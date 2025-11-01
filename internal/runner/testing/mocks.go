@@ -30,35 +30,29 @@ func (m *MockResourceManager) GetMode() resource.ExecutionMode {
 func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (resource.CommandToken, *resource.ExecutionResult, error) {
 	args := m.Called(ctx, cmd, group, env)
 
-	// Backwards compatibility: support both 2-argument and 3-argument Returns
+	// Expected format: .Return(token, result, error)
+	// All three values must be provided, even if token is "" or result is nil
 	const (
-		legacyReturnCount = 2 // Old format: .Return(result, error)
-		errorIndex        = 2 // Index for error in 3-argument return
+		tokenIndex  = 0
+		resultIndex = 1
+		errorIndex  = 2
 	)
-	numArgs := len(args)
 
-	if numArgs == legacyReturnCount {
-		// Old format: .Return(result, error)
-		// Return empty token for backwards compatibility
-		if args.Get(0) == nil {
-			return "", nil, args.Error(1)
-		}
-		return "", args.Get(0).(*resource.ExecutionResult), args.Error(1)
-	}
-
-	// New format: .Return(token, result, error)
+	// Extract token (may be empty string)
 	var token resource.CommandToken
-	if args.Get(0) != nil {
-		if t, ok := args.Get(0).(resource.CommandToken); ok {
+	if args.Get(tokenIndex) != nil {
+		if t, ok := args.Get(tokenIndex).(resource.CommandToken); ok {
 			token = t
 		}
 	}
 
-	// Handle result
-	if args.Get(1) == nil {
-		return token, nil, args.Error(errorIndex)
+	// Extract result (may be nil) and error
+	var result *resource.ExecutionResult
+	if args.Get(resultIndex) != nil {
+		result = args.Get(resultIndex).(*resource.ExecutionResult)
 	}
-	return token, args.Get(1).(*resource.ExecutionResult), args.Error(errorIndex)
+
+	return token, result, args.Error(errorIndex)
 }
 
 // ValidateOutputPath validates that the output path is within the working directory

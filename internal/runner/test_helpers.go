@@ -5,6 +5,7 @@ package runner
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
 	"github.com/stretchr/testify/mock"
 )
@@ -37,5 +38,5 @@ func setupSafeTestEnv(t *testing.T) {
 // setupFailedMockExecution sets up mock for failed command execution with custom error
 func setupFailedMockExecution(m *MockResourceManager, err error) {
 	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, err)
+	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resource.CommandToken(""), nil, err)
 }

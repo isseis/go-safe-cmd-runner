@@ -219,7 +219,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 
 		// First command fails with non-zero exit code
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &group, mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Subsequent commands should not be executed due to fail-fast behavior
 		ctx := context.Background()
@@ -255,11 +255,11 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 
 		// First command succeeds
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &group, mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil).Once()
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil).Once()
 
 		// Second command fails
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &group, mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil).Once()
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil).Once()
 		// Third command should not be executed due to fail-fast behavior
 
 		ctx := context.Background()
@@ -295,11 +295,11 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 
 		// First command succeeds
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &group, mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil).Once()
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil).Once()
 
 		// Second command returns executor error
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &group, mock.Anything).
-			Return((*resource.ExecutionResult)(nil), errCommandNotFound).Once()
+			Return(resource.CommandToken(""), (*resource.ExecutionResult)(nil), errCommandNotFound).Once()
 		// Third command should not be executed
 
 		ctx := context.Background()
@@ -394,14 +394,14 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 		// First group's command should be called and fail
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Remaining groups should still be executed
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[1], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "should execute\n", Stderr: ""}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "should execute\n", Stderr: ""}, nil)
 
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[2], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -450,15 +450,15 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 		// First group should succeed
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
 		// Second group should fail
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[1], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Third group should still be executed
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[2], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -501,16 +501,16 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 		// First command in group-1 should succeed
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil).Once()
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil).Once()
 
 		// Second command in group-1 should fail
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil).Once()
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil).Once()
 
 		// Third command in group-1 should not be executed (group-level failure stops remaining commands in same group)
 		// But group-2 should still be executed (new behavior)
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[1], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil).Once()
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil).Once()
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -551,11 +551,11 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 		// First command should return executor error
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).
-			Return((*resource.ExecutionResult)(nil), errCommandNotFound)
+			Return(resource.CommandToken(""), (*resource.ExecutionResult)(nil), errCommandNotFound)
 
 		// Second group should still be executed
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[1], mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
+			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -797,7 +797,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			// Create runner with mock resource manager to avoid actually executing commands
 			mockResourceManager := &MockResourceManager{}
 			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-				&resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
+				resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
 
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 			require.NoError(t, err) // Load basic environment
@@ -921,7 +921,7 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 					capturedEnv = env
 					return true
 				})).
-				Return(&resource.ExecutionResult{ExitCode: 0, Stdout: tt.expectedVar + "\n", Stderr: ""}, nil)
+				Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: tt.expectedVar + "\n", Stderr: ""}, nil)
 
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 			require.NoError(t, err)
@@ -990,7 +990,7 @@ func TestSlackNotification(t *testing.T) {
 			// Set up resource manager behavior based on test case
 			if tt.commandSuccess {
 				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-					&resource.ExecutionResult{
+					resource.CommandToken(""), &resource.ExecutionResult{
 						ExitCode: 0,
 						Stdout:   "test output",
 						Stderr:   "",
@@ -998,7 +998,7 @@ func TestSlackNotification(t *testing.T) {
 				)
 			} else {
 				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-					&resource.ExecutionResult{
+					resource.CommandToken(""), &resource.ExecutionResult{
 						ExitCode: 1,
 						Stdout:   "",
 						Stderr:   "command failed",
@@ -1274,7 +1274,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	// Set up mock expectations for dry-run mode
 	mockResourceManager.On("ValidateOutputPath", "dryrun-output.txt", mock.Anything).Return(nil)
 	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{
+		resource.CommandToken(""), &resource.ExecutionResult{
 			ExitCode: 0,
 			Stdout:   "Dry run test",
 			Stderr:   "",
@@ -1810,7 +1810,7 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 					Stderr:   "",
 				}
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
+					Return(resource.CommandToken(""), result, nil)
 				options = []Option{
 					WithResourceManager(mockRM),
 					WithVerificationManager(setupDryRunVerification(t)),

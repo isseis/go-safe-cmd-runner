@@ -246,7 +246,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 
 			mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 			mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-				&resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil)
+				resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil)
 
 			ctx := context.Background()
 			err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
@@ -331,10 +331,10 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 			// Mock execution
 			if tt.executionError != nil {
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-					nil, tt.executionError)
+					resource.CommandToken(""), nil, tt.executionError)
 			} else {
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-					&resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil)
+					resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil)
 			}
 			mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
@@ -445,7 +445,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -511,7 +511,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 127, Stdout: "", Stderr: "command not found"}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 127, Stdout: "", Stderr: "command not found"}, nil)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -573,7 +573,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -700,7 +700,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 
 	// Mock all executions
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 0, Stdout: "ok", Stderr: ""}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "ok", Stderr: ""}, nil)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -764,14 +764,14 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		mock.MatchedBy(func(cmd *runnertypes.RuntimeCommand) bool {
 			return cmd.Name() == "cmd1"
 		}), mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil).Once()
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "", Stderr: ""}, nil).Once()
 
 	// Second command fails
 	mockRM.On("ExecuteCommand", mock.Anything,
 		mock.MatchedBy(func(cmd *runnertypes.RuntimeCommand) bool {
 			return cmd.Name() == "cmd2-fails"
 		}), mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "error"}, nil).Once()
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "error"}, nil).Once()
 
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
@@ -1384,7 +1384,7 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "[DRY-RUN] output"}, nil)
+		Return(resource.CommandToken("test-token"), &resource.ExecutionResult{ExitCode: 0, Stdout: "[DRY-RUN] output"}, nil)
 
 	// Act
 	ctx := context.Background()
@@ -1460,7 +1460,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0}, nil)
+		Return(resource.CommandToken("test-token"), &resource.ExecutionResult{ExitCode: 0}, nil)
 
 	// Act
 	err := ge.ExecuteGroup(context.Background(), group, runtimeGlobal)
@@ -1524,7 +1524,7 @@ func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
 
 	// Act
 	ctx := context.Background()
@@ -1580,7 +1580,7 @@ func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
 
 	// Act
 	ctx := context.Background()
@@ -1635,7 +1635,7 @@ func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
 
 	// Act
 	ctx := context.Background()
@@ -1690,7 +1690,7 @@ func TestExecuteGroup_EmptyDescription(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
 
 	// Act
 	ctx := context.Background()
@@ -1800,7 +1800,7 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	}
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
 
 	// Act
 	ctx := context.Background()
@@ -2419,7 +2419,7 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 
 	// Mock execution to return context.DeadlineExceeded error
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		nil, context.DeadlineExceeded)
+		resource.CommandToken(""), nil, context.DeadlineExceeded)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()
@@ -2500,7 +2500,7 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 
 	// Mock successful execution for both commands
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		&resource.ExecutionResult{ExitCode: 0, Stdout: "ok"}, nil)
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "ok"}, nil)
 	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	ctx := context.Background()

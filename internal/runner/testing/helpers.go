@@ -38,7 +38,7 @@ func SetupSafeTestEnv(t *testing.T) {
 // SetupFailedMockExecution sets up mock for failed command execution with custom error
 func SetupFailedMockExecution(m *MockResourceManager, err error) {
 	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, err)
+	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resource.CommandToken(""), nil, err)
 }
 
 // TestGroupExecutorConfig holds configuration for test group executor creation.
