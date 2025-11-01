@@ -68,7 +68,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	// Create resource manager and execute command
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, result.ExitCode)
@@ -145,7 +145,7 @@ func TestOutputSizeLimit(t *testing.T) {
 	// Create resource manager with output capture support
 	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should get an error due to size limit being exceeded
 	require.Error(t, err, "Expected error when output size limit is exceeded")
@@ -198,7 +198,7 @@ func TestConcurrentExecution(t *testing.T) {
 			groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			results <- err
 		}(i)
 	}
@@ -264,7 +264,7 @@ func TestLongRunningStability(t *testing.T) {
 
 	start := time.Now()
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 	duration := time.Since(start)
 
 	require.NoError(t, err)
@@ -320,7 +320,7 @@ func BenchmarkOutputCapture(b *testing.B) {
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -345,7 +345,7 @@ func BenchmarkOutputCapture(b *testing.B) {
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -391,7 +391,7 @@ func TestMemoryLeakDetection(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+		_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 		require.NoError(t, err)
 		require.Equal(t, 0, result.ExitCode)
 

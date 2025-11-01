@@ -32,7 +32,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 
 		mockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expected, nil)
 
-		res, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
+		_, res, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
 		assert.NoError(t, err)
 		assert.NotNil(t, res)
 		assert.False(t, res.DryRun)
@@ -42,7 +42,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed}, nil, 0)
 		require.NoError(t, err)
 
-		res2, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
+		_, res2, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
 		assert.NoError(t, err)
 		assert.NotNil(t, res2)
 		assert.True(t, res2.DryRun)

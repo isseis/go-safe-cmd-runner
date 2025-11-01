@@ -227,7 +227,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 				cmd := createRuntimeCommand(&tt.spec)
 				group := tt.groupSpec
 
-				result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
+				_, result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 				if tt.expectError {
 					assert.Error(t, err, "expected error for %s", tt.description)
@@ -306,7 +306,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 							Cmd:  "echo concurrent test",
 						})
 
-						result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+						_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 						if err != nil {
 							errors <- err
 						} else {
@@ -469,7 +469,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 			cmd := createRuntimeCommand(&tt.spec)
 			group := tt.groupSpec
 
-			result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
+			_, result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 			if tt.expectError {
 				assert.Error(t, err, "expected error but got none")
@@ -624,7 +624,7 @@ func TestConcurrentExecution(t *testing.T) {
 					Cmd:         "echo concurrent test",
 				})
 
-				_, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+				_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 				if err != nil {
 					errors <- err
 					return
@@ -700,7 +700,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// Execute the same command multiple times
 	const numExecutions = 5
 	for i := range numExecutions {
-		result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+		_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 		assert.NoError(t, err, "execution %d should not error", i)
 		assert.NotNil(t, result, "execution %d should return result", i)
 
@@ -733,7 +733,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		dryRunManager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0)
 		require.NoError(t, err)
-		result, err := dryRunManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
+		_, result, err := dryRunManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
 		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
 		assert.NotNil(t, result, "dry-run mode should return result")
 		assert.True(t, result.DryRun, "result should indicate dry-run mode")
@@ -743,7 +743,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		mockPathResolver2.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
 		normalManager, err := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil, nil, 0)
 		require.NoError(t, err)
-		result, err = normalManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
+		_, result, err = normalManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
 		assert.NoError(t, err, "normal mode should handle null bytes in environment")
 		assert.NotNil(t, result, "normal mode should return result")
 		assert.False(t, result.DryRun, "result should indicate normal mode")

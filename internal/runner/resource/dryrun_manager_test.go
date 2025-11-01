@@ -47,7 +47,7 @@ func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -299,7 +299,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		group := createTestCommandGroup()
 		env := map[string]string{}
 
-		result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
+		_, result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result.Analysis)
@@ -314,7 +314,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			env := map[string]string{}
 			cmd := createRuntimeCommand(&tt.spec)
 
-			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+			_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result.Analysis)
@@ -365,7 +365,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	env := map[string]string{}
 	ctx := context.Background()
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -441,6 +441,242 @@ func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDryRunResourceManager_RecordGroupAnalysis(t *testing.T) {
+	tests := []struct {
+		name        string
+		groupName   string
+		debugInfo   *DebugInfo
+		expectError bool
+	}{
+		{
+			name:      "Record group analysis with debug info",
+			groupName: "test-group",
+			debugInfo: &DebugInfo{
+				InheritanceAnalysis: &InheritanceAnalysis{
+					GlobalEnvImport: []string{"DB_HOST=db_host"},
+					GlobalAllowlist: []string{"PATH"},
+					InheritanceMode: runnertypes.InheritanceModeInherit,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "Record group analysis with nil debug info",
+			groupName:   "test-group-2",
+			debugInfo:   nil,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := createTestDryRunResourceManager()
+
+			err := manager.RecordGroupAnalysis(tt.groupName, tt.debugInfo)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify the analysis was recorded
+				result := manager.GetDryRunResults()
+				require.NotNil(t, result)
+				require.Greater(t, len(result.ResourceAnalyses), 0)
+
+				// Find the group analysis
+				var foundAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeGroup {
+						foundAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, foundAnalysis, "Group analysis should be recorded")
+				assert.Equal(t, ResourceTypeGroup, foundAnalysis.Type)
+				assert.Equal(t, OperationAnalyze, foundAnalysis.Operation)
+				assert.Equal(t, tt.groupName, foundAnalysis.Target)
+				assert.Equal(t, tt.debugInfo, foundAnalysis.DebugInfo)
+			}
+		})
+	}
+}
+
+func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
+	tests := []struct {
+		name            string
+		setupFunc       func(*DryRunResourceManager) CommandToken
+		debugInfo       *DebugInfo
+		useInvalidToken bool
+		expectError     bool
+		errorContains   string
+		validateResult  func(*testing.T, *DryRunResourceManager)
+	}{
+		{
+			name: "Update command with final environment using valid token",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command analysis first
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+				return token
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateResult: func(t *testing.T, m *DryRunResourceManager) {
+				result := m.GetDryRunResults()
+				require.NotNil(t, result)
+				require.Greater(t, len(result.ResourceAnalyses), 0)
+
+				// Find the command analysis
+				var cmdAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+						cmdAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cmdAnalysis, "Command analysis should exist")
+				require.NotNil(t, cmdAnalysis.DebugInfo, "DebugInfo should be set")
+				require.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be set")
+				assert.Len(t, cmdAnalysis.DebugInfo.FinalEnvironment.Variables, 1)
+			},
+		},
+		{
+			name: "Update with invalid token",
+			setupFunc: func(_ *DryRunResourceManager) CommandToken {
+				return CommandToken("invalid-token")
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{},
+				},
+			},
+			expectError:   true,
+			errorContains: "invalid command token",
+		},
+		{
+			name: "Update with complete debug info including both fields",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+				return token
+			},
+			debugInfo: &DebugInfo{
+				InheritanceAnalysis: &InheritanceAnalysis{
+					GlobalEnvImport: []string{"TEST=test"},
+					InheritanceMode: runnertypes.InheritanceModeInherit,
+				},
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateResult: func(t *testing.T, m *DryRunResourceManager) {
+				result := m.GetDryRunResults()
+				require.NotNil(t, result)
+
+				// Find the command analysis
+				var cmdAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+						cmdAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cmdAnalysis)
+				require.NotNil(t, cmdAnalysis.DebugInfo)
+				assert.NotNil(t, cmdAnalysis.DebugInfo.InheritanceAnalysis, "InheritanceAnalysis should be set")
+				assert.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be set")
+			},
+		},
+		{
+			name: "Duplicate call should return error",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command and update once
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+
+				// First update - should succeed
+				_ = m.UpdateCommandDebugInfo(token, &DebugInfo{
+					InheritanceAnalysis: &InheritanceAnalysis{
+						GlobalEnvImport: []string{"TEST=test"},
+						InheritanceMode: runnertypes.InheritanceModeInherit,
+					},
+				})
+				return token
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError:   true,
+			errorContains: "called multiple times",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := createTestDryRunResourceManager()
+
+			// Setup test state and get token
+			var token CommandToken
+			if tt.setupFunc != nil {
+				token = tt.setupFunc(manager)
+			}
+
+			err := manager.UpdateCommandDebugInfo(token, tt.debugInfo)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				if tt.validateResult != nil {
+					tt.validateResult(t, manager)
+				}
 			}
 		})
 	}

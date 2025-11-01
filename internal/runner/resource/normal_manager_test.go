@@ -237,7 +237,7 @@ func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 
 	f.MockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil)
 
-	result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -291,7 +291,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 			env := map[string]string{"TEST": "value"}
 			ctx := context.Background()
 
-			result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
+			_, result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
 
 			assert.Error(t, err)
 			assert.Nil(t, result)
@@ -390,7 +390,7 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 				f.MockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil).Once()
 			}
 
-			result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
+			_, result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
 
 			if tc.shouldExecute {
 				assert.NoError(t, err)

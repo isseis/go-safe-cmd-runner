@@ -37,7 +37,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 					Stderr:   "",
 				}
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
+					Return(resource.CommandToken(""), result, nil)
 			},
 			expectError: false,
 			description: "Basic output capture should work with valid configuration",
@@ -47,7 +47,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			setupMock: func(mockRM *MockResourceManager) {
 				mockRM.On("ValidateOutputPath", "output.txt", mock.Anything).Return(nil)
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, fmt.Errorf("output capture failed"))
+					Return(resource.CommandToken(""), nil, fmt.Errorf("output capture failed"))
 			},
 			expectError: true,
 			description: "Output capture errors should be properly handled",
@@ -188,7 +188,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 					Stderr:   "",
 				}
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
+					Return(resource.CommandToken(""), result, nil)
 			} else {
 				// Failure case: validation fails, ExecuteCommand never gets called
 				mockRM.On("ValidateOutputPath", tt.outputPath, mock.Anything).

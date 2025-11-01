@@ -490,17 +490,17 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/resource/manager.go`
 
-- [ ] `RecordGroupAnalysis()` メソッドを実装
-  - [ ] 引数の検証
-  - [ ] ResourceAnalysis の作成
-  - [ ] DebugInfo の設定
-  - [ ] リストへの追加
-  - [ ] エラーハンドリング
-- [ ] `UpdateLastCommandDebugInfo()` メソッドを実装
-  - [ ] 最後のコマンドを検索
-  - [ ] DebugInfo のマージ
-  - [ ] エラーハンドリング
-- [ ] ドキュメントコメントを追加
+- [x] `RecordGroupAnalysis()` メソッドを実装
+  - [x] 引数の検証
+  - [x] ResourceAnalysis の作成
+  - [x] DebugInfo の設定
+  - [x] リストへの追加
+  - [x] エラーハンドリング
+- [x] `UpdateLastCommandDebugInfo()` メソッドを実装
+  - [x] 最後のコマンドを検索
+  - [x] DebugInfo のマージ
+  - [x] エラーハンドリング
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 両方のメソッドが実装されている
@@ -513,14 +513,14 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/resource/manager_test.go`
 
-- [ ] `TestRecordGroupAnalysis` を実装
-  - [ ] 正常ケース
-  - [ ] nil manager
-  - [ ] ResourceAnalyses への追加を検証
-- [ ] `TestUpdateLastCommandDebugInfo` を実装
-  - [ ] 正常ケース
-  - [ ] コマンドが存在しない場合
-  - [ ] DebugInfo のマージを検証
+- [x] `TestRecordGroupAnalysis` を実装
+  - [x] 正常ケース
+  - [x] nil manager
+  - [x] ResourceAnalyses への追加を検証
+- [x] `TestUpdateLastCommandDebugInfo` を実装
+  - [x] 正常ケース
+  - [x] コマンドが存在しない場合
+  - [x] DebugInfo のマージを検証
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -533,9 +533,9 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] `dryRunFormat` フィールドを追加
-- [ ] コンストラクタを修正
-- [ ] 既存のコードへの影響を確認
+- [x] `dryRunFormat` フィールドを追加
+- [x] コンストラクタを修正
+- [x] 既存のコードへの影響を確認
 
 **完了基準**:
 - フィールドが追加されている
@@ -548,12 +548,12 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] 既存の `PrintFromEnvInheritance` 呼び出しを特定
-- [ ] `CollectInheritanceAnalysis` 呼び出しに変更
-- [ ] 出力形式による条件分岐を実装
-  - [ ] JSON形式: `RecordGroupAnalysis` を呼び出し
-  - [ ] TEXT形式: `FormatInheritanceAnalysisText` を呼び出し
-- [ ] エラーハンドリングを追加
+- [x] 既存の `PrintFromEnvInheritance` 呼び出しを特定
+- [x] `CollectInheritanceAnalysis` 呼び出しに変更
+- [x] 出力形式による条件分岐を実装
+  - [x] JSON形式: `RecordGroupAnalysis` を呼び出し
+  - [x] TEXT形式: `FormatInheritanceAnalysisText` を呼び出し
+- [x] エラーハンドリングを追加
 
 **完了基準**:
 - 両方の出力形式で正しく動作する
@@ -566,12 +566,12 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] 既存の `PrintFinalEnvironment` 呼び出しを特定
-- [ ] `CollectFinalEnvironment` 呼び出しに変更
-- [ ] 出力形式による条件分岐を実装
-  - [ ] JSON形式: `UpdateLastCommandDebugInfo` を呼び出し
-  - [ ] TEXT形式: `FormatFinalEnvironmentText` を呼び出し
-- [ ] エラーハンドリングを追加
+- [x] 既存の `PrintFinalEnvironment` 呼び出しを特定
+- [x] `CollectFinalEnvironment` 呼び出しに変更
+- [x] 出力形式による条件分岐を実装
+  - [x] JSON形式: `UpdateLastCommandDebugInfo` を呼び出し
+  - [x] TEXT形式: `FormatFinalEnvironmentText` を呼び出し
+- [x] エラーハンドリングを追加
 
 **完了基準**:
 - 両方の出力形式で正しく動作する
@@ -584,9 +584,9 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `cmd/runner/main.go`
 
-- [ ] `GroupExecutor` の作成箇所を特定
-- [ ] `dryRunFormat` パラメータを追加
-- [ ] フラグからの値の取得を確認
+- [x] `GroupExecutor` の作成箇所を特定
+- [x] `dryRunFormat` パラメータを追加
+- [x] フラグからの値の取得を確認
 
 **完了基準**:
 - `dryRunFormat` が正しく伝搬される
@@ -680,7 +680,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 ### 6.5 Phase 4 のマイルストーン
 
-- [ ] Phase 4 完了
+- [x] Phase 4 完了
 - [ ] コードレビュー完了
 - [ ] Phase 4 のコミット作成
 

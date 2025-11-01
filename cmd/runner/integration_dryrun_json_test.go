@@ -104,11 +104,20 @@ args = ["hello"]
 			err = json.Unmarshal([]byte(jsonOutput), &result)
 			require.NoError(t, err, "output should be valid JSON: %s", jsonOutput)
 
-			// Find command analysis
+			// Find command analysis (may not be the first element due to group analysis)
 			require.NotEmpty(t, result.ResourceAnalyses, "should have at least one analysis")
 
-			cmdAnalysis := result.ResourceAnalyses[0]
-			assert.Equal(t, "command", cmdAnalysis.Type)
+			var cmdAnalysis *struct {
+				Type       string         `json:"type"`
+				Parameters map[string]any `json:"parameters"`
+			}
+			for i := range result.ResourceAnalyses {
+				if result.ResourceAnalyses[i].Type == "command" {
+					cmdAnalysis = &result.ResourceAnalyses[i]
+					break
+				}
+			}
+			require.NotNil(t, cmdAnalysis, "should have a command analysis")
 
 			// Check timeout parameters
 			timeout, ok := cmdAnalysis.Parameters["timeout"]
