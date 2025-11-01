@@ -319,8 +319,22 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 }
 
 // executeCommandInGroup executes a command within a specific group context
+//
+// Two-Phase Debug Info Update Pattern (Dry-run mode):
+// This function uses a two-phase approach to populate debug information:
+//
+//  1. Phase 1 (ExecuteCommand): Records core command analysis and returns a token
+//  2. Phase 2 (UpdateCommandDebugInfo): Adds optional debug info using the token
+//
+// Why this pattern is necessary:
+//   - ExecuteCommand accepts env as map[string]string (values only)
+//   - Debug info needs map[string]executor.EnvVar (values + origin metadata)
+//   - envMap (with metadata) is only available here in the caller context
+//   - ResourceManager interface stays simple and works for both normal/dry-run modes
+//   - Separation of concerns: core analysis vs optional debug details
 func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
+	// envMap contains executor.EnvVar with both value and origin metadata
 	envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
 	slog.Debug("Built process environment variables",
@@ -328,7 +342,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		"group", groupSpec.Name,
 		"final_vars_count", len(envMap))
 
-	// Extract values for validation
+	// Extract values for validation and ExecuteCommand
+	// Note: Origin metadata is stripped here, which is why Phase 2 update is needed
 	envVars := make(map[string]string, len(envMap))
 	for k, v := range envMap {
 		envVars[k] = v.Value
@@ -360,13 +375,15 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		}
 	}
 
-	// Execute the command using ResourceManager
+	// Phase 1: Execute the command using ResourceManager
+	// ExecuteCommand records core analysis and returns a token for later updates
 	token, result, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
 	if err != nil {
 		return nil, err
 	}
 
-	// Update final environment debug info in dry-run mode (after command execution)
+	// Phase 2: Update final environment debug info in dry-run mode (after command execution)
+	// Uses the token to update the ResourceAnalysis with environment origin metadata
 	if ge.isDryRun {
 		// Collect final environment data
 		finalEnv := debug.CollectFinalEnvironment(
