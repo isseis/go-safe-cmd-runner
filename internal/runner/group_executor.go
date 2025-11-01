@@ -175,8 +175,10 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 
 	// 7. Execute commands in the group sequentially
-	lastCommand, lastOutput, lastExitCode, err := ge.executeAllCommands(ctx, groupSpec, runtimeGroup, runtimeGlobal, &executionResult)
+	lastCommand, lastOutput, lastExitCode, errResult, err := ge.executeAllCommands(ctx, groupSpec, runtimeGroup, runtimeGlobal)
 	if err != nil {
+		// executionResult is set from the returned errResult
+		executionResult = errResult
 		return err
 	}
 
@@ -194,14 +196,14 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 }
 
 // executeAllCommands executes all commands in a group sequentially
-// Returns: (lastCommand, lastOutput, lastExitCode, error)
+// Returns: (lastCommand, lastOutput, lastExitCode, executionResult, error)
+// executionResult is non-nil only when an error occurs, representing the error state.
 func (ge *DefaultGroupExecutor) executeAllCommands(
 	ctx context.Context,
 	groupSpec *runnertypes.GroupSpec,
 	runtimeGroup *runnertypes.RuntimeGroup,
 	runtimeGlobal *runnertypes.RuntimeGlobal,
-	executionResult **groupExecutionResult,
-) (string, string, int, error) {
+) (string, string, int, *groupExecutionResult, error) {
 	var lastCommand string
 	var lastOutput string
 	var lastExitCode int
@@ -214,28 +216,28 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout())
 		if err != nil {
 			// Set failure result for notification
-			*executionResult = &groupExecutionResult{
+			errResult := &groupExecutionResult{
 				status:      GroupExecutionStatusError,
 				exitCode:    1,
 				lastCommand: cmdSpec.Name,
 				output:      lastOutput,
 				errorMsg:    fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
 			}
-			return lastCommand, lastOutput, 1, fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
+			return lastCommand, lastOutput, 1, errResult, fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
 		}
 
 		// Determine effective working directory for the command
 		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
 		if err != nil {
 			// Set failure result for notification
-			*executionResult = &groupExecutionResult{
+			errResult := &groupExecutionResult{
 				status:      GroupExecutionStatusError,
 				exitCode:    1,
 				lastCommand: cmdSpec.Name,
 				output:      lastOutput,
 				errorMsg:    fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
 			}
-			return lastCommand, lastOutput, 1, fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
+			return lastCommand, lastOutput, 1, errResult, fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
 		}
 		runtimeCmd.EffectiveWorkDir = workDir
 
@@ -245,14 +247,14 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 		if err != nil {
 			// Set failure result for notification
-			*executionResult = &groupExecutionResult{
+			errResult := &groupExecutionResult{
 				status:      GroupExecutionStatusError,
 				exitCode:    exitCode,
 				lastCommand: lastCommand,
 				output:      lastOutput,
 				errorMsg:    err.Error(),
 			}
-			return lastCommand, lastOutput, exitCode, err
+			return lastCommand, lastOutput, exitCode, errResult, err
 		}
 
 		// Update last output if command produced output
@@ -262,7 +264,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		lastExitCode = exitCode
 	}
 
-	return lastCommand, lastOutput, lastExitCode, nil
+	return lastCommand, lastOutput, lastExitCode, nil, nil
 }
 
 // verifyGroupFiles verifies files specified in the group before execution
