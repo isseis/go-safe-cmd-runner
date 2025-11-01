@@ -508,13 +508,6 @@ func TestDryRunResourceManager_RecordGroupAnalysis(t *testing.T) {
 	}
 }
 
-func TestDryRunResourceManager_RecordGroupAnalysis_NilManager(t *testing.T) {
-	var manager *DryRunResourceManager
-	err := manager.RecordGroupAnalysis("test-group", nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "resource manager is nil")
-}
-
 func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -687,11 +680,4 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestDryRunResourceManager_UpdateCommandDebugInfo_NilManager(t *testing.T) {
-	var manager *DryRunResourceManager
-	err := manager.UpdateCommandDebugInfo(CommandToken(""), nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "resource manager is nil")
 }

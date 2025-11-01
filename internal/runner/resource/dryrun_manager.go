@@ -19,7 +19,6 @@ import (
 var (
 	ErrPathResolverRequired      = errors.New("PathResolver is required for DryRunResourceManager")
 	ErrPathTraversalDetected     = errors.New("path validation failed: path traversal detected")
-	ErrResourceManagerNil        = errors.New("resource manager is nil")
 	ErrNoCommandResourceAnalysis = errors.New("no command resource analysis found to update")
 	ErrInvalidCommandToken       = errors.New("invalid command token")
 	ErrDuplicateDebugInfoUpdate  = errors.New("UpdateCommandDebugInfo called multiple times for the same token")
@@ -466,10 +465,6 @@ func (d *DryRunResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 
 // RecordGroupAnalysis records a group-level resource analysis with debug info
 func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error {
-	if d == nil {
-		return ErrResourceManagerNil
-	}
-
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -496,10 +491,6 @@ func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo 
 // UpdateCommandDebugInfo updates a specific command's debug info using its token
 // This should be called after ExecuteCommand to add final environment information
 func (d *DryRunResourceManager) UpdateCommandDebugInfo(token CommandToken, debugInfo *DebugInfo) error {
-	if d == nil {
-		return ErrResourceManagerNil
-	}
-
 	if token == "" {
 		return ErrInvalidCommandToken
 	}
