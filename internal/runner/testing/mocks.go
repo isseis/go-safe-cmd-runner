@@ -41,9 +41,7 @@ func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertyp
 	// Extract token (may be empty string)
 	var token resource.CommandToken
 	if args.Get(tokenIndex) != nil {
-		if t, ok := args.Get(tokenIndex).(resource.CommandToken); ok {
-			token = t
-		}
+		token = args.Get(tokenIndex).(resource.CommandToken)
 	}
 
 	// Extract result (may be nil) and error
