@@ -173,7 +173,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 				// Note: Global.WorkDir has been removed in Task 0034
 				// Note: We use mock.Anything for RuntimeCommand because it contains __runner_workdir
 				// which is set dynamically at runtime
-				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).Return(tt.mockResults[i], tt.mockErrors[i])
+				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).Return(resource.CommandToken(""), tt.mockResults[i], tt.mockErrors[i])
 			}
 
 			ctx := context.Background()
@@ -343,8 +343,8 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	require.NoError(t, err)
 
 	// Setup mock expectations - should be called in priority order
-	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[1], mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n"}, nil)
-	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "second\n"}, nil)
+	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[1], mock.Anything).Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "first\n"}, nil)
+	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "second\n"}, nil)
 
 	ctx := context.Background()
 	err = runner.ExecuteAll(ctx)

@@ -102,7 +102,7 @@ func TestPathTraversalAttack(t *testing.T) {
 
 			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
-			result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.shouldFail {
 				// In current implementation, path validation may not be fully integrated
@@ -159,7 +159,7 @@ func TestSymlinkAttack(t *testing.T) {
 
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	_, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// In current implementation, symlink protection may not be fully integrated
 	// Commands may succeed but symlink detection should happen
@@ -235,7 +235,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
-			result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.shouldFail {
 				// In test environment, system directories may not be writable
@@ -288,7 +288,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	logger := slog.Default()
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should fail due to size limit or fail gracefully
 	if err != nil {
@@ -335,7 +335,7 @@ func TestFilePermissionValidation(t *testing.T) {
 
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 	// In current implementation, output capture is not fully integrated
 	// so files may not be created as expected
 	if err != nil {
@@ -391,7 +391,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			results <- err
 		}(i)
 	}
@@ -462,7 +462,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 
 			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
-			result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.expectedResult {
 				// Expected to succeed
@@ -516,7 +516,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+			_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			results <- err
 		}(i)
 	}

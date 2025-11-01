@@ -47,7 +47,7 @@ func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -299,7 +299,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		group := createTestCommandGroup()
 		env := map[string]string{}
 
-		result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
+		_, result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result.Analysis)
@@ -314,7 +314,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			env := map[string]string{}
 			cmd := createRuntimeCommand(&tt.spec)
 
-			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+			_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result.Analysis)
@@ -365,7 +365,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	env := map[string]string{}
 	ctx := context.Background()
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -515,24 +515,26 @@ func TestDryRunResourceManager_RecordGroupAnalysis_NilManager(t *testing.T) {
 	assert.Contains(t, err.Error(), "resource manager is nil")
 }
 
-func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
+func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFunc      func(*DryRunResourceManager)
-		debugInfo      *DebugInfo
-		expectError    bool
-		errorContains  string
-		validateResult func(*testing.T, *DryRunResourceManager)
+		name            string
+		setupFunc       func(*DryRunResourceManager) CommandToken
+		debugInfo       *DebugInfo
+		useInvalidToken bool
+		expectError     bool
+		errorContains   string
+		validateResult  func(*testing.T, *DryRunResourceManager)
 	}{
 		{
-			name: "Update last command with final environment",
-			setupFunc: func(m *DryRunResourceManager) {
+			name: "Update command with final environment using valid token",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command analysis first
 				cmd := createTestCommand()
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
-				_, _ = m.ExecuteCommand(ctx, cmd, group, env)
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+				return token
 			},
 			debugInfo: &DebugInfo{
 				FinalEnvironment: &FinalEnvironment{
@@ -567,9 +569,9 @@ func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "Update last command when no command exists",
-			setupFunc: func(_ *DryRunResourceManager) {
-				// Don't execute any command
+			name: "Update with invalid token",
+			setupFunc: func(_ *DryRunResourceManager) CommandToken {
+				return CommandToken("invalid-token")
 			},
 			debugInfo: &DebugInfo{
 				FinalEnvironment: &FinalEnvironment{
@@ -577,27 +579,24 @@ func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
 				},
 			},
 			expectError:   true,
-			errorContains: "no command resource analysis found",
+			errorContains: "invalid command token",
 		},
 		{
-			name: "Merge with existing debug info",
-			setupFunc: func(m *DryRunResourceManager) {
-				// Record a command with existing debug info
+			name: "Update with complete debug info including both fields",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command
 				cmd := createTestCommand()
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
-				_, _ = m.ExecuteCommand(ctx, cmd, group, env)
-
-				// Update with inheritance analysis first
-				_ = m.UpdateLastCommandDebugInfo(&DebugInfo{
-					InheritanceAnalysis: &InheritanceAnalysis{
-						GlobalEnvImport: []string{"TEST=test"},
-						InheritanceMode: runnertypes.InheritanceModeInherit,
-					},
-				})
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+				return token
 			},
 			debugInfo: &DebugInfo{
+				InheritanceAnalysis: &InheritanceAnalysis{
+					GlobalEnvImport: []string{"TEST=test"},
+					InheritanceMode: runnertypes.InheritanceModeInherit,
+				},
 				FinalEnvironment: &FinalEnvironment{
 					Variables: map[string]EnvironmentVariable{
 						"TEST": {
@@ -624,9 +623,42 @@ func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
 
 				require.NotNil(t, cmdAnalysis)
 				require.NotNil(t, cmdAnalysis.DebugInfo)
-				assert.NotNil(t, cmdAnalysis.DebugInfo.InheritanceAnalysis, "InheritanceAnalysis should be preserved")
-				assert.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be added")
+				assert.NotNil(t, cmdAnalysis.DebugInfo.InheritanceAnalysis, "InheritanceAnalysis should be set")
+				assert.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be set")
 			},
+		},
+		{
+			name: "Duplicate call should return error",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command and update once
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+
+				// First update - should succeed
+				_ = m.UpdateCommandDebugInfo(token, &DebugInfo{
+					InheritanceAnalysis: &InheritanceAnalysis{
+						GlobalEnvImport: []string{"TEST=test"},
+						InheritanceMode: runnertypes.InheritanceModeInherit,
+					},
+				})
+				return token
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError:   true,
+			errorContains: "called multiple times",
 		},
 	}
 
@@ -634,12 +666,13 @@ func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			manager := createTestDryRunResourceManager()
 
-			// Setup test state
+			// Setup test state and get token
+			var token CommandToken
 			if tt.setupFunc != nil {
-				tt.setupFunc(manager)
+				token = tt.setupFunc(manager)
 			}
 
-			err := manager.UpdateLastCommandDebugInfo(tt.debugInfo)
+			err := manager.UpdateCommandDebugInfo(token, tt.debugInfo)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -656,9 +689,9 @@ func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
 	}
 }
 
-func TestDryRunResourceManager_UpdateLastCommandDebugInfo_NilManager(t *testing.T) {
+func TestDryRunResourceManager_UpdateCommandDebugInfo_NilManager(t *testing.T) {
 	var manager *DryRunResourceManager
-	err := manager.UpdateLastCommandDebugInfo(nil)
+	err := manager.UpdateCommandDebugInfo(CommandToken(""), nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "resource manager is nil")
 }

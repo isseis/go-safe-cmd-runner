@@ -60,7 +60,7 @@ func (d *DefaultResourceManager) activeManager() ResourceManager {
 }
 
 // ExecuteCommand delegates to the active manager.
-func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
+func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error) {
 	return d.activeManager().ExecuteCommand(ctx, cmd, groupSpec, env)
 }
 
@@ -114,7 +114,7 @@ func (d *DefaultResourceManager) RecordGroupAnalysis(groupName string, debugInfo
 	return d.activeManager().RecordGroupAnalysis(groupName, debugInfo)
 }
 
-// UpdateLastCommandDebugInfo updates the last command's debug info in dry-run mode; no-op in normal mode.
-func (d *DefaultResourceManager) UpdateLastCommandDebugInfo(debugInfo *DebugInfo) error {
-	return d.activeManager().UpdateLastCommandDebugInfo(debugInfo)
+// UpdateCommandDebugInfo updates a command's debug info using its token in dry-run mode; no-op in normal mode.
+func (d *DefaultResourceManager) UpdateCommandDebugInfo(token CommandToken, debugInfo *DebugInfo) error {
+	return d.activeManager().UpdateCommandDebugInfo(token, debugInfo)
 }

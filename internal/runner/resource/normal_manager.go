@@ -86,29 +86,30 @@ func (n *NormalResourceManager) ValidateOutputPath(outputPath, workDir string) e
 }
 
 // ExecuteCommand executes a command in normal mode
-func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
+// Returns an empty token (not used in normal mode), execution result, and error
+func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error) {
 	start := time.Now()
 
 	// Validate command and group for consistency with dry-run mode
 	if err := validateCommand(cmd); err != nil {
-		return nil, fmt.Errorf("command validation failed: %w", err)
+		return "", nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
 	if err := validateCommandGroup(group); err != nil {
-		return nil, fmt.Errorf("command group validation failed: %w", err)
+		return "", nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
 	// Unified Risk Evaluation Approach
 	// Step 1: Evaluate security risk (includes privilege escalation detection)
 	effectiveRisk, err := n.riskEvaluator.EvaluateRisk(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("risk evaluation failed: %w", err)
+		return "", nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
 
 	// Step 2: Get maximum allowed risk level from configuration
 	maxAllowedRisk, err := cmd.GetMaxRiskLevel()
 	if err != nil {
-		return nil, fmt.Errorf("invalid max_risk_level configuration: %w", err)
+		return "", nil, fmt.Errorf("invalid max_risk_level configuration: %w", err)
 	}
 
 	// Step 3: Unified risk level comparison
@@ -120,17 +121,19 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 			"max_allowed_risk", maxAllowedRisk.String(),
 			"command_path", group.Name,
 		)
-		return nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
+		return "", nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
 			runnertypes.ErrCommandSecurityViolation, cmd.ExpandedCmd, effectiveRisk.String(), maxAllowedRisk.String())
 	}
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput
 	if cmd.Output() != "" && n.outputManager != nil {
-		return n.executeCommandWithOutput(ctx, cmd, group, env, start)
+		result, err := n.executeCommandWithOutput(ctx, cmd, group, env, start)
+		return "", result, err
 	}
 
 	// Execute the command using the shared execution logic
-	return n.executeCommandInternal(ctx, cmd, env, start, nil)
+	result, err := n.executeCommandInternal(ctx, cmd, env, start, nil)
+	return "", result, err
 }
 
 // executeCommandWithOutput executes a command with output capture
@@ -287,7 +290,10 @@ func (n *NormalResourceManager) RecordGroupAnalysis(_ string, _ *DebugInfo) erro
 	return nil
 }
 
-// UpdateLastCommandDebugInfo is a no-op in normal mode
-func (n *NormalResourceManager) UpdateLastCommandDebugInfo(_ *DebugInfo) error {
+// UpdateCommandDebugInfo is a no-op in normal mode
+func (n *NormalResourceManager) UpdateCommandDebugInfo(token CommandToken, _ *DebugInfo) error {
+	if token == "" {
+		return ErrInvalidCommandToken
+	}
 	return nil
 }

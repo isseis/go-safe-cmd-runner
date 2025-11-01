@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -20,6 +21,8 @@ var (
 	ErrPathTraversalDetected     = errors.New("path validation failed: path traversal detected")
 	ErrResourceManagerNil        = errors.New("resource manager is nil")
 	ErrNoCommandResourceAnalysis = errors.New("no command resource analysis found to update")
+	ErrInvalidCommandToken       = errors.New("invalid command token")
+	ErrDuplicateDebugInfoUpdate  = errors.New("UpdateCommandDebugInfo called multiple times for the same token")
 )
 
 // PathResolver interface for resolving command paths
@@ -45,6 +48,10 @@ type DryRunResourceManager struct {
 	dryRunOptions    *DryRunOptions
 	dryRunResult     *DryRunResult
 	resourceAnalyses []ResourceAnalysis
+
+	// Token management - maps CommandToken to index in resourceAnalyses
+	tokenToIndex map[CommandToken]int
+	nextTokenID  uint64
 
 	// State management
 	mu sync.RWMutex
@@ -92,6 +99,8 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 			Warnings: make([]DryRunWarning, 0),
 		},
 		resourceAnalyses: make([]ResourceAnalysis, 0),
+		tokenToIndex:     make(map[CommandToken]int),
+		nextTokenID:      1,
 	}, nil
 }
 
@@ -114,23 +123,35 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 	return d.outputManager.ValidateOutputPath(outputPath, workDir)
 }
 
+// generateCommandToken generates a unique token for a command execution
+func (d *DryRunResourceManager) generateCommandToken() CommandToken {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tokenID := d.nextTokenID
+	d.nextTokenID++
+
+	return CommandToken(fmt.Sprintf("cmd-%d-%d", time.Now().UnixNano(), tokenID))
+}
+
 // ExecuteCommand simulates command execution in dry-run mode
-func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
+// Returns a token that can be used to update the command's debug info
+func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error) {
 	start := time.Now()
 
 	// Validate command and group for consistency with normal mode
 	if err := validateCommand(cmd); err != nil {
-		return nil, fmt.Errorf("command validation failed: %w", err)
+		return "", nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
 	if err := validateCommandGroup(group); err != nil {
-		return nil, fmt.Errorf("command group validation failed: %w", err)
+		return "", nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
 	// Analyze the command
 	analysis, err := d.analyzeCommand(ctx, cmd, group, env)
 	if err != nil {
-		return nil, fmt.Errorf("command analysis failed: %w", err)
+		return "", nil, fmt.Errorf("command analysis failed: %w", err)
 	}
 
 	// Check if output capture is requested and analyze it
@@ -139,8 +160,15 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		d.RecordAnalysis(&outputAnalysis)
 	}
 
-	// Record the analysis
-	d.RecordAnalysis(&analysis)
+	// Generate token before recording
+	token := d.generateCommandToken()
+
+	// Record the analysis and store token mapping
+	d.mu.Lock()
+	commandIndex := len(d.resourceAnalyses)
+	d.resourceAnalyses = append(d.resourceAnalyses, analysis)
+	d.tokenToIndex[token] = commandIndex
+	d.mu.Unlock()
 
 	// Generate simulated output
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
@@ -151,7 +179,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output())
 	}
 
-	return &ExecutionResult{
+	return token, &ExecutionResult{
 		ExitCode: 0,
 		Stdout:   stdout,
 		Stderr:   "",
@@ -465,34 +493,50 @@ func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo 
 	return nil
 }
 
-// UpdateLastCommandDebugInfo updates the most recent command ResourceAnalysis with debug info
+// UpdateCommandDebugInfo updates a specific command's debug info using its token
 // This should be called after ExecuteCommand to add final environment information
-func (d *DryRunResourceManager) UpdateLastCommandDebugInfo(debugInfo *DebugInfo) error {
+func (d *DryRunResourceManager) UpdateCommandDebugInfo(token CommandToken, debugInfo *DebugInfo) error {
 	if d == nil {
 		return ErrResourceManagerNil
+	}
+
+	if token == "" {
+		return ErrInvalidCommandToken
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Find the last command resource analysis
-	for i := len(d.resourceAnalyses) - 1; i >= 0; i-- {
-		if d.resourceAnalyses[i].Type == ResourceTypeCommand {
-			// Merge with existing debug info if present
-			if d.resourceAnalyses[i].DebugInfo == nil {
-				d.resourceAnalyses[i].DebugInfo = debugInfo
-			} else {
-				// Merge fields
-				if debugInfo.FinalEnvironment != nil {
-					d.resourceAnalyses[i].DebugInfo.FinalEnvironment = debugInfo.FinalEnvironment
-				}
-				if debugInfo.InheritanceAnalysis != nil {
-					d.resourceAnalyses[i].DebugInfo.InheritanceAnalysis = debugInfo.InheritanceAnalysis
-				}
-			}
-			return nil
-		}
+	// Find the command resource analysis by token
+	index, ok := d.tokenToIndex[token]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrInvalidCommandToken, token)
 	}
 
-	return ErrNoCommandResourceAnalysis
+	// Validate index bounds
+	if index < 0 || index >= len(d.resourceAnalyses) {
+		return fmt.Errorf("%w: index out of bounds", ErrInvalidCommandToken)
+	}
+
+	// Verify it's a command resource
+	if d.resourceAnalyses[index].Type != ResourceTypeCommand {
+		return fmt.Errorf("%w: token does not refer to a command resource", ErrInvalidCommandToken)
+	}
+
+	// Defensive check: DebugInfo should always be nil at this point
+	// UpdateCommandDebugInfo must be called exactly once per command token
+	if d.resourceAnalyses[index].DebugInfo != nil {
+		// This is a programming error - UpdateCommandDebugInfo was called multiple times
+		slog.Error("UpdateCommandDebugInfo called multiple times for the same token",
+			"command_index", index,
+			"token", string(token),
+			"has_existing_final_env", d.resourceAnalyses[index].DebugInfo.FinalEnvironment != nil,
+			"has_existing_inheritance", d.resourceAnalyses[index].DebugInfo.InheritanceAnalysis != nil)
+		return fmt.Errorf("%w: %s", ErrDuplicateDebugInfoUpdate, token)
+	}
+
+	// Set debug info (not merge - this is the first and only call)
+	d.resourceAnalyses[index].DebugInfo = debugInfo
+
+	return nil
 }

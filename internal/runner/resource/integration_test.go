@@ -93,7 +93,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 			for _, cmdSpec := range tt.commandSpecs {
 				group := tt.groupSpecs[0] // Use first group for simplicity
 				cmd := createRuntimeCommand(&cmdSpec)
-				result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
+				_, result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 				// Verify that dry-run execution doesn't produce errors
 				assert.NoError(t, err, "dry-run execution should not produce errors")
@@ -173,7 +173,7 @@ func TestDryRunResultConsistency(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		_, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
+		_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 		require.NoError(t, err)
 
 		result := manager.GetDryRunResults()
@@ -257,7 +257,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 		assert.Equal(t, ExecutionModeDryRun, manager.GetMode())
 
 		// Execute a command
-		_, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
+		_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 		assert.NoError(t, err)
 
 		// Dry-run mode should provide results

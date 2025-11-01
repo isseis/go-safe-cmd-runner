@@ -40,7 +40,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -83,7 +83,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err) // Dry-run should not fail, but report issues
 		assert.NotNil(t, result)
@@ -124,7 +124,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -162,7 +162,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -200,7 +200,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -242,7 +242,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)

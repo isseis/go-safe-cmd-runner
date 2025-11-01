@@ -339,35 +339,6 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
-	// Print final environment in dry-run mode
-	if ge.isDryRun {
-		// Collect final environment data
-		finalEnv := debug.CollectFinalEnvironment(
-			envMap,
-			ge.dryRunDetailLevel,
-			ge.dryRunShowSensitive,
-		)
-
-		if finalEnv != nil {
-			if ge.dryRunFormat == resource.OutputFormatJSON {
-				// Update the command's ResourceAnalysis with debug info
-				debugInfo := &resource.DebugInfo{
-					FinalEnvironment: finalEnv,
-				}
-				err := ge.resourceManager.UpdateLastCommandDebugInfo(debugInfo)
-				if err != nil {
-					slog.Warn("Failed to update command debug info", "error", err, "command", cmd.Name())
-				}
-			} else {
-				// Text format: output immediately
-				output := debug.FormatFinalEnvironmentText(finalEnv)
-				if output != "" {
-					_, _ = fmt.Fprint(os.Stdout, output)
-				}
-			}
-		}
-	}
-
 	// Resolve and validate command path if verification manager is available
 	if ge.verificationManager != nil {
 		resolvedPath, err := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
@@ -390,9 +361,38 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	}
 
 	// Execute the command using ResourceManager
-	result, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
+	token, result, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
 	if err != nil {
 		return nil, err
+	}
+
+	// Update final environment debug info in dry-run mode (after command execution)
+	if ge.isDryRun {
+		// Collect final environment data
+		finalEnv := debug.CollectFinalEnvironment(
+			envMap,
+			ge.dryRunDetailLevel,
+			ge.dryRunShowSensitive,
+		)
+
+		if finalEnv != nil {
+			if ge.dryRunFormat == resource.OutputFormatJSON {
+				// Update the command's ResourceAnalysis with debug info using token
+				debugInfo := &resource.DebugInfo{
+					FinalEnvironment: finalEnv,
+				}
+				err := ge.resourceManager.UpdateCommandDebugInfo(token, debugInfo)
+				if err != nil {
+					slog.Warn("Failed to update command debug info", "error", err, "command", cmd.Name())
+				}
+			} else {
+				// Text format: output immediately
+				output := debug.FormatFinalEnvironmentText(finalEnv)
+				if output != "" {
+					_, _ = fmt.Fprint(os.Stdout, output)
+				}
+			}
+		}
 	}
 
 	// Convert ResourceManager result to executor.Result

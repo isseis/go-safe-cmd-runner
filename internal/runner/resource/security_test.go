@@ -97,7 +97,7 @@ func TestSecurityAnalysis(t *testing.T) {
 
 			// Execute the command
 			cmd := createRuntimeCommand(&tt.spec)
-			result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+			_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 
@@ -193,7 +193,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 
 			// Execute the command
 			cmd := createRuntimeCommand(&tt.spec)
-			_, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
+			_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 
 			// Get dry-run results
@@ -269,7 +269,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	})
 
 	// Execute the command
-	_, err = manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	_, _, err = manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 	assert.NoError(t, err)
 
 	// Get dry-run results and verify security analysis was applied
@@ -330,7 +330,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 	var analyses []ResourceAnalysis
 	for _, cmdSpec := range commandSpecs {
 		cmd := createRuntimeCommand(&cmdSpec)
-		_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+		_, _, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 		assert.NoError(t, err)
 
 		result := manager.GetDryRunResults()

@@ -27,12 +27,38 @@ func (m *MockResourceManager) GetMode() resource.ExecutionMode {
 }
 
 // ExecuteCommand executes a command with the given context, command spec, group spec, and environment
-func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*resource.ExecutionResult, error) {
+func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (resource.CommandToken, *resource.ExecutionResult, error) {
 	args := m.Called(ctx, cmd, group, env)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+
+	// Backwards compatibility: support both 2-argument and 3-argument Returns
+	const (
+		legacyReturnCount = 2 // Old format: .Return(result, error)
+		errorIndex        = 2 // Index for error in 3-argument return
+	)
+	numArgs := len(args)
+
+	if numArgs == legacyReturnCount {
+		// Old format: .Return(result, error)
+		// Return empty token for backwards compatibility
+		if args.Get(0) == nil {
+			return "", nil, args.Error(1)
+		}
+		return "", args.Get(0).(*resource.ExecutionResult), args.Error(1)
 	}
-	return args.Get(0).(*resource.ExecutionResult), args.Error(1)
+
+	// New format: .Return(token, result, error)
+	var token resource.CommandToken
+	if args.Get(0) != nil {
+		if t, ok := args.Get(0).(resource.CommandToken); ok {
+			token = t
+		}
+	}
+
+	// Handle result
+	if args.Get(1) == nil {
+		return token, nil, args.Error(errorIndex)
+	}
+	return token, args.Get(1).(*resource.ExecutionResult), args.Error(errorIndex)
 }
 
 // ValidateOutputPath validates that the output path is within the working directory
@@ -86,8 +112,8 @@ func (m *MockResourceManager) RecordGroupAnalysis(groupName string, debugInfo *r
 	return args.Error(0)
 }
 
-// UpdateLastCommandDebugInfo updates the last command's debug info in dry-run mode
-func (m *MockResourceManager) UpdateLastCommandDebugInfo(debugInfo *resource.DebugInfo) error {
-	args := m.Called(debugInfo)
+// UpdateCommandDebugInfo updates a command's debug info using its token in dry-run mode
+func (m *MockResourceManager) UpdateCommandDebugInfo(token resource.CommandToken, debugInfo *resource.DebugInfo) error {
+	args := m.Called(token, debugInfo)
 	return args.Error(0)
 }
