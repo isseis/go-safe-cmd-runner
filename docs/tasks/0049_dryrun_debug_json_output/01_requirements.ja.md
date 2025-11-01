@@ -714,7 +714,139 @@ func FormatFinalEnvironmentText(
 - 長期的な保守性が高い
 - Detail level制御の実装が簡潔
 
-## 8. 次のステップ
+## 8. 将来の拡張（Phase 6+）
+
+以下の機能はPhase 5.5実装後の将来課題として記録する。
+
+### 8.1 Phase 6: 詳細なskip_reason値の定義
+
+**現状**: Phase 5.5では`skip_reason`フィールドが追加されたが、値は未定義の文字列。
+
+**提案**:
+- 定義済みのskip理由を列挙:
+  - `"parent_group_failed"` - 親グループが失敗したためスキップ
+  - `"dependency_not_met"` - 依存関係が満たされていない
+  - `"conditional_skip"` - 条件付きスキップ（将来の機能）
+  - `"user_requested"` - ユーザーが明示的にスキップを要求
+
+**優先度**: 中
+
+### 8.2 Phase 6: エラーdetailsの構造化
+
+**現状**: `ExecutionError.Details`は`map[string]any`で非構造化。
+
+**提案**:
+- エラータイプごとに標準化されたdetails構造を定義:
+
+```go
+// 設定検証エラーの場合
+{
+  "type": "config_validation_error",
+  "details": {
+    "system_var_name": "SECRET_KEY",
+    "internal_var_name": "my_secret",
+    "level": "group",
+    "suggestion": "Add 'SECRET_KEY' to global.env_allowed"
+  }
+}
+
+// ファイル検証エラーの場合
+{
+  "type": "verification_error",
+  "details": {
+    "total_files": 10,
+    "verified_files": 8,
+    "failed_files": 2,
+    "failed_file_paths": ["/path/to/file1", "/path/to/file2"]
+  }
+}
+```
+
+**優先度**: 中
+
+### 8.3 Phase 7: タイムスタンプフィールドの追加
+
+**現状**: エラー発生時刻が記録されない。
+
+**提案**:
+```go
+type ExecutionError struct {
+    Type      string         `json:"type"`
+    Message   string         `json:"message"`
+    Component string         `json:"component"`
+    Details   map[string]any `json:"details,omitempty"`
+    OccurredAt time.Time     `json:"occurred_at"` // 新規追加
+}
+
+type ResourceAnalysis struct {
+    // ... 既存フィールド ...
+    StartedAt   *time.Time    `json:"started_at,omitempty"`   // 新規追加
+    CompletedAt *time.Time    `json:"completed_at,omitempty"` // 新規追加
+}
+```
+
+**優先度**: 低
+
+### 8.4 Phase 8: エラーリカバリー提案
+
+**現状**: エラーメッセージのみで、ユーザーが対処方法を判断する必要がある。
+
+**提案**:
+```go
+type ExecutionError struct {
+    // ... 既存フィールド ...
+    Suggestion string `json:"suggestion,omitempty"` // 新規追加
+    RecoverySteps []string `json:"recovery_steps,omitempty"` // 新規追加
+}
+```
+
+**例**:
+```json
+{
+  "error": {
+    "type": "config_validation_error",
+    "message": "system environment variable 'SECRET_KEY' not in allowlist",
+    "suggestion": "Add 'SECRET_KEY' to global.env_allowed in your configuration",
+    "recovery_steps": [
+      "Open your configuration file",
+      "Add 'SECRET_KEY = \"internal_name\"' to [global.env_allowed] section",
+      "Re-run the command"
+    ]
+  }
+}
+```
+
+**優先度**: 低
+
+### 8.5 Phase 9: エラー重要度レベル
+
+**現状**: すべてのエラーが同等に扱われる。
+
+**提案**:
+```go
+type ErrorSeverity string
+
+const (
+    SeverityFatal   ErrorSeverity = "fatal"   // 実行を継続できない
+    SeverityError   ErrorSeverity = "error"   // 重大なエラーだが部分実行可能
+    SeverityWarning ErrorSeverity = "warning" // 警告レベル
+)
+
+type ExecutionError struct {
+    // ... 既存フィールド ...
+    Severity ErrorSeverity `json:"severity"` // 新規追加
+}
+```
+
+**優先度**: 低
+
+### 8.6 将来課題の実装時の注意事項
+
+- **後方互換性**: 新しいフィールドは常に`omitempty`タグを付与し、既存のJSONパーサーへの影響を最小化
+- **段階的導入**: 各フェーズは独立して実装・テスト可能であること
+- **ドキュメント更新**: 各フェーズの実装時に、JSON Schemaとユーザードキュメントを更新
+
+## 9. 次のステップ
 
 1. アーキテクチャ設計書の作成（02_architecture.ja.md）
 2. 詳細設計書の作成（03_detailed_design.ja.md）

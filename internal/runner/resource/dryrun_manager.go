@@ -55,6 +55,11 @@ type DryRunResourceManager struct {
 	tokenToIndex map[CommandToken]int
 	nextTokenID  uint64
 
+	// Execution tracking for Phase 5.5
+	executionStatus ExecutionStatus
+	executionPhase  ExecutionPhase
+	executionError  *ExecutionError
+
 	// State management
 	mu sync.RWMutex
 }
@@ -103,6 +108,8 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 		resourceAnalyses: make([]ResourceAnalysis, 0),
 		tokenToIndex:     make(map[CommandToken]int),
 		nextTokenID:      1,
+		executionStatus:  StatusSuccess,  // Default to success, will be updated if errors occur
+		executionPhase:   PhaseCompleted, // Default to completed, will be updated if errors occur
 	}, nil
 }
 
@@ -195,6 +202,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    cmd.ExpandedCmd,
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]any{
 			"command":           cmd.ExpandedCmd,
 			"working_directory": cmd.EffectiveWorkDir,
@@ -294,6 +302,7 @@ func (d *DryRunResourceManager) CreateTempDir(groupName string) (string, error) 
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    simulatedPath,
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]any{
 			"group_name": groupName,
 			"purpose":    "temporary_directory",
@@ -318,6 +327,7 @@ func (d *DryRunResourceManager) CleanupTempDir(tempDirPath string) error {
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationDelete,
 		Target:    tempDirPath,
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]any{
 			"path": tempDirPath,
 		},
@@ -347,6 +357,7 @@ func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() erro
 		Type:      ResourceTypePrivilege,
 		Operation: OperationEscalate,
 		Target:    "system_privileges",
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]any{
 			"context": "privilege_escalation",
 		},
@@ -373,6 +384,7 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 		Type:      ResourceTypeNetwork,
 		Operation: OperationSend,
 		Target:    "notification_service",
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]any{
 			"message": message,
 			"details": details,
@@ -395,6 +407,7 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    cmd.Output(),
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]any{
 			"output_path":       cmd.Output(),
 			"command":           cmd.ExpandedCmd,
@@ -440,6 +453,85 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	return analysis
 }
 
+// SetExecutionStatus sets the execution status and phase
+func (d *DryRunResourceManager) SetExecutionStatus(status ExecutionStatus, phase ExecutionPhase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.executionStatus = status
+	d.executionPhase = phase
+}
+
+// SetExecutionError sets the execution error and automatically updates status to StatusError
+func (d *DryRunResourceManager) SetExecutionError(errType, message, component string, details map[string]any, phase ExecutionPhase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.executionError = &ExecutionError{
+		Type:      errType,
+		Message:   message,
+		Component: component,
+		Details:   details,
+	}
+	d.executionStatus = StatusError
+	d.executionPhase = phase
+}
+
+// calculateSummary calculates the execution summary from resource analyses
+func (d *DryRunResourceManager) calculateSummary() *ExecutionSummary {
+	summary := &ExecutionSummary{
+		Groups:   &Counts{},
+		Commands: &Counts{},
+	}
+
+	for i := range d.resourceAnalyses {
+		analysis := &d.resourceAnalyses[i]
+
+		// Count by type
+		switch analysis.Type {
+		case ResourceTypeGroup:
+			summary.Groups.Total++
+			switch analysis.Status {
+			case StatusSuccess:
+				summary.Groups.Successful++
+				summary.Successful++
+			case StatusError:
+				summary.Groups.Failed++
+				summary.Failed++
+			case "": // Legacy - no status set, assume success
+				summary.Groups.Successful++
+				summary.Successful++
+			}
+			if analysis.SkipReason != "" {
+				summary.Groups.Skipped++
+				summary.Skipped++
+			}
+			summary.TotalResources++
+
+		case ResourceTypeCommand:
+			summary.Commands.Total++
+			switch analysis.Status {
+			case StatusSuccess:
+				summary.Commands.Successful++
+				summary.Successful++
+			case StatusError:
+				summary.Commands.Failed++
+				summary.Failed++
+			case "": // Legacy - no status set, assume success
+				summary.Commands.Successful++
+				summary.Successful++
+			}
+			if analysis.SkipReason != "" {
+				summary.Commands.Skipped++
+				summary.Skipped++
+			}
+			summary.TotalResources++
+		}
+	}
+
+	return summary
+}
+
 // GetDryRunResults returns the dry-run results
 func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.mu.RLock()
@@ -452,6 +544,12 @@ func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	// Update the resource analyses in the result
 	d.dryRunResult.ResourceAnalyses = make([]ResourceAnalysis, len(d.resourceAnalyses))
 	copy(d.dryRunResult.ResourceAnalyses, d.resourceAnalyses)
+
+	// Update Phase 5.5 fields
+	d.dryRunResult.Status = d.executionStatus
+	d.dryRunResult.Phase = d.executionPhase
+	d.dryRunResult.Error = d.executionError
+	d.dryRunResult.Summary = d.calculateSummary()
 
 	return d.dryRunResult
 }
@@ -473,6 +571,7 @@ func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo 
 		Type:      ResourceTypeGroup,
 		Operation: OperationAnalyze,
 		Target:    groupName,
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Impact: ResourceImpact{
 			Description: "Group configuration analysis",
 			Reversible:  true,

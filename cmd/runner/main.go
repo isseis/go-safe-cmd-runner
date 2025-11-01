@@ -268,12 +268,22 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}()
 
 	// Execute all groups (works for both normal and dry-run modes)
-	if err := runner.ExecuteAll(ctx); err != nil {
-		return fmt.Errorf("error running commands: %w", err)
-	}
+	execErr := runner.ExecuteAll(ctx)
 
-	// If dry-run mode, display the analysis results
+	// Phase 5.5: Handle dry-run output (always output, even on error)
 	if *dryRun {
+		// If an execution error occurred, set error status before getting results
+		if execErr != nil && outputFormat == resource.OutputFormatJSON {
+			// Set execution error in the resource manager
+			runner.SetDryRunExecutionError(
+				"execution_error",
+				execErr.Error(),
+				"runner",
+				nil,
+				resource.PhaseGroupExecution,
+			)
+		}
+
 		result := runner.GetDryRunResults()
 		if result != nil {
 			// Create appropriate formatter using pre-parsed values
@@ -295,6 +305,11 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 			}
 			fmt.Print(output)
 		}
+	}
+
+	// Return execution error after outputting results (if any)
+	if execErr != nil {
+		return fmt.Errorf("error running commands: %w", execErr)
 	}
 
 	return nil

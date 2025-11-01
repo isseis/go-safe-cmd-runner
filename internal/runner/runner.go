@@ -405,6 +405,15 @@ func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 	return r.resourceManager.GetDryRunResults()
 }
 
+// SetDryRunExecutionError sets the execution error for dry-run mode
+// This method should be called when an error occurs during dry-run execution
+func (r *Runner) SetDryRunExecutionError(errType, message, component string, details map[string]any, phase resource.ExecutionPhase) {
+	// Check if resource manager supports dry-run error setting
+	if drm, ok := r.resourceManager.(*resource.DryRunResourceManager); ok {
+		drm.SetExecutionError(errType, message, component, details, phase)
+	}
+}
+
 // logGroupExecutionSummary emits a structured log record summarizing the
 // execution of a command group. This record includes attributes (such as
 // "slack_notify" and "message_type") that notification handlers (for
