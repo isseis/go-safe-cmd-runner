@@ -44,8 +44,11 @@ type DryRunResourceManager struct {
 	outputManager output.CaptureManager
 
 	// Dry-run specific
-	dryRunOptions    *DryRunOptions
-	dryRunResult     *DryRunResult
+	dryRunOptions *DryRunOptions
+	dryRunResult  *DryRunResult
+	// resourceAnalyses is an append-only slice that stores all resource analyses.
+	// INVARIANT: Elements must never be deleted or reorderedafter being appended.
+	// This guarantees that indices stored in tokenToIndex remain valid throughout the manager's lifetime.
 	resourceAnalyses []ResourceAnalysis
 
 	// Token management - maps CommandToken to index in resourceAnalyses
