@@ -122,17 +122,6 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 	return d.outputManager.ValidateOutputPath(outputPath, workDir)
 }
 
-// generateCommandToken generates a unique token for a command execution
-func (d *DryRunResourceManager) generateCommandToken() CommandToken {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	tokenID := d.nextTokenID
-	d.nextTokenID++
-
-	return CommandToken(fmt.Sprintf("cmd-%d-%d", time.Now().UnixNano(), tokenID))
-}
-
 // ExecuteCommand simulates command execution in dry-run mode
 // Returns a token that can be used to update the command's debug info
 func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error) {
@@ -159,15 +148,8 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		d.RecordAnalysis(&outputAnalysis)
 	}
 
-	// Generate token before recording
-	token := d.generateCommandToken()
-
-	// Record the analysis and store token mapping
-	d.mu.Lock()
-	commandIndex := len(d.resourceAnalyses)
-	d.resourceAnalyses = append(d.resourceAnalyses, analysis)
-	d.tokenToIndex[token] = commandIndex
-	d.mu.Unlock()
+	// Generate token, record the analysis and store token mapping
+	token := d.recordAnalysis(analysis)
 
 	// Generate simulated output
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
@@ -186,6 +168,22 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		DryRun:   true,
 		Analysis: &analysis,
 	}, nil
+}
+
+// recordAnalysis records the analysis and returns a unique command token
+func (d *DryRunResourceManager) recordAnalysis(analysis ResourceAnalysis) CommandToken {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tokenID := d.nextTokenID
+	d.nextTokenID++
+
+	token := CommandToken(fmt.Sprintf("cmd-%d-%d", time.Now().UnixNano(), tokenID))
+
+	commandIndex := len(d.resourceAnalyses)
+	d.resourceAnalyses = append(d.resourceAnalyses, analysis)
+	d.tokenToIndex[token] = commandIndex
+	return token
 }
 
 // analyzeCommand analyzes a command for dry-run
