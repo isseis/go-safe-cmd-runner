@@ -78,7 +78,7 @@ func TestSetupLogging_Success(t *testing.T) {
 				t.Setenv("SLACK_WEBHOOK_URL", tt.slackURL)
 			}
 
-			err := SetupLogging(tt.logLevel, tt.logDir, tt.runID, tt.forceInteractive, tt.forceQuiet)
+			err := SetupLogging(tt.logLevel, tt.logDir, tt.runID, tt.forceInteractive, tt.forceQuiet, nil)
 
 			if (err != nil) != tt.wantErr {
 				assert.NoError(t, err, "SetupLogging() should not error")
@@ -137,7 +137,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 				logDir = tt.setupFunc(t)
 			}
 
-			err := SetupLogging(tt.logLevel, logDir, tt.runID, tt.forceInteractive, tt.forceQuiet)
+			err := SetupLogging(tt.logLevel, logDir, tt.runID, tt.forceInteractive, tt.forceQuiet, nil)
 
 			if (err != nil) != tt.wantErr {
 				assert.Equal(t, tt.wantErr, err != nil, "SetupLogging() error = %v, wantErr %v", err, tt.wantErr)
@@ -162,7 +162,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	// Ensure cleanup restores permissions for temp dir cleanup
 	defer os.Chmod(readOnlyDir, 0o755)
 
-	err := SetupLogging(runnertypes.LogLevelInfo, readOnlyDir, "test-run-perm", false, false)
+	err := SetupLogging(runnertypes.LogLevelInfo, readOnlyDir, "test-run-perm", false, false, nil)
 
 	assert.Error(t, err, "SetupLogging() expected error for read-only directory")
 }

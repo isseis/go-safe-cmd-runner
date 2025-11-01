@@ -4,10 +4,8 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,10 +88,7 @@ args = ["hello"]
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout
 			require.NoError(t, err, "dry-run should succeed")
 
-			// Extract JSON from output (handles potential non-JSON prefix robustly)
-			jsonOutput, err := extractJSON(string(output))
-			require.NoError(t, err, "should be able to extract valid JSON from output")
-
+			// With Phase 5 changes, stdout contains pure JSON (logs go to stderr)
 			var result struct {
 				ResourceAnalyses []struct {
 					Type       string         `json:"type"`
@@ -101,8 +96,8 @@ args = ["hello"]
 				} `json:"resource_analyses"`
 			}
 
-			err = json.Unmarshal([]byte(jsonOutput), &result)
-			require.NoError(t, err, "output should be valid JSON: %s", jsonOutput)
+			err = json.Unmarshal(output, &result)
+			require.NoError(t, err, "output should be valid JSON: %s", string(output))
 
 			// Find command analysis (may not be the first element due to group analysis)
 			require.NotEmpty(t, result.ResourceAnalyses, "should have at least one analysis")
@@ -129,41 +124,4 @@ args = ["hello"]
 			assert.Equal(t, tt.expectedLevel, timeoutLevel, "timeout_level should match expected value")
 		})
 	}
-}
-
-// extractJSON attempts to extract a JSON object from a string that may have a non-JSON prefix.
-// It's designed to be robust against noisy output that can occur, for example, with `go run`.
-func extractJSON(output string) (string, error) {
-	// The most likely case is that the output is a valid JSON object, possibly with whitespace.
-	trimmedOutput := strings.TrimSpace(output)
-	if json.Valid([]byte(trimmedOutput)) {
-		return trimmedOutput, nil
-	}
-
-	// If the full output is not valid JSON, it might have a prefix (e.g., build messages).
-	// We assume the JSON object starts with '{'.
-	firstBrace := strings.Index(trimmedOutput, "{")
-	if firstBrace == -1 {
-		return "", fmt.Errorf("no JSON object found in output: %s", output)
-	}
-
-	// The simplest case is that the JSON starts at the first brace.
-	candidate := trimmedOutput[firstBrace:]
-	if json.Valid([]byte(candidate)) {
-		return candidate, nil
-	}
-
-	// If that fails, the prefix itself might contain a '{'.
-	// We then try from the last '{', assuming it's the start of the main JSON object.
-	// This is a heuristic that works for outputs like "log: {invalid}. {valid_json}".
-	lastBrace := strings.LastIndex(trimmedOutput, "{")
-	// No need to check for -1, as we already found at least one '{' above.
-	if lastBrace > firstBrace {
-		candidate = trimmedOutput[lastBrace:]
-		if json.Valid([]byte(candidate)) {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("could not extract valid JSON from output: %s", output)
 }
