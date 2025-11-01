@@ -596,14 +596,14 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.7 統合テスト: JSON出力の検証
 
-**ファイル**: `cmd/runner/main_test.go` または `internal/runner/integration_test.go`
+**ファイル**: `cmd/runner/dry_run_integration_test.go`
 
-- [ ] `TestDryRunJSONOutput_WithDebugInfo` を実装
-  - [ ] テスト設定ファイルの作成
-  - [ ] JSON形式でdry-runを実行
-  - [ ] JSON出力のパースを検証
-  - [ ] グループレベルのDebugInfo を検証
-  - [ ] コマンドレベルのDebugInfo を検証
+- [x] `TestDryRunJSONOutput_WithDebugInfo` を実装
+  - [x] テスト設定ファイルの作成
+  - [x] JSON形式でdry-runを実行
+  - [x] JSON出力のパースを検証
+  - [x] グループレベルのDebugInfo を検証
+  - [x] コマンドレベルのDebugInfo を検証
 
 **完了基準**:
 - テストが実装されている
@@ -614,12 +614,12 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.8 統合テスト: Detail Level別の検証
 
-**ファイル**: `cmd/runner/main_test.go` または `internal/runner/integration_test.go`
+**ファイル**: `cmd/runner/dry_run_integration_test.go`
 
-- [ ] `TestDryRunJSONOutput_DetailLevels` を実装
-  - [ ] DetailLevelSummary: debug_info なし
-  - [ ] DetailLevelDetailed: 基本情報のみ
-  - [ ] DetailLevelFull: すべての情報
+- [x] `TestDryRunJSONOutput_DetailLevels` を実装
+  - [x] DetailLevelSummary: debug_info なし
+  - [x] DetailLevelDetailed: 基本情報のみ
+  - [x] DetailLevelFull: すべての情報
 
 **完了基準**:
 - すべてのDetail Levelでテストがパスする
@@ -629,11 +629,11 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.9 回帰テスト: テキスト出力の検証
 
-**ファイル**: `cmd/runner/main_test.go` または `internal/runner/integration_test.go`
+**ファイル**: `cmd/runner/dry_run_integration_test.go`
 
-- [ ] `TestDryRunTextOutput_Unchanged` を実装
-  - [ ] テキスト形式でdry-runを実行
-  - [ ] 既存の出力形式が維持されていることを確認
+- [x] `TestDryRunTextOutput_Unchanged` を実装
+  - [x] テキスト形式でdry-runを実行
+  - [x] 既存の出力形式が維持されていることを確認
 
 **完了基準**:
 - テキスト出力が変更されていない
@@ -643,11 +643,11 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.10 実際の設定ファイルでの動作確認
 
-- [ ] サンプル設定ファイルを作成
-- [ ] 各Detail Levelで実行
-- [ ] JSON出力を `jq` でパース
-- [ ] テキスト出力を目視確認
-- [ ] エラーケースの確認
+- [x] サンプル設定ファイルを作成 (testdata/dry_run_debug_test.toml)
+- [x] 各Detail Levelで実行（統合テストに含まれる）
+- [x] JSON出力を `jq` でパース（統合テストで検証）
+- [x] テキスト出力を目視確認（統合テストで検証）
+- [x] エラーケースの確認（センシティブマスキングテストに含まれる）
 
 **完了基準**:
 - すべての設定で正しく動作する
@@ -660,9 +660,9 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 - [x] `make test` が成功する
 - [x] `make lint` が成功する
-- [ ] `make build` が成功する
-- [ ] すべての統合テストがパスする
-- [ ] 既存のテストに影響がない（回帰なし）
+- [x] `make build` が成功する
+- [x] すべての統合テストがパスする
+- [x] 既存のテストに影響がない（回帰なし）
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -682,7 +682,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 - [x] Phase 4 完了
 - [ ] コードレビュー完了
-- [ ] Phase 4 のコミット作成
+- [x] Phase 4 のコミット作成
 
 ## 7. ドキュメント更新
 
