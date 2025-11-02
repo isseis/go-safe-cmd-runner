@@ -273,7 +273,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	// Phase 5.5: Handle dry-run output (always output, even on error)
 	if *dryRun {
 		// If an execution error occurred, set error status before getting results
-		if execErr != nil && outputFormat == resource.OutputFormatJSON {
+		if execErr != nil {
 			// Set execution error in the resource manager
 			runner.SetDryRunExecutionError(
 				"execution_error",
