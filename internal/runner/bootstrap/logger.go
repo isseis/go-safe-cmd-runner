@@ -76,7 +76,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 
 	// 2. Conditional text handler (for non-interactive console output)
-	// Use configured console writer (stdout by default, stderr for JSON dry-run)
+	// Use configured console writer (stdout by default, can be overridden by caller)
 	consoleWriter := config.ConsoleWriter
 	if consoleWriter == nil {
 		consoleWriter = os.Stdout // Default to stdout if not specified
