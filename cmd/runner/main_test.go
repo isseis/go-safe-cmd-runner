@@ -71,7 +71,7 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Phase 1: Initialize verification manager with temporary hash directory
+	// Initialize verification manager with temporary hash directory
 	verificationManager, err := verification.NewManagerForTest(tempHashDir)
 	if err != nil {
 		return &logging.PreExecutionError{
@@ -82,7 +82,7 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 		}
 	}
 
-	// Phase 2: Load and prepare configuration (verify, parse, and expand variables)
+	// Load and prepare configuration (verify, parse, and expand variables)
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
 	if err != nil {
 		return err
@@ -95,7 +95,7 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 		return nil
 	}
 
-	// For testing, we skip the actual execution phases
+	// For testing, we skip the actual execution steps
 	_ = ctx
 	_ = cfg
 

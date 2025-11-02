@@ -55,7 +55,7 @@ type DryRunResourceManager struct {
 	tokenToIndex map[CommandToken]int
 	nextTokenID  uint64
 
-	// Execution tracking for Phase 5.5
+	// Execution tracking (status, phase, error)
 	executionStatus ExecutionStatus
 	executionPhase  ExecutionPhase
 	executionError  *ExecutionError
@@ -549,7 +549,7 @@ func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.dryRunResult.ResourceAnalyses = make([]ResourceAnalysis, len(d.resourceAnalyses))
 	copy(d.dryRunResult.ResourceAnalyses, d.resourceAnalyses)
 
-	// Update Phase 5.5 fields
+	// Update execution status fields
 	d.dryRunResult.Status = d.executionStatus
 	d.dryRunResult.Phase = d.executionPhase
 	d.dryRunResult.Error = d.executionError

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDryRun_JSON_Phase55_ErrorHandling(t *testing.T) {
+func TestDryRun_JSON_OutputStructure(t *testing.T) {
 	tests := []struct {
 		name             string
 		configContent    string
@@ -41,7 +41,7 @@ args = ["hello"]
 		// Note: Pre-execution errors (like config validation failures) occur before
 		// dry-run mode starts, so they don't produce JSON output. They are handled
 		// by the logging system and output error messages to stdout/stderr.
-		// Phase 5.5 only applies to errors that occur during dry-run execution.
+		// The structured JSON output only applies to errors that occur during dry-run execution.
 	}
 
 	for _, tt := range tests {
@@ -56,7 +56,7 @@ args = ["hello"]
 			tmpFile.Close()
 
 			// Run command in dry-run mode with JSON output
-			// Capture stdout and stderr separately to properly test Phase 5 feature
+			// Capture stdout and stderr separately to verify JSON output separation
 			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
 			cmd.Dir = "."
 
@@ -73,7 +73,7 @@ args = ["hello"]
 				require.NoError(t, err, "dry-run should succeed")
 			}
 
-			// Phase 5 feature: stdout should contain ONLY pure JSON (no log prefixes)
+			// Stdout should contain ONLY pure JSON (no log prefixes)
 			stdoutOutput := stdout.String()
 			stderrOutput := stderr.String()
 
@@ -202,7 +202,7 @@ args = ["hello"]
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout
 			require.NoError(t, err, "dry-run should succeed")
 
-			// With Phase 5 changes, stdout contains pure JSON (logs go to stderr)
+			// Stdout contains pure JSON (logs go to stderr)
 			var result struct {
 				Status  string `json:"status"`
 				Phase   string `json:"phase"`
@@ -219,7 +219,7 @@ args = ["hello"]
 			err = json.Unmarshal(output, &result)
 			require.NoError(t, err, "output should be valid JSON: %s", string(output))
 
-			// Phase 5.5: Check top-level status and phase
+			// Check top-level status and phase
 			assert.Equal(t, "success", result.Status, "status should be success")
 			assert.Equal(t, "completed", result.Phase, "phase should be completed")
 			require.NotNil(t, result.Summary, "summary should be present")
@@ -240,7 +240,7 @@ args = ["hello"]
 			}
 			require.NotNil(t, cmdAnalysis, "should have a command analysis")
 
-			// Phase 5.5: Check resource-level status
+			// Check resource-level status
 			assert.Equal(t, "success", cmdAnalysis.Status, "command status should be success")
 
 			// Check timeout parameters

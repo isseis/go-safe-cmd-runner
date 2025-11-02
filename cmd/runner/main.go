@@ -109,7 +109,7 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Phase 1: Initialize verification manager with secure default hash directory
+	// Initialize verification manager with secure default hash directory
 	// For dry-run mode, skip hash directory validation since no actual file verification is needed
 	var verificationManager *verification.Manager
 	var err error
@@ -127,7 +127,7 @@ func run(runID string) error {
 		}
 	}
 
-	// Phase 3: Load and prepare configuration (verify, parse, and expand variables)
+	// Load and prepare configuration (verify, parse, and expand variables)
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
 	if err != nil {
 		return err
@@ -146,7 +146,7 @@ func run(runID string) error {
 		return nil
 	}
 
-	// Phase 4: Setup logging (using bootstrap package)
+	// Setup logging (using bootstrap package)
 	// Parse log level string to LogLevel type
 	logLevelValue, err := parseLogLevel(*logLevel, runID)
 	if err != nil {
@@ -162,7 +162,7 @@ func run(runID string) error {
 		return err
 	}
 
-	// Phase 4.5: Expand global configuration
+	// Expand global configuration
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
 	if err != nil {
 		return &logging.PreExecutionError{
@@ -173,7 +173,7 @@ func run(runID string) error {
 		}
 	}
 
-	// Phase 5: Perform global file verification (using verification manager directly)
+	// Perform global file verification (using verification manager directly)
 	result, err := verificationManager.VerifyGlobalFiles(runtimeGlobal)
 	if err != nil {
 		return &logging.PreExecutionError{
@@ -193,7 +193,7 @@ func run(runID string) error {
 			"run_id", runID)
 	}
 
-	// Phase 6: Initialize and execute runner with all verified data
+	// Initialize and execute runner with all verified data
 	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID)
 }
 
@@ -270,7 +270,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	// Execute all groups (works for both normal and dry-run modes)
 	execErr := runner.ExecuteAll(ctx)
 
-	// Phase 5.5: Handle dry-run output (always output, even on error)
+	// Handle dry-run output (always output, even on error)
 	if *dryRun {
 		// If an execution error occurred, set error status before getting results
 		if execErr != nil {
