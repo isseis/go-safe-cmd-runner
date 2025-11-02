@@ -419,38 +419,7 @@ func runDryRun(t *testing.T, binaryPath, configPath, format, detailLevel string,
 		return "", fmt.Errorf("command failed: %w, stderr: %s", err, stderr.String())
 	}
 
-	output := stdout.String()
-
-	// For JSON format, extract only the JSON portion (skip log lines)
-	if format == "json" {
-		var err error
-		output, err = extractJSONFromOutput(output)
-		if err != nil {
-			return "", fmt.Errorf("failed to extract JSON from output: %w", err)
-		}
-	}
-
-	return output, nil
-}
-
-// extractJSONFromOutput extracts the JSON portion from output that may contain log lines
-// This is a wrapper around the existing extractJSON function for consistency
-func extractJSONFromOutput(output string) (string, error) {
-	// Find the first '{' character which marks the start of JSON
-	startIdx := strings.Index(output, "{")
-	if startIdx == -1 {
-		return "", fmt.Errorf("no JSON found in output")
-	}
-
-	// Return everything from the first '{' onward
-	jsonPart := output[startIdx:]
-
-	// Validate it's actually JSON
-	if !json.Valid([]byte(jsonPart)) {
-		return "", fmt.Errorf("extracted content is not valid JSON")
-	}
-
-	return jsonPart, nil
+	return stdout.String(), nil
 }
 
 // findResourceAnalysisByTypeAndTarget finds a resource analysis by type and target
