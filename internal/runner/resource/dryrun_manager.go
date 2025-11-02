@@ -491,39 +491,43 @@ func (d *DryRunResourceManager) calculateSummary() *ExecutionSummary {
 		switch analysis.Type {
 		case ResourceTypeGroup:
 			summary.Groups.Total++
-			switch analysis.Status {
-			case StatusSuccess:
-				summary.Groups.Successful++
-				summary.Successful++
-			case StatusError:
-				summary.Groups.Failed++
-				summary.Failed++
-			case "": // Legacy - no status set, assume success
-				summary.Groups.Successful++
-				summary.Successful++
-			}
+			// Skipped resources are counted separately, not as successful or failed
 			if analysis.SkipReason != "" {
 				summary.Groups.Skipped++
 				summary.Skipped++
+			} else {
+				switch analysis.Status {
+				case StatusSuccess:
+					summary.Groups.Successful++
+					summary.Successful++
+				case StatusError:
+					summary.Groups.Failed++
+					summary.Failed++
+				case "": // Legacy - no status set, assume success
+					summary.Groups.Successful++
+					summary.Successful++
+				}
 			}
 			summary.TotalResources++
 
 		case ResourceTypeCommand:
 			summary.Commands.Total++
-			switch analysis.Status {
-			case StatusSuccess:
-				summary.Commands.Successful++
-				summary.Successful++
-			case StatusError:
-				summary.Commands.Failed++
-				summary.Failed++
-			case "": // Legacy - no status set, assume success
-				summary.Commands.Successful++
-				summary.Successful++
-			}
+			// Skipped resources are counted separately, not as successful or failed
 			if analysis.SkipReason != "" {
 				summary.Commands.Skipped++
 				summary.Skipped++
+			} else {
+				switch analysis.Status {
+				case StatusSuccess:
+					summary.Commands.Successful++
+					summary.Successful++
+				case StatusError:
+					summary.Commands.Failed++
+					summary.Failed++
+				case "": // Legacy - no status set, assume success
+					summary.Commands.Successful++
+					summary.Successful++
+				}
 			}
 			summary.TotalResources++
 		}

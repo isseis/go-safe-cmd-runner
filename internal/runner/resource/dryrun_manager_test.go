@@ -681,3 +681,108 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 		})
 	}
 }
+
+// TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted tests that
+// skipped resources are not counted as both successful/failed AND skipped
+func TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted(t *testing.T) {
+	manager := createTestDryRunResourceManager()
+
+	// Manually add resource analyses with different statuses
+	manager.mu.Lock()
+
+	// Add 2 successful groups
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeGroup,
+		Status: StatusSuccess,
+		Target: "group1",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeGroup,
+		Status: StatusSuccess,
+		Target: "group2",
+	})
+
+	// Add 1 failed group
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeGroup,
+		Status: StatusError,
+		Target: "group3",
+	})
+
+	// Add 1 skipped group (with skip_reason)
+	// CRITICAL: This should ONLY be counted as skipped, NOT as successful
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:       ResourceTypeGroup,
+		Status:     StatusSuccess, // Status doesn't matter when skip_reason is set
+		SkipReason: "parent_group_failed",
+		Target:     "group4",
+	})
+
+	// Add 3 successful commands
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusSuccess,
+		Target: "cmd1",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusSuccess,
+		Target: "cmd2",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusSuccess,
+		Target: "cmd3",
+	})
+
+	// Add 1 failed command
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusError,
+		Target: "cmd4",
+	})
+
+	// Add 2 skipped commands (with skip_reason)
+	// CRITICAL: These should ONLY be counted as skipped, NOT as successful
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:       ResourceTypeCommand,
+		Status:     StatusSuccess, // Status doesn't matter when skip_reason is set
+		SkipReason: "dependency_not_met",
+		Target:     "cmd5",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:       ResourceTypeCommand,
+		Status:     StatusError, // Even with error status, skip_reason takes precedence
+		SkipReason: "user_requested",
+		Target:     "cmd6",
+	})
+
+	manager.mu.Unlock()
+
+	// Calculate summary
+	summary := manager.calculateSummary()
+
+	// Verify group counts
+	assert.Equal(t, 4, summary.Groups.Total, "should have 4 total groups")
+	assert.Equal(t, 2, summary.Groups.Successful, "should have 2 successful groups")
+	assert.Equal(t, 1, summary.Groups.Failed, "should have 1 failed group")
+	assert.Equal(t, 1, summary.Groups.Skipped, "should have 1 skipped group")
+
+	// Verify command counts
+	assert.Equal(t, 6, summary.Commands.Total, "should have 6 total commands")
+	assert.Equal(t, 3, summary.Commands.Successful, "should have 3 successful commands")
+	assert.Equal(t, 1, summary.Commands.Failed, "should have 1 failed command")
+	assert.Equal(t, 2, summary.Commands.Skipped, "should have 2 skipped commands")
+
+	// Verify overall counts
+	assert.Equal(t, 10, summary.TotalResources, "should have 10 total resources")
+	assert.Equal(t, 5, summary.Successful, "should have 5 successful resources (2 groups + 3 commands)")
+	assert.Equal(t, 2, summary.Failed, "should have 2 failed resources (1 group + 1 command)")
+	assert.Equal(t, 3, summary.Skipped, "should have 3 skipped resources (1 group + 2 commands)")
+
+	// CRITICAL VERIFICATION: Total should equal successful + failed + skipped
+	// With the old buggy code, this would fail because skipped resources were double-counted
+	totalCounted := summary.Successful + summary.Failed + summary.Skipped
+	assert.Equal(t, summary.TotalResources, totalCounted,
+		"total resources should equal sum of successful + failed + skipped (no double counting)")
+}
