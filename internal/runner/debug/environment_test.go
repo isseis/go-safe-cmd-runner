@@ -94,10 +94,11 @@ func TestPrintFinalEnvironment_MultipleOrigins(t *testing.T) {
 	assert.Contains(t, output, "(from Command[my-command])")
 }
 
-// TestPrintFinalEnvironment_LongValue tests that long values are truncated
+// TestPrintFinalEnvironment_LongValue tests that long values are displayed in full
+// (no truncation for dry-run verification purposes)
 func TestPrintFinalEnvironment_LongValue(t *testing.T) {
-	// Create a value longer than MaxDisplayLength (60)
-	longValue := strings.Repeat("a", 100)
+	// Create a value longer than 100 characters
+	longValue := strings.Repeat("a", 150)
 
 	envMap := map[string]executor.EnvVar{
 		"LONG_VAR": {
@@ -111,13 +112,11 @@ func TestPrintFinalEnvironment_LongValue(t *testing.T) {
 
 	output := buf.String()
 
-	// Verify the value is truncated
-	// MaxDisplayLength=60, EllipsisLength=3, so we expect 57 chars + "..."
-	expectedTruncated := longValue[:MaxDisplayLength-EllipsisLength] + "..."
-	assert.Contains(t, output, expectedTruncated)
+	// Verify the FULL value is displayed (no truncation)
+	assert.Contains(t, output, longValue, "Long values should be displayed in full for dry-run verification")
 
-	// Verify the full long value is NOT in the output
-	assert.NotContains(t, output, longValue)
+	// Verify no ellipsis is present
+	assert.NotContains(t, output, "...", "Long values should not be truncated")
 }
 
 // TestPrintFinalEnvironment_EmptyEnv tests with empty environment
@@ -134,8 +133,8 @@ func TestPrintFinalEnvironment_EmptyEnv(t *testing.T) {
 	assert.Contains(t, output, "No environment variables set.")
 }
 
-// TestPrintFinalEnvironment_SpecialCharacters tests handling of special characters
-func TestPrintFinalEnvironment_SpecialCharacters(t *testing.T) {
+// TestPrintFinalEnvironment_ControlCharacters tests that control characters are escaped
+func TestPrintFinalEnvironment_ControlCharacters(t *testing.T) {
 	envMap := map[string]executor.EnvVar{
 		"VAR_WITH_NEWLINE": {
 			Value:  "value\nwith\nnewlines",
@@ -143,6 +142,18 @@ func TestPrintFinalEnvironment_SpecialCharacters(t *testing.T) {
 		},
 		"VAR_WITH_TAB": {
 			Value:  "value\twith\ttabs",
+			Origin: "Global",
+		},
+		"VAR_WITH_CR": {
+			Value:  "value\rwith\rcarriage",
+			Origin: "Global",
+		},
+		"VAR_WITH_NULL": {
+			Value:  "value\x00with\x00null",
+			Origin: "Global",
+		},
+		"VAR_WITH_ESC": {
+			Value:  "value\x1b[31mwith\x1b[0mcolor",
 			Origin: "Global",
 		},
 		"VAR_WITH_QUOTES": {
@@ -160,11 +171,20 @@ func TestPrintFinalEnvironment_SpecialCharacters(t *testing.T) {
 
 	output := buf.String()
 
-	// Verify special characters are displayed as-is (not escaped)
-	assert.Contains(t, output, "VAR_WITH_NEWLINE=value\nwith\nnewlines")
-	assert.Contains(t, output, "VAR_WITH_TAB=value\twith\ttabs")
-	assert.Contains(t, output, `VAR_WITH_QUOTES=value "with" quotes`)
-	assert.Contains(t, output, "VAR_WITH_SPACES=value with spaces")
+	// Verify control characters are ESCAPED for safe display
+	assert.Contains(t, output, `VAR_WITH_NEWLINE=value\nwith\nnewlines`, "Newlines should be escaped")
+	assert.Contains(t, output, `VAR_WITH_TAB=value\twith\ttabs`, "Tabs should be escaped")
+	assert.Contains(t, output, `VAR_WITH_CR=value\rwith\rcarriage`, "Carriage returns should be escaped")
+	assert.Contains(t, output, `VAR_WITH_NULL=value\x00with\x00null`, "Null bytes should be escaped")
+	assert.Contains(t, output, `VAR_WITH_ESC=value\x1b[31mwith\x1b[0mcolor`, "Escape sequences should be escaped")
+
+	// Verify normal characters are NOT escaped
+	assert.Contains(t, output, `VAR_WITH_QUOTES=value "with" quotes`, "Quotes should not be escaped")
+	assert.Contains(t, output, "VAR_WITH_SPACES=value with spaces", "Spaces should not be escaped")
+
+	// Verify raw control characters are NOT in output (they should be escaped)
+	assert.NotContains(t, output, "value\nwith\nnewlines", "Raw newlines should not be in output")
+	assert.NotContains(t, output, "value\twith\ttabs", "Raw tabs should not be in output")
 }
 
 // TestPrintFinalEnvironment_SortedOutput tests that output is sorted alphabetically
@@ -305,11 +325,12 @@ func TestPrintFinalEnvironment_ShowSensitiveData_Explicit(t *testing.T) {
 	// Verify header is present
 	assert.Contains(t, output, "===== Final Process Environment =====")
 
-	// Verify all sensitive values are displayed WITHOUT masking
+	// Verify all sensitive values are displayed WITHOUT masking (but with escaping)
 	assert.Contains(t, output, "super_secret_password_123", "Password should be displayed without masking")
 	assert.Contains(t, output, "ghp_1234567890abcdefghijklmnopqrstuvwxyz", "API token should be displayed without masking")
 	assert.Contains(t, output, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "AWS secret key should be displayed without masking")
-	assert.Contains(t, output, "-----BEGIN RSA PRIVATE KEY-----", "SSH private key should be displayed without masking")
+	// SSH private key contains \n which should be escaped
+	assert.Contains(t, output, `-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...`, "SSH private key should be displayed with escaped newlines")
 	assert.Contains(t, output, "public_value", "Normal values should be displayed")
 
 	// Verify origins are shown

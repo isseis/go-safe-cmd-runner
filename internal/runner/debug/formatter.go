@@ -161,9 +161,9 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 		displayValue := envVar.Value
 		if envVar.Masked {
 			displayValue = "[REDACTED]"
-		} else if len(displayValue) > MaxDisplayLength {
-			// Truncate long values for readability (only if not masked)
-			displayValue = displayValue[:MaxDisplayLength-EllipsisLength] + "..."
+		} else {
+			// Escape control characters for safe display (preserve full value for dry-run verification)
+			displayValue = escapeControlChars(displayValue)
 		}
 
 		buf.WriteString(fmt.Sprintf("  %s=%s\n", k, displayValue))

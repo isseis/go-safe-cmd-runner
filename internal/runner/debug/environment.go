@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
+	"unicode"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -11,6 +13,45 @@ import (
 
 // Global sensitive patterns instance for reuse
 var defaultSensitivePatterns = redaction.DefaultSensitivePatterns()
+
+// escapeControlChars escapes control characters in a string for safe display.
+// This ensures terminal control characters don't corrupt the output.
+//
+// Uses unicode.IsControl to detect control characters, then escapes them using
+// standard escape sequences (\n, \t, etc.) for common ones, or \xNN for others.
+// Regular printable characters are left unchanged for readability.
+func escapeControlChars(s string) string {
+	var result strings.Builder
+	for _, r := range s {
+		if !unicode.IsControl(r) {
+			// Not a control character - output as-is
+			result.WriteRune(r)
+			continue
+		}
+
+		// Use standard escape sequences for common control characters
+		switch r {
+		case '\n':
+			result.WriteString("\\n")
+		case '\r':
+			result.WriteString("\\r")
+		case '\t':
+			result.WriteString("\\t")
+		case '\b':
+			result.WriteString("\\b")
+		case '\f':
+			result.WriteString("\\f")
+		case '\v':
+			result.WriteString("\\v")
+		case '\a':
+			result.WriteString("\\a")
+		default:
+			// For other control characters, use \xNN notation
+			fmt.Fprintf(&result, "\\x%02x", r)
+		}
+	}
+	return result.String()
+}
 
 // PrintFinalEnvironment prints the final environment variables that will be set for the process.
 // It shows the variable name, value, and origin (system/global/group/command).
@@ -43,9 +84,9 @@ func PrintFinalEnvironment(
 		displayValue := envVar.Value
 		if !showSensitive && defaultSensitivePatterns.IsSensitiveEnvVar(k) {
 			displayValue = "[REDACTED]"
-		} else if len(displayValue) > MaxDisplayLength {
-			// Truncate long values for readability (only if not masked)
-			displayValue = displayValue[:MaxDisplayLength-EllipsisLength] + "..."
+		} else {
+			// Escape control characters for safe display (preserve full value for dry-run verification)
+			displayValue = escapeControlChars(displayValue)
 		}
 
 		_, _ = fmt.Fprintf(w, "  %s=%s\n", k, displayValue)

@@ -339,8 +339,8 @@ func TestFormatFinalEnvironmentText_WithMaskedVariables(t *testing.T) {
 }
 
 func TestFormatFinalEnvironmentText_WithLongValues(t *testing.T) {
-	// Create a value longer than MaxDisplayLength (60 characters)
-	longValue := strings.Repeat("a", 70)
+	// Create a value longer than 100 characters
+	longValue := strings.Repeat("a", 150)
 	env := &resource.FinalEnvironment{
 		Variables: map[string]resource.EnvironmentVariable{
 			"LONG_VAR": {
@@ -353,16 +353,55 @@ func TestFormatFinalEnvironmentText_WithLongValues(t *testing.T) {
 
 	result := FormatFinalEnvironmentText(env)
 
-	// MaxDisplayLength=60, EllipsisLength=3, so we expect 57 chars + "..."
-	expectedTruncated := longValue[:MaxDisplayLength-EllipsisLength] + "..."
-	expectedLine := fmt.Sprintf("LONG_VAR=%s", expectedTruncated)
+	// Verify the FULL value is displayed (no truncation for dry-run verification)
+	expectedLine := fmt.Sprintf("LONG_VAR=%s", longValue)
 
 	if !strings.Contains(result, expectedLine) {
-		t.Errorf("Expected truncated value not found. Got: %s", result)
+		t.Errorf("Expected full value not found. Got: %s", result)
+	}
+
+	// Verify no ellipsis is present
+	if strings.Contains(result, "...") {
+		t.Error("Long values should not be truncated")
 	}
 
 	if !strings.Contains(result, "(from command)") {
 		t.Error("Expected command source not found")
+	}
+}
+
+func TestFormatFinalEnvironmentText_WithControlCharacters(t *testing.T) {
+	env := &resource.FinalEnvironment{
+		Variables: map[string]resource.EnvironmentVariable{
+			"VAR_WITH_NEWLINE": {
+				Value:  "value\nwith\nnewlines",
+				Source: "command",
+				Masked: false,
+			},
+			"VAR_WITH_TAB": {
+				Value:  "value\twith\ttabs",
+				Source: "vars",
+				Masked: false,
+			},
+		},
+	}
+
+	result := FormatFinalEnvironmentText(env)
+
+	// Verify control characters are escaped
+	if !strings.Contains(result, `VAR_WITH_NEWLINE=value\nwith\nnewlines`) {
+		t.Errorf("Newlines should be escaped. Got: %s", result)
+	}
+	if !strings.Contains(result, `VAR_WITH_TAB=value\twith\ttabs`) {
+		t.Errorf("Tabs should be escaped. Got: %s", result)
+	}
+
+	// Verify raw control characters are NOT in output
+	if strings.Contains(result, "value\nwith\nnewlines") {
+		t.Error("Raw newlines should not be in output")
+	}
+	if strings.Contains(result, "value\twith\ttabs") {
+		t.Error("Raw tabs should not be in output")
 	}
 }
 
