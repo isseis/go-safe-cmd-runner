@@ -405,13 +405,22 @@ func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 	return r.resourceManager.GetDryRunResults()
 }
 
-// SetDryRunExecutionError sets the execution error for dry-run mode
-// This method should be called when an error occurs during dry-run execution
+// executionErrorSetter is an interface for setting execution errors in dry-run mode.
+// This interface allows type-safe checking without depending on concrete types.
+type executionErrorSetter interface {
+	SetExecutionError(errType, message, component string, details map[string]any, phase resource.ExecutionPhase)
+}
+
+// SetDryRunExecutionError sets the execution error for dry-run mode.
+// This method should be called when an error occurs during dry-run execution.
+// This is a no-op in normal execution mode.
 func (r *Runner) SetDryRunExecutionError(errType, message, component string, details map[string]any, phase resource.ExecutionPhase) {
-	// Check if resource manager supports dry-run error setting
-	if drm, ok := r.resourceManager.(*resource.DryRunResourceManager); ok {
-		drm.SetExecutionError(errType, message, component, details, phase)
+	// Use interface-based type assertion instead of concrete type check
+	// This allows any ResourceManager implementation to provide error setting capability
+	if setter, ok := r.resourceManager.(executionErrorSetter); ok {
+		setter.SetExecutionError(errType, message, component, details, phase)
 	}
+	// Silently ignore if the resource manager doesn't support error setting (normal mode)
 }
 
 // logGroupExecutionSummary emits a structured log record summarizing the
