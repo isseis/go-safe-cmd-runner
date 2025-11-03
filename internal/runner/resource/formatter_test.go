@@ -505,7 +505,9 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 		params := parsed.ResourceAnalyses[0].Parameters
 		assert.Equal(t, "[REDACTED]", params["password"].Value())
 		assert.Equal(t, "[REDACTED]", params["api_key"].Value())
-		assert.Equal(t, int64(30), params["timeout"].Value()) // JSON numbers unmarshaled as int64 via anyToParameterValue
+		assert.Equal(t, int64(30), params["timeout"].Value())
+		// JSON round-trip preserves integer types: anyToParameterValue converts whole-number
+		// float64 values back to int64, ensuring 30 doesn't become 30.
 	})
 
 	t.Run("ShowSensitive=true shows in JSON", func(t *testing.T) {
