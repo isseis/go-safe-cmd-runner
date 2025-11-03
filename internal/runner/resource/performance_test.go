@@ -97,9 +97,9 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 			Type:      ResourceTypeCommand,
 			Operation: OperationExecute,
 			Target:    "echo test command",
-			Parameters: map[string]interface{}{
-				"working_directory": "/test",
-				"timeout":           30,
+			Parameters: map[string]ParameterValue{
+				"working_directory": NewStringValue("/test"),
+				"timeout":           NewIntValue(30),
 			},
 			Impact: ResourceImpact{
 				Reversible:  true,

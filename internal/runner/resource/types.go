@@ -15,7 +15,7 @@ type ResourceAnalysis struct {
 	Status     ExecutionStatus   `json:"status"`
 	Error      *ExecutionError   `json:"error,omitempty"`
 	SkipReason string            `json:"skip_reason,omitempty"`
-	Parameters map[string]any    `json:"parameters"`
+	Parameters ParametersMap     `json:"parameters"`
 	Impact     ResourceImpact    `json:"impact"`
 	Timestamp  time.Time         `json:"timestamp"`
 

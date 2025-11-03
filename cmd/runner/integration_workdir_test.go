@@ -570,8 +570,8 @@ risk_level = "medium"
 	// Verify that working_directory parameter exists and contains virtual temp dir path
 	workDir, ok := cmdAnalysis.Parameters["working_directory"]
 	require.True(t, ok, "Expected working_directory parameter in command analysis")
-	workDirStr, ok := workDir.(string)
-	require.True(t, ok, "Expected working_directory to be a string")
+	workDirStr, ok := workDir.Value().(string)
+	require.True(t, ok, "Expected working_directory value to be a string")
 
 	// Verify virtual temp dir path pattern
 	assert.Contains(t, workDirStr, "/tmp/scr-", "Expected virtual temp dir path to start with /tmp/scr-")
@@ -585,7 +585,7 @@ risk_level = "medium"
 	// Verify group parameter
 	groupName, ok := cmdAnalysis.Parameters["group"]
 	require.True(t, ok, "Expected group parameter in command analysis")
-	assert.Equal(t, "test_group", groupName, "Expected group name to be 'test_group'")
+	assert.Equal(t, "test_group", groupName.Value(), "Expected group name to be 'test_group'")
 
 	// Cleanup
 	err = r.CleanupAllResources()

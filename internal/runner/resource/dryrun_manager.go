@@ -203,11 +203,11 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 		Operation: OperationExecute,
 		Target:    cmd.ExpandedCmd,
 		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]any{
-			"command":           cmd.ExpandedCmd,
-			"working_directory": cmd.EffectiveWorkDir,
-			"timeout":           cmd.EffectiveTimeout,
-			"timeout_level":     cmd.TimeoutResolution.Level,
+		Parameters: map[string]ParameterValue{
+			"command":           NewStringValue(cmd.ExpandedCmd),
+			"working_directory": NewStringValue(cmd.EffectiveWorkDir),
+			"timeout":           NewIntValue(int64(cmd.EffectiveTimeout)),
+			"timeout_level":     NewStringValue(cmd.TimeoutResolution.Level),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
@@ -219,13 +219,13 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add environment variables to parameters if they exist
 	if len(env) > 0 {
-		analysis.Parameters["environment"] = env
+		analysis.Parameters["environment"] = NewEnvironmentValue(env)
 	}
 
 	// Add group information if available
 	if group != nil {
-		analysis.Parameters["group"] = group.Name
-		analysis.Parameters["group_description"] = group.Description
+		analysis.Parameters["group"] = NewStringValue(group.Name)
+		analysis.Parameters["group_description"] = NewStringValue(group.Description)
 	}
 
 	// Analyze security risks first
@@ -235,8 +235,8 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add user/group privilege specification if present (after security analysis)
 	if cmd.HasUserGroupSpecification() {
-		analysis.Parameters["run_as_user"] = cmd.RunAsUser()
-		analysis.Parameters["run_as_group"] = cmd.RunAsGroup()
+		analysis.Parameters["run_as_user"] = NewStringValue(cmd.RunAsUser())
+		analysis.Parameters["run_as_group"] = NewStringValue(cmd.RunAsGroup())
 
 		// Validate user/group configuration in dry-run mode
 		if d.privilegeManager != nil && d.privilegeManager.IsPrivilegedExecutionSupported() {
@@ -303,9 +303,9 @@ func (d *DryRunResourceManager) CreateTempDir(groupName string) (string, error) 
 		Operation: OperationCreate,
 		Target:    simulatedPath,
 		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]any{
-			"group_name": groupName,
-			"purpose":    "temporary_directory",
+		Parameters: map[string]ParameterValue{
+			"group_name": NewStringValue(groupName),
+			"purpose":    NewStringValue("temporary_directory"),
 		},
 		Impact: ResourceImpact{
 			Reversible:  true,
@@ -328,8 +328,8 @@ func (d *DryRunResourceManager) CleanupTempDir(tempDirPath string) error {
 		Operation: OperationDelete,
 		Target:    tempDirPath,
 		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]any{
-			"path": tempDirPath,
+		Parameters: map[string]ParameterValue{
+			"path": NewStringValue(tempDirPath),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false,
@@ -358,8 +358,8 @@ func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() erro
 		Operation: OperationEscalate,
 		Target:    "system_privileges",
 		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]any{
-			"context": "privilege_escalation",
+		Parameters: map[string]ParameterValue{
+			"context": NewStringValue("privilege_escalation"),
 		},
 		Impact: ResourceImpact{
 			Reversible:   true,
@@ -385,9 +385,9 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 		Operation: OperationSend,
 		Target:    "notification_service",
 		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]any{
-			"message": message,
-			"details": details,
+		Parameters: map[string]ParameterValue{
+			"message": NewStringValue(message),
+			"details": NewAnyValue(details),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false,
@@ -408,10 +408,10 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 		Operation: OperationCreate,
 		Target:    cmd.Output(),
 		Status:    StatusSuccess, // Default to success in dry-run mode
-		Parameters: map[string]any{
-			"output_path":       cmd.Output(),
-			"command":           cmd.ExpandedCmd,
-			"working_directory": group.WorkDir,
+		Parameters: map[string]ParameterValue{
+			"output_path":       NewStringValue(cmd.Output()),
+			"command":           NewStringValue(cmd.ExpandedCmd),
+			"working_directory": NewStringValue(group.WorkDir),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Output files are persistent
@@ -430,11 +430,11 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	}
 
 	// Add analysis results to parameters
-	analysis.Parameters["resolved_path"] = outputAnalysis.ResolvedPath
-	analysis.Parameters["directory_exists"] = outputAnalysis.DirectoryExists
-	analysis.Parameters["write_permission"] = outputAnalysis.WritePermission
-	analysis.Parameters["security_risk"] = outputAnalysis.SecurityRisk.String()
-	analysis.Parameters["max_size_limit"] = outputAnalysis.MaxSizeLimit
+	analysis.Parameters["resolved_path"] = NewStringValue(outputAnalysis.ResolvedPath)
+	analysis.Parameters["directory_exists"] = NewBoolValue(outputAnalysis.DirectoryExists)
+	analysis.Parameters["write_permission"] = NewBoolValue(outputAnalysis.WritePermission)
+	analysis.Parameters["security_risk"] = NewStringValue(outputAnalysis.SecurityRisk.String())
+	analysis.Parameters["max_size_limit"] = NewIntValue(outputAnalysis.MaxSizeLimit)
 
 	// Set security risk based on analysis
 	analysis.Impact.SecurityRisk = outputAnalysis.SecurityRisk.String()
@@ -582,8 +582,8 @@ func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo 
 			Persistent:  false,
 		},
 		Timestamp: time.Now(),
-		Parameters: map[string]any{
-			"group_name": groupName,
+		Parameters: map[string]ParameterValue{
+			"group_name": NewStringValue(groupName),
 		},
 		DebugInfo: debugInfo,
 	}

@@ -80,8 +80,8 @@ func TestResourceAnalysis(t *testing.T) {
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    "echo test",
-		Parameters: map[string]any{
-			"timeout": 30,
+		Parameters: map[string]ParameterValue{
+			"timeout": NewIntValue(30),
 		},
 		Impact: ResourceImpact{
 			Reversible:  true,
@@ -94,7 +94,7 @@ func TestResourceAnalysis(t *testing.T) {
 	assert.Equal(t, ResourceTypeCommand, analysis.Type)
 	assert.Equal(t, OperationExecute, analysis.Operation)
 	assert.Equal(t, "echo test", analysis.Target)
-	assert.Equal(t, 30, analysis.Parameters["timeout"])
+	assert.Equal(t, int64(30), analysis.Parameters["timeout"].Value())
 	assert.True(t, analysis.Impact.Reversible)
 	assert.False(t, analysis.Impact.Persistent)
 	assert.Equal(t, timestamp, analysis.Timestamp)

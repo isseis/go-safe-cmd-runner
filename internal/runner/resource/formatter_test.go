@@ -198,9 +198,9 @@ func TestTextFormatterFullLevel(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    "echo test",
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"timeout": 30,
-					"retries": 3,
+				Parameters: map[string]ParameterValue{
+					"timeout": NewIntValue(30),
+					"retries": NewIntValue(3),
 				},
 				Impact: ResourceImpact{
 					Description: "Test command",
@@ -245,10 +245,10 @@ func TestTextFormatterSensitiveRedaction(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"password": "secret123",
-					"api_key":  "key123",
-					"timeout":  30,
+				Parameters: map[string]ParameterValue{
+					"password": NewStringValue("secret123"),
+					"api_key":  NewStringValue("key123"),
+					"timeout":  NewIntValue(30),
 				},
 				Impact: ResourceImpact{
 					Description: "Test",
@@ -438,8 +438,8 @@ func TestJSONFormatterSummaryFilter(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"timeout": 30,
+				Parameters: map[string]ParameterValue{
+					"timeout": NewIntValue(30),
 				},
 				Impact: ResourceImpact{
 					Description: "Test",
@@ -463,7 +463,8 @@ func TestJSONFormatterSummaryFilter(t *testing.T) {
 
 	// Summary level should exclude environment info and parameters
 	assert.Nil(t, parsed.EnvironmentInfo)
-	assert.Nil(t, parsed.ResourceAnalyses[0].Parameters)
+	// Parameters should be empty after summary filtering
+	assert.Empty(t, parsed.ResourceAnalyses[0].Parameters)
 }
 
 // TestJSONFormatterSensitiveRedaction tests JSON sensitive data redaction
@@ -476,10 +477,10 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"password": "secret123",
-					"api_key":  "key123",
-					"timeout":  30,
+				Parameters: map[string]ParameterValue{
+					"password": NewStringValue("secret123"),
+					"api_key":  NewStringValue("key123"),
+					"timeout":  NewIntValue(30),
 				},
 				Impact: ResourceImpact{
 					Description: "Test",
@@ -502,9 +503,9 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 		require.NoError(t, err)
 
 		params := parsed.ResourceAnalyses[0].Parameters
-		assert.Equal(t, "[REDACTED]", params["password"])
-		assert.Equal(t, "[REDACTED]", params["api_key"])
-		assert.Equal(t, float64(30), params["timeout"]) // JSON numbers are float64
+		assert.Equal(t, "[REDACTED]", params["password"].Value())
+		assert.Equal(t, "[REDACTED]", params["api_key"].Value())
+		assert.Equal(t, int64(30), params["timeout"].Value()) // JSON numbers unmarshaled as int64 via anyToParameterValue
 	})
 
 	t.Run("ShowSensitive=true shows in JSON", func(t *testing.T) {
@@ -516,10 +517,10 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 					Operation: OperationExecute,
 					Target:    "test",
 					Timestamp: time.Now(),
-					Parameters: map[string]any{
-						"password": "secret123",
-						"api_key":  "key123",
-						"timeout":  30,
+					Parameters: map[string]ParameterValue{
+						"password": NewStringValue("secret123"),
+						"api_key":  NewStringValue("key123"),
+						"timeout":  NewIntValue(30),
 					},
 					Impact: ResourceImpact{
 						Description: "Test",
@@ -541,8 +542,8 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 		require.NoError(t, err)
 
 		params := parsed.ResourceAnalyses[0].Parameters
-		assert.Equal(t, "secret123", params["password"])
-		assert.Equal(t, "key123", params["api_key"])
+		assert.Equal(t, "secret123", params["password"].Value())
+		assert.Equal(t, "key123", params["api_key"].Value())
 	})
 }
 
@@ -557,8 +558,8 @@ func TestJSONFormatterOriginalUnmodified(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"password": "secret123",
+				Parameters: map[string]ParameterValue{
+					"password": NewStringValue("secret123"),
 				},
 				Impact: ResourceImpact{
 					Description: "Test",
@@ -585,7 +586,8 @@ func TestJSONFormatterOriginalUnmodified(t *testing.T) {
 	require.NoError(t, err)
 
 	// Summary level removes parameters and environment info
-	assert.Nil(t, parsed.ResourceAnalyses[0].Parameters)
+	// Parameters should be empty after summary filtering
+	assert.Empty(t, parsed.ResourceAnalyses[0].Parameters)
 	assert.Nil(t, parsed.EnvironmentInfo)
 
 	// Note: Due to shallow copy, the original result's maps/slices may be modified
@@ -603,8 +605,8 @@ func TestJSONFormatterDetailedLevel(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"timeout": 30,
+				Parameters: map[string]ParameterValue{
+					"timeout": NewIntValue(30),
 				},
 				Impact: ResourceImpact{
 					Description: "Test",
@@ -783,8 +785,8 @@ func TestFormatterSpecialCharacters(t *testing.T) {
 				Operation: OperationExecute,
 				Target:    `test "command" with 'quotes' and \backslash`,
 				Timestamp: time.Now(),
-				Parameters: map[string]any{
-					"special": `{"nested": "json"}`,
+				Parameters: map[string]ParameterValue{
+					"special": NewStringValue(`{"nested": "json"}`),
 				},
 				Impact: ResourceImpact{
 					Description: "Test with special chars: <>&\"'",
