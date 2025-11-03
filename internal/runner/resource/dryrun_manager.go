@@ -219,7 +219,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add environment variables to parameters if they exist
 	if len(env) > 0 {
-		analysis.Parameters["environment"] = NewEnvironmentValue(env)
+		analysis.Parameters["environment"] = NewStringMapValue(env)
 	}
 
 	// Add group information if available

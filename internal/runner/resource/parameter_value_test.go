@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEnvironmentValue_String_SpaceEscaping tests that space characters are escaped
+// TestStringMapValue_String_SpaceEscaping tests that space characters are escaped
 // to avoid ambiguity with delimiters in environment variable output
-func TestEnvironmentValue_String_SpaceEscaping(t *testing.T) {
+func TestStringMapValue_String_SpaceEscaping(t *testing.T) {
 	tests := []struct {
 		name     string
 		envMap   map[string]string
@@ -73,16 +73,16 @@ func TestEnvironmentValue_String_SpaceEscaping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			envValue := NewEnvironmentValue(tt.envMap)
+			envValue := NewStringMapValue(tt.envMap)
 			result := envValue.String()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestEnvironmentValue_String_ControlCharacterEscaping tests that control characters
+// TestStringMapValue_String_ControlCharacterEscaping tests that control characters
 // are properly escaped in environment variable values
-func TestEnvironmentValue_String_ControlCharacterEscaping(t *testing.T) {
+func TestStringMapValue_String_ControlCharacterEscaping(t *testing.T) {
 	tests := []struct {
 		name     string
 		envMap   map[string]string
@@ -162,16 +162,16 @@ func TestEnvironmentValue_String_ControlCharacterEscaping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			envValue := NewEnvironmentValue(tt.envMap)
+			envValue := NewStringMapValue(tt.envMap)
 			result := envValue.String()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestEnvironmentValue_String_NormalCharacters tests that normal printable characters
+// TestStringMapValue_String_NormalCharacters tests that normal printable characters
 // (except space) are not escaped
-func TestEnvironmentValue_String_NormalCharacters(t *testing.T) {
+func TestStringMapValue_String_NormalCharacters(t *testing.T) {
 	tests := []struct {
 		name     string
 		envMap   map[string]string
@@ -216,22 +216,22 @@ func TestEnvironmentValue_String_NormalCharacters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			envValue := NewEnvironmentValue(tt.envMap)
+			envValue := NewStringMapValue(tt.envMap)
 			result := envValue.String()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestEnvironmentValue_String_EmptyMap tests empty environment map
-func TestEnvironmentValue_String_EmptyMap(t *testing.T) {
-	envValue := NewEnvironmentValue(map[string]string{})
+// TestStringMapValue_String_EmptyMap tests empty environment map
+func TestStringMapValue_String_EmptyMap(t *testing.T) {
+	envValue := NewStringMapValue(map[string]string{})
 	result := envValue.String()
 	assert.Equal(t, "", result)
 }
 
-// TestEnvironmentValue_String_SortedOutput tests that keys are sorted alphabetically
-func TestEnvironmentValue_String_SortedOutput(t *testing.T) {
+// TestStringMapValue_String_SortedOutput tests that keys are sorted alphabetically
+func TestStringMapValue_String_SortedOutput(t *testing.T) {
 	envMap := map[string]string{
 		"ZEBRA": "z",
 		"ALPHA": "a",
@@ -239,7 +239,7 @@ func TestEnvironmentValue_String_SortedOutput(t *testing.T) {
 		"BRAVO": "b",
 	}
 
-	envValue := NewEnvironmentValue(envMap)
+	envValue := NewStringMapValue(envMap)
 	result := envValue.String()
 
 	// Keys should be sorted alphabetically
@@ -247,15 +247,15 @@ func TestEnvironmentValue_String_SortedOutput(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
-// TestEnvironmentValue_JSONMarshaling tests that JSON marshaling preserves original values
-func TestEnvironmentValue_JSONMarshaling(t *testing.T) {
+// TestStringMapValue_JSONMarshaling tests that JSON marshaling preserves original values
+func TestStringMapValue_JSONMarshaling(t *testing.T) {
 	envMap := map[string]string{
 		"VAR_WITH_SPACE":   "hello world",
 		"VAR_WITH_NEWLINE": "line1\nline2",
 		"VAR_NORMAL":       "normal_value",
 	}
 
-	envValue := NewEnvironmentValue(envMap)
+	envValue := NewStringMapValue(envMap)
 
 	// Marshal to JSON
 	jsonBytes, err := json.Marshal(envValue)
@@ -272,14 +272,14 @@ func TestEnvironmentValue_JSONMarshaling(t *testing.T) {
 	assert.Equal(t, "normal_value", unmarshaled["VAR_NORMAL"])
 }
 
-// TestEnvironmentValue_Value tests that Value() returns the original map
-func TestEnvironmentValue_Value(t *testing.T) {
+// TestStringMapValue_Value tests that Value() returns the original map
+func TestStringMapValue_Value(t *testing.T) {
 	envMap := map[string]string{
 		"KEY1": "value with spaces",
 		"KEY2": "value\nwith\nnewlines",
 	}
 
-	envValue := NewEnvironmentValue(envMap)
+	envValue := NewStringMapValue(envMap)
 	result := envValue.Value()
 
 	// Value() should return the original map without any escaping
@@ -295,7 +295,7 @@ func TestParametersMap_JSONRoundtrip(t *testing.T) {
 		"int_value":    NewIntValue(42),
 		"bool_value":   NewBoolValue(true),
 		"float_value":  NewFloatValue(3.14),
-		"env_value": NewEnvironmentValue(map[string]string{
+		"env_value": NewStringMapValue(map[string]string{
 			"VAR": "value with spaces",
 		}),
 	}
@@ -321,8 +321,28 @@ func TestParametersMap_JSONRoundtrip(t *testing.T) {
 	assert.Equal(t, "value with spaces", envMap["VAR"], "Space should be preserved in JSON roundtrip")
 }
 
-// TestEnvironmentValue_String_RealWorldExample tests real-world environment variable scenarios
-func TestEnvironmentValue_String_RealWorldExample(t *testing.T) {
+// TestAnyToParameterValue_EmptyMap tests that empty map[string]any with all string values
+// is converted to EnvironmentValue (not AnyValue) for consistent formatting
+func TestAnyToParameterValue_EmptyMap(t *testing.T) {
+	// Empty map[string]any should be treated as EnvironmentValue
+	emptyMap := map[string]any{}
+	result := anyToParameterValue(emptyMap)
+
+	// Verify it's an EnvironmentValue (not AnyValue)
+	envValue, ok := result.(StringMapValue)
+	require.True(t, ok, "Empty map[string]any should be converted to EnvironmentValue")
+
+	// Verify it formats as empty string (not "map[]")
+	assert.Equal(t, "", envValue.String(), "Empty EnvironmentValue should format as empty string")
+
+	// Verify the underlying value is an empty map
+	valueMap, ok := envValue.Value().(map[string]string)
+	require.True(t, ok, "Value() should return map[string]string")
+	assert.Empty(t, valueMap, "Underlying map should be empty")
+}
+
+// TestStringMapValue_String_RealWorldExample tests real-world environment variable scenarios
+func TestStringMapValue_String_RealWorldExample(t *testing.T) {
 	tests := []struct {
 		name     string
 		envMap   map[string]string
@@ -357,7 +377,7 @@ func TestEnvironmentValue_String_RealWorldExample(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			envValue := NewEnvironmentValue(tt.envMap)
+			envValue := NewStringMapValue(tt.envMap)
 			result := envValue.String()
 			assert.Equal(t, tt.expected, result)
 		})

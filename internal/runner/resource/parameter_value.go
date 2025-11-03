@@ -58,19 +58,19 @@ func anyToParameterValue(v any) ParameterValue {
 	case int64:
 		return NewIntValue(val)
 	case map[string]any:
-		// Check if it's an environment map (all values are strings)
-		envMap := make(map[string]string)
+		// Check if it's a string map (all values are strings)
+		strMap := make(map[string]string)
 		allStrings := true
 		for k, v := range val {
 			if str, ok := v.(string); ok {
-				envMap[k] = str
+				strMap[k] = str
 			} else {
 				allStrings = false
 				break
 			}
 		}
-		if allStrings && len(envMap) > 0 {
-			return NewEnvironmentValue(envMap)
+		if allStrings {
+			return NewStringMapValue(strMap)
 		}
 		// Otherwise treat as generic any value
 		return NewAnyValue(val)
@@ -210,17 +210,17 @@ func (d DurationValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.value)
 }
 
-// EnvironmentValue represents an environment variable map with control character escaping
-type EnvironmentValue struct {
+// StringMapValue represents an variable map with control character escaping
+type StringMapValue struct {
 	value map[string]string
 }
 
-// NewEnvironmentValue creates a new environment parameter value
-func NewEnvironmentValue(v map[string]string) ParameterValue {
-	return EnvironmentValue{value: v}
+// NewStringMapValue creates a new string map parameter value
+func NewStringMapValue(v map[string]string) ParameterValue {
+	return StringMapValue{value: v}
 }
 
-func (e EnvironmentValue) String() string {
+func (e StringMapValue) String() string {
 	if len(e.value) == 0 {
 		return ""
 	}
@@ -245,12 +245,12 @@ func (e EnvironmentValue) String() string {
 }
 
 // Value implements ParameterValue interface
-func (e EnvironmentValue) Value() any {
+func (e StringMapValue) Value() any {
 	return e.value
 }
 
 // MarshalJSON implements json.Marshaler interface
-func (e EnvironmentValue) MarshalJSON() ([]byte, error) {
+func (e StringMapValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.value)
 }
 
