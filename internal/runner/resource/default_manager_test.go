@@ -104,7 +104,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 			assert.Equal(t, OperationEscalate, last.Operation)
 			assert.Equal(t, "system_privileges", last.Target)
 			// Parameters should include context of escalation
-			assert.Equal(t, "privilege_escalation", last.Parameters["context"])
+			assert.Equal(t, "privilege_escalation", last.Parameters["context"].Value())
 		}
 	}
 	prevLen := len(res.ResourceAnalyses)
@@ -122,7 +122,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 		assert.Equal(t, OperationSend, last.Operation)
 		assert.Equal(t, "notification_service", last.Target)
 		// Parameters should include message and details
-		assert.Equal(t, "msg", last.Parameters["message"])
-		assert.Equal(t, map[string]any{"k": "v"}, last.Parameters["details"])
+		assert.Equal(t, "msg", last.Parameters["message"].Value())
+		assert.Equal(t, map[string]any{"k": "v"}, last.Parameters["details"].Value())
 	}
 }

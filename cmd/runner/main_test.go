@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 )
@@ -71,18 +72,18 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Phase 1: Initialize verification manager with temporary hash directory
+	// Initialize verification manager with temporary hash directory
 	verificationManager, err := verification.NewManagerForTest(tempHashDir)
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   "Verification manager initialization failed",
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
 
-	// Phase 2: Load and prepare configuration (verify, parse, and expand variables)
+	// Load and prepare configuration (verify, parse, and expand variables)
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
 	if err != nil {
 		return err
@@ -95,7 +96,7 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 		return nil
 	}
 
-	// For testing, we skip the actual execution phases
+	// For testing, we skip the actual execution steps
 	_ = ctx
 	_ = cfg
 

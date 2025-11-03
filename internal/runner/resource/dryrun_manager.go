@@ -55,6 +55,11 @@ type DryRunResourceManager struct {
 	tokenToIndex map[CommandToken]int
 	nextTokenID  uint64
 
+	// Execution tracking (status, phase, error)
+	executionStatus ExecutionStatus
+	executionPhase  ExecutionPhase
+	executionError  *ExecutionError
+
 	// State management
 	mu sync.RWMutex
 }
@@ -103,6 +108,8 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 		resourceAnalyses: make([]ResourceAnalysis, 0),
 		tokenToIndex:     make(map[CommandToken]int),
 		nextTokenID:      1,
+		executionStatus:  StatusSuccess,  // Default to success, will be updated if errors occur
+		executionPhase:   PhaseCompleted, // Default to completed, will be updated if errors occur
 	}, nil
 }
 
@@ -195,11 +202,12 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    cmd.ExpandedCmd,
-		Parameters: map[string]any{
-			"command":           cmd.ExpandedCmd,
-			"working_directory": cmd.EffectiveWorkDir,
-			"timeout":           cmd.EffectiveTimeout,
-			"timeout_level":     cmd.TimeoutResolution.Level,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"command":           NewStringValue(cmd.ExpandedCmd),
+			"working_directory": NewStringValue(cmd.EffectiveWorkDir),
+			"timeout":           NewIntValue(int64(cmd.EffectiveTimeout)),
+			"timeout_level":     NewStringValue(cmd.TimeoutResolution.Level),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
@@ -211,13 +219,13 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add environment variables to parameters if they exist
 	if len(env) > 0 {
-		analysis.Parameters["environment"] = env
+		analysis.Parameters["environment"] = NewStringMapValue(env)
 	}
 
 	// Add group information if available
 	if group != nil {
-		analysis.Parameters["group"] = group.Name
-		analysis.Parameters["group_description"] = group.Description
+		analysis.Parameters["group"] = NewStringValue(group.Name)
+		analysis.Parameters["group_description"] = NewStringValue(group.Description)
 	}
 
 	// Analyze security risks first
@@ -227,8 +235,8 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add user/group privilege specification if present (after security analysis)
 	if cmd.HasUserGroupSpecification() {
-		analysis.Parameters["run_as_user"] = cmd.RunAsUser()
-		analysis.Parameters["run_as_group"] = cmd.RunAsGroup()
+		analysis.Parameters["run_as_user"] = NewStringValue(cmd.RunAsUser())
+		analysis.Parameters["run_as_group"] = NewStringValue(cmd.RunAsGroup())
 
 		// Validate user/group configuration in dry-run mode
 		if d.privilegeManager != nil && d.privilegeManager.IsPrivilegedExecutionSupported() {
@@ -294,9 +302,10 @@ func (d *DryRunResourceManager) CreateTempDir(groupName string) (string, error) 
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    simulatedPath,
-		Parameters: map[string]any{
-			"group_name": groupName,
-			"purpose":    "temporary_directory",
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"group_name": NewStringValue(groupName),
+			"purpose":    NewStringValue("temporary_directory"),
 		},
 		Impact: ResourceImpact{
 			Reversible:  true,
@@ -318,8 +327,9 @@ func (d *DryRunResourceManager) CleanupTempDir(tempDirPath string) error {
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationDelete,
 		Target:    tempDirPath,
-		Parameters: map[string]any{
-			"path": tempDirPath,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"path": NewStringValue(tempDirPath),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false,
@@ -347,8 +357,9 @@ func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() erro
 		Type:      ResourceTypePrivilege,
 		Operation: OperationEscalate,
 		Target:    "system_privileges",
-		Parameters: map[string]any{
-			"context": "privilege_escalation",
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"context": NewStringValue("privilege_escalation"),
 		},
 		Impact: ResourceImpact{
 			Reversible:   true,
@@ -373,9 +384,10 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 		Type:      ResourceTypeNetwork,
 		Operation: OperationSend,
 		Target:    "notification_service",
-		Parameters: map[string]any{
-			"message": message,
-			"details": details,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"message": NewStringValue(message),
+			"details": NewAnyValue(details),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false,
@@ -395,10 +407,11 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    cmd.Output(),
-		Parameters: map[string]any{
-			"output_path":       cmd.Output(),
-			"command":           cmd.ExpandedCmd,
-			"working_directory": group.WorkDir,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"output_path":       NewStringValue(cmd.Output()),
+			"command":           NewStringValue(cmd.ExpandedCmd),
+			"working_directory": NewStringValue(group.WorkDir),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Output files are persistent
@@ -417,11 +430,11 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	}
 
 	// Add analysis results to parameters
-	analysis.Parameters["resolved_path"] = outputAnalysis.ResolvedPath
-	analysis.Parameters["directory_exists"] = outputAnalysis.DirectoryExists
-	analysis.Parameters["write_permission"] = outputAnalysis.WritePermission
-	analysis.Parameters["security_risk"] = outputAnalysis.SecurityRisk.String()
-	analysis.Parameters["max_size_limit"] = outputAnalysis.MaxSizeLimit
+	analysis.Parameters["resolved_path"] = NewStringValue(outputAnalysis.ResolvedPath)
+	analysis.Parameters["directory_exists"] = NewBoolValue(outputAnalysis.DirectoryExists)
+	analysis.Parameters["write_permission"] = NewBoolValue(outputAnalysis.WritePermission)
+	analysis.Parameters["security_risk"] = NewStringValue(outputAnalysis.SecurityRisk.String())
+	analysis.Parameters["max_size_limit"] = NewIntValue(outputAnalysis.MaxSizeLimit)
 
 	// Set security risk based on analysis
 	analysis.Impact.SecurityRisk = outputAnalysis.SecurityRisk.String()
@@ -440,6 +453,89 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	return analysis
 }
 
+// SetExecutionStatus sets the execution status and phase
+func (d *DryRunResourceManager) SetExecutionStatus(status ExecutionStatus, phase ExecutionPhase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.executionStatus = status
+	d.executionPhase = phase
+}
+
+// SetExecutionError sets the execution error and automatically updates status to StatusError
+func (d *DryRunResourceManager) SetExecutionError(errType, message, component string, details map[string]any, phase ExecutionPhase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.executionError = &ExecutionError{
+		Type:      errType,
+		Message:   message,
+		Component: component,
+		Details:   details,
+	}
+	d.executionStatus = StatusError
+	d.executionPhase = phase
+}
+
+// calculateSummary calculates the execution summary from resource analyses
+func (d *DryRunResourceManager) calculateSummary() *ExecutionSummary {
+	summary := &ExecutionSummary{
+		Groups:   &Counts{},
+		Commands: &Counts{},
+	}
+
+	for i := range d.resourceAnalyses {
+		analysis := &d.resourceAnalyses[i]
+
+		// Count by type
+		switch analysis.Type {
+		case ResourceTypeGroup:
+			summary.Groups.Total++
+			// Skipped resources are counted separately, not as successful or failed
+			if analysis.SkipReason != "" {
+				summary.Groups.Skipped++
+				summary.Skipped++
+			} else {
+				switch analysis.Status {
+				case StatusSuccess:
+					summary.Groups.Successful++
+					summary.Successful++
+				case StatusError:
+					summary.Groups.Failed++
+					summary.Failed++
+				case "": // Legacy - no status set, assume success
+					summary.Groups.Successful++
+					summary.Successful++
+				}
+			}
+			summary.TotalResources++
+
+		case ResourceTypeCommand:
+			summary.Commands.Total++
+			// Skipped resources are counted separately, not as successful or failed
+			if analysis.SkipReason != "" {
+				summary.Commands.Skipped++
+				summary.Skipped++
+			} else {
+				switch analysis.Status {
+				case StatusSuccess:
+					summary.Commands.Successful++
+					summary.Successful++
+				case StatusError:
+					summary.Commands.Failed++
+					summary.Failed++
+				case "": // Legacy - no status set, assume success
+					summary.Commands.Successful++
+					summary.Successful++
+				}
+			}
+			summary.TotalResources++
+		}
+	}
+
+	return summary
+}
+
 // GetDryRunResults returns the dry-run results
 func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.mu.RLock()
@@ -452,6 +548,12 @@ func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	// Update the resource analyses in the result
 	d.dryRunResult.ResourceAnalyses = make([]ResourceAnalysis, len(d.resourceAnalyses))
 	copy(d.dryRunResult.ResourceAnalyses, d.resourceAnalyses)
+
+	// Update execution status fields
+	d.dryRunResult.Status = d.executionStatus
+	d.dryRunResult.Phase = d.executionPhase
+	d.dryRunResult.Error = d.executionError
+	d.dryRunResult.Summary = d.calculateSummary()
 
 	return d.dryRunResult
 }
@@ -473,14 +575,15 @@ func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo 
 		Type:      ResourceTypeGroup,
 		Operation: OperationAnalyze,
 		Target:    groupName,
+		Status:    StatusSuccess, // Default to success in dry-run mode
 		Impact: ResourceImpact{
 			Description: "Group configuration analysis",
 			Reversible:  true,
 			Persistent:  false,
 		},
 		Timestamp: time.Now(),
-		Parameters: map[string]any{
-			"group_name": groupName,
+		Parameters: map[string]ParameterValue{
+			"group_name": NewStringValue(groupName),
 		},
 		DebugInfo: debugInfo,
 	}

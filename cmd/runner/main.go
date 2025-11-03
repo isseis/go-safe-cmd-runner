@@ -97,7 +97,7 @@ func parseLogLevel(logLevelStr string, runID string) (runnertypes.LogLevel, erro
 		return level, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Invalid log level %q: %v", logLevelStr, err),
-			Component: "main",
+			Component: string(resource.ComponentMain),
 			RunID:     runID,
 		}
 	}
@@ -109,7 +109,7 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Phase 1: Initialize verification manager with secure default hash directory
+	// Initialize verification manager with secure default hash directory
 	// For dry-run mode, skip hash directory validation since no actual file verification is needed
 	var verificationManager *verification.Manager
 	var err error
@@ -122,12 +122,12 @@ func run(runID string) error {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Verification manager initialization failed: %v", err),
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
 
-	// Phase 3: Load and prepare configuration (verify, parse, and expand variables)
+	// Load and prepare configuration (verify, parse, and expand variables)
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
 	if err != nil {
 		return err
@@ -146,34 +146,40 @@ func run(runID string) error {
 		return nil
 	}
 
-	// Phase 4: Setup logging (using bootstrap package)
+	// Setup logging (using bootstrap package)
 	// Parse log level string to LogLevel type
 	logLevelValue, err := parseLogLevel(*logLevel, runID)
 	if err != nil {
 		return err
 	}
-	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
+	// Determine console output destination based on dry-run format
+	// For JSON format, send logs to stderr to keep stdout clean for JSON output
+	consoleWriter := os.Stdout
+	if *dryRun && *dryRunFormat == "json" {
+		consoleWriter = os.Stderr
+	}
+	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet, consoleWriter); err != nil {
 		return err
 	}
 
-	// Phase 4.5: Expand global configuration
+	// Expand global configuration
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Failed to expand global configuration: %v", err),
-			Component: "config",
+			Component: string(resource.ComponentConfig),
 			RunID:     runID,
 		}
 	}
 
-	// Phase 5: Perform global file verification (using verification manager directly)
+	// Perform global file verification (using verification manager directly)
 	result, err := verificationManager.VerifyGlobalFiles(runtimeGlobal)
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Global files verification failed: %v", err),
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
@@ -187,7 +193,7 @@ func run(runID string) error {
 			"run_id", runID)
 	}
 
-	// Phase 6: Initialize and execute runner with all verified data
+	// Initialize and execute runner with all verified data
 	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID)
 }
 
@@ -262,12 +268,22 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}()
 
 	// Execute all groups (works for both normal and dry-run modes)
-	if err := runner.ExecuteAll(ctx); err != nil {
-		return fmt.Errorf("error running commands: %w", err)
-	}
+	execErr := runner.ExecuteAll(ctx)
 
-	// If dry-run mode, display the analysis results
+	// Handle dry-run output (always output, even on error)
 	if *dryRun {
+		// If an execution error occurred, set error status before getting results
+		if execErr != nil {
+			// Set execution error in the resource manager
+			runner.SetDryRunExecutionError(
+				string(resource.ErrorTypeExecutionError),
+				execErr.Error(),
+				string(resource.ComponentRunner),
+				nil,
+				resource.PhaseGroupExecution,
+			)
+		}
+
 		result := runner.GetDryRunResults()
 		if result != nil {
 			// Create appropriate formatter using pre-parsed values
@@ -289,6 +305,11 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 			}
 			fmt.Print(output)
 		}
+	}
+
+	// Return execution error after outputting results (if any)
+	if execErr != nil {
+		return fmt.Errorf("error running commands: %w", execErr)
 	}
 
 	return nil

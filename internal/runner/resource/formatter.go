@@ -151,7 +151,8 @@ func (f *TextFormatter) writeResourceAnalyses(buf *strings.Builder, analyses []R
 				if !opts.ShowSensitive && defaultSensitivePatterns.IsSensitiveKey(key) {
 					fmt.Fprintf(buf, "     %s: [REDACTED]\n", key)
 				} else {
-					fmt.Fprintf(buf, "     %s: %v\n", key, value)
+					// Use String() method which handles escaping for each type
+					fmt.Fprintf(buf, "     %s: %s\n", key, value.String())
 				}
 			}
 		}
@@ -279,7 +280,7 @@ func (f *JSONFormatter) redactSensitiveInfo(result *DryRunResult) {
 	for i := range result.ResourceAnalyses {
 		for key := range result.ResourceAnalyses[i].Parameters {
 			if defaultSensitivePatterns.IsSensitiveKey(key) {
-				result.ResourceAnalyses[i].Parameters[key] = "[REDACTED]"
+				result.ResourceAnalyses[i].Parameters[key] = NewStringValue("[REDACTED]")
 			}
 		}
 	}
