@@ -688,7 +688,6 @@ func TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted(t *testi
 	manager := createTestDryRunResourceManager()
 
 	// Manually add resource analyses with different statuses
-	manager.mu.Lock()
 
 	// Add 2 successful groups
 	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
@@ -756,8 +755,6 @@ func TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted(t *testi
 		SkipReason: "user_requested",
 		Target:     "cmd6",
 	})
-
-	manager.mu.Unlock()
 
 	// Calculate summary
 	summary := manager.calculateSummary()
