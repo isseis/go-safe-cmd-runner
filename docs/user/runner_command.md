@@ -401,6 +401,125 @@ Environment variables (5):
 - `detailed`: Regular verification, checking after configuration changes
 - `full`: Debugging, troubleshooting, environment variable verification
 
+#### JSON Format Debug Information Output
+
+When JSON format (`-dry-run-format json`) is specified, debug information is included in the `debug_info` field according to the detail level.
+
+**DetailLevelSummary**
+
+The `debug_info` field is not included.
+
+**DetailLevelDetailed**
+
+Group-level and command-level debug information is included:
+
+```json
+{
+  "resource_analyses": [
+    {
+      "resource_type": "group",
+      "operation": "analyze",
+      "group_name": "backup",
+      "debug_info": {
+        "from_env_inheritance": {
+          "global_env_import": ["HOME", "PATH"],
+          "global_allowlist": ["HOME", "PATH"],
+          "group_env_import": ["BACKUP_DIR"],
+          "group_allowlist": ["BACKUP_DIR"],
+          "inheritance_mode": "inherit"
+        }
+      }
+    },
+    {
+      "resource_type": "command",
+      "operation": "execute",
+      "group_name": "backup",
+      "command_name": "db_backup",
+      "debug_info": {
+        "final_environment": {
+          "variables": [
+            {
+              "name": "BACKUP_DIR",
+              "value": "/var/backups",
+              "source": "Group[backup]"
+            },
+            {
+              "name": "HOME",
+              "value": "/root",
+              "source": "System (filtered by allowlist)"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+**DetailLevelFull**
+
+All debug information is included. The `from_env_inheritance` includes diff information (inherited variables, removed variables, unavailable variables):
+
+```json
+{
+  "debug_info": {
+    "from_env_inheritance": {
+      "global_env_import": ["HOME", "PATH"],
+      "global_allowlist": ["HOME", "PATH", "USER"],
+      "group_env_import": ["BACKUP_DIR"],
+      "group_allowlist": ["BACKUP_DIR", "TEMP_DIR"],
+      "inheritance_mode": "inherit",
+      "inherited_variables": ["HOME", "PATH"],
+      "removed_allowlist_variables": ["USER"],
+      "unavailable_env_import_variables": []
+    },
+    "final_environment": {
+      "variables": [
+        {
+          "name": "BACKUP_DIR",
+          "value": "/var/backups",
+          "source": "Group[backup]"
+        },
+        {
+          "name": "HOME",
+          "value": "[REDACTED]",
+          "source": "System (filtered by allowlist)"
+        },
+        {
+          "name": "PATH",
+          "value": "/usr/local/bin:/usr/bin:/bin",
+          "source": "System (filtered by allowlist)"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Sensitive Information Masking**
+
+By default, sensitive information such as passwords and tokens is masked with `[REDACTED]`. To display values in plain text for debugging purposes, use the `--show-sensitive` flag:
+
+```bash
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full --show-sensitive
+```
+
+**JSON Output Usage Examples**
+
+```bash
+# Extract only debug information
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info != null) | .debug_info'
+
+# Check environment variable inheritance mode
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detailed | \
+  jq '.resource_analyses[] | select(.debug_info.from_env_inheritance != null) | .debug_info.from_env_inheritance.inheritance_mode'
+
+# Check final environment variables
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info.final_environment != null) | .debug_info.final_environment.variables'
+```
+
 #### `-validate`
 
 **Overview**
@@ -1227,11 +1346,22 @@ runner -config config.toml -dry-run -dry-run-format json | jq '.'
 
 # Check risk level of specific commands
 runner -config config.toml -dry-run -dry-run-format json | \
-  jq '.groups[].commands[] | select(.risk_level == "high")'
+  jq '.resource_analyses[] | select(.risk_level == "high")'
 
 # Check long-running commands
 runner -config config.toml -dry-run -dry-run-format json | \
-  jq '.groups[].commands[] | select(.timeout > 3600)'
+  jq '.resource_analyses[] | select(.timeout > 3600)'
+
+# Output with debug information
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | jq '.'
+
+# Check environment variable inheritance mode
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detailed | \
+  jq '.resource_analyses[] | select(.debug_info.from_env_inheritance != null) | .debug_info.from_env_inheritance.inheritance_mode'
+
+# Check final environment variables
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info.final_environment != null) | .debug_info.final_environment'
 ```
 
 ### 5.3 Log Management

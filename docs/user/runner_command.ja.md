@@ -401,6 +401,125 @@ Environment variables (5):
 - `detailed`: 通常の確認作業、設定変更後のチェック
 - `full`: デバッグ、トラブルシューティング、環境変数の確認
 
+#### JSON形式でのデバッグ情報出力
+
+JSON形式(`-dry-run-format json`)を指定した場合、詳細レベルに応じてデバッグ情報が `debug_info` フィールドに含まれます。
+
+**DetailLevelSummary**
+
+`debug_info` フィールドは含まれません。
+
+**DetailLevelDetailed**
+
+グループレベルとコマンドレベルのデバッグ情報が含まれます：
+
+```json
+{
+  "resource_analyses": [
+    {
+      "resource_type": "group",
+      "operation": "analyze",
+      "group_name": "backup",
+      "debug_info": {
+        "from_env_inheritance": {
+          "global_env_import": ["HOME", "PATH"],
+          "global_allowlist": ["HOME", "PATH"],
+          "group_env_import": ["BACKUP_DIR"],
+          "group_allowlist": ["BACKUP_DIR"],
+          "inheritance_mode": "inherit"
+        }
+      }
+    },
+    {
+      "resource_type": "command",
+      "operation": "execute",
+      "group_name": "backup",
+      "command_name": "db_backup",
+      "debug_info": {
+        "final_environment": {
+          "variables": [
+            {
+              "name": "BACKUP_DIR",
+              "value": "/var/backups",
+              "source": "Group[backup]"
+            },
+            {
+              "name": "HOME",
+              "value": "/root",
+              "source": "System (filtered by allowlist)"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+**DetailLevelFull**
+
+すべてのデバッグ情報が含まれます。`from_env_inheritance` には差分情報（継承された変数、削除された変数、利用不可能な変数）が追加されます：
+
+```json
+{
+  "debug_info": {
+    "from_env_inheritance": {
+      "global_env_import": ["HOME", "PATH"],
+      "global_allowlist": ["HOME", "PATH", "USER"],
+      "group_env_import": ["BACKUP_DIR"],
+      "group_allowlist": ["BACKUP_DIR", "TEMP_DIR"],
+      "inheritance_mode": "inherit",
+      "inherited_variables": ["HOME", "PATH"],
+      "removed_allowlist_variables": ["USER"],
+      "unavailable_env_import_variables": []
+    },
+    "final_environment": {
+      "variables": [
+        {
+          "name": "BACKUP_DIR",
+          "value": "/var/backups",
+          "source": "Group[backup]"
+        },
+        {
+          "name": "HOME",
+          "value": "[REDACTED]",
+          "source": "System (filtered by allowlist)"
+        },
+        {
+          "name": "PATH",
+          "value": "/usr/local/bin:/usr/bin:/bin",
+          "source": "System (filtered by allowlist)"
+        }
+      ]
+    }
+  }
+}
+```
+
+**センシティブ情報のマスキング**
+
+デフォルトでは、パスワードやトークンなどのセンシティブ情報は `[REDACTED]` でマスクされます。デバッグ時に平文で表示する必要がある場合は、`--show-sensitive` フラグを使用します：
+
+```bash
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full --show-sensitive
+```
+
+**JSON出力の活用例**
+
+```bash
+# デバッグ情報のみを抽出
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info != null) | .debug_info'
+
+# 環境変数の継承モードを確認
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detailed | \
+  jq '.resource_analyses[] | select(.debug_info.from_env_inheritance != null) | .debug_info.from_env_inheritance.inheritance_mode'
+
+# 最終的な環境変数を確認
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info.final_environment != null) | .debug_info.final_environment.variables'
+```
+
 #### `-validate`
 
 **概要**
@@ -1227,11 +1346,22 @@ runner -config config.toml -dry-run -dry-run-format json | jq '.'
 
 # 特定のコマンドのリスクレベルを確認
 runner -config config.toml -dry-run -dry-run-format json | \
-  jq '.groups[].commands[] | select(.risk_level == "high")'
+  jq '.resource_analyses[] | select(.risk_level == "high")'
 
 # 実行時間の長いコマンドを確認
 runner -config config.toml -dry-run -dry-run-format json | \
-  jq '.groups[].commands[] | select(.timeout > 3600)'
+  jq '.resource_analyses[] | select(.timeout > 3600)'
+
+# デバッグ情報を含めて出力
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | jq '.'
+
+# 環境変数の継承モードを確認
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detailed | \
+  jq '.resource_analyses[] | select(.debug_info.from_env_inheritance != null) | .debug_info.from_env_inheritance.inheritance_mode'
+
+# 最終的な環境変数を確認
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info.final_environment != null) | .debug_info.final_environment'
 ```
 
 ### 5.3 ログ管理
