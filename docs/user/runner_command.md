@@ -462,37 +462,62 @@ All debug information is included. The `from_env_inheritance` includes diff info
 
 ```json
 {
-  "debug_info": {
-    "from_env_inheritance": {
-      "global_env_import": ["HOME", "PATH"],
-      "global_allowlist": ["HOME", "PATH", "USER"],
-      "group_env_import": ["BACKUP_DIR"],
-      "group_allowlist": ["BACKUP_DIR", "TEMP_DIR"],
-      "inheritance_mode": "inherit",
-      "inherited_variables": ["HOME", "PATH"],
-      "removed_allowlist_variables": ["USER"],
-      "unavailable_env_import_variables": []
-    },
-    "final_environment": {
-      "variables": [
-        {
-          "name": "BACKUP_DIR",
-          "value": "/var/backups",
-          "source": "Group[backup]"
-        },
-        {
-          "name": "HOME",
-          "value": "[REDACTED]",
-          "source": "System (filtered by allowlist)"
-        },
-        {
-          "name": "PATH",
-          "value": "/usr/local/bin:/usr/bin:/bin",
-          "source": "System (filtered by allowlist)"
+  "resource_analyses": [
+    {
+      "resource_type": "group",
+      "operation": "analyze",
+      "group_name": "backup",
+      "debug_info": {
+        "from_env_inheritance": {
+          "global_env_import": ["HOME", "PATH"],
+          "global_allowlist": ["HOME", "PATH", "USER"],
+          "group_env_import": ["BACKUP_DIR"],
+          "group_allowlist": ["BACKUP_DIR", "TEMP_DIR"],
+          "inheritance_mode": "inherit",
+          "inherited_variables": ["HOME", "PATH"],
+          "removed_allowlist_variables": ["USER"],
+          "unavailable_env_import_variables": []
         }
-      ]
+      }
+    },
+    {
+      "resource_type": "command",
+      "operation": "execute",
+      "group_name": "backup",
+      "command_name": "db_backup",
+      "cmd": "/usr/bin/pg_dump",
+      "args": ["-U", "postgres", "mydb"],
+      "workdir": "/var/backups",
+      "timeout": 3600,
+      "risk_level": "medium",
+      "debug_info": {
+        "final_environment": {
+          "variables": [
+            {
+              "name": "BACKUP_DIR",
+              "value": "/var/backups",
+              "source": "Group[backup]"
+            },
+            {
+              "name": "DB_PASSWORD",
+              "value": "[REDACTED]",
+              "source": "Command[db_backup]"
+            },
+            {
+              "name": "HOME",
+              "value": "/root",
+              "source": "System (filtered by allowlist)"
+            },
+            {
+              "name": "PATH",
+              "value": "/usr/local/bin:/usr/bin:/bin",
+              "source": "System (filtered by allowlist)"
+            }
+          ]
+        }
+      }
     }
-  }
+  ]
 }
 ```
 
