@@ -347,7 +347,30 @@ const (
 	ErrorTypeSecurityError ErrorType = "security_error"
 	// ErrorTypeSystemError represents system errors
 	ErrorTypeSystemError ErrorType = "system_error"
+	// ErrorTypeExecutionError represents execution errors
+	ErrorTypeExecutionError ErrorType = "execution_error"
 )
+
+// Component represents the component name for error and warning reporting
+type Component string
+
+const (
+	// ComponentRunner represents the runner component
+	ComponentRunner Component = "runner"
+	// ComponentConfig represents the config component
+	ComponentConfig Component = "config"
+	// ComponentVerification represents the verification component
+	ComponentVerification Component = "verification"
+	// ComponentMain represents the main component
+	ComponentMain Component = "main"
+	// ComponentLogging represents the logging component
+	ComponentLogging Component = "logging"
+)
+
+// String returns the string representation of Component
+func (c Component) String() string {
+	return string(c)
+}
 
 // DryRunWarning represents a warning that occurred during dry-run
 type DryRunWarning struct {

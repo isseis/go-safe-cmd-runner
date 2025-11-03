@@ -1,6 +1,10 @@
 package errors
 
-import "time"
+import (
+	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+)
 
 // ClassifyVerificationError creates a ClassifiedError for verification-related errors with configurable severity
 //
@@ -11,7 +15,7 @@ func ClassifyVerificationError(errorType ErrorType, severity ErrorSeverity, mess
 		Severity:  severity,
 		Message:   message,
 		Cause:     cause,
-		Component: "verification", // Always verification for this helper function
+		Component: string(resource.ComponentVerification), // Always verification for this helper function
 		FilePath:  filePath,
 		Timestamp: time.Now(),
 	}

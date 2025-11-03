@@ -97,7 +97,7 @@ func parseLogLevel(logLevelStr string, runID string) (runnertypes.LogLevel, erro
 		return level, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Invalid log level %q: %v", logLevelStr, err),
-			Component: "main",
+			Component: string(resource.ComponentMain),
 			RunID:     runID,
 		}
 	}
@@ -122,7 +122,7 @@ func run(runID string) error {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Verification manager initialization failed: %v", err),
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
@@ -168,7 +168,7 @@ func run(runID string) error {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Failed to expand global configuration: %v", err),
-			Component: "config",
+			Component: string(resource.ComponentConfig),
 			RunID:     runID,
 		}
 	}
@@ -179,7 +179,7 @@ func run(runID string) error {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Global files verification failed: %v", err),
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
@@ -276,9 +276,9 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		if execErr != nil {
 			// Set execution error in the resource manager
 			runner.SetDryRunExecutionError(
-				"execution_error",
+				string(resource.ErrorTypeExecutionError),
 				execErr.Error(),
-				"runner",
+				string(resource.ComponentRunner),
 				nil,
 				resource.PhaseGroupExecution,
 			)

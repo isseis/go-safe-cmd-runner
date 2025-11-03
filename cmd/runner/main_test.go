@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 )
@@ -77,7 +78,7 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   "Verification manager initialization failed",
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}

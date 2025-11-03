@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -29,7 +30,7 @@ func SetupLogging(logLevel runnertypes.LogLevel, logDir, runID string, forceInte
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeLogFileOpen,
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
-			Component: "logging",
+			Component: string(resource.ComponentLogging),
 			RunID:     runID,
 		}
 	}
