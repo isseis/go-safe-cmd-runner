@@ -210,7 +210,7 @@ func (d DurationValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.value)
 }
 
-// StringMapValue represents an variable map with control character escaping
+// StringMapValue represents a variable map with control character escaping
 type StringMapValue struct {
 	value map[string]string
 }
