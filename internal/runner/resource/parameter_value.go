@@ -6,7 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // ParametersMap is a custom type for parameters that handles JSON marshaling/unmarshaling
@@ -238,7 +239,7 @@ func (e EnvironmentValue) String() string {
 			result.WriteString(" ")
 		}
 		first = false
-		fmt.Fprintf(&result, "%s=%s", k, escapeControlChars(e.value[k]))
+		fmt.Fprintf(&result, "%s=%s", k, common.EscapeControlChars(e.value[k]))
 	}
 	return result.String()
 }
@@ -275,43 +276,4 @@ func (a AnyValue) Value() any {
 // MarshalJSON implements json.Marshaler interface
 func (a AnyValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.value)
-}
-
-// escapeControlChars escapes control characters in a string for safe display.
-// This ensures terminal control characters don't corrupt the output.
-//
-// Uses unicode.IsControl to detect control characters, then escapes them using
-// standard escape sequences (\n, \t, etc.) for common ones, or \xNN for others.
-// Regular printable characters are left unchanged for readability.
-func escapeControlChars(s string) string {
-	var result strings.Builder
-	for _, r := range s {
-		if r != ' ' && !unicode.IsControl(r) {
-			// Not a space or a control character - output as-is
-			result.WriteRune(r)
-			continue
-		}
-
-		// Use standard escape sequences for common control characters
-		switch r {
-		case '\n':
-			result.WriteString("\\n")
-		case '\r':
-			result.WriteString("\\r")
-		case '\t':
-			result.WriteString("\\t")
-		case '\b':
-			result.WriteString("\\b")
-		case '\f':
-			result.WriteString("\\f")
-		case '\v':
-			result.WriteString("\\v")
-		case '\a':
-			result.WriteString("\\a")
-		default:
-			// For space character and other control characters, use \xNN notation
-			fmt.Fprintf(&result, "\\x%02x", r)
-		}
-	}
-	return result.String()
 }

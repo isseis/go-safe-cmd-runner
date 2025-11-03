@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -163,7 +164,7 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 			displayValue = "[REDACTED]"
 		} else {
 			// Escape control characters for safe display (preserve full value for dry-run verification)
-			displayValue = escapeControlChars(displayValue)
+			displayValue = common.EscapeControlChars(displayValue)
 		}
 
 		buf.WriteString(fmt.Sprintf("  %s=%s\n", k, displayValue))

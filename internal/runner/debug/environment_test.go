@@ -178,9 +178,9 @@ func TestPrintFinalEnvironment_ControlCharacters(t *testing.T) {
 	assert.Contains(t, output, `VAR_WITH_NULL=value\x00with\x00null`, "Null bytes should be escaped")
 	assert.Contains(t, output, `VAR_WITH_ESC=value\x1b[31mwith\x1b[0mcolor`, "Escape sequences should be escaped")
 
-	// Verify normal characters are NOT escaped
-	assert.Contains(t, output, `VAR_WITH_QUOTES=value "with" quotes`, "Quotes should not be escaped")
-	assert.Contains(t, output, "VAR_WITH_SPACES=value with spaces", "Spaces should not be escaped")
+	// Verify normal characters are NOT escaped (except spaces which are escaped as \x20)
+	assert.Contains(t, output, `VAR_WITH_QUOTES=value\x20"with"\x20quotes`, "Quotes should not be escaped but spaces should be")
+	assert.Contains(t, output, `VAR_WITH_SPACES=value\x20with\x20spaces`, "Spaces should be escaped as \\x20")
 
 	// Verify raw control characters are NOT in output (they should be escaped)
 	assert.NotContains(t, output, "value\nwith\nnewlines", "Raw newlines should not be in output")
@@ -329,8 +329,8 @@ func TestPrintFinalEnvironment_ShowSensitiveData_Explicit(t *testing.T) {
 	assert.Contains(t, output, "super_secret_password_123", "Password should be displayed without masking")
 	assert.Contains(t, output, "ghp_1234567890abcdefghijklmnopqrstuvwxyz", "API token should be displayed without masking")
 	assert.Contains(t, output, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "AWS secret key should be displayed without masking")
-	// SSH private key contains \n which should be escaped
-	assert.Contains(t, output, `-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...`, "SSH private key should be displayed with escaped newlines")
+	// SSH private key contains \n which should be escaped, and spaces are also escaped as \x20
+	assert.Contains(t, output, `-----BEGIN\x20RSA\x20PRIVATE\x20KEY-----\nMIIEpAIBAAKCAQEA...`, "SSH private key should be displayed with escaped newlines and spaces")
 	assert.Contains(t, output, "public_value", "Normal values should be displayed")
 
 	// Verify origins are shown
