@@ -1,7 +1,8 @@
 #!/bin/bash
 # Script to generate large_scale.toml (500 groups, 10 commands each)
 
-cat > /home/issei/git/dryrun-debug-json-output-09/test/performance/large_scale.toml << 'EOF'
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+cat > "$SCRIPT_DIR/large_scale.toml" << 'EOF'
 # Performance Test - Large Scale Configuration
 # 500 groups with 10 commands each (total: 5000 commands)
 version = "1.0"
