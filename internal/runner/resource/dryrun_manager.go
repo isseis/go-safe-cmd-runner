@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -16,8 +17,11 @@ import (
 
 // Static errors
 var (
-	ErrPathResolverRequired  = errors.New("PathResolver is required for DryRunResourceManager")
-	ErrPathTraversalDetected = errors.New("path validation failed: path traversal detected")
+	ErrPathResolverRequired      = errors.New("PathResolver is required for DryRunResourceManager")
+	ErrPathTraversalDetected     = errors.New("path validation failed: path traversal detected")
+	ErrNoCommandResourceAnalysis = errors.New("no command resource analysis found to update")
+	ErrInvalidCommandToken       = errors.New("invalid command token")
+	ErrDuplicateDebugInfoUpdate  = errors.New("UpdateCommandDebugInfo called multiple times for the same token")
 )
 
 // PathResolver interface for resolving command paths
@@ -29,7 +33,7 @@ const (
 	riskLevelHigh = "high"
 )
 
-// DryRunResourceManager implements DryRunResourceManagerInterface for dry-run mode
+// DryRunResourceManager implements ResourceManager for dry-run mode
 type DryRunResourceManager struct {
 	// Core dependencies
 	executor         executor.CommandExecutor
@@ -40,9 +44,21 @@ type DryRunResourceManager struct {
 	outputManager output.CaptureManager
 
 	// Dry-run specific
-	dryRunOptions    *DryRunOptions
-	dryRunResult     *DryRunResult
+	dryRunOptions *DryRunOptions
+	dryRunResult  *DryRunResult
+	// resourceAnalyses is an append-only slice that stores all resource analyses.
+	// INVARIANT: Elements must never be deleted or reordered after being appended.
+	// This guarantees that indices stored in tokenToIndex remain valid throughout the manager's lifetime.
 	resourceAnalyses []ResourceAnalysis
+
+	// Token management - maps CommandToken to index in resourceAnalyses
+	tokenToIndex map[CommandToken]int
+	nextTokenID  uint64
+
+	// Execution tracking (status, phase, error)
+	executionStatus ExecutionStatus
+	executionPhase  ExecutionPhase
+	executionError  *ExecutionError
 
 	// State management
 	mu sync.RWMutex
@@ -90,6 +106,10 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 			Warnings: make([]DryRunWarning, 0),
 		},
 		resourceAnalyses: make([]ResourceAnalysis, 0),
+		tokenToIndex:     make(map[CommandToken]int),
+		nextTokenID:      1,
+		executionStatus:  StatusSuccess,  // Default to success, will be updated if errors occur
+		executionPhase:   PhaseCompleted, // Default to completed, will be updated if errors occur
 	}, nil
 }
 
@@ -113,22 +133,23 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 }
 
 // ExecuteCommand simulates command execution in dry-run mode
-func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
+// Returns a token that can be used to update the command's debug info
+func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error) {
 	start := time.Now()
 
 	// Validate command and group for consistency with normal mode
 	if err := validateCommand(cmd); err != nil {
-		return nil, fmt.Errorf("command validation failed: %w", err)
+		return "", nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
 	if err := validateCommandGroup(group); err != nil {
-		return nil, fmt.Errorf("command group validation failed: %w", err)
+		return "", nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
 	// Analyze the command
 	analysis, err := d.analyzeCommand(ctx, cmd, group, env)
 	if err != nil {
-		return nil, fmt.Errorf("command analysis failed: %w", err)
+		return "", nil, fmt.Errorf("command analysis failed: %w", err)
 	}
 
 	// Check if output capture is requested and analyze it
@@ -137,8 +158,8 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		d.RecordAnalysis(&outputAnalysis)
 	}
 
-	// Record the analysis
-	d.RecordAnalysis(&analysis)
+	// Generate token, record the analysis and store token mapping
+	token := d.recordAnalysis(analysis)
 
 	// Generate simulated output
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
@@ -149,7 +170,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output())
 	}
 
-	return &ExecutionResult{
+	return token, &ExecutionResult{
 		ExitCode: 0,
 		Stdout:   stdout,
 		Stderr:   "",
@@ -159,17 +180,34 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	}, nil
 }
 
+// recordAnalysis records the analysis and returns a unique command token
+func (d *DryRunResourceManager) recordAnalysis(analysis ResourceAnalysis) CommandToken {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tokenID := d.nextTokenID
+	d.nextTokenID++
+
+	token := CommandToken(fmt.Sprintf("cmd-%d-%d", time.Now().UnixNano(), tokenID))
+
+	commandIndex := len(d.resourceAnalyses)
+	d.resourceAnalyses = append(d.resourceAnalyses, analysis)
+	d.tokenToIndex[token] = commandIndex
+	return token
+}
+
 // analyzeCommand analyzes a command for dry-run
 func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (ResourceAnalysis, error) {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    cmd.ExpandedCmd,
-		Parameters: map[string]any{
-			"command":           cmd.ExpandedCmd,
-			"working_directory": cmd.EffectiveWorkDir,
-			"timeout":           cmd.EffectiveTimeout,
-			"timeout_level":     cmd.TimeoutResolution.Level,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"command":           NewStringValue(cmd.ExpandedCmd),
+			"working_directory": NewStringValue(cmd.EffectiveWorkDir),
+			"timeout":           NewIntValue(int64(cmd.EffectiveTimeout)),
+			"timeout_level":     NewStringValue(cmd.TimeoutResolution.Level),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
@@ -181,13 +219,13 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add environment variables to parameters if they exist
 	if len(env) > 0 {
-		analysis.Parameters["environment"] = env
+		analysis.Parameters["environment"] = NewStringMapValue(env)
 	}
 
 	// Add group information if available
 	if group != nil {
-		analysis.Parameters["group"] = group.Name
-		analysis.Parameters["group_description"] = group.Description
+		analysis.Parameters["group"] = NewStringValue(group.Name)
+		analysis.Parameters["group_description"] = NewStringValue(group.Description)
 	}
 
 	// Analyze security risks first
@@ -197,8 +235,8 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 
 	// Add user/group privilege specification if present (after security analysis)
 	if cmd.HasUserGroupSpecification() {
-		analysis.Parameters["run_as_user"] = cmd.RunAsUser()
-		analysis.Parameters["run_as_group"] = cmd.RunAsGroup()
+		analysis.Parameters["run_as_user"] = NewStringValue(cmd.RunAsUser())
+		analysis.Parameters["run_as_group"] = NewStringValue(cmd.RunAsGroup())
 
 		// Validate user/group configuration in dry-run mode
 		if d.privilegeManager != nil && d.privilegeManager.IsPrivilegedExecutionSupported() {
@@ -264,9 +302,10 @@ func (d *DryRunResourceManager) CreateTempDir(groupName string) (string, error) 
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    simulatedPath,
-		Parameters: map[string]any{
-			"group_name": groupName,
-			"purpose":    "temporary_directory",
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"group_name": NewStringValue(groupName),
+			"purpose":    NewStringValue("temporary_directory"),
 		},
 		Impact: ResourceImpact{
 			Reversible:  true,
@@ -288,8 +327,9 @@ func (d *DryRunResourceManager) CleanupTempDir(tempDirPath string) error {
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationDelete,
 		Target:    tempDirPath,
-		Parameters: map[string]any{
-			"path": tempDirPath,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"path": NewStringValue(tempDirPath),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false,
@@ -317,8 +357,9 @@ func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() erro
 		Type:      ResourceTypePrivilege,
 		Operation: OperationEscalate,
 		Target:    "system_privileges",
-		Parameters: map[string]any{
-			"context": "privilege_escalation",
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"context": NewStringValue("privilege_escalation"),
 		},
 		Impact: ResourceImpact{
 			Reversible:   true,
@@ -343,9 +384,10 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 		Type:      ResourceTypeNetwork,
 		Operation: OperationSend,
 		Target:    "notification_service",
-		Parameters: map[string]any{
-			"message": message,
-			"details": details,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"message": NewStringValue(message),
+			"details": NewAnyValue(details),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false,
@@ -365,10 +407,11 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    cmd.Output(),
-		Parameters: map[string]any{
-			"output_path":       cmd.Output(),
-			"command":           cmd.ExpandedCmd,
-			"working_directory": group.WorkDir,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Parameters: map[string]ParameterValue{
+			"output_path":       NewStringValue(cmd.Output()),
+			"command":           NewStringValue(cmd.ExpandedCmd),
+			"working_directory": NewStringValue(group.WorkDir),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Output files are persistent
@@ -387,11 +430,11 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	}
 
 	// Add analysis results to parameters
-	analysis.Parameters["resolved_path"] = outputAnalysis.ResolvedPath
-	analysis.Parameters["directory_exists"] = outputAnalysis.DirectoryExists
-	analysis.Parameters["write_permission"] = outputAnalysis.WritePermission
-	analysis.Parameters["security_risk"] = outputAnalysis.SecurityRisk.String()
-	analysis.Parameters["max_size_limit"] = outputAnalysis.MaxSizeLimit
+	analysis.Parameters["resolved_path"] = NewStringValue(outputAnalysis.ResolvedPath)
+	analysis.Parameters["directory_exists"] = NewBoolValue(outputAnalysis.DirectoryExists)
+	analysis.Parameters["write_permission"] = NewBoolValue(outputAnalysis.WritePermission)
+	analysis.Parameters["security_risk"] = NewStringValue(outputAnalysis.SecurityRisk.String())
+	analysis.Parameters["max_size_limit"] = NewIntValue(outputAnalysis.MaxSizeLimit)
 
 	// Set security risk based on analysis
 	analysis.Impact.SecurityRisk = outputAnalysis.SecurityRisk.String()
@@ -410,6 +453,89 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	return analysis
 }
 
+// SetExecutionStatus sets the execution status and phase
+func (d *DryRunResourceManager) SetExecutionStatus(status ExecutionStatus, phase ExecutionPhase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.executionStatus = status
+	d.executionPhase = phase
+}
+
+// SetExecutionError sets the execution error and automatically updates status to StatusError
+func (d *DryRunResourceManager) SetExecutionError(errType, message, component string, details map[string]any, phase ExecutionPhase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.executionError = &ExecutionError{
+		Type:      errType,
+		Message:   message,
+		Component: component,
+		Details:   details,
+	}
+	d.executionStatus = StatusError
+	d.executionPhase = phase
+}
+
+// calculateSummary calculates the execution summary from resource analyses
+func (d *DryRunResourceManager) calculateSummary() *ExecutionSummary {
+	summary := &ExecutionSummary{
+		Groups:   &Counts{},
+		Commands: &Counts{},
+	}
+
+	for i := range d.resourceAnalyses {
+		analysis := &d.resourceAnalyses[i]
+
+		// Count by type
+		switch analysis.Type {
+		case ResourceTypeGroup:
+			summary.Groups.Total++
+			// Skipped resources are counted separately, not as successful or failed
+			if analysis.SkipReason != "" {
+				summary.Groups.Skipped++
+				summary.Skipped++
+			} else {
+				switch analysis.Status {
+				case StatusSuccess:
+					summary.Groups.Successful++
+					summary.Successful++
+				case StatusError:
+					summary.Groups.Failed++
+					summary.Failed++
+				case "": // Legacy - no status set, assume success
+					summary.Groups.Successful++
+					summary.Successful++
+				}
+			}
+			summary.TotalResources++
+
+		case ResourceTypeCommand:
+			summary.Commands.Total++
+			// Skipped resources are counted separately, not as successful or failed
+			if analysis.SkipReason != "" {
+				summary.Commands.Skipped++
+				summary.Skipped++
+			} else {
+				switch analysis.Status {
+				case StatusSuccess:
+					summary.Commands.Successful++
+					summary.Successful++
+				case StatusError:
+					summary.Commands.Failed++
+					summary.Failed++
+				case "": // Legacy - no status set, assume success
+					summary.Commands.Successful++
+					summary.Successful++
+				}
+			}
+			summary.TotalResources++
+		}
+	}
+
+	return summary
+}
+
 // GetDryRunResults returns the dry-run results
 func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.mu.RLock()
@@ -423,6 +549,12 @@ func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.dryRunResult.ResourceAnalyses = make([]ResourceAnalysis, len(d.resourceAnalyses))
 	copy(d.dryRunResult.ResourceAnalyses, d.resourceAnalyses)
 
+	// Update execution status fields
+	d.dryRunResult.Status = d.executionStatus
+	d.dryRunResult.Phase = d.executionPhase
+	d.dryRunResult.Error = d.executionError
+	d.dryRunResult.Summary = d.calculateSummary()
+
 	return d.dryRunResult
 }
 
@@ -432,4 +564,74 @@ func (d *DryRunResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	defer d.mu.Unlock()
 
 	d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
+}
+
+// RecordGroupAnalysis records a group-level resource analysis with debug info
+func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	analysis := ResourceAnalysis{
+		Type:      ResourceTypeGroup,
+		Operation: OperationAnalyze,
+		Target:    groupName,
+		Status:    StatusSuccess, // Default to success in dry-run mode
+		Impact: ResourceImpact{
+			Description: "Group configuration analysis",
+			Reversible:  true,
+			Persistent:  false,
+		},
+		Timestamp: time.Now(),
+		Parameters: map[string]ParameterValue{
+			"group_name": NewStringValue(groupName),
+		},
+		DebugInfo: debugInfo,
+	}
+
+	d.resourceAnalyses = append(d.resourceAnalyses, analysis)
+	return nil
+}
+
+// UpdateCommandDebugInfo updates a specific command's debug info using its token
+// This should be called after ExecuteCommand to add final environment information
+func (d *DryRunResourceManager) UpdateCommandDebugInfo(token CommandToken, debugInfo *DebugInfo) error {
+	if token == "" {
+		return ErrInvalidCommandToken
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Find the command resource analysis by token
+	index, ok := d.tokenToIndex[token]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrInvalidCommandToken, token)
+	}
+
+	// Validate index bounds
+	if index < 0 || index >= len(d.resourceAnalyses) {
+		return fmt.Errorf("%w: index out of bounds", ErrInvalidCommandToken)
+	}
+
+	// Verify it's a command resource
+	if d.resourceAnalyses[index].Type != ResourceTypeCommand {
+		return fmt.Errorf("%w: token does not refer to a command resource", ErrInvalidCommandToken)
+	}
+
+	// Defensive check: DebugInfo should always be nil at this point
+	// UpdateCommandDebugInfo must be called exactly once per command token
+	if d.resourceAnalyses[index].DebugInfo != nil {
+		// This is a programming error - UpdateCommandDebugInfo was called multiple times
+		slog.Error("UpdateCommandDebugInfo called multiple times for the same token",
+			"command_index", index,
+			"token", string(token),
+			"has_existing_final_env", d.resourceAnalyses[index].DebugInfo.FinalEnvironment != nil,
+			"has_existing_inheritance", d.resourceAnalyses[index].DebugInfo.InheritanceAnalysis != nil)
+		return fmt.Errorf("%w: %s", ErrDuplicateDebugInfoUpdate, token)
+	}
+
+	// Set debug info (not merge - this is the first and only call)
+	d.resourceAnalyses[index].DebugInfo = debugInfo
+
+	return nil
 }

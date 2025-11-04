@@ -13,7 +13,7 @@ import (
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
 // NormalResourceManager or DryRunResourceManager depending on ExecutionMode.
-// It implements DryRunResourceManagerInterface so callers can always query dry-run results
+// It implements ResourceManager so callers can always query dry-run results
 // (returns nil in normal mode) and record analyses (no-op in normal mode).
 type DefaultResourceManager struct {
 	mode   ExecutionMode
@@ -60,7 +60,7 @@ func (d *DefaultResourceManager) activeManager() ResourceManager {
 }
 
 // ExecuteCommand delegates to the active manager.
-func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
+func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error) {
 	return d.activeManager().ExecuteCommand(ctx, cmd, groupSpec, env)
 }
 
@@ -107,4 +107,14 @@ func (d *DefaultResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	if d.mode == ExecutionModeDryRun {
 		d.dryrun.RecordAnalysis(analysis)
 	}
+}
+
+// RecordGroupAnalysis records group analysis in dry-run mode; no-op in normal mode.
+func (d *DefaultResourceManager) RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error {
+	return d.activeManager().RecordGroupAnalysis(groupName, debugInfo)
+}
+
+// UpdateCommandDebugInfo updates a command's debug info using its token in dry-run mode; no-op in normal mode.
+func (d *DefaultResourceManager) UpdateCommandDebugInfo(token CommandToken, debugInfo *DebugInfo) error {
+	return d.activeManager().UpdateCommandDebugInfo(token, debugInfo)
 }

@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### JSON Format Output for Dry-Run Mode
+
+Dry-run mode now supports JSON format output with comprehensive debug information, enabling machine processing and automated analysis of execution plans.
+
+**Features:**
+- New `--dry-run-format=json` flag for JSON output (default: text)
+- Debug information included in JSON output based on detail level:
+  - `summary`: No debug information
+  - `detailed`: Basic debug information (environment inheritance, final environment)
+  - `full`: Complete debug information with diff analysis
+- Environment variable inheritance analysis showing:
+  - Global and group-level configuration
+  - Inheritance mode (inherit/explicit/reject)
+  - Inherited variables list
+  - Removed allowlist variables
+  - Unavailable env_import variables
+- Final environment variables with source tracking
+- Logs output to stderr in JSON mode to keep stdout clean for piping
+
+**JSON Schema:**
+- `ResourceAnalysis` objects with `debug_info` field
+- `InheritanceAnalysis` for environment variable inheritance details
+- `FinalEnvironment` with per-variable source tracking
+- `InheritanceMode` JSON serialization (inherit/explicit/reject)
+
+**Example Usage:**
+```bash
+# JSON output with full debug information
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full
+
+# Pipe to jq for analysis
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | jq '.'
+
+# Extract debug information
+runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
+  jq '.resource_analyses[] | select(.debug_info != null) | .debug_info'
+```
+
+**Documentation:**
+- See `docs/user/dry_run_json_schema.md` for complete JSON schema reference
+- See `docs/user/runner_command.md` for usage examples
+
 #### Final Environment Variable Display in Dry-Run Mode
 
 When using `--dry-run-detail=full`, the final environment variables for each command are now displayed with their origin information.

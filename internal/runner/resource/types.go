@@ -12,9 +12,15 @@ type ResourceAnalysis struct {
 	Type       ResourceType      `json:"type"`
 	Operation  ResourceOperation `json:"operation"`
 	Target     string            `json:"target"`
-	Parameters map[string]any    `json:"parameters"`
+	Status     ExecutionStatus   `json:"status"`
+	Error      *ExecutionError   `json:"error,omitempty"`
+	SkipReason string            `json:"skip_reason,omitempty"`
+	Parameters ParametersMap     `json:"parameters"`
 	Impact     ResourceImpact    `json:"impact"`
 	Timestamp  time.Time         `json:"timestamp"`
+
+	// DebugInfo is optional and only populated based on dry-run detail level
+	DebugInfo *DebugInfo `json:"debug_info,omitempty"`
 }
 
 // ResourceType represents the type of resource being operated on
@@ -24,6 +30,8 @@ type ResourceType string
 const (
 	// ResourceTypeCommand represents command execution
 	ResourceTypeCommand ResourceType = "command"
+	// ResourceTypeGroup represents group configuration analysis
+	ResourceTypeGroup ResourceType = "group"
 	// ResourceTypeFilesystem represents filesystem operations
 	ResourceTypeFilesystem ResourceType = "filesystem"
 	// ResourceTypePrivilege represents privilege management
@@ -44,6 +52,8 @@ func (r ResourceType) String() string {
 type ResourceOperation string
 
 const (
+	// OperationAnalyze represents an analyze operation (e.g., group configuration analysis)
+	OperationAnalyze ResourceOperation = "analyze"
 	// OperationCreate represents a create operation
 	OperationCreate ResourceOperation = "create"
 	// OperationDelete represents a delete operation
@@ -136,11 +146,78 @@ func (o OutputFormat) String() string {
 // DryRunResult represents the complete result of a dry-run analysis
 type DryRunResult struct {
 	Metadata         *ResultMetadata    `json:"metadata"`
+	Status           ExecutionStatus    `json:"status"`
+	Phase            ExecutionPhase     `json:"phase"`
+	Error            *ExecutionError    `json:"error,omitempty"`
+	Summary          *ExecutionSummary  `json:"summary"`
 	ResourceAnalyses []ResourceAnalysis `json:"resource_analyses"`
 	SecurityAnalysis *SecurityAnalysis  `json:"security_analysis"`
 	EnvironmentInfo  *EnvironmentInfo   `json:"environment_info"`
 	Errors           []DryRunError      `json:"errors"`
 	Warnings         []DryRunWarning    `json:"warnings"`
+}
+
+// ExecutionStatus represents the overall execution status
+type ExecutionStatus string
+
+const (
+	// StatusSuccess indicates all operations completed successfully
+	StatusSuccess ExecutionStatus = "success"
+	// StatusError indicates a fatal error occurred
+	StatusError ExecutionStatus = "error"
+	// StatusPartial indicates partial execution with some failures
+	StatusPartial ExecutionStatus = "partial"
+)
+
+// String returns the string representation of ExecutionStatus
+func (e ExecutionStatus) String() string {
+	return string(e)
+}
+
+// ExecutionPhase represents the phase where execution stopped or completed
+type ExecutionPhase string
+
+const (
+	// PhaseCompleted indicates all phases completed successfully
+	PhaseCompleted ExecutionPhase = "completed"
+	// PhasePreExecution indicates error occurred during pre-execution validation
+	PhasePreExecution ExecutionPhase = "pre_execution"
+	// PhaseInitialization indicates error occurred during initialization
+	PhaseInitialization ExecutionPhase = "initialization"
+	// PhaseGroupExecution indicates error occurred during group execution
+	PhaseGroupExecution ExecutionPhase = "group_execution"
+)
+
+// String returns the string representation of ExecutionPhase
+func (e ExecutionPhase) String() string {
+	return string(e)
+}
+
+// ExecutionError represents a top-level execution error
+type ExecutionError struct {
+	Type      string         `json:"type"`
+	Message   string         `json:"message"`
+	Component string         `json:"component"`
+	Details   map[string]any `json:"details,omitempty"`
+}
+
+// ExecutionSummary provides summary statistics for the execution
+type ExecutionSummary struct {
+	TotalResources int     `json:"total_resources"`
+	Successful     int     `json:"successful"`
+	Failed         int     `json:"failed"`
+	Skipped        int     `json:"skipped"`
+	Groups         *Counts `json:"groups"`
+	Commands       *Counts `json:"commands"`
+}
+
+// Counts provides counts for a specific resource type
+// nolint:revive // Counts is intentionally named to avoid stuttering with resource.ResourceCounts
+type Counts struct {
+	Total      int `json:"total"`
+	Successful int `json:"successful"`
+	Failed     int `json:"failed"`
+	Skipped    int `json:"skipped"`
 }
 
 // ResultMetadata contains metadata about the dry-run result
@@ -270,7 +347,30 @@ const (
 	ErrorTypeSecurityError ErrorType = "security_error"
 	// ErrorTypeSystemError represents system errors
 	ErrorTypeSystemError ErrorType = "system_error"
+	// ErrorTypeExecutionError represents execution errors
+	ErrorTypeExecutionError ErrorType = "execution_error"
 )
+
+// Component represents the component name for error and warning reporting
+type Component string
+
+const (
+	// ComponentRunner represents the runner component
+	ComponentRunner Component = "runner"
+	// ComponentConfig represents the config component
+	ComponentConfig Component = "config"
+	// ComponentVerification represents the verification component
+	ComponentVerification Component = "verification"
+	// ComponentMain represents the main component
+	ComponentMain Component = "main"
+	// ComponentLogging represents the logging component
+	ComponentLogging Component = "logging"
+)
+
+// String returns the string representation of Component
+func (c Component) String() string {
+	return string(c)
+}
 
 // DryRunWarning represents a warning that occurred during dry-run
 type DryRunWarning struct {
@@ -294,3 +394,67 @@ const (
 	// WarningTypeCompatibility represents compatibility warnings
 	WarningTypeCompatibility WarningType = "compatibility"
 )
+
+// DebugInfo contains debug information for dry-run analysis
+// This is optional and only populated based on detail level
+type DebugInfo struct {
+	// InheritanceAnalysis contains environment variable inheritance information
+	// Populated for DetailLevelDetailed and DetailLevelFull
+	// Field content varies by detail level
+	InheritanceAnalysis *InheritanceAnalysis `json:"inheritance_analysis,omitempty"`
+
+	// FinalEnvironment contains the final resolved environment variables
+	// Only populated for DetailLevelFull
+	FinalEnvironment *FinalEnvironment `json:"final_environment,omitempty"`
+}
+
+// InheritanceAnalysis contains detailed information about environment variable inheritance
+type InheritanceAnalysis struct {
+	// Configuration fields (always present when InheritanceAnalysis is not nil)
+	GlobalEnvImport []string `json:"global_env_import"`
+	GlobalAllowlist []string `json:"global_allowlist"`
+	GroupEnvImport  []string `json:"group_env_import"`
+	GroupAllowlist  []string `json:"group_allowlist"`
+
+	// Computed field (always present when InheritanceAnalysis is not nil)
+	InheritanceMode runnertypes.InheritanceMode `json:"inheritance_mode"`
+
+	// Difference fields (only present for DetailLevelFull, omitempty otherwise)
+	// Variables inherited from global configuration
+	InheritedVariables []string `json:"inherited_variables,omitempty"`
+
+	// Variables removed from global allowlist by group override
+	RemovedAllowlistVariables []string `json:"removed_allowlist_variables,omitempty"`
+
+	// Internal variables (from env_import) that become unavailable
+	// when group overrides env_import
+	UnavailableEnvImportVariables []string `json:"unavailable_env_import_variables,omitempty"`
+}
+
+// FinalEnvironment contains the final resolved environment variables for a command
+// Only populated for DetailLevelFull
+type FinalEnvironment struct {
+	Variables map[string]EnvironmentVariable `json:"variables"`
+}
+
+// EnvironmentVariable represents a single environment variable with metadata
+type EnvironmentVariable struct {
+	// Value of the environment variable. For sensitive variables,
+	// the value is cleared (empty string) and the Masked field is set to true when ShowSensitive is false.
+	Value string `json:"value"`
+
+	// Source indicates where this variable comes from:
+	//   "system"  - from env_allowlist (system environment variable passed through)
+	//   "vars"    - from global or group level vars/env_import/env_vars sections
+	//   "command" - from command-level env_vars section
+	//
+	// Note: Currently, "env_import" is not distinguished from "vars" because variables
+	// from env_import are merged with vars during configuration expansion. Both are
+	// reported as "vars". This is a known limitation that maintains simplicity in the
+	// current architecture.
+	Source string `json:"source"`
+
+	// Masked indicates whether the value was redacted for security
+	// Only true when ShowSensitive is false and value contains sensitive data
+	Masked bool `json:"masked,omitempty"`
+}

@@ -47,7 +47,7 @@ func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -299,7 +299,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		group := createTestCommandGroup()
 		env := map[string]string{}
 
-		result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
+		_, result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result.Analysis)
@@ -314,7 +314,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			env := map[string]string{}
 			cmd := createRuntimeCommand(&tt.spec)
 
-			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+			_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result.Analysis)
@@ -365,7 +365,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	env := map[string]string{}
 	ctx := context.Background()
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -444,4 +444,342 @@ func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDryRunResourceManager_RecordGroupAnalysis(t *testing.T) {
+	tests := []struct {
+		name        string
+		groupName   string
+		debugInfo   *DebugInfo
+		expectError bool
+	}{
+		{
+			name:      "Record group analysis with debug info",
+			groupName: "test-group",
+			debugInfo: &DebugInfo{
+				InheritanceAnalysis: &InheritanceAnalysis{
+					GlobalEnvImport: []string{"DB_HOST=db_host"},
+					GlobalAllowlist: []string{"PATH"},
+					InheritanceMode: runnertypes.InheritanceModeInherit,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "Record group analysis with nil debug info",
+			groupName:   "test-group-2",
+			debugInfo:   nil,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := createTestDryRunResourceManager()
+
+			err := manager.RecordGroupAnalysis(tt.groupName, tt.debugInfo)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify the analysis was recorded
+				result := manager.GetDryRunResults()
+				require.NotNil(t, result)
+				require.Greater(t, len(result.ResourceAnalyses), 0)
+
+				// Find the group analysis
+				var foundAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeGroup {
+						foundAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, foundAnalysis, "Group analysis should be recorded")
+				assert.Equal(t, ResourceTypeGroup, foundAnalysis.Type)
+				assert.Equal(t, OperationAnalyze, foundAnalysis.Operation)
+				assert.Equal(t, tt.groupName, foundAnalysis.Target)
+				assert.Equal(t, tt.debugInfo, foundAnalysis.DebugInfo)
+			}
+		})
+	}
+}
+
+func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
+	tests := []struct {
+		name            string
+		setupFunc       func(*DryRunResourceManager) CommandToken
+		debugInfo       *DebugInfo
+		useInvalidToken bool
+		expectError     bool
+		errorContains   string
+		validateResult  func(*testing.T, *DryRunResourceManager)
+	}{
+		{
+			name: "Update command with final environment using valid token",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command analysis first
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+				return token
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateResult: func(t *testing.T, m *DryRunResourceManager) {
+				result := m.GetDryRunResults()
+				require.NotNil(t, result)
+				require.Greater(t, len(result.ResourceAnalyses), 0)
+
+				// Find the command analysis
+				var cmdAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+						cmdAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cmdAnalysis, "Command analysis should exist")
+				require.NotNil(t, cmdAnalysis.DebugInfo, "DebugInfo should be set")
+				require.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be set")
+				assert.Len(t, cmdAnalysis.DebugInfo.FinalEnvironment.Variables, 1)
+			},
+		},
+		{
+			name: "Update with invalid token",
+			setupFunc: func(_ *DryRunResourceManager) CommandToken {
+				return CommandToken("invalid-token")
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{},
+				},
+			},
+			expectError:   true,
+			errorContains: "invalid command token",
+		},
+		{
+			name: "Update with complete debug info including both fields",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+				return token
+			},
+			debugInfo: &DebugInfo{
+				InheritanceAnalysis: &InheritanceAnalysis{
+					GlobalEnvImport: []string{"TEST=test"},
+					InheritanceMode: runnertypes.InheritanceModeInherit,
+				},
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateResult: func(t *testing.T, m *DryRunResourceManager) {
+				result := m.GetDryRunResults()
+				require.NotNil(t, result)
+
+				// Find the command analysis
+				var cmdAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+						cmdAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cmdAnalysis)
+				require.NotNil(t, cmdAnalysis.DebugInfo)
+				assert.NotNil(t, cmdAnalysis.DebugInfo.InheritanceAnalysis, "InheritanceAnalysis should be set")
+				assert.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be set")
+			},
+		},
+		{
+			name: "Duplicate call should return error",
+			setupFunc: func(m *DryRunResourceManager) CommandToken {
+				// Record a command and update once
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				token, _, _ := m.ExecuteCommand(ctx, cmd, group, env)
+
+				// First update - should succeed
+				_ = m.UpdateCommandDebugInfo(token, &DebugInfo{
+					InheritanceAnalysis: &InheritanceAnalysis{
+						GlobalEnvImport: []string{"TEST=test"},
+						InheritanceMode: runnertypes.InheritanceModeInherit,
+					},
+				})
+				return token
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError:   true,
+			errorContains: "called multiple times",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := createTestDryRunResourceManager()
+
+			// Setup test state and get token
+			var token CommandToken
+			if tt.setupFunc != nil {
+				token = tt.setupFunc(manager)
+			}
+
+			err := manager.UpdateCommandDebugInfo(token, tt.debugInfo)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				if tt.validateResult != nil {
+					tt.validateResult(t, manager)
+				}
+			}
+		})
+	}
+}
+
+// TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted tests that
+// skipped resources are not counted as both successful/failed AND skipped
+func TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted(t *testing.T) {
+	manager := createTestDryRunResourceManager()
+
+	// Manually add resource analyses with different statuses
+
+	// Add 2 successful groups
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeGroup,
+		Status: StatusSuccess,
+		Target: "group1",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeGroup,
+		Status: StatusSuccess,
+		Target: "group2",
+	})
+
+	// Add 1 failed group
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeGroup,
+		Status: StatusError,
+		Target: "group3",
+	})
+
+	// Add 1 skipped group (with skip_reason)
+	// CRITICAL: This should ONLY be counted as skipped, NOT as successful
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:       ResourceTypeGroup,
+		Status:     StatusSuccess, // Status doesn't matter when skip_reason is set
+		SkipReason: "parent_group_failed",
+		Target:     "group4",
+	})
+
+	// Add 3 successful commands
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusSuccess,
+		Target: "cmd1",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusSuccess,
+		Target: "cmd2",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusSuccess,
+		Target: "cmd3",
+	})
+
+	// Add 1 failed command
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:   ResourceTypeCommand,
+		Status: StatusError,
+		Target: "cmd4",
+	})
+
+	// Add 2 skipped commands (with skip_reason)
+	// CRITICAL: These should ONLY be counted as skipped, NOT as successful
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:       ResourceTypeCommand,
+		Status:     StatusSuccess, // Status doesn't matter when skip_reason is set
+		SkipReason: "dependency_not_met",
+		Target:     "cmd5",
+	})
+	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
+		Type:       ResourceTypeCommand,
+		Status:     StatusError, // Even with error status, skip_reason takes precedence
+		SkipReason: "user_requested",
+		Target:     "cmd6",
+	})
+
+	// Calculate summary
+	summary := manager.calculateSummary()
+
+	// Verify group counts
+	assert.Equal(t, 4, summary.Groups.Total, "should have 4 total groups")
+	assert.Equal(t, 2, summary.Groups.Successful, "should have 2 successful groups")
+	assert.Equal(t, 1, summary.Groups.Failed, "should have 1 failed group")
+	assert.Equal(t, 1, summary.Groups.Skipped, "should have 1 skipped group")
+
+	// Verify command counts
+	assert.Equal(t, 6, summary.Commands.Total, "should have 6 total commands")
+	assert.Equal(t, 3, summary.Commands.Successful, "should have 3 successful commands")
+	assert.Equal(t, 1, summary.Commands.Failed, "should have 1 failed command")
+	assert.Equal(t, 2, summary.Commands.Skipped, "should have 2 skipped commands")
+
+	// Verify overall counts
+	assert.Equal(t, 10, summary.TotalResources, "should have 10 total resources")
+	assert.Equal(t, 5, summary.Successful, "should have 5 successful resources (2 groups + 3 commands)")
+	assert.Equal(t, 2, summary.Failed, "should have 2 failed resources (1 group + 1 command)")
+	assert.Equal(t, 3, summary.Skipped, "should have 3 skipped resources (1 group + 2 commands)")
+
+	// CRITICAL VERIFICATION: Total should equal successful + failed + skipped
+	// With the old buggy code, this would fail because skipped resources were double-counted
+	totalCounted := summary.Successful + summary.Failed + summary.Skipped
+	assert.Equal(t, summary.TotalResources, totalCounted,
+		"total resources should equal sum of successful + failed + skipped (no double counting)")
 }

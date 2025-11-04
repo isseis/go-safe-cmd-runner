@@ -63,7 +63,7 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 
 				// Execute all commands
 				for _, cmd := range commands {
-					_, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+					_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 					if err != nil {
 						b.Fatalf("unexpected error: %v", err)
 					}
@@ -97,9 +97,9 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 			Type:      ResourceTypeCommand,
 			Operation: OperationExecute,
 			Target:    "echo test command",
-			Parameters: map[string]interface{}{
-				"working_directory": "/test",
-				"timeout":           30,
+			Parameters: map[string]ParameterValue{
+				"working_directory": NewStringValue("/test"),
+				"timeout":           NewIntValue(30),
 			},
 			Impact: ResourceImpact{
 				Reversible:  true,
@@ -180,7 +180,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+			_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}
@@ -230,7 +230,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
 		// Execute all commands
 		for _, cmd := range commands {
-			_, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
+			_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}

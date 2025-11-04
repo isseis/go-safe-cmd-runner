@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 )
@@ -43,9 +44,9 @@ func PrintFinalEnvironment(
 		displayValue := envVar.Value
 		if !showSensitive && defaultSensitivePatterns.IsSensitiveEnvVar(k) {
 			displayValue = "[REDACTED]"
-		} else if len(displayValue) > MaxDisplayLength {
-			// Truncate long values for readability (only if not masked)
-			displayValue = displayValue[:MaxDisplayLength-EllipsisLength] + "..."
+		} else {
+			// Escape control characters for safe display (preserve full value for dry-run verification)
+			displayValue = common.EscapeControlChars(displayValue)
 		}
 
 		_, _ = fmt.Fprintf(w, "  %s=%s\n", k, displayValue)

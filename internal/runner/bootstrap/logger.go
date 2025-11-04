@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ type LoggerConfig struct {
 	LogDir          string
 	RunID           string
 	SlackWebhookURL string
+	ConsoleWriter   io.Writer // Writer for console output (stdout/stderr)
 }
 
 // SetupLoggerWithConfig initializes the logging system with all handlers atomically
@@ -73,12 +75,17 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 		handlers = append(handlers, interactiveHandler)
 	}
 
-	// 2. Conditional text handler (for non-interactive stdout output)
+	// 2. Conditional text handler (for non-interactive console output)
+	// Use configured console writer (stdout by default, can be overridden by caller)
+	consoleWriter := config.ConsoleWriter
+	if consoleWriter == nil {
+		consoleWriter = os.Stdout // Default to stdout if not specified
+	}
 	conditionalTextHandler, err := logging.NewConditionalTextHandler(logging.ConditionalTextHandlerOptions{
 		TextHandlerOptions: &slog.HandlerOptions{
 			Level: slogLevel,
 		},
-		Writer:       os.Stdout,
+		Writer:       consoleWriter,
 		Capabilities: capabilities,
 	})
 	if err != nil {

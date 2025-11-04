@@ -5,6 +5,200 @@ import (
 	"testing"
 )
 
+func TestCloneOrEmpty(t *testing.T) {
+	t.Run("returns copy of non-nil slice", func(t *testing.T) {
+		input := []string{"a", "b", "c"}
+		result := CloneOrEmpty(input)
+
+		// Check length
+		if len(result) != len(input) {
+			t.Errorf("expected length %d, got %d", len(input), len(result))
+		}
+
+		// Check contents
+		for i, v := range input {
+			if result[i] != v {
+				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
+			}
+		}
+
+		// Verify it's a copy (different underlying array)
+		input[0] = "modified"
+		if result[0] == "modified" {
+			t.Error("result should be a copy, not share underlying array")
+		}
+	})
+
+	t.Run("returns empty slice for nil input", func(t *testing.T) {
+		var input []string
+		result := CloneOrEmpty(input)
+
+		if result == nil {
+			t.Error("expected non-nil slice, got nil")
+		}
+
+		if len(result) != 0 {
+			t.Errorf("expected empty slice, got length %d", len(result))
+		}
+	})
+
+	t.Run("returns empty slice for empty input", func(t *testing.T) {
+		input := []string{}
+		result := CloneOrEmpty(input)
+
+		if result == nil {
+			t.Error("expected non-nil slice, got nil")
+		}
+
+		if len(result) != 0 {
+			t.Errorf("expected empty slice, got length %d", len(result))
+		}
+	})
+
+	t.Run("preserves all elements", func(t *testing.T) {
+		input := []string{"VAR1", "VAR2", "VAR3", "VAR4"}
+		result := CloneOrEmpty(input)
+
+		if len(result) != len(input) {
+			t.Errorf("expected length %d, got %d", len(input), len(result))
+		}
+
+		for i, expected := range input {
+			if result[i] != expected {
+				t.Errorf("expected result[%d] = %q, got %q", i, expected, result[i])
+			}
+		}
+	})
+}
+
+func TestSetDifferenceToSlice(t *testing.T) {
+	t.Run("returns elements in setA not in setB", func(t *testing.T) {
+		setA := map[string]struct{}{
+			"a": {},
+			"b": {},
+			"c": {},
+		}
+		setB := map[string]struct{}{
+			"b": {},
+		}
+
+		result := SetDifferenceToSlice(setA, setB)
+
+		expected := []string{"a", "c"}
+		if len(result) != len(expected) {
+			t.Errorf("expected length %d, got %d", len(expected), len(result))
+		}
+
+		for i, v := range expected {
+			if result[i] != v {
+				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
+			}
+		}
+	})
+
+	t.Run("returns empty slice when setA is subset of setB", func(t *testing.T) {
+		setA := map[string]struct{}{
+			"a": {},
+			"b": {},
+		}
+		setB := map[string]struct{}{
+			"a": {},
+			"b": {},
+			"c": {},
+		}
+
+		result := SetDifferenceToSlice(setA, setB)
+
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got %v", result)
+		}
+	})
+
+	t.Run("returns all elements when setB is empty", func(t *testing.T) {
+		setA := map[string]struct{}{
+			"a": {},
+			"b": {},
+			"c": {},
+		}
+		setB := map[string]struct{}{}
+
+		result := SetDifferenceToSlice(setA, setB)
+
+		expected := []string{"a", "b", "c"}
+		if len(result) != len(expected) {
+			t.Errorf("expected length %d, got %d", len(expected), len(result))
+		}
+
+		for i, v := range expected {
+			if result[i] != v {
+				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
+			}
+		}
+	})
+
+	t.Run("returns sorted results", func(t *testing.T) {
+		setA := map[string]struct{}{
+			"zebra": {},
+			"apple": {},
+			"mango": {},
+		}
+		setB := map[string]struct{}{}
+
+		result := SetDifferenceToSlice(setA, setB)
+
+		expected := []string{"apple", "mango", "zebra"}
+		if len(result) != len(expected) {
+			t.Errorf("expected length %d, got %d", len(expected), len(result))
+		}
+
+		for i, v := range expected {
+			if result[i] != v {
+				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
+			}
+		}
+	})
+
+	t.Run("works with integer sets", func(t *testing.T) {
+		setA := map[int]struct{}{
+			1: {},
+			2: {},
+			3: {},
+			4: {},
+		}
+		setB := map[int]struct{}{
+			2: {},
+			4: {},
+		}
+
+		result := SetDifferenceToSlice(setA, setB)
+
+		expected := []int{1, 3}
+		if len(result) != len(expected) {
+			t.Errorf("expected length %d, got %d", len(expected), len(result))
+		}
+
+		for i, v := range expected {
+			if result[i] != v {
+				t.Errorf("expected result[%d] = %d, got %d", i, v, result[i])
+			}
+		}
+	})
+
+	t.Run("handles empty setA", func(t *testing.T) {
+		setA := map[string]struct{}{}
+		setB := map[string]struct{}{
+			"a": {},
+			"b": {},
+		}
+
+		result := SetDifferenceToSlice(setA, setB)
+
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got %v", result)
+		}
+	})
+}
+
 func TestSliceToSet(t *testing.T) {
 	t.Run("converts string slice to set", func(t *testing.T) {
 		input := []string{"apple", "banana", "cherry"}

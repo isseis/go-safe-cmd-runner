@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -30,9 +29,18 @@ func mergeEnvWithOrigin(result map[string]EnvVar, envMap map[string]string, orig
 //
 // Merge order (lower priority to higher priority):
 //  1. System environment variables (filtered by env_allowlist)
-//  2. Global.ExpandedEnv
-//  3. Group.ExpandedEnv
-//  4. Command.ExpandedEnv
+//  2. Global.ExpandedEnv (from vars/env_import)
+//  3. Group.ExpandedEnv (from vars/env_import)
+//  4. Command.ExpandedEnv (from command-level env_vars)
+//
+// Source values in the returned EnvVar.Origin field:
+//   - "system": Variables from env_allowlist (system environment)
+//   - "vars": Variables from global or group level vars/env_import/env_vars
+//   - "command": Variables from command-level env_vars
+//
+// Note: Currently, we cannot distinguish between variables from env_import and vars
+// because they are merged during expansion. Both are reported as "vars" at global/group level.
+// This is a known limitation that could be addressed in future by tracking env_import separately.
 //
 // Returns:
 //   - A map where keys are environment variable names and values are EnvVar structs
@@ -52,19 +60,22 @@ func BuildProcessEnvironment(
 		if value, ok := systemEnv[name]; ok {
 			result[name] = EnvVar{
 				Value:  value,
-				Origin: "System (filtered by allowlist)",
+				Origin: "system",
 			}
 		}
 	}
 
 	// Step 2: Merge Global.ExpandedEnv (overrides system env)
-	mergeEnvWithOrigin(result, runtimeGlobal.ExpandedEnv, "Global")
+	// These come from global vars/env_import/env_vars sections
+	mergeEnvWithOrigin(result, runtimeGlobal.ExpandedEnv, "vars")
 
 	// Step 3: Merge Group.ExpandedEnv (overrides global env)
-	mergeEnvWithOrigin(result, runtimeGroup.ExpandedEnv, fmt.Sprintf("Group[%s]", runtimeGroup.Spec.Name))
+	// These come from group vars/env_import/env_vars sections
+	mergeEnvWithOrigin(result, runtimeGroup.ExpandedEnv, "vars")
 
 	// Step 4: Merge Command.ExpandedEnv (overrides group env)
-	mergeEnvWithOrigin(result, cmd.ExpandedEnv, fmt.Sprintf("Command[%s]", cmd.Name()))
+	// These come from command-level env_vars section
+	mergeEnvWithOrigin(result, cmd.ExpandedEnv, "command")
 
 	return result
 }

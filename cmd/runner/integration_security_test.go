@@ -379,7 +379,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			ctx := context.Background()
 			env := map[string]string{}
 
-			result, err := dryRunManager.ExecuteCommand(ctx, tc.cmd, tc.group, env)
+			_, result, err := dryRunManager.ExecuteCommand(ctx, tc.cmd, tc.group, env)
 
 			// Verify that execution completed successfully (analysis without actual execution)
 			if tc.expectedExecutionResult {

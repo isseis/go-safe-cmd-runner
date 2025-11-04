@@ -46,9 +46,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `ResourceTypeGroup` 定数を追加
-- [ ] `OperationAnalyze` 定数を追加
-- [ ] 既存の定数リストのコメントを更新
+- [x] `ResourceTypeGroup` 定数を追加
+- [x] `OperationAnalyze` 定数を追加
+- [x] 既存の定数リストのコメントを更新
 
 **完了基準**:
 - 新しい定数が正しく定義されている
@@ -60,9 +60,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `DebugInfo` 構造体を定義
-- [ ] JSONタグ (`omitempty`) を適切に設定
-- [ ] ドキュメントコメントを追加
+- [x] `DebugInfo` 構造体を定義
+- [x] JSONタグ (`omitempty`) を適切に設定
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 構造体が定義されている
@@ -75,12 +75,12 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `InheritanceAnalysis` 構造体を定義
-- [ ] 設定値フィールドを定義 (GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist)
-- [ ] 計算値フィールドを定義 (InheritanceMode)
-- [ ] 差分情報フィールドを定義 (InheritedVariables, RemovedAllowlistVariables, UnavailableEnvImportVariables)
-- [ ] 各フィールドに適切なJSONタグを設定 (`omitempty` を差分情報フィールドに付与)
-- [ ] ドキュメントコメントを追加
+- [x] `InheritanceAnalysis` 構造体を定義
+- [x] 設定値フィールドを定義 (GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist)
+- [x] 計算値フィールドを定義 (InheritanceMode)
+- [x] 差分情報フィールドを定義 (InheritedVariables, RemovedAllowlistVariables, UnavailableEnvImportVariables)
+- [x] 各フィールドに適切なJSONタグを設定 (`omitempty` を差分情報フィールドに付与)
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - すべてのフィールドが正しく定義されている
@@ -93,10 +93,10 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `FinalEnvironment` 構造体を定義
-- [ ] `EnvironmentVariable` 構造体を定義
-- [ ] JSONタグを適切に設定
-- [ ] ドキュメントコメントを追加 (特にSource フィールドの値の説明)
+- [x] `FinalEnvironment` 構造体を定義
+- [x] `EnvironmentVariable` 構造体を定義
+- [x] JSONタグを適切に設定
+- [x] ドキュメントコメントを追加 (特にSource フィールドの値の説明)
 
 **完了基準**:
 - 両方の構造体が定義されている
@@ -109,9 +109,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `ResourceAnalysis` に `DebugInfo *DebugInfo` フィールドを追加
-- [ ] JSONタグに `omitempty` を設定
-- [ ] ドキュメントコメントを追加
+- [x] `ResourceAnalysis` に `DebugInfo *DebugInfo` フィールドを追加
+- [x] JSONタグに `omitempty` を設定
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - フィールドが追加されている
@@ -121,11 +121,11 @@
 
 #### 3.2.6 InheritanceMode の JSON 変換メソッド実装
 
-**ファイル**: `internal/runner/runnertypes/inheritance_mode.go`
+**ファイル**: `internal/runner/runnertypes/config.go`
 
-- [ ] `MarshalJSON()` メソッドを実装
-- [ ] `UnmarshalJSON()` メソッドを実装
-- [ ] エラーハンドリングを追加
+- [x] `MarshalJSON()` メソッドを実装
+- [x] `UnmarshalJSON()` メソッドを実装
+- [x] エラーハンドリングを追加 (ErrInvalidInheritanceMode)
 - [ ] **セキュリティ**: エラーメッセージに入力値を含めない実装を確認
 
 **完了基準**:
@@ -137,17 +137,17 @@
 
 #### 3.2.7 InheritanceMode JSON 変換のユニットテスト
 
-**ファイル**: `internal/runner/runnertypes/inheritance_mode_test.go`
+**ファイル**: `internal/runner/runnertypes/config_test.go`
 
-- [ ] `TestInheritanceMode_MarshalJSON` を実装
-  - [ ] InheritanceModeInherit -> "inherit"
-  - [ ] InheritanceModeExplicit -> "explicit"
-  - [ ] InheritanceModeReject -> "reject"
-- [ ] `TestInheritanceMode_UnmarshalJSON` を実装
-  - [ ] "inherit" -> InheritanceModeInherit
-  - [ ] "explicit" -> InheritanceModeExplicit
-  - [ ] "reject" -> InheritanceModeReject
-  - [ ] 不正な値でエラーが返される
+- [x] `TestInheritanceMode_MarshalJSON` を実装
+  - [x] InheritanceModeInherit -> "inherit"
+  - [x] InheritanceModeExplicit -> "explicit"
+  - [x] InheritanceModeReject -> "reject"
+- [x] `TestInheritanceMode_UnmarshalJSON` を実装
+  - [x] "inherit" -> InheritanceModeInherit
+  - [x] "explicit" -> InheritanceModeExplicit
+  - [x] "reject" -> InheritanceModeReject
+  - [x] 不正な値でエラーが返される
   - [ ] **セキュリティテスト**: エラーメッセージに入力値が含まれないことを検証
   - [ ] **セキュリティテスト**: ログインジェクション試行（改行文字を含む値）
   - [ ] **セキュリティテスト**: パストラバーサル試行（`../../../etc/passwd`）
@@ -163,10 +163,10 @@
 
 #### 3.2.8 Phase 1 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] すべての新規構造体が正しくJSON変換される
-- [ ] 既存のテストに影響がない (回帰テスト)
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] すべての新規構造体が正しくJSON変換される
+- [x] 既存のテストに影響がない (回帰テスト)
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -184,9 +184,9 @@
 
 ### 3.5 Phase 1 のマイルストーン
 
-- [ ] Phase 1 完了
+- [x] Phase 1 完了
 - [ ] コードレビュー完了
-- [ ] Phase 1 のコミット作成
+- [x] Phase 1 のコミット作成
 
 ## 4. Phase 2: データ収集層
 
@@ -199,9 +199,9 @@
 
 **ファイル**: `internal/runner/debug/collector.go` (新規作成)
 
-- [ ] ファイルを作成
-- [ ] パッケージコメントを追加
-- [ ] 必要なインポートを追加
+- [x] ファイルを作成
+- [x] パッケージコメントを追加
+- [x] 必要なインポートを追加
 
 **完了基準**:
 - ファイルが作成されている
@@ -213,10 +213,10 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] `safeStringSlice()` を実装
-- [ ] `stringSliceToSet()` を実装
-- [ ] `setDifference()` を実装
-- [ ] `extractInternalVarNames()` を実装
+- [x] `safeStringSlice()` を実装
+- [x] `stringSliceToSet()` を実装
+- [x] `setDifference()` を実装
+- [x] `extractInternalVarNames()` を実装
 
 **完了基準**:
 - すべてのヘルパー関数が実装されている
@@ -229,15 +229,15 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] DetailLevelSummary の場合に nil を返す処理を実装
-- [ ] 設定値フィールドの収集を実装
-- [ ] 計算値フィールド (InheritanceMode) の設定を実装
-- [ ] DetailLevelFull の場合の差分情報計算を実装
-  - [ ] InheritedVariables の計算
-  - [ ] RemovedAllowlistVariables の計算
-  - [ ] UnavailableEnvImportVariables の計算
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] DetailLevelSummary の場合に nil を返す処理を実装
+- [x] 設定値フィールドの収集を実装
+- [x] 計算値フィールド (InheritanceMode) の設定を実装
+- [x] DetailLevelFull の場合の差分情報計算を実装
+  - [x] InheritedVariables の計算
+  - [x] RemovedAllowlistVariables の計算
+  - [x] UnavailableEnvImportVariables の計算
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -250,16 +250,16 @@
 
 **ファイル**: `internal/runner/debug/collector_test.go` (新規作成)
 
-- [ ] `TestCollectInheritanceAnalysis` を実装
-  - [ ] DetailLevelSummary: nil を返す
-  - [ ] DetailLevelDetailed: 基本フィールドのみ
-  - [ ] DetailLevelFull: すべてのフィールド
-  - [ ] InheritanceModeInherit の場合
-  - [ ] InheritanceModeExplicit の場合
-  - [ ] InheritanceModeReject の場合
-  - [ ] nil / 空スライスのエッジケース
-- [ ] テストヘルパー関数を実装
-- [ ] テストフィクスチャを作成
+- [x] `TestCollectInheritanceAnalysis` を実装
+  - [x] DetailLevelSummary: nil を返す
+  - [x] DetailLevelDetailed: 基本フィールドのみ
+  - [x] DetailLevelFull: すべてのフィールド
+  - [x] InheritanceModeInherit の場合
+  - [x] InheritanceModeExplicit の場合
+  - [x] InheritanceModeReject の場合
+  - [x] nil / 空スライスのエッジケース
+- [x] テストヘルパー関数を実装
+- [x] テストフィクスチャを作成
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -272,12 +272,12 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] DetailLevelFull 以外で nil を返す処理を実装
-- [ ] 環境変数マップをループ処理
-- [ ] センシティブ情報のマスキング処理を実装
-- [ ] `mapEnvVarSource()` ヘルパー関数を実装
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] DetailLevelFull 以外で nil を返す処理を実装
+- [x] 環境変数マップをループ処理
+- [x] センシティブ情報のマスキング処理を実装
+- [x] `mapEnvVarSource()` ヘルパー関数を実装
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -290,13 +290,13 @@
 
 **ファイル**: `internal/runner/debug/collector_test.go`
 
-- [ ] `TestCollectFinalEnvironment` を実装
-  - [ ] DetailLevelSummary: nil を返す
-  - [ ] DetailLevelDetailed: nil を返す
-  - [ ] DetailLevelFull + showSensitive=true: すべての値を含む
-  - [ ] DetailLevelFull + showSensitive=false: センシティブ値をマスク
-  - [ ] 各 Source タイプのテスト
-  - [ ] 空の環境変数マップのテスト
+- [x] `TestCollectFinalEnvironment` を実装
+  - [x] DetailLevelSummary: nil を返す
+  - [x] DetailLevelDetailed: nil を返す
+  - [x] DetailLevelFull + showSensitive=true: すべての値を含む
+  - [x] DetailLevelFull + showSensitive=false: センシティブ値をマスク
+  - [x] 各 Source タイプのテスト
+  - [x] 空の環境変数マップのテスト
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -307,10 +307,10 @@
 
 #### 4.2.7 Phase 2 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] データ収集関数が各Detail Levelで正しく動作する
-- [ ] 既存のテストに影響がない
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] データ収集関数が各Detail Levelで正しく動作する
+- [x] 既存のテストに影響がない
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -328,9 +328,9 @@
 
 ### 4.5 Phase 2 のマイルストーン
 
-- [ ] Phase 2 完了
+- [x] Phase 2 完了
 - [ ] コードレビュー完了
-- [ ] Phase 2 のコミット作成
+- [x] Phase 2 のコミット作成
 
 ## 5. Phase 3: フォーマット層
 
@@ -343,9 +343,9 @@
 
 **ファイル**: `internal/runner/debug/formatter.go` (新規作成)
 
-- [ ] ファイルを作成
-- [ ] パッケージコメントを追加
-- [ ] 必要なインポートを追加
+- [x] ファイルを作成
+- [x] パッケージコメントを追加
+- [x] 必要なインポートを追加
 
 **完了基準**:
 - ファイルが作成されている
@@ -357,8 +357,8 @@
 
 **ファイル**: `internal/runner/debug/formatter.go`
 
-- [ ] `formatStringSlice()` を実装
-- [ ] `formatGroupField()` を実装
+- [x] `formatStringSlice()` を実装
+- [x] `formatGroupField()` を実装
 
 **完了基準**:
 - ヘルパー関数が実装されている
@@ -370,17 +370,17 @@
 
 **ファイル**: `internal/runner/debug/formatter.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] nil チェックを実装
-- [ ] ヘッダーセクションの出力
-- [ ] Global Level セクションの出力
-- [ ] Group Level セクションの出力
-- [ ] Inheritance Mode セクションの出力
-- [ ] 差分情報セクションの出力（存在する場合のみ）
-  - [ ] Inherited Variables
-  - [ ] Removed Allowlist Variables
-  - [ ] Unavailable Env Import Variables
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] nil チェックを実装
+- [x] ヘッダーセクションの出力
+- [x] Global Level セクションの出力
+- [x] Group Level セクションの出力
+- [x] Inheritance Mode セクションの出力
+- [x] 差分情報セクションの出力（存在する場合のみ）
+  - [x] Inherited Variables
+  - [x] Removed Allowlist Variables
+  - [x] Unavailable Env Import Variables
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -393,12 +393,12 @@
 
 **ファイル**: `internal/runner/debug/formatter_test.go` (新規作成)
 
-- [ ] `TestFormatInheritanceAnalysisText` を実装
-  - [ ] nil の場合: 何も出力しない
-  - [ ] 基本フィールドのみの場合
-  - [ ] すべてのフィールドがある場合
-  - [ ] 各継承モードでの出力
-  - [ ] 出力内容を既存の `PrintFromEnvInheritance` と比較
+- [x] `TestFormatInheritanceAnalysisText` を実装
+  - [x] nil の場合: 何も出力しない
+  - [x] 基本フィールドのみの場合
+  - [x] すべてのフィールドがある場合
+  - [x] 各継承モードでの出力
+  - [x] 出力内容を既存の `PrintFromEnvInheritance` と比較
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -411,13 +411,13 @@
 
 **ファイル**: `internal/runner/debug/formatter.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] nil チェックを実装
-- [ ] ヘッダーの出力
-- [ ] 変数名のソート
-- [ ] 各環境変数の出力
-- [ ] マスクされた値の処理
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] nil チェックを実装
+- [x] ヘッダーの出力
+- [x] 変数名のソート
+- [x] 各環境変数の出力
+- [x] マスクされた値の処理
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -430,13 +430,13 @@
 
 **ファイル**: `internal/runner/debug/formatter_test.go`
 
-- [ ] `TestFormatFinalEnvironmentText` を実装
-  - [ ] nil の場合: 何も出力しない
-  - [ ] 空の環境変数の場合
-  - [ ] 複数の環境変数がある場合
-  - [ ] マスクされた変数がある場合
-  - [ ] 各 Source タイプでの出力
-  - [ ] 出力内容を既存の `PrintFinalEnvironment` と比較
+- [x] `TestFormatFinalEnvironmentText` を実装
+  - [x] nil の場合: 何も出力しない
+  - [x] 空の環境変数の場合
+  - [x] 複数の環境変数がある場合
+  - [x] マスクされた変数がある場合
+  - [x] 各 Source タイプでの出力
+  - [x] 出力内容を既存の `PrintFinalEnvironment` と比較
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -449,9 +449,9 @@
 
 **ファイル**: `internal/runner/debug/formatter_test.go`
 
-- [ ] `TestFormatConsistency` を実装
-  - [ ] 同じ入力で既存関数と新関数の出力を比較
-  - [ ] 各Detail Levelでの一貫性を検証
+- [x] `TestFormatConsistency` を実装
+  - [x] 同じ入力で既存関数と新関数の出力を比較
+  - [x] 各Detail Levelでの一貫性を検証
 
 **完了基準**:
 - 既存関数と新関数の出力が一致する
@@ -461,10 +461,10 @@
 
 #### 5.2.8 Phase 3 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] フォーマット関数が正しく動作する
-- [ ] 既存のテストに影響がない
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] フォーマット関数が正しく動作する
+- [x] 既存のテストに影響がない
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -482,9 +482,9 @@
 
 ### 5.5 Phase 3 のマイルストーン
 
-- [ ] Phase 3 完了
+- [x] Phase 3 完了
 - [ ] コードレビュー完了
-- [ ] Phase 3 のコミット作成
+- [x] Phase 3 のコミット作成
 
 ## 6. Phase 4: 実行層の統合
 
@@ -497,17 +497,17 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/resource/manager.go`
 
-- [ ] `RecordGroupAnalysis()` メソッドを実装
-  - [ ] 引数の検証
-  - [ ] ResourceAnalysis の作成
-  - [ ] DebugInfo の設定
-  - [ ] リストへの追加
-  - [ ] エラーハンドリング
-- [ ] `UpdateLastCommandDebugInfo()` メソッドを実装
-  - [ ] 最後のコマンドを検索
-  - [ ] DebugInfo のマージ
-  - [ ] エラーハンドリング
-- [ ] ドキュメントコメントを追加
+- [x] `RecordGroupAnalysis()` メソッドを実装
+  - [x] 引数の検証
+  - [x] ResourceAnalysis の作成
+  - [x] DebugInfo の設定
+  - [x] リストへの追加
+  - [x] エラーハンドリング
+- [x] `UpdateLastCommandDebugInfo()` メソッドを実装
+  - [x] 最後のコマンドを検索
+  - [x] DebugInfo のマージ
+  - [x] エラーハンドリング
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 両方のメソッドが実装されている
@@ -520,14 +520,14 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/resource/manager_test.go`
 
-- [ ] `TestRecordGroupAnalysis` を実装
-  - [ ] 正常ケース
-  - [ ] nil manager
-  - [ ] ResourceAnalyses への追加を検証
-- [ ] `TestUpdateLastCommandDebugInfo` を実装
-  - [ ] 正常ケース
-  - [ ] コマンドが存在しない場合
-  - [ ] DebugInfo のマージを検証
+- [x] `TestRecordGroupAnalysis` を実装
+  - [x] 正常ケース
+  - [x] nil manager
+  - [x] ResourceAnalyses への追加を検証
+- [x] `TestUpdateLastCommandDebugInfo` を実装
+  - [x] 正常ケース
+  - [x] コマンドが存在しない場合
+  - [x] DebugInfo のマージを検証
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -540,9 +540,9 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] `dryRunFormat` フィールドを追加
-- [ ] コンストラクタを修正
-- [ ] 既存のコードへの影響を確認
+- [x] `dryRunFormat` フィールドを追加
+- [x] コンストラクタを修正
+- [x] 既存のコードへの影響を確認
 
 **完了基準**:
 - フィールドが追加されている
@@ -555,12 +555,12 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] 既存の `PrintFromEnvInheritance` 呼び出しを特定
-- [ ] `CollectInheritanceAnalysis` 呼び出しに変更
-- [ ] 出力形式による条件分岐を実装
-  - [ ] JSON形式: `RecordGroupAnalysis` を呼び出し
-  - [ ] TEXT形式: `FormatInheritanceAnalysisText` を呼び出し
-- [ ] エラーハンドリングを追加
+- [x] 既存の `PrintFromEnvInheritance` 呼び出しを特定
+- [x] `CollectInheritanceAnalysis` 呼び出しに変更
+- [x] 出力形式による条件分岐を実装
+  - [x] JSON形式: `RecordGroupAnalysis` を呼び出し
+  - [x] TEXT形式: `FormatInheritanceAnalysisText` を呼び出し
+- [x] エラーハンドリングを追加
 
 **完了基準**:
 - 両方の出力形式で正しく動作する
@@ -573,12 +573,12 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] 既存の `PrintFinalEnvironment` 呼び出しを特定
-- [ ] `CollectFinalEnvironment` 呼び出しに変更
-- [ ] 出力形式による条件分岐を実装
-  - [ ] JSON形式: `UpdateLastCommandDebugInfo` を呼び出し
-  - [ ] TEXT形式: `FormatFinalEnvironmentText` を呼び出し
-- [ ] エラーハンドリングを追加
+- [x] 既存の `PrintFinalEnvironment` 呼び出しを特定
+- [x] `CollectFinalEnvironment` 呼び出しに変更
+- [x] 出力形式による条件分岐を実装
+  - [x] JSON形式: `UpdateLastCommandDebugInfo` を呼び出し
+  - [x] TEXT形式: `FormatFinalEnvironmentText` を呼び出し
+- [x] エラーハンドリングを追加
 
 **完了基準**:
 - 両方の出力形式で正しく動作する
@@ -591,9 +591,9 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **ファイル**: `cmd/runner/main.go`
 
-- [ ] `GroupExecutor` の作成箇所を特定
-- [ ] `dryRunFormat` パラメータを追加
-- [ ] フラグからの値の取得を確認
+- [x] `GroupExecutor` の作成箇所を特定
+- [x] `dryRunFormat` パラメータを追加
+- [x] フラグからの値の取得を確認
 
 **完了基準**:
 - `dryRunFormat` が正しく伝搬される
@@ -603,14 +603,14 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.7 統合テスト: JSON出力の検証
 
-**ファイル**: `cmd/runner/main_test.go` または `internal/runner/integration_test.go`
+**ファイル**: `cmd/runner/dry_run_integration_test.go`
 
-- [ ] `TestDryRunJSONOutput_WithDebugInfo` を実装
-  - [ ] テスト設定ファイルの作成
-  - [ ] JSON形式でdry-runを実行
-  - [ ] JSON出力のパースを検証
-  - [ ] グループレベルのDebugInfo を検証
-  - [ ] コマンドレベルのDebugInfo を検証
+- [x] `TestDryRunJSONOutput_WithDebugInfo` を実装
+  - [x] テスト設定ファイルの作成
+  - [x] JSON形式でdry-runを実行
+  - [x] JSON出力のパースを検証
+  - [x] グループレベルのDebugInfo を検証
+  - [x] コマンドレベルのDebugInfo を検証
 
 **完了基準**:
 - テストが実装されている
@@ -621,12 +621,12 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.8 統合テスト: Detail Level別の検証
 
-**ファイル**: `cmd/runner/main_test.go` または `internal/runner/integration_test.go`
+**ファイル**: `cmd/runner/dry_run_integration_test.go`
 
-- [ ] `TestDryRunJSONOutput_DetailLevels` を実装
-  - [ ] DetailLevelSummary: debug_info なし
-  - [ ] DetailLevelDetailed: 基本情報のみ
-  - [ ] DetailLevelFull: すべての情報
+- [x] `TestDryRunJSONOutput_DetailLevels` を実装
+  - [x] DetailLevelSummary: debug_info なし
+  - [x] DetailLevelDetailed: 基本情報のみ
+  - [x] DetailLevelFull: すべての情報
 
 **完了基準**:
 - すべてのDetail Levelでテストがパスする
@@ -636,11 +636,11 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.9 回帰テスト: テキスト出力の検証
 
-**ファイル**: `cmd/runner/main_test.go` または `internal/runner/integration_test.go`
+**ファイル**: `cmd/runner/dry_run_integration_test.go`
 
-- [ ] `TestDryRunTextOutput_Unchanged` を実装
-  - [ ] テキスト形式でdry-runを実行
-  - [ ] 既存の出力形式が維持されていることを確認
+- [x] `TestDryRunTextOutput_Unchanged` を実装
+  - [x] テキスト形式でdry-runを実行
+  - [x] 既存の出力形式が維持されていることを確認
 
 **完了基準**:
 - テキスト出力が変更されていない
@@ -650,11 +650,11 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.10 実際の設定ファイルでの動作確認
 
-- [ ] サンプル設定ファイルを作成
-- [ ] 各Detail Levelで実行
-- [ ] JSON出力を `jq` でパース
-- [ ] テキスト出力を目視確認
-- [ ] エラーケースの確認
+- [x] サンプル設定ファイルを作成 (testdata/dry_run_debug_test.toml)
+- [x] 各Detail Levelで実行（統合テストに含まれる）
+- [x] JSON出力を `jq` でパース（統合テストで検証）
+- [x] テキスト出力を目視確認（統合テストで検証）
+- [x] エラーケースの確認（センシティブマスキングテストに含まれる）
 
 **完了基準**:
 - すべての設定で正しく動作する
@@ -665,11 +665,11 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.11 Phase 4 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] `make build` が成功する
-- [ ] すべての統合テストがパスする
-- [ ] 既存のテストに影響がない（回帰なし）
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] `make build` が成功する
+- [x] すべての統合テストがパスする
+- [x] 既存のテストに影響がない（回帰なし）
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -687,22 +687,128 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 ### 6.5 Phase 4 のマイルストーン
 
-- [ ] Phase 4 完了
+- [x] Phase 4 完了
 - [ ] コードレビュー完了
-- [ ] Phase 4 のコミット作成
+- [x] Phase 4 のコミット作成
 
-## 7. ドキュメント更新
+## 7. Phase 5: ログのstderr出力対応
 
-### 7.1 タスク一覧
+### 7.1 目的
+JSON形式でdry-run出力する際、ログメッセージがstdoutに混在する問題を解決する。ログをstderrに出力することで、stdoutには純粋なJSON出力のみが含まれるようにし、`jq`などのツールで直接パイプ処理できるようにする。
 
-#### 7.1.1 ユーザーマニュアルの更新
+### 7.2 タスク一覧
 
-**ファイル**: `docs/user/dry_run.md` または新規作成
+#### 7.2.1 slog出力先の変更
 
-- [ ] JSON出力機能の説明を追加
-- [ ] Detail Level別の出力例を追加
-- [ ] 使用例を追加
-- [ ] センシティブ情報のマスキングについて説明
+**ファイル**: `internal/runner/bootstrap/logging.go`
+
+- [x] JSON形式のdry-run時にslogの出力先をstderrに変更
+- [x] `SetupLogging` 関数にoutput writer パラメータを追加
+- [x] dry-run format情報を渡す仕組みを追加
+
+**完了基準**:
+- JSON形式のdry-run時、slogがstderrに出力される
+- テキスト形式のdry-run時、既存の動作が維持される
+- 通常実行時、既存の動作が維持される
+
+**見積もり**: 1時間
+
+#### 7.2.2 main.goの修正
+
+**ファイル**: `cmd/runner/main.go`
+
+- [x] `SetupLogging` 呼び出し時に適切な出力先を指定
+- [x] JSON形式のdry-run時はstderrを指定
+- [x] その他の場合はstdout（既存の動作）
+
+**完了基準**:
+- JSON dry-run時にログがstderrに出力される
+- 既存の動作に影響がない
+
+**見積もり**: 30分
+
+#### 7.2.3 pre-execution logの出力先変更
+
+**ファイル**: 該当する初期化コード
+
+- [x] verification manager作成時のログ
+- [x] config読み込み時のログ
+- [x] その他のpre-execution logをstderrに出力
+
+**完了基準**:
+- すべてのログがstderrに出力される
+- JSON出力が純粋になる
+
+**見積もり**: 1.5時間
+
+#### 7.2.4 統合テストの更新
+
+**ファイル**: `cmd/runner/integration_dryrun_json_test.go`
+
+- [x] `runDryRun` 関数を修正し、stderrも取得
+- [x] JSON形式ではstdoutのみをパース（extractJSONFromOutput不要に）
+- [x] ログがstderrに出力されることを確認するテスト追加
+
+**完了基準**:
+- テストがJSON抽出なしで直接パース可能
+- ログがstderrに出力されることを検証
+- 既存のテストがすべてパス
+
+**見積もり**: 1.5時間
+
+#### 7.2.5 動作確認
+
+- [x] JSON形式でdry-run実行し、stdoutが純粋なJSONであることを確認
+- [x] `./runner --dry-run --dry-run-format json | jq .` が動作することを確認
+- [x] stderrにログが出力されることを確認
+- [x] テキスト形式のdry-runが既存通り動作することを確認
+
+**完了基準**:
+- jqで直接パイプ処理できる
+- ログはstderrに出力される
+- 既存の動作が維持される
+
+**見積もり**: 30分
+
+#### 7.2.6 Phase 5 の統合確認
+
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] `make build` が成功する
+- [x] すべてのテストがパスする
+- [x] 回帰テストがパスする
+
+**完了基準**:
+- すべてのチェックがパスする
+
+**見積もり**: 30分
+
+### 7.3 Phase 5 の合計見積もり
+
+**合計**: 約5.5時間
+
+### 7.4 Phase 5 の依存関係
+
+- Phase 4 が完了していること
+
+### 7.5 Phase 5 のマイルストーン
+
+- [x] Phase 5 完了
+- [x] コードレビュー完了
+- [x] Phase 5 のコミット作成
+
+## 8. ドキュメント更新
+
+### 8.1 タスク一覧
+
+#### 8.1.1 ユーザーマニュアルの更新
+
+**ファイル**: `docs/user/runner_command.ja.md`, `docs/user/runner_command.md`
+
+- [x] JSON出力機能の説明を追加
+- [x] Detail Level別の出力例を追加
+- [x] 使用例を追加
+- [x] センシティブ情報のマスキングについて説明
 
 **完了基準**:
 - ドキュメントが完全で分かりやすい
@@ -710,15 +816,15 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **見積もり**: 2時間
 
-#### 7.1.2 JSON Schema のドキュメント化
+#### 8.1.2 JSON Schema のドキュメント化
 
-**ファイル**: `docs/user/json_schema.md` (新規作成) または既存ドキュメントに追加
+**ファイル**: `docs/user/dry_run_json_schema.ja.md`, `docs/user/dry_run_json_schema.md` (新規作成)
 
-- [ ] `DebugInfo` の説明
-- [ ] `InheritanceAnalysis` の説明
-- [ ] `FinalEnvironment` の説明
-- [ ] `EnvironmentVariable` の説明
-- [ ] 各フィールドの説明とサンプル
+- [x] `DebugInfo` の説明
+- [x] `InheritanceAnalysis` の説明
+- [x] `FinalEnvironment` の説明
+- [x] `EnvironmentVariable` の説明
+- [x] 各フィールドの説明とサンプル
 
 **完了基準**:
 - JSON Schemaが完全に文書化されている
@@ -726,57 +832,57 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **見積もり**: 2時間
 
-#### 7.1.3 README.md の更新
+#### 8.1.3 README.md の更新
 
-**ファイル**: `README.md`
+**ファイル**: `README.md`, `README.ja.md`
 
-- [ ] JSON出力機能の追加を記載
-- [ ] 簡単な使用例を追加
+- [x] JSON出力機能の追加を記載
+- [x] 簡単な使用例を追加
 
 **完了基準**:
 - 新機能が適切に紹介されている
 
 **見積もり**: 30分
 
-#### 7.1.4 CHANGELOG の更新
+#### 8.1.4 CHANGELOG の更新
 
-**ファイル**: `CHANGELOG.md` (存在する場合)
+**ファイル**: `CHANGELOG.md`
 
-- [ ] 新機能として記載
-- [ ] 変更内容のサマリーを追加
+- [x] 新機能として記載
+- [x] 変更内容のサマリーを追加
 
 **完了基準**:
 - CHANGELOGが更新されている
 
 **見積もり**: 15分
 
-### 7.2 ドキュメント更新の合計見積もり
+### 8.2 ドキュメント更新の合計見積もり
 
 **合計**: 約4.75時間
 
-### 7.3 ドキュメント更新の依存関係
+### 8.3 ドキュメント更新の依存関係
 
-- Phase 4 が完了していること
+- Phase 5 が完了していること
 
-## 8. 最終確認とリリース準備
+## 9. 最終確認とリリース準備
 
-### 8.1 タスク一覧
+### 9.1 タスク一覧
 
-#### 8.1.1 全体テストの実行
+#### 9.1.1 全体テストの実行
 
-- [ ] すべてのユニットテストが成功
-- [ ] すべての統合テストが成功
-- [ ] すべての回帰テストが成功
-- [ ] `make test` が成功
-- [ ] `make lint` が成功
-- [ ] `make build` が成功
+- [x] すべてのユニットテストが成功
+- [x] すべての統合テストが成功
+- [x] すべての回帰テストが成功
+- [x] `make test` が成功
+- [x] `make lint` が成功
+- [-] `make build` が成功（スキップ - make test で既にビルド済み）
 
 **完了基準**:
 - すべてのテストがパスする
 
 **見積もり**: 30分
 
-#### 8.1.2 パフォーマンステスト
+#### 9.1.2 パフォーマンステスト
 
 **ベンチマーク設定ファイルの準備**:
 - [ ] 小規模設定ファイル作成（10グループ、各2コマンド）
@@ -815,7 +921,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **見積もり**: 2時間（プロファイリングと最適化を含む場合は+1時間）
 
-#### 8.1.3 最終コードレビュー
+#### 9.1.3 最終コードレビュー
 
 - [ ] すべてのコードがレビュー済み
 - [ ] レビューコメントが反映済み
@@ -826,7 +932,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **見積もり**: 2時間
 
-#### 8.1.4 リリースノートの作成
+#### 9.1.4 リリースノートの作成
 
 - [ ] 新機能の説明
 - [ ] 使用方法の概要
@@ -838,13 +944,13 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **見積もり**: 1時間
 
-### 8.2 最終確認の合計見積もり
+### 9.2 最終確認の合計見積もり
 
 **合計**: 約5.5時間（パフォーマンステスト拡充により1時間増、最適化が必要な場合は+1時間）
 
-## 9. 実装スケジュールのサマリー
+## 10. 実装スケジュールのサマリー
 
-### 9.1 フェーズ別の見積もり
+### 14.1 フェーズ別の見積もり
 
 | フェーズ | 内容 | 見積もり時間 | 依存関係 |
 |---------|------|-------------|---------|
@@ -856,7 +962,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 | 最終確認 | テスト・レビュー・パフォーマンス | 5.5時間 | すべて |
 | **合計** | | **49.75時間** | |
 
-### 9.2 推奨スケジュール
+### 14.2 推奨スケジュール
 
 1日あたり4-6時間の実装時間を想定した場合：
 
@@ -869,9 +975,9 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 **合計期間**: 約3週間
 
-## 10. リスク管理
+## 11. リスク管理
 
-### 10.1 潜在的なリスク
+### 11.1 潜在的なリスク
 
 | リスク | 影響 | 確率 | 対策 |
 |--------|------|------|------|
@@ -881,7 +987,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 | センシティブ情報の漏洩 | 高 | 低 | デフォルトでマスク、徹底的なテスト |
 | JSON Schema の後方互換性 | 中 | 低 | `omitempty` タグの使用、既存テストで確認 |
 
-### 10.2 リスク軽減策
+### 11.2 リスク軽減策
 
 1. **段階的な実装**: 各フェーズを独立してテスト
 2. **頻繁なコミット**: 問題発生時にロールバック可能
@@ -889,7 +995,7 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 4. **コードレビュー**: 各フェーズ完了後にレビュー
 5. **ドキュメント**: 実装と並行してドキュメント更新
 
-## 11. 成功基準
+## 12. 成功基準
 
 プロジェクト完了時の成功基準：
 
@@ -903,16 +1009,16 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 - [ ] ドキュメントが完全で分かりやすい
 - [ ] コードレビューが承認されている
 
-## 12. 実装の進捗管理
+## 13. 実装の進捗管理
 
 各タスクのチェックボックスを使用して進捗を管理する。
 
-### 12.1 進捗の記録方法
+### 13.1 進捗の記録方法
 
 - [ ] 未着手: チェックボックスが空
 - [x] 完了: チェックボックスにチェックを入れる
 
-### 12.2 フェーズ完了の報告
+### 13.2 フェーズ完了の報告
 
 各フェーズ完了時に：
 1. すべてのタスクのチェックボックスを確認
@@ -921,14 +1027,14 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 4. マイルストーンのチェックボックスにチェックを入れる
 5. 次のフェーズに進む
 
-## 13. 補足情報
+## 14. 補足情報
 
-### 13.1 開発環境
+### 14.1 開発環境
 
 - Go 1.23.10
 - 必要なツール: `make`, `golangci-lint`, `jq`
 
-### 13.2 テスト実行コマンド
+### 14.2 テスト実行コマンド
 
 ```bash
 # すべてのテストを実行
@@ -945,7 +1051,7 @@ go tool cover -html=coverage.out
 make lint
 ```
 
-### 13.3 デバッグ用のコマンド
+### 14.3 デバッグ用のコマンド
 
 ```bash
 # テキスト形式でdry-run
@@ -961,7 +1067,7 @@ make lint
 ./build/runner --config test.toml --dry-run --dry-run-format json --dry-run-detail full | jq '.resource_analyses[] | select(.debug_info != null) | .debug_info'
 ```
 
-### 13.4 問い合わせ先
+### 14.4 問い合わせ先
 
 実装中に質問や問題が発生した場合：
 - アーキテクチャに関する質問: [アーキテクチャ設計書](./02_architecture.ja.md) を参照

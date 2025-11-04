@@ -40,7 +40,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -52,8 +52,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		// Check analysis contains user/group information
 		analysis := result.Analysis
 		assert.NotNil(t, analysis)
-		assert.Equal(t, "testuser", analysis.Parameters["run_as_user"])
-		assert.Equal(t, "testgroup", analysis.Parameters["run_as_group"])
+		assert.Equal(t, "testuser", analysis.Parameters["run_as_user"].Value())
+		assert.Equal(t, "testgroup", analysis.Parameters["run_as_group"].Value())
 		assert.Contains(t, analysis.Impact.Description, "[INFO: User/Group configuration validated]")
 	})
 
@@ -83,7 +83,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err) // Dry-run should not fail, but report issues
 		assert.NotNil(t, result)
@@ -92,8 +92,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		// Check analysis contains error information
 		analysis := result.Analysis
 		assert.NotNil(t, analysis)
-		assert.Equal(t, "nonexistent_user", analysis.Parameters["run_as_user"])
-		assert.Equal(t, "nonexistent_group", analysis.Parameters["run_as_group"])
+		assert.Equal(t, "nonexistent_user", analysis.Parameters["run_as_user"].Value())
+		assert.Equal(t, "nonexistent_group", analysis.Parameters["run_as_group"].Value())
 		assert.Contains(t, analysis.Impact.Description, "[ERROR: User/Group validation failed:")
 		assert.Equal(t, riskLevelHigh, analysis.Impact.SecurityRisk)
 	})
@@ -124,7 +124,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -162,7 +162,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -200,7 +200,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -212,8 +212,8 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		// Check analysis
 		analysis := result.Analysis
 		assert.NotNil(t, analysis)
-		assert.Equal(t, "testuser", analysis.Parameters["run_as_user"])
-		assert.Equal(t, "", analysis.Parameters["run_as_group"])
+		assert.Equal(t, "testuser", analysis.Parameters["run_as_user"].Value())
+		assert.Equal(t, "", analysis.Parameters["run_as_group"].Value())
 		assert.Contains(t, analysis.Impact.Description, "[INFO: User/Group configuration validated]")
 	})
 
@@ -242,7 +242,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			Description: "Test group",
 		}
 
-		result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
+		_, result, err := manager.ExecuteCommand(context.Background(), cmd, group, map[string]string{})
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)

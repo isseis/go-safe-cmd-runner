@@ -4,7 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +12,119 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDryRun_JSON_OutputStructure(t *testing.T) {
+	tests := []struct {
+		name             string
+		configContent    string
+		expectedStatus   string
+		expectedPhase    string
+		expectError      bool
+		expectErrorField bool
+	}{
+		{
+			name: "success case with status and summary",
+			configContent: `
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/echo"
+args = ["hello"]
+`,
+			expectedStatus:   "success",
+			expectedPhase:    "completed",
+			expectError:      false,
+			expectErrorField: false,
+		},
+		// Note: Pre-execution errors (like config validation failures) occur before
+		// dry-run mode starts, so they don't produce JSON output. They are handled
+		// by the logging system and output error messages to stdout/stderr.
+		// The structured JSON output only applies to errors that occur during dry-run execution.
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary config file
+			tmpFile, err := os.CreateTemp("", "test-config-*.toml")
+			require.NoError(t, err)
+			defer os.Remove(tmpFile.Name())
+
+			_, err = tmpFile.WriteString(tt.configContent)
+			require.NoError(t, err)
+			tmpFile.Close()
+
+			// Run command in dry-run mode with JSON output
+			// Capture stdout and stderr separately to verify JSON output separation
+			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
+			cmd.Dir = "."
+
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+
+			err = cmd.Run()
+
+			if tt.expectError {
+				// For pre-execution errors, the command should fail
+				require.Error(t, err, "expected command to fail for error case")
+			} else {
+				require.NoError(t, err, "dry-run should succeed")
+			}
+
+			// Stdout should contain ONLY pure JSON (no log prefixes)
+			stdoutOutput := stdout.String()
+			stderrOutput := stderr.String()
+
+			// For pre-execution errors, JSON might not be output to stdout
+			if tt.expectError && stdoutOutput == "" {
+				// Pre-execution errors occur before dry-run mode starts, so no JSON output
+				// Verify error message is in stderr
+				require.NotEmpty(t, stderrOutput, "stderr should contain error information")
+				return
+			}
+
+			// Parse JSON output directly from stdout (should not need to search for JSON start)
+			var result struct {
+				Status string `json:"status"`
+				Phase  string `json:"phase"`
+				Error  *struct {
+					Type      string         `json:"type"`
+					Message   string         `json:"message"`
+					Component string         `json:"component"`
+					Details   map[string]any `json:"details,omitempty"`
+				} `json:"error,omitempty"`
+				Summary *struct {
+					TotalResources int `json:"total_resources"`
+					Successful     int `json:"successful"`
+					Failed         int `json:"failed"`
+					Skipped        int `json:"skipped"`
+				} `json:"summary"`
+				ResourceAnalyses []map[string]any `json:"resource_analyses"`
+			}
+
+			err = json.Unmarshal([]byte(stdoutOutput), &result)
+			require.NoError(t, err, "stdout should be valid JSON (no log prefixes): %s", stdoutOutput)
+
+			// Check status and phase
+			assert.Equal(t, tt.expectedStatus, result.Status, "status should match")
+			assert.Equal(t, tt.expectedPhase, result.Phase, "phase should match")
+
+			// Check error field
+			if tt.expectErrorField {
+				require.NotNil(t, result.Error, "error field should be present")
+				assert.NotEmpty(t, result.Error.Type, "error type should be set")
+				assert.NotEmpty(t, result.Error.Message, "error message should be set")
+			} else {
+				assert.Nil(t, result.Error, "error field should not be present")
+			}
+
+			// Check summary is always present
+			require.NotNil(t, result.Summary, "summary should always be present")
+		})
+	}
+}
 
 func TestDryRun_JSON_TimeoutResolutionContext(t *testing.T) {
 	tests := []struct {
@@ -90,25 +202,46 @@ args = ["hello"]
 			output, err := cmd.Output() // Use Output() instead of CombinedOutput() to get only stdout
 			require.NoError(t, err, "dry-run should succeed")
 
-			// Extract JSON from output (handles potential non-JSON prefix robustly)
-			jsonOutput, err := extractJSON(string(output))
-			require.NoError(t, err, "should be able to extract valid JSON from output")
-
+			// Stdout contains pure JSON (logs go to stderr)
 			var result struct {
+				Status  string `json:"status"`
+				Phase   string `json:"phase"`
+				Summary *struct {
+					TotalResources int `json:"total_resources"`
+				} `json:"summary"`
 				ResourceAnalyses []struct {
 					Type       string         `json:"type"`
+					Status     string         `json:"status"`
 					Parameters map[string]any `json:"parameters"`
 				} `json:"resource_analyses"`
 			}
 
-			err = json.Unmarshal([]byte(jsonOutput), &result)
-			require.NoError(t, err, "output should be valid JSON: %s", jsonOutput)
+			err = json.Unmarshal(output, &result)
+			require.NoError(t, err, "output should be valid JSON: %s", string(output))
 
-			// Find command analysis
+			// Check top-level status and phase
+			assert.Equal(t, "success", result.Status, "status should be success")
+			assert.Equal(t, "completed", result.Phase, "phase should be completed")
+			require.NotNil(t, result.Summary, "summary should be present")
+
+			// Find command analysis (may not be the first element due to group analysis)
 			require.NotEmpty(t, result.ResourceAnalyses, "should have at least one analysis")
 
-			cmdAnalysis := result.ResourceAnalyses[0]
-			assert.Equal(t, "command", cmdAnalysis.Type)
+			var cmdAnalysis *struct {
+				Type       string         `json:"type"`
+				Status     string         `json:"status"`
+				Parameters map[string]any `json:"parameters"`
+			}
+			for i := range result.ResourceAnalyses {
+				if result.ResourceAnalyses[i].Type == "command" {
+					cmdAnalysis = &result.ResourceAnalyses[i]
+					break
+				}
+			}
+			require.NotNil(t, cmdAnalysis, "should have a command analysis")
+
+			// Check resource-level status
+			assert.Equal(t, "success", cmdAnalysis.Status, "command status should be success")
 
 			// Check timeout parameters
 			timeout, ok := cmdAnalysis.Parameters["timeout"]
@@ -120,41 +253,4 @@ args = ["hello"]
 			assert.Equal(t, tt.expectedLevel, timeoutLevel, "timeout_level should match expected value")
 		})
 	}
-}
-
-// extractJSON attempts to extract a JSON object from a string that may have a non-JSON prefix.
-// It's designed to be robust against noisy output that can occur, for example, with `go run`.
-func extractJSON(output string) (string, error) {
-	// The most likely case is that the output is a valid JSON object, possibly with whitespace.
-	trimmedOutput := strings.TrimSpace(output)
-	if json.Valid([]byte(trimmedOutput)) {
-		return trimmedOutput, nil
-	}
-
-	// If the full output is not valid JSON, it might have a prefix (e.g., build messages).
-	// We assume the JSON object starts with '{'.
-	firstBrace := strings.Index(trimmedOutput, "{")
-	if firstBrace == -1 {
-		return "", fmt.Errorf("no JSON object found in output: %s", output)
-	}
-
-	// The simplest case is that the JSON starts at the first brace.
-	candidate := trimmedOutput[firstBrace:]
-	if json.Valid([]byte(candidate)) {
-		return candidate, nil
-	}
-
-	// If that fails, the prefix itself might contain a '{'.
-	// We then try from the last '{', assuming it's the start of the main JSON object.
-	// This is a heuristic that works for outputs like "log: {invalid}. {valid_json}".
-	lastBrace := strings.LastIndex(trimmedOutput, "{")
-	// No need to check for -1, as we already found at least one '{' above.
-	if lastBrace > firstBrace {
-		candidate = trimmedOutput[lastBrace:]
-		if json.Valid([]byte(candidate)) {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("could not extract valid JSON from output: %s", output)
 }

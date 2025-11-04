@@ -27,12 +27,30 @@ func (m *MockResourceManager) GetMode() resource.ExecutionMode {
 }
 
 // ExecuteCommand executes a command with the given context, command spec, group spec, and environment
-func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*resource.ExecutionResult, error) {
+func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (resource.CommandToken, *resource.ExecutionResult, error) {
 	args := m.Called(ctx, cmd, group, env)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+
+	// Expected format: .Return(token, result, error)
+	// All three values must be provided, even if token is "" or result is nil
+	const (
+		tokenIndex  = 0
+		resultIndex = 1
+		errorIndex  = 2
+	)
+
+	// Extract token (may be empty string)
+	var token resource.CommandToken
+	if args.Get(tokenIndex) != nil {
+		token = args.Get(tokenIndex).(resource.CommandToken)
 	}
-	return args.Get(0).(*resource.ExecutionResult), args.Error(1)
+
+	// Extract result (may be nil) and error
+	var result *resource.ExecutionResult
+	if args.Get(resultIndex) != nil {
+		result = args.Get(resultIndex).(*resource.ExecutionResult)
+	}
+
+	return token, result, args.Error(errorIndex)
 }
 
 // ValidateOutputPath validates that the output path is within the working directory
@@ -78,4 +96,16 @@ func (m *MockResourceManager) GetDryRunResults() *resource.DryRunResult {
 		return nil
 	}
 	return args.Get(0).(*resource.DryRunResult)
+}
+
+// RecordGroupAnalysis records group analysis in dry-run mode
+func (m *MockResourceManager) RecordGroupAnalysis(groupName string, debugInfo *resource.DebugInfo) error {
+	args := m.Called(groupName, debugInfo)
+	return args.Error(0)
+}
+
+// UpdateCommandDebugInfo updates a command's debug info using its token in dry-run mode
+func (m *MockResourceManager) UpdateCommandDebugInfo(token resource.CommandToken, debugInfo *resource.DebugInfo) error {
+	args := m.Called(token, debugInfo)
+	return args.Error(0)
 }

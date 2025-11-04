@@ -48,11 +48,15 @@ func (e ExecutionMode) String() string {
 	}
 }
 
+// CommandToken is a unique identifier for a command execution
+// Used to safely update debug information even in parallel execution scenarios
+type CommandToken string
+
 // ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
 // nolint:revive // ResourceManager is intentionally named to be clear about its purpose
 type ResourceManager interface {
-	// Command execution
-	ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error)
+	// Command execution - returns a token that can be used to update debug info
+	ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error)
 
 	// Output validation - validates output paths before command execution
 	ValidateOutputPath(outputPath, workDir string) error
@@ -70,14 +74,10 @@ type ResourceManager interface {
 
 	// Dry-run results (returns nil for normal execution mode)
 	GetDryRunResults() *DryRunResult
-}
 
-// DryRunResourceManagerInterface extends ResourceManager with dry-run specific functionality
-type DryRunResourceManagerInterface interface {
-	ResourceManager
-
-	// Dry-run specific
-	RecordAnalysis(analysis *ResourceAnalysis)
+	// Dry-run analysis recording (no-op for normal execution mode)
+	RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error
+	UpdateCommandDebugInfo(token CommandToken, debugInfo *DebugInfo) error
 }
 
 // ExecutionResult unified result for both normal and dry-run

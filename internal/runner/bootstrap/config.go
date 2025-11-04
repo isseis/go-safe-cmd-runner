@@ -6,6 +6,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
@@ -35,7 +36,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeRequiredArgumentMissing,
 			Message:   "Config file path is required",
-			Component: "config",
+			Component: string(resource.ComponentConfig),
 			RunID:     runID,
 		}
 	}
@@ -47,7 +48,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Config verification and reading failed: %v", err),
-			Component: "verification",
+			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
@@ -61,7 +62,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Failed to load config: %v", err),
-			Component: "config",
+			Component: string(resource.ComponentConfig),
 			RunID:     runID,
 		}
 	}

@@ -188,13 +188,13 @@ func findGroupByName(groups []runnertypes.GroupSpec, name string) *runnertypes.G
 	return nil
 }
 
-// ===========================================
-// Phase 1.4: TOML Parse Test for FromEnv/Vars
-// ===========================================
+// =================================================================
+// TOML Parse Test for FromEnv/Vars (Variable Expansion Foundation)
+// =================================================================
 
-// TestPhase1_ParseFromEnvAndVars tests that FromEnv and Vars fields are correctly parsed from TOML
-func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
-	t.Skip("Skipping phase 1 test - phase 9 integration covers this")
+// TestTOML_ParseFromEnvAndVars tests that FromEnv and Vars fields are correctly parsed from TOML
+func TestTOML_ParseFromEnvAndVars(t *testing.T) {
+	t.Skip("Skipping - integration test covers this functionality")
 
 	configPath := "testdata/phase1_basic_vars.toml"
 
@@ -255,14 +255,14 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 	assert.Equal(t, expectedCmdArgs, cmd.Args, "Command.Args should be parsed correctly")
 }
 
-// TestPhase9Integration tests the full integration of variable expansion in the config loader
-func TestPhase9Integration(t *testing.T) {
-	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
+// TestVariableExpansionIntegration tests the full integration of variable expansion in the config loader
+func TestVariableExpansionIntegration(t *testing.T) {
+	t.Skip("Skipping - expansion not yet implemented in loader")
 }
 
 // TestFromEnvMergeIntegration verifies that from_env is merged between Global and Group levels
 func TestFromEnvMergeIntegration(t *testing.T) {
-	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
+	t.Skip("Skipping - expansion not yet implemented in loader")
 }
 
 // TestLoadConfig_NegativeTimeoutValidation tests that LoadConfig rejects negative timeouts
