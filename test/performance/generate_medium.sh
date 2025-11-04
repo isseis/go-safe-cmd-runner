@@ -1,7 +1,8 @@
 #!/bin/bash
 # Script to generate medium_scale.toml (100 groups, 5 commands each)
 
-cat > /home/issei/git/dryrun-debug-json-output-09/test/performance/medium_scale.toml << 'EOF'
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+cat > "$SCRIPT_DIR/medium_scale.toml" << 'EOF'
 # Performance Test - Medium Scale Configuration
 # 100 groups with 5 commands each (total: 500 commands)
 version = "1.0"
