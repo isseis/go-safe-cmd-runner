@@ -171,9 +171,20 @@ func (m InheritanceMode) MarshalJSON() ([]byte, error) {
 
 **ファイル**: `internal/runner/runnertypes/inheritance_mode.go`
 
+**重要**: このメソッドは、将来JSON設定ファイルを読み込む機能を追加する場合に備えて実装する。現在のdry-run機能では、JSON出力のみを行い、JSON入力は受け付けないため、このメソッドが呼ばれることはない。
+
+**セキュリティ上の考慮事項**:
+- 不正な値を受け取った場合、エラーを返してグループ実行を中止する
+- エラーメッセージには入力値を含めない（ログファイルへの機密情報漏洩を防ぐため）
+- 将来的にJSON設定ファイルをサポートする場合、このメソッドが重要なバリデーション層となる
+
 ```go
 // UnmarshalJSON implements json.Unmarshaler interface
 // Parses string representation of InheritanceMode from JSON
+//
+// Security: This method validates that only known inheritance modes are accepted.
+// Invalid values will cause the entire operation to fail, preventing execution
+// with potentially dangerous or undefined configurations.
 func (m *InheritanceMode) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -188,12 +199,20 @@ func (m *InheritanceMode) UnmarshalJSON(data []byte) error {
 	case "reject":
 		*m = InheritanceModeReject
 	default:
-		return fmt.Errorf("invalid inheritance mode: %s", s)
+		// Security: Do not include the invalid value in the error message
+		// to prevent potential log injection or information disclosure
+		return fmt.Errorf("invalid inheritance mode value")
 	}
 
 	return nil
 }
 ```
+
+**エラーハンドリングの方針**:
+1. **不正な値の検出**: 定義された3つの値（"inherit", "explicit", "reject"）以外はすべて拒否
+2. **即座にエラーを返す**: グループやコマンドの実行を開始する前に失敗させる
+3. **エラーメッセージから入力値を除外**: ログインジェクションや情報漏洩のリスクを軽減
+4. **型安全性の維持**: 不正な値が`InheritanceMode`型として存在することを防ぐ
 
 ## 3. データ収集層の詳細設計
 
@@ -542,7 +561,11 @@ if ge.isDryRun {
 		err := ge.resourceManager.RecordGroupAnalysis(groupSpec.Name, debugInfo)
 		if err != nil {
 			// Log error but continue execution
-			ge.logger.Warn("Failed to record group analysis", "error", err)
+			// Note: Use slog.Warn with structured logging, never include sensitive data
+			ge.logger.Warn("Failed to record group analysis",
+				"error", err,
+				"group", groupSpec.Name,
+				"detail_level", ge.dryRunDetailLevel.String())
 		}
 	} else {
 		// Text format: output immediately
@@ -721,6 +744,8 @@ func TestCollectInheritanceAnalysis(t *testing.T) {
 		expectedAnalysis  *resource.InheritanceAnalysis
 	}{
 		{
+			// 目的: DetailLevelSummaryでは何も収集しないことを検証
+			// 期待結果: nilが返される（debug_infoフィールド自体がJSON出力に含まれない）
 			name: "DetailLevelSummary returns nil",
 			runtimeGlobal: &runnertypes.RuntimeGlobal{
 				GlobalSpec: &runnertypes.GlobalSpec{
@@ -736,6 +761,9 @@ func TestCollectInheritanceAnalysis(t *testing.T) {
 			expectedAnalysis: nil,
 		},
 		{
+			// 目的: DetailLevelDetailedでは設定値と計算値のみ収集し、差分情報は含めないことを検証
+			// 期待結果: 設定値フィールド（GlobalEnvImport等）と計算値フィールド（InheritanceMode）のみ設定
+			//          差分情報フィールド（InheritedVariables等）はnilでJSONに含まれない（omitempty）
 			name: "DetailLevelDetailed - basic fields only",
 			runtimeGlobal: &runnertypes.RuntimeGlobal{
 				GlobalSpec: &runnertypes.GlobalSpec{
@@ -754,13 +782,21 @@ func TestCollectInheritanceAnalysis(t *testing.T) {
 				GroupEnvImport:  []string{},
 				GroupAllowlist:  []string{},
 				InheritanceMode: runnertypes.InheritanceModeInherit,
-				// Difference fields should be nil
+				// 差分情報フィールドはnilであるべき（DetailLevelDetailedでは含めない）
 				InheritedVariables:            nil,
 				RemovedAllowlistVariables:     nil,
 				UnavailableEnvImportVariables: nil,
 			},
 		},
 		{
+			// 目的: DetailLevelFullでは全フィールド（設定値、計算値、差分情報）を収集することを検証
+			// 期待結果: すべてのフィールドが設定される
+			//          - 設定値: GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist
+			//          - 計算値: InheritanceMode (Explicit)
+			//          - 差分情報:
+			//            * InheritedVariables: 空配列（Explicitモードでは継承しない）
+			//            * RemovedAllowlistVariables: ["HOME", "USER"]（グローバルから削除された変数）
+			//            * UnavailableEnvImportVariables: ["api_key"]（グループで定義されていない内部変数）
 			name: "DetailLevelFull - all fields including differences",
 			runtimeGlobal: &runnertypes.RuntimeGlobal{
 				GlobalSpec: &runnertypes.GlobalSpec{
@@ -782,12 +818,16 @@ func TestCollectInheritanceAnalysis(t *testing.T) {
 				GroupEnvImport:  []string{"db_host=DB_HOST"},
 				GroupAllowlist:  []string{"PATH"},
 				InheritanceMode: runnertypes.InheritanceModeExplicit,
-				InheritedVariables:            []string{},
-				RemovedAllowlistVariables:     []string{"HOME", "USER"},
-				UnavailableEnvImportVariables: []string{"api_key"},
+				InheritedVariables:            []string{}, // Explicitモードなので継承なし
+				RemovedAllowlistVariables:     []string{"HOME", "USER"}, // グローバルにあってグループにない変数
+				UnavailableEnvImportVariables: []string{"api_key"}, // グローバルのenv_importにあってグループにない内部変数
 			},
 		},
-		// Add more test cases...
+		// 追加すべきテストケース:
+		// - InheritanceModeInheritでInheritedVariablesが正しく計算される
+		// - InheritanceModeRejectでRemovedAllowlistVariablesが全変数になる
+		// - nil/空スライスのエッジケース
+		// - GroupSpecがnilの場合の安全な処理
 	}
 
 	for _, tt := range tests {
@@ -825,6 +865,8 @@ func TestCollectFinalEnvironment(t *testing.T) {
 		expectedEnv   *resource.FinalEnvironment
 	}{
 		{
+			// 目的: DetailLevelSummaryでは最終環境変数を収集しないことを検証
+			// 期待結果: nilが返される（final_environmentフィールドがJSON出力に含まれない）
 			name: "DetailLevelSummary returns nil",
 			envMap: map[string]executor.EnvVar{
 				"PATH": {Value: "/usr/bin", Source: executor.EnvVarSourceSystem},
@@ -834,6 +876,8 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			expectedEnv:   nil,
 		},
 		{
+			// 目的: DetailLevelDetailedでも最終環境変数を収集しないことを検証
+			// 期待結果: nilが返される（final_environmentはDetailLevelFullのみで出力）
 			name: "DetailLevelDetailed returns nil",
 			envMap: map[string]executor.EnvVar{
 				"PATH": {Value: "/usr/bin", Source: executor.EnvVarSourceSystem},
@@ -843,6 +887,10 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			expectedEnv:   nil,
 		},
 		{
+			// 目的: DetailLevelFullかつshowSensitive=trueの場合、すべての環境変数の実際の値を含めることを検証
+			// 期待結果:
+			//   - PATH: 非センシティブなので値をそのまま表示、Masked=false
+			//   - API_KEY: センシティブだが--dry-run-show-sensitiveが指定されているので値を表示、Masked=false
 			name: "DetailLevelFull with showSensitive=true",
 			envMap: map[string]executor.EnvVar{
 				"PATH":    {Value: "/usr/bin", Source: executor.EnvVarSourceSystem},
@@ -858,7 +906,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 						Masked: false,
 					},
 					"API_KEY": {
-						Value:  "secret123",
+						Value:  "secret123", // showSensitive=trueなので実際の値を表示
 						Source: "env_import",
 						Masked: false,
 					},
@@ -866,6 +914,12 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			},
 		},
 		{
+			// 目的: DetailLevelFullかつshowSensitive=false（デフォルト）の場合、
+			//      センシティブな環境変数の値をマスクすることを検証
+			// 期待結果:
+			//   - PATH: 非センシティブなので値をそのまま表示、Masked=false
+			//   - API_KEY: センシティブなので値を空文字列に、Masked=true
+			//   - JSONパーサーがMasked=trueを見て、値がマスクされていることを判別できる
 			name: "DetailLevelFull with showSensitive=false masks sensitive vars",
 			envMap: map[string]executor.EnvVar{
 				"PATH":    {Value: "/usr/bin", Source: executor.EnvVarSourceSystem},
@@ -881,13 +935,17 @@ func TestCollectFinalEnvironment(t *testing.T) {
 						Masked: false,
 					},
 					"API_KEY": {
-						Value:  "",
+						Value:  "", // デフォルトでセンシティブな値はマスク
 						Source: "env_import",
-						Masked: true,
+						Masked: true, // マスク状態を明示
 					},
 				},
 			},
 		},
+		// 追加すべきテストケース:
+		// - 各Sourceタイプ（system, env_import, vars, command）の検証
+		// - 空の環境変数マップの処理
+		// - redaction.Redactorによるセンシティブパターンマッチングの検証
 	}
 
 	for _, tt := range tests {
@@ -922,16 +980,22 @@ func TestInheritanceMode_MarshalJSON(t *testing.T) {
 		expected string
 	}{
 		{
+			// 目的: InheritanceModeInheritが文字列"inherit"としてJSON化されることを検証
+			// 期待結果: `"inherit"`（数値の0ではなく文字列）
 			name:     "InheritanceModeInherit",
 			mode:     InheritanceModeInherit,
 			expected: `"inherit"`,
 		},
 		{
+			// 目的: InheritanceModeExplicitが文字列"explicit"としてJSON化されることを検証
+			// 期待結果: `"explicit"`（数値の1ではなく文字列）
 			name:     "InheritanceModeExplicit",
 			mode:     InheritanceModeExplicit,
 			expected: `"explicit"`,
 		},
 		{
+			// 目的: InheritanceModeRejectが文字列"reject"としてJSON化されることを検証
+			// 期待結果: `"reject"`（数値の2ではなく文字列）
 			name:     "InheritanceModeReject",
 			mode:     InheritanceModeReject,
 			expected: `"reject"`,
@@ -953,28 +1017,86 @@ func TestInheritanceMode_UnmarshalJSON(t *testing.T) {
 		input    string
 		expected InheritanceMode
 		wantErr  bool
+		errCheck func(*testing.T, error) // 追加: エラー内容の検証
 	}{
 		{
+			// 目的: 文字列"inherit"を正しくInheritanceModeInheritに変換できることを検証
+			// 期待結果: エラーなく、InheritanceModeInherit値が得られる
 			name:     "inherit",
 			input:    `"inherit"`,
 			expected: InheritanceModeInherit,
 			wantErr:  false,
 		},
 		{
+			// 目的: 文字列"explicit"を正しくInheritanceModeExplicitに変換できることを検証
+			// 期待結果: エラーなく、InheritanceModeExplicit値が得られる
 			name:     "explicit",
 			input:    `"explicit"`,
 			expected: InheritanceModeExplicit,
 			wantErr:  false,
 		},
 		{
+			// 目的: 文字列"reject"を正しくInheritanceModeRejectに変換できることを検証
+			// 期待結果: エラーなく、InheritanceModeReject値が得られる
 			name:     "reject",
 			input:    `"reject"`,
 			expected: InheritanceModeReject,
 			wantErr:  false,
 		},
 		{
+			// 目的: 不正な値を受け取った場合、エラーメッセージに入力値を含めないことを検証（セキュリティ）
+			// 期待結果:
+			//   - エラーが返される
+			//   - エラーメッセージに"invalid"（入力値）が含まれない
+			//   - エラーメッセージは汎用的な"invalid inheritance mode value"
+			// 理由: エラーメッセージに入力値を含めると、ログインジェクションや情報漏洩のリスクがある
 			name:     "invalid value",
 			input:    `"invalid"`,
+			expected: InheritanceModeInherit,
+			wantErr:  true,
+			errCheck: func(t *testing.T, err error) {
+				errMsg := err.Error()
+				assert.NotContains(t, errMsg, "invalid", "error message should not contain input value")
+				assert.Contains(t, errMsg, "invalid inheritance mode value")
+			},
+		},
+		{
+			// 目的: ログインジェクション攻撃を試みる入力（改行文字を含む）を安全に拒否することを検証
+			// 期待結果:
+			//   - エラーが返される
+			//   - エラーメッセージに改行文字や攻撃文字列が含まれない
+			// 理由: 改行を含む文字列がエラーメッセージに含まれると、ログファイルに偽のログエントリを挿入できる
+			name:     "potential log injection attempt",
+			input:    `"inherit\nmalicious_log_entry"`,
+			expected: InheritanceModeInherit,
+			wantErr:  true,
+			errCheck: func(t *testing.T, err error) {
+				errMsg := err.Error()
+				assert.NotContains(t, errMsg, "\n")
+				assert.NotContains(t, errMsg, "malicious")
+			},
+		},
+		{
+			// 目的: パストラバーサル攻撃を試みる入力を安全に拒否することを検証
+			// 期待結果:
+			//   - エラーが返される
+			//   - エラーメッセージにファイルパスや".."が含まれない
+			// 理由: パス情報がエラーメッセージに含まれると、システムの構造に関する情報が漏洩する
+			name:     "potential information disclosure attempt",
+			input:    `"../../../etc/passwd"`,
+			expected: InheritanceModeInherit,
+			wantErr:  true,
+			errCheck: func(t *testing.T, err error) {
+				errMsg := err.Error()
+				assert.NotContains(t, errMsg, "passwd")
+				assert.NotContains(t, errMsg, "..")
+			},
+		},
+		{
+			// 目的: 空文字列が適切に拒否されることを検証
+			// 期待結果: エラーが返される
+			name:     "empty string",
+			input:    `""`,
 			expected: InheritanceModeInherit,
 			wantErr:  true,
 		},
@@ -987,6 +1109,10 @@ func TestInheritanceMode_UnmarshalJSON(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
+				// エラー内容の詳細チェック（指定されている場合）
+				if tt.errCheck != nil {
+					tt.errCheck(t, err)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, mode)
@@ -1182,10 +1308,127 @@ name = "test-group"
    - `strings.Builder` の使用
    - 不要な文字列コピーの回避
 
-### 7.2 パフォーマンス目標
+### 7.2 パフォーマンス目標と計測方法
 
-- JSON出力のオーバーヘッド: 5-10%以内
-- メモリ使用量の増加: 10%以内
+#### 7.2.1 目標値
+
+- **実行時間オーバーヘッド**: 5-10%以内
+- **メモリ使用量の増加**: 10%以内
+
+#### 7.2.2 計測方法
+
+**実行時間の計測**:
+
+1. **ベースライン測定** (JSON出力機能追加前):
+   ```bash
+   # 同じ設定ファイルで10回実行し、平均実行時間を計測
+   for i in {1..10}; do
+     time ./build/runner --config benchmark.toml --dry-run --dry-run-format text --dry-run-detail full
+   done | grep real | awk '{sum+=$2; count++} END {print sum/count}'
+   ```
+
+2. **JSON出力時の測定**:
+   ```bash
+   # JSON形式で同じ設定ファイルを10回実行
+   for i in {1..10}; do
+     time ./build/runner --config benchmark.toml --dry-run --dry-run-format json --dry-run-detail full > /dev/null
+   done | grep real | awk '{sum+=$2; count++} END {print sum/count}'
+   ```
+
+3. **オーバーヘッドの計算**:
+   ```
+   オーバーヘッド = ((JSON時間 - ベースライン時間) / ベースライン時間) × 100%
+   ```
+
+**メモリ使用量の計測**:
+
+1. **Goの組み込みベンチマークツールを使用**:
+   ```bash
+   # メモリアロケーションを含むベンチマーク
+   go test -bench=BenchmarkDryRun -benchmem -run=^$ ./internal/runner/
+   ```
+
+2. **/usr/bin/time を使用** (より詳細な情報):
+   ```bash
+   # ベースライン
+   /usr/bin/time -v ./build/runner --config benchmark.toml --dry-run --dry-run-format text --dry-run-detail full 2>&1 | grep "Maximum resident set size"
+
+   # JSON形式
+   /usr/bin/time -v ./build/runner --config benchmark.toml --dry-run --dry-run-format json --dry-run-detail full > /dev/null 2>&1 | grep "Maximum resident set size"
+   ```
+
+3. **pprof によるプロファイリング** (詳細分析):
+   ```bash
+   # メモリプロファイルの取得
+   go test -memprofile=mem.prof -bench=BenchmarkDryRun ./internal/runner/
+
+   # プロファイルの分析
+   go tool pprof -alloc_space mem.prof
+   go tool pprof -alloc_objects mem.prof
+   ```
+
+#### 7.2.3 ベンチマーク用設定ファイル
+
+パフォーマンス計測には、実環境を模した設定ファイルを使用:
+
+```toml
+# benchmark.toml - 中規模の設定ファイル（100グループ、各5コマンド）
+[global]
+env_import = ["db_host=DB_HOST", "api_key=API_KEY", "service_url=SERVICE_URL"]
+env_allowed = ["PATH", "HOME", "USER", "LANG", "TZ"]
+
+[[groups]]
+name = "group-001"
+env_import = ["db_host=DB_HOST"]
+env_allowed = ["PATH", "HOME"]
+  [[groups.commands]]
+  command = "echo"
+  args = ["test1"]
+  # ... 5 commands per group
+
+# ... repeat for 100 groups
+```
+
+**設定ファイルのバリエーション**:
+- 小規模: 10グループ、各2コマンド（軽量テスト）
+- 中規模: 100グループ、各5コマンド（標準的なユースケース）
+- 大規模: 500グループ、各10コマンド（スケーラビリティテスト）
+
+#### 7.2.4 計測のタイミング
+
+1. **Phase 1完了後**: データ構造の基本的なオーバーヘッドを計測
+2. **Phase 2完了後**: データ収集層のオーバーヘッドを計測
+3. **Phase 4完了後**: 統合後の全体的なパフォーマンスを計測
+4. **最終確認時**: 本番環境を模した条件で計測
+
+#### 7.2.5 許容基準
+
+**実行時間**:
+- ✅ 合格: オーバーヘッド ≤ 10%
+- ⚠️  警告: 10% < オーバーヘッド ≤ 15%（最適化を検討）
+- ❌ 不合格: オーバーヘッド > 15%（リファクタリング必須）
+
+**メモリ使用量**:
+- ✅ 合格: 増加量 ≤ 10%
+- ⚠️  警告: 10% < 増加量 ≤ 20%（メモリ効率の改善を検討）
+- ❌ 不合格: 増加量 > 20%（設計の見直しが必要）
+
+#### 7.2.6 パフォーマンス改善の指針
+
+目標を達成できない場合の対策:
+
+1. **Detail Levelでの早期リターン**:
+   - DetailLevelSummaryでデータ収集をスキップ
+   - DetailLevelDetailedで差分計算をスキップ
+
+2. **メモリアロケーションの最適化**:
+   - 不要な文字列コピーを削減
+   - スライスの事前割り当て（`make([]string, 0, expectedSize)`）
+   - `omitempty`タグの活用
+
+3. **JSON marshaling の最適化**:
+   - 大きな構造体の場合、ストリーミングJSONエンコーダの使用を検討
+   - 不要なフィールドのnilチェックを最小化
 
 ## 8. セキュリティ考慮事項
 
@@ -1199,9 +1442,37 @@ name = "test-group"
    - `Masked` フィールドで明示的に示す
    - JSONパーサーがマスク状態を判別可能
 
-3. **ログへの出力制御**
-   - デバッグ情報収集のエラーは警告レベルでログ
-   - センシティブ情報をログに含めない
+3. **Dry-Run出力とエラーログの分離**
+
+   **Dry-Run出力（stdout）**:
+   - `--show-sensitive`フラグでセンシティブ情報の表示を制御
+   - `--dry-run-detail`レベルで出力の詳細度を制御
+   - JSON形式とTEXT形式の両方で、これらのフラグに従う
+   - ユーザーが明示的に`--show-sensitive`を指定した場合のみ、センシティブな値を表示
+   - デフォルトは`showSensitive=false`でマスク
+   - この制御は既に`CollectFinalEnvironment()`で実装済み
+
+   **エラー時のログ出力（slog）**:
+   - デバッグ情報収集の失敗は`slog.Warn()`で記録
+   - 通常のロギングシステムへの出力（dry-run出力とは別）
+   - エラーログには環境変数の値を含めない（セキュリティのため）
+   - GroupExecutorから呼び出す際の例:
+     ```go
+     if err := ge.resourceManager.RecordGroupAnalysis(groupName, debugInfo); err != nil {
+         ge.logger.Warn("Failed to record group analysis",
+             "error", err,
+             "group", groupName,
+             "detail_level", ge.dryRunDetailLevel.String())
+         // エラーを無視して実行を継続
+     }
+     ```
+
+   **エラーログで安全な情報のみ記録**:
+   - エラーメッセージ（入力値を含まない汎用的なもの）
+   - グループ名、コマンド名
+   - Detail Level（設定値）
+   - エラーオブジェクト（`error`フィールド）
+   - 環境変数の値や名前は含めない（dry-run出力で制御されるため、ログには不要）
 
 ## 9. ドキュメント更新
 
