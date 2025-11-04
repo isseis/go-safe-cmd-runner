@@ -16,7 +16,8 @@ if [[ ! -f "./build/prod/runner" ]]; then
 fi
 
 # Create results directory
-RESULTS_DIR="/home/issei/git/dryrun-debug-json-output-09/test/performance/results"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+RESULTS_DIR="$SCRIPT_DIR/results"
 mkdir -p "$RESULTS_DIR"
 
 # Configuration files - only small scale for quick test
@@ -100,7 +101,7 @@ if [[ -n "$text_time" && -n "$json_time" && "$text_time" != "0" ]]; then
     echo "JSON overhead: ${overhead}% (Text: ${text_time}s, JSON: ${json_time}s)"
 
     # Check if overhead is within acceptable limits
-    overhead_int=$(echo "$overhead" | cut -d'.' -f1)
+    overhead_int=$(echo "scale=0; $overhead/1" | bc -l)
     if [[ "$overhead_int" -le 10 ]]; then
         echo "✓ Overhead is within target (≤10%)"
     elif [[ "$overhead_int" -le 15 ]]; then

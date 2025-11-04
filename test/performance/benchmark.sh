@@ -37,8 +37,12 @@ if [[ "$TIME_CMD_TYPE" != "gnu" ]]; then
 fi
 
 # Check if jq is available
-if ! command -v jq &> /dev/null; then
     echo "Error: jq is required for JSON parsing. Please install jq."
+    exit 1
+fi
+
+if ! command -v bc &> /dev/null; then
+    echo "Error: bc is required for calculations. Please install bc."
     exit 1
 fi
 
@@ -49,7 +53,8 @@ if [[ ! -f "./build/prod/runner" ]]; then
 fi
 
 # Create results directory
-RESULTS_DIR="/home/issei/git/dryrun-debug-json-output-09/test/performance/results"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+RESULTS_DIR="$SCRIPT_DIR/results"
 mkdir -p "$RESULTS_DIR"
 
 # Configuration files
@@ -88,11 +93,13 @@ run_perf_test() {
         # Measure execution time
         local start_time=$(date +%s.%N)
 
+        local runner_args=("--config" "test/performance/$config_file" "--dry-run" "--dry-run-detail" "full")
         if [[ "$format" == "json" ]]; then
-            ./build/prod/runner --config "test/performance/$config_file" --dry-run --dry-run-format json --dry-run-detail full > /dev/null 2>&1
+            runner_args+=(--dry-run-format json)
         else
-            ./build/prod/runner --config "test/performance/$config_file" --dry-run --dry-run-format text --dry-run-detail full > /dev/null 2>&1
+            runner_args+=(--dry-run-format text)
         fi
+        ./build/prod/runner "${runner_args[@]}" > /dev/null 2>&1
 
         local end_time=$(date +%s.%N)
         local elapsed=$(echo "$end_time - $start_time" | bc -l)
