@@ -16,7 +16,7 @@ EOF
 
 # Generate 100 groups with 5 commands each
 for group_num in $(seq -w 1 100); do
-    cat >> /home/issei/git/dryrun-debug-json-output-09/test/performance/medium_scale.toml << EOF
+    cat >> "$SCRIPT_DIR/medium_scale.toml" << EOF
 # Group ${group_num}
 [[groups]]
 name = "group_${group_num}"
