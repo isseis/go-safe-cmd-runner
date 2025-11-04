@@ -1,0 +1,178 @@
+# Performance Test - Small Scale Configuration
+# 10 groups with 2 commands each (total: 20 commands)
+version = "1.0"
+
+[global]
+timeout = 30
+log_level = "info"
+env_allowed = ["PATH", "HOME", "USER", "PWD", "SHELL"]
+
+# Group 1
+[[groups]]
+name = "group_01"
+description = "Performance test group 1"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 1"
+cmd = "echo"
+args = ["Performance test command 1"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Date command 1"
+cmd = "date"
+args = ["+%Y-%m-%d %H:%M:%S"]
+
+# Group 2
+[[groups]]
+name = "group_02"
+description = "Performance test group 2"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 2"
+cmd = "echo"
+args = ["Performance test command 2"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Who command 2"
+cmd = "whoami"
+args = []
+
+# Group 3
+[[groups]]
+name = "group_03"
+description = "Performance test group 3"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 3"
+cmd = "echo"
+args = ["Performance test command 3"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Pwd command 3"
+cmd = "pwd"
+args = []
+
+# Group 4
+[[groups]]
+name = "group_04"
+description = "Performance test group 4"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 4"
+cmd = "echo"
+args = ["Performance test command 4"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Env command 4"
+cmd = "env"
+args = []
+
+# Group 5
+[[groups]]
+name = "group_05"
+description = "Performance test group 5"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 5"
+cmd = "echo"
+args = ["Performance test command 5"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Date command 5"
+cmd = "date"
+args = ["+%s"]
+
+# Group 6
+[[groups]]
+name = "group_06"
+description = "Performance test group 6"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 6"
+cmd = "echo"
+args = ["Performance test command 6"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Hostname command 6"
+cmd = "hostname"
+args = []
+
+# Group 7
+[[groups]]
+name = "group_07"
+description = "Performance test group 7"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 7"
+cmd = "echo"
+args = ["Performance test command 7"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Uptime command 7"
+cmd = "uptime"
+args = []
+
+# Group 8
+[[groups]]
+name = "group_08"
+description = "Performance test group 8"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 8"
+cmd = "echo"
+args = ["Performance test command 8"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Id command 8"
+cmd = "id"
+args = []
+
+# Group 9
+[[groups]]
+name = "group_09"
+description = "Performance test group 9"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 9"
+cmd = "echo"
+args = ["Performance test command 9"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Uname command 9"
+cmd = "uname"
+args = ["-a"]
+
+# Group 10
+[[groups]]
+name = "group_10"
+description = "Performance test group 10"
+
+[[groups.commands]]
+name = "cmd_1"
+description = "Echo command 10"
+cmd = "echo"
+args = ["Performance test command 10"]
+
+[[groups.commands]]
+name = "cmd_2"
+description = "Date command 10"
+cmd = "date"
+args = ["+%A, %B %d, %Y"]
