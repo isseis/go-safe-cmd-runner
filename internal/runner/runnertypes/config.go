@@ -195,7 +195,7 @@ func (m *InheritanceMode) UnmarshalJSON(data []byte) error {
 	case "reject":
 		*m = InheritanceModeReject
 	default:
-		return fmt.Errorf("%w: %s", ErrInvalidInheritanceMode, s)
+		return ErrInvalidInheritanceMode
 	}
 
 	return nil
