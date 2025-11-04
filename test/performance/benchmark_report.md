@@ -9,7 +9,7 @@ The JSON output feature for dry-run mode has been successfully implemented with 
 ## Test Environment
 - **OS**: Linux (Debian-based)
 - **Go Version**: 1.23.10
-- **Binary**: `/home/issei/git/dryrun-debug-json-output-09/build/prod/runner`
+- **Binary**: `./build/prod/runner`
 - **Test Method**: `/usr/bin/time` for measurement
 
 ## Test Configurations
