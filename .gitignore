@@ -4,3 +4,7 @@ build/
 .env
 coverage*.out
 coverage*.html
+
+# Generated performance test configurations
+test/performance/medium_scale.toml
+test/performance/large_scale.toml

@@ -98,7 +98,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test additional-test deadcode
+.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test additional-test deadcode generate-perf-configs
 
 all: security-check
 
@@ -151,6 +151,7 @@ clean:
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 	rm -f $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 	rm -f coverage.out coverage.html
+	rm -f test/performance/medium_scale.toml test/performance/large_scale.toml
 
 hash:
 	$(foreach file, $(HASH_TARGETS), \
@@ -246,7 +247,14 @@ slack-group-notification-test: $(BINARY_RUNNER)
 	echo "Slack group notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
 
-performance-test:
+# Generate performance test configuration files
+generate-perf-configs:
+	@echo "Generating performance test configurations..."
+	@cd test/performance && ./generate_medium.sh
+	@cd test/performance && ./generate_large.sh
+	@echo "Performance test configurations generated successfully"
+
+performance-test: generate-perf-configs
 	$(ENVSET) $(GOTEST) -tags performance -v ./test/performance/
 
 security-test:
