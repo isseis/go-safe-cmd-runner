@@ -16,7 +16,8 @@ if [[ ! -f "./build/prod/runner" ]]; then
 fi
 
 # Create results directory
-RESULTS_DIR="/home/issei/git/dryrun-debug-json-output-09/test/performance/results"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+RESULTS_DIR="$SCRIPT_DIR/results"
 mkdir -p "$RESULTS_DIR"
 
 # Configuration files - only small scale for quick test
