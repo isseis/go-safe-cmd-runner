@@ -306,7 +306,8 @@ func TestInheritanceMode_UnmarshalJSON(t *testing.T) {
 					errMsg := err.Error()
 					// Extract the input value without JSON quotes for checking
 					var inputValue string
-					_ = json.Unmarshal([]byte(tt.input), &inputValue)
+					unmarshalErr := json.Unmarshal([]byte(tt.input), &inputValue)
+					assert.NoError(t, unmarshalErr, "test case input must be a valid JSON string")
 					// Skip empty string check (would be a false positive)
 					if inputValue != "" {
 						// The error message should only contain the base error, not the input
