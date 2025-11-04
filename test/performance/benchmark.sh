@@ -60,11 +60,13 @@ run_perf_test() {
         # Measure execution time
         local start_time=$(date +%s.%N)
 
+        local runner_args=("--config" "test/performance/$config_file" "--dry-run" "--dry-run-detail" "full")
         if [[ "$format" == "json" ]]; then
-            ./build/prod/runner --config "test/performance/$config_file" --dry-run --dry-run-format json --dry-run-detail full > /dev/null 2>&1
+            runner_args+=(--dry-run-format json)
         else
-            ./build/prod/runner --config "test/performance/$config_file" --dry-run --dry-run-format text --dry-run-detail full > /dev/null 2>&1
+            runner_args+=(--dry-run-format text)
         fi
+        ./build/prod/runner "${runner_args[@]}" > /dev/null 2>&1
 
         local end_time=$(date +%s.%N)
         local elapsed=$(echo "$end_time - $start_time" | bc -l)
