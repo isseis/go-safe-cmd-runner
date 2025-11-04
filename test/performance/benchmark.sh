@@ -1,7 +1,40 @@
 #!/bin/bash
 # Performance benchmark script for dry-run JSON output feature
+#
+# Requirements:
+#   - GNU time (/usr/bin/time -v) for memory measurement (Linux)
+#   - jq for JSON parsing
+#   - bc for floating point calculations
 
 set -euo pipefail
+
+# Detect platform and GNU time availability
+detect_time_command() {
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if [[ -x "/usr/bin/time" ]]; then
+            # Verify it's GNU time by checking for -v option support
+            if /usr/bin/time -v true 2>&1 | grep -q "Maximum resident set size"; then
+                echo "gnu"
+                return 0
+            fi
+        fi
+    fi
+    echo "unsupported"
+    return 1
+}
+
+TIME_CMD_TYPE=$(detect_time_command)
+
+if [[ "$TIME_CMD_TYPE" != "gnu" ]]; then
+    echo "Error: This benchmark script requires GNU time for memory measurement."
+    echo "       GNU time is typically available on Linux systems at /usr/bin/time"
+    echo ""
+    echo "Platform: $OSTYPE"
+    echo ""
+    echo "On Debian/Ubuntu: sudo apt-get install time"
+    echo "On macOS: GNU time is not easily available; consider running in a Linux container"
+    exit 1
+fi
 
 # Check if jq is available
 if ! command -v jq &> /dev/null; then
