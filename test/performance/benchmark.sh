@@ -37,6 +37,7 @@ if [[ "$TIME_CMD_TYPE" != "gnu" ]]; then
 fi
 
 # Check if jq is available
+if ! command -v jq &> /dev/null; then
     echo "Error: jq is required for JSON parsing. Please install jq."
     exit 1
 fi
