@@ -4,8 +4,12 @@
 set -euo pipefail
 
 # Check if jq is available
-if ! command -v jq &> /dev/null; then
     echo "Error: jq is required for JSON parsing. Please install jq."
+    exit 1
+fi
+
+if ! command -v bc &> /dev/null; then
+    echo "Error: bc is required for calculations. Please install bc."
     exit 1
 fi
 
