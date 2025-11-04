@@ -302,17 +302,16 @@ func TestInheritanceMode_UnmarshalJSON(t *testing.T) {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, ErrInvalidInheritanceMode)
 				// Security check: error message should NOT contain the input value
-				if err != nil {
-					errMsg := err.Error()
-					// Extract the input value without JSON quotes for checking
-					var inputValue string
-					_ = json.Unmarshal([]byte(tt.input), &inputValue)
-					// Skip empty string check (would be a false positive)
-					if inputValue != "" {
-						// The error message should only contain the base error, not the input
-						assert.NotContains(t, errMsg, inputValue,
-							"error message should not contain user input to prevent log injection")
-					}
+				errMsg := err.Error()
+				// Extract the input value without JSON quotes for checking
+				var inputValue string
+				unmarshalErr := json.Unmarshal([]byte(tt.input), &inputValue)
+				assert.NoError(t, unmarshalErr, "test case input must be a valid JSON string")
+				// Skip empty string check (would be a false positive)
+				if inputValue != "" {
+					// The error message should only contain the base error, not the input
+					assert.NotContains(t, errMsg, inputValue,
+						"error message should not contain user input to prevent log injection")
 				}
 			} else {
 				assert.NoError(t, err)
