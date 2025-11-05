@@ -198,7 +198,7 @@ func TestErrorMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Record
 			_, err := validator.Record(tt.filePath, false)
-			assert.Error(t, err, "Expected error, got nil")
+require.Error(t, err, "Expected error, got nil")
 
 			// Check error type if expectedErr is set
 			if tt.expectedErr != nil {
