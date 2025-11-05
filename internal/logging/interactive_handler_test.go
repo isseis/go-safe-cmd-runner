@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // interactiveTestCapabilities implements terminal.Capabilities for testing
@@ -123,12 +126,8 @@ func TestNewInteractiveHandler(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Errorf("NewInteractiveHandler should not return error: %v", err)
-	}
-	if handler == nil {
-		t.Error("NewInteractiveHandler should return a non-nil handler")
-	}
+	assert.NoError(t, err, "NewInteractiveHandler should not return error")
+	assert.NotNil(t, handler, "NewInteractiveHandler should return a non-nil handler")
 }
 
 func TestNewInteractiveHandler_ErrorOnMissingDependencies(t *testing.T) {
@@ -182,12 +181,8 @@ func TestNewInteractiveHandler_ErrorOnMissingDependencies(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			handler, err := NewInteractiveHandler(tc.opts)
-			if err == nil {
-				t.Errorf("Expected error for %s", tc.name)
-			}
-			if handler != nil {
-				t.Errorf("Expected nil handler for %s, got %v", tc.name, handler)
-			}
+			assert.Error(t, err, "Expected error for %s", tc.name)
+			assert.Nil(t, handler, "Expected nil handler for %s", tc.name)
 		})
 	}
 }
@@ -205,25 +200,15 @@ func TestInteractiveHandler_Enabled_Interactive(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	ctx := context.Background()
 
 	// Should be enabled for levels >= configured level in interactive mode
-	if handler.Enabled(ctx, slog.LevelDebug) {
-		t.Error("Should not be enabled for debug level when min level is warn")
-	}
-	if handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("Should not be enabled for info level when min level is warn")
-	}
-	if !handler.Enabled(ctx, slog.LevelWarn) {
-		t.Error("Should be enabled for warn level")
-	}
-	if !handler.Enabled(ctx, slog.LevelError) {
-		t.Error("Should be enabled for error level")
-	}
+	assert.False(t, handler.Enabled(ctx, slog.LevelDebug), "Should not be enabled for debug level when min level is warn")
+	assert.False(t, handler.Enabled(ctx, slog.LevelInfo), "Should not be enabled for info level when min level is warn")
+	assert.True(t, handler.Enabled(ctx, slog.LevelWarn), "Should be enabled for warn level")
+	assert.True(t, handler.Enabled(ctx, slog.LevelError), "Should be enabled for error level")
 }
 
 func TestInteractiveHandler_Enabled_NonInteractive(t *testing.T) {
@@ -239,25 +224,15 @@ func TestInteractiveHandler_Enabled_NonInteractive(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	ctx := context.Background()
 
 	// Should be disabled for all levels in non-interactive mode
-	if handler.Enabled(ctx, slog.LevelDebug) {
-		t.Error("Should be disabled in non-interactive mode")
-	}
-	if handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("Should be disabled in non-interactive mode")
-	}
-	if handler.Enabled(ctx, slog.LevelWarn) {
-		t.Error("Should be disabled in non-interactive mode")
-	}
-	if handler.Enabled(ctx, slog.LevelError) {
-		t.Error("Should be disabled in non-interactive mode")
-	}
+	assert.False(t, handler.Enabled(ctx, slog.LevelDebug), "Should be disabled in non-interactive mode")
+	assert.False(t, handler.Enabled(ctx, slog.LevelInfo), "Should be disabled in non-interactive mode")
+	assert.False(t, handler.Enabled(ctx, slog.LevelWarn), "Should be disabled in non-interactive mode")
+	assert.False(t, handler.Enabled(ctx, slog.LevelError), "Should be disabled in non-interactive mode")
 }
 
 func TestInteractiveHandler_Handle_Interactive(t *testing.T) {
@@ -273,37 +248,25 @@ func TestInteractiveHandler_Handle_Interactive(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	ctx := context.Background()
 	now := time.Now()
 	record := slog.NewRecord(now, slog.LevelInfo, "test message", 0)
 
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Should call formatter with color support
-	if !formatter.formatRecordCalled {
-		t.Error("Formatter should have been called")
-	}
-	if formatter.recordMessage != "test message" {
-		t.Errorf("Formatter received wrong message: %s", formatter.recordMessage)
-	}
+	assert.True(t, formatter.formatRecordCalled, "Formatter should have been called")
+	assert.Equal(t, "test message", formatter.recordMessage, "Formatter received wrong message")
 
 	// Should write formatted output
 	output := buf.String()
-	if !strings.Contains(output, "test message") {
-		t.Error("Output should contain formatted message")
-	}
+	assert.Contains(t, output, "test message", "Output should contain formatted message")
 
 	// Should not add hint for non-error levels
-	if formatter.formatHintCalled {
-		t.Error("Hint formatter should not be called for non-error levels")
-	}
+	assert.False(t, formatter.formatHintCalled, "Hint formatter should not be called for non-error levels")
 }
 
 func TestInteractiveHandler_Handle_NonInteractive(t *testing.T) {
@@ -319,28 +282,20 @@ func TestInteractiveHandler_Handle_NonInteractive(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	ctx := context.Background()
 	now := time.Now()
 	record := slog.NewRecord(now, slog.LevelInfo, "test message", 0)
 
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Should not call formatter in non-interactive mode
-	if formatter.formatRecordCalled {
-		t.Error("Formatter should not be called in non-interactive mode")
-	}
+	assert.False(t, formatter.formatRecordCalled, "Formatter should not be called in non-interactive mode")
 
 	// Should not write any output
-	if buf.Len() > 0 {
-		t.Error("No output should be written in non-interactive mode")
-	}
+	assert.Zero(t, buf.Len(), "No output should be written in non-interactive mode")
 }
 
 func TestInteractiveHandler_Handle_ErrorLevelWithHint(t *testing.T) {
@@ -356,37 +311,25 @@ func TestInteractiveHandler_Handle_ErrorLevelWithHint(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	ctx := context.Background()
 	now := time.Now()
 	record := slog.NewRecord(now, slog.LevelError, "error message", 0)
 
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Should call both formatters
-	if !formatter.formatRecordCalled {
-		t.Error("Record formatter should have been called")
-	}
-	if !formatter.formatHintCalled {
-		t.Error("Hint formatter should have been called for error level")
-	}
+	assert.True(t, formatter.formatRecordCalled, "Record formatter should have been called")
+	assert.True(t, formatter.formatHintCalled, "Hint formatter should have been called for error level")
 
 	// Should call line tracker
-	if !tracker.getCalled {
-		t.Error("Line tracker should have been called")
-	}
+	assert.True(t, tracker.getCalled, "Line tracker should have been called")
 
 	output := buf.String()
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) < 1 {
-		t.Error("Should have at least one line of output")
-	}
+	assert.GreaterOrEqual(t, len(lines), 1, "Should have at least one line of output")
 }
 
 func TestInteractiveHandler_WithAttrs(t *testing.T) {
@@ -402,9 +345,7 @@ func TestInteractiveHandler_WithAttrs(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	attrs := []slog.Attr{
 		slog.String("key1", "value1"),
@@ -414,25 +355,18 @@ func TestInteractiveHandler_WithAttrs(t *testing.T) {
 	newHandler := handler.WithAttrs(attrs)
 
 	// Should return a new handler
-	if newHandler == handler {
-		t.Error("WithAttrs should return a new handler instance")
-	}
+	assert.NotEqual(t, handler, newHandler, "WithAttrs should return a new handler instance")
 
 	// New handler should be of the same type
-	if _, ok := newHandler.(*InteractiveHandler); !ok {
-		t.Error("WithAttrs should return an InteractiveHandler")
-	}
+	_, ok := newHandler.(*InteractiveHandler)
+	assert.True(t, ok, "WithAttrs should return an InteractiveHandler")
 
 	// Test with empty attrs
 	sameHandler := handler.WithAttrs(nil)
-	if sameHandler != handler {
-		t.Error("WithAttrs with empty attrs should return same handler")
-	}
+	assert.Equal(t, handler, sameHandler, "WithAttrs with empty attrs should return same handler")
 
 	sameHandler = handler.WithAttrs([]slog.Attr{})
-	if sameHandler != handler {
-		t.Error("WithAttrs with empty slice should return same handler")
-	}
+	assert.Equal(t, handler, sameHandler, "WithAttrs with empty slice should return same handler")
 }
 
 func TestInteractiveHandler_WithGroup(t *testing.T) {
@@ -448,29 +382,22 @@ func TestInteractiveHandler_WithGroup(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	const testGroupName = "testgroup"
 	groupName := testGroupName
 	newHandler := handler.WithGroup(groupName)
 
 	// Should return a new handler
-	if newHandler == handler {
-		t.Error("WithGroup should return a new handler instance")
-	}
+	assert.NotEqual(t, handler, newHandler, "WithGroup should return a new handler instance")
 
 	// New handler should be of the same type
-	if _, ok := newHandler.(*InteractiveHandler); !ok {
-		t.Error("WithGroup should return an InteractiveHandler")
-	}
+	_, ok := newHandler.(*InteractiveHandler)
+	assert.True(t, ok, "WithGroup should return an InteractiveHandler")
 
 	// Test with empty group name
 	sameHandler := handler.WithGroup("")
-	if sameHandler != handler {
-		t.Error("WithGroup with empty name should return same handler")
-	}
+	assert.Equal(t, handler, sameHandler, "WithGroup with empty name should return same handler")
 }
 
 func TestInteractiveHandler_Handle_WithAttributes(t *testing.T) {
@@ -486,9 +413,7 @@ func TestInteractiveHandler_Handle_WithAttributes(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	// Add attributes to handler
 	attrs := []slog.Attr{
@@ -502,14 +427,10 @@ func TestInteractiveHandler_Handle_WithAttributes(t *testing.T) {
 	record.AddAttrs(slog.String("extra", "value"))
 
 	err = handlerWithAttrs.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Formatter should have been called
-	if !formatter.formatRecordCalled {
-		t.Error("Formatter should have been called")
-	}
+	assert.True(t, formatter.formatRecordCalled, "Formatter should have been called")
 }
 
 func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
@@ -525,9 +446,7 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	// Add attributes and groups to handler
 	handlerWithAttrs := handler.WithAttrs([]slog.Attr{
@@ -542,14 +461,10 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 	record.AddAttrs(slog.String("user_id", "12345"))
 
 	err = handlerWithGroup.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Formatter should have been called
-	if !formatter.formatRecordCalled {
-		t.Error("Formatter should have been called")
-	}
+	assert.True(t, formatter.formatRecordCalled, "Formatter should have been called")
 
 	// Verify that group prefixes were applied correctly (standard slog behavior)
 	testCases := []struct {
@@ -564,13 +479,11 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 
 	for _, tc := range testCases {
 		value, found := formatter.GetAttribute(tc.key)
+		assert.True(t, found, "Expected to find attribute %q, but it was not found. %s", tc.key, tc.desc)
 		if !found {
-			t.Errorf("Expected to find attribute %q, but it was not found. %s", tc.key, tc.desc)
 			continue
 		}
-		if value.String() != tc.expected {
-			t.Errorf("For attribute %q: expected %q, got %q. %s", tc.key, tc.expected, value.String(), tc.desc)
-		}
+		assert.Equal(t, tc.expected, value.String(), "For attribute %q. %s", tc.key, tc.desc)
 	}
 
 	// Note: In standard slog behavior, WithAttrs attributes exist without prefix
@@ -590,9 +503,7 @@ func TestInteractiveHandler_Handle_WithAttrsAfterGroup(t *testing.T) {
 		Formatter:    formatter,
 		LineTracker:  tracker,
 	})
-	if err != nil {
-		t.Fatalf("NewInteractiveHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewInteractiveHandler failed")
 
 	// Create a handler with groups first, then add attributes
 	handlerWithGroup := handler.WithGroup("auth").WithGroup("session")
@@ -607,14 +518,10 @@ func TestInteractiveHandler_Handle_WithAttrsAfterGroup(t *testing.T) {
 	record.AddAttrs(slog.String("user_id", "12345"))
 
 	err = handlerWithAttrs.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Formatter should have been called
-	if !formatter.formatRecordCalled {
-		t.Error("Formatter should have been called")
-	}
+	assert.True(t, formatter.formatRecordCalled, "Formatter should have been called")
 
 	// Verify that group prefixes were applied correctly
 	// When WithAttrs is called after WithGroup, the attributes should be prefixed
@@ -630,13 +537,11 @@ func TestInteractiveHandler_Handle_WithAttrsAfterGroup(t *testing.T) {
 
 	for _, tc := range testCases {
 		value, found := formatter.GetAttribute(tc.key)
+		assert.True(t, found, "Expected to find attribute %q, but it was not found. %s", tc.key, tc.desc)
 		if !found {
-			t.Errorf("Expected to find attribute %q, but it was not found. %s", tc.key, tc.desc)
 			continue
 		}
-		if value.String() != tc.expected {
-			t.Errorf("For attribute %q: expected %q, got %q. %s", tc.key, tc.expected, value.String(), tc.desc)
-		}
+		assert.Equal(t, tc.expected, value.String(), "For attribute %q. %s", tc.key, tc.desc)
 	}
 
 	// Note: This test verifies the critical case where WithAttrs is called after WithGroup

@@ -141,9 +141,7 @@ func TestSetDifferenceToSlice(t *testing.T) {
 		result := SetDifferenceToSlice(setA, setB)
 
 		expected := []int{1, 3}
-		if len(result) != len(expected) {
-			t.Errorf("expected length %d, got %d", len(expected), len(result))
-		}
+		assert.Equal(t, len(expected), len(result), "slice length mismatch")
 
 		for i, v := range expected {
 			assert.Equal(t, v, result[i], "element mismatch at index %d", i)
@@ -200,9 +198,7 @@ func TestSliceToSet(t *testing.T) {
 		var input []string
 		result := SliceToSet(input)
 
-		if len(result) != 0 {
-			t.Errorf("expected empty set for nil slice, got size %d", len(result))
-		}
+		assert.Equal(t, 0, len(result), "expected empty set for nil slice")
 	})
 
 	t.Run("works with integers", func(t *testing.T) {
@@ -231,9 +227,8 @@ func TestSliceToSet(t *testing.T) {
 		assert.Equal(t, 3, len(result), "expected set size 3")
 
 		for _, status := range []Status{Pending, Active, Completed} {
-			if _, exists := result[status]; !exists {
-				t.Errorf("expected status %d to be in set", status)
-			}
+			_, exists := result[status]
+			assert.True(t, exists, "expected status %d to be in set", status)
 		}
 	})
 
@@ -246,9 +241,8 @@ func TestSliceToSet(t *testing.T) {
 		// Verify all unique elements are present
 		expected := []string{"VAR1", "VAR2", "VAR3"}
 		for _, item := range expected {
-			if _, exists := result[item]; !exists {
-				t.Errorf("expected %q to be in set", item)
-			}
+			_, exists := result[item]
+			assert.True(t, exists, "expected %q to be in set", item)
 		}
 	})
 
@@ -261,15 +255,12 @@ func TestSliceToSet(t *testing.T) {
 
 		result := SliceToSet(input)
 
-		if len(result) != 10000 {
-			t.Errorf("expected set size 10000, got %d", len(result))
-		}
+		assert.Equal(t, 10000, len(result), "expected set size 10000")
 
 		// Verify a few random elements
 		for _, num := range []int{0, 5000, 9999} {
-			if _, exists := result[num]; !exists {
-				t.Errorf("expected %d to be in set", num)
-			}
+			_, exists := result[num]
+			assert.True(t, exists, "expected %d to be in set", num)
 		}
 	})
 }

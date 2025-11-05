@@ -12,6 +12,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // configSetupHelper creates a complete test environment with config file and hash directory.
@@ -27,26 +29,18 @@ func configSetupHelper(t *testing.T, systemEnv map[string]string, configTOML str
 	// Create temporary config file
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.toml")
-	if err := os.WriteFile(configPath, []byte(configTOML), 0o644); err != nil {
-		t.Fatalf("Failed to write config file: %v", err)
-	}
+	require.NoError(t, os.WriteFile(configPath, []byte(configTOML), 0o644), "Failed to write config file")
 
 	// Create hash directory
 	hashDir := filepath.Join(tempDir, "hashes")
-	if err := os.MkdirAll(hashDir, 0o700); err != nil {
-		t.Fatalf("Failed to create hash directory: %v", err)
-	}
+	require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
 	// Load and prepare config
 	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	if err != nil {
-		t.Fatalf("Failed to create verification manager: %v", err)
-	}
+	require.NoError(t, err, "Failed to create verification manager")
 
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-env-priority")
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
+	require.NoError(t, err, "Failed to load config")
 
 	return cfg
 }
@@ -59,24 +53,17 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	cfg := configSetupHelper(t, systemEnv, configTOML)
 
 	// Extract the first command
-	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
-		t.Fatal("No command found in config")
-	}
+	require.NotEmpty(t, cfg.Groups, "No group found in config")
+	require.NotEmpty(t, cfg.Groups[0].Commands, "No command found in config")
 	cmdSpec := &cfg.Groups[0].Commands[0]
 
 	// Expand configuration to runtime types
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	if err != nil {
-		t.Fatalf("Failed to expand global config: %v", err)
-	}
+	require.NoError(t, err, "Failed to expand global config")
 	runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
-	if err != nil {
-		t.Fatalf("Failed to expand group config: %v", err)
-	}
+	require.NoError(t, err, "Failed to expand group config")
 	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
-	if err != nil {
-		t.Fatalf("Failed to expand command config: %v", err)
-	}
+	require.NoError(t, err, "Failed to expand command config")
 
 	// Call production code to build final environment
 	// This tests the actual implementation in executor.BuildProcessEnvironment
@@ -85,12 +72,9 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	// Verify expected variables
 	for k, expectedVal := range expectVars {
 		envVar, ok := finalEnv[k]
-		if !ok {
-			t.Errorf("Variable %s not found in final environment", k)
-			continue
-		}
-		if envVar.Value != expectedVal {
-			t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, envVar.Value)
+		assert.True(t, ok, "Variable %s not found in final environment", k)
+		if ok {
+			assert.Equal(t, expectedVal, envVar.Value, "Variable %s value mismatch", k)
 		}
 	}
 }
@@ -420,65 +404,32 @@ env_vars = ["OUTPUT=%{output}"]
 	cfg := configSetupHelper(t, systemEnv, configTOML)
 
 	// Extract the first command
-	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
-		t.Fatal("No command found in config")
-	}
+	require.NotEmpty(t, cfg.Groups, "No group found in config")
+	require.NotEmpty(t, cfg.Groups[0].Commands, "No command found in config")
 	cmdSpec := &cfg.Groups[0].Commands[0]
 	groupSpec := &cfg.Groups[0]
 
 	// Expand configuration to runtime types to access ExpandedVars
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	if err != nil {
-		t.Fatalf("Failed to expand global config: %v", err)
-	}
+	require.NoError(t, err, "Failed to expand global config")
 	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
-	if err != nil {
-		t.Fatalf("Failed to expand group config: %v", err)
-	}
+	require.NoError(t, err, "Failed to expand group config")
 	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
-	if err != nil {
-		t.Fatalf("Failed to expand command config: %v", err)
-	}
+	require.NoError(t, err, "Failed to expand command config")
 
 	// Verify vars expansion at each level
-	if runtimeGlobal.ExpandedVars["base"] != "/home/test/app" {
-		t.Errorf("Global vars: expected base=/home/test/app, got %q", runtimeGlobal.ExpandedVars["base"])
-	}
-
-	if runtimeGroup.ExpandedVars["rel_path"] != "data" {
-		t.Errorf("Group vars: expected rel_path=data, got %q", runtimeGroup.ExpandedVars["rel_path"])
-	}
-
-	if runtimeGroup.ExpandedVars["data_dir"] != "/home/test/app/data" {
-		t.Errorf("Group vars: expected data_dir=/home/test/app/data, got %q", runtimeGroup.ExpandedVars["data_dir"])
-	}
-
-	if runtimeCmd.ExpandedVars["filename"] != "output.txt" {
-		t.Errorf("Command vars: expected filename=output.txt, got %q", runtimeCmd.ExpandedVars["filename"])
-	}
-
-	if runtimeCmd.ExpandedVars["output"] != "/home/test/app/data/output.txt" {
-		t.Errorf("Command vars: expected output=/home/test/app/data/output.txt, got %q", runtimeCmd.ExpandedVars["output"])
-	}
+	assert.Equal(t, "/home/test/app", runtimeGlobal.ExpandedVars["base"], "Global vars: base mismatch")
+	assert.Equal(t, "data", runtimeGroup.ExpandedVars["rel_path"], "Group vars: rel_path mismatch")
+	assert.Equal(t, "/home/test/app/data", runtimeGroup.ExpandedVars["data_dir"], "Group vars: data_dir mismatch")
+	assert.Equal(t, "output.txt", runtimeCmd.ExpandedVars["filename"], "Command vars: filename mismatch")
+	assert.Equal(t, "/home/test/app/data/output.txt", runtimeCmd.ExpandedVars["output"], "Command vars: output mismatch")
 
 	// Verify env expansion
-	if runtimeGlobal.ExpandedEnv["APP_BASE"] != "/home/test/app" {
-		t.Errorf("Global env: expected APP_BASE=/home/test/app, got %q", runtimeGlobal.ExpandedEnv["APP_BASE"])
-	}
-
-	if runtimeGroup.ExpandedEnv["DATA_DIR"] != "/home/test/app/data" {
-		t.Errorf("Group env: expected DATA_DIR=/home/test/app/data, got %q", runtimeGroup.ExpandedEnv["DATA_DIR"])
-	}
-
-	if runtimeCmd.ExpandedEnv["OUTPUT"] != "/home/test/app/data/output.txt" {
-		t.Errorf("Command env: expected OUTPUT=/home/test/app/data/output.txt, got %q", runtimeCmd.ExpandedEnv["OUTPUT"])
-	}
+	assert.Equal(t, "/home/test/app", runtimeGlobal.ExpandedEnv["APP_BASE"], "Global env: APP_BASE mismatch")
+	assert.Equal(t, "/home/test/app/data", runtimeGroup.ExpandedEnv["DATA_DIR"], "Group env: DATA_DIR mismatch")
+	assert.Equal(t, "/home/test/app/data/output.txt", runtimeCmd.ExpandedEnv["OUTPUT"], "Command env: OUTPUT mismatch")
 
 	// Verify command args expansion
-	if len(runtimeCmd.ExpandedArgs) != 1 {
-		t.Fatalf("Expected 1 arg, got %d", len(runtimeCmd.ExpandedArgs))
-	}
-	if runtimeCmd.ExpandedArgs[0] != "/home/test/app/data" {
-		t.Errorf("Command args: expected /home/test/app/data, got %q", runtimeCmd.ExpandedArgs[0])
-	}
+	require.Len(t, runtimeCmd.ExpandedArgs, 1, "Expected 1 arg")
+	assert.Equal(t, "/home/test/app/data", runtimeCmd.ExpandedArgs[0], "Command args mismatch")
 }
