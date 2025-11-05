@@ -400,9 +400,6 @@ func TestSlackHandler_Handle_SlackNotifyFalse(t *testing.T) {
 }
 
 func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
-	// Use test backoff config for faster test execution
-	testConfig := testBackoffConfig
-
 	tests := []struct {
 		name            string
 		messageType     string
@@ -516,7 +513,7 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				runID:         "test-run",
 				httpClient:    &http.Client{Timeout: 5 * time.Second},
 				level:         slog.LevelInfo,
-				backoffConfig: testConfig,
+				backoffConfig: testBackoffConfig,
 			}
 
 			ctx := context.Background()
