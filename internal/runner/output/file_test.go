@@ -448,11 +448,8 @@ func TestSafeFileManager_FileDescriptorLeakagePrevention(t *testing.T) {
 		t.Logf("Attacker's file descriptor returned no content")
 	default:
 		attackerReadContent := attackerNewRead[:n]
-		if bytes.Equal(attackerReadContent, newContent) {
-			t.Errorf("SECURITY ISSUE: Attacker can read new content through old file descriptor")
-		} else {
-			t.Logf("Attacker sees different content (safe): %q", attackerReadContent)
-		}
+		assert.False(t, bytes.Equal(attackerReadContent, newContent), "SECURITY ISSUE: Attacker can read new content through old file descriptor")
+		t.Logf("Attacker sees different content (safe): %q", attackerReadContent)
 	}
 
 	// 7. Verify secure permissions

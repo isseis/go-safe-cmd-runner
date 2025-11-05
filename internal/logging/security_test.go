@@ -118,25 +118,18 @@ func TestSecurityLogger_LogMethods(t *testing.T) {
 
 			// Parse the JSON output
 			var logEntry map[string]any
-			if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-				t.Fatalf("Failed to parse JSON log output: %v\nOutput: %s", err, buf.String())
-			}
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &logEntry), "Failed to parse JSON log output: %s", buf.String())
 
 			// Verify log level
-			if level, ok := logEntry["level"].(string); !ok || level != tt.expectedLevel {
-				t.Errorf("Expected log level %q, got %q", tt.expectedLevel, level)
-			}
+			level, ok := logEntry["level"].(string)
+			assert.True(t, ok, "log level field is not a string")
+			assert.Equal(t, tt.expectedLevel, level)
 
 			// Verify expected fields
 			for key, expectedValue := range tt.expectedFields {
 				actualValue, ok := logEntry[key]
-				if !ok {
-					t.Errorf("Missing expected field %q in log output", key)
-					continue
-				}
-				if actualValue != expectedValue {
-					t.Errorf("Field %q: expected %v, got %v", key, expectedValue, actualValue)
-				}
+				assert.True(t, ok, "Missing expected field %q in log output", key)
+				assert.Equal(t, expectedValue, actualValue, "Field %q mismatch", key)
 			}
 		})
 	}

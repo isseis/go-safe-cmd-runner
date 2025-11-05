@@ -22,12 +22,8 @@ func TestConfig(t *testing.T) {
 			},
 			wantErr: false,
 			testFunc: func(t *testing.T, config Config) {
-				if config.Path != "/tmp/test-output.txt" {
-					t.Errorf("Expected Path '/tmp/test-output.txt', got '%s'", config.Path)
-				}
-				if config.MaxSize != 1024*1024 {
-					t.Errorf("Expected MaxSize 1048576, got %d", config.MaxSize)
-				}
+				assert.Equal(t, "/tmp/test-output.txt", config.Path)
+				assert.Equal(t, int64(1024*1024), config.MaxSize)
 			},
 		},
 		{
@@ -38,12 +34,8 @@ func TestConfig(t *testing.T) {
 			},
 			wantErr: false,
 			testFunc: func(t *testing.T, config Config) {
-				if config.Path != "" {
-					t.Errorf("Expected empty Path, got '%s'", config.Path)
-				}
-				if config.MaxSize != 0 {
-					t.Errorf("Expected MaxSize 0, got %d", config.MaxSize)
-				}
+				assert.Equal(t, "", config.Path)
+				assert.Equal(t, int64(0), config.MaxSize)
 			},
 		},
 	}

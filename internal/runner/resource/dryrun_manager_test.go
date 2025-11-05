@@ -351,10 +351,6 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 	require.NoError(t, err)
-	if err != nil {
-		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-	}
-	require.NoError(t, err)
 
 	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name: "test-failure",

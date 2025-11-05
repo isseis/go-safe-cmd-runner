@@ -488,9 +488,7 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := containsSSHStyleAddress(tt.args)
-			if result != tt.expected {
-				t.Errorf("containsSSHStyleAddress(%v) = %v, expected %v", tt.args, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "containsSSHStyleAddress(%v)", tt.args)
 		})
 	}
 }
@@ -678,14 +676,10 @@ func TestIsNetworkOperation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isNet, isRisk := IsNetworkOperation(tt.cmdName, tt.args)
-			if isNet != tt.expectedNet {
-				t.Errorf("IsNetworkOperation(%s, %v) network detection = %v, expected %v. %s",
-					tt.cmdName, tt.args, isNet, tt.expectedNet, tt.description)
-			}
-			if isRisk != tt.expectedRisk {
-				t.Errorf("IsNetworkOperation(%s, %v) risk detection = %v, expected %v. %s",
-					tt.cmdName, tt.args, isRisk, tt.expectedRisk, tt.description)
-			}
+			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
+				tt.cmdName, tt.args, tt.description)
+			assert.Equal(t, tt.expectedRisk, isRisk, "IsNetworkOperation(%s, %v) risk detection. %s",
+				tt.cmdName, tt.args, tt.description)
 		})
 	}
 }
@@ -1592,9 +1586,7 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := IsDestructiveFileOperation(tt.cmd, tt.args)
-			if result != tt.expected {
-				t.Errorf("IsDestructiveFileOperation(%q, %v) = %v, want %v", tt.cmd, tt.args, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "IsDestructiveFileOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
 }
@@ -1695,9 +1687,7 @@ func TestIsSystemModification(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := IsSystemModification(tt.cmd, tt.args)
-			if result != tt.expected {
-				t.Errorf("IsSystemModification(%q, %v) = %v, want %v", tt.cmd, tt.args, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "IsSystemModification(%q, %v)", tt.cmd, tt.args)
 		})
 	}
 }
@@ -1768,9 +1758,7 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, _ := IsNetworkOperation(tt.cmd, tt.args)
-			if result != tt.expected {
-				t.Errorf("IsNetworkOperation(%q, %v) = %v, want %v", tt.cmd, tt.args, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
 }
