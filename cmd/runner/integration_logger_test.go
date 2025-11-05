@@ -241,7 +241,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// Verify log file was created (if logDir was specified)
 	if config.LogDir != "" {
 		entries, err := os.ReadDir(config.LogDir)
-		assert.NoError(t, err, "Failed to read log directory")
+require.NoError(t, err, "Failed to read log directory")
 
 		assert.NotEmpty(t, entries, "Expected log file to be created, but directory is empty")
 
