@@ -462,6 +462,17 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			// Log timeout exceeded event
 			ge.securityLogger.LogTimeoutExceeded(cmd.Name(), cmd.EffectiveTimeout, 0) // PID not available at this level
 		}
+		// Log command output at debug level when execution fails
+		if result != nil {
+			debugLogArgs := []any{"command", cmd.Name()}
+			if result.Stdout != "" {
+				debugLogArgs = append(debugLogArgs, "stdout", result.Stdout)
+			}
+			if result.Stderr != "" {
+				debugLogArgs = append(debugLogArgs, "stderr", result.Stderr)
+			}
+			slog.Debug("Command output on failure", debugLogArgs...)
+		}
 		slog.Error("Command failed", "command", cmd.Name(), "exit_code", 1, "error", err)
 		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
 	}
@@ -484,6 +495,15 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
+		// Log command output at debug level when exit code is non-zero
+		debugLogArgs := []any{"command", cmd.Name(), "exit_code", result.ExitCode}
+		if result.Stdout != "" {
+			debugLogArgs = append(debugLogArgs, "stdout", result.Stdout)
+		}
+		if result.Stderr != "" {
+			debugLogArgs = append(debugLogArgs, "stderr", result.Stderr)
+		}
+		slog.Debug("Command output on non-zero exit", debugLogArgs...)
 		slog.Error("Command failed with non-zero exit code", "command", cmd.Name(), "exit_code", result.ExitCode)
 		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode)
 	}
