@@ -212,7 +212,7 @@ require.Error(t, err, "Expected error, got nil")
 
 			// Test Verify
 			err = validator.Verify(tt.filePath)
-			assert.Error(t, err, "Expected error for Verify, got nil")
+require.Error(t, err, "Expected error for Verify, got nil")
 
 			// Check error type for Verify
 			if tt.expectedErr != nil {
