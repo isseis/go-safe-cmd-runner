@@ -61,7 +61,6 @@ func isOpenat2Available() bool {
 	if fd >= 0 {
 		_ = syscall.Close(fd)
 	}
-	_ = os.Remove(testFile)
 
 	return err == nil
 }
