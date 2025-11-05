@@ -219,7 +219,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 
 	// Test setup
 	err := bootstrap.SetupLoggerWithConfig(config, false, false)
-	assert.NoError(t, err, "SetupLoggerWithConfig should not return error")
+	require.NoError(t, err, "SetupLoggerWithConfig should not return error")
 
 	// Test logging through the chain
 	logger := slog.Default()
