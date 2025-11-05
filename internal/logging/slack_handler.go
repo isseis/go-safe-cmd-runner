@@ -20,15 +20,35 @@ const (
 	outputMaxLength = 1000
 	stderrMaxLength = 500
 
-	// Backoff configuration
-	backoffBase = 2 * time.Second // Base interval for exponential backoff
-	retryCount  = 3               // Number of retry attempts
+	// Backoff configuration constants
+	defaultBackoffBase = 2 * time.Second
+	defaultRetryCount  = 3
+	testBackoffBase    = 10 * time.Millisecond
+	testRetryCount     = 3
 
 	// Color constants
 	colorDanger  = "danger"
 	colorWarning = "warning"
 	colorGood    = "good"
 )
+
+// BackoffConfig defines the retry backoff configuration
+type BackoffConfig struct {
+	Base       time.Duration // Base interval for exponential backoff
+	RetryCount int           // Number of retry attempts
+}
+
+// DefaultBackoffConfig is the production backoff configuration
+var DefaultBackoffConfig = BackoffConfig{
+	Base:       defaultBackoffBase,
+	RetryCount: defaultRetryCount,
+}
+
+// TestBackoffConfig is the test backoff configuration with shorter intervals
+var TestBackoffConfig = BackoffConfig{
+	Base:       testBackoffBase,
+	RetryCount: testRetryCount,
+}
 
 // Static errors for linting compliance
 var (
@@ -39,12 +59,13 @@ var (
 
 // SlackHandler is a slog.Handler that sends notifications to Slack
 type SlackHandler struct {
-	webhookURL string
-	runID      string
-	httpClient *http.Client
-	level      slog.Level
-	attrs      []slog.Attr // Accumulated attributes from WithAttrs calls
-	groups     []string    // Accumulated group names from WithGroup calls
+	webhookURL    string
+	runID         string
+	httpClient    *http.Client
+	level         slog.Level
+	attrs         []slog.Attr // Accumulated attributes from WithAttrs calls
+	groups        []string    // Accumulated group names from WithGroup calls
+	backoffConfig BackoffConfig
 }
 
 // SlackMessage represents the structure of a Slack webhook message
@@ -101,20 +122,26 @@ func validateWebhookURL(webhookURL string) error {
 	return nil
 }
 
-// NewSlackHandler creates a new SlackHandler with URL validation
+// NewSlackHandler creates a new SlackHandler with URL validation and default backoff configuration
 func NewSlackHandler(webhookURL, runID string) (*SlackHandler, error) {
+	return NewSlackHandlerWithConfig(webhookURL, runID, DefaultBackoffConfig)
+}
+
+// NewSlackHandlerWithConfig creates a new SlackHandler with URL validation and custom backoff configuration
+func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig) (*SlackHandler, error) {
 	if err := validateWebhookURL(webhookURL); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	slog.Debug("Creating Slack handler", "webhook_url", webhookURL, "run_id", runID, "timeout", httpTimeout)
+	slog.Debug("Creating Slack handler", "webhook_url", webhookURL, "run_id", runID, "timeout", httpTimeout, "backoff_base", config.Base, "retry_count", config.RetryCount)
 	return &SlackHandler{
 		webhookURL: webhookURL,
 		runID:      runID,
 		httpClient: &http.Client{
 			Timeout: httpTimeout,
 		},
-		level: slog.LevelInfo, // Only handle info level and above
+		level:         slog.LevelInfo, // Only handle info level and above
+		backoffConfig: config,
 	}, nil
 }
 
@@ -182,12 +209,13 @@ func (s *SlackHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	copy(newAttrs[len(s.attrs):], attrs)
 
 	return &SlackHandler{
-		webhookURL: s.webhookURL,
-		runID:      s.runID,
-		httpClient: s.httpClient,
-		level:      s.level,
-		attrs:      newAttrs,
-		groups:     s.groups, // Copy existing groups
+		webhookURL:    s.webhookURL,
+		runID:         s.runID,
+		httpClient:    s.httpClient,
+		level:         s.level,
+		attrs:         newAttrs,
+		groups:        s.groups, // Copy existing groups
+		backoffConfig: s.backoffConfig,
 	}
 }
 
@@ -203,12 +231,13 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 	newGroups[len(s.groups)] = name
 
 	return &SlackHandler{
-		webhookURL: s.webhookURL,
-		runID:      s.runID,
-		httpClient: s.httpClient,
-		level:      s.level,
-		attrs:      s.attrs, // Copy existing attributes
-		groups:     newGroups,
+		webhookURL:    s.webhookURL,
+		runID:         s.runID,
+		httpClient:    s.httpClient,
+		level:         s.level,
+		attrs:         s.attrs, // Copy existing attributes
+		groups:        newGroups,
+		backoffConfig: s.backoffConfig,
 	}
 }
 
@@ -591,8 +620,8 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 
 	var lastErr error
 
-	backoffIntervals := generateBackoffIntervals(backoffBase, retryCount)
-	for attempt := 0; attempt <= retryCount; attempt++ {
+	backoffIntervals := generateBackoffIntervals(s.backoffConfig.Base, s.backoffConfig.RetryCount)
+	for attempt := 0; attempt <= s.backoffConfig.RetryCount; attempt++ {
 		if attempt > 0 {
 			// Get backoff interval from predefined list
 			backoff := backoffIntervals[attempt-1]
