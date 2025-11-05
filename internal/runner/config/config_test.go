@@ -6,6 +6,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Test parsing Command with output field
@@ -65,28 +67,17 @@ output_file = ""
 			config, err := loader.LoadConfig([]byte(tt.tomlContent))
 
 			if tt.wantErr {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
+				assert.Error(t, err, "Expected error but got none")
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
+			require.NoError(t, err, "Unexpected error")
 
-			if len(config.Groups) == 0 {
-				t.Fatal("Expected at least one group")
-			}
-
-			if len(config.Groups[0].Commands) == 0 {
-				t.Fatal("Expected at least one command")
-			}
+			require.NotEmpty(t, config.Groups, "Expected at least one group")
+			require.NotEmpty(t, config.Groups[0].Commands, "Expected at least one command")
 
 			command := config.Groups[0].Commands[0]
-			if command.OutputFile != tt.wantOutput {
-				t.Errorf("Expected output '%s', got '%s'", tt.wantOutput, command.OutputFile)
-			}
+			assert.Equal(t, tt.wantOutput, command.OutputFile, "Output file mismatch")
 		})
 	}
 }
@@ -136,19 +127,12 @@ output_size_limit = 0
 			config, err := loader.LoadConfig([]byte(tt.tomlContent))
 
 			if tt.wantErr {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
+				assert.Error(t, err, "Expected error but got none")
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			if config.Global.OutputSizeLimit != tt.wantMaxSize {
-				t.Errorf("Expected max_output_size %d, got %d", tt.wantMaxSize, config.Global.OutputSizeLimit)
-			}
+			require.NoError(t, err, "Unexpected error")
+			assert.Equal(t, tt.wantMaxSize, config.Global.OutputSizeLimit, "max_output_size mismatch")
 		})
 	}
 }
@@ -195,45 +179,28 @@ args = ["-la"]
 
 	loader := NewLoader()
 	config, err := loader.LoadConfig([]byte(tomlContent))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err, "Unexpected error")
 
 	// Test global configuration
-	if config.Global.OutputSizeLimit != 20971520 {
-		t.Errorf("Expected max_output_size 20971520, got %d", config.Global.OutputSizeLimit)
-	}
+	assert.Equal(t, int64(20971520), config.Global.OutputSizeLimit, "max_output_size mismatch")
 
 	// Test first group commands
 	buildGroup := config.Groups[0]
-	if buildGroup.Name != "build" {
-		t.Errorf("Expected group name 'build', got '%s'", buildGroup.Name)
-	}
-
-	if len(buildGroup.Commands) != 2 {
-		t.Fatalf("Expected 2 commands in build group, got %d", len(buildGroup.Commands))
-	}
+	assert.Equal(t, "build", buildGroup.Name, "Group name mismatch")
+	require.Len(t, buildGroup.Commands, 2, "Expected 2 commands in build group")
 
 	makeCmd := buildGroup.Commands[0]
-	if makeCmd.OutputFile != "/tmp/build.log" {
-		t.Errorf("Expected make command output '/tmp/build.log', got '%s'", makeCmd.OutputFile)
-	}
+	assert.Equal(t, "/tmp/build.log", makeCmd.OutputFile, "make command output mismatch")
 
 	testCmd := buildGroup.Commands[1]
-	if testCmd.OutputFile != "/tmp/test.log" {
-		t.Errorf("Expected test command output '/tmp/test.log', got '%s'", testCmd.OutputFile)
-	}
+	assert.Equal(t, "/tmp/test.log", testCmd.OutputFile, "test command output mismatch")
 
 	// Test second group command (no output specified)
 	utilGroup := config.Groups[1]
-	if utilGroup.Name != "utilities" {
-		t.Errorf("Expected group name 'utilities', got '%s'", utilGroup.Name)
-	}
+	assert.Equal(t, "utilities", utilGroup.Name, "Group name mismatch")
 
 	lsCmd := utilGroup.Commands[0]
-	if lsCmd.OutputFile != "" {
-		t.Errorf("Expected ls command output to be empty, got '%s'", lsCmd.OutputFile)
-	}
+	assert.Equal(t, "", lsCmd.OutputFile, "ls command output should be empty")
 }
 
 // Test direct unmarshaling of structures with new fields
@@ -247,13 +214,8 @@ output_file = "/tmp/test.txt"
 `
 		var cmd runnertypes.CommandSpec
 		err := toml.Unmarshal([]byte(tomlData), &cmd)
-		if err != nil {
-			t.Fatalf("Failed to unmarshal command: %v", err)
-		}
-
-		if cmd.OutputFile != "/tmp/test.txt" {
-			t.Errorf("Expected output '/tmp/test.txt', got '%s'", cmd.OutputFile)
-		}
+		require.NoError(t, err, "Failed to unmarshal command")
+		assert.Equal(t, "/tmp/test.txt", cmd.OutputFile, "output field mismatch")
 	})
 
 	t.Run("GlobalConfig with max_output_size field", func(t *testing.T) {
@@ -264,13 +226,8 @@ output_size_limit = 5242880
 `
 		var global runnertypes.GlobalSpec
 		err := toml.Unmarshal([]byte(tomlData), &global)
-		if err != nil {
-			t.Fatalf("Failed to unmarshal global config: %v", err)
-		}
-
-		if global.OutputSizeLimit != 5242880 {
-			t.Errorf("Expected max_output_size 5242880, got %d", global.OutputSizeLimit)
-		}
+		require.NoError(t, err, "Failed to unmarshal global config")
+		assert.Equal(t, int64(5242880), global.OutputSizeLimit, "max_output_size mismatch")
 	})
 }
 
@@ -354,18 +311,11 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 			// 1. Parse TOML
 			loader := NewLoader()
 			config, err := loader.LoadConfig([]byte(tt.tomlContent))
-			if err != nil {
-				t.Fatalf("Failed to parse TOML: %v", err)
-			}
-
-			if len(config.Groups) == 0 {
-				t.Fatal("Expected at least one group")
-			}
+			require.NoError(t, err, "Failed to parse TOML")
+			require.NotEmpty(t, config.Groups, "Expected at least one group")
 
 			group := &config.Groups[0]
-			if len(group.Commands) == 0 {
-				t.Fatal("Expected at least one command")
-			}
+			require.NotEmpty(t, group.Commands, "Expected at least one command")
 
 			// 2. Simulate group variable expansion (mimic what ExecuteGroup does)
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
@@ -374,9 +324,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 			}
 
 			runtimeGroup, err := ExpandGroup(group, runtimeGlobal)
-			if err != nil {
-				t.Fatalf("Failed to expand group: %v", err)
-			}
+			require.NoError(t, err, "Failed to expand group")
 
 			// 3. Set __runner_workdir (this would normally be set by resolveGroupWorkDir)
 			runtimeGroup.EffectiveWorkDir = tt.runnerWorkdir
@@ -385,14 +333,10 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
 			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
-			if err != nil {
-				t.Fatalf("Failed to expand command: %v", err)
-			}
+			require.NoError(t, err, "Failed to expand command")
 
 			// 5. Verify command name
-			if cmdSpec.Name != tt.expectedCmdName {
-				t.Errorf("Expected command name '%s', got '%s'", tt.expectedCmdName, cmdSpec.Name)
-			}
+			assert.Equal(t, tt.expectedCmdName, cmdSpec.Name, "Command name mismatch")
 
 			// 6. Verify command workdir expansion (if specified)
 			if cmdSpec.WorkDir != "" {
@@ -402,27 +346,18 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 					"command["+cmdSpec.Name+"]",
 					"workdir",
 				)
-				if err != nil {
-					t.Fatalf("Failed to expand command workdir: %v", err)
-				}
-
-				if expandedWorkDir != tt.expectedWorkDir {
-					t.Errorf("Expected expanded workdir '%s', got '%s'", tt.expectedWorkDir, expandedWorkDir)
-				}
+				require.NoError(t, err, "Failed to expand command workdir")
+				assert.Equal(t, tt.expectedWorkDir, expandedWorkDir, "Expanded workdir mismatch")
 			} else if tt.expectedWorkDir != "" {
-				t.Errorf("Expected workdir '%s', but command has no workdir field", tt.expectedWorkDir)
+				assert.Fail(t, "Expected workdir field missing", "Expected workdir '%s', but command has no workdir field", tt.expectedWorkDir)
 			}
 
 			// 7. Verify args expansion (for the test case with args using __runner_workdir)
 			if tt.name == "command args with __runner_workdir variable" {
-				if len(runtimeCmd.ExpandedArgs) < 3 {
-					t.Fatalf("Expected at least 3 args, got %d", len(runtimeCmd.ExpandedArgs))
-				}
+				require.GreaterOrEqual(t, len(runtimeCmd.ExpandedArgs), 3, "Expected at least 3 args")
 
 				expectedArg := tt.runnerWorkdir + "/dump.sql"
-				if runtimeCmd.ExpandedArgs[2] != expectedArg {
-					t.Errorf("Expected args[2] to be '%s', got '%s'", expectedArg, runtimeCmd.ExpandedArgs[2])
-				}
+				assert.Equal(t, expectedArg, runtimeCmd.ExpandedArgs[2], "Args[2] mismatch")
 			}
 		})
 	}

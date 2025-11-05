@@ -3,6 +3,8 @@ package output
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Define static test errors to satisfy linter requirements
@@ -35,12 +37,8 @@ func TestCaptureError(t *testing.T) {
 			wantType: ErrorTypePathValidation,
 			wantMsg:  "output capture error during preparation phase: path validation for '../../../etc/passwd': path traversal detected",
 			testFunc: func(t *testing.T, err CaptureError) {
-				if err.Type != ErrorTypePathValidation {
-					t.Errorf("Expected ErrorTypePathValidation, got %v", err.Type)
-				}
-				if err.Phase != PhasePreparation {
-					t.Errorf("Expected PhasePreparation, got %v", err.Phase)
-				}
+				assert.Equal(t, ErrorTypePathValidation, err.Type)
+				assert.Equal(t, PhasePreparation, err.Phase)
 			},
 		},
 		{
@@ -54,9 +52,7 @@ func TestCaptureError(t *testing.T) {
 			wantType: ErrorTypePermission,
 			wantMsg:  "output capture error during preparation phase: permission denied for '/root/protected.txt': permission denied",
 			testFunc: func(t *testing.T, err CaptureError) {
-				if err.Type != ErrorTypePermission {
-					t.Errorf("Expected ErrorTypePermission, got %v", err.Type)
-				}
+				assert.Equal(t, ErrorTypePermission, err.Type)
 			},
 		},
 		{
@@ -70,12 +66,8 @@ func TestCaptureError(t *testing.T) {
 			wantType: ErrorTypeFileSystem,
 			wantMsg:  "output capture error during execution phase: filesystem error for '/tmp/output.txt': disk full",
 			testFunc: func(t *testing.T, err CaptureError) {
-				if err.Type != ErrorTypeFileSystem {
-					t.Errorf("Expected ErrorTypeFileSystem, got %v", err.Type)
-				}
-				if err.Phase != PhaseExecution {
-					t.Errorf("Expected PhaseExecution, got %v", err.Phase)
-				}
+				assert.Equal(t, ErrorTypeFileSystem, err.Type)
+				assert.Equal(t, PhaseExecution, err.Phase)
 			},
 		},
 		{
@@ -89,9 +81,7 @@ func TestCaptureError(t *testing.T) {
 			wantType: ErrorTypeSizeLimit,
 			wantMsg:  "output capture error during execution phase: size limit exceeded for '/tmp/large-output.txt': size limit exceeded: 10MB",
 			testFunc: func(t *testing.T, err CaptureError) {
-				if err.Type != ErrorTypeSizeLimit {
-					t.Errorf("Expected ErrorTypeSizeLimit, got %v", err.Type)
-				}
+				assert.Equal(t, ErrorTypeSizeLimit, err.Type)
 			},
 		},
 		{
@@ -105,12 +95,8 @@ func TestCaptureError(t *testing.T) {
 			wantType: ErrorTypeCleanup,
 			wantMsg:  "output capture error during cleanup phase: cleanup failed for '/tmp/temp-file.tmp': failed to remove temp file",
 			testFunc: func(t *testing.T, err CaptureError) {
-				if err.Type != ErrorTypeCleanup {
-					t.Errorf("Expected ErrorTypeCleanup, got %v", err.Type)
-				}
-				if err.Phase != PhaseCleanup {
-					t.Errorf("Expected PhaseCleanup, got %v", err.Phase)
-				}
+				assert.Equal(t, ErrorTypeCleanup, err.Type)
+				assert.Equal(t, PhaseCleanup, err.Phase)
 			},
 		},
 	}
@@ -118,14 +104,10 @@ func TestCaptureError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Error() method
-			if tt.err.Error() != tt.wantMsg {
-				t.Errorf("Expected error message:\n'%s'\nGot:\n'%s'", tt.wantMsg, tt.err.Error())
-			}
+			assert.Equal(t, tt.wantMsg, tt.err.Error(), "Error message mismatch")
 
 			// Test Unwrap() method
-			if !errors.Is(tt.err, tt.err.Cause) {
-				t.Error("Expected error to wrap the original cause")
-			}
+			assert.ErrorIs(t, tt.err, tt.err.Cause, "Expected error to wrap the original cause")
 
 			// Run custom test function
 			if tt.testFunc != nil {
@@ -151,9 +133,7 @@ func TestErrorTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.errorType.String() != tt.expected {
-				t.Errorf("Expected '%s', got '%s'", tt.expected, tt.errorType.String())
-			}
+			assert.Equal(t, tt.expected, tt.errorType.String())
 		})
 	}
 }
@@ -173,9 +153,7 @@ func TestExecutionPhases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.phase.String() != tt.expected {
-				t.Errorf("Expected '%s', got '%s'", tt.expected, tt.phase.String())
-			}
+			assert.Equal(t, tt.expected, tt.phase.String())
 		})
 	}
 }
@@ -193,7 +171,5 @@ func TestCaptureErrorInterface(t *testing.T) {
 	var _ error = err
 
 	// Test that it implements fmt.Wrapper interface
-	if !errors.Is(err, err.Cause) {
-		t.Error("Expected Unwrap() to return the original cause")
-	}
+	assert.ErrorIs(t, err, err.Cause, "Expected Unwrap() to return the original cause")
 }

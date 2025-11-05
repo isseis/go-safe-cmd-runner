@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +12,9 @@ import (
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockPathResolver is defined locally as it's specific to resource management
@@ -34,23 +35,18 @@ func validateMaliciousConfig(t *testing.T, configPath string, expectedPatterns [
 	// Verify that the malicious config file contains dangerous commands
 	// This validates that our test setup correctly creates a security risk scenario
 	configContent, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Errorf("Failed to read malicious config: %v", err)
-		return
-	}
+	require.NoError(t, err, "Failed to read malicious config")
 
 	configStr := string(configContent)
 
 	// Verify the config contains all expected dangerous patterns
 	for _, pattern := range expectedPatterns {
-		if !strings.Contains(configStr, pattern) {
-			t.Errorf("Malicious config should contain dangerous pattern %q", pattern)
-		}
+		assert.Contains(t, configStr, pattern, "Malicious config should contain dangerous pattern %q", pattern)
 	}
 
 	// Verify the target path if specified
-	if targetPath != "" && !strings.Contains(configStr, targetPath) {
-		t.Errorf("Malicious config should target test-specific path %q", targetPath)
+	if targetPath != "" {
+		assert.Contains(t, configStr, targetPath, "Malicious config should target test-specific path %q", targetPath)
 	}
 
 	t.Log("Malicious config properly contains dangerous command - would require dry-run or security controls for safe execution")
@@ -94,16 +90,14 @@ func TestSecureExecutionFlow(t *testing.T) {
 			} else {
 				hashDir = filepath.Join(tempDir, "hashes")
 				if !tc.expectError {
-					if err := os.MkdirAll(hashDir, 0o700); err != nil {
-						t.Fatalf("Failed to create hash directory: %v", err)
-					}
+					require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 				}
 			}
 
 			// Hash directory validation is now performed internally by verification.Manager
 			// We just need to ensure the directory exists for the test
-			if _, err := os.Stat(hashDir); err != nil && !tc.expectError {
-				t.Errorf("Hash directory should exist: %v", err)
+			if !tc.expectError {
+				assert.DirExists(t, hashDir, "Hash directory should exist")
 			}
 		})
 	}
@@ -122,9 +116,7 @@ func TestVerificationIntegration(t *testing.T) {
 			setupFunc: func(t *testing.T) (string, string) {
 				tempDir := t.TempDir()
 				hashDir := filepath.Join(tempDir, "hashes")
-				if err := os.MkdirAll(hashDir, 0o700); err != nil {
-					t.Fatalf("Failed to create hash directory: %v", err)
-				}
+				require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
 				configPath := filepath.Join(tempDir, "config.toml")
 				configContent := `
@@ -139,9 +131,7 @@ name = "integration-test"
 name = "test-cmd"
 cmd = ["echo", "integration-test"]
 `
-				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
-					t.Fatalf("Failed to create config file: %v", err)
-				}
+				require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o644), "Failed to create config file")
 				return hashDir, configPath
 			},
 			expectError: false,
@@ -154,8 +144,8 @@ cmd = ["echo", "integration-test"]
 
 			// Hash directory validation is now performed internally by verification.Manager
 			// Step 1: Verify hash directory exists
-			if _, err := os.Stat(hashDir); err != nil && !tc.expectError {
-				t.Errorf("Hash directory should exist: %v", err)
+			if !tc.expectError {
+				assert.DirExists(t, hashDir, "Hash directory should exist")
 			}
 
 			// If we expected an error, return early as the test is complete
@@ -164,9 +154,7 @@ cmd = ["echo", "integration-test"]
 			}
 
 			// Step 2: Verify config file exists and is readable
-			if _, err := os.Stat(configPath); err != nil {
-				t.Errorf("Config file verification failed: %v", err)
-			}
+			assert.FileExists(t, configPath, "Config file verification failed")
 		})
 	}
 }
@@ -188,24 +176,18 @@ func TestSecurityAttackScenarios(t *testing.T) {
 				tempDir := t.TempDir()
 
 				targetDir := filepath.Join(os.TempDir(), "symlink_target")
-				if err := os.MkdirAll(targetDir, 0o755); err != nil {
-					t.Fatalf("Failed to create target directory: %v", err)
-				}
+				require.NoError(t, os.MkdirAll(targetDir, 0o755), "Failed to create target directory")
 				t.Cleanup(func() { os.RemoveAll(targetDir) })
 
 				symlinkPath := filepath.Join(tempDir, "hashes")
-				if err := os.Symlink(targetDir, symlinkPath); err != nil {
-					t.Fatalf("Failed to create symlink: %v", err)
-				}
+				require.NoError(t, os.Symlink(targetDir, symlinkPath), "Failed to create symlink")
 
 				configPath := filepath.Join(tempDir, "config.toml")
 				configContent := `
 [global]
 log_level = "info"
 `
-				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
-					t.Fatalf("Failed to create config file: %v", err)
-				}
+				require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o644), "Failed to create config file")
 
 				return symlinkPath, configPath
 			},
@@ -218,9 +200,7 @@ log_level = "info"
 				tempDir := t.TempDir()
 
 				hashDir := filepath.Join(tempDir, "hashes")
-				if err := os.MkdirAll(hashDir, 0o700); err != nil {
-					t.Fatalf("Failed to create hash directory: %v", err)
-				}
+				require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
 				configPath := filepath.Join(tempDir, "malicious_config.toml")
 				maliciousContent := `
@@ -234,9 +214,7 @@ name = "malicious-group"
 name = "dangerous-cmd"
 cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 `
-				if err := os.WriteFile(configPath, []byte(maliciousContent), 0o644); err != nil {
-					t.Fatalf("Failed to create malicious config file: %v", err)
-				}
+				require.NoError(t, os.WriteFile(configPath, []byte(maliciousContent), 0o644), "Failed to create malicious config file")
 
 				return hashDir, configPath
 			},
@@ -253,8 +231,8 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 
 			// Hash directory validation is now performed internally by verification.Manager
 			// Verify hash directory exists
-			if _, err := os.Stat(hashDir); err != nil && !tc.expectError {
-				t.Errorf("Hash directory should exist: %v", err)
+			if !tc.expectError {
+				assert.DirExists(t, hashDir, "Hash directory should exist")
 			}
 
 			// For expected error cases, we've completed validation
@@ -263,10 +241,7 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 			}
 
 			// Verify config file is readable
-			if _, statErr := os.Stat(configPath); statErr != nil {
-				t.Errorf("Config file should be readable: %v", statErr)
-				// Continue to next validation - don't return early
-			}
+			assert.FileExists(t, configPath, "Config file should be readable")
 
 			// Perform additional security validation if required (independent of previous validations)
 			if tc.validateConfig {
@@ -352,9 +327,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			// Note: Using the same mock setup pattern as existing tests
 			tempDir := t.TempDir()
 			hashDir := filepath.Join(tempDir, "hashes")
-			if err := os.MkdirAll(hashDir, 0o700); err != nil {
-				t.Fatalf("Failed to create hash directory: %v", err)
-			}
+			require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
 			// Create DryRunResourceManager with mocks
 			mockExec := executortesting.NewMockExecutor()
@@ -371,9 +344,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			}
 
 			dryRunManager, err := resource.NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
-			if err != nil {
-				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-			}
+			require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 			// Execute the dangerous command in dry-run mode
 			ctx := context.Background()
@@ -383,26 +354,18 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 
 			// Verify that execution completed successfully (analysis without actual execution)
 			if tc.expectedExecutionResult {
-				if err != nil {
-					t.Errorf("Expected dry-run execution to succeed, but got error: %v", err)
-				}
-				if result == nil {
-					t.Error("Expected execution result, but got nil")
-				}
-			} else if err == nil {
-				t.Error("Expected dry-run execution to fail, but it succeeded")
+				assert.NoError(t, err, "Expected dry-run execution to succeed")
+				assert.NotNil(t, result, "Expected execution result, but got nil")
+			} else {
+				assert.Error(t, err, "Expected dry-run execution to fail, but it succeeded")
 			}
 
 			// Get dry-run results to verify security analysis
 			dryRunResult := dryRunManager.GetDryRunResults()
-			if dryRunResult == nil {
-				t.Fatal("Expected dry-run results, but got nil")
-			}
+			require.NotNil(t, dryRunResult, "Expected dry-run results, but got nil")
 
 			// Verify security analysis was performed
-			if len(dryRunResult.ResourceAnalyses) == 0 {
-				t.Error("Expected security analysis to be recorded, but no analyses found")
-			}
+			assert.NotEmpty(t, dryRunResult.ResourceAnalyses, "Expected security analysis to be recorded, but no analyses found")
 
 			// Verify security risk level for the dangerous command
 			found := false
@@ -410,23 +373,19 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 				// Check if this analysis is for our command (match by target path or command name)
 				if strings.Contains(analysis.Target, tc.cmd.ExpandedCmd) || strings.Contains(analysis.Target, tc.cmd.Name()) {
 					found = true
-					if analysis.Impact.SecurityRisk != tc.expectedSecurityRisk {
-						t.Errorf("Expected security risk %q, but got %q",
-							tc.expectedSecurityRisk, analysis.Impact.SecurityRisk)
-					}
+					assert.Equal(t, tc.expectedSecurityRisk, analysis.Impact.SecurityRisk,
+						"Expected security risk %q, but got %q", tc.expectedSecurityRisk, analysis.Impact.SecurityRisk)
 
 					// Verify that security warnings are present
-					if !strings.Contains(analysis.Impact.Description, "WARNING") {
-						t.Error("Expected security warning in impact description")
-					}
+					assert.Contains(t, analysis.Impact.Description, "WARNING", "Expected security warning in impact description")
 
 					t.Logf("Security analysis completed: %s - Risk: %s, Target: %s",
 						tc.description, analysis.Impact.SecurityRisk, analysis.Target)
 					break
 				}
 			}
+			assert.True(t, found, "Expected to find analysis for command %q, but it was not recorded", tc.cmd.Name())
 			if !found {
-				t.Errorf("Expected to find analysis for command %q, but it was not recorded", tc.cmd.Name())
 				// Log available analyses for debugging
 				for i, analysis := range dryRunResult.ResourceAnalyses {
 					t.Logf("Analysis %d: Type=%s, Target=%s, SecurityRisk=%s",
@@ -454,9 +413,7 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 			setupFunc: func(t *testing.T) string {
 				tempDir := t.TempDir()
 				hashDir := filepath.Join(tempDir, "hashes")
-				if err := os.MkdirAll(hashDir, 0o700); err != nil {
-					t.Fatalf("Failed to create hash directory: %v", err)
-				}
+				require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 				return hashDir
 			},
 			expectError: false,
@@ -478,9 +435,7 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 			// Hash directory validation is now performed internally by verification.Manager
 			// Just verify the directory exists if no error is expected
 			if !tc.expectError {
-				if _, err := os.Stat(hashDir); err != nil {
-					t.Errorf("Hash directory should exist: %v", err)
-				}
+				assert.DirExists(t, hashDir, "Hash directory should exist")
 			}
 		})
 	}
@@ -492,33 +447,22 @@ func TestUnverifiedDataAccessPrevention(t *testing.T) {
 
 	// Create hash directory
 	hashDir := filepath.Join(tempDir, "hashes")
-	if err := os.MkdirAll(hashDir, 0o700); err != nil {
-		t.Fatalf("Failed to create hash directory: %v", err)
-	}
+	require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
 	// Create a data file that has no corresponding hash file (unverified data)
 	unverifiedFile := filepath.Join(tempDir, "unverified_data.txt")
-	if err := os.WriteFile(unverifiedFile, []byte("sensitive unverified data"), 0o644); err != nil {
-		t.Fatalf("Failed to create unverified data file: %v", err)
-	}
+	require.NoError(t, os.WriteFile(unverifiedFile, []byte("sensitive unverified data"), 0o644), "Failed to create unverified data file")
 
 	// Attempt to verify the unverified file - this should fail
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
+	require.NoError(t, err, "Failed to create validator")
 
 	// Test that verification of unverified data fails appropriately
 	err = validator.Verify(unverifiedFile)
-	if err == nil {
-		t.Error("Expected verification to fail for unverified data, but it succeeded")
-		return
-	}
+	require.Error(t, err, "Expected verification to fail for unverified data")
 
 	// Verify that the error is the expected hash file not found error
-	if !errors.Is(err, filevalidator.ErrHashFileNotFound) {
-		t.Errorf("Expected ErrHashFileNotFound, but got: %v", err)
-	}
+	assert.ErrorIs(t, err, filevalidator.ErrHashFileNotFound, "Expected ErrHashFileNotFound")
 
 	t.Log("Successfully prevented access to unverified data - hash verification properly failed")
 }

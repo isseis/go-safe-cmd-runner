@@ -3,33 +3,27 @@ package logging
 import (
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewDefaultLogLineTracker(t *testing.T) {
 	tracker := NewDefaultLogLineTracker()
-	if tracker == nil {
-		t.Error("NewDefaultLogLineTracker should return a non-nil instance")
-	}
+	assert.NotNil(t, tracker, "NewDefaultLogLineTracker should return a non-nil instance")
 
 	// Initial line number should be 0
-	if line := tracker.GetCurrentLine(); line != 0 {
-		t.Errorf("Initial line number should be 0, got %d", line)
-	}
+	assert.Equal(t, 0, tracker.GetCurrentLine(), "Initial line number should be 0")
 }
 
 func TestDefaultLogLineTracker_GetCurrentLine(t *testing.T) {
 	tracker := NewDefaultLogLineTracker()
 
 	// Initial value should be 0
-	if line := tracker.GetCurrentLine(); line != 0 {
-		t.Errorf("GetCurrentLine() = %d, expected 0", line)
-	}
+	assert.Equal(t, 0, tracker.GetCurrentLine(), "Initial GetCurrentLine() should be 0")
 
 	// After increment, should return the incremented value
 	tracker.IncrementLine()
-	if line := tracker.GetCurrentLine(); line != 1 {
-		t.Errorf("GetCurrentLine() = %d, expected 1", line)
-	}
+	assert.Equal(t, 1, tracker.GetCurrentLine(), "GetCurrentLine() after one increment should be 1")
 }
 
 func TestDefaultLogLineTracker_IncrementLine(t *testing.T) {
@@ -49,9 +43,7 @@ func TestDefaultLogLineTracker_IncrementLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tracker.IncrementLine()
-			if result != tt.expected {
-				t.Errorf("IncrementLine() = %d, expected %d", result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "IncrementLine() result mismatch")
 		})
 	}
 }
@@ -65,21 +57,15 @@ func TestDefaultLogLineTracker_Reset(t *testing.T) {
 	tracker.IncrementLine()
 
 	// Verify it's not zero
-	if line := tracker.GetCurrentLine(); line == 0 {
-		t.Error("Line counter should not be zero before reset")
-	}
+	assert.NotEqual(t, 0, tracker.GetCurrentLine(), "Line counter should not be zero before reset")
 
 	// Reset and verify it's zero
 	tracker.Reset()
-	if line := tracker.GetCurrentLine(); line != 0 {
-		t.Errorf("After Reset(), GetCurrentLine() = %d, expected 0", line)
-	}
+	assert.Equal(t, 0, tracker.GetCurrentLine(), "After Reset(), GetCurrentLine() should be 0")
 
 	// Verify increment works after reset
 	result := tracker.IncrementLine()
-	if result != 1 {
-		t.Errorf("After reset, IncrementLine() = %d, expected 1", result)
-	}
+	assert.Equal(t, 1, result, "After reset, IncrementLine() should return 1")
 }
 
 func TestDefaultLogLineTracker_ThreadSafety(t *testing.T) {
@@ -106,9 +92,7 @@ func TestDefaultLogLineTracker_ThreadSafety(t *testing.T) {
 	expected := numGoroutines * incrementsPerGoroutine
 	result := tracker.GetCurrentLine()
 
-	if result != expected {
-		t.Errorf("After concurrent increments, GetCurrentLine() = %d, expected %d", result, expected)
-	}
+	assert.Equal(t, expected, result, "After concurrent increments, GetCurrentLine() mismatch")
 }
 
 func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
@@ -133,10 +117,7 @@ func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
 		for i := 0; i < numOperations; i++ {
 			line := tracker.GetCurrentLine()
 			// Line should never be negative
-			if line < 0 {
-				t.Errorf("GetCurrentLine() returned negative value: %d", line)
-				return
-			}
+			assert.GreaterOrEqual(t, line, 0, "GetCurrentLine() returned negative value")
 		}
 	}()
 
@@ -153,9 +134,7 @@ func TestDefaultLogLineTracker_ConcurrentReadWrite(t *testing.T) {
 
 	// Final line count should be non-negative
 	finalLine := tracker.GetCurrentLine()
-	if finalLine < 0 {
-		t.Errorf("Final line count is negative: %d", finalLine)
-	}
+	assert.GreaterOrEqual(t, finalLine, 0, "Final line count should be non-negative")
 }
 
 func TestLogLineTracker_Interface(t *testing.T) {
@@ -164,23 +143,15 @@ func TestLogLineTracker_Interface(t *testing.T) {
 
 	// Test interface methods
 	initialLine := tracker.GetCurrentLine()
-	if initialLine != 0 {
-		t.Errorf("Interface GetCurrentLine() = %d, expected 0", initialLine)
-	}
+	assert.Equal(t, 0, initialLine, "Interface GetCurrentLine() initial value mismatch")
 
 	incrementedLine := tracker.IncrementLine()
-	if incrementedLine != 1 {
-		t.Errorf("Interface IncrementLine() = %d, expected 1", incrementedLine)
-	}
+	assert.Equal(t, 1, incrementedLine, "Interface IncrementLine() result mismatch")
 
 	currentLine := tracker.GetCurrentLine()
-	if currentLine != 1 {
-		t.Errorf("Interface GetCurrentLine() after increment = %d, expected 1", currentLine)
-	}
+	assert.Equal(t, 1, currentLine, "Interface GetCurrentLine() after increment mismatch")
 
 	tracker.Reset()
 	resetLine := tracker.GetCurrentLine()
-	if resetLine != 0 {
-		t.Errorf("Interface GetCurrentLine() after reset = %d, expected 0", resetLine)
-	}
+	assert.Equal(t, 0, resetLine, "Interface GetCurrentLine() after reset mismatch")
 }

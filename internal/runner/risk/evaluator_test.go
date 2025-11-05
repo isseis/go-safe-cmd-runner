@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
@@ -125,13 +126,9 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := evaluator.EvaluateRisk(tt.cmd)
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "unexpected error")
 
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -187,14 +184,9 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := evaluator.EvaluateRisk(tt.cmd)
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "unexpected error")
 
-			if result != tt.expected {
-				t.Errorf("Test: %s\nExpected: %v, Got: %v\nDescription: %s",
-					tt.name, tt.expected, result, tt.description)
-			}
+			assert.Equal(t, tt.expected, result, "Test: %s\nDescription: %s", tt.name, tt.description)
 		})
 	}
 }
@@ -233,15 +225,11 @@ func TestStandardEvaluator_ErrorHandling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 
-			if tt.expectError && err == nil {
-				t.Errorf("expected error but got none")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-
-			if !tt.expectError && result != tt.expectedRisk {
-				t.Errorf("expected risk %v, got %v", tt.expectedRisk, result)
+			if tt.expectError {
+				assert.Error(t, err, "expected error but got none")
+			} else {
+				assert.NoError(t, err, "unexpected error")
+				assert.Equal(t, tt.expectedRisk, result, "expected risk %v, got %v", tt.expectedRisk, result)
 			}
 		})
 	}

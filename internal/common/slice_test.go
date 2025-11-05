@@ -3,6 +3,8 @@ package common
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCloneOrEmpty(t *testing.T) {
@@ -11,62 +13,42 @@ func TestCloneOrEmpty(t *testing.T) {
 		result := CloneOrEmpty(input)
 
 		// Check length
-		if len(result) != len(input) {
-			t.Errorf("expected length %d, got %d", len(input), len(result))
-		}
+		assert.Equal(t, len(input), len(result), "slice length mismatch")
 
 		// Check contents
 		for i, v := range input {
-			if result[i] != v {
-				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
-			}
+			assert.Equal(t, v, result[i], "element mismatch at index %d", i)
 		}
 
 		// Verify it's a copy (different underlying array)
 		input[0] = "modified"
-		if result[0] == "modified" {
-			t.Error("result should be a copy, not share underlying array")
-		}
+		assert.NotEqual(t, "modified", result[0], "result should be a copy, not share underlying array")
 	})
 
 	t.Run("returns empty slice for nil input", func(t *testing.T) {
 		var input []string
 		result := CloneOrEmpty(input)
 
-		if result == nil {
-			t.Error("expected non-nil slice, got nil")
-		}
-
-		if len(result) != 0 {
-			t.Errorf("expected empty slice, got length %d", len(result))
-		}
+		assert.NotNil(t, result, "expected non-nil slice")
+		assert.Empty(t, result, "expected empty slice")
 	})
 
 	t.Run("returns empty slice for empty input", func(t *testing.T) {
 		input := []string{}
 		result := CloneOrEmpty(input)
 
-		if result == nil {
-			t.Error("expected non-nil slice, got nil")
-		}
-
-		if len(result) != 0 {
-			t.Errorf("expected empty slice, got length %d", len(result))
-		}
+		assert.NotNil(t, result, "expected non-nil slice")
+		assert.Empty(t, result, "expected empty slice")
 	})
 
 	t.Run("preserves all elements", func(t *testing.T) {
 		input := []string{"VAR1", "VAR2", "VAR3", "VAR4"}
 		result := CloneOrEmpty(input)
 
-		if len(result) != len(input) {
-			t.Errorf("expected length %d, got %d", len(input), len(result))
-		}
+		assert.Equal(t, len(input), len(result), "slice length mismatch")
 
 		for i, expected := range input {
-			if result[i] != expected {
-				t.Errorf("expected result[%d] = %q, got %q", i, expected, result[i])
-			}
+			assert.Equal(t, expected, result[i], "element mismatch at index %d", i)
 		}
 	})
 }
@@ -85,14 +67,10 @@ func TestSetDifferenceToSlice(t *testing.T) {
 		result := SetDifferenceToSlice(setA, setB)
 
 		expected := []string{"a", "c"}
-		if len(result) != len(expected) {
-			t.Errorf("expected length %d, got %d", len(expected), len(result))
-		}
+		assert.Equal(t, len(expected), len(result), "slice length mismatch")
 
 		for i, v := range expected {
-			if result[i] != v {
-				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
-			}
+			assert.Equal(t, v, result[i], "element mismatch at index %d", i)
 		}
 	})
 
@@ -109,9 +87,7 @@ func TestSetDifferenceToSlice(t *testing.T) {
 
 		result := SetDifferenceToSlice(setA, setB)
 
-		if len(result) != 0 {
-			t.Errorf("expected empty result, got %v", result)
-		}
+		assert.Empty(t, result, "expected empty result")
 	})
 
 	t.Run("returns all elements when setB is empty", func(t *testing.T) {
@@ -125,14 +101,10 @@ func TestSetDifferenceToSlice(t *testing.T) {
 		result := SetDifferenceToSlice(setA, setB)
 
 		expected := []string{"a", "b", "c"}
-		if len(result) != len(expected) {
-			t.Errorf("expected length %d, got %d", len(expected), len(result))
-		}
+		assert.Equal(t, len(expected), len(result), "slice length mismatch")
 
 		for i, v := range expected {
-			if result[i] != v {
-				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
-			}
+			assert.Equal(t, v, result[i], "element mismatch at index %d", i)
 		}
 	})
 
@@ -147,14 +119,10 @@ func TestSetDifferenceToSlice(t *testing.T) {
 		result := SetDifferenceToSlice(setA, setB)
 
 		expected := []string{"apple", "mango", "zebra"}
-		if len(result) != len(expected) {
-			t.Errorf("expected length %d, got %d", len(expected), len(result))
-		}
+		assert.Equal(t, len(expected), len(result), "slice length mismatch")
 
 		for i, v := range expected {
-			if result[i] != v {
-				t.Errorf("expected result[%d] = %q, got %q", i, v, result[i])
-			}
+			assert.Equal(t, v, result[i], "element mismatch at index %d", i)
 		}
 	})
 
@@ -173,14 +141,10 @@ func TestSetDifferenceToSlice(t *testing.T) {
 		result := SetDifferenceToSlice(setA, setB)
 
 		expected := []int{1, 3}
-		if len(result) != len(expected) {
-			t.Errorf("expected length %d, got %d", len(expected), len(result))
-		}
+		assert.Equal(t, len(expected), len(result), "slice length mismatch")
 
 		for i, v := range expected {
-			if result[i] != v {
-				t.Errorf("expected result[%d] = %d, got %d", i, v, result[i])
-			}
+			assert.Equal(t, v, result[i], "element mismatch at index %d", i)
 		}
 	})
 
@@ -193,9 +157,7 @@ func TestSetDifferenceToSlice(t *testing.T) {
 
 		result := SetDifferenceToSlice(setA, setB)
 
-		if len(result) != 0 {
-			t.Errorf("expected empty result, got %v", result)
-		}
+		assert.Empty(t, result, "expected empty result")
 	})
 }
 
@@ -204,14 +166,11 @@ func TestSliceToSet(t *testing.T) {
 		input := []string{"apple", "banana", "cherry"}
 		result := SliceToSet(input)
 
-		if len(result) != 3 {
-			t.Errorf("expected set size 3, got %d", len(result))
-		}
+		assert.Equal(t, 3, len(result), "expected set size 3")
 
 		for _, item := range input {
-			if _, exists := result[item]; !exists {
-				t.Errorf("expected %q to be in set", item)
-			}
+			_, exists := result[item]
+			assert.True(t, exists, "expected %q to be in set", item)
 		}
 	})
 
@@ -219,15 +178,12 @@ func TestSliceToSet(t *testing.T) {
 		input := []string{"a", "b", "a", "c", "b"}
 		result := SliceToSet(input)
 
-		if len(result) != 3 {
-			t.Errorf("expected set size 3 (duplicates removed), got %d", len(result))
-		}
+		assert.Equal(t, 3, len(result), "expected set size 3 (duplicates removed)")
 
 		expected := map[string]struct{}{"a": {}, "b": {}, "c": {}}
 		for key := range expected {
-			if _, exists := result[key]; !exists {
-				t.Errorf("expected %q to be in set", key)
-			}
+			_, exists := result[key]
+			assert.True(t, exists, "expected %q to be in set", key)
 		}
 	})
 
@@ -235,32 +191,25 @@ func TestSliceToSet(t *testing.T) {
 		input := []string{}
 		result := SliceToSet(input)
 
-		if len(result) != 0 {
-			t.Errorf("expected empty set, got size %d", len(result))
-		}
+		assert.Equal(t, 0, len(result), "expected empty set")
 	})
 
 	t.Run("handles nil slice", func(t *testing.T) {
 		var input []string
 		result := SliceToSet(input)
 
-		if len(result) != 0 {
-			t.Errorf("expected empty set for nil slice, got size %d", len(result))
-		}
+		assert.Equal(t, 0, len(result), "expected empty set for nil slice")
 	})
 
 	t.Run("works with integers", func(t *testing.T) {
 		input := []int{1, 2, 3, 2, 1}
 		result := SliceToSet(input)
 
-		if len(result) != 3 {
-			t.Errorf("expected set size 3, got %d", len(result))
-		}
+		assert.Equal(t, 3, len(result), "expected set size 3")
 
 		for _, num := range []int{1, 2, 3} {
-			if _, exists := result[num]; !exists {
-				t.Errorf("expected %d to be in set", num)
-			}
+			_, exists := result[num]
+			assert.True(t, exists, "expected %d to be in set", num)
 		}
 	})
 
@@ -275,14 +224,11 @@ func TestSliceToSet(t *testing.T) {
 		input := []Status{Pending, Active, Completed, Active}
 		result := SliceToSet(input)
 
-		if len(result) != 3 {
-			t.Errorf("expected set size 3, got %d", len(result))
-		}
+		assert.Equal(t, 3, len(result), "expected set size 3")
 
 		for _, status := range []Status{Pending, Active, Completed} {
-			if _, exists := result[status]; !exists {
-				t.Errorf("expected status %d to be in set", status)
-			}
+			_, exists := result[status]
+			assert.True(t, exists, "expected status %d to be in set", status)
 		}
 	})
 
@@ -290,16 +236,13 @@ func TestSliceToSet(t *testing.T) {
 		input := []string{"VAR1", "VAR2", "VAR3", "VAR1"}
 		result := SliceToSet(input)
 
-		if len(result) != 3 {
-			t.Errorf("expected set size 3, got %d", len(result))
-		}
+		assert.Equal(t, 3, len(result), "expected set size 3")
 
 		// Verify all unique elements are present
 		expected := []string{"VAR1", "VAR2", "VAR3"}
 		for _, item := range expected {
-			if _, exists := result[item]; !exists {
-				t.Errorf("expected %q to be in set", item)
-			}
+			_, exists := result[item]
+			assert.True(t, exists, "expected %q to be in set", item)
 		}
 	})
 
@@ -312,15 +255,12 @@ func TestSliceToSet(t *testing.T) {
 
 		result := SliceToSet(input)
 
-		if len(result) != 10000 {
-			t.Errorf("expected set size 10000, got %d", len(result))
-		}
+		assert.Equal(t, 10000, len(result), "expected set size 10000")
 
 		// Verify a few random elements
 		for _, num := range []int{0, 5000, 9999} {
-			if _, exists := result[num]; !exists {
-				t.Errorf("expected %d to be in set", num)
-			}
+			_, exists := result[num]
+			assert.True(t, exists, "expected %d to be in set", num)
 		}
 	})
 }

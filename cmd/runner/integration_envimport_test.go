@@ -457,9 +457,7 @@ args = ["test"]
 				switch tt.errLevel {
 				case "group":
 					_, err = config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
-					if err == nil {
-						t.Fatal("Expected error at group level but got none")
-					}
+					assert.Error(t, err, "Expected error at group level but got none")
 				case "command":
 					runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 					if err != nil {

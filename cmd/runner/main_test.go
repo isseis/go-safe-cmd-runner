@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"os"
 	"os/signal"
@@ -14,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // setupTestFlags initializes the command-line flags for testing and returns a cleanup function
@@ -49,9 +49,7 @@ func setupTestFlags() func() {
 func createTempHashDir(t *testing.T) (string, func()) {
 	t.Helper()
 	tempDir, err := os.MkdirTemp("", "go-safe-cmd-runner-test-")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
+	require.NoError(t, err, "failed to create temp dir")
 
 	cleanup := func() {
 		_ = os.RemoveAll(tempDir) // Ignore cleanup errors in test helper
@@ -150,29 +148,20 @@ func TestConfigPathRequired(t *testing.T) {
 	// Test runForTestWithTempHashDir() function to avoid CI hash directory issues
 	runID := "test-run-id"
 	err := runForTestWithTempHashDir(t, runID)
-	if err == nil {
-		t.Error("expected error when --config is not provided")
-	}
+	assert.Error(t, err, "expected error when --config is not provided")
 
 	// Check if the error is a PreExecutionError with the correct type
 	var preExecErr *logging.PreExecutionError
-	if !errors.As(err, &preExecErr) {
-		t.Errorf("expected PreExecutionError, got: %T (error: %v)", err, err)
-		return
-	}
+	require.ErrorAs(t, err, &preExecErr, "expected PreExecutionError, got: %T (error: %v)", err, err)
 
-	if preExecErr.Type != logging.ErrorTypeRequiredArgumentMissing {
-		t.Errorf("expected ErrorTypeRequiredArgumentMissing, got: %v (message: %s)", preExecErr.Type, preExecErr.Message)
-	}
+	assert.Equal(t, logging.ErrorTypeRequiredArgumentMissing, preExecErr.Type)
 }
 
 func TestNewManagerProduction(t *testing.T) {
 	t.Run("creates manager with default hash directory", func(t *testing.T) {
 		// Use temporary hash directory to avoid CI environment issues
 		runErr, managerErr := runForTestWithManagerUsingTempDir(t)
-		if managerErr != nil {
-			t.Fatalf("manager creation should not fail: %v", managerErr)
-		}
+		require.NoError(t, managerErr, "manager creation should not fail")
 		if runErr != nil {
 			// In tests, we expect this to fail due to missing config file
 			assert.Contains(t, runErr.Error(), "config")
@@ -188,9 +177,7 @@ func TestNewManagerForTestValidation(t *testing.T) {
 
 		// This should work since we're in a test file
 		configErr, managerErr := runForTestWithCustomHashDir(t, tempDir)
-		if managerErr != nil {
-			t.Fatalf("manager creation should not fail: %v", managerErr)
-		}
+		require.NoError(t, managerErr, "manager creation should not fail")
 		if configErr != nil {
 			// We expect config errors, not manager creation errors
 			assert.Contains(t, configErr.Error(), "config")

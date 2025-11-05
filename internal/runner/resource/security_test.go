@@ -79,10 +79,7 @@ func TestSecurityAnalysis(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver) // fallback
 			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-			require.NoError(t, err)
-			if err != nil {
-				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-			}
+			require.NoError(t, err, "Failed to create DryRunResourceManager")
 			require.NotNil(t, manager)
 
 			group := &runnertypes.GroupSpec{
@@ -175,10 +172,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver) // fallback
 			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-			require.NoError(t, err)
-			if err != nil {
-				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-			}
+			require.NoError(t, err, "Failed to create DryRunResourceManager")
 			require.NotNil(t, manager)
 
 			group := &runnertypes.GroupSpec{
@@ -249,10 +243,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-	require.NoError(t, err)
-	if err != nil {
-		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DryRunResourceManager")
 	require.NotNil(t, manager)
 
 	group := &runnertypes.GroupSpec{
@@ -296,10 +287,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
 	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-	require.NoError(t, err)
-	if err != nil {
-		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DryRunResourceManager")
 	require.NotNil(t, manager)
 
 	group := &runnertypes.GroupSpec{

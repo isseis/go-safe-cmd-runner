@@ -2,6 +2,8 @@ package config
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDetermineEffectiveEnvAllowlist(t *testing.T) {
@@ -52,18 +54,16 @@ func TestDetermineEffectiveEnvAllowlist(t *testing.T) {
 				return
 			}
 			if (tt.want == nil) != (got == nil) {
-				t.Errorf("nil mismatch: got %v, want %v", got, tt.want)
+				assert.Fail(t, "nil mismatch", "got %v, want %v", got, tt.want)
 				return
 			}
 
+			assert.Equal(t, len(tt.want), len(got), "slice length mismatch")
 			if len(got) != len(tt.want) {
-				t.Errorf("len(got) = %d, len(want) = %d", len(got), len(tt.want))
 				return
 			}
 			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("got[%d] = %s, want[%d] = %s", i, got[i], i, tt.want[i])
-				}
+				assert.Equal(t, tt.want[i], got[i], "element at index %d mismatch", i)
 			}
 		})
 	}

@@ -2,6 +2,8 @@ package output
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Test for Config struct
@@ -20,12 +22,8 @@ func TestConfig(t *testing.T) {
 			},
 			wantErr: false,
 			testFunc: func(t *testing.T, config Config) {
-				if config.Path != "/tmp/test-output.txt" {
-					t.Errorf("Expected Path '/tmp/test-output.txt', got '%s'", config.Path)
-				}
-				if config.MaxSize != 1024*1024 {
-					t.Errorf("Expected MaxSize 1048576, got %d", config.MaxSize)
-				}
+				assert.Equal(t, "/tmp/test-output.txt", config.Path)
+				assert.Equal(t, int64(1024*1024), config.MaxSize)
 			},
 		},
 		{
@@ -36,12 +34,8 @@ func TestConfig(t *testing.T) {
 			},
 			wantErr: false,
 			testFunc: func(t *testing.T, config Config) {
-				if config.Path != "" {
-					t.Errorf("Expected empty Path, got '%s'", config.Path)
-				}
-				if config.MaxSize != 0 {
-					t.Errorf("Expected MaxSize 0, got %d", config.MaxSize)
-				}
+				assert.Equal(t, "", config.Path)
+				assert.Equal(t, int64(0), config.MaxSize)
 			},
 		},
 	}
@@ -73,15 +67,9 @@ func TestAnalysis(t *testing.T) {
 				MaxSizeLimit:    10 * 1024 * 1024, // 10MB
 			},
 			testFunc: func(t *testing.T, analysis Analysis) {
-				if !analysis.DirectoryExists {
-					t.Error("Expected DirectoryExists to be true")
-				}
-				if !analysis.WritePermission {
-					t.Error("Expected WritePermission to be true")
-				}
-				if analysis.SecurityRisk != RiskLevelLow {
-					t.Errorf("Expected SecurityRisk Low, got %v", analysis.SecurityRisk)
-				}
+				assert.True(t, analysis.DirectoryExists, "Expected DirectoryExists to be true")
+				assert.True(t, analysis.WritePermission, "Expected WritePermission to be true")
+				assert.Equal(t, RiskLevelLow, analysis.SecurityRisk, "Expected SecurityRisk Low")
 			},
 		},
 		{
@@ -95,15 +83,9 @@ func TestAnalysis(t *testing.T) {
 				MaxSizeLimit:    1024 * 1024, // 1MB
 			},
 			testFunc: func(t *testing.T, analysis Analysis) {
-				if analysis.DirectoryExists {
-					t.Error("Expected DirectoryExists to be false")
-				}
-				if analysis.WritePermission {
-					t.Error("Expected WritePermission to be false")
-				}
-				if analysis.SecurityRisk != RiskLevelHigh {
-					t.Errorf("Expected SecurityRisk High, got %v", analysis.SecurityRisk)
-				}
+				assert.False(t, analysis.DirectoryExists, "Expected DirectoryExists to be false")
+				assert.False(t, analysis.WritePermission, "Expected WritePermission to be false")
+				assert.Equal(t, RiskLevelHigh, analysis.SecurityRisk, "Expected SecurityRisk High")
 			},
 		},
 	}

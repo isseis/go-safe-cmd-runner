@@ -29,17 +29,11 @@ func TestCapture(t *testing.T) {
 				StartTime:   time.Now(),
 			},
 			testFunc: func(t *testing.T, capture *Capture) {
-				if capture.OutputPath != "/tmp/final-output.txt" {
-					t.Errorf("Expected OutputPath '/tmp/final-output.txt', got '%s'", capture.OutputPath)
-				}
+				assert.Equal(t, "/tmp/final-output.txt", capture.OutputPath)
 				// FileHandle will be set by PrepareOutput in real usage
 				// In this test context, nil is acceptable
-				if capture.MaxSize != 10*1024*1024 {
-					t.Errorf("Expected MaxSize 10485760, got %d", capture.MaxSize)
-				}
-				if capture.CurrentSize != 0 {
-					t.Errorf("Expected CurrentSize 0, got %d", capture.CurrentSize)
-				}
+				assert.Equal(t, int64(10*1024*1024), capture.MaxSize)
+				assert.Equal(t, int64(0), capture.CurrentSize)
 			},
 		},
 		{
@@ -52,12 +46,8 @@ func TestCapture(t *testing.T) {
 				StartTime:   time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
 			},
 			testFunc: func(t *testing.T, capture *Capture) {
-				if capture.CurrentSize != 512*1024 {
-					t.Errorf("Expected CurrentSize 524288, got %d", capture.CurrentSize)
-				}
-				if capture.MaxSize <= capture.CurrentSize {
-					t.Errorf("CurrentSize (%d) should be less than MaxSize (%d)", capture.CurrentSize, capture.MaxSize)
-				}
+				assert.Equal(t, int64(512*1024), capture.CurrentSize)
+				assert.Less(t, capture.CurrentSize, capture.MaxSize)
 			},
 		},
 	}

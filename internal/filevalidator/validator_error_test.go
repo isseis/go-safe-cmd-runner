@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestErrorCases tests various error conditions and their messages
@@ -47,14 +48,14 @@ func TestErrorCases(t *testing.T) {
 				// Create a directory with no read permissions
 				dirPath := filepath.Join(tempDir, "restricted")
 				if err := os.Mkdir(dirPath, 0o000); err != nil {
-					t.Fatalf("Failed to create restricted dir: %v", err)
+					return "", err
 				}
 				t.Cleanup(func() { _ = os.Chmod(dirPath, 0o755) }) // Ensure cleanup
 
 				// Create a file in the restricted directory
 				filePath := filepath.Join(dirPath, "test.txt")
 				if err := os.WriteFile(filePath, []byte("test"), 0o400); err == nil {
-					t.Fatal("Expected error when creating file in restricted dir")
+					return "", safefileio.ErrInvalidFilePath
 				}
 
 				return filePath, nil
@@ -198,15 +199,11 @@ func TestErrorMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Record
 			_, err := validator.Record(tt.filePath, false)
-			if err == nil {
-				t.Fatal("Expected error, got nil")
-			}
+			require.Error(t, err, "Expected error, got nil")
 
 			// Check error type if expectedErr is set
 			if tt.expectedErr != nil {
-				if !errors.Is(err, tt.expectedErr) {
-					t.Errorf("Error %v is not a %v", err, tt.expectedErr)
-				}
+				assert.True(t, errors.Is(err, tt.expectedErr), "Error %v is not a %v", err, tt.expectedErr)
 			}
 
 			// Skip Verify test if specified
@@ -216,15 +213,11 @@ func TestErrorMessages(t *testing.T) {
 
 			// Test Verify
 			err = validator.Verify(tt.filePath)
-			if err == nil {
-				t.Fatal("Expected error for Verify, got nil")
-			}
+			require.Error(t, err, "Expected error for Verify, got nil")
 
 			// Check error type for Verify
 			if tt.expectedErr != nil {
-				if !errors.Is(err, tt.expectedErr) {
-					t.Errorf("Verify error %v is not a %v", err, tt.expectedErr)
-				}
+				assert.True(t, errors.Is(err, tt.expectedErr), "Verify error %v is not a %v", err, tt.expectedErr)
 			}
 		})
 	}

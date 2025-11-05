@@ -3,6 +3,8 @@ package security
 import (
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // NewPermissiveTestConfig creates a config with relaxed permissions for specific tests
@@ -146,14 +148,13 @@ func TestConfig_GetSuspiciousFilePatterns(t *testing.T) {
 
 			// Handle comparison between empty slice and nil, or use reflect.DeepEqual for other cases
 			if len(result) != len(tt.expectedPatterns) || (len(result) > 0 && !reflect.DeepEqual(result, tt.expectedPatterns)) {
-				t.Errorf("GetSuspiciousFilePatterns() = %v, want %v", result, tt.expectedPatterns)
-				t.Errorf("Description: %s", tt.description)
+				assert.Equal(t, tt.expectedPatterns, result, "GetSuspiciousFilePatterns() mismatch for description: %s", tt.description)
 			}
 
 			// Verify result is sorted
 			for i := 1; i < len(result); i++ {
 				if result[i-1] > result[i] {
-					t.Errorf("Result is not sorted: %v", result)
+					assert.Fail(t, "Result is not sorted", "result: %v", result)
 					break
 				}
 			}
@@ -186,37 +187,31 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("Expected pattern %q not found in suspicious patterns: %v", expected, patterns)
+			assert.Fail(t, "Expected pattern not found in suspicious patterns", "expected: %q, patterns: %v", expected, patterns)
 		}
 	}
 
 	// Verify patterns are not empty
-	if len(patterns) == 0 {
-		t.Error("GetSuspiciousFilePatterns() returned empty list")
-	}
+	assert.NotEmpty(t, patterns, "GetSuspiciousFilePatterns() returned empty list")
 
 	// Verify no duplicates
 	seen := make(map[string]bool)
 	for _, pattern := range patterns {
-		if seen[pattern] {
-			t.Errorf("Duplicate pattern found: %q", pattern)
-		}
+		assert.False(t, seen[pattern], "Duplicate pattern found: %q", pattern)
 		seen[pattern] = true
 	}
 
 	// Verify result is sorted
 	for i := 1; i < len(patterns); i++ {
 		if patterns[i-1] > patterns[i] {
-			t.Errorf("Result is not sorted: %v", patterns)
+			assert.Fail(t, "Result is not sorted", "patterns: %v", patterns)
 			break
 		}
 	}
 
 	// Verify directories are excluded
 	for _, pattern := range patterns {
-		if pattern == ".ssh" || pattern == ".gnupg" {
-			t.Errorf("Directory pattern %q should have been excluded", pattern)
-		}
+		assert.NotContains(t, []string{".ssh", ".gnupg"}, pattern, "Directory pattern %q should have been excluded", pattern)
 	}
 
 	// Verify deduplication works
@@ -227,6 +222,6 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 		}
 	}
 	if duplicateCount != 1 {
-		t.Errorf("Expected exactly 1 occurrence of 'duplicate_file', got %d", duplicateCount)
+		assert.Equal(t, 1, duplicateCount, "Expected exactly 1 occurrence of 'duplicate_file', got %d", duplicateCount)
 	}
 }

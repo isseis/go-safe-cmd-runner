@@ -702,13 +702,9 @@ func TestSafeAtomicMoveFile(t *testing.T) {
 		default:
 			// Check if attacker can see new content (this would be a security issue)
 			attackerReadContent := attackerNewRead[:n]
-			if bytes.Equal(attackerReadContent, newContent) {
-				t.Errorf("SECURITY ISSUE: Attacker can read new content through old file descriptor")
-				t.Errorf("Expected: old content or error, Got: new content")
-			} else {
-				// Good: Attacker sees old content or garbage, not new content
-				t.Logf("Attacker's file descriptor sees different content (safe): %q", attackerReadContent)
-			}
+			assert.False(t, bytes.Equal(attackerReadContent, newContent), "SECURITY ISSUE: Attacker can read new content through old file descriptor. Expected: old content or error, Got: new content")
+			// Good: Attacker sees old content or garbage, not new content
+			t.Logf("Attacker's file descriptor sees different content (safe): %q", attackerReadContent)
 		}
 
 		// 7. Verify file permissions are secure (0o600)

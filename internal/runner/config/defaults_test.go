@@ -5,6 +5,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestApplyGlobalDefaults(t *testing.T) {
@@ -49,13 +50,11 @@ func TestApplyGlobalDefaults(t *testing.T) {
 			// Check VerifyStandardPaths
 			switch {
 			case tt.input.VerifyStandardPaths == nil && tt.expected.VerifyStandardPaths != nil:
-				t.Errorf("VerifyStandardPaths: got nil, want %v", *tt.expected.VerifyStandardPaths)
+				assert.Fail(t, "VerifyStandardPaths mismatch", "got nil, want %v", *tt.expected.VerifyStandardPaths)
 			case tt.input.VerifyStandardPaths != nil && tt.expected.VerifyStandardPaths == nil:
-				t.Errorf("VerifyStandardPaths: got %v, want nil", *tt.input.VerifyStandardPaths)
+				assert.Fail(t, "VerifyStandardPaths mismatch", "got %v, want nil", *tt.input.VerifyStandardPaths)
 			case tt.input.VerifyStandardPaths != nil && tt.expected.VerifyStandardPaths != nil:
-				if *tt.input.VerifyStandardPaths != *tt.expected.VerifyStandardPaths {
-					t.Errorf("VerifyStandardPaths: got %v, want %v", *tt.input.VerifyStandardPaths, *tt.expected.VerifyStandardPaths)
-				}
+				assert.Equal(t, *tt.expected.VerifyStandardPaths, *tt.input.VerifyStandardPaths, "VerifyStandardPaths value mismatch")
 			}
 		})
 	}
@@ -100,9 +99,7 @@ func TestApplyCommandDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ApplyCommandDefaults(tt.input)
 
-			if tt.input.RiskLevel != tt.expected.RiskLevel {
-				t.Errorf("RiskLevel: got %v, want %v", tt.input.RiskLevel, tt.expected.RiskLevel)
-			}
+			assert.Equal(t, tt.expected.RiskLevel, tt.input.RiskLevel, "RiskLevel mismatch")
 		})
 	}
 }

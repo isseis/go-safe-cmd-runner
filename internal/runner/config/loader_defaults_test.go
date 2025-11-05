@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoader_ApplyDefaults_Integration(t *testing.T) {
@@ -99,12 +100,12 @@ risk_level = "medium"
 			loader := NewLoader()
 			cfg, err := loader.LoadConfig([]byte(tt.toml))
 			if err != nil {
-				t.Errorf("LoadConfig() error = %v", err)
+				assert.NoError(t, err, "LoadConfig() should not error")
 				return
 			}
 
 			if !tt.expected(cfg) {
-				t.Errorf("Default values not applied correctly")
+				assert.Fail(t, "Default values not applied correctly")
 				t.Logf("Global.VerifyStandardPaths: %v", cfg.Global.VerifyStandardPaths)
 				if len(cfg.Groups) > 0 && len(cfg.Groups[0].Commands) > 0 {
 					t.Logf("Commands[0].RiskLevel: %v", cfg.Groups[0].Commands[0].RiskLevel)

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // conditionalTestCapabilities implements terminal.Capabilities for testing
@@ -39,12 +41,8 @@ func TestNewConditionalTextHandler(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Errorf("NewConditionalTextHandler should not return error: %v", err)
-	}
-	if handler == nil {
-		t.Error("NewConditionalTextHandler should return a non-nil handler")
-	}
+	assert.NoError(t, err, "NewConditionalTextHandler should not return error")
+	assert.NotNil(t, handler, "NewConditionalTextHandler should return a non-nil handler")
 }
 
 func TestNewConditionalTextHandler_ErrorOnNilCapabilities(t *testing.T) {
@@ -55,12 +53,8 @@ func TestNewConditionalTextHandler_ErrorOnNilCapabilities(t *testing.T) {
 		Writer:       &buf,
 	})
 
-	if err == nil {
-		t.Error("Expected error when Capabilities is nil")
-	}
-	if handler != nil {
-		t.Error("Expected nil handler when error occurs")
-	}
+	assert.Error(t, err, "Expected error when Capabilities is nil")
+	assert.Nil(t, handler, "Expected nil handler when error occurs")
 }
 
 func TestNewConditionalTextHandler_ErrorOnNilWriter(t *testing.T) {
@@ -71,12 +65,8 @@ func TestNewConditionalTextHandler_ErrorOnNilWriter(t *testing.T) {
 		Writer:       nil,
 	})
 
-	if err == nil {
-		t.Error("Expected error when Writer is nil")
-	}
-	if handler != nil {
-		t.Error("Expected nil handler when error occurs")
-	}
+	assert.Error(t, err, "Expected error when Writer is nil")
+	assert.Nil(t, handler, "Expected nil handler when error occurs")
 }
 
 func TestConditionalTextHandler_Enabled_Interactive(t *testing.T) {
@@ -90,19 +80,13 @@ func TestConditionalTextHandler_Enabled_Interactive(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	ctx := context.Background()
 
 	// Should be disabled in interactive mode
-	if handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("Handler should be disabled in interactive mode")
-	}
-	if handler.Enabled(ctx, slog.LevelError) {
-		t.Error("Handler should be disabled in interactive mode for all levels")
-	}
+	assert.False(t, handler.Enabled(ctx, slog.LevelInfo), "Handler should be disabled in interactive mode")
+	assert.False(t, handler.Enabled(ctx, slog.LevelError), "Handler should be disabled in interactive mode for all levels")
 }
 
 func TestConditionalTextHandler_Enabled_NonInteractive(t *testing.T) {
@@ -116,25 +100,15 @@ func TestConditionalTextHandler_Enabled_NonInteractive(t *testing.T) {
 			Level: slog.LevelWarn,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	ctx := context.Background()
 
 	// Should respect the underlying text handler's level settings
-	if handler.Enabled(ctx, slog.LevelDebug) {
-		t.Error("Handler should not be enabled for debug level when min level is warn")
-	}
-	if handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("Handler should not be enabled for info level when min level is warn")
-	}
-	if !handler.Enabled(ctx, slog.LevelWarn) {
-		t.Error("Handler should be enabled for warn level")
-	}
-	if !handler.Enabled(ctx, slog.LevelError) {
-		t.Error("Handler should be enabled for error level")
-	}
+	assert.False(t, handler.Enabled(ctx, slog.LevelDebug), "Handler should not be enabled for debug level when min level is warn")
+	assert.False(t, handler.Enabled(ctx, slog.LevelInfo), "Handler should not be enabled for info level when min level is warn")
+	assert.True(t, handler.Enabled(ctx, slog.LevelWarn), "Handler should be enabled for warn level")
+	assert.True(t, handler.Enabled(ctx, slog.LevelError), "Handler should be enabled for error level")
 }
 
 func TestConditionalTextHandler_Handle_Interactive(t *testing.T) {
@@ -148,9 +122,7 @@ func TestConditionalTextHandler_Handle_Interactive(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	ctx := context.Background()
 	now := time.Now()
@@ -158,14 +130,10 @@ func TestConditionalTextHandler_Handle_Interactive(t *testing.T) {
 
 	// Should not handle in interactive mode
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Buffer should be empty
-	if buf.Len() > 0 {
-		t.Error("No output should be written in interactive mode")
-	}
+	assert.Equal(t, 0, buf.Len(), "No output should be written in interactive mode")
 }
 
 func TestConditionalTextHandler_Handle_NonInteractive(t *testing.T) {
@@ -179,9 +147,7 @@ func TestConditionalTextHandler_Handle_NonInteractive(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	ctx := context.Background()
 	now := time.Now()
@@ -189,19 +155,13 @@ func TestConditionalTextHandler_Handle_NonInteractive(t *testing.T) {
 
 	// Should handle in non-interactive mode
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Buffer should contain output
-	if buf.Len() == 0 {
-		t.Error("Output should be written in non-interactive mode")
-	}
+	assert.NotEqual(t, 0, buf.Len(), "Output should be written in non-interactive mode")
 
 	output := buf.String()
-	if !strings.Contains(output, "test message") {
-		t.Error("Output should contain the log message")
-	}
+	assert.Contains(t, output, "test message", "Output should contain the log message")
 }
 
 func TestConditionalTextHandler_WithAttrs(t *testing.T) {
@@ -215,9 +175,7 @@ func TestConditionalTextHandler_WithAttrs(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	attrs := []slog.Attr{
 		slog.String("key1", "value1"),
@@ -227,14 +185,11 @@ func TestConditionalTextHandler_WithAttrs(t *testing.T) {
 	newHandler := handler.WithAttrs(attrs)
 
 	// Should return a new handler
-	if newHandler == handler {
-		t.Error("WithAttrs should return a new handler instance")
-	}
+	assert.NotEqual(t, handler, newHandler, "WithAttrs should return a new handler instance")
 
 	// New handler should be of the same type
-	if _, ok := newHandler.(*ConditionalTextHandler); !ok {
-		t.Error("WithAttrs should return a ConditionalTextHandler")
-	}
+	_, ok := newHandler.(*ConditionalTextHandler)
+	assert.True(t, ok, "WithAttrs should return a ConditionalTextHandler")
 
 	// Test that attributes are applied when logging
 	ctx := context.Background()
@@ -242,14 +197,10 @@ func TestConditionalTextHandler_WithAttrs(t *testing.T) {
 	record := slog.NewRecord(now, slog.LevelInfo, "test message", 0)
 
 	err = newHandler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	output := buf.String()
-	if !strings.Contains(output, "test message") {
-		t.Error("Output should contain the log message")
-	}
+	assert.Contains(t, output, "test message", "Output should contain the log message")
 }
 
 func TestConditionalTextHandler_WithGroup(t *testing.T) {
@@ -263,23 +214,18 @@ func TestConditionalTextHandler_WithGroup(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	const testGroupName = "testgroup"
 	groupName := testGroupName
 	newHandler := handler.WithGroup(groupName)
 
 	// Should return a new handler
-	if newHandler == handler {
-		t.Error("WithGroup should return a new handler instance")
-	}
+	assert.NotEqual(t, handler, newHandler, "WithGroup should return a new handler instance")
 
 	// New handler should be of the same type
-	if _, ok := newHandler.(*ConditionalTextHandler); !ok {
-		t.Error("WithGroup should return a ConditionalTextHandler")
-	}
+	_, ok := newHandler.(*ConditionalTextHandler)
+	assert.True(t, ok, "WithGroup should return a ConditionalTextHandler")
 
 	// Test that group is applied when logging
 	ctx := context.Background()
@@ -288,14 +234,10 @@ func TestConditionalTextHandler_WithGroup(t *testing.T) {
 	record.AddAttrs(slog.String("attr", "value"))
 
 	err = newHandler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	output := buf.String()
-	if !strings.Contains(output, "test message") {
-		t.Error("Output should contain the log message")
-	}
+	assert.Contains(t, output, "test message", "Output should contain the log message")
 }
 
 func TestConditionalTextHandler_InteractiveToggle(t *testing.T) {
@@ -309,46 +251,32 @@ func TestConditionalTextHandler_InteractiveToggle(t *testing.T) {
 			Level: slog.LevelInfo,
 		},
 	})
-	if err != nil {
-		t.Fatalf("NewConditionalTextHandler failed: %v", err)
-	}
+	require.NoError(t, err, "NewConditionalTextHandler failed")
 
 	ctx := context.Background()
 	now := time.Now()
 	record := slog.NewRecord(now, slog.LevelInfo, "test message", 0)
 
 	// Initially non-interactive, should handle
-	if !handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("Should be enabled in non-interactive mode")
-	}
+	assert.True(t, handler.Enabled(ctx, slog.LevelInfo), "Should be enabled in non-interactive mode")
 
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	initialOutput := buf.String()
-	if len(initialOutput) == 0 {
-		t.Error("Should produce output in non-interactive mode")
-	}
+	assert.NotEmpty(t, initialOutput, "Should produce output in non-interactive mode")
 
 	// Switch to interactive mode
 	caps.interactive = true
 
 	// Now should not be enabled
-	if handler.Enabled(ctx, slog.LevelInfo) {
-		t.Error("Should be disabled in interactive mode")
-	}
+	assert.False(t, handler.Enabled(ctx, slog.LevelInfo), "Should be disabled in interactive mode")
 
 	// Reset buffer and try again
 	buf.Reset()
 	err = handler.Handle(ctx, record)
-	if err != nil {
-		t.Errorf("Handle should not return error: %v", err)
-	}
+	assert.NoError(t, err, "Handle should not return error")
 
 	// Should not produce output in interactive mode
-	if buf.Len() > 0 {
-		t.Error("Should not produce output in interactive mode")
-	}
+	assert.Equal(t, 0, buf.Len(), "Should not produce output in interactive mode")
 }
