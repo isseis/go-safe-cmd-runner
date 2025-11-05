@@ -6,8 +6,8 @@ Migrate test files from using `t.Fatal*()` and `t.Error*()` to using testify ass
 
 **Total Files:** 76 files
 **Total Occurrences:** 405 occurrences
-**Completed:** 11 files (32 occurrences) - 14.5%
-**Remaining:** 65 files (373 occurrences) - 85.5%
+**Completed:** 15 files (50 occurrences) - 19.7%
+**Remaining:** 61 files (355 occurrences) - 80.3%
 
 ## Progress by Directory
 
@@ -26,12 +26,12 @@ Migrate test files from using `t.Fatal*()` and `t.Error*()` to using testify ass
 - [ ] validation_test.go (1 occurrence)
 
 ### internal/runner/risk (1 file)
-- [ ] evaluator_test.go (7 occurrences)
+- [x] evaluator_test.go (7 occurrences)
 
 ### internal/runner/resource (7 files)
-- [ ] security_test.go (4 occurrences)
+- [x] security_test.go (4 occurrences)
 - [ ] error_scenarios_test.go (4 occurrences)
-- [ ] usergroup_dryrun_test.go (6 occurrences)
+- [x] usergroup_dryrun_test.go (6 occurrences)
 - [ ] formatter_test.go (2 occurrences)
 - [ ] dryrun_manager_test.go (6 occurrences)
 - [ ] integration_test.go (2 occurrences)
@@ -67,7 +67,7 @@ Migrate test files from using `t.Fatal*()` and `t.Error*()` to using testify ass
 - [ ] command_risk_profile_test.go (1 occurrence)
 - [ ] validator_test.go (2 occurrences)
 - [ ] file_validation_test.go (27 occurrences) ⚠️ LARGEST FILE
-- [x] types_test.go (5 occurrences) ✅ Updated
+- [x] types_test.go (1 occurrence) ✅ Updated
 
 ### internal/runner/bootstrap (3 files)
 - [ ] logger_test.go (5 occurrences)

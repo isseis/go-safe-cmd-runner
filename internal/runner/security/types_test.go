@@ -154,7 +154,7 @@ func TestConfig_GetSuspiciousFilePatterns(t *testing.T) {
 			// Verify result is sorted
 			for i := 1; i < len(result); i++ {
 				if result[i-1] > result[i] {
-					t.Errorf("Result is not sorted: %v", result)
+					assert.Fail(t, "Result is not sorted", "result: %v", result)
 					break
 				}
 			}

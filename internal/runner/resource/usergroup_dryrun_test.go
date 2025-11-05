@@ -22,10 +22,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		setupStandardCommandPaths(mockPathResolver)
 
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-		}
+		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_user_group",
@@ -65,10 +62,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-		}
+		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_invalid_user_group",
@@ -106,10 +100,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-		}
+		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_user_group_unsupported",
@@ -144,10 +135,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-		}
+		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_no_privmgr",
@@ -182,10 +170,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-		}
+		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:      "test_user_only",
@@ -225,10 +210,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
-		}
+		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
 		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name: "test_no_user_group",
