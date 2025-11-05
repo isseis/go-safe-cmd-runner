@@ -459,7 +459,7 @@ func TestUnverifiedDataAccessPrevention(t *testing.T) {
 
 	// Test that verification of unverified data fails appropriately
 	err = validator.Verify(unverifiedFile)
-	assert.Error(t, err, "Expected verification to fail for unverified data")
+require.Error(t, err, "Expected verification to fail for unverified data")
 
 	// Verify that the error is the expected hash file not found error
 	assert.ErrorIs(t, err, filevalidator.ErrHashFileNotFound, "Expected ErrHashFileNotFound")
