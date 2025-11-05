@@ -103,3 +103,10 @@ linters:
           - dupl
           - gosec
           - goconst
+
+      # Exclude SA5011 (nil pointer dereference after t.Fatal) from test files
+      # t.Fatal() stops execution, but staticcheck doesn't recognize this
+      - path: _test\.go
+        text: "SA5011"
+        linters:
+          - staticcheck
