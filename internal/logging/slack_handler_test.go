@@ -15,6 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	// Test-specific backoff configuration constants
+	testBackoffBase = 10 * time.Millisecond
+	testRetryCount  = 3
+)
+
+// testBackoffConfig is the test backoff configuration with shorter intervals
+var testBackoffConfig = BackoffConfig{
+	Base:       testBackoffBase,
+	RetryCount: testRetryCount,
+}
+
 func TestSlackHandler_WithAttrs(t *testing.T) {
 	// Create a SlackHandler (we don't need a real webhook URL for this test)
 	handler := &SlackHandler{
@@ -389,7 +401,7 @@ func TestSlackHandler_Handle_SlackNotifyFalse(t *testing.T) {
 
 func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 	// Use test backoff config for faster test execution
-	testConfig := TestBackoffConfig
+	testConfig := testBackoffConfig
 
 	tests := []struct {
 		name            string
@@ -545,7 +557,7 @@ func TestSlackHandler_SendToSlack_Retry(t *testing.T) {
 			runID:         "test-run",
 			httpClient:    &http.Client{Timeout: 5 * time.Second},
 			level:         slog.LevelInfo,
-			backoffConfig: TestBackoffConfig,
+			backoffConfig: testBackoffConfig,
 		}
 
 		ctx := context.Background()
@@ -569,7 +581,7 @@ func TestSlackHandler_SendToSlack_Retry(t *testing.T) {
 			runID:         "test-run",
 			httpClient:    &http.Client{Timeout: 5 * time.Second},
 			level:         slog.LevelInfo,
-			backoffConfig: TestBackoffConfig,
+			backoffConfig: testBackoffConfig,
 		}
 
 		ctx := context.Background()
@@ -582,26 +594,39 @@ func TestSlackHandler_SendToSlack_Retry(t *testing.T) {
 }
 
 func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
-	// Test with default config
-	intervals := generateBackoffIntervals(DefaultBackoffConfig.Base, DefaultBackoffConfig.RetryCount)
-
-	assert.Len(t, intervals, DefaultBackoffConfig.RetryCount, "Should generate correct number of intervals")
-
-	// Check exponential backoff formula: base * 2^i
-	for i := range len(intervals) {
-		expected := DefaultBackoffConfig.Base * time.Duration(1<<i)
-		assert.Equal(t, expected, intervals[i],
-			"Interval[%d] should follow exponential backoff formula (base * 2^%d)", i, i)
+	tests := []struct {
+		name        string
+		base        time.Duration
+		retryCount  int
+		description string
+	}{
+		{
+			name:        "default config",
+			base:        DefaultBackoffConfig.Base,
+			retryCount:  DefaultBackoffConfig.RetryCount,
+			description: "Should generate intervals for default configuration",
+		},
+		{
+			name:        "test config",
+			base:        testBackoffConfig.Base,
+			retryCount:  testBackoffConfig.RetryCount,
+			description: "Should generate intervals for test configuration",
+		},
 	}
 
-	// Test with test config
-	testIntervals := generateBackoffIntervals(TestBackoffConfig.Base, TestBackoffConfig.RetryCount)
-	assert.Len(t, testIntervals, TestBackoffConfig.RetryCount, "Should generate correct number of test intervals")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			intervals := generateBackoffIntervals(tt.base, tt.retryCount)
 
-	// Verify test intervals are much shorter
-	for i := range len(testIntervals) {
-		expected := TestBackoffConfig.Base * time.Duration(1<<i)
-		assert.Equal(t, expected, testIntervals[i],
-			"Test interval[%d] should follow exponential backoff formula", i)
+			assert.Len(t, intervals, tt.retryCount,
+				"Should generate correct number of intervals for %s", tt.name)
+
+			// Check exponential backoff formula: base * 2^i
+			for i := range len(intervals) {
+				expected := tt.base * time.Duration(1<<i)
+				assert.Equal(t, expected, intervals[i],
+					"Interval[%d] should follow exponential backoff formula (base * 2^%d)", i, i)
+			}
+		})
 	}
 }

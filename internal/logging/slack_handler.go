@@ -23,8 +23,6 @@ const (
 	// Backoff configuration constants
 	defaultBackoffBase = 2 * time.Second
 	defaultRetryCount  = 3
-	testBackoffBase    = 10 * time.Millisecond
-	testRetryCount     = 3
 
 	// Color constants
 	colorDanger  = "danger"
@@ -42,12 +40,6 @@ type BackoffConfig struct {
 var DefaultBackoffConfig = BackoffConfig{
 	Base:       defaultBackoffBase,
 	RetryCount: defaultRetryCount,
-}
-
-// TestBackoffConfig is the test backoff configuration with shorter intervals
-var TestBackoffConfig = BackoffConfig{
-	Base:       testBackoffBase,
-	RetryCount: testRetryCount,
 }
 
 // Static errors for linting compliance
