@@ -9,6 +9,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSetupLoggerWithConfig_IntegrationWithNewHandlers tests the integration
@@ -241,7 +242,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// Verify log file was created (if logDir was specified)
 	if config.LogDir != "" {
 		entries, err := os.ReadDir(config.LogDir)
-require.NoError(t, err, "Failed to read log directory")
+		require.NoError(t, err, "Failed to read log directory")
 
 		assert.NotEmpty(t, entries, "Expected log file to be created, but directory is empty")
 

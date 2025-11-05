@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestErrorCases tests various error conditions and their messages
@@ -198,7 +199,7 @@ func TestErrorMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Record
 			_, err := validator.Record(tt.filePath, false)
-require.Error(t, err, "Expected error, got nil")
+			require.Error(t, err, "Expected error, got nil")
 
 			// Check error type if expectedErr is set
 			if tt.expectedErr != nil {
@@ -212,7 +213,7 @@ require.Error(t, err, "Expected error, got nil")
 
 			// Test Verify
 			err = validator.Verify(tt.filePath)
-require.Error(t, err, "Expected error for Verify, got nil")
+			require.Error(t, err, "Expected error for Verify, got nil")
 
 			// Check error type for Verify
 			if tt.expectedErr != nil {
