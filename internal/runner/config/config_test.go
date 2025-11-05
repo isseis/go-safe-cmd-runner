@@ -349,7 +349,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 				require.NoError(t, err, "Failed to expand command workdir")
 				assert.Equal(t, tt.expectedWorkDir, expandedWorkDir, "Expanded workdir mismatch")
 			} else if tt.expectedWorkDir != "" {
-				t.Errorf("Expected workdir '%s', but command has no workdir field", tt.expectedWorkDir)
+				assert.Fail(t, "Expected workdir field missing", "Expected workdir '%s', but command has no workdir field", tt.expectedWorkDir)
 			}
 
 			// 7. Verify args expansion (for the test case with args using __runner_workdir)
