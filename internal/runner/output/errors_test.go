@@ -3,6 +3,8 @@ package output
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Define static test errors to satisfy linter requirements
@@ -118,14 +120,10 @@ func TestCaptureError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Error() method
-			if tt.err.Error() != tt.wantMsg {
-				t.Errorf("Expected error message:\n'%s'\nGot:\n'%s'", tt.wantMsg, tt.err.Error())
-			}
+			assert.Equal(t, tt.wantMsg, tt.err.Error(), "Error message mismatch")
 
 			// Test Unwrap() method
-			if !errors.Is(tt.err, tt.err.Cause) {
-				t.Error("Expected error to wrap the original cause")
-			}
+			assert.ErrorIs(t, tt.err, tt.err.Cause, "Expected error to wrap the original cause")
 
 			// Run custom test function
 			if tt.testFunc != nil {
@@ -193,7 +191,5 @@ func TestCaptureErrorInterface(t *testing.T) {
 	var _ error = err
 
 	// Test that it implements fmt.Wrapper interface
-	if !errors.Is(err, err.Cause) {
-		t.Error("Expected Unwrap() to return the original cause")
-	}
+	assert.ErrorIs(t, err, err.Cause, "Expected Unwrap() to return the original cause")
 }

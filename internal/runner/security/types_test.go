@@ -3,6 +3,8 @@ package security
 import (
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // NewPermissiveTestConfig creates a config with relaxed permissions for specific tests
@@ -191,32 +193,26 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 	}
 
 	// Verify patterns are not empty
-	if len(patterns) == 0 {
-		t.Error("GetSuspiciousFilePatterns() returned empty list")
-	}
+	assert.NotEmpty(t, patterns, "GetSuspiciousFilePatterns() returned empty list")
 
 	// Verify no duplicates
 	seen := make(map[string]bool)
 	for _, pattern := range patterns {
-		if seen[pattern] {
-			t.Errorf("Duplicate pattern found: %q", pattern)
-		}
+		assert.False(t, seen[pattern], "Duplicate pattern found: %q", pattern)
 		seen[pattern] = true
 	}
 
 	// Verify result is sorted
 	for i := 1; i < len(patterns); i++ {
 		if patterns[i-1] > patterns[i] {
-			t.Errorf("Result is not sorted: %v", patterns)
+			assert.Fail(t, "Result is not sorted", "patterns: %v", patterns)
 			break
 		}
 	}
 
 	// Verify directories are excluded
 	for _, pattern := range patterns {
-		if pattern == ".ssh" || pattern == ".gnupg" {
-			t.Errorf("Directory pattern %q should have been excluded", pattern)
-		}
+		assert.NotContains(t, []string{".ssh", ".gnupg"}, pattern, "Directory pattern %q should have been excluded", pattern)
 	}
 
 	// Verify deduplication works

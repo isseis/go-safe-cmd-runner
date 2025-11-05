@@ -3,6 +3,8 @@ package color
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewColor(t *testing.T) {
@@ -48,18 +50,10 @@ func TestColorResetHandling(t *testing.T) {
 	greenText := Green("INFO")
 
 	// Verify both contain reset codes
-	if !strings.HasSuffix(redText, resetCode) {
-		t.Error("Red text does not end with reset code")
-	}
-	if !strings.HasSuffix(greenText, resetCode) {
-		t.Error("Green text does not end with reset code")
-	}
+	assert.True(t, strings.HasSuffix(redText, resetCode), "Red text does not end with reset code")
+	assert.True(t, strings.HasSuffix(greenText, resetCode), "Green text does not end with reset code")
 
 	// Verify colors start with correct codes
-	if !strings.HasPrefix(redText, redCode) {
-		t.Error("Red text does not start with red code")
-	}
-	if !strings.HasPrefix(greenText, greenCode) {
-		t.Error("Green text does not start with green code")
-	}
+	assert.True(t, strings.HasPrefix(redText, redCode), "Red text does not start with red code")
+	assert.True(t, strings.HasPrefix(greenText, greenCode), "Green text does not start with green code")
 }

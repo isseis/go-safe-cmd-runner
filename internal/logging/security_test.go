@@ -6,16 +6,15 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewSecurityLogger(t *testing.T) {
 	logger := NewSecurityLogger()
-	if logger == nil {
-		t.Fatal("NewSecurityLogger returned nil")
-	}
-	if logger.logger == nil {
-		t.Error("logger not initialized")
-	}
+	require.NotNil(t, logger, "NewSecurityLogger returned nil")
+	assert.NotNil(t, logger.logger, "logger not initialized")
 }
 
 func TestNewSecurityLoggerWithLogger(t *testing.T) {
@@ -23,12 +22,8 @@ func TestNewSecurityLoggerWithLogger(t *testing.T) {
 	customLogger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	logger := NewSecurityLoggerWithLogger(customLogger)
-	if logger == nil {
-		t.Fatal("NewSecurityLoggerWithLogger returned nil")
-	}
-	if logger.logger != customLogger {
-		t.Error("custom logger not set correctly")
-	}
+	require.NotNil(t, logger, "NewSecurityLoggerWithLogger returned nil")
+	assert.Equal(t, customLogger, logger.logger, "custom logger not set correctly")
 }
 
 func TestSecurityLogger_LogMethods(t *testing.T) {
