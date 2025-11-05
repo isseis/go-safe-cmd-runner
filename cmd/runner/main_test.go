@@ -153,7 +153,7 @@ func TestConfigPathRequired(t *testing.T) {
 
 	// Check if the error is a PreExecutionError with the correct type
 	var preExecErr *logging.PreExecutionError
-	assert.True(t, errors.As(err, &preExecErr), "expected PreExecutionError, got: %T (error: %v)", err, err)
+require.True(t, errors.As(err, &preExecErr), "expected PreExecutionError, got: %T (error: %v)", err, err)
 
 	assert.Equal(t, logging.ErrorTypeRequiredArgumentMissing, preExecErr.Type)
 }
