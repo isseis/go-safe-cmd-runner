@@ -1,5 +1,9 @@
 // Package safefileio provides secure file I/O operations with protection against
 // common security vulnerabilities like symlink attacks and TOCTOU race conditions.
+//
+// Platform-specific implementations:
+//   - Linux: see safe_file_linux.go (uses openat2 with fallback to portable method)
+//   - Others: see safe_file_nonlinux.go (uses portable method only)
 package safefileio
 
 import (
@@ -8,29 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"syscall"
-	"unsafe"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 )
-
-// openat2 constants for RESOLVE flags
-const (
-	// ResolveNoSymlinks disallows resolution of symbolic links
-	ResolveNoSymlinks = 0x04
-	// AtFdcwd represents the current working directory
-	AtFdcwd = -0x64
-	// SysOpenat2 is the system call number for openat2 on Linux
-	SysOpenat2 = 437
-)
-
-// openHow struct for openat2 system call
-type openHow struct {
-	flags   uint64
-	mode    uint64
-	resolve uint64
-}
 
 // FileSystemConfig holds configuration for the file system operations
 type FileSystemConfig struct {
@@ -62,69 +47,6 @@ func NewFileSystem(config FileSystemConfig) FileSystem {
 // DefaultFileSystem is the default filesystem implementation
 var defaultFS = NewFileSystem(FileSystemConfig{})
 
-const testFilePerm = 0o600 // Read/write for owner only
-
-// isOpenat2Available checks if openat2 system call is available and working
-func isOpenat2Available() bool {
-	// Check if we're on Linux
-	if runtime.GOOS != "linux" {
-		return false
-	}
-
-	// Create a temporary directory for testing
-	testDir, err := os.MkdirTemp("", "openat2test")
-	if err != nil {
-		return false
-	}
-	defer func() {
-		if err := os.RemoveAll(testDir); err != nil {
-			slog.Warn("failed to remove test directory", "error", err, "path", testDir)
-		}
-	}()
-
-	testFile := filepath.Join(testDir, "testfile")
-	how := openHow{
-		flags:   uint64(os.O_CREATE | os.O_RDWR | os.O_EXCL),
-		mode:    testFilePerm, // #nosec G302 - file permissions are appropriate for test file
-		resolve: ResolveNoSymlinks,
-	}
-
-	// Test openat2 with actual file operations
-	fd, err := openat2(AtFdcwd, testFile, &how)
-	// Clean up the test file
-	if fd >= 0 {
-		_ = syscall.Close(fd)
-	}
-	_ = os.Remove(testFile)
-
-	return err == nil
-}
-
-// openat2 wraps the openat2 system call
-func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-	pathBytes, err := syscall.BytePtrFromString(pathname)
-	if err != nil {
-		return -1, err
-	}
-
-	fd, _, errno := syscall.Syscall6(
-		SysOpenat2,
-		uintptr(dirfd),
-		// #nosec G103 - uintptr conversion is required for syscall interface
-		uintptr(unsafe.Pointer(pathBytes)),
-		// #nosec G103 - uintptr conversion is required for syscall interface
-		uintptr(unsafe.Pointer(how)),
-		unsafe.Sizeof(*how),
-		0, 0,
-	)
-
-	if errno != 0 {
-		return -1, errno
-	}
-
-	return int(fd), nil
-}
-
 // FileSystem is an interface that abstracts secure file system operations
 type FileSystem interface {
 	// SafeOpenFile opens a file with security checks to prevent symlink attacks and TOCTOU race conditions
@@ -152,7 +74,12 @@ func (fs *osFS) GetGroupMembership() *groupmembership.GroupMembership {
 }
 
 func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	return fs.safeOpenFileInternal(name, flag, perm)
+	absPath, err := filepath.Abs(name)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	}
+
+	return fs.safeOpenFileInternal(absPath, flag, perm)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
@@ -539,41 +466,11 @@ func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmem
 	return fileInfo, nil
 }
 
-// safeOpenFileInternal is the internal implementation of safeOpenFile
-func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
-	}
-
-	if fs.openat2Available {
-		// Use openat2 with RESOLVE_NO_SYMLINKS for atomic operation
-		how := openHow{
-			// #nosec G115 - flag conversion is intentional and safe within valid flag range
-			flags:   uint64(flag),
-			mode:    uint64(perm),
-			resolve: ResolveNoSymlinks,
-		}
-
-		fd, err := openat2(AtFdcwd, absPath, &how)
-		if err != nil {
-			// Check for specific errors
-			if errno, ok := err.(syscall.Errno); ok {
-				switch errno {
-				case syscall.ELOOP:
-					return nil, ErrIsSymlink
-				case syscall.EEXIST:
-					return nil, ErrFileExists
-				case syscall.ENOENT:
-					return nil, os.ErrNotExist // Return standard not exist error
-				}
-			}
-			return nil, fmt.Errorf("failed to open file: %w", err)
-		}
-
-		return os.NewFile(uintptr(fd), absPath), nil
-	}
-
+// safeOpenFileFallback implements the fallback method for opening files without openat2.
+// This method performs two-phase verification to detect symlink attacks:
+// 1. Verify parent directories are not symlinks before opening
+// 2. Verify again after opening to detect TOCTOU race conditions
+func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File, error) {
 	// Prevent symlink attacks by ensuring parent directories are not symlinks.
 	if err := ensureParentDirsNoSymlinks(absPath); err != nil {
 		return nil, err
