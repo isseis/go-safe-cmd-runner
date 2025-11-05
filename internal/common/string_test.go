@@ -3,6 +3,8 @@ package common
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseEnvVariable(t *testing.T) {
@@ -75,15 +77,9 @@ func TestParseEnvVariable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key, val, ok := ParseKeyValue(tt.env)
 
-			if key != tt.expectedKey {
-				t.Errorf("ParseEnvVariable() key = %v, expected %v", key, tt.expectedKey)
-			}
-			if val != tt.expectedVal {
-				t.Errorf("ParseEnvVariable() val = %v, expected %v", val, tt.expectedVal)
-			}
-			if ok != tt.expectedOk {
-				t.Errorf("ParseEnvVariable() ok = %v, expected %v", ok, tt.expectedOk)
-			}
+			assert.Equal(t, tt.expectedKey, key, "ParseEnvVariable() key mismatch")
+			assert.Equal(t, tt.expectedVal, val, "ParseEnvVariable() val mismatch")
+			assert.Equal(t, tt.expectedOk, ok, "ParseEnvVariable() ok mismatch")
 		})
 	}
 }
