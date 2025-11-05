@@ -12,9 +12,7 @@ func TestNewColor(t *testing.T) {
 	result := testColor("ERROR")
 	expected := "\033[31mERROR\033[0m"
 
-	if result != expected {
-		t.Errorf("NewColor() = %q, want %q", result, expected)
-	}
+	assert.Equal(t, expected, result, "NewColor() should format text with ANSI color codes")
 }
 
 func TestPredefinedColors(t *testing.T) {
@@ -37,9 +35,7 @@ func TestPredefinedColors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.colorFunc(tt.input)
-			if result != tt.expected {
-				t.Errorf("%s() = %q, want %q", tt.name, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "%s() should format text correctly", tt.name)
 		})
 	}
 }

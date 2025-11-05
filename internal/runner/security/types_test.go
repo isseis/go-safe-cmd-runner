@@ -148,8 +148,7 @@ func TestConfig_GetSuspiciousFilePatterns(t *testing.T) {
 
 			// Handle comparison between empty slice and nil, or use reflect.DeepEqual for other cases
 			if len(result) != len(tt.expectedPatterns) || (len(result) > 0 && !reflect.DeepEqual(result, tt.expectedPatterns)) {
-				t.Errorf("GetSuspiciousFilePatterns() = %v, want %v", result, tt.expectedPatterns)
-				t.Errorf("Description: %s", tt.description)
+				assert.Equal(t, tt.expectedPatterns, result, "GetSuspiciousFilePatterns() mismatch for description: %s", tt.description)
 			}
 
 			// Verify result is sorted
@@ -188,7 +187,7 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("Expected pattern %q not found in suspicious patterns: %v", expected, patterns)
+			assert.Fail(t, "Expected pattern not found in suspicious patterns", "expected: %q, patterns: %v", expected, patterns)
 		}
 	}
 
@@ -223,6 +222,6 @@ func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 		}
 	}
 	if duplicateCount != 1 {
-		t.Errorf("Expected exactly 1 occurrence of 'duplicate_file', got %d", duplicateCount)
+		assert.Equal(t, 1, duplicateCount, "Expected exactly 1 occurrence of 'duplicate_file', got %d", duplicateCount)
 	}
 }

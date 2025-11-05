@@ -8,6 +8,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestSetupLoggerWithConfig_IntegrationWithNewHandlers tests the integration
@@ -94,22 +95,15 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 
 			// Check error expectation
 			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got none")
-				}
+				assert.Error(t, err, "Expected error for invalid log directory")
 				return
 			}
 
-			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-				return
-			}
+			assert.NoError(t, err, "SetupLoggerWithConfig should not return error")
 
 			// Verify logger was set up (basic smoke test)
 			logger := slog.Default()
-			if logger == nil {
-				t.Error("Logger should not be nil after setup")
-			}
+			assert.NotNil(t, logger, "Logger should not be nil after setup")
 
 			// Test that logging works without panics
 			logger.Info("Integration test log message",
@@ -182,15 +176,11 @@ func TestTerminalCapabilitiesIntegration(t *testing.T) {
 			// Test terminal capabilities
 			capabilities := terminal.NewCapabilities(terminal.Options{})
 
-			if capabilities.SupportsColor() != tc.expectColor {
-				t.Errorf("Color support mismatch: expected %v, got %v",
-					tc.expectColor, capabilities.SupportsColor())
-			}
+			assert.Equal(t, tc.expectColor, capabilities.SupportsColor(),
+				"Color support mismatch for test case: %s", tc.name)
 
-			if capabilities.IsInteractive() != tc.expectInteractive {
-				t.Errorf("Interactive mode mismatch: expected %v, got %v",
-					tc.expectInteractive, capabilities.IsInteractive())
-			}
+			assert.Equal(t, tc.expectInteractive, capabilities.IsInteractive(),
+				"Interactive mode mismatch for test case: %s", tc.name)
 		})
 	}
 }
@@ -228,9 +218,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 
 	// Test setup
 	err := bootstrap.SetupLoggerWithConfig(config, false, false)
-	if err != nil {
-		t.Fatalf("Setup failed: %v", err)
-	}
+	assert.NoError(t, err, "SetupLoggerWithConfig should not return error")
 
 	// Test logging through the chain
 	logger := slog.Default()
@@ -253,13 +241,9 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// Verify log file was created (if logDir was specified)
 	if config.LogDir != "" {
 		entries, err := os.ReadDir(config.LogDir)
-		if err != nil {
-			t.Fatalf("Failed to read log directory: %v", err)
-		}
+		assert.NoError(t, err, "Failed to read log directory")
 
-		if len(entries) == 0 {
-			t.Error("Expected log file to be created, but directory is empty")
-		}
+		assert.NotEmpty(t, entries, "Expected log file to be created, but directory is empty")
 
 		// Check if log file contains our run ID
 		for _, entry := range entries {
@@ -268,7 +252,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 				return
 			}
 		}
-		t.Error("Expected to find log file with run ID, but none found")
+		assert.Fail(t, "Expected to find log file with run ID, but none found")
 	}
 }
 
@@ -324,13 +308,9 @@ func TestErrorHandling(t *testing.T) {
 			err := bootstrap.SetupLoggerWithConfig(tc.config, false, false)
 
 			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error (%s) but got none", tc.errorType)
-				}
+				assert.Error(t, err, "Expected error (%s) but got none", tc.errorType)
 			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
+				assert.NoError(t, err, "Unexpected error")
 			}
 		})
 	}

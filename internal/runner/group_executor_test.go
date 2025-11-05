@@ -2171,9 +2171,7 @@ func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
 
 	// Expected: ~1-2 allocations (groupExecutorOptions struct + DefaultGroupExecutor struct)
 	// Tolerance: <= 3 allocations to account for minor variations
-	if allocs > 3 {
-		t.Errorf("Too many allocations per call: got %.1f, want <= 3", allocs)
-	}
+	assert.LessOrEqual(t, allocs, 3.0, "Too many allocations per call: got %.1f, want <= 3", allocs)
 }
 
 // BenchmarkNewDefaultGroupExecutor benchmarks constructor performance
