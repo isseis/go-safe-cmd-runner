@@ -379,9 +379,21 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	// Phase 1: Execute the command using ResourceManager
 	// ExecuteCommand records core analysis and returns a token for later updates
-	token, result, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
+	token, resourceResult, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
+
+	// Convert ResourceManager result to executor.Result (even if err is non-nil)
+	// This preserves exit code information for error handling
+	var execResult *executor.Result
+	if resourceResult != nil {
+		execResult = &executor.Result{
+			ExitCode: resourceResult.ExitCode,
+			Stdout:   resourceResult.Stdout,
+			Stderr:   resourceResult.Stderr,
+		}
+	}
+
 	if err != nil {
-		return nil, err
+		return execResult, err
 	}
 
 	// Phase 2: Update final environment debug info in dry-run mode (after command execution)
@@ -414,12 +426,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		}
 	}
 
-	// Convert ResourceManager result to executor.Result
-	return &executor.Result{
-		ExitCode: result.ExitCode,
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
-	}, nil
+	// Return the converted executor.Result
+	return execResult, nil
 }
 
 // createCommandContext creates a context with timeout for command execution.
