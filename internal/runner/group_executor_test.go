@@ -624,8 +624,9 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 			Cmd:        "/bin/echo",
 			OutputFile: "/invalid/output/path",
 		},
-		ExpandedCmd:  "/bin/echo",
-		ExpandedArgs: []string{},
+		ExpandedCmd:      "/bin/echo",
+		ExpandedArgs:     []string{},
+		EffectiveWorkDir: "/work",
 	}
 
 	groupSpec := &runnertypes.GroupSpec{

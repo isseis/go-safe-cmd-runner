@@ -372,7 +372,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	// Validate output path before command execution if output capture is requested
 	if cmd.Output() != "" {
-		if err := ge.resourceManager.ValidateOutputPath(cmd.Output(), groupSpec.WorkDir); err != nil {
+		if err := ge.resourceManager.ValidateOutputPath(cmd.Output(), cmd.EffectiveWorkDir); err != nil {
 			return nil, fmt.Errorf("output path validation failed: %w", err)
 		}
 	}
