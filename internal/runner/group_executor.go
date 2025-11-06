@@ -485,8 +485,13 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, false)
 			slog.Debug("Command output on failure", debugLogArgs...)
 		}
-		slog.Error("Command failed", "command", cmd.Name(), "exit_code", 1, "error", err)
-		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
+		// Use actual exit code from result if available, otherwise use ExitCodeUnknown
+		exitCode := executor.ExitCodeUnknown
+		if result != nil {
+			exitCode = result.ExitCode
+		}
+		slog.Error("Command failed", "command", cmd.Name(), "exit_code", exitCode, "error", err)
+		return "", exitCode, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
 	}
 
 	// Display result
