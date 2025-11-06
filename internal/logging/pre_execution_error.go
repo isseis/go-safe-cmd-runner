@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 )
 
 // Environment variable names
@@ -73,15 +74,18 @@ func (e *PreExecutionError) Unwrap() error {
 
 // HandlePreExecutionError handles pre-execution errors by logging and notifying
 func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
-	// Log to stderr with hierarchical format for better readability
-	fmt.Fprintf(os.Stderr, "Error: %s\n", errorType)
+	// Build stderr output atomically to prevent interleaved output in concurrent scenarios
+	var stderrBuilder strings.Builder
+	fmt.Fprintf(&stderrBuilder, "Error: %s\n", errorType)
 	if component != "" {
-		fmt.Fprintf(os.Stderr, "  Component: %s\n", component)
+		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", component)
 	}
-	fmt.Fprintf(os.Stderr, "  Details: %s\n", errorMsg)
+	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", errorMsg)
 	if runID != "" {
-		fmt.Fprintf(os.Stderr, "  Run ID: %s\n", runID)
+		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", runID)
 	}
+	// Write to stderr atomically
+	fmt.Fprint(os.Stderr, stderrBuilder.String())
 
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
@@ -95,7 +99,10 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 		)
 	}
 
-	// Output error summary
-	fmt.Printf("Error: %s\n", errorType)
-	fmt.Printf("RUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", runID)
+	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
+	var stdoutBuilder strings.Builder
+	fmt.Fprintf(&stdoutBuilder, "Error: %s\n", errorType)
+	fmt.Fprintf(&stdoutBuilder, "RUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", runID)
+	// Write to stdout atomically
+	fmt.Print(stdoutBuilder.String())
 }
