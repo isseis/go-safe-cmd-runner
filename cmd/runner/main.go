@@ -35,26 +35,6 @@ func (e SilentExitError) Error() string {
 	return "silent exit requested"
 }
 
-// ExecutionError represents an error that occurs during command execution
-// (as opposed to pre-execution errors like configuration parsing or file access)
-type ExecutionError struct {
-	Message   string
-	Component string
-	RunID     string
-	Err       error // Wrapped error for better error context preservation
-}
-
-func (e *ExecutionError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("execution error: %s: %v (component: %s, run_id: %s)", e.Message, e.Err, e.Component, e.RunID)
-	}
-	return fmt.Sprintf("execution error: %s (component: %s, run_id: %s)", e.Message, e.Component, e.RunID)
-}
-
-func (e *ExecutionError) Unwrap() error {
-	return e.Err
-}
-
 var (
 	configPath       = flag.String("config", "", "path to config file")
 	logLevel         = flag.String("log-level", "info", "log level (debug, info, warn, error)")
@@ -95,7 +75,7 @@ func main() {
 	if err := run(*runID); err != nil {
 		var silentErr SilentExitError
 		var preExecErr *logging.PreExecutionError
-		var execErr *ExecutionError
+		var execErr *logging.ExecutionError
 		switch {
 		case errors.As(err, &silentErr):
 			// Check for silent exit error first (validation failure with report already printed)
@@ -105,7 +85,7 @@ func main() {
 			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, *runID)
 		case errors.As(err, &execErr):
 			// Check if this is an execution error (error during command execution)
-			logging.HandleExecutionError(execErr.Error(), execErr.Component, *runID)
+			logging.HandleExecutionError(execErr)
 		default:
 			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", *runID)
 		}
@@ -333,7 +313,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 	// Return execution error after outputting results (if any)
 	if execErr != nil {
-		return &ExecutionError{
+		return &logging.ExecutionError{
 			Message:   "error running commands",
 			Component: "runner",
 			RunID:     runID,

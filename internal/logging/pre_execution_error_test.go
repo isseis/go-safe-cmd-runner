@@ -383,7 +383,12 @@ func TestHandleExecutionError(t *testing.T) {
 			// We can't easily capture these without complex setup,
 			// but we can at least verify it doesn't panic
 			assert.NotPanics(t, func() {
-				HandleExecutionError(tt.message, tt.component, tt.runID)
+				execErr := &ExecutionError{
+					Message:   tt.message,
+					Component: tt.component,
+					RunID:     tt.runID,
+				}
+				HandleExecutionError(execErr)
 			}, "HandleExecutionError should not panic")
 		})
 	}
