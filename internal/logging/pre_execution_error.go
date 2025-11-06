@@ -101,8 +101,7 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 
 	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
 	var stdoutBuilder strings.Builder
-	fmt.Fprintf(&stdoutBuilder, "Error: %s\n", errorType)
-	fmt.Fprintf(&stdoutBuilder, "RUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", runID)
+	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", errorType, runID)
 	// Write to stdout atomically
 	fmt.Print(stdoutBuilder.String())
 }
