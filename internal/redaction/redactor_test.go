@@ -874,3 +874,56 @@ func TestPerformKeyValuePatternRedaction(t *testing.T) {
 		})
 	}
 }
+
+// TestRedactLogAttribute_StringWithKeyValuePatterns tests that log attributes containing
+// key=value patterns in their string values are properly redacted
+func TestRedactLogAttribute_StringWithKeyValuePatterns(t *testing.T) {
+	config := DefaultConfig()
+
+	tests := []struct {
+		name     string
+		key      string
+		value    string
+		expected string
+	}{
+		{
+			name:     "stdout with password",
+			key:      "stdout",
+			value:    "Connecting with password=secret123 to server",
+			expected: "Connecting with password=[REDACTED] to server",
+		},
+		{
+			name:     "stderr with token",
+			key:      "stderr",
+			value:    "Error: token=abc123 is invalid",
+			expected: "Error: token=[REDACTED] is invalid",
+		},
+		{
+			name:     "output with Bearer token",
+			key:      "output",
+			value:    "Authorization: Bearer token123",
+			expected: "Authorization: Bearer [REDACTED]",
+		},
+		{
+			name:     "output with multiple secrets",
+			key:      "message",
+			value:    "password=pass123 api_key=key456 normal=value",
+			expected: "password=[REDACTED] api_key=[REDACTED] normal=value",
+		},
+		{
+			name:     "normal output without secrets",
+			key:      "stdout",
+			value:    "Build completed successfully",
+			expected: "Build completed successfully",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attr := slog.Attr{Key: tt.key, Value: slog.StringValue(tt.value)}
+			result := config.RedactLogAttribute(attr)
+			assert.Equal(t, tt.key, result.Key)
+			assert.Equal(t, tt.expected, result.Value.String())
+		})
+	}
+}

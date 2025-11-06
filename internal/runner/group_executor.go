@@ -447,6 +447,24 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 	return context.WithTimeout(ctx, timeout)
 }
 
+// buildCommandDebugLogArgs builds log arguments for command output logging
+// Returns a slice of log arguments including command name, optional exit code, stdout, and stderr
+func buildCommandDebugLogArgs(cmdName string, result *executor.Result, includeExitCode bool) []any {
+	logArgs := []any{"command", cmdName}
+	if includeExitCode && result != nil {
+		logArgs = append(logArgs, "exit_code", result.ExitCode)
+	}
+	if result != nil {
+		if result.Stdout != "" {
+			logArgs = append(logArgs, "stdout", result.Stdout)
+		}
+		if result.Stderr != "" {
+			logArgs = append(logArgs, "stderr", result.Stderr)
+		}
+	}
+	return logArgs
+}
+
 // executeSingleCommand executes a single command with proper context management
 // Returns the output string, exit code, and any error encountered
 func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (string, int, error) {
@@ -462,6 +480,11 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			// Log timeout exceeded event
 			ge.securityLogger.LogTimeoutExceeded(cmd.Name(), cmd.EffectiveTimeout, 0) // PID not available at this level
 		}
+		// Log command output at debug level when execution fails
+		if result != nil {
+			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, false)
+			slog.Debug("Command output on failure", debugLogArgs...)
+		}
 		slog.Error("Command failed", "command", cmd.Name(), "exit_code", 1, "error", err)
 		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
 	}
@@ -473,17 +496,14 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	}
 
 	// Log command result with all relevant fields
-	logArgs := []any{"command", cmd.Name(), "exit_code", result.ExitCode}
-	if result.Stdout != "" {
-		logArgs = append(logArgs, "stdout", result.Stdout)
-	}
-	if result.Stderr != "" {
-		logArgs = append(logArgs, "stderr", result.Stderr)
-	}
+	logArgs := buildCommandDebugLogArgs(cmd.Name(), result, true)
 	slog.Debug("Command execution result", logArgs...)
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
+		// Log command output at debug level when exit code is non-zero
+		debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, true)
+		slog.Debug("Command output on non-zero exit", debugLogArgs...)
 		slog.Error("Command failed with non-zero exit code", "command", cmd.Name(), "exit_code", result.ExitCode)
 		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode)
 	}

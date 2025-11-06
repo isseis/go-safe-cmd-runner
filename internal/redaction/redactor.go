@@ -60,6 +60,13 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	// Redact string values that match sensitive patterns
 	if value.Kind() == slog.KindString {
 		strValue := value.String()
+		// First apply text-based redaction for key=value patterns within the string
+		redactedText := c.RedactText(strValue)
+		if redactedText != strValue {
+			return slog.Attr{Key: key, Value: slog.StringValue(redactedText)}
+		}
+		// Then check if the entire value is sensitive (only if no key=value patterns were found)
+		// This prevents strings like "password=secret" from being completely replaced with "***"
 		if c.Patterns.IsSensitiveValue(strValue) {
 			return slog.Attr{Key: key, Value: slog.StringValue(c.LogPlaceholder)}
 		}
