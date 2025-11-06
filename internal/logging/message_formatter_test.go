@@ -148,10 +148,105 @@ func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
 			expecteds: []string{"\033[31mX ERROR\033[0m operation failed error=timeout component=auth"},
 		},
 		{
+			name: "error level with stderr attribute",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelError, "Command failed", 0)
+				r.AddAttrs(
+					slog.String("command", "docker ps"),
+					slog.String("error", "command execution failed: exit status 1"),
+					slog.String("stderr", "permission denied while trying to connect to the Docker daemon socket"),
+					slog.Int("exit_code", 1),
+				)
+				return r
+			}(),
+			useColor:  false,
+			expecteds: []string{"[ERROR] Command failed error=command execution failed: exit status 1 stderr=permission denied while trying to connect to the Docker daemon socket command=docker ps"},
+		},
+		{
+			name: "error level with stderr and command - with color",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelError, "Command failed", 0)
+				r.AddAttrs(
+					slog.String("error", "exit status 1"),
+					slog.String("stderr", "connection refused"),
+					slog.String("command", "curl"),
+				)
+				return r
+			}(),
+			useColor:  true,
+			expecteds: []string{"\033[31mX ERROR\033[0m Command failed error=exit status 1 stderr=connection refused command=curl"},
+		},
+		{
 			name:      "debug level without color",
 			record:    slog.NewRecord(now, slog.LevelDebug, "debug info", 0),
 			useColor:  false,
 			expecteds: []string{"[DEBUG] debug info"},
+		},
+		{
+			name: "info level with stderr - should NOT show stderr",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelInfo, "Command executed", 0)
+				r.AddAttrs(
+					slog.String("command", "test"),
+					slog.String("stderr", "some warning message"),
+				)
+				return r
+			}(),
+			useColor:  false,
+			expecteds: []string{"[INFO ] Command executed command=test"},
+		},
+		{
+			name: "warn level with stderr - should show stderr",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelWarn, "Command warning", 0)
+				r.AddAttrs(
+					slog.String("command", "test"),
+					slog.String("stderr", "warning output"),
+				)
+				return r
+			}(),
+			useColor:  false,
+			expecteds: []string{"[WARN ] Command warning stderr=warning output command=test"},
+		},
+		{
+			name: "debug level with stdout - should show stdout",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelDebug, "Command debug", 0)
+				r.AddAttrs(
+					slog.String("command", "test"),
+					slog.String("stdout", "debug output"),
+				)
+				return r
+			}(),
+			useColor:  false,
+			expecteds: []string{"[DEBUG] Command debug command=test stdout=debug output"},
+		},
+		{
+			name: "info level with stdout - should NOT show stdout",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelInfo, "Command info", 0)
+				r.AddAttrs(
+					slog.String("command", "test"),
+					slog.String("stdout", "info output"),
+				)
+				return r
+			}(),
+			useColor:  false,
+			expecteds: []string{"[INFO ] Command info command=test"},
+		},
+		{
+			name: "error level with both stderr and stdout - should show only stderr",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelError, "Command failed", 0)
+				r.AddAttrs(
+					slog.String("command", "test"),
+					slog.String("stderr", "error output"),
+					slog.String("stdout", "partial output"),
+				)
+				return r
+			}(),
+			useColor:  false,
+			expecteds: []string{"[ERROR] Command failed stderr=error output command=test"},
 		},
 	}
 
