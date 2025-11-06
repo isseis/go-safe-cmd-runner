@@ -80,10 +80,33 @@ func (f *DefaultMessageFormatter) FormatRecordInteractive(record slog.Record, us
 	return sb.String()
 }
 
+// getPriorityKeys returns priority attributes based on log level
+// - stderr: shown only at WARN level and above
+// - stdout: shown only at DEBUG level
+//
+// slog level values: DEBUG=-4, INFO=0, WARN=4, ERROR=8
+func (f *DefaultMessageFormatter) getPriorityKeys(level slog.Level) []string {
+	switch {
+	case level >= slog.LevelError:
+		// ERROR and above: include stderr after error
+		return []string{"error", "stderr", "group", "command", "file", "component", "variable"}
+	case level >= slog.LevelWarn:
+		// WARN: include stderr after error
+		return []string{"error", "stderr", "group", "command", "file", "component", "variable"}
+	case level == slog.LevelDebug:
+		// DEBUG: include stdout at the end
+		return []string{"error", "group", "command", "file", "component", "variable", "stdout"}
+	default:
+		// INFO and other levels: base keys only
+		return []string{"error", "group", "command", "file", "component", "variable"}
+	}
+}
+
 // appendInteractiveAttrs appends selected attributes for interactive display
 func (f *DefaultMessageFormatter) appendInteractiveAttrs(sb *strings.Builder, record slog.Record) {
 	// Priority attributes to show in interactive mode (in order of preference)
-	priorityKeys := []string{"error", "group", "command", "file", "component", "variable"}
+	// Note: stderr and stdout are conditionally included based on log level
+	priorityKeys := f.getPriorityKeys(record.Level)
 
 	var foundAttrs []slog.Attr
 
