@@ -175,15 +175,17 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	// Execute the command using the shared execution logic with output writer
 	result, err = n.executeCommandInternal(ctx, cmd, env, start, teeWriter)
 	if err != nil {
-		return nil, err
+		// Return result even on error to preserve exit code information
+		return result, err
 	}
 
 	// Finalize output capture
 	if err = n.outputManager.FinalizeOutput(capture); err != nil {
-		return nil, fmt.Errorf("output capture finalization failed: %w", err)
+		// Return result even on finalization error to preserve exit code
+		return result, fmt.Errorf("output capture finalization failed: %w", err)
 	}
 
-	return result, err
+	return result, nil
 }
 
 // executeCommandInternal contains the shared command execution logic
