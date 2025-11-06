@@ -83,24 +83,23 @@ func (f *DefaultMessageFormatter) FormatRecordInteractive(record slog.Record, us
 // getPriorityKeys returns priority attributes based on log level
 // - stderr: shown only at WARN level and above
 // - stdout: shown only at DEBUG level
+//
+// slog level values: DEBUG=-4, INFO=0, WARN=4, ERROR=8
 func (f *DefaultMessageFormatter) getPriorityKeys(level slog.Level) []string {
-	// Base priority keys (always included)
-	baseKeys := []string{"error", "group", "command", "file", "component", "variable"}
-
-	// Add stderr for WARN and above (WARN=-4, ERROR=0, higher values are more severe)
-	if level >= slog.LevelWarn {
-		// Insert stderr after error
-		return append([]string{"error", "stderr"}, baseKeys[1:]...)
+	switch {
+	case level >= slog.LevelError:
+		// ERROR and above: include stderr after error
+		return []string{"error", "stderr", "group", "command", "file", "component", "variable"}
+	case level >= slog.LevelWarn:
+		// WARN: include stderr after error
+		return []string{"error", "stderr", "group", "command", "file", "component", "variable"}
+	case level == slog.LevelDebug:
+		// DEBUG: include stdout at the end
+		return []string{"error", "group", "command", "file", "component", "variable", "stdout"}
+	default:
+		// INFO and other levels: base keys only
+		return []string{"error", "group", "command", "file", "component", "variable"}
 	}
-
-	// Add stdout for DEBUG level
-	if level == slog.LevelDebug {
-		// Add stdout at the end
-		return append(baseKeys, "stdout")
-	}
-
-	// For INFO and other levels, return base keys without stderr or stdout
-	return baseKeys
 }
 
 // appendInteractiveAttrs appends selected attributes for interactive display
