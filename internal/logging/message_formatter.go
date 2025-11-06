@@ -83,7 +83,7 @@ func (f *DefaultMessageFormatter) FormatRecordInteractive(record slog.Record, us
 // appendInteractiveAttrs appends selected attributes for interactive display
 func (f *DefaultMessageFormatter) appendInteractiveAttrs(sb *strings.Builder, record slog.Record) {
 	// Priority attributes to show in interactive mode (in order of preference)
-	priorityKeys := []string{"error", "group", "command", "file", "component", "variable"}
+	priorityKeys := []string{"error", "stderr", "group", "command", "file", "component", "variable"}
 
 	var foundAttrs []slog.Attr
 
