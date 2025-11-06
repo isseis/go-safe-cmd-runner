@@ -455,20 +455,32 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 	return context.WithTimeout(ctx, timeout)
 }
 
+// maxStdoutLengthForDebugLog is the maximum length of stdout to include in debug logs
+const maxStdoutLengthForDebugLog = 500
+
 // buildCommandDebugLogArgs builds log arguments for command output logging
-// Returns a slice of log arguments including command name, exit code, stdout, and stderr
+// Returns a slice of log arguments including command name, exit code, stdout (truncated), and stderr
 func buildCommandDebugLogArgs(cmdName string, result *executor.Result) []any {
 	logArgs := []any{"command", cmdName}
 	if result != nil {
 		logArgs = append(logArgs, "exit_code", result.ExitCode)
 		if result.Stdout != "" {
-			logArgs = append(logArgs, "stdout", result.Stdout)
+			logArgs = append(logArgs, "stdout", truncateStdout(result.Stdout))
 		}
 		if result.Stderr != "" {
 			logArgs = append(logArgs, "stderr", result.Stderr)
 		}
 	}
 	return logArgs
+}
+
+// truncateStdout truncates stdout to the maximum length for debug logging
+// If the stdout is longer than maxStdoutLengthForDebugLog, it will be truncated with "... (truncated)" suffix
+func truncateStdout(stdout string) string {
+	if len(stdout) <= maxStdoutLengthForDebugLog {
+		return stdout
+	}
+	return stdout[:maxStdoutLengthForDebugLog] + "... (truncated)"
 }
 
 // executeSingleCommand executes a single command with proper context management
@@ -486,17 +498,17 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			// Log timeout exceeded event
 			ge.securityLogger.LogTimeoutExceeded(cmd.Name(), cmd.EffectiveTimeout, 0) // PID not available at this level
 		}
-		// Log command output at debug level when execution fails
-		if result != nil {
-			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result)
-			slog.Debug("Command output on failure", debugLogArgs...)
-		}
 		// Use actual exit code from result if available, otherwise use ExitCodeUnknown
 		exitCode := executor.ExitCodeUnknown
 		if result != nil {
 			exitCode = result.ExitCode
 		}
-		slog.Error("Command failed", "command", cmd.Name(), "exit_code", exitCode, "error", err)
+		// Log command failure with stderr at ERROR level (stdout is excluded to avoid excessive logging)
+		errorLogArgs := []any{"command", cmd.Name(), "exit_code", exitCode, "error", err}
+		if result != nil && result.Stderr != "" {
+			errorLogArgs = append(errorLogArgs, "stderr", result.Stderr)
+		}
+		slog.Error("Command failed", errorLogArgs...)
 		return "", exitCode, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
 	}
 
@@ -512,10 +524,12 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
-		// Log command output at debug level when exit code is non-zero
-		debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result)
-		slog.Debug("Command output on non-zero exit", debugLogArgs...)
-		slog.Error("Command failed with non-zero exit code", "command", cmd.Name(), "exit_code", result.ExitCode)
+		// Log command failure with stderr at ERROR level (stdout is excluded to avoid excessive logging)
+		errorLogArgs := []any{"command", cmd.Name(), "exit_code", result.ExitCode}
+		if result.Stderr != "" {
+			errorLogArgs = append(errorLogArgs, "stderr", result.Stderr)
+		}
+		slog.Error("Command failed with non-zero exit code", errorLogArgs...)
 		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode)
 	}
 
