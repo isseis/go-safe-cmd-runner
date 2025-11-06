@@ -194,7 +194,7 @@ func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd 
 	// Execute command with the provided output writer
 	result, err = n.executor.Execute(ctx, cmd, env, outputWriter)
 	if err != nil {
-		return nil, fmt.Errorf("command execution failed: %w", err)
+		return nil, err
 	}
 
 	return &ExecutionResult{
