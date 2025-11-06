@@ -186,6 +186,12 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			sensitivePattern: "abc123xyz",
 			shouldBeRedacted: true,
 		},
+		{
+			name:             "normal error message is not redacted",
+			command:          "echo 'command failed: exit code 1' >&2; exit 1",
+			sensitivePattern: "exit code 1",
+			shouldBeRedacted: false,
+		},
 	}
 
 	for _, tt := range tests {
