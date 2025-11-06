@@ -379,9 +379,21 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	// Phase 1: Execute the command using ResourceManager
 	// ExecuteCommand records core analysis and returns a token for later updates
-	token, result, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
+	token, resourceResult, err := ge.resourceManager.ExecuteCommand(ctx, cmd, groupSpec, envVars)
+
+	// Convert ResourceManager result to executor.Result (even if err is non-nil)
+	// This preserves exit code information for error handling
+	var execResult *executor.Result
+	if resourceResult != nil {
+		execResult = &executor.Result{
+			ExitCode: resourceResult.ExitCode,
+			Stdout:   resourceResult.Stdout,
+			Stderr:   resourceResult.Stderr,
+		}
+	}
+
 	if err != nil {
-		return nil, err
+		return execResult, err
 	}
 
 	// Phase 2: Update final environment debug info in dry-run mode (after command execution)
@@ -414,12 +426,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		}
 	}
 
-	// Convert ResourceManager result to executor.Result
-	return &executor.Result{
-		ExitCode: result.ExitCode,
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
-	}, nil
+	// Return the converted executor.Result
+	return execResult, nil
 }
 
 // createCommandContext creates a context with timeout for command execution.
@@ -448,13 +456,11 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 }
 
 // buildCommandDebugLogArgs builds log arguments for command output logging
-// Returns a slice of log arguments including command name, optional exit code, stdout, and stderr
-func buildCommandDebugLogArgs(cmdName string, result *executor.Result, includeExitCode bool) []any {
+// Returns a slice of log arguments including command name, exit code, stdout, and stderr
+func buildCommandDebugLogArgs(cmdName string, result *executor.Result) []any {
 	logArgs := []any{"command", cmdName}
-	if includeExitCode && result != nil {
-		logArgs = append(logArgs, "exit_code", result.ExitCode)
-	}
 	if result != nil {
+		logArgs = append(logArgs, "exit_code", result.ExitCode)
 		if result.Stdout != "" {
 			logArgs = append(logArgs, "stdout", result.Stdout)
 		}
@@ -482,11 +488,16 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 		}
 		// Log command output at debug level when execution fails
 		if result != nil {
-			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, false)
+			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result)
 			slog.Debug("Command output on failure", debugLogArgs...)
 		}
-		slog.Error("Command failed", "command", cmd.Name(), "exit_code", 1, "error", err)
-		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
+		// Use actual exit code from result if available, otherwise use ExitCodeUnknown
+		exitCode := executor.ExitCodeUnknown
+		if result != nil {
+			exitCode = result.ExitCode
+		}
+		slog.Error("Command failed", "command", cmd.Name(), "exit_code", exitCode, "error", err)
+		return "", exitCode, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
 	}
 
 	// Display result
@@ -496,13 +507,13 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	}
 
 	// Log command result with all relevant fields
-	logArgs := buildCommandDebugLogArgs(cmd.Name(), result, true)
+	logArgs := buildCommandDebugLogArgs(cmd.Name(), result)
 	slog.Debug("Command execution result", logArgs...)
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
 		// Log command output at debug level when exit code is non-zero
-		debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, true)
+		debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result)
 		slog.Debug("Command output on non-zero exit", debugLogArgs...)
 		slog.Error("Command failed with non-zero exit code", "command", cmd.Name(), "exit_code", result.ExitCode)
 		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode)

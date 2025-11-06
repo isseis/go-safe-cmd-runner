@@ -145,15 +145,12 @@ func TestOutputSizeLimit(t *testing.T) {
 	// Create resource manager with output capture support
 	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
 	ctx := context.Background()
-	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should get an error due to size limit being exceeded
 	require.Error(t, err, "Expected error when output size limit is exceeded")
 	require.Contains(t, err.Error(), "output size limit exceeded",
 		"Expected error message to contain 'output size limit exceeded', got: %v", err)
-
-	// Result should be nil when command fails
-	require.Nil(t, result)
 
 	// Verify output file was cleaned up and does not exist
 	_, statErr := os.Stat(outputPath)
