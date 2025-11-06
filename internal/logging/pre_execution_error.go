@@ -73,8 +73,15 @@ func (e *PreExecutionError) Unwrap() error {
 
 // HandlePreExecutionError handles pre-execution errors by logging and notifying
 func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
-	// Log to stderr as fallback (in case logging system isn't set up yet)
-	fmt.Fprintf(os.Stderr, "Error: %s - %s (run_id: %s)\n", errorType, errorMsg, runID)
+	// Log to stderr with hierarchical format for better readability
+	fmt.Fprintf(os.Stderr, "Error: %s\n", errorType)
+	if component != "" {
+		fmt.Fprintf(os.Stderr, "  Component: %s\n", component)
+	}
+	fmt.Fprintf(os.Stderr, "  Details: %s\n", errorMsg)
+	if runID != "" {
+		fmt.Fprintf(os.Stderr, "  Run ID: %s\n", runID)
+	}
 
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
