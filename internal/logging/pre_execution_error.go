@@ -105,3 +105,38 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 	// Write to stdout atomically
 	fmt.Print(stdoutBuilder.String())
 }
+
+// HandleExecutionError handles execution errors (errors that occur during command execution)
+// by logging and outputting appropriate summary information
+func HandleExecutionError(errorMsg, component, runID string) {
+	// Build stderr output atomically to prevent interleaved output in concurrent scenarios
+	var stderrBuilder strings.Builder
+	fmt.Fprintf(&stderrBuilder, "Error: %s\n", ErrorTypeSystemError)
+	if component != "" {
+		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", component)
+	}
+	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", errorMsg)
+	if runID != "" {
+		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", runID)
+	}
+	// Write to stderr atomically
+	fmt.Fprint(os.Stderr, stderrBuilder.String())
+
+	// Try to log through slog if available
+	if logger := slog.Default(); logger != nil {
+		slog.Error("Execution error occurred",
+			"error_type", string(ErrorTypeSystemError),
+			"error_message", errorMsg,
+			"component", component,
+			"run_id", runID,
+			"slack_notify", true,
+			"message_type", "execution_error",
+		)
+	}
+
+	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
+	var stdoutBuilder strings.Builder
+	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", ErrorTypeSystemError, runID)
+	// Write to stdout atomically
+	fmt.Print(stdoutBuilder.String())
+}

@@ -343,3 +343,48 @@ func TestPreExecutionError_ErrorWithWrappedError(t *testing.T) {
 	assert.Contains(t, errorString, "test component")
 	assert.Contains(t, errorString, "test-run-id")
 }
+
+func TestHandleExecutionError(t *testing.T) {
+	tests := []struct {
+		name      string
+		message   string
+		component string
+		runID     string
+	}{
+		{
+			name:      "command execution error",
+			message:   "command failed with exit status 1",
+			component: "runner",
+			runID:     "test-run-exec-1",
+		},
+		{
+			name:      "group execution error",
+			message:   "failed to execute group mattermost_backup",
+			component: "runner",
+			runID:     "test-run-exec-2",
+		},
+		{
+			name:      "error with empty component",
+			message:   "execution error",
+			component: "",
+			runID:     "test-run-exec-3",
+		},
+		{
+			name:      "error with empty run ID",
+			message:   "execution error",
+			component: "runner",
+			runID:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// HandleExecutionError writes to stderr and stdout
+			// We can't easily capture these without complex setup,
+			// but we can at least verify it doesn't panic
+			assert.NotPanics(t, func() {
+				HandleExecutionError(tt.message, tt.component, tt.runID)
+			}, "HandleExecutionError should not panic")
+		})
+	}
+}
