@@ -14,7 +14,9 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
@@ -2523,4 +2525,229 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 	mockRM.AssertExpectations(t)
 	mockValidator.AssertExpectations(t)
 	mockVerificationManager.AssertExpectations(t)
+}
+
+// TestCommandFailureLogging_StderrInErrorLog tests that:
+// 1. ERROR level logs include only stderr (not stdout)
+// 2. stdout is truncated in DEBUG logs
+// 3. sensitive information in stderr is redacted
+func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
+	tests := []struct {
+		name                       string
+		stdout                     string
+		stderr                     string
+		shouldContainInErrorLog    string
+		shouldNotContainInErrorLog string
+		sensitivePattern           string // Pattern that should be redacted
+	}{
+		{
+			name:                       "stderr only in ERROR log",
+			stdout:                     "normal output",
+			stderr:                     "command not found",
+			shouldContainInErrorLog:    "command not found",
+			shouldNotContainInErrorLog: "normal output",
+		},
+		{
+			name:                       "stderr with password should be redacted",
+			stdout:                     "processing...",
+			stderr:                     "authentication failed: password=secret123",
+			shouldContainInErrorLog:    "authentication failed",
+			shouldNotContainInErrorLog: "secret123",
+			sensitivePattern:           "secret123",
+		},
+		{
+			name:                       "stderr with token should be redacted",
+			stdout:                     "API call",
+			stderr:                     "API error: token=abc123xyz",
+			shouldContainInErrorLog:    "API error",
+			shouldNotContainInErrorLog: "abc123xyz",
+			sensitivePattern:           "abc123xyz",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a buffer to capture log output
+			var logBuffer bytes.Buffer
+			handler := slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			})
+
+			// Wrap with redacting handler to simulate real behavior
+			redactingHandler := redaction.NewRedactingHandler(handler, nil) // nil uses default config
+			logger := slog.New(redactingHandler)
+			slog.SetDefault(logger)
+
+			// Create test configuration
+			group := &runnertypes.GroupSpec{
+				Name: "test-group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "failing-cmd",
+						Cmd:  "/bin/false",
+					},
+				},
+			}
+
+			runtimeGlobal := &runnertypes.RuntimeGlobal{
+				Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+			}
+
+			mockRM := new(runnertesting.MockResourceManager)
+			mockValidator := new(securitytesting.MockValidator)
+			mockVerificationManager := new(verificationtesting.MockManager)
+
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:              &runnertypes.ConfigSpec{},
+				ResourceManager:     mockRM,
+				Validator:           mockValidator,
+				VerificationManager: mockVerificationManager,
+				RunID:               "test-run-stderr",
+			})
+
+			// Mock verification manager
+			mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+			mockVerificationManager.On("ResolvePath", mock.Anything).Return("/bin/false", nil)
+
+			// Mock validator
+			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+
+			// Mock resource manager - command execution fails with stderr
+			mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+				resource.CommandToken(""),
+				&resource.ExecutionResult{
+					ExitCode: 1,
+					Stdout:   tt.stdout,
+					Stderr:   tt.stderr,
+				},
+				fmt.Errorf("command execution failed: exit status 1"),
+			)
+
+			ctx := context.Background()
+			err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+			require.Error(t, err)
+
+			// Verify log output
+			logOutput := logBuffer.String()
+			assert.NotEmpty(t, logOutput, "log output should not be empty")
+
+			// Extract ERROR level logs
+			errorLogs := []string{}
+			for _, line := range strings.Split(logOutput, "\n") {
+				if strings.Contains(line, `"level":"ERROR"`) {
+					errorLogs = append(errorLogs, line)
+				}
+			}
+
+			// Verify at least one ERROR log exists
+			require.NotEmpty(t, errorLogs, "should have at least one ERROR log")
+
+			// Verify stderr content in ERROR logs
+			errorLogStr := strings.Join(errorLogs, "\n")
+			assert.Contains(t, errorLogStr, tt.shouldContainInErrorLog)
+
+			// Verify stdout is NOT in ERROR logs
+			assert.NotContains(t, errorLogStr, tt.shouldNotContainInErrorLog)
+
+			// Verify sensitive information is redacted
+			if tt.sensitivePattern != "" {
+				assert.NotContains(t, errorLogStr, tt.sensitivePattern,
+					"sensitive pattern should be redacted from ERROR log")
+			}
+
+			mockRM.AssertExpectations(t)
+			mockValidator.AssertExpectations(t)
+			mockVerificationManager.AssertExpectations(t)
+		})
+	}
+}
+
+// TestTruncateStdout tests the truncateStdout function
+func TestTruncateStdout(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "short string should not be truncated",
+			input:    "short output",
+			expected: "short output",
+		},
+		{
+			name:     "string at max length should not be truncated",
+			input:    strings.Repeat("x", maxStdoutLengthForDebugLog),
+			expected: strings.Repeat("x", maxStdoutLengthForDebugLog),
+		},
+		{
+			name:     "string over max length should be truncated",
+			input:    strings.Repeat("x", maxStdoutLengthForDebugLog+100),
+			expected: strings.Repeat("x", maxStdoutLengthForDebugLog) + "... (truncated)",
+		},
+		{
+			name:     "empty string should remain empty",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateStdout(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestCommandDebugLogArgs_StdoutTruncation tests that stdout is truncated in debug logs
+func TestCommandDebugLogArgs_StdoutTruncation(t *testing.T) {
+	tests := []struct {
+		name             string
+		stdout           string
+		expectedContains string
+		shouldTruncate   bool
+	}{
+		{
+			name:             "short stdout not truncated",
+			stdout:           "short output",
+			expectedContains: "short output",
+			shouldTruncate:   false,
+		},
+		{
+			name:             "long stdout truncated",
+			stdout:           strings.Repeat("x", maxStdoutLengthForDebugLog+100),
+			expectedContains: strings.Repeat("x", maxStdoutLengthForDebugLog),
+			shouldTruncate:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &executor.Result{
+				ExitCode: 0,
+				Stdout:   tt.stdout,
+				Stderr:   "",
+			}
+
+			logArgs := buildCommandDebugLogArgs("test-cmd", result)
+
+			// Find stdout in log args
+			var stdoutValue string
+			for i, arg := range logArgs {
+				if arg == "stdout" && i+1 < len(logArgs) {
+					stdoutValue = logArgs[i+1].(string)
+					break
+				}
+			}
+
+			assert.Contains(t, stdoutValue, tt.expectedContains)
+
+			if tt.shouldTruncate {
+				assert.Contains(t, stdoutValue, "... (truncated)")
+			} else {
+				assert.NotContains(t, stdoutValue, "... (truncated)")
+			}
+		})
+	}
 }
