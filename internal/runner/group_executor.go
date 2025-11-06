@@ -456,13 +456,11 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 }
 
 // buildCommandDebugLogArgs builds log arguments for command output logging
-// Returns a slice of log arguments including command name, optional exit code, stdout, and stderr
-func buildCommandDebugLogArgs(cmdName string, result *executor.Result, includeExitCode bool) []any {
+// Returns a slice of log arguments including command name, exit code, stdout, and stderr
+func buildCommandDebugLogArgs(cmdName string, result *executor.Result) []any {
 	logArgs := []any{"command", cmdName}
-	if includeExitCode && result != nil {
-		logArgs = append(logArgs, "exit_code", result.ExitCode)
-	}
 	if result != nil {
+		logArgs = append(logArgs, "exit_code", result.ExitCode)
 		if result.Stdout != "" {
 			logArgs = append(logArgs, "stdout", result.Stdout)
 		}
@@ -490,7 +488,7 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 		}
 		// Log command output at debug level when execution fails
 		if result != nil {
-			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, false)
+			debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result)
 			slog.Debug("Command output on failure", debugLogArgs...)
 		}
 		// Use actual exit code from result if available, otherwise use ExitCodeUnknown
@@ -509,13 +507,13 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	}
 
 	// Log command result with all relevant fields
-	logArgs := buildCommandDebugLogArgs(cmd.Name(), result, true)
+	logArgs := buildCommandDebugLogArgs(cmd.Name(), result)
 	slog.Debug("Command execution result", logArgs...)
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
 		// Log command output at debug level when exit code is non-zero
-		debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result, true)
+		debugLogArgs := buildCommandDebugLogArgs(cmd.Name(), result)
 		slog.Debug("Command output on non-zero exit", debugLogArgs...)
 		slog.Error("Command failed with non-zero exit code", "command", cmd.Name(), "exit_code", result.ExitCode)
 		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode)
