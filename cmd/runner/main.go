@@ -75,6 +75,7 @@ func main() {
 	if err := run(*runID); err != nil {
 		var silentErr SilentExitError
 		var preExecErr *logging.PreExecutionError
+		var execErr *logging.ExecutionError
 		switch {
 		case errors.As(err, &silentErr):
 			// Check for silent exit error first (validation failure with report already printed)
@@ -82,6 +83,9 @@ func main() {
 		case errors.As(err, &preExecErr):
 			// Check if this is a pre-execution error using errors.As for safe type checking
 			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, *runID)
+		case errors.As(err, &execErr):
+			// Check if this is an execution error (error during command execution)
+			logging.HandleExecutionError(execErr)
 		default:
 			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", *runID)
 		}
@@ -309,7 +313,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 	// Return execution error after outputting results (if any)
 	if execErr != nil {
-		return fmt.Errorf("error running commands: %w", execErr)
+		return &logging.ExecutionError{
+			Message:   "error running commands",
+			Component: "runner",
+			RunID:     runID,
+			Err:       execErr,
+		}
 	}
 
 	return nil

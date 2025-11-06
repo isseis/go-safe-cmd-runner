@@ -72,8 +72,9 @@ func (e *PreExecutionError) Unwrap() error {
 	return e.Err
 }
 
-// HandlePreExecutionError handles pre-execution errors by logging and notifying
-func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
+// handleErrorCommon is a private helper that contains the common error handling logic
+// for both pre-execution and execution errors
+func handleErrorCommon(errorType ErrorType, errorMsg, component, runID, slogMessage, slogMessageType, summaryStatus string) {
 	// Build stderr output atomically to prevent interleaved output in concurrent scenarios
 	var stderrBuilder strings.Builder
 	fmt.Fprintf(&stderrBuilder, "Error: %s\n", errorType)
@@ -89,19 +90,30 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
-		slog.Error("Pre-execution error occurred",
+		slog.Error(slogMessage,
 			"error_type", string(errorType),
 			"error_message", errorMsg,
 			"component", component,
 			"run_id", runID,
 			"slack_notify", true,
-			"message_type", "pre_execution_error",
+			"message_type", slogMessageType,
 		)
 	}
 
 	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
 	var stdoutBuilder strings.Builder
-	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", errorType, runID)
+	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=%s duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", errorType, runID, summaryStatus)
 	// Write to stdout atomically
 	fmt.Print(stdoutBuilder.String())
+}
+
+// HandlePreExecutionError handles pre-execution errors by logging and notifying
+func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
+	handleErrorCommon(errorType, errorMsg, component, runID, "Pre-execution error occurred", "pre_execution_error", "pre_execution_error")
+}
+
+// HandleExecutionError handles execution errors (errors that occur during command execution)
+// by logging and outputting appropriate summary information
+func HandleExecutionError(execErr *ExecutionError) {
+	handleErrorCommon(ErrorTypeSystemError, execErr.Message, execErr.Component, execErr.RunID, "Execution error occurred", "execution_error", "execution_error")
 }
