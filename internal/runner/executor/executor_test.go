@@ -16,46 +16,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to create RuntimeCommand for testing
+// Helper functions to create RuntimeCommand for testing
+// These are now wrappers around the shared testing helpers in executor/testing package
+
 func createRuntimeCommand(cmd string, args []string, workDir string, runAsUser, runAsGroup string) *runnertypes.RuntimeCommand {
-	spec := &runnertypes.CommandSpec{
-		Name:       "test-command",
-		Cmd:        cmd,
-		Args:       args,
-		WorkDir:    workDir,
-		Timeout:    nil,
-		RunAsUser:  runAsUser,
-		RunAsGroup: runAsGroup,
-	}
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      cmd,
-		ExpandedArgs:     args,
-		ExpandedEnv:      make(map[string]string),
-		EffectiveWorkDir: workDir,
-		EffectiveTimeout: 0,
-	}
+	return executortesting.CreateSimpleRuntimeCommand(cmd, args, workDir, runAsUser, runAsGroup)
 }
 
-// Helper function to create RuntimeCommand with name
 func createRuntimeCommandWithName(name, cmd string, args []string, workDir string, runAsUser, runAsGroup string) *runnertypes.RuntimeCommand {
-	spec := &runnertypes.CommandSpec{
-		Name:       name,
-		Cmd:        cmd,
-		Args:       args,
-		WorkDir:    workDir,
-		Timeout:    nil,
-		RunAsUser:  runAsUser,
-		RunAsGroup: runAsGroup,
-	}
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      cmd,
-		ExpandedArgs:     args,
-		ExpandedEnv:      make(map[string]string),
-		EffectiveWorkDir: workDir,
-		EffectiveTimeout: 0,
-	}
+	return executortesting.CreateNamedRuntimeCommand(name, cmd, args, workDir, runAsUser, runAsGroup)
 }
 
 func TestExecute_Success(t *testing.T) {

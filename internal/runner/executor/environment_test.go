@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
@@ -27,13 +28,10 @@ func createTestRuntimeCommand(expandedArgs []string, expandedEnv map[string]stri
 		Args:    expandedArgs,
 		WorkDir: "/tmp",
 	}
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      "echo",
-		ExpandedArgs:     expandedArgs,
-		ExpandedEnv:      expandedEnv,
-		EffectiveWorkDir: "/tmp",
-	}
+	cmd := executortesting.CreateRuntimeCommand(spec)
+	// Override ExpandedEnv for this specific test helper
+	cmd.ExpandedEnv = expandedEnv
+	return cmd
 }
 
 func createTestRuntimeGroup(expandedEnv map[string]string) *runnertypes.RuntimeGroup {
