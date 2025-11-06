@@ -22,16 +22,9 @@ func createTestRuntimeGlobal(envAllowlist []string, expandedEnv map[string]strin
 }
 
 func createTestRuntimeCommand(expandedArgs []string, expandedEnv map[string]string) *runnertypes.RuntimeCommand {
-	spec := &runnertypes.CommandSpec{
-		Name:    "test-command",
-		Cmd:     "echo",
-		Args:    expandedArgs,
-		WorkDir: "/tmp",
-	}
-	cmd := executortesting.CreateRuntimeCommand(spec)
-	// Override ExpandedEnv for this specific test helper
-	cmd.ExpandedEnv = expandedEnv
-	return cmd
+	return executortesting.CreateRuntimeCommand("echo", expandedArgs,
+		executortesting.WithExpandedEnv(expandedEnv),
+	)
 }
 
 func createTestRuntimeGroup(expandedEnv map[string]string) *runnertypes.RuntimeGroup {

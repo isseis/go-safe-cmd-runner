@@ -44,10 +44,8 @@ func setupFailedMockExecution(m *MockResourceManager, err error) {
 }
 
 // createRuntimeCommand creates a RuntimeCommand from a CommandSpec for testing.
-// This is the primary helper function that automatically sets ExpandedCmd, ExpandedArgs,
-// and EffectiveWorkDir from the spec values.
-//
-// The function also handles timeout resolution properly using the common timeout logic.
+// This is a local helper for the runner package. For other packages, use
+// the exported helpers in internal/runner/executor/testing package.
 //
 // Usage:
 //
@@ -58,10 +56,12 @@ func setupFailedMockExecution(m *MockResourceManager, err error) {
 //	    WorkDir: "/tmp",
 //	}
 //	cmd := createRuntimeCommand(spec)
-//
-// Note: This is a local helper for the runner package. For other packages, use
-// the exported helpers in internal/runner/executor/testing package.
 func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
+	// Use the shared CreateRuntimeCommandFromSpec from executor/testing package
+	// to avoid code duplication
+	// Note: We can't import executor/testing package from runner package directly
+	// because it would create a circular dependency, so we duplicate the implementation here
+
 	// Use the shared timeout resolution logic with context
 	commandTimeout := common.NewFromIntPtr(spec.Timeout)
 	globalTimeout := common.NewUnsetTimeout() // Tests typically don't need global timeout
@@ -73,13 +73,19 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 		"test-group",
 	)
 
+	// Set default workDir if not specified
+	workDir := spec.WorkDir
+	if workDir == "" {
+		workDir = "/tmp" // Use /tmp as default for runner package tests
+	}
+
 	return &runnertypes.RuntimeCommand{
 		Spec:              spec,
 		ExpandedCmd:       spec.Cmd,
 		ExpandedArgs:      spec.Args,
 		ExpandedEnv:       make(map[string]string),
 		ExpandedVars:      make(map[string]string),
-		EffectiveWorkDir:  spec.WorkDir,
+		EffectiveWorkDir:  workDir,
 		EffectiveTimeout:  effectiveTimeout,
 		TimeoutResolution: resolutionContext,
 	}

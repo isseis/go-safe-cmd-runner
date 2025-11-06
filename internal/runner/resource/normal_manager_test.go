@@ -198,7 +198,7 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 // Helper to convert CommandSpec to RuntimeCommand for testing
 // This is a wrapper around the shared helper in executor/testing package
 func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	return executortesting.CreateRuntimeCommand(spec)
+	return executortesting.CreateRuntimeCommandFromSpec(spec)
 }
 
 // Tests for Normal Resource Manager
