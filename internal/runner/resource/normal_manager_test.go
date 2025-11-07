@@ -166,23 +166,10 @@ func createTestNormalResourceManager() *testResourceManagerFixture {
 }
 
 func createTestCommand() *runnertypes.RuntimeCommand {
-	spec := &runnertypes.CommandSpec{
-		Name:        "test-command",
-		Description: "Test command description",
-		Cmd:         "echo",
-		Args:        []string{"hello", "world"},
-		WorkDir:     "/tmp",
-		Timeout:     common.IntPtr(30),
-	}
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      "echo",
-		ExpandedArgs:     []string{"hello", "world"},
-		ExpandedEnv:      make(map[string]string),
-		ExpandedVars:     make(map[string]string),
-		EffectiveWorkDir: "/tmp",
-		EffectiveTimeout: 30,
-	}
+	return executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"},
+		executortesting.WithName("test-command"),
+		executortesting.WithWorkDir("/tmp"),
+		executortesting.WithTimeout(30))
 }
 
 func createTestCommandGroup() *runnertypes.GroupSpec {
