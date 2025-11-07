@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,15 +38,10 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 	}{
 		{
 			name: "successful user/group command",
-			cmd: &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Name:       "test_user_group_cmd",
-					RunAsUser:  "testuser",
-					RunAsGroup: "testgroup",
-				},
-				ExpandedCmd:  "/bin/echo",
-				ExpandedArgs: []string{"test"},
-			},
+			cmd: executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"},
+				executortesting.WithName("test_user_group_cmd"),
+				executortesting.WithRunAsUser("testuser"),
+				executortesting.WithRunAsGroup("testgroup")),
 			result: &audit.ExecutionResult{
 				Stdout:   "test output",
 				Stderr:   "",
@@ -59,15 +55,10 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 		},
 		{
 			name: "failed user/group command",
-			cmd: &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Name:       "test_failed_user_group_cmd",
-					RunAsUser:  "testuser",
-					RunAsGroup: "testgroup",
-				},
-				ExpandedCmd:  "/bin/false",
-				ExpandedArgs: []string{},
-			},
+			cmd: executortesting.CreateRuntimeCommand("/bin/false", []string{},
+				executortesting.WithName("test_failed_user_group_cmd"),
+				executortesting.WithRunAsUser("testuser"),
+				executortesting.WithRunAsGroup("testgroup")),
 			result: &audit.ExecutionResult{
 				Stdout:   "",
 				Stderr:   "command failed",
@@ -81,14 +72,9 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 		},
 		{
 			name: "user only command",
-			cmd: &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Name:      "test_user_only_cmd",
-					RunAsUser: "testuser",
-				},
-				ExpandedCmd:  "/bin/id",
-				ExpandedArgs: []string{},
-			},
+			cmd: executortesting.CreateRuntimeCommand("/bin/id", []string{},
+				executortesting.WithName("test_user_only_cmd"),
+				executortesting.WithRunAsUser("testuser")),
 			result: &audit.ExecutionResult{
 				Stdout:   "uid=1001(testuser)",
 				Stderr:   "",
