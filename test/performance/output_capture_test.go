@@ -13,6 +13,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -20,19 +21,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
-
-// Helper function to create RuntimeCommand from CommandSpec
-func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      spec.Cmd,
-		ExpandedArgs:     spec.Args,
-		ExpandedEnv:      make(map[string]string),
-		ExpandedVars:     make(map[string]string),
-		EffectiveWorkDir: "",
-		EffectiveTimeout: 30,
-	}
-}
 
 // TestLargeOutputMemoryUsage tests memory usage with large output
 func TestLargeOutputMemoryUsage(t *testing.T) {
@@ -44,13 +32,12 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "large_output.txt")
 
 	// Create test configuration
-	cmdSpec := &runnertypes.CommandSpec{
-		Name:       "large_output_test",
-		Cmd:        "sh",
-		Args:       []string{"-c", "yes 'A' | head -c 10240"}, // 10KB of data
-		OutputFile: outputPath,
-	}
-	runtimeCmd := createRuntimeCommand(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommand(
+		"sh",
+		[]string{"-c", "yes 'A' | head -c 10240"},
+		executortesting.WithName("large_output_test"),
+		executortesting.WithOutputFile(outputPath),
+	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
@@ -121,13 +108,12 @@ func TestOutputSizeLimit(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "size_limited_output.txt")
 
 	// Create command that generates more output than the limit
-	cmdSpec := &runnertypes.CommandSpec{
-		Name:       "size_limit_test",
-		Cmd:        "sh",
-		Args:       []string{"-c", "yes 'A' | head -c 2048"}, // 2KB of data
-		OutputFile: outputPath,
-	}
-	runtimeCmd := createRuntimeCommand(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommand(
+		"sh",
+		[]string{"-c", "yes 'A' | head -c 2048"},
+		executortesting.WithName("size_limit_test"),
+		executortesting.WithOutputFile(outputPath),
+	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group", WorkDir: tempDir}
 
@@ -182,15 +168,14 @@ func TestConcurrentExecution(t *testing.T) {
 	results := make(chan error, numCommands)
 	start := time.Now()
 
-	for i := 0; i < numCommands; i++ {
+	for i := range numCommands {
 		go func(index int) {
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       fmt.Sprintf("concurrent_test_%d", index),
-				Cmd:        "echo",
-				Args:       []string{fmt.Sprintf("Output from command %d", index)},
-				OutputFile: filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index)),
-			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{fmt.Sprintf("Output from command %d", index)},
+				executortesting.WithName(fmt.Sprintf("concurrent_test_%d", index)),
+				executortesting.WithOutputFile(filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index))),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
@@ -201,7 +186,7 @@ func TestConcurrentExecution(t *testing.T) {
 	}
 
 	// Wait for all commands to complete
-	for i := 0; i < numCommands; i++ {
+	for i := range numCommands {
 		err := <-results
 		require.NoError(t, err, "Command %d failed", i)
 	}
@@ -210,7 +195,7 @@ func TestConcurrentExecution(t *testing.T) {
 	t.Logf("Concurrent execution of %d commands took: %v", numCommands, duration)
 
 	// Verify all output files were created
-	for i := 0; i < numCommands; i++ {
+	for i := range numCommands {
 		outputPath := filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", i))
 		if _, err := os.Stat(outputPath); err == nil {
 			data, err := os.ReadFile(outputPath)
@@ -237,14 +222,13 @@ func TestLongRunningStability(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "long_running_output.txt")
 
 	// Create command that runs for a while and produces incremental output
-	cmdSpec := &runnertypes.CommandSpec{
-		Name:       "long_running_test",
-		Cmd:        "sh",
-		Args:       []string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
-		OutputFile: outputPath,
-		Timeout:    common.IntPtr(30),
-	}
-	runtimeCmd := createRuntimeCommand(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommand(
+		"sh",
+		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
+		executortesting.WithName("long_running_test"),
+		executortesting.WithOutputFile(outputPath),
+		executortesting.WithTimeout(common.IntPtr(30)),
+	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
@@ -302,15 +286,14 @@ func BenchmarkOutputCapture(b *testing.B) {
 
 	// Small output benchmark
 	b.Run("SmallOutput", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("small_output_%d.txt", i))
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "small_output_bench",
-				Cmd:        "echo",
-				Args:       []string{"small output"},
-				OutputFile: outputPath,
-			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{"small output"},
+				executortesting.WithName("small_output_bench"),
+				executortesting.WithOutputFile(outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "bench_group",
@@ -327,15 +310,14 @@ func BenchmarkOutputCapture(b *testing.B) {
 	// Large output benchmark
 	b.Run("LargeOutput", func(b *testing.B) {
 		largeData := strings.Repeat("A", 100*1024) // 100KB
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("large_output_%d.txt", i))
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "large_output_bench",
-				Cmd:        "echo",
-				Args:       []string{largeData},
-				OutputFile: outputPath,
-			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{largeData},
+				executortesting.WithName("large_output_bench"),
+				executortesting.WithOutputFile(outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "bench_group",
@@ -373,15 +355,14 @@ func TestMemoryLeakDetection(t *testing.T) {
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Execute many commands to detect memory leaks
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		outputPath := filepath.Join(tempDir, fmt.Sprintf("leak_test_%d.txt", i))
-		cmdSpec := &runnertypes.CommandSpec{
-			Name:       fmt.Sprintf("leak_test_%d", i),
-			Cmd:        "echo",
-			Args:       []string{fmt.Sprintf("Test output %d", i)},
-			OutputFile: outputPath,
-		}
-		runtimeCmd := createRuntimeCommand(cmdSpec)
+		runtimeCmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{fmt.Sprintf("Test output %d", i)},
+			executortesting.WithName(fmt.Sprintf("leak_test_%d", i)),
+			executortesting.WithOutputFile(outputPath),
+		)
 
 		groupSpec := &runnertypes.GroupSpec{
 			Name: "leak_test_group",

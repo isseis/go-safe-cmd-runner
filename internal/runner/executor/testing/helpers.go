@@ -26,6 +26,7 @@ type runtimeCommandConfig struct {
 	runAsGroup          string
 	outputFile          string
 	expandedEnv         map[string]string
+	riskLevel           string
 }
 
 // WithName sets the command name.
@@ -75,9 +76,9 @@ func WithEffectiveWorkDir(effectiveWorkDir string) RuntimeCommandOption {
 }
 
 // WithTimeout sets the command timeout.
-func WithTimeout(timeout int) RuntimeCommandOption {
+func WithTimeout(timeout *int) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
-		c.timeout = &timeout
+		c.timeout = timeout
 	}
 }
 
@@ -99,6 +100,13 @@ func WithRunAsGroup(group string) RuntimeCommandOption {
 func WithOutputFile(outputFile string) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
 		c.outputFile = outputFile
+	}
+}
+
+// WithRiskLevel sets the risk level for the command.
+func WithRiskLevel(riskLevel string) RuntimeCommandOption {
+	return func(c *runtimeCommandConfig) {
+		c.riskLevel = riskLevel
 	}
 }
 
@@ -164,6 +172,7 @@ func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOptio
 		RunAsUser:  cfg.runAsUser,
 		RunAsGroup: cfg.runAsGroup,
 		OutputFile: cfg.outputFile,
+		RiskLevel:  cfg.riskLevel,
 	}
 
 	// Use the shared timeout resolution logic with context

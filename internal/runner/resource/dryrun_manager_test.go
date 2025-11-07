@@ -42,7 +42,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 
 func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	manager := createTestDryRunResourceManager()
-	cmd := createTestCommand()
+	cmd := executortesting.CreateRuntimeCommand("echo", []string{})
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
@@ -289,11 +289,11 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 		require.NoError(t, err)
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name: "setuid-chmod",
-			Cmd:  "setuid-chmod",
-			Args: []string{"777", "/tmp/test"}, // This would normally be medium risk
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"setuid-chmod",
+			[]string{"777", "/tmp/test"},
+			executortesting.WithName("setuid-chmod"),
+		)
 
 		ctx := context.Background()
 		group := createTestCommandGroup()
@@ -312,7 +312,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			ctx := context.Background()
 			group := createTestCommandGroup()
 			env := map[string]string{}
-			cmd := createRuntimeCommand(&tt.spec)
+			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
 
 			_, result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
@@ -352,11 +352,11 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 	require.NoError(t, err)
 
-	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-		Name: "test-failure",
-		Cmd:  "nonexistent-cmd",
-		Args: []string{"arg1"},
-	})
+	cmd := executortesting.CreateRuntimeCommand(
+		"nonexistent-cmd",
+		[]string{"arg1"},
+		executortesting.WithName("test-failure"),
+	)
 	group := createTestCommandGroup()
 	env := map[string]string{}
 	ctx := context.Background()
@@ -518,7 +518,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			name: "Update command with final environment using valid token",
 			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command analysis first
-				cmd := createTestCommand()
+				cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
@@ -574,7 +574,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			name: "Update with complete debug info including both fields",
 			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command
-				cmd := createTestCommand()
+				cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
@@ -620,7 +620,7 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 			name: "Duplicate call should return error",
 			setupFunc: func(m *DryRunResourceManager) CommandToken {
 				// Record a command and update once
-				cmd := createTestCommand()
+				cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
 				group := createTestCommandGroup()
 				env := map[string]string{"TEST": "value"}
 				ctx := context.Background()
