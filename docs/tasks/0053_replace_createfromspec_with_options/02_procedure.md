@@ -97,9 +97,9 @@ cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 
 // After
 cmd := executortesting.CreateRuntimeCommand(
-    "test_user_group",
     "echo",
-    executortesting.WithArgs([]string{"test"}),
+    []string{"test"},
+    executortesting.WithName("test_user_group"),
     executortesting.WithRunAsUser("testuser"),
     executortesting.WithRunAsGroup("testgroup"),
 )
@@ -139,8 +139,8 @@ cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 // After
 cmd := executortesting.CreateRuntimeCommand(
     "setuid-chmod",
-    "setuid-chmod",
-    executortesting.WithArgs([]string{"777", "/tmp/test"}),
+    []string{"777", "/tmp/test"},
+    executortesting.WithName("setuid-chmod"),
 )
 ```
 

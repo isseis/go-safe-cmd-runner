@@ -126,7 +126,7 @@
       return executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"},
           executortesting.WithName("test-command"),
           executortesting.WithWorkDir("/tmp"),
-          executortesting.WithTimeout(30))
+          executortesting.WithTimeout(common.IntPtr(30)))
   }
   ```
 
