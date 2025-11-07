@@ -19,7 +19,7 @@
 
 **タスク 1-1: ヘルパー関数の更新**
 
-- [ ] import 文に `executortesting` を追加
+- [x] import 文に `executortesting` を追加
   ```go
   import (
       // ... existing imports ...
@@ -135,8 +135,8 @@
 
 **Phase 1 完了確認**
 
-- [ ] 全体テスト実行: `make test`
-- [ ] リンター実行: `make lint`
+- [x] 全体テスト実行: `make test`
+- [x] リンター実行: `make lint`
 
 ---
 
