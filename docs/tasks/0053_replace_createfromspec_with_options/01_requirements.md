@@ -42,7 +42,7 @@ cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 cmd := executortesting.CreateRuntimeCommand(
     "echo",
     []string{"test"},
-    executortesting.WithName([]string{"test_cmd"}),
+    executortesting.WithName("test_cmd"),
     executortesting.WithRunAsUser("testuser"),
     executortesting.WithRunAsGroup("testgroup"),
 )
