@@ -217,16 +217,16 @@ runtimeCmd := executortesting.CreateRuntimeCommand(
 **対象行**: 79, 136, 212, 266, 312, 375, 439, 500
 
 **作業内容**:
-- [ ] L79: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L136: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L212: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L266: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L312: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L375: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L439: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L500: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./test/security -run TestOutputSecurity`
-- [ ] `make fmt` 実行
+- [x] L79: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L136: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L212: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L266: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L312: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L375: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L439: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L500: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./test/security -run TestOutputSecurity`
+- [x] `make fmt` 実行
 
 **変換例**:
 ```go
@@ -250,8 +250,8 @@ runtimeCmd := executortesting.CreateRuntimeCommand(
 
 #### Phase 3 完了確認
 
-- [ ] test/security パッケージの全テスト成功
-- [ ] `go test -tags test -v ./test/security`
+- [x] test/security パッケージの全テスト成功
+- [x] `go test -tags test -v ./test/security`
 
 ---
 
@@ -357,7 +357,7 @@ executortesting.WithRunAsGroup("testgroup"),
 - Phase 2 (test/performance): 7/7 (100%)
   - output_capture_test.go: 7/7
 
-- Phase 3 (test/security): 0/8 (0%)
-  - output_security_test.go: 0/8
+- Phase 3 (test/security): 8/8 (100%)
+  - output_security_test.go: 8/8
 
-**総計**: 7/41 (17%)
+**総計**: 15/41 (37%)

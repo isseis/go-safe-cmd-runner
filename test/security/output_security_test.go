@@ -70,13 +70,12 @@ func TestPathTraversalAttack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "path_traversal_test",
-				Cmd:        "echo",
-				Args:       []string{"test output"},
-				OutputFile: tc.outputPath,
-			}
-			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{"test output"},
+				executortesting.WithName("path_traversal_test"),
+				executortesting.WithOutputFile(tc.outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -127,13 +126,12 @@ func TestSymlinkAttack(t *testing.T) {
 	err := os.Symlink(sensitiveFile, symlinkPath)
 	require.NoError(t, err)
 
-	cmdSpec := &runnertypes.CommandSpec{
-		Name:       "symlink_attack_test",
-		Cmd:        "echo",
-		Args:       []string{"malicious content"},
-		OutputFile: symlinkPath,
-	}
-	runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommand(
+		"echo",
+		[]string{"malicious content"},
+		executortesting.WithName("symlink_attack_test"),
+		executortesting.WithOutputFile(symlinkPath),
+	)
 
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
@@ -203,13 +201,12 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "privilege_escalation_test",
-				Cmd:        "echo",
-				Args:       []string{"test output"},
-				OutputFile: tc.outputPath,
-			}
-			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{"test output"},
+				executortesting.WithName("privilege_escalation_test"),
+				executortesting.WithOutputFile(tc.outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -257,13 +254,12 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 
 	// Create command that attempts to generate very large output
 	largeSize := 100 * 1024 * 1024 // 100MB
-	cmdSpec := &runnertypes.CommandSpec{
-		Name:       "disk_exhaustion_test",
-		Cmd:        "sh",
-		Args:       []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
-		OutputFile: outputPath,
-	}
-	runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommand(
+		"sh",
+		[]string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
+		executortesting.WithName("disk_exhaustion_test"),
+		executortesting.WithOutputFile(outputPath),
+	)
 
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
@@ -303,13 +299,12 @@ func TestFilePermissionValidation(t *testing.T) {
 	tempDir := t.TempDir()
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
-	cmdSpec := &runnertypes.CommandSpec{
-		Name:       "permission_test",
-		Cmd:        "echo",
-		Args:       []string{"test output"},
-		OutputFile: outputPath,
-	}
-	runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommand(
+		"echo",
+		[]string{"test output"},
+		executortesting.WithName("permission_test"),
+		executortesting.WithOutputFile(outputPath),
+	)
 
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
@@ -366,13 +361,12 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 		go func(index int) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "concurrent_security_test",
-				Cmd:        "echo",
-				Args:       []string{"concurrent test output"},
-				OutputFile: outputPath,
-			}
-			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{"concurrent test output"},
+				executortesting.WithName("concurrent_security_test"),
+				executortesting.WithOutputFile(outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -430,13 +424,12 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "security_integration_test",
-				Cmd:        "echo",
-				Args:       []string{"test output"},
-				OutputFile: tc.outputPath,
-			}
-			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{"test output"},
+				executortesting.WithName("security_integration_test"),
+				executortesting.WithOutputFile(tc.outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -491,13 +484,12 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 	for i := range numGoroutines {
 		go func(index int) {
-			cmdSpec := &runnertypes.CommandSpec{
-				Name:       "race_condition_test",
-				Cmd:        "echo",
-				Args:       []string{fmt.Sprintf("content from goroutine %d", index)},
-				OutputFile: outputPath,
-			}
-			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommand(
+				"echo",
+				[]string{fmt.Sprintf("content from goroutine %d", index)},
+				executortesting.WithName("race_condition_test"),
+				executortesting.WithOutputFile(outputPath),
+			)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
