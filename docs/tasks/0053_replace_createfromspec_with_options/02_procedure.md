@@ -139,8 +139,8 @@ cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 // After
 cmd := executortesting.CreateRuntimeCommand(
     "setuid-chmod",
-    "setuid-chmod",
-    executortesting.WithArgs([]string{"777", "/tmp/test"}),
+    []string{"777", "/tmp/test"},
+    executortesting.WithName("setuid-chmod"),
 )
 ```
 
