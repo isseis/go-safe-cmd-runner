@@ -35,7 +35,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 
 これらは最もシンプルな変換パターン。
 
-- [ ] Line 65: `TestExecute/successful_execution`
+- [x] Line 65: `TestExecute/successful_execution`
   ```go
   // Before
   cmd: createRuntimeCommand("echo", []string{"hello"}, "", "", ""),
@@ -44,7 +44,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 83: `TestExecute/command_with_args`
+- [x] Line 83: `TestExecute/command_with_args`
   ```go
   // Before
   cmd: createRuntimeCommand("echo", []string{"-n", "test"}, "", "", ""),
@@ -53,7 +53,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 141: `TestExecute_Error/command_not_found`
+- [x] Line 141: `TestExecute_Error/command_not_found`
   ```go
   // Before
   cmd: createRuntimeCommand("nonexistentcommand12345", []string{}, "", "", ""),
@@ -62,7 +62,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 148: `TestExecute_Error/command_fails`
+- [x] Line 148: `TestExecute_Error/command_fails`
   ```go
   // Before
   cmd: createRuntimeCommand("sh", []string{"-c", "exit 1"}, "", "", ""),
@@ -71,7 +71,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 155: `TestExecute_Error/stderr_captured`
+- [x] Line 155: `TestExecute_Error/stderr_captured`
   ```go
   // Before
   cmd: createRuntimeCommand("sh", []string{"-c", "echo 'error message' >&2; exit 0"}, "", "", ""),
@@ -80,7 +80,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 161: `TestExecute_Error/timeout`
+- [x] Line 161: `TestExecute_Error/timeout`
   ```go
   // Before
   cmd: createRuntimeCommand("sleep", []string{"2"}, "", "", ""),
@@ -89,7 +89,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 226: `TestExecuteWithOutputWriter`
+- [x] Line 226: `TestExecuteWithOutputWriter`
   ```go
   // Before
   cmd := createRuntimeCommand("sleep", []string{"10"}, "", "", "")
@@ -98,7 +98,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir(""))
   ```
 
-- [ ] Line 253: `TestExecuteWithEnvironment`
+- [x] Line 253: `TestExecuteWithEnvironment`
   ```go
   // Before
   cmd := createRuntimeCommand("printenv", []string{}, "", "", "")
@@ -107,7 +107,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir(""))
   ```
 
-- [ ] Line 286: `TestValidate/valid_command_with_local_path`
+- [x] Line 286: `TestValidate/valid_command_with_local_path`
   ```go
   // Before
   cmd: createRuntimeCommand("echo", []string{"hello"}, "", "", ""),
@@ -116,7 +116,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("")),
   ```
 
-- [ ] Line 460: `TestUserGroupExecution/no_privilege_manager`
+- [x] Line 460: `TestUserGroupExecution/no_privilege_manager`
   ```go
   // Before
   cmd := createRuntimeCommand("echo", []string{"test"}, "", "", "")
@@ -125,7 +125,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir(""))
   ```
 
-- [ ] Line 619: `TestUserGroupExecutionMixedPrivileges`
+- [x] Line 619: `TestUserGroupExecutionMixedPrivileges`
   ```go
   // Before
   cmd := createRuntimeCommand("echo", []string{"normal"}, "", "", "")
@@ -136,7 +136,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 
 #### グループ B: workDir 指定あり
 
-- [ ] Line 74: `TestExecute/working_directory` (workDir=".")
+- [x] Line 74: `TestExecute/working_directory` (workDir=".")
   ```go
   // Before
   cmd: createRuntimeCommand("pwd", []string{}, ".", "", ""),
@@ -145,7 +145,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir(".")),
   ```
 
-- [ ] Line 291: `TestValidate/nonexistent_directory` (workDir="/nonexistent/directory")
+- [x] Line 291: `TestValidate/nonexistent_directory` (workDir="/nonexistent/directory")
   ```go
   // Before
   cmd: createRuntimeCommand("ls", []string{}, "/nonexistent/directory", "", ""),
@@ -154,7 +154,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithWorkDir("/nonexistent/directory")),
   ```
 
-- [ ] Line 488: `TestValidatePrivilegedCommand/valid_relative_workdir` (workDir="tmp")
+- [x] Line 488: `TestValidatePrivilegedCommand/valid_relative_workdir` (workDir="tmp")
   ```go
   // Before
   cmd: createRuntimeCommand("/bin/echo", []string{"test"}, "tmp", "testuser", "testgroup"),
@@ -165,7 +165,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup")),
   ```
 
-- [ ] Line 494: `TestValidatePrivilegedCommand/valid_absolute_workdir` (workDir="/tmp")
+- [x] Line 494: `TestValidatePrivilegedCommand/valid_absolute_workdir` (workDir="/tmp")
   ```go
   // Before
   cmd: createRuntimeCommand("/bin/echo", []string{"test"}, "/tmp", "testuser", "testgroup"),
@@ -178,7 +178,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 
 #### グループ C: runAsUser/runAsGroup 指定あり
 
-- [ ] Line 333: `TestUserGroupExecution/successful_user_group_execution`
+- [x] Line 333: `TestUserGroupExecution/successful_user_group_execution`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup")
@@ -189,7 +189,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup"))
   ```
 
-- [ ] Line 351: `TestUserGroupExecution/privileged_execution_not_supported`
+- [x] Line 351: `TestUserGroupExecution/privileged_execution_not_supported`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup")
@@ -200,7 +200,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup"))
   ```
 
-- [ ] Line 367: `TestUserGroupExecution/validation_fails_for_relative_path`
+- [x] Line 367: `TestUserGroupExecution/validation_fails_for_relative_path`
   ```go
   // Before
   cmd := createRuntimeCommand("echo", []string{"test"}, "", "testuser", "testgroup")
@@ -211,7 +211,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup"))
   ```
 
-- [ ] Line 383: `TestUserGroupExecution/privilege_execution_fails`
+- [x] Line 383: `TestUserGroupExecution/privilege_execution_fails`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "invaliduser", "invalidgroup")
@@ -222,7 +222,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("invalidgroup"))
   ```
 
-- [ ] Line 399: `TestUserGroupExecution/user_only_execution`
+- [x] Line 399: `TestUserGroupExecution/user_only_execution`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "")
@@ -232,7 +232,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsUser("testuser"))
   ```
 
-- [ ] Line 418: `TestUserGroupExecution/group_only_execution`
+- [x] Line 418: `TestUserGroupExecution/group_only_execution`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "", "testgroup")
@@ -242,7 +242,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup"))
   ```
 
-- [ ] Line 440: `TestUserGroupExecution/basic_validation_fails`
+- [x] Line 440: `TestUserGroupExecution/basic_validation_fails`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup")
@@ -253,7 +253,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup"))
   ```
 
-- [ ] Line 483: `TestValidatePrivilegedCommand/valid_absolute_path`
+- [x] Line 483: `TestValidatePrivilegedCommand/valid_absolute_path`
   ```go
   // Before
   cmd: createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup"),
@@ -264,7 +264,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup")),
   ```
 
-- [ ] Line 499: `TestValidatePrivilegedCommand/invalid_path_with_parent_reference`
+- [x] Line 499: `TestValidatePrivilegedCommand/invalid_path_with_parent_reference`
   ```go
   // Before
   cmd: createRuntimeCommand("/bin/../bin/echo", []string{"test"}, "", "testuser", "testgroup"),
@@ -275,7 +275,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup")),
   ```
 
-- [ ] Line 599: `TestUserGroupExecutionIntegration`
+- [x] Line 599: `TestUserGroupExecutionIntegration`
   ```go
   // Before
   cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "root", "wheel")
@@ -286,7 +286,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("wheel"))
   ```
 
-- [ ] Line 647: `TestExecuteSudoCommand/successful_sudo_execution`
+- [x] Line 647: `TestExecuteSudoCommand/successful_sudo_execution`
   ```go
   // Before
   cmd: createRuntimeCommand("/usr/bin/whoami", []string{}, "", "root", ""),
@@ -296,7 +296,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsUser("root")),
   ```
 
-- [ ] Line 655: `TestExecuteSudoCommand/sudo_execution_without_manager`
+- [x] Line 655: `TestExecuteSudoCommand/sudo_execution_without_manager`
   ```go
   // Before
   cmd: createRuntimeCommand("/usr/bin/whoami", []string{}, "", "root", ""),
@@ -306,7 +306,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsUser("root")),
   ```
 
-- [ ] Line 664: `TestExecuteSudoCommand/sudo_execution_not_supported`
+- [x] Line 664: `TestExecuteSudoCommand/sudo_execution_not_supported`
   ```go
   // Before
   cmd: createRuntimeCommand("/usr/bin/whoami", []string{}, "", "root", ""),
@@ -316,7 +316,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsUser("root")),
   ```
 
-- [ ] Line 673: `TestExecuteSudoCommand/normal_execution_without_privilege`
+- [x] Line 673: `TestExecuteSudoCommand/normal_execution_without_privilege`
   ```go
   // Before
   cmd: createRuntimeCommand("/bin/echo", []string{"test"}, "", "", ""),
@@ -327,7 +327,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 
 #### グループ D: エッジケース
 
-- [ ] Line 281: `TestValidate/empty_command`
+- [x] Line 281: `TestValidate/empty_command`
   ```go
   // Before
   cmd: createRuntimeCommand("", []string{}, "", "", ""),
@@ -338,7 +338,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 
 #### グループ E: createRuntimeCommandWithName の使用
 
-- [ ] Line 553: `TestUserGroupAuditLogging/audit_user_group_execution`
+- [x] Line 553: `TestUserGroupAuditLogging/audit_user_group_execution`
   ```go
   // Before
   cmd := createRuntimeCommandWithName("test_audit_user_group", "/bin/echo", []string{"test"}, "", "testuser", "testgroup")
@@ -350,7 +350,7 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
       executortesting.WithRunAsGroup("testgroup"))
   ```
 
-- [ ] Line 578: `TestUserGroupAuditLogging/no_audit_logger`
+- [x] Line 578: `TestUserGroupAuditLogging/no_audit_logger`
   ```go
   // Before
   cmd := createRuntimeCommandWithName("test_no_audit", "/bin/echo", []string{"test"}, "", "testuser", "testgroup")
@@ -365,23 +365,23 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 #### テスト実行タイミング
 
 各グループの更新後にテストを実行:
-- [ ] グループ A 更新後: `go test -tags test -v ./internal/runner/executor -run "TestExecute|TestValidate/valid_command_with_local_path|TestUserGroupExecution/no_privilege_manager|TestUserGroupExecutionMixedPrivileges"`
-- [ ] グループ B 更新後: `go test -tags test -v ./internal/runner/executor -run "TestExecute/working_directory|TestValidate/nonexistent_directory|TestValidatePrivilegedCommand"`
-- [ ] グループ C 更新後: `go test -tags test -v ./internal/runner/executor -run "TestUserGroupExecution|TestValidatePrivilegedCommand|TestUserGroupExecutionIntegration|TestExecuteSudoCommand"`
-- [ ] グループ D 更新後: `go test -tags test -v ./internal/runner/executor -run "TestValidate/empty_command"`
-- [ ] グループ E 更新後: `go test -tags test -v ./internal/runner/executor -run "TestUserGroupAuditLogging"`
+- [x] グループ A 更新後: `go test -tags test -v ./internal/runner/executor -run "TestExecute|TestValidate/valid_command_with_local_path|TestUserGroupExecution/no_privilege_manager|TestUserGroupExecutionMixedPrivileges"`
+- [x] グループ B 更新後: `go test -tags test -v ./internal/runner/executor -run "TestExecute/working_directory|TestValidate/nonexistent_directory|TestValidatePrivilegedCommand"`
+- [x] グループ C 更新後: `go test -tags test -v ./internal/runner/executor -run "TestUserGroupExecution|TestValidatePrivilegedCommand|TestUserGroupExecutionIntegration|TestExecuteSudoCommand"`
+- [x] グループ D 更新後: `go test -tags test -v ./internal/runner/executor -run "TestValidate/empty_command"`
+- [x] グループ E 更新後: `go test -tags test -v ./internal/runner/executor -run "TestUserGroupAuditLogging"`
 
 ### Phase 3: ラッパー関数の削除
 
-- [ ] `createRuntimeCommand` 関数を削除 (Line 22-35)
-- [ ] `createRuntimeCommandWithName` 関数を削除 (Line 37-51)
-- [ ] 削除後にテスト実行: `go test -tags test -v ./internal/runner/executor`
+- [x] `createRuntimeCommand` 関数を削除 (Line 22-35)
+- [x] `createRuntimeCommandWithName` 関数を削除 (Line 37-51)
+- [x] 削除後にテスト実行: `go test -tags test -v ./internal/runner/executor`
 
 ### Phase 4: 最終確認
 
-- [ ] 全体テスト実行: `make test`
-- [ ] リンター実行: `make lint`
-- [ ] 変更内容のレビュー: `git diff internal/runner/executor/executor_test.go`
+- [x] 全体テスト実行: `make test`
+- [x] リンター実行: `make lint`
+- [x] 変更内容のレビュー: `git diff internal/runner/executor/executor_test.go`
 
 ## 作業時の注意事項
 
@@ -422,8 +422,8 @@ grep -n "createRuntimeCommand" internal/runner/executor/executor_test.go | grep 
 
 ## 完了基準
 
-- [ ] 全32箇所の使用箇所が更新されている
-- [ ] ラッパー関数2つ (`createRuntimeCommand`, `createRuntimeCommandWithName`) が削除されている
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] git diff で変更内容を確認し、意図通りの変更であることを確認
+- [x] 全32箇所の使用箇所が更新されている
+- [x] ラッパー関数2つ (`createRuntimeCommand`, `createRuntimeCommandWithName`) が削除されている
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] git diff で変更内容を確認し、意図通りの変更であることを確認
