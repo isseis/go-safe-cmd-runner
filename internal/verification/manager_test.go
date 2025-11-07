@@ -364,7 +364,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.toml")
 		configContent := `[global]
-		max_risk_level = "low"
+		risk_level = "low"
 		[groups.test]
 		[[groups.test.commands]]
 		command = "echo hello"

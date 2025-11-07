@@ -484,65 +484,65 @@ cmd = "/bin/date"
 	}
 }
 
-func TestCommandSpec_GetMaxRiskLevel(t *testing.T) {
+func TestCommandSpec_GetRiskLevel(t *testing.T) {
 	tests := []struct {
-		name         string
-		maxRiskLevel string
-		want         RiskLevel
-		wantErr      bool
+		name      string
+		riskLevel string
+		want      RiskLevel
+		wantErr   bool
 	}{
 		{
-			name:         "low risk level",
-			maxRiskLevel: "low",
-			want:         RiskLevelLow,
-			wantErr:      false,
+			name:      "low risk level",
+			riskLevel: "low",
+			want:      RiskLevelLow,
+			wantErr:   false,
 		},
 		{
-			name:         "medium risk level",
-			maxRiskLevel: "medium",
-			want:         RiskLevelMedium,
-			wantErr:      false,
+			name:      "medium risk level",
+			riskLevel: "medium",
+			want:      RiskLevelMedium,
+			wantErr:   false,
 		},
 		{
-			name:         "high risk level",
-			maxRiskLevel: "high",
-			want:         RiskLevelHigh,
-			wantErr:      false,
+			name:      "high risk level",
+			riskLevel: "high",
+			want:      RiskLevelHigh,
+			wantErr:   false,
 		},
 		{
-			name:         "empty string defaults to low",
-			maxRiskLevel: "",
-			want:         RiskLevelLow,
-			wantErr:      false,
+			name:      "empty string defaults to low",
+			riskLevel: "",
+			want:      RiskLevelLow,
+			wantErr:   false,
 		},
 		{
-			name:         "unknown risk level",
-			maxRiskLevel: "unknown",
-			want:         RiskLevelUnknown,
-			wantErr:      false,
+			name:      "unknown risk level",
+			riskLevel: "unknown",
+			want:      RiskLevelUnknown,
+			wantErr:   false,
 		},
 		{
-			name:         "invalid risk level",
-			maxRiskLevel: "invalid",
-			want:         RiskLevelUnknown,
-			wantErr:      true,
+			name:      "invalid risk level",
+			riskLevel: "invalid",
+			want:      RiskLevelUnknown,
+			wantErr:   true,
 		},
 		{
-			name:         "critical risk level is prohibited",
-			maxRiskLevel: "critical",
-			want:         RiskLevelUnknown,
-			wantErr:      true,
+			name:      "critical risk level is prohibited",
+			riskLevel: "critical",
+			want:      RiskLevelUnknown,
+			wantErr:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			spec := &CommandSpec{
-				RiskLevel: tt.maxRiskLevel,
+				RiskLevel: tt.riskLevel,
 			}
-			got, err := spec.GetMaxRiskLevel()
-			assert.Equal(t, tt.wantErr, err != nil, "GetMaxRiskLevel() error = %v, wantErr %v", err, tt.wantErr)
-			assert.Equal(t, tt.want, got, "GetMaxRiskLevel() = %v, want %v", got, tt.want)
+			got, err := spec.GetRiskLevel()
+			assert.Equal(t, tt.wantErr, err != nil, "GetRiskLevel() error = %v, wantErr %v", err, tt.wantErr)
+			assert.Equal(t, tt.want, got, "GetRiskLevel() = %v, want %v", got, tt.want)
 		})
 	}
 }

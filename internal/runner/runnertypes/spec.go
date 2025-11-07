@@ -99,11 +99,11 @@ type CommandSpec struct {
 	Vars      []string `toml:"vars"`       // Command-level internal variables in VAR=value format
 }
 
-// GetMaxRiskLevel parses and returns the maximum risk level for this command.
+// GetRiskLevel parses and returns the maximum risk level for this command.
 // Returns RiskLevelUnknown and an error if the risk level string is invalid.
 //
 // Critical risk level cannot be set in configuration (reserved for internal use only).
-func (s *CommandSpec) GetMaxRiskLevel() (RiskLevel, error) {
+func (s *CommandSpec) GetRiskLevel() (RiskLevel, error) {
 	return ParseRiskLevel(s.RiskLevel)
 }
 

@@ -107,9 +107,9 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	}
 
 	// Step 2: Get maximum allowed risk level from configuration
-	maxAllowedRisk, err := cmd.GetMaxRiskLevel()
+	maxAllowedRisk, err := cmd.GetRiskLevel()
 	if err != nil {
-		return "", nil, fmt.Errorf("invalid max_risk_level configuration: %w", err)
+		return "", nil, fmt.Errorf("invalid risk_level configuration: %w", err)
 	}
 
 	// Step 3: Unified risk level comparison

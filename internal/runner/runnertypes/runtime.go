@@ -339,13 +339,13 @@ func (r *RuntimeCommand) Timeout() common.Timeout {
 	return r.timeout
 }
 
-// GetMaxRiskLevel parses and returns the maximum risk level for this command.
+// GetRiskLevel parses and returns the maximum risk level for this command.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
-func (r *RuntimeCommand) GetMaxRiskLevel() (RiskLevel, error) {
+func (r *RuntimeCommand) GetRiskLevel() (RiskLevel, error) {
 	if r == nil || r.Spec == nil {
-		panic("RuntimeCommand.GetMaxRiskLevel: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+		panic("RuntimeCommand.GetRiskLevel: nil receiver or Spec (programming error - use NewRuntimeCommand)")
 	}
-	return r.Spec.GetMaxRiskLevel()
+	return r.Spec.GetRiskLevel()
 }
 
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified.

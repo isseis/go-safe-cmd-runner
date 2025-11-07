@@ -140,7 +140,7 @@ func TestRuntimeCommand_Output(t *testing.T) {
 	}
 }
 
-func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
+func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 	tests := []struct {
 		name    string
 		spec    *CommandSpec
@@ -194,7 +194,7 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
 			}
-			got, err := r.GetMaxRiskLevel()
+			got, err := r.GetRiskLevel()
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
