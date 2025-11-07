@@ -17,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
@@ -71,11 +72,10 @@ func TestCreateCommandContext(t *testing.T) {
 				RunID:           "test-run-timeout",
 			})
 
-			cmd := &runnertypes.RuntimeCommand{
-				Spec: &runnertypes.CommandSpec{
-					Timeout: tt.commandTimeout,
-				},
-				EffectiveTimeout: int(tt.expectedTimeout.Seconds()),
+			cmd := executortesting.CreateRuntimeCommand("test", []string{})
+			cmd.EffectiveTimeout = int(tt.expectedTimeout.Seconds())
+			if tt.commandTimeout != nil {
+				cmd.Spec.Timeout = tt.commandTimeout
 			}
 
 			ctx := context.Background()
