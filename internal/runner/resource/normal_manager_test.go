@@ -196,28 +196,9 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 }
 
 // Helper to convert CommandSpec to RuntimeCommand for testing
+// This is a wrapper around the shared helper in executor/testing package
 func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	// Use the shared timeout resolution logic with context
-	commandTimeout := common.NewFromIntPtr(spec.Timeout)
-	globalTimeout := common.NewUnsetTimeout() // Tests typically don't need global timeout
-	effectiveTimeout, resolutionContext := common.ResolveTimeout(
-		commandTimeout,
-		common.NewUnsetTimeout(), // No group timeout in tests
-		globalTimeout,
-		spec.Name,
-		"test-group",
-	)
-
-	return &runnertypes.RuntimeCommand{
-		Spec:              spec,
-		ExpandedCmd:       spec.Cmd,
-		ExpandedArgs:      spec.Args,
-		ExpandedEnv:       make(map[string]string),
-		ExpandedVars:      make(map[string]string),
-		EffectiveWorkDir:  spec.WorkDir,
-		EffectiveTimeout:  effectiveTimeout,
-		TimeoutResolution: resolutionContext,
-	}
+	return executortesting.CreateRuntimeCommandFromSpec(spec)
 }
 
 // Tests for Normal Resource Manager

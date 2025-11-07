@@ -16,46 +16,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to create RuntimeCommand for testing
+// Helper functions to create RuntimeCommand for testing
+// These are now wrappers around the shared testing helpers in executor/testing package
+
 func createRuntimeCommand(cmd string, args []string, workDir string, runAsUser, runAsGroup string) *runnertypes.RuntimeCommand {
-	spec := &runnertypes.CommandSpec{
-		Name:       "test-command",
-		Cmd:        cmd,
-		Args:       args,
-		WorkDir:    workDir,
-		Timeout:    nil,
-		RunAsUser:  runAsUser,
-		RunAsGroup: runAsGroup,
+	opts := []executortesting.RuntimeCommandOption{
+		// Always set workDir to preserve existing test behavior
+		// Empty string means executor will use current directory
+		executortesting.WithWorkDir(workDir),
 	}
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      cmd,
-		ExpandedArgs:     args,
-		ExpandedEnv:      make(map[string]string),
-		EffectiveWorkDir: workDir,
-		EffectiveTimeout: 0,
+	if runAsUser != "" {
+		opts = append(opts, executortesting.WithRunAsUser(runAsUser))
 	}
+	if runAsGroup != "" {
+		opts = append(opts, executortesting.WithRunAsGroup(runAsGroup))
+	}
+	return executortesting.CreateRuntimeCommand(cmd, args, opts...)
 }
 
-// Helper function to create RuntimeCommand with name
 func createRuntimeCommandWithName(name, cmd string, args []string, workDir string, runAsUser, runAsGroup string) *runnertypes.RuntimeCommand {
-	spec := &runnertypes.CommandSpec{
-		Name:       name,
-		Cmd:        cmd,
-		Args:       args,
-		WorkDir:    workDir,
-		Timeout:    nil,
-		RunAsUser:  runAsUser,
-		RunAsGroup: runAsGroup,
+	opts := []executortesting.RuntimeCommandOption{
+		executortesting.WithName(name),
+		// Always set workDir to preserve existing test behavior
+		// Empty string means executor will use current directory
+		executortesting.WithWorkDir(workDir),
 	}
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      cmd,
-		ExpandedArgs:     args,
-		ExpandedEnv:      make(map[string]string),
-		EffectiveWorkDir: workDir,
-		EffectiveTimeout: 0,
+	if runAsUser != "" {
+		opts = append(opts, executortesting.WithRunAsUser(runAsUser))
 	}
+	if runAsGroup != "" {
+		opts = append(opts, executortesting.WithRunAsGroup(runAsGroup))
+	}
+	return executortesting.CreateRuntimeCommand(cmd, args, opts...)
 }
 
 func TestExecute_Success(t *testing.T) {

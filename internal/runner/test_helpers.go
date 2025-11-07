@@ -5,7 +5,9 @@ package runner
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
 	"github.com/stretchr/testify/mock"
 )
@@ -39,4 +41,52 @@ func setupSafeTestEnv(t *testing.T) {
 func setupFailedMockExecution(m *MockResourceManager, err error) {
 	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resource.CommandToken(""), nil, err)
+}
+
+// createRuntimeCommand creates a RuntimeCommand from a CommandSpec for testing.
+// This is a local helper for the runner package. For other packages, use
+// the exported helpers in internal/runner/executor/testing package.
+//
+// Usage:
+//
+//	spec := &runnertypes.CommandSpec{
+//	    Name: "test-cmd",
+//	    Cmd:  "/bin/echo",
+//	    Args: []string{"hello"},
+//	    WorkDir: "/tmp",
+//	}
+//	cmd := createRuntimeCommand(spec)
+func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
+	// Use the shared CreateRuntimeCommandFromSpec from executor/testing package
+	// to avoid code duplication
+	// Note: We can't import executor/testing package from runner package directly
+	// because it would create a circular dependency, so we duplicate the implementation here
+
+	// Use the shared timeout resolution logic with context
+	commandTimeout := common.NewFromIntPtr(spec.Timeout)
+	globalTimeout := common.NewUnsetTimeout() // Tests typically don't need global timeout
+	effectiveTimeout, resolutionContext := common.ResolveTimeout(
+		commandTimeout,
+		common.NewUnsetTimeout(), // No group timeout in tests
+		globalTimeout,
+		spec.Name,
+		"test-group",
+	)
+
+	// Set default workDir if not specified
+	workDir := spec.WorkDir
+	if workDir == "" {
+		workDir = "/tmp" // Use /tmp as default for runner package tests
+	}
+
+	return &runnertypes.RuntimeCommand{
+		Spec:              spec,
+		ExpandedCmd:       spec.Cmd,
+		ExpandedArgs:      spec.Args,
+		ExpandedEnv:       make(map[string]string),
+		ExpandedVars:      make(map[string]string),
+		EffectiveWorkDir:  workDir,
+		EffectiveTimeout:  effectiveTimeout,
+		TimeoutResolution: resolutionContext,
+	}
 }
