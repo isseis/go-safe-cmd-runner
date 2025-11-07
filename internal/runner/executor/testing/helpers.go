@@ -75,9 +75,9 @@ func WithEffectiveWorkDir(effectiveWorkDir string) RuntimeCommandOption {
 }
 
 // WithTimeout sets the command timeout.
-func WithTimeout(timeout int) RuntimeCommandOption {
+func WithTimeout(timeout *int) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
-		c.timeout = &timeout
+		c.timeout = timeout
 	}
 }
 

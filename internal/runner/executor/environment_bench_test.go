@@ -12,22 +12,22 @@ import (
 func BenchmarkBuildProcessEnvironment(b *testing.B) {
 	// Create test data with 100 variables
 	systemEnv := make(map[string]string)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		systemEnv[generateVarName("SYS", i)] = generateVarValue(i)
 	}
 
 	globalEnv := make(map[string]string)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		globalEnv[generateVarName("GLOBAL", i)] = generateVarValue(i)
 	}
 
 	groupEnv := make(map[string]string)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		groupEnv[generateVarName("GROUP", i)] = generateVarValue(i)
 	}
 
 	cmdEnv := make(map[string]string)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		cmdEnv[generateVarName("CMD", i)] = generateVarValue(i)
 	}
 
@@ -85,8 +85,8 @@ func BenchmarkBuildProcessEnvironment_Small(b *testing.B) {
 		},
 	}
 
-	cmd := executortesting.CreateRuntimeCommand("test-command", []string{},
-		executortesting.WithName("test-command"),
+	cmd := executortesting.CreateRuntimeCommand("echo", []string{},
+		executortesting.WithName("test-echo-command"),
 		executortesting.WithExpandedEnv(map[string]string{
 			"CMD_VAR": "value",
 		}))

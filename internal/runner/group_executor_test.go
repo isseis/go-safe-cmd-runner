@@ -72,11 +72,9 @@ func TestCreateCommandContext(t *testing.T) {
 				RunID:           "test-run-timeout",
 			})
 
-			cmd := executortesting.CreateRuntimeCommand("test", []string{})
+			cmd := executortesting.CreateRuntimeCommand("test", []string{},
+				executortesting.WithTimeout(tt.commandTimeout))
 			cmd.EffectiveTimeout = int(tt.expectedTimeout.Seconds())
-			if tt.commandTimeout != nil {
-				cmd.Spec.Timeout = tt.commandTimeout
-			}
 
 			ctx := context.Background()
 			now := time.Now()
