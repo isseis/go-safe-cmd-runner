@@ -179,15 +179,15 @@ cmd := executortesting.CreateRuntimeCommand(
 **対象行**: 41, 118, 181, 235, 301, 326, 372
 
 **作業内容**:
-- [ ] L41: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L118: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L181: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L235: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L301: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L326: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L372: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./test/performance -run TestOutputCapture`
-- [ ] `make fmt` 実行
+- [x] L41: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L118: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L181: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L235: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L301: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L326: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L372: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./test/performance -run TestOutputCapture`
+- [x] `make fmt` 実行
 
 **変換例**:
 ```go
@@ -205,8 +205,8 @@ runtimeCmd := executortesting.CreateRuntimeCommand(
 
 #### Phase 2 完了確認
 
-- [ ] test/performance パッケージの全テスト成功
-- [ ] `go test -tags test -v ./test/performance`
+- [x] test/performance パッケージの全テスト成功
+- [x] `go test -tags test -v ./test/performance`
 
 ---
 
@@ -354,10 +354,10 @@ executortesting.WithRunAsGroup("testgroup"),
   - integration_test.go: 0/3
   - normal_manager_test.go: 0/2
 
-- Phase 2 (test/performance): 0/7 (0%)
-  - output_capture_test.go: 0/7
+- Phase 2 (test/performance): 7/7 (100%)
+  - output_capture_test.go: 7/7
 
 - Phase 3 (test/security): 0/8 (0%)
   - output_security_test.go: 0/8
 
-**総計**: 0/41 (0%)
+**総計**: 7/41 (17%)
