@@ -541,8 +541,12 @@ func TestCommandSpec_GetRiskLevel(t *testing.T) {
 				RiskLevel: tt.riskLevel,
 			}
 			got, err := spec.GetRiskLevel()
-			assert.Equal(t, tt.wantErr, err != nil, "GetRiskLevel() error = %v, wantErr %v", err, tt.wantErr)
-			assert.Equal(t, tt.want, got, "GetRiskLevel() = %v, want %v", got, tt.want)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
