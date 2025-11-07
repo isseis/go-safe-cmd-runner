@@ -42,7 +42,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 
 func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	manager := createTestDryRunResourceManager()
-	cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
+	cmd := executortesting.CreateRuntimeCommand("echo", []string{})
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
