@@ -12,6 +12,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -21,15 +22,7 @@ import (
 
 // Helper function to create RuntimeCommand from CommandSpec
 func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      spec.Cmd,
-		ExpandedArgs:     spec.Args,
-		ExpandedEnv:      make(map[string]string),
-		ExpandedVars:     make(map[string]string),
-		EffectiveWorkDir: "",
-		EffectiveTimeout: 30,
-	}
+	return executortesting.CreateRuntimeCommandFromSpec(spec)
 }
 
 // TestPathTraversalAttack tests protection against path traversal attacks
