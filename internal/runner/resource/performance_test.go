@@ -28,11 +28,11 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 			// Create test commands
 			commands := make([]*runnertypes.RuntimeCommand, bm.numCommands)
 			for i := 0; i < bm.numCommands; i++ {
-				commands[i] = executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-					Name:        "test-cmd",
-					Description: "Benchmark test command",
-					Cmd:         "echo test",
-				})
+				commands[i] = executortesting.CreateRuntimeCommand(
+					"echo",
+					[]string{"test"},
+					executortesting.WithName("test-cmd"),
+				)
 			}
 
 			group := &runnertypes.GroupSpec{
@@ -147,11 +147,11 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 
 // BenchmarkResourceManagerModeSwitch benchmarks mode switching performance
 func BenchmarkResourceManagerModeSwitch(b *testing.B) {
-	cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-		Name:        "switch-test",
-		Description: "Mode switch test",
-		Cmd:         "echo switch test",
-	})
+	cmd := executortesting.CreateRuntimeCommand(
+		"echo",
+		[]string{"switch test"},
+		executortesting.WithName("switch-test"),
+	)
 
 	group := &runnertypes.GroupSpec{
 		Name:        "switch-group",
@@ -193,11 +193,11 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 func BenchmarkMemoryUsage(b *testing.B) {
 	commands := make([]*runnertypes.RuntimeCommand, 1000)
 	for i := 0; i < 1000; i++ {
-		commands[i] = executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-			Name:        "memory-test",
-			Description: "Memory usage test command",
-			Cmd:         "echo memory test",
-		})
+		commands[i] = executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"memory test"},
+			executortesting.WithName("memory-test"),
+		)
 	}
 
 	group := &runnertypes.GroupSpec{

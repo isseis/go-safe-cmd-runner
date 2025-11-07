@@ -35,12 +35,12 @@ make lint
 **対象行**: 97, 190, 256, 321
 
 **作業内容**:
-- [ ] L97: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L190: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L256: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L321: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestSecurityValidation`
-- [ ] `make fmt` 実行
+- [x] L97: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L190: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L256: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L321: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestSecurityValidation`
+- [x] `make fmt` 実行
 
 **変換例**:
 ```go
@@ -61,28 +61,28 @@ cmd := executortesting.CreateRuntimeCommand(
 **対象行**: 228, 305, 470, 622, 685, 722
 
 **作業内容**:
-- [ ] L228: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L305: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L470: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L622: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L685: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L722: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestErrorScenarios`
-- [ ] `make fmt` 実行
+- [x] L228: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L305: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L470: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L622: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L685: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L722: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestErrorScenarios`
+- [x] `make fmt` 実行
 
 #### 1.3 usergroup_dryrun_test.go (6箇所)
 
 **対象行**: 27, 67, 105, 140, 175, 215
 
 **作業内容**:
-- [ ] L27: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L67: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L105: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L140: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L175: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L215: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestUserGroupDryRun`
-- [ ] `make fmt` 実行
+- [x] L27: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L67: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L105: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L140: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L175: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L215: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestUserGroupDryRun`
+- [x] `make fmt` 実行
 
 **変換例**:
 ```go
@@ -110,22 +110,22 @@ cmd := executortesting.CreateRuntimeCommand(
 **対象行**: 31, 150, 196
 
 **作業内容**:
-- [ ] L31: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L150: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L196: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestPerformance`
-- [ ] `make fmt` 実行
+- [x] L31: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L150: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L196: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestPerformance`
+- [x] `make fmt` 実行
 
 #### 1.5 dryrun_manager_test.go (2箇所 + 1箇所例外)
 
 **対象行**: 292, 355 (移行対象), 315 (例外)
 
 **作業内容**:
-- [ ] L292: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L355: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L315: **移行しない** (テストテーブルから `&tt.spec` を使用)
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestDryRunManager`
-- [ ] `make fmt` 実行
+- [x] L292: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L355: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L315: **移行しない** (テストテーブルから `&tt.spec` を使用)
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestDryRunManager`
+- [x] `make fmt` 実行
 
 **変換例**:
 ```go
@@ -149,21 +149,23 @@ cmd := executortesting.CreateRuntimeCommand(
 **対象行**: 94, 146, 209
 
 **作業内容**:
-- [ ] L94: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L146: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L209: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestIntegration`
-- [ ] `make fmt` 実行
+- [x] L94: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L146: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L209: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestIntegration`
+- [x] `make fmt` 実行
 
 #### 1.7 normal_manager_test.go (2箇所)
 
 **対象行**: 236, 329
 
 **作業内容**:
-- [ ] L236: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] L329: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
-- [ ] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestNormalManager`
-- [ ] `make fmt` 実行
+- [-] L236: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options (保留: RiskLevel パラメータ対応が必要)
+- [-] L329: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options (保留: RiskLevel パラメータ対応が必要)
+- [-] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestNormalManager`
+- [-] `make fmt` 実行
+
+**備考**: RiskLevel フィールドが CommandSpec に存在するため、options パターンで対応する方法の検討が必要。
 
 #### Phase 1 完了確認
 
@@ -341,23 +343,23 @@ executortesting.WithRunAsGroup("testgroup"),
 - [ ] `make fmt` 適用済み
 - [ ] git status で変更ファイル確認
 
-## 進捗トラッキング
+### 進捗トラッキング
 
 ### 全体進捗
 
-- Phase 1 (internal/runner/resource): 0/26 (0%)
-  - security_test.go: 0/4
-  - error_scenarios_test.go: 0/6
-  - usergroup_dryrun_test.go: 0/6
-  - performance_test.go: 0/3
-  - dryrun_manager_test.go: 0/2
-  - integration_test.go: 0/3
-  - normal_manager_test.go: 0/2
+- Phase 1 (internal/runner/resource): 24/26 (92%)
+  - security_test.go: 4/4 ✓
+  - error_scenarios_test.go: 6/6 ✓
+  - usergroup_dryrun_test.go: 6/6 ✓
+  - performance_test.go: 3/3 ✓
+  - dryrun_manager_test.go: 2/2 + 1 exception ✓
+  - integration_test.go: 3/3 ✓
+  - normal_manager_test.go: 0/2 ([-] RiskLevel 対応保留)
 
 - Phase 2 (test/performance): 7/7 (100%)
-  - output_capture_test.go: 7/7
+  - output_capture_test.go: 7/7 ✓
 
 - Phase 3 (test/security): 8/8 (100%)
-  - output_security_test.go: 8/8
+  - output_security_test.go: 8/8 ✓
 
-**総計**: 15/41 (37%)
+**総計**: 39/41 (95%)

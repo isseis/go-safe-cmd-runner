@@ -1,0 +1,34 @@
+# Starter Example - Minimal Configuration for Beginners
+# This is the simplest possible configuration to get started with go-safe-cmd-runner
+version = "1.0"
+
+[global]
+# Basic timeout setting (30 seconds)
+# Note: From v2.0.0, timeout = 0 means unlimited execution (no timeout)
+# Positive values specify timeout in seconds
+timeout = 30
+# Log level: info (other options: debug, warn, error)
+log_level = "debug"
+# Allow only essential environment variables
+env_allowed = ["PATH", "HOME"]
+# Disable standard path verification for simplicity
+verify_standard_paths = false
+
+# Define a simple group with a few basic commands
+[[groups]]
+name = "hello_world"
+description = "Basic example commands"
+
+# Command 1: Simple echo
+[[groups.commands]]
+name = "greet"
+description = "Display a greeting message"
+cmd = "echo"
+args = ["Hello from go-safe-cmd-runner!"]
+
+# Command 2: Docker
+[[groups.commands]]
+name = "docker ps"
+description = "List running Docker containers"
+cmd = "/snap/bin/docker"
+args = ["ps"]

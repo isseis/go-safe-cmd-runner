@@ -94,7 +94,11 @@ func TestSecurityAnalysis(t *testing.T) {
 			}
 
 			// Execute the command
-			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
+			cmd := executortesting.CreateRuntimeCommand(
+				tt.spec.Cmd,
+				tt.spec.Args,
+				executortesting.WithName(tt.spec.Name),
+			)
 			_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
@@ -187,7 +191,13 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 
 			// Execute the command
-			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
+			cmd := executortesting.CreateRuntimeCommand(
+				tt.spec.Cmd,
+				tt.spec.Args,
+				executortesting.WithName(tt.spec.Name),
+				executortesting.WithRunAsUser(tt.spec.RunAsUser),
+				executortesting.WithRunAsGroup(tt.spec.RunAsGroup),
+			)
 			_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 
@@ -253,12 +263,11 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 		Priority:    1,
 	}
 
-	cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-		Name:        "dangerous-rm",
-		Description: "Dangerous rm command",
-		Cmd:         "rm",
-		Args:        []string{"-rf", "/tmp/*"},
-	})
+	cmd := executortesting.CreateRuntimeCommand(
+		"rm",
+		[]string{"-rf", "/tmp/*"},
+		executortesting.WithName("dangerous-rm"),
+	)
 
 	// Execute the command
 	_, _, err = manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
@@ -318,7 +327,11 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	var analyses []ResourceAnalysis
 	for _, cmdSpec := range commandSpecs {
-		cmd := executortesting.CreateRuntimeCommandFromSpec(&cmdSpec)
+		cmd := executortesting.CreateRuntimeCommand(
+			cmdSpec.Cmd,
+			cmdSpec.Args,
+			executortesting.WithName(cmdSpec.Name),
+		)
 		_, _, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 		assert.NoError(t, err)
 

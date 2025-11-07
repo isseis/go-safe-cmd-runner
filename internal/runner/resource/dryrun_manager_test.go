@@ -289,11 +289,11 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 		require.NoError(t, err)
 
-		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-			Name: "setuid-chmod",
-			Cmd:  "setuid-chmod",
-			Args: []string{"777", "/tmp/test"}, // This would normally be medium risk
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"setuid-chmod",
+			[]string{"777", "/tmp/test"},
+			executortesting.WithName("setuid-chmod"),
+		)
 
 		ctx := context.Background()
 		group := createTestCommandGroup()
@@ -352,11 +352,11 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 	require.NoError(t, err)
 
-	cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-		Name: "test-failure",
-		Cmd:  "nonexistent-cmd",
-		Args: []string{"arg1"},
-	})
+	cmd := executortesting.CreateRuntimeCommand(
+		"nonexistent-cmd",
+		[]string{"arg1"},
+		executortesting.WithName("test-failure"),
+	)
 	group := createTestCommandGroup()
 	env := map[string]string{}
 	ctx := context.Background()
