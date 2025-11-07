@@ -24,7 +24,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name:       "test_user_group",
 			Cmd:        "echo",
 			Args:       []string{"test"},
@@ -64,7 +64,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name:       "test_invalid_user_group",
 			Cmd:        "echo",
 			Args:       []string{"test"},
@@ -102,7 +102,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name:       "test_user_group_unsupported",
 			Cmd:        "echo",
 			Args:       []string{"test"},
@@ -137,7 +137,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name:       "test_no_privmgr",
 			Cmd:        "echo",
 			Args:       []string{"test"},
@@ -172,7 +172,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name:      "test_user_only",
 			Cmd:       "echo",
 			Args:      []string{"test"},
@@ -212,7 +212,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name: "test_no_user_group",
 			Cmd:  "echo",
 			Args: []string{"test"},

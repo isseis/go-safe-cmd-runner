@@ -20,7 +20,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 
-	cmd := createTestCommand()
+	cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
 	env := map[string]string{"FOO": "BAR"}
 	ctx := context.Background()
 

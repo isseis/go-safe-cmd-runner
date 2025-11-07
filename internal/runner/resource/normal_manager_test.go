@@ -165,13 +165,6 @@ func createTestNormalResourceManager() *testResourceManagerFixture {
 	}
 }
 
-func createTestCommand() *runnertypes.RuntimeCommand {
-	return executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"},
-		executortesting.WithName("test-command"),
-		executortesting.WithWorkDir("/tmp"),
-		executortesting.WithTimeout(30))
-}
-
 func createTestCommandGroup() *runnertypes.GroupSpec {
 	return &runnertypes.GroupSpec{
 		Name:        "test-group",
@@ -182,17 +175,11 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 	}
 }
 
-// Helper to convert CommandSpec to RuntimeCommand for testing
-// This is a wrapper around the shared helper in executor/testing package
-func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	return executortesting.CreateRuntimeCommandFromSpec(spec)
-}
-
 // Tests for Normal Resource Manager
 
 func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 	f := createTestNormalResourceManager()
-	cmd := createTestCommand()
+	cmd := executortesting.CreateRuntimeCommand("echo", []string{"hello", "world"})
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
@@ -246,7 +233,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+			cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 				Name:        "test-privilege-command",
 				Description: "Test privilege escalation command",
 				Cmd:         tc.cmd,
@@ -339,7 +326,7 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+			cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 				Name:        "test-command",
 				Description: "Test command",
 				Cmd:         tc.cmd,

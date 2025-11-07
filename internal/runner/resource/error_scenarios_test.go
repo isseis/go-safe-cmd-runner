@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -224,7 +225,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			t.Run(fmt.Sprintf("%s_%s", mode.name, tt.name), func(t *testing.T) {
 				ctx := context.Background()
 				manager := mode.setup()
-				cmd := createRuntimeCommand(&tt.spec)
+				cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
 				group := tt.groupSpec
 
 				_, result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
@@ -301,7 +302,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 					}
 
 					for j := range commandsPerGoroutine {
-						cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+						cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 							Name: fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j),
 							Cmd:  "echo concurrent test",
 						})
@@ -466,7 +467,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 
 			manager, err := tt.setup()
 			require.NoError(t, err, "setup failed: %v", err)
-			cmd := createRuntimeCommand(&tt.spec)
+			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
 			group := tt.groupSpec
 
 			_, result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
@@ -618,7 +619,7 @@ func TestConcurrentExecution(t *testing.T) {
 
 			// Execute multiple commands in this goroutine
 			for range commandsPerGoroutine {
-				cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+				cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 					Name:        "concurrent-cmd",
 					Description: "Concurrent test command",
 					Cmd:         "echo concurrent test",
@@ -681,7 +682,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, manager)
 
-	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+	cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 		Name:        "state-test",
 		Description: "State consistency test",
 		Cmd:         "echo state test",
@@ -718,7 +719,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// Test edge case: null bytes in environment variables
 	// This tests both normal and dry-run modes for proper handling
 	t.Run("null_bytes_in_environment", func(t *testing.T) {
-		nullCmd := createRuntimeCommand(&runnertypes.CommandSpec{
+		nullCmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 			Name: "null-test",
 			Cmd:  "echo $NULL_VAR",
 		})

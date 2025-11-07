@@ -20,11 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to create RuntimeCommand from CommandSpec
-func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	return executortesting.CreateRuntimeCommandFromSpec(spec)
-}
-
 // TestPathTraversalAttack tests protection against path traversal attacks
 func TestPathTraversalAttack(t *testing.T) {
 	tempDir := t.TempDir()
@@ -81,7 +76,7 @@ func TestPathTraversalAttack(t *testing.T) {
 				Args:       []string{"test output"},
 				OutputFile: tc.outputPath,
 			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -138,7 +133,7 @@ func TestSymlinkAttack(t *testing.T) {
 		Args:       []string{"malicious content"},
 		OutputFile: symlinkPath,
 	}
-	runtimeCmd := createRuntimeCommand(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
@@ -214,7 +209,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 				Args:       []string{"test output"},
 				OutputFile: tc.outputPath,
 			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -268,7 +263,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 		Args:       []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
 		OutputFile: outputPath,
 	}
-	runtimeCmd := createRuntimeCommand(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
@@ -314,7 +309,7 @@ func TestFilePermissionValidation(t *testing.T) {
 		Args:       []string{"test output"},
 		OutputFile: outputPath,
 	}
-	runtimeCmd := createRuntimeCommand(cmdSpec)
+	runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
@@ -367,7 +362,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(index int) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
@@ -377,7 +372,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 				Args:       []string{"concurrent test output"},
 				OutputFile: outputPath,
 			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -390,7 +385,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		err := <-results
 		require.NoError(t, err, "Concurrent execution should succeed")
 	}
@@ -441,7 +436,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 				Args:       []string{"test output"},
 				OutputFile: tc.outputPath,
 			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -494,7 +489,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 	numGoroutines := 5
 	results := make(chan error, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(index int) {
 			cmdSpec := &runnertypes.CommandSpec{
 				Name:       "race_condition_test",
@@ -502,7 +497,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 				Args:       []string{fmt.Sprintf("content from goroutine %d", index)},
 				OutputFile: outputPath,
 			}
-			runtimeCmd := createRuntimeCommand(cmdSpec)
+			runtimeCmd := executortesting.CreateRuntimeCommandFromSpec(cmdSpec)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -516,7 +511,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 	// Wait for all goroutines to complete
 	successCount := 0
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		err := <-results
 		if err == nil {
 			successCount++

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
@@ -93,7 +94,7 @@ func TestSecurityAnalysis(t *testing.T) {
 			}
 
 			// Execute the command
-			cmd := createRuntimeCommand(&tt.spec)
+			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
 			_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
@@ -186,7 +187,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 
 			// Execute the command
-			cmd := createRuntimeCommand(&tt.spec)
+			cmd := executortesting.CreateRuntimeCommandFromSpec(&tt.spec)
 			_, _, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 
@@ -252,7 +253,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 		Priority:    1,
 	}
 
-	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
+	cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
 		Name:        "dangerous-rm",
 		Description: "Dangerous rm command",
 		Cmd:         "rm",
@@ -317,7 +318,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	var analyses []ResourceAnalysis
 	for _, cmdSpec := range commandSpecs {
-		cmd := createRuntimeCommand(&cmdSpec)
+		cmd := executortesting.CreateRuntimeCommandFromSpec(&cmdSpec)
 		_, _, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 		assert.NoError(t, err)
 
