@@ -13,7 +13,7 @@ func BenchmarkPrintFinalEnvironment(b *testing.B) {
 	// Create test data with 100 variables
 	envMap := make(map[string]executor.EnvVar)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		varName := fmt.Sprintf("VAR_%d", i)
 		var origin string
 

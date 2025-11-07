@@ -24,13 +24,13 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name:       "test_user_group",
-			Cmd:        "echo",
-			Args:       []string{"test"},
-			RunAsUser:  "testuser",
-			RunAsGroup: "testgroup",
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"test"},
+			executortesting.WithName("test_user_group"),
+			executortesting.WithRunAsUser("testuser"),
+			executortesting.WithRunAsGroup("testgroup"),
+		)
 
 		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
@@ -64,13 +64,13 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name:       "test_invalid_user_group",
-			Cmd:        "echo",
-			Args:       []string{"test"},
-			RunAsUser:  "nonexistent_user",
-			RunAsGroup: "nonexistent_group",
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"test"},
+			executortesting.WithName("test_invalid_user_group"),
+			executortesting.WithRunAsUser("nonexistent_user"),
+			executortesting.WithRunAsGroup("nonexistent_group"),
+		)
 
 		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
@@ -102,13 +102,13 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name:       "test_user_group_unsupported",
-			Cmd:        "echo",
-			Args:       []string{"test"},
-			RunAsUser:  "testuser",
-			RunAsGroup: "testgroup",
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"test"},
+			executortesting.WithName("test_user_group_unsupported"),
+			executortesting.WithRunAsUser("testuser"),
+			executortesting.WithRunAsGroup("testgroup"),
+		)
 
 		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
@@ -137,13 +137,13 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name:       "test_no_privmgr",
-			Cmd:        "echo",
-			Args:       []string{"test"},
-			RunAsUser:  "testuser",
-			RunAsGroup: "testgroup",
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"test"},
+			executortesting.WithName("test_no_privmgr"),
+			executortesting.WithRunAsUser("testuser"),
+			executortesting.WithRunAsGroup("testgroup"),
+		)
 
 		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
@@ -172,13 +172,12 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name:      "test_user_only",
-			Cmd:       "echo",
-			Args:      []string{"test"},
-			RunAsUser: "testuser",
-			// RunAsGroup is empty
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"test"},
+			executortesting.WithName("test_user_only"),
+			executortesting.WithRunAsUser("testuser"),
+		)
 
 		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
@@ -212,12 +211,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 		require.NoError(t, err, "Failed to create DryRunResourceManager")
 
-		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
-			Name: "test_no_user_group",
-			Cmd:  "echo",
-			Args: []string{"test"},
-			// No RunAsUser or RunAsGroup
-		})
+		cmd := executortesting.CreateRuntimeCommand(
+			"echo",
+			[]string{"test"},
+			executortesting.WithName("test_no_user_group"),
+		)
 
 		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
