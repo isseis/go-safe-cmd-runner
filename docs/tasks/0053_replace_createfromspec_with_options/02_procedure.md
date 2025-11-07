@@ -160,17 +160,17 @@ cmd := executortesting.CreateRuntimeCommand(
 **対象行**: 236, 329
 
 **作業内容**:
-- [-] L236: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options (保留: RiskLevel パラメータ対応が必要)
-- [-] L329: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options (保留: RiskLevel パラメータ対応が必要)
-- [-] テスト実行: `go test -tags test -v ./internal/runner/resource -run TestNormalManager`
-- [-] `make fmt` 実行
+- [x] L236: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] L329: `CreateRuntimeCommandFromSpec` → `CreateRuntimeCommand` + options
+- [x] テスト実行: `go test -tags test -v ./internal/runner/resource -run 'TestNormalResourceManager_ExecuteCommand_(PrivilegeEscalationBlocked|MaxRiskLevelControl)'`
+- [x] `make fmt` 実行
 
-**備考**: RiskLevel フィールドが CommandSpec に存在するため、options パターンで対応する方法の検討が必要。
+**備考**: `WithRiskLevel` オプションを追加して対応完了。
 
 #### Phase 1 完了確認
 
-- [ ] internal/runner/resource パッケージの全テスト成功
-- [ ] `go test -tags test -v ./internal/runner/resource`
+- [x] internal/runner/resource パッケージの全テスト成功
+- [x] `go test -tags test -v ./internal/runner/resource`
 
 ---
 
@@ -347,14 +347,14 @@ executortesting.WithRunAsGroup("testgroup"),
 
 ### 全体進捗
 
-- Phase 1 (internal/runner/resource): 24/26 (92%)
+- Phase 1 (internal/runner/resource): 26/26 (100%)
   - security_test.go: 4/4 ✓
   - error_scenarios_test.go: 6/6 ✓
   - usergroup_dryrun_test.go: 6/6 ✓
   - performance_test.go: 3/3 ✓
   - dryrun_manager_test.go: 2/2 + 1 exception ✓
   - integration_test.go: 3/3 ✓
-  - normal_manager_test.go: 0/2 ([-] RiskLevel 対応保留)
+  - normal_manager_test.go: 2/2 ✓
 
 - Phase 2 (test/performance): 7/7 (100%)
   - output_capture_test.go: 7/7 ✓
@@ -362,4 +362,4 @@ executortesting.WithRunAsGroup("testgroup"),
 - Phase 3 (test/security): 8/8 (100%)
   - output_security_test.go: 8/8 ✓
 
-**総計**: 39/41 (95%)
+**総計**: 41/41 (100%)

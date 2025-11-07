@@ -233,15 +233,14 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-				Name:        "test-privilege-command",
-				Description: "Test privilege escalation command",
-				Cmd:         tc.cmd,
-				Args:        tc.args,
-				WorkDir:     "/tmp",
-				Timeout:     common.IntPtr(30),
-				RiskLevel:   "low", // Default max risk level to ensure Critical risk is blocked
-			})
+			cmd := executortesting.CreateRuntimeCommand(
+				tc.cmd,
+				tc.args,
+				executortesting.WithName("test-privilege-command"),
+				executortesting.WithWorkDir("/tmp"),
+				executortesting.WithTimeout(common.IntPtr(30)),
+				executortesting.WithRiskLevel("low"),
+			)
 			group := createTestCommandGroup()
 			env := map[string]string{"TEST": "value"}
 			ctx := context.Background()
@@ -326,15 +325,14 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := executortesting.CreateRuntimeCommandFromSpec(&runnertypes.CommandSpec{
-				Name:        "test-command",
-				Description: "Test command",
-				Cmd:         tc.cmd,
-				Args:        tc.args,
-				RiskLevel:   tc.maxRiskLevel,
-				WorkDir:     "/tmp",
-				Timeout:     common.IntPtr(30),
-			})
+			cmd := executortesting.CreateRuntimeCommand(
+				tc.cmd,
+				tc.args,
+				executortesting.WithName("test-command"),
+				executortesting.WithWorkDir("/tmp"),
+				executortesting.WithTimeout(common.IntPtr(30)),
+				executortesting.WithRiskLevel(tc.maxRiskLevel),
+			)
 
 			if tc.shouldExecute {
 				expectedResult := &executor.Result{
