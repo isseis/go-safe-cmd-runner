@@ -16,40 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper functions to create RuntimeCommand for testing
-// These are now wrappers around the shared testing helpers in executor/testing package
-
-func createRuntimeCommand(cmd string, args []string, workDir string, runAsUser, runAsGroup string) *runnertypes.RuntimeCommand {
-	opts := []executortesting.RuntimeCommandOption{
-		// Always set workDir to preserve existing test behavior
-		// Empty string means executor will use current directory
-		executortesting.WithWorkDir(workDir),
-	}
-	if runAsUser != "" {
-		opts = append(opts, executortesting.WithRunAsUser(runAsUser))
-	}
-	if runAsGroup != "" {
-		opts = append(opts, executortesting.WithRunAsGroup(runAsGroup))
-	}
-	return executortesting.CreateRuntimeCommand(cmd, args, opts...)
-}
-
-func createRuntimeCommandWithName(name, cmd string, args []string, workDir string, runAsUser, runAsGroup string) *runnertypes.RuntimeCommand {
-	opts := []executortesting.RuntimeCommandOption{
-		executortesting.WithName(name),
-		// Always set workDir to preserve existing test behavior
-		// Empty string means executor will use current directory
-		executortesting.WithWorkDir(workDir),
-	}
-	if runAsUser != "" {
-		opts = append(opts, executortesting.WithRunAsUser(runAsUser))
-	}
-	if runAsGroup != "" {
-		opts = append(opts, executortesting.WithRunAsGroup(runAsGroup))
-	}
-	return executortesting.CreateRuntimeCommand(cmd, args, opts...)
-}
-
 func TestExecute_Success(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -62,7 +28,7 @@ func TestExecute_Success(t *testing.T) {
 	}{
 		{
 			name:             "simple command",
-			cmd:              createRuntimeCommand("echo", []string{"hello"}, "", "", ""),
+			cmd:              executortesting.CreateRuntimeCommand("echo", []string{"hello"}, executortesting.WithWorkDir("")),
 			env:              map[string]string{"TEST": "value"},
 			wantErr:          false,
 			expectedStdout:   "hello\n",
@@ -71,7 +37,7 @@ func TestExecute_Success(t *testing.T) {
 		},
 		{
 			name:             "command with working directory",
-			cmd:              createRuntimeCommand("pwd", []string{}, ".", "", ""),
+			cmd:              executortesting.CreateRuntimeCommand("pwd", []string{}, executortesting.WithWorkDir(".")),
 			env:              nil,
 			wantErr:          false,
 			expectedStdout:   "", // pwd output varies, so we'll just check it's not empty
@@ -80,7 +46,7 @@ func TestExecute_Success(t *testing.T) {
 		},
 		{
 			name:             "command with multiple arguments",
-			cmd:              createRuntimeCommand("echo", []string{"-n", "test"}, "", "", ""),
+			cmd:              executortesting.CreateRuntimeCommand("echo", []string{"-n", "test"}, executortesting.WithWorkDir("")),
 			env:              map[string]string{},
 			wantErr:          false,
 			expectedStdout:   "test",
@@ -138,27 +104,27 @@ func TestExecute_Failure(t *testing.T) {
 	}{
 		{
 			name:    "non-existent command",
-			cmd:     createRuntimeCommand("nonexistentcommand12345", []string{}, "", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("nonexistentcommand12345", []string{}, executortesting.WithWorkDir("")),
 			env:     map[string]string{},
 			wantErr: true,
 			errMsg:  "failed to find command",
 		},
 		{
 			name:    "command with non-zero exit status",
-			cmd:     createRuntimeCommand("sh", []string{"-c", "exit 1"}, "", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("sh", []string{"-c", "exit 1"}, executortesting.WithWorkDir("")),
 			env:     map[string]string{},
 			wantErr: true,
 			errMsg:  "command execution failed",
 		},
 		{
 			name:    "command writing to stderr",
-			cmd:     createRuntimeCommand("sh", []string{"-c", "echo 'error message' >&2; exit 0"}, "", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("sh", []string{"-c", "echo 'error message' >&2; exit 0"}, executortesting.WithWorkDir("")),
 			env:     map[string]string{},
 			wantErr: false, // This should succeed but capture stderr
 		},
 		{
 			name:    "command that takes time (for timeout test)",
-			cmd:     createRuntimeCommand("sleep", []string{"2"}, "", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("sleep", []string{"2"}, executortesting.WithWorkDir("")),
 			env:     map[string]string{},
 			timeout: 100 * time.Millisecond,
 			wantErr: true,
@@ -223,7 +189,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Start a long-running command
-	cmd := createRuntimeCommand("sleep", []string{"10"}, "", "", "")
+	cmd := executortesting.CreateRuntimeCommand("sleep", []string{"10"}, executortesting.WithWorkDir(""))
 
 	// Cancel the context immediately
 	cancel()
@@ -250,7 +216,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	// Set a test environment variable in the runner process
 	t.Setenv("LEAKED_VAR", "should_not_appear")
 
-	cmd := createRuntimeCommand("printenv", []string{}, "", "", "")
+	cmd := executortesting.CreateRuntimeCommand("printenv", []string{}, executortesting.WithWorkDir(""))
 
 	// Only provide filtered variables through envVars parameter
 	envVars := map[string]string{
@@ -278,17 +244,17 @@ func TestValidate(t *testing.T) {
 	}{
 		{
 			name:    "empty command",
-			cmd:     createRuntimeCommand("", []string{}, "", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("", []string{}, executortesting.WithWorkDir("")),
 			wantErr: true,
 		},
 		{
 			name:    "valid command",
-			cmd:     createRuntimeCommand("echo", []string{"hello"}, "", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("echo", []string{"hello"}, executortesting.WithWorkDir("")),
 			wantErr: false,
 		},
 		{
 			name:    "invalid directory",
-			cmd:     createRuntimeCommand("ls", []string{}, "/nonexistent/directory", "", ""),
+			cmd:     executortesting.CreateRuntimeCommand("ls", []string{}, executortesting.WithWorkDir("/nonexistent/directory")),
 			wantErr: true,
 		},
 	}
@@ -330,7 +296,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -348,7 +314,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -364,7 +330,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("echo", []string{"test"}, "", "testuser", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -380,7 +346,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "invaliduser", "invalidgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("invaliduser"), executortesting.WithRunAsGroup("invalidgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -396,7 +362,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -415,7 +381,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -437,7 +403,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -457,7 +423,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
-		cmd := createRuntimeCommand("echo", []string{"test"}, "", "", "")
+		cmd := executortesting.CreateRuntimeCommand("echo", []string{"test"}, executortesting.WithWorkDir(""))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -480,23 +446,23 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	}{
 		{
 			name:        "valid absolute path works for user/group command",
-			cmd:         createRuntimeCommand("/bin/echo", []string{"test"}, "", "testuser", "testgroup"),
+			cmd:         executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup")),
 			expectError: false,
 		},
 		{
 			name:          "relative working directory fails for user/group command",
-			cmd:           createRuntimeCommand("/bin/echo", []string{"test"}, "tmp", "testuser", "testgroup"),
+			cmd:           executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir("tmp"), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup")),
 			expectError:   true,
 			errorContains: "does not exist", // Basic validation fails first (directory existence check)
 		},
 		{
 			name:        "absolute working directory works for user/group command",
-			cmd:         createRuntimeCommand("/bin/echo", []string{"test"}, "/tmp", "testuser", "testgroup"),
+			cmd:         executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir("/tmp"), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup")),
 			expectError: false,
 		},
 		{
 			name:          "path with relative components fails in standard validation",
-			cmd:           createRuntimeCommand("/bin/../bin/echo", []string{"test"}, "", "testuser", "testgroup"),
+			cmd:           executortesting.CreateRuntimeCommand("/bin/../bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup")),
 			expectError:   true,
 			errorContains: "command path contains relative path components", // Error message from standard validation
 		},
@@ -550,7 +516,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			executor.WithAuditLogger(auditLogger),
 		)
 
-		cmd := createRuntimeCommandWithName("test_audit_user_group", "/bin/echo", []string{"test"}, "", "testuser", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithName("test_audit_user_group"), executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -575,7 +541,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			// No audit logger provided
 		)
 
-		cmd := createRuntimeCommandWithName("test_no_audit", "/bin/echo", []string{"test"}, "", "testuser", "testgroup")
+		cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithName("test_no_audit"), executortesting.WithWorkDir(""), executortesting.WithRunAsUser("testuser"), executortesting.WithRunAsGroup("testgroup"))
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -596,7 +562,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 		executor.WithFileSystem(&executortesting.MockFileSystem{}),
 	)
 
-	cmd := createRuntimeCommand("/bin/echo", []string{"test"}, "", "root", "wheel")
+	cmd := executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("root"), executortesting.WithRunAsGroup("wheel"))
 
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
@@ -616,7 +582,7 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 		executor.WithFileSystem(&executortesting.MockFileSystem{}),
 	)
 
-	cmd := createRuntimeCommand("echo", []string{"normal"}, "", "", "")
+	cmd := executortesting.CreateRuntimeCommand("echo", []string{"normal"}, executortesting.WithWorkDir(""))
 
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
@@ -644,7 +610,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 	}{
 		{
 			name:               "root user command executes with elevation",
-			cmd:                createRuntimeCommand("/usr/bin/whoami", []string{}, "", "root", ""),
+			cmd:                executortesting.CreateRuntimeCommand("/usr/bin/whoami", []string{}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("root")),
 			privilegeSupported: true,
 			expectError:        false,
 			noPrivilegeManager: false,
@@ -652,7 +618,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		},
 		{
 			name:               "root user command fails when not supported",
-			cmd:                createRuntimeCommand("/usr/bin/whoami", []string{}, "", "root", ""),
+			cmd:                executortesting.CreateRuntimeCommand("/usr/bin/whoami", []string{}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("root")),
 			privilegeSupported: false,
 			expectError:        true,
 			errorMessage:       "user/group privilege changes are not supported",
@@ -661,7 +627,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		},
 		{
 			name:               "root user command fails with no manager",
-			cmd:                createRuntimeCommand("/usr/bin/whoami", []string{}, "", "root", ""),
+			cmd:                executortesting.CreateRuntimeCommand("/usr/bin/whoami", []string{}, executortesting.WithWorkDir(""), executortesting.WithRunAsUser("root")),
 			privilegeSupported: true,
 			expectError:        true,
 			errorMessage:       "no privilege manager available",
@@ -670,7 +636,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		},
 		{
 			name:               "normal command bypasses privilege manager",
-			cmd:                createRuntimeCommand("/bin/echo", []string{"test"}, "", "", ""),
+			cmd:                executortesting.CreateRuntimeCommand("/bin/echo", []string{"test"}, executortesting.WithWorkDir("")),
 			privilegeSupported: false, // Should not matter
 			expectError:        false,
 			noPrivilegeManager: false,
