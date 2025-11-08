@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -73,16 +74,17 @@ type Option func(*runnerOptions)
 
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
-	executor            executor.CommandExecutor
-	verificationManager *verification.Manager
-	privilegeManager    runnertypes.PrivilegeManager
-	auditLogger         *audit.Logger
-	runID               string
-	resourceManager     resource.ResourceManager
-	dryRun              bool
-	dryRunOptions       *resource.DryRunOptions
-	runtimeGlobal       *runnertypes.RuntimeGlobal
-	keepTempDirs        bool
+	executor                executor.CommandExecutor
+	verificationManager     *verification.Manager
+	privilegeManager        runnertypes.PrivilegeManager
+	auditLogger             *audit.Logger
+	runID                   string
+	resourceManager         resource.ResourceManager
+	dryRun                  bool
+	dryRunOptions           *resource.DryRunOptions
+	runtimeGlobal           *runnertypes.RuntimeGlobal
+	keepTempDirs            bool
+	groupMembershipProvider *groupmembership.GroupMembership
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -139,6 +141,13 @@ func WithKeepTempDirs(keep bool) Option {
 func WithRuntimeGlobal(runtimeGlobal *runnertypes.RuntimeGlobal) Option {
 	return func(opts *runnerOptions) {
 		opts.runtimeGlobal = runtimeGlobal
+	}
+}
+
+// WithGroupMembershipProvider sets a custom group membership provider
+func WithGroupMembershipProvider(provider *groupmembership.GroupMembership) Option {
+	return func(opts *runnerOptions) {
+		opts.groupMembershipProvider = provider
 	}
 }
 
@@ -255,8 +264,14 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		return nil, ErrRunIDRequired
 	}
 
+	// Initialize group membership provider if not provided
+	gmProvider := opts.groupMembershipProvider
+	if gmProvider == nil {
+		gmProvider = groupmembership.New()
+	}
+
 	// Create validator with default security config
-	validator, err := security.NewValidator(nil)
+	validator, err := security.NewValidator(nil, security.WithGroupMembership(gmProvider))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
