@@ -276,7 +276,6 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, nil)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrInvalidPath)
-		assert.Contains(t, err.Error(), "path must be absolute")
 	})
 
 	t.Run("integration test with real setuid binary", func(t *testing.T) {
@@ -1412,7 +1411,6 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, nil)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrInvalidPath)
-		assert.Contains(t, err.Error(), "path must be absolute")
 	})
 }
 

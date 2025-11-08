@@ -96,8 +96,6 @@ func TestValidateFileHash(t *testing.T) {
 		err := validateFileHash(nonExistentFile, tmpDir, config)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrHashValidationFailed)
-		// The error message will include "no such file or directory" for file system errors
-		assert.Contains(t, err.Error(), "no such file or directory")
 	})
 
 	t.Run("testSkipHashValidation should skip validation", func(t *testing.T) {

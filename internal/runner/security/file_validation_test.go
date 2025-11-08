@@ -28,7 +28,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 		setupFunc   func(t *testing.T) string // Returns the path to test
 		uid         int
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
 		{
 			name: "valid_output_file_write_permission",
@@ -70,7 +70,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			errContains: "empty output path",
+			expectedErr: ErrInvalidPath,
 		},
 		{
 			name: "relative_path",
@@ -79,7 +79,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			errContains: "output path must be absolute",
+			expectedErr: ErrInvalidPath,
 		},
 		{
 			name: "directory_instead_of_file",
@@ -89,7 +89,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			errContains: "is not a regular file",
+			expectedErr: ErrInvalidFilePermissions,
 		},
 	}
 
@@ -119,8 +119,8 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -142,7 +142,7 @@ func TestValidator_checkWritePermission(t *testing.T) {
 		uid         int
 		useTestMode bool
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
 		{
 			name: "owner_writable_file",
@@ -182,7 +182,7 @@ func TestValidator_checkWritePermission(t *testing.T) {
 			uid:         65534, // Use 'nobody' user to test world-writable check
 			useTestMode: false,
 			wantErr:     true,
-			errContains: "writable by others",
+			expectedErr: ErrInvalidFilePermissions,
 		},
 		{
 			name: "world_writable_file_allowed_in_test_mode",
@@ -226,8 +226,8 @@ func TestValidator_checkWritePermission(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -248,7 +248,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		setupFunc   func(t *testing.T) string
 		uid         int
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
 		{
 			name: "writable_directory_by_owner_with_permissive_config",
@@ -283,7 +283,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			errContains: "write permission denied",
+			expectedErr: ErrInvalidFilePermissions,
 		},
 	}
 
@@ -301,8 +301,8 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -323,7 +323,7 @@ func TestValidator_validateOutputFileWritePermission(t *testing.T) {
 		setupFunc   func(t *testing.T) (string, os.FileInfo)
 		uid         int
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
 		{
 			name: "writable_file_by_owner",
@@ -360,7 +360,7 @@ func TestValidator_validateOutputFileWritePermission(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			errContains: "write permission denied",
+			expectedErr: ErrInvalidFilePermissions,
 		},
 	}
 
@@ -377,8 +377,8 @@ func TestValidator_validateOutputFileWritePermission(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -645,7 +645,7 @@ func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 	t.Run("empty_path", func(t *testing.T) {
 		risk, err := validator.EvaluateOutputSecurityRisk("", "/home/user")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "empty path")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 	})
 
@@ -728,7 +728,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 		workDir     string
 		expectRisk  runnertypes.RiskLevel
 		expectError bool
-		errorText   string
 		desc        string
 	}{
 		{
@@ -737,7 +736,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "relative/path", // Non-absolute workDir
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be absolute",
 			desc:        "Non-absolute workDir should return error",
 		},
 		{
@@ -746,7 +744,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "/home/user/../user/project", // Non-clean workDir
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be pre-cleaned",
 			desc:        "Non-clean workDir should return error",
 		},
 		{
@@ -755,7 +752,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "/home/user/./project", // Non-clean workDir with dot
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be pre-cleaned",
 			desc:        "Non-clean workDir with dot should return error",
 		},
 		{
@@ -764,7 +760,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "/home/user/project/", // Non-clean workDir with trailing slash
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be pre-cleaned",
 			desc:        "Non-clean workDir with trailing slash should return error",
 		},
 		{
@@ -789,7 +784,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "not/absolute", // Non-absolute workDir with relative path
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be absolute",
 			desc:        "Relative path with non-absolute workDir should return error",
 		},
 		{
@@ -798,7 +792,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "relative", // Non-absolute workDir with absolute path
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be absolute",
 			desc:        "Absolute path with non-absolute workDir should return error due to programming error",
 		},
 	}
@@ -808,9 +801,7 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, tt.workDir)
 			if tt.expectError {
 				assert.Error(t, err, "Test failed: %s. Expected error but got none for path=%q, workDir=%q", tt.desc, tt.path, tt.workDir)
-				if tt.errorText != "" {
-					assert.Contains(t, err.Error(), tt.errorText, "Error message mismatch for %s", tt.desc)
-				}
+				assert.ErrorIs(t, err, ErrInvalidPath, "Error type mismatch for %s", tt.desc)
 				assert.Equal(t, tt.expectRisk, risk, "Risk level mismatch when error expected for %s", tt.desc)
 			} else {
 				require.NoError(t, err, "Test failed: %s. Unexpected error for path=%q, workDir=%q: %v", tt.desc, tt.path, tt.workDir, err)
@@ -1080,11 +1071,10 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
-		name        string
-		setupFunc   func(*commontesting.MockFileSystem)
-		path        string
-		shouldFail  bool
-		expectedErr string
+		name       string
+		setupFunc  func(*commontesting.MockFileSystem)
+		path       string
+		shouldFail bool
 	}{
 		{
 			name:       "root directory only",
@@ -1139,9 +1129,6 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 
 			if tt.shouldFail {
 				assert.Error(t, err)
-				if tt.expectedErr != "" {
-					assert.Contains(t, err.Error(), tt.expectedErr)
-				}
 			} else {
 				assert.NoError(t, err)
 			}
@@ -1342,7 +1329,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 		setupFunc   func(mockFS *commontesting.MockFileSystem)
 		realUID     int
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
 		{
 			name: "owner_write_permission_with_matching_uid",
@@ -1367,7 +1354,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 			},
 			realUID:     currentUID,
 			wantErr:     true,
-			errContains: "is owned by UID",
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name: "root_owned_directory_always_allowed",
@@ -1404,7 +1391,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 			},
 			realUID:     currentUID,
 			wantErr:     true,
-			errContains: "writable by others",
+			expectedErr: ErrInvalidDirPermissions,
 		},
 	}
 
@@ -1433,8 +1420,8 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -1590,7 +1577,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 		useNilGroup bool
 		realUID     int
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
 		{
 			name: "permissive_mode_allows_all",
@@ -1624,7 +1611,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			useNilGroup: true,
 			realUID:     currentUID,
 			wantErr:     true,
-			errContains: "group membership cannot be verified",
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name: "group_write_safe_with_single_member",
@@ -1647,7 +1634,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			useNilGroup: false,
 			realUID:     currentUID,
 			wantErr:     true,
-			errContains: "failed security validation",
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name: "uid_0_gid_0_boundary",
@@ -1700,8 +1687,8 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
 				}
 			} else {
 				assert.NoError(t, err)
