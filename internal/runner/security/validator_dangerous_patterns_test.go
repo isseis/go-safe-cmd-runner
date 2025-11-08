@@ -13,7 +13,6 @@ func TestValidateDangerousRootPatterns(t *testing.T) {
 		name        string
 		patterns    []string
 		expectError bool
-		errorMsg    string
 	}{
 		{
 			name:        "valid patterns - simple command names",
@@ -29,55 +28,46 @@ func TestValidateDangerousRootPatterns(t *testing.T) {
 			name:        "invalid pattern - empty string",
 			patterns:    []string{"rm", ""},
 			expectError: true,
-			errorMsg:    "contains empty pattern",
 		},
 		{
 			name:        "invalid pattern - contains path separator slash",
 			patterns:    []string{"/bin/rm"},
 			expectError: true,
-			errorMsg:    "contains path separator",
 		},
 		{
 			name:        "invalid pattern - contains path separator backslash",
 			patterns:    []string{"bin\\rm"},
 			expectError: true,
-			errorMsg:    "contains path separator",
 		},
 		{
 			name:        "invalid pattern - contains asterisk wildcard",
 			patterns:    []string{"rm*"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "invalid pattern - contains question mark wildcard",
 			patterns:    []string{"rm?"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "invalid pattern - contains regex brackets",
 			patterns:    []string{"[rm]"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "invalid pattern - contains regex braces",
 			patterns:    []string{"{rm}"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "invalid pattern - contains regex caret",
 			patterns:    []string{"^rm"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "invalid pattern - contains regex dollar",
 			patterns:    []string{"rm$"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "valid pattern - contains dot (common in commands)",
@@ -88,19 +78,16 @@ func TestValidateDangerousRootPatterns(t *testing.T) {
 			name:        "invalid pattern - contains regex pipe",
 			patterns:    []string{"rm|dd"},
 			expectError: true,
-			errorMsg:    "contains wildcard/regex characters",
 		},
 		{
 			name:        "invalid pattern - contains uppercase",
 			patterns:    []string{"RM"},
 			expectError: true,
-			errorMsg:    "contains uppercase",
 		},
 		{
 			name:        "invalid pattern - mixed case",
 			patterns:    []string{"Rm"},
 			expectError: true,
-			errorMsg:    "contains uppercase",
 		},
 		{
 			name:        "edge case - empty list",
@@ -115,7 +102,7 @@ func TestValidateDangerousRootPatterns(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.ErrorIs(t, err, ErrInvalidRegexPattern)
 			} else {
 				require.NoError(t, err)
 			}

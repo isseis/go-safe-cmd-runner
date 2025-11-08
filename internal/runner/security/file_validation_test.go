@@ -645,7 +645,7 @@ func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 	t.Run("empty_path", func(t *testing.T) {
 		risk, err := validator.EvaluateOutputSecurityRisk("", "/home/user")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "empty path")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 	})
 
@@ -728,7 +728,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 		workDir     string
 		expectRisk  runnertypes.RiskLevel
 		expectError bool
-		errorText   string
 		desc        string
 	}{
 		{
@@ -737,7 +736,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "relative/path", // Non-absolute workDir
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be absolute",
 			desc:        "Non-absolute workDir should return error",
 		},
 		{
@@ -746,7 +744,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "/home/user/../user/project", // Non-clean workDir
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be pre-cleaned",
 			desc:        "Non-clean workDir should return error",
 		},
 		{
@@ -755,7 +752,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "/home/user/./project", // Non-clean workDir with dot
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be pre-cleaned",
 			desc:        "Non-clean workDir with dot should return error",
 		},
 		{
@@ -764,7 +760,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "/home/user/project/", // Non-clean workDir with trailing slash
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be pre-cleaned",
 			desc:        "Non-clean workDir with trailing slash should return error",
 		},
 		{
@@ -789,7 +784,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "not/absolute", // Non-absolute workDir with relative path
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be absolute",
 			desc:        "Relative path with non-absolute workDir should return error",
 		},
 		{
@@ -798,7 +792,6 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			workDir:     "relative", // Non-absolute workDir with absolute path
 			expectRisk:  runnertypes.RiskLevelUnknown,
 			expectError: true,
-			errorText:   "workDir must be absolute",
 			desc:        "Absolute path with non-absolute workDir should return error due to programming error",
 		},
 	}
@@ -808,9 +801,7 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, tt.workDir)
 			if tt.expectError {
 				assert.Error(t, err, "Test failed: %s. Expected error but got none for path=%q, workDir=%q", tt.desc, tt.path, tt.workDir)
-				if tt.errorText != "" {
-					assert.Contains(t, err.Error(), tt.errorText, "Error message mismatch for %s", tt.desc)
-				}
+				assert.ErrorIs(t, err, ErrInvalidPath, "Error type mismatch for %s", tt.desc)
 				assert.Equal(t, tt.expectRisk, risk, "Risk level mismatch when error expected for %s", tt.desc)
 			} else {
 				require.NoError(t, err, "Test failed: %s. Unexpected error for path=%q, workDir=%q: %v", tt.desc, tt.path, tt.workDir, err)
@@ -1080,11 +1071,10 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 	config := DefaultConfig()
 
 	tests := []struct {
-		name        string
-		setupFunc   func(*commontesting.MockFileSystem)
-		path        string
-		shouldFail  bool
-		expectedErr string
+		name       string
+		setupFunc  func(*commontesting.MockFileSystem)
+		path       string
+		shouldFail bool
 	}{
 		{
 			name:       "root directory only",
@@ -1139,9 +1129,6 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 
 			if tt.shouldFail {
 				assert.Error(t, err)
-				if tt.expectedErr != "" {
-					assert.Contains(t, err.Error(), tt.expectedErr)
-				}
 			} else {
 				assert.NoError(t, err)
 			}
