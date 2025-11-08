@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -256,7 +257,7 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	}
 
 	// Create validator with default security config
-	validator, err := security.NewValidator(nil)
+	validator, err := security.NewValidator(nil, security.WithGroupMembership(groupmembership.New()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
