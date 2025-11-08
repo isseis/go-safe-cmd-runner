@@ -93,46 +93,46 @@ func TestRiskLevelString(t *testing.T) {
 	}
 }
 
-func TestCommandGetMaxRiskLevel(t *testing.T) {
+func TestCommandGetRiskLevel(t *testing.T) {
 	tests := []struct {
 		name        string
-		maxRiskStr  string
+		riskStr     string
 		expected    RiskLevel
 		expectError bool
 	}{
 		{
 			name:        "valid unknown risk",
-			maxRiskStr:  "unknown",
+			riskStr:     "unknown",
 			expected:    RiskLevelUnknown,
 			expectError: false,
 		},
 		{
 			name:        "valid low risk",
-			maxRiskStr:  "low",
+			riskStr:     "low",
 			expected:    RiskLevelLow,
 			expectError: false,
 		},
 		{
 			name:        "valid medium risk",
-			maxRiskStr:  "medium",
+			riskStr:     "medium",
 			expected:    RiskLevelMedium,
 			expectError: false,
 		},
 		{
 			name:        "valid high risk",
-			maxRiskStr:  "high",
+			riskStr:     "high",
 			expected:    RiskLevelHigh,
 			expectError: false,
 		},
 		{
 			name:        "empty defaults to low",
-			maxRiskStr:  "",
+			riskStr:     "",
 			expected:    RiskLevelLow,
 			expectError: false,
 		},
 		{
 			name:        "invalid risk level",
-			maxRiskStr:  "invalid",
+			riskStr:     "invalid",
 			expected:    RiskLevelUnknown,
 			expectError: true,
 		},
@@ -141,10 +141,10 @@ func TestCommandGetMaxRiskLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &CommandSpec{
-				RiskLevel: tt.maxRiskStr,
+				RiskLevel: tt.riskStr,
 			}
 
-			result, err := cmd.GetMaxRiskLevel()
+			result, err := cmd.GetRiskLevel()
 
 			if tt.expectError {
 				assert.Error(t, err)

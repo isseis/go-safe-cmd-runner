@@ -255,7 +255,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 	}
 }
 
-func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) {
+func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 	f := createTestNormalResourceManager()
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
@@ -265,61 +265,61 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 		name          string
 		cmd           string
 		args          []string
-		maxRiskLevel  string
+		riskLevel     string
 		shouldExecute bool
-		expectedError string
+		expectedError error
 	}{
 		{
-			name:          "low risk command with no max_risk_level (default low)",
+			name:          "low risk command with no risk_level (default low)",
 			cmd:           "echo",
 			args:          []string{"hello"},
-			maxRiskLevel:  "", // Default to low
+			riskLevel:     "", // Default to low
 			shouldExecute: true,
 		},
 		{
-			name:          "low risk command with low max_risk_level",
+			name:          "low risk command with low risk_level",
 			cmd:           "echo",
 			args:          []string{"hello"},
-			maxRiskLevel:  "low",
+			riskLevel:     "low",
 			shouldExecute: true,
 		},
 		{
-			name:          "medium risk command with high max_risk_level",
+			name:          "medium risk command with high risk_level",
 			cmd:           "wget",
 			args:          []string{"http://example.com/file.txt"},
-			maxRiskLevel:  "high",
+			riskLevel:     "high",
 			shouldExecute: true,
 		},
 		{
-			name:          "high risk command with high max_risk_level",
+			name:          "high risk command with high risk_level",
 			cmd:           "rm",
 			args:          []string{"-rf", "/tmp/test"},
-			maxRiskLevel:  "high",
+			riskLevel:     "high",
 			shouldExecute: true,
 		},
 		{
-			name:          "high risk command with low max_risk_level should be blocked",
+			name:          "high risk command with low risk_level should be blocked",
 			cmd:           "rm",
 			args:          []string{"-rf", "/tmp/test"},
-			maxRiskLevel:  "low",
+			riskLevel:     "low",
 			shouldExecute: false,
-			expectedError: "command security violation",
+			expectedError: runnertypes.ErrCommandSecurityViolation,
 		},
 		{
-			name:          "medium risk command with low max_risk_level should be blocked",
+			name:          "medium risk command with low risk_level should be blocked",
 			cmd:           "wget",
 			args:          []string{"http://example.com/file.txt"},
-			maxRiskLevel:  "low",
+			riskLevel:     "low",
 			shouldExecute: false,
-			expectedError: "command security violation",
+			expectedError: runnertypes.ErrCommandSecurityViolation,
 		},
 		{
-			name:          "invalid max_risk_level should return error",
+			name:          "invalid risk_level should return error",
 			cmd:           "echo",
 			args:          []string{"hello"},
-			maxRiskLevel:  "invalid",
+			riskLevel:     "invalid",
 			shouldExecute: false,
-			expectedError: "invalid max_risk_level configuration",
+			expectedError: runnertypes.ErrInvalidRiskLevel,
 		},
 	}
 
@@ -331,7 +331,7 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 				executortesting.WithName("test-command"),
 				executortesting.WithWorkDir("/tmp"),
 				executortesting.WithTimeout(common.IntPtr(30)),
-				executortesting.WithRiskLevel(tc.maxRiskLevel),
+				executortesting.WithRiskLevel(tc.riskLevel),
 			)
 
 			if tc.shouldExecute {
@@ -351,8 +351,8 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 			} else {
 				assert.Error(t, err)
 				assert.Nil(t, result)
-				if tc.expectedError != "" {
-					assert.Contains(t, err.Error(), tc.expectedError)
+				if tc.expectedError != nil {
+					assert.ErrorIs(t, err, tc.expectedError)
 				}
 			}
 		})
