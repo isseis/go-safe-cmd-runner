@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 
 	configpkg "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
@@ -78,6 +79,18 @@ func TestNewRunner(t *testing.T) {
 			WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
+	})
+
+	t.Run("with custom group membership provider", func(t *testing.T) {
+		// Create a custom group membership provider
+		customProvider := groupmembership.New()
+		runner, err := NewRunner(config,
+			WithVerificationManager(setupDryRunVerification(t)),
+			WithRunID("test-run-123"),
+			WithGroupMembershipProvider(customProvider))
+		require.NoError(t, err, "NewRunner should not return an error with custom group membership provider")
+		assert.NotNil(t, runner)
+		assert.NotNil(t, runner.validator)
 	})
 }
 
