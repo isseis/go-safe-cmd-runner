@@ -127,7 +127,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput
 	if cmd.Output() != "" && n.outputManager != nil {
-		result, err := n.executeCommandWithOutput(ctx, cmd, group, env, start)
+		result, err := n.executeCommandWithOutput(ctx, cmd, env, start)
 		return "", result, err
 	}
 
@@ -137,7 +137,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 }
 
 // executeCommandWithOutput executes a command with output capture
-func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, _ *runnertypes.GroupSpec, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
+func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
 	// Prepare output capture
 	maxSize := n.maxOutputSize
 	if maxSize <= 0 {
