@@ -169,13 +169,22 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	perm := info.Mode().Perm()
 
 	// Check that other users cannot write (world-writable check)
-	// Only bypass this check if explicitly configured for permissive testing
+	// Exception: If sticky bit is set (like /tmp), world-writable is safe because
+	// users can only delete/modify their own files in that directory
+	// Only bypass this check if explicitly configured for permissive testing or sticky bit is set
 	if perm&0o002 != 0 && !v.config.testPermissiveMode {
-		slog.Error("Directory writable by others detected",
+		// Check if sticky bit is set
+		if info.Mode()&os.ModeSticky == 0 {
+			slog.Error("Directory writable by others detected",
+				"path", dirPath,
+				"permissions", fmt.Sprintf("%04o", perm))
+			return fmt.Errorf("%w: directory %s is writable by others (%04o)",
+				ErrInvalidDirPermissions, dirPath, perm)
+		}
+		// Sticky bit is set, world-writable is acceptable
+		slog.Debug("Directory is world-writable but has sticky bit set (safe)",
 			"path", dirPath,
 			"permissions", fmt.Sprintf("%04o", perm))
-		return fmt.Errorf("%w: directory %s is writable by others (%04o)",
-			ErrInvalidDirPermissions, dirPath, perm)
 	}
 
 	// Check group write permissions
@@ -375,9 +384,17 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 	}
 
 	// Check other permissions (world-writable check)
+	// Exception: If sticky bit is set (like /tmp), world-writable is safe for directories
 	// Only allow world-writable access in permissive test mode for security
 	if stat.Mode()&0o002 != 0 {
 		if !v.config.testPermissiveMode {
+			// For directories with sticky bit, world-writable is acceptable
+			if stat.Mode().IsDir() && stat.Mode()&os.ModeSticky != 0 {
+				slog.Debug("Directory is world-writable but has sticky bit set (safe)",
+					"path", path,
+					"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()))
+				return nil
+			}
 			slog.Error("File writable by others detected",
 				"path", path,
 				"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
