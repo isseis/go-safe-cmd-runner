@@ -199,13 +199,13 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 	}
 
 	if opts.dryRun {
-		return createDryRunResourceManager(opts, getPathResolver())
+		return createDryRunResourceManager(opts, getPathResolver(), validator)
 	}
 	return createNormalResourceManager(opts, configSpec, getPathResolver(), validator)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
-func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver) error {
+func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver, validator *security.Validator) error {
 	if opts.dryRunOptions == nil {
 		opts.dryRunOptions = &resource.DryRunOptions{
 			DetailLevel:  resource.DetailLevelDetailed,
@@ -213,10 +213,14 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 		}
 	}
 
-	resourceManager, err := resource.NewDryRunResourceManager(
+	// Create output manager with the same validator that has group membership support
+	outputMgr := output.NewDefaultOutputCaptureManager(validator)
+
+	resourceManager, err := resource.NewDryRunResourceManagerWithOutput(
 		opts.executor,
 		opts.privilegeManager,
 		pathResolver,
+		outputMgr,
 		opts.dryRunOptions,
 	)
 	if err != nil {
