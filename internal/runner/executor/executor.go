@@ -142,13 +142,11 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 	privilegeStart := time.Now()
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
-		e.Logger.Debug("Inside WithPrivileges callback, about to execute command", "command", cmd.Name(), "path", cmd.ExpandedCmd)
 		var execErr error
 		result, execErr = e.executeCommandWithPath(ctx, cmd.ExpandedCmd, cmd, envVars, outputWriter)
-		e.Logger.Debug("Command execution in callback completed", "command", cmd.Name(), "error", execErr)
 		return execErr
 	})
-	e.Logger.Debug("WithPrivileges returned", "command", cmd.Name(), "error", err)
+	e.Logger.Debug("WithPrivileges returned", "command", cmd.Name())
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
@@ -239,7 +237,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		// Run the command
 		e.Logger.Debug("Starting command execution", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
 		cmdErr = execCmd.Run()
-		e.Logger.Debug("Command execution completed", "command", cmdLine, "error", cmdErr)
+		e.Logger.Debug("Command execution completed", "command", cmdLine)
 
 		// Get the captured output
 		stdout = stdoutWrapper.GetBuffer()
@@ -248,7 +246,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		// Otherwise, capture output in memory
 		e.Logger.Debug("Starting command execution (memory capture)", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
 		stdout, cmdErr = execCmd.Output()
-		e.Logger.Debug("Command execution completed (memory capture)", "command", cmdLine, "error", cmdErr)
+		e.Logger.Debug("Command execution completed (memory capture)", "command", cmdLine)
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			stderr = exitErr.Stderr
 		}
