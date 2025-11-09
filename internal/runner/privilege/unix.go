@@ -393,13 +393,33 @@ func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
 
+// buildUserGroupLogAttrs creates log attributes for user/group operations
+func buildUserGroupLogAttrs(userName, groupName, effectiveGroupName string, isDefaultGroup bool) []any {
+	logAttrs := []any{}
+	if userName != "" {
+		logAttrs = append(logAttrs, "user", userName)
+	}
+	if groupName != "" {
+		logAttrs = append(logAttrs, "group", groupName)
+	} else if isDefaultGroup {
+		logAttrs = append(logAttrs, "group", effectiveGroupName+" (user's primary group)")
+	}
+	return logAttrs
+}
+
 // changeUserGroupInternal implements the core user/group change logic with optional dry-run mode
 // Note: This method assumes the caller has already acquired appropriate privileges
 func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool) error {
-	m.logger.Info("User/group change requested",
-		"user", userName,
-		"group", groupName,
-		"dry_run", dryRun)
+	logAttrs := []any{"dry_run", dryRun}
+	if userName != "" {
+		logAttrs = append(logAttrs, "user", userName)
+	}
+	if groupName != "" {
+		logAttrs = append(logAttrs, "group", groupName)
+	} else if userName != "" {
+		logAttrs = append(logAttrs, "group_unspecified", true)
+	}
+	m.logger.Info("User/group change requested", logAttrs...)
 
 	// Resolve user name to UID
 	var targetUID int
@@ -421,6 +441,8 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 
 	// Resolve group name to GID
 	var targetGID int
+	var effectiveGroupName string
+	var isDefaultGroup bool
 	switch {
 	case groupName != "":
 		groupInfo, err := user.LookupGroup(groupName)
@@ -433,6 +455,8 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 			return fmt.Errorf("invalid GID %s for group %s: %w", groupInfo.Gid, groupName, err)
 		}
 		targetGID = gid
+		effectiveGroupName = groupName
+		isDefaultGroup = false
 	case userName != "":
 		// If user is specified but group is not, default to user's primary group
 		userInfo, err := user.Lookup(userName)
@@ -445,28 +469,41 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 			return fmt.Errorf("invalid primary GID %s for user %s: %w", userInfo.Gid, userName, err)
 		}
 		targetGID = gid
+		isDefaultGroup = true
+
+		// Try to resolve GID back to group name for better logging
+		if groupInfo, err := user.LookupGroupId(userInfo.Gid); err == nil {
+			effectiveGroupName = groupInfo.Name
+		} else {
+			// If lookup fails, use GID as string
+			effectiveGroupName = userInfo.Gid
+		}
+
 		m.logger.Info("Defaulting to user's primary group",
 			"user", userName,
+			"primary_group", effectiveGroupName,
 			"primary_gid", targetGID)
 	default:
 		// If neither user nor group specified, keep current effective group
 		targetGID = syscall.Getegid()
+		effectiveGroupName = ""
+		isDefaultGroup = false
 	}
 
 	if dryRun {
-		m.logger.Info("Dry-run mode: would change user/group privileges",
-			"user", userName,
-			"group", groupName,
+		dryRunLogAttrs := buildUserGroupLogAttrs(userName, groupName, effectiveGroupName, isDefaultGroup)
+		dryRunLogAttrs = append(dryRunLogAttrs,
 			"target_uid", targetUID,
 			"target_gid", targetGID,
 			"current_uid", syscall.Getuid(),
 			"current_gid", syscall.Getgid())
+		m.logger.Info("Dry-run mode: would change user/group privileges", dryRunLogAttrs...)
 		return nil
 	}
 
 	// Set group first, then user (standard practice)
 	if err := syscall.Setegid(targetGID); err != nil {
-		return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, groupName, err)
+		return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, effectiveGroupName, err)
 	}
 
 	if err := syscall.Seteuid(targetUID); err != nil {
@@ -478,11 +515,11 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 		return fmt.Errorf("failed to set effective user ID to %d (user %s): %w", targetUID, userName, err)
 	}
 
-	m.logger.Info("User/group privileges changed successfully",
-		"user", userName,
-		"group", groupName,
+	successLogAttrs := buildUserGroupLogAttrs(userName, groupName, effectiveGroupName, isDefaultGroup)
+	successLogAttrs = append(successLogAttrs,
 		"target_uid", targetUID,
 		"target_gid", targetGID)
+	m.logger.Info("User/group privileges changed successfully", successLogAttrs...)
 
 	return nil
 }
@@ -495,7 +532,7 @@ func (m *UnixPrivilegeManager) restoreUserGroupInternal(originalEGID int) error 
 		return fmt.Errorf("failed to restore effective group ID to %d: %w", originalEGID, err)
 	}
 
-	m.logger.Info("User/group privileges partially restored (group only)",
+	m.logger.Debug("User/group privileges partially restored (group only)",
 		"restored_egid", originalEGID,
 		"note", "user ID will be restored by privilege restoration")
 
