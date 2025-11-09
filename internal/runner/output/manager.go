@@ -185,8 +185,13 @@ func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPat
 		return
 	}
 	// Try to close file if it's still open
+	// Note: This may fail if the file is already closed (e.g., when Capture.Close() was called)
+	// which is expected and not an error condition due to the idempotent nature of Capture.Close()
 	if err := tempFile.Close(); err != nil {
-		slog.Warn("failed to close temporary file during cleanup", "path", tempPath, "error", err)
+		// Only log if it's not a "file already closed" error
+		if !errors.Is(err, os.ErrClosed) {
+			slog.Warn("failed to close temporary file during cleanup", "path", tempPath, "error", err)
+		}
 	}
 
 	// Remove temporary file if it still exists
