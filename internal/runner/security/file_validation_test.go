@@ -932,6 +932,28 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			shouldFail:  true,
 			expectedErr: ErrInvalidDirPermissions,
 		},
+		{
+			name: "directory hierarchy with sticky bit directory",
+			setupFunc: func(fs *commontesting.MockFileSystem) {
+				// Create hierarchy with sticky bit directory (like /tmp)
+				fs.AddDirWithOwner("/tmp", 0o777|os.ModeSticky, 0, 0) // World-writable with sticky bit - safe!
+				fs.AddDir("/tmp/user-temp", 0o755)
+				fs.AddDir("/tmp/user-temp/subdir", 0o755)
+			},
+			dirPath:    "/tmp/user-temp/subdir",
+			shouldFail: false, // Should pass because /tmp has sticky bit
+		},
+		{
+			name: "directory hierarchy with world-writable directory without sticky bit",
+			setupFunc: func(fs *commontesting.MockFileSystem) {
+				// Create hierarchy with world-writable directory but no sticky bit - insecure!
+				fs.AddDirWithOwner("/shared", 0o777, 0, 0) // World-writable without sticky bit - insecure!
+				fs.AddDir("/shared/data", 0o755)
+			},
+			dirPath:     "/shared/data",
+			shouldFail:  true,
+			expectedErr: ErrInvalidDirPermissions,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1269,6 +1291,17 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		// This test should fail with strict security validation
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+	})
+
+	t.Run("directory with sticky bit and world writable permissions", func(t *testing.T) {
+		// Create a directory with sticky bit and world writable permissions (like /tmp)
+		// This should be allowed as sticky bit prevents deletion by other users
+		err := mockFS.AddDirWithOwner("/test-sticky-dir", 0o777|os.ModeSticky, 0, 0)
+		require.NoError(t, err)
+
+		err = validator.ValidateDirectoryPermissions("/test-sticky-dir")
+		// This should pass because sticky bit is set
+		assert.NoError(t, err)
 	})
 
 	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
