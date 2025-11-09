@@ -32,7 +32,7 @@ func NewTeeOutputWriter(capture CaptureWriter, writer executor.OutputWriter) exe
 
 // Write implements executor.OutputWriter.Write
 // It writes data to both the capture writer and the output writer
-func (t *TeeOutputWriter) Write(stream string, data []byte) error {
+func (t *TeeOutputWriter) Write(stream executor.OutputStream, data []byte) error {
 	// Write to capture first (file output)
 	if t.capture != nil {
 		if err := t.capture.WriteOutput(data); err != nil {

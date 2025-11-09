@@ -285,7 +285,7 @@ func (fs *osFileSystem) FileExists(path string) (bool, error) {
 // and writes to an OutputWriter with a specific stream name
 type outputWrapper struct {
 	writer OutputWriter
-	stream string
+	stream OutputStream
 	buffer bytes.Buffer
 	mu     sync.Mutex
 }

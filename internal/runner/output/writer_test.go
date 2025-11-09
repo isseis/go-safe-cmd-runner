@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,7 @@ type mockOutputWriter struct {
 	closed      bool
 }
 
-func (m *mockOutputWriter) Write(_ string, data []byte) error {
+func (m *mockOutputWriter) Write(_ executor.OutputStream, data []byte) error {
 	if m.writeError != nil {
 		return m.writeError
 	}
@@ -41,7 +42,7 @@ func TestTeeOutputWriter_Write(t *testing.T) {
 	tests := []struct {
 		name          string
 		data          []byte
-		stream        string
+		stream        executor.OutputStream
 		bufferWritten bool
 		captureError  error
 		writerError   error
@@ -50,7 +51,7 @@ func TestTeeOutputWriter_Write(t *testing.T) {
 		{
 			name:          "successful write to both",
 			data:          []byte("test output"),
-			stream:        "stdout",
+			stream:        executor.StdoutStream,
 			bufferWritten: true,
 			captureError:  nil,
 			writerError:   nil,
@@ -59,7 +60,7 @@ func TestTeeOutputWriter_Write(t *testing.T) {
 		{
 			name:          "capture error",
 			data:          []byte("test output"),
-			stream:        "stdout",
+			stream:        executor.StdoutStream,
 			bufferWritten: false,
 			captureError:  errMockCapture,
 			writerError:   nil,
@@ -68,7 +69,7 @@ func TestTeeOutputWriter_Write(t *testing.T) {
 		{
 			name:          "writer error",
 			data:          []byte("test output"),
-			stream:        "stdout",
+			stream:        executor.StdoutStream,
 			bufferWritten: true,
 			captureError:  nil,
 			writerError:   errMockWriter,
@@ -77,7 +78,7 @@ func TestTeeOutputWriter_Write(t *testing.T) {
 		{
 			name:          "empty data",
 			data:          []byte{},
-			stream:        "stdout",
+			stream:        executor.StdoutStream,
 			bufferWritten: true,
 			captureError:  nil,
 			writerError:   nil,
@@ -216,7 +217,7 @@ func TestTeeOutputWriter_NilCapture(t *testing.T) {
 
 	// Write should only write to writer
 	data := []byte("test output")
-	err := teeWriter.Write("stdout", data)
+	err := teeWriter.Write(executor.StdoutStream, data)
 	require.NoError(t, err)
 
 	// Check that data was written only to writer
@@ -238,7 +239,7 @@ func TestTeeOutputWriter_NilWriter(t *testing.T) {
 
 	// Write should only write to capture
 	data := []byte("test output")
-	err := teeWriter.Write("stdout", data)
+	err := teeWriter.Write(executor.StdoutStream, data)
 	require.NoError(t, err)
 
 	// Check that data was written only to capture

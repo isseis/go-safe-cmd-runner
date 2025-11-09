@@ -18,7 +18,7 @@ func NewConsoleOutputWriter() executor.OutputWriter {
 }
 
 // Write implements executor.OutputWriter.Write
-func (c *ConsoleOutputWriter) Write(stream string, data []byte) error {
+func (c *ConsoleOutputWriter) Write(stream executor.OutputStream, data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
