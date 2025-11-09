@@ -156,6 +156,15 @@ func (v *Validator) validateDirectoryComponentMode(dirPath string, info os.FileI
 	return nil
 }
 
+// isWorldWritableWithStickyBit checks if a path is world-writable but safe due to sticky bit
+// Returns true if the path is a directory, is world-writable, and has the sticky bit set (like /tmp)
+// This is a helper function to avoid duplicating sticky bit validation logic
+func isWorldWritableWithStickyBit(info os.FileInfo) bool {
+	return info.Mode().IsDir() &&
+		info.Mode().Perm()&0o002 != 0 &&
+		info.Mode()&os.ModeSticky != 0
+}
+
 // validateDirectoryComponentPermissions validates that a directory component has secure permissions
 // info parameter should be the FileInfo for the directory at dirPath to avoid redundant filesystem calls
 // realUID parameter is the real user ID of the executing user for permission checks
@@ -173,18 +182,18 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	// users can only delete/modify their own files in that directory
 	// Only bypass this check if explicitly configured for permissive testing or sticky bit is set
 	if perm&0o002 != 0 && !v.config.testPermissiveMode {
-		// Check if sticky bit is set
-		if info.Mode()&os.ModeSticky == 0 {
+		if isWorldWritableWithStickyBit(info) {
+			// Sticky bit is set, world-writable is acceptable
+			slog.Debug("Directory is world-writable but has sticky bit set (safe)",
+				"path", dirPath,
+				"permissions", fmt.Sprintf("%04o", perm))
+		} else {
 			slog.Error("Directory writable by others detected",
 				"path", dirPath,
 				"permissions", fmt.Sprintf("%04o", perm))
 			return fmt.Errorf("%w: directory %s is writable by others (%04o)",
 				ErrInvalidDirPermissions, dirPath, perm)
 		}
-		// Sticky bit is set, world-writable is acceptable
-		slog.Debug("Directory is world-writable but has sticky bit set (safe)",
-			"path", dirPath,
-			"permissions", fmt.Sprintf("%04o", perm))
 	}
 
 	// Check group write permissions
@@ -389,11 +398,20 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 	if stat.Mode()&0o002 != 0 {
 		if !v.config.testPermissiveMode {
 			// For directories with sticky bit, world-writable is acceptable
-			if stat.Mode().IsDir() && stat.Mode()&os.ModeSticky != 0 {
+			if isWorldWritableWithStickyBit(stat) {
 				slog.Debug("Directory is world-writable but has sticky bit set (safe)",
 					"path", path,
 					"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()))
 				return nil
+			}
+			// Distinguish between directories and files in error messages
+			if stat.Mode().IsDir() {
+				slog.Error("Directory writable by others detected",
+					"path", path,
+					"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
+					"uid", realUID)
+				return fmt.Errorf("%w: directory %s is writable by others (%04o), which poses security risks",
+					ErrInvalidDirPermissions, path, stat.Mode().Perm())
 			}
 			slog.Error("File writable by others detected",
 				"path", path,
@@ -403,8 +421,13 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 				ErrInvalidFilePermissions, path, stat.Mode().Perm())
 		}
 		// In permissive test mode, allow world-writable access
-		slog.Warn("Allowing world-writable file access in test mode",
+		pathType := "file"
+		if stat.Mode().IsDir() {
+			pathType = "directory"
+		}
+		slog.Warn("Allowing world-writable access in test mode",
 			"path", path,
+			"path_type", pathType,
 			"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
 			"uid", realUID)
 		return nil

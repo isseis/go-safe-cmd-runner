@@ -943,6 +943,17 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			dirPath:    "/tmp/user-temp/subdir",
 			shouldFail: false, // Should pass because /tmp has sticky bit
 		},
+		{
+			name: "directory hierarchy with world-writable directory without sticky bit",
+			setupFunc: func(fs *commontesting.MockFileSystem) {
+				// Create hierarchy with world-writable directory but no sticky bit - insecure!
+				fs.AddDirWithOwner("/shared", 0o777, 0, 0) // World-writable without sticky bit - insecure!
+				fs.AddDir("/shared/data", 0o755)
+			},
+			dirPath:     "/shared/data",
+			shouldFail:  true,
+			expectedErr: ErrInvalidDirPermissions,
+		},
 	}
 
 	for _, tt := range tests {
