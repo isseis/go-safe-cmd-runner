@@ -332,15 +332,12 @@ func TestCapture_CloseIdempotency(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, capture.FileHandle, "FileHandle should be nil after Close")
 
-	// Second close should also succeed (idempotent)
-	err = capture.Close()
-	assert.NoError(t, err)
-	assert.Nil(t, capture.FileHandle, "FileHandle should remain nil after second Close")
-
-	// Third close should also succeed
-	err = capture.Close()
-	assert.NoError(t, err)
-	assert.Nil(t, capture.FileHandle, "FileHandle should remain nil after third Close")
+	// Subsequent closes should also succeed (idempotent)
+	for i := 0; i < 2; i++ {
+		err = capture.Close()
+		assert.NoError(t, err, "Subsequent Close() call #%d should not produce an error", i+1)
+		assert.Nil(t, capture.FileHandle, "FileHandle should remain nil after subsequent Close() call #%d", i+1)
+	}
 }
 
 // TestCapture_ConcurrentAccess tests concurrent access to WriteOutput method
