@@ -82,7 +82,7 @@ type captureOutputWriter struct {
 }
 
 // Write writes data to both the wrapped writer and capture buffer
-func (w *captureOutputWriter) Write(stream string, data []byte) error {
+func (w *captureOutputWriter) Write(stream executor.OutputStream, data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

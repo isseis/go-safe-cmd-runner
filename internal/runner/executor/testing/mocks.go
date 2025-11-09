@@ -4,6 +4,8 @@ package testing
 
 import (
 	"os"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 )
 
 // Mock implementations for executor interfaces used in testing.
@@ -15,7 +17,7 @@ type MockOutputWriter struct {
 }
 
 // Write implements the executor.OutputWriter interface for testing
-func (m *MockOutputWriter) Write(_ string, data []byte) error {
+func (m *MockOutputWriter) Write(_ executor.OutputStream, data []byte) error {
 	if m.Outputs == nil {
 		m.Outputs = make([]string, 0)
 	}

@@ -23,7 +23,7 @@ func TestNewConsoleOutputWriter(t *testing.T) {
 func TestConsoleOutputWriter_Write(t *testing.T) {
 	tests := []struct {
 		name   string
-		stream string
+		stream executor.OutputStream
 	}{
 		{
 			name:   "stdout stream",

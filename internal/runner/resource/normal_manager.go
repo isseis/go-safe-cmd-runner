@@ -158,22 +158,20 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 		}
 	}()
 
-	// Create TeeOutputWriter for both console and file output
-	// Use console writer for standard output display
-	consoleWriter := output.NewConsoleOutputWriter()
-	teeWriter := output.NewTeeOutputWriter(capture, consoleWriter)
+	// Use capture directly as OutputWriter (no console output when output_file is specified)
+	// Capture implements executor.OutputWriter interface
 	defer func() {
-		if closeErr := teeWriter.Close(); closeErr != nil {
-			n.logger.Error("Failed to close tee writer", "error", closeErr)
+		if closeErr := capture.Close(); closeErr != nil {
+			n.logger.Error("Failed to close capture", "error", closeErr)
 			// Update the error to propagate close errors
 			if err == nil {
-				err = fmt.Errorf("failed to close output writer: %w", closeErr)
+				err = fmt.Errorf("failed to close output capture: %w", closeErr)
 			}
 		}
 	}()
 
-	// Execute the command using the shared execution logic with output writer
-	result, err = n.executeCommandInternal(ctx, cmd, env, start, teeWriter)
+	// Execute the command using the shared execution logic with capture as output writer
+	result, err = n.executeCommandInternal(ctx, cmd, env, start, capture)
 	if err != nil {
 		// Return result even on error to preserve exit code information
 		return result, err

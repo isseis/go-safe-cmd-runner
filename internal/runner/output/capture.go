@@ -4,6 +4,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 )
 
 // Capture represents an active output capture session using temporary file
@@ -15,6 +17,12 @@ type Capture struct {
 	CurrentSize  int64      // Current accumulated output size
 	StartTime    time.Time  // Start time of capture session
 	mutex        sync.Mutex // Protects concurrent access to file and size
+}
+
+// Write implements executor.OutputWriter interface
+// The stream parameter is ignored since Capture does not distinguish between stdout/stderr
+func (c *Capture) Write(_ executor.OutputStream, data []byte) error {
+	return c.WriteOutput(data)
 }
 
 // WriteOutput writes data to the capture (implements CaptureWriter interface)
@@ -49,7 +57,7 @@ func (c *Capture) WriteOutput(data []byte) error {
 	return nil
 }
 
-// Close closes the capture (implements CaptureWriter interface)
+// Close closes the capture (implements both CaptureWriter and executor.OutputWriter interfaces)
 func (c *Capture) Close() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()

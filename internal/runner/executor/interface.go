@@ -13,13 +13,28 @@ const (
 	ExitCodeUnknown = -1
 )
 
-// Stream names for command output
+// OutputStream represents the type of output stream (stdout or stderr)
+type OutputStream int
+
+// Output stream constants
 const (
-	// StdoutStream is the name of the standard output stream
-	StdoutStream = "stdout"
-	// StderrStream is the name of the standard error stream
-	StderrStream = "stderr"
+	// StdoutStream represents the standard output stream
+	StdoutStream OutputStream = iota
+	// StderrStream represents the standard error stream
+	StderrStream
 )
+
+// String returns the string representation of the output stream
+func (s OutputStream) String() string {
+	switch s {
+	case StdoutStream:
+		return "stdout"
+	case StderrStream:
+		return "stderr"
+	default:
+		return "unknown"
+	}
+}
 
 // CommandExecutor defines the interface for executing commands
 type CommandExecutor interface {
@@ -59,7 +74,7 @@ type OutputWriter interface {
 	// stream will be either StdoutStream or StderrStream.
 	// data contains the raw output bytes and may include partial lines.
 	// Returns an error if writing fails or if the writer has been closed.
-	Write(stream string, data []byte) error
+	Write(stream OutputStream, data []byte) error
 
 	// Close closes the output writer and releases any resources.
 	// Must be idempotent and thread-safe.
