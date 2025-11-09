@@ -137,14 +137,14 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 }
 
 // executeCommandWithOutput executes a command with output capture
-func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
+func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, _ *runnertypes.GroupSpec, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
 	// Prepare output capture
 	maxSize := n.maxOutputSize
 	if maxSize <= 0 {
 		maxSize = output.DefaultMaxOutputSize // Use default from output package
 	}
 
-	capture, err := n.outputManager.PrepareOutput(cmd.Output(), group.WorkDir, maxSize)
+	capture, err := n.outputManager.PrepareOutput(cmd.Output(), cmd.EffectiveWorkDir, maxSize)
 	if err != nil {
 		return nil, fmt.Errorf("output capture preparation failed: %w", err)
 	}

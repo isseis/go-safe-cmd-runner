@@ -422,7 +422,7 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	}
 
 	// Use the output manager to analyze the output path
-	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Output(), group.WorkDir)
+	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Output(), cmd.EffectiveWorkDir)
 	if err != nil {
 		analysis.Impact.Description += fmt.Sprintf(" [ERROR: %v]", err)
 		analysis.Impact.SecurityRisk = riskLevelHigh
