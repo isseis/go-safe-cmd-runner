@@ -307,6 +307,42 @@ func TestCapture_Close(t *testing.T) {
 	}
 }
 
+// TestCapture_CloseIdempotency tests that Close can be called multiple times safely
+func TestCapture_CloseIdempotency(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "capture_test_*.tmp")
+	require.NoError(t, err)
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	// Write some data to ensure file is created
+	tmpFile.WriteString("test data")
+	tmpFile.Sync()
+
+	capture := &Capture{
+		OutputPath:   "/tmp/final-output.txt",
+		TempFilePath: tmpPath,
+		FileHandle:   tmpFile,
+		MaxSize:      1024,
+		CurrentSize:  9,
+		StartTime:    time.Now(),
+	}
+
+	// First close should succeed
+	err = capture.Close()
+	assert.NoError(t, err)
+	assert.Nil(t, capture.FileHandle, "FileHandle should be nil after Close")
+
+	// Second close should also succeed (idempotent)
+	err = capture.Close()
+	assert.NoError(t, err)
+	assert.Nil(t, capture.FileHandle, "FileHandle should remain nil after second Close")
+
+	// Third close should also succeed
+	err = capture.Close()
+	assert.NoError(t, err)
+	assert.Nil(t, capture.FileHandle, "FileHandle should remain nil after third Close")
+}
+
 // TestCapture_ConcurrentAccess tests concurrent access to WriteOutput method
 func TestCapture_ConcurrentAccess(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "capture_test_concurrent_*.tmp")

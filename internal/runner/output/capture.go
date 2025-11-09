@@ -58,12 +58,15 @@ func (c *Capture) WriteOutput(data []byte) error {
 }
 
 // Close closes the capture (implements both CaptureWriter and executor.OutputWriter interfaces)
+// This method is idempotent and can be safely called multiple times.
 func (c *Capture) Close() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if c.FileHandle != nil {
-		return c.FileHandle.Close()
+		err := c.FileHandle.Close()
+		c.FileHandle = nil // Set to nil after closing to make Close idempotent
+		return err
 	}
 	return nil
 }
