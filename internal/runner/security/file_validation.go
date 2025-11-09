@@ -156,13 +156,11 @@ func (v *Validator) validateDirectoryComponentMode(dirPath string, info os.FileI
 	return nil
 }
 
-// isWorldWritableWithStickyBit checks if a path is world-writable but safe due to sticky bit
-// Returns true if the path is a directory, is world-writable, and has the sticky bit set (like /tmp)
-// This is a helper function to avoid duplicating sticky bit validation logic
-func isWorldWritableWithStickyBit(info os.FileInfo) bool {
-	return info.Mode().IsDir() &&
-		info.Mode().Perm()&0o002 != 0 &&
-		info.Mode()&os.ModeSticky != 0
+// isStickyDirectory checks if a path is a directory with the sticky bit set
+// Returns true if the path is a directory with the sticky bit set (like /tmp)
+// Note: This function does NOT check for world-writability; that check should be done by the caller
+func isStickyDirectory(info os.FileInfo) bool {
+	return info.Mode().IsDir() && info.Mode()&os.ModeSticky != 0
 }
 
 // validateDirectoryComponentPermissions validates that a directory component has secure permissions
@@ -182,7 +180,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	// users can only delete/modify their own files in that directory
 	// Only bypass this check if explicitly configured for permissive testing or sticky bit is set
 	if perm&0o002 != 0 && !v.config.testPermissiveMode {
-		if isWorldWritableWithStickyBit(info) {
+		if isStickyDirectory(info) {
 			// Sticky bit is set, world-writable is acceptable
 			slog.Debug("Directory is world-writable but has sticky bit set (safe)",
 				"path", dirPath,
@@ -398,7 +396,7 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 	if stat.Mode()&0o002 != 0 {
 		if !v.config.testPermissiveMode {
 			// For directories with sticky bit, world-writable is acceptable
-			if isWorldWritableWithStickyBit(stat) {
+			if isStickyDirectory(stat) {
 				slog.Debug("Directory is world-writable but has sticky bit set (safe)",
 					"path", path,
 					"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()))
