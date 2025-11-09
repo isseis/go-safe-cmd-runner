@@ -104,13 +104,24 @@ func (e *ValidationError) Unwrap() error {
 }
 
 // GetChain は検証チェーンを返す
+// 内部状態を保護するため、スライスのコピーを返す
 func (e *ValidationError) GetChain() []string {
-    return e.Chain
+    chain := make([]string, len(e.Chain))
+    copy(chain, e.Chain)
+    return chain
 }
 
 // GetContext はコンテキスト情報を返す
+// 内部状態を保護するため、マップのコピーを返す（浅いコピー）
 func (e *ValidationError) GetContext() map[string]interface{} {
-    return e.Context
+    if e.Context == nil {
+        return make(map[string]interface{})
+    }
+    context := make(map[string]interface{}, len(e.Context))
+    for k, v := range e.Context {
+        context[k] = v
+    }
+    return context
 }
 
 // FormatChain は検証チェーンを文字列として整形
@@ -151,9 +162,11 @@ func WrapValidation(err error, functionName string) error {
     }
 
     // 新しい ValidationError を作成
+    // Context は空のマップで初期化（nil を避ける）
     return &ValidationError{
-        Err:   err,
-        Chain: []string{functionName},
+        Err:     err,
+        Chain:   []string{functionName},
+        Context: make(map[string]interface{}),
     }
 }
 
@@ -161,6 +174,7 @@ func WrapValidation(err error, functionName string) error {
 //
 // チェーンの順序: WrapValidation と同様に、呼び出し元が先頭
 // コンテキストのマージ: 既存のキーと重複した場合は、新しい値で上書きされる
+// nil のコンテキスト: context パラメータが nil の場合も安全に処理される
 func WrapValidationWithContext(err error, functionName string, context map[string]interface{}) error {
     if err == nil {
         return nil
@@ -174,10 +188,23 @@ func WrapValidationWithContext(err error, functionName string, context map[strin
         newChain = append(newChain, ve.Chain...)
 
         // コンテキストをマージ（重複キーは新しい値で上書き）
-        newContext := make(map[string]interface{}, len(ve.Context)+len(context))
+        // nil の場合を考慮してサイズを計算
+        veContextLen := 0
+        if ve.Context != nil {
+            veContextLen = len(ve.Context)
+        }
+        contextLen := 0
+        if context != nil {
+            contextLen = len(context)
+        }
+
+        newContext := make(map[string]interface{}, veContextLen+contextLen)
+
+        // 既存のコンテキストをコピー（ve.Context が nil でも安全）
         for k, v := range ve.Context {
             newContext[k] = v
         }
+        // 新しいコンテキストをマージ（context が nil でも安全）
         for k, v := range context {
             newContext[k] = v  // 既存のキーは上書きされる
         }
@@ -190,10 +217,16 @@ func WrapValidationWithContext(err error, functionName string, context map[strin
     }
 
     // 新しい ValidationError を作成
+    // context が nil の場合は空のマップを初期化
+    newContext := make(map[string]interface{})
+    for k, v := range context {
+        newContext[k] = v
+    }
+
     return &ValidationError{
         Err:     err,
         Chain:   []string{functionName},
-        Context: context,
+        Context: newContext,
     }
 }
 ```
