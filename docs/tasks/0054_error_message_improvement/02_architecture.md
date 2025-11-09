@@ -68,7 +68,7 @@ Level 5: "output path validation failed"
 
 ```go
 // internal/runner/errors/validation_error.go
-package errors
+package runnererrors
 
 import (
     "errors"
@@ -174,11 +174,9 @@ func WrapValidationWithContext(err error, functionName string, context map[strin
         newChain = append(newChain, ve.Chain...)
 
         // コンテキストをマージ（重複キーは新しい値で上書き）
-        newContext := make(map[string]interface{})
-        if ve.Context != nil {
-            for k, v := range ve.Context {
-                newContext[k] = v
-            }
+        newContext := make(map[string]interface{}, len(ve.Context)+len(context))
+        for k, v := range ve.Context {
+            newContext[k] = v
         }
         for k, v := range context {
             newContext[k] = v  // 既存のキーは上書きされる
