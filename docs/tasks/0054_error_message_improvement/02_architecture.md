@@ -73,6 +73,7 @@ package runnererrors
 import (
     "errors"
     "fmt"
+    "maps"
     "strings"
 )
 
@@ -113,15 +114,9 @@ func (e *ValidationError) GetChain() []string {
 
 // GetContext はコンテキスト情報を返す
 // 内部状態を保護するため、マップのコピーを返す（浅いコピー）
+// maps.Clone は nil マップを安全に処理し、空のマップを返す
 func (e *ValidationError) GetContext() map[string]interface{} {
-    if e.Context == nil {
-        return make(map[string]interface{})
-    }
-    context := make(map[string]interface{}, len(e.Context))
-    for k, v := range e.Context {
-        context[k] = v
-    }
-    return context
+    return maps.Clone(e.Context)
 }
 
 // FormatChain は検証チェーンを文字列として整形
@@ -188,26 +183,10 @@ func WrapValidationWithContext(err error, functionName string, context map[strin
         newChain = append(newChain, ve.Chain...)
 
         // コンテキストをマージ（重複キーは新しい値で上書き）
-        // nil の場合を考慮してサイズを計算
-        veContextLen := 0
-        if ve.Context != nil {
-            veContextLen = len(ve.Context)
-        }
-        contextLen := 0
-        if context != nil {
-            contextLen = len(context)
-        }
-
-        newContext := make(map[string]interface{}, veContextLen+contextLen)
-
-        // 既存のコンテキストをコピー（ve.Context が nil でも安全）
-        for k, v := range ve.Context {
-            newContext[k] = v
-        }
-        // 新しいコンテキストをマージ（context が nil でも安全）
-        for k, v := range context {
-            newContext[k] = v  // 既存のキーは上書きされる
-        }
+        // maps.Clone は nil マップを安全に処理し、空のマップを返す
+        newContext := maps.Clone(ve.Context)
+        // maps.Copy は nil マップも安全に処理（何もコピーしない）
+        maps.Copy(newContext, context)
 
         return &ValidationError{
             Err:     ve.Err,
@@ -217,16 +196,11 @@ func WrapValidationWithContext(err error, functionName string, context map[strin
     }
 
     // 新しい ValidationError を作成
-    // context が nil の場合は空のマップを初期化
-    newContext := make(map[string]interface{})
-    for k, v := range context {
-        newContext[k] = v
-    }
-
+    // maps.Clone は nil マップを安全に処理し、空のマップを返す
     return &ValidationError{
         Err:     err,
         Chain:   []string{functionName},
-        Context: newContext,
+        Context: maps.Clone(context),
     }
 }
 ```
@@ -271,20 +245,6 @@ flowchart LR
     class A data;
     class B enhanced;
     class C,D process;
-```
-
-**凡例（Legend）**
-
-```mermaid
-flowchart LR
-    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-
-    D1[("Data/Log")] --> P1["Existing Component"] --> E1["Enhanced Component"]
-    class D1 data
-    class P1 process
-    class E1 enhanced
 ```
 
 ## 4. コンポーネント設計
