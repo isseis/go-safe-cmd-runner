@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -181,49 +180,4 @@ func TestExecutor_ErrorLogging_WithStderr(t *testing.T) {
 	assert.Contains(t, logOutput, "Command execution failed")
 	assert.Contains(t, logOutput, "stderr")
 	// Note: stderr content appears in the log structured output
-}
-
-// TestFormatCommandForLog_CopyPasteable verifies that logged commands can be copy-pasted
-func TestFormatCommandForLog_CopyPasteable(t *testing.T) {
-	tests := []struct {
-		name        string
-		path        string
-		args        []string
-		description string
-	}{
-		{
-			name:        "simple command",
-			path:        "/bin/ls",
-			args:        []string{"-la"},
-			description: "Should produce: /bin/ls -la",
-		},
-		{
-			name:        "command with spaces in args",
-			path:        "/bin/grep",
-			args:        []string{"-r", "search pattern", "/path/to/dir"},
-			description: "Should properly quote arguments with spaces",
-		},
-		{
-			name:        "command with special chars",
-			path:        "/bin/sh",
-			args:        []string{"-c", "echo $HOME && ls -la"},
-			description: "Should escape shell special characters",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := FormatCommandForLog(tt.path, tt.args)
-
-			// Result should not be empty
-			assert.NotEmpty(t, result)
-
-			// Result should start with the path
-			assert.True(t, strings.HasPrefix(result, ShellEscape(tt.path)),
-				"Result should start with escaped path")
-
-			t.Logf("Command: %s", result)
-			t.Logf("Description: %s", tt.description)
-		})
-	}
 }

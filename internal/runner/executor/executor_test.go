@@ -68,9 +68,9 @@ func TestExecute_Success(t *testing.T) {
 
 			outputWriter := &executortesting.MockOutputWriter{}
 
-			e := &executor.DefaultExecutor{
-				FS: fileSystem,
-			}
+			e := executor.NewDefaultExecutor(
+				executor.WithFileSystem(fileSystem),
+			).(*executor.DefaultExecutor)
 
 			result, err := e.Execute(context.Background(), tt.cmd, tt.env, outputWriter)
 			if tt.wantErr {
@@ -145,9 +145,9 @@ func TestExecute_Failure(t *testing.T) {
 
 			outputWriter := &executortesting.MockOutputWriter{}
 
-			e := &executor.DefaultExecutor{
-				FS: fileSystem,
-			}
+			e := executor.NewDefaultExecutor(
+				executor.WithFileSystem(fileSystem),
+			).(*executor.DefaultExecutor)
 
 			ctx := context.Background()
 			if tt.timeout > 0 {
@@ -181,9 +181,9 @@ func TestExecute_ContextCancellation(t *testing.T) {
 		ExistingPaths: make(map[string]bool),
 	}
 
-	e := &executor.DefaultExecutor{
-		FS: fileSystem,
-	}
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(fileSystem),
+	).(*executor.DefaultExecutor)
 
 	// Create a context that we'll cancel
 	ctx, cancel := context.WithCancel(context.Background())
@@ -209,9 +209,9 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 		ExistingPaths: make(map[string]bool),
 	}
 
-	e := &executor.DefaultExecutor{
-		FS: fileSystem,
-	}
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(fileSystem),
+	).(*executor.DefaultExecutor)
 
 	// Set a test environment variable in the runner process
 	t.Setenv("LEAKED_VAR", "should_not_appear")
@@ -271,9 +271,9 @@ func TestValidate(t *testing.T) {
 				fileSystem.ExistingPaths[tt.cmd.EffectiveWorkDir] = !tt.wantErr
 			}
 
-			e := &executor.DefaultExecutor{
-				FS: fileSystem,
-			}
+			e := executor.NewDefaultExecutor(
+				executor.WithFileSystem(fileSystem),
+			).(*executor.DefaultExecutor)
 
 			err := e.Validate(tt.cmd)
 			if tt.wantErr {
