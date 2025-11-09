@@ -154,7 +154,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 
 	// Check if output capture is requested and analyze it
 	if cmd.Output() != "" && d.outputManager != nil {
-		outputAnalysis := d.analyzeOutput(cmd, group)
+		outputAnalysis := d.analyzeOutput(cmd)
 		d.RecordAnalysis(&outputAnalysis)
 	}
 
@@ -402,7 +402,7 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 }
 
 // analyzeOutput analyzes output capture configuration for dry-run
-func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec) ResourceAnalysis {
+func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand) ResourceAnalysis {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
@@ -411,7 +411,7 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 		Parameters: map[string]ParameterValue{
 			"output_path":       NewStringValue(cmd.Output()),
 			"command":           NewStringValue(cmd.ExpandedCmd),
-			"working_directory": NewStringValue(group.WorkDir),
+			"working_directory": NewStringValue(cmd.EffectiveWorkDir),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Output files are persistent
