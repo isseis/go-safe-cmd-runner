@@ -140,11 +140,13 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 
 	var result *Result
 	privilegeStart := time.Now()
+	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
 		result, execErr = e.executeCommandWithPath(ctx, cmd.ExpandedCmd, cmd, envVars, outputWriter)
 		return execErr
 	})
+	e.Logger.Debug("WithPrivileges returned", "command", cmd.Name())
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
@@ -195,15 +197,18 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.Ru
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Log the command being executed at DEBUG level
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
+	e.Logger.Debug("executeCommandWithPath called", "command", cmdLine, "path", path, "work_dir", cmd.EffectiveWorkDir)
 	e.Logger.Debug("Executing command", "command", cmdLine)
 
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
+	e.Logger.Debug("Command context created", "command", cmdLine, "args_count", len(cmd.ExpandedArgs))
 
 	// Set up working directory
 	if cmd.EffectiveWorkDir != "" {
 		execCmd.Dir = cmd.EffectiveWorkDir
+		e.Logger.Debug("Working directory set", "command", cmdLine, "work_dir", cmd.EffectiveWorkDir)
 	}
 
 	// Set up environment variables
@@ -213,28 +218,35 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	for k, v := range envVars {
 		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
+	e.Logger.Debug("Environment variables configured", "command", cmdLine, "env_count", len(execCmd.Env))
 
 	// Set up output capture
 	var stdout, stderr []byte
 	var cmdErr error
 
 	if outputWriter != nil {
+		e.Logger.Debug("Setting up output writer", "command", cmdLine)
 		// Create buffered wrappers that both capture output and write to OutputWriter
 		stdoutWrapper := &outputWrapper{writer: outputWriter, stream: StdoutStream}
 		stderrWrapper := &outputWrapper{writer: outputWriter, stream: StderrStream}
 
 		execCmd.Stdout = stdoutWrapper
 		execCmd.Stderr = stderrWrapper
+		e.Logger.Debug("Output writer configured", "command", cmdLine)
 
 		// Run the command
+		e.Logger.Debug("Starting command execution", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
 		cmdErr = execCmd.Run()
+		e.Logger.Debug("Command execution completed", "command", cmdLine)
 
 		// Get the captured output
 		stdout = stdoutWrapper.GetBuffer()
 		stderr = stderrWrapper.GetBuffer()
 	} else {
 		// Otherwise, capture output in memory
+		e.Logger.Debug("Starting command execution (memory capture)", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
 		stdout, cmdErr = execCmd.Output()
+		e.Logger.Debug("Command execution completed (memory capture)", "command", cmdLine)
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			stderr = exitErr.Stderr
 		}

@@ -61,7 +61,10 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	}
 
 	defer m.handleCleanupAndMetrics(execCtx)
-	return fn()
+	m.logger.Debug("Executing privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName)
+	fnErr := fn()
+	m.logger.Debug("Privileged operation callback completed", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName, "error", fnErr)
+	return fnErr
 }
 
 // executionContext holds context for privilege execution
