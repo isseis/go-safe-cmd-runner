@@ -227,14 +227,18 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		execCmd.Stderr = stderrWrapper
 
 		// Run the command
+		e.Logger.Debug("Starting command execution", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
 		cmdErr = execCmd.Run()
+		e.Logger.Debug("Command execution completed", "command", cmdLine, "error", cmdErr)
 
 		// Get the captured output
 		stdout = stdoutWrapper.GetBuffer()
 		stderr = stderrWrapper.GetBuffer()
 	} else {
 		// Otherwise, capture output in memory
+		e.Logger.Debug("Starting command execution (memory capture)", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
 		stdout, cmdErr = execCmd.Output()
+		e.Logger.Debug("Command execution completed (memory capture)", "command", cmdLine, "error", cmdErr)
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			stderr = exitErr.Stderr
 		}
