@@ -17,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -198,13 +199,13 @@ func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSp
 	}
 
 	if opts.dryRun {
-		return createDryRunResourceManager(opts, getPathResolver())
+		return createDryRunResourceManager(opts, getPathResolver(), validator)
 	}
-	return createNormalResourceManager(opts, configSpec, getPathResolver())
+	return createNormalResourceManager(opts, configSpec, getPathResolver(), validator)
 }
 
 // createDryRunResourceManager creates a resource manager for dry-run mode
-func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver) error {
+func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver, validator *security.Validator) error {
 	if opts.dryRunOptions == nil {
 		opts.dryRunOptions = &resource.DryRunOptions{
 			DetailLevel:  resource.DetailLevelDetailed,
@@ -212,10 +213,14 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 		}
 	}
 
-	resourceManager, err := resource.NewDryRunResourceManager(
+	// Create output manager with the same validator that has group membership support
+	outputMgr := output.NewDefaultOutputCaptureManager(validator)
+
+	resourceManager, err := resource.NewDryRunResourceManagerWithOutput(
 		opts.executor,
 		opts.privilegeManager,
 		pathResolver,
+		outputMgr,
 		opts.dryRunOptions,
 	)
 	if err != nil {
@@ -226,12 +231,15 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
-func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, pathResolver resource.PathResolver) error {
+func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, pathResolver resource.PathResolver, validator *security.Validator) error {
 	fs := common.NewDefaultFileSystem()
 	maxOutputSize := configSpec.Global.OutputSizeLimit
 	if maxOutputSize <= 0 {
 		maxOutputSize = 0 // Will use default from output package
 	}
+
+	// Create output manager with the same validator that has group membership support
+	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
 	resourceManager, err := resource.NewDefaultResourceManager(
 		opts.executor,
@@ -241,7 +249,7 @@ func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.Co
 		slog.Default(),
 		resource.ExecutionModeNormal,
 		&resource.DryRunOptions{}, // Empty dry-run options for normal mode
-		nil,                       // Use default output manager
+		outputMgr,                 // Pass output manager with validator
 		maxOutputSize,             // Max output size from config
 	)
 	if err != nil {
