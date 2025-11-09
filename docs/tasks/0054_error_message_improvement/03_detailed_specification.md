@@ -426,16 +426,20 @@ func (e *DefaultGroupExecutor) executeCommandWithOutputCapture(...) error {
         var ve *runnererrors.ValidationError
         if errors.As(err, &ve) {
             // 根本エラーを取得（ValidationErrorをアンラップ）
+            // 根本エラーを取得（ValidationErrorをアンラップ）
             rootErr := ve.Err
+            sentinelErr := errors.Unwrap(rootErr)
+            if sentinelErr == nil {
+                sentinelErr = rootErr // ラップされていない場合へのフォールバック
+            }
 
             slog.Debug("Command failed with details",
                 "command", cmd.Name(),
                 "error_message", err.Error(),           // 簡潔なエラーメッセージ
-                "root_error", rootErr,                  // 根本エラー（センチネルエラー）
-                "root_error_type", fmt.Sprintf("%T", rootErr),  // 根本エラーの型
+                "root_error", sentinelErr,                  // 根本エラー（センチネルエラー）
+                "root_error_type", fmt.Sprintf("%T", sentinelErr),  // 根本エラーの型
                 "validation_chain", ve.FormatChain(),   // 検証チェーン
                 "context", ve.GetContext())             // コンテキスト情報
-        }
 
         return err
     }
