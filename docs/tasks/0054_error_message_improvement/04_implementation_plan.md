@@ -184,6 +184,8 @@ func TestWrapValidationWithContext(t *testing.T) {
     var ve3 *ValidationError
     require.True(t, errors.As(err3, &ve3))
     assert.Equal(t, "/tmp/new_path", ve3.Context["path"])  // 上書きされた
+    assert.Equal(t, 1000, ve3.Context["uid"])              // 保持されていることを確認
+    assert.Equal(t, "0775", ve3.Context["permissions"])    // 保持されていることを確認
 }
 
 func TestValidationError_GetChain(t *testing.T) {
