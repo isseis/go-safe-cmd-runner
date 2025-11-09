@@ -595,6 +595,83 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	assert.Contains(t, result.Stdout, "normal")
 }
 
+// TestDefaultExecutor_UserGroupPrivileges_StderrCapture tests that stderr is captured even when privileged command fails
+func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
+	t.Run("stderr_captured_on_command_failure", func(t *testing.T) {
+		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+		exec := executor.NewDefaultExecutor(
+			executor.WithPrivilegeManager(mockPriv),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
+		)
+
+		// Use sh to create a command that writes to stderr and exits with non-zero status
+		cmd := executortesting.CreateRuntimeCommand(
+			"/bin/sh",
+			[]string{"-c", "echo 'error output' >&2; exit 255"},
+			executortesting.WithWorkDir(""),
+			executortesting.WithRunAsUser("testuser"),
+			executortesting.WithRunAsGroup("testgroup"),
+		)
+
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+
+		// Command should fail
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "user/group privilege execution failed")
+		assert.Contains(t, err.Error(), "exit status 255")
+
+		// Result should NOT be nil - it should contain the stderr output
+		require.NotNil(t, result, "Result should not be nil even on failure")
+		assert.NotEmpty(t, result.Stderr, "Stderr should be captured")
+		assert.Contains(t, result.Stderr, "error output", "Stderr should contain the error message")
+		assert.Equal(t, 255, result.ExitCode, "Exit code should be captured")
+	})
+
+	t.Run("stderr_captured_on_normal_command_failure", func(t *testing.T) {
+		// Verify that normal (non-privileged) commands also capture stderr on failure
+		exec := executor.NewDefaultExecutor(
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
+		)
+
+		cmd := executortesting.CreateRuntimeCommand(
+			"sh",
+			[]string{"-c", "echo 'normal error' >&2; exit 1"},
+			executortesting.WithWorkDir(""),
+		)
+
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+
+		assert.Error(t, err)
+		require.NotNil(t, result, "Result should not be nil even on failure")
+		assert.NotEmpty(t, result.Stderr, "Stderr should be captured")
+		assert.Contains(t, result.Stderr, "normal error")
+		assert.Equal(t, 1, result.ExitCode)
+	})
+
+	t.Run("both_stdout_and_stderr_captured_on_failure", func(t *testing.T) {
+		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+		exec := executor.NewDefaultExecutor(
+			executor.WithPrivilegeManager(mockPriv),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
+		)
+
+		cmd := executortesting.CreateRuntimeCommand(
+			"/bin/sh",
+			[]string{"-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"},
+			executortesting.WithWorkDir(""),
+			executortesting.WithRunAsUser("testuser"),
+		)
+
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
+
+		assert.Error(t, err)
+		require.NotNil(t, result, "Result should not be nil")
+		assert.Contains(t, result.Stdout, "stdout message", "Stdout should be captured")
+		assert.Contains(t, result.Stderr, "stderr message", "Stderr should be captured")
+		assert.Equal(t, 42, result.ExitCode, "Exit code should match")
+	})
+}
+
 // TestDefaultExecutor_UserGroupRootExecution tests running commands as root user
 // This provides equivalent functionality to the deleted privileged=true tests
 func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
