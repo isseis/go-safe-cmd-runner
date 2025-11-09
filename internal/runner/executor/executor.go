@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -71,7 +72,8 @@ func WithLogger(logger *slog.Logger) Option {
 // NewDefaultExecutor creates a new default command executor
 func NewDefaultExecutor(opts ...Option) CommandExecutor {
 	e := &DefaultExecutor{
-		FS: &osFileSystem{},
+		FS:     &osFileSystem{},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), // Default to no-op logger (discards all logs)
 	}
 
 	for _, opt := range opts {
@@ -100,40 +102,30 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 
 	// Pre-execution validation
 	if e.PrivMgr == nil {
-		if e.Logger != nil {
-			e.Logger.Error("No privilege manager available", "error", ErrNoPrivilegeManager)
-		}
+		e.Logger.Error("No privilege manager available", "error", ErrNoPrivilegeManager)
 		return nil, ErrNoPrivilegeManager
 	}
 
 	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
-		if e.Logger != nil {
-			e.Logger.Error("User/group privilege changes are not supported", "error", ErrUserGroupPrivilegeUnsupported)
-		}
+		e.Logger.Error("User/group privilege changes are not supported", "error", ErrUserGroupPrivilegeUnsupported)
 		return nil, ErrUserGroupPrivilegeUnsupported
 	}
 
 	// Validate the command before any privilege changes
 	if err := e.Validate(cmd); err != nil {
-		if e.Logger != nil {
-			e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
-		}
+		e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
 	// Additional security validation for privileged commands BEFORE path resolution
 	// This ensures the original command in the config file uses absolute paths
 	if err := e.validatePrivilegedCommand(cmd); err != nil {
-		if e.Logger != nil {
-			e.Logger.Error("Privileged command security validation failed", "error", err, "command", cmd.ExpandedCmd)
-		}
+		e.Logger.Error("Privileged command security validation failed", "error", err, "command", cmd.ExpandedCmd)
 		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
 	}
 
 	if cmd.ExpandedCmd == "" {
-		if e.Logger != nil {
-			e.Logger.Error("Empty command", "error", ErrEmptyCommand)
-		}
+		e.Logger.Error("Empty command", "error", ErrEmptyCommand)
 		return nil, ErrEmptyCommand
 	}
 
@@ -158,9 +150,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 	metrics.TotalDuration += privilegeDuration
 
 	if err != nil {
-		if e.Logger != nil {
-			e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
-		}
+		e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 		return nil, fmt.Errorf("user/group privilege execution failed: %w", err)
 	}
 
@@ -182,25 +172,19 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
-		if e.Logger != nil {
-			e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
-		}
+		e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
 	if cmd.ExpandedCmd == "" {
-		if e.Logger != nil {
-			e.Logger.Error("Empty command", "error", ErrEmptyCommand)
-		}
+		e.Logger.Error("Empty command", "error", ErrEmptyCommand)
 		return nil, ErrEmptyCommand
 	}
 
 	// Resolve the command path
 	path, lookErr := exec.LookPath(cmd.ExpandedCmd)
 	if lookErr != nil {
-		if e.Logger != nil {
-			e.Logger.Error("Failed to find command", "error", lookErr, "command", cmd.ExpandedCmd)
-		}
+		e.Logger.Error("Failed to find command", "error", lookErr, "command", cmd.ExpandedCmd)
 		return nil, fmt.Errorf("failed to find command %q: %w", cmd.ExpandedCmd, lookErr)
 	}
 
@@ -210,10 +194,8 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.Ru
 // executeCommandWithPath executes a command with the given resolved path
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Log the command being executed at DEBUG level
-	if e.Logger != nil {
-		cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
-		e.Logger.Debug("Executing command", "command", cmdLine)
-	}
+	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
+	e.Logger.Debug("Executing command", "command", cmdLine)
 
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
@@ -270,14 +252,11 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	}
 
 	if cmdErr != nil {
-		if e.Logger != nil {
-			cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
-			e.Logger.Error("Command execution failed",
-				"error", cmdErr,
-				"command", cmdLine,
-				"exit_code", result.ExitCode,
-				"stderr", string(stderr))
-		}
+		e.Logger.Error("Command execution failed",
+			"error", cmdErr,
+			"command", cmdLine,
+			"exit_code", result.ExitCode,
+			"stderr", string(stderr))
 		return result, fmt.Errorf("command execution failed: %w", cmdErr)
 	}
 

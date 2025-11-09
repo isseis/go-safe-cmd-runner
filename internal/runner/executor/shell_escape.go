@@ -44,10 +44,10 @@ func isSafeChar(r rune) bool {
 // FormatCommandForLog formats a command with arguments for logging
 // Returns a string that can be copy-pasted into a shell
 func FormatCommandForLog(path string, args []string) string {
-	var parts []string
-	parts = append(parts, ShellEscape(path))
-	for _, arg := range args {
-		parts = append(parts, ShellEscape(arg))
+	parts := make([]string, 1+len(args))
+	parts[0] = ShellEscape(path)
+	for i, arg := range args {
+		parts[i+1] = ShellEscape(arg)
 	}
 	return strings.Join(parts, " ")
 }
