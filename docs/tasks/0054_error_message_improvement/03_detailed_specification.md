@@ -426,7 +426,6 @@ func (e *DefaultGroupExecutor) executeCommandWithOutputCapture(...) error {
         var ve *runnererrors.ValidationError
         if errors.As(err, &ve) {
             // 根本エラーを取得（ValidationErrorをアンラップ）
-            // 根本エラーを取得（ValidationErrorをアンラップ）
             rootErr := ve.Err
             sentinelErr := errors.Unwrap(rootErr)
             if sentinelErr == nil {
