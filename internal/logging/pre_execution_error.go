@@ -118,9 +118,9 @@ func HandleExecutionError(execErr *ExecutionError) {
 	// Build error message with context information
 	message := execErr.Message
 
-	// Check if this is an output size limit error and add specific information
-	if isLimitError, outputPath := IsOutputSizeLimitError(execErr.Err); isLimitError {
-		message = fmt.Sprintf("%s: output size limit exceeded for '%s'", message, outputPath)
+	// Check if the error provides a user-friendly message
+	if userMsg := GetUserFriendlyMessage(execErr.Err); userMsg != "" {
+		message = fmt.Sprintf("%s: %s", message, userMsg)
 	}
 
 	// Add context information (group and command names)

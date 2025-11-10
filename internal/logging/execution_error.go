@@ -17,24 +17,23 @@ type ExecutionError struct {
 	Err         error  // Wrapped error for better error context preservation
 }
 
-// CaptureErrorInterface defines the interface for output capture errors
-// This allows us to detect output-related errors without importing the output package
-type CaptureErrorInterface interface {
+// UserFriendlyError defines the interface for errors that can provide user-friendly messages
+// This allows specific error types to customize how they appear in error summaries
+type UserFriendlyError interface {
 	error
-	GetType() string
-	GetPath() string
+	// UserMessage returns a user-friendly description of the error
+	// Returns empty string if no special message is needed
+	UserMessage() string
 }
 
-// IsOutputSizeLimitError checks if the error chain contains an output size limit error
-// Returns (isLimitError, outputPath)
-func IsOutputSizeLimitError(err error) (bool, string) {
-	var captureErr CaptureErrorInterface
-	if errors.As(err, &captureErr) {
-		if captureErr.GetType() == "size limit exceeded" {
-			return true, captureErr.GetPath()
-		}
+// GetUserFriendlyMessage extracts a user-friendly message from an error chain
+// Returns empty string if no user-friendly message is available
+func GetUserFriendlyMessage(err error) string {
+	var friendlyErr UserFriendlyError
+	if errors.As(err, &friendlyErr) {
+		return friendlyErr.UserMessage()
 	}
-	return false, ""
+	return ""
 }
 
 // ContextString returns the context information (group and command names) as a formatted string
