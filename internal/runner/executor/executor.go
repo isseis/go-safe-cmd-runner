@@ -153,7 +153,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 
 	if err != nil {
 		e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
-		return nil, fmt.Errorf("user/group privilege execution failed: %w", err)
+		return result, fmt.Errorf("user/group privilege execution failed: %w", err)
 	}
 
 	// Audit logging

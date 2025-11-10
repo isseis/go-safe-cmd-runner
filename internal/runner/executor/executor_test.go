@@ -595,6 +595,97 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	assert.Contains(t, result.Stdout, "normal")
 }
 
+// TestDefaultExecutor_UserGroupPrivileges_StderrCapture tests that stderr is captured even when privileged command fails
+func TestDefaultExecutor_UserGroupPrivileges_StderrCapture(t *testing.T) {
+	testCases := []struct {
+		name           string
+		cmd            *runnertypes.RuntimeCommand
+		privileged     bool
+		expectedStdout string
+		expectedStderr string
+		expectedExit   int
+		errContains    []string
+	}{
+		{
+			name: "privileged command failure captures stderr",
+			cmd: executortesting.CreateRuntimeCommand(
+				"/bin/sh",
+				[]string{"-c", "echo 'error output' >&2; exit 255"},
+				executortesting.WithWorkDir(""),
+				executortesting.WithRunAsUser("testuser"),
+				executortesting.WithRunAsGroup("testgroup"),
+			),
+			privileged:     true,
+			expectedStdout: "",
+			expectedStderr: "error output",
+			expectedExit:   255,
+			errContains:    []string{"user/group privilege execution failed", "exit status 255"},
+		},
+		{
+			name: "normal command failure captures stderr",
+			cmd: executortesting.CreateRuntimeCommand(
+				"sh",
+				[]string{"-c", "echo 'normal error' >&2; exit 1"},
+				executortesting.WithWorkDir(""),
+			),
+			privileged:     false,
+			expectedStdout: "",
+			expectedStderr: "normal error",
+			expectedExit:   1,
+			errContains:    []string{"command execution failed", "exit status 1"},
+		},
+		{
+			name: "privileged command failure captures both stdout and stderr",
+			cmd: executortesting.CreateRuntimeCommand(
+				"/bin/sh",
+				[]string{"-c", "echo 'stdout message'; echo 'stderr message' >&2; exit 42"},
+				executortesting.WithWorkDir(""),
+				executortesting.WithRunAsUser("testuser"),
+			),
+			privileged:     true,
+			expectedStdout: "stdout message",
+			expectedStderr: "stderr message",
+			expectedExit:   42,
+			errContains:    []string{"user/group privilege execution failed", "exit status 42"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var opts []executor.Option
+			if tc.privileged {
+				mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+				opts = append(opts, executor.WithPrivilegeManager(mockPriv))
+			}
+			opts = append(opts, executor.WithFileSystem(&executortesting.MockFileSystem{}))
+			exec := executor.NewDefaultExecutor(opts...)
+
+			result, err := exec.Execute(context.Background(), tc.cmd, map[string]string{}, nil)
+
+			assert.Error(t, err)
+			for _, msg := range tc.errContains {
+				assert.Contains(t, err.Error(), msg)
+			}
+
+			require.NotNil(t, result, "Result should not be nil even on failure")
+
+			if tc.expectedStdout == "" {
+				assert.Empty(t, result.Stdout)
+			} else {
+				assert.Contains(t, result.Stdout, tc.expectedStdout)
+			}
+
+			if tc.expectedStderr == "" {
+				assert.Empty(t, result.Stderr)
+			} else {
+				assert.Contains(t, result.Stderr, tc.expectedStderr)
+			}
+
+			assert.Equal(t, tc.expectedExit, result.ExitCode)
+		})
+	}
+}
+
 // TestDefaultExecutor_UserGroupRootExecution tests running commands as root user
 // This provides equivalent functionality to the deleted privileged=true tests
 func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
