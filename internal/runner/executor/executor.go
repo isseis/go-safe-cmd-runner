@@ -261,6 +261,17 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		// Get the captured output
 		stdout = stdoutWrapper.GetBuffer()
 		stderr = stderrWrapper.GetBuffer()
+
+		// Check if there was a write error (e.g., size limit exceeded)
+		// If so, prefer that error over the broken pipe error from the command
+		// This is important because when the writer returns an error, the command
+		// receives SIGPIPE and exits with "signal: broken pipe", which masks the
+		// real cause of the failure (e.g., output size limit exceeded)
+		if writeErr := stdoutWrapper.GetWriteError(); writeErr != nil {
+			cmdErr = writeErr
+		} else if writeErr := stderrWrapper.GetWriteError(); writeErr != nil {
+			cmdErr = writeErr
+		}
 	} else {
 		// Otherwise, capture output in memory
 		e.Logger.Debug("Starting command execution (memory capture)")
@@ -344,10 +355,11 @@ func (fs *osFileSystem) FileExists(path string) (bool, error) {
 // outputWrapper is an io.Writer that both captures output in a buffer
 // and writes to an OutputWriter with a specific stream name
 type outputWrapper struct {
-	writer OutputWriter
-	stream OutputStream
-	buffer bytes.Buffer
-	mu     sync.Mutex
+	writer   OutputWriter
+	stream   OutputStream
+	buffer   bytes.Buffer
+	writeErr error // Stores the first write error encountered
+	mu       sync.Mutex
 }
 
 func (w *outputWrapper) Write(p []byte) (n int, err error) {
@@ -360,6 +372,10 @@ func (w *outputWrapper) Write(p []byte) (n int, err error) {
 	// Also write to the OutputWriter
 	if w.writer != nil {
 		if err := w.writer.Write(w.stream, p); err != nil {
+			// Store the first error encountered for later retrieval
+			if w.writeErr == nil {
+				w.writeErr = err
+			}
 			return 0, err
 		}
 	}
@@ -371,6 +387,12 @@ func (w *outputWrapper) GetBuffer() []byte {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.buffer.Bytes()
+}
+
+func (w *outputWrapper) GetWriteError() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writeErr
 }
 
 // validatePrivilegedCommand performs additional security checks specifically for privileged commands
