@@ -115,5 +115,11 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 // HandleExecutionError handles execution errors (errors that occur during command execution)
 // by logging and outputting appropriate summary information
 func HandleExecutionError(execErr *ExecutionError) {
-	handleErrorCommon(ErrorTypeSystemError, execErr.Message, execErr.Component, execErr.RunID, "Execution error occurred", "execution_error", "execution_error")
+	// Build error message with context information
+	message := execErr.Message
+	if contextStr := execErr.ContextString(); contextStr != "" {
+		message = fmt.Sprintf("%s (%s)", message, contextStr)
+	}
+
+	handleErrorCommon(ErrorTypeSystemError, message, execErr.Component, execErr.RunID, "Execution error occurred", "execution_error", "execution_error")
 }

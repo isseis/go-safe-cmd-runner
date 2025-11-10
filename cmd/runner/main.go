@@ -246,13 +246,13 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
 
-	runner, err := runner.NewRunner(cfg, runnerOptions...)
+	r, err := runner.NewRunner(cfg, runnerOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
 
 	// Load system environment variables
-	if err := runner.LoadSystemEnvironment(); err != nil {
+	if err := r.LoadSystemEnvironment(); err != nil {
 		return fmt.Errorf("failed to load environment: %w", err)
 	}
 
@@ -266,20 +266,20 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 	// Ensure cleanup of all resources on exit
 	defer func() {
-		if err := runner.CleanupAllResources(); err != nil {
+		if err := r.CleanupAllResources(); err != nil {
 			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runID)
 		}
 	}()
 
 	// Execute all groups (works for both normal and dry-run modes)
-	execErr := runner.ExecuteAll(ctx)
+	execErr := r.ExecuteAll(ctx)
 
 	// Handle dry-run output (always output, even on error)
 	if *dryRun {
 		// If an execution error occurred, set error status before getting results
 		if execErr != nil {
 			// Set execution error in the resource manager
-			runner.SetDryRunExecutionError(
+			r.SetDryRunExecutionError(
 				string(resource.ErrorTypeExecutionError),
 				execErr.Error(),
 				string(resource.ComponentRunner),
@@ -288,7 +288,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 			)
 		}
 
-		result := runner.GetDryRunResults()
+		result := r.GetDryRunResults()
 		if result != nil {
 			// Create appropriate formatter using pre-parsed values
 			var formatter resource.Formatter
@@ -313,11 +313,21 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 	// Return execution error after outputting results (if any)
 	if execErr != nil {
+		// Extract group and command context from error chain if available
+		var cmdExecErr *runner.CommandExecutionError
+		var groupName, commandName string
+		if errors.As(execErr, &cmdExecErr) {
+			groupName = cmdExecErr.GroupName
+			commandName = cmdExecErr.CommandName
+		}
+
 		return &logging.ExecutionError{
-			Message:   "error running commands",
-			Component: "runner",
-			RunID:     runID,
-			Err:       execErr,
+			Message:     "error running commands",
+			Component:   "runner",
+			RunID:       runID,
+			GroupName:   groupName,
+			CommandName: commandName,
+			Err:         execErr,
 		}
 	}
 
