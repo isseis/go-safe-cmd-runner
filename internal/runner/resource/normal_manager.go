@@ -158,6 +158,8 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 			// Update the error to propagate close errors
 			if err == nil {
 				err = fmt.Errorf("failed to close output capture: %w", closeErr)
+			} else {
+				err = fmt.Errorf("%w; and also failed to close output capture: %v", err, closeErr)
 			}
 		}
 
