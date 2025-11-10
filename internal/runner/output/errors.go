@@ -122,6 +122,8 @@ func (e CaptureError) UserMessage() string {
 		return fmt.Sprintf("invalid output path '%s'", e.Path)
 	case ErrorTypeFileSystem:
 		return fmt.Sprintf("filesystem error for '%s'", e.Path)
+	case ErrorTypeCleanup:
+		return fmt.Sprintf("cleanup failed for '%s'", e.Path)
 	default:
 		return ""
 	}
