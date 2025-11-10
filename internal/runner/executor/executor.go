@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -73,7 +72,7 @@ func WithLogger(logger *slog.Logger) Option {
 func NewDefaultExecutor(opts ...Option) CommandExecutor {
 	e := &DefaultExecutor{
 		FS:     &osFileSystem{},
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), // Default to no-op logger (discards all logs)
+		Logger: slog.Default(),
 	}
 
 	for _, opt := range opts {
