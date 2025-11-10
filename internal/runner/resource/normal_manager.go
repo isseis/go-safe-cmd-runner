@@ -149,23 +149,24 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 		return nil, fmt.Errorf("output capture preparation failed: %w", err)
 	}
 
-	// Ensure cleanup only on error paths
+	// Cleanup and close capture on function exit
+	// Note: Capture.Close() is idempotent, so calling it multiple times is safe
 	defer func() {
-		if err != nil {
-			if cleanupErr := n.outputManager.CleanupOutput(capture); cleanupErr != nil {
-				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output())
-			}
-		}
-	}()
-
-	// Use capture directly as OutputWriter (no console output when output_file is specified)
-	// Capture implements executor.OutputWriter interface
-	defer func() {
+		// Always close the capture to ensure file is properly closed
 		if closeErr := capture.Close(); closeErr != nil {
 			n.logger.Error("Failed to close capture", "error", closeErr)
 			// Update the error to propagate close errors
 			if err == nil {
 				err = fmt.Errorf("failed to close output capture: %w", closeErr)
+			} else {
+				err = fmt.Errorf("%w; and also failed to close output capture: %v", err, closeErr)
+			}
+		}
+
+		// Cleanup temporary files only on error paths
+		if err != nil {
+			if cleanupErr := n.outputManager.CleanupOutput(capture); cleanupErr != nil {
+				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output())
 			}
 		}
 	}()
@@ -178,6 +179,8 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	}
 
 	// Finalize output capture
+	// Note: FinalizeOutput calls Capture.Close() internally, but since Close() is idempotent
+	// this is safe even though we also call Close() in the defer above
 	if err = n.outputManager.FinalizeOutput(capture); err != nil {
 		// Return result even on finalization error to preserve exit code
 		return result, fmt.Errorf("output capture finalization failed: %w", err)

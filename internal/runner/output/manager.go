@@ -152,7 +152,8 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *Capture, data []byte)
 // FinalizeOutput closes the temporary file and moves it to the final location
 func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *Capture) error {
 	// Close the temporary file before moving it to the final location
-	if err := capture.FileHandle.Close(); err != nil {
+	// Use Capture.Close() instead of direct FileHandle.Close() for idempotent behavior
+	if err := capture.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
@@ -207,7 +208,8 @@ func (m *DefaultOutputCaptureManager) CleanupOutput(capture *Capture) error {
 	defer capture.mutex.Unlock()
 
 	// Close and remove temporary file if it exists
-	if capture.FileHandle != nil {
+	// Note: FileHandle may be nil if Close() was already called, but we still need to remove the temp file
+	if capture.TempFilePath != "" {
 		m.cleanupTempFile(capture.FileHandle, capture.TempFilePath)
 		capture.FileHandle = nil
 		capture.TempFilePath = ""

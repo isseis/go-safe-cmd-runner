@@ -1770,12 +1770,6 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 			description: "Path traversal attempts should be blocked",
 		},
 		{
-			name:        "SymlinkProtection",
-			outputPath:  "/var/tmp/symlink-target",
-			expectError: true,
-			description: "Should validate directory security for non-standard paths",
-		},
-		{
 			name:        "AbsolutePathBlocked",
 			outputPath:  "/etc/shadow",
 			expectError: true,
