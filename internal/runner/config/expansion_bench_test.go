@@ -86,7 +86,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExpandCommand(spec, rGroup, rGlobal, common.NewUnsetTimeout(), nil)
+		_, _ = ExpandCommand(spec, rGroup, rGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
 	}
 }
 
@@ -166,7 +166,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), nil)
+		_, _ = ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
 	}
 }
 
@@ -221,7 +221,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Expand all commands (simulating loop in group_executor)
 		for _, cmdSpec := range cmdSpecs {
-			_, _ = ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), nil)
+			_, _ = ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
 		}
 	}
 }

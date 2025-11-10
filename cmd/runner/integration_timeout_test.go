@@ -28,7 +28,7 @@ func timeoutTestHelper(t *testing.T, configTOML string) int {
 	// Create RuntimeCommand with timeout resolution
 	// Note: Group-level timeout is not yet implemented (future enhancement)
 	groupName := cfg.Groups[0].Name
-	finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout), cfg.Global.OutputSizeLimit, groupName)
+	finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout), common.NewOutputSizeLimitFromPtr(cfg.Global.OutputSizeLimit), groupName)
 	require.NoError(t, err, "Failed to create RuntimeCommand")
 
 	return finalRuntimeCmd.EffectiveTimeout
@@ -296,7 +296,7 @@ timeout = 0
 	for _, tc := range testCases {
 		cmdSpec := &groupSpec.Commands[tc.cmdIndex]
 
-		finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout), cfg.Global.OutputSizeLimit, groupSpec.Name)
+		finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout), common.NewOutputSizeLimitFromPtr(cfg.Global.OutputSizeLimit), groupSpec.Name)
 		require.NoError(t, err, "Failed to create RuntimeCommand for %s", cmdSpec.Name)
 
 		assert.Equal(t, tc.expectedTimeout, finalRuntimeCmd.EffectiveTimeout, tc.description)

@@ -1036,7 +1036,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 
 			// 3. Test command expansion with __runner_workdir
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), nil)
+			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
 			require.NoError(t, err)
 
 			// Verify __runner_workdir was expanded in arguments

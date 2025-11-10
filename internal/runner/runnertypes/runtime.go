@@ -252,7 +252,7 @@ type RuntimeCommand struct {
 // The globalOutputSizeLimit parameter is used for output size limit resolution.
 // The groupName parameter provides context for timeout resolution logging.
 // Returns ErrNilSpec if spec is nil.
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOutputSizeLimit *int64, groupName string) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit, groupName string) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
@@ -268,8 +268,9 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOu
 	)
 
 	// Resolve the effective output size limit
+	commandOutputSizeLimit := common.NewOutputSizeLimitFromPtr(spec.OutputSizeLimit)
 	effectiveOutputSizeLimit := common.ResolveOutputSizeLimit(
-		spec.OutputSizeLimit,
+		commandOutputSizeLimit,
 		globalOutputSizeLimit,
 	)
 
