@@ -117,6 +117,13 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 func HandleExecutionError(execErr *ExecutionError) {
 	// Build error message with context information
 	message := execErr.Message
+
+	// Check if this is an output size limit error and add specific information
+	if isLimitError, outputPath := IsOutputSizeLimitError(execErr.Err); isLimitError {
+		message = fmt.Sprintf("%s: output size limit exceeded for '%s'", message, outputPath)
+	}
+
+	// Add context information (group and command names)
 	if contextStr := execErr.ContextString(); contextStr != "" {
 		message = fmt.Sprintf("%s (%s)", message, contextStr)
 	}

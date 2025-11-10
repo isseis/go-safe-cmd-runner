@@ -100,6 +100,16 @@ func (e CaptureError) Unwrap() error {
 	return e.Cause
 }
 
+// GetType returns the error type as a string (for error detection without package dependency)
+func (e CaptureError) GetType() string {
+	return e.Type.String()
+}
+
+// GetPath returns the file path associated with the error
+func (e CaptureError) GetPath() string {
+	return e.Path
+}
+
 // Standard error values
 var (
 	// ErrOutputSizeExceeded is returned when output size exceeds the maximum limit
