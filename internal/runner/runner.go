@@ -173,13 +173,7 @@ func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.Co
 
 	// Use provided components or create defaults
 	if opts.executor == nil {
-		// Explicitly set slog.Default() for executor to ensure all execution logs
-		// are visible through the application's default logger.
-		// While NewDefaultExecutor also uses slog.Default(), we set it explicitly
-		// here for clarity and to maintain consistency with privilege manager.
-		executorOpts := []executor.Option{
-			executor.WithLogger(slog.Default()),
-		}
+		executorOpts := []executor.Option{}
 		if opts.privilegeManager != nil {
 			executorOpts = append(executorOpts, executor.WithPrivilegeManager(opts.privilegeManager))
 		}
