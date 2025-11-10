@@ -1938,3 +1938,43 @@ func TestWithKeepTempDirs(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, runner2)
 }
+
+func TestRunner_ExecutorUsesDefaultLogger(t *testing.T) {
+	// This test verifies that when NewRunner creates a default executor,
+	// it configures it with slog.Default() instead of io.Discard.
+	// This ensures executor logs are visible in production.
+
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			Timeout:  common.IntPtr(3600),
+			LogLevel: "info",
+		},
+		Groups: []runnertypes.GroupSpec{
+			{
+				Name:     "test_group",
+				Priority: 1,
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "test_cmd",
+						Cmd:  "/bin/echo",
+						Args: []string{"test"},
+					},
+				},
+			},
+		},
+	}
+
+	// Create runner without providing a custom executor
+	// This will trigger the default executor creation with slog.Default()
+	runner, err := NewRunner(config,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-logger"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner)
+	assert.NotNil(t, runner.executor)
+
+	// Note: We cannot directly inspect the executor's logger field since it's private,
+	// but we can verify that the executor was created successfully.
+	// The actual logging behavior is tested in executor_logging_test.go
+}

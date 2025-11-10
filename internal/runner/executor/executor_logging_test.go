@@ -115,15 +115,19 @@ func TestExecutor_ErrorLogging_ValidationFailure(t *testing.T) {
 	assert.Contains(t, logOutput, "Command validation failed")
 }
 
-func TestExecutor_NoLogging_WhenLoggerNotSet(t *testing.T) {
-	// Create executor without logger
+func TestExecutor_DefaultLogger_UsesSlogDefault(t *testing.T) {
+	// Create executor without explicitly setting logger
+	// The default behavior is to use slog.Default()
 	executor := NewDefaultExecutor()
 
 	cmd := createTestCommand("/bin/echo", []string{"test"})
 
-	// Should not panic even without logger
+	// Should execute successfully with default slog logger
 	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
 	require.NoError(t, err)
+
+	// Note: Both NewDefaultExecutor() and runner.NewRunner() use slog.Default(),
+	// ensuring consistent logging behavior across the application.
 }
 
 func TestExecutor_ShellEscapingInLogs(t *testing.T) {

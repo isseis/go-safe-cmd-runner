@@ -69,6 +69,8 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // NewDefaultExecutor creates a new default command executor
+// By default, it uses slog.Default() for logging, ensuring all execution logs
+// are visible through the application's default logger.
 func NewDefaultExecutor(opts ...Option) CommandExecutor {
 	e := &DefaultExecutor{
 		FS:     &osFileSystem{},
