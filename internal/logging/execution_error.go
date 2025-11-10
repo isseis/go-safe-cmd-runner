@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -14,6 +15,25 @@ type ExecutionError struct {
 	GroupName   string // Optional: name of the group where error occurred
 	CommandName string // Optional: name of the command where error occurred
 	Err         error  // Wrapped error for better error context preservation
+}
+
+// UserFriendlyError defines the interface for errors that can provide user-friendly messages
+// This allows specific error types to customize how they appear in error summaries
+type UserFriendlyError interface {
+	error
+	// UserMessage returns a user-friendly description of the error
+	// Returns empty string if no special message is needed
+	UserMessage() string
+}
+
+// GetUserFriendlyMessage extracts a user-friendly message from an error chain
+// Returns empty string if no user-friendly message is available
+func GetUserFriendlyMessage(err error) string {
+	var friendlyErr UserFriendlyError
+	if errors.As(err, &friendlyErr) {
+		return friendlyErr.UserMessage()
+	}
+	return ""
 }
 
 // ContextString returns the context information (group and command names) as a formatted string

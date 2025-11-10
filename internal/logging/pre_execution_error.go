@@ -117,6 +117,13 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 func HandleExecutionError(execErr *ExecutionError) {
 	// Build error message with context information
 	message := execErr.Message
+
+	// Check if the error provides a user-friendly message
+	if userMsg := GetUserFriendlyMessage(execErr.Err); userMsg != "" {
+		message = fmt.Sprintf("%s: %s", message, userMsg)
+	}
+
+	// Add context information (group and command names)
 	if contextStr := execErr.ContextString(); contextStr != "" {
 		message = fmt.Sprintf("%s (%s)", message, contextStr)
 	}

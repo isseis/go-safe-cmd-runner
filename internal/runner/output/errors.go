@@ -100,6 +100,35 @@ func (e CaptureError) Unwrap() error {
 	return e.Cause
 }
 
+// GetType returns the error type as a string (for error detection without package dependency)
+func (e CaptureError) GetType() string {
+	return e.Type.String()
+}
+
+// GetPath returns the file path associated with the error
+func (e CaptureError) GetPath() string {
+	return e.Path
+}
+
+// UserMessage returns a user-friendly description of the error for display in error summaries
+// This implements the UserFriendlyError interface from the logging package
+func (e CaptureError) UserMessage() string {
+	switch e.Type {
+	case ErrorTypeSizeLimit:
+		return fmt.Sprintf("output size limit exceeded for '%s'", e.Path)
+	case ErrorTypePermission:
+		return fmt.Sprintf("permission denied for '%s'", e.Path)
+	case ErrorTypePathValidation:
+		return fmt.Sprintf("invalid output path '%s'", e.Path)
+	case ErrorTypeFileSystem:
+		return fmt.Sprintf("filesystem error for '%s'", e.Path)
+	case ErrorTypeCleanup:
+		return fmt.Sprintf("cleanup failed for '%s'", e.Path)
+	default:
+		return ""
+	}
+}
+
 // Standard error values
 var (
 	// ErrOutputSizeExceeded is returned when output size exceeds the maximum limit
