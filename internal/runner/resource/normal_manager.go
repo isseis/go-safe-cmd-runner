@@ -139,7 +139,9 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 // executeCommandWithOutput executes a command with output capture
 func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
 	// Prepare output capture
-	maxSize := n.maxOutputSize
+	// Use command-level EffectiveOutputSizeLimit which already has the resolved value
+	// (command-level takes precedence, falls back to global-level)
+	maxSize := cmd.EffectiveOutputSizeLimit
 	if maxSize <= 0 {
 		maxSize = output.DefaultMaxOutputSize // Use default from output package
 	}

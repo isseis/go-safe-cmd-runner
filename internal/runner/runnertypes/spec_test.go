@@ -31,7 +31,7 @@ output_size_limit = 1048576
 				EnvVars:             []string{"LANG=en_US.UTF-8"},
 				EnvAllowed:          []string{"PATH", "HOME"},
 				EnvImport:           []string{"user=USER"},
-				OutputSizeLimit:     1048576,
+				OutputSizeLimit:     common.Int64Ptr(1048576),
 			},
 		},
 		{
@@ -48,7 +48,7 @@ output_size_limit = 0
 				EnvVars:             []string{},
 				EnvAllowed:          []string{},
 				EnvImport:           []string{},
-				OutputSizeLimit:     0,
+				OutputSizeLimit:     common.Int64Ptr(0),
 			},
 		},
 		{
@@ -64,7 +64,7 @@ output_size_limit = 2097152
 				EnvVars:             []string{"DEBUG=1"},
 				EnvAllowed:          []string{"DEBUG"},
 				EnvImport:           []string{},
-				OutputSizeLimit:     2097152,
+				OutputSizeLimit:     common.Int64Ptr(2097152),
 			},
 		},
 	}
@@ -244,7 +244,7 @@ cmd = "/bin/echo"
 					Timeout:             common.IntPtr(300),
 					LogLevel:            "debug",
 					VerifyStandardPaths: common.BoolPtr(false),
-					OutputSizeLimit:     1048576,
+					OutputSizeLimit:     common.Int64Ptr(1048576),
 					VerifyFiles:         []string{"/usr/bin/python3", "/usr/bin/gcc"},
 					EnvAllowed:          []string{"PATH", "HOME"},
 					EnvVars:             []string{"PATH=/usr/bin:/bin", "HOME=/root"},

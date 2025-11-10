@@ -61,7 +61,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
 					Timeout:         common.IntPtr(30),
-					OutputSizeLimit: 1024,
+					OutputSizeLimit: common.Int64Ptr(1024),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -156,7 +156,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
 					Timeout:         common.IntPtr(30),
-					OutputSizeLimit: 1024,
+					OutputSizeLimit: common.Int64Ptr(1024),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{

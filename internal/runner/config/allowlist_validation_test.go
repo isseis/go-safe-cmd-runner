@@ -213,7 +213,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Finally expand command
-			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout())
+			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), nil)
 			if tt.wantErr != "" {
 				require.Error(t, err, tt.description)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -324,7 +324,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 
 		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
-		_, err = config.ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout())
+		_, err = config.ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), nil)
 		require.NoError(t, err, "Command should inherit global allowlist")
 	})
 }

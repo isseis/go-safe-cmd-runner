@@ -231,7 +231,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
 
 		// Expand command configuration
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout())
+		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout(), runtimeGlobal.Spec.OutputSizeLimit)
 		if err != nil {
 			// Set failure result for notification
 			errResult := &groupExecutionResult{

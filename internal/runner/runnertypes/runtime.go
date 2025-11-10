@@ -241,13 +241,18 @@ type RuntimeCommand struct {
 
 	// TimeoutResolution contains context information about timeout resolution
 	TimeoutResolution common.TimeoutResolutionContext
+
+	// EffectiveOutputSizeLimit is the resolved output size limit (in bytes) for this command
+	// 0 means unlimited
+	EffectiveOutputSizeLimit int64
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with the required spec.
 // The globalTimeout parameter is used for timeout resolution hierarchy.
+// The globalOutputSizeLimit parameter is used for output size limit resolution.
 // The groupName parameter provides context for timeout resolution logging.
 // Returns ErrNilSpec if spec is nil.
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupName string) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOutputSizeLimit *int64, groupName string) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
@@ -262,14 +267,21 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupNam
 		groupName,
 	)
 
+	// Resolve the effective output size limit
+	effectiveOutputSizeLimit := common.ResolveOutputSizeLimit(
+		spec.OutputSizeLimit,
+		globalOutputSizeLimit,
+	)
+
 	return &RuntimeCommand{
-		Spec:              spec,
-		timeout:           commandTimeout,
-		ExpandedArgs:      []string{},
-		ExpandedEnv:       make(map[string]string),
-		ExpandedVars:      make(map[string]string),
-		EffectiveTimeout:  effectiveTimeout,
-		TimeoutResolution: resolutionContext,
+		Spec:                     spec,
+		timeout:                  commandTimeout,
+		ExpandedArgs:             []string{},
+		ExpandedEnv:              make(map[string]string),
+		ExpandedVars:             make(map[string]string),
+		EffectiveTimeout:         effectiveTimeout,
+		TimeoutResolution:        resolutionContext,
+		EffectiveOutputSizeLimit: effectiveOutputSizeLimit,
 	}, nil
 }
 

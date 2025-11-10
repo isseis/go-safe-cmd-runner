@@ -9,6 +9,12 @@ func IntPtr(v int) *int {
 	return &v
 }
 
+// Int64Ptr returns a pointer to the given int64 value.
+// This is a convenience function for creating output size limit values.
+func Int64Ptr(v int64) *int64 {
+	return &v
+}
+
 // BoolPtr returns a pointer to the given bool value.
 // This is a convenience function for creating pointer values in tests and configuration.
 func BoolPtr(v bool) *bool {
