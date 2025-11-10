@@ -198,18 +198,36 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.Ru
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Log the command being executed at DEBUG level
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
-	e.Logger.Debug("executeCommandWithPath called", "command", cmdLine, "path", path, "work_dir", cmd.EffectiveWorkDir)
-	e.Logger.Debug("Executing command", "command", cmdLine)
+	e.Logger.Debug("Executing command",
+		"command", cmdLine,
+		"path", path,
+		"work_dir", cmd.EffectiveWorkDir,
+		"work_dir_len", len(cmd.EffectiveWorkDir))
 
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
-	e.Logger.Debug("Command context created", "command", cmdLine, "args_count", len(cmd.ExpandedArgs))
+	e.Logger.Debug("Command context created")
+
+	// Set up stdin to /dev/null to prevent issues with commands that expect stdin
+	// This prevents "exit status 255" errors from docker-compose exec and similar commands
+	// that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
+	devNull, err := os.Open("/dev/null")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open /dev/null for stdin: %w", err)
+	}
+	defer func() {
+		if closeErr := devNull.Close(); closeErr != nil {
+			e.Logger.Warn("Failed to close /dev/null", "error", closeErr)
+		}
+	}()
+	execCmd.Stdin = devNull
+	e.Logger.Debug("Stdin configured to /dev/null")
 
 	// Set up working directory
 	if cmd.EffectiveWorkDir != "" {
 		execCmd.Dir = cmd.EffectiveWorkDir
-		e.Logger.Debug("Working directory set", "command", cmdLine, "work_dir", cmd.EffectiveWorkDir)
+		e.Logger.Debug("Working directory set", "work_dir", cmd.EffectiveWorkDir)
 	}
 
 	// Set up environment variables
@@ -219,35 +237,35 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	for k, v := range envVars {
 		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	e.Logger.Debug("Environment variables configured", "command", cmdLine, "env_count", len(execCmd.Env))
+	e.Logger.Debug("Environment variables configured", "env_count", len(execCmd.Env))
 
 	// Set up output capture
 	var stdout, stderr []byte
 	var cmdErr error
 
 	if outputWriter != nil {
-		e.Logger.Debug("Setting up output writer", "command", cmdLine)
+		e.Logger.Debug("Setting up output writer")
 		// Create buffered wrappers that both capture output and write to OutputWriter
 		stdoutWrapper := &outputWrapper{writer: outputWriter, stream: StdoutStream}
 		stderrWrapper := &outputWrapper{writer: outputWriter, stream: StderrStream}
 
 		execCmd.Stdout = stdoutWrapper
 		execCmd.Stderr = stderrWrapper
-		e.Logger.Debug("Output writer configured", "command", cmdLine)
+		e.Logger.Debug("Output writer configured")
 
 		// Run the command
-		e.Logger.Debug("Starting command execution", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
+		e.Logger.Debug("Starting command execution")
 		cmdErr = execCmd.Run()
-		e.Logger.Debug("Command execution completed", "command", cmdLine)
+		e.Logger.Debug("Command execution completed")
 
 		// Get the captured output
 		stdout = stdoutWrapper.GetBuffer()
 		stderr = stderrWrapper.GetBuffer()
 	} else {
 		// Otherwise, capture output in memory
-		e.Logger.Debug("Starting command execution (memory capture)", "command", cmdLine, "working_dir", execCmd.Dir, "env_count", len(execCmd.Env))
+		e.Logger.Debug("Starting command execution (memory capture)")
 		stdout, cmdErr = execCmd.Output()
-		e.Logger.Debug("Command execution completed (memory capture)", "command", cmdLine)
+		e.Logger.Debug("Command execution completed (memory capture)")
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			stderr = exitErr.Stderr
 		}
