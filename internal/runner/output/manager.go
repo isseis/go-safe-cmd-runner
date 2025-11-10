@@ -46,6 +46,7 @@ type DefaultOutputCaptureManager struct {
 	pathValidator     PathValidator
 	fileManager       FileManager
 	securityValidator SecurityValidator
+	logger            *slog.Logger
 }
 
 // NewDefaultOutputCaptureManager creates a new DefaultOutputCaptureManager
@@ -54,6 +55,7 @@ func NewDefaultOutputCaptureManager(securityValidator SecurityValidator) *Defaul
 		pathValidator:     NewDefaultPathValidator(),
 		fileManager:       NewSafeFileManager(),
 		securityValidator: securityValidator,
+		logger:            slog.Default(),
 	}
 }
 
@@ -100,6 +102,7 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(outputPath string, workDir s
 			MaxSize:      maxSize,
 			CurrentSize:  0,
 			StartTime:    time.Now(),
+			Logger:       m.logger,
 		}, nil
 	}
 
@@ -123,6 +126,7 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(outputPath string, workDir s
 		MaxSize:      maxSize,
 		CurrentSize:  0,
 		StartTime:    time.Now(),
+		Logger:       m.logger,
 	}
 
 	return capture, nil

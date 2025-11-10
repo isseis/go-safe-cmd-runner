@@ -21,6 +21,24 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
+// CommandExecutionError wraps a command execution error with context information (group and command names)
+// This error type preserves the original error chain while adding context for better error reporting
+type CommandExecutionError struct {
+	GroupName   string
+	CommandName string
+	Err         error
+}
+
+// Error implements the error interface
+func (e *CommandExecutionError) Error() string {
+	return fmt.Sprintf("command %s in group %s failed: %v", e.CommandName, e.GroupName, e.Err)
+}
+
+// Unwrap implements error unwrapping for errors.Unwrap
+func (e *CommandExecutionError) Unwrap() error {
+	return e.Err
+}
+
 // GroupExecutor defines the interface for executing command groups
 type GroupExecutor interface {
 	// ExecuteGroup executes all commands in a group sequentially
@@ -509,7 +527,14 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			errorLogArgs = append(errorLogArgs, "stderr", result.Stderr)
 		}
 		slog.Error("Command failed", errorLogArgs...)
-		return "", exitCode, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
+
+		// Wrap error with group and command context information
+		// This preserves the original error chain while adding context
+		return "", exitCode, &CommandExecutionError{
+			GroupName:   groupSpec.Name,
+			CommandName: cmd.Name(),
+			Err:         err,
+		}
 	}
 
 	// Display result
@@ -530,7 +555,13 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			errorLogArgs = append(errorLogArgs, "stderr", result.Stderr)
 		}
 		slog.Error("Command failed with non-zero exit code", errorLogArgs...)
-		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode)
+
+		// Wrap error with group and command context information
+		return output, result.ExitCode, &CommandExecutionError{
+			GroupName:   groupSpec.Name,
+			CommandName: cmd.Name(),
+			Err:         fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode),
+		}
 	}
 
 	return output, 0, nil

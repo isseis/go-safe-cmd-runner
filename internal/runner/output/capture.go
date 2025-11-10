@@ -1,6 +1,7 @@
 package output
 
 import (
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -10,13 +11,14 @@ import (
 
 // Capture represents an active output capture session using temporary file
 type Capture struct {
-	OutputPath   string     // Final output file path
-	TempFilePath string     // Temporary file path
-	FileHandle   *os.File   // File handle for temporary file
-	MaxSize      int64      // Maximum allowed output size
-	CurrentSize  int64      // Current accumulated output size
-	StartTime    time.Time  // Start time of capture session
-	mutex        sync.Mutex // Protects concurrent access to file and size
+	OutputPath   string       // Final output file path
+	TempFilePath string       // Temporary file path
+	FileHandle   *os.File     // File handle for temporary file
+	MaxSize      int64        // Maximum allowed output size
+	CurrentSize  int64        // Current accumulated output size
+	StartTime    time.Time    // Start time of capture session
+	Logger       *slog.Logger // Logger for capture operations
+	mutex        sync.Mutex   // Protects concurrent access to file and size
 }
 
 // Write implements executor.OutputWriter interface
@@ -32,12 +34,21 @@ func (c *Capture) WriteOutput(data []byte) error {
 
 	// Check size limit
 	if c.CurrentSize+int64(len(data)) > c.MaxSize {
-		return &CaptureError{
+		err := &CaptureError{
 			Type:  ErrorTypeSizeLimit,
 			Path:  c.OutputPath,
 			Phase: PhaseExecution,
 			Cause: ErrOutputSizeExceeded,
 		}
+		if c.Logger != nil {
+			c.Logger.Error("Output size limit exceeded",
+				"output_path", c.OutputPath,
+				"current_size", c.CurrentSize,
+				"attempted_write", len(data),
+				"max_size", c.MaxSize,
+				"error", err)
+		}
+		return err
 	}
 
 	// Write to file
