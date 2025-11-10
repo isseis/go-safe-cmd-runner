@@ -1,6 +1,9 @@
 package logging
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ExecutionError represents an error that occurs during command execution
 // (as opposed to pre-execution errors like configuration parsing or file access)
@@ -13,16 +16,27 @@ type ExecutionError struct {
 	Err         error  // Wrapped error for better error context preservation
 }
 
+// ContextString returns the context information (group and command names) as a formatted string
+// Returns empty string if no context is available
+func (e *ExecutionError) ContextString() string {
+	var parts []string
+	if e.GroupName != "" {
+		parts = append(parts, fmt.Sprintf("group: %s", e.GroupName))
+	}
+	if e.CommandName != "" {
+		parts = append(parts, fmt.Sprintf("command: %s", e.CommandName))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ")
+}
+
 // Error implements the error interface
 func (e *ExecutionError) Error() string {
-	var contextInfo string
-	switch {
-	case e.GroupName != "" && e.CommandName != "":
-		contextInfo = fmt.Sprintf("group: %s, command: %s, ", e.GroupName, e.CommandName)
-	case e.GroupName != "":
-		contextInfo = fmt.Sprintf("group: %s, ", e.GroupName)
-	case e.CommandName != "":
-		contextInfo = fmt.Sprintf("command: %s, ", e.CommandName)
+	contextInfo := e.ContextString()
+	if contextInfo != "" {
+		contextInfo += ", "
 	}
 
 	if e.Err != nil {

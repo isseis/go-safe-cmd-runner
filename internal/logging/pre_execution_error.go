@@ -117,13 +117,8 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 func HandleExecutionError(execErr *ExecutionError) {
 	// Build error message with context information
 	message := execErr.Message
-	switch {
-	case execErr.GroupName != "" && execErr.CommandName != "":
-		message = fmt.Sprintf("%s (group: %s, command: %s)", message, execErr.GroupName, execErr.CommandName)
-	case execErr.GroupName != "":
-		message = fmt.Sprintf("%s (group: %s)", message, execErr.GroupName)
-	case execErr.CommandName != "":
-		message = fmt.Sprintf("%s (command: %s)", message, execErr.CommandName)
+	if contextStr := execErr.ContextString(); contextStr != "" {
+		message = fmt.Sprintf("%s (%s)", message, contextStr)
 	}
 
 	handleErrorCommon(ErrorTypeSystemError, message, execErr.Component, execErr.RunID, "Execution error occurred", "execution_error", "execution_error")
