@@ -1,0 +1,20 @@
+# Single Error Test Configuration
+version = "1.0"
+
+[global]
+timeout = 30
+log_level = "debug"
+output_size_limit = 1024
+env_allowed = ["PATH"]
+verify_standard_paths = false
+
+[[groups]]
+name = "too_large_error_test"
+description = "Test too large error case"
+
+[[groups.commands]]
+name = "infinite_output"
+description = "Attempt to generate output exceeding size limit"
+cmd = "yes"
+args = []
+output_file = "output.txt"
