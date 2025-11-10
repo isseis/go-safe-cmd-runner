@@ -209,20 +209,20 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
 	e.Logger.Debug("Command context created")
 
-	// Set up stdin to /dev/null to prevent issues with commands that expect stdin
+	// Set up stdin to null device to prevent issues with commands that expect stdin
 	// This prevents "exit status 255" errors from docker-compose exec and similar commands
 	// that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
-	devNull, err := os.Open("/dev/null")
+	devNull, err := os.Open(os.DevNull)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open /dev/null for stdin: %w", err)
+		return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
 	}
 	defer func() {
 		if closeErr := devNull.Close(); closeErr != nil {
-			e.Logger.Warn("Failed to close /dev/null", "error", closeErr)
+			e.Logger.Warn("Failed to close null device", "error", closeErr)
 		}
 	}()
 	execCmd.Stdin = devNull
-	e.Logger.Debug("Stdin configured to /dev/null")
+	e.Logger.Debug("Stdin configured to null device")
 
 	// Set up working directory
 	if cmd.EffectiveWorkDir != "" {
