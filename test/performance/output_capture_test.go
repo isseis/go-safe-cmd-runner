@@ -114,6 +114,10 @@ func TestOutputSizeLimit(t *testing.T) {
 		executortesting.WithName("size_limit_test"),
 		executortesting.WithOutputFile(outputPath),
 	)
+	// Set the output size limit on the command (1KB limit for 2KB data)
+	outputLimit, err := common.NewOutputSizeLimit(1024)
+	require.NoError(t, err)
+	runtimeCmd.EffectiveOutputSizeLimit = outputLimit
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group", WorkDir: tempDir}
 
@@ -131,7 +135,7 @@ func TestOutputSizeLimit(t *testing.T) {
 	// Create resource manager with output capture support
 	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
 	ctx := context.Background()
-	_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should get an error due to size limit being exceeded
 	require.Error(t, err, "Expected error when output size limit is exceeded")
@@ -227,7 +231,7 @@ func TestLongRunningStability(t *testing.T) {
 		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		executortesting.WithName("long_running_test"),
 		executortesting.WithOutputFile(outputPath),
-		executortesting.WithTimeout(common.IntPtr(30)),
+		executortesting.WithTimeout(common.Int32Ptr(30)),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}

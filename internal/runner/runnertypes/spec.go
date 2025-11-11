@@ -27,10 +27,10 @@ type GlobalSpec struct {
 	// nil: use DefaultTimeout (60 seconds)
 	// 0: unlimited execution (no timeout)
 	// Positive value: timeout after N seconds
-	Timeout             *int     `toml:"timeout"`               // Global timeout in seconds (nil=default 60s, 0=unlimited)
+	Timeout             *int32   `toml:"timeout"`               // Global timeout in seconds (nil=default 60s, 0=unlimited)
 	LogLevel            LogLevel `toml:"log_level"`             // Log level: debug, info, warn, error
 	VerifyStandardPaths *bool    `toml:"verify_standard_paths"` // Verify files in standard system paths (nil=default true)
-	OutputSizeLimit     int64    `toml:"output_size_limit"`     // Maximum output size in bytes (0 = unlimited)
+	OutputSizeLimit     *int64   `toml:"output_size_limit"`     // Maximum output size in bytes (nil=use default, 0=unlimited) - raw value for TOML unmarshaling
 
 	// Security
 	VerifyFiles []string `toml:"verify_files"` // Files to verify before execution (raw paths)
@@ -87,11 +87,12 @@ type CommandSpec struct {
 	// nil: inherit from parent (group or global)
 	// 0: unlimited execution (no timeout)
 	// Positive value: timeout after N seconds
-	Timeout    *int   `toml:"timeout"`      // Command-specific timeout in seconds (nil=inherit, 0=unlimited)
-	RunAsUser  string `toml:"run_as_user"`  // User to execute command as (using seteuid)
-	RunAsGroup string `toml:"run_as_group"` // Group to execute command as (using setegid)
-	RiskLevel  string `toml:"risk_level"`   // Maximum allowed risk level: low, medium, high
-	OutputFile string `toml:"output_file"`  // Standard output file path for capture
+	Timeout         *int32 `toml:"timeout"`           // Command-specific timeout in seconds (nil=inherit, 0=unlimited)
+	OutputSizeLimit *int64 `toml:"output_size_limit"` // Command-specific output size limit in bytes (nil=inherit from global, 0=unlimited) - raw value for TOML unmarshaling
+	RunAsUser       string `toml:"run_as_user"`       // User to execute command as (using seteuid)
+	RunAsGroup      string `toml:"run_as_group"`      // Group to execute command as (using setegid)
+	RiskLevel       string `toml:"risk_level"`        // Maximum allowed risk level: low, medium, high
+	OutputFile      string `toml:"output_file"`       // Standard output file path for capture
 
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Command-level environment variables in KEY=VALUE format

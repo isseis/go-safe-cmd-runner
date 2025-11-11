@@ -238,7 +238,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 				tc.args,
 				executortesting.WithName("test-privilege-command"),
 				executortesting.WithWorkDir("/tmp"),
-				executortesting.WithTimeout(common.IntPtr(30)),
+				executortesting.WithTimeout(common.Int32Ptr(30)),
 				executortesting.WithRiskLevel("low"),
 			)
 			group := createTestCommandGroup()
@@ -330,7 +330,7 @@ func TestNormalResourceManager_ExecuteCommand_RiskLevelControl(t *testing.T) {
 				tc.args,
 				executortesting.WithName("test-command"),
 				executortesting.WithWorkDir("/tmp"),
-				executortesting.WithTimeout(common.IntPtr(30)),
+				executortesting.WithTimeout(common.Int32Ptr(30)),
 				executortesting.WithRiskLevel(tc.riskLevel),
 			)
 

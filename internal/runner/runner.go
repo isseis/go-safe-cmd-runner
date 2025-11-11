@@ -231,12 +231,11 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 }
 
 // createNormalResourceManager creates a resource manager for normal mode
-func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, pathResolver resource.PathResolver, validator *security.Validator) error {
+func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec, pathResolver resource.PathResolver, validator *security.Validator) error {
 	fs := common.NewDefaultFileSystem()
-	maxOutputSize := configSpec.Global.OutputSizeLimit
-	if maxOutputSize <= 0 {
-		maxOutputSize = 0 // Will use default from output package
-	}
+	// Note: maxOutputSize is no longer used here as output size limit is now resolved per-command
+	// via RuntimeCommand.EffectiveOutputSizeLimit. Pass 0 to ResourceManager.
+	maxOutputSize := int64(0)
 
 	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
@@ -250,7 +249,7 @@ func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.Co
 		resource.ExecutionModeNormal,
 		&resource.DryRunOptions{}, // Empty dry-run options for normal mode
 		outputMgr,                 // Pass output manager with validator
-		maxOutputSize,             // Max output size from config
+		maxOutputSize,             // Not used anymore (per-command limit is used instead)
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)

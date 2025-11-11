@@ -87,7 +87,7 @@ func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
 	tests := []struct {
 		name        string
 		tomlContent string
-		wantMaxSize int64
+		wantMaxSize *int64
 		wantErr     bool
 	}{
 		{
@@ -97,7 +97,7 @@ func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
 workdir = "/tmp"
 output_size_limit = 10485760
 `,
-			wantMaxSize: 10485760, // 10MB
+			wantMaxSize: common.Int64Ptr(10485760), // 10MB
 			wantErr:     false,
 		},
 		{
@@ -106,7 +106,7 @@ output_size_limit = 10485760
 [global]
 workdir = "/tmp"
 `,
-			wantMaxSize: 0, // runner sets default value, so just check for no error
+			wantMaxSize: nil, // Not specified, should be nil
 			wantErr:     false,
 		},
 		{
@@ -116,7 +116,7 @@ workdir = "/tmp"
 workdir = "/tmp"
 output_size_limit = 0
 `,
-			wantMaxSize: 0, // runner sets default value, so just check for no error
+			wantMaxSize: common.Int64Ptr(0), // Explicitly set to 0 (unlimited)
 			wantErr:     false,
 		},
 	}
@@ -132,7 +132,12 @@ output_size_limit = 0
 			}
 
 			require.NoError(t, err, "Unexpected error")
-			assert.Equal(t, tt.wantMaxSize, config.Global.OutputSizeLimit, "max_output_size mismatch")
+			if tt.wantMaxSize == nil {
+				assert.Nil(t, config.Global.OutputSizeLimit, "max_output_size should be nil")
+			} else {
+				require.NotNil(t, config.Global.OutputSizeLimit, "max_output_size should not be nil")
+				assert.Equal(t, *tt.wantMaxSize, *config.Global.OutputSizeLimit, "max_output_size mismatch")
+			}
 		})
 	}
 }
@@ -182,7 +187,8 @@ args = ["-la"]
 	require.NoError(t, err, "Unexpected error")
 
 	// Test global configuration
-	assert.Equal(t, int64(20971520), config.Global.OutputSizeLimit, "max_output_size mismatch")
+	require.NotNil(t, config.Global.OutputSizeLimit, "OutputSizeLimit should not be nil")
+	assert.Equal(t, int64(20971520), *config.Global.OutputSizeLimit, "max_output_size mismatch")
 
 	// Test first group commands
 	buildGroup := config.Groups[0]
@@ -227,7 +233,8 @@ output_size_limit = 5242880
 		var global runnertypes.GlobalSpec
 		err := toml.Unmarshal([]byte(tomlData), &global)
 		require.NoError(t, err, "Failed to unmarshal global config")
-		assert.Equal(t, int64(5242880), global.OutputSizeLimit, "max_output_size mismatch")
+		require.NotNil(t, global.OutputSizeLimit, "OutputSizeLimit should not be nil")
+		assert.Equal(t, int64(5242880), *global.OutputSizeLimit, "max_output_size mismatch")
 	})
 }
 
@@ -332,7 +339,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
+			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
 			require.NoError(t, err, "Failed to expand command")
 
 			// 5. Verify command name

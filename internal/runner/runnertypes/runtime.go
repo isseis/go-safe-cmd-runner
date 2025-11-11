@@ -237,17 +237,22 @@ type RuntimeCommand struct {
 	EffectiveWorkDir string
 
 	// EffectiveTimeout is the resolved timeout value (in seconds) for this command
-	EffectiveTimeout int
+	EffectiveTimeout int32
 
 	// TimeoutResolution contains context information about timeout resolution
 	TimeoutResolution common.TimeoutResolutionContext
+
+	// EffectiveOutputSizeLimit is the resolved output size limit for this command
+	// Use IsUnlimited() to check if unlimited, Value() to get the limit in bytes
+	EffectiveOutputSizeLimit common.OutputSizeLimit
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with the required spec.
 // The globalTimeout parameter is used for timeout resolution hierarchy.
+// The globalOutputSizeLimit parameter is used for output size limit resolution.
 // The groupName parameter provides context for timeout resolution logging.
 // Returns ErrNilSpec if spec is nil.
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupName string) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit, groupName string) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
@@ -262,14 +267,22 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupNam
 		groupName,
 	)
 
+	// Resolve the effective output size limit
+	commandOutputSizeLimit := common.NewOutputSizeLimitFromPtr(spec.OutputSizeLimit)
+	effectiveOutputSizeLimit := common.ResolveOutputSizeLimit(
+		commandOutputSizeLimit,
+		globalOutputSizeLimit,
+	)
+
 	return &RuntimeCommand{
-		Spec:              spec,
-		timeout:           commandTimeout,
-		ExpandedArgs:      []string{},
-		ExpandedEnv:       make(map[string]string),
-		ExpandedVars:      make(map[string]string),
-		EffectiveTimeout:  effectiveTimeout,
-		TimeoutResolution: resolutionContext,
+		Spec:                     spec,
+		timeout:                  commandTimeout,
+		ExpandedArgs:             []string{},
+		ExpandedEnv:              make(map[string]string),
+		ExpandedVars:             make(map[string]string),
+		EffectiveTimeout:         effectiveTimeout,
+		TimeoutResolution:        resolutionContext,
+		EffectiveOutputSizeLimit: effectiveOutputSizeLimit,
 	}, nil
 }
 

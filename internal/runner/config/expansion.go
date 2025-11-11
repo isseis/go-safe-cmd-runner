@@ -501,18 +501,20 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 //   - groupVars: Group-level internal variables (from RuntimeGroup.ExpandedVars)
 //   - groupName: Group name for error messages (currently unused as spec.Name is used directly)
 //   - globalTimeout: Global timeout setting for timeout resolution hierarchy
+//   - globalOutputSizeLimit: Global output size limit setting for output size limit resolution
 //
 // Returns:
-//   - *RuntimeCommand: The expanded runtime command configuration with resolved EffectiveTimeout
+//   - *RuntimeCommand: The expanded runtime command configuration with resolved EffectiveTimeout and EffectiveOutputSizeLimit
 //   - error: An error if expansion fails
 //
 // Note:
 //   - EffectiveTimeout is set by NewRuntimeCommand using timeout resolution hierarchy.
+//   - EffectiveOutputSizeLimit is set by NewRuntimeCommand using output size limit resolution.
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
-func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout) (*runnertypes.RuntimeCommand, error) {
-	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout
+func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
+	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout and output size limit
 	groupName := runnertypes.ExtractGroupName(runtimeGroup)
-	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout, groupName)
+	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout, globalOutputSizeLimit, groupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", spec.Name, err)
 	}

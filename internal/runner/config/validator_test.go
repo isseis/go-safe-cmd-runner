@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -935,7 +936,7 @@ func TestValidateTimeouts(t *testing.T) {
 			name: "valid - positive global timeout",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: intPtr(30),
+					Timeout: common.Int32Ptr(30),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -955,7 +956,7 @@ func TestValidateTimeouts(t *testing.T) {
 			name: "valid - zero global timeout",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: intPtr(0),
+					Timeout: common.Int32Ptr(0),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -975,7 +976,7 @@ func TestValidateTimeouts(t *testing.T) {
 			name: "invalid - negative global timeout",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: intPtr(-10),
+					Timeout: common.Int32Ptr(-10),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -1002,7 +1003,7 @@ func TestValidateTimeouts(t *testing.T) {
 							{
 								Name:    "test_cmd",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(60),
+								Timeout: common.Int32Ptr(60),
 							},
 						},
 					},
@@ -1020,7 +1021,7 @@ func TestValidateTimeouts(t *testing.T) {
 							{
 								Name:    "test_cmd",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(0),
+								Timeout: common.Int32Ptr(0),
 							},
 						},
 					},
@@ -1038,7 +1039,7 @@ func TestValidateTimeouts(t *testing.T) {
 							{
 								Name:    "test_cmd",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(-5),
+								Timeout: common.Int32Ptr(-5),
 							},
 						},
 					},
@@ -1057,12 +1058,12 @@ func TestValidateTimeouts(t *testing.T) {
 							{
 								Name:    "cmd1",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(-1),
+								Timeout: common.Int32Ptr(-1),
 							},
 							{
 								Name:    "cmd2",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(-2),
+								Timeout: common.Int32Ptr(-2),
 							},
 						},
 					},
@@ -1081,7 +1082,7 @@ func TestValidateTimeouts(t *testing.T) {
 							{
 								Name:    "cmd1",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(30),
+								Timeout: common.Int32Ptr(30),
 							},
 						},
 					},
@@ -1091,7 +1092,7 @@ func TestValidateTimeouts(t *testing.T) {
 							{
 								Name:    "cmd2",
 								Cmd:     "/bin/echo",
-								Timeout: intPtr(-15),
+								Timeout: common.Int32Ptr(-15),
 							},
 						},
 					},
@@ -1114,9 +1115,4 @@ func TestValidateTimeouts(t *testing.T) {
 			}
 		})
 	}
-}
-
-// intPtr is a helper function to create a pointer to an int
-func intPtr(i int) *int {
-	return &i
 }

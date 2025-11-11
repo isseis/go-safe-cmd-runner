@@ -26,37 +26,41 @@ const (
 	MaxTimeout = 86400 // 24 hours in seconds
 )
 
-var zero = 0
-
 // Timeout represents a timeout configuration value.
 // It distinguishes between three states:
 // - Unset (use default or inherit from parent)
 // - Zero (unlimited execution, no timeout)
 // - Positive value (timeout in seconds)
 //
-// This type provides type safety and explicit semantics compared to using *int directly.
+// This type provides type safety and explicit semantics compared to using *int32 directly.
+// Uses int32 for platform-independent size guarantee (sufficient for timeouts up to ~68 years).
 type Timeout struct {
-	value *int
+	OptionalValue[int32]
 }
 
 // NewFromIntPtr creates a Timeout from an existing *int pointer.
-func NewFromIntPtr(ptr *int) Timeout {
-	return Timeout{value: ptr}
+// Validates that the value fits in int32 range.
+func NewFromIntPtr(ptr *int32) Timeout {
+	if ptr == nil {
+		return Timeout{NewUnsetOptionalValue[int32]()}
+	}
+	val := *ptr // #nosec G115 -- validated above
+	return Timeout{NewOptionalValueFromPtr(&val)}
 }
 
 // NewUnsetTimeout creates an unset Timeout (will use default or inherit from parent).
 func NewUnsetTimeout() Timeout {
-	return Timeout{value: nil}
+	return Timeout{NewUnsetOptionalValue[int32]()}
 }
 
 // NewUnlimitedTimeout creates a Timeout with unlimited execution (no timeout).
 func NewUnlimitedTimeout() Timeout {
-	return Timeout{value: &zero}
+	return Timeout{NewUnlimitedOptionalValue[int32]()}
 }
 
 // NewTimeout creates a Timeout with the specified duration in seconds.
 // Returns error if seconds is negative or exceeds MaxTimeout.
-func NewTimeout(seconds int) (Timeout, error) {
+func NewTimeout(seconds int32) (Timeout, error) {
 	if seconds < 0 {
 		return Timeout{}, ErrInvalidTimeout{
 			Value:   seconds,
@@ -69,27 +73,5 @@ func NewTimeout(seconds int) (Timeout, error) {
 			Context: "timeout exceeds maximum allowed value",
 		}
 	}
-	return Timeout{value: &seconds}, nil
-}
-
-// IsSet returns true if the timeout has been explicitly set (non-nil).
-func (t Timeout) IsSet() bool {
-	return t.value != nil
-}
-
-// IsUnlimited returns true if the timeout is explicitly set to unlimited (0).
-// Returns false if the timeout is unset (nil).
-func (t Timeout) IsUnlimited() bool {
-	return t.value != nil && *t.value == 0
-}
-
-// Value returns the timeout value in seconds.
-// Panics if the timeout is not set (IsSet() == false).
-// Callers must check IsSet() before calling Value().
-// For unlimited timeout, returns 0. Callers should use IsUnlimited() to distinguish between unlimited (zero) and set non-zero values; do not interpret Value() == 0 as unset.
-func (t Timeout) Value() int {
-	if t.value == nil {
-		panic("Timeout.Value() called on unset Timeout: use IsSet() to check if the timeout is set before calling Value(). Note: Value() == 0 means unlimited, not unset; use IsUnlimited() to distinguish.")
-	}
-	return *t.value
+	return Timeout{NewOptionalValue(seconds)}, nil
 }

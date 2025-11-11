@@ -44,7 +44,7 @@ func (s *SecurityLogger) LogLongRunningProcess(cmdName string, duration time.Dur
 }
 
 // LogTimeoutExceeded logs when a command exceeds its timeout
-func (s *SecurityLogger) LogTimeoutExceeded(cmdName string, timeoutSeconds int, pid int) {
+func (s *SecurityLogger) LogTimeoutExceeded(cmdName string, timeoutSeconds int32, pid int) {
 	s.logger.Error("Command exceeded timeout",
 		"command", cmdName,
 		"pid", pid,
@@ -53,7 +53,7 @@ func (s *SecurityLogger) LogTimeoutExceeded(cmdName string, timeoutSeconds int, 
 }
 
 // LogTimeoutConfiguration logs the effective timeout configuration for a command
-func (s *SecurityLogger) LogTimeoutConfiguration(cmdName string, timeoutSeconds int, source string) {
+func (s *SecurityLogger) LogTimeoutConfiguration(cmdName string, timeoutSeconds int32, source string) {
 	if timeoutSeconds == 0 {
 		s.logger.Info("Command configured with unlimited timeout",
 			"command", cmdName,

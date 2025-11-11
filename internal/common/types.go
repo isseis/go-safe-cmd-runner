@@ -5,7 +5,13 @@ package common
 
 // IntPtr returns a pointer to the given int value.
 // This is a convenience function for creating timeout values.
-func IntPtr(v int) *int {
+func Int32Ptr(v int32) *int32 {
+	return &v
+}
+
+// Int64Ptr returns a pointer to the given int64 value.
+// This is a convenience function for creating output size limit values.
+func Int64Ptr(v int64) *int64 {
 	return &v
 }
 

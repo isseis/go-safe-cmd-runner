@@ -944,8 +944,7 @@ const (
     MaxBufferSize     = 1024 * 1024   // 1MB maximum buffer
 
     // Size limits
-    DefaultMaxOutputSize = 10 * 1024 * 1024   // 10MB default limit
-    AbsoluteMaxSize      = 100 * 1024 * 1024  // 100MB absolute limit
+    // DefaultMaxOutputSize is defined in internal/common/output_size_limit_type.go
 
     // File permissions
     TempFileMode   = 0600   // Temporary file permissions

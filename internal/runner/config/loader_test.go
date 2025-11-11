@@ -107,14 +107,14 @@ args = ["test"]
 
 	// Verify explicit timeout is preserved in ConfigSpec
 	require.NotNil(t, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be non-nil")
-	assert.Equal(t, 120, *cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to preserve explicit value")
+	assert.Equal(t, int32(120), *cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to preserve explicit value")
 
 	// Create RuntimeGlobal and verify explicit timeout is returned
 	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)
 	require.NoError(t, err, "NewRuntimeGlobal failed")
 	timeout := runtimeGlobal.Timeout()
 	assert.True(t, timeout.IsSet(), "Expected RuntimeGlobal.Timeout() to be set")
-	assert.Equal(t, 120, timeout.Value(), "Expected RuntimeGlobal.Timeout().Value() to return explicit value")
+	assert.Equal(t, int32(120), timeout.Value(), "Expected RuntimeGlobal.Timeout().Value() to return explicit value")
 }
 
 // TestBasicTOMLParse tests basic TOML parsing for Global.EnvVars and Group.EnvVars

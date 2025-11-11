@@ -32,11 +32,3 @@ const (
 	RiskLevelHigh     = runnertypes.RiskLevelHigh
 	RiskLevelCritical = runnertypes.RiskLevelCritical
 )
-
-// Output size constants
-const (
-	// DefaultMaxOutputSize is the default maximum output size (10MB)
-	DefaultMaxOutputSize = 10 * 1024 * 1024
-	// AbsoluteMaxOutputSize is the absolute maximum output size (100MB)
-	AbsoluteMaxOutputSize = 100 * 1024 * 1024
-)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/debug"
@@ -231,7 +232,9 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
 
 		// Expand command configuration
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout())
+		// Convert global output size limit from *int64 (TOML representation) to OutputSizeLimit type
+		globalOutputSizeLimit := common.NewOutputSizeLimitFromPtr(runtimeGlobal.Spec.OutputSizeLimit)
+		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout(), globalOutputSizeLimit)
 		if err != nil {
 			// Set failure result for notification
 			errResult := &groupExecutionResult{

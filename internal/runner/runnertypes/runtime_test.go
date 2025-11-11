@@ -259,7 +259,7 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout:  common.IntPtr(300),
+		Timeout:  common.Int32Ptr(300),
 		LogLevel: "debug",
 		EnvVars:  []string{"PATH=/usr/bin"},
 		Vars:     []string{"VAR1=value1"},
@@ -279,7 +279,7 @@ func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Verify that the structure is properly created
 	require.NotNil(t, runtime.Spec)
 	require.NotNil(t, runtime.Spec.Timeout)
-	assert.Equal(t, 300, *runtime.Spec.Timeout)
+	assert.Equal(t, int32(300), *runtime.Spec.Timeout)
 	require.Len(t, runtime.ExpandedEnv, 1)
 	assert.Equal(t, "/usr/bin", runtime.ExpandedEnv["PATH"])
 }
@@ -320,7 +320,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
 		WorkDir: "/tmp",
-		Timeout: common.IntPtr(60),
+		Timeout: common.Int32Ptr(60),
 		EnvVars: []string{"TEST=value"},
 	}
 
@@ -343,7 +343,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 	require.Len(t, runtime.ExpandedEnv, 1)
 	assert.Equal(t, "value", runtime.ExpandedEnv["TEST"])
 	assert.Equal(t, "/tmp", runtime.EffectiveWorkDir)
-	assert.Equal(t, 60, runtime.EffectiveTimeout)
+	assert.Equal(t, int32(60), runtime.EffectiveTimeout)
 }
 
 // TestRuntimeCommand_HelperMethods tests the helper methods for RuntimeCommand
@@ -352,10 +352,10 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		Timeout: common.IntPtr(60),
+		Timeout: common.Int32Ptr(60),
 	}
 
-	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), "test-group")
+	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit(), "test-group")
 	require.NoError(t, err)
 
 	// Test Cmd()
@@ -369,13 +369,13 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 	// Test Timeout()
 	timeout := runtime.Timeout()
 	require.True(t, timeout.IsSet())
-	assert.Equal(t, 60, timeout.Value())
+	assert.Equal(t, int32(60), timeout.Value())
 }
 
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:             common.IntPtr(300),
+		Timeout:             common.Int32Ptr(300),
 		EnvAllowed:          []string{"PATH", "HOME"},
 		VerifyStandardPaths: common.BoolPtr(false),
 	}
@@ -386,7 +386,7 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	// Test Timeout()
 	timeout := runtime.Timeout()
 	require.True(t, timeout.IsSet())
-	assert.Equal(t, 300, timeout.Value())
+	assert.Equal(t, int32(300), timeout.Value())
 
 	// Test EnvAllowlist()
 	allowlist := runtime.EnvAllowlist()
