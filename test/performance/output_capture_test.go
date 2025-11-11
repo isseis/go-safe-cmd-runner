@@ -115,7 +115,9 @@ func TestOutputSizeLimit(t *testing.T) {
 		executortesting.WithOutputFile(outputPath),
 	)
 	// Set the output size limit on the command (1KB limit for 2KB data)
-	runtimeCmd.EffectiveOutputSizeLimit = common.NewOutputSizeLimit(1024)
+	outputLimit, err := common.NewOutputSizeLimit(1024)
+	require.NoError(t, err)
+	runtimeCmd.EffectiveOutputSizeLimit = outputLimit
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group", WorkDir: tempDir}
 
@@ -133,7 +135,7 @@ func TestOutputSizeLimit(t *testing.T) {
 	// Create resource manager with output capture support
 	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
 	ctx := context.Background()
-	_, _, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
+	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should get an error due to size limit being exceeded
 	require.Error(t, err, "Expected error when output size limit is exceeded")

@@ -3,6 +3,20 @@
 //nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 
+import (
+	"fmt"
+)
+
+// ErrInvalidOutputSizeLimit is returned when an invalid output size limit value is encountered
+type ErrInvalidOutputSizeLimit struct {
+	Value   any
+	Context string
+}
+
+func (e ErrInvalidOutputSizeLimit) Error() string {
+	return fmt.Sprintf("invalid output size limit value %v in %s", e.Value, e.Context)
+}
+
 // DefaultOutputSizeLimit is the default output size limit when not specified (10MB)
 const DefaultOutputSizeLimit = 10 * 1024 * 1024
 
@@ -33,6 +47,13 @@ func NewUnlimitedOutputSizeLimit() OutputSizeLimit {
 }
 
 // NewOutputSizeLimit creates an OutputSizeLimit with the specified size in bytes.
-func NewOutputSizeLimit(bytes int64) OutputSizeLimit {
-	return OutputSizeLimit{NewOptionalValue(bytes)}
+// Returns error if bytes is negative.
+func NewOutputSizeLimit(bytes int64) (OutputSizeLimit, error) {
+	if bytes < 0 {
+		return OutputSizeLimit{}, ErrInvalidOutputSizeLimit{
+			Value:   bytes,
+			Context: "output size limit cannot be negative",
+		}
+	}
+	return OutputSizeLimit{NewOptionalValue(bytes)}, nil
 }

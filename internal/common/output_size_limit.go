@@ -30,6 +30,7 @@ func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSize
 		return globalLimit
 	}
 
-	// Use default
-	return NewOutputSizeLimit(DefaultOutputSizeLimit)
+	// Use default (DefaultOutputSizeLimit is always valid, so we can safely ignore the error)
+	limit, _ := NewOutputSizeLimit(DefaultOutputSizeLimit)
+	return limit
 }
