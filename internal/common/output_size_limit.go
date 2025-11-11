@@ -13,23 +13,23 @@ package common
 //   - globalLimit: Global-level output_size_limit
 //
 // Returns:
-//   - Resolved output size limit in bytes (0 means unlimited)
+//   - Resolved OutputSizeLimit (use IsUnlimited() to check for unlimited, Value() to get bytes)
 //
 // Resolution logic:
 //   - If commandLimit is set, use its value (can be 0 for unlimited)
 //   - Otherwise, if globalLimit is set, use its value (can be 0 for unlimited)
 //   - Otherwise, use DefaultOutputSizeLimit
-func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSizeLimit) int64 {
+func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSizeLimit) OutputSizeLimit {
 	// Command-level takes precedence
 	if commandLimit.IsSet() {
-		return commandLimit.Value()
+		return commandLimit
 	}
 
 	// Fall back to global-level
 	if globalLimit.IsSet() {
-		return globalLimit.Value()
+		return globalLimit
 	}
 
 	// Use default
-	return DefaultOutputSizeLimit
+	return NewOutputSizeLimit(DefaultOutputSizeLimit)
 }

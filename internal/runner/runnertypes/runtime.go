@@ -242,9 +242,9 @@ type RuntimeCommand struct {
 	// TimeoutResolution contains context information about timeout resolution
 	TimeoutResolution common.TimeoutResolutionContext
 
-	// EffectiveOutputSizeLimit is the resolved output size limit (in bytes) for this command
-	// 0 means unlimited
-	EffectiveOutputSizeLimit int64
+	// EffectiveOutputSizeLimit is the resolved output size limit for this command
+	// Use IsUnlimited() to check if unlimited, Value() to get the limit in bytes
+	EffectiveOutputSizeLimit common.OutputSizeLimit
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with the required spec.

@@ -115,7 +115,7 @@ func TestOutputSizeLimit(t *testing.T) {
 		executortesting.WithOutputFile(outputPath),
 	)
 	// Set the output size limit on the command (1KB limit for 2KB data)
-	runtimeCmd.EffectiveOutputSizeLimit = 1024
+	runtimeCmd.EffectiveOutputSizeLimit = common.NewOutputSizeLimit(1024)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group", WorkDir: tempDir}
 
