@@ -3,6 +3,9 @@ package logging
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,9 +14,12 @@ import (
 
 // Static errors for testing to satisfy err113 linter
 var (
-	errStandardError = errors.New("standard error")
-	errInnerError    = errors.New("inner error")
-	errOtherError    = errors.New("other error")
+	errStandardError     = errors.New("standard error")
+	errInnerError        = errors.New("inner error")
+	errOtherError        = errors.New("other error")
+	errVariableUndefined = errors.New("undefined variable")
+	errVariableExpansion = errors.New("failed to expand variables")
+	errExitStatus        = errors.New("exit status 1")
 )
 
 func TestPreExecutionError_ErrorMessage(t *testing.T) {
@@ -390,6 +396,244 @@ func TestHandleExecutionError(t *testing.T) {
 				}
 				HandleExecutionError(execErr)
 			}, "HandleExecutionError should not panic")
+		})
+	}
+}
+
+func TestHandleExecutionError_WithWrappedError(t *testing.T) {
+	tests := []struct {
+		name      string
+		message   string
+		err       error
+		groupName string
+		cmdName   string
+		wantMsg   string
+	}{
+		{
+			name:      "with wrapped error",
+			message:   "error running commands",
+			err:       fmt.Errorf("command execution failed: %w", errExitStatus),
+			groupName: "backup_group",
+			cmdName:   "backup_db",
+			wantMsg:   "error running commands: command execution failed: exit status 1 (group: backup_group, command: backup_db)",
+		},
+		{
+			name:      "with nil error",
+			message:   "error running commands",
+			err:       nil,
+			groupName: "test_group",
+			cmdName:   "test_cmd",
+			wantMsg:   "error running commands (group: test_group, command: test_cmd)",
+		},
+		{
+			name:      "with error but no context",
+			message:   "error running commands",
+			err:       fmt.Errorf("undefined variable: __runner_datetime: %w", errVariableUndefined),
+			groupName: "",
+			cmdName:   "",
+			wantMsg:   "error running commands: undefined variable: __runner_datetime",
+		},
+		{
+			name:      "with group name only",
+			message:   "group execution failed",
+			err:       errVariableExpansion,
+			groupName: "test_group",
+			cmdName:   "",
+			wantMsg:   "group execution failed: failed to expand variables (group: test_group)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stderr to verify error message
+			oldStderr := os.Stderr
+			r, w, _ := os.Pipe()
+			os.Stderr = w
+
+			execErr := &ExecutionError{
+				Message:     tt.message,
+				Component:   "runner",
+				RunID:       "test-run-123",
+				GroupName:   tt.groupName,
+				CommandName: tt.cmdName,
+				Err:         tt.err,
+			}
+
+			HandleExecutionError(execErr)
+
+			// Restore stderr
+			w.Close()
+			os.Stderr = oldStderr
+
+			var buf strings.Builder
+			_, err := io.Copy(&buf, r)
+			require.NoError(t, err, "io.Copy should not fail")
+			output := buf.String()
+
+			// Verify that HandleExecutionError() outputs context information to stderr
+			// This indirectly tests that ContextString() is working correctly
+			if tt.groupName != "" {
+				assert.Contains(t, output, tt.groupName, "Output should contain group name")
+			}
+			if tt.cmdName != "" {
+				assert.Contains(t, output, tt.cmdName, "Output should contain command name")
+			}
+		})
+	}
+}
+
+func TestExecutionError_ContextString(t *testing.T) {
+	tests := []struct {
+		name        string
+		groupName   string
+		commandName string
+		want        string
+	}{
+		{
+			name:        "both group and command",
+			groupName:   "backup_group",
+			commandName: "backup_db",
+			want:        "group: backup_group, command: backup_db",
+		},
+		{
+			name:        "group only",
+			groupName:   "test_group",
+			commandName: "",
+			want:        "group: test_group",
+		},
+		{
+			name:        "command only",
+			groupName:   "",
+			commandName: "test_cmd",
+			want:        "command: test_cmd",
+		},
+		{
+			name:        "neither group nor command",
+			groupName:   "",
+			commandName: "",
+			want:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execErr := &ExecutionError{
+				Message:     "test message",
+				Component:   "test",
+				RunID:       "test-123",
+				GroupName:   tt.groupName,
+				CommandName: tt.commandName,
+			}
+
+			result := execErr.ContextString()
+			assert.Equal(t, tt.want, result,
+				"ContextString() should return the correct formatted string")
+		})
+	}
+}
+
+func TestExecutionError_Unwrap(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantNil bool
+	}{
+		{
+			name:    "with wrapped error",
+			err:     fmt.Errorf("command failed: %w", errExitStatus),
+			wantNil: false,
+		},
+		{
+			name:    "with nil error",
+			err:     nil,
+			wantNil: true,
+		},
+		{
+			name:    "with sentinel error",
+			err:     errVariableExpansion,
+			wantNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execErr := &ExecutionError{
+				Message:   "test message",
+				Component: "test",
+				RunID:     "test-123",
+				Err:       tt.err,
+			}
+
+			unwrapped := execErr.Unwrap()
+
+			if tt.wantNil {
+				assert.Nil(t, unwrapped, "Unwrap should return nil")
+			} else {
+				assert.NotNil(t, unwrapped, "Unwrap should return non-nil")
+				assert.Equal(t, tt.err, unwrapped, "Unwrap should return the wrapped error")
+
+				// Verify errors.Is() works correctly with the unwrapped error
+				if tt.err != nil {
+					assert.True(t, errors.Is(execErr, tt.err),
+						"errors.Is should find the wrapped error in ExecutionError")
+				}
+			}
+		})
+	}
+}
+
+func TestExecutionError_ErrorsIs(t *testing.T) {
+	tests := []struct {
+		name      string
+		wrappedIn error
+		target    error
+		want      bool
+	}{
+		{
+			name:      "direct sentinel error",
+			wrappedIn: errExitStatus,
+			target:    errExitStatus,
+			want:      true,
+		},
+		{
+			name:      "wrapped sentinel error",
+			wrappedIn: fmt.Errorf("command failed: %w", errExitStatus),
+			target:    errExitStatus,
+			want:      true,
+		},
+		{
+			name:      "double wrapped sentinel error",
+			wrappedIn: fmt.Errorf("execution failed: %w", fmt.Errorf("command failed: %w", errExitStatus)),
+			target:    errExitStatus,
+			want:      true,
+		},
+		{
+			name:      "different error",
+			wrappedIn: errVariableExpansion,
+			target:    errExitStatus,
+			want:      false,
+		},
+		{
+			name:      "nil wrapped error",
+			wrappedIn: nil,
+			target:    errExitStatus,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execErr := &ExecutionError{
+				Message:   "test message",
+				Component: "test",
+				RunID:     "test-123",
+				Err:       tt.wrappedIn,
+			}
+
+			result := errors.Is(execErr, tt.target)
+			assert.Equal(t, tt.want, result,
+				"errors.Is should return %v for wrapped error %v and target %v",
+				tt.want, tt.wrappedIn, tt.target)
 		})
 	}
 }

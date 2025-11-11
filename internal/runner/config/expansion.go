@@ -11,6 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 )
 
 const (
@@ -367,12 +368,20 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	// This avoids repeated os.Environ() parsing in ExpandGroup and ExpandCommand
 	runtime.SystemEnv = environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
 
+	// 0.5. Generate automatic variables (__runner_datetime and __runner_pid)
+	// These are generated once at configuration load time and shared across all commands
+	autoVars := variable.GenerateGlobalAutoVars(nil) // nil uses time.Now
+	runtime.ExpandedVars = autoVars
+
 	// 1. Process FromEnv
 	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global from_env: %w", err)
 	}
-	runtime.ExpandedVars = fromEnvVars
+	// Merge fromEnvVars into runtime.ExpandedVars (which already contains autoVars)
+	for k, v := range fromEnvVars {
+		runtime.ExpandedVars[k] = v
+	}
 
 	// 2. Process Vars
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, "global")
