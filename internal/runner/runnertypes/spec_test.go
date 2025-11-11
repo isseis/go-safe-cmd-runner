@@ -198,7 +198,7 @@ args = ["hello"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.IntPtr(300),
+					Timeout: common.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -241,7 +241,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:             common.IntPtr(300),
+					Timeout:             common.Int32Ptr(300),
 					LogLevel:            "debug",
 					VerifyStandardPaths: common.BoolPtr(false),
 					OutputSizeLimit:     common.Int64Ptr(1048576),
@@ -291,7 +291,7 @@ cmd = "/usr/bin/make"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.IntPtr(300),
+					Timeout: common.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -344,7 +344,7 @@ vars = ["TEST_VAR=value"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.IntPtr(300),
+					Timeout: common.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -356,7 +356,7 @@ vars = ["TEST_VAR=value"]
 								Cmd:         "/usr/bin/python3",
 								Args:        []string{"-m", "pytest"},
 								WorkDir:     "/tmp/test",
-								Timeout:     common.IntPtr(60),
+								Timeout:     common.Int32Ptr(60),
 								RunAsUser:   "testuser",
 								RunAsGroup:  "testgroup",
 								RiskLevel:   "medium",
@@ -433,7 +433,7 @@ cmd = "/bin/date"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.IntPtr(300),
+					Timeout: common.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{

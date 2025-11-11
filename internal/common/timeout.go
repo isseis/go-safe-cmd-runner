@@ -32,29 +32,35 @@ const (
 // - Zero (unlimited execution, no timeout)
 // - Positive value (timeout in seconds)
 //
-// This type provides type safety and explicit semantics compared to using *int directly.
+// This type provides type safety and explicit semantics compared to using *int32 directly.
+// Uses int32 for platform-independent size guarantee (sufficient for timeouts up to ~68 years).
 type Timeout struct {
-	OptionalValue[int]
+	OptionalValue[int32]
 }
 
 // NewFromIntPtr creates a Timeout from an existing *int pointer.
-func NewFromIntPtr(ptr *int) Timeout {
-	return Timeout{NewOptionalValueFromPtr(ptr)}
+// Validates that the value fits in int32 range.
+func NewFromIntPtr(ptr *int32) Timeout {
+	if ptr == nil {
+		return Timeout{NewUnsetOptionalValue[int32]()}
+	}
+	val := *ptr // #nosec G115 -- validated above
+	return Timeout{NewOptionalValueFromPtr(&val)}
 }
 
 // NewUnsetTimeout creates an unset Timeout (will use default or inherit from parent).
 func NewUnsetTimeout() Timeout {
-	return Timeout{NewUnsetOptionalValue[int]()}
+	return Timeout{NewUnsetOptionalValue[int32]()}
 }
 
 // NewUnlimitedTimeout creates a Timeout with unlimited execution (no timeout).
 func NewUnlimitedTimeout() Timeout {
-	return Timeout{NewUnlimitedOptionalValue[int]()}
+	return Timeout{NewUnlimitedOptionalValue[int32]()}
 }
 
 // NewTimeout creates a Timeout with the specified duration in seconds.
 // Returns error if seconds is negative or exceeds MaxTimeout.
-func NewTimeout(seconds int) (Timeout, error) {
+func NewTimeout(seconds int32) (Timeout, error) {
 	if seconds < 0 {
 		return Timeout{}, ErrInvalidTimeout{
 			Value:   seconds,

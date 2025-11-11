@@ -14,7 +14,7 @@ import (
 
 // timeoutTestHelper is a helper function for timeout resolution integration tests.
 // It loads config from TOML, creates a RuntimeCommand, and returns the effective timeout value.
-func timeoutTestHelper(t *testing.T, configTOML string) int {
+func timeoutTestHelper(t *testing.T, configTOML string) int32 {
 	t.Helper()
 
 	// Load config using the helper from integration_envpriority_test.go
@@ -41,7 +41,7 @@ func TestRunner_TimeoutResolution_Hierarchy(t *testing.T) {
 	tests := []struct {
 		name            string
 		configTOML      string
-		expectedTimeout int
+		expectedTimeout int32
 	}{
 		{
 			name: "default_timeout_when_nothing_set",
@@ -117,7 +117,7 @@ func TestRunner_TimeoutResolution_UnlimitedExecution(t *testing.T) {
 	tests := []struct {
 		name            string
 		configTOML      string
-		expectedTimeout int
+		expectedTimeout int32
 	}{
 		{
 			name: "global_unlimited_timeout",
@@ -180,7 +180,7 @@ func TestRunner_TimeoutResolution_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name            string
 		configTOML      string
-		expectedTimeout int
+		expectedTimeout int32
 	}{
 		{
 			name: "large_timeout_value",
@@ -285,7 +285,7 @@ timeout = 0
 	// Test each command independently
 	testCases := []struct {
 		cmdIndex        int
-		expectedTimeout int
+		expectedTimeout int32
 		description     string
 	}{
 		{0, 60, "cmd1 should inherit global timeout"},
@@ -307,7 +307,7 @@ func TestDryRun_TimeoutResolutionContext(t *testing.T) {
 	tests := []struct {
 		name            string
 		configContent   string
-		expectedTimeout int
+		expectedTimeout int32
 		expectedLevel   string
 	}{
 		{

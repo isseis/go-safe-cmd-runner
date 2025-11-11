@@ -237,7 +237,7 @@ type RuntimeCommand struct {
 	EffectiveWorkDir string
 
 	// EffectiveTimeout is the resolved timeout value (in seconds) for this command
-	EffectiveTimeout int
+	EffectiveTimeout int32
 
 	// TimeoutResolution contains context information about timeout resolution
 	TimeoutResolution common.TimeoutResolutionContext

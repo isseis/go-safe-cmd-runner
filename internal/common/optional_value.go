@@ -5,7 +5,7 @@ package common
 
 // Numeric is a constraint for numeric types that can be used with OptionalValue.
 type Numeric interface {
-	~int | ~int64
+	~int32 | ~int64
 }
 
 // OptionalValue represents an optional configuration value that can be:
@@ -59,10 +59,4 @@ func (o OptionalValue[T]) Value() T {
 		panic("OptionalValue.Value() called on unset value: use IsSet() to check if the value is set before calling Value()")
 	}
 	return *o.value
-}
-
-// Ptr returns the underlying pointer (can be nil).
-// This is useful for serialization or when you need to distinguish between unset and zero.
-func (o OptionalValue[T]) Ptr() *T {
-	return o.value
 }

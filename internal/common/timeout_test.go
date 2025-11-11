@@ -53,13 +53,13 @@ func TestNewUnlimitedTimeout(t *testing.T) {
 
 	assert.True(t, timeout.IsSet(), "NewUnlimitedTimeout() should be set")
 	assert.True(t, timeout.IsUnlimited(), "NewUnlimitedTimeout() should be unlimited")
-	assert.Equal(t, 0, timeout.Value(), "NewUnlimitedTimeout().Value() should be 0")
+	assert.Equal(t, int32(0), timeout.Value(), "NewUnlimitedTimeout().Value() should be 0")
 }
 
 func TestNewTimeout(t *testing.T) {
 	tests := []struct {
 		name    string
-		seconds int
+		seconds int32
 		wantErr bool
 	}{
 		{
@@ -186,7 +186,7 @@ func TestTimeout_Value(t *testing.T) {
 	tests := []struct {
 		name    string
 		timeout Timeout
-		want    int
+		want    int32
 	}{
 		{
 			name:    "unlimited timeout",
@@ -229,10 +229,10 @@ func TestTimeout_ValuePanicsOnUnset(t *testing.T) {
 func TestNewFromIntPtr(t *testing.T) {
 	tests := []struct {
 		name      string
-		ptr       *int
+		ptr       *int32
 		wantSet   bool
 		wantUnlim bool
-		wantValue int
+		wantValue int32
 	}{
 		{
 			name:      "nil pointer creates unset timeout",
@@ -243,21 +243,21 @@ func TestNewFromIntPtr(t *testing.T) {
 		},
 		{
 			name:      "zero pointer creates unlimited timeout",
-			ptr:       IntPtr(0),
+			ptr:       Int32Ptr(0),
 			wantSet:   true,
 			wantUnlim: true,
 			wantValue: 0,
 		},
 		{
 			name:      "positive pointer creates timeout",
-			ptr:       IntPtr(120),
+			ptr:       Int32Ptr(120),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: 120,
 		},
 		{
 			name:      "max timeout pointer",
-			ptr:       IntPtr(MaxTimeout),
+			ptr:       Int32Ptr(MaxTimeout),
 			wantSet:   true,
 			wantUnlim: false,
 			wantValue: MaxTimeout,

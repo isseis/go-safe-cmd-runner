@@ -41,8 +41,8 @@ type TimeoutResolutionContext struct {
 // 2. Else if groupTimeout is set, use its value (even if 0)
 // 3. Else if globalTimeout is set, use its value (even if 0)
 // 4. Else use DefaultTimeout (60 seconds)
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout Timeout, commandName, groupName string) (int, TimeoutResolutionContext) {
-	var resolvedValue int
+func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout Timeout, commandName, groupName string) (int32, TimeoutResolutionContext) {
+	var resolvedValue int32
 	var level string
 
 	// Determine which timeout to use based on hierarchy

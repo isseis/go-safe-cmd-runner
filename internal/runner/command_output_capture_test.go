@@ -60,7 +60,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager
@@ -220,7 +220,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			}
 
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+				Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
 			}
 
 			// Create real executor and resource manager

@@ -231,7 +231,7 @@ func TestLongRunningStability(t *testing.T) {
 		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		executortesting.WithName("long_running_test"),
 		executortesting.WithOutputFile(outputPath),
-		executortesting.WithTimeout(common.IntPtr(30)),
+		executortesting.WithTimeout(common.Int32Ptr(30)),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}

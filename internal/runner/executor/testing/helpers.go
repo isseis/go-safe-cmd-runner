@@ -21,7 +21,7 @@ type runtimeCommandConfig struct {
 	workDirSet          bool // Track if workDir was explicitly set
 	effectiveWorkDir    string
 	effectiveWorkDirSet bool // Track if effectiveWorkDir was explicitly set
-	timeout             *int
+	timeout             *int32
 	runAsUser           string
 	runAsGroup          string
 	outputFile          string
@@ -76,7 +76,7 @@ func WithEffectiveWorkDir(effectiveWorkDir string) RuntimeCommandOption {
 }
 
 // WithTimeout sets the command timeout.
-func WithTimeout(timeout *int) RuntimeCommandOption {
+func WithTimeout(timeout *int32) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
 		c.timeout = timeout
 	}
