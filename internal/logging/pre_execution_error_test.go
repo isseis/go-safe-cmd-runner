@@ -3,6 +3,9 @@ package logging
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -390,6 +393,89 @@ func TestHandleExecutionError(t *testing.T) {
 				}
 				HandleExecutionError(execErr)
 			}, "HandleExecutionError should not panic")
+		})
+	}
+}
+
+func TestHandleExecutionError_WithWrappedError(t *testing.T) {
+	tests := []struct {
+		name      string
+		message   string
+		err       error
+		groupName string
+		cmdName   string
+		wantMsg   string
+	}{
+		{
+			name:      "with wrapped error",
+			message:   "error running commands",
+			err:       fmt.Errorf("command execution failed: exit status 1"),
+			groupName: "backup_group",
+			cmdName:   "backup_db",
+			wantMsg:   "error running commands: command execution failed: exit status 1 (group: backup_group, command: backup_db)",
+		},
+		{
+			name:      "with nil error",
+			message:   "error running commands",
+			err:       nil,
+			groupName: "test_group",
+			cmdName:   "test_cmd",
+			wantMsg:   "error running commands (group: test_group, command: test_cmd)",
+		},
+		{
+			name:      "with error but no context",
+			message:   "error running commands",
+			err:       fmt.Errorf("undefined variable: __runner_datetime"),
+			groupName: "",
+			cmdName:   "",
+			wantMsg:   "error running commands: undefined variable: __runner_datetime",
+		},
+		{
+			name:      "with group name only",
+			message:   "group execution failed",
+			err:       fmt.Errorf("failed to expand variables"),
+			groupName: "test_group",
+			cmdName:   "",
+			wantMsg:   "group execution failed: failed to expand variables (group: test_group)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stderr to verify error message
+			oldStderr := os.Stderr
+			r, w, _ := os.Pipe()
+			os.Stderr = w
+
+			execErr := &ExecutionError{
+				Message:     tt.message,
+				Component:   "runner",
+				RunID:       "test-run-123",
+				GroupName:   tt.groupName,
+				CommandName: tt.cmdName,
+				Err:         tt.err,
+			}
+
+			HandleExecutionError(execErr)
+
+			// Restore stderr
+			w.Close()
+			os.Stderr = oldStderr
+
+			var buf strings.Builder
+			io.Copy(&buf, r)
+			output := buf.String()
+
+			// Verify that the error message contains expected components
+			if tt.err != nil {
+				assert.Contains(t, output, tt.err.Error(), "Output should contain wrapped error message")
+			}
+			if tt.groupName != "" {
+				assert.Contains(t, output, tt.groupName, "Output should contain group name")
+			}
+			if tt.cmdName != "" {
+				assert.Contains(t, output, tt.cmdName, "Output should contain command name")
+			}
 		})
 	}
 }
