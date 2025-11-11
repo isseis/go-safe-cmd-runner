@@ -12,6 +12,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// newFixedClock returns a Clock that always returns the specified time.
+// This is useful for testing time-dependent behavior with reproducible results.
+func newFixedClock(fixedTime time.Time) Clock {
+	return func() time.Time {
+		return fixedTime
+	}
+}
+
 func TestDatetimeKey(t *testing.T) {
 	assert.Equal(t, "__runner_datetime", DatetimeKey())
 }
@@ -27,11 +35,8 @@ func TestWorkDirKey(t *testing.T) {
 func TestGenerateGlobalAutoVars(t *testing.T) {
 	// Test with fixed time for reproducibility
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 25, 123000000, time.UTC)
-	clock := func() time.Time {
-		return fixedTime
-	}
 
-	autoVars := GenerateGlobalAutoVars(clock)
+	autoVars := GenerateGlobalAutoVars(newFixedClock(fixedTime))
 
 	// Check that both variables are present
 	assert.Contains(t, autoVars, DatetimeKey())
@@ -95,10 +100,7 @@ func TestGenerateGlobalAutoVars_DatetimeFormat(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			clock := func() time.Time {
-				return tc.time
-			}
-			autoVars := GenerateGlobalAutoVars(clock)
+			autoVars := GenerateGlobalAutoVars(newFixedClock(tc.time))
 			assert.Equal(t, tc.expected, autoVars[DatetimeKey()])
 		})
 	}
@@ -108,12 +110,9 @@ func TestGenerateGlobalAutoVars_Consistency(t *testing.T) {
 	// Test that calling GenerateGlobalAutoVars multiple times with the same clock
 	// produces consistent results
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 25, 123000000, time.UTC)
-	clock := func() time.Time {
-		return fixedTime
-	}
 
-	autoVars1 := GenerateGlobalAutoVars(clock)
-	autoVars2 := GenerateGlobalAutoVars(clock)
+	autoVars1 := GenerateGlobalAutoVars(newFixedClock(fixedTime))
+	autoVars2 := GenerateGlobalAutoVars(newFixedClock(fixedTime))
 
 	assert.Equal(t, autoVars1[DatetimeKey()], autoVars2[DatetimeKey()])
 	assert.Equal(t, autoVars1[PIDKey()], autoVars2[PIDKey()])

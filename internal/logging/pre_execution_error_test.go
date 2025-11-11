@@ -463,7 +463,8 @@ func TestHandleExecutionError_WithWrappedError(t *testing.T) {
 			os.Stderr = oldStderr
 
 			var buf strings.Builder
-			io.Copy(&buf, r)
+			_, err := io.Copy(&buf, r)
+			require.NoError(t, err, "io.Copy should not fail")
 			output := buf.String()
 
 			// Verify that the error message contains expected components
