@@ -46,13 +46,20 @@ const (
 	GroupExecutionStatusError GroupExecutionStatus = "error"
 )
 
+// CommandResult holds the result of a single command execution
+// This is exported to allow the logging package to access command results
+type CommandResult struct {
+	Name     string
+	ExitCode int
+	Output   string
+	Stderr   string
+}
+
 // groupExecutionResult holds the result of group execution for notification
 type groupExecutionResult struct {
-	status      GroupExecutionStatus
-	exitCode    int
-	lastCommand string
-	output      string
-	errorMsg    string
+	status   GroupExecutionStatus
+	commands []CommandResult // All commands executed in the group
+	errorMsg string
 }
 
 // Runner manages the execution of command groups
@@ -454,11 +461,9 @@ func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, resu
 	slog.Info(
 		"Command group execution completed",
 		"group", groupSpec.Name,
-		"command", result.lastCommand,
 		"status", result.status,
-		"exit_code", result.exitCode,
+		"commands", slog.Any("commands", result.commands),
 		"duration_ms", duration.Milliseconds(),
-		"output", result.output,
 		"run_id", r.runID,
 		"slack_notify", true,
 		"message_type", "command_group_summary",

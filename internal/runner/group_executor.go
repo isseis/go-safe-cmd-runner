@@ -194,7 +194,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 
 	// 7. Execute commands in the group sequentially
-	lastCommand, lastOutput, lastExitCode, errResult, err := ge.executeAllCommands(ctx, groupSpec, runtimeGroup, runtimeGlobal)
+	commandResults, errResult, err := ge.executeAllCommands(ctx, groupSpec, runtimeGroup, runtimeGlobal)
 	if err != nil {
 		// executionResult is set from the returned errResult
 		executionResult = errResult
@@ -203,11 +203,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	// Set success result for notification
 	executionResult = &groupExecutionResult{
-		status:      GroupExecutionStatusSuccess,
-		exitCode:    lastExitCode,
-		lastCommand: lastCommand,
-		output:      lastOutput,
-		errorMsg:    "",
+		status:   GroupExecutionStatusSuccess,
+		commands: commandResults,
+		errorMsg: "",
 	}
 
 	slog.Info("Group completed successfully", "name", groupSpec.Name)
@@ -215,17 +213,15 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 }
 
 // executeAllCommands executes all commands in a group sequentially
-// Returns: (lastCommand, lastOutput, lastExitCode, executionResult, error)
+// Returns: (commandResults, executionResult, error)
 // executionResult is non-nil only when an error occurs, representing the error state.
 func (ge *DefaultGroupExecutor) executeAllCommands(
 	ctx context.Context,
 	groupSpec *runnertypes.GroupSpec,
 	runtimeGroup *runnertypes.RuntimeGroup,
 	runtimeGlobal *runnertypes.RuntimeGlobal,
-) (string, string, int, *groupExecutionResult, error) {
-	var lastCommand string
-	var lastOutput string
-	var lastExitCode int
+) ([]CommandResult, *groupExecutionResult, error) {
+	commandResults := make([]CommandResult, 0, len(groupSpec.Commands))
 
 	for i := range groupSpec.Commands {
 		cmdSpec := &groupSpec.Commands[i]
@@ -238,13 +234,11 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		if err != nil {
 			// Set failure result for notification
 			errResult := &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    1,
-				lastCommand: cmdSpec.Name,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
+				status:   GroupExecutionStatusError,
+				commands: commandResults,
+				errorMsg: fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
 			}
-			return lastCommand, lastOutput, 1, errResult, fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
+			return commandResults, errResult, fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
 		}
 
 		// Determine effective working directory for the command
@@ -252,40 +246,38 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		if err != nil {
 			// Set failure result for notification
 			errResult := &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    1,
-				lastCommand: cmdSpec.Name,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
+				status:   GroupExecutionStatusError,
+				commands: commandResults,
+				errorMsg: fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
 			}
-			return lastCommand, lastOutput, 1, errResult, fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
+			return commandResults, errResult, fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
 		}
 		runtimeCmd.EffectiveWorkDir = workDir
 
-		lastCommand = cmdSpec.Name
-
 		// Execute the command
-		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
+		stdout, stderr, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
+
+		// Record command result
+		cmdResult := CommandResult{
+			Name:     cmdSpec.Name,
+			ExitCode: exitCode,
+			Output:   stdout,
+			Stderr:   stderr,
+		}
+		commandResults = append(commandResults, cmdResult)
+
 		if err != nil {
 			// Set failure result for notification
 			errResult := &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    exitCode,
-				lastCommand: lastCommand,
-				output:      lastOutput,
-				errorMsg:    err.Error(),
+				status:   GroupExecutionStatusError,
+				commands: commandResults,
+				errorMsg: err.Error(),
 			}
-			return lastCommand, lastOutput, exitCode, errResult, err
+			return commandResults, errResult, err
 		}
-
-		// Update last output if command produced output
-		if newOutput != "" {
-			lastOutput = newOutput
-		}
-		lastExitCode = exitCode
 	}
 
-	return lastCommand, lastOutput, lastExitCode, nil, nil
+	return commandResults, nil, nil
 }
 
 // verifyGroupFiles verifies files specified in the group before execution
@@ -505,8 +497,8 @@ func truncateStdout(stdout string) string {
 }
 
 // executeSingleCommand executes a single command with proper context management
-// Returns the output string, exit code, and any error encountered
-func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (string, int, error) {
+// Returns the stdout, stderr, exit code, and any error encountered
+func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (string, string, int, error) {
 	// Create command context with timeout
 	cmdCtx, cancel := ge.createCommandContext(ctx, cmd)
 	defer cancel()
@@ -521,19 +513,21 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 		}
 		// Use actual exit code from result if available, otherwise use ExitCodeUnknown
 		exitCode := executor.ExitCodeUnknown
+		stderr := ""
 		if result != nil {
 			exitCode = result.ExitCode
+			stderr = result.Stderr
 		}
 		// Log command failure with stderr at ERROR level (stdout is excluded to avoid excessive logging)
 		errorLogArgs := []any{"command", cmd.Name(), "exit_code", exitCode, "error", err}
-		if result != nil && result.Stderr != "" {
-			errorLogArgs = append(errorLogArgs, "stderr", result.Stderr)
+		if stderr != "" {
+			errorLogArgs = append(errorLogArgs, "stderr", stderr)
 		}
 		slog.Error("Command failed", errorLogArgs...)
 
 		// Wrap error with group and command context information
 		// This preserves the original error chain while adding context
-		return "", exitCode, &CommandExecutionError{
+		return "", stderr, exitCode, &CommandExecutionError{
 			GroupName:   groupSpec.Name,
 			CommandName: cmd.Name(),
 			Err:         err,
@@ -560,14 +554,14 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 		slog.Error("Command failed with non-zero exit code", errorLogArgs...)
 
 		// Wrap error with group and command context information
-		return output, result.ExitCode, &CommandExecutionError{
+		return output, result.Stderr, result.ExitCode, &CommandExecutionError{
 			GroupName:   groupSpec.Name,
 			CommandName: cmd.Name(),
 			Err:         fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode),
 		}
 	}
 
-	return output, 0, nil
+	return output, result.Stderr, 0, nil
 }
 
 // resolveGroupWorkDir determines the working directory for a group.

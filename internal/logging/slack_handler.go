@@ -233,11 +233,45 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
+// commandResultInfo holds command execution result information extracted from log attributes
+type commandResultInfo struct {
+	name     string
+	exitCode int
+	output   string
+	stderr   string
+}
+
+// extractCommandResults extracts command results from slog Any value
+func extractCommandResults(cmdSlice []any) []commandResultInfo {
+	var commands []commandResultInfo
+	for _, cmdAny := range cmdSlice {
+		// Try to extract as a map (reflection converts struct to map)
+		if cmdMap, ok := cmdAny.(map[string]any); ok {
+			cmdInfo := commandResultInfo{}
+			if name, ok := cmdMap["Name"].(string); ok {
+				cmdInfo.name = name
+			}
+			if exitCode, ok := cmdMap["ExitCode"].(int); ok {
+				cmdInfo.exitCode = exitCode
+			}
+			if output, ok := cmdMap["Output"].(string); ok {
+				cmdInfo.output = output
+			}
+			if stderr, ok := cmdMap["Stderr"].(string); ok {
+				cmdInfo.stderr = stderr
+			}
+			commands = append(commands, cmdInfo)
+		}
+	}
+	return commands
+}
+
 // buildCommandGroupSummary builds a Slack message for command group summary
 func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
-	var status, group, command, output string
-	var exitCode int
+	var status, group string
 	var duration time.Duration
+	var commandsAttr slog.Attr
+	var hasCommandsAttr bool
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
@@ -245,21 +279,31 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 			status = attr.Value.String()
 		case "group":
 			group = attr.Value.String()
-		case "command":
-			command = attr.Value.String()
-		case "exit_code":
-			if attr.Value.Kind() == slog.KindInt64 {
-				exitCode = int(attr.Value.Int64())
-			}
 		case "duration_ms":
 			if attr.Value.Kind() == slog.KindInt64 {
 				duration = time.Duration(attr.Value.Int64()) * time.Millisecond
 			}
-		case "output":
-			output = attr.Value.String()
+		case "commands":
+			commandsAttr = attr
+			hasCommandsAttr = true
 		}
 		return true
 	})
+
+	// Extract command results from the commands attribute
+	var commands []commandResultInfo
+	if hasCommandsAttr {
+		// The commands attribute contains another attribute with the actual slice
+		if commandsAttr.Value.Kind() == slog.KindGroup {
+			group := commandsAttr.Value.Group()
+			if len(group) > 0 {
+				// Get the actual commands slice
+				if cmdSlice, ok := group[0].Value.Any().([]any); ok {
+					commands = extractCommandResults(cmdSlice)
+				}
+			}
+		}
+	}
 
 	var color string
 	var titleIcon string
@@ -275,52 +319,82 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		titleIcon = "⚠️"
 	}
 
-	// Truncate output if too long
-	if len(output) > outputMaxLength {
-		const truncationSuffix = "..."
-		truncationPoint := outputMaxLength - len(truncationSuffix)
-		output = output[:truncationPoint] + truncationSuffix
+	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
+
+	// Build fields for the attachment
+	fields := []SlackAttachmentField{
+		{
+			Title: "Command Count",
+			Value: fmt.Sprintf("%d", len(commands)),
+			Short: true,
+		},
+		{
+			Title: "Duration",
+			Value: duration.String(),
+			Short: true,
+		},
+		{
+			Title: "Run ID",
+			Value: s.runID,
+			Short: true,
+		},
 	}
 
-	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
+	// Add individual command results
+	for _, cmd := range commands {
+		statusIcon := "✅"
+		if cmd.exitCode != 0 {
+			statusIcon = "❌"
+		}
+
+		// Build command summary
+		cmdSummary := fmt.Sprintf("%s `%s` (exit: %d)", statusIcon, cmd.name, cmd.exitCode)
+
+		fields = append(fields, SlackAttachmentField{
+			Title: "Command",
+			Value: cmdSummary,
+			Short: false,
+		})
+
+		// Add output if present and not too long
+		if cmd.output != "" {
+			output := cmd.output
+			if len(output) > outputMaxLength {
+				const truncationSuffix = "..."
+				truncationPoint := outputMaxLength - len(truncationSuffix)
+				output = output[:truncationPoint] + truncationSuffix
+			}
+			fields = append(fields, SlackAttachmentField{
+				Title: "  ↳ Output",
+				Value: fmt.Sprintf("```%s```", output),
+				Short: false,
+			})
+		}
+
+		// Add stderr if present and command failed
+		if cmd.stderr != "" && cmd.exitCode != 0 {
+			stderr := cmd.stderr
+			if len(stderr) > stderrMaxLength {
+				const truncationSuffix = "..."
+				truncationPoint := stderrMaxLength - len(truncationSuffix)
+				stderr = stderr[:truncationPoint] + truncationSuffix
+			}
+			fields = append(fields, SlackAttachmentField{
+				Title: "  ↳ Error",
+				Value: fmt.Sprintf("```%s```", stderr),
+				Short: false,
+			})
+		}
+	}
 
 	message := SlackMessage{
 		Text: title,
 		Attachments: []SlackAttachment{
 			{
-				Color: color,
-				Fields: []SlackAttachmentField{
-					{
-						Title: "Command",
-						Value: fmt.Sprintf("```%s```", command),
-						Short: false,
-					},
-					{
-						Title: "Exit Code",
-						Value: fmt.Sprintf("%d", exitCode),
-						Short: true,
-					},
-					{
-						Title: "Duration",
-						Value: duration.String(),
-						Short: true,
-					},
-					{
-						Title: "Run ID",
-						Value: s.runID,
-						Short: true,
-					},
-				},
+				Color:  color,
+				Fields: fields,
 			},
 		},
-	}
-
-	if output != "" {
-		message.Attachments[0].Fields = append(message.Attachments[0].Fields, SlackAttachmentField{
-			Title: "Output",
-			Value: fmt.Sprintf("```%s```", output),
-			Short: false,
-		})
 	}
 
 	return message

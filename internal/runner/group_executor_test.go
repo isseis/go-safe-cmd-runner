@@ -391,8 +391,9 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	// Verify notification was sent with error status
 	require.NotNil(t, capturedNotification)
 	assert.Equal(t, GroupExecutionStatusError, capturedNotification.status)
-	assert.Equal(t, 1, capturedNotification.exitCode)
-	assert.Equal(t, "test-cmd", capturedNotification.lastCommand)
+	require.Len(t, capturedNotification.commands, 1)
+	assert.Equal(t, 1, capturedNotification.commands[0].ExitCode)
+	assert.Equal(t, "test-cmd", capturedNotification.commands[0].Name)
 }
 
 // TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode tests that non-standard exit codes are preserved
@@ -457,8 +458,9 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	// Verify notification was sent with error status and correct exit code
 	require.NotNil(t, capturedNotification)
 	assert.Equal(t, GroupExecutionStatusError, capturedNotification.status)
-	assert.Equal(t, 127, capturedNotification.exitCode)
-	assert.Equal(t, "test-cmd", capturedNotification.lastCommand)
+	require.Len(t, capturedNotification.commands, 1)
+	assert.Equal(t, 127, capturedNotification.commands[0].ExitCode)
+	assert.Equal(t, "test-cmd", capturedNotification.commands[0].Name)
 }
 
 // TestExecuteGroup_SuccessNotification tests that success notification is sent properly
@@ -520,9 +522,10 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	// Verify notification was sent with success status
 	require.NotNil(t, capturedNotification)
 	assert.Equal(t, GroupExecutionStatusSuccess, capturedNotification.status)
-	assert.Equal(t, 0, capturedNotification.exitCode)
-	assert.Equal(t, "test-cmd", capturedNotification.lastCommand)
-	assert.Equal(t, "success", capturedNotification.output)
+	require.Len(t, capturedNotification.commands, 1)
+	assert.Equal(t, 0, capturedNotification.commands[0].ExitCode)
+	assert.Equal(t, "test-cmd", capturedNotification.commands[0].Name)
+	assert.Equal(t, "success", capturedNotification.commands[0].Output)
 	assert.Empty(t, capturedNotification.errorMsg)
 
 	// Verify duration is reasonable
