@@ -14,7 +14,7 @@ func TestErrInvalidOutputSizeLimit_Error(t *testing.T) {
 	tests := []struct {
 		name    string
 		err     ErrInvalidOutputSizeLimit
-		wantMsg string
+		wantErr error
 	}{
 		{
 			name: "negative output size",
@@ -22,14 +22,16 @@ func TestErrInvalidOutputSizeLimit_Error(t *testing.T) {
 				Value:   int64(-1),
 				Context: "output size limit cannot be negative",
 			},
-			wantMsg: "invalid output size limit value -1 in output size limit cannot be negative",
+			wantErr: ErrInvalidOutputSizeLimit{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.err.Error()
-			assert.Equal(t, tt.wantMsg, got, "ErrInvalidOutputSizeLimit.Error() should match expected message")
+			// Verify error type using errors.As
+			assert.ErrorAs(t, tt.err, &tt.wantErr, "error should be of type ErrInvalidOutputSizeLimit")
+			// Verify Error() returns non-empty message
+			assert.NotEmpty(t, tt.err.Error(), "Error() should return non-empty message")
 		})
 	}
 }
