@@ -121,6 +121,9 @@ func HandleExecutionError(execErr *ExecutionError) {
 	// Check if the error provides a user-friendly message
 	if userMsg := GetUserFriendlyMessage(execErr.Err); userMsg != "" {
 		message = fmt.Sprintf("%s: %s", message, userMsg)
+	} else if execErr.Err != nil {
+		// If no user-friendly message, include the raw error
+		message = fmt.Sprintf("%s: %v", message, execErr.Err)
 	}
 
 	// Add context information (group and command names)
