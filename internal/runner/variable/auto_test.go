@@ -24,14 +24,14 @@ func TestWorkDirKey(t *testing.T) {
 	assert.Equal(t, "__runner_workdir", WorkDirKey())
 }
 
-func TestGenerateAutoVars(t *testing.T) {
+func TestGenerateGlobalAutoVars(t *testing.T) {
 	// Test with fixed time for reproducibility
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 25, 123000000, time.UTC)
 	clock := func() time.Time {
 		return fixedTime
 	}
 
-	autoVars := GenerateAutoVars(clock)
+	autoVars := GenerateGlobalAutoVars(clock)
 
 	// Check that both variables are present
 	assert.Contains(t, autoVars, DatetimeKey())
@@ -49,9 +49,9 @@ func TestGenerateAutoVars(t *testing.T) {
 	assert.True(t, matched, "PID should be numeric")
 }
 
-func TestGenerateAutoVars_NilClock(t *testing.T) {
+func TestGenerateGlobalAutoVars_NilClock(t *testing.T) {
 	// Test with nil clock (should use time.Now)
-	autoVars := GenerateAutoVars(nil)
+	autoVars := GenerateGlobalAutoVars(nil)
 
 	// Check that both variables are present
 	assert.Contains(t, autoVars, DatetimeKey())
@@ -69,7 +69,7 @@ func TestGenerateAutoVars_NilClock(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%d", os.Getpid()), pid)
 }
 
-func TestGenerateAutoVars_DatetimeFormat(t *testing.T) {
+func TestGenerateGlobalAutoVars_DatetimeFormat(t *testing.T) {
 	// Test various times to ensure format is consistent
 	testCases := []struct {
 		name     string
@@ -98,22 +98,22 @@ func TestGenerateAutoVars_DatetimeFormat(t *testing.T) {
 			clock := func() time.Time {
 				return tc.time
 			}
-			autoVars := GenerateAutoVars(clock)
+			autoVars := GenerateGlobalAutoVars(clock)
 			assert.Equal(t, tc.expected, autoVars[DatetimeKey()])
 		})
 	}
 }
 
-func TestGenerateAutoVars_Consistency(t *testing.T) {
-	// Test that calling GenerateAutoVars multiple times with the same clock
+func TestGenerateGlobalAutoVars_Consistency(t *testing.T) {
+	// Test that calling GenerateGlobalAutoVars multiple times with the same clock
 	// produces consistent results
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 25, 123000000, time.UTC)
 	clock := func() time.Time {
 		return fixedTime
 	}
 
-	autoVars1 := GenerateAutoVars(clock)
-	autoVars2 := GenerateAutoVars(clock)
+	autoVars1 := GenerateGlobalAutoVars(clock)
+	autoVars2 := GenerateGlobalAutoVars(clock)
 
 	assert.Equal(t, autoVars1[DatetimeKey()], autoVars2[DatetimeKey()])
 	assert.Equal(t, autoVars1[PIDKey()], autoVars2[PIDKey()])

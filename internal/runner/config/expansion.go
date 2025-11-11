@@ -370,7 +370,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 
 	// 0.5. Generate automatic variables (__runner_datetime and __runner_pid)
 	// These are generated once at configuration load time and shared across all commands
-	autoVars := variable.GenerateAutoVars(nil) // nil uses time.Now
+	autoVars := variable.GenerateGlobalAutoVars(nil) // nil uses time.Now
 	runtime.ExpandedVars = autoVars
 
 	// 1. Process FromEnv
