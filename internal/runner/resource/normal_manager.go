@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
@@ -142,8 +143,8 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	// Use command-level EffectiveOutputSizeLimit which already has the resolved value
 	// (command-level takes precedence, falls back to global-level)
 	maxSize := cmd.EffectiveOutputSizeLimit
-	if maxSize <= 0 {
-		maxSize = output.DefaultMaxOutputSize // Use default from output package
+	if maxSize < 0 {
+		maxSize = common.DefaultOutputSizeLimit // Use default from common package
 	}
 
 	capture, err := n.outputManager.PrepareOutput(cmd.Output(), cmd.EffectiveWorkDir, maxSize)

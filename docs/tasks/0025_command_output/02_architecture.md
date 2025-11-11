@@ -332,10 +332,7 @@ const (
 )
 
 // サイズ制限
-const (
-    DefaultMaxOutputSize = 10 * 1024 * 1024  // 10MB デフォルト制限
-    AbsoluteMaxSize      = 100 * 1024 * 1024 // 100MB 絶対制限
-)
+// DefaultMaxOutputSize is defined in internal/common/output_size_limit_type.go
 ```
 
 ### 8.2 I/O効率戦略
