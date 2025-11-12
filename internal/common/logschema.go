@@ -1,6 +1,8 @@
 // Package common provides shared types and utilities used across the application
 package common
 
+import "log/slog"
+
 // Log field keys for CommandResult structured logging
 // These constants ensure consistency between log value creation (runner.CommandResult.LogValue())
 // and log attribute extraction (logging.extractCommandResults())
@@ -101,4 +103,21 @@ type CommandResultFields struct {
 	ExitCode int
 	Output   string
 	Stderr   string
+}
+
+// CommandResult holds the result of a single command execution
+// This type is used across packages (runner, logging) to avoid circular dependencies
+type CommandResult struct {
+	CommandResultFields
+}
+
+// LogValue implements slog.LogValuer to provide structured logging support
+// Field keys are defined in LogField* constants to ensure consistency
+func (c CommandResult) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String(LogFieldName, c.Name),
+		slog.Int(LogFieldExitCode, c.ExitCode),
+		slog.String(LogFieldOutput, c.Output),
+		slog.String(LogFieldStderr, c.Stderr),
+	)
 }
