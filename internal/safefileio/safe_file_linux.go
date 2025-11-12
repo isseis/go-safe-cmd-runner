@@ -44,7 +44,7 @@ func isOpenat2Available() bool {
 	}
 	defer func() {
 		if err := os.RemoveAll(testDir); err != nil {
-			slog.Warn("failed to remove test directory", "error", err, "path", testDir)
+			slog.Warn("failed to remove test directory", slog.Any("error", err), slog.String("path", testDir))
 		}
 	}()
 

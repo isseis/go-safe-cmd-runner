@@ -137,7 +137,7 @@ func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig) (
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	slog.Debug("Creating Slack handler", "webhook_url", webhookURL, "run_id", runID, "timeout", httpTimeout, "backoff_base", config.Base, "retry_count", config.RetryCount)
+	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpTimeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
 	return &SlackHandler{
 		webhookURL: webhookURL,
 		runID:      runID,
@@ -712,11 +712,11 @@ func generateBackoffIntervals(base time.Duration, count int) []time.Duration {
 func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) error {
 	payload, err := json.Marshal(message)
 	if err != nil {
-		slog.Error("Failed to marshal Slack message", "error", err, "run_id", s.runID)
+		slog.Error("Failed to marshal Slack message", slog.Any("error", err), slog.String("run_id", s.runID))
 		return fmt.Errorf("failed to marshal Slack message: %w", err)
 	}
 
-	slog.Debug("Sending Slack notification", "webhook_url", s.webhookURL, "run_id", s.runID, "message_text", message.Text)
+	slog.Debug("Sending Slack notification", slog.String("webhook_url", s.webhookURL), slog.String("run_id", s.runID), slog.String("message_text", message.Text))
 
 	var lastErr error
 
@@ -725,7 +725,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		if attempt > 0 {
 			// Get backoff interval from predefined list
 			backoff := backoffIntervals[attempt-1]
-			slog.Debug("Retrying Slack notification", "attempt", attempt+1, "backoff_seconds", backoff.Seconds(), "run_id", s.runID)
+			slog.Debug("Retrying Slack notification", slog.Int("attempt", attempt+1), slog.Float64("backoff_seconds", backoff.Seconds()), slog.String("run_id", s.runID))
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -736,7 +736,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		req, err := http.NewRequestWithContext(ctx, "POST", s.webhookURL, bytes.NewBuffer(payload))
 		if err != nil {
 			lastErr = fmt.Errorf("failed to create request: %w", err)
-			slog.Warn("Failed to create Slack request", "error", err, "attempt", attempt+1, "run_id", s.runID)
+			slog.Warn("Failed to create Slack request", slog.Any("error", err), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
 			continue
 		}
 
@@ -745,32 +745,32 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to send request: %w", err)
-			slog.Warn("Failed to send Slack request", "error", err, "attempt", attempt+1, "run_id", s.runID)
+			slog.Warn("Failed to send Slack request", slog.Any("error", err), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
 			continue
 		}
 
 		statusCode := resp.StatusCode
 		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Failed to close response body", "error", err)
+			slog.Warn("Failed to close response body", slog.Any("error", err))
 		}
 
 		if statusCode >= 200 && statusCode < 300 {
-			slog.Info("Slack notification sent successfully", "status_code", statusCode, "run_id", s.runID)
+			slog.Info("Slack notification sent successfully", slog.Int("status_code", statusCode), slog.String("run_id", s.runID))
 			return nil // Success
 		}
 
 		if statusCode == 429 || statusCode >= 500 {
 			lastErr = fmt.Errorf("%w: %d", ErrServerError, statusCode)
-			slog.Warn("Slack server error, retrying", "status_code", statusCode, "attempt", attempt+1, "run_id", s.runID)
+			slog.Warn("Slack server error, retrying", slog.Int("status_code", statusCode), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
 			continue // Retry for rate limiting and server errors
 		}
 
 		// Client error (4xx except 429) - don't retry
-		slog.Error("Slack client error", "status_code", statusCode, "run_id", s.runID)
+		slog.Error("Slack client error", slog.Int("status_code", statusCode), slog.String("run_id", s.runID))
 		return fmt.Errorf("%w: %d", ErrClientError, statusCode)
 	}
 
-	slog.Error("Failed to send Slack notification after all retries", "attempts", len(backoffIntervals)+1, "last_error", lastErr, "run_id", s.runID)
+	slog.Error("Failed to send Slack notification after all retries", slog.Int("attempts", len(backoffIntervals)+1), slog.Any("last_error", lastErr), slog.String("run_id", s.runID))
 	return fmt.Errorf("failed to send to Slack after %d attempts: %w", len(backoffIntervals)+1, lastErr)
 }
 

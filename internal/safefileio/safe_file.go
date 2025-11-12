@@ -154,7 +154,7 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 	}
 	defer func() {
 		if closeErr := srcFile.Close(); closeErr != nil {
-			slog.Warn("error closing source file", "error", closeErr)
+			slog.Warn("error closing source file", slog.Any("error", closeErr))
 		}
 	}()
 
@@ -180,7 +180,7 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 	}
 	defer func() {
 		if closeErr := dstFile.Close(); closeErr != nil {
-			slog.Warn("error closing destination file", "error", closeErr)
+			slog.Warn("error closing destination file", slog.Any("error", closeErr))
 		}
 	}()
 
@@ -322,7 +322,7 @@ func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
-			slog.Warn("error closing file", "error", closeErr)
+			slog.Warn("error closing file", slog.Any("error", closeErr))
 		}
 	}()
 

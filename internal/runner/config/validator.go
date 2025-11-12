@@ -39,7 +39,7 @@ func NewConfigValidator() *Validator {
 	if err != nil {
 		// Fallback to nil if security validator creation fails
 		// This allows the main validator to still function
-		slog.Warn("Failed to create security validator", "error", err)
+		slog.Warn("Failed to create security validator", slog.Any("error", err))
 		secValidator = nil
 	}
 

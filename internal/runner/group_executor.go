@@ -139,9 +139,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	startTime := time.Now()
 
 	if groupSpec.Description != "" {
-		slog.Info("Executing group", "name", groupSpec.Name, "description", groupSpec.Description)
+		slog.Info("Executing group", slog.String("name", groupSpec.Name), slog.String("description", groupSpec.Description))
 	} else {
-		slog.Info("Executing group", "name", groupSpec.Name)
+		slog.Info("Executing group", slog.String("name", groupSpec.Name))
 	}
 
 	// 1. Expand group configuration
@@ -173,7 +173,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	if tempDirMgr != nil && !ge.keepTempDirs {
 		defer func() {
 			if err := tempDirMgr.Cleanup(); err != nil {
-				slog.Warn("Cleanup warning", "error", err)
+				slog.Warn("Cleanup warning", slog.Any("error", err))
 			}
 		}()
 	}
@@ -208,7 +208,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		errorMsg: "",
 	}
 
-	slog.Info("Group completed successfully", "name", groupSpec.Name)
+	slog.Info("Group completed successfully", slog.String("name", groupSpec.Name))
 	return nil
 }
 
@@ -225,7 +225,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 
 	for i := range groupSpec.Commands {
 		cmdSpec := &groupSpec.Commands[i]
-		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
+		slog.Info("Executing command", slog.String("command", cmdSpec.Name), slog.Int("index", i+1), slog.Int("total", len(groupSpec.Commands)))
 
 		// Expand command configuration
 		// Convert global output size limit from *int64 (TOML representation) to OutputSizeLimit type
@@ -323,7 +323,7 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 		err := ge.resourceManager.RecordGroupAnalysis(groupSpec.Name, debugInfo)
 		if err != nil {
 			// Log error but continue execution
-			slog.Warn("Failed to record group analysis", "error", err, "group", groupSpec.Name)
+			slog.Warn("Failed to record group analysis", slog.Any("error", err), slog.String("group", groupSpec.Name))
 		}
 	} else {
 		// Text format: output immediately
@@ -429,7 +429,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 				}
 				err := ge.resourceManager.UpdateCommandDebugInfo(token, debugInfo)
 				if err != nil {
-					slog.Warn("Failed to update command debug info", "error", err, "command", cmd.Name())
+					slog.Warn("Failed to update command debug info", slog.Any("error", err), slog.String("command", cmd.Name()))
 				}
 			} else {
 				// Text format: output immediately

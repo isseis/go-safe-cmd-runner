@@ -105,12 +105,12 @@ func handleErrorCommon(params errorHandlingParams) {
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
 		slog.Error(params.slogMessage,
-			common.PreExecErrorAttrs.ErrorType, string(params.errorType),
-			common.PreExecErrorAttrs.ErrorMessage, params.errorMsg,
-			common.PreExecErrorAttrs.Component, params.component,
-			"run_id", params.runID,
-			"slack_notify", params.slackNotify,
-			"message_type", params.slogMsgType,
+			slog.String(common.PreExecErrorAttrs.ErrorType, string(params.errorType)),
+			slog.String(common.PreExecErrorAttrs.ErrorMessage, params.errorMsg),
+			slog.String(common.PreExecErrorAttrs.Component, params.component),
+			slog.String("run_id", params.runID),
+			slog.Bool("slack_notify", params.slackNotify),
+			slog.String("message_type", params.slogMsgType),
 		)
 	}
 
