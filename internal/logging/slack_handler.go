@@ -18,9 +18,10 @@ import (
 
 const (
 	// HTTP status codes
-	httpTimeout     = 5 * time.Second
-	outputMaxLength = 1000
-	stderrMaxLength = 500
+	httpTimeout      = 5 * time.Second
+	outputMaxLength  = 1000
+	stderrMaxLength  = 500
+	truncationSuffix = "..."
 
 	// Backoff configuration constants
 	defaultBackoffBase = 2 * time.Second
@@ -381,7 +382,6 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		if cmd.Output != "" {
 			output := cmd.Output
 			if len(output) > outputMaxLength {
-				const truncationSuffix = "..."
 				truncationPoint := outputMaxLength - len(truncationSuffix)
 				output = output[:truncationPoint] + truncationSuffix
 			}
@@ -396,7 +396,6 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		if cmd.Stderr != "" && cmd.ExitCode != 0 {
 			stderr := cmd.Stderr
 			if len(stderr) > stderrMaxLength {
-				const truncationSuffix = "..."
 				truncationPoint := stderrMaxLength - len(truncationSuffix)
 				stderr = stderr[:truncationPoint] + truncationSuffix
 			}
