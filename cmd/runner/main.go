@@ -267,7 +267,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	// Ensure cleanup of all resources on exit
 	defer func() {
 		if err := r.CleanupAllResources(); err != nil {
-			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runID)
+			slog.Warn("Failed to cleanup resources", slog.Any("error", err), slog.String("run_id", runID))
 		}
 	}()
 

@@ -195,14 +195,14 @@ func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPat
 	if err := tempFile.Close(); err != nil {
 		// Only log if it's not a "file already closed" error
 		if !errors.Is(err, os.ErrClosed) {
-			slog.Warn("failed to close temporary file during cleanup", "path", tempPath, "error", err)
+			slog.Warn("failed to close temporary file during cleanup", slog.String("path", tempPath), slog.Any("error", err))
 		}
 	}
 
 	// Remove temporary file if it still exists
 	// Log removal errors as warnings since they don't affect the main operation
 	if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
-		slog.Warn("failed to remove temporary file", "path", tempPath, "error", removeErr)
+		slog.Warn("failed to remove temporary file", slog.String("path", tempPath), slog.Any("error", removeErr))
 	}
 }
 

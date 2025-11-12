@@ -152,7 +152,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 
 	// Warn about invalid log level after logger is properly set up
 	if invalidLogLevel {
-		slog.Warn("Invalid log level provided, defaulting to INFO", "provided", config.Level)
+		slog.Warn("Invalid log level provided, defaulting to INFO", slog.Any("provided", config.Level))
 	}
 
 	return nil

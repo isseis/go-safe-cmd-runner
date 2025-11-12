@@ -479,7 +479,7 @@ func hasUserGroupCommands(configSpec *runnertypes.ConfigSpec) bool {
 func getCurrentUser() string {
 	currentUser, err := user.Current()
 	if err != nil {
-		slog.Warn("Failed to get current user", "error", err)
+		slog.Warn("Failed to get current user", slog.Any("error", err))
 		return "unknown"
 	}
 	return currentUser.Username

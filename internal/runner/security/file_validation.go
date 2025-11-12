@@ -21,24 +21,24 @@ func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.Fi
 	}
 	if !filepath.IsAbs(path) {
 		err := fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, path)
-		slog.Error("Path validation failed", "path", path, "error", err)
+		slog.Error("Path validation failed", slog.String("path", path), slog.Any("error", err))
 		return "", nil, err
 	}
 
 	// Clean and validate the path
 	cleanPath := filepath.Clean(path)
-	slog.Debug("Validating "+pathType+" permissions", "path", cleanPath)
+	slog.Debug("Validating "+pathType+" permissions", slog.String("path", cleanPath))
 
 	if len(cleanPath) > v.config.MaxPathLength {
 		err := fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
-		slog.Error("Path validation failed", "path", cleanPath, "error", err, "max_length", v.config.MaxPathLength)
+		slog.Error("Path validation failed", slog.String("path", cleanPath), slog.Any("error", err), slog.Int("max_length", v.config.MaxPathLength))
 		return "", nil, err
 	}
 
 	// Get file info
 	fileInfo, err := v.fs.Lstat(cleanPath)
 	if err != nil {
-		slog.Error("Failed to get "+pathType+" info", "path", cleanPath, "error", err)
+		slog.Error("Failed to get "+pathType+" info", slog.String("path", cleanPath), slog.Any("error", err))
 		return "", nil, fmt.Errorf("failed to stat %s: %w", cleanPath, err)
 	}
 
@@ -55,7 +55,7 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 	// Check if it's a regular file
 	if !fileInfo.Mode().IsRegular() {
 		err := fmt.Errorf("%w: %s is not a regular file", ErrInvalidFilePermissions, cleanPath)
-		slog.Warn("Invalid file type", "path", cleanPath, "mode", fileInfo.Mode().String())
+		slog.Warn("Invalid file type", slog.String("path", cleanPath), slog.String("mode", fileInfo.Mode().String()))
 		return err
 	}
 
@@ -63,7 +63,7 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 	requiredPerms := v.config.RequiredFilePermissions
 	pathType := "file"
 
-	slog.Debug("Checking "+pathType+" permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", requiredPerms))
+	slog.Debug("Checking "+pathType+" permissions", slog.String("path", cleanPath), slog.String("current_permissions", fmt.Sprintf("%04o", perm)), slog.String("max_allowed", fmt.Sprintf("%04o", requiredPerms)))
 
 	disallowedBits := perm &^ requiredPerms
 	if disallowedBits != 0 {
@@ -73,15 +73,15 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 
 		slog.Warn(
 			"Insecure "+pathType+" permissions detected",
-			"path", cleanPath,
-			"current_permissions", fmt.Sprintf("%04o", perm),
-			"disallowed_bits", fmt.Sprintf("%04o", disallowedBits),
-			"max_allowed", fmt.Sprintf("%04o", requiredPerms))
+			slog.String("path", cleanPath),
+			slog.String("current_permissions", fmt.Sprintf("%04o", perm)),
+			slog.String("disallowed_bits", fmt.Sprintf("%04o", disallowedBits)),
+			slog.String("max_allowed", fmt.Sprintf("%04o", requiredPerms)))
 
 		return err
 	}
 
-	slog.Debug(pathType+" permissions validated successfully", "path", cleanPath, "permissions", fmt.Sprintf("%04o", perm))
+	slog.Debug(pathType+" permissions validated successfully", slog.String("path", cleanPath), slog.String("permissions", fmt.Sprintf("%04o", perm)))
 	return nil
 }
 
@@ -96,7 +96,7 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 	// Check if it's a directory
 	if !dirInfo.Mode().IsDir() {
 		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, dirPath)
-		slog.Warn("Invalid directory type", "path", dirPath, "mode", dirInfo.Mode().String())
+		slog.Warn("Invalid directory type", slog.String("path", dirPath), slog.String("mode", dirInfo.Mode().String()))
 		return err
 	}
 
@@ -111,15 +111,15 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 // with proper realUID context for permission checks
 // cleanDir must be absolute and cleaned.
 func (v *Validator) validateCompletePath(cleanPath string, originalPath string, realUID int) error {
-	slog.Debug("Validating complete path security with UID context", "target_path", originalPath, "realUID", realUID)
+	slog.Debug("Validating complete path security with UID context", slog.String("target_path", originalPath), slog.Int("realUID", realUID))
 
 	// Validate each directory component from target to root
 	for currentPath := cleanPath; ; {
-		slog.Debug("Validating path component with UID context", "component_path", currentPath)
+		slog.Debug("Validating path component with UID context", slog.String("component_path", currentPath))
 
 		info, err := v.fs.Lstat(currentPath)
 		if err != nil {
-			slog.Error("Failed to stat path component", "path", currentPath, "error", err)
+			slog.Error("Failed to stat path component", slog.String("path", currentPath), slog.Any("error", err))
 			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
 		}
 
@@ -138,7 +138,7 @@ func (v *Validator) validateCompletePath(cleanPath string, originalPath string, 
 		currentPath = parentPath
 	}
 
-	slog.Debug("Complete path validation with UID context successful", "original_path", originalPath, "final_path", cleanPath, "realUID", realUID)
+	slog.Debug("Complete path validation with UID context successful", slog.String("original_path", originalPath), slog.String("final_path", cleanPath), slog.Int("realUID", realUID))
 	return nil
 }
 
@@ -183,12 +183,12 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 		if isStickyDirectory(info) {
 			// Sticky bit is set, world-writable is acceptable
 			slog.Debug("Directory is world-writable but has sticky bit set (safe)",
-				"path", dirPath,
-				"permissions", fmt.Sprintf("%04o", perm))
+				slog.String("path", dirPath),
+				slog.String("permissions", fmt.Sprintf("%04o", perm)))
 		} else {
 			slog.Error("Directory writable by others detected",
-				"path", dirPath,
-				"permissions", fmt.Sprintf("%04o", perm))
+				slog.String("path", dirPath),
+				slog.String("permissions", fmt.Sprintf("%04o", perm)))
 			return fmt.Errorf("%w: directory %s is writable by others (%04o)",
 				ErrInvalidDirPermissions, dirPath, perm)
 		}
@@ -207,10 +207,10 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 			// For non-root owned directories, validate owner matches realUID
 			if int(stat.Uid) != realUID {
 				slog.Error("Directory has owner write permissions but owner is not the execution user",
-					"path", dirPath,
-					"permissions", fmt.Sprintf("%04o", perm),
-					"directory_owner_uid", stat.Uid,
-					"execution_user_uid", realUID)
+					slog.String("path", dirPath),
+					slog.String("permissions", fmt.Sprintf("%04o", perm)),
+					slog.Any("directory_owner_uid", stat.Uid),
+					slog.Int("execution_user_uid", realUID))
 				return fmt.Errorf("%w: directory %s is owned by UID %d but execution user is UID %d",
 					ErrInvalidDirPermissions, dirPath, stat.Uid, realUID)
 			}
@@ -247,8 +247,8 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 	if v.groupMembership == nil {
 		// No group membership checker available, fall back to strict check
 		slog.Error("Directory has group write permissions but cannot verify group membership",
-			"path", dirPath,
-			"permissions", fmt.Sprintf("%04o", perm))
+			slog.String("path", dirPath),
+			slog.String("permissions", fmt.Sprintf("%04o", perm)))
 		return fmt.Errorf("%w: directory %s has group write permissions (%04o) but group membership cannot be verified",
 			ErrInvalidDirPermissions, dirPath, perm)
 	}
@@ -258,18 +258,18 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 	if err != nil {
 		// Convert groupmembership errors to security context errors
 		slog.Error("Directory security validation failed",
-			"path", dirPath,
-			"permissions", fmt.Sprintf("%04o", perm),
-			"user_uid", realUID,
-			"error", err)
+			slog.String("path", dirPath),
+			slog.String("permissions", fmt.Sprintf("%04o", perm)),
+			slog.Int("user_uid", realUID),
+			slog.Any("error", err))
 		return fmt.Errorf("%w: directory %s failed security validation: %v",
 			ErrInvalidDirPermissions, dirPath, err)
 	}
 	if !canSafelyWrite {
 		slog.Error("Directory security validation failed - write not safe",
-			"path", dirPath,
-			"permissions", fmt.Sprintf("%04o", perm),
-			"user_uid", realUID)
+			slog.String("path", dirPath),
+			slog.String("permissions", fmt.Sprintf("%04o", perm)),
+			slog.Int("user_uid", realUID))
 		return fmt.Errorf("%w: directory %s - user UID %d cannot safely write to this directory",
 			ErrInvalidDirPermissions, dirPath, realUID)
 	}
@@ -398,23 +398,23 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 			// For directories with sticky bit, world-writable is acceptable
 			if isStickyDirectory(stat) {
 				slog.Debug("Directory is world-writable but has sticky bit set (safe)",
-					"path", path,
-					"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()))
+					slog.String("path", path),
+					slog.String("permissions", fmt.Sprintf("%04o", stat.Mode().Perm())))
 				return nil
 			}
 			// Distinguish between directories and files in error messages
 			if stat.Mode().IsDir() {
 				slog.Error("Directory writable by others detected",
-					"path", path,
-					"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
-					"uid", realUID)
+					slog.String("path", path),
+					slog.String("permissions", fmt.Sprintf("%04o", stat.Mode().Perm())),
+					slog.Int("uid", realUID))
 				return fmt.Errorf("%w: directory %s is writable by others (%04o), which poses security risks",
 					ErrInvalidDirPermissions, path, stat.Mode().Perm())
 			}
 			slog.Error("File writable by others detected",
-				"path", path,
-				"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
-				"uid", realUID)
+				slog.String("path", path),
+				slog.String("permissions", fmt.Sprintf("%04o", stat.Mode().Perm())),
+				slog.Int("uid", realUID))
 			return fmt.Errorf("%w: file %s is writable by others (%04o), which poses security risks",
 				ErrInvalidFilePermissions, path, stat.Mode().Perm())
 		}
@@ -424,10 +424,10 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 			pathType = "directory"
 		}
 		slog.Warn("Allowing world-writable access in test mode",
-			"path", path,
-			"path_type", pathType,
-			"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
-			"uid", realUID)
+			slog.String("path", path),
+			slog.String("path_type", pathType),
+			slog.String("permissions", fmt.Sprintf("%04o", stat.Mode().Perm())),
+			slog.Int("uid", realUID))
 		return nil
 	}
 

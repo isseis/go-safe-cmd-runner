@@ -58,7 +58,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 		timestamp := time.Now().Format("20060102150405")
 		tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
 		m.tempDirPath = tempDir
-		slog.Info("[DRY-RUN] Would create temporary directory", "group", m.groupName, "path", tempDir)
+		slog.Info("[DRY-RUN] Would create temporary directory", slog.String("group", m.groupName), slog.String("path", tempDir))
 		return tempDir, nil
 	}
 
@@ -77,7 +77,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 	}
 
 	m.tempDirPath = tempDir
-	slog.Info("Created temporary directory", "group", m.groupName, "path", tempDir)
+	slog.Info("Created temporary directory", slog.String("group", m.groupName), slog.String("path", tempDir))
 	return tempDir, nil
 }
 
@@ -89,7 +89,7 @@ func (m *DefaultTempDirManager) Cleanup() error {
 
 	if m.isDryRun {
 		// Dry-run mode: log only
-		slog.Debug("[DRY-RUN] Would delete temporary directory", "path", m.tempDirPath)
+		slog.Debug("[DRY-RUN] Would delete temporary directory", slog.String("path", m.tempDirPath))
 		m.tempDirPath = ""
 		return nil
 	}
@@ -98,11 +98,11 @@ func (m *DefaultTempDirManager) Cleanup() error {
 	err := os.RemoveAll(m.tempDirPath)
 	if err != nil {
 		// Return wrapped error; caller decides whether this is fatal
-		slog.Error("Failed to cleanup temporary directory", "path", m.tempDirPath, "error", err)
+		slog.Error("Failed to cleanup temporary directory", slog.String("path", m.tempDirPath), slog.Any("error", err))
 		return fmt.Errorf("failed to cleanup temporary directory '%s': %w", m.tempDirPath, err)
 	}
 
-	slog.Debug("Cleaned up temporary directory", "path", m.tempDirPath)
+	slog.Debug("Cleaned up temporary directory", slog.String("path", m.tempDirPath))
 	m.tempDirPath = ""
 	return nil
 }
