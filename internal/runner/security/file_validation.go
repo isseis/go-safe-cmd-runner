@@ -209,7 +209,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 				slog.Error("Directory has owner write permissions but owner is not the execution user",
 					slog.String("path", dirPath),
 					slog.String("permissions", fmt.Sprintf("%04o", perm)),
-					slog.Uint64("directory_owner_uid", uint64(stat.Uid)),
+					slog.Any("directory_owner_uid", stat.Uid),
 					slog.Int("execution_user_uid", realUID))
 				return fmt.Errorf("%w: directory %s is owned by UID %d but execution user is UID %d",
 					ErrInvalidDirPermissions, dirPath, stat.Uid, realUID)
