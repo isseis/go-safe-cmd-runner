@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Environment variable names
@@ -91,9 +93,9 @@ func handleErrorCommon(errorType ErrorType, errorMsg, component, runID, slogMess
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
 		slog.Error(slogMessage,
-			"error_type", string(errorType),
-			"error_message", errorMsg,
-			"component", component,
+			common.LogAttrErrorType, string(errorType),
+			common.LogAttrErrorMessage, errorMsg,
+			common.LogAttrComponent, component,
 			"run_id", runID,
 			"slack_notify", true,
 			"message_type", slogMessageType,

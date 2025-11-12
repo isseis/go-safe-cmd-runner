@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -427,11 +428,11 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			recordAttrs: []slog.Attr{
 				slog.Bool("slack_notify", true),
 				slog.String("message_type", "command_group_summary"),
-				slog.String("status", "success"),
-				slog.String("group", "test-group"),
+				slog.String(common.LogAttrStatus, "success"),
+				slog.String(common.LogAttrGroup, "test-group"),
 				slog.String("command", "echo test"),
 				slog.Int("exit_code", 0),
-				slog.Int64("duration_ms", 100),
+				slog.Int64(common.LogAttrDurationMs, 100),
 			},
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,

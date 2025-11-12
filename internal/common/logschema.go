@@ -11,6 +11,23 @@ const (
 	LogFieldStderr   = "stderr"    // string - command stderr
 )
 
+// Log attribute keys for command group execution summary
+// Used in runner.logGroupExecutionSummary and logging.buildCommandGroupSummary
+const (
+	LogAttrStatus     = "status"      // string - execution status (success/error)
+	LogAttrGroup      = "group"       // string - group name
+	LogAttrDurationMs = "duration_ms" // int64 - execution duration in milliseconds
+	LogAttrCommands   = "commands"    // []CommandResult - list of command results
+)
+
+// Log attribute keys for pre-execution errors
+// Used in logging.HandlePreExecutionError and logging.buildPreExecutionError
+const (
+	LogAttrErrorType    = "error_type"    // string - error type identifier
+	LogAttrErrorMessage = "error_message" // string - error message details
+	LogAttrComponent    = "component"     // string - component where error occurred
+)
+
 // CommandResultFields defines the structure and types for command result log fields.
 // This struct serves as the canonical definition of the schema used for logging command results.
 //
