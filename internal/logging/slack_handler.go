@@ -391,7 +391,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 				output = output[:truncationPoint] + truncationSuffix
 			}
 			fields = append(fields, SlackAttachmentField{
-				Title: "  -> Output",
+				Title: "  ↳ Output",
 				Value: fmt.Sprintf("```\n%s\n```", output),
 				Short: false,
 			})
@@ -405,7 +405,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 				stderr = stderr[:truncationPoint] + truncationSuffix
 			}
 			fields = append(fields, SlackAttachmentField{
-				Title: "  -> Error",
+				Title: "  ↳ Error",
 				Value: fmt.Sprintf("```\n%s\n```", stderr),
 				Short: false,
 			})
