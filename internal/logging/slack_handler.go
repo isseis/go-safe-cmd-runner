@@ -595,7 +595,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 					},
 					{
 						Title: "Error Output",
-						Value: fmt.Sprintf("```%s```", stderr),
+						Value: fmt.Sprintf("```\n%s\n```", stderr),
 						Short: false,
 					},
 					{
