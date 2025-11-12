@@ -31,6 +31,15 @@ const (
 	colorDanger  = "danger"
 	colorWarning = "warning"
 	colorGood    = "good"
+
+	// Emoji icon constants
+	emojiSuccess = "✅"
+	emojiFailure = "❌"
+	emojiWarning = "⚠️"
+	emojiAlert   = "🚨"
+
+	// Special character constants
+	arrowIndent = "  ↳"
 )
 
 // BackoffConfig defines the retry backoff configuration
@@ -337,13 +346,13 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 	switch status {
 	case "success":
 		color = colorGood
-		titleIcon = "✅"
+		titleIcon = emojiSuccess
 	case "error":
 		color = colorDanger
-		titleIcon = "❌"
+		titleIcon = emojiFailure
 	default:
 		color = colorWarning
-		titleIcon = "⚠️"
+		titleIcon = emojiWarning
 	}
 
 	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
@@ -369,9 +378,9 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 
 	// Add individual command results
 	for _, cmd := range commands {
-		statusIcon := "✅"
+		statusIcon := emojiSuccess
 		if cmd.ExitCode != 0 {
-			statusIcon = "❌"
+			statusIcon = emojiFailure
 		}
 
 		// Build command summary
@@ -391,7 +400,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 				output = output[:truncationPoint] + truncationSuffix
 			}
 			fields = append(fields, SlackAttachmentField{
-				Title: "  ↳ Output",
+				Title: arrowIndent + " Output",
 				Value: fmt.Sprintf("```\n%s\n```", output),
 				Short: false,
 			})
@@ -405,7 +414,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 				stderr = stderr[:truncationPoint] + truncationSuffix
 			}
 			fields = append(fields, SlackAttachmentField{
-				Title: "  ↳ Error",
+				Title: arrowIndent + " Error",
 				Value: fmt.Sprintf("```\n%s\n```", stderr),
 				Short: false,
 			})
@@ -444,7 +453,7 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("🚨 Error: %s", errorType),
+		Text: fmt.Sprintf("%s Error: %s", emojiAlert, errorType),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorDanger,
@@ -504,7 +513,7 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("🚨 Security Alert: %s", eventType),
+		Text: fmt.Sprintf("%s Security Alert: %s", emojiAlert, eventType),
 		Attachments: []SlackAttachment{
 			{
 				Color: color,
@@ -573,7 +582,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("❌ Privileged Command Failed: %s", commandName),
+		Text: fmt.Sprintf("%s Privileged Command Failed: %s", emojiFailure, commandName),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorDanger,
@@ -637,7 +646,7 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("⚠️ Privilege Escalation Failed: %s", operation),
+		Text: fmt.Sprintf("%s Privilege Escalation Failed: %s", emojiWarning, operation),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorWarning,
