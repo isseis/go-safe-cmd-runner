@@ -478,11 +478,11 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "event_type":
+		case common.SecurityAlertAttrs.EventType:
 			eventType = attr.Value.String()
-		case "severity":
+		case common.SecurityAlertAttrs.Severity:
 			severity = attr.Value.String()
-		case "message":
+		case common.SecurityAlertAttrs.Message:
 			details = attr.Value.String()
 		}
 		return true
@@ -490,9 +490,9 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 
 	color := colorDanger
 	switch severity {
-	case "critical":
+	case common.SeverityCritical:
 		color = colorDanger
-	case "high":
+	case common.SeverityHigh:
 		color = colorWarning
 	}
 
@@ -544,13 +544,13 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "command_name":
+		case common.PrivilegedCommandFailureAttrs.CommandName:
 			commandName = attr.Value.String()
-		case "command_path":
+		case common.PrivilegedCommandFailureAttrs.CommandPath:
 			commandPath = attr.Value.String()
-		case "stderr":
+		case common.PrivilegedCommandFailureAttrs.Stderr:
 			stderr = attr.Value.String()
-		case "exit_code":
+		case common.PrivilegedCommandFailureAttrs.ExitCode:
 			if attr.Value.Kind() == slog.KindInt64 {
 				exitCode = int(attr.Value.Int64())
 			}
@@ -613,15 +613,15 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "operation":
+		case common.PrivilegeEscalationFailureAttrs.Operation:
 			operation = attr.Value.String()
-		case "command_name":
+		case common.PrivilegeEscalationFailureAttrs.CommandName:
 			commandName = attr.Value.String()
-		case "original_uid":
+		case common.PrivilegeEscalationFailureAttrs.OriginalUID:
 			if attr.Value.Kind() == slog.KindInt64 {
 				originalUID = int(attr.Value.Int64())
 			}
-		case "target_uid":
+		case common.PrivilegeEscalationFailureAttrs.TargetUID:
 			if attr.Value.Kind() == slog.KindInt64 {
 				targetUID = int(attr.Value.Int64())
 			}

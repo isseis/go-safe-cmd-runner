@@ -37,6 +37,52 @@ var PreExecErrorAttrs = struct {
 	Component:    "component",
 }
 
+// PrivilegeEscalationFailureAttrs contains attribute keys for privilege escalation failure logs.
+// Used in audit.Logger.LogPrivilegeEscalation (write) and logging.buildPrivilegeEscalationFailure (read).
+var PrivilegeEscalationFailureAttrs = struct {
+	Operation   string // operation being performed
+	CommandName string // command name
+	OriginalUID string // original user ID
+	TargetUID   string // target user ID
+}{
+	Operation:   "operation",
+	CommandName: "command_name",
+	OriginalUID: "original_uid",
+	TargetUID:   "target_uid",
+}
+
+// PrivilegedCommandFailureAttrs contains attribute keys for privileged command failure logs.
+// Used in logging.buildPrivilegedCommandFailure (read). Write side not yet implemented.
+var PrivilegedCommandFailureAttrs = struct {
+	CommandName string // command name
+	CommandPath string // command path
+	Stderr      string // standard error output
+	ExitCode    string // exit code
+}{
+	CommandName: "command_name",
+	CommandPath: "command_path",
+	Stderr:      "stderr",
+	ExitCode:    "exit_code",
+}
+
+// SecurityAlertAttrs contains attribute keys for security alert logs.
+// Used in audit.Logger.LogSecurityEvent (write) and logging.buildSecurityAlert (read).
+var SecurityAlertAttrs = struct {
+	EventType string // event type identifier
+	Severity  string // severity level (critical/high/medium/low)
+	Message   string // alert message details
+}{
+	EventType: "event_type",
+	Severity:  "severity",
+	Message:   "message",
+}
+
+// SecuritySeverity defines severity levels for security events
+const (
+	SeverityCritical = "critical" // Critical severity - requires immediate attention
+	SeverityHigh     = "high"     // High severity - requires prompt attention
+)
+
 // CommandResultFields defines the structure and types for command result log fields.
 // This struct serves as the canonical definition of the schema used for logging command results.
 //
