@@ -469,10 +469,10 @@ func (r *Runner) SetDryRunExecutionError(errType, message, component string, det
 func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration) {
 	slog.Info(
 		"Command group execution completed",
-		common.LogAttrGroup, groupSpec.Name,
-		common.LogAttrStatus, result.status,
-		common.LogAttrCommands, result.commands,
-		common.LogAttrDurationMs, duration.Milliseconds(),
+		common.GroupSummaryAttrs.Group, groupSpec.Name,
+		common.GroupSummaryAttrs.Status, result.status,
+		common.GroupSummaryAttrs.Commands, result.commands,
+		common.GroupSummaryAttrs.DurationMs, duration.Milliseconds(),
 		"run_id", r.runID,
 		"slack_notify", true,
 		"message_type", "command_group_summary",

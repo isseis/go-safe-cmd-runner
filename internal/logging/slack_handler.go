@@ -305,15 +305,15 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case common.LogAttrStatus:
+		case common.GroupSummaryAttrs.Status:
 			status = attr.Value.String()
-		case common.LogAttrGroup:
+		case common.GroupSummaryAttrs.Group:
 			group = attr.Value.String()
-		case common.LogAttrDurationMs:
+		case common.GroupSummaryAttrs.DurationMs:
 			if attr.Value.Kind() == slog.KindInt64 {
 				duration = time.Duration(attr.Value.Int64()) * time.Millisecond
 			}
-		case common.LogAttrCommands:
+		case common.GroupSummaryAttrs.Commands:
 			commandsAttr = attr
 			hasCommandsAttr = true
 		}
@@ -426,11 +426,11 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case common.LogAttrErrorType:
+		case common.PreExecErrorAttrs.ErrorType:
 			errorType = attr.Value.String()
-		case common.LogAttrErrorMessage:
+		case common.PreExecErrorAttrs.ErrorMessage:
 			errorMsg = attr.Value.String()
-		case common.LogAttrComponent:
+		case common.PreExecErrorAttrs.Component:
 			component = attr.Value.String()
 		}
 		return true

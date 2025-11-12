@@ -11,22 +11,31 @@ const (
 	LogFieldStderr   = "stderr"    // string - command stderr
 )
 
-// Log attribute keys for command group execution summary
-// Used in runner.logGroupExecutionSummary and logging.buildCommandGroupSummary
-const (
-	LogAttrStatus     = "status"      // string - execution status (success/error)
-	LogAttrGroup      = "group"       // string - group name
-	LogAttrDurationMs = "duration_ms" // int64 - execution duration in milliseconds
-	LogAttrCommands   = "commands"    // []CommandResult - list of command results
-)
+// GroupSummaryAttrs contains attribute keys for command group execution summary logs.
+// Used in runner.logGroupExecutionSummary (write) and logging.buildCommandGroupSummary (read).
+var GroupSummaryAttrs = struct {
+	Status     string // execution status (success/error)
+	Group      string // group name
+	DurationMs string // execution duration in milliseconds (int64)
+	Commands   string // list of command results ([]CommandResult)
+}{
+	Status:     "status",
+	Group:      "group",
+	DurationMs: "duration_ms",
+	Commands:   "commands",
+}
 
-// Log attribute keys for pre-execution errors
-// Used in logging.HandlePreExecutionError and logging.buildPreExecutionError
-const (
-	LogAttrErrorType    = "error_type"    // string - error type identifier
-	LogAttrErrorMessage = "error_message" // string - error message details
-	LogAttrComponent    = "component"     // string - component where error occurred
-)
+// PreExecErrorAttrs contains attribute keys for pre-execution error logs.
+// Used in logging.HandlePreExecutionError (write) and logging.buildPreExecutionError (read).
+var PreExecErrorAttrs = struct {
+	ErrorType    string // error type identifier
+	ErrorMessage string // error message details
+	Component    string // component where error occurred
+}{
+	ErrorType:    "error_type",
+	ErrorMessage: "error_message",
+	Component:    "component",
+}
 
 // CommandResultFields defines the structure and types for command result log fields.
 // This struct serves as the canonical definition of the schema used for logging command results.
