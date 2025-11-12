@@ -74,44 +74,65 @@ func (e *PreExecutionError) Unwrap() error {
 	return e.Err
 }
 
+// errorHandlingParams contains parameters for error handling
+type errorHandlingParams struct {
+	errorType     ErrorType
+	errorMsg      string
+	component     string
+	runID         string
+	slogMessage   string
+	slogMsgType   string
+	summaryStatus string
+	slackNotify   bool
+}
+
 // handleErrorCommon is a private helper that contains the common error handling logic
 // for both pre-execution and execution errors
-func handleErrorCommon(errorType ErrorType, errorMsg, component, runID, slogMessage, slogMessageType, summaryStatus string) {
+func handleErrorCommon(params errorHandlingParams) {
 	// Build stderr output atomically to prevent interleaved output in concurrent scenarios
 	var stderrBuilder strings.Builder
-	fmt.Fprintf(&stderrBuilder, "Error: %s\n", errorType)
-	if component != "" {
-		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", component)
+	fmt.Fprintf(&stderrBuilder, "Error: %s\n", params.errorType)
+	if params.component != "" {
+		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", params.component)
 	}
-	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", errorMsg)
-	if runID != "" {
-		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", runID)
+	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", params.errorMsg)
+	if params.runID != "" {
+		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", params.runID)
 	}
 	// Write to stderr atomically
 	fmt.Fprint(os.Stderr, stderrBuilder.String())
 
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
-		slog.Error(slogMessage,
-			common.PreExecErrorAttrs.ErrorType, string(errorType),
-			common.PreExecErrorAttrs.ErrorMessage, errorMsg,
-			common.PreExecErrorAttrs.Component, component,
-			"run_id", runID,
-			"slack_notify", true,
-			"message_type", slogMessageType,
+		slog.Error(params.slogMessage,
+			common.PreExecErrorAttrs.ErrorType, string(params.errorType),
+			common.PreExecErrorAttrs.ErrorMessage, params.errorMsg,
+			common.PreExecErrorAttrs.Component, params.component,
+			"run_id", params.runID,
+			"slack_notify", params.slackNotify,
+			"message_type", params.slogMsgType,
 		)
 	}
 
 	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
 	var stdoutBuilder strings.Builder
-	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=%s duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", errorType, runID, summaryStatus)
+	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=%s duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", params.errorType, params.runID, params.summaryStatus)
 	// Write to stdout atomically
 	fmt.Print(stdoutBuilder.String())
 }
 
 // HandlePreExecutionError handles pre-execution errors by logging and notifying
 func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
-	handleErrorCommon(errorType, errorMsg, component, runID, "Pre-execution error occurred", "pre_execution_error", "pre_execution_error")
+	handleErrorCommon(errorHandlingParams{
+		errorType:     errorType,
+		errorMsg:      errorMsg,
+		component:     component,
+		runID:         runID,
+		slogMessage:   "Pre-execution error occurred",
+		slogMsgType:   "pre_execution_error",
+		summaryStatus: "pre_execution_error",
+		slackNotify:   true,
+	})
 }
 
 // HandleExecutionError handles execution errors (errors that occur during command execution)
@@ -133,5 +154,14 @@ func HandleExecutionError(execErr *ExecutionError) {
 		message = fmt.Sprintf("%s (%s)", message, contextStr)
 	}
 
-	handleErrorCommon(ErrorTypeSystemError, message, execErr.Component, execErr.RunID, "Execution error occurred", "execution_error", "execution_error")
+	handleErrorCommon(errorHandlingParams{
+		errorType:     ErrorTypeSystemError,
+		errorMsg:      message,
+		component:     execErr.Component,
+		runID:         execErr.RunID,
+		slogMessage:   "Execution error occurred",
+		slogMsgType:   "execution_error",
+		summaryStatus: "execution_error",
+		slackNotify:   false,
+	})
 }
