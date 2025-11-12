@@ -1981,12 +1981,12 @@ func TestRunner_ExecutorUsesDefaultLogger(t *testing.T) {
 func TestCommandResult_LogValue(t *testing.T) {
 	tests := []struct {
 		name     string
-		result   CommandResult
+		result   common.CommandResult
 		expected map[string]any
 	}{
 		{
 			name: "complete result",
-			result: CommandResult{
+			result: common.CommandResult{
 				CommandResultFields: common.CommandResultFields{
 					Name:     "test-cmd",
 					ExitCode: 0,
@@ -2003,7 +2003,7 @@ func TestCommandResult_LogValue(t *testing.T) {
 		},
 		{
 			name: "failed command with stderr",
-			result: CommandResult{
+			result: common.CommandResult{
 				CommandResultFields: common.CommandResultFields{
 					Name:     "failing-cmd",
 					ExitCode: 1,
@@ -2020,7 +2020,7 @@ func TestCommandResult_LogValue(t *testing.T) {
 		},
 		{
 			name: "command with both output and stderr",
-			result: CommandResult{
+			result: common.CommandResult{
 				CommandResultFields: common.CommandResultFields{
 					Name:     "mixed-cmd",
 					ExitCode: 2,

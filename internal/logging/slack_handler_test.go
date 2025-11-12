@@ -431,18 +431,22 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				slog.String(common.GroupSummaryAttrs.Status, "success"),
 				slog.String(common.GroupSummaryAttrs.Group, "test-group"),
 				slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
-				slog.Any(common.GroupSummaryAttrs.Commands, []any{
-					[]slog.Attr{
-						slog.String(common.LogFieldName, "echo test"),
-						slog.Int(common.LogFieldExitCode, 0),
-						slog.String(common.LogFieldOutput, "test output"),
-						slog.String(common.LogFieldStderr, ""),
+				slog.Any(common.GroupSummaryAttrs.Commands, []common.CommandResult{
+					{
+						CommandResultFields: common.CommandResultFields{
+							Name:     "echo test",
+							ExitCode: 0,
+							Output:   "test output",
+							Stderr:   "",
+						},
 					},
-					[]slog.Attr{
-						slog.String(common.LogFieldName, "echo test2"),
-						slog.Int(common.LogFieldExitCode, 1),
-						slog.String(common.LogFieldOutput, ""),
-						slog.String(common.LogFieldStderr, "error output"),
+					{
+						CommandResultFields: common.CommandResultFields{
+							Name:     "echo test2",
+							ExitCode: 1,
+							Output:   "",
+							Stderr:   "error output",
+						},
 					},
 				}),
 			},
