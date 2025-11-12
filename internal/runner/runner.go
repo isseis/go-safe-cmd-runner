@@ -55,6 +55,16 @@ type CommandResult struct {
 	Stderr   string
 }
 
+// LogValue implements slog.LogValuer to provide structured logging support
+func (c CommandResult) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("name", c.Name),
+		slog.Int("exit_code", c.ExitCode),
+		slog.String("output", c.Output),
+		slog.String("stderr", c.Stderr),
+	)
+}
+
 // groupExecutionResult holds the result of group execution for notification
 type groupExecutionResult struct {
 	status   GroupExecutionStatus

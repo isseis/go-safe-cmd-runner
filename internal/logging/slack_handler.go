@@ -242,23 +242,31 @@ type commandResultInfo struct {
 }
 
 // extractCommandResults extracts command results from slog Any value
+// The structure is created by CommandResult.LogValue() which returns a GroupValue with:
+// - "name" (string)
+// - "exit_code" (int)
+// - "output" (string)
+// - "stderr" (string)
 func extractCommandResults(cmdSlice []any) []commandResultInfo {
 	var commands []commandResultInfo
 	for _, cmdAny := range cmdSlice {
-		// Try to extract as a map (reflection converts struct to map)
-		if cmdMap, ok := cmdAny.(map[string]any); ok {
+		// CommandResult.LogValue() returns a slog.GroupValue
+		// When retrieved via Any(), it becomes a []slog.Attr
+		if attrs, ok := cmdAny.([]slog.Attr); ok {
 			cmdInfo := commandResultInfo{}
-			if name, ok := cmdMap["Name"].(string); ok {
-				cmdInfo.name = name
-			}
-			if exitCode, ok := cmdMap["ExitCode"].(int); ok {
-				cmdInfo.exitCode = exitCode
-			}
-			if output, ok := cmdMap["Output"].(string); ok {
-				cmdInfo.output = output
-			}
-			if stderr, ok := cmdMap["Stderr"].(string); ok {
-				cmdInfo.stderr = stderr
+			for _, attr := range attrs {
+				switch attr.Key {
+				case "name":
+					cmdInfo.name = attr.Value.String()
+				case "exit_code":
+					if attr.Value.Kind() == slog.KindInt64 {
+						cmdInfo.exitCode = int(attr.Value.Int64())
+					}
+				case "output":
+					cmdInfo.output = attr.Value.String()
+				case "stderr":
+					cmdInfo.stderr = attr.Value.String()
+				}
 			}
 			commands = append(commands, cmdInfo)
 		}
