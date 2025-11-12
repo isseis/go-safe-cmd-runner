@@ -259,10 +259,12 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 
 		// Record command result
 		cmdResult := CommandResult{
-			Name:     cmdSpec.Name,
-			ExitCode: exitCode,
-			Output:   stdout,
-			Stderr:   stderr,
+			CommandResultFields: common.CommandResultFields{
+				Name:     cmdSpec.Name,
+				ExitCode: exitCode,
+				Output:   stdout,
+				Stderr:   stderr,
+			},
 		}
 		commandResults = append(commandResults, cmdResult)
 

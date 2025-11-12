@@ -1987,10 +1987,12 @@ func TestCommandResult_LogValue(t *testing.T) {
 		{
 			name: "complete result",
 			result: CommandResult{
-				Name:     "test-cmd",
-				ExitCode: 0,
-				Output:   "success output",
-				Stderr:   "",
+				CommandResultFields: common.CommandResultFields{
+					Name:     "test-cmd",
+					ExitCode: 0,
+					Output:   "success output",
+					Stderr:   "",
+				},
 			},
 			expected: map[string]any{
 				"name":      "test-cmd",
@@ -2002,10 +2004,12 @@ func TestCommandResult_LogValue(t *testing.T) {
 		{
 			name: "failed command with stderr",
 			result: CommandResult{
-				Name:     "failing-cmd",
-				ExitCode: 1,
-				Output:   "",
-				Stderr:   "error message",
+				CommandResultFields: common.CommandResultFields{
+					Name:     "failing-cmd",
+					ExitCode: 1,
+					Output:   "",
+					Stderr:   "error message",
+				},
 			},
 			expected: map[string]any{
 				"name":      "failing-cmd",
@@ -2017,10 +2021,12 @@ func TestCommandResult_LogValue(t *testing.T) {
 		{
 			name: "command with both output and stderr",
 			result: CommandResult{
-				Name:     "mixed-cmd",
-				ExitCode: 2,
-				Output:   "some output",
-				Stderr:   "some error",
+				CommandResultFields: common.CommandResultFields{
+					Name:     "mixed-cmd",
+					ExitCode: 2,
+					Output:   "some output",
+					Stderr:   "some error",
+				},
 			},
 			expected: map[string]any{
 				"name":      "mixed-cmd",

@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 const (
@@ -234,19 +236,21 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 }
 
 // commandResultInfo holds command execution result information extracted from log attributes
+// It embeds common.CommandResultFields to ensure type consistency with runner.CommandResult
 type commandResultInfo struct {
-	name     string
-	exitCode int
-	output   string
-	stderr   string
+	common.CommandResultFields
 }
 
 // extractCommandResults extracts command results from slog Any value
-// The structure is created by CommandResult.LogValue() which returns a GroupValue with:
-// - "name" (string)
-// - "exit_code" (int)
-// - "output" (string)
-// - "stderr" (string)
+// The structure is created by runner.CommandResult.LogValue() which returns a GroupValue.
+//
+// IMPORTANT: Field keys must match common.LogField* constants defined in internal/common/logschema.go:
+//   - common.LogFieldName     -> string (command name)
+//   - common.LogFieldExitCode -> int (command exit code)
+//   - common.LogFieldOutput   -> string (command stdout)
+//   - common.LogFieldStderr   -> string (command stderr)
+//
+// Schema consistency is enforced by integration tests in slack_handler_test.go
 func extractCommandResults(cmdSlice []any) []commandResultInfo {
 	var commands []commandResultInfo
 	for _, cmdAny := range cmdSlice {
@@ -256,16 +260,16 @@ func extractCommandResults(cmdSlice []any) []commandResultInfo {
 			cmdInfo := commandResultInfo{}
 			for _, attr := range attrs {
 				switch attr.Key {
-				case "name":
-					cmdInfo.name = attr.Value.String()
-				case "exit_code":
+				case common.LogFieldName:
+					cmdInfo.Name = attr.Value.String()
+				case common.LogFieldExitCode:
 					if attr.Value.Kind() == slog.KindInt64 {
-						cmdInfo.exitCode = int(attr.Value.Int64())
+						cmdInfo.ExitCode = int(attr.Value.Int64())
 					}
-				case "output":
-					cmdInfo.output = attr.Value.String()
-				case "stderr":
-					cmdInfo.stderr = attr.Value.String()
+				case common.LogFieldOutput:
+					cmdInfo.Output = attr.Value.String()
+				case common.LogFieldStderr:
+					cmdInfo.Stderr = attr.Value.String()
 				}
 			}
 			commands = append(commands, cmdInfo)
@@ -351,12 +355,12 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 	// Add individual command results
 	for _, cmd := range commands {
 		statusIcon := "✅"
-		if cmd.exitCode != 0 {
+		if cmd.ExitCode != 0 {
 			statusIcon = "❌"
 		}
 
 		// Build command summary
-		cmdSummary := fmt.Sprintf("%s `%s` (exit: %d)", statusIcon, cmd.name, cmd.exitCode)
+		cmdSummary := fmt.Sprintf("%s `%s` (exit: %d)", statusIcon, cmd.Name, cmd.ExitCode)
 
 		fields = append(fields, SlackAttachmentField{
 			Title: "Command",
@@ -365,8 +369,8 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		})
 
 		// Add output if present and not too long
-		if cmd.output != "" {
-			output := cmd.output
+		if cmd.Output != "" {
+			output := cmd.Output
 			if len(output) > outputMaxLength {
 				const truncationSuffix = "..."
 				truncationPoint := outputMaxLength - len(truncationSuffix)
@@ -380,8 +384,8 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		}
 
 		// Add stderr if present and command failed
-		if cmd.stderr != "" && cmd.exitCode != 0 {
-			stderr := cmd.stderr
+		if cmd.Stderr != "" && cmd.ExitCode != 0 {
+			stderr := cmd.Stderr
 			if len(stderr) > stderrMaxLength {
 				const truncationSuffix = "..."
 				truncationPoint := stderrMaxLength - len(truncationSuffix)

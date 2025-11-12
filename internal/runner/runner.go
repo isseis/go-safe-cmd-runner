@@ -48,20 +48,19 @@ const (
 
 // CommandResult holds the result of a single command execution
 // This is exported to allow the logging package to access command results
+// It embeds common.CommandResultFields to ensure type consistency across the codebase
 type CommandResult struct {
-	Name     string
-	ExitCode int
-	Output   string
-	Stderr   string
+	common.CommandResultFields
 }
 
 // LogValue implements slog.LogValuer to provide structured logging support
+// Field keys are defined in common.LogField* constants to ensure consistency
 func (c CommandResult) LogValue() slog.Value {
 	return slog.GroupValue(
-		slog.String("name", c.Name),
-		slog.Int("exit_code", c.ExitCode),
-		slog.String("output", c.Output),
-		slog.String("stderr", c.Stderr),
+		slog.String(common.LogFieldName, c.Name),
+		slog.Int(common.LogFieldExitCode, c.ExitCode),
+		slog.String(common.LogFieldOutput, c.Output),
+		slog.String(common.LogFieldStderr, c.Stderr),
 	)
 }
 
