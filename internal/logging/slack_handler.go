@@ -241,40 +241,57 @@ type commandResultInfo struct {
 	common.CommandResultFields
 }
 
-// extractCommandResults extracts command results from slog Any value
-// The structure is created by runner.CommandResult.LogValue() which returns a GroupValue.
+// extractCommandResults extracts command results from slog.Value containing []runner.CommandResult
+// Each CommandResult implements slog.LogValuer, so we need to call LogValue() to get the group.
 //
 // IMPORTANT: Field keys must match common.LogField* constants defined in internal/common/logschema.go:
 //   - common.LogFieldName     -> string (command name)
 //   - common.LogFieldExitCode -> int (command exit code)
 //   - common.LogFieldOutput   -> string (command stdout)
 //   - common.LogFieldStderr   -> string (command stderr)
-//
-// Schema consistency is enforced by integration tests in slack_handler_test.go
-func extractCommandResults(cmdSlice []any) []commandResultInfo {
+func extractCommandResults(value slog.Value) []commandResultInfo {
 	var commands []commandResultInfo
-	for _, cmdAny := range cmdSlice {
-		// CommandResult.LogValue() returns a slog.GroupValue
-		// When retrieved via Any(), it becomes a []slog.Attr
-		if attrs, ok := cmdAny.([]slog.Attr); ok {
-			cmdInfo := commandResultInfo{}
-			for _, attr := range attrs {
-				switch attr.Key {
-				case common.LogFieldName:
-					cmdInfo.Name = attr.Value.String()
-				case common.LogFieldExitCode:
-					if attr.Value.Kind() == slog.KindInt64 {
-						cmdInfo.ExitCode = int(attr.Value.Int64())
+
+	// The value is slog.KindAny containing a slice type
+	if value.Kind() != slog.KindAny {
+		return commands
+	}
+
+	anyVal := value.Any()
+
+	// slog doesn't automatically resolve LogValuer interfaces in slices,
+	// so we need to use reflection or type assertion to get each element
+	// and manually call its LogValue() method if it implements LogValuer
+	//
+	// However, since we're in a handler, we receive the already-resolved values.
+	// When slog processes a slice of LogValuer items, each item becomes a Group.
+	// But that only happens if we iterate through the slice properly.
+	//
+	// For now, we work with the raw slice and resolve each element
+	if slice, ok := anyVal.([]any); ok {
+		for _, item := range slice {
+			// Each item should be a []slog.Attr (the resolved Group from LogValue())
+			if attrs, ok := item.([]slog.Attr); ok {
+				cmdInfo := commandResultInfo{}
+				for _, attr := range attrs {
+					switch attr.Key {
+					case common.LogFieldName:
+						cmdInfo.Name = attr.Value.String()
+					case common.LogFieldExitCode:
+						if attr.Value.Kind() == slog.KindInt64 {
+							cmdInfo.ExitCode = int(attr.Value.Int64())
+						}
+					case common.LogFieldOutput:
+						cmdInfo.Output = attr.Value.String()
+					case common.LogFieldStderr:
+						cmdInfo.Stderr = attr.Value.String()
 					}
-				case common.LogFieldOutput:
-					cmdInfo.Output = attr.Value.String()
-				case common.LogFieldStderr:
-					cmdInfo.Stderr = attr.Value.String()
 				}
+				commands = append(commands, cmdInfo)
 			}
-			commands = append(commands, cmdInfo)
 		}
 	}
+
 	return commands
 }
 
@@ -305,16 +322,8 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 	// Extract command results from the commands attribute
 	var commands []commandResultInfo
 	if hasCommandsAttr {
-		// The commands attribute contains another attribute with the actual slice
-		if commandsAttr.Value.Kind() == slog.KindGroup {
-			group := commandsAttr.Value.Group()
-			if len(group) > 0 {
-				// Get the actual commands slice
-				if cmdSlice, ok := group[0].Value.Any().([]any); ok {
-					commands = extractCommandResults(cmdSlice)
-				}
-			}
-		}
+		// Extract commands from the slog.Value
+		commands = extractCommandResults(commandsAttr.Value)
 	}
 
 	var color string

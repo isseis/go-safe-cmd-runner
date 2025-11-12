@@ -471,7 +471,7 @@ func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, resu
 		"Command group execution completed",
 		"group", groupSpec.Name,
 		"status", result.status,
-		"commands", slog.Any("commands", result.commands),
+		"commands", result.commands,
 		"duration_ms", duration.Milliseconds(),
 		"run_id", r.runID,
 		"slack_notify", true,
