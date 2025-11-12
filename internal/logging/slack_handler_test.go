@@ -430,14 +430,59 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				slog.String("message_type", "command_group_summary"),
 				slog.String(common.GroupSummaryAttrs.Status, "success"),
 				slog.String(common.GroupSummaryAttrs.Group, "test-group"),
-				slog.String("command", "echo test"),
-				slog.Int("exit_code", 0),
 				slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
+				slog.Any(common.GroupSummaryAttrs.Commands, []any{
+					[]slog.Attr{
+						slog.String(common.LogFieldName, "echo test"),
+						slog.Int(common.LogFieldExitCode, 0),
+						slog.String(common.LogFieldOutput, "test output"),
+						slog.String(common.LogFieldStderr, ""),
+					},
+					[]slog.Attr{
+						slog.String(common.LogFieldName, "echo test2"),
+						slog.Int(common.LogFieldExitCode, 1),
+						slog.String(common.LogFieldOutput, ""),
+						slog.String(common.LogFieldStderr, "error output"),
+					},
+				}),
 			},
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
-				assert.Contains(t, msg.Text, "test-group", "Message should contain group name")
+				// Verify the message text contains the title with group name and status
+				assert.Contains(t, msg.Text, "test-group", "Message text should contain group name")
+				assert.Contains(t, msg.Text, "SUCCESS", "Message text should contain SUCCESS")
+
+				require.Len(t, msg.Attachments, 1, "Should have one attachment")
+				attachment := msg.Attachments[0]
+
+				// Verify the attachment color
+				assert.Equal(t, colorGood, attachment.Color, "Color should be green for success")
+
+				// Verify command count field
+				var foundCommandCount, foundDuration bool
+				var commandFields []SlackAttachmentField
+				for _, field := range attachment.Fields {
+					if field.Title == "Command Count" {
+						foundCommandCount = true
+						assert.Equal(t, "2", field.Value, "Should have 2 commands")
+					}
+					if field.Title == "Duration" {
+						foundDuration = true
+					}
+					if field.Title == "Command" {
+						commandFields = append(commandFields, field)
+					}
+				}
+				assert.True(t, foundCommandCount, "Should have Command Count field")
+				assert.True(t, foundDuration, "Should have Duration field")
+
+				// Verify individual command fields
+				require.Len(t, commandFields, 2, "Should have 2 command fields")
+				assert.Contains(t, commandFields[0].Value, "echo test", "First command should be echo test")
+				assert.Contains(t, commandFields[0].Value, "(exit: 0)", "First command should have exit code 0")
+				assert.Contains(t, commandFields[1].Value, "echo test2", "Second command should be echo test2")
+				assert.Contains(t, commandFields[1].Value, "(exit: 1)", "Second command should have exit code 1")
 			},
 		},
 		{
