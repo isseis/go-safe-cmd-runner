@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -112,10 +113,10 @@ func (l *Logger) LogPrivilegeEscalation(
 		slog.String("audit_type", "privilege_escalation"),
 		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String("operation", operation),
-		slog.String("command_name", commandName),
-		slog.Int("original_uid", originalUID),
-		slog.Int("target_uid", targetUID),
+		slog.String(common.PrivilegeEscalationFailureAttrs.Operation, operation),
+		slog.String(common.PrivilegeEscalationFailureAttrs.CommandName, commandName),
+		slog.Int(common.PrivilegeEscalationFailureAttrs.OriginalUID, originalUID),
+		slog.Int(common.PrivilegeEscalationFailureAttrs.TargetUID, targetUID),
 		slog.Bool("success", success),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 		slog.Int("process_id", os.Getpid()),
@@ -147,9 +148,9 @@ func (l *Logger) LogSecurityEvent(
 		slog.String("audit_type", "security_event"),
 		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String("event_type", eventType),
-		slog.String("severity", severity),
-		slog.String("message", message),
+		slog.String(common.SecurityAlertAttrs.EventType, eventType),
+		slog.String(common.SecurityAlertAttrs.Severity, severity),
+		slog.String(common.SecurityAlertAttrs.Message, message),
 		slog.Int("user_id", os.Getuid()),
 		slog.Int("effective_user_id", os.Geteuid()),
 		slog.Int("process_id", os.Getpid()),
@@ -161,7 +162,7 @@ func (l *Logger) LogSecurityEvent(
 	}
 
 	// Add Slack notification for critical and high severity events
-	shouldNotifySlack := severity == "critical" || severity == "high"
+	shouldNotifySlack := severity == common.SeverityCritical || severity == common.SeverityHigh
 	if shouldNotifySlack {
 		attrs = append(attrs,
 			slog.Bool("slack_notify", true),

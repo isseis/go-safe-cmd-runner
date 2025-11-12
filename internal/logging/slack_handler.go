@@ -12,13 +12,16 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 const (
 	// HTTP status codes
-	httpTimeout     = 5 * time.Second
-	outputMaxLength = 1000
-	stderrMaxLength = 500
+	httpTimeout      = 5 * time.Second
+	outputMaxLength  = 1000
+	stderrMaxLength  = 500
+	truncationSuffix = "..."
 
 	// Backoff configuration constants
 	defaultBackoffBase = 2 * time.Second
@@ -233,94 +236,185 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
+// commandResultInfo holds command execution result information extracted from log attributes
+// It embeds common.CommandResultFields to ensure type consistency with runner.CommandResult
+type commandResultInfo struct {
+	common.CommandResultFields
+}
+
+// extractCommandResults extracts command results from slog.Value containing []runner.CommandResult
+// Each CommandResult implements slog.LogValuer, so we need to call LogValue() to get the group.
+//
+// IMPORTANT: Field keys must match common.LogField* constants defined in internal/common/logschema.go:
+//   - common.LogFieldName     -> string (command name)
+//   - common.LogFieldExitCode -> int (command exit code)
+//   - common.LogFieldOutput   -> string (command stdout)
+//   - common.LogFieldStderr   -> string (command stderr)
+func extractCommandResults(value slog.Value) []commandResultInfo {
+	var commands []commandResultInfo
+
+	// The value is slog.KindAny containing a slice type
+	if value.Kind() != slog.KindAny {
+		return commands
+	}
+
+	anyVal := value.Any()
+
+	// slog doesn't automatically resolve LogValuer interfaces in slices,
+	// so we need to use reflection or type assertion to get each element
+	// and manually call its LogValue() method if it implements LogValuer
+	//
+	// However, since we're in a handler, we receive the already-resolved values.
+	// When slog processes a slice of LogValuer items, each item becomes a Group.
+	// But that only happens if we iterate through the slice properly.
+	//
+	// For now, we work with the raw slice and resolve each element
+	if slice, ok := anyVal.([]any); ok {
+		for _, item := range slice {
+			// Each item should be a []slog.Attr (the resolved Group from LogValue())
+			if attrs, ok := item.([]slog.Attr); ok {
+				cmdInfo := commandResultInfo{}
+				for _, attr := range attrs {
+					switch attr.Key {
+					case common.LogFieldName:
+						cmdInfo.Name = attr.Value.String()
+					case common.LogFieldExitCode:
+						if attr.Value.Kind() == slog.KindInt64 {
+							cmdInfo.ExitCode = int(attr.Value.Int64())
+						}
+					case common.LogFieldOutput:
+						cmdInfo.Output = attr.Value.String()
+					case common.LogFieldStderr:
+						cmdInfo.Stderr = attr.Value.String()
+					}
+				}
+				commands = append(commands, cmdInfo)
+			}
+		}
+	}
+
+	return commands
+}
+
 // buildCommandGroupSummary builds a Slack message for command group summary
 func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
-	var status, group, command, output string
-	var exitCode int
+	var status, group string
 	var duration time.Duration
+	var commandsAttr slog.Attr
+	var hasCommandsAttr bool
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "status":
+		case common.GroupSummaryAttrs.Status:
 			status = attr.Value.String()
-		case "group":
+		case common.GroupSummaryAttrs.Group:
 			group = attr.Value.String()
-		case "command":
-			command = attr.Value.String()
-		case "exit_code":
-			if attr.Value.Kind() == slog.KindInt64 {
-				exitCode = int(attr.Value.Int64())
-			}
-		case "duration_ms":
+		case common.GroupSummaryAttrs.DurationMs:
 			if attr.Value.Kind() == slog.KindInt64 {
 				duration = time.Duration(attr.Value.Int64()) * time.Millisecond
 			}
-		case "output":
-			output = attr.Value.String()
+		case common.GroupSummaryAttrs.Commands:
+			commandsAttr = attr
+			hasCommandsAttr = true
 		}
 		return true
 	})
+
+	// Extract command results from the commands attribute
+	var commands []commandResultInfo
+	if hasCommandsAttr {
+		// Extract commands from the slog.Value
+		commands = extractCommandResults(commandsAttr.Value)
+	}
 
 	var color string
 	var titleIcon string
 	switch status {
 	case "success":
 		color = colorGood
-		titleIcon = "✅"
+		titleIcon = "[OK]"
 	case "error":
 		color = colorDanger
-		titleIcon = "❌"
+		titleIcon = "[FAIL]"
 	default:
 		color = colorWarning
-		titleIcon = "⚠️"
-	}
-
-	// Truncate output if too long
-	if len(output) > outputMaxLength {
-		const truncationSuffix = "..."
-		truncationPoint := outputMaxLength - len(truncationSuffix)
-		output = output[:truncationPoint] + truncationSuffix
+		titleIcon = "[WARN]"
 	}
 
 	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
+
+	// Build fields for the attachment
+	fields := []SlackAttachmentField{
+		{
+			Title: "Command Count",
+			Value: fmt.Sprintf("%d", len(commands)),
+			Short: true,
+		},
+		{
+			Title: "Duration",
+			Value: duration.String(),
+			Short: true,
+		},
+		{
+			Title: "Run ID",
+			Value: s.runID,
+			Short: true,
+		},
+	}
+
+	// Add individual command results
+	for _, cmd := range commands {
+		statusIcon := "[OK]"
+		if cmd.ExitCode != 0 {
+			statusIcon = "[FAIL]"
+		}
+
+		// Build command summary
+		cmdSummary := fmt.Sprintf("%s `%s` (exit: %d)", statusIcon, cmd.Name, cmd.ExitCode)
+
+		fields = append(fields, SlackAttachmentField{
+			Title: "Command",
+			Value: cmdSummary,
+			Short: false,
+		})
+
+		// Add output if present and not too long
+		if cmd.Output != "" {
+			output := cmd.Output
+			if len(output) > outputMaxLength {
+				truncationPoint := outputMaxLength - len(truncationSuffix)
+				output = output[:truncationPoint] + truncationSuffix
+			}
+			fields = append(fields, SlackAttachmentField{
+				Title: "  -> Output",
+				Value: fmt.Sprintf("```%s```", output),
+				Short: false,
+			})
+		}
+
+		// Add stderr if present and command failed
+		if cmd.Stderr != "" && cmd.ExitCode != 0 {
+			stderr := cmd.Stderr
+			if len(stderr) > stderrMaxLength {
+				truncationPoint := stderrMaxLength - len(truncationSuffix)
+				stderr = stderr[:truncationPoint] + truncationSuffix
+			}
+			fields = append(fields, SlackAttachmentField{
+				Title: "  -> Error",
+				Value: fmt.Sprintf("```%s```", stderr),
+				Short: false,
+			})
+		}
+	}
 
 	message := SlackMessage{
 		Text: title,
 		Attachments: []SlackAttachment{
 			{
-				Color: color,
-				Fields: []SlackAttachmentField{
-					{
-						Title: "Command",
-						Value: fmt.Sprintf("```%s```", command),
-						Short: false,
-					},
-					{
-						Title: "Exit Code",
-						Value: fmt.Sprintf("%d", exitCode),
-						Short: true,
-					},
-					{
-						Title: "Duration",
-						Value: duration.String(),
-						Short: true,
-					},
-					{
-						Title: "Run ID",
-						Value: s.runID,
-						Short: true,
-					},
-				},
+				Color:  color,
+				Fields: fields,
 			},
 		},
-	}
-
-	if output != "" {
-		message.Attachments[0].Fields = append(message.Attachments[0].Fields, SlackAttachmentField{
-			Title: "Output",
-			Value: fmt.Sprintf("```%s```", output),
-			Short: false,
-		})
 	}
 
 	return message
@@ -332,11 +426,11 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "error_type":
+		case common.PreExecErrorAttrs.ErrorType:
 			errorType = attr.Value.String()
-		case "error_message":
+		case common.PreExecErrorAttrs.ErrorMessage:
 			errorMsg = attr.Value.String()
-		case "component":
+		case common.PreExecErrorAttrs.Component:
 			component = attr.Value.String()
 		}
 		return true
@@ -345,7 +439,7 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("🚨 Error: %s", errorType),
+		Text: fmt.Sprintf("[ERROR] %s", errorType),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorDanger,
@@ -384,11 +478,11 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "event_type":
+		case common.SecurityAlertAttrs.EventType:
 			eventType = attr.Value.String()
-		case "severity":
+		case common.SecurityAlertAttrs.Severity:
 			severity = attr.Value.String()
-		case "message":
+		case common.SecurityAlertAttrs.Message:
 			details = attr.Value.String()
 		}
 		return true
@@ -396,16 +490,16 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 
 	color := colorDanger
 	switch severity {
-	case "critical":
+	case common.SeverityCritical:
 		color = colorDanger
-	case "high":
+	case common.SeverityHigh:
 		color = colorWarning
 	}
 
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("🚨 Security Alert: %s", eventType),
+		Text: fmt.Sprintf("[SECURITY ALERT] %s", eventType),
 		Attachments: []SlackAttachment{
 			{
 				Color: color,
@@ -450,13 +544,13 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "command_name":
+		case common.PrivilegedCommandFailureAttrs.CommandName:
 			commandName = attr.Value.String()
-		case "command_path":
+		case common.PrivilegedCommandFailureAttrs.CommandPath:
 			commandPath = attr.Value.String()
-		case "stderr":
+		case common.PrivilegedCommandFailureAttrs.Stderr:
 			stderr = attr.Value.String()
-		case "exit_code":
+		case common.PrivilegedCommandFailureAttrs.ExitCode:
 			if attr.Value.Kind() == slog.KindInt64 {
 				exitCode = int(attr.Value.Int64())
 			}
@@ -474,7 +568,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("❌ Privileged Command Failed: %s", commandName),
+		Text: fmt.Sprintf("[FAIL] Privileged Command Failed: %s", commandName),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorDanger,
@@ -519,15 +613,15 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "operation":
+		case common.PrivilegeEscalationFailureAttrs.Operation:
 			operation = attr.Value.String()
-		case "command_name":
+		case common.PrivilegeEscalationFailureAttrs.CommandName:
 			commandName = attr.Value.String()
-		case "original_uid":
+		case common.PrivilegeEscalationFailureAttrs.OriginalUID:
 			if attr.Value.Kind() == slog.KindInt64 {
 				originalUID = int(attr.Value.Int64())
 			}
-		case "target_uid":
+		case common.PrivilegeEscalationFailureAttrs.TargetUID:
 			if attr.Value.Kind() == slog.KindInt64 {
 				targetUID = int(attr.Value.Int64())
 			}
@@ -538,7 +632,7 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("⚠️ Privilege Escalation Failed: %s", operation),
+		Text: fmt.Sprintf("[WARN] Privilege Escalation Failed: %s", operation),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorWarning,

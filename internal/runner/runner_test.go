@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1974,4 +1975,87 @@ func TestRunner_ExecutorUsesDefaultLogger(t *testing.T) {
 	// Note: We cannot directly inspect the executor's logger field since it's private,
 	// but we can verify that the executor was created successfully.
 	// The actual logging behavior is tested in executor_logging_test.go
+}
+
+// TestCommandResult_LogValue tests the slog.LogValuer implementation
+func TestCommandResult_LogValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   CommandResult
+		expected map[string]any
+	}{
+		{
+			name: "complete result",
+			result: CommandResult{
+				CommandResultFields: common.CommandResultFields{
+					Name:     "test-cmd",
+					ExitCode: 0,
+					Output:   "success output",
+					Stderr:   "",
+				},
+			},
+			expected: map[string]any{
+				"name":      "test-cmd",
+				"exit_code": 0,
+				"output":    "success output",
+				"stderr":    "",
+			},
+		},
+		{
+			name: "failed command with stderr",
+			result: CommandResult{
+				CommandResultFields: common.CommandResultFields{
+					Name:     "failing-cmd",
+					ExitCode: 1,
+					Output:   "",
+					Stderr:   "error message",
+				},
+			},
+			expected: map[string]any{
+				"name":      "failing-cmd",
+				"exit_code": 1,
+				"output":    "",
+				"stderr":    "error message",
+			},
+		},
+		{
+			name: "command with both output and stderr",
+			result: CommandResult{
+				CommandResultFields: common.CommandResultFields{
+					Name:     "mixed-cmd",
+					ExitCode: 2,
+					Output:   "some output",
+					Stderr:   "some error",
+				},
+			},
+			expected: map[string]any{
+				"name":      "mixed-cmd",
+				"exit_code": 2,
+				"output":    "some output",
+				"stderr":    "some error",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logValue := tt.result.LogValue()
+
+			// LogValue returns a GroupValue, which contains []slog.Attr
+			require.Equal(t, logValue.Kind(), slog.KindGroup)
+
+			attrs := logValue.Group()
+			attrMap := make(map[string]any)
+			for _, attr := range attrs {
+				switch attr.Value.Kind() {
+				case slog.KindString:
+					attrMap[attr.Key] = attr.Value.String()
+				case slog.KindInt64:
+					attrMap[attr.Key] = int(attr.Value.Int64())
+				}
+			}
+
+			assert.Equal(t, tt.expected, attrMap)
+		})
+	}
 }

@@ -46,13 +46,29 @@ const (
 	GroupExecutionStatusError GroupExecutionStatus = "error"
 )
 
+// CommandResult holds the result of a single command execution
+// This is exported to allow the logging package to access command results
+// It embeds common.CommandResultFields to ensure type consistency across the codebase
+type CommandResult struct {
+	common.CommandResultFields
+}
+
+// LogValue implements slog.LogValuer to provide structured logging support
+// Field keys are defined in common.LogField* constants to ensure consistency
+func (c CommandResult) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String(common.LogFieldName, c.Name),
+		slog.Int(common.LogFieldExitCode, c.ExitCode),
+		slog.String(common.LogFieldOutput, c.Output),
+		slog.String(common.LogFieldStderr, c.Stderr),
+	)
+}
+
 // groupExecutionResult holds the result of group execution for notification
 type groupExecutionResult struct {
-	status      GroupExecutionStatus
-	exitCode    int
-	lastCommand string
-	output      string
-	errorMsg    string
+	status   GroupExecutionStatus
+	commands []CommandResult // All commands executed in the group
+	errorMsg string
 }
 
 // Runner manages the execution of command groups
@@ -453,12 +469,10 @@ func (r *Runner) SetDryRunExecutionError(errType, message, component string, det
 func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration) {
 	slog.Info(
 		"Command group execution completed",
-		"group", groupSpec.Name,
-		"command", result.lastCommand,
-		"status", result.status,
-		"exit_code", result.exitCode,
-		"duration_ms", duration.Milliseconds(),
-		"output", result.output,
+		common.GroupSummaryAttrs.Group, groupSpec.Name,
+		common.GroupSummaryAttrs.Status, result.status,
+		common.GroupSummaryAttrs.Commands, result.commands,
+		common.GroupSummaryAttrs.DurationMs, duration.Milliseconds(),
 		"run_id", r.runID,
 		"slack_notify", true,
 		"message_type", "command_group_summary",
