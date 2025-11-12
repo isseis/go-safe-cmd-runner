@@ -392,7 +392,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 			}
 			fields = append(fields, SlackAttachmentField{
 				Title: "  -> Output",
-				Value: fmt.Sprintf("```%s```", output),
+				Value: fmt.Sprintf("```\n%s\n```", output),
 				Short: false,
 			})
 		}
@@ -406,7 +406,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 			}
 			fields = append(fields, SlackAttachmentField{
 				Title: "  -> Error",
-				Value: fmt.Sprintf("```%s```", stderr),
+				Value: fmt.Sprintf("```\n%s\n```", stderr),
 				Short: false,
 			})
 		}
