@@ -332,13 +332,13 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 	switch status {
 	case "success":
 		color = colorGood
-		titleIcon = "✅"
+		titleIcon = "[OK]"
 	case "error":
 		color = colorDanger
-		titleIcon = "❌"
+		titleIcon = "[FAIL]"
 	default:
 		color = colorWarning
-		titleIcon = "⚠️"
+		titleIcon = "[WARN]"
 	}
 
 	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
@@ -364,9 +364,9 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 
 	// Add individual command results
 	for _, cmd := range commands {
-		statusIcon := "✅"
+		statusIcon := "[OK]"
 		if cmd.ExitCode != 0 {
-			statusIcon = "❌"
+			statusIcon = "[FAIL]"
 		}
 
 		// Build command summary
@@ -439,7 +439,7 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("🚨 Error: %s", errorType),
+		Text: fmt.Sprintf("[ERROR] %s", errorType),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorDanger,
@@ -499,7 +499,7 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("🚨 Security Alert: %s", eventType),
+		Text: fmt.Sprintf("[SECURITY ALERT] %s", eventType),
 		Attachments: []SlackAttachment{
 			{
 				Color: color,
@@ -568,7 +568,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("❌ Privileged Command Failed: %s", commandName),
+		Text: fmt.Sprintf("[FAIL] Privileged Command Failed: %s", commandName),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorDanger,
@@ -632,7 +632,7 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 	hostname, _ := os.Hostname()
 
 	message := SlackMessage{
-		Text: fmt.Sprintf("⚠️ Privilege Escalation Failed: %s", operation),
+		Text: fmt.Sprintf("[WARN] Privilege Escalation Failed: %s", operation),
 		Attachments: []SlackAttachment{
 			{
 				Color: colorWarning,
