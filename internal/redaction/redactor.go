@@ -10,10 +10,9 @@ import (
 
 // Config controls how sensitive information is redacted
 type Config struct {
-	// LogPlaceholder is the placeholder used for log redaction (e.g., "***")
-	LogPlaceholder string
-	// TextPlaceholder is the placeholder used for text redaction (e.g., "[REDACTED]")
-	TextPlaceholder string
+	// Placeholder is the placeholder used for redaction (e.g., "[REDACTED]")
+	// Unified from LogPlaceholder and TextPlaceholder
+	Placeholder string
 	// Patterns contains the sensitive patterns to detect
 	Patterns *SensitivePatterns
 	// KeyValuePatterns contains keys for key=value or header redaction
@@ -24,8 +23,7 @@ type Config struct {
 // DefaultConfig returns default redaction configuration
 func DefaultConfig() *Config {
 	return &Config{
-		LogPlaceholder:   "***",
-		TextPlaceholder:  "[REDACTED]",
+		Placeholder:      "[REDACTED]",
 		Patterns:         DefaultSensitivePatterns(),
 		KeyValuePatterns: DefaultKeyValuePatterns(),
 	}
@@ -41,7 +39,7 @@ func (c *Config) RedactText(text string) string {
 
 	// Apply key=value pattern redaction
 	for _, key := range c.KeyValuePatterns {
-		result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
+		result = c.performKeyValueRedaction(result, key, c.Placeholder)
 	}
 
 	return result
@@ -54,7 +52,7 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 
 	// Check for sensitive patterns in the key
 	if c.Patterns.IsSensitiveKey(key) {
-		return slog.Attr{Key: key, Value: slog.StringValue(c.LogPlaceholder)}
+		return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
 	}
 
 	// Redact string values that match sensitive patterns
@@ -66,9 +64,9 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 			return slog.Attr{Key: key, Value: slog.StringValue(redactedText)}
 		}
 		// Then check if the entire value is sensitive (only if no key=value patterns were found)
-		// This prevents strings like "password=secret" from being completely replaced with "***"
+		// This prevents strings like "password=secret" from being completely replaced with "[REDACTED]"
 		if c.Patterns.IsSensitiveValue(strValue) {
-			return slog.Attr{Key: key, Value: slog.StringValue(c.LogPlaceholder)}
+			return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
 		}
 	}
 

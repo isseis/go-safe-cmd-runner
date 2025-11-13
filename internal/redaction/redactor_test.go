@@ -254,25 +254,25 @@ func TestRedactLogAttribute_SensitiveKeys(t *testing.T) {
 			name:     "password key",
 			key:      "password",
 			value:    "secret123",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "token key",
 			key:      "token",
 			value:    "abc123",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "api_key",
 			key:      "api_key",
 			value:    "xyz",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "secret key",
 			key:      "secret",
 			value:    "mysecret",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 	}
 
@@ -336,13 +336,13 @@ func TestRedactLogAttribute_SensitiveValues(t *testing.T) {
 			name:     "value contains 'password'",
 			key:      "field",
 			value:    "my_password_123",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "value contains 'token'",
 			key:      "data",
 			value:    "bearer_token_xyz",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "normal value",
@@ -380,7 +380,7 @@ func TestRedactLogAttribute_GroupValues(t *testing.T) {
 		groupAttrs := result.Value.Group()
 		require.Len(t, groupAttrs, 2)
 		assert.Equal(t, "password", groupAttrs[0].Key)
-		assert.Equal(t, "***", groupAttrs[0].Value.String())
+		assert.Equal(t, "[REDACTED]", groupAttrs[0].Value.String())
 		assert.Equal(t, "username", groupAttrs[1].Key)
 		assert.Equal(t, "john", groupAttrs[1].Value.String())
 	})
@@ -409,7 +409,7 @@ func TestRedactLogAttribute_GroupValues(t *testing.T) {
 		authAttrs := authGroup.Value.Group()
 		require.Len(t, authAttrs, 1)
 		assert.Equal(t, "token", authAttrs[0].Key)
-		assert.Equal(t, "***", authAttrs[0].Value.String())
+		assert.Equal(t, "[REDACTED]", authAttrs[0].Value.String())
 	})
 }
 
@@ -518,8 +518,7 @@ func TestNewRedactingHandler(t *testing.T) {
 
 		assert.NotNil(t, handler)
 		assert.NotNil(t, handler.config)
-		assert.Equal(t, "***", handler.config.LogPlaceholder)
-		assert.Equal(t, "[REDACTED]", handler.config.TextPlaceholder)
+		assert.Equal(t, "[REDACTED]", handler.config.Placeholder)
 	})
 }
 
@@ -573,7 +572,7 @@ func TestRedactingHandler_Handle(t *testing.T) {
 		assert.Equal(t, "username", attrs[0].Key)
 		assert.Equal(t, "john", attrs[0].Value.String())
 		assert.Equal(t, "password", attrs[1].Key)
-		assert.Equal(t, "***", attrs[1].Value.String())
+		assert.Equal(t, "[REDACTED]", attrs[1].Value.String())
 	})
 
 	t.Run("preserves record metadata", func(t *testing.T) {
@@ -618,7 +617,7 @@ func TestRedactingHandler_WithAttrs(t *testing.T) {
 	require.Len(t, underlyingMock.attrs, 2)
 
 	assert.Equal(t, "token", underlyingMock.attrs[0].Key)
-	assert.Equal(t, "***", underlyingMock.attrs[0].Value.String())
+	assert.Equal(t, "[REDACTED]", underlyingMock.attrs[0].Value.String())
 	assert.Equal(t, "user", underlyingMock.attrs[1].Key)
 	assert.Equal(t, "alice", underlyingMock.attrs[1].Value.String())
 

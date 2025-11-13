@@ -54,9 +54,9 @@
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `Config` 構造体から `LogPlaceholder` と `TextPlaceholder` を削除
-- [ ] 単一の `Placeholder` フィールドを追加
-- [ ] すべての参照箇所を `Placeholder` に統一
+- [x] `Config` 構造体から `LogPlaceholder` と `TextPlaceholder` を削除
+- [x] 単一の `Placeholder` フィールドを追加
+- [x] すべての参照箇所を `Placeholder` に統一
 
 **実装内容**：
 ```go
@@ -76,20 +76,20 @@ type Config struct {
 ```
 
 **テスト**：
-- [ ] 既存のテストがパスすることを確認
-- [ ] プレースホルダーが `"[REDACTED]"` で統一されていることを確認
+- [x] 既存のテストがパスすることを確認
+- [x] プレースホルダーが `"[REDACTED]"` で統一されていることを確認
 
 **完了基準**：
-- [ ] `Config` 構造体が更新される
-- [ ] すべての参照箇所が `Placeholder` を使用
-- [ ] 既存のテストがパスする
+- [x] `Config` 構造体が更新される
+- [x] すべての参照箇所が `Placeholder` を使用
+- [x] 既存のテストがパスする
 
 #### 2.1.2 DefaultConfig の更新
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `DefaultConfig()` で `Placeholder` を `"[REDACTED]"` に設定
+- [x] `DefaultConfig()` で `Placeholder` を `"[REDACTED]"` に設定
 
 **実装内容**：
 ```go
@@ -105,7 +105,7 @@ func DefaultConfig() *Config {
 ```
 
 **完了基準**：
-- [ ] デフォルト設定で `"[REDACTED]"` が使用される
+- [x] デフォルト設定で `"[REDACTED]"` が使用される
 
 ---
 
