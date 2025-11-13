@@ -126,3 +126,146 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 		assert.Equal(t, map[string]any{"k": "v"}, last.Parameters["details"].Value())
 	}
 }
+
+func TestDefaultResourceManager_CleanupTempDir(t *testing.T) {
+	mockExec := executortesting.NewMockExecutor()
+	mockFS := &MockFileSystem{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+	setupStandardCommandPaths(mockPathResolver)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
+
+	t.Run("Dry Run Mode", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		// Dry-run should not actually remove but should delegate without error
+		err = mgr.CleanupTempDir("/tmp/scr-test-123")
+		assert.NoError(t, err)
+	})
+}
+
+func TestDefaultResourceManager_CleanupAllTempDirs(t *testing.T) {
+	mockExec := executortesting.NewMockExecutor()
+	mockFS := &MockFileSystem{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+	setupStandardCommandPaths(mockPathResolver)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
+
+	t.Run("Dry Run Mode", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		err = mgr.CleanupAllTempDirs()
+		assert.NoError(t, err)
+	})
+}
+
+func TestDefaultResourceManager_RecordAnalysis(t *testing.T) {
+	mockExec := executortesting.NewMockExecutor()
+	mockFS := &MockFileSystem{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+	setupStandardCommandPaths(mockPathResolver)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
+
+	t.Run("Normal Mode - No-op", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		analysis := &ResourceAnalysis{
+			Type:      ResourceTypeFilesystem,
+			Operation: OperationCreate,
+			Target:    "/test/file.txt",
+		}
+
+		// Should be no-op in normal mode
+		mgr.RecordAnalysis(analysis)
+
+		// GetDryRunResults should return nil in normal mode
+		assert.Nil(t, mgr.GetDryRunResults())
+	})
+
+	t.Run("Dry Run Mode - Records Analysis", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		analysis := &ResourceAnalysis{
+			Type:      ResourceTypeFilesystem,
+			Operation: OperationCreate,
+			Target:    "/test/output.txt",
+		}
+
+		mgr.RecordAnalysis(analysis)
+
+		// Should have recorded the analysis
+		results := mgr.GetDryRunResults()
+		require.NotNil(t, results)
+		assert.Greater(t, len(results.ResourceAnalyses), 0, "Should have at least one analysis")
+	})
+}
+
+func TestDefaultResourceManager_RecordGroupAnalysis(t *testing.T) {
+	mockExec := executortesting.NewMockExecutor()
+	mockFS := &MockFileSystem{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+	setupStandardCommandPaths(mockPathResolver)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
+
+	debugInfo := &DebugInfo{}
+
+	t.Run("Normal Mode", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		err = mgr.RecordGroupAnalysis("test-group", debugInfo)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Dry Run Mode", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		err = mgr.RecordGroupAnalysis("test-group", debugInfo)
+		assert.NoError(t, err)
+	})
+}
+
+func TestDefaultResourceManager_UpdateCommandDebugInfo(t *testing.T) {
+	mockExec := executortesting.NewMockExecutor()
+	mockFS := &MockFileSystem{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+	setupStandardCommandPaths(mockPathResolver)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
+
+	debugInfo := &DebugInfo{}
+
+	t.Run("Normal Mode", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		token := CommandToken("test-token-123")
+		// This may return an error for invalid token, which is expected
+		_ = mgr.UpdateCommandDebugInfo(token, debugInfo)
+	})
+
+	t.Run("Dry Run Mode - execution creates token", func(t *testing.T) {
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		require.NoError(t, err)
+
+		// Execute a command to get a valid token
+		cmd := executortesting.CreateRuntimeCommand("echo", []string{})
+		env := map[string]string{}
+		ctx := context.Background()
+
+		token, _, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
+		require.NoError(t, err)
+
+		// Now update debug info with the valid token
+		err = mgr.UpdateCommandDebugInfo(token, debugInfo)
+		assert.NoError(t, err)
+	})
+}

@@ -709,7 +709,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 
 **完了基準**：
 - [x] すべての Unit テストがパス
-- [ ] テストカバレッジが 90% 以上
+- [ ] テストカバレッジが 90% 以上（現在: 86.7%）
 
 #### 2.3.8 Phase 3 の完了確認
 
