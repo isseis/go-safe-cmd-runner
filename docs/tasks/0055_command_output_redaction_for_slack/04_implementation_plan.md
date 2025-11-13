@@ -409,7 +409,7 @@ const RedactionFailurePlaceholder = "[REDACTION FAILED - OUTPUT SUPPRESSED]"
 - ✅ 構造体と定数が定義される
 - ✅ コンパイルエラーがない
 
-#### 2.2.3 redactLogAttributeWithContext の実装
+#### 2.3.3 redactLogAttributeWithContext の実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
