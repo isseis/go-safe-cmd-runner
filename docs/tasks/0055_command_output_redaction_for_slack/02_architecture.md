@@ -423,7 +423,7 @@ flowchart TD
 
 **原則**：
 - panic は recover して可用性を維持
-- エラーは stderr とファイルログに記録（FR-2.4：Slack 以外の出力先）
+- エラーは Slack 以外の出力先（stderr とファイルログ）に記録
   - ログレベル: `slog.Warn`（デバッグと監査のため）
   - 記録内容: エラーの種類、属性キー、スタックトレース（panic の場合）
   - 注記: RedactingHandler 自身の出力は再帰を避けるため、非 RedactingHandler 経路を使用
