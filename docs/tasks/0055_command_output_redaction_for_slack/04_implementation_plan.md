@@ -485,7 +485,7 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
 - ✅ 既存のテストがすべてパス
 - ✅ コンパイルエラーがない（`processKindAny` は次で実装）
 
-#### 2.2.4 processKindAny の基本実装
+#### 2.3.4 processKindAny の基本実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
