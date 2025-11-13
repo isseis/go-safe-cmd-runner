@@ -393,6 +393,15 @@ type RedactionContext struct {
 2. **型キャッシュ**：頻繁に使用される型の判定結果をキャッシュ（将来的な最適化）
 3. **再帰深度制限**：無限再帰を防ぎ、スタックオーバーフローを回避
 
+**型判定のパフォーマンス分析**：
+- 現状の実装では、KindAny 属性ごとに型判定（type assertion）やリフレクションが
+  毎回発生するため、ログ出力頻度が高い場合や複雑な型が多い場合、10% 以内の
+  オーバーヘッド目標を達成できない可能性がある。
+- Go のリフレクションは比較的高コストであり、特にスライス要素数が多い場合は
+  影響が大きくなる。
+- そのため、初期実装段階から型判定結果のキャッシュ（型キャッシュ）を導入するか、
+  少なくともベンチマーク・プロファイリングを早期に実施し、必要に応じて
+  キャッシュを追加することを推奨する。
 **パフォーマンス目標**：
 - 通常のログ出力（KindAny でない）：オーバーヘッドなし
 - KindAny を含むログ出力：10% 以内のオーバーヘッド
@@ -425,7 +434,7 @@ flowchart TD
 
 **原則**：
 - panic は recover して可用性を維持
-- エラーは stderr とファイルログに記録（FR-2.4：Slack 以外の出力先）
+- エラーは Slack 以外の出力先（stderr とファイルログ）に記録
   - ログレベル: `slog.Warn`（デバッグと監査のため）
   - 記録内容: エラーの種類、属性キー、スタックトレース（panic の場合）
   - 注記: RedactingHandler 自身の出力は再帰を避けるため、非 RedactingHandler 経路を使用
@@ -457,8 +466,19 @@ flowchart TD
 **重要な実装上の注意**：
 - 現在の `redaction.Config.RedactText()` 実装は、正規表現コンパイル失敗時に元のテキストを返す fail-open 動作となっている（`redactor.go` の 110-112, 136-139, 174-177 行）
 - この動作は本アーキテクチャで定義した fail-secure 原則と矛盾しており、セキュリティリスクとなる
-- 実装時には、正規表現コンパイル失敗時も "[REDACTION FAILED - OUTPUT SUPPRESSED]" を返すように修正する必要がある
+- 実装時には、正規表現コンパイル失敗時も "[REDACTION FAILED - OUTPUT SUPPRESSED]" を返す fail-secure 動作に修正する必要がある
+
+**移行計画（Migration Plan）**：
+1. 影響範囲の調査：`RedactText()` を利用している全ての箇所をリストアップし、fail-open から fail-secure への変更が既存機能や運用に与える影響を評価する。
+2. テストケースの追加：正規表現コンパイル失敗時に "[REDACTION FAILED - OUTPUT SUPPRESSED]" が返ることを確認するテストを追加する。
+3. 段階的なロールアウト：まず開発環境・ステージング環境で動作確認を行い、問題がなければ本番環境へ適用する。
+4. ドキュメント更新：開発者向けガイドラインや API ドキュメントに新しいエラーハンドリング仕様を明記する。
+5. 監視・フィードバック：本番適用後、異常なログ出力や運用上の問題が発生していないか監視し、必要に応じて調整する。
+
+**実装上の注意**：
 - 既存の `RedactText()` の動作変更は他の箇所に影響する可能性があるため、慎重な影響範囲調査とテストが必要
+- 変更後は、正規表現コンパイル失敗時に必ず "[REDACTION FAILED - OUTPUT SUPPRESSED]" を返すこと
+- 影響を受ける箇所の開発者に周知徹底すること
 
 ---
 
@@ -811,8 +831,8 @@ type RedactionContext struct {
 // 疑似コード：詳細は詳細設計書で定義
 func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr
 func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionContext) slog.Attr
-func (c *Config) processLogValuer(key string, value slog.Value, ctx RedactionContext) slog.Attr
-func (c *Config) processSlice(key string, value slog.Value, ctx RedactionContext) slog.Attr
+func (c *Config) processLogValuer(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error)
+func (c *Config) processSlice(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error)
 ```
 
 ### 7.2 GroupExecutor の変更
