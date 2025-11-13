@@ -534,7 +534,7 @@ func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionConte
 - ✅ `processKindAny` が実装される
 - ✅ テストがパス
 
-#### 2.2.5 processLogValuer の実装
+#### 2.3.5 processLogValuer の実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
