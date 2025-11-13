@@ -378,7 +378,8 @@ type RedactionContext struct {
    c. LogValuer でない場合:
       i. スキップ
 3. 処理済みの要素を新しいスライスに格納
-4. slog.GroupValue で新しい属性を作成して返す
+4. slog.Any(key, newSlice) で新しい属性を作成して返す
+   (注: スライス型を維持し、オブジェクト/マップに変換しない)
 ```
 
 ### 4.4 実装上の考慮事項
