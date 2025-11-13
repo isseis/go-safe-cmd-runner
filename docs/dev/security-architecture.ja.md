@@ -390,44 +390,89 @@ type ResourceManager interface {
 
 #### 実装詳細
 
-**一元化データ編集**:
+##### 現在の実装
+
+**一元化データ編集基盤**:
 ```go
 // 場所: internal/redaction/redactor.go
-type Redactor struct {
-    patterns []SensitivePattern
+type Config struct {
+    LogPlaceholder   string
+    TextPlaceholder  string
+    Patterns         *SensitivePatterns
+    KeyValuePatterns []string
 }
 
-func (r *Redactor) RedactText(text string) string {
+func (c *Config) RedactText(text string) string {
     // 設定されたすべての編集パターンを適用
+}
+
+func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
+    // ログ属性の機密情報を編集
 }
 ```
 
-**多層防御による機密情報保護**（予定 - task 0055）:
+**RedactingHandler（ログレベル編集）**:
+```go
+// 場所: internal/redaction/redactor.go:200-259
+type RedactingHandler struct {
+    handler slog.Handler
+    config  *Config
+}
+
+// 場所: internal/runner/bootstrap/logger.go:138
+redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+logger := slog.New(redactedHandler)
+```
+- ログ出力時に自動的に機密情報を編集
+- すべてのログハンドラー（ファイル、syslog、Slack）をラップ
+- `slog.KindGroup`を含む構造化ログの再帰的処理
+- key=value形式と認証ヘッダーパターンの両方をサポート
+
+**現在のSlack通知実装**:
+```go
+// 場所: internal/logging/slack_handler.go:64-73
+type SlackHandler struct {
+    webhookURL    string
+    runID         string
+    httpClient    *http.Client
+    level         slog.Level
+    attrs         []slog.Attr
+    groups        []string
+    backoffConfig BackoffConfig
+}
+```
+- RedactingHandlerによってラップされているため、基本的な編集が適用される
+- コマンド出力の長さ制限（stdout: 1000文字、stderr: 500文字）
+
+##### 計画中の拡張（task 0055）
+
+**多層防御による機密情報保護の強化**:
 
 システムは二重の防御層アプローチを採用し、一方の対策が失敗しても他方が保護します：
 
-1. **第1層：CommandResult作成時の編集**
-   - 場所: `internal/runner/group_executor.go`
+1. **第1層：CommandResult作成時の編集**（計画中）
+   - 場所: `internal/runner/group_executor.go`（変更予定）
    - コマンド出力を`CommandResult`に格納する際に事前編集
    - `security.Validator.SanitizeOutputForLogging()`を使用
+   - 現在の実装: 編集なしで生の出力を格納
 
-2. **第2層：RedactingHandlerでの編集**
-   - 場所: `internal/redaction/handler.go`
+2. **第2層：RedactingHandlerでの編集**（実装済み）
+   - 場所: `internal/redaction/redactor.go:200-259`
    - ログ出力時に`slog.KindAny`型と`LogValuer`インターフェースを処理
    - 第1層で漏れた機密情報もここでキャッチ
-   - 再帰深度制限（最大10層）により無限再帰を防止
+   - 再帰深度制限により無限再帰を防止
 
-**Slack通知への機密情報保護**:
+**Slack通知への機密情報保護の強化**（計画中）:
 ```go
-// 場所: internal/logging/slack_handler.go
+// 計画中の実装: internal/logging/slack_handler.go
 type SlackHandler struct {
     webhookURL string
-    redactor   *redaction.Redactor
+    redactor   *redaction.Redactor  // 追加予定
 }
 ```
-- Slack通知送信前の自動編集
-- `[]common.CommandResult`スライスを含む構造化ログの処理
-- 外部通信における機密データ保護
+- Slack通知送信前の明示的な編集処理追加
+- `[]common.CommandResult`スライス内の機密情報の完全な編集
+- 外部通信における追加の保護層
 
 **ログセキュリティ設定**:
 ```go
@@ -520,11 +565,20 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - 構造化ログでの機密パターンの自動検出と編集
 
 #### セキュリティ保証
-- 一般的な機密パターン（パスワード、トークン、APIキー）の自動編集
+
+##### 現在提供されている保証
+- RedactingHandlerによる全ログ出力での自動編集
+- 一般的な機密パターン（パスワード、トークン、APIキー）の検出と編集
 - 異なるセキュリティ環境に対応する設定可能なログ詳細レベル
 - エラーメッセージとコマンド出力による認証情報露出からの保護
 - ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
 - 環境変数パターンの検出とサニタイズ
+- key=value形式と認証ヘッダーパターン（Bearer、Basic）の両方をサポート
+
+##### task 0055実装後に追加される保証
+- CommandResult作成時点での事前編集による二重防御
+- Slack通知での明示的な編集処理による外部通信の追加保護層
+- 第1層で編集漏れがあっても第2層（RedactingHandler）でキャッチ
 
 ### 9. 端末能力検出 (`internal/terminal/`)
 
@@ -883,7 +937,7 @@ if !filepath.IsAbs(hashDir) {
 5. **特権制御**: 制御された昇格による最小特権原則
 6. **環境分離**: 厳格な許可リストベースの環境フィルタリング、PATH継承の排除
 7. **コマンド検証**: 許可リスト検証を伴うリスクベースコマンド実行制御
-8. **データ保護**: 全出力における機密情報の自動編集（多層防御アプローチ）
+8. **データ保護**: RedactingHandlerによる全ログ出力での機密情報の自動編集（task 0055でCommandResult作成時の事前編集を追加し多層防御を強化予定）
 9. **ユーザー・グループセキュリティ**: メンバーシップ検証を伴う安全なユーザー・グループ切り替え
 10. **ハッシュディレクトリセキュリティ**: カスタムハッシュディレクトリ攻撃の完全防止
 11. **実行環境分離**: stdin無効化による予期しない入力の防止
@@ -1016,11 +1070,11 @@ if !filepath.IsAbs(hashDir) {
 - 繰り返しコマンド分析の結果キャッシュ
 
 ### データ編集
-- 大出力のストリーミング編集
+- RedactingHandlerによるログ出力時の編集（現在実装済み）
 - 機密データの事前コンパイルパターン
 - 通常操作への最小パフォーマンス影響
 - 設定可能な編集ポリシー
-- 多層防御アプローチによる二重編集（予定 - task 0055）
+- CommandResult作成時の事前編集追加による多層防御（task 0055で実装予定）
 
 ### リソース管理
 - 出力サイズ制限によるメモリ使用量の制御
@@ -1056,10 +1110,10 @@ Go Safe Command Runnerは、特権委譲による安全なコマンド実行の�
 主要なセキュリティ革新機能には、以下が含まれます：
 - コマンド実行のためのインテリジェントリスク評価
 - 一貫したセキュリティ境界を持つ統一リソース管理
-- 全チャンネルでの自動機密データ編集（多層防御による二重保護）
+- RedactingHandlerによる全ログ出力での自動機密データ編集（task 0055でCommandResult作成時の事前編集を追加し多層防御による二重保護を実現予定）
 - 安全なユーザー・グループ実行機能
 - セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知
 - stdin無効化による実行環境の明示的制御
 - 出力サイズ制限によるリソース枯渇攻撃の防止
 
-システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。最近の改善により、実行環境の分離とリソース保護が強化され、より包括的なセキュリティ対策が実現されています。
+システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。最近の改善により、実行環境の分離とリソース保護が強化され、より包括的なセキュリティ対策が実現されています。task 0055の実装により、機密データ保護がさらに強化される予定です。
