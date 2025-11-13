@@ -406,6 +406,7 @@ SlackHandler 内で、Slack に送信する直前に出力を redact する。
 - FR-2.2：redact された stdout/stderr を CommandResult に格納すること
 - FR-2.3：redaction が失敗した場合、安全なフォールバックメッセージ `[REDACTION FAILED - OUTPUT SUPPRESSED]` を使用し、元の文字列を使用しないこと（セキュリティを優先）
 - FR-2.4：redaction の失敗は、Slack 以外のログ出力先（標準エラー出力、監査ログなど）に記録すること（デバッグ用）
+  - 注：ログ出力自体が失敗した場合は、さらなるエラー通知や再試行は行わず、静かに抑制（silent suppression）すること。これにより、無限ループや追加の障害を防止する。
 
 #### FR-3：Redaction パターン
 
