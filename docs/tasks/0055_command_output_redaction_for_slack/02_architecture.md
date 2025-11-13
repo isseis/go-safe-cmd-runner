@@ -311,7 +311,7 @@ flowchart TD
     I --> N{Depth < MAX?}
     M --> N
 
-    N -->|Yes| A
+    N -.->|Yes<br/>⟲ Recursive call| A
     N -->|No| O[Stop recursion<br/>Return partially redacted]
 
     C --> P[Return redacted attr]
@@ -325,6 +325,8 @@ flowchart TD
     style H fill:#ccffcc
     style I fill:#ccffcc
     style M fill:#ccffcc
+    style N fill:#ffeecc
+    style A fill:#eef
 ```
 
 **注記**：
