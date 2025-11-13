@@ -262,7 +262,8 @@ func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error
 func (r *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	redactedAttrs := make([]slog.Attr, 0, len(attrs))
 	for _, attr := range attrs {
-		redactedAttrs = append(redactedAttrs, r.config.RedactLogAttribute(attr))
+		// Use redactLogAttributeWithContext for full redaction support
+		redactedAttrs = append(redactedAttrs, r.redactLogAttributeWithContext(attr, redactionContext{depth: 0}))
 	}
 	return &RedactingHandler{
 		handler:       r.handler.WithAttrs(redactedAttrs),

@@ -646,6 +646,143 @@ func TestRedactingHandler_WithAttrs(t *testing.T) {
 	assert.Len(t, originalMock.attrs, 0)
 }
 
+// TestRedactingHandler_WithAttrs_LogValuer tests WithAttrs with LogValuer attributes
+func TestRedactingHandler_WithAttrs_LogValuer(t *testing.T) {
+	tests := []struct {
+		name           string
+		attr           slog.Attr
+		expectedKey    string
+		expectedValue  string
+		expectRedacted bool
+	}{
+		{
+			name:           "LogValuer with sensitive key",
+			attr:           slog.Any("token", sensitiveLogValuer{data: "secret123"}),
+			expectedKey:    "token",
+			expectedValue:  "[REDACTED]",
+			expectRedacted: true,
+		},
+		{
+			name:           "LogValuer with non-sensitive key",
+			attr:           slog.Any("user", sensitiveLogValuer{data: "alice"}),
+			expectedKey:    "user",
+			expectedValue:  "alice",
+			expectRedacted: false,
+		},
+		{
+			name:           "LogValuer returning sensitive value",
+			attr:           slog.Any("data", sensitiveLogValuer{data: "password=secret"}),
+			expectedKey:    "data",
+			expectedValue:  "password=[REDACTED]",
+			expectRedacted: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newMockHandler()
+			handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+			newHandler := handler.WithAttrs([]slog.Attr{tt.attr})
+
+			// Should return a new RedactingHandler
+			redactingHandler, ok := newHandler.(*RedactingHandler)
+			require.True(t, ok)
+
+			// Check that underlying handler received redacted attributes
+			underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+			require.True(t, ok)
+			require.Len(t, underlyingMock.attrs, 1)
+
+			assert.Equal(t, tt.expectedKey, underlyingMock.attrs[0].Key)
+			assert.Equal(t, tt.expectedValue, underlyingMock.attrs[0].Value.String())
+		})
+	}
+}
+
+// TestRedactingHandler_WithAttrs_Slice tests WithAttrs with slice attributes
+func TestRedactingHandler_WithAttrs_Slice(t *testing.T) {
+	t.Run("slice with LogValuer elements", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		// Create a slice with LogValuer elements
+		newHandler := handler.WithAttrs([]slog.Attr{
+			slog.Any("users", []slog.LogValuer{
+				sensitiveLogValuer{data: "alice"},
+				sensitiveLogValuer{data: "bob"},
+			}),
+		})
+
+		// Should return a new RedactingHandler
+		redactingHandler, ok := newHandler.(*RedactingHandler)
+		require.True(t, ok)
+
+		// Check that underlying handler received the attribute
+		underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+		require.True(t, ok)
+		require.Len(t, underlyingMock.attrs, 1)
+
+		assert.Equal(t, "users", underlyingMock.attrs[0].Key)
+
+		// Check that the slice was processed - it should be []any now
+		sliceValue := underlyingMock.attrs[0].Value.Any()
+		require.NotNil(t, sliceValue)
+
+		sliceAny, ok := sliceValue.([]any)
+		require.True(t, ok, "expected []any after processing LogValuer slice, got %T", sliceValue)
+		assert.Len(t, sliceAny, 2)
+	})
+
+	t.Run("slice with sensitive LogValuer - key based redaction", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		// Use "token" as the key which is sensitive
+		newHandler := handler.WithAttrs([]slog.Attr{
+			slog.Any("token", []slog.LogValuer{
+				sensitiveLogValuer{data: "token123"},
+			}),
+		})
+
+		// Should return a new RedactingHandler
+		redactingHandler, ok := newHandler.(*RedactingHandler)
+		require.True(t, ok)
+
+		// Check that underlying handler received the attribute
+		underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+		require.True(t, ok)
+		require.Len(t, underlyingMock.attrs, 1)
+
+		assert.Equal(t, "token", underlyingMock.attrs[0].Key)
+		// The entire attribute should be redacted because "token" is a sensitive key
+		assert.Equal(t, "[REDACTED]", underlyingMock.attrs[0].Value.String())
+	})
+}
+
+// TestRedactingHandler_WithAttrs_PanicRecovery tests panic recovery in WithAttrs
+func TestRedactingHandler_WithAttrs_PanicRecovery(t *testing.T) {
+	mock := newMockHandler()
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+	// Should not panic even if LogValue() panics
+	newHandler := handler.WithAttrs([]slog.Attr{
+		slog.Any("panic_attr", panickingLogValuer{}),
+	})
+
+	// Should return a new RedactingHandler
+	redactingHandler, ok := newHandler.(*RedactingHandler)
+	require.True(t, ok)
+
+	// Check that underlying handler received safe placeholder
+	underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+	require.True(t, ok)
+	require.Len(t, underlyingMock.attrs, 1)
+
+	assert.Equal(t, "panic_attr", underlyingMock.attrs[0].Key)
+	assert.Equal(t, RedactionFailurePlaceholder, underlyingMock.attrs[0].Value.String())
+}
+
 // TestRedactingHandler_WithGroup tests group creation
 func TestRedactingHandler_WithGroup(t *testing.T) {
 	mock := newMockHandler()
