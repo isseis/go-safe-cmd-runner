@@ -386,7 +386,7 @@ type ResourceManager interface {
 ### 8. セキュアログと機密データ保護
 
 #### 目的
-パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。専用の編集サービスで強化されています。
+パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。専用の編集サービスで強化され、多層防御アプローチにより包括的な保護を実現します。
 
 #### 実装詳細
 
@@ -401,6 +401,33 @@ func (r *Redactor) RedactText(text string) string {
     // 設定されたすべての編集パターンを適用
 }
 ```
+
+**多層防御による機密情報保護**（予定 - task 0055）:
+
+システムは二重の防御層アプローチを採用し、一方の対策が失敗しても他方が保護します：
+
+1. **第1層：CommandResult作成時の編集**
+   - 場所: `internal/runner/group_executor.go`
+   - コマンド出力を`CommandResult`に格納する際に事前編集
+   - `security.Validator.SanitizeOutputForLogging()`を使用
+
+2. **第2層：RedactingHandlerでの編集**
+   - 場所: `internal/redaction/handler.go`
+   - ログ出力時に`slog.KindAny`型と`LogValuer`インターフェースを処理
+   - 第1層で漏れた機密情報もここでキャッチ
+   - 再帰深度制限（最大10層）により無限再帰を防止
+
+**Slack通知への機密情報保護**:
+```go
+// 場所: internal/logging/slack_handler.go
+type SlackHandler struct {
+    webhookURL string
+    redactor   *redaction.Redactor
+}
+```
+- Slack通知送信前の自動編集
+- `[]common.CommandResult`スライスを含む構造化ログの処理
+- 外部通信における機密データ保護
 
 **ログセキュリティ設定**:
 ```go
@@ -668,7 +695,91 @@ type SlackHandler struct {
 - 悪用を防ぐレート制限
 - 包括的エラー処理
 
-### 14. 設定セキュリティ
+### 14. コマンド実行環境の分離
+
+#### 目的
+子プロセスが予期しない入力を読み取ることを防ぎ、実行環境を明示的に制御することで、セキュリティと安定性を向上させます。
+
+#### 実装詳細
+
+**標準入力の無効化**:
+```go
+// 場所: internal/runner/executor/executor.go:210-224
+// Set up stdin to null device for security and stability:
+// 1. Security: Prevents child processes from reading unexpected input from stdin
+// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
+//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
+// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
+devNull, err := os.Open(os.DevNull)
+if err != nil {
+    return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
+}
+defer func() {
+    if closeErr := devNull.Close(); closeErr != nil {
+        e.Logger.Warn("Failed to close null device", "error", closeErr)
+    }
+}()
+execCmd.Stdin = devNull
+```
+
+**セキュリティ上の利点**:
+- 子プロセスがstdinから予期しない入力を読み取ることを防止
+- 対話型プロンプトによる処理の停止を防止
+- バッチ処理環境における一貫した動作を保証
+- 悪意のある入力注入攻撃のリスクを軽減
+
+**安定性の向上**:
+- stdinがnilの場合に疑似TTYを割り当てようとするコマンド（docker-compose execなど）のエラーを防止
+- プラットフォーム間での一貫した動作（`os.DevNull`を使用）
+
+#### セキュリティ保証
+- すべての子プロセスでstdin入力を明示的に無効化
+- 予期しない入力による処理の停止や改ざんを防止
+- クロスプラットフォーム対応（Linuxでは`/dev/null`、Windowsでは`NUL`）
+
+### 15. 出力サイズ制限によるリソース保護
+
+#### 目的
+コマンド出力サイズを制限することで、メモリ枯渇攻撃やディスク容量の枯渇を防ぎ、システムの安定性とセキュリティを確保します。
+
+#### 実装詳細
+
+**階層的な出力サイズ制限**:
+```go
+// 場所: internal/common/output_size_limit.go
+func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSizeLimit) OutputSizeLimit {
+    // 1. コマンドレベルのoutput_size_limit（設定されている場合）
+    // 2. グローバルレベルのoutput_size_limit（設定されている場合）
+    // 3. デフォルト出力サイズ制限（10MB）
+}
+```
+
+**デフォルト設定**:
+```go
+// 場所: internal/common/output_size_limit_type.go:20-21
+// DefaultOutputSizeLimit is the default output size limit when not specified (10MB)
+const DefaultOutputSizeLimit = 10 * 1024 * 1024
+```
+
+**制限の適用**:
+- 場所: `internal/runner/output/capture.go`
+- `io.LimitReader`を使用した出力サイズの制限
+- 制限超過時のエラー検出と報告
+- コマンド単位での柔軟な制限設定
+
+**設定階層**:
+1. **コマンドレベル**: 個別コマンドごとに`output_size_limit`を設定可能
+2. **グローバルレベル**: すべてのコマンドに適用される既定値
+3. **デフォルト**: 10MB（設定がない場合）
+4. **無制限**: 値を0に設定することで制限を無効化可能（注意が必要）
+
+#### セキュリティ保証
+- メモリ枯渇攻撃（DoS）からの保護
+- 過大な出力によるディスク容量枯渇の防止
+- 出力サイズ制限超過時の明確なエラーメッセージ
+- コマンド単位での柔軟な制限設定によるきめ細かな制御
+
+### 16. 設定セキュリティ
 
 #### 目的
 設定ファイルと全体的なシステム設定が改ざんされないことを確保し、セキュリティのベストプラクティスに従います。
@@ -772,9 +883,11 @@ if !filepath.IsAbs(hashDir) {
 5. **特権制御**: 制御された昇格による最小特権原則
 6. **環境分離**: 厳格な許可リストベースの環境フィルタリング、PATH継承の排除
 7. **コマンド検証**: 許可リスト検証を伴うリスクベースコマンド実行制御
-8. **データ保護**: 全出力における機密情報の自動編集
+8. **データ保護**: 全出力における機密情報の自動編集（多層防御アプローチ）
 9. **ユーザー・グループセキュリティ**: メンバーシップ検証を伴う安全なユーザー・グループ切り替え
 10. **ハッシュディレクトリセキュリティ**: カスタムハッシュディレクトリ攻撃の完全防止
+11. **実行環境分離**: stdin無効化による予期しない入力の防止
+12. **リソース保護**: 出力サイズ制限によるメモリ・ディスク枯渇攻撃の防止
 
 ### ゼロトラストモデル
 
@@ -852,6 +965,7 @@ if !filepath.IsAbs(hashDir) {
 - PATH操作
 - コマンド操作による特権昇格
 - 環境変数PATHを通じた悪意のあるバイナリ実行
+- stdin経由での予期しない入力注入
 
 **対策**:
 - 許可リスト執行を伴うリスクベースコマンド検証
@@ -862,6 +976,22 @@ if !filepath.IsAbs(hashDir) {
 - ユーザー・グループ実行検証
 - 環境変数PATH継承の完全排除
 - セキュア固定PATH（/sbin:/usr/sbin:/bin:/usr/bin）の強制使用
+- stdin無効化による入力注入攻撃の防止
+
+### リソース枯渇攻撃
+
+**脅威**:
+- メモリ枯渇によるDoS攻撃
+- 過大な出力によるディスク容量枯渇
+- ログファイルの肥大化
+- 長時間実行コマンドによるシステムリソースの独占
+
+**対策**:
+- 出力サイズ制限（デフォルト10MB、設定可能）
+- タイムアウト設定による長時間実行の防止
+- ログ切り詰め設定（MaxStdoutLength、MaxErrorMessageLength）
+- 階層的な制限設定（グローバル、グループ、コマンドレベル）
+- リソース使用量の監視とアラート
 
 ## パフォーマンス考慮事項
 
@@ -890,6 +1020,13 @@ if !filepath.IsAbs(hashDir) {
 - 機密データの事前コンパイルパターン
 - 通常操作への最小パフォーマンス影響
 - 設定可能な編集ポリシー
+- 多層防御アプローチによる二重編集（予定 - task 0055）
+
+### リソース管理
+- 出力サイズ制限によるメモリ使用量の制御
+- `io.LimitReader`を使用した効率的な制限実装
+- コマンド単位での柔軟な制限設定
+- 制限超過時の早期検出とエラー報告
 
 ## デプロイメントセキュリティ
 
@@ -916,4 +1053,13 @@ Go Safe Command Runnerは、特権委譲による安全なコマンド実行の�
 
 実装は、包括的な入力検証、リスクベースコマンド制御、安全な特権管理、自動機密データ保護、広範な監査機能を含むセキュリティエンジニアリングのベストプラクティスを実証しています。システムは安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されています。
 
-主要なセキュリティ革新機能には、コマンド実行のためのインテリジェントリスク評価、一貫したセキュリティ境界を持つ統一リソース管理、全チャンネルでの自動機密データ編集、安全なユーザー・グループ実行機能、セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知が含まれます。システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。
+主要なセキュリティ革新機能には、以下が含まれます：
+- コマンド実行のためのインテリジェントリスク評価
+- 一貫したセキュリティ境界を持つ統一リソース管理
+- 全チャンネルでの自動機密データ編集（多層防御による二重保護）
+- 安全なユーザー・グループ実行機能
+- セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知
+- stdin無効化による実行環境の明示的制御
+- 出力サイズ制限によるリソース枯渇攻撃の防止
+
+システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。最近の改善により、実行環境の分離とリソース保護が強化され、より包括的なセキュリティ対策が実現されています。
