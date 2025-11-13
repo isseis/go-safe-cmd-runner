@@ -314,6 +314,20 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 		}
 		return slog.Attr{Key: key, Value: slog.GroupValue(redactedGroupAttrs...)}
 
+	case slog.KindLogValuer:
+		// Handle LogValuer with panic recovery
+		logValuer, ok := value.Any().(slog.LogValuer)
+		if !ok {
+			// Should never happen, but handle gracefully
+			return attr
+		}
+		processedAttr, err := r.processLogValuer(key, logValuer, ctx)
+		if err != nil {
+			// On error, return safe placeholder
+			return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+		}
+		return processedAttr
+
 	case slog.KindAny:
 		// NEW: Handle KindAny (LogValuer, slices, etc.)
 		processedAttr, err := r.processKindAny(key, value, ctx)

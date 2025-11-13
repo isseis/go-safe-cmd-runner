@@ -11,6 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// panickingLogValuer is a helper struct that panics when LogValue is called.
+type panickingLogValuer struct{}
+
+// LogValue implements the slog.LogValuer interface and always panics.
+func (p panickingLogValuer) LogValue() slog.Value {
+	panic("test panic")
+}
+
 // TestRedactText_EmptyString tests that empty strings are handled correctly
 func TestRedactText_EmptyString(t *testing.T) {
 	config := DefaultConfig()
@@ -1017,7 +1025,7 @@ func TestRedactingHandler_DeepRecursion(t *testing.T) {
 	assert.Contains(t, output, "level")
 }
 
-// TestRedactingHandler_PanicHandling tests panic recovery
+// TestRedactingHandler_PanicHandling tests our panic recovery when logging a panicking LogValuer
 func TestRedactingHandler_PanicHandling(t *testing.T) {
 	var buf bytes.Buffer
 	handler := slog.NewJSONHandler(&buf, nil)
@@ -1031,15 +1039,64 @@ func TestRedactingHandler_PanicHandling(t *testing.T) {
 	redactingHandler := NewRedactingHandler(handler, config, failureLogger)
 	logger := slog.New(redactingHandler)
 
-	// We can't directly implement LogValue on a type in test, so we'll use a different approach
-	// Instead, we'll test with a value that causes issues during processing
+	// Execute with a LogValuer that is designed to panic.
+	// Note: The `panickingLogValuer` type with its `LogValue()` method
+	// is defined at the top level of this test file.
+	//
+	// Our RedactingHandler now handles KindLogValuer and catches panics,
+	// replacing them with RedactionFailurePlaceholder and logging to failureLogger.
+	logger.Info("Test message", "data", panickingLogValuer{})
 
-	// For now, test with valid data and verify panic handling is in place
-	logger.Info("Test message", "data", "normal_value")
-
-	// Verify no panic occurred
+	// Verify main log contains placeholder and not the panic message
 	output := buf.String()
-	assert.Contains(t, output, "normal_value")
+	assert.Contains(t, output, RedactionFailurePlaceholder)
+	assert.NotContains(t, output, "test panic")
+	assert.NotContains(t, output, "LogValue panicked")
+
+	// Verify failure log contains panic info
+	failureOutput := failureBuf.String()
+	assert.Contains(t, failureOutput, "Redaction failed due to panic in LogValue()")
+	assert.Contains(t, failureOutput, "test panic")
+	assert.Contains(t, failureOutput, "stack_trace")
+}
+
+// TestRedactingHandler_PanicInProcessKindAny tests our custom panic recovery
+// when we manually process KindAny LogValuers (e.g., in groups)
+func TestRedactingHandler_PanicInProcessKindAny(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+
+	// Create failure logger to capture panic logs
+	var failureBuf bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureBuf, nil)
+	failureLogger := slog.New(failureHandler)
+
+	redactingHandler := NewRedactingHandler(handler, config, failureLogger)
+
+	// Create a KindAny attribute with an unresolved panicking LogValuer
+	// We use slog.Attr directly with AnyValue to avoid premature resolution
+	attr := slog.Attr{
+		Key:   "test_data",
+		Value: slog.AnyValue(panickingLogValuer{}),
+	}
+
+	// Process the attribute through our redaction logic
+	// This will trigger our panic recovery code in processLogValuer()
+	redactedAttr := redactingHandler.redactLogAttributeWithContext(
+		attr,
+		redactionContext{depth: 0},
+	)
+
+	// Verify the redacted attribute contains the failure placeholder
+	assert.Equal(t, "test_data", redactedAttr.Key)
+	assert.Equal(t, RedactionFailurePlaceholder, redactedAttr.Value.String())
+
+	// Verify failure log contains panic info
+	failureOutput := failureBuf.String()
+	assert.Contains(t, failureOutput, "Redaction failed due to panic in LogValue()")
+	assert.Contains(t, failureOutput, "test panic")
+	assert.Contains(t, failureOutput, "stack_trace")
 }
 
 // TestRedactingHandler_NilValue tests nil value handling
