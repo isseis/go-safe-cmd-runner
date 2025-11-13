@@ -715,7 +715,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 - ✅ `processSlice` が実装される
 - ✅ すべてのテストがパス
 
-#### 2.2.7 Unit Tests の追加
+#### 2.3.7 Unit Tests の追加
 
 **ファイル**：`internal/redaction/redactor_test.go`
 
