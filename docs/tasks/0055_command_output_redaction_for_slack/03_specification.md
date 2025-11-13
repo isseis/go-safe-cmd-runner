@@ -289,7 +289,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
                 nextCtx,
             )
 
-            // スライスには Group 値を追加
+            // 処理済みの値をスライスに追加
             processedElements = append(processedElements, redactedAttr.Value.Any())
         } else {
             // LogValuer でない要素はそのまま
