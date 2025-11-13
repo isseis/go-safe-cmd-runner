@@ -1103,6 +1103,20 @@ func TestRedactingHandler_LogValuerSingle(t *testing.T) {
 	assert.NotContains(t, output, "secret123")
 }
 
+// commandResultMock is a helper struct for testing LogValuer with CommandResult-like data.
+type commandResultMock struct {
+	Name   string
+	Output string
+}
+
+// LogValue implements the slog.LogValuer interface.
+func (c commandResultMock) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("name", c.Name),
+		slog.String("output", c.Output),
+	)
+}
+
 // Test LogValuer with actual CommandResult-like struct
 func TestRedactingHandler_LogValuerWithCommandResult(t *testing.T) {
 	var buf bytes.Buffer
@@ -1112,24 +1126,13 @@ func TestRedactingHandler_LogValuerWithCommandResult(t *testing.T) {
 	logger := slog.New(redactingHandler)
 
 	// Create a LogValuer that returns sensitive data
-	type CommandResultMock struct {
-		Name   string
-		Output string
-	}
-
-	// Implement LogValue method
-	result := CommandResultMock{
+	result := commandResultMock{
 		Name:   "test_cmd",
 		Output: "password=secret123 and token=abc456",
 	}
 
-	// Since Go doesn't support adding methods dynamically, we'll test with slog.Group directly
-	logger.Info("Command executed",
-		slog.Group("result",
-			slog.String("name", result.Name),
-			slog.String("output", result.Output),
-		),
-	)
+	// Log the CommandResult using LogValuer interface
+	logger.Info("Command executed", "result", result)
 
 	// Verify
 	output := buf.String()
