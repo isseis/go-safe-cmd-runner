@@ -556,8 +556,7 @@ func (v *Validator) SanitizeOutputForLogging(output string) string {
 
 ```
 redaction.Config
-├── LogPlaceholder: "***"
-├── TextPlaceholder: "[REDACTED]"
+├── Placeholder: "[REDACTED]"
 ├── Patterns: SensitivePatterns
 │   ├── Credential patterns (password, token, secret, etc.)
 │   └── Environment variable patterns
@@ -566,6 +565,26 @@ redaction.Config
     ├── "Bearer ", "Basic "
     └── "Authorization: "
 ```
+
+**プレースホルダーの使い分け**:
+
+| プレースホルダー | 値 | 使用場面 | 例 |
+|---------------|-----|---------|-----|
+| `Placeholder` | `"[REDACTED]"` | 正常な redaction（すべての用途） | `password=[REDACTED]` |
+| エラー用プレースホルダー | `"[REDACTION FAILED - OUTPUT SUPPRESSED]"` | redaction 処理自体の失敗時（fail-secure） | 処理エラー時の全体置換 |
+
+**重要な区別**:
+- **正常な redaction**: 機密情報パターンが検出され、正常に置換された場合 → `Placeholder` (`"[REDACTED]"`)
+- **redaction の失敗**: redaction 処理中に panic や予期しないエラーが発生した場合 → `"[REDACTION FAILED - OUTPUT SUPPRESSED]"`
+  - 失敗時は機密情報が含まれる可能性があるため、出力全体を安全なプレースホルダーで置換する（FR-2.1 fail-secure 原則)
+  - この動作は「セクション 4.4.2 エラーハンドリング」および「セクション 5.4.2 エラーハンドリング」で詳述
+
+**設計上の簡素化**:
+- 以前の設計では `LogPlaceholder` (`"***"`) と `TextPlaceholder` (`"[REDACTED]"`) の2種類を使い分けていたが、実用上の利点がないため `Placeholder` に統一
+- `"[REDACTED]"` の利点:
+  - より明示的で視認性が高い
+  - ログ検索が容易（すべての redaction を一括検索可能）
+  - 設定と実装がシンプルになる
 
 ### 5.4 実装上の考慮事項
 
@@ -850,8 +869,7 @@ type LoggingOptions struct {
 
 ```go
 type Config struct {
-    LogPlaceholder   string              // ログ用プレースホルダー（"***"）
-    TextPlaceholder  string              // テキスト用プレースホルダー（"[REDACTED]"）
+    Placeholder      string              // プレースホルダー（"[REDACTED]"）
     Patterns         *SensitivePatterns  // 機密情報パターン
     KeyValuePatterns []string            // key=value パターン
 }
