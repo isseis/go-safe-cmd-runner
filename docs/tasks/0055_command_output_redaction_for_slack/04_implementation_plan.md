@@ -1253,9 +1253,9 @@ messages = client.conversations_history(
 
 # Patterns to detect
 sensitive_patterns = [
-    r"password=[^[\s]+(?<!\[REDACTED\])",
-    r"api_key=[^[\s]+(?<!\[REDACTED\])",
-    r"Bearer [^[\s]+(?<!\[REDACTED\])",
+    r"password=(?!\[REDACTED\]\b)\S+",
+    r"api_key=(?!\[REDACTED\]\b)\S+",
+    r"Bearer (?!\[REDACTED\]\b)\S+",
     # ... other patterns
 ]
 
