@@ -43,7 +43,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	})
 
 	// Wrap with redacting handler
-	redactingHandler := redaction.NewRedactingHandler(handler, nil)
+	redactingHandler := redaction.NewRedactingHandler(handler, nil, nil)
 	logger := slog.New(redactingHandler)
 	slog.SetDefault(logger)
 
@@ -206,7 +206,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			})
 
 			// Wrap with redacting handler
-			redactingHandler := redaction.NewRedactingHandler(handler, nil)
+			redactingHandler := redaction.NewRedactingHandler(handler, nil, nil)
 			logger := slog.New(redactingHandler)
 			slog.SetDefault(logger)
 

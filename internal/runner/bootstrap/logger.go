@@ -135,7 +135,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	if err != nil {
 		return fmt.Errorf("failed to create multi handler: %w", err)
 	}
-	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, nil)
 
 	// Set as default logger
 	logger := slog.New(redactedHandler)

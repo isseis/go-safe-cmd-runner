@@ -305,7 +305,7 @@ func TestE2E_Case2_RedactionAtCreation(t *testing.T) {
 **ファイル**：`internal/redaction/errors.go`（新規作成）
 
 **タスク**：
-- [ ] エラー型を定義
+- [x] エラー型を定義
 
 **実装内容**：
 ```go
@@ -348,20 +348,20 @@ func (e *ErrRegexCompilationFailed) Error() string {
 ```
 
 **テスト**：
-- [ ] エラー型が正しく定義されていることを確認
-- [ ] `Error()` メソッドが適切なメッセージを返すことを確認
+- [x] エラー型が正しく定義されていることを確認
+- [x] `Error()` メソッドが適切なメッセージを返すことを確認
 
 **完了基準**：
-- [ ] エラー型が定義される
-- [ ] テストがパス
+- [x] エラー型が定義される
+- [x] テストがパス
 
 #### 2.3.2 RedactionContext の追加
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `RedactionContext` 構造体を定義
-- [ ] `maxRedactionDepth` 定数を定義
+- [x] `RedactionContext` 構造体を定義
+- [x] `maxRedactionDepth` 定数を定義
 
 **実装内容**：
 ```go
@@ -381,16 +381,16 @@ const RedactionFailurePlaceholder = "[REDACTION FAILED - OUTPUT SUPPRESSED]"
 ```
 
 **完了基準**：
-- [ ] 構造体と定数が定義される
-- [ ] コンパイルエラーがない
+- [x] 構造体と定数が定義される
+- [x] コンパイルエラーがない
 
 #### 2.3.3 redactLogAttributeWithContext の実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] 既存の `RedactLogAttribute` を変更せず、内部実装として `redactLogAttributeWithContext` を追加
-- [ ] `RedactLogAttribute` から `redactLogAttributeWithContext` を呼び出す
+- [x] 既存の `RedactLogAttribute` を変更せず、内部実装として `redactLogAttributeWithContext` を追加
+- [x] `RedactLogAttribute` から `redactLogAttributeWithContext` を呼び出す
 
 **実装内容**：
 ```go
@@ -452,21 +452,21 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
 ```
 
 **テスト**：
-- [ ] 既存のテストがすべてパス（動作変更なし）
-- [ ] `KindAny` の処理は次のステップで実装
+- [x] 既存のテストがすべてパス（動作変更なし）
+- [x] `KindAny` の処理は次のステップで実装
 
 **完了基準**：
-- [ ] `redactLogAttributeWithContext` が実装される
-- [ ] 既存のテストがすべてパス
-- [ ] コンパイルエラーがない（`processKindAny` は次で実装）
+- [x] `redactLogAttributeWithContext` が実装される
+- [x] 既存のテストがすべてパス
+- [x] コンパイルエラーがない（`processKindAny` は次で実装）
 
 #### 2.3.4 processKindAny の基本実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `processKindAny` メソッドを実装
-- [ ] 型判定のロジックを実装（LogValuer、スライス、その他）
+- [x] `processKindAny` メソッドを実装
+- [x] 型判定のロジックを実装（LogValuer、スライス、その他）
 
 **実装内容**：
 ```go
@@ -502,21 +502,21 @@ func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionConte
 ```
 
 **テスト**：
-- [ ] Nil 値の処理をテスト
-- [ ] 未対応型のパススルーをテスト
+- [x] Nil 値の処理をテスト
+- [x] 未対応型のパススルーをテスト
 
 **完了基準**：
-- [ ] `processKindAny` が実装される
-- [ ] テストがパス
+- [x] `processKindAny` が実装される
+- [x] テストがパス
 
 #### 2.3.5 processLogValuer の実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `processLogValuer` メソッドを実装
-- [ ] 再帰深度チェックを実装
-- [ ] Panic からの復旧を実装
+- [x] `processLogValuer` メソッドを実装
+- [x] 再帰深度チェックを実装
+- [x] Panic からの復旧を実装
 
 **実装内容**：
 ```go
@@ -582,21 +582,21 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
 ```
 
 **テスト**：
-- [ ] 正常な LogValuer の処理をテスト
-- [ ] 再帰深度制限をテスト（depth=11）
-- [ ] Panic からの復旧をテスト
+- [x] 正常な LogValuer の処理をテスト
+- [x] 再帰深度制限をテスト（depth=11）
+- [x] Panic からの復旧をテスト
 
 **完了基準**：
-- [ ] `processLogValuer` が実装される
-- [ ] すべてのテストがパス
+- [x] `processLogValuer` が実装される
+- [x] すべてのテストがパス
 
 #### 2.3.6 processSlice の実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `processSlice` メソッドを実装
-- [ ] スライスの各要素を処理
+- [x] `processSlice` メソッドを実装
+- [x] スライスの各要素を処理
 
 **実装内容**：
 ```go
@@ -682,20 +682,20 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 ```
 
 **テスト**：
-- [ ] LogValuer スライスの処理をテスト
-- [ ] 空スライスの処理をテスト
-- [ ] 混在型スライス（LogValuer + non-LogValuer）の処理をテスト
+- [x] LogValuer スライスの処理をテスト
+- [x] 空スライスの処理をテスト
+- [x] 混在型スライス（LogValuer + non-LogValuer）の処理をテスト
 
 **完了基準**：
-- [ ] `processSlice` が実装される
-- [ ] すべてのテストがパス
+- [x] `processSlice` が実装される
+- [x] すべてのテストがパス
 
 #### 2.3.7 Unit Tests の追加
 
 **ファイル**：`internal/redaction/redactor_test.go`
 
 **タスク**：
-- [ ] Unit テストを追加（詳細設計書の 6.1 に基づく）
+- [x] Unit テストを追加（詳細設計書の 6.1 に基づく）
 
 **テストケース**：
 1. LogValuer single
@@ -708,15 +708,15 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 8. Mixed slice
 
 **完了基準**：
-- [ ] すべての Unit テストがパス
+- [x] すべての Unit テストがパス
 - [ ] テストカバレッジが 90% 以上
 
 #### 2.3.8 Phase 3 の完了確認
 
 **完了基準**：
-- [ ] すべてのタスクが完了
-- [ ] すべてのテストがパス
-- [ ] コードレビューが完了
+- [x] すべてのタスクが完了
+- [x] すべてのテストがパス
+- [-] コードレビューが完了
 
 **期待される結果**：
 - RedactingHandler が `slog.KindAny` 型を処理できる

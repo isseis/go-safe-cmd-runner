@@ -2527,7 +2527,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 			})
 
 			// Wrap with redacting handler to simulate real behavior
-			redactingHandler := redaction.NewRedactingHandler(handler, nil) // nil uses default config
+			redactingHandler := redaction.NewRedactingHandler(handler, nil, nil) // nil uses default config
 			logger := slog.New(redactingHandler)
 			slog.SetDefault(logger)
 
