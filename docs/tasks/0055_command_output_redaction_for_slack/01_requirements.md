@@ -404,7 +404,8 @@ SlackHandler 内で、Slack に送信する直前に出力を redact する。
 **詳細**：
 - FR-2.1：`group_executor.executeAllCommands()` で CommandResult 作成時に `SanitizeOutputForLogging()` を呼び出すこと
 - FR-2.2：redact された stdout/stderr を CommandResult に格納すること
-- FR-2.3：redaction が失敗した場合でも、エラーを返さずに元の文字列を使用すること（可用性を優先）
+- FR-2.3：redaction が失敗した場合、安全なフォールバックメッセージ `[REDACTION FAILED - OUTPUT SUPPRESSED]` を使用し、元の文字列を使用しないこと（セキュリティを優先）
+- FR-2.4：redaction の失敗は、Slack 以外のログ出力先（標準エラー出力、監査ログなど）に記録すること（デバッグ用）
 
 #### FR-3：Redaction パターン
 
@@ -436,8 +437,9 @@ SlackHandler 内で、Slack に送信する直前に出力を redact する。
 #### NFR-2：セキュリティ
 
 - NFR-2.1：既知の機密情報パターン（パスワード、トークンなど）が Slack に送信されないこと
-- NFR-2.2：redaction の失敗は可用性を損なわないこと（最悪の場合、元の文字列を使用）
+- NFR-2.2：redaction の失敗時は、セキュリティを可用性より優先し、安全なプレースホルダーテキストを使用すること（元の文字列を公開しない）
 - NFR-2.3：redaction 処理自体がセキュリティ脆弱性を生まないこと
+- NFR-2.4：redaction 失敗時もシステムの動作を継続し、該当する出力のみを安全なプレースホルダーに置き換えること
 
 #### NFR-3：保守性
 
