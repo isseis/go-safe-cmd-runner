@@ -289,7 +289,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[RedactLogAttribute] --> B{attr.Value.Kind()}
+    A[RedactLogAttribute] --> B{"attr.Value.Kind()"}
 
     B -->|KindString| C[Redact string]
     B -->|KindGroup| D[Redact group recursively]
@@ -648,7 +648,7 @@ flowchart TD
     B -->|Yes| C[Log warning]
     B -->|No| D[Return redacted output]
 
-    C --> E[Return "[REDACTION FAILED - OUTPUT SUPPRESSED]"]
+    C --> E["Return [REDACTION FAILED - OUTPUT SUPPRESSED]"]
 
     D --> F[Safe output]
     E --> F
