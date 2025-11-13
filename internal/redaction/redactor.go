@@ -380,14 +380,14 @@ func (r *RedactingHandler) processKindAny(key string, value slog.Value, ctx reda
 func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer, ctx redactionContext) (slog.Attr, error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
-		// Depth limit reached: return partially redacted value (not an error)
+		// Depth limit reached: return placeholder to prevent information leakage
 		// Log at Debug level
-		slog.Debug("Recursion depth limit reached - returning partially redacted value",
+		slog.Debug("Recursion depth limit reached - returning placeholder for security",
 			"attribute_key", key,
 			"depth", maxRedactionDepth,
 			"note", "This is not an error - DoS prevention measure",
 		)
-		return slog.Attr{Key: key, Value: slog.AnyValue(logValuer)}, nil
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
 	}
 
 	// 2. Call LogValue() with panic recovery
@@ -432,11 +432,11 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (slog.Attr, error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
-		slog.Debug("Recursion depth limit reached for slice - returning original",
+		slog.Debug("Recursion depth limit reached for slice - returning placeholder for security",
 			"attribute_key", key,
 			"depth", maxRedactionDepth,
 		)
-		return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}, nil
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}, nil
 	}
 
 	// 2. Use reflection to get slice elements
