@@ -30,29 +30,30 @@
 ```mermaid
 flowchart TB
     subgraph "Command Execution"
-        A[Executor] -->|stdout/stderr| B[CommandResult]
+        A[Executor] -->|stdout/stderr| B[GroupExecutor]
+        B --> C[CommandResult]
     end
 
     subgraph "Logging Pipeline"
-        B -->|slog.Any| C[slog]
-        C --> D[RedactingHandler]
-        D --> E[MultiHandler]
+        C -->|slog.Any| D[slog]
+        D --> E[RedactingHandler]
+        E --> F[MultiHandler]
     end
 
     subgraph "Output Handlers"
-        E --> F[SlackHandler]
-        E --> G[FileHandler]
-        E --> H[ConsoleHandler]
+        F --> G[SlackHandler]
+        F --> H[FileHandler]
+        F --> I[ConsoleHandler]
     end
 
-    F -->|POST| I[(Slack)]
-    G -->|write| J[(Log File)]
-    H -->|write| K[(Console)]
+    G -->|POST| J[(Slack)]
+    H -->|write| K[(Log File)]
+    I -->|write| L[(Console)]
 
-    style B fill:#ffcccc
-    style D fill:#ffcccc
-    style F fill:#ffcccc
-    style I fill:#ff6666
+    style C fill:#ffcccc
+    style E fill:#ffcccc
+    style G fill:#ffcccc
+    style J fill:#ff6666
 
     classDef vulnerable fill:#ffcccc,stroke:#ff0000,stroke-width:2px
     classDef risk fill:#ff6666,stroke:#ff0000,stroke-width:3px
