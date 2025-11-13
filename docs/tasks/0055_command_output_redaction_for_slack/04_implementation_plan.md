@@ -80,9 +80,9 @@ type Config struct {
 - [ ] プレースホルダーが `"[REDACTED]"` で統一されていることを確認
 
 **完了基準**：
-- ✅ `Config` 構造体が更新される
-- ✅ すべての参照箇所が `Placeholder` を使用
-- ✅ 既存のテストがパスする
+- [ ] `Config` 構造体が更新される
+- [ ] すべての参照箇所が `Placeholder` を使用
+- [ ] 既存のテストがパスする
 
 #### 2.1.2 DefaultConfig の更新
 
@@ -105,7 +105,7 @@ func DefaultConfig() *Config {
 ```
 
 **完了基準**：
-- ✅ デフォルト設定で `"[REDACTED]"` が使用される
+- [ ] デフォルト設定で `"[REDACTED]"` が使用される
 
 ---
 
@@ -142,9 +142,9 @@ type ValidatorInterface interface {
 - [ ] モック実装の更新は次のセクションで実施
 
 **完了基準**：
-- ✅ インターフェースが更新される
-- ✅ `Validator` が `ValidatorInterface` を満たす
-- ✅ コンパイルエラーがない
+- [ ] インターフェースが更新される
+- [ ] `Validator` が `ValidatorInterface` を満たす
+- [ ] コンパイルエラーがない
 
 #### 2.1.2 モック実装の更新
 
@@ -167,8 +167,8 @@ func (m *MockValidator) SanitizeOutputForLogging(output string) string {
 - [ ] モックを使用する既存のテストがパスすることを確認
 
 **完了基準**：
-- ✅ モック実装が追加される
-- ✅ 既存のテストがすべてパス
+- [ ] モック実装が追加される
+- [ ] 既存のテストがすべてパス
 
 #### 2.1.3 GroupExecutor での呼び出し
 
@@ -207,8 +207,8 @@ func (ge *DefaultGroupExecutor) executeAllCommands(...) ([]common.CommandResult,
 - [ ] 新しい統合テストを追加（次のセクション）
 
 **完了基準**：
-- ✅ `SanitizeOutputForLogging` が呼び出される
-- ✅ 既存のテストがすべてパス
+- [ ] `SanitizeOutputForLogging` が呼び出される
+- [ ] 既存のテストがすべてパス
 
 #### 2.1.4 統合テストの追加
 
@@ -247,8 +247,8 @@ func TestGroupExecutor_SanitizeOutputForLogging(t *testing.T) {
 ```
 
 **完了基準**：
-- ✅ テストがパス
-- ✅ `SanitizeOutputForLogging` が正しく呼び出されることを確認
+- [ ] テストがパス
+- [ ] `SanitizeOutputForLogging` が正しく呼び出されることを確認
 
 #### 2.1.5 E2E テスト（案2のみ）
 
@@ -301,16 +301,16 @@ func TestE2E_Case2_RedactionAtCreation(t *testing.T) {
 ```
 
 **完了基準**：
-- ✅ E2E テストがパス
-- ✅ 機密情報が Slack に送信されないことを確認
+- [ ] E2E テストがパス
+- [ ] 機密情報が Slack に送信されないことを確認
 
 #### 2.1.6 Phase 1 の完了確認
 
 **完了基準**：
-- ✅ すべてのタスクが完了
-- ✅ すべてのテストがパス
-- ✅ コードレビューが完了
-- ✅ ドキュメントが更新される（必要に応じて）
+- [ ] すべてのタスクが完了
+- [ ] すべてのテストがパス
+- [ ] コードレビューが完了
+- [ ] ドキュメントが更新される（必要に応じて）
 
 **期待される結果**：
 - CommandResult 作成時に機密情報が redact される
@@ -377,8 +377,8 @@ func (e *ErrRegexCompilationFailed) Error() string {
 - [ ] `Error()` メソッドが適切なメッセージを返すことを確認
 
 **完了基準**：
-- ✅ エラー型が定義される
-- ✅ テストがパス
+- [ ] エラー型が定義される
+- [ ] テストがパス
 
 #### 2.2.2 RedactionContext の追加
 
@@ -406,8 +406,8 @@ const RedactionFailurePlaceholder = "[REDACTION FAILED - OUTPUT SUPPRESSED]"
 ```
 
 **完了基準**：
-- ✅ 構造体と定数が定義される
-- ✅ コンパイルエラーがない
+- [ ] 構造体と定数が定義される
+- [ ] コンパイルエラーがない
 
 #### 2.2.3 redactLogAttributeWithContext の実装
 
@@ -481,9 +481,9 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
 - [ ] `KindAny` の処理は次のステップで実装
 
 **完了基準**：
-- ✅ `redactLogAttributeWithContext` が実装される
-- ✅ 既存のテストがすべてパス
-- ✅ コンパイルエラーがない（`processKindAny` は次で実装）
+- [ ] `redactLogAttributeWithContext` が実装される
+- [ ] 既存のテストがすべてパス
+- [ ] コンパイルエラーがない（`processKindAny` は次で実装）
 
 #### 2.2.4 processKindAny の基本実装
 
@@ -531,8 +531,8 @@ func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionConte
 - [ ] 未対応型のパススルーをテスト
 
 **完了基準**：
-- ✅ `processKindAny` が実装される
-- ✅ テストがパス
+- [ ] `processKindAny` が実装される
+- [ ] テストがパス
 
 #### 2.2.5 processLogValuer の実装
 
@@ -612,8 +612,8 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
 - [ ] Panic からの復旧をテスト
 
 **完了基準**：
-- ✅ `processLogValuer` が実装される
-- ✅ すべてのテストがパス
+- [ ] `processLogValuer` が実装される
+- [ ] すべてのテストがパス
 
 #### 2.2.6 processSlice の実装
 
@@ -712,8 +712,8 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 - [ ] 混在型スライス（LogValuer + non-LogValuer）の処理をテスト
 
 **完了基準**：
-- ✅ `processSlice` が実装される
-- ✅ すべてのテストがパス
+- [ ] `processSlice` が実装される
+- [ ] すべてのテストがパス
 
 #### 2.2.7 Unit Tests の追加
 
@@ -733,15 +733,15 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 8. Mixed slice
 
 **完了基準**：
-- ✅ すべての Unit テストがパス
-- ✅ テストカバレッジが 90% 以上
+- [ ] すべての Unit テストがパス
+- [ ] テストカバレッジが 90% 以上
 
 #### 2.2.8 Phase 2 の完了確認
 
 **完了基準**：
-- ✅ すべてのタスクが完了
-- ✅ すべてのテストがパス
-- ✅ コードレビューが完了
+- [ ] すべてのタスクが完了
+- [ ] すべてのテストがパス
+- [ ] コードレビューが完了
 
 **期待される結果**：
 - RedactingHandler が `slog.KindAny` 型を処理できる
@@ -795,8 +795,8 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 - [ ] `failureLogger` が正しく設定されることを確認
 
 **完了基準**：
-- ✅ `failureLogger` フィールドが追加される
-- ✅ 既存のテストがすべてパス
+- [ ] `failureLogger` フィールドが追加される
+- [ ] 既存のテストがすべてパス
 
 #### 2.3.2 processLogValuer での failureLogger 使用
 
@@ -865,8 +865,8 @@ func (r *RedactingHandler) processLogValuerInternal(key string, logValuer slog.L
 - [ ] ログメッセージが正しいことを確認
 
 **完了基準**：
-- ✅ `failureLogger` が使用される
-- ✅ テストがパス
+- [ ] `failureLogger` が使用される
+- [ ] テストがパス
 
 #### 2.3.3 logging システムでの初期化更新
 
@@ -906,15 +906,15 @@ func setupLogging() {
 - [ ] 統合テストで `failureLogger` が正しく設定されることを確認
 
 **完了基準**：
-- ✅ logging システムが更新される
-- ✅ テストがパス
+- [ ] logging システムが更新される
+- [ ] テストがパス
 
 #### 2.3.4 Phase 3 の完了確認
 
 **完了基準**：
-- ✅ すべてのタスクが完了
-- ✅ すべてのテストがパス
-- ✅ 失敗ログが Slack に送信されないことを確認
+- [ ] すべてのタスクが完了
+- [ ] すべてのテストがパス
+- [ ] 失敗ログが Slack に送信されないことを確認
 
 **期待される結果**：
 - Redaction の失敗が stderr とファイルログに記録される
@@ -940,8 +940,8 @@ grep -rn "RedactText" internal/
 ```
 
 **完了基準**：
-- ✅ 影響範囲がドキュメント化される
-- ✅ 変更のリスク評価が完了
+- [ ] 影響範囲がドキュメント化される
+- [ ] 変更のリスク評価が完了
 
 #### 2.4.2 performXXXRedaction メソッドの変更
 
@@ -962,7 +962,7 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 
     re, err := regexp.Compile(regexPattern)
     if err != nil {
-        // ✅ Fail-secure: 正規表現コンパイル失敗時は全体を置換
+        // [ ] Fail-secure: 正規表現コンパイル失敗時は全体を置換
         slog.Warn("Regex compilation failed - using safe placeholder",
             "pattern", pattern,
             "error", err.Error(),
@@ -982,8 +982,8 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 - [ ] `RedactionFailurePlaceholder` が返されることを確認
 
 **完了基準**：
-- ✅ すべての `performXXXRedaction` メソッドが fail-secure になる
-- ✅ テストがパス
+- [ ] すべての `performXXXRedaction` メソッドが fail-secure になる
+- [ ] テストがパス
 
 #### 2.4.3 既存のテストの更新
 
@@ -994,15 +994,15 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 - [ ] エラーケースのテストを追加
 
 **完了基準**：
-- ✅ すべてのテストがパス
-- ✅ カバレッジが維持される
+- [ ] すべてのテストがパス
+- [ ] カバレッジが維持される
 
 #### 2.4.4 Phase 4 の完了確認
 
 **完了基準**：
-- ✅ すべてのタスクが完了
-- ✅ すべてのテストがパス
-- ✅ コードレビューが完了
+- [ ] すべてのタスクが完了
+- [ ] すべてのテストがパス
+- [ ] コードレビューが完了
 
 **期待される結果**：
 - 正規表現コンパイル失敗時に機密情報が漏洩しない
@@ -1086,8 +1086,8 @@ func TestIntegration_Case1Only(t *testing.T) {
 ```
 
 **完了基準**：
-- ✅ Integration テストがパス
-- ✅ 二重防御が正しく動作することを確認
+- [ ] Integration テストがパス
+- [ ] 二重防御が正しく動作することを確認
 
 #### 2.5.2 E2E Tests の追加
 
@@ -1125,8 +1125,8 @@ func TestE2E_RealCommandWithAPIKey(t *testing.T) {
 - モック HTTP サーバーを使用
 
 **完了基準**：
-- ✅ E2E テストがパス
-- ✅ 機密情報が Slack に送信されないことを確認
+- [ ] E2E テストがパス
+- [ ] 機密情報が Slack に送信されないことを確認
 
 #### 2.5.3 パフォーマンステスト
 
@@ -1148,15 +1148,15 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 - LogValuer/Slice：String 処理の 2倍以内
 
 **完了基準**：
-- ✅ ベンチマークテストが実行される
-- ✅ パフォーマンス目標を達成
+- [ ] ベンチマークテストが実行される
+- [ ] パフォーマンス目標を達成
 
 #### 2.5.4 Phase 5 の完了確認
 
 **完了基準**：
-- ✅ すべてのテストがパス
-- ✅ カバレッジが 90% 以上
-- ✅ パフォーマンス目標を達成
+- [ ] すべてのテストがパス
+- [ ] カバレッジが 90% 以上
+- [ ] パフォーマンス目標を達成
 
 **期待される結果**：
 - 案1と案2の二重防御が正しく動作
@@ -1175,9 +1175,9 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 - Placeholder の統一実装
 
 **検証基準**：
-- ✅ 単体テストがすべてパス
-- ✅ 既存機能が正常動作
-- ✅ ログ出力で `"[REDACTED]"` が使用されていることを確認
+- [ ] 単体テストがすべてパス
+- [ ] 既存機能が正常動作
+- [ ] ログ出力で `"[REDACTED]"` が使用されていることを確認
 
 #### Phase 2：案2のみ（開発環境）
 
@@ -1185,9 +1185,9 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 - CommandResult 作成時の redaction のみ
 
 **検証基準**：
-- ✅ 単体テストがすべてパス
-- ✅ 統合テストがすべてパス
-- ✅ 機密情報が Slack に送信されないことを確認（モック環境）
+- [ ] 単体テストがすべてパス
+- [ ] 統合テストがすべてパス
+- [ ] 機密情報が Slack に送信されないことを確認（モック環境）
 
 **完了判断**：
 - 上記の検証基準がすべて満たされ、コードレビューが完了
@@ -1198,9 +1198,9 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 - RedactingHandler の拡張を追加
 
 **検証基準**：
-- ✅ すべてのテストがパス
-- ✅ パフォーマンス目標を達成
-- ✅ 案1のみで保護できることを確認（案2を無効化したテスト）
+- [ ] すべてのテストがパス
+- [ ] パフォーマンス目標を達成
+- [ ] 案1のみで保護できることを確認（案2を無効化したテスト）
 
 **完了判断**：
 - 上記の検証基準がすべて満たされ、パフォーマンス目標を達成
@@ -1220,16 +1220,16 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 4. 安定性確認（1週間）
 
 **検証基準（本番環境）**：
-- ✅ デプロイ前の最終確認：
+- [ ] デプロイ前の最終確認：
   - 本番 Slack Webhook URL が設定されていることを確認
   - テスト用 Webhook URL が削除されていることを確認
   - Redaction が有効化されていることを確認（`RedactSensitiveInfo: true`）
-- ✅ 初期監視期間（24時間）：
+- [ ] 初期監視期間（24時間）：
   - Redaction エラー率 < 0.1%
   - ログ出力レイテンシ < 100ms
   - CPU 使用率増加 < 5%
   - メモリ使用量増加 < 5%
-- ✅ セキュリティ検証：
+- [ ] セキュリティ検証：
   - **自動スキャン（最優先）**：
     - Slack API を使用して対象期間（過去1週間）のメッセージをエクスポート
     - 検証スクリプトで以下をチェック：
@@ -1243,7 +1243,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
   - **アクセス制限と監査**：
     - 検証作業は適切な権限とセキュリティクリアランスを持つ担当者のみが実施
     - 検証作業の開始・終了・担当者を監査ログに記録
-- ✅ 安定性確認（1週間）：
+- [ ] 安定性確認（1週間）：
   - 上記メトリクスが継続的に正常範囲内
 
 **完了判断**：
@@ -1441,31 +1441,31 @@ print(f"Redacted messages: {redacted_count}")
 
 ### 8.1 機能要件
 
-- ✅ CommandResult 作成時に機密情報が redact される
-- ✅ RedactingHandler で `slog.KindAny` 型が処理される
-- ✅ LogValuer と スライス型の redaction が動作する
-- ✅ 再帰深度制限が正しく動作する
-- ✅ Panic からの復旧が正しく動作する
-- ✅ 失敗ログが Slack 以外の出力先に記録される
-- ✅ 正規表現コンパイル失敗時に fail-secure 動作する
+- [ ] CommandResult 作成時に機密情報が redact される
+- [ ] RedactingHandler で `slog.KindAny` 型が処理される
+- [ ] LogValuer と スライス型の redaction が動作する
+- [ ] 再帰深度制限が正しく動作する
+- [ ] Panic からの復旧が正しく動作する
+- [ ] 失敗ログが Slack 以外の出力先に記録される
+- [ ] 正規表現コンパイル失敗時に fail-secure 動作する
 
 ### 8.2 非機能要件
 
-- ✅ テストカバレッジ：90% 以上
-- ✅ パフォーマンス：
+- [ ] テストカバレッジ：90% 以上
+- [ ] パフォーマンス：
   - RedactingHandler のオーバーヘッド < 10%
   - ログ出力レイテンシ < 100ms
   - CPU 使用率増加 < 5%
   - メモリ使用量増加 < 5%
-- ✅ セキュリティ：
+- [ ] セキュリティ：
   - すべての既知のパターンが redact される
   - 機密情報が Slack に漏洩しない
 
 ### 8.3 デプロイ要件
 
-- ✅ 段階的ロールアウトが完了
-- ✅ 本番環境で1週間の安定稼働を確認
-- ✅ ドキュメントが完成
+- [ ] 段階的ロールアウトが完了
+- [ ] 本番環境で1週間の安定稼働を確認
+- [ ] ドキュメントが完成
 
 ---
 
