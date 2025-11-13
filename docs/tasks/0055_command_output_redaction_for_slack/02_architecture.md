@@ -404,7 +404,7 @@ flowchart TD
     B -->|No| D[Continue processing]
 
     C --> E[Log error]
-    E --> F[Return original attr]
+    E --> F[Return attr with "[REDACTION FAILED]"]
 
     D --> G{Type assertion error?}
     G -->|Yes| H[Skip element]
@@ -412,18 +412,19 @@ flowchart TD
 
     H --> J[Continue with next element]
     I --> J
-    F --> K[Maintain availability]
+    F --> K[Maintain availability and security]
     J --> K
 
     style C fill:#ffcccc
     style E fill:#ffcccc
+    style F fill:#ff6666
     style H fill:#ffffcc
 ```
 
 **原則**：
 - panic は recover して可用性を維持
 - エラーは slog.Debug でログ出力（再帰を避けるため）
-- 処理に失敗した場合は元の属性を返す
+- 処理に失敗した場合は "[REDACTION FAILED]" で置換（fail-secure）
 
 #### 4.4.3 セキュリティ
 
@@ -439,6 +440,12 @@ flowchart TD
 3. **型安全性**：
    - 型アサーションは常にチェック
    - 予期しない型は安全にスキップ
+
+**重要な実装上の注意**：
+- 現在の `redaction.Config.RedactText()` 実装は、正規表現コンパイル失敗時に元のテキストを返す fail-open 動作となっている（`redactor.go` の 110-112, 136-139, 174-177 行）
+- この動作は本アーキテクチャで定義した fail-secure 原則と矛盾しており、セキュリティリスクとなる
+- 実装時には、正規表現コンパイル失敗時も "[REDACTION FAILED]" を返すように修正する必要がある
+- 既存の `RedactText()` の動作変更は他の箇所に影響する可能性があるため、慎重な影響範囲調査とテストが必要
 
 ---
 
@@ -589,7 +596,7 @@ flowchart TD
     B -->|Yes| C[Log warning]
     B -->|No| D[Return redacted output]
 
-    C --> E[Return original output]
+    C --> E[Return "[REDACTION FAILED]"]
 
     D --> F[Safe output]
     E --> F
@@ -597,13 +604,13 @@ flowchart TD
     F --> G[Continue execution]
 
     style C fill:#ffffcc
-    style E fill:#ffcccc
+    style E fill:#ff6666
     style F fill:#66ff66
 ```
 
 **原則**：
 - redaction が失敗しても、エラーを返さない
-- 可用性を優先し、最悪の場合は元の文字列を使用
+- セキュリティを優先し、失敗時は "[REDACTION FAILED]" で置換（fail-secure）
 - 警告をログ出力（slog.Warn）
 
 #### 5.4.3 パフォーマンス
