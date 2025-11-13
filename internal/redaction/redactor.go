@@ -504,6 +504,6 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 		}
 	}
 
-	// 4. Return processed slice (maintain slice type)
+	// 4. Return processed slice (converted to []any for compatibility)
 	return slog.Attr{Key: key, Value: slog.AnyValue(processedElements)}, firstError
 }
