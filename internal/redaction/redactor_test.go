@@ -19,6 +19,16 @@ func (p panickingLogValuer) LogValue() slog.Value {
 	panic("test panic")
 }
 
+// sensitiveLogValuer is a helper struct for testing LogValuer redaction with sensitive data.
+type sensitiveLogValuer struct {
+	data string
+}
+
+// LogValue implements the slog.LogValuer interface.
+func (v sensitiveLogValuer) LogValue() slog.Value {
+	return slog.StringValue(v.data)
+}
+
 // TestRedactText_EmptyString tests that empty strings are handled correctly
 func TestRedactText_EmptyString(t *testing.T) {
 	config := DefaultConfig()
@@ -937,7 +947,7 @@ func TestRedactLogAttribute_StringWithKeyValuePatterns(t *testing.T) {
 }
 
 // TestRedactingHandler_LogValuerSingle tests redaction of a single LogValuer
-func TestRedactingHandler_LogValuerSingle(_ *testing.T) {
+func TestRedactingHandler_LogValuerSingle(t *testing.T) {
 	var buf bytes.Buffer
 	handler := slog.NewJSONHandler(&buf, nil)
 	config := DefaultConfig()
@@ -945,16 +955,15 @@ func TestRedactingHandler_LogValuerSingle(_ *testing.T) {
 	logger := slog.New(redactingHandler)
 
 	// Test data with a LogValuer that contains sensitive information
-	type TestLogValuer struct {
-		data string
-	}
-	testValuer := TestLogValuer{data: "password=secret123"}
+	testValuer := sensitiveLogValuer{data: "password=secret123"}
 
 	// Execute
-	logger.Info("Command executed", "result", slog.AnyValue(testValuer))
+	logger.Info("Command executed", "result", testValuer)
 
-	// Note: This test demonstrates that without LogValuer interface implementation,
-	// the value passes through. This is expected behavior for non-LogValuer types.
+	// Verify the sensitive data is redacted
+	output := buf.String()
+	assert.Contains(t, output, "password=[REDACTED]")
+	assert.NotContains(t, output, "secret123")
 }
 
 // Test LogValuer with actual CommandResult-like struct
