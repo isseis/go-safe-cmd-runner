@@ -1,181 +1,284 @@
-//go:build skip_risk_tests
+//go:build test
 
-package risk_test
+package risk
 
 import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
+func TestNewStandardEvaluator(t *testing.T) {
+	evaluator := NewStandardEvaluator()
+	require.NotNil(t, evaluator)
+	assert.IsType(t, &StandardEvaluator{}, evaluator)
+}
+
+func TestStandardEvaluator_EvaluateRisk_PrivilegeEscalation(t *testing.T) {
 	evaluator := NewStandardEvaluator()
 
 	tests := []struct {
 		name     string
-		cmd      *runnertypes.Command
+		cmd      string
+		args     []string
 		expected runnertypes.RiskLevel
 	}{
 		{
-			name: "privilege escalation command - sudo",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "sudo",
-				Args: []string{"ls", "/root"},
-			},
+			name:     "sudo command",
+			cmd:      "sudo",
+			args:     []string{"ls", "/root"},
 			expected: runnertypes.RiskLevelCritical,
 		},
 		{
-			name: "privilege escalation command - su",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "su",
-				Args: []string{"root"},
-			},
+			name:     "su command",
+			cmd:      "su",
+			args:     []string{"root"},
 			expected: runnertypes.RiskLevelCritical,
 		},
 		{
-			name: "privilege escalation command - doas",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "doas",
-				Args: []string{"ls", "/root"},
-			},
+			name:     "doas command",
+			cmd:      "doas",
+			args:     []string{"ls", "/root"},
 			expected: runnertypes.RiskLevelCritical,
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
+			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStandardEvaluator_EvaluateRisk_DestructiveFileOperations(t *testing.T) {
+	evaluator := NewStandardEvaluator()
+
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected runnertypes.RiskLevel
+	}{
 		{
-			name: "destructive file operation - rm",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "rm",
-				Args: []string{"-rf", "/tmp/files"},
-			},
+			name:     "rm with recursive flag",
+			cmd:      "rm",
+			args:     []string{"-rf", "/tmp/files"},
 			expected: runnertypes.RiskLevelHigh,
 		},
 		{
-			name: "destructive file operation - find with delete",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "find",
-				Args: []string{"/tmp", "-name", "*.tmp", "-delete"},
-			},
+			name:     "find with delete",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.tmp", "-delete"},
 			expected: runnertypes.RiskLevelHigh,
 		},
 		{
-			name: "network operation - wget",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "wget",
-				Args: []string{"https://example.com/file.txt"},
-			},
+			name:     "dd command",
+			cmd:      "dd",
+			args:     []string{"if=/dev/zero", "of=/tmp/test"},
+			expected: runnertypes.RiskLevelHigh,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
+			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStandardEvaluator_EvaluateRisk_NetworkOperations(t *testing.T) {
+	evaluator := NewStandardEvaluator()
+
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected runnertypes.RiskLevel
+	}{
+		{
+			name:     "wget download",
+			cmd:      "wget",
+			args:     []string{"https://example.com/file.txt"},
 			expected: runnertypes.RiskLevelMedium,
 		},
 		{
-			name: "network operation - curl",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "curl",
-				Args: []string{"-O", "https://example.com/file.txt"},
-			},
+			name:     "curl download",
+			cmd:      "curl",
+			args:     []string{"-O", "https://example.com/file.txt"},
 			expected: runnertypes.RiskLevelMedium,
 		},
 		{
-			name: "system modification - systemctl",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "systemctl",
-				Args: []string{"restart", "nginx"},
-			},
+			name:     "nc command",
+			cmd:      "nc",
+			args:     []string{"-l", "8080"},
+			expected: runnertypes.RiskLevelMedium,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
+			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStandardEvaluator_EvaluateRisk_SystemModifications(t *testing.T) {
+	evaluator := NewStandardEvaluator()
+
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected runnertypes.RiskLevel
+	}{
+		{
+			name:     "systemctl restart",
+			cmd:      "systemctl",
+			args:     []string{"restart", "nginx"},
 			expected: runnertypes.RiskLevelMedium,
 		},
 		{
-			name: "package installation - apt install",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "apt",
-				Args: []string{"install", "vim"},
-			},
+			name:     "apt install",
+			cmd:      "apt",
+			args:     []string{"install", "vim"},
 			expected: runnertypes.RiskLevelMedium,
 		},
 		{
-			name: "safe package query - apt list",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "apt",
-				Args: []string{"list", "--installed"},
-			},
+			name:     "yum install",
+			cmd:      "yum",
+			args:     []string{"install", "vim"},
+			expected: runnertypes.RiskLevelMedium,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
+			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStandardEvaluator_EvaluateRisk_SafeCommands(t *testing.T) {
+	evaluator := NewStandardEvaluator()
+
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected runnertypes.RiskLevel
+	}{
+		{
+			name:     "echo command",
+			cmd:      "echo",
+			args:     []string{"Hello, World!"},
 			expected: runnertypes.RiskLevelLow,
 		},
 		{
-			name: "safe command - echo",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "echo",
-				Args: []string{"Hello, World!"},
-			},
+			name:     "ls command",
+			cmd:      "ls",
+			args:     []string{"-la", "/home"},
 			expected: runnertypes.RiskLevelLow,
 		},
 		{
-			name: "safe command - ls",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "ls",
-				Args: []string{"-la", "/home"},
-			},
+			name:     "cat command",
+			cmd:      "cat",
+			args:     []string{"/etc/passwd"},
 			expected: runnertypes.RiskLevelLow,
 		},
 		{
-			name: "safe command - cat",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "cat",
-				Args: []string{"/etc/passwd"},
-			},
+			name:     "apt list (query)",
+			cmd:      "apt",
+			args:     []string{"list", "--installed"},
 			expected: runnertypes.RiskLevelLow,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := evaluator.EvaluateRisk(tt.cmd)
-			assert.NoError(t, err, "unexpected error")
-
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
+			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestStandardEvaluator_RiskLevelHierarchy tests that risk levels are properly prioritized
-func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
+func TestStandardEvaluator_EvaluateRisk_EmptyCommand(t *testing.T) {
+	evaluator := NewStandardEvaluator()
+
+	runtimeCmd := &runnertypes.RuntimeCommand{
+		ExpandedCmd:  "",
+		ExpandedArgs: []string{"test"},
+	}
+	result, err := evaluator.EvaluateRisk(runtimeCmd)
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelLow, result)
+}
+
+func TestStandardEvaluator_EvaluateRisk_RiskLevelHierarchy(t *testing.T) {
 	evaluator := NewStandardEvaluator()
 
 	tests := []struct {
 		name        string
-		cmd         *runnertypes.Command
+		cmd         string
+		args        []string
 		expected    runnertypes.RiskLevel
 		description string
 	}{
 		{
-			name: "critical risk overrides all",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "sudo",
-				Args: []string{"rm", "-rf", "/"},
-			},
+			name:        "critical risk overrides all",
+			cmd:         "sudo",
+			args:        []string{"rm", "-rf", "/"},
 			expected:    runnertypes.RiskLevelCritical,
 			description: "Privilege escalation should be classified as critical even with destructive operations",
 		},
 		{
-			name: "high risk destructive operations",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "rm",
-				Args: []string{"-rf", "/important/data"},
-			},
+			name:        "high risk destructive operations",
+			cmd:         "rm",
+			args:        []string{"-rf", "/important/data"},
 			expected:    runnertypes.RiskLevelHigh,
 			description: "Destructive file operations should be high risk",
 		},
 		{
-			name: "medium risk network operations",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "wget",
-				Args: []string{"https://suspicious.example.com/script.sh"},
-			},
+			name:        "medium risk network operations",
+			cmd:         "wget",
+			args:        []string{"https://suspicious.example.com/script.sh"},
 			expected:    runnertypes.RiskLevelMedium,
 			description: "Network operations should be medium risk",
 		},
 		{
-			name: "medium risk system modifications",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "systemctl",
-				Args: []string{"stop", "important-service"},
-			},
+			name:        "medium risk system modifications",
+			cmd:         "systemctl",
+			args:        []string{"stop", "important-service"},
 			expected:    runnertypes.RiskLevelMedium,
 			description: "System modifications should be medium risk",
 		},
@@ -183,54 +286,13 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := evaluator.EvaluateRisk(tt.cmd)
-			assert.NoError(t, err, "unexpected error")
-
-			assert.Equal(t, tt.expected, result, "Test: %s\nDescription: %s", tt.name, tt.description)
-		})
-	}
-}
-
-// TestStandardEvaluator_ErrorHandling tests error handling in risk evaluation
-func TestStandardEvaluator_ErrorHandling(t *testing.T) {
-	evaluator := NewStandardEvaluator()
-
-	tests := []struct {
-		name         string
-		cmd          *runnertypes.Command
-		expectError  bool
-		expectedRisk runnertypes.RiskLevel
-	}{
-		{
-			name: "normal command should not error",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "echo",
-				Args: []string{"hello"},
-			},
-			expectError:  false,
-			expectedRisk: runnertypes.RiskLevelLow,
-		},
-		{
-			name: "empty command name",
-			cmd: &runnertypes.CommandSpec{
-				Cmd:  "",
-				Args: []string{"test"},
-			},
-			expectError:  false, // IsPrivilegeEscalationCommand handles empty command gracefully
-			expectedRisk: runnertypes.RiskLevelLow,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := evaluator.EvaluateRisk(tt.cmd)
-
-			if tt.expectError {
-				assert.Error(t, err, "expected error but got none")
-			} else {
-				assert.NoError(t, err, "unexpected error")
-				assert.Equal(t, tt.expectedRisk, result, "expected risk %v, got %v", tt.expectedRisk, result)
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				ExpandedCmd:  tt.cmd,
+				ExpandedArgs: tt.args,
 			}
+			result, err := evaluator.EvaluateRisk(runtimeCmd)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result, "Test: %s\nDescription: %s", tt.name, tt.description)
 		})
 	}
 }
