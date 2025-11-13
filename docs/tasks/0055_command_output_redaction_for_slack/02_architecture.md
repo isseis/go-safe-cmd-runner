@@ -415,7 +415,7 @@ flowchart TD
     B -->|No| D[Continue processing]
 
     C --> E[Log error]
-    E --> F[Return attr with "[REDACTION FAILED - OUTPUT SUPPRESSED]"]
+    E --> F["Return attr with [REDACTION FAILED - OUTPUT SUPPRESSED]"]
 
     D --> G{Type assertion error?}
     G -->|Yes| H[Skip element]
