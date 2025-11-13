@@ -257,13 +257,17 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		// Execute the command
 		stdout, stderr, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 
+		// Sanitize output for logging (Case 2: supplementary measure for task 0055)
+		sanitizedStdout := ge.validator.SanitizeOutputForLogging(stdout)
+		sanitizedStderr := ge.validator.SanitizeOutputForLogging(stderr)
+
 		// Record command result
 		cmdResult := common.CommandResult{
 			CommandResultFields: common.CommandResultFields{
 				Name:     cmdSpec.Name,
 				ExitCode: exitCode,
-				Output:   stdout,
-				Stderr:   stderr,
+				Output:   sanitizedStdout,
+				Stderr:   sanitizedStderr,
 			},
 		}
 		commandResults = append(commandResults, cmdResult)

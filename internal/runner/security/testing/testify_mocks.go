@@ -27,3 +27,9 @@ func (m *MockValidator) ValidateCommand(command string) error {
 	args := m.Called(command)
 	return args.Error(0)
 }
+
+// SanitizeOutputForLogging mocks the SanitizeOutputForLogging method
+func (m *MockValidator) SanitizeOutputForLogging(output string) string {
+	args := m.Called(output)
+	return args.String(0)
+}

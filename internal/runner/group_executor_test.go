@@ -372,6 +372,8 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 	// Mock validator to allow all validations
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
@@ -439,6 +441,8 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 	// Mock validator to allow all validations
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
@@ -466,7 +470,17 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 // TestExecuteGroup_SuccessNotification tests that success notification is sent properly
 func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
-	mockValidator, mockVerificationManager := setupMocksForTest(t)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	// Setup validator mocks - need to preserve actual output for this test
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// Return input as-is for sanitization in this test
+	mockValidator.On("SanitizeOutputForLogging", "success").Return("success")
+	mockValidator.On("SanitizeOutputForLogging", "").Return("")
+
+	// Setup verification manager mock
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -1126,6 +1140,8 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 			val, exists := envVars["DANGEROUS_VAR"]
 			return exists && strings.Contains(val, "rm -rf")
 		})).Return(expectedErr)
+	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging (may not be called in this test)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
@@ -1188,6 +1204,8 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 
 	// Setup: validator passes
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging (may not be called in this test)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	// Setup: path resolution fails
 	expectedErr := errors.New("command not found in PATH")
@@ -1249,6 +1267,8 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behaviors for validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil).Maybe()
+	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	// Setup default behaviors for verification manager - return the input path as-is
 	// Note: Cannot use dynamic return in Maybe() mocks, so we don't set up a default mock here.
@@ -2544,6 +2564,8 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+			// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+			mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 			// Mock resource manager - command execution fails with stderr
 			mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
