@@ -759,11 +759,9 @@ type SlackHandler struct {
 **標準入力の無効化**:
 ```go
 // 場所: internal/runner/executor/executor.go:210-224
-// Set up stdin to null device for security and stability:
-// 1. Security: Prevents child processes from reading unexpected input from stdin
-// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
-//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
-// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
+// Set up stdin to null device to prevent issues with commands that expect stdin
+// This prevents "exit status 255" errors from docker-compose exec and similar commands
+// that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
 devNull, err := os.Open(os.DevNull)
 if err != nil {
     return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
