@@ -330,7 +330,7 @@ flowchart TD
 ```
 
 **注記**：
-- 図中の「N → A」の矢印は概念的な再帰を示しています
+- 図中の破線矢印「Depth < MAX? → RedactLogAttribute」は、再帰深度チェック後に `RedactLogAttribute` を再度呼び出す概念的な再帰を示しています
 - 実装では `redactLogAttributeWithContext(attr, context)` のような内部ヘルパー関数を使用し、深度情報を `RedactionContext` で管理します
 - 公開 API の `RedactLogAttribute(attr)` は内部で `redactLogAttributeWithContext(attr, RedactionContext{depth: 0})` を呼び出す設計とします
 
