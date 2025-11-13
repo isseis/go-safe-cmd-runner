@@ -155,25 +155,25 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 **File Size Protection**:
 - Maximum file size limit: 128 MB
 - Prevents memory exhaustion attacks
-- Uses `io.LimitReader` for consistent behavior
+- Controls write size with custom size-limiting writer
 
 **Path Validation**:
-- Absolute path requirement
-- Path length limits (configurable, default 4096 characters)
-- Regular file type validation
-- Disallows device files, pipes, and special files
+- Requires absolute paths
+- Path length limit (configurable, default 4096 characters)
+- Validates regular file type
+- Does not allow device files, pipes, or special files
 
 #### Security Guarantees
 - Atomic symlink-safe operations on modern Linux (openat2)
 - Comprehensive path traversal protection
-- Elimination of TOCTOU race conditions
+- Eliminates TOCTOU race conditions
 - Protection against memory exhaustion attacks
-- Safe file type validation
+- Secure file type validation
 
 ### 4. Privilege Management
 
 #### Purpose
-Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege, with comprehensive audit trail.
+Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege and providing comprehensive audit trails.
 
 #### Implementation Details
 
@@ -185,7 +185,7 @@ type UnixPrivilegeManager struct {
     originalUID        int
     privilegeSupported bool
     metrics            Metrics
-    mu                 sync.Mutex  // Prevent race conditions
+    mu                 sync.Mutex  // Prevents race conditions
 }
 ```
 
@@ -215,10 +215,10 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 **Execution Modes**:
 
 1. **Native Root Execution**: Running as root user (UID 0)
-   - No privilege escalation needed
+   - No privilege escalation required
    - Direct execution with full privileges
 
-2. **Setuid Binary Execution**: Binary with setuid bit set and root ownership
+2. **setuid Binary Execution**: Binary with setuid bit set and root ownership
    - Uses `syscall.Seteuid(0)` for privilege escalation
    - Automatic privilege restoration after operation
 
@@ -226,13 +226,13 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 ```go
 // Location: internal/runner/privilege/unix.go:232-294
 func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
-    // Validate setuid bit is set
+    // Verify setuid bit is set
     hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
 
-    // Validate root ownership (essential for setuid to work)
+    // Verify root ownership (essential for setuid to work)
     isOwnedByRoot := stat.Uid == 0
 
-    // Validate non-root real UID (true setuid scenario)
+    // Verify non-root real UID (true setuid scenario)
     isValidSetuid := hasSetuidBit && isOwnedByRoot && originalUID != 0
 
     return isValidSetuid
@@ -241,7 +241,7 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 
 **Emergency Shutdown Protocol**:
 - Immediate process termination on privilege restoration failure
-- Multi-channel logging (structured logs, syslog, stderr)
+- Multi-channel logging (structured logging, syslog, stderr)
 - Security event recording with full context
 - Prevents continued execution in compromised state
 
@@ -250,12 +250,12 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 - Automatic privilege restoration with panic protection
 - Comprehensive audit logging of all privilege operations
 - Emergency shutdown on security failures
-- Support for both native root and setuid binary execution models
+- Supports both native root and setuid binary execution models
 
-### 5. Command Path Validation
+### 5. Command Path Verification
 
 #### Purpose
-Validate command paths against configurable allowlists to ensure only authorized commands can be executed, preventing the execution of dangerous binaries. Stops environment variable inheritance and uses a secure fixed PATH.
+Validates command paths against a configurable allowlist and prevents execution of dangerous binaries, ensuring only authorized commands can be executed. Stops environment variable inheritance and uses a secure fixed PATH.
 
 #### Implementation Details
 
@@ -264,7 +264,7 @@ Validate command paths against configurable allowlists to ensure only authorized
 // Location: internal/verification/manager.go
 const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 
-// Do not inherit environment variable PATH, use secure fixed PATH
+// Does not inherit environment variable PATH, uses secure fixed PATH
 pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
 ```
 
@@ -272,19 +272,19 @@ pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
 ```go
 // Location: internal/verification/path_resolver.go
 type PathResolver struct {
-    pathEnv            string    // Use secure fixed PATH
+    pathEnv            string    // Uses secure fixed PATH
     securityValidator  *security.Validator
     skipStandardPaths  bool
 }
 ```
 
-**Command Validation Process**:
+**Command Verification Process**:
 1. Resolve command to full path using PATH environment variable
 2. Validate against allowlist patterns (regex-based)
 3. Check for dangerous privileged commands
 4. Verify file integrity if hash is available
 
-**Default Allow Patterns**:
+**Default Allowed Patterns**:
 ```go
 // Location: internal/runner/security/types.go:147-154
 AllowedCommands: []string{
@@ -304,7 +304,7 @@ AllowedCommands: []string{
 
 #### Security Guarantees
 - Allowlist-based command execution
-- Prevention of arbitrary command execution
+- Prevents arbitrary command execution
 - Detection of dangerous privileged operations
 - Path resolution security validation
 - Complete elimination of environment variable PATH inheritance
@@ -323,7 +323,7 @@ Implements intelligent security controls based on command risk assessment, autom
 type StandardEvaluator struct{}
 
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-    // Check for privilege escalation commands (critical risk - should be blocked)
+    // Check privilege escalation commands (critical risk - should be blocked)
     isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
     if err != nil {
         return runnertypes.RiskLevelUnknown, err
@@ -331,15 +331,15 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
     if isPrivEsc {
         return runnertypes.RiskLevelCritical, nil
     }
-    // ... additional risk assessment logic
+    // ... Additional risk assessment logic
 }
 ```
 
 **Command Risk Analysis**:
-- Low Risk: Standard system utilities (ls, cat, grep)
-- Medium Risk: File modification commands (cp, mv, chmod), package management (apt, yum)
-- High Risk: System administration commands (mount, systemctl), destructive operations (rm -rf)
-- Critical Risk: Privilege escalation commands (sudo, su) - automatically blocked
+- Low risk: Standard system utilities (ls, cat, grep)
+- Medium risk: File modification commands (cp, mv, chmod), package management (apt, yum)
+- High risk: System administration commands (mount, systemctl), destructive operations (rm -rf)
+- Critical risk: Privilege escalation commands (sudo, su) - automatically blocked
 
 **Risk Level Configuration**:
 ```go
@@ -351,7 +351,7 @@ type Command struct {
 
 #### Security Guarantees
 - Automatic blocking of privilege escalation attempts
-- Configurable risk thresholds per command
+- Configurable risk threshold per command
 - Comprehensive command pattern matching
 - Risk-based audit logging
 
@@ -373,34 +373,106 @@ type ResourceManager interface {
 ```
 
 **Execution Mode Security**:
-- Normal Mode: Full privilege management and command execution
-- Dry-run Mode: Security analysis without actual execution
+- Normal mode: Full privilege management and command execution
+- dry-run mode: Security analysis without actual execution
 - Consistent security validation across both modes
 
 #### Security Guarantees
 - Mode-independent security validation
 - Privilege boundary enforcement
-- Safe notification handling
+- Secure notification handling
 - Resource lifecycle management
 
 ### 8. Secure Logging and Sensitive Data Protection
 
 #### Purpose
-Prevents sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing a safe audit trail without compromising sensitive data. Enhanced by dedicated redaction service.
+Prevents sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing a safe audit trail without compromising sensitive data. Enhanced with dedicated redaction services to achieve comprehensive protection through a defense-in-depth approach.
 
 #### Implementation Details
 
-**Centralized Data Redaction**:
+##### Current Implementation
+
+**Centralized Data Redaction Foundation**:
 ```go
 // Location: internal/redaction/redactor.go
-type Redactor struct {
-    patterns []SensitivePattern
+type Config struct {
+    LogPlaceholder   string
+    TextPlaceholder  string
+    Patterns         *SensitivePatterns
+    KeyValuePatterns []string
 }
 
-func (r *Redactor) RedactText(text string) string {
+func (c *Config) RedactText(text string) string {
     // Apply all configured redaction patterns
 }
+
+func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
+    // Redact sensitive information in log attributes
+}
 ```
+
+**RedactingHandler (Log-Level Redaction)**:
+```go
+// Location: internal/redaction/redactor.go:200-259
+type RedactingHandler struct {
+    handler slog.Handler
+    config  *Config
+}
+
+// Location: internal/runner/bootstrap/logger.go:138
+redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+logger := slog.New(redactedHandler)
+```
+- Automatically redacts sensitive information at log output time
+- Wraps all log handlers (file, syslog, Slack)
+- Recursive processing of structured logs including `slog.KindGroup`
+- Supports both key=value format and authentication header patterns
+
+**Current Slack Notification Implementation**:
+```go
+// Location: internal/logging/slack_handler.go:64-73
+type SlackHandler struct {
+    webhookURL    string
+    runID         string
+    httpClient    *http.Client
+    level         slog.Level
+    attrs         []slog.Attr
+    groups        []string
+    backoffConfig BackoffConfig
+}
+```
+- Wrapped by RedactingHandler, so basic redaction is applied
+- Length limits on command output (stdout: 1000 characters, stderr: 500 characters)
+
+##### Planned Enhancements (task 0055)
+
+**Enhanced Sensitive Information Protection with Multiple Layers of Defense**:
+
+The system adopts a dual defense layer approach where one layer protects even if the other fails:
+
+1. **Layer 1: Redaction at CommandResult Creation** (Planned)
+   - Location: `internal/runner/group_executor.go` (to be modified)
+   - Pre-redact when storing command output into `CommandResult`
+   - Uses `security.Validator.SanitizeOutputForLogging()`
+   - Current implementation: Stores raw output without redaction
+
+2. **Layer 2: Redaction in RedactingHandler** (Implemented)
+   - Location: `internal/redaction/redactor.go:200-259`
+   - Handles `slog.KindAny` type and `LogValuer` interface at log output time
+   - Catches sensitive information missed by Layer 1
+   - Prevents infinite recursion with recursion depth limit
+
+**Enhanced Sensitive Information Protection for Slack Notifications** (Planned):
+```go
+// Planned implementation: internal/logging/slack_handler.go
+type SlackHandler struct {
+    webhookURL string
+    redactor   *redaction.Redactor  // To be added
+}
+```
+- Add explicit redaction processing before sending Slack notifications
+- Complete redaction of sensitive information within `[]common.CommandResult` slices
+- Additional protection layer in external communication
 
 **Log Security Configuration**:
 ```go
@@ -438,13 +510,13 @@ func (v *Validator) redactSensitivePatterns(text string) string {
         {"secret=", "secret=[REDACTED]"},
         {"api_key=", "api_key=[REDACTED]"},
 
-        // Environment variable assignments that might contain secrets
+        // Environment variable assignments that may contain sensitive information
         {"_PASSWORD=", "_PASSWORD=[REDACTED]"},
         {"_TOKEN=", "_TOKEN=[REDACTED]"},
         {"_KEY=", "_KEY=[REDACTED]"},
         {"_SECRET=", "_SECRET=[REDACTED]"},
 
-        // Common credential patterns
+        // Common authentication patterns
         {"Bearer ", "Bearer [REDACTED]"},
         {"Basic ", "Basic [REDACTED]"},
     }
@@ -462,7 +534,7 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 
     errMsg := err.Error()
 
-    // If we shouldn't include error details, return a generic message
+    // Return generic message if error details should not be included
     if !v.config.LoggingOptions.IncludeErrorDetails {
         return "[error details redacted for security]"
     }
@@ -487,22 +559,31 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - Automatic pattern-based redaction of sensitive information
 - Supports both key=value format and authentication header patterns
 
-**Safe Logging Functions**:
-- `CreateSafeLogFields()`: Creates sanitized log field maps
+**Safe Log Functions**:
+- `CreateSafeLogFields()`: Creates sanitized log field map
 - `LogFieldsWithError()`: Combines base fields with sanitized error information
 - Automatic detection and redaction of sensitive patterns in structured logs
 
-#### Security Guarante
-- Automatic redaction of common sensitive patterns (passwords, tokens, API keys)
+#### Security Guarantees
+
+##### Currently Provided Guarantees
+- Automatic redaction in all log output via RedactingHandler
+- Detection and redaction of common sensitive patterns (passwords, tokens, API keys)
 - Configurable log detail levels for different security environments
 - Protection from credential exposure via error messages and command output
 - Length-based truncation to prevent log file bloat and potential DoS
-- Environment variable pattern detection and sanitization
+- Detection and sanitization of environment variable patterns
+- Supports both key=value format and authentication header patterns (Bearer, Basic)
+
+##### Guarantees to be Added After task 0055 Implementation
+- Dual defense with pre-redaction at CommandResult creation time
+- Additional protection layer in external communication with explicit redaction processing in Slack notifications
+- Catch by Layer 2 (RedactingHandler) even if redaction is missed in Layer 1
 
 ### 9. Terminal Capability Detection (`internal/terminal/`)
 
 #### Purpose
-Provides terminal capability detection functionality to identify terminal color support and interactive execution environments, enabling appropriate output format selection.
+Provides terminal capability detection functionality to detect color support and interactive execution environments, enabling selection of appropriate output formats.
 
 #### Implementation Details
 
@@ -521,27 +602,27 @@ type Capabilities interface {
 // Location: internal/terminal/detector.go
 type InteractiveDetector interface {
     IsInteractive() bool
-    IsTerminal() bool // Check for TTY environment or terminal-like environment
+    IsTerminal() bool // Checks for TTY environment or terminal-like environment
     IsCIEnvironment() bool
 }
 ```
 
 **Implementation Features**:
 - **CI/CD Environment Detection**: Automatic detection of GitHub Actions, Travis CI, Jenkins, etc.
-- **TTY Detection**: Verifies TTY connection status of stdout/stderr
-- **Terminal Environment Heuristics**: Identifies terminal-like environments based on TERM environment variable
+- **TTY Detection**: Checks stdout/stderr TTY connection status
+- **Terminal Environment Heuristics**: Determines terminal-like environment via TERM environment variable
 - **Color Support Detection**: Identifies color-capable terminals based on TERM value
-- **User Preference Priority**: Controls priority of command-line arguments and environment variables
+- **User Configuration Priority**: Priority control of command-line arguments and environment variables
 
 #### Security Characteristics
-- **Conservative Defaults**: Disables color output for unknown terminals
+- **Conservative Default**: Disables color output for unknown terminals
 - **Environment Variable Validation**: Proper parsing of CI environment variables
-- **Configuration Priority Control**: Security-conscious configuration inheritance
+- **Configuration Priority Control**: Security-aware configuration inheritance
 
 ### 10. Color Management (`internal/color/`)
 
 #### Purpose
-Provides safe colored output based on terminal color support capabilities and manages color control sequences appropriately.
+Provides safe colored output based on terminal color support capability and proper management of color control sequences.
 
 #### Implementation Details
 
@@ -565,18 +646,18 @@ type ColorDetector interface {
 **Implementation Features**:
 - **Known Terminal Pattern Matching**: Identifies color-capable terminals like xterm, screen, tmux, etc.
 - **Conservative Fallback**: Disables color output for unknown terminals
-- **TERM Environment Variable Parsing**: Determines color support based on terminal type
-- **User Configuration Integration**: Controls priority of terminal capabilities and user settings
+- **TERM Environment Variable Parsing**: Color support determination based on terminal type
+- **User Configuration Integration**: Priority control of terminal capability and user configuration
 
 #### Security Characteristics
 - **Conservative Approach**: Disables color output for unknown terminals to prevent escape sequence output
-- **Validated Patterns**: Enables color only for known color-capable terminals
-- **Safe Defaults**: Ensures safe behavior when color support is unknown
+- **Verified Patterns**: Enables color only for known color-capable terminals
+- **Safe Default**: Guarantees safe behavior when color support is unknown
 
 ### 11. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
 
 #### Purpose
-Provides cross-package foundational functionality, ensuring testable and reproducible safe implementations.
+Provides cross-package foundational functionality, guaranteeing testable, reproducible, and secure implementations.
 
 #### Implementation Details
 
@@ -591,8 +672,8 @@ type FileSystem interface {
 }
 ```
 
-**Mock Implementations**:
-- Provides mock filesystem for testing, enabling testing with production-equivalent security characteristics
+**Mock Implementation**:
+- Provides mock filesystem for testing, enabling testing with security characteristics equivalent to production
 - Supports testing of error conditions and boundary cases
 
 #### Security Guarantees
@@ -604,21 +685,21 @@ type FileSystem interface {
 ### 12. User and Group Execution Security
 
 #### Purpose
-Provides safe user and group switching capabilities while maintaining strict security boundaries and comprehensive audit trail.
+Provides secure user and group switching functionality while maintaining strict security boundaries and comprehensive audit trails.
 
 #### Implementation Details
 
-**User/Group Configuration**:
+**User and Group Configuration**:
 ```go
 // Location: internal/runner/runnertypes/config.go
 type Command struct {
-    RunAsUser    string `toml:"run_as_user"`    // User to execute command as
-    RunAsGroup   string `toml:"run_as_group"`   // Group to execute command as
+    RunAsUser    string `toml:"run_as_user"`    // User to run the command as
+    RunAsGroup   string `toml:"run_as_group"`   // Group to run the command as
     MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
 }
 ```
 
-**Group Membership Validation**:
+**Group Membership Verification**:
 ```go
 // Location: internal/groupmembership/membership.go
 type GroupMembershipChecker interface {
@@ -627,9 +708,9 @@ type GroupMembershipChecker interface {
 }
 ```
 
-**Security Validation Flow**:
+**Security Verification Flow**:
 1. Validate user existence and permissions
-2. Verify group membership if group is specified
+2. Confirm group membership when group is specified
 3. Check privilege escalation requirements
 4. Apply risk-based restrictions
 5. Execute command with appropriate privileges
@@ -637,13 +718,13 @@ type GroupMembershipChecker interface {
 #### Security Guarantees
 - Comprehensive user and group validation
 - Privilege escalation boundary enforcement
-- Group membership verification
-- Complete audit trail of user/group switching
+- Group membership confirmation
+- Complete audit trail of user and group switching
 
 ### 13. Multi-Channel Notification Security
 
 #### Purpose
-Provides safe notification capabilities for critical security events while protecting sensitive information in external communications.
+Provides secure notification functionality for critical security events while protecting sensitive information in external communication.
 
 #### Implementation Details
 
@@ -656,8 +737,8 @@ type SlackHandler struct {
 }
 ```
 
-**Safe Notification Handling**:
-- Automatic redaction of sensitive data before sending
+**Secure Notification Handling**:
+- Automatic sensitive data redaction before sending
 - Configurable notification channels
 - Rate limiting and error handling
 - Secure webhook URL management
@@ -668,10 +749,95 @@ type SlackHandler struct {
 - Rate limiting to prevent abuse
 - Comprehensive error handling
 
-### 14. Configuration Security
+### 14. Command Execution Environment Isolation
 
 #### Purpose
-Ensures configuration files and overall system configuration are not tampered with and follows security best practices.
+Prevents child processes from reading unexpected input and explicitly controls the execution environment to improve security and stability.
+
+#### Implementation Details
+
+**Standard Input Disabling**:
+```go
+// Location: internal/runner/executor/executor.go:210-224
+// Set up stdin to null device for security and stability:
+// 1. Security: Prevents child processes from reading unexpected input from stdin
+// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
+//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
+// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
+devNull, err := os.Open(os.DevNull)
+if err != nil {
+    return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
+}
+defer func() {
+    if closeErr := devNull.Close(); closeErr != nil {
+        e.Logger.Warn("Failed to close null device", "error", closeErr)
+    }
+}()
+execCmd.Stdin = devNull
+```
+
+**Security Benefits**:
+- Prevents child processes from reading unexpected input from stdin
+- Prevents processing from being halted by interactive prompts
+- Guarantees consistent behavior in batch processing environments
+- Mitigates risk of malicious input injection attacks
+
+**Stability Improvement**:
+- Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil (such as docker-compose exec)
+- Consistent behavior across platforms (using `os.DevNull`)
+
+#### Security Guarantees
+- Explicitly disables stdin input in all child processes
+- Prevents processing halt or tampering via unexpected input
+- Cross-platform support (Linux: `/dev/null`, Windows: `NUL`)
+
+### 15. Resource Protection with Output Size Limits
+
+#### Purpose
+Limits command output size to prevent memory exhaustion attacks and disk space exhaustion, ensuring system stability and security.
+
+#### Implementation Details
+
+**Hierarchical Output Size Limits**:
+```go
+// Location: internal/common/output_size_limit.go
+func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSizeLimit) OutputSizeLimit {
+    // 1. Command-level output_size_limit (if configured)
+    // 2. Global-level output_size_limit (if configured)
+    // 3. Default output size limit (10MB)
+}
+```
+
+**Default Configuration**:
+```go
+// Location: internal/common/output_size_limit_type.go:20-21
+// DefaultOutputSizeLimit is the default output size limit when not specified (10MB)
+const DefaultOutputSizeLimit = 10 * 1024 * 1024
+```
+
+**Limit Enforcement**:
+- Location: `internal/runner/output/capture.go`
+- Limits output size with custom size-limiting writer
+- Prevents limit violations with pre-write size checks
+- Error detection and reporting when limit is exceeded
+- Flexible limit configuration per command
+
+**Configuration Hierarchy**:
+1. **Command Level**: Can configure `output_size_limit` per individual command
+2. **Global Level**: Default value applied to all commands
+3. **Default**: 10MB (when not configured)
+4. **Unlimited**: Can disable limit by setting value to 0 (requires caution)
+
+#### Security Guarantees
+- Protection from memory exhaustion attacks (DoS)
+- Prevention of disk space exhaustion from excessive output
+- Clear error messages when output size limit is exceeded
+- Fine-grained control with flexible limit configuration per command
+
+### 16. Configuration Security
+
+#### Purpose
+Ensures that configuration files and overall system configuration are not tampered with and follows security best practices.
 
 #### Implementation Details
 
@@ -692,7 +858,7 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 ```go
 // Location: cmd/runner/main.go (after modification)
 func getHashDir() string {
-    // Always use only default directory in production environment
+    // Always use default directory only in production environment
     // --hash-directory flag completely removed (security vulnerability countermeasure)
     return cmdcommon.DefaultHashDirectory
 }
@@ -701,7 +867,7 @@ func getHashDir() string {
 **Configuration File Pre-Verification**:
 ```go
 // Location: cmd/runner/main.go (after modification)
-// Execute hash verification before loading configuration file
+// Execute hash verification before reading configuration file
 if err := verificationManager.VerifyConfigFile(configPath); err != nil {
     // Completely eliminate system operation with unverified data
     return &logging.PreExecutionError{
@@ -731,18 +897,18 @@ if !filepath.IsAbs(hashDir) {
 - Complete path traversal from root to target
 - Symlink detection in path components
 - World-writable directory detection
-- Group write restrictions (root ownership required)
+- Group write restriction (requires root ownership)
 
-**Configuration Validation Timing Improvements**:
-- Execute hash verification before loading configuration file
+**Configuration Verification Timing Improvement**:
+- Execute hash verification before reading configuration file
 - Completely eliminate system operation with unverified data
 - Forced stderr output on verification failure (independent of log level settings)
 
 **Hash Directory Configuration Security Enhancement**:
 - Complete removal of `--hash-directory` command-line argument
-- Always use only default directory in production environment
-- Complete elimination of custom hash directory attack vector
-- Maintained testability through test-only API
+- Always use default directory only in production environment
+- Complete elimination of attack path via custom hash directory
+- Maintain testability with test-environment-only API
 
 **Configuration Integrity**:
 - TOML format validation
@@ -752,12 +918,12 @@ if !filepath.IsAbs(hashDir) {
 
 #### Security Guarantees
 - Prevention of configuration tampering
-- Safe file and directory permissions
+- Secure file and directory permissions
 - Prevention of path traversal attacks
 - Configuration format validation
-- Tampering detection through configuration file pre-verification
-- Complete elimination of hash directory attack vector
-- Enhanced early validation through absolute path requirements
+- Tampering detection with configuration file pre-verification
+- Complete elimination of hash directory attack path
+- Strengthened early validation with absolute path requirement
 
 ## Security Architecture Patterns
 
@@ -765,40 +931,42 @@ if !filepath.IsAbs(hashDir) {
 
 The system implements multiple security layers:
 
-1. **Input Validation**: All inputs validated at entry points (including absolute path requirements)
+1. **Input Validation**: All inputs are validated at entry points (including absolute path requirement)
 2. **Pre-Verification**: Hash verification of configuration files before use
-3. **Path Security**: Comprehensive path validation and symlink protection, use of secure fixed PATH
+3. **Path Security**: Comprehensive path validation and symlink protection, secure fixed PATH use
 4. **File Integrity**: Hash-based verification of all critical files (configuration, executables)
-5. **Privilege Control**: Least privilege principle with controlled escalation
-6. **Environment Isolation**: Strict allowlist-based environment filtering, elimination of PATH inheritance
-7. **Command Validation**: Risk-based command execution control with allowlist validation
-8. **Data Protection**: Automatic redaction of sensitive information in all outputs
-9. **User/Group Security**: Safe user/group switching with membership validation
+5. **Privilege Control**: Principle of least privilege with controlled escalation
+6. **Environment Isolation**: Strict allowlist-based environment filtering, PATH inheritance elimination
+7. **Command Validation**: Risk-based command execution control with allowlist verification
+8. **Data Protection**: Automatic sensitive information redaction in all log output via RedactingHandler (task 0055 will add pre-redaction at CommandResult creation time to strengthen defense-in-depth with dual protection)
+9. **User and Group Security**: Secure user and group switching with membership verification
 10. **Hash Directory Security**: Complete prevention of custom hash directory attacks
+11. **Execution Environment Isolation**: Prevention of unexpected input via stdin disabling
+12. **Resource Protection**: Prevention of memory and disk exhaustion attacks with output size limits
 
 ### Zero-Trust Model
 
 - No implicit trust in system environment
-- All files verified before use
-- Environment variables filtered through allowlist
-- Commands validated against known-good patterns
-- Privileges granted only when needed and immediately revoked
+- All files are verified before use
+- Environment variables are filtered by allowlist
+- Commands are validated against known good patterns
+- Privileges are granted only when needed and revoked immediately
 
 ### Fail-Safe Design
 
-- Default deny on all operations
+- Default deny for all operations
 - Emergency shutdown on security failures
 - Comprehensive error handling and logging
-- Graceful degradation when security features unavailable
+- Graceful degradation when security features are unavailable
 
-### Auditing and Monitoring
+### Audit and Monitoring
 
 - Structured logging with security context
 - Privilege operation metrics and tracking
 - Security event recording
 - Multi-channel reporting of critical errors
 
-## Threat Model and Mitigations
+## Threat Model and Countermeasures
 
 ### Filesystem Attacks
 
@@ -808,12 +976,12 @@ The system implements multiple security layers:
 - TOCTOU race conditions
 - File tampering
 - System operation manipulation via malicious configuration files
-- Verification bypass through custom hash directory
+- Verification bypass via custom hash directory
 
-**Mitigations**:
+**Countermeasures**:
 - openat2 with RESOLVE_NO_SYMLINKS
 - Step-by-step path validation
-- SHA-256 hash validation
+- SHA-256 hash verification
 - Atomic file operations
 - Pre-hash verification of configuration files
 - Fixed hash directory default (custom specification completely prohibited)
@@ -825,7 +993,7 @@ The system implements multiple security layers:
 - Privilege persistence
 - Race conditions in privilege handling
 
-**Mitigations**:
+**Countermeasures**:
 - Controlled privilege escalation
 - Automatic privilege restoration
 - Thread-safe operations
@@ -835,10 +1003,10 @@ The system implements multiple security layers:
 
 **Threats**:
 - Command injection via environment variables
-- Information leakage through environment
+- Information leakage via environment
 - Privilege escalation via LD_PRELOAD, etc.
 
-**Mitigations**:
+**Countermeasures**:
 - Strict allowlist-based filtering
 - Dangerous pattern detection
 - Group-level environment isolation
@@ -851,28 +1019,45 @@ The system implements multiple security layers:
 - Shell metacharacter exploitation
 - PATH manipulation
 - Privilege escalation via command manipulation
-- Malicious binary execution through environment variable PATH
+- Malicious binary execution via environment variable PATH
+- Unexpected input injection via stdin
 
-**Mitigations**:
+**Countermeasures**:
 - Risk-based command validation with allowlist enforcement
 - Full path resolution with security validation
 - Shell metacharacter detection
 - Command path validation
 - Risk level enforcement and blocking
-- User/group execution validation
+- User and group execution validation
 - Complete elimination of environment variable PATH inheritance
 - Enforced use of secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin)
+- Prevention of input injection attacks via stdin disabling
+
+### Resource Exhaustion Attacks
+
+**Threats**:
+- DoS attacks via memory exhaustion
+- Disk space exhaustion from excessive output
+- Log file bloat
+- System resource monopolization by long-running commands
+
+**Countermeasures**:
+- Output size limits (default 10MB, configurable)
+- Prevention of long execution with timeout settings
+- Log truncation settings (MaxStdoutLength, MaxErrorMessageLength)
+- Hierarchical limit configuration (global, group, command level)
+- Resource usage monitoring and alerting
 
 ## Performance Considerations
 
 ### Hash Calculation
-- Efficient streaming hash computation
-- File size limits to prevent resource exhaustion
+- Efficient streaming hash calculation
+- File size limit to prevent resource exhaustion
 
 ### Environment Processing
-- O(1) allowlist lookup using map structures
-- Compiled regular expressions for pattern matching
-- Minimal string manipulation
+- O(1) allowlist lookup using map structure
+- Pre-compiled regular expressions for pattern matching
+- Minimal string operations
 
 ### Privilege Operations
 - Global mutex prevents race conditions but serializes privilege operations
@@ -880,21 +1065,29 @@ The system implements multiple security layers:
 - Metrics collection for performance monitoring
 
 ### Risk Assessment
-- Pre-compiled regex patterns for efficient command analysis
+- Pre-compiled regular expression patterns for efficient command analysis
 - O(1) risk level lookup using pre-compiled patterns
-- Minimal overhead for risk evaluation
+- Minimal overhead for risk assessment
 - Result caching for repeated command analysis
 
 ### Data Redaction
-- Streaming redaction for large outputs
+- Redaction at log output time via RedactingHandler (currently implemented)
 - Pre-compiled patterns for sensitive data
 - Minimal performance impact on normal operations
-- Configurable redaction policies
+- Configurable redaction policy
+- Addition of pre-redaction at CommandResult creation time for defense-in-depth (to be implemented in task 0055)
+
+### Resource Management
+- Controls memory usage with output size limits
+- Efficient limit implementation with custom size-limiting writer
+- Prevents limit violations with pre-write size checks
+- Flexible limit configuration per command
+- Early detection and error reporting when limit is exceeded
 
 ## Deployment Security
 
 ### Binary Distribution
-- Binaries must have setuid bit set for privilege escalation
+- Binary must have setuid bit set for privilege escalation
 - Root ownership required for setuid functionality
 - Verify binary integrity before deployment
 
@@ -908,12 +1101,21 @@ The system implements multiple security layers:
 - Syslog integration for centralized logging
 - Emergency shutdown events require immediate attention
 - Slack integration for real-time security alerts
-- Automatic sensitive data redaction across all monitoring channels
+- Automatic sensitive data redaction in all monitoring channels
 
 ## Conclusion
 
-Go Safe Command Runner provides a comprehensive security framework for safe command execution with privilege delegation. The multi-layered approach combines modern security primitives (openat2) with proven security principles (defense-in-depth, zero-trust, fail-safe design) to create a robust system suitable for production use in security-conscious environments.
+Go Safe Command Runner provides a comprehensive security framework for secure command execution with privilege delegation. The multi-layered approach combines modern security primitives (openat2) with proven security principles (defense-in-depth, zero-trust, fail-safe design) to create a robust system suitable for production use in security-conscious environments.
 
-The implementation demonstrates security engineering best practices including comprehensive input validation, risk-based command control, secure privilege management, automatic sensitive data protection, and extensive auditing capabilities. The system is designed to fail safely and provide complete visibility into security-related operations.
+The implementation demonstrates security engineering best practices including comprehensive input validation, risk-based command control, secure privilege management, automatic sensitive data protection, and extensive audit capabilities. The system is designed to fail safely and provide complete visibility into security-related operations.
 
-Key security innovations include intelligent risk assessment for command execution, unified resource management with consistent security boundaries, automatic sensitive data redaction across all channels, secure user/group execution capabilities, and comprehensive multi-channel notifications with security-aware messaging. The system provides enterprise-grade security controls while maintaining operational flexibility and transparency.
+Key security innovation features include:
+- Intelligent risk assessment for command execution
+- Unified resource management with consistent security boundaries
+- Automatic sensitive data redaction in all log output via RedactingHandler (task 0055 will add pre-redaction at CommandResult creation time to achieve dual protection with defense-in-depth)
+- Secure user and group execution functionality
+- Comprehensive multi-channel notifications with security-aware messaging
+- Explicit control of execution environment via stdin disabling
+- Prevention of resource exhaustion attacks with output size limits
+
+The system provides enterprise-grade security controls while maintaining operational flexibility and transparency. Recent improvements have strengthened execution environment isolation and resource protection, achieving more comprehensive security countermeasures. Implementation of task 0055 will further strengthen sensitive data protection.

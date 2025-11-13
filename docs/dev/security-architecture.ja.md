@@ -155,7 +155,7 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 **ファイルサイズ保護**:
 - 最大ファイルサイズ制限: 128 MB
 - メモリ枯渇攻撃を防止
-- 一貫した動作のため`io.LimitReader`を使用
+- カスタムサイズ制限ライターによる書き込みサイズの制御
 
 **パス検証**:
 - 絶対パス要求
@@ -386,21 +386,93 @@ type ResourceManager interface {
 ### 8. セキュアログと機密データ保護
 
 #### 目的
-パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。専用の編集サービスで強化されています。
+パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。専用の編集サービスで強化され、多層防御アプローチにより包括的な保護を実現します。
 
 #### 実装詳細
 
-**一元化データ編集**:
+##### 現在の実装
+
+**一元化データ編集基盤**:
 ```go
 // 場所: internal/redaction/redactor.go
-type Redactor struct {
-    patterns []SensitivePattern
+type Config struct {
+    LogPlaceholder   string
+    TextPlaceholder  string
+    Patterns         *SensitivePatterns
+    KeyValuePatterns []string
 }
 
-func (r *Redactor) RedactText(text string) string {
+func (c *Config) RedactText(text string) string {
     // 設定されたすべての編集パターンを適用
 }
+
+func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
+    // ログ属性の機密情報を編集
+}
 ```
+
+**RedactingHandler（ログレベル編集）**:
+```go
+// 場所: internal/redaction/redactor.go:200-259
+type RedactingHandler struct {
+    handler slog.Handler
+    config  *Config
+}
+
+// 場所: internal/runner/bootstrap/logger.go:138
+redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+logger := slog.New(redactedHandler)
+```
+- ログ出力時に自動的に機密情報を編集
+- すべてのログハンドラー（ファイル、syslog、Slack）をラップ
+- `slog.KindGroup`を含む構造化ログの再帰的処理
+- key=value形式と認証ヘッダーパターンの両方をサポート
+
+**現在のSlack通知実装**:
+```go
+// 場所: internal/logging/slack_handler.go:64-73
+type SlackHandler struct {
+    webhookURL    string
+    runID         string
+    httpClient    *http.Client
+    level         slog.Level
+    attrs         []slog.Attr
+    groups        []string
+    backoffConfig BackoffConfig
+}
+```
+- RedactingHandlerによってラップされているため、基本的な編集が適用される
+- コマンド出力の長さ制限（stdout: 1000文字、stderr: 500文字）
+
+##### 計画中の拡張（task 0055）
+
+**多層防御による機密情報保護の強化**:
+
+システムは二重の防御層アプローチを採用し、一方の対策が失敗しても他方が保護します：
+
+1. **第1層：CommandResult作成時の編集**（計画中）
+   - 場所: `internal/runner/group_executor.go`（変更予定）
+   - コマンド出力を`CommandResult`に格納する際に事前編集
+   - `security.Validator.SanitizeOutputForLogging()`を使用
+   - 現在の実装: 編集なしで生の出力を格納
+
+2. **第2層：RedactingHandlerでの編集**（実装済み）
+   - 場所: `internal/redaction/redactor.go:200-259`
+   - ログ出力時に`slog.KindAny`型と`LogValuer`インターフェースを処理
+   - 第1層で漏れた機密情報もここでキャッチ
+   - 再帰深度制限により無限再帰を防止
+
+**Slack通知への機密情報保護の強化**（計画中）:
+```go
+// 計画中の実装: internal/logging/slack_handler.go
+type SlackHandler struct {
+    webhookURL string
+    redactor   *redaction.Redactor  // 追加予定
+}
+```
+- Slack通知送信前の明示的な編集処理追加
+- `[]common.CommandResult`スライス内の機密情報の完全な編集
+- 外部通信における追加の保護層
 
 **ログセキュリティ設定**:
 ```go
@@ -493,11 +565,20 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - 構造化ログでの機密パターンの自動検出と編集
 
 #### セキュリティ保証
-- 一般的な機密パターン（パスワード、トークン、APIキー）の自動編集
+
+##### 現在提供されている保証
+- RedactingHandlerによる全ログ出力での自動編集
+- 一般的な機密パターン（パスワード、トークン、APIキー）の検出と編集
 - 異なるセキュリティ環境に対応する設定可能なログ詳細レベル
 - エラーメッセージとコマンド出力による認証情報露出からの保護
 - ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
 - 環境変数パターンの検出とサニタイズ
+- key=value形式と認証ヘッダーパターン（Bearer、Basic）の両方をサポート
+
+##### task 0055実装後に追加される保証
+- CommandResult作成時点での事前編集による二重防御
+- Slack通知での明示的な編集処理による外部通信の追加保護層
+- 第1層で編集漏れがあっても第2層（RedactingHandler）でキャッチ
 
 ### 9. 端末能力検出 (`internal/terminal/`)
 
@@ -668,7 +749,90 @@ type SlackHandler struct {
 - 悪用を防ぐレート制限
 - 包括的エラー処理
 
-### 14. 設定セキュリティ
+### 14. コマンド実行環境の分離
+
+#### 目的
+子プロセスが予期しない入力を読み取ることを防ぎ、実行環境を明示的に制御することで、セキュリティと安定性を向上させます。
+
+#### 実装詳細
+
+**標準入力の無効化**:
+```go
+// 場所: internal/runner/executor/executor.go:210-224
+// Set up stdin to null device to prevent issues with commands that expect stdin
+// This prevents "exit status 255" errors from docker-compose exec and similar commands
+// that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
+devNull, err := os.Open(os.DevNull)
+if err != nil {
+    return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
+}
+defer func() {
+    if closeErr := devNull.Close(); closeErr != nil {
+        e.Logger.Warn("Failed to close null device", "error", closeErr)
+    }
+}()
+execCmd.Stdin = devNull
+```
+
+**セキュリティ上の利点**:
+- 子プロセスがstdinから予期しない入力を読み取ることを防止
+- 対話型プロンプトによる処理の停止を防止
+- バッチ処理環境における一貫した動作を保証
+- 悪意のある入力注入攻撃のリスクを軽減
+
+**安定性の向上**:
+- stdinがnilの場合に疑似TTYを割り当てようとするコマンド（docker-compose execなど）のエラーを防止
+- プラットフォーム間での一貫した動作（`os.DevNull`を使用）
+
+#### セキュリティ保証
+- すべての子プロセスでstdin入力を明示的に無効化
+- 予期しない入力による処理の停止や改ざんを防止
+- クロスプラットフォーム対応（Linuxでは`/dev/null`、Windowsでは`NUL`）
+
+### 15. 出力サイズ制限によるリソース保護
+
+#### 目的
+コマンド出力サイズを制限することで、メモリ枯渇攻撃やディスク容量の枯渇を防ぎ、システムの安定性とセキュリティを確保します。
+
+#### 実装詳細
+
+**階層的な出力サイズ制限**:
+```go
+// 場所: internal/common/output_size_limit.go
+func ResolveOutputSizeLimit(commandLimit OutputSizeLimit, globalLimit OutputSizeLimit) OutputSizeLimit {
+    // 1. コマンドレベルのoutput_size_limit（設定されている場合）
+    // 2. グローバルレベルのoutput_size_limit（設定されている場合）
+    // 3. デフォルト出力サイズ制限（10MB）
+}
+```
+
+**デフォルト設定**:
+```go
+// 場所: internal/common/output_size_limit_type.go:20-21
+// DefaultOutputSizeLimit is the default output size limit when not specified (10MB)
+const DefaultOutputSizeLimit = 10 * 1024 * 1024
+```
+
+**制限の適用**:
+- 場所: `internal/runner/output/capture.go`
+- カスタムサイズ制限ライターによる出力サイズの制限
+- 書き込み前のサイズチェックにより制限超過を防止
+- 制限超過時のエラー検出と報告
+- コマンド単位での柔軟な制限設定
+
+**設定階層**:
+1. **コマンドレベル**: 個別コマンドごとに`output_size_limit`を設定可能
+2. **グローバルレベル**: すべてのコマンドに適用される既定値
+3. **デフォルト**: 10MB（設定がない場合）
+4. **無制限**: 値を0に設定することで制限を無効化可能（注意が必要）
+
+#### セキュリティ保証
+- メモリ枯渇攻撃（DoS）からの保護
+- 過大な出力によるディスク容量枯渇の防止
+- 出力サイズ制限超過時の明確なエラーメッセージ
+- コマンド単位での柔軟な制限設定によるきめ細かな制御
+
+### 16. 設定セキュリティ
 
 #### 目的
 設定ファイルと全体的なシステム設定が改ざんされないことを確保し、セキュリティのベストプラクティスに従います。
@@ -772,9 +936,11 @@ if !filepath.IsAbs(hashDir) {
 5. **特権制御**: 制御された昇格による最小特権原則
 6. **環境分離**: 厳格な許可リストベースの環境フィルタリング、PATH継承の排除
 7. **コマンド検証**: 許可リスト検証を伴うリスクベースコマンド実行制御
-8. **データ保護**: 全出力における機密情報の自動編集
+8. **データ保護**: RedactingHandlerによる全ログ出力での機密情報の自動編集（task 0055でCommandResult作成時の事前編集を追加し多層防御を強化予定）
 9. **ユーザー・グループセキュリティ**: メンバーシップ検証を伴う安全なユーザー・グループ切り替え
 10. **ハッシュディレクトリセキュリティ**: カスタムハッシュディレクトリ攻撃の完全防止
+11. **実行環境分離**: stdin無効化による予期しない入力の防止
+12. **リソース保護**: 出力サイズ制限によるメモリ・ディスク枯渇攻撃の防止
 
 ### ゼロトラストモデル
 
@@ -852,6 +1018,7 @@ if !filepath.IsAbs(hashDir) {
 - PATH操作
 - コマンド操作による特権昇格
 - 環境変数PATHを通じた悪意のあるバイナリ実行
+- stdin経由での予期しない入力注入
 
 **対策**:
 - 許可リスト執行を伴うリスクベースコマンド検証
@@ -862,6 +1029,22 @@ if !filepath.IsAbs(hashDir) {
 - ユーザー・グループ実行検証
 - 環境変数PATH継承の完全排除
 - セキュア固定PATH（/sbin:/usr/sbin:/bin:/usr/bin）の強制使用
+- stdin無効化による入力注入攻撃の防止
+
+### リソース枯渇攻撃
+
+**脅威**:
+- メモリ枯渇によるDoS攻撃
+- 過大な出力によるディスク容量枯渇
+- ログファイルの肥大化
+- 長時間実行コマンドによるシステムリソースの独占
+
+**対策**:
+- 出力サイズ制限（デフォルト10MB、設定可能）
+- タイムアウト設定による長時間実行の防止
+- ログ切り詰め設定（MaxStdoutLength、MaxErrorMessageLength）
+- 階層的な制限設定（グローバル、グループ、コマンドレベル）
+- リソース使用量の監視とアラート
 
 ## パフォーマンス考慮事項
 
@@ -886,10 +1069,18 @@ if !filepath.IsAbs(hashDir) {
 - 繰り返しコマンド分析の結果キャッシュ
 
 ### データ編集
-- 大出力のストリーミング編集
+- RedactingHandlerによるログ出力時の編集（現在実装済み）
 - 機密データの事前コンパイルパターン
 - 通常操作への最小パフォーマンス影響
 - 設定可能な編集ポリシー
+- CommandResult作成時の事前編集追加による多層防御（task 0055で実装予定）
+
+### リソース管理
+- 出力サイズ制限によるメモリ使用量の制御
+- カスタムサイズ制限ライターによる効率的な制限実装
+- 書き込み前のサイズチェックによる制限超過の防止
+- コマンド単位での柔軟な制限設定
+- 制限超過時の早期検出とエラー報告
 
 ## デプロイメントセキュリティ
 
@@ -916,4 +1107,13 @@ Go Safe Command Runnerは、特権委譲による安全なコマンド実行の�
 
 実装は、包括的な入力検証、リスクベースコマンド制御、安全な特権管理、自動機密データ保護、広範な監査機能を含むセキュリティエンジニアリングのベストプラクティスを実証しています。システムは安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されています。
 
-主要なセキュリティ革新機能には、コマンド実行のためのインテリジェントリスク評価、一貫したセキュリティ境界を持つ統一リソース管理、全チャンネルでの自動機密データ編集、安全なユーザー・グループ実行機能、セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知が含まれます。システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。
+主要なセキュリティ革新機能には、以下が含まれます：
+- コマンド実行のためのインテリジェントリスク評価
+- 一貫したセキュリティ境界を持つ統一リソース管理
+- RedactingHandlerによる全ログ出力での自動機密データ編集（task 0055でCommandResult作成時の事前編集を追加し多層防御による二重保護を実現予定）
+- 安全なユーザー・グループ実行機能
+- セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知
+- stdin無効化による実行環境の明示的制御
+- 出力サイズ制限によるリソース枯渇攻撃の防止
+
+システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。最近の改善により、実行環境の分離とリソース保護が強化され、より包括的なセキュリティ対策が実現されています。task 0055の実装により、機密データ保護がさらに強化される予定です。
