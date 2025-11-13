@@ -395,7 +395,12 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
 
     case slog.KindAny:
         // NEW: Handle KindAny (will be implemented in next steps)
-        return c.processKindAny(key, value, ctx)
+        processedAttr, err := c.processKindAny(key, value, ctx)
+        if err != nil {
+            // On error, return safe placeholder
+            return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+        }
+        return processedAttr
 
     default:
         // Other types: pass through
@@ -430,12 +435,12 @@ import (
 )
 
 // processKindAny processes slog.KindAny values
-func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionContext) slog.Attr {
+func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error) {
     anyValue := value.Any()
 
     // Nil check
     if anyValue == nil {
-        return slog.Attr{Key: key, Value: value}
+        return slog.Attr{Key: key, Value: value}, nil
     }
 
     // 1. Check for LogValuer interface
@@ -450,7 +455,7 @@ func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionConte
     }
 
     // 3. Unsupported type: pass through
-    return slog.Attr{Key: key, Value: value}
+    return slog.Attr{Key: key, Value: value}, nil
 }
 ```
 
@@ -480,7 +485,7 @@ import (
 )
 
 // processLogValuer processes a LogValuer value and recursively redacts it
-func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx RedactionContext) slog.Attr {
+func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx RedactionContext) (slog.Attr, error) {
     // 1. Check recursion depth
     if ctx.depth >= maxRedactionDepth {
         // Depth limit reached: return partially redacted value (not an error)
@@ -490,7 +495,7 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
             "depth", maxRedactionDepth,
             "note", "This is not an error - DoS prevention measure",
         )
-        return slog.Attr{Key: key, Value: slog.AnyValue(logValuer)}
+        return slog.Attr{Key: key, Value: slog.AnyValue(logValuer)}, nil
     }
 
     // 2. Call LogValue() with panic recovery
@@ -520,13 +525,17 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
     }()
 
     if panicOccurred {
-        return slog.Attr{Key: key, Value: resolvedValue}
+        return slog.Attr{Key: key, Value: resolvedValue}, &ErrLogValuePanic{
+            Key:        key,
+            PanicValue: panicValue,
+            StackTrace: string(debug.Stack()),
+        }
     }
 
     // 3. Recursively redact the resolved value
     resolvedAttr := slog.Attr{Key: key, Value: resolvedValue}
     nextCtx := RedactionContext{depth: ctx.depth + 1}
-    return c.redactLogAttributeWithContext(resolvedAttr, nextCtx)
+    return c.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
 }
 ```
 
@@ -552,26 +561,27 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
 // internal/redaction/redactor.go
 
 // processSlice processes a slice value and redacts LogValuer elements
-func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) slog.Attr {
+func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) (slog.Attr, error) {
     // 1. Check recursion depth
     if ctx.depth >= maxRedactionDepth {
         slog.Debug("Recursion depth limit reached for slice - returning original",
             "attribute_key", key,
             "depth", maxRedactionDepth,
         )
-        return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}
+        return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}, nil
     }
 
     // 2. Use reflection to get slice elements
     rv := reflect.ValueOf(sliceValue)
     if rv.Kind() != reflect.Slice {
         // Not a slice (should not happen)
-        return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}
+        return slog.Attr{Key: key, Value: slog.AnyValue(sliceValue)}, nil
     }
 
     // 3. Process each element
     processedElements := make([]any, 0, rv.Len())
     nextCtx := RedactionContext{depth: ctx.depth + 1}
+    var firstError error
 
     for i := 0; i < rv.Len(); i++ {
         element := rv.Index(i).Interface()
@@ -581,11 +591,13 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
             // Call LogValue() and redact
             var resolvedValue slog.Value
             var panicOccurred bool
+            var panicValue any
 
             func() {
                 defer func() {
                     if r := recover(); r != nil {
                         panicOccurred = true
+                        panicValue = r
                         resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
                         slog.Warn("Redaction failed for slice element",
                             "attribute_key", key,
@@ -607,6 +619,14 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
                 processedElements = append(processedElements, redactedAttr.Value.Any())
             } else {
                 processedElements = append(processedElements, resolvedValue.Any())
+                // Record first error only
+                if firstError == nil {
+                    firstError = &ErrLogValuePanic{
+                        Key:        fmt.Sprintf("%s[%d]", key, i),
+                        PanicValue: panicValue,
+                        StackTrace: string(debug.Stack()),
+                    }
+                }
             }
         } else {
             // Non-LogValuer element: keep as-is
@@ -615,7 +635,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
     }
 
     // 4. Return processed slice (maintain slice type)
-    return slog.Attr{Key: key, Value: slog.AnyValue(processedElements)}
+    return slog.Attr{Key: key, Value: slog.AnyValue(processedElements)}, firstError
 }
 ```
 
@@ -727,8 +747,12 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 // or make processLogValuer a method of RedactingHandler
 
 // Option 1: Make processLogValuer a method of RedactingHandler
-func (r *RedactingHandler) processLogValuerInternal(key string, logValuer slog.LogValuer, ctx RedactionContext) slog.Attr {
+func (r *RedactingHandler) processLogValuerInternal(key string, logValuer slog.LogValuer, ctx RedactionContext) (slog.Attr, error) {
     // ... existing code ...
+
+    var panicOccurred bool
+    var panicValue any
+    var resolvedValue slog.Value
 
     func() {
         defer func() {
@@ -749,7 +773,16 @@ func (r *RedactingHandler) processLogValuerInternal(key string, logValuer slog.L
         resolvedValue = logValuer.LogValue()
     }()
 
+    if panicOccurred {
+        return slog.Attr{Key: key, Value: resolvedValue}, &ErrLogValuePanic{
+            Key:        key,
+            PanicValue: panicValue,
+            StackTrace: string(debug.Stack()),
+        }
+    }
+
     // ... rest of the code ...
+    return redactedAttr, nil
 }
 ```
 
