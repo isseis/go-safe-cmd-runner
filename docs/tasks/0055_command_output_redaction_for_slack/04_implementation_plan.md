@@ -146,7 +146,7 @@ type ValidatorInterface interface {
 - ✅ `Validator` が `ValidatorInterface` を満たす
 - ✅ コンパイルエラーがない
 
-#### 2.1.2 モック実装の更新
+#### 2.2.2 モック実装の更新
 
 **ファイル**：`internal/runner/security/testing/testify_mocks.go`
 
