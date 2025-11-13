@@ -404,7 +404,7 @@ flowchart TD
     B -->|No| D[Continue processing]
 
     C --> E[Log error]
-    E --> F[Return attr with "[REDACTION FAILED]"]
+    E --> F[Return attr with "[REDACTION FAILED - OUTPUT SUPPRESSED]"]
 
     D --> G{Type assertion error?}
     G -->|Yes| H[Skip element]
@@ -423,8 +423,11 @@ flowchart TD
 
 **原則**：
 - panic は recover して可用性を維持
-- エラーは slog.Debug でログ出力（再帰を避けるため）
-- 処理に失敗した場合は "[REDACTION FAILED]" で置換（fail-secure）
+- エラーは stderr とファイルログに記録（FR-2.4：Slack 以外の出力先）
+  - ログレベル: `slog.Warn`（デバッグと監査のため）
+  - 記録内容: エラーの種類、属性キー、スタックトレース（panic の場合）
+  - 注記: RedactingHandler 自身の出力は再帰を避けるため、非 RedactingHandler 経路を使用
+- 処理に失敗した場合は "[REDACTION FAILED - OUTPUT SUPPRESSED]" で置換（fail-secure）
 
 #### 4.4.3 セキュリティ
 
@@ -444,7 +447,7 @@ flowchart TD
 **重要な実装上の注意**：
 - 現在の `redaction.Config.RedactText()` 実装は、正規表現コンパイル失敗時に元のテキストを返す fail-open 動作となっている（`redactor.go` の 110-112, 136-139, 174-177 行）
 - この動作は本アーキテクチャで定義した fail-secure 原則と矛盾しており、セキュリティリスクとなる
-- 実装時には、正規表現コンパイル失敗時も "[REDACTION FAILED]" を返すように修正する必要がある
+- 実装時には、正規表現コンパイル失敗時も "[REDACTION FAILED - OUTPUT SUPPRESSED]" を返すように修正する必要がある
 - 既存の `RedactText()` の動作変更は他の箇所に影響する可能性があるため、慎重な影響範囲調査とテストが必要
 
 ---
@@ -596,7 +599,7 @@ flowchart TD
     B -->|Yes| C[Log warning]
     B -->|No| D[Return redacted output]
 
-    C --> E[Return "[REDACTION FAILED]"]
+    C --> E[Return "[REDACTION FAILED - OUTPUT SUPPRESSED]"]
 
     D --> F[Safe output]
     E --> F
@@ -610,8 +613,10 @@ flowchart TD
 
 **原則**：
 - redaction が失敗しても、エラーを返さない
-- セキュリティを優先し、失敗時は "[REDACTION FAILED]" で置換（fail-secure）
-- 警告をログ出力（slog.Warn）
+- セキュリティを優先し、失敗時は "[REDACTION FAILED - OUTPUT SUPPRESSED]" で置換（fail-secure）
+- 失敗は stderr とファイルログに記録（FR-2.4：Slack 以外の出力先）
+  - ログレベル: `slog.Warn`（デバッグと監査のため）
+  - 記録内容: エラーの詳細、コマンド名、失敗した出力の種類（stdout/stderr）
 
 #### 5.4.3 パフォーマンス
 
@@ -899,6 +904,7 @@ flowchart TB
 | Nil LogValue | LogValue() returns nil or empty | Handle gracefully | nil 値の堅牢性検証 |
 | Empty slice | []CommandResult (empty) | Pass through empty | 空スライスの処理 |
 | Mixed slice | Slice with LogValuer + non-LogValuer | Process only LogValuer elements | 混在型スライスの処理 |
+| FR-2.4: Failure logging | LogValue() panics | slog.Warn to stderr/file (not Slack) | 失敗ログが Slack 以外に記録されることを検証 |
 
 #### 9.2.2 Integration Tests
 
@@ -1083,6 +1089,15 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 - Redaction に失敗した場合、warning レベルでログ出力
 - パフォーマンスへの影響を最小限にするため、デフォルトでは無効
 
+**FR-2.4：失敗時のログ記録要件**：
+- Redaction の失敗は、**Slack 以外の出力先**に記録すること（必須）
+  - 出力先: stderr、ファイルログ、監査ログ
+  - 目的: デバッグ、インシデント分析、セキュリティ監査
+- ログ記録の実装方法:
+  - RedactingHandler: 内部エラーログを非 RedactingHandler 経路で出力
+  - GroupExecutor: `slog.Warn()` で失敗を記録（通常のログパイプライン経由）
+  - 注意: RedactingHandler のエラーログは再帰を避けるため、MultiHandler の構成に注意が必要
+
 ---
 
 ## 12. 運用考慮事項
@@ -1192,16 +1207,19 @@ flowchart TD
 #### 12.2.2 ログ出力
 
 ```go
-// Redaction の成功/失敗をログ出力（debug レベル）
+// Redaction の成功をログ出力（debug レベル、オプション）
 slog.Debug("Redaction applied",
     "attribute_key", key,
     "value_type", valueType,
     "redacted", true)
 
-// Redaction の失敗（warning レベル）
-slog.Warn("Redaction failed",
+// Redaction の失敗（warning レベル、FR-2.4 必須）
+// 注意: このログは Slack 以外（stderr、ファイル、監査ログ）に出力される
+slog.Warn("Redaction failed - using safe placeholder",
     "attribute_key", key,
-    "error", err)
+    "error", err,
+    "placeholder", "[REDACTION FAILED - OUTPUT SUPPRESSED]",
+    "output_destination", "stderr, file, audit")
 ```
 
 ### 12.3 トラブルシューティング
