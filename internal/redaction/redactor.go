@@ -295,12 +295,15 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	// Process based on value kind
 	switch value.Kind() {
 	case slog.KindString:
-		// Redact string values
+		// Handle string values - apply text-based redaction
 		strValue := value.String()
+		// First apply text-based redaction for key=value patterns within the string
 		redactedText := r.config.RedactText(strValue)
 		if redactedText != strValue {
 			return slog.Attr{Key: key, Value: slog.StringValue(redactedText)}
 		}
+		// Then check if the entire value is sensitive (only if no key=value patterns were found)
+		// This prevents strings like "password=secret" from being completely replaced with "[REDACTED]"
 		if r.config.Patterns.IsSensitiveValue(strValue) {
 			return slog.Attr{Key: key, Value: slog.StringValue(r.config.Placeholder)}
 		}
@@ -308,10 +311,15 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 
 	case slog.KindGroup:
 		// Handle group values recursively
+		if ctx.depth >= maxRedactionDepth {
+			slog.Debug("redaction depth limit reached for group, returning placeholder", "key", key, "depth", ctx.depth)
+			return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+		}
 		groupAttrs := value.Group()
 		redactedGroupAttrs := make([]slog.Attr, 0, len(groupAttrs))
+		nextCtx := redactionContext{depth: ctx.depth + 1}
 		for _, groupAttr := range groupAttrs {
-			redactedGroupAttrs = append(redactedGroupAttrs, r.redactLogAttributeWithContext(groupAttr, ctx))
+			redactedGroupAttrs = append(redactedGroupAttrs, r.redactLogAttributeWithContext(groupAttr, nextCtx))
 		}
 		return slog.Attr{Key: key, Value: slog.GroupValue(redactedGroupAttrs...)}
 
