@@ -782,8 +782,8 @@ type RedactionContext struct {
 // 疑似コード：詳細は詳細設計書で定義
 func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr
 func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionContext) slog.Attr
-func (c *Config) processLogValuer(key string, value slog.Value, ctx RedactionContext) slog.Attr
-func (c *Config) processSlice(key string, value slog.Value, ctx RedactionContext) slog.Attr
+func (c *Config) processLogValuer(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error)
+func (c *Config) processSlice(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error)
 ```
 
 ### 7.2 GroupExecutor の変更
