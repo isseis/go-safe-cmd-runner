@@ -463,6 +463,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 							"attribute_key", elementKey,
 							"element_index", i,
 							"panic", rec,
+							"stack_trace", string(debug.Stack()),
 						)
 					}
 				}()
