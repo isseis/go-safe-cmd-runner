@@ -147,7 +147,6 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnert
 		result, execErr = e.executeCommandWithPath(ctx, cmd.ExpandedCmd, cmd, envVars, outputWriter)
 		return execErr
 	})
-	e.Logger.Debug("WithPrivileges returned", "command", cmd.Name())
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
@@ -207,11 +206,12 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
-	e.Logger.Debug("Command context created")
 
-	// Set up stdin to null device to prevent issues with commands that expect stdin
-	// This prevents "exit status 255" errors from docker-compose exec and similar commands
-	// that try to allocate a pseudo-TTY when stdin is nil (file descriptor -1)
+	// Set up stdin to null device for security and stability:
+	// 1. Security: Prevents child processes from reading unexpected input from stdin
+	// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
+	//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
+	// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
@@ -222,12 +222,10 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		}
 	}()
 	execCmd.Stdin = devNull
-	e.Logger.Debug("Stdin configured to null device")
 
 	// Set up working directory
 	if cmd.EffectiveWorkDir != "" {
 		execCmd.Dir = cmd.EffectiveWorkDir
-		e.Logger.Debug("Working directory set", "work_dir", cmd.EffectiveWorkDir)
 	}
 
 	// Set up environment variables
@@ -237,26 +235,21 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	for k, v := range envVars {
 		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	e.Logger.Debug("Environment variables configured", "env_count", len(execCmd.Env))
 
 	// Set up output capture
 	var stdout, stderr []byte
 	var cmdErr error
 
 	if outputWriter != nil {
-		e.Logger.Debug("Setting up output writer")
 		// Create buffered wrappers that both capture output and write to OutputWriter
 		stdoutWrapper := &outputWrapper{writer: outputWriter, stream: StdoutStream}
 		stderrWrapper := &outputWrapper{writer: outputWriter, stream: StderrStream}
 
 		execCmd.Stdout = stdoutWrapper
 		execCmd.Stderr = stderrWrapper
-		e.Logger.Debug("Output writer configured")
 
 		// Run the command
-		e.Logger.Debug("Starting command execution")
 		cmdErr = execCmd.Run()
-		e.Logger.Debug("Command execution completed")
 
 		// Get the captured output
 		stdout = stdoutWrapper.GetBuffer()
@@ -274,9 +267,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 		}
 	} else {
 		// Otherwise, capture output in memory
-		e.Logger.Debug("Starting command execution (memory capture)")
 		stdout, cmdErr = execCmd.Output()
-		e.Logger.Debug("Command execution completed (memory capture)")
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			stderr = exitErr.Stderr
 		}
