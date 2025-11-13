@@ -7,7 +7,7 @@ type ValidatorInterface interface {
 	ValidateEnvironmentValue(key, value string) error
 	ValidateCommand(command string) error
 	// SanitizeOutputForLogging redacts sensitive information from command output
-	// This is used for Case 2 (supplementary measure) in task 0055
+	// This helps prevent sensitive data from being logged or sent to external systems such as Slack.
 	SanitizeOutputForLogging(output string) string
 }
 
