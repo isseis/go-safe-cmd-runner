@@ -134,17 +134,18 @@ type LogValuer interface {
 
 ```go
 // 疑似コード
-func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error) {
+// processKindAny is now a method of RedactingHandler
+func (h *RedactingHandler) processKindAny(key string, value slog.Value, ctx RedactionContext) (slog.Attr, error) {
     anyValue := value.Any()
 
     // 1. LogValuer インターフェースのチェック
     if logValuer, ok := anyValue.(slog.LogValuer); ok {
-        return c.processLogValuer(key, logValuer, ctx)
+        return h.processLogValuer(key, logValuer, ctx)
     }
 
     // 2. スライス型のチェック
     if isSlice(anyValue) {
-        return c.processSlice(key, anyValue, ctx)
+        return h.processSlice(key, anyValue, ctx)
     }
 
     // 3. 未対応の型はスキップ
@@ -156,11 +157,34 @@ func (c *Config) processKindAny(key string, value slog.Value, ctx RedactionConte
 
 #### 2.2.1 処理フロー
 
+**設計方針の変更**：
+- `processLogValuer` および関連メソッドを `*Config` ではなく `*RedactingHandler` のメソッドとして定義
+- **理由**：失敗時のログ記録に `failureLogger` へのアクセスが必要
+- **影響範囲**：以下のメソッドも `*RedactingHandler` に移行
+  - `redactLogAttributeWithContext`（`RedactLogAttribute` から呼ばれる内部実装）
+  - `processKindAny`
+  - `processLogValuer`
+  - `processSlice`
+
+**呼び出しチェイン**：
+```
+RedactingHandler.Handle()
+  → RedactingHandler.redactLogAttributeWithContext()
+    → (for KindAny) RedactingHandler.processKindAny()
+      → RedactingHandler.processLogValuer()  // failureLogger にアクセス
+      → RedactingHandler.processSlice()      // failureLogger にアクセス
+```
+
+**公開 API の変更なし**：
+- `Config.RedactLogAttribute()` は既存の公開 API として維持
+- 内部で `RedactingHandler` のメソッドを呼び出す形に変更
+
 ```go
 // internal/redaction/redactor.go
 
 // processLogValuer processes a LogValuer value and recursively redacts it
-func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx RedactionContext) (slog.Attr, error) {
+// This is now a method of RedactingHandler to access failureLogger
+func (h *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer, ctx RedactionContext) (slog.Attr, error) {
     // 1. 再帰深度チェック
     if ctx.depth >= maxRedactionDepth {
         // 深度制限到達：部分的に redact された値を返す（エラーにしない）
@@ -176,6 +200,13 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
                 // Panic が発生した場合、安全なプレースホルダーで置換
                 resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
                 // Warning レベルでログ記録（Slack 以外の出力先）
+                h.failureLogger.WarnContext(context.Background(),
+                    "Redaction failed due to panic in LogValue()",
+                    "attribute_key", key,
+                    "panic", r,
+                    "stack_trace", string(debug.Stack()),
+                    "output_destination", "stderr, file, audit",
+                )
             }
         }()
         resolvedValue = logValuer.LogValue()
@@ -184,7 +215,7 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
     // 3. 解決された値を再帰的に redact
     resolvedAttr := slog.Attr{Key: key, Value: resolvedValue}
     nextCtx := RedactionContext{depth: ctx.depth + 1}
-    return c.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
+    return h.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
 }
 ```
 
@@ -246,7 +277,8 @@ if ctx.depth >= maxRedactionDepth {
 // internal/redaction/redactor.go
 
 // processSlice processes a slice value and redacts LogValuer elements
-func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) (slog.Attr, error) {
+// This is now a method of RedactingHandler to access failureLogger
+func (h *RedactingHandler) processSlice(key string, sliceValue any, ctx RedactionContext) (slog.Attr, error) {
     // 1. 再帰深度チェック
     if ctx.depth >= maxRedactionDepth {
         // 深度制限到達：元の値を返す
@@ -273,10 +305,18 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
             var resolvedValue slog.Value
             func() {
                 defer func() {
-                    if r := recover(); r != nil {
+                    if r != nil {
                         // Panic 発生時は安全なプレースホルダーで置換
                         resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
                         // Warning レベルでログ記録
+                        h.failureLogger.WarnContext(context.Background(),
+                            "Redaction failed due to panic in LogValue() within slice",
+                            "attribute_key", elementKey,
+                            "slice_index", i,
+                            "panic", r,
+                            "stack_trace", string(debug.Stack()),
+                            "output_destination", "stderr, file, audit",
+                        )
                     }
                 }()
                 resolvedValue = logValuer.LogValue()
@@ -284,7 +324,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 
             // 解決された値を redact
             elementKey := fmt.Sprintf("%s[%d]", key, i)
-            redactedAttr := c.redactLogAttributeWithContext(
+            redactedAttr := h.redactLogAttributeWithContext(
                 slog.Attr{Key: elementKey, Value: resolvedValue},
                 nextCtx,
             )
@@ -348,13 +388,15 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 // internal/redaction/redactor.go
 
 // RedactLogAttribute redacts sensitive information from a log attribute
-// This is the public API entry point
+// This is the public API entry point (maintained for backward compatibility)
 func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
-    return c.redactLogAttributeWithContext(attr, RedactionContext{depth: 0})
+    // Note: This method delegates to RedactingHandler when used within logging context
+    // For direct use without a handler, it processes only String and Group kinds
+    return c.redactLogAttributeBasic(attr)
 }
 
-// redactLogAttributeWithContext is the internal implementation with context
-func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionContext) slog.Attr {
+// redactLogAttributeBasic handles basic redaction without LogValuer support
+func (c *Config) redactLogAttributeBasic(attr slog.Attr) slog.Attr {
     key := attr.Key
     value := attr.Value
 
@@ -382,13 +424,53 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
         groupAttrs := value.Group()
         redactedGroupAttrs := make([]slog.Attr, 0, len(groupAttrs))
         for _, groupAttr := range groupAttrs {
-            redactedGroupAttrs = append(redactedGroupAttrs, c.redactLogAttributeWithContext(groupAttr, ctx))
+            redactedGroupAttrs = append(redactedGroupAttrs, c.redactLogAttributeBasic(groupAttr))
+        }
+        return slog.Attr{Key: key, Value: slog.GroupValue(redactedGroupAttrs...)}
+
+    default:
+        // Other types: pass through (KindAny is handled by RedactingHandler)
+        return attr
+    }
+}
+
+// redactLogAttributeWithContext is the internal implementation with full redaction support
+// This is now a method of RedactingHandler to support LogValuer and access failureLogger
+func (h *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionContext) slog.Attr {
+    key := attr.Key
+    value := attr.Value
+
+    // Check for sensitive patterns in the key
+    if h.config.Patterns.IsSensitiveKey(key) {
+        return slog.Attr{Key: key, Value: slog.StringValue(h.config.Placeholder)}
+    }
+
+    // Process based on value kind
+    switch value.Kind() {
+    case slog.KindString:
+        // Redact string values
+        strValue := value.String()
+        redactedText := h.config.RedactText(strValue)
+        if redactedText != strValue {
+            return slog.Attr{Key: key, Value: slog.StringValue(redactedText)}
+        }
+        if h.config.Patterns.IsSensitiveValue(strValue) {
+            return slog.Attr{Key: key, Value: slog.StringValue(h.config.Placeholder)}
+        }
+        return attr
+
+    case slog.KindGroup:
+        // Handle group values recursively
+        groupAttrs := value.Group()
+        redactedGroupAttrs := make([]slog.Attr, 0, len(groupAttrs))
+        for _, groupAttr := range groupAttrs {
+            redactedGroupAttrs = append(redactedGroupAttrs, h.redactLogAttributeWithContext(groupAttr, ctx))
         }
         return slog.Attr{Key: key, Value: slog.GroupValue(redactedGroupAttrs...)}
 
     case slog.KindAny:
         // NEW: Handle KindAny (LogValuer, slices, etc.)
-        processedAttr, err := c.processKindAny(key, value, ctx)
+        processedAttr, err := h.processKindAny(key, value, ctx)
         if err != nil {
             // エラー時は安全なプレースホルダーで置換
             return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
@@ -403,9 +485,12 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
 ```
 
 **変更点**：
-1. **内部実装の分離**：`redactLogAttributeWithContext` を導入
+1. **責任の分離**：
+   - `Config.RedactLogAttribute()`：公開 API、基本的な redaction のみ（String, Group）
+   - `RedactingHandler.redactLogAttributeWithContext()`：完全な redaction（LogValuer, スライス対応）
 2. **KindAny の処理追加**：`processKindAny` を呼び出し
-3. **エラーハンドリング**：処理失敗時は安全なプレースホルダーで置換
+3. **エラーハンドリング**：処理失敗時は `RedactionFailurePlaceholder` で置換
+4. **Placeholder の統一**：すべて `c.Placeholder` を使用
 
 ### 2.5 RedactText の Fail-secure 改善
 
@@ -1089,23 +1174,28 @@ func TestGroupExecutor_RedactionIntegration(t *testing.T) {
 
 ```go
 // Fast path for common cases
-func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionContext) slog.Attr {
+// This is now a method of RedactingHandler
+func (h *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionContext) slog.Attr {
     value := attr.Value
 
     // Fast path: 最も頻繁な型を先にチェック
     switch value.Kind() {
     case slog.KindString:
         // String は最も頻繁に使われるため、最初にチェック
-        return c.redactStringAttribute(attr)
+        return h.redactStringAttribute(attr)
     case slog.KindGroup:
         // Group も比較的頻繁
-        return c.redactGroupAttribute(attr, ctx)
+        return h.redactGroupAttribute(attr, ctx)
     case slog.KindInt64, slog.KindUint64, slog.KindFloat64, slog.KindBool:
         // プリミティブ型は redaction 不要、早期リターン
         return attr
     case slog.KindAny:
         // KindAny は頻度が低いため、最後にチェック
-        processedAttr, _ := c.processKindAny(attr.Key, value, ctx)
+        processedAttr, err := h.processKindAny(attr.Key, value, ctx)
+        if err != nil {
+            // エラー時は安全なプレースホルダーで置換
+            return slog.Attr{Key: attr.Key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+        }
         return processedAttr
     default:
         return attr
@@ -1474,21 +1564,22 @@ internal/runner/security/
 
 ### 11.2 実装の優先順位
 
-1. **Phase 1（優先度：高）**：案2（CommandResult 作成時の redaction）
+1. **Phase 1（優先度：高）**：Placeholder の統一
+   - `LogPlaceholder` と `TextPlaceholder` を単一の `Placeholder` に統一
+   - 設計方針に基づく基盤整備
+   - 後続のフェーズの実装をシンプルにする
+
+2. **Phase 2（優先度：高）**：案2（CommandResult 作成時の redaction）
    - 比較的簡単に実装可能
    - すぐに効果が得られる
 
-2. **Phase 2（優先度：高）**：案1（RedactingHandler の拡張）
+3. **Phase 3（優先度：高）**：案1（RedactingHandler の拡張）
    - より包括的な保護
    - 将来的な型にも対応
 
-3. **Phase 3（優先度：中）**：RedactText の fail-secure 改善
+4. **Phase 4（優先度：中）**：RedactText の fail-secure 改善
    - セキュリティ強化
    - 慎重な影響範囲調査が必要
-
-4. **Phase 4（優先度：低）**：プレースホルダーの統一
-   - コードの簡素化
-   - 破壊的変更の可能性
 
 ### 11.3 次のステップ
 

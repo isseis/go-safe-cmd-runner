@@ -17,6 +17,7 @@
 ### 1.3 実装スコープ
 
 本タスクで実装する機能:
+- **Placeholder の統一**：`LogPlaceholder` と `TextPlaceholder` を単一の `Placeholder` に統一
 - **案2（補完策）**：CommandResult 作成時の早期 redaction
   - `ValidatorInterface` への `SanitizeOutputForLogging` メソッド追加
   - `GroupExecutor` での `SanitizeOutputForLogging` 呼び出し
@@ -27,13 +28,13 @@
   - 再帰深度制限
   - Panic からの復旧
   - 失敗時のログ記録（Slack 以外の出力先）
+  - `processLogValuer` 等のメソッドを `RedactingHandler` に移行
 - **Fail-secure 改善**：RedactText の正規表現コンパイル失敗時の処理
 - **テストの拡充**：Unit、Integration、E2E テスト
 
 ### 1.4 実装しない項目（将来的な拡張）
 
 以下は本タスクの範囲外とし、将来的な拡張として検討：
-- プレースホルダーの統一（`LogPlaceholder` と `TextPlaceholder` の統合）
 - 型判定結果のキャッシュ（パフォーマンス最適化）
 - カスタム redaction パターンの TOML 設定サポート
 - 機械学習ベースの機密情報検出
@@ -42,13 +43,79 @@
 
 ## 2. 実装フェーズ
 
-### Phase 1: 案2（CommandResult 作成時の Redaction）
+### Phase 1: Placeholder の統一
+
+**目的**：`LogPlaceholder` と `TextPlaceholder` を単一の `Placeholder` に統一し、後続フェーズの実装をシンプルにする
+
+**実装期間**：2日間
+
+#### 2.1.1 redaction.Config の変更
+
+**ファイル**：`internal/redaction/redactor.go`
+
+**タスク**：
+- [ ] `Config` 構造体から `LogPlaceholder` と `TextPlaceholder` を削除
+- [ ] 単一の `Placeholder` フィールドを追加
+- [ ] すべての参照箇所を `Placeholder` に統一
+
+**実装内容**：
+```go
+// internal/redaction/redactor.go
+
+type Config struct {
+    // Placeholder is the placeholder used for redaction (e.g., "[REDACTED]")
+    // Unified from LogPlaceholder and TextPlaceholder
+    Placeholder string
+
+    // Patterns contains the sensitive patterns to detect
+    Patterns *SensitivePatterns
+
+    // KeyValuePatterns contains keys for key=value or header redaction
+    KeyValuePatterns []string
+}
+```
+
+**テスト**：
+- [ ] 既存のテストがパスすることを確認
+- [ ] プレースホルダーが `"[REDACTED]"` で統一されていることを確認
+
+**完了基準**：
+- ✅ `Config` 構造体が更新される
+- ✅ すべての参照箇所が `Placeholder` を使用
+- ✅ 既存のテストがパスする
+
+#### 2.1.2 DefaultConfig の更新
+
+**ファイル**：`internal/redaction/redactor.go`
+
+**タスク**：
+- [ ] `DefaultConfig()` で `Placeholder` を `"[REDACTED]"` に設定
+
+**実装内容**：
+```go
+// internal/redaction/redactor.go
+
+func DefaultConfig() *Config {
+    return &Config{
+        Placeholder:      "[REDACTED]",
+        Patterns:         DefaultSensitivePatterns(),
+        KeyValuePatterns: DefaultKeyValuePatterns(),
+    }
+}
+```
+
+**完了基準**：
+- ✅ デフォルト設定で `"[REDACTED]"` が使用される
+
+---
+
+### Phase 2: 案2（CommandResult 作成時の Redaction）
 
 **目的**：早期に redaction を適用し、第1層の防御を確立
 
 **実装期間**：3日間
 
-#### 2.1.1 ValidatorInterface の拡張
+#### 2.2.1 ValidatorInterface の拡張
 
 **ファイル**：`internal/runner/security/interfaces.go`
 
@@ -252,13 +319,13 @@ func TestE2E_Case2_RedactionAtCreation(t *testing.T) {
 
 ---
 
-### Phase 2: 案1（RedactingHandler の拡張）- 基本実装
+### Phase 3: 案1（RedactingHandler の拡張）- 基本実装
 
 **目的**：RedactingHandler で `slog.KindAny` 型を処理できるようにする
 
 **実装期間**：5日間
 
-#### 2.2.1 エラー型の定義
+#### 2.3.1 エラー型の定義
 
 **ファイル**：`internal/redaction/errors.go`（新規作成）
 
@@ -367,7 +434,7 @@ func (c *Config) redactLogAttributeWithContext(attr slog.Attr, ctx RedactionCont
 
     // Check for sensitive patterns in the key
     if c.Patterns.IsSensitiveKey(key) {
-        return slog.Attr{Key: key, Value: slog.StringValue(c.TextPlaceholder)}
+        return slog.Attr{Key: key, Value: slog.StringValue(c.Placeholder)}
     }
 
     // Process based on value kind
@@ -683,13 +750,13 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 
 ---
 
-### Phase 3: 案1（RedactingHandler の拡張）- ログ記録の改善
+### Phase 4: 案1（RedactingHandler の拡張）- ログ記録の改善
 
 **目的**：失敗時のログ記録を Slack 以外の出力先に送信できるようにする
 
 **実装期間**：3日間
 
-#### 2.3.1 RedactingHandler への failureLogger の追加
+#### 2.4.1 RedactingHandler への failureLogger の追加
 
 **ファイル**：`internal/redaction/redactor.go`
 
@@ -855,13 +922,13 @@ func setupLogging() {
 
 ---
 
-### Phase 4: Fail-secure 改善
+### Phase 5: Fail-secure 改善
 
 **目的**：RedactText の正規表現コンパイル失敗時に fail-secure 動作を実装
 
 **実装期間**：2日間
 
-#### 2.4.1 影響範囲の調査
+#### 2.5.1 影響範囲の調査
 
 **タスク**：
 - [ ] `RedactText()` を使用している箇所をリストアップ
@@ -943,13 +1010,13 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 
 ---
 
-### Phase 5: 統合・E2E テスト
+### Phase 6: 統合・E2E テスト
 
 **目的**：案1と案2の二重防御が正しく動作することを確認
 
 **実装期間**：3日間
 
-#### 2.5.1 Integration Tests の追加
+#### 2.6.1 Integration Tests の追加
 
 **ファイル**：`internal/runner/integration_test.go` または新規ファイル
 
@@ -1102,7 +1169,17 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 
 ### 3.1 段階的ロールアウト
 
-#### Phase 1：案2のみ（開発環境）
+#### Phase 1：Placeholder 統一（開発環境）
+
+**デプロイ内容**：
+- Placeholder の統一実装
+
+**検証基準**：
+- ✅ 単体テストがすべてパス
+- ✅ 既存機能が正常動作
+- ✅ ログ出力で `"[REDACTED]"` が使用されていることを確認
+
+#### Phase 2：案2のみ（開発環境）
 
 **デプロイ内容**：
 - CommandResult 作成時の redaction のみ
@@ -1115,7 +1192,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 **完了判断**：
 - 上記の検証基準がすべて満たされ、コードレビューが完了
 
-#### Phase 2：案1+案2（開発環境）
+#### Phase 3：案1+案2（開発環境）
 
 **デプロイ内容**：
 - RedactingHandler の拡張を追加
@@ -1128,7 +1205,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 **完了判断**：
 - 上記の検証基準がすべて満たされ、パフォーマンス目標を達成
 
-#### Phase 3：本番環境へのデプロイ
+#### Phase 4：本番環境へのデプロイ
 
 **デプロイ準備**：
 - すべてのテストがパス（カバレッジ 90% 以上）
