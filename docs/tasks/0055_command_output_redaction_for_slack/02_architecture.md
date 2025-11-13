@@ -312,7 +312,7 @@ flowchart TD
     M --> N
 
     N -->|Yes| A
-    N -->|No| O[Stop recursion]
+    N -->|No| O[Stop recursion<br/>Return partially redacted]
 
     C --> P[Return redacted attr]
     D --> P
@@ -428,6 +428,14 @@ flowchart TD
   - 記録内容: エラーの種類、属性キー、スタックトレース（panic の場合）
   - 注記: RedactingHandler 自身の出力は再帰を避けるため、非 RedactingHandler 経路を使用
 - 処理に失敗した場合は "[REDACTION FAILED - OUTPUT SUPPRESSED]" で置換（fail-secure）
+
+**再帰深度制限の扱い**：
+- 再帰深度が maxRedactionDepth (10) に達した場合:
+  - エラーとは扱わない（DoS 攻撃防止が目的のため）
+  - **それまでに処理した部分的に redact された値を返す**
+  - `slog.Debug` レベルでログ記録（監視・チューニング用）
+- 完全に redact されない可能性があるが、DoS 攻撃を防ぐことを優先
+- 通常のデータ構造では depth=10 に達することは稀
 
 #### 4.4.3 セキュリティ
 
@@ -899,7 +907,7 @@ flowchart TB
 | LogValuer single | CommandResult with password | Redacted CommandResult | LogValuer 処理の検証 |
 | LogValuer slice | []CommandResult | Redacted slice | スライス処理の検証 |
 | Non-LogValuer | Any other type | Pass through | 未対応型のスキップ |
-| Deep recursion | Nested structures (depth=11) | Stop at depth 10 | 再帰深度制限の検証 |
+| Deep recursion | Nested structures (depth=11) | Stop at depth 10, return partially redacted | 再帰深度制限の検証（エラー扱いしない） |
 | Panic handling | LogValue() panics | Recover and log | パニックからの復旧 |
 | Nil LogValue | LogValue() returns nil or empty | Handle gracefully | nil 値の堅牢性検証 |
 | Empty slice | []CommandResult (empty) | Pass through empty | 空スライスの処理 |
@@ -1052,7 +1060,11 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 
 **対策**：
 - 再帰深度制限（maxRedactionDepth = 10）
+  - 深度制限到達時は部分的に redact された値を返す（エラー扱いしない）
+  - DoS 攻撃を防ぎつつ、可用性を維持
+  - 深度制限到達は `slog.Debug` で記録
 - panic からの recover
+  - 予期しない panic は `slog.Warn` で記録し、"[REDACTION FAILED - OUTPUT SUPPRESSED]" を返す
 
 ### 11.2 セキュリティテスト
 
@@ -1212,6 +1224,12 @@ slog.Debug("Redaction applied",
     "attribute_key", key,
     "value_type", valueType,
     "redacted", true)
+
+// 再帰深度制限到達（debug レベル、監視・チューニング用）
+slog.Debug("Recursion depth limit reached - returning partially redacted value",
+    "attribute_key", key,
+    "depth", maxRedactionDepth,
+    "note", "This is not an error - DoS prevention measure")
 
 // Redaction の失敗（warning レベル、FR-2.4 必須）
 // 注意: このログは Slack 以外（stderr、ファイル、監査ログ）に出力される
