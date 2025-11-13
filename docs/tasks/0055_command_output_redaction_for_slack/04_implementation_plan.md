@@ -170,7 +170,7 @@ func (m *MockValidator) SanitizeOutputForLogging(output string) string {
 - ✅ モック実装が追加される
 - ✅ 既存のテストがすべてパス
 
-#### 2.1.3 GroupExecutor での呼び出し
+#### 2.2.3 GroupExecutor での呼び出し
 
 **ファイル**：`internal/runner/group_executor.go`
 
@@ -210,7 +210,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(...) ([]common.CommandResult,
 - ✅ `SanitizeOutputForLogging` が呼び出される
 - ✅ 既存のテストがすべてパス
 
-#### 2.1.4 統合テストの追加
+#### 2.2.4 統合テストの追加
 
 **ファイル**：`internal/runner/group_executor_test.go`
 
@@ -250,7 +250,7 @@ func TestGroupExecutor_SanitizeOutputForLogging(t *testing.T) {
 - ✅ テストがパス
 - ✅ `SanitizeOutputForLogging` が正しく呼び出されることを確認
 
-#### 2.1.5 E2E テスト（案2のみ）
+#### 2.2.5 E2E テスト（案2のみ）
 
 **ファイル**：テスト専用ディレクトリまたは既存のテストファイル
 
@@ -304,7 +304,7 @@ func TestE2E_Case2_RedactionAtCreation(t *testing.T) {
 - ✅ E2E テストがパス
 - ✅ 機密情報が Slack に送信されないことを確認
 
-#### 2.1.6 Phase 1 の完了確認
+#### 2.2.6 Phase 2 の完了確認
 
 **完了基準**：
 - ✅ すべてのタスクが完了
@@ -380,7 +380,7 @@ func (e *ErrRegexCompilationFailed) Error() string {
 - ✅ エラー型が定義される
 - ✅ テストがパス
 
-#### 2.2.2 RedactionContext の追加
+#### 2.3.2 RedactionContext の追加
 
 **ファイル**：`internal/redaction/redactor.go`
 
@@ -615,7 +615,7 @@ func (c *Config) processLogValuer(key string, logValuer slog.LogValuer, ctx Reda
 - ✅ `processLogValuer` が実装される
 - ✅ すべてのテストがパス
 
-#### 2.2.6 processSlice の実装
+#### 2.3.6 processSlice の実装
 
 **ファイル**：`internal/redaction/redactor.go`
 
@@ -736,7 +736,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 - ✅ すべての Unit テストがパス
 - ✅ テストカバレッジが 90% 以上
 
-#### 2.2.8 Phase 2 の完了確認
+#### 2.3.8 Phase 3 の完了確認
 
 **完了基準**：
 - ✅ すべてのタスクが完了
@@ -798,7 +798,7 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 - ✅ `failureLogger` フィールドが追加される
 - ✅ 既存のテストがすべてパス
 
-#### 2.3.2 processLogValuer での failureLogger 使用
+#### 2.4.2 processLogValuer での failureLogger 使用
 
 **ファイル**：`internal/redaction/redactor.go`
 
@@ -868,7 +868,7 @@ func (r *RedactingHandler) processLogValuerInternal(key string, logValuer slog.L
 - ✅ `failureLogger` が使用される
 - ✅ テストがパス
 
-#### 2.3.3 logging システムでの初期化更新
+#### 2.4.3 logging システムでの初期化更新
 
 **ファイル**：`internal/runner/bootstrap/logging.go` または該当するファイル
 
@@ -943,7 +943,7 @@ grep -rn "RedactText" internal/
 - ✅ 影響範囲がドキュメント化される
 - ✅ 変更のリスク評価が完了
 
-#### 2.4.2 performXXXRedaction メソッドの変更
+#### 2.5.2 performXXXRedaction メソッドの変更
 
 **ファイル**：`internal/redaction/redactor.go`
 
@@ -985,7 +985,7 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 - ✅ すべての `performXXXRedaction` メソッドが fail-secure になる
 - ✅ テストがパス
 
-#### 2.4.3 既存のテストの更新
+#### 2.5.3 既存のテストの更新
 
 **ファイル**：`internal/redaction/redactor_test.go`
 
@@ -997,7 +997,7 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 - ✅ すべてのテストがパス
 - ✅ カバレッジが維持される
 
-#### 2.4.4 Phase 4 の完了確認
+#### 2.5.4 Phase 5 の完了確認
 
 **完了基準**：
 - ✅ すべてのタスクが完了
@@ -1089,7 +1089,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 - ✅ Integration テストがパス
 - ✅ 二重防御が正しく動作することを確認
 
-#### 2.5.2 E2E Tests の追加
+#### 2.6.2 E2E Tests の追加
 
 **ファイル**：テスト専用ディレクトリ
 
@@ -1128,7 +1128,7 @@ func TestE2E_RealCommandWithAPIKey(t *testing.T) {
 - ✅ E2E テストがパス
 - ✅ 機密情報が Slack に送信されないことを確認
 
-#### 2.5.3 パフォーマンステスト
+#### 2.6.3 パフォーマンステスト
 
 **ファイル**：`internal/redaction/redactor_test.go`
 
@@ -1151,7 +1151,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) { /* ... */ }
 - ✅ ベンチマークテストが実行される
 - ✅ パフォーマンス目標を達成
 
-#### 2.5.4 Phase 5 の完了確認
+#### 2.6.4 Phase 6 の完了確認
 
 **完了基準**：
 - ✅ すべてのテストがパス
