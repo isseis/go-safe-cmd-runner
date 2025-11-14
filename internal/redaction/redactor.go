@@ -119,6 +119,27 @@ func (c *Config) performKeyValueRedaction(text, key, placeholder string) string 
 	return c.performKeyValuePatternRedaction(text, key, placeholder)
 }
 
+// compileRedactionRegex compiles a regex pattern with fail-secure error handling.
+// Returns the compiled regex or nil if compilation fails.
+// On failure, logs a warning and returns nil to signal the caller to use RedactionFailurePlaceholder.
+func compileRedactionRegex(regexPattern string, contextInfo map[string]string) *regexp.Regexp {
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		// Fail-secure: log warning and signal caller to use safe placeholder
+		// This prevents potential sensitive information leakage
+		logAttrs := []any{
+			"error", err.Error(),
+			"output_destination", "stderr, file, audit",
+		}
+		for k, v := range contextInfo {
+			logAttrs = append(logAttrs, k, v)
+		}
+		slog.Warn("Regex compilation failed - using safe placeholder", logAttrs...)
+		return nil
+	}
+	return re
+}
+
 // performSpacePatternRedaction handles patterns like "Bearer ", "Basic "
 func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string) string {
 	// Escape pattern for regex and create case-insensitive pattern
@@ -126,15 +147,11 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 	escapedPattern := regexp.QuoteMeta(pattern)
 	regexPattern := `(?i)(` + escapedPattern + `)(\S+)`
 
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		// Fail-secure: return safe placeholder if regex compilation fails
-		// This prevents potential sensitive information leakage
-		slog.Warn("Regex compilation failed in performSpacePatternRedaction - using safe placeholder",
-			"pattern", pattern,
-			"error", err.Error(),
-			"output_destination", "stderr, file, audit",
-		)
+	re := compileRedactionRegex(regexPattern, map[string]string{
+		"function": "performSpacePatternRedaction",
+		"pattern":  pattern,
+	})
+	if re == nil {
 		return RedactionFailurePlaceholder
 	}
 
@@ -159,15 +176,11 @@ func (c *Config) performColonPatternRedaction(text, pattern, placeholder string)
 	escapedPattern := regexp.QuoteMeta(pattern)
 	regexPattern := `(?i)(` + escapedPattern + `)([ \t]*)((?:bearer |basic )?)[^\r\n]*`
 
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		// Fail-secure: return safe placeholder if regex compilation fails
-		// This prevents potential sensitive information leakage
-		slog.Warn("Regex compilation failed in performColonPatternRedaction - using safe placeholder",
-			"pattern", pattern,
-			"error", err.Error(),
-			"output_destination", "stderr, file, audit",
-		)
+	re := compileRedactionRegex(regexPattern, map[string]string{
+		"function": "performColonPatternRedaction",
+		"pattern":  pattern,
+	})
+	if re == nil {
 		return RedactionFailurePlaceholder
 	}
 
@@ -203,15 +216,11 @@ func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) 
 		regexPattern = `(?i)(` + escapedKey + `)(=)(\S+)`
 	}
 
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		// Fail-secure: return safe placeholder if regex compilation fails
-		// This prevents potential sensitive information leakage
-		slog.Warn("Regex compilation failed in performKeyValuePatternRedaction - using safe placeholder",
-			"key", key,
-			"error", err.Error(),
-			"output_destination", "stderr, file, audit",
-		)
+	re := compileRedactionRegex(regexPattern, map[string]string{
+		"function": "performKeyValuePatternRedaction",
+		"key":      key,
+	})
+	if re == nil {
 		return RedactionFailurePlaceholder
 	}
 
