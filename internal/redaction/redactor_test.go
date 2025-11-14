@@ -1,14 +1,38 @@
 package redaction
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 )
+
+// panickingLogValuer is a helper struct that panics when LogValue is called.
+type panickingLogValuer struct{}
+
+// LogValue implements the slog.LogValuer interface and always panics.
+func (p panickingLogValuer) LogValue() slog.Value {
+	panic("test panic")
+}
+
+// sensitiveLogValuer is a helper struct for testing LogValuer redaction with sensitive data.
+type sensitiveLogValuer struct {
+	data string
+}
+
+// LogValue implements the slog.LogValuer interface.
+func (v sensitiveLogValuer) LogValue() slog.Value {
+	return slog.StringValue(v.data)
+}
 
 // TestRedactText_EmptyString tests that empty strings are handled correctly
 func TestRedactText_EmptyString(t *testing.T) {
@@ -254,25 +278,25 @@ func TestRedactLogAttribute_SensitiveKeys(t *testing.T) {
 			name:     "password key",
 			key:      "password",
 			value:    "secret123",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "token key",
 			key:      "token",
 			value:    "abc123",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "api_key",
 			key:      "api_key",
 			value:    "xyz",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "secret key",
 			key:      "secret",
 			value:    "mysecret",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 	}
 
@@ -336,13 +360,13 @@ func TestRedactLogAttribute_SensitiveValues(t *testing.T) {
 			name:     "value contains 'password'",
 			key:      "field",
 			value:    "my_password_123",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "value contains 'token'",
 			key:      "data",
 			value:    "bearer_token_xyz",
-			expected: "***",
+			expected: "[REDACTED]",
 		},
 		{
 			name:     "normal value",
@@ -380,7 +404,7 @@ func TestRedactLogAttribute_GroupValues(t *testing.T) {
 		groupAttrs := result.Value.Group()
 		require.Len(t, groupAttrs, 2)
 		assert.Equal(t, "password", groupAttrs[0].Key)
-		assert.Equal(t, "***", groupAttrs[0].Value.String())
+		assert.Equal(t, "[REDACTED]", groupAttrs[0].Value.String())
 		assert.Equal(t, "username", groupAttrs[1].Key)
 		assert.Equal(t, "john", groupAttrs[1].Value.String())
 	})
@@ -409,7 +433,7 @@ func TestRedactLogAttribute_GroupValues(t *testing.T) {
 		authAttrs := authGroup.Value.Group()
 		require.Len(t, authAttrs, 1)
 		assert.Equal(t, "token", authAttrs[0].Key)
-		assert.Equal(t, "***", authAttrs[0].Value.String())
+		assert.Equal(t, "[REDACTED]", authAttrs[0].Value.String())
 	})
 }
 
@@ -505,7 +529,7 @@ func TestNewRedactingHandler(t *testing.T) {
 	t.Run("with custom config", func(t *testing.T) {
 		mock := newMockHandler()
 		config := DefaultConfig()
-		handler := NewRedactingHandler(mock, config)
+		handler := NewRedactingHandler(mock, config, nil)
 
 		assert.NotNil(t, handler)
 		assert.Equal(t, mock, handler.handler)
@@ -514,12 +538,11 @@ func TestNewRedactingHandler(t *testing.T) {
 
 	t.Run("with nil config uses default", func(t *testing.T) {
 		mock := newMockHandler()
-		handler := NewRedactingHandler(mock, nil)
+		handler := NewRedactingHandler(mock, nil, nil)
 
 		assert.NotNil(t, handler)
 		assert.NotNil(t, handler.config)
-		assert.Equal(t, "***", handler.config.LogPlaceholder)
-		assert.Equal(t, "[REDACTED]", handler.config.TextPlaceholder)
+		assert.Equal(t, "[REDACTED]", handler.config.Placeholder)
 	})
 }
 
@@ -527,7 +550,7 @@ func TestNewRedactingHandler(t *testing.T) {
 func TestRedactingHandler_Enabled(t *testing.T) {
 	mock := newMockHandler()
 	mock.enabledLevel = slog.LevelWarn
-	handler := NewRedactingHandler(mock, DefaultConfig())
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
 
 	ctx := context.Background()
 
@@ -540,7 +563,7 @@ func TestRedactingHandler_Enabled(t *testing.T) {
 // TestRedactingHandler_Handler tests Handler getter
 func TestRedactingHandler_Handler(t *testing.T) {
 	mock := newMockHandler()
-	handler := NewRedactingHandler(mock, DefaultConfig())
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
 
 	assert.Equal(t, mock, handler.Handler())
 }
@@ -549,7 +572,7 @@ func TestRedactingHandler_Handler(t *testing.T) {
 func TestRedactingHandler_Handle(t *testing.T) {
 	t.Run("redacts sensitive attributes", func(t *testing.T) {
 		mock := newMockHandler()
-		handler := NewRedactingHandler(mock, DefaultConfig())
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
 
 		ctx := context.Background()
 		record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
@@ -573,12 +596,12 @@ func TestRedactingHandler_Handle(t *testing.T) {
 		assert.Equal(t, "username", attrs[0].Key)
 		assert.Equal(t, "john", attrs[0].Value.String())
 		assert.Equal(t, "password", attrs[1].Key)
-		assert.Equal(t, "***", attrs[1].Value.String())
+		assert.Equal(t, "[REDACTED]", attrs[1].Value.String())
 	})
 
 	t.Run("preserves record metadata", func(t *testing.T) {
 		mock := newMockHandler()
-		handler := NewRedactingHandler(mock, DefaultConfig())
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
 
 		ctx := context.Background()
 		originalTime := time.Now()
@@ -599,7 +622,7 @@ func TestRedactingHandler_Handle(t *testing.T) {
 // TestRedactingHandler_WithAttrs tests attribute addition with redaction
 func TestRedactingHandler_WithAttrs(t *testing.T) {
 	mock := newMockHandler()
-	handler := NewRedactingHandler(mock, DefaultConfig())
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
 
 	newAttrs := []slog.Attr{
 		slog.String("token", "abc123"),
@@ -618,7 +641,7 @@ func TestRedactingHandler_WithAttrs(t *testing.T) {
 	require.Len(t, underlyingMock.attrs, 2)
 
 	assert.Equal(t, "token", underlyingMock.attrs[0].Key)
-	assert.Equal(t, "***", underlyingMock.attrs[0].Value.String())
+	assert.Equal(t, "[REDACTED]", underlyingMock.attrs[0].Value.String())
 	assert.Equal(t, "user", underlyingMock.attrs[1].Key)
 	assert.Equal(t, "alice", underlyingMock.attrs[1].Value.String())
 
@@ -628,10 +651,147 @@ func TestRedactingHandler_WithAttrs(t *testing.T) {
 	assert.Len(t, originalMock.attrs, 0)
 }
 
+// TestRedactingHandler_WithAttrs_LogValuer tests WithAttrs with LogValuer attributes
+func TestRedactingHandler_WithAttrs_LogValuer(t *testing.T) {
+	tests := []struct {
+		name           string
+		attr           slog.Attr
+		expectedKey    string
+		expectedValue  string
+		expectRedacted bool
+	}{
+		{
+			name:           "LogValuer with sensitive key",
+			attr:           slog.Any("token", sensitiveLogValuer{data: "secret123"}),
+			expectedKey:    "token",
+			expectedValue:  "[REDACTED]",
+			expectRedacted: true,
+		},
+		{
+			name:           "LogValuer with non-sensitive key",
+			attr:           slog.Any("user", sensitiveLogValuer{data: "alice"}),
+			expectedKey:    "user",
+			expectedValue:  "alice",
+			expectRedacted: false,
+		},
+		{
+			name:           "LogValuer returning sensitive value",
+			attr:           slog.Any("data", sensitiveLogValuer{data: "password=secret"}),
+			expectedKey:    "data",
+			expectedValue:  "password=[REDACTED]",
+			expectRedacted: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newMockHandler()
+			handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+			newHandler := handler.WithAttrs([]slog.Attr{tt.attr})
+
+			// Should return a new RedactingHandler
+			redactingHandler, ok := newHandler.(*RedactingHandler)
+			require.True(t, ok)
+
+			// Check that underlying handler received redacted attributes
+			underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+			require.True(t, ok)
+			require.Len(t, underlyingMock.attrs, 1)
+
+			assert.Equal(t, tt.expectedKey, underlyingMock.attrs[0].Key)
+			assert.Equal(t, tt.expectedValue, underlyingMock.attrs[0].Value.String())
+		})
+	}
+}
+
+// TestRedactingHandler_WithAttrs_Slice tests WithAttrs with slice attributes
+func TestRedactingHandler_WithAttrs_Slice(t *testing.T) {
+	t.Run("slice with LogValuer elements", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		// Create a slice with LogValuer elements
+		newHandler := handler.WithAttrs([]slog.Attr{
+			slog.Any("users", []slog.LogValuer{
+				sensitiveLogValuer{data: "alice"},
+				sensitiveLogValuer{data: "bob"},
+			}),
+		})
+
+		// Should return a new RedactingHandler
+		redactingHandler, ok := newHandler.(*RedactingHandler)
+		require.True(t, ok)
+
+		// Check that underlying handler received the attribute
+		underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+		require.True(t, ok)
+		require.Len(t, underlyingMock.attrs, 1)
+
+		assert.Equal(t, "users", underlyingMock.attrs[0].Key)
+
+		// Check that the slice was processed - it should be []any now
+		sliceValue := underlyingMock.attrs[0].Value.Any()
+		require.NotNil(t, sliceValue)
+
+		sliceAny, ok := sliceValue.([]any)
+		require.True(t, ok, "expected []any after processing LogValuer slice, got %T", sliceValue)
+		assert.Len(t, sliceAny, 2)
+	})
+
+	t.Run("slice with sensitive LogValuer - key based redaction", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		// Use "token" as the key which is sensitive
+		newHandler := handler.WithAttrs([]slog.Attr{
+			slog.Any("token", []slog.LogValuer{
+				sensitiveLogValuer{data: "token123"},
+			}),
+		})
+
+		// Should return a new RedactingHandler
+		redactingHandler, ok := newHandler.(*RedactingHandler)
+		require.True(t, ok)
+
+		// Check that underlying handler received the attribute
+		underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+		require.True(t, ok)
+		require.Len(t, underlyingMock.attrs, 1)
+
+		assert.Equal(t, "token", underlyingMock.attrs[0].Key)
+		// The entire attribute should be redacted because "token" is a sensitive key
+		assert.Equal(t, "[REDACTED]", underlyingMock.attrs[0].Value.String())
+	})
+}
+
+// TestRedactingHandler_WithAttrs_PanicRecovery tests panic recovery in WithAttrs
+func TestRedactingHandler_WithAttrs_PanicRecovery(t *testing.T) {
+	mock := newMockHandler()
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+	// Should not panic even if LogValue() panics
+	newHandler := handler.WithAttrs([]slog.Attr{
+		slog.Any("panic_attr", panickingLogValuer{}),
+	})
+
+	// Should return a new RedactingHandler
+	redactingHandler, ok := newHandler.(*RedactingHandler)
+	require.True(t, ok)
+
+	// Check that underlying handler received safe placeholder
+	underlyingMock, ok := redactingHandler.handler.(*mockHandler)
+	require.True(t, ok)
+	require.Len(t, underlyingMock.attrs, 1)
+
+	assert.Equal(t, "panic_attr", underlyingMock.attrs[0].Key)
+	assert.Equal(t, RedactionFailurePlaceholder, underlyingMock.attrs[0].Value.String())
+}
+
 // TestRedactingHandler_WithGroup tests group creation
 func TestRedactingHandler_WithGroup(t *testing.T) {
 	mock := newMockHandler()
-	handler := NewRedactingHandler(mock, DefaultConfig())
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
 
 	newHandler := handler.WithGroup("request")
 
@@ -926,4 +1086,709 @@ func TestRedactLogAttribute_StringWithKeyValuePatterns(t *testing.T) {
 			assert.Equal(t, tt.expected, result.Value.String())
 		})
 	}
+}
+
+// TestRedactingHandler_LogValuerSingle tests redaction of a single LogValuer
+func TestRedactingHandler_LogValuerSingle(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Test data with a LogValuer that contains sensitive information
+	testValuer := sensitiveLogValuer{data: "password=secret123"}
+
+	// Execute
+	logger.Info("Command executed", "result", testValuer)
+
+	// Verify the sensitive data is redacted
+	output := buf.String()
+	assert.Contains(t, output, "password=[REDACTED]")
+	assert.NotContains(t, output, "secret123")
+}
+
+// commandResultMock is a helper struct for testing LogValuer with CommandResult-like data.
+type commandResultMock struct {
+	Name   string
+	Output string
+}
+
+// LogValue implements the slog.LogValuer interface.
+func (c commandResultMock) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("name", c.Name),
+		slog.String("output", c.Output),
+	)
+}
+
+// Test LogValuer with actual CommandResult-like struct
+func TestRedactingHandler_LogValuerWithCommandResult(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Create a LogValuer that returns sensitive data
+	result := commandResultMock{
+		Name:   "test_cmd",
+		Output: "password=secret123 and token=abc456",
+	}
+
+	// Log the CommandResult using LogValuer interface
+	logger.Info("Command executed", "result", result)
+
+	// Verify
+	output := buf.String()
+	assert.Contains(t, output, "password=[REDACTED]")
+	assert.Contains(t, output, "token=[REDACTED]")
+	assert.NotContains(t, output, "secret123")
+	assert.NotContains(t, output, "abc456")
+}
+
+// TestRedactingHandler_DeepRecursion tests recursion depth limiting
+func TestRedactingHandler_DeepRecursion(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Create deeply nested group structure (depth > 10)
+	var createNestedGroup func(int) slog.Value
+	createNestedGroup = func(depth int) slog.Value {
+		if depth == 0 {
+			return slog.StringValue("leaf_value")
+		}
+		return slog.GroupValue(
+			slog.Attr{Key: "level", Value: slog.Int64Value(int64(depth))},
+			slog.Attr{Key: "nested", Value: createNestedGroup(depth - 1)},
+		)
+	}
+
+	// Create structure with depth 15
+	deepGroup := createNestedGroup(15)
+
+	// Execute
+	logger.Info("Deep structure", "data", deepGroup)
+
+	// Verify: Should handle without panic
+	// The depth limit prevents infinite recursion
+	output := buf.String()
+	assert.Contains(t, output, "level")
+}
+
+// TestRedactingHandler_PanicHandling tests our panic recovery when logging a panicking LogValuer
+func TestRedactingHandler_PanicHandling(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+
+	// Create failure logger to capture panic logs
+	var failureBuf bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureBuf, nil)
+	failureLogger := slog.New(failureHandler)
+
+	redactingHandler := NewRedactingHandler(handler, config, failureLogger)
+	logger := slog.New(redactingHandler)
+
+	// Execute with a LogValuer that is designed to panic.
+	// Note: The `panickingLogValuer` type with its `LogValue()` method
+	// is defined at the top level of this test file.
+	//
+	// Our RedactingHandler now handles KindLogValuer and catches panics,
+	// replacing them with RedactionFailurePlaceholder and logging to failureLogger.
+	logger.Info("Test message", "data", panickingLogValuer{})
+
+	// Verify main log contains placeholder and not the panic message
+	output := buf.String()
+	assert.Contains(t, output, RedactionFailurePlaceholder)
+	assert.NotContains(t, output, "test panic")
+	assert.NotContains(t, output, "LogValue panicked")
+
+	// Verify failure log contains detailed panic info
+	failureOutput := failureBuf.String()
+	assert.Contains(t, failureOutput, "Redaction failed - detailed log")
+	assert.Contains(t, failureOutput, "test panic")
+	assert.Contains(t, failureOutput, "panic_value")
+	assert.Contains(t, failureOutput, "panic_type")
+	assert.Contains(t, failureOutput, "stack_trace")
+}
+
+// TestRedactingHandler_PanicInProcessKindAny tests our custom panic recovery
+// when we manually process KindAny LogValuers (e.g., in groups)
+func TestRedactingHandler_PanicInProcessKindAny(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+
+	// Create failure logger to capture panic logs
+	var failureBuf bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureBuf, nil)
+	failureLogger := slog.New(failureHandler)
+
+	redactingHandler := NewRedactingHandler(handler, config, failureLogger)
+
+	// Create a KindAny attribute with an unresolved panicking LogValuer
+	// We use slog.Attr directly with AnyValue to avoid premature resolution
+	attr := slog.Attr{
+		Key:   "test_data",
+		Value: slog.AnyValue(panickingLogValuer{}),
+	}
+
+	// Process the attribute through WithAttrs public API
+	// This will trigger our panic recovery code in processLogValuer()
+	handlerWithAttrs := redactingHandler.WithAttrs([]slog.Attr{attr})
+	logger := slog.New(handlerWithAttrs)
+
+	// Log a message to trigger the attribute rendering
+	logger.Info("Test message")
+
+	// Verify main log contains placeholder
+	output := buf.String()
+	assert.Contains(t, output, "Test message")
+	assert.Contains(t, output, RedactionFailurePlaceholder)
+	assert.NotContains(t, output, "test panic")
+
+	// Verify failure log contains detailed panic info
+	failureOutput := failureBuf.String()
+	assert.Contains(t, failureOutput, "Redaction failed - detailed log")
+	assert.Contains(t, failureOutput, "test panic")
+	assert.Contains(t, failureOutput, "panic_value")
+	assert.Contains(t, failureOutput, "panic_type")
+	assert.Contains(t, failureOutput, "stack_trace")
+}
+
+// TestRedactingHandler_NilValue tests nil value handling
+func TestRedactingHandler_NilValue(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Test with nil value
+	logger.Info("Test message", "data", slog.AnyValue(nil))
+
+	// Verify: Should handle nil gracefully
+	output := buf.String()
+	assert.Contains(t, output, "Test message")
+}
+
+// TestRedactingHandler_EmptySlice tests empty slice handling
+func TestRedactingHandler_EmptySlice(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Test with empty slice
+	emptySlice := []string{}
+	logger.Info("Test message", "data", slog.AnyValue(emptySlice))
+
+	// Verify: Should handle empty slice gracefully
+	output := buf.String()
+	assert.Contains(t, output, "Test message")
+}
+
+// TestRedactingHandler_MixedSlice tests slice with mixed types
+func TestRedactingHandler_MixedSlice(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Test with mixed slice (interfaces)
+	mixedSlice := []interface{}{
+		"string_value",
+		123,
+		true,
+	}
+	logger.Info("Test message", "data", slog.AnyValue(mixedSlice))
+
+	// Verify: Should handle mixed slice gracefully
+	output := buf.String()
+	assert.Contains(t, output, "Test message")
+	assert.Contains(t, output, "string_value")
+}
+
+// TestRedactingHandler_NonLogValuer tests non-LogValuer types pass through
+func TestRedactingHandler_NonLogValuer(t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewJSONHandler(&buf, nil)
+	config := DefaultConfig()
+	redactingHandler := NewRedactingHandler(handler, config, nil)
+	logger := slog.New(redactingHandler)
+
+	// Test with various non-LogValuer types
+	logger.Info("Test message",
+		"int", slog.IntValue(123),
+		"bool", slog.BoolValue(true),
+		"float", slog.Float64Value(3.14),
+	)
+
+	// Verify: Should pass through without modification
+	output := buf.String()
+	assert.Contains(t, output, "123")
+	assert.Contains(t, output, "true")
+	assert.Contains(t, output, "3.14")
+}
+
+// TestRedactionContext_DepthTracking tests depth tracking
+func TestRedactionContext_DepthTracking(t *testing.T) {
+	ctx1 := redactionContext{depth: 0}
+	assert.Equal(t, 0, ctx1.depth)
+
+	ctx2 := redactionContext{depth: 5}
+	assert.Equal(t, 5, ctx2.depth)
+
+	// Test depth limit
+	assert.True(t, ctx2.depth < maxRedactionDepth)
+
+	ctxLimit := redactionContext{depth: maxRedactionDepth}
+	assert.Equal(t, maxRedactionDepth, ctxLimit.depth)
+}
+
+// TestRedactionFailurePlaceholder tests the failure placeholder constant
+func TestRedactionFailurePlaceholder(t *testing.T) {
+	assert.Equal(t, "[REDACTION FAILED - OUTPUT SUPPRESSED]", RedactionFailurePlaceholder)
+	assert.NotEqual(t, "[REDACTED]", RedactionFailurePlaceholder)
+}
+
+// TestMaxRedactionDepth tests the depth limit constant
+func TestMaxRedactionDepth(t *testing.T) {
+	assert.Equal(t, 10, maxRedactionDepth)
+	assert.True(t, maxRedactionDepth > 0)
+}
+
+// TestRedactingHandler_SliceTypeConversion tests and documents the type conversion behavior
+// for slices processed by the redacting handler
+func TestRedactingHandler_SliceTypeConversion(t *testing.T) {
+	t.Run("typed slice without LogValuer converts to []any", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with a typed slice that has no LogValuer elements
+		stringSlice := []string{"alice", "bob", "charlie"}
+		logger.Info("Test message", "users", slog.AnyValue(stringSlice))
+
+		// Verify: Even without LogValuer, processSlice converts to []any
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var usersAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "users" {
+				usersAttr = attr
+				return false
+			}
+			return true
+		})
+
+		// ALL slices are processed and converted to []any
+		sliceValue := usersAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processSlice, got %T", sliceValue)
+		assert.Len(t, anySlice, 3)
+
+		// Verify semantic content is preserved
+		assert.Equal(t, "alice", anySlice[0])
+		assert.Equal(t, "bob", anySlice[1])
+		assert.Equal(t, "charlie", anySlice[2])
+	})
+
+	t.Run("slice with LogValuer converts to []any", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with a slice containing LogValuer elements
+		logValuerSlice := []slog.LogValuer{
+			sensitiveLogValuer{data: "alice"},
+			sensitiveLogValuer{data: "bob"},
+		}
+		logger.Info("Test message", "users", slog.AnyValue(logValuerSlice))
+
+		// Verify: Should convert to []any after processing
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var usersAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "users" {
+				usersAttr = attr
+				return false
+			}
+			return true
+		})
+
+		// After processSlice, the type should be []any
+		sliceValue := usersAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing LogValuer slice, got %T", sliceValue)
+		assert.Len(t, anySlice, 2)
+
+		// Verify that the semantic content is preserved
+		// (even though the type changed from []slog.LogValuer to []any)
+		assert.Equal(t, "alice", anySlice[0])
+		assert.Equal(t, "bob", anySlice[1])
+	})
+
+	t.Run("mixed slice type conversion", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with interface slice containing some LogValuers
+		mixedSlice := []interface{}{
+			sensitiveLogValuer{data: "alice"},
+			"plain_string",
+			123,
+		}
+		logger.Info("Test message", "data", slog.AnyValue(mixedSlice))
+
+		// Verify: []interface{} is similar to []any, should handle gracefully
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any for processed mixed slice, got %T", sliceValue)
+		assert.Len(t, anySlice, 3)
+
+		// First element was LogValuer -> resolved to its string value
+		assert.Equal(t, "alice", anySlice[0])
+		// Other elements preserved as-is
+		assert.Equal(t, "plain_string", anySlice[1])
+		assert.Equal(t, 123, anySlice[2])
+	})
+}
+
+// TestRedactingHandler_TwoTierLogging tests that panic handling produces
+// two log entries: detailed (to failureLogger) and summary (to slog.Default)
+func TestRedactingHandler_TwoTierLogging(t *testing.T) {
+	var mainBuf bytes.Buffer
+	mainHandler := slog.NewJSONHandler(&mainBuf, nil)
+	config := DefaultConfig()
+
+	// Create failure logger (simulates file/stderr, excludes Slack)
+	var failureBuf bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureBuf, nil)
+	failureLogger := slog.New(failureHandler)
+
+	// Create redacting handler
+	redactingHandler := NewRedactingHandler(mainHandler, config, failureLogger)
+	logger := slog.New(redactingHandler)
+
+	// Set this logger as default so slog.Warn() in panic handler works
+	oldDefault := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(oldDefault)
+
+	// Trigger panic in LogValuer
+	logger.Info("Test message", "data", panickingLogValuer{})
+
+	// Parse main output
+	mainLines := strings.Split(strings.TrimSpace(mainBuf.String()), "\n")
+	require.GreaterOrEqual(t, len(mainLines), 2, "Expected at least 2 log entries (placeholder + summary)")
+
+	// Parse failure output
+	failureLines := strings.Split(strings.TrimSpace(failureBuf.String()), "\n")
+	require.GreaterOrEqual(t, len(failureLines), 1, "Expected at least 1 detailed log entry")
+
+	// Verify detailed log (in failureLogger)
+	var detailedLog map[string]interface{}
+	err := json.Unmarshal([]byte(failureLines[0]), &detailedLog)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Redaction failed - detailed log", detailedLog["msg"])
+	assert.Contains(t, detailedLog, "panic_value")
+	assert.Contains(t, detailedLog, "panic_type")
+	assert.Contains(t, detailedLog, "stack_trace")
+	assert.Equal(t, "redaction_failure_detail", detailedLog["log_category"])
+
+	// Verify summary log (in main logger via slog.Default)
+	// Find the summary log in main output
+	var summaryLog map[string]interface{}
+	for _, line := range mainLines {
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &entry); err == nil {
+			if msg, ok := entry["msg"].(string); ok && strings.Contains(msg, "see logs for details") {
+				summaryLog = entry
+				break
+			}
+		}
+	}
+
+	require.NotNil(t, summaryLog, "Expected to find summary log in main output")
+	assert.Equal(t, "Redaction failed - see logs for details", summaryLog["msg"])
+	assert.Contains(t, summaryLog, "panic_type")
+	assert.Equal(t, "redaction_failure_summary", summaryLog["log_category"])
+	assert.Equal(t, true, summaryLog["details_in_log"])
+
+	// Verify sensitive information is NOT in summary
+	assert.NotContains(t, summaryLog, "panic_value")
+	assert.NotContains(t, summaryLog, "stack_trace")
+}
+
+// TestContainsRedactingHandler tests the containsRedactingHandler helper function
+func TestContainsRedactingHandler(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func() slog.Handler
+		expected bool
+	}{
+		{
+			name: "nil handler",
+			setup: func() slog.Handler {
+				return nil
+			},
+			expected: false,
+		},
+		{
+			name: "simple text handler without RedactingHandler",
+			setup: func() slog.Handler {
+				return slog.NewTextHandler(os.Stderr, nil)
+			},
+			expected: false,
+		},
+		{
+			name: "simple JSON handler without RedactingHandler",
+			setup: func() slog.Handler {
+				return slog.NewJSONHandler(os.Stderr, nil)
+			},
+			expected: false,
+		},
+		{
+			name: "direct RedactingHandler",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				return NewRedactingHandler(baseHandler, nil, nil)
+			},
+			expected: true,
+		},
+		{
+			name: "RedactingHandler wrapped in another RedactingHandler",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting1 := NewRedactingHandler(baseHandler, nil, nil)
+				return NewRedactingHandler(redacting1, nil, nil)
+			},
+			expected: true,
+		},
+		{
+			name: "RedactingHandler accessed via Handler() method",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting := NewRedactingHandler(baseHandler, nil, nil)
+				// The Handler() method should expose the underlying handler
+				return redacting
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler without RedactingHandler",
+			setup: func() slog.Handler {
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, jsonHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: false,
+		},
+		{
+			name: "MultiHandler with RedactingHandler in first position",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(redactingHandler, jsonHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler with RedactingHandler in middle position",
+			setup: func() slog.Handler {
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				baseHandler := slog.NewJSONHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				anotherTextHandler := slog.NewTextHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, redactingHandler, anotherTextHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler with RedactingHandler in last position",
+			setup: func() slog.Handler {
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				baseHandler := slog.NewJSONHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, redactingHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler with nested RedactingHandler",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting1 := NewRedactingHandler(baseHandler, nil, nil)
+				redacting2 := NewRedactingHandler(redacting1, nil, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(jsonHandler, redacting2)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := tt.setup()
+			result := containsRedactingHandler(handler)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestNewRedactingHandler_FailureLoggerValidation tests that NewRedactingHandler
+// panics when failureLogger contains a RedactingHandler in its chain
+func TestNewRedactingHandler_FailureLoggerValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupLogger func() *slog.Logger
+		expectPanic bool
+	}{
+		{
+			name: "failureLogger without RedactingHandler - no panic",
+			setupLogger: func() *slog.Logger {
+				// Create a simple logger without RedactingHandler
+				handler := slog.NewTextHandler(os.Stderr, nil)
+				return slog.New(handler)
+			},
+			expectPanic: false,
+		},
+		{
+			name: "failureLogger with RedactingHandler - panic expected",
+			setupLogger: func() *slog.Logger {
+				// Create a logger with RedactingHandler in the chain
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				return slog.New(redactingHandler)
+			},
+			expectPanic: true,
+		},
+		{
+			name: "failureLogger with nested RedactingHandler - panic expected",
+			setupLogger: func() *slog.Logger {
+				// Create a logger with nested RedactingHandler
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting1 := NewRedactingHandler(baseHandler, nil, nil)
+				redacting2 := NewRedactingHandler(redacting1, nil, nil)
+				return slog.New(redacting2)
+			},
+			expectPanic: true,
+		},
+		{
+			name: "nil failureLogger (uses default) - no panic in this specific case",
+			setupLogger: func() *slog.Logger {
+				return nil
+			},
+			expectPanic: false,
+		},
+		{
+			name: "failureLogger with MultiHandler containing RedactingHandler - panic expected",
+			setupLogger: func() *slog.Logger {
+				// Create a MultiHandler that contains a RedactingHandler
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(jsonHandler, redactingHandler)
+				require.NoError(t, err)
+				return slog.New(multiHandler)
+			},
+			expectPanic: true,
+		},
+		{
+			name: "failureLogger with MultiHandler without RedactingHandler - no panic",
+			setupLogger: func() *slog.Logger {
+				// Create a MultiHandler without RedactingHandler
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, jsonHandler)
+				require.NoError(t, err)
+				return slog.New(multiHandler)
+			},
+			expectPanic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseHandler := slog.NewTextHandler(os.Stderr, nil)
+			failureLogger := tt.setupLogger()
+
+			if tt.expectPanic {
+				// Expect a panic
+				assert.Panics(t, func() {
+					NewRedactingHandler(baseHandler, nil, failureLogger)
+				}, "Expected NewRedactingHandler to panic with RedactingHandler in failureLogger chain")
+			} else {
+				// Should not panic
+				assert.NotPanics(t, func() {
+					NewRedactingHandler(baseHandler, nil, failureLogger)
+				}, "NewRedactingHandler should not panic with valid failureLogger")
+			}
+		})
+	}
+}
+
+// TestProductionLoggerSetup verifies that the production logger setup
+// (as used in internal/runner/bootstrap/logger.go) does not violate
+// the constraint that failureLogger must not contain RedactingHandler
+func TestProductionLoggerSetup(t *testing.T) {
+	// Simulate the production setup from internal/runner/bootstrap/logger.go
+
+	// 1. Create base handlers (text and JSON)
+	textHandler := slog.NewTextHandler(os.Stderr, nil)
+	jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+
+	// 2. Create failureLogger from base handlers (NO RedactingHandler)
+	failureHandlers := []slog.Handler{textHandler, jsonHandler}
+	failureMultiHandler, err := logging.NewMultiHandler(failureHandlers...)
+	require.NoError(t, err)
+	failureLogger := slog.New(failureMultiHandler)
+
+	// 3. Verify failureLogger does not contain RedactingHandler
+	assert.False(t, containsRedactingHandler(failureLogger.Handler()),
+		"Production failureLogger should not contain RedactingHandler")
+
+	// 4. Create main handler with RedactingHandler
+	// Should not panic with valid failureLogger
+	mainHandler, err := logging.NewMultiHandler(textHandler, jsonHandler)
+	require.NoError(t, err)
+
+	assert.NotPanics(t, func() {
+		_ = NewRedactingHandler(mainHandler, nil, failureLogger)
+	}, "Production setup should not panic - failureLogger is correctly configured without RedactingHandler")
 }

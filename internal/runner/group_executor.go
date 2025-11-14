@@ -257,13 +257,21 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		// Execute the command
 		stdout, stderr, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 
+		// Sanitize command output before storing in CommandResult to prevent sensitive data
+		// (passwords, tokens, keys) from being logged or sent to external services like Slack.
+		// This is the first layer of defense (Case 2) in a defense-in-depth strategy.
+		// The second layer (Case 1) is RedactingHandler which processes LogValuer types during logging.
+		// See docs/tasks/0055_command_output_redaction_for_slack for architecture details.
+		sanitizedStdout := ge.validator.SanitizeOutputForLogging(stdout)
+		sanitizedStderr := ge.validator.SanitizeOutputForLogging(stderr)
+
 		// Record command result
 		cmdResult := common.CommandResult{
 			CommandResultFields: common.CommandResultFields{
 				Name:     cmdSpec.Name,
 				ExitCode: exitCode,
-				Output:   stdout,
-				Stderr:   stderr,
+				Output:   sanitizedStdout,
+				Stderr:   sanitizedStderr,
 			},
 		}
 		commandResults = append(commandResults, cmdResult)

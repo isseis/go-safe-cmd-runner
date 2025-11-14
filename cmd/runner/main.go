@@ -71,8 +71,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Run main logic and capture exit code
+	exitCode := mainWithExitCode(*runID)
+
+	// Ensure redaction failures are reported before exit
+	bootstrap.ReportRedactionFailures()
+
+	// Exit with captured code
+	os.Exit(exitCode)
+}
+
+// mainWithExitCode runs the main logic and returns the exit code
+func mainWithExitCode(runID string) int {
 	// Wrap main logic in a separate function to properly handle errors and defer
-	if err := run(*runID); err != nil {
+	if err := run(runID); err != nil {
 		var silentErr SilentExitError
 		var preExecErr *logging.PreExecutionError
 		var execErr *logging.ExecutionError
@@ -82,15 +94,16 @@ func main() {
 			// revive:disable:empty-block This empty block is intentional to handle specific cases
 		case errors.As(err, &preExecErr):
 			// Check if this is a pre-execution error using errors.As for safe type checking
-			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, *runID)
+			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runID)
 		case errors.As(err, &execErr):
 			// Check if this is an execution error (error during command execution)
 			logging.HandleExecutionError(execErr)
 		default:
-			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", *runID)
+			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", runID)
 		}
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // parseLogLevel parses a log level string and returns the corresponding LogLevel value.

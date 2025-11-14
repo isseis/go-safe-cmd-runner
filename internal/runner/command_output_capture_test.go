@@ -42,8 +42,16 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 		Level: slog.LevelDebug,
 	})
 
+	// Create a separate failure logger without RedactingHandler
+	// This is required to prevent circular dependencies during panic recovery
+	var failureLogBuffer bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
+	failureLogger := slog.New(failureHandler)
+
 	// Wrap with redacting handler
-	redactingHandler := redaction.NewRedactingHandler(handler, nil)
+	redactingHandler := redaction.NewRedactingHandler(handler, nil, failureLogger)
 	logger := slog.New(redactingHandler)
 	slog.SetDefault(logger)
 
@@ -105,6 +113,9 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 
 	// Mock validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// Mock SanitizeOutputForLogging (defense-in-depth sanitization of command output)
+	// Since this test checks error output, we just return empty string
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	ctx := context.Background()
 	err = ge.ExecuteGroup(ctx, group, runtimeGlobal)
@@ -202,8 +213,16 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 				Level: slog.LevelDebug,
 			})
 
+			// Create a separate failure logger without RedactingHandler
+			// This is required to prevent circular dependencies during panic recovery
+			var failureLogBuffer bytes.Buffer
+			failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			})
+			failureLogger := slog.New(failureHandler)
+
 			// Wrap with redacting handler
-			redactingHandler := redaction.NewRedactingHandler(handler, nil)
+			redactingHandler := redaction.NewRedactingHandler(handler, nil, failureLogger)
 			logger := slog.New(redactingHandler)
 			slog.SetDefault(logger)
 
@@ -264,6 +283,8 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+			// Mock SanitizeOutputForLogging (defense-in-depth sanitization of command output)
+			mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 			ctx := context.Background()
 			err = ge.ExecuteGroup(ctx, group, runtimeGlobal)

@@ -28,7 +28,22 @@ type LoggerConfig struct {
 	ConsoleWriter   io.Writer // Writer for console output (stdout/stderr)
 }
 
-// SetupLoggerWithConfig initializes the logging system with all handlers atomically
+// redactionErrorCollector is a global collector for redaction failures
+// This is set during logger initialization and used for shutdown reporting
+var redactionErrorCollector *redaction.InMemoryErrorCollector
+
+// redactionReporter is a global reporter for shutdown
+var redactionReporter *redaction.ShutdownReporter
+
+// SetupLoggerWithConfig initializes the logging system with all handlers atomically.
+//
+// IMPORTANT: This function must be called exactly once during application startup,
+// before any logging operations occur. It is designed for single-threaded bootstrap
+// initialization and should not be called concurrently or after the application
+// has started processing.
+//
+// The global redactionErrorCollector and redactionReporter are initialized during
+// this call and must not be accessed before initialization completes.
 func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet bool) error {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -122,20 +137,48 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 
 	// 4. Slack notification handler (optional)
+	var slackHandler slog.Handler
 	if config.SlackWebhookURL != "" {
-		slackHandler, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
+		sh, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
 		if err != nil {
 			return fmt.Errorf("failed to create Slack handler: %w", err)
 		}
-		handlers = append(handlers, slackHandler)
+		slackHandler = sh
+		handlers = append(handlers, sh)
 	}
 
-	// Create MultiHandler with redaction
+	// Create failure logger (excludes Slack to prevent sensitive information leakage)
+	// This logger is used for detailed error logging during redaction failures
+	failureHandlers := make([]slog.Handler, 0, len(handlers))
+	for _, h := range handlers {
+		// Exclude Slack handler from failure logger
+		// Detailed panic values and stack traces should not be sent to Slack
+		if h != slackHandler {
+			failureHandlers = append(failureHandlers, h)
+		}
+	}
+
+	failureMultiHandler, err := logging.NewMultiHandler(failureHandlers...)
+	if err != nil {
+		return fmt.Errorf("failed to create failure multi handler: %w", err)
+	}
+	failureLogger := slog.New(failureMultiHandler)
+
+	// Create redaction error collector for monitoring failures
+	// Limit to 1000 most recent failures to prevent unbounded growth
+	const maxRedactionFailures = 1000
+	redactionErrorCollector = redaction.NewInMemoryErrorCollector(maxRedactionFailures)
+
+	// Create MultiHandler with redaction (includes all handlers including Slack)
 	multiHandler, err := logging.NewMultiHandler(handlers...)
 	if err != nil {
 		return fmt.Errorf("failed to create multi handler: %w", err)
 	}
-	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
+	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger).
+		WithErrorCollector(redactionErrorCollector)
+
+	// Create shutdown reporter for redaction failures
+	redactionReporter = redaction.NewShutdownReporter(redactionErrorCollector, os.Stderr, failureLogger)
 
 	// Set as default logger
 	logger := slog.New(redactedHandler)
@@ -156,4 +199,17 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 
 	return nil
+}
+
+// ReportRedactionFailures reports any collected redaction failures
+// This should be called during application shutdown
+func ReportRedactionFailures() {
+	if redactionReporter == nil {
+		return
+	}
+
+	if err := redactionReporter.Report(); err != nil {
+		// Use fmt.Fprintf since logger might be shutting down
+		fmt.Fprintf(os.Stderr, "Warning: failed to report redaction failures: %v\n", err)
+	}
 }
