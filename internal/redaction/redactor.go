@@ -402,12 +402,23 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 				panicValue = rec
 				resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
 
-				// Use failureLogger (does not go through RedactingHandler)
-				r.failureLogger.Warn("Redaction failed due to panic in LogValue()",
+				// 1. Log detailed information to file/stderr only (excludes Slack)
+				// This uses failureLogger which was configured to exclude Slack handler
+				r.failureLogger.Warn("Redaction failed - detailed log",
 					"attribute_key", key,
-					"panic", rec,
+					"panic_value", rec,
+					"panic_type", fmt.Sprintf("%T", rec),
 					"stack_trace", string(debug.Stack()),
-					"output_destination", "stderr, file, audit",
+					"log_category", "redaction_failure_detail",
+				)
+
+				// 2. Log safe summary to all destinations (includes Slack)
+				// This uses slog.Default() which goes through RedactingHandler
+				slog.Warn("Redaction failed - see logs for details",
+					"attribute_key", key,
+					"panic_type", fmt.Sprintf("%T", rec),
+					"log_category", "redaction_failure_summary",
+					"details_in_log", true,
 				)
 			}
 		}()
@@ -468,11 +479,24 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 						panicValue = rec
 						resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
 						elementKey := fmt.Sprintf("%s[%d]", key, i)
-						r.failureLogger.Warn("Redaction failed for slice element",
+
+						// 1. Log detailed information to file/stderr only (excludes Slack)
+						r.failureLogger.Warn("Redaction failed for slice element - detailed log",
 							"attribute_key", elementKey,
 							"element_index", i,
-							"panic", rec,
+							"panic_value", rec,
+							"panic_type", fmt.Sprintf("%T", rec),
 							"stack_trace", string(debug.Stack()),
+							"log_category", "redaction_failure_detail",
+						)
+
+						// 2. Log safe summary to all destinations (includes Slack)
+						slog.Warn("Redaction failed for slice element - see logs for details",
+							"attribute_key", elementKey,
+							"element_index", i,
+							"panic_type", fmt.Sprintf("%T", rec),
+							"log_category", "redaction_failure_summary",
+							"details_in_log", true,
 						)
 					}
 				}()

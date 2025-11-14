@@ -122,20 +122,39 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 
 	// 4. Slack notification handler (optional)
+	var slackHandler slog.Handler
 	if config.SlackWebhookURL != "" {
-		slackHandler, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
+		sh, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
 		if err != nil {
 			return fmt.Errorf("failed to create Slack handler: %w", err)
 		}
-		handlers = append(handlers, slackHandler)
+		slackHandler = sh
+		handlers = append(handlers, sh)
 	}
 
-	// Create MultiHandler with redaction
+	// Create failure logger (excludes Slack to prevent sensitive information leakage)
+	// This logger is used for detailed error logging during redaction failures
+	failureHandlers := make([]slog.Handler, 0, len(handlers))
+	for _, h := range handlers {
+		// Exclude Slack handler from failure logger
+		// Detailed panic values and stack traces should not be sent to Slack
+		if h != slackHandler {
+			failureHandlers = append(failureHandlers, h)
+		}
+	}
+
+	failureMultiHandler, err := logging.NewMultiHandler(failureHandlers...)
+	if err != nil {
+		return fmt.Errorf("failed to create failure multi handler: %w", err)
+	}
+	failureLogger := slog.New(failureMultiHandler)
+
+	// Create MultiHandler with redaction (includes all handlers including Slack)
 	multiHandler, err := logging.NewMultiHandler(handlers...)
 	if err != nil {
 		return fmt.Errorf("failed to create multi handler: %w", err)
 	}
-	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, nil)
+	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger)
 
 	// Set as default logger
 	logger := slog.New(redactedHandler)

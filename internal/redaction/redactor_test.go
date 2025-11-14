@@ -3,7 +3,9 @@ package redaction
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -1202,10 +1204,12 @@ func TestRedactingHandler_PanicHandling(t *testing.T) {
 	assert.NotContains(t, output, "test panic")
 	assert.NotContains(t, output, "LogValue panicked")
 
-	// Verify failure log contains panic info
+	// Verify failure log contains detailed panic info
 	failureOutput := failureBuf.String()
-	assert.Contains(t, failureOutput, "Redaction failed due to panic in LogValue()")
+	assert.Contains(t, failureOutput, "Redaction failed - detailed log")
 	assert.Contains(t, failureOutput, "test panic")
+	assert.Contains(t, failureOutput, "panic_value")
+	assert.Contains(t, failureOutput, "panic_type")
 	assert.Contains(t, failureOutput, "stack_trace")
 }
 
@@ -1241,10 +1245,12 @@ func TestRedactingHandler_PanicInProcessKindAny(t *testing.T) {
 	assert.Equal(t, "test_data", redactedAttr.Key)
 	assert.Equal(t, RedactionFailurePlaceholder, redactedAttr.Value.String())
 
-	// Verify failure log contains panic info
+	// Verify failure log contains detailed panic info
 	failureOutput := failureBuf.String()
-	assert.Contains(t, failureOutput, "Redaction failed due to panic in LogValue()")
+	assert.Contains(t, failureOutput, "Redaction failed - detailed log")
 	assert.Contains(t, failureOutput, "test panic")
+	assert.Contains(t, failureOutput, "panic_value")
+	assert.Contains(t, failureOutput, "panic_type")
 	assert.Contains(t, failureOutput, "stack_trace")
 }
 
@@ -1350,4 +1356,71 @@ func TestRedactionFailurePlaceholder(t *testing.T) {
 func TestMaxRedactionDepth(t *testing.T) {
 	assert.Equal(t, 10, maxRedactionDepth)
 	assert.True(t, maxRedactionDepth > 0)
+}
+
+// TestRedactingHandler_TwoTierLogging tests that panic handling produces
+// two log entries: detailed (to failureLogger) and summary (to slog.Default)
+func TestRedactingHandler_TwoTierLogging(t *testing.T) {
+	var mainBuf bytes.Buffer
+	mainHandler := slog.NewJSONHandler(&mainBuf, nil)
+	config := DefaultConfig()
+
+	// Create failure logger (simulates file/stderr, excludes Slack)
+	var failureBuf bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureBuf, nil)
+	failureLogger := slog.New(failureHandler)
+
+	// Create redacting handler
+	redactingHandler := NewRedactingHandler(mainHandler, config, failureLogger)
+	logger := slog.New(redactingHandler)
+
+	// Set this logger as default so slog.Warn() in panic handler works
+	oldDefault := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(oldDefault)
+
+	// Trigger panic in LogValuer
+	logger.Info("Test message", "data", panickingLogValuer{})
+
+	// Parse main output
+	mainLines := strings.Split(strings.TrimSpace(mainBuf.String()), "\n")
+	require.GreaterOrEqual(t, len(mainLines), 2, "Expected at least 2 log entries (placeholder + summary)")
+
+	// Parse failure output
+	failureLines := strings.Split(strings.TrimSpace(failureBuf.String()), "\n")
+	require.GreaterOrEqual(t, len(failureLines), 1, "Expected at least 1 detailed log entry")
+
+	// Verify detailed log (in failureLogger)
+	var detailedLog map[string]interface{}
+	err := json.Unmarshal([]byte(failureLines[0]), &detailedLog)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Redaction failed - detailed log", detailedLog["msg"])
+	assert.Contains(t, detailedLog, "panic_value")
+	assert.Contains(t, detailedLog, "panic_type")
+	assert.Contains(t, detailedLog, "stack_trace")
+	assert.Equal(t, "redaction_failure_detail", detailedLog["log_category"])
+
+	// Verify summary log (in main logger via slog.Default)
+	// Find the summary log in main output
+	var summaryLog map[string]interface{}
+	for _, line := range mainLines {
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &entry); err == nil {
+			if msg, ok := entry["msg"].(string); ok && strings.Contains(msg, "see logs for details") {
+				summaryLog = entry
+				break
+			}
+		}
+	}
+
+	require.NotNil(t, summaryLog, "Expected to find summary log in main output")
+	assert.Equal(t, "Redaction failed - see logs for details", summaryLog["msg"])
+	assert.Contains(t, summaryLog, "panic_type")
+	assert.Equal(t, "redaction_failure_summary", summaryLog["log_category"])
+	assert.Equal(t, true, summaryLog["details_in_log"])
+
+	// Verify sensitive information is NOT in summary
+	assert.NotContains(t, summaryLog, "panic_value")
+	assert.NotContains(t, summaryLog, "stack_trace")
 }
