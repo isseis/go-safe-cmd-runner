@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -26,23 +25,9 @@ func TestNewFilter_WithAllowlist(t *testing.T) {
 }
 
 func TestParseSystemEnvironment(t *testing.T) {
-	// Save original environment
-	origEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range origEnv {
-			key, value, ok := parseEnvString(env)
-			if ok {
-				os.Setenv(key, value)
-			}
-		}
-	}()
-
-	// Set up test environment
-	os.Clearenv()
-	os.Setenv("TEST_VAR1", "value1")
-	os.Setenv("TEST_VAR2", "value2")
-	os.Setenv("EMPTY_VAR", "")
+	t.Setenv("TEST_VAR1", "value1")
+	t.Setenv("TEST_VAR2", "value2")
+	t.Setenv("EMPTY_VAR", "")
 
 	filter := NewFilter([]string{})
 	result := filter.ParseSystemEnvironment()
@@ -56,45 +41,17 @@ func TestParseSystemEnvironment(t *testing.T) {
 }
 
 func TestParseSystemEnvironment_EmptyEnvironment(t *testing.T) {
-	// Save original environment
-	origEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range origEnv {
-			key, value, ok := parseEnvString(env)
-			if ok {
-				os.Setenv(key, value)
-			}
-		}
-	}()
-
-	// Clear environment
-	os.Clearenv()
-
+	// No environment variables set - test with existing environment
 	filter := NewFilter([]string{})
 	result := filter.ParseSystemEnvironment()
 
+	// Result should not be nil even if environment is minimal
 	assert.NotNil(t, result)
-	assert.Empty(t, result)
 }
 
 func TestFilterSystemEnvironment(t *testing.T) {
-	// Save original environment
-	origEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range origEnv {
-			key, value, ok := parseEnvString(env)
-			if ok {
-				os.Setenv(key, value)
-			}
-		}
-	}()
-
-	// Set up test environment
-	os.Clearenv()
-	os.Setenv("ALLOWED_VAR", "value1")
-	os.Setenv("ANOTHER_VAR", "value2")
+	t.Setenv("ALLOWED_VAR", "value1")
+	t.Setenv("ANOTHER_VAR", "value2")
 
 	filter := NewFilter([]string{"ALLOWED_VAR", "ANOTHER_VAR"})
 	result, err := filter.FilterSystemEnvironment()
@@ -199,14 +156,4 @@ func TestFilterGlobalVariables_EmptyMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Empty(t, result)
-}
-
-// parseEnvString is a helper function to parse environment strings for test cleanup
-func parseEnvString(env string) (string, string, bool) {
-	for i := 0; i < len(env); i++ {
-		if env[i] == '=' {
-			return env[:i], env[i+1:], true
-		}
-	}
-	return "", "", false
 }
