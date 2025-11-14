@@ -1792,3 +1792,181 @@ func TestProductionLoggerSetup(t *testing.T) {
 		_ = NewRedactingHandler(mainHandler, nil, failureLogger)
 	}, "Production setup should not panic - failureLogger is correctly configured without RedactingHandler")
 }
+
+// ============================================================================
+// Benchmark Tests for Phase 6
+// ============================================================================
+
+// BenchmarkRedactingHandler_String benchmarks RedactingHandler with simple string attributes
+func BenchmarkRedactingHandler_String(b *testing.B) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.Info("test message",
+			"user", "testuser",
+			"action", "login",
+			"timestamp", time.Now().String(),
+		)
+	}
+}
+
+// BenchmarkRedactingHandler_String_WithSensitiveData benchmarks with sensitive data redaction
+func BenchmarkRedactingHandler_String_WithSensitiveData(b *testing.B) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.Info("test message",
+			"user", "testuser",
+			"credentials", "password=secret123 token=abc456",
+			"timestamp", time.Now().String(),
+		)
+	}
+}
+
+// BenchmarkRedactingHandler_LogValuer benchmarks RedactingHandler with LogValuer attributes
+func BenchmarkRedactingHandler_LogValuer(b *testing.B) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	// Create LogValuer with sensitive data
+	valuer := sensitiveLogValuer{data: "password=secret123"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.Info("test message",
+			"user", "testuser",
+			"data", valuer,
+			"timestamp", time.Now().String(),
+		)
+	}
+}
+
+// BenchmarkRedactingHandler_Slice benchmarks RedactingHandler with slice attributes
+func BenchmarkRedactingHandler_Slice(b *testing.B) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	// Create slice of LogValuers with sensitive data
+	slice := []slog.LogValuer{
+		sensitiveLogValuer{data: "password=secret1"},
+		sensitiveLogValuer{data: "token=secret2"},
+		sensitiveLogValuer{data: "api_key=secret3"},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.Info("test message",
+			"user", "testuser",
+			"items", slice,
+			"timestamp", time.Now().String(),
+		)
+	}
+}
+
+// BenchmarkRedactingHandler_Mixed benchmarks RedactingHandler with mixed attribute types
+func BenchmarkRedactingHandler_Mixed(b *testing.B) {
+	var buf bytes.Buffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
+
+	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
+	logger := slog.New(handler)
+
+	valuer := sensitiveLogValuer{data: "password=secret123"}
+	slice := []slog.LogValuer{
+		sensitiveLogValuer{data: "token=abc"},
+		sensitiveLogValuer{data: "api_key=xyz"},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.Info("test message",
+			"user", "testuser",
+			"simple_string", "normal data",
+			"sensitive_string", "password=mypass",
+			"logvaluer", valuer,
+			"slice", slice,
+			"timestamp", time.Now().String(),
+		)
+	}
+}
+
+// BenchmarkRedactText benchmarks the RedactText function
+func BenchmarkRedactText(b *testing.B) {
+	config := DefaultConfig()
+	text := "User logged in with password=secret123 and token=abc456xyz"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = config.RedactText(text)
+	}
+}
+
+// BenchmarkRedactText_NoSensitiveData benchmarks RedactText with non-sensitive data
+func BenchmarkRedactText_NoSensitiveData(b *testing.B) {
+	config := DefaultConfig()
+	text := "User logged in successfully at 2024-01-01 12:00:00"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = config.RedactText(text)
+	}
+}
+
+// BenchmarkRedactLogAttribute_String benchmarks RedactLogAttribute with string values
+func BenchmarkRedactLogAttribute_String(b *testing.B) {
+	config := DefaultConfig()
+	attr := slog.String("message", "password=secret123")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = config.RedactLogAttribute(attr)
+	}
+}
+
+// BenchmarkRedactLogAttribute_Group benchmarks RedactLogAttribute with group values
+func BenchmarkRedactLogAttribute_Group(b *testing.B) {
+	config := DefaultConfig()
+	attr := slog.Group("user",
+		slog.String("name", "testuser"),
+		slog.String("password", "secret123"),
+		slog.String("token", "abc456"),
+	)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = config.RedactLogAttribute(attr)
+	}
+}
+
+// BenchmarkRedactLogAttribute_Any_LogValuer benchmarks RedactLogAttribute with LogValuer
+func BenchmarkRedactLogAttribute_Any_LogValuer(b *testing.B) {
+	config := DefaultConfig()
+	valuer := sensitiveLogValuer{data: "password=secret123"}
+	attr := slog.Any("data", valuer)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = config.RedactLogAttribute(attr)
+	}
+}
