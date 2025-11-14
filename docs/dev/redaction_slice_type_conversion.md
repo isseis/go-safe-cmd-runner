@@ -21,9 +21,9 @@ attr := slog.Any("users", stringSlice)
 
 ### 実装の要点
 
-[redactor.go:481-508](../../internal/redaction/redactor.go#L481-L508) 参照
+実装の詳細は [redactor.go の processSlice 関数](../../internal/redaction/redactor.go) を参照してください。
 
-1. **すべてのスライスが処理対象**: `processKindAny()` ([redactor.go:407-409](../../internal/redaction/redactor.go#L407-L409)) により、LogValuer要素の有無に関わらず、すべてのスライスが `processSlice()` を経由します
+1. **すべてのスライスが処理対象**: `processKindAny()` 関数により、LogValuer要素の有無に関わらず、すべてのスライスが `processSlice()` を経由します
 
 2. **新しい[]anyスライスの作成**: 処理済み要素を格納するため、`[]any` 型の新しいスライスを作成します
 
@@ -127,7 +127,7 @@ for _, elem := range sliceValue {
 
 ## テスト
 
-型変換の動作は [redactor_test.go:1364-1475](../../internal/redaction/redactor_test.go#L1364-L1475) の `TestRedactingHandler_SliceTypeConversion` で検証されています。
+型変換の動作は [redactor_test.go の TestRedactingHandler_SliceTypeConversion](../../internal/redaction/redactor_test.go) で検証されています。
 
 テストケース:
 1. LogValuer要素なしの型付きスライス → `[]any` に変換
@@ -143,5 +143,8 @@ for _, elem := range sliceValue {
 ## 参照
 
 - 実装: [internal/redaction/redactor.go](../../internal/redaction/redactor.go)
+  - `processSlice` 関数: スライス処理の実装
+  - `processKindAny` 関数: slog.KindAny値の処理
+  - `processLogValuer` 関数: LogValuer要素の処理
 - テスト: [internal/redaction/redactor_test.go](../../internal/redaction/redactor_test.go)
-- processSlice関数: [redactor.go:481-608](../../internal/redaction/redactor.go#L481-L608)
+  - `TestRedactingHandler_SliceTypeConversion`: 型変換動作の検証
