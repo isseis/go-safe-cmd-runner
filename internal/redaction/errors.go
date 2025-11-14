@@ -3,16 +3,6 @@ package redaction
 
 import "fmt"
 
-// ErrRedactionDepthExceeded is returned when recursion depth limit is reached
-type ErrRedactionDepthExceeded struct {
-	Key   string
-	Depth int
-}
-
-func (e *ErrRedactionDepthExceeded) Error() string {
-	return fmt.Sprintf("redaction depth limit (%d) exceeded for attribute %q", e.Depth, e.Key)
-}
-
 // ErrLogValuePanic is returned when LogValue() panics
 type ErrLogValuePanic struct {
 	Key        string
