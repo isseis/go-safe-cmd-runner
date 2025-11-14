@@ -372,7 +372,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 	// Mock validator to allow all validations
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	// Mock sanitization to allow testing command execution without actual redaction
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	// Mock verification manager to verify group files and resolve paths
@@ -441,7 +441,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 	// Mock validator to allow all validations
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	// Mock sanitization to allow testing command execution without actual redaction
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	// Mock verification manager to verify group files and resolve paths
@@ -1140,7 +1140,7 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 			val, exists := envVars["DANGEROUS_VAR"]
 			return exists && strings.Contains(val, "rm -rf")
 		})).Return(expectedErr)
-	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging (may not be called in this test)
+	// Mock sanitization (optional, as test may not reach logging stage)
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	ge := NewTestGroupExecutorWithConfig(
@@ -1204,7 +1204,7 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 
 	// Setup: validator passes
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging (may not be called in this test)
+	// Mock sanitization (optional, as test may not reach logging stage)
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	// Setup: path resolution fails
@@ -1267,7 +1267,7 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behaviors for validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil).Maybe()
-	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	// Mock sanitization (optional, as test may not reach logging stage)
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	// Setup default behaviors for verification manager - return the input path as-is
@@ -2564,7 +2564,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-			// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+			// Mock sanitization to allow testing command execution without actual redaction
 			mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 			// Mock resource manager - command execution fails with stderr
