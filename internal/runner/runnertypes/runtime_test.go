@@ -449,3 +449,341 @@ func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {
 		})
 	}
 }
+
+// TestNewRuntimeGroup tests the NewRuntimeGroup constructor
+func TestNewRuntimeGroup(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    *GroupSpec
+		wantErr error
+	}{
+		{
+			name: "valid spec",
+			spec: &GroupSpec{
+				Name:    "test-group",
+				WorkDir: "/tmp/test",
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil spec",
+			spec:    nil,
+			wantErr: ErrNilSpec,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewRuntimeGroup(tt.spec)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Nil(t, got)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, got)
+				assert.Equal(t, tt.spec, got.Spec)
+				assert.NotNil(t, got.ExpandedVerifyFiles)
+				assert.NotNil(t, got.ExpandedEnv)
+				assert.NotNil(t, got.ExpandedVars)
+				assert.NotNil(t, got.Commands)
+			}
+		})
+	}
+}
+
+// TestRuntimeGroup_Name tests the RuntimeGroup.Name method
+func TestRuntimeGroup_Name(t *testing.T) {
+	tests := []struct {
+		name string
+		spec *GroupSpec
+		want string
+	}{
+		{
+			name: "basic group name",
+			spec: &GroupSpec{
+				Name: "test-group",
+			},
+			want: "test-group",
+		},
+		{
+			name: "empty name",
+			spec: &GroupSpec{
+				Name: "",
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &RuntimeGroup{
+				Spec: tt.spec,
+			}
+			got := r.Name()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestRuntimeGroup_Name_Panic tests that Name panics with nil receiver or spec
+func TestRuntimeGroup_Name_Panic(t *testing.T) {
+	tests := []struct {
+		name        string
+		runtimeGrp  *RuntimeGroup
+		wantPanic   bool
+		panicSubstr string
+	}{
+		{
+			name:        "nil receiver",
+			runtimeGrp:  nil,
+			wantPanic:   true,
+			panicSubstr: "RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)",
+		},
+		{
+			name: "nil spec",
+			runtimeGrp: &RuntimeGroup{
+				Spec: nil,
+			},
+			wantPanic:   true,
+			panicSubstr: "RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantPanic {
+				assert.PanicsWithValue(t, tt.panicSubstr, func() {
+					tt.runtimeGrp.Name()
+				})
+			}
+		})
+	}
+}
+
+// TestRuntimeGroup_WorkDir tests the RuntimeGroup.WorkDir method
+func TestRuntimeGroup_WorkDir(t *testing.T) {
+	tests := []struct {
+		name string
+		spec *GroupSpec
+		want string
+	}{
+		{
+			name: "basic work directory",
+			spec: &GroupSpec{
+				WorkDir: "/tmp/test",
+			},
+			want: "/tmp/test",
+		},
+		{
+			name: "empty work directory",
+			spec: &GroupSpec{
+				WorkDir: "",
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &RuntimeGroup{
+				Spec: tt.spec,
+			}
+			got := r.WorkDir()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestRuntimeGroup_WorkDir_Panic tests that WorkDir panics with nil receiver or spec
+func TestRuntimeGroup_WorkDir_Panic(t *testing.T) {
+	tests := []struct {
+		name        string
+		runtimeGrp  *RuntimeGroup
+		wantPanic   bool
+		panicSubstr string
+	}{
+		{
+			name:        "nil receiver",
+			runtimeGrp:  nil,
+			wantPanic:   true,
+			panicSubstr: "RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)",
+		},
+		{
+			name: "nil spec",
+			runtimeGrp: &RuntimeGroup{
+				Spec: nil,
+			},
+			wantPanic:   true,
+			panicSubstr: "RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantPanic {
+				assert.PanicsWithValue(t, tt.panicSubstr, func() {
+					tt.runtimeGrp.WorkDir()
+				})
+			}
+		})
+	}
+}
+
+// TestExtractGroupName tests the ExtractGroupName helper function
+func TestExtractGroupName(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtimeGrp *RuntimeGroup
+		want       string
+	}{
+		{
+			name: "valid RuntimeGroup with name",
+			runtimeGrp: &RuntimeGroup{
+				Spec: &GroupSpec{
+					Name: "test-group",
+				},
+			},
+			want: "test-group",
+		},
+		{
+			name:       "nil RuntimeGroup",
+			runtimeGrp: nil,
+			want:       "",
+		},
+		{
+			name: "RuntimeGroup with nil Spec",
+			runtimeGrp: &RuntimeGroup{
+				Spec: nil,
+			},
+			want: "",
+		},
+		{
+			name: "empty group name",
+			runtimeGrp: &RuntimeGroup{
+				Spec: &GroupSpec{
+					Name: "",
+				},
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractGroupName(tt.runtimeGrp)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestNewRuntimeGlobal_NilSpec tests that NewRuntimeGlobal returns error for nil spec
+func TestNewRuntimeGlobal_NilSpec(t *testing.T) {
+	got, err := NewRuntimeGlobal(nil)
+	require.ErrorIs(t, err, ErrNilSpec)
+	assert.Nil(t, got)
+}
+
+// TestRuntimeGlobal_Timeout_Panic tests that Timeout panics with nil receiver or spec
+func TestRuntimeGlobal_Timeout_Panic(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtime    *RuntimeGlobal
+		wantPanic  bool
+		panicValue string
+	}{
+		{
+			name:       "nil receiver",
+			runtime:    nil,
+			wantPanic:  true,
+			panicValue: "RuntimeGlobal.Timeout: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
+		},
+		{
+			name: "nil spec",
+			runtime: &RuntimeGlobal{
+				Spec: nil,
+			},
+			wantPanic:  true,
+			panicValue: "RuntimeGlobal.Timeout: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantPanic {
+				assert.PanicsWithValue(t, tt.panicValue, func() {
+					tt.runtime.Timeout()
+				})
+			}
+		})
+	}
+}
+
+// TestRuntimeGlobal_EnvAllowlist_Panic tests that EnvAllowlist panics with nil receiver or spec
+func TestRuntimeGlobal_EnvAllowlist_Panic(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtime    *RuntimeGlobal
+		wantPanic  bool
+		panicValue string
+	}{
+		{
+			name:       "nil receiver",
+			runtime:    nil,
+			wantPanic:  true,
+			panicValue: "RuntimeGlobal.EnvAllowed: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
+		},
+		{
+			name: "nil spec",
+			runtime: &RuntimeGlobal{
+				Spec: nil,
+			},
+			wantPanic:  true,
+			panicValue: "RuntimeGlobal.EnvAllowed: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantPanic {
+				assert.PanicsWithValue(t, tt.panicValue, func() {
+					tt.runtime.EnvAllowlist()
+				})
+			}
+		})
+	}
+}
+
+// TestRuntimeGlobal_SkipStandardPaths_Panic tests that SkipStandardPaths panics with nil receiver or spec
+func TestRuntimeGlobal_SkipStandardPaths_Panic(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtime    *RuntimeGlobal
+		wantPanic  bool
+		panicValue string
+	}{
+		{
+			name:       "nil receiver",
+			runtime:    nil,
+			wantPanic:  true,
+			panicValue: "RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
+		},
+		{
+			name: "nil spec",
+			runtime: &RuntimeGlobal{
+				Spec: nil,
+			},
+			wantPanic:  true,
+			panicValue: "RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantPanic {
+				assert.PanicsWithValue(t, tt.panicValue, func() {
+					tt.runtime.SkipStandardPaths()
+				})
+			}
+		})
+	}
+}
