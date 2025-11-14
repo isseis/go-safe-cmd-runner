@@ -709,7 +709,7 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 
 **完了基準**：
 - [x] すべての Unit テストがパス
-- [ ] テストカバレッジが 90% 以上
+- [-] テストカバレッジが 90% 以上
 
 #### 2.3.8 Phase 3 の完了確認
 
@@ -736,8 +736,8 @@ func (c *Config) processSlice(key string, sliceValue any, ctx RedactionContext) 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `RedactingHandler` に `failureLogger` フィールドを追加
-- [ ] `NewRedactingHandler` のシグネチャを変更
+- [x] `RedactingHandler` に `failureLogger` フィールドを追加
+- [x] `NewRedactingHandler` のシグネチャを変更
 
 **実装内容**：
 ```go
@@ -766,20 +766,20 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 ```
 
 **テスト**：
-- [ ] 既存のテストを更新（`NewRedactingHandler` の呼び出しに `nil` を渡す）
-- [ ] `failureLogger` が正しく設定されることを確認
+- [x] 既存のテストを更新（`NewRedactingHandler` の呼び出しに `nil` を渡す）
+- [x] `failureLogger` が正しく設定されることを確認
 
 **完了基準**：
-- [ ] `failureLogger` フィールドが追加される
-- [ ] 既存のテストがすべてパス
+- [x] `failureLogger` フィールドが追加される
+- [x] 既存のテストがすべてパス
 
 #### 2.4.2 processLogValuer での failureLogger 使用
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `processLogValuer` の panic ハンドラーで `c.failureLogger` を使用
-- [ ] 同様に `processSlice` でも使用
+- [x] `processLogValuer` の panic ハンドラーで `r.failureLogger` を使用
+- [x] 同様に `processSlice` でも使用
 
 **実装内容**：
 ```go
@@ -836,19 +836,19 @@ func (r *RedactingHandler) processLogValuerInternal(key string, logValuer slog.L
 - `RedactingHandler` に内部メソッドを追加し、`Config` の既存メソッドはラッパーとして保持
 
 **テスト**：
-- [ ] Panic 発生時に `failureLogger` が呼び出されることを確認
-- [ ] ログメッセージが正しいことを確認
+- [x] Panic 発生時に `failureLogger` が呼び出されることを確認
+- [x] ログメッセージが正しいことを確認
 
 **完了基準**：
-- [ ] `failureLogger` が使用される
-- [ ] テストがパス
+- [x] `failureLogger` が使用される
+- [x] テストがパス
 
 #### 2.4.3 logging システムでの初期化更新
 
 **ファイル**：`internal/runner/bootstrap/logging.go` または該当するファイル
 
 **タスク**：
-- [ ] `RedactingHandler` の初期化時に `failureLogger` を渡す
+- [x] `RedactingHandler` の初期化時に `failureLogger` を渡す
 
 **実装内容**：
 ```go
@@ -878,18 +878,18 @@ func setupLogging() {
 ```
 
 **テスト**：
-- [ ] 統合テストで `failureLogger` が正しく設定されることを確認
+- [x] 統合テストで `failureLogger` が正しく設定されることを確認
 
 **完了基準**：
-- [ ] logging システムが更新される
-- [ ] テストがパス
+- [x] logging システムが更新される
+- [x] テストがパス
 
 #### 2.4.4 Phase 4 の完了確認
 
 **完了基準**：
-- [ ] すべてのタスクが完了
-- [ ] すべてのテストがパス
-- [ ] 失敗ログが Slack に送信されないことを確認
+- [x] すべてのタスクが完了
+- [x] すべてのテストがパス
+- [x] 失敗ログが Slack に送信されないことを確認
 
 **期待される結果**：
 - Redaction の失敗が stderr とファイルログに記録される
