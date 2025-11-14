@@ -44,6 +44,12 @@ const maxRedactionDepth = 10
 // RedactionFailurePlaceholder is used when redaction itself fails
 const RedactionFailurePlaceholder = "[REDACTION FAILED - OUTPUT SUPPRESSED]"
 
+// ErrorCollector collects redaction failures for monitoring and debugging
+type ErrorCollector interface {
+	// RecordFailure records a redaction failure with the attribute key and error
+	RecordFailure(key string, err error)
+}
+
 // RedactText removes or redacts potentially sensitive information from text
 func (c *Config) RedactText(text string) string {
 	if text == "" {
@@ -223,6 +229,8 @@ type RedactingHandler struct {
 	// - Use slog.Default() for: safe summary messages that should reach all destinations including Slack
 	//   (these logs intentionally go through RedactingHandler and must not contain sensitive data)
 	failureLogger *slog.Logger
+	// errorCollector optionally collects redaction failures for monitoring and debugging
+	errorCollector ErrorCollector
 }
 
 // NewRedactingHandler creates a new redacting handler that wraps the given handler
@@ -235,9 +243,20 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 		failureLogger = slog.Default()
 	}
 	return &RedactingHandler{
-		handler:       handler,
-		config:        config,
-		failureLogger: failureLogger,
+		handler:        handler,
+		config:         config,
+		failureLogger:  failureLogger,
+		errorCollector: nil, // No error collector by default
+	}
+}
+
+// WithErrorCollector returns a new RedactingHandler with the given error collector
+func (r *RedactingHandler) WithErrorCollector(collector ErrorCollector) *RedactingHandler {
+	return &RedactingHandler{
+		handler:        r.handler,
+		config:         r.config,
+		failureLogger:  r.failureLogger,
+		errorCollector: collector,
 	}
 }
 
@@ -274,18 +293,20 @@ func (r *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		redactedAttrs = append(redactedAttrs, r.redactLogAttributeWithContext(attr, redactionContext{depth: 0}))
 	}
 	return &RedactingHandler{
-		handler:       r.handler.WithAttrs(redactedAttrs),
-		config:        r.config,
-		failureLogger: r.failureLogger,
+		handler:        r.handler.WithAttrs(redactedAttrs),
+		config:         r.config,
+		failureLogger:  r.failureLogger,
+		errorCollector: r.errorCollector,
 	}
 }
 
 // WithGroup returns a new RedactingHandler with the given group name
 func (r *RedactingHandler) WithGroup(name string) slog.Handler {
 	return &RedactingHandler{
-		handler:       r.handler.WithGroup(name),
-		config:        r.config,
-		failureLogger: r.failureLogger,
+		handler:        r.handler.WithGroup(name),
+		config:         r.config,
+		failureLogger:  r.failureLogger,
+		errorCollector: r.errorCollector,
 	}
 }
 
@@ -340,6 +361,10 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 		}
 		processedAttr, err := r.processLogValuer(key, logValuer, ctx)
 		if err != nil {
+			// Record error for monitoring
+			if r.errorCollector != nil {
+				r.errorCollector.RecordFailure(key, err)
+			}
 			// On error, return safe placeholder
 			return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
 		}
@@ -349,6 +374,10 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 		// NEW: Handle KindAny (LogValuer, slices, etc.)
 		processedAttr, err := r.processKindAny(key, value, ctx)
 		if err != nil {
+			// Record error for monitoring
+			if r.errorCollector != nil {
+				r.errorCollector.RecordFailure(key, err)
+			}
 			// On error, return safe placeholder
 			return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
 		}

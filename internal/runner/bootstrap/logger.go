@@ -28,6 +28,13 @@ type LoggerConfig struct {
 	ConsoleWriter   io.Writer // Writer for console output (stdout/stderr)
 }
 
+// redactionErrorCollector is a global collector for redaction failures
+// This is set during logger initialization and used for shutdown reporting
+var redactionErrorCollector *redaction.InMemoryErrorCollector
+
+// redactionReporter is a global reporter for shutdown
+var redactionReporter *redaction.ShutdownReporter
+
 // SetupLoggerWithConfig initializes the logging system with all handlers atomically
 func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet bool) error {
 	hostname, err := os.Hostname()
@@ -149,12 +156,21 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 	failureLogger := slog.New(failureMultiHandler)
 
+	// Create redaction error collector for monitoring failures
+	// Limit to 1000 most recent failures to prevent unbounded growth
+	const maxRedactionFailures = 1000
+	redactionErrorCollector = redaction.NewInMemoryErrorCollector(maxRedactionFailures)
+
 	// Create MultiHandler with redaction (includes all handlers including Slack)
 	multiHandler, err := logging.NewMultiHandler(handlers...)
 	if err != nil {
 		return fmt.Errorf("failed to create multi handler: %w", err)
 	}
-	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger)
+	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger).
+		WithErrorCollector(redactionErrorCollector)
+
+	// Create shutdown reporter for redaction failures
+	redactionReporter = redaction.NewShutdownReporter(redactionErrorCollector, os.Stderr, failureLogger)
 
 	// Set as default logger
 	logger := slog.New(redactedHandler)
@@ -175,4 +191,17 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 
 	return nil
+}
+
+// ReportRedactionFailures reports any collected redaction failures
+// This should be called during application shutdown
+func ReportRedactionFailures() {
+	if redactionReporter == nil {
+		return
+	}
+
+	if err := redactionReporter.Report(); err != nil {
+		// Use fmt.Fprintf since logger might be shutting down
+		fmt.Fprintf(os.Stderr, "Warning: failed to report redaction failures: %v\n", err)
+	}
 }
