@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 )
 
@@ -255,6 +256,7 @@ type RedactingHandler struct {
 // The function recursively walks through the handler chain, checking:
 // - Direct RedactingHandler instances
 // - Handlers that expose their underlying handler via Handler() method
+// - Handlers that wrap multiple handlers (like MultiHandler)
 //
 // Returns true if any RedactingHandler is found in the chain.
 func containsRedactingHandler(h slog.Handler) bool {
@@ -268,12 +270,24 @@ func containsRedactingHandler(h slog.Handler) bool {
 	}
 
 	// Check if the handler exposes an underlying handler
-	// Many handler wrappers provide a Handler() method to access the wrapped handler
 	type handlerGetter interface {
 		Handler() slog.Handler
 	}
 	if hg, ok := h.(handlerGetter); ok {
 		return containsRedactingHandler(hg.Handler())
+	}
+
+	// handlerChainProvider is an interface for handlers that wrap multiple other handlers.
+	// This is used by containsRedactingHandler to inspect the full handler chain.
+	type handlerChainProvider interface {
+		Handlers() []slog.Handler
+	}
+
+	// Check if the handler is a multi-handler that exposes its children
+	if hcp, ok := h.(handlerChainProvider); ok {
+		if slices.ContainsFunc(hcp.Handlers(), containsRedactingHandler) {
+			return true
+		}
 	}
 
 	// Cannot determine if there's a RedactingHandler deeper in the chain

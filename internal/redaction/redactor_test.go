@@ -1599,6 +1599,67 @@ func TestContainsRedactingHandler(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name: "MultiHandler without RedactingHandler",
+			setup: func() slog.Handler {
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, jsonHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: false,
+		},
+		{
+			name: "MultiHandler with RedactingHandler in first position",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(redactingHandler, jsonHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler with RedactingHandler in middle position",
+			setup: func() slog.Handler {
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				baseHandler := slog.NewJSONHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				anotherTextHandler := slog.NewTextHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, redactingHandler, anotherTextHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler with RedactingHandler in last position",
+			setup: func() slog.Handler {
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				baseHandler := slog.NewJSONHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, redactingHandler)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
+		{
+			name: "MultiHandler with nested RedactingHandler",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting1 := NewRedactingHandler(baseHandler, nil, nil)
+				redacting2 := NewRedactingHandler(redacting1, nil, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(jsonHandler, redacting2)
+				require.NoError(t, err)
+				return multiHandler
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1652,6 +1713,31 @@ func TestNewRedactingHandler_FailureLoggerValidation(t *testing.T) {
 			name: "nil failureLogger (uses default) - no panic in this specific case",
 			setupLogger: func() *slog.Logger {
 				return nil
+			},
+			expectPanic: false,
+		},
+		{
+			name: "failureLogger with MultiHandler containing RedactingHandler - panic expected",
+			setupLogger: func() *slog.Logger {
+				// Create a MultiHandler that contains a RedactingHandler
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(jsonHandler, redactingHandler)
+				require.NoError(t, err)
+				return slog.New(multiHandler)
+			},
+			expectPanic: true,
+		},
+		{
+			name: "failureLogger with MultiHandler without RedactingHandler - no panic",
+			setupLogger: func() *slog.Logger {
+				// Create a MultiHandler without RedactingHandler
+				textHandler := slog.NewTextHandler(os.Stderr, nil)
+				jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+				multiHandler, err := logging.NewMultiHandler(textHandler, jsonHandler)
+				require.NoError(t, err)
+				return slog.New(multiHandler)
 			},
 			expectPanic: false,
 		},
