@@ -906,8 +906,8 @@ func setupLogging() {
 #### 2.5.1 影響範囲の調査
 
 **タスク**：
-- [ ] `RedactText()` を使用している箇所をリストアップ
-- [ ] 変更による影響を評価
+- [x] `RedactText()` を使用している箇所をリストアップ
+- [x] 変更による影響を評価
 
 **調査方法**：
 ```bash
@@ -915,17 +915,17 @@ grep -rn "RedactText" internal/
 ```
 
 **完了基準**：
-- [ ] 影響範囲がドキュメント化される
-- [ ] 変更のリスク評価が完了
+- [x] 影響範囲がドキュメント化される
+- [x] 変更のリスク評価が完了
 
 #### 2.5.2 performXXXRedaction メソッドの変更
 
 **ファイル**：`internal/redaction/redactor.go`
 
 **タスク**：
-- [ ] `performSpacePatternRedaction` を fail-secure に変更
-- [ ] `performColonPatternRedaction` を fail-secure に変更
-- [ ] `performKeyValuePatternRedaction` を fail-secure に変更
+- [x] `performSpacePatternRedaction` を fail-secure に変更
+- [x] `performColonPatternRedaction` を fail-secure に変更
+- [x] `performKeyValuePatternRedaction` を fail-secure に変更
 
 **実装内容**：
 ```go
@@ -953,31 +953,31 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 ```
 
 **テスト**：
-- [ ] 正規表現コンパイル失敗時のテストを追加
-- [ ] `RedactionFailurePlaceholder` が返されることを確認
+- [x] 正規表現コンパイル失敗時のテストを追加
+- [x] `RedactionFailurePlaceholder` が返されることを確認
 
 **完了基準**：
-- [ ] すべての `performXXXRedaction` メソッドが fail-secure になる
-- [ ] テストがパス
+- [x] すべての `performXXXRedaction` メソッドが fail-secure になる
+- [x] テストがパス
 
 #### 2.5.3 既存のテストの更新
 
 **ファイル**：`internal/redaction/redactor_test.go`
 
 **タスク**：
-- [ ] 既存のテストが新しい動作でパスすることを確認
-- [ ] エラーケースのテストを追加
+- [x] 既存のテストが新しい動作でパスすることを確認
+- [x] エラーケースのテストを追加
 
 **完了基準**：
-- [ ] すべてのテストがパス
-- [ ] カバレッジが維持される
+- [x] すべてのテストがパス
+- [x] カバレッジが維持される
 
 #### 2.5.4 Phase 5 の完了確認
 
 **完了基準**：
-- [ ] すべてのタスクが完了
-- [ ] すべてのテストがパス
-- [ ] コードレビューが完了
+- [x] すべてのタスクが完了
+- [x] すべてのテストがパス
+- [-] コードレビューが完了
 
 **期待される結果**：
 - 正規表現コンパイル失敗時に機密情報が漏洩しない

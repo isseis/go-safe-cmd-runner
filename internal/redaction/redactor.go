@@ -128,8 +128,14 @@ func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string)
 
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
-		// Fallback to original text if regex compilation fails
-		return text
+		// Fail-secure: return safe placeholder if regex compilation fails
+		// This prevents potential sensitive information leakage
+		slog.Warn("Regex compilation failed in performSpacePatternRedaction - using safe placeholder",
+			"pattern", pattern,
+			"error", err.Error(),
+			"output_destination", "stderr, file, audit",
+		)
+		return RedactionFailurePlaceholder
 	}
 
 	// Replace matching tokens with pattern + placeholder
@@ -155,8 +161,14 @@ func (c *Config) performColonPatternRedaction(text, pattern, placeholder string)
 
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
-		// Fallback to original text if regex compilation fails
-		return text
+		// Fail-secure: return safe placeholder if regex compilation fails
+		// This prevents potential sensitive information leakage
+		slog.Warn("Regex compilation failed in performColonPatternRedaction - using safe placeholder",
+			"pattern", pattern,
+			"error", err.Error(),
+			"output_destination", "stderr, file, audit",
+		)
+		return RedactionFailurePlaceholder
 	}
 
 	// Replace matching headers with pattern + whitespace + scheme + placeholder
@@ -193,8 +205,14 @@ func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) 
 
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
-		// Fallback to original text if regex compilation fails
-		return text
+		// Fail-secure: return safe placeholder if regex compilation fails
+		// This prevents potential sensitive information leakage
+		slog.Warn("Regex compilation failed in performKeyValuePatternRedaction - using safe placeholder",
+			"key", key,
+			"error", err.Error(),
+			"output_destination", "stderr, file, audit",
+		)
+		return RedactionFailurePlaceholder
 	}
 
 	// Replace matching key=value pairs with key=placeholder
