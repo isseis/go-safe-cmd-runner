@@ -537,7 +537,7 @@ func TestRuntimeGroup_Name_Panic(t *testing.T) {
 			name:        "nil receiver",
 			runtimeGrp:  nil,
 			wantPanic:   true,
-			panicSubstr: "nil receiver or Spec",
+			panicSubstr: "RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)",
 		},
 		{
 			name: "nil spec",
@@ -545,7 +545,7 @@ func TestRuntimeGroup_Name_Panic(t *testing.T) {
 				Spec: nil,
 			},
 			wantPanic:   true,
-			panicSubstr: "nil receiver or Spec",
+			panicSubstr: "RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)",
 		},
 	}
 
@@ -606,7 +606,7 @@ func TestRuntimeGroup_WorkDir_Panic(t *testing.T) {
 			name:        "nil receiver",
 			runtimeGrp:  nil,
 			wantPanic:   true,
-			panicSubstr: "nil receiver or Spec",
+			panicSubstr: "RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)",
 		},
 		{
 			name: "nil spec",
@@ -614,7 +614,7 @@ func TestRuntimeGroup_WorkDir_Panic(t *testing.T) {
 				Spec: nil,
 			},
 			wantPanic:   true,
-			panicSubstr: "nil receiver or Spec",
+			panicSubstr: "RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)",
 		},
 	}
 
