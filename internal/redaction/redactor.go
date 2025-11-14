@@ -431,6 +431,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	var resolvedValue slog.Value
 	var panicOccurred bool
 	var panicValue any
+	var panicStackTrace string
 
 	func() {
 		defer func() {
@@ -438,6 +439,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 				panicOccurred = true
 				panicValue = rec
 				resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
+				panicStackTrace = string(debug.Stack())
 
 				// 1. Log detailed information to file/stderr only (excludes Slack)
 				// This uses failureLogger which was configured to exclude Slack handler
@@ -445,7 +447,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 					"attribute_key", key,
 					"panic_value", rec,
 					"panic_type", fmt.Sprintf("%T", rec),
-					"stack_trace", string(debug.Stack()),
+					"stack_trace", panicStackTrace,
 					"log_category", "redaction_failure_detail",
 				)
 
@@ -466,7 +468,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 		return slog.Attr{Key: key, Value: resolvedValue}, &ErrLogValuePanic{
 			Key:        key,
 			PanicValue: panicValue,
-			StackTrace: string(debug.Stack()),
+			StackTrace: panicStackTrace,
 		}
 	}
 
@@ -508,6 +510,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 			var resolvedValue slog.Value
 			var panicOccurred bool
 			var panicValue any
+			var panicStackTrace string
 
 			func() {
 				defer func() {
@@ -515,6 +518,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 						panicOccurred = true
 						panicValue = rec
 						resolvedValue = slog.StringValue(RedactionFailurePlaceholder)
+						panicStackTrace = string(debug.Stack())
 						elementKey := fmt.Sprintf("%s[%d]", key, i)
 
 						// 1. Log detailed information to file/stderr only (excludes Slack)
@@ -523,7 +527,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 							"element_index", i,
 							"panic_value", rec,
 							"panic_type", fmt.Sprintf("%T", rec),
-							"stack_trace", string(debug.Stack()),
+							"stack_trace", panicStackTrace,
 							"log_category", "redaction_failure_detail",
 						)
 
@@ -555,7 +559,7 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 					firstError = &ErrLogValuePanic{
 						Key:        fmt.Sprintf("%s[%d]", key, i),
 						PanicValue: panicValue,
-						StackTrace: string(debug.Stack()),
+						StackTrace: panicStackTrace,
 					}
 				}
 			}
