@@ -1267,7 +1267,7 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behaviors for validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil).Maybe()
-	// Mock sanitization (optional, as test may not reach logging stage)
+	// Mock sanitization (optional, as not all tests using this setup execute command output handling)
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
 	// Setup default behaviors for verification manager - return the input path as-is
