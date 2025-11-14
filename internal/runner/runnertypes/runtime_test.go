@@ -552,7 +552,7 @@ func TestRuntimeGroup_Name_Panic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.wantPanic {
-				assert.PanicsWithValue(t, "RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)", func() {
+				assert.PanicsWithValue(t, tt.panicSubstr, func() {
 					tt.runtimeGrp.Name()
 				})
 			}
@@ -621,7 +621,7 @@ func TestRuntimeGroup_WorkDir_Panic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.wantPanic {
-				assert.PanicsWithValue(t, "RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)", func() {
+				assert.PanicsWithValue(t, tt.panicSubstr, func() {
 					tt.runtimeGrp.WorkDir()
 				})
 			}

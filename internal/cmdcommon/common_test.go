@@ -25,10 +25,10 @@ func TestCreateValidator_DefaultHashDirectory(_ *testing.T) {
 	// Use the default hash directory constant
 	validator, err := CreateValidator(DefaultHashDirectory)
 
-	// This may fail if the directory doesn't exist, which is expected behavior
-	// We're testing that the function executes without panicking
-	_ = err
-	_ = validator
+	// This may fail if the directory doesn't exist, which is expected behavior.
+	// The function should execute without returning an error.
+	require.NoError(t, err)
+	require.NotNil(t, validator)
 }
 
 func TestCreateValidator_NonExistentDirectory(t *testing.T) {
@@ -38,9 +38,9 @@ func TestCreateValidator_NonExistentDirectory(t *testing.T) {
 	validator, err := CreateValidator(nonExistentDir)
 
 	// The validator should be created even if the directory doesn't exist yet
-	// (it will be created when needed)
-	_ = err
-	_ = validator
+	// (it will be created when needed).
+	require.NoError(t, err)
+	require.NotNil(t, validator)
 }
 
 func TestCreateValidator_RelativePath(t *testing.T) {
@@ -64,9 +64,9 @@ func TestCreateValidator_EmptyPath(_ *testing.T) {
 	// Test with empty path
 	validator, err := CreateValidator("")
 
-	// CreateValidator should handle empty path
-	_ = err
-	_ = validator
+	// CreateValidator should handle an empty path without returning an error.
+	require.NoError(t, err)
+	require.NotNil(t, validator)
 }
 
 func TestDefaultHashDirectory_IsSet(t *testing.T) {
