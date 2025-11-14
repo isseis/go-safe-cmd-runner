@@ -1234,16 +1234,19 @@ func TestRedactingHandler_PanicInProcessKindAny(t *testing.T) {
 		Value: slog.AnyValue(panickingLogValuer{}),
 	}
 
-	// Process the attribute through our redaction logic
+	// Process the attribute through WithAttrs public API
 	// This will trigger our panic recovery code in processLogValuer()
-	redactedAttr := redactingHandler.redactLogAttributeWithContext(
-		attr,
-		redactionContext{depth: 0},
-	)
+	handlerWithAttrs := redactingHandler.WithAttrs([]slog.Attr{attr})
+	logger := slog.New(handlerWithAttrs)
 
-	// Verify the redacted attribute contains the failure placeholder
-	assert.Equal(t, "test_data", redactedAttr.Key)
-	assert.Equal(t, RedactionFailurePlaceholder, redactedAttr.Value.String())
+	// Log a message to trigger the attribute rendering
+	logger.Info("Test message")
+
+	// Verify main log contains placeholder
+	output := buf.String()
+	assert.Contains(t, output, "Test message")
+	assert.Contains(t, output, RedactionFailurePlaceholder)
+	assert.NotContains(t, output, "test panic")
 
 	// Verify failure log contains detailed panic info
 	failureOutput := failureBuf.String()
