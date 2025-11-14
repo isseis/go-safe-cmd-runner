@@ -105,7 +105,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 
 	// Mock validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-	// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+	// Mock SanitizeOutputForLogging (defense-in-depth sanitization of command output)
 	// Since this test checks error output, we just return empty string
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
@@ -267,7 +267,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-			// For Phase 2 (task 0055): Mock SanitizeOutputForLogging
+			// Mock SanitizeOutputForLogging (defense-in-depth sanitization of command output)
 			mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 			ctx := context.Background()
