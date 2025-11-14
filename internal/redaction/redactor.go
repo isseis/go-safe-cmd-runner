@@ -212,9 +212,17 @@ func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) 
 
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
 type RedactingHandler struct {
-	handler       slog.Handler
-	config        *Config
-	failureLogger *slog.Logger // Failure logging (stderr/file, not Slack)
+	handler slog.Handler
+	config  *Config
+	// failureLogger is used for logging within RedactingHandler to prevent recursive redaction.
+	// It should be configured to exclude any RedactingHandler in its chain (typically stderr/file only, not Slack).
+	//
+	// Logging strategy:
+	// - Use failureLogger for: depth limit warnings, internal state, and detailed error information
+	//   (these logs must NOT go through RedactingHandler to avoid recursion)
+	// - Use slog.Default() for: safe summary messages that should reach all destinations including Slack
+	//   (these logs intentionally go through RedactingHandler and must not contain sensitive data)
+	failureLogger *slog.Logger
 }
 
 // NewRedactingHandler creates a new redacting handler that wraps the given handler
@@ -312,7 +320,7 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	case slog.KindGroup:
 		// Handle group values recursively
 		if ctx.depth >= maxRedactionDepth {
-			slog.Debug("redaction depth limit reached for group, returning placeholder", "key", key, "depth", ctx.depth)
+			r.failureLogger.Debug("redaction depth limit reached for group, returning placeholder", "key", key, "depth", ctx.depth)
 			return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
 		}
 		groupAttrs := value.Group()
@@ -382,7 +390,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	if ctx.depth >= maxRedactionDepth {
 		// Depth limit reached: return placeholder to prevent information leakage
 		// Log at Debug level
-		slog.Debug("Recursion depth limit reached - returning placeholder for security",
+		r.failureLogger.Debug("Recursion depth limit reached - returning placeholder for security",
 			"attribute_key", key,
 			"depth", maxRedactionDepth,
 			"note", "This is not an error - DoS prevention measure",
@@ -443,7 +451,7 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (slog.Attr, error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {
-		slog.Debug("Recursion depth limit reached for slice - returning placeholder for security",
+		r.failureLogger.Debug("Recursion depth limit reached for slice - returning placeholder for security",
 			"attribute_key", key,
 			"depth", maxRedactionDepth,
 		)
