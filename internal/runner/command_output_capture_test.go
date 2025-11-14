@@ -42,8 +42,16 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 		Level: slog.LevelDebug,
 	})
 
+	// Create a separate failure logger without RedactingHandler
+	// This is required to prevent circular dependencies during panic recovery
+	var failureLogBuffer bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
+	failureLogger := slog.New(failureHandler)
+
 	// Wrap with redacting handler
-	redactingHandler := redaction.NewRedactingHandler(handler, nil, nil)
+	redactingHandler := redaction.NewRedactingHandler(handler, nil, failureLogger)
 	logger := slog.New(redactingHandler)
 	slog.SetDefault(logger)
 
@@ -205,8 +213,16 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 				Level: slog.LevelDebug,
 			})
 
+			// Create a separate failure logger without RedactingHandler
+			// This is required to prevent circular dependencies during panic recovery
+			var failureLogBuffer bytes.Buffer
+			failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			})
+			failureLogger := slog.New(failureHandler)
+
 			// Wrap with redacting handler
-			redactingHandler := redaction.NewRedactingHandler(handler, nil, nil)
+			redactingHandler := redaction.NewRedactingHandler(handler, nil, failureLogger)
 			logger := slog.New(redactingHandler)
 			slog.SetDefault(logger)
 

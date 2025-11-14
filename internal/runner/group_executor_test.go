@@ -2526,8 +2526,16 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 				Level: slog.LevelDebug,
 			})
 
+			// Create a separate failure logger without RedactingHandler
+			// This is required to prevent circular dependencies during panic recovery
+			var failureLogBuffer bytes.Buffer
+			failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			})
+			failureLogger := slog.New(failureHandler)
+
 			// Wrap with redacting handler to simulate real behavior
-			redactingHandler := redaction.NewRedactingHandler(handler, nil, nil) // nil uses default config
+			redactingHandler := redaction.NewRedactingHandler(handler, nil, failureLogger) // nil uses default config
 			logger := slog.New(redactingHandler)
 			slog.SetDefault(logger)
 

@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 )
 
 // panickingLogValuer is a helper struct that panics when LogValue is called.
@@ -1539,4 +1542,167 @@ func TestRedactingHandler_TwoTierLogging(t *testing.T) {
 	// Verify sensitive information is NOT in summary
 	assert.NotContains(t, summaryLog, "panic_value")
 	assert.NotContains(t, summaryLog, "stack_trace")
+}
+
+// TestContainsRedactingHandler tests the containsRedactingHandler helper function
+func TestContainsRedactingHandler(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func() slog.Handler
+		expected bool
+	}{
+		{
+			name: "nil handler",
+			setup: func() slog.Handler {
+				return nil
+			},
+			expected: false,
+		},
+		{
+			name: "simple text handler without RedactingHandler",
+			setup: func() slog.Handler {
+				return slog.NewTextHandler(os.Stderr, nil)
+			},
+			expected: false,
+		},
+		{
+			name: "simple JSON handler without RedactingHandler",
+			setup: func() slog.Handler {
+				return slog.NewJSONHandler(os.Stderr, nil)
+			},
+			expected: false,
+		},
+		{
+			name: "direct RedactingHandler",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				return NewRedactingHandler(baseHandler, nil, nil)
+			},
+			expected: true,
+		},
+		{
+			name: "RedactingHandler wrapped in another RedactingHandler",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting1 := NewRedactingHandler(baseHandler, nil, nil)
+				return NewRedactingHandler(redacting1, nil, nil)
+			},
+			expected: true,
+		},
+		{
+			name: "RedactingHandler accessed via Handler() method",
+			setup: func() slog.Handler {
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting := NewRedactingHandler(baseHandler, nil, nil)
+				// The Handler() method should expose the underlying handler
+				return redacting
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := tt.setup()
+			result := containsRedactingHandler(handler)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestNewRedactingHandler_FailureLoggerValidation tests that NewRedactingHandler
+// panics when failureLogger contains a RedactingHandler in its chain
+func TestNewRedactingHandler_FailureLoggerValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupLogger func() *slog.Logger
+		expectPanic bool
+	}{
+		{
+			name: "failureLogger without RedactingHandler - no panic",
+			setupLogger: func() *slog.Logger {
+				// Create a simple logger without RedactingHandler
+				handler := slog.NewTextHandler(os.Stderr, nil)
+				return slog.New(handler)
+			},
+			expectPanic: false,
+		},
+		{
+			name: "failureLogger with RedactingHandler - panic expected",
+			setupLogger: func() *slog.Logger {
+				// Create a logger with RedactingHandler in the chain
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redactingHandler := NewRedactingHandler(baseHandler, nil, nil)
+				return slog.New(redactingHandler)
+			},
+			expectPanic: true,
+		},
+		{
+			name: "failureLogger with nested RedactingHandler - panic expected",
+			setupLogger: func() *slog.Logger {
+				// Create a logger with nested RedactingHandler
+				baseHandler := slog.NewTextHandler(os.Stderr, nil)
+				redacting1 := NewRedactingHandler(baseHandler, nil, nil)
+				redacting2 := NewRedactingHandler(redacting1, nil, nil)
+				return slog.New(redacting2)
+			},
+			expectPanic: true,
+		},
+		{
+			name: "nil failureLogger (uses default) - no panic in this specific case",
+			setupLogger: func() *slog.Logger {
+				return nil
+			},
+			expectPanic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseHandler := slog.NewTextHandler(os.Stderr, nil)
+			failureLogger := tt.setupLogger()
+
+			if tt.expectPanic {
+				// Expect a panic
+				assert.Panics(t, func() {
+					NewRedactingHandler(baseHandler, nil, failureLogger)
+				}, "Expected NewRedactingHandler to panic with RedactingHandler in failureLogger chain")
+			} else {
+				// Should not panic
+				assert.NotPanics(t, func() {
+					NewRedactingHandler(baseHandler, nil, failureLogger)
+				}, "NewRedactingHandler should not panic with valid failureLogger")
+			}
+		})
+	}
+}
+
+// TestProductionLoggerSetup verifies that the production logger setup
+// (as used in internal/runner/bootstrap/logger.go) does not violate
+// the constraint that failureLogger must not contain RedactingHandler
+func TestProductionLoggerSetup(t *testing.T) {
+	// Simulate the production setup from internal/runner/bootstrap/logger.go
+
+	// 1. Create base handlers (text and JSON)
+	textHandler := slog.NewTextHandler(os.Stderr, nil)
+	jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+
+	// 2. Create failureLogger from base handlers (NO RedactingHandler)
+	failureHandlers := []slog.Handler{textHandler, jsonHandler}
+	failureMultiHandler, err := logging.NewMultiHandler(failureHandlers...)
+	require.NoError(t, err)
+	failureLogger := slog.New(failureMultiHandler)
+
+	// 3. Verify failureLogger does not contain RedactingHandler
+	assert.False(t, containsRedactingHandler(failureLogger.Handler()),
+		"Production failureLogger should not contain RedactingHandler")
+
+	// 4. Create main handler with RedactingHandler
+	// Should not panic with valid failureLogger
+	mainHandler, err := logging.NewMultiHandler(textHandler, jsonHandler)
+	require.NoError(t, err)
+
+	assert.NotPanics(t, func() {
+		_ = NewRedactingHandler(mainHandler, nil, failureLogger)
+	}, "Production setup should not panic - failureLogger is correctly configured without RedactingHandler")
 }

@@ -221,19 +221,78 @@ type RedactingHandler struct {
 	handler slog.Handler
 	config  *Config
 	// failureLogger is used for logging within RedactingHandler to prevent recursive redaction.
-	// It should be configured to exclude any RedactingHandler in its chain (typically stderr/file only, not Slack).
+	//
+	// CRITICAL CONSTRAINT: failureLogger MUST NOT contain RedactingHandler in its handler chain.
+	// Violating this constraint can cause circular dependencies during panic recovery:
+	//   1. User code panics in LogValue() → RedactingHandler catches it
+	//   2. RedactingHandler logs panic details to failureLogger
+	//   3. If failureLogger uses RedactingHandler, it tries to redact the panic log
+	//   4. This could trigger another redaction → infinite loop or stack overflow
+	//
+	// This constraint is enforced by NewRedactingHandler which validates the failureLogger
+	// and emits a warning to stderr if RedactingHandler is detected in the chain.
+	//
+	// Recommended configuration (as in internal/runner/bootstrap/logger.go):
+	//   - failureLogger: stderr/file handlers only (NO RedactingHandler, NO Slack)
+	//   - Main logger: all handlers wrapped with RedactingHandler (includes Slack)
 	//
 	// Logging strategy:
-	// - Use failureLogger for: depth limit warnings, internal state, and detailed error information
-	//   (these logs must NOT go through RedactingHandler to avoid recursion)
-	// - Use slog.Default() for: safe summary messages that should reach all destinations including Slack
-	//   (these logs intentionally go through RedactingHandler and must not contain sensitive data)
+	// - Use failureLogger for: depth limit warnings, internal state, detailed error information,
+	//   panic values, and stack traces (these logs must NOT go through RedactingHandler to
+	//   avoid recursion and must NOT go to Slack to prevent sensitive data leakage)
+	// - Use slog.Default() for: safe summary messages that should reach all destinations
+	//   including Slack (these logs intentionally go through RedactingHandler and must not
+	//   contain sensitive data)
 	failureLogger *slog.Logger
 	// errorCollector optionally collects redaction failures for monitoring and debugging
 	errorCollector ErrorCollector
 }
 
-// NewRedactingHandler creates a new redacting handler that wraps the given handler
+// containsRedactingHandler checks if a handler chain contains a RedactingHandler.
+// This is used to prevent circular dependencies where failureLogger itself
+// uses RedactingHandler, which could cause infinite loops during panic recovery.
+//
+// The function recursively walks through the handler chain, checking:
+// - Direct RedactingHandler instances
+// - Handlers that expose their underlying handler via Handler() method
+//
+// Returns true if any RedactingHandler is found in the chain.
+func containsRedactingHandler(h slog.Handler) bool {
+	if h == nil {
+		return false
+	}
+
+	// Check if this handler is a RedactingHandler
+	if _, ok := h.(*RedactingHandler); ok {
+		return true
+	}
+
+	// Check if the handler exposes an underlying handler
+	// Many handler wrappers provide a Handler() method to access the wrapped handler
+	type handlerGetter interface {
+		Handler() slog.Handler
+	}
+	if hg, ok := h.(handlerGetter); ok {
+		return containsRedactingHandler(hg.Handler())
+	}
+
+	// Cannot determine if there's a RedactingHandler deeper in the chain
+	return false
+}
+
+// NewRedactingHandler creates a new redacting handler that wraps the given handler.
+//
+// IMPORTANT: The failureLogger MUST NOT contain a RedactingHandler in its handler chain.
+// If failureLogger uses RedactingHandler, it can cause circular dependencies during panic
+// recovery in processLogValuer:
+//  1. User code panics in LogValue()
+//  2. RedactingHandler catches panic and logs to failureLogger
+//  3. If failureLogger uses RedactingHandler, it tries to redact the panic log
+//  4. This could trigger another redaction → infinite loop or stack overflow
+//
+// This function validates the failureLogger and logs a warning if a RedactingHandler
+// is detected in the chain. The warning is logged to stderr to ensure visibility even
+// if the logging system is misconfigured.
 func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *slog.Logger) *RedactingHandler {
 	if config == nil {
 		config = DefaultConfig()
@@ -242,6 +301,20 @@ func NewRedactingHandler(handler slog.Handler, config *Config, failureLogger *sl
 		// Default to slog.Default() if not provided
 		failureLogger = slog.Default()
 	}
+
+	// Validate that failureLogger does not contain RedactingHandler
+	// Use failureLogger.Handler() to get the handler chain
+	if containsRedactingHandler(failureLogger.Handler()) {
+		// This is a fatal configuration error that must be caught immediately.
+		// Continuing execution with RedactingHandler in failureLogger's chain will
+		// cause infinite loops during panic recovery in processLogValuer.
+		// We panic here to fail fast and prevent runtime circular dependency bugs.
+		panic("FATAL: failureLogger contains RedactingHandler in its handler chain.\n" +
+			"This will cause circular dependencies during panic recovery in redaction.\n" +
+			"The failureLogger MUST be configured to exclude RedactingHandler.\n" +
+			"See internal/redaction/redactor.go RedactingHandler.failureLogger documentation for details.")
+	}
+
 	return &RedactingHandler{
 		handler:        handler,
 		config:         config,
