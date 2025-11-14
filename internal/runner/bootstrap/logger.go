@@ -35,7 +35,15 @@ var redactionErrorCollector *redaction.InMemoryErrorCollector
 // redactionReporter is a global reporter for shutdown
 var redactionReporter *redaction.ShutdownReporter
 
-// SetupLoggerWithConfig initializes the logging system with all handlers atomically
+// SetupLoggerWithConfig initializes the logging system with all handlers atomically.
+//
+// IMPORTANT: This function must be called exactly once during application startup,
+// before any logging operations occur. It is designed for single-threaded bootstrap
+// initialization and should not be called concurrently or after the application
+// has started processing.
+//
+// The global redactionErrorCollector and redactionReporter are initialized during
+// this call and must not be accessed before initialization completes.
 func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet bool) error {
 	hostname, err := os.Hostname()
 	if err != nil {
