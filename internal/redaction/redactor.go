@@ -478,7 +478,33 @@ func (r *RedactingHandler) processLogValuer(key string, logValuer slog.LogValuer
 	return r.redactLogAttributeWithContext(resolvedAttr, nextCtx), nil
 }
 
-// processSlice processes a slice value and redacts LogValuer elements
+// processSlice processes a slice value and redacts LogValuer elements.
+//
+// Type Conversion Behavior:
+// This function converts all typed slices ([]string, []int, []MyStruct, etc.)
+// to []any in the returned slog.Value. This is necessary because:
+//  1. We process each element individually (resolving LogValuer, applying redaction)
+//  2. The processed elements are collected into a new slice
+//  3. Go does not allow creating []T dynamically without complex reflection
+//
+// Example:
+//
+//	Input:  []string{"alice", "bob"}          -> Kind: KindAny, Type: []string
+//	Output: []any{"alice", "bob"}             -> Kind: KindAny, Type: []any
+//
+// Implications:
+//   - Type assertions like value.Any().([]string) will fail after processing
+//   - Use value.Any().([]any) instead to access processed slices
+//   - For logging purposes this is typically transparent as handlers (JSON, text)
+//     serialize the slice regardless of element type
+//   - This differs from non-slice values which preserve their original types
+//
+// Rationale:
+// Preserving the original slice type would require reflect.MakeSlice and complex
+// type checking for every element, adding significant overhead and complexity.
+// Since this is a logging system where handlers serialize to JSON/text anyway,
+// the semantic content is what matters, not the Go type. The []any conversion
+// maintains all actual values while keeping the implementation simple and efficient.
 func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactionContext) (slog.Attr, error) {
 	// 1. Check recursion depth
 	if ctx.depth >= maxRedactionDepth {

@@ -1361,6 +1361,119 @@ func TestMaxRedactionDepth(t *testing.T) {
 	assert.True(t, maxRedactionDepth > 0)
 }
 
+// TestRedactingHandler_SliceTypeConversion tests and documents the type conversion behavior
+// for slices processed by the redacting handler
+func TestRedactingHandler_SliceTypeConversion(t *testing.T) {
+	t.Run("typed slice without LogValuer converts to []any", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with a typed slice that has no LogValuer elements
+		stringSlice := []string{"alice", "bob", "charlie"}
+		logger.Info("Test message", "users", slog.AnyValue(stringSlice))
+
+		// Verify: Even without LogValuer, processSlice converts to []any
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var usersAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "users" {
+				usersAttr = attr
+				return false
+			}
+			return true
+		})
+
+		// ALL slices are processed and converted to []any
+		sliceValue := usersAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processSlice, got %T", sliceValue)
+		assert.Len(t, anySlice, 3)
+
+		// Verify semantic content is preserved
+		assert.Equal(t, "alice", anySlice[0])
+		assert.Equal(t, "bob", anySlice[1])
+		assert.Equal(t, "charlie", anySlice[2])
+	})
+
+	t.Run("slice with LogValuer converts to []any", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with a slice containing LogValuer elements
+		logValuerSlice := []slog.LogValuer{
+			sensitiveLogValuer{data: "alice"},
+			sensitiveLogValuer{data: "bob"},
+		}
+		logger.Info("Test message", "users", slog.AnyValue(logValuerSlice))
+
+		// Verify: Should convert to []any after processing
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var usersAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "users" {
+				usersAttr = attr
+				return false
+			}
+			return true
+		})
+
+		// After processSlice, the type should be []any
+		sliceValue := usersAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any after processing LogValuer slice, got %T", sliceValue)
+		assert.Len(t, anySlice, 2)
+
+		// Verify that the semantic content is preserved
+		// (even though the type changed from []slog.LogValuer to []any)
+		assert.Equal(t, "alice", anySlice[0])
+		assert.Equal(t, "bob", anySlice[1])
+	})
+
+	t.Run("mixed slice type conversion", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		// Test with interface slice containing some LogValuers
+		mixedSlice := []interface{}{
+			sensitiveLogValuer{data: "alice"},
+			"plain_string",
+			123,
+		}
+		logger.Info("Test message", "data", slog.AnyValue(mixedSlice))
+
+		// Verify: []interface{} is similar to []any, should handle gracefully
+		require.Len(t, mock.records, 1)
+		record := mock.records[0]
+
+		var dataAttr slog.Attr
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "data" {
+				dataAttr = attr
+				return false
+			}
+			return true
+		})
+
+		sliceValue := dataAttr.Value.Any()
+		anySlice, ok := sliceValue.([]any)
+		assert.True(t, ok, "Expected []any for processed mixed slice, got %T", sliceValue)
+		assert.Len(t, anySlice, 3)
+
+		// First element was LogValuer -> resolved to its string value
+		assert.Equal(t, "alice", anySlice[0])
+		// Other elements preserved as-is
+		assert.Equal(t, "plain_string", anySlice[1])
+		assert.Equal(t, 123, anySlice[2])
+	})
+}
+
 // TestRedactingHandler_TwoTierLogging tests that panic handling produces
 // two log entries: detailed (to failureLogger) and summary (to slog.Default)
 func TestRedactingHandler_TwoTierLogging(t *testing.T) {
