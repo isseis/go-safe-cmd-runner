@@ -1816,8 +1816,7 @@ func BenchmarkRedactingHandler_String(b *testing.B) {
 
 // BenchmarkRedactingHandler_String_WithSensitiveData benchmarks with sensitive data redaction
 func BenchmarkRedactingHandler_String_WithSensitiveData(b *testing.B) {
-	var buf bytes.Buffer
-	baseHandler := slog.NewJSONHandler(&buf, nil)
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
 
 	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
@@ -1837,8 +1836,7 @@ func BenchmarkRedactingHandler_String_WithSensitiveData(b *testing.B) {
 
 // BenchmarkRedactingHandler_LogValuer benchmarks RedactingHandler with LogValuer attributes
 func BenchmarkRedactingHandler_LogValuer(b *testing.B) {
-	var buf bytes.Buffer
-	baseHandler := slog.NewJSONHandler(&buf, nil)
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
 
 	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
@@ -1860,8 +1858,7 @@ func BenchmarkRedactingHandler_LogValuer(b *testing.B) {
 
 // BenchmarkRedactingHandler_Slice benchmarks RedactingHandler with slice attributes
 func BenchmarkRedactingHandler_Slice(b *testing.B) {
-	var buf bytes.Buffer
-	baseHandler := slog.NewJSONHandler(&buf, nil)
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
 
 	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
@@ -1887,8 +1884,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) {
 
 // BenchmarkRedactingHandler_Mixed benchmarks RedactingHandler with mixed attribute types
 func BenchmarkRedactingHandler_Mixed(b *testing.B) {
-	var buf bytes.Buffer
-	baseHandler := slog.NewJSONHandler(&buf, nil)
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
 
 	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
