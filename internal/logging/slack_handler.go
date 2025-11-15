@@ -279,7 +279,7 @@ func extractCommandResults(value slog.Value) []commandResultInfo {
 	// slog doesn't automatically resolve LogValuer interfaces in slices,
 	// so we need to manually call LogValue() for each element.
 	// The production code passes []common.CommandResult.
-	// However, after passing through RedactingHandler, it becomes []any.
+	// However, after passing through RedactingHandler, it becomes []any with []slog.Attr elements.
 
 	// Try []common.CommandResult first (direct case without RedactingHandler)
 	if slice, ok := anyVal.([]common.CommandResult); ok {
@@ -313,6 +313,11 @@ func extractCommandResults(value slog.Value) []commandResultInfo {
 					cmdInfo := extractFromAttrs(attrs)
 					commands = append(commands, cmdInfo)
 				}
+			} else if attrs, ok := elem.([]slog.Attr); ok {
+				// Element is []slog.Attr (from RedactingHandler processing of Group values)
+				// This happens when RedactingHandler calls redactedAttr.Value.Any() on a Group
+				cmdInfo := extractFromAttrs(attrs)
+				commands = append(commands, cmdInfo)
 			}
 		}
 		return commands
