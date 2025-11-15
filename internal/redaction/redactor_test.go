@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -1802,16 +1803,18 @@ func BenchmarkRedactingHandler_String(b *testing.B) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
-	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
 	logger := slog.New(handler)
+
+	timestamp := time.Now().String()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		logger.Info("test message",
 			"user", "testuser",
 			"action", "login",
-			"timestamp", time.Now().String(),
+			"timestamp", timestamp,
 		)
 	}
 }
@@ -1821,16 +1824,18 @@ func BenchmarkRedactingHandler_String_WithSensitiveData(b *testing.B) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
-	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
 	logger := slog.New(handler)
+
+	timestamp := time.Now().String()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		logger.Info("test message",
 			"user", "testuser",
 			"credentials", "password=secret123 token=abc456",
-			"timestamp", time.Now().String(),
+			"timestamp", timestamp,
 		)
 	}
 }
@@ -1840,19 +1845,20 @@ func BenchmarkRedactingHandler_LogValuer(b *testing.B) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
-	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
 	logger := slog.New(handler)
 
 	// Create LogValuer with sensitive data
 	valuer := sensitiveLogValuer{data: "password=secret123"}
+	timestamp := time.Now().String()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		logger.Info("test message",
 			"user", "testuser",
 			"data", valuer,
-			"timestamp", time.Now().String(),
+			"timestamp", timestamp,
 		)
 	}
 }
@@ -1862,7 +1868,7 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
-	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
 	logger := slog.New(handler)
 
@@ -1872,13 +1878,14 @@ func BenchmarkRedactingHandler_Slice(b *testing.B) {
 		sensitiveLogValuer{data: "token=secret2"},
 		sensitiveLogValuer{data: "api_key=secret3"},
 	}
+	timestamp := time.Now().String()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		logger.Info("test message",
 			"user", "testuser",
 			"items", slice,
-			"timestamp", time.Now().String(),
+			"timestamp", timestamp,
 		)
 	}
 }
@@ -1888,7 +1895,7 @@ func BenchmarkRedactingHandler_Mixed(b *testing.B) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
-	failureLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
 	logger := slog.New(handler)
 
@@ -1897,6 +1904,7 @@ func BenchmarkRedactingHandler_Mixed(b *testing.B) {
 		sensitiveLogValuer{data: "token=abc"},
 		sensitiveLogValuer{data: "api_key=xyz"},
 	}
+	timestamp := time.Now().String()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1906,7 +1914,7 @@ func BenchmarkRedactingHandler_Mixed(b *testing.B) {
 			"sensitive_string", "password=mypass",
 			"logvaluer", valuer,
 			"slice", slice,
-			"timestamp", time.Now().String(),
+			"timestamp", timestamp,
 		)
 	}
 }
