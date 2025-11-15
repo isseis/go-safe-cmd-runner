@@ -178,7 +178,9 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 
 	t.Logf("Total messages sent to Slack handler: %d", len(mockSlackHandler.messages))
 	t.Logf("Sample message: %s", mockSlackHandler.messages[0][:min(len(mockSlackHandler.messages[0]), 300)])
-} // TestE2E_MultiHandlerLogging tests that sensitive data is redacted across multiple log handlers
+}
+
+// TestE2E_MultiHandlerLogging tests that sensitive data is redacted across multiple log handlers
 // (stderr, file, and Slack) in a realistic multi-handler setup.
 func TestE2E_MultiHandlerLogging(t *testing.T) {
 	// Create buffers for different log destinations
