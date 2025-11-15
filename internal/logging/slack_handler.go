@@ -143,7 +143,7 @@ func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Cl
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
+	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
 	return &SlackHandler{
 		webhookURL:    webhookURL,
 		runID:         runID,
@@ -263,6 +263,9 @@ type commandResultInfo struct {
 //   - common.LogFieldExitCode -> int (command exit code)
 //   - common.LogFieldOutput   -> string (command stdout)
 //   - common.LogFieldStderr   -> string (command stderr)
+//
+// NOTE: After passing through RedactingHandler, []common.CommandResult is converted to []any.
+// This function handles both cases for compatibility.
 func extractCommandResults(value slog.Value) []commandResultInfo {
 	var commands []commandResultInfo
 
@@ -276,19 +279,43 @@ func extractCommandResults(value slog.Value) []commandResultInfo {
 	// slog doesn't automatically resolve LogValuer interfaces in slices,
 	// so we need to manually call LogValue() for each element.
 	// The production code passes []common.CommandResult.
-	slice, ok := anyVal.([]common.CommandResult)
-	if !ok {
+	// However, after passing through RedactingHandler, it becomes []any.
+
+	// Try []common.CommandResult first (direct case without RedactingHandler)
+	if slice, ok := anyVal.([]common.CommandResult); ok {
+		for _, cmdResult := range slice {
+			// Call LogValue() to get the slog.Value
+			logValue := cmdResult.LogValue()
+			if logValue.Kind() == slog.KindGroup {
+				attrs := logValue.Group()
+				cmdInfo := extractFromAttrs(attrs)
+				commands = append(commands, cmdInfo)
+			}
+		}
 		return commands
 	}
 
-	for _, cmdResult := range slice {
-		// Call LogValue() to get the slog.Value
-		logValue := cmdResult.LogValue()
-		if logValue.Kind() == slog.KindGroup {
-			attrs := logValue.Group()
-			cmdInfo := extractFromAttrs(attrs)
-			commands = append(commands, cmdInfo)
+	// Try []any (after RedactingHandler conversion)
+	if anySlice, ok := anyVal.([]any); ok {
+		for _, elem := range anySlice {
+			// Check if element is CommandResult
+			if cmdResult, ok := elem.(common.CommandResult); ok {
+				logValue := cmdResult.LogValue()
+				if logValue.Kind() == slog.KindGroup {
+					attrs := logValue.Group()
+					cmdInfo := extractFromAttrs(attrs)
+					commands = append(commands, cmdInfo)
+				}
+			} else if logValue, ok := elem.(slog.Value); ok {
+				// Element might be already a slog.Value (from redaction processing)
+				if logValue.Kind() == slog.KindGroup {
+					attrs := logValue.Group()
+					cmdInfo := extractFromAttrs(attrs)
+					commands = append(commands, cmdInfo)
+				}
+			}
 		}
+		return commands
 	}
 
 	return commands
