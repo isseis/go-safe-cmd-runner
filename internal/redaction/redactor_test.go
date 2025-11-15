@@ -1794,10 +1794,6 @@ func TestProductionLoggerSetup(t *testing.T) {
 	}, "Production setup should not panic - failureLogger is correctly configured without RedactingHandler")
 }
 
-// ============================================================================
-// Benchmark Tests for Phase 6
-// ============================================================================
-
 // BenchmarkRedactingHandler_String benchmarks RedactingHandler with simple string attributes
 func BenchmarkRedactingHandler_String(b *testing.B) {
 	baseHandler := slog.NewJSONHandler(io.Discard, nil)
