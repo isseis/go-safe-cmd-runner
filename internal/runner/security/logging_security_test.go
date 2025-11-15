@@ -92,7 +92,7 @@ func TestValidator_SanitizeOutputForLogging(t *testing.T) {
 				MaxStdoutLength: 20,
 			},
 			output:   "this is a very long output that should be truncated for security reasons",
-			expected: "this is a very long ...[truncated for security]",
+			expected: "this is a very long ...[truncated]",
 		},
 		{
 			name: "handles bearer tokens",

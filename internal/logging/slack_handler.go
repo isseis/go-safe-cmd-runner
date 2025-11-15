@@ -391,7 +391,7 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		titleIcon = emojiWarning
 	}
 
-	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
+	title := fmt.Sprintf("### %s %s %s", titleIcon, strings.ToUpper(status), group)
 
 	// Build fields for the attachment
 	fields := []SlackAttachmentField{

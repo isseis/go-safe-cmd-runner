@@ -39,7 +39,7 @@ func (v *Validator) SanitizeOutputForLogging(output string) string {
 
 	// Truncate stdout if configured
 	if v.config.LoggingOptions.TruncateStdout && v.config.LoggingOptions.MaxStdoutLength > 0 && len(output) > v.config.LoggingOptions.MaxStdoutLength {
-		output = output[:v.config.LoggingOptions.MaxStdoutLength] + "...[truncated for security]"
+		output = output[:v.config.LoggingOptions.MaxStdoutLength] + "...[truncated]"
 	}
 
 	return output
