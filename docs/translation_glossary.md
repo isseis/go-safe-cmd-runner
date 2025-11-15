@@ -92,6 +92,8 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | エコー | echo | |
+| E2E | E2E | End-to-End の略 |
+| End-to-End | end-to-end | |
 | 環境 | environment | |
 | 環境変数 | environment variable | |
 | エラー | error | |
@@ -102,6 +104,8 @@
 | 実行可能ファイル | executable | |
 | 展開 | expansion | |
 | エクスポート | export | |
+| 外部依存 | external dependencies | |
+| 外部サービス | external service | |
 
 ### F
 
@@ -177,6 +181,8 @@
 | 保守性 | maintainability | |
 | メンテナンス | maintenance | |
 | 管理 | manage / management | |
+| 手動 | manual | |
+| Manual testing | manual testing | 手動テスト |
 | マッピング | mapping | |
 | 習得 | mastery | |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
@@ -185,6 +191,8 @@
 | 中級者 | intermediate (user) | |
 | 移行 | migration | |
 | 移行ガイド | migration guide | |
+| Mock | mock | テストのモック |
+| Mock server | mock server | モックサーバー |
 | 監視 | monitoring | |
 | モード | mode | |
 
@@ -216,7 +224,10 @@
 | パッケージ | package | |
 | パラメータ | parameter | |
 | パス | path | |
+| Pattern | pattern | パターン |
+| Payload | payload | ペイロード |
 | パフォーマンス | performance | |
+| Placeholder | placeholder | プレースホルダー |
 | 権限 | permission / privilege | "permission"はファイル権限、"privilege"は特権 |
 | 許可 | allow / allowed | "allowlist" の文脈では "allowed" |
 | 許可リスト | allowlist | "whitelist" は使用しない |
@@ -236,6 +247,7 @@
 |--------|---------|------|
 | 読み取り | read | |
 | README | README | |
+| Redaction | redaction | 機密情報の削除・マスク処理 |
 | 推奨 | recommend / recommended | |
 | 記録 | record | |
 | リダイレクト | redirect | |
@@ -245,6 +257,7 @@
 | レポート | report | |
 | リポジトリ | repository | |
 | 必須 | required | |
+| 要件 | requirement | |
 | 要件定義書 | requirements document | |
 | 予約済み | reserved | |
 | リソース | resource | |
@@ -252,6 +265,7 @@
 | リスクレベル | risk level | |
 | 役割 | role | |
 | ルート | root | |
+| 根本原因 | root cause | |
 | 回転 | rotation | |
 | 実行者 | runner | コマンド名としては `runner` |
 | ランタイム | runtime | |
@@ -264,6 +278,9 @@
 | サンプル | sample | |
 | スクリプト | script | |
 | 検索 | search | |
+| Secret | secret | 機密情報・秘密情報 |
+| Self-signed certificate | self-signed certificate | 自己署名証明書 |
+| Sensitive data | sensitive data | 機密データ |
 | セクション | section | |
 | セキュリティ | security | |
 | セキュアデフォルト | secure default | |
@@ -273,6 +290,7 @@
 | サイズ | size | |
 | サイズ制限 | size limit | |
 | スキップ | skip | |
+| Slack | Slack | |
 | 仕様 | specification | |
 | 標準 | standard | |
 | 標準パス | standard path | |
@@ -343,10 +361,13 @@
 |--------|---------|------|
 | 警告 | warning | |
 | ウェブ | web | |
+| Webhook | webhook | |
 | ようこそ | welcome | |
 | ワークフロー | workflow | |
+| 回避策 | workaround | |
 | 作業ディレクトリ | working directory | |
 | ワークスペース | workspace | |
+| Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
 
 ---
@@ -443,6 +464,7 @@
 |------|---------|
 | 2025-10-23 | 初版作成（Task 0042対応） |
 | 2025-10-23 | 追加用語約150語を追加。docs/user以下のドキュメントを調査して訳語を拡充 |
+| 2025-11-15 | E2E testing関連の用語を追加 (E2E, end-to-end, external dependencies, external service, manual, mock, pattern, payload, placeholder, redaction, requirement, root cause, secret, self-signed certificate, sensitive data, Slack, webhook, workaround, wrapper) |
 
 ---
 

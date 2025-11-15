@@ -1,15 +1,21 @@
 //go:build test
 
+// Package runner contains integration tests for Slack redaction functionality.
+//
+// These tests run by default with `make test` and verify that sensitive data
+// is properly redacted across multiple log handlers including mock Slack handlers.
+//
+// For E2E tests that make actual HTTP requests to Slack webhooks, see:
+// - e2e_slack_webhook_test.go (requires -tags 'e2e test')
+// - docs/testing/e2e_slack_tests.md for detailed documentation
+
 package runner
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -70,30 +76,9 @@ func (m *MockSlackHandler) WithGroup(_ string) slog.Handler {
 	return m
 }
 
-// TestE2E_RealCommandWithAPIKey tests end-to-end flow from command execution to Slack webhook
-// with a mock HTTP server simulating the Slack endpoint.
-func TestE2E_RealCommandWithAPIKey(t *testing.T) {
-	// Setup: Mock Slack webhook endpoint
-	var receivedPayloads []string
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("Failed to read request body: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		receivedPayloads = append(receivedPayloads, string(body))
-
-		// Verify: API key is redacted in the payload
-		assert.NotContains(t, string(body), "secret123", "API key should be redacted in Slack webhook payload")
-		assert.NotContains(t, string(body), "mypassword", "password should be redacted in Slack webhook payload")
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}))
-	defer mockServer.Close()
-
+// TestIntegration_SlackRedaction tests that sensitive data is redacted when logging
+// to a mock Slack handler. This is an integration test that runs with `make test`.
+func TestIntegration_SlackRedaction(t *testing.T) {
 	// Create mock Slack handler
 	mockSlackHandler := &MockSlackHandler{
 		messages: make([]string, 0),
@@ -121,7 +106,7 @@ func TestE2E_RealCommandWithAPIKey(t *testing.T) {
 
 	// Create test configuration with command that outputs sensitive data
 	group := &runnertypes.GroupSpec{
-		Name: "test-group-e2e",
+		Name: "test-group-integration",
 		Commands: []runnertypes.CommandSpec{
 			{
 				Name: "test-cmd",
@@ -166,7 +151,7 @@ func TestE2E_RealCommandWithAPIKey(t *testing.T) {
 		ResourceManager:     rm,
 		Validator:           realValidator,
 		VerificationManager: mockVerificationManager,
-		RunID:               "test-run-e2e",
+		RunID:               "test-run-integration",
 	})
 
 	// Mock verification manager

@@ -133,17 +133,21 @@ func NewSlackHandler(webhookURL, runID string) (*SlackHandler, error) {
 
 // NewSlackHandlerWithConfig creates a new SlackHandler with URL validation and custom backoff configuration
 func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig) (*SlackHandler, error) {
+	return NewSlackHandlerWithHTTPClient(webhookURL, runID, &http.Client{Timeout: httpTimeout}, config)
+}
+
+// NewSlackHandlerWithHTTPClient creates a new SlackHandler with URL validation, custom HTTP client, and custom backoff configuration
+// This is useful for testing with mock servers that use self-signed certificates
+func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Client, config BackoffConfig) (*SlackHandler, error) {
 	if err := validateWebhookURL(webhookURL); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
 	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpTimeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
 	return &SlackHandler{
-		webhookURL: webhookURL,
-		runID:      runID,
-		httpClient: &http.Client{
-			Timeout: httpTimeout,
-		},
+		webhookURL:    webhookURL,
+		runID:         runID,
+		httpClient:    httpClient,
 		level:         slog.LevelInfo, // Only handle info level and above
 		backoffConfig: config,
 	}, nil
