@@ -143,7 +143,7 @@ func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Cl
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpTimeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
+slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
 	return &SlackHandler{
 		webhookURL:    webhookURL,
 		runID:         runID,
