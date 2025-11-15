@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -673,6 +675,214 @@ func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
 				expected := tt.base * time.Duration(1<<i)
 				assert.Equal(t, expected, intervals[i],
 					"Interval[%d] should follow exponential backoff formula (base * 2^%d)", i, i)
+			}
+		})
+	}
+}
+
+// TestSlackHandler_WithRedactingHandler tests that SlackHandler works correctly
+// when wrapped with RedactingHandler (which converts []CommandResult to []any)
+func TestSlackHandler_WithRedactingHandler(t *testing.T) {
+	var receivedMessage SlackMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		err = json.Unmarshal(body, &receivedMessage)
+		require.NoError(t, err)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create SlackHandler
+	slackHandler := &SlackHandler{
+		webhookURL:    server.URL,
+		runID:         "test-run",
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		level:         slog.LevelInfo,
+		backoffConfig: testBackoffConfig,
+	}
+
+	// Wrap with RedactingHandler (like in production)
+	var failureLogBuffer bytes.Buffer
+	failureHandler := slog.NewJSONHandler(&failureLogBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
+	failureLogger := slog.New(failureHandler)
+
+	redactingHandler := redaction.NewRedactingHandler(slackHandler, nil, failureLogger)
+
+	// Create log record with command results
+	ctx := context.Background()
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Command group execution completed", 0)
+	record.AddAttrs(
+		slog.Bool("slack_notify", true),
+		slog.String("message_type", "command_group_summary"),
+		slog.String(common.GroupSummaryAttrs.Status, "success"),
+		slog.String(common.GroupSummaryAttrs.Group, "test-group"),
+		slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
+		slog.Any(common.GroupSummaryAttrs.Commands, []common.CommandResult{
+			{
+				CommandResultFields: common.CommandResultFields{
+					Name:     "test-cmd-1",
+					ExitCode: 0,
+					Output:   "output1",
+					Stderr:   "",
+				},
+			},
+			{
+				CommandResultFields: common.CommandResultFields{
+					Name:     "test-cmd-2",
+					ExitCode: 1,
+					Output:   "",
+					Stderr:   "error2",
+				},
+			},
+		}),
+	)
+
+	// Handle the record through RedactingHandler
+	err := redactingHandler.Handle(ctx, record)
+	require.NoError(t, err)
+
+	// Verify the message was sent and Command Count is correct
+	assert.Contains(t, receivedMessage.Text, "test-group")
+	assert.Contains(t, receivedMessage.Text, "SUCCESS")
+
+	require.Len(t, receivedMessage.Attachments, 1)
+	attachment := receivedMessage.Attachments[0]
+
+	// Find Command Count field
+	var commandCountValue string
+	var commandFields []SlackAttachmentField
+	for _, field := range attachment.Fields {
+		if field.Title == "Command Count" {
+			commandCountValue = field.Value
+		}
+		if field.Title == "Command" {
+			commandFields = append(commandFields, field)
+		}
+	}
+
+	// This is the critical assertion - Command Count should be 2, not 0
+	assert.Equal(t, "2", commandCountValue, "Command Count should be 2 after RedactingHandler")
+	assert.Len(t, commandFields, 2, "Should have 2 command fields")
+}
+
+// TestExtractCommandResults_AfterRedaction tests that extractCommandResults can handle
+// both []common.CommandResult (direct) and []any (after RedactingHandler conversion)
+func TestExtractCommandResults_AfterRedaction(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    slog.Value
+		expected int // expected number of commands
+	}{
+		{
+			name: "direct []common.CommandResult",
+			value: slog.AnyValue([]common.CommandResult{
+				{
+					CommandResultFields: common.CommandResultFields{
+						Name:     "test1",
+						ExitCode: 0,
+						Output:   "output1",
+						Stderr:   "",
+					},
+				},
+				{
+					CommandResultFields: common.CommandResultFields{
+						Name:     "test2",
+						ExitCode: 1,
+						Output:   "",
+						Stderr:   "error2",
+					},
+				},
+			}),
+			expected: 2,
+		},
+		{
+			name: "[]any with CommandResult elements (after RedactingHandler)",
+			value: slog.AnyValue([]any{
+				common.CommandResult{
+					CommandResultFields: common.CommandResultFields{
+						Name:     "test1",
+						ExitCode: 0,
+						Output:   "output1",
+						Stderr:   "",
+					},
+				},
+				common.CommandResult{
+					CommandResultFields: common.CommandResultFields{
+						Name:     "test2",
+						ExitCode: 1,
+						Output:   "",
+						Stderr:   "error2",
+					},
+				},
+			}),
+			expected: 2,
+		},
+		{
+			name: "[]any with slog.Value elements (redacted groups)",
+			value: slog.AnyValue([]any{
+				slog.GroupValue(
+					slog.String(common.LogFieldName, "test1"),
+					slog.Int(common.LogFieldExitCode, 0),
+					slog.String(common.LogFieldOutput, "output1"),
+					slog.String(common.LogFieldStderr, ""),
+				),
+				slog.GroupValue(
+					slog.String(common.LogFieldName, "test2"),
+					slog.Int(common.LogFieldExitCode, 1),
+					slog.String(common.LogFieldOutput, ""),
+					slog.String(common.LogFieldStderr, "error2"),
+				),
+			}),
+			expected: 2,
+		},
+		{
+			name: "[]any with []slog.Attr elements (after RedactingHandler Group.Any())",
+			value: slog.AnyValue([]any{
+				[]slog.Attr{
+					slog.String(common.LogFieldName, "test1"),
+					slog.Int(common.LogFieldExitCode, 0),
+					slog.String(common.LogFieldOutput, "output1"),
+					slog.String(common.LogFieldStderr, ""),
+				},
+				[]slog.Attr{
+					slog.String(common.LogFieldName, "test2"),
+					slog.Int(common.LogFieldExitCode, 1),
+					slog.String(common.LogFieldOutput, ""),
+					slog.String(common.LogFieldStderr, "error2"),
+				},
+			}),
+			expected: 2,
+		},
+		{
+			name:     "empty slice",
+			value:    slog.AnyValue([]common.CommandResult{}),
+			expected: 0,
+		},
+		{
+			name:     "wrong type",
+			value:    slog.StringValue("not a slice"),
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := extractCommandResults(tt.value)
+			assert.Len(t, results, tt.expected, "should extract correct number of command results")
+
+			// Verify the extracted data for non-empty cases
+			if tt.expected > 0 && len(results) > 0 {
+				assert.Equal(t, "test1", results[0].Name, "first command name should match")
+				assert.Equal(t, 0, results[0].ExitCode, "first command exit code should match")
+			}
+			if tt.expected > 1 && len(results) > 1 {
+				assert.Equal(t, "test2", results[1].Name, "second command name should match")
+				assert.Equal(t, 1, results[1].ExitCode, "second command exit code should match")
 			}
 		})
 	}

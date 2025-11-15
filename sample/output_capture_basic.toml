@@ -13,6 +13,7 @@ env_allowed = [
     "USER",
     "LANG",
 ]
+verify_standard_paths = false
 
 # Basic output capture examples
 [[groups]]
