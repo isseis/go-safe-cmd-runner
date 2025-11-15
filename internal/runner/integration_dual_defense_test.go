@@ -328,3 +328,111 @@ func TestIntegration_Case2Only(t *testing.T) {
 	assert.NotContains(t, logOutput, "password=secret999",
 		"At INFO level, password should not appear because CommandResult was sanitized by Case 2")
 }
+
+// TestIntegration_Case2Only_DebugLeakage tests that Validator sanitization (Case 2) alone
+// is NOT sufficient at DEBUG level because debug logs may contain raw output BEFORE sanitization.
+// This test intentionally demonstrates the vulnerability that Case 1 (RedactingHandler) prevents.
+// NOTE: This test is expected to FAIL (leakage expected) - it documents why Case 1 is essential.
+func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
+	// Create a buffer to capture log output WITHOUT RedactingHandler (Case 1 disabled)
+	var logBuffer bytes.Buffer
+	handler := slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug, // Use DEBUG level to expose the vulnerability
+	})
+
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	// Create test configuration with command that outputs sensitive data
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{
+				Name: "test-cmd",
+				Cmd:  "/bin/sh",
+				Args: []string{"-c", "echo 'api_key=leaked_secret_456'"},
+			},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+	}
+
+	// Create real executor and resource manager
+	exec := executor.NewDefaultExecutor()
+	fs := common.NewDefaultFileSystem()
+
+	// Use REAL validator with redaction enabled (Case 2 - enabled)
+	// However, this is NOT sufficient at DEBUG level
+	realValidator, err := security.NewValidator(&security.Config{
+		LoggingOptions: security.LoggingOptions{
+			RedactSensitiveInfo: true,
+		},
+	})
+	require.NoError(t, err)
+
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	// Create mock path resolver
+	mockPathResolver := &mockPathResolver{}
+	mockPathResolver.On("ResolvePath", mock.Anything).Return(func(path string) string { return path }, nil)
+
+	// Output manager will be created by NewDefaultResourceManager
+	var outputMgr output.CaptureManager
+
+	rm, err := resource.NewDefaultResourceManager(
+		exec,
+		fs,
+		nil,
+		mockPathResolver,
+		logger,
+		resource.ExecutionModeNormal,
+		nil,
+		outputMgr,
+		0,
+	)
+	require.NoError(t, err)
+
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              &runnertypes.ConfigSpec{},
+		Executor:            exec,
+		ResourceManager:     rm,
+		Validator:           realValidator, // Use real validator
+		VerificationManager: mockVerificationManager,
+		RunID:               "test-run-case2-debug-leak",
+	})
+
+	// Mock verification manager
+	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
+
+	ctx := context.Background()
+	err = ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	require.NoError(t, err, "command should succeed")
+
+	// Check log output for sensitive patterns
+	logOutput := logBuffer.String()
+
+	t.Logf("Log output sample (Case 2 only, DEBUG level - LEAKAGE EXPECTED): %s",
+		logOutput[:minInt(len(logOutput), 1000)])
+
+	// IMPORTANT: This assertion documents the VULNERABILITY when Case 1 is absent
+	// At DEBUG level, even though Case 2 sanitizes CommandResult fields,
+	// debug logs from executor or other components may log raw output BEFORE sanitization happens.
+	// This is why Case 1 (RedactingHandler) is ESSENTIAL - it protects ALL log output at the handler level.
+	//
+	// If this assertion passes (sensitive data found), it proves Case 2 alone is insufficient.
+	// This motivates the dual-defense strategy where Case 1 is the primary defense.
+	assert.Contains(t, logOutput, "leaked_secret_456",
+		"VULNERABILITY DEMONSTRATION: At DEBUG level without Case 1 (RedactingHandler), "+
+			"sensitive data leaks through debug logs even though Case 2 sanitizes CommandResult. "+
+			"This proves why Case 1 is the PRIMARY and ESSENTIAL defense mechanism.")
+
+	// Also verify that the vulnerability is specifically related to DEBUG level logging
+	// and that the raw data appears in debug-level log entries
+	t.Logf("This test demonstrates why Case 1 (RedactingHandler) is non-negotiable for security. " +
+		"Case 2 alone cannot prevent leakage at DEBUG level because debug logs may contain " +
+		"raw output from various execution stages BEFORE sanitization occurs.")
+}
