@@ -1339,14 +1339,14 @@ print(f"Redacted messages: {redacted_count}")
 
 ### 6.1 全体スケジュール
 
-| Phase | 内容 | 期間 | 担当者 | 開始日 | 完了予定日 |
-|-------|------|------|--------|--------|----------|
-| Phase 1 | Placeholder の統一 | 2日 | TBD | TBD | TBD |
-| Phase 2 | 案2（CommandResult 作成時の Redaction） | 3日 | TBD | TBD | TBD |
-| Phase 3 | 案1（RedactingHandler の拡張）- 基本実装 | 5日 | TBD | TBD | TBD |
-| Phase 4 | 案1（RedactingHandler の拡張）- ログ記録の改善 | 3日 | TBD | TBD | TBD |
-| Phase 5 | Fail-secure 改善 | 2日 | TBD | TBD | TBD |
-| Phase 6 | 統合・E2E テスト | 3日 | TBD | TBD | TBD |
+| Phase | 内容 | 期間 | 担当者 | 開始日 | 完了日 |
+|-------|------|------|--------|--------|-----|
+| Phase 1 | Placeholder の統一 | 2日 | - | 2025-11-13 | 2025-11-13 |
+| Phase 2 | 案2（CommandResult 作成時の Redaction） | 3日 | - | 2025-11-13 | 2025-11-13 |
+| Phase 3 | 案1（RedactingHandler の拡張）- 基本実装 | 5日 | - | 2025-11-13 | 2025-11-13 |
+| Phase 4 | 案1（RedactingHandler の拡張）- ログ記録の改善 | 3日 | - | 2025-11-14 | 2025-11-14 |
+| Phase 5 | Fail-secure 改善 | 2日 | - | 2025-11-14 | 2025-11-14 |
+| Phase 6 | 統合・E2E テスト | 3日 | - | 2025-11-14 | 2025-11-15 |
 | デプロイ | 本番環境へのデプロイ | 2日 | TBD | TBD | TBD |
 | 監視 | 安定性確認 | 7日 | TBD | TBD | TBD |
 
@@ -1354,14 +1354,14 @@ print(f"Redacted messages: {redacted_count}")
 
 ### 6.2 マイルストーン
 
-| マイルストーン | 内容 | 完了予定日 |
-|--------------|------|----------|
-| M1 | Phase 1 完了（Placeholder 統一） | TBD |
-| M2 | Phase 2 完了（案2実装） | TBD |
-| M3 | Phase 3 完了（案1基本実装） | TBD |
-| M4 | Phase 4 完了（ログ記録改善） | TBD |
-| M5 | Phase 5 完了（Fail-secure 改善） | TBD |
-| M6 | Phase 6 完了（統合・E2E テスト） | TBD |
+| マイルストーン | 内容 | 完了日 |
+|--------------|------|---------|
+| M1 | Phase 1 完了（Placeholder 統一） | 2025-11-13 |
+| M2 | Phase 2 完了（案2実装） | 2025-11-13 |
+| M3 | Phase 3 完了（案1基本実装） | 2025-11-13 |
+| M4 | Phase 4 完了（ログ記録改善） | 2025-11-14 |
+| M5 | Phase 5 完了（Fail-secure 改善） | 2025-11-14 |
+| M6 | Phase 6 完了（統合・E2E テスト） | 2025-11-15 |
 | M7 | 本番デプロイ完了 | TBD |
 | M8 | 安定稼働確認 | TBD |
 
