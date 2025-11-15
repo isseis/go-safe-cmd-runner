@@ -177,7 +177,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	assert.Contains(t, allMessages, "[REDACTED]", "redacted placeholder should appear in Slack messages")
 
 	t.Logf("Total messages sent to Slack handler: %d", len(mockSlackHandler.messages))
-	t.Logf("Sample message: %s", mockSlackHandler.messages[0][:minInt(len(mockSlackHandler.messages[0]), 300)])
+	t.Logf("Sample message: %s", mockSlackHandler.messages[0][:min(len(mockSlackHandler.messages[0]), 300)])
 } // TestE2E_MultiHandlerLogging tests that sensitive data is redacted across multiple log handlers
 // (stderr, file, and Slack) in a realistic multi-handler setup.
 func TestE2E_MultiHandlerLogging(t *testing.T) {
@@ -303,12 +303,4 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 	assert.Contains(t, allSlackMessages, "[REDACTED]", "redacted placeholder should appear in Slack messages")
 
 	t.Logf("Redaction verified across all handlers (stderr, file, Slack)")
-}
-
-// minInt returns the smaller of two integers (Go 1.20 compatible)
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

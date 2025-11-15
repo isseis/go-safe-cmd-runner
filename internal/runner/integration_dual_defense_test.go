@@ -123,7 +123,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	// Verify that [REDACTED] placeholder appears
 	assert.Contains(t, logOutput, "[REDACTED]", "redacted placeholder should appear in logs")
 
-	t.Logf("Log output sample: %s", logOutput[:minInt(len(logOutput), 500)])
+	t.Logf("Log output sample: %s", logOutput[:min(len(logOutput), 500)])
 }
 
 // TestIntegration_Case1Only tests that RedactingHandler alone (Case 1) can protect
@@ -226,7 +226,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 	// Verify that [REDACTED] placeholder appears
 	assert.Contains(t, logOutput, "[REDACTED]", "redacted placeholder should appear in logs")
 
-	t.Logf("Log output sample (Case 1 only): %s", logOutput[:minInt(len(logOutput), 500)])
+	t.Logf("Log output sample (Case 1 only): %s", logOutput[:min(len(logOutput), 500)])
 }
 
 // TestIntegration_Case2Only tests that Validator sanitization (Case 2) provides
@@ -321,7 +321,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 
 	// At INFO level, CommandResult logging will show sanitized output
 	// We're testing that the sanitized fields are used in INFO-level logs
-	t.Logf("Log output sample (Case 2 only, INFO level): %s", logOutput[:minInt(len(logOutput), 500)])
+	t.Logf("Log output sample (Case 2 only, INFO level): %s", logOutput[:min(len(logOutput), 500)])
 
 	// With INFO level, we should NOT see the raw sensitive data in CommandResult logs
 	// because the Validator sanitized it before creating CommandResult
@@ -416,7 +416,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	logOutput := logBuffer.String()
 
 	t.Logf("Log output sample (Case 2 only, DEBUG level - LEAKAGE EXPECTED): %s",
-		logOutput[:minInt(len(logOutput), 1000)])
+		logOutput[:min(len(logOutput), 1000)])
 
 	// IMPORTANT: This assertion documents the VULNERABILITY when Case 1 is absent
 	// At DEBUG level, even though Case 2 sanitizes CommandResult fields,
