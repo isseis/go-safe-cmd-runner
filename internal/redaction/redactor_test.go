@@ -1800,8 +1800,7 @@ func TestProductionLoggerSetup(t *testing.T) {
 
 // BenchmarkRedactingHandler_String benchmarks RedactingHandler with simple string attributes
 func BenchmarkRedactingHandler_String(b *testing.B) {
-	var buf bytes.Buffer
-	baseHandler := slog.NewJSONHandler(&buf, nil)
+	baseHandler := slog.NewJSONHandler(io.Discard, nil)
 
 	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewRedactingHandler(baseHandler, nil, failureLogger)
