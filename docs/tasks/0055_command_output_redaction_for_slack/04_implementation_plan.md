@@ -1341,27 +1341,29 @@ print(f"Redacted messages: {redacted_count}")
 
 | Phase | 内容 | 期間 | 担当者 | 開始日 | 完了予定日 |
 |-------|------|------|--------|--------|----------|
-| Phase 1 | 案2（CommandResult 作成時の Redaction） | 3日 | TBD | TBD | TBD |
-| Phase 2 | 案1（RedactingHandler の拡張）- 基本実装 | 5日 | TBD | TBD | TBD |
-| Phase 3 | 案1（RedactingHandler の拡張）- ログ記録の改善 | 3日 | TBD | TBD | TBD |
-| Phase 4 | Fail-secure 改善 | 2日 | TBD | TBD | TBD |
-| Phase 5 | 統合・E2E テスト | 3日 | TBD | TBD | TBD |
+| Phase 1 | Placeholder の統一 | 2日 | TBD | TBD | TBD |
+| Phase 2 | 案2（CommandResult 作成時の Redaction） | 3日 | TBD | TBD | TBD |
+| Phase 3 | 案1（RedactingHandler の拡張）- 基本実装 | 5日 | TBD | TBD | TBD |
+| Phase 4 | 案1（RedactingHandler の拡張）- ログ記録の改善 | 3日 | TBD | TBD | TBD |
+| Phase 5 | Fail-secure 改善 | 2日 | TBD | TBD | TBD |
+| Phase 6 | 統合・E2E テスト | 3日 | TBD | TBD | TBD |
 | デプロイ | 本番環境へのデプロイ | 2日 | TBD | TBD | TBD |
 | 監視 | 安定性確認 | 7日 | TBD | TBD | TBD |
 
-**合計期間**：約25日（3.5週間）
+**合計期間**：約27日（約4週間）
 
 ### 6.2 マイルストーン
 
 | マイルストーン | 内容 | 完了予定日 |
 |--------------|------|----------|
-| M1 | Phase 1 完了（案2実装） | TBD |
-| M2 | Phase 2 完了（案1基本実装） | TBD |
-| M3 | Phase 3 完了（ログ記録改善） | TBD |
-| M4 | Phase 4 完了（Fail-secure 改善） | TBD |
-| M5 | Phase 5 完了（統合・E2E テスト） | TBD |
-| M6 | 本番デプロイ完了 | TBD |
-| M7 | 安定稼働確認 | TBD |
+| M1 | Phase 1 完了（Placeholder 統一） | TBD |
+| M2 | Phase 2 完了（案2実装） | TBD |
+| M3 | Phase 3 完了（案1基本実装） | TBD |
+| M4 | Phase 4 完了（ログ記録改善） | TBD |
+| M5 | Phase 5 完了（Fail-secure 改善） | TBD |
+| M6 | Phase 6 完了（統合・E2E テスト） | TBD |
+| M7 | 本番デプロイ完了 | TBD |
+| M8 | 安定稼働確認 | TBD |
 
 ---
 
@@ -1428,21 +1430,24 @@ print(f"Redacted messages: {redacted_count}")
 
 ### 9.1 実装の優先順位
 
-1. **Phase 1（最優先）**：案2（CommandResult 作成時の redaction）
+1. **Phase 1（最優先）**：Placeholder の統一
+   - 後続フェーズの実装をシンプルにする基盤
+
+2. **Phase 2（最優先）**：案2（CommandResult 作成時の redaction）
    - すぐに効果が得られる
    - 比較的簡単に実装可能
 
-2. **Phase 2（高優先）**：案1（RedactingHandler の拡張）- 基本実装
+3. **Phase 3（高優先）**：案1（RedactingHandler の拡張）- 基本実装
    - より包括的な保護
    - 将来的な型にも対応
 
-3. **Phase 3（高優先）**：案1（RedactingHandler の拡張）- ログ記録の改善
+4. **Phase 4（高優先）**：案1（RedactingHandler の拡張）- ログ記録の改善
    - FR-2.4 要件の遵守
 
-4. **Phase 4（中優先）**：Fail-secure 改善
+5. **Phase 5（中優先）**：Fail-secure 改善
    - セキュリティ強化
 
-5. **Phase 5（必須）**：統合・E2E テスト
+6. **Phase 6（必須）**：統合・E2E テスト
    - 品質保証
 
 ### 9.2 実装後の期待される効果
