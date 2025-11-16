@@ -23,6 +23,8 @@
 | アプリケーション | application | |
 | 引数 | argument | コマンドの引数 |
 | 配列 | array | |
+| 代替案 | alternative | |
+| 型アサーション | type assertion | Go言語の文脈 |
 
 ### B
 
@@ -54,10 +56,14 @@
 | コミュニティ | community | |
 | コンパイル | compile | |
 | 完了 | complete / completion | |
+| 複雑さ | complexity | |
 | 包括的 | comprehensive | |
+| 一貫性 | consistency | |
 | 設定 | configuration | |
 | 設定ファイル | configuration file | |
 | 制約 | constraint | |
+| 内容 | content | |
+| 変換 | conversion | |
 | 貢献 | contribute / contributing | |
 | 制御 | control | |
 | クリティカル | critical | |
@@ -74,7 +80,9 @@
 | 定義 | define / definition | |
 | デプロイ | deploy / deployment | |
 | 廃止 | deprecated / deprecation | |
+| デメリット | disadvantage | |
 | 説明 | description | |
+| デザイン | design | |
 | 破壊的 | destructive | |
 | 検出 | detect / detection | |
 | 詳細 | detail / detailed | |
@@ -93,6 +101,8 @@
 |--------|---------|------|
 | エコー | echo | |
 | E2E | E2E | End-to-End の略 |
+| エッジケース | edge case | |
+| 要素 | element | |
 | End-to-End | end-to-end | |
 | 環境 | environment | |
 | 環境変数 | environment variable | |
@@ -106,6 +116,7 @@
 | エクスポート | export | |
 | 外部依存 | external dependencies | |
 | 外部サービス | external service | |
+| 抽出 | extract / extraction | |
 
 ### F
 
@@ -137,6 +148,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| ハンドラ | handler | slogハンドラの文脈 |
 | ハッシュ | hash | |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
@@ -149,9 +161,11 @@
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
 | インポート | import | |
+| 影響 | impact | |
 | 継承 | inheritance | |
 | 整合性 | integrity | |
 | 整数 | integer | |
+| インターフェース | interface | |
 | 内部変数 | internal variable | |
 
 ### K
@@ -172,7 +186,9 @@
 | ログ | log | |
 | ログレベル | log level | |
 | ロギング | logging | |
+| LogValuer | LogValuer | slog.LogValuer インターフェース |
 | 論理的 | logical | |
+| 喪失 | loss | |
 
 ### M
 
@@ -186,11 +202,16 @@
 | マッピング | mapping | |
 | 習得 | mastery | |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
+| 意味的 | semantic | |
+| メリット | advantage | |
 | メッセージ | message | |
 | マージ | merge / merging | |
+| メソッド | method | |
 | 中級者 | intermediate (user) | |
 | 移行 | migration | |
 | 移行ガイド | migration guide | |
+| 最小 | minimum | |
+| 混合型 | mixed-type | |
 | Mock | mock | テストのモック |
 | Mock server | mock server | モックサーバー |
 | 監視 | monitoring | |
@@ -213,6 +234,7 @@
 | 出力 | output | |
 | 出力ファイル | output file | |
 | 出力サイズ | output size | |
+| オーバーヘッド | overhead | |
 | 概要 | overview | |
 | オーバーライド | override | |
 | 上書き | overwrite | |
@@ -228,18 +250,24 @@
 | Payload | payload | ペイロード |
 | パフォーマンス | performance | |
 | Placeholder | placeholder | プレースホルダー |
+| 要点 | point | |
 | 権限 | permission / privilege | "permission"はファイル権限、"privilege"は特権 |
 | 許可 | allow / allowed | "allowlist" の文脈では "allowed" |
 | 許可リスト | allowlist | "whitelist" は使用しない |
 | パイプ | pipe | |
 | 実践的 | practical | |
+| 予測 | predictable / prediction | |
 | プレフィックス | prefix | |
+| 保持 | preserve / preservation | |
 | 本番環境 | production (environment) | |
 | 優先度 | priority | |
 | プロセス | process | |
+| 処理 | processing | |
 | プロセス環境変数 | process environment variable | |
 | プロジェクト | project | |
 | プログラムによる処理 | programmatic processing | |
+| 保護 | protection | |
+| 目的 | purpose | |
 
 ### R
 
@@ -247,11 +275,14 @@
 |--------|---------|------|
 | 読み取り | read | |
 | README | README | |
+| 理由 | reason | |
 | Redaction | redaction | 機密情報の削除・マスク処理 |
 | 推奨 | recommend / recommended | |
 | 記録 | record | |
+| 再帰的 | recursive / recursively | |
 | リダイレクト | redirect | |
 | 参照 | reference | |
+| Reflection | reflection | Go言語のreflectionパッケージ |
 | 定期的 | regular | |
 | リリース | release | |
 | レポート | report | |
@@ -260,7 +291,10 @@
 | 要件 | requirement | |
 | 要件定義書 | requirements document | |
 | 予約済み | reserved | |
+| 解決 | resolution | 問題解決の文脈 |
+| 解決策 | solution | |
 | リソース | resource | |
+| 戻り値 | return value | |
 | リスク | risk | |
 | リスクレベル | risk level | |
 | 役割 | role | |
@@ -285,12 +319,15 @@
 | セキュリティ | security | |
 | セキュアデフォルト | secure default | |
 | 分離 | separation | |
+| シリアライズ | serialize / serialization | |
 | セットアップ | setup | |
 | シェル | shell | |
+| シンプルさ | simplicity | |
 | サイズ | size | |
 | サイズ制限 | size limit | |
 | スキップ | skip | |
 | Slack | Slack | |
+| スライス | slice | Go言語のスライス型 |
 | 仕様 | specification | |
 | 標準 | standard | |
 | 標準パス | standard path | |
@@ -312,6 +349,7 @@
 | 一時 | temporary | |
 | ターミナル | terminal | |
 | テスト | test / testing | |
+| テストケース | test case | |
 | タイムアウト | timeout | |
 | タイムアウト階層 | timeout hierarchy | |
 | タイムアウト解決 | timeout resolution | |
@@ -322,8 +360,12 @@
 | TOMLフィールド | TOML field | |
 | 翻訳 | translation | |
 | トラブルシューティング | troubleshooting | |
+| 切り詰め | truncation | |
 | 典型的 | typical | |
 | 型 | type | |
+| 型付き | typed | |
+| 型情報 | type information | |
+| 型不一致 | type mismatch | |
 
 ### U
 
@@ -339,6 +381,7 @@
 | 更新 | update | |
 | アップロード | upload | |
 | 使用 | use / usage | |
+| ユースケース | use case | |
 | ユーザー | user | |
 | ユーザーガイド | user guide | |
 | ユーティリティ | utility | |
@@ -348,6 +391,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | バリデーション | validation | データ妥当性検証 |
+| 妥当性 | validity | |
 | 値 | value | |
 | 変数 | variable | |
 | 変数名 | variable name | |
@@ -465,6 +509,7 @@
 | 2025-10-23 | 初版作成（Task 0042対応） |
 | 2025-10-23 | 追加用語約150語を追加。docs/user以下のドキュメントを調査して訳語を拡充 |
 | 2025-11-15 | E2E testing関連の用語を追加 (E2E, end-to-end, external dependencies, external service, manual, mock, pattern, payload, placeholder, redaction, requirement, root cause, secret, self-signed certificate, sensitive data, Slack, webhook, workaround, wrapper) |
+| 2025-11-16 | Redaction slice type conversion関連の用語を追加 (alternative, type assertion, complexity, consistency, content, conversion, disadvantage, design, edge case, element, extraction, handler, impact, interface, LogValuer, loss, semantic, advantage, method, minimum, mixed-type, overhead, point, predictable, preserve, processing, protection, purpose, reason, recursive, reflection, resolution, solution, return value, serialize, simplicity, slice, test case, truncation, typed, type information, type mismatch, use case, validity) |
 
 ---
 

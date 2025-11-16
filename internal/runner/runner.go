@@ -49,7 +49,7 @@ const (
 // groupExecutionResult holds the result of group execution for notification
 type groupExecutionResult struct {
 	status   GroupExecutionStatus
-	commands []common.CommandResult // All commands executed in the group
+	commands common.CommandResults // All commands executed in the group
 	errorMsg string
 }
 

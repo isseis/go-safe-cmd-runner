@@ -142,10 +142,10 @@ var _ slog.LogValuer = CommandResults(nil)
 ```
 
 **チェックリスト**:
-- [ ] 型定義を追加
-- [ ] コメントを追加（設計意図、使用例を含む）
-- [ ] インターフェース実装チェックを追加
-- [ ] 定数 `MaxLoggedCommands` を定義
+- [x] 型定義を追加
+- [x] コメントを追加（設計意図、使用例を含む）
+- [x] インターフェース実装チェックを追加
+- [x] 定数 `MaxLoggedCommands` を定義
 
 #### 1.2 LogValue() メソッドの実装
 
@@ -218,11 +218,11 @@ func (cr CommandResults) LogValue() slog.Value {
 ```
 
 **チェックリスト**:
-- [ ] LogValue() メソッドを実装
-- [ ] nil/空スライスの処理を実装
-- [ ] 切り詰めロジックを実装
-- [ ] メモリ最適化（事前確保）を実装
-- [ ] コメントを追加（出力構造、制限事項を含む）
+- [x] LogValue() メソッドを実装
+- [x] nil/空スライスの処理を実装
+- [x] 切り詰めロジックを実装
+- [x] メモリ最適化（事前確保）を実装
+- [x] コメントを追加（出力構造、制限事項を含む）
 
 #### 1.3 単体テストの作成
 
@@ -402,14 +402,14 @@ func createTestCommandResults(count int) CommandResults {
 ```
 
 **チェックリスト**:
-- [ ] nil スライスのテスト
-- [ ] 空スライスのテスト
-- [ ] 単一コマンドのテスト
-- [ ] 複数コマンドのテスト
-- [ ] 100件（境界値）のテスト
-- [ ] 101件（切り詰め発生）のテスト
-- [ ] 150件（大量切り詰め）のテスト
-- [ ] ヘルパー関数 `createTestCommandResults` の実装
+- [x] nil スライスのテスト
+- [x] 空スライスのテスト
+- [x] 単一コマンドのテスト
+- [x] 複数コマンドのテスト
+- [x] 100件（境界値）のテスト
+- [x] 101件（切り詰め発生）のテスト
+- [x] 150件（大量切り詰め）のテスト
+- [x] ヘルパー関数 `createTestCommandResults` の実装
 
 #### 1.4 コードフォーマットとリント
 
@@ -421,17 +421,17 @@ make test
 ```
 
 **チェックリスト**:
-- [ ] `make fmt` でフォーマット
-- [ ] `make lint` でエラーなし
-- [ ] `make test` で全テスト通過
+- [x] `make fmt` でフォーマット
+- [x] `make lint` でエラーなし
+- [x] `make test` で全テスト通過
 
 ### Phase 1 成功基準
 
-- [ ] `CommandResults` 型が定義されている
-- [ ] `LogValue()` が実装されている
-- [ ] 単体テストが100%カバレッジ
-- [ ] すべてのテストが通過
-- [ ] リンターエラーなし
+- [x] `CommandResults` 型が定義されている
+- [x] `LogValue()` が実装されている
+- [x] 単体テストが100%カバレッジ
+- [x] すべてのテストが通過
+- [x] リンターエラーなし
 - [ ] コードレビューで承認
 
 ### Phase 1 完了時の確認事項
@@ -562,11 +562,11 @@ func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 ```
 
 **チェックリスト**:
-- [ ] `extractCommandResultsFromGroup` 関数を実装
-- [ ] デバッグログを追加（5箇所）
-- [ ] メタデータフィールドのスキップ処理
-- [ ] 必須フィールドの検証
-- [ ] コメントを追加
+- [x] `extractCommandResultsFromGroup` 関数を実装
+- [x] デバッグログを追加（5箇所）
+- [x] メタデータフィールドのスキップ処理
+- [x] 必須フィールドの検証
+- [x] コメントを追加
 
 #### 2.2 extractCommandResults の更新
 
@@ -591,9 +591,9 @@ func extractCommandResults(value slog.Value) []commandResultInfo {
 ```
 
 **チェックリスト**:
-- [ ] 既存の `extractCommandResults` を削除
-- [ ] 新しい `extractCommandResults` を実装（wrapper）
-- [ ] コメントを更新
+- [x] 既存の `extractCommandResults` を削除
+- [x] 新しい `extractCommandResults` を実装（wrapper）
+- [x] コメントを更新
 
 #### 2.3 単体テストの作成
 
@@ -735,14 +735,14 @@ func TestExtractCommandResults_Wrapper(t *testing.T) {
 ```
 
 **チェックリスト**:
-- [ ] 正常系テスト（単一コマンド）
-- [ ] 正常系テスト（複数コマンド）
-- [ ] 空 Group のテスト
-- [ ] 非 Group 値のテスト（String, Int）
-- [ ] メタデータのみの Group のテスト
-- [ ] 非 Group 属性のスキップテスト
-- [ ] 必須フィールド欠損のテスト
-- [ ] wrapper 関数のテスト
+- [x] 正常系テスト（単一コマンド）
+- [x] 正常系テスト（複数コマンド）
+- [x] 空 Group のテスト
+- [x] 非 Group 値のテスト（String, Int）
+- [x] メタデータのみの Group のテスト
+- [x] 非 Group 属性のスキップテスト
+- [x] 必須フィールド欠損のテスト
+- [x] wrapper 関数のテスト
 
 #### 2.4 RedactingHandler 統合テストの作成
 
@@ -843,10 +843,10 @@ func TestRedactingHandler_CommandResults_Integration(t *testing.T) {
 ```
 
 **チェックリスト**:
-- [ ] password redaction のテスト
-- [ ] 複数フィールドの redaction のテスト
-- [ ] 非機密情報の保持テスト
-- [ ] JSON 出力形式の確認
+- [x] password redaction のテスト
+- [x] 複数フィールドの redaction のテスト
+- [x] 非機密情報の保持テスト
+- [x] JSON 出力形式の確認
 
 #### 2.5 コードフォーマットとリント
 
@@ -858,18 +858,18 @@ make test
 ```
 
 **チェックリスト**:
-- [ ] `make fmt` でフォーマット
-- [ ] `make lint` でエラーなし
-- [ ] `make test` で全テスト通過
+- [x] `make fmt` でフォーマット
+- [x] `make lint` でエラーなし
+- [x] `make test` で全テスト通過
 
 ### Phase 2 成功基準
 
-- [ ] `extractCommandResultsFromGroup` が実装されている
-- [ ] `extractCommandResults` が wrapper になっている
-- [ ] 単体テストが通過
-- [ ] RedactingHandler 統合テストが通過
-- [ ] すべてのテストが通過
-- [ ] リンターエラーなし
+- [x] `extractCommandResultsFromGroup` が実装されている
+- [x] `extractCommandResults` が wrapper になっている
+- [x] 単体テストが通過
+- [x] RedactingHandler 統合テストが通過
+- [x] すべてのテストが通過
+- [x] リンターエラーなし
 - [ ] コードレビューで承認
 
 ## Phase 3: 使用箇所の一括更新
@@ -900,8 +900,8 @@ grep -rn "slog.Any.*commands" --include="*.go" internal/
 4. テストファイル（複数）
 
 **チェックリスト**:
-- [ ] 使用箇所のリストを作成
-- [ ] 各ファイルの変更内容を確認
+- [x] 使用箇所のリストを作成
+- [x] 各ファイルの変更内容を確認
 
 #### 3.2 runner.go の更新
 
@@ -941,9 +941,9 @@ func logGroupExecutionSummary(group *runnertypes.GroupSpec, result *groupExecuti
 ```
 
 **チェックリスト**:
-- [ ] `commandResults` 変数を追加
-- [ ] 型変換を実装
-- [ ] コメントを追加
+- [x] `commandResults` 変数を追加
+- [x] 型変換を実装
+- [x] コメントを追加
 
 #### 3.3 テストファイルの更新
 
@@ -975,10 +975,10 @@ value := results.LogValue()
 ```
 
 **チェックリスト**:
-- [ ] `runner_test.go` の更新
-- [ ] `slack_handler_test.go` の更新
-- [ ] `slack_handler_benchmark_test.go` の更新
-- [ ] 全テストが通過することを確認
+- [x] `runner_test.go` の更新
+- [x] `slack_handler_test.go` の更新
+- [x] `slack_handler_benchmark_test.go` の更新
+- [x] 全テストが通過することを確認
 
 #### 3.4 E2Eテストの実行
 
@@ -1097,11 +1097,11 @@ func TestCommandResults_E2E_Integration(t *testing.T) {
 ```
 
 **チェックリスト**:
-- [ ] E2Eテストファイルを作成
-- [ ] RedactingHandler との統合を確認
-- [ ] 機密情報の redaction を確認
-- [ ] Group 構造の維持を確認
-- [ ] テストが通過することを確認
+- [x] E2Eテストファイルを作成
+- [x] RedactingHandler との統合を確認
+- [x] 機密情報の redaction を確認
+- [x] Group 構造の維持を確認
+- [x] テストが通過することを確認
 
 #### 3.5 全体テストの実行
 
