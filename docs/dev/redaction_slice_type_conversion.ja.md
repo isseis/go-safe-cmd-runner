@@ -2,11 +2,13 @@
 
 ## 概要
 
-`internal/redaction` パッケージの `RedactingHandler.processSlice()` メソッドは、すべての型付きスライス（`[]string`, `[]int`, `[]MyStruct` など）を `[]any` に変換します。本ドキュメントでは、この動作の理由、影響、および設計の妥当性について説明します。
+`internal/redaction` パッケージの `RedactingHandler.processSlice()` メソッドは、すべての型付きスライス（`[]string`, `[]int`, `[]MyStruct` など）を `[]any` に変換します。本ドキュメントでは、この動作の理由、影響、およびスライス型変換を回避する推奨パターンについて説明します。
 
-## 現在の動作
+## スライス型変換の動作
 
-### 型変換の詳細
+### 基本的な型変換
+
+RedactingHandler は、すべてのスライスを `[]any` に変換します：
 
 ```go
 // 入力: 型付きスライス
@@ -15,162 +17,108 @@ attr := slog.Any("users", stringSlice)
 
 // processSlice 処理後
 // 出力: []any に変換される
-// attr.Value.Any().([]string) → 失敗
-// attr.Value.Any().([]any)    → 成功
+attr.Value.Any().([]string) // 失敗
+attr.Value.Any().([]any)    // 成功
 ```
 
-### 実装の要点
+### 処理の流れ
 
-実装の詳細は [redactor.go の processSlice 関数](../../internal/redaction/redactor.go) を参照してください。
-
-1. **すべてのスライスが処理対象**: `processKindAny()` 関数により、LogValuer要素の有無に関わらず、すべてのスライスが `processSlice()` を経由します
-
-2. **新しい[]anyスライスの作成**: 処理済み要素を格納するため、`[]any` 型の新しいスライスを作成します
-
+1. **すべてのスライスが処理対象**: LogValuer要素の有無に関わらず、すべてのスライスが `processSlice()` を経由
+2. **新しい[]anyスライスの作成**: 処理済み要素を格納するため、`[]any` 型の新しいスライスを作成
 3. **要素の処理**:
    - LogValuer要素: `LogValue()` を呼び出して解決し、再帰的にredaction適用
    - 非LogValuer要素: そのまま保持
-
 4. **戻り値**: `slog.AnyValue(processedElements)` として `[]any` で返却
 
-## 影響
+### 影響範囲
 
-### 影響を受けるケース
+**影響を受ける**:
+- 型アサーション: `value.Any().([]string)` は失敗し、`value.Any().([]any)` が必要
+- 型情報: 元の型（`[]string`, `[]int` など）の情報が失われる
 
-1. **型アサーションの失敗**:
-   ```go
-   // 処理前
-   value.Any().([]string) // 成功
+**影響を受けない**:
+- ログ出力: JSONハンドラやテキストハンドラの出力結果
+- 意味的な内容: スライスの実際の値はすべて保持される
+- 非スライス値: string, int, bool などは元の型を保持
 
-   // 処理後
-   value.Any().([]string) // 失敗
-   value.Any().([]any)    // 成功
-   ```
+## 設計判断の根拠
 
-2. **型情報の喪失**:
-   - 元の型（`[]string`, `[]int` など）の情報が失われる
-   - スライス要素の具体的な型は `[]any` に統一される
+この設計は、以下の理由により適切と判断しています：
 
-### 影響を受けないケース
-
-1. **ログ出力**: JSONハンドラやテキストハンドラは、スライス要素の型に関係なくシリアライズを行うため、出力結果に影響なし
-
-2. **意味的な内容**: スライスの実際の値はすべて保持される
-
-3. **非スライス値**: 他の型（string, int, boolなど）は元の型を保持
-
-## 代替案の検討
-
-### オプション1: Reflectionを使用した型保持
-
-**概要**: `reflect.MakeSlice()` を使用して元の型のスライスを作成
-
-**メリット**:
-- 元のスライス型を保持
-- 型アサーションが機能する
-
-**デメリット**:
-- 実装が複雑
-- Reflectionのパフォーマンスオーバーヘッド
-- 型不一致のエッジケース処理が必要
-- メンテナンスコストが高い
-
-### オプション2: LogValuer要素がある場合のみ処理
-
-**概要**: LogValuer要素がない場合は元のスライスをそのまま返す
-
-**メリット**:
-- 一部のケースで型を保持
-- パフォーマンス向上
-
-**デメリット**:
-- 動作が一貫しない（LogValuerの有無で挙動が変わる）
-- テストが複雑化
-- 予測が難しい
-
-### オプション3: 現在の実装を維持（推奨）
-
-**理由**:
-1. **ログシステムとしての特性**: 本システムはログ出力が目的であり、型情報の保持は重要ではない
-2. **シンプルさ**: 実装がシンプルで理解しやすい
-3. **一貫性**: すべてのスライスが同じ方法で処理される
-4. **パフォーマンス**: Reflectionを使用しないため、オーバーヘッドが最小
-5. **実用性**: 実際のユースケースで型アサーションは稀
-
-## 設計の妥当性
-
-### なぜこの設計が適切か
-
-1. **用途**: これはログシステムであり、型保持よりも意味的な内容の保持が重要
-
+1. **用途**: ログシステムでは、型保持よりも意味的な内容の保持が重要
 2. **ハンドラの実装**: 標準的なslogハンドラ（JSON、テキスト）は型情報を必要としない
+3. **シンプルさ**: 実装がシンプルで理解しやすい
+4. **一貫性**: すべてのスライスが同じ方法で処理される
+5. **パフォーマンス**: Reflectionを使用しないため、オーバーヘッドが最小
 
-3. **セキュリティ**: redactionの主目的は機密情報の保護であり、型保持は二次的
+型保持の実装（Reflectionを使用）も技術的には可能ですが、複雑さとオーバーヘッドが利益を上回ります。
 
-4. **保守性**: シンプルな実装は長期的なメンテナンスコストを低減
+## 型安全な処理が必要な場合の推奨パターン
 
-### 推奨される使用方法
+スライス型変換を回避し、型安全な処理を実現するには、**LogValuerを実装したラッパー型でGroup構造を使用する**パターンを推奨します。
+
+### CommandResults の実装例
+
+`[]CommandResult` スライスの処理では、以下のアプローチを採用しています：
 
 ```go
-// ✓ 良い例: ログ出力での使用
-logger.Info("Users list", "users", slog.AnyValue(stringSlice))
+// 型定義
+type CommandResults []CommandResult
 
-// ✗ 悪い例: 型アサーションへの依存
-sliceValue := attr.Value.Any().([]string) // redaction後は失敗する
+// LogValuer実装: Group構造を使用してスライス全体を構造化
+func (c CommandResults) LogValue() slog.Value {
+    attrs := make([]slog.Attr, len(c))
+    for i, result := range c {
+        attrs[i] = slog.Any(strconv.Itoa(i), result)
+    }
+    return slog.GroupValue(attrs...)
+}
+```
 
-// ✓ 良い例: 汎用的な処理
-sliceValue := attr.Value.Any().([]any)
-for _, elem := range sliceValue {
-    // 各要素を処理
+### パターンの利点
+
+1. **型安全性**: RedactingHandler を経由しても Group 構造が維持される
+2. **型アサーション不要**: SlackHandler 側は Group 値として直接処理可能
+3. **パフォーマンス**: 複雑な型アサーションやリフレクション不要
+4. **一貫性**: redaction 前後で構造が変わらない
+
+### 使用例
+
+```go
+// ログ記録側（Runner）
+results := runnertypes.CommandResults{
+    {Command: "echo test", ExitCode: 0},
+    {Command: "false", ExitCode: 1},
+}
+logger.Info("Execution summary", "results", results)
+
+// ログ処理側（SlackHandler）
+// Group として直接処理可能、型アサーション不要
+func (h *SlackHandler) Handle(ctx context.Context, record slog.Record) error {
+    record.Attrs(func(attr slog.Attr) bool {
+        if attr.Key == "results" && attr.Value.Kind() == slog.KindGroup {
+            // Group 構造として直接処理
+            for _, a := range attr.Value.Group() {
+                // 各 CommandResult を処理
+            }
+        }
+        return true
+    })
 }
 ```
 
 ## テスト
 
-型変換の動作は [redactor_test.go の TestRedactingHandler_SliceTypeConversion](../../internal/redaction/redactor_test.go) で検証されています。
+型変換の動作検証:
+- [redactor_test.go の TestRedactingHandler_SliceTypeConversion](../../internal/redaction/redactor_test.go)
 
-テストケース:
-1. LogValuer要素なしの型付きスライス → `[]any` に変換
-2. LogValuer要素ありのスライス → `[]any` に変換
-3. 混合型スライス → `[]any` に変換、意味的内容は保持
-
-## 結論
-
-現在の `[]any` 変換は、ログシステムとしての用途において適切な設計判断です。型情報は失われますが、意味的な内容はすべて保持され、実装はシンプルで保守しやすくなっています。
-
-型保持を実装する技術的な方法は存在しますが、複雑さとオーバーヘッドが、ログシステムにおける利益を上回ります。
-
-## 関連プロジェクト
-
-### CommandResults 型安全性改善プロジェクト
-
-`[]CommandResult` のログ処理における型変換問題を根本から解決するプロジェクトが進行中です。
-
-**問題:**
-- RedactingHandler によるスライス型変換により、`extractCommandResults` で複雑な型アサーションが必要
-- 型安全性の欠如とパフォーマンスオーバーヘッド
-
-**解決策:**
-- スライス全体で LogValuer を実装する `CommandResults` 型を導入
-- Group 構造を使用してスライス型変換を回避
-
-**詳細:**
-- [プロジェクト要件定義書](../tasks/0056_command_results_type_safety/01_requirements.md)
-- [アーキテクチャ設計書](../tasks/0056_command_results_type_safety/02_architecture.md)
-
-このプロジェクトにより、本ドキュメントで説明する型変換の問題が、特定のユースケース（CommandResults）において解決されます。
-
-## 解決方法（実装済み）
-
-Task 0056 の Phase 3 までを完了し、CommandResults を用いた以下の対策を本番コードに反映した。
-
-1. **CommandResults 型の導入**: `[]CommandResult` のエイリアス型に LogValuer を実装し、スライス全体で構造化出力。
-2. **Runner/SlackHandler の更新**: `logGroupExecutionSummary` などログ発生箇所で `CommandResults` を渡し、SlackHandler 側は Group 値のみを処理。
-3. **Redaction/E2E テストの拡充**: RedactingHandler 経由でも Group 構造が維持されること、機密情報が end-to-end で redact されることを新しい統合テストで検証。
+CommandResults パターンの統合テスト:
+- RedactingHandler 経由での Group 構造維持
+- end-to-end での機密情報 redaction
 
 詳細は Task 0056 の成果物を参照:
+- [アーキテクチャ設計書](../tasks/0056_command_results_type_safety/02_architecture.md)
 - [実装計画](../tasks/0056_command_results_type_safety/04_implementation_plan.md)
-- [デザイン/仕様](../tasks/0056_command_results_type_safety/02_architecture.md)
 
 ## 参照
 
