@@ -146,12 +146,6 @@ var _ slog.LogValuer = CommandResults(nil)
 // LogValue structures command results as a slog.GroupValue with metadata and truncated command entries.
 // Sensitive data can then be redacted at the Group level without triggering slog's slice processing path.
 func (cr CommandResults) LogValue() slog.Value {
-	if len(cr) == 0 {
-		return slog.GroupValue(
-			slog.Int("total_count", 0),
-		)
-	}
-
 	commandsToLog := cr
 	truncated := false
 	if len(cr) > MaxLoggedCommands {

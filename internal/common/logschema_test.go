@@ -1,5 +1,6 @@
 //go:build test
 
+//nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 
 import (
@@ -22,9 +23,11 @@ func TestCommandResults_LogValue(t *testing.T) {
 			validate: func(t *testing.T, value slog.Value) {
 				assert.Equal(t, slog.KindGroup, value.Kind())
 				attrs := value.Group()
-				assert.Len(t, attrs, 1)
+				assert.Len(t, attrs, 2)
 				assert.Equal(t, "total_count", attrs[0].Key)
 				assert.Equal(t, int64(0), attrs[0].Value.Int64())
+				assert.Equal(t, "truncated", attrs[1].Key)
+				assert.False(t, attrs[1].Value.Bool())
 			},
 		},
 		{
@@ -33,9 +36,11 @@ func TestCommandResults_LogValue(t *testing.T) {
 			validate: func(t *testing.T, value slog.Value) {
 				assert.Equal(t, slog.KindGroup, value.Kind())
 				attrs := value.Group()
-				assert.Len(t, attrs, 1)
+				assert.Len(t, attrs, 2)
 				assert.Equal(t, "total_count", attrs[0].Key)
 				assert.Equal(t, int64(0), attrs[0].Value.Int64())
+				assert.Equal(t, "truncated", attrs[1].Key)
+				assert.False(t, attrs[1].Value.Bool())
 			},
 		},
 		{
