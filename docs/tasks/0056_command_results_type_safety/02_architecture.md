@@ -1360,10 +1360,10 @@ func (cr CommandResults) LogValue() slog.Value {
     for i, cmd := range commandsToLog {
         attrs = append(attrs, slog.Group(
             fmt.Sprintf("cmd_%d", i),
-            slog.String(LogFieldName, cmd.Name),
-            slog.Int(LogFieldExitCode, cmd.ExitCode),
-            slog.String(LogFieldOutput, cmd.Output),
-            slog.String(LogFieldStderr, cmd.Stderr),
+            LogFieldName, cmd.Name,
+            LogFieldExitCode, cmd.ExitCode,
+            LogFieldOutput, cmd.Output,
+            LogFieldStderr, cmd.Stderr,
         ))
     }
 
