@@ -1348,7 +1348,7 @@ func (cr CommandResults) LogValue() slog.Value {
         truncated = true
     }
 
-    attrs := make([]any, 0, len(commandsToLog)+2) // +2 for metadata
+    attrs := make([]slog.Attr, 0, len(commandsToLog)+3) // +2 for metadata, +1 for optional note
 
     // メタデータを追加
     attrs = append(attrs,
@@ -1360,10 +1360,10 @@ func (cr CommandResults) LogValue() slog.Value {
     for i, cmd := range commandsToLog {
         attrs = append(attrs, slog.Group(
             fmt.Sprintf("cmd_%d", i),
-            slog.String(LogFieldName, cmd.Name),
-            slog.Int(LogFieldExitCode, cmd.ExitCode),
-            slog.String(LogFieldOutput, cmd.Output),
-            slog.String(LogFieldStderr, cmd.Stderr),
+            LogFieldName, cmd.Name,
+            LogFieldExitCode, cmd.ExitCode,
+            LogFieldOutput, cmd.Output,
+            LogFieldStderr, cmd.Stderr,
         ))
     }
 
