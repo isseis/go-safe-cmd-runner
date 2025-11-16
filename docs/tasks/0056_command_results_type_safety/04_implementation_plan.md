@@ -900,8 +900,8 @@ grep -rn "slog.Any.*commands" --include="*.go" internal/
 4. テストファイル（複数）
 
 **チェックリスト**:
-- [ ] 使用箇所のリストを作成
-- [ ] 各ファイルの変更内容を確認
+- [x] 使用箇所のリストを作成
+- [x] 各ファイルの変更内容を確認
 
 #### 3.2 runner.go の更新
 
@@ -941,9 +941,9 @@ func logGroupExecutionSummary(group *runnertypes.GroupSpec, result *groupExecuti
 ```
 
 **チェックリスト**:
-- [ ] `commandResults` 変数を追加
-- [ ] 型変換を実装
-- [ ] コメントを追加
+- [x] `commandResults` 変数を追加
+- [x] 型変換を実装
+- [x] コメントを追加
 
 #### 3.3 テストファイルの更新
 
@@ -975,10 +975,10 @@ value := results.LogValue()
 ```
 
 **チェックリスト**:
-- [ ] `runner_test.go` の更新
-- [ ] `slack_handler_test.go` の更新
-- [ ] `slack_handler_benchmark_test.go` の更新
-- [ ] 全テストが通過することを確認
+- [x] `runner_test.go` の更新
+- [x] `slack_handler_test.go` の更新
+- [x] `slack_handler_benchmark_test.go` の更新
+- [x] 全テストが通過することを確認
 
 #### 3.4 E2Eテストの実行
 
@@ -1097,11 +1097,11 @@ func TestCommandResults_E2E_Integration(t *testing.T) {
 ```
 
 **チェックリスト**:
-- [ ] E2Eテストファイルを作成
-- [ ] RedactingHandler との統合を確認
-- [ ] 機密情報の redaction を確認
-- [ ] Group 構造の維持を確認
-- [ ] テストが通過することを確認
+- [x] E2Eテストファイルを作成
+- [x] RedactingHandler との統合を確認
+- [x] 機密情報の redaction を確認
+- [x] Group 構造の維持を確認
+- [x] テストが通過することを確認
 
 #### 3.5 全体テストの実行
 

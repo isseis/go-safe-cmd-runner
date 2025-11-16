@@ -160,6 +160,18 @@ for _, elem := range sliceValue {
 
 このプロジェクトにより、本ドキュメントで説明する型変換の問題が、特定のユースケース（CommandResults）において解決されます。
 
+## 解決方法（実装済み）
+
+Task 0056 の Phase 3 までを完了し、CommandResults を用いた以下の対策を本番コードに反映した。
+
+1. **CommandResults 型の導入**: `[]CommandResult` のエイリアス型に LogValuer を実装し、スライス全体で構造化出力。
+2. **Runner/SlackHandler の更新**: `logGroupExecutionSummary` などログ発生箇所で `CommandResults` を渡し、SlackHandler 側は Group 値のみを処理。
+3. **Redaction/E2E テストの拡充**: RedactingHandler 経由でも Group 構造が維持されること、機密情報が end-to-end で redact されることを新しい統合テストで検証。
+
+詳細は Task 0056 の成果物を参照:
+- [実装計画](../tasks/0056_command_results_type_safety/04_implementation_plan.md)
+- [デザイン/仕様](../tasks/0056_command_results_type_safety/02_architecture.md)
+
 ## 参照
 
 - 実装: [internal/redaction/redactor.go](../../internal/redaction/redactor.go)

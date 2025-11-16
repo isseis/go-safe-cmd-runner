@@ -220,8 +220,8 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 	groupSpec *runnertypes.GroupSpec,
 	runtimeGroup *runnertypes.RuntimeGroup,
 	runtimeGlobal *runnertypes.RuntimeGlobal,
-) ([]common.CommandResult, *groupExecutionResult, error) {
-	commandResults := make([]common.CommandResult, 0, len(groupSpec.Commands))
+) (common.CommandResults, *groupExecutionResult, error) {
+	commandResults := make(common.CommandResults, 0, len(groupSpec.Commands))
 
 	for i := range groupSpec.Commands {
 		cmdSpec := &groupSpec.Commands[i]
