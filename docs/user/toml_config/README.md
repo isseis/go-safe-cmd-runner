@@ -27,7 +27,6 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 ### Chapter 4: [Global Level Configuration](04_global_level.md)
 - timeout - Timeout configuration
 - workdir - Working directory
-- log_level - Log level
 - skip_standard_paths - Skip standard path validation
 - env_allowed - Environment variable allowlist
 - verify_files - File verification list

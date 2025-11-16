@@ -34,7 +34,6 @@ version = "1.0"
 [global]
 timeout = 60
 workdir = "/tmp/workspace"
-log_level = "info"
 env_allowed = ["PATH", "HOME", "USER"]
 
 # コマンドグループ(1つ以上必須)

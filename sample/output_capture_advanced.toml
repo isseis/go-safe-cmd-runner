@@ -5,7 +5,6 @@ version = "1.0"
 
 [global]
 timeout = 60
-log_level = "debug"
 # Set higher output size limit for advanced scenarios (10MB)
 output_size_limit = 10485760
 env_allowed = [

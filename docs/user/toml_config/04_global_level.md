@@ -238,120 +238,7 @@ args = ["test.txt"]
 
 Read and write permissions are required for the specified directory.
 
-## 4.3 log_level - Log Level
-
-### Overview
-
-Controls the verbosity of log output.
-
-### Syntax
-
-```toml
-[global]
-log_level = "log_level"
-```
-
-### Parameter Details
-
-| Item | Description |
-|------|-------------|
-| **Type** | String (string) |
-| **Required/Optional** | Optional |
-| **Configurable Level** | Global only |
-| **Default Value** | "info" |
-| **Valid Values** | "debug", "info", "warn", "error" |
-| **Override** | Not possible (global level only) |
-
-### Log Level Details
-
-| Level | Use Case | Output Information |
-|-------|----------|-------------------|
-| **debug** | Development/debugging | All detailed information (variable values, internal states, etc.) |
-| **info** | Normal operation | Execution status, completion notifications, etc. |
-| **warn** | Warning monitoring | Warnings and important information only |
-| **error** | Errors only | Error messages only |
-
-### Configuration Examples
-
-#### Example 1: Debug Mode
-
-```toml
-version = "1.0"
-
-[global]
-log_level = "debug"  # Output detailed debug information
-
-[[groups]]
-name = "troubleshooting"
-
-[[groups.commands]]
-name = "test_command"
-cmd = "echo"
-args = ["test"]
-```
-
-Output example:
-```
-[DEBUG] Configuration loaded: version=1.0
-[DEBUG] Global settings: timeout=default, workdir=default
-[DEBUG] Processing group: troubleshooting
-[DEBUG] Executing command: test_command
-[DEBUG] Command path: /usr/bin/echo
-[DEBUG] Arguments: [test]
-[INFO] Command completed successfully
-```
-
-#### Example 2: Production Environment (info level)
-
-```toml
-version = "1.0"
-
-[global]
-log_level = "info"  # Output standard information only
-
-[[groups]]
-name = "production"
-
-[[groups.commands]]
-name = "backup"
-cmd = "/usr/bin/backup.sh"
-args = []
-```
-
-Output example:
-```
-[INFO] Starting command group: production
-[INFO] Executing command: backup
-[INFO] Command completed successfully
-```
-
-#### Example 3: Errors Only (error level)
-
-```toml
-version = "1.0"
-
-[global]
-log_level = "error"  # Output errors only
-
-[[groups]]
-name = "silent_operation"
-
-[[groups.commands]]
-name = "routine_check"
-cmd = "test"
-args = ["-f", "/tmp/check.txt"]
-```
-
-No output during normal operation; messages are displayed only when errors occur.
-
-### Best Practices
-
-- **During Development**: Use `debug` level to check details
-- **During Testing**: Use `info` level to verify execution status
-- **Production Environment**: Use `info` or `warn` level
-- **Silent Operation**: Use `error` level to record errors only
-
-## 4.4 skip_standard_paths - Skip Standard Path Verification
+## 4.3 skip_standard_paths - Skip Standard Path Verification
 
 ### Overview
 
@@ -421,7 +308,7 @@ args = ["pattern", "file.txt"]
 
 Setting `verify_standard_paths = false` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
-## 4.5 vars - Global Internal Variables
+## 4.4 vars - Global Internal Variables
 
 ### Overview
 
@@ -609,7 +496,7 @@ cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
 3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
 4. **Security**: Manage sensitive information in vars and expose via env only when necessary
 
-## 4.6 env_import - System Environment Variable Import
+## 4.5 env_import - System Environment Variable Import
 
 ### Overview
 
@@ -781,7 +668,7 @@ env_import = [
 3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
-## 4.7 env - Global Process Environment Variables
+## 4.6 env - Global Process Environment Variables
 
 ### Overview
 
@@ -992,7 +879,7 @@ env_vars = [
 ]
 ```
 
-## 4.8 env_allowed - Environment Variable Allowlist
+## 4.7 env_allowed - Environment Variable Allowlist
 
 ### Overview
 
@@ -1120,7 +1007,7 @@ env_allowed = [
 env_allowed = ["PATH", "HOME", "USER"]
 ```
 
-## 4.9 verify_files - File Verification List
+## 4.8 verify_files - File Verification List
 
 ### Overview
 
@@ -1230,7 +1117,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 - **Performance**: File hash verification operates efficiently with minimal performance impact
 - **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
-## 4.10 output_size_limit - Maximum Output Size
+## 4.9 output_size_limit - Maximum Output Size
 
 ### Overview
 

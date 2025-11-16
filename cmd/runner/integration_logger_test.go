@@ -266,17 +266,6 @@ func TestErrorHandling(t *testing.T) {
 		errorType   string
 	}{
 		{
-			name: "invalid_log_level",
-			config: bootstrap.LoggerConfig{
-				Level:           "invalid-level",
-				LogDir:          "",
-				RunID:           "test-error-001",
-				SlackWebhookURL: "",
-			},
-			expectError: false, // Should default to INFO and continue
-			errorType:   "",
-		},
-		{
 			name: "invalid_slack_webhook",
 			config: bootstrap.LoggerConfig{
 				Level:           "info",

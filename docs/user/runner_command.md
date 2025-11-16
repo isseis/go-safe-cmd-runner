@@ -778,7 +778,6 @@ runner -config config.toml -log-level error
 
 **Notes**
 
-- Command-line flags take precedence over `global.log_level` in TOML configuration files
 - Sensitive information is automatically masked (passwords, tokens, etc.)
 
 #### `-log-dir <directory>`

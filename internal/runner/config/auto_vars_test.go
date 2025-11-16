@@ -19,7 +19,6 @@ func TestExpandGlobal_AutoVarsGenerated(t *testing.T) {
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
 		Timeout:    &timeout,
-		LogLevel:   runnertypes.LogLevelInfo,
 		EnvAllowed: []string{"PATH"},
 		Vars:       []string{},
 	}
@@ -53,8 +52,7 @@ func TestExpandGlobal_AutoVarsReservedPrefix(t *testing.T) {
 	// Test that user-defined vars cannot use reserved prefix __runner_
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
-		Timeout:  &timeout,
-		LogLevel: runnertypes.LogLevelInfo,
+		Timeout: &timeout,
 		Vars: []string{
 			"__runner_datetime=user_value",
 		},
@@ -71,8 +69,7 @@ func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {
 	// Test that auto variables can be used in vars expansion
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
-		Timeout:  &timeout,
-		LogLevel: runnertypes.LogLevelInfo,
+		Timeout: &timeout,
 		Vars: []string{
 			"output_file=/tmp/backup-%{__runner_datetime}.tar.gz",
 			"lock_file=/var/run/myapp-%{__runner_pid}.lock",
@@ -111,8 +108,7 @@ func TestExpandGlobal_AutoVarsConsistentAcrossExpansions(t *testing.T) {
 	// Test that auto variables have consistent values within a single ExpandGlobal call
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
-		Timeout:  &timeout,
-		LogLevel: runnertypes.LogLevelInfo,
+		Timeout: &timeout,
 		Vars: []string{
 			"file1=/tmp/file1-%{__runner_datetime}.log",
 			"file2=/tmp/file2-%{__runner_datetime}.log",
@@ -158,7 +154,6 @@ func TestExpandGlobal_AutoVarsWithEnvImport(t *testing.T) {
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
 		Timeout:    &timeout,
-		LogLevel:   runnertypes.LogLevelInfo,
 		EnvAllowed: []string{"TEST_VAR"},
 		EnvImport:  []string{"test_var=TEST_VAR"}, // Correct format: internal_name=SYSTEM_VAR
 		Vars: []string{

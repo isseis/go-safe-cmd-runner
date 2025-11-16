@@ -13,9 +13,7 @@ func TestValidateConfigCommand_Valid(t *testing.T) {
 	// Create a valid minimal config
 	cfg := &runnertypes.ConfigSpec{
 		Version: "1.0",
-		Global: runnertypes.GlobalSpec{
-			LogLevel: runnertypes.LogLevelInfo,
-		},
+		Global:  runnertypes.GlobalSpec{},
 		Groups: []runnertypes.GroupSpec{
 			{
 				Name: "test-group",
@@ -44,9 +42,7 @@ func TestValidateConfigCommand_Invalid(t *testing.T) {
 			name: "command with empty name",
 			cfg: &runnertypes.ConfigSpec{
 				Version: "1.0",
-				Global: runnertypes.GlobalSpec{
-					LogLevel: runnertypes.LogLevelInfo,
-				},
+				Global:  runnertypes.GlobalSpec{},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
@@ -66,9 +62,7 @@ func TestValidateConfigCommand_Invalid(t *testing.T) {
 			name: "command with empty cmd",
 			cfg: &runnertypes.ConfigSpec{
 				Version: "1.0",
-				Global: runnertypes.GlobalSpec{
-					LogLevel: runnertypes.LogLevelInfo,
-				},
+				Global:  runnertypes.GlobalSpec{},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",

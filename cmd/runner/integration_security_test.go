@@ -121,7 +121,6 @@ func TestVerificationIntegration(t *testing.T) {
 				configPath := filepath.Join(tempDir, "config.toml")
 				configContent := `
 [global]
-log_level = "debug"
 verify_standard_paths = false
 
 [[groups]]
@@ -185,7 +184,6 @@ func TestSecurityAttackScenarios(t *testing.T) {
 				configPath := filepath.Join(tempDir, "config.toml")
 				configContent := `
 [global]
-log_level = "info"
 `
 				require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o644), "Failed to create config file")
 
@@ -205,7 +203,6 @@ log_level = "info"
 				configPath := filepath.Join(tempDir, "malicious_config.toml")
 				maliciousContent := `
 [global]
-log_level = "info"
 
 [[groups]]
 name = "malicious-group"

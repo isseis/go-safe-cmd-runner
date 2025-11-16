@@ -382,9 +382,6 @@ version = "1.0"
 # Timeout set to 1.5x the longest execution time
 timeout = 900
 
-# Information-level logs only in production
-log_level = "info"
-
 # Due to security requirements, verify system paths as well
 verify_standard_paths = true
 
@@ -409,7 +406,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/opt/deploy"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 # ========================================

@@ -80,7 +80,6 @@ Using the `vars` field, you can define internal variables for TOML expansion onl
 [global]
 vars = [
     "app_dir=/opt/myapp",
-    "log_level=info"
 ]
 
 [[groups]]
@@ -556,7 +555,6 @@ vars = [
     "app_bin=/opt/myapp/bin/myapp",
     "config_dir=/etc/myapp/configs",
     "env_type=development",
-    "log_level=debug",
     "db_url=postgresql://localhost/dev_db"
 ]
 
@@ -576,7 +574,6 @@ vars = [
     "app_bin=/opt/myapp/bin/myapp",
     "config_dir=/etc/myapp/configs",
     "env_type=production",
-    "log_level=info",
     "db_url=postgresql://prod-server/prod_db"
 ]
 ```
@@ -1107,7 +1104,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 env_allowed = ["PATH", "HOME", "USER"]
 env_import = [
     "home=HOME",
@@ -1316,7 +1312,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 env_allowed = ["PATH", "HOME", "USER"]
 env_import = [
     "home=HOME",

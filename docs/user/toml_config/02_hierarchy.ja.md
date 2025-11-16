@@ -42,7 +42,6 @@ version = "1.0"
 [global]
 timeout = 60
 workdir = "/tmp/workspace"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 ```
 
@@ -243,7 +242,6 @@ args = ["Home: %{HOME}, PWD: %{PWD}"]
 | from_env | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
 | env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
 | verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
-| log_level | グローバルのみ | N/A | 下位レベルでオーバーライド不可 |
 
 ### 2.3.6 実践例: 複雑な継承パターン
 

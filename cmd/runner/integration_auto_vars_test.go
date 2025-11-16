@@ -34,7 +34,6 @@ version = "1.0"
 
 [global]
 timeout = 60
-log_level = "info"
 vars = [
     "output_file=%s",
     "backup_file=%%{output_file}.%%{__runner_datetime}.bak",

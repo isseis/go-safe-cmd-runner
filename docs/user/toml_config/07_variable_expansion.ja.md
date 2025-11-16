@@ -80,7 +80,6 @@ env_vars = ["VAR=%{VALUE}"]
 [global]
 vars = [
     "app_dir=/opt/myapp",
-    "log_level=info"
 ]
 
 [[groups]]
@@ -543,7 +542,6 @@ vars = [
 name = "development"
 vars = [
     "env_type=development",
-    "log_level=debug",
     "db_url=postgresql://localhost/dev_db"
 ]
 
@@ -561,7 +559,6 @@ args = [
 name = "production"
 vars = [
     "env_type=production",
-    "log_level=info",
     "db_url=postgresql://prod-server/prod_db"
 ]
 
@@ -926,7 +923,6 @@ vars = [
 # 有効な変数名
 vars = [
     "app_dir=/opt/app",
-    "log_level=info",
     "_private=value"
 ]
 
@@ -1018,7 +1014,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 env_allowed = ["PATH", "HOME", "USER"]
 env_import = [
     "home=HOME",
@@ -1227,7 +1222,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 env_allowed = ["PATH", "HOME", "USER"]
 env_import = [
     "home=HOME",

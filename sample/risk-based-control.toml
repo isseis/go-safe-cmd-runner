@@ -3,7 +3,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 verify_files = ["/etc/ssl/certs/ca-certificates.crt"]
 verify_standard_paths = false
 env_allowed = ["PATH", "HOME", "USER", "LANG"]

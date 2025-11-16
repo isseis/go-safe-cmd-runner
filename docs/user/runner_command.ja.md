@@ -778,7 +778,6 @@ runner -config config.toml -log-level error
 
 **注意事項**
 
-- コマンドラインフラグは TOML設定ファイルの `global.log_level` より優先されます
 - センシティブな情報は自動的にマスクされます（パスワード、トークンなど）
 
 #### `-log-dir <directory>`
