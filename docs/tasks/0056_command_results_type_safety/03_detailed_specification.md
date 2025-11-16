@@ -109,6 +109,7 @@ type LogValuer interface {
 // 出力構造:
 //   GroupValue {
 //     "total_count": int,
+//     "truncated": bool,
 //     "cmd_0": GroupValue { "name": ..., "exit_code": ..., ... },
 //     "cmd_1": GroupValue { ... },
 //     ...
@@ -1149,7 +1150,7 @@ func TestRedactingHandler_CommandResults(t *testing.T) {
     tests := []struct {
         name     string
         results  common.CommandResults
-        validate func(t *testing.T, redacted slog.Value)
+        validate func(t *testing.T, commands any)
     }{
         {
             name: "redact password in output",
@@ -1161,18 +1162,24 @@ func TestRedactingHandler_CommandResults(t *testing.T) {
                     Stderr:   "",
                 }},
             },
-            validate: func(t *testing.T, redacted slog.Value) {
-                // Group 構造が維持されていることを確認
-                assert.Equal(t, slog.KindGroup, redacted.Kind())
+            validate: func(t *testing.T, commands any) {
+                // 型アサーション: any -> map[string]any
+                commandsMap, ok := commands.(map[string]any)
+                require.True(t, ok, "commands should be a map[string]any")
+
+                // total_count と truncated の確認
+                assert.Equal(t, float64(1), commandsMap["total_count"])
+                assert.Equal(t, false, commandsMap["truncated"])
 
                 // cmd_0 の output が redaction されていることを確認
-                attrs := redacted.Group()
-                cmd0 := findAttr(attrs, "cmd_0")
-                cmdAttrs := cmd0.Value.Group()
-                output := findAttr(cmdAttrs, "output")
+                cmd0, ok := commandsMap["cmd_0"].(map[string]any)
+                require.True(t, ok, "cmd_0 should be a map[string]any")
 
-                assert.Contains(t, output.Value.String(), "[REDACTED]")
-                assert.NotContains(t, output.Value.String(), "secret123")
+                output, ok := cmd0["output"].(string)
+                require.True(t, ok, "output should be a string")
+
+                assert.Contains(t, output, "[REDACTED]")
+                assert.NotContains(t, output, "secret123")
             },
         },
     }
