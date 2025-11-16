@@ -562,11 +562,11 @@ func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
 ```
 
 **チェックリスト**:
-- [ ] `extractCommandResultsFromGroup` 関数を実装
-- [ ] デバッグログを追加（5箇所）
-- [ ] メタデータフィールドのスキップ処理
-- [ ] 必須フィールドの検証
-- [ ] コメントを追加
+- [x] `extractCommandResultsFromGroup` 関数を実装
+- [x] デバッグログを追加（5箇所）
+- [x] メタデータフィールドのスキップ処理
+- [x] 必須フィールドの検証
+- [x] コメントを追加
 
 #### 2.2 extractCommandResults の更新
 
@@ -591,9 +591,9 @@ func extractCommandResults(value slog.Value) []commandResultInfo {
 ```
 
 **チェックリスト**:
-- [ ] 既存の `extractCommandResults` を削除
-- [ ] 新しい `extractCommandResults` を実装（wrapper）
-- [ ] コメントを更新
+- [x] 既存の `extractCommandResults` を削除
+- [x] 新しい `extractCommandResults` を実装（wrapper）
+- [x] コメントを更新
 
 #### 2.3 単体テストの作成
 
@@ -735,14 +735,14 @@ func TestExtractCommandResults_Wrapper(t *testing.T) {
 ```
 
 **チェックリスト**:
-- [ ] 正常系テスト（単一コマンド）
-- [ ] 正常系テスト（複数コマンド）
-- [ ] 空 Group のテスト
-- [ ] 非 Group 値のテスト（String, Int）
-- [ ] メタデータのみの Group のテスト
-- [ ] 非 Group 属性のスキップテスト
-- [ ] 必須フィールド欠損のテスト
-- [ ] wrapper 関数のテスト
+- [x] 正常系テスト（単一コマンド）
+- [x] 正常系テスト（複数コマンド）
+- [x] 空 Group のテスト
+- [x] 非 Group 値のテスト（String, Int）
+- [x] メタデータのみの Group のテスト
+- [x] 非 Group 属性のスキップテスト
+- [x] 必須フィールド欠損のテスト
+- [x] wrapper 関数のテスト
 
 #### 2.4 RedactingHandler 統合テストの作成
 
@@ -843,10 +843,10 @@ func TestRedactingHandler_CommandResults_Integration(t *testing.T) {
 ```
 
 **チェックリスト**:
-- [ ] password redaction のテスト
-- [ ] 複数フィールドの redaction のテスト
-- [ ] 非機密情報の保持テスト
-- [ ] JSON 出力形式の確認
+- [x] password redaction のテスト
+- [x] 複数フィールドの redaction のテスト
+- [x] 非機密情報の保持テスト
+- [x] JSON 出力形式の確認
 
 #### 2.5 コードフォーマットとリント
 
@@ -858,18 +858,18 @@ make test
 ```
 
 **チェックリスト**:
-- [ ] `make fmt` でフォーマット
-- [ ] `make lint` でエラーなし
-- [ ] `make test` で全テスト通過
+- [x] `make fmt` でフォーマット
+- [x] `make lint` でエラーなし
+- [x] `make test` で全テスト通過
 
 ### Phase 2 成功基準
 
-- [ ] `extractCommandResultsFromGroup` が実装されている
-- [ ] `extractCommandResults` が wrapper になっている
-- [ ] 単体テストが通過
-- [ ] RedactingHandler 統合テストが通過
-- [ ] すべてのテストが通過
-- [ ] リンターエラーなし
+- [x] `extractCommandResultsFromGroup` が実装されている
+- [x] `extractCommandResults` が wrapper になっている
+- [x] 単体テストが通過
+- [x] RedactingHandler 統合テストが通過
+- [x] すべてのテストが通過
+- [x] リンターエラーなし
 - [ ] コードレビューで承認
 
 ## Phase 3: 使用箇所の一括更新

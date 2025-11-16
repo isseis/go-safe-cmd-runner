@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 )
 
@@ -1146,6 +1147,90 @@ func TestRedactingHandler_LogValuerWithCommandResult(t *testing.T) {
 	assert.Contains(t, output, "token=[REDACTED]")
 	assert.NotContains(t, output, "secret123")
 	assert.NotContains(t, output, "abc456")
+}
+
+func TestRedactingHandler_CommandResults_Integration(t *testing.T) {
+	tests := []struct {
+		name     string
+		results  common.CommandResults
+		validate func(t *testing.T, output string)
+	}{
+		{
+			name: "redact password in output",
+			results: common.CommandResults{
+				{CommandResultFields: common.CommandResultFields{
+					Name:     "setup",
+					ExitCode: 0,
+					Output:   "Database password=secret123 configured",
+					Stderr:   "",
+				}},
+			},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "[REDACTED]")
+				assert.NotContains(t, output, "secret123")
+				assert.Contains(t, output, "Database")
+				assert.Contains(t, output, "configured")
+			},
+		},
+		{
+			name: "redact multiple sensitive fields",
+			results: common.CommandResults{
+				{CommandResultFields: common.CommandResultFields{
+					Name:     "deploy",
+					ExitCode: 0,
+					Output:   "API key=sk-1234567890abcdef set",
+					Stderr:   "",
+				}},
+				{CommandResultFields: common.CommandResultFields{
+					Name:     "configure",
+					ExitCode: 0,
+					Output:   "",
+					Stderr:   "Warning: token=ghp_xxxxxxxxxxxx expired",
+				}},
+			},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "[REDACTED]")
+				assert.NotContains(t, output, "sk-1234567890abcdef")
+				assert.NotContains(t, output, "ghp_xxxxxxxxxxxx")
+				assert.Contains(t, output, "API")
+				assert.Contains(t, output, "Warning")
+			},
+		},
+		{
+			name: "preserve non-sensitive output",
+			results: common.CommandResults{
+				{CommandResultFields: common.CommandResultFields{
+					Name:     "test",
+					ExitCode: 0,
+					Output:   "All tests passed",
+					Stderr:   "",
+				}},
+			},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "All tests passed")
+				assert.NotContains(t, output, "[REDACTED]")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			handler := slog.NewJSONHandler(&buf, nil)
+			config := DefaultConfig()
+			redactingHandler := NewRedactingHandler(handler, config, nil)
+			logger := slog.New(redactingHandler)
+
+			logger.Info("test",
+				slog.String(common.GroupSummaryAttrs.Status, "success"),
+				slog.String(common.GroupSummaryAttrs.Group, "test_group"),
+				slog.Any(common.GroupSummaryAttrs.Commands, tt.results),
+			)
+
+			output := buf.String()
+			tt.validate(t, output)
+		})
+	}
 }
 
 // TestRedactingHandler_DeepRecursion tests recursion depth limiting

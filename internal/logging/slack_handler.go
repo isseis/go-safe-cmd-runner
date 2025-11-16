@@ -255,75 +255,89 @@ type commandResultInfo struct {
 	common.CommandResultFields
 }
 
-// extractCommandResults extracts command results from slog.Value containing []common.CommandResult
-// Each CommandResult implements slog.LogValuer, so we need to call LogValue() to get the group.
-//
-// IMPORTANT: Field keys must match common.LogField* constants defined in internal/common/logschema.go:
-//   - common.LogFieldName     -> string (command name)
-//   - common.LogFieldExitCode -> int (command exit code)
-//   - common.LogFieldOutput   -> string (command stdout)
-//   - common.LogFieldStderr   -> string (command stderr)
-//
-// NOTE: After passing through RedactingHandler, []common.CommandResult is converted to []any.
-// This function handles both cases for compatibility.
-func extractCommandResults(value slog.Value) []commandResultInfo {
-	var commands []commandResultInfo
+const commandResultsMetadataAttrCount = 2 // total_count + truncated
 
-	// The value is slog.KindAny containing a slice type
-	if value.Kind() != slog.KindAny {
-		return commands
+// extractCommandResultsFromGroup extracts command result information from a slog.Group value.
+//
+// 入力となる groupValue は CommandResults.LogValue() が生成した構造を想定しており、
+// メタデータ(total_count / truncated)と cmd_N 形式の Group 属性を含む。
+// 不正な形式の場合は nil を返し、詳細をデバッグログに記録する。
+func extractCommandResultsFromGroup(groupValue slog.Value) []commandResultInfo {
+	if groupValue.Kind() != slog.KindGroup {
+		slog.Debug("Command results extraction failed: unexpected value kind",
+			"expected", slog.KindGroup,
+			"actual", groupValue.Kind(),
+			"function", "extractCommandResultsFromGroup",
+		)
+		return nil
 	}
 
-	anyVal := value.Any()
-
-	// slog doesn't automatically resolve LogValuer interfaces in slices,
-	// so we need to manually call LogValue() for each element.
-	// The production code passes []common.CommandResult.
-	// However, after passing through RedactingHandler, it becomes []any with []slog.Attr elements.
-
-	// Try []common.CommandResult first (direct case without RedactingHandler)
-	if slice, ok := anyVal.([]common.CommandResult); ok {
-		for _, cmdResult := range slice {
-			// Call LogValue() to get the slog.Value
-			logValue := cmdResult.LogValue()
-			if logValue.Kind() == slog.KindGroup {
-				attrs := logValue.Group()
-				cmdInfo := extractFromAttrs(attrs)
-				commands = append(commands, cmdInfo)
-			}
-		}
-		return commands
+	attrs := groupValue.Group()
+	if len(attrs) == 0 {
+		slog.Debug("Command results extraction: empty group",
+			"function", "extractCommandResultsFromGroup",
+		)
+		return nil
 	}
 
-	// Try []any (after RedactingHandler conversion)
-	if anySlice, ok := anyVal.([]any); ok {
-		for _, elem := range anySlice {
-			// Check if element is CommandResult
-			if cmdResult, ok := elem.(common.CommandResult); ok {
-				logValue := cmdResult.LogValue()
-				if logValue.Kind() == slog.KindGroup {
-					attrs := logValue.Group()
-					cmdInfo := extractFromAttrs(attrs)
-					commands = append(commands, cmdInfo)
-				}
-			} else if logValue, ok := elem.(slog.Value); ok {
-				// Element might be already a slog.Value (from redaction processing)
-				if logValue.Kind() == slog.KindGroup {
-					attrs := logValue.Group()
-					cmdInfo := extractFromAttrs(attrs)
-					commands = append(commands, cmdInfo)
-				}
-			} else if attrs, ok := elem.([]slog.Attr); ok {
-				// Element is []slog.Attr (from RedactingHandler processing of Group values)
-				// This happens when RedactingHandler calls redactedAttr.Value.Any() on a Group
-				cmdInfo := extractFromAttrs(attrs)
-				commands = append(commands, cmdInfo)
-			}
+	estimatedCmdCount := len(attrs) - commandResultsMetadataAttrCount
+	if estimatedCmdCount < 0 {
+		estimatedCmdCount = 0
+	}
+
+	commands := make([]commandResultInfo, 0, estimatedCmdCount)
+	skipped := 0
+
+	for i, attr := range attrs {
+		if attr.Key == "total_count" || attr.Key == "truncated" {
+			continue
 		}
-		return commands
+
+		if attr.Value.Kind() != slog.KindGroup {
+			slog.Debug("Skipping non-group attribute in command results",
+				"index", i,
+				"key", attr.Key,
+				"kind", attr.Value.Kind(),
+				"function", "extractCommandResultsFromGroup",
+			)
+			skipped++
+			continue
+		}
+
+		cmdAttrs := attr.Value.Group()
+		cmdInfo := extractFromAttrs(cmdAttrs)
+
+		if cmdInfo.Name == "" {
+			slog.Debug("Skipping command result with missing name",
+				"index", i,
+				"key", attr.Key,
+				"function", "extractCommandResultsFromGroup",
+			)
+			skipped++
+			continue
+		}
+
+		commands = append(commands, cmdInfo)
+	}
+
+	if skipped > 0 {
+		slog.Debug("Command results extraction completed with some skipped items",
+			"extracted", len(commands),
+			"skipped", skipped,
+			"total_attrs", len(attrs),
+			"function", "extractCommandResultsFromGroup",
+		)
 	}
 
 	return commands
+}
+
+// extractCommandResults extracts command result information from log values.
+//
+// CommandResults.LogValue() が生成した Group 構造のみをサポートし、旧形式の []CommandResult / []any
+// には対応しない（Task0056 の一括移行方針）。
+func extractCommandResults(value slog.Value) []commandResultInfo {
+	return extractCommandResultsFromGroup(value.Resolve())
 }
 
 // extractFromAttrs extracts commandResultInfo from a slice of slog.Attr

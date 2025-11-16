@@ -433,7 +433,7 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				slog.String(common.GroupSummaryAttrs.Status, "success"),
 				slog.String(common.GroupSummaryAttrs.Group, "test-group"),
 				slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
-				slog.Any(common.GroupSummaryAttrs.Commands, []common.CommandResult{
+				slog.Any(common.GroupSummaryAttrs.Commands, common.CommandResults{
 					{
 						CommandResultFields: common.CommandResultFields{
 							Name:     "echo test",
@@ -722,7 +722,7 @@ func TestSlackHandler_WithRedactingHandler(t *testing.T) {
 		slog.String(common.GroupSummaryAttrs.Status, "success"),
 		slog.String(common.GroupSummaryAttrs.Group, "test-group"),
 		slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
-		slog.Any(common.GroupSummaryAttrs.Commands, []common.CommandResult{
+		slog.Any(common.GroupSummaryAttrs.Commands, common.CommandResults{
 			{
 				CommandResultFields: common.CommandResultFields{
 					Name:     "test-cmd-1",
@@ -770,120 +770,144 @@ func TestSlackHandler_WithRedactingHandler(t *testing.T) {
 	assert.Len(t, commandFields, 2, "Should have 2 command fields")
 }
 
-// TestExtractCommandResults_AfterRedaction tests that extractCommandResults can handle
-// both []common.CommandResult (direct) and []any (after RedactingHandler conversion)
-func TestExtractCommandResults_AfterRedaction(t *testing.T) {
+func TestExtractCommandResultsFromGroup(t *testing.T) {
 	tests := []struct {
 		name     string
-		value    slog.Value
-		expected int // expected number of commands
+		input    slog.Value
+		expected []commandResultInfo
+		wantNil  bool
 	}{
 		{
-			name: "direct []common.CommandResult",
-			value: slog.AnyValue([]common.CommandResult{
-				{
-					CommandResultFields: common.CommandResultFields{
-						Name:     "test1",
-						ExitCode: 0,
-						Output:   "output1",
-						Stderr:   "",
-					},
-				},
-				{
-					CommandResultFields: common.CommandResultFields{
-						Name:     "test2",
-						ExitCode: 1,
-						Output:   "",
-						Stderr:   "error2",
-					},
-				},
-			}),
-			expected: 2,
+			name: "valid group structure with single command",
+			input: common.CommandResults{
+				{CommandResultFields: common.CommandResultFields{
+					Name:     "test1",
+					ExitCode: 0,
+					Output:   "ok",
+					Stderr:   "",
+				}},
+			}.LogValue(),
+			expected: []commandResultInfo{
+				{CommandResultFields: common.CommandResultFields{Name: "test1", ExitCode: 0, Output: "ok", Stderr: ""}},
+			},
+			wantNil: false,
 		},
 		{
-			name: "[]any with CommandResult elements (after RedactingHandler)",
-			value: slog.AnyValue([]any{
-				common.CommandResult{
-					CommandResultFields: common.CommandResultFields{
-						Name:     "test1",
-						ExitCode: 0,
-						Output:   "output1",
-						Stderr:   "",
-					},
-				},
-				common.CommandResult{
-					CommandResultFields: common.CommandResultFields{
-						Name:     "test2",
-						ExitCode: 1,
-						Output:   "",
-						Stderr:   "error2",
-					},
-				},
-			}),
-			expected: 2,
+			name: "valid group structure with multiple commands",
+			input: common.CommandResults{
+				{CommandResultFields: common.CommandResultFields{Name: "test1", ExitCode: 0, Output: "out1", Stderr: ""}},
+				{CommandResultFields: common.CommandResultFields{Name: "test2", ExitCode: 1, Output: "", Stderr: "err2"}},
+				{CommandResultFields: common.CommandResultFields{Name: "test3", ExitCode: 0, Output: "out3", Stderr: "warn3"}},
+			}.LogValue(),
+			expected: []commandResultInfo{
+				{CommandResultFields: common.CommandResultFields{Name: "test1", ExitCode: 0, Output: "out1", Stderr: ""}},
+				{CommandResultFields: common.CommandResultFields{Name: "test2", ExitCode: 1, Output: "", Stderr: "err2"}},
+				{CommandResultFields: common.CommandResultFields{Name: "test3", ExitCode: 0, Output: "out3", Stderr: "warn3"}},
+			},
+			wantNil: false,
 		},
 		{
-			name: "[]any with slog.Value elements (redacted groups)",
-			value: slog.AnyValue([]any{
-				slog.GroupValue(
-					slog.String(common.LogFieldName, "test1"),
+			name:     "empty group",
+			input:    slog.GroupValue(),
+			expected: nil,
+			wantNil:  true,
+		},
+		{
+			name:     "non-group value - string",
+			input:    slog.StringValue("invalid"),
+			expected: nil,
+			wantNil:  true,
+		},
+		{
+			name:     "non-group value - int",
+			input:    slog.IntValue(123),
+			expected: nil,
+			wantNil:  true,
+		},
+		{
+			name: "group with metadata only",
+			input: slog.GroupValue(
+				slog.Int("total_count", 0),
+				slog.Bool("truncated", false),
+			),
+			expected: []commandResultInfo{},
+			wantNil:  false,
+		},
+		{
+			name: "group with non-group attribute - skip it",
+			input: slog.GroupValue(
+				slog.Int("total_count", 2),
+				slog.Bool("truncated", false),
+				slog.String("invalid_attr", "should be skipped"),
+				slog.Group("cmd_0",
+					slog.String(common.LogFieldName, "valid"),
 					slog.Int(common.LogFieldExitCode, 0),
-					slog.String(common.LogFieldOutput, "output1"),
+					slog.String(common.LogFieldOutput, ""),
 					slog.String(common.LogFieldStderr, ""),
 				),
-				slog.GroupValue(
-					slog.String(common.LogFieldName, "test2"),
-					slog.Int(common.LogFieldExitCode, 1),
-					slog.String(common.LogFieldOutput, ""),
-					slog.String(common.LogFieldStderr, "error2"),
-				),
-			}),
-			expected: 2,
+			),
+			expected: []commandResultInfo{
+				{CommandResultFields: common.CommandResultFields{Name: "valid", ExitCode: 0, Output: "", Stderr: ""}},
+			},
+			wantNil: false,
 		},
 		{
-			name: "[]any with []slog.Attr elements (after RedactingHandler Group.Any())",
-			value: slog.AnyValue([]any{
-				[]slog.Attr{
-					slog.String(common.LogFieldName, "test1"),
+			name: "command with missing name - skip it",
+			input: slog.GroupValue(
+				slog.Int("total_count", 2),
+				slog.Bool("truncated", false),
+				slog.Group("cmd_0",
 					slog.Int(common.LogFieldExitCode, 0),
-					slog.String(common.LogFieldOutput, "output1"),
-					slog.String(common.LogFieldStderr, ""),
-				},
-				[]slog.Attr{
-					slog.String(common.LogFieldName, "test2"),
-					slog.Int(common.LogFieldExitCode, 1),
 					slog.String(common.LogFieldOutput, ""),
-					slog.String(common.LogFieldStderr, "error2"),
-				},
-			}),
-			expected: 2,
-		},
-		{
-			name:     "empty slice",
-			value:    slog.AnyValue([]common.CommandResult{}),
-			expected: 0,
-		},
-		{
-			name:     "wrong type",
-			value:    slog.StringValue("not a slice"),
-			expected: 0,
+					slog.String(common.LogFieldStderr, ""),
+				),
+				slog.Group("cmd_1",
+					slog.String(common.LogFieldName, "valid"),
+					slog.Int(common.LogFieldExitCode, 0),
+					slog.String(common.LogFieldOutput, ""),
+					slog.String(common.LogFieldStderr, ""),
+				),
+			),
+			expected: []commandResultInfo{
+				{CommandResultFields: common.CommandResultFields{Name: "valid", ExitCode: 0, Output: "", Stderr: ""}},
+			},
+			wantNil: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := extractCommandResults(tt.value)
-			assert.Len(t, results, tt.expected, "should extract correct number of command results")
-
-			// Verify the extracted data for non-empty cases
-			if tt.expected > 0 && len(results) > 0 {
-				assert.Equal(t, "test1", results[0].Name, "first command name should match")
-				assert.Equal(t, 0, results[0].ExitCode, "first command exit code should match")
-			}
-			if tt.expected > 1 && len(results) > 1 {
-				assert.Equal(t, "test2", results[1].Name, "second command name should match")
-				assert.Equal(t, 1, results[1].ExitCode, "second command exit code should match")
+			result := extractCommandResultsFromGroup(tt.input)
+			if tt.wantNil {
+				assert.Nil(t, result)
+			} else {
+				assert.Equal(t, tt.expected, result)
 			}
 		})
 	}
+}
+
+func TestExtractCommandResults_Wrapper(t *testing.T) {
+	t.Run("group value input", func(t *testing.T) {
+		input := common.CommandResults{
+			{CommandResultFields: common.CommandResultFields{Name: "test", ExitCode: 0}},
+		}.LogValue()
+
+		result := extractCommandResults(input)
+
+		assert.Len(t, result, 1)
+		assert.Equal(t, "test", result[0].Name)
+	})
+
+	t.Run("log valuer input resolves", func(t *testing.T) {
+		input := slog.AnyValue(common.CommandResults{
+			{CommandResultFields: common.CommandResultFields{Name: "fromLogValuer", ExitCode: 2}},
+		})
+
+		result := extractCommandResults(input)
+
+		require.Len(t, result, 1)
+		assert.Equal(t, "fromLogValuer", result[0].Name)
+		assert.Equal(t, 2, result[0].ExitCode)
+	})
 }
