@@ -140,6 +140,26 @@ for _, elem := range sliceValue {
 
 型保持を実装する技術的な方法は存在しますが、複雑さとオーバーヘッドが、ログシステムにおける利益を上回ります。
 
+## 関連プロジェクト
+
+### CommandResults 型安全性改善プロジェクト
+
+`[]CommandResult` のログ処理における型変換問題を根本から解決するプロジェクトが進行中です。
+
+**問題:**
+- RedactingHandler によるスライス型変換により、`extractCommandResults` で複雑な型アサーションが必要
+- 型安全性の欠如とパフォーマンスオーバーヘッド
+
+**解決策:**
+- スライス全体で LogValuer を実装する `CommandResults` 型を導入
+- Group 構造を使用してスライス型変換を回避
+
+**詳細:**
+- [プロジェクト要件定義書](../tasks/0056_command_results_type_safety/01_requirements.md)
+- [アーキテクチャ設計書](../tasks/0056_command_results_type_safety/02_architecture.md)
+
+このプロジェクトにより、本ドキュメントで説明する型変換の問題が、特定のユースケース（CommandResults）において解決されます。
+
 ## 参照
 
 - 実装: [internal/redaction/redactor.go](../../internal/redaction/redactor.go)
