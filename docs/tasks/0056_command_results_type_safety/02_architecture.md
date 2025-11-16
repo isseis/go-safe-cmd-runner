@@ -1348,7 +1348,7 @@ func (cr CommandResults) LogValue() slog.Value {
         truncated = true
     }
 
-    attrs := make([]any, 0, len(commandsToLog)+2) // +2 for metadata
+    attrs := make([]slog.Attr, 0, len(commandsToLog)+3) // +2 for metadata, +1 for optional note
 
     // メタデータを追加
     attrs = append(attrs,
