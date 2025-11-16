@@ -129,6 +129,11 @@ const (
 	// MaxLoggedCommands bounds the number of command results that will be emitted in a single log record.
 	// This keeps log payload sizes predictable when groups execute very large command sets.
 	MaxLoggedCommands = 100
+
+	// CommandResultsMetadataAttrCount is the number of metadata attributes in CommandResults.LogValue() output.
+	// These metadata attributes (total_count, truncated) appear before the command entries.
+	// This constant is used for slice capacity pre-allocation in both LogValue() and extraction logic.
+	CommandResultsMetadataAttrCount = 2
 )
 
 // CommandResults is a slice wrapper that implements slog.LogValuer for the entire collection.
@@ -154,8 +159,7 @@ func (cr CommandResults) LogValue() slog.Value {
 		truncated = true
 	}
 
-	const metadataAttrCount = 2 // total_count + truncated
-	attrs := make([]slog.Attr, 0, len(commandsToLog)+metadataAttrCount)
+	attrs := make([]slog.Attr, 0, len(commandsToLog)+CommandResultsMetadataAttrCount)
 	attrs = append(attrs,
 		slog.Int("total_count", len(cr)),
 		slog.Bool("truncated", truncated),
