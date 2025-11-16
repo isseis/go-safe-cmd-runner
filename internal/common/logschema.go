@@ -1,7 +1,10 @@
 // Package common provides shared types and utilities used across the application
 package common
 
-import "log/slog"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // Log field keys for CommandResult structured logging
 // These constants ensure consistency between log value creation (runner.CommandResult.LogValue())
@@ -120,4 +123,53 @@ func (c CommandResult) LogValue() slog.Value {
 		slog.String(LogFieldOutput, c.Output),
 		slog.String(LogFieldStderr, c.Stderr),
 	)
+}
+
+const (
+	// MaxLoggedCommands bounds the number of command results that will be emitted in a single log record.
+	// This keeps log payload sizes predictable when groups execute very large command sets.
+	MaxLoggedCommands = 100
+)
+
+// CommandResults is a slice wrapper that implements slog.LogValuer for the entire collection.
+// It produces a stable Group structure so downstream handlers do not need to inspect individual elements.
+type CommandResults []CommandResult
+
+// Compile-time guard to ensure CommandResults implements slog.LogValuer.
+var _ slog.LogValuer = CommandResults(nil)
+
+// LogValue structures command results as a slog.GroupValue with metadata and truncated command entries.
+// Sensitive data can then be redacted at the Group level without triggering slog's slice processing path.
+func (cr CommandResults) LogValue() slog.Value {
+	if len(cr) == 0 {
+		return slog.GroupValue(
+			slog.Int("total_count", 0),
+		)
+	}
+
+	commandsToLog := cr
+	truncated := false
+	if len(cr) > MaxLoggedCommands {
+		commandsToLog = cr[:MaxLoggedCommands]
+		truncated = true
+	}
+
+	const metadataAttrCount = 2 // total_count + truncated
+	attrs := make([]slog.Attr, 0, len(commandsToLog)+metadataAttrCount)
+	attrs = append(attrs,
+		slog.Int("total_count", len(cr)),
+		slog.Bool("truncated", truncated),
+	)
+
+	for i, cmd := range commandsToLog {
+		attrs = append(attrs, slog.Group(
+			fmt.Sprintf("cmd_%d", i),
+			slog.String(LogFieldName, cmd.Name),
+			slog.Int(LogFieldExitCode, cmd.ExitCode),
+			slog.String(LogFieldOutput, cmd.Output),
+			slog.String(LogFieldStderr, cmd.Stderr),
+		))
+	}
+
+	return slog.GroupValue(attrs...)
 }
