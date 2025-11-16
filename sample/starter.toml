@@ -11,6 +11,8 @@ timeout = 30
 log_level = "info"
 # Allow only essential environment variables
 env_allowed = ["PATH", "HOME"]
+# Skip hash verification for commands in standard paths
+verify_standard_paths = false
 
 # Define a simple group with a few basic commands
 [[groups]]

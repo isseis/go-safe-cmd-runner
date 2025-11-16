@@ -126,10 +126,26 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Setup logging early (using command-line log level only)
+	// This allows verification manager creation logs to use custom formatters
+	// Parse log level string to LogLevel type
+	logLevelValue, err := parseLogLevel(*logLevel, runID)
+	if err != nil {
+		return err
+	}
+	// Determine console output destination based on dry-run format
+	// For JSON format, send logs to stderr to keep stdout clean for JSON output
+	consoleWriter := os.Stdout
+	if *dryRun && *dryRunFormat == "json" {
+		consoleWriter = os.Stderr
+	}
+	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet, consoleWriter); err != nil {
+		return err
+	}
+
 	// Initialize verification manager with secure default hash directory
 	// For dry-run mode, skip hash directory validation since no actual file verification is needed
 	var verificationManager *verification.Manager
-	var err error
 	if *dryRun {
 		verificationManager, err = verification.NewManagerForDryRun()
 	} else {
@@ -163,21 +179,11 @@ func run(runID string) error {
 		return nil
 	}
 
-	// Setup logging (using bootstrap package)
-	// Parse log level string to LogLevel type
-	logLevelValue, err := parseLogLevel(*logLevel, runID)
-	if err != nil {
-		return err
-	}
-	// Determine console output destination based on dry-run format
-	// For JSON format, send logs to stderr to keep stdout clean for JSON output
-	consoleWriter := os.Stdout
-	if *dryRun && *dryRunFormat == "json" {
-		consoleWriter = os.Stderr
-	}
-	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet, consoleWriter); err != nil {
-		return err
-	}
+	// Log verification and configuration summary after config is loaded
+	slog.Info("Verification and configuration completed",
+		"config_path", *configPath,
+		"hash_directory", cmdcommon.DefaultHashDirectory,
+		"dry_run", *dryRun)
 
 	// Expand global configuration
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
@@ -267,14 +273,6 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	// Load system environment variables
 	if err := r.LoadSystemEnvironment(); err != nil {
 		return fmt.Errorf("failed to load environment: %w", err)
-	}
-
-	if *logLevel != "" {
-		level, err := parseLogLevel(*logLevel, runID)
-		if err != nil {
-			return err
-		}
-		cfg.Global.LogLevel = level
 	}
 
 	// Ensure cleanup of all resources on exit

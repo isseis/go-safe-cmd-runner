@@ -51,7 +51,7 @@ func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
 		}
 	}
 
-	slog.Info("Config file verification and reading completed successfully",
+	slog.Debug("Config file verification and reading completed successfully",
 		"config_path", configPath,
 		"hash_directory", m.hashDir,
 		"content_size", len(content))
