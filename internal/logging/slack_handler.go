@@ -105,6 +105,15 @@ type SlackAttachmentField struct {
 	Short bool   `json:"short"`
 }
 
+// SlackHandlerOptions holds configuration for creating a SlackHandler
+type SlackHandlerOptions struct {
+	WebhookURL    string        // Slack webhook URL (required)
+	RunID         string        // Run ID for tracking (required)
+	HTTPClient    *http.Client  // Custom HTTP client (optional, defaults to client with httpTimeout)
+	BackoffConfig BackoffConfig // Retry backoff configuration (optional, defaults to DefaultBackoffConfig)
+	IsDryRun      bool          // If true, suppresses actual Slack notifications (used for dry-run mode)
+}
+
 // validateWebhookURL validates that the webhook URL is a valid HTTPS URL
 func validateWebhookURL(webhookURL string) error {
 	if webhookURL == "" {
@@ -127,34 +136,52 @@ func validateWebhookURL(webhookURL string) error {
 	return nil
 }
 
-// NewSlackHandler creates a new SlackHandler with URL validation and default backoff configuration
-// isDryRun suppresses actual Slack notifications when true (used for dry-run mode)
-func NewSlackHandler(webhookURL, runID string, isDryRun bool) (*SlackHandler, error) {
-	return NewSlackHandlerWithConfig(webhookURL, runID, DefaultBackoffConfig, isDryRun)
-}
-
-// NewSlackHandlerWithConfig creates a new SlackHandler with URL validation and custom backoff configuration
-// isDryRun suppresses actual Slack notifications when true (used for dry-run mode)
-func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig, isDryRun bool) (*SlackHandler, error) {
-	return NewSlackHandlerWithHTTPClient(webhookURL, runID, &http.Client{Timeout: httpTimeout}, config, isDryRun)
-}
-
 // NewSlackHandlerWithHTTPClient creates a new SlackHandler with URL validation, custom HTTP client, and custom backoff configuration
-// This is useful for testing with mock servers that use self-signed certificates
-// isDryRun suppresses actual Slack notifications when true (used for dry-run mode)
+// Deprecated: Use NewSlackHandlerWithOptions instead
 func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Client, config BackoffConfig, isDryRun bool) (*SlackHandler, error) {
-	if err := validateWebhookURL(webhookURL); err != nil {
+	return NewSlackHandlerWithOptions(SlackHandlerOptions{
+		WebhookURL:    webhookURL,
+		RunID:         runID,
+		HTTPClient:    httpClient,
+		BackoffConfig: config,
+		IsDryRun:      isDryRun,
+	})
+}
+
+// NewSlackHandlerWithOptions creates a new SlackHandler with the provided options
+// This is the preferred way to create a SlackHandler as it allows for easy addition of new configuration options
+func NewSlackHandlerWithOptions(opts SlackHandlerOptions) (*SlackHandler, error) {
+	if err := validateWebhookURL(opts.WebhookURL); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount), slog.Bool("dry_run", isDryRun))
+	// Apply defaults for optional fields
+	httpClient := opts.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: httpTimeout}
+	}
+
+	backoffConfig := opts.BackoffConfig
+	// If backoff config is zero-valued, use defaults
+	if backoffConfig.Base == 0 && backoffConfig.RetryCount == 0 {
+		backoffConfig = DefaultBackoffConfig
+	}
+
+	slog.Debug("Creating Slack handler",
+		slog.String("webhook_url", opts.WebhookURL),
+		slog.String("run_id", opts.RunID),
+		slog.Duration("timeout", httpClient.Timeout),
+		slog.Duration("backoff_base", backoffConfig.Base),
+		slog.Int("retry_count", backoffConfig.RetryCount),
+		slog.Bool("dry_run", opts.IsDryRun))
+
 	return &SlackHandler{
-		webhookURL:    webhookURL,
-		runID:         runID,
+		webhookURL:    opts.WebhookURL,
+		runID:         opts.RunID,
 		httpClient:    httpClient,
 		level:         slog.LevelInfo, // Only handle info level and above
-		backoffConfig: config,
-		isDryRun:      isDryRun,
+		backoffConfig: backoffConfig,
+		isDryRun:      opts.IsDryRun,
 	}, nil
 }
 

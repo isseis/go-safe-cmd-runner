@@ -134,7 +134,11 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	// 4. Slack notification handler (optional)
 	var slackHandler slog.Handler
 	if config.SlackWebhookURL != "" {
-		sh, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID, config.DryRun)
+		sh, err := logging.NewSlackHandlerWithOptions(logging.SlackHandlerOptions{
+			WebhookURL: config.SlackWebhookURL,
+			RunID:      config.RunID,
+			IsDryRun:   config.DryRun,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to create Slack handler: %w", err)
 		}

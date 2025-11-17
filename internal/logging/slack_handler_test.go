@@ -267,51 +267,79 @@ func TestValidateWebhookURL(t *testing.T) {
 	}
 }
 
-func TestNewSlackHandler_URLValidation(t *testing.T) {
+func TestNewSlackHandlerWithOptions(t *testing.T) {
 	tests := []struct {
 		name        string
-		url         string
-		runID       string
+		opts        SlackHandlerOptions
 		expectError bool
+		validate    func(t *testing.T, handler *SlackHandler)
 	}{
 		{
-			name:        "valid URL and run ID",
-			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-			runID:       "test-run-123",
+			name: "minimal options with defaults",
+			opts: SlackHandlerOptions{
+				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:      "test-run-123",
+			},
 			expectError: false,
+			validate: func(t *testing.T, handler *SlackHandler) {
+				assert.NotNil(t, handler.httpClient, "HTTP client should be set to default")
+				assert.Equal(t, DefaultBackoffConfig, handler.backoffConfig, "Backoff config should be default")
+				assert.False(t, handler.isDryRun, "IsDryRun should be false by default")
+			},
 		},
 		{
-			name:        "invalid URL",
-			url:         "http://invalid-url",
-			runID:       "test-run-123",
+			name: "all options specified",
+			opts: SlackHandlerOptions{
+				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:      "test-run-456",
+				HTTPClient: &http.Client{Timeout: 10 * time.Second},
+				BackoffConfig: BackoffConfig{
+					Base:       3 * time.Second,
+					RetryCount: 5,
+				},
+				IsDryRun: true,
+			},
+			expectError: false,
+			validate: func(t *testing.T, handler *SlackHandler) {
+				assert.Equal(t, 10*time.Second, handler.httpClient.Timeout, "Custom HTTP client should be used")
+				assert.Equal(t, 3*time.Second, handler.backoffConfig.Base, "Custom backoff base should be used")
+				assert.Equal(t, 5, handler.backoffConfig.RetryCount, "Custom retry count should be used")
+				assert.True(t, handler.isDryRun, "IsDryRun should be true")
+			},
+		},
+		{
+			name: "invalid webhook URL",
+			opts: SlackHandlerOptions{
+				WebhookURL: "http://invalid-url",
+				RunID:      "test-run-789",
+			},
 			expectError: true,
 		},
 		{
-			name:        "empty URL",
-			url:         "",
-			runID:       "test-run-123",
+			name: "empty webhook URL",
+			opts: SlackHandlerOptions{
+				WebhookURL: "",
+				RunID:      "test-run-789",
+			},
 			expectError: true,
-		},
-		{
-			name:        "valid URL with empty run ID (should work)",
-			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-			runID:       "",
-			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler, err := NewSlackHandler(tt.url, tt.runID, false)
+			handler, err := NewSlackHandlerWithOptions(tt.opts)
 
 			if tt.expectError {
-				require.Error(t, err, "Expected error for URL: %s", tt.url)
+				require.Error(t, err, "Expected error for invalid options")
 				assert.Nil(t, handler, "Expected nil handler when error occurs")
 			} else {
-				require.NoError(t, err, "Unexpected error for valid input")
-				require.NotNil(t, handler, "Expected non-nil handler for valid input")
-				assert.Equal(t, tt.url, handler.webhookURL, "Webhook URL should match")
-				assert.Equal(t, tt.runID, handler.runID, "Run ID should match")
+				require.NoError(t, err, "Unexpected error for valid options")
+				require.NotNil(t, handler, "Expected non-nil handler for valid options")
+				assert.Equal(t, tt.opts.WebhookURL, handler.webhookURL, "Webhook URL should match")
+				assert.Equal(t, tt.opts.RunID, handler.runID, "Run ID should match")
+				if tt.validate != nil {
+					tt.validate(t, handler)
+				}
 			}
 		})
 	}
