@@ -1063,6 +1063,148 @@ jobs:
 - エラーメッセージは stderr に出力されます
 - ログレベルの設定は引き続き有効です
 
+#### `--groups <names>`
+
+**概要**
+
+実行するグループをカンマ区切りで指定します。指定しない場合は、設定ファイル内のすべてのグループが実行されます。
+
+**文法**
+
+```bash
+runner -config <path> --groups <names>
+```
+
+**パラメータ**
+
+- `<names>`: 実行するグループ名をカンマ区切りで指定（例: `build,test,deploy`）
+
+**グループ名の命名規則**
+
+グループ名は環境変数と同じ命名規則に従います:
+
+- **パターン**: `[A-Za-z_][A-Za-z0-9_]*`
+- **先頭文字**: 英字（大文字・小文字）またはアンダースコア
+- **以降の文字**: 英数字またはアンダースコア
+
+**使用例**
+
+```bash
+# 単一グループを実行
+runner -config config.toml --groups build
+
+# 複数グループを実行
+runner -config config.toml --groups build,test
+
+# 空白を含む指定（空白は自動的にトリミングされる）
+runner -config config.toml --groups "build, test, deploy"
+
+# すべてのグループを実行（--groups 省略時）
+runner -config config.toml
+```
+
+**依存関係の自動解決**
+
+`--groups` で指定したグループが他のグループに依存している場合、依存グループも自動的に実行されます。
+
+設定例:
+
+```toml
+[[groups]]
+name = "preparation"
+
+[[groups]]
+name = "build"
+depends_on = ["preparation"]
+
+[[groups]]
+name = "test"
+depends_on = ["build"]
+```
+
+実行例:
+
+```bash
+# testグループのみ指定
+runner -config config.toml --groups test
+
+# 実行されるグループ: preparation → build → test
+# （依存関係に基づき、preparation と build も自動的に実行される）
+```
+
+**エラーハンドリング**
+
+**無効なグループ名**
+
+```bash
+runner -config config.toml --groups 123test
+```
+
+エラー出力:
+```
+Error: invalid group name: "123test" must match pattern [A-Za-z_][A-Za-z0-9_]*
+```
+
+**存在しないグループ**
+
+```bash
+runner -config config.toml --groups xyz
+```
+
+エラー出力:
+```
+Error: group not found: group(s) [xyz] specified in --groups do not exist in configuration
+Available groups: [build, test, deploy]
+```
+
+**ユースケース**
+
+- **段階的なデプロイ**: 特定の環境（開発、ステージング、本番）のグループのみを実行
+- **部分的なテスト**: 変更に関連するテストグループのみを実行
+- **デバッグ**: 問題のあるグループだけを個別に実行
+- **CI/CDパイプライン**: ブランチやイベントに応じて異なるグループを実行
+
+**CI/CDでの活用例**
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: runner -config config.toml --groups build
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Test
+        run: runner -config config.toml --groups test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy
+        run: runner -config config.toml --groups deploy
+```
+
+**注意事項**
+
+- グループ名は大文字・小文字を区別します
+- 存在しないグループを指定するとエラーになります
+- 依存関係のあるグループは自動的に含まれます
+- 実行順序は優先度（priority）と依存関係（depends_on）に基づいて決定されます
+
 #### `--keep-temp-dirs`
 
 **概要**

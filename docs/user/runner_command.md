@@ -1063,6 +1063,148 @@ jobs:
 - Error messages are output to stderr
 - Log level settings remain effective
 
+#### `--groups <names>`
+
+**Overview**
+
+Specifies groups to execute, separated by commas. When not specified, all groups in the configuration file are executed.
+
+**Syntax**
+
+```bash
+runner -config <path> --groups <names>
+```
+
+**Parameters**
+
+- `<names>`: Group names to execute, separated by commas (e.g., `build,test,deploy`)
+
+**Group Name Naming Convention**
+
+Group names follow the same naming convention as environment variables:
+
+- **Pattern**: `[A-Za-z_][A-Za-z0-9_]*`
+- **First character**: Alphabet (uppercase/lowercase) or underscore
+- **Following characters**: Alphanumeric or underscore
+
+**Usage Examples**
+
+```bash
+# Execute single group
+runner -config config.toml --groups build
+
+# Execute multiple groups
+runner -config config.toml --groups build,test
+
+# Specification with whitespace (whitespace is automatically trimmed)
+runner -config config.toml --groups "build, test, deploy"
+
+# Execute all groups (when --groups is omitted)
+runner -config config.toml
+```
+
+**Automatic Dependency Resolution**
+
+When a group specified with `--groups` depends on other groups, the dependent groups are also automatically executed.
+
+Configuration example:
+
+```toml
+[[groups]]
+name = "preparation"
+
+[[groups]]
+name = "build"
+depends_on = ["preparation"]
+
+[[groups]]
+name = "test"
+depends_on = ["build"]
+```
+
+Execution example:
+
+```bash
+# Specify only test group
+runner -config config.toml --groups test
+
+# Groups executed: preparation → build → test
+# (preparation and build are automatically executed based on dependencies)
+```
+
+**Error Handling**
+
+**Invalid Group Name**
+
+```bash
+runner -config config.toml --groups 123test
+```
+
+Error output:
+```
+Error: invalid group name: "123test" must match pattern [A-Za-z_][A-Za-z0-9_]*
+```
+
+**Non-existent Group**
+
+```bash
+runner -config config.toml --groups xyz
+```
+
+Error output:
+```
+Error: group not found: group(s) [xyz] specified in --groups do not exist in configuration
+Available groups: [build, test, deploy]
+```
+
+**Use Cases**
+
+- **Staged Deployment**: Execute only groups for specific environments (development, staging, production)
+- **Partial Testing**: Execute only test groups related to changes
+- **Debugging**: Execute only problematic groups individually
+- **CI/CD Pipeline**: Execute different groups according to branches or events
+
+**CI/CD Usage Example**
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: runner -config config.toml --groups build
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Test
+        run: runner -config config.toml --groups test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy
+        run: runner -config config.toml --groups deploy
+```
+
+**Notes**
+
+- Group names are case-sensitive
+- Specifying a non-existent group results in an error
+- Groups with dependencies are automatically included
+- Execution order is determined based on priority and depends_on
+
 #### `--keep-temp-dirs`
 
 **Overview**
