@@ -31,6 +31,8 @@ var (
 	ErrCommandNotFound      = errors.New("command not found")
 	ErrGroupVerification    = errors.New("group file verification failed")
 	ErrGroupNotFound        = errors.New("group not found")
+	ErrDependencyNotFound   = errors.New("group dependency not found")
+	ErrCircularDependency   = errors.New("circular group dependency detected")
 	ErrVariableAccessDenied = errors.New("variable access denied")
 	ErrRunIDRequired        = errors.New("runID is required")
 )
@@ -424,8 +426,11 @@ func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error
 		return r.ExecuteAll(ctx)
 	}
 
-	// 指定されたグループのみを含む設定を作成
-	filteredConfig := r.filterConfigGroups(groupNames)
+	// 指定されたグループと依存関係のみを含む設定を作成
+	filteredConfig, err := r.filterConfigGroups(groupNames)
+	if err != nil {
+		return err
+	}
 
 	// フィルタリングされた設定で実行
 	// ExecuteAll のロジックを再利用（依存関係解決を含む）
@@ -439,7 +444,7 @@ func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error
 	return r.ExecuteAll(ctx)
 }
 
-// filterConfigGroups は指定されたグループ名のみを含む設定を作成する
+// filterConfigGroups は指定されたグループ名と、その依存関係を含む設定を生成する
 // 内部使用のみ（非公開メソッド）
 //
 // Parameters:
@@ -447,26 +452,105 @@ func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error
 //
 // Returns:
 //   - *runnertypes.ConfigSpec: フィルタリングされた設定
-func (r *Runner) filterConfigGroups(groupNames []string) *runnertypes.ConfigSpec {
-	// グループ名のセットを作成
-	nameSet := make(map[string]bool, len(groupNames))
-	for _, name := range groupNames {
-		nameSet[name] = true
+//   - error: 依存関係解決時のエラー
+func (r *Runner) filterConfigGroups(groupNames []string) (*runnertypes.ConfigSpec, error) {
+	if len(groupNames) == 0 {
+		cloned := *r.config
+		return &cloned, nil
 	}
 
-	// フィルタリングされたグループのみを抽出
-	filteredGroups := make([]runnertypes.GroupSpec, 0, len(groupNames))
+	selected, err := r.collectGroupsWithDependencies(groupNames)
+	if err != nil {
+		return nil, err
+	}
+
+	filteredConfig := *r.config
+	filteredGroups := make([]runnertypes.GroupSpec, 0, len(selected))
 	for _, group := range r.config.Groups {
-		if nameSet[group.Name] {
+		if _, ok := selected[group.Name]; ok {
 			filteredGroups = append(filteredGroups, group)
 		}
 	}
 
-	// 新しい設定を作成（グローバル設定はそのまま、グループのみフィルタリング）
-	filteredConfig := *r.config
 	filteredConfig.Groups = filteredGroups
+	return &filteredConfig, nil
+}
 
-	return &filteredConfig
+// collectGroupsWithDependencies resolves the dependency closure for the requested group names.
+// It returns a set of group names (including the original requests) or an error if a dependency
+// is missing or a cycle is detected.
+func (r *Runner) collectGroupsWithDependencies(groupNames []string) (map[string]struct{}, error) {
+	groupIndex := make(map[string]*runnertypes.GroupSpec, len(r.config.Groups))
+	for i := range r.config.Groups {
+		group := &r.config.Groups[i]
+		groupIndex[group.Name] = group
+	}
+
+	requested := make(map[string]struct{}, len(groupNames))
+	for _, name := range groupNames {
+		requested[name] = struct{}{}
+	}
+
+	included := make(map[string]struct{}, len(groupNames))
+	for name := range requested {
+		included[name] = struct{}{}
+	}
+
+	visiting := make(map[string]bool)
+	visited := make(map[string]bool)
+
+	var visit func(string) error
+	visit = func(name string) error {
+		if visited[name] {
+			return nil
+		}
+		if visiting[name] {
+			return fmt.Errorf("%w: detected cycle involving group %q", ErrCircularDependency, name)
+		}
+
+		group, ok := groupIndex[name]
+		if !ok {
+			return fmt.Errorf("%w: group %q not found in configuration", ErrGroupNotFound, name)
+		}
+
+		visiting[name] = true
+		for _, dep := range group.DependsOn {
+			if dep == "" {
+				continue
+			}
+
+			if _, exists := groupIndex[dep]; !exists {
+				return fmt.Errorf("%w: dependency %q required by %q not found in configuration", ErrDependencyNotFound, dep, group.Name)
+			}
+
+			if _, alreadyIncluded := included[dep]; !alreadyIncluded {
+				included[dep] = struct{}{}
+				if _, explicitlyRequested := requested[dep]; !explicitlyRequested {
+					slog.Info("Adding dependent group to execution list",
+						"group", dep,
+						"required_by", group.Name,
+						"run_id", r.runID,
+					)
+				}
+			}
+
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+
+		visiting[name] = false
+		visited[name] = true
+		return nil
+	}
+
+	for _, name := range groupNames {
+		if err := visit(name); err != nil {
+			return nil, err
+		}
+	}
+
+	return included, nil
 }
 
 // ExecuteGroup executes all commands in a group sequentially

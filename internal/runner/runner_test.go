@@ -18,6 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	toml "github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -2118,6 +2119,31 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			expectedGroups: []string{"common", "test"}, // Should be sorted by priority
 			expectError:    false,
 		},
+		{
+			name: "includes dependent groups when filtering subset",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2, DependsOn: []string{"common"}},
+					{Name: "test", Priority: 3, DependsOn: []string{"build"}},
+				},
+			},
+			groupNames:     []string{"test"},
+			expectedGroups: []string{"common", "build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "returns error when dependency missing",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test", Priority: 1, DependsOn: []string{"build"}},
+				},
+			},
+			groupNames:  []string{"test"},
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2127,12 +2153,14 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 
 			// Create a mock group executor that tracks group execution
 			mockGroupExecutor := &MockGroupExecutor{}
-			mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
-				Run(func(args mock.Arguments) {
-					groupSpec := args.Get(1).(*runnertypes.GroupSpec)
-					executedGroups = append(executedGroups, groupSpec.Name)
-				}).
-				Return(nil)
+			if !tt.expectError {
+				mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
+					Run(func(args mock.Arguments) {
+						groupSpec := args.Get(1).(*runnertypes.GroupSpec)
+						executedGroups = append(executedGroups, groupSpec.Name)
+					}).
+					Return(nil)
+			}
 
 			// Create runner with mock executor
 			runner, err := NewRunner(tt.config,
@@ -2153,9 +2181,8 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedGroups, executedGroups, "Executed groups should match expected groups")
+				mockGroupExecutor.AssertExpectations(t)
 			}
-
-			mockGroupExecutor.AssertExpectations(t)
 		})
 	}
 }
@@ -2166,6 +2193,7 @@ func TestRunner_filterConfigGroups(t *testing.T) {
 		config         *runnertypes.ConfigSpec
 		groupNames     []string
 		expectedGroups []string
+		expectError    bool
 	}{
 		{
 			name: "filter single group",
@@ -2207,6 +2235,30 @@ func TestRunner_filterConfigGroups(t *testing.T) {
 			groupNames:     []string{"common", "test"},
 			expectedGroups: []string{"test", "common"}, // Original order from config
 		},
+		{
+			name: "includes dependencies",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build", DependsOn: []string{"common"}},
+					{Name: "test", DependsOn: []string{"build"}},
+				},
+			},
+			groupNames:     []string{"test"},
+			expectedGroups: []string{"common", "build", "test"},
+		},
+		{
+			name: "missing dependency returns error",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test", DependsOn: []string{"missing"}},
+				},
+			},
+			groupNames:  []string{"test"},
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2215,7 +2267,12 @@ func TestRunner_filterConfigGroups(t *testing.T) {
 				config: tt.config,
 			}
 
-			filteredConfig := runner.filterConfigGroups(tt.groupNames)
+			filteredConfig, err := runner.filterConfigGroups(tt.groupNames)
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 
 			// Extract group names from filtered config
 			var filteredNames []string
@@ -2230,4 +2287,40 @@ func TestRunner_filterConfigGroups(t *testing.T) {
 			assert.Equal(t, tt.config.Global, filteredConfig.Global)
 		})
 	}
+}
+
+func TestGroupFilteringE2E(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	configPath := filepath.Join("testdata", "group_filtering_test.toml")
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	var cfg runnertypes.ConfigSpec
+	require.NoError(t, toml.Unmarshal(data, &cfg))
+
+	runtimeGlobal, err := configpkg.ExpandGlobal(&cfg.Global)
+	require.NoError(t, err)
+
+	runner, err := NewRunner(&cfg,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-e2e-run"),
+		WithRuntimeGlobal(runtimeGlobal))
+	require.NoError(t, err)
+
+	var executedGroups []string
+	mockGroupExecutor := &MockGroupExecutor{}
+	mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			groupSpec := args.Get(1).(*runnertypes.GroupSpec)
+			executedGroups = append(executedGroups, groupSpec.Name)
+		}).
+		Return(nil)
+	runner.groupExecutor = mockGroupExecutor
+
+	ctx := context.Background()
+	require.NoError(t, runner.ExecuteFiltered(ctx, []string{"test"}))
+
+	assert.Equal(t, []string{"common", "build_backend", "build_frontend", "test"}, executedGroups)
+	mockGroupExecutor.AssertExpectations(t)
 }
