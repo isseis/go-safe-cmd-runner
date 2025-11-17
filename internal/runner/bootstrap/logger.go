@@ -25,6 +25,7 @@ type LoggerConfig struct {
 	RunID           string
 	SlackWebhookURL string
 	ConsoleWriter   io.Writer // Writer for console output (stdout/stderr)
+	DryRun          bool      // Whether running in dry-run mode (suppresses side effects like Slack notifications)
 }
 
 // redactionErrorCollector is a global collector for redaction failures
@@ -133,7 +134,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	// 4. Slack notification handler (optional)
 	var slackHandler slog.Handler
 	if config.SlackWebhookURL != "" {
-		sh, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
+		sh, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID, config.DryRun)
 		if err != nil {
 			return fmt.Errorf("failed to create Slack handler: %w", err)
 		}

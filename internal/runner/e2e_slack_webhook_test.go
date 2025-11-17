@@ -72,6 +72,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 		"e2e-mock-test-"+timeBasedID(),
 		mockServer.Client(),
 		logging.DefaultBackoffConfig,
+		false, // not dry-run
 	)
 	require.NoError(t, err, "Failed to create Slack handler")
 

@@ -70,6 +70,7 @@ type SlackHandler struct {
 	attrs         []slog.Attr // Accumulated attributes from WithAttrs calls
 	groups        []string    // Accumulated group names from WithGroup calls
 	backoffConfig BackoffConfig
+	isDryRun      bool // Whether running in dry-run mode (suppresses actual notifications)
 }
 
 // SlackMessage represents the structure of a Slack webhook message
@@ -127,29 +128,33 @@ func validateWebhookURL(webhookURL string) error {
 }
 
 // NewSlackHandler creates a new SlackHandler with URL validation and default backoff configuration
-func NewSlackHandler(webhookURL, runID string) (*SlackHandler, error) {
-	return NewSlackHandlerWithConfig(webhookURL, runID, DefaultBackoffConfig)
+// isDryRun suppresses actual Slack notifications when true (used for dry-run mode)
+func NewSlackHandler(webhookURL, runID string, isDryRun bool) (*SlackHandler, error) {
+	return NewSlackHandlerWithConfig(webhookURL, runID, DefaultBackoffConfig, isDryRun)
 }
 
 // NewSlackHandlerWithConfig creates a new SlackHandler with URL validation and custom backoff configuration
-func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig) (*SlackHandler, error) {
-	return NewSlackHandlerWithHTTPClient(webhookURL, runID, &http.Client{Timeout: httpTimeout}, config)
+// isDryRun suppresses actual Slack notifications when true (used for dry-run mode)
+func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig, isDryRun bool) (*SlackHandler, error) {
+	return NewSlackHandlerWithHTTPClient(webhookURL, runID, &http.Client{Timeout: httpTimeout}, config, isDryRun)
 }
 
 // NewSlackHandlerWithHTTPClient creates a new SlackHandler with URL validation, custom HTTP client, and custom backoff configuration
 // This is useful for testing with mock servers that use self-signed certificates
-func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Client, config BackoffConfig) (*SlackHandler, error) {
+// isDryRun suppresses actual Slack notifications when true (used for dry-run mode)
+func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Client, config BackoffConfig, isDryRun bool) (*SlackHandler, error) {
 	if err := validateWebhookURL(webhookURL); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
+	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount), slog.Bool("dry_run", isDryRun))
 	return &SlackHandler{
 		webhookURL:    webhookURL,
 		runID:         runID,
 		httpClient:    httpClient,
 		level:         slog.LevelInfo, // Only handle info level and above
 		backoffConfig: config,
+		isDryRun:      isDryRun,
 	}, nil
 }
 
@@ -182,6 +187,12 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 	})
 
 	if !shouldSend {
+		return nil
+	}
+
+	// Skip actual Slack notifications in dry-run mode
+	if s.isDryRun {
+		slog.Debug("Skipping Slack notification in dry-run mode", slog.String("message_type", messageType))
 		return nil
 	}
 
@@ -224,6 +235,7 @@ func (s *SlackHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		attrs:         newAttrs,
 		groups:        s.groups, // Copy existing groups
 		backoffConfig: s.backoffConfig,
+		isDryRun:      s.isDryRun,
 	}
 }
 
@@ -246,6 +258,7 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 		attrs:         s.attrs, // Copy existing attributes
 		groups:        newGroups,
 		backoffConfig: s.backoffConfig,
+		isDryRun:      s.isDryRun,
 	}
 }
 

@@ -13,7 +13,8 @@ import (
 // SetupLogging sets up logging system without environment file handling
 // consoleWriter specifies where console logs should be written (stdout or stderr)
 // If nil, defaults to stdout for backward compatibility
-func SetupLogging(logLevel slog.Level, logDir, runID string, forceInteractive, forceQuiet bool, consoleWriter io.Writer) error {
+// isDryRun suppresses side effects like Slack notifications when true
+func SetupLogging(logLevel slog.Level, logDir, runID string, forceInteractive, forceQuiet bool, consoleWriter io.Writer, isDryRun bool) error {
 	// Get Slack webhook URL from OS environment variables
 	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 
@@ -24,6 +25,7 @@ func SetupLogging(logLevel slog.Level, logDir, runID string, forceInteractive, f
 		RunID:           runID,
 		SlackWebhookURL: slackURL,
 		ConsoleWriter:   consoleWriter,
+		DryRun:          isDryRun,
 	}
 
 	if err := SetupLoggerWithConfig(loggerConfig, forceInteractive, forceQuiet); err != nil {

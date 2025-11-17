@@ -302,7 +302,7 @@ func TestNewSlackHandler_URLValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler, err := NewSlackHandler(tt.url, tt.runID)
+			handler, err := NewSlackHandler(tt.url, tt.runID, false)
 
 			if tt.expectError {
 				require.Error(t, err, "Expected error for URL: %s", tt.url)

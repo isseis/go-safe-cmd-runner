@@ -139,7 +139,7 @@ func run(runID string) error {
 	if *dryRun && *dryRunFormat == "json" {
 		consoleWriter = os.Stderr
 	}
-	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet, consoleWriter); err != nil {
+	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet, consoleWriter, *dryRun); err != nil {
 		return err
 	}
 
