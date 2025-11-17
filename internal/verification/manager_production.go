@@ -76,7 +76,7 @@ func logProductionManagerCreation() {
 		args = append(args, "caller_file", file, "caller_line", line)
 	}
 
-	slog.Debug("Production verification manager created", args...)
+	slog.Info("Production verification manager created", args...)
 }
 
 // logDryRunManagerCreation logs the creation of a dry-run manager for security audit
@@ -96,7 +96,7 @@ func logDryRunManagerCreation() {
 		args = append(args, "caller_file", file, "caller_line", line)
 	}
 
-	slog.Debug("Dry-run verification manager created", args...)
+	slog.Info("Dry-run verification manager created", args...)
 }
 
 // validateProductionConstraints validates that production security constraints are met
