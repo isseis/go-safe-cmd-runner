@@ -136,21 +136,9 @@ func validateWebhookURL(webhookURL string) error {
 	return nil
 }
 
-// NewSlackHandlerWithHTTPClient creates a new SlackHandler with URL validation, custom HTTP client, and custom backoff configuration
-// Deprecated: Use NewSlackHandlerWithOptions instead
-func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Client, config BackoffConfig, isDryRun bool) (*SlackHandler, error) {
-	return NewSlackHandlerWithOptions(SlackHandlerOptions{
-		WebhookURL:    webhookURL,
-		RunID:         runID,
-		HTTPClient:    httpClient,
-		BackoffConfig: config,
-		IsDryRun:      isDryRun,
-	})
-}
-
-// NewSlackHandlerWithOptions creates a new SlackHandler with the provided options
+// NewSlackHandler creates a new SlackHandler with the provided options
 // This is the preferred way to create a SlackHandler as it allows for easy addition of new configuration options
-func NewSlackHandlerWithOptions(opts SlackHandlerOptions) (*SlackHandler, error) {
+func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
 	if err := validateWebhookURL(opts.WebhookURL); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}

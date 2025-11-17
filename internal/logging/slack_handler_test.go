@@ -327,7 +327,7 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler, err := NewSlackHandlerWithOptions(tt.opts)
+			handler, err := NewSlackHandler(tt.opts)
 
 			if tt.expectError {
 				require.Error(t, err, "Expected error for invalid options")
