@@ -569,35 +569,28 @@ var (
 
 ### 5.2 フラグ仕様
 
-| フラグ | 短縮形 | 型 | デフォルト値 | 説明 |
-|--------|--------|-------|--------------|------|
-| `--groups` | `-g` | `string` | `""` | 実行するグループ名（カンマ区切り） |
-
-**注**: Go の `flag` パッケージは短縮形（`-g`）を自動的にサポートしない。
-短縮形が必要な場合は、同じ変数を指す2つのフラグを定義する。
+| フラグ | 型 | デフォルト値 | 説明 |
+|---------------|--------------|------|
+| `--groups` | `string` | `""` | 実行するグループ名（カンマ区切り） |
 
 ```go
 groups = flag.String("groups", "", "comma-separated list of groups to execute")
-flag.StringVar(groups, "g", "", "shorthand for --groups")
 ```
 
 ### 5.3 使用例
 
 ```bash
 # すべてのグループを実行
-runner -c config.toml
+runner -config config.toml
 
 # 単一グループを実行
-runner -c config.toml --groups=build
+runner -config config.toml --groups=build
 
 # 複数グループを実行
-runner -c config.toml --groups=build,test
-
-# 短縮形（実装する場合）
-runner -c config.toml -g build,test
+runner -config config.toml --groups=build,test
 
 # 他のフラグとの併用
-runner -c config.toml --groups=deploy --dry-run
+runner -config config.toml --groups=deploy --dry-run
 ```
 
 ## 6. ログ出力仕様

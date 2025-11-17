@@ -295,7 +295,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 	}()
 
-	// Parse and filter groups if --groups flag is specified
+	// Resolve and filter groups based on the --groups flag (executes all groups if not specified)
 	groupNames, err := cli.FilterGroups(
 		cli.ParseGroupNames(*groups),
 		cfg,

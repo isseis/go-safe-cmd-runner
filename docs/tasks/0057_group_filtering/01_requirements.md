@@ -45,7 +45,7 @@ depends_on = ["test"]
 
 #### 2.1.1 フラグ仕様
 
-**フラグ名**: `--groups` または `-g`
+**フラグ名**: `--groups`
 
 **型**: 文字列（カンマ区切りのグループ名リスト）
 
@@ -54,16 +54,13 @@ depends_on = ["test"]
 **例**:
 ```bash
 # すべてのグループを実行（デフォルト）
-runner -c config.toml
+runner -config config.toml
 
 # 特定のグループのみ実行
-runner -c config.toml --groups=build
+runner -config config.toml --groups=build
 
 # 複数のグループを実行
-runner -c config.toml --groups=build,test
-
-# 短縮形
-runner -c config.toml -g build,test
+runner -config config.toml --groups=build,test
 ```
 
 #### 2.1.2 グループ名の制約
