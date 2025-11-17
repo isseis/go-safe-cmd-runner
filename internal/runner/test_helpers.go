@@ -3,6 +3,7 @@
 package runner
 
 import (
+	"context"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -14,6 +15,17 @@ import (
 
 // MockResourceManager is an alias to the shared mock implementation
 type MockResourceManager = runnertesting.MockResourceManager
+
+// MockGroupExecutor is a mock implementation of GroupExecutor for testing
+type MockGroupExecutor struct {
+	mock.Mock
+}
+
+// ExecuteGroup executes all commands in a group sequentially
+func (m *MockGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec, runtimeGlobal *runnertypes.RuntimeGlobal) error {
+	args := m.Called(ctx, groupSpec, runtimeGlobal)
+	return args.Error(0)
+}
 
 // setupTestEnv sets up a clean test environment.
 func setupTestEnv(t *testing.T, envVars map[string]string) {

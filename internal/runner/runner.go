@@ -409,6 +409,66 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 	return nil
 }
 
+// ExecuteFiltered executes only the specified groups (including their dependencies)
+// groupNames が nil または空の場合は全グループを実行（ExecuteAll と同じ動作）
+//
+// Parameters:
+//   - ctx: コンテキスト
+//   - groupNames: 実行するグループ名のリスト（nil の場合は全グループ）
+//
+// Returns:
+//   - error: 実行エラー
+func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error {
+	// グループ名が指定されていない場合は全グループを実行
+	if len(groupNames) == 0 {
+		return r.ExecuteAll(ctx)
+	}
+
+	// 指定されたグループのみを含む設定を作成
+	filteredConfig := r.filterConfigGroups(groupNames)
+
+	// フィルタリングされた設定で実行
+	// ExecuteAll のロジックを再利用（依存関係解決を含む）
+	// 一時的にr.configを置き換えて実行
+	originalConfig := r.config
+	r.config = filteredConfig
+	defer func() {
+		r.config = originalConfig
+	}()
+
+	return r.ExecuteAll(ctx)
+}
+
+// filterConfigGroups は指定されたグループ名のみを含む設定を作成する
+// 内部使用のみ（非公開メソッド）
+//
+// Parameters:
+//   - groupNames: フィルターするグループ名
+//
+// Returns:
+//   - *runnertypes.ConfigSpec: フィルタリングされた設定
+func (r *Runner) filterConfigGroups(groupNames []string) *runnertypes.ConfigSpec {
+	// グループ名のセットを作成
+	nameSet := make(map[string]bool, len(groupNames))
+	for _, name := range groupNames {
+		nameSet[name] = true
+	}
+
+	// フィルタリングされたグループのみを抽出
+	filteredGroups := make([]runnertypes.GroupSpec, 0, len(groupNames))
+	for _, group := range r.config.Groups {
+		if nameSet[group.Name] {
+			filteredGroups = append(filteredGroups, group)
+		}
+	}
+
+	// 新しい設定を作成（グローバル設定はそのまま、グループのみフィルタリング）
+	filteredConfig := *r.config
+	filteredConfig.Groups = filteredGroups
+
+	return &filteredConfig
+}
+
 // ExecuteGroup executes all commands in a group sequentially
 // This method delegates to the GroupExecutor implementation
 func (r *Runner) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec) error {

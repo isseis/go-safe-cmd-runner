@@ -2036,3 +2036,198 @@ func TestCommandResult_LogValue(t *testing.T) {
 		})
 	}
 }
+
+func TestRunner_ExecuteFiltered(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	tests := []struct {
+		name           string
+		config         *runnertypes.ConfigSpec
+		groupNames     []string
+		expectedGroups []string // Expected groups to be executed (in order)
+		expectError    bool
+	}{
+		{
+			name: "nil input executes all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+				},
+			},
+			groupNames:     nil,
+			expectedGroups: []string{"common", "build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "empty slice executes all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+				},
+			},
+			groupNames:     []string{},
+			expectedGroups: []string{"common", "build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "single group filter",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+				},
+			},
+			groupNames:     []string{"build"},
+			expectedGroups: []string{"build"},
+			expectError:    false,
+		},
+		{
+			name: "multiple groups filter",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+					{Name: "deploy", Priority: 4},
+				},
+			},
+			groupNames:     []string{"build", "test"},
+			expectedGroups: []string{"build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "filter preserves priority order",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test", Priority: 3},
+					{Name: "build", Priority: 2},
+					{Name: "common", Priority: 1},
+				},
+			},
+			groupNames:     []string{"test", "common"},
+			expectedGroups: []string{"common", "test"}, // Should be sorted by priority
+			expectError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Track executed groups
+			var executedGroups []string
+
+			// Create a mock group executor that tracks group execution
+			mockGroupExecutor := &MockGroupExecutor{}
+			mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
+				Run(func(args mock.Arguments) {
+					groupSpec := args.Get(1).(*runnertypes.GroupSpec)
+					executedGroups = append(executedGroups, groupSpec.Name)
+				}).
+				Return(nil)
+
+			// Create runner with mock executor
+			runner, err := NewRunner(tt.config,
+				WithVerificationManager(setupDryRunVerification(t)),
+				WithRunID("test-run-123"),
+				WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
+			require.NoError(t, err)
+
+			// Replace group executor with mock
+			runner.groupExecutor = mockGroupExecutor
+
+			// Execute filtered
+			ctx := context.Background()
+			err = runner.ExecuteFiltered(ctx, tt.groupNames)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedGroups, executedGroups, "Executed groups should match expected groups")
+			}
+
+			mockGroupExecutor.AssertExpectations(t)
+		})
+	}
+}
+
+func TestRunner_filterConfigGroups(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         *runnertypes.ConfigSpec
+		groupNames     []string
+		expectedGroups []string
+	}{
+		{
+			name: "filter single group",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+				},
+			},
+			groupNames:     []string{"build"},
+			expectedGroups: []string{"build"},
+		},
+		{
+			name: "filter multiple groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+					{Name: "deploy"},
+				},
+			},
+			groupNames:     []string{"build", "deploy"},
+			expectedGroups: []string{"build", "deploy"},
+		},
+		{
+			name: "filter preserves original order",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test"},
+					{Name: "build"},
+					{Name: "common"},
+				},
+			},
+			groupNames:     []string{"common", "test"},
+			expectedGroups: []string{"test", "common"}, // Original order from config
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &Runner{
+				config: tt.config,
+			}
+
+			filteredConfig := runner.filterConfigGroups(tt.groupNames)
+
+			// Extract group names from filtered config
+			var filteredNames []string
+			for _, group := range filteredConfig.Groups {
+				filteredNames = append(filteredNames, group.Name)
+			}
+
+			assert.Equal(t, tt.expectedGroups, filteredNames)
+
+			// Verify global config is preserved
+			assert.Equal(t, tt.config.Version, filteredConfig.Version)
+			assert.Equal(t, tt.config.Global, filteredConfig.Global)
+		})
+	}
+}
