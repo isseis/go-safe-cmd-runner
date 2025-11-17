@@ -5,7 +5,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-log_level = "info"
 # Conservative output size limit (1MB) for security
 output_size_limit = 1048576
 # Minimal environment allowlist for security

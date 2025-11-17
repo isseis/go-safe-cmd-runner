@@ -3,17 +3,17 @@ package bootstrap
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // SetupLogging sets up logging system without environment file handling
 // consoleWriter specifies where console logs should be written (stdout or stderr)
 // If nil, defaults to stdout for backward compatibility
-func SetupLogging(logLevel runnertypes.LogLevel, logDir, runID string, forceInteractive, forceQuiet bool, consoleWriter io.Writer) error {
+func SetupLogging(logLevel slog.Level, logDir, runID string, forceInteractive, forceQuiet bool, consoleWriter io.Writer) error {
 	// Get Slack webhook URL from OS environment variables
 	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 

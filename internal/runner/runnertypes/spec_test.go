@@ -222,7 +222,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "debug"
 verify_standard_paths = false
 output_size_limit = 1048576
 verify_files = ["/usr/bin/python3", "/usr/bin/gcc"]
@@ -242,7 +241,6 @@ cmd = "/bin/echo"
 				Version: "1.0",
 				Global: GlobalSpec{
 					Timeout:             common.Int32Ptr(300),
-					LogLevel:            "debug",
 					VerifyStandardPaths: common.BoolPtr(false),
 					OutputSizeLimit:     common.Int64Ptr(1048576),
 					VerifyFiles:         []string{"/usr/bin/python3", "/usr/bin/gcc"},

@@ -389,12 +389,7 @@ go-safe-cmd-runner -file with-vars.toml
 
 ### 10.2.3 ログレベルの活用
 
-デバッグ時は詳細なログを有効化:
-
-```toml
-[global]
-log_level = "debug"  # 詳細なデバッグ情報を出力
-```
+デバッグ時は詳細なログを有効化: `-log-level debug`
 
 出力例:
 ```

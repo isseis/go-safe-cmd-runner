@@ -14,7 +14,6 @@
 |-----------|-----|------|------------|------|
 | timeout | int | - | システムデフォルト | コマンド実行のタイムアウト(秒) |
 | workdir | string | - | 実行ディレクトリ | 作業ディレクトリの絶対パス |
-| log_level | string | - | "info" | ログレベル(debug/info/warn/error) |
 | verify_standard_paths | bool | - | true | 標準パスの検証を有効化 |
 | env_allowed | []string | - | [] | 環境変数の許可リスト |
 | verify_files | []string | - | [] | 検証対象ファイルのリスト |
@@ -87,7 +86,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/var/backups"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]
@@ -112,7 +110,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-log_level = "info"
 verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = []  # コマンドは自動検証される
@@ -156,7 +153,6 @@ version = "1.0"
 
 [global]
 timeout = 600
-log_level = "info"
 env_allowed = ["PATH"]
 
 [[groups]]
@@ -352,7 +348,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/path/to/workdir"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]
@@ -374,7 +369,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/opt/secure"
-log_level = "info"
 verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = [

@@ -14,7 +14,6 @@
 |-----------|------|----------|---------------|-------------|
 | timeout | int | - | System default | Command execution timeout (seconds) |
 | workdir | string | - | Execution directory | Absolute path of working directory |
-| log_level | string | - | "info" | Log level (debug/info/warn/error) |
 | verify_standard_paths | bool | - | true | Verify standard path validation |
 | env_allowed | []string | - | [] | Environment variable allowlist |
 | verify_files | []string | - | [] | List of files to verify |
@@ -87,7 +86,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/var/backups"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]
@@ -112,7 +110,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-log_level = "info"
 verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = []  # Commands are automatically verified
@@ -156,7 +153,6 @@ version = "1.0"
 
 [global]
 timeout = 600
-log_level = "info"
 env_allowed = ["PATH"]
 
 [[groups]]
@@ -352,7 +348,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/path/to/workdir"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]
@@ -374,7 +369,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/opt/secure"
-log_level = "info"
 verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = [

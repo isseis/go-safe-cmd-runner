@@ -25,7 +25,6 @@ runner の設定は以下の4階層に分かれています：
 |---------|--------|-------|---------|-----------------|------|
 | **timeout** | ✓ | - | ✓ | **Override**: Command.Timeout > 0 の場合はそれを使用、それ以外は Global.Timeout を使用 | Command レベルで上書き可能<br>実装: [runner.go:582-586](../../internal/runner/runner.go#L582-L586) |
 | **workdir** | ✓ | ✓ | ✓ | **Override**: Command.Dir が空文字列の場合のみ Global.WorkDir を設定 | Group.WorkDir は temp_dir 用途<br>Command.Dir は実行時に使用<br>実装: [runner.go:526-528](../../internal/runner/runner.go#L526-L528) |
-| **log_level** | ✓ | - | - | **Global only**: Global.LogLevel のみ定義可能 | Command や Group レベルでは未対応 |
 | **max_output_size** | ✓ | - | - | **Global only**: Global.MaxOutputSize のみ定義可能 | Command や Group レベルでは未対応 |
 | **skip_standard_paths** | ✓ | - | - | **Global only**: Global.SkipStandardPaths のみ定義可能 | Command や Group レベルでは未対応 |
 | **max_risk_level** | - | - | ✓ | **Command only**: Command.MaxRiskLevel のみ定義可能 | Global や Group レベルでは未対応 |
@@ -208,7 +207,7 @@ if cmd.Dir == "" {
 
 設定項目は**単一値項目**と**複数値項目**に大別されます：
 
-- **単一値項目** (timeout, workdir, log_level など): 複数レイヤーで設定された場合、必ず Override（上書き）動作
+- **単一値項目** (timeout, workdir など): 複数レイヤーで設定された場合、必ず Override（上書き）動作
 - **複数値項目** (env, env_allowlist, verify_files): Union（結合）または Override（上書き）の選択が可能だが、現在の実装ではすべて **Override または Independent** を採用
 
 ### 継承・マージ動作のパターン
@@ -219,7 +218,7 @@ if cmd.Dir == "" {
 2. **Independent パターン** (env): 各レベルで独立して管理（層間でのマージなし）
 3. **Effective Union パターン** (verify_files): 設定は独立管理だが、実行時には両方の検証成功が必要
 4. **Inherit/Override/Prohibit パターン** (env_allowlist): 3つの継承モードで柔軟に制御
-5. **Single-level パターン** (log_level, max_output_size など): 特定のレベルでのみ定義可能
+5. **Single-level パターン** (max_output_size など): 特定のレベルでのみ定義可能
 
 ### 設計思想
 

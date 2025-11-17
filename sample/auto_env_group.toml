@@ -4,7 +4,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-log_level = "debug"
 verify_standard_paths = false
 
 # Group with multiple commands - all should use same DATETIME

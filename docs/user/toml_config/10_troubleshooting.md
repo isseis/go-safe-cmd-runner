@@ -389,12 +389,7 @@ go-safe-cmd-runner -file with-vars.toml
 
 ### 10.2.3 Utilizing Log Levels
 
-Enable detailed logs when debugging:
-
-```toml
-[global]
-log_level = "debug"  # Output detailed debug information
-```
+Enable detailed logs when debugging: `-log-level debug`
 
 Output example:
 ```

@@ -259,10 +259,9 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout:  common.Int32Ptr(300),
-		LogLevel: "debug",
-		EnvVars:  []string{"PATH=/usr/bin"},
-		Vars:     []string{"VAR1=value1"},
+		Timeout: common.Int32Ptr(300),
+		EnvVars: []string{"PATH=/usr/bin"},
+		Vars:    []string{"VAR1=value1"},
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)

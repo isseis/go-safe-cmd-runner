@@ -10,7 +10,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 )
 
@@ -21,7 +20,7 @@ const (
 
 // LoggerConfig holds all configuration for logger setup
 type LoggerConfig struct {
-	Level           runnertypes.LogLevel
+	Level           slog.Level
 	LogDir          string
 	RunID           string
 	SlackWebhookURL string
@@ -52,14 +51,9 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	timestamp := time.Now().Format("20060102T150405Z")
 
 	var handlers []slog.Handler
-	var invalidLogLevel bool
 
-	// Parse log level for all handlers
-	slogLevel, err := config.Level.ToSlogLevel()
-	if err != nil {
-		slogLevel = slog.LevelInfo // Default to info on parse error
-		invalidLogLevel = true
-	}
+	// Use the log level directly
+	slogLevel := config.Level
 
 	// Initialize terminal capabilities with command line overrides
 	terminalOptions := terminal.Options{
@@ -192,11 +186,6 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 		"interactive_mode", capabilities.IsInteractive(),
 		"color_support", capabilities.SupportsColor(),
 		"slack_enabled", config.SlackWebhookURL != "")
-
-	// Warn about invalid log level after logger is properly set up
-	if invalidLogLevel {
-		slog.Warn("Invalid log level provided, defaulting to INFO", slog.Any("provided", config.Level))
-	}
 
 	return nil
 }

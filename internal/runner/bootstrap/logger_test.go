@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +24,7 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 		{
 			name: "minimal config with info level",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelInfo,
+				Level:           slog.LevelInfo,
 				LogDir:          "",
 				RunID:           "test-min-001",
 				SlackWebhookURL: "",
@@ -37,7 +36,7 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 		{
 			name: "minimal config with debug level",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelDebug,
+				Level:           slog.LevelDebug,
 				LogDir:          "",
 				RunID:           "test-min-002",
 				SlackWebhookURL: "",
@@ -49,7 +48,7 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 		{
 			name: "minimal config with warn level",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelWarn,
+				Level:           slog.LevelWarn,
 				LogDir:          "",
 				RunID:           "test-min-003",
 				SlackWebhookURL: "",
@@ -61,7 +60,7 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 		{
 			name: "minimal config with error level",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelError,
+				Level:           slog.LevelError,
 				LogDir:          "",
 				RunID:           "test-min-004",
 				SlackWebhookURL: "",
@@ -98,7 +97,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		{
 			name: "full config with file handler",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelDebug,
+				Level:           slog.LevelDebug,
 				LogDir:          tempDir,
 				RunID:           "test-full-001",
 				SlackWebhookURL: "",
@@ -110,7 +109,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		{
 			name: "full config with Slack handler",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelInfo,
+				Level:           slog.LevelInfo,
 				LogDir:          "",
 				RunID:           "test-full-002",
 				SlackWebhookURL: "https://hooks.slack.com/services/test",
@@ -122,7 +121,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		{
 			name: "full config with all handlers",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelWarn,
+				Level:           slog.LevelWarn,
 				LogDir:          tempDir,
 				RunID:           "test-full-003",
 				SlackWebhookURL: "https://hooks.slack.com/services/test",
@@ -134,7 +133,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		{
 			name: "full config with interactive mode",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelInfo,
+				Level:           slog.LevelInfo,
 				LogDir:          tempDir,
 				RunID:           "test-full-004",
 				SlackWebhookURL: "",
@@ -146,7 +145,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		{
 			name: "full config with quiet mode",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelError,
+				Level:           slog.LevelError,
 				LogDir:          tempDir,
 				RunID:           "test-full-005",
 				SlackWebhookURL: "",
@@ -187,53 +186,6 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 	}
 }
 
-func TestSetupLoggerWithConfig_InvalidLogLevel(t *testing.T) {
-	tests := []struct {
-		name             string
-		config           LoggerConfig
-		forceInteractive bool
-		forceQuiet       bool
-		wantErr          bool
-	}{
-		{
-			name: "invalid log level - fallback to info",
-			config: LoggerConfig{
-				Level:           runnertypes.LogLevel("invalid"),
-				LogDir:          "",
-				RunID:           "test-invalid-001",
-				SlackWebhookURL: "",
-			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false, // Should not error, just warn and use default
-		},
-		{
-			name: "empty log level - fallback to info",
-			config: LoggerConfig{
-				Level:           runnertypes.LogLevel(""),
-				LogDir:          "",
-				RunID:           "test-invalid-002",
-				SlackWebhookURL: "",
-			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false, // Should not error, just warn and use default
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := SetupLoggerWithConfig(tt.config, tt.forceInteractive, tt.forceQuiet)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestSetupLoggerWithConfig_InvalidLogDirectory(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -243,7 +195,7 @@ func TestSetupLoggerWithConfig_InvalidLogDirectory(t *testing.T) {
 		{
 			name: "log directory does not exist",
 			config: LoggerConfig{
-				Level:           runnertypes.LogLevelInfo,
+				Level:           slog.LevelInfo,
 				LogDir:          "/nonexistent/path/to/logs",
 				RunID:           "test-dir-001",
 				SlackWebhookURL: "",
@@ -281,7 +233,7 @@ func TestSetupLoggerWithConfig_LogDirectoryPermissionError(t *testing.T) {
 	defer os.Chmod(readOnlyDir, 0o755)
 
 	config := LoggerConfig{
-		Level:           runnertypes.LogLevelInfo,
+		Level:           slog.LevelInfo,
 		LogDir:          readOnlyDir,
 		RunID:           "test-perm-001",
 		SlackWebhookURL: "",
@@ -307,7 +259,7 @@ func TestSetupLoggerWithConfig_FailureLoggerUsesMultiHandler(t *testing.T) {
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
-		Level:         runnertypes.LogLevelDebug,
+		Level:         slog.LevelDebug,
 		LogDir:        tempDir,
 		RunID:         "test-failure-logger-001",
 		ConsoleWriter: &consoleBuffer,
@@ -378,7 +330,7 @@ func TestSetupLoggerWithConfig_FailureLoggerCircularDependencyPrevention(t *test
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
-		Level:         runnertypes.LogLevelDebug,
+		Level:         slog.LevelDebug,
 		LogDir:        tempDir,
 		RunID:         "test-circular-001",
 		ConsoleWriter: &consoleBuffer,
@@ -417,7 +369,7 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
-		Level:           runnertypes.LogLevelDebug,
+		Level:           slog.LevelDebug,
 		LogDir:          tempDir,
 		RunID:           "test-slack-exclusion-001",
 		SlackWebhookURL: "https://hooks.slack.com/services/test",

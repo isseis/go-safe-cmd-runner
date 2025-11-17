@@ -14,7 +14,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/tmp"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]
@@ -66,7 +65,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-log_level = "info"
 verify_standard_paths = true  # Verify all files
 env_allowed = ["PATH"]      # Minimal environment variables
 verify_files = [
@@ -130,7 +128,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]
@@ -186,7 +183,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/tmp"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 verify_files = [
     "/usr/bin/apt-get",
@@ -246,7 +242,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/var/reports"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 output_size_limit = 10485760  # 10MB
 
@@ -314,7 +309,6 @@ version = "1.0"
 
 [global]
 timeout = 600
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 # Development environment
@@ -439,7 +433,6 @@ version = "1.0"
 [global]
 timeout = 900
 workdir = "/opt/deploy"
-log_level = "info"
 verify_standard_paths = false
 env_allowed = [
     "PATH",
@@ -694,7 +687,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]

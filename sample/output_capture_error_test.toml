@@ -4,7 +4,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-log_level = "debug"
 output_size_limit = 1024
 env_allowed = ["PATH"]
 

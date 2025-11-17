@@ -238,120 +238,7 @@ args = ["test.txt"]
 
 指定したディレクトリに対する読み書き権限が必要です。
 
-## 4.3 log_level - ログレベル
-
-### 概要
-
-ログ出力の詳細度を制御します。
-
-### 文法
-
-```toml
-[global]
-log_level = "ログレベル"
-```
-
-### パラメータの詳細
-
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバルのみ |
-| **デフォルト値** | "info" |
-| **有効な値** | "debug", "info", "warn", "error" |
-| **オーバーライド** | 不可(グローバルレベルのみ) |
-
-### ログレベルの詳細
-
-| レベル | 用途 | 出力される情報 |
-|--------|------|--------------|
-| **debug** | 開発・デバッグ | 全ての詳細情報(変数値、内部状態など) |
-| **info** | 通常運用 | 実行状況、完了通知など |
-| **warn** | 警告の監視 | 警告と重要な情報のみ |
-| **error** | エラーのみ | エラーメッセージのみ |
-
-### 設定例
-
-#### 例1: デバッグモード
-
-```toml
-version = "1.0"
-
-[global]
-log_level = "debug"  # 詳細なデバッグ情報を出力
-
-[[groups]]
-name = "troubleshooting"
-
-[[groups.commands]]
-name = "test_command"
-cmd = "echo"
-args = ["test"]
-```
-
-出力例:
-```
-[DEBUG] Configuration loaded: version=1.0
-[DEBUG] Global settings: timeout=default, workdir=default
-[DEBUG] Processing group: troubleshooting
-[DEBUG] Executing command: test_command
-[DEBUG] Command path: /usr/bin/echo
-[DEBUG] Arguments: [test]
-[INFO] Command completed successfully
-```
-
-#### 例2: 本番環境(info レベル)
-
-```toml
-version = "1.0"
-
-[global]
-log_level = "info"  # 標準的な情報のみ出力
-
-[[groups]]
-name = "production"
-
-[[groups.commands]]
-name = "backup"
-cmd = "/usr/bin/backup.sh"
-args = []
-```
-
-出力例:
-```
-[INFO] Starting command group: production
-[INFO] Executing command: backup
-[INFO] Command completed successfully
-```
-
-#### 例3: エラーのみ(error レベル)
-
-```toml
-version = "1.0"
-
-[global]
-log_level = "error"  # エラーのみ出力
-
-[[groups]]
-name = "silent_operation"
-
-[[groups.commands]]
-name = "routine_check"
-cmd = "test"
-args = ["-f", "/tmp/check.txt"]
-```
-
-正常時は何も出力されず、エラー時のみメッセージが表示されます。
-
-### ベストプラクティス
-
-- **開発時**: `debug` レベルを使用して詳細を確認
-- **テスト時**: `info` レベルで実行状況を確認
-- **本番環境**: `info` または `warn` レベルを使用
-- **静かな運用**: `error` レベルでエラーのみを記録
-
-## 4.4 skip_standard_paths - 標準パス検証のスキップ
+## 4.3 skip_standard_paths - 標準パス検証のスキップ
 
 ### 概要
 
@@ -421,7 +308,7 @@ args = ["pattern", "file.txt"]
 
 `verify_standard_paths = false` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
 
-## 4.5 vars - グローバル内部変数
+## 4.4 vars - グローバル内部変数
 
 ### 概要
 
@@ -609,7 +496,7 @@ cmd = "%{undefined_var}/tool"  # エラー: undefined_var は定義されてい�
 3. **階層構造**: ネストした変数参照で階層的なパスを構築
 4. **セキュリティ**: 機密情報は vars で管理し、必要な場合のみ env で公開
 
-## 4.6 from_env - システム環境変数の取り込み
+## 4.5 from_env - システム環境変数の取り込み
 
 ### 概要
 
@@ -781,7 +668,7 @@ from_env_vars = [
 3. **allowlist と併用**: env_allowed で許可した変数のみ取り込む
 4. **わかりやすい名前**: システム環境変数名と内部変数名を区別しやすい名前に
 
-## 4.7 env - グローバルプロセス環境変数
+## 4.6 env - グローバルプロセス環境変数
 
 ### 概要
 
@@ -1026,7 +913,7 @@ env_allowed = ["HOME", "PATH"]
 - **Command.env**: コマンドレベルの環境変数については第6章を参照
 - **変数展開の詳細**: 変数展開の仕組みについては第7章を参照
 
-## 4.8 env_allowed - 環境変数許可リスト
+## 4.7 env_allowed - 環境変数許可リスト
 
 ### 概要
 
@@ -1154,7 +1041,7 @@ env_allowed = [
 env_allowed = ["PATH", "HOME", "USER"]
 ```
 
-## 4.9 verify_files - ファイル検証リスト
+## 4.8 verify_files - ファイル検証リスト
 
 ### 概要
 
@@ -1264,7 +1151,7 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 - **パフォーマンス**: ファイルハッシュ検証は高速に動作するため、パフォーマンスへの影響は限定的です
 - **改ざん検出**: 検証対象を増やすことでシステム侵害をより確実に防ぐことができます
 
-## 4.10 output_size_limit - 出力サイズ上限
+## 4.9 output_size_limit - 出力サイズ上限
 
 ### 概要
 

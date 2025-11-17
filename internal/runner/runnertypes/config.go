@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"strings"
 )
 
 // InheritanceMode represents how environment allowlist inheritance works
@@ -26,65 +24,6 @@ const (
 	// This occurs when env_allowlist field is explicitly empty: []
 	InheritanceModeReject
 )
-
-// LogLevel represents the logging level for the application.
-// Valid values: debug, info, warn, error
-type LogLevel string
-
-const (
-	// LogLevelDebug enables debug-level logging
-	LogLevelDebug LogLevel = "debug"
-
-	// LogLevelInfo enables info-level logging (default)
-	LogLevelInfo LogLevel = "info"
-
-	// LogLevelWarn enables warning-level logging
-	LogLevelWarn LogLevel = "warn"
-
-	// LogLevelError enables error-level logging only
-	LogLevelError LogLevel = "error"
-)
-
-// ErrInvalidLogLevel is returned when an invalid log level is provided
-var ErrInvalidLogLevel = errors.New("invalid log level")
-
-// UnmarshalText implements the encoding.TextUnmarshaler interface.
-// This enables validation during TOML parsing.
-func (l *LogLevel) UnmarshalText(text []byte) error {
-	s := strings.ToLower(string(text))
-	switch LogLevel(s) {
-	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
-		*l = LogLevel(s)
-		return nil
-	case "":
-		// Empty string defaults to info level
-		*l = LogLevelInfo
-		return nil
-	default:
-		return fmt.Errorf("%w: %q (must be one of: debug, info, warn, error)", ErrInvalidLogLevel, string(text))
-	}
-}
-
-// ToSlogLevel converts LogLevel to slog.Level for use with the slog package.
-func (l LogLevel) ToSlogLevel() (slog.Level, error) {
-	switch strings.ToLower(string(l)) {
-	case "debug":
-		return slog.LevelDebug, nil
-	case "info", "":
-		return slog.LevelInfo, nil
-	case "warn":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	default:
-		return 0, fmt.Errorf("%w: %q", ErrInvalidLogLevel, l)
-	}
-}
-
-// String returns the string representation of LogLevel.
-func (l LogLevel) String() string {
-	return string(l)
-}
 
 // RiskLevel represents the security risk level of a command
 type RiskLevel int

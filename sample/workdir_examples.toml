@@ -5,7 +5,6 @@ version = "1.0"
 
 [global]
 timeout = 60
-log_level = "info"
 verify_standard_paths = false
 env_allowed = ["PATH", "HOME", "USER"]
 

@@ -161,7 +161,6 @@ version = "1.0"
 
 [global]
 timeout = 3600
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 [[groups]]

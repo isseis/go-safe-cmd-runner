@@ -1,18 +1,18 @@
 package bootstrap
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSetupLogging_Success(t *testing.T) {
 	tests := []struct {
 		name             string
-		logLevel         runnertypes.LogLevel
+		logLevel         slog.Level
 		logDir           string
 		runID            string
 		forceInteractive bool
@@ -22,7 +22,7 @@ func TestSetupLogging_Success(t *testing.T) {
 	}{
 		{
 			name:             "minimal config with info level",
-			logLevel:         runnertypes.LogLevelInfo,
+			logLevel:         slog.LevelInfo,
 			logDir:           "",
 			runID:            "test-run-001",
 			forceInteractive: false,
@@ -32,7 +32,7 @@ func TestSetupLogging_Success(t *testing.T) {
 		},
 		{
 			name:             "with log directory",
-			logLevel:         runnertypes.LogLevelDebug,
+			logLevel:         slog.LevelDebug,
 			logDir:           t.TempDir(),
 			runID:            "test-run-002",
 			forceInteractive: false,
@@ -42,7 +42,7 @@ func TestSetupLogging_Success(t *testing.T) {
 		},
 		{
 			name:             "with Slack webhook URL",
-			logLevel:         runnertypes.LogLevelWarn,
+			logLevel:         slog.LevelWarn,
 			logDir:           "",
 			runID:            "test-run-003",
 			forceInteractive: false,
@@ -52,7 +52,7 @@ func TestSetupLogging_Success(t *testing.T) {
 		},
 		{
 			name:             "force interactive mode",
-			logLevel:         runnertypes.LogLevelInfo,
+			logLevel:         slog.LevelInfo,
 			logDir:           "",
 			runID:            "test-run-004",
 			forceInteractive: true,
@@ -62,7 +62,7 @@ func TestSetupLogging_Success(t *testing.T) {
 		},
 		{
 			name:             "force quiet mode",
-			logLevel:         runnertypes.LogLevelError,
+			logLevel:         slog.LevelError,
 			logDir:           "",
 			runID:            "test-run-005",
 			forceInteractive: false,
@@ -90,7 +90,7 @@ func TestSetupLogging_Success(t *testing.T) {
 func TestSetupLogging_InvalidConfig(t *testing.T) {
 	tests := []struct {
 		name             string
-		logLevel         runnertypes.LogLevel
+		logLevel         slog.Level
 		logDir           string
 		runID            string
 		forceInteractive bool
@@ -100,7 +100,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 	}{
 		{
 			name:             "invalid log directory - does not exist",
-			logLevel:         runnertypes.LogLevelInfo,
+			logLevel:         slog.LevelInfo,
 			logDir:           "/nonexistent/path/to/logs",
 			runID:            "test-run-error-001",
 			forceInteractive: false,
@@ -110,7 +110,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 		},
 		{
 			name:             "invalid log directory - not writable",
-			logLevel:         runnertypes.LogLevelInfo,
+			logLevel:         slog.LevelInfo,
 			logDir:           "",
 			runID:            "test-run-error-002",
 			forceInteractive: false,
@@ -162,7 +162,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	// Ensure cleanup restores permissions for temp dir cleanup
 	defer os.Chmod(readOnlyDir, 0o755)
 
-	err := SetupLogging(runnertypes.LogLevelInfo, readOnlyDir, "test-run-perm", false, false, nil)
+	err := SetupLogging(slog.LevelInfo, readOnlyDir, "test-run-perm", false, false, nil)
 
 	assert.Error(t, err, "SetupLogging() expected error for read-only directory")
 }

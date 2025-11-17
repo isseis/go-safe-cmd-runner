@@ -42,7 +42,6 @@ Defines configuration common to all groups and commands.
 [global]
 timeout = 60
 workdir = "/tmp/workspace"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 ```
 

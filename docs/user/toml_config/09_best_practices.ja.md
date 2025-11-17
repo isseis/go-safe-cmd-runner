@@ -382,9 +382,6 @@ version = "1.0"
 # タイムアウトは最長実行時間の1.5倍に設定
 timeout = 900
 
-# 本番環境では情報レベルのログのみ
-log_level = "info"
-
 # セキュリティ要件により、システムパスも検証
 verify_standard_paths = true
 
@@ -409,7 +406,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/opt/deploy"
-log_level = "info"
 env_allowed = ["PATH", "HOME"]
 
 # ========================================
