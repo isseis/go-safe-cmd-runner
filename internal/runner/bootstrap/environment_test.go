@@ -74,10 +74,6 @@ func TestSetupLogging_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.slackURL != "" {
-				t.Setenv("SLACK_WEBHOOK_URL", tt.slackURL)
-			}
-
 			err := SetupLogging(SetupLoggingOptions{
 				LogLevel:         tt.logLevel,
 				LogDir:           tt.logDir,
@@ -85,7 +81,7 @@ func TestSetupLogging_Success(t *testing.T) {
 				ForceInteractive: tt.forceInteractive,
 				ForceQuiet:       tt.forceQuiet,
 				ConsoleWriter:    nil,
-				IsDryRun:         false,
+				SlackWebhookURL:  tt.slackURL,
 			})
 
 			if (err != nil) != tt.wantErr {
@@ -137,9 +133,6 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Unset Slack webhook URL
-			t.Setenv("SLACK_WEBHOOK_URL", "")
-
 			logDir := tt.logDir
 			if tt.setupFunc != nil {
 				logDir = tt.setupFunc(t)
@@ -152,7 +145,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 				ForceInteractive: tt.forceInteractive,
 				ForceQuiet:       tt.forceQuiet,
 				ConsoleWriter:    nil,
-				IsDryRun:         false,
+				SlackWebhookURL:  "",
 			})
 
 			if (err != nil) != tt.wantErr {
@@ -185,7 +178,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 		ForceInteractive: false,
 		ForceQuiet:       false,
 		ConsoleWriter:    nil,
-		IsDryRun:         false,
+		SlackWebhookURL:  "",
 	})
 
 	assert.Error(t, err, "SetupLogging() expected error for read-only directory")

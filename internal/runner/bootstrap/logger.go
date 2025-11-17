@@ -25,7 +25,7 @@ type LoggerConfig struct {
 	RunID           string
 	SlackWebhookURL string
 	ConsoleWriter   io.Writer // Writer for console output (stdout/stderr)
-	DryRun          bool      // Whether running in dry-run mode (suppresses side effects like Slack notifications)
+	DryRun          bool      // If true, Slack notifications are not sent
 }
 
 // redactionErrorCollector is a global collector for redaction failures

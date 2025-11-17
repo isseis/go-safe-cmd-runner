@@ -139,6 +139,8 @@ func run(runID string) error {
 	if *dryRun && *dryRunFormat == "json" {
 		consoleWriter = os.Stderr
 	}
+	// Get Slack webhook URL from environment (empty in dry-run mode to disable notifications)
+	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 	if err := bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{
 		LogLevel:         logLevelValue,
 		LogDir:           *logDir,
@@ -146,7 +148,8 @@ func run(runID string) error {
 		ForceInteractive: *forceInteractive,
 		ForceQuiet:       *forceQuiet,
 		ConsoleWriter:    consoleWriter,
-		IsDryRun:         *dryRun,
+		SlackWebhookURL:  slackURL,
+		DryRun:           *dryRun,
 	}); err != nil {
 		return err
 	}

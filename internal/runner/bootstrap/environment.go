@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -18,22 +17,21 @@ type SetupLoggingOptions struct {
 	ForceInteractive bool
 	ForceQuiet       bool
 	ConsoleWriter    io.Writer // If nil, defaults to stdout for backward compatibility
-	IsDryRun         bool      // Suppresses side effects like Slack notifications when true
+	SlackWebhookURL  string    // Slack webhook URL for notifications. Empty string disables Slack handler.
+	DryRun           bool      // If true, Slack notifications are not sent
 }
 
 // SetupLogging sets up logging system without environment file handling
 func SetupLogging(opts SetupLoggingOptions) error {
-	// Get Slack webhook URL from OS environment variables
-	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
-
 	// Setup logging system with all configuration including Slack
+	// Empty SlackWebhookURL disables Slack notifications (e.g., in dry-run mode)
 	loggerConfig := LoggerConfig{
 		Level:           opts.LogLevel,
 		LogDir:          opts.LogDir,
 		RunID:           opts.RunID,
-		SlackWebhookURL: slackURL,
+		SlackWebhookURL: opts.SlackWebhookURL,
 		ConsoleWriter:   opts.ConsoleWriter,
-		DryRun:          opts.IsDryRun,
+		DryRun:          opts.DryRun,
 	}
 
 	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
