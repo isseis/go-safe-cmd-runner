@@ -128,7 +128,7 @@ func run(runID string) error {
 
 	// Setup logging early (using command-line log level only)
 	// This allows verification manager creation logs to use custom formatters
-	// Parse log level string to LogLevel type
+	// Parse log level string to slog.Level type
 	logLevelValue, err := parseLogLevel(*logLevel, runID)
 	if err != nil {
 		return err
