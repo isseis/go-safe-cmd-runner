@@ -302,19 +302,19 @@ go build -o build/runner cmd/runner/main.go
 
 #### 3.3.2 変更ファイル
 
-**ファイル**: `internal/runner/group_executor.go`
+**ファイル**: `internal/runner/runner.go`
 
-依存関係解決ロジック内に以下のログを追加：
+依存関係解決ロジック（`collectGroupsWithDependencies` 関数）内に以下のログを追加：
 
 ```go
-// 依存関係が追加される箇所（既存の依存関係解決ロジック内）
+// 依存関係が追加される箇所（collectGroupsWithDependencies 関数内）
 slog.Info("Adding dependent group to execution list",
     "group", dependentGroupName,
     "required_by", requestingGroupName,
     "run_id", r.runID)
 ```
 
-**注**: 既存の依存関係解決ロジックの場所を特定し、適切な箇所にログを追加する。
+**注**: `collectGroupsWithDependencies` 関数内で依存関係を追加する際に、上記のログを出力する。
 
 #### 3.3.3 E2Eテスト設計
 

@@ -357,7 +357,7 @@ func (r *Runner) filterConfigGroups(groupNames []string) *runnertypes.ConfigSpec
 
 依存関係により追加されたグループは INFO レベルでログ出力する。
 
-**実装箇所**: 既存の依存関係解決ロジック内（`internal/runner/group_executor.go`）
+**実装箇所**: 依存関係解決ロジック内（`internal/runner/runner.go` の `collectGroupsWithDependencies` 関数）
 
 ```go
 // 既存コードに以下のログを追加
