@@ -73,40 +73,34 @@ func CheckGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 		return fmt.Errorf("%w: %w", ErrGroupNotFound, ErrNilConfig)
 	}
 
+	// Build a map of existing group names for O(1) lookup
+	// This reduces time complexity from O(N*M) to O(N+M)
+	existingGroups := make(map[string]struct{}, len(config.Groups))
+	for _, group := range config.Groups {
+		existingGroups[group.Name] = struct{}{}
+	}
+
+	// Check each requested group against the map
 	var (
 		missing    []string
-		missingSet map[string]struct{}
+		missingSet = make(map[string]struct{})
 	)
 
 	for _, name := range names {
-		found := false
-		for _, group := range config.Groups {
-			if group.Name == name {
-				found = true
-				break
+		if _, exists := existingGroups[name]; !exists {
+			// Track missing groups with deduplication
+			if _, alreadyAdded := missingSet[name]; !alreadyAdded {
+				missingSet[name] = struct{}{}
+				missing = append(missing, name)
 			}
-		}
-		if !found {
-			if missingSet == nil {
-				missingSet = make(map[string]struct{})
-			}
-			if _, exists := missingSet[name]; exists {
-				continue
-			}
-			missingSet[name] = struct{}{}
-			missing = append(missing, name)
 		}
 	}
 
 	if len(missing) > 0 {
-		available := make([]string, 0, len(config.Groups))
-		seen := make(map[string]struct{}, len(config.Groups))
-		for _, group := range config.Groups {
-			if _, ok := seen[group.Name]; ok {
-				continue
-			}
-			available = append(available, group.Name)
-			seen[group.Name] = struct{}{}
+		// Build available groups list (deduplicated)
+		available := make([]string, 0, len(existingGroups))
+		for groupName := range existingGroups {
+			available = append(available, groupName)
 		}
 
 		return fmt.Errorf("%w: group(s) %v specified in --groups do not exist in configuration\nAvailable groups: %v",
