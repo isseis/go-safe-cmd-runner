@@ -73,14 +73,27 @@ func CheckGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 		return fmt.Errorf("%w: %w", ErrGroupNotFound, ErrNilConfig)
 	}
 
-	existingGroups := make(map[string]struct{}, len(config.Groups))
-	for _, group := range config.Groups {
-		existingGroups[group.Name] = struct{}{}
-	}
+	var (
+		missing    []string
+		missingSet map[string]struct{}
+	)
 
-	var missing []string
 	for _, name := range names {
-		if _, ok := existingGroups[name]; !ok {
+		found := false
+		for _, group := range config.Groups {
+			if group.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if missingSet == nil {
+				missingSet = make(map[string]struct{})
+			}
+			if _, exists := missingSet[name]; exists {
+				continue
+			}
+			missingSet[name] = struct{}{}
 			missing = append(missing, name)
 		}
 	}

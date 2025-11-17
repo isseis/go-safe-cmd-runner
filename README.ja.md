@@ -333,6 +333,40 @@ go-safe-cmd-runnerは3つのコマンドラインツールを提供します：
 
 詳細は [runner コマンドガイド](docs/user/runner_command.ja.md) を参照してください。
 
+### グループフィルタリング
+
+`--groups` フラグにカンマ区切りでグループ名を渡すことで、必要なグループだけを実行できます。
+
+```bash
+# 単一グループ
+./runner -config config.toml --groups=build
+
+# 複数グループ
+./runner -config config.toml --groups=build,test
+
+# 省略時（全グループ）
+./runner -config config.toml
+```
+
+選択したグループが `depends_on` を持つ場合は、依存先が自動的に追加され先に実行されます。
+
+```toml
+[[groups]]
+name = "build"
+depends_on = ["preparation"]
+
+[[groups]]
+name = "test"
+depends_on = ["build"]
+```
+
+```bash
+./runner -config config.toml --groups=test
+# 実行順序: preparation -> build -> test
+```
+
+グループ名は環境変数と同じ命名規則に従い、`[A-Za-z_][A-Za-z0-9_]*`（先頭は英字またはアンダースコア、以降は英数字またはアンダースコア）でなければなりません。
+
 ### record - ハッシュ記録コマンド
 
 ```bash

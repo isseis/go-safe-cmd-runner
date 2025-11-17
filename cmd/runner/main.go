@@ -48,7 +48,8 @@ var (
 	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	forceQuiet       = flag.Bool("quiet", false, "force non-interactive mode (disables colored output)")
 	keepTempDirs     = flag.Bool("keep-temp-dirs", false, "keep temporary directories after execution")
-	groups           = flag.String("groups", "", "comma-separated list of groups to execute (executes all groups if not specified)")
+	groups           = flag.String("groups", "", "comma-separated list of groups to execute (executes all groups if not specified)\n"+
+		"Example: --groups=build,test")
 )
 
 func main() {
