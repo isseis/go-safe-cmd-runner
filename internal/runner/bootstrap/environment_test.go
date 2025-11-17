@@ -74,11 +74,15 @@ func TestSetupLogging_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.slackURL != "" {
-				t.Setenv("SLACK_WEBHOOK_URL", tt.slackURL)
-			}
-
-			err := SetupLogging(tt.logLevel, tt.logDir, tt.runID, tt.forceInteractive, tt.forceQuiet, nil)
+			err := SetupLogging(SetupLoggingOptions{
+				LogLevel:         tt.logLevel,
+				LogDir:           tt.logDir,
+				RunID:            tt.runID,
+				ForceInteractive: tt.forceInteractive,
+				ForceQuiet:       tt.forceQuiet,
+				ConsoleWriter:    nil,
+				SlackWebhookURL:  tt.slackURL,
+			})
 
 			if (err != nil) != tt.wantErr {
 				assert.NoError(t, err, "SetupLogging() should not error")
@@ -129,15 +133,20 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Unset Slack webhook URL
-			t.Setenv("SLACK_WEBHOOK_URL", "")
-
 			logDir := tt.logDir
 			if tt.setupFunc != nil {
 				logDir = tt.setupFunc(t)
 			}
 
-			err := SetupLogging(tt.logLevel, logDir, tt.runID, tt.forceInteractive, tt.forceQuiet, nil)
+			err := SetupLogging(SetupLoggingOptions{
+				LogLevel:         tt.logLevel,
+				LogDir:           logDir,
+				RunID:            tt.runID,
+				ForceInteractive: tt.forceInteractive,
+				ForceQuiet:       tt.forceQuiet,
+				ConsoleWriter:    nil,
+				SlackWebhookURL:  "",
+			})
 
 			if (err != nil) != tt.wantErr {
 				assert.Equal(t, tt.wantErr, err != nil, "SetupLogging() error = %v, wantErr %v", err, tt.wantErr)
@@ -162,7 +171,15 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	// Ensure cleanup restores permissions for temp dir cleanup
 	defer os.Chmod(readOnlyDir, 0o755)
 
-	err := SetupLogging(slog.LevelInfo, readOnlyDir, "test-run-perm", false, false, nil)
+	err := SetupLogging(SetupLoggingOptions{
+		LogLevel:         slog.LevelInfo,
+		LogDir:           readOnlyDir,
+		RunID:            "test-run-perm",
+		ForceInteractive: false,
+		ForceQuiet:       false,
+		ConsoleWriter:    nil,
+		SlackWebhookURL:  "",
+	})
 
 	assert.Error(t, err, "SetupLogging() expected error for read-only directory")
 }

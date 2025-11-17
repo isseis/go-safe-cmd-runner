@@ -70,6 +70,7 @@ type SlackHandler struct {
 	attrs         []slog.Attr // Accumulated attributes from WithAttrs calls
 	groups        []string    // Accumulated group names from WithGroup calls
 	backoffConfig BackoffConfig
+	isDryRun      bool // Whether running in dry-run mode (suppresses actual notifications)
 }
 
 // SlackMessage represents the structure of a Slack webhook message
@@ -104,6 +105,15 @@ type SlackAttachmentField struct {
 	Short bool   `json:"short"`
 }
 
+// SlackHandlerOptions holds configuration for creating a SlackHandler
+type SlackHandlerOptions struct {
+	WebhookURL    string        // Slack webhook URL (required)
+	RunID         string        // Run ID for tracking (required)
+	HTTPClient    *http.Client  // Custom HTTP client (optional, defaults to client with httpTimeout)
+	BackoffConfig BackoffConfig // Retry backoff configuration (optional, defaults to DefaultBackoffConfig)
+	IsDryRun      bool          // If true, suppresses actual Slack notifications (used for dry-run mode)
+}
+
 // validateWebhookURL validates that the webhook URL is a valid HTTPS URL
 func validateWebhookURL(webhookURL string) error {
 	if webhookURL == "" {
@@ -126,30 +136,40 @@ func validateWebhookURL(webhookURL string) error {
 	return nil
 }
 
-// NewSlackHandler creates a new SlackHandler with URL validation and default backoff configuration
-func NewSlackHandler(webhookURL, runID string) (*SlackHandler, error) {
-	return NewSlackHandlerWithConfig(webhookURL, runID, DefaultBackoffConfig)
-}
-
-// NewSlackHandlerWithConfig creates a new SlackHandler with URL validation and custom backoff configuration
-func NewSlackHandlerWithConfig(webhookURL, runID string, config BackoffConfig) (*SlackHandler, error) {
-	return NewSlackHandlerWithHTTPClient(webhookURL, runID, &http.Client{Timeout: httpTimeout}, config)
-}
-
-// NewSlackHandlerWithHTTPClient creates a new SlackHandler with URL validation, custom HTTP client, and custom backoff configuration
-// This is useful for testing with mock servers that use self-signed certificates
-func NewSlackHandlerWithHTTPClient(webhookURL, runID string, httpClient *http.Client, config BackoffConfig) (*SlackHandler, error) {
-	if err := validateWebhookURL(webhookURL); err != nil {
+// NewSlackHandler creates a new SlackHandler with the provided options
+// This is the preferred way to create a SlackHandler as it allows for easy addition of new configuration options
+func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
+	if err := validateWebhookURL(opts.WebhookURL); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	slog.Debug("Creating Slack handler", slog.String("webhook_url", webhookURL), slog.String("run_id", runID), slog.Duration("timeout", httpClient.Timeout), slog.Duration("backoff_base", config.Base), slog.Int("retry_count", config.RetryCount))
+	// Apply defaults for optional fields
+	httpClient := opts.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: httpTimeout}
+	}
+
+	backoffConfig := opts.BackoffConfig
+	// If backoff config is zero-valued, use defaults
+	if backoffConfig.Base == 0 && backoffConfig.RetryCount == 0 {
+		backoffConfig = DefaultBackoffConfig
+	}
+
+	slog.Debug("Creating Slack handler",
+		slog.String("webhook_url", opts.WebhookURL),
+		slog.String("run_id", opts.RunID),
+		slog.Duration("timeout", httpClient.Timeout),
+		slog.Duration("backoff_base", backoffConfig.Base),
+		slog.Int("retry_count", backoffConfig.RetryCount),
+		slog.Bool("dry_run", opts.IsDryRun))
+
 	return &SlackHandler{
-		webhookURL:    webhookURL,
-		runID:         runID,
+		webhookURL:    opts.WebhookURL,
+		runID:         opts.RunID,
 		httpClient:    httpClient,
 		level:         slog.LevelInfo, // Only handle info level and above
-		backoffConfig: config,
+		backoffConfig: backoffConfig,
+		isDryRun:      opts.IsDryRun,
 	}, nil
 }
 
@@ -182,6 +202,12 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 	})
 
 	if !shouldSend {
+		return nil
+	}
+
+	// Skip actual Slack notifications in dry-run mode
+	if s.isDryRun {
+		slog.Debug("Skipping Slack notification in dry-run mode", slog.String("message_type", messageType))
 		return nil
 	}
 
@@ -224,6 +250,7 @@ func (s *SlackHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		attrs:         newAttrs,
 		groups:        s.groups, // Copy existing groups
 		backoffConfig: s.backoffConfig,
+		isDryRun:      s.isDryRun,
 	}
 }
 
@@ -246,6 +273,7 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 		attrs:         s.attrs, // Copy existing attributes
 		groups:        newGroups,
 		backoffConfig: s.backoffConfig,
+		isDryRun:      s.isDryRun,
 	}
 }
 

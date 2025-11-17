@@ -4,34 +4,42 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 )
 
-// SetupLogging sets up logging system without environment file handling
-// consoleWriter specifies where console logs should be written (stdout or stderr)
-// If nil, defaults to stdout for backward compatibility
-func SetupLogging(logLevel slog.Level, logDir, runID string, forceInteractive, forceQuiet bool, consoleWriter io.Writer) error {
-	// Get Slack webhook URL from OS environment variables
-	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
+// SetupLoggingOptions holds configuration for SetupLogging
+type SetupLoggingOptions struct {
+	LogLevel         slog.Level
+	LogDir           string
+	RunID            string
+	ForceInteractive bool
+	ForceQuiet       bool
+	ConsoleWriter    io.Writer // If nil, defaults to stdout for backward compatibility
+	SlackWebhookURL  string    // Slack webhook URL for notifications. Empty string disables Slack handler.
+	DryRun           bool      // If true, Slack notifications are not sent
+}
 
+// SetupLogging sets up logging system without environment file handling
+func SetupLogging(opts SetupLoggingOptions) error {
 	// Setup logging system with all configuration including Slack
+	// Empty SlackWebhookURL disables Slack notifications (e.g., in dry-run mode)
 	loggerConfig := LoggerConfig{
-		Level:           logLevel,
-		LogDir:          logDir,
-		RunID:           runID,
-		SlackWebhookURL: slackURL,
-		ConsoleWriter:   consoleWriter,
+		Level:           opts.LogLevel,
+		LogDir:          opts.LogDir,
+		RunID:           opts.RunID,
+		SlackWebhookURL: opts.SlackWebhookURL,
+		ConsoleWriter:   opts.ConsoleWriter,
+		DryRun:          opts.DryRun,
 	}
 
-	if err := SetupLoggerWithConfig(loggerConfig, forceInteractive, forceQuiet); err != nil {
+	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeLogFileOpen,
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
 			Component: string(resource.ComponentLogging),
-			RunID:     runID,
+			RunID:     opts.RunID,
 		}
 	}
 
