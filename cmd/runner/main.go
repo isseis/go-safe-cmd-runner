@@ -106,10 +106,10 @@ func mainWithExitCode(runID string) int {
 	return 0
 }
 
-// parseLogLevel parses a log level string and returns the corresponding LogLevel value.
+// parseLogLevel parses a log level string and returns the corresponding slog.Level value.
 // It returns a PreExecutionError if the log level string is invalid.
-func parseLogLevel(logLevelStr string, runID string) (runnertypes.LogLevel, error) {
-	var level runnertypes.LogLevel
+func parseLogLevel(logLevelStr string, runID string) (slog.Level, error) {
+	var level slog.Level
 	if err := level.UnmarshalText([]byte(logLevelStr)); err != nil {
 		return level, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
