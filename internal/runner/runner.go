@@ -410,28 +410,28 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 }
 
 // ExecuteFiltered executes only the specified groups
-// groupNames が nil または空の場合は全グループを実行（ExecuteAll と同じ動作）
+// If groupNames is nil or empty, executes all groups (same behavior as ExecuteAll)
 //
 // Parameters:
-//   - ctx: コンテキスト
-//   - groupNames: 実行するグループ名のリスト（nil の場合は全グループ）
+//   - ctx: context
+//   - groupNames: list of group names to execute (all groups if nil)
 //
 // Returns:
-//   - error: 実行エラー
+//   - error: execution error
 func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error {
-	// グループ名が指定されていない場合は全グループを実行
+	// Execute all groups if no group names are specified
 	if len(groupNames) == 0 {
 		return r.ExecuteAll(ctx)
 	}
 
-	// 指定されたグループのみを含む設定を作成
+	// Create a configuration containing only the specified groups
 	filteredConfig, err := r.filterConfigGroups(groupNames)
 	if err != nil {
 		return err
 	}
 
-	// フィルタリングされた設定で実行
-	// 一時的にr.configを置き換えて実行
+	// Execute with the filtered configuration
+	// Temporarily replace r.config for execution
 	originalConfig := r.config
 	r.config = filteredConfig
 	defer func() {
@@ -441,15 +441,15 @@ func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error
 	return r.ExecuteAll(ctx)
 }
 
-// filterConfigGroups は指定されたグループ名を含む設定を生成する
-// 内部使用のみ（非公開メソッド）
+// filterConfigGroups generates a configuration containing the specified group names
+// For internal use only (private method)
 //
 // Parameters:
-//   - groupNames: フィルターするグループ名
+//   - groupNames: group names to filter
 //
 // Returns:
-//   - *runnertypes.ConfigSpec: フィルタリングされた設定
-//   - error: グループが見つからない場合のエラー
+//   - *runnertypes.ConfigSpec: filtered configuration
+//   - error: error if a group is not found
 func (r *Runner) filterConfigGroups(groupNames []string) (*runnertypes.ConfigSpec, error) {
 	if len(groupNames) == 0 {
 		cloned := *r.config
