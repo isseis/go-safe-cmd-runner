@@ -20,15 +20,6 @@ func BenchmarkParseGroupNames(b *testing.B) {
 	}
 }
 
-func BenchmarkValidateGroupNames(b *testing.B) {
-	names := []string{"build", "test", "deploy", "verify", "cleanup"}
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_ = ValidateGroupNames(names)
-	}
-}
-
 func BenchmarkFilterGroups(b *testing.B) {
 	config := &runnertypes.ConfigSpec{
 		Groups: make([]runnertypes.GroupSpec, 10),

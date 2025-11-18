@@ -58,40 +58,6 @@ func TestParseGroupNames(t *testing.T) {
 	}
 }
 
-func TestValidateGroupName(t *testing.T) {
-	validNames := []string{"build", "test_integration", "Deploy_Prod", "_internal", "group123"}
-	for _, name := range validNames {
-		t.Run("valid/"+name, func(t *testing.T) {
-			require.NoError(t, ValidateGroupName(name))
-		})
-	}
-
-	invalidNames := []string{"123test", "test-unit", "build,test", "build test", ""}
-	for _, name := range invalidNames {
-		t.Run("invalid/"+name, func(t *testing.T) {
-			err := ValidateGroupName(name)
-			require.Error(t, err)
-			require.True(t, errors.Is(err, ErrInvalidGroupName))
-		})
-	}
-}
-
-func TestValidateGroupNames(t *testing.T) {
-	t.Run("all valid", func(t *testing.T) {
-		require.NoError(t, ValidateGroupNames([]string{"build", "test"}))
-	})
-
-	t.Run("invalid entry", func(t *testing.T) {
-		err := ValidateGroupNames([]string{"build", "bad-name"})
-		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrInvalidGroupName))
-	})
-
-	t.Run("empty slice", func(t *testing.T) {
-		require.NoError(t, ValidateGroupNames(nil))
-	})
-}
-
 func TestCheckGroupsExist(t *testing.T) {
 	cfg := newTestConfig("build", "test")
 
@@ -143,10 +109,12 @@ func TestFilterGroups(t *testing.T) {
 		require.Equal(t, []string{"build"}, got)
 	})
 
-	t.Run("invalid name", func(t *testing.T) {
+	t.Run("invalid name (hyphenated)", func(t *testing.T) {
+		// Invalid group names (like "bad-name") won't exist in config since
+		// config loading validates group names
 		_, err := FilterGroups([]string{"bad-name"}, cfg)
 		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrInvalidGroupName))
+		require.True(t, errors.Is(err, ErrGroupNotFound))
 	})
 
 	t.Run("missing group", func(t *testing.T) {

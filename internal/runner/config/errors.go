@@ -66,6 +66,18 @@ var (
 
 	// ErrDuplicateVariableDefinition is returned when the same variable is defined multiple times in the same scope
 	ErrDuplicateVariableDefinition = errors.New("duplicate variable definition")
+
+	// ErrInvalidGroupName is returned when a group name doesn't match the required pattern
+	ErrInvalidGroupName = errors.New("invalid group name")
+
+	// ErrEmptyGroupName is returned when a group has an empty name
+	ErrEmptyGroupName = errors.New("group has empty name")
+
+	// ErrDuplicateGroupName is returned when duplicate group names are found
+	ErrDuplicateGroupName = errors.New("duplicate group name")
+
+	// ErrNilConfig is returned when configuration is nil
+	ErrNilConfig = errors.New("configuration must not be nil")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.

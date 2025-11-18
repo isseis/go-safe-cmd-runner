@@ -1339,7 +1339,7 @@ workdir = "` + tempDir + `"
 output_size_limit = 1048576
 
 [[groups]]
-name = "output-capture-group"
+name = "output_capture_group"
 description = "Test group with output capture"
 
 [[groups.commands]]
@@ -1380,7 +1380,7 @@ args = ["No output capture"]
 		require.NotNil(t, config.Global.OutputSizeLimit)
 		assert.Equal(t, int64(1048576), *config.Global.OutputSizeLimit)
 		assert.Len(t, config.Groups, 1)
-		assert.Equal(t, "output-capture-group", config.Groups[0].Name)
+		assert.Equal(t, "output_capture_group", config.Groups[0].Name)
 		assert.Len(t, config.Groups[0].Commands, 3)
 
 		// Verify commands have correct output configuration
@@ -1416,7 +1416,7 @@ workdir = "` + tempDir + `"
 output_size_limit = -1  # Invalid negative size
 
 [[groups]]
-name = "invalid-group"
+name = "invalid_group"
 
 [[groups.commands]]
 name = "invalid-echo"

@@ -3,21 +3,15 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// GroupNamePattern defines the naming rule for groups.
-// Allowed characters follow the environment variable convention: [A-Za-z_][A-Za-z0-9_]*.
-var GroupNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 // Error definitions for group filtering.
 var (
-	ErrInvalidGroupName = errors.New("invalid group name")
-	ErrGroupNotFound    = errors.New("group not found")
-	ErrNilConfig        = errors.New("configuration must not be nil")
+	ErrGroupNotFound = errors.New("group not found")
+	ErrNilConfig     = errors.New("configuration must not be nil")
 )
 
 // ParseGroupNames parses the --groups CLI flag and returns a slice of group names.
@@ -46,25 +40,9 @@ func ParseGroupNames(groupsFlag string) []string {
 	return result
 }
 
-// ValidateGroupName verifies that a single group name complies with the naming convention.
-func ValidateGroupName(name string) error {
-	if !GroupNamePattern.MatchString(name) {
-		return fmt.Errorf("%w: %q must match pattern [A-Za-z_][A-Za-z0-9_]*", ErrInvalidGroupName, name)
-	}
-	return nil
-}
-
-// ValidateGroupNames verifies that all provided group names are valid.
-func ValidateGroupNames(names []string) error {
-	for _, name := range names {
-		if err := ValidateGroupName(name); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // CheckGroupsExist ensures that every group name exists in the provided configuration.
+// Note: Group names in the configuration are already validated by config.ValidateGroupNames
+// during config loading, so this function only checks existence, not name format.
 func CheckGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 	if len(names) == 0 {
 		return nil
@@ -112,6 +90,8 @@ func CheckGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 
 // FilterGroups validates and filters the configuration based on the requested names.
 // When names is nil or empty, it returns all group names from the configuration.
+// Note: Group names in the configuration are already validated by config.ValidateGroupNames
+// during config loading, so this function only checks that user-specified groups exist.
 func FilterGroups(names []string, config *runnertypes.ConfigSpec) ([]string, error) {
 	if config == nil {
 		return nil, ErrNilConfig
@@ -125,10 +105,7 @@ func FilterGroups(names []string, config *runnertypes.ConfigSpec) ([]string, err
 		return allGroups, nil
 	}
 
-	if err := ValidateGroupNames(names); err != nil {
-		return nil, err
-	}
-
+	// Check that requested groups exist in the configuration
 	if err := CheckGroupsExist(names, config); err != nil {
 		return nil, err
 	}

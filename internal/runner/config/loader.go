@@ -58,5 +58,10 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 		return nil, err
 	}
 
+	// Validate group names
+	if err := ValidateGroupNames(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }

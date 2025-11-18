@@ -26,7 +26,7 @@ func TestDryRun_JSON_OutputStructure(t *testing.T) {
 			name: "success case with status and summary",
 			configContent: `
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
@@ -140,7 +140,7 @@ func TestDryRun_JSON_TimeoutResolutionContext(t *testing.T) {
 timeout = 60
 
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
@@ -158,7 +158,7 @@ timeout = 30
 timeout = 45
 
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
@@ -172,7 +172,7 @@ args = ["hello"]
 			name: "default timeout in JSON dry-run",
 			configContent: `
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
