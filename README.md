@@ -321,15 +321,45 @@ go-safe-cmd-runner provides three command-line tools:
 ### runner - Main Execution Command
 
 ```bash
-# Basic execution
-./runner -config config.toml
+# Basic execution (long form)
+./runner --config config.toml
+
+# Basic execution (short form)
+./runner -c config.toml
 
 # Dry run (preview execution)
-./runner -config config.toml -dry-run
+./runner -c config.toml --dry-run
+./runner -c config.toml -n          # Short form
 
 # Validate configuration
-./runner -config config.toml -validate
+./runner -c config.toml --validate
+./runner -c config.toml -V           # Short form
+
+# Group filtering
+./runner -c config.toml --groups=build,test
+./runner -c config.toml -g build,test  # Short form
+
+# Quiet mode
+./runner -c config.toml --quiet
+./runner -c config.toml -q           # Short form
+
+# Set log level
+./runner -c config.toml --log-level=debug
+./runner -c config.toml -l debug     # Short form
 ```
+
+#### Short Flags
+
+The runner command supports the following short flags for commonly used options:
+
+| Long Form | Short Form | Description |
+|-----------|------------|-------------|
+| `--config` | `-c` | Configuration file path |
+| `--dry-run` | `-n` | Dry run mode (preview execution) |
+| `--groups` | `-g` | Filter groups to execute |
+| `--log-level` | `-l` | Set logging level |
+| `--quiet` | `-q` | Quiet mode (disable colored output) |
+| `--validate` | `-V` | Validate configuration and exit |
 
 For details, see the [runner command guide](docs/user/runner_command.md).
 
@@ -370,21 +400,89 @@ Group names follow the same constraints as environment variable identifiers: the
 ### record - Hash Recording Command
 
 ```bash
-# Record file hash
-./record -file /path/to/executable
+# Record hash for a single file
+./record --hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /path/to/executable
+
+# Record hash using short form
+./record -d /usr/local/etc/go-safe-cmd-runner/hashes /path/to/executable
+
+# Record hashes for multiple files at once
+./record -d /usr/local/etc/go-safe-cmd-runner/hashes file1.dat file2.txt file3.sh
 
 # Force overwrite existing hash
-./record -file /path/to/file -force
+./record -d /usr/local/etc/go-safe-cmd-runner/hashes -force /path/to/file
 ```
+
+#### Multiple File Processing
+
+The record command can process multiple files in a single invocation:
+
+```bash
+# Process multiple files
+./record -d /tmp/hash file1.dat file2.txt file3.sh
+
+# Output example:
+# Processing 3 files...
+# [1/3] file1.dat: OK
+# [2/3] file2.txt: OK
+# [3/3] file3.sh: OK
+#
+# Summary: 3 succeeded, 0 failed
+```
+
+- Files are specified as positional arguments after flags
+- Progress is shown as `[current/total]` for each file
+- Final summary reports success and failure counts
+- Non-zero exit code if any file fails
+
+#### Short Flags
+
+| Long Form | Short Form | Description |
+|-----------|------------|-------------|
+| `--hash-dir` | `-d` | Hash directory path |
 
 For details, see the [record command guide](docs/user/record_command.md).
 
 ### verify - File Verification Command
 
 ```bash
-# Verify file integrity
-./verify -file /path/to/file
+# Verify single file integrity
+./verify --hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /path/to/file
+
+# Verify using short form
+./verify -d /usr/local/etc/go-safe-cmd-runner/hashes /path/to/file
+
+# Verify multiple files at once
+./verify -d /usr/local/etc/go-safe-cmd-runner/hashes file1.dat file2.txt file3.sh
 ```
+
+#### Multiple File Processing
+
+The verify command can verify multiple files in a single invocation:
+
+```bash
+# Verify multiple files
+./verify -d /tmp/hash file1.dat file2.txt file3.sh
+
+# Output example:
+# Verifying 3 files...
+# [1/3] file1.dat: OK
+# [2/3] file2.txt: OK
+# [3/3] file3.sh: OK
+#
+# Summary: 3 succeeded, 0 failed
+```
+
+- Files are specified as positional arguments after flags
+- Progress is shown as `[current/total]` for each file
+- Final summary reports success and failure counts
+- Non-zero exit code if any file fails
+
+#### Short Flags
+
+| Long Form | Short Form | Description |
+|-----------|------------|-------------|
+| `--hash-dir` | `-d` | Hash directory path |
 
 For details, see the [verify command guide](docs/user/verify_command.md).
 
