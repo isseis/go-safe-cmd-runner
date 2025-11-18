@@ -47,10 +47,9 @@ type GlobalSpec struct {
 // For runtime-expanded values, see RuntimeGroup instead.
 type GroupSpec struct {
 	// Basic information
-	Name        string   `toml:"name"`        // Group name (must be unique within the config)
-	Description string   `toml:"description"` // Human-readable description
-	Priority    int      `toml:"priority"`    // Execution priority (lower number = higher priority)
-	DependsOn   []string `toml:"depends_on"`  // Names of groups that must run before this group
+	Name        string `toml:"name"`        // Group name (must be unique within the config)
+	Description string `toml:"description"` // Human-readable description
+	Priority    int    `toml:"priority"`    // Execution priority (lower number = higher priority)
 
 	// Resource management
 	WorkDir string `toml:"workdir"` // Working directory for this group (raw value, not yet expanded)

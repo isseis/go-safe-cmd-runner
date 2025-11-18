@@ -2119,31 +2119,6 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			expectedGroups: []string{"common", "test"}, // Should be sorted by priority
 			expectError:    false,
 		},
-		{
-			name: "includes dependent groups when filtering subset",
-			config: &runnertypes.ConfigSpec{
-				Version: "1.0",
-				Groups: []runnertypes.GroupSpec{
-					{Name: "common", Priority: 1},
-					{Name: "build", Priority: 2, DependsOn: []string{"common"}},
-					{Name: "test", Priority: 3, DependsOn: []string{"build"}},
-				},
-			},
-			groupNames:     []string{"test"},
-			expectedGroups: []string{"common", "build", "test"},
-			expectError:    false,
-		},
-		{
-			name: "returns error when dependency missing",
-			config: &runnertypes.ConfigSpec{
-				Version: "1.0",
-				Groups: []runnertypes.GroupSpec{
-					{Name: "test", Priority: 1, DependsOn: []string{"build"}},
-				},
-			},
-			groupNames:  []string{"test"},
-			expectError: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -2236,27 +2211,15 @@ func TestRunner_filterConfigGroups(t *testing.T) {
 			expectedGroups: []string{"test", "common"}, // Original order from config
 		},
 		{
-			name: "includes dependencies",
+			name: "nonexistent group returns error",
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
 					{Name: "common"},
-					{Name: "build", DependsOn: []string{"common"}},
-					{Name: "test", DependsOn: []string{"build"}},
+					{Name: "build"},
 				},
 			},
-			groupNames:     []string{"test"},
-			expectedGroups: []string{"common", "build", "test"},
-		},
-		{
-			name: "missing dependency returns error",
-			config: &runnertypes.ConfigSpec{
-				Version: "1.0",
-				Groups: []runnertypes.GroupSpec{
-					{Name: "test", DependsOn: []string{"missing"}},
-				},
-			},
-			groupNames:  []string{"test"},
+			groupNames:  []string{"missing"},
 			expectError: true,
 		},
 	}
@@ -2321,6 +2284,7 @@ func TestGroupFilteringE2E(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, runner.ExecuteFiltered(ctx, []string{"test"}))
 
-	assert.Equal(t, []string{"common", "build_backend", "build_frontend", "test"}, executedGroups)
+	// Without dependency resolution, only the specified group should execute
+	assert.Equal(t, []string{"test"}, executedGroups)
 	mockGroupExecutor.AssertExpectations(t)
 }
