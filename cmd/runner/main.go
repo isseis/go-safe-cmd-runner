@@ -36,45 +36,75 @@ func (e SilentExitError) Error() string {
 }
 
 var (
-	configPath       = flag.String("config", "", "path to config file")
-	logLevel         = flag.String("log-level", "info", "log level (debug, info, warn, error)")
-	logDir           = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
-	dryRun           = flag.Bool("dry-run", false, "print commands without executing them")
-	dryRunFormat     = flag.String("dry-run-format", "text", "dry-run output format (text, json)")
-	dryRunDetail     = flag.String("dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
-	showSensitive    = flag.Bool("show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	validateConfig   = flag.Bool("validate", false, "validate configuration file and exit")
-	runID            = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
-	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
-	forceQuiet       = flag.Bool("quiet", false, "force non-interactive mode (disables colored output)")
-	keepTempDirs     = flag.Bool("keep-temp-dirs", false, "keep temporary directories after execution")
-	groups           = flag.String("groups", "", "comma-separated list of groups to execute (executes all groups if not specified)\n"+
-		"Example: --groups=build,test")
+	configPath       string
+	logLevel         string
+	logDir           string
+	dryRun           bool
+	dryRunFormat     string
+	dryRunDetail     string
+	showSensitive    bool
+	validateConfig   bool
+	runID            string
+	forceInteractive bool
+	forceQuiet       bool
+	keepTempDirs     bool
+	groups           string
 )
+
+func init() {
+	// High-priority flags with short forms
+	flag.StringVar(&configPath, "config", "", "path to config file")
+	flag.StringVar(&configPath, "c", "", "path to config file (short form)")
+
+	flag.BoolVar(&dryRun, "dry-run", false, "print commands without executing them")
+	flag.BoolVar(&dryRun, "n", false, "print commands without executing them (short form)")
+
+	flag.StringVar(&groups, "groups", "", "comma-separated list of groups to execute (executes all groups if not specified)\nExample: --groups=build,test")
+	flag.StringVar(&groups, "g", "", "comma-separated list of groups to execute (short form)")
+
+	// Medium-priority flags with short forms
+	flag.StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
+	flag.StringVar(&logLevel, "l", "info", "log level (short form)")
+
+	flag.BoolVar(&forceQuiet, "quiet", false, "force non-interactive mode (disables colored output)")
+	flag.BoolVar(&forceQuiet, "q", false, "force non-interactive mode (short form)")
+
+	flag.BoolVar(&validateConfig, "validate", false, "validate configuration file and exit")
+	flag.BoolVar(&validateConfig, "V", false, "validate configuration file and exit (short form)")
+
+	// Other flags without short forms
+	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
+	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
+	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
+	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
+	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
+	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
+}
 
 func main() {
 	// Parse command line flags early to get runID
 	flag.Parse()
 
 	// Use provided run ID or generate one for error handling
-	if *runID == "" {
-		*runID = logging.GenerateRunID()
+	if runID == "" {
+		runID = logging.GenerateRunID()
 	}
 
 	// Validate DefaultHashDirectory early - this should never fail in production
 	// but helps catch build-time configuration errors
 	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
-		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory), "main", *runID)
+		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory), "main", runID)
 		os.Exit(1)
 	}
 
 	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
-		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", *runID)
+		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", runID)
 		os.Exit(1)
 	}
 
 	// Run main logic and capture exit code
-	exitCode := mainWithExitCode(*runID)
+	exitCode := mainWithExitCode(runID)
 
 	// Ensure redaction failures are reported before exit
 	bootstrap.ReportRedactionFailures()
@@ -131,27 +161,27 @@ func run(runID string) error {
 	// Setup logging early (using command-line log level only)
 	// This allows verification manager creation logs to use custom formatters
 	// Parse log level string to slog.Level type
-	logLevelValue, err := parseLogLevel(*logLevel, runID)
+	logLevelValue, err := parseLogLevel(logLevel, runID)
 	if err != nil {
 		return err
 	}
 	// Determine console output destination based on dry-run format
 	// For JSON format, send logs to stderr to keep stdout clean for JSON output
 	consoleWriter := os.Stdout
-	if *dryRun && *dryRunFormat == "json" {
+	if dryRun && dryRunFormat == "json" {
 		consoleWriter = os.Stderr
 	}
 	// Get Slack webhook URL from environment (empty in dry-run mode to disable notifications)
 	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 	if err := bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{
 		LogLevel:         logLevelValue,
-		LogDir:           *logDir,
+		LogDir:           logDir,
 		RunID:            runID,
-		ForceInteractive: *forceInteractive,
-		ForceQuiet:       *forceQuiet,
+		ForceInteractive: forceInteractive,
+		ForceQuiet:       forceQuiet,
 		ConsoleWriter:    consoleWriter,
 		SlackWebhookURL:  slackURL,
-		DryRun:           *dryRun,
+		DryRun:           dryRun,
 	}); err != nil {
 		return err
 	}
@@ -159,7 +189,7 @@ func run(runID string) error {
 	// Initialize verification manager with secure default hash directory
 	// For dry-run mode, skip hash directory validation since no actual file verification is needed
 	var verificationManager *verification.Manager
-	if *dryRun {
+	if dryRun {
 		verificationManager, err = verification.NewManagerForDryRun()
 	} else {
 		verificationManager, err = verification.NewManager()
@@ -174,13 +204,13 @@ func run(runID string) error {
 	}
 
 	// Load and prepare configuration (verify, parse, and expand variables)
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
 	if err != nil {
 		return err
 	}
 
 	// Handle validate command (after verification and loading)
-	if *validateConfig {
+	if validateConfig {
 		err := cli.ValidateConfigCommand(cfg)
 		if err != nil {
 			if errors.Is(err, cli.ErrConfigValidationFailed) {
@@ -194,9 +224,9 @@ func run(runID string) error {
 
 	// Log verification and configuration summary after config is loaded
 	slog.Info("Verification and configuration completed",
-		"config_path", *configPath,
+		"config_path", configPath,
 		"hash_directory", cmdcommon.DefaultHashDirectory,
-		"dry_run", *dryRun)
+		"dry_run", dryRun)
 
 	// Expand global configuration
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
@@ -245,7 +275,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runner.WithPrivilegeManager(privMgr),
 		runner.WithRunID(runID),
 		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithKeepTempDirs(*keepTempDirs),
+		runner.WithKeepTempDirs(keepTempDirs),
 	}
 
 	// Parse dry-run options once for the entire function
@@ -253,24 +283,24 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	var outputFormat resource.OutputFormat
 
 	// Add dry-run mode if requested
-	if *dryRun {
+	if dryRun {
 		// Parse detail level
 		var err error
-		detailLevel, err = cli.ParseDryRunDetailLevel(*dryRunDetail)
+		detailLevel, err = cli.ParseDryRunDetailLevel(dryRunDetail)
 		if err != nil {
-			return fmt.Errorf("invalid detail level %q: %w", *dryRunDetail, err)
+			return fmt.Errorf("invalid detail level %q: %w", dryRunDetail, err)
 		}
 
 		// Parse output format
-		outputFormat, err = cli.ParseDryRunOutputFormat(*dryRunFormat)
+		outputFormat, err = cli.ParseDryRunOutputFormat(dryRunFormat)
 		if err != nil {
-			return fmt.Errorf("invalid output format %q: %w", *dryRunFormat, err)
+			return fmt.Errorf("invalid output format %q: %w", dryRunFormat, err)
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
 			DetailLevel:         detailLevel,
 			OutputFormat:        outputFormat,
-			ShowSensitive:       *showSensitive,
+			ShowSensitive:       showSensitive,
 			VerifyFiles:         true,
 			VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths), // Use new verify logic
 			HashDir:             cmdcommon.DefaultHashDirectory,                                           // Use secure default hash directory
@@ -297,7 +327,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 	// Resolve and filter groups based on the --groups flag (executes all groups if not specified)
 	groupNames, err := cli.FilterGroups(
-		cli.ParseGroupNames(*groups),
+		cli.ParseGroupNames(groups),
 		cfg,
 	)
 	if err != nil {
@@ -314,7 +344,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	execErr := r.Execute(ctx, groupNames)
 
 	// Handle dry-run output (always output, even on error)
-	if *dryRun {
+	if dryRun {
 		// If an execution error occurred, set error status before getting results
 		if execErr != nil {
 			// Set execution error in the resource manager
@@ -341,7 +371,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 			output, err := formatter.FormatResult(result, resource.FormatterOptions{
 				DetailLevel:   detailLevel,
 				OutputFormat:  outputFormat,
-				ShowSensitive: *showSensitive,
+				ShowSensitive: showSensitive,
 			})
 			if err != nil {
 				return fmt.Errorf("formatting failed: %w", err)
