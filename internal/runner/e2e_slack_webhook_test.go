@@ -67,13 +67,13 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	t.Logf("Mock server URL: %s", mockServer.URL)
 
 	// Create real Slack handler with mock server URL and HTTP client that accepts self-signed certs
-	realSlackHandler, err := logging.NewSlackHandlerWithHTTPClient(
-		mockServer.URL,
-		"e2e-mock-test-"+timeBasedID(),
-		mockServer.Client(),
-		logging.DefaultBackoffConfig,
-		false, // not dry-run
-	)
+	realSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
+		WebhookURL:    mockServer.URL,
+		RunID:         "e2e-mock-test-" + timeBasedID(),
+		HTTPClient:    mockServer.Client(),
+		BackoffConfig: logging.DefaultBackoffConfig,
+		IsDryRun:      false,
+	})
 	require.NoError(t, err, "Failed to create Slack handler")
 
 	// Create failure logger (stderr only, no Slack)
@@ -121,7 +121,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	err = runner.ExecuteFiltered(ctx, nil)
+	err = runner.Execute(ctx, nil)
 
 	require.NoError(t, err, "command should succeed")
 
