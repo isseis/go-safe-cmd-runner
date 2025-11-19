@@ -108,7 +108,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	// Mock validator
@@ -278,7 +278,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			})
 
 			// Mock verification manager
-			mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+			mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 			mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 			// Mock validator

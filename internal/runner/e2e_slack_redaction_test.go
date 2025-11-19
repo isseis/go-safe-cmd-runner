@@ -155,7 +155,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	ctx := context.Background()
@@ -270,7 +270,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 		RunID:               "test-run-multihandler",
 	})
 
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	ctx := context.Background()

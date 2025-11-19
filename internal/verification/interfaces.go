@@ -8,7 +8,7 @@ import (
 // This interface is introduced for testing purposes
 type ManagerInterface interface {
 	ResolvePath(path string) (string, error)
-	VerifyGroupFiles(group *runnertypes.GroupSpec) (*Result, error)
+	VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Result, error)
 }
 
 // Ensure Manager implements ManagerInterface
