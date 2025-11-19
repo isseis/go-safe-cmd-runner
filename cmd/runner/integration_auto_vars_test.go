@@ -99,7 +99,7 @@ args = ["-c", "echo 'backup' > %%{backup_file}"]
 
 	// Execute the commands
 	ctx := context.Background()
-	err = r.ExecuteAll(ctx)
+	err = r.Execute(ctx, nil)
 	require.NoError(t, err)
 
 	// Verify the output file contains the expanded values

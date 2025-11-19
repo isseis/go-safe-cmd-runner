@@ -354,21 +354,22 @@ func (r *Runner) LoadSystemEnvironment() error {
 	return nil
 }
 
-// ExecuteAll executes all command groups in the configured order
-func (r *Runner) ExecuteAll(ctx context.Context) error {
+// executeGroups executes the specified groups in priority order
+// This is a helper method used by ExecuteFiltered
+func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSpec) error {
 	// Sort groups by priority (lower number = higher priority)
-	groups := make([]*runnertypes.GroupSpec, len(r.config.Groups))
-	for i := range r.config.Groups {
-		groups[i] = &r.config.Groups[i]
+	sortedGroups := make([]*runnertypes.GroupSpec, len(groups))
+	for i := range groups {
+		sortedGroups[i] = &groups[i]
 	}
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].Priority < groups[j].Priority
+	sort.Slice(sortedGroups, func(i, j int) bool {
+		return sortedGroups[i].Priority < sortedGroups[j].Priority
 	})
 
 	var groupErrs []error
 
 	// Execute all groups sequentially, collecting errors
-	for _, group := range groups {
+	for _, group := range sortedGroups {
 		// Check if context is already cancelled before executing next group
 		select {
 		case <-ctx.Done():
@@ -407,6 +408,47 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Execute executes the specified groups
+// If groupNames is nil or empty, executes all groups
+//
+// Parameters:
+//   - ctx: context
+//   - groupNames: map of group names to execute (all groups if nil or empty)
+//
+// Returns:
+//   - error: execution error
+func (r *Runner) Execute(ctx context.Context, groupNames map[string]struct{}) error {
+	// Get the filtered group list (returns all groups if groupNames is nil or empty)
+	filteredGroups := r.filterGroups(groupNames)
+
+	// Execute the filtered groups
+	return r.executeGroups(ctx, filteredGroups)
+}
+
+// filterGroups returns a slice of groups matching the specified group names map
+// For internal use only (private method)
+//
+// Parameters:
+//   - groupNames: map of group names to filter (nil or empty means all groups)
+//
+// Returns:
+//   - []runnertypes.GroupSpec: filtered groups
+func (r *Runner) filterGroups(groupNames map[string]struct{}) []runnertypes.GroupSpec {
+	if len(groupNames) == 0 {
+		return r.config.Groups
+	}
+
+	// Filter groups based on the map
+	filteredGroups := make([]runnertypes.GroupSpec, 0, len(groupNames))
+	for _, group := range r.config.Groups {
+		if _, ok := groupNames[group.Name]; ok {
+			filteredGroups = append(filteredGroups, group)
+		}
+	}
+
+	return filteredGroups
 }
 
 // ExecuteGroup executes all commands in a group sequentially

@@ -1,0 +1,38 @@
+[global]
+env_allowed = []
+
+[[groups]]
+name = "common"
+priority = 10
+
+[[groups.commands]]
+name = "common_cmd"
+cmd = "/bin/echo"
+args = ["common executed"]
+
+[[groups]]
+name = "build_backend"
+priority = 20
+
+[[groups.commands]]
+name = "backend_cmd"
+cmd = "/bin/echo"
+args = ["build_backend executed"]
+
+[[groups]]
+name = "build_frontend"
+priority = 30
+
+[[groups.commands]]
+name = "frontend_cmd"
+cmd = "/bin/echo"
+args = ["build_frontend executed"]
+
+[[groups]]
+name = "test"
+priority = 40
+
+[[groups.commands]]
+name = "test_cmd"
+cmd = "/bin/echo"
+args = ["test executed"]

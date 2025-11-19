@@ -18,6 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	toml "github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -355,7 +356,7 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "second\n"}, nil)
 
 	ctx := context.Background()
-	err = runner.ExecuteAll(ctx)
+	err = runner.Execute(ctx, nil)
 
 	assert.NoError(t, err)
 	mockResourceManager.AssertExpectations(t)
@@ -411,7 +412,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		// Should still return error from first group, but all groups executed
 		assert.Error(t, err)
@@ -467,7 +468,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrCommandFailed)
@@ -518,7 +519,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil).Once()
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrCommandFailed)
@@ -562,7 +563,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, errCommandNotFound)
@@ -601,7 +602,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
@@ -621,7 +622,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		// Should succeed with no groups to execute
 		assert.NoError(t, err)
@@ -658,7 +659,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		elapsed := time.Since(start)
 
@@ -701,7 +702,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		elapsed := time.Since(start)
 
@@ -727,7 +728,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 
 		start := time.Now()
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		elapsed := time.Since(start)
 
@@ -1338,7 +1339,7 @@ workdir = "` + tempDir + `"
 output_size_limit = 1048576
 
 [[groups]]
-name = "output-capture-group"
+name = "output_capture_group"
 description = "Test group with output capture"
 
 [[groups.commands]]
@@ -1379,7 +1380,7 @@ args = ["No output capture"]
 		require.NotNil(t, config.Global.OutputSizeLimit)
 		assert.Equal(t, int64(1048576), *config.Global.OutputSizeLimit)
 		assert.Len(t, config.Groups, 1)
-		assert.Equal(t, "output-capture-group", config.Groups[0].Name)
+		assert.Equal(t, "output_capture_group", config.Groups[0].Name)
 		assert.Len(t, config.Groups[0].Commands, 3)
 
 		// Verify commands have correct output configuration
@@ -1415,7 +1416,7 @@ workdir = "` + tempDir + `"
 output_size_limit = -1  # Invalid negative size
 
 [[groups]]
-name = "invalid-group"
+name = "invalid_group"
 
 [[groups.commands]]
 name = "invalid-echo"
@@ -2035,4 +2036,258 @@ func TestCommandResult_LogValue(t *testing.T) {
 			assert.Equal(t, tt.expected, attrMap)
 		})
 	}
+}
+
+func TestRunner_ExecuteFiltered(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	tests := []struct {
+		name           string
+		config         *runnertypes.ConfigSpec
+		groupNames     map[string]struct{}
+		expectedGroups []string // Expected groups to be executed (in order)
+		expectError    bool
+	}{
+		{
+			name: "nil input executes all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+				},
+			},
+			groupNames:     nil,
+			expectedGroups: []string{"common", "build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "empty map executes all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+				},
+			},
+			groupNames:     map[string]struct{}{},
+			expectedGroups: []string{"common", "build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "single group filter",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+				},
+			},
+			groupNames:     map[string]struct{}{"build": {}},
+			expectedGroups: []string{"build"},
+			expectError:    false,
+		},
+		{
+			name: "multiple groups filter",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common", Priority: 1},
+					{Name: "build", Priority: 2},
+					{Name: "test", Priority: 3},
+					{Name: "deploy", Priority: 4},
+				},
+			},
+			groupNames:     map[string]struct{}{"build": {}, "test": {}},
+			expectedGroups: []string{"build", "test"},
+			expectError:    false,
+		},
+		{
+			name: "filter preserves priority order",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test", Priority: 3},
+					{Name: "build", Priority: 2},
+					{Name: "common", Priority: 1},
+				},
+			},
+			groupNames:     map[string]struct{}{"test": {}, "common": {}},
+			expectedGroups: []string{"common", "test"}, // Should be sorted by priority
+			expectError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Track executed groups
+			var executedGroups []string
+
+			// Create a mock group executor that tracks group execution
+			mockGroupExecutor := &MockGroupExecutor{}
+			if !tt.expectError {
+				mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
+					Run(func(args mock.Arguments) {
+						groupSpec := args.Get(1).(*runnertypes.GroupSpec)
+						executedGroups = append(executedGroups, groupSpec.Name)
+					}).
+					Return(nil)
+			}
+
+			// Create runner with mock executor
+			runner, err := NewRunner(tt.config,
+				WithVerificationManager(setupDryRunVerification(t)),
+				WithRunID("test-run-123"),
+				WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
+			require.NoError(t, err)
+
+			// Replace group executor with mock
+			runner.groupExecutor = mockGroupExecutor
+
+			// Execute filtered
+			ctx := context.Background()
+			err = runner.Execute(ctx, tt.groupNames)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedGroups, executedGroups, "Executed groups should match expected groups")
+				mockGroupExecutor.AssertExpectations(t)
+			}
+		})
+	}
+}
+
+func TestRunner_filterGroups(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         *runnertypes.ConfigSpec
+		groupNames     map[string]struct{}
+		expectedGroups []string
+	}{
+		{
+			name: "filter single group",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+				},
+			},
+			groupNames:     map[string]struct{}{"build": {}},
+			expectedGroups: []string{"build"},
+		},
+		{
+			name: "filter multiple groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+					{Name: "deploy"},
+				},
+			},
+			groupNames:     map[string]struct{}{"build": {}, "deploy": {}},
+			expectedGroups: []string{"build", "deploy"},
+		},
+		{
+			name: "filter preserves original order",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test"},
+					{Name: "build"},
+					{Name: "common"},
+				},
+			},
+			groupNames:     map[string]struct{}{"common": {}, "test": {}},
+			expectedGroups: []string{"test", "common"}, // Original order from config
+		},
+		{
+			name: "nil groupNames returns all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+				},
+			},
+			groupNames:     nil,
+			expectedGroups: []string{"common", "build", "test"},
+		},
+		{
+			name: "empty groupNames returns all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+				},
+			},
+			groupNames:     map[string]struct{}{},
+			expectedGroups: []string{"common", "build"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &Runner{
+				config: tt.config,
+			}
+
+			filteredGroups := runner.filterGroups(tt.groupNames)
+
+			// Extract group names from filtered groups
+			var filteredNames []string
+			for _, group := range filteredGroups {
+				filteredNames = append(filteredNames, group.Name)
+			}
+
+			assert.Equal(t, tt.expectedGroups, filteredNames)
+		})
+	}
+}
+
+func TestGroupFilteringE2E(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	configPath := filepath.Join("testdata", "group_filtering_test.toml")
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	var cfg runnertypes.ConfigSpec
+	require.NoError(t, toml.Unmarshal(data, &cfg))
+
+	runtimeGlobal, err := configpkg.ExpandGlobal(&cfg.Global)
+	require.NoError(t, err)
+
+	runner, err := NewRunner(&cfg,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-e2e-run"),
+		WithRuntimeGlobal(runtimeGlobal))
+	require.NoError(t, err)
+
+	var executedGroups []string
+	mockGroupExecutor := &MockGroupExecutor{}
+	mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			groupSpec := args.Get(1).(*runnertypes.GroupSpec)
+			executedGroups = append(executedGroups, groupSpec.Name)
+		}).
+		Return(nil)
+	runner.groupExecutor = mockGroupExecutor
+
+	ctx := context.Background()
+	require.NoError(t, runner.Execute(ctx, map[string]struct{}{"test": {}}))
+
+	// Without dependency resolution, only the specified group should execute
+	assert.Equal(t, []string{"test"}, executedGroups)
+	mockGroupExecutor.AssertExpectations(t)
 }

@@ -4,7 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestValidateVariableName tests internal variable name validation with detailed errors
@@ -115,4 +117,81 @@ func TestValidateVariableName(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestValidateGroupNames tests group name validation during config loading
+func TestValidateGroupNames(t *testing.T) {
+	t.Run("valid group names", func(t *testing.T) {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: []runnertypes.GroupSpec{
+				{Name: "build"},
+				{Name: "test"},
+				{Name: "Deploy_123"},
+			},
+		}
+		require.NoError(t, ValidateGroupNames(cfg))
+	})
+
+	t.Run("empty group name", func(t *testing.T) {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: []runnertypes.GroupSpec{
+				{Name: "build"},
+				{Name: ""},
+			},
+		}
+		err := ValidateGroupNames(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "empty name")
+	})
+
+	t.Run("invalid group name with hyphen", func(t *testing.T) {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: []runnertypes.GroupSpec{
+				{Name: "build"},
+				{Name: "test-deploy"},
+			},
+		}
+		err := ValidateGroupNames(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid group name")
+		require.Contains(t, err.Error(), "test-deploy")
+	})
+
+	t.Run("invalid group name starting with number", func(t *testing.T) {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: []runnertypes.GroupSpec{
+				{Name: "123build"},
+			},
+		}
+		err := ValidateGroupNames(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid group name")
+	})
+
+	t.Run("duplicate group names", func(t *testing.T) {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: []runnertypes.GroupSpec{
+				{Name: "build"},
+				{Name: "test"},
+				{Name: "build"},
+			},
+		}
+		err := ValidateGroupNames(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate group name")
+		require.Contains(t, err.Error(), "build")
+	})
+
+	t.Run("nil config", func(t *testing.T) {
+		err := ValidateGroupNames(nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must not be nil")
+	})
+
+	t.Run("empty groups slice", func(t *testing.T) {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: []runnertypes.GroupSpec{},
+		}
+		require.NoError(t, ValidateGroupNames(cfg))
+	})
 }

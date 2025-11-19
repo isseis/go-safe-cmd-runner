@@ -333,6 +333,40 @@ go-safe-cmd-runner provides three command-line tools:
 
 For details, see the [runner command guide](docs/user/runner_command.md).
 
+### Group Filtering
+
+Run only the groups you need by passing the `--groups` flag with a comma-separated list.
+
+```bash
+# Single group
+./runner -config config.toml --groups=build
+
+# Multiple groups
+./runner -config config.toml --groups=build,test
+
+# Default (all groups)
+./runner -config config.toml
+```
+
+When a selected group declares dependencies via `depends_on`, those prerequisite groups are automatically appended and executed first.
+
+```toml
+[[groups]]
+name = "build"
+depends_on = ["preparation"]
+
+[[groups]]
+name = "test"
+depends_on = ["build"]
+```
+
+```bash
+./runner -config config.toml --groups=test
+# Execution order: preparation -> build -> test
+```
+
+Group names follow the same constraints as environment variable identifiers: they must match the pattern `[A-Za-z_][A-Za-z0-9_]*` (letters or underscore first, followed by alphanumerics or underscores).
+
 ### record - Hash Recording Command
 
 ```bash

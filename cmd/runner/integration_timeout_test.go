@@ -317,7 +317,7 @@ func TestDryRun_TimeoutResolutionContext(t *testing.T) {
 timeout = 60
 
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
@@ -335,7 +335,7 @@ timeout = 30
 timeout = 45
 
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"
@@ -349,7 +349,7 @@ args = ["1"]
 			name: "default timeout in dry-run",
 			configContent: `
 [[groups]]
-name = "test-group"
+name = "test_group"
 
 [[groups.commands]]
 name = "test-cmd"

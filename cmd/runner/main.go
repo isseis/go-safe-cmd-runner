@@ -48,6 +48,8 @@ var (
 	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	forceQuiet       = flag.Bool("quiet", false, "force non-interactive mode (disables colored output)")
 	keepTempDirs     = flag.Bool("keep-temp-dirs", false, "keep temporary directories after execution")
+	groups           = flag.String("groups", "", "comma-separated list of groups to execute (executes all groups if not specified)\n"+
+		"Example: --groups=build,test")
 )
 
 func main() {
@@ -293,8 +295,23 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 	}()
 
-	// Execute all groups (works for both normal and dry-run modes)
-	execErr := r.ExecuteAll(ctx)
+	// Resolve and filter groups based on the --groups flag (executes all groups if not specified)
+	groupNames, err := cli.FilterGroups(
+		cli.ParseGroupNames(*groups),
+		cfg,
+	)
+	if err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Invalid groups specified: %v", err),
+			Component: string(resource.ComponentRunner),
+			RunID:     runID,
+		}
+	}
+
+	// Execute filtered or all groups (works for both normal and dry-run modes)
+	// Execute handles both cases: nil/empty groupNamesMap executes all groups
+	execErr := r.Execute(ctx, groupNames)
 
 	// Handle dry-run output (always output, even on error)
 	if *dryRun {

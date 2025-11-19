@@ -54,9 +54,9 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 	for i := range result.ResourceAnalyses {
 		if result.ResourceAnalyses[i].Type == resource.ResourceTypeGroup {
 			switch result.ResourceAnalyses[i].Target {
-			case "test-group-inherit":
+			case "test_group_inherit":
 				inheritGroupAnalysis = &result.ResourceAnalyses[i]
-			case "test-group-explicit":
+			case "test_group_explicit":
 				explicitGroupAnalysis = &result.ResourceAnalyses[i]
 			}
 		}
@@ -193,7 +193,7 @@ func TestDryRunJSONOutput_DetailLevels(t *testing.T) {
 			require.NoError(t, err, "JSON output should be valid")
 
 			// Check group analysis
-			groupAnalysis := findResourceAnalysisByTypeAndTarget(result, resource.ResourceTypeGroup, "test-group-inherit")
+			groupAnalysis := findResourceAnalysisByTypeAndTarget(result, resource.ResourceTypeGroup, "test_group_inherit")
 			require.NotNil(t, groupAnalysis, "should have group analysis")
 
 			if tt.expectDebugInfo {
@@ -282,9 +282,9 @@ func TestDryRunTextOutput_Unchanged(t *testing.T) {
 		"should have final environment section")
 
 	// Verify group-specific sections
-	assert.Contains(t, output, "test-group-inherit",
+	assert.Contains(t, output, "test_group_inherit",
 		"should show inherit group name")
-	assert.Contains(t, output, "test-group-explicit",
+	assert.Contains(t, output, "test_group_explicit",
 		"should show explicit group name")
 }
 

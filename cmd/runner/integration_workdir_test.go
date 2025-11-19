@@ -184,7 +184,7 @@ func setupTestConfig(t *testing.T, configContent string) string {
 	return tempConfigFile.Name()
 }
 
-// executeRunnerWithTimeout executes a runner with LoadSystemEnvironment and ExecuteAll
+// executeRunnerWithTimeout executes a runner with LoadSystemEnvironment and ExecuteFiltered
 //
 //nolint:unparam // timeout parameter kept for test flexibility even though currently always receives same value
 func executeRunnerWithTimeout(t *testing.T, r *runner.Runner, timeout time.Duration) {
@@ -196,7 +196,7 @@ func executeRunnerWithTimeout(t *testing.T, r *runner.Runner, timeout time.Durat
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	err = r.ExecuteAll(ctx)
+	err = r.Execute(ctx, nil)
 	require.NoError(t, err)
 }
 
@@ -621,8 +621,8 @@ risk_level = "medium"
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// ExecuteAll should fail due to invalid command
-	err = r.ExecuteAll(ctx)
+	// ExecuteFiltered should fail due to invalid command
+	err = r.Execute(ctx, nil)
 	require.Error(t, err, "Expected error from invalid command")
 
 	// 3. Extract __runner_workdir value from command output (from the first successful command)
