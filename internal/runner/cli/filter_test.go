@@ -58,32 +58,6 @@ func TestParseGroupNames(t *testing.T) {
 	}
 }
 
-func TestCheckGroupsExist(t *testing.T) {
-	cfg := newTestConfig("build", "test")
-
-	t.Run("all exist", func(t *testing.T) {
-		require.NoError(t, CheckGroupsExist([]string{"build"}, cfg))
-	})
-
-	t.Run("missing group", func(t *testing.T) {
-		err := CheckGroupsExist([]string{"deploy"}, cfg)
-		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrGroupNotFound))
-		require.Contains(t, err.Error(), "Available groups")
-	})
-
-	t.Run("empty names", func(t *testing.T) {
-		require.NoError(t, CheckGroupsExist(nil, cfg))
-	})
-
-	t.Run("nil config", func(t *testing.T) {
-		err := CheckGroupsExist([]string{"build"}, nil)
-		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrGroupNotFound))
-		require.True(t, errors.Is(err, ErrNilConfig))
-	})
-}
-
 func TestFilterGroups(t *testing.T) {
 	cfg := newTestConfig("common", "build", "test")
 

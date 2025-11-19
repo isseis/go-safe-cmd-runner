@@ -40,10 +40,10 @@ func ParseGroupNames(groupsFlag string) []string {
 	return result
 }
 
-// CheckGroupsExist ensures that every group name exists in the provided configuration.
+// checkGroupsExist ensures that every group name exists in the provided configuration.
 // Note: Group names in the configuration are already validated by config.ValidateGroupNames
 // during config loading, so this function only checks existence, not name format.
-func CheckGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
+func checkGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -106,7 +106,7 @@ func FilterGroups(names []string, config *runnertypes.ConfigSpec) (map[string]st
 	}
 
 	// Check that requested groups exist in the configuration
-	if err := CheckGroupsExist(names, config); err != nil {
+	if err := checkGroupsExist(names, config); err != nil {
 		return nil, err
 	}
 
