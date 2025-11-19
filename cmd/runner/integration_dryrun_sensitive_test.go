@@ -104,7 +104,7 @@ func (h *sensitiveTestHelper) executeWithCapturedOutput(
 	errCh := make(chan error, 1)
 	go func() {
 		defer w.Close()
-		errCh <- r1.ExecuteAll(ctx)
+		errCh <- r1.Execute(ctx, nil)
 	}()
 
 	// Read captured output
@@ -115,7 +115,7 @@ func (h *sensitiveTestHelper) executeWithCapturedOutput(
 
 	// Check for execution error
 	execErr := <-errCh
-	require.NoError(h.t, execErr, "ExecuteAll should run without error")
+	require.NoError(h.t, execErr, "ExecuteFiltered should run without error")
 
 	// Verify dry-run results
 	result := r1.GetDryRunResults()

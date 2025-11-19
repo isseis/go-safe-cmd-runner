@@ -310,12 +310,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	// Execute filtered or all groups (works for both normal and dry-run modes)
-	var execErr error
-	if len(groupNames) > 0 {
-		execErr = r.ExecuteFiltered(ctx, groupNames)
-	} else {
-		execErr = r.ExecuteAll(ctx)
-	}
+	// ExecuteFiltered handles both cases: nil/empty groupNames executes all groups
+	execErr := r.Execute(ctx, groupNames)
 
 	// Handle dry-run output (always output, even on error)
 	if *dryRun {

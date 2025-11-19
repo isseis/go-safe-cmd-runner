@@ -354,21 +354,22 @@ func (r *Runner) LoadSystemEnvironment() error {
 	return nil
 }
 
-// ExecuteAll executes all command groups in the configured order
-func (r *Runner) ExecuteAll(ctx context.Context) error {
+// executeGroups executes the specified groups in priority order
+// This is a helper method used by ExecuteFiltered
+func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSpec) error {
 	// Sort groups by priority (lower number = higher priority)
-	groups := make([]*runnertypes.GroupSpec, len(r.config.Groups))
-	for i := range r.config.Groups {
-		groups[i] = &r.config.Groups[i]
+	sortedGroups := make([]*runnertypes.GroupSpec, len(groups))
+	for i := range groups {
+		sortedGroups[i] = &groups[i]
 	}
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].Priority < groups[j].Priority
+	sort.Slice(sortedGroups, func(i, j int) bool {
+		return sortedGroups[i].Priority < sortedGroups[j].Priority
 	})
 
 	var groupErrs []error
 
 	// Execute all groups sequentially, collecting errors
-	for _, group := range groups {
+	for _, group := range sortedGroups {
 		// Check if context is already cancelled before executing next group
 		select {
 		case <-ctx.Done():
@@ -409,51 +410,38 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 	return nil
 }
 
-// ExecuteFiltered executes only the specified groups
-// If groupNames is nil or empty, executes all groups (same behavior as ExecuteAll)
+// Execute executes the specified groups
+// If groupNames is nil or empty, executes all groups
 //
 // Parameters:
 //   - ctx: context
-//   - groupNames: list of group names to execute (all groups if nil)
+//   - groupNames: list of group names to execute (all groups if nil or empty)
 //
 // Returns:
 //   - error: execution error
-func (r *Runner) ExecuteFiltered(ctx context.Context, groupNames []string) error {
-	// Execute all groups if no group names are specified
-	if len(groupNames) == 0 {
-		return r.ExecuteAll(ctx)
-	}
-
-	// Create a configuration containing only the specified groups
-	filteredConfig, err := r.filterConfigGroups(groupNames)
+func (r *Runner) Execute(ctx context.Context, groupNames []string) error {
+	// Get the filtered group list (returns all groups if groupNames is nil or empty)
+	filteredGroups, err := r.filterGroups(groupNames)
 	if err != nil {
 		return err
 	}
 
-	// Execute with the filtered configuration
-	// Temporarily replace r.config for execution
-	originalConfig := r.config
-	r.config = filteredConfig
-	defer func() {
-		r.config = originalConfig
-	}()
-
-	return r.ExecuteAll(ctx)
+	// Execute the filtered groups
+	return r.executeGroups(ctx, filteredGroups)
 }
 
-// filterConfigGroups generates a configuration containing the specified group names
+// filterGroups returns a slice of groups matching the specified group names
 // For internal use only (private method)
 //
 // Parameters:
 //   - groupNames: group names to filter
 //
 // Returns:
-//   - *runnertypes.ConfigSpec: filtered configuration
+//   - []runnertypes.GroupSpec: filtered groups
 //   - error: error if a group is not found
-func (r *Runner) filterConfigGroups(groupNames []string) (*runnertypes.ConfigSpec, error) {
+func (r *Runner) filterGroups(groupNames []string) ([]runnertypes.GroupSpec, error) {
 	if len(groupNames) == 0 {
-		cloned := *r.config
-		return &cloned, nil
+		return r.config.Groups, nil
 	}
 
 	// Create a set of requested group names for quick lookup
@@ -475,7 +463,6 @@ func (r *Runner) filterConfigGroups(groupNames []string) (*runnertypes.ConfigSpe
 	}
 
 	// Filter groups
-	filteredConfig := *r.config
 	filteredGroups := make([]runnertypes.GroupSpec, 0, len(groupNames))
 	for _, group := range r.config.Groups {
 		if _, ok := requestedGroups[group.Name]; ok {
@@ -483,8 +470,7 @@ func (r *Runner) filterConfigGroups(groupNames []string) (*runnertypes.ConfigSpe
 		}
 	}
 
-	filteredConfig.Groups = filteredGroups
-	return &filteredConfig, nil
+	return filteredGroups, nil
 }
 
 // ExecuteGroup executes all commands in a group sequentially

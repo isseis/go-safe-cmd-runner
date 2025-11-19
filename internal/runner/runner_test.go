@@ -356,7 +356,7 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, &config.Groups[0], mock.Anything).Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "second\n"}, nil)
 
 	ctx := context.Background()
-	err = runner.ExecuteAll(ctx)
+	err = runner.Execute(ctx, nil)
 
 	assert.NoError(t, err)
 	mockResourceManager.AssertExpectations(t)
@@ -412,7 +412,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		// Should still return error from first group, but all groups executed
 		assert.Error(t, err)
@@ -468,7 +468,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrCommandFailed)
@@ -519,7 +519,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil).Once()
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrCommandFailed)
@@ -563,7 +563,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, errCommandNotFound)
@@ -602,7 +602,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
@@ -622,7 +622,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		// Should succeed with no groups to execute
 		assert.NoError(t, err)
@@ -659,7 +659,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		elapsed := time.Since(start)
 
@@ -702,7 +702,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		elapsed := time.Since(start)
 
@@ -728,7 +728,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 
 		start := time.Now()
 
-		err = runner.ExecuteAll(ctx)
+		err = runner.Execute(ctx, nil)
 
 		elapsed := time.Since(start)
 
@@ -2149,7 +2149,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 
 			// Execute filtered
 			ctx := context.Background()
-			err = runner.ExecuteFiltered(ctx, tt.groupNames)
+			err = runner.Execute(ctx, tt.groupNames)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -2162,7 +2162,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 	}
 }
 
-func TestRunner_filterConfigGroups(t *testing.T) {
+func TestRunner_filterGroups(t *testing.T) {
 	tests := []struct {
 		name           string
 		config         *runnertypes.ConfigSpec
@@ -2230,24 +2230,20 @@ func TestRunner_filterConfigGroups(t *testing.T) {
 				config: tt.config,
 			}
 
-			filteredConfig, err := runner.filterConfigGroups(tt.groupNames)
+			filteredGroups, err := runner.filterGroups(tt.groupNames)
 			if tt.expectError {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 
-			// Extract group names from filtered config
+			// Extract group names from filtered groups
 			var filteredNames []string
-			for _, group := range filteredConfig.Groups {
+			for _, group := range filteredGroups {
 				filteredNames = append(filteredNames, group.Name)
 			}
 
 			assert.Equal(t, tt.expectedGroups, filteredNames)
-
-			// Verify global config is preserved
-			assert.Equal(t, tt.config.Version, filteredConfig.Version)
-			assert.Equal(t, tt.config.Global, filteredConfig.Global)
 		})
 	}
 }
@@ -2282,7 +2278,7 @@ func TestGroupFilteringE2E(t *testing.T) {
 	runner.groupExecutor = mockGroupExecutor
 
 	ctx := context.Background()
-	require.NoError(t, runner.ExecuteFiltered(ctx, []string{"test"}))
+	require.NoError(t, runner.Execute(ctx, []string{"test"}))
 
 	// Without dependency resolution, only the specified group should execute
 	assert.Equal(t, []string{"test"}, executedGroups)

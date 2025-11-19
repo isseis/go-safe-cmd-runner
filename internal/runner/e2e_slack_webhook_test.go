@@ -121,7 +121,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	err = runner.ExecuteAll(ctx)
+	err = runner.ExecuteFiltered(ctx, nil)
 
 	require.NoError(t, err, "command should succeed")
 
