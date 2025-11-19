@@ -2044,7 +2044,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 	tests := []struct {
 		name           string
 		config         *runnertypes.ConfigSpec
-		groupNames     []string
+		groupNames     map[string]struct{}
 		expectedGroups []string // Expected groups to be executed (in order)
 		expectError    bool
 	}{
@@ -2063,7 +2063,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name: "empty slice executes all groups",
+			name: "empty map executes all groups",
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
@@ -2072,7 +2072,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 					{Name: "test", Priority: 3},
 				},
 			},
-			groupNames:     []string{},
+			groupNames:     map[string]struct{}{},
 			expectedGroups: []string{"common", "build", "test"},
 			expectError:    false,
 		},
@@ -2086,7 +2086,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 					{Name: "test", Priority: 3},
 				},
 			},
-			groupNames:     []string{"build"},
+			groupNames:     map[string]struct{}{"build": {}},
 			expectedGroups: []string{"build"},
 			expectError:    false,
 		},
@@ -2101,7 +2101,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 					{Name: "deploy", Priority: 4},
 				},
 			},
-			groupNames:     []string{"build", "test"},
+			groupNames:     map[string]struct{}{"build": {}, "test": {}},
 			expectedGroups: []string{"build", "test"},
 			expectError:    false,
 		},
@@ -2115,7 +2115,7 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 					{Name: "common", Priority: 1},
 				},
 			},
-			groupNames:     []string{"test", "common"},
+			groupNames:     map[string]struct{}{"test": {}, "common": {}},
 			expectedGroups: []string{"common", "test"}, // Should be sorted by priority
 			expectError:    false,
 		},
@@ -2166,9 +2166,8 @@ func TestRunner_filterGroups(t *testing.T) {
 	tests := []struct {
 		name           string
 		config         *runnertypes.ConfigSpec
-		groupNames     []string
+		groupNames     map[string]struct{}
 		expectedGroups []string
-		expectError    bool
 	}{
 		{
 			name: "filter single group",
@@ -2180,7 +2179,7 @@ func TestRunner_filterGroups(t *testing.T) {
 					{Name: "test"},
 				},
 			},
-			groupNames:     []string{"build"},
+			groupNames:     map[string]struct{}{"build": {}},
 			expectedGroups: []string{"build"},
 		},
 		{
@@ -2194,7 +2193,7 @@ func TestRunner_filterGroups(t *testing.T) {
 					{Name: "deploy"},
 				},
 			},
-			groupNames:     []string{"build", "deploy"},
+			groupNames:     map[string]struct{}{"build": {}, "deploy": {}},
 			expectedGroups: []string{"build", "deploy"},
 		},
 		{
@@ -2207,11 +2206,24 @@ func TestRunner_filterGroups(t *testing.T) {
 					{Name: "common"},
 				},
 			},
-			groupNames:     []string{"common", "test"},
+			groupNames:     map[string]struct{}{"common": {}, "test": {}},
 			expectedGroups: []string{"test", "common"}, // Original order from config
 		},
 		{
-			name: "nonexistent group returns error",
+			name: "nil groupNames returns all groups",
+			config: &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Groups: []runnertypes.GroupSpec{
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+				},
+			},
+			groupNames:     nil,
+			expectedGroups: []string{"common", "build", "test"},
+		},
+		{
+			name: "empty groupNames returns all groups",
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
@@ -2219,8 +2231,8 @@ func TestRunner_filterGroups(t *testing.T) {
 					{Name: "build"},
 				},
 			},
-			groupNames:  []string{"missing"},
-			expectError: true,
+			groupNames:     map[string]struct{}{},
+			expectedGroups: []string{"common", "build"},
 		},
 	}
 
@@ -2230,12 +2242,7 @@ func TestRunner_filterGroups(t *testing.T) {
 				config: tt.config,
 			}
 
-			filteredGroups, err := runner.filterGroups(tt.groupNames)
-			if tt.expectError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
+			filteredGroups := runner.filterGroups(tt.groupNames)
 
 			// Extract group names from filtered groups
 			var filteredNames []string
@@ -2278,7 +2285,7 @@ func TestGroupFilteringE2E(t *testing.T) {
 	runner.groupExecutor = mockGroupExecutor
 
 	ctx := context.Background()
-	require.NoError(t, runner.Execute(ctx, []string{"test"}))
+	require.NoError(t, runner.Execute(ctx, map[string]struct{}{"test": {}}))
 
 	// Without dependency resolution, only the specified group should execute
 	assert.Equal(t, []string{"test"}, executedGroups)

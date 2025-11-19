@@ -89,18 +89,18 @@ func CheckGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 }
 
 // FilterGroups validates and filters the configuration based on the requested names.
-// When names is nil or empty, it returns all group names from the configuration.
+// When names is nil or empty, it returns all group names from the configuration as a map.
 // Note: Group names in the configuration are already validated by config.ValidateGroupNames
 // during config loading, so this function only checks that user-specified groups exist.
-func FilterGroups(names []string, config *runnertypes.ConfigSpec) ([]string, error) {
+func FilterGroups(names []string, config *runnertypes.ConfigSpec) (map[string]struct{}, error) {
 	if config == nil {
 		return nil, ErrNilConfig
 	}
 
 	if len(names) == 0 {
-		allGroups := make([]string, len(config.Groups))
-		for i, group := range config.Groups {
-			allGroups[i] = group.Name
+		allGroups := make(map[string]struct{}, len(config.Groups))
+		for _, group := range config.Groups {
+			allGroups[group.Name] = struct{}{}
 		}
 		return allGroups, nil
 	}
@@ -110,5 +110,11 @@ func FilterGroups(names []string, config *runnertypes.ConfigSpec) ([]string, err
 		return nil, err
 	}
 
-	return append([]string(nil), names...), nil
+	// Convert slice to map for efficient lookup
+	result := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		result[name] = struct{}{}
+	}
+
+	return result, nil
 }

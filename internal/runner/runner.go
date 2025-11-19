@@ -415,62 +415,40 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 //
 // Parameters:
 //   - ctx: context
-//   - groupNames: list of group names to execute (all groups if nil or empty)
+//   - groupNames: map of group names to execute (all groups if nil or empty)
 //
 // Returns:
 //   - error: execution error
-func (r *Runner) Execute(ctx context.Context, groupNames []string) error {
+func (r *Runner) Execute(ctx context.Context, groupNames map[string]struct{}) error {
 	// Get the filtered group list (returns all groups if groupNames is nil or empty)
-	filteredGroups, err := r.filterGroups(groupNames)
-	if err != nil {
-		return err
-	}
+	filteredGroups := r.filterGroups(groupNames)
 
 	// Execute the filtered groups
 	return r.executeGroups(ctx, filteredGroups)
 }
 
-// filterGroups returns a slice of groups matching the specified group names
+// filterGroups returns a slice of groups matching the specified group names map
 // For internal use only (private method)
 //
 // Parameters:
-//   - groupNames: group names to filter
+//   - groupNames: map of group names to filter (nil or empty means all groups)
 //
 // Returns:
 //   - []runnertypes.GroupSpec: filtered groups
-//   - error: error if a group is not found
-func (r *Runner) filterGroups(groupNames []string) ([]runnertypes.GroupSpec, error) {
+func (r *Runner) filterGroups(groupNames map[string]struct{}) []runnertypes.GroupSpec {
 	if len(groupNames) == 0 {
-		return r.config.Groups, nil
+		return r.config.Groups
 	}
 
-	// Create a set of requested group names for quick lookup
-	requestedGroups := make(map[string]struct{}, len(groupNames))
-	for _, name := range groupNames {
-		requestedGroups[name] = struct{}{}
-	}
-
-	// Validate that all requested groups exist
-	groupIndex := make(map[string]bool, len(r.config.Groups))
-	for _, group := range r.config.Groups {
-		groupIndex[group.Name] = true
-	}
-
-	for _, name := range groupNames {
-		if !groupIndex[name] {
-			return nil, fmt.Errorf("%w: group %q not found in configuration", ErrGroupNotFound, name)
-		}
-	}
-
-	// Filter groups
+	// Filter groups based on the map
 	filteredGroups := make([]runnertypes.GroupSpec, 0, len(groupNames))
 	for _, group := range r.config.Groups {
-		if _, ok := requestedGroups[group.Name]; ok {
+		if _, ok := groupNames[group.Name]; ok {
 			filteredGroups = append(filteredGroups, group)
 		}
 	}
 
-	return filteredGroups, nil
+	return filteredGroups
 }
 
 // ExecuteGroup executes all commands in a group sequentially

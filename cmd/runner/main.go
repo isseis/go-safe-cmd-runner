@@ -296,7 +296,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}()
 
 	// Resolve and filter groups based on the --groups flag (executes all groups if not specified)
-	groupNames, err := cli.FilterGroups(
+	groupNamesMap, err := cli.FilterGroups(
 		cli.ParseGroupNames(*groups),
 		cfg,
 	)
@@ -310,8 +310,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	// Execute filtered or all groups (works for both normal and dry-run modes)
-	// ExecuteFiltered handles both cases: nil/empty groupNames executes all groups
-	execErr := r.Execute(ctx, groupNames)
+	// Execute handles both cases: nil/empty groupNamesMap executes all groups
+	execErr := r.Execute(ctx, groupNamesMap)
 
 	// Handle dry-run output (always output, even on error)
 	if *dryRun {

@@ -90,23 +90,44 @@ func TestFilterGroups(t *testing.T) {
 	t.Run("nil names returns all", func(t *testing.T) {
 		got, err := FilterGroups(nil, cfg)
 		require.NoError(t, err)
-		require.Equal(t, []string{"common", "build", "test"}, got)
+		expected := map[string]struct{}{
+			"common": {},
+			"build":  {},
+			"test":   {},
+		}
+		require.Equal(t, expected, got)
 	})
 
 	t.Run("empty names returns all", func(t *testing.T) {
 		got, err := FilterGroups([]string{}, cfg)
 		require.NoError(t, err)
-		require.Equal(t, []string{"common", "build", "test"}, got)
+		expected := map[string]struct{}{
+			"common": {},
+			"build":  {},
+			"test":   {},
+		}
+		require.Equal(t, expected, got)
 	})
 
-	t.Run("subset returns copy", func(t *testing.T) {
+	t.Run("subset returns map", func(t *testing.T) {
 		input := []string{"build"}
 		got, err := FilterGroups(input, cfg)
 		require.NoError(t, err)
-		require.Equal(t, input, got)
+		expected := map[string]struct{}{
+			"build": {},
+		}
+		require.Equal(t, expected, got)
+	})
 
-		input[0] = "mutated"
-		require.Equal(t, []string{"build"}, got)
+	t.Run("multiple groups returns map", func(t *testing.T) {
+		input := []string{"build", "test"}
+		got, err := FilterGroups(input, cfg)
+		require.NoError(t, err)
+		expected := map[string]struct{}{
+			"build": {},
+			"test":  {},
+		}
+		require.Equal(t, expected, got)
 	})
 
 	t.Run("invalid name (hyphenated)", func(t *testing.T) {
