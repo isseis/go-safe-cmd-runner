@@ -228,7 +228,6 @@ runner -config config.toml -dry-run -dry-run-format json
   "groups": [
     {
       "name": "backup",
-      "priority": 1,
       "description": "Database backup operations",
       "commands": [
         {
@@ -1020,7 +1019,7 @@ runner -config config.toml -quiet > output.log 2>&1
 ```
 2025-10-02T10:30:00Z INFO Configuration loaded
 2025-10-02T10:30:00Z INFO File verification completed files=5
-2025-10-02T10:30:00Z INFO Starting group name=backup priority=1
+2025-10-02T10:30:00Z INFO Starting group name=backup
 2025-10-02T10:30:05Z INFO Command completed group=backup command=db_backup duration=5.2s exit_code=0
 2025-10-02T10:30:18Z INFO Command completed group=backup command=file_backup duration=12.8s exit_code=0
 2025-10-02T10:30:20Z INFO All commands completed duration=20.1s

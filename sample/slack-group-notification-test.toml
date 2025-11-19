@@ -21,7 +21,6 @@ env_allowed = [
 [[groups]]
 name = "success_group"
 description = "Test group that should complete successfully and send success notification"
-priority = 1
 
 [[groups.commands]]
 name = "hello_world"
@@ -40,7 +39,6 @@ args = []
 [[groups]]
 name = "failure_group"
 description = "Test group that should fail and send error notification"
-priority = 2
 
 [[groups.commands]]
 name = "failing_command"
@@ -52,7 +50,6 @@ args = ["-c", "echo 'This command will fail'; exit 1"]
 [[groups]]
 name = "second_success_group"
 description = "Another successful group to test multiple notifications"
-priority = 3
 
 [[groups.commands]]
 name = "multiple_echo"
@@ -71,7 +68,6 @@ args = []
 [[groups]]
 name = "mixed_group"
 description = "Group with both successful and failing commands"
-priority = 4
 
 [[groups.commands]]
 name = "initial_success"

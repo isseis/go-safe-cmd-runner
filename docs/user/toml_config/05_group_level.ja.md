@@ -122,117 +122,6 @@ cmd = "/usr/bin/psql"
 args = ["-c", "VACUUM ANALYZE"]
 ```
 
-### 5.1.3 priority - 優先度
-
-#### 概要
-
-グループの実行優先度を指定します。小さい数字ほど優先度が高く、先に実行されます。
-
-#### 文法
-
-```toml
-[[groups]]
-name = "example"
-priority = 数値
-```
-
-#### パラメータの詳細
-
-| 項目 | 内容 |
-|-----|------|
-| **型** | 整数 (int) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グループのみ |
-| **デフォルト値** | 0 |
-| **有効な値** | 整数(負の値も可) |
-
-#### 役割
-
-- **実行順序の制御**: 依存関係のあるグループを適切な順序で実行
-- **重要度の表現**: 重要なタスクを先に実行
-
-#### 設定例
-
-#### 例1: 優先度による実行順序の制御
-
-```toml
-version = "1.0"
-
-[[groups]]
-name = "preparation"
-description = "事前準備タスク"
-priority = 1  # 最初に実行
-
-[[groups.commands]]
-name = "create_directory"
-cmd = "mkdir"
-args = ["-p", "/tmp/workspace"]
-
-[[groups]]
-name = "main_tasks"
-description = "メインタスク"
-priority = 2  # 2番目に実行
-
-[[groups.commands]]
-name = "process_data"
-cmd = "/opt/app/process"
-args = []
-
-[[groups]]
-name = "cleanup"
-description = "後処理"
-priority = 3  # 最後に実行
-
-[[groups.commands]]
-name = "remove_temp"
-cmd = "rm"
-args = ["-rf", "/tmp/workspace"]
-```
-
-実行順序: `preparation` → `main_tasks` → `cleanup`
-
-#### 例2: 重要度に応じた優先度設定
-
-```toml
-version = "1.0"
-
-[[groups]]
-name = "critical_backup"
-description = "重要データのバックアップ"
-priority = 10  # 高優先度
-
-[[groups.commands]]
-name = "backup_database"
-cmd = "/usr/bin/backup_db.sh"
-args = []
-
-[[groups]]
-name = "routine_maintenance"
-description = "日常的なメンテナンス"
-priority = 50  # 中優先度
-
-[[groups.commands]]
-name = "clean_logs"
-cmd = "/usr/bin/clean_old_logs.sh"
-args = []
-
-[[groups]]
-name = "optional_optimization"
-description = "オプションの最適化タスク"
-priority = 100  # 低優先度
-
-[[groups.commands]]
-name = "optimize"
-cmd = "/usr/bin/optimize.sh"
-args = []
-```
-
-#### 注意事項
-
-1. **同じ優先度**: 同じ優先度のグループは定義された順序で実行されます
-2. **負の優先度**: 負の値も使用可能(より高い優先度を表現)
-3. **省略時**: priority を指定しない場合は 0 として扱われます
-
 ## 5.2 リソース管理設定
 
 ### 5.2.1 ❌ temp_dir - 一時ディレクトリ（廃止済み）
@@ -1215,7 +1104,6 @@ verify_files = ["/bin/sh"]
 [[groups]]
 name = "database_backup"
 description = "PostgreSQL データベースの日次バックアップ"
-priority = 10
 workdir = "/var/backups/db"
 verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
 env_allowed = ["PATH", "PGDATA", "PGHOST"]
@@ -1232,7 +1120,6 @@ timeout = 600
 [[groups]]
 name = "log_rotation"
 description = "古いログファイルの圧縮と削除"
-priority = 20
 workdir = "/var/log/app"
 env_allowed = ["PATH"]  # 明示モード: PATH のみ
 
@@ -1250,7 +1137,6 @@ args = [".", "-name", "*.log.gz", "-mtime", "+30", "-delete"]
 [[groups]]
 name = "temp_processing"
 description = "一時ディレクトリでのデータ処理"
-priority = 30
 # workdir未指定 - 自動的に一時ディレクトリが生成される
 env_allowed = []  # 拒否モード: 環境変数なし
 

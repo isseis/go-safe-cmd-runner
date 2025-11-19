@@ -55,7 +55,6 @@ env_allowed = ["PATH", "HOME"]
 [[groups]]
 name = "backup_tasks"
 description = "バックアップ関連のタスク"
-priority = 1
 workdir = "/var/backups"
 ```
 

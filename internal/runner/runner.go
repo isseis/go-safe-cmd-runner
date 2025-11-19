@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os/user"
-	"sort"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -354,22 +353,13 @@ func (r *Runner) LoadSystemEnvironment() error {
 	return nil
 }
 
-// executeGroups executes the specified groups in priority order
+// executeGroups executes the specified groups
 // This is a helper method used by ExecuteFiltered
 func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSpec) error {
-	// Sort groups by priority (lower number = higher priority)
-	sortedGroups := make([]*runnertypes.GroupSpec, len(groups))
-	for i := range groups {
-		sortedGroups[i] = &groups[i]
-	}
-	sort.Slice(sortedGroups, func(i, j int) bool {
-		return sortedGroups[i].Priority < sortedGroups[j].Priority
-	})
-
 	var groupErrs []error
 
 	// Execute all groups sequentially, collecting errors
-	for _, group := range sortedGroups {
+	for _, group := range groups {
 		// Check if context is already cancelled before executing next group
 		select {
 		case <-ctx.Done():
@@ -379,7 +369,7 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 		default:
 		}
 
-		if err := r.ExecuteGroup(ctx, group); err != nil {
+		if err := r.ExecuteGroup(ctx, &group); err != nil {
 			// Check if this is a context cancellation error - if so, stop execution
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err

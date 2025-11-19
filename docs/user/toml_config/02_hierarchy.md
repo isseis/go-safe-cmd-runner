@@ -55,7 +55,6 @@ A unit for grouping related commands. Multiple groups can be defined.
 [[groups]]
 name = "backup_tasks"
 description = "Backup-related tasks"
-priority = 1
 workdir = "/var/backups"
 ```
 

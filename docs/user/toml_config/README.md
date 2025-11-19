@@ -36,7 +36,6 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - Group basic configuration
   - name - Group name
   - description - Description
-  - priority - Priority
 - Resource management configuration
   - workdir - Working directory
 - Security configuration

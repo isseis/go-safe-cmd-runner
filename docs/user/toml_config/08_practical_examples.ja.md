@@ -224,7 +224,6 @@ verify_files = [
 [[groups]]
 name = "system_maintenance"
 description = "システムメンテナンスタスク"
-priority = 1
 
 # 非特権タスク: システム状態の確認
 [[groups.commands]]
@@ -347,7 +346,6 @@ env_allowed = ["PATH", "HOME"]
 [[groups]]
 name = "deploy_development"
 description = "開発環境へのデプロイ"
-priority = 1
 
 [[groups.commands]]
 name = "deploy_dev_config"
@@ -384,7 +382,6 @@ risk_level = "high"
 [[groups]]
 name = "deploy_staging"
 description = "ステージング環境へのデプロイ"
-priority = 2
 
 [[groups.commands]]
 name = "deploy_staging_config"
@@ -421,7 +418,6 @@ risk_level = "high"
 [[groups]]
 name = "deploy_production"
 description = "本番環境へのデプロイ"
-priority = 3
 
 [[groups.commands]]
 name = "deploy_prod_config"
@@ -509,7 +505,6 @@ output_size_limit = 52428800  # 50MB
 [[groups]]
 name = "preparation"
 description = "デプロイ前の準備作業"
-priority = 1
 workdir = "/opt/deploy/prep"
 
 [[groups.commands]]
@@ -540,7 +535,6 @@ output_file = "installed-packages.txt"
 [[groups]]
 name = "database_migration"
 description = "データベーススキーマの更新"
-priority = 2
 env_allowed = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
 verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 
@@ -583,7 +577,6 @@ timeout = 600
 [[groups]]
 name = "application_deployment"
 description = "アプリケーションのデプロイ"
-priority = 3
 workdir = "/opt/myapp"
 
 [[groups.commands]]
@@ -628,7 +621,6 @@ risk_level = "high"
 [[groups]]
 name = "web_server_update"
 description = "Webサーバーの設定更新"
-priority = 4
 
 [[groups.commands]]
 name = "update_nginx_config"
@@ -662,7 +654,6 @@ risk_level = "high"
 [[groups]]
 name = "deployment_verification"
 description = "デプロイの検証"
-priority = 5
 
 [[groups.commands]]
 name = "health_check"
@@ -706,7 +697,6 @@ output_file = "db-connection-test.txt"
 [[groups]]
 name = "post_deployment"
 description = "デプロイ後の処理"
-priority = 6
 workdir = "/var/reports/deployment"
 
 [[groups.commands]]

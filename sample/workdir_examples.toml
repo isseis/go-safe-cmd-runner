@@ -13,7 +13,6 @@ env_allowed = ["PATH", "HOME", "USER"]
 [[groups]]
 name = "temp_backup"
 description = "Backup example using automatic temporary directory"
-priority = 1
 
 [[groups.commands]]
 name = "show_temp_dir"
@@ -39,7 +38,6 @@ args = ["-la", "%{__runner_workdir}"]
 [[groups]]
 name = "fixed_backup"
 description = "Backup example using fixed working directory"
-priority = 2
 workdir = "/tmp/fixed-backup-dir"
 
 [[groups.commands]]
@@ -59,7 +57,6 @@ output_file = "%{__runner_workdir}/fixed_backup.log"
 [[groups]]
 name = "mixed_workdir"
 description = "Mixed workdir example with command-level overrides"
-priority = 3
 
 [[groups.commands]]
 name = "default_temp_location"

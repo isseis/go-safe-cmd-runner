@@ -10,7 +10,6 @@ verify_standard_paths = false
 [[groups]]
 name = "timestamped_operations"
 description = "Multiple operations with consistent timestamp"
-priority = 1
 
 [[groups.commands]]
 name = "step1_create"
@@ -40,7 +39,6 @@ args = ["ls -la /tmp/backup/run-%{__runner_datetime}/"]
 [[groups]]
 name = "pid_tracking"
 description = "Track runner PID across commands"
-priority = 2
 
 [[groups.commands]]
 name = "show_runner_info"

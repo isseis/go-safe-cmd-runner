@@ -1268,7 +1268,6 @@ verify_files = []  # Commands are automatically verified, so can be empty if no 
 [[groups]]
 name = "database_operations"
 description = "Database-related operations"
-priority = 10
 workdir = "/var/backups/db"
 env_allowed = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
 verify_files = ["/etc/postgresql/pg_hba.conf"]  # Only specify additional files like config files
@@ -1307,7 +1306,6 @@ risk_level = "medium"
 [[groups]]
 name = "system_maintenance"
 description = "System maintenance tasks"
-priority = 20
 workdir = "/tmp"
 env_allowed = []  # No environment variables
 
@@ -1334,7 +1332,6 @@ risk_level = "high"
 [[groups]]
 name = "temporary_processing"
 description = "Temporary directory processing tasks"
-priority = 30
 
 # Command 6: Image resizing in temporary directory
 [[groups.commands]]

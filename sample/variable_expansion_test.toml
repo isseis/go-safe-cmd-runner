@@ -15,7 +15,6 @@ env_allowed = [
 [[groups]]
 name = "cmd_expansion_basic"
 description = "Test basic variable expansion in cmd field"
-priority = 1
 
 [[groups.commands]]
 name = "echo_with_var_cmd"
@@ -28,7 +27,6 @@ vars = ["path=/bin/echo"]
 [[groups]]
 name = "args_expansion_basic"
 description = "Test basic variable expansion in args field"
-priority = 2
 
 [[groups.commands]]
 name = "echo_with_var_args"
@@ -52,7 +50,6 @@ vars = [
 [[groups]]
 name = "combined_expansion"
 description = "Test variable expansion in both cmd and args"
-priority = 3
 
 [[groups.commands]]
 name = "full_expansion_test"
@@ -68,7 +65,6 @@ vars = [
 [[groups]]
 name = "nested_expansion"
 description = "Test nested variable references"
-priority = 4
 
 [[groups.commands]]
 name = "nested_vars"
@@ -84,7 +80,6 @@ vars = [
 [[groups]]
 name = "escape_test"
 description = "Test backslash escape sequences"
-priority = 5
 
 [[groups.commands]]
 name = "escaped_percent"

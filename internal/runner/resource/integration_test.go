@@ -35,7 +35,6 @@ func TestDryRunExecutionPath(t *testing.T) {
 				{
 					Name:        "test-group",
 					Description: "Test command group",
-					Priority:    1,
 				},
 			},
 			envVars: map[string]string{
@@ -61,7 +60,6 @@ func TestDryRunExecutionPath(t *testing.T) {
 				{
 					Name:        "test-group",
 					Description: "Test command group",
-					Priority:    1,
 				},
 			},
 			envVars: map[string]string{
@@ -158,7 +156,6 @@ func TestDryRunResultConsistency(t *testing.T) {
 	group := &runnertypes.GroupSpec{
 		Name:        "consistency-group",
 		Description: "Consistency test group",
-		Priority:    1,
 	}
 
 	envVars := map[string]string{
@@ -221,7 +218,6 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 	group := &runnertypes.GroupSpec{
 		Name:        "mode-group",
 		Description: "Mode test group",
-		Priority:    1,
 	}
 
 	envVars := map[string]string{

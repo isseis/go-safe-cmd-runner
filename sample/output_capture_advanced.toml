@@ -23,7 +23,6 @@ verify_files = ["/bin/echo", "/usr/bin/find"]
 [[groups]]
 name = "size_management_tests"
 description = "Test output size limits and large output handling"
-priority = 1
 
 [[groups.commands]]
 name = "large_directory_listing"
@@ -52,7 +51,6 @@ timeout = 90
 [[groups]]
 name = "privileged_output_capture"
 description = "Test output capture with privileged operations"
-priority = 2
 
 [[groups.commands]]
 name = "system_info_as_root"
@@ -82,7 +80,6 @@ output_file = "kernel_modules.txt"
 [[groups]]
 name = "complex_path_scenarios"
 description = "Test various path configurations for output files"
-priority = 3
 cleanup = true
 
 [[groups.commands]]
@@ -111,7 +108,6 @@ output_file = "working_directory.txt"
 [[groups]]
 name = "environment_output_tests"
 description = "Test internal variables and environment variables with output capture"
-priority = 4
 env_allowed = ["PATH", "HOME", "ADVANCED_TEST_VAR", "BUILD_ENV"]
 
 vars = [
@@ -149,7 +145,6 @@ output_file = "variable_expansion.txt"
 [[groups]]
 name = "performance_tests"
 description = "Test performance aspects of output capture"
-priority = 5
 
 [[groups.commands]]
 name = "cpu_intensive_with_output"
@@ -177,7 +172,6 @@ output_file = "system_uptime.txt"
 [[groups]]
 name = "mixed_output_scenarios"
 description = "Mix of commands with and without output capture"
-priority = 6
 
 [[groups.commands]]
 name = "with_capture"
