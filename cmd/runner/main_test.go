@@ -25,18 +25,35 @@ func setupTestFlags() func() {
 	// Create new flag set with ExitOnError handling
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	// Initialize all flags - match the original flags from main.go (excluding removed hash-directory flag)
-	configPath = flag.String("config", "", "path to config file")
-	logLevel = flag.String("log-level", "info", "log level (debug, info, warn, error)")
-	logDir = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
-	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
-	dryRunFormat = flag.String("dry-run-format", "text", "dry-run output format (text, json)")
-	dryRunDetail = flag.String("dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
-	showSensitive = flag.Bool("show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
-	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
-	runID = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
-	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
-	forceQuiet = flag.Bool("quiet", false, "force non-interactive mode (disables colored output)")
+	// Initialize all flags - must match init() in main.go
+	// High-priority flags with short forms
+	flag.StringVar(&configPath, "config", "", "path to config file")
+	flag.StringVar(&configPath, "c", "", "path to config file (short form)")
+
+	flag.BoolVar(&dryRun, "dry-run", false, "print commands without executing them")
+	flag.BoolVar(&dryRun, "n", false, "print commands without executing them (short form)")
+
+	flag.StringVar(&groups, "groups", "", "comma-separated list of groups to execute (executes all groups if not specified)\nExample: --groups=build,test")
+	flag.StringVar(&groups, "g", "", "comma-separated list of groups to execute (short form)")
+
+	// Medium-priority flags with short forms
+	flag.StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
+	flag.StringVar(&logLevel, "l", "info", "log level (short form)")
+
+	flag.BoolVar(&forceQuiet, "quiet", false, "force non-interactive mode (disables colored output)")
+	flag.BoolVar(&forceQuiet, "q", false, "force non-interactive mode (short form)")
+
+	flag.BoolVar(&validateConfig, "validate", false, "validate configuration file and exit")
+	flag.BoolVar(&validateConfig, "V", false, "validate configuration file and exit (short form)")
+
+	// Other flags without short forms
+	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
+	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
+	flag.StringVar(&dryRunDetail, "dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
+	flag.BoolVar(&showSensitive, "show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
+	flag.StringVar(&runID, "run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	flag.BoolVar(&forceInteractive, "interactive", false, "force interactive mode with colored output (overrides environment detection)")
+	flag.BoolVar(&keepTempDirs, "keep-temp-dirs", false, "keep temporary directories after execution")
 
 	// Return cleanup function to restore original state
 	return func() {
@@ -82,14 +99,14 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 	}
 
 	// Load and prepare configuration (verify, parse, and expand variables)
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
 	if err != nil {
 		return err
 	}
 
 	// The rest of the function follows the same logic as run()
 	// Handle validate command (after verification and loading)
-	if *validateConfig {
+	if validateConfig {
 		// Return silently for config validation in tests
 		return nil
 	}
@@ -130,7 +147,7 @@ func runForTestWithCustomHashDir(t *testing.T, hashDir string) (error, error) {
 	}
 
 	// Try to load and prepare config (will fail without config file, but tests manager creation)
-	_, configErr := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, "test-run-id")
+	_, configErr := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-id")
 	return configErr, nil
 }
 
@@ -191,4 +208,158 @@ func TestNewManagerForTestValidation(t *testing.T) {
 		// We expect either a config error or manager error (directory doesn't exist)
 		assert.True(t, configErr != nil || managerErr != nil, "expected an error for non-existent directory")
 	})
+}
+
+// TestShortFlags tests that short flags work the same as long flags
+func TestShortFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		checkFunc func(t *testing.T)
+	}{
+		{
+			name: "short flag -c sets configPath",
+			args: []string{"runner", "-c", "/path/to/config.toml"},
+			checkFunc: func(t *testing.T) {
+				assert.Equal(t, "/path/to/config.toml", configPath)
+			},
+		},
+		{
+			name: "short flag -n sets dryRun",
+			args: []string{"runner", "-n"},
+			checkFunc: func(t *testing.T) {
+				assert.True(t, dryRun)
+			},
+		},
+		{
+			name: "short flag -g sets groups",
+			args: []string{"runner", "-g", "build,test"},
+			checkFunc: func(t *testing.T) {
+				assert.Equal(t, "build,test", groups)
+			},
+		},
+		{
+			name: "short flag -l sets logLevel",
+			args: []string{"runner", "-l", "debug"},
+			checkFunc: func(t *testing.T) {
+				assert.Equal(t, "debug", logLevel)
+			},
+		},
+		{
+			name: "short flag -q sets forceQuiet",
+			args: []string{"runner", "-q"},
+			checkFunc: func(t *testing.T) {
+				assert.True(t, forceQuiet)
+			},
+		},
+		{
+			name: "short flag -V sets validateConfig",
+			args: []string{"runner", "-V"},
+			checkFunc: func(t *testing.T) {
+				assert.True(t, validateConfig)
+			},
+		},
+		{
+			name: "long and short flags can be mixed",
+			args: []string{"runner", "-c", "/path/to/config.toml", "--dry-run", "-g", "build"},
+			checkFunc: func(t *testing.T) {
+				assert.Equal(t, "/path/to/config.toml", configPath)
+				assert.True(t, dryRun)
+				assert.Equal(t, "build", groups)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test flags
+			cleanup := setupTestFlags()
+			defer cleanup()
+
+			// Set test args
+			os.Args = tt.args
+
+			// Parse flags
+			flag.Parse()
+
+			// Check result
+			tt.checkFunc(t)
+		})
+	}
+}
+
+// TestShortFlagsEquivalence tests that short flags are equivalent to long flags
+func TestShortFlagsEquivalence(t *testing.T) {
+	tests := []struct {
+		name      string
+		shortArgs []string
+		longArgs  []string
+	}{
+		{
+			name:      "config flag equivalence",
+			shortArgs: []string{"runner", "-c", "/path/to/config.toml"},
+			longArgs:  []string{"runner", "--config", "/path/to/config.toml"},
+		},
+		{
+			name:      "dry-run flag equivalence",
+			shortArgs: []string{"runner", "-n"},
+			longArgs:  []string{"runner", "--dry-run"},
+		},
+		{
+			name:      "groups flag equivalence",
+			shortArgs: []string{"runner", "-g", "build,test"},
+			longArgs:  []string{"runner", "--groups", "build,test"},
+		},
+		{
+			name:      "log-level flag equivalence",
+			shortArgs: []string{"runner", "-l", "debug"},
+			longArgs:  []string{"runner", "--log-level", "debug"},
+		},
+		{
+			name:      "quiet flag equivalence",
+			shortArgs: []string{"runner", "-q"},
+			longArgs:  []string{"runner", "--quiet"},
+		},
+		{
+			name:      "validate flag equivalence",
+			shortArgs: []string{"runner", "-V"},
+			longArgs:  []string{"runner", "--validate"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test short form
+			cleanup1 := setupTestFlags()
+			os.Args = tt.shortArgs
+			flag.Parse()
+			shortConfigPath := configPath
+			shortDryRun := dryRun
+			shortGroups := groups
+			shortLogLevel := logLevel
+			shortForceQuiet := forceQuiet
+			shortValidateConfig := validateConfig
+			cleanup1()
+
+			// Test long form
+			cleanup2 := setupTestFlags()
+			os.Args = tt.longArgs
+			flag.Parse()
+			longConfigPath := configPath
+			longDryRun := dryRun
+			longGroups := groups
+			longLogLevel := logLevel
+			longForceQuiet := forceQuiet
+			longValidateConfig := validateConfig
+			cleanup2()
+
+			// Verify equivalence
+			assert.Equal(t, longConfigPath, shortConfigPath, "configPath should be the same")
+			assert.Equal(t, longDryRun, shortDryRun, "dryRun should be the same")
+			assert.Equal(t, longGroups, shortGroups, "groups should be the same")
+			assert.Equal(t, longLogLevel, shortLogLevel, "logLevel should be the same")
+			assert.Equal(t, longForceQuiet, shortForceQuiet, "forceQuiet should be the same")
+			assert.Equal(t, longValidateConfig, shortValidateConfig, "validateConfig should be the same")
+		})
+	}
 }

@@ -6,94 +6,142 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 )
 
+const hashDirPermissions = 0o750
+
 var (
-	// ErrFileArgumentRequired is returned when the required file argument is missing.
-	ErrFileArgumentRequired = errors.New("file argument is required")
-	// ErrGetCurrentDir is returned when there's an error getting the current directory.
-	ErrGetCurrentDir = errors.New("error getting current directory")
-	// ErrCreateHashDir is returned when there's an error creating or accessing the hash directory.
-	ErrCreateHashDir = errors.New("error creating/accessing hash directory")
+	errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
+	errGetCurrentDir   = errors.New("error getting current directory")
+	errEnsureHashDir   = errors.New("error creating/accessing hash directory")
+	validatorFactory   = func(hashDir string) (hashValidator, error) {
+		return cmdcommon.CreateValidator(hashDir)
+	}
 )
 
-const (
-	// hashDirPermissions defines the default permissions for the hash directory.
-	hashDirPermissions = 0o750
-)
-
-// config holds the configuration for the verify command.
-type config struct {
-	File    string
-	HashDir string
+type hashValidator interface {
+	Verify(filePath string) error
 }
 
-// parseFlags parses the command-line flags for the verify command.
-// It returns a config and any error encountered.
-func parseFlags() (*config, error) {
-	var (
-		file    = flag.String("file", "", "Path to the file to process")
-		hashDir = flag.String("hash-dir", "", "Directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
-	)
-	flag.Parse()
+type verifyConfig struct {
+	files          []string
+	hashDir        string
+	usedDeprecated bool
+}
 
-	if *file == "" {
-		return nil, ErrFileArgumentRequired
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	cfg, fs, err := parseArgs(args, stderr)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		printUsage(fs, stderr)
+		_, _ = fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 1
 	}
 
-	// Set default hash directory to current directory if not specified
-	dir := *hashDir
+	if cfg.usedDeprecated {
+		_, _ = fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.")
+	}
+
+	validator, err := validatorFactory(cfg.hashDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "Error creating validator: %v\n", err)
+		return 1
+	}
+
+	return processFiles(validator, cfg.files, stdout, stderr)
+}
+
+func parseArgs(args []string, stderr io.Writer) (*verifyConfig, *flag.FlagSet, error) {
+	options := struct {
+		deprecatedFile string
+		hashDir        string
+	}{}
+
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { printUsage(fs, stderr) }
+	fs.StringVar(&options.deprecatedFile, "file", "", "DEPRECATED: Path to the file to verify (use positional arguments instead)")
+	fs.StringVar(&options.hashDir, "hash-dir", "", "Directory containing hash files (default: current working directory)")
+	fs.StringVar(&options.hashDir, "d", "", "Short alias for -hash-dir")
+
+	if err := fs.Parse(args); err != nil {
+		return nil, fs, err
+	}
+
+	files := fs.Args()
+	if options.deprecatedFile != "" {
+		files = append([]string{options.deprecatedFile}, files...)
+	}
+	if len(files) == 0 {
+		return nil, fs, errNoFilesProvided
+	}
+
+	dir := options.hashDir
 	if dir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrGetCurrentDir, err)
+			return nil, fs, fmt.Errorf("%w: %w", errGetCurrentDir, err)
 		}
 		dir = cwd
 	}
 
-	// Ensure the directory exists
 	if err := os.MkdirAll(dir, hashDirPermissions); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCreateHashDir, err)
+		return nil, fs, fmt.Errorf("%w: %w", errEnsureHashDir, err)
 	}
 
-	return &config{
-		File:    *file,
-		HashDir: dir,
-	}, nil
+	return &verifyConfig{
+		files:          files,
+		hashDir:        dir,
+		usedDeprecated: options.deprecatedFile != "",
+	}, fs, nil
 }
 
-// printUsage prints the usage message for the verify command.
-func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s -file <path> [-hash-dir <dir>]\n", filepath.Base(os.Args[0]))
-	flag.PrintDefaults()
+func printUsage(fs *flag.FlagSet, w io.Writer) {
+	if fs == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0]))
+	fs.PrintDefaults()
 }
 
-func main() {
-	// Parse command line flags
-	cfg, err := parseFlags()
-	if err != nil {
-		printUsage()
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+func processFiles(validator hashValidator, files []string, stdout, stderr io.Writer) int {
+	total := len(files)
+	label := "files"
+	if total == 1 {
+		label = "file"
 	}
 
-	// Create validator with SHA256 hasher
-	validator, err := cmdcommon.CreateValidator(cfg.HashDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating validator: %v\n", err)
-		os.Exit(1)
+	_, _ = fmt.Fprintf(stdout, "Verifying %d %s...\n", total, label)
+
+	successes := 0
+	failures := 0
+
+	for idx, filePath := range files {
+		_, _ = fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath)
+		if err := validator.Verify(filePath); err != nil {
+			failures++
+			_, _ = fmt.Fprintln(stdout, "FAILED")
+			_, _ = fmt.Fprintf(stderr, "Verification failed for %s: %v\n", filePath, err)
+			continue
+		}
+		successes++
+		_, _ = fmt.Fprintln(stdout, "OK")
 	}
 
-	// Verify file hash
-	err = validator.Verify(cfg.File)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Verification failed: %v\n", err)
-		os.Exit(1)
+	_, _ = fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures)
+	if failures > 0 {
+		return 1
 	}
-
-	fmt.Printf("OK: %s\n", cfg.File)
+	return 0
 }

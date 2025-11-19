@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"flag"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,129 +11,114 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseFlags_Success(t *testing.T) {
-	tests := []struct {
-		name         string
-		args         []string
-		wantFile     string
-		checkHashDir bool
-	}{
-		{
-			name:         "with required file argument",
-			args:         []string{"-file", "test.txt"},
-			wantFile:     "test.txt",
-			checkHashDir: true,
-		},
-		{
-			name:         "with file and hash-dir",
-			args:         []string{"-file", "test.txt", "-hash-dir", "/tmp/hashes"},
-			wantFile:     "test.txt",
-			checkHashDir: false,
-		},
+type verifyCall struct {
+	file string
+}
+
+type fakeValidator struct {
+	responses map[string]error
+	calls     []verifyCall
+	hashDir   string
+}
+
+func (f *fakeValidator) Verify(filePath string) error {
+	f.calls = append(f.calls, verifyCall{file: filePath})
+	if err, ok := f.responses[filePath]; ok {
+		return err
 	}
+	return nil
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset flags for each test
-			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-
-			// Set os.Args to simulate command-line arguments
-			oldArgs := os.Args
-			os.Args = append([]string{"cmd"}, tt.args...)
-			defer func() { os.Args = oldArgs }()
-
-			cfg, err := parseFlags()
-			require.NoError(t, err)
-
-			assert.Equal(t, tt.wantFile, cfg.File)
-
-			if tt.checkHashDir {
-				// When hash-dir is not specified, it should default to current directory
-				cwd, err := os.Getwd()
-				require.NoError(t, err)
-				assert.Equal(t, cwd, cfg.HashDir)
-			} else {
-				assert.Equal(t, "/tmp/hashes", cfg.HashDir)
-			}
-		})
+func overrideValidatorFactory(t *testing.T, validator *fakeValidator) func() {
+	t.Helper()
+	originalFactory := validatorFactory
+	validatorFactory = func(hashDir string) (hashValidator, error) {
+		validator.hashDir = hashDir
+		return validator, nil
+	}
+	return func() {
+		validatorFactory = originalFactory
 	}
 }
 
-func TestParseFlags_MissingRequiredArg(t *testing.T) {
-	// Reset flags
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+func TestRunRequiresAtLeastOneFile(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 
-	// Set os.Args without -file argument
-	oldArgs := os.Args
-	os.Args = []string{"cmd"}
-	defer func() { os.Args = oldArgs }()
+	exitCode := run([]string{}, stdout, stderr)
 
-	// Capture stderr to avoid cluttering test output
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-	defer func() { os.Stderr = oldStderr }()
-
-	cfg, err := parseFlags()
-
-	// Close writer and restore stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	assert.Nil(t, cfg)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrFileArgumentRequired)
-
-	// Read captured output (just to consume it, we don't need to check it)
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(r)
+	require.Equal(t, 1, exitCode)
+	assert.Contains(t, stderr.String(), "at least one file path")
 }
 
-func TestParseFlags_InvalidHashDir(t *testing.T) {
-	// Create a test directory with no write permissions
+func TestRunProcessesMultipleFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	assert.Equal(t, tempDir, validator.hashDir)
+	require.Len(t, validator.calls, 2)
+	assert.Equal(t, []verifyCall{{"file1.txt"}, {"file2.txt"}}, validator.calls)
+	assert.Contains(t, stdout.String(), "Verifying 2 files...")
+	assert.Contains(t, stdout.String(), "Summary: 2 succeeded, 0 failed")
+	assert.Empty(t, stderr.String())
+}
+
+func TestRunReportsFailuresAndContinues(t *testing.T) {
+	tempDir := t.TempDir()
+	validator := &fakeValidator{responses: map[string]error{
+		"bad.txt": errors.New("hash mismatch"),
+	}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-hash-dir", tempDir, "good.txt", "bad.txt", "later.txt"}, stdout, stderr)
+
+	require.Equal(t, 1, exitCode)
+	require.Len(t, validator.calls, 3)
+	assert.Contains(t, stdout.String(), "[2/3] bad.txt: FAILED")
+	assert.Contains(t, stdout.String(), "Summary: 2 succeeded, 1 failed")
+	assert.Contains(t, stderr.String(), "Verification failed for bad.txt")
+}
+
+func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
+	tempDir := t.TempDir()
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	require.Len(t, validator.calls, 2)
+	assert.Equal(t, "legacy.txt", validator.calls[0].file)
+	assert.Contains(t, stderr.String(), "deprecated")
+}
+
+func TestParseArgsInvalidHashDir(t *testing.T) {
 	tempDir := t.TempDir()
 	noWriteDir := filepath.Join(tempDir, "no_write")
+	require.NoError(t, os.Mkdir(noWriteDir, 0o400))
+	defer os.Chmod(noWriteDir, 0o755)
 
-	// Create directory with read-only permissions
-	require.NoError(t, os.Mkdir(noWriteDir, 0o444))
-	defer os.Chmod(noWriteDir, 0o755) // Restore permissions for cleanup
-
-	// Try to create a subdirectory that will fail due to permissions
 	invalidHashDir := filepath.Join(noWriteDir, "hashes")
 
-	// Reset flags
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-
-	oldArgs := os.Args
-	os.Args = []string{"cmd", "-file", "test.txt", "-hash-dir", invalidHashDir}
-	defer func() { os.Args = oldArgs }()
-
-	cfg, err := parseFlags()
+	cfg, _, err := parseArgs([]string{"-hash-dir", invalidHashDir, "file.txt"}, bytes.NewBuffer(nil))
 
 	assert.Nil(t, cfg)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrCreateHashDir)
-}
-
-func TestPrintUsage(t *testing.T) {
-	// Capture stderr output
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
-	printUsage()
-
-	// Close writer and restore stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	// Read captured output
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	// Verify that usage message contains expected elements
-	assert.Contains(t, output, "Usage:")
-	assert.Contains(t, output, "-file")
-	assert.Contains(t, output, "-hash-dir")
+	assert.ErrorIs(t, err, errEnsureHashDir)
 }
