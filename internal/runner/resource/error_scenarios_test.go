@@ -623,7 +623,6 @@ func TestConcurrentExecution(t *testing.T) {
 			group := &runnertypes.GroupSpec{
 				Name:        "concurrent-test-group",
 				Description: "Concurrent test group",
-				Priority:    1,
 			}
 
 			envVars := map[string]string{
@@ -704,7 +703,6 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	group := &runnertypes.GroupSpec{
 		Name:        "state-test-group",
 		Description: "State test group",
-		Priority:    1,
 	}
 
 	envVars := map[string]string{

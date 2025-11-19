@@ -265,31 +265,7 @@ name = "group1"
 # Mixed database, file, and network operations
 ```
 
-### 9.3.2 Effective Use of Priority
-
-Set priorities based on dependencies and importance.
-
-#### Recommended Implementation
-
-```toml
-# Good example: Clear priority settings
-[[groups]]
-name = "prerequisites"
-description = "Verify prerequisites"
-priority = 1  # Execute first
-
-[[groups]]
-name = "main_operations"
-description = "Main processing"
-priority = 10  # Execute after prerequisites
-
-[[groups]]
-name = "cleanup"
-description = "Post-processing and cleanup"
-priority = 100  # Execute last
-```
-
-### 9.3.3 Comprehensive Descriptions
+### 9.3.2 Comprehensive Descriptions
 
 Write clear descriptions for each group and command.
 
@@ -413,7 +389,6 @@ env_allowed = ["PATH", "HOME"]
 # ========================================
 [[groups]]
 name = "preparation"
-priority = 1
 # ... command definitions
 
 # ========================================
@@ -421,7 +396,6 @@ priority = 1
 # ========================================
 [[groups]]
 name = "deployment"
-priority = 2
 # ... command definitions
 
 # ========================================
@@ -429,7 +403,6 @@ priority = 2
 # ========================================
 [[groups]]
 name = "verification"
-priority = 3
 # ... command definitions
 ```
 
@@ -468,22 +441,11 @@ Design independent groups to enable parallel execution.
 # Good example: Independent groups (parallel execution possible)
 [[groups]]
 name = "backup_database"
-priority = 10
 # Database backup
 
 [[groups]]
 name = "backup_files"
-priority = 10  # Same priority → Parallel execution possible
 # File backup
-
-# Example to avoid: Unnecessary dependencies
-[[groups]]
-name = "backup_database"
-priority = 10
-
-[[groups]]
-name = "backup_files"
-priority = 11  # Unnecessarily creating dependencies
 ```
 
 ### 9.6.2 Optimizing File Verification

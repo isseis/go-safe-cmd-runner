@@ -265,31 +265,7 @@ name = "group1"
 # データベース、ファイル、ネットワークが混在
 ```
 
-### 9.3.2 優先度の効果的な使用
-
-依存関係や重要度に基づいて優先度を設定してください。
-
-#### 推奨される実装
-
-```toml
-# 良い例: 明確な優先度設定
-[[groups]]
-name = "prerequisites"
-description = "前提条件の確認"
-priority = 1  # 最初に実行
-
-[[groups]]
-name = "main_operations"
-description = "メイン処理"
-priority = 10  # 前提条件の後に実行
-
-[[groups]]
-name = "cleanup"
-description = "後処理とクリーンアップ"
-priority = 100  # 最後に実行
-```
-
-### 9.3.3 説明の充実
+### 9.3.2 説明の充実
 
 各グループとコマンドに明確な説明を記述してください。
 
@@ -413,7 +389,6 @@ env_allowed = ["PATH", "HOME"]
 # ========================================
 [[groups]]
 name = "preparation"
-priority = 1
 # ... コマンド定義
 
 # ========================================
@@ -421,7 +396,6 @@ priority = 1
 # ========================================
 [[groups]]
 name = "deployment"
-priority = 2
 # ... コマンド定義
 
 # ========================================
@@ -429,7 +403,6 @@ priority = 2
 # ========================================
 [[groups]]
 name = "verification"
-priority = 3
 # ... コマンド定義
 ```
 
@@ -468,22 +441,11 @@ go-safe-cmd-runner -file configs/production.toml
 # 良い例: 独立したグループ(並列実行可能)
 [[groups]]
 name = "backup_database"
-priority = 10
 # データベースバックアップ
 
 [[groups]]
 name = "backup_files"
-priority = 10  # 同じ優先度 → 並列実行可能
 # ファイルバックアップ
-
-# 避けるべき例: 不必要な依存関係
-[[groups]]
-name = "backup_database"
-priority = 10
-
-[[groups]]
-name = "backup_files"
-priority = 11  # 不必要に依存関係を作っている
 ```
 
 ### 9.6.2 ファイル検証の最適化

@@ -25,7 +25,6 @@
 |-----------|-----|------|------------|------|
 | name | string | ✓ | なし | グループ名(一意) |
 | description | string | - | "" | グループの説明 |
-| priority | int | - | 0 | 実行優先度(小さいほど優先) |
 | workdir | string | - | 自動生成 | 作業ディレクトリ(未指定時は一時ディレクトリを自動生成) |
 | verify_files | []string | - | [] | 検証対象ファイル(グローバルに追加) |
 | env_allowed | []string | - | nil(継承) | 環境変数許可リスト(継承モード参照) |
@@ -208,7 +207,6 @@ env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
 # 開発環境
 [[groups]]
 name = "dev_deploy"
-priority = 1
 
 [[groups.commands]]
 name = "run_dev"
@@ -224,7 +222,6 @@ env_vars = [
 # 本番環境
 [[groups]]
 name = "prod_deploy"
-priority = 2
 
 [[groups.commands]]
 name = "run_prod"
@@ -435,7 +432,6 @@ env_allowed = [
 # 開発環境
 [[groups]]
 name = "dev_environment"
-priority = 1
 
 [[groups.commands]]
 name = "run_dev"
@@ -450,7 +446,6 @@ env_vars = [
 # 本番環境
 [[groups]]
 name = "prod_environment"
-priority = 2
 
 [[groups.commands]]
 name = "run_prod"

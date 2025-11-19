@@ -274,7 +274,6 @@ timeout = 300
 [[groups]]
 name = "build"
 description = "Build tasks"
-priority = 1
 workdir = "/tmp/build"
 verify_files = ["/usr/bin/make"]
 env_allowed = ["PATH", "CC"]
@@ -295,7 +294,6 @@ cmd = "/usr/bin/make"
 					{
 						Name:        "build",
 						Description: "Build tasks",
-						Priority:    1,
 						WorkDir:     "/tmp/build",
 						VerifyFiles: []string{"/usr/bin/make"},
 						EnvAllowed:  []string{"PATH", "CC"},

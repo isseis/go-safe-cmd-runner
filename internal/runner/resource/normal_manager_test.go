@@ -169,7 +169,6 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 	return &runnertypes.GroupSpec{
 		Name:        "test-group",
 		Description: "Test group description",
-		Priority:    1,
 		WorkDir:     "/tmp",
 		Commands:    []runnertypes.CommandSpec{},
 	}

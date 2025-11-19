@@ -1275,7 +1275,6 @@ verify_files = []  # コマンドは自動検証されるため、追加ファ�
 [[groups]]
 name = "database_operations"
 description = "データベース関連の操作"
-priority = 10
 workdir = "/var/backups/db"
 env_allowed = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
 verify_files = ["/etc/postgresql/pg_hba.conf"]  # 設定ファイルなど追加ファイルのみ指定
@@ -1314,7 +1313,6 @@ risk_level = "medium"
 [[groups]]
 name = "system_maintenance"
 description = "システムメンテナンスタスク"
-priority = 20
 workdir = "/tmp"
 env_allowed = []  # 環境変数なし
 
@@ -1341,7 +1339,6 @@ risk_level = "high"
 [[groups]]
 name = "temporary_processing"
 description = "一時ディレクトリでの処理タスク"
-priority = 30
 
 # コマンド6: 一時ディレクトリでの画像変換
 [[groups.commands]]

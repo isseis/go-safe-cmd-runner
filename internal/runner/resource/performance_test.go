@@ -38,7 +38,6 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 			group := &runnertypes.GroupSpec{
 				Name:        "benchmark-group",
 				Description: "Benchmark test group",
-				Priority:    1,
 			}
 
 			envVars := map[string]string{
@@ -156,7 +155,6 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 	group := &runnertypes.GroupSpec{
 		Name:        "switch-group",
 		Description: "Switch test group",
-		Priority:    1,
 	}
 
 	envVars := map[string]string{
@@ -203,7 +201,6 @@ func BenchmarkMemoryUsage(b *testing.B) {
 	group := &runnertypes.GroupSpec{
 		Name:        "memory-group",
 		Description: "Memory test group",
-		Priority:    1,
 	}
 
 	envVars := map[string]string{

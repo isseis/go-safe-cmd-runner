@@ -192,7 +192,6 @@ verify_files = [
 [[groups]]
 name = "system_maintenance"
 description = "System maintenance tasks"
-priority = 1
 
 # Non-privileged task: Check system status
 [[groups.commands]]
@@ -315,7 +314,6 @@ env_allowed = ["PATH", "HOME"]
 [[groups]]
 name = "deploy_development"
 description = "Deploy to development environment"
-priority = 1
 
 [[groups.commands]]
 name = "deploy_dev_config"
@@ -351,7 +349,6 @@ risk_level = "high"
 [[groups]]
 name = "deploy_staging"
 description = "Deploy to staging environment"
-priority = 2
 
 [[groups.commands]]
 name = "deploy_staging_config"
@@ -387,7 +384,6 @@ risk_level = "high"
 [[groups]]
 name = "deploy_production"
 description = "Deploy to production environment"
-priority = 3
 
 [[groups.commands]]
 name = "deploy_prod_config"
@@ -449,7 +445,6 @@ output_size_limit = 52428800  # 50MB
 [[groups]]
 name = "preparation"
 description = "Pre-deployment preparation"
-priority = 1
 workdir = "/opt/deploy/prep"
 
 [[groups.commands]]
@@ -480,7 +475,6 @@ output_file = "installed-packages.txt"
 [[groups]]
 name = "database_migration"
 description = "Update database schema"
-priority = 2
 env_allowed = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
 verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 
@@ -523,7 +517,6 @@ timeout = 600
 [[groups]]
 name = "application_deployment"
 description = "Deploy application"
-priority = 3
 workdir = "/opt/myapp"
 
 [[groups.commands]]
@@ -568,7 +561,6 @@ risk_level = "high"
 [[groups]]
 name = "web_server_update"
 description = "Update web server configuration"
-priority = 4
 
 [[groups.commands]]
 name = "update_nginx_config"
@@ -602,7 +594,6 @@ risk_level = "high"
 [[groups]]
 name = "deployment_verification"
 description = "Verify deployment"
-priority = 5
 
 [[groups.commands]]
 name = "health_check"
@@ -646,7 +637,6 @@ output_file = "db-connection-test.txt"
 [[groups]]
 name = "post_deployment"
 description = "Post-deployment processing"
-priority = 6
 workdir = "/var/reports/deployment"
 
 [[groups.commands]]

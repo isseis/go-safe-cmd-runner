@@ -25,7 +25,6 @@ verify_files = [
 [[groups]]
 name = "safe_output_paths"
 description = "Demonstrate safe output file paths within working directory"
-priority = 1
 
 [[groups.commands]]
 name = "safe_relative_path"
@@ -52,7 +51,6 @@ output_file = "reports/user/identity.txt"
 [[groups]]
 name = "user_home_outputs"
 description = "Safe outputs to user home directory"
-priority = 2
 
 [[groups.commands]]
 name = "home_directory_output"
@@ -72,7 +70,6 @@ output_file = "${HOME}/Documents/user_identity.txt" # Note: variable expansion i
 [[groups]]
 name = "controlled_temp_usage"
 description = "Controlled usage of temporary directories"
-priority = 3
 cleanup = true
 
 [[groups.commands]]
@@ -93,7 +90,6 @@ output_file = "detailed_user_info.txt"
 [[groups]]
 name = "security_validation_examples"
 description = "Examples that demonstrate security validation"
-priority = 4
 
 [[groups.commands]]
 name = "permitted_system_read"
@@ -121,7 +117,6 @@ output_file = "network_interfaces.txt"
 [[groups]]
 name = "risk_managed_outputs"
 description = "Commands with explicit risk level management"
-priority = 5
 
 [[groups.commands]]
 name = "low_risk_with_output"
@@ -143,7 +138,6 @@ risk_level = "medium"
 [[groups]]
 name = "env_security_tests"
 description = "Environment variable security with output capture"
-priority = 6
 # Explicit minimal allowlist for this group
 env_allowed = ["PATH", "USER"]
 
@@ -165,7 +159,6 @@ output_file = "env_safety_check.txt"
 [[groups]]
 name = "permission_demonstration"
 description = "Demonstrate secure file permissions for output"
-priority = 7
 
 [[groups.commands]]
 name = "secure_file_creation"
@@ -185,7 +178,6 @@ output_file = "permission_check.txt"
 [[groups]]
 name = "size_limit_security"
 description = "Demonstrate output size limits for security"
-priority = 8
 
 [[groups.commands]]
 name = "controlled_size_output"
@@ -206,7 +198,6 @@ timeout = 30
 [[groups]]
 name = "security_summary"
 description = "Security best practices summary"
-priority = 9
 
 [[groups.commands]]
 name = "security_checklist"

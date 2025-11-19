@@ -331,17 +331,15 @@ func TestRunner_ExecuteAll(t *testing.T) {
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
-				Name:     "group-2",
-				Priority: 2,
+				Name: "group-1",
 				Commands: []runnertypes.CommandSpec{
-					{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
+					{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
 				},
 			},
 			{
-				Name:     "group-1",
-				Priority: 1,
+				Name: "group-2",
 				Commands: []runnertypes.CommandSpec{
-					{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+					{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
 				},
 			},
 		},
@@ -373,22 +371,19 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			},
 			Groups: []runnertypes.GroupSpec{
 				{
-					Name:     "group-1",
-					Priority: 1,
+					Name: "group-1",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "fail-cmd", Cmd: "false"},
 					},
 				},
 				{
-					Name:     "group-2",
-					Priority: 2,
+					Name: "group-2",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}},
 					},
 				},
 				{
-					Name:     "group-3",
-					Priority: 3,
+					Name: "group-3",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}},
 					},
@@ -428,22 +423,19 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			},
 			Groups: []runnertypes.GroupSpec{
 				{
-					Name:     "group-1",
-					Priority: 1,
+					Name: "group-1",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}},
 					},
 				},
 				{
-					Name:     "group-2",
-					Priority: 2,
+					Name: "group-2",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "fail-cmd", Cmd: "false"},
 					},
 				},
 				{
-					Name:     "group-3",
-					Priority: 3,
+					Name: "group-3",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "should-execute", Cmd: "echo", Args: []string{"third"}},
 					},
@@ -483,8 +475,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			},
 			Groups: []runnertypes.GroupSpec{
 				{
-					Name:     "group-1",
-					Priority: 1,
+					Name: "group-1",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}},
 						{Name: "fail-cmd", Cmd: "false"},
@@ -492,8 +483,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 					},
 				},
 				{
-					Name:     "group-2",
-					Priority: 2,
+					Name: "group-2",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}},
 					},
@@ -534,15 +524,13 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			},
 			Groups: []runnertypes.GroupSpec{
 				{
-					Name:     "group-1",
-					Priority: 1,
+					Name: "group-1",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "executor-error-cmd", Cmd: "cat"}, // Use a real command that can return an error
 					},
 				},
 				{
-					Name:     "group-2",
-					Priority: 2,
+					Name: "group-2",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "should-execute", Cmd: "echo", Args: []string{"second"}},
 					},
@@ -578,15 +566,13 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			},
 			Groups: []runnertypes.GroupSpec{
 				{
-					Name:     "group-1",
-					Priority: 1,
+					Name: "group-1",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "long-running-cmd", Cmd: "sleep", Args: []string{"10"}},
 					},
 				},
 				{
-					Name:     "group-2",
-					Priority: 2,
+					Name: "group-2",
 					Commands: []runnertypes.CommandSpec{
 						{Name: "should-not-execute", Cmd: "echo", Args: []string{"second"}},
 					},
@@ -1928,8 +1914,7 @@ func TestRunner_ExecutorUsesDefaultLogger(t *testing.T) {
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
-				Name:     "test_group",
-				Priority: 1,
+				Name: "test_group",
 				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "test_cmd",
@@ -2053,9 +2038,9 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
-					{Name: "common", Priority: 1},
-					{Name: "build", Priority: 2},
-					{Name: "test", Priority: 3},
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
 				},
 			},
 			groupNames:     nil,
@@ -2067,9 +2052,9 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
-					{Name: "common", Priority: 1},
-					{Name: "build", Priority: 2},
-					{Name: "test", Priority: 3},
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
 				},
 			},
 			groupNames:     map[string]struct{}{},
@@ -2081,9 +2066,9 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
-					{Name: "common", Priority: 1},
-					{Name: "build", Priority: 2},
-					{Name: "test", Priority: 3},
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
 				},
 			},
 			groupNames:     map[string]struct{}{"build": {}},
@@ -2095,28 +2080,14 @@ func TestRunner_ExecuteFiltered(t *testing.T) {
 			config: &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Groups: []runnertypes.GroupSpec{
-					{Name: "common", Priority: 1},
-					{Name: "build", Priority: 2},
-					{Name: "test", Priority: 3},
-					{Name: "deploy", Priority: 4},
+					{Name: "common"},
+					{Name: "build"},
+					{Name: "test"},
+					{Name: "deploy"},
 				},
 			},
 			groupNames:     map[string]struct{}{"build": {}, "test": {}},
 			expectedGroups: []string{"build", "test"},
-			expectError:    false,
-		},
-		{
-			name: "filter preserves priority order",
-			config: &runnertypes.ConfigSpec{
-				Version: "1.0",
-				Groups: []runnertypes.GroupSpec{
-					{Name: "test", Priority: 3},
-					{Name: "build", Priority: 2},
-					{Name: "common", Priority: 1},
-				},
-			},
-			groupNames:     map[string]struct{}{"test": {}, "common": {}},
-			expectedGroups: []string{"common", "test"}, // Should be sorted by priority
 			expectError:    false,
 		},
 	}

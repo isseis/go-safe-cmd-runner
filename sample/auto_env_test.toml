@@ -15,7 +15,6 @@ env_allowed = [
 [[groups]]
 name = "basic_auto_env"
 description = "Test basic automatic internal variable expansion"
-priority = 1
 
 [[groups.commands]]
 name = "expand_datetime"
@@ -39,7 +38,6 @@ args = ["DateTime=%{__runner_datetime}", "PID=%{__runner_pid}"]
 [[groups]]
 name = "combined_expansion"
 description = "Test variable expansion combining auto variables with user vars"
-priority = 2
 
 [[groups.commands]]
 name = "user_and_auto"
@@ -59,7 +57,6 @@ vars = ["base_path=/var/log"]
 [[groups]]
 name = "file_operations"
 description = "Test file operations using auto internal variables"
-priority = 3
 
 [[groups.commands]]
 name = "timestamp_filename"
@@ -77,7 +74,6 @@ args = ["-c", "echo test > /tmp/auto-env-test/pid-%{__runner_pid}.txt && cat /tm
 [[groups]]
 name = "complex_usage"
 description = "Test complex usage patterns"
-priority = 4
 
 [[groups.commands]]
 name = "backup_simulation"

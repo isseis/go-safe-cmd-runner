@@ -36,7 +36,6 @@ verify_files = ["/etc/passwd", "/bin/sh"]
 [[groups]]
 name = "basic_tests"
 description = "Basic command execution tests without special features"
-priority = 1
 
 [[groups.commands]]
 name = "simple_echo"
@@ -54,7 +53,6 @@ args = []
 [[groups]]
 name = "security_tests"
 description = "Security feature testing including privilege escalation"
-priority = 2
 # Group-level explicit environment allowlist (overrides global)
 env_allowed = ["PATH", "HOME", "TEST_SECURITY_VAR"]
 
@@ -82,7 +80,6 @@ env_vars = ["TEST_SECURITY_VAR=security_value"]
 [[groups]]
 name = "resource_tests"
 description = "Test temporary directory creation and cleanup"
-priority = 3
 cleanup = true
 
 [[groups.commands]]
@@ -119,7 +116,6 @@ args = ["%{__runner_workdir}/workdir_reference.txt"]
 [[groups]]
 name = "workdir_tests"
 description = "Test custom working directory functionality"
-priority = 4
 workdir = "/tmp/custom-workdir-test"
 
 [[groups.commands]]
@@ -138,7 +134,6 @@ args = ["workdir_test_file.txt"]
 [[groups]]
 name = "env_var_tests"
 description = "Test internal variables and environment variable passing"
-priority = 5
 # Test inheritance mode - inherits from global by not specifying env_allowed
 
 # Group-level internal variables
@@ -179,7 +174,6 @@ env_import = ["username=USER"]
 [[groups]]
 name = "env_rejection_tests"
 description = "Test environment variable rejection"
-priority = 6
 # Explicit empty allowlist - rejects all environment variables
 env_allowed = []
 env_import = []  # No system env imports
@@ -194,7 +188,6 @@ args = ["Should not see any custom env vars"]
 [[groups]]
 name = "timeout_tests"
 description = "Test timeout functionality at command and global level"
-priority = 7
 
 [[groups.commands]]
 name = "quick_command"
@@ -214,7 +207,6 @@ timeout = 10
 [[groups]]
 name = "file_verification_tests"
 description = "Test file verification functionality"
-priority = 8
 verify_files = ["/bin/echo", "/usr/bin/env"]
 
 [[groups.commands]]
@@ -233,7 +225,6 @@ args = ["Using verified command"]
 [[groups]]
 name = "variable_expansion_tests"
 description = "Test variable expansion in various contexts"
-priority = 9
 
 vars = [
     "base_dir=/tmp/expansion-test",
@@ -257,7 +248,6 @@ args = ["DateTime: %{__runner_datetime}, PID: %{__runner_pid}"]
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-priority = 10
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
 env_allowed = ["PATH", "HOME", "FINAL_TEST_VAR"]

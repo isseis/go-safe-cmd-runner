@@ -25,7 +25,6 @@
 |-----------|------|----------|---------------|-------------|
 | name | string | ✓ | none | Group name (unique) |
 | description | string | - | "" | Group description |
-| priority | int | - | 0 | Execution priority (lower runs first) |
 | workdir | string | - | Auto-generated | Working directory (auto-generates temporary directory if not specified) |
 | verify_files | []string | - | [] | Files to verify (added to global) |
 | env_allowed | []string | - | nil (inherit) | Environment variable allowlist (see inheritance mode) |
@@ -208,7 +207,6 @@ env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
 # Development environment
 [[groups]]
 name = "dev_deploy"
-priority = 1
 
 [[groups.commands]]
 name = "run_dev"
@@ -224,7 +222,6 @@ env_vars = [
 # Production environment
 [[groups]]
 name = "prod_deploy"
-priority = 2
 
 [[groups.commands]]
 name = "run_prod"
@@ -435,7 +432,6 @@ env_allowed = [
 # Development environment
 [[groups]]
 name = "dev_environment"
-priority = 1
 
 [[groups.commands]]
 name = "run_dev"
@@ -450,7 +446,6 @@ env_vars = [
 # Production environment
 [[groups]]
 name = "prod_environment"
-priority = 2
 
 [[groups.commands]]
 name = "run_prod"

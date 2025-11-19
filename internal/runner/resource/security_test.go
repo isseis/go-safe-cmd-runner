@@ -86,7 +86,6 @@ func TestSecurityAnalysis(t *testing.T) {
 			group := &runnertypes.GroupSpec{
 				Name:        "security-test-group",
 				Description: "Security test group",
-				Priority:    1,
 			}
 
 			envVars := map[string]string{
@@ -183,7 +182,6 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			group := &runnertypes.GroupSpec{
 				Name:        "privilege-test-group",
 				Description: "Privilege test group",
-				Priority:    1,
 			}
 
 			envVars := map[string]string{
@@ -260,7 +258,6 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	group := &runnertypes.GroupSpec{
 		Name:        "security-test-group",
 		Description: "Security test group",
-		Priority:    1,
 	}
 
 	cmd := executortesting.CreateRuntimeCommand(
@@ -303,7 +300,6 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 	group := &runnertypes.GroupSpec{
 		Name:        "security-integration-test",
 		Description: "Security integration test group",
-		Priority:    1,
 	}
 
 	// Test multiple commands with different risk levels

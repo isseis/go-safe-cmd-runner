@@ -374,117 +374,6 @@ cmd = "/usr/bin/psql"
 args = ["-c", "VACUUM ANALYZE"]
 ```
 
-### 5.1.3 priority - Priority
-
-#### Overview
-
-Specifies the execution priority of the group. Smaller numbers have higher priority and are executed first.
-
-#### Syntax
-
-```toml
-[[groups]]
-name = "example"
-priority = number
-```
-
-#### Parameter Details
-
-| Item | Description |
-|------|-------------|
-| **Type** | Integer (int) |
-| **Required/Optional** | Optional |
-| **Configurable Level** | Group only |
-| **Default Value** | 0 |
-| **Valid Values** | Integer (negative values allowed) |
-
-#### Role
-
-- **Execution Order Control**: Execute dependent groups in appropriate order
-- **Express Importance**: Execute important tasks first
-
-#### Configuration Examples
-
-#### Example 1: Execution Order Control with Priority
-
-```toml
-version = "1.0"
-
-[[groups]]
-name = "preparation"
-description = "Preparation tasks"
-priority = 1  # Execute first
-
-[[groups.commands]]
-name = "create_directory"
-cmd = "mkdir"
-args = ["-p", "/tmp/workspace"]
-
-[[groups]]
-name = "main_tasks"
-description = "Main tasks"
-priority = 2  # Execute second
-
-[[groups.commands]]
-name = "process_data"
-cmd = "/opt/app/process"
-args = []
-
-[[groups]]
-name = "cleanup"
-description = "Post-processing"
-priority = 3  # Execute last
-
-[[groups.commands]]
-name = "remove_temp"
-cmd = "rm"
-args = ["-rf", "/tmp/workspace"]
-```
-
-Execution order: `preparation` → `main_tasks` → `cleanup`
-
-#### Example 2: Priority Setting Based on Importance
-
-```toml
-version = "1.0"
-
-[[groups]]
-name = "critical_backup"
-description = "Backup of critical data"
-priority = 10  # High priority
-
-[[groups.commands]]
-name = "backup_database"
-cmd = "/usr/bin/backup_db.sh"
-args = []
-
-[[groups]]
-name = "routine_maintenance"
-description = "Routine maintenance"
-priority = 50  # Medium priority
-
-[[groups.commands]]
-name = "clean_logs"
-cmd = "/usr/bin/clean_old_logs.sh"
-args = []
-
-[[groups]]
-name = "optional_optimization"
-description = "Optional optimization tasks"
-priority = 100  # Low priority
-
-[[groups.commands]]
-name = "optimize"
-cmd = "/usr/bin/optimize.sh"
-args = []
-```
-
-#### Notes
-
-1. **Same Priority**: Groups with the same priority are executed in the order they are defined
-2. **Negative Priority**: Negative values are also allowed (represent higher priority)
-3. **When Omitted**: If priority is not specified, it is treated as 0
-
 ## 5.2 Resource Management Settings
 
 ### 5.2.1 ❌ temp_dir - Temporary Directory (Deprecated)
@@ -1316,7 +1205,6 @@ verify_files = ["/bin/sh"]
 [[groups]]
 name = "database_backup"
 description = "Daily PostgreSQL database backup"
-priority = 10
 workdir = "/var/backups/db"
 verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
 env_allowed = ["PATH", "PGDATA", "PGHOST"]
@@ -1333,7 +1221,6 @@ timeout = 600
 [[groups]]
 name = "log_rotation"
 description = "Compression and deletion of old log files"
-priority = 20
 workdir = "/var/log/app"
 env_allowed = ["PATH"]  # Explicit mode: PATH only
 
@@ -1351,7 +1238,6 @@ args = [".", "-name", "*.log.gz", "-mtime", "+30", "-delete"]
 [[groups]]
 name = "temp_processing"
 description = "Data processing in temporary directory"
-priority = 30
 # workdir not specified - a temporary directory is automatically generated
 env_allowed = []  # Reject mode: No environment variables
 
