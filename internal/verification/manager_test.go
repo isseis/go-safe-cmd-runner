@@ -20,7 +20,8 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 	spec := &runnertypes.GlobalSpec{
 		VerifyFiles: verifyFiles,
 	}
-	runtime, _ := runnertypes.NewRuntimeGlobal(spec)
+	runtime, err := runnertypes.NewRuntimeGlobal(spec)
+	require.NoError(nil, err)
 	runtime.ExpandedVerifyFiles = verifyFiles
 	return runtime
 }
@@ -38,7 +39,8 @@ func createGroupSpec(verifyFiles []string) *runnertypes.GroupSpec {
 // Helper function to create RuntimeGroup for testing
 func createRuntimeGroup(verifyFiles []string) *runnertypes.RuntimeGroup {
 	spec := createGroupSpec(verifyFiles)
-	runtime, _ := runnertypes.NewRuntimeGroup(spec)
+	runtime, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(nil, err)
 	runtime.ExpandedVerifyFiles = verifyFiles
 	return runtime
 }

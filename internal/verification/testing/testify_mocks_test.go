@@ -8,7 +8,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +28,8 @@ func TestMockManager_ResolvePath(t *testing.T) {
 func TestMockManager_VerifyGroupFiles(t *testing.T) {
 	mockManager := new(verificationtesting.MockManager)
 	spec := &runnertypes.GroupSpec{Name: "test-group"}
-	runtimeGroup, _ := runnertypes.NewRuntimeGroup(spec)
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(t, err)
 	expectedResult := &verification.Result{TotalFiles: 1, VerifiedFiles: 1}
 	expectedErr := errors.New("verification error")
 
@@ -45,11 +45,12 @@ func TestMockManager_VerifyGroupFiles(t *testing.T) {
 func TestMockManager_SuccessScenario(t *testing.T) {
 	mockManager := new(verificationtesting.MockManager)
 	spec := &runnertypes.GroupSpec{Name: "test-group"}
-	runtimeGroup, _ := runnertypes.NewRuntimeGroup(spec)
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(t, err)
 	expectedResult := &verification.Result{TotalFiles: 1, VerifiedFiles: 1}
 
-	mockManager.On("ResolvePath", mock.Anything).Return("/usr/bin/test", nil)
-	mockManager.On("VerifyGroupFiles", mock.Anything).Return(expectedResult, nil)
+	mockManager.On("ResolvePath", "test").Return("/usr/bin/test", nil)
+	mockManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(expectedResult, nil)
 
 	path, err1 := mockManager.ResolvePath("test")
 	result, err2 := mockManager.VerifyGroupFiles(runtimeGroup)
@@ -66,7 +67,8 @@ func TestMockManager_SuccessScenario(t *testing.T) {
 func TestMockManager_VerifyGroupFiles_NilResult(t *testing.T) {
 	mockManager := new(verificationtesting.MockManager)
 	spec := &runnertypes.GroupSpec{Name: "test-group"}
-	runtimeGroup, _ := runnertypes.NewRuntimeGroup(spec)
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(t, err)
 	expectedErr := errors.New("verification failed")
 
 	mockManager.On("VerifyGroupFiles", runtimeGroup).Return(nil, expectedErr)
