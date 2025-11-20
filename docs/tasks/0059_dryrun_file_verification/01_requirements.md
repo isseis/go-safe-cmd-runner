@@ -309,7 +309,7 @@ Status:           Exists
 ```json
 {
   "metadata": { ... },
-  "status": "success",
+  "status": "error",
   "file_verification": {
     "total_files": 10,
     "verified_files": 8,
@@ -486,7 +486,8 @@ runner -c audit.toml --dry-run --dry-run-format=json | jq '.file_verification.fa
 
 **対応策**:
 - 検証失敗を目立たせる出力（色付け、明確なセクション）
-- JSON の `status` フィールドで検証失敗を示す（`status: "success_with_warnings"`）
+- JSON の `status` フィールドで検証失敗を示す（`status: "error"`）
+- プログラム終了コードは 0（dry-run は診断ツールとして動作）
 
 ## 8. 関連タスク
 

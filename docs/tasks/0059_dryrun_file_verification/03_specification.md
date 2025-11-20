@@ -683,6 +683,50 @@ type DryRunResult struct {
 }
 ```
 
+#### 3.3.2 ExecutionStatus の変更
+
+ファイル検証失敗を適切に表現するため、`ExecutionStatus` 型を整理する。
+
+**現在の定義** ([internal/runner/resource/types.go](../../../internal/runner/resource/types.go)):
+```go
+type ExecutionStatus string
+
+const (
+    // StatusSuccess indicates all operations completed successfully
+    StatusSuccess ExecutionStatus = "success"
+    // StatusError indicates a fatal error occurred
+    StatusError ExecutionStatus = "error"
+    // StatusPartial indicates partial execution with some failures
+    StatusPartial ExecutionStatus = "partial"
+)
+```
+
+**変更後の定義:**
+```go
+type ExecutionStatus string
+
+const (
+    // StatusSuccess indicates all operations completed successfully
+    StatusSuccess ExecutionStatus = "success"
+    // StatusError indicates an error occurred (fatal or non-fatal)
+    StatusError ExecutionStatus = "error"
+)
+```
+
+**変更内容:**
+- `StatusPartial` を削除（未使用のため）
+
+**ステータス設定ロジック:**
+- dry-run モードでファイル検証失敗がある場合: `StatusError`（exit code は 0）
+- dry-run モードでファイル検証が全て成功した場合: `StatusSuccess`
+- dry-run 処理自体の致命的エラー: `StatusError`（exit code は 1）
+
+**設計判断の根拠:**
+- ファイル検証失敗（特にハッシュ不一致）はセキュリティ上重大な問題
+- `status: "error"` により JSON パーサーが適切に警告を表示可能
+- exit code 0 は維持（dry-run は診断ツールとして動作）
+- プログラム終了コードと `status` フィールドを分離することで、診断ツールとしての利便性とエラーの明確化を両立
+
 ### 3.4 Formatter の拡張
 
 **副作用**: なし（標準出力への書き込みのみ）
@@ -836,7 +880,7 @@ JSON Formatter は構造体の自動シリアライゼーションに依存す�
 ```json
 {
   "metadata": { ... },
-  "status": "success",
+  "status": "error",
   "file_verification": {
     "total_files": 10,
     "verified_files": 8,

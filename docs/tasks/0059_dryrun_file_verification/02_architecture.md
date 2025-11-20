@@ -562,6 +562,42 @@ type DryRunResult struct {
 }
 ```
 
+**ExecutionStatus の変更:**
+
+ファイル検証失敗を適切に表現するため、`ExecutionStatus` 型を整理：
+
+**現在の定義:**
+```go
+type ExecutionStatus string
+
+const (
+    StatusSuccess ExecutionStatus = "success"
+    StatusError   ExecutionStatus = "error"
+    StatusPartial ExecutionStatus = "partial"  // 未使用のため削除
+)
+```
+
+**変更後の定義:**
+```go
+type ExecutionStatus string
+
+const (
+    StatusSuccess ExecutionStatus = "success"
+    StatusError   ExecutionStatus = "error"
+)
+```
+
+**ステータス設定ロジック:**
+- ファイル検証失敗がある場合: `StatusError`（ただし exit code は 0）
+- 全ての検証が成功した場合: `StatusSuccess`
+- dry-run 処理自体の致命的エラー: `StatusError`（exit code は 1）
+
+**設計判断の根拠:**
+- ファイル検証失敗（特にハッシュ不一致）はセキュリティ上重大な問題
+- `status: "error"` により JSON パーサーが適切に警告を表示可能
+- exit code 0 は維持（dry-run は診断ツールとして動作）
+- `StatusPartial` は使用されていないため削除
+
 ### 5.3 Formatter の拡張
 
 **Text Formatter:**
