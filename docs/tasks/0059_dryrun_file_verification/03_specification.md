@@ -266,7 +266,7 @@ func NewResultCollector(hashDirPath string) *ResultCollector {
 }
 ```
 
-#### 2.1.3 メソッド仕様
+#### 3.1.3 メソッド仕様
 
 **RecordSuccess**
 
@@ -412,7 +412,7 @@ type Manager struct {
 }
 ```
 
-#### 2.2.2 NewManagerForDryRun の変更
+#### 3.2.2 NewManagerForDryRun の変更
 
 **現在の実装:**
 ```go
@@ -442,7 +442,7 @@ func NewManagerForDryRun() (*Manager, error) {
 }
 ```
 
-#### 2.2.3 newManagerInternal の変更
+#### 3.2.3 newManagerInternal の変更
 
 `ResultCollector` の初期化を追加:
 
@@ -486,7 +486,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 }
 ```
 
-#### 2.2.4 verifyFileWithFallback の変更
+#### 3.2.4 verifyFileWithFallback の変更
 
 **現在の実装:**
 ```go
@@ -562,7 +562,7 @@ func getSecurityRisk(reason VerificationFailureReason) string {
 }
 ```
 
-#### 2.2.5 各検証メソッドの変更
+#### 3.2.5 各検証メソッドの変更
 
 **VerifyConfigFile:**
 ```go
@@ -629,7 +629,7 @@ func (m *Manager) VerifyGroupFiles(groupSpec *runnertypes.GroupSpec) (*Result, e
 }
 ```
 
-#### 2.2.6 新規メソッド: GetVerificationSummary
+#### 3.2.6 新規メソッド: GetVerificationSummary
 
 ```go
 // GetVerificationSummary returns the file verification summary in dry-run mode
@@ -872,7 +872,7 @@ func formatReason(reason VerificationFailureReason) string {
 }
 ```
 
-#### 2.4.2 JSONFormatter の拡張
+#### 3.4.2 JSONFormatter の拡張
 
 JSON Formatter は構造体の自動シリアライゼーションに依存するため、追加実装は不要。`DryRunResult` に `FileVerification` フィールドが追加されることで、自動的に JSON 出力に含まれる。
 

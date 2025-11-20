@@ -483,7 +483,7 @@ flowchart LR
     style K fill:#f3e5f5
 ```
 
-### 4.2 検証コンテキストの伝播
+### 5.2 検証コンテキストの伝播
 
 各検証呼び出し元から、検証失敗時の文脈情報を伝播する：
 
@@ -496,9 +496,9 @@ flowchart LR
 
 この文脈情報により、ユーザーはどの段階で検証が失敗したかを理解できる。
 
-## 5. 拡張ポイント設計
+## 6. 拡張ポイント設計
 
-### 5.1 Verification Manager の拡張
+### 6.1 Verification Manager の拡張
 
 **現在の実装:**
 ```go
@@ -536,7 +536,7 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 }
 ```
 
-### 5.2 DryRunResult の拡張
+### 6.2 DryRunResult の拡張
 
 **現在の構造:**
 ```go
@@ -598,7 +598,7 @@ const (
 - exit code 0 は維持（dry-run は診断ツールとして動作）
 - `StatusPartial` は使用されていないため削除
 
-### 5.3 Formatter の拡張
+### 6.3 Formatter の拡張
 
 **Text Formatter:**
 ```go
@@ -618,9 +618,9 @@ func (f *TextFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 - `DryRunResult` の JSON シリアライゼーションで自動的に `file_verification` フィールドが含まれる
 - 追加の実装は不要
 
-## 6. エラー処理設計
+## 7. エラー処理設計
 
-### 6.1 検証失敗の分類
+### 7.1 検証失敗の分類
 
 ```mermaid
 graph TD
@@ -648,7 +648,7 @@ graph TD
     style N fill:#e3f2fd
 ```
 
-### 6.2 ログレベルの決定基準
+### 7.2 ログレベルの決定基準
 
 | 失敗理由 | ログレベル | 根拠 |
 |---------|----------|------|
@@ -658,9 +658,9 @@ graph TD
 | File Read Error | ERROR | システムの問題（本番実行で確実に失敗） |
 | Standard Path Skipped | INFO | 意図的なスキップ |
 
-## 7. セキュリティ設計
+## 8. セキュリティ設計
 
-### 7.1 センシティブ情報の扱い
+### 8.1 センシティブ情報の扱い
 
 検証結果にセンシティブ情報が含まれる可能性を考慮：
 
@@ -696,9 +696,9 @@ graph TD
 - **通常実行モードでは検証をバイパスしない**: dry-run モードの拡張は、通常実行モードのセキュリティを低下させない
 - **File Validator は同一のロジックを使用**: dry-run と通常モードで検証ロジックを共有し、整合性を保証
 
-## 8. パフォーマンス設計
+## 9. パフォーマンス設計
 
-### 8.1 検証の並列化
+### 9.1 検証の並列化
 
 既存の実装では、ファイル検証は順次実行されるが、将来的に並列化を検討する場合の設計：
 
@@ -723,7 +723,7 @@ func (m *Manager) VerifyGlobalFilesParallel(runtimeGlobal *runnertypes.RuntimeGl
 
 現時点では並列化を実装しないが、`ResultCollector` は並行アクセスに対応した設計とする（mutex を使用）。
 
-### 8.2 検証コストの最小化
+### 9.2 検証コストの最小化
 
 ```mermaid
 graph TD
@@ -754,9 +754,9 @@ graph TD
 2. **早期リターン**: Hash Directory が存在しない場合、全検証をスキップ
 3. **Standard Path のスキップ**: `/bin`, `/usr/bin` 等の標準パスは検証をスキップ
 
-## 9. テスト戦略
+## 10. テスト戦略
 
-### 9.1 テストレベル
+### 10.1 テストレベル
 
 ```mermaid
 graph TD
@@ -797,9 +797,9 @@ graph TD
 | **E2E** | runner --dry-run (hash file not found) | WARN ログ + exit 0 + JSON 出力 |
 | **E2E** | runner --dry-run (hash mismatch) | ERROR ログ + exit 0 + verification section |
 
-## 10. 段階的実装計画
+## 11. 段階的実装計画
 
-### 10.1 実装フェーズ
+### 11.1 実装フェーズ
 
 ```mermaid
 gantt
@@ -846,16 +846,16 @@ gantt
 - ドキュメント更新
 - パフォーマンステスト
 
-## 11. 今後の拡張可能性
+## 12. 今後の拡張可能性
 
-### 11.1 将来的な機能拡張
+### 12.1 将来的な機能拡張
 
 1. **並列検証**: 大量ファイルの並列検証によるパフォーマンス向上
 2. **検証モード選択**: `--verify-mode=disabled|warn|strict` のような明示的な制御
 3. **検証結果のエクスポート**: 検証結果を別ファイルに保存（監査ログ）
 4. **差分検証**: 前回の検証結果との差分表示
 
-### 11.2 拡張時の考慮事項
+### 12.2 拡張時の考慮事項
 
 ```mermaid
 graph TD
@@ -880,16 +880,16 @@ graph TD
     style J fill:#fff9c4
 ```
 
-## 12. まとめ
+## 13. まとめ
 
-### 12.1 アーキテクチャの特徴
+### 13.1 アーキテクチャの特徴
 
 1. **既存パターンとの調和**: Resource Manager Pattern と同様の設計原則を踏襲
 2. **最小限の侵襲性**: 通常実行モードには影響を与えず、dry-run モードのみを拡張
 3. **可視性の向上**: 検証結果を DryRunResult に統合し、既存の出力インフラを活用
 4. **段階的実装**: フェーズ分けにより、リスクを最小化しながら実装
 
-### 12.2 成功基準
+### 13.2 成功基準
 
 - [ ] dry-run モードでファイル検証が実行される
 - [ ] 検証失敗時も dry-run は継続実行される（exit 0）
