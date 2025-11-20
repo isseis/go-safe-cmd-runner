@@ -102,3 +102,15 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 		TimeoutResolution: resolutionContext,
 	}
 }
+
+// matchRuntimeGroupWithName creates a mock.ArgumentMatcher that validates RuntimeGroup with expected group name.
+// This is a helper function to avoid code duplication in mock expectations.
+//
+// Usage:
+//
+//	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(...)
+func matchRuntimeGroupWithName(expectedName string) interface{} {
+	return mock.MatchedBy(func(rg *runnertypes.RuntimeGroup) bool {
+		return rg != nil && rg.Spec != nil && rg.Spec.Name == expectedName
+	})
+}

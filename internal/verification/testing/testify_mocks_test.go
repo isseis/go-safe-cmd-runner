@@ -8,7 +8,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,13 +27,15 @@ func TestMockManager_ResolvePath(t *testing.T) {
 
 func TestMockManager_VerifyGroupFiles(t *testing.T) {
 	mockManager := new(verificationtesting.MockManager)
-	groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+	spec := &runnertypes.GroupSpec{Name: "test-group"}
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(t, err)
 	expectedResult := &verification.Result{TotalFiles: 1, VerifiedFiles: 1}
 	expectedErr := errors.New("verification error")
 
-	mockManager.On("VerifyGroupFiles", groupSpec).Return(expectedResult, expectedErr)
+	mockManager.On("VerifyGroupFiles", runtimeGroup).Return(expectedResult, expectedErr)
 
-	result, err := mockManager.VerifyGroupFiles(groupSpec)
+	result, err := mockManager.VerifyGroupFiles(runtimeGroup)
 
 	assert.Equal(t, expectedResult, result)
 	assert.Equal(t, expectedErr, err)
@@ -43,14 +44,16 @@ func TestMockManager_VerifyGroupFiles(t *testing.T) {
 
 func TestMockManager_SuccessScenario(t *testing.T) {
 	mockManager := new(verificationtesting.MockManager)
-	groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+	spec := &runnertypes.GroupSpec{Name: "test-group"}
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(t, err)
 	expectedResult := &verification.Result{TotalFiles: 1, VerifiedFiles: 1}
 
-	mockManager.On("ResolvePath", mock.Anything).Return("/usr/bin/test", nil)
-	mockManager.On("VerifyGroupFiles", mock.Anything).Return(expectedResult, nil)
+	mockManager.On("ResolvePath", "test").Return("/usr/bin/test", nil)
+	mockManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(expectedResult, nil)
 
 	path, err1 := mockManager.ResolvePath("test")
-	result, err2 := mockManager.VerifyGroupFiles(groupSpec)
+	result, err2 := mockManager.VerifyGroupFiles(runtimeGroup)
 
 	assert.NoError(t, err1)
 	assert.Equal(t, "/usr/bin/test", path)
@@ -63,12 +66,14 @@ func TestMockManager_SuccessScenario(t *testing.T) {
 
 func TestMockManager_VerifyGroupFiles_NilResult(t *testing.T) {
 	mockManager := new(verificationtesting.MockManager)
-	groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+	spec := &runnertypes.GroupSpec{Name: "test-group"}
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(t, err)
 	expectedErr := errors.New("verification failed")
 
-	mockManager.On("VerifyGroupFiles", groupSpec).Return(nil, expectedErr)
+	mockManager.On("VerifyGroupFiles", runtimeGroup).Return(nil, expectedErr)
 
-	result, err := mockManager.VerifyGroupFiles(groupSpec)
+	result, err := mockManager.VerifyGroupFiles(runtimeGroup)
 
 	assert.Nil(t, result)
 	assert.Equal(t, expectedErr, err)

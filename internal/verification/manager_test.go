@@ -20,7 +20,8 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 	spec := &runnertypes.GlobalSpec{
 		VerifyFiles: verifyFiles,
 	}
-	runtime, _ := runnertypes.NewRuntimeGlobal(spec)
+	runtime, err := runnertypes.NewRuntimeGlobal(spec)
+	require.NoError(nil, err)
 	runtime.ExpandedVerifyFiles = verifyFiles
 	return runtime
 }
@@ -33,6 +34,15 @@ func createGroupSpec(verifyFiles []string) *runnertypes.GroupSpec {
 		Description: "",
 		VerifyFiles: verifyFiles,
 	}
+}
+
+// Helper function to create RuntimeGroup for testing
+func createRuntimeGroup(verifyFiles []string) *runnertypes.RuntimeGroup {
+	spec := createGroupSpec(verifyFiles)
+	runtime, err := runnertypes.NewRuntimeGroup(spec)
+	require.NoError(nil, err)
+	runtime.ExpandedVerifyFiles = verifyFiles
+	return runtime
 }
 
 func TestNewManager(t *testing.T) {
@@ -536,11 +546,11 @@ func TestVerifyGroupFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
 
-		// Create test group spec
-		groupSpec := createGroupSpec([]string{}) // Empty files list should succeed
+		// Create test runtime group
+		runtimeGroup := createRuntimeGroup([]string{}) // Empty files list should succeed
 
 		// Test verification
-		result, err := manager.VerifyGroupFiles(groupSpec)
+		result, err := manager.VerifyGroupFiles(runtimeGroup)
 
 		// Should succeed with empty files
 		assert.NoError(t, err)
@@ -567,10 +577,10 @@ func TestVerifyGroupFiles(t *testing.T) {
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
 		manager := invalidHashDirManager()
 
-		groupSpec := createGroupSpec([]string{})
+		runtimeGroup := createRuntimeGroup([]string{})
 
 		// Test with invalid hash directory
-		result, err := manager.VerifyGroupFiles(groupSpec)
+		result, err := manager.VerifyGroupFiles(runtimeGroup)
 
 		// Should fail hash directory validation
 		assert.Error(t, err)
@@ -670,11 +680,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Test group spec with files
-		groupSpec := createGroupSpec([]string{"file1.txt", "file2.txt", "file3.txt"})
+		// Test runtime group with files
+		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file3.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(groupSpec)
+		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
 
 		// Should return a map with the same files
 		assert.Len(t, collectedFiles, 3)
@@ -689,11 +699,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Test group spec with empty files
-		groupSpec := createGroupSpec([]string{})
+		// Test runtime group with empty files
+		runtimeGroup := createRuntimeGroup([]string{})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(groupSpec)
+		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -718,11 +728,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Test group spec with duplicate files
-		groupSpec := createGroupSpec([]string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"})
+		// Test runtime group with duplicate files
+		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(groupSpec)
+		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
 
 		// Should automatically remove duplicates
 		assert.Len(t, collectedFiles, 3)

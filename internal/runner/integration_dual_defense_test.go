@@ -104,7 +104,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	ctx := context.Background()
@@ -209,7 +209,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	ctx := context.Background()
@@ -304,7 +304,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	ctx := context.Background()
@@ -404,7 +404,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	})
 
 	// Mock verification manager
-	mockVerificationManager.On("VerifyGroupFiles", group).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 
 	ctx := context.Background()

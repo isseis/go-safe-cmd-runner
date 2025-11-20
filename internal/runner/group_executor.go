@@ -189,7 +189,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
 
 	// 6. Verify group files before execution
-	if err := ge.verifyGroupFiles(groupSpec); err != nil {
+	if err := ge.verifyGroupFiles(runtimeGroup); err != nil {
 		return err
 	}
 
@@ -291,20 +291,22 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 }
 
 // verifyGroupFiles verifies files specified in the group before execution
-func (ge *DefaultGroupExecutor) verifyGroupFiles(groupSpec *runnertypes.GroupSpec) error {
+func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) error {
 	if ge.verificationManager == nil {
 		return nil
 	}
 
-	result, err := ge.verificationManager.VerifyGroupFiles(groupSpec)
+	result, err := ge.verificationManager.VerifyGroupFiles(runtimeGroup)
 	if err != nil {
 		// Return the error directly (it already contains all necessary information)
 		return err
 	}
 
+	groupName := runnertypes.ExtractGroupName(runtimeGroup)
+
 	if result.TotalFiles > 0 {
 		slog.Info("Group file verification completed",
-			"group", groupSpec.Name,
+			"group", groupName,
 			"verified_files", result.VerifiedFiles,
 			"skipped_files", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds())

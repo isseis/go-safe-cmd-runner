@@ -19,8 +19,8 @@ func (m *MockManager) ResolvePath(path string) (string, error) {
 }
 
 // VerifyGroupFiles mocks the VerifyGroupFiles method
-func (m *MockManager) VerifyGroupFiles(group *runnertypes.GroupSpec) (*verification.Result, error) {
-	args := m.Called(group)
+func (m *MockManager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*verification.Result, error) {
+	args := m.Called(runtimeGroup)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
