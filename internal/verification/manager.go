@@ -373,18 +373,21 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 					"file_path", filePath,
 					"context", context,
 					"reason", reason,
+					"security_risk", getSecurityRisk(reason),
 					"error", err)
 			case logLevelWarn:
 				slog.Warn("File verification issue in dry-run mode",
 					"file_path", filePath,
 					"context", context,
 					"reason", reason,
+					"security_risk", getSecurityRisk(reason),
 					"error", err)
 			default:
 				slog.Info("File verification skipped in dry-run mode",
 					"file_path", filePath,
 					"context", context,
 					"reason", reason,
+					"security_risk", getSecurityRisk(reason),
 					"error", err)
 			}
 		}
@@ -427,18 +430,21 @@ func (m *Manager) readAndVerifyFileWithFallback(filePath string, context string)
 					"file_path", filePath,
 					"context", context,
 					"reason", reason,
+					"security_risk", getSecurityRisk(reason),
 					"error", err)
 			case logLevelWarn:
 				slog.Warn("File verification and read issue in dry-run mode",
 					"file_path", filePath,
 					"context", context,
 					"reason", reason,
+					"security_risk", getSecurityRisk(reason),
 					"error", err)
 			default:
 				slog.Info("File verification and read skipped in dry-run mode",
 					"file_path", filePath,
 					"context", context,
 					"reason", reason,
+					"security_risk", getSecurityRisk(reason),
 					"error", err)
 			}
 		}
