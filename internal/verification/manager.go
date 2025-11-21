@@ -157,7 +157,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 		// Check if file should be skipped
 		if m.shouldSkipVerification(filePath) {
 			if m.isDryRun && m.resultCollector != nil {
-				m.resultCollector.RecordSkip(filePath, "global")
+				m.resultCollector.RecordSkip()
 			}
 			result.SkippedFiles = append(result.SkippedFiles, filePath)
 			slog.Info("Skipping global file verification for standard system path",
@@ -225,7 +225,7 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	for file := range allFiles {
 		if m.shouldSkipVerification(file) {
 			if m.isDryRun && m.resultCollector != nil {
-				m.resultCollector.RecordSkip(file, "group:"+groupName)
+				m.resultCollector.RecordSkip()
 			}
 			result.SkippedFiles = append(result.SkippedFiles, file)
 			slog.Info("Skipping verification for standard system path",
@@ -357,7 +357,7 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 	// In dry-run mode, record the result and return nil (warn-only mode)
 	if m.isDryRun && m.resultCollector != nil {
 		if err == nil {
-			m.resultCollector.RecordSuccess(filePath, context)
+			m.resultCollector.RecordSuccess()
 		} else {
 			// Record failure and log based on severity
 			m.resultCollector.RecordFailure(filePath, err, context)
@@ -414,7 +414,7 @@ func (m *Manager) readAndVerifyFileWithFallback(filePath string, context string)
 	// In dry-run mode, record the result and handle differently
 	if m.isDryRun && m.resultCollector != nil {
 		if err == nil {
-			m.resultCollector.RecordSuccess(filePath, context)
+			m.resultCollector.RecordSuccess()
 		} else {
 			// Record failure and log based on severity
 			m.resultCollector.RecordFailure(filePath, err, context)

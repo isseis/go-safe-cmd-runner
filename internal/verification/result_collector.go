@@ -43,7 +43,7 @@ func NewResultCollector(hashDirPath string) *ResultCollector {
 }
 
 // RecordSuccess records a successful file verification
-func (rc *ResultCollector) RecordSuccess(_ /* filePath */, _ /* context */ string) {
+func (rc *ResultCollector) RecordSuccess() {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
@@ -73,7 +73,7 @@ func (rc *ResultCollector) RecordFailure(filePath string, err error, context str
 }
 
 // RecordSkip records a skipped file verification
-func (rc *ResultCollector) RecordSkip(_ /* filePath */, _ /* context */ string) {
+func (rc *ResultCollector) RecordSkip() {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 

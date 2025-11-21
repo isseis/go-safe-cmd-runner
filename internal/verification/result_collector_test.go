@@ -50,8 +50,8 @@ func TestNewResultCollector(t *testing.T) {
 func TestResultCollector_RecordSuccess(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 
-	rc.RecordSuccess("/path/to/file1.toml", "config")
-	rc.RecordSuccess("/path/to/file2.toml", "global")
+	rc.RecordSuccess()
+	rc.RecordSuccess()
 
 	summary := rc.GetSummary()
 
@@ -132,8 +132,8 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 func TestResultCollector_RecordSkip(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 
-	rc.RecordSkip("/usr/bin/bash", "global")
-	rc.RecordSkip("/bin/sh", "global")
+	rc.RecordSkip()
+	rc.RecordSkip()
 
 	summary := rc.GetSummary()
 
@@ -170,10 +170,10 @@ func TestResultCollector_GetSummary(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 
 	// Record various outcomes
-	rc.RecordSuccess("/path/to/success1.toml", "config")
-	rc.RecordSuccess("/path/to/success2.toml", "global")
+	rc.RecordSuccess()
+	rc.RecordSuccess()
 	rc.RecordFailure("/path/to/fail1.toml", filevalidator.ErrMismatch, "config")
-	rc.RecordSkip("/usr/bin/bash", "global")
+	rc.RecordSkip()
 
 	summary := rc.GetSummary()
 
@@ -212,11 +212,11 @@ func TestResultCollector_Concurrency(t *testing.T) {
 			for j := 0; j < numOpsPerGoroutine; j++ {
 				switch j % 3 {
 				case 0:
-					rc.RecordSuccess("/path/to/file", "test")
+					rc.RecordSuccess()
 				case 1:
 					rc.RecordFailure("/path/to/file", filevalidator.ErrHashFileNotFound, "test")
 				case 2:
-					rc.RecordSkip("/path/to/file", "test")
+					rc.RecordSkip()
 				}
 			}
 		}()
@@ -352,13 +352,13 @@ func TestResultCollector_MixedResults(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 
 	// Simulate a real scenario with mixed results
-	rc.RecordSuccess("/etc/config.toml", "config")
-	rc.RecordSuccess("/etc/global1.toml", "global")
-	rc.RecordSuccess("/etc/global2.toml", "global")
+	rc.RecordSuccess()
+	rc.RecordSuccess()
+	rc.RecordSuccess()
 	rc.RecordFailure("/etc/global3.toml", filevalidator.ErrHashFileNotFound, "global")
 	rc.RecordFailure("/etc/group.toml", filevalidator.ErrMismatch, "group:admin")
-	rc.RecordSkip("/usr/bin/bash", "global")
-	rc.RecordSkip("/bin/sh", "global")
+	rc.RecordSkip()
+	rc.RecordSkip()
 	rc.SetHashDirStatus(true)
 
 	summary := rc.GetSummary()
