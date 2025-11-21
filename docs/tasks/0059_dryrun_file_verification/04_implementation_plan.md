@@ -212,9 +212,9 @@ go build ./internal/verification
 ```
 
 **成果物チェックリスト**:
-- [ ] `resultCollector *ResultCollector` フィールドが追加されている
-- [ ] `GetVerificationSummary()` が nil チェックを実施
-- [ ] ビルドエラーがない
+- [x] `resultCollector *ResultCollector` フィールドが追加されている
+- [x] `GetVerificationSummary()` が nil チェックを実施
+- [x] ビルドエラーがない
 
 ---
 
@@ -235,10 +235,10 @@ go test -tags test -v ./internal/verification -run TestNewManagerForDryRun
 ```
 
 **成果物チェックリスト**:
-- [ ] dry-run モードで File Validator が有効化されている
-- [ ] Hash Directory 不在時に `ResultCollector` が初期化される
-- [ ] Hash Directory 不在時に INFO ログが出力される
-- [ ] テストが成功
+- [x] dry-run モードで File Validator が有効化されている
+- [x] Hash Directory 不在時に `ResultCollector` が初期化される
+- [x] Hash Directory 不在時に INFO ログが出力される
+- [x] テストが成功
 
 ---
 
@@ -260,11 +260,11 @@ go test -tags test -v ./internal/verification -run TestManager_VerifyFileWithFal
 ```
 
 **成果物チェックリスト**:
-- [ ] `context` パラメータが追加されている
-- [ ] dry-run モードで常に `nil` を返す
-- [ ] 検証成功時に `RecordSuccess` が呼ばれる
-- [ ] 検証失敗時に `RecordFailure` が呼ばれ、適切なログが出力される
-- [ ] 通常モードの動作が変わっていない（回帰確認）
+- [x] `context` パラメータが追加されている
+- [x] dry-run モードで常に `nil` を返す
+- [x] 検証成功時に `RecordSuccess` が呼ばれる
+- [x] 検証失敗時に `RecordFailure` が呼ばれ、適切なログが出力される
+- [x] 通常モードの動作が変わっていない（回帰確認）
 
 ---
 
@@ -288,10 +288,10 @@ go test -tags test -v ./internal/verification
 ```
 
 **成果物チェックリスト**:
-- [ ] すべての検証メソッドが `context` を渡している
-- [ ] スキップ処理で `RecordSkip` が呼ばれる
-- [ ] テストが成功
-- [ ] 既存テストの回帰がない
+- [x] すべての検証メソッドが `context` を渡している
+- [x] スキップ処理で `RecordSkip` が呼ばれる
+- [x] テストが成功
+- [x] 既存テストの回帰がない
 
 ---
 
@@ -312,9 +312,9 @@ go test -tags test -v ./internal/verification -run TestVerify.*DryRun
 ```
 
 **成果物チェックリスト**:
-- [ ] すべてのテストが成功
-- [ ] 混合結果（成功/失敗/スキップ）のシナリオが動作
-- [ ] Hash Mismatch が ERROR ログを出力
+- [x] すべてのテストが成功
+- [x] 混合結果（成功/失敗/スキップ）のシナリオが動作
+- [x] Hash Mismatch が ERROR ログを出力
 
 ---
 

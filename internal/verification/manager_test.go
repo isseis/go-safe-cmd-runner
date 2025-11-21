@@ -757,7 +757,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test verification (should succeed when file validator is disabled)
-		err = manager.verifyFileWithFallback(testFile)
+		err = manager.verifyFileWithFallback(testFile, "test")
 		assert.NoError(t, err)
 	})
 
@@ -768,7 +768,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with non-existent file (with file validator enabled to ensure error)
-		err = manager.verifyFileWithFallback("/non/existent/file.txt")
+		err = manager.verifyFileWithFallback("/non/existent/file.txt", "test")
 		assert.Error(t, err)
 	})
 
@@ -785,7 +785,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test verification (should fail because no hash file exists)
-		err = manager.verifyFileWithFallback(testFile)
+		err = manager.verifyFileWithFallback(testFile, "test")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "hash")
 	})
@@ -806,7 +806,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test reading and verification
-		content, err := manager.readAndVerifyFileWithFallback(testFile)
+		content, err := manager.readAndVerifyFileWithFallback(testFile, "test")
 		assert.NoError(t, err)
 		assert.Equal(t, testContent, string(content))
 	})
@@ -818,7 +818,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with non-existent file
-		content, err := manager.readAndVerifyFileWithFallback("/non/existent/config.toml")
+		content, err := manager.readAndVerifyFileWithFallback("/non/existent/config.toml", "test")
 		assert.Error(t, err)
 		assert.Nil(t, content)
 	})
@@ -836,7 +836,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test reading and verification (should fail because no hash file exists)
-		content, err := manager.readAndVerifyFileWithFallback(testFile)
+		content, err := manager.readAndVerifyFileWithFallback(testFile, "test")
 		assert.Error(t, err)
 		assert.Nil(t, content)
 	})

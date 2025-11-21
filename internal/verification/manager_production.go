@@ -32,12 +32,12 @@ func NewManagerForDryRun() (*Manager, error) {
 	// Always use the default hash directory in production
 	hashDir := cmdcommon.DefaultHashDirectory
 
-	// Create manager with dry-run constraints (skip hash directory validation and file validator)
+	// Create manager with dry-run constraints
+	// File validator is enabled in dry-run mode to collect verification results
 	return newManagerInternal(hashDir,
 		withCreationMode(CreationModeProduction),
 		withSecurityLevel(SecurityLevelStrict),
 		withSkipHashDirectoryValidationInternal(),
-		withFileValidatorDisabledInternal(),
 		withDryRunModeInternal(),
 	)
 }
@@ -88,7 +88,7 @@ func logDryRunManagerCreation() {
 		"security_level", "strict",
 		"mode", "dry-run",
 		"skip_hash_directory_validation", true,
-		"file_validator_enabled", false,
+		"file_validator_enabled", true,
 	}
 
 	// Add caller information if available

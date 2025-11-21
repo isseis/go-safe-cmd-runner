@@ -125,7 +125,7 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		assert.Contains(t, logOutput, "api=NewManagerForDryRun")
 		assert.Contains(t, logOutput, "mode=dry-run")
 		assert.Contains(t, logOutput, "skip_hash_directory_validation=true")
-		assert.Contains(t, logOutput, "file_validator_enabled=false")
+		assert.Contains(t, logOutput, "file_validator_enabled=true")
 	})
 
 	t.Run("basic_functionality_difference", func(t *testing.T) {
@@ -197,7 +197,7 @@ func TestDryRunManagerLogging(t *testing.T) {
 		assert.Contains(t, logOutput, "api=NewManagerForDryRun")
 		assert.Contains(t, logOutput, "mode=dry-run")
 		assert.Contains(t, logOutput, "skip_hash_directory_validation=true")
-		assert.Contains(t, logOutput, "file_validator_enabled=false")
+		assert.Contains(t, logOutput, "file_validator_enabled=true")
 		assert.Contains(t, logOutput, "caller_file=")
 		assert.Contains(t, logOutput, "caller_line=")
 	})
