@@ -142,7 +142,7 @@ type HashDirectoryStatus struct {
 
 | フィールド | 型 | 説明 |
 |----------|---|------|
-| `Path` | `string` | ハッシュディレクトリのパス（通常 `/etc/runner/hashes`） |
+| `Path` | `string` | ハッシュディレクトリのパス（デフォルト: `/usr/local/etc/go-safe-cmd-runner/hashes`、ビルド時に変更可能） |
 | `Exists` | `bool` | ディレクトリが存在するか |
 | `Validated` | `bool` | ディレクトリの検証が完了したか |
 
@@ -865,7 +865,7 @@ JSON Formatter は構造体の自動シリアライゼーションに依存す�
     "failed_files": 2,
     "duration": 150000000,
     "hash_dir_status": {
-      "path": "/etc/runner/hashes",
+      "path": "/usr/local/etc/go-safe-cmd-runner/hashes",
       "exists": true,
       "validated": true
     },
@@ -1047,7 +1047,7 @@ sequenceDiagram
 **Hash Directory Not Found (INFO):**
 ```
 INFO  Hash directory not found - skipping file verification
-      hash_directory=/etc/runner/hashes
+      hash_directory=/usr/local/etc/go-safe-cmd-runner/hashes
       mode=dry-run
       reason="Directory does not exist (acceptable in development environments)"
 ```
@@ -1058,7 +1058,7 @@ WARN  File verification failed
       file=/usr/local/bin/myapp
       context=group:build
       reason=hash_file_not_found
-      hash_file=/etc/runner/hashes/usr_local_bin_myapp.sha256
+      hash_file=/usr/local/etc/go-safe-cmd-runner/hashes/usr_local_bin_myapp.sha256
 ```
 
 **Hash Mismatch (ERROR):**
@@ -1088,7 +1088,7 @@ ERROR File verification failed
 **TestResultCollector_RecordSuccess:**
 ```go
 func TestResultCollector_RecordSuccess(t *testing.T) {
-    rc := NewResultCollector("/etc/runner/hashes")
+    rc := NewResultCollector("/usr/local/etc/go-safe-cmd-runner/hashes")
 
     rc.RecordSuccess("/bin/ls", "config")
     rc.RecordSuccess("/bin/cat", "global")
@@ -1105,7 +1105,7 @@ func TestResultCollector_RecordSuccess(t *testing.T) {
 **TestResultCollector_RecordFailure:**
 ```go
 func TestResultCollector_RecordFailure(t *testing.T) {
-    rc := NewResultCollector("/etc/runner/hashes")
+    rc := NewResultCollector("/usr/local/etc/go-safe-cmd-runner/hashes")
 
     err := filevalidator.ErrHashFileNotExist
     rc.RecordFailure("/bin/ls", err, "config")
@@ -1128,7 +1128,7 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 **TestResultCollector_Concurrency:**
 ```go
 func TestResultCollector_Concurrency(t *testing.T) {
-    rc := NewResultCollector("/etc/runner/hashes")
+    rc := NewResultCollector("/usr/local/etc/go-safe-cmd-runner/hashes")
 
     var wg sync.WaitGroup
     for i := 0; i < 100; i++ {
@@ -1260,7 +1260,7 @@ func TestVerifyGlobalFiles_DryRun_MixedResults(t *testing.T) {
 ```bash
 #!/bin/bash
 # Ensure hash directory does not exist
-rm -rf /etc/runner/hashes
+rm -rf /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Run dry-run
 runner -c test.toml --dry-run --dry-run-format=json > output.json
@@ -1277,7 +1277,7 @@ jq -e '.file_verification.total_files == 0' output.json
 ```bash
 #!/bin/bash
 # Setup: Hash directory exists but no hash files
-mkdir -p /etc/runner/hashes
+mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Run dry-run
 runner -c test.toml --dry-run --dry-run-format=json > output.json
@@ -1329,7 +1329,7 @@ grep 'security_risk=high' output.txt
 **BenchmarkResultCollector_RecordSuccess:**
 ```go
 func BenchmarkResultCollector_RecordSuccess(b *testing.B) {
-    rc := NewResultCollector("/etc/runner/hashes")
+    rc := NewResultCollector("/usr/local/etc/go-safe-cmd-runner/hashes")
 
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
@@ -1343,7 +1343,7 @@ func BenchmarkResultCollector_RecordSuccess(b *testing.B) {
 **BenchmarkResultCollector_RecordFailure:**
 ```go
 func BenchmarkResultCollector_RecordFailure(b *testing.B) {
-    rc := NewResultCollector("/etc/runner/hashes")
+    rc := NewResultCollector("/usr/local/etc/go-safe-cmd-runner/hashes")
     err := filevalidator.ErrHashFileNotExist
 
     b.ResetTimer()

@@ -129,7 +129,7 @@ dry-run モードで検証する対象ファイルは、通常実行モードと
 各ファイルに対して以下の**読み取り専用**検証を実行：
 
 1. **ハッシュファイルの存在確認**:
-   - ハッシュディレクトリ（`/etc/runner/hashes`）内の対応するハッシュファイルの存在確認
+   - ハッシュディレクトリ（デフォルト: `/usr/local/etc/go-safe-cmd-runner/hashes`）内の対応するハッシュファイルの存在確認
    - ファイル名は `encoding` パッケージによりエンコードされたパス
    - **副作用**: なし（ファイル読み取りのみ）
 
@@ -229,14 +229,14 @@ const (
 
 ```
 INFO  Dry-run mode: File verification enabled (warn-only mode)
-      hash_directory=/etc/runner/hashes
+      hash_directory=/usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 #### 2.4.2 ハッシュディレクトリ不在時
 
 ```
 INFO  Hash directory not found - skipping all file verification
-      hash_directory=/etc/runner/hashes
+      hash_directory=/usr/local/etc/go-safe-cmd-runner/hashes
       reason="Directory does not exist (acceptable in development environments)"
 ```
 
@@ -246,7 +246,7 @@ INFO  Hash directory not found - skipping all file verification
 WARN  File verification failed: hash file not found
       file=/usr/local/bin/myapp
       context=group:build
-      hash_file=/etc/runner/hashes/usr_local_bin_myapp.sha256
+      hash_file=/usr/local/etc/go-safe-cmd-runner/hashes/usr_local_bin_myapp.sha256
 ```
 
 #### 2.4.4 ハッシュ値不一致時
@@ -287,7 +287,7 @@ Skipped:          0
 Failed:           2
 Duration:         150ms
 
-Hash Directory:   /etc/runner/hashes
+Hash Directory:   /usr/local/etc/go-safe-cmd-runner/hashes
 Status:           Exists
 
 === Verification Failures ===
@@ -317,7 +317,7 @@ Status:           Exists
     "failed_files": 2,
     "duration": 150000000,
     "hash_dir_status": {
-      "path": "/etc/runner/hashes",
+      "path": "/usr/local/etc/go-safe-cmd-runner/hashes",
       "exists": true,
       "validated": true
     },
@@ -398,7 +398,9 @@ Status:           Exists
 
 ### 4.1 技術的制約
 
-- **ハッシュディレクトリ**: デフォルトは `/etc/runner/hashes`（変更不可）
+- **ハッシュディレクトリ**: ビルド時に `ldflags` で設定可能（デフォルト: `/usr/local/etc/go-safe-cmd-runner/hashes`）
+  - ビルド例: `-ldflags "-X internal/cmdcommon.DefaultHashDirectory=/custom/path"`
+  - 実行時の変更は不可
 - **ハッシュアルゴリズム**: SHA-256 を使用（既存実装に従う）
 - **ファイル名エンコーディング**: `filevalidator/encoding` パッケージを使用
 
