@@ -791,7 +791,7 @@ graph TD
     style D fill:#c8e6c9
 ```
 
-### 9.2 主要テストケース
+### 10.2 主要テストケース
 
 | レベル | テストケース | 検証内容 |
 |--------|------------|---------|
@@ -828,7 +828,7 @@ gantt
     Documentation                     :p4d, after p4, 1d
 ```
 
-### 10.2 フェーズ詳細
+### 11.2 フェーズ詳細
 
 **Phase 1: Result Collector Implementation**
 - `ResultCollector` 構造体の実装
