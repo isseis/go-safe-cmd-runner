@@ -4,6 +4,7 @@ package verification
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +98,10 @@ func (rc *ResultCollector) GetSummary() FileVerificationSummary {
 
 	duration := time.Since(rc.startTime)
 
+	// Deep copy failures slice to prevent data races
+	failuresCopy := make([]FileVerificationFailure, len(rc.failures))
+	copy(failuresCopy, rc.failures)
+
 	return FileVerificationSummary{
 		TotalFiles:    rc.totalFiles,
 		VerifiedFiles: rc.verifiedFiles,
@@ -104,7 +109,7 @@ func (rc *ResultCollector) GetSummary() FileVerificationSummary {
 		FailedFiles:   len(rc.failures),
 		Duration:      duration,
 		HashDirStatus: rc.hashDirStatus,
-		Failures:      rc.failures,
+		Failures:      failuresCopy,
 	}
 }
 
@@ -160,5 +165,28 @@ func getSecurityRisk(reason FailureReason) string {
 		return "low"
 	default:
 		return "medium"
+	}
+}
+
+// logVerificationFailure logs a verification failure with appropriate log level based on failure reason
+func logVerificationFailure(filePath, context string, err error, operation string) {
+	reason := determineFailureReason(err)
+	level := determineLogLevel(reason)
+
+	attrs := []any{
+		"file_path", filePath,
+		"context", context,
+		"reason", reason,
+		"security_risk", getSecurityRisk(reason),
+		"error", err,
+	}
+
+	switch level {
+	case logLevelError:
+		slog.Error(operation+" failed in dry-run mode", attrs...)
+	case logLevelWarn:
+		slog.Warn(operation+" issue in dry-run mode", attrs...)
+	default:
+		slog.Info(operation+" skipped in dry-run mode", attrs...)
 	}
 }

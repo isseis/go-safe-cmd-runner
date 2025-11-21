@@ -361,35 +361,7 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 		} else {
 			// Record failure and log based on severity
 			m.resultCollector.RecordFailure(filePath, err, context)
-
-			// Determine log level based on failure reason
-			reason := determineFailureReason(err)
-			level := determineLogLevel(reason)
-
-			// Log the verification failure
-			switch level {
-			case logLevelError:
-				slog.Error("File verification failed in dry-run mode",
-					"file_path", filePath,
-					"context", context,
-					"reason", reason,
-					"security_risk", getSecurityRisk(reason),
-					"error", err)
-			case logLevelWarn:
-				slog.Warn("File verification issue in dry-run mode",
-					"file_path", filePath,
-					"context", context,
-					"reason", reason,
-					"security_risk", getSecurityRisk(reason),
-					"error", err)
-			default:
-				slog.Info("File verification skipped in dry-run mode",
-					"file_path", filePath,
-					"context", context,
-					"reason", reason,
-					"security_risk", getSecurityRisk(reason),
-					"error", err)
-			}
+			logVerificationFailure(filePath, context, err, "File verification")
 		}
 		return nil
 	}
@@ -418,35 +390,7 @@ func (m *Manager) readAndVerifyFileWithFallback(filePath string, context string)
 		} else {
 			// Record failure and log based on severity
 			m.resultCollector.RecordFailure(filePath, err, context)
-
-			// Determine log level based on failure reason
-			reason := determineFailureReason(err)
-			level := determineLogLevel(reason)
-
-			// Log the verification failure
-			switch level {
-			case logLevelError:
-				slog.Error("File verification and read failed in dry-run mode",
-					"file_path", filePath,
-					"context", context,
-					"reason", reason,
-					"security_risk", getSecurityRisk(reason),
-					"error", err)
-			case logLevelWarn:
-				slog.Warn("File verification and read issue in dry-run mode",
-					"file_path", filePath,
-					"context", context,
-					"reason", reason,
-					"security_risk", getSecurityRisk(reason),
-					"error", err)
-			default:
-				slog.Info("File verification and read skipped in dry-run mode",
-					"file_path", filePath,
-					"context", context,
-					"reason", reason,
-					"security_risk", getSecurityRisk(reason),
-					"error", err)
-			}
+			logVerificationFailure(filePath, context, err, "File verification and read")
 		}
 
 		// In dry-run mode, try to read the file even if verification failed
