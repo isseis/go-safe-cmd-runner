@@ -156,20 +156,20 @@ stateDiagram-v2
     Exists --> [*]: Verification Proceeds
     NotExists --> [*]: Skip All Verification
 
-    state NotValidated {
+    note right of NotValidated
         Validated = false
         Exists = false (default)
-    }
+    end note
 
-    state Exists {
+    note right of Exists
         Validated = true
         Exists = true
-    }
+    end note
 
-    state NotExists {
+    note right of NotExists
         Validated = true
         Exists = false
-    }
+    end note
 ```
 
 ### 2.3 FileVerificationFailure
@@ -910,7 +910,6 @@ sequenceDiagram
 
     alt Hash Directory Exists
         FV-->>VM: validator, nil
-        deactivate FV
         VM->>RC: NewResultCollector(hashDir)
         activate RC
         RC->>RC: SetHashDirStatus(true, true)
@@ -918,7 +917,6 @@ sequenceDiagram
         deactivate RC
     else Hash Directory Not Found
         FV-->>VM: nil, ErrHashDirNotExist
-        deactivate FV
         VM->>RC: NewResultCollector(hashDir)
         activate RC
         RC->>RC: SetHashDirStatus(false, true)
@@ -926,6 +924,8 @@ sequenceDiagram
         deactivate RC
         Note over VM: fileValidator = nil<br/>Continue without validator
     end
+
+    deactivate FV
 
     VM-->>M: manager
     deactivate VM
@@ -961,7 +961,6 @@ sequenceDiagram
 
             alt Verification Success
                 FV-->>VM: nil
-                deactivate FV
                 VM->>RC: RecordSuccess(file, "global")
                 activate RC
                 RC->>RC: totalFiles++<br/>verifiedFiles++
@@ -969,7 +968,6 @@ sequenceDiagram
                 deactivate RC
             else Verification Failure
                 FV-->>VM: error
-                deactivate FV
                 VM->>RC: RecordFailure(file, error, "global")
                 activate RC
                 RC->>RC: totalFiles++<br/>Parse error → reason<br/>Append to failures
@@ -977,6 +975,8 @@ sequenceDiagram
                 deactivate RC
                 VM->>VM: Log WARN/ERROR based on reason
             end
+
+            deactivate FV
         end
     end
 
