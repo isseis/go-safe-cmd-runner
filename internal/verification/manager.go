@@ -445,6 +445,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 					"mode", "dry-run",
 					"error", err.Error())
 				// fileValidator remains nil, which will be handled in verification methods
+				manager.fileValidator = nil
 			} else {
 				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 			}
