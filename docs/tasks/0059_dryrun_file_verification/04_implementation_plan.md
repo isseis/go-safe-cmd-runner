@@ -336,9 +336,9 @@ go build ./internal/runner/resource
 ```
 
 **成果物チェックリスト**:
-- [ ] `FileVerification *FileVerificationSummary` フィールドが追加されている
-- [ ] JSON タグが `"file_verification,omitempty"` に設定されている
-- [ ] ビルドエラーがない
+- [x] `FileVerification *FileVerificationSummary` フィールドが追加されている
+- [x] JSON タグが `"file_verification,omitempty"` に設定されている
+- [x] ビルドエラーがない
 
 ---
 
@@ -359,10 +359,10 @@ go test -tags test -v ./internal/runner/resource -run TestTextFormatter
 ```
 
 **成果物チェックリスト**:
-- [ ] File Verification セクションが Summary の後に表示される
-- [ ] Hash Directory Status が表示される
-- [ ] Failures が適切にフォーマットされる（INFO/WARN/ERROR マーカー）
-- [ ] DetailLevel に応じて詳細度が変わる
+- [x] File Verification セクションが Summary の後に表示される
+- [x] Hash Directory Status が表示される
+- [x] Failures が適切にフォーマットされる（INFO/WARN/ERROR マーカー）
+- [x] DetailLevel に応じて詳細度が変わる
 
 ---
 
@@ -382,8 +382,8 @@ go test -tags test -v ./internal/runner/resource -run TestJSONFormatter
 ```
 
 **成果物チェックリスト**:
-- [ ] JSON 出力に `file_verification` が含まれる
-- [ ] フィールドがすべて正しくシリアライズされる
+- [x] JSON 出力に `file_verification` が含まれる
+- [x] フィールドがすべて正しくシリアライズされる
 
 ---
 
@@ -405,8 +405,8 @@ go test -tags test -v ./internal/runner/resource
 ```
 
 **成果物チェックリスト**:
-- [ ] すべてのテストが成功
-- [ ] 出力フォーマットが仕様通り
+- [x] すべてのテストが成功
+- [x] 出力フォーマットが仕様通り
 
 ---
 

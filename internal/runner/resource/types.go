@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 // ResourceAnalysis captures analysis of a resource operation
@@ -145,16 +146,17 @@ func (o OutputFormat) String() string {
 
 // DryRunResult represents the complete result of a dry-run analysis
 type DryRunResult struct {
-	Metadata         *ResultMetadata    `json:"metadata"`
-	Status           ExecutionStatus    `json:"status"`
-	Phase            ExecutionPhase     `json:"phase"`
-	Error            *ExecutionError    `json:"error,omitempty"`
-	Summary          *ExecutionSummary  `json:"summary"`
-	ResourceAnalyses []ResourceAnalysis `json:"resource_analyses"`
-	SecurityAnalysis *SecurityAnalysis  `json:"security_analysis"`
-	EnvironmentInfo  *EnvironmentInfo   `json:"environment_info"`
-	Errors           []DryRunError      `json:"errors"`
-	Warnings         []DryRunWarning    `json:"warnings"`
+	Metadata         *ResultMetadata                       `json:"metadata"`
+	Status           ExecutionStatus                       `json:"status"`
+	Phase            ExecutionPhase                        `json:"phase"`
+	Error            *ExecutionError                       `json:"error,omitempty"`
+	Summary          *ExecutionSummary                     `json:"summary"`
+	ResourceAnalyses []ResourceAnalysis                    `json:"resource_analyses"`
+	SecurityAnalysis *SecurityAnalysis                     `json:"security_analysis"`
+	EnvironmentInfo  *EnvironmentInfo                      `json:"environment_info"`
+	FileVerification *verification.FileVerificationSummary `json:"file_verification,omitempty"`
+	Errors           []DryRunError                         `json:"errors"`
+	Warnings         []DryRunWarning                       `json:"warnings"`
 }
 
 // ExecutionStatus represents the overall execution status
@@ -165,8 +167,6 @@ const (
 	StatusSuccess ExecutionStatus = "success"
 	// StatusError indicates a fatal error occurred
 	StatusError ExecutionStatus = "error"
-	// StatusPartial indicates partial execution with some failures
-	StatusPartial ExecutionStatus = "partial"
 )
 
 // String returns the string representation of ExecutionStatus

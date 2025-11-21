@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -868,4 +869,237 @@ func TestFormatterLongStrings(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, longString, parsed.ResourceAnalyses[0].Impact.Description)
 	})
+}
+
+// TestTextFormatter_FormatResult_WithFileVerification tests TextFormatter with file verification
+func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-run-verification",
+		},
+		ResourceAnalyses: []ResourceAnalysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    10,
+			VerifiedFiles: 7,
+			SkippedFiles:  2,
+			FailedFiles:   1,
+			Duration:      time.Millisecond * 500,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/path/to/hashes",
+				Exists:    true,
+				Validated: true,
+			},
+			Failures: []verification.FileVerificationFailure{
+				{
+					Path:    "/usr/bin/suspicious",
+					Reason:  verification.ReasonHashMismatch,
+					Level:   "error",
+					Message: "hash mismatch detected",
+					Context: "global",
+				},
+			},
+		},
+	}
+
+	t.Run("Summary level hides failures", func(t *testing.T) {
+		opts := FormatterOptions{DetailLevel: DetailLevelSummary}
+		output, err := formatter.FormatResult(result, opts)
+		assert.NoError(t, err)
+		assert.Contains(t, output, "=== FILE VERIFICATION ===")
+		assert.Contains(t, output, "Total Files: 10")
+		assert.Contains(t, output, "Verified: 7")
+		assert.Contains(t, output, "Skipped: 2")
+		assert.Contains(t, output, "Failed: 1")
+		assert.NotContains(t, output, "Failures:")
+		assert.NotContains(t, output, "/usr/bin/suspicious")
+	})
+
+	t.Run("Detailed level shows failures", func(t *testing.T) {
+		opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+		output, err := formatter.FormatResult(result, opts)
+		assert.NoError(t, err)
+		assert.Contains(t, output, "=== FILE VERIFICATION ===")
+		assert.Contains(t, output, "Failures:")
+		assert.Contains(t, output, "[ERROR] /usr/bin/suspicious")
+		assert.Contains(t, output, "Reason: Hash mismatch (potential tampering)")
+		assert.Contains(t, output, "Context: global")
+	})
+
+	t.Run("Full level shows failures", func(t *testing.T) {
+		opts := FormatterOptions{DetailLevel: DetailLevelFull}
+		output, err := formatter.FormatResult(result, opts)
+		assert.NoError(t, err)
+		assert.Contains(t, output, "=== FILE VERIFICATION ===")
+		assert.Contains(t, output, "Failures:")
+		assert.Contains(t, output, "[ERROR] /usr/bin/suspicious")
+	})
+}
+
+// TestTextFormatter_WriteFileVerification_AllSuccess tests file verification with all successes
+func TestTextFormatter_WriteFileVerification_AllSuccess(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-all-success",
+		},
+		ResourceAnalyses: []ResourceAnalysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    5,
+			VerifiedFiles: 5,
+			SkippedFiles:  0,
+			FailedFiles:   0,
+			Duration:      time.Millisecond * 100,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/path/to/hashes",
+				Exists:    true,
+				Validated: true,
+			},
+			Failures: []verification.FileVerificationFailure{},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	assert.NoError(t, err)
+	assert.Contains(t, output, "=== FILE VERIFICATION ===")
+	assert.Contains(t, output, "Total Files: 5")
+	assert.Contains(t, output, "Verified: 5")
+	assert.Contains(t, output, "Failed: 0")
+	assert.NotContains(t, output, "Failures:")
+}
+
+// TestTextFormatter_WriteFileVerification_WithFailures tests file verification with multiple failures
+func TestTextFormatter_WriteFileVerification_WithFailures(t *testing.T) {
+	formatter := NewTextFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-with-failures",
+		},
+		ResourceAnalyses: []ResourceAnalysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    10,
+			VerifiedFiles: 5,
+			SkippedFiles:  2,
+			FailedFiles:   3,
+			Duration:      time.Millisecond * 800,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/opt/custom/hashes",
+				Exists:    true,
+				Validated: false,
+			},
+			Failures: []verification.FileVerificationFailure{
+				{
+					Path:    "/etc/config.toml",
+					Reason:  verification.ReasonHashFileNotFound,
+					Level:   "warn",
+					Message: "no hash file recorded",
+					Context: "config",
+				},
+				{
+					Path:    "/usr/bin/modified",
+					Reason:  verification.ReasonHashMismatch,
+					Level:   "error",
+					Message: "content differs from recorded hash",
+					Context: "global",
+				},
+				{
+					Path:    "/var/data/file.txt",
+					Reason:  verification.ReasonPermissionDenied,
+					Level:   "error",
+					Message: "access denied",
+					Context: "group:data",
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	assert.NoError(t, err)
+
+	// Check summary
+	assert.Contains(t, output, "Total Files: 10")
+	assert.Contains(t, output, "Verified: 5")
+	assert.Contains(t, output, "Failed: 3")
+
+	// Check hash directory status
+	assert.Contains(t, output, "Hash Directory: /opt/custom/hashes")
+	assert.Contains(t, output, "Exists: true")
+	assert.Contains(t, output, "Validated: false")
+
+	// Check failures section
+	assert.Contains(t, output, "Failures:")
+	assert.Contains(t, output, "[WARN] /etc/config.toml")
+	assert.Contains(t, output, "Reason: Hash file not found")
+	assert.Contains(t, output, "[ERROR] /usr/bin/modified")
+	assert.Contains(t, output, "Reason: Hash mismatch (potential tampering)")
+	assert.Contains(t, output, "[ERROR] /var/data/file.txt")
+	assert.Contains(t, output, "Reason: Permission denied")
+}
+
+// TestJSONFormatter_FormatResult_WithFileVerification tests JSONFormatter with file verification
+func TestJSONFormatter_FormatResult_WithFileVerification(t *testing.T) {
+	formatter := NewJSONFormatter()
+	result := &DryRunResult{
+		Metadata: &ResultMetadata{
+			GeneratedAt: time.Now(),
+			RunID:       "test-json-verification",
+		},
+		Status:           StatusSuccess,
+		Phase:            PhaseCompleted,
+		ResourceAnalyses: []ResourceAnalysis{},
+		FileVerification: &verification.FileVerificationSummary{
+			TotalFiles:    8,
+			VerifiedFiles: 6,
+			SkippedFiles:  1,
+			FailedFiles:   1,
+			Duration:      time.Millisecond * 300,
+			HashDirStatus: verification.HashDirectoryStatus{
+				Path:      "/test/hashes",
+				Exists:    true,
+				Validated: true,
+			},
+			Failures: []verification.FileVerificationFailure{
+				{
+					Path:    "/test/file",
+					Reason:  verification.ReasonHashMismatch,
+					Level:   "error",
+					Message: "hash verification failed",
+					Context: "test",
+				},
+			},
+		},
+	}
+
+	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
+	output, err := formatter.FormatResult(result, opts)
+	assert.NoError(t, err)
+
+	// Parse JSON output
+	var parsed DryRunResult
+	err = json.Unmarshal([]byte(output), &parsed)
+	require.NoError(t, err)
+
+	// Verify file_verification field is present
+	assert.NotNil(t, parsed.FileVerification)
+	assert.Equal(t, 8, parsed.FileVerification.TotalFiles)
+	assert.Equal(t, 6, parsed.FileVerification.VerifiedFiles)
+	assert.Equal(t, 1, parsed.FileVerification.SkippedFiles)
+	assert.Equal(t, 1, parsed.FileVerification.FailedFiles)
+
+	// Verify hash directory status
+	assert.Equal(t, "/test/hashes", parsed.FileVerification.HashDirStatus.Path)
+	assert.True(t, parsed.FileVerification.HashDirStatus.Exists)
+	assert.True(t, parsed.FileVerification.HashDirStatus.Validated)
+
+	// Verify failures
+	require.Len(t, parsed.FileVerification.Failures, 1)
+	assert.Equal(t, "/test/file", parsed.FileVerification.Failures[0].Path)
+	assert.Equal(t, verification.ReasonHashMismatch, parsed.FileVerification.Failures[0].Reason)
+	assert.Equal(t, "error", parsed.FileVerification.Failures[0].Level)
+	assert.Equal(t, "test", parsed.FileVerification.Failures[0].Context)
 }
