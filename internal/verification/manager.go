@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -438,15 +439,10 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
-			// In dry-run mode, record hash directory status and continue without error
-			if opts.isDryRun {
-				slog.Info("Hash directory not found - skipping file verification",
-					"hash_directory", hashDir,
-					"mode", "dry-run",
-					"error", err.Error())
-				// fileValidator remains nil, which will be handled in verification methods
-				manager.fileValidator = nil
-			} else {
+			// In dry-run mode, handle recoverable errors differently
+			if opts.isDryRun && !shouldContinueOnValidatorError(err, hashDir) {
+				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+			} else if !opts.isDryRun {
 				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 			}
 		}
@@ -493,6 +489,38 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	return manager, nil
+}
+
+// shouldContinueOnValidatorError determines if execution should continue in dry-run mode
+// when file validator initialization fails.
+// Returns true for recoverable errors (directory not found, permission denied),
+// false for configuration errors (invalid path, not a directory, etc.)
+func shouldContinueOnValidatorError(err error, hashDir string) bool {
+	// Check if hash directory does not exist - recoverable in dry-run mode
+	if errors.Is(err, filevalidator.ErrHashDirNotExist) {
+		slog.Info("Hash directory not found - skipping file verification",
+			"hash_directory", hashDir,
+			"mode", "dry-run",
+			"error", err.Error())
+		return true
+	}
+
+	// Check if permission denied - recoverable in dry-run mode
+	if errors.Is(err, os.ErrPermission) {
+		slog.Info("Hash directory permission denied - skipping file verification",
+			"hash_directory", hashDir,
+			"mode", "dry-run",
+			"error", err.Error())
+		return true
+	}
+
+	// For other errors (invalid path, not a directory, etc.), fail immediately
+	// These indicate configuration problems that should be fixed
+	slog.Error("File validator initialization failed with non-recoverable error",
+		"hash_directory", hashDir,
+		"mode", "dry-run",
+		"error", err.Error())
+	return false
 }
 
 // validateSecurityConstraints validates security constraints based on creation mode and security level
