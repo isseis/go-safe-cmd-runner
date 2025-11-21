@@ -52,10 +52,10 @@ func (h *sensitiveTestHelper) createConfigAndPaths(configContent string) (string
 }
 
 // loadConfig loads and expands the configuration
-func (h *sensitiveTestHelper) loadConfig(configPath string, runID string) (*runnertypes.ConfigSpec, *runnertypes.RuntimeGlobal, *verification.Manager) {
+func (h *sensitiveTestHelper) loadConfig(configPath string, hashDir string, runID string) (*runnertypes.ConfigSpec, *runnertypes.RuntimeGlobal, *verification.Manager) {
 	h.t.Helper()
 
-	verificationManager, err := verification.NewManagerForDryRun()
+	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithDryRunMode())
 	require.NoError(h.t, err, "Should create verification manager")
 
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
@@ -198,7 +198,7 @@ risk_level = "medium"
 
 			helper := newSensitiveTestHelper(t)
 			configPath, hashDir := helper.createConfigAndPaths(configContent)
-			cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, "test-run-sensitive")
+			cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, hashDir, "test-run-sensitive")
 
 			dryRunOptions := helper.createDryRunOptions(cfg, hashDir, tt.showSensitive)
 			output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run-sensitive")
@@ -269,7 +269,7 @@ risk_level = "low"
 
 	helper := newSensitiveTestHelper(t)
 	configPath, hashDir := helper.createConfigAndPaths(configContent)
-	cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, "test-run-default")
+	cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, hashDir, "test-run-default")
 
 	dryRunOptions := helper.createDryRunOptions(cfg, hashDir, false) // showSensitive defaults to false
 	output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run-default")
@@ -322,7 +322,7 @@ risk_level = "low"
 `
 			helper := newSensitiveTestHelper(t)
 			configPath, hashDir := helper.createConfigAndPaths(configContent)
-			cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, "test-run")
+			cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, hashDir, "test-run")
 
 			dryRunOptions := helper.createDryRunOptionsWithDetailLevel(cfg, hashDir, tt.detailLevel)
 			output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run")

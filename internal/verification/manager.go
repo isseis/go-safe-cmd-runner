@@ -488,7 +488,16 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+			// In dry-run mode, record hash directory status and continue without error
+			if opts.isDryRun {
+				slog.Info("Hash directory not found - skipping file verification",
+					"hash_directory", hashDir,
+					"mode", "dry-run",
+					"error", err.Error())
+				// fileValidator remains nil, which will be handled in verification methods
+			} else {
+				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+			}
 		}
 	}
 
