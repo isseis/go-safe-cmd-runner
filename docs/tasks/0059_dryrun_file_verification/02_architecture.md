@@ -516,6 +516,9 @@ func (m *Manager) verifyFileWithFallback(filePath string) error {
 func (m *Manager) verifyFileWithFallback(filePath string, context string) error {
     if m.fileValidator == nil {
         // Development environment without hash directory
+        if m.isDryRun && m.resultCollector != nil {
+            m.resultCollector.RecordSkip(filePath, context, "hash_directory_not_found")
+        }
         return nil
     }
 
@@ -660,15 +663,20 @@ graph TD
 
 ## 8. セキュリティ設計
 
-### 8.1 センシティブ情報の扱い
+### 8.1 ファイルパスの表示
 
-検証結果にセンシティブ情報が含まれる可能性を考慮：
+**原則**: 検証失敗時のファイルパスは常にフルパスで表示する（マスキングしない）
 
-1. **ファイルパス**: 検証失敗時に記録するが、`--show-sensitive` フラグに従ってマスク
-2. **ハッシュ値**: ERROR レベルのログで expected/actual を出力するが、詳細は制限
-3. **エラーメッセージ**: システム内部情報の漏洩を防ぐため、汎用的なメッセージを使用
+**理由:**
+1. **実用性**: ユーザーが問題のファイルを特定し、適切な対応（ハッシュファイル作成、ファイル修復など）を取るために必要
+2. **一貫性**: 通常実行時には表示されるため、dry-runでのみマスクしても意味がない
+3. **セキュリティ**: ファイルパス自体は機密情報ではない（機密情報はパス名ではなくファイル内容）
 
-### 7.2 検証バイパスの防止
+**既存の `--show-sensitive` フラグとの関係:**
+- `--show-sensitive` は環境変数の値（パスワード、APIキーなど）のマスキングを制御
+- ファイルパスの表示には影響しない（常にフルパス表示）
+
+### 8.2 検証バイパスの防止
 
 ```mermaid
 graph TD

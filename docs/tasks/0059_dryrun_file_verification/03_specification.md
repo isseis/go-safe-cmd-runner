@@ -814,13 +814,7 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *Fil
                 marker = "[?]"
             }
 
-            // Mask sensitive paths if needed
-            displayPath := failure.Path
-            if !opts.ShowSensitive {
-                displayPath = maskSensitivePath(failure.Path)
-            }
-
-            fmt.Fprintf(buf, "%s %s\n", marker, displayPath)
+            fmt.Fprintf(buf, "%s %s\n", marker, failure.Path)
             fmt.Fprintf(buf, "  Reason:   %s\n", formatReason(failure.Reason))
             fmt.Fprintf(buf, "  Context:  %s\n", failure.Context)
 
@@ -832,23 +826,6 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, summary *Fil
             buf.WriteString("\n")
         }
     }
-}
-
-// maskSensitivePath masks sensitive parts of a file path
-func maskSensitivePath(path string) string {
-    // Keep only the last 2 components of the path
-    parts := strings.Split(path, "/")
-    if len(parts) <= 2 {
-        return path
-    }
-
-    maskedParts := make([]string, len(parts))
-    for i := 0; i < len(parts)-2; i++ {
-        maskedParts[i] = "***"
-    }
-    copy(maskedParts[len(parts)-2:], parts[len(parts)-2:])
-
-    return strings.Join(maskedParts, "/")
 }
 
 // formatReason formats a VerificationFailureReason for display
@@ -1380,32 +1357,7 @@ func BenchmarkResultCollector_RecordFailure(b *testing.B) {
 
 ## 8. セキュリティ仕様
 
-### 8.1 センシティブ情報のマスキング
-
-**ファイルパスのマスキング:**
-```go
-// maskSensitivePath implementation (already shown in Formatter section)
-// Example:
-// Input:  /home/user/secrets/config.json
-// Output: /***/secrets/config.json (when ShowSensitive=false)
-```
-
-**ログ出力でのマスキング:**
-```go
-func logVerificationFailure(filePath string, reason VerificationFailureReason, context string, showSensitive bool) {
-    displayPath := filePath
-    if !showSensitive {
-        displayPath = maskSensitivePath(filePath)
-    }
-
-    slog.Warn("File verification failed",
-        "file", displayPath,
-        "context", context,
-        "reason", reason)
-}
-```
-
-### 8.2 検証バイパスの防止
+### 8.1 検証バイパスの防止
 
 **原則:**
 1. dry-run モードでも File Validator は実際に検証を実行
@@ -1471,7 +1423,6 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 - [ ] `DryRunResult` に `FileVerification` フィールドを追加
 - [ ] `TextFormatter.FormatResult` に File Verification セクションを追加
 - [ ] `TextFormatter.writeFileVerification` メソッドの実装
-- [ ] `maskSensitivePath` ヘルパー関数の実装
 - [ ] `formatReason` ヘルパー関数の実装
 - [ ] JSON 出力の確認（自動シリアライゼーション）
 - [ ] フォーマッタテスト（TEXT/JSON）
