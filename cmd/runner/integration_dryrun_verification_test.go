@@ -15,12 +15,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDryRunE2E_HashDirectoryNotFound tests dry-run with hash directory not found
-func TestDryRunE2E_HashDirectoryNotFound(t *testing.T) {
-	// Create temporary config file
+// setupTempConfig creates a temporary directory with a config file containing the given content.
+// Returns configFile path.
+func setupTempConfig(t *testing.T, configContent string) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
+	err := os.WriteFile(configFile, []byte(configContent), 0o644)
+	require.NoError(t, err)
+	return configFile
+}
 
+// runDryRunCommand executes the runner in dry-run mode with the given config file and additional arguments.
+// Returns the command and its combined output.
+func runDryRunCommand(t *testing.T, configFile string, extraArgs ...string) (*exec.Cmd, []byte) {
+	t.Helper()
+	args := []string{"run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text"}
+	args = append(args, extraArgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = "."
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Command output:\n%s", string(output))
+	}
+	require.NoError(t, err, "dry-run should succeed")
+	return cmd, output
+}
+
+// TestDryRunE2E_HashDirectoryNotFound tests dry-run with hash directory not found
+func TestDryRunE2E_HashDirectoryNotFound(t *testing.T) {
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -31,19 +54,8 @@ cmd = "/bin/echo"
 args = ["hello"]
 `
 
-	err := os.WriteFile(configFile, []byte(configContent), 0o644)
-	require.NoError(t, err)
-
-	// Run command in dry-run mode
-	// Note: Uses default hash directory which may or may not exist
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text")
-	cmd.Dir = "."
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Logf("Command output:\n%s", string(output))
-	}
-	require.NoError(t, err, "dry-run should succeed even with missing hash directory")
+	configFile := setupTempConfig(t, configContent)
+	cmd, output := runDryRunCommand(t, configFile)
 
 	outputStr := string(output)
 	// Verify file verification section is present
@@ -56,10 +68,6 @@ args = ["hello"]
 
 // TestDryRunE2E_HashFilesNotFound tests dry-run with hash files not found
 func TestDryRunE2E_HashFilesNotFound(t *testing.T) {
-	// Create temporary config file
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.toml")
-
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -70,15 +78,8 @@ cmd = "/bin/echo"
 args = ["hello"]
 `
 
-	err := os.WriteFile(configFile, []byte(configContent), 0o644)
-	require.NoError(t, err)
-
-	// Run command in dry-run mode
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text")
-	cmd.Dir = "."
-
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "dry-run should succeed even with missing hash files")
+	configFile := setupTempConfig(t, configContent)
+	cmd, output := runDryRunCommand(t, configFile)
 
 	outputStr := string(output)
 	// Verify file verification section is present
@@ -91,10 +92,6 @@ args = ["hello"]
 
 // TestDryRunE2E_AllSuccess tests dry-run with all verifications successful
 func TestDryRunE2E_AllSuccess(t *testing.T) {
-	// Create temporary config file
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.toml")
-
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -105,13 +102,12 @@ cmd = "/bin/echo"
 args = ["hello"]
 `
 
-	err := os.WriteFile(configFile, []byte(configContent), 0o644)
-	require.NoError(t, err)
+	configFile := setupTempConfig(t, configContent)
 
-	// Run command in dry-run mode
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text")
+	// Run with summary detail level instead of full
+	args := []string{"run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "summary", "-dry-run-format", "text"}
+	cmd := exec.Command("go", args...)
 	cmd.Dir = "."
-
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "dry-run should succeed")
 
@@ -125,10 +121,6 @@ args = ["hello"]
 
 // TestDryRunE2E_JSONOutput tests dry-run JSON output with file verification
 func TestDryRunE2E_JSONOutput(t *testing.T) {
-	// Create temporary config file
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.toml")
-
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -139,8 +131,7 @@ cmd = "/bin/echo"
 args = ["hello"]
 `
 
-	err := os.WriteFile(configFile, []byte(configContent), 0o644)
-	require.NoError(t, err)
+	configFile := setupTempConfig(t, configContent)
 
 	// Run command in dry-run mode with JSON output
 	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "json", "-log-level", "error")
@@ -150,7 +141,7 @@ args = ["hello"]
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err = cmd.Run()
+	err := cmd.Run()
 	require.NoError(t, err, "dry-run should succeed")
 
 	// Parse JSON output
@@ -177,10 +168,6 @@ args = ["hello"]
 
 // TestDryRunE2E_MixedResults tests dry-run with mixed verification results
 func TestDryRunE2E_MixedResults(t *testing.T) {
-	// Create temporary config file
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.toml")
-
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -196,13 +183,12 @@ cmd = "/bin/ls"
 args = ["-l"]
 `
 
-	err := os.WriteFile(configFile, []byte(configContent), 0o644)
-	require.NoError(t, err)
+	configFile := setupTempConfig(t, configContent)
 
 	// Run command in dry-run mode with detailed output
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "detailed", "-dry-run-format", "text")
+	args := []string{"run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "detailed", "-dry-run-format", "text"}
+	cmd := exec.Command("go", args...)
 	cmd.Dir = "."
-
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "dry-run should succeed even with verification failures")
 
