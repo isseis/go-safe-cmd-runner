@@ -5,7 +5,7 @@ package verification
 import (
 	"errors"
 	"log/slog"
-	"strings"
+	"os"
 	"sync"
 	"time"
 
@@ -130,9 +130,8 @@ func determineFailureReason(err error) FailureReason {
 		return ReasonHashDirNotFound
 	}
 
-	// Check error message for permission denied (Go's standard error)
-	errMsg := err.Error()
-	if strings.Contains(errMsg, "permission denied") {
+	// Check for permission denied error
+	if errors.Is(err, os.ErrPermission) {
 		return ReasonPermissionDenied
 	}
 

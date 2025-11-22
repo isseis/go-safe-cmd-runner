@@ -4,6 +4,7 @@ package verification
 
 import (
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -267,7 +268,7 @@ func TestDetermineFailureReason(t *testing.T) {
 		},
 		{
 			name:     "permission denied",
-			err:      errors.New("open /test/file: permission denied"),
+			err:      os.ErrPermission,
 			expected: ReasonPermissionDenied,
 		},
 		{
