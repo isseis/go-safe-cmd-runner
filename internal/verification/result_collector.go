@@ -142,7 +142,7 @@ func determineFailureReason(err error) FailureReason {
 // determineLogLevel determines the log level based on failure reason
 func determineLogLevel(reason FailureReason) string {
 	switch reason {
-	case ReasonHashDirNotFound, ReasonStandardPathSkipped:
+	case ReasonHashDirNotFound:
 		return logLevelInfo
 	case ReasonHashFileNotFound:
 		return logLevelWarn
@@ -160,7 +160,7 @@ func getSecurityRisk(reason FailureReason) string {
 		return "high"
 	case ReasonHashFileNotFound, ReasonFileReadError, ReasonPermissionDenied:
 		return "medium"
-	case ReasonHashDirNotFound, ReasonStandardPathSkipped:
+	case ReasonHashDirNotFound:
 		return "low"
 	default:
 		return "medium"

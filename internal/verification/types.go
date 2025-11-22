@@ -144,8 +144,6 @@ const (
 	ReasonFileReadError FailureReason = "file_read_error"
 	// ReasonPermissionDenied indicates insufficient permissions to access file
 	ReasonPermissionDenied FailureReason = "permission_denied"
-	// ReasonStandardPathSkipped indicates file was skipped due to standard system path
-	ReasonStandardPathSkipped FailureReason = "standard_path_skipped"
 )
 
 // FileVerificationFailure represents a single file verification failure

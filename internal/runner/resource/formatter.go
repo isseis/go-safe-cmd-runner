@@ -180,8 +180,6 @@ func (f *TextFormatter) formatReason(reason verification.FailureReason) string {
 		return "File read error"
 	case verification.ReasonPermissionDenied:
 		return "Permission denied"
-	case verification.ReasonStandardPathSkipped:
-		return "Standard path skipped"
 	default:
 		return string(reason)
 	}

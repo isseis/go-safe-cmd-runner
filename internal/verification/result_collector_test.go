@@ -294,7 +294,6 @@ func TestDetermineLogLevel(t *testing.T) {
 		expected string
 	}{
 		{ReasonHashDirNotFound, "info"},
-		{ReasonStandardPathSkipped, "info"},
 		{ReasonHashFileNotFound, "warn"},
 		{ReasonHashMismatch, "error"},
 		{ReasonFileReadError, "error"},
@@ -322,7 +321,6 @@ func TestGetSecurityRisk(t *testing.T) {
 		{ReasonFileReadError, "medium"},
 		{ReasonPermissionDenied, "medium"},
 		{ReasonHashDirNotFound, "low"},
-		{ReasonStandardPathSkipped, "low"},
 		{FailureReason("unknown"), "medium"},
 	}
 
