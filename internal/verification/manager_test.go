@@ -33,7 +33,8 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 
 // Helper to create a hash manifest file with wrong hash value
 // Uses HybridHashFilePathGetter strategy (SubstitutionHashEscape for short paths)
-func createWrongHashManifest(hashDir, filePath, wrongHash string) error {
+// Returns the path of the created hash file
+func createWrongHashManifest(hashDir, filePath, wrongHash string) (string, error) {
 	manifest := filevalidator.HashManifest{
 		Version:   "1.0",
 		Format:    "file-hash",
@@ -49,7 +50,7 @@ func createWrongHashManifest(hashDir, filePath, wrongHash string) error {
 
 	jsonData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return err
+		return "", err
 	}
 	jsonData = append(jsonData, '\n')
 
@@ -57,14 +58,18 @@ func createWrongHashManifest(hashDir, filePath, wrongHash string) error {
 	getter := filevalidator.NewHybridHashFilePathGetter()
 	resolvedPath, err := common.NewResolvedPath(filePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return os.WriteFile(hashFile, jsonData, 0o644)
+	if err := os.WriteFile(hashFile, jsonData, 0o644); err != nil {
+		return "", err
+	}
+
+	return hashFile, nil
 }
 
 // Helper function to create GroupSpec for testing
@@ -1347,15 +1352,10 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	err = createWrongHashManifest(hashDir, testFile, wrongHash)
+	hashFile, err := createWrongHashManifest(hashDir, testFile, wrongHash)
 	require.NoError(t, err)
 
-	// Verify hash file was created (using HybridHashFilePathGetter)
-	getter := filevalidator.NewHybridHashFilePathGetter()
-	resolvedPath, err := common.NewResolvedPath(testFile)
-	require.NoError(t, err)
-	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
-	require.NoError(t, err)
+	// Verify hash file was created
 	_, err = os.Stat(hashFile)
 	require.NoError(t, err, "hash file should exist at %s", hashFile)
 
@@ -1423,7 +1423,7 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	err = createWrongHashManifest(hashDir, configFile, wrongHash)
+	_, err = createWrongHashManifest(hashDir, configFile, wrongHash)
 	require.NoError(t, err)
 
 	// Create manager in dry-run mode
