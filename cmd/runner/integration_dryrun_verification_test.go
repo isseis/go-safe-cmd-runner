@@ -225,8 +225,16 @@ func TestDryRunE2E_NoSideEffects(t *testing.T) {
 	// Create temporary directories
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
+	logDir := filepath.Join(tmpDir, "logs")
+
+	// Create log directory
+	err := os.MkdirAll(logDir, 0o755)
+	require.NoError(t, err)
 
 	configContent := `
+run_id = "test-no-side-effects"
+log_dir = "` + logDir + `"
+
 [[groups]]
 name = "test_group"
 
@@ -236,22 +244,53 @@ cmd = "/bin/echo"
 args = ["hello"]
 `
 
-	err := os.WriteFile(configFile, []byte(configContent), 0o644)
+	err = os.WriteFile(configFile, []byte(configContent), 0o644)
 	require.NoError(t, err)
 
-	// Run command in dry-run mode
-	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text")
+	// Capture initial state of temp directory
+	entriesBefore, err := os.ReadDir(tmpDir)
+	require.NoError(t, err)
+
+	// Capture initial state of log directory
+	logEntriesBefore, err := os.ReadDir(logDir)
+	require.NoError(t, err)
+
+	// Run command in dry-run mode with Slack webhook configured
+	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text", "-log-level", "debug")
 	cmd.Dir = "."
+	// Set fake Slack webhook URL to enable Slack notifications
+	cmd.Env = append(os.Environ(), "GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/TEST/FAKE/WEBHOOK")
 
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Command output:\n%s", string(output))
+	}
 	require.NoError(t, err, "dry-run should succeed")
 	require.NotEmpty(t, output, "output should not be empty")
 
-	// Verify no files were created in temp directory (except config file)
-	entries, err := os.ReadDir(tmpDir)
+	outputStr := string(output)
+
+	// Verify command was not actually executed (output should not contain "hello")
+	assert.NotContains(t, outputStr, "hello", "dry-run should not execute the command")
+
+	// Verify no files were created in temp directory (compare before/after)
+	entriesAfter, err := os.ReadDir(tmpDir)
 	require.NoError(t, err)
-	assert.Equal(t, 1, len(entries), "dry-run should not create any files")
-	assert.Equal(t, "config.toml", entries[0].Name())
+	assert.Equal(t, len(entriesBefore), len(entriesAfter), "dry-run should not create any files in temp directory")
+	if len(entriesBefore) == len(entriesAfter) {
+		for i := range entriesBefore {
+			assert.Equal(t, entriesBefore[i].Name(), entriesAfter[i].Name())
+		}
+	}
+
+	// Verify no log files were created (compare before/after)
+	logEntriesAfter, err := os.ReadDir(logDir)
+	require.NoError(t, err)
+	assert.Equal(t, len(logEntriesBefore), len(logEntriesAfter), "dry-run should not create log files")
+
+	// Verify Slack notification was suppressed in dry-run mode
+	// The debug log should contain "Skipping Slack notification in dry-run mode"
+	assert.Contains(t, outputStr, "Skipping Slack notification in dry-run mode", "dry-run should skip Slack notifications")
 
 	// Verify exit code is 0
 	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
