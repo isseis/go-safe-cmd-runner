@@ -2,8 +2,10 @@ package verification
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -757,7 +759,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test verification (should succeed when file validator is disabled)
-		err = manager.verifyFileWithFallback(testFile)
+		err = manager.verifyFileWithFallback(testFile, "test")
 		assert.NoError(t, err)
 	})
 
@@ -768,7 +770,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with non-existent file (with file validator enabled to ensure error)
-		err = manager.verifyFileWithFallback("/non/existent/file.txt")
+		err = manager.verifyFileWithFallback("/non/existent/file.txt", "test")
 		assert.Error(t, err)
 	})
 
@@ -785,7 +787,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test verification (should fail because no hash file exists)
-		err = manager.verifyFileWithFallback(testFile)
+		err = manager.verifyFileWithFallback(testFile, "test")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "hash")
 	})
@@ -806,7 +808,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test reading and verification
-		content, err := manager.readAndVerifyFileWithFallback(testFile)
+		content, err := manager.readAndVerifyFileWithFallback(testFile, "test")
 		assert.NoError(t, err)
 		assert.Equal(t, testContent, string(content))
 	})
@@ -818,7 +820,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with non-existent file
-		content, err := manager.readAndVerifyFileWithFallback("/non/existent/config.toml")
+		content, err := manager.readAndVerifyFileWithFallback("/non/existent/config.toml", "test")
 		assert.Error(t, err)
 		assert.Nil(t, content)
 	})
@@ -836,9 +838,78 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test reading and verification (should fail because no hash file exists)
-		content, err := manager.readAndVerifyFileWithFallback(testFile)
+		content, err := manager.readAndVerifyFileWithFallback(testFile, "test")
 		assert.Error(t, err)
 		assert.Nil(t, content)
+	})
+}
+
+// TestVerifyFileWithFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
+func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
+	t.Run("logs_security_risk_on_verification_failure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Capture log output
+		var logBuffer strings.Builder
+		logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
+		originalLogger := slog.Default()
+		slog.SetDefault(logger)
+		defer slog.SetDefault(originalLogger)
+
+		// Create dry-run manager with file validator enabled
+		manager, err := NewManagerForTest(tmpDir, WithDryRunMode(), WithSkipHashDirectoryValidation())
+		require.NoError(t, err)
+
+		// Create test file (no hash file exists, so verification will fail)
+		testFile := filepath.Join(tmpDir, "test.txt")
+		err = os.WriteFile(testFile, []byte("test content"), 0o644)
+		require.NoError(t, err)
+
+		// In dry-run mode, verification failure should be logged but not returned as error
+		err = manager.verifyFileWithFallback(testFile, "test-context")
+		assert.NoError(t, err, "dry-run mode should not return error on verification failure")
+
+		// Verify security_risk is in the log
+		logOutput := logBuffer.String()
+		assert.Contains(t, logOutput, "security_risk", "log should contain security_risk attribute")
+		assert.Contains(t, logOutput, "dry-run mode", "log should indicate dry-run mode")
+	})
+}
+
+// TestReadAndVerifyFileWithFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
+func TestReadAndVerifyFileWithFallback_DryRunLogging(t *testing.T) {
+	t.Run("logs_security_risk_on_verification_failure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Capture log output
+		var logBuffer strings.Builder
+		logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
+		originalLogger := slog.Default()
+		slog.SetDefault(logger)
+		defer slog.SetDefault(originalLogger)
+
+		// Create dry-run manager with file validator enabled
+		manager, err := NewManagerForTest(tmpDir, WithDryRunMode(), WithSkipHashDirectoryValidation())
+		require.NoError(t, err)
+
+		// Create test file (no hash file exists, so verification will fail)
+		testFile := filepath.Join(tmpDir, "test.conf")
+		err = os.WriteFile(testFile, []byte("test content"), 0o644)
+		require.NoError(t, err)
+
+		// In dry-run mode, verification failure should be logged but file should still be read
+		content, err := manager.readAndVerifyFileWithFallback(testFile, "test-context")
+		assert.NoError(t, err, "dry-run mode should not return error on verification failure")
+		assert.Equal(t, "test content", string(content), "file content should be returned")
+
+		// Verify security_risk is in the log
+		logOutput := logBuffer.String()
+		assert.Contains(t, logOutput, "security_risk", "log should contain security_risk attribute")
+		assert.Contains(t, logOutput, "dry-run mode", "log should indicate dry-run mode")
 	})
 }
 

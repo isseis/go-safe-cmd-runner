@@ -8,6 +8,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 // Global sensitive patterns instance for reuse
@@ -55,6 +56,11 @@ func (f *TextFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 
 	// Summary
 	f.writeSummary(&buf, result)
+
+	// File Verification (if available)
+	if result.FileVerification != nil {
+		f.writeFileVerification(&buf, result.FileVerification, opts)
+	}
 
 	// Detailed information based on detail level
 	switch opts.DetailLevel {
@@ -122,6 +128,75 @@ func (f *TextFormatter) writeSummary(buf *strings.Builder, result *DryRunResult)
 	}
 
 	buf.WriteString("\n")
+}
+
+// writeFileVerification writes the file verification section
+func (f *TextFormatter) writeFileVerification(buf *strings.Builder, verification *verification.FileVerificationSummary, opts FormatterOptions) {
+	if verification == nil {
+		return
+	}
+
+	buf.WriteString("=== FILE VERIFICATION ===\n")
+
+	// Hash directory status
+	fmt.Fprintf(buf, "Hash Directory: %s\n", verification.HashDirStatus.Path)
+	fmt.Fprintf(buf, "  Exists: %t\n", verification.HashDirStatus.Exists)
+	fmt.Fprintf(buf, "  Validated: %t\n", verification.HashDirStatus.Validated)
+
+	// Summary statistics
+	fmt.Fprintf(buf, "Total Files: %d\n", verification.TotalFiles)
+	fmt.Fprintf(buf, "  Verified: %d\n", verification.VerifiedFiles)
+	fmt.Fprintf(buf, "  Skipped: %d\n", verification.SkippedFiles)
+	fmt.Fprintf(buf, "  Failed: %d\n", verification.FailedFiles)
+	fmt.Fprintf(buf, "Duration: %v\n", verification.Duration)
+
+	// Failures (if any and detail level permits)
+	if len(verification.Failures) > 0 && opts.DetailLevel >= DetailLevelDetailed {
+		buf.WriteString("\nFailures:\n")
+		for i, failure := range verification.Failures {
+			marker := f.formatLevelMarker(failure.Level)
+			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, marker, failure.Path)
+			fmt.Fprintf(buf, "   Reason: %s\n", f.formatReason(failure.Reason))
+			fmt.Fprintf(buf, "   Context: %s\n", failure.Context)
+			if failure.Message != "" {
+				fmt.Fprintf(buf, "   Message: %s\n", failure.Message)
+			}
+		}
+	}
+
+	buf.WriteString("\n")
+}
+
+// formatReason formats a FailureReason for display
+func (f *TextFormatter) formatReason(reason verification.FailureReason) string {
+	switch reason {
+	case verification.ReasonHashDirNotFound:
+		return "Hash directory not found"
+	case verification.ReasonHashFileNotFound:
+		return "Hash file not found"
+	case verification.ReasonHashMismatch:
+		return "Hash mismatch (potential tampering)"
+	case verification.ReasonFileReadError:
+		return "File read error"
+	case verification.ReasonPermissionDenied:
+		return "Permission denied"
+	default:
+		return string(reason)
+	}
+}
+
+// formatLevelMarker formats a log level marker for display
+func (f *TextFormatter) formatLevelMarker(level string) string {
+	switch level {
+	case "error":
+		return "ERROR"
+	case "warn":
+		return "WARN"
+	case "info":
+		return "INFO"
+	default:
+		return strings.ToUpper(level)
+	}
 }
 
 // writeResourceAnalyses writes the resource analyses section

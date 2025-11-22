@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -24,6 +25,7 @@ type Manager struct {
 	pathResolver                *PathResolver
 	isDryRun                    bool
 	skipHashDirectoryValidation bool
+	resultCollector             *ResultCollector
 }
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
@@ -39,7 +41,7 @@ func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
 	}
 
 	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(configPath)
+	content, err := m.readAndVerifyFileWithFallback(configPath, "config")
 	if err != nil {
 		slog.Error("Config file verification and reading failed",
 			"config_path", configPath,
@@ -71,7 +73,7 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 	}
 
 	// Verify file hash using filevalidator (with privilege fallback)
-	if err := m.verifyFileWithFallback(envFilePath); err != nil {
+	if err := m.verifyFileWithFallback(envFilePath, "env"); err != nil {
 		slog.Error("Environment file verification failed",
 			"env_file_path", envFilePath,
 			"error", err)
@@ -155,6 +157,9 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {
 		// Check if file should be skipped
 		if m.shouldSkipVerification(filePath) {
+			if m.isDryRun && m.resultCollector != nil {
+				m.resultCollector.RecordSkip()
+			}
 			result.SkippedFiles = append(result.SkippedFiles, filePath)
 			slog.Info("Skipping global file verification for standard system path",
 				"file", filePath)
@@ -162,7 +167,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 		}
 
 		// Verify file hash (try normal verification first, then with privileges if needed)
-		if err := m.verifyFileWithFallback(filePath); err != nil {
+		if err := m.verifyFileWithFallback(filePath, "global"); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
 			slog.Error("Global file verification failed",
 				"file", filePath,
@@ -220,6 +225,9 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 
 	for file := range allFiles {
 		if m.shouldSkipVerification(file) {
+			if m.isDryRun && m.resultCollector != nil {
+				m.resultCollector.RecordSkip()
+			}
 			result.SkippedFiles = append(result.SkippedFiles, file)
 			slog.Info("Skipping verification for standard system path",
 				"group", groupName,
@@ -228,7 +236,7 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 		}
 
 		// Verify file hash (try normal verification first, then with privileges if needed)
-		if err := m.verifyFileWithFallback(file); err != nil {
+		if err := m.verifyFileWithFallback(file, "group:"+groupName); err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
 				"group", groupName,
@@ -325,25 +333,75 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 	return resolvedPath, nil
 }
 
-// verifyFileWithFallback attempts file verification with normal privileges first,
-// then falls back to privileged verification if permission errors occur
-func (m *Manager) verifyFileWithFallback(filePath string) error {
-	if m.fileValidator == nil {
-		// File validator is disabled (e.g., in dry-run mode) - skip verification
+// GetVerificationSummary returns the file verification summary for dry-run mode
+// Returns nil if not in dry-run mode or if result collector is not initialized
+func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
+	if m.resultCollector == nil {
 		return nil
 	}
-	return m.fileValidator.Verify(filePath)
+	summary := m.resultCollector.GetSummary()
+	return &summary
+}
+
+// verifyFileWithFallback attempts file verification with normal privileges first,
+// then falls back to privileged verification if permission errors occur
+// In dry-run mode, it records the verification result without returning errors
+func (m *Manager) verifyFileWithFallback(filePath string, context string) error {
+	if m.fileValidator == nil {
+		// File validator is disabled - skip verification
+		return nil
+	}
+
+	// Perform verification
+	err := m.fileValidator.Verify(filePath)
+
+	// In dry-run mode, record the result and return nil (warn-only mode)
+	if m.isDryRun && m.resultCollector != nil {
+		if err == nil {
+			m.resultCollector.RecordSuccess()
+		} else {
+			// Record failure and log based on severity
+			m.resultCollector.RecordFailure(filePath, err, context)
+			logVerificationFailure(filePath, context, err, "File verification")
+		}
+		return nil
+	}
+
+	// In normal mode, return the error
+	return err
 }
 
 // readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
 // then falls back to privileged access if permission errors occur
-func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
+// In dry-run mode, it records the verification result without returning errors
+func (m *Manager) readAndVerifyFileWithFallback(filePath string, context string) ([]byte, error) {
 	if m.fileValidator == nil {
-		// File validator is disabled (e.g., in dry-run mode) - fallback to normal file reading
+		// File validator is disabled - fallback to normal file reading
 		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
 		return os.ReadFile(filePath)
 	}
-	return m.fileValidator.VerifyAndRead(filePath)
+
+	// Perform verification and reading
+	content, err := m.fileValidator.VerifyAndRead(filePath)
+
+	// In dry-run mode, record the result and handle differently
+	if m.isDryRun && m.resultCollector != nil {
+		if err == nil {
+			m.resultCollector.RecordSuccess()
+		} else {
+			// Record failure and log based on severity
+			m.resultCollector.RecordFailure(filePath, err, context)
+			logVerificationFailure(filePath, context, err, "File verification and read")
+		}
+
+		// In dry-run mode, try to read the file even if verification failed
+		if err != nil {
+			// #nosec G304 - filePath comes from verified configuration
+			content, err = os.ReadFile(filePath)
+		}
+	}
+
+	return content, err
 }
 
 // newManagerInternal creates a new verification manager with internal configuration
@@ -377,11 +435,19 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
-		var err error
-
-		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+			// In dry-run mode, handle recoverable errors differently. Only keep going when
+			// the error is considered recoverable; otherwise fail fast as before.
+			if opts.isDryRun {
+				if !shouldContinueOnValidatorError(err, hashDir) {
+					return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+			}
+		} else {
+			manager.fileValidator = validator
 		}
 	}
 
@@ -404,7 +470,60 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	manager.security = securityValidator
 	manager.pathResolver = pathResolver
 
+	// Initialize result collector for dry-run mode
+	if opts.isDryRun {
+		manager.resultCollector = NewResultCollector(hashDir)
+
+		// Check if hash directory exists
+		exists, err := opts.fs.FileExists(hashDir)
+		switch {
+		case err != nil:
+			slog.Info("Unable to check hash directory existence in dry-run mode",
+				"hash_directory", hashDir,
+				"error", err)
+			manager.resultCollector.SetHashDirStatus(false)
+		case !exists:
+			slog.Info("Hash directory does not exist in dry-run mode",
+				"hash_directory", hashDir)
+			manager.resultCollector.SetHashDirStatus(false)
+		default:
+			manager.resultCollector.SetHashDirStatus(true)
+		}
+	}
+
 	return manager, nil
+}
+
+// shouldContinueOnValidatorError determines if execution should continue in dry-run mode
+// when file validator initialization fails.
+// Returns true for recoverable errors (directory not found, permission denied),
+// false for configuration errors (invalid path, not a directory, etc.)
+func shouldContinueOnValidatorError(err error, hashDir string) bool {
+	// Check if hash directory does not exist - recoverable in dry-run mode
+	if errors.Is(err, filevalidator.ErrHashDirNotExist) {
+		slog.Info("Hash directory not found - skipping file verification",
+			"hash_directory", hashDir,
+			"mode", "dry-run",
+			"error", err.Error())
+		return true
+	}
+
+	// Check if permission denied - recoverable in dry-run mode
+	if errors.Is(err, os.ErrPermission) {
+		slog.Info("Hash directory permission denied - skipping file verification",
+			"hash_directory", hashDir,
+			"mode", "dry-run",
+			"error", err.Error())
+		return true
+	}
+
+	// For other errors (invalid path, not a directory, etc.), fail immediately
+	// These indicate configuration problems that should be fixed
+	slog.Error("File validator initialization failed with non-recoverable error",
+		"hash_directory", hashDir,
+		"mode", "dry-run",
+		"error", err.Error())
+	return false
 }
 
 // validateSecurityConstraints validates security constraints based on creation mode and security level

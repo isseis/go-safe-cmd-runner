@@ -1,6 +1,8 @@
 package verification
 
 import (
+	"time"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
@@ -127,3 +129,46 @@ var (
 	_ = withSkipHashDirectoryValidationInternal
 	_ = withCustomPathResolverInternal
 )
+
+// FailureReason represents the reason for verification failure
+type FailureReason string
+
+const (
+	// ReasonHashDirNotFound indicates hash directory was not found
+	ReasonHashDirNotFound FailureReason = "hash_directory_not_found"
+	// ReasonHashFileNotFound indicates hash file for a specific file was not found
+	ReasonHashFileNotFound FailureReason = "hash_file_not_found"
+	// ReasonHashMismatch indicates hash value mismatch (potential tampering)
+	ReasonHashMismatch FailureReason = "hash_mismatch"
+	// ReasonFileReadError indicates file read operation failed
+	ReasonFileReadError FailureReason = "file_read_error"
+	// ReasonPermissionDenied indicates insufficient permissions to access file
+	ReasonPermissionDenied FailureReason = "permission_denied"
+)
+
+// FileVerificationFailure represents a single file verification failure
+type FileVerificationFailure struct {
+	Path    string        `json:"path"`
+	Reason  FailureReason `json:"reason"`
+	Level   string        `json:"level"`
+	Message string        `json:"message"`
+	Context string        `json:"context"`
+}
+
+// HashDirectoryStatus represents the status of the hash directory
+type HashDirectoryStatus struct {
+	Path      string `json:"path"`
+	Exists    bool   `json:"exists"`
+	Validated bool   `json:"validated"`
+}
+
+// FileVerificationSummary represents the summary of file verification in dry-run mode
+type FileVerificationSummary struct {
+	TotalFiles    int                       `json:"total_files"`
+	VerifiedFiles int                       `json:"verified_files"`
+	SkippedFiles  int                       `json:"skipped_files"`
+	FailedFiles   int                       `json:"failed_files"`
+	Duration      time.Duration             `json:"duration"`
+	HashDirStatus HashDirectoryStatus       `json:"hash_dir_status"`
+	Failures      []FileVerificationFailure `json:"failures,omitempty"`
+}
