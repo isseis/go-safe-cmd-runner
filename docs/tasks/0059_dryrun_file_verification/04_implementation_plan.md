@@ -60,10 +60,10 @@
 - フォーマッタテスト
 
 **完了条件**:
-- [ ] `DryRunResult` に `FileVerification` フィールドが追加
-- [ ] TEXT フォーマッタが検証サマリーを表示
-- [ ] JSON フォーマッタが検証サマリーを含む
-- [ ] フォーマッタテストが成功
+- [x] `DryRunResult` に `FileVerification` フィールドが追加
+- [x] TEXT フォーマッタが検証サマリーを表示
+- [x] JSON フォーマッタが検証サマリーを含む
+- [x] フォーマッタテストが成功
 
 ### 2.4 Phase 4: E2E Testing and Documentation
 
