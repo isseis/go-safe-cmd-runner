@@ -42,11 +42,11 @@
 - 統合テスト
 
 **完了条件**:
-- [ ] `NewManagerForDryRun` が File Validator を有効化
-- [ ] `verifyFileWithFallback` が warn-only モードで動作
-- [ ] すべての検証メソッドが `context` パラメータを受け取る
-- [ ] Hash Directory 不在時の処理が正しく動作
-- [ ] 統合テストが成功
+- [x] `NewManagerForDryRun` が File Validator を有効化
+- [x] `verifyFileWithFallback` が warn-only モードで動作
+- [x] すべての検証メソッドが `context` パラメータを受け取る
+- [x] Hash Directory 不在時の処理が正しく動作
+- [x] 統合テストが成功
 
 ### 2.3 Phase 3: DryRunResult and Formatter Extension
 

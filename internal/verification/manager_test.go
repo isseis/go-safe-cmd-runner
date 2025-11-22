@@ -1131,3 +1131,152 @@ func TestTypeEnumMethods(t *testing.T) {
 		assert.Equal(t, "relaxed", SecurityLevelRelaxed.String())
 	})
 }
+
+// TestVerifyGlobalFiles_DryRun_MixedResults tests global file verification in dry-run mode
+// with a mix of successful verifications, failures, and skipped files
+func TestVerifyGlobalFiles_DryRun_MixedResults(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+	err := os.MkdirAll(hashDir, 0o755)
+	require.NoError(t, err)
+
+	// Create test files
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	file2 := filepath.Join(tmpDir, "file2.txt")
+
+	err = os.WriteFile(file1, []byte("content1"), 0o644)
+	require.NoError(t, err)
+	err = os.WriteFile(file2, []byte("content2"), 0o644)
+	require.NoError(t, err)
+
+	// Create hash file for file1 only (file2 will fail)
+	mockFS := commontesting.NewMockFileSystem()
+	err = mockFS.AddDir(hashDir, 0o755)
+	require.NoError(t, err)
+	err = mockFS.AddFile(file1, 0o644, []byte("content1"))
+	require.NoError(t, err)
+	err = mockFS.AddFile(file2, 0o644, []byte("content2"))
+	require.NoError(t, err)
+
+	// Create manager in dry-run mode
+	manager, err := newManagerInternal(hashDir,
+		withFSInternal(mockFS),
+		withDryRunModeInternal(),
+		withCreationMode(CreationModeTesting),
+		withSecurityLevel(SecurityLevelRelaxed),
+		withSkipHashDirectoryValidationInternal())
+	require.NoError(t, err)
+
+	// Create RuntimeGlobal with both files (no system paths to avoid skip logic complexity)
+	runtimeGlobal := createRuntimeGlobal([]string{file1, file2})
+
+	// In dry-run mode, verification should complete without error
+	result, err := manager.VerifyGlobalFiles(runtimeGlobal)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	assert.NotNil(t, result)
+
+	// Verify summary
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.Equal(t, 2, summary.TotalFiles, "should have 2 total files")
+	assert.True(t, summary.FailedFiles > 0, "should have at least 1 failed file (file2 has no hash)")
+}
+
+// TestVerifyGroupFiles_DryRun_HashMismatch tests group file verification in dry-run mode
+// when hash mismatch occurs (ERROR level logging)
+func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+
+	// Capture log output
+	var logBuffer strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	originalLogger := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(originalLogger)
+
+	// Create test file
+	testFile := filepath.Join(tmpDir, "config.toml")
+	err := os.WriteFile(testFile, []byte("actual content"), 0o644)
+	require.NoError(t, err)
+
+	// Create hash directory with mismatched hash
+	err = os.MkdirAll(hashDir, 0o755)
+	require.NoError(t, err)
+	// Note: We're not creating hash files, which will cause hash file not found error
+
+	// Create manager in dry-run mode
+	manager, err := NewManagerForTest(hashDir,
+		WithDryRunMode(),
+		WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// Create RuntimeGroup
+	runtimeGroup := createRuntimeGroup([]string{testFile})
+
+	// In dry-run mode, verification should complete without error
+	result, err := manager.VerifyGroupFiles(runtimeGroup)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	assert.NotNil(t, result)
+
+	// Verify that verification was attempted and recorded
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.True(t, summary.TotalFiles > 0, "should have files to verify")
+
+	// Verify that WARN level logging occurred (hash file not found)
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "security_risk", "log should contain security_risk")
+}
+
+// TestVerifyConfigFile_DryRun_HashFileNotFound tests config file verification in dry-run mode
+// when hash file is not found (WARN level logging)
+func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+
+	// Capture log output
+	var logBuffer strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	originalLogger := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(originalLogger)
+
+	// Create config file
+	configFile := filepath.Join(tmpDir, "config.toml")
+	err := os.WriteFile(configFile, []byte("test config"), 0o644)
+	require.NoError(t, err)
+
+	// Create hash directory but no hash file
+	err = os.MkdirAll(hashDir, 0o755)
+	require.NoError(t, err)
+
+	// Create manager in dry-run mode
+	manager, err := NewManagerForTest(hashDir,
+		WithDryRunMode(),
+		WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// In dry-run mode, reading should succeed even if verification fails
+	content, err := manager.VerifyAndReadConfigFile(configFile)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	assert.Equal(t, "test config", string(content), "should return file content")
+
+	// Verify that verification failure was recorded
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.Equal(t, 1, summary.TotalFiles, "should have 1 file")
+	assert.Equal(t, 1, summary.FailedFiles, "should have 1 failed file")
+	assert.Len(t, summary.Failures, 1, "should have 1 failure recorded")
+
+	// Verify WARN level logging (hash file not found)
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "security_risk", "log should contain security_risk")
+	require.NotEmpty(t, summary.Failures)
+	assert.Equal(t, ReasonHashFileNotFound, summary.Failures[0].Reason)
+	assert.Equal(t, logLevelWarn, summary.Failures[0].Level)
+}
