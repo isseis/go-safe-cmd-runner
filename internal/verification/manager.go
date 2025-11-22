@@ -435,16 +435,19 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
-		var err error
-
-		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
-			// In dry-run mode, handle recoverable errors differently
-			if opts.isDryRun && !shouldContinueOnValidatorError(err, hashDir) {
-				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
-			} else if !opts.isDryRun {
+			// In dry-run mode, handle recoverable errors differently. Only keep going when
+			// the error is considered recoverable; otherwise fail fast as before.
+			if opts.isDryRun {
+				if !shouldContinueOnValidatorError(err, hashDir) {
+					return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+				}
+			} else {
 				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 			}
+		} else {
+			manager.fileValidator = validator
 		}
 	}
 

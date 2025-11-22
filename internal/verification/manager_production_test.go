@@ -105,6 +105,22 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		assert.True(t, manager.isDryRun, "Should be in dry-run mode")
 	})
 
+	t.Run("missing_hash_dir_keeps_validator_nil", func(t *testing.T) {
+		// Point the default hash directory to a path that does not exist so the
+		// validator initialization fails with ErrHashDirNotExist.
+		tmpDir := t.TempDir()
+		nonexistentHashDir := filepath.Join(tmpDir, "missing")
+
+		originalHashDir := cmdcommon.DefaultHashDirectory
+		defer func() { cmdcommon.DefaultHashDirectory = originalHashDir }()
+		cmdcommon.DefaultHashDirectory = nonexistentHashDir
+
+		manager, err := NewManagerForDryRun()
+		require.NoError(t, err)
+		require.NotNil(t, manager)
+		assert.Nil(t, manager.fileValidator, "file validator should remain nil on recoverable errors")
+	})
+
 	t.Run("dry_run_security_audit_logging", func(t *testing.T) {
 		// Capture log output
 		var logBuffer strings.Builder
