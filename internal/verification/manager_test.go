@@ -1,15 +1,18 @@
 package verification
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +29,42 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 	require.NoError(nil, err)
 	runtime.ExpandedVerifyFiles = verifyFiles
 	return runtime
+}
+
+// Helper to create a hash manifest file with wrong hash value
+// Uses HybridHashFilePathGetter strategy (SubstitutionHashEscape for short paths)
+func createWrongHashManifest(hashDir, filePath, wrongHash string) error {
+	manifest := filevalidator.HashManifest{
+		Version:   "1.0",
+		Format:    "file-hash",
+		Timestamp: time.Now().UTC(),
+		File: filevalidator.FileInfo{
+			Path: filePath,
+			Hash: filevalidator.HashInfo{
+				Algorithm: "sha256",
+				Value:     wrongHash,
+			},
+		},
+	}
+
+	jsonData, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	jsonData = append(jsonData, '\n')
+
+	// Use HybridHashFilePathGetter to get the correct hash file path
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	if err != nil {
+		return err
+	}
+	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(hashFile, jsonData, 0o644)
 }
 
 // Helper function to create GroupSpec for testing
@@ -1183,7 +1222,8 @@ func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 }
 
 // TestVerifyGroupFiles_DryRun_HashFileNotFound tests group file verification in dry-run mode
-// when hash mismatch occurs (ERROR level logging)
+//
+//	when hash file is not found (WARN level logging)
 func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	hashDir := filepath.Join(tmpDir, "hashes")
@@ -1202,7 +1242,7 @@ func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	err := os.WriteFile(testFile, []byte("actual content"), 0o644)
 	require.NoError(t, err)
 
-	// Create hash directory with mismatched hash
+	// Create hash directory with but no hash file
 	err = os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 	// Note: We're not creating hash files, which will cause hash file not found error
@@ -1279,4 +1319,135 @@ func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
 	require.NotEmpty(t, summary.Failures)
 	assert.Equal(t, ReasonHashFileNotFound, summary.Failures[0].Reason)
 	assert.Equal(t, logLevelWarn, summary.Failures[0].Level)
+}
+
+// TestVerifyGroupFiles_DryRun_HashMismatch tests group file verification in dry-run mode
+// when hash mismatch occurs (ERROR level logging)
+func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+
+	// Capture log output
+	var logBuffer strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	originalLogger := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(originalLogger)
+
+	// Create test file
+	testFile := filepath.Join(tmpDir, "testfile.txt")
+	err := os.WriteFile(testFile, []byte("actual content"), 0o644)
+	require.NoError(t, err)
+
+	// Create hash directory and hash file with wrong hash
+	err = os.MkdirAll(hashDir, 0o755)
+	require.NoError(t, err)
+
+	// Write hash file with incorrect hash value
+	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
+	err = createWrongHashManifest(hashDir, testFile, wrongHash)
+	require.NoError(t, err)
+
+	// Verify hash file was created (using HybridHashFilePathGetter)
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	resolvedPath, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	require.NoError(t, err)
+	_, err = os.Stat(hashFile)
+	require.NoError(t, err, "hash file should exist at %s", hashFile)
+
+	// Create manager in dry-run mode
+	manager, err := NewManagerForTest(hashDir,
+		WithDryRunMode(),
+		WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// Create RuntimeGroup
+	runtimeGroup := createRuntimeGroup([]string{testFile})
+
+	// In dry-run mode, verification should complete without error
+	result, err := manager.VerifyGroupFiles(runtimeGroup)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	assert.NotNil(t, result)
+
+	// Verify that verification failure was recorded
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.True(t, summary.TotalFiles > 0, "should have files to verify")
+	assert.True(t, summary.FailedFiles > 0, "should have failed files")
+
+	// Verify that ERROR level logging occurred (hash mismatch)
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "security_risk", "log should contain security_risk")
+	require.NotEmpty(t, summary.Failures)
+
+	// Find the failure for our test file
+	var foundFailure *FileVerificationFailure
+	for i := range summary.Failures {
+		if summary.Failures[i].Path == testFile {
+			foundFailure = &summary.Failures[i]
+			break
+		}
+	}
+	require.NotNil(t, foundFailure, "should have failure for test file")
+	assert.Equal(t, ReasonHashMismatch, foundFailure.Reason)
+	assert.Equal(t, logLevelError, foundFailure.Level)
+}
+
+// TestVerifyConfigFile_DryRun_HashMismatch tests config file verification in dry-run mode
+// when hash mismatch occurs (ERROR level logging)
+func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	hashDir := filepath.Join(tmpDir, "hashes")
+
+	// Capture log output
+	var logBuffer strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	originalLogger := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(originalLogger)
+
+	// Create config file
+	configFile := filepath.Join(tmpDir, "config.toml")
+	err := os.WriteFile(configFile, []byte("test config"), 0o644)
+	require.NoError(t, err)
+
+	// Create hash directory and hash file with wrong hash
+	err = os.MkdirAll(hashDir, 0o755)
+	require.NoError(t, err)
+
+	// Write hash file with incorrect hash value
+	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
+	err = createWrongHashManifest(hashDir, configFile, wrongHash)
+	require.NoError(t, err)
+
+	// Create manager in dry-run mode
+	manager, err := NewManagerForTest(hashDir,
+		WithDryRunMode(),
+		WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+
+	// In dry-run mode, reading should succeed even if verification fails
+	content, err := manager.VerifyAndReadConfigFile(configFile)
+	assert.NoError(t, err, "dry-run mode should not return errors")
+	assert.Equal(t, "test config", string(content), "should return file content")
+
+	// Verify that verification failure was recorded
+	summary := manager.GetVerificationSummary()
+	require.NotNil(t, summary)
+	assert.Equal(t, 1, summary.TotalFiles, "should have 1 file")
+	assert.Equal(t, 1, summary.FailedFiles, "should have 1 failed file")
+	assert.Len(t, summary.Failures, 1, "should have 1 failure recorded")
+
+	// Verify ERROR level logging (hash mismatch)
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "security_risk", "log should contain security_risk")
+	require.NotEmpty(t, summary.Failures)
+	assert.Equal(t, ReasonHashMismatch, summary.Failures[0].Reason)
+	assert.Equal(t, logLevelError, summary.Failures[0].Level)
 }

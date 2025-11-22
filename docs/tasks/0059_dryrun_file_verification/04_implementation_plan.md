@@ -458,10 +458,10 @@ go test -tags test -bench=. -benchmem ./internal/verification
 ```
 
 **成果物チェックリスト**:
-- [-] `RecordSuccess` < 1000 ns/op (既にPhase 1で実装済み)
-- [-] `RecordFailure` < 2000 ns/op (既にPhase 1で実装済み)
-- [-] 検証オーバーヘッド < 30% (既にPhase 1で実装済み)
-- [-] メモリ使用量 < 1 MB (既にPhase 1で実装済み)
+- [x] `RecordSuccess` < 1000 ns/op (既にPhase 1で実装済み)
+- [x] `RecordFailure` < 2000 ns/op (既にPhase 1で実装済み)
+- [x] 検証オーバーヘッド < 30% (既にPhase 1で実装済み)
+- [x] メモリ使用量 < 1 MB (既にPhase 1で実装済み)
 
 ---
 

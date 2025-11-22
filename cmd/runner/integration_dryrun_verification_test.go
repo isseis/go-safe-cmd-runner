@@ -56,7 +56,7 @@ args = ["hello"]
 
 // TestDryRunE2E_HashFilesNotFound tests dry-run with hash files not found
 func TestDryRunE2E_HashFilesNotFound(t *testing.T) {
-	// Create temporary directories
+	// Create temporary config file
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
 
@@ -91,7 +91,7 @@ args = ["hello"]
 
 // TestDryRunE2E_AllSuccess tests dry-run with all verifications successful
 func TestDryRunE2E_AllSuccess(t *testing.T) {
-	// Create temporary directories
+	// Create temporary config file
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
 
@@ -125,7 +125,7 @@ args = ["hello"]
 
 // TestDryRunE2E_JSONOutput tests dry-run JSON output with file verification
 func TestDryRunE2E_JSONOutput(t *testing.T) {
-	// Create temporary directories
+	// Create temporary config file
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
 
@@ -177,7 +177,7 @@ args = ["hello"]
 
 // TestDryRunE2E_MixedResults tests dry-run with mixed verification results
 func TestDryRunE2E_MixedResults(t *testing.T) {
-	// Create temporary directories
+	// Create temporary config file
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
 
@@ -222,7 +222,7 @@ args = ["-l"]
 
 // TestDryRunE2E_NoSideEffects tests that dry-run with file verification has no side effects
 func TestDryRunE2E_NoSideEffects(t *testing.T) {
-	// Create temporary directories
+	// Create temporary config file
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.toml")
 	logDir := filepath.Join(tmpDir, "logs")
