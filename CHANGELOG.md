@@ -75,6 +75,13 @@ Failures:
         "reason": "hash_file_not_found",
         "message": "hash file not found",
         "level": "warn"
+      },
+      {
+        "path": "/bin/echo",
+        "context": "group:test_group",
+        "reason": "hash_file_not_found",
+        "message": "hash file not found",
+        "level": "warn"
       }
     ]
   }
