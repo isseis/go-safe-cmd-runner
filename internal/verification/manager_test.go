@@ -1227,36 +1227,16 @@ func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 }
 
 // TestVerifyGroupFiles_DryRun_HashFileNotFound tests group file verification in dry-run mode
-//
-//	when hash file is not found (WARN level logging)
+// when hash file is not found (WARN level logging)
 func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	hashDir := filepath.Join(tmpDir, "hashes")
-
-	// Capture log output
-	var logBuffer strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	originalLogger := slog.Default()
-	slog.SetDefault(logger)
-	defer slog.SetDefault(originalLogger)
+	tmpDir, hashDir, logBuffer, cleanup := setupDryRunTest(t)
+	defer cleanup()
 
 	// Create test file
-	testFile := filepath.Join(tmpDir, "config.toml")
-	err := os.WriteFile(testFile, []byte("actual content"), 0o644)
-	require.NoError(t, err)
-
-	// Create hash directory with but no hash file
-	err = os.MkdirAll(hashDir, 0o755)
-	require.NoError(t, err)
-	// Note: We're not creating hash files, which will cause hash file not found error
+	testFile := createTestFile(t, tmpDir, "config.toml", []byte("actual content"))
 
 	// Create manager in dry-run mode
-	manager, err := NewManagerForTest(hashDir,
-		WithDryRunMode(),
-		WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
+	manager := createDryRunManager(t, hashDir)
 
 	// Create RuntimeGroup
 	runtimeGroup := createRuntimeGroup([]string{testFile})
@@ -1279,32 +1259,14 @@ func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 // TestVerifyConfigFile_DryRun_HashFileNotFound tests config file verification in dry-run mode
 // when hash file is not found (WARN level logging)
 func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	hashDir := filepath.Join(tmpDir, "hashes")
-
-	// Capture log output
-	var logBuffer strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	originalLogger := slog.Default()
-	slog.SetDefault(logger)
-	defer slog.SetDefault(originalLogger)
+	tmpDir, hashDir, logBuffer, cleanup := setupDryRunTest(t)
+	defer cleanup()
 
 	// Create config file
-	configFile := filepath.Join(tmpDir, "config.toml")
-	err := os.WriteFile(configFile, []byte("test config"), 0o644)
-	require.NoError(t, err)
-
-	// Create hash directory but no hash file
-	err = os.MkdirAll(hashDir, 0o755)
-	require.NoError(t, err)
+	configFile := createTestFile(t, tmpDir, "config.toml", []byte("test config"))
 
 	// Create manager in dry-run mode
-	manager, err := NewManagerForTest(hashDir,
-		WithDryRunMode(),
-		WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
+	manager := createDryRunManager(t, hashDir)
 
 	// In dry-run mode, reading should succeed even if verification fails
 	content, err := manager.VerifyAndReadConfigFile(configFile)
@@ -1329,26 +1291,11 @@ func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
 // TestVerifyGroupFiles_DryRun_HashMismatch tests group file verification in dry-run mode
 // when hash mismatch occurs (ERROR level logging)
 func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
-	tmpDir := t.TempDir()
-	hashDir := filepath.Join(tmpDir, "hashes")
-
-	// Capture log output
-	var logBuffer strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	originalLogger := slog.Default()
-	slog.SetDefault(logger)
-	defer slog.SetDefault(originalLogger)
+	tmpDir, hashDir, logBuffer, cleanup := setupDryRunTest(t)
+	defer cleanup()
 
 	// Create test file
-	testFile := filepath.Join(tmpDir, "testfile.txt")
-	err := os.WriteFile(testFile, []byte("actual content"), 0o644)
-	require.NoError(t, err)
-
-	// Create hash directory and hash file with wrong hash
-	err = os.MkdirAll(hashDir, 0o755)
-	require.NoError(t, err)
+	testFile := createTestFile(t, tmpDir, "testfile.txt", []byte("actual content"))
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
@@ -1360,10 +1307,7 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 	require.NoError(t, err, "hash file should exist at %s", hashFile)
 
 	// Create manager in dry-run mode
-	manager, err := NewManagerForTest(hashDir,
-		WithDryRunMode(),
-		WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
+	manager := createDryRunManager(t, hashDir)
 
 	// Create RuntimeGroup
 	runtimeGroup := createRuntimeGroup([]string{testFile})
@@ -1400,37 +1344,19 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 // TestVerifyConfigFile_DryRun_HashMismatch tests config file verification in dry-run mode
 // when hash mismatch occurs (ERROR level logging)
 func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
-	tmpDir := t.TempDir()
-	hashDir := filepath.Join(tmpDir, "hashes")
-
-	// Capture log output
-	var logBuffer strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	originalLogger := slog.Default()
-	slog.SetDefault(logger)
-	defer slog.SetDefault(originalLogger)
+	tmpDir, hashDir, logBuffer, cleanup := setupDryRunTest(t)
+	defer cleanup()
 
 	// Create config file
-	configFile := filepath.Join(tmpDir, "config.toml")
-	err := os.WriteFile(configFile, []byte("test config"), 0o644)
-	require.NoError(t, err)
-
-	// Create hash directory and hash file with wrong hash
-	err = os.MkdirAll(hashDir, 0o755)
-	require.NoError(t, err)
+	configFile := createTestFile(t, tmpDir, "config.toml", []byte("test config"))
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	_, err = createWrongHashManifest(hashDir, configFile, wrongHash)
+	_, err := createWrongHashManifest(hashDir, configFile, wrongHash)
 	require.NoError(t, err)
 
 	// Create manager in dry-run mode
-	manager, err := NewManagerForTest(hashDir,
-		WithDryRunMode(),
-		WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
+	manager := createDryRunManager(t, hashDir)
 
 	// In dry-run mode, reading should succeed even if verification fails
 	content, err := manager.VerifyAndReadConfigFile(configFile)
