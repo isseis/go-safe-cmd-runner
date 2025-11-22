@@ -1132,9 +1132,9 @@ func TestTypeEnumMethods(t *testing.T) {
 	})
 }
 
-// TestVerifyGlobalFiles_DryRun_MixedResults tests global file verification in dry-run mode
-// with a mix of successful verifications, failures, and skipped files
-func TestVerifyGlobalFiles_DryRun_MixedResults(t *testing.T) {
+// TestVerifyGlobalFiles_DryRun_MultipleFailures tests global file verification in dry-run mode
+// when hash files do not exist for any files (both files will fail verification)
+func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 	tmpDir := t.TempDir()
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
@@ -1149,7 +1149,7 @@ func TestVerifyGlobalFiles_DryRun_MixedResults(t *testing.T) {
 	err = os.WriteFile(file2, []byte("content2"), 0o644)
 	require.NoError(t, err)
 
-	// Create hash file for file1 only (file2 will fail)
+	// Set up mock filesystem with files but no hash files (both will fail verification)
 	mockFS := commontesting.NewMockFileSystem()
 	err = mockFS.AddDir(hashDir, 0o755)
 	require.NoError(t, err)
@@ -1179,12 +1179,12 @@ func TestVerifyGlobalFiles_DryRun_MixedResults(t *testing.T) {
 	summary := manager.GetVerificationSummary()
 	require.NotNil(t, summary)
 	assert.Equal(t, 2, summary.TotalFiles, "should have 2 total files")
-	assert.True(t, summary.FailedFiles > 0, "should have at least 1 failed file (file2 has no hash)")
+	assert.Equal(t, 2, summary.FailedFiles, "both files should fail (no hash files exist)")
 }
 
-// TestVerifyGroupFiles_DryRun_HashMismatch tests group file verification in dry-run mode
+// TestVerifyGroupFiles_DryRun_HashFileNotFound tests group file verification in dry-run mode
 // when hash mismatch occurs (ERROR level logging)
-func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
+func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	hashDir := filepath.Join(tmpDir, "hashes")
 
