@@ -9,6 +9,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### File Verification in Dry-Run Mode
+
+Dry-run mode now performs file verification checks, providing visibility into the integrity status of configuration files, global files, group files, and executables without interrupting execution.
+
+**Features:**
+- File verification enabled in dry-run mode with warn-only behavior
+- Verification results included in dry-run output (TEXT and JSON formats)
+- No verification failures cause dry-run to exit (exit code always 0)
+- Detailed verification summary showing:
+  - Total files verified
+  - Hash directory status
+  - Verification failures with severity levels (INFO/WARN/ERROR)
+  - Context information for each file (config, global, group, env)
+  - Security risk assessment for failures
+
+**Verification Failure Reasons:**
+- Hash directory not found (INFO level)
+- Hash file not found (WARN level)
+- Hash mismatch (ERROR level - potential tampering)
+- File read error (ERROR level)
+- Permission denied (ERROR level)
+
+**Example Output (TEXT):**
+```
+=== FILE VERIFICATION ===
+Hash Directory: /usr/local/etc/go-safe-cmd-runner/hashes
+  Exists: true
+  Validated: true
+Total Files: 2
+  Verified: 0
+  Skipped: 0
+  Failed: 2
+Duration: 3.469ms
+
+Failures:
+1. [WARN] /tmp/test-config.toml
+   Reason: Hash file not found
+   Context: config
+   Message: hash file not found
+2. [WARN] /bin/echo
+   Reason: Hash file not found
+   Context: group:test_group
+   Message: hash file not found
+```
+
+**Example Output (JSON):**
+```json
+{
+  "file_verification": {
+    "total_files": 2,
+    "verified_files": 0,
+    "skipped_files": 0,
+    "failed_files": 2,
+    "duration": 3469483,
+    "hash_dir_status": {
+      "path": "/usr/local/etc/go-safe-cmd-runner/hashes",
+      "exists": true,
+      "validated": true
+    },
+    "failures": [
+      {
+        "path": "/tmp/test-config.toml",
+        "context": "config",
+        "reason": "hash_file_not_found",
+        "message": "hash file not found",
+        "level": "warn"
+      }
+    ]
+  }
+}
+```
+
+**Side-Effect Guarantees:**
+- Dry-run mode remains side-effect free
+- Only read-only operations performed (file and hash reading)
+- No files written or modified
+- No network communication
+- Exit code always 0 regardless of verification failures
+
+**Documentation:**
+- Verification behavior documented in implementation plan
+
 #### JSON Format Output for Dry-Run Mode
 
 Dry-run mode now supports JSON format output with comprehensive debug information, enabling machine processing and automated analysis of execution plans.

@@ -454,7 +454,15 @@ func (r *Runner) CleanupAllResources() error {
 
 // GetDryRunResults returns dry-run analysis results if available
 func (r *Runner) GetDryRunResults() *resource.DryRunResult {
-	return r.resourceManager.GetDryRunResults()
+	result := r.resourceManager.GetDryRunResults()
+	if result != nil && r.verificationManager != nil {
+		// Add file verification summary to the result
+		summary := r.verificationManager.GetVerificationSummary()
+		if summary != nil {
+			result.FileVerification = summary
+		}
+	}
+	return result
 }
 
 // executionErrorSetter is an interface for setting execution errors in dry-run mode.
