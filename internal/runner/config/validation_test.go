@@ -184,6 +184,25 @@ func TestValidateGroupNames(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid group names - single character",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "a"},
+					{Name: "Z"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - underscore only",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "_"},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "single valid group",
 			config: &runnertypes.ConfigSpec{
 				Groups: []runnertypes.GroupSpec{
@@ -268,7 +287,7 @@ func TestValidateGroupNames(t *testing.T) {
 			errorContains: []string{"invalid group name", "123build"},
 		},
 		{
-			name: "invalid group name with special characters",
+			name: "invalid group name with special character @",
 			config: &runnertypes.ConfigSpec{
 				Groups: []runnertypes.GroupSpec{
 					{Name: "build@test"},
@@ -277,6 +296,28 @@ func TestValidateGroupNames(t *testing.T) {
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
 			errorContains: []string{"invalid group name", "build@test"},
+		},
+		{
+			name: "invalid group name with special character #",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build#test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "build#test"},
+		},
+		{
+			name: "invalid group name with special character $",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build$test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "build$test"},
 		},
 		{
 			name: "duplicate group names - simple case",
@@ -340,107 +381,6 @@ func TestValidateGroupNames(t *testing.T) {
 					assert.Contains(t, err.Error(), substr,
 						"error message should contain %q", substr)
 				}
-			} else {
-				require.NoError(t, err, "expected no error but got: %v", err)
-			}
-		})
-	}
-}
-
-// TestValidateGroupName tests the internal validateGroupName function
-func TestValidateGroupName(t *testing.T) {
-	tests := []struct {
-		name      string
-		groupName string
-		wantErr   bool
-	}{
-		{
-			name:      "valid lowercase",
-			groupName: "build",
-			wantErr:   false,
-		},
-		{
-			name:      "valid uppercase",
-			groupName: "BUILD",
-			wantErr:   false,
-		},
-		{
-			name:      "valid mixed case",
-			groupName: "Build_Test",
-			wantErr:   false,
-		},
-		{
-			name:      "valid starting with underscore",
-			groupName: "_internal",
-			wantErr:   false,
-		},
-		{
-			name:      "valid with numbers",
-			groupName: "build123",
-			wantErr:   false,
-		},
-		{
-			name:      "valid single character",
-			groupName: "a",
-			wantErr:   false,
-		},
-		{
-			name:      "valid underscore only",
-			groupName: "_",
-			wantErr:   false,
-		},
-		{
-			name:      "invalid starting with number",
-			groupName: "123build",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid with hyphen",
-			groupName: "build-test",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid with dot",
-			groupName: "build.test",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid with space",
-			groupName: "build test",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid with special character @",
-			groupName: "build@test",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid with special character #",
-			groupName: "build#test",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid with special character $",
-			groupName: "build$test",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid empty string",
-			groupName: "",
-			wantErr:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateGroupName(tt.groupName)
-
-			if tt.wantErr {
-				require.Error(t, err, "expected error but got none")
-				assert.True(t, errors.Is(err, ErrInvalidGroupName),
-					"error should wrap ErrInvalidGroupName")
-				assert.Contains(t, err.Error(), tt.groupName,
-					"error message should contain the invalid group name")
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
 			}
