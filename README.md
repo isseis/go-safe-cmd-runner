@@ -117,16 +117,17 @@ internal/              # Core implementation
 │   ├── bootstrap/     # System initialization
 │   ├── cli/           # Command-line interface
 │   ├── config/        # Configuration management
+│   ├── debug/         # Debug functionality and utilities
 │   ├── environment/   # Environment variable processing
 │   ├── errors/        # Centralized error handling
 │   ├── executor/      # Command execution logic
-│   ├── hashdir/       # Hash directory security
 │   ├── output/        # Output capture management
 │   ├── privilege/     # Privilege management
 │   ├── resource/      # Resource management (normal/dry-run)
 │   ├── risk/          # Risk-based command assessment
 │   ├── runnertypes/   # Type definitions and interfaces
-│   └── security/      # Security validation framework
+│   ├── security/      # Security validation framework
+│   └── variable/      # Variable processing and expansion
 ├── safefileio/        # Secure file operations
 ├── terminal/          # Terminal capability detection
 └── verification/      # Centralized verification management
