@@ -43,9 +43,6 @@ func setupTestFlags() func() {
 	flag.BoolVar(&forceQuiet, "quiet", false, "force non-interactive mode (disables colored output)")
 	flag.BoolVar(&forceQuiet, "q", false, "force non-interactive mode (short form)")
 
-	flag.BoolVar(&validateConfig, "validate", false, "validate configuration file and exit")
-	flag.BoolVar(&validateConfig, "V", false, "validate configuration file and exit (short form)")
-
 	// Other flags without short forms
 	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	flag.StringVar(&dryRunFormat, "dry-run-format", "text", "dry-run output format (text, json)")
@@ -102,13 +99,6 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
 	if err != nil {
 		return err
-	}
-
-	// The rest of the function follows the same logic as run()
-	// Handle validate command (after verification and loading)
-	if validateConfig {
-		// Return silently for config validation in tests
-		return nil
 	}
 
 	// For testing, we skip the actual execution steps
@@ -253,13 +243,6 @@ func TestShortFlags(t *testing.T) {
 			},
 		},
 		{
-			name: "short flag -V sets validateConfig",
-			args: []string{"runner", "-V"},
-			checkFunc: func(t *testing.T) {
-				assert.True(t, validateConfig)
-			},
-		},
-		{
 			name: "long and short flags can be mixed",
 			args: []string{"runner", "-c", "/path/to/config.toml", "--dry-run", "-g", "build"},
 			checkFunc: func(t *testing.T) {
@@ -320,11 +303,6 @@ func TestShortFlagsEquivalence(t *testing.T) {
 			shortArgs: []string{"runner", "-q"},
 			longArgs:  []string{"runner", "--quiet"},
 		},
-		{
-			name:      "validate flag equivalence",
-			shortArgs: []string{"runner", "-V"},
-			longArgs:  []string{"runner", "--validate"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -338,7 +316,6 @@ func TestShortFlagsEquivalence(t *testing.T) {
 			shortGroups := groups
 			shortLogLevel := logLevel
 			shortForceQuiet := forceQuiet
-			shortValidateConfig := validateConfig
 			cleanup1()
 
 			// Test long form
@@ -350,7 +327,6 @@ func TestShortFlagsEquivalence(t *testing.T) {
 			longGroups := groups
 			longLogLevel := logLevel
 			longForceQuiet := forceQuiet
-			longValidateConfig := validateConfig
 			cleanup2()
 
 			// Verify equivalence
@@ -359,7 +335,6 @@ func TestShortFlagsEquivalence(t *testing.T) {
 			assert.Equal(t, longGroups, shortGroups, "groups should be the same")
 			assert.Equal(t, longLogLevel, shortLogLevel, "logLevel should be the same")
 			assert.Equal(t, longForceQuiet, shortForceQuiet, "forceQuiet should be the same")
-			assert.Equal(t, longValidateConfig, shortValidateConfig, "validateConfig should be the same")
 		})
 	}
 }

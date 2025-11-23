@@ -78,6 +78,9 @@ var (
 
 	// ErrNilConfig is returned when configuration is nil
 	ErrNilConfig = errors.New("configuration must not be nil")
+
+	// ErrNegativeTimeout indicates that a timeout value is negative
+	ErrNegativeTimeout = errors.New("timeout must not be negative")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.

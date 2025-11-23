@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -121,77 +122,396 @@ func TestValidateVariableName(t *testing.T) {
 
 // TestValidateGroupNames tests group name validation during config loading
 func TestValidateGroupNames(t *testing.T) {
-	t.Run("valid group names", func(t *testing.T) {
-		cfg := &runnertypes.ConfigSpec{
-			Groups: []runnertypes.GroupSpec{
-				{Name: "build"},
-				{Name: "test"},
-				{Name: "Deploy_123"},
+	tests := []struct {
+		name          string
+		config        *runnertypes.ConfigSpec
+		wantErr       bool
+		expectedError error
+		errorContains []string
+	}{
+		{
+			name: "valid group names - lowercase",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build"},
+					{Name: "test"},
+					{Name: "deploy"},
+				},
 			},
-		}
-		require.NoError(t, ValidateGroupNames(cfg))
-	})
-
-	t.Run("empty group name", func(t *testing.T) {
-		cfg := &runnertypes.ConfigSpec{
-			Groups: []runnertypes.GroupSpec{
-				{Name: "build"},
-				{Name: ""},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - uppercase",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "BUILD"},
+					{Name: "TEST"},
+					{Name: "DEPLOY"},
+				},
 			},
-		}
-		err := ValidateGroupNames(cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "empty name")
-	})
-
-	t.Run("invalid group name with hyphen", func(t *testing.T) {
-		cfg := &runnertypes.ConfigSpec{
-			Groups: []runnertypes.GroupSpec{
-				{Name: "build"},
-				{Name: "test-deploy"},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - mixed case with underscore",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "Build_Stage"},
+					{Name: "Test_Unit"},
+					{Name: "Deploy_Prod"},
+				},
 			},
-		}
-		err := ValidateGroupNames(cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid group name")
-		require.Contains(t, err.Error(), "test-deploy")
-	})
-
-	t.Run("invalid group name starting with number", func(t *testing.T) {
-		cfg := &runnertypes.ConfigSpec{
-			Groups: []runnertypes.GroupSpec{
-				{Name: "123build"},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - starting with underscore",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "_internal"},
+					{Name: "_private_build"},
+				},
 			},
-		}
-		err := ValidateGroupNames(cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid group name")
-	})
-
-	t.Run("duplicate group names", func(t *testing.T) {
-		cfg := &runnertypes.ConfigSpec{
-			Groups: []runnertypes.GroupSpec{
-				{Name: "build"},
-				{Name: "test"},
-				{Name: "build"},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - with numbers",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build123"},
+					{Name: "test_v2"},
+					{Name: "Deploy_123"},
+				},
 			},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - single character",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "a"},
+					{Name: "Z"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid group names - underscore only",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "_"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "single valid group",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty groups slice - valid",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty group name at index 0",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: ""},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrEmptyGroupName,
+			errorContains: []string{"empty name", "index 0"},
+		},
+		{
+			name: "empty group name at index 1",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build"},
+					{Name: ""},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrEmptyGroupName,
+			errorContains: []string{"empty name", "index 1"},
+		},
+		{
+			name: "invalid group name with hyphen",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build"},
+					{Name: "test-deploy"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "test-deploy", "index 1"},
+		},
+		{
+			name: "invalid group name with dot",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test.deploy"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "test.deploy"},
+		},
+		{
+			name: "invalid group name with space",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test deploy"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "test deploy"},
+		},
+		{
+			name: "invalid group name starting with number",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "123build"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "123build"},
+		},
+		{
+			name: "invalid group name with special character @",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build@test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "build@test"},
+		},
+		{
+			name: "invalid group name with special character #",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build#test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "build#test"},
+		},
+		{
+			name: "invalid group name with special character $",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build$test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrInvalidGroupName,
+			errorContains: []string{"invalid group name", "build$test"},
+		},
+		{
+			name: "duplicate group names - simple case",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build"},
+					{Name: "test"},
+					{Name: "build"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrDuplicateGroupName,
+			errorContains: []string{"duplicate group name", "build", "indices 0 and 2"},
+		},
+		{
+			name: "duplicate group names - adjacent",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "test"},
+					{Name: "test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrDuplicateGroupName,
+			errorContains: []string{"duplicate group name", "test", "indices 0 and 1"},
+		},
+		{
+			name: "duplicate group names - at end",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build"},
+					{Name: "test"},
+					{Name: "deploy"},
+					{Name: "test"},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrDuplicateGroupName,
+			errorContains: []string{"duplicate group name", "test", "indices 1 and 3"},
+		},
+		{
+			name:          "nil config",
+			config:        nil,
+			wantErr:       true,
+			expectedError: ErrNilConfig,
+			errorContains: []string{"must not be nil"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGroupNames(tt.config)
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error but got none")
+				if tt.expectedError != nil {
+					assert.True(t, errors.Is(err, tt.expectedError),
+						"expected error type %v, got %v", tt.expectedError, err)
+				}
+				for _, substr := range tt.errorContains {
+					assert.Contains(t, err.Error(), substr,
+						"error message should contain %q", substr)
+				}
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateTimeouts(t *testing.T) {
+	// Helper function to create a basic command spec
+	makeCommand := func(name string, timeout *int32) runnertypes.CommandSpec {
+		return runnertypes.CommandSpec{
+			Name:    name,
+			Cmd:     "/bin/echo",
+			Timeout: timeout,
 		}
-		err := ValidateGroupNames(cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "duplicate group name")
-		require.Contains(t, err.Error(), "build")
-	})
+	}
 
-	t.Run("nil config", func(t *testing.T) {
-		err := ValidateGroupNames(nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "must not be nil")
-	})
+	// Helper function to create a group spec
+	makeGroup := func(name string, commands ...runnertypes.CommandSpec) runnertypes.GroupSpec {
+		return runnertypes.GroupSpec{
+			Name:     name,
+			Commands: commands,
+		}
+	}
 
-	t.Run("empty groups slice", func(t *testing.T) {
+	// Helper function to create a config spec
+	makeConfig := func(globalTimeout *int32, groups ...runnertypes.GroupSpec) *runnertypes.ConfigSpec {
 		cfg := &runnertypes.ConfigSpec{
-			Groups: []runnertypes.GroupSpec{},
+			Groups: groups,
 		}
-		require.NoError(t, ValidateGroupNames(cfg))
-	})
+		if globalTimeout != nil {
+			cfg.Global.Timeout = globalTimeout
+		}
+		return cfg
+	}
+
+	tests := []struct {
+		name             string
+		config           *runnertypes.ConfigSpec
+		expectError      bool
+		expectedErr      error
+		errorMustContain []string // All strings that must appear in error message
+	}{
+		{
+			name:        "valid - no timeout specified",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", nil))),
+			expectError: false,
+		},
+		{
+			name:        "valid - positive global timeout",
+			config:      makeConfig(common.Int32Ptr(30), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			expectError: false,
+		},
+		{
+			name:        "valid - zero global timeout",
+			config:      makeConfig(common.Int32Ptr(0), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			expectError: false,
+		},
+		{
+			name:        "invalid - negative global timeout",
+			config:      makeConfig(common.Int32Ptr(-10), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+		},
+		{
+			name:        "valid - positive command timeout",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(60)))),
+			expectError: false,
+		},
+		{
+			name:        "valid - zero command timeout",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(0)))),
+			expectError: false,
+		},
+		{
+			name:        "invalid - negative command timeout",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(-5)))),
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+		},
+		{
+			name: "invalid - multiple negative command timeouts",
+			config: makeConfig(nil, makeGroup("test_group",
+				makeCommand("cmd1", common.Int32Ptr(-1)),
+				makeCommand("cmd2", common.Int32Ptr(-2)),
+			)),
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+		},
+		{
+			name: "invalid - negative timeout in second group",
+			config: makeConfig(nil,
+				makeGroup("group1", makeCommand("cmd1", common.Int32Ptr(30))),
+				makeGroup("group2", makeCommand("cmd2", common.Int32Ptr(-15))),
+			),
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+		},
+		{
+			name: "invalid - multiple errors reported together",
+			config: makeConfig(common.Int32Ptr(-5),
+				makeGroup("group1", makeCommand("cmd1", common.Int32Ptr(-10))),
+				makeGroup("group2", makeCommand("cmd2", common.Int32Ptr(-20))),
+			),
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"-5",   // global timeout value
+				"cmd1", // first command name
+				"-10",  // first command timeout value
+				"cmd2", // second command name
+				"-20",  // second command timeout value
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTimeouts(tt.config)
+
+			if tt.expectError {
+				require.Error(t, err, "expected error but got none")
+				assert.True(t, errors.Is(err, tt.expectedErr),
+					"expected error type %v, got %v", tt.expectedErr, err)
+				for _, mustContain := range tt.errorMustContain {
+					assert.Contains(t, err.Error(), mustContain,
+						"error message should contain %q", mustContain)
+				}
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+			}
+		})
+	}
 }
