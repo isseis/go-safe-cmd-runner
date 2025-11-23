@@ -201,7 +201,7 @@ When adding new test helper code, follow this decision tree:
     - `risk/`: Risk-based command assessment
     - `runnertypes/`: Type definitions and interfaces
     - `security/`: Security validation framework
-    - `variable/`: Variable processing and expansion
+    - `variable/`: Automatic variable generation and definitions
   - `safefileio/`: Secure file operations
   - `terminal/`: Terminal capabilities detection and interactive UI support
   - `verification/`: Centralized file verification management (pre-execution verification, path resolution)
