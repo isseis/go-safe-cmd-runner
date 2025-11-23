@@ -12,58 +12,198 @@ This document defines the data structures output in JSON format during dry-run e
 
 ```json
 {
+  "metadata": {
+    "generated_at": "2025-11-23T10:00:00Z",
+    "run_id": "abc123",
+    "config_path": "/path/to/config.toml",
+    "environment_file": "",
+    "version": "1.0.0",
+    "duration": 1500000000
+  },
+  "status": "success",
+  "phase": "completed",
+  "summary": {
+    "total_resources": 5,
+    "successful": 5,
+    "failed": 0,
+    "skipped": 0,
+    "groups": {
+      "total": 2,
+      "successful": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "commands": {
+      "total": 3,
+      "successful": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
   "resource_analyses": [
     {
-      "resource_type": "group",
+      "type": "group",
       "operation": "analyze",
-      "group_name": "backup",
+      "target": "backup",
+      "status": "success",
+      "parameters": {},
+      "impact": {
+        "reversible": true,
+        "persistent": false,
+        "description": "Configuration analysis only"
+      },
+      "timestamp": "2025-11-23T10:00:00Z",
       "debug_info": { ... }
     },
     {
-      "resource_type": "command",
+      "type": "command",
       "operation": "execute",
-      "group_name": "backup",
-      "command_name": "db_backup",
-      "cmd": "/usr/bin/pg_dump",
-      "args": ["-U", "postgres", "mydb"],
-      "workdir": "/var/backups",
-      "timeout": 3600,
-      "risk_level": "medium",
+      "target": "backup.db_backup",
+      "status": "success",
+      "parameters": {
+        "cmd": "/usr/bin/pg_dump",
+        "args": ["-U", "postgres", "mydb"],
+        "workdir": "/var/backups",
+        "timeout": 3600000000000,
+        "risk_level": "medium"
+      },
+      "impact": {
+        "reversible": false,
+        "persistent": true,
+        "security_risk": "medium",
+        "description": "Database backup operation"
+      },
+      "timestamp": "2025-11-23T10:00:01Z",
       "debug_info": { ... }
     }
-  ]
+  ],
+  "security_analysis": { ... },
+  "environment_info": { ... },
+  "file_verification": { ... },
+  "errors": [],
+  "warnings": []
 }
 ```
+
+## DryRunResult (Top-Level Object)
+
+Represents the complete result of a dry-run execution.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `metadata` | ResultMetadata | Execution metadata |
+| `status` | string | Execution status (`"success"` or `"error"`) |
+| `phase` | string | Execution phase (`"completed"`, `"pre_execution"`, `"initialization"`, `"group_execution"`) |
+| `error` | ExecutionError? | Top-level error information (only on error) |
+| `summary` | ExecutionSummary | Execution summary statistics |
+| `resource_analyses` | ResourceAnalysis[] | List of resource analysis results |
+| `security_analysis` | SecurityAnalysis | Security analysis results |
+| `environment_info` | EnvironmentInfo | Environment variable information |
+| `file_verification` | FileVerificationSummary? | File verification summary (only when verification is performed) |
+| `errors` | DryRunError[] | List of errors that occurred |
+| `warnings` | DryRunWarning[] | List of warnings that occurred |
+
+## ResultMetadata
+
+Contains metadata about the dry-run result.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `generated_at` | string | Result generation timestamp (RFC3339 format) |
+| `run_id` | string | Execution ID |
+| `config_path` | string | Configuration file path |
+| `environment_file` | string | Environment file path |
+| `version` | string | Version information |
+| `duration` | number | Execution duration (nanoseconds) |
+
+## ExecutionSummary
+
+Provides summary statistics for the execution.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `total_resources` | number | Total number of resources |
+| `successful` | number | Number of successful resources |
+| `failed` | number | Number of failed resources |
+| `skipped` | number | Number of skipped resources |
+| `groups` | Counts | Group statistics |
+| `commands` | Counts | Command statistics |
+
+### Counts
+
+Provides counts for a specific resource type.
+
+| Field | Type | Description |
+|---------|------|------|
+| `total` | number | Total count |
+| `successful` | number | Successful count |
+| `failed` | number | Failed count |
+| `skipped` | number | Skipped count |
 
 ## ResourceAnalysis
 
 Represents the analysis result of each resource (group or command).
 
-### Common Fields
+### Fields
 
 | Field | Type | Description |
 |---------|------|------|
-| `resource_type` | string | Type of resource (`"group"` or `"command"`) |
-| `operation` | string | Type of operation (`"analyze"` or `"execute"`) |
-| `group_name` | string | Group name |
-| `debug_info` | object? | Debug information (included depending on detail level) |
+| `type` | string | Resource type (`"group"`, `"command"`, `"filesystem"`, `"privilege"`, `"network"`, `"process"`) |
+| `operation` | string | Operation type (`"analyze"`, `"execute"`, `"create"`, `"delete"`, `"escalate"`, `"send"`) |
+| `target` | string | Target identifier (e.g., group name, `group.command` format) |
+| `status` | string | Execution status (`"success"` or `"error"`) |
+| `error` | ExecutionError? | Error information (only on error) |
+| `skip_reason` | string? | Skip reason (only when skipped) |
+| `parameters` | object | Parameters for the resource operation |
+| `impact` | ResourceImpact | Impact of the resource operation |
+| `timestamp` | string | Timestamp (RFC3339 format) |
+| `debug_info` | DebugInfo? | Debug information (included depending on detail level) |
 
-### Group Resource Specific Fields
+### Parameters Field
 
-For group resources (`resource_type: "group"`), only common fields are present.
+The `parameters` field contains different content depending on the resource type and operation:
 
-### Command Resource Specific Fields
-
-For command resources (`resource_type: "command"`), the following fields are added:
+#### For Command Execution
 
 | Field | Type | Description |
 |---------|------|------|
-| `command_name` | string | Command name |
 | `cmd` | string | Path to the command to execute |
 | `args` | string[]? | Command-line arguments |
 | `workdir` | string? | Working directory |
-| `timeout` | number? | Timeout (seconds) |
+| `timeout` | number? | Timeout (nanoseconds) |
 | `risk_level` | string? | Risk level (`"low"`, `"medium"`, `"high"`) |
+
+## ResourceImpact
+
+Describes the impact of a resource operation.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `reversible` | boolean | Whether the operation is reversible |
+| `persistent` | boolean | Whether the operation is persistent |
+| `security_risk` | string? | Security risk (`"low"`, `"medium"`, `"high"`) |
+| `description` | string | Impact description |
+
+## ExecutionError
+
+Represents an execution error.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `type` | string | Error type |
+| `message` | string | Error message |
+| `component` | string | Component where error occurred |
+| `details` | object? | Error details |
 
 ## DebugInfo
 
@@ -71,18 +211,18 @@ An object containing debug information. The content varies depending on the deta
 
 ### Content by Detail Level
 
-| Detail Level | `from_env_inheritance` | `final_environment` |
+| Detail Level | `inheritance_analysis` | `final_environment` |
 |----------|----------------------|-------------------|
 | `summary` | None | None |
-| `detailed` | Basic information only | Basic information only |
+| `detailed` | Basic information only | None |
 | `full` | Complete information including diff | Complete information |
 
 ### Fields
 
 | Field | Type | Description | Occurrence Condition |
 |---------|------|------|---------|
-| `from_env_inheritance` | InheritanceAnalysis? | Analysis result of environment variable inheritance | Group resources with `detailed` or higher |
-| `final_environment` | FinalEnvironment? | Final environment variables | Command resources with `detailed` or higher |
+| `inheritance_analysis` | InheritanceAnalysis? | Analysis result of environment variable inheritance | Group resources with `detailed` or higher |
+| `final_environment` | FinalEnvironment? | Final environment variables | Command resources with `full` only |
 
 ## InheritanceAnalysis
 
@@ -138,7 +278,7 @@ The final state of environment variables at command execution time.
 
 | Field | Type | Description |
 |---------|------|------|
-| `variables` | EnvironmentVariable[] | List of environment variables |
+| `variables` | map[string]EnvironmentVariable | Map of environment variables (key is variable name) |
 
 ## EnvironmentVariable
 
@@ -148,24 +288,27 @@ Represents an individual environment variable.
 
 | Field | Type | Description |
 |---------|------|------|
-| `name` | string | Environment variable name |
-| `value` | string | Environment variable value (sensitive information is masked) |
+| `value` | string | Environment variable value (empty string for sensitive variables when `show_sensitive=false`) |
 | `source` | string | Source of the value |
+| `masked` | boolean? | Whether the value was masked (only `true` when sensitive data with `show_sensitive=false`) |
 
 ### Source Field Values
 
 | Value | Description |
 |----|------|
-| `"Global"` | Variable defined at global level |
-| `"Group[<name>]"` | Variable defined in a specific group (`<name>` is the group name) |
-| `"Command[<name>]"` | Variable defined in a specific command (`<name>` is the command name) |
-| `"System (filtered by allowlist)"` | Variable filtered from system environment by allowlist |
-| `"Internal"` | Internal variable automatically set by the system |
+| `"system"` | Variable allowed from system environment by `env_allowlist` |
+| `"vars"` | Variable defined in global or group-level `vars`/`env_import`/`env_vars` sections |
+| `"command"` | Variable defined in command-level `env_vars` section |
+
+**Note**: Currently, variables imported from `env_import` are not distinguished from `vars`. This is because variables from `env_import` are merged with `vars` during configuration expansion. Both are reported as `"vars"`. This is a known limitation that maintains simplicity in the current architecture.
 
 ## Sensitive Information Masking
 
-By default, the values of environment variable names matching the following patterns are masked with `[REDACTED]`:
+By default (when `show_sensitive=false`), for environment variable names matching the following patterns:
+- The `value` field is set to an empty string
+- The `masked` field is set to `true`
 
+Sensitive patterns:
 - `*PASSWORD*`
 - `*SECRET*`
 - `*TOKEN*`
@@ -173,7 +316,7 @@ By default, the values of environment variable names matching the following patt
 - `*CREDENTIAL*`
 - `*AUTH*`
 
-Using the `--show-sensitive` flag displays values in plain text without masking.
+Using the `--show-sensitive` flag sets the actual value in the `value` field and the `masked` field is not included.
 
 ## Usage Examples
 
@@ -181,17 +324,58 @@ Using the `--show-sensitive` flag displays values in plain text without masking.
 
 ```json
 {
+  "metadata": {
+    "generated_at": "2025-11-23T10:00:00Z",
+    "run_id": "abc123",
+    "config_path": "/path/to/config.toml",
+    "environment_file": "",
+    "version": "1.0.0",
+    "duration": 1500000000
+  },
+  "status": "success",
+  "phase": "completed",
+  "summary": {
+    "total_resources": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "groups": {
+      "total": 0,
+      "successful": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "commands": {
+      "total": 1,
+      "successful": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
   "resource_analyses": [
     {
-      "resource_type": "command",
+      "type": "command",
       "operation": "execute",
-      "group_name": "backup",
-      "command_name": "db_backup",
-      "cmd": "/usr/bin/pg_dump",
-      "args": ["-U", "postgres", "mydb"],
-      "risk_level": "medium"
+      "target": "backup.db_backup",
+      "status": "success",
+      "parameters": {
+        "cmd": "/usr/bin/pg_dump",
+        "args": ["-U", "postgres", "mydb"],
+        "risk_level": "medium"
+      },
+      "impact": {
+        "reversible": false,
+        "persistent": true,
+        "security_risk": "medium",
+        "description": "Database backup operation"
+      },
+      "timestamp": "2025-11-23T10:00:00Z"
     }
-  ]
+  ],
+  "security_analysis": {},
+  "environment_info": {},
+  "errors": [],
+  "warnings": []
 }
 ```
 
@@ -201,13 +385,25 @@ The `debug_info` field is not included.
 
 ```json
 {
+  "metadata": { ... },
+  "status": "success",
+  "phase": "completed",
+  "summary": { ... },
   "resource_analyses": [
     {
-      "resource_type": "group",
+      "type": "group",
       "operation": "analyze",
-      "group_name": "backup",
+      "target": "backup",
+      "status": "success",
+      "parameters": {},
+      "impact": {
+        "reversible": true,
+        "persistent": false,
+        "description": "Configuration analysis only"
+      },
+      "timestamp": "2025-11-23T10:00:00Z",
       "debug_info": {
-        "from_env_inheritance": {
+        "inheritance_analysis": {
           "global_env_import": ["HOME", "PATH"],
           "global_allowlist": ["HOME", "PATH"],
           "group_env_import": ["BACKUP_DIR"],
@@ -217,52 +413,56 @@ The `debug_info` field is not included.
       }
     },
     {
-      "resource_type": "command",
+      "type": "command",
       "operation": "execute",
-      "group_name": "backup",
-      "command_name": "db_backup",
-      "cmd": "/usr/bin/pg_dump",
-      "args": ["-U", "postgres", "mydb"],
-      "risk_level": "medium",
-      "debug_info": {
-        "final_environment": {
-          "variables": [
-            {
-              "name": "BACKUP_DIR",
-              "value": "/var/backups",
-              "source": "Group[backup]"
-            },
-            {
-              "name": "HOME",
-              "value": "/root",
-              "source": "System (filtered by allowlist)"
-            },
-            {
-              "name": "PATH",
-              "value": "/usr/local/bin:/usr/bin:/bin",
-              "source": "System (filtered by allowlist)"
-            }
-          ]
-        }
-      }
+      "target": "backup.db_backup",
+      "status": "success",
+      "parameters": {
+        "cmd": "/usr/bin/pg_dump",
+        "args": ["-U", "postgres", "mydb"],
+        "risk_level": "medium"
+      },
+      "impact": {
+        "reversible": false,
+        "persistent": true,
+        "security_risk": "medium",
+        "description": "Database backup operation"
+      },
+      "timestamp": "2025-11-23T10:00:01Z"
     }
-  ]
+  ],
+  "security_analysis": {},
+  "environment_info": {},
+  "errors": [],
+  "warnings": []
 }
 ```
 
-Basic debug information is included.
+Basic debug information is included. At `detailed` level, `final_environment` is not included for command resources.
 
 ### DetailLevelFull
 
 ```json
 {
+  "metadata": { ... },
+  "status": "success",
+  "phase": "completed",
+  "summary": { ... },
   "resource_analyses": [
     {
-      "resource_type": "group",
+      "type": "group",
       "operation": "analyze",
-      "group_name": "backup",
+      "target": "backup",
+      "status": "success",
+      "parameters": {},
+      "impact": {
+        "reversible": true,
+        "persistent": false,
+        "description": "Configuration analysis only"
+      },
+      "timestamp": "2025-11-23T10:00:00Z",
       "debug_info": {
-        "from_env_inheritance": {
+        "inheritance_analysis": {
           "global_env_import": ["HOME", "PATH"],
           "global_allowlist": ["HOME", "PATH", "USER"],
           "group_env_import": ["BACKUP_DIR"],
@@ -275,43 +475,53 @@ Basic debug information is included.
       }
     },
     {
-      "resource_type": "command",
+      "type": "command",
       "operation": "execute",
-      "group_name": "backup",
-      "command_name": "db_backup",
-      "cmd": "/usr/bin/pg_dump",
-      "args": ["-U", "postgres", "mydb"],
-      "workdir": "/var/backups",
-      "timeout": 3600,
-      "risk_level": "medium",
+      "target": "backup.db_backup",
+      "status": "success",
+      "parameters": {
+        "cmd": "/usr/bin/pg_dump",
+        "args": ["-U", "postgres", "mydb"],
+        "workdir": "/var/backups",
+        "timeout": 3600000000000,
+        "risk_level": "medium"
+      },
+      "impact": {
+        "reversible": false,
+        "persistent": true,
+        "security_risk": "medium",
+        "description": "Database backup operation"
+      },
+      "timestamp": "2025-11-23T10:00:01Z",
       "debug_info": {
         "final_environment": {
-          "variables": [
-            {
-              "name": "BACKUP_DIR",
+          "variables": {
+            "BACKUP_DIR": {
               "value": "/var/backups",
-              "source": "Group[backup]"
+              "source": "vars"
             },
-            {
-              "name": "DB_PASSWORD",
-              "value": "[REDACTED]",
-              "source": "Command[db_backup]"
+            "DB_PASSWORD": {
+              "value": "",
+              "source": "command",
+              "masked": true
             },
-            {
-              "name": "HOME",
+            "HOME": {
               "value": "/root",
-              "source": "System (filtered by allowlist)"
+              "source": "system"
             },
-            {
-              "name": "PATH",
+            "PATH": {
               "value": "/usr/local/bin:/usr/bin:/bin",
-              "source": "System (filtered by allowlist)"
+              "source": "system"
             }
-          ]
+          }
         }
       }
     }
-  ]
+  ],
+  "security_analysis": {},
+  "environment_info": {},
+  "errors": [],
+  "warnings": []
 }
 ```
 
@@ -330,30 +540,30 @@ runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | 
 
 ```bash
 runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detailed | \
-  jq '.resource_analyses[] | select(.debug_info.from_env_inheritance != null) | .debug_info.from_env_inheritance.inheritance_mode'
+  jq '.resource_analyses[] | select(.debug_info.inheritance_analysis != null) | .debug_info.inheritance_analysis.inheritance_mode'
 ```
 
 ### Check Final Environment Variables of a Specific Command
 
 ```bash
 runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
-  jq '.resource_analyses[] | select(.command_name == "db_backup") | .debug_info.final_environment.variables'
+  jq '.resource_analyses[] | select(.target == "backup.db_backup") | .debug_info.final_environment.variables'
 ```
 
 ### Get List of Inherited Variables
 
 ```bash
 runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
-  jq '.resource_analyses[] | select(.debug_info.from_env_inheritance.inherited_variables != null) | .debug_info.from_env_inheritance.inherited_variables[]'
+  jq '.resource_analyses[] | select(.debug_info.inheritance_analysis.inherited_variables != null) | .debug_info.inheritance_analysis.inherited_variables[]'
 ```
 
 ### Identify Commands with Sensitive Variables
 
 ```bash
 runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
-  jq '.resource_analyses[] | select(.debug_info.final_environment != null) | select(.debug_info.final_environment.variables[] | select(.value == "[REDACTED]")) | .command_name'
+  jq '.resource_analyses[] | select(.debug_info.final_environment != null) | select(.debug_info.final_environment.variables | to_entries[] | select(.value.masked == true)) | .target'
 ```
 
 ---
 
-**Last Updated**: 2025-11-03
+**Last Updated**: 2025-11-23
