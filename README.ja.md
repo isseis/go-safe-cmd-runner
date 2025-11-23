@@ -117,16 +117,17 @@ internal/              # コア実装
 │   ├── bootstrap/     # システム初期化
 │   ├── cli/           # コマンドラインインターフェース
 │   ├── config/        # 設定管理
+│   ├── debug/         # デバッグ機能とユーティリティ
 │   ├── environment/   # 環境変数処理
 │   ├── errors/        # 一元化エラー処理
 │   ├── executor/      # コマンド実行ロジック
-│   ├── hashdir/       # ハッシュディレクトリセキュリティ
 │   ├── output/        # 出力キャプチャ管理
 │   ├── privilege/     # 権限管理
 │   ├── resource/      # リソース管理（通常/ドライラン）
 │   ├── risk/          # リスクベースコマンド評価
 │   ├── runnertypes/   # 型定義とインターフェース
-│   └── security/      # セキュリティ検証フレームワーク
+│   ├── security/      # セキュリティ検証フレームワーク
+│   └── variable/      # 自動変数の生成と定義
 ├── safefileio/        # セキュアファイル操作
 ├── terminal/          # ターミナル機能検出
 └── verification/      # 一元化検証管理

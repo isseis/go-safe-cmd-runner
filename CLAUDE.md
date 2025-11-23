@@ -191,20 +191,20 @@ When adding new test helper code, follow this decision tree:
     - `bootstrap/`: System initialization and bootstrap
     - `cli/`: Command-line interface management
     - `config/`: Configuration management
+    - `debug/`: Debug functionality and utilities
     - `environment/`: Environment variable processing and filtering
     - `errors/`: Centralized error handling
     - `executor/`: Command execution logic
-    - `hashdir/`: Hash directory security management
     - `output/`: Output path validation and security
     - `privilege/`: Privilege management
     - `resource/`: Unified resource management (normal/dry-run)
     - `risk/`: Risk-based command assessment
     - `runnertypes/`: Type definitions and interfaces
     - `security/`: Security validation framework
+    - `variable/`: Automatic variable generation and definitions
   - `safefileio/`: Secure file operations
   - `terminal/`: Terminal capabilities detection and interactive UI support
   - `verification/`: Centralized file verification management (pre-execution verification, path resolution)
-- `pkg/cmdutil/`: Public utilities for command-line tools
 - `docs/`: Project documentation with requirements and architecture
 
 ## Development Notes
