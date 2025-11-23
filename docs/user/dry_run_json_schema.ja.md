@@ -154,7 +154,7 @@
 
 | フィールド | 型 | 説明 |
 |---------|------|------|
-| `type` | string | リソースタイプ (`"group"`, `"command"`, `"filesystem"`, `"privilege"`, `"network"`, `"process"`) |
+| `type` | string | リソースタイプ (`"group"`, `"command"`, `"filesystem"`, `"privilege"`, `"network"`) |
 | `operation` | string | 操作タイプ (`"analyze"`, `"execute"`, `"create"`, `"delete"`, `"escalate"`, `"send"`) |
 | `target` | string | ターゲット識別子 (例: グループ名、`group.command` 形式) |
 | `status` | string | 実行ステータス (`"success"` または `"error"`) |

@@ -154,7 +154,7 @@ Represents the analysis result of each resource (group or command).
 
 | Field | Type | Description |
 |---------|------|------|
-| `type` | string | Resource type (`"group"`, `"command"`, `"filesystem"`, `"privilege"`, `"network"`, `"process"`) |
+| `type` | string | Resource type (`"group"`, `"command"`, `"filesystem"`, `"privilege"`, `"network"`) |
 | `operation` | string | Operation type (`"analyze"`, `"execute"`, `"create"`, `"delete"`, `"escalate"`, `"send"`) |
 | `target` | string | Target identifier (e.g., group name, `group.command` format) |
 | `status` | string | Execution status (`"success"` or `"error"`) |

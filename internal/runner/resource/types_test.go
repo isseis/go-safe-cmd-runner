@@ -15,10 +15,10 @@ func TestResourceTypeString(t *testing.T) {
 		expected string
 	}{
 		{ResourceTypeCommand, "command"},
+		{ResourceTypeGroup, "group"},
 		{ResourceTypeFilesystem, "filesystem"},
 		{ResourceTypePrivilege, "privilege"},
 		{ResourceTypeNetwork, "network"},
-		{ResourceTypeProcess, "process"},
 	}
 
 	for _, test := range tests {
