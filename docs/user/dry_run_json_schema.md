@@ -318,6 +318,149 @@ Sensitive patterns:
 
 Using the `--show-sensitive` flag sets the actual value in the `value` field and the `masked` field is not included.
 
+## SecurityAnalysis
+
+Contains security analysis results.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `risks` | SecurityRisk[] | List of security risks |
+| `privilege_changes` | PrivilegeChange[] | List of privilege changes |
+| `environment_access` | EnvironmentAccess[] | List of environment variable accesses |
+| `file_access` | FileAccess[] | List of file accesses |
+
+### SecurityRisk
+
+Represents an individual security risk.
+
+| Field | Type | Description |
+|---------|------|------|
+| `level` | string | Risk level (`"low"`, `"medium"`, `"high"`) |
+| `type` | string | Risk type (`"privilege_escalation"`, `"dangerous_command"`, `"data_exposure"`) |
+| `description` | string | Risk description |
+| `command` | string | Related command |
+| `group` | string | Related group |
+| `mitigation` | string | Risk mitigation |
+
+### PrivilegeChange
+
+Represents a privilege change.
+
+| Field | Type | Description |
+|---------|------|------|
+| `group` | string | Group name |
+| `command` | string | Command name |
+| `from_user` | string | User before change |
+| `to_user` | string | User after change |
+| `mechanism` | string | Change mechanism |
+
+### EnvironmentAccess
+
+Represents environment variable access.
+
+| Field | Type | Description |
+|---------|------|------|
+| `variable` | string | Variable name |
+| `access_type` | string | Access type (`"read"`, `"write"`) |
+| `commands` | string[] | List of commands accessing the variable |
+| `groups` | string[] | List of groups accessing the variable |
+| `sensitive` | boolean | Whether the variable is sensitive |
+
+### FileAccess
+
+Represents file access.
+
+| Field | Type | Description |
+|---------|------|------|
+| `path` | string | File path |
+| `access_type` | string | Access type (`"read"`, `"write"`, `"execute"`) |
+| `commands` | string[] | List of commands accessing the file |
+| `groups` | string[] | List of groups accessing the file |
+
+## EnvironmentInfo
+
+Contains information about environment variables.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `total_variables` | number | Total number of environment variables |
+| `allowed_variables` | string[] | List of allowed variable names |
+| `filtered_variables` | string[] | List of filtered variable names |
+| `variable_usage` | map[string]string[] | Map of variable names to commands using them |
+
+## FileVerificationSummary
+
+Contains file verification result summary. Only included when verification is performed.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `total_files` | number | Total number of files to verify |
+| `verified_files` | number | Number of files successfully verified |
+| `skipped_files` | number | Number of files skipped |
+| `failed_files` | number | Number of files that failed verification |
+| `duration` | number | Verification processing time (nanoseconds) |
+| `hash_dir_status` | HashDirectoryStatus | Hash directory status |
+| `failures` | FileVerificationFailure[]? | List of verification failures (only when failures occur) |
+
+### HashDirectoryStatus
+
+Represents the status of the hash directory.
+
+| Field | Type | Description |
+|---------|------|------|
+| `path` | string | Hash directory path |
+| `exists` | boolean | Whether the directory exists |
+| `validated` | boolean | Whether the directory has been validated |
+
+### FileVerificationFailure
+
+Represents an individual file verification failure.
+
+| Field | Type | Description |
+|---------|------|------|
+| `path` | string | File path |
+| `reason` | string | Failure reason (`"hash_directory_not_found"`, `"hash_file_not_found"`, `"hash_mismatch"`, `"file_read_error"`, `"permission_denied"`) |
+| `level` | string | Severity level |
+| `message` | string | Error message |
+| `context` | string | Context information |
+
+## DryRunError
+
+Represents an error that occurred during dry-run execution.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `type` | string | Error type (`"configuration_error"`, `"verification_error"`, `"variable_error"`, `"security_error"`, `"system_error"`, `"execution_error"`) |
+| `code` | string | Error code |
+| `message` | string | Error message |
+| `component` | string | Component where error occurred |
+| `group` | string? | Related group name (only for group-level errors) |
+| `command` | string? | Related command name (only for command-level errors) |
+| `details` | object? | Error details |
+| `recoverable` | boolean | Whether the error is recoverable |
+
+## DryRunWarning
+
+Represents a warning that occurred during dry-run execution.
+
+### Fields
+
+| Field | Type | Description |
+|---------|------|------|
+| `type` | string | Warning type (`"deprecated_feature"`, `"security_concern"`, `"performance_concern"`, `"compatibility"`) |
+| `message` | string | Warning message |
+| `component` | string | Component where warning occurred |
+| `group` | string? | Related group name (only for group-level warnings) |
+| `command` | string? | Related command name (only for command-level warnings) |
+
 ## Usage Examples
 
 ### DetailLevelSummary

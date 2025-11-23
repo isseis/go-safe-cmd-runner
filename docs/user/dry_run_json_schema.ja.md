@@ -318,6 +318,149 @@
 
 `--show-sensitive` フラグを使用すると、`value` フィールドに実際の値が設定され、`masked` フィールドは含まれません。
 
+## SecurityAnalysis
+
+セキュリティ分析結果を含みます。
+
+### フィールド
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `risks` | SecurityRisk[] | セキュリティリスクのリスト |
+| `privilege_changes` | PrivilegeChange[] | 権限変更のリスト |
+| `environment_access` | EnvironmentAccess[] | 環境変数アクセスのリスト |
+| `file_access` | FileAccess[] | ファイルアクセスのリスト |
+
+### SecurityRisk
+
+個々のセキュリティリスクを表します。
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `level` | string | リスクレベル (`"low"`, `"medium"`, `"high"`) |
+| `type` | string | リスクタイプ (`"privilege_escalation"`, `"dangerous_command"`, `"data_exposure"`) |
+| `description` | string | リスクの説明 |
+| `command` | string | 関連するコマンド |
+| `group` | string | 関連するグループ |
+| `mitigation` | string | リスク軽減策 |
+
+### PrivilegeChange
+
+権限変更を表します。
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `group` | string | グループ名 |
+| `command` | string | コマンド名 |
+| `from_user` | string | 変更前のユーザー |
+| `to_user` | string | 変更後のユーザー |
+| `mechanism` | string | 変更メカニズム |
+
+### EnvironmentAccess
+
+環境変数アクセスを表します。
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `variable` | string | 変数名 |
+| `access_type` | string | アクセスタイプ (`"read"`, `"write"`) |
+| `commands` | string[] | アクセスするコマンドのリスト |
+| `groups` | string[] | アクセスするグループのリスト |
+| `sensitive` | boolean | センシティブ変数かどうか |
+
+### FileAccess
+
+ファイルアクセスを表します。
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `path` | string | ファイルパス |
+| `access_type` | string | アクセスタイプ (`"read"`, `"write"`, `"execute"`) |
+| `commands` | string[] | アクセスするコマンドのリスト |
+| `groups` | string[] | アクセスするグループのリスト |
+
+## EnvironmentInfo
+
+環境変数に関する情報を含みます。
+
+### フィールド
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `total_variables` | number | 環境変数の総数 |
+| `allowed_variables` | string[] | 許可された変数名のリスト |
+| `filtered_variables` | string[] | フィルタリングされた変数名のリスト |
+| `variable_usage` | map[string]string[] | 変数名とそれを使用するコマンドのマップ |
+
+## FileVerificationSummary
+
+ファイル検証の結果サマリーを含みます。検証が実行された場合のみ含まれます。
+
+### フィールド
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `total_files` | number | 検証対象ファイルの総数 |
+| `verified_files` | number | 検証成功したファイル数 |
+| `skipped_files` | number | スキップされたファイル数 |
+| `failed_files` | number | 検証失敗したファイル数 |
+| `duration` | number | 検証処理時間 (ナノ秒) |
+| `hash_dir_status` | HashDirectoryStatus | ハッシュディレクトリの状態 |
+| `failures` | FileVerificationFailure[]? | 検証失敗のリスト (失敗がある場合のみ) |
+
+### HashDirectoryStatus
+
+ハッシュディレクトリの状態を表します。
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `path` | string | ハッシュディレクトリのパス |
+| `exists` | boolean | ディレクトリが存在するかどうか |
+| `validated` | boolean | ディレクトリが検証されたかどうか |
+
+### FileVerificationFailure
+
+個々のファイル検証失敗を表します。
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `path` | string | ファイルパス |
+| `reason` | string | 失敗理由 (`"hash_directory_not_found"`, `"hash_file_not_found"`, `"hash_mismatch"`, `"file_read_error"`, `"permission_denied"`) |
+| `level` | string | 重要度レベル |
+| `message` | string | エラーメッセージ |
+| `context` | string | コンテキスト情報 |
+
+## DryRunError
+
+ドライラン実行中に発生したエラーを表します。
+
+### フィールド
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `type` | string | エラータイプ (`"configuration_error"`, `"verification_error"`, `"variable_error"`, `"security_error"`, `"system_error"`, `"execution_error"`) |
+| `code` | string | エラーコード |
+| `message` | string | エラーメッセージ |
+| `component` | string | エラー発生コンポーネント |
+| `group` | string? | 関連するグループ名 (グループレベルのエラーの場合のみ) |
+| `command` | string? | 関連するコマンド名 (コマンドレベルのエラーの場合のみ) |
+| `details` | object? | エラー詳細 |
+| `recoverable` | boolean | 回復可能なエラーかどうか |
+
+## DryRunWarning
+
+ドライラン実行中に発生した警告を表します。
+
+### フィールド
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `type` | string | 警告タイプ (`"deprecated_feature"`, `"security_concern"`, `"performance_concern"`, `"compatibility"`) |
+| `message` | string | 警告メッセージ |
+| `component` | string | 警告発生コンポーネント |
+| `group` | string? | 関連するグループ名 (グループレベルの警告の場合のみ) |
+| `command` | string? | 関連するコマンド名 (コマンドレベルの警告の場合のみ) |
+
 ## 使用例
 
 ### DetailLevelSummary
