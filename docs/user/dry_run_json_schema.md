@@ -169,15 +169,64 @@ Represents the analysis result of each resource (group or command).
 
 The `parameters` field contains different content depending on the resource type and operation:
 
-#### For Command Execution
+#### Group Analysis (type="group", operation="analyze")
 
 | Field | Type | Description |
 |---------|------|------|
-| `cmd` | string | Path to the command to execute |
-| `args` | string[]? | Command-line arguments |
-| `workdir` | string? | Working directory |
-| `timeout` | number? | Timeout (nanoseconds) |
-| `risk_level` | string? | Risk level (`"low"`, `"medium"`, `"high"`) |
+| `group_name` | string | Group name |
+
+#### Command Execution (type="command", operation="execute")
+
+| Field | Type | Description |
+|---------|------|------|
+| `command` | string | Path to the command to execute |
+| `working_directory` | string | Working directory |
+| `timeout` | number | Timeout (nanoseconds) |
+| `timeout_level` | string | Timeout level |
+| `environment` | map[string]string? | Map of environment variables (only if present) |
+| `group` | string? | Group name (only if within a group) |
+| `group_description` | string? | Group description (only if within a group) |
+| `run_as_user` | string? | Run-as user (only if specified) |
+| `run_as_group` | string? | Run-as group (only if specified) |
+
+#### Filesystem Operation - Temporary Directory Creation (type="filesystem", operation="create")
+
+| Field | Type | Description |
+|---------|------|------|
+| `group_name` | string | Group name |
+| `purpose` | string | Purpose (e.g., `"temporary_directory"`) |
+
+#### Filesystem Operation - Directory Deletion (type="filesystem", operation="delete")
+
+| Field | Type | Description |
+|---------|------|------|
+| `path` | string | Directory path |
+
+#### Filesystem Operation - Output Capture (type="filesystem", operation="create")
+
+| Field | Type | Description |
+|---------|------|------|
+| `output_path` | string | Output file path |
+| `command` | string | Command path |
+| `working_directory` | string | Working directory |
+| `resolved_path` | string | Resolved path |
+| `directory_exists` | boolean | Whether directory exists |
+| `write_permission` | boolean | Whether write permission exists |
+| `security_risk` | string | Security risk level |
+| `max_size_limit` | number | Maximum size limit |
+
+#### Privilege Operation (type="privilege", operation="escalate")
+
+| Field | Type | Description |
+|---------|------|------|
+| `context` | string | Privilege escalation context (e.g., `"privilege_escalation"`) |
+
+#### Network Operation (type="network", operation="send")
+
+| Field | Type | Description |
+|---------|------|------|
+| `message` | string | Message to send |
+| `details` | object | Message details |
 
 ## ResourceImpact
 

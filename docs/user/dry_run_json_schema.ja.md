@@ -169,15 +169,64 @@
 
 `parameters` フィールドは、リソースタイプと操作によって異なる内容を持ちます：
 
-#### コマンド実行の場合
+#### グループ分析 (type="group", operation="analyze")
 
 | フィールド | 型 | 説明 |
 |---------|------|------|
-| `cmd` | string | 実行するコマンドのパス |
-| `args` | string[]? | コマンドライン引数 |
-| `workdir` | string? | 作業ディレクトリ |
-| `timeout` | number? | タイムアウト (ナノ秒) |
-| `risk_level` | string? | リスクレベル (`"low"`, `"medium"`, `"high"`) |
+| `group_name` | string | グループ名 |
+
+#### コマンド実行 (type="command", operation="execute")
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `command` | string | 実行するコマンドのパス |
+| `working_directory` | string | 作業ディレクトリ |
+| `timeout` | number | タイムアウト (ナノ秒) |
+| `timeout_level` | string | タイムアウトレベル |
+| `environment` | map[string]string? | 環境変数のマップ (存在する場合のみ) |
+| `group` | string? | グループ名 (グループ内の場合のみ) |
+| `group_description` | string? | グループの説明 (グループ内の場合のみ) |
+| `run_as_user` | string? | 実行ユーザー (指定されている場合のみ) |
+| `run_as_group` | string? | 実行グループ (指定されている場合のみ) |
+
+#### ファイルシステム操作 - 一時ディレクトリ作成 (type="filesystem", operation="create")
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `group_name` | string | グループ名 |
+| `purpose` | string | 用途 (例: `"temporary_directory"`) |
+
+#### ファイルシステム操作 - ディレクトリ削除 (type="filesystem", operation="delete")
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `path` | string | ディレクトリパス |
+
+#### ファイルシステム操作 - 出力キャプチャ (type="filesystem", operation="create")
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `output_path` | string | 出力ファイルパス |
+| `command` | string | コマンドパス |
+| `working_directory` | string | 作業ディレクトリ |
+| `resolved_path` | string | 解決されたパス |
+| `directory_exists` | boolean | ディレクトリが存在するか |
+| `write_permission` | boolean | 書き込み権限があるか |
+| `security_risk` | string | セキュリティリスクレベル |
+| `max_size_limit` | number | 最大サイズ制限 |
+
+#### 権限操作 (type="privilege", operation="escalate")
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `context` | string | 権限エスカレーションのコンテキスト (例: `"privilege_escalation"`) |
+
+#### ネットワーク操作 (type="network", operation="send")
+
+| フィールド | 型 | 説明 |
+|---------|------|------|
+| `message` | string | 送信メッセージ |
+| `details` | object | メッセージの詳細情報 |
 
 ## ResourceImpact
 
