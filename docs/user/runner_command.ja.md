@@ -35,11 +35,9 @@ go-safe-cmd-runner のメイン実行コマンド `runner` の使用方法を解
    - 実行バイナリのハッシュ
    - verify_files で指定したファイルのハッシュ
    ↓
-3. 設定ファイルを検証（-validate フラグ）
+3. ドライランで動作確認（-dry-run フラグ）
    ↓
-4. ドライランで動作確認（-dry-run フラグ）
-   ↓
-5. 本番実行（runner コマンド）
+4. 本番実行（runner コマンド）
 ```
 
 ## 2. クイックスタート
@@ -542,66 +540,6 @@ runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detaile
 # 最終的な環境変数を確認
 runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
   jq '.resource_analyses[] | select(.debug_info.final_environment != null) | .debug_info.final_environment.variables'
-```
-
-#### `-validate`
-
-**概要**
-
-設定ファイルの文法と整合性を検証し、結果を表示して終了します。コマンドは実行されません。
-
-**文法**
-
-```bash
-runner -config <path> -validate
-```
-
-**使用例**
-
-```bash
-# 設定ファイルの検証
-runner -config config.toml -validate
-```
-
-成功時の出力：
-```
-Configuration validation successful
-  Version: 1.0
-  Groups: 3
-  Total Commands: 8
-  Verified Files: 5
-```
-
-エラー時の出力：
-```
-Configuration validation failed:
-  - Group 'backup': command 'db_backup' has invalid timeout: -1
-  - Group 'deploy': duplicate command name 'deploy_app'
-  - Global: invalid log level 'trace' (must be: debug, info, warn, error)
-```
-
-**ユースケース**
-
-- **CI/CDパイプライン**: 設定ファイルのコミット前に自動検証
-- **設定変更後の確認**: 本番実行前に設定の妥当性を確認
-- **開発中のテスト**: 設定ファイルを編集しながら即座に検証
-
-**CI/CDでの活用例**
-
-```yaml
-# .github/workflows/validate-config.yml
-name: Validate Runner Config
-
-on: [push, pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Validate configuration
-        run: |
-          runner -config config.toml -validate
 ```
 
 #### `-show-sensitive`
@@ -1564,65 +1502,7 @@ cat /var/log/runner/runner-*.json | jq 'select(.level == "ERROR")'
 cat /var/log/runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
 ```
 
-### 5.4 設定ファイルの検証
-
-**基本的な検証**
-
-```bash
-# 設定ファイルを検証
-runner -config config.toml -validate
-```
-
-**CI/CDパイプラインでの検証**
-
-**GitHub Actions**
-
-```yaml
-name: Validate Configuration
-
-on: [push, pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install runner
-        run: |
-          # ビルド済みバイナリをダウンロードまたはビルド
-          make build
-
-      - name: Validate configuration
-        run: |
-          ./build/runner -config config.toml -validate
-```
-
-**GitLab CI**
-
-```yaml
-validate-config:
-  stage: test
-  script:
-    - runner -config config.toml -validate
-  rules:
-    - changes:
-      - config.toml
-```
-
-**pre-commit hook**
-
-```bash
-#!/bin/bash
-# .git/hooks/pre-commit
-
-if git diff --cached --name-only | grep -q "config.toml"; then
-  echo "Validating configuration..."
-  runner -config config.toml -validate || exit 1
-fi
-```
-
-### 5.5 CI/CD環境での使用
+### 5.4 CI/CD環境での使用
 
 **非インタラクティブモードでの実行**
 
@@ -1659,10 +1539,6 @@ jobs:
           # 実行バイナリのハッシュを記録
           sudo ./build/record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-      - name: Validate configuration
-        run: |
-          runner -config config.toml -validate
-
       - name: Dry run
         run: |
           runner -config config.toml -dry-run -dry-run-format json > dryrun.json
@@ -1689,12 +1565,6 @@ pipeline {
     agent any
 
     stages {
-        stage('Validate') {
-            steps {
-                sh 'runner -config config.toml -validate'
-            }
-        }
-
         stage('Dry Run') {
             steps {
                 sh 'runner -config config.toml -dry-run'
@@ -1721,7 +1591,7 @@ pipeline {
 }
 ```
 
-### 5.6 カラー出力の制御
+### 5.5 カラー出力の制御
 
 **環境に応じた出力調整**
 
@@ -1791,11 +1661,11 @@ Configuration validation failed:
 **対処法**
 
 ```bash
-# 設定ファイルを検証
-runner -config config.toml -validate
+# ドライランで設定ファイルを検証
+runner -config config.toml -dry-run
 
 # 詳細なエラーメッセージを確認
-runner -config config.toml -validate -log-level debug
+runner -config config.toml -dry-run -log-level debug
 ```
 
 詳細な設定方法は [TOML設定ファイルガイド](toml_config/README.ja.md) を参照してください。

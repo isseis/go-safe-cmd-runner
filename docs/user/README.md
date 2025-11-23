@@ -37,9 +37,6 @@ runner -config config.toml
 
 # Dry run (verify execution plan)
 runner -config config.toml -dry-run
-
-# Validate configuration file
-runner -config config.toml -validate
 ```
 
 **Use this when:**
@@ -258,16 +255,13 @@ Explains command risk levels and evaluation criteria.
 2. Record hash values
    └─ Use record command to record hashes of executables and configuration files
 
-3. Validate configuration
-   └─ runner -config config.toml -validate
-
-4. Verify with dry run
+3. Verify with dry run
    └─ runner -config config.toml -dry-run
 
-5. Production execution
+4. Production execution
    └─ runner -config config.toml
 
-6. Troubleshooting (as needed)
+5. Troubleshooting (as needed)
    └─ Use verify command to check file integrity
 ```
 
@@ -304,13 +298,10 @@ sudo record -file /etc/go-safe-cmd-runner/backup.toml \
 sudo record -file /usr/bin/pg_dump \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 4. Validate configuration
-runner -config /etc/go-safe-cmd-runner/backup.toml -validate
-
-# 5. Verify with dry run
+# 4. Verify with dry run
 runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run
 
-# 6. Production execution
+# 5. Production execution
 runner -config /etc/go-safe-cmd-runner/backup.toml
 ```
 
@@ -335,7 +326,7 @@ See the [TOML Configuration File Guide](toml_config/README.md) for details.
 
 A: Check in the following order:
 
-1. **Validate configuration**: `runner -config config.toml -validate`
+1. **Validate configuration**: `runner -config config.toml -dry-run`
 2. **Verify files**: `verify -file <path> -hash-dir <hash-dir>`
 3. **Debug logging**: `runner -config config.toml -log-level debug`
 4. **Troubleshooting guides**:

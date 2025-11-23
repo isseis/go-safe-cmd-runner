@@ -37,9 +37,6 @@ runner -config config.toml
 
 # ドライラン（実行内容の確認）
 runner -config config.toml -dry-run
-
-# 設定ファイルの検証
-runner -config config.toml -validate
 ```
 
 **こんな時に:**
@@ -258,16 +255,13 @@ $ ./runner --config backup.toml --keep-temp-dirs
 2. ハッシュ値を記録
    └─ record コマンドで実行ファイルと設定ファイルのハッシュを記録
 
-3. 設定を検証
-   └─ runner -config config.toml -validate
-
-4. ドライランで確認
+3. ドライランで確認
    └─ runner -config config.toml -dry-run
 
-5. 本番実行
+4. 本番実行
    └─ runner -config config.toml
 
-6. トラブルシューティング（必要に応じて）
+5. トラブルシューティング（必要に応じて）
    └─ verify コマンドでファイル整合性を確認
 ```
 
@@ -304,13 +298,10 @@ sudo record -file /etc/go-safe-cmd-runner/backup.toml \
 sudo record -file /usr/bin/pg_dump \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 4. 設定を検証
-runner -config /etc/go-safe-cmd-runner/backup.toml -validate
-
-# 5. ドライランで確認
+# 4. ドライランで確認
 runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run
 
-# 6. 本番実行
+# 5. 本番実行
 runner -config /etc/go-safe-cmd-runner/backup.toml
 ```
 
@@ -335,7 +326,7 @@ A: はい、プロジェクトの `sample/` ディレクトリに多数のサン
 
 A: 以下の順序で確認してください：
 
-1. **設定検証**: `runner -config config.toml -validate`
+1. **設定検証**: `runner -config config.toml -dry-run`
 2. **ファイル検証**: `verify -file <path> -hash-dir <hash-dir>`
 3. **デバッグログ**: `runner -config config.toml -log-level debug`
 4. **トラブルシューティングガイド**:

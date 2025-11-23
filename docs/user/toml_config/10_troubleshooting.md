@@ -344,9 +344,6 @@ risk_level = "low"
 Validate configuration file syntax:
 
 ```bash
-# Test configuration file loading
-go-safe-cmd-runner --validate config.toml
-
 # Pre-execution validation with dry run
 go-safe-cmd-runner --dry-run --file config.toml
 ```
