@@ -449,6 +449,34 @@ func TestValidateGroupName(t *testing.T) {
 }
 
 func TestValidateTimeouts(t *testing.T) {
+	// Helper function to create a basic command spec
+	makeCommand := func(name string, timeout *int32) runnertypes.CommandSpec {
+		return runnertypes.CommandSpec{
+			Name:    name,
+			Cmd:     "/bin/echo",
+			Timeout: timeout,
+		}
+	}
+
+	// Helper function to create a group spec
+	makeGroup := func(name string, commands ...runnertypes.CommandSpec) runnertypes.GroupSpec {
+		return runnertypes.GroupSpec{
+			Name:     name,
+			Commands: commands,
+		}
+	}
+
+	// Helper function to create a config spec
+	makeConfig := func(globalTimeout *int32, groups ...runnertypes.GroupSpec) *runnertypes.ConfigSpec {
+		cfg := &runnertypes.ConfigSpec{
+			Groups: groups,
+		}
+		if globalTimeout != nil {
+			cfg.Global.Timeout = globalTimeout
+		}
+		return cfg
+	}
+
 	tests := []struct {
 		name        string
 		config      *runnertypes.ConfigSpec
@@ -456,188 +484,57 @@ func TestValidateTimeouts(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			name: "valid - no timeout specified",
-			config: &runnertypes.ConfigSpec{
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name: "test_cmd",
-								Cmd:  "/bin/echo",
-							},
-						},
-					},
-				},
-			},
+			name:        "valid - no timeout specified",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
-			name: "valid - positive global timeout",
-			config: &runnertypes.ConfigSpec{
-				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
-				},
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name: "test_cmd",
-								Cmd:  "/bin/echo",
-							},
-						},
-					},
-				},
-			},
+			name:        "valid - positive global timeout",
+			config:      makeConfig(common.Int32Ptr(30), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
-			name: "valid - zero global timeout",
-			config: &runnertypes.ConfigSpec{
-				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(0),
-				},
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name: "test_cmd",
-								Cmd:  "/bin/echo",
-							},
-						},
-					},
-				},
-			},
+			name:        "valid - zero global timeout",
+			config:      makeConfig(common.Int32Ptr(0), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
-			name: "invalid - negative global timeout",
-			config: &runnertypes.ConfigSpec{
-				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(-10),
-				},
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name: "test_cmd",
-								Cmd:  "/bin/echo",
-							},
-						},
-					},
-				},
-			},
+			name:        "invalid - negative global timeout",
+			config:      makeConfig(common.Int32Ptr(-10), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
-			name: "valid - positive command timeout",
-			config: &runnertypes.ConfigSpec{
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:    "test_cmd",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(60),
-							},
-						},
-					},
-				},
-			},
+			name:        "valid - positive command timeout",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(60)))),
 			expectError: false,
 		},
 		{
-			name: "valid - zero command timeout",
-			config: &runnertypes.ConfigSpec{
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:    "test_cmd",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(0),
-							},
-						},
-					},
-				},
-			},
+			name:        "valid - zero command timeout",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(0)))),
 			expectError: false,
 		},
 		{
-			name: "invalid - negative command timeout",
-			config: &runnertypes.ConfigSpec{
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:    "test_cmd",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(-5),
-							},
-						},
-					},
-				},
-			},
+			name:        "invalid - negative command timeout",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(-5)))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - multiple negative command timeouts",
-			config: &runnertypes.ConfigSpec{
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test_group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:    "cmd1",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(-1),
-							},
-							{
-								Name:    "cmd2",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(-2),
-							},
-						},
-					},
-				},
-			},
+			config: makeConfig(nil, makeGroup("test_group",
+				makeCommand("cmd1", common.Int32Ptr(-1)),
+				makeCommand("cmd2", common.Int32Ptr(-2)),
+			)),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - negative timeout in second group",
-			config: &runnertypes.ConfigSpec{
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "group1",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:    "cmd1",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(30),
-							},
-						},
-					},
-					{
-						Name: "group2",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:    "cmd2",
-								Cmd:     "/bin/echo",
-								Timeout: common.Int32Ptr(-15),
-							},
-						},
-					},
-				},
-			},
+			config: makeConfig(nil,
+				makeGroup("group1", makeCommand("cmd1", common.Int32Ptr(30))),
+				makeGroup("group2", makeCommand("cmd2", common.Int32Ptr(-15))),
+			),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
