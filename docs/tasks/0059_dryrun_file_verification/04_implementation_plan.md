@@ -42,11 +42,11 @@
 - 統合テスト
 
 **完了条件**:
-- [ ] `NewManagerForDryRun` が File Validator を有効化
-- [ ] `verifyFileWithFallback` が warn-only モードで動作
-- [ ] すべての検証メソッドが `context` パラメータを受け取る
-- [ ] Hash Directory 不在時の処理が正しく動作
-- [ ] 統合テストが成功
+- [x] `NewManagerForDryRun` が File Validator を有効化
+- [x] `verifyFileWithFallback` が warn-only モードで動作
+- [x] すべての検証メソッドが `context` パラメータを受け取る
+- [x] Hash Directory 不在時の処理が正しく動作
+- [x] 統合テストが成功
 
 ### 2.3 Phase 3: DryRunResult and Formatter Extension
 
@@ -60,10 +60,10 @@
 - フォーマッタテスト
 
 **完了条件**:
-- [ ] `DryRunResult` に `FileVerification` フィールドが追加
-- [ ] TEXT フォーマッタが検証サマリーを表示
-- [ ] JSON フォーマッタが検証サマリーを含む
-- [ ] フォーマッタテストが成功
+- [x] `DryRunResult` に `FileVerification` フィールドが追加
+- [x] TEXT フォーマッタが検証サマリーを表示
+- [x] JSON フォーマッタが検証サマリーを含む
+- [x] フォーマッタテストが成功
 
 ### 2.4 Phase 4: E2E Testing and Documentation
 
@@ -78,10 +78,10 @@
 - CHANGELOG.md 更新
 
 **完了条件**:
-- [ ] すべての E2E テストが成功
-- [ ] パフォーマンス要件を満たす（検証オーバーヘッド < 30%）
-- [ ] 既存の dry-run テストの回帰確認
-- [ ] ドキュメントのレビュー完了
+- [x] すべての E2E テストが成功
+- [x] パフォーマンス要件を満たす（検証オーバーヘッド < 30%）
+- [x] 既存の dry-run テストの回帰確認
+- [x] ドキュメントのレビュー完了
 
 ## 3. 詳細タスク分解
 
@@ -433,10 +433,10 @@ go test -tags test -v ./cmd/runner -run TestDryRunE2E
 ```
 
 **成果物チェックリスト**:
-- [ ] すべての E2E テストが成功
-- [ ] exit code が常に 0（dry-run モード）
-- [ ] JSON 出力が仕様通り
-- [ ] TEXT 出力が仕様通り
+- [x] すべての E2E テストが成功
+- [x] exit code が常に 0（dry-run モード）
+- [x] JSON 出力が仕様通り
+- [x] TEXT 出力が仕様通り
 
 ---
 
@@ -458,10 +458,10 @@ go test -tags test -bench=. -benchmem ./internal/verification
 ```
 
 **成果物チェックリスト**:
-- [ ] `RecordSuccess` < 1000 ns/op
-- [ ] `RecordFailure` < 2000 ns/op
-- [ ] 検証オーバーヘッド < 30%
-- [ ] メモリ使用量 < 1 MB
+- [x] `RecordSuccess` < 1000 ns/op (既にPhase 1で実装済み)
+- [x] `RecordFailure` < 2000 ns/op (既にPhase 1で実装済み)
+- [x] 検証オーバーヘッド < 30% (既にPhase 1で実装済み)
+- [x] メモリ使用量 < 1 MB (既にPhase 1で実装済み)
 
 ---
 
@@ -483,9 +483,9 @@ go test -tags test -v ./... -run DryRun
 ```
 
 **成果物チェックリスト**:
-- [ ] すべてのテストが成功
-- [ ] 新規実装によるテスト失敗がない
-- [ ] dry-run モードの副作用抑制が維持されている
+- [x] すべてのテストが成功
+- [x] 新規実装によるテスト失敗がない
+- [x] dry-run モードの副作用抑制が維持されている
 
 ---
 
@@ -504,9 +504,9 @@ go test -tags test -v ./... -run DryRun
 - ドキュメントのレビュー
 
 **成果物チェックリスト**:
-- [ ] `CHANGELOG.md` に新機能が記載されている
-- [ ] ユーザーガイドが最新の動作を反映
-- [ ] コード内コメントが英語で記述されている
+- [x] `CHANGELOG.md` に新機能が記載されている
+- [x] ユーザーガイドが最新の動作を反映
+- [x] コード内コメントが英語で記述されている
 
 ---
 
