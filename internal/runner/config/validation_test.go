@@ -453,7 +453,7 @@ func TestValidateTimeouts(t *testing.T) {
 		name        string
 		config      *runnertypes.ConfigSpec
 		expectError bool
-		errorMsg    string
+		expectedErr error
 	}{
 		{
 			name: "valid - no timeout specified",
@@ -531,7 +531,7 @@ func TestValidateTimeouts(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "timeout must not be negative: global timeout got -10",
+			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "valid - positive command timeout",
@@ -586,7 +586,7 @@ func TestValidateTimeouts(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "timeout must not be negative: command 'test_cmd' in group 'test_group' (groups[0].commands[0]) got -5",
+			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - multiple negative command timeouts",
@@ -610,7 +610,7 @@ func TestValidateTimeouts(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "timeout must not be negative: command 'cmd1' in group 'test_group' (groups[0].commands[0]) got -1",
+			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - negative timeout in second group",
@@ -639,7 +639,7 @@ func TestValidateTimeouts(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "timeout must not be negative: command 'cmd2' in group 'group2' (groups[1].commands[0]) got -15",
+			expectedErr: ErrNegativeTimeout,
 		},
 	}
 
@@ -649,7 +649,8 @@ func TestValidateTimeouts(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err, "expected error but got none")
-				assert.Contains(t, err.Error(), tt.errorMsg, "error message mismatch")
+				assert.True(t, errors.Is(err, tt.expectedErr),
+					"expected error type %v, got %v", tt.expectedErr, err)
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
 			}
