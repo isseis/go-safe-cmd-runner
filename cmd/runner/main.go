@@ -43,7 +43,6 @@ var (
 	dryRunFormat     string
 	dryRunDetail     string
 	showSensitive    bool
-	validateConfig   bool
 	runID            string
 	forceInteractive bool
 	forceQuiet       bool
@@ -68,9 +67,6 @@ func init() {
 
 	flag.BoolVar(&forceQuiet, "quiet", false, "force non-interactive mode (disables colored output)")
 	flag.BoolVar(&forceQuiet, "q", false, "force non-interactive mode (short form)")
-
-	flag.BoolVar(&validateConfig, "validate", false, "validate configuration file and exit")
-	flag.BoolVar(&validateConfig, "V", false, "validate configuration file and exit (short form)")
 
 	// Other flags without short forms
 	flag.StringVar(&logDir, "log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
@@ -207,19 +203,6 @@ func run(runID string) error {
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
 	if err != nil {
 		return err
-	}
-
-	// Handle validate command (after verification and loading)
-	if validateConfig {
-		err := cli.ValidateConfigCommand(cfg)
-		if err != nil {
-			if errors.Is(err, cli.ErrConfigValidationFailed) {
-				// Config validation failed - return silent exit error to avoid additional error messages
-				return SilentExitError{}
-			}
-			return err
-		}
-		return nil
 	}
 
 	// Log verification and configuration summary after config is loaded
