@@ -418,10 +418,11 @@ func TestValidateTimeouts(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		config      *runnertypes.ConfigSpec
-		expectError bool
-		expectedErr error
+		name             string
+		config           *runnertypes.ConfigSpec
+		expectError      bool
+		expectedErr      error
+		errorMustContain []string // All strings that must appear in error message
 	}{
 		{
 			name:        "valid - no timeout specified",
@@ -478,6 +479,22 @@ func TestValidateTimeouts(t *testing.T) {
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
+		{
+			name: "invalid - multiple errors reported together",
+			config: makeConfig(common.Int32Ptr(-5),
+				makeGroup("group1", makeCommand("cmd1", common.Int32Ptr(-10))),
+				makeGroup("group2", makeCommand("cmd2", common.Int32Ptr(-20))),
+			),
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"-5",   // global timeout value
+				"cmd1", // first command name
+				"-10",  // first command timeout value
+				"cmd2", // second command name
+				"-20",  // second command timeout value
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -488,6 +505,10 @@ func TestValidateTimeouts(t *testing.T) {
 				require.Error(t, err, "expected error but got none")
 				assert.True(t, errors.Is(err, tt.expectedErr),
 					"expected error type %v, got %v", tt.expectedErr, err)
+				for _, mustContain := range tt.errorMustContain {
+					assert.Contains(t, err.Error(), mustContain,
+						"error message should contain %q", mustContain)
+				}
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
 			}
