@@ -127,7 +127,7 @@ internal/              # コア実装
 │   ├── risk/          # リスクベースコマンド評価
 │   ├── runnertypes/   # 型定義とインターフェース
 │   ├── security/      # セキュリティ検証フレームワーク
-│   └── variable/      # 変数処理と展開
+│   └── variable/      # 自動変数の生成と定義
 ├── safefileio/        # セキュアファイル操作
 ├── terminal/          # ターミナル機能検出
 └── verification/      # 一元化検証管理
