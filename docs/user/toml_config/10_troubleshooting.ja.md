@@ -344,9 +344,6 @@ risk_level = "low"
 設定ファイルの文法を検証:
 
 ```bash
-# 設定ファイルの読み込みテスト
-go-safe-cmd-runner --validate config.toml
-
 # ドライランで実行前検証
 go-safe-cmd-runner --dry-run --file config.toml
 ```

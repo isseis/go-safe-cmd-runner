@@ -35,11 +35,9 @@ User guide for the main execution command `runner` of go-safe-cmd-runner.
    - Hash of executable binaries
    - Hash of files specified in verify_files
    ↓
-3. Validate configuration file (-validate flag)
+3. Verify operation with dry run (-dry-run flag)
    ↓
-4. Verify operation with dry run (-dry-run flag)
-   ↓
-5. Production execution (runner command)
+4. Production execution (runner command)
 ```
 
 ## 2. Quick Start
@@ -542,66 +540,6 @@ runner -config config.toml -dry-run -dry-run-format json -dry-run-detail detaile
 # Check final environment variables
 runner -config config.toml -dry-run -dry-run-format json -dry-run-detail full | \
   jq '.resource_analyses[] | select(.debug_info.final_environment != null) | .debug_info.final_environment.variables'
-```
-
-#### `-validate`
-
-**Overview**
-
-Validates the syntax and consistency of the configuration file, displays results, and exits. Commands are not executed.
-
-**Syntax**
-
-```bash
-runner -config <path> -validate
-```
-
-**Usage Examples**
-
-```bash
-# Validate configuration file
-runner -config config.toml -validate
-```
-
-Success output:
-```
-Configuration validation successful
-  Version: 1.0
-  Groups: 3
-  Total Commands: 8
-  Verified Files: 5
-```
-
-Error output:
-```
-Configuration validation failed:
-  - Group 'backup': command 'db_backup' has invalid timeout: -1
-  - Group 'deploy': duplicate command name 'deploy_app'
-  - Global: invalid log level 'trace' (must be: debug, info, warn, error)
-```
-
-**Use Cases**
-
-- **CI/CD Pipeline**: Automatically validate configuration files before commit
-- **Confirmation after configuration changes**: Verify configuration validity before production execution
-- **Development Testing**: Validate immediately while editing configuration files
-
-**CI/CD Usage Example**
-
-```yaml
-# .github/workflows/validate-config.yml
-name: Validate Runner Config
-
-on: [push, pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Validate configuration
-        run: |
-          runner -config config.toml -validate
 ```
 
 #### `-show-sensitive`
@@ -1563,65 +1501,7 @@ cat /var/log/runner/runner-*.json | jq 'select(.level == "ERROR")'
 cat /var/log/runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
 ```
 
-### 5.4 Configuration File Validation
-
-**Basic Validation**
-
-```bash
-# Validate configuration file
-runner -config config.toml -validate
-```
-
-**Validation in CI/CD Pipeline**
-
-**GitHub Actions**
-
-```yaml
-name: Validate Configuration
-
-on: [push, pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install runner
-        run: |
-          # Download or build pre-built binary
-          make build
-
-      - name: Validate configuration
-        run: |
-          ./build/runner -config config.toml -validate
-```
-
-**GitLab CI**
-
-```yaml
-validate-config:
-  stage: test
-  script:
-    - runner -config config.toml -validate
-  rules:
-    - changes:
-      - config.toml
-```
-
-**pre-commit hook**
-
-```bash
-#!/bin/bash
-# .git/hooks/pre-commit
-
-if git diff --cached --name-only | grep -q "config.toml"; then
-  echo "Validating configuration..."
-  runner -config config.toml -validate || exit 1
-fi
-```
-
-### 5.5 Usage in CI/CD Environment
+### 5.4 Usage in CI/CD Environment
 
 **Execution in Non-Interactive Mode**
 
@@ -1658,10 +1538,6 @@ jobs:
           # Record hash of executable binaries
           sudo ./build/record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-      - name: Validate configuration
-        run: |
-          runner -config config.toml -validate
-
       - name: Dry run
         run: |
           runner -config config.toml -dry-run -dry-run-format json > dryrun.json
@@ -1688,12 +1564,6 @@ pipeline {
     agent any
 
     stages {
-        stage('Validate') {
-            steps {
-                sh 'runner -config config.toml -validate'
-            }
-        }
-
         stage('Dry Run') {
             steps {
                 sh 'runner -config config.toml -dry-run'
@@ -1720,7 +1590,7 @@ pipeline {
 }
 ```
 
-### 5.6 Color Output Control
+### 5.5 Color Output Control
 
 **Output Adjustment According to Environment**
 
@@ -1790,11 +1660,11 @@ Configuration validation failed:
 **Solutions**
 
 ```bash
-# Validate configuration file
-runner -config config.toml -validate
+# Validate configuration file with dry run
+runner -config config.toml -dry-run
 
 # Check detailed error messages
-runner -config config.toml -validate -log-level debug
+runner -config config.toml -dry-run -log-level debug
 ```
 
 For detailed configuration methods, see [TOML Configuration File Guide](toml_config/README.md).

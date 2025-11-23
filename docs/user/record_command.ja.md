@@ -303,7 +303,7 @@ sudo record -file /usr/local/bin/backup.sh \
     -force
 
 # 4. 動作確認
-runner -config /etc/go-safe-cmd-runner/backup.toml -validate
+runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run
 ```
 
 ### 4.3 複数ファイルの一括記録
