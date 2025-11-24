@@ -179,8 +179,9 @@ The `parameters` field contains different content depending on the resource type
 
 | Field | Type | Description |
 |---------|------|------|
-| `command` | string | Path to the command to execute |
-| `working_directory` | string | Working directory |
+| `cmd` | string | Path to the command to execute |
+| `args` | string | Arguments to pass to the command executed |
+| `workdir` | string | Working directory |
 | `timeout` | number | Timeout (nanoseconds) |
 | `timeout_level` | string | Timeout level |
 | `environment` | map[string]string? | Map of environment variables (only if present) |

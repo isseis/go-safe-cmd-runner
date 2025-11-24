@@ -179,8 +179,9 @@
 
 | フィールド | 型 | 説明 |
 |---------|------|------|
-| `command` | string | 実行するコマンドのパス |
-| `working_directory` | string | 作業ディレクトリ |
+| `cmd` | string | 実行するコマンドのパス |
+| `args` | string | 実行するコマンドに渡す引数 |
+| `workdir` | string | 作業ディレクトリ |
 | `timeout` | number | タイムアウト (ナノ秒) |
 | `timeout_level` | string | タイムアウトレベル |
 | `environment` | map[string]string? | 環境変数のマップ (存在する場合のみ) |
