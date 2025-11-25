@@ -121,6 +121,22 @@ type RuntimeGroup struct {
 	// EffectiveWorkDir is the resolved working directory for this group
 	EffectiveWorkDir string
 
+	// ExpandedCmdAllowed is the list of allowed commands after variable expansion.
+	//
+	// Each element has completed the following processing:
+	//   1. Variable expansion: %{var} -> actual value
+	//   2. Absolute path validation: confirmed to start with '/'
+	//   3. Symbolic link resolution: filepath.EvalSymlinks
+	//   4. Path normalization: filepath.Clean
+	//
+	// When nil:
+	//   - GroupSpec.CmdAllowed was nil or empty array
+	//   - No group-level additional permissions are applied
+	//
+	// Example:
+	//   ["/home/user/bin/tool1", "/usr/local/bin/node"]
+	ExpandedCmdAllowed []string
+
 	// Commands contains the expanded runtime commands for this group
 	Commands []*RuntimeCommand
 

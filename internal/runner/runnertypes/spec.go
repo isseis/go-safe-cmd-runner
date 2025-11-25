@@ -60,6 +60,17 @@ type GroupSpec struct {
 	VerifyFiles []string `toml:"verify_files"` // Files to verify for this group (raw paths)
 	EnvAllowed  []string `toml:"env_allowed"`  // Group-level environment variable allowlist
 
+	// CmdAllowed is the list of additional commands allowed to be executed in this group.
+	// Each element is an absolute path (before variable expansion).
+	//
+	// Behavior when empty:
+	//   - nil: Field was omitted (no group-level additional permissions)
+	//   - []: Empty array was explicitly specified (same behavior as nil, no additional permissions)
+	//
+	// Example:
+	//   cmd_allowed = ["/home/user/bin/tool1", "%{home}/bin/tool2"]
+	CmdAllowed []string `toml:"cmd_allowed"`
+
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Group-level environment variables in KEY=VALUE format
 	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
