@@ -39,8 +39,6 @@ const (
 	ResourceTypePrivilege ResourceType = "privilege"
 	// ResourceTypeNetwork represents network operations
 	ResourceTypeNetwork ResourceType = "network"
-	// ResourceTypeProcess represents process management
-	ResourceTypeProcess ResourceType = "process"
 )
 
 // String returns the string representation of ResourceType
