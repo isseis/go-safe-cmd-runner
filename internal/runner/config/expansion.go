@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -410,18 +411,90 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	return runtime, nil
 }
 
+// expandCmdAllowed expands and validates cmd_allowed paths.
+//
+// Processing steps:
+//  1. Variable expansion: %{var} -> actual value
+//  2. Empty string validation: reject empty strings
+//  3. Absolute path validation: must start with '/'
+//  4. Path length validation: must not exceed MaxPathLength
+//  5. Symbolic link resolution: filepath.EvalSymlinks
+//  6. Deduplication: remove duplicate paths
+//
+// Parameters:
+//   - rawPaths: List of paths to expand (may contain variable references)
+//   - vars: Variable map for expansion (%{key} -> value)
+//   - groupName: Group name for error messages
+//
+// Returns:
+//   - []string: Expanded and normalized path list
+//   - error: Expansion or validation error
+func expandCmdAllowed(
+	rawPaths []string,
+	vars map[string]string,
+	groupName string,
+) ([]string, error) {
+	result := make([]string, 0, len(rawPaths))
+	seen := make(map[string]bool) // for deduplication
+
+	for i, rawPath := range rawPaths {
+		// 1. Empty string check
+		if rawPath == "" {
+			return nil, fmt.Errorf("group[%s] cmd_allowed[%d]: %w", groupName, i, ErrEmptyPath)
+		}
+
+		// 2. Variable expansion
+		expanded, err := ExpandString(rawPath, vars, fmt.Sprintf("group[%s]", groupName), fmt.Sprintf("cmd_allowed[%d]", i))
+		if err != nil {
+			return nil, fmt.Errorf("group[%s] cmd_allowed[%d] '%s': %w", groupName, i, rawPath, err)
+		}
+
+		// 3. Absolute path validation
+		if !filepath.IsAbs(expanded) {
+			return nil, &InvalidPathError{
+				Path:   expanded,
+				Reason: "cmd_allowed paths must be absolute (start with '/')",
+			}
+		}
+
+		// 4. Path length validation
+		const MaxPathLength = security.DefaultMaxPathLength
+		if len(expanded) > MaxPathLength {
+			return nil, &InvalidPathError{
+				Path:   expanded,
+				Reason: fmt.Sprintf("path length exceeds maximum (%d)", MaxPathLength),
+			}
+		}
+
+		// 5. Symbolic link resolution and normalization
+		normalized, err := filepath.EvalSymlinks(expanded)
+		if err != nil {
+			return nil, fmt.Errorf("group[%s] cmd_allowed[%d] '%s': failed to resolve path: %w", groupName, i, expanded, err)
+		}
+
+		// 6. Deduplication
+		if !seen[normalized] {
+			result = append(result, normalized)
+			seen[normalized] = true
+		}
+	}
+
+	return result, nil
+}
+
 // ExpandGroup expands a GroupSpec into a RuntimeGroup.
 //
 // This function processes:
-// 1. Inherits global variables
-// 2. FromEnv: Imports system environment variables as internal variables (group-level) (NOT IMPLEMENTED YET)
+// 1. Inherit global variables
+// 2. FromEnv: Imports system environment variables as internal variables (group-level)
 // 3. Vars: Defines internal variables (group-level)
 // 4. Env: Expands environment variables using internal variables
 // 5. VerifyFiles: Expands file paths using internal variables
+// 6. CmdAllowed: Expands and validates allowed command paths
 //
 // Parameters:
 //   - spec: The group configuration spec to expand
-//   - globalVars: Global-level internal variables (from RuntimeGlobal.ExpandedVars)
+//   - globalRuntime: The global runtime configuration
 //
 // Returns:
 //   - *RuntimeGroup: The expanded runtime group configuration
@@ -489,6 +562,19 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 			return nil, err
 		}
 		runtime.ExpandedVerifyFiles[i] = expandedFile
+	}
+
+	// 6. Expand CmdAllowed
+	if len(spec.CmdAllowed) > 0 {
+		expandedCmdAllowed, err := expandCmdAllowed(
+			spec.CmdAllowed,
+			runtime.ExpandedVars,
+			spec.Name,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand cmd_allowed for group[%s]: %w", spec.Name, err)
+		}
+		runtime.ExpandedCmdAllowed = expandedCmdAllowed
 	}
 
 	// Note: Commands are not expanded at this point

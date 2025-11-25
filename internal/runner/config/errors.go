@@ -81,6 +81,12 @@ var (
 
 	// ErrNegativeTimeout indicates that a timeout value is negative
 	ErrNegativeTimeout = errors.New("timeout must not be negative")
+
+	// ErrInvalidPath is returned when a path validation fails
+	ErrInvalidPath = errors.New("invalid path")
+
+	// ErrEmptyPath is returned when a path is empty
+	ErrEmptyPath = errors.New("path cannot be empty")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
@@ -306,4 +312,26 @@ func (e *ErrDuplicateVariableDefinitionDetail) Error() string {
 
 func (e *ErrDuplicateVariableDefinitionDetail) Unwrap() error {
 	return ErrDuplicateVariableDefinition
+}
+
+// InvalidPathError provides detailed information about path validation failures.
+// This error type wraps ErrInvalidPath and is used when paths don't meet
+// requirements (e.g., not absolute, too long, failed to resolve symlinks).
+type InvalidPathError struct {
+	Path   string // The invalid path
+	Reason string // Reason why the path is invalid
+}
+
+func (e *InvalidPathError) Error() string {
+	return fmt.Sprintf("invalid path '%s': %s", e.Path, e.Reason)
+}
+
+func (e *InvalidPathError) Unwrap() error {
+	return ErrInvalidPath
+}
+
+// Is implements error comparison for InvalidPathError.
+func (e *InvalidPathError) Is(target error) bool {
+	_, ok := target.(*InvalidPathError)
+	return ok
 }
