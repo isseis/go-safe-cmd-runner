@@ -422,7 +422,14 @@ func (g *DefaultGroupExecutor) ExecuteGroup(
 
 **結論**: 現状の線形探索で実装
 
-### 5.2 シンボリックリンク解決のキャッシュ
+### 5.2 重複除去の最適化
+
+**実装**:
+- `expandCmdAllowed()` での重複パス除去
+- `map[string]struct{}` を使用（`map[string]bool` よりメモリ効率が良い）
+- 時間計算量: O(n)（n は cmd_allowed のエントリ数）
+
+### 5.3 シンボリックリンク解決のキャッシュ
 
 **検討事項**:
 - 同一コマンドの繰り返し実行時にキャッシュが有効

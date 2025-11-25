@@ -187,7 +187,7 @@ func (e *Expander) expandCmdAllowed(
     groupName string,
 ) ([]string, error) {
     result := make([]string, 0, len(rawPaths))
-    seen := make(map[string]bool) // 重複除去用
+    seen := make(map[string]struct{}) // 重複除去用
 
     for i, rawPath := range rawPaths {
         // 1. 空文字列チェック
@@ -224,9 +224,9 @@ func (e *Expander) expandCmdAllowed(
         }
 
         // 6. 重複チェックと追加
-        if !seen[normalized] {
+        if _, exists := seen[normalized]; !exists {
             result = append(result, normalized)
-            seen[normalized] = true
+            seen[normalized] = struct{}{}
         }
     }
 
@@ -676,7 +676,7 @@ cmd_allowed = ["/home/user/bin/tool"]
 **計測ポイント**: `expandCmdAllowed()` の実行時間
 
 **最適化**:
-- 重複除去は O(n) で実行（マップ使用）
+- 重複除去は O(n) で実行（`map[string]struct{}` 使用でメモリ効率化）
 - シンボリックリンク解決のキャッシュは初期実装では行わない
 
 ## 9. 実装チェックリスト

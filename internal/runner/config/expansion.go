@@ -435,7 +435,7 @@ func expandCmdAllowed(
 	groupName string,
 ) ([]string, error) {
 	result := make([]string, 0, len(rawPaths))
-	seen := make(map[string]bool) // for deduplication
+	seen := make(map[string]struct{}) // for deduplication
 
 	for i, rawPath := range rawPaths {
 		// 1. Empty string check
@@ -473,9 +473,9 @@ func expandCmdAllowed(
 		}
 
 		// 6. Deduplication
-		if !seen[normalized] {
+		if _, exists := seen[normalized]; !exists {
 			result = append(result, normalized)
-			seen[normalized] = true
+			seen[normalized] = struct{}{}
 		}
 	}
 
