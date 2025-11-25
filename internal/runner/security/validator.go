@@ -233,3 +233,51 @@ func validateDangerousRootPatterns(patterns []string) error {
 	}
 	return nil
 }
+
+// ValidateCommandAllowed checks whether a command path is permitted for execution.
+// Validation logic:
+//  1. If the command matches any AllowedCommands regex pattern -> allowed
+//  2. Else if groupCmdAllowed list is provided and the resolved command path matches one of them -> allowed
+//  3. Otherwise returns *CommandNotAllowedError (wrapping ErrCommandNotAllowed)
+//
+// Parameters:
+//   - cmdPath: absolute command path (already expanded)
+//   - groupCmdAllowed: expanded, normalized, symlink-resolved group-level allowed command list (may be nil or empty)
+//
+// Returns:
+//   - nil if allowed
+//   - error (*CommandNotAllowedError or other structural errors)
+func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed []string) error {
+	// Basic input validation
+	if cmdPath == "" {
+		return ErrEmptyCommandPath
+	}
+
+	// 1. Global AllowedCommands pattern match (using precompiled regexps)
+	for _, re := range v.allowedCommandRegexps {
+		if re.MatchString(cmdPath) {
+			return nil
+		}
+	}
+
+	// 2. Group-level cmd_allowed list check
+	if len(groupCmdAllowed) > 0 {
+		// Resolve symlinks for the command path before comparison to ensure consistency
+		normalizedCmd, err := filepath.EvalSymlinks(cmdPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
+		}
+		for _, allowed := range groupCmdAllowed {
+			if normalizedCmd == allowed { // Exact match after resolution
+				return nil
+			}
+		}
+	}
+
+	// 3. Neither global patterns nor group-level list matched -> not allowed
+	return &CommandNotAllowedError{
+		CommandPath:     cmdPath,
+		AllowedPatterns: v.config.AllowedCommands,
+		GroupCmdAllowed: groupCmdAllowed,
+	}
+}
