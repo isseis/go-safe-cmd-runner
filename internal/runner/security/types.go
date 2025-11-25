@@ -176,7 +176,6 @@ func DefaultConfig() *Config {
 			"^/usr/bin/.*",
 			"^/usr/sbin/.*",
 			"^/usr/local/bin/.*",
-			"^/snap/bin/.*",
 		},
 		RequiredFilePermissions:      DefaultFilePermissions,
 		RequiredDirectoryPermissions: DefaultDirectoryPermissions,
