@@ -1117,7 +1117,78 @@ If the hash of a specified file has not been recorded in advance, a verification
 - **Performance**: File hash verification operates efficiently with minimal performance impact
 - **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
-## 4.9 output_size_limit - Maximum Output Size
+## 4.9 Global Command Allowlist (Hardcoded)
+
+### Overview
+
+**IMPORTANT**: The global command allowlist is **hardcoded** in the program for security reasons and **cannot be configured** via the TOML file.
+
+The following regex patterns are used to determine which commands are allowed to execute globally:
+
+```
+^/bin/.*
+^/usr/bin/.*
+^/usr/sbin/.*
+^/usr/local/bin/.*
+```
+
+### Security Rationale
+
+The global command allowlist is hardcoded to prevent security misconfigurations. Allowing users to weaken these restrictions through configuration could:
+
+- Enable execution of commands from untrusted locations
+- Bypass security controls
+- Increase attack surface
+
+### Extending Allowed Commands
+
+For commands outside the hardcoded patterns, use **group-level `cmd_allowed`** (see Chapter 5.3.6):
+
+```toml
+[global]
+env_import = ["home=HOME"]
+
+[[groups]]
+name = "custom_tools"
+# Allow additional commands for this group only
+cmd_allowed = [
+    "%{home}/bin/custom_tool",
+    "/opt/myapp/bin/processor",
+]
+
+[[groups.commands]]
+name = "run_custom"
+cmd = "%{home}/bin/custom_tool"  # Allowed via group-level cmd_allowed
+args = ["--verbose"]
+
+[[groups.commands]]
+name = "run_sh"
+cmd = "/bin/sh"  # Allowed via hardcoded global patterns
+args = ["-c", "echo hello"]
+```
+
+### Command Validation Logic
+
+Commands are allowed if they match **EITHER**:
+
+1. **Hardcoded global patterns** (applies to all groups), **OR**
+2. **Group-level `cmd_allowed`** (applies to specific group only)
+
+See Chapter 5.3.6 for details on group-level `cmd_allowed`.
+
+### Notes
+
+#### 1. Pattern Matching
+
+The hardcoded patterns are matched against the full absolute path of the command after resolving symlinks.
+
+#### 2. Security Best Practices
+
+- **Use Anchored Patterns**: Always use `^` at the start to anchor patterns
+- **Be Specific**: Prefer specific patterns over broad ones
+- **Combine with cmd_allowed**: Use group-level `cmd_allowed` for exceptions rather than broadening global patterns
+
+## 4.10 output_size_limit - Maximum Output Size
 
 ### Overview
 

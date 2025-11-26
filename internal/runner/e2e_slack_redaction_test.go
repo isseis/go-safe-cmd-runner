@@ -97,7 +97,9 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	slog.SetDefault(logger)
 
 	// Use real validator with redaction enabled (Case 2)
+	// Include AllowedCommands pattern to allow /bin/sh for testing
 	realValidator, err := security.NewValidator(&security.Config{
+		AllowedCommands: []string{"^/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},
@@ -215,7 +217,9 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 	slog.SetDefault(logger)
 
 	// Use real validator with redaction enabled
+	// Include AllowedCommands pattern to allow /bin/sh for testing
 	realValidator, err := security.NewValidator(&security.Config{
+		AllowedCommands: []string{"^/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},

@@ -65,7 +65,9 @@ func TestIntegration_DualDefense(t *testing.T) {
 	fs := common.NewDefaultFileSystem()
 
 	// Use REAL validator with redaction enabled (Case 2)
+	// Include AllowedCommands pattern to allow /bin/sh for testing
 	realValidator, err := security.NewValidator(&security.Config{
+		AllowedCommands: []string{"^/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},
@@ -171,6 +173,8 @@ func TestIntegration_Case1Only(t *testing.T) {
 	// This simulates a scenario where Case 2 is not working, so Case 1 must protect alone
 	mockValidator := new(securitytesting.MockValidator)
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// Mock ValidateCommandAllowed - allow all commands for this test
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
 	// Return original output WITHOUT sanitization (simulating Case 2 disabled)
 	// For testify mock, we need to set up the expectation to return the argument value
 	mockValidator.On("SanitizeOutputForLogging", mock.MatchedBy(func(_ string) bool {
@@ -265,7 +269,9 @@ func TestIntegration_Case2Only(t *testing.T) {
 	fs := common.NewDefaultFileSystem()
 
 	// Use REAL validator with redaction enabled (Case 2 - enabled)
+	// Include AllowedCommands pattern to allow /bin/sh for testing
 	realValidator, err := security.NewValidator(&security.Config{
+		AllowedCommands: []string{"^/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},
@@ -365,7 +371,9 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 
 	// Use REAL validator with redaction enabled (Case 2 - enabled)
 	// However, this is NOT sufficient at DEBUG level
+	// Include AllowedCommands pattern to allow /bin/sh for testing
 	realValidator, err := security.NewValidator(&security.Config{
+		AllowedCommands: []string{"^/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},

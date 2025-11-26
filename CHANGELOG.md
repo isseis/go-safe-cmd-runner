@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Group-Level Command Allowlist (`cmd_allowed`)
+
+Added the ability to define group-specific allowed commands that are not covered by hardcoded global patterns. This feature enables finer-grained security control.
+
+**Hardcoded Global Patterns** (not configurable from TOML):
+```
+^/bin/.*
+^/usr/bin/.*
+^/usr/sbin/.*
+^/usr/local/bin/.*
+```
+
+**Features:**
+- `cmd_allowed` field in `[[groups]]` sections for per-group command allowlists
+- Variable expansion support (`%{variable}`) for flexible path configuration
+- OR condition evaluation: commands pass if they match EITHER hardcoded global patterns OR group-level list
+- Symlink resolution and path normalization for security
+- Absolute path requirement prevents path traversal attacks
+- All other security checks (permissions, risk assessment) remain active
+- Global patterns are hardcoded for security (cannot be configured from TOML)
+
+**Configuration Example:**
+```toml
+[global]
+env_import = ["home=HOME"]
+
+[[groups]]
+name = "custom_build"
+cmd_allowed = [
+    "%{home}/bin/custom_tool",
+    "/opt/myapp/bin/processor"
+]
+
+[[groups.commands]]
+name = "run_custom"
+cmd = "%{home}/bin/custom_tool"
+args = ["--verbose"]
+```
+
+**Sample File:** See `sample/group_cmd_allowed.toml` for complete examples.
+
 #### File Verification in Dry-Run Mode
 
 Dry-run mode now performs file verification checks, providing visibility into the integrity status of configuration files, global files, group files, and executables without interrupting execution.

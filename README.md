@@ -241,6 +241,45 @@ args = ["-c", "echo 'PID: ${__RUNNER_PID}, Time: ${__RUNNER_DATETIME}' >> /var/l
 
 **Note**: The prefix `__RUNNER_` is reserved and cannot be used for user-defined environment variables.
 
+### Group-Level Command Allowlist
+
+Groups can define additional allowed commands beyond the hardcoded global patterns:
+
+**Hardcoded global patterns** (not configurable from TOML):
+```
+^/bin/.*
+^/usr/bin/.*
+^/usr/sbin/.*
+^/usr/local/bin/.*
+```
+
+```toml
+[global]
+env_import = ["home=HOME"]
+
+[[groups]]
+name = "custom_build"
+# Additional commands allowed only in this group
+cmd_allowed = [
+    "%{home}/bin/custom_tool",
+    "/opt/myapp/bin/processor"
+]
+
+[[groups.commands]]
+name = "run_custom"
+cmd = "%{home}/bin/custom_tool"
+args = ["--verbose"]
+```
+
+**Key features**:
+- Commands pass if they match EITHER hardcoded global patterns OR group-level `cmd_allowed` list
+- Variable expansion (`%{variable}`) is supported in `cmd_allowed` paths
+- Only absolute paths are allowed (relative paths are rejected for security)
+- All other security checks (permissions, risk assessment) remain active
+- Global patterns are hardcoded for security (cannot be configured from TOML)
+
+See `sample/group_cmd_allowed.toml` for complete examples.
+
 For detailed configuration file documentation, refer to the following documents:
 
 - [TOML Configuration File User Guide](docs/user/toml_config/README.md) - Comprehensive configuration guide

@@ -392,6 +392,11 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		cmd.ExpandedCmd = resolvedPath
 	}
 
+	// Validate that the command is allowed (global AllowedCommands OR group-level cmd_allowed)
+	if err := ge.validator.ValidateCommandAllowed(cmd.ExpandedCmd, runtimeGroup.ExpandedCmdAllowed); err != nil {
+		return nil, fmt.Errorf("command not allowed: %w", err)
+	}
+
 	// Note: EffectiveWorkDir should be set earlier in ExecuteGroup()
 	// If still empty at this point, the command will use the process's current working directory
 

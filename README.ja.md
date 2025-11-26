@@ -239,6 +239,36 @@ args = ["-c", "echo 'PID: ${__RUNNER_PID}, Time: ${__RUNNER_DATETIME}' >> /var/l
 
 **注意**: プレフィックス `__RUNNER_` は予約されており、ユーザー定義の環境変数では使用できません。
 
+### グループレベルコマンド許可リスト
+
+グループごとに、ハードコードされたグローバルパターン（`^/bin/.*`, `^/usr/bin/.*`, `^/usr/sbin/.*`, `^/usr/local/bin/.*`）以外の追加コマンドを許可できます：
+
+```toml
+[global]
+env_import = ["home=HOME"]
+
+[[groups]]
+name = "custom_build"
+# このグループでのみ許可される追加コマンド
+cmd_allowed = [
+    "%{home}/bin/custom_tool",
+    "/opt/myapp/bin/processor"
+]
+
+[[groups.commands]]
+name = "run_custom"
+cmd = "%{home}/bin/custom_tool"
+args = ["--verbose"]
+```
+
+**主な特徴**:
+- ハードコードされたグローバルパターンまたはグループレベルの `cmd_allowed` リストのいずれかにマッチすればコマンド実行可能
+- `cmd_allowed` パスで変数展開（`%{variable}`）をサポート
+- 絶対パスのみ許可（相対パスはセキュリティのため拒否）
+- 他のセキュリティチェック（パーミッション、リスク評価など）は継続して実行
+
+完全な例は `sample/group_cmd_allowed.toml` を参照してください。
+
 ### 詳細な設定方法
 
 設定ファイルの詳細な記述方法については、以下のドキュメントを参照してください：

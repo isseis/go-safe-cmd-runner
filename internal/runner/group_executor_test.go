@@ -372,6 +372,8 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 	// Mock validator to allow all validations
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// Mock ValidateCommandAllowed - allow all commands for this test
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
 	// Mock sanitization to allow testing command execution without actual redaction
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
@@ -441,6 +443,8 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 	// Mock validator to allow all validations
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// Mock ValidateCommandAllowed - allow all commands for this test
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
 	// Mock sanitization to allow testing command execution without actual redaction
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
@@ -475,6 +479,8 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 
 	// Setup validator mocks - need to preserve actual output for this test
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	// Mock ValidateCommandAllowed - allow all commands for this test
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
 	// Return input as-is for sanitization in this test
 	mockValidator.On("SanitizeOutputForLogging", "success").Return("success")
 	mockValidator.On("SanitizeOutputForLogging", "").Return("")
@@ -1267,6 +1273,8 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behaviors for validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil).Maybe()
+	// Mock ValidateCommandAllowed - allow all commands for this test
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil).Maybe()
 	// Mock sanitization (optional, as not all tests using this setup execute command output handling)
 	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("").Maybe()
 
@@ -2572,6 +2580,8 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+			// Mock ValidateCommandAllowed - allow all commands for this test
+			mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
 			// Mock sanitization to allow testing command execution without actual redaction
 			mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
