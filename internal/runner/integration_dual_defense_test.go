@@ -65,9 +65,10 @@ func TestIntegration_DualDefense(t *testing.T) {
 	fs := common.NewDefaultFileSystem()
 
 	// Use REAL validator with redaction enabled (Case 2)
-	// Include AllowedCommands pattern to allow /bin/sh for testing
+	// Include AllowedCommands patterns to allow /bin/sh for testing
+	// Note: /bin/sh may be a symlink to /usr/bin/dash or similar, so we need both patterns
 	realValidator, err := security.NewValidator(&security.Config{
-		AllowedCommands: []string{"^/bin/.*"},
+		AllowedCommands: []string{"^/bin/.*", "^/usr/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},
@@ -269,9 +270,10 @@ func TestIntegration_Case2Only(t *testing.T) {
 	fs := common.NewDefaultFileSystem()
 
 	// Use REAL validator with redaction enabled (Case 2 - enabled)
-	// Include AllowedCommands pattern to allow /bin/sh for testing
+	// Include AllowedCommands patterns to allow /bin/sh for testing
+	// Note: /bin/sh may be a symlink to /usr/bin/dash or similar, so we need both patterns
 	realValidator, err := security.NewValidator(&security.Config{
-		AllowedCommands: []string{"^/bin/.*"},
+		AllowedCommands: []string{"^/bin/.*", "^/usr/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},
@@ -371,9 +373,10 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 
 	// Use REAL validator with redaction enabled (Case 2 - enabled)
 	// However, this is NOT sufficient at DEBUG level
-	// Include AllowedCommands pattern to allow /bin/sh for testing
+	// Include AllowedCommands patterns to allow /bin/sh for testing
+	// Note: /bin/sh may be a symlink to /usr/bin/dash or similar, so we need both patterns
 	realValidator, err := security.NewValidator(&security.Config{
-		AllowedCommands: []string{"^/bin/.*"},
+		AllowedCommands: []string{"^/bin/.*", "^/usr/bin/.*"},
 		LoggingOptions: security.LoggingOptions{
 			RedactSensitiveInfo: true,
 		},
