@@ -1121,8 +1121,7 @@ Even if a command is allowed via `cmd_allowed`, other security validations conti
 - Environment variable validation
 
 ##### 2. Variable Expansion Timing
-
-Variables in `cmd_allowed` are expanded when the group is prepared for execution, not at configuration load time. This allows use of runtime variables.
+Variables in `cmd_allowed` are expanded during the initial configuration loading and preparation phase, before any commands are executed. This allows the use of variables defined at the global or group level.
 
 ##### 3. Best Practices
 
