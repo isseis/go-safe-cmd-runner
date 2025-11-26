@@ -1101,6 +1101,87 @@ if !filepath.IsAbs(hashDir) {
 - リアルタイムセキュリティアラートのSlack統合
 - 全監視チャンネルでの自動機密データ編集
 
+## 既知のセキュリティ制限
+
+### TOCTOU (Time-of-Check to Time-of-Use) 競合状態
+
+#### 脆弱性の概要
+
+コマンドパス検証（`ValidateCommandAllowed`）と実際のコマンド実行の間に、理論的なTOCTOU競合状態が存在します。ファイルシステムへの書き込み権限を持つ攻撃者は、これらの操作の間にシンボリックリンクのターゲットを置き換える可能性があります。
+
+**脆弱性の場所**:
+```go
+// 場所: internal/runner/security/validator.go:255-295
+func (v *Validator) ValidateCommandAllowed(cmdPath string, ...) error {
+    // 1. シンボリックリンクを解決して検証（Check）
+    resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
+    // パターンマッチング検証...
+}
+
+// 場所: internal/runner/group_executor.go:396-412
+// 検証後、実際の実行までの間にTOCTOUウィンドウが存在
+if err := ge.validator.ValidateCommandAllowed(...); err != nil {
+    return nil, fmt.Errorf("command not allowed: %w", err)
+}
+// ... (ここで攻撃者がシンボリックリンクを変更可能)
+token, resourceResult, err := ge.resourceManager.ExecuteCommand(...) // Use
+```
+
+#### 攻撃の要件
+
+この脆弱性を悪用するには、攻撃者は以下を満たす必要があります：
+1. ファイルシステムへの書き込み権限
+2. 検証と実行の間の正確なタイミング
+3. シンボリックリンクを配置・変更する能力
+
+#### 緩和策
+
+以下の多層防御メカニズムにより、攻撃の実現可能性と影響を大幅に軽減しています：
+
+**1. ファイル整合性検証**:
+- すべての実行ファイルはSHA-256ハッシュ検証により実行前に検証されます
+- ハッシュ検証システムが改ざんされたバイナリの検出と実行防止を提供
+- 場所: `internal/filevalidator/`, `internal/verification/`
+
+**2. セキュリティモデル境界**:
+- システムのセキュリティモデルは、ファイルシステムへの書き込み権限を持つ攻撃者を信頼境界外と定義
+- 適切に設定されたシステムでは、実行ファイルディレクトリへの書き込み権限は制限されるべき
+
+**3. デプロイメント推奨事項**:
+高セキュリティ環境では、以下の追加対策を推奨：
+- 実行ファイルディレクトリを読み取り専用ファイルシステムとしてマウント
+- `nosymfollow`マウントオプションの使用（利用可能な場合）
+- 厳格なファイルシステム権限の実施
+- 定期的なファイル整合性監視
+
+#### 技術的背景
+
+**完全な対策の実現困難性**:
+Goの標準`os/exec`パッケージは、TOCTOU攻撃を完全に防ぐ`fexecve()`システムコールをサポートしていません。完全な対策には以下が必要：
+1. CGOを使用した低レベルシステムコール実装
+2. ファイルディスクリプタベースの実行フロー
+3. プラットフォーム固有のコード（Linux `fexecve()`、Windows代替）
+
+このような実装は、以下の理由から現実的ではありません：
+- 大幅なアーキテクチャ変更が必要
+- プラットフォーム互換性の複雑化
+- 保守性の低下
+- 既存の多層防御で十分な保護を提供
+
+#### 影響評価
+
+**リスクレベル**: 低〜中
+- **実現可能性**: 低（厳格な要件、正確なタイミング必要）
+- **影響**: 中（ファイル整合性検証により制限）
+- **検出可能性**: 高（監査ログ、ファイル整合性監視）
+
+#### 参考資料
+
+- [Safe programming. How to avoid TOCTOU vulnerability](https://stackoverflow.com/questions/41069166/)
+- [CERT C Coding Standard: POS35-C](https://wiki.sei.cmu.edu/confluence/display/c/POS35-C.+Avoid+race+conditions+while+checking+for+the+existence+of+a+symbolic+link)
+- [Wikipedia: Symlink race](https://en.wikipedia.org/wiki/Symlink_race)
+- [Star Lab Software: Linux Symbolic Links Security](https://www.starlab.io/blog/linux-symbolic-links-convenient-useful-and-a-whole-lot-of-trouble)
+
 ## 結論
 
 Go Safe Command Runnerは、特権委譲による安全なコマンド実行のための包括的なセキュリティフレームワークを提供します。多層アプローチは、最新のセキュリティプリミティブ（openat2）と実証済みのセキュリティ原則（多層防御、ゼロトラスト、フェイルセーフ設計）を組み合わせて、セキュリティを重視する環境での本番使用に適した堅牢なシステムを作成します。

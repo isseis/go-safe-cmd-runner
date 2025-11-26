@@ -236,9 +236,14 @@ func validateDangerousRootPatterns(patterns []string) error {
 
 // ValidateCommandAllowed checks whether a command path is permitted for execution.
 // Validation logic:
-//  1. If the command matches any AllowedCommands regex pattern -> allowed
-//  2. Else if groupCmdAllowed map is provided and contains the resolved command path -> allowed
-//  3. Otherwise returns *CommandNotAllowedError (wrapping ErrCommandNotAllowed)
+//  1. Resolve symlinks to get canonical path (security: prevents symlink bypass attacks)
+//  2. If the resolved command matches any AllowedCommands regex pattern -> allowed
+//  3. Else if groupCmdAllowed map is provided and contains the resolved command path -> allowed
+//  4. Otherwise returns *CommandNotAllowedError (wrapping ErrCommandNotAllowed)
+//
+// Security note: Both global pattern matching and group-level allowlist checks are
+// performed against the symlink-resolved canonical path. This prevents attacks where
+// a symlink like /usr/bin/safe-looking-name points to a disallowed command.
 //
 // Parameters:
 //   - cmdPath: absolute command path (already expanded)
@@ -253,26 +258,30 @@ func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[s
 		return ErrEmptyCommandPath
 	}
 
-	// 1. Global AllowedCommands pattern match (using precompiled regexps)
+	// 1. Resolve symlinks to get canonical path for security
+	// This must happen before any allowlist checks to prevent symlink bypass attacks
+	resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
+	}
+
+	// 2. Global AllowedCommands pattern match (using precompiled regexps)
+	// Patterns are matched against the resolved canonical path
 	for _, re := range v.allowedCommandRegexps {
-		if re.MatchString(cmdPath) {
+		if re.MatchString(resolvedCmd) {
 			return nil
 		}
 	}
 
-	// 2. Group-level cmd_allowed map check (O(1) lookup)
+	// 3. Group-level cmd_allowed map check (O(1) lookup)
+	// The map already contains symlink-resolved paths, so we compare resolved paths
 	if len(groupCmdAllowed) > 0 {
-		// Resolve symlinks for the command path before comparison to ensure consistency
-		normalizedCmd, err := filepath.EvalSymlinks(cmdPath)
-		if err != nil {
-			return fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
-		}
-		if _, exists := groupCmdAllowed[normalizedCmd]; exists {
+		if _, exists := groupCmdAllowed[resolvedCmd]; exists {
 			return nil
 		}
 	}
 
-	// 3. Neither global patterns nor group-level map matched -> not allowed
+	// 4. Neither global patterns nor group-level map matched -> not allowed
 	// Convert map keys to slice for error message
 	var groupCmdAllowedSlice []string
 	for path := range groupCmdAllowed {

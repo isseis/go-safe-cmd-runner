@@ -17,13 +17,24 @@ func newValidatorForCmdAllowedTest(t *testing.T, patterns []string) *Validator {
 	return validator
 }
 
+// resolvedEchoPattern returns a regex pattern that matches the symlink-resolved
+// path of /bin/echo. This is necessary because ValidateCommandAllowed now
+// resolves symlinks before pattern matching for security.
+func resolvedEchoPattern(t *testing.T) string {
+	resolved, err := filepath.EvalSymlinks("/bin/echo")
+	require.NoError(t, err)
+	return "^" + resolved + "$"
+}
+
 func TestValidateCommandAllowed_PatternMatchSingle(t *testing.T) {
-	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
+	// Pattern must match the resolved path (e.g., /usr/bin/echo on systems where /bin -> /usr/bin)
+	v := newValidatorForCmdAllowedTest(t, []string{resolvedEchoPattern(t)})
 	err := v.ValidateCommandAllowed("/bin/echo", nil)
 	assert.NoError(t, err)
 }
 
 func TestValidateCommandAllowed_PatternMatchMultiple(t *testing.T) {
+	// Use patterns that cover both /bin/* and /usr/bin/* to handle symlink resolution
 	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/.*", "^/usr/bin/.*"})
 	err := v.ValidateCommandAllowed("/bin/echo", nil)
 	assert.NoError(t, err)
@@ -55,14 +66,16 @@ func TestValidateCommandAllowed_GroupExactMatchMultiple(t *testing.T) {
 func TestValidateCommandAllowed_ORBothMatch(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks("/bin/echo")
 	require.NoError(t, err)
-	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
+	// Pattern must match the resolved path
+	v := newValidatorForCmdAllowedTest(t, []string{resolvedEchoPattern(t)})
 	groupCmdAllowed := map[string]struct{}{resolved: {}}
 	err = v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
 }
 
 func TestValidateCommandAllowed_ORGlobalOnly(t *testing.T) {
-	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
+	// Pattern must match the resolved path
+	v := newValidatorForCmdAllowedTest(t, []string{resolvedEchoPattern(t)})
 	groupCmdAllowed := map[string]struct{}{"/some/other/path": {}}
 	err := v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
@@ -78,7 +91,8 @@ func TestValidateCommandAllowed_ORGroupOnly(t *testing.T) {
 }
 
 func TestValidateCommandAllowed_ErrorNeitherMatches(t *testing.T) {
-	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
+	// Use resolved path pattern for echo, but test with ls which resolves differently
+	v := newValidatorForCmdAllowedTest(t, []string{resolvedEchoPattern(t)})
 	err := v.ValidateCommandAllowed("/bin/ls", nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrCommandNotAllowed)
@@ -87,7 +101,8 @@ func TestValidateCommandAllowed_ErrorNeitherMatches(t *testing.T) {
 }
 
 func TestValidateCommandAllowed_ErrorEmptyGroupListNoMatch(t *testing.T) {
-	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
+	// Use resolved path pattern for echo, but test with ls
+	v := newValidatorForCmdAllowedTest(t, []string{resolvedEchoPattern(t)})
 	groupCmdAllowed := make(map[string]struct{})
 	err := v.ValidateCommandAllowed("/bin/ls", groupCmdAllowed)
 	assert.Error(t, err)

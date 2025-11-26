@@ -1103,6 +1103,87 @@ The system implements multiple security layers:
 - Slack integration for real-time security alerts
 - Automatic sensitive data redaction in all monitoring channels
 
+## Known Security Limitations
+
+### TOCTOU (Time-of-Check to Time-of-Use) Race Condition
+
+#### Vulnerability Overview
+
+A theoretical TOCTOU race condition exists between command path validation (`ValidateCommandAllowed`) and actual command execution. An attacker with filesystem write permissions could potentially replace a symlink target between these operations.
+
+**Vulnerability Location**:
+```go
+// Location: internal/runner/security/validator.go:255-295
+func (v *Validator) ValidateCommandAllowed(cmdPath string, ...) error {
+    // 1. Resolve symlinks and validate (Check)
+    resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
+    // Pattern matching validation...
+}
+
+// Location: internal/runner/group_executor.go:396-412
+// TOCTOU window exists between validation and actual execution
+if err := ge.validator.ValidateCommandAllowed(...); err != nil {
+    return nil, fmt.Errorf("command not allowed: %w", err)
+}
+// ... (attacker can modify symlink here)
+token, resourceResult, err := ge.resourceManager.ExecuteCommand(...) // Use
+```
+
+#### Attack Requirements
+
+To exploit this vulnerability, an attacker must:
+1. Have filesystem write permissions
+2. Precisely time the attack between validation and execution
+3. Be able to place and modify symlinks
+
+#### Mitigation Measures
+
+The following defense-in-depth mechanisms significantly reduce the feasibility and impact of this attack:
+
+**1. File Integrity Verification**:
+- All executables are verified against SHA-256 hashes before execution
+- The hash verification system provides detection and prevention of tampered binaries
+- Location: `internal/filevalidator/`, `internal/verification/`
+
+**2. Security Model Boundaries**:
+- The system's security model defines attackers with filesystem write permissions as outside the trust boundary
+- In properly configured systems, write permissions to executable directories should be restricted
+
+**3. Deployment Recommendations**:
+For high-security environments, the following additional measures are recommended:
+- Mount executable directories as read-only filesystems
+- Use the `nosymfollow` mount option (where available)
+- Enforce strict filesystem permissions
+- Implement regular file integrity monitoring
+
+#### Technical Background
+
+**Difficulty of Complete Mitigation**:
+Go's standard `os/exec` package does not support the `fexecve()` system call that would completely prevent TOCTOU attacks. A complete solution would require:
+1. Low-level system call implementation using CGO
+2. File descriptor-based execution flow
+3. Platform-specific code (Linux `fexecve()`, Windows alternatives)
+
+Such an implementation is impractical due to:
+- Significant architectural changes required
+- Increased platform compatibility complexity
+- Reduced maintainability
+- Existing defense-in-depth provides sufficient protection
+
+#### Impact Assessment
+
+**Risk Level**: Low to Medium
+- **Likelihood**: Low (strict requirements, precise timing needed)
+- **Impact**: Medium (limited by file integrity verification)
+- **Detectability**: High (audit logs, file integrity monitoring)
+
+#### References
+
+- [Safe programming. How to avoid TOCTOU vulnerability](https://stackoverflow.com/questions/41069166/)
+- [CERT C Coding Standard: POS35-C](https://wiki.sei.cmu.edu/confluence/display/c/POS35-C.+Avoid+race+conditions+while+checking+for+the+existence+of+a+symbolic+link)
+- [Wikipedia: Symlink race](https://en.wikipedia.org/wiki/Symlink_race)
+- [Star Lab Software: Linux Symbolic Links Security](https://www.starlab.io/blog/linux-symbolic-links-convenient-useful-and-a-whole-lot-of-trouble)
+
 ## Conclusion
 
 Go Safe Command Runner provides a comprehensive security framework for secure command execution with privilege delegation. The multi-layered approach combines modern security primitives (openat2) with proven security principles (defense-in-depth, zero-trust, fail-safe design) to create a robust system suitable for production use in security-conscious environments.
