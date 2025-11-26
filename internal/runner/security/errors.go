@@ -1,7 +1,6 @@
 package security
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -38,7 +37,7 @@ func (e *CommandNotAllowedError) Error() string {
 
 // Is enables errors.Is(err, ErrCommandNotAllowed) comparisons.
 func (e *CommandNotAllowedError) Is(target error) bool {
-	return errors.Is(target, ErrCommandNotAllowed)
+	return target == ErrCommandNotAllowed
 }
 
 // Unwrap returns the sentinel ErrCommandNotAllowed for error chain checks.
