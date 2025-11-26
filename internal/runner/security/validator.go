@@ -237,17 +237,17 @@ func validateDangerousRootPatterns(patterns []string) error {
 // ValidateCommandAllowed checks whether a command path is permitted for execution.
 // Validation logic:
 //  1. If the command matches any AllowedCommands regex pattern -> allowed
-//  2. Else if groupCmdAllowed list is provided and the resolved command path matches one of them -> allowed
+//  2. Else if groupCmdAllowed map is provided and contains the resolved command path -> allowed
 //  3. Otherwise returns *CommandNotAllowedError (wrapping ErrCommandNotAllowed)
 //
 // Parameters:
 //   - cmdPath: absolute command path (already expanded)
-//   - groupCmdAllowed: expanded, normalized, symlink-resolved group-level allowed command list (may be nil or empty)
+//   - groupCmdAllowed: expanded, normalized, symlink-resolved group-level allowed command map (may be nil or empty)
 //
 // Returns:
 //   - nil if allowed
 //   - error (*CommandNotAllowedError or other structural errors)
-func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed []string) error {
+func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[string]struct{}) error {
 	// Basic input validation
 	if cmdPath == "" {
 		return ErrEmptyCommandPath
@@ -260,24 +260,27 @@ func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed []str
 		}
 	}
 
-	// 2. Group-level cmd_allowed list check
+	// 2. Group-level cmd_allowed map check (O(1) lookup)
 	if len(groupCmdAllowed) > 0 {
 		// Resolve symlinks for the command path before comparison to ensure consistency
 		normalizedCmd, err := filepath.EvalSymlinks(cmdPath)
 		if err != nil {
 			return fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
 		}
-		for _, allowed := range groupCmdAllowed {
-			if normalizedCmd == allowed { // Exact match after resolution
-				return nil
-			}
+		if _, exists := groupCmdAllowed[normalizedCmd]; exists {
+			return nil
 		}
 	}
 
-	// 3. Neither global patterns nor group-level list matched -> not allowed
+	// 3. Neither global patterns nor group-level map matched -> not allowed
+	// Convert map keys to slice for error message
+	var groupCmdAllowedSlice []string
+	for path := range groupCmdAllowed {
+		groupCmdAllowedSlice = append(groupCmdAllowedSlice, path)
+	}
 	return &CommandNotAllowedError{
 		CommandPath:     cmdPath,
 		AllowedPatterns: v.config.AllowedCommands,
-		GroupCmdAllowed: groupCmdAllowed,
+		GroupCmdAllowed: groupCmdAllowedSlice,
 	}
 }

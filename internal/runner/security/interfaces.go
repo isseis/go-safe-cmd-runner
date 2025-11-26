@@ -7,9 +7,10 @@ type ValidatorInterface interface {
 	ValidateEnvironmentValue(key, value string) error
 	ValidateCommand(command string) error
 	// ValidateCommandAllowed checks whether a command path is permitted for execution.
-	// It validates against global AllowedCommands patterns OR group-level cmd_allowed list.
+	// It validates against global AllowedCommands patterns OR group-level cmd_allowed map.
+	// The map provides O(1) lookup performance for checking if a command is in the allowed list.
 	// Returns nil if allowed, or *CommandNotAllowedError if not permitted.
-	ValidateCommandAllowed(cmdPath string, groupCmdAllowed []string) error
+	ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[string]struct{}) error
 	// SanitizeOutputForLogging redacts sensitive information from command output
 	// This helps prevent sensitive data from being logged or sent to external systems such as Slack.
 	SanitizeOutputForLogging(output string) string

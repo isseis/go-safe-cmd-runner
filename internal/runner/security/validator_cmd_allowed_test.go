@@ -31,10 +31,11 @@ func TestValidateCommandAllowed_PatternMatchMultiple(t *testing.T) {
 
 func TestValidateCommandAllowed_GroupExactMatchSingle(t *testing.T) {
 	v := newValidatorForCmdAllowedTest(t, []string{})
-	// We need the resolved path for groupCmdAllowed list
+	// We need the resolved path for groupCmdAllowed map
 	resolved, err := filepath.EvalSymlinks("/bin/echo")
 	require.NoError(t, err)
-	err = v.ValidateCommandAllowed("/bin/echo", []string{resolved})
+	groupCmdAllowed := map[string]struct{}{resolved: {}}
+	err = v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
 }
 
@@ -43,7 +44,11 @@ func TestValidateCommandAllowed_GroupExactMatchMultiple(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks("/bin/echo")
 	require.NoError(t, err)
 	otherResolved := resolved + "-other" // ensure non-match extra element
-	err = v.ValidateCommandAllowed("/bin/echo", []string{otherResolved, resolved})
+	groupCmdAllowed := map[string]struct{}{
+		otherResolved: {},
+		resolved:      {},
+	}
+	err = v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
 }
 
@@ -51,13 +56,15 @@ func TestValidateCommandAllowed_ORBothMatch(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks("/bin/echo")
 	require.NoError(t, err)
 	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
-	err = v.ValidateCommandAllowed("/bin/echo", []string{resolved})
+	groupCmdAllowed := map[string]struct{}{resolved: {}}
+	err = v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
 }
 
 func TestValidateCommandAllowed_ORGlobalOnly(t *testing.T) {
 	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
-	err := v.ValidateCommandAllowed("/bin/echo", []string{"/some/other/path"})
+	groupCmdAllowed := map[string]struct{}{"/some/other/path": {}}
+	err := v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
 }
 
@@ -65,7 +72,8 @@ func TestValidateCommandAllowed_ORGroupOnly(t *testing.T) {
 	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/something$"})
 	resolved, err := filepath.EvalSymlinks("/bin/echo")
 	require.NoError(t, err)
-	err = v.ValidateCommandAllowed("/bin/echo", []string{resolved})
+	groupCmdAllowed := map[string]struct{}{resolved: {}}
+	err = v.ValidateCommandAllowed("/bin/echo", groupCmdAllowed)
 	assert.NoError(t, err)
 }
 
@@ -80,7 +88,8 @@ func TestValidateCommandAllowed_ErrorNeitherMatches(t *testing.T) {
 
 func TestValidateCommandAllowed_ErrorEmptyGroupListNoMatch(t *testing.T) {
 	v := newValidatorForCmdAllowedTest(t, []string{"^/bin/echo$"})
-	err := v.ValidateCommandAllowed("/bin/ls", []string{})
+	groupCmdAllowed := make(map[string]struct{})
+	err := v.ValidateCommandAllowed("/bin/ls", groupCmdAllowed)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrCommandNotAllowed)
 }

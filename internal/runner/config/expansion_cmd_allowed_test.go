@@ -27,7 +27,10 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		result, err := expandCmdAllowed(paths, vars, "testgroup")
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
-		assert.True(t, filepath.IsAbs(result[0]))
+		// Check that the map contains an absolute path
+		for path := range result {
+			assert.True(t, filepath.IsAbs(path))
+		}
 	})
 
 	t.Run("single variable expansion", func(t *testing.T) {
@@ -42,7 +45,10 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		result, err := expandCmdAllowed(paths, vars, "testgroup")
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
-		assert.Contains(t, result[0], "tool")
+		// Check that the map contains the expected tool path
+		for path := range result {
+			assert.Contains(t, path, "tool")
+		}
 	})
 
 	t.Run("multiple paths", func(t *testing.T) {
@@ -93,7 +99,10 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		result, err := expandCmdAllowed(paths, vars, "testgroup")
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
-		assert.Contains(t, result[0], "tool")
+		// Check that the map contains the expected tool path
+		for path := range result {
+			assert.Contains(t, path, "tool")
+		}
 	})
 }
 
@@ -167,7 +176,10 @@ func TestExpandGroup_WithCmdAllowed(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, runtime.ExpandedCmdAllowed)
 		assert.Len(t, runtime.ExpandedCmdAllowed, 1)
-		assert.Contains(t, runtime.ExpandedCmdAllowed[0], "tool")
+		// Check that the map contains the expected tool path
+		for path := range runtime.ExpandedCmdAllowed {
+			assert.Contains(t, path, "tool")
+		}
 	})
 
 	t.Run("nil cmd_allowed", func(t *testing.T) {

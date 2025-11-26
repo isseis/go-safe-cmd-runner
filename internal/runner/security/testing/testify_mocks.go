@@ -29,7 +29,7 @@ func (m *MockValidator) ValidateCommand(command string) error {
 }
 
 // ValidateCommandAllowed mocks the ValidateCommandAllowed method
-func (m *MockValidator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed []string) error {
+func (m *MockValidator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[string]struct{}) error {
 	args := m.Called(cmdPath, groupCmdAllowed)
 	return args.Error(0)
 }

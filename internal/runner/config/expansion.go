@@ -419,7 +419,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 //  3. Absolute path validation: must start with '/'
 //  4. Path length validation: must not exceed MaxPathLength
 //  5. Symbolic link resolution: filepath.EvalSymlinks
-//  6. Deduplication: remove duplicate paths
+//  6. Deduplication: remove duplicate paths (automatic with map)
 //
 // Parameters:
 //   - rawPaths: List of paths to expand (may contain variable references)
@@ -427,15 +427,14 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 //   - groupName: Group name for error messages
 //
 // Returns:
-//   - []string: Expanded and normalized path list
+//   - map[string]struct{}: Expanded and normalized path set for O(1) lookup
 //   - error: Expansion or validation error
 func expandCmdAllowed(
 	rawPaths []string,
 	vars map[string]string,
 	groupName string,
-) ([]string, error) {
-	result := make([]string, 0, len(rawPaths))
-	seen := make(map[string]struct{}) // for deduplication
+) (map[string]struct{}, error) {
+	result := make(map[string]struct{}, len(rawPaths))
 
 	for i, rawPath := range rawPaths {
 		// 1. Empty string check
@@ -472,11 +471,8 @@ func expandCmdAllowed(
 			return nil, fmt.Errorf("group[%s] cmd_allowed[%d] '%s': failed to resolve path: %w", groupName, i, expanded, err)
 		}
 
-		// 6. Deduplication
-		if _, exists := seen[normalized]; !exists {
-			result = append(result, normalized)
-			seen[normalized] = struct{}{}
-		}
+		// 6. Deduplication (automatic with map)
+		result[normalized] = struct{}{}
 	}
 
 	return result, nil
