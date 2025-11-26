@@ -198,7 +198,7 @@ func (e *Expander) expandCmdAllowed(
     groupName string,
 ) ([]string, error) {
     result := make([]string, 0, len(rawPaths))
-    seen := make(map[string]bool) // 重複除去用
+    seen := make(map[string]struct{}) // 重複除去用
 
     for i, rawPath := range rawPaths {
         // 1. 空文字列チェック
