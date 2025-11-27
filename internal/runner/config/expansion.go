@@ -586,17 +586,15 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	}
 
 	// 6. Expand CmdAllowed
-	if len(spec.CmdAllowed) > 0 {
-		expandedCmdAllowed, err := expandCmdAllowed(
-			spec.CmdAllowed,
-			runtime.ExpandedVars,
-			spec.Name,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to expand cmd_allowed for group[%s]: %w", spec.Name, err)
-		}
-		runtime.ExpandedCmdAllowed = expandedCmdAllowed
+	expandedCmdAllowed, err := expandCmdAllowed(
+		spec.CmdAllowed,
+		runtime.ExpandedVars,
+		spec.Name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand cmd_allowed for group[%s]: %w", spec.Name, err)
 	}
+	runtime.ExpandedCmdAllowed = expandedCmdAllowed
 
 	// Note: Commands are not expanded at this point
 	return runtime, nil

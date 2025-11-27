@@ -211,7 +211,8 @@ func TestExpandGroup_WithCmdAllowed(t *testing.T) {
 
 		runtime, err := ExpandGroup(spec, nil)
 		require.NoError(t, err)
-		assert.Nil(t, runtime.ExpandedCmdAllowed)
+		assert.NotNil(t, runtime.ExpandedCmdAllowed)
+		assert.Len(t, runtime.ExpandedCmdAllowed, 0)
 	})
 
 	t.Run("empty cmd_allowed", func(t *testing.T) {
@@ -222,7 +223,8 @@ func TestExpandGroup_WithCmdAllowed(t *testing.T) {
 
 		runtime, err := ExpandGroup(spec, nil)
 		require.NoError(t, err)
-		assert.Nil(t, runtime.ExpandedCmdAllowed)
+		assert.NotNil(t, runtime.ExpandedCmdAllowed)
+		assert.Len(t, runtime.ExpandedCmdAllowed, 0)
 	})
 
 	t.Run("error during cmd_allowed expansion", func(t *testing.T) {

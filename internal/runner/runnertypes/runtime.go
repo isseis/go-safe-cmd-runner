@@ -133,7 +133,7 @@ type RuntimeGroup struct {
 	// Using a map provides O(1) lookup time compared to O(n) for a slice,
 	// improving performance when validating command paths against the allowed list.
 	//
-	// When nil:
+	// When empty (len == 0):
 	//   - GroupSpec.CmdAllowed was nil or empty array
 	//   - No group-level additional permissions are applied
 	//
