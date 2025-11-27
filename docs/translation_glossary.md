@@ -25,6 +25,8 @@
 | 配列 | array | |
 | 代替案 | alternative | |
 | 型アサーション | type assertion | Go言語の文脈 |
+| アンカーされた | anchored | 正規表現パターンの文脈 |
+| 攻撃対象領域 | attack surface | セキュリティの文脈 |
 
 ### B
 
@@ -39,6 +41,7 @@
 | 真偽値 | boolean | |
 | 破壊的変更 | breaking change | |
 | ビルド | build | |
+| バイパスする | bypass | セキュリティコントロールの文脈 |
 
 ### C
 
@@ -60,6 +63,7 @@
 | 包括的 | comprehensive | |
 | 一貫性 | consistency | |
 | 設定 | configuration | |
+| 設定ミス | misconfiguration | セキュリティの文脈 |
 | 設定ファイル | configuration file | |
 | 制約 | constraint | |
 | 内容 | content | |
@@ -103,6 +107,7 @@
 | E2E | E2E | End-to-End の略 |
 | エッジケース | edge case | |
 | 要素 | element | |
+| 有効化する | enable | |
 | End-to-End | end-to-end | |
 | 環境 | environment | |
 | 環境変数 | environment variable | |
@@ -110,9 +115,11 @@
 | エラーメッセージ | error message | |
 | エスケープ | escape / escaping | |
 | 例 | example | |
+| 例外 | exception | |
 | 実行 | execute / execution | |
 | 実行可能ファイル | executable | |
 | 展開 | expansion | |
+| 拡張 | extend / extending | 機能拡張の文脈 |
 | エクスポート | export | |
 | 外部依存 | external dependencies | |
 | 外部サービス | external service | |
@@ -149,6 +156,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | ハンドラ | handler | slogハンドラの文脈 |
+| ハードコード | hardcoded | プログラムに埋め込まれた値 |
 | ハッシュ | hash | |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
@@ -182,10 +190,12 @@
 | ライセンス | license | |
 | 制限 | limit | |
 | リスト | list | |
+| 場所 | location | ファイルやコマンドの場所 |
 | ロケール | locale | |
 | ログ | log | |
 | ログレベル | log level | |
 | ロギング | logging | |
+| 論理 | logic | |
 | LogValuer | LogValuer | slog.LogValuer インターフェース |
 | 論理的 | logical | |
 | 喪失 | loss | |
@@ -201,6 +211,7 @@
 | Manual testing | manual testing | 手動テスト |
 | マッピング | mapping | |
 | 習得 | mastery | |
+| マッチング | matching | パターンマッチングの文脈 |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
 | 意味的 | semantic | |
 | メリット | advantage | |
@@ -254,10 +265,13 @@
 | 権限 | permission / privilege | "permission"はファイル権限、"privilege"は特権 |
 | 許可 | allow / allowed | "allowlist" の文脈では "allowed" |
 | 許可リスト | allowlist | "whitelist" は使用しない |
+| 許可する | allow | |
 | パイプ | pipe | |
+| 優先する | prefer | |
 | 実践的 | practical | |
 | 予測 | predictable / prediction | |
 | プレフィックス | prefix | |
+| 防ぐ | prevent | セキュリティの文脈 |
 | 保持 | preserve / preservation | |
 | 本番環境 | production (environment) | |
 | 優先度 | priority | |
@@ -281,8 +295,10 @@
 | 記録 | record | |
 | 再帰的 | recursive / recursively | |
 | リダイレクト | redirect | |
+| 根拠 | rationale | 理由・根拠の説明 |
 | 参照 | reference | |
 | Reflection | reflection | Go言語のreflectionパッケージ |
+| 正規表現 | regex | "regular expression" の略 |
 | 定期的 | regular | |
 | リリース | release | |
 | レポート | report | |
@@ -292,8 +308,10 @@
 | 要件定義書 | requirements document | |
 | 予約済み | reserved | |
 | 解決 | resolution | 問題解決の文脈 |
+| 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |
 | リソース | resource | |
+| 制限を緩和する | weaken restrictions | セキュリティの文脈 |
 | 戻り値 | return value | |
 | リスク | risk | |
 | リスクレベル | risk level | |
@@ -328,6 +346,7 @@
 | スキップ | skip | |
 | Slack | Slack | |
 | スライス | slice | Go言語のスライス型 |
+| 具体的 | specific | |
 | 仕様 | specification | |
 | 標準 | standard | |
 | 標準パス | standard path | |
@@ -335,6 +354,7 @@
 | 静的 | static | |
 | 文字列 | string | |
 | 構造体 | struct | Go言語の文脈 |
+| シンボリックリンク | symlink | "symbolic link" の略 |
 | 文法 | syntax | |
 | システム | system | |
 | システム環境変数 | system environment variable | |
@@ -378,6 +398,7 @@
 | 無制限 | unlimited | |
 | 無制限実行 | unlimited execution | |
 | 無制限タイムアウト | unlimited timeout | |
+| 信頼できない | untrusted | セキュリティの文脈 |
 | 更新 | update | |
 | アップロード | upload | |
 | 使用 | use / usage | |
@@ -510,6 +531,7 @@
 | 2025-10-23 | 追加用語約150語を追加。docs/user以下のドキュメントを調査して訳語を拡充 |
 | 2025-11-15 | E2E testing関連の用語を追加 (E2E, end-to-end, external dependencies, external service, manual, mock, pattern, payload, placeholder, redaction, requirement, root cause, secret, self-signed certificate, sensitive data, Slack, webhook, workaround, wrapper) |
 | 2025-11-16 | Redaction slice type conversion関連の用語を追加 (alternative, type assertion, complexity, consistency, content, conversion, disadvantage, design, edge case, element, extraction, handler, impact, interface, LogValuer, loss, semantic, advantage, method, minimum, mixed-type, overhead, point, predictable, preserve, processing, protection, purpose, reason, recursive, reflection, resolution, solution, return value, serialize, simplicity, slice, test case, truncation, typed, type information, type mismatch, use case, validity) |
+| 2025-11-27 | グローバルコマンド許可リスト関連の用語を追加 (anchored, attack surface, bypass, misconfiguration, enable, exception, extend/extending, hardcoded, location, logic, matching, prefer, prevent, rationale, regex, resolve/resolving, weaken restrictions, specific, symlink, untrusted) |
 
 ---
 
