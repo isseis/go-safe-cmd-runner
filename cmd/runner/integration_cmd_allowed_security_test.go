@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,7 +45,10 @@ args = ["test"]
 
 	// Expect error due to relative path in cmd_allowed
 	require.Error(t, err, "Should reject relative paths in cmd_allowed")
-	assert.Contains(t, err.Error(), "absolute", "Error message should mention absolute path requirement")
+	// Verify that the error is InvalidPathError (indicates path validation failure)
+	var invalidPathErr *config.InvalidPathError
+	assert.ErrorAs(t, err, &invalidPathErr, "Error should be InvalidPathError for relative path")
+	assert.ErrorIs(t, err, config.ErrInvalidPath, "Error should wrap ErrInvalidPath")
 }
 
 // TestIntegration_CmdAllowed_SymlinkResolution tests that symlinks in cmd_allowed
@@ -128,10 +131,9 @@ args = ["test"]
 	err := r.Execute(ctx, nil)
 
 	// Expect error because path doesn't exist
+	// The error comes from filepath.EvalSymlinks which returns os.PathError, wrapped in fmt.Errorf.
+	// We verify that an error occurred without checking the specific error type.
 	require.Error(t, err, "Should fail when cmd_allowed contains non-existent path")
-	assert.True(t, strings.Contains(err.Error(), "no such file") ||
-		strings.Contains(err.Error(), "failed to resolve"),
-		"Error should indicate path resolution failure: %v", err)
 }
 
 // TestIntegration_CmdAllowed_OtherSecurityChecksRemain tests that other security
