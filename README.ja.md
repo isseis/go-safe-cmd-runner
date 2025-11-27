@@ -68,7 +68,7 @@ Go Safe Command Runnerは、以下のような環境における安全なコマ�
 - **自動一時ディレクトリ**: グループごとの自動一時ディレクトリ生成とクリーンアップ機能
 - **作業ディレクトリ制御**: 固定ディレクトリまたは自動生成一時ディレクトリでの実行
 - **`__runner_workdir`変数**: 実行時作業ディレクトリを参照する予約変数
-- **変数展開**: コマンド名と引数での`${VAR}`形式の展開
+- **変数展開**: コマンド名と引数での`%{var}`形式の展開
 - **自動環境変数**: タイムスタンプとプロセス追跡のための自動生成変数
 - **出力キャプチャ**: セキュアな権限でのファイルへのコマンド出力保存
 - **バックグラウンド実行**: シグナル処理を伴う長時間実行プロセスのサポート
@@ -220,8 +220,8 @@ max_risk_level = "medium"
 
 システムは各コマンド実行時に自動的に環境変数を提供します：
 
-- `__RUNNER_DATETIME`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
-- `__RUNNER_PID`: runnerのプロセスID
+- `__runner_datetime`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
+- `__runner_pid`: runnerのプロセスID
 
 これらの変数はコマンドパス、引数、環境変数の値で使用できます：
 
@@ -229,15 +229,15 @@ max_risk_level = "medium"
 [[groups.commands]]
 name = "backup_with_timestamp"
 cmd = "/usr/bin/tar"
-args = ["czf", "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/data-%{__runner_datetime}.tar.gz", "/data"]
 
 [[groups.commands]]
 name = "log_execution"
 cmd = "/bin/sh"
-args = ["-c", "echo 'PID: ${__RUNNER_PID}, Time: ${__RUNNER_DATETIME}' >> /var/log/executions.log"]
+args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/log/executions.log"]
 ```
 
-**注意**: プレフィックス `__RUNNER_` は予約されており、ユーザー定義の環境変数では使用できません。
+**注意**: プレフィックス `__runner_` は予約されており、ユーザー定義の環境変数では使用できません。
 
 ### グループレベルコマンド許可リスト
 
@@ -321,7 +321,7 @@ args = ["--verbose"]
 - **セキュア固定PATH**: ハードコードされた`/sbin:/usr/sbin:/bin:/usr/bin`
 - **PATH継承なし**: PATH操作攻撃の排除
 - **許可リストフィルタリング**: 厳格なゼロトラスト環境制御
-- **変数展開**: 許可リスト付きのセキュアな`${VAR}`展開
+- **変数展開**: 許可リスト付きのセキュアな`%{var}`展開
 - **Command.Env優先**: 設定がOS環境を上書き
 
 ### 権限管理
