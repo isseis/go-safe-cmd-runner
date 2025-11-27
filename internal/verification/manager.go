@@ -10,6 +10,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -295,14 +296,26 @@ func (m *Manager) collectVerificationFiles(runtimeGroup *runnertypes.RuntimeGrou
 	// Add command files
 	if m.pathResolver != nil {
 		for _, command := range groupSpec.Commands {
-			// NOTE: In the new architecture, command.Cmd needs to be expanded to ExpandedCmd
-			// For now, we'll use the raw Cmd from CommandSpec
-			// TODO: Pass expanded commands here
-			resolvedPath, err := m.pathResolver.ResolvePath(command.Cmd)
+			// Expand command path using group variables
+			expandedCmd, err := config.ExpandString(
+				command.Cmd,
+				runtimeGroup.ExpandedVars,
+				fmt.Sprintf("group[%s]", groupSpec.Name),
+				"cmd")
+			if err != nil {
+				slog.Warn("Failed to expand command path",
+					"group", groupSpec.Name,
+					"command", command.Cmd,
+					"error", err.Error())
+				continue
+			}
+
+			// Resolve expanded command path
+			resolvedPath, err := m.pathResolver.ResolvePath(expandedCmd)
 			if err != nil {
 				slog.Warn("Failed to resolve command path",
 					"group", groupSpec.Name,
-					"command", command.Cmd,
+					"command", expandedCmd,
 					"error", err.Error())
 				continue
 			}
