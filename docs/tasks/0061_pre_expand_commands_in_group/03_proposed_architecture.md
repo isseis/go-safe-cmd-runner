@@ -9,19 +9,20 @@ flowchart TD
     Start([Start: ExecuteGroup]) --> ExpandGroup[1. config.ExpandGroup]
     ExpandGroup --> GroupVars[グループ変数展開]
     GroupVars --> CmdAllowed[cmd_allowed 展開]
-    CmdAllowed --> ExpandCommands[★ 全コマンド展開 ★<br/>NEW]
-    ExpandCommands --> RuntimeGroup["(RuntimeGroup<br/>Commands = []RuntimeCommand)"]
+    CmdAllowed --> RuntimeGroup["(RuntimeGroup)"]
 
     RuntimeGroup --> ResolveWorkDir[2. Working Directory 解決]
     ResolveWorkDir --> SetWorkDirVar[3. __runner_workdir 設定]
-    SetWorkDirVar --> VerifyFiles[4. verifyGroupFiles]
+    SetWorkDirVar --> ExpandCommands[4. 全コマンド展開<br/>★ NEW ★]
+    ExpandCommands --> ExpandedCommands["(RuntimeGroup<br/>Commands = []RuntimeCommand)"]
+    ExpandedCommands --> VerifyFiles[5. verifyGroupFiles]
 
     VerifyFiles --> CollectFiles[collectVerificationFiles]
     CollectFiles --> UseExpanded[展開済みコマンドを使用<br/>runtimeCmd.ExpandedCmd]
     UseExpanded --> ResolvePath[PathResolver.ResolvePath]
     ResolvePath --> VerifyHash[ハッシュ検証]
 
-    VerifyHash --> ExecuteAll[5. executeAllCommands]
+    VerifyHash --> ExecuteAll[6. executeAllCommands]
     ExecuteAll --> Loop{各コマンド}
     Loop --> UsePreExpanded[展開済みコマンドを使用<br/>runtimeGroup.Commands]
     UsePreExpanded --> Execute[executeSingleCommand]
@@ -30,53 +31,77 @@ flowchart TD
     Loop --> End([End])
 
     style ExpandCommands fill:#ccffcc
+    style ExpandedCommands fill:#ccffcc
     style UseExpanded fill:#ccffcc
     style UsePreExpanded fill:#ccffcc
-    style RuntimeGroup fill:#ccffcc
 ```
 
 ### 1.2 変更点
 
-#### 変更1: グループ展開時にコマンドも展開
+#### 変更1: ExecuteGroup でのコマンド展開追加
+
+**重要な変更**: `__runner_workdir` 変数の設定タイミングとの関係により、コマンド展開は `ExecuteGroup` 内で、作業ディレクトリ解決後に行う。
 
 **Before (現在)**:
 ```go
-func ExpandGroup(spec *GroupSpec, globalRuntime *RuntimeGlobal) (*RuntimeGroup, error) {
-    // ...
-    // 6. Expand CmdAllowed
-    runtime.ExpandedCmdAllowed = expandedCmdAllowed
+func (ge *DefaultGroupExecutor) ExecuteGroup(...) error {
+    // 1. Expand group configuration
+    runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 
-    // Commands は展開しない（nil のまま）
-    return runtime, nil
+    // 2. Determine working directory for the group
+    workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
+
+    // 3. Set __runner_workdir variable
+    runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
+
+    // 4. Verify group files
+    err := ge.verifyGroupFiles(runtimeGroup)
+
+    // 5. Execute commands (各コマンドで展開を実行)
+    commandResults, errResult, err := ge.executeAllCommands(...)
 }
 ```
 
 **After (改善後)**:
 ```go
-func ExpandGroup(spec *GroupSpec, globalRuntime *RuntimeGlobal) (*RuntimeGroup, error) {
-    // ...
-    // 6. Expand CmdAllowed
-    runtime.ExpandedCmdAllowed = expandedCmdAllowed
+func (ge *DefaultGroupExecutor) ExecuteGroup(...) error {
+    // 1. Expand group configuration
+    runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 
-    // 7. Expand Commands (NEW)
-    runtime.Commands = make([]*RuntimeCommand, len(spec.Commands))
-    for i := range spec.Commands {
-        runtimeCmd, err := ExpandCommand(
-            &spec.Commands[i],
-            runtime,
-            globalRuntime,
-            globalRuntime.Timeout(),
+    // 2. Determine working directory for the group
+    workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
+
+    // 3. Set __runner_workdir variable
+    runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
+
+    // 4. Expand all commands (NEW)
+    runtimeGroup.Commands = make([]*RuntimeCommand, len(groupSpec.Commands))
+    for i := range groupSpec.Commands {
+        runtimeCmd, err := config.ExpandCommand(
+            &groupSpec.Commands[i],
+            runtimeGroup,
+            runtimeGlobal,
+            runtimeGlobal.Timeout(),
             globalOutputSizeLimit)
         if err != nil {
-            return nil, fmt.Errorf("failed to expand command[%s]: %w",
-                spec.Commands[i].Name, err)
+            return fmt.Errorf("failed to expand command[%s]: %w",
+                groupSpec.Commands[i].Name, err)
         }
-        runtime.Commands[i] = runtimeCmd
+        runtimeGroup.Commands[i] = runtimeCmd
     }
 
-    return runtime, nil
+    // 5. Verify group files (展開済みコマンドを使用)
+    err := ge.verifyGroupFiles(runtimeGroup)
+
+    // 6. Execute commands (展開済みコマンドを使用)
+    commandResults, errResult, err := ge.executeAllCommands(...)
 }
 ```
+
+**`__runner_workdir` の扱い**:
+- `cmd` フィールドで `__runner_workdir` を使用した場合はエラーとする
+  - コマンドパスに作業ディレクトリを含める正当なユースケースは存在しない
+- `args` や `env` では引き続き使用可能（実行時に展開されるため問題ない）
 
 #### 変更2: 検証時に展開済みコマンドを使用
 
@@ -452,9 +477,181 @@ flowchart TD
 - 実行前に失敗するため、混乱がない
 - デバッグが容易
 
-## 6. 実装の段階的移行
+## 6. Dry-runモードへの影響
 
-### 6.1 移行ステップ
+### 6.1 現在のDry-run実装
+
+Dry-runモードは`DryRunResourceManager`で実装されており、既に展開済みの`RuntimeCommand`を前提に設計されている：
+
+```go
+// internal/runner/resource/dryrun_manager.go:150-180
+func (d *DryRunResourceManager) ExecuteCommand(
+    ctx context.Context,
+    cmd *runnertypes.RuntimeCommand,  // ← 展開済みRuntimeCommandを受け取る
+    group *runnertypes.GroupSpec,
+    env map[string]string,
+) (CommandToken, *ExecutionResult, error) {
+    start := time.Now()
+
+    // コマンド分析（展開済みフィールドを使用）
+    analysis, err := d.analyzeCommand(ctx, cmd, group, env)
+    // ...
+}
+
+// internal/runner/resource/dryrun_manager.go:200-268
+func (d *DryRunResourceManager) analyzeCommand(
+    _ context.Context,
+    cmd *runnertypes.RuntimeCommand,
+    group *runnertypes.GroupSpec,
+    env map[string]string,
+) (ResourceAnalysis, error) {
+    analysis := ResourceAnalysis{
+        Type:      ResourceTypeCommand,
+        Operation: OperationExecute,
+        Target:    cmd.ExpandedCmd,  // ← 展開済みコマンド
+        Parameters: map[string]ParameterValue{
+            "command":           NewStringValue(cmd.ExpandedCmd),
+            "working_directory": NewStringValue(cmd.EffectiveWorkDir),
+            "timeout":           NewIntValue(int64(cmd.EffectiveTimeout)),
+            // ...
+        },
+    }
+
+    // セキュリティ分析（展開済み引数を使用）
+    d.analyzeCommandSecurity(cmd, &analysis)
+    // ...
+}
+
+// internal/runner/resource/dryrun_manager.go:272-294
+func (d *DryRunResourceManager) analyzeCommandSecurity(
+    cmd *runnertypes.RuntimeCommand,
+    analysis *ResourceAnalysis,
+) error {
+    // 展開済みコマンドパスを解決
+    resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
+    // ...
+
+    // セキュリティ分析（展開済み引数を使用）
+    riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(
+        resolvedPath,
+        cmd.ExpandedArgs,  // ← 展開済み引数
+        opts,
+    )
+    // ...
+}
+```
+
+### 6.2 事前展開による変更
+
+#### 6.2.1 実行フローの変更
+
+**現在のフロー**（Dry-run）:
+```mermaid
+flowchart TD
+    Start([ExecuteGroup]) --> ExpandGroup[1. ExpandGroup]
+    ExpandGroup --> ResolveWorkDir[2. Working Directory 解決]
+    ResolveWorkDir --> SetWorkDir[3. __runner_workdir 設定]
+    SetWorkDir --> Verify[4. verifyGroupFiles<br/>警告のみ]
+
+    Verify --> Loop{各コマンド}
+    Loop --> ExpandCmd[5. config.ExpandCommand<br/>★展開実行★]
+    ExpandCmd --> DryRunExec[6. DryRunResourceManager<br/>.ExecuteCommand]
+    DryRunExec --> Analyze[7. analyzeCommand]
+    Analyze --> Loop
+
+    Loop --> End([End])
+
+    style ExpandCmd fill:#ffffcc
+    style Analyze fill:#ccffcc
+```
+
+**事前展開後のフロー**（Dry-run）:
+```mermaid
+flowchart TD
+    Start([ExecuteGroup]) --> ExpandGroup[1. ExpandGroup]
+    ExpandGroup --> ResolveWorkDir[2. Working Directory 解決]
+    ResolveWorkDir --> SetWorkDir[3. __runner_workdir 設定]
+    SetWorkDir --> ExpandAll[4. 全コマンド展開<br/>★NEW: 事前展開★]
+    ExpandAll --> Verify[5. verifyGroupFiles<br/>展開済み使用]
+
+    Verify --> Loop{各コマンド}
+    Loop --> DryRunExec[6. DryRunResourceManager<br/>.ExecuteCommand]
+    DryRunExec --> Analyze[7. analyzeCommand<br/>展開済み使用]
+    Analyze --> Loop
+
+    Loop --> End([End])
+
+    style ExpandAll fill:#ccffcc
+    style Verify fill:#ccffcc
+    style Analyze fill:#ccffcc
+```
+
+#### 6.2.2 互換性評価
+
+| 観点 | 評価 | 詳細 |
+|------|------|------|
+| **API互換性** | ✅ 完全互換 | `DryRunResourceManager`のインターフェースは変更なし |
+| **動作互換性** | ✅ 完全互換 | 展開済み`RuntimeCommand`を受け取る設計は変わらない |
+| **エラー検出** | ✅ 改善 | コマンド展開エラーがdry-run開始前に検出される |
+| **メモリ使用** | ✅ 問題なし | dry-runモード自体はメモリを増やさない |
+
+#### 6.2.3 Verification Managerとの連携
+
+**現在**（Dry-run）:
+```go
+// verification/manager.go:298-324
+for _, command := range groupSpec.Commands {
+    expandedCmd, err := config.ExpandString(command.Cmd, runtimeGroup.ExpandedVars, ...)
+    if err != nil {
+        slog.Warn("Failed to expand command path", ...)
+        continue  // ← dry-runモードでも警告のみ（実行は継続）
+    }
+    resolvedPath, err := m.pathResolver.ResolvePath(expandedCmd)
+    // ...
+}
+```
+
+**事前展開後**（Dry-run）:
+```go
+// verification/manager.go（修正後）
+for _, runtimeCmd := range runtimeGroup.Commands {
+    // 既に展開済み - エラーハンドリング不要
+    resolvedPath, err := m.pathResolver.ResolvePath(runtimeCmd.ExpandedCmd)
+    // ...
+}
+```
+
+**影響**:
+- ✅ dry-runモードでも検証フェーズの展開処理が不要になる
+- ✅ 展開エラーは`ExecuteGroup`の早期段階で発生（dry-runでも同様）
+- ✅ より早い段階でのエラー検出が可能
+
+### 6.3 Dry-runモードでの追加メリット
+
+1. **早期エラー検出**:
+   - 現在: 実行ループ内でコマンドごとに展開エラーが発生する可能性
+   - 改善後: グループ展開時に全コマンドの展開エラーを一括検出
+
+2. **一貫性の向上**:
+   - dry-runモードでも通常モードでも同じタイミングでエラーが発生
+   - エラーメッセージが統一される
+
+3. **分析の正確性**:
+   - 全コマンドが正常に展開されることが保証された後に分析を実行
+   - 部分的な分析結果を出力するリスクがない
+
+### 6.4 テスト確認項目
+
+- [ ] Dry-runモードの全テストケースが通ること
+- [ ] セキュリティ分析が正しく動作すること
+- [ ] エラー発生時のメッセージが適切であること
+- [ ] Verification Managerのdry-run動作が変わらないこと
+- [ ] 展開エラー時にdry-runが適切に中断されること
+- [ ] dry-run出力のフォーマットが変わらないこと
+
+## 7. 実装の段階的移行
+
+### 7.1 移行ステップ
 
 ```mermaid
 flowchart LR
@@ -492,7 +689,7 @@ flowchart LR
     style S4 fill:#ccffcc
 ```
 
-### 6.2 各ステップの詳細
+### 7.2 各ステップの詳細
 
 #### Step 1: ExpandGroup の拡張
 
@@ -567,9 +764,9 @@ func (ge *DefaultGroupExecutor) executeAllCommands(...) {
 - 不要なエラーハンドリングを削除
 - ドキュメントを更新
 
-## 7. まとめ
+## 8. まとめ
 
-### 7.1 改善の効果
+### 8.1 改善の効果
 
 | 項目 | 改善内容 |
 |------|----------|
@@ -579,8 +776,9 @@ func (ge *DefaultGroupExecutor) executeAllCommands(...) {
 | **シンプル性** | 重複コードの削減 |
 | **明確性** | 未使用フィールドの活用 |
 | **保守性** | エラーハンドリングの一元化 |
+| **Dry-run互換** | dry-runモードでも完全互換、追加メリットあり |
 
-### 7.2 トレードオフ
+### 8.2 トレードオフ
 
 | メリット | デメリット |
 |---------|-----------|
@@ -588,8 +786,9 @@ func (ge *DefaultGroupExecutor) executeAllCommands(...) {
 | ✅ コードの簡素化 | ⚠️ 実装の複雑性（一時的） |
 | ✅ パフォーマンス改善 | ⚠️ テスト更新の必要性 |
 | ✅ Fail Fast | ⚠️ エラー発生タイミングの変更 |
+| ✅ Dry-run互換性維持 | - |
 
-### 7.3 推奨実装
+### 8.3 推奨実装
 
 この改善案は、ユーザー体験の大幅な向上とコードの保守性向上をもたらすため、**強く推奨**される。
 
