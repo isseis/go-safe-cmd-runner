@@ -87,6 +87,15 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(...) error {
             return fmt.Errorf("failed to expand command[%s]: %w",
                 groupSpec.Commands[i].Name, err)
         }
+
+        // Resolve effective working directory (Fail Fast)
+        workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+        if err != nil {
+            return fmt.Errorf("failed to resolve workdir for command[%s]: %w",
+                groupSpec.Commands[i].Name, err)
+        }
+        runtimeCmd.EffectiveWorkDir = workDir
+
         runtimeGroup.Commands[i] = runtimeCmd
     }
 

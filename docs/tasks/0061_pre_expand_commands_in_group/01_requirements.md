@@ -117,6 +117,8 @@ ExecuteGroup(groupSpec, runtimeGlobal)
 4. 全コマンドを展開（★新規★）
    for each command in groupSpec.Commands:
      runtimeCmd = ExpandCommand(command, runtimeGroup, runtimeGlobal, ...)
+     workDir = resolveCommandWorkDir(runtimeCmd, runtimeGroup)  ← ★追加★
+     runtimeCmd.EffectiveWorkDir = workDir  ← ★追加★
      runtimeGroup.Commands.append(runtimeCmd)
   ↓
 5. verifyGroupFiles（既存、展開済みコマンドを使用）
@@ -134,10 +136,14 @@ ExecuteGroup(groupSpec, runtimeGlobal)
 - `runtimeGlobal *runnertypes.RuntimeGlobal` - グローバル実行時設定
 
 **出力**:
-- `runtimeGroup.Commands []*RuntimeCommand` - 全コマンドが展開済み
+- `runtimeGroup.Commands []*RuntimeCommand` - 全コマンドが完全に展開済み
+  - `ExpandedCmd`, `ExpandedArgs`, `ExpandedEnv` が設定済み
+  - `EffectiveTimeout` が解決済み
+  - `EffectiveWorkDir` が解決済み ★NEW★
 
 **エラー処理**:
 - いずれかのコマンド展開が失敗した場合、`ExecuteGroup` 全体が失敗する
+- いずれかのコマンドのworkdir解決が失敗した場合、`ExecuteGroup` 全体が失敗する ★NEW★
 - エラーメッセージにはコマンド名とグループ名を含める
 - `cmd` フィールドで `__runner_workdir` が使用された場合は、明確なエラーメッセージを返す
 
@@ -151,6 +157,7 @@ runtimeGroup, err := config.ExpandGroup(groupSpec, globalRuntime)
 runtimeGroup, err := config.ExpandGroup(groupSpec, globalRuntime)
 // runtimeGroup.Commands[0].ExpandedCmd == "/home/user/bin/testcmd"
 // runtimeGroup.Commands[0].ExpandedArgs == ["--verbose", "/tmp/output.txt"]
+// runtimeGroup.Commands[0].EffectiveWorkDir == "/tmp/scr-xxx"  ← ★追加★
 ```
 
 ### 2.2 検証時の展開済みコマンド使用
