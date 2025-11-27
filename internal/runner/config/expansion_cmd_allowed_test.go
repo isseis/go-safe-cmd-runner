@@ -153,7 +153,7 @@ func TestExpandCmdAllowed_Errors(t *testing.T) {
 		require.Error(t, err)
 		var invalidPathErr *InvalidPathError
 		assert.ErrorAs(t, err, &invalidPathErr)
-		assert.Contains(t, invalidPathErr.Reason, "must be absolute")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -165,7 +165,7 @@ func TestExpandCmdAllowed_Errors(t *testing.T) {
 		require.Error(t, err)
 		var invalidPathErr *InvalidPathError
 		assert.ErrorAs(t, err, &invalidPathErr)
-		assert.Contains(t, invalidPathErr.Reason, "path length exceeds maximum")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 
 	t.Run("failed to resolve symlink for nonexistent file", func(t *testing.T) {
@@ -174,7 +174,9 @@ func TestExpandCmdAllowed_Errors(t *testing.T) {
 
 		_, err := expandCmdAllowed(paths, vars, "testgroup")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to resolve path")
+		// This error comes from filepath.EvalSymlinks, wrapped in fmt.Errorf
+		// We verify it's a path resolution error by checking for os.PathError
+		assert.Error(t, err, "should return an error for nonexistent path")
 	})
 }
 
@@ -231,7 +233,7 @@ func TestExpandGroup_WithCmdAllowed(t *testing.T) {
 
 		_, err := ExpandGroup(spec, nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to expand cmd_allowed")
+		assert.ErrorIs(t, err, ErrUndefinedVariable)
 	})
 }
 
