@@ -4,15 +4,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -418,10 +419,12 @@ args = ["arg1"]
 	err = r.Execute(ctx, nil)
 
 	// Expect error because command path doesn't exist and is not allowed
-	// The error could be either "command not found" (path resolution) or "not allowed" (security check)
+	// The error could be either:
+	// 1. verification.ErrCommandNotFound if path resolution fails first
+	// 2. security.ErrCommandNotAllowed if security check fails first
 	require.Error(t, err, "Should reject command not in hardcoded patterns or cmd_allowed")
-	assert.True(t, strings.Contains(err.Error(), "not allowed") ||
-		strings.Contains(err.Error(), "does not match") ||
-		strings.Contains(err.Error(), "command not found"),
-		"Error should indicate command rejection: %v", err)
+	// Use errors.Is() to check for specific error types instead of fragile string matching
+	assert.True(t,
+		errors.Is(err, verification.ErrCommandNotFound) || errors.Is(err, security.ErrCommandNotAllowed),
+		"Error should be either ErrCommandNotFound or ErrCommandNotAllowed, got: %v", err)
 }
