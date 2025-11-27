@@ -87,6 +87,12 @@ var (
 
 	// ErrEmptyPath is returned when a path is empty
 	ErrEmptyPath = errors.New("path cannot be empty")
+
+	// ErrDuplicatePath is returned when duplicate paths are found in cmd_allowed
+	ErrDuplicatePath = errors.New("duplicate path in cmd_allowed")
+
+	// ErrDuplicateResolvedPath is returned when different paths resolve to the same file
+	ErrDuplicateResolvedPath = errors.New("duplicate resolved path in cmd_allowed")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
@@ -334,4 +340,40 @@ func (e *InvalidPathError) Unwrap() error {
 func (e *InvalidPathError) Is(target error) bool {
 	_, ok := target.(*InvalidPathError)
 	return ok
+}
+
+// ErrDuplicatePathDetail provides detailed information about duplicate paths in cmd_allowed.
+// This error is returned when the same path string appears multiple times in the configuration.
+type ErrDuplicatePathDetail struct {
+	Level      string // e.g., "group[mygroup]"
+	Field      string // e.g., "cmd_allowed"
+	Path       string // The duplicated path string
+	FirstIndex int    // Index of first occurrence
+	DupeIndex  int    // Index of duplicate occurrence
+}
+
+func (e *ErrDuplicatePathDetail) Error() string {
+	return fmt.Sprintf("duplicate path in %s.%s: '%s' appears at index %d and %d", e.Level, e.Field, e.Path, e.FirstIndex, e.DupeIndex)
+}
+
+func (e *ErrDuplicatePathDetail) Unwrap() error {
+	return ErrDuplicatePath
+}
+
+// ErrDuplicateResolvedPathDetail provides detailed information about paths that resolve to the same file.
+// This error is returned when different path strings (potentially after variable expansion)
+// resolve to the same actual file after symlink resolution.
+type ErrDuplicateResolvedPathDetail struct {
+	Level        string // e.g., "group[mygroup]"
+	Field        string // e.g., "cmd_allowed"
+	OriginalPath string // The original path from config
+	ResolvedPath string // The resolved path that is duplicated
+}
+
+func (e *ErrDuplicateResolvedPathDetail) Error() string {
+	return fmt.Sprintf("duplicate resolved path in %s.%s: '%s' resolves to '%s' which is already in the list", e.Level, e.Field, e.OriginalPath, e.ResolvedPath)
+}
+
+func (e *ErrDuplicateResolvedPathDetail) Unwrap() error {
+	return ErrDuplicateResolvedPath
 }

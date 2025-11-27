@@ -346,3 +346,55 @@ func TestErrDuplicateVariableDefinitionDetail_Unwrap(t *testing.T) {
 
 	assert.True(t, errors.Is(err, ErrDuplicateVariableDefinition), "Unwrap() should return ErrDuplicateVariableDefinition")
 }
+
+// TestErrDuplicatePathDetail_Error tests the Error() method
+func TestErrDuplicatePathDetail_Error(t *testing.T) {
+	err := &ErrDuplicatePathDetail{
+		Level:      "group[testgroup]",
+		Field:      "cmd_allowed",
+		Path:       "/usr/bin/tool",
+		FirstIndex: 0,
+		DupeIndex:  3,
+	}
+
+	expected := "duplicate path in group[testgroup].cmd_allowed: '/usr/bin/tool' appears at index 0 and 3"
+	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+}
+
+// TestErrDuplicatePathDetail_Unwrap tests the Unwrap() method
+func TestErrDuplicatePathDetail_Unwrap(t *testing.T) {
+	err := &ErrDuplicatePathDetail{
+		Level:      "group[test]",
+		Field:      "cmd_allowed",
+		Path:       "/bin/sh",
+		FirstIndex: 1,
+		DupeIndex:  2,
+	}
+
+	assert.True(t, errors.Is(err, ErrDuplicatePath), "Unwrap() should return ErrDuplicatePath")
+}
+
+// TestErrDuplicateResolvedPathDetail_Error tests the Error() method
+func TestErrDuplicateResolvedPathDetail_Error(t *testing.T) {
+	err := &ErrDuplicateResolvedPathDetail{
+		Level:        "group[mygroup]",
+		Field:        "cmd_allowed",
+		OriginalPath: "/usr/bin/tool-link",
+		ResolvedPath: "/usr/bin/tool",
+	}
+
+	expected := "duplicate resolved path in group[mygroup].cmd_allowed: '/usr/bin/tool-link' resolves to '/usr/bin/tool' which is already in the list"
+	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+}
+
+// TestErrDuplicateResolvedPathDetail_Unwrap tests the Unwrap() method
+func TestErrDuplicateResolvedPathDetail_Unwrap(t *testing.T) {
+	err := &ErrDuplicateResolvedPathDetail{
+		Level:        "group[test]",
+		Field:        "cmd_allowed",
+		OriginalPath: "/link",
+		ResolvedPath: "/target",
+	}
+
+	assert.True(t, errors.Is(err, ErrDuplicateResolvedPath), "Unwrap() should return ErrDuplicateResolvedPath")
+}

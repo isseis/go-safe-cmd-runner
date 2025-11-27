@@ -47,7 +47,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		assert.Len(t, result, 1)
 		// Check that the map contains the expected tool path
 		for path := range result {
-			assert.Contains(t, path, "tool")
+			assert.Equal(t, "tool", filepath.Base(path))
 		}
 	})
 
@@ -68,7 +68,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		assert.Len(t, result, 2)
 	})
 
-	t.Run("deduplication", func(t *testing.T) {
+	t.Run("duplicate raw path returns error", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		tmpFile := filepath.Join(tmpDir, "tool")
 		err := os.WriteFile(tmpFile, []byte{}, 0o644)
@@ -77,9 +77,28 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		paths := []string{tmpFile, tmpFile}
 		vars := make(map[string]string)
 
-		result, err := expandCmdAllowed(paths, vars, "testgroup")
+		_, err = expandCmdAllowed(paths, vars, "testgroup")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrDuplicatePath)
+	})
+
+	t.Run("duplicate resolved path returns error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tmpFile := filepath.Join(tmpDir, "tool")
+		err := os.WriteFile(tmpFile, []byte{}, 0o644)
 		require.NoError(t, err)
-		assert.Len(t, result, 1, "duplicates should be removed")
+
+		// Create a symlink pointing to the same file
+		symlink := filepath.Join(tmpDir, "tool-link")
+		err = os.Symlink(tmpFile, symlink)
+		require.NoError(t, err)
+
+		paths := []string{tmpFile, symlink}
+		vars := make(map[string]string)
+
+		_, err = expandCmdAllowed(paths, vars, "testgroup")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrDuplicateResolvedPath)
 	})
 
 	t.Run("complex variable expansion", func(t *testing.T) {
@@ -101,7 +120,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 		assert.Len(t, result, 1)
 		// Check that the map contains the expected tool path
 		for path := range result {
-			assert.Contains(t, path, "tool")
+			assert.Equal(t, "tool", filepath.Base(path))
 		}
 	})
 }
@@ -178,7 +197,7 @@ func TestExpandGroup_WithCmdAllowed(t *testing.T) {
 		assert.Len(t, runtime.ExpandedCmdAllowed, 1)
 		// Check that the map contains the expected tool path
 		for path := range runtime.ExpandedCmdAllowed {
-			assert.Contains(t, path, "tool")
+			assert.Equal(t, "tool", filepath.Base(path))
 		}
 	})
 

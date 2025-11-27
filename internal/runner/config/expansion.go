@@ -414,12 +414,13 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 // expandCmdAllowed expands and validates cmd_allowed paths.
 //
 // Processing steps:
-//  1. Variable expansion: %{var} -> actual value
-//  2. Empty string validation: reject empty strings
-//  3. Absolute path validation: must start with '/'
-//  4. Path length validation: must not exceed MaxPathLength
-//  5. Symbolic link resolution: filepath.EvalSymlinks
-//  6. Deduplication: remove duplicate paths (automatic with map)
+//  1. Duplicate detection (raw string level): detect configuration errors
+//  2. Variable expansion: %{var} -> actual value
+//  3. Empty string validation: reject empty strings
+//  4. Absolute path validation: must start with '/'
+//  5. Path length validation: must not exceed MaxPathLength
+//  6. Symbolic link resolution: filepath.EvalSymlinks
+//  7. Duplicate detection (resolved path level): detect paths pointing to same file
 //
 // Parameters:
 //   - rawPaths: List of paths to expand (may contain variable references)
@@ -434,21 +435,36 @@ func expandCmdAllowed(
 	vars map[string]string,
 	groupName string,
 ) (map[string]struct{}, error) {
+	// 1. Check for duplicate raw strings (before expansion)
+	seenRaw := make(map[string]int, len(rawPaths))
+	for i, rawPath := range rawPaths {
+		if firstIdx, exists := seenRaw[rawPath]; exists {
+			return nil, &ErrDuplicatePathDetail{
+				Level:      fmt.Sprintf("group[%s]", groupName),
+				Field:      "cmd_allowed",
+				Path:       rawPath,
+				FirstIndex: firstIdx,
+				DupeIndex:  i,
+			}
+		}
+		seenRaw[rawPath] = i
+	}
+
 	result := make(map[string]struct{}, len(rawPaths))
 
 	for i, rawPath := range rawPaths {
-		// 1. Empty string check
+		// 2. Empty string check
 		if rawPath == "" {
 			return nil, fmt.Errorf("group[%s] cmd_allowed[%d]: %w", groupName, i, ErrEmptyPath)
 		}
 
-		// 2. Variable expansion
+		// 3. Variable expansion
 		expanded, err := ExpandString(rawPath, vars, fmt.Sprintf("group[%s]", groupName), fmt.Sprintf("cmd_allowed[%d]", i))
 		if err != nil {
 			return nil, fmt.Errorf("group[%s] cmd_allowed[%d] '%s': %w", groupName, i, rawPath, err)
 		}
 
-		// 3. Absolute path validation
+		// 4. Absolute path validation
 		if !filepath.IsAbs(expanded) {
 			return nil, &InvalidPathError{
 				Path:   expanded,
@@ -456,7 +472,7 @@ func expandCmdAllowed(
 			}
 		}
 
-		// 4. Path length validation
+		// 5. Path length validation
 		const MaxPathLength = security.DefaultMaxPathLength
 		if len(expanded) > MaxPathLength {
 			return nil, &InvalidPathError{
@@ -465,13 +481,22 @@ func expandCmdAllowed(
 			}
 		}
 
-		// 5. Symbolic link resolution and normalization
+		// 6. Symbolic link resolution and normalization
 		normalized, err := filepath.EvalSymlinks(expanded)
 		if err != nil {
 			return nil, fmt.Errorf("group[%s] cmd_allowed[%d] '%s': failed to resolve path: %w", groupName, i, expanded, err)
 		}
 
-		// 6. Deduplication (automatic with map)
+		// 7. Check for duplicate resolved paths
+		if _, exists := result[normalized]; exists {
+			return nil, &ErrDuplicateResolvedPathDetail{
+				Level:        fmt.Sprintf("group[%s]", groupName),
+				Field:        "cmd_allowed",
+				OriginalPath: rawPath,
+				ResolvedPath: normalized,
+			}
+		}
+
 		result[normalized] = struct{}{}
 	}
 
