@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -282,11 +283,12 @@ func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[s
 	}
 
 	// 4. Neither global patterns nor group-level map matched -> not allowed
-	// Convert map keys to slice for error message
-	var groupCmdAllowedSlice []string
+	// Convert map keys to slice and sort for stable error messages
+	groupCmdAllowedSlice := make([]string, 0, len(groupCmdAllowed))
 	for path := range groupCmdAllowed {
 		groupCmdAllowedSlice = append(groupCmdAllowedSlice, path)
 	}
+	sort.Strings(groupCmdAllowedSlice)
 	return &CommandNotAllowedError{
 		CommandPath:     cmdPath,
 		AllowedPatterns: v.config.AllowedCommands,
