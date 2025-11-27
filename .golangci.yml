@@ -67,6 +67,7 @@ linters:
             - $all
             - "!$test"
             - "!**/internal/**"
+            - "!**/*test_helpers.go"
           allow:
             - $gostd
             - github.com/joho/godotenv

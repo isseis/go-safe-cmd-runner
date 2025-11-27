@@ -10,10 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
-	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,12 +17,7 @@ import (
 // TestIntegration_CmdAllowed_RelativePathRejected tests that relative paths in cmd_allowed
 // are rejected (path traversal prevention).
 func TestIntegration_CmdAllowed_RelativePathRejected(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-relative-path")
 
 	// Config with relative path in cmd_allowed - should fail at config expansion
 	configContent := `
@@ -46,31 +37,11 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-relative-path")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	// Try to create runner - should fail during group expansion due to relative path
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-relative-path"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 
 	// Expect error due to relative path in cmd_allowed
 	require.Error(t, err, "Should reject relative paths in cmd_allowed")
@@ -81,13 +52,8 @@ args = ["test"]
 // are properly resolved and checked. Commands executed via symlink are allowed
 // when the resolved real path matches cmd_allowed.
 func TestIntegration_CmdAllowed_SymlinkResolution(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-symlink")
+	outputFile := env.outputFilePath()
 
 	// Find actual sh command
 	testCmd := "/bin/sh"
@@ -120,27 +86,8 @@ cmd = "%s"
 args = ["-c", "echo 'Symlink resolution works' > %s"]
 `, resolvedPath, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-symlink")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-symlink"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
 	err = r.Execute(ctx, nil)
@@ -154,12 +101,7 @@ args = ["-c", "echo 'Symlink resolution works' > %s"]
 // TestIntegration_CmdAllowed_NonexistentPath tests that non-existent paths in cmd_allowed
 // cause an error during config expansion.
 func TestIntegration_CmdAllowed_NonexistentPath(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-nonexistent")
 
 	// Config with non-existent path in cmd_allowed
 	configContent := `
@@ -179,30 +121,11 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-nonexistent")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-nonexistent"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 
 	// Expect error because path doesn't exist
 	require.Error(t, err, "Should fail when cmd_allowed contains non-existent path")
@@ -214,13 +137,8 @@ args = ["test"]
 // TestIntegration_CmdAllowed_OtherSecurityChecksRemain tests that other security
 // checks (file permissions, etc.) are still applied even when cmd_allowed matches.
 func TestIntegration_CmdAllowed_OtherSecurityChecksRemain(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-security-checks")
+	outputFile := env.outputFilePath()
 
 	testCmd := "/bin/sh"
 	if _, err := os.Stat(testCmd); os.IsNotExist(err) {
@@ -246,32 +164,13 @@ cmd = "%s"
 args = ["-c", "echo 'Security checks remain active' > %s"]
 `, testCmd, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-security-checks")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-security-checks"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	// Execute should succeed - this test mainly verifies that the command
 	// runs through all security validation steps
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 	require.NoError(t, err, "Command should succeed when allowed via cmd_allowed and passes other security checks")
 
 	content, err := os.ReadFile(outputFile)

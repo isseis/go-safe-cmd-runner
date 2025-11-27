@@ -10,9 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -22,13 +19,8 @@ import (
 // TestIntegration_CmdAllowed_BasicFunctionality tests that group-level cmd_allowed
 // allows commands that are not in global allowed_commands patterns.
 func TestIntegration_CmdAllowed_BasicFunctionality(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-cmd-allowed")
+	outputFile := env.outputFilePath()
 
 	// Find a command that exists on the system for testing
 	// /bin/sh should be available on most Unix systems
@@ -57,34 +49,12 @@ cmd = "%s"
 args = ["-c", "echo 'Hello from cmd_allowed' > %s"]
 `, testCmd, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	// Load and expand config
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-cmd-allowed")
-	require.NoError(t, err)
-
-	// Expand global configuration to get runtime global
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	// Create and execute runner
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-cmd-allowed"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	// Execute the commands - should succeed via cmd_allowed
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 	require.NoError(t, err, "Command should be allowed via group-level cmd_allowed")
 
 	// Verify output
@@ -96,13 +66,8 @@ args = ["-c", "echo 'Hello from cmd_allowed' > %s"]
 // TestIntegration_CmdAllowed_WithVariableExpansion tests that cmd_allowed paths
 // support variable expansion.
 func TestIntegration_CmdAllowed_WithVariableExpansion(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-var-expansion")
+	outputFile := env.outputFilePath()
 
 	// Find a command that exists
 	testCmd := "/bin/sh"
@@ -135,31 +100,11 @@ cmd = "%s"
 args = ["-c", "echo 'Variable expansion works' > %s"]
 `, cmdDir, cmdBase, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	// Load and expand config
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-var-expansion")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-var-expansion"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 	require.NoError(t, err, "Command should be allowed via variable-expanded cmd_allowed")
 
 	content, err := os.ReadFile(outputFile)
@@ -170,13 +115,8 @@ args = ["-c", "echo 'Variable expansion works' > %s"]
 // TestIntegration_CmdAllowed_GlobalPatternTakesPrecedence tests that commands
 // matching global allowed_commands patterns are allowed even without cmd_allowed.
 func TestIntegration_CmdAllowed_GlobalPatternTakesPrecedence(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-global-pattern")
+	outputFile := env.outputFilePath()
 
 	testCmd := "/bin/sh"
 	if _, err := os.Stat(testCmd); os.IsNotExist(err) {
@@ -201,30 +141,11 @@ cmd = "%s"
 args = ["-c", "echo 'Global pattern works' > %s"]
 `, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-global-pattern")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-global-pattern"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 	require.NoError(t, err, "Command should be allowed via global allowed_commands pattern")
 
 	content, err := os.ReadFile(outputFile)
@@ -235,13 +156,8 @@ args = ["-c", "echo 'Global pattern works' > %s"]
 // TestIntegration_CmdAllowed_ORCondition tests that commands are allowed if they
 // match EITHER global patterns OR group-level cmd_allowed (OR condition).
 func TestIntegration_CmdAllowed_ORCondition(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-or-condition")
+	outputFile := env.outputFilePath()
 
 	testCmd := "/bin/sh"
 	if _, err := os.Stat(testCmd); os.IsNotExist(err) {
@@ -266,30 +182,11 @@ cmd = "%s"
 args = ["-c", "echo 'Both match - OR condition' > %s"]
 `, testCmd, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-or-condition")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-or-condition"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 	require.NoError(t, err, "Command should be allowed (matches both global and group-level)")
 
 	content, err := os.ReadFile(outputFile)
@@ -300,13 +197,8 @@ args = ["-c", "echo 'Both match - OR condition' > %s"]
 // TestIntegration_CmdAllowed_NotConfigured tests that commands rely on global
 // patterns when cmd_allowed is not configured at group level.
 func TestIntegration_CmdAllowed_NotConfigured(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-	outputFile := filepath.Join(testDir, "output.txt")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-no-cmd-allowed")
+	outputFile := env.outputFilePath()
 
 	testCmd := "/bin/sh"
 	if _, err := os.Stat(testCmd); os.IsNotExist(err) {
@@ -331,30 +223,11 @@ cmd = "%s"
 args = ["-c", "echo 'Existing behavior maintained' > %s"]
 `, testCmd, outputFile)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-no-cmd-allowed")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-no-cmd-allowed"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 	require.NoError(t, err, "Existing behavior should be maintained when cmd_allowed is not configured")
 
 	content, err := os.ReadFile(outputFile)
@@ -364,12 +237,7 @@ args = ["-c", "echo 'Existing behavior maintained' > %s"]
 
 // TestIntegration_CmdAllowed_CommandNotAllowed tests error when command is not allowed.
 func TestIntegration_CmdAllowed_CommandNotAllowed(t *testing.T) {
-	testDir := t.TempDir()
-	hashDir := filepath.Join(testDir, "hashes")
-	configPath := filepath.Join(testDir, "config.toml")
-
-	err := os.MkdirAll(hashDir, 0o700)
-	require.NoError(t, err)
+	env := setupTestEnvironment(t, "test-run-not-allowed")
 
 	// Use a path that does NOT match hardcoded allowed_commands patterns
 	// Hardcoded patterns: ^/bin/.*, ^/usr/bin/.*, ^/usr/sbin/.*, ^/usr/local/bin/.*
@@ -393,30 +261,11 @@ cmd = "%s"
 args = ["arg1"]
 `, testCmd)
 
-	err = os.WriteFile(configPath, []byte(configContent), 0o600)
-	require.NoError(t, err)
-
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	require.NoError(t, err)
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-not-allowed")
-	require.NoError(t, err)
-
-	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-	require.NoError(t, err)
-
-	r, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager),
-		runner.WithRuntimeGlobal(runtimeGlobal),
-		runner.WithRunID("test-run-not-allowed"),
-	)
-	require.NoError(t, err)
-
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
+	env.writeConfig(t, configContent)
+	r := env.createRunner(t)
 
 	ctx := context.Background()
-	err = r.Execute(ctx, nil)
+	err := r.Execute(ctx, nil)
 
 	// Expect error because command path doesn't exist and is not allowed
 	// The error could be either:
