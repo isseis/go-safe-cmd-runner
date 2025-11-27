@@ -49,6 +49,7 @@ go-safe-cmd-runner is a security-focused Go-based command execution system. It i
 | Privilege Management | Controlled escalation/restoration | ✅ Excellent |
 | Configuration Validation Timing | Complete verification before use | ✅ Excellent |
 | Hash Directory Protection | Complete prohibition of custom specification | ✅ Excellent |
+| Command Allowlist | Global regex + Group-level exact paths | ✅ Excellent |
 | Output File Security | Privilege separation/restricted permissions | ✅ Good |
 | Variable Expansion Security | Allowlist integration | ✅ Good |
 

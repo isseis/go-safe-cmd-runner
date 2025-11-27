@@ -1,0 +1,99 @@
+# Group-level command allowlist example
+#
+# This configuration demonstrates the `cmd_allowed` feature that allows
+# specific commands to be executed within a group, even if they are not
+# matched by hardcoded global allowed command patterns.
+#
+# Hardcoded global patterns (not configurable from TOML):
+#   - ^/bin/.*
+#   - ^/usr/bin/.*
+#   - ^/usr/sbin/.*
+#   - ^/usr/local/bin/.*
+#
+# Key features:
+#   - Commands in `cmd_allowed` must be absolute paths
+#   - Variable expansion (%{variable}) is supported
+#   - Works with OR condition: command is allowed if it matches EITHER
+#     hardcoded global patterns OR group-level `cmd_allowed` list
+#   - Other security checks (permissions, risk assessment) still apply
+
+version = "1.0"
+
+[global]
+timeout = 60
+
+# Import HOME environment variable for use in cmd_allowed
+env_import = ["home=HOME"]
+
+# Define custom variables
+vars = [
+    "custom_tools=/opt/myproject/bin"
+]
+
+# Group using global allowed_commands only
+[[groups]]
+name = "standard_tools"
+description = "Uses only standard system tools"
+
+[[groups.commands]]
+name = "list_files"
+cmd = "/bin/ls"
+args = ["-la"]
+
+# Group with custom tool allowed via cmd_allowed
+[[groups]]
+name = "custom_build"
+description = "Build group with custom tool access"
+
+# This group allows /home/user/bin/build_tool even though
+# it's not matched by hardcoded global allowed command patterns
+cmd_allowed = [
+    "%{home}/bin/build_tool",
+    "%{custom_tools}/processor"
+]
+
+[[groups.commands]]
+name = "run_custom_build"
+# This command works because it's listed in cmd_allowed
+cmd = "%{home}/bin/build_tool"
+args = ["--verbose", "--config=release"]
+
+[[groups.commands]]
+name = "run_processor"
+# This also works via cmd_allowed
+cmd = "%{custom_tools}/processor"
+args = ["--input=data.txt"]
+
+# Group with mixed commands (both global and group-level)
+[[groups]]
+name = "mixed_workflow"
+description = "Uses both system tools and custom scripts"
+
+# Only the custom script needs to be in cmd_allowed
+# System tools (/bin/*, /usr/bin/*) are already allowed globally
+cmd_allowed = [
+    "%{home}/scripts/prepare.sh"
+]
+
+[[groups.commands]]
+name = "prepare"
+# Custom script allowed via cmd_allowed
+cmd = "%{home}/scripts/prepare.sh"
+args = []
+
+[[groups.commands]]
+name = "process"
+# Standard tool allowed via hardcoded global patterns
+cmd = "/bin/sh"
+args = ["-c", "echo 'Processing...'"]
+
+# Group without cmd_allowed (default behavior)
+[[groups]]
+name = "system_only"
+description = "Can only use commands matching hardcoded global patterns"
+# No cmd_allowed field - only hardcoded global patterns apply
+
+[[groups.commands]]
+name = "show_date"
+cmd = "/bin/date"
+args = []

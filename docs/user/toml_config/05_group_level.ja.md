@@ -833,6 +833,202 @@ env_vars = [
 ]
 ```
 
+### 5.3.6 cmd_allowed - グループレベルコマンド許可リスト
+
+#### 概要
+
+この特定のグループ内でのみ実行を許可する追加コマンドを指定します。ハードコードされたグローバルパターンでカバーされないグループ固有のツールを許可できます。
+
+#### 文法
+
+```toml
+[[groups]]
+name = "example"
+cmd_allowed = ["/path/to/command1", "%{variable}/command2", ...]
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列（絶対パス）|
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グループのみ |
+| **デフォルト値** | [] (追加コマンドなし) |
+| **有効な値** | 絶対パスのリスト（変数展開をサポート）|
+| **検証** | パスは存在し、解決可能である必要がある |
+
+#### 役割
+
+- **グループ固有の権限**: 特定のグループ内でのみコマンドを許可
+- **セキュリティ分離**: カスタムツールを必要な場所でのみ利用可能に
+- **柔軟性**: グローバルパターンと組み合わせてきめ細かい制御
+
+#### ハードコードされたグローバルパターンとの関係
+
+以下のグローバルパターンがハードコードされています（TOMLで設定不可）：
+```
+^/bin/.*
+^/usr/bin/.*
+^/usr/sbin/.*
+^/usr/local/bin/.*
+```
+
+コマンドは以下の**いずれか**にマッチすれば許可されます：
+1. 上記のハードコードされたグローバルパターン（正規表現マッチング）
+2. グループ `cmd_allowed` のいずれかの完全パス（変数展開とシンボリックリンク解決後）
+
+これは**OR条件**であり、AND条件ではありません。
+
+#### 設定例
+
+##### 例1: 基本的なグループ固有コマンド
+
+```toml
+version = "1.0"
+
+# グローバルパターン（^/bin/.*, ^/usr/bin/.* 等）はハードコードされており
+# TOMLで設定する必要はありません
+
+[[groups]]
+name = "custom_build"
+# このグループでのみカスタムツールを許可
+cmd_allowed = ["/opt/myproject/bin/build_tool"]
+
+[[groups.commands]]
+name = "run_build"
+cmd = "/opt/myproject/bin/build_tool"  # cmd_allowed 経由で許可
+args = ["--release"]
+
+[[groups.commands]]
+name = "run_sh"
+cmd = "/bin/sh"  # ハードコードされたグローバルパターン経由で許可
+args = ["-c", "echo 'ビルド完了'"]
+```
+
+##### 例2: 変数展開付き
+
+```toml
+version = "1.0"
+
+[global]
+env_import = ["home=HOME"]
+vars = ["tools_dir=/opt/tools"]
+
+[[groups]]
+name = "user_scripts"
+cmd_allowed = [
+    "%{home}/bin/my_script.sh",    # /home/user/bin/my_script.sh に展開
+    "%{tools_dir}/processor",      # /opt/tools/processor に展開
+]
+
+[[groups.commands]]
+name = "run_user_script"
+cmd = "%{home}/bin/my_script.sh"
+args = ["--verbose"]
+```
+
+##### 例3: 異なる権限を持つ複数グループ
+
+```toml
+version = "1.0"
+
+# グローバルパターンはハードコードされています
+
+[[groups]]
+name = "database_admin"
+cmd_allowed = [
+    "/opt/db-tools/backup",
+    "/opt/db-tools/restore",
+]
+
+[[groups.commands]]
+name = "backup_db"
+cmd = "/opt/db-tools/backup"
+args = ["--all"]
+
+[[groups]]
+name = "web_deploy"
+cmd_allowed = [
+    "/opt/deploy/push",
+    "/opt/deploy/rollback",
+]
+
+[[groups.commands]]
+name = "deploy_app"
+cmd = "/opt/deploy/push"
+args = ["--env=production"]
+
+[[groups]]
+name = "monitoring"
+# cmd_allowed なし - ハードコードされたグローバルパターンのみ適用
+
+[[groups.commands]]
+name = "check_status"
+cmd = "/usr/bin/curl"  # ハードコードされたパターン経由で許可
+args = ["http://localhost/health"]
+```
+
+#### セキュリティ機能
+
+##### 1. 絶対パス必須
+
+パストラバーサル攻撃を防ぐため、相対パスは拒否されます。
+
+```toml
+[[groups]]
+cmd_allowed = ["./script.sh"]  # エラー: 相対パスは許可されない
+cmd_allowed = ["../bin/tool"]  # エラー: 相対パスは許可されない
+cmd_allowed = ["/opt/bin/tool"]  # 正しい
+```
+
+##### 2. パス存在検証
+
+設定読み込み時にパスが存在する必要があります。存在しないパスはエラーになります。
+
+```toml
+[[groups]]
+cmd_allowed = ["/nonexistent/path"]  # エラー: パスが存在しない
+```
+
+##### 3. シンボリックリンク解決
+
+`cmd_allowed` 内のシンボリックリンクは実際のパスに解決されます。コマンドは解決後のパスに対してマッチングされます。
+
+```toml
+# /usr/local/bin/python -> /usr/bin/python3 の場合
+[[groups]]
+cmd_allowed = ["/usr/local/bin/python"]  # /usr/bin/python3 として保存
+```
+
+#### 注意事項
+
+##### 1. 他のセキュリティチェックは継続
+
+`cmd_allowed` でコマンドが許可されていても、他のセキュリティ検証は継続されます：
+- ファイル整合性検証（ハッシュチェック）
+- リスク評価
+- 権限検証
+- 環境変数検証
+
+##### 2. 変数展開のタイミング
+`cmd_allowed` 内の変数は、コマンド実行が開始される前、設定の読み込みと準備を行う初期段階で展開されます。これにより実行時変数を使用できます。
+
+##### 3. ベストプラクティス
+
+- **最小権限の原則**: グループの目的に必要なコマンドのみ追加
+- **移植性のための変数使用**: ハードコードされたパスではなく適切な場所で `%{home}` を使用
+- **目的を文書化**: 各コマンドが許可されている理由をコメントで説明
+
+```toml
+[[groups]]
+name = "deployment"
+cmd_allowed = [
+    "/opt/deploy/push",      # 本番デプロイに必要
+    "/opt/deploy/rollback",  # 緊急ロールバック機能
+]
+```
+
 #### 次のステップ
 
 - **Command.env**: コマンドレベルの環境変数については第6章を参照

@@ -274,8 +274,12 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		gmProvider = groupmembership.New()
 	}
 
-	// Create validator with default security config
-	validator, err := security.NewValidator(nil, security.WithGroupMembership(gmProvider))
+	// Create security config with hardcoded allowed commands
+	// AllowedCommands are not configurable from TOML for security reasons
+	securityConfig := security.DefaultConfig()
+
+	// Create validator with merged security config
+	validator, err := security.NewValidator(securityConfig, security.WithGroupMembership(gmProvider))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}

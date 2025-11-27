@@ -68,7 +68,7 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Automatic Temporary Directories**: Auto-generation and cleanup of temporary directories per group
 - **Working Directory Control**: Execute in fixed directories or auto-generated temporary directories
 - **`__runner_workdir` Variable**: Reserved variable that references the runtime working directory
-- **Variable Expansion**: `${VAR}` format expansion in command names and arguments
+- **Variable Expansion**: `%{var}` format expansion in command names and arguments
 - **Automatic Environment Variables**: Automatically generated variables for timestamps and process tracking
 - **Output Capture**: Save command output to files with secure permissions
 - **Background Execution**: Support for long-running processes with signal handling
@@ -222,8 +222,8 @@ risk_level = "medium"
 
 The system automatically provides environment variables for each command execution:
 
-- `__RUNNER_DATETIME`: Execution timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
-- `__RUNNER_PID`: Process ID of the runner
+- `__runner_datetime`: Execution timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
+- `__runner_pid`: Process ID of the runner
 
 These variables can be used in command paths, arguments, and environment variable values:
 
@@ -231,15 +231,54 @@ These variables can be used in command paths, arguments, and environment variabl
 [[groups.commands]]
 name = "backup_with_timestamp"
 cmd = "/usr/bin/tar"
-args = ["czf", "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/data-%{__runner_datetime}.tar.gz", "/data"]
 
 [[groups.commands]]
 name = "log_execution"
 cmd = "/bin/sh"
-args = ["-c", "echo 'PID: ${__RUNNER_PID}, Time: ${__RUNNER_DATETIME}' >> /var/log/executions.log"]
+args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/log/executions.log"]
 ```
 
-**Note**: The prefix `__RUNNER_` is reserved and cannot be used for user-defined environment variables.
+**Note**: The prefix `__runner_` is reserved and cannot be used for user-defined environment variables.
+
+### Group-Level Command Allowlist
+
+Groups can define additional allowed commands beyond the hardcoded global patterns:
+
+**Hardcoded global patterns** (not configurable from TOML):
+```
+^/bin/.*
+^/usr/bin/.*
+^/usr/sbin/.*
+^/usr/local/bin/.*
+```
+
+```toml
+[global]
+env_import = ["home=HOME"]
+
+[[groups]]
+name = "custom_build"
+# Additional commands allowed only in this group
+cmd_allowed = [
+    "%{home}/bin/custom_tool",
+    "/opt/myapp/bin/processor"
+]
+
+[[groups.commands]]
+name = "run_custom"
+cmd = "%{home}/bin/custom_tool"
+args = ["--verbose"]
+```
+
+**Key features**:
+- Commands pass if they match EITHER hardcoded global patterns OR group-level `cmd_allowed` list
+- Variable expansion (`%{variable}`) is supported in `cmd_allowed` paths
+- Only absolute paths are allowed (relative paths are rejected for security)
+- All other security checks (permissions, risk assessment) remain active
+- Global patterns are hardcoded for security (cannot be configured from TOML)
+
+See `sample/group_cmd_allowed.toml` for complete examples.
 
 For detailed configuration file documentation, refer to the following documents:
 
@@ -291,7 +330,7 @@ For detailed configuration file documentation, refer to the following documents:
 - **Secure Fixed PATH**: Hardcoded `/sbin:/usr/sbin:/bin:/usr/bin`
 - **No PATH Inheritance**: Eliminates PATH manipulation attacks
 - **Allowlist Filtering**: Strict zero-trust environment control
-- **Variable Expansion**: Secure `${VAR}` expansion with allowlist
+- **Variable Expansion**: Secure `%{var}` expansion with allowlist
 - **Command.Env Priority**: Configuration overrides OS environment
 
 ### Privilege Management

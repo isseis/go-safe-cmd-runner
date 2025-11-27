@@ -939,6 +939,204 @@ env_vars = [
     "WEB_DIR=%{APP_ROOT}/web",         # Reference APP_ROOT from Global.env
     "STATIC_DIR=%{WEB_DIR}/static",    # Reference WEB_DIR from Group.env
     "UPLOAD_DIR=%{WEB_DIR}/uploads",   # Reference WEB_DIR from Group.env
+]
+```
+
+### 5.3.6 cmd_allowed - Group-Level Command Allowlist
+
+#### Overview
+
+Specifies additional commands that are allowed to execute within this specific group. This allows group-specific tools that are not covered by the hardcoded global patterns.
+
+#### Syntax
+
+```toml
+[[groups]]
+name = "example"
+cmd_allowed = ["/path/to/command1", "%{variable}/command2", ...]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (absolute paths) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Group only |
+| **Default Value** | [] (no additional commands) |
+| **Valid Values** | List of absolute paths (variable expansion supported) |
+| **Validation** | Paths must exist and be resolvable |
+
+#### Role
+
+- **Group-Specific Permissions**: Allow commands only within specific groups
+- **Security Isolation**: Custom tools available only where needed
+- **Flexibility**: Combine with global patterns for fine-grained control
+
+#### Relationship with Hardcoded Global Patterns
+
+The following global patterns are hardcoded (not configurable from TOML):
+```
+^/bin/.*
+^/usr/bin/.*
+^/usr/sbin/.*
+^/usr/local/bin/.*
+```
+
+Commands are allowed if they match **EITHER**:
+1. Any of the hardcoded global patterns above (regex matching)
+2. Any exact path in group `cmd_allowed` (after variable expansion and symlink resolution)
+
+This is an **OR relationship**, not AND.
+
+#### Configuration Examples
+
+##### Example 1: Basic Group-Specific Command
+
+```toml
+version = "1.0"
+
+# Global patterns (^/bin/.*, ^/usr/bin/.*, etc.) are hardcoded
+# and do not need to be specified in TOML
+
+[[groups]]
+name = "custom_build"
+# Allow custom tool only in this group
+cmd_allowed = ["/opt/myproject/bin/build_tool"]
+
+[[groups.commands]]
+name = "run_build"
+cmd = "/opt/myproject/bin/build_tool"  # Allowed via cmd_allowed
+args = ["--release"]
+
+[[groups.commands]]
+name = "run_sh"
+cmd = "/bin/sh"  # Allowed via hardcoded global patterns
+args = ["-c", "echo 'Build complete'"]
+```
+
+##### Example 2: With Variable Expansion
+
+```toml
+version = "1.0"
+
+[global]
+env_import = ["home=HOME"]
+vars = ["tools_dir=/opt/tools"]
+
+[[groups]]
+name = "user_scripts"
+cmd_allowed = [
+    "%{home}/bin/my_script.sh",    # Expands to /home/user/bin/my_script.sh
+    "%{tools_dir}/processor",      # Expands to /opt/tools/processor
+]
+
+[[groups.commands]]
+name = "run_user_script"
+cmd = "%{home}/bin/my_script.sh"
+args = ["--verbose"]
+```
+
+##### Example 3: Multiple Groups with Different Permissions
+
+```toml
+version = "1.0"
+
+# Global patterns are hardcoded
+
+[[groups]]
+name = "database_admin"
+cmd_allowed = [
+    "/opt/db-tools/backup",
+    "/opt/db-tools/restore",
+]
+
+[[groups.commands]]
+name = "backup_db"
+cmd = "/opt/db-tools/backup"
+args = ["--all"]
+
+[[groups]]
+name = "web_deploy"
+cmd_allowed = [
+    "/opt/deploy/push",
+    "/opt/deploy/rollback",
+]
+
+[[groups.commands]]
+name = "deploy_app"
+cmd = "/opt/deploy/push"
+args = ["--env=production"]
+
+[[groups]]
+name = "monitoring"
+# No cmd_allowed - only hardcoded global patterns apply
+
+[[groups.commands]]
+name = "check_status"
+cmd = "/usr/bin/curl"  # Allowed via hardcoded global patterns
+args = ["http://localhost/health"]
+```
+
+#### Security Features
+
+##### 1. Absolute Paths Required
+
+Relative paths are rejected to prevent path traversal attacks.
+
+```toml
+[[groups]]
+cmd_allowed = ["./script.sh"]  # Error: relative path not allowed
+cmd_allowed = ["../bin/tool"]  # Error: relative path not allowed
+cmd_allowed = ["/opt/bin/tool"]  # Correct
+```
+
+##### 2. Path Existence Validation
+
+Paths must exist at configuration load time. Non-existent paths cause an error.
+
+```toml
+[[groups]]
+cmd_allowed = ["/nonexistent/path"]  # Error: path does not exist
+```
+
+##### 3. Symlink Resolution
+
+Symbolic links in `cmd_allowed` are resolved to their real paths. Commands are matched against the resolved path.
+
+```toml
+# If /usr/local/bin/python -> /usr/bin/python3
+[[groups]]
+cmd_allowed = ["/usr/local/bin/python"]  # Stored as /usr/bin/python3
+```
+
+#### Notes
+
+##### 1. Other Security Checks Still Apply
+
+Even if a command is allowed via `cmd_allowed`, other security validations continue:
+- File integrity verification (hash checking)
+- Risk assessment
+- Privilege validation
+- Environment variable validation
+
+##### 2. Variable Expansion Timing
+Variables in `cmd_allowed` are expanded during the initial configuration loading and preparation phase, before any commands are executed. This allows the use of variables defined at the global or group level.
+
+##### 3. Best Practices
+
+- **Principle of Least Privilege**: Only add commands that are necessary for the group's purpose
+- **Use Variables for Portability**: Use `%{home}` instead of hardcoded paths where appropriate
+- **Document Purpose**: Add comments explaining why each command is allowed
+
+```toml
+[[groups]]
+name = "deployment"
+cmd_allowed = [
+    "/opt/deploy/push",      # Required for production deployments
+    "/opt/deploy/rollback",  # Emergency rollback capability
+]
+```
 
 ## 5.4 Environment Variable Inheritance Modes
 

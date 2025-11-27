@@ -28,6 +28,12 @@ func (m *MockValidator) ValidateCommand(command string) error {
 	return args.Error(0)
 }
 
+// ValidateCommandAllowed mocks the ValidateCommandAllowed method
+func (m *MockValidator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[string]struct{}) error {
+	args := m.Called(cmdPath, groupCmdAllowed)
+	return args.Error(0)
+}
+
 // SanitizeOutputForLogging mocks the SanitizeOutputForLogging method
 func (m *MockValidator) SanitizeOutputForLogging(output string) string {
 	args := m.Called(output)

@@ -207,7 +207,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.1
+          version: v2.5
           args: --build-tags test --timeout=5m
 
       - name: Verify modules

@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -232,4 +233,65 @@ func validateDangerousRootPatterns(patterns []string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateCommandAllowed checks whether a command path is permitted for execution.
+// Validation logic:
+//  1. Resolve symlinks to get canonical path (security: prevents symlink bypass attacks)
+//  2. If the resolved command matches any AllowedCommands regex pattern -> allowed
+//  3. Else if groupCmdAllowed map is provided and contains the resolved command path -> allowed
+//  4. Otherwise returns *CommandNotAllowedError (wrapping ErrCommandNotAllowed)
+//
+// Security note: Both global pattern matching and group-level allowlist checks are
+// performed against the symlink-resolved canonical path. This prevents attacks where
+// a symlink like /usr/bin/safe-looking-name points to a disallowed command.
+//
+// Parameters:
+//   - cmdPath: absolute command path (already expanded)
+//   - groupCmdAllowed: expanded, normalized, symlink-resolved group-level allowed command map (may be nil or empty)
+//
+// Returns:
+//   - nil if allowed
+//   - error (*CommandNotAllowedError or other structural errors)
+func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[string]struct{}) error {
+	// Basic input validation
+	if cmdPath == "" {
+		return ErrEmptyCommandPath
+	}
+
+	// 1. Resolve symlinks to get canonical path for security
+	// This must happen before any allowlist checks to prevent symlink bypass attacks
+	resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
+	}
+
+	// 2. Global AllowedCommands pattern match (using precompiled regexps)
+	// Patterns are matched against the resolved canonical path
+	for _, re := range v.allowedCommandRegexps {
+		if re.MatchString(resolvedCmd) {
+			return nil
+		}
+	}
+
+	// 3. Group-level cmd_allowed map check (O(1) lookup)
+	// The map already contains symlink-resolved paths, so we compare resolved paths
+	if len(groupCmdAllowed) > 0 {
+		if _, exists := groupCmdAllowed[resolvedCmd]; exists {
+			return nil
+		}
+	}
+
+	// 4. Neither global patterns nor group-level map matched -> not allowed
+	// Convert map keys to slice and sort for stable error messages
+	groupCmdAllowedSlice := make([]string, 0, len(groupCmdAllowed))
+	for path := range groupCmdAllowed {
+		groupCmdAllowedSlice = append(groupCmdAllowedSlice, path)
+	}
+	sort.Strings(groupCmdAllowedSlice)
+	return &CommandNotAllowedError{
+		CommandPath:     cmdPath,
+		AllowedPatterns: v.config.AllowedCommands,
+		GroupCmdAllowed: groupCmdAllowedSlice,
+	}
 }

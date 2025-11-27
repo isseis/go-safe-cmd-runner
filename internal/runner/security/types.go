@@ -68,6 +68,9 @@ var (
 	// callers can compare with errors.Is instead of relying on dynamic error
 	// strings.
 	ErrNoExistingDirectoryInPathHierarchy = errors.New("no existing directory found in path hierarchy")
+
+	// ErrEmptyCommandPath is returned when a command path is empty
+	ErrEmptyCommandPath = errors.New("command path cannot be empty")
 )
 
 // Constants for security configuration
@@ -176,7 +179,6 @@ func DefaultConfig() *Config {
 			"^/usr/bin/.*",
 			"^/usr/sbin/.*",
 			"^/usr/local/bin/.*",
-			"^/snap/bin/.*",
 		},
 		RequiredFilePermissions:      DefaultFilePermissions,
 		RequiredDirectoryPermissions: DefaultDirectoryPermissions,
