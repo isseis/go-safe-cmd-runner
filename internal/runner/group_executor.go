@@ -188,12 +188,19 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 	runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
 
-	// 6. Verify group files before execution
+	// 6. Pre-expand all commands
+	// This enables consistent variable access during both verification and execution,
+	// and provides early detection of configuration errors (Fail Fast).
+	if err := ge.preExpandCommands(groupSpec, runtimeGroup, runtimeGlobal); err != nil {
+		return fmt.Errorf("failed to pre-expand commands for group[%s]: %w", groupSpec.Name, err)
+	}
+
+	// 7. Verify group files before execution
 	if err := ge.verifyGroupFiles(runtimeGroup); err != nil {
 		return err
 	}
 
-	// 7. Execute commands in the group sequentially
+	// 8. Execute commands in the group sequentially
 	commandResults, errResult, err := ge.executeAllCommands(ctx, groupSpec, runtimeGroup, runtimeGlobal)
 	if err != nil {
 		// executionResult is set from the returned errResult
@@ -221,40 +228,13 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 	runtimeGroup *runnertypes.RuntimeGroup,
 	runtimeGlobal *runnertypes.RuntimeGlobal,
 ) (common.CommandResults, *groupExecutionResult, error) {
-	commandResults := make(common.CommandResults, 0, len(groupSpec.Commands))
+	commandResults := make(common.CommandResults, 0, len(runtimeGroup.Commands))
 
-	for i := range groupSpec.Commands {
-		cmdSpec := &groupSpec.Commands[i]
-		slog.Info("Executing command", slog.String("command", cmdSpec.Name), slog.Int("index", i+1), slog.Int("total", len(groupSpec.Commands)))
+	// Use pre-expanded commands from runtimeGroup.Commands
+	for i, runtimeCmd := range runtimeGroup.Commands {
+		slog.Info("Executing command", slog.String("command", runtimeCmd.Spec.Name), slog.Int("index", i+1), slog.Int("total", len(runtimeGroup.Commands)))
 
-		// Expand command configuration
-		// Convert global output size limit from *int64 (TOML representation) to OutputSizeLimit type
-		globalOutputSizeLimit := common.NewOutputSizeLimitFromPtr(runtimeGlobal.Spec.OutputSizeLimit)
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout(), globalOutputSizeLimit)
-		if err != nil {
-			// Set failure result for notification
-			errResult := &groupExecutionResult{
-				status:   GroupExecutionStatusError,
-				commands: commandResults,
-				errorMsg: fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
-			}
-			return commandResults, errResult, fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
-		}
-
-		// Determine effective working directory for the command
-		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
-		if err != nil {
-			// Set failure result for notification
-			errResult := &groupExecutionResult{
-				status:   GroupExecutionStatusError,
-				commands: commandResults,
-				errorMsg: fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
-			}
-			return commandResults, errResult, fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
-		}
-		runtimeCmd.EffectiveWorkDir = workDir
-
-		// Execute the command
+		// Execute the command (expansion and workdir resolution already done in preExpandCommands)
 		stdout, stderr, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 
 		// Sanitize command output before storing in CommandResult to prevent sensitive data
@@ -268,7 +248,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 		// Record command result
 		cmdResult := common.CommandResult{
 			CommandResultFields: common.CommandResultFields{
-				Name:     cmdSpec.Name,
+				Name:     runtimeCmd.Spec.Name,
 				ExitCode: exitCode,
 				Output:   sanitizedStdout,
 				Stderr:   sanitizedStderr,
@@ -288,6 +268,68 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 	}
 
 	return commandResults, nil, nil
+}
+
+// preExpandCommands expands all commands in a group before execution.
+//
+// This function processes all commands in the group and stores the expanded
+// RuntimeCommand instances in runtimeGroup.Commands. This enables:
+//   - Consistent variable access during both verification and execution
+//   - Access to command-level variables (vars, env_import) during verification
+//   - Single point of expansion for better error detection (Fail Fast)
+//   - Early detection of workdir configuration errors (Fail Fast)
+//
+// The function performs the following for each command:
+//  1. Expand command configuration (cmd, args, env, vars) via config.ExpandCommand
+//  2. Resolve effective working directory via resolveCommandWorkDir
+//  3. Store the fully-expanded RuntimeCommand in runtimeGroup.Commands
+//
+// Parameters:
+//   - groupSpec: The group specification containing command definitions
+//   - runtimeGroup: The runtime group to store expanded commands
+//   - runtimeGlobal: The global runtime configuration
+//
+// Returns:
+//   - error: An error if any command expansion or workdir resolution fails
+func (ge *DefaultGroupExecutor) preExpandCommands(
+	groupSpec *runnertypes.GroupSpec,
+	runtimeGroup *runnertypes.RuntimeGroup,
+	runtimeGlobal *runnertypes.RuntimeGlobal,
+) error {
+	// Allocate slice for expanded commands
+	runtimeGroup.Commands = make([]*runnertypes.RuntimeCommand, 0, len(groupSpec.Commands))
+
+	// Get global output size limit for command expansion
+	globalOutputSizeLimit := common.NewOutputSizeLimitFromPtr(runtimeGlobal.Spec.OutputSizeLimit)
+
+	for i := range groupSpec.Commands {
+		cmdSpec := &groupSpec.Commands[i]
+
+		// Expand command configuration
+		runtimeCmd, err := config.ExpandCommand(
+			cmdSpec,
+			runtimeGroup,
+			runtimeGlobal,
+			runtimeGlobal.Timeout(),
+			globalOutputSizeLimit,
+		)
+		if err != nil {
+			return fmt.Errorf("command[%s] (index %d): %w", cmdSpec.Name, i, err)
+		}
+
+		// Resolve effective working directory (Fail Fast)
+		// Note: This was previously done in executeAllCommands loop,
+		//       but moving it here enables earlier error detection.
+		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+		if err != nil {
+			return fmt.Errorf("command[%s] (index %d): failed to resolve workdir: %w", cmdSpec.Name, i, err)
+		}
+		runtimeCmd.EffectiveWorkDir = workDir
+
+		runtimeGroup.Commands = append(runtimeGroup.Commands, runtimeCmd)
+	}
+
+	return nil
 }
 
 // verifyGroupFiles verifies files specified in the group before execution

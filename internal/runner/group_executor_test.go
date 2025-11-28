@@ -1824,7 +1824,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to expand command")
+	assert.Contains(t, err.Error(), "failed to pre-expand commands")
 	assert.Contains(t, err.Error(), "test-cmd")
 
 	// Verify that ExecuteCommand was not called due to early error
@@ -1877,7 +1877,8 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to resolve command workdir")
+	assert.Contains(t, err.Error(), "failed to pre-expand commands")
+	assert.Contains(t, err.Error(), "failed to resolve workdir")
 	assert.Contains(t, err.Error(), "test-cmd")
 
 	// Verify that ExecuteCommand was not called due to early error
@@ -2721,6 +2722,217 @@ func TestCommandDebugLogArgs_StdoutTruncation(t *testing.T) {
 			} else {
 				assert.NotContains(t, stdoutValue, "... (truncated)")
 			}
+		})
+	}
+}
+
+// TestPreExpandCommands_Success tests successful command pre-expansion
+func TestPreExpandCommands_Success(t *testing.T) {
+	tests := []struct {
+		name         string
+		groupSpec    *runnertypes.GroupSpec
+		runtimeGroup *runnertypes.RuntimeGroup
+		wantCmdCount int
+	}{
+		{
+			name: "single command",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "/bin/echo"},
+				},
+			},
+			wantCmdCount: 1,
+		},
+		{
+			name: "multiple commands",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "/bin/echo"},
+					{Name: "cmd2", Cmd: "/bin/cat"},
+					{Name: "cmd3", Cmd: "/bin/ls"},
+				},
+			},
+			wantCmdCount: 3,
+		},
+		{
+			name: "command with group variables",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "%{tool_path}/binary"},
+				},
+			},
+			runtimeGroup: &runnertypes.RuntimeGroup{
+				ExpandedVars: map[string]string{"tool_path": "/opt/tools"},
+			},
+			wantCmdCount: 1,
+		},
+		{
+			name: "command with command-level variables",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "cmd1",
+						Vars: []string{"cmd_var=/custom/path"},
+						Cmd:  "%{cmd_var}/tool",
+					},
+				},
+			},
+			wantCmdCount: 1,
+		},
+		{
+			name: "empty commands",
+			groupSpec: &runnertypes.GroupSpec{
+				Name:     "test_group",
+				Commands: []runnertypes.CommandSpec{},
+			},
+			wantCmdCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run",
+			})
+
+			runtimeGroup := tt.runtimeGroup
+			if runtimeGroup == nil {
+				runtimeGroup = &runnertypes.RuntimeGroup{
+					Spec:             tt.groupSpec,
+					ExpandedVars:     make(map[string]string),
+					EffectiveWorkDir: "/tmp/test",
+				}
+			}
+			if runtimeGroup.Spec == nil {
+				runtimeGroup.Spec = tt.groupSpec
+			}
+			if runtimeGroup.EffectiveWorkDir == "" {
+				runtimeGroup.EffectiveWorkDir = "/tmp/test"
+			}
+
+			runtimeGlobal := &runnertypes.RuntimeGlobal{
+				Spec: &runnertypes.GlobalSpec{
+					Timeout: common.Int32Ptr(30),
+				},
+			}
+
+			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
+
+			require.NoError(t, err)
+			assert.Len(t, runtimeGroup.Commands, tt.wantCmdCount)
+
+			// Verify each command has EffectiveWorkDir set
+			for i, cmd := range runtimeGroup.Commands {
+				assert.NotEmpty(t, cmd.EffectiveWorkDir, "command %d should have EffectiveWorkDir set", i)
+			}
+		})
+	}
+}
+
+// TestPreExpandCommands_Error tests error cases in command pre-expansion
+func TestPreExpandCommands_Error(t *testing.T) {
+	tests := []struct {
+		name            string
+		groupSpec       *runnertypes.GroupSpec
+		runtimeGroup    *runnertypes.RuntimeGroup
+		wantErrContains string
+	}{
+		{
+			name: "undefined variable in cmd",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "%{undefined_var}/binary"},
+				},
+			},
+			runtimeGroup: &runnertypes.RuntimeGroup{
+				ExpandedVars: make(map[string]string),
+			},
+			wantErrContains: "undefined variable",
+		},
+		{
+			name: "undefined variable in args",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "cmd1",
+						Cmd:  "/bin/echo",
+						Args: []string{"%{undefined_arg}"},
+					},
+				},
+			},
+			runtimeGroup: &runnertypes.RuntimeGroup{
+				ExpandedVars: make(map[string]string),
+			},
+			wantErrContains: "undefined variable",
+		},
+		{
+			name: "error includes command name",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "failing_cmd", Cmd: "%{bad}/path"},
+				},
+			},
+			runtimeGroup: &runnertypes.RuntimeGroup{
+				ExpandedVars: make(map[string]string),
+			},
+			wantErrContains: "failing_cmd",
+		},
+		{
+			name: "undefined variable in workdir",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name:    "cmd1",
+						Cmd:     "/bin/echo",
+						WorkDir: "%{undefined_workdir}",
+					},
+				},
+			},
+			runtimeGroup: &runnertypes.RuntimeGroup{
+				ExpandedVars:     make(map[string]string),
+				EffectiveWorkDir: "/tmp/test",
+			},
+			wantErrContains: "failed to resolve workdir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run",
+			})
+
+			if tt.runtimeGroup.Spec == nil {
+				tt.runtimeGroup.Spec = tt.groupSpec
+			}
+			if tt.runtimeGroup.EffectiveWorkDir == "" {
+				tt.runtimeGroup.EffectiveWorkDir = "/tmp/test"
+			}
+
+			runtimeGlobal := &runnertypes.RuntimeGlobal{
+				Spec: &runnertypes.GlobalSpec{
+					Timeout: common.Int32Ptr(30),
+				},
+			}
+
+			err := ge.preExpandCommands(tt.groupSpec, tt.runtimeGroup, runtimeGlobal)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErrContains)
 		})
 	}
 }
