@@ -295,12 +295,13 @@ func (m *Manager) collectVerificationFiles(runtimeGroup *runnertypes.RuntimeGrou
 
 	// Add command files
 	if m.pathResolver != nil {
+		groupContext := fmt.Sprintf("group[%s]", groupSpec.Name)
 		for _, command := range groupSpec.Commands {
 			// Expand command path using group variables
 			expandedCmd, err := config.ExpandString(
 				command.Cmd,
 				runtimeGroup.ExpandedVars,
-				fmt.Sprintf("group[%s]", groupSpec.Name),
+				groupContext,
 				"cmd")
 			if err != nil {
 				slog.Warn("Failed to expand command path",
