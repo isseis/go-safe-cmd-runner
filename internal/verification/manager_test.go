@@ -821,7 +821,13 @@ func TestCollectVerificationFiles(t *testing.T) {
 			"bindir": binDir,
 		}
 
-		// Collect files (should expand %{bindir} to actual path)
+		// Create pre-expanded RuntimeCommand (simulating preExpandCommands behavior)
+		runtimeCmd, err := runnertypes.NewRuntimeCommand(&spec.Commands[0], common.NewUnsetTimeout(), common.NewUnlimitedOutputSizeLimit(), spec.Name)
+		require.NoError(t, err)
+		runtimeCmd.ExpandedCmd = filepath.Join(binDir, "testcmd")
+		runtimeGroup.Commands = []*runnertypes.RuntimeCommand{runtimeCmd}
+
+		// Collect files (should use pre-expanded command)
 		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
 
 		// Should resolve to the actual command path
