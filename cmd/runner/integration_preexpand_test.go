@@ -114,7 +114,7 @@ vars = [
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
 
-	// Execute group - should fail during workdir validation (not during pre-expansion)
+	// Execute group - should fail during pre-expansion due to workdir resolution error
 	ctx := context.Background()
 	err := r.Execute(ctx, nil)
 	require.Error(t, err, "Group execution should fail")
