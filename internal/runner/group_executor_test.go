@@ -28,6 +28,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newDefaultRuntimeGlobal creates a RuntimeGlobal with default test values
+func newDefaultRuntimeGlobal() *runnertypes.RuntimeGlobal {
+	return &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{
+			Timeout: common.Int32Ptr(30),
+		},
+	}
+}
+
+// newDefaultRuntimeGroup creates a RuntimeGroup with default test values for the given GroupSpec
+func newDefaultRuntimeGroup(groupSpec *runnertypes.GroupSpec) *runnertypes.RuntimeGroup {
+	return &runnertypes.RuntimeGroup{
+		Spec:             groupSpec,
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: "/tmp/test",
+	}
+}
+
+// RuntimeGroupOption is a function that modifies a RuntimeGroup
+type RuntimeGroupOption func(*runnertypes.RuntimeGroup)
+
+// WithExpandedVars sets the ExpandedVars for a RuntimeGroup
+func WithExpandedVars(vars map[string]string) RuntimeGroupOption {
+	return func(rg *runnertypes.RuntimeGroup) {
+		rg.ExpandedVars = vars
+	}
+}
+
+// WithEffectiveWorkDir sets the EffectiveWorkDir for a RuntimeGroup
+func WithEffectiveWorkDir(workDir string) RuntimeGroupOption {
+	return func(rg *runnertypes.RuntimeGroup) {
+		rg.EffectiveWorkDir = workDir
+	}
+}
+
+// newRuntimeGroup creates a RuntimeGroup with default test values and applies optional modifications
+func newRuntimeGroup(groupSpec *runnertypes.GroupSpec, opts ...RuntimeGroupOption) *runnertypes.RuntimeGroup {
+	rg := newDefaultRuntimeGroup(groupSpec)
+	for _, opt := range opts {
+		opt(rg)
+	}
+	return rg
+}
+
 // TestCreateCommandContext_UnlimitedTimeout tests unlimited timeout handling (T1.1)
 func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 	tests := []struct {
@@ -2764,9 +2808,15 @@ func TestPreExpandCommands_Success(t *testing.T) {
 					{Name: "cmd1", Cmd: "%{tool_path}/binary"},
 				},
 			},
-			runtimeGroup: &runnertypes.RuntimeGroup{
-				ExpandedVars: map[string]string{"tool_path": "/opt/tools"},
-			},
+			runtimeGroup: newRuntimeGroup(
+				&runnertypes.GroupSpec{
+					Name: "test_group",
+					Commands: []runnertypes.CommandSpec{
+						{Name: "cmd1", Cmd: "%{tool_path}/binary"},
+					},
+				},
+				WithExpandedVars(map[string]string{"tool_path": "/opt/tools"}),
+			),
 			wantCmdCount: 1,
 		},
 		{
@@ -2802,26 +2852,13 @@ func TestPreExpandCommands_Success(t *testing.T) {
 				RunID:           "test-run",
 			})
 
+			// Create runtimeGroup with defaults, override if provided in test case
 			runtimeGroup := tt.runtimeGroup
 			if runtimeGroup == nil {
-				runtimeGroup = &runnertypes.RuntimeGroup{
-					Spec:             tt.groupSpec,
-					ExpandedVars:     make(map[string]string),
-					EffectiveWorkDir: "/tmp/test",
-				}
-			}
-			if runtimeGroup.Spec == nil {
-				runtimeGroup.Spec = tt.groupSpec
-			}
-			if runtimeGroup.EffectiveWorkDir == "" {
-				runtimeGroup.EffectiveWorkDir = "/tmp/test"
+				runtimeGroup = newRuntimeGroup(tt.groupSpec)
 			}
 
-			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
-				},
-			}
+			runtimeGlobal := newDefaultRuntimeGlobal()
 
 			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
 
@@ -2841,7 +2878,6 @@ func TestPreExpandCommands_Error(t *testing.T) {
 	tests := []struct {
 		name            string
 		groupSpec       *runnertypes.GroupSpec
-		runtimeGroup    *runnertypes.RuntimeGroup
 		wantErrContains string
 	}{
 		{
@@ -2851,9 +2887,6 @@ func TestPreExpandCommands_Error(t *testing.T) {
 				Commands: []runnertypes.CommandSpec{
 					{Name: "cmd1", Cmd: "%{undefined_var}/binary"},
 				},
-			},
-			runtimeGroup: &runnertypes.RuntimeGroup{
-				ExpandedVars: make(map[string]string),
 			},
 			wantErrContains: "undefined variable",
 		},
@@ -2869,9 +2902,6 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					},
 				},
 			},
-			runtimeGroup: &runnertypes.RuntimeGroup{
-				ExpandedVars: make(map[string]string),
-			},
 			wantErrContains: "undefined variable",
 		},
 		{
@@ -2881,9 +2911,6 @@ func TestPreExpandCommands_Error(t *testing.T) {
 				Commands: []runnertypes.CommandSpec{
 					{Name: "failing_cmd", Cmd: "%{bad}/path"},
 				},
-			},
-			runtimeGroup: &runnertypes.RuntimeGroup{
-				ExpandedVars: make(map[string]string),
 			},
 			wantErrContains: "failing_cmd",
 		},
@@ -2899,10 +2926,6 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					},
 				},
 			},
-			runtimeGroup: &runnertypes.RuntimeGroup{
-				ExpandedVars:     make(map[string]string),
-				EffectiveWorkDir: "/tmp/test",
-			},
 			wantErrContains: "failed to resolve workdir",
 		},
 	}
@@ -2916,20 +2939,10 @@ func TestPreExpandCommands_Error(t *testing.T) {
 				RunID:           "test-run",
 			})
 
-			if tt.runtimeGroup.Spec == nil {
-				tt.runtimeGroup.Spec = tt.groupSpec
-			}
-			if tt.runtimeGroup.EffectiveWorkDir == "" {
-				tt.runtimeGroup.EffectiveWorkDir = "/tmp/test"
-			}
+			runtimeGroup := newRuntimeGroup(tt.groupSpec, WithExpandedVars(make(map[string]string)))
+			runtimeGlobal := newDefaultRuntimeGlobal()
 
-			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
-				},
-			}
-
-			err := ge.preExpandCommands(tt.groupSpec, tt.runtimeGroup, runtimeGlobal)
+			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErrContains)
