@@ -786,6 +786,106 @@ func TestCollectVerificationFiles(t *testing.T) {
 		assert.Contains(t, collectedFiles, "file2.txt")
 		assert.Contains(t, collectedFiles, "file3.txt")
 	})
+
+	t.Run("expand_command_variables", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Create actual command files for PATH resolution
+		binDir := filepath.Join(tmpDir, "bin")
+		err := os.MkdirAll(binDir, 0o755)
+		require.NoError(t, err)
+
+		testCmd := filepath.Join(binDir, "testcmd")
+		err = os.WriteFile(testCmd, []byte("#!/bin/sh\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Create manager with PATH resolver
+		pathResolver := NewPathResolver(binDir, nil, false)
+		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
+		require.NoError(t, err)
+
+		// Create runtime group with command using variable reference
+		spec := &runnertypes.GroupSpec{
+			Name: "test-group",
+			Commands: []runnertypes.CommandSpec{
+				{
+					Name: "test-command",
+					Cmd:  "%{bindir}/testcmd",
+					Args: []string{},
+				},
+			},
+		}
+		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+		require.NoError(t, err)
+		runtimeGroup.ExpandedVars = map[string]string{
+			"bindir": binDir,
+		}
+
+		// Collect files (should expand %{bindir} to actual path)
+		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+
+		// Should resolve to the actual command path
+		assert.Len(t, collectedFiles, 1)
+		assert.Contains(t, collectedFiles, testCmd)
+	})
+
+	t.Run("skip_command_with_expansion_error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		manager, err := NewManagerForTest(tmpDir)
+		require.NoError(t, err)
+
+		// Create runtime group with command using undefined variable
+		spec := &runnertypes.GroupSpec{
+			Name: "test-group",
+			Commands: []runnertypes.CommandSpec{
+				{
+					Name: "test-command",
+					Cmd:  "%{undefined_var}/testcmd",
+					Args: []string{},
+				},
+			},
+		}
+		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+		require.NoError(t, err)
+		runtimeGroup.ExpandedVars = map[string]string{} // Empty - no variables defined
+
+		// Collect files (should skip command with expansion error)
+		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+
+		// Should return empty (command skipped due to expansion error)
+		assert.Empty(t, collectedFiles)
+	})
+
+	t.Run("skip_command_with_resolution_error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Create path resolver with empty PATH (no commands can be resolved)
+		pathResolver := NewPathResolver("", nil, false)
+		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
+		require.NoError(t, err)
+
+		// Create runtime group with command that can't be resolved
+		spec := &runnertypes.GroupSpec{
+			Name: "test-group",
+			Commands: []runnertypes.CommandSpec{
+				{
+					Name: "test-command",
+					Cmd:  "/nonexistent/command",
+					Args: []string{},
+				},
+			},
+		}
+		runtimeGroup, err := runnertypes.NewRuntimeGroup(spec)
+		require.NoError(t, err)
+		runtimeGroup.ExpandedVars = map[string]string{}
+
+		// Collect files (should skip command with resolution error)
+		collectedFiles := manager.collectVerificationFiles(runtimeGroup)
+
+		// Should return empty (command skipped due to resolution error)
+		assert.Empty(t, collectedFiles)
+	})
 }
 
 // TestVerifyFileWithFallback tests the verifyFileWithFallback helper method
