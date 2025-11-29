@@ -28,6 +28,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newDefaultRuntimeGlobal creates a RuntimeGlobal with default test values
+func newDefaultRuntimeGlobal() *runnertypes.RuntimeGlobal {
+	return &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{
+			Timeout: common.Int32Ptr(30),
+		},
+	}
+}
+
+// newDefaultRuntimeGroup creates a RuntimeGroup with default test values for the given GroupSpec
+func newDefaultRuntimeGroup(groupSpec *runnertypes.GroupSpec) *runnertypes.RuntimeGroup {
+	return &runnertypes.RuntimeGroup{
+		Spec:             groupSpec,
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: "/tmp/test",
+	}
+}
+
+// RuntimeGroupOption is a function that modifies a RuntimeGroup
+type RuntimeGroupOption func(*runnertypes.RuntimeGroup)
+
+// WithExpandedVars sets the ExpandedVars for a RuntimeGroup
+func WithExpandedVars(vars map[string]string) RuntimeGroupOption {
+	return func(rg *runnertypes.RuntimeGroup) {
+		rg.ExpandedVars = vars
+	}
+}
+
+// WithEffectiveWorkDir sets the EffectiveWorkDir for a RuntimeGroup
+func WithEffectiveWorkDir(workDir string) RuntimeGroupOption {
+	return func(rg *runnertypes.RuntimeGroup) {
+		rg.EffectiveWorkDir = workDir
+	}
+}
+
+// newRuntimeGroup creates a RuntimeGroup with default test values and applies optional modifications
+func newRuntimeGroup(groupSpec *runnertypes.GroupSpec, opts ...RuntimeGroupOption) *runnertypes.RuntimeGroup {
+	rg := newDefaultRuntimeGroup(groupSpec)
+	for _, opt := range opts {
+		opt(rg)
+	}
+	return rg
+}
+
 // TestCreateCommandContext_UnlimitedTimeout tests unlimited timeout handling (T1.1)
 func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 	tests := []struct {
@@ -1675,7 +1719,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 	mockValidator, _ := setupMocksForTest(t)
 	mockRM := new(runnertesting.MockResourceManager)
 
-	config := &runnertypes.ConfigSpec{
+	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
 			Timeout: common.Int32Ptr(30),
 		},
@@ -1683,7 +1727,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
-			Config:          config,
+			Config:          configSpec,
 			Validator:       mockValidator,
 			ResourceManager: mockRM,
 		},
@@ -1709,8 +1753,13 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined variable")
-	assert.Contains(t, err.Error(), "UNDEFINED_VAR")
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	// Also verify detailed error contains variable name
+	var detailErr *config.ErrUndefinedVariableDetail
+	if errors.As(err, &detailErr) {
+		assert.Equal(t, "UNDEFINED_VAR", detailErr.VariableName, "Error should mention undefined variable name")
+	}
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -1786,7 +1835,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	mockValidator, mockVM := setupMocksForTest(t)
 	mockRM := new(runnertesting.MockResourceManager)
 
-	config := &runnertypes.ConfigSpec{
+	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
 			Timeout: common.Int32Ptr(30),
 		},
@@ -1794,7 +1843,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
-			Config:              config,
+			Config:              configSpec,
 			Validator:           mockValidator,
 			VerificationManager: mockVM,
 			ResourceManager:     mockRM,
@@ -1824,8 +1873,10 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to expand command")
-	assert.Contains(t, err.Error(), "test-cmd")
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	// Command name appears in the outer wrapper error message
+	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -1839,7 +1890,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	mockValidator, mockVM := setupMocksForTest(t)
 	mockRM := new(runnertesting.MockResourceManager)
 
-	config := &runnertypes.ConfigSpec{
+	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
 			Timeout: common.Int32Ptr(30),
 		},
@@ -1847,7 +1898,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
-			Config:              config,
+			Config:              configSpec,
 			Validator:           mockValidator,
 			VerificationManager: mockVM,
 			ResourceManager:     mockRM,
@@ -1877,8 +1928,11 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to resolve command workdir")
-	assert.Contains(t, err.Error(), "test-cmd")
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	// Verify error message mentions both workdir resolution and command name
+	assert.Contains(t, err.Error(), "failed to resolve workdir", "Error should mention workdir resolution failure")
+	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2720,6 +2774,196 @@ func TestCommandDebugLogArgs_StdoutTruncation(t *testing.T) {
 				assert.Contains(t, stdoutValue, "... (truncated)")
 			} else {
 				assert.NotContains(t, stdoutValue, "... (truncated)")
+			}
+		})
+	}
+}
+
+// TestPreExpandCommands_Success tests successful command pre-expansion
+func TestPreExpandCommands_Success(t *testing.T) {
+	tests := []struct {
+		name         string
+		groupSpec    *runnertypes.GroupSpec
+		runtimeGroup *runnertypes.RuntimeGroup
+		wantCmdCount int
+	}{
+		{
+			name: "single command",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "/bin/echo"},
+				},
+			},
+			wantCmdCount: 1,
+		},
+		{
+			name: "multiple commands",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "/bin/echo"},
+					{Name: "cmd2", Cmd: "/bin/cat"},
+					{Name: "cmd3", Cmd: "/bin/ls"},
+				},
+			},
+			wantCmdCount: 3,
+		},
+		{
+			name: "command with group variables",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "%{tool_path}/binary"},
+				},
+			},
+			runtimeGroup: newRuntimeGroup(
+				&runnertypes.GroupSpec{
+					Name: "test_group",
+					Commands: []runnertypes.CommandSpec{
+						{Name: "cmd1", Cmd: "%{tool_path}/binary"},
+					},
+				},
+				WithExpandedVars(map[string]string{"tool_path": "/opt/tools"}),
+			),
+			wantCmdCount: 1,
+		},
+		{
+			name: "command with command-level variables",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "cmd1",
+						Vars: []string{"cmd_var=/custom/path"},
+						Cmd:  "%{cmd_var}/tool",
+					},
+				},
+			},
+			wantCmdCount: 1,
+		},
+		{
+			name: "empty commands",
+			groupSpec: &runnertypes.GroupSpec{
+				Name:     "test_group",
+				Commands: []runnertypes.CommandSpec{},
+			},
+			wantCmdCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run",
+			})
+
+			// Create runtimeGroup with defaults, override if provided in test case
+			runtimeGroup := tt.runtimeGroup
+			if runtimeGroup == nil {
+				runtimeGroup = newRuntimeGroup(tt.groupSpec)
+			}
+
+			runtimeGlobal := newDefaultRuntimeGlobal()
+
+			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
+
+			require.NoError(t, err)
+			assert.Len(t, runtimeGroup.Commands, tt.wantCmdCount)
+
+			// Verify each command has EffectiveWorkDir set
+			for i, cmd := range runtimeGroup.Commands {
+				assert.NotEmpty(t, cmd.EffectiveWorkDir, "command %d should have EffectiveWorkDir set", i)
+			}
+		})
+	}
+}
+
+// TestPreExpandCommands_Error tests error cases in command pre-expansion
+func TestPreExpandCommands_Error(t *testing.T) {
+	tests := []struct {
+		name            string
+		groupSpec       *runnertypes.GroupSpec
+		wantErrIs       error  // Expected error type for errors.Is check
+		wantErrContains string // Expected substring in error message (for context)
+	}{
+		{
+			name: "undefined variable in cmd",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "cmd1", Cmd: "%{undefined_var}/binary"},
+				},
+			},
+			wantErrIs: config.ErrUndefinedVariable,
+		},
+		{
+			name: "undefined variable in args",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "cmd1",
+						Cmd:  "/bin/echo",
+						Args: []string{"%{undefined_arg}"},
+					},
+				},
+			},
+			wantErrIs: config.ErrUndefinedVariable,
+		},
+		{
+			name: "error includes command name",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{Name: "failing_cmd", Cmd: "%{bad}/path"},
+				},
+			},
+			wantErrIs:       config.ErrUndefinedVariable,
+			wantErrContains: "failing_cmd", // Verify error context includes the command name
+		},
+		{
+			name: "undefined variable in workdir",
+			groupSpec: &runnertypes.GroupSpec{
+				Name: "test_group",
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name:    "cmd1",
+						Cmd:     "/bin/echo",
+						WorkDir: "%{undefined_workdir}",
+					},
+				},
+			},
+			wantErrIs: config.ErrUndefinedVariable,
+			// Note: No wantErrContains needed - error type check is sufficient
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run",
+			})
+
+			runtimeGroup := newRuntimeGroup(tt.groupSpec, WithExpandedVars(make(map[string]string)))
+			runtimeGlobal := newDefaultRuntimeGlobal()
+
+			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
+
+			require.Error(t, err)
+			// Verify error type using errors.Is instead of fragile string matching
+			if tt.wantErrIs != nil {
+				assert.True(t, errors.Is(err, tt.wantErrIs), "Error should be %v", tt.wantErrIs)
+			}
+			// If specific context is expected in error message, verify it
+			if tt.wantErrContains != "" {
+				assert.Contains(t, err.Error(), tt.wantErrContains)
 			}
 		})
 	}

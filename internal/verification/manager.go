@@ -10,7 +10,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -286,37 +285,22 @@ func (m *Manager) collectVerificationFiles(runtimeGroup *runnertypes.RuntimeGrou
 	groupSpec := runtimeGroup.Spec
 
 	// Use map to automatically eliminate duplicates
-	fileSet := make(map[string]struct{}, len(runtimeGroup.ExpandedVerifyFiles)+len(groupSpec.Commands))
+	fileSet := make(map[string]struct{}, len(runtimeGroup.ExpandedVerifyFiles)+len(runtimeGroup.Commands))
 
 	// Add explicit files with variables expanded
 	for _, file := range runtimeGroup.ExpandedVerifyFiles {
 		fileSet[file] = struct{}{}
 	}
 
-	// Add command files
-	if m.pathResolver != nil {
-		groupContext := fmt.Sprintf("group[%s]", groupSpec.Name)
-		for _, command := range groupSpec.Commands {
-			// Expand command path using group variables
-			expandedCmd, err := config.ExpandString(
-				command.Cmd,
-				runtimeGroup.ExpandedVars,
-				groupContext,
-				"cmd")
-			if err != nil {
-				slog.Warn("Failed to expand command path",
-					"group", groupSpec.Name,
-					"command", command.Cmd,
-					"error", err.Error())
-				continue
-			}
-
-			// Resolve expanded command path
-			resolvedPath, err := m.pathResolver.ResolvePath(expandedCmd)
+	// Add command files from pre-expanded runtime commands
+	if m.pathResolver != nil && len(runtimeGroup.Commands) > 0 {
+		for _, runtimeCmd := range runtimeGroup.Commands {
+			// Use pre-expanded command path
+			resolvedPath, err := m.pathResolver.ResolvePath(runtimeCmd.ExpandedCmd)
 			if err != nil {
 				slog.Warn("Failed to resolve command path",
 					"group", groupSpec.Name,
-					"command", expandedCmd,
+					"command", runtimeCmd.ExpandedCmd,
 					"error", err.Error())
 				continue
 			}
