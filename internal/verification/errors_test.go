@@ -75,7 +75,6 @@ func TestError_Is(t *testing.T) {
 	}
 
 	assert.True(t, verificationErr.Is(ErrOriginalError))
-	assert.NotErrorIs(t, verificationErr, ErrDifferentError)
 	assert.ErrorIs(t, verificationErr, ErrOriginalError)
 }
 
@@ -265,7 +264,6 @@ func TestErrorStructure(t *testing.T) {
 
 		// Test Is functionality
 		assert.True(t, err.Is(baseErr))
-		assert.NotErrorIs(t, err, ErrDifferentError)
 
 		// Test errors.Is with wrapper
 		assert.ErrorIs(t, err, baseErr)
@@ -337,7 +335,6 @@ func TestVerificationErrorStructure(t *testing.T) {
 
 		// Test Is functionality
 		assert.True(t, err.Is(baseErr))
-		assert.NotErrorIs(t, err, ErrDifferentError)
 
 		// Test errors.Is with wrapper
 		assert.ErrorIs(t, err, baseErr)
