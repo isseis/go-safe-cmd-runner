@@ -75,7 +75,7 @@ func TestError_Is(t *testing.T) {
 	}
 
 	assert.True(t, verificationErr.Is(ErrOriginalError))
-	assert.False(t, verificationErr.Is(ErrDifferentError))
+	assert.NotErrorIs(t, verificationErr, ErrDifferentError)
 	assert.ErrorIs(t, verificationErr, ErrOriginalError)
 }
 
@@ -137,7 +137,7 @@ func TestValidateProductionConstraints(t *testing.T) {
 		require.Error(t, err)
 
 		var hashDirErr *HashDirectorySecurityError
-		assert.True(t, errors.As(err, &hashDirErr))
+		assert.ErrorAs(t, err, &hashDirErr)
 		assert.Equal(t, "/custom/hash/dir", hashDirErr.RequestedDir)
 		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", hashDirErr.DefaultDir)
 		assert.Equal(t, "production environment requires default hash directory", hashDirErr.Reason)
@@ -156,7 +156,7 @@ func TestSecurityConstraintsInManager(t *testing.T) {
 
 		require.Error(t, err)
 		var hashDirErr *HashDirectorySecurityError
-		assert.True(t, errors.As(err, &hashDirErr))
+		assert.ErrorAs(t, err, &hashDirErr)
 	})
 
 	t.Run("testing mode with relaxed security allows custom directories", func(t *testing.T) {
@@ -265,7 +265,7 @@ func TestErrorStructure(t *testing.T) {
 
 		// Test Is functionality
 		assert.True(t, err.Is(baseErr))
-		assert.False(t, err.Is(ErrDifferentError))
+		assert.NotErrorIs(t, err, ErrDifferentError)
 
 		// Test errors.Is with wrapper
 		assert.ErrorIs(t, err, baseErr)
@@ -337,7 +337,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 
 		// Test Is functionality
 		assert.True(t, err.Is(baseErr))
-		assert.False(t, err.Is(ErrDifferentError))
+		assert.NotErrorIs(t, err, ErrDifferentError)
 
 		// Test errors.Is with wrapper
 		assert.ErrorIs(t, err, baseErr)

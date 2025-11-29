@@ -1618,8 +1618,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 
 			// Verify error matches expected type using errors.Is()
 			require.Error(t, err, "Should return error for %s stage", tt.stage)
-			assert.True(t, errors.Is(err, tt.expectError),
-				"Expected error type %v, got %v", tt.expectError, err)
+			assert.ErrorIs(t, err, tt.expectError)
 
 			// Verify mock expectations
 			mockRM.AssertExpectations(t)

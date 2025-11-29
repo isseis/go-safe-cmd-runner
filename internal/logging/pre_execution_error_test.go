@@ -139,8 +139,8 @@ func TestPreExecutionError_As_False_Cases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var target *PreExecutionError
-			assert.False(t, errors.As(tt.err, &target), "errors.As() should return false for %s", tt.name)
-			assert.Nil(t, target, "target should remain nil for %s", tt.name)
+			assert.False(t, errors.As(tt.err, &target))
+			assert.Nil(t, target)
 		})
 	}
 }
@@ -155,8 +155,8 @@ func TestPreExecutionError_As_WrongTargetType(t *testing.T) {
 
 	// Test with wrong target type (different error type)
 	var wrongTarget *customError
-	assert.False(t, errors.As(err, &wrongTarget), "errors.As() should return false for wrong target type")
-	assert.Nil(t, wrongTarget, "wrong target should remain nil")
+	assert.False(t, errors.As(err, &wrongTarget))
+	assert.Nil(t, wrongTarget)
 }
 
 func TestPreExecutionError_As_Integration(t *testing.T) {

@@ -2,7 +2,6 @@ package verification
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -281,7 +280,7 @@ func TestNewManagerProduction(t *testing.T) {
 
 		require.Error(t, err)
 		var hashDirErr *HashDirectorySecurityError
-		assert.True(t, errors.As(err, &hashDirErr))
+		assert.ErrorAs(t, err, &hashDirErr)
 		assert.Equal(t, "/custom/hash/dir", hashDirErr.RequestedDir)
 		assert.Equal(t, testHashDir, hashDirErr.DefaultDir)
 	})

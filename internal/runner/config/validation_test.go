@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -374,8 +373,7 @@ func TestValidateGroupNames(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")
 				if tt.expectedError != nil {
-					assert.True(t, errors.Is(err, tt.expectedError),
-						"expected error type %v, got %v", tt.expectedError, err)
+					assert.ErrorIs(t, err, tt.expectedError)
 				}
 				for _, substr := range tt.errorContains {
 					assert.Contains(t, err.Error(), substr,
@@ -503,8 +501,7 @@ func TestValidateTimeouts(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err, "expected error but got none")
-				assert.True(t, errors.Is(err, tt.expectedErr),
-					"expected error type %v, got %v", tt.expectedErr, err)
+				assert.ErrorIs(t, err, tt.expectedErr)
 				for _, mustContain := range tt.errorMustContain {
 					assert.Contains(t, err.Error(), mustContain,
 						"error message should contain %q", mustContain)
