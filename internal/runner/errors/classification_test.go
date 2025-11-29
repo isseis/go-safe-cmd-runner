@@ -56,7 +56,7 @@ func TestClassifyVerificationError_WithCause(t *testing.T) {
 	)
 
 	// Verify errors.Is works correctly
-	assert.True(t, errors.Is(wrappedErr.Cause, originalErr))
+	assert.ErrorIs(t, wrappedErr.Cause, originalErr)
 
 	// Verify the error chain is maintained
 	assert.NotNil(t, wrappedErr.Cause)

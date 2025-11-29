@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func TestErrInvalidVariableNameDetail_Unwrap(t *testing.T) {
 		Reason:       "test reason",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidVariableName), "Unwrap() should return ErrInvalidVariableName")
+	assert.ErrorIs(t, err, ErrInvalidVariableName)
 }
 
 // TestErrInvalidSystemVariableNameDetail_Error tests the Error() method
@@ -54,7 +53,7 @@ func TestErrInvalidSystemVariableNameDetail_Unwrap(t *testing.T) {
 		Reason:             "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidSystemVariableName), "Unwrap() should return ErrInvalidSystemVariableName")
+	assert.ErrorIs(t, err, ErrInvalidSystemVariableName)
 }
 
 // TestErrReservedVariablePrefixDetail_Error tests the Error() method
@@ -79,7 +78,7 @@ func TestErrReservedVariablePrefixDetail_Unwrap(t *testing.T) {
 		Prefix:       "RUNNER_",
 	}
 
-	assert.True(t, errors.Is(err, ErrReservedVariablePrefix), "Unwrap() should return ErrReservedVariablePrefix")
+	assert.ErrorIs(t, err, ErrReservedVariablePrefix)
 }
 
 // TestErrVariableNotInAllowlistDetail_Error tests the Error() method
@@ -104,7 +103,7 @@ func TestErrVariableNotInAllowlistDetail_Unwrap(t *testing.T) {
 		Allowlist:       []string{},
 	}
 
-	assert.True(t, errors.Is(err, ErrVariableNotInAllowlist), "Unwrap() should return ErrVariableNotInAllowlist")
+	assert.ErrorIs(t, err, ErrVariableNotInAllowlist)
 }
 
 // TestErrCircularReferenceDetail_Error tests the Error() method
@@ -129,7 +128,7 @@ func TestErrCircularReferenceDetail_Unwrap(t *testing.T) {
 		Chain:        []string{"VAR"},
 	}
 
-	assert.True(t, errors.Is(err, ErrCircularReference), "Unwrap() should return ErrCircularReference")
+	assert.ErrorIs(t, err, ErrCircularReference)
 }
 
 // TestErrUndefinedVariableDetail_Error tests the Error() method
@@ -154,7 +153,7 @@ func TestErrUndefinedVariableDetail_Unwrap(t *testing.T) {
 		Context:      "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrUndefinedVariable), "Unwrap() should return ErrUndefinedVariable")
+	assert.ErrorIs(t, err, ErrUndefinedVariable)
 }
 
 // TestErrInvalidEscapeSequenceDetail_Error tests the Error() method
@@ -179,7 +178,7 @@ func TestErrInvalidEscapeSequenceDetail_Unwrap(t *testing.T) {
 		Context:  "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidEscapeSequence), "Unwrap() should return ErrInvalidEscapeSequence")
+	assert.ErrorIs(t, err, ErrInvalidEscapeSequence)
 }
 
 // TestErrUnclosedVariableReferenceDetail_Error tests the Error() method
@@ -202,7 +201,7 @@ func TestErrUnclosedVariableReferenceDetail_Unwrap(t *testing.T) {
 		Context: "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrUnclosedVariableReference), "Unwrap() should return ErrUnclosedVariableReference")
+	assert.ErrorIs(t, err, ErrUnclosedVariableReference)
 }
 
 // TestErrMaxRecursionDepthExceededDetail_Error tests the Error() method
@@ -227,7 +226,7 @@ func TestErrMaxRecursionDepthExceededDetail_Unwrap(t *testing.T) {
 		Context:  "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrMaxRecursionDepthExceeded), "Unwrap() should return ErrMaxRecursionDepthExceeded")
+	assert.ErrorIs(t, err, ErrMaxRecursionDepthExceeded)
 }
 
 // TestErrInvalidFromEnvFormatDetail_Error tests the Error() method
@@ -250,7 +249,7 @@ func TestErrInvalidFromEnvFormatDetail_Unwrap(t *testing.T) {
 		Reason:  "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidFromEnvFormat), "Unwrap() should return ErrInvalidFromEnvFormat")
+	assert.ErrorIs(t, err, ErrInvalidFromEnvFormat)
 }
 
 // TestErrInvalidVarsFormatDetail_Error tests the Error() method
@@ -273,7 +272,7 @@ func TestErrInvalidVarsFormatDetail_Unwrap(t *testing.T) {
 		Reason:  "reason",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidVarsFormat), "Unwrap() should return ErrInvalidVarsFormat")
+	assert.ErrorIs(t, err, ErrInvalidVarsFormat)
 }
 
 // TestErrInvalidEnvFormatDetail_Error tests the Error() method
@@ -296,7 +295,7 @@ func TestErrInvalidEnvFormatDetail_Unwrap(t *testing.T) {
 		Reason:  "test",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidEnvFormat), "Unwrap() should return ErrInvalidEnvFormat")
+	assert.ErrorIs(t, err, ErrInvalidEnvFormat)
 }
 
 // TestErrInvalidEnvKeyDetail_Error tests the Error() method
@@ -321,7 +320,7 @@ func TestErrInvalidEnvKeyDetail_Unwrap(t *testing.T) {
 		Reason:  "test reason",
 	}
 
-	assert.True(t, errors.Is(err, ErrInvalidEnvKey), "Unwrap() should return ErrInvalidEnvKey")
+	assert.ErrorIs(t, err, ErrInvalidEnvKey)
 }
 
 // TestErrDuplicateVariableDefinitionDetail_Error tests the Error() method
@@ -344,7 +343,7 @@ func TestErrDuplicateVariableDefinitionDetail_Unwrap(t *testing.T) {
 		VariableName: "DUP",
 	}
 
-	assert.True(t, errors.Is(err, ErrDuplicateVariableDefinition), "Unwrap() should return ErrDuplicateVariableDefinition")
+	assert.ErrorIs(t, err, ErrDuplicateVariableDefinition)
 }
 
 // TestErrDuplicatePathDetail_Error tests the Error() method
@@ -371,7 +370,7 @@ func TestErrDuplicatePathDetail_Unwrap(t *testing.T) {
 		DupeIndex:  2,
 	}
 
-	assert.True(t, errors.Is(err, ErrDuplicatePath), "Unwrap() should return ErrDuplicatePath")
+	assert.ErrorIs(t, err, ErrDuplicatePath)
 }
 
 // TestErrDuplicateResolvedPathDetail_Error tests the Error() method
@@ -396,5 +395,5 @@ func TestErrDuplicateResolvedPathDetail_Unwrap(t *testing.T) {
 		ResolvedPath: "/target",
 	}
 
-	assert.True(t, errors.Is(err, ErrDuplicateResolvedPath), "Unwrap() should return ErrDuplicateResolvedPath")
+	assert.ErrorIs(t, err, ErrDuplicateResolvedPath)
 }

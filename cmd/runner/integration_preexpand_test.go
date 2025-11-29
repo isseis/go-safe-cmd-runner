@@ -89,7 +89,7 @@ args = ["test", "%%{undefined_var}"]
 	require.Error(t, err, "Group execution should fail")
 
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 
 	// Also verify detailed error contains variable name
 	var detailErr *config.ErrUndefinedVariableDetail
@@ -131,7 +131,7 @@ vars = [
 	require.Error(t, err, "Group execution should fail")
 
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.True(t, errors.Is(err, executor.ErrDirNotExists), "Error should be ErrDirNotExists")
+	assert.ErrorIs(t, err, executor.ErrDirNotExists)
 }
 
 // TestIntegration_PreExpand_DryRunMode tests that pre-expansion works correctly
@@ -217,7 +217,7 @@ args = ["third"]
 	require.Error(t, err, "Group execution should fail")
 
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 
 	// Verify detailed error contains variable name and command name in error message
 	var detailErr *config.ErrUndefinedVariableDetail

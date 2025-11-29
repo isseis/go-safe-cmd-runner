@@ -1,7 +1,6 @@
 package groupmembership
 
 import (
-	"errors"
 	"os"
 	"testing"
 	"time"
@@ -228,7 +227,7 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 		// before group membership is even checked
 		assert.Error(t, err, "CanUserSafelyWriteFile should return an error for non-owner user")
 		assert.False(t, canWrite, "Should return false for non-owner user")
-		assert.True(t, errors.Is(err, ErrFileNotOwner), "Error should be ErrFileNotOwner for non-owner accessing group writable file")
+		assert.ErrorIs(t, err, ErrFileNotOwner)
 	})
 
 	t.Run("root user test", func(t *testing.T) {
@@ -249,7 +248,7 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o666) // world writable
 		assert.Error(t, err, "World writable files should be denied")
 		assert.False(t, canWrite, "Should return false for world writable files")
-		assert.True(t, errors.Is(err, ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
+		assert.ErrorIs(t, err, ErrFileWorldWritable)
 	})
 
 	t.Run("group writable file - owner only allowed if exclusive group member", func(t *testing.T) {
@@ -274,7 +273,7 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o444) // read-only
 		assert.Error(t, err, "Non-writable files should be denied")
 		assert.False(t, canWrite, "Should return false for non-writable files")
-		assert.True(t, errors.Is(err, ErrFileNotWritable), "Error should be ErrFileNotWritable")
+		assert.ErrorIs(t, err, ErrFileNotWritable)
 	})
 
 	t.Run("owner writable only - non-owner denied", func(t *testing.T) {
@@ -328,7 +327,7 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o666) // world writable
 		assert.Error(t, err, "World writable files should be denied for read")
 		assert.False(t, canRead, "Should return false for world writable files")
-		assert.True(t, errors.Is(err, ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
+		assert.ErrorIs(t, err, ErrFileWorldWritable)
 	})
 
 	t.Run("setuid file allowed for read", func(t *testing.T) {
@@ -388,7 +387,7 @@ func TestCanCurrentUserSafelyWriteFile_AllPermissions(t *testing.T) {
 		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o666)
 		assert.Error(t, err, "World writable files should be denied")
 		assert.False(t, canWrite)
-		assert.True(t, errors.Is(err, ErrFileWorldWritable))
+		assert.ErrorIs(t, err, ErrFileWorldWritable)
 	})
 }
 
@@ -475,7 +474,7 @@ func TestCanCurrentUserSafelyReadFile_AllPermissions(t *testing.T) {
 		// Should error because user is not in group and file is group writable
 		assert.Error(t, err)
 		assert.False(t, canRead)
-		assert.True(t, errors.Is(err, ErrGroupWritableNonMember))
+		assert.ErrorIs(t, err, ErrGroupWritableNonMember)
 	})
 
 	t.Run("world_readable", func(t *testing.T) {
@@ -488,7 +487,7 @@ func TestCanCurrentUserSafelyReadFile_AllPermissions(t *testing.T) {
 		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o666)
 		assert.Error(t, err, "World writable files should be denied for read")
 		assert.False(t, canRead)
-		assert.True(t, errors.Is(err, ErrFileWorldWritable))
+		assert.ErrorIs(t, err, ErrFileWorldWritable)
 	})
 }
 
@@ -536,7 +535,7 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, MaxAllowedReadPerms|0o1000)
 		assert.Error(t, err)
 		assert.False(t, canRead)
-		assert.True(t, errors.Is(err, ErrPermissionsExceedMaximum))
+		assert.ErrorIs(t, err, ErrPermissionsExceedMaximum)
 	})
 
 	t.Run("various_readable_permissions", func(t *testing.T) {

@@ -111,7 +111,7 @@ func TestValidateVariableName(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errType != nil {
-					assert.True(t, errors.Is(err, tt.errType))
+					assert.ErrorIs(t, err, tt.errType)
 				}
 			} else {
 				assert.NoError(t, err)

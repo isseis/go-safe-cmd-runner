@@ -911,6 +911,6 @@ func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 		// Test that SafeReadFile still fails with world writable files
 		_, err := SafeReadFile(filePath)
 		assert.Error(t, err, "SafeReadFile should fail with world writable file")
-		assert.True(t, errors.Is(err, groupmembership.ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
+		assert.ErrorIs(t, err, groupmembership.ErrFileWorldWritable)
 	})
 }

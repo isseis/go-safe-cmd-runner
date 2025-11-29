@@ -565,7 +565,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		// Should fail with nil config
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.True(t, errors.Is(err, ErrConfigNil))
+		assert.ErrorIs(t, err, ErrConfigNil)
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -617,7 +617,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 		// Should fail with nil config
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.True(t, errors.Is(err, ErrConfigNil))
+		assert.ErrorIs(t, err, ErrConfigNil)
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -667,7 +667,7 @@ func TestResolvePath(t *testing.T) {
 		// Should fail with path resolver not initialized
 		assert.Error(t, err)
 		assert.Empty(t, resolvedPath)
-		assert.True(t, errors.Is(err, ErrPathResolverNotInitialized))
+		assert.ErrorIs(t, err, ErrPathResolverNotInitialized)
 	})
 
 	t.Run("command_not_found", func(t *testing.T) {

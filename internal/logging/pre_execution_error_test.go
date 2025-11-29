@@ -574,8 +574,7 @@ func TestExecutionError_Unwrap(t *testing.T) {
 
 				// Verify errors.Is() works correctly with the unwrapped error
 				if tt.err != nil {
-					assert.True(t, errors.Is(execErr, tt.err),
-						"errors.Is should find the wrapped error in ExecutionError")
+					assert.ErrorIs(t, execErr, tt.err)
 				}
 			}
 		})

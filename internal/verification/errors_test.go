@@ -268,7 +268,7 @@ func TestErrorStructure(t *testing.T) {
 		assert.False(t, err.Is(ErrDifferentError))
 
 		// Test errors.Is with wrapper
-		assert.True(t, errors.Is(err, baseErr))
+		assert.ErrorIs(t, err, baseErr)
 	})
 
 	t.Run("error_interface_compliance", func(t *testing.T) {
@@ -340,7 +340,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 		assert.False(t, err.Is(ErrDifferentError))
 
 		// Test errors.Is with wrapper
-		assert.True(t, errors.Is(err, baseErr))
+		assert.ErrorIs(t, err, baseErr)
 	})
 
 	t.Run("error_interface_compliance", func(t *testing.T) {
@@ -376,7 +376,7 @@ func TestPredefinedErrorsComplete(t *testing.T) {
 			assert.NotEmpty(t, tc.err.Error())
 
 			// Verify error can be compared with errors.Is
-			assert.True(t, errors.Is(tc.err, tc.err))
+			assert.ErrorIs(t, tc.err, tc.err)
 
 			// Verify it implements error interface
 			_ = tc.err
@@ -469,8 +469,8 @@ func TestErrorWrappingBehavior(t *testing.T) {
 		}
 
 		// Test error chain unwrapping
-		assert.True(t, errors.Is(verificationErr, rootErr))
-		assert.True(t, errors.Is(verificationErr, verifyErr))
+		assert.ErrorIs(t, verificationErr, rootErr)
+		assert.ErrorIs(t, verificationErr, verifyErr)
 
 		// Test direct unwrapping
 		assert.Equal(t, verifyErr, verificationErr.Unwrap())
