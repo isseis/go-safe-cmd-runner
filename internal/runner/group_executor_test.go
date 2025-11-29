@@ -1719,7 +1719,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 	mockValidator, _ := setupMocksForTest(t)
 	mockRM := new(runnertesting.MockResourceManager)
 
-	config := &runnertypes.ConfigSpec{
+	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
 			Timeout: common.Int32Ptr(30),
 		},
@@ -1727,7 +1727,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
-			Config:          config,
+			Config:          configSpec,
 			Validator:       mockValidator,
 			ResourceManager: mockRM,
 		},
@@ -1753,8 +1753,13 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined variable")
-	assert.Contains(t, err.Error(), "UNDEFINED_VAR")
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	// Also verify detailed error contains variable name
+	var detailErr *config.ErrUndefinedVariableDetail
+	if errors.As(err, &detailErr) {
+		assert.Equal(t, "UNDEFINED_VAR", detailErr.VariableName, "Error should mention undefined variable name")
+	}
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -1830,7 +1835,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	mockValidator, mockVM := setupMocksForTest(t)
 	mockRM := new(runnertesting.MockResourceManager)
 
-	config := &runnertypes.ConfigSpec{
+	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
 			Timeout: common.Int32Ptr(30),
 		},
@@ -1838,7 +1843,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
-			Config:              config,
+			Config:              configSpec,
 			Validator:           mockValidator,
 			VerificationManager: mockVM,
 			ResourceManager:     mockRM,
@@ -1868,8 +1873,10 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to pre-expand commands")
-	assert.Contains(t, err.Error(), "test-cmd")
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	// Command name appears in the outer wrapper error message
+	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -1883,7 +1890,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	mockValidator, mockVM := setupMocksForTest(t)
 	mockRM := new(runnertesting.MockResourceManager)
 
-	config := &runnertypes.ConfigSpec{
+	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
 			Timeout: common.Int32Ptr(30),
 		},
@@ -1891,7 +1898,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 	ge := NewTestGroupExecutorWithConfig(
 		TestGroupExecutorConfig{
-			Config:              config,
+			Config:              configSpec,
 			Validator:           mockValidator,
 			VerificationManager: mockVM,
 			ResourceManager:     mockRM,
@@ -1921,9 +1928,11 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to pre-expand commands")
-	assert.Contains(t, err.Error(), "failed to resolve workdir")
-	assert.Contains(t, err.Error(), "test-cmd")
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	// Verify error message mentions both workdir resolution and command name
+	assert.Contains(t, err.Error(), "failed to resolve workdir", "Error should mention workdir resolution failure")
+	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
 
 	// Verify that ExecuteCommand was not called due to early error
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
@@ -2878,7 +2887,8 @@ func TestPreExpandCommands_Error(t *testing.T) {
 	tests := []struct {
 		name            string
 		groupSpec       *runnertypes.GroupSpec
-		wantErrContains string
+		wantErrIs       error  // Expected error type for errors.Is check
+		wantErrContains string // Expected substring in error message (for context)
 	}{
 		{
 			name: "undefined variable in cmd",
@@ -2888,7 +2898,7 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					{Name: "cmd1", Cmd: "%{undefined_var}/binary"},
 				},
 			},
-			wantErrContains: "undefined variable",
+			wantErrIs: config.ErrUndefinedVariable,
 		},
 		{
 			name: "undefined variable in args",
@@ -2902,7 +2912,7 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					},
 				},
 			},
-			wantErrContains: "undefined variable",
+			wantErrIs: config.ErrUndefinedVariable,
 		},
 		{
 			name: "error includes command name",
@@ -2912,7 +2922,8 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					{Name: "failing_cmd", Cmd: "%{bad}/path"},
 				},
 			},
-			wantErrContains: "failing_cmd",
+			wantErrIs:       config.ErrUndefinedVariable,
+			wantErrContains: "failing_cmd", // Verify error context includes the command name
 		},
 		{
 			name: "undefined variable in workdir",
@@ -2926,7 +2937,8 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					},
 				},
 			},
-			wantErrContains: "failed to resolve workdir",
+			wantErrIs: config.ErrUndefinedVariable,
+			// Note: No wantErrContains needed - error type check is sufficient
 		},
 	}
 
@@ -2945,7 +2957,14 @@ func TestPreExpandCommands_Error(t *testing.T) {
 			err := ge.preExpandCommands(tt.groupSpec, runtimeGroup, runtimeGlobal)
 
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErrContains)
+			// Verify error type using errors.Is instead of fragile string matching
+			if tt.wantErrIs != nil {
+				assert.True(t, errors.Is(err, tt.wantErrIs), "Error should be %v", tt.wantErrIs)
+			}
+			// If specific context is expected in error message, verify it
+			if tt.wantErrContains != "" {
+				assert.Contains(t, err.Error(), tt.wantErrContains)
+			}
 		})
 	}
 }
