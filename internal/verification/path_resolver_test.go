@@ -138,26 +138,6 @@ func TestPathResolver_CanAccessDirectory(t *testing.T) {
 	})
 }
 
-func TestPathResolver_ValidateCommandSafety(t *testing.T) {
-	resolver := NewPathResolver("/usr/bin:/bin", nil, false)
-
-	t.Run("deprecated_no_op", func(t *testing.T) {
-		// validateCommandSafety is now deprecated and always returns nil
-		// Command allowlist validation is performed by the caller (GroupExecutor)
-		testPaths := []string{
-			"/usr/bin/ls",
-			"/bin/sh",
-			"/tmp/any_command",
-			"/home/user/any_tool",
-		}
-
-		for _, path := range testPaths {
-			err := resolver.validateCommandSafety(path)
-			assert.NoError(t, err, "validateCommandSafety should always return nil (deprecated)")
-		}
-	})
-}
-
 func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	t.Run("successful_validation_and_caching", func(t *testing.T) {
 		tempDir := t.TempDir()

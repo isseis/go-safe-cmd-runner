@@ -55,17 +55,6 @@ func (pr *PathResolver) ShouldSkipVerification(path string) bool {
 	return false
 }
 
-// validateCommandSafety is deprecated and no longer used.
-// Command allowlist validation is now performed by the caller (GroupExecutor)
-// after path resolution, using security.ValidateCommandAllowed() which checks both
-// global patterns and group-level cmd_allowed configuration.
-//
-// This method is retained for backward compatibility but does nothing.
-func (pr *PathResolver) validateCommandSafety(_ string) error {
-	// No-op: validation is performed by the caller
-	return nil
-}
-
 // validateAndCacheCommand validates that a path points to an executable file and caches it
 func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, error) {
 	if info, err := os.Stat(path); err != nil {
@@ -125,15 +114,4 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 		return "", lastErr
 	}
 	return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
-}
-
-// ValidateCommand is deprecated and no longer performs validation.
-// Command allowlist validation is now performed by the caller (GroupExecutor)
-// using security.ValidateCommandAllowed() which checks both global patterns
-// and group-level cmd_allowed configuration.
-//
-// This method is retained for backward compatibility but does nothing.
-func (pr *PathResolver) ValidateCommand(_ string) error {
-	// No-op: validation is performed by the caller
-	return nil
 }
