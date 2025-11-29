@@ -141,32 +141,19 @@ func TestPathResolver_CanAccessDirectory(t *testing.T) {
 func TestPathResolver_ValidateCommandSafety(t *testing.T) {
 	resolver := NewPathResolver("/usr/bin:/bin", nil, false)
 
-	t.Run("safe_command_paths", func(t *testing.T) {
-		// Test commands in standard safe directories
-		safePaths := []string{
+	t.Run("deprecated_no_op", func(t *testing.T) {
+		// validateCommandSafety is now deprecated and always returns nil
+		// Command allowlist validation is performed by the caller (GroupExecutor)
+		testPaths := []string{
 			"/usr/bin/ls",
 			"/bin/sh",
+			"/tmp/any_command",
+			"/home/user/any_tool",
 		}
 
-		for _, path := range safePaths {
+		for _, path := range testPaths {
 			err := resolver.validateCommandSafety(path)
-			assert.NoError(t, err, "Path %s should be considered safe", path)
-		}
-	})
-
-	t.Run("potentially_unsafe_command_paths", func(t *testing.T) {
-		// Test commands in potentially unsafe locations
-		unsafePaths := []string{
-			"/tmp/malicious_command",
-			"/home/user/suspicious_tool",
-		}
-
-		for _, path := range unsafePaths {
-			err := resolver.validateCommandSafety(path)
-			// The exact behavior depends on implementation
-			if err != nil {
-				assert.Contains(t, err.Error(), "safety")
-			}
+			assert.NoError(t, err, "validateCommandSafety should always return nil (deprecated)")
 		}
 	})
 }
