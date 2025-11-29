@@ -3,7 +3,6 @@
 package filevalidator
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -140,7 +139,8 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		assert.Error(t, err, "Expected error for unreadable directory")
 		// Check for permission error in the error chain
 		var perr *os.PathError
-		assert.True(t, errors.As(err, &perr) && os.IsPermission(perr), "Expected permission error, got: %v", err)
+		assert.ErrorAs(t, err, &perr)
+		assert.True(t, os.IsPermission(perr), "Expected permission error, got: %v", err)
 	})
 
 	// This test requires root privileges to create a read-only mount
@@ -203,7 +203,7 @@ func TestErrorMessages(t *testing.T) {
 
 			// Check error type if expectedErr is set
 			if tt.expectedErr != nil {
-				assert.True(t, errors.Is(err, tt.expectedErr), "Error %v is not a %v", err, tt.expectedErr)
+				assert.ErrorIs(t, err, tt.expectedErr)
 			}
 
 			// Skip Verify test if specified
@@ -217,7 +217,7 @@ func TestErrorMessages(t *testing.T) {
 
 			// Check error type for Verify
 			if tt.expectedErr != nil {
-				assert.True(t, errors.Is(err, tt.expectedErr), "Verify error %v is not a %v", err, tt.expectedErr)
+				assert.ErrorIs(t, err, tt.expectedErr)
 			}
 		})
 	}

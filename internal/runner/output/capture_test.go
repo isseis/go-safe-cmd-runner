@@ -1,7 +1,6 @@
 package output
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -202,7 +201,7 @@ func TestCapture_WriteOutput(t *testing.T) {
 			if tt.wantError {
 				assert.Error(t, err)
 				var captureErr *CaptureError
-				assert.True(t, errors.As(err, &captureErr))
+				assert.ErrorAs(t, err, &captureErr)
 				assert.Equal(t, tt.errorType, captureErr.Type)
 				// Size should not change on error
 				assert.Equal(t, initialSize, capture.CurrentSize)

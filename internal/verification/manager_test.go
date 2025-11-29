@@ -2,7 +2,6 @@ package verification
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -281,7 +280,7 @@ func TestNewManagerProduction(t *testing.T) {
 
 		require.Error(t, err)
 		var hashDirErr *HashDirectorySecurityError
-		assert.True(t, errors.As(err, &hashDirErr))
+		assert.ErrorAs(t, err, &hashDirErr)
 		assert.Equal(t, "/custom/hash/dir", hashDirErr.RequestedDir)
 		assert.Equal(t, testHashDir, hashDirErr.DefaultDir)
 	})
@@ -565,7 +564,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		// Should fail with nil config
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.True(t, errors.Is(err, ErrConfigNil))
+		assert.ErrorIs(t, err, ErrConfigNil)
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -617,7 +616,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 		// Should fail with nil config
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.True(t, errors.Is(err, ErrConfigNil))
+		assert.ErrorIs(t, err, ErrConfigNil)
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -667,7 +666,7 @@ func TestResolvePath(t *testing.T) {
 		// Should fail with path resolver not initialized
 		assert.Error(t, err)
 		assert.Empty(t, resolvedPath)
-		assert.True(t, errors.Is(err, ErrPathResolverNotInitialized))
+		assert.ErrorIs(t, err, ErrPathResolverNotInitialized)
 	})
 
 	t.Run("command_not_found", func(t *testing.T) {

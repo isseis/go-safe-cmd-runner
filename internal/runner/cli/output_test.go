@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -63,7 +62,7 @@ func TestParseDryRunDetailLevel_InvalidLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ParseDryRunDetailLevel(tt.input)
 			assert.Error(t, err, "ParseDryRunDetailLevel(%q) should error", tt.input)
-			assert.True(t, errors.Is(err, ErrInvalidDetailLevel), "ParseDryRunDetailLevel(%q) error should be ErrInvalidDetailLevel", tt.input)
+			assert.ErrorIs(t, err, ErrInvalidDetailLevel)
 			assert.Equal(t, resource.DetailLevelSummary, got, "ParseDryRunDetailLevel(%q) should return default", tt.input)
 		})
 	}
@@ -119,7 +118,7 @@ func TestParseDryRunOutputFormat_InvalidFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ParseDryRunOutputFormat(tt.input)
 			assert.Error(t, err, "ParseDryRunOutputFormat(%q) should error", tt.input)
-			assert.True(t, errors.Is(err, ErrInvalidOutputFormat), "ParseDryRunOutputFormat(%q) error should be ErrInvalidOutputFormat", tt.input)
+			assert.ErrorIs(t, err, ErrInvalidOutputFormat)
 			assert.Equal(t, resource.OutputFormatText, got, "ParseDryRunOutputFormat(%q) should return default", tt.input)
 		})
 	}

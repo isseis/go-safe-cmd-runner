@@ -192,8 +192,8 @@ func TestTeeOutputWriter_Close(t *testing.T) {
 					assert.Contains(t, err.Error(), errMockWriterClose.Error())
 
 					// Verify that errors.Is works correctly with joined errors
-					assert.True(t, errors.Is(err, errMockCaptureClose))
-					assert.True(t, errors.Is(err, errMockWriterClose))
+					assert.ErrorIs(t, err, errMockCaptureClose)
+					assert.ErrorIs(t, err, errMockWriterClose)
 				}
 			} else {
 				assert.NoError(t, err)

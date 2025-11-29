@@ -1754,7 +1754,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 	// Also verify detailed error contains variable name
 	var detailErr *config.ErrUndefinedVariableDetail
 	if errors.As(err, &detailErr) {
@@ -1874,7 +1874,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 	// Command name appears in the outer wrapper error message
 	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
 
@@ -1929,7 +1929,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	// Verify error type using errors.Is instead of fragile string matching
-	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 	// Verify error message mentions both workdir resolution and command name
 	assert.Contains(t, err.Error(), "failed to resolve workdir", "Error should mention workdir resolution failure")
 	assert.Contains(t, err.Error(), "test-cmd", "Error should mention the failing command")
