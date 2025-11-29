@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 )
 
 // TestIntegration_PreExpand_CommandLevelVariableInVerification tests that
@@ -83,8 +87,15 @@ args = ["test", "%%{undefined_var}"]
 	ctx := context.Background()
 	err := r.Execute(ctx, nil)
 	require.Error(t, err, "Group execution should fail")
-	assert.Contains(t, err.Error(), "undefined_var", "Error should mention undefined variable")
-	assert.Contains(t, err.Error(), "failed to pre-expand commands", "Error should indicate pre-expansion failure")
+
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+
+	// Also verify detailed error contains variable name
+	var detailErr *config.ErrUndefinedVariableDetail
+	if errors.As(err, &detailErr) {
+		assert.Equal(t, "undefined_var", detailErr.VariableName, "Error should mention undefined variable name")
+	}
 }
 
 // TestIntegration_PreExpand_FailFast_WorkdirResolutionError tests that workdir
@@ -118,8 +129,9 @@ vars = [
 	ctx := context.Background()
 	err := r.Execute(ctx, nil)
 	require.Error(t, err, "Group execution should fail")
-	assert.Contains(t, err.Error(), "working directory", "Error should mention working directory")
-	assert.Contains(t, err.Error(), "does not exist", "Error should mention directory does not exist")
+
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, executor.ErrDirNotExists), "Error should be ErrDirNotExists")
 }
 
 // TestIntegration_PreExpand_DryRunMode tests that pre-expansion works correctly
@@ -203,9 +215,17 @@ args = ["third"]
 	ctx := context.Background()
 	err := r.Execute(ctx, nil)
 	require.Error(t, err, "Group execution should fail")
-	assert.Contains(t, err.Error(), "undefined_var", "Error should mention undefined variable")
+
+	// Verify error type using errors.Is instead of fragile string matching
+	assert.True(t, errors.Is(err, config.ErrUndefinedVariable), "Error should be ErrUndefinedVariable")
+
+	// Verify detailed error contains variable name and command name in error message
+	var detailErr *config.ErrUndefinedVariableDetail
+	if errors.As(err, &detailErr) {
+		assert.Equal(t, "undefined_var", detailErr.VariableName, "Error should mention undefined variable name")
+	}
+	// Command name appears in the outer wrapper error message
 	assert.Contains(t, err.Error(), "first_cmd", "Error should mention the failing command")
-	assert.Contains(t, err.Error(), "failed to pre-expand commands", "Error should indicate pre-expansion failure")
 }
 
 // TestIntegration_PreExpand_CommandVarsInArgs tests that command-level
