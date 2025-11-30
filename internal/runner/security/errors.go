@@ -23,7 +23,7 @@ func (e *CommandNotAllowedError) Error() string {
 	buf.WriteString(fmt.Sprintf("command not allowed: %s\n", e.CommandPath))
 
 	// If the command path was a symlink, show the resolved path
-	if e.ResolvedPath != "" && e.ResolvedPath != e.CommandPath {
+	if e.ResolvedPath != e.CommandPath {
 		buf.WriteString(fmt.Sprintf("  - Resolved symlink to: %s\n", e.ResolvedPath))
 		buf.WriteString("  - Validation performed against the resolved path\n")
 	}
