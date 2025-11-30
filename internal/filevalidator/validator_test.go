@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
@@ -279,9 +278,8 @@ func TestValidator_HashCollision(t *testing.T) {
 
 		// Create a modified hash manifest with file3's path but file1's hash
 		modifiedHashManifest := HashManifest{
-			Version:   HashManifestVersion,
-			Format:    HashManifestFormat,
-			Timestamp: time.Now().UTC(),
+			Version: HashManifestVersion,
+			Format:  HashManifestFormat,
 			File: FileInfo{
 				Path: file3Path,
 				Hash: HashInfo{
@@ -366,41 +364,6 @@ func TestValidator_ManifestFormat(t *testing.T) {
 	assert.NotEmpty(t, manifest.File.Path, "File path is empty")
 	assert.Equal(t, "sha256", manifest.File.Hash.Algorithm, "Expected algorithm sha256, got %s", manifest.File.Hash.Algorithm)
 	assert.NotEmpty(t, manifest.File.Hash.Value, "Hash value is empty")
-}
-
-func TestValidator_InvalidTimestamp(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a test file
-	testFilePath := filepath.Join(tempDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFilePath, []byte("test content"), 0o644), "Failed to create test file")
-
-	validator, err := New(&SHA256{}, tempDir)
-	require.NoError(t, err, "Failed to create validator")
-
-	hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
-	require.NoError(t, err, "GetHashFilePath failed")
-
-	t.Run("Zero timestamp", func(t *testing.T) {
-		manifest := HashManifest{
-			Version:   HashManifestVersion,
-			Format:    HashManifestFormat,
-			Timestamp: time.Time{}, // zero value
-			File: FileInfo{
-				Path: testFilePath,
-				Hash: HashInfo{
-					Algorithm: "sha256",
-					Value:     "dummyhash",
-				},
-			},
-		}
-		jsonData, err := json.MarshalIndent(manifest, "", "  ")
-		require.NoError(t, err, "Failed to marshal manifest")
-		jsonData = append(jsonData, '\n')
-		require.NoError(t, os.WriteFile(hashFilePath, jsonData, 0o644), "Failed to write hash file")
-		err = validator.Verify(testFilePath)
-		assert.ErrorIs(t, err, ErrInvalidTimestamp, "Expected ErrInvalidTimestamp")
-	})
 }
 
 func TestValidator_Record(t *testing.T) {

@@ -37,9 +37,6 @@ var (
 	// ErrUnsupportedVersion indicates that the hash file version is not supported.
 	ErrUnsupportedVersion = errors.New("unsupported hash file version")
 
-	// ErrInvalidTimestamp indicates that the timestamp in the hash file is invalid.
-	ErrInvalidTimestamp = errors.New("invalid timestamp in hash file")
-
 	// ErrJSONParseError indicates that JSON parsing failed.
 	ErrJSONParseError = errors.New("failed to parse JSON hash file")
 

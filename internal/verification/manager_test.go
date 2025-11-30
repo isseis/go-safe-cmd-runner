@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
@@ -35,9 +34,8 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 // Returns the path of the created hash file
 func createWrongHashManifest(hashDir, filePath, wrongHash string) (string, error) {
 	manifest := filevalidator.HashManifest{
-		Version:   "1.0",
-		Format:    "file-hash",
-		Timestamp: time.Now().UTC(),
+		Version: "1.0",
+		Format:  "file-hash",
 		File: filevalidator.FileInfo{
 			Path: filePath,
 			Hash: filevalidator.HashInfo{
