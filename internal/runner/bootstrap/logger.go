@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
@@ -45,10 +46,7 @@ var redactionReporter *redaction.ShutdownReporter
 // The global redactionErrorCollector and redactionReporter are initialized during
 // this call and must not be accessed before initialization completes.
 func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet bool) error {
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown-host"
-	}
+	hostname := common.GetHostname()
 	timestamp := time.Now().Format("20060102T150405Z")
 
 	var handlers []slog.Handler

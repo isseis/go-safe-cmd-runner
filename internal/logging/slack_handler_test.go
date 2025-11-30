@@ -494,7 +494,7 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				assert.Equal(t, colorGood, attachment.Color, "Color should be green for success")
 
 				// Verify command count field
-				var foundCommandCount, foundDuration bool
+				var foundCommandCount, foundDuration, foundHostname bool
 				var commandFields []SlackAttachmentField
 				for _, field := range attachment.Fields {
 					if field.Title == "Command Count" {
@@ -504,12 +504,17 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 					if field.Title == "Duration" {
 						foundDuration = true
 					}
+					if field.Title == "Hostname" {
+						foundHostname = true
+						assert.NotEmpty(t, field.Value, "Hostname should not be empty")
+					}
 					if field.Title == "Command" {
 						commandFields = append(commandFields, field)
 					}
 				}
 				assert.True(t, foundCommandCount, "Should have Command Count field")
 				assert.True(t, foundDuration, "Should have Duration field")
+				assert.True(t, foundHostname, "Should have Hostname field")
 
 				// Verify individual command fields
 				require.Len(t, commandFields, 2, "Should have 2 command fields")

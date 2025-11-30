@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -430,6 +429,8 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 
 	title := fmt.Sprintf("### %s %s %s", titleIcon, strings.ToUpper(status), group)
 
+	hostname := common.GetHostname()
+
 	// Build fields for the attachment
 	fields := []SlackAttachmentField{
 		{
@@ -440,6 +441,11 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		{
 			Title: "Duration",
 			Value: duration.String(),
+			Short: true,
+		},
+		{
+			Title: "Hostname",
+			Value: hostname,
 			Short: true,
 		},
 		{
@@ -523,7 +529,7 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 		return true
 	})
 
-	hostname, _ := os.Hostname()
+	hostname := common.GetHostname()
 
 	message := SlackMessage{
 		Text: fmt.Sprintf("%s Error: %s", emojiAlert, errorType),
@@ -583,7 +589,7 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 		color = colorWarning
 	}
 
-	hostname, _ := os.Hostname()
+	hostname := common.GetHostname()
 
 	message := SlackMessage{
 		Text: fmt.Sprintf("%s Security Alert: %s", emojiAlert, eventType),
@@ -652,7 +658,7 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 		stderr = stderr[:truncationPoint] + truncationSuffix
 	}
 
-	hostname, _ := os.Hostname()
+	hostname := common.GetHostname()
 
 	message := SlackMessage{
 		Text: fmt.Sprintf("%s Privileged Command Failed: %s", emojiFailure, commandName),
@@ -716,7 +722,7 @@ func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessa
 		return true
 	})
 
-	hostname, _ := os.Hostname()
+	hostname := common.GetHostname()
 
 	message := SlackMessage{
 		Text: fmt.Sprintf("%s Privilege Escalation Failed: %s", emojiWarning, operation),
