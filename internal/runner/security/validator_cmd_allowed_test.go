@@ -169,12 +169,15 @@ func TestValidateCommandAllowed_ErrorMessageNoSymlink(t *testing.T) {
 	// Use a real path that exists but is not a symlink
 	// /usr/bin/env is typically a real file, not a symlink
 	testPath := "/usr/bin/env"
-	_, evalErr := filepath.EvalSymlinks(testPath)
-	require.NoError(t, evalErr, "Test path should exist and be resolvable")
+	resolvedPath, err := filepath.EvalSymlinks(testPath)
+	require.NoError(t, err, "Test path should exist and be resolvable")
 
-	// Verify it's not a symlink (or at least resolves to itself)
-	// This test is meaningful when testPath equals resolvedPath
-	err := v.ValidateCommandAllowed(testPath, nil)
+	// Only run this test if the path is NOT a symlink
+	if resolvedPath != testPath {
+		t.Skip("Skipping test: test path is a symlink on this system")
+	}
+
+	err = v.ValidateCommandAllowed(testPath, nil)
 
 	// Verify error is returned
 	require.Error(t, err)
