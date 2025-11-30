@@ -436,7 +436,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	// Validate that the command is allowed (global AllowedCommands OR group-level cmd_allowed)
 	if err := ge.validator.ValidateCommandAllowed(cmd.ExpandedCmd, runtimeGroup.ExpandedCmdAllowed); err != nil {
-		return nil, fmt.Errorf("command not allowed: %w", err)
+		return nil, err
 	}
 
 	// Note: EffectiveWorkDir should be set earlier in ExecuteGroup()
