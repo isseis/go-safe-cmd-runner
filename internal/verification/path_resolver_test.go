@@ -138,36 +138,31 @@ func TestPathResolver_CanAccessDirectory(t *testing.T) {
 	})
 }
 
-func TestPathResolver_ValidateCommandSafety(t *testing.T) {
-	resolver := NewPathResolver("/usr/bin:/bin", nil, false)
+func TestPathResolver_NoCommandValidation(t *testing.T) {
+	// This test documents that ResolvePath intentionally does NOT perform
+	// command allowlist validation. Validation is the caller's responsibility.
 
-	t.Run("safe_command_paths", func(t *testing.T) {
-		// Test commands in standard safe directories
-		safePaths := []string{
-			"/usr/bin/ls",
-			"/bin/sh",
-		}
+	t.Run("ResolvePath succeeds regardless of allowlist", func(t *testing.T) {
+		tempDir := t.TempDir()
 
-		for _, path := range safePaths {
-			err := resolver.validateCommandSafety(path)
-			assert.NoError(t, err, "Path %s should be considered safe", path)
-		}
-	})
+		// Create an executable file
+		execPath := filepath.Join(tempDir, "test_command")
+		err := os.WriteFile(execPath, []byte("#!/bin/sh\necho test"), 0o755)
+		require.NoError(t, err)
 
-	t.Run("potentially_unsafe_command_paths", func(t *testing.T) {
-		// Test commands in potentially unsafe locations
-		unsafePaths := []string{
-			"/tmp/malicious_command",
-			"/home/user/suspicious_tool",
-		}
+		// Create PathResolver with a security validator that would reject this command
+		// (if validation were performed, which it should NOT be)
+		testPath := tempDir
+		resolver := NewPathResolver(testPath, nil, false)
 
-		for _, path := range unsafePaths {
-			err := resolver.validateCommandSafety(path)
-			// The exact behavior depends on implementation
-			if err != nil {
-				assert.Contains(t, err.Error(), "safety")
-			}
-		}
+		// ResolvePath should succeed - it only resolves paths, doesn't validate
+		resolved, err := resolver.ResolvePath(execPath)
+		require.NoError(t, err)
+		assert.Equal(t, execPath, resolved)
+
+		// Note: Command allowlist validation is performed by the caller
+		// (GroupExecutor) using security.ValidateCommandAllowed(), which
+		// checks both global patterns and group-level cmd_allowed.
 	})
 }
 

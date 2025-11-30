@@ -323,10 +323,9 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 		return "", err
 	}
 
-	// Always perform validation when Manager exists
-	if err := m.pathResolver.ValidateCommand(resolvedPath); err != nil {
-		return "", fmt.Errorf("unsafe command rejected: %w", err)
-	}
+	// Note: Command allowlist validation is performed by the caller (GroupExecutor)
+	// after path resolution, using ValidateCommandAllowed() which checks both
+	// global patterns and group-level cmd_allowed configuration.
 
 	return resolvedPath, nil
 }
