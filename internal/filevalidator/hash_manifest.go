@@ -3,7 +3,6 @@ package filevalidator
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -17,10 +16,9 @@ const (
 
 // HashManifest defines the JSON format for hash files
 type HashManifest struct {
-	Version   string    `json:"version"`
-	Format    string    `json:"format"`
-	Timestamp time.Time `json:"timestamp"`
-	File      FileInfo  `json:"file"`
+	Version string   `json:"version"`
+	Format  string   `json:"format"`
+	File    FileInfo `json:"file"`
 }
 
 // FileInfo defines file information
@@ -38,9 +36,8 @@ type HashInfo struct {
 // createHashManifest creates a hash manifest structure
 func createHashManifest(path common.ResolvedPath, hash, algorithm string) HashManifest {
 	return HashManifest{
-		Version:   HashManifestVersion,
-		Format:    HashManifestFormat,
-		Timestamp: time.Now().UTC(),
+		Version: HashManifestVersion,
+		Format:  HashManifestFormat,
 		File: FileInfo{
 			Path: path.String(),
 			Hash: HashInfo{
@@ -97,11 +94,6 @@ func validateHashManifest(manifest HashManifest, algoName string, targetPath com
 	// Hash value validation
 	if manifest.File.Hash.Value == "" {
 		return fmt.Errorf("%w: empty hash value", ErrInvalidManifestFormat)
-	}
-
-	// Timestamp validation
-	if manifest.Timestamp.IsZero() {
-		return fmt.Errorf("%w: zero timestamp", ErrInvalidTimestamp)
 	}
 
 	return nil
