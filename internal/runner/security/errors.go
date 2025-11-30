@@ -9,7 +9,8 @@ import (
 // global AllowedCommands patterns or the group-level cmd_allowed list.
 // It wraps ErrCommandNotAllowed so callers can use errors.Is(err, ErrCommandNotAllowed).
 type CommandNotAllowedError struct {
-	CommandPath     string   // The command path that was attempted to execute
+	CommandPath     string   // The command path that was attempted to execute (original path before symlink resolution)
+	ResolvedPath    string   // The resolved command path after symlink resolution (may be same as CommandPath)
 	AllowedPatterns []string // Global security configuration regex patterns
 	GroupCmdAllowed []string // Expanded group-level allowed command paths (may be nil/empty)
 }
@@ -20,6 +21,13 @@ type CommandNotAllowedError struct {
 func (e *CommandNotAllowedError) Error() string {
 	var buf strings.Builder
 	buf.WriteString(fmt.Sprintf("command not allowed: %s\n", e.CommandPath))
+
+	// If the command path was a symlink, show the resolved path
+	if e.ResolvedPath != e.CommandPath {
+		buf.WriteString(fmt.Sprintf("  - Resolved symlink to: %s\n", e.ResolvedPath))
+		buf.WriteString("  - Validation performed against the resolved path\n")
+	}
+
 	buf.WriteString("  - Not matched by global allowed_commands patterns:\n")
 	for _, pattern := range e.AllowedPatterns {
 		buf.WriteString(fmt.Sprintf("      %s\n", pattern))

@@ -291,6 +291,7 @@ func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[s
 	sort.Strings(groupCmdAllowedSlice)
 	return &CommandNotAllowedError{
 		CommandPath:     cmdPath,
+		ResolvedPath:    resolvedCmd,
 		AllowedPatterns: v.config.AllowedCommands,
 		GroupCmdAllowed: groupCmdAllowedSlice,
 	}
