@@ -169,12 +169,12 @@ func TestValidateCommandAllowed_ErrorMessageNoSymlink(t *testing.T) {
 	// Use a real path that exists but is not a symlink
 	// /usr/bin/env is typically a real file, not a symlink
 	testPath := "/usr/bin/env"
-	_, err := filepath.EvalSymlinks(testPath)
-	require.NoError(t, err, "Test path should exist and be resolvable")
+	_, evalErr := filepath.EvalSymlinks(testPath)
+	require.NoError(t, evalErr, "Test path should exist and be resolvable")
 
 	// Verify it's not a symlink (or at least resolves to itself)
 	// This test is meaningful when testPath equals resolvedPath
-	err = v.ValidateCommandAllowed(testPath, nil)
+	err := v.ValidateCommandAllowed(testPath, nil)
 
 	// Verify error is returned
 	require.Error(t, err)
@@ -185,9 +185,9 @@ func TestValidateCommandAllowed_ErrorMessageNoSymlink(t *testing.T) {
 	require.True(t, ok, "Error should be *CommandNotAllowedError")
 
 	// Verify the error structure is populated correctly
-	// Both fields should exist, but may be equal for non-symlinks
-	assert.NotEmpty(t, cmdErr.CommandPath, "CommandPath should be populated")
-	assert.NotEmpty(t, cmdErr.ResolvedPath, "ResolvedPath should be populated")
+	// For non-symlinks, CommandPath and ResolvedPath should be identical.
+	assert.Equal(t, testPath, cmdErr.CommandPath, "CommandPath should be the original path")
+	assert.Equal(t, testPath, cmdErr.ResolvedPath, "ResolvedPath should be the same as the original path")
 
 	// Verify error message contains the command path (structural requirement)
 	errMsg := err.Error()
