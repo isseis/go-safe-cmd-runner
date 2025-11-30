@@ -138,6 +138,34 @@ func TestPathResolver_CanAccessDirectory(t *testing.T) {
 	})
 }
 
+func TestPathResolver_NoCommandValidation(t *testing.T) {
+	// This test documents that ResolvePath intentionally does NOT perform
+	// command allowlist validation. Validation is the caller's responsibility.
+
+	t.Run("ResolvePath succeeds regardless of allowlist", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		// Create an executable file
+		execPath := filepath.Join(tempDir, "test_command")
+		err := os.WriteFile(execPath, []byte("#!/bin/sh\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Create PathResolver with a security validator that would reject this command
+		// (if validation were performed, which it should NOT be)
+		testPath := tempDir
+		resolver := NewPathResolver(testPath, nil, false)
+
+		// ResolvePath should succeed - it only resolves paths, doesn't validate
+		resolved, err := resolver.ResolvePath(execPath)
+		require.NoError(t, err)
+		assert.Equal(t, execPath, resolved)
+
+		// Note: Command allowlist validation is performed by the caller
+		// (GroupExecutor) using security.ValidateCommandAllowed(), which
+		// checks both global patterns and group-level cmd_allowed.
+	})
+}
+
 func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	t.Run("successful_validation_and_caching", func(t *testing.T) {
 		tempDir := t.TempDir()

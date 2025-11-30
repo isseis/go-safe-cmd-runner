@@ -69,7 +69,18 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 	return path, nil
 }
 
-// ResolvePath resolves a command to its full path without security validation
+// ResolvePath resolves a command to its full path without security validation.
+//
+// This method only performs path resolution and basic file existence checks.
+// Command allowlist validation is intentionally NOT performed here - it is the
+// responsibility of the caller (GroupExecutor) to validate the resolved path
+// using security.ValidateCommandAllowed(), which checks both global patterns
+// and group-level cmd_allowed configuration.
+//
+// This separation of concerns ensures that:
+//  1. Path resolution remains independent of group context
+//  2. Validation can properly consider group-specific allowlists
+//  3. The same resolved path can be validated differently in different contexts
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Check cache first
 	pr.mu.RLock()
