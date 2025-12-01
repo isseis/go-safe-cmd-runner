@@ -320,7 +320,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 	// Convert userUID to uint32 for IsUserInGroup call
 	// #nosec G115 -- safe: `effectiveUID` represents a system user ID (UID), which is
 	// non-negative and constrained by the operating system to fit within a 32-bit
-	// unsigned value on supported platforms. It was already validated in getEffectiveUID.
+	// unsigned value on supported platforms. It was already validated in getPermissionCheckUID().
 	effectiveUID32 := uint32(effectiveUID) // #nosec G115
 
 	perm := filePerm.Perm()
