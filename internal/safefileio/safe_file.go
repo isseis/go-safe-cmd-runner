@@ -53,6 +53,8 @@ type FileSystem interface {
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 	// GetGroupMembership returns the GroupMembership instance for security checks
 	GetGroupMembership() *groupmembership.GroupMembership
+	// Remove removes the named file or (empty) directory
+	Remove(name string) error
 }
 
 // File is an interface that abstracts file operations
@@ -80,6 +82,11 @@ func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, err
 	}
 
 	return fs.safeOpenFileInternal(absPath, flag, perm)
+}
+
+// Remove removes the named file or (empty) directory
+func (fs *osFS) Remove(name string) error {
+	return os.Remove(name)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
@@ -224,7 +231,7 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 
 		// If there was an error during validation or writing, remove the file
 		if err != nil && fileCreated {
-			if removeErr := os.Remove(absPath); removeErr != nil {
+			if removeErr := fs.Remove(absPath); removeErr != nil {
 				slog.Warn("failed to remove file after error",
 					slog.String("path", absPath),
 					slog.Any("original_error", err),
