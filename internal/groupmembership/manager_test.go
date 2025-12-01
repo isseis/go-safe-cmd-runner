@@ -611,14 +611,15 @@ func TestGetPermissionCheckUID(t *testing.T) {
 	t.Run("malicious SUDO_UID values - out of bounds", func(t *testing.T) {
 		// Test parseSudoUID directly with malicious values - this doesn't require root privileges
 		maliciousValues := []struct {
-			name  string
-			value string
+			name         string
+			value        string
+			expectsError string
 		}{
-			{"negative value", "-1"},
-			{"large overflow", "999999999999999999999"},
-			{"max uint32 + 1", "4294967296"},           // 2^32
-			{"max uint64 + 1", "18446744073709551616"}, // 2^64
-			{"scientific notation", "1e10"},
+			{"negative value", "-1", "SUDO_UID value out of range"},
+			{"large overflow", "999999999999999999999", "failed to parse SUDO_UID"}, // Way beyond int, fails to parse
+			{"max uint32 + 1", "4294967296", "SUDO_UID value out of range"},         // 2^32, parses but exceeds bounds
+			{"max uint64 + 1", "18446744073709551616", "failed to parse SUDO_UID"},  // 2^64, fails to parse
+			{"scientific notation", "1e10", "failed to parse SUDO_UID"},
 		}
 
 		for _, test := range maliciousValues {
@@ -626,7 +627,7 @@ func TestGetPermissionCheckUID(t *testing.T) {
 				_, err := parseSudoUID(test.value)
 				// All malicious values should return an error
 				assert.Error(t, err, "parseSudoUID(%s) should be rejected", test.value)
-				assert.Contains(t, err.Error(), "failed to parse SUDO_UID")
+				assert.Contains(t, err.Error(), test.expectsError)
 			})
 		}
 	})

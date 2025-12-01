@@ -482,7 +482,7 @@ func parseSudoUID(sudoUID string) (int, error) {
 		return 0, fmt.Errorf("failed to parse SUDO_UID %s: %w", sudoUID, err)
 	}
 	if parsedUID < 0 || parsedUID > math.MaxUint32 {
-return 0, fmt.Errorf("SUDO_UID value out of range %s: %w", sudoUID, ErrSudoUIDOutOfRange)
+		return 0, fmt.Errorf("SUDO_UID value out of range %s: %w", sudoUID, ErrSudoUIDOutOfRange)
 	}
 	return parsedUID, nil
 }
