@@ -457,11 +457,11 @@ func getPermissionCheckUID() (int, error) {
 	// Check if running under sudo: EUID must be 0 (root) and SUDO_UID must be set
 	if currentUID == 0 {
 		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
-				if parsedUID >= 0 && parsedUID <= math.MaxUint32 {
-					return parsedUID, nil
-				}
+			parsedUID, err := strconv.Atoi(sudoUID)
+			if err != nil || parsedUID < 0 || parsedUID > math.MaxUint32 {
+				return 0, fmt.Errorf("failed to parse SUDO_UID %s: %w", sudoUID, err)
 			}
+			return parsedUID, nil
 		}
 	}
 
