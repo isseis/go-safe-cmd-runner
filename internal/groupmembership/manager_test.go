@@ -560,8 +560,8 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 	})
 }
 
-// TestGetEffectiveUID tests the getEffectiveUID function
-func TestGetEffectiveUID(t *testing.T) {
+// TestGetPermissionCheckUID tests the getPermissionCheckUID function
+func TestGetPermissionCheckUID(t *testing.T) {
 	t.Run("normal user without sudo", func(t *testing.T) {
 		// Clear SUDO_UID if set
 		oldSudoUID := os.Getenv("SUDO_UID")
@@ -574,14 +574,14 @@ func TestGetEffectiveUID(t *testing.T) {
 		}()
 		os.Unsetenv("SUDO_UID")
 
-		effectiveUID, err := getEffectiveUID()
+		effectiveUID, err := getPermissionCheckUID()
 		assert.NoError(t, err)
 		assert.Greater(t, effectiveUID, -1) // Should be non-negative
 	})
 
 	t.Run("simulated sudo environment for non-root user", func(t *testing.T) {
 		// Only test if running as non-root
-		currentUID, err := getEffectiveUID()
+		currentUID, err := getPermissionCheckUID()
 		assert.NoError(t, err)
 
 		if currentUID != 0 {
@@ -597,7 +597,7 @@ func TestGetEffectiveUID(t *testing.T) {
 
 			// When running as non-root, SUDO_UID should be ignored
 			os.Setenv("SUDO_UID", "1234")
-			effectiveUID, err := getEffectiveUID()
+			effectiveUID, err := getPermissionCheckUID()
 			assert.NoError(t, err)
 			// Should return current UID, not SUDO_UID, because we're not root
 			assert.Equal(t, currentUID, effectiveUID)
@@ -607,7 +607,7 @@ func TestGetEffectiveUID(t *testing.T) {
 	})
 
 	t.Run("SUDO_UID with invalid value", func(t *testing.T) {
-		currentUID, err := getEffectiveUID()
+		currentUID, err := getPermissionCheckUID()
 		assert.NoError(t, err)
 
 		if currentUID == 0 {
@@ -624,7 +624,7 @@ func TestGetEffectiveUID(t *testing.T) {
 			invalidValues := []string{"invalid", "-1", "999999999999", ""}
 			for _, val := range invalidValues {
 				os.Setenv("SUDO_UID", val)
-				effectiveUID, err := getEffectiveUID()
+				effectiveUID, err := getPermissionCheckUID()
 				assert.NoError(t, err)
 				// Should return 0 (root) when SUDO_UID is invalid
 				assert.Equal(t, 0, effectiveUID, "SUDO_UID=%s should be ignored", val)
@@ -635,8 +635,8 @@ func TestGetEffectiveUID(t *testing.T) {
 	})
 }
 
-// TestGetCurrentUID tests the getCurrentUID function
-func TestGetCurrentUID(t *testing.T) {
+// TestGetProcessEUID tests the getProcessEUID function
+func TestGetProcessEUID(t *testing.T) {
 	t.Run("returns current UID regardless of SUDO_UID", func(t *testing.T) {
 		// Save and restore SUDO_UID
 		oldSudoUID := os.Getenv("SUDO_UID")
@@ -651,18 +651,18 @@ func TestGetCurrentUID(t *testing.T) {
 		// Set SUDO_UID to a different value
 		os.Setenv("SUDO_UID", "9999")
 
-		currentUID, err := getCurrentUID()
+		currentUID, err := getProcessEUID()
 		assert.NoError(t, err)
 
 		// getCurrentUID should ignore SUDO_UID and return actual UID
-		effectiveUID, err := getEffectiveUID()
+		effectiveUID, err := getPermissionCheckUID()
 		assert.NoError(t, err)
 
 		// If running as root with SUDO_UID set, these should differ
 		// Otherwise they should be the same
 		if currentUID == 0 {
 			// Running as root, effectiveUID should use SUDO_UID
-			assert.Equal(t, 9999, effectiveUID, "getEffectiveUID should use SUDO_UID")
+			assert.Equal(t, 9999, effectiveUID, "getPermissionCheckUID should use SUDO_UID")
 			assert.Equal(t, 0, currentUID, "getCurrentUID should ignore SUDO_UID")
 		} else {
 			// Not running as root, both should return the same UID
@@ -682,7 +682,7 @@ func TestGetCurrentUID(t *testing.T) {
 
 		os.Unsetenv("SUDO_UID")
 
-		currentUID, err := getCurrentUID()
+		currentUID, err := getProcessEUID()
 		assert.NoError(t, err)
 		assert.Greater(t, currentUID, -1) // Should be non-negative
 	})

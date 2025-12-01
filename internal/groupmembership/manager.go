@@ -282,7 +282,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 	// For write operations, use the actual EUID (not SUDO_UID) to verify
 	// that the running process has permission to write to the file.
 	// This is important for hash files that should only be writable by root.
-	currentUID, err := getCurrentUID()
+	currentUID, err := getProcessEUID()
 	if err != nil {
 		return false, err
 	}
@@ -308,7 +308,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 //   - bool: true if the current user can safely read from the file, false otherwise
 //   - error: non-nil if there was an error checking user or group information
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
-	effectiveUID, err := getEffectiveUID()
+	effectiveUID, err := getPermissionCheckUID()
 	if err != nil {
 		return false, err
 	}
@@ -435,7 +435,7 @@ func (gm *GroupMembership) clearExpiredCache() {
 	}
 }
 
-// getEffectiveUID returns the effective user ID for permission checks.
+// getPermissionCheckUID returns the effective user ID for permission checks.
 // When running under sudo (EUID is 0 and SUDO_UID is set), it returns the original user's UID.
 // Otherwise, it returns the current user's UID.
 //
@@ -448,19 +448,10 @@ func (gm *GroupMembership) clearExpiredCache() {
 // Returns:
 //   - int: The effective UID to use for permission checks
 //   - error: Error if unable to determine the UID
-func getEffectiveUID() (int, error) {
-	currentUser, err := user.Current()
+func getPermissionCheckUID() (int, error) {
+	currentUID, err := getProcessEUID()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse current user UID: %w", err)
-	}
-
-	if currentUID < 0 || currentUID > math.MaxUint32 {
-		return 0, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
+		return 0, err
 	}
 
 	// Check if running under sudo: EUID must be 0 (root) and SUDO_UID must be set
@@ -477,16 +468,16 @@ func getEffectiveUID() (int, error) {
 	return currentUID, nil
 }
 
-// getCurrentUID returns the current user's UID without considering SUDO_UID.
+// getProcessEUID returns the current user's EUID without considering SUDO_UID.
 // This returns the actual EUID of the running process.
 //
 // This function is primarily used for write operations where we want to verify
 // the actual running process has the necessary permissions to write files.
 //
 // Returns:
-//   - int: The current user's UID
-//   - error: Error if unable to determine the UID
-func getCurrentUID() (int, error) {
+//   - int: The current user's EUID
+//   - error: Error if unable to determine the EUID
+func getProcessEUID() (int, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current user: %w", err)
