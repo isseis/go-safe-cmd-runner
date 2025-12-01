@@ -18,13 +18,14 @@ import (
 
 // mockFile is a test implementation of File interface
 type mockFile struct {
-	content    *bytes.Buffer
-	statErr    error
-	writeErr   error
-	closeErr   error
-	fileInfo   os.FileInfo
-	isClosed   bool
-	closeMutex sync.Mutex
+	content     *bytes.Buffer
+	statErr     error
+	writeErr    error
+	closeErr    error
+	truncateErr error
+	fileInfo    os.FileInfo
+	isClosed    bool
+	closeMutex  sync.Mutex
 }
 
 func newMockFile(content []byte, fileInfo os.FileInfo) *mockFile {
@@ -57,6 +58,17 @@ func (m *mockFile) Stat() (os.FileInfo, error) {
 		return nil, m.statErr
 	}
 	return m.fileInfo, nil
+}
+
+func (m *mockFile) Truncate(size int64) error {
+	if m.truncateErr != nil {
+		return m.truncateErr
+	}
+	// Simulate truncate by resetting the buffer
+	if size == 0 {
+		m.content.Reset()
+	}
+	return nil
 }
 
 // mockFileInfo implements os.FileInfo for testing
@@ -220,11 +232,11 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 
 		mockFS := newMockFileSystem()
 
-		// Setup: SafeOpenFile succeeds with O_TRUNC (overwrite mode)
+		// Setup: SafeOpenFile succeeds (overwrite mode - no O_TRUNC, no O_EXCL)
 		// but validation fails
 		mockFS.openFunc = func(_ string, flag int, _ os.FileMode) (File, error) {
-			// Verify this is an overwrite operation (O_TRUNC, not O_EXCL)
-			assert.True(t, flag&os.O_TRUNC != 0, "Should be using O_TRUNC for overwrite")
+			// Verify this is an overwrite operation (no O_TRUNC, no O_EXCL)
+			assert.False(t, flag&os.O_TRUNC != 0, "Should NOT be using O_TRUNC for overwrite")
 			assert.False(t, flag&os.O_EXCL != 0, "Should NOT be using O_EXCL for overwrite")
 
 			mockFile := &mockFile{
@@ -237,13 +249,13 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 
 		content := []byte("new content")
 
-		// Execute: Try to overwrite with O_TRUNC
+		// Execute: Try to overwrite (truncate happens after validation)
 		err := safeWriteFileOverwriteWithFS(filePath, content, 0o644, mockFS)
 
 		// Verify: Operation failed
 		require.Error(t, err)
 
-		// Verify: Remove was NOT called (fileCreated should be false for O_TRUNC)
+		// Verify: Remove was NOT called (fileCreated should be false when not using O_EXCL)
 		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
 			"Remove should NOT be called when overwriting existing file fails")
 	})
@@ -284,6 +296,44 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		// Verify: File was NOT removed
 		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
 			"Existing file should NOT be removed when write fails during overwrite")
+	})
+
+	t.Run("existing file is NOT deleted when truncate fails", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		filePath := filepath.Join(tempDir, "existing_truncate_fail.txt")
+
+		mockFS := newMockFileSystem()
+
+		// Get current user's UID and GID
+		currentUID := uint32(os.Getuid())
+		currentGID := uint32(os.Getgid())
+
+		// Setup: File passes validation but truncate fails
+		mockFS.openFunc = func(name string, _ int, perm os.FileMode) (File, error) {
+			fileInfo := &mockFileInfo{
+				name: filepath.Base(name),
+				mode: perm,
+				size: 100, // Non-zero size indicates existing file
+				uid:  currentUID,
+				gid:  currentGID,
+			}
+			mockFile := newMockFile([]byte("old content"), fileInfo)
+			mockFile.truncateErr = errors.New("truncate failed")
+			return mockFile, nil
+		}
+
+		content := []byte("new content")
+
+		// Execute
+		err := safeWriteFileOverwriteWithFS(filePath, content, 0o644, mockFS)
+
+		// Verify
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to truncate")
+
+		// Verify: File was NOT removed (truncate failure should not trigger cleanup)
+		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
+			"Existing file should NOT be removed when truncate fails during overwrite")
 	})
 }
 
@@ -389,7 +439,9 @@ func TestFileCleanup_Integration(t *testing.T) {
 		_, statErr := os.Stat(filePath)
 		assert.NoError(t, statErr, "File should still exist after overwrite failure")
 
-		// Note: The file content will be empty due to O_TRUNC, but the file itself exists
-		// This is a known limitation of the current implementation
+		// Verify: File content is preserved (truncate happens after validation)
+		content, readErr := os.ReadFile(filePath)
+		require.NoError(t, readErr)
+		assert.Equal(t, originalContent, content, "Original content should be preserved when validation fails")
 	})
 }

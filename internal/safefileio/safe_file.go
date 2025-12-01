@@ -63,6 +63,7 @@ type File interface {
 	io.Writer
 	Close() error
 	Stat() (os.FileInfo, error)
+	Truncate(size int64) error
 }
 
 // IsOpenat2Available returns true if openat2 is available and enabled
@@ -124,7 +125,7 @@ func SafeAtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 
 // safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
-	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE)
 }
 
 // safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
@@ -212,7 +213,7 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	}
 
 	// Track whether file was created by this function
-	// Only set to true when creating a new file (O_EXCL), not when truncating an existing file (O_TRUNC)
+	// Only set to true when creating a new file (O_EXCL), not when truncating an existing file
 	fileCreated := false
 
 	// Use the FileSystem interface consistently for both testing and production
@@ -248,6 +249,13 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	// Validate the file is a regular file (not a device, pipe, etc.)
 	if err := canSafelyAccessFile(file, absPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
+	}
+
+	// Truncate the file after permission check to ensure content is written to an empty file
+	// For O_EXCL (new file), this is a no-op but harmless
+	// For overwrite mode, this ensures the file is truncated only after permission validation
+	if err := file.Truncate(0); err != nil {
+		return fmt.Errorf("failed to truncate %s: %w", absPath, err)
 	}
 
 	// Write the content
