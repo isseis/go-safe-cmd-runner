@@ -205,6 +205,7 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	}
 
 	// Track whether file was created by this function
+	// Only set to true when creating a new file (O_EXCL), not when truncating an existing file (O_TRUNC)
 	fileCreated := false
 
 	// Use the FileSystem interface consistently for both testing and production
@@ -212,8 +213,10 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	if err != nil {
 		return err
 	}
-	// File was successfully opened/created
-	fileCreated = true
+	// File was successfully opened/created - only mark as created if using O_EXCL (new file)
+	if flags&os.O_EXCL != 0 {
+		fileCreated = true
+	}
 
 	// Ensure the file is closed, and remove it if validation or writing fails
 	defer func() {
