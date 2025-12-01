@@ -662,7 +662,7 @@ func TestGetProcessEUID(t *testing.T) {
 		currentUID, err := getProcessEUID()
 		assert.NoError(t, err)
 
-		// getCurrentUID should ignore SUDO_UID and return actual UID
+		// getProcessEUID should ignore SUDO_UID and return actual UID
 		effectiveUID, err := getPermissionCheckUID()
 		assert.NoError(t, err)
 
