@@ -279,18 +279,12 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 //	    return fmt.Errorf("current user cannot safely write to file")
 //	}
 func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
-	currentUser, err := user.Current()
+	// For write operations, use the actual EUID (not SUDO_UID) to verify
+	// that the running process has permission to write to the file.
+	// This is important for hash files that should only be writable by root.
+	currentUID, err := getCurrentUID()
 	if err != nil {
-		return false, fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse current user UID: %w", err)
-	}
-
-	if currentUID < 0 || currentUID > math.MaxUint32 {
-		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
+		return false, err
 	}
 
 	return gm.CanUserSafelyWriteFile(currentUID, fileUID, fileGID, filePerm)
@@ -314,26 +308,17 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 //   - bool: true if the current user can safely read from the file, false otherwise
 //   - error: non-nil if there was an error checking user or group information
 func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
-	currentUser, err := user.Current()
+	effectiveUID, err := getEffectiveUID()
 	if err != nil {
-		return false, fmt.Errorf("failed to get current user: %w", err)
+		return false, err
 	}
 
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse current user UID: %w", err)
-	}
-
-	if currentUID < 0 || currentUID > math.MaxUint32 {
-		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
-	}
-
-	// For reads: deny only if current user is NOT in the group
+	// For reads: deny only if effective user is NOT in the group
 	// Convert userUID to uint32 for IsUserInGroup call
-	// #nosec G115 -- safe: `currentUID` represents a system user ID (UID), which is
+	// #nosec G115 -- safe: `effectiveUID` represents a system user ID (UID), which is
 	// non-negative and constrained by the operating system to fit within a 32-bit
-	// unsigned value on supported platforms.
-	currentUID32 := uint32(currentUID) // #nosec G115
+	// unsigned value on supported platforms. It was already validated in getEffectiveUID.
+	effectiveUID32 := uint32(effectiveUID) // #nosec G115
 
 	perm := filePerm.Perm()
 
@@ -345,7 +330,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 	// 2. Check group writable permissions - more relaxed than write policy
 	if perm&0o020 != 0 {
 
-		isUserInGroup, err := gm.IsUserInGroup(currentUID32, fileGID)
+		isUserInGroup, err := gm.IsUserInGroup(effectiveUID32, fileGID)
 		if err != nil {
 			return false, fmt.Errorf("failed to check group membership: %w", err)
 		}
@@ -448,4 +433,73 @@ func (gm *GroupMembership) clearExpiredCache() {
 			delete(gm.membershipCache, gid)
 		}
 	}
+}
+
+// getEffectiveUID returns the effective user ID for permission checks.
+// When running under sudo (EUID is 0 and SUDO_UID is set), it returns the original user's UID.
+// Otherwise, it returns the current user's UID.
+//
+// This allows sudo to perform permission checks as if the original user were accessing the file,
+// which is important for validating that the user has legitimate access to the files.
+//
+// This function is primarily used for read operations where we want to verify the original
+// user has access to the file being read.
+//
+// Returns:
+//   - int: The effective UID to use for permission checks
+//   - error: Error if unable to determine the UID
+func getEffectiveUID() (int, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse current user UID: %w", err)
+	}
+
+	if currentUID < 0 || currentUID > math.MaxUint32 {
+		return 0, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
+	}
+
+	// Check if running under sudo: EUID must be 0 (root) and SUDO_UID must be set
+	if currentUID == 0 {
+		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
+				if parsedUID >= 0 && parsedUID <= math.MaxUint32 {
+					return parsedUID, nil
+				}
+			}
+		}
+	}
+
+	return currentUID, nil
+}
+
+// getCurrentUID returns the current user's UID without considering SUDO_UID.
+// This returns the actual EUID of the running process.
+//
+// This function is primarily used for write operations where we want to verify
+// the actual running process has the necessary permissions to write files.
+//
+// Returns:
+//   - int: The current user's UID
+//   - error: Error if unable to determine the UID
+func getCurrentUID() (int, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse current user UID: %w", err)
+	}
+
+	if currentUID < 0 || currentUID > math.MaxUint32 {
+		return 0, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
+	}
+
+	return currentUID, nil
 }
