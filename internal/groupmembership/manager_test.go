@@ -590,61 +590,65 @@ func TestGetPermissionCheckUID(t *testing.T) {
 	})
 
 	t.Run("SUDO_UID with invalid value", func(t *testing.T) {
-		currentUID, err := getPermissionCheckUID()
-		assert.NoError(t, err)
-
-		if currentUID == 0 {
-			// Invalid SUDO_UID values should be ignored
-			invalidValues := []string{"invalid", "-1", "999999999999", ""}
-			for _, val := range invalidValues {
-				t.Setenv("SUDO_UID", val)
-				effectiveUID, err := getPermissionCheckUID()
-				assert.NoError(t, err)
-				// Should return 0 (root) when SUDO_UID is invalid
-				assert.Equal(t, 0, effectiveUID, "SUDO_UID=%s should be ignored", val)
-			}
-		} else {
-			t.Skip("Skipping root test when running as non-root")
+		// Test parseSudoUID directly - this doesn't require root privileges
+		invalidValues := []struct {
+			name  string
+			value string
+		}{
+			{"non-numeric", "invalid"},
+			{"negative value", "-1"},
+			{"large overflow", "999999999999"},
+			{"empty string", ""},
+		}
+		for _, test := range invalidValues {
+			t.Run(test.name, func(t *testing.T) {
+				_, err := parseSudoUID(test.value)
+				assert.Error(t, err, "parseSudoUID(%s) should return an error", test.value)
+			})
 		}
 	})
 
 	t.Run("malicious SUDO_UID values - out of bounds", func(t *testing.T) {
-		currentUID, err := getPermissionCheckUID()
-		assert.NoError(t, err)
+		// Test parseSudoUID directly with malicious values - this doesn't require root privileges
+		maliciousValues := []struct {
+			name  string
+			value string
+		}{
+			{"negative value", "-1"},
+			{"large overflow", "999999999999999999999"},
+			{"max uint32 + 1", "4294967296"},           // 2^32
+			{"max uint64 + 1", "18446744073709551616"}, // 2^64
+			{"scientific notation", "1e10"},
+		}
 
-		if currentUID == 0 {
-			// Test various malicious out-of-bounds SUDO_UID values
-			// These should be rejected and fall back to returning 0 (root)
-			maliciousValues := []struct {
-				name  string
-				value string
-			}{
-				{"negative value", "-1"},
-				{"large overflow", "999999999999999999999"},
-				{"max uint32 + 1", "4294967296"},           // 2^32
-				{"max uint64 + 1", "18446744073709551616"}, // 2^64
-				{"scientific notation", "1e10"},
-			}
+		for _, test := range maliciousValues {
+			t.Run(test.name, func(t *testing.T) {
+				_, err := parseSudoUID(test.value)
+				// All malicious values should return an error
+				assert.Error(t, err, "parseSudoUID(%s) should be rejected", test.value)
+				assert.Contains(t, err.Error(), "failed to parse SUDO_UID")
+			})
+		}
+	})
 
-			for _, test := range maliciousValues {
-				t.Run(test.name, func(t *testing.T) {
-					t.Setenv("SUDO_UID", test.value)
-					effectiveUID, err := getPermissionCheckUID()
+	t.Run("valid SUDO_UID values", func(t *testing.T) {
+		// Test parseSudoUID with valid values - this doesn't require root privileges
+		validValues := []struct {
+			name     string
+			value    string
+			expected int
+		}{
+			{"zero", "0", 0},
+			{"normal user", "1000", 1000},
+			{"max uint32", "4294967295", 4294967295}, // 2^32 - 1
+		}
 
-					// Out-of-bounds values should either error or be ignored
-					// If no error, should return 0 (root/current)
-					if err != nil {
-						// Parse error is expected for malicious values
-						assert.Error(t, err, "SUDO_UID=%s should be rejected", test.value)
-						assert.Contains(t, err.Error(), "failed to parse SUDO_UID")
-					} else {
-						// If no error, should return 0 (falls back to current UID)
-						assert.Equal(t, 0, effectiveUID, "SUDO_UID=%s should be ignored and fall back to root", test.value)
-					}
-				})
-			}
-		} else {
-			t.Skip("Skipping root test when running as non-root")
+		for _, test := range validValues {
+			t.Run(test.name, func(t *testing.T) {
+				uid, err := parseSudoUID(test.value)
+				assert.NoError(t, err, "parseSudoUID(%s) should not return an error", test.value)
+				assert.Equal(t, test.expected, uid)
+			})
 		}
 	})
 }

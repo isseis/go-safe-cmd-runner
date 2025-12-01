@@ -45,6 +45,9 @@ var ErrGroupWritableNonMember = errors.New("group writable file with non-member 
 // ErrPermissionsExceedMaximum is returned when file permissions exceed the maximum allowed for the operation
 var ErrPermissionsExceedMaximum = errors.New("file permissions exceed maximum allowed for operation")
 
+// ErrSudoUIDOutOfRange is returned when SUDO_UID value is out of range for uint32
+var ErrSudoUIDOutOfRange = errors.New("SUDO_UID value out of range")
+
 // FileOperation represents the type of file operation being performed
 type FileOperation int
 
@@ -457,15 +460,31 @@ func getPermissionCheckUID() (int, error) {
 	// Check if running under sudo: EUID must be 0 (root) and SUDO_UID must be set
 	if currentUID == 0 {
 		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			parsedUID, err := strconv.Atoi(sudoUID)
-			if err != nil || parsedUID < 0 || parsedUID > math.MaxUint32 {
-				return 0, fmt.Errorf("failed to parse SUDO_UID %s: %w", sudoUID, err)
-			}
-			return parsedUID, nil
+			return parseSudoUID(sudoUID)
 		}
 	}
 
 	return currentUID, nil
+}
+
+// parseSudoUID parses and validates a SUDO_UID string value.
+// This is separated from getPermissionCheckUID to allow independent testing.
+//
+// Parameters:
+//   - sudoUID: The string value of SUDO_UID environment variable
+//
+// Returns:
+//   - int: The parsed UID value
+//   - error: Error if the value is invalid (not a number, negative, or exceeds uint32)
+func parseSudoUID(sudoUID string) (int, error) {
+	parsedUID, err := strconv.Atoi(sudoUID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse SUDO_UID %s: %w", sudoUID, err)
+	}
+	if parsedUID < 0 || parsedUID > math.MaxUint32 {
+		return 0, fmt.Errorf("failed to parse SUDO_UID %s: %w", sudoUID, ErrSudoUIDOutOfRange)
+	}
+	return parsedUID, nil
 }
 
 // getProcessEUID returns the current user's EUID without considering SUDO_UID.
