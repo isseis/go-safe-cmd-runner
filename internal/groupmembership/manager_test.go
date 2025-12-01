@@ -564,15 +564,7 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 func TestGetPermissionCheckUID(t *testing.T) {
 	t.Run("normal user without sudo", func(t *testing.T) {
 		// Clear SUDO_UID if set
-		oldSudoUID := os.Getenv("SUDO_UID")
-		defer func() {
-			if oldSudoUID != "" {
-				os.Setenv("SUDO_UID", oldSudoUID)
-			} else {
-				os.Unsetenv("SUDO_UID")
-			}
-		}()
-		os.Unsetenv("SUDO_UID")
+		t.Setenv("SUDO_UID", "")
 
 		effectiveUID, err := getPermissionCheckUID()
 		assert.NoError(t, err)
@@ -586,17 +578,8 @@ func TestGetPermissionCheckUID(t *testing.T) {
 
 		if currentUID != 0 {
 			// Set SUDO_UID to simulate sudo environment
-			oldSudoUID := os.Getenv("SUDO_UID")
-			defer func() {
-				if oldSudoUID != "" {
-					os.Setenv("SUDO_UID", oldSudoUID)
-				} else {
-					os.Unsetenv("SUDO_UID")
-				}
-			}()
-
 			// When running as non-root, SUDO_UID should be ignored
-			os.Setenv("SUDO_UID", "1234")
+			t.Setenv("SUDO_UID", "1234")
 			effectiveUID, err := getPermissionCheckUID()
 			assert.NoError(t, err)
 			// Should return current UID, not SUDO_UID, because we're not root
@@ -611,19 +594,10 @@ func TestGetPermissionCheckUID(t *testing.T) {
 		assert.NoError(t, err)
 
 		if currentUID == 0 {
-			oldSudoUID := os.Getenv("SUDO_UID")
-			defer func() {
-				if oldSudoUID != "" {
-					os.Setenv("SUDO_UID", oldSudoUID)
-				} else {
-					os.Unsetenv("SUDO_UID")
-				}
-			}()
-
 			// Invalid SUDO_UID values should be ignored
 			invalidValues := []string{"invalid", "-1", "999999999999", ""}
 			for _, val := range invalidValues {
-				os.Setenv("SUDO_UID", val)
+				t.Setenv("SUDO_UID", val)
 				effectiveUID, err := getPermissionCheckUID()
 				assert.NoError(t, err)
 				// Should return 0 (root) when SUDO_UID is invalid
@@ -639,15 +613,6 @@ func TestGetPermissionCheckUID(t *testing.T) {
 		assert.NoError(t, err)
 
 		if currentUID == 0 {
-			oldSudoUID := os.Getenv("SUDO_UID")
-			defer func() {
-				if oldSudoUID != "" {
-					os.Setenv("SUDO_UID", oldSudoUID)
-				} else {
-					os.Unsetenv("SUDO_UID")
-				}
-			}()
-
 			// Test various malicious out-of-bounds SUDO_UID values
 			// These should be rejected and fall back to returning 0 (root)
 			maliciousValues := []struct {
@@ -663,7 +628,7 @@ func TestGetPermissionCheckUID(t *testing.T) {
 
 			for _, test := range maliciousValues {
 				t.Run(test.name, func(t *testing.T) {
-					os.Setenv("SUDO_UID", test.value)
+					t.Setenv("SUDO_UID", test.value)
 					effectiveUID, err := getPermissionCheckUID()
 
 					// Out-of-bounds values should either error or be ignored
@@ -687,18 +652,8 @@ func TestGetPermissionCheckUID(t *testing.T) {
 // TestGetProcessEUID tests the getProcessEUID function
 func TestGetProcessEUID(t *testing.T) {
 	t.Run("returns current UID regardless of SUDO_UID", func(t *testing.T) {
-		// Save and restore SUDO_UID
-		oldSudoUID := os.Getenv("SUDO_UID")
-		defer func() {
-			if oldSudoUID != "" {
-				os.Setenv("SUDO_UID", oldSudoUID)
-			} else {
-				os.Unsetenv("SUDO_UID")
-			}
-		}()
-
 		// Set SUDO_UID to a different value
-		os.Setenv("SUDO_UID", "9999")
+		t.Setenv("SUDO_UID", "9999")
 
 		currentUID, err := getProcessEUID()
 		assert.NoError(t, err)
@@ -720,16 +675,7 @@ func TestGetProcessEUID(t *testing.T) {
 	})
 
 	t.Run("clears SUDO_UID and returns actual UID", func(t *testing.T) {
-		oldSudoUID := os.Getenv("SUDO_UID")
-		defer func() {
-			if oldSudoUID != "" {
-				os.Setenv("SUDO_UID", oldSudoUID)
-			} else {
-				os.Unsetenv("SUDO_UID")
-			}
-		}()
-
-		os.Unsetenv("SUDO_UID")
+		t.Setenv("SUDO_UID", "")
 
 		currentUID, err := getProcessEUID()
 		assert.NoError(t, err)
