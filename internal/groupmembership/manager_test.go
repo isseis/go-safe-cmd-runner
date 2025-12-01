@@ -671,7 +671,7 @@ func TestGetProcessEUID(t *testing.T) {
 		if currentUID == 0 {
 			// Running as root, effectiveUID should use SUDO_UID
 			assert.Equal(t, 9999, effectiveUID, "getPermissionCheckUID should use SUDO_UID")
-			assert.Equal(t, 0, currentUID, "getCurrentUID should ignore SUDO_UID")
+			assert.Equal(t, 0, currentUID, "getProcessEUID should ignore SUDO_UID")
 		} else {
 			// Not running as root, both should return the same UID
 			assert.Equal(t, currentUID, effectiveUID)
