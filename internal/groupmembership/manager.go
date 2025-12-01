@@ -316,7 +316,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 		return false, err
 	}
 
-	// For reads: deny only if effective user is NOT in the group
+	// For reads with group-writable permissions: deny only if effective user is NOT in the group
 	// Convert userUID to uint32 for IsUserInGroup call
 	// #nosec G115 -- safe: `effectiveUID` represents a system user ID (UID), which is
 	// non-negative and constrained by the operating system to fit within a 32-bit
