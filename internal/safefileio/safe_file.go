@@ -53,6 +53,8 @@ type FileSystem interface {
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 	// GetGroupMembership returns the GroupMembership instance for security checks
 	GetGroupMembership() *groupmembership.GroupMembership
+	// Remove removes the named file or (empty) directory
+	Remove(name string) error
 }
 
 // File is an interface that abstracts file operations
@@ -61,6 +63,7 @@ type File interface {
 	io.Writer
 	Close() error
 	Stat() (os.FileInfo, error)
+	Truncate(size int64) error
 }
 
 // IsOpenat2Available returns true if openat2 is available and enabled
@@ -80,6 +83,11 @@ func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, err
 	}
 
 	return fs.safeOpenFileInternal(absPath, flag, perm)
+}
+
+// Remove removes the named file or (empty) directory
+func (fs *osFS) Remove(name string) error {
+	return os.Remove(name)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
@@ -117,7 +125,7 @@ func SafeAtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 
 // safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
-	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE)
 }
 
 // safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
@@ -204,15 +212,36 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 		return err
 	}
 
+	// Track whether file was created by this function
+	// Only set to true when creating a new file (O_EXCL), not when truncating an existing file
+	fileCreated := false
+
 	// Use the FileSystem interface consistently for both testing and production
 	file, err := fs.SafeOpenFile(absPath, flags, perm)
 	if err != nil {
 		return err
 	}
+	// File was successfully opened/created - only mark as created if using O_EXCL (new file)
+	if flags&os.O_EXCL != 0 {
+		fileCreated = true
+	}
 
-	// Ensure the file is closed on error
+	// Ensure the file is closed, and remove it if validation or writing fails
 	defer func() {
-		if closeErr := file.Close(); closeErr != nil && err == nil {
+		closeErr := file.Close()
+
+		// If there was an error during validation or writing, remove the file
+		if err != nil && fileCreated {
+			if removeErr := fs.Remove(absPath); removeErr != nil {
+				slog.Warn("failed to remove file after error",
+					slog.String("path", absPath),
+					slog.Any("original_error", err),
+					slog.Any("remove_error", removeErr))
+			}
+		}
+
+		// Report close error if no other error occurred
+		if closeErr != nil && err == nil {
 			err = fmt.Errorf("failed to close file: %w", closeErr)
 		}
 	}()
@@ -220,6 +249,13 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	// Validate the file is a regular file (not a device, pipe, etc.)
 	if err := canSafelyAccessFile(file, absPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
+	}
+
+	// Truncate the file after permission check to ensure content is written to an empty file
+	// For O_EXCL (new file), this is a no-op but harmless
+	// For overwrite mode, this ensures the file is truncated only after permission validation
+	if err := file.Truncate(0); err != nil {
+		return fmt.Errorf("failed to truncate %s: %w", absPath, err)
 	}
 
 	// Write the content
