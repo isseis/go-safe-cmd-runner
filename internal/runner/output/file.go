@@ -69,10 +69,10 @@ func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string) error {
 		return fmt.Errorf("failed to ensure directory for final path: %w", err)
 	}
 
-	// Use safefileio.SafeAtomicMoveFile for secure atomic file moving
+	// Use safeFS.AtomicMoveFile for secure atomic file moving
 	// This provides protection against TOCTOU attacks and ensures 0600 permissions
 	const secureFilePermission = 0o600
-	if err := safefileio.SafeAtomicMoveFile(tempPath, finalPath, secureFilePermission); err != nil {
+	if err := f.safeFS.AtomicMoveFile(tempPath, finalPath, secureFilePermission); err != nil {
 		return fmt.Errorf("failed to move to final path %s: %w", finalPath, err)
 	}
 

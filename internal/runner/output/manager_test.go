@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -436,23 +437,28 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 }
 
 func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
-	// Create manager with proper fileManager initialization
+	// Setup mocks
+	mockSafeFS := NewMockSafeFileSystem()
+	mockCommonFS := commontesting.NewMockFileSystem()
+
+	// Add a dummy file to mock FS
+	tempPath := "/tmp/test_output_123.tmp"
+	_ = mockCommonFS.AddFile(tempPath, 0o600, []byte("test data to be cleaned"))
+
+	// Create manager with mocks
 	manager := &DefaultOutputCaptureManager{
-		fileManager: NewSafeFileManager(),
+		fileManager: NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS),
 	}
 
-	// Create temporary file with some data
-	tempFile, tempPath := createRealTempFile(t)
-	defer os.Remove(tempPath)
-
-	testData := "test data to be cleaned"
-	_, err := tempFile.Write([]byte(testData))
-	require.NoError(t, err)
+	// Create a dummy file handle that can be closed
+	// We use a real pipe here just to have a valid *os.File that doesn't error on Close
+	r, w, _ := os.Pipe()
+	_ = r.Close() // Close reader end
 
 	capture := &Capture{
 		OutputPath:   "/tmp/test.txt",
 		TempFilePath: tempPath,
-		FileHandle:   tempFile,
+		FileHandle:   w, // Use writer end as file handle
 		CurrentSize:  23,
 		StartTime:    time.Now(),
 	}
@@ -462,13 +468,17 @@ func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 	assert.NotNil(t, capture.FileHandle)
 
 	// Call CleanupOutput
-	err = manager.CleanupOutput(capture)
+	err := manager.CleanupOutput(capture)
 
 	// Validate results
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), capture.CurrentSize)
 	assert.Nil(t, capture.FileHandle)
 	assert.Empty(t, capture.TempFilePath)
+
+	// Verify file is removed from mock FS
+	exists, _ := mockCommonFS.FileExists(tempPath)
+	assert.False(t, exists, "Temp file should be removed from mock FS")
 }
 
 func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {

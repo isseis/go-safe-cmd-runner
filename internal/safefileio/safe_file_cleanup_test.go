@@ -95,12 +95,13 @@ func (m *mockFileInfo) Sys() interface{} {
 
 // mockFileSystem is a test implementation of FileSystem interface
 type mockFileSystem struct {
-	openFunc        func(name string, flag int, perm os.FileMode) (File, error)
-	removeFunc      func(name string) error
-	groupMembership *groupmembership.GroupMembership
-	removedFiles    []string
-	removeCallCount int
-	mu              sync.Mutex
+	openFunc           func(name string, flag int, perm os.FileMode) (File, error)
+	removeFunc         func(name string) error
+	atomicMoveFileFunc func(srcPath, dstPath string, requiredPerm os.FileMode) error
+	groupMembership    *groupmembership.GroupMembership
+	removedFiles       []string
+	removeCallCount    int
+	mu                 sync.Mutex
 }
 
 func newMockFileSystem() *mockFileSystem {
@@ -126,6 +127,13 @@ func (m *mockFileSystem) Remove(name string) error {
 		return m.removeFunc(name)
 	}
 	return nil
+}
+
+func (m *mockFileSystem) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
+	if m.atomicMoveFileFunc != nil {
+		return m.atomicMoveFileFunc(srcPath, dstPath, requiredPerm)
+	}
+	return errors.New("mock AtomicMoveFile not implemented")
 }
 
 func (m *mockFileSystem) GetGroupMembership() *groupmembership.GroupMembership {

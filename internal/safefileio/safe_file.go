@@ -55,6 +55,8 @@ type FileSystem interface {
 	GetGroupMembership() *groupmembership.GroupMembership
 	// Remove removes the named file or (empty) directory
 	Remove(name string) error
+	// AtomicMoveFile atomically moves a file from source to destination with secure permissions
+	AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 }
 
 // File is an interface that abstracts file operations
@@ -88,6 +90,11 @@ func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, err
 // Remove removes the named file or (empty) directory
 func (fs *osFS) Remove(name string) error {
 	return os.Remove(name)
+}
+
+// AtomicMoveFile atomically moves a file from source to destination with secure permissions
+func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
+	return safeAtomicMoveFileWithFS(srcPath, dstPath, requiredPerm, fs)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
