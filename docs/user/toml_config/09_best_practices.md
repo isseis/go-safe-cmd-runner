@@ -101,7 +101,7 @@ Manage sensitive information with Command.Env and isolate it from the system env
 #### Recommended Implementation
 
 ```toml
-# Good example: Use vars and env appropriately
+# Good example: Use vars and env_vars appropriately
 [global]
 env_allowed = ["PATH", "HOME"]  # Don't include sensitive information
 

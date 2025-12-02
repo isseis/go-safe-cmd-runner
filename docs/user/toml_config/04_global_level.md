@@ -293,7 +293,7 @@ vars = ["var1=value1", "var2=value2", ...]
 
 ### Role
 
-- **TOML Expansion Only**: Expands values in `cmd`, `args`, `env`, and `verify_files`
+- **TOML Expansion Only**: Expands values in `cmd`, `args`, `env_vars`, and `verify_files`
 - **Enhanced Security**: Separates from environment variables passed to child processes
 - **Configuration Reuse**: Centrally manage common values
 - **Dynamic Path Building**: Build directory paths dynamically
@@ -408,7 +408,7 @@ args = ["secret_key"]
 # Output: (empty string) (secret_key is not passed as environment variable)
 ```
 
-To pass to child process, explicitly define in `env` field:
+To pass to child process, explicitly define in `env_vars` field:
 
 ```toml
 [global]
@@ -452,7 +452,7 @@ cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
 1. **Centralize Path Management**: Define application root paths and similar values in vars
 2. **Lowercase Recommended**: Use lowercase and underscores for internal variable names
 3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
-4. **Security**: Manage sensitive information in vars and expose via env only when necessary
+4. **Security**: Manage sensitive information in vars and expose via env_vars only when necessary
 
 ## 4.4 env_import - System Environment Variable Import
 
@@ -626,7 +626,7 @@ env_import = [
 3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
-## 4.5 env - Global Process Environment Variables
+## 4.5 env_vars - Global Process Environment Variables
 
 ### Overview
 
@@ -737,9 +737,9 @@ args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
 
 Environment variables are merged in the following order:
 
-1. Global.env (global environment variables)
-2. Merged with Group.env (group environment variables, see Chapter 5)
-3. Merged with Command.env (command environment variables, see Chapter 6)
+1. Global.env_vars (global environment variables)
+2. Merged with Group.env_vars (group environment variables, see Chapter 5)
+3. Merged with Command.env_vars (command environment variables, see Chapter 6)
 
 When the same environment variable is defined at multiple levels, the more specific level (Command > Group > Global) takes priority:
 
@@ -754,12 +754,12 @@ env_vars = [
 [[groups]]
 name = "example"
 vars = ["base=group_value"]
-env_vars = ["COMMON_VAR=%{base}"]    # Overrides Global.env
+env_vars = ["COMMON_VAR=%{base}"]    # Overrides Global.env_vars
 
 [[groups.commands]]
 name = "cmd1"
 vars = ["base=command_value"]
-env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env
+env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env_vars
 
 # Runtime environment variables:
 # COMMON_VAR=command_value (command level takes priority)
@@ -768,8 +768,8 @@ env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env
 
 ### Relationship with Internal Variables
 
-- **env values**: Can use internal variables `%{VAR}`
-- **Propagation to Child Processes**: Environment variables defined in env are passed to child processes
+- **env_vars values**: Can use internal variables `%{VAR}`
+- **Propagation to Child Processes**: Environment variables defined in env_vars are passed to child processes
 - **Internal Variables Not Propagated**: Internal variables defined in vars or env_import are not passed to child processes by default
 
 ```toml

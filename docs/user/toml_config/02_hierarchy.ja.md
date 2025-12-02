@@ -239,7 +239,7 @@ args = ["Home: %{HOME}, PWD: %{PWD}"]
 | env_allowed | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
 | vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
 | env_import | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
-| env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
+| env_vars | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
 | verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
 
 ### 2.3.6 実践例: 複雑な継承パターン
@@ -275,7 +275,7 @@ timeout = 300  # グローバルの 60 をオーバーライド
 
 ### 2.3.7 セキュリティベストプラクティス: 環境変数の定義レベル
 
-`env` (プロセス環境変数)は、グローバル・グループ・コマンドの全階層で定義可能ですが、セキュリティ観点から適切なレベルで定義することが重要です。
+`env_vars` (プロセス環境変数)は、グローバル・グループ・コマンドの全階層で定義可能ですが、セキュリティ観点から適切なレベルで定義することが重要です。
 
 #### 推奨される定義レベル
 
@@ -296,19 +296,19 @@ timeout = 300  # グローバルの 60 をオーバーライド
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env = [
+env_vars = [
     "PGPASSWORD=secret",      # このコマンドのみで必要
     "PGHOST=localhost"
 ]
 
 # 非推奨: グローバルで全コマンドに機密情報を公開
 [global]
-env = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
+env_vars = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
 ```
 
-##### 2. vars と env の使い分け
+##### 2. vars と env_vars の使い分け
 
-内部変数 `vars` を活用し、必要な場合のみ `env` で子プロセスに公開します:
+内部変数 `vars` を活用し、必要な場合のみ `env_vars` で子プロセスに公開します:
 
 ```toml
 [global]
@@ -319,22 +319,22 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
+env_vars = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env_vars として公開
 
 [[groups.commands]]
 name = "log_check"
 cmd = "/bin/grep"
 args = ["ERROR", "%{app_dir}/logs/app.log"]
-# env は定義しない → db_password は子プロセスに渡らない
+# env_vars は定義しない → db_password は子プロセスに渡らない
 ```
 
-##### 3. グローバルレベルの env は安全な値のみ
+##### 3. グローバルレベルの env_vars は安全な値のみ
 
 グローバルレベルでは、全コマンドに渡しても安全な環境変数のみを定義します:
 
 ```toml
 [global]
-env = [
+env_vars = [
     "LANG=C",              # 安全: ロケール設定
     "TZ=UTC",              # 安全: タイムゾーン設定
     "LC_ALL=C"             # 安全: 言語設定
@@ -349,7 +349,7 @@ env = [
 ```toml
 [[groups]]
 name = "database_group"
-env = [
+env_vars = [
     "PGHOST=localhost",
     "PGPORT=5432",
     "PGDATABASE=production"
@@ -357,11 +357,11 @@ env = [
 
 [[groups.commands]]
 name = "backup"
-env = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
+env_vars = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
 
 [[groups.commands]]
 name = "analyze"
-env = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
+env_vars = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
 ```
 
 #### セキュリティチェックリスト
@@ -370,7 +370,7 @@ env = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情�
 
 - [ ] 機密情報(パスワード、トークン等)をグローバルレベルで定義していないか
 - [ ] 各コマンドに必要な環境変数のみを定義しているか
-- [ ] 内部変数 `vars` で管理できる値を不必要に `env` で公開していないか
+- [ ] 内部変数 `vars` で管理できる値を不必要に `env_vars` で公開していないか
 - [ ] `env_allowed` で必要最小限のシステム環境変数のみを許可しているか
 
 ## 次のステップ

@@ -38,7 +38,7 @@ runner の設定は以下の4階層に分かれています：
 
 | 設定項目 | Global | Group | Command | 継承・マージ動作 | 備考 |
 |---------|--------|-------|---------|-----------------|------|
-| **env** | - | - | ✓ | **Independent (層間マージなし)**: Command.Env で定義された環境変数のみ使用。複数 Command 間では独立 | 各 Command が独自の env を持つ<br>Union ではなく Independent 動作 |
+| **env_vars** | - | - | ✓ | **Independent (層間マージなし)**: Command.Env で定義された環境変数のみ使用。複数 Command 間では独立 | 各 Command が独自の env_vars を持つ<br>Union ではなく Independent 動作 |
 | **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist が `nil` → Inherit (Global を継承)<br>• Group.EnvAllowlist が `[]` → Prohibit (すべて拒否)<br>• Group.EnvAllowlist が `["VAR1", ...]` → Override (Group の値のみ使用) | 3つの継承モード<br>**Union ではなく Override** を採用<br>実装: [filter.go:141-153](../../internal/runner/environment/filter.go#L141-L153)<br>型定義: [config.go:121-135](../../internal/runner/runnertypes/config.go#L121-L135) |
 | **verify_files** | ✓ | ✓ | - | **Effective Union**: Global と Group で個別に管理されるが、実行時には両方の検証成功が必要。Global 失敗→プログラム終了、Group 失敗→グループスキップ | ユーザー観点では実質的に Union 動作<br>両方の検証成功が Group 実行の前提条件<br>実装: [main.go:129-133](../../cmd/runner/main.go#L129-L133), [runner.go:406-417](../../internal/runner/runner.go#L406-L417) |
 
@@ -47,7 +47,7 @@ runner の設定は以下の4階層に分かれています：
 複数値項目において **Union（結合）を採用しなかった理由**:
 
 1. **env_allowlist**: セキュリティ上の理由から、明示的な制御が必要。Union では意図しない環境変数が継承される可能性がある。Override により、Group レベルで厳格な制御が可能。
-2. **env**: 各 Command が独自の環境変数セットを持つことで、Command 間の独立性を確保。
+2. **env_vars**: 各 Command が独自の環境変数セットを持つことで、Command 間の独立性を確保。
 3. **verify_files**: Global と Group で検証対象が異なるため、独立した管理が適切。
 
 ## 特記事項
@@ -208,14 +208,14 @@ if cmd.Dir == "" {
 設定項目は**単一値項目**と**複数値項目**に大別されます：
 
 - **単一値項目** (timeout, workdir など): 複数レイヤーで設定された場合、必ず Override（上書き）動作
-- **複数値項目** (env, env_allowlist, verify_files): Union（結合）または Override（上書き）の選択が可能だが、現在の実装ではすべて **Override または Independent** を採用
+- **複数値項目** (env_vars, env_allowlist, verify_files): Union（結合）または Override（上書き）の選択が可能だが、現在の実装ではすべて **Override または Independent** を採用
 
 ### 継承・マージ動作のパターン
 
 設定項目の継承・マージ動作は一様ではなく、項目ごとに以下のパターンがあります：
 
 1. **Override パターン** (timeout, workdir): 下位レベルが上位レベルを上書き
-2. **Independent パターン** (env): 各レベルで独立して管理（層間でのマージなし）
+2. **Independent パターン** (env_vars): 各レベルで独立して管理（層間でのマージなし）
 3. **Effective Union パターン** (verify_files): 設定は独立管理だが、実行時には両方の検証成功が必要
 4. **Inherit/Override/Prohibit パターン** (env_allowlist): 3つの継承モードで柔軟に制御
 5. **Single-level パターン** (max_output_size など): 特定のレベルでのみ定義可能
@@ -225,7 +225,7 @@ if cmd.Dir == "" {
 **複数値項目で Union（結合）を採用しなかった理由**:
 
 1. **セキュリティの明示性**: env_allowlist で Union を使用すると、上位レベルの設定が意図せず継承され、セキュリティリスクが発生する可能性がある
-2. **Command の独立性**: env で各 Command が独自の環境変数を持つことで、Command 間の意図しない影響を防止
+2. **Command の独立性**: env_vars で各 Command が独自の環境変数を持つことで、Command 間の意図しない影響を防止
 3. **検証対象の明確性**: verify_files で Global と Group の検証対象を独立管理することで、それぞれのスコープを明確化。ただし、実行時には **Effective Union** として機能し、両方の検証成功がコマンド実行の前提条件となる
 
 この設計により、セキュリティ要件と柔軟性のバランスを実現しています。特に verify_files については、設定管理は独立しつつも、実行時のセキュリティ保証は厳格（Union的動作）にすることで、堅牢性を確保しています。

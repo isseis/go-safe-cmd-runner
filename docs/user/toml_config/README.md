@@ -53,7 +53,7 @@ A comprehensive user guide explaining how to write TOML configuration files for 
   - cmd - Execution command
   - args - Arguments
 - Environment configuration
-  - env - Environment variables
+  - env_vars - Environment variables
 - Timeout configuration
   - timeout - Command-specific timeout
 - Privilege Management

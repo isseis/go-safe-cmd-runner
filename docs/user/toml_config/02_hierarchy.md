@@ -239,7 +239,7 @@ Depending on the configuration item, the priority differs:
 | env_allowed | Group > Global | Override | Behavior changes according to inheritance mode |
 | vars | Command > Group > Global | Merge (Union) | Lower levels merge with upper levels, same keys override |
 | env_import | Command > Group > Global | Merge | Lower levels merge with upper levels |
-| env | Command > Group > Global | Merge | Process environment variable configuration ※Security: Define at minimal necessary level |
+| env_vars | Command > Group > Global | Merge | Process environment variable configuration ※Security: Define at minimal necessary level |
 | verify_files | Group + Global | Merge | Merged (both applied) |
 | log_level | Global only | N/A | Cannot be overridden at lower levels |
 
@@ -276,7 +276,7 @@ In this example:
 
 ### 2.3.7 Security Best Practices: Environment Variable Definition Levels
 
-While `env` (process environment variables) can be defined at all hierarchy levels (Global, Group, and Command), it's important to define them at the appropriate level from a security perspective.
+While `env_vars` (process environment variables) can be defined at all hierarchy levels (Global, Group, and Command), it's important to define them at the appropriate level from a security perspective.
 
 #### Recommended Definition Levels
 
@@ -297,19 +297,19 @@ Define only the environment variables needed for each command:
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env = [
+env_vars = [
     "PGPASSWORD=secret",      # Only needed for this command
     "PGHOST=localhost"
 ]
 
 # Not recommended: Exposing sensitive information globally to all commands
 [global]
-env = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
+env_vars = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
 ```
 
-##### 2. Proper Use of vars vs env
+##### 2. Proper Use of vars vs env_vars
 
-Leverage internal variables `vars` and expose to child processes via `env` only when necessary:
+Leverage internal variables `vars` and expose to child processes via `env_vars` only when necessary:
 
 ```toml
 [global]
@@ -320,22 +320,22 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env = ["PGPASSWORD=%{db_password}"]  # Expose as env only for commands that need it
+env_vars = ["PGPASSWORD=%{db_password}"]  # Expose as env_vars only for commands that need it
 
 [[groups.commands]]
 name = "log_check"
 cmd = "/bin/grep"
 args = ["ERROR", "%{app_dir}/logs/app.log"]
-# No env defined → db_password is not passed to child process
+# No env_vars defined → db_password is not passed to child process
 ```
 
-##### 3. Global-level env Should Contain Only Safe Values
+##### 3. Global-level env_vars Should Contain Only Safe Values
 
 At the global level, define only environment variables that are safe to pass to all commands:
 
 ```toml
 [global]
-env = [
+env_vars = [
     "LANG=C",              # Safe: Locale setting
     "TZ=UTC",              # Safe: Timezone setting
     "LC_ALL=C"             # Safe: Language setting
@@ -350,7 +350,7 @@ Define settings common to all commands within a group at the group level:
 ```toml
 [[groups]]
 name = "database_group"
-env = [
+env_vars = [
     "PGHOST=localhost",
     "PGPORT=5432",
     "PGDATABASE=production"
@@ -358,11 +358,11 @@ env = [
 
 [[groups.commands]]
 name = "backup"
-env = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
+env_vars = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
 
 [[groups.commands]]
 name = "analyze"
-env = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
+env_vars = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
 ```
 
 #### Security Checklist
@@ -371,7 +371,7 @@ When creating configuration files, verify the following:
 
 - [ ] No sensitive information (passwords, tokens, etc.) defined at global level
 - [ ] Only necessary environment variables defined for each command
-- [ ] Values that can be managed with internal `vars` are not unnecessarily exposed via `env`
+- [ ] Values that can be managed with internal `vars` are not unnecessarily exposed via `env_vars`
 - [ ] `env_allowed` permits only the minimal necessary system environment variables
 
 ## Next Steps

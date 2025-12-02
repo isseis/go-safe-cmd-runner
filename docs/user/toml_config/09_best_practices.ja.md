@@ -101,7 +101,7 @@ args = ["-czf", "backup.tar.gz", "/data"]
 #### 推奨される実装
 
 ```toml
-# 良い例: vars と env を適切に使い分け
+# 良い例: vars と env_vars を適切に使い分け
 [global]
 env_allowed = ["PATH", "HOME"]  # 機密情報は含めない
 
