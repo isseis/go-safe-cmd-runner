@@ -15,8 +15,7 @@
 record backup-config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 実行バイナリのハッシュを記録
-record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /bin/ls -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/tar /bin/ls
 ```
 
 **設定ファイル (backup-config.toml):**
