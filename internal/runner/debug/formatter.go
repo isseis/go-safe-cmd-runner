@@ -24,12 +24,6 @@ func formatStringSlice(items []string, emptyMessage string) string {
 	return strings.Join(items, ", ")
 }
 
-// formatGroupField formats a group field name for display output.
-// It shows the field name with the specified count and format similar to the existing output.
-func formatGroupField(fieldName string, count int) string {
-	return fmt.Sprintf("  %s (%d):", fieldName, count)
-}
-
 // FormatInheritanceAnalysisText formats InheritanceAnalysis as text output matching
 // the format of the existing PrintFromEnvInheritance function.
 // Returns an empty string if analysis is nil.
