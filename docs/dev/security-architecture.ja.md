@@ -695,7 +695,7 @@ type FileSystem interface {
 type Command struct {
     RunAsUser    string `toml:"run_as_user"`    // コマンドを実行するユーザー
     RunAsGroup   string `toml:"run_as_group"`   // コマンドを実行するグループ
-    RiskLevel    string `toml:"risk_level"`     // コマンドの最大リスクレベル
+    RiskLevel    string `toml:"risk_level"`     // コマンドのリスクレベル
 }
 ```
 

@@ -695,7 +695,7 @@ Provides secure user and group switching functionality while maintaining strict 
 type Command struct {
     RunAsUser    string `toml:"run_as_user"`    // User to run the command as
     RunAsGroup   string `toml:"run_as_group"`   // Group to run the command as
-    iskLevel     string `toml:"risk_level"`     // Risk level of the command
+    RiskLevel    string `toml:"risk_level"`     // Risk level of the command
 }
 ```
 
