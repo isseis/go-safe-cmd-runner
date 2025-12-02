@@ -58,11 +58,11 @@ runner の設定は以下の4階層に分かれています：
 - `Filter.ResolveGroupEnvironmentVars()` が Group レベルの `env_allowlist` に基づいてシステム環境変数をフィルタリング
 - 実装: [filter.go:114-139](../../internal/runner/environment/filter.go#L114-L139)
 
-### 2. 自動環境変数 (Auto Env)
+### 2. 自動変数 (Auto Variables)
 
-- `__RUNNER_DATETIME`, `__RUNNER_PID` などの自動生成環境変数は Command.Env より優先
-- Command.Env から自動環境変数を参照可能だが、上書きは不可
-- 実装: [expansion.go:81-94](../../internal/runner/config/expansion.go#L81-L94)
+- `__runner_datetime`, `__runner_pid`, `__runner_workdir` などの自動生成内部変数はユーザー定義変数より優先
+- これらは内部変数であり、環境変数ではない（`%{__runner_datetime}` の形式で参照）
+- 実装: [variable/auto.go](../../internal/runner/variable/auto.go)
 
 ### 3. env_allowlist の継承モード詳細
 

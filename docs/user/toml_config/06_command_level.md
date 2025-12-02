@@ -396,14 +396,15 @@ vars = [
 
 Runner provides the following automatic variables (cannot be overridden):
 
-- `__RUNNER_DATETIME`: Command execution time (ISO 8601 format)
-- `__RUNNER_PID`: PID of Runner process
+- `__runner_datetime`: Runner start time (UTC) in YYYYMMDDHHmmSS.msec format
+- `__runner_pid`: Process ID of the runner process
+- `__runner_workdir`: Working directory for the group (available at command level only)
 
 ```toml
 [[groups.commands]]
 name = "log_execution"
 cmd = "/usr/bin/logger"
-args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
+args = ["Executed at %{__runner_datetime} by PID %{__runner_pid}"]
 ```
 
 ### 6.2.2 env_import - System Environment Variable Import

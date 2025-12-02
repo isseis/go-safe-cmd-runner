@@ -395,14 +395,15 @@ vars = [
 
 Runner は以下の自動変数を提供します(上書き不可):
 
-- `__RUNNER_DATETIME`: コマンド実行時刻 (ISO 8601 形式)
-- `__RUNNER_PID`: Runner プロセスの PID
+- `__runner_datetime`: runner実行開始時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
+- `__runner_pid`: runnerプロセスのプロセスID
+- `__runner_workdir`: グループの作業ディレクトリ（コマンドレベルでのみ利用可能）
 
 ```toml
 [[groups.commands]]
 name = "log_execution"
 cmd = "/usr/bin/logger"
-args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
+args = ["Executed at %{__runner_datetime} by PID %{__runner_pid}"]
 ```
 
 ### 6.2.2 from_env - システム環境変数のインポート

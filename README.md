@@ -218,14 +218,15 @@ risk_level = "medium"
 
 ### Detailed Configuration Guide
 
-### Automatic Environment Variables
+### Automatic Variables
 
-The system automatically provides environment variables for each command execution:
+The system automatically provides internal variables for each command execution:
 
 - `__runner_datetime`: Execution timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
 - `__runner_pid`: Process ID of the runner
+- `__runner_workdir`: Working directory for the group (available at command level)
 
-These variables can be used in command paths, arguments, and environment variable values:
+These variables can be referenced using `%{var}` syntax in command paths, arguments, and environment variable values:
 
 ```toml
 [[groups.commands]]
@@ -239,7 +240,7 @@ cmd = "/bin/sh"
 args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/log/executions.log"]
 ```
 
-**Note**: The prefix `__runner_` is reserved and cannot be used for user-defined environment variables.
+**Note**: The prefix `__runner_` is reserved and cannot be used for user-defined variables.
 
 ### Group-Level Command Allowlist
 

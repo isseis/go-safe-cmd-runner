@@ -768,14 +768,15 @@ vars = ["home=/home/user"]
 
 Output: `Literal $HOME is different from /home/user`
 
-## 7.11 Automatic Environment Variables
+## 7.11 Automatic Variables
 
 ### 7.11.1 Overview
 
-The system automatically sets the following internal variables for each command execution:
+The system automatically sets the following internal variables:
 
-- **`__runner_datetime`**: Execution time (UTC) in YYYYMMDDHHmmSS.msec format
-- **`__runner_pid`**: Process ID of the runner process
+- **`__runner_datetime`**: Runner start time (UTC) in YYYYMMDDHHmmSS.msec format (global variable)
+- **`__runner_pid`**: Process ID of the runner process (global variable)
+- **`__runner_workdir`**: Working directory for the group (set during group execution, available at command level only)
 
 These variables can be used in command paths, arguments, and environment variable values just like regular internal variables.
 
@@ -833,6 +834,23 @@ Example output:
 ```
 Executed at 20251005143022.123 by PID 12345
 ```
+
+#### Working Directory Reference
+
+```toml
+[[groups]]
+name = "backup_group"
+
+[[groups.commands]]
+name = "create_backup"
+description = "Create backup file in working directory"
+cmd = "/usr/bin/tar"
+args = ["czf", "%{__runner_workdir}/backup.tar.gz", "/data"]
+```
+
+Example execution:
+- If the group's working directory is `/tmp/scr-backup_group-XXXXXX`
+- Backup file: `/tmp/scr-backup_group-XXXXXX/backup.tar.gz`
 
 #### Combining Multiple Automatic Variables
 
