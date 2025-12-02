@@ -192,15 +192,14 @@ Error: file verification failed: /opt/app/script.sh: hash file not found
 
 ```bash
 # Record hashes with record command
-record -file /usr/bin/tool
-record -file /opt/app/script.sh
+record /usr/bin/tool /opt/app/script.sh
 ```
 
 **If file was legitimately changed**:
 
 ```bash
 # Re-record hash
-record -file /usr/bin/tool
+record /usr/bin/tool
 ```
 
 ### 10.1.7 Command Path Errors
@@ -603,8 +602,7 @@ env_allowed = ["PATH"]
 
 ```bash
 # Record individual files
-record -file config.toml
-record -file /usr/bin/tool
+record config.toml /usr/bin/tool
 ```
 
 ### Q4: Frequent timeout errors

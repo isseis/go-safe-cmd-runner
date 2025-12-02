@@ -8,6 +8,18 @@ This chapter introduces practical configuration examples based on real-world use
 
 Basic configuration for daily file backups:
 
+**Pre-execution Setup:**
+
+```bash
+# Record hash of the TOML configuration file
+record backup-config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Record hash of executable binaries
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/tar /bin/ls
+```
+
+**Configuration File (backup-config.toml):**
+
 ```toml
 version = "1.0"
 
@@ -58,6 +70,21 @@ output_file = "backup-list.txt"
 ### File Verification and Access Control
 
 Configuration for environments with high security requirements:
+
+**Pre-execution Setup:**
+
+```bash
+# Record hash of the TOML configuration file
+record secure-backup.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Record hash of files specified in Global verify_files
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/sh /bin/tar /usr/bin/gpg
+
+# Record hash of files specified in Group verify_files
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /opt/secure/bin/backup-tool
+```
+
+**Configuration File (secure-backup.toml):**
 
 ```toml
 version = "1.0"
@@ -422,6 +449,32 @@ risk_level = "high"
 ### Full-Stack Application Deployment
 
 Integrated deployment of database, application, and web server:
+
+**Pre-execution Setup:**
+
+```bash
+# Record hash of the TOML configuration file
+record deploy-fullstack.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Record hash of files specified in Global verify_files
+record /usr/bin/psql -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/pg_dump -d /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Record hash of executable binaries
+record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /bin/tar \
+    /usr/bin/dpkg \
+    /opt/myapp/bin/migrate \
+    /usr/bin/systemctl \
+    /usr/bin/pip3 \
+    /bin/cp \
+    /usr/bin/nginx \
+    /usr/bin/curl \
+    /opt/tools/generate-report \
+    /bin/rm
+```
+
+**Configuration File (deploy-fullstack.toml):**
 
 ```toml
 version = "1.0"

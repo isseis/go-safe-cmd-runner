@@ -34,11 +34,11 @@ The main execution command. Safely executes commands based on TOML configuration
 ```bash
 # Basic execution
 runner -config config.toml
-# Short form: runner -c config.toml
+runner -c config.toml  # Short form
 
 # Dry run (verify execution plan)
 runner -config config.toml -dry-run
-# Short form: runner -c config.toml -n
+runner -c config.toml -n  # Short form
 ```
 
 **Use this when:**
@@ -65,7 +65,10 @@ Command to record SHA-256 hash values of files. For administrators.
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Overwrite existing hash
-record -d /usr/local/etc/go-safe-cmd-runner/hashes -force /usr/bin/backup.sh
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# Batch recording of multiple files
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 **Use this when:**
@@ -92,9 +95,7 @@ Command to verify file integrity. For debugging and troubleshooting.
 verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Verify multiple files
-for file in /usr/local/bin/*.sh; do
-    verify -d /path/to/hashes "$file"
-done
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 **Use this when:**
@@ -291,9 +292,7 @@ sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 3. Record hashes
 sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes \
-    /etc/go-safe-cmd-runner/backup.toml
-
-sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /etc/go-safe-cmd-runner/backup.toml \
     /usr/bin/pg_dump
 
 # 4. Verify with dry run
@@ -325,7 +324,7 @@ See the [TOML Configuration File Guide](toml_config/README.md) for details.
 A: Check in the following order:
 
 1. **Validate configuration**: `runner -config config.toml -dry-run`
-2. **Verify files**: `verify -file <path> -hash-dir <hash-dir>`
+2. **Verify files**: `verify -d <hash-dir> <file>`
 3. **Debug logging**: `runner -config config.toml -log-level debug`
 4. **Troubleshooting guides**:
    - [runner Troubleshooting](runner_command.md#6-troubleshooting)

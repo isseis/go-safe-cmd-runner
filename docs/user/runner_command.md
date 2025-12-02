@@ -74,14 +74,14 @@ You need to record hash values of the following files before execution:
 3. Files specified in `verify_files`
 
 ```bash
-# 2. Record hash of the TOML configuration file (most important)
-record -d /usr/local/etc/go-safe-cmd-runner/hashes config.toml
+# 1. Record hash of the TOML configuration file (most important)
+record config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 2. Record hash of executable binaries
-record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
+record /usr/local/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 3. Record hash of files specified in verify_files (e.g., environment config files)
-record -d /usr/local/etc/go-safe-cmd-runner/hashes /etc/myapp/database.conf
+record /etc/myapp/database.conf -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 For details, see [record Command Guide](record_command.md).
@@ -1572,18 +1572,18 @@ jobs:
         run: |
           sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
           # Record hash of the TOML configuration file itself (most important)
-          sudo ./build/record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          sudo ./build/record config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
           # Record hash of executable binaries
-          sudo ./build/record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          sudo ./build/record /usr/local/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 
       - name: Dry run
         run: |
-          runner -config config.toml -dry-run -dry-run-format json > dryrun.json
+          runner -c config.toml -n -dry-run-format json > dryrun.json
           cat dryrun.json | jq '.'
 
       - name: Deploy
         run: |
-          runner -config config.toml -quiet -log-dir ./logs
+          runner -c config.toml -q -log-dir ./logs
         env:
           GSCR_SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
@@ -1745,10 +1745,10 @@ Hash mismatch: expected abc123..., got def456...
 ls -l /usr/bin/backup.sh
 
 # Re-record hash
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
+record /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes -force
 
 # Verify individually
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 For details, see [verify Command Guide](verify_command.md).
