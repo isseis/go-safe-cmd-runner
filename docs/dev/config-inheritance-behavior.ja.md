@@ -27,7 +27,7 @@ runner の設定は以下の4階層に分かれています：
 | **workdir** | ✓ | ✓ | ✓ | **Override**: Command.Dir が空文字列の場合のみ Global.WorkDir を設定 | Group.WorkDir は temp_dir 用途<br>Command.Dir は実行時に使用<br>実装: [runner.go:526-528](../../internal/runner/runner.go#L526-L528) |
 | **max_output_size** | ✓ | - | - | **Global only**: Global.MaxOutputSize のみ定義可能 | Command や Group レベルでは未対応 |
 | **skip_standard_paths** | ✓ | - | - | **Global only**: Global.SkipStandardPaths のみ定義可能 | Command や Group レベルでは未対応 |
-| **max_risk_level** | - | - | ✓ | **Command only**: Command.MaxRiskLevel のみ定義可能 | Global や Group レベルでは未対応 |
+| **risk_level** | - | - | ✓ | **Command only**: Command.RiskLevel のみ定義可能 | Global や Group レベルでは未対応 |
 | **run_as_user** | - | - | ✓ | **Command only**: Command.RunAsUser のみ定義可能 | Global や Group レベルでは未対応 |
 | **run_as_group** | - | - | ✓ | **Command only**: Command.RunAsGroup のみ定義可能 | Global や Group レベルでは未対応 |
 | **output** | - | - | ✓ | **Command only**: Command.Output のみ定義可能 | Global や Group レベルでは未対応 |

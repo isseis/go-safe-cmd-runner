@@ -498,7 +498,6 @@
 |--------|--------------|--------------|
 | 環境変数 | `env` | `env_vars` |
 | 環境変数インポート | `from_env` | `env_import` |
-| リスクレベル | `max_risk_level` | `risk_level` |
 | 出力ファイル | `output` | `output_file` |
 
 ---

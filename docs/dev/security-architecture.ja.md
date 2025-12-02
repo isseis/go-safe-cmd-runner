@@ -345,7 +345,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 ```go
 // 場所: internal/runner/runnertypes/config.go
 type Command struct {
-    MaxRiskLevel string `toml:"max_risk_level"` // 許可される最大リスクレベル
+    RiskLevel string `toml:"risk_level"` // コマンドのリスクレベル
 }
 ```
 
@@ -695,7 +695,7 @@ type FileSystem interface {
 type Command struct {
     RunAsUser    string `toml:"run_as_user"`    // コマンドを実行するユーザー
     RunAsGroup   string `toml:"run_as_group"`   // コマンドを実行するグループ
-    MaxRiskLevel string `toml:"max_risk_level"` // 許可される最大リスクレベル
+    RiskLevel    string `toml:"risk_level"`     // コマンドの最大リスクレベル
 }
 ```
 
