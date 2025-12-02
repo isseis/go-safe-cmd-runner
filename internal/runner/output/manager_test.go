@@ -443,7 +443,7 @@ func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 
 	// Add a dummy file to mock FS
 	tempPath := "/tmp/test_output_123.tmp"
-	_ = mockCommonFS.AddFile(tempPath, 0o600, []byte("test data to be cleaned"))
+	require.NoError(t, mockCommonFS.AddFile(tempPath, 0o600, []byte("test data to be cleaned")))
 
 	// Create manager with mocks
 	manager := &DefaultOutputCaptureManager{
@@ -452,8 +452,9 @@ func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 
 	// Create a dummy file handle that can be closed
 	// We use a real pipe here just to have a valid *os.File that doesn't error on Close
-	r, w, _ := os.Pipe()
-	_ = r.Close() // Close reader end
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, r.Close()) // Close reader end
 
 	capture := &Capture{
 		OutputPath:   "/tmp/test.txt",
@@ -468,7 +469,7 @@ func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 	assert.NotNil(t, capture.FileHandle)
 
 	// Call CleanupOutput
-	err := manager.CleanupOutput(capture)
+	err = manager.CleanupOutput(capture)
 
 	// Validate results
 	assert.NoError(t, err)

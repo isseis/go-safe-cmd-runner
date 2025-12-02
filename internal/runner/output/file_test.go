@@ -365,7 +365,8 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 			// Store original content if temp file exists
 			var originalContent []byte
 			if _, err := os.Stat(tempPath); err == nil {
-				originalContent, _ = os.ReadFile(tempPath)
+				originalContent, err = os.ReadFile(tempPath)
+				require.NoError(t, err)
 			}
 
 			err := manager.MoveToFinal(tempPath, finalPath)
@@ -580,32 +581,45 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 		name                 string
 		tempPath             string
 		finalPath            string
+		setupMock            func(*commontesting.MockFileSystem)
 		atomicMoveError      error
 		wantErr              bool
 		errContains          string
 		wantAtomicMoveCalled bool
 	}{
 		{
-			name:                 "successful_move",
-			tempPath:             "/tmp/test.tmp",
-			finalPath:            "/output/final.txt",
+			name:      "successful_move",
+			tempPath:  "/tmp/test.tmp",
+			finalPath: "/output/final.txt",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				// Pre-add directory so EnsureDirectory succeeds
+				require.NoError(t, mock.AddDir("/output", 0o750))
+			},
 			atomicMoveError:      nil,
 			wantErr:              false,
 			wantAtomicMoveCalled: true,
 		},
 		{
-			name:                 "atomic_move_fails",
-			tempPath:             "/tmp/test.tmp",
-			finalPath:            "/output/final.txt",
+			name:      "atomic_move_fails",
+			tempPath:  "/tmp/test.tmp",
+			finalPath: "/output/final.txt",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				// Pre-add directory so EnsureDirectory succeeds
+				require.NoError(t, mock.AddDir("/output", 0o750))
+			},
 			atomicMoveError:      errors.New("rename failed"),
 			wantErr:              true,
 			errContains:          "failed to move to final path",
 			wantAtomicMoveCalled: true,
 		},
 		{
-			name:                 "ensure_directory_fails_path_is_file",
-			tempPath:             "/tmp/test.tmp",
-			finalPath:            "/existing_file/final.txt",
+			name:      "ensure_directory_fails_path_is_file",
+			tempPath:  "/tmp/test.tmp",
+			finalPath: "/existing_file/final.txt",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				// Add a file at the path where we expect a directory
+				require.NoError(t, mock.AddFile("/existing_file", 0o644, []byte("content")))
+			},
 			wantErr:              true,
 			errContains:          "not a directory",
 			wantAtomicMoveCalled: false,
@@ -622,15 +636,8 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 
 			// Set up mock common.FileSystem
 			mockCommonFS := commontesting.NewMockFileSystem()
-
-			// Setup for ensure_directory_fails_path_is_file test case
-			if tt.name == "ensure_directory_fails_path_is_file" {
-				// Add a file at the path where we expect a directory
-				_ = mockCommonFS.AddFile("/existing_file", 0o644, []byte("content"))
-			} else {
-				// Pre-add directories so EnsureDirectory succeeds
-				finalDir := filepath.Dir(tt.finalPath)
-				_ = mockCommonFS.AddDir(finalDir, 0o750)
+			if tt.setupMock != nil {
+				tt.setupMock(mockCommonFS)
 			}
 
 			// Create SafeFileManager with mocks
@@ -675,7 +682,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			name: "directory_already_exists",
 			path: "/existing/dir",
 			setupMock: func(mock *commontesting.MockFileSystem) {
-				_ = mock.AddDir("/existing/dir", 0o755)
+				require.NoError(t, mock.AddDir("/existing/dir", 0o755))
 			},
 			wantErr: false,
 		},
@@ -691,7 +698,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			name: "path_is_file_not_directory",
 			path: "/path/to/file",
 			setupMock: func(mock *commontesting.MockFileSystem) {
-				_ = mock.AddFile("/path/to/file", 0o644, []byte("content"))
+				require.NoError(t, mock.AddFile("/path/to/file", 0o644, []byte("content")))
 			},
 			wantErr:     true,
 			errContains: "not a directory",
@@ -740,7 +747,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			name: "file_exists_and_removed",
 			path: "/tmp/test.tmp",
 			setupMock: func(mock *commontesting.MockFileSystem) {
-				_ = mock.AddFile("/tmp/test.tmp", 0o600, []byte("content"))
+				require.NoError(t, mock.AddFile("/tmp/test.tmp", 0o600, []byte("content")))
 			},
 			wantErr: false,
 		},
@@ -756,7 +763,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			name: "path_is_directory_error",
 			path: "/tmp/dir",
 			setupMock: func(mock *commontesting.MockFileSystem) {
-				_ = mock.AddDir("/tmp/dir", 0o755)
+				require.NoError(t, mock.AddDir("/tmp/dir", 0o755))
 			},
 			wantErr:     true,
 			errContains: "not a file",
@@ -816,7 +823,7 @@ func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 			dir:     "/custom/dir",
 			pattern: "output_*.tmp",
 			setupMock: func(mock *commontesting.MockFileSystem) {
-				_ = mock.AddDir("/custom/dir", 0o755)
+				require.NoError(t, mock.AddDir("/custom/dir", 0o755))
 			},
 			wantErr: false,
 		},
