@@ -2,13 +2,80 @@ package output
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// MockSafeFileSystem implements safefileio.FileSystem for testing
+type MockSafeFileSystem struct {
+	// SafeOpenFileFunc allows customizing SafeOpenFile behavior
+	SafeOpenFileFunc func(name string, flag int, perm os.FileMode) (safefileio.File, error)
+	// GetGroupMembershipFunc allows customizing GetGroupMembership behavior
+	GetGroupMembershipFunc func() *groupmembership.GroupMembership
+	// RemoveFunc allows customizing Remove behavior
+	RemoveFunc func(name string) error
+	// AtomicMoveFileFunc allows customizing AtomicMoveFile behavior
+	AtomicMoveFileFunc func(srcPath, dstPath string, requiredPerm os.FileMode) error
+
+	// Call tracking for verification
+	AtomicMoveFileCalls []struct {
+		SrcPath      string
+		DstPath      string
+		RequiredPerm os.FileMode
+	}
+	RemoveCalls []string
+}
+
+// SafeOpenFile implements safefileio.FileSystem
+func (m *MockSafeFileSystem) SafeOpenFile(name string, flag int, perm os.FileMode) (safefileio.File, error) {
+	if m.SafeOpenFileFunc != nil {
+		return m.SafeOpenFileFunc(name, flag, perm)
+	}
+	return nil, errors.New("SafeOpenFile not implemented in mock")
+}
+
+// GetGroupMembership implements safefileio.FileSystem
+func (m *MockSafeFileSystem) GetGroupMembership() *groupmembership.GroupMembership {
+	if m.GetGroupMembershipFunc != nil {
+		return m.GetGroupMembershipFunc()
+	}
+	return groupmembership.New()
+}
+
+// Remove implements safefileio.FileSystem
+func (m *MockSafeFileSystem) Remove(name string) error {
+	m.RemoveCalls = append(m.RemoveCalls, name)
+	if m.RemoveFunc != nil {
+		return m.RemoveFunc(name)
+	}
+	return nil
+}
+
+// AtomicMoveFile implements safefileio.FileSystem
+func (m *MockSafeFileSystem) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
+	m.AtomicMoveFileCalls = append(m.AtomicMoveFileCalls, struct {
+		SrcPath      string
+		DstPath      string
+		RequiredPerm os.FileMode
+	}{srcPath, dstPath, requiredPerm})
+	if m.AtomicMoveFileFunc != nil {
+		return m.AtomicMoveFileFunc(srcPath, dstPath, requiredPerm)
+	}
+	return nil
+}
+
+// NewMockSafeFileSystem creates a new MockSafeFileSystem with default implementations
+func NewMockSafeFileSystem() *MockSafeFileSystem {
+	return &MockSafeFileSystem{}
+}
 
 func TestSafeFileManager_CreateTempFile(t *testing.T) {
 	tests := []struct {
@@ -298,7 +365,8 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 			// Store original content if temp file exists
 			var originalContent []byte
 			if _, err := os.Stat(tempPath); err == nil {
-				originalContent, _ = os.ReadFile(tempPath)
+				originalContent, err = os.ReadFile(tempPath)
+				require.NoError(t, err)
 			}
 
 			err := manager.MoveToFinal(tempPath, finalPath)
@@ -500,4 +568,298 @@ func TestSafeFileManager_Integration(t *testing.T) {
 	require.NoError(t, err)
 	// SafeAtomicMoveFile enforces 0600 for write operations for security
 	assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm())
+}
+
+// ============================================================================
+// Mock-based Unit Tests
+// These tests use mock implementations to test SafeFileManager logic
+// without depending on the actual file system.
+// ============================================================================
+
+func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
+	tests := []struct {
+		name                 string
+		tempPath             string
+		finalPath            string
+		setupMock            func(*commontesting.MockFileSystem)
+		atomicMoveError      error
+		wantErr              bool
+		errContains          string
+		wantAtomicMoveCalled bool
+	}{
+		{
+			name:      "successful_move",
+			tempPath:  "/tmp/test.tmp",
+			finalPath: "/output/final.txt",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				// Pre-add directory so EnsureDirectory succeeds
+				require.NoError(t, mock.AddDir("/output", 0o750))
+			},
+			atomicMoveError:      nil,
+			wantErr:              false,
+			wantAtomicMoveCalled: true,
+		},
+		{
+			name:      "atomic_move_fails",
+			tempPath:  "/tmp/test.tmp",
+			finalPath: "/output/final.txt",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				// Pre-add directory so EnsureDirectory succeeds
+				require.NoError(t, mock.AddDir("/output", 0o750))
+			},
+			atomicMoveError:      errors.New("rename failed"),
+			wantErr:              true,
+			errContains:          "failed to move to final path",
+			wantAtomicMoveCalled: true,
+		},
+		{
+			name:      "ensure_directory_fails_path_is_file",
+			tempPath:  "/tmp/test.tmp",
+			finalPath: "/existing_file/final.txt",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				// Add a file at the path where we expect a directory
+				require.NoError(t, mock.AddFile("/existing_file", 0o644, []byte("content")))
+			},
+			wantErr:              true,
+			errContains:          "not a directory",
+			wantAtomicMoveCalled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up mock safefileio.FileSystem
+			mockSafeFS := NewMockSafeFileSystem()
+			mockSafeFS.AtomicMoveFileFunc = func(_, _ string, _ os.FileMode) error {
+				return tt.atomicMoveError
+			}
+
+			// Set up mock common.FileSystem
+			mockCommonFS := commontesting.NewMockFileSystem()
+			if tt.setupMock != nil {
+				tt.setupMock(mockCommonFS)
+			}
+
+			// Create SafeFileManager with mocks
+			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+
+			// Execute
+			err := manager.MoveToFinal(tt.tempPath, tt.finalPath)
+
+			// Verify error handling
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			// Verify AtomicMoveFile was called with correct parameters
+			if tt.wantAtomicMoveCalled {
+				require.Len(t, mockSafeFS.AtomicMoveFileCalls, 1)
+				call := mockSafeFS.AtomicMoveFileCalls[0]
+				assert.Equal(t, tt.tempPath, call.SrcPath)
+				assert.Equal(t, tt.finalPath, call.DstPath)
+				assert.Equal(t, os.FileMode(0o600), call.RequiredPerm)
+			} else {
+				assert.Empty(t, mockSafeFS.AtomicMoveFileCalls)
+			}
+		})
+	}
+}
+
+func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		setupMock   func(*commontesting.MockFileSystem)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "directory_already_exists",
+			path: "/existing/dir",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				require.NoError(t, mock.AddDir("/existing/dir", 0o755))
+			},
+			wantErr: false,
+		},
+		{
+			name: "create_new_directory",
+			path: "/new/dir",
+			setupMock: func(_ *commontesting.MockFileSystem) {
+				// Directory doesn't exist, MkdirAll should be called
+			},
+			wantErr: false,
+		},
+		{
+			name: "path_is_file_not_directory",
+			path: "/path/to/file",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				require.NoError(t, mock.AddFile("/path/to/file", 0o644, []byte("content")))
+			},
+			wantErr:     true,
+			errContains: "not a directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up mock common.FileSystem
+			mockCommonFS := commontesting.NewMockFileSystem()
+			if tt.setupMock != nil {
+				tt.setupMock(mockCommonFS)
+			}
+
+			// Set up mock safefileio.FileSystem (not used in EnsureDirectory)
+			mockSafeFS := NewMockSafeFileSystem()
+
+			// Create SafeFileManager with mocks
+			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+
+			// Execute
+			err := manager.EnsureDirectory(tt.path)
+
+			// Verify
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		setupMock   func(*commontesting.MockFileSystem)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "file_exists_and_removed",
+			path: "/tmp/test.tmp",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				require.NoError(t, mock.AddFile("/tmp/test.tmp", 0o600, []byte("content")))
+			},
+			wantErr: false,
+		},
+		{
+			name: "file_does_not_exist_idempotent",
+			path: "/tmp/nonexistent.tmp",
+			setupMock: func(_ *commontesting.MockFileSystem) {
+				// File doesn't exist
+			},
+			wantErr: false, // RemoveTemp should be idempotent
+		},
+		{
+			name: "path_is_directory_error",
+			path: "/tmp/dir",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				require.NoError(t, mock.AddDir("/tmp/dir", 0o755))
+			},
+			wantErr:     true,
+			errContains: "not a file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up mock common.FileSystem
+			mockCommonFS := commontesting.NewMockFileSystem()
+			if tt.setupMock != nil {
+				tt.setupMock(mockCommonFS)
+			}
+
+			// Set up mock safefileio.FileSystem (not used in RemoveTemp)
+			mockSafeFS := NewMockSafeFileSystem()
+
+			// Create SafeFileManager with mocks
+			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+
+			// Execute
+			err := manager.RemoveTemp(tt.path)
+
+			// Verify
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
+	tests := []struct {
+		name        string
+		dir         string
+		pattern     string
+		setupMock   func(*commontesting.MockFileSystem)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "create_temp_file_in_default_dir",
+			dir:     "",
+			pattern: "test_*.tmp",
+			setupMock: func(_ *commontesting.MockFileSystem) {
+				// MockFileSystem.CreateTemp handles temp file creation
+			},
+			wantErr: false,
+		},
+		{
+			name:    "create_temp_file_in_specific_dir",
+			dir:     "/custom/dir",
+			pattern: "output_*.tmp",
+			setupMock: func(mock *commontesting.MockFileSystem) {
+				require.NoError(t, mock.AddDir("/custom/dir", 0o755))
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up mock common.FileSystem
+			mockCommonFS := commontesting.NewMockFileSystem()
+			if tt.setupMock != nil {
+				tt.setupMock(mockCommonFS)
+			}
+
+			// Set up mock safefileio.FileSystem (not used in CreateTempFile)
+			mockSafeFS := NewMockSafeFileSystem()
+
+			// Create SafeFileManager with mocks
+			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
+
+			// Execute
+			file, err := manager.CreateTempFile(tt.dir, tt.pattern)
+
+			// Verify
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, file)
+				// Clean up
+				if file != nil {
+					file.Close()
+				}
+			}
+		})
+	}
 }
