@@ -81,7 +81,7 @@ record secure-backup.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/sh /bin/tar /usr/bin/gpg
 
 # Group verify_files で指定したファイルのハッシュを記録
-record /opt/secure/bin/backup-tool -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /opt/secure/bin/backup-tool
 ```
 
 **設定ファイル (secure-backup.toml):**
