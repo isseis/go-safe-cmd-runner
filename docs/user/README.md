@@ -34,9 +34,11 @@ The main execution command. Safely executes commands based on TOML configuration
 ```bash
 # Basic execution
 runner -config config.toml
+# Short form: runner -c config.toml
 
 # Dry run (verify execution plan)
 runner -config config.toml -dry-run
+# Short form: runner -c config.toml -n
 ```
 
 **Use this when:**
@@ -60,13 +62,10 @@ Command to record SHA-256 hash values of files. For administrators.
 **Quick Start:**
 ```bash
 # Record hash
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Overwrite existing hash
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -d /usr/local/etc/go-safe-cmd-runner/hashes -force /usr/bin/backup.sh
 ```
 
 **Use this when:**
@@ -90,12 +89,11 @@ Command to verify file integrity. For debugging and troubleshooting.
 **Quick Start:**
 ```bash
 # Verify a file
-verify -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Verify multiple files
 for file in /usr/local/bin/*.sh; do
-    verify -file "$file" -hash-dir /path/to/hashes
+    verify -d /path/to/hashes "$file"
 done
 ```
 
@@ -292,11 +290,11 @@ sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 3. Record hashes
-sudo record -file /etc/go-safe-cmd-runner/backup.toml \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /etc/go-safe-cmd-runner/backup.toml
 
-sudo record -file /usr/bin/pg_dump \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /usr/bin/pg_dump
 
 # 4. Verify with dry run
 runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run

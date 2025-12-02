@@ -74,14 +74,14 @@ You need to record hash values of the following files before execution:
 3. Files specified in `verify_files`
 
 ```bash
-# 1. Record hash of the TOML configuration file (most important)
-record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+# 2. Record hash of the TOML configuration file (most important)
+record -d /usr/local/etc/go-safe-cmd-runner/hashes config.toml
 
 # 2. Record hash of executable binaries
-record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 
 # 3. Record hash of files specified in verify_files (e.g., environment config files)
-record -file /etc/myapp/database.conf -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /etc/myapp/database.conf
 ```
 
 For details, see [record Command Guide](record_command.md).
@@ -96,7 +96,7 @@ For detailed information on how to write TOML configuration files, see the follo
 
 ### 3.1 Required Flags
 
-#### `-config <path>`
+#### `-config <path>` / `-c <path>`
 
 **Overview**
 
@@ -106,6 +106,8 @@ Specifies the path to the TOML format configuration file.
 
 ```bash
 runner -config <path>
+# Short form:
+runner -c <path>
 ```
 
 **Parameters**
@@ -117,12 +119,18 @@ runner -config <path>
 ```bash
 # Specify with relative path
 runner -config config.toml
+# Short form:
+runner -c config.toml
 
 # Specify with absolute path
 runner -config /etc/go-safe-cmd-runner/production.toml
+# Short form:
+runner -c /etc/go-safe-cmd-runner/production.toml
 
 # Specify from home directory
 runner -config ~/configs/backup.toml
+# Short form:
+runner -c ~/configs/backup.toml
 ```
 
 **Notes**
@@ -134,7 +142,7 @@ runner -config ~/configs/backup.toml
 
 ### 3.2 Execution Mode Control
 
-#### `-dry-run`
+#### `-dry-run` / `-n`
 
 **Overview**
 
@@ -144,6 +152,8 @@ Simulates and displays the execution content without actually running commands.
 
 ```bash
 runner -config <path> -dry-run
+# Short form:
+runner -c <path> -n
 ```
 
 **Usage Examples**
@@ -151,9 +161,13 @@ runner -config <path> -dry-run
 ```bash
 # Basic dry run
 runner -config config.toml -dry-run
+# Short form:
+runner -c config.toml -n
 
 # Specify detail level and format
 runner -config config.toml -dry-run -dry-run-detail full -dry-run-format json
+# Short form:
+runner -c config.toml -n -dry-run-detail full -dry-run-format json
 ```
 
 **Use Cases**
@@ -647,7 +661,7 @@ shred -u debug.txt  # secure deletion
 
 ### 3.3 Log Configuration
 
-#### `-log-level <level>`
+#### `-log-level <level>` / `-l <level>`
 
 **Overview**
 
@@ -657,6 +671,8 @@ Specifies the log output level. Logs at or above the specified level are output.
 
 ```bash
 runner -config <path> -log-level <level>
+# Short form:
+runner -c <path> -l <level>
 ```
 
 **Options**
@@ -671,12 +687,18 @@ runner -config <path> -log-level <level>
 ```bash
 # Execute in debug mode
 runner -config config.toml -log-level debug
+# Short form:
+runner -c config.toml -l debug
 
 # Show warnings and errors only
 runner -config config.toml -log-level warn
+# Short form:
+runner -c config.toml -l warn
 
 # Show errors only
 runner -config config.toml -log-level error
+# Short form:
+runner -c config.toml -l error
 ```
 
 **Information Output at Each Level**
@@ -924,7 +946,7 @@ NO_COLOR=1 runner -config config.toml -interactive
 - Log files do not contain ANSI escape sequences
 - If specified with `-quiet` flag, `-quiet` takes precedence
 
-#### `-quiet`
+#### `-quiet` / `-q`
 
 **Overview**
 
@@ -934,6 +956,8 @@ Forces non-interactive mode. Color output and progress display are disabled.
 
 ```bash
 runner -config <path> -quiet
+# Short form:
+runner -c <path> -q
 ```
 
 **Usage Examples**
@@ -941,9 +965,13 @@ runner -config <path> -quiet
 ```bash
 # Execute in non-interactive mode
 runner -config config.toml -quiet
+# Short form:
+runner -c config.toml -q
 
 # Redirect to log file
 runner -config config.toml -quiet > output.log 2>&1
+# Short form:
+runner -c config.toml -q > output.log 2>&1
 ```
 
 **Non-Interactive Mode Features**
@@ -1000,7 +1028,7 @@ jobs:
 - Error messages are output to stderr
 - Log level settings remain effective
 
-#### `--groups <names>`
+#### `--groups <names>` / `-g <names>`
 
 **Overview**
 
@@ -1010,6 +1038,8 @@ Specifies groups to execute, separated by commas. When not specified, all groups
 
 ```bash
 runner -config <path> --groups <names>
+# Short form:
+runner -c <path> -g <names>
 ```
 
 **Parameters**
@@ -1029,15 +1059,23 @@ Group names follow the same naming convention as environment variables:
 ```bash
 # Execute single group
 runner -config config.toml --groups build
+# Short form:
+runner -c config.toml -g build
 
 # Execute multiple groups
 runner -config config.toml --groups build,test
+# Short form:
+runner -c config.toml -g build,test
 
 # Specification with whitespace (whitespace is automatically trimmed)
 runner -config config.toml --groups "build, test, deploy"
+# Short form:
+runner -c config.toml -g "build, test, deploy"
 
 # Execute all groups (when --groups is omitted)
 runner -config config.toml
+# Short form:
+runner -c config.toml
 ```
 
 **Automatic Dependency Resolution**

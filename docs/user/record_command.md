@@ -66,7 +66,7 @@ This approach makes hash file names human-readable while also handling file name
 
 ```bash
 # Record hash to current directory
-record -file /usr/bin/backup.sh
+record /usr/bin/backup.sh
 ```
 
 Output:
@@ -78,7 +78,7 @@ Recorded hash for /usr/bin/backup.sh in /home/user/~usr~bin~backup.sh
 
 ```bash
 # Record hash to a specific directory
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 Output:
@@ -90,7 +90,7 @@ Recorded hash for /usr/bin/backup.sh in /usr/local/etc/go-safe-cmd-runner/hashes
 
 ```bash
 # Forcefully overwrite existing hash file
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
+record -d /usr/local/etc/go-safe-cmd-runner/hashes -force /usr/bin/backup.sh
 ```
 
 ### 2.4 Batch Recording of Multiple Files
@@ -98,13 +98,13 @@ record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hash
 ```bash
 # Record multiple files with a script
 for file in /usr/local/bin/*.sh; do
-    record -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+    record -d /usr/local/etc/go-safe-cmd-runner/hashes "$file"
 done
 ```
 
 ## 3. Command-Line Flags
 
-### 3.1 `-file <path>` (Required)
+### 3.1 `<file_path>` (Required)
 
 **Overview**
 
@@ -113,24 +113,24 @@ Specifies the path to the file whose hash value should be recorded.
 **Syntax**
 
 ```bash
-record -file <path>
+record [options] <file_path>
 ```
 
 **Parameters**
 
-- `<path>`: Absolute or relative path to the file for which to record the hash (required)
+- `<file_path>`: Absolute or relative path to the file for which to record the hash (required)
 
 **Usage Examples**
 
 ```bash
 # Specify with absolute path
-record -file /usr/bin/backup.sh
+record /usr/bin/backup.sh
 
 # Specify with relative path
-record -file ./scripts/deploy.sh
+record ./scripts/deploy.sh
 
 # File in home directory
-record -file ~/bin/custom-script.sh
+record ~/bin/custom-script.sh
 ```
 
 **Notes**
@@ -139,7 +139,7 @@ record -file ~/bin/custom-script.sh
 - For symbolic links, the hash of the target file is recorded
 - Directories cannot be specified (files only)
 
-### 3.2 `-hash-dir <directory>` (Optional)
+### 3.2 `-d <directory>` (Optional)
 
 **Overview**
 
@@ -148,7 +148,7 @@ Specifies the directory where the hash file should be saved. If not specified, t
 **Syntax**
 
 ```bash
-record -file <path> -hash-dir <directory>
+record -d <directory> <file_path>
 ```
 
 **Parameters**
@@ -160,13 +160,13 @@ record -file <path> -hash-dir <directory>
 
 ```bash
 # Save to standard hash directory
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Save to custom directory (for testing)
-record -file ./test.sh -hash-dir ./test-hashes
+record -d ./test-hashes ./test.sh
 
 # Specify with relative path
-record -file /etc/config.toml -hash-dir ../hashes
+record -d ../hashes /etc/config.toml
 ```
 
 **Automatic Directory Creation**
@@ -175,7 +175,7 @@ If the specified directory does not exist, it will be created automatically (per
 
 ```bash
 # Works even if directory doesn't exist
-record -file /usr/bin/backup.sh -hash-dir /new/hash/directory
+record -d /new/hash/directory /usr/bin/backup.sh
 # /new/hash/directory will be created automatically
 ```
 
@@ -193,7 +193,7 @@ sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Record hash
-sudo record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 3.3 `-force` (Optional)
@@ -205,7 +205,7 @@ Forcefully overwrites an existing hash file. If not specified, an error occurs i
 **Syntax**
 
 ```bash
-record -file <path> -hash-dir <directory> -force
+record -d <directory> -force <file_path>
 ```
 
 **Usage Examples**
@@ -214,10 +214,10 @@ record -file <path> -hash-dir <directory> -force
 
 ```bash
 # First time succeeds
-record -file /usr/bin/backup.sh -hash-dir ./hashes
+record -d ./hashes /usr/bin/backup.sh
 
 # Second time fails
-record -file /usr/bin/backup.sh -hash-dir ./hashes
+record -d ./hashes /usr/bin/backup.sh
 # Error: hash file already exists: ./hashes/~usr~bin~backup.sh
 ```
 
@@ -225,7 +225,7 @@ record -file /usr/bin/backup.sh -hash-dir ./hashes
 
 ```bash
 # Overwrite existing hash file
-record -file /usr/bin/backup.sh -hash-dir ./hashes -force
+record -d ./hashes -force /usr/bin/backup.sh
 # Recorded hash for /usr/bin/backup.sh in ./hashes/~usr~bin~backup.sh
 ```
 
@@ -240,7 +240,7 @@ record -file /usr/bin/backup.sh -hash-dir ./hashes -force
 ```bash
 # Forcefully re-record hashes of all scripts
 for file in /usr/local/bin/*.sh; do
-    record -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
+    record -d /usr/local/etc/go-safe-cmd-runner/hashes -force "$file"
 done
 ```
 
@@ -269,19 +269,19 @@ sudo chmod 755 "$HASH_DIR"
 
 # Record hashes of configuration files
 echo "Recording configuration files..."
-sudo record -file /etc/go-safe-cmd-runner/backup.toml -hash-dir "$HASH_DIR"
-sudo record -file /etc/go-safe-cmd-runner/deploy.toml -hash-dir "$HASH_DIR"
+sudo record -d "$HASH_DIR" /etc/go-safe-cmd-runner/backup.toml
+sudo record -d "$HASH_DIR" /etc/go-safe-cmd-runner/deploy.toml
 
 # Record hashes of executable scripts
 echo "Recording executable scripts..."
-sudo record -file /usr/local/bin/backup.sh -hash-dir "$HASH_DIR"
-sudo record -file /usr/local/bin/deploy.sh -hash-dir "$HASH_DIR"
-sudo record -file /usr/local/bin/cleanup.sh -hash-dir "$HASH_DIR"
+sudo record -d "$HASH_DIR" /usr/local/bin/backup.sh
+sudo record -d "$HASH_DIR" /usr/local/bin/deploy.sh
+sudo record -d "$HASH_DIR" /usr/local/bin/cleanup.sh
 
 # Record hashes of system binaries
 echo "Recording system binaries..."
-sudo record -file /usr/bin/rsync -hash-dir "$HASH_DIR"
-sudo record -file /usr/bin/pg_dump -hash-dir "$HASH_DIR"
+sudo record -d "$HASH_DIR" /usr/bin/rsync
+sudo record -d "$HASH_DIR" /usr/bin/pg_dump
 
 echo "Hash recording completed successfully!"
 ```
@@ -298,9 +298,8 @@ sudo cp /usr/local/bin/backup.sh /usr/local/bin/backup.sh.bak
 sudo vim /usr/local/bin/backup.sh
 
 # 3. Re-record hash
-sudo record -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes -force \
+    /usr/local/bin/backup.sh
 
 # 4. Verify operation
 runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run
@@ -320,7 +319,7 @@ SCRIPT_DIR="/usr/local/bin"
 # Record all .sh files
 for script in "$SCRIPT_DIR"/*.sh; do
     echo "Recording: $script"
-    sudo record -file "$script" -hash-dir "$HASH_DIR" -force
+    sudo record -d "$HASH_DIR" -force "$script"
 done
 
 echo "All scripts recorded successfully!"
@@ -346,7 +345,7 @@ while IFS= read -r file; do
     [[ -z "$file" ]] && continue
 
     echo "Recording: $file"
-    sudo record -file "$file" -hash-dir "$HASH_DIR" -force || {
+    sudo record -d "$HASH_DIR" -force "$file" || {
         echo "Error recording: $file"
         exit 1
     }
@@ -388,17 +387,15 @@ jobs:
       - name: Record hashes for scripts
         run: |
           for script in scripts/*.sh; do
-            sudo record -file "$script" \
-              -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-              -force
+            sudo ./build/record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+              -force "$script"
           done
 
       - name: Record hashes for configs
         run: |
           for config in config/*.toml; do
-            sudo record -file "$config" \
-              -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-              -force
+            sudo ./build/record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+              -force "$config"
           done
 
       - name: Commit hash files
@@ -435,7 +432,7 @@ echo "Updating hashes for system binaries..."
 for binary in "${BINARIES[@]}"; do
     if [[ -f "$binary" ]]; then
         echo "Recording: $binary"
-        sudo record -file "$binary" -hash-dir "$HASH_DIR" -force
+        sudo record -d "$HASH_DIR" -force "$binary"
     else
         echo "Warning: $binary not found, skipping"
     fi
@@ -466,8 +463,8 @@ TEST_HASH_DIR="./test-hashes"
 mkdir -p "$TEST_HASH_DIR"
 
 # Record hashes of test scripts
-record -file ./test/test-script.sh -hash-dir "$TEST_HASH_DIR"
-record -file ./test/test-config.toml -hash-dir "$TEST_HASH_DIR"
+record -d "$TEST_HASH_DIR" ./test/test-script.sh
+record -d "$TEST_HASH_DIR" ./test/test-config.toml
 
 # Run tests
 runner -config ./test/test-config.toml -dry-run
@@ -568,8 +565,7 @@ When a symbolic link is specified, the hash of the target file is recorded.
 ln -s /usr/local/bin/backup-v2.sh /usr/local/bin/backup.sh
 
 # Record hash (hash of target file is recorded)
-record -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 ```
 
 **Notes**
@@ -593,8 +589,7 @@ To record hashes of all files in a directory, use a loop:
 # Record hashes of all files in directory
 for file in /usr/local/bin/*; do
     if [[ -f "$file" ]]; then
-        record -file "$file" \
-            -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+        record -d /usr/local/etc/go-safe-cmd-runner/hashes "$file"
     fi
 done
 ```
