@@ -220,9 +220,9 @@ risk_level = "medium"
 
 ### Automatic Variables
 
-The system automatically provides internal variables for each command execution:
+The system automatically provides the following internal variables:
 
-- `__runner_datetime`: Execution timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
+- `__runner_datetime`: Runner start timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
 - `__runner_pid`: Process ID of the runner
 - `__runner_workdir`: Working directory for the group (available at command level)
 
