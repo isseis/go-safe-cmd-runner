@@ -297,14 +297,14 @@ Define only the environment variables needed for each command:
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env_vars = [
+env = [
     "PGPASSWORD=secret",      # Only needed for this command
     "PGHOST=localhost"
 ]
 
 # Not recommended: Exposing sensitive information globally to all commands
 [global]
-env_vars = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
+env = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
 ```
 
 ##### 2. Proper Use of vars vs env
@@ -320,7 +320,7 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env_vars = ["PGPASSWORD=%{db_password}"]  # Expose as env only for commands that need it
+env = ["PGPASSWORD=%{db_password}"]  # Expose as env only for commands that need it
 
 [[groups.commands]]
 name = "log_check"
@@ -335,7 +335,7 @@ At the global level, define only environment variables that are safe to pass to 
 
 ```toml
 [global]
-env_vars = [
+env = [
     "LANG=C",              # Safe: Locale setting
     "TZ=UTC",              # Safe: Timezone setting
     "LC_ALL=C"             # Safe: Language setting
@@ -350,7 +350,7 @@ Define settings common to all commands within a group at the group level:
 ```toml
 [[groups]]
 name = "database_group"
-env_vars = [
+env = [
     "PGHOST=localhost",
     "PGPORT=5432",
     "PGDATABASE=production"
@@ -358,11 +358,11 @@ env_vars = [
 
 [[groups.commands]]
 name = "backup"
-env_vars = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
+env = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
 
 [[groups.commands]]
 name = "analyze"
-env_vars = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
+env = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
 ```
 
 #### Security Checklist

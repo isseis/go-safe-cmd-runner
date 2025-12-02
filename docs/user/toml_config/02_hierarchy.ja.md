@@ -201,9 +201,9 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 # 最終的な vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
 ```
 
-#### from_env (システム環境変数のインポート) - Merge 継承
+#### env_import (システム環境変数のインポート) - Merge 継承
 
-`from_env` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
+`env_import` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
 
 ```toml
 [global]
@@ -211,18 +211,18 @@ env_import = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env_vars = ["LANG", "LC_ALL"]  # グローバルの from_env とマージ
+env_import = ["LANG", "LC_ALL"]  # グローバルの env_import とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-# from_env を指定しないため、グループの from_env が適用される
+# env_import を指定しないため、グループの env_import が適用される
 # 継承された変数: HOME, USER (global) + LANG, LC_ALL (group)
 args = ["User: %{USER}, Lang: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
-from_env_vars = ["PWD"]  # グループの from_env とマージ
+env_import = ["PWD"]  # グループの env_import とマージ
 cmd = "/bin/echo"
 # 継承された変数: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
 args = ["Home: %{HOME}, PWD: %{PWD}"]
@@ -238,7 +238,7 @@ args = ["Home: %{HOME}, PWD: %{PWD}"]
 | workdir | グループ > グローバル | Override | コマンドレベルでは設定不可 |
 | env_allowed | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
 | vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
-| from_env | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
+| env_import | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
 | env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
 | verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
 
@@ -296,14 +296,14 @@ timeout = 300  # グローバルの 60 をオーバーライド
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env_vars = [
+env = [
     "PGPASSWORD=secret",      # このコマンドのみで必要
     "PGHOST=localhost"
 ]
 
 # 非推奨: グローバルで全コマンドに機密情報を公開
 [global]
-env_vars = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
+env = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
 ```
 
 ##### 2. vars と env の使い分け
@@ -319,7 +319,7 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env_vars = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
+env = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
 
 [[groups.commands]]
 name = "log_check"
@@ -334,7 +334,7 @@ args = ["ERROR", "%{app_dir}/logs/app.log"]
 
 ```toml
 [global]
-env_vars = [
+env = [
     "LANG=C",              # 安全: ロケール設定
     "TZ=UTC",              # 安全: タイムゾーン設定
     "LC_ALL=C"             # 安全: 言語設定
@@ -349,7 +349,7 @@ env_vars = [
 ```toml
 [[groups]]
 name = "database_group"
-env_vars = [
+env = [
     "PGHOST=localhost",
     "PGPORT=5432",
     "PGDATABASE=production"
@@ -357,11 +357,11 @@ env_vars = [
 
 [[groups.commands]]
 name = "backup"
-env_vars = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
+env = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
 
 [[groups.commands]]
 name = "analyze"
-env_vars = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
+env = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
 ```
 
 #### セキュリティチェックリスト
