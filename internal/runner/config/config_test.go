@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
@@ -97,7 +98,7 @@ func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
 workdir = "/tmp"
 output_size_limit = 10485760
 `,
-			wantMaxSize: common.Int64Ptr(10485760), // 10MB
+			wantMaxSize: commontesting.Int64Ptr(10485760), // 10MB
 			wantErr:     false,
 		},
 		{
@@ -116,7 +117,7 @@ workdir = "/tmp"
 workdir = "/tmp"
 output_size_limit = 0
 `,
-			wantMaxSize: common.Int64Ptr(0), // Explicitly set to 0 (unlimited)
+			wantMaxSize: commontesting.Int64Ptr(0), // Explicitly set to 0 (unlimited)
 			wantErr:     false,
 		},
 	}
@@ -339,7 +340,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 			require.NoError(t, err, "Failed to expand command")
 
 			// 5. Verify command name

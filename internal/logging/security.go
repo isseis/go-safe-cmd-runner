@@ -18,13 +18,6 @@ func NewSecurityLogger() *SecurityLogger {
 	}
 }
 
-// NewSecurityLoggerWithLogger creates a new security logger with a custom logger
-func NewSecurityLoggerWithLogger(logger *slog.Logger) *SecurityLogger {
-	return &SecurityLogger{
-		logger: logger,
-	}
-}
-
 // LogUnlimitedExecution logs when a command starts execution with unlimited timeout
 func (s *SecurityLogger) LogUnlimitedExecution(cmdName string, user string) {
 	s.logger.Warn("Command starting with unlimited timeout",

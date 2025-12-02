@@ -87,20 +87,6 @@ func withSecurityLevel(level SecurityLevel) InternalOption {
 	}
 }
 
-// withFSInternal is an internal option for setting the file system
-func withFSInternal(fs common.FileSystem) InternalOption {
-	return func(opts *managerInternalOptions) {
-		opts.fs = fs
-	}
-}
-
-// withFileValidatorDisabledInternal is an internal option for disabling the file validator
-func withFileValidatorDisabledInternal() InternalOption {
-	return func(opts *managerInternalOptions) {
-		opts.fileValidatorEnabled = false
-	}
-}
-
 // withSkipHashDirectoryValidationInternal is an internal option for skipping hash directory validation
 func withSkipHashDirectoryValidationInternal() InternalOption {
 	return func(opts *managerInternalOptions) {
@@ -114,21 +100,6 @@ func withDryRunModeInternal() InternalOption {
 		opts.isDryRun = true
 	}
 }
-
-// withCustomPathResolverInternal is an internal option for setting a custom path resolver
-func withCustomPathResolverInternal(pathResolver *PathResolver) InternalOption {
-	return func(opts *managerInternalOptions) {
-		opts.customPathResolver = pathResolver
-	}
-}
-
-// Ensure the internal options are referenced in non-test builds so linters
-// don't report them as unused. Tests will actively use these options, but
-// static analyzers run across packages/build tags and may flag them.
-var (
-	_ = withSkipHashDirectoryValidationInternal
-	_ = withCustomPathResolverInternal
-)
 
 // FailureReason represents the reason for verification failure
 type FailureReason string

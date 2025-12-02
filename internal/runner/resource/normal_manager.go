@@ -39,17 +39,6 @@ type NormalResourceManager struct {
 	tempDirs []string
 }
 
-// NewNormalResourceManager creates a new NormalResourceManager for normal execution mode
-func NewNormalResourceManager(
-	exec executor.CommandExecutor,
-	fs executor.FileSystem,
-	privMgr runnertypes.PrivilegeManager,
-	logger *slog.Logger,
-) *NormalResourceManager {
-	// Delegate to NewNormalResourceManagerWithOutput with nil outputManager and 0 maxOutputSize
-	return NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger)
-}
-
 // NewNormalResourceManagerWithOutput creates a new NormalResourceManager with output capture support
 func NewNormalResourceManagerWithOutput(
 	exec executor.CommandExecutor,

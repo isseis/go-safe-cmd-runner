@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
@@ -113,4 +114,11 @@ func matchRuntimeGroupWithName(expectedName string) interface{} {
 	return mock.MatchedBy(func(rg *runnertypes.RuntimeGroup) bool {
 		return rg != nil && rg.Spec != nil && rg.Spec.Name == expectedName
 	})
+}
+
+// WithSecurityLogger sets the security logger for timeout-related security events.
+func WithSecurityLogger(logger *logging.SecurityLogger) GroupExecutorOption {
+	return func(opts *groupExecutorOptions) {
+		opts.securityLogger = logger
+	}
 }

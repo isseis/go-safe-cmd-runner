@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -429,41 +429,41 @@ func TestValidateTimeouts(t *testing.T) {
 		},
 		{
 			name:        "valid - positive global timeout",
-			config:      makeConfig(common.Int32Ptr(30), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			config:      makeConfig(commontesting.Int32Ptr(30), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
 			name:        "valid - zero global timeout",
-			config:      makeConfig(common.Int32Ptr(0), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			config:      makeConfig(commontesting.Int32Ptr(0), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: false,
 		},
 		{
 			name:        "invalid - negative global timeout",
-			config:      makeConfig(common.Int32Ptr(-10), makeGroup("test_group", makeCommand("test_cmd", nil))),
+			config:      makeConfig(commontesting.Int32Ptr(-10), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name:        "valid - positive command timeout",
-			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(60)))),
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", commontesting.Int32Ptr(60)))),
 			expectError: false,
 		},
 		{
 			name:        "valid - zero command timeout",
-			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(0)))),
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", commontesting.Int32Ptr(0)))),
 			expectError: false,
 		},
 		{
 			name:        "invalid - negative command timeout",
-			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", common.Int32Ptr(-5)))),
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", commontesting.Int32Ptr(-5)))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - multiple negative command timeouts",
 			config: makeConfig(nil, makeGroup("test_group",
-				makeCommand("cmd1", common.Int32Ptr(-1)),
-				makeCommand("cmd2", common.Int32Ptr(-2)),
+				makeCommand("cmd1", commontesting.Int32Ptr(-1)),
+				makeCommand("cmd2", commontesting.Int32Ptr(-2)),
 			)),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
@@ -471,17 +471,17 @@ func TestValidateTimeouts(t *testing.T) {
 		{
 			name: "invalid - negative timeout in second group",
 			config: makeConfig(nil,
-				makeGroup("group1", makeCommand("cmd1", common.Int32Ptr(30))),
-				makeGroup("group2", makeCommand("cmd2", common.Int32Ptr(-15))),
+				makeGroup("group1", makeCommand("cmd1", commontesting.Int32Ptr(30))),
+				makeGroup("group2", makeCommand("cmd2", commontesting.Int32Ptr(-15))),
 			),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 		},
 		{
 			name: "invalid - multiple errors reported together",
-			config: makeConfig(common.Int32Ptr(-5),
-				makeGroup("group1", makeCommand("cmd1", common.Int32Ptr(-10))),
-				makeGroup("group2", makeCommand("cmd2", common.Int32Ptr(-20))),
+			config: makeConfig(commontesting.Int32Ptr(-5),
+				makeGroup("group1", makeCommand("cmd1", commontesting.Int32Ptr(-10))),
+				makeGroup("group2", makeCommand("cmd2", commontesting.Int32Ptr(-20))),
 			),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,

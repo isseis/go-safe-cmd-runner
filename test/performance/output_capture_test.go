@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 
 	"github.com/stretchr/testify/require"
@@ -53,7 +55,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	runtime.ReadMemStats(&initialMem)
 
 	// Create resource manager and execute command
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -166,7 +168,7 @@ func TestConcurrentExecution(t *testing.T) {
 	// Create output capture manager
 	// For testing, we can use a simple mock SecurityValidator or skip output capture
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Execute commands concurrently
 	results := make(chan error, numCommands)
@@ -231,7 +233,7 @@ func TestLongRunningStability(t *testing.T) {
 		[]string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		executortesting.WithName("long_running_test"),
 		executortesting.WithOutputFile(outputPath),
-		executortesting.WithTimeout(common.Int32Ptr(30)),
+		executortesting.WithTimeout(commontesting.Int32Ptr(30)),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
@@ -245,7 +247,7 @@ func TestLongRunningStability(t *testing.T) {
 	// Create output capture manager
 	// For testing, we can use a simple mock SecurityValidator or skip output capture
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	start := time.Now()
 	ctx := context.Background()
@@ -286,7 +288,7 @@ func BenchmarkOutputCapture(b *testing.B) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Small output benchmark
 	b.Run("SmallOutput", func(b *testing.B) {
@@ -356,7 +358,7 @@ func TestMemoryLeakDetection(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Execute many commands to detect memory leaks
 	for i := range iterations {

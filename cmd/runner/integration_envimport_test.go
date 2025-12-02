@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 )
 
@@ -280,7 +281,7 @@ args = ["test"]
 				runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 				require.NoError(t, err, "should expand group config without error")
 
-				_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+				_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 				assert.Error(t, err, "should fail when env_import var not in allowlist")
 			} else {
 				// Test success case
@@ -464,7 +465,7 @@ args = ["test"]
 						// Error at group level is also acceptable
 						return
 					}
-					_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+					_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 					assert.Error(t, err, "should fail at command level")
 				}
 			} else {
@@ -601,7 +602,7 @@ args = ["test"]
 
 				// Expand command and verify it uses cached SystemEnv
 				if len(cfg.Groups[0].Commands) > 0 {
-					runtimeCmd, err := config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+					runtimeCmd, err := config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 					require.NoError(t, err, "should expand command config without error")
 
 					// Verify command's env_import used the cached SystemEnv

@@ -28,12 +28,6 @@ func NewUnsetOptionalValue[T Numeric]() OptionalValue[T] {
 	return OptionalValue[T]{value: nil}
 }
 
-// NewUnlimitedOptionalValue creates an OptionalValue with unlimited/disabled setting (0).
-func NewUnlimitedOptionalValue[T Numeric]() OptionalValue[T] {
-	var zero T
-	return OptionalValue[T]{value: &zero}
-}
-
 // NewOptionalValue creates an OptionalValue with the specified value.
 func NewOptionalValue[T Numeric](value T) OptionalValue[T] {
 	return OptionalValue[T]{value: &value}

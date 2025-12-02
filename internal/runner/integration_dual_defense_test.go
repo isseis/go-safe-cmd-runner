@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
@@ -57,7 +58,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager
@@ -163,7 +164,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager
@@ -262,7 +263,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager
@@ -364,7 +365,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager

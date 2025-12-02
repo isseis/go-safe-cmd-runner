@@ -92,13 +92,6 @@ func WithVerificationManager(verificationManager *verification.Manager) Option {
 	}
 }
 
-// WithExecutor sets a custom command executor
-func WithExecutor(exec executor.CommandExecutor) Option {
-	return func(opts *runnerOptions) {
-		opts.executor = exec
-	}
-}
-
 // WithPrivilegeManager sets a custom privilege manager
 func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 	return func(opts *runnerOptions) {
@@ -110,13 +103,6 @@ func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 func WithRunID(runID string) Option {
 	return func(opts *runnerOptions) {
 		opts.runID = runID
-	}
-}
-
-// WithResourceManager sets a custom resource manager
-func WithResourceManager(resourceManager resource.ResourceManager) Option {
-	return func(opts *runnerOptions) {
-		opts.resourceManager = resourceManager
 	}
 }
 
@@ -142,7 +128,21 @@ func WithRuntimeGlobal(runtimeGlobal *runnertypes.RuntimeGlobal) Option {
 	}
 }
 
-// WithGroupMembershipProvider sets a custom group membership provider
+// WithExecutor sets a custom command executor
+func WithExecutor(exec executor.CommandExecutor) Option {
+	return func(opts *runnerOptions) {
+		opts.executor = exec
+	}
+}
+
+// WithResourceManager sets the resource manager.
+func WithResourceManager(manager resource.ResourceManager) Option {
+	return func(opts *runnerOptions) {
+		opts.resourceManager = manager
+	}
+}
+
+// WithGroupMembershipProvider sets the group membership provider.
 func WithGroupMembershipProvider(provider *groupmembership.GroupMembership) Option {
 	return func(opts *runnerOptions) {
 		opts.groupMembershipProvider = provider

@@ -1,3 +1,5 @@
+//go:build test
+
 // Package testing provides shared test utilities and mock implementations
 // for the runner package.
 package testing
