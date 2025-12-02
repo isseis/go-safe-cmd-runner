@@ -668,10 +668,11 @@ HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 FILE="/usr/bin/backup.sh"
 
 # Run verification and handle errors in detail
-if verify -file "$FILE" -hash-dir "$HASH_DIR" 2>&1 | tee /tmp/verify-output.txt; then
+verify -file "$FILE" -hash-dir "$HASH_DIR" 2>&1 | tee /tmp/verify-output.txt
+EXIT_CODE=${PIPESTATUS[0]}
+if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
 else
-    EXIT_CODE=$?
     echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"
     echo "Output:"
