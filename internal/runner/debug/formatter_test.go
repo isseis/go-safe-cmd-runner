@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -140,12 +139,6 @@ func TestFormatStringSlice(t *testing.T) {
 	}
 }
 
-func TestFormatGroupField(t *testing.T) {
-	result := formatGroupField("test_field", 5)
-	expected := "  test_field (5):"
-	assert.Equal(t, expected, result)
-}
-
 func TestFormatFinalEnvironmentText_Nil(t *testing.T) {
 	result := FormatFinalEnvironmentText(nil)
 	assert.Empty(t, result, "Expected empty string for nil environment")
@@ -272,87 +265,4 @@ func TestFormatFinalEnvironmentText_WithControlCharacters(t *testing.T) {
 	// Verify raw control characters are NOT in output
 	assert.NotContains(t, result, "value\nwith\nnewlines", "Raw newlines should not be in output")
 	assert.NotContains(t, result, "value\twith\ttabs", "Raw tabs should not be in output")
-}
-
-// TestFormatConsistency_InheritanceAnalysis compares the output between
-// the existing PrintFromEnvInheritance and the new FormatInheritanceAnalysisText
-func TestFormatConsistency_InheritanceAnalysis(t *testing.T) {
-	// Create test data
-	global := &runnertypes.GlobalSpec{
-		EnvImport:  []string{"db_host=DB_HOST", "api_key=API_KEY"},
-		EnvAllowed: []string{"PATH", "HOME"},
-	}
-
-	runtimeGroup := &runnertypes.RuntimeGroup{
-		Spec: &runnertypes.GroupSpec{
-			Name:       "test_group",
-			EnvImport:  []string{}, // Empty means inherit
-			EnvAllowed: []string{},
-		},
-		EnvAllowlistInheritanceMode: runnertypes.InheritanceModeInherit,
-	}
-
-	// Get output from existing function
-	var existingBuf strings.Builder
-	PrintFromEnvInheritance(&existingBuf, global, runtimeGroup)
-	existingOutput := existingBuf.String()
-
-	// Create corresponding InheritanceAnalysis
-	analysis := &resource.InheritanceAnalysis{
-		GlobalEnvImport: global.EnvImport,
-		GlobalAllowlist: global.EnvAllowed,
-		GroupEnvImport:  runtimeGroup.Spec.EnvImport,
-		GroupAllowlist:  runtimeGroup.Spec.EnvAllowed,
-		InheritanceMode: runtimeGroup.EnvAllowlistInheritanceMode,
-	}
-
-	// Get output from new function with the actual group name
-	newOutput := FormatInheritanceAnalysisText(analysis, runtimeGroup.Spec.Name)
-
-	// Compare outputs - they should be identical
-	assert.Equal(t, existingOutput, newOutput, "Output mismatch between existing and new functions")
-}
-
-// TestFormatConsistency_FinalEnvironment compares the output between
-// the existing PrintFinalEnvironment and the new FormatFinalEnvironmentText
-func TestFormatConsistency_FinalEnvironment(t *testing.T) {
-	// Create test environment map
-	envMap := map[string]executor.EnvVar{
-		"PATH": {
-			Value:  "/usr/bin:/bin",
-			Origin: "system",
-		},
-		"API_KEY": {
-			Value:  "secret123",
-			Origin: "env_import",
-		},
-	}
-
-	// Get output from existing function
-	var existingBuf strings.Builder
-	PrintFinalEnvironment(&existingBuf, envMap, false) // showSensitive = false
-	existingOutput := existingBuf.String()
-
-	// Create corresponding FinalEnvironment
-	// API_KEY should be masked to match PrintFinalEnvironment behavior with showSensitive=false
-	finalEnv := &resource.FinalEnvironment{
-		Variables: map[string]resource.EnvironmentVariable{
-			"PATH": {
-				Value:  "/usr/bin:/bin",
-				Source: "system",
-				Masked: false,
-			},
-			"API_KEY": {
-				Value:  "secret123",
-				Source: "env_import",
-				Masked: true, // Masked to match showSensitive=false behavior
-			},
-		},
-	}
-
-	// Get output from new function
-	newOutput := FormatFinalEnvironmentText(finalEnv)
-
-	// Compare outputs - they should be identical
-	assert.Equal(t, existingOutput, newOutput, "Output mismatch between existing and new functions")
 }

@@ -3,12 +3,11 @@
 package runner_test
 
 import (
-	"bytes"
-	"context"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/debug"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,10 +53,9 @@ func TestInheritanceModeTracking_Inherit(t *testing.T) {
 	assert.Equal(t, runnertypes.InheritanceModeInherit, runtimeGroup.EnvAllowlistInheritanceMode,
 		"Inheritance mode should be Inherit when group has nil allowlist")
 
-	// Verify debug output
-	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
-	output := buf.String()
+	// Verify debug output using FormatInheritanceAnalysisText
+	analysis := debug.CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, resource.DetailLevelDetailed)
+	output := debug.FormatInheritanceAnalysisText(analysis, runtimeGroup.Spec.Name)
 
 	assert.Contains(t, output, "Inheriting Global env_allowlist",
 		"Debug output should indicate inheritance")
@@ -105,10 +103,9 @@ func TestInheritanceModeTracking_Explicit(t *testing.T) {
 	assert.Equal(t, runnertypes.InheritanceModeExplicit, runtimeGroup.EnvAllowlistInheritanceMode,
 		"Inheritance mode should be Explicit when group has non-empty allowlist")
 
-	// Verify debug output
-	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
-	output := buf.String()
+	// Verify debug output using FormatInheritanceAnalysisText with DetailLevelFull to get RemovedAllowlistVariables
+	analysis := debug.CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, resource.DetailLevelFull)
+	output := debug.FormatInheritanceAnalysisText(analysis, runtimeGroup.Spec.Name)
 
 	assert.Contains(t, output, "Using group-specific env_allowlist",
 		"Debug output should indicate explicit allowlist")
@@ -158,10 +155,9 @@ func TestInheritanceModeTracking_Reject(t *testing.T) {
 	assert.Equal(t, runnertypes.InheritanceModeReject, runtimeGroup.EnvAllowlistInheritanceMode,
 		"Inheritance mode should be Reject when group has empty allowlist")
 
-	// Verify debug output
-	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
-	output := buf.String()
+	// Verify debug output using FormatInheritanceAnalysisText
+	analysis := debug.CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, resource.DetailLevelDetailed)
+	output := debug.FormatInheritanceAnalysisText(analysis, runtimeGroup.Spec.Name)
 
 	assert.Contains(t, output, "Rejecting all environment variables",
 		"Debug output should indicate rejection of all variables")
@@ -208,7 +204,6 @@ func TestInheritanceModeTracking_CompleteFlow(t *testing.T) {
 	}
 
 	// Act & Assert: Process each group through the pipeline
-	ctx := context.Background()
 	runtimeGlobal, err := config.ExpandGlobal(&configSpec.Global)
 	require.NoError(t, err)
 
@@ -235,10 +230,9 @@ func TestInheritanceModeTracking_CompleteFlow(t *testing.T) {
 			assert.Equal(t, tc.expectedMode, runtimeGroup.EnvAllowlistInheritanceMode,
 				"Inheritance mode should be %v for %s", tc.expectedMode, tc.groupName)
 
-			// Verify debug output contains expected text
-			var buf bytes.Buffer
-			debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
-			output := buf.String()
+			// Verify debug output contains expected text using FormatInheritanceAnalysisText
+			analysis := debug.CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, resource.DetailLevelDetailed)
+			output := debug.FormatInheritanceAnalysisText(analysis, runtimeGroup.Spec.Name)
 
 			switch tc.expectedMode {
 			case runnertypes.InheritanceModeInherit:
@@ -250,7 +244,4 @@ func TestInheritanceModeTracking_CompleteFlow(t *testing.T) {
 			}
 		})
 	}
-
-	// Unused context to avoid linter warnings
-	_ = ctx
 }
