@@ -12,11 +12,11 @@
 
 ```bash
 # TOML設定ファイルのハッシュを記録
-record -file backup-config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record backup-config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 実行バイナリのハッシュを記録
-record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /bin/ls -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/ls -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 **設定ファイル (backup-config.toml):**
@@ -76,15 +76,15 @@ output_file = "backup-list.txt"
 
 ```bash
 # TOML設定ファイルのハッシュを記録
-record -file secure-backup.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record secure-backup.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Global verify_files で指定したファイルのハッシュを記録
-record -file /bin/sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/gpg -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/sh -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/gpg -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Group verify_files で指定したファイルのハッシュを記録
-record -file /opt/secure/bin/backup-tool -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /opt/secure/bin/backup-tool -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 **設定ファイル (secure-backup.toml):**
@@ -462,23 +462,23 @@ risk_level = "high"
 
 ```bash
 # TOML設定ファイルのハッシュを記録
-record -file deploy-fullstack.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record deploy-fullstack.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Global verify_files で指定したファイルのハッシュを記録
-record -file /usr/bin/psql -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/pg_dump -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/psql -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/pg_dump -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 実行バイナリのハッシュを記録
-record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/dpkg -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /opt/myapp/bin/migrate -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/systemctl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/pip3 -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /bin/cp -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/nginx -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /usr/bin/curl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /opt/tools/generate-report -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-record -file /bin/rm -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/dpkg -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /opt/myapp/bin/migrate -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/systemctl -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/pip3 -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/cp -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/nginx -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/bin/curl -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /opt/tools/generate-report -d /usr/local/etc/go-safe-cmd-runner/hashes
+record /bin/rm -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 **設定ファイル (deploy-fullstack.toml):**

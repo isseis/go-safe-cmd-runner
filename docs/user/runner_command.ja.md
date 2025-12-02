@@ -75,13 +75,13 @@ runner -config config.toml
 
 ```bash
 # 1. TOML設定ファイルのハッシュを記録（最も重要）
-record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 2. 実行バイナリのハッシュを記録
-record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /usr/local/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 3. verify_files で指定したファイルのハッシュを記録（環境設定ファイルなど）
-record -file /etc/myapp/database.conf -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record /etc/myapp/database.conf -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 詳細は [record コマンドガイド](record_command.ja.md) を参照してください。
@@ -96,7 +96,7 @@ TOML設定ファイルの詳細な記述方法については、以下のドキ�
 
 ### 3.1 必須フラグ
 
-#### `-config <path>`
+#### `-config <path>` / `-c <path>`
 
 **概要**
 
@@ -106,6 +106,7 @@ TOML形式の設定ファイルのパスを指定します。
 
 ```bash
 runner -config <path>
+runner -c <path>
 ```
 
 **パラメータ**
@@ -117,6 +118,7 @@ runner -config <path>
 ```bash
 # 相対パスで指定
 runner -config config.toml
+runner -c config.toml
 
 # 絶対パスで指定
 runner -config /etc/go-safe-cmd-runner/production.toml
@@ -134,7 +136,7 @@ runner -config ~/configs/backup.toml
 
 ### 3.2 実行モード制御
 
-#### `-dry-run`
+#### `-dry-run` / `-n`
 
 **概要**
 
@@ -144,6 +146,7 @@ runner -config ~/configs/backup.toml
 
 ```bash
 runner -config <path> -dry-run
+runner -c <path> -n
 ```
 
 **使用例**
@@ -151,6 +154,7 @@ runner -config <path> -dry-run
 ```bash
 # 基本的なドライラン
 runner -config config.toml -dry-run
+runner -c config.toml -n
 
 # 詳細レベルとフォーマットを指定
 runner -config config.toml -dry-run -dry-run-detail full -dry-run-format json
@@ -647,7 +651,7 @@ shred -u debug.txt  # secure deletion
 
 ### 3.3 ログ設定
 
-#### `-log-level <level>`
+#### `-log-level <level>` / `-l <level>`
 
 **概要**
 
@@ -657,6 +661,7 @@ shred -u debug.txt  # secure deletion
 
 ```bash
 runner -config <path> -log-level <level>
+runner -c <path> -l <level>
 ```
 
 **選択肢**
@@ -671,6 +676,7 @@ runner -config <path> -log-level <level>
 ```bash
 # デバッグモードで実行
 runner -config config.toml -log-level debug
+runner -c config.toml -l debug
 
 # 警告とエラーのみ表示
 runner -config config.toml -log-level warn
@@ -924,7 +930,7 @@ NO_COLOR=1 runner -config config.toml -interactive
 - ログファイルにはANSIエスケープシーケンスが含まれません
 - `-quiet` フラグと同時に指定した場合は `-quiet` が優先されます
 
-#### `-quiet`
+#### `-quiet` / `-q`
 
 **概要**
 
@@ -934,6 +940,7 @@ NO_COLOR=1 runner -config config.toml -interactive
 
 ```bash
 runner -config <path> -quiet
+runner -c <path> -q
 ```
 
 **使用例**
@@ -941,6 +948,7 @@ runner -config <path> -quiet
 ```bash
 # 非インタラクティブモードで実行
 runner -config config.toml -quiet
+runner -c config.toml -q
 
 # ログファイルへのリダイレクト
 runner -config config.toml -quiet > output.log 2>&1
@@ -1000,7 +1008,7 @@ jobs:
 - エラーメッセージは stderr に出力されます
 - ログレベルの設定は引き続き有効です
 
-#### `--groups <names>`
+#### `--groups <names>` / `-g <names>`
 
 **概要**
 
@@ -1010,6 +1018,7 @@ jobs:
 
 ```bash
 runner -config <path> --groups <names>
+runner -c <path> -g <names>
 ```
 
 **パラメータ**
@@ -1029,9 +1038,11 @@ runner -config <path> --groups <names>
 ```bash
 # 単一グループを実行
 runner -config config.toml --groups build
+runner -c config.toml -g build
 
 # 複数グループを実行
 runner -config config.toml --groups build,test
+runner -c config.toml -g build,test
 
 # 空白を含む指定（空白は自動的にトリミングされる）
 runner -config config.toml --groups "build, test, deploy"
@@ -1535,18 +1546,18 @@ jobs:
         run: |
           sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
           # TOML設定ファイル自体のハッシュを記録（最重要）
-          sudo ./build/record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          sudo ./build/record config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
           # 実行バイナリのハッシュを記録
-          sudo ./build/record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          sudo ./build/record /usr/local/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 
       - name: Dry run
         run: |
-          runner -config config.toml -dry-run -dry-run-format json > dryrun.json
+          runner -c config.toml -n -dry-run-format json > dryrun.json
           cat dryrun.json | jq '.'
 
       - name: Deploy
         run: |
-          runner -config config.toml -quiet -log-dir ./logs
+          runner -c config.toml -q -log-dir ./logs
         env:
           GSCR_SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
@@ -1708,10 +1719,10 @@ Hash mismatch: expected abc123..., got def456...
 ls -l /usr/bin/backup.sh
 
 # ハッシュを再記録
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
+record /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes -force
 
 # 個別に検証
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 詳細は [verify コマンドガイド](verify_command.ja.md) を参照してください。
