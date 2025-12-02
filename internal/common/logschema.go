@@ -1,4 +1,6 @@
 // Package common provides shared types and utilities used across the application
+//
+//nolint:revive // common is an appropriate name for shared utilities package
 package common
 
 import (
