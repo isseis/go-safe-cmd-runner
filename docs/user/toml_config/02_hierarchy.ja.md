@@ -296,7 +296,7 @@ timeout = 300  # グローバルの 60 をオーバーライド
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env = [
+env_vars = [
     "PGPASSWORD=secret",      # このコマンドのみで必要
     "PGHOST=localhost"
 ]

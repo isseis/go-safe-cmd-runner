@@ -297,7 +297,7 @@ Define only the environment variables needed for each command:
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env = [
+env_vars = [
     "PGPASSWORD=secret",      # Only needed for this command
     "PGHOST=localhost"
 ]

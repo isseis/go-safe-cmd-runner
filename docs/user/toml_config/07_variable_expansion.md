@@ -19,7 +19,7 @@ go-safe-cmd-runner handles 2 types of variables:
 | Variable Type | Purpose | Reference Syntax | Definition Method | Impact on Child Process |
 |---------------|---------|------------------|-------------------|------------------------|
 | **Internal Variables** | For expansion only within TOML configuration files | `%{var}` | `vars`, `env_import` | None (default) |
-| **Process Environment Variables** | Set as environment variables for child processes | - | `env` | Yes |
+| **Process Environment Variables** | Set as environment variables for child processes | - | `env_vars` | Yes |
 
 ### Locations Where Variables Can Be Used
 

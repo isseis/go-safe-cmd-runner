@@ -626,7 +626,7 @@ env_import = [
 3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
-## 4.5 env - Global Process Environment Variables
+## 4.5 env_vars - Global Process Environment Variables
 
 ### Overview
 
