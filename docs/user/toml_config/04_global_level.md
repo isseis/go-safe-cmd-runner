@@ -196,49 +196,7 @@ timeout = 0  # ✅ Unlimited execution (no timeout)
 timeout = -1  # ❌ Invalid: negative values are not allowed
 ```
 
-## 4.2 ❌ workdir - Working Directory (Deprecated)
-
-### ⚠️ Deprecation Notice
-
-**This feature has been deprecated.** The `workdir` field at the global level is no longer supported.
-
-### Alternative Methods in the New Specification
-
-Global-level working directory configuration has been removed and replaced with the following methods:
-
-1. **Automatic Temporary Directories (Recommended)**: If `workdir` is not specified at the group level, a temporary directory is automatically generated
-2. **Group-Level Configuration**: Set `workdir` for each group as needed
-3. **Command-Level Configuration**: Set `workdir` for individual commands
-
-### Migration Example
-
-```toml
-# Old specification (will cause an error)
-[global]
-workdir = "/var/app/workspace"  # ❌ This must be removed
-
-# New specification
-[[groups]]
-name = "file_operations"
-workdir = "/var/app/workspace"  # ✅ Set at group level
-
-[[groups.commands]]
-name = "create_file"
-cmd = "touch"
-args = ["test.txt"]
-```
-
-### Additional Information
-
-- [CHANGELOG.md](../../../CHANGELOG.md): Details on breaking changes
-- [05_group_level.md](05_group_level.md): Working directory configuration at group level
-- [06_command_level.md](06_command_level.md): Working directory configuration at command level
-
-#### 3. Permission Check
-
-Read and write permissions are required for the specified directory.
-
-## 4.3 skip_standard_paths - Skip Standard Path Verification
+## 4.2 skip_standard_paths - Skip Standard Path Verification
 
 ### Overview
 
@@ -308,7 +266,7 @@ args = ["pattern", "file.txt"]
 
 Setting `verify_standard_paths = false` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
-## 4.4 vars - Global Internal Variables
+## 4.3 vars - Global Internal Variables
 
 ### Overview
 
@@ -496,7 +454,7 @@ cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
 3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
 4. **Security**: Manage sensitive information in vars and expose via env only when necessary
 
-## 4.5 env_import - System Environment Variable Import
+## 4.4 env_import - System Environment Variable Import
 
 ### Overview
 
@@ -668,7 +626,7 @@ env_import = [
 3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
-## 4.6 env - Global Process Environment Variables
+## 4.5 env - Global Process Environment Variables
 
 ### Overview
 
@@ -879,7 +837,7 @@ env_vars = [
 ]
 ```
 
-## 4.7 env_allowed - Environment Variable Allowlist
+## 4.6 env_allowed - Environment Variable Allowlist
 
 ### Overview
 
@@ -1007,7 +965,7 @@ env_allowed = [
 env_allowed = ["PATH", "HOME", "USER"]
 ```
 
-## 4.8 verify_files - File Verification List
+## 4.7 verify_files - File Verification List
 
 ### Overview
 
@@ -1117,7 +1075,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 - **Performance**: File hash verification operates efficiently with minimal performance impact
 - **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
-## 4.9 Global Command Allowlist (Hardcoded)
+## 4.8 Global Command Allowlist (Hardcoded)
 
 ### Overview
 
@@ -1188,7 +1146,7 @@ The hardcoded patterns are matched against the full absolute path of the command
 - **Be Specific**: Prefer specific patterns over broad ones
 - **Combine with cmd_allowed**: Use group-level `cmd_allowed` for exceptions rather than broadening global patterns
 
-## 4.10 output_size_limit - Maximum Output Size
+## 4.9 output_size_limit - Maximum Output Size
 
 ### Overview
 
