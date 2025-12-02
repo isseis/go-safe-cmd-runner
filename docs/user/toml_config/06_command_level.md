@@ -311,7 +311,7 @@ vars = ["key1=value1", "key2=value2", ...]
 
 #### Role
 
-- **Variable Expansion in TOML**: Can be referenced in `cmd`, `args`, `env` values using `%{VAR}` format
+- **Variable Expansion in TOML**: Can be referenced in `cmd`, `args`, `env_vars` values using `%{VAR}` format
 - **Non-propagation to Process Environment**: Not included in child process environment variables
 - **Hierarchical Merge**: Merged in order: Global → Group → Command
 
@@ -362,7 +362,7 @@ vars = ["my_var=hello"]
 args = ["-c", "echo $my_var"]  # my_var is empty string (not in environment)
 ```
 
-To pass environment variables to child processes, use `env` parameter:
+To pass environment variables to child processes, use `env_vars` parameter:
 
 ```toml
 [[groups.commands]]
@@ -529,7 +529,7 @@ env_import = ["NONEXISTENT_VAR"]
 args = ["Value: %{NONEXISTENT_VAR}"]  # Output: "Value: "
 ```
 
-### 6.2.3 env - Process Environment Variables
+### 6.2.3 env_vars - Process Environment Variables
 
 #### Overview
 

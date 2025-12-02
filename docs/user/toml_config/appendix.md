@@ -293,7 +293,7 @@ risk_level = "high"
 : The process of replacing variables in `${VAR}` format with actual values.
 
 **Command.Env**
-: Environment variables defined at the command level. Set with the `env` parameter.
+: Environment variables defined at the command level. Set with the `env_vars` parameter.
 
 **Inheritance Mode**
 : A mode that determines how environment variable allowlists are handled at the group level.

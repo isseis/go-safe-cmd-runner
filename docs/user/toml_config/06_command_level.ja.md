@@ -310,7 +310,7 @@ vars = ["key1=value1", "key2=value2", ...]
 
 #### 役割
 
-- **TOML 内での変数展開**: `cmd`、`args`、`env` の値で `%{VAR}` 形式で参照可能
+- **TOML 内での変数展開**: `cmd`、`args`、`env_vars` の値で `%{VAR}` 形式で参照可能
 - **プロセス環境への非伝搬**: 子プロセスの環境変数には含まれない
 - **階層的なマージ**: グローバル → グループ → コマンドの順でマージ
 
@@ -361,14 +361,14 @@ vars = ["my_var=hello"]
 args = ["-c", "echo $my_var"]  # my_var は空文字列 (環境変数に存在しない)
 ```
 
-子プロセスに環境変数を渡すには、`env` パラメータを使用します:
+子プロセスに環境変数を渡すには、`env_vars` パラメータを使用します:
 
 ```toml
 [[groups.commands]]
 name = "print_vars"
 cmd = "/bin/sh"
 vars = ["my_var=hello"]
-env_vars = ["MY_VAR=%{my_var}"]  # vars の値を env で環境変数に変換
+env_vars = ["MY_VAR=%{my_var}"]  # vars の値を env_vars で環境変数に変換
 args = ["-c", "echo $MY_VAR"]  # MY_VAR=hello が出力される
 ```
 
@@ -528,7 +528,7 @@ from_env_vars = ["NONEXISTENT_VAR"]
 args = ["Value: %{NONEXISTENT_VAR}"]  # "Value: " と出力される
 ```
 
-### 6.2.3 env - プロセス環境変数
+### 6.2.3 env_vars - プロセス環境変数
 
 #### 概要
 

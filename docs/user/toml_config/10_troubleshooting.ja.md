@@ -148,7 +148,7 @@ name = "run_tool"
 cmd = "${TOOL_DIR}/mytool"
 args = []
 
-# 正しい: env で定義
+# 正しい: env_vars で定義
 [[groups.commands]]
 name = "run_tool"
 cmd = "${TOOL_DIR}/mytool"

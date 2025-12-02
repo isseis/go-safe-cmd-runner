@@ -196,49 +196,7 @@ timeout = 0  # ✅ Unlimited execution (no timeout)
 timeout = -1  # ❌ Invalid: negative values are not allowed
 ```
 
-## 4.2 ❌ workdir - Working Directory (Deprecated)
-
-### ⚠️ Deprecation Notice
-
-**This feature has been deprecated.** The `workdir` field at the global level is no longer supported.
-
-### Alternative Methods in the New Specification
-
-Global-level working directory configuration has been removed and replaced with the following methods:
-
-1. **Automatic Temporary Directories (Recommended)**: If `workdir` is not specified at the group level, a temporary directory is automatically generated
-2. **Group-Level Configuration**: Set `workdir` for each group as needed
-3. **Command-Level Configuration**: Set `workdir` for individual commands
-
-### Migration Example
-
-```toml
-# Old specification (will cause an error)
-[global]
-workdir = "/var/app/workspace"  # ❌ This must be removed
-
-# New specification
-[[groups]]
-name = "file_operations"
-workdir = "/var/app/workspace"  # ✅ Set at group level
-
-[[groups.commands]]
-name = "create_file"
-cmd = "touch"
-args = ["test.txt"]
-```
-
-### Additional Information
-
-- [CHANGELOG.md](../../../CHANGELOG.md): Details on breaking changes
-- [05_group_level.md](05_group_level.md): Working directory configuration at group level
-- [06_command_level.md](06_command_level.md): Working directory configuration at command level
-
-#### 3. Permission Check
-
-Read and write permissions are required for the specified directory.
-
-## 4.3 skip_standard_paths - Skip Standard Path Verification
+## 4.2 skip_standard_paths - Skip Standard Path Verification
 
 ### Overview
 
@@ -308,7 +266,7 @@ args = ["pattern", "file.txt"]
 
 Setting `verify_standard_paths = false` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
-## 4.4 vars - Global Internal Variables
+## 4.3 vars - Global Internal Variables
 
 ### Overview
 
@@ -335,7 +293,7 @@ vars = ["var1=value1", "var2=value2", ...]
 
 ### Role
 
-- **TOML Expansion Only**: Expands values in `cmd`, `args`, `env`, and `verify_files`
+- **TOML Expansion Only**: Expands values in `cmd`, `args`, `env_vars`, and `verify_files`
 - **Enhanced Security**: Separates from environment variables passed to child processes
 - **Configuration Reuse**: Centrally manage common values
 - **Dynamic Path Building**: Build directory paths dynamically
@@ -450,7 +408,7 @@ args = ["secret_key"]
 # Output: (empty string) (secret_key is not passed as environment variable)
 ```
 
-To pass to child process, explicitly define in `env` field:
+To pass to child process, explicitly define in `env_vars` field:
 
 ```toml
 [global]
@@ -494,9 +452,9 @@ cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
 1. **Centralize Path Management**: Define application root paths and similar values in vars
 2. **Lowercase Recommended**: Use lowercase and underscores for internal variable names
 3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
-4. **Security**: Manage sensitive information in vars and expose via env only when necessary
+4. **Security**: Manage sensitive information in vars and expose via env_vars only when necessary
 
-## 4.5 env_import - System Environment Variable Import
+## 4.4 env_import - System Environment Variable Import
 
 ### Overview
 
@@ -668,7 +626,7 @@ env_import = [
 3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
-## 4.6 env - Global Process Environment Variables
+## 4.5 env_vars - Global Process Environment Variables
 
 ### Overview
 
@@ -779,9 +737,9 @@ args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
 
 Environment variables are merged in the following order:
 
-1. Global.env (global environment variables)
-2. Merged with Group.env (group environment variables, see Chapter 5)
-3. Merged with Command.env (command environment variables, see Chapter 6)
+1. Global.env_vars (global environment variables)
+2. Merged with Group.env_vars (group environment variables, see Chapter 5)
+3. Merged with Command.env_vars (command environment variables, see Chapter 6)
 
 When the same environment variable is defined at multiple levels, the more specific level (Command > Group > Global) takes priority:
 
@@ -796,12 +754,12 @@ env_vars = [
 [[groups]]
 name = "example"
 vars = ["base=group_value"]
-env_vars = ["COMMON_VAR=%{base}"]    # Overrides Global.env
+env_vars = ["COMMON_VAR=%{base}"]    # Overrides Global.env_vars
 
 [[groups.commands]]
 name = "cmd1"
 vars = ["base=command_value"]
-env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env
+env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env_vars
 
 # Runtime environment variables:
 # COMMON_VAR=command_value (command level takes priority)
@@ -810,8 +768,8 @@ env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env
 
 ### Relationship with Internal Variables
 
-- **env values**: Can use internal variables `%{VAR}`
-- **Propagation to Child Processes**: Environment variables defined in env are passed to child processes
+- **env_vars values**: Can use internal variables `%{VAR}`
+- **Propagation to Child Processes**: Environment variables defined in env_vars are passed to child processes
 - **Internal Variables Not Propagated**: Internal variables defined in vars or env_import are not passed to child processes by default
 
 ```toml
@@ -879,7 +837,7 @@ env_vars = [
 ]
 ```
 
-## 4.7 env_allowed - Environment Variable Allowlist
+## 4.6 env_allowed - Environment Variable Allowlist
 
 ### Overview
 
@@ -1007,7 +965,7 @@ env_allowed = [
 env_allowed = ["PATH", "HOME", "USER"]
 ```
 
-## 4.8 verify_files - File Verification List
+## 4.7 verify_files - File Verification List
 
 ### Overview
 
@@ -1117,7 +1075,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 - **Performance**: File hash verification operates efficiently with minimal performance impact
 - **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
-## 4.9 Global Command Allowlist (Hardcoded)
+## 4.8 Global Command Allowlist (Hardcoded)
 
 ### Overview
 
@@ -1188,7 +1146,7 @@ The hardcoded patterns are matched against the full absolute path of the command
 - **Be Specific**: Prefer specific patterns over broad ones
 - **Combine with cmd_allowed**: Use group-level `cmd_allowed` for exceptions rather than broadening global patterns
 
-## 4.10 output_size_limit - Maximum Output Size
+## 4.9 output_size_limit - Maximum Output Size
 
 ### Overview
 

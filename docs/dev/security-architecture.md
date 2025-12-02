@@ -345,7 +345,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 ```go
 // Location: internal/runner/runnertypes/config.go
 type Command struct {
-    MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
+    RiskLevel string `toml:"risk_level"` // Risk level
 }
 ```
 
@@ -695,7 +695,7 @@ Provides secure user and group switching functionality while maintaining strict 
 type Command struct {
     RunAsUser    string `toml:"run_as_user"`    // User to run the command as
     RunAsGroup   string `toml:"run_as_group"`   // Group to run the command as
-    MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
+    RiskLevel    string `toml:"risk_level"`     // Risk level of the command
 }
 ```
 

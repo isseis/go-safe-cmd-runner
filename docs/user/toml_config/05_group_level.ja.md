@@ -586,7 +586,7 @@ env_allowed = ["変数1", "変数2", ...]
 | **有効な値** | 環境変数名のリスト、または空配列 |
 | **継承動作** | **Override(上書き)方式** |
 
-### 5.3.5 env - グループプロセス環境変数
+### 5.3.5 env_vars - グループプロセス環境変数
 
 #### 概要
 
@@ -610,7 +610,7 @@ env_vars = ["KEY1=value1", "KEY2=value2", ...]
 | **デフォルト値** | [] (環境変数なし) |
 | **書式** | `"KEY=VALUE"` 形式 |
 | **値での変数展開** | 内部変数 `%{VAR}` を使用可能 |
-| **マージ動作** | Global.env とマージ(Group が優先) |
+| **マージ動作** | Global.env_vars とマージ(Group が優先) |
 
 #### 役割
 
@@ -645,7 +645,7 @@ env_vars = [
 name = "connect"
 cmd = "/usr/bin/psql"
 args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
-# DB_HOST と DB_PORT は Group.env から取得
+# DB_HOST と DB_PORT は Group.env_vars から取得
 ```
 
 ##### 例2: グローバル設定の上書き
@@ -662,8 +662,8 @@ env_vars = [
 [[groups]]
 name = "development_group"
 env_vars = [
-    "LOG_LEVEL=debug",      # Global.env の LOG_LEVEL を上書き
-    "ENV_TYPE=development", # Global.env の ENV_TYPE を上書き
+    "LOG_LEVEL=debug",      # Global.env_vars の LOG_LEVEL を上書き
+    "ENV_TYPE=development", # Global.env_vars の ENV_TYPE を上書き
 ]
 
 [[groups.commands]]
@@ -684,9 +684,9 @@ env_vars = ["APP_ROOT=/opt/myapp"]
 [[groups]]
 name = "web_group"
 env_vars = [
-    "WEB_DIR=${APP_ROOT}/web",         # Global.env の APP_ROOT を参照
-    "STATIC_DIR=${WEB_DIR}/static",    # Group.env の WEB_DIR を参照
-    "UPLOAD_DIR=${WEB_DIR}/uploads",   # Group.env の WEB_DIR を参照
+    "WEB_DIR=${APP_ROOT}/web",         # Global.env_vars の APP_ROOT を参照
+    "STATIC_DIR=${WEB_DIR}/static",    # Group.env_vars の WEB_DIR を参照
+    "UPLOAD_DIR=${WEB_DIR}/uploads",   # Group.env_vars の WEB_DIR を参照
 ]
 
 [[groups.commands]]
@@ -701,7 +701,7 @@ args = ["--static", "${STATIC_DIR}", "--upload", "${UPLOAD_DIR}"]
 
 1. システム環境変数（最低優先）
 2. Global.env（グローバル環境変数）
-3. **Group.env**（グループ環境変数）← このセクション
+3. **Group.env_vars**（グループ環境変数）← このセクション
 4. Command.env（コマンド環境変数）（最高優先）
 
 ```toml
@@ -724,9 +724,9 @@ env_vars = ["OVERRIDE=command"]  # さらに上書き
 
 #### 変数展開
 
-Group.env 内では、Global.env で定義した変数や、同じ Group.env 内の他の変数を参照できます。
+Group.env_vars 内では、Global.env_vars で定義した変数や、同じ Group.env_vars 内の他の変数を参照できます。
 
-##### Global.env の変数を参照
+##### Global.env_vars の変数を参照
 
 ```toml
 [global]
@@ -735,8 +735,8 @@ env_vars = ["BASE=/opt/app"]
 [[groups]]
 name = "services"
 env_vars = [
-    "SERVICE_DIR=${BASE}/services",     # Global.env の BASE を参照
-    "CONFIG=${SERVICE_DIR}/config",     # Group.env の SERVICE_DIR を参照
+    "SERVICE_DIR=${BASE}/services",     # Global.env_vars の BASE を参照
+    "CONFIG=${SERVICE_DIR}/config",     # Group.env_vars の SERVICE_DIR を参照
 ]
 ```
 
@@ -757,7 +757,7 @@ env_vars = [
 
 ##### 1. KEY名の制約
 
-Global.env と同じ制約が適用されます（第4章参照）。
+Global.env_vars と同じ制約が適用されます（第4章参照）。
 
 ##### 2. 重複定義
 
@@ -765,7 +765,7 @@ Global.env と同じ制約が適用されます（第4章参照）。
 
 ##### 3. allowlist との関係
 
-Group.env で定義した変数がシステム環境変数を参照する場合、そのグループの `env_allowed` に参照先の変数を追加する必要があります。
+Group.env_vars で定義した変数がシステム環境変数を参照する場合、そのグループの `env_allowed` に参照先の変数を追加する必要があります。
 
 ```toml
 [global]
@@ -779,7 +779,7 @@ env_allowed = ["HOME"]       # 必須: HOME を許可（グローバルを上書
 
 ##### 4. グループ間の独立性
 
-Group.env で定義した変数は、そのグループ内でのみ有効です。他のグループには影響しません。
+Group.env_vars で定義した変数は、そのグループ内でのみ有効です。他のグループには影響しません。
 
 ```toml
 [[groups]]
@@ -793,7 +793,7 @@ args = ["${VAR}"]  # value1
 
 [[groups]]
 name = "group2"
-# env で VAR を定義していない
+# env_vars で VAR を定義していない
 
 [[groups.commands]]
 name = "cmd2"
@@ -803,8 +803,8 @@ args = ["${VAR}"]  # エラー: VAR は未定義
 
 #### ベストプラクティス
 
-1. **グループ固有の設定を定義**: グループに特有の環境変数は Group.env に
-2. **Global.env との連携**: ベースパスは Global.env、派生パスは Group.env
+1. **グループ固有の設定を定義**: グループに特有の環境変数は Group.env_vars に
+2. **Global.env_vars との連携**: ベースパスは Global.env、派生パスは Group.env_vars
 3. **適切な allowlist 設定**: システム環境変数を参照する場合は allowlist を設定
 4. **明確な命名**: グループ固有であることがわかる変数名を使用
 

@@ -82,6 +82,7 @@
 | デフォルト | default | |
 | デフォルト値 | default value | |
 | 定義 | define / definition | |
+| 拒否 | deny | 許可リストの文脈では "deny" |
 | デプロイ | deploy / deployment | |
 | 廃止 | deprecated / deprecation | |
 | デメリット | disadvantage | |
@@ -118,6 +119,8 @@
 | 例外 | exception | |
 | 実行 | execute / execution | |
 | 実行可能ファイル | executable | |
+| 実行時 | at runtime | |
+| 明示 | explicit | env_allowlistの継承モードの文脈 |
 | 展開 | expansion | |
 | 拡張 | extend / extending | 機能拡張の文脈 |
 | エクスポート | export | |
@@ -138,6 +141,7 @@
 | フィールド名 | field name | |
 | 初めて | first-time | |
 | フラグ | flag | コマンドラインフラグ |
+| 柔軟性 | flexibility | |
 | フロー | flow | |
 | フォーマット | format | |
 | よくある質問 | frequently asked questions / FAQ | |
@@ -161,6 +165,7 @@
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
 | 階層継承 | hierarchy inheritance | |
 | 階層解決 | hierarchy resolution | |
+| 階層間 | cross-level / across hierarchy levels | 設定の継承の文脈 |
 
 ### I
 
@@ -169,6 +174,8 @@
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
 | インポート | import | |
+| 独立 | independent | 設定の継承の文脈 |
+| 独立性 | independence | 設定の継承の文脈 |
 | 影響 | impact | |
 | 継承 | inheritance | |
 | 整合性 | integrity | |
@@ -227,6 +234,7 @@
 | Mock server | mock server | モックサーバー |
 | 監視 | monitoring | |
 | モード | mode | |
+| 複数値 | multi-value | 設定項目の文脈 |
 
 ### N
 
@@ -271,9 +279,11 @@
 | 実践的 | practical | |
 | 予測 | predictable / prediction | |
 | プレフィックス | prefix | |
+| 前提条件 | prerequisite | |
 | 防ぐ | prevent | セキュリティの文脈 |
 | 保持 | preserve / preservation | |
 | 本番環境 | production (environment) | |
+| 禁止 | prohibit | env_allowlistの継承モードの文脈 |
 | 優先度 | priority | |
 | プロセス | process | |
 | 処理 | processing | |
@@ -315,6 +325,7 @@
 | 戻り値 | return value | |
 | リスク | risk | |
 | リスクレベル | risk level | |
+| 堅牢性 | robustness | |
 | 役割 | role | |
 | ルート | root | |
 | 根本原因 | root cause | |
@@ -341,6 +352,7 @@
 | セットアップ | setup | |
 | シェル | shell | |
 | シンプルさ | simplicity | |
+| 単一値 | single-value | 設定項目の文脈 |
 | サイズ | size | |
 | サイズ制限 | size limit | |
 | スキップ | skip | |
@@ -393,8 +405,9 @@
 |--------|---------|------|
 | 未定義 | undefined | |
 | 一意 | unique | |
-| ユニオン | union | |
+| ユニオン | union | 設定のマージの文脈 |
 | 一様性 | uniformity | |
+| 一様 | uniform | |
 | 無制限 | unlimited | |
 | 無制限実行 | unlimited execution | |
 | 無制限タイムアウト | unlimited timeout | |
@@ -498,7 +511,6 @@
 |--------|--------------|--------------|
 | 環境変数 | `env` | `env_vars` |
 | 環境変数インポート | `from_env` | `env_import` |
-| リスクレベル | `max_risk_level` | `risk_level` |
 | 出力ファイル | `output` | `output_file` |
 
 ---
@@ -532,6 +544,7 @@
 | 2025-11-15 | E2E testing関連の用語を追加 (E2E, end-to-end, external dependencies, external service, manual, mock, pattern, payload, placeholder, redaction, requirement, root cause, secret, self-signed certificate, sensitive data, Slack, webhook, workaround, wrapper) |
 | 2025-11-16 | Redaction slice type conversion関連の用語を追加 (alternative, type assertion, complexity, consistency, content, conversion, disadvantage, design, edge case, element, extraction, handler, impact, interface, LogValuer, loss, semantic, advantage, method, minimum, mixed-type, overhead, point, predictable, preserve, processing, protection, purpose, reason, recursive, reflection, resolution, solution, return value, serialize, simplicity, slice, test case, truncation, typed, type information, type mismatch, use case, validity) |
 | 2025-11-27 | グローバルコマンド許可リスト関連の用語を追加 (anchored, attack surface, bypass, misconfiguration, enable, exception, extend/extending, hardcoded, location, logic, matching, prefer, prevent, rationale, regex, resolve/resolving, weaken restrictions, specific, symlink, untrusted) |
+| 2025-12-02 | 設定継承動作ドキュメント関連の用語を追加 (cross-level, deny, prohibit, prerequisite, single-value, multi-value, at runtime, explicit, union, uniform, robustness, independent, independence, flexibility) |
 
 ---
 

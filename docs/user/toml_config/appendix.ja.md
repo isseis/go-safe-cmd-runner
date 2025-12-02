@@ -37,7 +37,7 @@
 | description | string | - | "" | コマンドの説明 |
 | cmd | string | ✓ | なし | 実行するコマンド(絶対パスまたはPATH上) |
 | args | []string | - | [] | コマンドの引数 |
-| env | []string | - | [] | 環境変数("KEY=VALUE"形式) |
+| env_vars | []string | - | [] | 環境変数("KEY=VALUE"形式) |
 | workdir | string | - | グループ設定 | 作業ディレクトリ(グループ設定をオーバーライド) |
 | timeout | int | - | グローバル設定 | タイムアウト(グローバルをオーバーライド) |
 | run_as_user | string | - | "" | 実行ユーザー |
@@ -293,7 +293,7 @@ risk_level = "high"
 : `${VAR}` 形式の変数を実際の値に置き換える処理。
 
 **Command.Env**
-: コマンドレベルで定義される環境変数。`env` パラメータで設定。
+: コマンドレベルで定義される環境変数。`env_vars` パラメータで設定。
 
 **継承モード (Inheritance Mode)**
 : グループレベルで環境変数許可リストをどのように扱うかを決定するモード。

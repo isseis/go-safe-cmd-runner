@@ -23,7 +23,7 @@ name = "group_name"
 
 | Item | Description #### Inheritance Behavior** | Three modes (described below) |
 
-### 5.3.3 env - Group Environment Variables
+### 5.3.3 env_vars - Group Environment Variables
 
 #### Overview
 
@@ -73,14 +73,14 @@ name = "database_group"
 env_vars = [
     "DB_HOST=localhost",
     "DB_PORT=5432",
-    "DB_DATA=%{BASE_DIR}/db-data",  # References BASE_DIR from Global.env
+    "DB_DATA=%{BASE_DIR}/db-data",  # References BASE_DIR from Global.env_vars
 ]
 
 [[groups.commands]]
 name = "connect"
 cmd = "/usr/bin/psql"
 args = ["-h", "%{DB_HOST}", "-p", "%{DB_PORT}"]
-# DB_HOST and DB_PORT are obtained from Group.env
+# DB_HOST and DB_PORT are obtained from Group.env_vars
 ```
 
 ##### Example 2: Overriding Global Settings
@@ -97,8 +97,8 @@ env_vars = [
 [[groups]]
 name = "development_group"
 env_vars = [
-    "LOG_LEVEL=debug",      # Overrides Global.env LOG_LEVEL
-    "ENV_TYPE=development", # Overrides Global.env ENV_TYPE
+    "LOG_LEVEL=debug",      # Overrides Global.env_vars LOG_LEVEL
+    "ENV_TYPE=development", # Overrides Global.env_vars ENV_TYPE
 ]
 
 [[groups.commands]]
@@ -119,9 +119,9 @@ env_vars = ["APP_ROOT=/opt/myapp"]
 [[groups]]
 name = "web_group"
 env_vars = [
-    "WEB_DIR=%{APP_ROOT}/web",         # References APP_ROOT from Global.env
-    "STATIC_DIR=%{WEB_DIR}/static",    # References WEB_DIR from Group.env
-    "UPLOAD_DIR=%{WEB_DIR}/uploads",   # References WEB_DIR from Group.env
+    "WEB_DIR=%{APP_ROOT}/web",         # References APP_ROOT from Global.env_vars
+    "STATIC_DIR=%{WEB_DIR}/static",    # References WEB_DIR from Group.env_vars
+    "UPLOAD_DIR=%{WEB_DIR}/uploads",   # References WEB_DIR from Group.env_vars
 ]
 
 [[groups.commands]]
@@ -135,9 +135,9 @@ args = ["--static", "%{STATIC_DIR}", "--upload", "%{UPLOAD_DIR}"]
 Environment variables are resolved in the following priority order:
 
 1. System environment variables (lowest priority)
-2. Global.env (global environment variables)
-3. **Group.env** (group environment variables) ← This section
-4. Command.env (command environment variables) (highest priority)
+2. Global.env_vars (global environment variables)
+3. **Group.env_vars** (group environment variables) ← This section
+4. Command.env_vars (command environment variables) (highest priority)
 
 ```toml
 [global]
@@ -159,9 +159,9 @@ env_vars = ["OVERRIDE=command"]  # Further override
 
 #### Variable Expansion
 
-Within Group.env, you can reference variables defined in Global.env or other variables within the same Group.env.
+Within Group.env_vars, you can reference variables defined in Global.env_vars or other variables within the same Group.env_vars.
 
-##### Referencing Global.env Variables
+##### Referencing Global.env_vars Variables
 
 ```toml
 [global]
@@ -170,8 +170,8 @@ env_vars = ["BASE=/opt/app"]
 [[groups]]
 name = "services"
 env_vars = [
-    "SERVICE_DIR=%{BASE}/services",     # References BASE from Global.env
-    "CONFIG=%{SERVICE_DIR}/config",     # References SERVICE_DIR from Group.env
+    "SERVICE_DIR=%{BASE}/services",     # References BASE from Global.env_vars
+    "CONFIG=%{SERVICE_DIR}/config",     # References SERVICE_DIR from Group.env_vars
 ]
 ```
 
@@ -192,7 +192,7 @@ env_vars = [
 
 ##### 1. KEY Name Constraints
 
-The same constraints as Global.env apply (see Chapter 4).
+The same constraints as Global.env_vars apply (see Chapter 4).
 
 ##### 2. Duplicate Definitions
 
@@ -200,7 +200,7 @@ Defining the same KEY multiple times within the same group results in an error.
 
 ##### 3. Relationship with allowlist
 
-When variables defined in Group.env reference system environment variables, the referenced variables must be added to that group's `env_allowed`.
+When variables defined in Group.env_vars reference system environment variables, the referenced variables must be added to that group's `env_allowed`.
 
 ```toml
 [global]
@@ -214,7 +214,7 @@ env_allowed = ["HOME"]       # Required: Allow HOME (overrides global)
 
 ##### 4. Independence Between Groups
 
-Variables defined in Group.env are only valid within that group. They do not affect other groups.
+Variables defined in Group.env_vars are only valid within that group. They do not affect other groups.
 
 ```toml
 [[groups]]
@@ -228,7 +228,7 @@ args = ["%{VAR}"]  # value1
 
 [[groups]]
 name = "group2"
-# VAR not defined in env
+# VAR not defined in env_vars
 
 [[groups.commands]]
 name = "cmd2"
@@ -238,8 +238,8 @@ args = ["%{VAR}"]  # Error: VAR is undefined
 
 #### Best Practices
 
-1. **Define Group-Specific Settings**: Put group-specific environment variables in Group.env
-2. **Coordination with Global.env**: Base paths in Global.env, derived paths in Group.env
+1. **Define Group-Specific Settings**: Put group-specific environment variables in Group.env_vars
+2. **Coordination with Global.env_vars**: Base paths in Global.env_vars, derived paths in Group.env_vars
 3. **Proper allowlist Settings**: Configure allowlist when referencing system environment variables
 4. **Clear Naming**: Use variable names that indicate they are group-specific
 
@@ -257,20 +257,20 @@ name = "database"
 env_vars = [
     "DB_HOST=localhost",              # Group-specific
     "DB_PORT=5432",                   # Group-specific
-    "DB_DATA=%{APP_ROOT}/db-data",    # References Global.env
+    "DB_DATA=%{APP_ROOT}/db-data",    # References Global.env_vars
 ]
 
 [[groups]]
 name = "web"
-env = [
-    "WEB_DIR=%{APP_ROOT}/web",        # References Global.env
+env_vars = [
+    "WEB_DIR=%{APP_ROOT}/web",        # References Global.env_vars
     "PORT=8080",                      # Group-specific
 ]
 ```
 
 #### Next Steps
 
-- **Command.env**: See Chapter 6 for command-level environment variables
+- **Command.env_vars**: See Chapter 6 for command-level environment variables
 - **Variable Expansion Details**: See Chapter 7 for variable expansion mechanisms
 - **Environment Variable Inheritance Modes**: See section 5.4 for allowlist inheritance
 
@@ -838,7 +838,7 @@ env_allowed = ["variable1", "variable2", ...]
 | **Valid Values** | List of environment variable names, or empty array |
 | **Inheritance Behavior** | **Override (replacement) method** |
 
-### 5.3.5 env - Group Process Environment Variables
+### 5.3.5 env_vars - Group Process Environment Variables
 
 #### Overview
 
@@ -862,7 +862,7 @@ env_vars = ["KEY1=value1", "KEY2=value2", ...]
 | **Default Value** | [] (no environment variables) |
 | **Format** | `"KEY=VALUE"` format |
 | **Variable Expansion in Values** | Can use internal variables `%{VAR}` |
-| **Merge Behavior** | Merged with Global.env (Group takes priority) |
+| **Merge Behavior** | Merged with Global.env_vars (Group takes priority) |
 
 #### Role
 
@@ -897,7 +897,7 @@ env_vars = [
 name = "connect"
 cmd = "/usr/bin/psql"
 args = ["-h", "%{DB_HOST}", "-p", "%{DB_PORT}"]
-# DB_HOST and DB_PORT are obtained from Group.env
+# DB_HOST and DB_PORT are obtained from Group.env_vars
 ```
 
 ##### Example 2: Overriding Global Settings
@@ -936,9 +936,9 @@ env_vars = ["APP_ROOT=/opt/myapp"]
 [[groups]]
 name = "web_group"
 env_vars = [
-    "WEB_DIR=%{APP_ROOT}/web",         # Reference APP_ROOT from Global.env
-    "STATIC_DIR=%{WEB_DIR}/static",    # Reference WEB_DIR from Group.env
-    "UPLOAD_DIR=%{WEB_DIR}/uploads",   # Reference WEB_DIR from Group.env
+    "WEB_DIR=%{APP_ROOT}/web",         # Reference APP_ROOT from Global.env_vars
+    "STATIC_DIR=%{WEB_DIR}/static",    # Reference WEB_DIR from Group.env_vars
+    "UPLOAD_DIR=%{WEB_DIR}/uploads",   # Reference WEB_DIR from Group.env_vars
 ]
 ```
 
@@ -1066,7 +1066,7 @@ cmd_allowed = [
 [[groups.commands]]
 name = "deploy_app"
 cmd = "/opt/deploy/push"
-args = ["--env=production"]
+args = ["--env_vars=production"]
 
 [[groups]]
 name = "monitoring"

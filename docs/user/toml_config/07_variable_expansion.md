@@ -18,18 +18,18 @@ go-safe-cmd-runner handles 2 types of variables:
 
 | Variable Type | Purpose | Reference Syntax | Definition Method | Impact on Child Process |
 |---------------|---------|------------------|-------------------|------------------------|
-| **Internal Variables** | For expansion only within TOML configuration files | `%{VAR}` | `vars`, `env_import` | None (default) |
-| **Process Environment Variables** | Set as environment variables for child processes | - | `env` | Yes |
+| **Internal Variables** | For expansion only within TOML configuration files | `%{var}` | `vars`, `env_import` | None (default) |
+| **Process Environment Variables** | Set as environment variables for child processes | - | `env_vars` | Yes |
 
 ### Locations Where Variables Can Be Used
 
 Variable expansion can be used in the following locations:
 
-- **cmd**: Path to the command to execute (use `%{VAR}`)
-- **args**: Command arguments (use `%{VAR}`)
-- **env**: Process environment variable values (use `%{VAR}` if needed)
-- **verify_files**: Paths of files to verify (use `%{VAR}`)
-- **vars**: Internal variable definitions (can reference other internal variables with `%{VAR}`)
+- **cmd**: Path to the command to execute (use `%{var}`)
+- **args**: Command arguments (use `%{var}`)
+- **env_vars**: Process environment variable values (use `%{var}` if needed)
+- **verify_files**: Paths of files to verify (use `%{var}`)
+- **vars**: Internal variable definitions (can reference other internal variables with `%{var}`)
 
 ## 7.2 Variable Expansion Syntax
 
@@ -38,9 +38,9 @@ Variable expansion can be used in the following locations:
 Internal variables are written in the format `%{variable_name}`:
 
 ```toml
-cmd = "%{VARIABLE_NAME}"
-args = ["%{ARG1}", "%{ARG2}"]
-env_vars = ["VAR=%{VALUE}"]
+cmd = "%{variable_name}"
+args = ["%{arg1}", "%{arg2}"]
+env_vars = ["VAR=%{value}"]
 ```
 
 ### Variable Naming Rules
@@ -110,7 +110,7 @@ args = ["-f", "%{output_file}", "mydb"]
 #### Reference Syntax
 
 - Reference in the format `%{variable_name}`
-- Can be used in the values of `cmd`, `args`, `verify_files`, `env`, and in other `vars` definitions
+- Can be used in the values of `cmd`, `args`, `verify_files`, `env_vars`, and in other `vars` definitions
 
 #### Basic Example
 
@@ -247,11 +247,11 @@ args = ["%{var1}"]
 
 ## 7.4 Defining Process Environment Variables
 
-### 7.4.1 Setting Environment Variables Using the `env` Field
+### 7.4.1 Setting Environment Variables Using the `env_vars` Field
 
 #### Overview
 
-Environment variables defined in the `env` field are passed to child processes when commands are executed. Internal variables (`%{VAR}`) can be used in these values.
+Environment variables defined in the `env_vars` field are passed to child processes when commands are executed. Internal variables (`%{var}`) can be used in these values.
 
 #### Configuration Format
 
@@ -280,18 +280,18 @@ vars = ["config_path=/etc/myapp/config.yml"]
 
 #### Inheritance and Merging
 
-The `env` field is merged as follows:
+The `env_vars` field is merged as follows:
 
-1. Global.env
-2. Group.env (combined with Global)
-3. Command.env (combined with Global + Group)
+1. Global.env_vars
+2. Group.env_vars (combined with Global)
+3. Command.env_vars (combined with Global + Group)
 
 When the same environment variable name is defined at multiple levels, the more specific level (Command > Group > Global) takes priority.
 
 #### Relationship with Internal Variables
 
-- Internal variables can be referenced in `env` values using the `%{VAR}` format
-- By default, environment variables defined in `env` are passed only to child processes and cannot be used as internal variables
+- Internal variables can be referenced in `env_vars` values using the `%{var}` format
+- By default, environment variables defined in `env_vars` are passed only to child processes and cannot be used as internal variables
 - If you want to use them as internal variables, define them in the `vars` field
 
 #### Example: Setting Process Environment Variables Using Internal Variables
@@ -1045,7 +1045,7 @@ env_vars = [
 
 ### 7.12.5 Isolation Between Commands
 
-Each command's `env` is independent and does not affect other commands:
+Each command's `env_vars` is independent and does not affect other commands:
 
 ```toml
 [[groups.commands]]
@@ -1075,10 +1075,10 @@ If a variable is not defined, an error occurs:
 name = "undefined_var"
 cmd = "/bin/echo"
 args = ["Value: ${UNDEFINED}"]
-# UNDEFINED is not defined in env → error
+# UNDEFINED is not defined in env_vars → error
 ```
 
-**Solution**: Define all required variables in `env`
+**Solution**: Define all required variables in `env_vars`
 
 ### Circular References
 
@@ -1416,12 +1416,12 @@ The go-safe-cmd-runner variable system consists of three main components:
 
 1. **Internal Variables** (`vars`, `env_import`)
    - Used exclusively for TOML expansion
-   - Referenced using `%{VAR}` syntax
+   - Referenced using `%{var}` syntax
    - Not passed to child processes (by default)
 
-2. **Process Environment Variables** (`env`)
+2. **Process Environment Variables** (`env_vars`)
    - Environment variables passed to child processes at execution time
-   - Can use internal variables `%{VAR}` in values
+   - Can use internal variables `%{var}` in values
 
 3. **Automatic Variables** (`__runner_datetime`, `__runner_pid`)
    - Automatically generated by the system
@@ -1431,7 +1431,7 @@ The go-safe-cmd-runner variable system consists of three main components:
 
 1. **Utilize internal variables**: Define values that are only needed for TOML expansion (like paths and URLs) using `vars`
 2. **Explicitly import with env_import**: Import system environment variables explicitly using `env_import` to make intentions clear
-3. **Minimize env usage**: Keep environment variables passed to child processes to the minimum necessary
+3. **Minimize env_vars usage**: Keep environment variables passed to child processes to the minimum necessary
 4. **Consider security**: Handle sensitive information carefully and avoid passing unnecessary environment variables
 5. **Standardize naming conventions**: Use lowercase with underscores for internal variables (e.g., `app_dir`), and uppercase for environment variables
 

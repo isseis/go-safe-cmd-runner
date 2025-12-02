@@ -201,9 +201,9 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 # 最終的な vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
 ```
 
-#### from_env (システム環境変数のインポート) - Merge 継承
+#### env_import (システム環境変数のインポート) - Merge 継承
 
-`from_env` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
+`env_import` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
 
 ```toml
 [global]
@@ -211,18 +211,18 @@ env_import = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env_vars = ["LANG", "LC_ALL"]  # グローバルの from_env とマージ
+env_import = ["LANG", "LC_ALL"]  # グローバルの env_import とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-# from_env を指定しないため、グループの from_env が適用される
+# env_import を指定しないため、グループの env_import が適用される
 # 継承された変数: HOME, USER (global) + LANG, LC_ALL (group)
 args = ["User: %{USER}, Lang: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
-from_env_vars = ["PWD"]  # グループの from_env とマージ
+env_import = ["PWD"]  # グループの env_import とマージ
 cmd = "/bin/echo"
 # 継承された変数: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
 args = ["Home: %{HOME}, PWD: %{PWD}"]
@@ -238,8 +238,8 @@ args = ["Home: %{HOME}, PWD: %{PWD}"]
 | workdir | グループ > グローバル | Override | コマンドレベルでは設定不可 |
 | env_allowed | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
 | vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
-| from_env | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
-| env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
+| env_import | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
+| env_vars | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
 | verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
 
 ### 2.3.6 実践例: 複雑な継承パターン
@@ -275,7 +275,7 @@ timeout = 300  # グローバルの 60 をオーバーライド
 
 ### 2.3.7 セキュリティベストプラクティス: 環境変数の定義レベル
 
-`env` (プロセス環境変数)は、グローバル・グループ・コマンドの全階層で定義可能ですが、セキュリティ観点から適切なレベルで定義することが重要です。
+`env_vars` (プロセス環境変数)は、グローバル・グループ・コマンドの全階層で定義可能ですが、セキュリティ観点から適切なレベルで定義することが重要です。
 
 #### 推奨される定義レベル
 
@@ -306,9 +306,9 @@ env_vars = [
 env_vars = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
 ```
 
-##### 2. vars と env の使い分け
+##### 2. vars と env_vars の使い分け
 
-内部変数 `vars` を活用し、必要な場合のみ `env` で子プロセスに公開します:
+内部変数 `vars` を活用し、必要な場合のみ `env_vars` で子プロセスに公開します:
 
 ```toml
 [global]
@@ -319,16 +319,16 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env_vars = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
+env_vars = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env_vars として公開
 
 [[groups.commands]]
 name = "log_check"
 cmd = "/bin/grep"
 args = ["ERROR", "%{app_dir}/logs/app.log"]
-# env は定義しない → db_password は子プロセスに渡らない
+# env_vars は定義しない → db_password は子プロセスに渡らない
 ```
 
-##### 3. グローバルレベルの env は安全な値のみ
+##### 3. グローバルレベルの env_vars は安全な値のみ
 
 グローバルレベルでは、全コマンドに渡しても安全な環境変数のみを定義します:
 
@@ -370,7 +370,7 @@ env_vars = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証
 
 - [ ] 機密情報(パスワード、トークン等)をグローバルレベルで定義していないか
 - [ ] 各コマンドに必要な環境変数のみを定義しているか
-- [ ] 内部変数 `vars` で管理できる値を不必要に `env` で公開していないか
+- [ ] 内部変数 `vars` で管理できる値を不必要に `env_vars` で公開していないか
 - [ ] `env_allowed` で必要最小限のシステム環境変数のみを許可しているか
 
 ## 次のステップ
