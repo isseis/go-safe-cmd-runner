@@ -216,14 +216,15 @@ args = ["status"]
 max_risk_level = "medium"
 ```
 
-### 自動環境変数
+### 自動変数
 
-システムは各コマンド実行時に自動的に環境変数を提供します：
+システムは以下の内部変数を自動的に提供します：
 
-- `__runner_datetime`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
+- `__runner_datetime`: runner実行開始タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
 - `__runner_pid`: runnerのプロセスID
+- `__runner_workdir`: グループの作業ディレクトリ（コマンドレベルで利用可能）
 
-これらの変数はコマンドパス、引数、環境変数の値で使用できます：
+これらの変数は`%{変数名}`の形式でコマンドパス、引数、環境変数の値で参照できます：
 
 ```toml
 [[groups.commands]]
@@ -237,7 +238,7 @@ cmd = "/bin/sh"
 args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/log/executions.log"]
 ```
 
-**注意**: プレフィックス `__runner_` は予約されており、ユーザー定義の環境変数では使用できません。
+**注意**: プレフィックス `__runner_` は予約されており、ユーザー定義の変数では使用できません。
 
 ### グループレベルコマンド許可リスト
 

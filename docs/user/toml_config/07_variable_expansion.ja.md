@@ -660,12 +660,13 @@ vars = ["percent=100"]
 
 ### 7.8.1 概要
 
-システムは各コマンド実行時に以下の内部変数を自動的に設定します:
+システムは以下の内部変数を自動的に設定します:
 
-- **`__runner_datetime`**: 実行時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
-- **`__runner_pid`**: runnerプロセスのプロセスID
+- **`__runner_datetime`**: runner実行開始時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現（グローバル変数）
+- **`__runner_pid`**: runnerプロセスのプロセスID（グローバル変数）
+- **`__runner_workdir`**: グループの作業ディレクトリ（グループ実行時に設定される変数、コマンドレベルでのみ利用可能）
 
-これらの変数は、**内部変数として利用可能**であり、`%{__runner_datetime}` や `%{__runner_pid}` の形式で参照できます。
+これらの変数は、**内部変数として利用可能**であり、`%{__runner_datetime}`、`%{__runner_pid}`、`%{__runner_workdir}` の形式で参照できます。
 
 ### 7.8.2 使用例
 
@@ -721,6 +722,23 @@ args = [
 ```
 Executed at 20251005143022.123 by PID 12345
 ```
+
+#### 作業ディレクトリの参照
+
+```toml
+[[groups]]
+name = "backup_group"
+
+[[groups.commands]]
+name = "create_backup"
+description = "作業ディレクトリにバックアップファイルを作成"
+cmd = "/usr/bin/tar"
+args = ["czf", "%{__runner_workdir}/backup.tar.gz", "/data"]
+```
+
+実行例:
+- グループの作業ディレクトリが `/tmp/scr-backup_group-XXXXXX` の場合
+- バックアップファイル: `/tmp/scr-backup_group-XXXXXX/backup.tar.gz`
 
 #### 複数の自動変数の組み合わせ
 
