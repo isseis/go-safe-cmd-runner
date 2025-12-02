@@ -218,9 +218,9 @@ max_risk_level = "medium"
 
 ### 自動変数
 
-システムは各コマンド実行時に自動的に内部変数を提供します：
+システムは以下の内部変数を自動的に提供します：
 
-- `__runner_datetime`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
+- `__runner_datetime`: runner実行開始タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
 - `__runner_pid`: runnerのプロセスID
 - `__runner_workdir`: グループの作業ディレクトリ（コマンドレベルで利用可能）
 
