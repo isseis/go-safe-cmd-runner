@@ -66,71 +66,87 @@ record コマンドは、ハイブリッドエンコーディング方式を使�
 
 ```bash
 # カレントディレクトリにハッシュを記録
-record -file /usr/bin/backup.sh
+record /usr/bin/backup.sh
 ```
 
 実行結果：
 ```
-Recorded hash for /usr/bin/backup.sh in /home/user/~usr~bin~backup.sh
+Processing 1 file...
+[1/1] /usr/bin/backup.sh: OK (~usr~bin~backup.sh)
+
+Summary: 1 succeeded, 0 failed
 ```
 
 ### 2.2 ハッシュディレクトリを指定
 
 ```bash
 # 特定のディレクトリにハッシュを記録
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# 短縮形を使用
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 実行結果：
 ```
-Recorded hash for /usr/bin/backup.sh in /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
+Processing 1 file...
+[1/1] /usr/bin/backup.sh: OK (~usr~bin~backup.sh)
+
+Summary: 1 succeeded, 0 failed
 ```
 
 ### 2.3 既存のハッシュを上書き
 
 ```bash
 # 既存のハッシュファイルを強制的に上書き
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
+record -force -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 2.4 複数ファイルの一括記録
 
 ```bash
-# スクリプトで複数ファイルを記録
-for file in /usr/local/bin/*.sh; do
-    record -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-done
+# 複数ファイルを直接指定（推奨）
+record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh /usr/local/bin/deploy.sh
+
+# ワイルドカードを使用
+record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 ## 3. コマンドラインフラグ詳解
 
-### 3.1 `-file <path>` (必須)
+### 3.1 ファイル指定（ポジショナル引数）
 
 **概要**
 
-ハッシュ値を記録するファイルのパスを指定します。
+ハッシュ値を記録するファイルをポジショナル引数として指定します。複数ファイルを同時に指定できます。
 
 **文法**
 
 ```bash
-record -file <path>
+record [flags] <file> [<file>...]
 ```
 
 **パラメータ**
 
-- `<path>`: ハッシュを記録したいファイルへの絶対パスまたは相対パス（必須）
+- `<file>`: ハッシュを記録したいファイルへの絶対パスまたは相対パス（1つ以上必須）
 
 **使用例**
 
 ```bash
 # 絶対パスで指定
-record -file /usr/bin/backup.sh
+record /usr/bin/backup.sh
 
 # 相対パスで指定
-record -file ./scripts/deploy.sh
+record ./scripts/deploy.sh
 
 # ホームディレクトリのファイル
-record -file ~/bin/custom-script.sh
+record ~/bin/custom-script.sh
+
+# 複数ファイルを指定
+record /usr/bin/backup.sh /usr/bin/restore.sh
+
+# ワイルドカードを使用
+record /usr/local/bin/*.sh
 ```
 
 **注意事項**
@@ -139,7 +155,7 @@ record -file ~/bin/custom-script.sh
 - シンボリックリンクの場合、リンク先のファイルのハッシュが記録されます
 - ディレクトリは指定できません（ファイルのみ）
 
-### 3.2 `-hash-dir <directory>` (オプション)
+### 3.2 `-hash-dir <directory>` / `-d <directory>` (オプション)
 
 **概要**
 
@@ -148,7 +164,8 @@ record -file ~/bin/custom-script.sh
 **文法**
 
 ```bash
-record -file <path> -hash-dir <directory>
+record -hash-dir <directory> <file>...
+record -d <directory> <file>...
 ```
 
 **パラメータ**
@@ -160,13 +177,16 @@ record -file <path> -hash-dir <directory>
 
 ```bash
 # 標準のハッシュディレクトリに保存
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# 短縮形を使用
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # カスタムディレクトリに保存（テスト用）
-record -file ./test.sh -hash-dir ./test-hashes
+record -d ./test-hashes ./test.sh
 
 # 相対パスで指定
-record -file /etc/config.toml -hash-dir ../hashes
+record -d ../hashes /etc/config.toml
 ```
 
 **ディレクトリの自動作成**
@@ -175,7 +195,7 @@ record -file /etc/config.toml -hash-dir ../hashes
 
 ```bash
 # ディレクトリが存在しない場合でもOK
-record -file /usr/bin/backup.sh -hash-dir /new/hash/directory
+record -d /new/hash/directory /usr/bin/backup.sh
 # /new/hash/directory が自動的に作成されます
 ```
 
@@ -193,7 +213,7 @@ sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # ハッシュを記録
-sudo record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 3.3 `-force` (オプション)
@@ -205,7 +225,7 @@ sudo record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner
 **文法**
 
 ```bash
-record -file <path> -hash-dir <directory> -force
+record -force [-hash-dir <directory>] <file>...
 ```
 
 **使用例**
@@ -214,10 +234,10 @@ record -file <path> -hash-dir <directory> -force
 
 ```bash
 # 1回目は成功
-record -file /usr/bin/backup.sh -hash-dir ./hashes
+record -d ./hashes /usr/bin/backup.sh
 
 # 2回目はエラー
-record -file /usr/bin/backup.sh -hash-dir ./hashes
+record -d ./hashes /usr/bin/backup.sh
 # Error: hash file already exists: ./hashes/~usr~bin~backup.sh
 ```
 
@@ -225,8 +245,7 @@ record -file /usr/bin/backup.sh -hash-dir ./hashes
 
 ```bash
 # 既存のハッシュファイルを上書き
-record -file /usr/bin/backup.sh -hash-dir ./hashes -force
-# Recorded hash for /usr/bin/backup.sh in ./hashes/~usr~bin~backup.sh
+record -force -d ./hashes /usr/bin/backup.sh
 ```
 
 **ユースケース**
@@ -239,9 +258,7 @@ record -file /usr/bin/backup.sh -hash-dir ./hashes -force
 
 ```bash
 # 全スクリプトのハッシュを強制的に再記録
-for file in /usr/local/bin/*.sh; do
-    record -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
-done
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 **注意事項**
@@ -269,19 +286,15 @@ sudo chmod 755 "$HASH_DIR"
 
 # 設定ファイルのハッシュを記録
 echo "Recording configuration files..."
-sudo record -file /etc/go-safe-cmd-runner/backup.toml -hash-dir "$HASH_DIR"
-sudo record -file /etc/go-safe-cmd-runner/deploy.toml -hash-dir "$HASH_DIR"
+sudo record -d "$HASH_DIR" /etc/go-safe-cmd-runner/backup.toml /etc/go-safe-cmd-runner/deploy.toml
 
 # 実行スクリプトのハッシュを記録
 echo "Recording executable scripts..."
-sudo record -file /usr/local/bin/backup.sh -hash-dir "$HASH_DIR"
-sudo record -file /usr/local/bin/deploy.sh -hash-dir "$HASH_DIR"
-sudo record -file /usr/local/bin/cleanup.sh -hash-dir "$HASH_DIR"
+sudo record -d "$HASH_DIR" /usr/local/bin/backup.sh /usr/local/bin/deploy.sh /usr/local/bin/cleanup.sh
 
 # システムバイナリのハッシュを記録
 echo "Recording system binaries..."
-sudo record -file /usr/bin/rsync -hash-dir "$HASH_DIR"
-sudo record -file /usr/bin/pg_dump -hash-dir "$HASH_DIR"
+sudo record -d "$HASH_DIR" /usr/bin/rsync /usr/bin/pg_dump
 
 echo "Hash recording completed successfully!"
 ```
@@ -298,9 +311,7 @@ sudo cp /usr/local/bin/backup.sh /usr/local/bin/backup.sh.bak
 sudo vim /usr/local/bin/backup.sh
 
 # 3. ハッシュを再記録
-sudo record -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+sudo record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 
 # 4. 動作確認
 runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run
@@ -318,10 +329,8 @@ HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 SCRIPT_DIR="/usr/local/bin"
 
 # .sh ファイルを全て記録
-for script in "$SCRIPT_DIR"/*.sh; do
-    echo "Recording: $script"
-    sudo record -file "$script" -hash-dir "$HASH_DIR" -force
-done
+echo "Recording scripts in $SCRIPT_DIR..."
+sudo record -force -d "$HASH_DIR" "$SCRIPT_DIR"/*.sh
 
 echo "All scripts recorded successfully!"
 ```
@@ -340,17 +349,11 @@ FILE_LIST="files-to-record.txt"
 # /usr/local/bin/deploy.sh
 # /etc/config.toml
 
-while IFS= read -r file; do
-    # コメント行と空行をスキップ
-    [[ "$file" =~ ^#.*$ ]] && continue
-    [[ -z "$file" ]] && continue
-
-    echo "Recording: $file"
-    sudo record -file "$file" -hash-dir "$HASH_DIR" -force || {
-        echo "Error recording: $file"
-        exit 1
-    }
-done < "$FILE_LIST"
+# ファイルリストを配列に読み込んで一括記録
+mapfile -t FILES < <(grep -v '^#' "$FILE_LIST" | grep -v '^$')
+if [[ ${#FILES[@]} -gt 0 ]]; then
+    sudo record -force -d "$HASH_DIR" "${FILES[@]}"
+fi
 
 echo "All files recorded successfully!"
 ```
@@ -387,19 +390,11 @@ jobs:
 
       - name: Record hashes for scripts
         run: |
-          for script in scripts/*.sh; do
-            sudo record -file "$script" \
-              -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-              -force
-          done
+          sudo record -force -d /usr/local/etc/go-safe-cmd-runner/hashes scripts/*.sh
 
       - name: Record hashes for configs
         run: |
-          for config in config/*.toml; do
-            sudo record -file "$config" \
-              -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-              -force
-          done
+          sudo record -force -d /usr/local/etc/go-safe-cmd-runner/hashes config/*.toml
 
       - name: Commit hash files
         run: |
@@ -430,16 +425,21 @@ BINARIES=(
     "/usr/bin/gzip"
 )
 
-echo "Updating hashes for system binaries..."
-
+# 存在するバイナリのみをフィルタリング
+EXISTING_BINARIES=()
 for binary in "${BINARIES[@]}"; do
     if [[ -f "$binary" ]]; then
-        echo "Recording: $binary"
-        sudo record -file "$binary" -hash-dir "$HASH_DIR" -force
+        EXISTING_BINARIES+=("$binary")
     else
         echo "Warning: $binary not found, skipping"
     fi
 done
+
+# 存在するバイナリのハッシュを一括記録
+if [[ ${#EXISTING_BINARIES[@]} -gt 0 ]]; then
+    echo "Updating hashes for system binaries..."
+    sudo record -force -d "$HASH_DIR" "${EXISTING_BINARIES[@]}"
+fi
 
 echo "Hash update completed!"
 ```
@@ -466,8 +466,7 @@ TEST_HASH_DIR="./test-hashes"
 mkdir -p "$TEST_HASH_DIR"
 
 # テストスクリプトのハッシュを記録
-record -file ./test/test-script.sh -hash-dir "$TEST_HASH_DIR"
-record -file ./test/test-config.toml -hash-dir "$TEST_HASH_DIR"
+record -d "$TEST_HASH_DIR" ./test/test-script.sh ./test/test-config.toml
 
 # テスト実行
 runner -config ./test/test-config.toml -dry-run
@@ -481,7 +480,9 @@ echo "Test setup completed!"
 
 **エラーメッセージ**
 ```
-Error: file not found: /usr/bin/backup.sh
+Processing 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Error recording hash for /usr/bin/backup.sh: file not found
 ```
 
 **対処法**
@@ -501,7 +502,7 @@ pwd
 
 **エラーメッセージ**
 ```
-Error: permission denied: /usr/local/etc/go-safe-cmd-runner/hashes
+Error creating validator: permission denied: /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 **対処法**
@@ -514,15 +515,16 @@ ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # または sudo で record を実行
-sudo record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.3 既存のハッシュファイルが存在
 
 **エラーメッセージ**
 ```
-Error: hash file already exists: /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
+Processing 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Error recording hash for /usr/bin/backup.sh: hash file already exists
 ```
 
 **対処法**
@@ -530,9 +532,7 @@ Error: hash file already exists: /usr/local/etc/go-safe-cmd-runner/hashes/~usr~b
 **方法1: -force フラグを使用**
 
 ```bash
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **方法2: 既存のハッシュファイルを削除**
@@ -540,8 +540,7 @@ record -file /usr/bin/backup.sh \
 ```bash
 # ハッシュファイルを削除してから再記録
 sudo rm /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
-sudo record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **方法3: バックアップを取ってから上書き**
@@ -552,9 +551,7 @@ sudo cp /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh \
        /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh.bak
 
 # 強制的に上書き
-sudo record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+sudo record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.4 シンボリックリンクのハッシュ記録
@@ -568,8 +565,7 @@ sudo record -file /usr/bin/backup.sh \
 ln -s /usr/local/bin/backup-v2.sh /usr/local/bin/backup.sh
 
 # ハッシュを記録（リンク先のファイルのハッシュが記録される）
-record -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 ```
 
 **注意事項**
@@ -582,21 +578,21 @@ record -file /usr/local/bin/backup.sh \
 
 **エラーメッセージ**
 ```
-Error: cannot record hash for directory: /usr/local/bin
+Processing 1 file...
+[1/1] /usr/local/bin: FAILED
+Error recording hash for /usr/local/bin: cannot record hash for directory
 ```
 
 **対処法**
 
-ディレクトリ内の全ファイルのハッシュを記録したい場合は、ループを使用します：
+ディレクトリ内の全ファイルのハッシュを記録したい場合は、ワイルドカードを使用します：
 
 ```bash
 # ディレクトリ内の全ファイルのハッシュを記録
-for file in /usr/local/bin/*; do
-    if [[ -f "$file" ]]; then
-        record -file "$file" \
-            -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-    fi
-done
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*
+
+# または特定の拡張子のみ
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 ## 6. 関連ドキュメント

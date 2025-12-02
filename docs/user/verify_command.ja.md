@@ -50,45 +50,51 @@
 
 ```bash
 # カレントディレクトリのハッシュファイルを使用して検証
-verify -file /usr/bin/backup.sh
+verify /usr/bin/backup.sh
 ```
 
 成功時の出力：
 ```
-OK: /usr/bin/backup.sh
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: OK
+
+Summary: 1 succeeded, 0 failed
 ```
 
 失敗時の出力：
 ```
-Verification failed: hash mismatch
-Expected: abc123def456...
-Got:      def456abc123...
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: hash mismatch
+
+Summary: 0 succeeded, 1 failed
 ```
 
 ### 2.2 ハッシュディレクトリを指定
 
 ```bash
 # 特定のディレクトリのハッシュファイルを使用
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# 短縮形を使用
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 2.3 複数ファイルの検証
 
 ```bash
-# スクリプトで複数ファイルを検証
-for file in /usr/local/bin/*.sh; do
-    echo "Verifying: $file"
-    verify -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes || {
-        echo "Verification failed for: $file"
-    }
-done
+# 複数ファイルを直接指定（推奨）
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh /usr/local/bin/deploy.sh
+
+# ワイルドカードを使用
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 ### 2.4 終了コードによる判定
 
 ```bash
 # 終了コードで検証結果を判定
-if verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes; then
+if verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh; then
     echo "File is valid"
 else
     echo "File verification failed"
@@ -98,33 +104,39 @@ fi
 
 ## 3. コマンドラインフラグ詳解
 
-### 3.1 `-file <path>` (必須)
+### 3.1 ファイル指定（ポジショナル引数）
 
 **概要**
 
-検証するファイルのパスを指定します。
+検証するファイルをポジショナル引数として指定します。複数ファイルを同時に指定できます。
 
 **文法**
 
 ```bash
-verify -file <path>
+verify [flags] <file> [<file>...]
 ```
 
 **パラメータ**
 
-- `<path>`: 検証したいファイルへの絶対パスまたは相対パス（必須）
+- `<file>`: 検証したいファイルへの絶対パスまたは相対パス（1つ以上必須）
 
 **使用例**
 
 ```bash
 # 絶対パスで指定
-verify -file /usr/bin/backup.sh
+verify /usr/bin/backup.sh
 
 # 相対パスで指定
-verify -file ./scripts/deploy.sh
+verify ./scripts/deploy.sh
 
 # ホームディレクトリのファイル
-verify -file ~/bin/custom-script.sh
+verify ~/bin/custom-script.sh
+
+# 複数ファイルを指定
+verify /usr/bin/backup.sh /usr/bin/restore.sh
+
+# ワイルドカードを使用
+verify /usr/local/bin/*.sh
 ```
 
 **注意事項**
@@ -133,7 +145,7 @@ verify -file ~/bin/custom-script.sh
 - 対応するハッシュファイルが存在しない場合もエラーになります
 - シンボリックリンクの場合、リンク先のファイルが検証されます
 
-### 3.2 `-hash-dir <directory>` (オプション)
+### 3.2 `-hash-dir <directory>` / `-d <directory>` (オプション)
 
 **概要**
 
@@ -142,7 +154,8 @@ verify -file ~/bin/custom-script.sh
 **文法**
 
 ```bash
-verify -file <path> -hash-dir <directory>
+verify -hash-dir <directory> <file>...
+verify -d <directory> <file>...
 ```
 
 **パラメータ**
@@ -154,13 +167,16 @@ verify -file <path> -hash-dir <directory>
 
 ```bash
 # 標準のハッシュディレクトリを使用
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# 短縮形を使用
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # カスタムディレクトリを使用（テスト用）
-verify -file ./test.sh -hash-dir ./test-hashes
+verify -d ./test-hashes ./test.sh
 
 # 相対パスで指定
-verify -file /etc/config.toml -hash-dir ../hashes
+verify -d ../hashes /etc/config.toml
 ```
 
 **ハッシュファイルの検索**
@@ -171,7 +187,7 @@ verify -file /etc/config.toml -hash-dir ../hashes
 # /usr/bin/backup.sh の場合
 # ハッシュファイル: <hash-dir>/~usr~bin~backup.sh
 
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 # 実際に検索されるファイル:
 # /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
 ```
@@ -195,28 +211,15 @@ verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hash
 HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 CONFIG_FILE="/etc/go-safe-cmd-runner/backup.toml"
 
-# 設定ファイルを検証
-echo "Verifying configuration file..."
-if ! verify -file "$CONFIG_FILE" -hash-dir "$HASH_DIR"; then
-    echo "Error: Configuration file verification failed"
+# 設定ファイルと実行ファイルを一括検証
+echo "Verifying all files..."
+if ! verify -d "$HASH_DIR" "$CONFIG_FILE" \
+    /usr/local/bin/backup.sh \
+    /usr/local/bin/cleanup.sh \
+    /usr/bin/rsync; then
+    echo "Error: Verification failed"
     exit 1
 fi
-
-# TOML設定から verify_files を抽出して検証（手動で指定）
-FILES=(
-    "/usr/local/bin/backup.sh"
-    "/usr/local/bin/cleanup.sh"
-    "/usr/bin/rsync"
-)
-
-echo "Verifying executable files..."
-for file in "${FILES[@]}"; do
-    echo "  Checking: $file"
-    if ! verify -file "$file" -hash-dir "$HASH_DIR"; then
-        echo "  Error: Verification failed for $file"
-        exit 1
-    fi
-done
 
 echo "All files verified successfully!"
 echo "You can now run: runner -config $CONFIG_FILE"
@@ -266,7 +269,7 @@ fi
 
 # 検証を実行
 echo "Running verification:"
-verify -file "$FILE" -hash-dir "$HASH_DIR"
+verify -d "$HASH_DIR" "$FILE"
 ```
 
 ### 4.3 定期的な整合性チェック
@@ -291,25 +294,14 @@ CRITICAL_FILES=(
     "/usr/bin/rsync"
 )
 
-FAILED=0
-
-for file in "${CRITICAL_FILES[@]}"; do
-    if verify -file "$file" -hash-dir "$HASH_DIR" >> "$LOG_FILE" 2>&1; then
-        echo "OK: $file" >> "$LOG_FILE"
-    else
-        echo "FAILED: $file" >> "$LOG_FILE"
-        FAILED=1
-
-        # Slack通知などの警告処理
-        # send-alert.sh "$file verification failed"
-    fi
-done
-
-if [[ $FAILED -eq 1 ]]; then
-    echo "Integrity check failed. See $LOG_FILE for details" >&2
-    exit 1
-else
+# 一括検証を実行
+if verify -d "$HASH_DIR" "${CRITICAL_FILES[@]}" >> "$LOG_FILE" 2>&1; then
     echo "All files verified successfully" >> "$LOG_FILE"
+else
+    echo "Integrity check failed. See $LOG_FILE for details" >&2
+    # Slack通知などの警告処理
+    # send-alert.sh "Integrity check failed"
+    exit 1
 fi
 ```
 
@@ -352,16 +344,11 @@ jobs:
 
       - name: Verify configuration files
         run: |
-          verify -file config/backup.toml \
-            -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          verify -d /usr/local/etc/go-safe-cmd-runner/hashes config/*.toml
 
       - name: Verify scripts
         run: |
-          for script in scripts/*.sh; do
-            echo "Verifying: $script"
-            verify -file "$script" \
-              -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-          done
+          verify -d /usr/local/etc/go-safe-cmd-runner/hashes scripts/*.sh
 
       - name: Report failure
         if: failure()
@@ -386,32 +373,19 @@ CONFIG_FILE="/etc/go-safe-cmd-runner/deploy.toml"
 
 echo "=== Pre-deployment Verification ==="
 
-# 設定ファイルを検証
-echo "Verifying configuration file..."
-if ! verify -file "$CONFIG_FILE" -hash-dir "$HASH_DIR"; then
-    echo "Error: Configuration file verification failed"
+# 設定ファイルとデプロイスクリプトを一括検証
+echo "Verifying all files..."
+if ! verify -d "$HASH_DIR" "$CONFIG_FILE" \
+    /usr/local/bin/deploy-app.sh \
+    /usr/local/bin/migrate-db.sh \
+    /usr/local/bin/restart-services.sh; then
+    echo "Error: Verification failed"
     echo "Possible causes:"
-    echo "  - Configuration file has been modified"
-    echo "  - Hash file is outdated"
-    echo "  - Hash file is missing"
+    echo "  - Files have been modified"
+    echo "  - Hash files are outdated"
+    echo "  - Hash files are missing"
     exit 1
 fi
-
-# デプロイスクリプトを検証
-echo "Verifying deployment scripts..."
-SCRIPTS=(
-    "/usr/local/bin/deploy-app.sh"
-    "/usr/local/bin/migrate-db.sh"
-    "/usr/local/bin/restart-services.sh"
-)
-
-for script in "${SCRIPTS[@]}"; do
-    echo "  Checking: $script"
-    if ! verify -file "$script" -hash-dir "$HASH_DIR"; then
-        echo "  Error: Script verification failed"
-        exit 1
-    fi
-done
 
 echo "All verifications passed!"
 echo ""
@@ -501,7 +475,9 @@ fi
 
 **エラーメッセージ**
 ```
-Error: file not found: /usr/bin/backup.sh
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: file not found
 ```
 
 **対処法**
@@ -521,7 +497,9 @@ ls -lL /usr/bin/backup.sh
 
 **エラーメッセージ**
 ```
-Error: hash file not found
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: hash file not found
 ```
 
 **対処法**
@@ -530,7 +508,7 @@ Error: hash file not found
 
 ```bash
 # ハッシュを記録
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **原因2: 間違ったハッシュディレクトリを指定**
@@ -540,7 +518,7 @@ record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hash
 find /usr/local/etc/go-safe-cmd-runner -name "*backup.sh*"
 
 # 正しいディレクトリで再度検証
-verify -file /usr/bin/backup.sh -hash-dir /path/to/correct/hash-dir
+verify -d /path/to/correct/hash-dir /usr/bin/backup.sh
 ```
 
 **原因3: ハッシュファイル名の問題**
@@ -557,9 +535,9 @@ ls -la /usr/local/etc/go-safe-cmd-runner/hashes/
 
 **エラーメッセージ**
 ```
-Verification failed: hash mismatch
-Expected: abc123def456789...
-Got:      def456abc123xyz...
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: hash mismatch
 ```
 
 **原因と対処法**
@@ -571,9 +549,7 @@ Got:      def456abc123xyz...
 ls -l /usr/bin/backup.sh
 
 # ファイルが意図的に更新された場合、ハッシュを再記録
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **原因2: ファイルが改ざんされた**
@@ -585,8 +561,7 @@ sudo chown root:root /usr/bin/backup.sh
 sudo chmod 755 /usr/bin/backup.sh
 
 # 検証を再実行
-verify -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **原因3: ハッシュファイルが古い**
@@ -601,16 +576,14 @@ echo "File:"; ls -l /usr/bin/backup.sh
 echo "Hash:"; ls -l "$HASH_FILE"
 
 # ハッシュが古い場合は再記録
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.4 権限エラー
 
 **エラーメッセージ**
 ```
-Error: permission denied: /usr/local/etc/go-safe-cmd-runner/hashes
+Error creating validator: permission denied: /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 **対処法**
@@ -623,8 +596,7 @@ ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # またはsudoで実行
-sudo verify -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.5 シンボリックリンクの検証
@@ -635,8 +607,7 @@ sudo verify -file /usr/bin/backup.sh \
 
 ```bash
 # シンボリックリンクの検証
-verify -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 
 # リンク先のファイルのハッシュと比較されます
 ```
@@ -651,9 +622,7 @@ verify -file /usr/local/bin/backup.sh \
 ls -lL /usr/local/bin/backup.sh
 
 # リンク先が変更された場合はハッシュを再記録
-record -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 ```
 
 ### 5.6 スクリプトでのエラーハンドリング
@@ -668,10 +637,11 @@ HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 FILE="/usr/bin/backup.sh"
 
 # 検証を実行し、エラーを詳細に処理
-if verify -file "$FILE" -hash-dir "$HASH_DIR" 2>&1 | tee /tmp/verify-output.txt; then
+verify -d "$HASH_DIR" "$FILE" 2>&1 | tee /tmp/verify-output.txt
+EXIT_CODE=${PIPESTATUS[0]}
+if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
 else
-    EXIT_CODE=$?
     echo "Verification failed: $FILE"
     echo "Exit code: $EXIT_CODE"
     echo "Output:"
@@ -682,7 +652,7 @@ else
         echo "Error: File does not exist"
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
-        echo "Run: record -file $FILE -hash-dir $HASH_DIR"
+        echo "Run: record -d $HASH_DIR $FILE"
     elif grep -q "hash mismatch" /tmp/verify-output.txt; then
         echo "Error: File has been modified"
         echo "Current hash:"

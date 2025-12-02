@@ -450,7 +450,7 @@ env_allowed = ["HOME", "USER", "PATH"]
 [[groups.commands]]
 name = "show_user_info"
 cmd = "/bin/echo"
-from_env_vars = ["USER", "HOME"]
+env_import = ["USER", "HOME"]
 args = ["User: %{USER}, Home: %{HOME}"]
 ```
 
@@ -459,11 +459,11 @@ args = ["User: %{USER}, Home: %{HOME}"]
 ```toml
 [global]
 env_allowed = ["HOME", "USER", "PATH", "LANG"]
-from_env_vars = ["HOME", "USER"]  # グローバルレベル
+env_import = ["HOME", "USER"]  # グローバルレベル
 
 [[groups]]
 name = "intl_tasks"
-from_env_vars = ["LANG"]  # グループレベル: グローバルの from_env とマージ
+env_import = ["LANG"]  # グループレベル: グローバルの from_env とマージ
 
 [[groups.commands]]
 name = "task1"
@@ -475,7 +475,7 @@ args = ["User: %{USER}, Language: %{LANG}"]
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-from_env_vars = ["PATH"]  # コマンドレベル: グループとマージ
+env_import = ["PATH"]  # コマンドレベル: グループとマージ
 # 継承された変数: HOME, USER (global) + LANG (group) + PATH (command)
 args = ["Path: %{PATH}, Home: %{HOME}"]
 ```
@@ -493,7 +493,7 @@ env_allowed = ["HOME", "USER"]
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-from_env_vars = ["HOME", "PATH"]  # エラー: PATH は env_allowed に含まれていない
+env_import = ["HOME", "PATH"]  # エラー: PATH は env_allowed に含まれていない
 args = ["%{HOME}"]
 ```
 
@@ -503,16 +503,16 @@ args = ["%{HOME}"]
 
 ```toml
 [global]
-from_env_vars = ["HOME", "USER"]
+env_import = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env_vars = ["LANG", "LC_ALL"]
+env_import = ["LANG", "LC_ALL"]
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-from_env_vars = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD がすべて利用可能
+env_import = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD がすべて利用可能
 args = ["User: %{USER}, PWD: %{PWD}"]
 ```
 
@@ -524,7 +524,7 @@ args = ["User: %{USER}, PWD: %{PWD}"]
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-from_env_vars = ["NONEXISTENT_VAR"]
+env_import = ["NONEXISTENT_VAR"]
 args = ["Value: %{NONEXISTENT_VAR}"]  # "Value: " と出力される
 ```
 

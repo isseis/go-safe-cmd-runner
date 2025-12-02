@@ -493,7 +493,7 @@ version = "1.0"
 
 [global]
 env_allowed = ["HOME", "USER"]
-from_env_vars = [
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -515,7 +515,7 @@ version = "1.0"
 
 [global]
 env_allowed = ["PATH", "HOME"]
-from_env_vars = [
+env_import = [
     "user_path=PATH",
     "home=HOME"
 ]
@@ -538,7 +538,7 @@ version = "1.0"
 
 [global]
 env_allowed = ["APP_ENV"]
-from_env_vars = ["environment=APP_ENV"]
+env_import = ["environment=APP_ENV"]
 vars = [
     "config_dir=/etc/myapp/%{environment}",
     "log_level=%{environment}"  # 環境に応じたログレベル
@@ -558,7 +558,7 @@ args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
 ```toml
 [global]
 env_allowed = ["HOME"]
-from_env_vars = [
+env_import = [
     "home=HOME",    # OK: HOME は allowlist に含まれている
     "path=PATH"     # エラー: PATH は allowlist に含まれていない
 ]
@@ -576,7 +576,7 @@ system environment variable 'PATH' (mapped to 'path' in global.from_env) is not 
 ```toml
 [global]
 env_allowed = ["HOME", "USER", "HOSTNAME"]
-from_env_vars = [
+env_import = [
     "user_home=HOME",       # HOME を user_home として参照
     "current_user=USER",    # USER を current_user として参照
     "host=HOSTNAME"         # HOSTNAME を host として参照
@@ -597,7 +597,7 @@ args = ["User: %{current_user}, Home: %{user_home}, Host: %{host}"]
 ```toml
 [global]
 env_allowed = ["NONEXISTENT_VAR"]
-from_env_vars = ["var=NONEXISTENT_VAR"]
+env_import = ["var=NONEXISTENT_VAR"]
 # 警告: System environment variable 'NONEXISTENT_VAR' is not set
 # var には空文字列が設定される
 ```
@@ -609,7 +609,7 @@ from_env_vars = ["var=NONEXISTENT_VAR"]
 ```toml
 [global]
 env_allowed = ["HOME"]
-from_env_vars = [
+env_import = [
     "home=HOME",            # 正しい
     "user_home=HOME",       # 正しい
     "HOME=HOME",            # 正しい(大文字も可)
@@ -714,7 +714,7 @@ version = "1.0"
 
 [global]
 env_allowed = ["HOME", "USER"]
-from_env_vars = [
+env_import = [
     "home=HOME",
     "username=USER"
 ]

@@ -470,7 +470,7 @@ version = "1.0"
 
 [global]
 env_allowed = ["HOME", "USER"]
-from_env_vars = [
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -493,14 +493,14 @@ version = "1.0"
 
 [global]
 env_allowed = ["HOME", "USER", "PATH"]
-from_env_vars = [
+env_import = [
     "home=HOME",
     "user=USER"
 ]
 
 [[groups]]
 name = "merge_group"
-from_env_vars = [
+env_import = [
     "path=PATH"  # Global.from_env と統合（マージ）
 ]
 
@@ -518,14 +518,14 @@ version = "1.0"
 
 [global]
 env_allowed = ["HOME", "USER", "HOSTNAME"]
-from_env_vars = [
+env_import = [
     "home=HOME",
     "user=USER"
 ]
 
 [[groups]]
 name = "override_merge_group"
-from_env_vars = [
+env_import = [
     "home=CUSTOM_HOME_DIR",  # home を上書き
     "host=HOSTNAME"           # 新しい変数を追加
 ]
@@ -544,11 +544,11 @@ version = "1.0"
 
 [global]
 env_allowed = ["HOME"]
-from_env_vars = ["home=HOME"]
+env_import = ["home=HOME"]
 
 [[groups]]
 name = "empty_merge_group"
-from_env_vars = []  # 空配列: Global.from_env を継承（Merge方式）
+env_import = []  # 空配列: Global.from_env を継承（Merge方式）
 
 [[groups.commands]]
 name = "show_home"

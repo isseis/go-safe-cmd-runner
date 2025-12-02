@@ -134,12 +134,11 @@ args = ["Hello, World!"]
 1. **設定ファイルの作成**: `config.toml` ファイルを作成
 2. **ハッシュファイルの作成** (必要な場合):
    ```bash
-record -file config.toml
-record -file /bin/echo
+   record config.toml /bin/echo
    ```
 3. **実行**:
    ```bash
-   go-safe-cmd-runner -file config.toml
+   runner -c config.toml
    ```
 
 ## 推奨される学習順序

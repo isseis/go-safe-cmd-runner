@@ -60,13 +60,13 @@ runner -config config.toml -dry-run
 **クイックスタート:**
 ```bash
 # ハッシュを記録
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # 既存のハッシュを上書き
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# 複数ファイルを一括記録
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 **こんな時に:**
@@ -90,13 +90,10 @@ record -file /usr/bin/backup.sh \
 **クイックスタート:**
 ```bash
 # ファイルを検証
-verify -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # 複数ファイルの検証
-for file in /usr/local/bin/*.sh; do
-    verify -file "$file" -hash-dir /path/to/hashes
-done
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 **こんな時に:**
@@ -292,11 +289,9 @@ sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 3. ハッシュを記録
-sudo record -file /etc/go-safe-cmd-runner/backup.toml \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-
-sudo record -file /usr/bin/pg_dump \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /etc/go-safe-cmd-runner/backup.toml \
+    /usr/bin/pg_dump
 
 # 4. ドライランで確認
 runner -config /etc/go-safe-cmd-runner/backup.toml -dry-run
@@ -327,7 +322,7 @@ A: はい、プロジェクトの `sample/` ディレクトリに多数のサン
 A: 以下の順序で確認してください：
 
 1. **設定検証**: `runner -config config.toml -dry-run`
-2. **ファイル検証**: `verify -file <path> -hash-dir <hash-dir>`
+2. **ファイル検証**: `verify -d <hash-dir> <file>`
 3. **デバッグログ**: `runner -config config.toml -log-level debug`
 4. **トラブルシューティングガイド**:
    - [runner のトラブルシューティング](runner_command.ja.md#6-トラブルシューティング)
