@@ -15,8 +15,7 @@
 record backup-config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 実行バイナリのハッシュを記録
-record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /bin/ls -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/tar /bin/ls
 ```
 
 **設定ファイル (backup-config.toml):**
@@ -79,12 +78,10 @@ output_file = "backup-list.txt"
 record secure-backup.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Global verify_files で指定したファイルのハッシュを記録
-record /bin/sh -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/gpg -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/sh /bin/tar /usr/bin/gpg
 
 # Group verify_files で指定したファイルのハッシュを記録
-record /opt/secure/bin/backup-tool -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /opt/secure/bin/backup-tool
 ```
 
 **設定ファイル (secure-backup.toml):**
@@ -469,16 +466,17 @@ record /usr/bin/psql -d /usr/local/etc/go-safe-cmd-runner/hashes
 record /usr/bin/pg_dump -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 実行バイナリのハッシュを記録
-record /bin/tar -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/dpkg -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /opt/myapp/bin/migrate -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/systemctl -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/pip3 -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /bin/cp -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/nginx -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/curl -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /opt/tools/generate-report -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /bin/rm -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /bin/tar \
+    /usr/bin/dpkg \
+    /opt/myapp/bin/migrate \
+    /usr/bin/systemctl \
+    /usr/bin/pip3 \
+    /bin/cp \
+    /usr/bin/nginx \
+    /usr/bin/curl \
+    /opt/tools/generate-report \
+    /bin/rm
 ```
 
 **設定ファイル (deploy-fullstack.toml):**

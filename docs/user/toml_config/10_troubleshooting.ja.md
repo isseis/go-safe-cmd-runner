@@ -192,8 +192,7 @@ Error: file verification failed: /opt/app/script.sh: hash file not found
 
 ```bash
 # record コマンドでハッシュを記録
-record /usr/bin/tool
-record /opt/app/script.sh
+record /usr/bin/tool /opt/app/script.sh
 ```
 
 **ファイルが正当に変更された場合**:
@@ -603,8 +602,7 @@ env_allowed = ["PATH"]
 
 ```bash
 # ハッシュファイルの作成
-record config.toml
-record /usr/bin/tool
+record config.toml /usr/bin/tool
 ```
 
 ### Q4: タイムアウトエラーが頻発する
