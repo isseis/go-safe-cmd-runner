@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
@@ -20,25 +20,25 @@ func TestApplyGlobalDefaults(t *testing.T) {
 				VerifyStandardPaths: nil,
 			},
 			expected: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(true),
+				VerifyStandardPaths: commontesting.BoolPtr(true),
 			},
 		},
 		{
 			name: "VerifyStandardPaths true -> unchanged",
 			input: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(true),
+				VerifyStandardPaths: commontesting.BoolPtr(true),
 			},
 			expected: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(true),
+				VerifyStandardPaths: commontesting.BoolPtr(true),
 			},
 		},
 		{
 			name: "VerifyStandardPaths false -> unchanged",
 			input: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(false),
+				VerifyStandardPaths: commontesting.BoolPtr(false),
 			},
 			expected: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(false),
+				VerifyStandardPaths: commontesting.BoolPtr(false),
 			},
 		},
 	}

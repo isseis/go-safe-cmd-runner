@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -184,30 +183,6 @@ func (f FloatValue) Value() any {
 // MarshalJSON implements json.Marshaler interface
 func (f FloatValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(f.value)
-}
-
-// DurationValue represents a time.Duration parameter value
-type DurationValue struct {
-	value time.Duration
-}
-
-// NewDurationValue creates a new duration parameter value
-func NewDurationValue(v time.Duration) ParameterValue {
-	return DurationValue{value: v}
-}
-
-func (d DurationValue) String() string {
-	return fmt.Sprintf("%v", d.value)
-}
-
-// Value implements ParameterValue interface
-func (d DurationValue) Value() any {
-	return d.value
-}
-
-// MarshalJSON implements json.Marshaler interface
-func (d DurationValue) MarshalJSON() ([]byte, error) {
-	return json.Marshal(d.value)
 }
 
 // StringMapValue represents a variable map with control character escaping

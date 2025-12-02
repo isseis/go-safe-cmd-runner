@@ -49,13 +49,6 @@ func WithGroupKeepTempDirs(keep bool) GroupExecutorOption {
 	}
 }
 
-// WithSecurityLogger sets the security logger for timeout-related security events.
-func WithSecurityLogger(logger *logging.SecurityLogger) GroupExecutorOption {
-	return func(opts *groupExecutorOptions) {
-		opts.securityLogger = logger
-	}
-}
-
 // WithCurrentUser sets the current user name for security logging.
 // This should be obtained from a trusted source (e.g., os/user.Current())
 // rather than environment variables which can be spoofed.

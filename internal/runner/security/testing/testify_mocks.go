@@ -1,3 +1,5 @@
+//go:build test
+
 // Package securitytesting provides mock implementations for security validation testing.
 package securitytesting
 

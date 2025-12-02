@@ -36,16 +36,6 @@ func NewOutputSizeLimitFromPtr(ptr *int64) OutputSizeLimit {
 	return OutputSizeLimit{NewOptionalValueFromPtr(ptr)}
 }
 
-// NewUnsetOutputSizeLimit creates an unset OutputSizeLimit (will use default or inherit from parent).
-func NewUnsetOutputSizeLimit() OutputSizeLimit {
-	return OutputSizeLimit{NewUnsetOptionalValue[int64]()}
-}
-
-// NewUnlimitedOutputSizeLimit creates an OutputSizeLimit with unlimited output (no limit).
-func NewUnlimitedOutputSizeLimit() OutputSizeLimit {
-	return OutputSizeLimit{NewUnlimitedOptionalValue[int64]()}
-}
-
 // NewOutputSizeLimit creates an OutputSizeLimit with the specified size in bytes.
 // Returns error if bytes is negative.
 func NewOutputSizeLimit(bytes int64) (OutputSizeLimit, error) {

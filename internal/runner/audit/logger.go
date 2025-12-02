@@ -24,10 +24,10 @@ func NewAuditLogger() *Logger {
 	return &Logger{logger: slog.Default()}
 }
 
-// NewAuditLoggerWithCustom creates a new audit logger instance with a custom logger
-// This method is preserved for backwards compatibility and testing
-func NewAuditLoggerWithCustom(logger *slog.Logger) *Logger {
-	return &Logger{logger: logger}
+// NewAuditLoggerWithCustom creates a new audit logger instance using a custom logger
+// This is useful for testing or when a specific logger configuration is needed
+func NewAuditLoggerWithCustom(l *slog.Logger) *Logger {
+	return &Logger{logger: l}
 }
 
 // PrivilegeMetrics contains metrics about privilege usage during execution

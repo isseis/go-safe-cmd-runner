@@ -1,3 +1,5 @@
+//go:build test
+
 // Package testing provides testify-based mock implementations for executor interfaces.
 package testing
 

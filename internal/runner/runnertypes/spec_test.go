@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,11 +27,11 @@ env_import = ["user=USER"]
 output_size_limit = 1048576
 `,
 			want: GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(true),
+				VerifyStandardPaths: commontesting.BoolPtr(true),
 				EnvVars:             []string{"LANG=en_US.UTF-8"},
 				EnvAllowed:          []string{"PATH", "HOME"},
 				EnvImport:           []string{"user=USER"},
-				OutputSizeLimit:     common.Int64Ptr(1048576),
+				OutputSizeLimit:     commontesting.Int64Ptr(1048576),
 			},
 		},
 		{
@@ -44,11 +44,11 @@ env_import = []
 output_size_limit = 0
 `,
 			want: GlobalSpec{
-				VerifyStandardPaths: common.BoolPtr(false),
+				VerifyStandardPaths: commontesting.BoolPtr(false),
 				EnvVars:             []string{},
 				EnvAllowed:          []string{},
 				EnvImport:           []string{},
-				OutputSizeLimit:     common.Int64Ptr(0),
+				OutputSizeLimit:     commontesting.Int64Ptr(0),
 			},
 		},
 		{
@@ -64,7 +64,7 @@ output_size_limit = 2097152
 				EnvVars:             []string{"DEBUG=1"},
 				EnvAllowed:          []string{"DEBUG"},
 				EnvImport:           []string{},
-				OutputSizeLimit:     common.Int64Ptr(2097152),
+				OutputSizeLimit:     commontesting.Int64Ptr(2097152),
 			},
 		},
 	}
@@ -198,7 +198,7 @@ args = ["hello"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.Int32Ptr(300),
+					Timeout: commontesting.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -240,9 +240,9 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:             common.Int32Ptr(300),
-					VerifyStandardPaths: common.BoolPtr(false),
-					OutputSizeLimit:     common.Int64Ptr(1048576),
+					Timeout:             commontesting.Int32Ptr(300),
+					VerifyStandardPaths: commontesting.BoolPtr(false),
+					OutputSizeLimit:     commontesting.Int64Ptr(1048576),
 					VerifyFiles:         []string{"/usr/bin/python3", "/usr/bin/gcc"},
 					EnvAllowed:          []string{"PATH", "HOME"},
 					EnvVars:             []string{"PATH=/usr/bin:/bin", "HOME=/root"},
@@ -288,7 +288,7 @@ cmd = "/usr/bin/make"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.Int32Ptr(300),
+					Timeout: commontesting.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -340,7 +340,7 @@ vars = ["TEST_VAR=value"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.Int32Ptr(300),
+					Timeout: commontesting.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -352,7 +352,7 @@ vars = ["TEST_VAR=value"]
 								Cmd:         "/usr/bin/python3",
 								Args:        []string{"-m", "pytest"},
 								WorkDir:     "/tmp/test",
-								Timeout:     common.Int32Ptr(60),
+								Timeout:     commontesting.Int32Ptr(60),
 								RunAsUser:   "testuser",
 								RunAsGroup:  "testgroup",
 								RiskLevel:   "medium",
@@ -429,7 +429,7 @@ cmd = "/bin/date"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: common.Int32Ptr(300),
+					Timeout: commontesting.Int32Ptr(300),
 				},
 				Groups: []GroupSpec{
 					{

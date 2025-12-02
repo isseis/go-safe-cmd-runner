@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -259,7 +260,7 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout: common.Int32Ptr(300),
+		Timeout: commontesting.Int32Ptr(300),
 		EnvVars: []string{"PATH=/usr/bin"},
 		Vars:    []string{"VAR1=value1"},
 	}
@@ -319,7 +320,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
 		WorkDir: "/tmp",
-		Timeout: common.Int32Ptr(60),
+		Timeout: commontesting.Int32Ptr(60),
 		EnvVars: []string{"TEST=value"},
 	}
 
@@ -351,10 +352,10 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		Timeout: common.Int32Ptr(60),
+		Timeout: commontesting.Int32Ptr(60),
 	}
 
-	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit(), "test-group")
+	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit(), "test-group")
 	require.NoError(t, err)
 
 	// Test Cmd()
@@ -374,9 +375,9 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:             common.Int32Ptr(300),
+		Timeout:             commontesting.Int32Ptr(300),
 		EnvAllowed:          []string{"PATH", "HOME"},
-		VerifyStandardPaths: common.BoolPtr(false),
+		VerifyStandardPaths: commontesting.BoolPtr(false),
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
@@ -426,12 +427,12 @@ func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {
 		},
 		{
 			name:                "explicit true (verify) means skip=false",
-			verifyStandardPaths: common.BoolPtr(true),
+			verifyStandardPaths: commontesting.BoolPtr(true),
 			wantSkip:            false,
 		},
 		{
 			name:                "explicit false (don't verify) means skip=true",
-			verifyStandardPaths: common.BoolPtr(false),
+			verifyStandardPaths: commontesting.BoolPtr(false),
 			wantSkip:            true,
 		},
 	}

@@ -819,7 +819,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		}
 
 		// Create pre-expanded RuntimeCommand (simulating preExpandCommands behavior)
-		runtimeCmd, err := runnertypes.NewRuntimeCommand(&spec.Commands[0], common.NewUnsetTimeout(), common.NewUnlimitedOutputSizeLimit(), spec.Name)
+		runtimeCmd, err := runnertypes.NewRuntimeCommand(&spec.Commands[0], common.NewUnsetTimeout(), commontesting.NewUnlimitedOutputSizeLimit(), spec.Name)
 		require.NoError(t, err)
 		runtimeCmd.ExpandedCmd = filepath.Join(binDir, "testcmd")
 		runtimeGroup.Commands = []*runnertypes.RuntimeCommand{runtimeCmd}

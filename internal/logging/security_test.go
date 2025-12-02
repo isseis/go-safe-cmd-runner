@@ -17,15 +17,6 @@ func TestNewSecurityLogger(t *testing.T) {
 	assert.NotNil(t, logger.logger, "logger not initialized")
 }
 
-func TestNewSecurityLoggerWithLogger(t *testing.T) {
-	var buf bytes.Buffer
-	customLogger := slog.New(slog.NewTextHandler(&buf, nil))
-
-	logger := NewSecurityLoggerWithLogger(customLogger)
-	require.NotNil(t, logger, "NewSecurityLoggerWithLogger returned nil")
-	assert.Equal(t, customLogger, logger.logger, "custom logger not set correctly")
-}
-
 func TestSecurityLogger_LogMethods(t *testing.T) {
 	tests := []struct {
 		name           string

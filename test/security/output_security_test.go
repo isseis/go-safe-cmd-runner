@@ -14,7 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 
 	"github.com/stretchr/testify/require"
@@ -87,7 +87,7 @@ func TestPathTraversalAttack(t *testing.T) {
 			privMgr := privilege.NewManager(slog.Default())
 			logger := slog.Default()
 
-			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+			manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -143,7 +143,7 @@ func TestSymlinkAttack(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -218,7 +218,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 			privMgr := privilege.NewManager(slog.Default())
 			logger := slog.Default()
 
-			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+			manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -270,7 +270,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	exec := executor.NewDefaultExecutor()
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -316,7 +316,7 @@ func TestFilePermissionValidation(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
 	_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 	// In current implementation, output capture is not fully integrated
@@ -355,7 +355,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	for i := range numGoroutines {
 		go func(index int) {
@@ -441,7 +441,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 			privMgr := privilege.NewManager(slog.Default())
 			logger := slog.Default()
 
-			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+			manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
@@ -476,7 +476,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
 
 	// Create multiple goroutines trying to write to the same output file
 	numGoroutines := 5

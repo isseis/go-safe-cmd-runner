@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -32,7 +33,7 @@ import (
 func newDefaultRuntimeGlobal() *runnertypes.RuntimeGlobal {
 	return &runnertypes.RuntimeGlobal{
 		Spec: &runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 }
@@ -194,7 +195,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 
 			config := &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
+					Timeout: commontesting.Int32Ptr(30),
 				},
 			}
 
@@ -213,7 +214,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 			}
 
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+				Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 			}
 
 			// Setup mocks
@@ -281,7 +282,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 
 			config := &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
+					Timeout: commontesting.Int32Ptr(30),
 				},
 			}
 
@@ -298,7 +299,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 			}
 
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+				Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 			}
 
 			// Setup mocks
@@ -341,7 +342,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -358,7 +359,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Setup mock to fail temp dir creation
@@ -381,7 +382,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -411,7 +412,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock validator to allow all validations
@@ -452,7 +453,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -482,7 +483,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock validator to allow all validations
@@ -534,7 +535,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -566,7 +567,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock verification manager to resolve paths
@@ -604,7 +605,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -640,7 +641,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	mockRM.On("ValidateOutputPath", "/invalid/output/path", "/work").Return(expectedErr)
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	ctx := context.Background()
@@ -659,7 +660,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -691,7 +692,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock verification manager to resolve paths (all commands use /bin/echo)
@@ -718,7 +719,7 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -750,7 +751,7 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock verification manager to resolve paths for all commands
@@ -1038,7 +1039,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 
 			configSpec := &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
+					Timeout: commontesting.Int32Ptr(30),
 				},
 			}
 
@@ -1073,7 +1074,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 			}
 
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+				Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 				ExpandedVars: map[string]string{},
 			}
 
@@ -1103,7 +1104,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 
 			// 3. Test command expansion with __runner_workdir
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 			require.NoError(t, err)
 
 			// Verify __runner_workdir was expanded in arguments
@@ -1180,7 +1181,7 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1221,7 +1222,7 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1248,7 +1249,7 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1288,7 +1289,7 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1345,7 +1346,7 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1386,7 +1387,7 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 	require.NoError(t, err)
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1433,7 +1434,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1462,7 +1463,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1496,7 +1497,7 @@ func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1526,7 +1527,7 @@ func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 	require.NoError(t, err)
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1556,7 +1557,7 @@ func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1582,7 +1583,7 @@ func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1612,7 +1613,7 @@ func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1637,7 +1638,7 @@ func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1666,7 +1667,7 @@ func TestExecuteGroup_EmptyDescription(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1692,7 +1693,7 @@ func TestExecuteGroup_EmptyDescription(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1721,7 +1722,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 
 	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1743,7 +1744,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{}, // No UNDEFINED_VAR defined
 	}
 
@@ -1774,7 +1775,7 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1807,7 +1808,7 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{},
 	}
 
@@ -1837,7 +1838,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 
 	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1863,7 +1864,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{}, // No UNDEFINED_VAR defined
 	}
 
@@ -1892,7 +1893,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 	configSpec := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -1918,7 +1919,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec:         &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec:         &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 		ExpandedVars: map[string]string{}, // No UNDEFINED_VAR defined
 	}
 
@@ -2041,7 +2042,7 @@ func TestGroupExecutorOptions(t *testing.T) {
 func TestNewDefaultGroupExecutor_WithOptions(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2110,7 +2111,7 @@ func TestNewDefaultGroupExecutor_WithOptions(t *testing.T) {
 func TestNewDefaultGroupExecutor_Validation(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2138,7 +2139,7 @@ func TestNewDefaultGroupExecutor_Validation(t *testing.T) {
 func TestNewTestGroupExecutor(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2173,7 +2174,7 @@ func TestNewTestGroupExecutor(t *testing.T) {
 func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2195,7 +2196,7 @@ func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
 func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2220,7 +2221,7 @@ func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
 func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2258,7 +2259,7 @@ func TestWithCurrentUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					Timeout: common.Int32Ptr(30),
+					Timeout: commontesting.Int32Ptr(30),
 				},
 			}
 			mockRM := new(runnertesting.MockResourceManager)
@@ -2277,7 +2278,7 @@ func TestWithCurrentUser(t *testing.T) {
 func TestDefaultCurrentUser(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 	mockRM := new(runnertesting.MockResourceManager)
@@ -2398,7 +2399,7 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -2420,13 +2421,13 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 				Name:    "timeout-cmd",
 				Cmd:     "/bin/sleep",
 				Args:    []string{"1000"},
-				Timeout: common.Int32Ptr(1), // 1 second timeout
+				Timeout: commontesting.Int32Ptr(1), // 1 second timeout
 			},
 		},
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock verification manager to resolve paths
@@ -2475,7 +2476,7 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			Timeout: common.Int32Ptr(30),
+			Timeout: commontesting.Int32Ptr(30),
 		},
 	}
 
@@ -2496,18 +2497,18 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 			{
 				Name:    "unlimited-cmd",
 				Cmd:     "/bin/echo",
-				Timeout: common.Int32Ptr(0), // Unlimited timeout
+				Timeout: commontesting.Int32Ptr(0), // Unlimited timeout
 			},
 			{
 				Name:    "normal-cmd",
 				Cmd:     "/bin/echo",
-				Timeout: common.Int32Ptr(10), // Normal timeout
+				Timeout: commontesting.Int32Ptr(10), // Normal timeout
 			},
 		},
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Mock verification manager to resolve paths
@@ -2613,7 +2614,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 			}
 
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+				Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 			}
 
 			mockRM := new(runnertesting.MockResourceManager)

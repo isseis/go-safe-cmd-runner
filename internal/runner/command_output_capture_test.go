@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
@@ -68,7 +69,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	}
 
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 	}
 
 	// Create real executor and resource manager
@@ -241,7 +242,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			}
 
 			runtimeGlobal := &runnertypes.RuntimeGlobal{
-				Spec: &runnertypes.GlobalSpec{Timeout: common.Int32Ptr(30)},
+				Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
 			}
 
 			// Create real executor and resource manager

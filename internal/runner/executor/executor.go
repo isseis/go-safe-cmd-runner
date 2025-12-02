@@ -47,24 +47,10 @@ func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 	}
 }
 
-// WithFileSystem sets the file system for the executor
-func WithFileSystem(fs FileSystem) Option {
-	return func(e *DefaultExecutor) {
-		e.FS = fs
-	}
-}
-
 // WithAuditLogger sets the audit logger for the executor
 func WithAuditLogger(auditLogger *audit.Logger) Option {
 	return func(e *DefaultExecutor) {
 		e.AuditLogger = auditLogger
-	}
-}
-
-// WithLogger sets the logger for the executor
-func WithLogger(logger *slog.Logger) Option {
-	return func(e *DefaultExecutor) {
-		e.Logger = logger
 	}
 }
 

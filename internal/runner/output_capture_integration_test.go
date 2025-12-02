@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -60,8 +60,8 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         common.Int32Ptr(30),
-					OutputSizeLimit: common.Int64Ptr(1024),
+					Timeout:         commontesting.Int32Ptr(30),
+					OutputSizeLimit: commontesting.Int64Ptr(1024),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -155,8 +155,8 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         common.Int32Ptr(30),
-					OutputSizeLimit: common.Int64Ptr(1024),
+					Timeout:         commontesting.Int32Ptr(30),
+					OutputSizeLimit: commontesting.Int64Ptr(1024),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{

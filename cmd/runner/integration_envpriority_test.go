@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -62,7 +63,7 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	require.NoError(t, err, "Failed to expand global config")
 	runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 	require.NoError(t, err, "Failed to expand group config")
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 	require.NoError(t, err, "Failed to expand command config")
 
 	// Call production code to build final environment
@@ -414,7 +415,7 @@ env_vars = ["OUTPUT=%{output}"]
 	require.NoError(t, err, "Failed to expand global config")
 	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 	require.NoError(t, err, "Failed to expand group config")
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 	require.NoError(t, err, "Failed to expand command config")
 
 	// Verify vars expansion at each level

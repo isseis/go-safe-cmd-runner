@@ -1,3 +1,5 @@
+//go:build test
+
 // Package testing provides mock implementations for testing common interfaces.
 package testing
 

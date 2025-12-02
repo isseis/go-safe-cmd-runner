@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -213,7 +214,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Finally expand command
-			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 			if tt.wantErr != "" {
 				require.Error(t, err, tt.description)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -324,7 +325,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 
 		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
-		_, err = config.ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), common.NewUnsetOutputSizeLimit())
+		_, err = config.ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 		require.NoError(t, err, "Command should inherit global allowlist")
 	})
 }
