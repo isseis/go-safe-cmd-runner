@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -123,7 +124,7 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	exitCode := run([]string{"file1.txt"}, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
-	assert.Contains(t, recorder.hashDir, "go-safe-cmd-runner/hashes")
+	assert.Equal(t, cmdcommon.DefaultHashDirectory, recorder.hashDir)
 	require.Len(t, recorder.calls, 1)
 	assert.Equal(t, "file1.txt", recorder.calls[0].file)
 	assert.False(t, recorder.calls[0].force)
