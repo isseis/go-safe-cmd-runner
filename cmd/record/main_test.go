@@ -111,3 +111,20 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 	assert.Equal(t, "legacy.txt", recorder.calls[0].file)
 	assert.Contains(t, stderr.String(), "deprecated")
 }
+
+func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
+	recorder := &fakeRecorder{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, recorder)
+	defer cleanup()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	assert.Contains(t, recorder.hashDir, "go-safe-cmd-runner/hashes")
+	require.Len(t, recorder.calls, 1)
+	assert.Equal(t, "file1.txt", recorder.calls[0].file)
+	assert.False(t, recorder.calls[0].force)
+}

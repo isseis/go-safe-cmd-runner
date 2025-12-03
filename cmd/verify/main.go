@@ -17,7 +17,6 @@ const hashDirPermissions = 0o750
 
 var (
 	errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
-	errGetCurrentDir   = errors.New("error getting current directory")
 	errEnsureHashDir   = errors.New("error creating/accessing hash directory")
 	validatorFactory   = func(hashDir string) (hashValidator, error) {
 		return cmdcommon.CreateValidator(hashDir)
@@ -89,11 +88,7 @@ func parseArgs(args []string, stderr io.Writer) (*verifyConfig, *flag.FlagSet, e
 
 	dir := options.hashDir
 	if dir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, fs, fmt.Errorf("%w: %w", errGetCurrentDir, err)
-		}
-		dir = cwd
+		dir = cmdcommon.DefaultHashDirectory
 	}
 
 	if err := os.MkdirAll(dir, hashDirPermissions); err != nil {

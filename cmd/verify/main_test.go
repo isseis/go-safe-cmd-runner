@@ -122,3 +122,19 @@ func TestParseArgsInvalidHashDir(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errEnsureHashDir)
 }
+
+func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	assert.Contains(t, validator.hashDir, "go-safe-cmd-runner/hashes")
+	require.Len(t, validator.calls, 1)
+	assert.Equal(t, "file1.txt", validator.calls[0].file)
+}
