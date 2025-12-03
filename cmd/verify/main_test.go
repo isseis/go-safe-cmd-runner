@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -121,4 +122,27 @@ func TestParseArgsInvalidHashDir(t *testing.T) {
 	assert.Nil(t, cfg)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errEnsureHashDir)
+}
+
+func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
+	validator := &fakeValidator{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, validator)
+	defer cleanup()
+
+	// Override mkdirAll to avoid permission issues in CI
+	originalMkdirAll := mkdirAll
+	mkdirAll = func(_ string, _ os.FileMode) error {
+		return nil
+	}
+	defer func() { mkdirAll = originalMkdirAll }()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	assert.Equal(t, cmdcommon.DefaultHashDirectory, validator.hashDir)
+	require.Len(t, validator.calls, 1)
+	assert.Equal(t, "file1.txt", validator.calls[0].file)
 }

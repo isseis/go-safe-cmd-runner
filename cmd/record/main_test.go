@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,4 +112,28 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 	require.Len(t, recorder.calls, 2)
 	assert.Equal(t, "legacy.txt", recorder.calls[0].file)
 	assert.Contains(t, stderr.String(), "deprecated")
+}
+
+func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
+	recorder := &fakeRecorder{responses: map[string]error{}}
+	cleanup := overrideValidatorFactory(t, recorder)
+	defer cleanup()
+
+	// Override mkdirAll to avoid permission issues in CI
+	originalMkdirAll := mkdirAll
+	mkdirAll = func(_ string, _ os.FileMode) error {
+		return nil
+	}
+	defer func() { mkdirAll = originalMkdirAll }()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	assert.Equal(t, cmdcommon.DefaultHashDirectory, recorder.hashDir)
+	require.Len(t, recorder.calls, 1)
+	assert.Equal(t, "file1.txt", recorder.calls[0].file)
+	assert.False(t, recorder.calls[0].force)
 }
