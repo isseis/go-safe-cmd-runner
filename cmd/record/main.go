@@ -23,6 +23,7 @@ var (
 	validatorFactory   = func(hashDir string) (hashRecorder, error) {
 		return cmdcommon.CreateValidator(hashDir)
 	}
+	mkdirAll = os.MkdirAll
 )
 
 type hashRecorder interface {
@@ -96,7 +97,7 @@ func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, e
 		dir = cmdcommon.DefaultHashDirectory
 	}
 
-	if err := os.MkdirAll(dir, hashDirPermissions); err != nil {
+	if err := mkdirAll(dir, hashDirPermissions); err != nil {
 		return nil, fs, fmt.Errorf("%w: %w", errEnsureHashDir, err)
 	}
 

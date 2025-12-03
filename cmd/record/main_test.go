@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -117,6 +118,13 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	recorder := &fakeRecorder{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, recorder)
 	defer cleanup()
+
+	// Override mkdirAll to avoid permission issues in CI
+	originalMkdirAll := mkdirAll
+	mkdirAll = func(_ string, _ os.FileMode) error {
+		return nil
+	}
+	defer func() { mkdirAll = originalMkdirAll }()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}

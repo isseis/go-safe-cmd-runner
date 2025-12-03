@@ -129,6 +129,13 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	cleanup := overrideValidatorFactory(t, validator)
 	defer cleanup()
 
+	// Override mkdirAll to avoid permission issues in CI
+	originalMkdirAll := mkdirAll
+	mkdirAll = func(_ string, _ os.FileMode) error {
+		return nil
+	}
+	defer func() { mkdirAll = originalMkdirAll }()
+
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
