@@ -134,12 +134,11 @@ args = ["Hello, World!"]
 1. **Create configuration file**: Create a `config.toml` file
 2. **Create hash file** (if needed):
    ```bash
-  record -file config.toml
-  record -file /bin/echo
+   record -d /usr/local/ets/go-safe-cmd-runner/hashes config.toml /bin/echo
    ```
 3. **Execute**:
    ```bash
-   go-safe-cmd-runner -file config.toml
+   runner -c config.toml
    ```
 
 ## Recommended Learning Order

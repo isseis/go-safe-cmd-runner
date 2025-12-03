@@ -12,7 +12,7 @@
 
 ```bash
 # TOML設定ファイルのハッシュを記録
-record backup-config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes backup-config.toml
 
 # 実行バイナリのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/tar /bin/ls
@@ -75,7 +75,7 @@ output_file = "backup-list.txt"
 
 ```bash
 # TOML設定ファイルのハッシュを記録
-record secure-backup.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes secure-backup.toml
 
 # Global verify_files で指定したファイルのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/sh /bin/tar /usr/bin/gpg
@@ -462,8 +462,9 @@ risk_level = "high"
 record deploy-fullstack.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Global verify_files で指定したファイルのハッシュを記録
-record /usr/bin/psql -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/pg_dump -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /usr/bin/psql \
+    /usr/bin/pg_dump
 
 # 実行バイナリのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes \

@@ -134,7 +134,7 @@ args = ["Hello, World!"]
 1. **設定ファイルの作成**: `config.toml` ファイルを作成
 2. **ハッシュファイルの作成** (必要な場合):
    ```bash
-   record config.toml /bin/echo
+   record -d /usr/local/ets/go-safe-cmd-runner/hashes config.toml /bin/echo
    ```
 3. **実行**:
    ```bash

@@ -141,6 +141,8 @@
 | フィールド名 | field name | |
 | 初めて | first-time | |
 | フラグ | flag | コマンドラインフラグ |
+| 短縮フラグ | short flag | Single-character command-line flag (e.g. -c, -n) |
+| 短縮表記 | short form | Short form of a flag, often single-character (e.g. -c) |
 | 柔軟性 | flexibility | |
 | フロー | flow | |
 | フォーマット | format | |

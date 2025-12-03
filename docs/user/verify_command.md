@@ -50,45 +50,51 @@ While the `runner` command automatically performs file verification internally, 
 
 ```bash
 # Verify using hash files in the current directory
-verify -file /usr/bin/backup.sh
+verify /usr/bin/backup.sh
 ```
 
 Output on success:
 ```
-OK: /usr/bin/backup.sh
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: OK
+
+Summary: 1 succeeded, 0 failed
 ```
 
 Output on failure:
 ```
-Verification failed: hash mismatch
-Expected: abc123def456...
-Got:      def456abc123...
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: hash mismatch
+
+Summary: 0 succeeded, 1 failed
 ```
 
 ### 2.2 Specifying Hash Directory
 
 ```bash
 # Use hash files from a specific directory
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# Short form
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 2.3 Verifying Multiple Files
 
 ```bash
-# Verify multiple files with a script
-for file in /usr/local/bin/*.sh; do
-    echo "Verifying: $file"
-    verify -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes || {
-        echo "Verification failed for: $file"
-    }
-done
+# Specify multiple files directly (recommended)
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh /usr/local/bin/deploy.sh
+
+# Using wildcards
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/*.sh
 ```
 
 ### 2.4 Determining Results by Exit Code
 
 ```bash
 # Determine verification results by exit code
-if verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes; then
+if verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh; then
     echo "File is valid"
 else
     echo "File verification failed"
@@ -98,33 +104,39 @@ fi
 
 ## 3. Command-Line Flags Reference
 
-### 3.1 `-file <path>` (Required)
+### 3.1 File Specification (Positional Arguments)
 
 **Overview**
 
-Specifies the path to the file to verify.
+Specifies the files to verify as positional arguments. Multiple files can be specified simultaneously.
 
 **Syntax**
 
 ```bash
-verify -file <path>
+verify [flags] <file> [<file>...]
 ```
 
 **Parameters**
 
-- `<path>`: Absolute or relative path to the file to verify (required)
+- `<file>`: Absolute or relative path to the file to verify (one or more required)
 
 **Usage Examples**
 
 ```bash
 # Specify with absolute path
-verify -file /usr/bin/backup.sh
+verify /usr/bin/backup.sh
 
 # Specify with relative path
-verify -file ./scripts/deploy.sh
+verify ./scripts/deploy.sh
 
 # File in home directory
-verify -file ~/bin/custom-script.sh
+verify ~/bin/custom-script.sh
+
+# Specify multiple files
+verify /usr/bin/backup.sh /usr/bin/restore.sh
+
+# Using wildcards
+verify /usr/local/bin/*.sh
 ```
 
 **Notes**
@@ -133,7 +145,7 @@ verify -file ~/bin/custom-script.sh
 - Error also occurs if the corresponding hash file does not exist
 - For symbolic links, the target file is verified
 
-### 3.2 `-hash-dir <directory>` (Optional)
+### 3.2 `-hash-dir <directory>` / `-d <directory>` (Optional)
 
 **Overview**
 
@@ -142,7 +154,8 @@ Specifies the directory where hash files are stored. If not specified, the curre
 **Syntax**
 
 ```bash
-verify -file <path> -hash-dir <directory>
+verify -hash-dir <directory> <file>...
+verify -d <directory> <file>...
 ```
 
 **Parameters**
@@ -154,13 +167,16 @@ verify -file <path> -hash-dir <directory>
 
 ```bash
 # Use standard hash directory
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
+
+# Short form
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 
 # Use custom directory (for testing)
-verify -file ./test.sh -hash-dir ./test-hashes
+verify -d ./test-hashes ./test.sh
 
 # Specify with relative path
-verify -file /etc/config.toml -hash-dir ../hashes
+verify -d ../hashes /etc/config.toml
 ```
 
 **Hash File Search**
@@ -171,7 +187,7 @@ The `verify` command automatically generates the hash filename from the specifie
 # For /usr/bin/backup.sh
 # Hash file: <hash-dir>/~usr~bin~backup.sh
 
-verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 # Actually searched file:
 # /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
 ```
@@ -195,28 +211,15 @@ verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hash
 HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 CONFIG_FILE="/etc/go-safe-cmd-runner/backup.toml"
 
-# Verify configuration file
-echo "Verifying configuration file..."
-if ! verify -file "$CONFIG_FILE" -hash-dir "$HASH_DIR"; then
-    echo "Error: Configuration file verification failed"
+# Batch verify configuration file and executable files
+echo "Verifying all files..."
+if ! verify -d "$HASH_DIR" "$CONFIG_FILE" \
+    /usr/local/bin/backup.sh \
+    /usr/local/bin/cleanup.sh \
+    /usr/bin/rsync; then
+    echo "Error: Verification failed"
     exit 1
 fi
-
-# Extract and verify verify_files from TOML config (manually specified)
-FILES=(
-    "/usr/local/bin/backup.sh"
-    "/usr/local/bin/cleanup.sh"
-    "/usr/bin/rsync"
-)
-
-echo "Verifying executable files..."
-for file in "${FILES[@]}"; do
-    echo "  Checking: $file"
-    if ! verify -file "$file" -hash-dir "$HASH_DIR"; then
-        echo "  Error: Verification failed for $file"
-        exit 1
-    fi
-done
 
 echo "All files verified successfully!"
 echo "You can now run: runner -config $CONFIG_FILE"
@@ -266,7 +269,7 @@ fi
 
 # Run verification
 echo "Running verification:"
-verify -file "$FILE" -hash-dir "$HASH_DIR"
+verify -d "$HASH_DIR" "$FILE"
 ```
 
 ### 4.3 Periodic Integrity Check
@@ -291,25 +294,14 @@ CRITICAL_FILES=(
     "/usr/bin/rsync"
 )
 
-FAILED=0
-
-for file in "${CRITICAL_FILES[@]}"; do
-    if verify -file "$file" -hash-dir "$HASH_DIR" >> "$LOG_FILE" 2>&1; then
-        echo "OK: $file" >> "$LOG_FILE"
-    else
-        echo "FAILED: $file" >> "$LOG_FILE"
-        FAILED=1
-
-        # Alert handling such as Slack notification
-        # send-alert.sh "$file verification failed"
-    fi
-done
-
-if [[ $FAILED -eq 1 ]]; then
-    echo "Integrity check failed. See $LOG_FILE for details" >&2
-    exit 1
-else
+# Execute batch verification
+if verify -d "$HASH_DIR" "${CRITICAL_FILES[@]}" >> "$LOG_FILE" 2>&1; then
     echo "All files verified successfully" >> "$LOG_FILE"
+else
+    echo "Integrity check failed. See $LOG_FILE for details" >&2
+    # Alert handling such as Slack notification
+    # send-alert.sh "Integrity check failed"
+    exit 1
 fi
 ```
 
@@ -352,16 +344,11 @@ jobs:
 
       - name: Verify configuration files
         run: |
-          verify -file config/backup.toml \
-            -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          verify -d /usr/local/etc/go-safe-cmd-runner/hashes config/*.toml
 
       - name: Verify scripts
         run: |
-          for script in scripts/*.sh; do
-            echo "Verifying: $script"
-            verify -file "$script" \
-              -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
-          done
+          verify -d /usr/local/etc/go-safe-cmd-runner/hashes scripts/*.sh
 
       - name: Report failure
         if: failure()
@@ -386,32 +373,19 @@ CONFIG_FILE="/etc/go-safe-cmd-runner/deploy.toml"
 
 echo "=== Pre-deployment Verification ==="
 
-# Verify configuration file
-echo "Verifying configuration file..."
-if ! verify -file "$CONFIG_FILE" -hash-dir "$HASH_DIR"; then
-    echo "Error: Configuration file verification failed"
+# Batch verify configuration file and deployment scripts
+echo "Verifying all files..."
+if ! verify -d "$HASH_DIR" "$CONFIG_FILE" \
+    /usr/local/bin/deploy-app.sh \
+    /usr/local/bin/migrate-db.sh \
+    /usr/local/bin/restart-services.sh; then
+    echo "Error: Verification failed"
     echo "Possible causes:"
-    echo "  - Configuration file has been modified"
-    echo "  - Hash file is outdated"
-    echo "  - Hash file is missing"
+    echo "  - Files have been modified"
+    echo "  - Hash files are outdated"
+    echo "  - Hash files are missing"
     exit 1
 fi
-
-# Verify deployment scripts
-echo "Verifying deployment scripts..."
-SCRIPTS=(
-    "/usr/local/bin/deploy-app.sh"
-    "/usr/local/bin/migrate-db.sh"
-    "/usr/local/bin/restart-services.sh"
-)
-
-for script in "${SCRIPTS[@]}"; do
-    echo "  Checking: $script"
-    if ! verify -file "$script" -hash-dir "$HASH_DIR"; then
-        echo "  Error: Script verification failed"
-        exit 1
-    fi
-done
 
 echo "All verifications passed!"
 echo ""
@@ -450,7 +424,7 @@ FAILED=0
 for file in "${FILES[@]}"; do
     TOTAL=$((TOTAL + 1))
 
-    if verify -file "$file" -hash-dir "$HASH_DIR" 2>/dev/null; then
+    if verify -d "$HASH_DIR" "$file" 2>/dev/null; then
         echo "✓ PASS: $file" >> "$REPORT_FILE"
         PASSED=$((PASSED + 1))
     else
@@ -501,7 +475,9 @@ fi
 
 **Error Message**
 ```
-Error: file not found: /usr/bin/backup.sh
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: file not found
 ```
 
 **Solutions**
@@ -521,7 +497,9 @@ ls -lL /usr/bin/backup.sh
 
 **Error Message**
 ```
-Error: hash file not found
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: hash file not found
 ```
 
 **Solutions**
@@ -530,7 +508,7 @@ Error: hash file not found
 
 ```bash
 # Record hash
-record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **Cause 2: Wrong hash directory specified**
@@ -540,7 +518,7 @@ record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hash
 find /usr/local/etc/go-safe-cmd-runner -name "*backup.sh*"
 
 # Verify again with correct directory
-verify -file /usr/bin/backup.sh -hash-dir /path/to/correct/hash-dir
+verify -d /path/to/correct/hash-dir /usr/bin/backup.sh
 ```
 
 **Cause 3: Hash filename issue**
@@ -557,9 +535,9 @@ ls -la /usr/local/etc/go-safe-cmd-runner/hashes/
 
 **Error Message**
 ```
-Verification failed: hash mismatch
-Expected: abc123def456789...
-Got:      def456abc123xyz...
+Verifying 1 file...
+[1/1] /usr/bin/backup.sh: FAILED
+Verification failed for /usr/bin/backup.sh: hash mismatch
 ```
 
 **Causes and Solutions**
@@ -571,9 +549,7 @@ Got:      def456abc123xyz...
 ls -l /usr/bin/backup.sh
 
 # If file was intentionally updated, re-record hash
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **Cause 2: File has been tampered with**
@@ -585,8 +561,7 @@ sudo chown root:root /usr/bin/backup.sh
 sudo chmod 755 /usr/bin/backup.sh
 
 # Re-run verification
-verify -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 **Cause 3: Hash file is outdated**
@@ -601,9 +576,7 @@ echo "File:"; ls -l /usr/bin/backup.sh
 echo "Hash:"; ls -l "$HASH_FILE"
 
 # Re-record if hash is outdated
-record -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.4 Permission Error
@@ -623,8 +596,7 @@ ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # Or run with sudo
-sudo verify -file /usr/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/bin/backup.sh
 ```
 
 ### 5.5 Symbolic Link Verification
@@ -635,8 +607,7 @@ When a symbolic link is specified, the target file is verified.
 
 ```bash
 # Verify symbolic link
-verify -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+verify -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 
 # Compared with the target file's hash
 ```
@@ -651,9 +622,7 @@ verify -file /usr/local/bin/backup.sh \
 ls -lL /usr/local/bin/backup.sh
 
 # Re-record hash if target has changed
-record -file /usr/local/bin/backup.sh \
-    -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
-    -force
+record -force -d /usr/local/etc/go-safe-cmd-runner/hashes /usr/local/bin/backup.sh
 ```
 
 ### 5.6 Error Handling in Scripts
@@ -668,7 +637,7 @@ HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 FILE="/usr/bin/backup.sh"
 
 # Run verification and handle errors in detail
-verify -file "$FILE" -hash-dir "$HASH_DIR" 2>&1 | tee /tmp/verify-output.txt
+verify -d "$HASH_DIR" "$FILE" 2>&1 | tee /tmp/verify-output.txt
 EXIT_CODE=${PIPESTATUS[0]}
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo "Verification passed: $FILE"
@@ -683,7 +652,7 @@ else
         echo "Error: File does not exist"
     elif grep -q "hash file not found" /tmp/verify-output.txt; then
         echo "Error: Hash has not been recorded"
-        echo "Run: record -file $FILE -hash-dir $HASH_DIR"
+        echo "Run: record -d $HASH_DIR $FILE"
     elif grep -q "hash mismatch" /tmp/verify-output.txt; then
         echo "Error: File has been modified"
         echo "Current hash:"
