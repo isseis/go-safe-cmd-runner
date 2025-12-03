@@ -75,13 +75,12 @@ runner -config config.toml
 
 ```bash
 # 1. TOML設定ファイルのハッシュを記録（最も重要）
-record config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
-
 # 2. 実行バイナリのハッシュを記録
-record /usr/local/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
-
 # 3. verify_files で指定したファイルのハッシュを記録（環境設定ファイルなど）
-record /etc/myapp/database.conf -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    config.toml \
+    /usr/local/bin/backup.sh \
+    /etc/myapp/database.conf
 ```
 
 詳細は [record コマンドガイド](record_command.ja.md) を参照してください。

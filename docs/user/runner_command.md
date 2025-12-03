@@ -75,13 +75,12 @@ You need to record hash values of the following files before execution:
 
 ```bash
 # 1. Record hash of the TOML configuration file (most important)
-record config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
-
 # 2. Record hash of executable binaries
-record /usr/local/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
-
 # 3. Record hash of files specified in verify_files (e.g., environment config files)
-record /etc/myapp/database.conf -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    config.toml \
+    /usr/local/bin/backup.sh \
+    /etc/myapp/database.conf
 ```
 
 For details, see [record Command Guide](record_command.md).

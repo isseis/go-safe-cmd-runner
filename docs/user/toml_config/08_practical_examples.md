@@ -12,7 +12,7 @@ Basic configuration for daily file backups:
 
 ```bash
 # Record hash of the TOML configuration file
-record backup-config.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes backup-config.toml
 
 # Record hash of executable binaries
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/tar /bin/ls
@@ -75,7 +75,7 @@ Configuration for environments with high security requirements:
 
 ```bash
 # Record hash of the TOML configuration file
-record secure-backup.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes secure-backup.toml
 
 # Record hash of files specified in Global verify_files
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/sh /bin/tar /usr/bin/gpg
@@ -454,11 +454,12 @@ Integrated deployment of database, application, and web server:
 
 ```bash
 # Record hash of the TOML configuration file
-record deploy-fullstack.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes deploy-fullstack.toml
 
 # Record hash of files specified in Global verify_files
-record /usr/bin/psql -d /usr/local/etc/go-safe-cmd-runner/hashes
-record /usr/bin/pg_dump -d /usr/local/etc/go-safe-cmd-runner/hashes
+record -d /usr/local/etc/go-safe-cmd-runner/hashes \
+    /usr/bin/psql \
+    /usr/bin/pg_dump
 
 # Record hash of executable binaries
 record -d /usr/local/etc/go-safe-cmd-runner/hashes \
