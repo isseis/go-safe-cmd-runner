@@ -1872,8 +1872,8 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 | 予約プレフィックス拒否 | `ValidateVariableName()` | `__runner_` で始まる変数名を拒否 |
 | 型検証 | `ProcessVars()` Phase 1 | 文字列または文字列配列のみ許可 |
 | サイズ制限 | `ProcessVars()` Phase 1 | 変数数、配列要素数、文字列長 |
-| 循環依存検出 | `expandStringWithRawVars()` | visited マップで検出 |
-| 展開深度制限 | `expandStringWithRawVars()` | `MaxRecursionDepth` (100) |
+| 循環依存検出 | `expandStringWithResolver()` | visited マップで検出 |
+| 展開深度制限 | `expandStringWithResolver()` | `MaxRecursionDepth` (100) |
 
 ### 4.2 エラー情報漏洩防止
 
