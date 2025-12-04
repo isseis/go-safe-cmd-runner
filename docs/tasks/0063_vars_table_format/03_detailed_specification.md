@@ -6,7 +6,7 @@
 
 - **ExpandString 関数**: 再帰的な変数展開エンジン、循環参照検出
   - `ExpandString()`: 文字列中の `%{VAR}` を展開（エクスポート済み）
-  - `expandStringRecursive()`: 再帰展開と循環検出（内部関数）
+  - `expandStringRecursive()`: 再帰展開と循環検出（内部関数、リファクタリング対象）
 - **ValidateVariableName 関数**: 変数名のバリデーション
   - 英字/アンダースコアで始まり、英数字/アンダースコアのみ
   - 予約プレフィックス（`__runner_`）の拒否
@@ -17,14 +17,24 @@
 - 出力を `(map[string]string, map[string][]string, error)` に変更（配列変数対応）
 - 型検証とサイズ制限を `ProcessVars` 内で実施
 
+**コード重複の回避（リファクタリング）**:
+- 既存の `expandStringRecursive` と `varExpander` の展開ロジックが重複するため、共通化する
+- `expandStringWithResolver()`: コア展開ロジック（エスケープシーケンス、`%{VAR}` パース、循環検出）を抽出
+- `variableResolver` 型: 変数解決の戦略を関数型で抽象化
+  - 既存の `ExpandString`: `expandedVars` から即時解決
+  - 新規の `varExpander`: `expandedVars` と `rawVars` から遅延解決
+- このリファクタリングにより、変数展開ロジックを **1箇所に集約** し、メンテナンス性を向上
+
 **新規追加する構造体と関数**:
+- `variableResolver` 型: 変数名を展開値に解決する関数型
+- `expandStringWithResolver()`: 共通の変数展開ロジック（既存の `expandStringRecursive` を置き換え）
 - `varExpander` 構造体: 変数展開の状態を管理
   - Goの `map` 反復順序は非決定的であるため、変数 A が変数 B を参照している場合、B が先に展開されている保証がない
   - `expandedVars`（展開済み変数）と `rawVars`（未展開変数）をフィールドとして持ち、遅延展開を行う
   - メモ化により展開結果を `expandedVars` にキャッシュ
   - これにより、**map の反復順序に依存しない正しい変数展開**が実現される
 - `varExpander.expandString()`: 公開メソッド、変数展開のエントリポイント
-- `varExpander.expandStringRecursive()`: 内部メソッド、再帰展開と循環検出
+- `varExpander.resolveVariable()`: 内部メソッド、遅延展開とメモ化
 
 これにより**実証済みセキュリティ機能を継承**し、**配列変数サポートを追加**できる。
 
@@ -36,12 +46,11 @@
 # 変更対象コンポーネント
 internal/runner/runnertypes/spec.go       # Vars フィールドの型変更
 internal/runner/runnertypes/runtime.go    # ExpandedArrayVars フィールド追加
-internal/runner/config/expansion.go       # ProcessVars の更新
+internal/runner/config/expansion.go       # ProcessVars の更新、expandStringRecursive のリファクタリング
 internal/runner/config/errors.go          # 新規エラー型の追加
 internal/runner/config/loader.go          # 旧形式検出エラーの追加
 
 # 既存コンポーネント（再利用）
-internal/runner/config/expansion.go       # ExpandString（変更なし）
 internal/runner/security/validation.go    # ValidateVariableName（変更なし）
 ```
 
@@ -195,9 +204,164 @@ const (
 )
 ```
 
-### 1.4 ProcessVars 関数の更新
+### 1.4 既存の ExpandString のリファクタリング
 
-#### 1.4.1 関数シグネチャ
+既存の `expandStringRecursive` 関数と、新規の `varExpander` 構造体が同じ展開ロジックを持つため、
+コードの重複を避けるため、共通の展開ロジックを `expandStringWithResolver` 関数として抽出します。
+
+#### 1.4.1 既存の expandStringRecursive の置き換え
+
+既存の `expandStringRecursive` 関数を、`expandStringWithResolver` 関数を使用する実装に変更します。
+
+**変更前**:
+```go
+// expandStringRecursive performs recursive expansion with circular reference detection.
+func expandStringRecursive(
+    input string,
+    expandedVars map[string]string,
+    level string,
+    field string,
+    visited map[string]struct{},
+    expansionChain []string,
+    depth int,
+) (string, error) {
+    // ... 変数展開ロジック（エスケープシーケンス処理、%{VAR}パース、循環検出）...
+}
+```
+
+**変更後**:
+```go
+// expandStringRecursive performs recursive expansion with circular reference detection.
+// This is a wrapper around expandStringWithResolver for backward compatibility.
+func expandStringRecursive(
+    input string,
+    expandedVars map[string]string,
+    level string,
+    field string,
+    visited map[string]struct{},
+    expansionChain []string,
+    depth int,
+) (string, error) {
+    // Create a resolver that looks up variables from expandedVars
+    resolver := func(
+        varName string,
+        resolverField string,
+        resolverVisited map[string]struct{},
+        resolverChain []string,
+        resolverDepth int,
+    ) (string, error) {
+        // Check if variable is defined
+        value, exists := expandedVars[varName]
+        if !exists {
+            return "", &ErrUndefinedVariableDetail{
+                Level:        level,
+                Field:        resolverField,
+                VariableName: varName,
+                Context:      input,
+            }
+        }
+
+        // Mark as visited for circular reference detection
+        resolverVisited[varName] = struct{}{}
+
+        // Recursively expand the value using expandStringWithResolver
+        expandedValue, err := expandStringWithResolver(
+            value,
+            // Pass the same resolver for recursive calls
+            func(nestedVarName string, nestedField string, nestedVisited map[string]struct{}, nestedChain []string, nestedDepth int) (string, error) {
+                return expandStringRecursive(value, expandedVars, level, nestedField, nestedVisited, nestedChain, nestedDepth)
+            },
+            level,
+            resolverField,
+            resolverVisited,
+            append(resolverChain, varName),
+            resolverDepth+1,
+        )
+        if err != nil {
+            return "", err
+        }
+
+        // Unmark after expansion
+        delete(resolverVisited, varName)
+
+        return expandedValue, nil
+    }
+
+    return expandStringWithResolver(input, resolver, level, field, visited, expansionChain, depth)
+}
+```
+
+**注**: 上記の実装は、既存の `ExpandString` のシグネチャと動作を保持しつつ、
+内部的に `expandStringWithResolver` を使用するように変更します。
+
+#### 1.4.2 より簡潔な実装
+
+実際には、再帰呼び出しの仕組みを単純化できます:
+
+```go
+// expandStringRecursive performs recursive expansion with circular reference detection.
+func expandStringRecursive(
+    input string,
+    expandedVars map[string]string,
+    level string,
+    field string,
+    visited map[string]struct{},
+    expansionChain []string,
+    depth int,
+) (string, error) {
+    // Create a resolver that looks up variables from expandedVars
+    // and recursively expands them
+    resolver := func(
+        varName string,
+        resolverField string,
+        resolverVisited map[string]struct{},
+        resolverChain []string,
+        resolverDepth int,
+    ) (string, error) {
+        // Check if variable is defined
+        value, exists := expandedVars[varName]
+        if !exists {
+            return "", &ErrUndefinedVariableDetail{
+                Level:        level,
+                Field:        resolverField,
+                VariableName: varName,
+                Context:      input,
+            }
+        }
+
+        // Mark as visited for circular reference detection
+        resolverVisited[varName] = struct{}{}
+
+        // Recursively expand the value
+        expandedValue, err := expandStringRecursive(
+            value,
+            expandedVars,
+            level,
+            resolverField,
+            resolverVisited,
+            append(resolverChain, varName),
+            resolverDepth+1,
+        )
+        if err != nil {
+            return "", err
+        }
+
+        // Unmark after expansion
+        delete(resolverVisited, varName)
+
+        return expandedValue, nil
+    }
+
+    return expandStringWithResolver(input, resolver, level, field, visited, expansionChain, depth)
+}
+```
+
+この実装により、既存の `expandStringRecursive` は `expandStringWithResolver` を使用するラッパーとなり、
+変数展開のコアロジックは `expandStringWithResolver` に集約されます。
+
+### 1.5 ProcessVars 関数の更新
+
+#### 1.5.1 関数シグネチャ
 
 ```go
 // internal/runner/config/expansion.go
@@ -240,7 +404,7 @@ func ProcessVars(
 ) (map[string]string, map[string][]string, error)
 ```
 
-#### 1.4.2 実装
+#### 1.5.2 実装
 
 **重要な設計上の考慮事項: map反復順序と変数依存関係**
 
@@ -261,7 +425,146 @@ config_path = "%{base_dir}/config.yml"
 既存の `ExpandString` は `expandedVars` に存在する変数のみを参照可能なため、
 **未展開変数マップ** (`rawVars`) も参照可能な `varExpander` 構造体を導入します。
 
+**コード重複の回避**: 既存の `expandStringRecursive` と変数展開ロジックを共有するため、
+共通の展開ロジックを抽出した `expandStringWithResolver` 関数を導入します。
+これにより、変数解決の戦略（即時解決 vs 遅延解決）のみが異なる実装を、
+コア展開ロジックを重複させることなく実現できます。
+
 ```go
+// variableResolver is a function type that resolves a variable name to its expanded value.
+// It is called during variable expansion to look up and expand variable references.
+//
+// Parameters:
+//   - varName: the variable name to resolve (without %{} syntax)
+//   - field: field name for error messages
+//   - visited: map tracking currently-being-expanded variables (for circular detection)
+//   - expansionChain: ordered list of variable names in current expansion path
+//   - depth: current recursion depth
+//
+// Returns:
+//   - string: the expanded value of the variable
+//   - error: resolution error (e.g., undefined variable, type mismatch)
+type variableResolver func(
+    varName string,
+    field string,
+    visited map[string]struct{},
+    expansionChain []string,
+    depth int,
+) (string, error)
+
+// expandStringWithResolver performs recursive variable expansion using a custom resolver.
+// This is the core expansion logic shared by both ExpandString and varExpander.
+//
+// Parameters:
+//   - input: the string to expand (may contain %{VAR} references and escape sequences)
+//   - resolver: function to resolve variable names to their values
+//   - level: context for error messages (e.g., "global", "group[deploy]")
+//   - field: field name for error messages (e.g., "vars", "env.PATH")
+//   - visited: tracks variables currently being expanded (for circular reference detection)
+//   - expansionChain: ordered list of variable names in the current expansion path
+//   - depth: current recursion depth
+//
+// Returns:
+//   - string: the fully expanded string
+//   - error: expansion error (syntax error, undefined variable, circular reference, etc.)
+func expandStringWithResolver(
+    input string,
+    resolver variableResolver,
+    level string,
+    field string,
+    visited map[string]struct{},
+    expansionChain []string,
+    depth int,
+) (string, error) {
+    // Check recursion depth
+    if depth >= MaxRecursionDepth {
+        return "", &ErrMaxRecursionDepthExceededDetail{
+            Level:    level,
+            Field:    field,
+            MaxDepth: MaxRecursionDepth,
+            Context:  input,
+        }
+    }
+
+    var result strings.Builder
+    i := 0
+
+    for i < len(input) {
+        // Handle escape sequences
+        if input[i] == '\\' && i+1 < len(input) {
+            next := input[i+1]
+            switch next {
+            case '%':
+                result.WriteByte('%')
+                i += 2
+                continue
+            case '\\':
+                result.WriteByte('\\')
+                i += 2
+                continue
+            default:
+                return "", &ErrInvalidEscapeSequenceDetail{
+                    Level:    level,
+                    Field:    field,
+                    Sequence: input[i : i+2],
+                    Context:  input,
+                }
+            }
+        }
+
+        // Handle %{VAR} expansion
+        if input[i] == '%' && i+1 < len(input) && input[i+1] == '{' {
+            const openBraceLen = 2
+            closeIdx := strings.IndexByte(input[i+openBraceLen:], '}')
+            if closeIdx == -1 {
+                return "", &ErrUnclosedVariableReferenceDetail{
+                    Level:   level,
+                    Field:   field,
+                    Context: input,
+                }
+            }
+            closeIdx += i + openBraceLen
+
+            varName := input[i+openBraceLen : closeIdx]
+
+            // Validate variable name
+            if err := security.ValidateVariableName(varName); err != nil {
+                return "", &ErrInvalidVariableNameDetail{
+                    Level:        level,
+                    Field:        field,
+                    VariableName: varName,
+                    Reason:       err.Error(),
+                }
+            }
+
+            // Check for circular reference
+            if _, ok := visited[varName]; ok {
+                return "", &ErrCircularReferenceDetail{
+                    Level:        level,
+                    Field:        field,
+                    VariableName: varName,
+                    Chain:        append(expansionChain, varName),
+                }
+            }
+
+            // Resolve variable using the provided resolver
+            value, err := resolver(varName, field, visited, expansionChain, depth)
+            if err != nil {
+                return "", err
+            }
+
+            result.WriteString(value)
+            i = closeIdx + 1
+            continue
+        }
+
+        result.WriteByte(input[i])
+        i++
+    }
+
+    return result.String(), nil
+}
+
 // varExpander handles variable expansion with lazy resolution.
 // It maintains state for memoization and circular reference detection.
 //
@@ -303,111 +606,19 @@ func newVarExpander(
 func (e *varExpander) expandString(input string, field string) (string, error) {
     visited := make(map[string]struct{})
     expansionChain := make([]string, 0)
-    return e.expandStringRecursive(input, field, visited, expansionChain, 0)
-}
 
-// expandStringRecursive is the internal recursive expansion function.
-//
-// Parameters:
-//   - input: the string to expand
-//   - field: field name for error messages
-//   - visited: tracks variables currently being expanded (for circular reference detection)
-//   - expansionChain: ordered list of variable names in the current expansion path
-//   - depth: current recursion depth
-func (e *varExpander) expandStringRecursive(
-    input string,
-    field string,
-    visited map[string]struct{},
-    expansionChain []string,
-    depth int,
-) (string, error) {
-    // Check recursion depth
-    if depth >= MaxRecursionDepth {
-        return "", &ErrMaxRecursionDepthExceededDetail{
-            Level:    e.level,
-            Field:    field,
-            MaxDepth: MaxRecursionDepth,
-            Context:  input,
-        }
+    // Use expandStringWithResolver with varExpander's resolver
+    resolver := func(
+        varName string,
+        resolverField string,
+        resolverVisited map[string]struct{},
+        resolverChain []string,
+        resolverDepth int,
+    ) (string, error) {
+        return e.resolveVariable(varName, resolverField, resolverVisited, resolverChain, resolverDepth)
     }
 
-    var result strings.Builder
-    i := 0
-
-    for i < len(input) {
-        // Handle escape sequences (same as existing implementation)
-        if input[i] == '\\' && i+1 < len(input) {
-            next := input[i+1]
-            switch next {
-            case '%':
-                result.WriteByte('%')
-                i += 2
-                continue
-            case '\\':
-                result.WriteByte('\\')
-                i += 2
-                continue
-            default:
-                return "", &ErrInvalidEscapeSequenceDetail{
-                    Level:    e.level,
-                    Field:    field,
-                    Sequence: input[i : i+2],
-                    Context:  input,
-                }
-            }
-        }
-
-        // Handle %{VAR} expansion
-        if input[i] == '%' && i+1 < len(input) && input[i+1] == '{' {
-            const openBraceLen = 2
-            closeIdx := strings.IndexByte(input[i+openBraceLen:], '}')
-            if closeIdx == -1 {
-                return "", &ErrUnclosedVariableReferenceDetail{
-                    Level:   e.level,
-                    Field:   field,
-                    Context: input,
-                }
-            }
-            closeIdx += i + openBraceLen
-
-            varName := input[i+openBraceLen : closeIdx]
-
-            // Validate variable name
-            if err := security.ValidateVariableName(varName); err != nil {
-                return "", &ErrInvalidVariableNameDetail{
-                    Level:        e.level,
-                    Field:        field,
-                    VariableName: varName,
-                    Reason:       err.Error(),
-                }
-            }
-
-            // Check for circular reference
-            if _, ok := visited[varName]; ok {
-                return "", &ErrCircularReferenceDetail{
-                    Level:        e.level,
-                    Field:        field,
-                    VariableName: varName,
-                    Chain:        append(expansionChain, varName),
-                }
-            }
-
-            // Look up the variable value
-            value, err := e.resolveVariable(varName, field, visited, expansionChain, depth)
-            if err != nil {
-                return "", err
-            }
-
-            result.WriteString(value)
-            i = closeIdx + 1
-            continue
-        }
-
-        result.WriteByte(input[i])
-        i++
-    }
-
-    return result.String(), nil
+    return expandStringWithResolver(input, resolver, e.level, field, visited, expansionChain, 0)
 }
 
 // resolveVariable looks up and expands a variable by name.
@@ -442,8 +653,22 @@ func (e *varExpander) resolveVariable(
         // Mark as visited before recursive expansion
         visited[varName] = struct{}{}
 
-        expanded, err := e.expandStringRecursive(
+        // Create a resolver for recursive expansion
+        resolver := func(
+            resolverVarName string,
+            resolverField string,
+            resolverVisited map[string]struct{},
+            resolverChain []string,
+            resolverDepth int,
+        ) (string, error) {
+            return e.resolveVariable(resolverVarName, resolverField, resolverVisited, resolverChain, resolverDepth)
+        }
+
+        // Expand the raw value using the shared expansion logic
+        expanded, err := expandStringWithResolver(
             rv,
+            resolver,
+            e.level,
             field,
             visited,
             append(expansionChain, varName),
@@ -650,7 +875,7 @@ func ProcessVars(
 }
 ```
 
-### 1.5 エラー型定義
+### 1.6 エラー型定義
 
 ```go
 // internal/runner/config/errors.go
@@ -816,7 +1041,7 @@ func (e *ErrArrayVariableInStringContextDetail) Error() string {
 }
 ```
 
-### 1.6 ExpandGlobal の更新
+### 1.7 ExpandGlobal の更新
 
 ```go
 // internal/runner/config/expansion.go
@@ -879,7 +1104,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 }
 ```
 
-### 1.7 ExpandGroup の更新
+### 1.8 ExpandGroup の更新
 
 ```go
 // internal/runner/config/expansion.go
@@ -963,7 +1188,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 }
 ```
 
-### 1.8 ExpandCommand の更新
+### 1.9 ExpandCommand の更新
 
 ```go
 // internal/runner/config/expansion.go
@@ -1048,7 +1273,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 }
 ```
 
-### 1.9 旧形式検出エラー
+### 1.10 旧形式検出エラー
 
 ```go
 // internal/runner/config/loader.go
