@@ -1831,7 +1831,7 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 - [ ] `expansion.go`: `varExpander` 構造体の追加
 - [ ] `expansion.go`: `newVarExpander` コンストラクタの追加
 - [ ] `expansion.go`: `varExpander.expandString` メソッドの追加
-- [ ] `expansion.go`: `varExpander.expandStringRecursive` メソッドの追加
+- [ ] `expansion.go`: `expandStringRecursive` 内部関数の追加
 - [ ] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
 - [ ] `expansion.go`: `ProcessVars` のシグネチャ変更
 - [ ] `expansion.go`: 型検証の実装（Phase 1: 検証とパース）
