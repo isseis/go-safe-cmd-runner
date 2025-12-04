@@ -419,8 +419,8 @@ config_path = "%{base_dir}/config.yml"
 
 この問題を解決するため、実装は2段階で行います：
 
-1. **Phase 1: 検証とパース** - すべての変数を検証し、未展開の値を一時マップに格納
-2. **Phase 2: 遅延展開** - `varExpander` を使用して未展開変数を動的に解決
+1. **Phase 1: 検証と型チェック (Validation and type checking)** - すべての変数を検証し、型チェックを行い、未展開の値を一時マップに格納
+2. **Phase 2: 遅延解決による展開 (Expansion with lazy resolution)** - `varExpander` を使用して未展開変数を動的に解決
 
 既存の `ExpandString` は `expandedVars` に存在する変数のみを参照可能なため、
 **未展開変数マップ** (`rawVars`) も参照可能な `varExpander` 構造体を導入します。
