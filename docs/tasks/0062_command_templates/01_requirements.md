@@ -265,6 +265,8 @@ args = ["${@verbose_flags}", "backup", "%{group_root}/${subdir}"]
 
 [[groups]]
 name = "group1"
+
+[groups.vars]
 group_root = "/data/group1"
 
 [[groups.commands]]
