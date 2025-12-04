@@ -17,11 +17,14 @@
 - 出力を `(map[string]string, map[string][]string, error)` に変更（配列変数対応）
 - 型検証とサイズ制限を `ProcessVars` 内で実施
 
-**新規追加する内部関数**:
-- `expandStringWithRawVars()`: 未展開変数も参照可能な展開関数
+**新規追加する構造体と関数**:
+- `varExpander` 構造体: 変数展開の状態を管理
   - Goの `map` 反復順序は非決定的であるため、変数 A が変数 B を参照している場合、B が先に展開されている保証がない
-  - この関数は `expandedVars`（展開済み変数）と `rawVars`（未展開変数）の両方を参照し、必要に応じて遅延展開を行う
+  - `expandedVars`（展開済み変数）と `rawVars`（未展開変数）をフィールドとして持ち、遅延展開を行う
+  - メモ化により展開結果を `expandedVars` にキャッシュ
   - これにより、**map の反復順序に依存しない正しい変数展開**が実現される
+- `varExpander.expandString()`: 公開メソッド、変数展開のエントリポイント
+- `varExpander.expandStringRecursive()`: 内部メソッド、再帰展開と循環検出
 
 これにより**実証済みセキュリティ機能を継承**し、**配列変数サポートを追加**できる。
 
@@ -253,27 +256,66 @@ config_path = "%{base_dir}/config.yml"
 この問題を解決するため、実装は2段階で行います：
 
 1. **Phase 1: 検証とパース** - すべての変数を検証し、未展開の値を一時マップに格納
-2. **Phase 2: 遅延展開** - `ExpandString` の呼び出し時に未展開変数を動的に解決
+2. **Phase 2: 遅延展開** - `varExpander` を使用して未展開変数を動的に解決
 
 既存の `ExpandString` は `expandedVars` に存在する変数のみを参照可能なため、
-**未展開変数マップ** (`rawVars`) を追加のコンテキストとして渡す新しいヘルパー関数 `expandStringWithRawVars` を導入します。
+**未展開変数マップ** (`rawVars`) も参照可能な `varExpander` 構造体を導入します。
 
 ```go
-// expandStringWithRawVars expands a string, resolving references to both
-// already-expanded variables and raw (not yet expanded) variables.
-// This enables correct expansion regardless of map iteration order.
+// varExpander handles variable expansion with lazy resolution.
+// It maintains state for memoization and circular reference detection.
 //
-// The expandedVars map is also used for memoization: once a raw variable
-// is expanded, the result is cached in expandedVars to avoid redundant
-// expansion when the same variable is referenced multiple times.
-//
-// SIDE EFFECT: This function modifies the expandedVars map by adding
+// SIDE EFFECT: The expandString method modifies the expandedVars map by adding
 // newly expanded variables to it. This is intentional for memoization.
-func expandStringWithRawVars(
-    input string,
-    expandedVars map[string]string, // also used for memoization
+type varExpander struct {
+    // expandedVars contains already-expanded string variables.
+    // Also used for memoization of newly expanded variables.
+    expandedVars map[string]string
+
+    // rawVars contains not-yet-expanded variable definitions.
+    rawVars map[string]interface{}
+
+    // level is the context for error messages (e.g., "global", "group[deploy]").
+    level string
+}
+
+// newVarExpander creates a new varExpander instance.
+func newVarExpander(
+    expandedVars map[string]string,
     rawVars map[string]interface{},
     level string,
+) *varExpander {
+    return &varExpander{
+        expandedVars: expandedVars,
+        rawVars:      rawVars,
+        level:        level,
+    }
+}
+
+// expandString expands variable references in the input string.
+// It resolves references to both already-expanded and raw variables.
+//
+// Parameters:
+//   - input: the string containing %{VAR} references to expand
+//   - field: field name for error messages (e.g., "vars.config_path")
+//
+// Returns the expanded string or an error.
+func (e *varExpander) expandString(input string, field string) (string, error) {
+    visited := make(map[string]struct{})
+    expansionChain := make([]string, 0)
+    return e.expandStringRecursive(input, field, visited, expansionChain, 0)
+}
+
+// expandStringRecursive is the internal recursive expansion function.
+//
+// Parameters:
+//   - input: the string to expand
+//   - field: field name for error messages
+//   - visited: tracks variables currently being expanded (for circular reference detection)
+//   - expansionChain: ordered list of variable names in the current expansion path
+//   - depth: current recursion depth
+func (e *varExpander) expandStringRecursive(
+    input string,
     field string,
     visited map[string]struct{},
     expansionChain []string,
@@ -282,7 +324,7 @@ func expandStringWithRawVars(
     // Check recursion depth
     if depth >= MaxRecursionDepth {
         return "", &ErrMaxRecursionDepthExceededDetail{
-            Level:    level,
+            Level:    e.level,
             Field:    field,
             MaxDepth: MaxRecursionDepth,
             Context:  input,
@@ -307,7 +349,7 @@ func expandStringWithRawVars(
                 continue
             default:
                 return "", &ErrInvalidEscapeSequenceDetail{
-                    Level:    level,
+                    Level:    e.level,
                     Field:    field,
                     Sequence: input[i : i+2],
                     Context:  input,
@@ -321,7 +363,7 @@ func expandStringWithRawVars(
             closeIdx := strings.IndexByte(input[i+openBraceLen:], '}')
             if closeIdx == -1 {
                 return "", &ErrUnclosedVariableReferenceDetail{
-                    Level:   level,
+                    Level:   e.level,
                     Field:   field,
                     Context: input,
                 }
@@ -333,7 +375,7 @@ func expandStringWithRawVars(
             // Validate variable name
             if err := security.ValidateVariableName(varName); err != nil {
                 return "", &ErrInvalidVariableNameDetail{
-                    Level:        level,
+                    Level:        e.level,
                     Field:        field,
                     VariableName: varName,
                     Reason:       err.Error(),
@@ -343,7 +385,7 @@ func expandStringWithRawVars(
             // Check for circular reference
             if _, ok := visited[varName]; ok {
                 return "", &ErrCircularReferenceDetail{
-                    Level:        level,
+                    Level:        e.level,
                     Field:        field,
                     VariableName: varName,
                     Chain:        append(expansionChain, varName),
@@ -351,59 +393,9 @@ func expandStringWithRawVars(
             }
 
             // Look up the variable value
-            var value string
-            var found bool
-
-            // First, check already-expanded variables (includes memoized results)
-            if v, ok := expandedVars[varName]; ok {
-                value = v
-                found = true
-            } else if rawVal, ok := rawVars[varName]; ok {
-                // Found in raw vars - need to expand it first
-                switch rv := rawVal.(type) {
-                case string:
-                    // Mark as visited before recursive expansion
-                    visited[varName] = struct{}{}
-
-                    expanded, err := expandStringWithRawVars(
-                        rv,
-                        expandedVars,
-                        rawVars,
-                        level,
-                        field,
-                        visited,
-                        append(expansionChain, varName),
-                        depth+1,
-                    )
-                    if err != nil {
-                        return "", err
-                    }
-
-                    // Unmark after expansion
-                    delete(visited, varName)
-
-                    // Cache the expanded value for future references (memoization)
-                    expandedVars[varName] = expanded
-
-                    value = expanded
-                    found = true
-                default:
-                    // Array variable cannot be referenced in string context
-                    return "", &ErrArrayVariableInStringContextDetail{
-                        Level:        level,
-                        Field:        field,
-                        VariableName: varName,
-                    }
-                }
-            }
-
-            if !found {
-                return "", &ErrUndefinedVariableDetail{
-                    Level:        level,
-                    Field:        field,
-                    VariableName: varName,
-                    Context:      input,
-                }
+            value, err := e.resolveVariable(varName, field, visited, expansionChain, depth)
+            if err != nil {
+                return "", err
             }
 
             result.WriteString(value)
@@ -416,6 +408,68 @@ func expandStringWithRawVars(
     }
 
     return result.String(), nil
+}
+
+// resolveVariable looks up and expands a variable by name.
+// It checks expandedVars first, then rawVars for lazy expansion.
+func (e *varExpander) resolveVariable(
+    varName string,
+    field string,
+    visited map[string]struct{},
+    expansionChain []string,
+    depth int,
+) (string, error) {
+    // First, check already-expanded variables (includes memoized results)
+    if v, ok := e.expandedVars[varName]; ok {
+        return v, nil
+    }
+
+    // Check raw vars for lazy expansion
+    rawVal, ok := e.rawVars[varName]
+    if !ok {
+        return "", &ErrUndefinedVariableDetail{
+            Level:        e.level,
+            Field:        field,
+            VariableName: varName,
+            Context:      "",
+            Chain:        append(expansionChain, varName),
+        }
+    }
+
+    // Handle based on type
+    switch rv := rawVal.(type) {
+    case string:
+        // Mark as visited before recursive expansion
+        visited[varName] = struct{}{}
+
+        expanded, err := e.expandStringRecursive(
+            rv,
+            field,
+            visited,
+            append(expansionChain, varName),
+            depth+1,
+        )
+        if err != nil {
+            return "", err
+        }
+
+        // Unmark after expansion
+        delete(visited, varName)
+
+        // Cache the expanded value for future references (memoization)
+        e.expandedVars[varName] = expanded
+
+        return expanded, nil
+
+    default:
+        // Array variable cannot be referenced in string context
+        return "", &ErrArrayVariableInStringContextDetail{
+            Level:        e.level,
+            Field:        field,
+            VariableName: varName,
+            Chain:        append(expansionChain, varName),
+        }
+    }
 }
 
 func ProcessVars(
@@ -559,18 +613,14 @@ func ProcessVars(
         rawVars[k] = v
     }
 
+    // Create expander for lazy variable resolution
+    expander := newVarExpander(expandedStrings, rawVars, level)
+
     // Expand string variables (order-independent due to lazy resolution)
     for varName, rawValue := range stringVars {
-        visited := make(map[string]struct{})
-        expanded, err := expandStringWithRawVars(
+        expanded, err := expander.expandString(
             rawValue,
-            expandedStrings,
-            rawVars,
-            level,
             fmt.Sprintf("vars.%s", varName),
-            visited,
-            []string{varName},
-            0,
         )
         if err != nil {
             return nil, nil, err
@@ -584,16 +634,9 @@ func ProcessVars(
         for i, elem := range rawArray {
             str := elem.(string) // Already validated in Phase 1
 
-            visited := make(map[string]struct{})
-            expanded, err := expandStringWithRawVars(
+            expanded, err := expander.expandString(
                 str,
-                expandedStrings,
-                rawVars,
-                level,
                 fmt.Sprintf("vars.%s[%d]", varName, i),
-                visited,
-                nil,
-                0,
             )
             if err != nil {
                 return nil, nil, err
@@ -611,6 +654,38 @@ func ProcessVars(
 
 ```go
 // internal/runner/config/errors.go
+
+// ===========================================
+// Existing error type modification
+// ===========================================
+
+// ErrUndefinedVariableDetail needs to be extended with Chain field.
+// Add the following field to the existing struct:
+//
+// type ErrUndefinedVariableDetail struct {
+//     Level        string
+//     Field        string
+//     VariableName string
+//     Context      string
+//     Chain        []string // NEW: expansion path leading to this error
+// }
+//
+// Update the Error() method to include the chain in the message:
+//
+// func (e *ErrUndefinedVariableDetail) Error() string {
+//     msg := fmt.Sprintf(
+//         "undefined variable %q referenced in %s.%s",
+//         e.VariableName, e.Level, e.Field,
+//     )
+//     if len(e.Chain) > 0 {
+//         msg += fmt.Sprintf(" (expansion path: %s)", strings.Join(e.Chain, " -> "))
+//     }
+//     return msg
+// }
+
+// ===========================================
+// New error types
+// ===========================================
 
 // ErrTooManyVariablesDetail is returned when the number of variables exceeds
 // MaxVarsPerLevel.
@@ -725,14 +800,19 @@ type ErrArrayVariableInStringContextDetail struct {
     Level        string
     Field        string
     VariableName string
+    Chain        []string // expansion path leading to this error
 }
 
 func (e *ErrArrayVariableInStringContextDetail) Error() string {
-    return fmt.Sprintf(
+    msg := fmt.Sprintf(
         "cannot reference array variable %q in string context at %s.%s: "+
             "array variables can only be used where array values are expected",
         e.VariableName, e.Level, e.Field,
     )
+    if len(e.Chain) > 0 {
+        msg += fmt.Sprintf(" (expansion path: %s)", strings.Join(e.Chain, " -> "))
+    }
+    return msg
 }
 ```
 
@@ -1523,7 +1603,11 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 - [ ] `expansion.go`: 制限値定数の追加
 - [ ] `errors.go`: 新規エラー型の追加
 - [ ] `errors.go`: `ErrArrayVariableInStringContextDetail` エラー型の追加
-- [ ] `expansion.go`: `expandStringWithRawVars` ヘルパー関数の追加
+- [ ] `expansion.go`: `varExpander` 構造体の追加
+- [ ] `expansion.go`: `newVarExpander` コンストラクタの追加
+- [ ] `expansion.go`: `varExpander.expandString` メソッドの追加
+- [ ] `expansion.go`: `varExpander.expandStringRecursive` メソッドの追加
+- [ ] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
 - [ ] `expansion.go`: `ProcessVars` のシグネチャ変更
 - [ ] `expansion.go`: 型検証の実装（Phase 1: 検証とパース）
 - [ ] `expansion.go`: サイズ検証の実装
@@ -1541,7 +1625,7 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 - [ ] `expansion_test.go`: サイズ制限のテスト
 - [ ] `expansion_test.go`: 順序非依存展開のテスト（前方参照、連鎖依存）
 - [ ] `expansion_test.go`: 配列変数の文字列コンテキスト参照エラーのテスト
-- [ ] `expansion_test.go`: `expandStringWithRawVars` のテスト
+- [ ] `expansion_test.go`: `varExpander` のテスト
 - [ ] `loader_test.go`: 旧形式検出のテスト
 - [ ] 統合テストの作成
 - [ ] ベンチマークテストの作成
