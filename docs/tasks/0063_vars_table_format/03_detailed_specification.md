@@ -727,7 +727,7 @@ func ProcessVars(
 
     for varName, rawValue := range vars {
         // 1a. Validate variable name
-        if err := validateVariableName(varName, level, "vars"); err != nil {
+        if err := security.ValidateVariableName(varName); err != nil {
             return nil, nil, err
         }
 
