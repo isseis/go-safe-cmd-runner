@@ -1,0 +1,728 @@
+# コマンドテンプレート機能 - 要件定義書
+
+## 1. 概要
+
+### 1.1 背景
+
+現在の TOML 設定では、複数のグループで同じコマンド定義を繰り返し記述する必要がある。
+
+```toml
+[[groups]]
+name = "group1"
+[[groups.commands]]
+name = "restic_prune"
+cmd = "restic"
+args = ["forget", "--prune", "--keep-daily", "7", "--keep-weekly", "5", "--keep-monthly", "3"]
+
+[[groups]]
+name = "group2"
+[[groups.commands]]
+name = "restic_prune"
+cmd = "restic"
+args = ["forget", "--prune", "--keep-daily", "7", "--keep-weekly", "5", "--keep-monthly", "3"]
+```
+
+この重複は以下の問題を引き起こす：
+
+1. **保守性の低下**: 同じコマンド定義を複数箇所で修正する必要がある
+2. **一貫性の欠如**: コピー時の誤りにより、グループ間でコマンド定義が不一致になる可能性
+3. **可読性の低下**: 設定ファイルが冗長になり、本質的な差分が見えにくい
+
+### 1.2 目的
+
+テンプレート機能を導入し、共通のコマンド定義を一カ所で管理できるようにする。
+
+```toml
+# テンプレート定義
+[command_templates.restic_prune]
+cmd = "restic"
+args = ["forget", "--prune", "--keep-daily", "7", "--keep-weekly", "5", "--keep-monthly", "3"]
+
+# グループでテンプレートを使用
+[[groups]]
+name = "group1"
+[[groups.commands]]
+template = "restic_prune"
+
+[[groups]]
+name = "group2"
+[[groups.commands]]
+template = "restic_prune"
+```
+
+### 1.3 スコープ
+
+#### 対象範囲 (In Scope)
+
+- `[[groups.commands]]` のテンプレート化
+- テンプレートへのパラメータ渡し（文字列、配列）
+- テンプレート内での変数展開（`${param}`, `${?param}`, `${@list}`）
+- テンプレート内での既存変数展開（`%{group_root}` など）
+- 後方互換性の維持（テンプレート機能はオプショナル）
+
+#### 対象外 (Out of Scope)
+
+- テンプレートの継承・拡張機能
+- `[[groups.commands]]` 以外の要素のテンプレート化
+- 条件付きテンプレート展開（環境変数による分岐など）
+- テンプレートのネスト（テンプレートから別のテンプレートを参照）
+
+## 2. 機能要件
+
+### 2.1 テンプレート定義
+
+#### F-001: テンプレート定義セクション
+
+**概要**: TOML ファイルにテンプレート定義セクションを追加する。
+
+**フォーマット**:
+```toml
+[command_templates.<template_name>]
+cmd = "<command>"
+args = ["<arg1>", "<arg2>", ...]
+env = ["<key>=<value>", ...]
+# 他の [[groups.commands]] で利用可能なフィールド
+```
+
+**制約**:
+- テンプレート名は英字またはアンダースコアで始まり、英数字とアンダースコアのみ使用可能（既存の変数名規則と同一、`ValidateVariableName` を使用）
+- テンプレート定義は設定ファイルの先頭（`[[groups]]` より前）に配置
+- 同名のテンプレートが複数定義された場合はエラー
+- 予約済みのテンプレート名（将来の拡張用）: `__` で始まる名前は予約済み
+
+**例**:
+```toml
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check", "--read-data-subset=${subset_percentage}"]
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${backup_path}"]
+```
+
+### 2.2 パラメータ展開
+
+#### F-002: 文字列パラメータ展開 `${param}`
+
+**概要**: テンプレート内の `${param}` を文字列値で置換する。
+
+**動作**:
+- `${param}` はパラメータ値で置換される
+- 空文字列でも要素として保持される
+
+**例**:
+```toml
+[command_templates.example]
+args = ["--option", "${value}"]
+
+[[groups.commands]]
+template = "example"
+params.value = "test"
+# 結果: args = ["--option", "test"]
+```
+
+#### F-003: オプショナル文字列パラメータ展開 `${?param}`
+
+**概要**: テンプレート内の `${?param}` を文字列値で置換し、空文字列の場合は要素を削除する。
+
+**動作**:
+- `${?param}` はパラメータ値で置換される
+- パラメータが空文字列の場合、その要素を配列から削除する
+
+**例**:
+```toml
+[command_templates.example]
+args = ["backup", "${?optional_flag}", "${path}"]
+
+# optional_flag が空文字列の場合
+[[groups.commands]]
+template = "example"
+params.optional_flag = ""
+params.path = "/data"
+# 結果: args = ["backup", "/data"]
+
+# optional_flag が指定された場合
+[[groups.commands]]
+template = "example"
+params.optional_flag = "--verbose"
+params.path = "/data"
+# 結果: args = ["backup", "--verbose", "/data"]
+```
+
+#### F-004: 配列パラメータ展開 `${@list}`
+
+**概要**: テンプレート内の `${@list}` を配列で置換し、その要素を展開する。
+
+**動作**:
+- `${@list}` は配列の全要素で置換される
+- 空配列の場合、要素を追加しない（無駄な空文字列が入らない）
+
+**例**:
+```toml
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${path}"]
+
+# verbose_flags が空配列の場合
+[[groups.commands]]
+template = "restic_backup"
+params.verbose_flags = []
+params.path = "/data"
+# 結果: args = ["backup", "/data"]
+
+# verbose_flags が指定された場合
+[[groups.commands]]
+template = "restic_backup"
+params.verbose_flags = ["-q", "--no-cache"]
+params.path = "/data"
+# 結果: args = ["-q", "--no-cache", "backup", "/data"]
+```
+
+#### F-008: 非再帰的展開
+
+**概要**: パラメータ展開は1回のみ行われ、再帰的な展開は行わない。
+
+**動作**:
+- パラメータ値に含まれる `${...}` や `${@...}` は文字列リテラルとして扱われる
+- これにより、無限ループや DoS 攻撃（Billion Laughs attack 類似）を防止する
+
+**例**:
+```toml
+[command_templates.echo]
+args = ["${msg}"]
+
+[[groups.commands]]
+template = "echo"
+params.msg = "${other_param}"
+# 結果: args = ["${other_param}"]
+# （"${other_param}" は展開されず、そのまま文字列として渡される）
+```
+
+### 2.3 テンプレート使用
+
+#### F-005: グループコマンドでのテンプレート参照
+
+**概要**: `[[groups.commands]]` でテンプレートを参照し、パラメータを渡す。
+
+**フォーマット**:
+```toml
+[[groups.commands]]
+template = "<template_name>"
+params.<param1> = "<value1>"
+params.<param2> = ["<value2a>", "<value2b>"]
+```
+
+**制約**:
+- `template` フィールドと通常のコマンド定義（`cmd`, `args` など）は排他的
+  - `env` もこれに含まれる。テンプレートを使用する場合、コマンド固有の環境変数は `params` 経由でテンプレート内の `env` に渡す必要がある
+- 存在しないテンプレート名を指定した場合はエラー
+- テンプレートで定義されていないパラメータを渡した場合は警告（エラーではない）
+- テンプレートで使用されているパラメータが未指定の場合はエラー
+
+**例**:
+```toml
+[[groups.commands]]
+template = "restic_backup"
+params.verbose_flags = ["-q"]
+params.backup_path = "%{group_root}/volumes"
+```
+
+#### F-007: リテラル `$` のエスケープ
+
+**概要**: テンプレート定義内でリテラルの `$` 文字を使用したい場合のエスケープ機構を提供する。
+
+**動作**:
+- `$$` は展開処理でリテラルの `$` に変換される
+- テンプレートパラメータ展開後、`$$` → `$` の置換を行う
+
+**例**:
+```toml
+[command_templates.example]
+args = ["--cost=$$100", "${path}"]
+
+[[groups.commands]]
+template = "example"
+params.path = "/data"
+# 結果: args = ["--cost=$100", "/data"]
+```
+
+### 2.4 変数展開の順序
+
+#### F-006: 展開タイミング
+
+**概要**: テンプレート展開と既存の変数展開（`%{...}`）の順序を定義する。
+
+**展開順序**:
+1. テンプレートに params を適用（`${...}`, `${?...}`, `${@...}` を展開）
+2. 結果として得られた `[[groups.commands]]` に対して `%{...}` を展開
+
+**例**:
+```toml
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "%{group_root}/${subdir}"]
+
+[[groups]]
+name = "group1"
+group_root = "/data/group1"
+
+[[groups.commands]]
+template = "restic_backup"
+params.verbose_flags = ["-q"]
+params.subdir = "volumes"
+
+# 展開プロセス:
+# Step 1: テンプレート適用（${...} を params 値で置換）
+#   args = ["-q", "backup", "%{group_root}/volumes"]
+# Step 2: 結果の %{} を展開
+#   args = ["-q", "backup", "/data/group1/volumes"]
+```
+
+**理由**:
+- テンプレート内でグループ固有の変数（`%{group_root}` など）を使用できる
+- params でパスの一部だけを指定し、残りはグループ変数で補完できる
+- `%{...}` の展開は1回のみでシンプル
+- params の値は変数展開なしでそのまま使用されるため、動作が予測可能
+
+**セキュリティ上の注意**:
+- params の値に `%{` が含まれる場合はエラーとして拒否する（NF-006）
+- これにより、Step 1 の結果に含まれる `%{...}` は必ずテンプレート定義由来となる
+- 意図しない変数展開を完全に防止できる
+
+**params 内で変数を使いたい場合の代替手段**:
+```toml
+# NG: params 内で %{} は使用不可
+params.path = "%{group_root}/volumes"
+
+# OK: テンプレート定義側で %{} を使用し、params は部分的な値のみ
+[command_templates.restic_backup]
+args = ["backup", "%{group_root}/${subdir}"]
+
+[[groups.commands]]
+template = "restic_backup"
+params.subdir = "volumes"
+```
+
+## 3. 非機能要件
+
+### 3.1 互換性 (Compatibility)
+
+#### NF-001: 後方互換性の維持
+
+**要件**: 既存の TOML 設定ファイルが変更なしで動作すること。
+
+**確認項目**:
+- テンプレート機能を使用しない設定ファイルが従来通り動作する
+- 全ての既存テストケースが変更なしで通る
+- サンプル設定ファイルが正常に動作する
+
+### 3.2 保守性 (Maintainability)
+
+#### NF-002: 明確なエラーメッセージ
+
+**要件**: テンプレート関連のエラーは明確で分かりやすいメッセージを表示すること。
+
+**エラーメッセージ例**:
+- `template "restic_backup" not found`
+- `parameter "backup_path" is required but not provided in template "restic_backup"`
+- `cannot specify both "template" and "cmd" fields in command definition`
+- `unused parameter "extra_param" in template "restic_backup"`（警告）
+
+#### NF-003: テストカバレッジ
+
+**要件**: テンプレート機能の全ての分岐をカバーするテストを作成すること。
+
+**確認項目**:
+- 正常系: 各種パラメータ展開の動作確認
+- 異常系: 存在しないテンプレート、未指定パラメータなど
+- エッジケース: 空文字列、空配列、特殊文字など
+
+### 3.3 性能 (Performance)
+
+#### NF-004: オーバーヘッドの最小化
+
+**要件**: テンプレート展開によるオーバーヘッドを最小限に抑えること。
+
+**期待値**:
+- テンプレート展開は設定ファイル読み込み時に1回のみ実行
+- 実行時のパフォーマンスに影響しない
+- メモリ使用量の増加は無視できるレベル
+
+### 3.4 セキュリティ (Security)
+
+#### NF-005: パラメータ値のセキュリティ検証
+
+**要件**: `params` で渡される値に対して、既存のセキュリティ検証と同等の検証を行うこと。
+
+**検証項目**:
+- **コマンドインジェクション検出**: `;`, `|`, `&&`, `||`, `$()`, バッククォート等の危険パターン
+- **パストラバーサル検出**: `../` を含むパス（`cmd` フィールドに展開される場合）
+- **変数名の検証**: パラメータ名は `ValidateVariableName` で検証
+
+**実装方針**:
+- 既存の `ValidateEnvironmentValue` または同等のロジックを再利用
+- テンプレート展開前に params 値を検証
+- 検証に失敗した場合は設定ファイル読み込み時にエラー
+
+#### NF-006: パラメータからの変数参照インジェクション防止
+
+**要件**: `params` の値から `%{...}` パターンが Step 2 の変数展開に渡されることを防止する。
+
+**実装方針**:
+- params の値（文字列および配列の各要素）に `%{` が含まれる場合、エラーとして拒否する
+- これにより、テンプレート展開後の `%{...}` はすべてテンプレート定義由来であることが保証される
+
+**理由**:
+- 攻撃者が params 経由で `%{secret_var}` を注入し、意図しない変数値を取得することを防止
+- テンプレート定義者が意図した変数参照のみが展開されることを保証
+- 展開順序がシンプルになり、動作が予測可能
+
+**例（攻撃シナリオ）**:
+```toml
+[command_templates.example]
+args = ["--path=${user_input}"]
+
+[[groups.commands]]
+template = "example"
+params.user_input = "%{secret_var}"  # エラー: params に %{ を含めることは禁止
+```
+
+**エラーメッセージ例**:
+```
+parameter "user_input" contains forbidden pattern "%{": variable references in params are not allowed
+```
+
+#### NF-007: 展開後のセキュリティ検証
+
+**要件**: テンプレート展開後に生成されたコマンド定義に対して、既存のセキュリティ検証を適用すること。
+
+**確認項目**:
+- 展開後の `cmd` パスが `cmd_allowed` または `AllowedCommands` に含まれること
+- 展開後の `args` に対する危険パターン検出
+- 展開後の `env` に対する `ValidateAllEnvironmentVars` 検証
+
+**実装方針**:
+- テンプレート展開後、通常のコマンド定義と同様の検証パスを通過させる
+- 特別な例外処理やバイパスを設けない
+
+## 4. 代替案の検討
+
+### 4.1 検討した代替案
+
+#### 案1: 単純なテンプレート定義 + パラメータ展開（ベースライン）
+
+```toml
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check", "--read-data-subset=${subset_percentage}"]
+
+[[groups.commands]]
+template = "restic_check"
+params = { subset_percentage = "2.5%" }
+```
+
+**Pros**:
+- シンプルで直感的
+- TOML の標準的な構造を使用
+- パラメータ名が明示的
+
+**Cons**:
+- 空文字列 `""` を args に含めると無駄な空引数が渡される
+- リストをパラメータとして渡しにくい
+
+**不採用理由**: リスト展開のサポートが不十分
+
+---
+
+#### 案2: リスト展開のみをサポート（`${...name}` 記法）
+
+```toml
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${...verbose_flags}", "backup", "${backup_path}"]
+
+[[groups.commands]]
+template = "restic_backup"
+params.verbose_flags = ["-q"]
+params.backup_path = "/data"
+```
+
+**Pros**:
+- リストのパラメータを自然に扱える
+- 空配列を渡せば要素が消える
+
+**Cons**:
+- `${...name}` という記法が直感的でない（スプレッド演算子風だが一貫性がない）
+- 文字列パラメータで空文字列を削除する機能がない
+
+**不採用理由**: 記法が分かりにくく、オプショナル文字列パラメータの機能がない
+
+---
+
+#### 案3: 条件付き要素（環境変数ベース）
+
+```toml
+[command_templates.restic_backup]
+cmd = "restic"
+args = [
+    { value = "-q", if_env_not = "DEBUG" },
+    "backup",
+    "${backup_path}"
+]
+
+[[groups.commands]]
+template = "restic_backup"
+params.backup_path = "/data"
+```
+
+**Pros**:
+- 環境変数による動的な制御が可能
+- パラメータ渡しがシンプル
+- デバッグ時の切り替えが環境変数で完結
+
+**Cons**:
+- TOML の構造が複雑（インライン配列と辞書の混在）
+- 実装コストが高い
+- YAGNI に反する（現時点で環境変数による条件分岐は不要）
+
+**不採用理由**: 複雑性が高く、YAGNI の原則に反する
+
+---
+
+#### 案4: ハイブリッド（採用案）
+
+```toml
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${?optional_flag}", "${backup_path}"]
+
+[[groups.commands]]
+template = "restic_backup"
+params.verbose_flags = ["-q"]
+params.optional_flag = ""
+params.backup_path = "/data"
+# 結果: args = ["-q", "backup", "/data"]
+```
+
+**Pros**:
+- 文字列と配列の両方を扱える
+- `${}`, `${?}`, `${@}` の3つの記法で直感的
+- 空配列・空文字列で要素を消せる
+- YAGNI に従いシンプルながら、必須要件をカバー
+
+**Cons**:
+- 3種類の記法を覚える必要がある
+
+**採用理由**:
+- シンプルながら必要十分な機能を提供
+- Ruby/shell の `$@` に似た記法で直感的
+- 将来的に継承機能を追加する際も構造を変えずに拡張可能
+
+### 4.2 記法の詳細比較
+
+| 記法 | 用途 | 空の場合の動作 | 例 |
+|------|------|----------------|-----|
+| `${param}` | 文字列置換 | 空文字列として保持 | `${path}` → `""` |
+| `${?param}` | オプショナル文字列置換 | 要素を削除 | `${?flag}` → （削除） |
+| `${@list}` | 配列展開 | 何も追加しない | `${@flags}` → （削除） |
+
+## 5. 実装計画
+
+### 5.1 実装フェーズ
+
+#### Phase 1: パース機能の追加
+
+**対象ファイル**:
+- `internal/runner/config/types.go` - テンプレート定義の型追加
+- `internal/runner/config/loader.go` - TOML パース時のテンプレート読み込み
+
+**実装内容**:
+- `CommandTemplate` 型の定義
+- TOML ファイルから `[command_templates.*]` セクションの読み込み
+- テンプレート名の検証（重複チェック、命名規則チェック）
+
+**テスト**:
+- 正常系: テンプレート定義が正しく読み込まれる
+- 異常系: 重複テンプレート名、不正なテンプレート名
+
+#### Phase 2: テンプレート展開機能の実装
+
+**対象ファイル**:
+- `internal/runner/config/template_expansion.go`（新規作成）
+
+**実装内容**:
+- `${param}`, `${?param}`, `${@list}` のパーサー
+- パラメータ置換ロジック
+- テンプレート展開関数
+- params 値のセキュリティ検証（NF-005）
+- params からの変数参照インジェクション防止（NF-006）
+- リテラル `$` のエスケープ処理（`$$` → `$`）
+
+**テスト**:
+- 各記法のパラメータ展開テスト
+- 空文字列・空配列の扱い
+- エスケープ処理（`$$` のリテラル表記）
+- セキュリティ検証のテスト（危険パターンの検出）
+- インジェクション防止のテスト（`%{` を含む params の拒否）
+
+#### Phase 3: コマンド定義への統合
+
+**対象ファイル**:
+- `internal/runner/config/expansion.go` - コマンド展開ロジックの修正
+
+**実装内容**:
+- `[[groups.commands]]` で `template` フィールドが指定された場合の処理
+- テンプレート展開 → `%{...}` 変数展開の順序制御
+- エラーハンドリング（未定義テンプレート、未指定パラメータなど）
+- 展開後のセキュリティ検証が既存のパスを通過することの確認（NF-007）
+
+**テスト**:
+- テンプレート使用時のコマンド展開テスト
+- 変数展開の順序テスト（`%{...}` との組み合わせ）
+- エラーケースのテスト
+- セキュリティ検証統合テスト
+
+#### Phase 4: エンドツーエンドテスト
+
+**対象ファイル**:
+- `internal/runner/config/loader_test.go` - 統合テスト
+
+**実装内容**:
+- TOML 読み込み → テンプレート展開 → コマンド実行の全フロー
+- サンプル設定ファイルを使用したテスト
+- 既存テストの互換性確認
+
+### 5.2 リスクと対策
+
+#### Risk-001: 既存の変数展開との干渉
+
+**リスク**: `${...}` 記法が既存の何らかの機能と衝突する可能性。
+
+**対策**:
+- 既存のコードベースで `${` の使用箇所を検索
+- 既存の変数展開は `%{...}` 記法を使用しているため、衝突の可能性は低い
+- テンプレート展開は明示的に `template` フィールドが指定された場合のみ実行
+
+**確認結果**:
+```bash
+grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
+# 既存の使用箇所がないことを確認
+```
+
+**補足**: 仮に既存の TOML で `${...}` が使用されていた場合、テンプレート機能を使用しない限り影響はない（`template` フィールドが指定されたコマンドのみがテンプレート展開の対象となる）。
+
+#### Risk-002: 複雑な展開順序によるバグ
+
+**リスク**: `%{...}` と `${...}` の展開順序が複雑で、バグが混入する可能性。
+
+**対策**:
+- 展開順序を明確にドキュメント化
+- 各ステップでの中間結果をログ出力（デバッグモード）
+- 展開順序を検証する専用のテストケースを作成
+- params からの変数参照インジェクションを防止（NF-006）
+
+#### Risk-003: パラメータ値によるセキュリティバイパス
+
+**リスク**: 悪意のある params 値により、セキュリティ検証をバイパスされる可能性。
+
+**対策**:
+- params 値に対するセキュリティ検証（NF-005）
+- 展開後のコマンドに対する既存セキュリティ検証の適用（NF-007）
+- params の値に `%{` パターンを含めることの禁止（NF-006）
+
+#### Risk-004: パフォーマンスへの影響
+
+**リスク**: テンプレート展開処理が重く、設定ファイル読み込みが遅くなる可能性。
+
+**対策**:
+- 展開は設定ファイル読み込み時に1回のみ実行
+- ベンチマークテストで性能測定
+- 通常のユースケース（数個〜数十個のテンプレート）では影響が小さいことを確認
+
+#### Risk-005: 配列パラメータ展開の悪用
+
+**リスク**: `${@list}` 展開で大量の要素を注入し、コマンドライン長制限を超過させる、または意図しない引数を混入させる可能性。
+
+**対策**:
+- 配列パラメータの各要素に対するセキュリティ検証（NF-005 の一部として実施）
+- 配列要素数の上限設定（オプション：将来の拡張として検討）
+- 展開後の引数配列に対する既存の検証を適用
+
+## 6. セキュリティ考慮事項
+
+### 6.1 脅威モデル
+
+テンプレート機能において想定する脅威：
+
+1. **設定ファイル改ざん**: 攻撃者が TOML 設定ファイルを改ざんし、悪意のあるテンプレートやパラメータを注入する
+2. **パラメータインジェクション**: 正規の設定ファイル内で、params の値を通じて意図しないコマンドや引数を注入する
+3. **変数参照インジェクション**: params の値に `%{...}` パターンを含め、意図しない内部変数を参照させる
+4. **セキュリティバイパス**: テンプレート展開を通じて、既存のセキュリティ検証（`cmd_allowed`, `AllowedCommands` 等）をバイパスする
+
+### 6.2 セキュリティ設計原則
+
+1. **Defense in Depth（多層防御）**:
+   - 入力時検証（params 値のセキュリティ検証）
+   - 展開時検証（変数参照インジェクション防止）
+   - 出力時検証（展開後のコマンドに対する既存セキュリティ検証）
+
+2. **Fail-Safe Defaults（安全側への失敗）**:
+   - 不正な入力はエラーとして拒否
+   - 曖昧なケースは許可ではなく拒否
+
+3. **Least Privilege（最小権限の原則）**:
+   - テンプレート展開は設定ファイル読み込み時の静的処理
+   - 実行時の動的なパラメータ変更は不可
+
+### 6.3 検証チェックリスト
+
+実装時に確認すべきセキュリティ項目：
+
+- [ ] テンプレート名のバリデーション（`ValidateVariableName` 使用）
+- [ ] params 値に対するコマンドインジェクション検出
+- [ ] params 値に `%{` パターンが含まれる場合の拒否
+- [ ] パラメータ展開が非再帰的であること（params 値内の `${...}` が展開されないこと）
+- [ ] 配列パラメータの各要素に対するセキュリティ検証
+- [ ] 展開後の `cmd` が `cmd_allowed` / `AllowedCommands` を通過すること
+- [ ] 展開後の `args` に対する危険パターン検出
+- [ ] 展開後の `env` に対する `ValidateAllEnvironmentVars` 検証
+- [ ] リテラル `$` のエスケープ処理（`$$` → `$`）
+- [ ] 再帰展開の深さ制限（既存の `MaxRecursionDepth` と同様）
+
+## 7. 用語集
+
+- **テンプレート (Template)**: 再利用可能なコマンド定義
+- **パラメータ (Parameter)**: テンプレートに渡す変数
+- **テンプレート展開 (Template Expansion)**: テンプレート内のパラメータ参照を実際の値に置き換える処理
+- **変数展開 (Variable Expansion)**: `%{variable}` 形式の変数参照を実際の値に置き換える処理
+- **文字列パラメータ**: `${param}` 形式で参照される文字列型のパラメータ
+- **オプショナルパラメータ**: `${?param}` 形式で参照され、空の場合に要素が削除されるパラメータ
+- **配列パラメータ**: `${@list}` 形式で参照される配列型のパラメータ
+- **変数参照インジェクション**: params 値に `%{...}` を含めることで、テンプレート展開後の変数展開で意図しない変数を参照させる攻撃
+
+## 8. 参考資料
+
+### 8.1 関連ファイル
+
+- `internal/runner/config/types.go` - 設定ファイルの型定義（現在は `internal/runner/runnertypes/spec.go`）
+- `internal/runner/config/loader.go` - TOML 読み込み処理
+- `internal/runner/config/expansion.go` - 変数展開ロジック
+- `internal/runner/security/validator.go` - セキュリティ検証
+- `internal/runner/security/environment_validation.go` - 環境変数検証
+- `sample/risk-based-control.toml` - サンプル設定ファイル
+
+### 7.2 関連タスク
+
+- Task 0030: ファイル変数展開の検証
+- Task 0061: グループ展開時のコマンド事前展開
+
+### 7.3 設計上の議論
+
+この要件定義書は、以下の議論に基づいて作成された：
+
+1. **問題の発見**: 複数グループで同じコマンド定義を繰り返し記述する必要がある
+2. **解決策の検討**: テンプレート機能の導入
+3. **記法の選択**: 複数の代替案を比較し、ハイブリッド案（`${}`, `${?}`, `${@}`）を採用
+4. **展開順序の決定**: テンプレート展開 → `%{...}` 変数展開の2段階展開（params 内では `%{...}` 展開を行わない）
+5. **YAGNI の原則**: 継承機能や条件分岐は現時点では不要と判断し、スコープ外とした
