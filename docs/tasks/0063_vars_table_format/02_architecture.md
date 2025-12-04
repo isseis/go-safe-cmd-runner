@@ -305,7 +305,7 @@ flowchart TD
 [global.vars]
 base_dir = "/opt/myapp"
 env_type = "production"
-config_files = ["config.yml", "secrets.yml"]
+config_files = ["%{base_dir}/config.yml", "%{base_dir}/secrets.yml"]
 
 # Group level
 [[groups]]

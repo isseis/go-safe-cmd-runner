@@ -335,8 +335,8 @@ config_path = "%{base_dir}/config.yml"
 
 この問題を解決するため、実装は2段階で行います：
 
-1. **Phase 1: 検証とパース** - すべての変数を検証し、未展開の値を一時マップに格納
-2. **Phase 2: 遅延展開** - `varExpander` を使用して未展開変数を動的に解決
+1. **Phase 1: 検証と型チェック (Validation and type checking)** - すべての変数を検証し、型チェックを行い、未展開の値を一時マップに格納
+2. **Phase 2: 遅延解決による展開 (Expansion with lazy resolution)** - `varExpander` を使用して未展開変数を動的に解決
 
 既存の `ExpandString` は `expandedVars` に存在する変数のみを参照可能なため、
 **未展開変数マップ** (`rawVars`) も参照可能な `varExpander` 構造体を導入します。
@@ -643,7 +643,7 @@ func ProcessVars(
 
     for varName, rawValue := range vars {
         // 1a. Validate variable name
-        if err := validateVariableName(varName, level, "vars"); err != nil {
+        if err := security.ValidateVariableName(varName); err != nil {
             return nil, nil, err
         }
 
@@ -1760,6 +1760,7 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 - [ ] `expansion.go`: `varExpander` 構造体の追加
 - [ ] `expansion.go`: `newVarExpander` コンストラクタの追加
 - [ ] `expansion.go`: `varExpander.expandString` メソッドの追加
+- [ ] `expansion.go`: `expandStringRecursive` 内部関数の追加
 - [ ] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
 - [ ] `expansion.go`: `ProcessVars` のシグネチャ変更
 - [ ] `expansion.go`: 型検証の実装（Phase 1: 検証とパース）
