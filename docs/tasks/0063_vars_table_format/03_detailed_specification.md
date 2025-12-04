@@ -213,93 +213,9 @@ const (
 
 既存の `expandStringRecursive` 関数を、`expandStringWithResolver` 関数を使用する実装に変更します。
 
-**変更前**:
-```go
-// expandStringRecursive performs recursive expansion with circular reference detection.
-func expandStringRecursive(
-    input string,
-    expandedVars map[string]string,
-    level string,
-    field string,
-    visited map[string]struct{},
-    expansionChain []string,
-    depth int,
-) (string, error) {
-    // ... 変数展開ロジック（エスケープシーケンス処理、%{VAR}パース、循環検出）...
-}
-```
-
-**変更後**:
 ```go
 // expandStringRecursive performs recursive expansion with circular reference detection.
 // This is a wrapper around expandStringWithResolver for backward compatibility.
-func expandStringRecursive(
-    input string,
-    expandedVars map[string]string,
-    level string,
-    field string,
-    visited map[string]struct{},
-    expansionChain []string,
-    depth int,
-) (string, error) {
-    // Create a resolver that looks up variables from expandedVars
-    resolver := func(
-        varName string,
-        resolverField string,
-        resolverVisited map[string]struct{},
-        resolverChain []string,
-        resolverDepth int,
-    ) (string, error) {
-        // Check if variable is defined
-        value, exists := expandedVars[varName]
-        if !exists {
-            return "", &ErrUndefinedVariableDetail{
-                Level:        level,
-                Field:        resolverField,
-                VariableName: varName,
-                Context:      input,
-            }
-        }
-
-        // Mark as visited for circular reference detection
-        resolverVisited[varName] = struct{}{}
-
-        // Recursively expand the value using expandStringWithResolver
-        expandedValue, err := expandStringWithResolver(
-            value,
-            // Pass the same resolver for recursive calls
-            func(nestedVarName string, nestedField string, nestedVisited map[string]struct{}, nestedChain []string, nestedDepth int) (string, error) {
-                return expandStringRecursive(value, expandedVars, level, nestedField, nestedVisited, nestedChain, nestedDepth)
-            },
-            level,
-            resolverField,
-            resolverVisited,
-            append(resolverChain, varName),
-            resolverDepth+1,
-        )
-        if err != nil {
-            return "", err
-        }
-
-        // Unmark after expansion
-        delete(resolverVisited, varName)
-
-        return expandedValue, nil
-    }
-
-    return expandStringWithResolver(input, resolver, level, field, visited, expansionChain, depth)
-}
-```
-
-**注**: 上記の実装は、既存の `ExpandString` のシグネチャと動作を保持しつつ、
-内部的に `expandStringWithResolver` を使用するように変更します。
-
-#### 1.4.2 より簡潔な実装
-
-実際には、再帰呼び出しの仕組みを単純化できます:
-
-```go
-// expandStringRecursive performs recursive expansion with circular reference detection.
 func expandStringRecursive(
     input string,
     expandedVars map[string]string,
@@ -357,7 +273,7 @@ func expandStringRecursive(
 ```
 
 この実装により、既存の `expandStringRecursive` は `expandStringWithResolver` を使用するラッパーとなり、
-変数展開のコアロジックは `expandStringWithResolver` に集約されます。
+変数展開のコアロジック（エスケープシーケンス処理、`%{VAR}` パース、循環検出）は `expandStringWithResolver` に集約されます。
 
 ### 1.5 ProcessVars 関数の更新
 
@@ -1308,7 +1224,7 @@ func LoadConfig(configPath string) (*runnertypes.ConfigSpec, error) {
 }
 ```
 
-### 1.10 NewRuntimeGlobal の更新
+### 1.11 NewRuntimeGlobal の更新
 
 ```go
 // internal/runner/runnertypes/runtime.go
@@ -1330,7 +1246,7 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 }
 ```
 
-### 1.11 NewRuntimeGroup の更新
+### 1.12 NewRuntimeGroup の更新
 
 ```go
 // internal/runner/runnertypes/runtime.go
@@ -1350,7 +1266,7 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 }
 ```
 
-### 1.12 NewRuntimeCommand の更新
+### 1.13 NewRuntimeCommand の更新
 
 ```go
 // internal/runner/runnertypes/runtime.go
@@ -1565,10 +1481,14 @@ func TestProcessVars(t *testing.T) {
             wantErrType:        &ErrCircularReferenceDetail{},
         },
         // Order-independent expansion (important for map iteration)
+        // This test verifies that lazy expansion handles forward references correctly.
+        // Since Go maps have non-deterministic iteration order, config_path may be
+        // processed before base_dir. The varExpander's lazy resolution mechanism
+        // should correctly expand config_path even if base_dir hasn't been processed yet.
         {
             name: "order independent expansion - forward reference",
             vars: map[string]interface{}{
-                "config_path": "%{base_dir}/config.yml",
+                "config_path": "%{base_dir}/config.yml", // References base_dir (may be processed later)
                 "base_dir":    "/opt",
             },
             baseExpandedVars:   map[string]string{},
@@ -1576,25 +1496,28 @@ func TestProcessVars(t *testing.T) {
             level:              "global",
             wantStrings: map[string]string{
                 "base_dir":    "/opt",
-                "config_path": "/opt/config.yml",
+                "config_path": "/opt/config.yml", // Should be correctly expanded via lazy resolution
             },
             wantArrays: map[string][]string{},
         },
         // Chained dependencies
+        // This test verifies that lazy expansion handles multi-level dependencies correctly.
+        // Variable c depends on b, which depends on a. Regardless of map iteration order,
+        // all variables should be correctly expanded through lazy resolution and memoization.
         {
             name: "chained dependencies",
             vars: map[string]interface{}{
-                "c": "%{b}/c",
+                "c": "%{b}/c",  // Depends on b
                 "a": "/opt",
-                "b": "%{a}/b",
+                "b": "%{a}/b",  // Depends on a
             },
             baseExpandedVars:   map[string]string{},
             baseExpandedArrays: map[string][]string{},
             level:              "global",
             wantStrings: map[string]string{
                 "a": "/opt",
-                "b": "/opt/b",
-                "c": "/opt/b/c",
+                "b": "/opt/b",      // Expanded via lazy resolution
+                "c": "/opt/b/c",    // Expanded via lazy resolution (multi-level)
             },
             wantArrays: map[string][]string{},
         },
@@ -1825,19 +1748,26 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 
 ### 3.2 Phase 2: 変数展開ロジックの更新
 
+#### リファクタリング（セクション 1.4）
+- [ ] `expansion.go`: `variableResolver` 型の定義
+- [ ] `expansion.go`: `expandStringWithResolver` 関数の実装
+- [ ] `expansion.go`: `expandStringRecursive` のリファクタリング（`expandStringWithResolver` を使用）
+
+#### 新規実装（セクション 1.5, 1.6）
 - [ ] `expansion.go`: 制限値定数の追加
 - [ ] `errors.go`: 新規エラー型の追加
 - [ ] `errors.go`: `ErrArrayVariableInStringContextDetail` エラー型の追加
 - [ ] `expansion.go`: `varExpander` 構造体の追加
 - [ ] `expansion.go`: `newVarExpander` コンストラクタの追加
 - [ ] `expansion.go`: `varExpander.expandString` メソッドの追加
-- [ ] `expansion.go`: `varExpander.expandStringRecursive` メソッドの追加
 - [ ] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
 - [ ] `expansion.go`: `ProcessVars` のシグネチャ変更
 - [ ] `expansion.go`: 型検証の実装（Phase 1: 検証とパース）
 - [ ] `expansion.go`: サイズ検証の実装
 - [ ] `expansion.go`: 型整合性検証の実装
 - [ ] `expansion.go`: 配列変数の展開処理の実装（Phase 2: 遅延展開）
+
+#### 既存関数の更新（セクション 1.7, 1.8, 1.9）
 - [ ] `expansion.go`: `ExpandGlobal` の更新
 - [ ] `expansion.go`: `ExpandGroup` の更新
 - [ ] `expansion.go`: `ExpandCommand` の更新
@@ -1875,19 +1805,43 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 | 循環依存検出 | `expandStringWithResolver()` | visited マップで検出 |
 | 展開深度制限 | `expandStringWithResolver()` | `MaxRecursionDepth` (100) |
 
-### 4.2 エラー情報漏洩防止
+### 4.2 機密情報漏洩防止
 
-エラーメッセージには以下の情報のみを含め、機密情報の漏洩を防止する：
+変数には機密情報（パスワード、APIキー、トークンなど）が含まれる可能性があるため、
+以下のガイドラインに従って機密情報の漏洩を防止する：
 
+#### 4.2.1 エラーメッセージ
+
+エラーメッセージには以下の情報のみを含める：
+
+**含めて良い情報**:
 - 変数名（値は含まない）
 - レベル情報（global, group[name], command[name]）
 - 型情報（期待型と実際の型）
 - インデックス情報（配列の場合）
 
-**避けるべき情報**:
-- 変数の実際の値
+**含めてはいけない情報**:
+- 変数の実際の値（展開前、展開後ともに）
+- 変数値を含むコンテキスト文字列
 - ファイルシステムの内部パス
 - 環境変数の値
+
+#### 4.2.2 ログ出力
+
+**原則**: 変数の値は絶対にログに出力しない
+
+**ログに含めて良い情報**:
+- 変数名
+- 変数の型（string, array）
+- 展開状態（expanded, pending, failed）
+- エラーの種類
+- 変数の個数
+
+**ログに含めてはいけない情報**:
+- 変数の値（展開前、展開後ともに）
+- 部分的な値（プレフィックス、サフィックスも禁止）
+
+詳細は「セクション 5.2 ログ出力」を参照。
 
 ### 4.3 リソース制限
 
@@ -1921,11 +1875,36 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 
 ### 5.2 ログ出力
 
-| レベル | イベント | 出力内容 |
-|--------|---------|---------|
-| INFO | 設定ファイル読み込み成功 | ファイルパス、変数数 |
-| ERROR | 変数展開エラー | レベル、フィールド、エラー種別 |
-| WARN | 制限値接近 | 変数数が閾値の80%を超えた場合 |
+| レベル | イベント | 出力内容 | セキュリティ制約 |
+|--------|---------|---------|-----------------|
+| INFO | 設定ファイル読み込み成功 | ファイルパス、変数数 | - |
+| DEBUG | 変数展開処理 | 変数名、型、展開状態 | **値は出力禁止** |
+| ERROR | 変数展開エラー | レベル、フィールド、エラー種別 | **値は出力禁止** |
+| WARN | 制限値接近 | 変数数が閾値の80%を超えた場合 | - |
+
+**セキュリティ要件（機密情報漏洩防止）**:
+
+変数の**値**は絶対にログに出力してはならない。理由:
+- 変数には機密情報（パスワード、APIキー、トークンなど）が含まれる可能性がある
+- ログファイルは複数の管理者がアクセス可能であり、機密情報の漏洩リスクがある
+- デバッグ目的でも、値のログ出力は禁止
+
+**ログに含めて良い情報**:
+- 変数名（例: `api_token`, `db_password`）
+- 変数の型（`string`, `array`）
+- 展開状態（`expanded`, `pending`, `failed`）
+- エラーの種類（`circular_reference`, `undefined_variable`, `type_mismatch`）
+- 変数の個数（例: `10 variables expanded`）
+
+**ログに含めてはいけない情報**:
+- 変数の値（展開前、展開後ともに禁止）
+- 変数値を含むエラーコンテキスト
+- 部分的な値（プレフィックス、サフィックスも禁止）
+
+**実装上の注意**:
+- エラー型の `Context` フィールドには値を含めない
+- デバッグログでは変数名と状態のみを出力
+- 既存の `internal/redaction` パッケージとの統合は不要（値を出力しないため）
 
 ### 5.3 トラブルシューティング
 
