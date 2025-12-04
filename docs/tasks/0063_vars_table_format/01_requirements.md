@@ -28,11 +28,11 @@ vars = [
 ### 1.1.1 変更対象の範囲
 
 本変更は以下のレベルで定義される `vars` すべてに適用される：
-- **グローバルレベル**: `[global]` セクション（現在は `global.vars = [...]`、変更後は `[global.vars]`）
-- **グループレベル**: `[[groups]]` 内（現在は `vars = [...]`、変更後は `[groups.vars]`）
-- **コマンドレベル**: `[[groups.commands]]` 内（現在は `vars = [...]`、変更後は `[groups.commands.vars]`）
+- **グローバルレベル**: `[global]` セクション内（現在は `vars = [...]`、変更後は `[global.vars]` サブセクション）
+- **グループレベル**: `[[groups]]` 内（現在は `vars = [...]`、変更後は `[groups.vars]` サブセクション）
+- **コマンドレベル**: `[[groups.commands]]` 内（現在は `vars = [...]`、変更後は `[groups.commands.vars]` サブセクション）
 
-これらすべてのレベルで一貫したテーブル形式を採用する。
+これらすべてのレベルで一貫したテーブル形式（サブセクション）を採用する。
 
 ### 1.2 目的
 
@@ -67,15 +67,62 @@ vars = [
 
 ### 2.1 テーブル形式での変数定義
 
-#### F-001: `[vars]` セクションでの変数定義
+#### F-001: テーブル形式（サブセクション）での変数定義
 
-**概要**: TOML の `[vars]` セクションで変数を定義する。
+**概要**: 各レベル（global、group、command）のセクション内に、TOMLのサブセクション（`[*.vars]`）として変数を定義する。
 
 **フォーマット**:
 ```toml
-[vars]
+# グローバルレベル
+[global.vars]
 variable_name = "string_value"
 array_variable = ["value1", "value2", "value3"]
+
+# グループレベル
+[[groups]]
+name = "example"
+[groups.vars]
+variable_name = "string_value"
+
+# コマンドレベル
+[[groups.commands]]
+name = "example_cmd"
+[groups.commands.vars]
+variable_name = "string_value"
+```
+
+**TOML構文の注記**:
+- グループレベル・コマンドレベルでは、配列要素定義（`[[groups]]` や `[[groups.commands]]`）の**直後**に `[groups.vars]` や `[groups.commands.vars]` を書くことで、その配列要素のサブテーブルとして定義される
+- **TOML仕様の動作**: `[[array]]` の後に `[array.field]` を書くと、最後に定義された配列要素の `field` として解釈される。これはネストした配列（`[[parent.child]]` → `[parent.child.field]`）でも同様に機能する
+- **記述順序が重要**: `[groups.vars]` や `[groups.commands.vars]` は、対応する配列要素（`[[groups]]` や `[[groups.commands]]`）の直後に配置すること
+- 複数のgroupsや複数のcommandsがある場合は、各配列要素の直後にそれぞれの vars を定義する
+
+**例（複数のgroupsと複数のcommands）**:
+```toml
+[[groups]]
+name = "group1"
+[groups.vars]
+group_var = "value1"
+
+[[groups.commands]]
+name = "cmd1"
+[groups.commands.vars]
+cmd_var = "value1"
+
+[[groups.commands]]
+name = "cmd2"
+[groups.commands.vars]
+cmd_var = "value2"
+
+[[groups]]
+name = "group2"
+[groups.vars]
+group_var = "value2"
+
+[[groups.commands]]
+name = "cmd3"
+[groups.commands.vars]
+cmd_var = "value3"
 ```
 
 **制約**:
@@ -86,9 +133,9 @@ array_variable = ["value1", "value2", "value3"]
 - 配列変数の要素数は最大1000個まで（DoS防止）
 - 文字列値の最大長は10KB（DoS防止）
 
-**例**:
+**例（グローバルレベル）**:
 ```toml
-[vars]
+[global.vars]
 base_dir = "/opt/myapp"
 env_type = "production"
 config_path = "%{base_dir}/%{env_type}/config.yml"
@@ -116,7 +163,7 @@ include_files = [
 
 **例**:
 ```toml
-[vars]
+[global.vars]
 # map の反復順序は不定だが、ExpandString が依存を自動解決
 base_dir = "/opt/myapp"
 env_type = "production"
@@ -139,7 +186,7 @@ config_path = "%{base_dir}/%{env_type}/config.yml"
 
 **例（エラーケース）**:
 ```toml
-[vars]
+[global.vars]
 a = "%{b}"
 b = "%{c}"
 c = "%{a}"  # 循環依存: a → b → c → a
@@ -154,7 +201,54 @@ circular reference detected in vars: variable 'a' -> 'b' -> 'c' -> 'a'
 - 既存の `ErrCircularReferenceDetail` エラー型を使用（[expansion.go:111-118](internal/runner/config/expansion.go:111-118)）
 - 新たな実装は不要
 
-### 2.3 配列変数の展開
+### 2.3 変数の上書きと型の整合性
+
+#### F-003: 変数の上書き（override）ルール
+
+**概要**: 異なるレベル（global、group、command）で同じ変数名が定義された場合の動作を規定する。
+
+**動作**:
+- 既存の変数展開ロジックと同様、**後から定義された変数が前の定義を上書きする**（override セマンティクス）
+- 上書き順序: `global.vars` → `groups.vars` → `groups.commands.vars`
+- 同一レベル内での重複定義はTOMLパーサーがエラーとして検出
+
+**型の整合性検証**:
+- 変数を上書きする際に型が変更される場合（文字列 → 配列、または配列 → 文字列）は**エラーとして拒否**
+- これにより、変数の使用箇所で型の不整合によるバグを防止
+
+**例（正常ケース）**:
+```toml
+[global.vars]
+base_dir = "/opt/myapp"        # 文字列
+
+[[groups]]
+name = "production"
+[groups.vars]
+base_dir = "/var/myapp"        # 文字列で上書き - OK
+```
+
+**例（エラーケース）**:
+```toml
+[global.vars]
+base_dir = "/opt/myapp"        # 文字列
+
+[[groups]]
+name = "production"
+[groups.vars]
+base_dir = ["/var/myapp"]      # 配列で上書き - ERROR
+```
+
+**エラーメッセージ例**:
+```
+variable "base_dir" type mismatch: defined as string in global.vars, but redefined as array in group[production].vars
+```
+
+**実装方針**:
+- `ProcessVars` 関数で、`baseExpandedVars` と `baseExpandedArrays` の両方をチェック
+- 既存変数の型と新規定義の型が異なる場合はエラーを返す
+- 型の整合性チェックは、変数展開前に実施
+
+### 2.4 配列変数の展開
 
 #### F-004: 配列要素内での変数展開
 
@@ -166,7 +260,7 @@ circular reference detected in vars: variable 'a' -> 'b' -> 'c' -> 'a'
 
 **例**:
 ```toml
-[vars]
+[global.vars]
 base_dir = "/opt/myapp"
 include_files = [
     "%{base_dir}/config.yml",
@@ -182,7 +276,7 @@ include_files = [
 ]
 ```
 
-### 2.4 型検証
+### 2.5 型検証
 
 #### F-005: 変数値の型チェック
 
@@ -199,6 +293,8 @@ variable "count" has unsupported type int64: only string and []string are suppor
 variable "mixed_array" has invalid array element at index 2: expected string, got int64
 ```
 
+**注記**: 実装では `fmt.Errorf` の `%q` フォーマット指定子を使用して変数名を引用符で囲む。上記の例は読みやすさのため手動で引用符を付けているが、実装コードでは `%q` を使用すること。
+
 #### F-006: 配列変数の制限
 
 **概要**: 配列変数のサイズに制限を設け、リソース枯渇攻撃を防止する。
@@ -207,11 +303,25 @@ variable "mixed_array" has invalid array element at index 2: expected string, go
 - 配列要素数の上限: 1000個
 - 各文字列要素の最大長: 10KB
 - 制限を超えた場合は設定ファイル読み込み時にエラー
+- **空配列（`var = []`）は許可**: 空配列は有効な定義であり、継承された変数を明示的にクリアする用途などで使用できる
 
 **エラーメッセージ例**:
 ```
-variable "large_array" exceeds maximum array size: got 1500, max 1000
-variable "long_value" value exceeds maximum length: got 15000 bytes, max 10240 bytes
+variable "large_array" array too large: got 1500 elements, max 1000
+variable "long_value" value too long: got 15000 bytes, max 10240
+```
+
+**注記**: 実装コードでは `%q` フォーマット指定子を使用して変数名を引用符で囲む（例: `fmt.Errorf("variable %q array too large: got %d elements, max %d", varName, len(v), MaxArrayElements)`）。
+
+**空配列の使用例**:
+```toml
+[global.vars]
+config_files = ["/etc/app/global.conf"]
+
+[[groups]]
+name = "minimal"
+[groups.vars]
+config_files = []  # グローバル設定をクリアし、空の配列を使用
 ```
 
 ## 3. 非機能要件
@@ -243,19 +353,23 @@ variable "long_value" value exceeds maximum length: got 15000 bytes, max 10240 b
 - `invalid variable name "__runner_reserved": names starting with "__runner_" are reserved`
 - `duplicate variable name "base_dir"`（TOMLパーサーが検出）
 - `variable "mixed" has invalid array element at index 0: expected string, got float64`
+- `variable "base_dir" type mismatch: already defined as string, cannot redefine as array in group[production].vars`
+
+**注記**: すべての変数名は `%q` フォーマット指定子を使用して引用符で囲むこと。上記の例は読みやすさのため手動で引用符を付けているが、実装では `fmt.Errorf` の `%q` を使用すること。
 
 **エラーメッセージ設計原則**:
 - エラー発生箇所を特定可能（レベル、フィールド名、変数名）
 - 期待される形式と実際の入力を表示
 - 可能な場合は修正方法のヒントを提供
+- 変数名は常に `%q` で引用符付きで表示
 
 #### NF-003: テストカバレッジ
 
 **要件**: 変数定義と展開機能の全ての分岐をカバーするテストを作成すること。
 
 **確認項目**:
-- 正常系: 文字列変数、配列変数、変数参照、依存関係解決
-- 異常系: 循環依存、未定義変数参照、不正な型、不正な変数名
+- 正常系: 文字列変数、配列変数、変数参照、依存関係解決、同じ型での変数上書き
+- 異常系: 循環依存、未定義変数参照、不正な型、不正な変数名、型不整合（文字列↔配列）
 - エッジケース: 空文字列、空配列、特殊文字、自己参照
 
 ### 3.3 性能 (Performance)
@@ -347,46 +461,52 @@ variable "long_value" value exceeds maximum length: got 15000 bytes, max 10240 b
 
 **実装内容**:
 - `Vars []string` から `Vars map[string]interface{}` に変更
-- または、より型安全な `Vars map[string]VarValue` を定義
 - `GlobalSpec`, `GroupSpec`, `CommandSpec` すべてで型を変更
+- TOMLパーサーが返す `interface{}` 型をそのまま使用
+- `ProcessVars` 内で型検証と変換を行う
 
-**型定義例**:
+**設計判断**:
+- TOML パース層（`spec.go`）と処理層（`expansion.go`）の責任を分離
+- パース層: TOMLの構造をそのまま受け取る（`map[string]interface{}`）
+- 処理層: 型検証、変換、展開を実施
+
+**型定義**:
 ```go
-// VarValue represents a variable value that can be either a string or a string array.
-// This is used for type-safe handling of vars defined in TOML configuration.
-type VarValue struct {
-    Type   VarType  // The type of the variable value
-    String string   // Value when Type == VarTypeString
-    Array  []string // Value when Type == VarTypeArray
+// internal/runner/runnertypes/spec.go
+type GlobalSpec struct {
+    // ... existing fields ...
+    Vars map[string]interface{} `toml:"vars"` // Changed from []string
 }
 
-type VarType int
+type GroupSpec struct {
+    // ... existing fields ...
+    Vars map[string]interface{} `toml:"vars"` // Changed from []string
+}
 
-const (
-    VarTypeString VarType = iota
-    VarTypeArray
-)
-
-// String returns the string representation of VarValue for debugging.
-func (v VarValue) String() string {
-    switch v.Type {
-    case VarTypeString:
-        return v.String
-    case VarTypeArray:
-        return fmt.Sprintf("%v", v.Array)
-    default:
-        return "<unknown>"
-    }
+type CommandSpec struct {
+    // ... existing fields ...
+    Vars map[string]interface{} `toml:"vars"` // Changed from []string
 }
 ```
 
-**代替案: `map[string]interface{}` の直接使用**:
-- TOMLパーサーが返す型をそのまま使用
-- 型アサーション時にエラーハンドリングが必要
-- より柔軟だが、型安全性が低下
-- 実装の簡便さを優先する場合はこちらを選択
+**代替案: カスタム型 `VarValue` の使用**（参考）:
+より型安全なアプローチとして、以下のようなカスタム型を定義することも可能だが、TOMLパーサーとの統合の複雑さから、本タスクでは採用しない。
 
-**推奨**: `map[string]interface{}` を使用し、`ProcessVars` 内で型検証と変換を行う。これにより TOML パース層と処理層の分離が明確になる。
+```go
+// Alternative: Custom type (NOT recommended for this task)
+type VarValue struct {
+    Type   VarType
+    String string
+    Array  []string
+}
+```
+
+このアプローチは、TOMLパーサーのカスタムアンマーシャラーが必要となり、実装の複雑さが増すため、`map[string]interface{}` を使用する方針とする。
+
+**追加作業**:
+- `internal/runner/config/loader.go` でのエラーハンドリング改善
+  - TOMLパースエラーを捕捉し、旧形式の可能性がある場合は移行ガイドを含むエラーメッセージを返す
+  - 実装例はRisk-005を参照
 
 **テスト**:
 - TOML パース時の型変換テスト
@@ -414,16 +534,20 @@ const (
     MaxStringValueLen  = 10 * 1024 // 10KB
 )
 
-func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string, level string) (map[string]string, map[string][]string, error) {
+func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string, baseExpandedArrays map[string][]string, level string) (map[string]string, map[string][]string, error) {
     // Check total variable count
     if len(vars) > MaxVarsPerLevel {
         return nil, nil, fmt.Errorf("too many variables in %s: got %d, max %d", level, len(vars), MaxVarsPerLevel)
     }
 
     expandedStrings := maps.Clone(baseExpandedVars)
-    expandedArrays := make(map[string][]string)
+    expandedArrays := maps.Clone(baseExpandedArrays)
 
     for varName, rawValue := range vars {
+        // Check for type consistency when overriding existing variables
+        _, existsAsString := expandedStrings[varName]
+        _, existsAsArray := expandedArrays[varName]
+
         // Validate variable name
         if err := validateVariableName(varName, level, "vars"); err != nil {
             return nil, nil, err
@@ -431,6 +555,11 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 
         switch v := rawValue.(type) {
         case string:
+            // Check type consistency: cannot override array with string
+            if existsAsArray {
+                return nil, nil, fmt.Errorf("variable %q type mismatch: already defined as array, cannot redefine as string in %s", varName, level)
+            }
+
             // Validate string length
             if len(v) > MaxStringValueLen {
                 return nil, nil, fmt.Errorf("variable %q value too long: got %d bytes, max %d", varName, len(v), MaxStringValueLen)
@@ -443,11 +572,17 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
             expandedStrings[varName] = expanded
 
         case []interface{}:
+            // Check type consistency: cannot override string with array
+            if existsAsString {
+                return nil, nil, fmt.Errorf("variable %q type mismatch: already defined as string, cannot redefine as array in %s", varName, level)
+            }
+
             // Validate array size
             if len(v) > MaxArrayElements {
                 return nil, nil, fmt.Errorf("variable %q array too large: got %d elements, max %d", varName, len(v), MaxArrayElements)
             }
             // Convert and expand each element
+            // Note: Empty arrays (len(v) == 0) are allowed and handled correctly here
             expandedArray := make([]string, len(v))
             for i, elem := range v {
                 str, ok := elem.(string)
@@ -492,6 +627,10 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 - 循環依存の検出テスト（既存が動作することを確認）
 - サイズ制限のテスト（新規）
 - 配列内の型エラー検出テスト（新規）
+- **型整合性検証のテスト（新規）**:
+  - 文字列変数を配列で上書きしようとした場合のエラー検出
+  - 配列変数を文字列で上書きしようとした場合のエラー検出
+  - 同じ型での上書きが正常に動作することを確認
 
 #### Phase 3: バリデーションの統合
 
@@ -520,6 +659,10 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 - TOML 読み込み → 依存解決 → 変数展開の全フロー
 - 既存のテストの更新（配列形式からテーブル形式への変更）
 - サンプル設定ファイルの更新
+- **旧形式検出のテスト**（`loader_test.go`）:
+  - 旧形式（`vars = ["key=value"]`）の設定ファイルを読み込むとパースエラーが発生することを確認
+  - エラーメッセージに移行ガイドが含まれることを確認
+  - テスト用の旧形式TOMLファイルを用意（`testdata/legacy_vars_format.toml`など）
 
 #### Phase 5: サンプルファイルとドキュメントの更新
 
@@ -590,14 +733,31 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 **対策**:
 - リリースノートで明確に破壊的変更を記載
 - 変換例をドキュメントに記載
-- 旧形式を検出した場合は、新形式への移行方法を示すエラーメッセージを表示
+- TOMLパース時のエラーメッセージを改善し、移行方法を提示
+
+**旧形式検出の実装方針**:
+
+新しい型定義（`Vars map[string]interface{}`）では、TOMLパーサーが旧形式（`vars = ["key=value"]`）を検出した時点でパースエラーが発生する。このエラーを捕捉し、わかりやすいエラーメッセージに変換する必要がある。
 
 ```go
-// 旧形式検出時のエラーメッセージ例
-if _, ok := vars.([]interface{}); ok {
-    return fmt.Errorf("vars array format is no longer supported; please migrate to table format: [vars] section")
+// TOMLパースエラーのハンドリング例（loader.go）
+_, err := toml.DecodeFile(path, &spec)
+if err != nil {
+    // Check if error message indicates vars type mismatch
+    if strings.Contains(err.Error(), "cannot decode") && strings.Contains(err.Error(), "vars") {
+        return nil, fmt.Errorf("vars array format (vars = [\"key=value\"]) is no longer supported; please migrate to table format ([vars] section). Original error: %w", err)
+    }
+    return nil, err
 }
 ```
+
+**代替案**:
+より正確な検出のため、TOMLを2段階で読み込む方法も検討可能：
+1. 最初に `map[string]interface{}` として読み込み、`vars` フィールドの型を確認
+2. 配列型であれば移行ガイドを含むエラーを返す
+3. それ以外の場合は通常の構造体にデコード
+
+ただし、この方法は実装の複雑さが増すため、単純なエラーメッセージの改善で十分と判断する。
 
 #### Risk-006: map の反復順序の非決定性
 
@@ -610,10 +770,11 @@ if _, ok := vars.([]interface{}); ok {
 
 ## 5. 変換例
 
-### 5.1 シンプルな変数定義
+### 5.1 グローバルレベルの変数定義
 
 **変更前（配列ベース）**:
 ```toml
+[global]
 vars = [
     "base_dir=/opt/myapp",
     "env_type=production"
@@ -622,7 +783,7 @@ vars = [
 
 **変更後（テーブルベース）**:
 ```toml
-[vars]
+[global.vars]
 base_dir = "/opt/myapp"
 env_type = "production"
 ```
@@ -631,6 +792,7 @@ env_type = "production"
 
 **変更前（配列ベース）**:
 ```toml
+[global]
 vars = [
     "base_dir=/opt/myapp",
     "env_type=production",
@@ -640,7 +802,7 @@ vars = [
 
 **変更後（テーブルベース）**:
 ```toml
-[vars]
+[global.vars]
 base_dir = "/opt/myapp"
 env_type = "production"
 config_path = "%{base_dir}/%{env_type}/config.yml"
@@ -650,7 +812,7 @@ config_path = "%{base_dir}/%{env_type}/config.yml"
 
 **変更後（テーブルベース）**:
 ```toml
-[vars]
+[global.vars]
 base_dir = "/opt/myapp"
 include_files = [
     "%{base_dir}/config.yml",
@@ -758,6 +920,7 @@ backup_suffix = ".bak"
 - [ ] 配列要素数の制限（1000個/変数）
 - [ ] 文字列長の制限（10KB/値）
 - [ ] 旧形式（配列ベース）の検出と明確なエラーメッセージ
+- [ ] **型整合性の検証**（変数上書き時に型が変更されないことを確認）
 
 **変数展開時の検証**（既存実装を活用）:
 - [ ] 循環依存の検出と拒否（`expandStringRecursive` の visited マップ）
@@ -864,3 +1027,8 @@ backup_suffix = ".bak"
 | 2025-12-04 | 1.0 | 初版作成 |
 | 2025-12-04 | 1.1 | レビュー反映: 変更対象範囲の明確化、リソース制限の追加、運用考慮事項の追加、リスク項目の拡充 |
 | 2025-12-04 | 1.2 | セキュリティ設計の明確化: 変数値のセキュリティ検証を使用時点で実施する設計に変更。vars段階では構造的検証のみ実施し、意味的検証（危険パターン検出等）は最終使用時点（cmd, args, env等への展開時）で既存の検証ロジックにより実施する方針を明記 |
+| 2025-12-04 | 1.3 | 型整合性検証の追加: 変数上書き時の型不整合（文字列↔配列）を検出・拒否する要件を追加（F-003）。`ProcessVars` のシグネチャを更新し、`baseExpandedArrays` パラメータを追加。実装例、テスト項目、エラーメッセージ例、検証チェックリストに型整合性検証を反映 |
+| 2025-12-04 | 1.4 | 旧形式検出の実装方針を明確化: Risk-005を更新し、TOMLパース時のエラーハンドリングで旧形式を検出する方針を追記。Phase 1に `loader.go` のエラーハンドリング改善を追加、Phase 4に旧形式検出テストを追加。型定義変更後は直接的な型アサーションでの検出が不可能なため、パースエラーメッセージの解析による検出方法を採用 |
+| 2025-12-04 | 1.5 | エラーメッセージとTOML形式の一貫性向上: (1) すべてのエラーメッセージで変数名を `%q` で引用符付き表示するよう統一し、注記を追加。(2) TOML形式の例を正しい形式に修正 - グローバルレベルは `[global.vars]`、グループレベルは `[groups.vars]`、コマンドレベルは `[groups.commands.vars]` として各親セクション内のサブセクションとして定義。変更対象範囲の説明（1.1.1）とすべてのサンプルコード（F-001～F-004、セクション5）を修正。(3) TOML配列要素内のサブテーブル構文について注記を追加（`[[array]]` の直後に `[array.field]` を書くとその配列要素のフィールドとして解釈される） |
+| 2025-12-04 | 1.6 | TOML構文の詳細説明を強化: F-001のTOML構文注記を拡充し、ネストした配列（`[[parent.child]]` → `[parent.child.field]`）でも同様の構文が機能することを明記。記述順序の重要性を強調し、複数のgroupsと複数のcommandsを含む完全な例を追加。Python tomllib での動作検証済み |
+| 2025-12-04 | 1.7 | 空配列の扱いを明確化: F-006に空配列（`var = []`）が許可されることを明記。既存のサンプルファイルで空配列が使用されていることを確認し、継承変数のクリアなどの用途で有効であることを記載。実装例にも空配列が正しく処理されることを示すコメントを追加。テスト項目には既に含まれていることを確認 |
