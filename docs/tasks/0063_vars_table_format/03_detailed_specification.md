@@ -742,20 +742,17 @@ func ProcessVars(
         expandedArrays = make(map[string][]string)
     }
 
-    // Convert stringVars to interface{} map for rawVars parameter
-    // We reconstruct rawVars from validated maps (stringVars/arrayVars) instead of
-    // using the original vars map to ensure only validated and supported types
-    // are exposed to the expansion logic.
-    rawVars := make(map[string]interface{}, len(stringVars)+len(arrayVars))
-    for k, v := range stringVars {
-        rawVars[k] = v
-    }
-    for k, v := range arrayVars {
-        rawVars[k] = v
-    }
-
+    // Use the validated vars map directly for lazy resolution.
+    // Phase 1 validation has already ensured that:
+    //   - All variable names are valid (ValidateVariableName)
+    //   - All types are supported (string or []interface{} with string elements)
+    //   - All size limits are enforced (MaxStringValueLen, MaxArrayElements)
+    //   - Type consistency with base variables is checked
+    // Therefore, the original vars map is safe to use without reconstruction.
+    // This avoids unnecessary overhead of rebuilding a map that was just validated.
+    //
     // Create expander for lazy variable resolution
-    expander := newVarExpander(expandedStrings, rawVars, level)
+    expander := newVarExpander(expandedStrings, vars, level)
 
     // Expand string variables (order-independent due to lazy resolution)
     for varName, rawValue := range stringVars {
@@ -1481,10 +1478,17 @@ func TestProcessVars(t *testing.T) {
             wantErrType:        &ErrCircularReferenceDetail{},
         },
         // Order-independent expansion (important for map iteration)
-        // This test verifies that lazy expansion handles forward references correctly.
-        // Since Go maps have non-deterministic iteration order, config_path may be
-        // processed before base_dir. The varExpander's lazy resolution mechanism
-        // should correctly expand config_path even if base_dir hasn't been processed yet.
+        // NOTE: This is a regression test that verifies correct behavior with forward references,
+        // relying on the lazy resolution implementation. It does NOT prove order independence
+        // across all scenarios due to Go's map randomization being non-deterministic in practice.
+        // The test checks that when config_path references base_dir, the varExpander's lazy
+        // resolution mechanism produces the correct result. However, Go's map iteration order
+        // randomization does not guarantee different orderings will be triggered in a single
+        // test run. To truly verify order independence, one would need to either:
+        //   1. Run multiple iterations with forced map ordering variations (not standard Go)
+        //   2. Use property-based testing with randomized input orderings
+        // This test is valuable as a regression test but should not be considered proof of
+        // complete order independence under all possible map iteration orders.
         {
             name: "order independent expansion - forward reference",
             vars: map[string]interface{}{
@@ -1501,9 +1505,15 @@ func TestProcessVars(t *testing.T) {
             wantArrays: map[string][]string{},
         },
         // Chained dependencies
-        // This test verifies that lazy expansion handles multi-level dependencies correctly.
-        // Variable c depends on b, which depends on a. Regardless of map iteration order,
-        // all variables should be correctly expanded through lazy resolution and memoization.
+        // NOTE: This is a regression test that verifies correct behavior with multi-level
+        // dependencies, relying on the lazy resolution implementation. Like the forward
+        // reference test above, this does NOT prove order independence across all scenarios
+        // due to Go's non-deterministic map iteration in practice.
+        // The test checks that when variable c depends on b, which depends on a, the
+        // varExpander's lazy resolution and memoization produce the correct result.
+        // However, a single test execution cannot guarantee all possible iteration orders
+        // are tested. This test is valuable as a regression test for the implementation's
+        // correctness but should not be considered proof of complete order independence.
         {
             name: "chained dependencies",
             vars: map[string]interface{}{
@@ -1699,7 +1709,7 @@ func BenchmarkProcessVarsLargeArray(b *testing.B) {
     }
 }
 
-func BenchmarkProcessVarsWithDependencies(b *testing.B) {
+func BenchmarkProcessVarsWithChainedDependencies(b *testing.B) {
     // Test case with forward references to measure lazy expansion overhead
     vars := map[string]interface{}{
         "d": "%{c}/d",
@@ -1760,7 +1770,6 @@ func BenchmarkProcessVarsManyVariables(b *testing.B) {
 - [ ] `expansion.go`: `varExpander` 構造体の追加
 - [ ] `expansion.go`: `newVarExpander` コンストラクタの追加
 - [ ] `expansion.go`: `varExpander.expandString` メソッドの追加
-- [ ] `expansion.go`: `expandStringRecursive` 内部関数の追加
 - [ ] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
 - [ ] `expansion.go`: `ProcessVars` のシグネチャ変更
 - [ ] `expansion.go`: 型検証の実装（Phase 1: 検証とパース）

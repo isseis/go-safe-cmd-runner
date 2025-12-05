@@ -27,7 +27,7 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    A[("TOML Configuration<br>[*.vars] sections")] -->|"vars map"| B["Config Loader<br>(TOML parsing)"]
+    A[("TOML Configuration<br>[*.vars] sections")] -->|"vars map"| B["Config Loader<br>(type detection)"]
     B -->|"map[string]interface{}"| C["ProcessVars<br>(type-changed)"]
     C -.->|"calls"| D["ExpandString<br>(existing)"]
     D -->|"expanded values"| C
@@ -272,9 +272,13 @@ flowchart TD
 
 | レイヤー | 検証内容 | 実施タイミング |
 |---------|---------|---------------|
-| 構造検証 | 変数名バリデーション、型検証、サイズ制限 | vars定義時（ProcessVars） |
-| 展開検証 | 循環依存検出、未定義変数検出 | 変数展開時（ExpandString） |
+| 構造検証 | 定義変数名バリデーション、型検証、サイズ制限 | vars定義時（ProcessVars） |
+| 展開検証 | 参照変数名バリデーション、循環依存検出、未定義変数検出 | 変数展開時（expandStringWithResolver） |
 | 意味検証 | 危険パターン検出、パス検証 | 使用時点（cmd, args, env等） |
+
+**注記**: 変数名バリデーション（`ValidateVariableName`）は二段階で実施される：
+1. **定義時検証**（構造検証）: `vars` テーブルで定義される変数名を検証
+2. **参照時検証**（展開検証）: `%{VAR}` で参照される変数名を検証
 
 ### 4.3 制限値
 
