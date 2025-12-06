@@ -187,34 +187,11 @@ const (
 - 配列変数の継承処理を追加
 - `ProcessVars` の呼び出しを新シグネチャに更新
 
-### Phase 6: 旧形式検出
-
-**目標**: 旧形式の設定ファイルに対してわかりやすいエラーメッセージを表示
-
-#### 6.1 loader.go の更新
-
-```go
-func detectLegacyVarsFormat(err error) error {
-    errStr := err.Error()
-    if strings.Contains(errStr, "cannot decode") &&
-        strings.Contains(errStr, "vars") &&
-        strings.Contains(errStr, "[]") {
-        return fmt.Errorf(
-            "vars array format (vars = [\"key=value\"]) is no longer supported; "+
-                "please migrate to table format ([*.vars] section). "+
-                "See documentation for migration guide. Original error: %w",
-            err,
-        )
-    }
-    return err
-}
-```
-
-### Phase 7: テスト
+### Phase 6: テスト
 
 **目標**: 全機能のテストを実施
 
-#### 7.1 単体テスト（expansion_test.go）
+#### 6.1 単体テスト（expansion_test.go）
 
 | テストケース | 説明 |
 |-------------|------|
@@ -237,14 +214,13 @@ func detectLegacyVarsFormat(err error) error {
 | 配列変数の文字列参照 | エラー検出 |
 | base変数の参照 | 継承変数からの展開 |
 
-#### 7.2 統合テスト（loader_test.go）
+#### 6.2 統合テスト（loader_test.go）
 
 | テストケース | 説明 |
 |-------------|------|
 | 完全なTOML読み込み | global/group/command の vars |
-| 旧形式検出 | `vars = ["key=value"]` のエラー |
 
-#### 7.3 ベンチマークテスト
+#### 6.3 ベンチマークテスト
 
 | テストケース | 説明 |
 |-------------|------|
@@ -253,11 +229,11 @@ func detectLegacyVarsFormat(err error) error {
 | 連鎖依存 | 4段階の依存解決時間 |
 | 多数の変数 | 500変数の展開時間 |
 
-### Phase 8: 設定ファイルの更新
+### Phase 7: 設定ファイルの更新
 
 **目標**: 全てのサンプルファイルとテストデータを新形式に変換
 
-#### 8.1 sample/*.toml
+#### 7.1 sample/*.toml
 
 | ファイル | 主な変更 |
 |---------|---------|
@@ -269,15 +245,15 @@ func detectLegacyVarsFormat(err error) error {
 | `vars_env_separation_e2e.toml` | vars セクション形式に変更 |
 | その他 | 該当箇所を更新 |
 
-#### 8.2 cmd/runner/testdata/*.toml
+#### 7.2 cmd/runner/testdata/*.toml
 
 全テストデータファイルを新形式に変換
 
-### Phase 9: ドキュメント更新
+### Phase 8: ドキュメント更新
 
 **目標**: ユーザードキュメントを新形式に対応
 
-#### 9.1 更新対象
+#### 8.1 更新対象
 
 | ファイル | 変更内容 |
 |---------|---------|
@@ -297,11 +273,10 @@ graph TD
     P2 --> P3[Phase 3: リファクタリング]
     P3 --> P4[Phase 4: ProcessVars]
     P4 --> P5[Phase 5: Expand関数]
-    P5 --> P6[Phase 6: 旧形式検出]
-    P1 --> P7[Phase 7: テスト]
-    P6 --> P7
-    P7 --> P8[Phase 8: 設定ファイル]
-    P8 --> P9[Phase 9: ドキュメント]
+    P1 --> P6[Phase 6: テスト]
+    P5 --> P6
+    P6 --> P7[Phase 7: 設定ファイル]
+    P7 --> P8[Phase 8: ドキュメント]
 ```
 
 ### 作業単位の分割
@@ -309,9 +284,9 @@ graph TD
 | 作業単位 | Phase | 見積もり |
 |---------|-------|---------|
 | データ構造変更 | P1-P2 | 0.5日 |
-| コア実装 | P3-P6 | 1.5日 |
-| テスト | P7 | 1日 |
-| 設定ファイル・ドキュメント | P8-P9 | 0.5日 |
+| コア実装 | P3-P5 | 1.5日 |
+| テスト | P6 | 1日 |
+| 設定ファイル・ドキュメント | P7-P8 | 0.5日 |
 | **合計** | | **3.5日** |
 
 ## 3. 実装チェックリスト
@@ -365,12 +340,7 @@ graph TD
 - [ ] `expansion.go`: `ExpandGroup` の更新
 - [ ] `expansion.go`: `ExpandCommand` の更新
 
-### 3.6 Phase 6: 旧形式検出
-
-- [ ] `loader.go`: `detectLegacyVarsFormat` 関数の追加
-- [ ] `loader.go`: `LoadConfig` でのエラーハンドリング更新
-
-### 3.7 Phase 7: テスト
+### 3.6 Phase 6: テスト
 
 - [ ] `expansion_test.go`: 基本的な文字列変数テスト
 - [ ] `expansion_test.go`: 基本的な配列変数テスト
@@ -380,11 +350,10 @@ graph TD
 - [ ] `expansion_test.go`: 順序非依存展開テスト
 - [ ] `expansion_test.go`: エラーケーステスト
 - [ ] `expansion_test.go`: `varExpander` 単体テスト
-- [ ] `loader_test.go`: 旧形式検出テスト
 - [ ] `expansion_test.go`: ベンチマークテスト
 - [ ] 既存テストの更新（新形式対応）
 
-### 3.8 Phase 8: 設定ファイルの更新
+### 3.7 Phase 7: 設定ファイルの更新
 
 - [ ] `sample/auto_env_example.toml`
 - [ ] `sample/auto_env_group.toml`
@@ -398,7 +367,7 @@ graph TD
 - [ ] その他の `sample/*.toml`
 - [ ] `cmd/runner/testdata/*.toml`
 
-### 3.9 Phase 9: ドキュメント更新
+### 3.8 Phase 8: ドキュメント更新
 
 - [ ] `README.md`
 - [ ] `README.ja.md`
