@@ -18,12 +18,11 @@ env_import = [
 ]
 
 # Define internal variables (TOML expansion only, not process env vars)
-vars = [
-    "app_name=test_app",
-    "app_dir=%{home}/%{app_name}",
-    "data_dir=%{app_dir}/data",
-    "log_dir=%{app_dir}/logs"
-]
+[global.vars]
+app_name = "test_app"
+app_dir = "%{home}/%{app_name}"
+data_dir = "%{app_dir}/data"
+log_dir = "%{app_dir}/logs"
 
 # Define process environment variables (visible to child processes)
 env_vars = [
@@ -45,11 +44,10 @@ name = "test_group"
 # Inherited variables: home, user, system_path
 
 # Group-level internal variables
-vars = [
-    "input_file=%{data_dir}/input.txt",
-    "output_file=%{data_dir}/output.txt",
-    "temp_dir=%{data_dir}/temp"
-]
+[groups.vars]
+input_file = "%{data_dir}/input.txt"
+output_file = "%{data_dir}/output.txt"
+temp_dir = "%{data_dir}/temp"
 
 # Group-level process environment variables
 env_vars = [
@@ -105,9 +103,6 @@ mode = "user"
 # Test 4: Command-level variables
 [[groups.commands]]
 name = "command_level_vars"
-vars = [
-    "cmd_var=%{temp_dir}/command_specific.log"
-]
 cmd = "/bin/echo"
 args = [
     "cmd_var=%{cmd_var}",
@@ -117,6 +112,8 @@ env_vars = [
     "CMD_VAR=%{cmd_var}"
 ]
 mode = "user"
+[groups.commands.vars]
+cmd_var = "%{temp_dir}/command_specific.log"
 
 # Test 5: Verify environment variable priority
 # Command.env should override Group.env and Global.env
@@ -140,10 +137,9 @@ env_import = [
 ]
 
 # This group does NOT have access to %{home} because env_import is overridden
-vars = [
-    "group_specific=/opt/override_app",
-    "config=%{group_specific}/config"
-]
+[groups.vars]
+group_specific = "/opt/override_app"
+config = "%{group_specific}/config"
 
 env_vars = [
     "GROUP_SPECIFIC=%{group_specific}",
@@ -167,9 +163,8 @@ name = "empty_env_import_group"
 # Explicitly disable env_import (no system env vars imported)
 env_import = []
 
-vars = [
-    "static_var=/static/path"
-]
+[groups.vars]
+static_var = "/static/path"
 
 env_vars = [
     "STATIC_VAR=%{static_var}"

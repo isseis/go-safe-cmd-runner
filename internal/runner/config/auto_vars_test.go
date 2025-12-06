@@ -20,7 +20,7 @@ func TestExpandGlobal_AutoVarsGenerated(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		Timeout:    &timeout,
 		EnvAllowed: []string{"PATH"},
-		Vars:       []string{},
+		Vars:       nil,
 	}
 
 	runtime, err := ExpandGlobal(spec)
@@ -53,8 +53,8 @@ func TestExpandGlobal_AutoVarsReservedPrefix(t *testing.T) {
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
 		Timeout: &timeout,
-		Vars: []string{
-			"__runner_datetime=user_value",
+		Vars: map[string]interface{}{
+			"__runner_datetime": "user_value",
 		},
 	}
 
@@ -70,9 +70,9 @@ func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
 		Timeout: &timeout,
-		Vars: []string{
-			"output_file=/tmp/backup-%{__runner_datetime}.tar.gz",
-			"lock_file=/var/run/myapp-%{__runner_pid}.lock",
+		Vars: map[string]interface{}{
+			"output_file": "/tmp/backup-%{__runner_datetime}.tar.gz",
+			"lock_file":   "/var/run/myapp-%{__runner_pid}.lock",
 		},
 	}
 
@@ -109,11 +109,11 @@ func TestExpandGlobal_AutoVarsConsistentAcrossExpansions(t *testing.T) {
 	timeout := int32(3600)
 	spec := &runnertypes.GlobalSpec{
 		Timeout: &timeout,
-		Vars: []string{
-			"file1=/tmp/file1-%{__runner_datetime}.log",
-			"file2=/tmp/file2-%{__runner_datetime}.log",
-			"lock1=/tmp/lock1-%{__runner_pid}.pid",
-			"lock2=/tmp/lock2-%{__runner_pid}.pid",
+		Vars: map[string]interface{}{
+			"file1": "/tmp/file1-%{__runner_datetime}.log",
+			"file2": "/tmp/file2-%{__runner_datetime}.log",
+			"lock1": "/tmp/lock1-%{__runner_pid}.pid",
+			"lock2": "/tmp/lock2-%{__runner_pid}.pid",
 		},
 	}
 
@@ -156,8 +156,8 @@ func TestExpandGlobal_AutoVarsWithEnvImport(t *testing.T) {
 		Timeout:    &timeout,
 		EnvAllowed: []string{"TEST_VAR"},
 		EnvImport:  []string{"test_var=TEST_VAR"}, // Correct format: internal_name=SYSTEM_VAR
-		Vars: []string{
-			"combined=%{test_var}-%{__runner_datetime}",
+		Vars: map[string]interface{}{
+			"combined": "%{test_var}-%{__runner_datetime}",
 		},
 	}
 

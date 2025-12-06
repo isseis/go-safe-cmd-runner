@@ -8,23 +8,25 @@ workdir = "/tmp"
 env_allowed = ["HOME", "USER", "PATH", "LANG"]
 # Global defines home and user from system environment
 env_import = ["home=HOME", "user=USER"]
-vars = ["base_dir=%{home}/app"]
+
+[global.vars]
+base_dir = "%{home}/app"
 
 [[groups]]
 name = "merge_group"
 # Group adds PATH to the inherited variables
 # Expected result: home, user (from Global) + path (from Group)
 env_import = ["path=PATH"]
-vars = [
-    "log_dir=%{base_dir}/logs",
-    "combined_env=%{home}:%{user}:%{path}"
-]
 env_vars = [
     "HOME_VAR=%{home}",
     "USER_VAR=%{user}",
     "PATH_VAR=%{path}",
     "COMBINED=%{combined_env}"
 ]
+
+[groups.vars]
+log_dir = "%{base_dir}/logs"
+combined_env = "%{home}:%{user}:%{path}"
 
 [[groups.commands]]
 name = "verify_merge"

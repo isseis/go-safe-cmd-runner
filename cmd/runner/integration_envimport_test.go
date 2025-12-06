@@ -33,7 +33,9 @@ env_allowed = ["PATH", "HOME"]
 [[groups]]
 name = "test_group"
 env_import = ["group_path=PATH"]
-vars = ["log_dir=%{group_path}/logs"]
+
+[groups.vars]
+log_dir = "%{group_path}/logs"
 
 [[groups.commands]]
 name = "test_cmd"
@@ -57,8 +59,10 @@ env_allowed = ["PATH"]
 [[groups]]
 name = "test_group"
 env_import = ["grp_path=PATH"]
-vars = ["bin_dir=%{grp_path}"]
 env_vars = ["CUSTOM_PATH=%{bin_dir}"]
+
+[groups.vars]
+bin_dir = "%{grp_path}"
 
 [[groups.commands]]
 name = "test_cmd"
@@ -83,8 +87,10 @@ env_allowed = ["PATH", "HOME", "USER"]
 [[groups]]
 name = "test_group"
 env_import = ["grp_path=PATH", "grp_home=HOME", "grp_user=USER"]
-vars = ["config_file=%{grp_home}/.config"]
 env_vars = ["CONFIG=%{config_file}"]
+
+[groups.vars]
+config_file = "%{grp_home}/.config"
 
 [[groups.commands]]
 name = "test_cmd"
@@ -103,7 +109,9 @@ args = ["%{grp_user}"]
 			configTOML: `
 [global]
 env_allowed = ["PATH"]
-vars = ["mypath=/global/path"]
+
+[global.vars]
+mypath = "/global/path"
 
 [[groups]]
 name = "test_group"
@@ -184,10 +192,12 @@ name = "test_group"
 [[groups.commands]]
 name = "test_cmd"
 env_import = ["cmd_home=HOME"]
-vars = ["output_file=%{cmd_home}/output.txt"]
 cmd = "echo"
 args = ["%{output_file}"]
 env_vars = ["OUTPUT=%{output_file}"]
+
+[groups.commands.vars]
+output_file = "%{cmd_home}/output.txt"
 `,
 			expectVars: map[string]string{
 				"OUTPUT": "/home/testuser/output.txt",
@@ -204,7 +214,9 @@ env_allowed = ["USER"]
 
 [[groups]]
 name = "test_group"
-vars = ["username=groupuser"]
+
+[groups.vars]
+username = "groupuser"
 
 [[groups.commands]]
 name = "test_cmd"
@@ -233,10 +245,12 @@ name = "test_group"
 [[groups.commands]]
 name = "test_cmd"
 env_import = ["cmd_path=PATH", "cmd_home=HOME"]
-vars = ["full_path=%{cmd_path}:%{cmd_home}/bin"]
 env_vars = ["FULL_PATH=%{full_path}"]
 cmd = "echo"
 args = ["test"]
+
+[groups.commands.vars]
+full_path = "%{cmd_path}:%{cmd_home}/bin"
 `,
 			expectVars: map[string]string{
 				"FULL_PATH": "/usr/bin:/home/test/bin",
@@ -250,19 +264,25 @@ args = ["test"]
 			configTOML: `
 [global]
 env_allowed = ["USER"]
-vars = ["global_prefix=/opt"]
+
+[global.vars]
+global_prefix = "/opt"
 
 [[groups]]
 name = "test_group"
-vars = ["group_suffix=data"]
+
+[groups.vars]
+group_suffix = "data"
 
 [[groups.commands]]
 name = "test_cmd"
 env_import = ["cmd_user=USER"]
-vars = ["full_path=%{global_prefix}/%{cmd_user}/%{group_suffix}"]
 env_vars = ["DATA_PATH=%{full_path}"]
 cmd = "echo"
 args = ["test"]
+
+[groups.commands.vars]
+full_path = "%{global_prefix}/%{cmd_user}/%{group_suffix}"
 `,
 			expectVars: map[string]string{
 				"DATA_PATH": "/opt/testuser/data",
@@ -635,20 +655,26 @@ func TestRunner_EnvImportIntegration(t *testing.T) {
 [global]
 env_allowed = ["BASE_PATH", "APP_NAME", "VERSION"]
 env_import = ["base=BASE_PATH"]
-vars = ["app_base=%{base}/apps"]
+
+[global.vars]
+app_base = "%{base}/apps"
 
 [[groups]]
 name = "app_group"
 env_import = ["app=APP_NAME"]
-vars = ["app_path=%{app_base}/%{app}"]
+
+[groups.vars]
+app_path = "%{app_base}/%{app}"
 
 [[groups.commands]]
 name = "deploy_cmd"
 env_import = ["ver=VERSION"]
-vars = ["deploy_path=%{app_path}/v%{ver}"]
 env_vars = ["DEPLOY_PATH=%{deploy_path}"]
 cmd = "echo"
 args = ["%{deploy_path}"]
+
+[groups.commands.vars]
+deploy_path = "%{app_path}/v%{ver}"
 `,
 			expectVars: map[string]string{
 				"DEPLOY_PATH": "/opt/apps/myapp/v1.0",
@@ -662,7 +688,9 @@ args = ["%{deploy_path}"]
 			configTOML: `
 [global]
 env_allowed = ["SYS_VAR"]
-vars = ["myvar=from_global_vars"]
+
+[global.vars]
+myvar = "from_global_vars"
 
 [[groups]]
 name = "test_group"
@@ -688,19 +716,25 @@ args = ["test"]
 [global]
 env_allowed = ["USER", "DOMAIN"]
 env_import = ["u=USER"]
-vars = ["user_prefix=user"]
+
+[global.vars]
+user_prefix = "user"
 
 [[groups]]
 name = "test_group"
 env_import = ["d=DOMAIN"]
-vars = ["email=%{user_prefix}_%{u}@%{d}"]
+
+[groups.vars]
+email = "%{user_prefix}_%{u}@%{d}"
 
 [[groups.commands]]
 name = "test_cmd"
-vars = ["full_email=email:%{email}"]
 env_vars = ["EMAIL=%{full_email}"]
 cmd = "echo"
 args = ["test"]
+
+[groups.commands.vars]
+full_email = "email:%{email}"
 `,
 			expectVars: map[string]string{
 				"EMAIL": "email:user_john@example.com",

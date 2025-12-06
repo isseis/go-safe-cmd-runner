@@ -36,19 +36,19 @@ hash_directory = "%s"
 
 [[groups]]
 name = "test_group"
-vars = [
-    "group_var=%s",
-]
+
+[groups.vars]
+group_var = "%s"
 
 [[groups.commands]]
 name = "test_cmd"
 cmd = "/usr/bin/echo"
 args = ["test"]
-vars = [
-    "cmd_var=%s",
-]
 # Use command-level variable in verify_files
 verify_files = ["%%{cmd_var}"]
+
+[groups.commands.vars]
+cmd_var = "%s"
 `, env.HashDir, env.TestDir, verifyFile)
 
 	env.writeConfig(t, configContent)
@@ -117,9 +117,9 @@ name = "test_cmd"
 cmd = "/usr/bin/echo"
 args = ["test"]
 workdir = "/nonexistent/directory/%%{some_var}"
-vars = [
-    "some_var=subdir",
-]
+
+[groups.commands.vars]
+some_var = "subdir"
 `, env.HashDir)
 
 	env.writeConfig(t, configContent)
@@ -150,9 +150,9 @@ dry_run = true
 
 [[groups]]
 name = "test_group"
-vars = [
-    "output_file=%s",
-]
+
+[groups.vars]
+output_file = "%s"
 
 [[groups.commands]]
 name = "test_cmd"
@@ -248,9 +248,9 @@ name = "test_group"
 name = "test_cmd"
 cmd = "/bin/sh"
 args = ["-c", "echo 'test output' > %%{cmd_output}"]
-vars = [
-    "cmd_output=%s",
-]
+
+[groups.commands.vars]
+cmd_output = "%s"
 `, env.HashDir, outputFile)
 
 	env.writeConfig(t, configContent)
@@ -293,9 +293,9 @@ name = "test_cmd"
 cmd = "/bin/sh"
 args = ["-c", "pwd > marker.txt"]
 workdir = "%%{work_directory}"
-vars = [
-    "work_directory=%s",
-]
+
+[groups.commands.vars]
+work_directory = "%s"
 `, env.HashDir, subdir)
 
 	env.writeConfig(t, configContent)

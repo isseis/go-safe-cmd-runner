@@ -190,7 +190,7 @@ func TestExpandGroup_WithCmdAllowed(t *testing.T) {
 		spec := &runnertypes.GroupSpec{
 			Name:       "testgroup",
 			CmdAllowed: []string{"%{bindir}/tool"},
-			Vars:       []string{"bindir=" + tmpDir},
+			Vars:       map[string]interface{}{"bindir": tmpDir},
 		}
 
 		runtime, err := ExpandGroup(spec, nil)

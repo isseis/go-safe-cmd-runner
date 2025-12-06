@@ -88,17 +88,17 @@ timeout = 60
 
 [[groups]]
 name = "test_group"
-vars = [
-    "cmd_dir=%s",
-]
 # Group-level cmd_allowed with variable expansion
 cmd_allowed = ["%%{cmd_dir}/%s"]
+
+[groups.vars]
+cmd_dir = "%s"
 
 [[groups.commands]]
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Variable expansion works' > %s"]
-`, cmdDir, cmdBase, testCmd, outputFile)
+`, cmdBase, cmdDir, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)

@@ -354,46 +354,37 @@ func TestProcessFromEnv_DuplicateDefinition(t *testing.T) {
 }
 
 // TestProcessVars_DuplicateDefinition tests duplicate variable detection in vars
-func TestProcessVars_DuplicateDefinition(t *testing.T) {
-	vars := []string{
-		"VAR=value1",
-		"VAR=value2", // Duplicate
-	}
-	baseVars := make(map[string]string)
-
-	_, err := config.ProcessVars(vars, baseVars, "test")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate variable")
-}
+// Note: With map[string]interface{}, duplicate keys are inherently impossible in Go,
+// so this test is no longer applicable and has been removed.
 
 // TestProcessVars_InvalidVariableName tests invalid variable names in vars
 func TestProcessVars_InvalidVariableName(t *testing.T) {
 	tests := []struct {
 		name     string
-		vars     []string
+		vars     map[string]interface{}
 		errorMsg string
 	}{
 		{
 			name:     "variable with dash",
-			vars:     []string{"my-var=value"},
+			vars:     map[string]interface{}{"my-var": "value"},
 			errorMsg: "invalid variable name",
 		},
 		{
 			name:     "variable with space",
-			vars:     []string{"my var=value"},
+			vars:     map[string]interface{}{"my var": "value"},
 			errorMsg: "invalid variable name",
 		},
 		{
 			name:     "empty variable name",
-			vars:     []string{"=value"},
-			errorMsg: "invalid vars format",
+			vars:     map[string]interface{}{"": "value"},
+			errorMsg: "invalid variable name",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			baseVars := make(map[string]string)
-			_, err := config.ProcessVars(tt.vars, baseVars, "test")
+			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, "test")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
@@ -404,7 +395,7 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 	tests := []struct {
 		name     string
-		vars     []string
+		vars     map[string]interface{}
 		baseVars map[string]string
 		checkVar string
 		wantVal  string
@@ -412,11 +403,11 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 	}{
 		{
 			name: "linear chain",
-			vars: []string{
-				"A=base",
-				"B=%{A}/level1",
-				"C=%{B}/level2",
-				"D=%{C}/level3",
+			vars: map[string]interface{}{
+				"A": "base",
+				"B": "%{A}/level1",
+				"C": "%{B}/level2",
+				"D": "%{C}/level3",
 			},
 			baseVars: make(map[string]string),
 			checkVar: "D",
@@ -425,8 +416,8 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 		},
 		{
 			name: "reference base variables",
-			vars: []string{
-				"NEW_VAR=%{BASE1}/%{BASE2}",
+			vars: map[string]interface{}{
+				"NEW_VAR": "%{BASE1}/%{BASE2}",
 			},
 			baseVars: map[string]string{
 				"BASE1": "first",
@@ -438,8 +429,8 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 		},
 		{
 			name: "override base variable",
-			vars: []string{
-				"BASE=%{BASE}_extended",
+			vars: map[string]interface{}{
+				"BASE": "%{BASE}_extended",
 			},
 			baseVars: map[string]string{
 				"BASE": "original",
@@ -452,7 +443,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ProcessVars(tt.vars, tt.baseVars, "test")
+			result, _, err := config.ProcessVars(tt.vars, tt.baseVars, nil, "test")
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -465,12 +456,12 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 
 // TestProcessVars_UndefinedReference tests undefined variable references
 func TestProcessVars_UndefinedReference(t *testing.T) {
-	vars := []string{
-		"VAR=%{UNDEFINED}",
+	vars := map[string]interface{}{
+		"VAR": "%{UNDEFINED}",
 	}
 	baseVars := make(map[string]string)
 
-	_, err := config.ProcessVars(vars, baseVars, "test")
+	_, _, err := config.ProcessVars(vars, baseVars, nil, "test")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "undefined variable")
 }
@@ -586,9 +577,9 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 			"sys_path=PATH",
 			"sys_home=HOME",
 		},
-		Vars: []string{
-			"base_dir=%{sys_home}/app",
-			"bin_dir=%{base_dir}/bin",
+		Vars: map[string]interface{}{
+			"base_dir": "%{sys_home}/app",
+			"bin_dir":  "%{base_dir}/bin",
 		},
 		EnvVars: []string{
 			"APP_HOME=%{base_dir}",

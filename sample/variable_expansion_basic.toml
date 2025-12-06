@@ -21,7 +21,8 @@ name = "docker_command"
 description = "Use Docker command with variable path"
 cmd = "%{docker_cmd}"
 args = ["version"]
-vars = ["docker_cmd=/usr/bin/docker"]
+[groups.commands.vars]
+docker_cmd = "/usr/bin/docker"
 
 # Example 2: Variable expansion in arguments
 [[groups]]
@@ -33,8 +34,9 @@ name = "copy_file"
 description = "Copy file using variables in args"
 cmd = "/bin/cp"
 args = ["%{home}/source.txt", "%{backup_dir}/backup.txt"]
-vars = ["backup_dir=/opt/backups"]
 env_import = ["home=HOME"]
+[groups.commands.vars]
+backup_dir = "/opt/backups"
 
 # Example 3: Multiple variables in one string
 [[groups]]
@@ -46,11 +48,10 @@ name = "ssh_connection"
 description = "Build SSH connection string from variables"
 cmd = "/usr/bin/ssh"
 args = ["%{user}@%{hostname}:%{port}"]
-vars = [
-    "user=admin",
-    "hostname=server01",
-    "port=22"
-]
+[groups.commands.vars]
+user = "admin"
+hostname = "server01"
+port = "22"
 
 # Example 4: Path construction with variables
 [[groups]]
@@ -62,11 +63,10 @@ name = "custom_tool"
 description = "Execute tool from variable directory"
 cmd = "%{tool_dir}/my-script"
 args = ["--input", "%{input_file}", "--output", "%{output_file}"]
-vars = [
-    "tool_dir=/opt/tools",
-    "input_file=/data/input.txt",
-    "output_file=/data/output.txt"
-]
+[groups.commands.vars]
+tool_dir = "/opt/tools"
+input_file = "/data/input.txt"
+output_file = "/data/output.txt"
 
 # Example 5: Environment-specific configuration
 [[groups]]
@@ -78,8 +78,7 @@ name = "deploy_script"
 description = "Run deployment with environment-specific settings"
 cmd = "%{app_dir}/deploy.sh"
 args = ["--env", "%{env_type}", "--region", "%{region}"]
-vars = [
-    "app_dir=/opt/myapp",
-    "env_type=production",
-    "region=us-west-2"
-]
+[groups.commands.vars]
+app_dir = "/opt/myapp"
+env_type = "production"
+region = "us-west-2"

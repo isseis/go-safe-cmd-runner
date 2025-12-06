@@ -56,8 +56,10 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 [global]
 env_import = ["MY_SAFE=SAFE_VAR"]
 env_allowed = ["SAFE_VAR"]
-vars = ["derived=%{MY_SAFE}/subdir"]
 env_vars = ["MY_ENV=%{derived}"]
+
+[global.vars]
+derived = "%{MY_SAFE}/subdir"
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)
@@ -118,18 +120,23 @@ env_allowed = ["SAFE_VAR"]
 [global]
 env_import = ["home=SAFE_HOME", "allowed=ALLOWED_VAR"]
 env_allowed = ["SAFE_HOME", "ALLOWED_VAR"]
-vars = ["work_dir=%{home}/work", "config_dir=%{home}/config"]
 env_vars = ["WORK_DIR=%{work_dir}", "CONFIG_DIR=%{config_dir}"]
 verify_files = ["%{config_dir}/app.conf"]
 
-[[group]]
+[global.vars]
+work_dir = "%{home}/work"
+config_dir = "%{home}/config"
+
+[[groups]]
 name = "secure_group"
 env_import = ["group_var=ALLOWED_VAR"]
 env_allowed = ["ALLOWED_VAR"]
-vars = ["group_path=%{group_var}/data"]
 env_vars = ["GROUP_PATH=%{group_path}"]
 
-[[group.commands]]
+[groups.vars]
+group_path = "%{group_var}/data"
+
+[[groups.commands]]
 name = "secure_command"
 cmd = "echo"
 args = ["Running with security"]
@@ -190,24 +197,24 @@ env_vars = ["CMD_VAR=%{group_path}"]
 [global]
 env_allowed = ["PUBLIC_VAR", "PRIVATE_VAR"]
 
-[[group]]
+[[groups]]
 name = "public_group"
 env_import = ["pub=PUBLIC_VAR"]
 env_allowed = ["PUBLIC_VAR"]
 env_vars = ["PUBLIC=%{pub}"]
 
-[[group.commands]]
+[[groups.commands]]
 name = "public_cmd"
 cmd = "echo"
 args = ["public"]
 
-[[group]]
+[[groups]]
 name = "private_group"
 env_import = ["priv=PRIVATE_VAR"]
 env_allowed = ["PRIVATE_VAR"]
 env_vars = ["PRIVATE=%{priv}"]
 
-[[group.commands]]
+[[groups.commands]]
 name = "private_cmd"
 cmd = "echo"
 args = ["private"]
@@ -257,8 +264,10 @@ args = ["private"]
 [global]
 env_import = ["dir=SAFE_DIR"]
 env_allowed = ["SAFE_DIR"]
-vars = ["file_path=%{dir}/test_security_file.txt"]
 verify_files = ["%{file_path}"]
+
+[global.vars]
+file_path = "%{dir}/test_security_file.txt"
 `
 				err = os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)

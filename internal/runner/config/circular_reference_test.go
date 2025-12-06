@@ -25,25 +25,25 @@ func TestCircularReference_DirectSelfReference(t *testing.T) {
 		{
 			name: "vars direct self-reference",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{"v=%{v}"},
+				Vars: map[string]interface{}{"v": "%{v}"},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: "v",
 		},
 		{
 			name: "vars self-reference with prefix",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{"PATH=/custom:%{PATH}"},
+				Vars: map[string]interface{}{"PATH": "/custom:%{PATH}"},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: "PATH",
 		},
 		{
 			name: "vars self-reference with suffix",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{"VALUE=%{VALUE}_suffix"},
+				Vars: map[string]interface{}{"VALUE": "%{VALUE}_suffix"},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: "VALUE",
 		},
 	}
@@ -59,8 +59,7 @@ func TestCircularReference_DirectSelfReference(t *testing.T) {
 }
 
 // TestCircularReference_TwoVariables tests circular references between two variables (a=%{b}, b=%{a})
-// Note: Due to sequential processing, the first variable fails with "undefined variable" for forward reference.
-// To test actual circular reference detection, define b before a, so a references b which then has a cycle.
+// With lazy evaluation, mutual references are detected as circular references.
 func TestCircularReference_TwoVariables(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -71,42 +70,47 @@ func TestCircularReference_TwoVariables(t *testing.T) {
 		{
 			name: "simple two-variable cycle",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"a=%{b}",
-					"b=%{a}",
+				Vars: map[string]interface{}{
+					"a": "%{b}",
+					"b": "%{a}",
 				},
 			},
-			wantErr:  "undefined variable",
-			contains: []string{"b"}, // First failure is undefined 'b'
+			wantErr:  "circular reference",
+			contains: []string{"b"},
 		},
 		{
 			name: "two-variable cycle with reverse order",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"b=%{a}",
-					"a=%{b}",
+				Vars: map[string]interface{}{
+					"b": "%{a}",
+					"a": "%{b}",
 				},
 			},
-			wantErr:  "undefined variable",
-			contains: []string{"a"}, // First failure is undefined 'a'
+			wantErr:  "circular reference",
+			contains: []string{"a"},
 		},
 		{
-			name: "actual circular reference via existing variable",
+			name: "valid chain with existing variable",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"a=initial",
-					"b=%{a}",
-					"a=%{b}", // Trying to redefine 'a' - should fail as duplicate
+				Vars: map[string]interface{}{
+					"a": "initial",
+					"b": "%{a}",
 				},
 			},
-			wantErr:  "duplicate variable",
-			contains: []string{"a"},
+			// With map format, this is a valid chain (no cycle)
+			wantErr:  "",
+			contains: []string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ExpandGlobal(tt.spec)
+			runtime, err := config.ExpandGlobal(tt.spec)
+			if tt.wantErr == "" {
+				require.NoError(t, err, "Expected no error for valid chain")
+				require.NotNil(t, runtime)
+				return
+			}
 			require.Error(t, err, "Expected error")
 			assert.Contains(t, err.Error(), tt.wantErr)
 			for _, s := range tt.contains {
@@ -117,7 +121,7 @@ func TestCircularReference_TwoVariables(t *testing.T) {
 }
 
 // TestCircularReference_ComplexChain tests circular references with 3+ variables
-// These tests create actual cycles where expansion recurses back to an already-visited variable.
+// With lazy evaluation, all mutual references are detected as circular references.
 func TestCircularReference_ComplexChain(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -126,54 +130,54 @@ func TestCircularReference_ComplexChain(t *testing.T) {
 		contains []string
 	}{
 		{
-			name: "three-variable cycle (forward refs fail first)",
+			name: "three-variable cycle",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"a=%{b}",
-					"b=%{c}",
-					"c=%{a}",
+				Vars: map[string]interface{}{
+					"a": "%{b}",
+					"b": "%{c}",
+					"c": "%{a}",
 				},
 			},
-			wantErr:  "undefined variable",
-			contains: []string{"b"}, // First failure is undefined 'b'
+			wantErr:  "circular reference",
+			contains: []string{"a", "b", "c"},
 		},
 		{
-			name: "three-variable forward reference (not a cycle, just undefined)",
+			name: "three-variable cycle (reverse order in map)",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"c=%{a}",
-					"a=%{b}",
-					"b=%{c}",
+				Vars: map[string]interface{}{
+					"c": "%{a}",
+					"a": "%{b}",
+					"b": "%{c}",
 				},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: []string{"a"},
 		},
 		{
-			name: "four-variable forward reference (not a cycle, just undefined)",
+			name: "four-variable cycle",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"VAR4=%{VAR1}",
-					"VAR1=%{VAR2}",
-					"VAR2=%{VAR3}",
-					"VAR3=%{VAR4}",
+				Vars: map[string]interface{}{
+					"VAR4": "%{VAR1}",
+					"VAR1": "%{VAR2}",
+					"VAR2": "%{VAR3}",
+					"VAR3": "%{VAR4}",
 				},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: []string{"VAR1"},
 		},
 		{
-			name: "complex chain forward reference (not a cycle)",
+			name: "complex chain with cycle",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"BASE=/base",
-					"D=%{A}",
-					"A=%{BASE}/%{B}",
-					"B=%{C}",
-					"C=%{D}",
+				Vars: map[string]interface{}{
+					"BASE": "/base",
+					"D":    "%{A}",
+					"A":    "%{BASE}/%{B}",
+					"B":    "%{C}",
+					"C":    "%{D}",
 				},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: []string{"A"},
 		},
 	}
@@ -199,12 +203,12 @@ func TestCircularReference_RecursionDepthLimit(t *testing.T) {
 	// Create a reasonably long chain that should succeed
 	const chainLength = 50
 
-	vars := make([]string, chainLength)
-	vars[0] = "VAR_000=initial"
+	vars := make(map[string]interface{}, chainLength)
+	vars["VAR_000"] = "initial"
 	for i := 1; i < chainLength; i++ {
 		currentVarName := "VAR_" + fmt.Sprintf("%03d", i)
 		previousVarName := "VAR_" + fmt.Sprintf("%03d", i-1)
-		vars[i] = currentVarName + "=%{" + previousVarName + "}"
+		vars[currentVarName] = "%{" + previousVarName + "}"
 	}
 
 	spec := &runnertypes.GlobalSpec{
@@ -230,11 +234,11 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 		{
 			name: "group vars references global var that doesn't exist yet",
 			global: &runnertypes.GlobalSpec{
-				Vars: []string{"GLOBAL_VAR=%{GROUP_VAR}"},
+				Vars: map[string]interface{}{"GLOBAL_VAR": "%{GROUP_VAR}"},
 			},
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: []string{"GROUP_VAR=%{GLOBAL_VAR}"},
+				Vars: map[string]interface{}{"GROUP_VAR": "%{GLOBAL_VAR}"},
 			},
 			wantErr:  "undefined variable",
 			contains: "GROUP_VAR",
@@ -242,16 +246,16 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 		{
 			name: "group vars with forward reference",
 			global: &runnertypes.GlobalSpec{
-				Vars: []string{"BASE=/base"},
+				Vars: map[string]interface{}{"BASE": "/base"},
 			},
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: []string{
-					"CYCLE=%{DERIVED}",
-					"DERIVED=%{CYCLE}",
+				Vars: map[string]interface{}{
+					"CYCLE":   "%{DERIVED}",
+					"DERIVED": "%{CYCLE}",
 				},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: "DERIVED",
 		},
 	}
@@ -289,7 +293,7 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 			name: "command env references undefined group var",
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: []string{"GROUP_VAR=value"},
+				Vars: map[string]interface{}{"GROUP_VAR": "value"},
 			},
 			command: &runnertypes.CommandSpec{
 				Name:    "test",
@@ -303,17 +307,17 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 			name: "command vars with forward reference",
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: []string{"GROUP_VAR=base"},
+				Vars: map[string]interface{}{"GROUP_VAR": "base"},
 			},
 			command: &runnertypes.CommandSpec{
 				Name: "test",
 				Cmd:  "/bin/test",
-				Vars: []string{
-					"CMD_B=%{CMD_A}",
-					"CMD_A=%{CMD_B}",
+				Vars: map[string]interface{}{
+					"CMD_B": "%{CMD_A}",
+					"CMD_A": "%{CMD_B}",
 				},
 			},
-			wantErr:  "undefined variable",
+			wantErr:  "circular reference",
 			contains: "CMD_A",
 		},
 	}
@@ -347,47 +351,47 @@ func TestCircularReference_ComplexPatterns(t *testing.T) {
 		{
 			name: "forward reference with non-cyclic variables mixed in",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"SAFE1=value1",
-					"SAFE2=value2",
-					"CYCLE_B=%{CYCLE_A}",
-					"SAFE3=%{SAFE1}",
-					"CYCLE_A=%{CYCLE_B}",
-					"SAFE4=%{SAFE2}/%{SAFE3}",
+				Vars: map[string]interface{}{
+					"SAFE1":   "value1",
+					"SAFE2":   "value2",
+					"CYCLE_B": "%{CYCLE_A}",
+					"SAFE3":   "%{SAFE1}",
+					"CYCLE_A": "%{CYCLE_B}",
+					"SAFE4":   "%{SAFE2}/%{SAFE3}",
 				},
 			},
-			wantErr: "undefined variable",
+			wantErr: "circular reference",
 		},
 		{
 			name: "multiple independent forward-reference failures",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"A1=%{A2}",
-					"A2=%{A1}",
-					"B1=%{B2}",
-					"B2=%{B1}",
+				Vars: map[string]interface{}{
+					"A1": "%{A2}",
+					"A2": "%{A1}",
+					"B1": "%{B2}",
+					"B2": "%{B1}",
 				},
 			},
-			wantErr: "undefined variable",
+			wantErr: "circular reference",
 		},
 		{
 			name: "multiple forward references",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"A2=%{A1}",
-					"A1=%{A2}",
-					"B2=%{B1}",
-					"B1=%{B2}",
+				Vars: map[string]interface{}{
+					"A2": "%{A1}",
+					"A1": "%{A2}",
+					"B2": "%{B1}",
+					"B1": "%{B2}",
 				},
 			},
-			wantErr: "undefined variable",
+			wantErr: "circular reference",
 		},
 		{
 			name: "env variables cannot reference each other",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"VAR1=%{VAR2}",
-					"VAR2=value",
+				Vars: map[string]interface{}{
+					"VAR1": "%{VAR2}",
+					"VAR2": "value",
 				},
 				EnvVars: []string{
 					"ENV1=%{VAR1}",
@@ -419,12 +423,12 @@ func TestCircularReference_ValidComplexReferences(t *testing.T) {
 		{
 			name: "deep chain without cycle",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"V1=a",
-					"V2=%{V1}b",
-					"V3=%{V2}c",
-					"V4=%{V3}d",
-					"V5=%{V4}e",
+				Vars: map[string]interface{}{
+					"V1": "a",
+					"V2": "%{V1}b",
+					"V3": "%{V2}c",
+					"V4": "%{V3}d",
+					"V5": "%{V4}e",
 				},
 			},
 			checkVar: "V5",
@@ -433,11 +437,11 @@ func TestCircularReference_ValidComplexReferences(t *testing.T) {
 		{
 			name: "diamond pattern (multiple paths, no cycle)",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"BASE=x",
-					"LEFT=%{BASE}L",
-					"RIGHT=%{BASE}R",
-					"MERGE=%{LEFT}%{RIGHT}",
+				Vars: map[string]interface{}{
+					"BASE":  "x",
+					"LEFT":  "%{BASE}L",
+					"RIGHT": "%{BASE}R",
+					"MERGE": "%{LEFT}%{RIGHT}",
 				},
 			},
 			checkVar: "MERGE",
@@ -446,13 +450,13 @@ func TestCircularReference_ValidComplexReferences(t *testing.T) {
 		{
 			name: "complex tree structure",
 			spec: &runnertypes.GlobalSpec{
-				Vars: []string{
-					"ROOT=/root",
-					"BRANCH1=%{ROOT}/b1",
-					"BRANCH2=%{ROOT}/b2",
-					"LEAF1=%{BRANCH1}/leaf",
-					"LEAF2=%{BRANCH2}/leaf",
-					"COMBINED=%{LEAF1}:%{LEAF2}",
+				Vars: map[string]interface{}{
+					"ROOT":     "/root",
+					"BRANCH1":  "%{ROOT}/b1",
+					"BRANCH2":  "%{ROOT}/b2",
+					"LEAF1":    "%{BRANCH1}/leaf",
+					"LEAF2":    "%{BRANCH2}/leaf",
+					"COMBINED": "%{LEAF1}:%{LEAF2}",
 				},
 			},
 			checkVar: "COMBINED",

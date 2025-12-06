@@ -292,79 +292,79 @@ graph TD
 
 ### 3.1 Phase 1: 型定義の変更
 
-- [ ] `spec.go`: `GlobalSpec.Vars` を `map[string]interface{}` に変更
-- [ ] `spec.go`: `GroupSpec.Vars` を `map[string]interface{}` に変更
-- [ ] `spec.go`: `CommandSpec.Vars` を `map[string]interface{}` に変更
-- [ ] `runtime.go`: `RuntimeGlobal.ExpandedArrayVars` フィールド追加
-- [ ] `runtime.go`: `RuntimeGroup.ExpandedArrayVars` フィールド追加
-- [ ] `runtime.go`: `RuntimeCommand.ExpandedArrayVars` フィールド追加
-- [ ] `runtime.go`: `NewRuntimeGlobal` で `ExpandedArrayVars` を初期化
-- [ ] `runtime.go`: `NewRuntimeGroup` で `ExpandedArrayVars` を初期化
-- [ ] `runtime.go`: `NewRuntimeCommand` で `ExpandedArrayVars` を初期化
+- [x] `spec.go`: `GlobalSpec.Vars` を `map[string]interface{}` に変更
+- [x] `spec.go`: `GroupSpec.Vars` を `map[string]interface{}` に変更
+- [x] `spec.go`: `CommandSpec.Vars` を `map[string]interface{}` に変更
+- [x] `runtime.go`: `RuntimeGlobal.ExpandedArrayVars` フィールド追加
+- [x] `runtime.go`: `RuntimeGroup.ExpandedArrayVars` フィールド追加
+- [x] `runtime.go`: `RuntimeCommand.ExpandedArrayVars` フィールド追加
+- [x] `runtime.go`: `NewRuntimeGlobal` で `ExpandedArrayVars` を初期化
+- [x] `runtime.go`: `NewRuntimeGroup` で `ExpandedArrayVars` を初期化
+- [x] `runtime.go`: `NewRuntimeCommand` で `ExpandedArrayVars` を初期化
 
 ### 3.2 Phase 2: エラー型の追加
 
-- [ ] `errors.go`: `ErrTooManyVariablesDetail` 追加
-- [ ] `errors.go`: `ErrTypeMismatchDetail` 追加
-- [ ] `errors.go`: `ErrValueTooLongDetail` 追加
-- [ ] `errors.go`: `ErrArrayTooLargeDetail` 追加
-- [ ] `errors.go`: `ErrInvalidArrayElementDetail` 追加
-- [ ] `errors.go`: `ErrArrayElementTooLongDetail` 追加
-- [ ] `errors.go`: `ErrUnsupportedTypeDetail` 追加
-- [ ] `errors.go`: `ErrArrayVariableInStringContextDetail` 追加
-- [ ] `errors.go`: `ErrUndefinedVariableDetail` に `Chain` フィールド追加
+- [x] `errors.go`: `ErrTooManyVariablesDetail` 追加
+- [x] `errors.go`: `ErrTypeMismatchDetail` 追加
+- [x] `errors.go`: `ErrValueTooLongDetail` 追加
+- [x] `errors.go`: `ErrArrayTooLargeDetail` 追加
+- [x] `errors.go`: `ErrInvalidArrayElementDetail` 追加
+- [x] `errors.go`: `ErrArrayElementTooLongDetail` 追加
+- [x] `errors.go`: `ErrUnsupportedTypeDetail` 追加
+- [x] `errors.go`: `ErrArrayVariableInStringContextDetail` 追加
+- [x] `errors.go`: `ErrUndefinedVariableDetail` に `Chain` フィールド追加
 
 ### 3.3 Phase 3: リファクタリング
 
-- [ ] `expansion.go`: `variableResolver` 型の定義
-- [ ] `expansion.go`: `expandStringWithResolver` 関数の実装
-- [ ] `expansion.go`: `expandStringRecursive` のリファクタリング
+- [x] `expansion.go`: `variableResolver` 型の定義
+- [x] `expansion.go`: `expandStringWithResolver` 関数の実装
+- [x] `expansion.go`: `expandStringRecursive` のリファクタリング
 
 ### 3.4 Phase 4: ProcessVars の更新
 
-- [ ] `expansion.go`: 制限値定数の追加
-- [ ] `expansion.go`: `varExpander` 構造体の追加
-- [ ] `expansion.go`: `newVarExpander` コンストラクタの追加
-- [ ] `expansion.go`: `varExpander.expandString` メソッドの追加
-- [ ] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
-- [ ] `expansion.go`: `ProcessVars` のシグネチャ変更
-- [ ] `expansion.go`: 型検証の実装
-- [ ] `expansion.go`: サイズ検証の実装
-- [ ] `expansion.go`: 型整合性検証の実装
-- [ ] `expansion.go`: 配列変数の展開処理の実装
+- [x] `expansion.go`: 制限値定数の追加
+- [x] `expansion.go`: `varExpander` 構造体の追加
+- [x] `expansion.go`: `newVarExpander` コンストラクタの追加
+- [x] `expansion.go`: `varExpander.expandString` メソッドの追加
+- [x] `expansion.go`: `varExpander.resolveVariable` メソッドの追加
+- [x] `expansion.go`: `ProcessVars` のシグネチャ変更
+- [x] `expansion.go`: 型検証の実装
+- [x] `expansion.go`: サイズ検証の実装
+- [x] `expansion.go`: 型整合性検証の実装
+- [x] `expansion.go`: 配列変数の展開処理の実装
 
 ### 3.5 Phase 5: Expand関数群の更新
 
-- [ ] `expansion.go`: `ExpandGlobal` の更新
-- [ ] `expansion.go`: `ExpandGroup` の更新
-- [ ] `expansion.go`: `ExpandCommand` の更新
+- [x] `expansion.go`: `ExpandGlobal` の更新
+- [x] `expansion.go`: `ExpandGroup` の更新
+- [x] `expansion.go`: `ExpandCommand` の更新
 
 ### 3.6 Phase 6: テスト
 
-- [ ] `expansion_test.go`: 基本的な文字列変数テスト
-- [ ] `expansion_test.go`: 基本的な配列変数テスト
-- [ ] `expansion_test.go`: 変数展開テスト
-- [ ] `expansion_test.go`: 型整合性テスト
-- [ ] `expansion_test.go`: サイズ制限テスト
-- [ ] `expansion_test.go`: 順序非依存展開テスト
-- [ ] `expansion_test.go`: エラーケーステスト
-- [ ] `expansion_test.go`: `varExpander` 単体テスト
-- [ ] `expansion_test.go`: ベンチマークテスト
-- [ ] 既存テストの更新（新形式対応）
+- [x] `expansion_test.go`: 基本的な文字列変数テスト
+- [x] `expansion_test.go`: 基本的な配列変数テスト
+- [x] `expansion_test.go`: 変数展開テスト
+- [x] `expansion_test.go`: 型整合性テスト
+- [x] `expansion_test.go`: サイズ制限テスト
+- [x] `expansion_test.go`: 順序非依存展開テスト
+- [x] `expansion_test.go`: エラーケーステスト
+- [x] `expansion_test.go`: `varExpander` 単体テスト
+- [x] `expansion_test.go`: ベンチマークテスト
+- [x] 既存テストの更新（新形式対応）
 
 ### 3.7 Phase 7: 設定ファイルの更新
 
-- [ ] `sample/auto_env_example.toml`
-- [ ] `sample/auto_env_group.toml`
-- [ ] `sample/auto_env_test.toml`
-- [ ] `sample/comprehensive.toml`
-- [ ] `sample/variable_expansion_basic.toml`
-- [ ] `sample/variable_expansion_advanced.toml`
-- [ ] `sample/variable_expansion_security.toml`
-- [ ] `sample/variable_expansion_test.toml`
-- [ ] `sample/vars_env_separation_e2e.toml`
-- [ ] その他の `sample/*.toml`
-- [ ] `cmd/runner/testdata/*.toml`
+- [x] `sample/auto_env_example.toml`
+- [x] `sample/auto_env_group.toml`
+- [x] `sample/auto_env_test.toml`
+- [x] `sample/comprehensive.toml`
+- [x] `sample/variable_expansion_basic.toml`
+- [x] `sample/variable_expansion_advanced.toml`
+- [x] `sample/variable_expansion_security.toml`
+- [x] `sample/variable_expansion_test.toml`
+- [x] `sample/vars_env_separation_e2e.toml`
+- [x] その他の `sample/*.toml`
+- [x] `cmd/runner/testdata/*.toml`
 
 ### 3.8 Phase 8: ドキュメント更新
 

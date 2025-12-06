@@ -7,18 +7,24 @@
 # - New system: vars (internal variables) and %{VAR} syntax
 
 [global]
-vars = ["base_dir=/opt"]
 env_vars = ["BASE_DIR=%{base_dir}"]
 env_allowed = ["HOME", "PATH"]
 
+[global.vars]
+base_dir = "/opt"
+
 [[groups]]
 name = "app_group"
-vars = ["app_dir=%{base_dir}/myapp"]
 env_vars = ["APP_DIR=%{app_dir}"]
+
+[groups.vars]
+app_dir = "%{base_dir}/myapp"
 
 [[groups.commands]]
 name = "run_app"
 cmd = "%{app_dir}/bin/server"
 args = ["--log", "%{log_dir}/app.log"]
-vars = ["log_dir=%{app_dir}/logs"]
 env_vars = ["LOG_DIR=%{log_dir}"]
+
+[groups.commands.vars]
+log_dir = "%{app_dir}/logs"

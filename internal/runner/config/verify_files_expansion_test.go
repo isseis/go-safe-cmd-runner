@@ -13,7 +13,7 @@ import (
 func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 	t.Run("GlobalVerifyFiles_WithSpaces", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        []string{"base_dir=/opt/my app", "file_name=test-file_v1.0.sh"},
+			Vars:        map[string]interface{}{"base_dir": "/opt/my app", "file_name": "test-file_v1.0.sh"},
 			VerifyFiles: []string{"%{base_dir}/%{file_name}"},
 		}
 
@@ -26,7 +26,7 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 
 	t.Run("GlobalVerifyFiles_WithDashes", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        []string{"base_dir=/opt/app", "sub_dir=sub-dir_v2.0"},
+			Vars:        map[string]interface{}{"base_dir": "/opt/app", "sub_dir": "sub-dir_v2.0"},
 			VerifyFiles: []string{"%{base_dir}/%{sub_dir}/script.sh"},
 		}
 
@@ -39,14 +39,14 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 
 	t.Run("GroupVerifyFiles_WithSpecialChars", func(t *testing.T) {
 		globalSpec := &runnertypes.GlobalSpec{
-			Vars: []string{"root=/opt/my-app"},
+			Vars: map[string]interface{}{"root": "/opt/my-app"},
 		}
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
 
 		groupSpec := &runnertypes.GroupSpec{
 			Name:        "test_group",
-			Vars:        []string{"sub_dir=test dir v1.0"},
+			Vars:        map[string]interface{}{"sub_dir": "test dir v1.0"},
 			VerifyFiles: []string{"%{root}/%{sub_dir}/verify.sh"},
 		}
 
@@ -62,7 +62,7 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 	t.Run("GlobalVerifyFiles_NestedReferences", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        []string{"root=/opt", "app_name=myapp", "app_dir=%{root}/%{app_name}"},
+			Vars:        map[string]interface{}{"root": "/opt", "app_name": "myapp", "app_dir": "%{root}/%{app_name}"},
 			VerifyFiles: []string{"%{app_dir}/verify.sh"},
 		}
 
@@ -75,12 +75,12 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 
 	t.Run("GlobalVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars: []string{
-				"root=/opt",
-				"app_name=myapp",
-				"version=v1.0",
-				"app_dir=%{root}/%{app_name}",
-				"versioned_dir=%{app_dir}/%{version}",
+			Vars: map[string]interface{}{
+				"root":          "/opt",
+				"app_name":      "myapp",
+				"version":       "v1.0",
+				"app_dir":       "%{root}/%{app_name}",
+				"versioned_dir": "%{app_dir}/%{version}",
 			},
 			VerifyFiles: []string{"%{versioned_dir}/scripts/verify.sh"},
 		}
@@ -94,14 +94,14 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 
 	t.Run("GroupVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
 		globalSpec := &runnertypes.GlobalSpec{
-			Vars: []string{"root=/opt", "app_name=myapp", "app_dir=%{root}/%{app_name}"},
+			Vars: map[string]interface{}{"root": "/opt", "app_name": "myapp", "app_dir": "%{root}/%{app_name}"},
 		}
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
 
 		groupSpec := &runnertypes.GroupSpec{
 			Name:        "test_group",
-			Vars:        []string{"subdir=scripts", "full_path=%{app_dir}/%{subdir}"},
+			Vars:        map[string]interface{}{"subdir": "scripts", "full_path": "%{app_dir}/%{subdir}"},
 			VerifyFiles: []string{"%{full_path}/check.sh"},
 		}
 
@@ -117,7 +117,7 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 	t.Run("UndefinedVariable", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        []string{"existing_var=/opt"},
+			Vars:        map[string]interface{}{"existing_var": "/opt"},
 			VerifyFiles: []string{"%{undefined_var}/script.sh"},
 		}
 
@@ -139,7 +139,7 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 
 	t.Run("MultipleVerifyFilesWithMixedErrors", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars: []string{"valid_dir=/opt"},
+			Vars: map[string]interface{}{"valid_dir": "/opt"},
 			VerifyFiles: []string{
 				"%{valid_dir}/good.sh",
 				"%{invalid_var}/bad.sh",
@@ -153,7 +153,7 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 
 	t.Run("GroupVerifyFiles_UndefinedVariable", func(t *testing.T) {
 		globalSpec := &runnertypes.GlobalSpec{
-			Vars: []string{"global_var=/opt"},
+			Vars: map[string]interface{}{"global_var": "/opt"},
 		}
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 func TestVerifyFilesExpansion_EmptyAndNoFiles(t *testing.T) {
 	t.Run("NoVerifyFiles", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        []string{"var1=/opt"},
+			Vars:        map[string]interface{}{"var1": "/opt"},
 			VerifyFiles: nil,
 		}
 
@@ -184,7 +184,7 @@ func TestVerifyFilesExpansion_EmptyAndNoFiles(t *testing.T) {
 
 	t.Run("EmptyVerifyFilesList", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        []string{"var1=/opt"},
+			Vars:        map[string]interface{}{"var1": "/opt"},
 			VerifyFiles: []string{},
 		}
 
@@ -198,7 +198,7 @@ func TestVerifyFilesExpansion_EmptyAndNoFiles(t *testing.T) {
 func TestVerifyFilesExpansion_MultipleFiles(t *testing.T) {
 	t.Run("GlobalMultipleVerifyFiles", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars: []string{"dir1=/opt/app1", "dir2=/opt/app2"},
+			Vars: map[string]interface{}{"dir1": "/opt/app1", "dir2": "/opt/app2"},
 			VerifyFiles: []string{
 				"%{dir1}/verify1.sh",
 				"%{dir2}/verify2.sh",
@@ -216,14 +216,14 @@ func TestVerifyFilesExpansion_MultipleFiles(t *testing.T) {
 
 	t.Run("GroupMultipleVerifyFiles", func(t *testing.T) {
 		globalSpec := &runnertypes.GlobalSpec{
-			Vars: []string{"root=/opt"},
+			Vars: map[string]interface{}{"root": "/opt"},
 		}
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
 
 		groupSpec := &runnertypes.GroupSpec{
 			Name: "test_group",
-			Vars: []string{"app=myapp"},
+			Vars: map[string]interface{}{"app": "myapp"},
 			VerifyFiles: []string{
 				"%{root}/%{app}/check1.sh",
 				"%{root}/%{app}/check2.sh",
