@@ -273,8 +273,7 @@ graph TD
     P2 --> P3[Phase 3: リファクタリング]
     P3 --> P4[Phase 4: ProcessVars]
     P4 --> P5[Phase 5: Expand関数]
-    P1 --> P6[Phase 6: テスト]
-    P5 --> P6
+    P5 --> P6[Phase 6: テスト]
     P6 --> P7[Phase 7: 設定ファイル]
     P7 --> P8[Phase 8: ドキュメント]
 ```
