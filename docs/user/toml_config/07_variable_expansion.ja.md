@@ -957,7 +957,7 @@ app_dir = "/opt/app"
 _private = "value"
 
 # 無効な変数名
-[*.vars]
+[global.vars] # Applies to all 'vars' tables (global, group, and command)
 __runner_custom = "value"  # エラー: 予約プレフィックス
 123invalid = "value"        # エラー: 数字で開始
 my-var = "value"            # エラー: ハイフン使用不可
