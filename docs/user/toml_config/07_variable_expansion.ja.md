@@ -77,26 +77,24 @@ env_vars = ["VAR=%{value}"]
 #### 設定形式
 
 ```toml
-[global]
-vars = [
-    "app_dir=/opt/myapp",
-]
+[global.vars]
+app_dir = "/opt/myapp"
 
 [[groups]]
 name = "backup"
-vars = [
-    "backup_dir=%{app_dir}/backups",
-    "retention_days=30"
-]
+
+[groups.vars]
+backup_dir = "%{app_dir}/backups"
+retention_days = "30"
 
 [[groups.commands]]
 name = "backup_db"
-vars = [
-    "timestamp=20250114",
-    "output_file=%{backup_dir}/dump_%{timestamp}.sql"
-]
 cmd = "/usr/bin/pg_dump"
 args = ["-f", "%{output_file}", "mydb"]
+
+[groups.commands.vars]
+timestamp = "20250114"
+output_file = "%{backup_dir}/dump_%{timestamp}.sql"
 ```
 
 #### スコープと継承
@@ -117,21 +115,23 @@ args = ["-f", "%{output_file}", "mydb"]
 ```toml
 version = "1.0"
 
-[global]
-vars = ["base_dir=/opt"]
+[global.vars]
+base_dir = "/opt"
 
 [[groups]]
 name = "prod_backup"
-vars = ["db_tools=%{base_dir}/db-tools"]
+
+[groups.vars]
+db_tools = "%{base_dir}/db-tools"
 
 [[groups.commands]]
 name = "db_dump"
-vars = [
-    "timestamp=20250114",
-    "output_file=%{base_dir}/dump_%{timestamp}.sql"
-]
 cmd = "%{db_tools}/dump.sh"
 args = ["-o", "%{output_file}"]
+
+[groups.commands.vars]
+timestamp = "20250114"
+output_file = "%{base_dir}/dump_%{timestamp}.sql"
 ```
 
 ### 7.3.2 `env_import` によるシステム環境変数の取り込み
@@ -208,12 +208,10 @@ args = ["-la", "%{home}"]
 #### 基本例
 
 ```toml
-[global]
-vars = [
-    "base=/opt",
-    "app_dir=%{base}/myapp",
-    "log_dir=%{app_dir}/logs"
-]
+[global.vars]
+base = "/opt"
+app_dir = "%{base}/myapp"
+log_dir = "%{app_dir}/logs"
 
 [[groups.commands]]
 name = "show_log_dir"
@@ -237,12 +235,12 @@ args = ["Log directory: %{log_dir}"]
 ```toml
 [[groups.commands]]
 name = "circular"
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}"  # エラー: 循環参照
-]
 cmd = "/bin/echo"
 args = ["%{var1}"]
+
+[groups.commands.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # エラー: 循環参照
 ```
 
 ## 7.4 プロセス環境変数の定義
@@ -299,11 +297,11 @@ vars = ["config_path=/etc/myapp/config.yml"]
 ```toml
 version = "1.0"
 
+[global.vars]
+app_dir = "/opt/myapp"
+log_dir = "%{app_dir}/logs"
+
 [global]
-vars = [
-    "app_dir=/opt/myapp",
-    "log_dir=%{app_dir}/logs"
-]
 env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_PATH=%{log_dir}/app.log"
@@ -329,7 +327,9 @@ args = ["--verbose"]
 name = "docker_version"
 cmd = "%{docker_cmd}"
 args = ["version"]
-vars = ["docker_cmd=/usr/bin/docker"]
+
+[groups.commands.vars]
+docker_cmd = "/usr/bin/docker"
 ```
 
 実行時:
@@ -343,10 +343,10 @@ vars = ["docker_cmd=/usr/bin/docker"]
 name = "gcc_compile"
 cmd = "%{toolchain_dir}/gcc-%{version}/bin/gcc"
 args = ["-o", "output", "main.c"]
-vars = [
-    "toolchain_dir=/opt/toolchains",
-    "version=11.2.0"
-]
+
+[groups.commands.vars]
+toolchain_dir = "/opt/toolchains"
+version = "11.2.0"
 ```
 
 実行時:
@@ -365,10 +365,10 @@ vars = [
 name = "backup_copy"
 cmd = "/bin/cp"
 args = ["%{source_file}", "%{dest_file}"]
-vars = [
-    "source_file=/data/original.txt",
-    "dest_file=/backups/backup.txt"
-]
+
+[groups.commands.vars]
+source_file = "/data/original.txt"
+dest_file = "/backups/backup.txt"
 ```
 
 #### 例2: 複数の変数を1つの引数に含める
@@ -378,11 +378,11 @@ vars = [
 name = "ssh_connect"
 cmd = "/usr/bin/ssh"
 args = ["%{user}@%{host}:%{port}"]
-vars = [
-    "user=admin",
-    "host=server01.example.com",
-    "port=22"
-]
+
+[groups.commands.vars]
+user = "admin"
+host = "server01.example.com"
+port = "22"
 ```
 
 実行時:
@@ -395,10 +395,10 @@ vars = [
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
 args = ["--config", "%{config_dir}/%{env_type}.yml"]
-vars = [
-    "config_dir=/etc/myapp/configs",
-    "env_type=production"
-]
+
+[groups.commands.vars]
+config_dir = "/etc/myapp/configs"
+env_type = "production"
 ```
 
 実行時:
@@ -415,11 +415,11 @@ vars = [
 name = "backup_with_timestamp"
 cmd = "/bin/mkdir"
 args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
-vars = [
-    "backup_root=/var/backups",
-    "date=2025-10-02",
-    "user=admin"
-]
+
+[groups.commands.vars]
+backup_root = "/var/backups"
+date = "2025-10-02"
+user = "admin"
 ```
 
 実行時:
@@ -432,13 +432,13 @@ vars = [
 name = "db_connect"
 cmd = "/usr/bin/psql"
 args = ["postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"]
-vars = [
-    "db_user=appuser",
-    "db_pass=secret123",
-    "db_host=localhost",
-    "db_port=5432",
-    "db_name=myapp_db"
-]
+
+[groups.commands.vars]
+db_user = "appuser"
+db_pass = "secret123"
+db_host = "localhost"
+db_port = "5432"
+db_name = "myapp_db"
 ```
 
 実行時:
@@ -454,10 +454,7 @@ vars = [
 version = "1.0"
 
 [global]
-env_allowed = ["PATH"]
-vars = [
-    "python_root=/usr/local"
-]
+env_allowed = ["PATH", "HOME", "PYTHON_ROOT", "PY_VERSION"]
 
 [[groups]]
 name = "python_tasks"
@@ -467,14 +464,20 @@ name = "python_tasks"
 name = "run_with_py310"
 cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-vars = ["py_version=3.10"]
+
+[groups.commands.vars]
+python_root = "/usr/local"
+py_version = "3.10"
 
 # Python 3.11 を使用
 [[groups.commands]]
 name = "run_with_py311"
 cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-vars = ["py_version=3.11"]
+
+[groups.commands.vars]
+python_root = "/usr/local"
+py_version = "3.11"
 ```
 
 ### 7.6.2 引数の動的生成
@@ -485,8 +488,7 @@ Docker コンテナの起動パラメータを動的に構築:
 version = "1.0"
 
 [global]
-env_allowed = ["PATH"]
-vars = ["docker_bin=/usr/bin/docker"]
+env_allowed = ["PATH", "DOCKER_BIN"]
 
 [[groups]]
 name = "docker_deployment"
@@ -499,19 +501,21 @@ args = [
     "-d",
     "--name", "%{container_name}",
     "-v", "%{host_path}:%{container_path}",
+    "-e", "APP_ENV=%{app_env}",
     "-p", "%{host_port}:%{container_port}",
-    "%{image_name}:%{image_tag}"
+    "%{image_name}:%{image_tag}",
 ]
-vars = [
-    "container_name=myapp-prod",
-    "host_path=/opt/myapp/data",
-    "container_path=/app/data",
-    "host_port=8080",
-    "container_port=80",
-    "image_name=myapp",
-    "image_tag=v1.2.3"
-]
-env_vars = ["APP_ENV=production"]
+
+[groups.commands.vars]
+docker_bin = "/usr/bin/docker"
+container_name = "myapp-prod"
+host_path = "/opt/myapp/data"
+container_path = "/app/data"
+app_env = "production"
+host_port = "8080"
+container_port = "80"
+image_name = "myapp"
+image_tag = "v1.2.3"
 ```
 
 実行されるコマンド:
@@ -519,6 +523,7 @@ env_vars = ["APP_ENV=production"]
 /usr/bin/docker run -d \
   --name myapp-prod \
   -v /opt/myapp/data:/app/data \
+  -e APP_ENV=production \
   -p 8080:80 \
   myapp:v1.2.3
 ```
@@ -531,19 +536,11 @@ env_vars = ["APP_ENV=production"]
 version = "1.0"
 
 [global]
-env_allowed = ["PATH"]
-vars = [
-    "app_bin=/opt/myapp/bin/myapp",
-    "config_dir=/etc/myapp/configs"
-]
+env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "LOG_LEVEL", "DB_URL"]
 
 # 開発環境グループ
 [[groups]]
 name = "development"
-vars = [
-    "env_type=development",
-    "db_url=postgresql://localhost/dev_db"
-]
 
 [[groups.commands]]
 name = "run_dev"
@@ -551,16 +548,18 @@ cmd = "%{app_bin}"
 args = [
     "--config", "%{config_dir}/%{env_type}.yml",
     "--log-level", "%{log_level}",
-    "--db", "%{db_url}"
+    "--db", "%{db_url}",
 ]
+
+[groups.commands.vars]
+app_bin = "/opt/myapp/bin/myapp"
+config_dir = "/etc/myapp/configs"
+env_type = "development"
+db_url = "postgresql://localhost/dev_db"
 
 # 本番環境グループ
 [[groups]]
 name = "production"
-vars = [
-    "env_type=production",
-    "db_url=postgresql://prod-server/prod_db"
-]
 
 [[groups.commands]]
 name = "run_prod"
@@ -568,8 +567,14 @@ cmd = "%{app_bin}"
 args = [
     "--config", "%{config_dir}/%{env_type}.yml",
     "--log-level", "%{log_level}",
-    "--db", "%{db_url}"
+    "--db", "%{db_url}",
 ]
+
+[groups.commands.vars]
+app_bin = "/opt/myapp/bin/myapp"
+config_dir = "/etc/myapp/configs"
+env_type = "production"
+db_url = "postgresql://prod-server/prod_db"
 ```
 
 ### 7.6.4 システム環境変数の活用
@@ -837,11 +842,11 @@ args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 内部変数(vars, env_import)とプロセス環境変数(env_vars)は明確に分離されています:
 
 ```toml
+[global.vars]
+app_dir = "/opt/myapp"
+config_path = "%{app_dir}/config.yml"
+
 [global]
-vars = [
-    "app_dir=/opt/myapp",
-    "config_path=%{app_dir}/config.yml"
-]
 env_vars = [
     "APP_HOME=%{app_dir}"  # 子プロセスに渡される
 ]
@@ -880,13 +885,17 @@ env_import = [
 [[groups.commands]]
 name = "valid_absolute"
 cmd = "%{tool_dir}/mytool"
-vars = ["tool_dir=/opt/tools"]  # 絶対パス
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"  # 絶対パス
 
 # 正しい: 相対パスに展開される（一般コマンドでは許可）
 [[groups.commands]]
 name = "valid_relative"
 cmd = "%{tool_dir}/mytool"
-vars = ["tool_dir=./tools"]  # 相対パス - 一般コマンドではOK
+
+[groups.commands.vars]
+tool_dir = "./tools"  # 相対パス - 一般コマンドではOK
 ```
 
 #### 特権コマンド
@@ -899,14 +908,18 @@ vars = ["tool_dir=./tools"]  # 相対パス - 一般コマンドではOK
 name = "valid_privileged"
 cmd = "%{tool_dir}/mytool"
 run_as_user = "appuser"
-vars = ["tool_dir=/opt/tools"]  # 絶対パス
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"  # 絶対パス
 
 # 誤り: 相対パスに展開される（特権コマンドではエラー）
 [[groups.commands]]
 name = "invalid_privileged"
 cmd = "%{tool_dir}/mytool"
 run_as_user = "appuser"
-vars = ["tool_dir=./tools"]  # 相対パス - 特権コマンドではエラー
+
+[groups.commands.vars]
+tool_dir = "./tools"  # 相対パス - 特権コマンドではエラー
 ```
 
 特権コマンドで絶対パスを要求する理由:
@@ -926,10 +939,10 @@ args = [
     "-H", "Authorization: Bearer %{api_token}",
     "%{api_endpoint}/data"
 ]
-vars = [
-    "api_token=sk-1234567890abcdef",
-    "api_endpoint=https://api.example.com"
-]
+
+[groups.commands.vars]
+api_token = "sk-1234567890abcdef"
+api_endpoint = "https://api.example.com"
 # api_token と api_endpoint は内部変数のみで、子プロセスには渡されない
 ```
 
@@ -939,17 +952,15 @@ vars = [
 
 ```toml
 # 有効な変数名
-vars = [
-    "app_dir=/opt/app",
-    "_private=value"
-]
+[global.vars] # Applies to all 'vars' tables (global, group, and command)
+app_dir = "/opt/app"
+_private = "value"
 
 # 無効な変数名
-vars = [
-    "__runner_custom=value",  # エラー: 予約プレフィックス
-    "123invalid=value",        # エラー: 数字で開始
-    "my-var=value"             # エラー: ハイフン使用不可
-]
+[global.vars] # Applies to all 'vars' tables (global, group, and command)
+__runner_custom = "value"  # エラー: 予約プレフィックス
+123invalid = "value"        # エラー: 数字で開始
+my-var = "value"            # エラー: ハイフン使用不可
 ```
 
 ## 7.10 トラブルシューティング
@@ -975,12 +986,12 @@ args = ["Value: %{UNDEFINED}"]
 ```toml
 [[groups.commands]]
 name = "circular"
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}"  # 循環参照 → エラー
-]
 cmd = "/bin/echo"
 args = ["%{var1}"]
+
+[groups.commands.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # 循環参照 → エラー
 ```
 
 **解決方法**: 変数の依存関係を整理する
@@ -1011,7 +1022,9 @@ env_import = ["path=PATH"]  # OK
 [[groups.commands]]
 name = "invalid_path"
 cmd = "%{tool}"
-vars = ["tool=../tool"]  # 相対パス → エラー
+
+[groups.commands.vars]
+tool = "../tool"  # 相対パス → エラー
 ```
 
 **解決方法**: 絶対パスを使用する
@@ -1020,7 +1033,9 @@ vars = ["tool=../tool"]  # 相対パス → エラー
 [[groups.commands]]
 name = "valid_path"
 cmd = "%{tool}"
-vars = ["tool=/opt/tools/tool"]  # 絶対パス → OK
+
+[groups.commands.vars]
+tool = "/opt/tools/tool"  # 絶対パス → OK
 ```
 
 ## 実践的な総合例
@@ -1245,19 +1260,19 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "app_root=/opt/myapp",
-    "config_dir=%{app_root}/config",
-    "bin_dir=%{app_root}/bin"
-]
+
+[global.vars]
+app_root = "/opt/myapp"
+config_dir = "%{app_root}/config"
+bin_dir = "%{app_root}/bin"
 
 [[groups]]
 name = "application_deployment"
 description = "アプリケーションのデプロイメント処理"
-vars = [
-    "env_type=production",
-    "log_dir=%{app_root}/logs"
-]
+
+[groups.vars]
+env_type = "production"
+log_dir = "%{app_root}/logs"
 
 # ステップ1: 設定ファイルの配置
 [[groups.commands]]
@@ -1278,16 +1293,16 @@ args = [
     "--database", "%{db_url}",
     "--migrations", "%{migration_dir}"
 ]
-vars = [
-    "db_user=appuser",
-    "db_pass=secret123",
-    "db_host=localhost",
-    "db_port=5432",
-    "db_name=myapp_prod",
-    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}",
-    "migration_dir=%{app_root}/migrations"
-]
 timeout = 600
+
+[groups.commands.vars]
+db_user = "appuser"
+db_pass = "secret123"
+db_host = "localhost"
+db_port = "5432"
+db_name = "myapp_prod"
+db_url = "postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
+migration_dir = "%{app_root}/migrations"
 
 # ステップ3: アプリケーションの起動
 [[groups.commands]]
@@ -1299,14 +1314,14 @@ args = [
     "--port", "%{app_port}",
     "--workers", "%{worker_count}"
 ]
-vars = [
-    "app_port=8080",
-    "worker_count=4"
-]
 env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{log_dir}/app.log"
 ]
+
+[groups.commands.vars]
+app_port = "8080"
+worker_count = "4"
 
 # ステップ4: ヘルスチェック
 [[groups.commands]]
@@ -1314,8 +1329,10 @@ name = "health_check"
 description = "アプリケーションのヘルスチェック"
 cmd = "/usr/bin/curl"
 args = ["-f", "%{health_url}"]
-vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
+
+[groups.commands.vars]
+health_url = "http://localhost:%{app_port}/health"
 ```
 
 ## 7.13 まとめ

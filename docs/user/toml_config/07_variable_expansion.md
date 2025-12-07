@@ -77,26 +77,24 @@ Using the `vars` field, you can define internal variables for TOML expansion onl
 #### Configuration Format
 
 ```toml
-[global]
-vars = [
-    "app_dir=/opt/myapp",
-]
+[global.vars]
+app_dir = "/opt/myapp"
 
 [[groups]]
 name = "backup"
-vars = [
-    "backup_dir=%{app_dir}/backups",
-    "retention_days=30"
-]
+
+[groups.vars]
+backup_dir = "%{app_dir}/backups"
+retention_days = "30"
 
 [[groups.commands]]
 name = "backup_db"
-vars = [
-    "timestamp=20250114",
-    "output_file=%{backup_dir}/dump_%{timestamp}.sql"
-]
 cmd = "/usr/bin/pg_dump"
 args = ["-f", "%{output_file}", "mydb"]
+
+[groups.commands.vars]
+timestamp = "20250114"
+output_file = "%{backup_dir}/dump_%{timestamp}.sql"
 ```
 
 #### Scope and Inheritance
@@ -117,21 +115,23 @@ args = ["-f", "%{output_file}", "mydb"]
 ```toml
 version = "1.0"
 
-[global]
-vars = ["base_dir=/opt"]
+[global.vars]
+base_dir = "/opt"
 
 [[groups]]
 name = "prod_backup"
-vars = ["db_tools=%{base_dir}/db-tools"]
+
+[groups.vars]
+db_tools = "%{base_dir}/db-tools"
 
 [[groups.commands]]
 name = "db_dump"
-vars = [
-    "timestamp=20250114",
-    "output_file=%{base_dir}/dump_%{timestamp}.sql"
-]
 cmd = "%{db_tools}/dump.sh"
 args = ["-o", "%{output_file}"]
+
+[groups.commands.vars]
+timestamp = "20250114"
+output_file = "%{base_dir}/dump_%{timestamp}.sql"
 ```
 
 ### 7.3.2 Importing System Environment Variables Using `env_import`
@@ -208,12 +208,10 @@ Internal variable values can contain references to other internal variables.
 #### Basic Example
 
 ```toml
-[global]
-vars = [
-    "base=/opt",
-    "app_dir=%{base}/myapp",
-    "log_dir=%{app_dir}/logs"
-]
+[global.vars]
+base = "/opt"
+app_dir = "%{base}/myapp"
+log_dir = "%{app_dir}/logs"
 
 [[groups.commands]]
 name = "show_log_dir"
@@ -237,12 +235,12 @@ Circular references are detected as errors:
 ```toml
 [[groups.commands]]
 name = "circular"
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}"  # Error: circular reference
-]
 cmd = "/bin/echo"
 args = ["%{var1}"]
+
+[groups.commands.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # Error: circular reference
 ```
 
 ## 7.4 Defining Process Environment Variables
@@ -275,7 +273,9 @@ cmd = "/opt/myapp/bin/app"
 env_vars = [
     "CONFIG_FILE=%{config_path}"  # Internal variables can be used
 ]
-vars = ["config_path=/etc/myapp/config.yml"]
+
+[groups.commands.vars]
+config_path = "/etc/myapp/config.yml"
 ```
 
 #### Inheritance and Merging
@@ -299,11 +299,11 @@ When the same environment variable name is defined at multiple levels, the more 
 ```toml
 version = "1.0"
 
+[global.vars]
+app_dir = "/opt/myapp"
+log_dir = "%{app_dir}/logs"
+
 [global]
-vars = [
-    "app_dir=/opt/myapp",
-    "log_dir=%{app_dir}/logs"
-]
 env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_PATH=%{log_dir}/app.log"
@@ -329,7 +329,9 @@ Internal variables can be used in command paths.
 name = "docker_version"
 cmd = "%{docker_cmd}"
 args = ["version"]
-vars = ["docker_cmd=/usr/bin/docker"]
+
+[groups.commands.vars]
+docker_cmd = "/usr/bin/docker"
 ```
 
 At runtime:
@@ -343,10 +345,10 @@ At runtime:
 name = "gcc_compile"
 cmd = "%{toolchain_dir}/gcc-%{version}/bin/gcc"
 args = ["-o", "output", "main.c"]
-vars = [
-    "toolchain_dir=/opt/toolchains",
-    "version=11.2.0"
-]
+
+[groups.commands.vars]
+toolchain_dir = "/opt/toolchains"
+version = "11.2.0"
 ```
 
 At runtime:
@@ -365,10 +367,10 @@ Internal variables can be used in command arguments.
 name = "backup_copy"
 cmd = "/bin/cp"
 args = ["%{source_file}", "%{dest_file}"]
-vars = [
-    "source_file=/data/original.txt",
-    "dest_file=/backups/backup.txt"
-]
+
+[groups.commands.vars]
+source_file = "/data/original.txt"
+dest_file = "/backups/backup.txt"
 ```
 
 #### Example 2: Multiple Variables in One Argument
@@ -378,11 +380,11 @@ vars = [
 name = "ssh_connect"
 cmd = "/usr/bin/ssh"
 args = ["%{user}@%{host}:%{port}"]
-vars = [
-    "user=admin",
-    "host=server01.example.com",
-    "port=22"
-]
+
+[groups.commands.vars]
+user = "admin"
+host = "server01.example.com"
+port = "22"
 ```
 
 At runtime:
@@ -395,10 +397,10 @@ At runtime:
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
 args = ["--config", "%{config_dir}/%{env_type}.yml"]
-vars = [
-    "config_dir=/etc/myapp/configs",
-    "env_type=production"
-]
+
+[groups.commands.vars]
+config_dir = "/etc/myapp/configs"
+env_type = "production"
 ```
 
 At runtime:
@@ -415,11 +417,11 @@ Multiple variables can be combined to construct complex paths and strings.
 name = "backup_with_timestamp"
 cmd = "/bin/mkdir"
 args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
-vars = [
-    "backup_root=/var/backups",
-    "date=2025-10-02",
-    "user=admin"
-]
+
+[groups.commands.vars]
+backup_root = "/var/backups"
+date = "2025-10-02"
+user = "admin"
 ```
 
 At runtime:
@@ -432,13 +434,13 @@ At runtime:
 name = "db_connect"
 cmd = "/usr/bin/psql"
 args = ["postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"]
-vars = [
-    "db_user=appuser",
-    "db_pass=secret123",
-    "db_host=localhost",
-    "db_port=5432",
-    "db_name=myapp_db"
-]
+
+[groups.commands.vars]
+db_user = "appuser"
+db_pass = "secret123"
+db_host = "localhost"
+db_port = "5432"
+db_name = "myapp_db"
 ```
 
 At runtime:
@@ -465,20 +467,20 @@ name = "python_tasks"
 name = "run_with_py310"
 cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-vars = [
-    "python_root=/usr/local",
-    "py_version=3.10"
-]
+
+[groups.commands.vars]
+python_root = "/usr/local"
+py_version = "3.10"
 
 # Using Python 3.11
 [[groups.commands]]
 name = "run_with_py311"
 cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-vars = [
-    "python_root=/usr/local",
-    "py_version=3.11"
-]
+
+[groups.commands.vars]
+python_root = "/usr/local"
+py_version = "3.11"
 ```
 
 ### 7.6.2 Dynamic Argument Generation
@@ -506,17 +508,17 @@ args = [
     "-p", "%{host_port}:%{container_port}",
     "%{image_name}:%{image_tag}",
 ]
-vars = [
-    "docker_bin=/usr/bin/docker",
-    "container_name=myapp-prod",
-    "host_path=/opt/myapp/data",
-    "container_path=/app/data",
-    "app_env=production",
-    "host_port=8080",
-    "container_port=80",
-    "image_name=myapp",
-    "image_tag=v1.2.3"
-]
+
+[groups.commands.vars]
+docker_bin = "/usr/bin/docker"
+container_name = "myapp-prod"
+host_path = "/opt/myapp/data"
+container_path = "/app/data"
+app_env = "production"
+host_port = "8080"
+container_port = "80"
+image_name = "myapp"
+image_tag = "v1.2.3"
 ```
 
 Executed command:
@@ -551,12 +553,12 @@ args = [
     "--log-level", "%{log_level}",
     "--db", "%{db_url}",
 ]
-vars = [
-    "app_bin=/opt/myapp/bin/myapp",
-    "config_dir=/etc/myapp/configs",
-    "env_type=development",
-    "db_url=postgresql://localhost/dev_db"
-]
+
+[groups.commands.vars]
+app_bin = "/opt/myapp/bin/myapp"
+config_dir = "/etc/myapp/configs"
+env_type = "development"
+db_url = "postgresql://localhost/dev_db"
 
 # Production environment group
 [[groups]]
@@ -570,12 +572,12 @@ args = [
     "--log-level", "%{log_level}",
     "--db", "%{db_url}",
 ]
-vars = [
-    "app_bin=/opt/myapp/bin/myapp",
-    "config_dir=/etc/myapp/configs",
-    "env_type=production",
-    "db_url=postgresql://prod-server/prod_db"
-]
+
+[groups.commands.vars]
+app_bin = "/opt/myapp/bin/myapp"
+config_dir = "/etc/myapp/configs"
+env_type = "production"
+db_url = "postgresql://prod-server/prod_db"
 ```
 
 ## 7.8 Nested Variables
@@ -589,10 +591,10 @@ Variable values can contain other variables.
 name = "nested_vars"
 cmd = "/bin/echo"
 args = ["Message: %{full_msg}"]
-vars = [
-    "full_msg=Hello, %{user}!",
-    "user=Alice"
-]
+
+[groups.commands.vars]
+full_msg = "Hello, %{user}!"
+user = "Alice"
 ```
 
 Expansion order:
@@ -607,11 +609,11 @@ Expansion order:
 name = "complex_path"
 cmd = "/bin/echo"
 args = ["Config path: %{config_path}"]
-vars = [
-    "config_path=%{base_dir}/%{env_type}/config.yml",
-    "base_dir=/opt/myapp",
-    "env_type=production"
-]
+
+[groups.commands.vars]
+config_path = "%{base_dir}/%{env_type}/config.yml"
+base_dir = "/opt/myapp"
+env_type = "production"
 ```
 
 Expansion order:
@@ -657,13 +659,13 @@ env_import = ["path=PATH"]
 name = "use_custom_tools"
 cmd = "%{custom_tool}"
 args = ["--version"]
-vars = [
-    "tool_dir=/opt/custom-tools",
-    "custom_tool=%{tool_dir}/bin/mytool"
-]
 env_vars = [
     "PATH=%{tool_dir}/bin:%{path}"
 ]
+
+[groups.commands.vars]
+tool_dir = "/opt/custom-tools"
+custom_tool = "%{tool_dir}/bin/mytool"
 ```
 
 With this configuration:
@@ -751,7 +753,9 @@ Use `\\` to represent a literal backslash:
 name = "windows_path"
 cmd = "/bin/echo"
 args = ["Path: C:\\\\Users\\\\%{user}"]
-vars = ["user=JohnDoe"]
+
+[groups.commands.vars]
+user = "JohnDoe"
 ```
 
 Output: `Path: C:\Users\JohnDoe`
@@ -763,7 +767,9 @@ Output: `Path: C:\Users\JohnDoe`
 name = "mixed_escape"
 cmd = "/bin/echo"
 args = ["Literal \\%{HOME} is different from %{home}"]
-vars = ["home=/home/user"]
+
+[groups.commands.vars]
+home = "/home/user"
 ```
 
 Output: `Literal $HOME is different from /home/user`
@@ -898,7 +904,9 @@ The prefix `__runner_` is reserved for automatic variables and cannot be used fo
 name = "invalid_var"
 cmd = "/bin/echo"
 args = ["%{__runner_custom}"]
-vars = ["__runner_custom=value"]  # Error: Using reserved prefix
+
+[groups.commands.vars]
+__runner_custom = "value"  # Error: Using reserved prefix
 ```
 
 Error message:
@@ -914,7 +922,9 @@ this prefix is reserved for automatically generated variables
 name = "valid_var"
 cmd = "/bin/echo"
 args = ["%{my_custom_var}"]
-vars = ["my_custom_var=value"]  # OK: Not using reserved prefix
+
+[groups.commands.vars]
+my_custom_var = "value"  # OK: Not using reserved prefix
 ```
 
 ### 7.11.5 Timing of Variable Generation
@@ -1052,16 +1062,20 @@ Each command's `env_vars` is independent and does not affect other commands:
 name = "cmd1"
 cmd = "/bin/echo"
 args = ["DB: %{db_host}"]
-vars = ["db_host=db1.example.com"]
 env_vars = ["DB_HOST=%{db_host}"]
+
+[groups.commands.vars]
+db_host = "db1.example.com"
 
 [[groups.commands]]
 name = "cmd2"
 cmd = "/bin/echo"
 args = ["DB: %{db_host}"]
-vars = ["db_host=db2.example.com"]
 env_vars = ["DB_HOST=%{db_host}"]
 # Independent from cmd1's DB_HOST
+
+[groups.commands.vars]
+db_host = "db2.example.com"
 ```
 
 ## 7.13 Troubleshooting
@@ -1127,20 +1141,20 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "app_root=/opt/myapp",
-    "config_dir=%{app_root}/config",
-    "bin_dir=%{app_root}/bin"
-]
+
+[global.vars]
+app_root = "/opt/myapp"
+config_dir = "%{app_root}/config"
+bin_dir = "%{app_root}/bin"
 
 [[groups]]
 name = "application_deployment"
 description = "Application deployment process"
-vars = [
-    "env_type=production",
-    "config_source=%{config_dir}/templates",
-    "migration_dir=%{app_root}/migrations"
-]
+
+[groups.vars]
+env_type = "production"
+config_source = "%{config_dir}/templates"
+migration_dir = "%{app_root}/migrations"
 
 # Step 1: Deploy configuration file
 [[groups.commands]]
@@ -1161,15 +1175,15 @@ args = [
     "--database", "%{db_url}",
     "--migrations", "%{migration_dir}"
 ]
-vars = [
-    "db_user=appuser",
-    "db_pass=secret123",
-    "db_host=localhost",
-    "db_port=5432",
-    "db_name=myapp_prod",
-    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
-]
 timeout = 600
+
+[groups.commands.vars]
+db_user = "appuser"
+db_pass = "secret123"
+db_host = "localhost"
+db_port = "5432"
+db_name = "myapp_prod"
+db_url = "postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
 
 # Step 3: Start application
 [[groups.commands]]
@@ -1181,14 +1195,14 @@ args = [
     "--port", "%{app_port}",
     "--workers", "%{worker_count}"
 ]
-vars = [
-    "app_port=8080",
-    "worker_count=4"
-]
 env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{app_root}/logs/app.log"
 ]
+
+[groups.commands.vars]
+app_port = "8080"
+worker_count = "4"
 
 # Step 4: Health check
 [[groups.commands]]
@@ -1196,8 +1210,10 @@ name = "health_check"
 description = "Application health check"
 cmd = "/usr/bin/curl"
 args = ["-f", "%{health_url}"]
-vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
+
+[groups.commands.vars]
+health_url = "http://localhost:%{app_port}/health"
 ```
 
 ## 7.14 Variable Expansion in verify_files
@@ -1280,10 +1296,6 @@ env_import = [
     "env_type=ENV",
     "app_root=APP_ROOT"
 ]
-vars = [
-    "config_base=%{app_root}/configs",
-    "config_path=%{config_base}/%{env_type}"
-]
 verify_files = [
     "%{config_path}/global.yml",
     "%{config_path}/secrets.enc",
@@ -1293,6 +1305,10 @@ verify_files = [
     "%{app_root}/db/schema.sql",
     "%{app_root}/db/migrations/%{env_type}/"
 ]
+
+[global.vars]
+config_base = "%{app_root}/configs"
+config_path = "%{config_base}/%{env_type}"
 
 [[groups]]
 name = "deployment"
@@ -1335,19 +1351,19 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "app_root=/opt/myapp",
-    "config_dir=%{app_root}/config",
-    "bin_dir=%{app_root}/bin"
-]
+
+[global.vars]
+app_root = "/opt/myapp"
+config_dir = "%{app_root}/config"
+bin_dir = "%{app_root}/bin"
 
 [[groups]]
 name = "application_deployment"
 description = "Application deployment process"
-vars = [
-    "env_type=production",
-    "log_dir=%{app_root}/logs"
-]
+
+[groups.vars]
+env_type = "production"
+log_dir = "%{app_root}/logs"
 
 # Step 1: Deploy configuration file
 [[groups.commands]]
@@ -1368,16 +1384,16 @@ args = [
     "--database", "%{db_url}",
     "--migrations", "%{migration_dir}"
 ]
-vars = [
-    "db_user=appuser",
-    "db_pass=secret123",
-    "db_host=localhost",
-    "db_port=5432",
-    "db_name=myapp_prod",
-    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}",
-    "migration_dir=%{app_root}/migrations"
-]
 timeout = 600
+
+[groups.commands.vars]
+db_user = "appuser"
+db_pass = "secret123"
+db_host = "localhost"
+db_port = "5432"
+db_name = "myapp_prod"
+db_url = "postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
+migration_dir = "%{app_root}/migrations"
 
 # Step 3: Start application
 [[groups.commands]]
@@ -1389,14 +1405,14 @@ args = [
     "--port", "%{app_port}",
     "--workers", "%{worker_count}"
 ]
-vars = [
-    "app_port=8080",
-    "worker_count=4"
-]
 env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{log_dir}/app.log"
 ]
+
+[groups.commands.vars]
+app_port = "8080"
+worker_count = "4"
 
 # Step 4: Health check
 [[groups.commands]]
@@ -1404,8 +1420,10 @@ name = "health_check"
 description = "Application health check"
 cmd = "/usr/bin/curl"
 args = ["-f", "%{health_url}"]
-vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
+
+[groups.commands.vars]
+health_url = "http://localhost:%{app_port}/health"
 ```
 
 ## 7.13 Summary
