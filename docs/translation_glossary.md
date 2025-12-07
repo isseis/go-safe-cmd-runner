@@ -48,6 +48,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 能力 | capability | |
+| キャッシュ | cache | |
 | キャプチャ | capture | |
 | CI/CD | CI/CD | |
 | 循環参照 | circular reference | |
@@ -68,6 +69,7 @@
 | 制約 | constraint | |
 | 内容 | content | |
 | 変換 | conversion | |
+| コアロジック | core logic | |
 | 貢献 | contribute / contributing | |
 | 制御 | control | |
 | クリティカル | critical | |
@@ -95,6 +97,7 @@
 | 開発 | development | |
 | 開発者 | developer | |
 | ディレクトリ | directory | |
+| DoS攻撃 | DoS attack | Denial of Service attack |
 | ドキュメント | documentation / document | |
 | ドライラン | dry run | |
 | ダンプ | dump | |
@@ -110,6 +113,7 @@
 | 要素 | element | |
 | 有効化する | enable | |
 | End-to-End | end-to-end | |
+| エントリーポイント | entry point | |
 | 環境 | environment | |
 | 環境変数 | environment variable | |
 | エラー | error | |
@@ -122,6 +126,7 @@
 | 実行時 | at runtime | |
 | 明示 | explicit | env_allowlistの継承モードの文脈 |
 | 展開 | expansion | |
+| 展開済み | expanded | 変数展開の文脈 |
 | 拡張 | extend / extending | 機能拡張の文脈 |
 | エクスポート | export | |
 | 外部依存 | external dependencies | |
@@ -173,6 +178,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 即時展開 | immediate expansion | 変数展開の文脈 |
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
 | インポート | import | |
@@ -180,6 +186,7 @@
 | 独立性 | independence | 設定の継承の文脈 |
 | 影響 | impact | |
 | 継承 | inheritance | |
+| インジェクション攻撃 | injection attack | セキュリティの文脈 |
 | 整合性 | integrity | |
 | 整数 | integer | |
 | インターフェース | interface | |
@@ -195,6 +202,7 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| 遅延評価 | lazy evaluation | 変数展開の文脈 |
 | 学習 | learn / learning | |
 | ライセンス | license | |
 | 制限 | limit | |
@@ -223,6 +231,8 @@
 | マッチング | matching | パターンマッチングの文脈 |
 | 最大 | maximum | 通常 "max" ではなく "maximum" を使用 |
 | 意味的 | semantic | |
+| メモ化 | memoization | 計算結果のキャッシング |
+| メモリ枯渇 | memory exhaustion | DoS攻撃の文脈 |
 | メリット | advantage | |
 | メッセージ | message | |
 | マージ | merge / merging | |
@@ -252,6 +262,7 @@
 | 操作 | operation | |
 | オプション | optional | |
 | 最適化 | optimize / optimization | |
+| 順序独立 | order-independent | 変数展開の文脈 |
 | 出力 | output | |
 | 出力ファイル | output file | |
 | 出力サイズ | output size | |
@@ -266,6 +277,8 @@
 |--------|---------|------|
 | パッケージ | package | |
 | パラメータ | parameter | |
+| パース | parse / parsing | 構文解析 |
+| パーサ | parser | 構文解析器 |
 | パス | path | |
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
@@ -306,6 +319,7 @@
 | 推奨 | recommend / recommended | |
 | 記録 | record | |
 | 再帰的 | recursive / recursively | |
+| 再帰深度 | recursion depth | 再帰呼び出しの深さ |
 | リダイレクト | redirect | |
 | 根拠 | rationale | 理由・根拠の説明 |
 | 参照 | reference | |
@@ -360,16 +374,20 @@
 | スキップ | skip | |
 | Slack | Slack | |
 | スライス | slice | Go言語のスライス型 |
+| ソース | source | データソースの文脈 |
 | 具体的 | specific | |
 | 仕様 | specification | |
+| スタックオーバーフロー | stack overflow | 再帰呼び出しの文脈 |
 | 標準 | standard | |
 | 標準パス | standard path | |
 | スタート | start | |
 | 静的 | static | |
 | 文字列 | string | |
 | 構造体 | struct | Go言語の文脈 |
+| 置換 | substitution | 変数展開の文脈 |
 | シンボリックリンク | symlink | "symbolic link" の略 |
 | 文法 | syntax | |
+| 構文 | syntax | パース・解析の文脈 |
 | システム | system | |
 | システム環境変数 | system environment variable | |
 
@@ -397,6 +415,7 @@
 | 切り詰め | truncation | |
 | 典型的 | typical | |
 | 型 | type | |
+| 型安全性 | type safety | |
 | 型付き | typed | |
 | 型情報 | type information | |
 | 型不一致 | type mismatch | |
@@ -406,6 +425,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 未定義 | undefined | |
+| 未展開 | unexpanded | 変数展開の文脈 |
 | 一意 | unique | |
 | ユニオン | union | 設定のマージの文脈 |
 | 一様性 | uniformity | |
@@ -547,6 +567,7 @@
 | 2025-11-16 | Redaction slice type conversion関連の用語を追加 (alternative, type assertion, complexity, consistency, content, conversion, disadvantage, design, edge case, element, extraction, handler, impact, interface, LogValuer, loss, semantic, advantage, method, minimum, mixed-type, overhead, point, predictable, preserve, processing, protection, purpose, reason, recursive, reflection, resolution, solution, return value, serialize, simplicity, slice, test case, truncation, typed, type information, type mismatch, use case, validity) |
 | 2025-11-27 | グローバルコマンド許可リスト関連の用語を追加 (anchored, attack surface, bypass, misconfiguration, enable, exception, extend/extending, hardcoded, location, logic, matching, prefer, prevent, rationale, regex, resolve/resolving, weaken restrictions, specific, symlink, untrusted) |
 | 2025-12-02 | 設定継承動作ドキュメント関連の用語を追加 (cross-level, deny, prohibit, prerequisite, single-value, multi-value, at runtime, explicit, union, uniform, robustness, independent, independence, flexibility) |
+| 2025-12-07 | 変数展開アルゴリズムドキュメント関連の用語を追加 (cache, core logic, DoS attack, entry point, expanded, immediate expansion, injection attack, lazy evaluation, memoization, memory exhaustion, order-independent, parse/parser/parsing, recursion depth, source, stack overflow, substitution, syntax, type safety, unexpanded) |
 
 ---
 
