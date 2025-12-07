@@ -275,21 +275,23 @@ TOML設定ファイル内での展開専用の内部変数を定義します。�
 ### 文法
 
 ```toml
-[global]
-vars = ["var1=value1", "var2=value2", ...]
+[global.vars]
+var1 = "value1"
+var2 = "value2"
 ```
 
 ### パラメータの詳細
 
 | 項目 | 内容 |
 |-----|------|
-| **型** | 文字列配列 (array of strings) |
+| **型** | TOMLテーブル (map[string]interface{}) |
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバル、グループ、コマンド |
-| **デフォルト値** | [] (変数なし) |
-| **書式** | `"変数名=値"` 形式 |
+| **デフォルト値** | {} (変数なし) |
+| **書式** | TOMLテーブル形式: `key = "value"` または `key = ["value1", "value2"]` |
 | **参照構文** | `%{変数名}` |
 | **スコープ** | グローバル vars はすべてのグループ・コマンドから参照可能 |
+| **サポートされる型** | 文字列値と文字列配列 |
 
 ### 役割
 
@@ -305,11 +307,9 @@ vars = ["var1=value1", "var2=value2", ...]
 ```toml
 version = "1.0"
 
-[global]
-vars = [
-    "app_dir=/opt/myapp",
-    "config_file=%{app_dir}/config.yml"
-]
+[global.vars]
+app_dir = "/opt/myapp"
+config_file = "%{app_dir}/config.yml"
 
 [[groups]]
 name = "app_group"
@@ -326,14 +326,12 @@ args = ["%{config_file}"]
 ```toml
 version = "1.0"
 
-[global]
-vars = [
-    "base=/opt",
-    "app_root=%{base}/myapp",
-    "bin_dir=%{app_root}/bin",
-    "data_dir=%{app_root}/data",
-    "log_dir=%{app_root}/logs"
-]
+[global.vars]
+base = "/opt"
+app_root = "%{base}/myapp"
+bin_dir = "%{app_root}/bin"
+data_dir = "%{app_root}/data"
+log_dir = "%{app_root}/logs"
 
 [[groups]]
 name = "deployment"
@@ -350,11 +348,11 @@ args = ["--data", "%{data_dir}", "--log", "%{log_dir}"]
 ```toml
 version = "1.0"
 
+[global.vars]
+app_dir = "/opt/myapp"
+config_path = "%{app_dir}/config.yml"
+
 [global]
-vars = [
-    "app_dir=/opt/myapp",
-    "config_path=%{app_dir}/config.yml"
-]
 env_vars = [
     "APP_HOME=%{app_dir}",           # 内部変数を使ってプロセス環境変数を定義
     "CONFIG_FILE=%{config_path}"     # 設定ファイルのパスを環境変数として渡す
@@ -378,17 +376,15 @@ args = ["--config", "%{config_path}"]
 - **予約プレフィックス禁止**: `__runner_` で始まる名前は使用不可
 
 ```toml
-[global]
-vars = [
-    "app_dir=/opt/app",        # 正しい: 小文字とアンダースコア
-    "logLevel=info",           # 正しい: キャメルケース
-    "APP_ROOT=/opt",           # 正しい: 大文字も可
-    "_private=/tmp",           # 正しい: アンダースコアで開始
-    "var123=value",            # 正しい: 数字を含む
-    "__runner_var=value",      # エラー: 予約プレフィックス
-    "123invalid=value",        # エラー: 数字で開始
-    "my-var=value"             # エラー: ハイフン使用不可
-]
+[global.vars]
+app_dir = "/opt/app"        # 正しい: 小文字とアンダースコア
+logLevel = "info"           # 正しい: キャメルケース
+APP_ROOT = "/opt"           # 正しい: 大文字も可
+_private = "/tmp"           # 正しい: アンダースコアで開始
+var123 = "value"            # 正しい: 数字を含む
+__runner_var = "value"      # エラー: 予約プレフィックス
+123invalid = "value"        # エラー: 数字で開始
+my-var = "value"            # エラー: ハイフン使用不可
 ```
 
 ### 注意事項
@@ -398,8 +394,8 @@ vars = [
 `vars` で定義した変数は、デフォルトでは子プロセスの環境変数になりません:
 
 ```toml
-[global]
-vars = ["secret_key=abc123"]
+[global.vars]
+secret_key = "abc123"
 
 [[groups.commands]]
 name = "test"
@@ -411,8 +407,10 @@ args = ["secret_key"]
 子プロセスに渡したい場合は、`env_vars` フィールドで明示的に定義します:
 
 ```toml
+[global.vars]
+secret_key = "abc123"
+
 [global]
-vars = ["secret_key=abc123"]
 env_vars = ["SECRET_KEY=%{secret_key}"]  # 内部変数を使ってプロセス環境変数を定義
 
 [[groups.commands]]
