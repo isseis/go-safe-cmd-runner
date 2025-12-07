@@ -67,7 +67,7 @@ func ExpandString(
 }
 
 // expandStringRecursive performs recursive expansion with circular reference detection.
-// This is a wrapper around expandStringWithResolver for backward compatibility.
+// It wraps expandStringWithResolver with a resolver that looks up variables from expandedVars.
 func expandStringRecursive(
 	input string,
 	expandedVars map[string]string,
