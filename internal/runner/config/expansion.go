@@ -63,23 +63,11 @@ func ExpandString(
 	field string,
 ) (string, error) {
 	visited := make(map[string]struct{})
-	return expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
-}
 
-// expandStringRecursive performs recursive expansion with circular reference detection.
-// This is a wrapper around expandStringWithResolver for backward compatibility.
-func expandStringRecursive(
-	input string,
-	expandedVars map[string]string,
-	level string,
-	field string,
-	visited map[string]struct{},
-	expansionChain []string,
-	depth int,
-) (string, error) {
 	// Create a resolver that looks up variables from expandedVars
 	// and recursively expands them
-	resolver := func(
+	var resolver variableResolver
+	resolver = func(
 		varName string,
 		resolverField string,
 		resolverVisited map[string]struct{},
@@ -101,9 +89,9 @@ func expandStringRecursive(
 		resolverVisited[varName] = struct{}{}
 
 		// Recursively expand the value
-		expandedValue, err := expandStringRecursive(
+		expandedValue, err := expandStringWithResolver(
 			value,
-			expandedVars,
+			resolver,
 			level,
 			resolverField,
 			resolverVisited,
@@ -120,7 +108,7 @@ func expandStringRecursive(
 		return expandedValue, nil
 	}
 
-	return expandStringWithResolver(input, resolver, level, field, visited, expansionChain, depth)
+	return expandStringWithResolver(input, resolver, level, field, visited, nil, 0)
 }
 
 // expandStringWithResolver performs recursive variable expansion using a custom resolver.
