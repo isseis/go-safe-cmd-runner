@@ -16,7 +16,9 @@ go-safe-cmd-runner provides functionality to expand variable references in the f
 
 ### Core Function Hierarchy
 
-Variable expansion is implemented in three layers of functions:
+Variable expansion is implemented in different hierarchies depending on the expansion strategy:
+
+#### Immediate Expansion (via `ExpandString`)
 
 ```
 ExpandString (Public API)
@@ -31,6 +33,22 @@ parseAndSubstitute (Core parsing and substitution logic)
 | `ExpandString` | Public API (entry point) | public | [expansion.go:59-67](../../internal/runner/config/expansion.go#L59-L67) |
 | `resolveAndExpand` | Generate resolver from variable map and expand recursively | private | [expansion.go:71-124](../../internal/runner/config/expansion.go#L71-L124) |
 | `parseAndSubstitute` | Core logic for parsing, escape handling, and variable substitution | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
+
+#### Lazy Expansion (via `varExpander`)
+
+```
+varExpander.expandString (Entry point)
+  ↓
+varExpander.resolveVariable (Variable resolution and memoization)
+  ↓
+parseAndSubstitute (Core parsing and substitution logic)
+```
+
+| Function | Role | Visibility | Implementation |
+|----------|------|------------|----------------|
+| `varExpander.expandString` | Entry point (expansion of internal variables) | private | [expansion.go:350-366](../../internal/runner/config/expansion.go#L350-L366) |
+| `varExpander.resolveVariable` | Variable resolution with lazy evaluation and memoization | private | [expansion.go:370-460](../../internal/runner/config/expansion.go#L370-L460) |
+| `parseAndSubstitute` | Core logic for parsing, escape handling, and variable substitution (shared by both strategies) | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
 
 ### Two Expansion Strategies
 

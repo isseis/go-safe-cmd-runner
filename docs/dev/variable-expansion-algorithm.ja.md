@@ -16,7 +16,9 @@ go-safe-cmd-runner は、設定ファイル内で `%{変数名}` という形式
 
 ### コア関数の階層構造
 
-変数展開は以下の3層の関数で実装されています：
+変数展開は2つの戦略に応じて、異なる階層で実装されています：
+
+#### 即時展開（ExpandString経由）
 
 ```
 ExpandString (パブリックAPI)
@@ -31,6 +33,22 @@ parseAndSubstitute (パース・置換のコアロジック)
 | `ExpandString` | パブリックAPI（エントリーポイント） | public | [expansion.go:59-67](../../internal/runner/config/expansion.go#L59-L67) |
 | `resolveAndExpand` | 変数マップからresolverを生成し再帰展開 | private | [expansion.go:71-124](../../internal/runner/config/expansion.go#L71-L124) |
 | `parseAndSubstitute` | パース、エスケープ処理、変数置換のコアロジック | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
+
+#### 遅延展開（varExpander経由）
+
+```
+varExpander.expandString (エントリーポイント)
+  ↓
+varExpander.resolveVariable (変数解決・メモ化)
+  ↓
+parseAndSubstitute (パース・置換のコアロジック)
+```
+
+| 関数名 | 役割 | 可視性 | 実装 |
+|--------|------|--------|------|
+| `varExpander.expandString` | エントリーポイント（内部変数の展開） | private | [expansion.go:350-366](../../internal/runner/config/expansion.go#L350-L366) |
+| `varExpander.resolveVariable` | 変数解決とメモ化による遅延評価 | private | [expansion.go:370-460](../../internal/runner/config/expansion.go#L370-L460) |
+| `parseAndSubstitute` | パース、エスケープ処理、変数置換のコアロジック（両戦略で共有） | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
 
 ### 2つの展開戦略
 
