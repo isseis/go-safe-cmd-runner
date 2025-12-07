@@ -952,7 +952,7 @@ api_endpoint = "https://api.example.com"
 
 ```toml
 # 有効な変数名
-[*.vars]
+[global.vars] # Applies to all 'vars' tables (global, group, and command)
 app_dir = "/opt/app"
 _private = "value"
 
