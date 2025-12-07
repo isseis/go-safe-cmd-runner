@@ -234,11 +234,12 @@ func TestCircularReference_RecursionDepthLimit(t *testing.T) {
 // TestCircularReference_CrossLevel_GlobalGroup tests circular references between global and group levels
 func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 	tests := []struct {
-		name         string
-		global       *runnertypes.GlobalSpec
-		group        *runnertypes.GroupSpec
-		wantErr      error
-		wantVarInErr string
+		name            string
+		global          *runnertypes.GlobalSpec
+		group           *runnertypes.GroupSpec
+		wantErr         error
+		wantVarInErr    string
+		wantVarsInChain []string // For circular references, check all vars in cycle
 	}{
 		{
 			name: "group vars references global var that doesn't exist yet",
@@ -264,8 +265,8 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 					"DERIVED": "%{CYCLE}",
 				},
 			},
-			wantErr:      config.ErrCircularReference,
-			wantVarInErr: "DERIVED",
+			wantErr:         config.ErrCircularReference,
+			wantVarsInChain: []string{"CYCLE", "DERIVED"},
 		},
 	}
 
@@ -288,7 +289,14 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 			if errors.Is(err, config.ErrCircularReference) {
 				var detailErr *config.ErrCircularReferenceDetail
 				if errors.As(err, &detailErr) {
-					assert.Equal(t, tt.wantVarInErr, detailErr.VariableName, "Error should reference the correct variable")
+					if len(tt.wantVarsInChain) > 0 {
+						// For circular references, verify all expected variables are in the chain
+						for _, wantVar := range tt.wantVarsInChain {
+							assert.Contains(t, detailErr.Chain, wantVar, "Chain should contain variable %s", wantVar)
+						}
+					} else {
+						assert.Equal(t, tt.wantVarInErr, detailErr.VariableName, "Error should reference the correct variable")
+					}
 				}
 			} else if errors.Is(err, config.ErrUndefinedVariable) {
 				var detailErr *config.ErrUndefinedVariableDetail
