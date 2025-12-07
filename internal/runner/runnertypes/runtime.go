@@ -34,6 +34,15 @@ type RuntimeGlobal struct {
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
 
+	// ExpandedArrayVars contains array variables with all variable references expanded.
+	// Each array element has been individually expanded using ExpandString.
+	// This is populated by ProcessVars when processing array-type variables.
+	//
+	// Example:
+	//   TOML: config_files = ["%{base_dir}/config.yml", "%{base_dir}/secrets.yml"]
+	//   After expansion: {"config_files": ["/opt/myapp/config.yml", "/opt/myapp/secrets.yml"]}
+	ExpandedArrayVars map[string][]string
+
 	// SystemEnv contains the cached system environment variables parsed from os.Environ().
 	// This is populated once during ExpandGlobal to avoid repeated os.Environ() parsing
 	// in ExpandGroup and ExpandCommand.
@@ -53,6 +62,7 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 		ExpandedVerifyFiles: []string{},
 		ExpandedEnv:         make(map[string]string),
 		ExpandedVars:        make(map[string]string),
+		ExpandedArrayVars:   make(map[string][]string),
 		SystemEnv:           make(map[string]string),
 	}, nil
 }
@@ -117,6 +127,10 @@ type RuntimeGroup struct {
 
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
+
+	// ExpandedArrayVars contains array variables with all variable references expanded.
+	// See RuntimeGlobal.ExpandedArrayVars for details.
+	ExpandedArrayVars map[string][]string
 
 	// EffectiveWorkDir is the resolved working directory for this group
 	EffectiveWorkDir string
@@ -194,6 +208,7 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 		ExpandedVerifyFiles: []string{},
 		ExpandedEnv:         make(map[string]string),
 		ExpandedVars:        make(map[string]string),
+		ExpandedArrayVars:   make(map[string][]string),
 		Commands:            []*RuntimeCommand{},
 	}, nil
 }
@@ -253,6 +268,10 @@ type RuntimeCommand struct {
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
 
+	// ExpandedArrayVars contains array variables with all variable references expanded.
+	// See RuntimeGlobal.ExpandedArrayVars for details.
+	ExpandedArrayVars map[string][]string
+
 	// EffectiveWorkDir is the resolved working directory for this command
 	EffectiveWorkDir string
 
@@ -300,6 +319,7 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOu
 		ExpandedArgs:             []string{},
 		ExpandedEnv:              make(map[string]string),
 		ExpandedVars:             make(map[string]string),
+		ExpandedArrayVars:        make(map[string][]string),
 		EffectiveTimeout:         effectiveTimeout,
 		TimeoutResolution:        resolutionContext,
 		EffectiveOutputSizeLimit: effectiveOutputSizeLimit,

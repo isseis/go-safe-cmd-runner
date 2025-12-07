@@ -24,7 +24,8 @@ name = "internal_var_only"
 description = "Use internal variable (not passed to child process)"
 cmd = "/bin/echo"
 args = ["Tool path: %{tool_path}"]
-vars = ["tool_path=/opt/tools/mytool"]
+[groups.commands.vars]
+tool_path = "/opt/tools/mytool"
 # tool_path is only used for TOML expansion, not passed to child process
 
 [[groups.commands]]
@@ -32,7 +33,6 @@ name = "env_var_to_child"
 description = "Pass environment variable to child process"
 cmd = "/bin/sh"
 args = ["-c", "echo HOME from env: $HOME"]
-vars = []
 env_import = ["home=HOME"]
 env_vars = ["HOME=%{home}"]
 # HOME is explicitly passed to child process via env
@@ -66,7 +66,8 @@ name = "secure_command_path"
 description = "Command path is absolute after expansion"
 cmd = "%{secure_bin}"
 args = ["--version"]
-vars = ["secure_bin=/usr/local/bin/mytool"]  # Must use absolute path
+[groups.commands.vars]
+secure_bin = "/usr/local/bin/mytool"  # Must use absolute path
 
 # Example 4: No shell interpretation - literal argument passing
 [[groups]]
@@ -78,7 +79,8 @@ name = "literal_glob_pattern"
 description = "Glob patterns are passed as literal strings, not expanded by shell"
 cmd = "/bin/echo"
 args = ["Files matching pattern: %{pattern}"]
-vars = ["pattern=*.txt"]
+[groups.commands.vars]
+pattern = "*.txt"
 # The *.txt pattern is passed as a literal string to echo,
 # not expanded by a shell (which would list all .txt files)
 
@@ -96,7 +98,8 @@ env_import = [
     "username=USER",
     "home=HOME"
 ]
-vars = ["app_dir=/opt/application"]
+[groups.commands.vars]
+app_dir = "/opt/application"
 # username and home come from system (via env_import)
 # app_dir is internal variable
 
@@ -114,10 +117,9 @@ args = [
     "-H", "Content-Type: application/json",
     "%{api_endpoint}/data"
 ]
-vars = [
-    "api_token=sk-1234567890abcdef",
-    "api_endpoint=https://api.example.com"
-]
+[groups.commands.vars]
+api_token = "sk-1234567890abcdef"
+api_endpoint = "https://api.example.com"
 # api_token and api_endpoint are internal variables only,
 # not passed to child process environment
 
@@ -131,8 +133,9 @@ name = "pass_to_env"
 description = "Pass internal variable to child process environment"
 cmd = "/bin/sh"
 args = ["-c", "echo Config file: $CONFIG_FILE"]
-vars = ["config_path=/etc/myapp/config.yml"]
 env_vars = ["CONFIG_FILE=%{config_path}"]
+[groups.commands.vars]
+config_path = "/etc/myapp/config.yml"
 # config_path is internal variable used in TOML expansion
 # CONFIG_FILE is environment variable passed to child process
 
@@ -146,14 +149,16 @@ name = "isolated_cmd_1"
 description = "First command with its own DB_HOST"
 cmd = "/bin/echo"
 args = ["Connecting to %{db_host}"]
-vars = ["db_host=db1.example.com"]
+[groups.commands.vars]
+db_host = "db1.example.com"
 
 [[groups.commands]]
 name = "isolated_cmd_2"
 description = "Second command with different DB_HOST"
 cmd = "/bin/echo"
 args = ["Connecting to %{db_host}"]
-vars = ["db_host=db2.example.com"]
+[groups.commands.vars]
+db_host = "db2.example.com"
 # This db_host is independent of the previous command
 
 # Example 9: Preventing path traversal
@@ -166,10 +171,9 @@ name = "safe_file_access"
 description = "Access files within allowed directory"
 cmd = "/bin/cat"
 args = ["%{data_dir}/%{filename}"]
-vars = [
-    "data_dir=/var/app/data",
-    "filename=config.json"
-]
+[groups.commands.vars]
+data_dir = "/var/app/data"
+filename = "config.json"
 # Construct paths safely with validated components
 
 # Example 10: Nested internal variables
@@ -182,12 +186,11 @@ name = "secure_nested"
 description = "Nested variables for controlled path construction"
 cmd = "/bin/echo"
 args = ["Full path: %{full_path}"]
-vars = [
-    "base=/opt/secure",
-    "subdir=configs",
-    "file=app.yml",
-    "full_path=%{base}/%{subdir}/%{file}"
-]
+[groups.commands.vars]
+base = "/opt/secure"
+subdir = "configs"
+file = "app.yml"
+full_path = "%{base}/%{subdir}/%{file}"
 # All components are internal variables for maximum control
 
 # Example 11: PATH extension example

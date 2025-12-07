@@ -25,10 +25,9 @@ env_allowed = [
 ]
 
 # Global internal variables available for TOML expansion
-vars = [
-    "app_name=cmd-runner",
-    "test_mode=comprehensive"
-]
+[global.vars]
+app_name = "cmd-runner"
+test_mode = "comprehensive"
 
 verify_files = ["/etc/passwd", "/bin/sh"]
 
@@ -137,10 +136,9 @@ description = "Test internal variables and environment variable passing"
 # Test inheritance mode - inherits from global by not specifying env_allowed
 
 # Group-level internal variables
-vars = [
-    "group_var=group_value",
-    "test_var=inherited_value"
-]
+[groups.vars]
+group_var = "group_value"
+test_var = "inherited_value"
 
 [[groups.commands]]
 name = "test_internal_var_expansion"
@@ -167,7 +165,6 @@ name = "test_system_env_import"
 description = "Test importing system environment variable"
 cmd = "echo"
 args = ["User from system: %{username}"]
-vars = []
 env_import = ["username=USER"]
 
 # Group 6: Environment variable rejection tests
@@ -226,11 +223,10 @@ args = ["Using verified command"]
 name = "variable_expansion_tests"
 description = "Test variable expansion in various contexts"
 
-vars = [
-    "base_dir=/tmp/expansion-test",
-    "file_name=test.txt",
-    "full_path=%{base_dir}/%{file_name}"
-]
+[groups.vars]
+base_dir = "/tmp/expansion-test"
+file_name = "test.txt"
+full_path = "%{base_dir}/%{file_name}"
 
 [[groups.commands]]
 name = "test_nested_expansion"
@@ -253,10 +249,9 @@ workdir = "/tmp/final-comprehensive-test"
 env_allowed = ["PATH", "HOME", "FINAL_TEST_VAR"]
 verify_files = ["/bin/echo"]
 
-vars = [
-    "final_msg=comprehensive_success",
-    "test_complete=true"
-]
+[groups.vars]
+final_msg = "comprehensive_success"
+test_complete = "true"
 
 [[groups.commands]]
 name = "final_privileged_test"

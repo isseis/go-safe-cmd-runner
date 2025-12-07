@@ -34,10 +34,10 @@ version = "1.0"
 
 [global]
 timeout = 60
-vars = [
-    "output_file=%s",
-    "backup_file=%%{output_file}.%%{__runner_datetime}.bak",
-]
+
+[global.vars]
+output_file = "%s"
+backup_file = "%%{output_file}.%%{__runner_datetime}.bak"
 
 [[groups]]
 name = "test_group"

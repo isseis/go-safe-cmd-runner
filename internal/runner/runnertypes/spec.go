@@ -38,7 +38,19 @@ type GlobalSpec struct {
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Environment variables in KEY=VALUE format
 	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
-	Vars      []string `toml:"vars"`       // Internal variables in VAR=value format
+
+	// Vars defines internal variables as a TOML table.
+	// Each key-value pair defines a variable where:
+	//   - Key: variable name (must pass ValidateVariableName)
+	//   - Value: string or []string (other types are rejected)
+	//
+	// Example TOML:
+	//   [global.vars]
+	//   base_dir = "/opt/myapp"
+	//   config_files = ["config.yml", "secrets.yml"]
+	//
+	// Changed from: Vars []string `toml:"vars"` (array-based format)
+	Vars map[string]interface{} `toml:"vars"`
 }
 
 // GroupSpec represents a command group configuration loaded from TOML file.
@@ -74,7 +86,18 @@ type GroupSpec struct {
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Group-level environment variables in KEY=VALUE format
 	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
-	Vars      []string `toml:"vars"`       // Group-level internal variables in VAR=value format
+
+	// Vars defines group-level internal variables as a TOML table.
+	// See GlobalSpec.Vars for format details.
+	//
+	// Example TOML:
+	//   [[groups]]
+	//   name = "deploy"
+	//   [groups.vars]
+	//   deploy_target = "production"
+	//
+	// Changed from: Vars []string `toml:"vars"` (array-based format)
+	Vars map[string]interface{} `toml:"vars"`
 }
 
 // CommandSpec represents a single command configuration loaded from TOML file.
@@ -106,7 +129,18 @@ type CommandSpec struct {
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Command-level environment variables in KEY=VALUE format
 	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
-	Vars      []string `toml:"vars"`       // Command-level internal variables in VAR=value format
+
+	// Vars defines command-level internal variables as a TOML table.
+	// See GlobalSpec.Vars for format details.
+	//
+	// Example TOML:
+	//   [[groups.commands]]
+	//   name = "backup"
+	//   [groups.commands.vars]
+	//   backup_suffix = ".bak"
+	//
+	// Changed from: Vars []string `toml:"vars"` (array-based format)
+	Vars map[string]interface{} `toml:"vars"`
 }
 
 // GetRiskLevel parses and returns the maximum risk level for this command.

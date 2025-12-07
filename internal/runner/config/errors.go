@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Configuration loading and expansion errors
@@ -93,6 +94,27 @@ var (
 
 	// ErrDuplicateResolvedPath is returned when different paths resolve to the same file
 	ErrDuplicateResolvedPath = errors.New("duplicate resolved path in cmd_allowed")
+
+	// ErrTooManyVariables is returned when the number of variables exceeds the limit
+	ErrTooManyVariables = errors.New("too many variables")
+
+	// ErrTypeMismatch is returned when a variable is redefined with a different type
+	ErrTypeMismatch = errors.New("variable type mismatch")
+
+	// ErrValueTooLong is returned when a string value exceeds the maximum length
+	ErrValueTooLong = errors.New("value too long")
+
+	// ErrArrayTooLarge is returned when an array exceeds the maximum number of elements
+	ErrArrayTooLarge = errors.New("array too large")
+
+	// ErrInvalidArrayElement is returned when an array element has an invalid type
+	ErrInvalidArrayElement = errors.New("invalid array element")
+
+	// ErrUnsupportedType is returned when a variable has an unsupported type
+	ErrUnsupportedType = errors.New("unsupported variable type")
+
+	// ErrArrayVariableInStringContext is returned when an array variable is used in string context
+	ErrArrayVariableInStringContext = errors.New("array variable used in string context")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
@@ -183,10 +205,15 @@ type ErrUndefinedVariableDetail struct {
 	Field        string
 	VariableName string
 	Context      string
+	Chain        []string // expansion path leading to this error
 }
 
 func (e *ErrUndefinedVariableDetail) Error() string {
-	return fmt.Sprintf("undefined variable in %s.%s: '%s' (context: %s)", e.Level, e.Field, e.VariableName, e.Context)
+	msg := fmt.Sprintf("undefined variable in %s.%s: '%s' (context: %s)", e.Level, e.Field, e.VariableName, e.Context)
+	if len(e.Chain) > 0 {
+		msg += fmt.Sprintf(" (expansion path: %s)", strings.Join(e.Chain, " -> "))
+	}
+	return msg
 }
 
 func (e *ErrUndefinedVariableDetail) Unwrap() error {
@@ -376,4 +403,149 @@ func (e *ErrDuplicateResolvedPathDetail) Error() string {
 
 func (e *ErrDuplicateResolvedPathDetail) Unwrap() error {
 	return ErrDuplicateResolvedPath
+}
+
+// ===========================================
+// New error types for vars table format
+// ===========================================
+
+// ErrTooManyVariablesDetail is returned when the number of variables exceeds MaxVarsPerLevel.
+type ErrTooManyVariablesDetail struct {
+	Level    string
+	Count    int
+	MaxCount int
+}
+
+func (e *ErrTooManyVariablesDetail) Error() string {
+	return fmt.Sprintf("too many variables in %s: got %d, max %d", e.Level, e.Count, e.MaxCount)
+}
+
+func (e *ErrTooManyVariablesDetail) Unwrap() error {
+	return ErrTooManyVariables
+}
+
+// ErrTypeMismatchDetail is returned when a variable is redefined with a different type (string vs array).
+type ErrTypeMismatchDetail struct {
+	Level        string
+	VariableName string
+	ExpectedType string
+	ActualType   string
+}
+
+func (e *ErrTypeMismatchDetail) Error() string {
+	return fmt.Sprintf("variable %q type mismatch in %s: already defined as %s, cannot redefine as %s",
+		e.VariableName, e.Level, e.ExpectedType, e.ActualType)
+}
+
+func (e *ErrTypeMismatchDetail) Unwrap() error {
+	return ErrTypeMismatch
+}
+
+// ErrValueTooLongDetail is returned when a string value exceeds MaxStringValueLen.
+type ErrValueTooLongDetail struct {
+	Level        string
+	VariableName string
+	Length       int
+	MaxLength    int
+}
+
+func (e *ErrValueTooLongDetail) Error() string {
+	return fmt.Sprintf("variable %q value too long in %s: got %d bytes, max %d",
+		e.VariableName, e.Level, e.Length, e.MaxLength)
+}
+
+func (e *ErrValueTooLongDetail) Unwrap() error {
+	return ErrValueTooLong
+}
+
+// ErrArrayTooLargeDetail is returned when an array variable exceeds MaxArrayElements.
+type ErrArrayTooLargeDetail struct {
+	Level        string
+	VariableName string
+	Count        int
+	MaxCount     int
+}
+
+func (e *ErrArrayTooLargeDetail) Error() string {
+	return fmt.Sprintf("variable %q array too large in %s: got %d elements, max %d",
+		e.VariableName, e.Level, e.Count, e.MaxCount)
+}
+
+func (e *ErrArrayTooLargeDetail) Unwrap() error {
+	return ErrArrayTooLarge
+}
+
+// ErrInvalidArrayElementDetail is returned when an array element is not a string.
+type ErrInvalidArrayElementDetail struct {
+	Level        string
+	VariableName string
+	Index        int
+	ExpectedType string
+	ActualType   string
+}
+
+func (e *ErrInvalidArrayElementDetail) Error() string {
+	return fmt.Sprintf("variable %q has invalid array element at index %d in %s: expected %s, got %s",
+		e.VariableName, e.Index, e.Level, e.ExpectedType, e.ActualType)
+}
+
+func (e *ErrInvalidArrayElementDetail) Unwrap() error {
+	return ErrInvalidArrayElement
+}
+
+// ErrArrayElementTooLongDetail is returned when an array element exceeds MaxStringValueLen.
+type ErrArrayElementTooLongDetail struct {
+	Level        string
+	VariableName string
+	Index        int
+	Length       int
+	MaxLength    int
+}
+
+func (e *ErrArrayElementTooLongDetail) Error() string {
+	return fmt.Sprintf("variable %q array element %d too long in %s: got %d bytes, max %d",
+		e.VariableName, e.Index, e.Level, e.Length, e.MaxLength)
+}
+
+func (e *ErrArrayElementTooLongDetail) Unwrap() error {
+	return ErrValueTooLong
+}
+
+// ErrUnsupportedTypeDetail is returned when a variable value has an unsupported type.
+type ErrUnsupportedTypeDetail struct {
+	Level        string
+	VariableName string
+	ActualType   string
+}
+
+func (e *ErrUnsupportedTypeDetail) Error() string {
+	return fmt.Sprintf("variable %q has unsupported type %s in %s: only string and []string are supported",
+		e.VariableName, e.ActualType, e.Level)
+}
+
+func (e *ErrUnsupportedTypeDetail) Unwrap() error {
+	return ErrUnsupportedType
+}
+
+// ErrArrayVariableInStringContextDetail is returned when an array variable
+// is referenced in a string context (e.g., "%{array_var}" in a string value).
+type ErrArrayVariableInStringContextDetail struct {
+	Level        string
+	Field        string
+	VariableName string
+	Chain        []string // expansion path leading to this error
+}
+
+func (e *ErrArrayVariableInStringContextDetail) Error() string {
+	msg := fmt.Sprintf("cannot reference array variable %q in string context at %s.%s: "+
+		"array variables can only be used where array values are expected",
+		e.VariableName, e.Level, e.Field)
+	if len(e.Chain) > 0 {
+		msg += fmt.Sprintf(" (expansion path: %s)", strings.Join(e.Chain, " -> "))
+	}
+	return msg
+}
+
+func (e *ErrArrayVariableInStringContextDetail) Unwrap() error {
+	return ErrArrayVariableInStringContext
 }

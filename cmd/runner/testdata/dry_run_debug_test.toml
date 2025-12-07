@@ -4,29 +4,37 @@
 [global]
 env_import = ["db_host=DB_HOST", "api_key=API_KEY"]
 env_allowed = ["PATH", "HOME", "USER", "DB_HOST", "API_KEY"]
-vars = ["base_dir=/opt/app"]
 env_vars = ["BASE_DIR=%{base_dir}", "LOG_LEVEL=info"]
+
+[global.vars]
+base_dir = "/opt/app"
 
 [[groups]]
 name = "test_group_inherit"
 # Group with default inheritance (inherits from global)
-vars = ["group_var=value1"]
 env_vars = ["GROUP_VAR=%{group_var}"]
+
+[groups.vars]
+group_var = "value1"
 
 [[groups.commands]]
 name = "test-command-1"
 cmd = "echo"
 args = ["Hello from command 1"]
-vars = ["cmd_var=cmd1"]
 env_vars = ["CMD_VAR=%{cmd_var}"]
+
+[groups.commands.vars]
+cmd_var = "cmd1"
 
 [[groups]]
 name = "test_group_explicit"
 # Group with explicit env configuration (overrides global)
 env_import = ["db_host=DB_HOST"]
 env_allowed = ["PATH", "DB_HOST"]
-vars = ["group_var=value2"]
 env_vars = ["GROUP_VAR=%{group_var}"]
+
+[groups.vars]
+group_var = "value2"
 
 [[groups.commands]]
 name = "test-command-2"

@@ -110,10 +110,9 @@ name = "environment_output_tests"
 description = "Test internal variables and environment variables with output capture"
 env_allowed = ["PATH", "HOME", "ADVANCED_TEST_VAR", "BUILD_ENV"]
 
-vars = [
-    "build_env=production",
-    "test_var=advanced_value"
-]
+[groups.vars]
+build_env = "production"
+test_var = "advanced_value"
 
 [[groups.commands]]
 name = "custom_env_capture"
@@ -131,8 +130,9 @@ name = "build_script_simulation"
 description = "Simulate build script with variable expansion and output capture"
 cmd = "echo"
 args = ["Build completed successfully in %{build_env} environment"]
-vars = ["build_env=staging"]  # Override group-level value
 output_file = "build_results.txt"
+[groups.commands.vars]
+build_env = "staging"  # Override group-level value
 
 [[groups.commands]]
 name = "variable_expansion_demo"

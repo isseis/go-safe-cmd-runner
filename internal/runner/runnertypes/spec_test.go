@@ -228,7 +228,10 @@ verify_files = ["/usr/bin/python3", "/usr/bin/gcc"]
 env_allowed = ["PATH", "HOME"]
 env_vars = ["PATH=/usr/bin:/bin", "HOME=/root"]
 env_import = ["user=USER", "shell=SHELL"]
-vars = ["PREFIX=/opt", "VERSION=1.0"]
+
+[global.vars]
+PREFIX = "/opt"
+VERSION = "1.0"
 
 [[groups]]
 name = "test"
@@ -247,7 +250,7 @@ cmd = "/bin/echo"
 					EnvAllowed:          []string{"PATH", "HOME"},
 					EnvVars:             []string{"PATH=/usr/bin:/bin", "HOME=/root"},
 					EnvImport:           []string{"user=USER", "shell=SHELL"},
-					Vars:                []string{"PREFIX=/opt", "VERSION=1.0"},
+					Vars:                map[string]interface{}{"PREFIX": "/opt", "VERSION": "1.0"},
 				},
 				Groups: []GroupSpec{
 					{
@@ -279,7 +282,9 @@ verify_files = ["/usr/bin/make"]
 env_allowed = ["PATH", "CC"]
 env_vars = ["CC=gcc"]
 env_import = ["home=HOME"]
-vars = ["BUILD_TYPE=release"]
+
+[groups.vars]
+BUILD_TYPE = "release"
 
 [[groups.commands]]
 name = "compile"
@@ -299,7 +304,7 @@ cmd = "/usr/bin/make"
 						EnvAllowed:  []string{"PATH", "CC"},
 						EnvVars:     []string{"CC=gcc"},
 						EnvImport:   []string{"home=HOME"},
-						Vars:        []string{"BUILD_TYPE=release"},
+						Vars:        map[string]interface{}{"BUILD_TYPE": "release"},
 						Commands: []CommandSpec{
 							{
 								Name: "compile",
@@ -335,7 +340,9 @@ risk_level = "medium"
 output_file = "/tmp/output.log"
 env_vars = ["PYTHONPATH=/opt/lib"]
 env_import = ["path=PATH"]
-vars = ["TEST_VAR=value"]
+
+[groups.commands.vars]
+TEST_VAR = "value"
 `,
 			want: &ConfigSpec{
 				Version: "1.0",
@@ -359,7 +366,7 @@ vars = ["TEST_VAR=value"]
 								OutputFile:  "/tmp/output.log",
 								EnvVars:     []string{"PYTHONPATH=/opt/lib"},
 								EnvImport:   []string{"path=PATH"},
-								Vars:        []string{"TEST_VAR=value"},
+								Vars:        map[string]interface{}{"TEST_VAR": "value"},
 							},
 						},
 					},

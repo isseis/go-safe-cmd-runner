@@ -21,21 +21,19 @@ name = "nested_vars_simple"
 description = "Simple nested variable expansion"
 cmd = "/bin/echo"
 args = ["Message: %{full_msg}"]
-vars = [
-    "user=Alice",
-    "full_msg=Hello, %{user}!"
-]
+[groups.commands.vars]
+user = "Alice"
+full_msg = "Hello, %{user}!"
 
 [[groups.commands]]
 name = "nested_vars_complex"
 description = "Multiple levels of nested variables"
 cmd = "/bin/echo"
 args = ["Config path: %{config_path}"]
-vars = [
-    "base_dir=/opt/myapp",
-    "env_type=production",
-    "config_path=%{base_dir}/%{env_type}/config.yml"
-]
+[groups.commands.vars]
+base_dir = "/opt/myapp"
+env_type = "production"
+config_path = "%{base_dir}/%{env_type}/config.yml"
 
 # Example 2: Escape sequences
 [[groups]]
@@ -53,14 +51,14 @@ name = "escape_backslash"
 description = "Literal backslash with \\\\"
 cmd = "/bin/echo"
 args = ["Windows path: C:\\\\Users\\\\%{user}"]
-vars = ["user=JohnDoe"]
+[groups.commands.vars]
+user = "JohnDoe"
 
 [[groups.commands]]
 name = "mixed_escape"
 description = "Mixed literal and expanded variables"
 cmd = "/bin/echo"
 args = ["Literal \\%{home} is different from %{home}"]
-vars = []
 env_import = ["home=HOME"]
 
 # Example 3: Complex path construction
@@ -73,11 +71,10 @@ name = "backup_with_timestamp"
 description = "Create backup path with date and user"
 cmd = "/bin/mkdir"
 args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
-vars = [
-    "backup_root=/var/backups",
-    "date=2025-10-01",
-    "user=admin"
-]
+[groups.commands.vars]
+backup_root = "/var/backups"
+date = "2025-10-01"
+user = "admin"
 
 # Example 4: Multi-variable string construction
 [[groups]]
@@ -89,13 +86,12 @@ name = "connection_string"
 description = "Database connection string from components"
 cmd = "/bin/echo"
 args = ["Connecting to: %{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"]
-vars = [
-    "db_user=appuser",
-    "db_pass=secret123",
-    "db_host=localhost",
-    "db_port=5432",
-    "db_name=myapp_db"
-]
+[groups.commands.vars]
+db_user = "appuser"
+db_pass = "secret123"
+db_host = "localhost"
+db_port = "5432"
+db_name = "myapp_db"
 
 # Example 5: Toolchain version management
 [[groups]]
@@ -107,20 +103,18 @@ name = "gcc_versioned"
 description = "Use specific GCC version"
 cmd = "%{toolchain_dir}/gcc-%{version}/bin/gcc"
 args = ["--version"]
-vars = [
-    "toolchain_dir=/opt/toolchains",
-    "version=11.2.0"
-]
+[groups.commands.vars]
+toolchain_dir = "/opt/toolchains"
+version = "11.2.0"
 
 [[groups.commands]]
 name = "python_versioned"
 description = "Use specific Python version"
 cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-vars = [
-    "python_root=/usr/local",
-    "py_version=3.11"
-]
+[groups.commands.vars]
+python_root = "/usr/local"
+py_version = "3.11"
 
 # Example 6: Conditional-like behavior with variables
 [[groups]]
@@ -132,12 +126,11 @@ name = "run_with_env_config"
 description = "Load environment-specific configuration"
 cmd = "%{app_bin}"
 args = ["--config", "%{config_dir}/%{env_type}.yml", "--log-level", "%{log_level}"]
-vars = [
-    "app_bin=/opt/myapp/bin/myapp",
-    "config_dir=/etc/myapp/configs",
-    "env_type=development",
-    "log_level=debug"
-]
+[groups.commands.vars]
+app_bin = "/opt/myapp/bin/myapp"
+config_dir = "/etc/myapp/configs"
+env_type = "development"
+log_level = "debug"
 
 # Example 7: Complex Docker command with variables
 [[groups]]
@@ -157,14 +150,13 @@ args = [
     "-p", "%{host_port}:%{container_port}",
     "%{image_name}:%{image_tag}"
 ]
-vars = [
-    "docker_bin=/usr/bin/docker",
-    "container_name=myapp-prod",
-    "host_path=/opt/myapp/data",
-    "container_path=/app/data",
-    "app_env=production",
-    "host_port=8080",
-    "container_port=80",
-    "image_name=myapp",
-    "image_tag=v1.2.3"
-]
+[groups.commands.vars]
+docker_bin = "/usr/bin/docker"
+container_name = "myapp-prod"
+host_path = "/opt/myapp/data"
+container_path = "/app/data"
+app_env = "production"
+host_port = "8080"
+container_port = "80"
+image_name = "myapp"
+image_tag = "v1.2.3"

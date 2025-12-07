@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -18,7 +17,41 @@ import (
 const (
 	// MaxRecursionDepth is the maximum depth for variable expansion to prevent stack overflow
 	MaxRecursionDepth = 100
+
+	// MaxVarsPerLevel is the maximum number of variables allowed per level
+	// (global, group, or command). This prevents DoS attacks via excessive
+	// variable definitions.
+	MaxVarsPerLevel = 1000
+
+	// MaxArrayElements is the maximum number of elements allowed in an array
+	// variable. This prevents DoS attacks via large arrays.
+	MaxArrayElements = 1000
+
+	// MaxStringValueLen is the maximum length (in bytes) allowed for a string
+	// value. This prevents memory exhaustion via extremely long strings.
+	MaxStringValueLen = 10 * 1024 // 10KB
 )
+
+// variableResolver is a function type that resolves a variable name to its expanded value.
+// It is called during variable expansion to look up and expand variable references.
+//
+// Parameters:
+//   - varName: the variable name to resolve (without %{} syntax)
+//   - field: field name for error messages
+//   - visited: map tracking currently-being-expanded variables (for circular detection)
+//   - expansionChain: ordered list of variable names in current expansion path
+//   - depth: current recursion depth
+//
+// Returns:
+//   - string: the expanded value of the variable
+//   - error: resolution error (e.g., undefined variable, type mismatch)
+type variableResolver func(
+	varName string,
+	field string,
+	visited map[string]struct{},
+	expansionChain []string,
+	depth int,
+) (string, error)
 
 // ExpandString expands %{VAR} references in a string using the provided
 // internal variables. It detects circular references and reports detailed
@@ -30,13 +63,84 @@ func ExpandString(
 	field string,
 ) (string, error) {
 	visited := make(map[string]struct{})
-	return expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
+	return resolveAndExpand(input, expandedVars, level, field, visited, nil, 0)
 }
 
-// expandStringRecursive performs recursive expansion with circular reference detection.
-func expandStringRecursive(
+// resolveAndExpand resolves variable references from expandedVars and expands them recursively.
+// It creates a resolver that looks up variables from the provided map and delegates to parseAndSubstitute.
+func resolveAndExpand(
 	input string,
 	expandedVars map[string]string,
+	level string,
+	field string,
+	visited map[string]struct{},
+	expansionChain []string,
+	depth int,
+) (string, error) {
+	// Create a resolver that looks up variables from expandedVars
+	// and recursively expands them
+	resolver := func(
+		varName string,
+		resolverField string,
+		resolverVisited map[string]struct{},
+		resolverChain []string,
+		resolverDepth int,
+	) (string, error) {
+		// Check if variable is defined
+		value, exists := expandedVars[varName]
+		if !exists {
+			return "", &ErrUndefinedVariableDetail{
+				Level:        level,
+				Field:        resolverField,
+				VariableName: varName,
+				Context:      input,
+			}
+		}
+
+		// Mark as visited for circular reference detection
+		resolverVisited[varName] = struct{}{}
+
+		// Recursively expand the value
+		expandedValue, err := resolveAndExpand(
+			value,
+			expandedVars,
+			level,
+			resolverField,
+			resolverVisited,
+			append(resolverChain, varName),
+			resolverDepth+1,
+		)
+		if err != nil {
+			return "", err
+		}
+
+		// Unmark after expansion
+		delete(resolverVisited, varName)
+
+		return expandedValue, nil
+	}
+
+	return parseAndSubstitute(input, resolver, level, field, visited, expansionChain, depth)
+}
+
+// parseAndSubstitute parses variable references and performs substitution using a custom resolver.
+// This is the core expansion logic shared by both ExpandString and varExpander.
+//
+// Parameters:
+//   - input: the string to expand (may contain %{VAR} references and escape sequences)
+//   - resolver: function to resolve variable names to their values
+//   - level: context for error messages (e.g., "global", "group[deploy]")
+//   - field: field name for error messages (e.g., "vars", "env.PATH")
+//   - visited: tracks variables currently being expanded (for circular reference detection)
+//   - expansionChain: ordered list of variable names in the current expansion path
+//   - depth: current recursion depth
+//
+// Returns:
+//   - string: the fully expanded string
+//   - error: expansion error (syntax error, undefined variable, circular reference, etc.)
+func parseAndSubstitute(
+	input string,
+	resolver variableResolver,
 	level string,
 	field string,
 	visited map[string]struct{},
@@ -113,42 +217,17 @@ func expandStringRecursive(
 					Level:        level,
 					Field:        field,
 					VariableName: varName,
-					Chain:        slices.Insert(expansionChain, len(expansionChain), varName),
+					Chain:        append(expansionChain, varName),
 				}
 			}
 
-			// Check if variable is defined
-			value, exists := expandedVars[varName]
-			if !exists {
-				return "", &ErrUndefinedVariableDetail{
-					Level:        level,
-					Field:        field,
-					VariableName: varName,
-					Context:      input,
-				}
-			}
-
-			// Mark as visited for circular reference detection
-			visited[varName] = struct{}{}
-
-			// Recursively expand the value
-			expandedValue, err := expandStringRecursive(
-				value,
-				expandedVars,
-				level,
-				field,
-				visited,
-				slices.Insert(expansionChain, len(expansionChain), varName),
-				depth+1,
-			)
+			// Resolve variable using the provided resolver
+			value, err := resolver(varName, field, visited, expansionChain, depth)
 			if err != nil {
 				return "", err
 			}
 
-			// Unmark after expansion
-			delete(visited, varName)
-
-			result.WriteString(expandedValue)
+			result.WriteString(value)
 			i = closeIdx + 1
 			continue
 		}
@@ -225,63 +304,416 @@ func ProcessFromEnv(
 	return result, nil
 }
 
-// ProcessVars processes vars definitions and expands them using baseExpandedVars.
-// Variables are processed sequentially in definition order, allowing later variables
-// to reference earlier ones within the same vars array.
-func ProcessVars(vars []string, baseExpandedVars map[string]string, level string) (map[string]string, error) {
-	// Step 1: Parse and validate all variable definitions
-	type parsedMapping struct {
-		name  string
-		value string
-	}
-	parsedMappings := make([]parsedMapping, 0, len(vars))
+// varExpander handles variable expansion with lazy resolution.
+// It maintains state for memoization and circular reference detection.
+//
+// SIDE EFFECT: The expandString method modifies the expandedVars map by adding
+// newly expanded variables to it. This is intentional for memoization.
+type varExpander struct {
+	// expandedVars contains already-expanded string variables.
+	// Also used for memoization of newly expanded variables.
+	expandedVars map[string]string
 
-	for _, mapping := range vars {
-		varName, varValue, ok := common.ParseKeyValue(mapping)
-		if !ok {
-			return nil, &ErrInvalidVarsFormatDetail{
-				Level:   level,
-				Mapping: mapping,
-				Reason:  "must be in 'var_name=value' format",
-			}
+	// expandedArrayVars contains already-expanded array variables.
+	expandedArrayVars map[string][]string
+
+	// rawVars contains not-yet-expanded variable definitions.
+	rawVars map[string]interface{}
+
+	// level is the context for error messages (e.g., "global", "group[deploy]").
+	level string
+}
+
+// newVarExpander creates a new varExpander instance.
+func newVarExpander(
+	expandedVars map[string]string,
+	expandedArrayVars map[string][]string,
+	rawVars map[string]interface{},
+	level string,
+) *varExpander {
+	return &varExpander{
+		expandedVars:      expandedVars,
+		expandedArrayVars: expandedArrayVars,
+		rawVars:           rawVars,
+		level:             level,
+	}
+}
+
+// expandString expands variable references in the input string.
+// It resolves references to both already-expanded and raw variables.
+//
+// Parameters:
+//   - input: the string containing %{VAR} references to expand
+//   - field: field name for error messages (e.g., "vars.config_path")
+//
+// Returns the expanded string or an error.
+func (e *varExpander) expandString(input string, field string) (string, error) {
+	visited := make(map[string]struct{})
+	expansionChain := make([]string, 0)
+
+	// Use parseAndSubstitute with varExpander's resolver
+	resolver := func(
+		varName string,
+		resolverField string,
+		resolverVisited map[string]struct{},
+		resolverChain []string,
+		resolverDepth int,
+	) (string, error) {
+		return e.resolveVariable(varName, resolverField, resolverVisited, resolverChain, resolverDepth)
+	}
+
+	return parseAndSubstitute(input, resolver, e.level, field, visited, expansionChain, 0)
+}
+
+// resolveVariable looks up and expands a variable by name.
+// It checks expandedVars first, then rawVars for lazy expansion.
+func (e *varExpander) resolveVariable(
+	varName string,
+	field string,
+	visited map[string]struct{},
+	expansionChain []string,
+	depth int,
+) (string, error) {
+	// First, check already-expanded variables (includes memoized results)
+	if v, ok := e.expandedVars[varName]; ok {
+		return v, nil
+	}
+
+	// Check if it's an array variable (cannot be used in string context)
+	if _, ok := e.expandedArrayVars[varName]; ok {
+		return "", &ErrArrayVariableInStringContextDetail{
+			Level:        e.level,
+			Field:        field,
+			VariableName: varName,
+			Chain:        append(expansionChain, varName),
+		}
+	}
+
+	// Check raw vars for lazy expansion
+	rawVal, ok := e.rawVars[varName]
+	if !ok {
+		return "", &ErrUndefinedVariableDetail{
+			Level:        e.level,
+			Field:        field,
+			VariableName: varName,
+			Context:      "",
+			Chain:        append(expansionChain, varName),
+		}
+	}
+
+	// Handle based on type
+	switch rv := rawVal.(type) {
+	case string:
+		// Mark as visited before recursive expansion
+		visited[varName] = struct{}{}
+
+		// Create a resolver for recursive expansion
+		resolver := func(
+			resolverVarName string,
+			resolverField string,
+			resolverVisited map[string]struct{},
+			resolverChain []string,
+			resolverDepth int,
+		) (string, error) {
+			return e.resolveVariable(resolverVarName, resolverField, resolverVisited, resolverChain, resolverDepth)
 		}
 
+		// Expand the raw value using the shared expansion logic
+		expanded, err := parseAndSubstitute(
+			rv,
+			resolver,
+			e.level,
+			field,
+			visited,
+			append(expansionChain, varName),
+			depth+1,
+		)
+		if err != nil {
+			return "", err
+		}
+
+		// Unmark after expansion
+		delete(visited, varName)
+
+		// Cache the expanded value for future references (memoization)
+		e.expandedVars[varName] = expanded
+
+		return expanded, nil
+
+	case []interface{}:
+		// Array variable referenced in string context
+		return "", &ErrArrayVariableInStringContextDetail{
+			Level:        e.level,
+			Field:        field,
+			VariableName: varName,
+			Chain:        append(expansionChain, varName),
+		}
+
+	default:
+		// This shouldn't happen as we validate types in ProcessVars
+		return "", &ErrUnsupportedTypeDetail{
+			Level:        e.level,
+			VariableName: varName,
+			ActualType:   fmt.Sprintf("%T", rawVal),
+		}
+	}
+}
+
+// ProcessVars processes vars definitions from a TOML table and expands them
+// using baseExpandedVars and baseExpandedArrays.
+//
+// Parameters:
+//   - vars: Variable definitions from TOML (map[string]interface{})
+//   - baseExpandedVars: Previously expanded string variables (inherited)
+//   - baseExpandedArrays: Previously expanded array variables (inherited)
+//   - level: Context for error messages (e.g., "global", "group[deploy]")
+//
+// Returns:
+//   - map[string]string: Expanded string variables (includes base + new)
+//   - map[string][]string: Expanded array variables (includes base + new)
+//   - error: Validation or expansion error
+//
+// Processing steps:
+//  1. Check total variable count against MaxVarsPerLevel
+//  2. For each variable:
+//     a. Validate variable name using ValidateVariableName
+//     b. Check type consistency with base variables
+//     c. Validate value type (string or []interface{})
+//     d. Validate size limits
+//     e. Expand using ExpandString
+//     f. Store in appropriate output map
+//
+// Type consistency rule:
+//   - A variable defined as string cannot be overridden as array
+//   - A variable defined as array cannot be overridden as string
+//   - Same type override is allowed (value replacement)
+//
+// Empty arrays are allowed and useful for clearing inherited variables.
+func ProcessVars(
+	vars map[string]interface{},
+	baseExpandedVars map[string]string,
+	baseExpandedArrays map[string][]string,
+	level string,
+) (map[string]string, map[string][]string, error) {
+	// Handle nil vars map
+	if vars == nil {
+		s, a := cloneBaseVars(baseExpandedVars, baseExpandedArrays)
+		return s, a, nil
+	}
+
+	// Check total variable count
+	if len(vars) > MaxVarsPerLevel {
+		return nil, nil, &ErrTooManyVariablesDetail{
+			Level:    level,
+			Count:    len(vars),
+			MaxCount: MaxVarsPerLevel,
+		}
+	}
+
+	// Phase 1: Validation and type checking
+	stringVars, arrayVars, err := validateAndClassifyVars(vars, baseExpandedVars, baseExpandedArrays, level)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Phase 2: Expansion with lazy resolution
+	return expandVarsWithLazyResolution(vars, stringVars, arrayVars, baseExpandedVars, baseExpandedArrays, level)
+}
+
+// cloneBaseVars creates copies of base variables.
+func cloneBaseVars(
+	baseExpandedVars map[string]string,
+	baseExpandedArrays map[string][]string,
+) (map[string]string, map[string][]string) {
+	expandedStrings := maps.Clone(baseExpandedVars)
+	if expandedStrings == nil {
+		expandedStrings = make(map[string]string)
+	}
+	expandedArrays := maps.Clone(baseExpandedArrays)
+	if expandedArrays == nil {
+		expandedArrays = make(map[string][]string)
+	}
+	return expandedStrings, expandedArrays
+}
+
+// validateAndClassifyVars validates all variables and classifies them by type.
+func validateAndClassifyVars(
+	vars map[string]interface{},
+	baseExpandedVars map[string]string,
+	baseExpandedArrays map[string][]string,
+	level string,
+) (map[string]string, map[string][]interface{}, error) {
+	stringVars := make(map[string]string)
+	arrayVars := make(map[string][]interface{})
+
+	for varName, rawValue := range vars {
 		// Validate variable name
 		if err := validateVariableName(varName, level, "vars"); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		// Check for duplicate definition within this vars array
-		// Note: Overriding base variables is allowed
-		for _, existing := range parsedMappings {
-			if existing.name == varName {
-				return nil, &ErrDuplicateVariableDefinitionDetail{
-					Level:        level,
-					Field:        "vars",
-					VariableName: varName,
-				}
+		// Determine the type and validate
+		switch v := rawValue.(type) {
+		case string:
+			if err := validateStringVar(varName, v, baseExpandedArrays, level); err != nil {
+				return nil, nil, err
+			}
+			stringVars[varName] = v
+
+		case []interface{}:
+			if err := validateArrayVar(varName, v, baseExpandedVars, level); err != nil {
+				return nil, nil, err
+			}
+			arrayVars[varName] = v
+
+		default:
+			return nil, nil, &ErrUnsupportedTypeDetail{
+				Level:        level,
+				VariableName: varName,
+				ActualType:   fmt.Sprintf("%T", rawValue),
 			}
 		}
-
-		parsedMappings = append(parsedMappings, parsedMapping{name: varName, value: varValue})
 	}
 
-	// Start with a copy of base variables
-	expandedVars := maps.Clone(baseExpandedVars)
+	return stringVars, arrayVars, nil
+}
 
-	// Step 2: Sequential expansion
-	for _, parsedMapping := range parsedMappings {
-		// Expand using current result map (includes baseExpandedVars + previously defined vars)
-		expandedValue, err := ExpandString(parsedMapping.value, expandedVars, level, "vars")
-		if err != nil {
-			return nil, err
+// validateStringVar validates a string variable.
+func validateStringVar(
+	varName string,
+	value string,
+	baseExpandedArrays map[string][]string,
+	level string,
+) error {
+	// Check if overriding an array variable with a string
+	if _, ok := baseExpandedArrays[varName]; ok {
+		return &ErrTypeMismatchDetail{
+			Level:        level,
+			VariableName: varName,
+			ExpectedType: "array",
+			ActualType:   "string",
 		}
-
-		// Add to result map for subsequent variables to reference
-		expandedVars[parsedMapping.name] = expandedValue
 	}
 
-	return expandedVars, nil
+	// Check string length
+	if len(value) > MaxStringValueLen {
+		return &ErrValueTooLongDetail{
+			Level:        level,
+			VariableName: varName,
+			Length:       len(value),
+			MaxLength:    MaxStringValueLen,
+		}
+	}
+
+	return nil
+}
+
+// validateArrayVar validates an array variable.
+func validateArrayVar(
+	varName string,
+	value []interface{},
+	baseExpandedVars map[string]string,
+	level string,
+) error {
+	// Check if overriding a string variable with an array
+	if _, ok := baseExpandedVars[varName]; ok {
+		return &ErrTypeMismatchDetail{
+			Level:        level,
+			VariableName: varName,
+			ExpectedType: "string",
+			ActualType:   "array",
+		}
+	}
+
+	// Check array size
+	if len(value) > MaxArrayElements {
+		return &ErrArrayTooLargeDetail{
+			Level:        level,
+			VariableName: varName,
+			Count:        len(value),
+			MaxCount:     MaxArrayElements,
+		}
+	}
+
+	// Validate each array element
+	for i, elem := range value {
+		str, ok := elem.(string)
+		if !ok {
+			return &ErrInvalidArrayElementDetail{
+				Level:        level,
+				VariableName: varName,
+				Index:        i,
+				ExpectedType: "string",
+				ActualType:   fmt.Sprintf("%T", elem),
+			}
+		}
+		if len(str) > MaxStringValueLen {
+			return &ErrArrayElementTooLongDetail{
+				Level:        level,
+				VariableName: varName,
+				Index:        i,
+				Length:       len(str),
+				MaxLength:    MaxStringValueLen,
+			}
+		}
+	}
+
+	return nil
+}
+
+// expandVarsWithLazyResolution expands variables using lazy resolution.
+func expandVarsWithLazyResolution(
+	vars map[string]interface{},
+	stringVars map[string]string,
+	arrayVars map[string][]interface{},
+	baseExpandedVars map[string]string,
+	baseExpandedArrays map[string][]string,
+	level string,
+) (map[string]string, map[string][]string, error) {
+	// Start with copies of base variables
+	expandedStrings := maps.Clone(baseExpandedVars)
+	if expandedStrings == nil {
+		expandedStrings = make(map[string]string)
+	}
+	expandedArrays := maps.Clone(baseExpandedArrays)
+	if expandedArrays == nil {
+		expandedArrays = make(map[string][]string)
+	}
+
+	// Create expander for lazy variable resolution
+	expander := newVarExpander(expandedStrings, expandedArrays, vars, level)
+
+	// Expand string variables (order-independent due to lazy resolution)
+	for varName, rawValue := range stringVars {
+		expanded, err := expander.expandString(
+			rawValue,
+			fmt.Sprintf("vars.%s", varName),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		expandedStrings[varName] = expanded
+	}
+
+	// Expand array variables
+	for varName, rawArray := range arrayVars {
+		expandedArray := make([]string, len(rawArray))
+		for i, elem := range rawArray {
+			str := elem.(string) // Already validated in Phase 1
+
+			expanded, err := expander.expandString(
+				str,
+				fmt.Sprintf("vars.%s[%d]", varName, i),
+			)
+			if err != nil {
+				return nil, nil, err
+			}
+			expandedArray[i] = expanded
+		}
+		expandedArrays[varName] = expandedArray
+	}
+
+	return expandedStrings, expandedArrays, nil
 }
 
 // ProcessEnv processes env definitions and expands them using internal variables.
@@ -385,11 +817,12 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	}
 
 	// 2. Process Vars
-	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, "global")
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global vars: %w", err)
 	}
 	runtime.ExpandedVars = expandedVars
+	runtime.ExpandedArrayVars = expandedArrays
 
 	// 3. Expand Env
 	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, "global")
@@ -536,6 +969,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	// 1. Inherit global variables
 	if globalRuntime != nil {
 		maps.Copy(runtime.ExpandedVars, globalRuntime.ExpandedVars)
+		maps.Copy(runtime.ExpandedArrayVars, globalRuntime.ExpandedArrayVars)
 	}
 
 	// 2. Process FromEnv (group-level)
@@ -562,11 +996,12 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	}
 
 	// 3. Process Vars (group-level)
-	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, fmt.Sprintf("group[%s]", spec.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to process group[%s] vars: %w", spec.Name, err)
 	}
 	runtime.ExpandedVars = expandedVars
+	runtime.ExpandedArrayVars = expandedArrays
 
 	// 4. Expand Env
 	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
@@ -636,6 +1071,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 	// 1. Inherit group variables
 	if runtimeGroup != nil {
 		maps.Copy(runtime.ExpandedVars, runtimeGroup.ExpandedVars)
+		maps.Copy(runtime.ExpandedArrayVars, runtimeGroup.ExpandedArrayVars)
 	}
 
 	// 2. Process FromEnv (command-level)
@@ -666,11 +1102,12 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 	}
 
 	// 3. Process Vars (command-level)
-	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("command[%s]", spec.Name))
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, fmt.Sprintf("command[%s]", spec.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to process command[%s] vars: %w", spec.Name, err)
 	}
 	runtime.ExpandedVars = expandedVars
+	runtime.ExpandedArrayVars = expandedArrays
 
 	level := fmt.Sprintf("command[%s]", spec.Name)
 

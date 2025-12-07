@@ -201,8 +201,11 @@ func TestRunner_EnvironmentVariablePriority_WithVars(t *testing.T) {
 [global]
 env_import = ["USER=USER"]
 env_allowed = ["USER"]
-vars = ["myvar=%{USER}"]
 env_vars = ["HOME=%{myvar}"]
+
+[global.vars]
+myvar = "%{USER}"
+
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -219,16 +222,24 @@ args = ["HOME"]
 			systemEnv: map[string]string{},
 			configTOML: `
 [global]
-vars = ["v=global"]
+
+[global.vars]
+v = "global"
+
 [[groups]]
 name = "test_group"
-vars = ["v=group"]
+
+[groups.vars]
+v = "group"
+
 [[groups.commands]]
 name = "test"
 cmd = "echo"
 args = ["test"]
-vars = ["v=command"]
 env_vars = ["RESULT=%{v}"]
+
+[groups.commands.vars]
+v = "command"
 `,
 			expectVars: map[string]string{
 				"RESULT": "command",
@@ -243,10 +254,16 @@ env_vars = ["RESULT=%{v}"]
 [global]
 env_import = ["HOME=HOME"]
 env_allowed = ["HOME"]
-vars = ["gv2=%{HOME}/global"]
+
+[global.vars]
+gv2 = "%{HOME}/global"
+
 [[groups]]
 name = "test_group"
-vars = ["gv3=%{gv2}/group"]
+
+[groups.vars]
+gv3 = "%{gv2}/group"
+
 [[groups.commands]]
 name = "test"
 cmd = "echo"
@@ -388,18 +405,28 @@ func TestRunner_ResolveEnvironmentVars_Integration(t *testing.T) {
 [global]
 env_import = ["HOME=HOME", "USER=USER"]
 env_allowed = ["HOME", "USER"]
-vars = ["base=%{HOME}/app"]
 env_vars = ["APP_BASE=%{base}"]
+
+[global.vars]
+base = "%{HOME}/app"
+
 [[groups]]
 name = "test_group"
-vars = ["rel_path=data", "data_dir=%{base}/%{rel_path}"]
 env_vars = ["DATA_DIR=%{data_dir}"]
+
+[groups.vars]
+rel_path = "data"
+data_dir = "%{base}/%{rel_path}"
+
 [[groups.commands]]
 name = "test"
 cmd = "echo"
 args = ["%{data_dir}"]
-vars = ["filename=output.txt", "output=%{data_dir}/%{filename}"]
 env_vars = ["OUTPUT=%{output}"]
+
+[groups.commands.vars]
+filename = "output.txt"
+output = "%{data_dir}/%{filename}"
 `
 
 	cfg := configSetupHelper(t, systemEnv, configTOML)

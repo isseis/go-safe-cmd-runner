@@ -26,9 +26,8 @@ timeout = 60
 env_import = ["home=HOME"]
 
 # Define custom variables
-vars = [
-    "custom_tools=/opt/myproject/bin"
-]
+[global.vars]
+custom_tools = "/opt/myproject/bin"
 
 # Group using global allowed_commands only
 [[groups]]

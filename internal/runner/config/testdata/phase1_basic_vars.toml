@@ -1,16 +1,22 @@
 [global]
 env_allowed = ["HOME", "PATH"]
 env_import = ["home=HOME", "path=PATH"]
-vars = ["app_dir=/opt/myapp"]
 env_vars = ["BASE_DIR=%{app_dir}"]
+
+[global.vars]
+app_dir = "/opt/myapp"
 
 [[groups]]
 name = "test_group"
-vars = ["log_dir=%{app_dir}/logs"]
 env_vars = ["LOG_DIR=%{log_dir}"]
+
+[groups.vars]
+log_dir = "%{app_dir}/logs"
 
 [[groups.commands]]
 name = "test_cmd"
-vars = ["temp_file=%{log_dir}/temp.log"]
 cmd = "/bin/echo"
 args = ["%{temp_file}"]
+
+[groups.commands.vars]
+temp_file = "%{log_dir}/temp.log"

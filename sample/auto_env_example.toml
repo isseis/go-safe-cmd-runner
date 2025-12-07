@@ -102,10 +102,9 @@ args = [
     "-c",
     "echo 'Backup %{backup_name} created at %{backup_path}'"
 ]
-vars = [
-    "backup_name=database",
-    "backup_path=/tmp/backup/%{backup_name}-%{__runner_datetime}.tar.gz"
-]
+[groups.commands.vars]
+backup_name = "database"
+backup_path = "/tmp/backup/%{backup_name}-%{__runner_datetime}.tar.gz"
 # Output example: Backup database created at /tmp/backup/database-20251005143022.123.tar.gz
 
 [[groups]]

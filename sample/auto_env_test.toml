@@ -44,14 +44,16 @@ name = "user_and_auto"
 description = "Combine auto variables with user vars in expansion"
 cmd = "echo"
 args = ["User=%{user}, DateTime=%{__runner_datetime}, PID=%{__runner_pid}"]
-vars = ["user=testuser"]
+[groups.commands.vars]
+user = "testuser"
 
 [[groups.commands]]
 name = "multiple_vars"
 description = "Multiple variables in single argument"
 cmd = "echo"
 args = ["Base: %{base_path}/log-%{__runner_datetime}.txt"]
-vars = ["base_path=/var/log"]
+[groups.commands.vars]
+base_path = "/var/log"
 
 # Group 3: File operations with auto variables
 [[groups]]
@@ -86,7 +88,6 @@ name = "log_with_metadata"
 description = "Log file with multiple variables"
 cmd = "echo"
 args = ["Log: %{user}@%{host}-%{__runner_datetime}-%{__runner_pid}.log"]
-vars = [
-    "user=admin",
-    "host=server01"
-]
+[groups.commands.vars]
+user = "admin"
+host = "server01"

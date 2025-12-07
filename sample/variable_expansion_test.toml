@@ -21,7 +21,8 @@ name = "echo_with_var_cmd"
 description = "Use echo command via path variable"
 cmd = "%{path}"
 args = ["Command path from path variable"]
-vars = ["path=/bin/echo"]
+[groups.commands.vars]
+path = "/bin/echo"
 
 # Group 2: Basic variable expansion in args
 [[groups]]
@@ -33,18 +34,18 @@ name = "echo_with_var_args"
 description = "Echo message with variable in args"
 cmd = "echo"
 args = ["Hello, %{user}!"]
-vars = ["user=TestUser"]
+[groups.commands.vars]
+user = "TestUser"
 
 [[groups.commands]]
 name = "echo_multiple_vars"
 description = "Echo with multiple variables in args"
 cmd = "echo"
 args = ["Base: %{base_path}", "File: %{filename}.%{extension}"]
-vars = [
-    "base_path=/home/test",
-    "filename=data",
-    "extension=txt"
-]
+[groups.commands.vars]
+base_path = "/home/test"
+filename = "data"
+extension = "txt"
 
 # Group 3: Combined cmd and args expansion
 [[groups]]
@@ -56,10 +57,9 @@ name = "full_expansion_test"
 description = "Expand variables in both cmd and args"
 cmd = "%{path}"
 args = ["Variable test: %{test_var}"]
-vars = [
-    "path=/bin/echo",
-    "test_var=success"
-]
+[groups.commands.vars]
+path = "/bin/echo"
+test_var = "success"
 
 # Group 4: Nested variable expansion
 [[groups]]
@@ -71,10 +71,9 @@ name = "nested_vars"
 description = "Use nested variable expansion"
 cmd = "echo"
 args = ["Nested: %{test_var}"]
-vars = [
-    "user=testuser",
-    "test_var=%{user}_nested"
-]
+[groups.commands.vars]
+user = "testuser"
+test_var = "%{user}_nested"
 
 # Group 5: Escape sequence test
 [[groups]]
@@ -92,5 +91,4 @@ name = "escaped_backslash"
 description = "Test escaped backslash before variable"
 cmd = "echo"
 args = ["Path: \\\\%{home}"]
-vars = []
 env_import = ["home=HOME"]

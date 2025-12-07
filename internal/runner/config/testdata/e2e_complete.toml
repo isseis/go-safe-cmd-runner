@@ -5,7 +5,6 @@
 [global]
 env_allowed = ["HOME", "USER", "PATH"]
 env_import = ["home=HOME", "user=USER", "path=PATH"]
-vars = ["base_dir=/opt/app"]
 env_vars = [
     "BASE_DIR=%{base_dir}",
     "LOG_LEVEL=info",
@@ -13,13 +12,11 @@ env_vars = [
 ]
 verify_files = ["%{base_dir}/verify.sh"]
 
+[global.vars]
+base_dir = "/opt/app"
+
 [[groups]]
 name = "database"
-vars = [
-    "db_host=localhost",
-    "db_port=5432",
-    "db_data=%{base_dir}/db-data"
-]
 env_vars = [
     "DB_HOST=%{db_host}",
     "DB_PORT=%{db_port}",
@@ -27,12 +24,19 @@ env_vars = [
 ]
 verify_files = ["%{db_data}/schema.sql"]
 
+[groups.vars]
+db_host = "localhost"
+db_port = "5432"
+db_data = "%{base_dir}/db-data"
+
 [[groups.commands]]
 name = "migrate"
 cmd = "%{base_dir}/bin/migrate"
 args = ["-h", "%{db_host}", "-p", "%{db_port}"]
-vars = ["migration_dir=%{db_data}/migrations"]
 env_vars = ["MIGRATION_DIR=%{migration_dir}"]
+
+[groups.commands.vars]
+migration_dir = "%{db_data}/migrations"
 
 [[groups]]
 name = "web"
@@ -40,8 +44,10 @@ env_allowed = ["PORT"]  # Override: only PORT allowed
 # Note: When from_env is specified, global from_env is merged
 # So global vars (home, user, path) are inherited and can be referenced
 env_import = ["port=PORT"]
-vars = ["web_dir=/opt/app/web"]
 env_vars = ["WEB_DIR=%{web_dir}"]
+
+[groups.vars]
+web_dir = "/opt/app/web"
 
 [[groups.commands]]
 name = "start"
