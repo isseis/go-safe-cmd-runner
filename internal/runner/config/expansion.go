@@ -497,7 +497,8 @@ func ProcessVars(
 ) (map[string]string, map[string][]string, error) {
 	// Handle nil vars map
 	if vars == nil {
-		return cloneBaseVars(baseExpandedVars, baseExpandedArrays)
+		s, a := cloneBaseVars(baseExpandedVars, baseExpandedArrays)
+		return s, a, nil
 	}
 
 	// Check total variable count
@@ -523,7 +524,7 @@ func ProcessVars(
 func cloneBaseVars(
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
-) (map[string]string, map[string][]string, error) {
+) (map[string]string, map[string][]string) {
 	expandedStrings := maps.Clone(baseExpandedVars)
 	if expandedStrings == nil {
 		expandedStrings = make(map[string]string)
@@ -532,7 +533,7 @@ func cloneBaseVars(
 	if expandedArrays == nil {
 		expandedArrays = make(map[string][]string)
 	}
-	return expandedStrings, expandedArrays, nil
+	return expandedStrings, expandedArrays
 }
 
 // validateAndClassifyVars validates all variables and classifies them by type.
