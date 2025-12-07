@@ -519,3 +519,112 @@ func TestCircularReference_ValidComplexReferences(t *testing.T) {
 		})
 	}
 }
+
+// TestCircularReference_CommandVarsToGroupVars tests references from command vars to group vars
+// This tests the case where [groups.commands.vars] appears after [[groups]] in TOML,
+// but command vars should still be able to reference group vars defined earlier.
+func TestCircularReference_CommandVarsToGroupVars(t *testing.T) {
+	tests := []struct {
+		name        string
+		group       *runnertypes.GroupSpec
+		command     *runnertypes.CommandSpec
+		wantErr     error
+		checkVar    string // Variable to check in expanded command
+		wantVal     string // Expected value
+		description string
+	}{
+		{
+			name: "command vars reference group vars - valid",
+			group: &runnertypes.GroupSpec{
+				Name: "test",
+				Vars: map[string]any{"GROUP_VAR": "group_value"},
+			},
+			command: &runnertypes.CommandSpec{
+				Name: "test",
+				Cmd:  "/bin/test",
+				Vars: map[string]any{
+					"CMD_VAR": "%{GROUP_VAR}",
+				},
+			},
+			wantErr:     nil,
+			checkVar:    "CMD_VAR",
+			wantVal:     "group_value",
+			description: "Command vars can reference group vars defined in [[groups]] section",
+		},
+		{
+			name: "group vars reference command vars - should fail",
+			group: &runnertypes.GroupSpec{
+				Name: "test",
+				Vars: map[string]any{"GROUP_VAR": "%{CMD_VAR}"},
+			},
+			command: &runnertypes.CommandSpec{
+				Name: "test",
+				Cmd:  "/bin/test",
+				Vars: map[string]any{
+					"CMD_VAR": "cmd_value",
+				},
+			},
+			wantErr:     config.ErrUndefinedVariable,
+			description: "Group vars cannot reference command vars (command vars not yet defined)",
+		},
+		{
+			name: "command vars reference group vars in chain",
+			group: &runnertypes.GroupSpec{
+				Name: "test",
+				Vars: map[string]any{
+					"BASE":    "base",
+					"DERIVED": "%{BASE}_derived",
+				},
+			},
+			command: &runnertypes.CommandSpec{
+				Name: "test",
+				Cmd:  "/bin/test",
+				Vars: map[string]any{
+					"CMD_VAR": "%{DERIVED}_cmd",
+				},
+			},
+			wantErr:     nil,
+			checkVar:    "CMD_VAR",
+			wantVal:     "base_derived_cmd",
+			description: "Command vars can reference group vars that themselves reference other group vars",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// First expand global (empty)
+			runtimeGlobal := &runnertypes.RuntimeGlobal{
+				Spec:         &runnertypes.GlobalSpec{},
+				ExpandedVars: make(map[string]string),
+			}
+
+			// Then expand group
+			runtimeGroup, err := config.ExpandGroup(tt.group, runtimeGlobal)
+			if err != nil {
+				// If group expansion fails, check if that's expected
+				if tt.wantErr != nil {
+					assert.True(t, errors.Is(err, tt.wantErr), "Expected error type %v, got %v", tt.wantErr, err)
+					return
+				}
+				require.NoError(t, err, "Group expansion should succeed: %v", err)
+			}
+
+			// Finally expand command
+			runtimeCmd, err := config.ExpandCommand(tt.command, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			if tt.wantErr != nil {
+				require.Error(t, err, "Expected error in command expansion")
+				assert.True(t, errors.Is(err, tt.wantErr), "Expected error type %v, got %v", tt.wantErr, err)
+				return
+			}
+
+			require.NoError(t, err, "Command expansion should succeed: %v", err)
+			require.NotNil(t, runtimeCmd)
+
+			// Check the expanded variable value
+			if tt.checkVar != "" {
+				assert.Equal(t, tt.wantVal, runtimeCmd.ExpandedVars[tt.checkVar],
+					"Variable %s should have expected value", tt.checkVar)
+			}
+		})
+	}
+}
