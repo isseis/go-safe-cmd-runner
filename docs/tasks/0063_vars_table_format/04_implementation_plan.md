@@ -368,13 +368,13 @@ graph TD
 
 ### 3.8 Phase 8: ドキュメント更新
 
-- [ ] `README.md`
-- [ ] `README.ja.md`
-- [ ] `docs/user/toml_config/04_global_level.md`
-- [ ] `docs/user/toml_config/04_global_level.ja.md`
-- [ ] `docs/user/toml_config/07_variable_expansion.md`
-- [ ] `docs/user/toml_config/07_variable_expansion.ja.md`
-- [ ] `CHANGELOG.md`
+- [x] `README.md` - varsの例なし、更新不要
+- [x] `README.ja.md` - varsの例なし、更新不要
+- [x] `docs/user/toml_config/04_global_level.md` - 主要な例を更新完了
+- [-] `docs/user/toml_config/04_global_level.ja.md` - 後続タスクで日本語版を対応
+- [x] `docs/user/toml_config/07_variable_expansion.md` - 主要な包括的例を更新完了
+- [-] `docs/user/toml_config/07_variable_expansion.ja.md` - 後続タスクで日本語版を対応
+- [x] `CHANGELOG.md` - 破壊的変更を記載完了
 
 ## 4. リスクと対策
 
@@ -398,10 +398,10 @@ graph TD
 
 ## 6. 完了条件
 
-- [ ] 全ての Phase のチェックリスト項目が完了
-- [ ] `make test` が成功
-- [ ] `make lint` が成功（警告なし）
-- [ ] `make build` が成功
-- [ ] 新形式のサンプルファイルで動作確認
-- [ ] ドキュメントのレビュー完了
-- [ ] CHANGELOG.md に変更を記載
+- [x] 全ての Phase のチェックリスト項目が完了（日本語ドキュメントは後続タスク）
+- [x] `make test` が成功
+- [x] `make lint` が成功（警告なし）
+- [x] `make build` が成功
+- [x] 新形式のサンプルファイルで動作確認
+- [-] ドキュメントのレビュー完了（英語版完了、日本語版は後続タスク）
+- [x] CHANGELOG.md に変更を記載

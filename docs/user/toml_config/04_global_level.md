@@ -275,21 +275,23 @@ Defines internal variables for expansion within the TOML configuration file. Int
 ### Syntax
 
 ```toml
-[global]
-vars = ["var1=value1", "var2=value2", ...]
+[global.vars]
+var1 = "value1"
+var2 = "value2"
 ```
 
 ### Parameter Details
 
 | Item | Description |
 |------|-------------|
-| **Type** | Array of strings (array of strings) |
+| **Type** | TOML table (map[string]interface{}) |
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Group, Command |
-| **Default Value** | [] (no variables) |
-| **Format** | `"variable_name=value"` format |
+| **Default Value** | {} (no variables) |
+| **Format** | TOML table format: `key = "value"` or `key = ["value1", "value2"]` |
 | **Reference Syntax** | `%{variable_name}` |
 | **Scope** | Global vars can be referenced from all groups and commands |
+| **Supported Types** | String values and string arrays |
 
 ### Role
 
@@ -305,11 +307,9 @@ vars = ["var1=value1", "var2=value2", ...]
 ```toml
 version = "1.0"
 
-[global]
-vars = [
-    "app_dir=/opt/myapp",
-    "config_file=%{app_dir}/config.yml"
-]
+[global.vars]
+app_dir = "/opt/myapp"
+config_file = "%{app_dir}/config.yml"
 
 [[groups]]
 name = "app_group"
@@ -326,14 +326,12 @@ args = ["%{config_file}"]
 ```toml
 version = "1.0"
 
-[global]
-vars = [
-    "base=/opt",
-    "app_root=%{base}/myapp",
-    "bin_dir=%{app_root}/bin",
-    "data_dir=%{app_root}/data",
-    "log_dir=%{app_root}/logs"
-]
+[global.vars]
+base = "/opt"
+app_root = "%{base}/myapp"
+bin_dir = "%{app_root}/bin"
+data_dir = "%{app_root}/data"
+log_dir = "%{app_root}/logs"
 
 [[groups]]
 name = "deployment"
@@ -350,11 +348,11 @@ args = ["--data", "%{data_dir}", "--log", "%{log_dir}"]
 ```toml
 version = "1.0"
 
+[global.vars]
+app_dir = "/opt/myapp"
+config_path = "%{app_dir}/config.yml"
+
 [global]
-vars = [
-    "app_dir=/opt/myapp",
-    "config_path=%{app_dir}/config.yml"
-]
 env_vars = [
     "APP_HOME=%{app_dir}",           # Define process environment variable using internal variable
     "CONFIG_FILE=%{config_path}"     # Pass config file path as environment variable
@@ -398,8 +396,8 @@ vars = [
 Variables defined in `vars` are not passed as environment variables to child processes by default:
 
 ```toml
-[global]
-vars = ["secret_key=abc123"]
+[global.vars]
+secret_key = "abc123"
 
 [[groups.commands]]
 name = "test"
@@ -411,8 +409,10 @@ args = ["secret_key"]
 To pass to child process, explicitly define in `env_vars` field:
 
 ```toml
+[global.vars]
+secret_key = "abc123"
+
 [global]
-vars = ["secret_key=abc123"]
 env_vars = ["SECRET_KEY=%{secret_key}"]  # Define process environment variable using internal variable
 
 [[groups.commands]]
@@ -427,11 +427,9 @@ args = ["SECRET_KEY"]
 Creating circular references between variables results in an error:
 
 ```toml
-[global]
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}"  # Error: circular reference
-]
+[global.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # Error: circular reference
 ```
 
 #### 3. Undefined Variable References
@@ -439,8 +437,8 @@ vars = [
 Referencing undefined variables results in an error:
 
 ```toml
-[global]
-vars = ["app_dir=/opt/app"]
+[global.vars]
+app_dir = "/opt/app"
 
 [[groups.commands]]
 name = "test"

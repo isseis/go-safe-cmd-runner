@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### BREAKING CHANGE: Vars Configuration Format
+
+**What Changed:**
+The `vars` field configuration format has been changed from an array of strings to a TOML table format.
+
+**Old Format (Deprecated):**
+```toml
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "config_file=%{app_dir}/config.yml"
+]
+
+[[groups]]
+name = "example"
+vars = ["backup_dir=/var/backups"]
+
+[[groups.commands]]
+name = "backup"
+vars = ["timestamp=20250114"]
+```
+
+**New Format (Required):**
+```toml
+[global.vars]
+app_dir = "/opt/myapp"
+config_file = "%{app_dir}/config.yml"
+
+[[groups]]
+name = "example"
+
+[groups.vars]
+backup_dir = "/var/backups"
+
+[[groups.commands]]
+name = "backup"
+
+[groups.commands.vars]
+timestamp = "20250114"
+```
+
+**Migration Guide:**
+1. Global level: Change `[global] vars = [...]` to `[global.vars]` table
+2. Group level: Change `[[groups]] vars = [...]` to `[groups.vars]` table
+3. Command level: Change `[[groups.commands]] vars = [...]` to `[groups.commands.vars]` table
+4. Convert each `"key=value"` array entry to `key = "value"` table entry
+
+**Why This Change:**
+- Improved TOML compliance and readability
+- Better support for complex value types (strings, arrays, nested tables)
+- Consistent with standard TOML practices
+- Easier validation and error reporting
+
 ### Added
 
 #### Group-Level Command Allowlist (`cmd_allowed`)
