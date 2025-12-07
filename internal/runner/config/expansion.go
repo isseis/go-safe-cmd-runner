@@ -63,12 +63,12 @@ func ExpandString(
 	field string,
 ) (string, error) {
 	visited := make(map[string]struct{})
-	return expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
+	return resolveAndExpand(input, expandedVars, level, field, visited, nil, 0)
 }
 
-// expandStringRecursive performs recursive expansion with circular reference detection.
-// It wraps expandStringWithResolver with a resolver that looks up variables from expandedVars.
-func expandStringRecursive(
+// resolveAndExpand resolves variable references from expandedVars and expands them recursively.
+// It creates a resolver that looks up variables from the provided map and delegates to parseAndSubstitute.
+func resolveAndExpand(
 	input string,
 	expandedVars map[string]string,
 	level string,
@@ -101,7 +101,7 @@ func expandStringRecursive(
 		resolverVisited[varName] = struct{}{}
 
 		// Recursively expand the value
-		expandedValue, err := expandStringRecursive(
+		expandedValue, err := resolveAndExpand(
 			value,
 			expandedVars,
 			level,
@@ -120,10 +120,10 @@ func expandStringRecursive(
 		return expandedValue, nil
 	}
 
-	return expandStringWithResolver(input, resolver, level, field, visited, expansionChain, depth)
+	return parseAndSubstitute(input, resolver, level, field, visited, expansionChain, depth)
 }
 
-// expandStringWithResolver performs recursive variable expansion using a custom resolver.
+// parseAndSubstitute parses variable references and performs substitution using a custom resolver.
 // This is the core expansion logic shared by both ExpandString and varExpander.
 //
 // Parameters:
@@ -138,7 +138,7 @@ func expandStringRecursive(
 // Returns:
 //   - string: the fully expanded string
 //   - error: expansion error (syntax error, undefined variable, circular reference, etc.)
-func expandStringWithResolver(
+func parseAndSubstitute(
 	input string,
 	resolver variableResolver,
 	level string,
@@ -351,7 +351,7 @@ func (e *varExpander) expandString(input string, field string) (string, error) {
 	visited := make(map[string]struct{})
 	expansionChain := make([]string, 0)
 
-	// Use expandStringWithResolver with varExpander's resolver
+	// Use parseAndSubstitute with varExpander's resolver
 	resolver := func(
 		varName string,
 		resolverField string,
@@ -362,7 +362,7 @@ func (e *varExpander) expandString(input string, field string) (string, error) {
 		return e.resolveVariable(varName, resolverField, resolverVisited, resolverChain, resolverDepth)
 	}
 
-	return expandStringWithResolver(input, resolver, e.level, field, visited, expansionChain, 0)
+	return parseAndSubstitute(input, resolver, e.level, field, visited, expansionChain, 0)
 }
 
 // resolveVariable looks up and expands a variable by name.
@@ -419,7 +419,7 @@ func (e *varExpander) resolveVariable(
 		}
 
 		// Expand the raw value using the shared expansion logic
-		expanded, err := expandStringWithResolver(
+		expanded, err := parseAndSubstitute(
 			rv,
 			resolver,
 			e.level,
