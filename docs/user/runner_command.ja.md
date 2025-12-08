@@ -1451,6 +1451,32 @@ runner -config config.toml -dry-run -dry-run-detail detailed
 runner -config config.toml -dry-run -dry-run-detail full
 ```
 
+**Dry-Run出力とログの分離**
+
+dry-runモードでは、runnerコマンドは出力先を分離して使いやすくしています:
+
+- **標準出力 (stdout)**: Dry-run解析結果（テキストまたはJSON形式）
+- **標準エラー出力 (stderr)**: 実行ログ（slogメッセージ）
+
+この分離により、以下のような使い方ができます:
+
+```bash
+# dry-run出力のみをファイルに保存
+runner -config config.toml -dry-run > dryrun-report.txt
+
+# ログのみをファイルに保存
+runner -config config.toml -dry-run 2> execution.log
+
+# 両方を別々のファイルに保存
+runner -config config.toml -dry-run > dryrun-report.txt 2> execution.log
+
+# dry-run出力のみを表示（ログを抑制）
+runner -config config.toml -dry-run 2>/dev/null
+
+# ログのみを表示（dry-run出力を抑制）
+runner -config config.toml -dry-run 2>&1 1>/dev/null
+```
+
 **JSON出力での解析**
 
 ```bash

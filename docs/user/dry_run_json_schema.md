@@ -4,6 +4,12 @@
 
 This document defines the data structures output in JSON format during dry-run execution of the `runner` command.
 
+**Output Streams**: In dry-run mode, the runner command separates output streams:
+- **stdout**: Dry-run JSON output (defined by this schema)
+- **stderr**: Execution logs (slog messages)
+
+This separation allows you to redirect dry-run output and logs independently. See the [runner Command User Guide](runner_command.md) for usage examples.
+
 ## Related Documents
 
 - [runner Command User Guide](runner_command.md)

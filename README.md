@@ -73,6 +73,7 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Output Capture**: Save command output to files with secure permissions
 - **Background Execution**: Support for long-running processes with signal handling
 - **Extended Dry Run**: Realistic simulation with comprehensive security analysis
+  - Separate output streams: stdout for dry-run results, stderr for execution logs
   - `--dry-run-format=json`: JSON output for machine processing with debug information
   - `--dry-run-detail=full`: Display final environment variables with their origins and inheritance analysis
   - `--show-sensitive`: Show sensitive information in plain text (for debugging, use with caution)

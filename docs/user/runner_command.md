@@ -1477,6 +1477,32 @@ runner -config config.toml -dry-run -dry-run-detail detailed
 runner -config config.toml -dry-run -dry-run-detail full
 ```
 
+**Dry-Run Output and Log Separation**
+
+In dry-run mode, the runner command separates output destinations for better usability:
+
+- **stdout**: Dry-run analysis output (text or JSON format)
+- **stderr**: Execution logs (slog messages)
+
+This separation allows you to:
+
+```bash
+# Save only dry-run output to a file
+runner -config config.toml -dry-run > dryrun-report.txt
+
+# Save only logs to a file
+runner -config config.toml -dry-run 2> execution.log
+
+# Save both to separate files
+runner -config config.toml -dry-run > dryrun-report.txt 2> execution.log
+
+# View only dry-run output (suppress logs)
+runner -config config.toml -dry-run 2>/dev/null
+
+# View only logs (suppress dry-run output)
+runner -config config.toml -dry-run 2>&1 1>/dev/null
+```
+
 **Analysis with JSON Output**
 
 ```bash
