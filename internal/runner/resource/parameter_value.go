@@ -58,21 +58,16 @@ func anyToParameterValue(v any) ParameterValue {
 		return NewIntValue(val)
 	case []any:
 		// Check if it's a string slice (all values are strings)
-		strSlice := make([]string, 0, len(val))
-		allStrings := true
-		for _, v := range val {
-			if str, ok := v.(string); ok {
-				strSlice = append(strSlice, str)
-			} else {
-				allStrings = false
-				break
+		strSlice := make([]string, len(val))
+		for i, v := range val {
+			str, ok := v.(string)
+			if !ok {
+				// Otherwise treat as generic any value
+				return NewAnyValue(val)
 			}
+			strSlice[i] = str
 		}
-		if allStrings {
-			return NewStringSliceValue(strSlice)
-		}
-		// Otherwise treat as generic any value
-		return NewAnyValue(val)
+		return NewStringSliceValue(strSlice)
 	case map[string]any:
 		// Check if it's a string map (all values are strings)
 		strMap := make(map[string]string)
