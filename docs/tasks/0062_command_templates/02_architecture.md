@@ -20,8 +20,8 @@
 ```mermaid
 graph TD
     A["TOML Configuration<br/>[command_templates.restic_backup]<br/>cmd = 'restic'<br/>args = ['${@verbose_flags}', 'backup', '${path}']<br/><br/>[[groups.commands]]<br/>template = 'restic_backup'<br/>params.verbose_flags = ['-q']<br/>params.path = '%{backup_dir}/data'"]
-    B["Config Loader<br/>(internal/runner/config/loader.go)<br/><br/>1. TOML Parse<br/>2. CommandTemplate Extraction<br/>3. Template Name Validation"]
-    C["Template Expansion Module (NEW)<br/>(internal/runner/config/template_expansion.go)<br/><br/>Phase 1: Template Definition Validation<br/>- %{ pattern rejection (NF-006)<br/>- Template name validation<br/><br/>Phase 2: Template Expansion<br/>- ${param} → String replacement<br/>- ${?param} → Optional replacement<br/>- ${@list} → Array expansion<br/>- \\$ → Literal $ (consistent with \\%)"]
+    B["Config Loader<br/>(internal/runner/config/loader.go)<br/><br/>1. TOML Parse<br/>2. CommandTemplate Extraction<br/>3. Template Definition Validation (Fail-Fast)<br/>   - Name/duplicate/reserved check<br/>   - 'name' field rejection<br/>   - %{ pattern rejection (NF-006)"]
+    C["Template Expansion Module (NEW)<br/>(internal/runner/config/template_expansion.go)<br/><br/>Phase 1: Parameter Validation<br/>- Required params check<br/>- Unused params warning<br/><br/>Phase 2: Template Expansion<br/>- ${param} → String replacement<br/>- ${?param} → Optional replacement<br/>- ${@list} → Array expansion<br/>- \\$ → Literal $ (consistent with \\%)"]
     D["Variable Expansion (Existing)<br/>(internal/runner/config/expansion.go)<br/><br/>- %{var} expansion<br/>- Circular reference detection<br/>- Max recursion depth check"]
     E["Security Validation (Existing)<br/>(internal/runner/security/validator.go)<br/><br/>- cmd_allowed / AllowedCommands check<br/>- Dangerous pattern detection<br/>- Environment variable validation"]
     F["RuntimeCommand<br/>(internal/runner/runnertypes/runtime.go)<br/><br/>ExpandedCmd: '/usr/bin/restic'<br/>ExpandedArgs: ['-q', 'backup', '/data/backups/data']"]
@@ -39,10 +39,10 @@ graph TD
 graph TD
     A["設定ファイル読み込み時"]
     B["TOML ファイルパース<br/>Input: TOML file content<br/>Output: ConfigSpec with CommandTemplates map"]
-    C["テンプレート定義の検証<br/>- Template name validation<br/>- Duplicate detection<br/>- Reserved name check"]
+    C["テンプレート定義の検証 (Fail-Fast)<br/>- Template name validation<br/>- Duplicate detection<br/>- Reserved name check<br/>- 'name' field rejection<br/>- %{ pattern rejection (NF-006)"]
     D["コマンド展開時<br/>(ExpandCommand 呼び出し時)"]
     E["Step 1: テンプレート参照の解決<br/>template = 'restic_backup' → CommandTemplate 取得"]
-    F["Step 2: テンプレート定義検証<br/>- %{ pattern rejection (NF-006)<br/>- Required params check"]
+    F["Step 2: パラメータ検証<br/>- Required params check<br/>- Unused params warning"]
     G["Step 3: テンプレートパラメータ展開<br/>Template: args = ['${@verbose_flags}', 'backup', '${path}']<br/>Params: verbose_flags = ['-q'], path = '%{backup_dir}/data'<br/>Result: args = ['-q', 'backup', '%{backup_dir}/data']"]
     H["Step 4: %{var} 変数展開（既存処理）<br/>Input: args = ['-q', 'backup', '%{backup_dir}/data']<br/>Vars: backup_dir = '/data/backups'<br/>Output: args = ['-q', 'backup', '/data/backups/data']"]
     I["Step 5: セキュリティ検証（既存処理）<br/>- cmd_allowed / AllowedCommands check<br/>- Dangerous pattern detection<br/>- Environment variable validation"]
@@ -59,6 +59,59 @@ graph TD
     I --> J
 ```
 
+### 2.3 検証タイミングの設計
+
+テンプレート機能における検証は、**Fail-Fast** の原則に従い、2つのタイミングで実行される：
+
+#### Phase 1: 設定ファイル読み込み時（ノードC）
+
+**目的**: テンプレート定義自体の静的検証（実行前に検出可能なエラーを即座に報告）
+
+**検証項目**:
+1. **Template name validation** - テンプレート名が変数命名規則に準拠
+2. **Duplicate detection** - 同名テンプレートの重複検出
+3. **Reserved name check** - `__` で始まる予約名の使用禁止
+4. **'name' field rejection** - テンプレート定義に `name` フィールドが含まれる場合はエラー
+5. **%{ pattern rejection (NF-006)** - テンプレート定義の `cmd`, `args`, `env`, `workdir` に `%{` が含まれる場合はエラー
+
+**理由**: これらは設定ファイルの構造的な問題であり、コマンド実行前に検出すべき
+
+**例**:
+```toml
+# ❌ 設定ファイル読み込み時にエラー
+[command_templates.bad_template]
+cmd = "restic"
+args = ["%{group_root}/data"]  # NF-006違反 → 即座にエラー
+```
+
+#### Phase 2: コマンド展開時（ノードF）
+
+**目的**: テンプレート使用時のパラメータ検証（実行時にしか判断できない項目）
+
+**検証項目**:
+1. **Required params check** - テンプレートで使用されている必須パラメータ（`${param}`）が全て提供されているか
+2. **Unused params warning** - 提供されたが使用されていないパラメータの警告
+
+**理由**: どのパラメータが必要かは、どのテンプレートが使用されるかに依存するため、展開時にしか判断できない
+
+**例**:
+```toml
+# ✓ テンプレート定義は正常
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+
+# ❌ コマンド展開時にエラー
+[[groups.commands]]
+template = "restic_backup"
+# params.path がない → 展開時にエラー
+```
+
+**設計原則**:
+- **Static before Dynamic**: 静的に検証できるものは早期に検証
+- **Clear Separation**: テンプレート定義の検証 vs. テンプレート使用の検証
+- **Fast Feedback**: 設定ミスは可能な限り早く報告
+
 ## 3. モジュール構成
 
 ### 3.1 新規モジュール
@@ -66,9 +119,10 @@ graph TD
 ```
 internal/runner/
 ├── config/
-│   ├── loader.go                    # 修正: テンプレート読み込み追加
+│   ├── loader.go                    # 修正: テンプレート読み込み・静的検証追加
 │   ├── template_expansion.go        # 新規: テンプレート展開ロジック
 │   ├── template_expansion_test.go   # 新規: テンプレート展開テスト
+│   ├── template_validation.go       # 新規: テンプレート定義の静的検証
 │   └── expansion.go                 # 修正: ExpandCommand にテンプレート統合
 └── runnertypes/
     └── spec.go                      # 修正: CommandTemplate 型追加
@@ -78,17 +132,20 @@ internal/runner/
 
 ```mermaid
 graph TB
-    A["loader.go<br/>(TOML parsing)"]
+    A["loader.go<br/>(TOML parsing<br/>+ static validation)"]
     B["runnertypes/spec.go<br/>(Type definitions)"]
-    C["template_expansion.go<br/>(Template parameter expansion)"]
-    D["expansion.go<br/>(%{var} expansion<br/>ExpandCommand integration)"]
-    E["security/validator.go<br/>(Security validation)"]
+    C["template_validation.go<br/>(Static validation:<br/>name/duplicate/%{ check)"]
+    D["template_expansion.go<br/>(Template parameter expansion<br/>+ runtime validation)"]
+    E["expansion.go<br/>(%{var} expansion<br/>ExpandCommand integration)"]
+    F["security/validator.go<br/>(Security validation)"]
 
-    A -->|uses| C
+    A -->|calls| C
+    A -->|uses| B
     C -->|uses| B
+    E -->|calls| D
     D -->|uses| B
-    D -->|calls| C
-    D -->|uses| E
+    E -->|uses| B
+    E -->|uses| F
 ```
 
 ## 4. 展開処理の設計
