@@ -188,7 +188,7 @@ graph TD
     B["ErrTemplateNotFound"]
     C["ErrDuplicateTemplateName"]
     D["ErrReservedTemplateName"]
-    E["ErrTemplateFieldConflict"]
+    E["ErrTemplateFieldConflict<br/>(Field property: 'cmd', 'args', 'env', 'workdir')"]
     F1["ErrTemplateContainsNameField"]
     F2["ErrTemplateContainsForbiddenPattern"]
 
@@ -207,12 +207,6 @@ graph TD
     Q1["ErrInvalidPlaceholderName"]
     R1["ErrArrayInMixedContext"]
     S1["ErrMultipleValuesInStringContext"]
-
-    T["CommandSpecError"]
-    U["ErrTemplateAndCmdConflict"]
-    V["ErrTemplateAndArgsConflict"]
-    W["ErrTemplateAndEnvConflict"]
-    X["ErrTemplateAndWorkdirConflict"]
 
     A --> B
     A --> C
@@ -235,15 +229,9 @@ graph TD
     M --> R1
     M --> S1
 
-    T --> U
-    T --> V
-    T --> W
-    T --> X
-
     style A fill:#ffebee
     style F fill:#ffebee
     style M fill:#ffebee
-    style T fill:#ffebee
 ```
 
 ### 6.2 エラーメッセージのフォーマット
