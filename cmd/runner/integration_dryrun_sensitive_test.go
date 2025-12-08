@@ -206,7 +206,7 @@ risk_level = "medium"
 			// Verify PrintFinalEnvironment output
 			if tt.expectMasked {
 				// Default behavior: sensitive values should be masked
-				assert.Contains(t, output, "===== Final Process Environment =====",
+				assert.Contains(t, output, "----- Final Process Environment -----",
 					"Should contain final environment header")
 				assert.Contains(t, output, "DB_PASSWORD=[REDACTED]",
 					"DB_PASSWORD should be masked")
@@ -226,7 +226,7 @@ risk_level = "medium"
 					"AWS secret key should not appear in plain text")
 			} else {
 				// showSensitive=true: sensitive values should be displayed
-				assert.Contains(t, output, "===== Final Process Environment =====",
+				assert.Contains(t, output, "----- Final Process Environment -----",
 					"Should contain final environment header")
 				assert.Contains(t, output, "super_secret_db_password_123",
 					"DB password should appear in plain text")
@@ -328,7 +328,7 @@ risk_level = "low"
 			output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run")
 
 			// PrintFinalEnvironment should NOT be called
-			assert.NotContains(t, output, "===== Final Process Environment =====",
+			assert.NotContains(t, output, "----- Final Process Environment -----",
 				"Final environment should not be printed when detail level is not Full")
 			// Neither masked nor plaintext sensitive values should appear
 			assert.NotContains(t, output, "SECRET_VAR=[REDACTED]",

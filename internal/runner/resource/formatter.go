@@ -95,7 +95,7 @@ func (f *TextFormatter) writeHeader(buf *strings.Builder, result *DryRunResult) 
 
 // writeSummary writes the summary section
 func (f *TextFormatter) writeSummary(buf *strings.Builder, result *DryRunResult) {
-	buf.WriteString("=== SUMMARY ===\n")
+	buf.WriteString("----- SUMMARY -----\n\n")
 
 	// Resource operations count
 	resourceCounts := make(map[ResourceType]int)
@@ -136,7 +136,7 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, verification
 		return
 	}
 
-	buf.WriteString("=== FILE VERIFICATION ===\n")
+	buf.WriteString("=== FILE VERIFICATION ===\n\n")
 
 	// Hash directory status
 	fmt.Fprintf(buf, "Hash Directory: %s\n", verification.HashDirStatus.Path)
@@ -205,7 +205,7 @@ func (f *TextFormatter) writeResourceAnalyses(buf *strings.Builder, analyses []R
 		return
 	}
 
-	buf.WriteString("=== RESOURCE OPERATIONS ===\n")
+	buf.WriteString("----- RESOURCE OPERATIONS -----\n\n")
 
 	for i, analysis := range analyses {
 		fmt.Fprintf(buf, "%d. %s [%s]\n", i+1, analysis.Impact.Description, analysis.Type)
@@ -243,7 +243,7 @@ func (f *TextFormatter) writeSecurityAnalysis(buf *strings.Builder, security *Se
 	}
 
 	if len(security.Risks) > 0 {
-		buf.WriteString("=== SECURITY ANALYSIS ===\n")
+		buf.WriteString("----- SECURITY ANALYSIS -----\n\n")
 
 		for i, risk := range security.Risks {
 			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, strings.ToUpper(risk.Level.String()), risk.Description)
@@ -294,7 +294,7 @@ func (f *TextFormatter) writeEnvironmentInfo(buf *strings.Builder, envInfo *Envi
 // writeErrorsAndWarnings writes the errors and warnings section
 func (f *TextFormatter) writeErrorsAndWarnings(buf *strings.Builder, errors []DryRunError, warnings []DryRunWarning) {
 	if len(errors) > 0 {
-		buf.WriteString("=== ERRORS ===\n")
+		buf.WriteString("----- ERRORS -----\n\n")
 		for i, err := range errors {
 			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, err.Type, err.Message)
 			if err.Component != "" {
@@ -309,7 +309,7 @@ func (f *TextFormatter) writeErrorsAndWarnings(buf *strings.Builder, errors []Dr
 	}
 
 	if len(warnings) > 0 {
-		buf.WriteString("=== WARNINGS ===\n")
+		buf.WriteString("----- WARNINGS -----\n\n")
 		for i, warning := range warnings {
 			fmt.Fprintf(buf, "%d. [%s] %s\n", i+1, warning.Type, warning.Message)
 			if warning.Component != "" {

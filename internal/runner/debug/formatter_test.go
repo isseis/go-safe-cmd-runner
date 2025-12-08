@@ -30,7 +30,7 @@ func TestFormatInheritanceAnalysisText_InheritMode(t *testing.T) {
 	t.Logf("Actual output:\n%s", result)
 
 	// Check for key sections
-	assert.Contains(t, result, "===== from_env Inheritance Analysis =====", "Expected header not found in output")
+	assert.Contains(t, result, "----- from_env Inheritance Analysis -----", "Expected header not found in output")
 	assert.Contains(t, result, "[Global Level]", "Expected Global Level section not found")
 	assert.Contains(t, result, "env_import defined: 2 mappings", "Expected global env_import count not found")
 	assert.Contains(t, result, "db_host=DB_HOST", "Expected global mapping not found")
@@ -39,7 +39,7 @@ func TestFormatInheritanceAnalysisText_InheritMode(t *testing.T) {
 	assert.Contains(t, result, "[Group: test_group]", "Expected Group section not found")
 	assert.Contains(t, result, "env_import: Inheriting from Global", "Expected inheritance message not found")
 	assert.Contains(t, result, "Inherited variables (2): api_key, db_host", "Expected inherited variables not found")
-	assert.Contains(t, result, "[Allowlist Inheritance]", "Expected allowlist section not found")
+	assert.Contains(t, result, "----- Allowlist Inheritance -----", "Expected allowlist section not found")
 	assert.Contains(t, result, "Inheriting Global env_allowlist", "Expected allowlist inheritance message not found")
 	assert.Contains(t, result, "Allowlist (2): PATH, HOME", "Expected allowlist variables not found")
 }
@@ -151,7 +151,7 @@ func TestFormatFinalEnvironmentText_Empty(t *testing.T) {
 
 	result := FormatFinalEnvironmentText(env)
 
-	assert.Contains(t, result, "===== Final Process Environment =====", "Expected header not found in output")
+	assert.Contains(t, result, "----- Final Process Environment -----", "Expected header not found in output")
 	assert.Contains(t, result, "No environment variables set.", "Expected empty message not found")
 }
 
@@ -181,7 +181,7 @@ func TestFormatFinalEnvironmentText_WithVariables(t *testing.T) {
 	// Print actual output for debugging
 	t.Logf("Actual output:\n%s", result)
 
-	assert.Contains(t, result, "===== Final Process Environment =====", "Expected header not found in output")
+	assert.Contains(t, result, "----- Final Process Environment -----", "Expected header not found in output")
 	assert.Contains(t, result, "Environment variables (3):", "Expected variable count not found")
 
 	// Check variables are sorted and formatted correctly

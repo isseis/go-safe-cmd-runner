@@ -36,7 +36,7 @@ func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis, group
 	var buf strings.Builder
 
 	// Header
-	buf.WriteString("===== from_env Inheritance Analysis =====\n\n")
+	buf.WriteString("----- from_env Inheritance Analysis -----\n\n")
 
 	// Global Level section
 	buf.WriteString("[Global Level]\n")
@@ -93,7 +93,7 @@ func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis, group
 	buf.WriteString("\n")
 
 	// Allowlist Inheritance section
-	buf.WriteString("[Allowlist Inheritance]\n")
+	buf.WriteString("----- Allowlist Inheritance -----\n\n")
 	switch analysis.InheritanceMode {
 	case runnertypes.InheritanceModeInherit:
 		buf.WriteString("  Inheriting Global env_allowlist\n")
@@ -133,7 +133,7 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 	var buf strings.Builder
 
 	// Header
-	buf.WriteString("===== Final Process Environment =====\n\n")
+	buf.WriteString("----- Final Process Environment -----\n\n")
 
 	if len(env.Variables) == 0 {
 		buf.WriteString("No environment variables set.\n")
