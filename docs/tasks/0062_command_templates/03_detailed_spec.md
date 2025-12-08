@@ -1418,7 +1418,7 @@ params.path = "/data"
 ```toml
 [command_templates.restic_group_backup]
 cmd = "restic"
-args = ["backup", "%{group_root}/${subdir}"]
+args = ["backup", "${path}"]
 
 [[groups]]
 name = "production"
@@ -1429,9 +1429,9 @@ group_root = "/data/prod"
 [[groups.commands]]
 name = "backup_volumes"
 template = "restic_group_backup"
-params.subdir = "volumes"
-# Step 1 展開: args = ["backup", "%{group_root}/volumes"]
-# Step 2 展開: args = ["backup", "/data/prod/volumes"]
+params.path = "%{group_root}/volumes"
+# Step 1 (template expansion): args = ["backup", "%{group_root}/volumes"]
+# Step 2 (variable expansion): args = ["backup", "/data/prod/volumes"]
 ```
 
 ### 7.5 リテラル $ のエスケープ
