@@ -205,6 +205,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 		Status:    StatusSuccess, // Default to success in dry-run mode
 		Parameters: map[string]ParameterValue{
 			"command":           NewStringValue(cmd.ExpandedCmd),
+			"args":              NewStringSliceValue(cmd.ExpandedArgs),
 			"working_directory": NewStringValue(cmd.EffectiveWorkDir),
 			"timeout":           NewIntValue(int64(cmd.EffectiveTimeout)),
 			"timeout_level":     NewStringValue(cmd.TimeoutResolution.Level),
