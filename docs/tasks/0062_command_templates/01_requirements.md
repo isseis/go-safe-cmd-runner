@@ -536,7 +536,7 @@ params.backup_path = "/data"
 #### Phase 1: パース機能の追加
 
 **対象ファイル**:
-- `internal/runner/config/types.go` - テンプレート定義の型追加
+- `internal/runner/runnertypes/spec.go` - テンプレート定義の型追加
 - `internal/runner/config/loader.go` - TOML パース時のテンプレート読み込み
 
 **実装内容**:
@@ -707,19 +707,21 @@ grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
 
 ### 8.1 関連ファイル
 
-- `internal/runner/config/types.go` - 設定ファイルの型定義（現在は `internal/runner/runnertypes/spec.go`）
+- `internal/runner/runnertypes/spec.go` - 設定ファイルの型定義
+- `internal/runner/runnertypes/runtime.go` - 実行時展開済みデータ構造（`ExpandedArrayVars` 等）
 - `internal/runner/config/loader.go` - TOML 読み込み処理
 - `internal/runner/config/expansion.go` - 変数展開ロジック
 - `internal/runner/security/validator.go` - セキュリティ検証
 - `internal/runner/security/environment_validation.go` - 環境変数検証
 - `sample/risk-based-control.toml` - サンプル設定ファイル
 
-### 7.2 関連タスク
+### 8.2 関連タスク
 
 - Task 0030: ファイル変数展開の検証
 - Task 0061: グループ展開時のコマンド事前展開
+- Task 0063: vars テーブル形式への変更（配列変数サポートの基盤）
 
-### 7.3 設計上の議論
+### 8.3 設計上の議論
 
 この要件定義書は、以下の議論に基づいて作成された：
 
