@@ -82,7 +82,6 @@ cmd = "<command>"
 args = ["<arg1>", "<arg2>", ...]
 env = ["<key>=<value>", ...]
 workdir = "<working_directory>"
-allow_failure = <true|false>
 # その他のコマンド実行に関するフィールド
 ```
 
@@ -93,7 +92,6 @@ allow_failure = <true|false>
 - `args`: 引数配列（省略時は空配列）
 - `env`: 環境変数配列（省略時は空配列）
 - `workdir`: 作業ディレクトリ（省略時は未設定）
-- `allow_failure`: 失敗許容フラグ（省略時は false）
 - その他 `[[groups.commands]]` で利用可能な実行関連フィールド
 
 **禁止フィールド**:
@@ -241,7 +239,6 @@ params.<param2> = ["<value2a>", "<value2b>"]
 - `args`: 引数配列（テンプレートで定義）
 - `env`: 環境変数配列（テンプレートで定義）
 - `workdir`: 作業ディレクトリ（テンプレートで定義）
-- `allow_failure`: 失敗許容フラグ（テンプレートで定義）
 - その他テンプレートで定義可能な全てのコマンド実行関連フィールド
 
 **併用可能なフィールド**:
@@ -254,7 +251,7 @@ params.<param2> = ["<value2a>", "<value2b>"]
 - 存在しないテンプレート名を指定した場合はエラー
 - テンプレートで定義されていないパラメータを渡した場合は警告（エラーではない）
 - テンプレートで使用されているパラメータが未指定の場合はエラー
-- `template` と `cmd`/`args`/`env`/`workdir`/`allow_failure` を同時に指定した場合はエラー
+- `template` と `cmd`/`args`/`env`/`workdir` を同時に指定した場合はエラー
 
 **例**:
 ```toml
@@ -395,7 +392,6 @@ params.path = "%{group_root}/volumes"  # ローカル変数参照は許可
 - `cannot specify both "template" and "args" fields in command definition`
 - `cannot specify both "template" and "env" fields in command definition`
 - `cannot specify both "template" and "workdir" fields in command definition`
-- `cannot specify both "template" and "allow_failure" fields in command definition`
 - `template definition cannot contain "name" field`
 - `unused parameter "extra_param" in template "restic_backup"`（警告）
 - `variable "group_root" is not defined in group "group1", referenced by template parameter "backup_path" in template "restic_backup" (command #2)`（変数未定義エラー）
@@ -825,7 +821,7 @@ grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
 - [ ] パラメータ名のバリデーション（`ValidateVariableName` 使用）
 - [ ] テンプレート定義に `name` フィールドが含まれる場合の拒否
 - [ ] テンプレート定義（`cmd`, `args`, `env`, `workdir`）に `%{` パターンが含まれる場合の拒否
-- [ ] `template` フィールドと排他的フィールド（`cmd`, `args`, `env`, `workdir`, `allow_failure`）の同時指定の拒否
+- [ ] `template` フィールドと排他的フィールド（`cmd`, `args`, `env`, `workdir`）の同時指定の拒否
 - [ ] パラメータ展開が非再帰的であること（params 値内の `${...}` が展開されないこと）
 - [ ] params 値内の `%{...}` はそのまま保持され、後続の変数展開フェーズで処理されること
 - [ ] 展開後の `cmd` が `cmd_allowed` / `AllowedCommands` を通過すること

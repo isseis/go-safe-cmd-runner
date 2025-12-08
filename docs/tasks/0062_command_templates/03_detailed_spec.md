@@ -49,10 +49,6 @@ type CommandTemplate struct {
 	// Valid values: "low", "medium", "high"
 	RiskLevel string `toml:"risk_level"`
 
-	// AllowFailure specifies whether the command is allowed to fail
-	// Optional, defaults to false
-	AllowFailure bool `toml:"allow_failure"`
-
 	// NOTE: The "name" field is NOT allowed in template definitions.
 	// Command names must be specified in the [[groups.commands]] section
 	// when referencing the template.
@@ -96,7 +92,7 @@ type CommandSpec struct {
 	Name        string `toml:"name"`        // Command name (REQUIRED, must be unique within group)
 	Description string `toml:"description"` // Human-readable description
 
-	// Template reference (mutually exclusive with Cmd, Args, Env, WorkDir, AllowFailure)
+	// Template reference (mutually exclusive with Cmd, Args, Env, WorkDir)
 	// When Template is set, the command definition is loaded from the
 	// referenced CommandTemplate and Params are applied.
 	Template string `toml:"template"`
@@ -122,11 +118,10 @@ type CommandSpec struct {
 	// These fields are MUTUALLY EXCLUSIVE with Template:
 	//   - If Template is set, these fields MUST NOT be set (validation error)
 	//   - If Template is not set, Cmd is REQUIRED
-	Cmd         string   `toml:"cmd"`           // Command path (may contain variables like %{VAR})
-	Args        []string `toml:"args"`          // Command arguments (may contain variables)
-	Env         []string `toml:"env"`           // Environment variables (KEY=VALUE format)
-	WorkDir     string   `toml:"workdir"`       // Working directory
-	AllowFailure bool    `toml:"allow_failure"` // Whether the command is allowed to fail
+	Cmd     string   `toml:"cmd"`     // Command path (may contain variables like %{VAR})
+	Args    []string `toml:"args"`    // Command arguments (may contain variables)
+	Env     []string `toml:"env"`     // Environment variables (KEY=VALUE format)
+	WorkDir string   `toml:"workdir"` // Working directory
 
 	// ... (other existing fields remain unchanged)
 }
@@ -754,9 +749,8 @@ func ValidateTemplateDefinition(
 //   - Args
 //   - Env
 //   - WorkDir
-//   - AllowFailure
 //
-// The Name field is allowed with Template (to override the default name).
+// The Name field is allowed with Template (to specify the command name).
 //
 // This enforces the "complete exclusivity" design (Option A) where
 // templates provide all command execution fields, and the calling site
@@ -813,15 +807,6 @@ func ValidateCommandSpecExclusivity(
 			CommandIndex: commandIndex,
 			TemplateName: spec.Template,
 			Field:        "workdir",
-		}
-	}
-
-	if spec.AllowFailure {
-		return &ErrTemplateFieldConflict{
-			GroupName:    groupName,
-			CommandIndex: commandIndex,
-			TemplateName: spec.Template,
-			Field:        "allow_failure",
 		}
 	}
 
@@ -1107,7 +1092,7 @@ type ErrTemplateFieldConflict struct {
 	GroupName    string
 	CommandIndex int
 	TemplateName string
-	Field        string // "cmd", "args", "env", "workdir", "allow_failure"
+	Field        string // "cmd", "args", "env", "workdir"
 }
 
 func (e *ErrTemplateFieldConflict) Error() string {

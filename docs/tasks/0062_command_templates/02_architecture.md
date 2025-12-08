@@ -151,8 +151,8 @@ graph TB
 ```mermaid
 graph TD
     A["ConfigSpec (Existing)<br/>Version: string<br/>Global: GlobalSpec<br/>Groups: []GroupSpec<br/>CommandTemplates: map[string]CommandTemplate ← NEW"]
-    B["CommandTemplate (NEW)<br/>Cmd: string (REQUIRED)<br/>Args: []string<br/>Env: []string<br/>WorkDir: string<br/>Timeout: *int32<br/>OutputSizeLimit: *int64<br/>RiskLevel: string<br/>AllowFailure: bool<br/><br/>NOTE: Name フィールドは禁止"]
-    C["CommandSpec (Modified)<br/>Name: string (REQUIRED, unique within group)<br/>Description: string<br/>Template: string ← NEW<br/>Params: map[string]any ← NEW<br/>Cmd: string (EXCLUSIVE with Template)<br/>Args: []string (EXCLUSIVE with Template)<br/>Env: []string (EXCLUSIVE with Template)<br/>WorkDir: string (EXCLUSIVE with Template)<br/>AllowFailure: bool (EXCLUSIVE with Template)"]
+    B["CommandTemplate (NEW)<br/>Cmd: string (REQUIRED)<br/>Args: []string<br/>Env: []string<br/>WorkDir: string<br/>Timeout: *int32<br/>OutputSizeLimit: *int64<br/>RiskLevel: string<br/><br/>NOTE: Name フィールドは禁止"]
+    C["CommandSpec (Modified)<br/>Name: string (REQUIRED, unique within group)<br/>Description: string<br/>Template: string ← NEW<br/>Params: map[string]any ← NEW<br/>Cmd: string (EXCLUSIVE with Template)<br/>Args: []string (EXCLUSIVE with Template)<br/>Env: []string (EXCLUSIVE with Template)<br/>WorkDir: string (EXCLUSIVE with Template)"]
 
     A -->|contains| B
     A -->|contains| C
@@ -213,7 +213,6 @@ graph TD
     V["ErrTemplateAndArgsConflict"]
     W["ErrTemplateAndEnvConflict"]
     X["ErrTemplateAndWorkdirConflict"]
-    Y["ErrTemplateAndAllowFailureConflict"]
 
     A --> B
     A --> C
@@ -240,7 +239,6 @@ graph TD
     T --> V
     T --> W
     T --> X
-    T --> Y
 
     style A fill:#ffebee
     style F fill:#ffebee
