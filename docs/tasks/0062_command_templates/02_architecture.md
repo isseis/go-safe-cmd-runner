@@ -371,7 +371,8 @@ graph TB
 │  3. Validation Tests                                                        │
 │     - Required params missing                                               │
 │     - Unused params warning                                                 │
-│     - %{ pattern rejection                                                  │
+│     - %{ pattern rejection in template definitions (NF-006)                 │
+│     - %{ pattern allowed in params (NF-006)                                 │
 │     - Command injection patterns                                            │
 │     - Type mismatch errors                                                  │
 │                                                                             │
