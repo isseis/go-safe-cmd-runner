@@ -225,7 +225,7 @@ params.<param2> = ["<value2a>", "<value2b>"]
 [[groups.commands]]
 template = "restic_backup"
 params.verbose_flags = ["-q"]
-params.backup_path = "%{group_root}/volumes"
+params.backup_path = "/data/group1/volumes"
 ```
 
 #### F-007: リテラル `$` のエスケープ
