@@ -293,61 +293,41 @@ graph TD
 
 ### 6.2 エラーメッセージのフォーマット
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Error Message Format:                                                      │
-│                                                                             │
-│  [context] [field]: [error type]: [details]                                │
-│                                                                             │
-│  Examples:                                                                  │
-│  ─────────────────────────────────────────────────────────────────          │
-│  group[backup] command[daily]: template "restic_backup" not found          │
-│                                                                             │
-│  template "echo_var" contains forbidden pattern "%{" in args[0]:           │
-│  variable references are not allowed in template definitions for           │
-│  security reasons (see NF-006)                                              │
-│                                                                             │
-│  group[backup] command[daily]: required parameter "backup_path" not        │
-│  provided for template "restic_backup"                                      │
-│                                                                             │
-│  WARNING: group[backup] command[daily]: unused parameter "extra"           │
-│  in template "restic_backup"                                                │
-│                                                                             │
-│  template definition "restic_backup" cannot contain "name" field            │
-│                                                                             │
-│  group[backup] command[daily]: cannot specify both "template" and "cmd"    │
-│  fields in command definition                                               │
-│                                                                             │
-│  group[backup] command[daily]: cannot specify both "template" and "args"   │
-│  fields in command definition                                               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### フォーマット規則
+
+**基本形式**: `[context] [field]: [error type]: [details]`
+
+#### エラーメッセージ例
+
+| エラー種別 | メッセージ例 |
+|-----------|-------------|
+| テンプレート未検出 | `group[backup] command[daily]: template "restic_backup" not found` |
+| 禁止パターン検出 (NF-006) | `template "echo_var" contains forbidden pattern "%{" in args[0]: variable references are not allowed in template definitions for security reasons (see NF-006)` |
+| 必須パラメータ欠如 | `group[backup] command[daily]: required parameter "backup_path" not provided for template "restic_backup"` |
+| 未使用パラメータ (警告) | `WARNING: group[backup] command[daily]: unused parameter "extra" in template "restic_backup"` |
+| name フィールド禁止 | `template definition "restic_backup" cannot contain "name" field` |
+| フィールド衝突 (template+cmd) | `group[backup] command[daily]: cannot specify both "template" and "cmd" fields in command definition` |
+| フィールド衝突 (template+args) | `group[backup] command[daily]: cannot specify both "template" and "args" fields in command definition` |
 
 ## 7. 後方互換性
 
 ### 7.1 既存機能への影響
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Backward Compatibility Matrix                            │
-│                                                                             │
-│  既存機能                        影響    対応                               │
-│  ──────────────────────────────────────────────────────────────────         │
-│  [[groups.commands]] (従来形式)   なし   template なしで従来通り動作        │
-│  %{var} 変数展開                 なし   Stage 2 で従来通り処理              │
-│  env_import                      なし   変更なし                            │
-│  cmd_allowed                     なし   展開後の cmd に対して検証           │
-│  security validation             なし   展開後に従来通り検証                │
-│  verify_files                    なし   変更なし                            │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  既存の TOML ファイルは無修正で動作する                               │  │
-│  │  command_templates セクションは完全にオプショナル                     │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### 後方互換性マトリックス
+
+| 既存機能 | 影響 | 対応 |
+|---------|------|------|
+| `[[groups.commands]]` (従来形式) | なし | `template` フィールドなしで従来通り動作 |
+| `%{var}` 変数展開 | なし | Stage 2 で従来通り処理 |
+| `env_import` | なし | 変更なし |
+| `cmd_allowed` | なし | 展開後の `cmd` に対して検証 |
+| `security validation` | なし | 展開後に従来通り検証 |
+| `verify_files` | なし | 変更なし |
+
+#### 重要事項
+
+- **既存の TOML ファイルは無修正で動作する**
+- **`command_templates` セクションは完全にオプショナル**
 
 ### 7.2 段階的移行パス
 
@@ -393,43 +373,36 @@ graph TB
 
 ### 8.2 テストカテゴリ
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Test Categories                                     │
-│                                                                             │
-│  1. Parsing Tests                                                           │
-│     - Valid template definitions                                            │
-│     - Invalid template names                                                │
-│     - Duplicate template names                                              │
-│     - Reserved names rejection                                              │
-│                                                                             │
-│  2. Expansion Tests                                                         │
-│     - ${param} string replacement                                           │
-│     - ${?param} optional replacement (empty → remove)                       │
-│     - ${@list} array expansion                                              │
-│     - \$ literal escape (consistent with \% for variables)                 │
-│     - Mixed placeholders                                                    │
-│     - Non-recursive expansion                                               │
-│                                                                             │
-│  3. Validation Tests                                                        │
-│     - Required params missing                                               │
-│     - Unused params warning                                                 │
-│     - %{ pattern rejection in template definitions (NF-006)                 │
-│     - %{ pattern allowed in params (NF-006)                                 │
-│     - Command injection patterns                                            │
-│     - Type mismatch errors                                                  │
-│                                                                             │
-│  4. Integration Tests                                                       │
-│     - Template + %{var} combined expansion                                  │
-│     - Security validation after expansion                                   │
-│     - cmd_allowed check after expansion                                     │
-│                                                                             │
-│  5. Backward Compatibility Tests                                            │
-│     - All existing tests pass unchanged                                     │
-│     - Sample configs work without modification                              │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### 1. Parsing Tests
+- Valid template definitions
+- Invalid template names
+- Duplicate template names
+- Reserved names rejection
+
+#### 2. Expansion Tests
+- `${param}` string replacement
+- `${?param}` optional replacement (empty → remove)
+- `${@list}` array expansion
+- `\$` literal escape (consistent with `\%` for variables)
+- Mixed placeholders
+- Non-recursive expansion
+
+#### 3. Validation Tests
+- Required params missing
+- Unused params warning
+- `%{` pattern rejection in template definitions (NF-006)
+- `%{` pattern allowed in params (NF-006)
+- Command injection patterns
+- Type mismatch errors
+
+#### 4. Integration Tests
+- Template + `%{var}` combined expansion
+- Security validation after expansion
+- `cmd_allowed` check after expansion
+
+#### 5. Backward Compatibility Tests
+- All existing tests pass unchanged
+- Sample configs work without modification
 
 ## 9. 将来の拡張ポイント
 
@@ -474,27 +447,29 @@ graph TD
 
 ### 10.2 トレードオフ
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Trade-offs                                          │
-│                                                                             │
-│  シンプルさ vs 柔軟性                                                       │
-│  ─────────────────────────────────────────────────────────────              │
-│  選択: シンプルさ優先                                                       │
-│  影響: 継承機能や条件分岐は非サポート                                       │
-│  理由: YAGNI、初期リリースでの安定性重視                                    │
-│                                                                             │
-│  セキュリティ vs 利便性                                                     │
-│  ─────────────────────────────────────────────────────────────              │
-│  選択: セキュリティ優先                                                     │
-│  影響: テンプレート定義で %{} 使用不可 (NF-006)                               │
-│  理由: インジェクション攻撃の完全防止                                       │
-│                                                                             │
-│  厳格さ vs 寛容さ                                                           │
-│  ─────────────────────────────────────────────────────────────              │
-│  選択: バランス（エラー/警告の使い分け）                                    │
-│  影響: 未使用 params は警告のみ、必須 params 欠如はエラー                   │
-│  理由: 開発者体験とエラー検出のバランス                                     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### シンプルさ vs 柔軟性
+
+**選択**: シンプルさ優先
+
+| 項目 | 内容 |
+|-----|------|
+| 影響 | 継承機能や条件分岐は非サポート |
+| 理由 | YAGNI、初期リリースでの安定性重視 |
+
+#### セキュリティ vs 利便性
+
+**選択**: セキュリティ優先
+
+| 項目 | 内容 |
+|-----|------|
+| 影響 | テンプレート定義で `%{}` 使用不可 (NF-006) |
+| 理由 | インジェクション攻撃の完全防止 |
+
+#### 厳格さ vs 寛容さ
+
+**選択**: バランス（エラー/警告の使い分け）
+
+| 項目 | 内容 |
+|-----|------|
+| 影響 | 未使用 params は警告のみ、必須 params 欠如はエラー |
+| 理由 | 開発者体験とエラー検出のバランス |
