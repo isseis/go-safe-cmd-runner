@@ -1224,6 +1224,66 @@ func (e *ErrArrayInMixedContext) Error() string {
 		e.TemplateName, e.Field, e.ParamName)
 }
 
+// ErrInvalidArrayElement is returned when an array parameter contains non-string elements
+type ErrInvalidArrayElement struct {
+	TemplateName string
+	Field        string
+	ParamName    string
+	Index        int
+	ActualType   string
+}
+
+func (e *ErrInvalidArrayElement) Error() string {
+	return fmt.Sprintf("template %q %s: array parameter %q contains non-string element at index %d (type: %s)",
+		e.TemplateName, e.Field, e.ParamName, e.Index, e.ActualType)
+}
+
+// ErrUnsupportedParamType is returned when a parameter has an unsupported type
+type ErrUnsupportedParamType struct {
+	TemplateName string
+	Field        string
+	ParamName    string
+	ActualType   string
+}
+
+func (e *ErrUnsupportedParamType) Error() string {
+	return fmt.Sprintf("template %q %s: parameter %q has unsupported type %s (expected string or []string)",
+		e.TemplateName, e.Field, e.ParamName, e.ActualType)
+}
+
+// ErrInvalidParamName is returned when a parameter name is invalid
+type ErrInvalidParamName struct {
+	TemplateName string
+	ParamName    string
+	Reason       string
+}
+
+func (e *ErrInvalidParamName) Error() string {
+	return fmt.Sprintf("template %q: invalid parameter name %q: %s",
+		e.TemplateName, e.ParamName, e.Reason)
+}
+
+// ErrEmptyPlaceholderName is returned when a placeholder has an empty name
+type ErrEmptyPlaceholderName struct {
+	Input    string
+	Position int
+}
+
+func (e *ErrEmptyPlaceholderName) Error() string {
+	return fmt.Sprintf("empty placeholder name at position %d in %q", e.Position, e.Input)
+}
+
+// ErrMultipleValuesInStringContext is returned when array expansion produces multiple values in a string context
+type ErrMultipleValuesInStringContext struct {
+	TemplateName string
+	Field        string
+}
+
+func (e *ErrMultipleValuesInStringContext) Error() string {
+	return fmt.Sprintf("template %q %s: array expansion produced multiple values in string context",
+		e.TemplateName, e.Field)
+}
+
 // Placeholder parsing errors
 
 // ErrUnclosedPlaceholder is returned when a placeholder is not closed

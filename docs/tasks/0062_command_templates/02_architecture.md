@@ -194,21 +194,26 @@ graph TD
 
     F["ParamError"]
     G["ErrRequiredParamMissing"]
-    H["ErrParamTypeMismatch"]
-    I["ErrParamContainsForbiddenPattern"]
-    J["ErrParamSecurityViolation"]
-    K["ErrUnusedParam (Warning)"]
+    H["ErrTypeMismatch"]
+    I["ErrInvalidArrayElement"]
+    J["ErrUnsupportedParamType"]
+    K["ErrInvalidParamName"]
+    L["ErrUnusedParam (Warning)"]
 
-    L["ExpansionError"]
-    M["ErrUnclosedPlaceholder"]
-    N["ErrInvalidPlaceholderSyntax"]
+    M["ExpansionError"]
+    N["ErrUnclosedPlaceholder"]
+    O1["ErrEmptyPlaceholder"]
+    P1["ErrEmptyPlaceholderName"]
+    Q1["ErrInvalidPlaceholderName"]
+    R1["ErrArrayInMixedContext"]
+    S1["ErrMultipleValuesInStringContext"]
 
-    O["CommandSpecError"]
-    P["ErrTemplateAndCmdConflict"]
-    Q["ErrTemplateAndArgsConflict"]
-    R["ErrTemplateAndEnvConflict"]
-    S["ErrTemplateAndWorkdirConflict"]
-    T["ErrTemplateAndAllowFailureConflict"]
+    T["CommandSpecError"]
+    U["ErrTemplateAndCmdConflict"]
+    V["ErrTemplateAndArgsConflict"]
+    W["ErrTemplateAndEnvConflict"]
+    X["ErrTemplateAndWorkdirConflict"]
+    Y["ErrTemplateAndAllowFailureConflict"]
 
     A --> B
     A --> C
@@ -222,20 +227,25 @@ graph TD
     F --> I
     F --> J
     F --> K
+    F --> L
 
-    L --> M
-    L --> N
+    M --> N
+    M --> O1
+    M --> P1
+    M --> Q1
+    M --> R1
+    M --> S1
 
-    O --> P
-    O --> Q
-    O --> R
-    O --> S
-    O --> T
+    T --> U
+    T --> V
+    T --> W
+    T --> X
+    T --> Y
 
     style A fill:#ffebee
     style F fill:#ffebee
-    style L fill:#ffebee
-    style O fill:#ffebee
+    style M fill:#ffebee
+    style T fill:#ffebee
 ```
 
 ### 6.2 エラーメッセージのフォーマット
