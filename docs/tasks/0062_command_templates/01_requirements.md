@@ -690,7 +690,7 @@ grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
 - [ ] 展開後の `args` に対する危険パターン検出
 - [ ] 展開後の `env` に対する `ValidateAllEnvironmentVars` 検証
 - [ ] リテラル `$` のエスケープ処理（`$$` → `$`）
-- [ ] 再帰展開の深さ制限（既存の `MaxRecursionDepth` と同様）
+- [ ] テンプレート展開後の `%{...}` 変数展開における再帰展開の深さ制限（既存の `MaxRecursionDepth` と同様）
 
 ## 7. 用語集
 
