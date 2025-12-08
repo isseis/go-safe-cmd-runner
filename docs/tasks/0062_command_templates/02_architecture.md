@@ -21,7 +21,7 @@
 graph TD
     A["TOML Configuration<br/>[command_templates.restic_backup]<br/>cmd = 'restic'<br/>args = ['${@verbose_flags}', 'backup', '${path}']<br/><br/>[[groups.commands]]<br/>template = 'restic_backup'<br/>params.verbose_flags = ['-q']<br/>params.path = '%{backup_dir}/data'"]
     B["Config Loader<br/>(internal/runner/config/loader.go)<br/><br/>1. TOML Parse<br/>2. CommandTemplate Extraction<br/>3. Template Name Validation"]
-    C["Template Expansion Module (NEW)<br/>(internal/runner/config/template_expansion.go)<br/><br/>Phase 1: Template Definition Validation<br/>- %{ pattern rejection (NF-006)<br/>- Template name validation<br/><br/>Phase 2: Template Expansion<br/>- ${param} → String replacement<br/>- ${?param} → Optional replacement<br/>- ${@list} → Array expansion<br/>- $$ → Literal $"]
+    C["Template Expansion Module (NEW)<br/>(internal/runner/config/template_expansion.go)<br/><br/>Phase 1: Template Definition Validation<br/>- %{ pattern rejection (NF-006)<br/>- Template name validation<br/><br/>Phase 2: Template Expansion<br/>- ${param} → String replacement<br/>- ${?param} → Optional replacement<br/>- ${@list} → Array expansion<br/>- \\$ → Literal $ (consistent with \\%)"]
     D["Variable Expansion (Existing)<br/>(internal/runner/config/expansion.go)<br/><br/>- %{var} expansion<br/>- Circular reference detection<br/>- Max recursion depth check"]
     E["Security Validation (Existing)<br/>(internal/runner/security/validator.go)<br/><br/>- cmd_allowed / AllowedCommands check<br/>- Dangerous pattern detection<br/>- Environment variable validation"]
     F["RuntimeCommand<br/>(internal/runner/runnertypes/runtime.go)<br/><br/>ExpandedCmd: '/usr/bin/restic'<br/>ExpandedArgs: ['-q', 'backup', '/data/backups/data']"]
@@ -350,7 +350,7 @@ graph TB
 │     - ${param} string replacement                                           │
 │     - ${?param} optional replacement (empty → remove)                       │
 │     - ${@list} array expansion                                              │
-│     - $$ literal escape                                                     │
+│     - \$ literal escape (consistent with \% for variables)                 │
 │     - Mixed placeholders                                                    │
 │     - Non-recursive expansion                                               │
 │                                                                             │

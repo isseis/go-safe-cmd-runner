@@ -13,7 +13,7 @@
 //   - ${param}   : Required string parameter
 //   - ${?param}  : Optional string parameter (removed if empty)
 //   - ${@param}  : Array parameter (elements are expanded in place)
-//   - $$         : Literal $ character
+//   - \$         : Literal $ character (in TOML: \\$)
 //
 // Example TOML:
 //
@@ -148,7 +148,7 @@ type CommandSpec struct {
 //   - ${param}  : Replace with string value, error if not found
 //   - ${?param} : Replace with string value, remove element if empty/not found
 //   - ${@param} : Replace with array elements, remove element if empty/not found
-//   - $$        : Replace with literal $
+//   - \$        : Replace with literal $ (escape sequence)
 func ExpandTemplateParams(
 	input string,
 	params map[string]interface{},
@@ -174,7 +174,7 @@ func ExpandTemplateParams(
 //        - Mixed or ${param}: string replacement mode
 //     c. Apply expansion based on classification
 //  2. Concatenate all results
-//  3. Apply $$ -> $ transformation
+//  3. Apply escape sequence transformation (\$ -> $, \\ -> \)
 //
 // Example:
 //   Input:  ["${@flags}", "backup", "${?verbose}", "${path}"]
@@ -195,12 +195,40 @@ func ExpandTemplateArgs(
 		result = append(result, expanded...)
 	}
 
-	// Apply $$ -> $ transformation
+	// Apply escape sequence transformation
 	for i := range result {
-		result[i] = strings.ReplaceAll(result[i], "$$", "$")
+		result[i] = applyEscapeSequences(result[i])
 	}
 
 	return result, nil
+}
+
+// applyEscapeSequences applies escape sequence transformation.
+// Supported escape sequences:
+//   - \$ -> $
+//   - \\ -> \
+//
+// This is consistent with the existing variable expansion escape sequences:
+//   - \% -> %
+//   - \\ -> \
+func applyEscapeSequences(input string) string {
+	var result strings.Builder
+	i := 0
+
+	for i < len(input) {
+		if i+1 < len(input) && input[i] == '\\' {
+			nextChar := input[i+1]
+			if nextChar == '$' || nextChar == '\\' {
+				result.WriteByte(nextChar)
+				i += 2
+				continue
+			}
+		}
+		result.WriteByte(input[i])
+		i++
+	}
+
+	return result.String()
 }
 ```
 
@@ -238,10 +266,13 @@ func parsePlaceholders(input string) ([]placeholder, error) {
 	i := 0
 
 	for i < len(input) {
-		// Handle escape sequence
-		if i+1 < len(input) && input[i] == '$' && input[i+1] == '$' {
-			i += 2
-			continue
+		// Handle escape sequence (\$, \\)
+		if i+1 < len(input) && input[i] == '\\' {
+			nextChar := input[i+1]
+			if nextChar == '$' || nextChar == '\\' {
+				i += 2
+				continue
+			}
 		}
 
 		// Check for placeholder start
@@ -1036,8 +1067,8 @@ func expandTemplateString(
 		}
 	}
 
-	// Apply $$ -> $ transformation
-	return strings.ReplaceAll(results[0], "$$", "$"), nil
+	// Apply escape sequence transformation
+	return applyEscapeSequences(results[0]), nil
 }
 
 // expandTemplateEnv expands template parameters in env array.
@@ -1484,13 +1515,24 @@ params.path = "%{group_root}/volumes"
 ```toml
 [command_templates.echo_cost]
 cmd = "echo"
-args = ["The cost is $$100 for ${item}"]
+args = ["The cost is \\$100 for ${item}"]
 
 [[groups.commands]]
 name = "show_cost"
 template = "echo_cost"
 params.item = "widget"
 # 展開結果: args = ["The cost is $100 for widget"]
+
+# 複数のエスケープの例
+[command_templates.path_example]
+cmd = "echo"
+args = ["Path: C:\\\\Users\\\\${user}\\\\file.txt"]
+
+[[groups.commands]]
+name = "show_path"
+template = "path_example"
+params.user = "alice"
+# 展開結果: args = ["Path: C:\\Users\\alice\\file.txt"]
 ```
 
 ## 8. テストケース一覧
@@ -1505,7 +1547,8 @@ params.item = "widget"
 | TestOptionalMissing | 未指定オプショナル | `${?flag}`, params = {} | `[]` |
 | TestArrayExpansion | 配列展開 | `${@flags}`, params.flags = ["-a", "-b"] | `["-a", "-b"]` |
 | TestArrayEmpty | 空配列 | `${@flags}`, params.flags = [] | `[]` |
-| TestDollarEscape | $ エスケープ | `$$100` | `["$100"]` |
+| TestDollarEscape | $ エスケープ | `\$100` | `["$100"]` |
+| TestBackslashEscape | \ エスケープ | `C:\\\\path` | `["C:\\path"]` |
 | TestMixedPlaceholders | 混合 | `["${@a}", "${b}", "${?c}"]` | 各種組み合わせ |
 | TestNoPlaceholders | プレースホルダーなし | `["backup", "/data"]` | `["backup", "/data"]` |
 
