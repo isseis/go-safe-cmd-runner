@@ -161,10 +161,10 @@ func run(runID string) error {
 	if err != nil {
 		return err
 	}
-	// Determine console output destination based on dry-run format
-	// For JSON format, send logs to stderr to keep stdout clean for JSON output
+	// Determine console output destination based on dry-run mode
+	// In dry-run mode, send logs to stderr to keep stdout clean for dry-run output
 	consoleWriter := os.Stdout
-	if dryRun && dryRunFormat == "json" {
+	if dryRun {
 		consoleWriter = os.Stderr
 	}
 	// Get Slack webhook URL from environment (empty in dry-run mode to disable notifications)
