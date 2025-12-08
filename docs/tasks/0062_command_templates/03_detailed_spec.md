@@ -22,13 +22,16 @@
 //	args = ["${@verbose_flags}", "backup", "${path}"]
 type CommandTemplate struct {
 	// Cmd is the command path (may contain template parameters)
+	// REQUIRED field
 	Cmd string `toml:"cmd"`
 
 	// Args is the list of command arguments (may contain template parameters)
+	// Optional, defaults to empty array
 	Args []string `toml:"args"`
 
 	// Env is the list of environment variables in KEY=VALUE format
 	// (may contain template parameters in the VALUE part)
+	// Optional, defaults to empty array
 	Env []string `toml:"env"`
 
 	// WorkDir is the working directory for the command (optional)
@@ -45,6 +48,14 @@ type CommandTemplate struct {
 	// RiskLevel specifies the maximum allowed risk level (optional)
 	// Valid values: "low", "medium", "high"
 	RiskLevel string `toml:"risk_level"`
+
+	// AllowFailure specifies whether the command is allowed to fail
+	// Optional, defaults to false
+	AllowFailure bool `toml:"allow_failure"`
+
+	// NOTE: The "name" field is NOT allowed in template definitions.
+	// Command names must be specified in the [[groups.commands]] section
+	// when referencing the template.
 }
 ```
 
@@ -82,10 +93,10 @@ type ConfigSpec struct {
 // CommandSpec represents a single command configuration loaded from TOML file.
 type CommandSpec struct {
 	// Basic information
-	Name        string `toml:"name"`        // Command name (must be unique within the group)
+	Name        string `toml:"name"`        // Command name (REQUIRED, must be unique within group)
 	Description string `toml:"description"` // Human-readable description
 
-	// Template reference (mutually exclusive with Cmd, Args, Env)
+	// Template reference (mutually exclusive with Cmd, Args, Env, WorkDir, AllowFailure)
 	// When Template is set, the command definition is loaded from the
 	// referenced CommandTemplate and Params are applied.
 	Template string `toml:"template"`
@@ -94,19 +105,28 @@ type CommandSpec struct {
 	// Each key corresponds to a parameter placeholder in the template.
 	// Values can be:
 	//   - string: for ${param} and ${?param} placeholders
-	//   - []string: for ${@param} placeholders
+	//   - []any: for ${@param} placeholders (elements must be string)
+	//
+	// Params can contain variable references (%{var}) which will be expanded
+	// AFTER template expansion (see F-006 in requirements.md).
 	//
 	// Example TOML:
 	//   [[groups.commands]]
+	//   name = "backup_volumes"  # REQUIRED (must be unique within group)
 	//   template = "restic_backup"
 	//   params.verbose_flags = ["-q"]
-	//   params.path = "/data"
+	//   params.path = "%{backup_dir}/data"  # %{} is allowed in params
 	Params map[string]interface{} `toml:"params"`
 
 	// Command definition (raw values, not yet expanded)
-	// These fields are mutually exclusive with Template
-	Cmd  string   `toml:"cmd"`  // Command path (may contain variables like %{VAR})
-	Args []string `toml:"args"` // Command arguments (may contain variables)
+	// These fields are MUTUALLY EXCLUSIVE with Template:
+	//   - If Template is set, these fields MUST NOT be set (validation error)
+	//   - If Template is not set, Cmd is REQUIRED
+	Cmd         string   `toml:"cmd"`           // Command path (may contain variables like %{VAR})
+	Args        []string `toml:"args"`          // Command arguments (may contain variables)
+	Env         []string `toml:"env"`           // Environment variables (KEY=VALUE format)
+	WorkDir     string   `toml:"workdir"`       // Working directory
+	AllowFailure bool    `toml:"allow_failure"` // Whether the command is allowed to fail
 
 	// ... (other existing fields remain unchanged)
 }
@@ -666,6 +686,19 @@ func ValidateTemplateDefinition(
 	name string,
 	template *CommandTemplate,
 ) error {
+	// NOTE: Since CommandTemplate is parsed from TOML, there's no "Name" field
+	// in the struct itself. The template name comes from the TOML table key.
+	// However, we need to validate that the TOML doesn't contain a "name" field.
+	// This check should be done during TOML parsing in the loader.
+
+	// Check cmd is not empty (REQUIRED field)
+	if template.Cmd == "" {
+		return &ErrMissingRequiredField{
+			TemplateName: name,
+			Field:        "cmd",
+		}
+	}
+
 	// Check cmd for forbidden %{ pattern
 	if strings.Contains(template.Cmd, "%{") {
 		return &ErrForbiddenPatternInTemplate{
@@ -710,7 +743,94 @@ func ValidateTemplateDefinition(
 }
 ```
 
-### 3.4 使用パラメータの収集
+### 3.4 CommandSpec の排他性検証
+
+```go
+// ValidateCommandSpecExclusivity validates that template and command fields
+// are mutually exclusive in a CommandSpec.
+//
+// When Template is set, the following fields MUST NOT be set:
+//   - Cmd
+//   - Args
+//   - Env
+//   - WorkDir
+//   - AllowFailure
+//
+// The Name field is allowed with Template (to override the default name).
+//
+// This enforces the "complete exclusivity" design (Option A) where
+// templates provide all command execution fields, and the calling site
+// can only specify Name and Params.
+func ValidateCommandSpecExclusivity(
+	groupName string,
+	commandIndex int,
+	spec *CommandSpec,
+) error {
+	if spec.Template == "" {
+		// Not using template, normal command definition
+		// Cmd is required
+		if spec.Cmd == "" {
+			return &ErrMissingRequiredField{
+				GroupName:    groupName,
+				CommandIndex: commandIndex,
+				Field:        "cmd",
+			}
+		}
+		return nil
+	}
+
+	// Using template, check for conflicting fields
+	if spec.Cmd != "" {
+		return &ErrTemplateFieldConflict{
+			GroupName:    groupName,
+			CommandIndex: commandIndex,
+			TemplateName: spec.Template,
+			Field:        "cmd",
+		}
+	}
+
+	if len(spec.Args) > 0 {
+		return &ErrTemplateFieldConflict{
+			GroupName:    groupName,
+			CommandIndex: commandIndex,
+			TemplateName: spec.Template,
+			Field:        "args",
+		}
+	}
+
+	if len(spec.Env) > 0 {
+		return &ErrTemplateFieldConflict{
+			GroupName:    groupName,
+			CommandIndex: commandIndex,
+			TemplateName: spec.Template,
+			Field:        "env",
+		}
+	}
+
+	if spec.WorkDir != "" {
+		return &ErrTemplateFieldConflict{
+			GroupName:    groupName,
+			CommandIndex: commandIndex,
+			TemplateName: spec.Template,
+			Field:        "workdir",
+		}
+	}
+
+	if spec.AllowFailure {
+		return &ErrTemplateFieldConflict{
+			GroupName:    groupName,
+			CommandIndex: commandIndex,
+			TemplateName: spec.Template,
+			Field:        "allow_failure",
+		}
+	}
+
+	// Name and Params are allowed with Template
+	return nil
+}
+```
+
+### 3.5 使用パラメータの収集
 
 ```go
 // CollectUsedParams extracts all parameter names used in a template.
@@ -982,15 +1102,17 @@ func (e *ErrTemplateNotFound) Error() string {
 		e.TemplateName, e.CommandName)
 }
 
-// ErrTemplateFieldConflict is returned when both template and cmd/args are specified
+// ErrTemplateFieldConflict is returned when both template and execution fields are specified
 type ErrTemplateFieldConflict struct {
-	CommandName  string
+	GroupName    string
+	CommandIndex int
 	TemplateName string
+	Field        string // "cmd", "args", "env", "workdir", "allow_failure"
 }
 
 func (e *ErrTemplateFieldConflict) Error() string {
-	return fmt.Sprintf("command %q: cannot specify both 'template' and 'cmd/args/env' fields",
-		e.CommandName)
+	return fmt.Sprintf("group[%s] command[%d]: cannot specify both \"template\" and \"%s\" fields in command definition",
+		e.GroupName, e.CommandIndex, e.Field)
 }
 
 // ErrDuplicateTemplateName is returned when a template name is defined more than once
@@ -1019,6 +1141,33 @@ type ErrReservedTemplateName struct {
 
 func (e *ErrReservedTemplateName) Error() string {
 	return fmt.Sprintf("template name %q uses reserved prefix '__'", e.Name)
+}
+
+// ErrTemplateContainsNameField is returned when a template definition contains a "name" field
+type ErrTemplateContainsNameField struct {
+	TemplateName string
+}
+
+func (e *ErrTemplateContainsNameField) Error() string {
+	return fmt.Sprintf("template definition %q cannot contain \"name\" field",
+		e.TemplateName)
+}
+
+// ErrMissingRequiredField is returned when a required field is missing
+type ErrMissingRequiredField struct {
+	TemplateName string
+	GroupName    string
+	CommandIndex int
+	Field        string
+}
+
+func (e *ErrMissingRequiredField) Error() string {
+	if e.TemplateName != "" {
+		return fmt.Sprintf("template %q: required field %q is missing",
+			e.TemplateName, e.Field)
+	}
+	return fmt.Sprintf("group[%s] command[%d]: required field %q is missing",
+		e.GroupName, e.CommandIndex, e.Field)
 }
 
 // Parameter-related errors

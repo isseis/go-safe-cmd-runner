@@ -81,14 +81,31 @@ template = "restic_prune"
 cmd = "<command>"
 args = ["<arg1>", "<arg2>", ...]
 env = ["<key>=<value>", ...]
-# 他の [[groups.commands]] で利用可能なフィールド
+workdir = "<working_directory>"
+allow_failure = <true|false>
+# その他のコマンド実行に関するフィールド
 ```
+
+**必須フィールド**:
+- `cmd`: コマンドパス（必須）
+
+**オプショナルフィールド**:
+- `args`: 引数配列（省略時は空配列）
+- `env`: 環境変数配列（省略時は空配列）
+- `workdir`: 作業ディレクトリ（省略時は未設定）
+- `allow_failure`: 失敗許容フラグ（省略時は false）
+- その他 `[[groups.commands]]` で利用可能な実行関連フィールド
+
+**禁止フィールド**:
+- `name`: テンプレートではコマンド名を定義できない（呼び出し側で指定）
+- `template`: テンプレート内でテンプレートを参照できない（ネストは禁止）
 
 **制約**:
 - テンプレート名は英字またはアンダースコアで始まり、英数字とアンダースコアのみ使用可能（既存の変数名規則と同一、`ValidateVariableName` を使用）
 - テンプレート定義は設定ファイルの先頭（`[[groups]]` より前）に配置
 - 同名のテンプレートが複数定義された場合はエラー
 - 予約済みのテンプレート名（将来の拡張用）: `__` で始まる名前は予約済み
+- テンプレート定義に `name` フィールドが含まれる場合はエラー
 
 **例**:
 ```toml
@@ -208,24 +225,64 @@ params.msg = "${other_param}"
 **フォーマット**:
 ```toml
 [[groups.commands]]
+name = "<command_name>"  # 必須（グループ内でユニーク）
 template = "<template_name>"
 params.<param1> = "<value1>"
 params.<param2> = ["<value2a>", "<value2b>"]
 ```
 
+**必須フィールド**:
+- `name`: コマンド名（グループ内でユニークである必要がある）
+- `template`: テンプレート名
+
+**排他的フィールド（エラー）**:
+`template` が指定された場合、以下のフィールドは指定できない:
+- `cmd`: コマンドパス（テンプレートで定義）
+- `args`: 引数配列（テンプレートで定義）
+- `env`: 環境変数配列（テンプレートで定義）
+- `workdir`: 作業ディレクトリ（テンプレートで定義）
+- `allow_failure`: 失敗許容フラグ（テンプレートで定義）
+- その他テンプレートで定義可能な全てのコマンド実行関連フィールド
+
+**併用可能なフィールド**:
+`template` と併用可能なフィールド:
+- `name`: コマンド名（必須、同じテンプレートから複数のコマンドを区別するために使用）
+- `params`: パラメータ指定（テンプレート展開に使用）
+
 **制約**:
-- `template` フィールドと通常のコマンド定義（`cmd`, `args` など）は排他的
-  - `env` もこれに含まれる。テンプレートを使用する場合、コマンド固有の環境変数は `params` 経由でテンプレート内の `env` に渡す必要がある
+- `name` は必須であり、グループ内でユニークである必要がある（既存の仕様と同じ）
 - 存在しないテンプレート名を指定した場合はエラー
 - テンプレートで定義されていないパラメータを渡した場合は警告（エラーではない）
 - テンプレートで使用されているパラメータが未指定の場合はエラー
+- `template` と `cmd`/`args`/`env`/`workdir`/`allow_failure` を同時に指定した場合はエラー
 
 **例**:
 ```toml
+# 基本的な使用例
 [[groups.commands]]
+name = "daily_backup"  # 必須
 template = "restic_backup"
 params.verbose_flags = ["-q"]
 params.backup_path = "/data/group1/volumes"
+
+# 同じテンプレートから複数のコマンドを作成
+[[groups.commands]]
+name = "backup_volumes"  # 異なる name で区別
+template = "restic_backup"
+params.verbose_flags = ["-v", "-v"]
+params.backup_path = "/data/group1/volumes"
+
+[[groups.commands]]
+name = "backup_config"  # 異なる name で区別
+template = "restic_backup"
+params.verbose_flags = []
+params.backup_path = "/etc"
+
+# エラー例: template と cmd の併用
+[[groups.commands]]
+name = "test"
+template = "restic_backup"
+cmd = "foo"  # ❌ エラー: template と cmd は排他的
 ```
 
 #### F-007: リテラル `$` のエスケープ
@@ -335,6 +392,11 @@ params.path = "%{group_root}/volumes"  # ローカル変数参照は許可
 - `template "restic_backup" not found`
 - `parameter "backup_path" is required but not provided in template "restic_backup"`
 - `cannot specify both "template" and "cmd" fields in command definition`
+- `cannot specify both "template" and "args" fields in command definition`
+- `cannot specify both "template" and "env" fields in command definition`
+- `cannot specify both "template" and "workdir" fields in command definition`
+- `cannot specify both "template" and "allow_failure" fields in command definition`
+- `template definition cannot contain "name" field`
 - `unused parameter "extra_param" in template "restic_backup"`（警告）
 - `variable "group_root" is not defined in group "group1", referenced by template parameter "backup_path" in template "restic_backup" (command #2)`（変数未定義エラー）
 
@@ -761,7 +823,9 @@ grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
 
 - [ ] テンプレート名のバリデーション（`ValidateVariableName` 使用）
 - [ ] パラメータ名のバリデーション（`ValidateVariableName` 使用）
+- [ ] テンプレート定義に `name` フィールドが含まれる場合の拒否
 - [ ] テンプレート定義（`cmd`, `args`, `env`, `workdir`）に `%{` パターンが含まれる場合の拒否
+- [ ] `template` フィールドと排他的フィールド（`cmd`, `args`, `env`, `workdir`, `allow_failure`）の同時指定の拒否
 - [ ] パラメータ展開が非再帰的であること（params 値内の `${...}` が展開されないこと）
 - [ ] params 値内の `%{...}` はそのまま保持され、後続の変数展開フェーズで処理されること
 - [ ] 展開後の `cmd` が `cmd_allowed` / `AllowedCommands` を通過すること

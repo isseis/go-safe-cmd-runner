@@ -151,8 +151,8 @@ graph TB
 ```mermaid
 graph TD
     A["ConfigSpec (Existing)<br/>Version: string<br/>Global: GlobalSpec<br/>Groups: []GroupSpec<br/>CommandTemplates: map[string]CommandTemplate ← NEW"]
-    B["CommandTemplate (NEW)<br/>Cmd: string<br/>Args: []string<br/>Env: []string<br/>WorkDir: string<br/>Timeout: *int32<br/>OutputSizeLimit: *int64<br/>RiskLevel: string"]
-    C["CommandSpec (Modified)<br/>Name: string<br/>Description: string<br/>Template: string ← NEW<br/>Params: map[string]any ← NEW<br/>Cmd: string<br/>Args: []string<br/>Env: []string"]
+    B["CommandTemplate (NEW)<br/>Cmd: string (REQUIRED)<br/>Args: []string<br/>Env: []string<br/>WorkDir: string<br/>Timeout: *int32<br/>OutputSizeLimit: *int64<br/>RiskLevel: string<br/>AllowFailure: bool<br/><br/>NOTE: Name フィールドは禁止"]
+    C["CommandSpec (Modified)<br/>Name: string (REQUIRED, unique within group)<br/>Description: string<br/>Template: string ← NEW<br/>Params: map[string]any ← NEW<br/>Cmd: string (EXCLUSIVE with Template)<br/>Args: []string (EXCLUSIVE with Template)<br/>Env: []string (EXCLUSIVE with Template)<br/>WorkDir: string (EXCLUSIVE with Template)<br/>AllowFailure: bool (EXCLUSIVE with Template)"]
 
     A -->|contains| B
     A -->|contains| C
@@ -189,6 +189,8 @@ graph TD
     C["ErrDuplicateTemplateName"]
     D["ErrReservedTemplateName"]
     E["ErrTemplateFieldConflict"]
+    F1["ErrTemplateContainsNameField"]
+    F2["ErrTemplateContainsForbiddenPattern"]
 
     F["ParamError"]
     G["ErrRequiredParamMissing"]
@@ -201,10 +203,19 @@ graph TD
     M["ErrUnclosedPlaceholder"]
     N["ErrInvalidPlaceholderSyntax"]
 
+    O["CommandSpecError"]
+    P["ErrTemplateAndCmdConflict"]
+    Q["ErrTemplateAndArgsConflict"]
+    R["ErrTemplateAndEnvConflict"]
+    S["ErrTemplateAndWorkdirConflict"]
+    T["ErrTemplateAndAllowFailureConflict"]
+
     A --> B
     A --> C
     A --> D
     A --> E
+    A --> F1
+    A --> F2
 
     F --> G
     F --> H
@@ -215,9 +226,16 @@ graph TD
     L --> M
     L --> N
 
+    O --> P
+    O --> Q
+    O --> R
+    O --> S
+    O --> T
+
     style A fill:#ffebee
     style F fill:#ffebee
     style L fill:#ffebee
+    style O fill:#ffebee
 ```
 
 ### 6.2 エラーメッセージのフォーマット
@@ -241,6 +259,14 @@ graph TD
 │                                                                             │
 │  WARNING: group[backup] command[daily]: unused parameter "extra"           │
 │  in template "restic_backup"                                                │
+│                                                                             │
+│  template definition "restic_backup" cannot contain "name" field            │
+│                                                                             │
+│  group[backup] command[daily]: cannot specify both "template" and "cmd"    │
+│  fields in command definition                                               │
+│                                                                             │
+│  group[backup] command[daily]: cannot specify both "template" and "args"   │
+│  fields in command definition                                               │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -382,12 +408,15 @@ graph TD
 | 決定事項 | 選択 | 根拠 |
 |----------|------|------|
 | パラメータ記法 | `${}`, `${?}`, `${@}` | Shell/Ruby との類似性、直感的 |
-| 展開順序 | テンプレート → %{var} | テンプレート内で vars を参照可能に |
+| 展開順序 | テンプレート → %{var} | 実装がシンプル、一貫性が高い（案2採用、ADR参照） |
 | テンプレート定義での %{ | 禁止 | セキュリティ（コンテキスト依存リスク防止, NF-006） |
 | params での %{ | 許可 | 柔軟性（ローカル変数参照を明示的に指定） |
 | 再帰展開 | 非再帰 | DoS 防止（Billion Laughs 類似攻撃） |
 | 未使用 params | 警告のみ | 厳格すぎるとリファクタリングが困難 |
 | テンプレート配置 | groups より前 | TOML の解析順序、可読性 |
+| テンプレート定義での name | 禁止 | name は呼び出し側で指定（同じテンプレートから複数コマンドを区別） |
+| template と cmd/args/env等 | 排他的（エラー） | シンプルさ優先、YAGNI（案A採用、部分上書きは将来拡張可能） |
+| name フィールドの必須性 | 常に必須 | 既存仕様との一貫性、グループ内でユニーク識別が必要 |
 
 ### 10.2 トレードオフ
 
