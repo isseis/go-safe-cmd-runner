@@ -257,9 +257,18 @@ args = ["hello"]
 	outputStr := string(output)
 
 	// Verify command was not actually executed
-	// Note: The args field will contain "hello" but the actual output should not
-	// We check that the command execution message is not present
-	assert.NotContains(t, outputStr, "Would execute: /bin/echo hello", "dry-run should not show actual command execution with args in output")
+	// The output should not contain the command's actual output (which would be "hello" on its own line)
+	// However, "hello" will appear in the args field as `args: ["hello"]`, which is expected
+	// We verify that the command wasn't executed by checking it's not printed as actual output
+	lines := strings.Split(outputStr, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Check for standalone "hello" output (actual command execution)
+		// But exclude lines that are part of the parameter display
+		if trimmed == "hello" {
+			t.Fatal("dry-run should not execute the command (found standalone 'hello' in output)")
+		}
+	}
 
 	// Verify args are shown in the analysis
 	assert.Contains(t, outputStr, `args: ["hello"]`, "dry-run should show command arguments in analysis")
