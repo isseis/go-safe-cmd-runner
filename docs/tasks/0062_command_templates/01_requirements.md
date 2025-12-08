@@ -257,6 +257,9 @@ params.path = "/data"
 1. テンプレートに params を適用（`${...}`, `${?...}`, `${@...}` を展開）
 2. 結果として得られた `[[groups.commands]]` に対して `%{...}` を展開
 
+**重要**: params 内の `%{...}` は Step 1 では展開されず、Step 2 で展開される。
+これにより、params は「テンプレートに渡す式」として機能し、その式にはリテラル値だけでなく変数参照も含めることができる。
+
 **例**:
 ```toml
 [command_templates.restic_backup]
@@ -286,6 +289,11 @@ params.backup_path = "%{group_root}/volumes"
 - params 内で変数参照を明示的に指定することで、どの変数が使用されるか明確
 - `%{...}` の展開は1回のみでシンプル
 - テンプレート定義は変数に依存せず、再利用性が高い
+- 実装がシンプル（既存の変数展開ロジックを再利用）
+
+**メンタルモデル**:
+- `params.backup_path = "%{group_root}/volumes"` は「値」ではなく「式」を渡している
+- テンプレート展開は「式の代入」、変数展開は「式の評価」
 
 **セキュリティ上の注意**:
 - テンプレート定義（`cmd`, `args`, `env`, `workdir`）に `%{` が含まれる場合はエラーとして拒否する（NF-006）
@@ -319,7 +327,7 @@ params.path = "%{group_root}/volumes"  # ローカル変数参照は許可
 
 ### 3.2 保守性 (Maintainability)
 
-#### NF-002: 明確なエラーメッセージ
+#### NF-002: 明確なエラーメッセージとデバッグ情報
 
 **要件**: テンプレート関連のエラーは明確で分かりやすいメッセージを表示すること。
 
@@ -328,6 +336,25 @@ params.path = "%{group_root}/volumes"  # ローカル変数参照は許可
 - `parameter "backup_path" is required but not provided in template "restic_backup"`
 - `cannot specify both "template" and "cmd" fields in command definition`
 - `unused parameter "extra_param" in template "restic_backup"`（警告）
+- `variable "group_root" is not defined in group "group1", referenced by template parameter "backup_path" in template "restic_backup" (command #2)`（変数未定義エラー）
+
+**変数未定義エラーの要件**:
+- テンプレート使用時には、どの params フィールドから参照されたかを明記する
+- グループ名、コマンド番号、テンプレート名を含める
+- params の値（展開前の式）を表示する
+- 可能であれば、修正のヒント（Hint）を表示する
+
+**デバッグログ出力**:
+- テンプレート展開時に params の値（展開前）をログ出力
+- 変数展開時に最終的な値（展開後）をログ出力
+- デバッグモードでは展開の各ステップを追跡可能にする
+
+**ログ出力例**:
+```
+DEBUG: Expanding template "restic_backup" with params: {backup_path: "%{group_root}/volumes"}
+DEBUG: Template expansion result: args = ["backup", "%{group_root}/volumes"]
+DEBUG: Variable expansion result: args = ["backup", "/data/group1/volumes"]
+```
 
 #### NF-003: テストカバレッジ
 
@@ -432,6 +459,33 @@ params.message = "%{prod_message}"  # 明示的、安全、許可される
 ```
 template "echo_var" contains forbidden pattern "%{" in args[0]: variable references are not allowed in template definitions for security reasons
 ```
+
+#### NF-007: Dry-run モードでのテンプレート展開可視化
+
+**要件**: `--dry-run` モードでテンプレート展開のプロセスを可視化すること。
+
+**表示内容**:
+- 使用されたテンプレート名
+- params の値（展開前の式）
+- 変数展開後の最終値
+- 最終的に展開されたコマンド定義
+
+**表示例**:
+```
+Group: group1
+Command: restic_backup (from template)
+  Template parameters:
+    verbose_flags = ["-q"]
+    backup_path = "%{group_root}/volumes" → "/data/group1/volumes"
+
+  Expanded command:
+    cmd: restic
+    args: ["-q", "backup", "/data/group1/volumes"]
+```
+
+**目的**:
+- ユーザーがテンプレート展開の結果を事前に確認できる
+- デバッグ時に展開プロセスを追跡できる
 
 
 ## 4. 代替案の検討
@@ -720,8 +774,9 @@ grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
 
 - **テンプレート (Template)**: 再利用可能なコマンド定義
 - **パラメータ (Parameter)**: テンプレートに渡す変数
-- **テンプレート展開 (Template Expansion)**: テンプレート内のパラメータ参照を実際の値に置き換える処理
-- **変数展開 (Variable Expansion)**: `%{variable}` 形式の変数参照を実際の値に置き換える処理
+- **パラメータ式 (Parameter Expression)**: params で指定する値。リテラル文字列、リテラル配列、または変数参照（`%{...}`）を含む式
+- **テンプレート展開 (Template Expansion)**: テンプレート内の `${...}` パラメータ参照をパラメータ式で置換する処理（変数展開は行わない）
+- **変数展開 (Variable Expansion)**: `%{variable}` 形式の変数参照を実際の変数値で置き換える処理（テンプレート展開後に実行）
 - **文字列パラメータ**: `${param}` 形式で参照される文字列型のパラメータ
 - **オプショナルパラメータ**: `${?param}` 形式で参照され、空の場合に要素が削除されるパラメータ
 - **配列パラメータ**: `${@list}` 形式で参照される配列型のパラメータ
@@ -752,5 +807,12 @@ grep -r '\${' --include='*.go' --include='*.toml' internal/ sample/
 1. **問題の発見**: 複数グループで同じコマンド定義を繰り返し記述する必要がある
 2. **解決策の検討**: テンプレート機能の導入
 3. **記法の選択**: 複数の代替案を比較し、ハイブリッド案（`${}`, `${?}`, `${@}`）を採用
-4. **展開順序の決定**: テンプレート展開 → `%{...}` 変数展開の2段階展開（params 内では `%{...}` 展開を行わない）
-5. **YAGNI の原則**: 継承機能や条件分岐は現時点では不要と判断し、スコープ外とした
+4. **展開順序の決定**:
+   - テンプレート展開 → `%{...}` 変数展開の2段階展開（params 内では `%{...}` 展開を行わない）
+   - 案1（params を先に展開）vs 案2（テンプレート展開を先に実行）を比較し、案2を採用
+   - 採用理由: 実装がシンプル（既存の変数展開ロジックを再利用）、一貫性が高い、セキュリティ検証が容易
+5. **デバッグ性の向上**: 案2の課題（params の値が分かりにくい、エラーメッセージが複雑）に対する対策を追加
+   - デバッグログでの展開前後の値表示（NF-002）
+   - dry-run モードでの可視化（NF-007）
+   - エラーメッセージへのコンテキスト情報追加（NF-002）
+6. **YAGNI の原則**: 継承機能や条件分岐は現時点では不要と判断し、スコープ外とした

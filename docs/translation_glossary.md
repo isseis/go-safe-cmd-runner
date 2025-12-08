@@ -132,6 +132,7 @@
 | 外部依存 | external dependencies | |
 | 外部サービス | external service | |
 | 抽出 | extract / extraction | |
+| 式 | expression | テンプレートパラメータの文脈 |
 
 ### F
 
@@ -191,6 +192,7 @@
 | 整数 | integer | |
 | インターフェース | interface | |
 | 内部変数 | internal variable | |
+| 中間状態 | intermediate state | テンプレート展開と変数展開の間の状態 |
 
 ### K
 
@@ -395,6 +397,9 @@
 
 | 日本語 | English | 備考 |
 |--------|---------|------|
+| テンプレート | template | コマンドテンプレート機能の文脈 |
+| テンプレート展開 | template expansion | コマンド定義への置換処理 |
+| テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
 | タスク | task | |
 | 改ざん | tampering | |
