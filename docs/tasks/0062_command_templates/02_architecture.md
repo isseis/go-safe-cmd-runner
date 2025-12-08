@@ -21,7 +21,7 @@
 graph TD
     A["TOML Configuration<br/>[command_templates.restic_backup]<br/>cmd = 'restic'<br/>args = ['${@verbose_flags}', 'backup', '${path}']<br/><br/>[[groups.commands]]<br/>template = 'restic_backup'<br/>params.verbose_flags = ['-q']<br/>params.path = '%{backup_dir}/data'"]
     B["Config Loader<br/>(internal/runner/config/loader.go)<br/><br/>1. TOML Parse<br/>2. CommandTemplate Extraction<br/>3. Template Name Validation"]
-    C["Template Expansion Module (NEW)<br/>(internal/runner/config/template_expansion.go)<br/><br/>Phase 1: Params Validation<br/>- %{ pattern rejection<br/>- Required params verification<br/><br/>Phase 2: Template Expansion<br/>- ${param} → String replacement<br/>- ${?param} → Optional replacement<br/>- ${@list} → Array expansion<br/>- $$ → Literal $"]
+    C["Template Expansion Module (NEW)<br/>(internal/runner/config/template_expansion.go)<br/><br/>Phase 1: Template Definition Validation<br/>- %{ pattern rejection (NF-006)<br/>- Template name validation<br/><br/>Phase 2: Template Expansion<br/>- ${param} → String replacement<br/>- ${?param} → Optional replacement<br/>- ${@list} → Array expansion<br/>- $$ → Literal $"]
     D["Variable Expansion (Existing)<br/>(internal/runner/config/expansion.go)<br/><br/>- %{var} expansion<br/>- Circular reference detection<br/>- Max recursion depth check"]
     E["Security Validation (Existing)<br/>(internal/runner/security/validator.go)<br/><br/>- cmd_allowed / AllowedCommands check<br/>- Dangerous pattern detection<br/>- Environment variable validation"]
     F["RuntimeCommand<br/>(internal/runner/runnertypes/runtime.go)<br/><br/>ExpandedCmd: '/usr/bin/restic'<br/>ExpandedArgs: ['-q', 'backup', '/data/backups/data']"]
@@ -42,7 +42,7 @@ graph TD
     C["テンプレート定義の検証<br/>- Template name validation<br/>- Duplicate detection<br/>- Reserved name check"]
     D["コマンド展開時<br/>(ExpandCommand 呼び出し時)"]
     E["Step 1: テンプレート参照の解決<br/>template = 'restic_backup' → CommandTemplate 取得"]
-    F["Step 2: params の検証<br/>- %{ pattern rejection<br/>- Required params check"]
+    F["Step 2: テンプレート定義検証<br/>- %{ pattern rejection (NF-006)<br/>- Required params check"]
     G["Step 3: テンプレートパラメータ展開<br/>Template: args = ['${@verbose_flags}', 'backup', '${path}']<br/>Params: verbose_flags = ['-q'], path = '%{backup_dir}/data'<br/>Result: args = ['-q', 'backup', '%{backup_dir}/data']"]
     H["Step 4: %{var} 変数展開（既存処理）<br/>Input: args = ['-q', 'backup', '%{backup_dir}/data']<br/>Vars: backup_dir = '/data/backups'<br/>Output: args = ['-q', 'backup', '/data/backups/data']"]
     I["Step 5: セキュリティ検証（既存処理）<br/>- cmd_allowed / AllowedCommands check<br/>- Dangerous pattern detection<br/>- Environment variable validation"]
@@ -128,12 +128,12 @@ graph LR
 
 ```mermaid
 graph TB
-    A["TOML Configuration (Trusted)<br/>[command_templates.example]<br/>cmd = 'restic'<br/>args = ['${@flags}', '%{dir}']"]
-    B["Params (Partially Trusted)<br/>[[groups.commands]]<br/>template = 'example'<br/>params.flags = ['-q']<br/>params.path = 'data'"]
+    A["TOML Configuration (Trusted)<br/>[command_templates.example]<br/>cmd = 'restic'<br/>args = ['${@flags}', '${path}']<br/><br/>Note: %{var} is FORBIDDEN here (NF-006)"]
+    B["Params (Partially Trusted)<br/>[[groups.commands]]<br/>template = 'example'<br/>params.flags = ['-q']<br/>params.path = '%{backup_dir}/data'<br/><br/>Note: %{var} is ALLOWED here"]
 
     C["Validation"]
 
-    D["Security Checks<br/>1. params 値に %{ が含まれる → エラー<br/>2. 展開後の cmd が許可リストに含まれる → 検証<br/>3. 展開後の cmd, args に危険パターン → 検証<br/>4. 展開後の env に対する検証"]
+    D["Security Checks<br/>1. Template definition に %{ が含まれる → エラー (NF-006)<br/>2. 展開後の cmd が許可リストに含まれる → 検証<br/>3. 展開後の cmd, args に危険パターン → 検証<br/>4. 展開後の env に対する検証"]
 
     A -->|trusted| C
     B -->|partial trust<br/>requires validation| C
@@ -232,8 +232,9 @@ graph TD
 │  ─────────────────────────────────────────────────────────────────          │
 │  group[backup] command[daily]: template "restic_backup" not found          │
 │                                                                             │
-│  group[backup] command[daily].params.path: forbidden pattern "%{" found    │
-│  in value "%{secret_var}"                                                   │
+│  template "echo_var" contains forbidden pattern "%{" in args[0]:           │
+│  variable references are not allowed in template definitions for           │
+│  security reasons (see NF-006)                                              │
 │                                                                             │
 │  group[backup] command[daily]: required parameter "backup_path" not        │
 │  provided for template "restic_backup"                                      │
@@ -382,7 +383,8 @@ graph TD
 |----------|------|------|
 | パラメータ記法 | `${}`, `${?}`, `${@}` | Shell/Ruby との類似性、直感的 |
 | 展開順序 | テンプレート → %{var} | テンプレート内で vars を参照可能に |
-| params での %{ | 禁止 | セキュリティ（インジェクション防止） |
+| テンプレート定義での %{ | 禁止 | セキュリティ（コンテキスト依存リスク防止, NF-006） |
+| params での %{ | 許可 | 柔軟性（ローカル変数参照を明示的に指定） |
 | 再帰展開 | 非再帰 | DoS 防止（Billion Laughs 類似攻撃） |
 | 未使用 params | 警告のみ | 厳格すぎるとリファクタリングが困難 |
 | テンプレート配置 | groups より前 | TOML の解析順序、可読性 |
@@ -402,7 +404,7 @@ graph TD
 │  セキュリティ vs 利便性                                                     │
 │  ─────────────────────────────────────────────────────────────              │
 │  選択: セキュリティ優先                                                     │
-│  影響: params で %{} 使用不可                                               │
+│  影響: テンプレート定義で %{} 使用不可 (NF-006)                               │
 │  理由: インジェクション攻撃の完全防止                                       │
 │                                                                             │
 │  厳格さ vs 寛容さ                                                           │

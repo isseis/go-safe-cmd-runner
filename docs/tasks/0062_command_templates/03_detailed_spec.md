@@ -526,8 +526,10 @@ func expandStringPlaceholders(
 //
 // This function performs the following checks:
 //  1. Parameter name validation
-//  2. Forbidden pattern check: %{ is not allowed in params (NF-006)
-//  3. Type validation
+//  2. Type validation
+//
+// Note: Variable references (%{var}) are allowed in params to enable
+// local variable usage (NF-006).
 //
 // Note: Command injection and path traversal validation is NOT performed here.
 // These checks are applied to the expanded command definition after template
@@ -586,19 +588,10 @@ func ValidateParams(
 
 // validateParamString validates a single string parameter value.
 func validateParamString(value, paramName, templateName string) error {
-	// Check for forbidden %{ pattern (NF-006)
-	// This is the ONLY security check performed on raw param values.
-	// Other security checks (command injection, path traversal, etc.)
+	// No security checks on raw param values.
+	// Variable references (%{var}) are allowed in params (NF-006).
+	// Security checks (command injection, path traversal, etc.)
 	// are performed on the expanded command definition.
-	if strings.Contains(value, "%{") {
-		return &ErrForbiddenPattern{
-			TemplateName: templateName,
-			ParamName:    paramName,
-			Pattern:      "%{",
-			Value:        value,
-		}
-	}
-
 	return nil
 }
 ```
@@ -631,7 +624,93 @@ func ValidateTemplateName(name string) error {
 }
 ```
 
-### 3.3 使用パラメータの収集
+### 3.3 テンプレート定義の検証
+
+```go
+// ValidateTemplateDefinition validates a template definition for security.
+//
+// This function enforces NF-006: Variable references (%{var}) are NOT allowed
+// in template definitions to prevent context-dependent security issues.
+//
+// Rationale:
+//  - Templates are reused across multiple groups with different variable contexts
+//  - A variable reference safe in one group may expose secrets in another group
+//  - Variable references should be explicit in params, not hidden in templates
+//
+// Example attack scenario prevented by this check:
+//   [command_templates.dangerous]
+//   cmd = "echo"
+//   args = ["%{secret_password}"]  # FORBIDDEN: context-dependent risk
+//
+//   # Safe in development group
+//   [[groups]]
+//   name = "dev"
+//   [groups.vars]
+//   secret_password = "dev_message"
+//
+//   # But leaks secrets in production group
+//   [[groups]]
+//   name = "prod"
+//   [groups.vars]
+//   secret_password = "prod_db_pass_xyz"  # LEAKED!
+//
+// Safe alternative:
+//   [command_templates.safe]
+//   cmd = "echo"
+//   args = ["${message}"]  # Parameter reference only
+//
+//   [[groups.commands]]
+//   template = "safe"
+//   params.message = "%{secret_password}"  # Explicit, visible
+func ValidateTemplateDefinition(
+	name string,
+	template *CommandTemplate,
+) error {
+	// Check cmd for forbidden %{ pattern
+	if strings.Contains(template.Cmd, "%{") {
+		return &ErrForbiddenPatternInTemplate{
+			TemplateName: name,
+			Field:        "cmd",
+			Value:        template.Cmd,
+		}
+	}
+
+	// Check args for forbidden %{ pattern
+	for i, arg := range template.Args {
+		if strings.Contains(arg, "%{") {
+			return &ErrForbiddenPatternInTemplate{
+				TemplateName: name,
+				Field:        fmt.Sprintf("args[%d]", i),
+				Value:        arg,
+			}
+		}
+	}
+
+	// Check env for forbidden %{ pattern
+	for i, env := range template.Env {
+		if strings.Contains(env, "%{") {
+			return &ErrForbiddenPatternInTemplate{
+				TemplateName: name,
+				Field:        fmt.Sprintf("env[%d]", i),
+				Value:        env,
+			}
+		}
+	}
+
+	// Check workdir for forbidden %{ pattern
+	if template.WorkDir != "" && strings.Contains(template.WorkDir, "%{") {
+		return &ErrForbiddenPatternInTemplate{
+			TemplateName: name,
+			Field:        "workdir",
+			Value:        template.WorkDir,
+		}
+	}
+
+	return nil
+}
+```
+
+### 3.4 使用パラメータの収集
 
 ```go
 // CollectUsedParams extracts all parameter names used in a template.
@@ -690,10 +769,10 @@ func collectFromString(input string, used map[string]struct{}) error {
 //
 // Processing order:
 //  1. Template resolution (if template field is set)
-//  2. Params validation (name validation, %{ pattern rejection)
+//  2. Template definition validation (NF-006: %{ pattern forbidden)
 //  3. Template parameter expansion (${...})
 //  4. Variable inheritance from group
-//  5. Variable expansion (%{...})
+//  5. Variable expansion (%{...} - allowed in params)
 //  6. Security validation (NF-005: applied to expanded command)
 //
 // Security validation (step 6) includes:
@@ -732,7 +811,12 @@ func ExpandCommand(
 			}
 		}
 
-		// Validate params (name validation, %{ rejection only)
+		// Validate template definition (NF-006: no %{ in template)
+		if err := ValidateTemplateDefinition(spec.Template, &template); err != nil {
+			return nil, fmt.Errorf("command[%s]: %w", spec.Name, err)
+		}
+
+		// Validate params (name validation only)
 		if err := ValidateParams(spec.Params, spec.Template); err != nil {
 			return nil, fmt.Errorf("command[%s]: %w", spec.Name, err)
 		}
@@ -965,17 +1049,17 @@ func (e *ErrTypeMismatch) Error() string {
 		e.TemplateName, e.Field, e.ParamName, e.Expected, e.Actual)
 }
 
-// ErrForbiddenPattern is returned when a parameter contains a forbidden pattern
-type ErrForbiddenPattern struct {
+// ErrForbiddenPatternInTemplate is returned when a template definition contains
+// a forbidden variable reference pattern (%{var}) - enforces NF-006
+type ErrForbiddenPatternInTemplate struct {
 	TemplateName string
-	ParamName    string
-	Pattern      string
+	Field        string
 	Value        string
 }
 
-func (e *ErrForbiddenPattern) Error() string {
-	return fmt.Sprintf("template %q parameter %q contains forbidden pattern %q: %q",
-		e.TemplateName, e.ParamName, e.Pattern, e.Value)
+func (e *ErrForbiddenPatternInTemplate) Error() string {
+	return fmt.Sprintf("template %q contains forbidden pattern \"%%{\" in %s: variable references are not allowed in template definitions for security reasons (see NF-006)",
+		e.TemplateName, e.Field)
 }
 
 
@@ -1239,10 +1323,11 @@ params.item = "widget"
 | TestTypeMismatch | 型不一致 | `${path}`, params.path = [] | ErrTypeMismatch |
 | TestUnclosedPlaceholder | 閉じ忘れ | `${path` | ErrUnclosedPlaceholder |
 | TestArrayInMixed | 配列の混合コンテキスト | `"pre${@arr}post"` | ErrArrayInMixedContext |
-| TestForbiddenPattern | %{ パターン | params.p = "%{var}" | ErrForbiddenPattern |
+| TestVarRefInTemplate | テンプレート定義で%{使用 | template.args = ["%{var}"] | ErrForbiddenPatternInTemplate |
 | TestTemplateNotFound | 未定義テンプレート | template = "nonexistent" | ErrTemplateNotFound |
 | TestTemplateFieldConflict | 排他違反 | template + cmd | ErrTemplateFieldConflict |
 | TestReservedTemplateName | 予約名 | name = "__reserved" | ErrReservedTemplateName |
+| TestVarRefInParams | params内で%{使用 | params.p = "%{var}" | 許可される（エラーなし） |
 
 ### 8.3 統合テスト
 
