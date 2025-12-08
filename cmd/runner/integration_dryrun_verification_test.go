@@ -59,7 +59,7 @@ args = ["hello"]
 
 	outputStr := string(output)
 	// Verify file verification section is present
-	assert.Contains(t, outputStr, "=== FILE VERIFICATION ===")
+	assert.Contains(t, outputStr, "===== File Verification =====")
 	assert.Contains(t, outputStr, "Hash Directory:")
 
 	// Verify exit code is 0
@@ -83,7 +83,7 @@ args = ["hello"]
 
 	outputStr := string(output)
 	// Verify file verification section is present
-	assert.Contains(t, outputStr, "=== FILE VERIFICATION ===")
+	assert.Contains(t, outputStr, "===== File Verification =====")
 	assert.Contains(t, outputStr, "Hash Directory:")
 
 	// Verify exit code is 0
@@ -113,7 +113,7 @@ args = ["hello"]
 
 	outputStr := string(output)
 	// Verify file verification section is present
-	assert.Contains(t, outputStr, "=== FILE VERIFICATION ===")
+	assert.Contains(t, outputStr, "===== File Verification =====")
 
 	// Verify exit code is 0
 	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
@@ -194,7 +194,7 @@ args = ["-l"]
 
 	outputStr := string(output)
 	// Verify file verification section is present
-	assert.Contains(t, outputStr, "=== FILE VERIFICATION ===")
+	assert.Contains(t, outputStr, "===== File Verification =====")
 
 	// Verify detailed level shows failures if present
 	if !strings.Contains(outputStr, "Failed: 0") {

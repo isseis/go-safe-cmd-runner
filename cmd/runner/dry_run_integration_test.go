@@ -275,10 +275,10 @@ func TestDryRunTextOutput_Unchanged(t *testing.T) {
 		"should have global level section")
 	assert.Contains(t, output, "[Group:",
 		"should have group section")
-	// Note: The text format shows "[Allowlist Inheritance]" instead of "[Inheritance Mode]"
-	assert.Contains(t, output, "[Allowlist Inheritance]",
+	// Note: The text format shows "----- Allowlist Inheritance -----" instead of "[Inheritance Mode]"
+	assert.Contains(t, output, "----- Allowlist Inheritance -----",
 		"should have allowlist inheritance section")
-	assert.Contains(t, output, "===== Final Process Environment =====",
+	assert.Contains(t, output, "----- Final Process Environment -----",
 		"should have final environment section")
 
 	// Verify group-specific sections

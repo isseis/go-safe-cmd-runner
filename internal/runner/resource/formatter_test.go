@@ -69,8 +69,8 @@ func TestTextFormatterMinimalResult(t *testing.T) {
 
 	output, err := formatter.FormatResult(result, opts)
 	assert.NoError(t, err)
-	assert.Contains(t, output, "=== DRY-RUN ANALYSIS REPORT ===")
-	assert.Contains(t, output, "=== SUMMARY ===")
+	assert.Contains(t, output, "===== Dry-Run Analysis Report =====")
+	assert.Contains(t, output, "----- Summary -----")
 }
 
 // TestTextFormatterWithMetadata tests TextFormatter with metadata
@@ -131,14 +131,14 @@ func TestTextFormatterSummaryLevel(t *testing.T) {
 
 	output, err := formatter.FormatResult(result, opts)
 	assert.NoError(t, err)
-	assert.Contains(t, output, "=== SUMMARY ===")
+	assert.Contains(t, output, "----- Summary -----")
 	assert.Contains(t, output, "Resource Operations:")
 	assert.Contains(t, output, "command: 1")
 	assert.Contains(t, output, "Security Risks:")
 	assert.Contains(t, output, "Low: 1")
 	// Summary level should not include detailed sections
-	assert.NotContains(t, output, "=== RESOURCE OPERATIONS ===")
-	assert.NotContains(t, output, "=== ENVIRONMENT INFORMATION ===")
+	assert.NotContains(t, output, "----- Resource Operations -----")
+	assert.NotContains(t, output, "===== Environment Information =====")
 }
 
 // TestTextFormatterDetailedLevel tests TextFormatter with detailed level
@@ -180,13 +180,13 @@ func TestTextFormatterDetailedLevel(t *testing.T) {
 
 	output, err := formatter.FormatResult(result, opts)
 	assert.NoError(t, err)
-	assert.Contains(t, output, "=== RESOURCE OPERATIONS ===")
-	assert.Contains(t, output, "=== SECURITY ANALYSIS ===")
+	assert.Contains(t, output, "----- Resource Operations -----")
+	assert.Contains(t, output, "----- Security Analysis -----")
 	assert.Contains(t, output, "Test command [command]")
 	assert.Contains(t, output, "Security Risk: LOW")
 	assert.Contains(t, output, "[MEDIUM] Test risk")
 	// Detailed level should not include environment info
-	assert.NotContains(t, output, "=== ENVIRONMENT INFORMATION ===")
+	assert.NotContains(t, output, "===== Environment Information =====")
 }
 
 // TestTextFormatterFullLevel tests TextFormatter with full level detail
@@ -227,7 +227,7 @@ func TestTextFormatterFullLevel(t *testing.T) {
 
 	output, err := formatter.FormatResult(result, opts)
 	assert.NoError(t, err)
-	assert.Contains(t, output, "=== ENVIRONMENT INFORMATION ===")
+	assert.Contains(t, output, "===== Environment Information =====")
 	assert.Contains(t, output, "Total Variables: 10")
 	assert.Contains(t, output, "Allowed Variables: 2")
 	assert.Contains(t, output, "Filtered Variables: 1")
@@ -386,12 +386,12 @@ func TestTextFormatterErrorsAndWarnings(t *testing.T) {
 
 	output, err := formatter.FormatResult(result, opts)
 	assert.NoError(t, err)
-	assert.Contains(t, output, "=== ERRORS ===")
+	assert.Contains(t, output, "----- Errors -----")
 	assert.Contains(t, output, "[configuration_error] Config error")
 	assert.Contains(t, output, "Component: config")
 	assert.Contains(t, output, "Location: test-group/test-cmd")
 	assert.Contains(t, output, "Recoverable: true")
-	assert.Contains(t, output, "=== WARNINGS ===")
+	assert.Contains(t, output, "----- Warnings -----")
 	assert.Contains(t, output, "[security_concern] Security warning")
 }
 
@@ -717,13 +717,13 @@ func TestFormatterEmptyCollections(t *testing.T) {
 
 		output, err := formatter.FormatResult(result, opts)
 		assert.NoError(t, err)
-		assert.Contains(t, output, "=== DRY-RUN ANALYSIS REPORT ===")
-		assert.Contains(t, output, "=== SUMMARY ===")
+		assert.Contains(t, output, "===== Dry-Run Analysis Report =====")
+		assert.Contains(t, output, "----- Summary -----")
 		// Should not contain sections for empty data
-		assert.NotContains(t, output, "=== RESOURCE OPERATIONS ===")
-		assert.NotContains(t, output, "=== SECURITY ANALYSIS ===")
-		assert.NotContains(t, output, "=== ERRORS ===")
-		assert.NotContains(t, output, "=== WARNINGS ===")
+		assert.NotContains(t, output, "----- Resource Operations -----")
+		assert.NotContains(t, output, "----- Security Analysis -----")
+		assert.NotContains(t, output, "----- Errors -----")
+		assert.NotContains(t, output, "----- Warnings -----")
 	})
 
 	t.Run("JSONFormatter", func(t *testing.T) {
@@ -758,11 +758,11 @@ func TestFormatterNilFields(t *testing.T) {
 
 		output, err := formatter.FormatResult(result, opts)
 		assert.NoError(t, err)
-		assert.Contains(t, output, "=== DRY-RUN ANALYSIS REPORT ===")
+		assert.Contains(t, output, "===== Dry-Run Analysis Report =====")
 		// Should not contain sections for nil data
 		assert.NotContains(t, output, "Generated at:")
-		assert.NotContains(t, output, "=== SECURITY ANALYSIS ===")
-		assert.NotContains(t, output, "=== ENVIRONMENT INFORMATION ===")
+		assert.NotContains(t, output, "----- Security Analysis -----")
+		assert.NotContains(t, output, "===== Environment Information =====")
 	})
 
 	t.Run("JSONFormatter handles nil fields", func(t *testing.T) {
@@ -907,7 +907,7 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		opts := FormatterOptions{DetailLevel: DetailLevelSummary}
 		output, err := formatter.FormatResult(result, opts)
 		assert.NoError(t, err)
-		assert.Contains(t, output, "=== FILE VERIFICATION ===")
+		assert.Contains(t, output, "===== File Verification =====")
 		assert.Contains(t, output, "Total Files: 10")
 		assert.Contains(t, output, "Verified: 7")
 		assert.Contains(t, output, "Skipped: 2")
@@ -920,7 +920,7 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
 		output, err := formatter.FormatResult(result, opts)
 		assert.NoError(t, err)
-		assert.Contains(t, output, "=== FILE VERIFICATION ===")
+		assert.Contains(t, output, "===== File Verification =====")
 		assert.Contains(t, output, "Failures:")
 		assert.Contains(t, output, "[ERROR] /usr/bin/suspicious")
 		assert.Contains(t, output, "Reason: Hash mismatch (potential tampering)")
@@ -931,7 +931,7 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		opts := FormatterOptions{DetailLevel: DetailLevelFull}
 		output, err := formatter.FormatResult(result, opts)
 		assert.NoError(t, err)
-		assert.Contains(t, output, "=== FILE VERIFICATION ===")
+		assert.Contains(t, output, "===== File Verification =====")
 		assert.Contains(t, output, "Failures:")
 		assert.Contains(t, output, "[ERROR] /usr/bin/suspicious")
 	})
@@ -964,7 +964,7 @@ func TestTextFormatter_WriteFileVerification_AllSuccess(t *testing.T) {
 	opts := FormatterOptions{DetailLevel: DetailLevelDetailed}
 	output, err := formatter.FormatResult(result, opts)
 	assert.NoError(t, err)
-	assert.Contains(t, output, "=== FILE VERIFICATION ===")
+	assert.Contains(t, output, "===== File Verification =====")
 	assert.Contains(t, output, "Total Files: 5")
 	assert.Contains(t, output, "Verified: 5")
 	assert.Contains(t, output, "Failed: 0")
