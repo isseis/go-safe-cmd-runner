@@ -383,3 +383,247 @@ func TestStringMapValue_String_RealWorldExample(t *testing.T) {
 		})
 	}
 }
+
+// TestStringSliceValue_String tests the String() method for various cases
+func TestStringSliceValue_String(t *testing.T) {
+	tests := []struct {
+		name     string
+		slice    []string
+		expected string
+	}{
+		{
+			name:     "empty slice",
+			slice:    []string{},
+			expected: "[]",
+		},
+		{
+			name:     "single element",
+			slice:    []string{"hello"},
+			expected: `["hello"]`,
+		},
+		{
+			name:     "multiple elements",
+			slice:    []string{"arg1", "arg2", "arg3"},
+			expected: `["arg1", "arg2", "arg3"]`,
+		},
+		{
+			name:     "elements with spaces",
+			slice:    []string{"hello world", "foo bar"},
+			expected: `["hello world", "foo bar"]`,
+		},
+		{
+			name:     "elements with special characters",
+			slice:    []string{"arg=value", "--option=test"},
+			expected: `["arg=value", "--option=test"]`,
+		},
+		{
+			name:     "elements with quotes",
+			slice:    []string{`"quoted"`, `'single'`},
+			expected: `["\"quoted\"", "'single'"]`,
+		},
+		{
+			name:     "elements with newlines",
+			slice:    []string{"line1\nline2", "text"},
+			expected: `["line1\nline2", "text"]`,
+		},
+		{
+			name:     "elements with tabs",
+			slice:    []string{"col1\tcol2", "data"},
+			expected: `["col1\tcol2", "data"]`,
+		},
+		{
+			name:     "real-world command arguments",
+			slice:    []string{"-la", "/home/user"},
+			expected: `["-la", "/home/user"]`,
+		},
+		{
+			name:     "variable expansion result",
+			slice:    []string{"DateTime=20251208033257.063", "PID=546452"},
+			expected: `["DateTime=20251208033257.063", "PID=546452"]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sliceValue := NewStringSliceValue(tt.slice)
+			result := sliceValue.String()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestStringSliceValue_Value tests that Value() returns the original slice
+func TestStringSliceValue_Value(t *testing.T) {
+	slice := []string{"arg1", "arg2", "arg3"}
+	sliceValue := NewStringSliceValue(slice)
+	result := sliceValue.Value()
+
+	// Value() should return the original slice
+	resultSlice, ok := result.([]string)
+	require.True(t, ok, "Value() should return []string")
+	assert.Equal(t, slice, resultSlice)
+}
+
+// TestStringSliceValue_JSONMarshaling tests JSON marshaling of StringSliceValue
+func TestStringSliceValue_JSONMarshaling(t *testing.T) {
+	tests := []struct {
+		name     string
+		slice    []string
+		expected string
+	}{
+		{
+			name:     "empty slice",
+			slice:    []string{},
+			expected: `[]`,
+		},
+		{
+			name:     "single element",
+			slice:    []string{"hello"},
+			expected: `["hello"]`,
+		},
+		{
+			name:     "multiple elements",
+			slice:    []string{"arg1", "arg2", "arg3"},
+			expected: `["arg1","arg2","arg3"]`,
+		},
+		{
+			name:     "elements with spaces",
+			slice:    []string{"hello world", "foo bar"},
+			expected: `["hello world","foo bar"]`,
+		},
+		{
+			name:     "elements with special characters",
+			slice:    []string{"arg=value", "--option=test"},
+			expected: `["arg=value","--option=test"]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sliceValue := NewStringSliceValue(tt.slice)
+
+			// Marshal to JSON
+			jsonBytes, err := json.Marshal(sliceValue)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, string(jsonBytes))
+
+			// Unmarshal back
+			var unmarshaled []string
+			err = json.Unmarshal(jsonBytes, &unmarshaled)
+			require.NoError(t, err)
+			assert.Equal(t, tt.slice, unmarshaled)
+		})
+	}
+}
+
+// TestAnyToParameterValue_StringSlice tests conversion of []any to StringSliceValue
+func TestAnyToParameterValue_StringSlice(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         any
+		expectedType  string
+		expectedValue any
+		expectedStr   string
+	}{
+		{
+			name:          "empty slice",
+			input:         []any{},
+			expectedType:  "StringSliceValue",
+			expectedValue: []string{},
+			expectedStr:   "[]",
+		},
+		{
+			name:          "single string element",
+			input:         []any{"hello"},
+			expectedType:  "StringSliceValue",
+			expectedValue: []string{"hello"},
+			expectedStr:   `["hello"]`,
+		},
+		{
+			name:          "multiple string elements",
+			input:         []any{"arg1", "arg2", "arg3"},
+			expectedType:  "StringSliceValue",
+			expectedValue: []string{"arg1", "arg2", "arg3"},
+			expectedStr:   `["arg1", "arg2", "arg3"]`,
+		},
+		{
+			name:          "mixed types - strings and integers",
+			input:         []any{"arg1", 42, "arg3"},
+			expectedType:  "AnyValue",
+			expectedValue: []any{"arg1", 42, "arg3"},
+			expectedStr:   "[arg1 42 arg3]",
+		},
+		{
+			name:          "mixed types - strings and booleans",
+			input:         []any{"true", true, "false"},
+			expectedType:  "AnyValue",
+			expectedValue: []any{"true", true, "false"},
+			expectedStr:   "[true true false]",
+		},
+		{
+			name:          "mixed types - strings and floats",
+			input:         []any{"3.14", 3.14, "2.71"},
+			expectedType:  "AnyValue",
+			expectedValue: []any{"3.14", 3.14, "2.71"},
+			expectedStr:   "[3.14 3.14 2.71]",
+		},
+		{
+			name:          "nested slice (should be AnyValue)",
+			input:         []any{[]any{"nested"}},
+			expectedType:  "AnyValue",
+			expectedValue: []any{[]any{"nested"}},
+			expectedStr:   "[[nested]]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := anyToParameterValue(tt.input)
+
+			// Check type
+			switch tt.expectedType {
+			case "StringSliceValue":
+				sliceValue, ok := result.(StringSliceValue)
+				require.True(t, ok, "Expected StringSliceValue but got %T", result)
+				assert.Equal(t, tt.expectedValue, sliceValue.Value())
+				assert.Equal(t, tt.expectedStr, sliceValue.String())
+			case "AnyValue":
+				anyValue, ok := result.(AnyValue)
+				require.True(t, ok, "Expected AnyValue but got %T", result)
+				assert.Equal(t, tt.expectedValue, anyValue.Value())
+				assert.Equal(t, tt.expectedStr, anyValue.String())
+			default:
+				t.Fatalf("Unknown expected type: %s", tt.expectedType)
+			}
+		})
+	}
+}
+
+// TestParametersMap_JSONRoundtrip_WithStringSlice tests that ParametersMap with StringSliceValue
+// can be marshaled and unmarshaled correctly
+func TestParametersMap_JSONRoundtrip_WithStringSlice(t *testing.T) {
+	original := ParametersMap{
+		"command": NewStringValue("/bin/echo"),
+		"args":    NewStringSliceValue([]string{"arg1", "arg2", "arg3"}),
+		"count":   NewIntValue(3),
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	// Unmarshal back
+	var restored ParametersMap
+	err = json.Unmarshal(jsonBytes, &restored)
+	require.NoError(t, err)
+
+	// Check values
+	assert.Equal(t, "/bin/echo", restored["command"].Value())
+	assert.Equal(t, int64(3), restored["count"].Value())
+
+	// Args should be restored as []any (which will become StringSliceValue)
+	args := restored["args"].Value()
+	argsSlice, ok := args.([]string)
+	require.True(t, ok, "args should be []string, got %T", args)
+	assert.Equal(t, []string{"arg1", "arg2", "arg3"}, argsSlice)
+}

@@ -56,6 +56,18 @@ func anyToParameterValue(v any) ParameterValue {
 		return NewIntValue(int64(val))
 	case int64:
 		return NewIntValue(val)
+	case []any:
+		// Check if it's a string slice (all values are strings)
+		strSlice := make([]string, len(val))
+		for i, v := range val {
+			str, ok := v.(string)
+			if !ok {
+				// Otherwise treat as generic any value
+				return NewAnyValue(val)
+			}
+			strSlice[i] = str
+		}
+		return NewStringSliceValue(strSlice)
 	case map[string]any:
 		// Check if it's a string map (all values are strings)
 		strMap := make(map[string]string)
@@ -183,6 +195,45 @@ func (f FloatValue) Value() any {
 // MarshalJSON implements json.Marshaler interface
 func (f FloatValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(f.value)
+}
+
+// StringSliceValue represents a string slice parameter value
+type StringSliceValue struct {
+	value []string
+}
+
+// NewStringSliceValue creates a new string slice parameter value
+func NewStringSliceValue(v []string) ParameterValue {
+	return StringSliceValue{value: v}
+}
+
+func (s StringSliceValue) String() string {
+	if len(s.value) == 0 {
+		return "[]"
+	}
+
+	// Format as JSON array for readability
+	var result strings.Builder
+	result.WriteString("[")
+	for i, v := range s.value {
+		if i > 0 {
+			result.WriteString(", ")
+		}
+		// Quote and escape each argument
+		result.WriteString(fmt.Sprintf("%q", v))
+	}
+	result.WriteString("]")
+	return result.String()
+}
+
+// Value implements ParameterValue interface
+func (s StringSliceValue) Value() any {
+	return s.value
+}
+
+// MarshalJSON implements json.Marshaler interface
+func (s StringSliceValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.value)
 }
 
 // StringMapValue represents a variable map with control character escaping
