@@ -156,7 +156,7 @@ graph TB
 
 ```mermaid
 graph LR
-    A["Template Definition<br/>$`{param}<br/>$`{?param}<br/>$`{@list}"]
+    A["Template Definition<br/>${param}<br/>${?param}<br/>${@list}"]
     B["Params Application<br/>params.path = 'data'"]
     C["Intermediate CommandSpec<br/>cmd = 'restic'<br/>args = ['backup'<br/>'%{dir}/data']"]
     D["Variable Resolution<br/>dir = '/backup'"]
