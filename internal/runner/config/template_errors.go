@@ -232,3 +232,18 @@ func (e *ErrInvalidPlaceholderName) Error() string {
 	return fmt.Sprintf("invalid placeholder name %q at position %d in %q: %s",
 		e.Name, e.Position, e.Input, e.Reason)
 }
+
+// ErrTemplateCmdNotSingleValue is returned when template cmd field doesn't resolve to exactly one value.
+type ErrTemplateCmdNotSingleValue struct {
+	TemplateName string
+	ResultCount  int
+}
+
+func (e *ErrTemplateCmdNotSingleValue) Error() string {
+	if e.ResultCount == 0 {
+		return fmt.Sprintf("template %q: cmd field must resolve to exactly one non-empty value, got 0 values (check optional placeholders)",
+			e.TemplateName)
+	}
+	return fmt.Sprintf("template %q: cmd field must resolve to exactly one value, got %d values",
+		e.TemplateName, e.ResultCount)
+}

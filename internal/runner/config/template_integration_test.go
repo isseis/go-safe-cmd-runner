@@ -384,6 +384,113 @@ msg = "hello"
 	// We can verify it was copied to the expanded CommandSpec
 }
 
+// TestTemplateCmdValidation tests that cmd field must resolve to exactly one value
+func TestTemplateCmdValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		toml        string
+		errContains string
+	}{
+		{
+			name: "cmd with optional placeholder that resolves to empty",
+			toml: `
+version = "1.0"
+[command_templates.optional_cmd]
+cmd = "${?mycmd}"
+args = ["test"]
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "cmd1"
+template = "optional_cmd"
+# params.mycmd not provided - cmd will be empty
+`,
+			errContains: "cmd field must resolve to exactly one non-empty value, got 0 values",
+		},
+		{
+			name: "cmd with array placeholder (invalid)",
+			toml: `
+version = "1.0"
+[command_templates.array_cmd]
+cmd = "${@cmds}"
+args = ["test"]
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "cmd1"
+template = "array_cmd"
+[groups.commands.params]
+cmds = ["ls", "cat"]
+`,
+			errContains: "cmd field must resolve to exactly one value, got 2 values",
+		},
+		{
+			name: "cmd with empty string after expansion",
+			toml: `
+version = "1.0"
+[command_templates.empty_cmd]
+cmd = "${?cmd}"
+args = ["test"]
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "cmd1"
+template = "empty_cmd"
+[groups.commands.params]
+cmd = ""
+`,
+			errContains: "cmd field must resolve to exactly one non-empty value, got 0 values",
+		},
+		{
+			name: "valid cmd with optional placeholder provided",
+			toml: `
+version = "1.0"
+[command_templates.optional_cmd]
+cmd = "${?mycmd}"
+args = ["test"]
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "cmd1"
+template = "optional_cmd"
+[groups.commands.params]
+mycmd = "echo"
+`,
+			errContains: "", // Should succeed
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			require.NoError(t, err)
+
+			runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+			require.NoError(t, err)
+
+			runtimeGroup, err := ExpandGroup(&cfg.Groups[0], runtimeGlobal)
+			require.NoError(t, err)
+
+			_, err = ExpandCommand(
+				&cfg.Groups[0].Commands[0],
+				cfg.CommandTemplates,
+				runtimeGroup,
+				runtimeGlobal,
+				common.NewUnsetTimeout(),
+				commontesting.NewUnsetOutputSizeLimit(),
+			)
+
+			if tt.errContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // TestMultipleGroupsSameTemplate tests that the same template can be used
 // by commands in different groups
 func TestMultipleGroupsSameTemplate(t *testing.T) {

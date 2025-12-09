@@ -1199,6 +1199,20 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template cmd: %w", err)
 	}
 
+	// Validate cmd resolves to exactly one value
+	if len(expandedCmd) != 1 {
+		return nil, warnings, &ErrTemplateCmdNotSingleValue{
+			TemplateName: templateName,
+			ResultCount:  len(expandedCmd),
+		}
+	}
+	if expandedCmd[0] == "" {
+		return nil, warnings, &ErrTemplateCmdNotSingleValue{
+			TemplateName: templateName,
+			ResultCount:  0,
+		}
+	}
+
 	// Expand args
 	expandedArgs, err := ExpandTemplateArgs(template.Args, cmdSpec.Params, templateName)
 	if err != nil {
