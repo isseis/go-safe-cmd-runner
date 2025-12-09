@@ -1133,11 +1133,11 @@ func TestBackwardCompatibility(t *testing.T) {
 - [x] セキュリティテスト
 
 ### Phase 5: Loader 統合
-- [ ] ValidateTemplates() 実装
-- [ ] LoadConfig() への統合
-- [ ] "name" フィールド禁止チェック
-- [ ] 重複テンプレート名検出
-- [ ] ユニットテスト
+- [x] ValidateTemplates() 実装
+- [x] LoadConfig() への統合
+- [x] "name" フィールド禁止チェック
+- [x] 重複テンプレート名検出
+- [x] ユニットテスト
 
 ### Phase 6: 展開統合
 - [x] expandTemplateToSpec() 実装
