@@ -308,6 +308,7 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 		// Expand command configuration
 		runtimeCmd, err := config.ExpandCommand(
 			cmdSpec,
+			ge.config.CommandTemplates,
 			runtimeGroup,
 			runtimeGlobal,
 			runtimeGlobal.Timeout(),

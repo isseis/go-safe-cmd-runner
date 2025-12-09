@@ -1060,7 +1060,41 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 //   - EffectiveTimeout is set by NewRuntimeCommand using timeout resolution hierarchy.
 //   - EffectiveOutputSizeLimit is set by NewRuntimeCommand using output size limit resolution.
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
-func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
+func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertypes.CommandTemplate, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
+	// Check for template field and expand if present
+	if spec.Template != "" {
+		// Validate exclusivity (template vs. cmd/args/env/workdir)
+		groupName := runnertypes.ExtractGroupName(runtimeGroup)
+		// Use -1 as commandIndex since we don't have it in this context
+		if err := ValidateCommandSpecExclusivity(groupName, -1, spec); err != nil {
+			return nil, err
+		}
+
+		// Find template
+		template, exists := templates[spec.Template]
+		if !exists {
+			return nil, &ErrTemplateNotFound{
+				CommandName:  spec.Name,
+				TemplateName: spec.Template,
+			}
+		}
+
+		// Expand template to CommandSpec
+		expandedSpec, warnings, err := expandTemplateToSpec(spec, &template, spec.Template)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand template %q for command %q: %w", spec.Template, spec.Name, err)
+		}
+
+		// Log warnings about unused parameters
+		for _, warning := range warnings {
+			// TODO: Add proper logging for warnings
+			_ = warning
+		}
+
+		// Use expanded spec for the rest of the expansion process
+		spec = expandedSpec
+	}
+
 	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout and output size limit
 	groupName := runnertypes.ExtractGroupName(runtimeGroup)
 	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout, globalOutputSizeLimit, groupName)
@@ -1137,4 +1171,105 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 
 	// Note: EffectiveWorkDir and EffectiveTimeout are not set here
 	return runtime, nil
+}
+
+// expandTemplateToSpec expands a template into a CommandSpec by substituting parameters.
+// It returns the expanded CommandSpec and a list of warnings for unused parameters.
+// The expanded spec will have Template field cleared and Cmd/Args/Env/WorkDir fields populated.
+func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, templateName string) (*runnertypes.CommandSpec, []string, error) {
+	var warnings []string
+
+	// Collect used parameters from template
+	usedParams, err := CollectUsedParams(template)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to collect used params from template %q: %w", templateName, err)
+	}
+
+	// Check for unused parameters
+	for paramName := range cmdSpec.Params {
+		if _, used := usedParams[paramName]; !used {
+			warnings = append(warnings, fmt.Sprintf("unused parameter %q in template %q for command %q",
+				paramName, templateName, cmdSpec.Name))
+		}
+	}
+
+	// Expand cmd
+	expandedCmd, err := expandSingleArg(template.Cmd, cmdSpec.Params, templateName, "cmd")
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template cmd: %w", err)
+	}
+
+	// Expand args
+	expandedArgs, err := ExpandTemplateArgs(template.Args, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template args: %w", err)
+	}
+
+	// Expand env (KEY=VALUE format)
+	expandedEnv := make([]string, 0, len(template.Env))
+	for _, envEntry := range template.Env {
+		// Parse KEY=VALUE
+		const envKeyValueParts = 2
+		parts := strings.SplitN(envEntry, "=", envKeyValueParts)
+		if len(parts) != envKeyValueParts {
+			return nil, warnings, &ErrInvalidEnvFormatDetail{
+				Level:   "template",
+				Mapping: envEntry,
+				Reason:  "expected KEY=value format",
+			}
+		}
+		key := parts[0]
+		value := parts[1]
+
+		// Expand value part only
+		expandedValue, err := expandSingleArg(value, cmdSpec.Params, templateName, "env")
+		if err != nil {
+			return nil, warnings, fmt.Errorf("failed to expand template env value for %q: %w", key, err)
+		}
+
+		// Skip if value is empty after expansion (e.g., optional param was missing)
+		if len(expandedValue) == 0 {
+			continue
+		}
+
+		expandedEnv = append(expandedEnv, key+"="+expandedValue[0])
+	}
+
+	// Expand workdir
+	var expandedWorkDir string
+	if template.WorkDir != "" {
+		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, "workdir")
+		if err != nil {
+			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
+		}
+		if len(result) > 0 {
+			expandedWorkDir = result[0]
+		}
+	}
+
+	// Create expanded spec
+	expandedSpec := &runnertypes.CommandSpec{
+		Name:            cmdSpec.Name,
+		Description:     cmdSpec.Description,
+		Cmd:             expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
+		Args:            expandedArgs,
+		EnvVars:         expandedEnv,
+		WorkDir:         expandedWorkDir,
+		Timeout:         template.Timeout,         // Inherit from template if set
+		OutputSizeLimit: template.OutputSizeLimit, // Inherit from template if set
+		RiskLevel:       template.RiskLevel,       // Inherit from template if set
+
+		// Copy non-template fields from original spec
+		EnvImport:  cmdSpec.EnvImport,
+		Vars:       cmdSpec.Vars,
+		OutputFile: cmdSpec.OutputFile,
+		RunAsUser:  cmdSpec.RunAsUser,
+		RunAsGroup: cmdSpec.RunAsGroup,
+
+		// Template and Params are cleared - no longer needed
+		Template: "",
+		Params:   nil,
+	}
+
+	return expandedSpec, warnings, nil
 }

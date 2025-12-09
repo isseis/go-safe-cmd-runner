@@ -1140,11 +1140,14 @@ func TestBackwardCompatibility(t *testing.T) {
 - [ ] ユニットテスト
 
 ### Phase 6: 展開統合
-- [ ] expandTemplateToSpec() 実装
-- [ ] expandTemplateString() 実装
-- [ ] expandTemplateEnv() 実装
-- [ ] ExpandCommand() への統合
-- [ ] 統合テスト
+- [x] expandTemplateToSpec() 実装
+- [x] ExpandCommand() への統合
+  - [x] ExpandCommand() シグネチャ更新 (templates パラメータ追加)
+  - [x] テンプレート展開ロジック統合
+  - [x] 全呼び出し箇所の更新 (group_executor.go, テストファイル)
+- [x] 統合テスト
+  - [x] TestExpandTemplateToSpec: expandTemplateToSpec() の単体テスト
+  - [x] TestExpandCommandWithTemplate: ExpandCommand() 経由のE2Eテスト
 
 ### Phase 7: 統合テスト
 - [ ] サンプル設定ファイル作成
