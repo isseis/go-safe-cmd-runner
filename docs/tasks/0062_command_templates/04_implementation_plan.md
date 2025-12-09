@@ -1160,11 +1160,11 @@ func TestBackwardCompatibility(t *testing.T) {
 - [x] 互換性確認
 
 ### Phase 9: ドキュメント整備
-- [ ] command_templates.md 作成
-- [ ] README.md 更新
-- [ ] README.ja.md 更新
-- [ ] CHANGELOG.md 更新
-- [ ] ドキュメントレビュー
+- [x] command_templates.md 作成
+- [x] README.md 更新
+- [x] README.ja.md 更新
+- [x] CHANGELOG.md 更新
+- [x] ドキュメントレビュー
 
 ## 7. 成功基準
 

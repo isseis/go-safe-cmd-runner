@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Command Templates
+
+Added reusable command templates with parameter substitution to reduce configuration duplication and improve maintainability.
+
+**Features:**
+- Define command templates in `[command_templates.template_name]` sections
+- Reference templates using `template` field in command definitions
+- Three parameter types:
+  - `${param}`: Required parameter (error if missing)
+  - `${?param}`: Optional parameter (omitted if empty)
+  - `${@param}`: Array parameter (expanded into multiple arguments)
+- Escape sequences: `\$` for literal dollar sign
+- Variable expansion (`%{var}`) allowed in `params` values
+- Security constraint: `%{var}` syntax forbidden in template definitions
+
+**Example:**
+```toml
+# Define template
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}"]
+env = ["RESTIC_REPOSITORY=${repo}"]
+
+# Use template
+[[groups.commands]]
+name = "backup_volumes"
+template = "restic_backup"
+
+[groups.commands.params]
+flags = ["-v", "--exclude-caches"]
+path = "/data/volumes"
+repo = "/backup/repo"
+```
+
+**Type Definitions:**
+- Added `CommandTemplate` struct in `runnertypes/spec.go`
+- Added `CommandTemplates map[string]CommandTemplate` field to `ConfigSpec`
+- Added `Template string` and `Params map[string]interface{}` fields to `CommandSpec`
+
+**Documentation:**
+- User guide: `docs/user/command_templates.md`
+- Sample configuration: `sample/command_template_example.toml`
+
 ### Changed
 
 #### BREAKING CHANGE: Vars Configuration Format
