@@ -1,6 +1,55 @@
 // Package runnertypes defines the core data structures used throughout the command runner.
 package runnertypes
 
+// CommandTemplate represents a reusable command definition.
+// Templates are defined in the [command_templates] section of TOML and
+// can be referenced by CommandSpec using the Template field.
+//
+// Template parameters use the following syntax:
+//   - ${param}   : Required string parameter
+//   - ${?param}  : Optional string parameter (removed if empty)
+//   - ${@param}  : Array parameter (elements are expanded in place)
+//   - \$         : Literal $ character (in TOML: \\$)
+//
+// Example TOML:
+//
+//	[command_templates.restic_backup]
+//	cmd = "restic"
+//	args = ["${@verbose_flags}", "backup", "${path}"]
+type CommandTemplate struct {
+	// Cmd is the command path (may contain template parameters)
+	// REQUIRED field
+	Cmd string `toml:"cmd"`
+
+	// Args is the list of command arguments (may contain template parameters)
+	// Optional, defaults to empty array
+	Args []string `toml:"args"`
+
+	// Env is the list of environment variables in KEY=VALUE format
+	// (may contain template parameters in the VALUE part)
+	// Optional, defaults to empty array
+	Env []string `toml:"env"`
+
+	// WorkDir is the working directory for the command (optional)
+	WorkDir string `toml:"workdir"`
+
+	// Timeout specifies the command timeout in seconds (optional)
+	// nil: inherit from group/global, 0: unlimited, positive: timeout in seconds
+	Timeout *int32 `toml:"timeout"`
+
+	// OutputSizeLimit specifies the maximum output size in bytes (optional)
+	// nil: inherit from global, 0: unlimited, positive: limit in bytes
+	OutputSizeLimit *int64 `toml:"output_size_limit"`
+
+	// RiskLevel specifies the maximum allowed risk level (optional)
+	// Valid values: "low", "medium", "high"
+	RiskLevel string `toml:"risk_level"`
+
+	// NOTE: The "name" field is NOT allowed in template definitions.
+	// Command names must be specified in the [[groups.commands]] section
+	// when referencing the template.
+}
+
 // ConfigSpec represents the root configuration structure loaded from TOML file.
 // This is an immutable representation of the configuration file and should not be modified after loading.
 //
@@ -12,6 +61,18 @@ type ConfigSpec struct {
 
 	// Global contains global-level configuration
 	Global GlobalSpec `toml:"global"`
+
+	// CommandTemplates contains reusable command template definitions.
+	// Templates are defined using TOML table syntax:
+	//   [command_templates.template_name]
+	//   cmd = "..."
+	//   args = [...]
+	//
+	// Template names must:
+	//   - Start with a letter or underscore
+	//   - Contain only letters, digits, and underscores
+	//   - Not start with "__" (reserved for future use)
+	CommandTemplates map[string]CommandTemplate `toml:"command_templates"`
 
 	// Groups contains all command groups defined in the configuration
 	Groups []GroupSpec `toml:"groups"`
@@ -106,10 +167,35 @@ type GroupSpec struct {
 // For runtime-expanded values (e.g., ExpandedCmd, ExpandedArgs), see RuntimeCommand instead.
 type CommandSpec struct {
 	// Basic information
-	Name        string `toml:"name"`        // Command name (must be unique within the group)
+	Name        string `toml:"name"`        // Command name (REQUIRED, must be unique within group)
 	Description string `toml:"description"` // Human-readable description
 
+	// Template reference (mutually exclusive with Cmd, Args, Env, WorkDir)
+	// When Template is set, the command definition is loaded from the
+	// referenced CommandTemplate and Params are applied.
+	Template string `toml:"template"`
+
+	// Params contains template parameter values.
+	// Each key corresponds to a parameter placeholder in the template.
+	// Values can be:
+	//   - string: for ${param} and ${?param} placeholders
+	//   - []any: for ${@param} placeholders (elements must be string)
+	//
+	// Params can contain variable references (%{var}) which will be expanded
+	// AFTER template expansion (see F-006 in requirements.md).
+	//
+	// Example TOML:
+	//   [[groups.commands]]
+	//   name = "backup_volumes"  # REQUIRED (must be unique within group)
+	//   template = "restic_backup"
+	//   params.verbose_flags = ["-q"]
+	//   params.path = "%{backup_dir}/data"  # %{} is allowed in params
+	Params map[string]interface{} `toml:"params"`
+
 	// Command definition (raw values, not yet expanded)
+	// These fields are MUTUALLY EXCLUSIVE with Template:
+	//   - If Template is set, these fields MUST NOT be set (validation error)
+	//   - If Template is not set, Cmd is REQUIRED
 	Cmd  string   `toml:"cmd"`  // Command path (may contain variables like %{VAR})
 	Args []string `toml:"args"` // Command arguments (may contain variables)
 

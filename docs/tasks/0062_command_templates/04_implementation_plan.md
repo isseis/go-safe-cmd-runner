@@ -1173,11 +1173,11 @@ func TestBackwardCompatibility(t *testing.T) {
 ## 6. 実装チェックリスト
 
 ### Phase 1: 基盤整備
-- [ ] CommandTemplate 構造体追加
-- [ ] ConfigSpec への CommandTemplates フィールド追加
-- [ ] CommandSpec への Template/Params フィールド追加
-- [ ] 全エラー型定義
-- [ ] エラーメッセージテスト
+- [x] CommandTemplate 構造体追加
+- [x] ConfigSpec への CommandTemplates フィールド追加
+- [x] CommandSpec への Template/Params フィールド追加
+- [x] 全エラー型定義
+- [x] エラーメッセージテスト
 
 ### Phase 2: プレースホルダー解析
 - [ ] placeholderType 定義
