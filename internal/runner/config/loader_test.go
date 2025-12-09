@@ -346,6 +346,27 @@ version = "1.0"
 `,
 			expectError: false,
 		},
+		{
+			name: "negative template timeout",
+			configToml: `
+version = "1.0"
+
+[command_templates.bad_template]
+  cmd = "echo"
+  args = ["test"]
+  timeout = -15
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    template = "bad_template"
+    [groups.commands.params]
+`,
+			expectError: true,
+			errorMsg:    "timeout must not be negative: template 'bad_template' timeout got -15",
+		},
 	}
 
 	for _, tt := range tests {

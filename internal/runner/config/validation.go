@@ -103,7 +103,7 @@ func validateVariableName(varName, level, field string) error {
 }
 
 // ValidateTimeouts validates that all timeout values in the configuration are non-negative.
-// It checks both global timeout and command-level timeouts.
+// It checks global timeout, template timeouts, and command-level timeouts.
 // Returns an aggregated error containing all negative timeout violations found.
 func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
 	var errors []string
@@ -111,6 +111,14 @@ func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
 	// Check global timeout
 	if cfg.Global.Timeout != nil && *cfg.Global.Timeout < 0 {
 		errors = append(errors, fmt.Sprintf("global timeout got %d", *cfg.Global.Timeout))
+	}
+
+	// Check template timeouts
+	for templateName, template := range cfg.CommandTemplates {
+		if template.Timeout != nil && *template.Timeout < 0 {
+			errors = append(errors, fmt.Sprintf("template '%s' timeout got %d",
+				templateName, *template.Timeout))
+		}
 	}
 
 	// Check command-level timeouts
