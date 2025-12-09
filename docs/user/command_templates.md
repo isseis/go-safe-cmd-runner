@@ -118,11 +118,13 @@ repo = "%{backup_root}/repo"  # "/data/backups/repo" に展開
 | `args` | []string | | コマンド引数 |
 | `env` | []string | | 環境変数（KEY=VALUE形式） |
 | `workdir` | string | | 作業ディレクトリ |
-| `timeout` | int32 | | タイムアウト（秒） |
-| `output_size_limit` | int64 | | 出力サイズ制限（バイト） |
-| `risk_level` | string | | リスクレベル（low/medium/high） |
+| `timeout` | int32 | | タイムアウト（秒）※1 |
+| `output_size_limit` | int64 | | 出力サイズ制限（バイト）※1 |
+| `risk_level` | string | | リスクレベル（low/medium/high）※1 |
 
-**注意**: テンプレート定義内に `name` フィールドを含めることはできません。コマンド名はテンプレート使用時に指定します。
+**注意**:
+- テンプレート定義内に `name` フィールドを含めることはできません。コマンド名はテンプレート使用時に指定します。
+- ※1 実行設定（`timeout`、`output_size_limit`、`risk_level`）は、コマンド定義で明示的に指定することで上書きできます。コマンド定義で指定しない場合はテンプレートの値が使用されます。
 
 ## セキュリティ制約
 
@@ -371,6 +373,39 @@ repo = "%{backup_root}/repo"  # 環境変数を参照
 # ❌ Bad: 1つのテンプレートで全て
 [command_templates.restic_all_in_one]
 ```
+
+### 5. 実行設定のオーバーライド
+
+テンプレートで実行設定（`timeout`、`output_size_limit`、`risk_level`）のデフォルト値を定義し、必要に応じてコマンド定義で上書きできます：
+
+```toml
+# テンプレート: 通常のタイムアウト
+[command_templates.database_backup]
+cmd = "pg_dump"
+args = ["${database}"]
+timeout = 300  # デフォルト5分
+risk_level = "medium"
+
+[[groups.commands]]
+name = "backup_small_db"
+template = "database_backup"
+# テンプレートのtimeout=300とrisk_level="medium"を継承
+[groups.commands.params]
+database = "small_db"
+
+[[groups.commands]]
+name = "backup_large_db"
+template = "database_backup"
+timeout = 1800  # 30分に上書き（大規模DBのため）
+risk_level = "high"  # リスクレベルも上書き
+[groups.commands.params]
+database = "large_db"
+```
+
+**オーバーライドの優先順位**:
+- コマンド定義で明示的に指定された値が最優先
+- 指定がない場合はテンプレートの値を使用
+- テンプレートにも指定がない場合はシステムデフォルト（`risk_level` のみ、デフォルトは "low"）
 
 ## 参考情報
 

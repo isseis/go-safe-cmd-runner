@@ -1176,6 +1176,14 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 // expandTemplateToSpec expands a template into a CommandSpec by substituting parameters.
 // It returns the expanded CommandSpec and a list of warnings for unused parameters.
 // The expanded spec will have Template field cleared and Cmd/Args/Env/WorkDir fields populated.
+//
+// Execution settings (Timeout, OutputSizeLimit, RiskLevel) follow a command-override pattern:
+//   - If the command explicitly sets a value, that value is used
+//   - Otherwise, the template's value is used as a fallback
+//
+// This allows templates to provide sensible defaults while permitting per-command customization.
+//
+//nolint:gocyclo // Template expansion requires sequential validation and transformation steps
 func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, templateName string) (*runnertypes.CommandSpec, []string, error) {
 	var warnings []string
 
@@ -1263,15 +1271,18 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 
 	// Create expanded spec
 	expandedSpec := &runnertypes.CommandSpec{
-		Name:            cmdSpec.Name,
-		Description:     cmdSpec.Description,
-		Cmd:             expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
-		Args:            expandedArgs,
-		EnvVars:         expandedEnv,
-		WorkDir:         expandedWorkDir,
-		Timeout:         template.Timeout,         // Inherit from template if set
-		OutputSizeLimit: template.OutputSizeLimit, // Inherit from template if set
-		RiskLevel:       template.RiskLevel,       // Inherit from template if set
+		Name:        cmdSpec.Name,
+		Description: cmdSpec.Description,
+		Cmd:         expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
+		Args:        expandedArgs,
+		EnvVars:     expandedEnv,
+		WorkDir:     expandedWorkDir,
+
+		// Execution settings: prefer command-level, fallback to template
+		// This allows commands to override template defaults
+		Timeout:         cmdSpec.Timeout,
+		OutputSizeLimit: cmdSpec.OutputSizeLimit,
+		RiskLevel:       cmdSpec.RiskLevel,
 
 		// Copy non-template fields from original spec
 		EnvImport:  cmdSpec.EnvImport,
@@ -1283,6 +1294,17 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		// Template and Params are cleared - no longer needed
 		Template: "",
 		Params:   nil,
+	}
+
+	// Apply template defaults for execution settings only if command didn't set them
+	if expandedSpec.Timeout == nil && template.Timeout != nil {
+		expandedSpec.Timeout = template.Timeout
+	}
+	if expandedSpec.OutputSizeLimit == nil && template.OutputSizeLimit != nil {
+		expandedSpec.OutputSizeLimit = template.OutputSizeLimit
+	}
+	if expandedSpec.RiskLevel == "" && template.RiskLevel != "" {
+		expandedSpec.RiskLevel = template.RiskLevel
 	}
 
 	return expandedSpec, warnings, nil

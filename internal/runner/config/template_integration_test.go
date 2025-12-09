@@ -560,3 +560,194 @@ message = "%{msg}"
 	require.NoError(t, err)
 	assert.Equal(t, []string{"Group 2"}, runtimeCmd2.ExpandedArgs)
 }
+
+// TestTemplateExecutionSettingsOverride tests that command-level execution settings
+// override template values (timeout, output_size_limit, risk_level)
+func TestTemplateExecutionSettingsOverride(t *testing.T) {
+	tests := []struct {
+		name                     string
+		toml                     string
+		expectedTimeout          *int32
+		expectedOutputSizeLimit  *int64
+		expectedRiskLevel        string
+		expectedEffectiveTimeout int32
+	}{
+		{
+			name: "command overrides all execution settings",
+			toml: `
+version = "1.0"
+
+[command_templates.base]
+cmd = "echo"
+args = ["${msg}"]
+timeout = 10
+output_size_limit = 1024
+risk_level = "low"
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "base"
+timeout = 300
+output_size_limit = 2048
+risk_level = "high"
+[groups.commands.params]
+msg = "hello"
+`,
+			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
+			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
+			expectedRiskLevel:        "high",
+			expectedEffectiveTimeout: 300,
+		},
+		{
+			name: "command overrides timeout only",
+			toml: `
+version = "1.0"
+
+[command_templates.base]
+cmd = "echo"
+args = ["${msg}"]
+timeout = 10
+output_size_limit = 1024
+risk_level = "low"
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "base"
+timeout = 300
+[groups.commands.params]
+msg = "hello"
+`,
+			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
+			expectedOutputSizeLimit:  func() *int64 { v := int64(1024); return &v }(),
+			expectedRiskLevel:        "low",
+			expectedEffectiveTimeout: 300,
+		},
+		{
+			name: "command inherits all from template",
+			toml: `
+version = "1.0"
+
+[command_templates.base]
+cmd = "echo"
+args = ["${msg}"]
+timeout = 10
+output_size_limit = 1024
+risk_level = "low"
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "base"
+[groups.commands.params]
+msg = "hello"
+`,
+			expectedTimeout:          func() *int32 { v := int32(10); return &v }(),
+			expectedOutputSizeLimit:  func() *int64 { v := int64(1024); return &v }(),
+			expectedRiskLevel:        "low",
+			expectedEffectiveTimeout: 10,
+		},
+		{
+			name: "command sets timeout to zero (unlimited) overriding template",
+			toml: `
+version = "1.0"
+
+[command_templates.base]
+cmd = "echo"
+args = ["${msg}"]
+timeout = 10
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "base"
+timeout = 0
+[groups.commands.params]
+msg = "hello"
+`,
+			expectedTimeout:          func() *int32 { v := int32(0); return &v }(),
+			expectedOutputSizeLimit:  nil,
+			expectedRiskLevel:        "low", // Default risk level is applied when neither template nor command specify it
+			expectedEffectiveTimeout: 0,
+		},
+		{
+			name: "template has no execution settings, command sets them",
+			toml: `
+version = "1.0"
+
+[command_templates.base]
+cmd = "echo"
+args = ["${msg}"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "base"
+timeout = 300
+output_size_limit = 2048
+risk_level = "medium"
+[groups.commands.params]
+msg = "hello"
+`,
+			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
+			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
+			expectedRiskLevel:        "medium",
+			expectedEffectiveTimeout: 300,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			require.NoError(t, err)
+
+			runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+			require.NoError(t, err)
+
+			runtimeGroup, err := ExpandGroup(&cfg.Groups[0], runtimeGlobal)
+			require.NoError(t, err)
+
+			runtimeCmd, err := ExpandCommand(
+				&cfg.Groups[0].Commands[0],
+				cfg.CommandTemplates,
+				runtimeGroup,
+				runtimeGlobal,
+				common.NewUnsetTimeout(),
+				commontesting.NewUnsetOutputSizeLimit(),
+			)
+			require.NoError(t, err)
+
+			// Check the expanded spec fields (accessed via runtimeCmd.Spec)
+			if tt.expectedTimeout != nil {
+				require.NotNil(t, runtimeCmd.Spec.Timeout, "expected timeout to be set")
+				assert.Equal(t, *tt.expectedTimeout, *runtimeCmd.Spec.Timeout, "timeout mismatch")
+			} else {
+				assert.Nil(t, runtimeCmd.Spec.Timeout, "expected timeout to be nil")
+			}
+
+			if tt.expectedOutputSizeLimit != nil {
+				require.NotNil(t, runtimeCmd.Spec.OutputSizeLimit, "expected output_size_limit to be set")
+				assert.Equal(t, *tt.expectedOutputSizeLimit, *runtimeCmd.Spec.OutputSizeLimit, "output_size_limit mismatch")
+			} else {
+				assert.Nil(t, runtimeCmd.Spec.OutputSizeLimit, "expected output_size_limit to be nil")
+			}
+
+			assert.Equal(t, tt.expectedRiskLevel, runtimeCmd.Spec.RiskLevel, "risk_level mismatch")
+
+			// Check effective timeout (resolved value)
+			assert.Equal(t, tt.expectedEffectiveTimeout, runtimeCmd.EffectiveTimeout, "effective timeout mismatch")
+		})
+	}
+}
