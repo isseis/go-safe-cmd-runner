@@ -1195,12 +1195,12 @@ func TestBackwardCompatibility(t *testing.T) {
 - [x] ユニットテスト (全展開モード)
 
 ### Phase 4: セキュリティ検証
-- [ ] ValidateTemplateName() 実装
-- [ ] ValidateTemplateDefinition() 実装
-- [ ] ValidateParams() 実装
-- [ ] ValidateCommandSpecExclusivity() 実装
-- [ ] CollectUsedParams() 実装
-- [ ] セキュリティテスト
+- [x] ValidateTemplateName() 実装
+- [x] ValidateTemplateDefinition() 実装
+- [x] ValidateParams() 実装
+- [x] ValidateCommandSpecExclusivity() 実装
+- [x] CollectUsedParams() 実装
+- [x] セキュリティテスト
 
 ### Phase 5: Loader 統合
 - [ ] ValidateTemplates() 実装
