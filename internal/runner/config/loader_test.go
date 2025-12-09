@@ -364,3 +364,169 @@ version = "1.0"
 		})
 	}
 }
+
+func TestLoaderWithTemplates(t *testing.T) {
+	tests := []struct {
+		name        string
+		toml        string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid template",
+			toml: `
+version = "1.0"
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+
+[[groups]]
+name = "backup"
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"
+[groups.commands.params]
+path = "/data"
+`,
+			wantErr: false,
+		},
+		{
+			name: "duplicate template name",
+			toml: `
+version = "1.0"
+[command_templates.duplicate]
+cmd = "echo"
+args = ["first"]
+[command_templates.duplicate]
+cmd = "ls"
+`,
+			wantErr:     true,
+			errContains: "duplicate",
+		},
+		{
+			name: "forbidden %{ in template cmd",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "%{var}"
+`,
+			wantErr:     true,
+			errContains: "forbidden pattern",
+		},
+		{
+			name: "forbidden %{ in template args",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "echo"
+args = ["%{var}", "hello"]
+`,
+			wantErr:     true,
+			errContains: "forbidden pattern",
+		},
+		{
+			name: "forbidden %{ in template env",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "echo"
+env = ["VAR=%{value}"]
+`,
+			wantErr:     true,
+			errContains: "forbidden pattern",
+		},
+		{
+			name: "forbidden %{ in template workdir",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "echo"
+workdir = "%{dir}"
+`,
+			wantErr:     true,
+			errContains: "forbidden pattern",
+		},
+		{
+			name: "missing cmd field",
+			toml: `
+version = "1.0"
+[command_templates.no_cmd]
+args = ["backup"]
+`,
+			wantErr:     true,
+			errContains: "required field",
+		},
+		{
+			name: "invalid template name",
+			toml: `
+version = "1.0"
+[command_templates."123invalid"]
+cmd = "echo"
+`,
+			wantErr:     true,
+			errContains: "invalid template name",
+		},
+		{
+			name: "reserved template name prefix",
+			toml: `
+version = "1.0"
+[command_templates.__reserved]
+cmd = "echo"
+`,
+			wantErr:     true,
+			errContains: "reserved prefix",
+		},
+		{
+			name: "template with name field",
+			toml: `
+version = "1.0"
+[command_templates.bad_template]
+name = "should_not_be_here"
+cmd = "echo"
+`,
+			wantErr:     true,
+			errContains: "cannot contain \"name\" field",
+		},
+		{
+			name: "valid template with placeholders",
+			toml: `
+version = "1.0"
+[command_templates.restic_advanced]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}", "${?optional}"]
+env = ["RESTIC_REPO=${repo}"]
+workdir = "${workdir}"
+
+[[groups]]
+name = "backup"
+[[groups.commands]]
+name = "backup_home"
+template = "restic_advanced"
+[groups.commands.params]
+flags = ["-v", "--exclude-caches"]
+path = "/home"
+repo = "/backup/repo"
+workdir = "/tmp"
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.toml))
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error but got none")
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains, "error message mismatch")
+				}
+				assert.Nil(t, cfg, "config should be nil when validation fails")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+				require.NotNil(t, cfg, "config should not be nil")
+			}
+		})
+	}
+}

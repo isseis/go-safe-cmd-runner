@@ -639,12 +639,9 @@ func TestCollectUsedParams(t *testing.T) {
 
 #### Step 5.1: TOML 読み込み対応
 
-**ファイル**: `internal/runner/config/loader.go`
-
-**作業内容**:
-1. `LoadConfig()` に `ValidateTemplates()` 呼び出し追加
-2. `ValidateTemplates()` 関数の実装 (各テンプレートに対して検証実行)
-3. 重複テンプレート名の検出
+- [x] `LoadConfig()` に `ValidateTemplates()` 呼び出し追加
+- [x] `ValidateTemplates()` 関数の実装 (各テンプレートに対して検証実行)
+- [x] 重複テンプレート名の検出
 
 **成功条件**:
 - 有効なテンプレート定義を含む TOML をロードできる
@@ -653,97 +650,30 @@ func TestCollectUsedParams(t *testing.T) {
 
 **推定工数**: 2時間
 
-**テスト**:
-```go
-func TestLoaderWithTemplates(t *testing.T) {
-	tests := []struct {
-		name    string
-		toml    string
-		wantErr bool
-		errType error
-	}{
-		{
-			name: "valid template",
-			toml: `
-version = "1.0"
-[command_templates.restic_backup]
-cmd = "restic"
-args = ["backup", "${path}"]
-
-[[groups]]
-name = "backup"
-[[groups.commands]]
-name = "backup_data"
-template = "restic_backup"
-params.path = "/data"
-`,
-			wantErr: false,
-		},
-		{
-			name: "duplicate template name",
-			toml: `
-version = "1.0"
-[command_templates.duplicate]
-cmd = "echo"
-[command_templates.duplicate]
-cmd = "ls"
-`,
-			wantErr: true,
-			errType: &ErrDuplicateTemplateName{},
-		},
-		{
-			name: "forbidden %{ in template",
-			toml: `
-version = "1.0"
-[command_templates.bad]
-cmd = "echo"
-args = ["%{var}"]
-`,
-			wantErr: true,
-			errType: &ErrForbiddenPatternInTemplate{},
-		},
-	}
-	// ...
-}
-```
+**実装済み**: `ValidateTemplates()` を loader.go に実装。LoadConfig() から呼び出し。
 
 #### Step 5.2: "name" フィールド禁止チェック
 
-**ファイル**: `internal/runner/config/loader.go`
-
-**作業内容**:
-1. TOML パース後、`CommandTemplate` に "name" フィールドが含まれる場合のエラー処理
-2. カスタム TOML デコーダーまたはパース後の検証
-   - ヒント: `toml.Unmarshal` 後に再度 `map[string]interface{}` としてデコードして、`command_templates` 下の各テーブルに `name` キーが存在するかチェックする方法などが考えられる。
+- [x] TOML パース後、`CommandTemplate` に "name" フィールドが含まれる場合のエラー処理
+- [x] カスタム TOML デコーダーまたはパース後の検証
+- [x] `checkTemplateNameField()` 関数の実装
 
 **成功条件**:
 - テンプレート定義に "name" が含まれる場合にエラーを返す
 
 **推定工数**: 1.5時間
 
-**注意**: go-toml/v2 では追加フィールドを検出するために `toml.DisallowUnknownFields()` を使用する必要があるが、これは構造体レベルでのみ機能する。テンプレート定義に "name" が含まれているかを検出するには、カスタムバリデーションが必要。
+**実装済み**: `checkTemplateNameField()` を loader.go に実装。TOML を map としてパースして name フィールドを検出。
 
 **テスト**:
-```go
-func TestTemplateNameFieldRejection(t *testing.T) {
-	toml := `
-version = "1.0"
-[command_templates.bad_template]
-name = "should_not_be_here"
-cmd = "echo"
-`
-	loader := NewLoader()
-	_, err := loader.LoadConfig([]byte(toml))
-	if err == nil {
-		t.Fatal("expected error for 'name' field in template definition")
-	}
-	// Verify error type
-	var targetErr *ErrTemplateContainsNameField
-	if !errors.As(err, &targetErr) {
-		t.Errorf("expected ErrTemplateContainsNameField, got %T", err)
-	}
-}
-```
+- [x] `TestLoaderWithTemplates` に各種テンプレートローディングテストを追加
+  - [x] 有効なテンプレート
+  - [x] 重複テンプレート名
+  - [x] 禁止パターン (%{} in cmd/args/env/workdir)
+  - [x] 必須フィールド欠如
+  - [x] 無効なテンプレート名
+  - [x] 予約済みプレフィックス
+  - [x] name フィールド禁止
 
 ### Phase 6: 展開統合 (Expansion Integration)
 
