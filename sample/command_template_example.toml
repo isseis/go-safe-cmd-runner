@@ -1,0 +1,137 @@
+# Command Template Examples
+# This file demonstrates various features of the command template functionality.
+
+version = "1.0"
+
+# Global configuration
+[global]
+workdir = "/tmp"
+
+[global.vars]
+backup_root = "/data/backups"
+restore_target = "/mnt/restore"
+
+# Command Template Definitions
+# Templates allow you to define reusable command patterns with parameters
+
+# Basic template with required parameters
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+env = ["RESTIC_REPOSITORY=${repo}"]
+
+# Template with optional parameters
+# ${?param} syntax means the parameter is optional and will be omitted if not provided
+[command_templates.restic_backup_with_options]
+cmd = "restic"
+args = ["${?verbose}", "backup", "${path}"]
+env = ["RESTIC_REPOSITORY=${repo}"]
+
+# Template with array parameters
+# ${@param} syntax expands an array into multiple arguments
+[command_templates.restic_backup_advanced]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}"]
+env = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD=${?password}"]
+
+# Template with workdir
+[command_templates.restic_restore]
+cmd = "restic"
+args = ["restore", "latest", "--target", "${target}"]
+env = ["RESTIC_REPOSITORY=${repo}"]
+workdir = "${workdir}"
+
+# Template with timeout and risk level
+[command_templates.safe_echo]
+cmd = "echo"
+args = ["${message}"]
+timeout = 5
+risk_level = "low"
+
+# Groups using templates
+[[groups]]
+name = "daily_backup"
+description = "Daily backup jobs using restic templates"
+
+[groups.vars]
+backup_repo = "%{backup_root}/repo"
+
+# Basic template usage
+[[groups.commands]]
+name = "backup_volumes"
+description = "Backup volumes directory"
+template = "restic_backup"
+
+[groups.commands.params]
+path = "/data/volumes"
+repo = "%{backup_repo}"
+
+# Template with optional parameter provided
+[[groups.commands]]
+name = "backup_db_verbose"
+description = "Backup database with verbose output"
+template = "restic_backup_with_options"
+
+[groups.commands.params]
+verbose = "-v"
+path = "/data/database"
+repo = "%{backup_repo}"
+
+# Template with optional parameter omitted
+[[groups.commands]]
+name = "backup_config"
+description = "Backup config (quiet mode)"
+template = "restic_backup_with_options"
+
+[groups.commands.params]
+# verbose is not provided, so it will be omitted
+path = "/etc/config"
+repo = "%{backup_repo}"
+
+# Template with array parameter
+[[groups.commands]]
+name = "backup_home_advanced"
+description = "Backup home with multiple flags"
+template = "restic_backup_advanced"
+
+[groups.commands.params]
+flags = ["-v", "--exclude-caches", "--one-file-system"]
+path = "/home"
+repo = "%{backup_repo}"
+# password is optional and not provided
+
+# Another group for restore operations
+[[groups]]
+name = "restore"
+description = "Restore operations using templates"
+
+[groups.vars]
+restore_repo = "%{backup_root}/repo"
+
+[[groups.commands]]
+name = "restore_volumes"
+description = "Restore volumes to target directory"
+template = "restic_restore"
+
+[groups.commands.params]
+target = "%{restore_target}/volumes"
+repo = "%{restore_repo}"
+workdir = "/tmp/restore"
+
+# Group demonstrating variable expansion in params
+# Note: %{var} is allowed in params and will be expanded after template expansion
+[[groups]]
+name = "variable_expansion_demo"
+description = "Demonstrates variable expansion in template parameters"
+
+[groups.vars]
+msg_prefix = "Hello from"
+service_name = "backup-service"
+
+[[groups.commands]]
+name = "announce"
+description = "Announce service startup"
+template = "safe_echo"
+
+[groups.commands.params]
+message = "%{msg_prefix} %{service_name}"

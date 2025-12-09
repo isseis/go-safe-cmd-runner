@@ -1150,9 +1150,9 @@ func TestBackwardCompatibility(t *testing.T) {
   - [x] TestExpandCommandWithTemplate: ExpandCommand() 経由のE2Eテスト
 
 ### Phase 7: 統合テスト
-- [ ] サンプル設定ファイル作成
-- [ ] template_integration_test.go 実装
-- [ ] 全統合テスト実装・パス
+- [x] サンプル設定ファイル作成
+- [x] template_integration_test.go 実装
+- [x] 全統合テスト実装・パス
 
 ### Phase 8: 後方互換性テスト
 - [ ] template_backward_compat_test.go 実装
