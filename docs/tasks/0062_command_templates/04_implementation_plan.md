@@ -1180,11 +1180,11 @@ func TestBackwardCompatibility(t *testing.T) {
 - [x] エラーメッセージテスト
 
 ### Phase 2: プレースホルダー解析
-- [ ] placeholderType 定義
-- [ ] placeholder 構造体定義
-- [ ] parsePlaceholders() 実装
-- [ ] applyEscapeSequences() 実装
-- [ ] ユニットテスト (正常系・異常系)
+- [x] placeholderType 定義
+- [x] placeholder 構造体定義
+- [x] parsePlaceholders() 実装
+- [x] applyEscapeSequences() 実装
+- [x] ユニットテスト (正常系・異常系)
 
 ### Phase 3: パラメータ展開
 - [ ] expandSingleArg() 実装
