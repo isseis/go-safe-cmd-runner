@@ -1155,9 +1155,9 @@ func TestBackwardCompatibility(t *testing.T) {
 - [x] 全統合テスト実装・パス
 
 ### Phase 8: 後方互換性テスト
-- [ ] template_backward_compat_test.go 実装
-- [ ] 全既存サンプルファイルのテスト
-- [ ] 互換性確認
+- [x] template_backward_compat_test.go 実装
+- [x] 全既存サンプルファイルのテスト
+- [x] 互換性確認
 
 ### Phase 9: ドキュメント整備
 - [ ] command_templates.md 作成
