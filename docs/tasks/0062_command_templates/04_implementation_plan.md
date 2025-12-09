@@ -1187,12 +1187,12 @@ func TestBackwardCompatibility(t *testing.T) {
 - [x] ユニットテスト (正常系・異常系)
 
 ### Phase 3: パラメータ展開
-- [ ] expandSingleArg() 実装
-- [ ] ExpandTemplateArgs() 実装
-- [ ] expandArrayPlaceholder() 実装
-- [ ] expandOptionalPlaceholder() 実装
-- [ ] expandStringPlaceholders() 実装
-- [ ] ユニットテスト (全展開モード)
+- [x] expandSingleArg() 実装
+- [x] ExpandTemplateArgs() 実装
+- [x] expandArrayPlaceholder() 実装
+- [x] expandOptionalPlaceholder() 実装
+- [x] expandStringPlaceholders() 実装
+- [x] ユニットテスト (全展開モード)
 
 ### Phase 4: セキュリティ検証
 - [ ] ValidateTemplateName() 実装
