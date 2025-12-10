@@ -1254,6 +1254,8 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 			continue
 		}
 
+		// Note: Array placeholders (${@param}) are rejected at expansion time
+		// by expandArrayPlaceholder, so expandedValue will always have exactly 1 element here
 		expandedEnv = append(expandedEnv, key+"="+expandedValue[0])
 	}
 
@@ -1264,6 +1266,9 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		if err != nil {
 			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
 		}
+
+		// Note: Array placeholders (${@param}) are rejected at expansion time
+		// by expandArrayPlaceholder, so result will always have 0 or 1 element here
 		if len(result) > 0 {
 			expandedWorkDir = result[0]
 		}

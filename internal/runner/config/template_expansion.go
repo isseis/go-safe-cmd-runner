@@ -214,6 +214,16 @@ func expandArrayPlaceholder(
 	templateName string,
 	field string,
 ) ([]string, error) {
+	// Array placeholders are not allowed in env/workdir fields - they can only
+	// expand to a single value, so using array syntax is a configuration error
+	if field == "env" || field == "workdir" {
+		return nil, &ErrArrayInMixedContext{
+			TemplateName: templateName,
+			Field:        field,
+			ParamName:    name,
+		}
+	}
+
 	value, exists := params[name]
 	if !exists {
 		// Array param not provided - return empty (element removed)

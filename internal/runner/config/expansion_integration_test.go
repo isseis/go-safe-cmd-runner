@@ -303,3 +303,133 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 		})
 	}
 }
+
+// TestExpandTemplateToSpec_ArrayInEnvWorkdir tests that array parameters
+// are properly rejected in env and workdir fields (not silently truncated)
+func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
+	tests := []struct {
+		name         string
+		command      *runnertypes.CommandSpec
+		template     *runnertypes.CommandTemplate
+		templateName string
+		expectErr    bool
+		errContains  string
+	}{
+		{
+			name: "array parameter in env - should fail",
+			command: &runnertypes.CommandSpec{
+				Name:     "bad_env",
+				Template: "env_tmpl",
+				Params: map[string]interface{}{
+					"paths": []interface{}{"/path1", "/path2"},
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd: "echo",
+				Env: []string{"PATHS=${@paths}"},
+			},
+			templateName: "env_tmpl",
+			expectErr:    true,
+			errContains:  "cannot be used in mixed context",
+		},
+		{
+			name: "array parameter in workdir - should fail",
+			command: &runnertypes.CommandSpec{
+				Name:     "bad_workdir",
+				Template: "workdir_tmpl",
+				Params: map[string]interface{}{
+					"dirs": []interface{}{"/dir1", "/dir2"},
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd:     "echo",
+				WorkDir: "${@dirs}",
+			},
+			templateName: "workdir_tmpl",
+			expectErr:    true,
+			errContains:  "cannot be used in mixed context",
+		},
+		{
+			name: "single-element array in env - should also be rejected",
+			command: &runnertypes.CommandSpec{
+				Name:     "single_array_env",
+				Template: "env_tmpl",
+				Params: map[string]interface{}{
+					"path": []interface{}{"/single/path"},
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd: "echo",
+				Env: []string{"PATH=${@path}"},
+			},
+			templateName: "env_tmpl",
+			expectErr:    true,
+			errContains:  "cannot be used in mixed context",
+		},
+		{
+			name: "single-element array in workdir - should also be rejected",
+			command: &runnertypes.CommandSpec{
+				Name:     "single_array_workdir",
+				Template: "workdir_tmpl",
+				Params: map[string]interface{}{
+					"dir": []interface{}{"/single/dir"},
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd:     "echo",
+				WorkDir: "${@dir}",
+			},
+			templateName: "workdir_tmpl",
+			expectErr:    true,
+			errContains:  "cannot be used in mixed context",
+		},
+		{
+			name: "regular string parameter in env - should work",
+			command: &runnertypes.CommandSpec{
+				Name:     "good_env",
+				Template: "env_tmpl",
+				Params: map[string]interface{}{
+					"value": "test123",
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd: "echo",
+				Env: []string{"VALUE=${value}"},
+			},
+			templateName: "env_tmpl",
+			expectErr:    false,
+		},
+		{
+			name: "regular string parameter in workdir - should work",
+			command: &runnertypes.CommandSpec{
+				Name:     "good_workdir",
+				Template: "workdir_tmpl",
+				Params: map[string]interface{}{
+					"path": "/working/dir",
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd:     "echo",
+				WorkDir: "${path}",
+			},
+			templateName: "workdir_tmpl",
+			expectErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := expandTemplateToSpec(tt.command, tt.template, tt.templateName)
+
+			if tt.expectErr {
+				require.Error(t, err, "expected error but got none")
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains,
+						"error should contain %q", tt.errContains)
+				}
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+			}
+		})
+	}
+}
