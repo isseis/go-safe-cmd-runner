@@ -125,6 +125,18 @@ func (e *ErrForbiddenPatternInTemplate) Error() string {
 		e.TemplateName, e.Field)
 }
 
+// ErrPlaceholderInEnvKey is returned when a placeholder is used in an env key.
+type ErrPlaceholderInEnvKey struct {
+	TemplateName string
+	EnvEntry     string
+	Key          string
+}
+
+func (e *ErrPlaceholderInEnvKey) Error() string {
+	return fmt.Sprintf("template %q env: placeholder in key %q is not allowed (env entry: %q) - only values can contain placeholders",
+		e.TemplateName, e.Key, e.EnvEntry)
+}
+
 // ErrArrayInMixedContext is returned when ${@param} is used in a mixed context.
 type ErrArrayInMixedContext struct {
 	TemplateName string

@@ -24,6 +24,7 @@ func TestErrorTypesImplementError(t *testing.T) {
 		{"ErrRequiredParamMissing", &ErrRequiredParamMissing{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrTemplateTypeMismatch", &ErrTemplateTypeMismatch{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrForbiddenPatternInTemplate", &ErrForbiddenPatternInTemplate{TemplateName: "tmpl", Field: "cmd"}},
+		{"ErrPlaceholderInEnvKey", &ErrPlaceholderInEnvKey{TemplateName: "tmpl", EnvEntry: "${key}=val", Key: "${key}"}},
 		{"ErrArrayInMixedContext", &ErrArrayInMixedContext{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrTemplateInvalidArrayElement", &ErrTemplateInvalidArrayElement{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrUnsupportedParamType", &ErrUnsupportedParamType{TemplateName: "tmpl", ParamName: "p"}},
@@ -76,6 +77,11 @@ func TestErrorsAs(t *testing.T) {
 			err:    &ErrForbiddenPatternInTemplate{TemplateName: "tmpl", Field: "cmd"},
 			target: &ErrForbiddenPatternInTemplate{},
 		},
+		{
+			name:   "ErrPlaceholderInEnvKey",
+			err:    &ErrPlaceholderInEnvKey{TemplateName: "tmpl", EnvEntry: "${key}=val", Key: "${key}"},
+			target: &ErrPlaceholderInEnvKey{},
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,6 +105,10 @@ func TestErrorsAs(t *testing.T) {
 					t.Errorf("errors.As failed for %s", tt.name)
 				}
 			case *ErrForbiddenPatternInTemplate:
+				if !errors.As(tt.err, &target) {
+					t.Errorf("errors.As failed for %s", tt.name)
+				}
+			case *ErrPlaceholderInEnvKey:
 				if !errors.As(tt.err, &target) {
 					t.Errorf("errors.As failed for %s", tt.name)
 				}

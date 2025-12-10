@@ -1246,6 +1246,19 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		key := parts[0]
 		value := parts[1]
 
+		// Validate that key does not contain placeholders (security requirement)
+		placeholders, err := parsePlaceholders(key)
+		if err != nil {
+			return nil, warnings, fmt.Errorf("failed to parse env key %q: %w", key, err)
+		}
+		if len(placeholders) > 0 {
+			return nil, warnings, &ErrPlaceholderInEnvKey{
+				TemplateName: templateName,
+				EnvEntry:     envEntry,
+				Key:          key,
+			}
+		}
+
 		// Expand value part only
 		expandedValue, err := expandSingleArg(value, cmdSpec.Params, templateName, "env")
 		if err != nil {
