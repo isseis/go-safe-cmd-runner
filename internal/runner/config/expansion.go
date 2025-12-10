@@ -1039,7 +1039,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 //
 // This function processes:
 // 1. Inherits group variables
-// 2. FromEnv: Imports system environment variables as internal variables (command-level) (NOT IMPLEMENTED YET)
+// 2. FromEnv: Imports system environment variables as internal variables (command-level)
 // 3. Vars: Defines internal variables (command-level)
 // 4. Cmd: Expands command path using internal variables
 // 5. Args: Expands command arguments using internal variables
