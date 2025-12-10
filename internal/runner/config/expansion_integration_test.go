@@ -265,6 +265,19 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			expectErr:   true,
 			wantErrType: &ErrTemplateFieldConflict{},
 		},
+		{
+			name: "unused parameter - should log warning",
+			spec: &runnertypes.CommandSpec{
+				Name:     "with_unused",
+				Template: "echo_tmpl",
+				Params: map[string]interface{}{
+					"message": "Hello",
+					"unused":  "ignored",
+				},
+			},
+			expectCmd:  "echo",
+			expectArgs: []string{"Hello"},
+		},
 	}
 
 	for _, tt := range tests {

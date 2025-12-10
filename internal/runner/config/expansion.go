@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"maps"
 	"path/filepath"
 	"strings"
@@ -1087,8 +1088,10 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 
 		// Log warnings about unused parameters
 		for _, warning := range warnings {
-			// TODO: Add proper logging for warnings
-			_ = warning
+			slog.Warn("Template parameter warning",
+				slog.String("warning", warning),
+				slog.String("command", spec.Name),
+				slog.String("template", spec.Template))
 		}
 
 		// Use expanded spec for the rest of the expansion process
