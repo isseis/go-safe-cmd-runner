@@ -23,6 +23,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 		expectSpec   *runnertypes.CommandSpec
 		expectWarns  []string
 		expectErr    bool
+		wantErrType  error
 		errContains  string
 	}{
 		{
@@ -166,6 +167,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			},
 			templateName: "required_tmpl",
 			expectErr:    true,
+			wantErrType:  &ErrRequiredParamMissing{},
 			errContains:  "required parameter \"required\" not provided",
 		},
 		{
@@ -183,6 +185,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			},
 			templateName: "array_tmpl",
 			expectErr:    true,
+			wantErrType:  &ErrTemplateTypeMismatch{},
 			errContains:  "expected array, got string",
 		},
 	}
@@ -193,6 +196,9 @@ func TestExpandTemplateToSpec(t *testing.T) {
 
 			if tt.expectErr {
 				require.Error(t, err)
+				if tt.wantErrType != nil {
+					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+				}
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains)
 				}
@@ -230,6 +236,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 		expectCmd   string
 		expectArgs  []string
 		expectErr   bool
+		wantErrType error
 		errContains string
 	}{
 		{
@@ -252,6 +259,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 				Params:   map[string]interface{}{},
 			},
 			expectErr:   true,
+			wantErrType: &ErrTemplateNotFound{},
 			errContains: "template \"nonexistent\" not found",
 		},
 		{
@@ -263,6 +271,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 				Params:   map[string]interface{}{},
 			},
 			expectErr:   true,
+			wantErrType: &ErrTemplateFieldConflict{},
 			errContains: "cannot specify both \"template\" and \"cmd\"",
 		},
 	}
@@ -290,6 +299,9 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 
 			if tt.expectErr {
 				require.Error(t, err)
+				if tt.wantErrType != nil {
+					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+				}
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains)
 				}
@@ -313,6 +325,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 		template     *runnertypes.CommandTemplate
 		templateName string
 		expectErr    bool
+		wantErrType  error
 		errContains  string
 	}{
 		{
@@ -330,6 +343,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			templateName: "env_tmpl",
 			expectErr:    true,
+			wantErrType:  &ErrArrayInMixedContext{},
 			errContains:  "cannot be used in mixed context",
 		},
 		{
@@ -347,6 +361,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			templateName: "workdir_tmpl",
 			expectErr:    true,
+			wantErrType:  &ErrArrayInMixedContext{},
 			errContains:  "cannot be used in mixed context",
 		},
 		{
@@ -364,6 +379,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			templateName: "env_tmpl",
 			expectErr:    true,
+			wantErrType:  &ErrArrayInMixedContext{},
 			errContains:  "cannot be used in mixed context",
 		},
 		{
@@ -381,6 +397,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			},
 			templateName: "workdir_tmpl",
 			expectErr:    true,
+			wantErrType:  &ErrArrayInMixedContext{},
 			errContains:  "cannot be used in mixed context",
 		},
 		{
@@ -423,6 +440,9 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 
 			if tt.expectErr {
 				require.Error(t, err, "expected error but got none")
+				if tt.wantErrType != nil {
+					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+				}
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains,
 						"error should contain %q", tt.errContains)

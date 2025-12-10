@@ -220,6 +220,7 @@ func TestTemplateErrorCases(t *testing.T) {
 		name        string
 		toml        string
 		wantErr     bool
+		wantErrType error
 		errContains string
 	}{
 		{
@@ -235,6 +236,7 @@ template = "nonexistent"
 param = "value"
 `,
 			wantErr:     true,
+			wantErrType: &ErrTemplateNotFound{},
 			errContains: "template \"nonexistent\" not found",
 		},
 		{
@@ -251,6 +253,7 @@ template = "tmpl"
 cmd = "ls"
 `,
 			wantErr:     true,
+			wantErrType: &ErrTemplateFieldConflict{},
 			errContains: "cannot specify both \"template\" and \"cmd\"",
 		},
 		{
@@ -268,6 +271,7 @@ template = "needs_param"
 # params not provided
 `,
 			wantErr:     true,
+			wantErrType: &ErrRequiredParamMissing{},
 			errContains: "required parameter \"required\" not provided",
 		},
 		{
@@ -286,6 +290,7 @@ template = "echo_msg"
 message = 123
 `,
 			wantErr:     true,
+			wantErrType: &ErrTemplateTypeMismatch{},
 			errContains: "expected string, got int64",
 		},
 	}
@@ -298,6 +303,9 @@ message = 123
 			if tt.wantErr {
 				if err != nil {
 					// Error during loading
+					if tt.wantErrType != nil {
+						assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+					}
 					if tt.errContains != "" {
 						assert.Contains(t, err.Error(), tt.errContains)
 					}
@@ -311,6 +319,9 @@ message = 123
 
 				runtimeGroup, err := ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 				if err != nil {
+					if tt.wantErrType != nil {
+						assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+					}
 					if tt.errContains != "" {
 						assert.Contains(t, err.Error(), tt.errContains)
 					}
@@ -326,6 +337,9 @@ message = 123
 					commontesting.NewUnsetOutputSizeLimit(),
 				)
 				require.Error(t, err)
+				if tt.wantErrType != nil {
+					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+				}
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains)
 				}
@@ -389,6 +403,7 @@ func TestTemplateCmdValidation(t *testing.T) {
 	tests := []struct {
 		name        string
 		toml        string
+		wantErrType error
 		errContains string
 	}{
 		{
@@ -405,6 +420,7 @@ name = "cmd1"
 template = "optional_cmd"
 # params.mycmd not provided - cmd will be empty
 `,
+			wantErrType: &ErrTemplateCmdNotSingleValue{},
 			errContains: "cmd field must resolve to exactly one non-empty value, got 0 values",
 		},
 		{
@@ -422,6 +438,7 @@ template = "array_cmd"
 [groups.commands.params]
 cmds = ["ls", "cat"]
 `,
+			wantErrType: &ErrTemplateCmdNotSingleValue{},
 			errContains: "cmd field must resolve to exactly one value, got 2 values",
 		},
 		{
@@ -439,6 +456,7 @@ template = "empty_cmd"
 [groups.commands.params]
 cmd = ""
 `,
+			wantErrType: &ErrTemplateCmdNotSingleValue{},
 			errContains: "cmd field must resolve to exactly one non-empty value, got 0 values",
 		},
 		{
@@ -456,6 +474,7 @@ template = "optional_cmd"
 [groups.commands.params]
 mycmd = "echo"
 `,
+			wantErrType: nil,
 			errContains: "", // Should succeed
 		},
 	}
@@ -483,6 +502,9 @@ mycmd = "echo"
 
 			if tt.errContains != "" {
 				require.Error(t, err)
+				if tt.wantErrType != nil {
+					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+				}
 				assert.Contains(t, err.Error(), tt.errContains)
 			} else {
 				require.NoError(t, err)
