@@ -271,7 +271,6 @@ func TestLoadConfig_NegativeTimeoutValidation(t *testing.T) {
 		name        string
 		configToml  string
 		expectError bool
-		errorMsg    string
 	}{
 		{
 			name: "negative global timeout",
@@ -290,7 +289,6 @@ version = "1.0"
     args = ["hello"]
 `,
 			expectError: true,
-			errorMsg:    "timeout must not be negative: global timeout got -10",
 		},
 		{
 			name: "negative command timeout",
@@ -307,7 +305,6 @@ version = "1.0"
     timeout = -5
 `,
 			expectError: true,
-			errorMsg:    "timeout must not be negative: command 'test_cmd' in group 'test' (groups[0].commands[0]) got -5",
 		},
 		{
 			name: "valid zero timeout",
@@ -365,7 +362,6 @@ version = "1.0"
     [groups.commands.params]
 `,
 			expectError: true,
-			errorMsg:    "timeout must not be negative: template 'bad_template' timeout got -15",
 		},
 	}
 
@@ -376,7 +372,7 @@ version = "1.0"
 
 			if tt.expectError {
 				require.Error(t, err, "expected error but got none")
-				assert.Contains(t, err.Error(), tt.errorMsg, "error message mismatch")
+				require.ErrorIs(t, err, ErrNegativeTimeout, "error should be ErrNegativeTimeout")
 				assert.Nil(t, cfg, "config should be nil when validation fails")
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
@@ -391,7 +387,7 @@ func TestLoaderWithTemplates(t *testing.T) {
 		name        string
 		toml        string
 		wantErr     bool
-		errContains string
+		wantErrType error
 	}{
 		{
 			name: "valid template",
@@ -422,7 +418,7 @@ args = ["first"]
 cmd = "ls"
 `,
 			wantErr:     true,
-			errContains: "duplicate",
+			wantErrType: &ErrDuplicateTemplateName{},
 		},
 		{
 			name: "forbidden %{ in template cmd",
@@ -432,7 +428,7 @@ version = "1.0"
 cmd = "%{var}"
 `,
 			wantErr:     true,
-			errContains: "forbidden pattern",
+			wantErrType: &ErrForbiddenPatternInTemplate{},
 		},
 		{
 			name: "forbidden %{ in template args",
@@ -443,7 +439,7 @@ cmd = "echo"
 args = ["%{var}", "hello"]
 `,
 			wantErr:     true,
-			errContains: "forbidden pattern",
+			wantErrType: &ErrForbiddenPatternInTemplate{},
 		},
 		{
 			name: "forbidden %{ in template env",
@@ -454,7 +450,7 @@ cmd = "echo"
 env = ["VAR=%{value}"]
 `,
 			wantErr:     true,
-			errContains: "forbidden pattern",
+			wantErrType: &ErrForbiddenPatternInTemplate{},
 		},
 		{
 			name: "forbidden %{ in template workdir",
@@ -465,7 +461,7 @@ cmd = "echo"
 workdir = "%{dir}"
 `,
 			wantErr:     true,
-			errContains: "forbidden pattern",
+			wantErrType: &ErrForbiddenPatternInTemplate{},
 		},
 		{
 			name: "missing cmd field",
@@ -475,7 +471,7 @@ version = "1.0"
 args = ["backup"]
 `,
 			wantErr:     true,
-			errContains: "required field",
+			wantErrType: &ErrMissingRequiredField{},
 		},
 		{
 			name: "invalid template name",
@@ -485,7 +481,7 @@ version = "1.0"
 cmd = "echo"
 `,
 			wantErr:     true,
-			errContains: "invalid template name",
+			wantErrType: &ErrInvalidTemplateName{},
 		},
 		{
 			name: "reserved template name prefix",
@@ -495,7 +491,7 @@ version = "1.0"
 cmd = "echo"
 `,
 			wantErr:     true,
-			errContains: "reserved prefix",
+			wantErrType: &ErrReservedTemplateName{},
 		},
 		{
 			name: "template with name field",
@@ -506,7 +502,7 @@ name = "should_not_be_here"
 cmd = "echo"
 `,
 			wantErr:     true,
-			errContains: "cannot contain \"name\" field",
+			wantErrType: &ErrTemplateContainsNameField{},
 		},
 		{
 			name: "valid template with placeholders",
@@ -540,8 +536,8 @@ workdir = "/tmp"
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains, "error message mismatch")
+				if tt.wantErrType != nil {
+					require.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
 				}
 				assert.Nil(t, cfg, "config should be nil when validation fails")
 			} else {

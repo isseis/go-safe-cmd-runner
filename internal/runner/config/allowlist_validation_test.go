@@ -16,7 +16,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 	tests := []struct {
 		name        string
 		spec        *runnertypes.GlobalSpec
-		wantErr     string
+		wantErr     bool
 		description string
 	}{
 		{
@@ -25,7 +25,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"MY_VAR=HOME"},
 				EnvAllowed: []string{}, // Empty allowlist
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "Empty allowlist should block all system variables",
 		},
 		{
@@ -34,7 +34,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"MY_VAR=HOME"},
 				EnvAllowed: []string{"PATH", "USER"}, // HOME not in list
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "System variable not in allowlist should be rejected",
 		},
 		{
@@ -43,7 +43,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"MY_VAR=HOME"},
 				EnvAllowed: []string{"HOME", "PATH"},
 			},
-			wantErr:     "",
+			wantErr:     false,
 			description: "System variable in allowlist should be accepted",
 		},
 		{
@@ -52,7 +52,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"VAR1=HOME", "VAR2=NOTALLOWED"},
 				EnvAllowed: []string{"HOME"},
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "First violation should be reported",
 		},
 	}
@@ -60,9 +60,9 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ExpandGlobal(tt.spec)
-			if tt.wantErr != "" {
+			if tt.wantErr {
 				require.Error(t, err, tt.description)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
 			} else {
 				require.NoError(t, err, tt.description)
 			}
@@ -225,31 +225,34 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 	}
 }
 
-// TestAllowlist_DetailedErrorMessages tests that error messages contain useful information
+// TestAllowlist_DetailedErrorMessages tests that errors contain detailed information
 func TestAllowlist_DetailedErrorMessages(t *testing.T) {
 	tests := []struct {
 		name            string
 		spec            *runnertypes.GlobalSpec
-		wantErrContains []string
+		wantSystemVar   string
+		wantInternalVar string
 		description     string
 	}{
 		{
-			name: "error message includes variable name",
+			name: "error includes variable name",
 			spec: &runnertypes.GlobalSpec{
 				EnvImport:  []string{"MY_VAR=SECRET_VAR"},
 				EnvAllowed: []string{"HOME"},
 			},
-			wantErrContains: []string{"SECRET_VAR", "not in allowlist"},
-			description:     "Error should mention the rejected system variable name",
+			wantSystemVar:   "SECRET_VAR",
+			wantInternalVar: "MY_VAR",
+			description:     "Error should include the rejected system variable name",
 		},
 		{
-			name: "error message for empty allowlist",
+			name: "error for empty allowlist",
 			spec: &runnertypes.GlobalSpec{
 				EnvImport:  []string{"VAR=PATH"},
 				EnvAllowed: []string{},
 			},
-			wantErrContains: []string{"PATH", "not in allowlist"},
-			description:     "Error should mention the variable even with empty allowlist",
+			wantSystemVar:   "PATH",
+			wantInternalVar: "VAR",
+			description:     "Error should include the variable even with empty allowlist",
 		},
 	}
 
@@ -257,8 +260,13 @@ func TestAllowlist_DetailedErrorMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ExpandGlobal(tt.spec)
 			require.Error(t, err, tt.description)
-			for _, want := range tt.wantErrContains {
-				assert.Contains(t, err.Error(), want, "Error message should contain: "+want)
+			require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
+
+			// Check detailed error information
+			var detailErr *config.ErrVariableNotInAllowlistDetail
+			if assert.ErrorAs(t, err, &detailErr) {
+				assert.Equal(t, tt.wantSystemVar, detailErr.SystemVarName, "system variable name should match")
+				assert.Equal(t, tt.wantInternalVar, detailErr.InternalVarName, "internal variable name should match")
 			}
 		})
 	}
@@ -277,8 +285,13 @@ func TestAllowlist_EmptyAllowlistBlocksAll(t *testing.T) {
 
 			_, err := config.ExpandGlobal(spec)
 			require.Error(t, err, "Empty allowlist should block "+sysVar)
-			assert.Contains(t, err.Error(), "not in allowlist")
-			assert.Contains(t, err.Error(), sysVar)
+			require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
+
+			// Verify the error contains the variable name
+			var detailErr *config.ErrVariableNotInAllowlistDetail
+			if assert.ErrorAs(t, err, &detailErr) {
+				assert.Equal(t, sysVar, detailErr.SystemVarName, "system variable name should match")
+			}
 		})
 	}
 }

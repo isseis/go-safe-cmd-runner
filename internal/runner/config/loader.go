@@ -76,7 +76,7 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 	return &cfg, nil
 }
 
-// checkTemplateNameField checks if any template definition contains a "name" field.
+// checkTemplateNameField checks if any template definition qs a "name" field.
 // This is done by parsing the TOML content as a map to detect fields that would be
 // ignored by the struct unmarshaling.
 func checkTemplateNameField(content []byte) error {

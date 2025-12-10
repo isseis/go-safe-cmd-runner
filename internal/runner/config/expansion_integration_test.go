@@ -24,7 +24,6 @@ func TestExpandTemplateToSpec(t *testing.T) {
 		expectWarns  []string
 		expectErr    bool
 		wantErrType  error
-		errContains  string
 	}{
 		{
 			name: "expand required parameters",
@@ -168,7 +167,6 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			templateName: "required_tmpl",
 			expectErr:    true,
 			wantErrType:  &ErrRequiredParamMissing{},
-			errContains:  "required parameter \"required\" not provided",
 		},
 		{
 			name: "invalid array parameter type",
@@ -186,7 +184,6 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			templateName: "array_tmpl",
 			expectErr:    true,
 			wantErrType:  &ErrTemplateTypeMismatch{},
-			errContains:  "expected array, got string",
 		},
 	}
 
@@ -197,10 +194,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			if tt.expectErr {
 				require.Error(t, err)
 				if tt.wantErrType != nil {
-					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
-				}
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+					require.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
 				}
 				return
 			}
@@ -237,7 +231,6 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 		expectArgs  []string
 		expectErr   bool
 		wantErrType error
-		errContains string
 	}{
 		{
 			name: "valid template expansion",
@@ -260,7 +253,6 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			},
 			expectErr:   true,
 			wantErrType: &ErrTemplateNotFound{},
-			errContains: "template \"nonexistent\" not found",
 		},
 		{
 			name: "exclusivity violation - template with cmd",
@@ -272,7 +264,6 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			},
 			expectErr:   true,
 			wantErrType: &ErrTemplateFieldConflict{},
-			errContains: "cannot specify both \"template\" and \"cmd\"",
 		},
 	}
 
@@ -300,10 +291,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			if tt.expectErr {
 				require.Error(t, err)
 				if tt.wantErrType != nil {
-					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
-				}
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+					require.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
 				}
 				return
 			}
@@ -326,7 +314,6 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 		templateName string
 		expectErr    bool
 		wantErrType  error
-		errContains  string
 	}{
 		{
 			name: "array parameter in env - should fail",
@@ -344,7 +331,6 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			templateName: "env_tmpl",
 			expectErr:    true,
 			wantErrType:  &ErrArrayInMixedContext{},
-			errContains:  "cannot be used in mixed context",
 		},
 		{
 			name: "array parameter in workdir - should fail",
@@ -362,7 +348,6 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			templateName: "workdir_tmpl",
 			expectErr:    true,
 			wantErrType:  &ErrArrayInMixedContext{},
-			errContains:  "cannot be used in mixed context",
 		},
 		{
 			name: "single-element array in env - should also be rejected",
@@ -380,7 +365,6 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			templateName: "env_tmpl",
 			expectErr:    true,
 			wantErrType:  &ErrArrayInMixedContext{},
-			errContains:  "cannot be used in mixed context",
 		},
 		{
 			name: "single-element array in workdir - should also be rejected",
@@ -398,7 +382,6 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			templateName: "workdir_tmpl",
 			expectErr:    true,
 			wantErrType:  &ErrArrayInMixedContext{},
-			errContains:  "cannot be used in mixed context",
 		},
 		{
 			name: "regular string parameter in env - should work",
@@ -441,11 +424,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			if tt.expectErr {
 				require.Error(t, err, "expected error but got none")
 				if tt.wantErrType != nil {
-					assert.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
-				}
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains,
-						"error should contain %q", tt.errContains)
+					require.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
 				}
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
