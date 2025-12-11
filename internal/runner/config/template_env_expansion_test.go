@@ -177,6 +177,35 @@ func TestExpandTemplateEnv(t *testing.T) {
 			wantErr:      true,
 			errType:      &ErrArrayInMixedContext{},
 		},
+
+		// Error cases - duplicate keys
+		{
+			name:         "duplicate key in template",
+			env:          []string{"PATH=/usr/bin", "PATH=/bin"},
+			params:       map[string]interface{}{},
+			templateName: "test",
+			wantErr:      true,
+			errType:      &ErrDuplicateEnvVariableDetail{},
+		},
+		{
+			name:         "duplicate key from array expansion",
+			env:          []string{"REQUIRED=value", "${@optional_env}"},
+			params:       map[string]interface{}{"optional_env": []string{"REQUIRED=foo"}},
+			templateName: "test",
+			wantErr:      true,
+			errType:      &ErrDuplicateEnvVariableDetail{},
+		},
+		{
+			name: "duplicate key from multiple array placeholders",
+			env:  []string{"${@common}", "${@app_specific}"},
+			params: map[string]interface{}{
+				"common":       []string{"PATH=/usr/bin", "HOME=/home/user"},
+				"app_specific": []string{"PATH=/usr/local/bin"},
+			},
+			templateName: "test",
+			wantErr:      true,
+			errType:      &ErrDuplicateEnvVariableDetail{},
+		},
 	}
 
 	for _, tt := range tests {
@@ -205,6 +234,11 @@ func TestExpandTemplateEnv(t *testing.T) {
 					var target *ErrArrayInMixedContext
 					if !errors.As(err, &target) {
 						t.Errorf("expected ErrArrayInMixedContext, got %T: %v", err, err)
+					}
+				case *ErrDuplicateEnvVariableDetail:
+					var target *ErrDuplicateEnvVariableDetail
+					if !errors.As(err, &target) {
+						t.Errorf("expected ErrDuplicateEnvVariableDetail, got %T: %v", err, err)
 					}
 				}
 				return

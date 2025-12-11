@@ -276,3 +276,19 @@ func (e *ErrTemplateCmdNotSingleValue) Error() string {
 	return fmt.Sprintf("template %q: cmd field must resolve to exactly one value, got %d values",
 		e.TemplateName, e.ResultCount)
 }
+
+// ErrDuplicateEnvVariableDetail is returned when duplicate environment variable keys are detected in template env.
+type ErrDuplicateEnvVariableDetail struct {
+	TemplateName string
+	Field        string // "env"
+	EnvKey       string
+}
+
+func (e *ErrDuplicateEnvVariableDetail) Error() string {
+	return fmt.Sprintf("template %q %s: duplicate environment variable key %q",
+		e.TemplateName, e.Field, e.EnvKey)
+}
+
+func (e *ErrDuplicateEnvVariableDetail) Unwrap() error {
+	return ErrDuplicateEnvVariable
+}

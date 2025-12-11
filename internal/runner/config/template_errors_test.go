@@ -36,6 +36,7 @@ func TestErrorTypesImplementError(t *testing.T) {
 		{"ErrUnclosedPlaceholder", &ErrUnclosedPlaceholder{Input: "${path"}},
 		{"ErrEmptyPlaceholder", &ErrEmptyPlaceholder{Input: "${}"}},
 		{"ErrInvalidPlaceholderName", &ErrInvalidPlaceholderName{Input: "${123}", Name: "123"}},
+		{"ErrDuplicateEnvVariableDetail", &ErrDuplicateEnvVariableDetail{TemplateName: "tmpl", Field: "env", EnvKey: "PATH"}},
 	}
 
 	for _, tt := range tests {
@@ -99,6 +100,14 @@ func TestErrorsAs(t *testing.T) {
 			err:  &ErrPlaceholderInEnvKey{TemplateName: "tmpl", EnvEntry: "${key}=val", Key: "${key}"},
 			assert: func(t *testing.T, err error) {
 				var target *ErrPlaceholderInEnvKey
+				assert.ErrorAs(t, err, &target)
+			},
+		},
+		{
+			name: "ErrDuplicateEnvVariableDetail",
+			err:  &ErrDuplicateEnvVariableDetail{TemplateName: "tmpl", Field: "env", EnvKey: "PATH"},
+			assert: func(t *testing.T, err error) {
+				var target *ErrDuplicateEnvVariableDetail
 				assert.ErrorAs(t, err, &target)
 			},
 		},

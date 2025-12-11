@@ -473,6 +473,11 @@ func ExpandTemplateEnv(
 		}
 	}
 
+	// Validate no duplicate keys in the expanded env array
+	if err := validateNoDuplicateEnvKeys(result, templateName); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 
@@ -542,6 +547,35 @@ func validateEnvEntryAfterExpansion(entry, templateName, field string, expandedI
 	// This function only validates the format after expansion
 
 	return true, nil
+}
+
+// validateNoDuplicateEnvKeys validates that there are no duplicate environment variable keys
+// in the expanded env array.
+func validateNoDuplicateEnvKeys(env []string, templateName string) error {
+	seen := make(map[string]struct{}, len(env))
+
+	for _, entry := range env {
+		// Extract KEY from "KEY=VALUE"
+		idx := strings.IndexByte(entry, '=')
+		if idx == -1 {
+			// Format error should have been caught by validateEnvEntryAfterExpansion
+			continue
+		}
+
+		key := entry[:idx]
+
+		// Check for duplicate
+		if _, exists := seen[key]; exists {
+			return &ErrDuplicateEnvVariableDetail{
+				TemplateName: templateName,
+				Field:        "env",
+				EnvKey:       key,
+			}
+		}
+		seen[key] = struct{}{}
+	}
+
+	return nil
 }
 
 // ValidateTemplateName validates that a template name is valid and not reserved.
