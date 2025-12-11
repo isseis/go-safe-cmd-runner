@@ -109,7 +109,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			expectWarns: []string{},
 		},
 		{
-			name: "expand workdir",
+			name: "expand workdir from template",
 			command: &runnertypes.CommandSpec{
 				Name:     "workdir_cmd",
 				Template: "workdir_tmpl",
@@ -126,6 +126,47 @@ func TestExpandTemplateToSpec(t *testing.T) {
 				Name:    "workdir_cmd",
 				Cmd:     "make",
 				WorkDir: "/projects/myapp",
+			},
+			expectWarns: []string{},
+		},
+		{
+			name: "command workdir overrides template workdir",
+			command: &runnertypes.CommandSpec{
+				Name:     "custom_workdir_cmd",
+				Template: "workdir_tmpl",
+				WorkDir:  "/custom/dir",
+				Params: map[string]interface{}{
+					"project": "myapp",
+				},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd:     "make",
+				WorkDir: "/projects/${project}",
+			},
+			templateName: "workdir_tmpl",
+			expectSpec: &runnertypes.CommandSpec{
+				Name:    "custom_workdir_cmd",
+				Cmd:     "make",
+				WorkDir: "/custom/dir",
+			},
+			expectWarns: []string{},
+		},
+		{
+			name: "empty template workdir uses command workdir",
+			command: &runnertypes.CommandSpec{
+				Name:     "cmd_only_workdir",
+				Template: "no_workdir_tmpl",
+				WorkDir:  "/my/workdir",
+				Params:   map[string]interface{}{},
+			},
+			template: &runnertypes.CommandTemplate{
+				Cmd: "echo",
+			},
+			templateName: "no_workdir_tmpl",
+			expectSpec: &runnertypes.CommandSpec{
+				Name:    "cmd_only_workdir",
+				Cmd:     "echo",
+				WorkDir: "/my/workdir",
 			},
 			expectWarns: []string{},
 		},

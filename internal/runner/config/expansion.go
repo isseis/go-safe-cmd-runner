@@ -1323,7 +1323,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template env: %w", err)
 	}
 
-	// Expand workdir
+	// Expand workdir from template
 	var expandedWorkDir string
 	if template.WorkDir != "" {
 		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, workDirKey)
@@ -1338,6 +1338,12 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		}
 	}
 
+	// Determine final workdir: command-level overrides template
+	finalWorkDir := cmdSpec.WorkDir
+	if finalWorkDir == "" {
+		finalWorkDir = expandedWorkDir
+	}
+
 	// Create expanded spec
 	expandedSpec := &runnertypes.CommandSpec{
 		Name:        cmdSpec.Name,
@@ -1345,7 +1351,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		Cmd:         expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
 		Args:        expandedArgs,
 		EnvVars:     expandedEnv,
-		WorkDir:     expandedWorkDir,
+		WorkDir:     finalWorkDir,
 
 		// Execution settings: prefer command-level, fallback to template
 		// This allows commands to override template defaults
