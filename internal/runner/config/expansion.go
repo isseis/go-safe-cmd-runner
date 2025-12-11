@@ -241,10 +241,10 @@ func parseAndSubstitute(
 	return result.String(), nil
 }
 
-// ProcessFromEnv processes from_env mappings and imports system environment variables
+// ProcessEnvImport processes env_import mappings and imports system environment variables
 // as internal variables. It validates that all referenced system variables are in the allowlist.
-func ProcessFromEnv(
-	fromEnv []string,
+func ProcessEnvImport(
+	envImport []string,
 	envAllowlist []string,
 	systemEnv map[string]string,
 	level string,
@@ -253,10 +253,10 @@ func ProcessFromEnv(
 
 	// Build allowlist map for O(1) lookup
 	allowlistMap := common.SliceToSet(envAllowlist)
-	for _, mapping := range fromEnv {
+	for _, mapping := range envImport {
 		internalName, systemVarName, ok := common.ParseKeyValue(mapping)
 		if !ok {
-			return nil, &ErrInvalidFromEnvFormatDetail{
+			return nil, &ErrInvalidEnvImportFormatDetail{
 				Level:   level,
 				Mapping: mapping,
 				Reason:  "must be in 'internal_name=SYSTEM_VAR' format",
@@ -264,7 +264,7 @@ func ProcessFromEnv(
 		}
 
 		// Validate internal variable name
-		if err := validateVariableName(internalName, level, "from_env"); err != nil {
+		if err := validateVariableName(internalName, level, "env_import"); err != nil {
 			return nil, err
 		}
 
@@ -272,7 +272,7 @@ func ProcessFromEnv(
 		if _, exists := result[internalName]; exists {
 			return nil, &ErrDuplicateVariableDefinitionDetail{
 				Level:        level,
-				Field:        "from_env",
+				Field:        "env_import",
 				VariableName: internalName,
 			}
 		}
@@ -281,7 +281,7 @@ func ProcessFromEnv(
 		if err := security.ValidateVariableName(systemVarName); err != nil {
 			return nil, &ErrInvalidSystemVariableNameDetail{
 				Level:              level,
-				Field:              "from_env",
+				Field:              "env_import",
 				SystemVariableName: systemVarName,
 				Reason:             err.Error(),
 			}
@@ -807,13 +807,13 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	autoVars := variable.GenerateGlobalAutoVars(nil) // nil uses time.Now
 	runtime.ExpandedVars = autoVars
 
-	// 1. Process FromEnv
-	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
+	// 1. Process EnvImport
+	envImportVars, err := ProcessEnvImport(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
 	if err != nil {
-		return nil, fmt.Errorf("failed to process global from_env: %w", err)
+		return nil, fmt.Errorf("failed to process global env_import: %w", err)
 	}
-	// Merge fromEnvVars into runtime.ExpandedVars (which already contains autoVars)
-	for k, v := range fromEnvVars {
+	// Merge envImportVars into runtime.ExpandedVars (which already contains autoVars)
+	for k, v := range envImportVars {
 		runtime.ExpandedVars[k] = v
 	}
 
@@ -973,8 +973,8 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 		maps.Copy(runtime.ExpandedArrayVars, globalRuntime.ExpandedArrayVars)
 	}
 
-	// 2. Process FromEnv (group-level)
-	// Implement from_env processing with allowlist inheritance: group.EnvAllowed (if non-nil)
+	// 2. Process EnvImport (group-level)
+	// Implement env_import processing with allowlist inheritance: group.EnvAllowed (if non-nil)
 	// overrides global; nil means inherit global allowlist; empty slice means reject all.
 	if len(spec.EnvImport) > 0 {
 		// Use cached system environment from globalRuntime
@@ -987,13 +987,13 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 
 		effectiveAllowlist := determineEffectiveEnvAllowlist(spec.EnvAllowed, globalAllowlist)
 
-		fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("group[%s]", spec.Name))
+		envImportVars, err := ProcessEnvImport(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("group[%s]", spec.Name))
 		if err != nil {
-			return nil, fmt.Errorf("failed to process group[%s] from_env: %w", spec.Name, err)
+			return nil, fmt.Errorf("failed to process group[%s] env_import: %w", spec.Name, err)
 		}
 
-		// Merge from_env variables into expanded vars (group-level from_env may override inherited vars)
-		maps.Copy(runtime.ExpandedVars, fromEnvVars)
+		// Merge env_import variables into expanded vars (group-level env_import may override inherited vars)
+		maps.Copy(runtime.ExpandedVars, envImportVars)
 	}
 
 	// 3. Process Vars (group-level)
@@ -1083,8 +1083,8 @@ func resolveAndPrepareCommandSpec(
 	return expandedSpec, nil
 }
 
-// expandCommandFromEnv processes command-level from_env and merges imported variables.
-func expandCommandFromEnv(
+// expandCommandEnvImport processes command-level env_import and merges imported variables.
+func expandCommandEnvImport(
 	spec *runnertypes.CommandSpec,
 	runtime *runnertypes.RuntimeCommand,
 	runtimeGroup *runnertypes.RuntimeGroup,
@@ -1094,7 +1094,6 @@ func expandCommandFromEnv(
 		return nil
 	}
 
-	// Use cached system environment from globalRuntime
 	var globalAllowlist []string
 	var systemEnv map[string]string
 	if globalRuntime != nil {
@@ -1109,13 +1108,13 @@ func expandCommandFromEnv(
 
 	effectiveAllowlist := determineEffectiveEnvAllowlist(groupAllowlist, globalAllowlist)
 
-	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("command[%s]", spec.Name))
+	envImportVars, err := ProcessEnvImport(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("command[%s]", spec.Name))
 	if err != nil {
-		return fmt.Errorf("failed to process command[%s] from_env: %w", spec.Name, err)
+		return fmt.Errorf("failed to process command[%s] env_import: %w", spec.Name, err)
 	}
 
-	// Merge command-level from_env into expanded vars (command-level may override group vars)
-	maps.Copy(runtime.ExpandedVars, fromEnvVars)
+	// Merge command-level env_import into expanded vars (command-level may override group vars)
+	maps.Copy(runtime.ExpandedVars, envImportVars)
 	return nil
 }
 
@@ -1220,8 +1219,8 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 		maps.Copy(runtime.ExpandedArrayVars, runtimeGroup.ExpandedArrayVars)
 	}
 
-	// 2. Process FromEnv (command-level)
-	if err := expandCommandFromEnv(workingSpec, runtime, runtimeGroup, globalRuntime); err != nil {
+	// 2. Process EnvImport (command-level)
+	if err := expandCommandEnvImport(workingSpec, runtime, runtimeGroup, globalRuntime); err != nil {
 		return nil, err
 	}
 

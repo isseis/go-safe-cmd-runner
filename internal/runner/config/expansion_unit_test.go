@@ -207,8 +207,8 @@ func TestExpandString_InvalidSyntax(t *testing.T) {
 	}
 }
 
-// TestProcessFromEnv_AllowlistViolation tests allowlist enforcement
-func TestProcessFromEnv_AllowlistViolation(t *testing.T) {
+// TestProcessEnvImport_AllowlistViolation tests allowlist enforcement
+func TestProcessEnvImport_AllowlistViolation(t *testing.T) {
 	tests := []struct {
 		name        string
 		fromEnv     []string
@@ -246,7 +246,7 @@ func TestProcessFromEnv_AllowlistViolation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "test")
+			result, err := config.ProcessEnvImport(tt.fromEnv, tt.allowlist, tt.systemEnv, "test")
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorMsg)
@@ -258,20 +258,20 @@ func TestProcessFromEnv_AllowlistViolation(t *testing.T) {
 	}
 }
 
-// TestProcessFromEnv_SystemVariableNotSet tests handling of missing system variables
-// Note: ProcessFromEnv returns empty string for missing variables, not an error
-func TestProcessFromEnv_SystemVariableNotSet(t *testing.T) {
+// TestProcessEnvImport_SystemVariableNotSet tests handling of missing system variables
+// Note: ProcessEnvImport returns empty string for missing variables, not an error
+func TestProcessEnvImport_SystemVariableNotSet(t *testing.T) {
 	fromEnv := []string{"my_var=MISSING_VAR"}
 	allowlist := []string{"MISSING_VAR"}
 	systemEnv := map[string]string{} // MISSING_VAR not set
 
-	result, err := config.ProcessFromEnv(fromEnv, allowlist, systemEnv, "test")
+	result, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "test")
 	require.NoError(t, err, "Missing system variables should not cause an error")
 	assert.Equal(t, "", result["my_var"], "Missing variable should have empty string value")
 }
 
-// TestProcessFromEnv_InvalidFormat tests invalid from_env format handling
-func TestProcessFromEnv_InvalidFormat(t *testing.T) {
+// TestProcessEnvImport_InvalidFormat tests invalid env_import format handling
+func TestProcessEnvImport_InvalidFormat(t *testing.T) {
 	tests := []struct {
 		name     string
 		fromEnv  []string
@@ -280,12 +280,12 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 		{
 			name:     "missing equals sign",
 			fromEnv:  []string{"no_equals"},
-			errorMsg: "invalid from_env format",
+			errorMsg: "invalid env_import format",
 		},
 		{
 			name:     "empty mapping",
 			fromEnv:  []string{""},
-			errorMsg: "invalid from_env format",
+			errorMsg: "invalid env_import format",
 		},
 		{
 			name:     "multiple equals signs causes invalid system var name",
@@ -296,15 +296,15 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ProcessFromEnv(tt.fromEnv, []string{}, map[string]string{}, "test")
+			_, err := config.ProcessEnvImport(tt.fromEnv, []string{}, map[string]string{}, "test")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
 	}
 }
 
-// TestProcessFromEnv_InvalidInternalVariableName tests internal variable name validation
-func TestProcessFromEnv_InvalidInternalVariableName(t *testing.T) {
+// TestProcessEnvImport_InvalidInternalVariableName tests internal variable name validation
+func TestProcessEnvImport_InvalidInternalVariableName(t *testing.T) {
 	tests := []struct {
 		name     string
 		fromEnv  []string
@@ -313,7 +313,7 @@ func TestProcessFromEnv_InvalidInternalVariableName(t *testing.T) {
 		{
 			name:     "empty internal variable name",
 			fromEnv:  []string{"=SYSTEM_VAR"},
-			errorMsg: "invalid from_env format",
+			errorMsg: "invalid env_import format",
 		},
 		{
 			name:     "internal variable with dash",
@@ -329,15 +329,15 @@ func TestProcessFromEnv_InvalidInternalVariableName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ProcessFromEnv(tt.fromEnv, []string{"SYSTEM_VAR"}, map[string]string{"SYSTEM_VAR": "value"}, "test")
+			_, err := config.ProcessEnvImport(tt.fromEnv, []string{"SYSTEM_VAR"}, map[string]string{"SYSTEM_VAR": "value"}, "test")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
 	}
 }
 
-// TestProcessFromEnv_DuplicateDefinition tests duplicate internal variable detection
-func TestProcessFromEnv_DuplicateDefinition(t *testing.T) {
+// TestProcessEnvImport_DuplicateDefinition tests duplicate internal variable detection
+func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 	fromEnv := []string{
 		"my_var=SYSTEM_VAR1",
 		"my_var=SYSTEM_VAR2", // Duplicate internal name
@@ -348,7 +348,7 @@ func TestProcessFromEnv_DuplicateDefinition(t *testing.T) {
 		"SYSTEM_VAR2": "value2",
 	}
 
-	_, err := config.ProcessFromEnv(fromEnv, allowlist, systemEnv, "test")
+	_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "test")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate variable")
 }

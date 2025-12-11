@@ -50,8 +50,8 @@ var (
 	// ErrMaxRecursionDepthExceeded is returned when variable expansion exceeds maximum recursion depth
 	ErrMaxRecursionDepthExceeded = errors.New("maximum recursion depth exceeded")
 
-	// ErrInvalidFromEnvFormat is returned when from_env entry is not in 'internal_name=SYSTEM_VAR' format
-	ErrInvalidFromEnvFormat = errors.New("invalid from_env format")
+	// ErrInvalidEnvImportFormat is returned when env_import entry is not in 'internal_name=SYSTEM_VAR' format
+	ErrInvalidEnvImportFormat = errors.New("invalid env_import format")
 
 	// ErrInvalidVarsFormat is returned when a vars entry is not in var_name=value format
 	ErrInvalidVarsFormat = errors.New("malformed vars entry (expected var_name=value format)")
@@ -271,19 +271,19 @@ func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
 // to maintain consistency with test naming conventions
 type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail
 
-// ErrInvalidFromEnvFormatDetail provides detailed information about invalid from_env format
-type ErrInvalidFromEnvFormatDetail struct {
+// ErrInvalidEnvImportFormatDetail provides detailed information about invalid env_import format
+type ErrInvalidEnvImportFormatDetail struct {
 	Level   string
 	Mapping string
 	Reason  string
 }
 
-func (e *ErrInvalidFromEnvFormatDetail) Error() string {
-	return fmt.Sprintf("invalid from_env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+func (e *ErrInvalidEnvImportFormatDetail) Error() string {
+	return fmt.Sprintf("invalid env_import format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
 }
 
-func (e *ErrInvalidFromEnvFormatDetail) Unwrap() error {
-	return ErrInvalidFromEnvFormat
+func (e *ErrInvalidEnvImportFormatDetail) Unwrap() error {
+	return ErrInvalidEnvImportFormat
 }
 
 // ErrInvalidVarsFormatDetail provides detailed information about invalid vars format

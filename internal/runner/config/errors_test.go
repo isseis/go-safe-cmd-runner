@@ -229,27 +229,27 @@ func TestErrMaxRecursionDepthExceededDetail_Unwrap(t *testing.T) {
 	assert.ErrorIs(t, err, ErrMaxRecursionDepthExceeded)
 }
 
-// TestErrInvalidFromEnvFormatDetail_Error tests the Error() method
-func TestErrInvalidFromEnvFormatDetail_Error(t *testing.T) {
-	err := &ErrInvalidFromEnvFormatDetail{
+// TestErrInvalidEnvImportFormatDetail_Error tests the Error() method
+func TestErrInvalidEnvImportFormatDetail_Error(t *testing.T) {
+	err := &ErrInvalidEnvImportFormatDetail{
 		Level:   "global",
 		Mapping: "invalid_mapping",
 		Reason:  "missing equals sign",
 	}
 
-	expected := "invalid from_env format in global: 'invalid_mapping' (missing equals sign)"
+	expected := "invalid env_import format in global: 'invalid_mapping' (missing equals sign)"
 	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
 }
 
-// TestErrInvalidFromEnvFormatDetail_Unwrap tests the Unwrap() method
-func TestErrInvalidFromEnvFormatDetail_Unwrap(t *testing.T) {
-	err := &ErrInvalidFromEnvFormatDetail{
+// TestErrInvalidEnvImportFormatDetail_Unwrap tests the Unwrap() method
+func TestErrInvalidEnvImportFormatDetail_Unwrap(t *testing.T) {
+	err := &ErrInvalidEnvImportFormatDetail{
 		Level:   "command",
 		Mapping: "bad",
 		Reason:  "test",
 	}
 
-	assert.ErrorIs(t, err, ErrInvalidFromEnvFormat)
+	assert.ErrorIs(t, err, ErrInvalidEnvImportFormat)
 }
 
 // TestErrInvalidVarsFormatDetail_Error tests the Error() method

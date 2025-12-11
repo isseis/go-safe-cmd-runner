@@ -127,7 +127,7 @@ func CollectFinalEnvironment(
 // Example: "db_host=DB_HOST" -> "db_host"
 //
 // Precondition: envImport must contain only validated "key=value" format strings.
-// This is guaranteed by ProcessFromEnv() validation during RuntimeGlobal/RuntimeGroup creation.
+// This is guaranteed by ProcessEnvImport() validation during RuntimeGlobal/RuntimeGroup creation.
 // If parsing fails, it indicates a program invariant violation and will panic.
 func extractInternalVarNames(envImport []string) []string {
 	var result []string
@@ -136,7 +136,7 @@ func extractInternalVarNames(envImport []string) []string {
 		if !ok {
 			// This should never happen as envImport is validated during expansion.
 			// If it does, it indicates a serious programming error.
-			panic("invalid env_import format: " + mapping + " (should be validated by ProcessFromEnv)")
+			panic("invalid env_import format: " + mapping + " (should be validated by ProcessEnvImport)")
 		}
 		result = append(result, key)
 	}

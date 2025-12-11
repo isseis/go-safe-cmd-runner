@@ -498,7 +498,7 @@ args = ["test"]
 
 // TestRunner_SystemEnvCache tests that SystemEnv is properly cached in RuntimeGlobal
 // Note: SystemEnv contains ALL environment variables (not filtered by allowlist).
-// The allowlist is used during ProcessFromEnv to control which variables can be imported.
+// The allowlist is used during ProcessEnvImport to control which variables can be imported.
 func TestRunner_SystemEnvCache(t *testing.T) {
 	tests := []struct {
 		name                    string
