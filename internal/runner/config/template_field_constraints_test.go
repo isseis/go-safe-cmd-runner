@@ -44,7 +44,31 @@ func TestTemplateFieldConstraints(t *testing.T) {
 		// Note: cmd with ${@param} is tested in integration tests (template_integration_test.go)
 		// because expandSingleArg allows it, but the validation happens at a higher level
 
-		// ========== args field ==========
+		// ========== args field (VALUE part )==========
+		{
+			name:        "args VALUE: ${param} allowed",
+			field:       "args",
+			placeholder: "${file}.txt",
+			wantErr:     false,
+			description: "Required placeholder in args is valid",
+		},
+		{
+			name:        "args VALUE: ${?param} allowed",
+			field:       "args",
+			placeholder: "test${?version}.log",
+			wantErr:     false,
+			description: "Optional placeholder in args is valid",
+		},
+		{
+			name:        "args VALUE: ${@param} in mixed context rejected",
+			field:       "args",
+			placeholder: "foo-${@flags}",
+			wantErr:     true,
+			errType:     &ErrArrayInMixedContext{},
+			description: "Array placeholder mixed with other text in args element is invalid",
+		},
+
+		// ========== args field (element level)==========
 		{
 			name:        "args: ${param} allowed",
 			field:       "args",
@@ -65,14 +89,6 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			placeholder: "${@flags}",
 			wantErr:     false,
 			description: "Array placeholder in args is valid (element-level expansion)",
-		},
-		{
-			name:        "args: ${@param} in mixed context rejected",
-			field:       "args",
-			placeholder: "foo-${@flags}",
-			wantErr:     true,
-			errType:     &ErrArrayInMixedContext{},
-			description: "Array placeholder mixed with other text in args element is invalid",
 		},
 
 		// ========== env field (VALUE part) ==========
