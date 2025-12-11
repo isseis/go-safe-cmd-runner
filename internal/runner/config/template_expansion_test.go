@@ -3,8 +3,9 @@
 package config
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParsePlaceholders(t *testing.T) {
@@ -124,60 +125,35 @@ func TestParsePlaceholders(t *testing.T) {
 			result, err := parsePlaceholders(tt.input)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				assert.Error(t, err, "expected error, got nil")
 				// Check error type using type switch
 				switch tt.errType.(type) {
 				case *ErrUnclosedPlaceholder:
 					var target *ErrUnclosedPlaceholder
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrUnclosedPlaceholder, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrUnclosedPlaceholder")
 				case *ErrEmptyPlaceholder:
 					var target *ErrEmptyPlaceholder
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrEmptyPlaceholder, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrEmptyPlaceholder")
 				case *ErrEmptyPlaceholderName:
 					var target *ErrEmptyPlaceholderName
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrEmptyPlaceholderName, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrEmptyPlaceholderName")
 				case *ErrInvalidPlaceholderName:
 					var target *ErrInvalidPlaceholderName
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrInvalidPlaceholderName, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrInvalidPlaceholderName")
 				}
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(result) != len(tt.expected) {
-				t.Fatalf("expected %d placeholders, got %d", len(tt.expected), len(result))
-			}
+			assert.NoError(t, err, "unexpected error")
+			assert.Equal(t, len(tt.expected), len(result), "expected placeholders length")
 
 			for i, exp := range tt.expected {
 				got := result[i]
-				if got.fullMatch != exp.fullMatch {
-					t.Errorf("placeholder[%d] fullMatch: expected %q, got %q", i, exp.fullMatch, got.fullMatch)
-				}
-				if got.name != exp.name {
-					t.Errorf("placeholder[%d] name: expected %q, got %q", i, exp.name, got.name)
-				}
-				if got.ptype != exp.ptype {
-					t.Errorf("placeholder[%d] ptype: expected %v, got %v", i, exp.ptype, got.ptype)
-				}
-				if got.start != exp.start {
-					t.Errorf("placeholder[%d] start: expected %d, got %d", i, exp.start, got.start)
-				}
-				if got.end != exp.end {
-					t.Errorf("placeholder[%d] end: expected %d, got %d", i, exp.end, got.end)
-				}
+				assert.Equal(t, exp.fullMatch, got.fullMatch, "placeholder[%d] fullMatch mismatch", i)
+				assert.Equal(t, exp.name, got.name, "placeholder[%d] name mismatch", i)
+				assert.Equal(t, exp.ptype, got.ptype, "placeholder[%d] ptype mismatch", i)
+				assert.Equal(t, exp.start, got.start, "placeholder[%d] start mismatch", i)
+				assert.Equal(t, exp.end, got.end, "placeholder[%d] end mismatch", i)
 			}
 		})
 	}
@@ -254,9 +230,7 @@ func TestApplyEscapeSequences(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := applyEscapeSequences(tt.input)
-			if result != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result, "result mismatch")
 		})
 	}
 }
@@ -317,37 +291,20 @@ func TestParsePlaceholders_EdgeCases(t *testing.T) {
 			result, err := parsePlaceholders(tt.input)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				assert.Error(t, err, "expected error, got nil")
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(result) != len(tt.expected) {
-				t.Fatalf("expected %d placeholders, got %d", len(tt.expected), len(result))
-			}
+			assert.NoError(t, err, "unexpected error")
+			assert.Equal(t, len(tt.expected), len(result), "expected placeholders length")
 
 			for i, exp := range tt.expected {
 				got := result[i]
-				if got.fullMatch != exp.fullMatch {
-					t.Errorf("placeholder[%d] fullMatch: expected %q, got %q", i, exp.fullMatch, got.fullMatch)
-				}
-				if got.name != exp.name {
-					t.Errorf("placeholder[%d] name: expected %q, got %q", i, exp.name, got.name)
-				}
-				if got.ptype != exp.ptype {
-					t.Errorf("placeholder[%d] ptype: expected %v, got %v", i, exp.ptype, got.ptype)
-				}
-				if got.start != exp.start {
-					t.Errorf("placeholder[%d] start: expected %d, got %d", i, exp.start, got.start)
-				}
-				if got.end != exp.end {
-					t.Errorf("placeholder[%d] end: expected %d, got %d", i, exp.end, got.end)
-				}
+				assert.Equal(t, exp.fullMatch, got.fullMatch, "placeholder[%d] fullMatch mismatch", i)
+				assert.Equal(t, exp.name, got.name, "placeholder[%d] name mismatch", i)
+				assert.Equal(t, exp.ptype, got.ptype, "placeholder[%d] ptype mismatch", i)
+				assert.Equal(t, exp.start, got.start, "placeholder[%d] start mismatch", i)
+				assert.Equal(t, exp.end, got.end, "placeholder[%d] end mismatch", i)
 			}
 		})
 	}
