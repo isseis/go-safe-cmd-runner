@@ -9,6 +9,34 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+// Template field parameter usage constraints:
+//
+//   Field    | ${param} | ${?param} | ${@param} | In Key (env only)
+//   ---------|----------|-----------|-----------|-------------------
+//   cmd      |    ✓     |     ✓     |     ✗     |       N/A
+//   args     |    ✓     |     ✓     |     ✓     |       N/A
+//   env      |    ✓     |     ✓     |  ✓ (※1)  |   ✗ (※2)
+//   workdir  |    ✓     |     ✓     |     ✗     |       N/A
+//
+// Rationale:
+//   - cmd, workdir: Must expand to exactly one string value
+//   - args: Can expand to multiple strings (array expansion at element level)
+//   - env:
+//     ※1 Array expansion is allowed at element level (e.g., env = ["${@vars}"])
+//        but NOT in VALUE part (e.g., env = ["PATH=${@paths}"] is invalid)
+//     ※2 KEY part (before '=') cannot contain any placeholders (security constraint)
+//
+// Examples:
+//   ✓ cmd = "${binary}"                    # OK: single value
+//   ✗ cmd = "${@bins}"                     # Error: array not allowed
+//   ✓ args = ["${@flags}", "${file}"]      # OK: array expansion
+//   ✓ env = ["${@env_vars}"]               # OK: element-level array expansion
+//   ✗ env = ["PATH=${@paths}"]             # Error: array in VALUE part
+//   ✗ env = ["${key}=value"]               # Error: placeholder in KEY part
+//   ✓ env = ["KEY=${value}"]               # OK: placeholder in VALUE part only
+//   ✓ workdir = "${dir}"                   # OK: single value
+//   ✗ workdir = "${@dirs}"                 # Error: array not allowed
+
 // placeholderType represents the type of a template placeholder.
 type placeholderType int
 
@@ -20,6 +48,9 @@ const (
 
 // placeholderPrefixLen is the length of the placeholder prefix "${".
 const placeholderPrefixLen = 2
+
+// field name
+const workDirKey = "workdir"
 
 // placeholder represents a parsed placeholder in a template string.
 type placeholder struct {
@@ -214,9 +245,9 @@ func expandArrayPlaceholder(
 	templateName string,
 	field string,
 ) ([]string, error) {
-	// Array placeholders are not allowed in env/workdir fields - they can only
-	// expand to a single value, so using array syntax is a configuration error
-	if field == "env" || field == "workdir" {
+	// Array placeholders are not allowed in workdir field - it must
+	// expand to a single value (one directory path)
+	if field == workDirKey {
 		return nil, &ErrArrayInMixedContext{
 			TemplateName: templateName,
 			Field:        field,
@@ -397,6 +428,118 @@ func ExpandTemplateArgs(
 	return result, nil
 }
 
+// ExpandTemplateEnv expands all placeholders in a template's env array.
+// Each element must expand to valid KEY=VALUE format(s).
+// Placeholders in the KEY part are forbidden for security reasons.
+func ExpandTemplateEnv(
+	env []string,
+	params map[string]interface{},
+	templateName string,
+) ([]string, error) {
+	result := make([]string, 0, len(env))
+
+	for i, envEntry := range env {
+		field := fmt.Sprintf("env[%d]", i)
+
+		// Pre-validate: check if KEY part contains placeholders (before expansion)
+		if err := validateEnvEntryBeforeExpansion(envEntry, templateName, field); err != nil {
+			return nil, err
+		}
+
+		// Expand the entry (may expand to multiple elements for ${@param})
+		expanded, err := expandSingleArg(envEntry, params, templateName, field)
+		if err != nil {
+			return nil, err
+		}
+
+		// Skip if expansion resulted in empty (e.g., ${?param} with missing/empty value)
+		if len(expanded) == 0 {
+			continue
+		}
+
+		// Post-validate: check each expanded element is in KEY=VALUE format
+		for j, entry := range expanded {
+			shouldInclude, err := validateEnvEntryAfterExpansion(entry, templateName, field, j)
+			if err != nil {
+				return nil, err
+			}
+			if shouldInclude {
+				result = append(result, entry)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// validateEnvEntryBeforeExpansion validates env entry before placeholder expansion.
+// This checks that the KEY part (before '=') does not contain placeholders.
+func validateEnvEntryBeforeExpansion(entry, templateName, _ string) error {
+	// Check if this is a pure placeholder (entire element is ${...} or ${?...} or ${@...})
+	placeholders, err := parsePlaceholders(entry)
+	if err != nil {
+		return err
+	}
+
+	// If entire entry is a single placeholder, we'll validate after expansion
+	if len(placeholders) == 1 && entry == placeholders[0].fullMatch {
+		return nil
+	}
+
+	// Parse KEY=VALUE to check KEY part
+	idx := strings.IndexByte(entry, '=')
+	if idx == -1 {
+		// No '=' found - could be invalid format or pure placeholder
+		// Will be caught in post-validation
+		return nil
+	}
+
+	key := entry[:idx]
+
+	// Check that KEY part does not contain placeholders (security requirement)
+	keyPlaceholders, err := parsePlaceholders(key)
+	if err != nil {
+		return fmt.Errorf("failed to parse env key %q: %w", key, err)
+	}
+	if len(keyPlaceholders) > 0 {
+		return &ErrPlaceholderInEnvKey{
+			TemplateName: templateName,
+			EnvEntry:     entry,
+			Key:          key,
+		}
+	}
+
+	return nil
+}
+
+// validateEnvEntryAfterExpansion validates that an env entry is in KEY=VALUE format
+// after placeholder expansion.
+// Returns (shouldInclude=false, nil) if the entry should be skipped (empty VALUE).
+func validateEnvEntryAfterExpansion(entry, templateName, field string, expandedIndex int) (bool, error) {
+	// Check KEY=VALUE format
+	idx := strings.IndexByte(entry, '=')
+	if idx == -1 {
+		return false, &ErrTemplateInvalidEnvFormat{
+			TemplateName:  templateName,
+			Field:         field,
+			ExpandedIndex: expandedIndex,
+			Entry:         entry,
+		}
+	}
+
+	// Check if VALUE part is empty (e.g., "PATH=" from "PATH=${?path}" with empty/missing param)
+	// In this case, skip the entire entry
+	value := entry[idx+1:]
+	if value == "" {
+		return false, nil
+	}
+
+	// Note: KEY part placeholder validation is done in validateEnvEntryBeforeExpansion
+	// This function only validates the format after expansion
+
+	return true, nil
+}
+
 // ValidateTemplateName validates that a template name is valid and not reserved.
 //
 // Rules:
@@ -477,7 +620,7 @@ func ValidateTemplateDefinition(
 	if template.WorkDir != "" && strings.Contains(template.WorkDir, "%{") {
 		return &ErrForbiddenPatternInTemplate{
 			TemplateName: name,
-			Field:        "workdir",
+			Field:        workDirKey,
 			Value:        template.WorkDir,
 		}
 	}
@@ -603,7 +746,7 @@ func ValidateCommandSpecExclusivity(
 			GroupName:    groupName,
 			CommandIndex: commandIndex,
 			TemplateName: spec.Template,
-			Field:        "workdir",
+			Field:        workDirKey,
 		}
 	}
 

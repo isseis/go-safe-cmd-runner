@@ -25,6 +25,7 @@ func TestErrorTypesImplementError(t *testing.T) {
 		{"ErrTemplateTypeMismatch", &ErrTemplateTypeMismatch{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrForbiddenPatternInTemplate", &ErrForbiddenPatternInTemplate{TemplateName: "tmpl", Field: "cmd"}},
 		{"ErrPlaceholderInEnvKey", &ErrPlaceholderInEnvKey{TemplateName: "tmpl", EnvEntry: "${key}=val", Key: "${key}"}},
+		{"ErrTemplateInvalidEnvFormat", &ErrTemplateInvalidEnvFormat{TemplateName: "tmpl", Field: "env[0]", Entry: "INVALID"}},
 		{"ErrArrayInMixedContext", &ErrArrayInMixedContext{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrTemplateInvalidArrayElement", &ErrTemplateInvalidArrayElement{TemplateName: "tmpl", ParamName: "p"}},
 		{"ErrUnsupportedParamType", &ErrUnsupportedParamType{TemplateName: "tmpl", ParamName: "p"}},

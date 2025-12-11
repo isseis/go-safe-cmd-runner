@@ -58,15 +58,40 @@ args = ["${?verbose}", "backup", "${path}"]
 
 ### 配列パラメータ: `${@param}`
 
-配列値を複数の引数として展開します。
+配列値を複数の要素として展開します。`args` と `env` の配列要素レベルで使用できます。
 
+**args での使用:**
 ```toml
 [command_templates.example]
 cmd = "restic"
 args = ["${@flags}", "backup", "${path}"]
 
 # params.flags = ["-v", "-q"] の場合
-# 展開結果: ["restic", "-v", "-q", "backup", "/data"]
+# 展開結果: args = ["-v", "-q", "backup", "/data"]
+```
+
+**env での使用:**
+```toml
+[command_templates.docker_run]
+cmd = "docker"
+args = ["run", "${image}"]
+env = ["REQUIRED=value", "${@optional_env}"]
+
+# params.optional_env = ["DEBUG=1", "VERBOSE=1"] の場合
+# 展開結果: env = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
+
+# params.optional_env が空配列または未指定の場合
+# 展開結果: env = ["REQUIRED=value"]
+```
+
+**注意:** `env` の VALUE 部分（`=` の右側）では `${@param}` は使用できません：
+```toml
+# ❌ エラー: env の VALUE 部分で配列展開は不可
+env = ["PATH=${@paths}"]  # 無効
+
+# ✓ OK: env の要素レベルでの配列展開
+env = ["${@path_defs}"]
+# path_defs = ["PATH=/usr/bin", "LD_LIBRARY_PATH=/lib"]
 ```
 
 ### エスケープシーケンス
@@ -272,7 +297,49 @@ path = "/home"
 repo = "/backup/repo"
 ```
 
-### 例4: グループ変数との組み合わせ
+### 例4: 環境変数の動的な追加（配列パラメータ）
+
+```toml
+[command_templates.docker_run]
+cmd = "docker"
+args = ["run", "${@docker_flags}", "${image}"]
+env = ["${@common_env}", "${@app_env}"]
+
+[[groups.commands]]
+name = "run_dev"
+template = "docker_run"
+
+[groups.commands.params]
+docker_flags = ["-it", "--rm"]
+image = "myapp:dev"
+common_env = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
+app_env = ["DEBUG=1", "LOG_LEVEL=debug"]
+
+# 展開結果:
+# cmd = docker run -it --rm myapp:dev
+# env = [
+#   "PATH=/usr/local/bin:/usr/bin",
+#   "LANG=C.UTF-8",
+#   "DEBUG=1",
+#   "LOG_LEVEL=debug"
+# ]
+
+[[groups.commands]]
+name = "run_prod"
+template = "docker_run"
+
+[groups.commands.params]
+docker_flags = ["-d"]
+image = "myapp:latest"
+common_env = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
+app_env = []  # プロダクションでは追加の環境変数なし
+
+# 展開結果:
+# cmd = docker run -d myapp:latest
+# env = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
+```
+
+### 例5: グループ変数との組み合わせ
 
 ```toml
 [global.vars]
@@ -320,7 +387,15 @@ repo = "%{backup_root}/repo"           # グローバル変数参照
 
 ### `array parameter ${@xxx} cannot be used in mixed context`
 - 配列パラメータが文字列と混在しています
-- 配列パラメータは単独の引数として使用してください
+- 配列パラメータは単独の要素として使用してください
+- env の場合、VALUE 部分（`=` の右側）では配列展開はできません
+  ```toml
+  # ❌ エラー
+  env = ["PATH=${@paths}"]
+
+  # ✓ OK
+  env = ["${@env_vars}"]
+  ```
 
 ## ベストプラクティス
 

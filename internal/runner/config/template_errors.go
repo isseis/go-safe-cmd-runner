@@ -137,6 +137,23 @@ func (e *ErrPlaceholderInEnvKey) Error() string {
 		e.TemplateName, e.Key, e.EnvEntry)
 }
 
+// ErrTemplateInvalidEnvFormat is returned when a template env entry is not in KEY=VALUE format.
+type ErrTemplateInvalidEnvFormat struct {
+	TemplateName  string
+	Field         string // e.g., "env[0]"
+	ExpandedIndex int    // Index within expanded array elements
+	Entry         string
+}
+
+func (e *ErrTemplateInvalidEnvFormat) Error() string {
+	if e.ExpandedIndex > 0 {
+		return fmt.Sprintf("template %q %s: invalid env format in expanded element [%d]: %q (expected KEY=VALUE format)",
+			e.TemplateName, e.Field, e.ExpandedIndex, e.Entry)
+	}
+	return fmt.Sprintf("template %q %s: invalid env format: %q (expected KEY=VALUE format)",
+		e.TemplateName, e.Field, e.Entry)
+}
+
 // ErrArrayInMixedContext is returned when ${@param} is used in a mixed context.
 type ErrArrayInMixedContext struct {
 	TemplateName string

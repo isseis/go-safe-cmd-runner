@@ -1230,55 +1230,16 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template args: %w", err)
 	}
 
-	// Expand env (KEY=VALUE format)
-	expandedEnv := make([]string, 0, len(template.Env))
-	for _, envEntry := range template.Env {
-		// Parse KEY=VALUE
-		const envKeyValueParts = 2
-		parts := strings.SplitN(envEntry, "=", envKeyValueParts)
-		if len(parts) != envKeyValueParts {
-			return nil, warnings, &ErrInvalidEnvFormatDetail{
-				Level:   "template",
-				Mapping: envEntry,
-				Reason:  "expected KEY=value format",
-			}
-		}
-		key := parts[0]
-		value := parts[1]
-
-		// Validate that key does not contain placeholders (security requirement)
-		placeholders, err := parsePlaceholders(key)
-		if err != nil {
-			return nil, warnings, fmt.Errorf("failed to parse env key %q: %w", key, err)
-		}
-		if len(placeholders) > 0 {
-			return nil, warnings, &ErrPlaceholderInEnvKey{
-				TemplateName: templateName,
-				EnvEntry:     envEntry,
-				Key:          key,
-			}
-		}
-
-		// Expand value part only
-		expandedValue, err := expandSingleArg(value, cmdSpec.Params, templateName, "env")
-		if err != nil {
-			return nil, warnings, fmt.Errorf("failed to expand template env value for %q: %w", key, err)
-		}
-
-		// Skip if value is empty after expansion (e.g., optional param was missing)
-		if len(expandedValue) == 0 {
-			continue
-		}
-
-		// Note: Array placeholders (${@param}) are rejected at expansion time
-		// by expandArrayPlaceholder, so expandedValue will always have exactly 1 element here
-		expandedEnv = append(expandedEnv, key+"="+expandedValue[0])
+	// Expand env (supports element-level ${@param} expansion)
+	expandedEnv, err := ExpandTemplateEnv(template.Env, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template env: %w", err)
 	}
 
 	// Expand workdir
 	var expandedWorkDir string
 	if template.WorkDir != "" {
-		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, "workdir")
+		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, workDirKey)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
 		}
