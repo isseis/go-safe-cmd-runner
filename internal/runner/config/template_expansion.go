@@ -11,12 +11,12 @@ import (
 
 // Template field parameter usage constraints:
 //
-//   Field    | ${param} | ${?param} | ${@param} | In Key (env only)
-//   ---------|----------|-----------|-----------|-------------------
-//   cmd      |    ✓     |     ✓     |     ✗     |       N/A
-//   args     |    ✓     |     ✓     |     ✓     |       N/A
-//   env      |    ✓     |     ✓     |  ✓ (※1)  |   ✗ (※2)
-//   workdir  |    ✓     |     ✓     |     ✗     |       N/A
+//   Field    | ${param} | ${?param} | ${@param} | In Key (env only) | Override at call site
+//   ---------|----------|-----------|-----------|-------------------|----------------------
+//   cmd      |    ✓     |     ✓     |     ✗     |       N/A         |        ✗
+//   args     |    ✓     |     ✓     |     ✓     |       N/A         |        ✗
+//   env      |    ✓     |     ✓     |  ✓ (※1)  |   ✗ (※2)         |        ✗
+//   workdir  |    ✓     |     ✓     |     ✗     |       N/A         |   ✓ (※3)
 //
 // Rationale:
 //   - cmd, workdir: Must expand to exactly one string value
@@ -25,6 +25,9 @@ import (
 //     ※1 Array expansion is allowed at element level (e.g., env = ["${@vars}"])
 //        but NOT in VALUE part (e.g., env = ["PATH=${@paths}"] is invalid)
 //     ※2 KEY part (before '=') cannot contain any placeholders (security constraint)
+//   - workdir override:
+//     ※3 Caller can override template's workdir to adjust execution context
+//        (useful when coordinating output directories between commands)
 //
 // Examples:
 //   ✓ cmd = "${binary}"                    # OK: single value
@@ -34,8 +37,9 @@ import (
 //   ✗ env = ["PATH=${@paths}"]             # Error: array in VALUE part
 //   ✗ env = ["${key}=value"]               # Error: placeholder in KEY part
 //   ✓ env = ["KEY=${value}"]               # OK: placeholder in VALUE part only
-//   ✓ workdir = "${dir}"                   # OK: single value
+//   ✓ workdir = "${dir}"                   # OK: single value (in template)
 //   ✗ workdir = "${@dirs}"                 # Error: array not allowed
+//   ✓ workdir = "%{work_dir}/temp"         # OK: override at call site (uses %{} not ${})
 
 // placeholderType represents the type of a template placeholder.
 type placeholderType int
@@ -688,13 +692,17 @@ func ValidateParams(params map[string]interface{}, templateName string) error {
 //   - Cmd
 //   - Args
 //   - Env
-//   - WorkDir
+//
+// The following fields CAN be set with Template (override template defaults):
+//   - WorkDir (execution context)
+//   - OutputFile (output redirection)
+//   - Timeout, RiskLevel, etc. (execution parameters)
 //
 // The Name and Params fields are allowed with Template.
 //
-// This enforces the "complete exclusivity" design where templates provide
-// all command execution fields, and the calling site can only specify
-// Name and Params.
+// This enforces separation between:
+//   - Template: defines command execution logic (cmd, args, env)
+//   - Caller: specifies execution context (workdir, output, etc.)
 func ValidateCommandSpecExclusivity(
 	groupName string,
 	commandIndex int,
@@ -723,7 +731,7 @@ func ValidateCommandSpecExclusivity(
 		}
 	}
 
-	if len(spec.Args) > 0 {
+	if spec.Args != nil {
 		return &ErrTemplateFieldConflict{
 			GroupName:    groupName,
 			CommandIndex: commandIndex,
@@ -732,7 +740,7 @@ func ValidateCommandSpecExclusivity(
 		}
 	}
 
-	if len(spec.EnvVars) > 0 {
+	if spec.EnvVars != nil {
 		return &ErrTemplateFieldConflict{
 			GroupName:    groupName,
 			CommandIndex: commandIndex,
@@ -741,14 +749,9 @@ func ValidateCommandSpecExclusivity(
 		}
 	}
 
-	if spec.WorkDir != "" {
-		return &ErrTemplateFieldConflict{
-			GroupName:    groupName,
-			CommandIndex: commandIndex,
-			TemplateName: spec.Template,
-			Field:        workDirKey,
-		}
-	}
+	// WorkDir is allowed with Template (overrides template default)
+	// OutputFile is allowed with Template (specifies output redirection)
+	// Timeout, RiskLevel, etc. are allowed with Template (execution parameters)
 
 	// Name and Params are allowed with Template
 	return nil

@@ -9,6 +9,11 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// int32Ptr is a helper function to create a pointer to an int32 value.
+func int32Ptr(v int32) *int32 {
+	return &v
+}
+
 // TestValidateTemplateName tests template name validation
 func TestValidateTemplateName(t *testing.T) {
 	tests := []struct {
@@ -322,16 +327,37 @@ func TestValidateCommandSpecExclusivity(t *testing.T) {
 			errType: &ErrTemplateFieldConflict{},
 		},
 		{
+			name:    "template + args empty array (invalid)",
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", Args: []string{}},
+			wantErr: true,
+			errType: &ErrTemplateFieldConflict{},
+		},
+		{
 			name:    "template + env_vars (invalid)",
 			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", EnvVars: []string{"KEY=VALUE"}},
 			wantErr: true,
 			errType: &ErrTemplateFieldConflict{},
 		},
 		{
-			name:    "template + workdir (invalid)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", WorkDir: "/tmp"},
+			name:    "template + env_vars empty array (invalid)",
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", EnvVars: []string{}},
 			wantErr: true,
 			errType: &ErrTemplateFieldConflict{},
+		},
+		{
+			name:    "template + workdir (valid - override allowed)",
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", WorkDir: "/tmp"},
+			wantErr: false,
+		},
+		{
+			name:    "template + output_file (valid - override allowed)",
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", OutputFile: "/tmp/output.txt"},
+			wantErr: false,
+		},
+		{
+			name:    "template + timeout (valid - override allowed)",
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", Timeout: int32Ptr(120)},
+			wantErr: false,
 		},
 		{
 			name:    "no template and no cmd (invalid)",
