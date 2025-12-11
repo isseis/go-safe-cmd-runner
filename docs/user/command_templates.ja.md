@@ -183,7 +183,8 @@ path = "%{backup_root}/data"  # OK
 - `cmd`
 - `args`
 - `env`
-- `workdir`
+
+**注意**: `workdir` はテンプレートと併用可能です（テンプレートのデフォルト値を上書きできます）。
 
 ```toml
 # ❌ エラー: template と cmd を同時に指定
@@ -191,6 +192,12 @@ path = "%{backup_root}/data"  # OK
 name = "backup"
 template = "restic_backup"
 cmd = "restic"  # エラー
+
+# ✅ OK: template と workdir は併用可能
+[[groups.commands]]
+name = "backup"
+template = "restic_backup"
+workdir = "/custom/dir"  # テンプレートの workdir を上書き
 ```
 
 ## テンプレート名の命名規則
