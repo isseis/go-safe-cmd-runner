@@ -66,6 +66,14 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			wantErr:     false,
 			description: "Array placeholder in args is valid (element-level expansion)",
 		},
+		{
+			name:        "args: ${@param} in mixed context rejected",
+			field:       "args",
+			placeholder: "foo-${@flags}",
+			wantErr:     true,
+			errType:     &ErrArrayInMixedContext{},
+			description: "Array placeholder mixed with other text in args element is invalid",
+		},
 
 		// ========== env field (VALUE part) ==========
 		{
