@@ -115,6 +115,9 @@ var (
 
 	// ErrArrayVariableInStringContext is returned when an array variable is used in string context
 	ErrArrayVariableInStringContext = errors.New("array variable used in string context")
+
+	// ErrEnvImportVarsConflict is returned when the same variable is defined in both env_import and vars
+	ErrEnvImportVarsConflict = errors.New("variable defined in both env_import and vars")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
@@ -548,4 +551,25 @@ func (e *ErrArrayVariableInStringContextDetail) Error() string {
 
 func (e *ErrArrayVariableInStringContextDetail) Unwrap() error {
 	return ErrArrayVariableInStringContext
+}
+
+// ErrEnvImportVarsConflictDetail provides detailed information about conflicts
+// between env_import and vars definitions.
+// This error is returned when the same variable name is defined in both env_import
+// and vars, either at the same level or across different levels (global/group/command).
+type ErrEnvImportVarsConflictDetail struct {
+	Level          string // Current level (e.g., "global", "group[deploy]", "command[build]")
+	VariableName   string // The conflicting variable name
+	EnvImportLevel string // Level where env_import defined this variable
+	VarsLevel      string // Level where vars defined this variable
+}
+
+func (e *ErrEnvImportVarsConflictDetail) Error() string {
+	return fmt.Sprintf("variable %q conflicts between env_import and vars in %s: "+
+		"defined in env_import at %s and vars at %s",
+		e.VariableName, e.Level, e.EnvImportLevel, e.VarsLevel)
+}
+
+func (e *ErrEnvImportVarsConflictDetail) Unwrap() error {
+	return ErrEnvImportVarsConflict
 }

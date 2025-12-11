@@ -384,7 +384,8 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			baseVars := make(map[string]string)
-			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, "test")
+			envImportVars := make(map[string]string)
+			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, envImportVars, "test")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
@@ -443,7 +444,8 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, _, err := config.ProcessVars(tt.vars, tt.baseVars, nil, "test")
+			envImportVars := make(map[string]string)
+			result, _, err := config.ProcessVars(tt.vars, tt.baseVars, nil, envImportVars, "test")
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -460,10 +462,72 @@ func TestProcessVars_UndefinedReference(t *testing.T) {
 		"VAR": "%{UNDEFINED}",
 	}
 	baseVars := make(map[string]string)
+	envImportVars := make(map[string]string)
 
-	_, _, err := config.ProcessVars(vars, baseVars, nil, "test")
+	_, _, err := config.ProcessVars(vars, baseVars, nil, envImportVars, "test")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "undefined variable")
+}
+
+// TestProcessVars_EnvImportVarsConflict tests env_import and vars conflict detection
+func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
+	tests := []struct {
+		name          string
+		vars          map[string]interface{}
+		envImportVars map[string]string
+		wantErr       bool
+		errContains   string
+	}{
+		{
+			name: "conflict with env_import variable",
+			vars: map[string]interface{}{
+				"MY_VAR": "value_from_vars",
+			},
+			envImportVars: map[string]string{
+				"MY_VAR": "value_from_env_import",
+			},
+			wantErr:     true,
+			errContains: "conflicts between env_import and vars",
+		},
+		{
+			name: "no conflict - different variable names",
+			vars: map[string]interface{}{
+				"VAR1": "value1",
+			},
+			envImportVars: map[string]string{
+				"VAR2": "value2",
+			},
+			wantErr: false,
+		},
+		{
+			name: "no conflict - empty env_import",
+			vars: map[string]interface{}{
+				"MY_VAR": "value",
+			},
+			envImportVars: map[string]string{},
+			wantErr:       false,
+		},
+		{
+			name:          "no conflict - nil env_import",
+			vars:          map[string]interface{}{"MY_VAR": "value"},
+			envImportVars: nil,
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseVars := make(map[string]string)
+			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, tt.envImportVars, "test")
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				assert.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 // TestProcessEnv_VariableReference tests that env can reference vars

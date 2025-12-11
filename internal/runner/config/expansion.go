@@ -467,6 +467,7 @@ func (e *varExpander) resolveVariable(
 //   - vars: Variable definitions from TOML (map[string]interface{})
 //   - baseExpandedVars: Previously expanded string variables (inherited)
 //   - baseExpandedArrays: Previously expanded array variables (inherited)
+//   - envImportVars: Variables defined via env_import at any level (for conflict detection)
 //   - level: Context for error messages (e.g., "global", "group[deploy]")
 //
 // Returns:
@@ -478,11 +479,12 @@ func (e *varExpander) resolveVariable(
 //  1. Check total variable count against MaxVarsPerLevel
 //  2. For each variable:
 //     a. Validate variable name using ValidateVariableName
-//     b. Check type consistency with base variables
-//     c. Validate value type (string or []interface{})
-//     d. Validate size limits
-//     e. Expand using ExpandString
-//     f. Store in appropriate output map
+//     b. Check for conflicts with env_import variables
+//     c. Check type consistency with base variables
+//     d. Validate value type (string or []interface{})
+//     e. Validate size limits
+//     f. Expand using ExpandString
+//     g. Store in appropriate output map
 //
 // Type consistency rule:
 //   - A variable defined as string cannot be overridden as array
@@ -494,6 +496,7 @@ func ProcessVars(
 	vars map[string]interface{},
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
+	envImportVars map[string]string,
 	level string,
 ) (map[string]string, map[string][]string, error) {
 	// Handle nil vars map
@@ -512,7 +515,7 @@ func ProcessVars(
 	}
 
 	// Phase 1: Validation and type checking
-	stringVars, arrayVars, err := validateAndClassifyVars(vars, baseExpandedVars, baseExpandedArrays, level)
+	stringVars, arrayVars, err := validateAndClassifyVars(vars, baseExpandedVars, baseExpandedArrays, envImportVars, level)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -542,6 +545,7 @@ func validateAndClassifyVars(
 	vars map[string]interface{},
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
+	envImportVars map[string]string,
 	level string,
 ) (map[string]string, map[string][]interface{}, error) {
 	stringVars := make(map[string]string)
@@ -551,6 +555,18 @@ func validateAndClassifyVars(
 		// Validate variable name
 		if err := validateVariableName(varName, level, "vars"); err != nil {
 			return nil, nil, err
+		}
+
+		// Check for conflict with env_import variables
+		if envImportVars != nil {
+			if _, existsInEnvImport := envImportVars[varName]; existsInEnvImport {
+				return nil, nil, &ErrEnvImportVarsConflictDetail{
+					Level:          level,
+					VariableName:   varName,
+					EnvImportLevel: level, // Same level conflict for now
+					VarsLevel:      level,
+				}
+			}
 		}
 
 		// Determine the type and validate
@@ -812,13 +828,15 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global env_import: %w", err)
 	}
+	// Store env_import variables for conflict detection
+	runtime.EnvImportVars = envImportVars
 	// Merge envImportVars into runtime.ExpandedVars (which already contains autoVars)
 	for k, v := range envImportVars {
 		runtime.ExpandedVars[k] = v
 	}
 
-	// 2. Process Vars
-	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, "global")
+	// 2. Process Vars (pass envImportVars for conflict detection)
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, runtime.EnvImportVars, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global vars: %w", err)
 	}
@@ -967,10 +985,11 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	// Set the inheritance mode immediately after RuntimeGroup creation
 	runtime.EnvAllowlistInheritanceMode = runnertypes.DetermineEnvAllowlistInheritanceMode(spec.EnvAllowed)
 
-	// 1. Inherit global variables
+	// 1. Inherit global variables and env_import tracking
 	if globalRuntime != nil {
 		maps.Copy(runtime.ExpandedVars, globalRuntime.ExpandedVars)
 		maps.Copy(runtime.ExpandedArrayVars, globalRuntime.ExpandedArrayVars)
+		maps.Copy(runtime.EnvImportVars, globalRuntime.EnvImportVars)
 	}
 
 	// 2. Process EnvImport (group-level)
@@ -992,12 +1011,14 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 			return nil, fmt.Errorf("failed to process group[%s] env_import: %w", spec.Name, err)
 		}
 
+		// Add group-level env_import variables to tracking map
+		maps.Copy(runtime.EnvImportVars, envImportVars)
 		// Merge env_import variables into expanded vars (group-level env_import may override inherited vars)
 		maps.Copy(runtime.ExpandedVars, envImportVars)
 	}
 
-	// 3. Process Vars (group-level)
-	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, fmt.Sprintf("group[%s]", spec.Name))
+	// 3. Process Vars (group-level) - pass accumulated env_import vars for conflict detection
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, runtime.EnvImportVars, fmt.Sprintf("group[%s]", spec.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to process group[%s] vars: %w", spec.Name, err)
 	}
@@ -1113,6 +1134,8 @@ func expandCommandEnvImport(
 		return fmt.Errorf("failed to process command[%s] env_import: %w", spec.Name, err)
 	}
 
+	// Add command-level env_import variables to tracking map
+	maps.Copy(runtime.EnvImportVars, envImportVars)
 	// Merge command-level env_import into expanded vars (command-level may override group vars)
 	maps.Copy(runtime.ExpandedVars, envImportVars)
 	return nil
@@ -1127,6 +1150,7 @@ func expandCommandVars(
 		spec.Vars,
 		runtime.ExpandedVars,
 		runtime.ExpandedArrayVars,
+		runtime.EnvImportVars,
 		fmt.Sprintf("command[%s]", spec.Name),
 	)
 	if err != nil {
@@ -1213,10 +1237,11 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", workingSpec.Name, err)
 	}
 
-	// 1. Inherit group variables
+	// 1. Inherit group variables and env_import tracking
 	if runtimeGroup != nil {
 		maps.Copy(runtime.ExpandedVars, runtimeGroup.ExpandedVars)
 		maps.Copy(runtime.ExpandedArrayVars, runtimeGroup.ExpandedArrayVars)
+		maps.Copy(runtime.EnvImportVars, runtimeGroup.EnvImportVars)
 	}
 
 	// 2. Process EnvImport (command-level)
@@ -1224,7 +1249,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 		return nil, err
 	}
 
-	// 3. Process Vars (command-level)
+	// 3. Process Vars (command-level) - pass accumulated env_import vars for conflict detection
 	if err := expandCommandVars(workingSpec, runtime); err != nil {
 		return nil, err
 	}

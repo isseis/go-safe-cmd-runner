@@ -346,6 +346,34 @@ func TestErrDuplicateVariableDefinitionDetail_Unwrap(t *testing.T) {
 	assert.ErrorIs(t, err, ErrDuplicateVariableDefinition)
 }
 
+// TestErrEnvImportVarsConflictDetail_Error tests the Error() method
+func TestErrEnvImportVarsConflictDetail_Error(t *testing.T) {
+	err := &ErrEnvImportVarsConflictDetail{
+		Level:          "group[deploy]",
+		VariableName:   "CONFLICT_VAR",
+		EnvImportLevel: "global",
+		VarsLevel:      "group[deploy]",
+	}
+
+	errMsg := err.Error()
+	assert.Contains(t, errMsg, "CONFLICT_VAR")
+	assert.Contains(t, errMsg, "conflicts between env_import and vars")
+	assert.Contains(t, errMsg, "group[deploy]")
+	assert.Contains(t, errMsg, "global")
+}
+
+// TestErrEnvImportVarsConflictDetail_Unwrap tests the Unwrap() method
+func TestErrEnvImportVarsConflictDetail_Unwrap(t *testing.T) {
+	err := &ErrEnvImportVarsConflictDetail{
+		Level:          "global",
+		VariableName:   "CONFLICT_VAR",
+		EnvImportLevel: "global",
+		VarsLevel:      "global",
+	}
+
+	assert.ErrorIs(t, err, ErrEnvImportVarsConflict)
+}
+
 // TestErrDuplicatePathDetail_Error tests the Error() method
 func TestErrDuplicatePathDetail_Error(t *testing.T) {
 	err := &ErrDuplicatePathDetail{
