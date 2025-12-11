@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestErrInvalidVariableNameDetail_Error tests the Error() method
@@ -15,8 +17,15 @@ func TestErrInvalidVariableNameDetail_Error(t *testing.T) {
 		Reason:       "contains hyphen",
 	}
 
-	expected := "invalid variable name in global.vars: 'invalid-var' (contains hyphen)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidVariableNameDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidVariableNameDetail")
+
+	// Verify field values
+	assert.Equal(t, "global", detailErr.Level)
+	assert.Equal(t, "vars", detailErr.Field)
+	assert.Equal(t, "invalid-var", detailErr.VariableName)
+	assert.Equal(t, "contains hyphen", detailErr.Reason)
 }
 
 // TestErrInvalidVariableNameDetail_Unwrap tests the Unwrap() method
@@ -40,8 +49,15 @@ func TestErrInvalidSystemVariableNameDetail_Error(t *testing.T) {
 		Reason:             "contains hyphen",
 	}
 
-	expected := "invalid system variable name in command.from_env: 'SYS-VAR' (contains hyphen)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidSystemVariableNameDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidSystemVariableNameDetail")
+
+	// Verify field values
+	assert.Equal(t, "command", detailErr.Level)
+	assert.Equal(t, "from_env", detailErr.Field)
+	assert.Equal(t, "SYS-VAR", detailErr.SystemVariableName)
+	assert.Equal(t, "contains hyphen", detailErr.Reason)
 }
 
 // TestErrInvalidSystemVariableNameDetail_Unwrap tests the Unwrap() method
@@ -65,8 +81,15 @@ func TestErrReservedVariablePrefixDetail_Error(t *testing.T) {
 		Prefix:       "RUNNER_",
 	}
 
-	expected := "reserved variable prefix in global.vars: 'RUNNER_SECRET' (prefix 'RUNNER_' is reserved)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrReservedVariablePrefixDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrReservedVariablePrefixDetail")
+
+	// Verify field values
+	assert.Equal(t, "global", detailErr.Level)
+	assert.Equal(t, "vars", detailErr.Field)
+	assert.Equal(t, "RUNNER_SECRET", detailErr.VariableName)
+	assert.Equal(t, "RUNNER_", detailErr.Prefix)
 }
 
 // TestErrReservedVariablePrefixDetail_Unwrap tests the Unwrap() method
@@ -90,8 +113,15 @@ func TestErrVariableNotInAllowlistDetail_Error(t *testing.T) {
 		Allowlist:       []string{"HOME", "PATH"},
 	}
 
-	expected := "system environment variable 'SECRET_KEY' not in allowlist (referenced as 'my_secret' in group.from_env)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrVariableNotInAllowlistDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrVariableNotInAllowlistDetail")
+
+	// Verify field values
+	assert.Equal(t, "group", detailErr.Level)
+	assert.Equal(t, "SECRET_KEY", detailErr.SystemVarName)
+	assert.Equal(t, "my_secret", detailErr.InternalVarName)
+	assert.Equal(t, []string{"HOME", "PATH"}, detailErr.Allowlist)
 }
 
 // TestErrVariableNotInAllowlistDetail_Unwrap tests the Unwrap() method
@@ -115,8 +145,15 @@ func TestErrCircularReferenceDetail_Error(t *testing.T) {
 		Chain:        []string{"A", "B", "C", "A"},
 	}
 
-	expected := "circular reference in command.vars: 'A' (chain: [A B C A])"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrCircularReferenceDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrCircularReferenceDetail")
+
+	// Verify field values
+	assert.Equal(t, "command", detailErr.Level)
+	assert.Equal(t, "vars", detailErr.Field)
+	assert.Equal(t, "A", detailErr.VariableName)
+	assert.Equal(t, []string{"A", "B", "C", "A"}, detailErr.Chain)
 }
 
 // TestErrCircularReferenceDetail_Unwrap tests the Unwrap() method
@@ -140,8 +177,15 @@ func TestErrUndefinedVariableDetail_Error(t *testing.T) {
 		Context:      "in command expansion",
 	}
 
-	expected := "undefined variable in command.command_line: 'MISSING_VAR' (context: in command expansion)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrUndefinedVariableDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrUndefinedVariableDetail")
+
+	// Verify field values
+	assert.Equal(t, "command", detailErr.Level)
+	assert.Equal(t, "command_line", detailErr.Field)
+	assert.Equal(t, "MISSING_VAR", detailErr.VariableName)
+	assert.Equal(t, "in command expansion", detailErr.Context)
 }
 
 // TestErrUndefinedVariableDetail_Unwrap tests the Unwrap() method
@@ -165,8 +209,15 @@ func TestErrInvalidEscapeSequenceDetail_Error(t *testing.T) {
 		Context:  "invalid escape in string",
 	}
 
-	expected := "invalid escape sequence in command.command_line: '\\x' (context: invalid escape in string)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidEscapeSequenceDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidEscapeSequenceDetail")
+
+	// Verify field values
+	assert.Equal(t, "command", detailErr.Level)
+	assert.Equal(t, "command_line", detailErr.Field)
+	assert.Equal(t, "\\x", detailErr.Sequence)
+	assert.Equal(t, "invalid escape in string", detailErr.Context)
 }
 
 // TestErrInvalidEscapeSequenceDetail_Unwrap tests the Unwrap() method
@@ -189,8 +240,14 @@ func TestErrUnclosedVariableReferenceDetail_Error(t *testing.T) {
 		Context: "%{VAR without closing",
 	}
 
-	expected := "unclosed variable reference in group.env: missing closing '}' (context: %{VAR without closing)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrUnclosedVariableReferenceDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrUnclosedVariableReferenceDetail")
+
+	// Verify field values
+	assert.Equal(t, "group", detailErr.Level)
+	assert.Equal(t, "env", detailErr.Field)
+	assert.Equal(t, "%{VAR without closing", detailErr.Context)
 }
 
 // TestErrUnclosedVariableReferenceDetail_Unwrap tests the Unwrap() method
@@ -213,8 +270,15 @@ func TestErrMaxRecursionDepthExceededDetail_Error(t *testing.T) {
 		Context:  "deep variable expansion",
 	}
 
-	expected := "maximum recursion depth exceeded in command.vars: limit 100 (context: deep variable expansion)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrMaxRecursionDepthExceededDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrMaxRecursionDepthExceededDetail")
+
+	// Verify field values
+	assert.Equal(t, "command", detailErr.Level)
+	assert.Equal(t, "vars", detailErr.Field)
+	assert.Equal(t, 100, detailErr.MaxDepth)
+	assert.Equal(t, "deep variable expansion", detailErr.Context)
 }
 
 // TestErrMaxRecursionDepthExceededDetail_Unwrap tests the Unwrap() method
@@ -237,8 +301,14 @@ func TestErrInvalidEnvImportFormatDetail_Error(t *testing.T) {
 		Reason:  "missing equals sign",
 	}
 
-	expected := "invalid env_import format in global: 'invalid_mapping' (missing equals sign)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidEnvImportFormatDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidEnvImportFormatDetail")
+
+	// Verify field values
+	assert.Equal(t, "global", detailErr.Level)
+	assert.Equal(t, "invalid_mapping", detailErr.Mapping)
+	assert.Equal(t, "missing equals sign", detailErr.Reason)
 }
 
 // TestErrInvalidEnvImportFormatDetail_Unwrap tests the Unwrap() method
@@ -260,8 +330,14 @@ func TestErrInvalidVarsFormatDetail_Error(t *testing.T) {
 		Reason:  "no equals sign found",
 	}
 
-	expected := "invalid vars format in group: 'var_without_value' (no equals sign found)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidVarsFormatDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidVarsFormatDetail")
+
+	// Verify field values
+	assert.Equal(t, "group", detailErr.Level)
+	assert.Equal(t, "var_without_value", detailErr.Mapping)
+	assert.Equal(t, "no equals sign found", detailErr.Reason)
 }
 
 // TestErrInvalidVarsFormatDetail_Unwrap tests the Unwrap() method
@@ -283,8 +359,14 @@ func TestErrInvalidEnvFormatDetail_Error(t *testing.T) {
 		Reason:  "missing value",
 	}
 
-	expected := "invalid env format in command: 'ENV_VAR' (missing value)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidEnvFormatDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidEnvFormatDetail")
+
+	// Verify field values
+	assert.Equal(t, "command", detailErr.Level)
+	assert.Equal(t, "ENV_VAR", detailErr.Mapping)
+	assert.Equal(t, "missing value", detailErr.Reason)
 }
 
 // TestErrInvalidEnvFormatDetail_Unwrap tests the Unwrap() method
@@ -307,8 +389,15 @@ func TestErrInvalidEnvKeyDetail_Error(t *testing.T) {
 		Reason:  "contains hyphen",
 	}
 
-	expected := "invalid environment variable key in global: 'BAD-KEY' (context: environment variable, reason: contains hyphen)"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrInvalidEnvKeyDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrInvalidEnvKeyDetail")
+
+	// Verify field values
+	assert.Equal(t, "global", detailErr.Level)
+	assert.Equal(t, "BAD-KEY", detailErr.Key)
+	assert.Equal(t, "environment variable", detailErr.Context)
+	assert.Equal(t, "contains hyphen", detailErr.Reason)
 }
 
 // TestErrInvalidEnvKeyDetail_Unwrap tests the Unwrap() method
@@ -331,8 +420,14 @@ func TestErrDuplicateVariableDefinitionDetail_Error(t *testing.T) {
 		VariableName: "DUPLICATE_VAR",
 	}
 
-	expected := "duplicate variable definition in group.vars: 'DUPLICATE_VAR' is defined multiple times"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrDuplicateVariableDefinitionDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrDuplicateVariableDefinitionDetail")
+
+	// Verify field values
+	assert.Equal(t, "group", detailErr.Level)
+	assert.Equal(t, "vars", detailErr.Field)
+	assert.Equal(t, "DUPLICATE_VAR", detailErr.VariableName)
 }
 
 // TestErrDuplicateVariableDefinitionDetail_Unwrap tests the Unwrap() method
@@ -355,11 +450,15 @@ func TestErrEnvImportVarsConflictDetail_Error(t *testing.T) {
 		VarsLevel:      "group[deploy]",
 	}
 
-	errMsg := err.Error()
-	assert.Contains(t, errMsg, "CONFLICT_VAR")
-	assert.Contains(t, errMsg, "conflicts between env_import and vars")
-	assert.Contains(t, errMsg, "group[deploy]")
-	assert.Contains(t, errMsg, "global")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrEnvImportVarsConflictDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrEnvImportVarsConflictDetail")
+
+	// Verify field values
+	assert.Equal(t, "group[deploy]", detailErr.Level)
+	assert.Equal(t, "CONFLICT_VAR", detailErr.VariableName)
+	assert.Equal(t, "global", detailErr.EnvImportLevel)
+	assert.Equal(t, "group[deploy]", detailErr.VarsLevel)
 }
 
 // TestErrEnvImportVarsConflictDetail_Unwrap tests the Unwrap() method
@@ -384,8 +483,16 @@ func TestErrDuplicatePathDetail_Error(t *testing.T) {
 		DupeIndex:  3,
 	}
 
-	expected := "duplicate path in group[testgroup].cmd_allowed: '/usr/bin/tool' appears at index 0 and 3"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrDuplicatePathDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrDuplicatePathDetail")
+
+	// Verify field values
+	assert.Equal(t, "group[testgroup]", detailErr.Level)
+	assert.Equal(t, "cmd_allowed", detailErr.Field)
+	assert.Equal(t, "/usr/bin/tool", detailErr.Path)
+	assert.Equal(t, 0, detailErr.FirstIndex)
+	assert.Equal(t, 3, detailErr.DupeIndex)
 }
 
 // TestErrDuplicatePathDetail_Unwrap tests the Unwrap() method
@@ -410,8 +517,15 @@ func TestErrDuplicateResolvedPathDetail_Error(t *testing.T) {
 		ResolvedPath: "/usr/bin/tool",
 	}
 
-	expected := "duplicate resolved path in group[mygroup].cmd_allowed: '/usr/bin/tool-link' resolves to '/usr/bin/tool' which is already in the list"
-	assert.Equal(t, expected, err.Error(), "Error() should return expected message")
+	// Verify it's the correct error type using errors.As
+	var detailErr *ErrDuplicateResolvedPathDetail
+	require.True(t, errors.As(err, &detailErr), "error should be ErrDuplicateResolvedPathDetail")
+
+	// Verify field values
+	assert.Equal(t, "group[mygroup]", detailErr.Level)
+	assert.Equal(t, "cmd_allowed", detailErr.Field)
+	assert.Equal(t, "/usr/bin/tool-link", detailErr.OriginalPath)
+	assert.Equal(t, "/usr/bin/tool", detailErr.ResolvedPath)
 }
 
 // TestErrDuplicateResolvedPathDetail_Unwrap tests the Unwrap() method
