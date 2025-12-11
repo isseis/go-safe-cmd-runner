@@ -757,3 +757,170 @@ msg = "hello"
 		})
 	}
 }
+
+// TestTemplateArrayParameterExpansion tests that array parameters (${@param})
+// are correctly expanded in both args and env fields
+func TestTemplateArrayParameterExpansion(t *testing.T) {
+	tests := []struct {
+		name         string
+		toml         string
+		expectedArgs []string
+		expectedEnv  map[string]string
+	}{
+		{
+			name: "array parameter in args only",
+			toml: `
+version = "1.0"
+
+[command_templates.cmd_with_flags]
+cmd = "echo"
+args = ["${@flags}", "message"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "cmd_with_flags"
+[groups.commands.params]
+flags = ["-v", "--debug"]
+`,
+			expectedArgs: []string{"-v", "--debug", "message"},
+			expectedEnv:  map[string]string{},
+		},
+		{
+			name: "array parameter in env only - element level",
+			toml: `
+version = "1.0"
+
+[command_templates.cmd_with_env]
+cmd = "echo"
+args = ["message"]
+env = ["STATIC=value", "${@env_vars}"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "cmd_with_env"
+[groups.commands.params]
+env_vars = ["DEBUG=1", "VERBOSE=1"]
+`,
+			expectedArgs: []string{"message"},
+			expectedEnv: map[string]string{
+				"STATIC":  "value",
+				"DEBUG":   "1",
+				"VERBOSE": "1",
+			},
+		},
+		{
+			name: "array parameter in both args and env",
+			toml: `
+version = "1.0"
+
+[command_templates.cmd_with_both]
+cmd = "echo"
+args = ["${@flags}", "message"]
+env = ["REQUIRED=foo", "${@env_vars}"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "cmd_with_both"
+[groups.commands.params]
+flags = ["-v", "--debug"]
+env_vars = ["DEBUG=1", "VERBOSE=1"]
+`,
+			expectedArgs: []string{"-v", "--debug", "message"},
+			expectedEnv: map[string]string{
+				"REQUIRED": "foo",
+				"DEBUG":    "1",
+				"VERBOSE":  "1",
+			},
+		},
+		{
+			name: "multiple array parameters in args and env",
+			toml: `
+version = "1.0"
+
+[command_templates.cmd_multi_array]
+cmd = "echo"
+args = ["${@common_flags}", "${@app_flags}", "message"]
+env = ["${@common_env}", "${@app_env}"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "cmd_multi_array"
+[groups.commands.params]
+common_flags = ["-v"]
+app_flags = ["--debug", "--trace"]
+common_env = ["PATH=/usr/bin", "HOME=/home/user"]
+app_env = ["DEBUG=1"]
+`,
+			expectedArgs: []string{"-v", "--debug", "--trace", "message"},
+			expectedEnv: map[string]string{
+				"PATH":  "/usr/bin",
+				"HOME":  "/home/user",
+				"DEBUG": "1",
+			},
+		},
+		{
+			name: "empty array parameters",
+			toml: `
+version = "1.0"
+
+[command_templates.cmd_empty_array]
+cmd = "echo"
+args = ["${@flags}", "message"]
+env = ["REQUIRED=foo", "${@env_vars}"]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "cmd1"
+template = "cmd_empty_array"
+[groups.commands.params]
+flags = []
+env_vars = []
+`,
+			expectedArgs: []string{"message"},
+			expectedEnv: map[string]string{
+				"REQUIRED": "foo",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			require.NoError(t, err)
+
+			runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+			require.NoError(t, err)
+
+			runtimeGroup, err := ExpandGroup(&cfg.Groups[0], runtimeGlobal)
+			require.NoError(t, err)
+
+			runtimeCmd, err := ExpandCommand(
+				&cfg.Groups[0].Commands[0],
+				cfg.CommandTemplates,
+				runtimeGroup,
+				runtimeGlobal,
+				common.NewUnsetTimeout(),
+				commontesting.NewUnsetOutputSizeLimit(),
+			)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedArgs, runtimeCmd.ExpandedArgs, "args mismatch")
+			assert.Equal(t, tt.expectedEnv, runtimeCmd.ExpandedEnv, "env mismatch")
+		})
+	}
+}

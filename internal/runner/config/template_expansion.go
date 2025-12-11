@@ -810,10 +810,18 @@ func CollectUsedParams(template *runnertypes.CommandTemplate) (map[string]struct
 		}
 	}
 
-	// Collect from env (only the value part after =)
+	// Collect from env
+	// - For "KEY=VALUE" format: collect from VALUE part only
+	// - For element-level expansion (e.g., "${@env_vars}"): collect from entire string
 	for _, env := range template.Env {
 		if idx := strings.IndexByte(env, '='); idx != -1 {
+			// KEY=VALUE format - collect from value part only
 			if err := collectFromString(env[idx+1:], used); err != nil {
+				return nil, err
+			}
+		} else {
+			// No '=' - this might be element-level expansion like "${@env_vars}"
+			if err := collectFromString(env, used); err != nil {
 				return nil, err
 			}
 		}
