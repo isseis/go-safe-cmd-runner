@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -12,12 +13,12 @@ import (
 // TestExpandString_EscapeSequence tests escape sequence handling in ExpandString
 func TestExpandString_EscapeSequence(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		vars     map[string]string
-		want     string
-		wantErr  bool
-		errorMsg string
+		name        string
+		input       string
+		vars        map[string]string
+		want        string
+		wantErr     bool
+		wantErrType error
 	}{
 		{
 			name:    "escape percent sign",
@@ -41,11 +42,11 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "invalid escape sequence",
-			input:    "test\\x",
-			vars:     map[string]string{},
-			wantErr:  true,
-			errorMsg: "invalid escape sequence",
+			name:        "invalid escape sequence",
+			input:       "test\\x",
+			vars:        map[string]string{},
+			wantErr:     true,
+			wantErrType: config.ErrInvalidEscapeSequence,
 		},
 	}
 
@@ -54,7 +55,7 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 			got, err := config.ExpandString(tt.input, tt.vars, "test", "field")
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				require.ErrorIs(t, err, tt.wantErrType)
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, got)
@@ -69,25 +70,25 @@ func TestExpandString_UndefinedVariable(t *testing.T) {
 		name     string
 		input    string
 		vars     map[string]string
-		errorMsg string
+		checkVar string // variable name to check in error
 	}{
 		{
 			name:     "simple undefined variable",
 			input:    "%{UNDEFINED}",
 			vars:     map[string]string{},
-			errorMsg: "undefined variable",
+			checkVar: "UNDEFINED",
 		},
 		{
 			name:     "undefined variable in context",
 			input:    "prefix_%{MISSING}_suffix",
 			vars:     map[string]string{"OTHER": "value"},
-			errorMsg: "MISSING",
+			checkVar: "MISSING",
 		},
 		{
 			name:     "multiple undefined variables (first fails)",
 			input:    "%{UNDEFINED1}_%{UNDEFINED2}",
 			vars:     map[string]string{},
-			errorMsg: "UNDEFINED1",
+			checkVar: "UNDEFINED1",
 		},
 	}
 
@@ -95,7 +96,13 @@ func TestExpandString_UndefinedVariable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ExpandString(tt.input, tt.vars, "test", "field")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errorMsg)
+			require.ErrorIs(t, err, config.ErrUndefinedVariable)
+
+			// Also verify the specific variable name in the detailed error
+			var detailErr *config.ErrUndefinedVariableDetail
+			if errors.As(err, &detailErr) {
+				assert.Equal(t, tt.checkVar, detailErr.VariableName)
+			}
 		})
 	}
 }
@@ -167,34 +174,34 @@ func TestExpandString_ComplexPatterns(t *testing.T) {
 // TestExpandString_InvalidSyntax tests invalid variable syntax
 func TestExpandString_InvalidSyntax(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		vars     map[string]string
-		errorMsg string
+		name        string
+		input       string
+		vars        map[string]string
+		wantErrType error
 	}{
 		{
-			name:     "unclosed variable reference",
-			input:    "%{UNCLOSED",
-			vars:     map[string]string{},
-			errorMsg: "unclosed variable reference",
+			name:        "unclosed variable reference",
+			input:       "%{UNCLOSED",
+			vars:        map[string]string{},
+			wantErrType: config.ErrUnclosedVariableReference,
 		},
 		{
-			name:     "empty variable name",
-			input:    "%{}",
-			vars:     map[string]string{},
-			errorMsg: "invalid variable name",
+			name:        "empty variable name",
+			input:       "%{}",
+			vars:        map[string]string{},
+			wantErrType: config.ErrInvalidVariableName,
 		},
 		{
-			name:     "variable with invalid characters",
-			input:    "%{VAR-WITH-DASH}",
-			vars:     map[string]string{},
-			errorMsg: "invalid variable name",
+			name:        "variable with invalid characters",
+			input:       "%{VAR-WITH-DASH}",
+			vars:        map[string]string{},
+			wantErrType: config.ErrInvalidVariableName,
 		},
 		{
-			name:     "variable with space",
-			input:    "%{VAR NAME}",
-			vars:     map[string]string{},
-			errorMsg: "invalid variable name",
+			name:        "variable with space",
+			input:       "%{VAR NAME}",
+			vars:        map[string]string{},
+			wantErrType: config.ErrInvalidVariableName,
 		},
 	}
 
@@ -202,7 +209,7 @@ func TestExpandString_InvalidSyntax(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ExpandString(tt.input, tt.vars, "test", "field")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errorMsg)
+			require.ErrorIs(t, err, tt.wantErrType)
 		})
 	}
 }
@@ -215,16 +222,16 @@ func TestProcessEnvImport_AllowlistViolation(t *testing.T) {
 		allowlist   []string
 		systemEnv   map[string]string
 		wantErr     bool
-		errorMsg    string
+		wantErrType error
 		expectedVar string
 	}{
 		{
-			name:      "system variable not in allowlist",
-			fromEnv:   []string{"my_var=BLOCKED_VAR"},
-			allowlist: []string{"ALLOWED_VAR"},
-			systemEnv: map[string]string{"BLOCKED_VAR": "value"},
-			wantErr:   true,
-			errorMsg:  "not in allowlist",
+			name:        "system variable not in allowlist",
+			fromEnv:     []string{"my_var=BLOCKED_VAR"},
+			allowlist:   []string{"ALLOWED_VAR"},
+			systemEnv:   map[string]string{"BLOCKED_VAR": "value"},
+			wantErr:     true,
+			wantErrType: config.ErrVariableNotInAllowlist,
 		},
 		{
 			name:        "system variable in allowlist",
@@ -235,12 +242,12 @@ func TestProcessEnvImport_AllowlistViolation(t *testing.T) {
 			expectedVar: "my_var",
 		},
 		{
-			name:      "empty allowlist blocks all",
-			fromEnv:   []string{"my_var=ANY_VAR"},
-			allowlist: []string{},
-			systemEnv: map[string]string{"ANY_VAR": "value"},
-			wantErr:   true,
-			errorMsg:  "not in allowlist",
+			name:        "empty allowlist blocks all",
+			fromEnv:     []string{"my_var=ANY_VAR"},
+			allowlist:   []string{},
+			systemEnv:   map[string]string{"ANY_VAR": "value"},
+			wantErr:     true,
+			wantErrType: config.ErrVariableNotInAllowlist,
 		},
 	}
 
@@ -249,7 +256,7 @@ func TestProcessEnvImport_AllowlistViolation(t *testing.T) {
 			result, err := config.ProcessEnvImport(tt.fromEnv, tt.allowlist, tt.systemEnv, "test")
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				require.ErrorIs(t, err, tt.wantErrType)
 			} else {
 				require.NoError(t, err)
 				assert.Contains(t, result, tt.expectedVar)
@@ -273,24 +280,24 @@ func TestProcessEnvImport_SystemVariableNotSet(t *testing.T) {
 // TestProcessEnvImport_InvalidFormat tests invalid env_import format handling
 func TestProcessEnvImport_InvalidFormat(t *testing.T) {
 	tests := []struct {
-		name     string
-		fromEnv  []string
-		errorMsg string
+		name        string
+		fromEnv     []string
+		wantErrType error
 	}{
 		{
-			name:     "missing equals sign",
-			fromEnv:  []string{"no_equals"},
-			errorMsg: "invalid env_import format",
+			name:        "missing equals sign",
+			fromEnv:     []string{"no_equals"},
+			wantErrType: config.ErrInvalidEnvImportFormat,
 		},
 		{
-			name:     "empty mapping",
-			fromEnv:  []string{""},
-			errorMsg: "invalid env_import format",
+			name:        "empty mapping",
+			fromEnv:     []string{""},
+			wantErrType: config.ErrInvalidEnvImportFormat,
 		},
 		{
-			name:     "multiple equals signs causes invalid system var name",
-			fromEnv:  []string{"var=SYS=VAR"},
-			errorMsg: "invalid system variable name",
+			name:        "multiple equals signs causes invalid system var name",
+			fromEnv:     []string{"var=SYS=VAR"},
+			wantErrType: config.ErrInvalidSystemVariableName,
 		},
 	}
 
@@ -298,7 +305,7 @@ func TestProcessEnvImport_InvalidFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ProcessEnvImport(tt.fromEnv, []string{}, map[string]string{}, "test")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errorMsg)
+			require.ErrorIs(t, err, tt.wantErrType)
 		})
 	}
 }
@@ -306,24 +313,24 @@ func TestProcessEnvImport_InvalidFormat(t *testing.T) {
 // TestProcessEnvImport_InvalidInternalVariableName tests internal variable name validation
 func TestProcessEnvImport_InvalidInternalVariableName(t *testing.T) {
 	tests := []struct {
-		name     string
-		fromEnv  []string
-		errorMsg string
+		name        string
+		fromEnv     []string
+		wantErrType error
 	}{
 		{
-			name:     "empty internal variable name",
-			fromEnv:  []string{"=SYSTEM_VAR"},
-			errorMsg: "invalid env_import format",
+			name:        "empty internal variable name",
+			fromEnv:     []string{"=SYSTEM_VAR"},
+			wantErrType: config.ErrInvalidEnvImportFormat,
 		},
 		{
-			name:     "internal variable with dash",
-			fromEnv:  []string{"my-var=SYSTEM_VAR"},
-			errorMsg: "invalid variable name",
+			name:        "internal variable with dash",
+			fromEnv:     []string{"my-var=SYSTEM_VAR"},
+			wantErrType: config.ErrInvalidVariableName,
 		},
 		{
-			name:     "internal variable with space",
-			fromEnv:  []string{"my var=SYSTEM_VAR"},
-			errorMsg: "invalid variable name",
+			name:        "internal variable with space",
+			fromEnv:     []string{"my var=SYSTEM_VAR"},
+			wantErrType: config.ErrInvalidVariableName,
 		},
 	}
 
@@ -331,7 +338,7 @@ func TestProcessEnvImport_InvalidInternalVariableName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ProcessEnvImport(tt.fromEnv, []string{"SYSTEM_VAR"}, map[string]string{"SYSTEM_VAR": "value"}, "test")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errorMsg)
+			require.ErrorIs(t, err, tt.wantErrType)
 		})
 	}
 }
@@ -350,7 +357,7 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 
 	_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "test")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate variable")
+	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
 }
 
 // TestProcessVars_DuplicateDefinition tests duplicate variable detection in vars
@@ -360,24 +367,20 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 // TestProcessVars_InvalidVariableName tests invalid variable names in vars
 func TestProcessVars_InvalidVariableName(t *testing.T) {
 	tests := []struct {
-		name     string
-		vars     map[string]interface{}
-		errorMsg string
+		name string
+		vars map[string]interface{}
 	}{
 		{
-			name:     "variable with dash",
-			vars:     map[string]interface{}{"my-var": "value"},
-			errorMsg: "invalid variable name",
+			name: "variable with dash",
+			vars: map[string]interface{}{"my-var": "value"},
 		},
 		{
-			name:     "variable with space",
-			vars:     map[string]interface{}{"my var": "value"},
-			errorMsg: "invalid variable name",
+			name: "variable with space",
+			vars: map[string]interface{}{"my var": "value"},
 		},
 		{
-			name:     "empty variable name",
-			vars:     map[string]interface{}{"": "value"},
-			errorMsg: "invalid variable name",
+			name: "empty variable name",
+			vars: map[string]interface{}{"": "value"},
 		},
 	}
 
@@ -387,7 +390,7 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 			envImportVars := make(map[string]string)
 			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, envImportVars, "test")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errorMsg)
+			require.ErrorIs(t, err, config.ErrInvalidVariableName)
 		})
 	}
 }
@@ -466,7 +469,7 @@ func TestProcessVars_UndefinedReference(t *testing.T) {
 
 	_, _, err := config.ProcessVars(vars, baseVars, nil, envImportVars, "test")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined variable")
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
 }
 
 // TestProcessVars_EnvImportVarsConflict tests env_import and vars conflict detection
@@ -583,30 +586,30 @@ func TestProcessEnv_UndefinedVariable(t *testing.T) {
 
 	_, err := config.ProcessEnv(env, internalVars, "test")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined variable")
+	require.ErrorIs(t, err, config.ErrUndefinedVariable)
 }
 
 // TestProcessEnv_InvalidEnvVarName tests invalid environment variable names
 func TestProcessEnv_InvalidEnvVarName(t *testing.T) {
 	tests := []struct {
-		name     string
-		env      []string
-		errorMsg string
+		name        string
+		env         []string
+		wantErrType error
 	}{
 		{
-			name:     "env var with dash",
-			env:      []string{"MY-VAR=value"},
-			errorMsg: "invalid environment variable key",
+			name:        "env var with dash",
+			env:         []string{"MY-VAR=value"},
+			wantErrType: config.ErrInvalidEnvKey,
 		},
 		{
-			name:     "env var with space",
-			env:      []string{"MY VAR=value"},
-			errorMsg: "invalid environment variable key",
+			name:        "env var with space",
+			env:         []string{"MY VAR=value"},
+			wantErrType: config.ErrInvalidEnvKey,
 		},
 		{
-			name:     "empty env var name",
-			env:      []string{"=value"},
-			errorMsg: "invalid env format",
+			name:        "empty env var name",
+			env:         []string{"=value"},
+			wantErrType: config.ErrInvalidEnvFormat,
 		},
 	}
 
@@ -615,7 +618,7 @@ func TestProcessEnv_InvalidEnvVarName(t *testing.T) {
 			internalVars := make(map[string]string)
 			_, err := config.ProcessEnv(tt.env, internalVars, "test")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errorMsg)
+			require.ErrorIs(t, err, tt.wantErrType)
 		})
 	}
 }
@@ -630,7 +633,7 @@ func TestProcessEnv_DuplicateDefinition(t *testing.T) {
 
 	_, err := config.ProcessEnv(env, internalVars, "test")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate variable")
+	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
 }
 
 // TestIntegration_FullExpansionChain tests the full expansion chain: from_env -> vars -> env

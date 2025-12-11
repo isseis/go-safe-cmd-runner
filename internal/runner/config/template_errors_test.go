@@ -3,8 +3,9 @@
 package config
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestErrorTypesImplementError(t *testing.T) {
@@ -51,69 +52,61 @@ func TestErrorsAs(t *testing.T) {
 	tests := []struct {
 		name   string
 		err    error
-		target interface{}
+		assert func(t *testing.T, err error)
 	}{
 		{
-			name:   "ErrTemplateNotFound",
-			err:    &ErrTemplateNotFound{CommandName: "cmd", TemplateName: "tmpl"},
-			target: &ErrTemplateNotFound{},
+			name: "ErrTemplateNotFound",
+			err:  &ErrTemplateNotFound{CommandName: "cmd", TemplateName: "tmpl"},
+			assert: func(t *testing.T, err error) {
+				var target *ErrTemplateNotFound
+				assert.ErrorAs(t, err, &target)
+			},
 		},
 		{
-			name:   "ErrTemplateFieldConflict",
-			err:    &ErrTemplateFieldConflict{GroupName: "grp", Field: "cmd"},
-			target: &ErrTemplateFieldConflict{},
+			name: "ErrTemplateFieldConflict",
+			err:  &ErrTemplateFieldConflict{GroupName: "grp", Field: "cmd"},
+			assert: func(t *testing.T, err error) {
+				var target *ErrTemplateFieldConflict
+				assert.ErrorAs(t, err, &target)
+			},
 		},
 		{
-			name:   "ErrUnclosedPlaceholder",
-			err:    &ErrUnclosedPlaceholder{Input: "${path", Position: 0},
-			target: &ErrUnclosedPlaceholder{},
+			name: "ErrUnclosedPlaceholder",
+			err:  &ErrUnclosedPlaceholder{Input: "${path", Position: 0},
+			assert: func(t *testing.T, err error) {
+				var target *ErrUnclosedPlaceholder
+				assert.ErrorAs(t, err, &target)
+			},
 		},
 		{
-			name:   "ErrRequiredParamMissing",
-			err:    &ErrRequiredParamMissing{TemplateName: "tmpl", ParamName: "p"},
-			target: &ErrRequiredParamMissing{},
+			name: "ErrRequiredParamMissing",
+			err:  &ErrRequiredParamMissing{TemplateName: "tmpl", ParamName: "p"},
+			assert: func(t *testing.T, err error) {
+				var target *ErrRequiredParamMissing
+				assert.ErrorAs(t, err, &target)
+			},
 		},
 		{
-			name:   "ErrForbiddenPatternInTemplate",
-			err:    &ErrForbiddenPatternInTemplate{TemplateName: "tmpl", Field: "cmd"},
-			target: &ErrForbiddenPatternInTemplate{},
+			name: "ErrForbiddenPatternInTemplate",
+			err:  &ErrForbiddenPatternInTemplate{TemplateName: "tmpl", Field: "cmd"},
+			assert: func(t *testing.T, err error) {
+				var target *ErrForbiddenPatternInTemplate
+				assert.ErrorAs(t, err, &target)
+			},
 		},
 		{
-			name:   "ErrPlaceholderInEnvKey",
-			err:    &ErrPlaceholderInEnvKey{TemplateName: "tmpl", EnvEntry: "${key}=val", Key: "${key}"},
-			target: &ErrPlaceholderInEnvKey{},
+			name: "ErrPlaceholderInEnvKey",
+			err:  &ErrPlaceholderInEnvKey{TemplateName: "tmpl", EnvEntry: "${key}=val", Key: "${key}"},
+			assert: func(t *testing.T, err error) {
+				var target *ErrPlaceholderInEnvKey
+				assert.ErrorAs(t, err, &target)
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Use type switch to test errors.As behavior
-			switch target := tt.target.(type) {
-			case *ErrTemplateNotFound:
-				if !errors.As(tt.err, &target) {
-					t.Errorf("errors.As failed for %s", tt.name)
-				}
-			case *ErrTemplateFieldConflict:
-				if !errors.As(tt.err, &target) {
-					t.Errorf("errors.As failed for %s", tt.name)
-				}
-			case *ErrUnclosedPlaceholder:
-				if !errors.As(tt.err, &target) {
-					t.Errorf("errors.As failed for %s", tt.name)
-				}
-			case *ErrRequiredParamMissing:
-				if !errors.As(tt.err, &target) {
-					t.Errorf("errors.As failed for %s", tt.name)
-				}
-			case *ErrForbiddenPatternInTemplate:
-				if !errors.As(tt.err, &target) {
-					t.Errorf("errors.As failed for %s", tt.name)
-				}
-			case *ErrPlaceholderInEnvKey:
-				if !errors.As(tt.err, &target) {
-					t.Errorf("errors.As failed for %s", tt.name)
-				}
-			}
+			tt.assert(t, tt.err)
 		})
 	}
 }
