@@ -3,8 +3,9 @@
 package config
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestExpandTemplateEnv(t *testing.T) {
@@ -213,53 +214,30 @@ func TestExpandTemplateEnv(t *testing.T) {
 			result, err := ExpandTemplateEnv(tt.env, tt.params, tt.templateName)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Errorf("expected error, got nil")
-					return
-				}
+				assert.Error(t, err, "expected error, got nil")
 
 				// Verify error type
 				switch tt.errType.(type) {
 				case *ErrTemplateInvalidEnvFormat:
 					var target *ErrTemplateInvalidEnvFormat
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrTemplateInvalidEnvFormat, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrTemplateInvalidEnvFormat")
 				case *ErrPlaceholderInEnvKey:
 					var target *ErrPlaceholderInEnvKey
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrPlaceholderInEnvKey, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrPlaceholderInEnvKey")
 				case *ErrArrayInMixedContext:
 					var target *ErrArrayInMixedContext
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrArrayInMixedContext, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrArrayInMixedContext")
 				case *ErrDuplicateEnvVariableDetail:
 					var target *ErrDuplicateEnvVariableDetail
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrDuplicateEnvVariableDetail, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrDuplicateEnvVariableDetail")
 				}
 				return
 			}
 
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
+			assert.NoError(t, err, "unexpected error")
 
-			if len(result) != len(tt.want) {
-				t.Errorf("result length = %d, want %d\nresult: %v\nwant: %v",
-					len(result), len(tt.want), result, tt.want)
-				return
-			}
-
-			for i, got := range result {
-				if got != tt.want[i] {
-					t.Errorf("result[%d] = %q, want %q", i, got, tt.want[i])
-				}
-			}
+			assert.Equal(t, len(tt.want), len(result), "result length mismatch")
+			assert.Equal(t, tt.want, result, "result content mismatch")
 		})
 	}
 }
