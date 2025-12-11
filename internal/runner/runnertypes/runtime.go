@@ -233,14 +233,14 @@ func (r *RuntimeGroup) WorkDir() string {
 	return r.Spec.WorkDir
 }
 
-// ExtractGroupName safely extracts the group name from a RuntimeGroup.
-// Returns an empty string if the RuntimeGroup or its Spec is nil.
-// This helper is useful for timeout resolution context where group name is optional.
+// ExtractGroupName extracts the group name from a RuntimeGroup.
+// Panics if runtimeGroup or runtimeGroup.Spec is nil (programming error).
+// All commands must belong to a group per TOML specification.
 func ExtractGroupName(runtimeGroup *RuntimeGroup) string {
-	if runtimeGroup != nil && runtimeGroup.Spec != nil {
-		return runtimeGroup.Spec.Name
+	if runtimeGroup == nil || runtimeGroup.Spec == nil {
+		panic("ExtractGroupName: runtimeGroup and runtimeGroup.Spec must be non-nil (programming error)")
 	}
-	return ""
+	return runtimeGroup.Spec.Name
 }
 
 // RuntimeCommand represents the runtime-expanded command configuration.

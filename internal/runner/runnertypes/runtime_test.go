@@ -631,49 +631,40 @@ func TestRuntimeGroup_WorkDir_Panic(t *testing.T) {
 
 // TestExtractGroupName tests the ExtractGroupName helper function
 func TestExtractGroupName(t *testing.T) {
-	tests := []struct {
-		name       string
-		runtimeGrp *RuntimeGroup
-		want       string
-	}{
-		{
-			name: "valid RuntimeGroup with name",
-			runtimeGrp: &RuntimeGroup{
-				Spec: &GroupSpec{
-					Name: "test-group",
-				},
+	t.Run("valid RuntimeGroup with name", func(t *testing.T) {
+		runtimeGrp := &RuntimeGroup{
+			Spec: &GroupSpec{
+				Name: "test-group",
 			},
-			want: "test-group",
-		},
-		{
-			name:       "nil RuntimeGroup",
-			runtimeGrp: nil,
-			want:       "",
-		},
-		{
-			name: "RuntimeGroup with nil Spec",
-			runtimeGrp: &RuntimeGroup{
-				Spec: nil,
-			},
-			want: "",
-		},
-		{
-			name: "empty group name",
-			runtimeGrp: &RuntimeGroup{
-				Spec: &GroupSpec{
-					Name: "",
-				},
-			},
-			want: "",
-		},
-	}
+		}
+		got := ExtractGroupName(runtimeGrp)
+		assert.Equal(t, "test-group", got)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ExtractGroupName(tt.runtimeGrp)
-			assert.Equal(t, tt.want, got)
-		})
-	}
+	t.Run("empty group name is allowed", func(t *testing.T) {
+		runtimeGrp := &RuntimeGroup{
+			Spec: &GroupSpec{
+				Name: "",
+			},
+		}
+		got := ExtractGroupName(runtimeGrp)
+		assert.Equal(t, "", got)
+	})
+
+	t.Run("panic on nil RuntimeGroup", func(t *testing.T) {
+		assert.Panics(t, func() {
+			ExtractGroupName(nil)
+		}, "ExtractGroupName should panic when runtimeGroup is nil")
+	})
+
+	t.Run("panic on RuntimeGroup with nil Spec", func(t *testing.T) {
+		runtimeGrp := &RuntimeGroup{
+			Spec: nil,
+		}
+		assert.Panics(t, func() {
+			ExtractGroupName(runtimeGrp)
+		}, "ExtractGroupName should panic when runtimeGroup.Spec is nil")
+	})
 }
 
 // TestNewRuntimeGlobal_NilSpec tests that NewRuntimeGlobal returns error for nil spec
