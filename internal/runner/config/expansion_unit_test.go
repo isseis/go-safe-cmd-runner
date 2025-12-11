@@ -479,7 +479,6 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 		vars          map[string]interface{}
 		envImportVars map[string]string
 		wantErr       bool
-		errContains   string
 	}{
 		{
 			name: "conflict with env_import variable",
@@ -489,8 +488,7 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 			envImportVars: map[string]string{
 				"MY_VAR": "value_from_env_import",
 			},
-			wantErr:     true,
-			errContains: "conflicts between env_import and vars",
+			wantErr: true,
 		},
 		{
 			name: "no conflict - different variable names",
@@ -524,8 +522,7 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, tt.envImportVars, "test")
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errContains)
-				assert.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
+				require.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
 			} else {
 				require.NoError(t, err)
 			}
