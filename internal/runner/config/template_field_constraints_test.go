@@ -3,10 +3,10 @@
 package config
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestTemplateFieldConstraints validates all field-specific parameter usage constraints
@@ -241,37 +241,28 @@ func TestTemplateFieldConstraints(t *testing.T) {
 
 			// Verify result
 			if tt.wantErr {
-				if err == nil {
-					t.Errorf("%s: expected error but got nil\nDescription: %s",
-						tt.name, tt.description)
-					return
-				}
+				assert.Error(t, err, "%s: expected error but got nil\nDescription: %s",
+					tt.name, tt.description)
 
 				// Verify error type
 				if tt.errType != nil {
 					switch tt.errType.(type) {
 					case *ErrTemplateCmdNotSingleValue:
 						var target *ErrTemplateCmdNotSingleValue
-						if !errors.As(err, &target) {
-							t.Errorf("%s: expected ErrTemplateCmdNotSingleValue, got %T: %v",
-								tt.name, err, err)
-						}
+						assert.ErrorAs(t, err, &target, "%s: expected ErrTemplateCmdNotSingleValue",
+							tt.name)
 					case *ErrArrayInMixedContext:
 						var target *ErrArrayInMixedContext
-						if !errors.As(err, &target) {
-							t.Errorf("%s: expected ErrArrayInMixedContext, got %T: %v",
-								tt.name, err, err)
-						}
+						assert.ErrorAs(t, err, &target, "%s: expected ErrArrayInMixedContext",
+							tt.name)
 					case *ErrPlaceholderInEnvKey:
 						var target *ErrPlaceholderInEnvKey
-						if !errors.As(err, &target) {
-							t.Errorf("%s: expected ErrPlaceholderInEnvKey, got %T: %v",
-								tt.name, err, err)
-						}
+						assert.ErrorAs(t, err, &target, "%s: expected ErrPlaceholderInEnvKey",
+							tt.name)
 					}
 				}
-			} else if err != nil {
-				t.Errorf("%s: unexpected error: %v\nDescription: %s",
+			} else {
+				assert.NoError(t, err, "%s: unexpected error: %v\nDescription: %s",
 					tt.name, err, tt.description)
 			}
 		})
