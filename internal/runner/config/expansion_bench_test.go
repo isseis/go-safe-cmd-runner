@@ -11,7 +11,7 @@ import (
 // BenchmarkExpandGlobal measures the performance of global configuration expansion
 func BenchmarkExpandGlobal(b *testing.B) {
 	spec := &runnertypes.GlobalSpec{
-		Vars:    map[string]interface{}{"VAR1": "value1", "VAR2": "value2", "VAR3": "%{VAR1}/subdir"},
+		Vars:    map[string]any{"VAR1": "value1", "VAR2": "value2", "VAR3": "%{VAR1}/subdir"},
 		EnvVars: []string{"PATH=%{VAR1}/bin:%{VAR2}/bin", "HOME=/home/user"},
 	}
 
@@ -25,7 +25,7 @@ func BenchmarkExpandGlobal(b *testing.B) {
 func BenchmarkExpandGlobalWithFromEnv(b *testing.B) {
 	spec := &runnertypes.GlobalSpec{
 		EnvImport:  []string{"MY_PATH=PATH", "MY_HOME=HOME"},
-		Vars:       map[string]interface{}{"VAR1": "%{MY_PATH}", "VAR2": "%{MY_HOME}/local"},
+		Vars:       map[string]any{"VAR1": "%{MY_PATH}", "VAR2": "%{MY_HOME}/local"},
 		EnvVars:    []string{"NEW_PATH=%{VAR1}:%{VAR2}/bin"},
 		EnvAllowed: []string{"PATH", "HOME"},
 	}
@@ -44,7 +44,7 @@ func BenchmarkExpandGlobalWithFromEnv(b *testing.B) {
 func BenchmarkExpandGroup(b *testing.B) {
 	spec := &runnertypes.GroupSpec{
 		Name:    "test_group",
-		Vars:    map[string]interface{}{"GROUP_VAR": "group_value", "DERIVED": "%{GROUP_VAR}/subdir"},
+		Vars:    map[string]any{"GROUP_VAR": "group_value", "DERIVED": "%{GROUP_VAR}/subdir"},
 		EnvVars: []string{"GROUP_ENV=%{DERIVED}"},
 	}
 	globalVars := map[string]string{
@@ -71,7 +71,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 		Cmd:     "/usr/bin/test",
 		Args:    []string{"%{ARG1}", "%{ARG2}"},
 		EnvVars: []string{"CMD_ENV=%{CMD_VAR}"},
-		Vars:    map[string]interface{}{"CMD_VAR": "cmd_value", "ARG1": "arg1", "ARG2": "arg2"},
+		Vars:    map[string]any{"CMD_VAR": "cmd_value", "ARG1": "arg1", "ARG2": "arg2"},
 	}
 	groupVars := map[string]string{
 		"GROUP_VAR": "group_value",
@@ -94,7 +94,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 // BenchmarkExpandGlobalComplex measures performance with complex variable expansion
 func BenchmarkExpandGlobalComplex(b *testing.B) {
 	spec := &runnertypes.GlobalSpec{
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"BASE":   "/opt/app",
 			"BIN":    "%{BASE}/bin",
 			"LIB":    "%{BASE}/lib",
@@ -131,7 +131,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 	globalSpec := &runnertypes.GlobalSpec{
 		EnvAllowed: []string{"PATH", "HOME", "USER"},
 		EnvImport:  []string{"MY_PATH=PATH"},
-		Vars:       map[string]interface{}{"GLOBAL_VAR": "global_value"},
+		Vars:       map[string]any{"GLOBAL_VAR": "global_value"},
 	}
 
 	// Set environment variables for benchmark
@@ -148,7 +148,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 	// Prepare group runtime
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "test_group",
-		Vars: map[string]interface{}{"GROUP_VAR": "group_value"},
+		Vars: map[string]any{"GROUP_VAR": "group_value"},
 	}
 	groupRuntime, err := ExpandGroup(groupSpec, globalRuntime)
 	if err != nil {
@@ -161,7 +161,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 		Cmd:       "/usr/bin/test",
 		Args:      []string{"%{CMD_ARG}"},
 		EnvImport: []string{"CMD_PATH=PATH"},
-		Vars:      map[string]interface{}{"CMD_ARG": "arg_value"},
+		Vars:      map[string]any{"CMD_ARG": "arg_value"},
 		EnvVars:   []string{"CMD_ENV=%{CMD_ARG}"},
 	}
 
@@ -180,7 +180,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 	globalSpec := &runnertypes.GlobalSpec{
 		EnvAllowed: []string{"PATH", "HOME", "USER", "LANG"},
 		EnvImport:  []string{"MY_PATH=PATH"},
-		Vars:       map[string]interface{}{"GLOBAL_VAR": "global_value"},
+		Vars:       map[string]any{"GLOBAL_VAR": "global_value"},
 	}
 
 	// Set environment variables
@@ -198,7 +198,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 	// Prepare group runtime
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "test_group",
-		Vars: map[string]interface{}{"GROUP_VAR": "group_value"},
+		Vars: map[string]any{"GROUP_VAR": "group_value"},
 	}
 	groupRuntime, err := ExpandGroup(groupSpec, globalRuntime)
 	if err != nil {
@@ -213,7 +213,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 			Cmd:       "/usr/bin/test",
 			Args:      []string{"%{CMD_ARG}"},
 			EnvImport: []string{"CMD_PATH=PATH", "CMD_HOME=HOME"},
-			Vars:      map[string]interface{}{"CMD_ARG": "arg_value"},
+			Vars:      map[string]any{"CMD_ARG": "arg_value"},
 			EnvVars:   []string{"CMD_ENV=%{CMD_ARG}"},
 		}
 	}

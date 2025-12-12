@@ -200,7 +200,7 @@ func applyEscapeSequences(input string) string {
 //     - ${@param} in mixed context is an error
 func expandSingleArg(
 	arg string,
-	params map[string]interface{},
+	params map[string]any,
 	templateName string,
 	field string,
 ) ([]string, error) {
@@ -245,7 +245,7 @@ func expandSingleArg(
 // expandArrayPlaceholder expands a ${@param} placeholder.
 func expandArrayPlaceholder(
 	name string,
-	params map[string]interface{},
+	params map[string]any,
 	templateName string,
 	field string,
 ) ([]string, error) {
@@ -267,7 +267,7 @@ func expandArrayPlaceholder(
 
 	// Type check
 	switch v := value.(type) {
-	case []interface{}:
+	case []any:
 		result := make([]string, len(v))
 		for i, elem := range v {
 			str, ok := elem.(string)
@@ -309,7 +309,7 @@ func expandArrayPlaceholder(
 // expandOptionalPlaceholder expands a ${?param} placeholder.
 func expandOptionalPlaceholder(
 	name string,
-	params map[string]interface{},
+	params map[string]any,
 	templateName string,
 	field string,
 ) ([]string, error) {
@@ -340,7 +340,7 @@ func expandOptionalPlaceholder(
 func expandStringPlaceholders(
 	input string,
 	placeholders []placeholder,
-	params map[string]interface{},
+	params map[string]any,
 	templateName string,
 	field string,
 ) ([]string, error) {
@@ -415,7 +415,7 @@ func expandStringPlaceholders(
 // ExpandTemplateArgs expands all placeholders in a template's args array.
 func ExpandTemplateArgs(
 	args []string,
-	params map[string]interface{},
+	params map[string]any,
 	templateName string,
 ) ([]string, error) {
 	var result []string
@@ -437,7 +437,7 @@ func ExpandTemplateArgs(
 // Placeholders in the KEY part are forbidden for security reasons.
 func ExpandTemplateEnv(
 	env []string,
-	params map[string]interface{},
+	params map[string]any,
 	templateName string,
 ) ([]string, error) {
 	result := make([]string, 0, len(env))
@@ -670,11 +670,11 @@ func ValidateTemplateDefinition(
 //
 // This function validates:
 //  1. Parameter names must be valid variable names (letter/underscore start, alphanumeric)
-//  2. Parameter values must be string or []string ([]interface{} with string elements)
+//  2. Parameter values must be string or []string ([]any with string elements)
 //
 // NOTE: %{var} references in params values ARE allowed (NF-006) because they
 // will be expanded after template expansion using the group's variable context.
-func ValidateParams(params map[string]interface{}, templateName string) error {
+func ValidateParams(params map[string]any, templateName string) error {
 	for paramName, value := range params {
 		// Validate parameter name
 		if err := security.ValidateVariableName(paramName); err != nil {
@@ -690,7 +690,7 @@ func ValidateParams(params map[string]interface{}, templateName string) error {
 		case string:
 			// String is valid, %{var} references allowed (NF-006)
 			continue
-		case []interface{}:
+		case []any:
 			// Check that all elements are strings
 			for i, elem := range v {
 				if _, ok := elem.(string); !ok {

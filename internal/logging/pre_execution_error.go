@@ -61,7 +61,7 @@ func (e *PreExecutionError) Is(target error) bool {
 }
 
 // As implements error wrapping for errors.As
-func (e *PreExecutionError) As(target interface{}) bool {
+func (e *PreExecutionError) As(target any) bool {
 	if preExecErr, ok := target.(**PreExecutionError); ok {
 		*preExecErr = e
 		return true

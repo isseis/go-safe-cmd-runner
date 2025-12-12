@@ -250,7 +250,7 @@ cmd = "/bin/echo"
 					EnvAllowed:          []string{"PATH", "HOME"},
 					EnvVars:             []string{"PATH=/usr/bin:/bin", "HOME=/root"},
 					EnvImport:           []string{"user=USER", "shell=SHELL"},
-					Vars:                map[string]interface{}{"PREFIX": "/opt", "VERSION": "1.0"},
+					Vars:                map[string]any{"PREFIX": "/opt", "VERSION": "1.0"},
 				},
 				Groups: []GroupSpec{
 					{
@@ -304,7 +304,7 @@ cmd = "/usr/bin/make"
 						EnvAllowed:  []string{"PATH", "CC"},
 						EnvVars:     []string{"CC=gcc"},
 						EnvImport:   []string{"home=HOME"},
-						Vars:        map[string]interface{}{"BUILD_TYPE": "release"},
+						Vars:        map[string]any{"BUILD_TYPE": "release"},
 						Commands: []CommandSpec{
 							{
 								Name: "compile",
@@ -366,7 +366,7 @@ TEST_VAR = "value"
 								OutputFile:  "/tmp/output.log",
 								EnvVars:     []string{"PYTHONPATH=/opt/lib"},
 								EnvImport:   []string{"path=PATH"},
-								Vars:        map[string]interface{}{"TEST_VAR": "value"},
+								Vars:        map[string]any{"TEST_VAR": "value"},
 							},
 						},
 					},

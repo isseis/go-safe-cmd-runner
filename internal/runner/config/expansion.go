@@ -319,7 +319,7 @@ type varExpander struct {
 	expandedArrayVars map[string][]string
 
 	// rawVars contains not-yet-expanded variable definitions.
-	rawVars map[string]interface{}
+	rawVars map[string]any
 
 	// level is the context for error messages (e.g., "global", "group[deploy]").
 	level string
@@ -329,7 +329,7 @@ type varExpander struct {
 func newVarExpander(
 	expandedVars map[string]string,
 	expandedArrayVars map[string][]string,
-	rawVars map[string]interface{},
+	rawVars map[string]any,
 	level string,
 ) *varExpander {
 	return &varExpander{
@@ -441,7 +441,7 @@ func (e *varExpander) resolveVariable(
 
 		return expanded, nil
 
-	case []interface{}:
+	case []any:
 		// Array variable referenced in string context
 		return "", &ErrArrayVariableInStringContextDetail{
 			Level:        e.level,
@@ -464,7 +464,7 @@ func (e *varExpander) resolveVariable(
 // using baseExpandedVars and baseExpandedArrays.
 //
 // Parameters:
-//   - vars: Variable definitions from TOML (map[string]interface{})
+//   - vars: Variable definitions from TOML (map[string]any)
 //   - baseExpandedVars: Previously expanded string variables (inherited)
 //   - baseExpandedArrays: Previously expanded array variables (inherited)
 //   - envImportVars: Variables defined via env_import at any level (for conflict detection)
@@ -481,7 +481,7 @@ func (e *varExpander) resolveVariable(
 //     a. Validate variable name using ValidateVariableName
 //     b. Check for conflicts with env_import variables
 //     c. Check type consistency with base variables
-//     d. Validate value type (string or []interface{})
+//     d. Validate value type (string or []any)
 //     e. Validate size limits
 //     f. Expand using ExpandString
 //     g. Store in appropriate output map
@@ -493,7 +493,7 @@ func (e *varExpander) resolveVariable(
 //
 // Empty arrays are allowed and useful for clearing inherited variables.
 func ProcessVars(
-	vars map[string]interface{},
+	vars map[string]any,
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
 	envImportVars map[string]string,
@@ -542,14 +542,14 @@ func cloneBaseVars(
 
 // validateAndClassifyVars validates all variables and classifies them by type.
 func validateAndClassifyVars(
-	vars map[string]interface{},
+	vars map[string]any,
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
 	envImportVars map[string]string,
 	level string,
-) (map[string]string, map[string][]interface{}, error) {
+) (map[string]string, map[string][]any, error) {
 	stringVars := make(map[string]string)
-	arrayVars := make(map[string][]interface{})
+	arrayVars := make(map[string][]any)
 
 	for varName, rawValue := range vars {
 		// Validate variable name
@@ -577,7 +577,7 @@ func validateAndClassifyVars(
 			}
 			stringVars[varName] = v
 
-		case []interface{}:
+		case []any:
 			if err := validateArrayVar(varName, v, baseExpandedVars, level); err != nil {
 				return nil, nil, err
 			}
@@ -628,7 +628,7 @@ func validateStringVar(
 // validateArrayVar validates an array variable.
 func validateArrayVar(
 	varName string,
-	value []interface{},
+	value []any,
 	baseExpandedVars map[string]string,
 	level string,
 ) error {
@@ -680,9 +680,9 @@ func validateArrayVar(
 
 // expandVarsWithLazyResolution expands variables using lazy resolution.
 func expandVarsWithLazyResolution(
-	vars map[string]interface{},
+	vars map[string]any,
 	stringVars map[string]string,
-	arrayVars map[string][]interface{},
+	arrayVars map[string][]any,
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
 	level string,

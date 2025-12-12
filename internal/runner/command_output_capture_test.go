@@ -129,14 +129,14 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	logOutput := logBuffer.String()
 	logLines := strings.Split(logOutput, "\n")
 
-	var errorLogs []map[string]interface{}
-	var debugLogs []map[string]interface{}
+	var errorLogs []map[string]any
+	var debugLogs []map[string]any
 
 	for _, line := range logLines {
 		if line == "" {
 			continue
 		}
-		var logEntry map[string]interface{}
+		var logEntry map[string]any
 		if err := json.Unmarshal([]byte(line), &logEntry); err != nil {
 			continue
 		}

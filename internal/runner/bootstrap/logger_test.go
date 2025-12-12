@@ -296,9 +296,9 @@ func TestSetupLoggerWithConfig_FailureLoggerUsesMultiHandler(t *testing.T) {
 	require.NotEmpty(t, lines, "Expected at least one log entry")
 
 	// Find the test warning message in the log entries
-	var testLogEntry map[string]interface{}
+	var testLogEntry map[string]any
 	for _, line := range lines {
-		var entry map[string]interface{}
+		var entry map[string]any
 		err := json.Unmarshal([]byte(line), &entry)
 		require.NoError(t, err)
 

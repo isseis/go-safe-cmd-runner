@@ -85,7 +85,7 @@ func (m *mockFileInfo) Size() int64        { return m.size }
 func (m *mockFileInfo) Mode() os.FileMode  { return m.mode }
 func (m *mockFileInfo) ModTime() time.Time { return time.Time{} }
 func (m *mockFileInfo) IsDir() bool        { return false }
-func (m *mockFileInfo) Sys() interface{} {
+func (m *mockFileInfo) Sys() any {
 	// Return a syscall.Stat_t for compatibility with getFileStatInfo
 	return &syscall.Stat_t{
 		Uid: m.uid,

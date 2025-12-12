@@ -211,7 +211,7 @@ func TestTemplateFieldConstraints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test template based on field
 			var template *runnertypes.CommandTemplate
-			params := map[string]interface{}{}
+			params := map[string]any{}
 
 			switch tt.field {
 			case "cmd":
@@ -294,7 +294,7 @@ func TestTemplateFieldConstraints(t *testing.T) {
 }
 
 // setupParams creates appropriate parameter values based on placeholder content
-func setupParams(params map[string]interface{}, placeholder string) {
+func setupParams(params map[string]any, placeholder string) {
 	// Extract parameter names from placeholder
 	placeholders, _ := parsePlaceholders(placeholder)
 
@@ -309,7 +309,7 @@ func setupParams(params map[string]interface{}, placeholder string) {
 }
 
 // setupParamsForEnvElement creates env-appropriate parameter values (KEY=VALUE format)
-func setupParamsForEnvElement(params map[string]interface{}, placeholder string) {
+func setupParamsForEnvElement(params map[string]any, placeholder string) {
 	// Extract parameter names from placeholder
 	placeholders, _ := parsePlaceholders(placeholder)
 

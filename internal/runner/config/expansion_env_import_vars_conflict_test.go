@@ -16,7 +16,7 @@ func TestExpandGlobal_EnvImportVarsConflict(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		EnvAllowed: []string{"PATH"},
 		EnvImport:  []string{"my_path=PATH"},
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"my_path": "/custom/path", // Conflicts with env_import
 		},
 	}
@@ -39,7 +39,7 @@ func TestExpandGroup_EnvImportVarsConflict(t *testing.T) {
 	// Group tries to define same variable in vars
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "test_group",
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"global_var": "override_value", // Conflicts with global env_import
 		},
 		Commands: []runnertypes.CommandSpec{},
@@ -64,7 +64,7 @@ func TestExpandGroup_SameLevelConflict(t *testing.T) {
 		Name:       "test_group",
 		EnvAllowed: []string{"USER"},
 		EnvImport:  []string{"my_user=USER"},
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"my_user": "custom_user", // Conflicts with group-level env_import
 		},
 		Commands: []runnertypes.CommandSpec{},
@@ -81,7 +81,7 @@ func TestExpandGlobal_NoConflict(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		EnvAllowed: []string{"PATH"},
 		EnvImport:  []string{"sys_path=PATH"},
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"custom_path": "/custom/path", // Different name - no conflict
 		},
 	}
@@ -111,7 +111,7 @@ func TestExpandGroup_InheritedEnvImportVarsTracking(t *testing.T) {
 		Name:       "test_group",
 		EnvAllowed: []string{"HOME"},
 		EnvImport:  []string{"group_home=HOME"},
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"group_var": "value",
 		},
 		Commands: []runnertypes.CommandSpec{},
