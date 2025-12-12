@@ -262,7 +262,7 @@ func TestRuntimeGlobal_Structure(t *testing.T) {
 	spec := &GlobalSpec{
 		Timeout: commontesting.Int32Ptr(300),
 		EnvVars: []string{"PATH=/usr/bin"},
-		Vars:    map[string]interface{}{"VAR1": "value1"},
+		Vars:    map[string]any{"VAR1": "value1"},
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
@@ -290,7 +290,7 @@ func TestRuntimeGroup_Structure(t *testing.T) {
 		Name:    "test-group",
 		WorkDir: "/tmp/test",
 		EnvVars: []string{"CC=gcc"},
-		Vars:    map[string]interface{}{"BUILD_TYPE": "release"},
+		Vars:    map[string]any{"BUILD_TYPE": "release"},
 	}
 
 	runtime := &RuntimeGroup{

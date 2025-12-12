@@ -1456,7 +1456,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 
 	group := &runnertypes.GroupSpec{
 		Name: "test-group",
-		Vars: map[string]interface{}{"TEST_VAR": "test_value"},
+		Vars: map[string]any{"TEST_VAR": "test_value"},
 		Commands: []runnertypes.CommandSpec{
 			{Name: "test-cmd", Cmd: "/bin/echo"},
 		},
@@ -2298,7 +2298,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 		commandName      string
 		currentUser      string
 		expectLog        bool
-		expectedFields   map[string]interface{}
+		expectedFields   map[string]any
 	}{
 		{
 			name:             "zero timeout logs unlimited execution",
@@ -2306,7 +2306,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			commandName:      "unlimited-cmd",
 			currentUser:      "testuser",
 			expectLog:        true,
-			expectedFields: map[string]interface{}{
+			expectedFields: map[string]any{
 				"command":        "unlimited-cmd",
 				"user":           "testuser",
 				"timeout":        "unlimited",
@@ -2319,7 +2319,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			commandName:      "test-cmd",
 			currentUser:      "unknown",
 			expectLog:        true,
-			expectedFields: map[string]interface{}{
+			expectedFields: map[string]any{
 				"command":        "test-cmd",
 				"user":           "unknown",
 				"timeout":        "unlimited",
@@ -2836,7 +2836,7 @@ func TestPreExpandCommands_Success(t *testing.T) {
 				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "cmd1",
-						Vars: map[string]interface{}{"cmd_var": "/custom/path"},
+						Vars: map[string]any{"cmd_var": "/custom/path"},
 						Cmd:  "%{cmd_var}/tool",
 					},
 				},

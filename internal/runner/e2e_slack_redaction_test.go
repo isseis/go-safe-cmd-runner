@@ -43,14 +43,14 @@ func (m *MockSlackHandler) Handle(_ context.Context, record slog.Record) error {
 	var buf bytes.Buffer
 
 	// Format record attributes
-	attrs := make(map[string]interface{})
+	attrs := make(map[string]any)
 	record.Attrs(func(a slog.Attr) bool {
 		attrs[a.Key] = a.Value.Any()
 		return true
 	})
 
 	// Convert to JSON (simulating Slack webhook payload)
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"message": record.Message,
 		"level":   record.Level.String(),
 		"attrs":   attrs,

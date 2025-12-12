@@ -466,7 +466,7 @@ func TestJSONValidStructure(t *testing.T) {
 	require.NoError(t, err, "dry-run execution should succeed")
 
 	// Test 1: Valid JSON structure
-	var jsonData interface{}
+	var jsonData any
 	err = json.Unmarshal([]byte(output), &jsonData)
 	require.NoError(t, err, "output should be valid JSON")
 

@@ -136,44 +136,44 @@ func TestValidateTemplateDefinition(t *testing.T) {
 func TestValidateParams(t *testing.T) {
 	tests := []struct {
 		name         string
-		params       map[string]interface{}
+		params       map[string]any
 		templateName string
 		wantErr      bool
 		errType      error
 	}{
 		{
 			name:         "valid string param",
-			params:       map[string]interface{}{"path": "/data"},
+			params:       map[string]any{"path": "/data"},
 			templateName: "test",
 			wantErr:      false,
 		},
 		{
 			name:         "valid string array param",
-			params:       map[string]interface{}{"flags": []string{"-v", "-q"}},
+			params:       map[string]any{"flags": []string{"-v", "-q"}},
 			templateName: "test",
 			wantErr:      false,
 		},
 		{
 			name:         "valid interface array param with strings",
-			params:       map[string]interface{}{"flags": []interface{}{"-v", "-q"}},
+			params:       map[string]any{"flags": []any{"-v", "-q"}},
 			templateName: "test",
 			wantErr:      false,
 		},
 		{
 			name:         "variable reference allowed in params (NF-006)",
-			params:       map[string]interface{}{"path": "%{group_root}/data"},
+			params:       map[string]any{"path": "%{group_root}/data"},
 			templateName: "test",
 			wantErr:      false, // %{} is allowed in params
 		},
 		{
 			name:         "multiple params",
-			params:       map[string]interface{}{"path": "/data", "flags": []string{"-v"}},
+			params:       map[string]any{"path": "/data", "flags": []string{"-v"}},
 			templateName: "test",
 			wantErr:      false,
 		},
 		{
 			name:         "empty params",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			wantErr:      false,
 		},
@@ -185,42 +185,42 @@ func TestValidateParams(t *testing.T) {
 		},
 		{
 			name:         "invalid param name starting with number",
-			params:       map[string]interface{}{"123invalid": "value"},
+			params:       map[string]any{"123invalid": "value"},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrInvalidParamName{},
 		},
 		{
 			name:         "invalid param name with dash",
-			params:       map[string]interface{}{"my-param": "value"},
+			params:       map[string]any{"my-param": "value"},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrInvalidParamName{},
 		},
 		{
 			name:         "unsupported type int",
-			params:       map[string]interface{}{"number": 123},
+			params:       map[string]any{"number": 123},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrUnsupportedParamType{},
 		},
 		{
 			name:         "unsupported type float",
-			params:       map[string]interface{}{"number": 3.14},
+			params:       map[string]any{"number": 3.14},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrUnsupportedParamType{},
 		},
 		{
 			name:         "unsupported type bool",
-			params:       map[string]interface{}{"flag": true},
+			params:       map[string]any{"flag": true},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrUnsupportedParamType{},
 		},
 		{
 			name:         "array with non-string element",
-			params:       map[string]interface{}{"mixed": []interface{}{"-v", 123}},
+			params:       map[string]any{"mixed": []any{"-v", 123}},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrTemplateInvalidArrayElement{},
@@ -253,7 +253,7 @@ func TestValidateCommandSpecExclusivity(t *testing.T) {
 	}{
 		{
 			name:    "template only (valid)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", Params: map[string]interface{}{"path": "/data"}},
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", Params: map[string]any{"path": "/data"}},
 			wantErr: false,
 		},
 		{
@@ -314,7 +314,7 @@ func TestValidateCommandSpecExclusivity(t *testing.T) {
 		},
 		{
 			name:    "template with params only (valid)",
-			spec:    runnertypes.CommandSpec{Name: "test", Template: "tmpl", Params: map[string]interface{}{"key": "value"}},
+			spec:    runnertypes.CommandSpec{Name: "test", Template: "tmpl", Params: map[string]any{"key": "value"}},
 			wantErr: false,
 		},
 	}

@@ -12,7 +12,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 	tests := []struct {
 		name         string
 		env          []string
-		params       map[string]interface{}
+		params       map[string]any
 		templateName string
 		want         []string
 		wantErr      bool
@@ -22,14 +22,14 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "simple string parameter",
 			env:          []string{"PATH=${path}"},
-			params:       map[string]interface{}{"path": "/usr/bin"},
+			params:       map[string]any{"path": "/usr/bin"},
 			templateName: "test",
 			want:         []string{"PATH=/usr/bin"},
 		},
 		{
 			name:         "multiple env entries",
 			env:          []string{"PATH=${path}", "HOME=${home}"},
-			params:       map[string]interface{}{"path": "/usr/bin", "home": "/home/user"},
+			params:       map[string]any{"path": "/usr/bin", "home": "/home/user"},
 			templateName: "test",
 			want:         []string{"PATH=/usr/bin", "HOME=/home/user"},
 		},
@@ -38,35 +38,35 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "pure array placeholder - single element",
 			env:          []string{"REQUIRED=foo", "${@opts}"},
-			params:       map[string]interface{}{"opts": []string{"DEBUG=1"}},
+			params:       map[string]any{"opts": []string{"DEBUG=1"}},
 			templateName: "test",
 			want:         []string{"REQUIRED=foo", "DEBUG=1"},
 		},
 		{
 			name:         "pure array placeholder - multiple elements",
 			env:          []string{"REQUIRED=foo", "${@opts}"},
-			params:       map[string]interface{}{"opts": []string{"DEBUG=1", "VERBOSE=1"}},
+			params:       map[string]any{"opts": []string{"DEBUG=1", "VERBOSE=1"}},
 			templateName: "test",
 			want:         []string{"REQUIRED=foo", "DEBUG=1", "VERBOSE=1"},
 		},
 		{
 			name:         "pure array placeholder - empty array",
 			env:          []string{"REQUIRED=foo", "${@opts}"},
-			params:       map[string]interface{}{"opts": []string{}},
+			params:       map[string]any{"opts": []string{}},
 			templateName: "test",
 			want:         []string{"REQUIRED=foo"},
 		},
 		{
 			name:         "pure array placeholder - not provided",
 			env:          []string{"REQUIRED=foo", "${@opts}"},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			want:         []string{"REQUIRED=foo"},
 		},
 		{
 			name: "multiple array placeholders",
 			env:  []string{"${@common}", "${@app_specific}"},
-			params: map[string]interface{}{
+			params: map[string]any{
 				"common":       []string{"PATH=/usr/bin", "HOME=/home/user"},
 				"app_specific": []string{"DEBUG=1"},
 			},
@@ -78,21 +78,21 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "optional parameter - VALUE part",
 			env:          []string{"PATH=${?path}"},
-			params:       map[string]interface{}{"path": "/usr/bin"},
+			params:       map[string]any{"path": "/usr/bin"},
 			templateName: "test",
 			want:         []string{"PATH=/usr/bin"},
 		},
 		{
 			name:         "optional parameter - VALUE part - empty",
 			env:          []string{"REQUIRED=foo", "PATH=${?path}"},
-			params:       map[string]interface{}{"path": ""},
+			params:       map[string]any{"path": ""},
 			templateName: "test",
 			want:         []string{"REQUIRED=foo"},
 		},
 		{
 			name:         "optional parameter - VALUE part - not provided",
 			env:          []string{"REQUIRED=foo", "PATH=${?path}"},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			want:         []string{"REQUIRED=foo"},
 		},
@@ -101,7 +101,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name: "combined string and array parameters",
 			env:  []string{"STATIC=value", "DYNAMIC=${param}", "${@opts}"},
-			params: map[string]interface{}{
+			params: map[string]any{
 				"param": "/usr/bin",
 				"opts":  []string{"DEBUG=1", "VERBOSE=1"},
 			},
@@ -113,7 +113,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "invalid format - no equals sign",
 			env:          []string{"INVALID"},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrTemplateInvalidEnvFormat{},
@@ -121,7 +121,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "invalid format after expansion",
 			env:          []string{"${entry}"},
-			params:       map[string]interface{}{"entry": "INVALID"},
+			params:       map[string]any{"entry": "INVALID"},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrTemplateInvalidEnvFormat{},
@@ -129,7 +129,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "invalid format in array element",
 			env:          []string{"${@opts}"},
-			params:       map[string]interface{}{"opts": []string{"DEBUG=1", "INVALID"}},
+			params:       map[string]any{"opts": []string{"DEBUG=1", "INVALID"}},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrTemplateInvalidEnvFormat{},
@@ -139,7 +139,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "placeholder in KEY part - required",
 			env:          []string{"${key}=value"},
-			params:       map[string]interface{}{"key": "PATH"},
+			params:       map[string]any{"key": "PATH"},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrPlaceholderInEnvKey{},
@@ -147,7 +147,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "placeholder in KEY part - optional",
 			env:          []string{"${?key}=value"},
-			params:       map[string]interface{}{"key": "PATH"},
+			params:       map[string]any{"key": "PATH"},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrPlaceholderInEnvKey{},
@@ -155,7 +155,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "placeholder in KEY part - array",
 			env:          []string{"${@keys}=value"},
-			params:       map[string]interface{}{"keys": []string{"PATH"}},
+			params:       map[string]any{"keys": []string{"PATH"}},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrPlaceholderInEnvKey{},
@@ -163,7 +163,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "placeholder in middle of KEY",
 			env:          []string{"PREFIX_${key}_SUFFIX=value"},
-			params:       map[string]interface{}{"key": "PATH"},
+			params:       map[string]any{"key": "PATH"},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrPlaceholderInEnvKey{},
@@ -173,7 +173,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "array in VALUE part",
 			env:          []string{"PATH=${@paths}"},
-			params:       map[string]interface{}{"paths": []string{"/usr/bin", "/bin"}},
+			params:       map[string]any{"paths": []string{"/usr/bin", "/bin"}},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrArrayInMixedContext{},
@@ -183,7 +183,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "duplicate key in template",
 			env:          []string{"PATH=/usr/bin", "PATH=/bin"},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrDuplicateEnvVariableDetail{},
@@ -191,7 +191,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name:         "duplicate key from array expansion",
 			env:          []string{"REQUIRED=value", "${@optional_env}"},
-			params:       map[string]interface{}{"optional_env": []string{"REQUIRED=foo"}},
+			params:       map[string]any{"optional_env": []string{"REQUIRED=foo"}},
 			templateName: "test",
 			wantErr:      true,
 			errType:      &ErrDuplicateEnvVariableDetail{},
@@ -199,7 +199,7 @@ func TestExpandTemplateEnv(t *testing.T) {
 		{
 			name: "duplicate key from multiple array placeholders",
 			env:  []string{"${@common}", "${@app_specific}"},
-			params: map[string]interface{}{
+			params: map[string]any{
 				"common":       []string{"PATH=/usr/bin", "HOME=/home/user"},
 				"app_specific": []string{"PATH=/usr/local/bin"},
 			},

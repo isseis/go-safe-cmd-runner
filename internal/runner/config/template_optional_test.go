@@ -24,7 +24,7 @@ func TestOptionalParameter_InEnv(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"value": "myvalue",
 				},
 			},
@@ -40,7 +40,7 @@ func TestOptionalParameter_InEnv(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd: "echo",
@@ -54,7 +54,7 @@ func TestOptionalParameter_InEnv(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"value": "",
 				},
 			},
@@ -70,7 +70,7 @@ func TestOptionalParameter_InEnv(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"value": "myvalue",
 				},
 			},
@@ -86,7 +86,7 @@ func TestOptionalParameter_InEnv(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd: "echo",
@@ -100,7 +100,7 @@ func TestOptionalParameter_InEnv(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"val1": "first",
 				},
 			},
@@ -136,7 +136,7 @@ func TestOptionalParameter_EnvKeyWithPlaceholder(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"key": "MYKEY",
 				},
 			},
@@ -152,7 +152,7 @@ func TestOptionalParameter_EnvKeyWithPlaceholder(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"key": "MYKEY",
 				},
 			},
@@ -168,8 +168,8 @@ func TestOptionalParameter_EnvKeyWithPlaceholder(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
-					"keys": []interface{}{"KEY1", "KEY2"},
+				Params: map[string]any{
+					"keys": []any{"KEY1", "KEY2"},
 				},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -184,7 +184,7 @@ func TestOptionalParameter_EnvKeyWithPlaceholder(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"prefix": "MY",
 				},
 			},
@@ -222,7 +222,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "dir_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"dir": "/my/dir",
 				},
 			},
@@ -238,7 +238,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "dir_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
@@ -252,7 +252,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "dir_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"subdir": "myproject",
 				},
 			},
@@ -268,7 +268,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "dir_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
@@ -304,7 +304,7 @@ func TestOptionalParameter_InCmd(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "cmd_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"cmd": "echo",
 				},
 			},
@@ -319,7 +319,7 @@ func TestOptionalParameter_InCmd(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "cmd_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd: "${?cmd}",
@@ -333,7 +333,7 @@ func TestOptionalParameter_InCmd(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "cmd_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"prefix": "/usr/local/bin/",
 				},
 			},
@@ -377,7 +377,7 @@ func TestOptionalParameter_InArgs(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "args_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"flag": "--verbose",
 				},
 			},
@@ -393,7 +393,7 @@ func TestOptionalParameter_InArgs(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "args_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:  "echo",
@@ -407,7 +407,7 @@ func TestOptionalParameter_InArgs(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "args_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"level": "3",
 				},
 			},
@@ -423,7 +423,7 @@ func TestOptionalParameter_InArgs(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "args_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:  "echo",
@@ -437,7 +437,7 @@ func TestOptionalParameter_InArgs(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "test_cmd",
 				Template: "args_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"arg1": "value1",
 				},
 			},

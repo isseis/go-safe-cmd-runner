@@ -110,7 +110,7 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 // Usage:
 //
 //	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(...)
-func matchRuntimeGroupWithName(expectedName string) interface{} {
+func matchRuntimeGroupWithName(expectedName string) any {
 	return mock.MatchedBy(func(rg *runnertypes.RuntimeGroup) bool {
 		return rg != nil && rg.Spec != nil && rg.Spec.Name == expectedName
 	})

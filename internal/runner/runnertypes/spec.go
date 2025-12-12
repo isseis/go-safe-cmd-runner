@@ -111,7 +111,7 @@ type GlobalSpec struct {
 	//   config_files = ["config.yml", "secrets.yml"]
 	//
 	// Changed from: Vars []string `toml:"vars"` (array-based format)
-	Vars map[string]interface{} `toml:"vars"`
+	Vars map[string]any `toml:"vars"`
 }
 
 // GroupSpec represents a command group configuration loaded from TOML file.
@@ -158,7 +158,7 @@ type GroupSpec struct {
 	//   deploy_target = "production"
 	//
 	// Changed from: Vars []string `toml:"vars"` (array-based format)
-	Vars map[string]interface{} `toml:"vars"`
+	Vars map[string]any `toml:"vars"`
 }
 
 // CommandSpec represents a single command configuration loaded from TOML file.
@@ -190,7 +190,7 @@ type CommandSpec struct {
 	//   template = "restic_backup"
 	//   params.verbose_flags = ["-q"]
 	//   params.path = "%{backup_dir}/data"  # %{} is allowed in params
-	Params map[string]interface{} `toml:"params"`
+	Params map[string]any `toml:"params"`
 
 	// Command definition (raw values, not yet expanded)
 	// These fields are MUTUALLY EXCLUSIVE with Template:
@@ -226,7 +226,7 @@ type CommandSpec struct {
 	//   backup_suffix = ".bak"
 	//
 	// Changed from: Vars []string `toml:"vars"` (array-based format)
-	Vars map[string]interface{} `toml:"vars"`
+	Vars map[string]any `toml:"vars"`
 }
 
 // GetRiskLevel parses and returns the maximum risk level for this command.

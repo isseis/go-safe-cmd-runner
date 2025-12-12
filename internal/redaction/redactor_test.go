@@ -1388,7 +1388,7 @@ func TestRedactingHandler_MixedSlice(t *testing.T) {
 	logger := slog.New(redactingHandler)
 
 	// Test with mixed slice (interfaces)
-	mixedSlice := []interface{}{
+	mixedSlice := []any{
 		"string_value",
 		123,
 		true,
@@ -1530,14 +1530,14 @@ func TestRedactingHandler_SliceTypeConversion(t *testing.T) {
 		logger := slog.New(handler)
 
 		// Test with interface slice containing some LogValuers
-		mixedSlice := []interface{}{
+		mixedSlice := []any{
 			sensitiveLogValuer{data: "alice"},
 			"plain_string",
 			123,
 		}
 		logger.Info("Test message", "data", slog.AnyValue(mixedSlice))
 
-		// Verify: []interface{} is similar to []any, should handle gracefully
+		// Verify: []any is similar to []any, should handle gracefully
 		require.Len(t, mock.records, 1)
 		record := mock.records[0]
 
@@ -1596,7 +1596,7 @@ func TestRedactingHandler_TwoTierLogging(t *testing.T) {
 	require.GreaterOrEqual(t, len(failureLines), 1, "Expected at least 1 detailed log entry")
 
 	// Verify detailed log (in failureLogger)
-	var detailedLog map[string]interface{}
+	var detailedLog map[string]any
 	err := json.Unmarshal([]byte(failureLines[0]), &detailedLog)
 	require.NoError(t, err)
 
@@ -1608,9 +1608,9 @@ func TestRedactingHandler_TwoTierLogging(t *testing.T) {
 
 	// Verify summary log (in main logger via slog.Default)
 	// Find the summary log in main output
-	var summaryLog map[string]interface{}
+	var summaryLog map[string]any
 	for _, line := range mainLines {
-		var entry map[string]interface{}
+		var entry map[string]any
 		if err := json.Unmarshal([]byte(line), &entry); err == nil {
 			if msg, ok := entry["msg"].(string); ok && strings.Contains(msg, "see logs for details") {
 				summaryLog = entry

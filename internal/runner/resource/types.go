@@ -321,14 +321,14 @@ type EnvironmentInfo struct {
 
 // DryRunError represents an error that occurred during dry-run
 type DryRunError struct {
-	Type        ErrorType   `json:"type"`
-	Code        string      `json:"code"`
-	Message     string      `json:"message"`
-	Component   string      `json:"component"`
-	Group       string      `json:"group,omitempty"`
-	Command     string      `json:"command,omitempty"`
-	Details     interface{} `json:"details,omitempty"`
-	Recoverable bool        `json:"recoverable"`
+	Type        ErrorType `json:"type"`
+	Code        string    `json:"code"`
+	Message     string    `json:"message"`
+	Component   string    `json:"component"`
+	Group       string    `json:"group,omitempty"`
+	Command     string    `json:"command,omitempty"`
+	Details     any       `json:"details,omitempty"`
+	Recoverable bool      `json:"recoverable"`
 }
 
 // ErrorType represents the type of error

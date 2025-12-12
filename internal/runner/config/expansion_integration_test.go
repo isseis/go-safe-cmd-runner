@@ -30,7 +30,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "backup",
 				Template: "backup_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"source": "/data",
 					"dest":   "/backup",
 				},
@@ -52,7 +52,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "verbose_cmd",
 				Template: "optional_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"verbose": "true",
 				},
 			},
@@ -73,7 +73,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "quiet_cmd",
 				Template: "optional_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:  "echo",
@@ -92,8 +92,8 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "multi_arg",
 				Template: "array_tmpl",
-				Params: map[string]interface{}{
-					"flags": []interface{}{"--verbose", "--force"},
+				Params: map[string]any{
+					"flags": []any{"--verbose", "--force"},
 				},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -113,7 +113,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "workdir_cmd",
 				Template: "workdir_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"project": "myapp",
 				},
 			},
@@ -135,7 +135,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 				Name:     "custom_workdir_cmd",
 				Template: "workdir_tmpl",
 				WorkDir:  "/custom/dir",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"project": "myapp",
 				},
 			},
@@ -157,7 +157,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 				Name:     "cmd_only_workdir",
 				Template: "no_workdir_tmpl",
 				WorkDir:  "/my/workdir",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd: "echo",
@@ -175,7 +175,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "unused_param",
 				Template: "simple_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"used":   "value1",
 					"unused": "value2",
 				},
@@ -199,7 +199,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "missing_param",
 				Template: "required_tmpl",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:  "echo",
@@ -214,7 +214,7 @@ func TestExpandTemplateToSpec(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "invalid_array",
 				Template: "array_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"flags": "not-an-array",
 				},
 			},
@@ -278,7 +278,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			spec: &runnertypes.CommandSpec{
 				Name:     "hello",
 				Template: "echo_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"message": "Hello World",
 				},
 			},
@@ -290,7 +290,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			spec: &runnertypes.CommandSpec{
 				Name:     "missing",
 				Template: "nonexistent",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			expectErr:   true,
 			wantErrType: &ErrTemplateNotFound{},
@@ -301,7 +301,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 				Name:     "invalid",
 				Template: "echo_tmpl",
 				Cmd:      "ls",
-				Params:   map[string]interface{}{},
+				Params:   map[string]any{},
 			},
 			expectErr:   true,
 			wantErrType: &ErrTemplateFieldConflict{},
@@ -311,7 +311,7 @@ func TestExpandCommandWithTemplate(t *testing.T) {
 			spec: &runnertypes.CommandSpec{
 				Name:     "with_unused",
 				Template: "echo_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"message": "Hello",
 					"unused":  "ignored",
 				},
@@ -374,8 +374,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "bad_env",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
-					"paths": []interface{}{"/path1", "/path2"},
+				Params: map[string]any{
+					"paths": []any{"/path1", "/path2"},
 				},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -391,8 +391,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "bad_workdir",
 				Template: "workdir_tmpl",
-				Params: map[string]interface{}{
-					"dirs": []interface{}{"/dir1", "/dir2"},
+				Params: map[string]any{
+					"dirs": []any{"/dir1", "/dir2"},
 				},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -408,8 +408,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "single_array_env",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
-					"path": []interface{}{"/single/path"},
+				Params: map[string]any{
+					"path": []any{"/single/path"},
 				},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -425,8 +425,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "single_array_workdir",
 				Template: "workdir_tmpl",
-				Params: map[string]interface{}{
-					"dir": []interface{}{"/single/dir"},
+				Params: map[string]any{
+					"dir": []any{"/single/dir"},
 				},
 			},
 			template: &runnertypes.CommandTemplate{
@@ -442,7 +442,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "good_env",
 				Template: "env_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"value": "test123",
 				},
 			},
@@ -458,7 +458,7 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 			command: &runnertypes.CommandSpec{
 				Name:     "good_workdir",
 				Template: "workdir_tmpl",
-				Params: map[string]interface{}{
+				Params: map[string]any{
 					"path": "/working/dir",
 				},
 			},

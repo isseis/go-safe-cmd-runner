@@ -85,7 +85,7 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 // This is done by parsing the TOML content as a map to detect fields that would be
 // ignored by the struct unmarshaling.
 func checkTemplateNameField(content []byte) error {
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := toml.Unmarshal(content, &raw); err != nil {
 		// If we can't parse as map, the structured parse will also fail
 		// so we can skip this check
@@ -93,13 +93,13 @@ func checkTemplateNameField(content []byte) error {
 	}
 
 	// Check command_templates section
-	templates, ok := raw["command_templates"].(map[string]interface{})
+	templates, ok := raw["command_templates"].(map[string]any)
 	if !ok {
 		return nil
 	}
 
 	for templateName, templateData := range templates {
-		templateMap, ok := templateData.(map[string]interface{})
+		templateMap, ok := templateData.(map[string]any)
 		if !ok {
 			continue
 		}

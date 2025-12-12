@@ -361,26 +361,26 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 }
 
 // TestProcessVars_DuplicateDefinition tests duplicate variable detection in vars
-// Note: With map[string]interface{}, duplicate keys are inherently impossible in Go,
+// Note: With map[string]any, duplicate keys are inherently impossible in Go,
 // so this test is no longer applicable and has been removed.
 
 // TestProcessVars_InvalidVariableName tests invalid variable names in vars
 func TestProcessVars_InvalidVariableName(t *testing.T) {
 	tests := []struct {
 		name string
-		vars map[string]interface{}
+		vars map[string]any
 	}{
 		{
 			name: "variable with dash",
-			vars: map[string]interface{}{"my-var": "value"},
+			vars: map[string]any{"my-var": "value"},
 		},
 		{
 			name: "variable with space",
-			vars: map[string]interface{}{"my var": "value"},
+			vars: map[string]any{"my var": "value"},
 		},
 		{
 			name: "empty variable name",
-			vars: map[string]interface{}{"": "value"},
+			vars: map[string]any{"": "value"},
 		},
 	}
 
@@ -399,7 +399,7 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 	tests := []struct {
 		name     string
-		vars     map[string]interface{}
+		vars     map[string]any
 		baseVars map[string]string
 		checkVar string
 		wantVal  string
@@ -407,7 +407,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 	}{
 		{
 			name: "linear chain",
-			vars: map[string]interface{}{
+			vars: map[string]any{
 				"A": "base",
 				"B": "%{A}/level1",
 				"C": "%{B}/level2",
@@ -420,7 +420,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 		},
 		{
 			name: "reference base variables",
-			vars: map[string]interface{}{
+			vars: map[string]any{
 				"NEW_VAR": "%{BASE1}/%{BASE2}",
 			},
 			baseVars: map[string]string{
@@ -433,7 +433,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 		},
 		{
 			name: "override base variable",
-			vars: map[string]interface{}{
+			vars: map[string]any{
 				"BASE": "%{BASE}_extended",
 			},
 			baseVars: map[string]string{
@@ -461,7 +461,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 
 // TestProcessVars_UndefinedReference tests undefined variable references
 func TestProcessVars_UndefinedReference(t *testing.T) {
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		"VAR": "%{UNDEFINED}",
 	}
 	baseVars := make(map[string]string)
@@ -476,13 +476,13 @@ func TestProcessVars_UndefinedReference(t *testing.T) {
 func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 	tests := []struct {
 		name          string
-		vars          map[string]interface{}
+		vars          map[string]any
 		envImportVars map[string]string
 		wantErr       bool
 	}{
 		{
 			name: "conflict with env_import variable",
-			vars: map[string]interface{}{
+			vars: map[string]any{
 				"MY_VAR": "value_from_vars",
 			},
 			envImportVars: map[string]string{
@@ -492,7 +492,7 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 		},
 		{
 			name: "no conflict - different variable names",
-			vars: map[string]interface{}{
+			vars: map[string]any{
 				"VAR1": "value1",
 			},
 			envImportVars: map[string]string{
@@ -502,7 +502,7 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 		},
 		{
 			name: "no conflict - empty env_import",
-			vars: map[string]interface{}{
+			vars: map[string]any{
 				"MY_VAR": "value",
 			},
 			envImportVars: map[string]string{},
@@ -510,7 +510,7 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 		},
 		{
 			name:          "no conflict - nil env_import",
-			vars:          map[string]interface{}{"MY_VAR": "value"},
+			vars:          map[string]any{"MY_VAR": "value"},
 			envImportVars: nil,
 			wantErr:       false,
 		},
@@ -641,7 +641,7 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 			"sys_path=PATH",
 			"sys_home=HOME",
 		},
-		Vars: map[string]interface{}{
+		Vars: map[string]any{
 			"base_dir": "%{sys_home}/app",
 			"bin_dir":  "%{base_dir}/bin",
 		},

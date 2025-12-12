@@ -13,7 +13,7 @@ import (
 // Usage:
 //
 //	mockVerificationManager.On("VerifyGroupFiles", verificationtesting.MatchRuntimeGroupWithName("test-group")).Return(...)
-func MatchRuntimeGroupWithName(expectedName string) interface{} {
+func MatchRuntimeGroupWithName(expectedName string) any {
 	return mock.MatchedBy(func(rg *runnertypes.RuntimeGroup) bool {
 		return rg != nil && rg.Spec != nil && rg.Spec.Name == expectedName
 	})
