@@ -1065,18 +1065,15 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 func resolveAndPrepareCommandSpec(
 	spec *runnertypes.CommandSpec,
 	templates map[string]runnertypes.CommandTemplate,
-	runtimeGroup *runnertypes.RuntimeGroup,
 ) (*runnertypes.CommandSpec, error) {
 	if spec.Template == "" {
 		return spec, nil
 	}
 
-	// Validate exclusivity (template vs. cmd/args/env/workdir)
-	groupName := runnertypes.ExtractGroupName(runtimeGroup)
-	// Use -1 as commandIndex since we don't have it in this context
-	if err := ValidateCommandSpecExclusivity(groupName, -1, spec); err != nil {
-		return nil, err
-	}
+	// Note: Command spec exclusivity validation (template vs. cmd/args/env)
+	// is performed during config loading by ValidateCommands(), not here.
+	// The configuration spec is immutable after loading, so runtime
+	// re-validation is unnecessary.
 
 	// Find template
 	template, exists := templates[spec.Template]
@@ -1225,7 +1222,7 @@ func expandCommandFields(
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
 func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertypes.CommandTemplate, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
 	// 0. Resolve template if present
-	workingSpec, err := resolveAndPrepareCommandSpec(spec, templates, runtimeGroup)
+	workingSpec, err := resolveAndPrepareCommandSpec(spec, templates)
 	if err != nil {
 		return nil, err
 	}

@@ -73,6 +73,11 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 		return nil, err
 	}
 
+	// Validate commands (exclusivity check)
+	if err := ValidateCommands(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
