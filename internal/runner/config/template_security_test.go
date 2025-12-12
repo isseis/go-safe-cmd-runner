@@ -3,10 +3,11 @@
 package config
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // int32Ptr is a helper function to create a pointer to an int32 value.
@@ -40,29 +41,12 @@ func TestValidateTemplateName(t *testing.T) {
 			err := ValidateTemplateName(tt.tmplName)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				if tt.errType != nil {
-					// Check error type using errors.As
-					switch tt.errType.(type) {
-					case *ErrInvalidTemplateName:
-						var target *ErrInvalidTemplateName
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrInvalidTemplateName, got %T: %v", err, err)
-						}
-					case *ErrReservedTemplateName:
-						var target *ErrReservedTemplateName
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrReservedTemplateName, got %T: %v", err, err)
-						}
-					}
+					assert.ErrorAs(t, err, &tt.errType)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -137,28 +121,12 @@ func TestValidateTemplateDefinition(t *testing.T) {
 			err := ValidateTemplateDefinition(tt.tmplName, &tt.template)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				if tt.errType != nil {
-					switch tt.errType.(type) {
-					case *ErrForbiddenPatternInTemplate:
-						var target *ErrForbiddenPatternInTemplate
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrForbiddenPatternInTemplate, got %T: %v", err, err)
-						}
-					case *ErrMissingRequiredField:
-						var target *ErrMissingRequiredField
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrMissingRequiredField, got %T: %v", err, err)
-						}
-					}
+					assert.ErrorAs(t, err, &tt.errType)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -264,33 +232,12 @@ func TestValidateParams(t *testing.T) {
 			err := ValidateParams(tt.params, tt.templateName)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				if tt.errType != nil {
-					switch tt.errType.(type) {
-					case *ErrInvalidParamName:
-						var target *ErrInvalidParamName
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrInvalidParamName, got %T: %v", err, err)
-						}
-					case *ErrUnsupportedParamType:
-						var target *ErrUnsupportedParamType
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrUnsupportedParamType, got %T: %v", err, err)
-						}
-					case *ErrTemplateInvalidArrayElement:
-						var target *ErrTemplateInvalidArrayElement
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrTemplateInvalidArrayElement, got %T: %v", err, err)
-						}
-					}
+					assert.ErrorAs(t, err, &tt.errType)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -377,28 +324,12 @@ func TestValidateCommandSpecExclusivity(t *testing.T) {
 			err := ValidateCommandSpecExclusivity("test_group", 0, &tt.spec)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				if tt.errType != nil {
-					switch tt.errType.(type) {
-					case *ErrTemplateFieldConflict:
-						var target *ErrTemplateFieldConflict
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrTemplateFieldConflict, got %T: %v", err, err)
-						}
-					case *ErrMissingRequiredField:
-						var target *ErrMissingRequiredField
-						if !errors.As(err, &target) {
-							t.Errorf("expected ErrMissingRequiredField, got %T: %v", err, err)
-						}
-					}
+					assert.ErrorAs(t, err, &tt.errType)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -491,30 +422,19 @@ func TestCollectUsedParams(t *testing.T) {
 			result, err := CollectUsedParams(&tt.template)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("expected %d params, got %d", len(tt.expected), len(result))
-			}
+			require.NoError(t, err)
+			assert.Equal(t, len(tt.expected), len(result), "parameter count mismatch")
 
 			for name := range tt.expected {
-				if _, ok := result[name]; !ok {
-					t.Errorf("expected param %q not found", name)
-				}
+				assert.Contains(t, result, name, "expected param %q not found", name)
 			}
 
 			for name := range result {
-				if _, ok := tt.expected[name]; !ok {
-					t.Errorf("unexpected param %q found", name)
-				}
+				assert.Contains(t, tt.expected, name, "unexpected param %q found", name)
 			}
 		})
 	}

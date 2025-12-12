@@ -266,7 +266,7 @@ args = ["hello"]
 		// Check for standalone "hello" output (actual command execution)
 		// But exclude lines that are part of the parameter display
 		if trimmed == "hello" {
-			t.Fatal("dry-run should not execute the command (found standalone 'hello' in output)")
+			require.FailNow(t, "dry-run should not execute the command (found standalone 'hello' in output)")
 		}
 	}
 

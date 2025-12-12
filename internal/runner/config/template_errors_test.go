@@ -41,9 +41,7 @@ func TestErrorTypesImplementError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if msg := tt.err.Error(); msg == "" {
-				t.Errorf("%s.Error() returned empty string", tt.name)
-			}
+			assert.NotEmpty(t, tt.err.Error(), "%s.Error() returned empty string", tt.name)
 		})
 	}
 }

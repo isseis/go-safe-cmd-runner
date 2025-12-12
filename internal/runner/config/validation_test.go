@@ -108,7 +108,7 @@ func TestValidateVariableName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateVariableName(tt.variableName, tt.level, tt.field)
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 				if tt.errType != nil {
 					assert.ErrorIs(t, err, tt.errType)
 				}

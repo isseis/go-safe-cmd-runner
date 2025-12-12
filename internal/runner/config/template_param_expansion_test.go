@@ -3,29 +3,28 @@
 package config
 
 import (
-	"errors"
-	"reflect"
 	"testing"
-)
 
-// Phase 3: Parameter expansion tests
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestExpandSingleArg(t *testing.T) {
 	tests := []struct {
 		name         string
 		arg          string
-		params       map[string]interface{}
+		params       map[string]any
 		templateName string
 		field        string
 		expected     []string
 		wantErr      bool
-		errType      interface{}
+		errType      any
 	}{
 		// Required parameter tests
 		{
 			name:         "required param - success",
 			arg:          "${path}",
-			params:       map[string]interface{}{"path": "/backup/data"},
+			params:       map[string]any{"path": "/backup/data"},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"/backup/data"},
@@ -33,7 +32,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "required param - missing",
 			arg:          "${path}",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -42,7 +41,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "required param - wrong type",
 			arg:          "${path}",
-			params:       map[string]interface{}{"path": []interface{}{"a", "b"}},
+			params:       map[string]any{"path": []any{"a", "b"}},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -52,7 +51,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "optional param - provided",
 			arg:          "${?verbose}",
-			params:       map[string]interface{}{"verbose": "-v"},
+			params:       map[string]any{"verbose": "-v"},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"-v"},
@@ -60,7 +59,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "optional param - missing",
 			arg:          "${?verbose}",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -68,7 +67,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "optional param - empty string",
 			arg:          "${?verbose}",
-			params:       map[string]interface{}{"verbose": ""},
+			params:       map[string]any{"verbose": ""},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -77,7 +76,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - provided",
 			arg:          "${@flags}",
-			params:       map[string]interface{}{"flags": []interface{}{"-v", "--quiet"}},
+			params:       map[string]any{"flags": []any{"-v", "--quiet"}},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"-v", "--quiet"},
@@ -85,7 +84,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - missing",
 			arg:          "${@flags}",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -93,7 +92,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - empty array",
 			arg:          "${@flags}",
-			params:       map[string]interface{}{"flags": []interface{}{}},
+			params:       map[string]any{"flags": []any{}},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -101,7 +100,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - []string type",
 			arg:          "${@flags}",
-			params:       map[string]interface{}{"flags": []string{"-a", "-b"}},
+			params:       map[string]any{"flags": []string{"-a", "-b"}},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"-a", "-b"},
@@ -109,7 +108,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - wrong type (string)",
 			arg:          "${@flags}",
-			params:       map[string]interface{}{"flags": "not-an-array"},
+			params:       map[string]any{"flags": "not-an-array"},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -118,7 +117,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - non-string element",
 			arg:          "${@flags}",
-			params:       map[string]interface{}{"flags": []interface{}{"-v", 123}},
+			params:       map[string]any{"flags": []any{"-v", 123}},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -127,7 +126,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "array param - in mixed context",
 			arg:          "prefix${@flags}",
-			params:       map[string]interface{}{"flags": []interface{}{"-v"}},
+			params:       map[string]any{"flags": []any{"-v"}},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -137,7 +136,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "string with multiple placeholders",
 			arg:          "${prefix}/${path}",
-			params:       map[string]interface{}{"prefix": "/backup", "path": "data"},
+			params:       map[string]any{"prefix": "/backup", "path": "data"},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"/backup/data"},
@@ -145,7 +144,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "optional in mixed context - provided",
 			arg:          "--flag=${?value}",
-			params:       map[string]interface{}{"value": "test"},
+			params:       map[string]any{"value": "test"},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"--flag=test"},
@@ -153,7 +152,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "optional in mixed context - missing",
 			arg:          "--flag=${?value}",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"--flag="},
@@ -162,7 +161,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "no placeholders",
 			arg:          "backup",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"backup"},
@@ -171,7 +170,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "escaped dollar",
 			arg:          "\\$100",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"$100"},
@@ -179,7 +178,7 @@ func TestExpandSingleArg(t *testing.T) {
 		{
 			name:         "escaped dollar with placeholder",
 			arg:          "\\$${value}",
-			params:       map[string]interface{}{"value": "100"},
+			params:       map[string]any{"value": "100"},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"$100"},
@@ -191,42 +190,27 @@ func TestExpandSingleArg(t *testing.T) {
 			result, err := expandSingleArg(tt.arg, tt.params, tt.templateName, tt.field)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err, "expected error, got nil")
 				// Check error type
 				switch tt.errType.(type) {
 				case *ErrRequiredParamMissing:
 					var target *ErrRequiredParamMissing
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrRequiredParamMissing, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrRequiredParamMissing")
 				case *ErrTemplateTypeMismatch:
 					var target *ErrTemplateTypeMismatch
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrTemplateTypeMismatch, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrTemplateTypeMismatch")
 				case *ErrTemplateInvalidArrayElement:
 					var target *ErrTemplateInvalidArrayElement
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrTemplateInvalidArrayElement, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrTemplateInvalidArrayElement")
 				case *ErrArrayInMixedContext:
 					var target *ErrArrayInMixedContext
-					if !errors.As(err, &target) {
-						t.Errorf("expected ErrArrayInMixedContext, got %T: %v", err, err)
-					}
+					assert.ErrorAs(t, err, &target, "expected ErrArrayInMixedContext")
 				}
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result, "result mismatch")
 		})
 	}
 }
@@ -235,7 +219,7 @@ func TestExpandTemplateArgs(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
-		params       map[string]interface{}
+		params       map[string]any
 		templateName string
 		expected     []string
 		wantErr      bool
@@ -243,42 +227,42 @@ func TestExpandTemplateArgs(t *testing.T) {
 		{
 			name:         "simple args",
 			args:         []string{"backup", "${path}"},
-			params:       map[string]interface{}{"path": "/data"},
+			params:       map[string]any{"path": "/data"},
 			templateName: "test",
 			expected:     []string{"backup", "/data"},
 		},
 		{
 			name:         "array expansion",
 			args:         []string{"${@flags}", "backup", "${path}"},
-			params:       map[string]interface{}{"flags": []interface{}{"-v", "-q"}, "path": "/data"},
+			params:       map[string]any{"flags": []any{"-v", "-q"}, "path": "/data"},
 			templateName: "test",
 			expected:     []string{"-v", "-q", "backup", "/data"},
 		},
 		{
 			name:         "array expansion removes element when empty",
 			args:         []string{"${@flags}", "backup"},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			expected:     []string{"backup"},
 		},
 		{
 			name:         "optional removes element",
 			args:         []string{"${?verbose}", "backup"},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			expected:     []string{"backup"},
 		},
 		{
 			name:         "empty args",
 			args:         []string{},
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			expected:     nil,
 		},
 		{
 			name:         "complex example",
 			args:         []string{"${@verbose_flags}", "backup", "${path}", "${?exclude}"},
-			params:       map[string]interface{}{"verbose_flags": []interface{}{"-v"}, "path": "/backup/data"},
+			params:       map[string]any{"verbose_flags": []any{"-v"}, "path": "/backup/data"},
 			templateName: "restic_backup",
 			expected:     []string{"-v", "backup", "/backup/data"},
 		},
@@ -289,19 +273,12 @@ func TestExpandTemplateArgs(t *testing.T) {
 			result, err := ExpandTemplateArgs(tt.args, tt.params, tt.templateName)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err, "expected error, got nil")
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			assert.NoError(t, err, "unexpected error")
+			assert.Equal(t, tt.expected, result, "result mismatch")
 		})
 	}
 }
@@ -310,17 +287,17 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 	tests := []struct {
 		name         string
 		paramName    string
-		params       map[string]interface{}
+		params       map[string]any
 		templateName string
 		field        string
 		expected     []string
 		wantErr      bool
-		errType      interface{}
+		errType      any
 	}{
 		{
-			name:         "[]interface{} with strings",
+			name:         "[]any with strings",
 			paramName:    "flags",
-			params:       map[string]interface{}{"flags": []interface{}{"-v", "--quiet"}},
+			params:       map[string]any{"flags": []any{"-v", "--quiet"}},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"-v", "--quiet"},
@@ -328,7 +305,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 		{
 			name:         "[]string type",
 			paramName:    "flags",
-			params:       map[string]interface{}{"flags": []string{"-a", "-b", "-c"}},
+			params:       map[string]any{"flags": []string{"-a", "-b", "-c"}},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"-a", "-b", "-c"},
@@ -336,7 +313,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 		{
 			name:         "missing param",
 			paramName:    "flags",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -344,7 +321,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 		{
 			name:         "string instead of array",
 			paramName:    "flags",
-			params:       map[string]interface{}{"flags": "single"},
+			params:       map[string]any{"flags": "single"},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -353,7 +330,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 		{
 			name:         "unsupported type",
 			paramName:    "flags",
-			params:       map[string]interface{}{"flags": 123},
+			params:       map[string]any{"flags": 123},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -362,7 +339,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 		{
 			name:         "non-string element in array",
 			paramName:    "flags",
-			params:       map[string]interface{}{"flags": []interface{}{"ok", 42, "also-ok"}},
+			params:       map[string]any{"flags": []any{"ok", 42, "also-ok"}},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -375,18 +352,10 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			result, err := expandArrayPlaceholder(tt.paramName, tt.params, tt.templateName, tt.field)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("expected %v, got %v", tt.expected, result)
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
 			}
 		})
 	}
@@ -396,7 +365,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 	tests := []struct {
 		name         string
 		paramName    string
-		params       map[string]interface{}
+		params       map[string]any
 		templateName string
 		field        string
 		expected     []string
@@ -405,7 +374,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 		{
 			name:         "value provided",
 			paramName:    "verbose",
-			params:       map[string]interface{}{"verbose": "-v"},
+			params:       map[string]any{"verbose": "-v"},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{"-v"},
@@ -413,7 +382,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 		{
 			name:         "empty string",
 			paramName:    "verbose",
-			params:       map[string]interface{}{"verbose": ""},
+			params:       map[string]any{"verbose": ""},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -421,7 +390,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 		{
 			name:         "missing param",
 			paramName:    "verbose",
-			params:       map[string]interface{}{},
+			params:       map[string]any{},
 			templateName: "test",
 			field:        "args[0]",
 			expected:     []string{},
@@ -429,7 +398,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 		{
 			name:         "wrong type",
 			paramName:    "verbose",
-			params:       map[string]interface{}{"verbose": []interface{}{"-v"}},
+			params:       map[string]any{"verbose": []any{"-v"}},
 			templateName: "test",
 			field:        "args[0]",
 			wantErr:      true,
@@ -441,18 +410,10 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 			result, err := expandOptionalPlaceholder(tt.paramName, tt.params, tt.templateName, tt.field)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("expected %v, got %v", tt.expected, result)
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
 			}
 		})
 	}
