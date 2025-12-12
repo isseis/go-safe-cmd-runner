@@ -271,7 +271,6 @@ func TestLoadConfig_NegativeTimeoutValidation(t *testing.T) {
 		name        string
 		configToml  string
 		expectError bool
-		errorMsg    string
 	}{
 		{
 			name: "negative global timeout",
@@ -290,7 +289,6 @@ version = "1.0"
     args = ["hello"]
 `,
 			expectError: true,
-			errorMsg:    "timeout must not be negative: global timeout got -10",
 		},
 		{
 			name: "negative command timeout",
@@ -307,7 +305,6 @@ version = "1.0"
     timeout = -5
 `,
 			expectError: true,
-			errorMsg:    "timeout must not be negative: command 'test_cmd' in group 'test' (groups[0].commands[0]) got -5",
 		},
 		{
 			name: "valid zero timeout",
@@ -346,6 +343,26 @@ version = "1.0"
 `,
 			expectError: false,
 		},
+		{
+			name: "negative template timeout",
+			configToml: `
+version = "1.0"
+
+[command_templates.bad_template]
+  cmd = "echo"
+  args = ["test"]
+  timeout = -15
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    template = "bad_template"
+    [groups.commands.params]
+`,
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -355,7 +372,173 @@ version = "1.0"
 
 			if tt.expectError {
 				require.Error(t, err, "expected error but got none")
-				assert.Contains(t, err.Error(), tt.errorMsg, "error message mismatch")
+				require.ErrorIs(t, err, ErrNegativeTimeout, "error should be ErrNegativeTimeout")
+				assert.Nil(t, cfg, "config should be nil when validation fails")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+				require.NotNil(t, cfg, "config should not be nil")
+			}
+		})
+	}
+}
+
+func TestLoaderWithTemplates(t *testing.T) {
+	tests := []struct {
+		name        string
+		toml        string
+		wantErr     bool
+		wantErrType error
+	}{
+		{
+			name: "valid template",
+			toml: `
+version = "1.0"
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+
+[[groups]]
+name = "backup"
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"
+[groups.commands.params]
+path = "/data"
+`,
+			wantErr: false,
+		},
+		{
+			name: "duplicate template name",
+			toml: `
+version = "1.0"
+[command_templates.duplicate]
+cmd = "echo"
+args = ["first"]
+[command_templates.duplicate]
+cmd = "ls"
+`,
+			wantErr:     true,
+			wantErrType: &ErrDuplicateTemplateName{},
+		},
+		{
+			name: "forbidden %{ in template cmd",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "%{var}"
+`,
+			wantErr:     true,
+			wantErrType: &ErrForbiddenPatternInTemplate{},
+		},
+		{
+			name: "forbidden %{ in template args",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "echo"
+args = ["%{var}", "hello"]
+`,
+			wantErr:     true,
+			wantErrType: &ErrForbiddenPatternInTemplate{},
+		},
+		{
+			name: "forbidden %{ in template env",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "echo"
+env = ["VAR=%{value}"]
+`,
+			wantErr:     true,
+			wantErrType: &ErrForbiddenPatternInTemplate{},
+		},
+		{
+			name: "forbidden %{ in template workdir",
+			toml: `
+version = "1.0"
+[command_templates.bad]
+cmd = "echo"
+workdir = "%{dir}"
+`,
+			wantErr:     true,
+			wantErrType: &ErrForbiddenPatternInTemplate{},
+		},
+		{
+			name: "missing cmd field",
+			toml: `
+version = "1.0"
+[command_templates.no_cmd]
+args = ["backup"]
+`,
+			wantErr:     true,
+			wantErrType: &ErrMissingRequiredField{},
+		},
+		{
+			name: "invalid template name",
+			toml: `
+version = "1.0"
+[command_templates."123invalid"]
+cmd = "echo"
+`,
+			wantErr:     true,
+			wantErrType: &ErrInvalidTemplateName{},
+		},
+		{
+			name: "reserved template name prefix",
+			toml: `
+version = "1.0"
+[command_templates.__reserved]
+cmd = "echo"
+`,
+			wantErr:     true,
+			wantErrType: &ErrReservedTemplateName{},
+		},
+		{
+			name: "template with name field",
+			toml: `
+version = "1.0"
+[command_templates.bad_template]
+name = "should_not_be_here"
+cmd = "echo"
+`,
+			wantErr:     true,
+			wantErrType: &ErrTemplateContainsNameField{},
+		},
+		{
+			name: "valid template with placeholders",
+			toml: `
+version = "1.0"
+[command_templates.restic_advanced]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}", "${?optional}"]
+env = ["RESTIC_REPO=${repo}"]
+workdir = "${workdir}"
+
+[[groups]]
+name = "backup"
+[[groups.commands]]
+name = "backup_home"
+template = "restic_advanced"
+[groups.commands.params]
+flags = ["-v", "--exclude-caches"]
+path = "/home"
+repo = "/backup/repo"
+workdir = "/tmp"
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.toml))
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error but got none")
+				if tt.wantErrType != nil {
+					require.ErrorAs(t, err, &tt.wantErrType, "error should be of expected type")
+				}
 				assert.Nil(t, cfg, "config should be nil when validation fails")
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)

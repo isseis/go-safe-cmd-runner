@@ -45,6 +45,11 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Check for prohibited "name" field in command_templates
+	if err := checkTemplateNameField(content); err != nil {
+		return nil, err
+	}
+
 	// Apply default values
 	ApplyGlobalDefaults(&cfg.Global)
 	for i := range cfg.Groups {
@@ -63,5 +68,84 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 		return nil, err
 	}
 
+	// Validate command templates
+	if err := ValidateTemplates(&cfg); err != nil {
+		return nil, err
+	}
+
+	// Validate commands (exclusivity check)
+	if err := ValidateCommands(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// checkTemplateNameField checks if any template definition qs a "name" field.
+// This is done by parsing the TOML content as a map to detect fields that would be
+// ignored by the struct unmarshaling.
+func checkTemplateNameField(content []byte) error {
+	var raw map[string]interface{}
+	if err := toml.Unmarshal(content, &raw); err != nil {
+		// If we can't parse as map, the structured parse will also fail
+		// so we can skip this check
+		return nil
+	}
+
+	// Check command_templates section
+	templates, ok := raw["command_templates"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	for templateName, templateData := range templates {
+		templateMap, ok := templateData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check if "name" field exists
+		if _, hasName := templateMap["name"]; hasName {
+			return &ErrTemplateContainsNameField{
+				TemplateName: templateName,
+			}
+		}
+	}
+
+	return nil
+}
+
+// ValidateTemplates validates all command templates in the configuration.
+// It checks for:
+// - Duplicate template names
+// - Invalid template names
+// - Invalid template definitions (NF-006: no %{} in template definitions)
+// - Missing required fields in templates
+func ValidateTemplates(cfg *runnertypes.ConfigSpec) error {
+	if cfg == nil || cfg.CommandTemplates == nil {
+		return nil
+	}
+
+	// Track seen template names to detect duplicates
+	seen := make(map[string]bool)
+
+	for name, tmpl := range cfg.CommandTemplates {
+		// Check for duplicate names
+		if seen[name] {
+			return &ErrDuplicateTemplateName{Name: name}
+		}
+		seen[name] = true
+
+		// Validate template name
+		if err := ValidateTemplateName(name); err != nil {
+			return err
+		}
+
+		// Validate template definition
+		if err := ValidateTemplateDefinition(name, &tmpl); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

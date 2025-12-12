@@ -64,6 +64,10 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Group and Global Verification**: Flexible file verification at multiple levels
 
 ### Command Execution
+- **Command Templates**: Reusable command definitions with parameter substitution for maintainability
+  - Required parameters: `${param}` - must be provided
+  - Optional parameters: `${?param}` - omitted if empty
+  - Array parameters: `${@param}` - expanded into multiple arguments
 - **Batch Processing**: Command execution in organized groups with dependency management
 - **Automatic Temporary Directories**: Auto-generation and cleanup of temporary directories per group
 - **Working Directory Control**: Execute in fixed directories or auto-generated temporary directories
@@ -242,6 +246,47 @@ args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/l
 ```
 
 **Note**: The prefix `__runner_` is reserved and cannot be used for user-defined variables.
+
+### Command Templates
+
+Command templates allow you to define reusable command patterns with parameters, reducing configuration duplication:
+
+```toml
+# Define a template
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}"]
+env = ["RESTIC_REPOSITORY=${repo}"]
+
+# Use the template with different parameters
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_volumes"
+template = "restic_backup"
+
+[groups.commands.params]
+flags = ["-v", "--exclude-caches"]
+path = "/data/volumes"
+repo = "/backup/repo"
+
+[[groups.commands]]
+name = "backup_database"
+template = "restic_backup"
+
+[groups.commands.params]
+flags = ["-q"]
+path = "/data/database"
+repo = "/backup/repo"
+```
+
+Template parameters support three types:
+- `${param}`: Required parameter (error if missing)
+- `${?param}`: Optional parameter (omitted if empty)
+- `${@param}`: Array parameter (expanded into multiple arguments)
+
+For more details, see [Command Templates Guide](docs/user/command_templates.md).
 
 ### Group-Level Command Allowlist
 

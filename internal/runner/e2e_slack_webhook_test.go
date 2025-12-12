@@ -51,7 +51,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	mockServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Errorf("Failed to read request body: %v", err)
+			require.NoError(t, err, "Failed to read request body")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}

@@ -50,8 +50,8 @@ var (
 	// ErrMaxRecursionDepthExceeded is returned when variable expansion exceeds maximum recursion depth
 	ErrMaxRecursionDepthExceeded = errors.New("maximum recursion depth exceeded")
 
-	// ErrInvalidFromEnvFormat is returned when from_env entry is not in 'internal_name=SYSTEM_VAR' format
-	ErrInvalidFromEnvFormat = errors.New("invalid from_env format")
+	// ErrInvalidEnvImportFormat is returned when env_import entry is not in 'internal_name=SYSTEM_VAR' format
+	ErrInvalidEnvImportFormat = errors.New("invalid env_import format")
 
 	// ErrInvalidVarsFormat is returned when a vars entry is not in var_name=value format
 	ErrInvalidVarsFormat = errors.New("malformed vars entry (expected var_name=value format)")
@@ -115,6 +115,9 @@ var (
 
 	// ErrArrayVariableInStringContext is returned when an array variable is used in string context
 	ErrArrayVariableInStringContext = errors.New("array variable used in string context")
+
+	// ErrEnvImportVarsConflict is returned when the same variable is defined in both env_import and vars
+	ErrEnvImportVarsConflict = errors.New("variable defined in both env_import and vars")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
@@ -271,19 +274,19 @@ func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
 // to maintain consistency with test naming conventions
 type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail
 
-// ErrInvalidFromEnvFormatDetail provides detailed information about invalid from_env format
-type ErrInvalidFromEnvFormatDetail struct {
+// ErrInvalidEnvImportFormatDetail provides detailed information about invalid env_import format
+type ErrInvalidEnvImportFormatDetail struct {
 	Level   string
 	Mapping string
 	Reason  string
 }
 
-func (e *ErrInvalidFromEnvFormatDetail) Error() string {
-	return fmt.Sprintf("invalid from_env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+func (e *ErrInvalidEnvImportFormatDetail) Error() string {
+	return fmt.Sprintf("invalid env_import format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
 }
 
-func (e *ErrInvalidFromEnvFormatDetail) Unwrap() error {
-	return ErrInvalidFromEnvFormat
+func (e *ErrInvalidEnvImportFormatDetail) Unwrap() error {
+	return ErrInvalidEnvImportFormat
 }
 
 // ErrInvalidVarsFormatDetail provides detailed information about invalid vars format
@@ -548,4 +551,25 @@ func (e *ErrArrayVariableInStringContextDetail) Error() string {
 
 func (e *ErrArrayVariableInStringContextDetail) Unwrap() error {
 	return ErrArrayVariableInStringContext
+}
+
+// ErrEnvImportVarsConflictDetail provides detailed information about conflicts
+// between env_import and vars definitions.
+// This error is returned when the same variable name is defined in both env_import
+// and vars, either at the same level or across different levels (global/group/command).
+type ErrEnvImportVarsConflictDetail struct {
+	Level          string // Current level (e.g., "global", "group[deploy]", "command[build]")
+	VariableName   string // The conflicting variable name
+	EnvImportLevel string // Level where env_import defined this variable
+	VarsLevel      string // Level where vars defined this variable
+}
+
+func (e *ErrEnvImportVarsConflictDetail) Error() string {
+	return fmt.Sprintf("variable %q conflicts between env_import and vars in %s: "+
+		"defined in env_import at %s and vars at %s",
+		e.VariableName, e.Level, e.EnvImportLevel, e.VarsLevel)
+}
+
+func (e *ErrEnvImportVarsConflictDetail) Unwrap() error {
+	return ErrEnvImportVarsConflict
 }

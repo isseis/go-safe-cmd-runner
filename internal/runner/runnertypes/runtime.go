@@ -43,6 +43,11 @@ type RuntimeGlobal struct {
 	//   After expansion: {"config_files": ["/opt/myapp/config.yml", "/opt/myapp/secrets.yml"]}
 	ExpandedArrayVars map[string][]string
 
+	// EnvImportVars tracks variables imported from system environment via env_import.
+	// This is used for conflict detection to prevent vars from redefining env_import variables.
+	// Key: internal variable name, Value: expanded value from system environment
+	EnvImportVars map[string]string
+
 	// SystemEnv contains the cached system environment variables parsed from os.Environ().
 	// This is populated once during ExpandGlobal to avoid repeated os.Environ() parsing
 	// in ExpandGroup and ExpandCommand.
@@ -63,6 +68,7 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 		ExpandedEnv:         make(map[string]string),
 		ExpandedVars:        make(map[string]string),
 		ExpandedArrayVars:   make(map[string][]string),
+		EnvImportVars:       make(map[string]string),
 		SystemEnv:           make(map[string]string),
 	}, nil
 }
@@ -131,6 +137,11 @@ type RuntimeGroup struct {
 	// ExpandedArrayVars contains array variables with all variable references expanded.
 	// See RuntimeGlobal.ExpandedArrayVars for details.
 	ExpandedArrayVars map[string][]string
+
+	// EnvImportVars tracks variables imported from system environment via env_import at this level.
+	// This accumulates env_import variables from global and group levels for conflict detection.
+	// Key: internal variable name, Value: expanded value from system environment
+	EnvImportVars map[string]string
 
 	// EffectiveWorkDir is the resolved working directory for this group
 	EffectiveWorkDir string
@@ -209,6 +220,7 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 		ExpandedEnv:         make(map[string]string),
 		ExpandedVars:        make(map[string]string),
 		ExpandedArrayVars:   make(map[string][]string),
+		EnvImportVars:       make(map[string]string),
 		Commands:            []*RuntimeCommand{},
 	}, nil
 }
@@ -233,14 +245,14 @@ func (r *RuntimeGroup) WorkDir() string {
 	return r.Spec.WorkDir
 }
 
-// ExtractGroupName safely extracts the group name from a RuntimeGroup.
-// Returns an empty string if the RuntimeGroup or its Spec is nil.
-// This helper is useful for timeout resolution context where group name is optional.
+// ExtractGroupName extracts the group name from a RuntimeGroup.
+// Panics if runtimeGroup or runtimeGroup.Spec is nil (programming error).
+// All commands must belong to a group per TOML specification.
 func ExtractGroupName(runtimeGroup *RuntimeGroup) string {
-	if runtimeGroup != nil && runtimeGroup.Spec != nil {
-		return runtimeGroup.Spec.Name
+	if runtimeGroup == nil || runtimeGroup.Spec == nil {
+		panic("ExtractGroupName: runtimeGroup and runtimeGroup.Spec must be non-nil (programming error)")
 	}
-	return ""
+	return runtimeGroup.Spec.Name
 }
 
 // RuntimeCommand represents the runtime-expanded command configuration.
@@ -271,6 +283,11 @@ type RuntimeCommand struct {
 	// ExpandedArrayVars contains array variables with all variable references expanded.
 	// See RuntimeGlobal.ExpandedArrayVars for details.
 	ExpandedArrayVars map[string][]string
+
+	// EnvImportVars tracks variables imported from system environment via env_import at this level.
+	// This accumulates env_import variables from global, group, and command levels for conflict detection.
+	// Key: internal variable name, Value: expanded value from system environment
+	EnvImportVars map[string]string
 
 	// EffectiveWorkDir is the resolved working directory for this command
 	EffectiveWorkDir string
@@ -320,6 +337,7 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, globalOu
 		ExpandedEnv:              make(map[string]string),
 		ExpandedVars:             make(map[string]string),
 		ExpandedArrayVars:        make(map[string][]string),
+		EnvImportVars:            make(map[string]string),
 		EffectiveTimeout:         effectiveTimeout,
 		TimeoutResolution:        resolutionContext,
 		EffectiveOutputSizeLimit: effectiveOutputSizeLimit,

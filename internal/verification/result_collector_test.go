@@ -10,42 +10,26 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewResultCollector(t *testing.T) {
 	hashDirPath := "/usr/local/etc/go-safe-cmd-runner/hashes"
 	rc := NewResultCollector(hashDirPath)
 
-	if rc == nil {
-		t.Fatal("NewResultCollector returned nil")
-	}
+	require.NotNil(t, rc, "NewResultCollector returned nil")
 
 	summary := rc.GetSummary()
 
-	if summary.TotalFiles != 0 {
-		t.Errorf("expected TotalFiles = 0, got %d", summary.TotalFiles)
-	}
-	if summary.VerifiedFiles != 0 {
-		t.Errorf("expected VerifiedFiles = 0, got %d", summary.VerifiedFiles)
-	}
-	if summary.SkippedFiles != 0 {
-		t.Errorf("expected SkippedFiles = 0, got %d", summary.SkippedFiles)
-	}
-	if summary.FailedFiles != 0 {
-		t.Errorf("expected FailedFiles = 0, got %d", summary.FailedFiles)
-	}
-	if summary.HashDirStatus.Path != hashDirPath {
-		t.Errorf("expected HashDirStatus.Path = %s, got %s", hashDirPath, summary.HashDirStatus.Path)
-	}
-	if summary.HashDirStatus.Exists {
-		t.Error("expected HashDirStatus.Exists = false")
-	}
-	if summary.HashDirStatus.Validated {
-		t.Error("expected HashDirStatus.Validated = false")
-	}
-	if len(summary.Failures) != 0 {
-		t.Errorf("expected empty Failures, got %d", len(summary.Failures))
-	}
+	assert.Equal(t, 0, summary.TotalFiles, "TotalFiles should be 0")
+	assert.Equal(t, 0, summary.VerifiedFiles, "VerifiedFiles should be 0")
+	assert.Equal(t, 0, summary.SkippedFiles, "SkippedFiles should be 0")
+	assert.Equal(t, 0, summary.FailedFiles, "FailedFiles should be 0")
+	assert.Equal(t, hashDirPath, summary.HashDirStatus.Path, "HashDirStatus.Path mismatch")
+	assert.False(t, summary.HashDirStatus.Exists, "HashDirStatus.Exists should be false")
+	assert.False(t, summary.HashDirStatus.Validated, "HashDirStatus.Validated should be false")
+	assert.Equal(t, 0, len(summary.Failures), "Failures should be empty")
 }
 
 func TestResultCollector_RecordSuccess(t *testing.T) {
@@ -56,18 +40,10 @@ func TestResultCollector_RecordSuccess(t *testing.T) {
 
 	summary := rc.GetSummary()
 
-	if summary.TotalFiles != 2 {
-		t.Errorf("expected TotalFiles = 2, got %d", summary.TotalFiles)
-	}
-	if summary.VerifiedFiles != 2 {
-		t.Errorf("expected VerifiedFiles = 2, got %d", summary.VerifiedFiles)
-	}
-	if summary.SkippedFiles != 0 {
-		t.Errorf("expected SkippedFiles = 0, got %d", summary.SkippedFiles)
-	}
-	if summary.FailedFiles != 0 {
-		t.Errorf("expected FailedFiles = 0, got %d", summary.FailedFiles)
-	}
+	assert.Equal(t, 2, summary.TotalFiles, "TotalFiles should be 2")
+	assert.Equal(t, 2, summary.VerifiedFiles, "VerifiedFiles should be 2")
+	assert.Equal(t, 0, summary.SkippedFiles, "SkippedFiles should be 0")
+	assert.Equal(t, 0, summary.FailedFiles, "FailedFiles should be 0")
 }
 
 func TestResultCollector_RecordFailure(t *testing.T) {
@@ -81,53 +57,27 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 
 	summary := rc.GetSummary()
 
-	if summary.TotalFiles != 2 {
-		t.Errorf("expected TotalFiles = 2, got %d", summary.TotalFiles)
-	}
-	if summary.VerifiedFiles != 0 {
-		t.Errorf("expected VerifiedFiles = 0, got %d", summary.VerifiedFiles)
-	}
-	if summary.SkippedFiles != 0 {
-		t.Errorf("expected SkippedFiles = 0, got %d", summary.SkippedFiles)
-	}
-	if summary.FailedFiles != 2 {
-		t.Errorf("expected FailedFiles = 2, got %d", summary.FailedFiles)
-	}
+	assert.Equal(t, 2, summary.TotalFiles, "TotalFiles should be 2")
+	assert.Equal(t, 0, summary.VerifiedFiles, "VerifiedFiles should be 0")
+	assert.Equal(t, 0, summary.SkippedFiles, "SkippedFiles should be 0")
+	assert.Equal(t, 2, summary.FailedFiles, "FailedFiles should be 2")
 
 	// Check failures
-	if len(summary.Failures) != 2 {
-		t.Fatalf("expected 2 failures, got %d", len(summary.Failures))
-	}
+	require.Equal(t, 2, len(summary.Failures), "expected 2 failures")
 
 	// First failure
 	f1 := summary.Failures[0]
-	if f1.Path != "/path/to/file1.toml" {
-		t.Errorf("expected Path = /path/to/file1.toml, got %s", f1.Path)
-	}
-	if f1.Reason != ReasonHashFileNotFound {
-		t.Errorf("expected Reason = %s, got %s", ReasonHashFileNotFound, f1.Reason)
-	}
-	if f1.Level != "warn" {
-		t.Errorf("expected Level = warn, got %s", f1.Level)
-	}
-	if f1.Context != "config" {
-		t.Errorf("expected Context = config, got %s", f1.Context)
-	}
+	assert.Equal(t, "/path/to/file1.toml", f1.Path)
+	assert.Equal(t, ReasonHashFileNotFound, f1.Reason)
+	assert.Equal(t, "warn", f1.Level)
+	assert.Equal(t, "config", f1.Context)
 
 	// Second failure
 	f2 := summary.Failures[1]
-	if f2.Path != "/path/to/file2.toml" {
-		t.Errorf("expected Path = /path/to/file2.toml, got %s", f2.Path)
-	}
-	if f2.Reason != ReasonHashMismatch {
-		t.Errorf("expected Reason = %s, got %s", ReasonHashMismatch, f2.Reason)
-	}
-	if f2.Level != "error" {
-		t.Errorf("expected Level = error, got %s", f2.Level)
-	}
-	if f2.Context != "global" {
-		t.Errorf("expected Context = global, got %s", f2.Context)
-	}
+	assert.Equal(t, "/path/to/file2.toml", f2.Path)
+	assert.Equal(t, ReasonHashMismatch, f2.Reason)
+	assert.Equal(t, "error", f2.Level)
+	assert.Equal(t, "global", f2.Context)
 }
 
 func TestResultCollector_RecordSkip(t *testing.T) {
@@ -138,18 +88,10 @@ func TestResultCollector_RecordSkip(t *testing.T) {
 
 	summary := rc.GetSummary()
 
-	if summary.TotalFiles != 2 {
-		t.Errorf("expected TotalFiles = 2, got %d", summary.TotalFiles)
-	}
-	if summary.VerifiedFiles != 0 {
-		t.Errorf("expected VerifiedFiles = 0, got %d", summary.VerifiedFiles)
-	}
-	if summary.SkippedFiles != 2 {
-		t.Errorf("expected SkippedFiles = 2, got %d", summary.SkippedFiles)
-	}
-	if summary.FailedFiles != 0 {
-		t.Errorf("expected FailedFiles = 0, got %d", summary.FailedFiles)
-	}
+	assert.Equal(t, 2, summary.TotalFiles, "TotalFiles should be 2")
+	assert.Equal(t, 0, summary.VerifiedFiles, "VerifiedFiles should be 0")
+	assert.Equal(t, 2, summary.SkippedFiles, "SkippedFiles should be 2")
+	assert.Equal(t, 0, summary.FailedFiles, "FailedFiles should be 0")
 }
 
 func TestResultCollector_SetHashDirStatus(t *testing.T) {
@@ -159,12 +101,8 @@ func TestResultCollector_SetHashDirStatus(t *testing.T) {
 
 	summary := rc.GetSummary()
 
-	if !summary.HashDirStatus.Exists {
-		t.Error("expected HashDirStatus.Exists = true")
-	}
-	if !summary.HashDirStatus.Validated {
-		t.Error("expected HashDirStatus.Validated = true")
-	}
+	assert.True(t, summary.HashDirStatus.Exists, "HashDirStatus.Exists should be true")
+	assert.True(t, summary.HashDirStatus.Validated, "HashDirStatus.Validated should be true")
 }
 
 func TestResultCollector_GetSummary(t *testing.T) {
@@ -180,21 +118,13 @@ func TestResultCollector_GetSummary(t *testing.T) {
 
 	// Verify invariant: TotalFiles = VerifiedFiles + SkippedFiles + FailedFiles
 	expectedTotal := summary.VerifiedFiles + summary.SkippedFiles + summary.FailedFiles
-	if summary.TotalFiles != expectedTotal {
-		t.Errorf("invariant violation: TotalFiles (%d) != VerifiedFiles + SkippedFiles + FailedFiles (%d)",
-			summary.TotalFiles, expectedTotal)
-	}
+	assert.Equal(t, expectedTotal, summary.TotalFiles, "invariant violation: TotalFiles should equal sum of parts")
 
 	// Verify invariant: FailedFiles = len(Failures)
-	if summary.FailedFiles != len(summary.Failures) {
-		t.Errorf("invariant violation: FailedFiles (%d) != len(Failures) (%d)",
-			summary.FailedFiles, len(summary.Failures))
-	}
+	assert.Equal(t, len(summary.Failures), summary.FailedFiles, "FailedFiles should equal length of Failures")
 
 	// Verify Duration
-	if summary.Duration <= 0 {
-		t.Error("expected Duration > 0")
-	}
+	assert.Greater(t, summary.Duration, time.Duration(0), "Duration should be > 0")
 }
 
 func TestResultCollector_Concurrency(t *testing.T) {
@@ -228,16 +158,11 @@ func TestResultCollector_Concurrency(t *testing.T) {
 	summary := rc.GetSummary()
 
 	expectedTotal := numGoroutines * numOpsPerGoroutine
-	if summary.TotalFiles != expectedTotal {
-		t.Errorf("expected TotalFiles = %d, got %d", expectedTotal, summary.TotalFiles)
-	}
+	assert.Equal(t, expectedTotal, summary.TotalFiles, "TotalFiles mismatch after concurrent operations")
 
 	// Verify invariant
 	actualTotal := summary.VerifiedFiles + summary.SkippedFiles + summary.FailedFiles
-	if summary.TotalFiles != actualTotal {
-		t.Errorf("invariant violation after concurrent operations: TotalFiles (%d) != sum (%d)",
-			summary.TotalFiles, actualTotal)
-	}
+	assert.Equal(t, actualTotal, summary.TotalFiles, "invariant violation after concurrent operations")
 }
 
 func TestDetermineFailureReason(t *testing.T) {
@@ -281,9 +206,7 @@ func TestDetermineFailureReason(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := determineFailureReason(tt.err)
-			if result != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -304,9 +227,7 @@ func TestDetermineLogLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.reason), func(t *testing.T) {
 			result := determineLogLevel(tt.reason)
-			if result != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -327,9 +248,7 @@ func TestGetSecurityRisk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.reason), func(t *testing.T) {
 			result := getSecurityRisk(tt.reason)
-			if result != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -342,9 +261,7 @@ func TestResultCollector_Duration(t *testing.T) {
 
 	summary := rc.GetSummary()
 
-	if summary.Duration < 10*time.Millisecond {
-		t.Errorf("expected Duration >= 10ms, got %v", summary.Duration)
-	}
+	assert.GreaterOrEqual(t, summary.Duration, 10*time.Millisecond, "Duration should be at least 10ms")
 }
 
 func TestResultCollector_MixedResults(t *testing.T) {
@@ -362,39 +279,21 @@ func TestResultCollector_MixedResults(t *testing.T) {
 
 	summary := rc.GetSummary()
 
-	if summary.TotalFiles != 7 {
-		t.Errorf("expected TotalFiles = 7, got %d", summary.TotalFiles)
-	}
-	if summary.VerifiedFiles != 3 {
-		t.Errorf("expected VerifiedFiles = 3, got %d", summary.VerifiedFiles)
-	}
-	if summary.SkippedFiles != 2 {
-		t.Errorf("expected SkippedFiles = 2, got %d", summary.SkippedFiles)
-	}
-	if summary.FailedFiles != 2 {
-		t.Errorf("expected FailedFiles = 2, got %d", summary.FailedFiles)
-	}
+	assert.Equal(t, 7, summary.TotalFiles)
+	assert.Equal(t, 3, summary.VerifiedFiles)
+	assert.Equal(t, 2, summary.SkippedFiles)
+	assert.Equal(t, 2, summary.FailedFiles)
 
 	// Check hash directory status
-	if !summary.HashDirStatus.Exists {
-		t.Error("expected HashDirStatus.Exists = true")
-	}
-	if !summary.HashDirStatus.Validated {
-		t.Error("expected HashDirStatus.Validated = true")
-	}
+	assert.True(t, summary.HashDirStatus.Exists, "HashDirStatus.Exists should be true")
+	assert.True(t, summary.HashDirStatus.Validated, "HashDirStatus.Validated should be true")
 
 	// Check failures details
-	if len(summary.Failures) != 2 {
-		t.Fatalf("expected 2 failures, got %d", len(summary.Failures))
-	}
+	require.Equal(t, 2, len(summary.Failures), "expected 2 failures")
 
 	// Verify first failure (WARN level)
-	if summary.Failures[0].Level != "warn" {
-		t.Errorf("expected first failure Level = warn, got %s", summary.Failures[0].Level)
-	}
+	assert.Equal(t, "warn", summary.Failures[0].Level)
 
 	// Verify second failure (ERROR level)
-	if summary.Failures[1].Level != "error" {
-		t.Errorf("expected second failure Level = error, got %s", summary.Failures[1].Level)
-	}
+	assert.Equal(t, "error", summary.Failures[1].Level)
 }

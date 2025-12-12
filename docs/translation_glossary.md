@@ -20,6 +20,7 @@
 | アーキテクチャ設計書 | architecture design | |
 | アクセス | access | |
 | 値 | value | |
+| 曖昧さ | ambiguity | |
 | アプリケーション | application | |
 | 引数 | argument | コマンドの引数 |
 | 配列 | array | |
@@ -100,8 +101,11 @@
 | DoS攻撃 | DoS attack | Denial of Service attack |
 | ドキュメント | documentation / document | |
 | ドライラン | dry run | |
+| 重複 | duplication | |
 | ダンプ | dump | |
+| 追加 | add / addition | |
 | 動的 | dynamic | |
+| 動的な | dynamic | |
 
 ### E
 
@@ -119,6 +123,7 @@
 | エラー | error | |
 | エラーメッセージ | error message | |
 | エスケープ | escape / escaping | |
+| 排他性 | exclusivity | Field exclusivity context |
 | 例 | example | |
 | 例外 | exception | |
 | 実行 | execute / execution | |
@@ -139,6 +144,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | FAQ | FAQ | Frequently Asked Questions |
+| 汎用的 | generic | |
 | 機能 | feature / functionality | |
 | フィードバック | feedback | |
 | ファイル | file | |
@@ -185,6 +191,7 @@
 | インポート | import | |
 | 独立 | independent | 設定の継承の文脈 |
 | 独立性 | independence | 設定の継承の文脈 |
+| 注入 | inject / injection | Parameter injection context |
 | 影響 | impact | |
 | 継承 | inheritance | |
 | インジェクション攻撃 | injection attack | セキュリティの文脈 |
@@ -205,10 +212,12 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 遅延評価 | lazy evaluation | 変数展開の文脈 |
+| 活用 | leverage / leveraging | |
 | 学習 | learn / learning | |
 | ライセンス | license | |
 | 制限 | limit | |
 | リスト | list | |
+| リテラル | literal | Literal string value |
 | 場所 | location | ファイルやコマンドの場所 |
 | ロケール | locale | |
 | ログ | log | |
@@ -248,6 +257,7 @@
 | Mock server | mock server | モックサーバー |
 | 監視 | monitoring | |
 | モード | mode | |
+| 混在 | mixed | |
 | 複数値 | multi-value | 設定項目の文脈 |
 
 ### N
@@ -279,14 +289,16 @@
 |--------|---------|------|
 | パッケージ | package | |
 | パラメータ | parameter | |
+| パラメータ値 | parameter value | Template parameter value |
 | パース | parse / parsing | 構文解析 |
 | パーサ | parser | 構文解析器 |
 | パス | path | |
 | Pattern | pattern | パターン |
 | Payload | payload | ペイロード |
 | パフォーマンス | performance | |
-| Placeholder | placeholder | プレースホルダー |
-| 要点 | point | |
+| プレースホルダー | placeholder | Template parameter syntax like ${...} |
+| プレースホルダー構文 | placeholder syntax | |
+| 優先する | prefer | |
 | 権限 | permission / privilege | "permission"はファイル権限、"privilege"は特権 |
 | 許可 | allow / allowed | "allowlist" の文脈では "allowed" |
 | 許可リスト | allowlist | "whitelist" は使用しない |
@@ -302,6 +314,7 @@
 | 本番環境 | production (environment) | |
 | 禁止 | prohibit | env_allowlistの継承モードの文脈 |
 | 優先度 | priority | |
+| 優先順位 | priority order | |
 | プロセス | process | |
 | 処理 | processing | |
 | プロセス環境変数 | process environment variable | |
@@ -331,6 +344,7 @@
 | リリース | release | |
 | レポート | report | |
 | リポジトリ | repository | |
+| 再利用可能 | reusable | |
 | 必須 | required | |
 | 要件 | requirement | |
 | 要件定義書 | requirements document | |
@@ -341,6 +355,7 @@
 | リソース | resource | |
 | 制限を緩和する | weaken restrictions | セキュリティの文脈 |
 | 戻り値 | return value | |
+| 責務 | responsibility | |
 | リスク | risk | |
 | リスクレベル | risk level | |
 | 堅牢性 | robustness | |
@@ -377,9 +392,11 @@
 | Slack | Slack | |
 | スライス | slice | Go言語のスライス型 |
 | ソース | source | データソースの文脈 |
+| スペル | spelling | |
 | 具体的 | specific | |
 | 仕様 | specification | |
 | スタックオーバーフロー | stack overflow | 再帰呼び出しの文脈 |
+| 単独 | standalone | |
 | 標準 | standard | |
 | 標準パス | standard path | |
 | スタート | start | |
@@ -388,8 +405,10 @@
 | 構造体 | struct | Go言語の文脈 |
 | 置換 | substitution | 変数展開の文脈 |
 | シンボリックリンク | symlink | "symbolic link" の略 |
+| 対処法 | solution | Error troubleshooting context |
 | 文法 | syntax | |
 | 構文 | syntax | パース・解析の文脈 |
+| 同時 | simultaneous / simultaneously | |
 | システム | system | |
 | システム環境変数 | system environment variable | |
 
@@ -531,6 +550,8 @@
 | 環境変数 | `env` | `env_vars` |
 | 環境変数許可リスト | `env_allowlist` | `env_allowed` |
 | 環境変数インポート | `from_env` | `env_import` |
+| テンプレート | - | `template` |
+| テンプレートパラメータ | - | `params` |
 
 ### Command Level
 
@@ -573,6 +594,7 @@
 | 2025-11-27 | グローバルコマンド許可リスト関連の用語を追加 (anchored, attack surface, bypass, misconfiguration, enable, exception, extend/extending, hardcoded, location, logic, matching, prefer, prevent, rationale, regex, resolve/resolving, weaken restrictions, specific, symlink, untrusted) |
 | 2025-12-02 | 設定継承動作ドキュメント関連の用語を追加 (cross-level, deny, prohibit, prerequisite, single-value, multi-value, at runtime, explicit, union, uniform, robustness, independent, independence, flexibility) |
 | 2025-12-07 | 変数展開アルゴリズムドキュメント関連の用語を追加 (cache, core logic, DoS attack, entry point, expanded, immediate expansion, injection attack, lazy evaluation, memoization, memory exhaustion, order-independent, parse/parser/parsing, recursion depth, source, stack overflow, substitution, syntax, type safety, unexpanded) |
+| 2025-12-11 | コマンドテンプレート機能ドキュメント関連の用語を追加 (ambiguity, duplication, exclusivity, generic, inject/injection, leverage/leveraging, literal, mixed, parameter value, placeholder/placeholder syntax, priority order, reusable, responsibility, simultaneous/simultaneously, solution (error context), spelling, standalone) |
 
 ---
 

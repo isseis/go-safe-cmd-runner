@@ -340,7 +340,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			runtimeCmd, err := ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 			require.NoError(t, err, "Failed to expand command")
 
 			// 5. Verify command name

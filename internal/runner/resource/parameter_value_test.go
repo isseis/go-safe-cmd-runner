@@ -593,7 +593,7 @@ func TestAnyToParameterValue_StringSlice(t *testing.T) {
 				assert.Equal(t, tt.expectedValue, anyValue.Value())
 				assert.Equal(t, tt.expectedStr, anyValue.String())
 			default:
-				t.Fatalf("Unknown expected type: %s", tt.expectedType)
+				require.FailNow(t, "Unknown expected type: "+tt.expectedType)
 			}
 		})
 	}

@@ -301,7 +301,7 @@ full_path = "%{global_prefix}/%{cmd_user}/%{group_suffix}"
 				runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 				require.NoError(t, err, "should expand group config without error")
 
-				_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+				_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 				assert.Error(t, err, "should fail when env_import var not in allowlist")
 			} else {
 				// Test success case
@@ -485,7 +485,7 @@ args = ["test"]
 						// Error at group level is also acceptable
 						return
 					}
-					_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+					_, err = config.ExpandCommand(&cfg.Groups[0].Commands[0], nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 					assert.Error(t, err, "should fail at command level")
 				}
 			} else {
@@ -498,7 +498,7 @@ args = ["test"]
 
 // TestRunner_SystemEnvCache tests that SystemEnv is properly cached in RuntimeGlobal
 // Note: SystemEnv contains ALL environment variables (not filtered by allowlist).
-// The allowlist is used during ProcessFromEnv to control which variables can be imported.
+// The allowlist is used during ProcessEnvImport to control which variables can be imported.
 func TestRunner_SystemEnvCache(t *testing.T) {
 	tests := []struct {
 		name                    string
@@ -622,7 +622,7 @@ args = ["test"]
 
 				// Expand command and verify it uses cached SystemEnv
 				if len(cfg.Groups[0].Commands) > 0 {
-					runtimeCmd, err := config.ExpandCommand(&cfg.Groups[0].Commands[0], runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+					runtimeCmd, err := config.ExpandCommand(&cfg.Groups[0].Commands[0], nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 					require.NoError(t, err, "should expand command config without error")
 
 					// Verify command's env_import used the cached SystemEnv

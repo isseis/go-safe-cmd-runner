@@ -63,7 +63,7 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	require.NoError(t, err, "Failed to expand global config")
 	runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 	require.NoError(t, err, "Failed to expand group config")
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 	require.NoError(t, err, "Failed to expand command config")
 
 	// Call production code to build final environment
@@ -442,7 +442,7 @@ output = "%{data_dir}/%{filename}"
 	require.NoError(t, err, "Failed to expand global config")
 	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 	require.NoError(t, err, "Failed to expand group config")
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, nil, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 	require.NoError(t, err, "Failed to expand command config")
 
 	// Verify vars expansion at each level

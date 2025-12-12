@@ -108,7 +108,7 @@ func TestValidateVariableName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateVariableName(tt.variableName, tt.level, tt.field)
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 				if tt.errType != nil {
 					assert.ErrorIs(t, err, tt.errType)
 				}
@@ -491,6 +491,106 @@ func TestValidateTimeouts(t *testing.T) {
 				"-10",  // first command timeout value
 				"cmd2", // second command name
 				"-20",  // second command timeout value
+			},
+		},
+		{
+			name: "invalid - negative timeout in template",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"test_template": {
+						Cmd:     "echo",
+						Timeout: commontesting.Int32Ptr(-1),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{
+					makeGroup("test_group", makeCommand("test_cmd", nil)),
+				},
+			},
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"test_template",
+				"-1",
+			},
+		},
+		{
+			name: "valid - positive timeout in template",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"test_template": {
+						Cmd:     "echo",
+						Timeout: commontesting.Int32Ptr(30),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{
+					makeGroup("test_group", makeCommand("test_cmd", nil)),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid - zero timeout in template",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"test_template": {
+						Cmd:     "echo",
+						Timeout: commontesting.Int32Ptr(0),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{
+					makeGroup("test_group", makeCommand("test_cmd", nil)),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid - multiple negative template timeouts",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"template1": {
+						Cmd:     "echo",
+						Timeout: commontesting.Int32Ptr(-10),
+					},
+					"template2": {
+						Cmd:     "cat",
+						Timeout: commontesting.Int32Ptr(-20),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{
+					makeGroup("test_group", makeCommand("test_cmd", nil)),
+				},
+			},
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"-10",
+				"-20",
+			},
+		},
+		{
+			name: "invalid - negative timeouts in global, template, and command",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: commontesting.Int32Ptr(-5),
+				},
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"bad_template": {
+						Cmd:     "echo",
+						Timeout: commontesting.Int32Ptr(-15),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{
+					makeGroup("test_group", makeCommand("bad_cmd", commontesting.Int32Ptr(-25))),
+				},
+			},
+			expectError: true,
+			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"-5",  // global
+				"-15", // template
+				"-25", // command
+				"bad_template",
+				"bad_cmd",
 			},
 		},
 	}

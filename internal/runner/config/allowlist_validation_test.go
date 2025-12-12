@@ -16,7 +16,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 	tests := []struct {
 		name        string
 		spec        *runnertypes.GlobalSpec
-		wantErr     string
+		wantErr     bool
 		description string
 	}{
 		{
@@ -25,7 +25,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"MY_VAR=HOME"},
 				EnvAllowed: []string{}, // Empty allowlist
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "Empty allowlist should block all system variables",
 		},
 		{
@@ -34,7 +34,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"MY_VAR=HOME"},
 				EnvAllowed: []string{"PATH", "USER"}, // HOME not in list
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "System variable not in allowlist should be rejected",
 		},
 		{
@@ -43,7 +43,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"MY_VAR=HOME"},
 				EnvAllowed: []string{"HOME", "PATH"},
 			},
-			wantErr:     "",
+			wantErr:     false,
 			description: "System variable in allowlist should be accepted",
 		},
 		{
@@ -52,7 +52,7 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 				EnvImport:  []string{"VAR1=HOME", "VAR2=NOTALLOWED"},
 				EnvAllowed: []string{"HOME"},
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "First violation should be reported",
 		},
 	}
@@ -60,9 +60,9 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ExpandGlobal(tt.spec)
-			if tt.wantErr != "" {
+			if tt.wantErr {
 				require.Error(t, err, tt.description)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
 			} else {
 				require.NoError(t, err, tt.description)
 			}
@@ -71,16 +71,12 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 }
 
 // TestAllowlist_ViolationAtGroupLevel tests allowlist violations at the group level
-// Note: Group-level FromEnv processing is not yet implemented (TODO in Task 0033).
-// This test is included for future compatibility and to document expected behavior.
 func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
-	t.Skip("Group-level FromEnv processing not yet implemented (TODO in Task 0033)")
-
 	tests := []struct {
 		name        string
 		globalSpec  *runnertypes.GlobalSpec
 		groupSpec   *runnertypes.GroupSpec
-		wantErr     string
+		wantErr     bool
 		description string
 	}{
 		{
@@ -92,7 +88,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 				Name:      "test-group",
 				EnvImport: []string{"GROUP_VAR=HOME"},
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "Group-level from_env should respect global allowlist",
 		},
 		{
@@ -104,7 +100,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 				Name:      "test-group",
 				EnvImport: []string{"GROUP_VAR=HOME"},
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "Group-level from_env should check global allowlist",
 		},
 		{
@@ -116,7 +112,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 				Name:      "test-group",
 				EnvImport: []string{"GROUP_VAR=HOME"},
 			},
-			wantErr:     "",
+			wantErr:     false,
 			description: "Group-level from_env should succeed with allowed variable",
 		},
 	}
@@ -129,9 +125,9 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 
 			// Then expand group
 			_, err = config.ExpandGroup(tt.groupSpec, globalRuntime)
-			if tt.wantErr != "" {
+			if tt.wantErr {
 				require.Error(t, err, tt.description)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
 			} else {
 				require.NoError(t, err, tt.description)
 			}
@@ -140,17 +136,13 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 }
 
 // TestAllowlist_ViolationAtCommandLevel tests allowlist violations at the command level
-// Note: Command-level FromEnv processing is not yet implemented (TODO in Task 0033).
-// This test is included for future compatibility and to document expected behavior.
 func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
-	t.Skip("Command-level FromEnv processing not yet implemented (TODO in Task 0033)")
-
 	tests := []struct {
 		name        string
 		globalSpec  *runnertypes.GlobalSpec
 		groupSpec   *runnertypes.GroupSpec
 		cmdSpec     *runnertypes.CommandSpec
-		wantErr     string
+		wantErr     bool
 		description string
 	}{
 		{
@@ -166,7 +158,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 				Cmd:       "echo",
 				EnvImport: []string{"CMD_VAR=HOME"},
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "Command-level from_env should respect global allowlist",
 		},
 		{
@@ -182,7 +174,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 				Cmd:       "echo",
 				EnvImport: []string{"CMD_VAR=HOME"},
 			},
-			wantErr:     "not in allowlist",
+			wantErr:     true,
 			description: "Command-level from_env should check global allowlist",
 		},
 		{
@@ -198,7 +190,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 				Cmd:       "echo",
 				EnvImport: []string{"CMD_VAR=HOME"},
 			},
-			wantErr:     "",
+			wantErr:     false,
 			description: "Command-level from_env should succeed with allowed variable",
 		},
 	}
@@ -214,10 +206,10 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Finally expand command
-			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
-			if tt.wantErr != "" {
+			_, err = config.ExpandCommand(tt.cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+			if tt.wantErr {
 				require.Error(t, err, tt.description)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
 			} else {
 				require.NoError(t, err, tt.description)
 			}
@@ -225,31 +217,34 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 	}
 }
 
-// TestAllowlist_DetailedErrorMessages tests that error messages contain useful information
+// TestAllowlist_DetailedErrorMessages tests that errors contain detailed information
 func TestAllowlist_DetailedErrorMessages(t *testing.T) {
 	tests := []struct {
 		name            string
 		spec            *runnertypes.GlobalSpec
-		wantErrContains []string
+		wantSystemVar   string
+		wantInternalVar string
 		description     string
 	}{
 		{
-			name: "error message includes variable name",
+			name: "error includes variable name",
 			spec: &runnertypes.GlobalSpec{
 				EnvImport:  []string{"MY_VAR=SECRET_VAR"},
 				EnvAllowed: []string{"HOME"},
 			},
-			wantErrContains: []string{"SECRET_VAR", "not in allowlist"},
-			description:     "Error should mention the rejected system variable name",
+			wantSystemVar:   "SECRET_VAR",
+			wantInternalVar: "MY_VAR",
+			description:     "Error should include the rejected system variable name",
 		},
 		{
-			name: "error message for empty allowlist",
+			name: "error for empty allowlist",
 			spec: &runnertypes.GlobalSpec{
 				EnvImport:  []string{"VAR=PATH"},
 				EnvAllowed: []string{},
 			},
-			wantErrContains: []string{"PATH", "not in allowlist"},
-			description:     "Error should mention the variable even with empty allowlist",
+			wantSystemVar:   "PATH",
+			wantInternalVar: "VAR",
+			description:     "Error should include the variable even with empty allowlist",
 		},
 	}
 
@@ -257,8 +252,13 @@ func TestAllowlist_DetailedErrorMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := config.ExpandGlobal(tt.spec)
 			require.Error(t, err, tt.description)
-			for _, want := range tt.wantErrContains {
-				assert.Contains(t, err.Error(), want, "Error message should contain: "+want)
+			require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
+
+			// Check detailed error information
+			var detailErr *config.ErrVariableNotInAllowlistDetail
+			if assert.ErrorAs(t, err, &detailErr) {
+				assert.Equal(t, tt.wantSystemVar, detailErr.SystemVarName, "system variable name should match")
+				assert.Equal(t, tt.wantInternalVar, detailErr.InternalVarName, "internal variable name should match")
 			}
 		})
 	}
@@ -277,19 +277,20 @@ func TestAllowlist_EmptyAllowlistBlocksAll(t *testing.T) {
 
 			_, err := config.ExpandGlobal(spec)
 			require.Error(t, err, "Empty allowlist should block "+sysVar)
-			assert.Contains(t, err.Error(), "not in allowlist")
-			assert.Contains(t, err.Error(), sysVar)
+			require.ErrorIs(t, err, config.ErrVariableNotInAllowlist, "error should be ErrVariableNotInAllowlist")
+
+			// Verify the error contains the variable name
+			var detailErr *config.ErrVariableNotInAllowlistDetail
+			if assert.ErrorAs(t, err, &detailErr) {
+				assert.Equal(t, sysVar, detailErr.SystemVarName, "system variable name should match")
+			}
 		})
 	}
 }
 
 // TestAllowlist_InheritanceAcrossLevels tests that allowlist is properly inherited
-// Note: Group/Command-level FromEnv processing is not yet implemented (TODO in Task 0033).
-// These tests verify the current behavior and document expected future behavior.
 func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 	t.Run("group inherits global allowlist", func(t *testing.T) {
-		t.Skip("Group-level FromEnv processing not yet implemented (TODO in Task 0033)")
-
 		globalSpec := &runnertypes.GlobalSpec{
 			EnvAllowed: []string{"HOME", "PATH"},
 		}
@@ -306,8 +307,6 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 	})
 
 	t.Run("command inherits global allowlist", func(t *testing.T) {
-		t.Skip("Command-level FromEnv processing not yet implemented (TODO in Task 0033)")
-
 		globalSpec := &runnertypes.GlobalSpec{
 			EnvAllowed: []string{"HOME", "PATH"},
 		}
@@ -325,7 +324,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 
 		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
-		_, err = config.ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
+		_, err = config.ExpandCommand(cmdSpec, nil, groupRuntime, globalRuntime, common.NewUnsetTimeout(), commontesting.NewUnsetOutputSizeLimit())
 		require.NoError(t, err, "Command should inherit global allowlist")
 	})
 }

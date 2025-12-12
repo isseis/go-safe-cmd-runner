@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"maps"
 	"path/filepath"
 	"strings"
@@ -240,10 +241,10 @@ func parseAndSubstitute(
 	return result.String(), nil
 }
 
-// ProcessFromEnv processes from_env mappings and imports system environment variables
+// ProcessEnvImport processes env_import mappings and imports system environment variables
 // as internal variables. It validates that all referenced system variables are in the allowlist.
-func ProcessFromEnv(
-	fromEnv []string,
+func ProcessEnvImport(
+	envImport []string,
 	envAllowlist []string,
 	systemEnv map[string]string,
 	level string,
@@ -252,10 +253,10 @@ func ProcessFromEnv(
 
 	// Build allowlist map for O(1) lookup
 	allowlistMap := common.SliceToSet(envAllowlist)
-	for _, mapping := range fromEnv {
+	for _, mapping := range envImport {
 		internalName, systemVarName, ok := common.ParseKeyValue(mapping)
 		if !ok {
-			return nil, &ErrInvalidFromEnvFormatDetail{
+			return nil, &ErrInvalidEnvImportFormatDetail{
 				Level:   level,
 				Mapping: mapping,
 				Reason:  "must be in 'internal_name=SYSTEM_VAR' format",
@@ -263,7 +264,7 @@ func ProcessFromEnv(
 		}
 
 		// Validate internal variable name
-		if err := validateVariableName(internalName, level, "from_env"); err != nil {
+		if err := validateVariableName(internalName, level, "env_import"); err != nil {
 			return nil, err
 		}
 
@@ -271,7 +272,7 @@ func ProcessFromEnv(
 		if _, exists := result[internalName]; exists {
 			return nil, &ErrDuplicateVariableDefinitionDetail{
 				Level:        level,
-				Field:        "from_env",
+				Field:        "env_import",
 				VariableName: internalName,
 			}
 		}
@@ -280,7 +281,7 @@ func ProcessFromEnv(
 		if err := security.ValidateVariableName(systemVarName); err != nil {
 			return nil, &ErrInvalidSystemVariableNameDetail{
 				Level:              level,
-				Field:              "from_env",
+				Field:              "env_import",
 				SystemVariableName: systemVarName,
 				Reason:             err.Error(),
 			}
@@ -466,6 +467,7 @@ func (e *varExpander) resolveVariable(
 //   - vars: Variable definitions from TOML (map[string]interface{})
 //   - baseExpandedVars: Previously expanded string variables (inherited)
 //   - baseExpandedArrays: Previously expanded array variables (inherited)
+//   - envImportVars: Variables defined via env_import at any level (for conflict detection)
 //   - level: Context for error messages (e.g., "global", "group[deploy]")
 //
 // Returns:
@@ -477,11 +479,12 @@ func (e *varExpander) resolveVariable(
 //  1. Check total variable count against MaxVarsPerLevel
 //  2. For each variable:
 //     a. Validate variable name using ValidateVariableName
-//     b. Check type consistency with base variables
-//     c. Validate value type (string or []interface{})
-//     d. Validate size limits
-//     e. Expand using ExpandString
-//     f. Store in appropriate output map
+//     b. Check for conflicts with env_import variables
+//     c. Check type consistency with base variables
+//     d. Validate value type (string or []interface{})
+//     e. Validate size limits
+//     f. Expand using ExpandString
+//     g. Store in appropriate output map
 //
 // Type consistency rule:
 //   - A variable defined as string cannot be overridden as array
@@ -493,6 +496,7 @@ func ProcessVars(
 	vars map[string]interface{},
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
+	envImportVars map[string]string,
 	level string,
 ) (map[string]string, map[string][]string, error) {
 	// Handle nil vars map
@@ -511,7 +515,7 @@ func ProcessVars(
 	}
 
 	// Phase 1: Validation and type checking
-	stringVars, arrayVars, err := validateAndClassifyVars(vars, baseExpandedVars, baseExpandedArrays, level)
+	stringVars, arrayVars, err := validateAndClassifyVars(vars, baseExpandedVars, baseExpandedArrays, envImportVars, level)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -541,6 +545,7 @@ func validateAndClassifyVars(
 	vars map[string]interface{},
 	baseExpandedVars map[string]string,
 	baseExpandedArrays map[string][]string,
+	envImportVars map[string]string,
 	level string,
 ) (map[string]string, map[string][]interface{}, error) {
 	stringVars := make(map[string]string)
@@ -550,6 +555,18 @@ func validateAndClassifyVars(
 		// Validate variable name
 		if err := validateVariableName(varName, level, "vars"); err != nil {
 			return nil, nil, err
+		}
+
+		// Check for conflict with env_import variables
+		if envImportVars != nil {
+			if _, existsInEnvImport := envImportVars[varName]; existsInEnvImport {
+				return nil, nil, &ErrEnvImportVarsConflictDetail{
+					Level:          level,
+					VariableName:   varName,
+					EnvImportLevel: level, // Same level conflict for now
+					VarsLevel:      level,
+				}
+			}
 		}
 
 		// Determine the type and validate
@@ -806,18 +823,20 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	autoVars := variable.GenerateGlobalAutoVars(nil) // nil uses time.Now
 	runtime.ExpandedVars = autoVars
 
-	// 1. Process FromEnv
-	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
+	// 1. Process EnvImport
+	envImportVars, err := ProcessEnvImport(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
 	if err != nil {
-		return nil, fmt.Errorf("failed to process global from_env: %w", err)
+		return nil, fmt.Errorf("failed to process global env_import: %w", err)
 	}
-	// Merge fromEnvVars into runtime.ExpandedVars (which already contains autoVars)
-	for k, v := range fromEnvVars {
+	// Store env_import variables for conflict detection
+	runtime.EnvImportVars = envImportVars
+	// Merge envImportVars into runtime.ExpandedVars (which already contains autoVars)
+	for k, v := range envImportVars {
 		runtime.ExpandedVars[k] = v
 	}
 
-	// 2. Process Vars
-	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, "global")
+	// 2. Process Vars (pass envImportVars for conflict detection)
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, runtime.EnvImportVars, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global vars: %w", err)
 	}
@@ -966,14 +985,15 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	// Set the inheritance mode immediately after RuntimeGroup creation
 	runtime.EnvAllowlistInheritanceMode = runnertypes.DetermineEnvAllowlistInheritanceMode(spec.EnvAllowed)
 
-	// 1. Inherit global variables
+	// 1. Inherit global variables and env_import tracking
 	if globalRuntime != nil {
 		maps.Copy(runtime.ExpandedVars, globalRuntime.ExpandedVars)
 		maps.Copy(runtime.ExpandedArrayVars, globalRuntime.ExpandedArrayVars)
+		maps.Copy(runtime.EnvImportVars, globalRuntime.EnvImportVars)
 	}
 
-	// 2. Process FromEnv (group-level)
-	// Implement from_env processing with allowlist inheritance: group.EnvAllowed (if non-nil)
+	// 2. Process EnvImport (group-level)
+	// Implement env_import processing with allowlist inheritance: group.EnvAllowed (if non-nil)
 	// overrides global; nil means inherit global allowlist; empty slice means reject all.
 	if len(spec.EnvImport) > 0 {
 		// Use cached system environment from globalRuntime
@@ -986,17 +1006,19 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 
 		effectiveAllowlist := determineEffectiveEnvAllowlist(spec.EnvAllowed, globalAllowlist)
 
-		fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("group[%s]", spec.Name))
+		envImportVars, err := ProcessEnvImport(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("group[%s]", spec.Name))
 		if err != nil {
-			return nil, fmt.Errorf("failed to process group[%s] from_env: %w", spec.Name, err)
+			return nil, fmt.Errorf("failed to process group[%s] env_import: %w", spec.Name, err)
 		}
 
-		// Merge from_env variables into expanded vars (group-level from_env may override inherited vars)
-		maps.Copy(runtime.ExpandedVars, fromEnvVars)
+		// Add group-level env_import variables to tracking map
+		maps.Copy(runtime.EnvImportVars, envImportVars)
+		// Merge env_import variables into expanded vars (group-level env_import may override inherited vars)
+		maps.Copy(runtime.ExpandedVars, envImportVars)
 	}
 
-	// 3. Process Vars (group-level)
-	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, fmt.Sprintf("group[%s]", spec.Name))
+	// 3. Process Vars (group-level) - pass accumulated env_import vars for conflict detection
+	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, runtime.EnvImportVars, fmt.Sprintf("group[%s]", spec.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to process group[%s] vars: %w", spec.Name, err)
 	}
@@ -1035,20 +1057,158 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	return runtime, nil
 }
 
+// resolveAndPrepareCommandSpec resolves template references in CommandSpec.
+// If a template is referenced, it expands the template into the spec.
+// Otherwise, returns the spec unchanged.
+//
+// Returns the resolved spec (either expanded from template or the input spec unchanged).
+func resolveAndPrepareCommandSpec(
+	spec *runnertypes.CommandSpec,
+	templates map[string]runnertypes.CommandTemplate,
+) (*runnertypes.CommandSpec, error) {
+	if spec.Template == "" {
+		return spec, nil
+	}
+
+	// Note: Command spec exclusivity validation (template vs. cmd/args/env)
+	// is performed during config loading by ValidateCommands(), not here.
+	// The configuration spec is immutable after loading, so runtime
+	// re-validation is unnecessary.
+
+	// Find template
+	template, exists := templates[spec.Template]
+	if !exists {
+		return nil, &ErrTemplateNotFound{
+			CommandName:  spec.Name,
+			TemplateName: spec.Template,
+		}
+	}
+
+	// Expand template to CommandSpec
+	expandedSpec, warnings, err := expandTemplateToSpec(spec, &template, spec.Template)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand template %q for command %q: %w", spec.Template, spec.Name, err)
+	}
+
+	// Log warnings about unused parameters
+	for _, warning := range warnings {
+		slog.Warn("Template parameter warning",
+			slog.String("warning", warning),
+			slog.String("command", spec.Name),
+			slog.String("template", spec.Template))
+	}
+
+	return expandedSpec, nil
+}
+
+// expandCommandEnvImport processes command-level env_import and merges imported variables.
+func expandCommandEnvImport(
+	spec *runnertypes.CommandSpec,
+	runtime *runnertypes.RuntimeCommand,
+	runtimeGroup *runnertypes.RuntimeGroup,
+	globalRuntime *runnertypes.RuntimeGlobal,
+) error {
+	if len(spec.EnvImport) == 0 {
+		return nil
+	}
+
+	var globalAllowlist []string
+	var systemEnv map[string]string
+	if globalRuntime != nil {
+		globalAllowlist = globalRuntime.EnvAllowlist()
+		systemEnv = globalRuntime.SystemEnv
+	}
+
+	var groupAllowlist []string
+	if runtimeGroup != nil && runtimeGroup.Spec != nil {
+		groupAllowlist = runtimeGroup.Spec.EnvAllowed
+	}
+
+	effectiveAllowlist := determineEffectiveEnvAllowlist(groupAllowlist, globalAllowlist)
+
+	envImportVars, err := ProcessEnvImport(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("command[%s]", spec.Name))
+	if err != nil {
+		return fmt.Errorf("failed to process command[%s] env_import: %w", spec.Name, err)
+	}
+
+	// Add command-level env_import variables to tracking map
+	maps.Copy(runtime.EnvImportVars, envImportVars)
+	// Merge command-level env_import into expanded vars (command-level may override group vars)
+	maps.Copy(runtime.ExpandedVars, envImportVars)
+	return nil
+}
+
+// expandCommandVars processes command-level vars and updates runtime variables.
+func expandCommandVars(
+	spec *runnertypes.CommandSpec,
+	runtime *runnertypes.RuntimeCommand,
+) error {
+	expandedVars, expandedArrays, err := ProcessVars(
+		spec.Vars,
+		runtime.ExpandedVars,
+		runtime.ExpandedArrayVars,
+		runtime.EnvImportVars,
+		fmt.Sprintf("command[%s]", spec.Name),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to process command[%s] vars: %w", spec.Name, err)
+	}
+
+	runtime.ExpandedVars = expandedVars
+	runtime.ExpandedArrayVars = expandedArrays
+	return nil
+}
+
+// expandCommandFields expands cmd, args, and env fields using internal variables.
+func expandCommandFields(
+	spec *runnertypes.CommandSpec,
+	runtime *runnertypes.RuntimeCommand,
+) error {
+	level := fmt.Sprintf("command[%s]", spec.Name)
+
+	// Expand Cmd
+	expandedCmd, err := ExpandString(spec.Cmd, runtime.ExpandedVars, level, "cmd")
+	if err != nil {
+		return err
+	}
+	runtime.ExpandedCmd = expandedCmd
+
+	// Expand Args
+	runtime.ExpandedArgs = make([]string, len(spec.Args))
+	for i, arg := range spec.Args {
+		expandedArg, err := ExpandString(arg, runtime.ExpandedVars, level, fmt.Sprintf("args[%d]", i))
+		if err != nil {
+			return err
+		}
+		runtime.ExpandedArgs[i] = expandedArg
+	}
+
+	// Expand Env
+	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, level)
+	if err != nil {
+		return fmt.Errorf("failed to process command[%s] env: %w", spec.Name, err)
+	}
+	runtime.ExpandedEnv = expandedEnv
+
+	return nil
+}
+
 // ExpandCommand expands a CommandSpec into a RuntimeCommand.
 //
 // This function processes:
-// 1. Inherits group variables
-// 2. FromEnv: Imports system environment variables as internal variables (command-level) (NOT IMPLEMENTED YET)
-// 3. Vars: Defines internal variables (command-level)
-// 4. Cmd: Expands command path using internal variables
-// 5. Args: Expands command arguments using internal variables
-// 6. Env: Expands environment variables using internal variables
+// 1. Template resolution (if template is referenced)
+// 2. Inherit group variables
+// 3. FromEnv: Imports system environment variables as internal variables (command-level)
+// 4. Vars: Defines internal variables (command-level)
+// 5. Cmd: Expands command path using internal variables
+// 6. Args: Expands command arguments using internal variables
+// 7. Env: Expands environment variables using internal variables
 //
 // Parameters:
 //   - spec: The command configuration spec to expand
-//   - groupVars: Group-level internal variables (from RuntimeGroup.ExpandedVars)
-//   - groupName: Group name for error messages (currently unused as spec.Name is used directly)
+//   - templates: Map of available command templates
+//   - runtimeGroup: The runtime group configuration
+//   - globalRuntime: The global runtime configuration
 //   - globalTimeout: Global timeout setting for timeout resolution hierarchy
 //   - globalOutputSizeLimit: Global output size limit setting for output size limit resolution
 //
@@ -1060,81 +1220,164 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 //   - EffectiveTimeout is set by NewRuntimeCommand using timeout resolution hierarchy.
 //   - EffectiveOutputSizeLimit is set by NewRuntimeCommand using output size limit resolution.
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
-func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
-	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout and output size limit
-	groupName := runnertypes.ExtractGroupName(runtimeGroup)
-	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout, globalOutputSizeLimit, groupName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", spec.Name, err)
-	}
-
-	// 1. Inherit group variables
-	if runtimeGroup != nil {
-		maps.Copy(runtime.ExpandedVars, runtimeGroup.ExpandedVars)
-		maps.Copy(runtime.ExpandedArrayVars, runtimeGroup.ExpandedArrayVars)
-	}
-
-	// 2. Process FromEnv (command-level)
-	// Command-level from_env uses group's allowlist (if any) with fallback to global allowlist
-	if len(spec.EnvImport) > 0 {
-		// Use cached system environment from globalRuntime
-		var globalAllowlist []string
-		var systemEnv map[string]string
-		if globalRuntime != nil {
-			globalAllowlist = globalRuntime.EnvAllowlist()
-			systemEnv = globalRuntime.SystemEnv
-		}
-
-		var groupAllowlist []string
-		if runtimeGroup != nil && runtimeGroup.Spec != nil {
-			groupAllowlist = runtimeGroup.Spec.EnvAllowed
-		}
-
-		effectiveAllowlist := determineEffectiveEnvAllowlist(groupAllowlist, globalAllowlist)
-
-		fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("command[%s]", spec.Name))
-		if err != nil {
-			return nil, fmt.Errorf("failed to process command[%s] from_env: %w", spec.Name, err)
-		}
-
-		// Merge command-level from_env into expanded vars (command-level may override group vars)
-		maps.Copy(runtime.ExpandedVars, fromEnvVars)
-	}
-
-	// 3. Process Vars (command-level)
-	expandedVars, expandedArrays, err := ProcessVars(spec.Vars, runtime.ExpandedVars, runtime.ExpandedArrayVars, fmt.Sprintf("command[%s]", spec.Name))
-	if err != nil {
-		return nil, fmt.Errorf("failed to process command[%s] vars: %w", spec.Name, err)
-	}
-	runtime.ExpandedVars = expandedVars
-	runtime.ExpandedArrayVars = expandedArrays
-
-	level := fmt.Sprintf("command[%s]", spec.Name)
-
-	// 4. Expand Cmd
-	expandedCmd, err := ExpandString(spec.Cmd, runtime.ExpandedVars, level, "cmd")
+func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertypes.CommandTemplate, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
+	// 0. Resolve template if present
+	workingSpec, err := resolveAndPrepareCommandSpec(spec, templates)
 	if err != nil {
 		return nil, err
 	}
-	runtime.ExpandedCmd = expandedCmd
 
-	// 5. Expand Args
-	runtime.ExpandedArgs = make([]string, len(spec.Args))
-	for i, arg := range spec.Args {
-		expandedArg, err := ExpandString(arg, runtime.ExpandedVars, level, fmt.Sprintf("args[%d]", i))
-		if err != nil {
-			return nil, err
-		}
-		runtime.ExpandedArgs[i] = expandedArg
-	}
-
-	// 6. Expand Env
-	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, level)
+	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout and output size limit
+	groupName := runnertypes.ExtractGroupName(runtimeGroup)
+	runtime, err := runnertypes.NewRuntimeCommand(workingSpec, globalTimeout, globalOutputSizeLimit, groupName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to process command[%s] env: %w", spec.Name, err)
+		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", workingSpec.Name, err)
 	}
-	runtime.ExpandedEnv = expandedEnv
+
+	// 1. Inherit group variables and env_import tracking
+	if runtimeGroup != nil {
+		maps.Copy(runtime.ExpandedVars, runtimeGroup.ExpandedVars)
+		maps.Copy(runtime.ExpandedArrayVars, runtimeGroup.ExpandedArrayVars)
+		maps.Copy(runtime.EnvImportVars, runtimeGroup.EnvImportVars)
+	}
+
+	// 2. Process EnvImport (command-level)
+	if err := expandCommandEnvImport(workingSpec, runtime, runtimeGroup, globalRuntime); err != nil {
+		return nil, err
+	}
+
+	// 3. Process Vars (command-level) - pass accumulated env_import vars for conflict detection
+	if err := expandCommandVars(workingSpec, runtime); err != nil {
+		return nil, err
+	}
+
+	// 4-6. Expand Cmd, Args, and Env fields
+	if err := expandCommandFields(workingSpec, runtime); err != nil {
+		return nil, err
+	}
 
 	// Note: EffectiveWorkDir and EffectiveTimeout are not set here
 	return runtime, nil
+}
+
+// expandTemplateToSpec expands a template into a CommandSpec by substituting parameters.
+// It returns the expanded CommandSpec and a list of warnings for unused parameters.
+// The expanded spec will have Template field cleared and Cmd/Args/Env/WorkDir fields populated.
+//
+// Execution settings (Timeout, OutputSizeLimit, RiskLevel) follow a command-override pattern:
+//   - If the command explicitly sets a value, that value is used
+//   - Otherwise, the template's value is used as a fallback
+//
+// This allows templates to provide sensible defaults while permitting per-command customization.
+//
+//nolint:gocyclo // Template expansion requires sequential validation and transformation steps
+func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, templateName string) (*runnertypes.CommandSpec, []string, error) {
+	var warnings []string
+
+	// Collect used parameters from template
+	usedParams, err := CollectUsedParams(template)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to collect used params from template %q: %w", templateName, err)
+	}
+
+	// Check for unused parameters
+	for paramName := range cmdSpec.Params {
+		if _, used := usedParams[paramName]; !used {
+			warnings = append(warnings, fmt.Sprintf("unused parameter %q in template %q for command %q",
+				paramName, templateName, cmdSpec.Name))
+		}
+	}
+
+	// Expand cmd
+	expandedCmd, err := expandSingleArg(template.Cmd, cmdSpec.Params, templateName, "cmd")
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template cmd: %w", err)
+	}
+
+	// Validate cmd resolves to exactly one value
+	if len(expandedCmd) != 1 {
+		return nil, warnings, &ErrTemplateCmdNotSingleValue{
+			TemplateName: templateName,
+			ResultCount:  len(expandedCmd),
+		}
+	}
+	if expandedCmd[0] == "" {
+		return nil, warnings, &ErrTemplateCmdNotSingleValue{
+			TemplateName: templateName,
+			ResultCount:  0,
+		}
+	}
+
+	// Expand args
+	expandedArgs, err := ExpandTemplateArgs(template.Args, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template args: %w", err)
+	}
+
+	// Expand env (supports element-level ${@param} expansion)
+	expandedEnv, err := ExpandTemplateEnv(template.Env, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template env: %w", err)
+	}
+
+	// Expand workdir from template
+	var expandedWorkDir string
+	if template.WorkDir != "" {
+		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, workDirKey)
+		if err != nil {
+			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
+		}
+
+		// Note: Array placeholders (${@param}) are rejected at expansion time
+		// by expandArrayPlaceholder, so result will always have 0 or 1 element here
+		if len(result) > 0 {
+			expandedWorkDir = result[0]
+		}
+	}
+
+	// Determine final workdir: command-level overrides template
+	finalWorkDir := cmdSpec.WorkDir
+	if finalWorkDir == "" {
+		finalWorkDir = expandedWorkDir
+	}
+
+	// Create expanded spec
+	expandedSpec := &runnertypes.CommandSpec{
+		Name:        cmdSpec.Name,
+		Description: cmdSpec.Description,
+		Cmd:         expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
+		Args:        expandedArgs,
+		EnvVars:     expandedEnv,
+		WorkDir:     finalWorkDir,
+
+		// Execution settings: prefer command-level, fallback to template
+		// This allows commands to override template defaults
+		Timeout:         cmdSpec.Timeout,
+		OutputSizeLimit: cmdSpec.OutputSizeLimit,
+		RiskLevel:       cmdSpec.RiskLevel,
+
+		// Copy non-template fields from original spec
+		EnvImport:  cmdSpec.EnvImport,
+		Vars:       cmdSpec.Vars,
+		OutputFile: cmdSpec.OutputFile,
+		RunAsUser:  cmdSpec.RunAsUser,
+		RunAsGroup: cmdSpec.RunAsGroup,
+
+		// Template and Params are cleared - no longer needed
+		Template: "",
+		Params:   nil,
+	}
+
+	// Apply template defaults for execution settings only if command didn't set them
+	if expandedSpec.Timeout == nil && template.Timeout != nil {
+		expandedSpec.Timeout = template.Timeout
+	}
+	if expandedSpec.OutputSizeLimit == nil && template.OutputSizeLimit != nil {
+		expandedSpec.OutputSizeLimit = template.OutputSizeLimit
+	}
+	if expandedSpec.RiskLevel == "" && template.RiskLevel != "" {
+		expandedSpec.RiskLevel = template.RiskLevel
+	}
+
+	return expandedSpec, warnings, nil
 }

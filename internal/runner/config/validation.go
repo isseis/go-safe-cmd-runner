@@ -62,7 +62,7 @@ func ValidateGroupNames(cfg *runnertypes.ConfigSpec) error {
 
 // validateVariableName validates a variable name and returns a detailed error
 // if validation fails. This helper function standardizes error handling across
-// ProcessEnv, ProcessFromEnv, and ProcessVars.
+// ProcessEnv, ProcessEnvImport, and ProcessVars.
 //
 // The function performs two checks:
 // 1. POSIX compliance using security.ValidateVariableName (empty name, pattern matching)
@@ -71,7 +71,7 @@ func ValidateGroupNames(cfg *runnertypes.ConfigSpec) error {
 // Parameters:
 //   - varName: The variable name to validate
 //   - level: The configuration level (e.g., "global", "group:mygroup", "cmd:mycmd")
-//   - field: The field name where the variable appears (e.g., "env", "from_env", "vars")
+//   - field: The field name where the variable appears (e.g., "env", "env_import", "vars")
 //
 // Returns:
 //   - nil if valid
@@ -103,7 +103,7 @@ func validateVariableName(varName, level, field string) error {
 }
 
 // ValidateTimeouts validates that all timeout values in the configuration are non-negative.
-// It checks both global timeout and command-level timeouts.
+// It checks global timeout, template timeouts, and command-level timeouts.
 // Returns an aggregated error containing all negative timeout violations found.
 func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
 	var errors []string
@@ -111,6 +111,14 @@ func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
 	// Check global timeout
 	if cfg.Global.Timeout != nil && *cfg.Global.Timeout < 0 {
 		errors = append(errors, fmt.Sprintf("global timeout got %d", *cfg.Global.Timeout))
+	}
+
+	// Check template timeouts
+	for templateName, template := range cfg.CommandTemplates {
+		if template.Timeout != nil && *template.Timeout < 0 {
+			errors = append(errors, fmt.Sprintf("template '%s' timeout got %d",
+				templateName, *template.Timeout))
+		}
 	}
 
 	// Check command-level timeouts
@@ -125,6 +133,29 @@ func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
 
 	if len(errors) > 0 {
 		return fmt.Errorf("%w: %s", ErrNegativeTimeout, strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+// ValidateCommands validates all commands in the configuration.
+// It checks for:
+// - Command spec exclusivity (template vs. cmd/args/env fields)
+// - Missing required fields
+//
+// This function is called during configuration loading to ensure early validation.
+func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
+	if cfg == nil {
+		return ErrNilConfig
+	}
+
+	for groupIdx, group := range cfg.Groups {
+		for cmdIdx, cmd := range group.Commands {
+			// Validate command spec exclusivity
+			if err := ValidateCommandSpecExclusivity(group.Name, cmdIdx, &cmd); err != nil {
+				return fmt.Errorf("group[%d] (%s): %w", groupIdx, group.Name, err)
+			}
+		}
 	}
 
 	return nil
