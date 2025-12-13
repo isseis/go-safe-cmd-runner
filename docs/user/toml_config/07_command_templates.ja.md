@@ -543,6 +543,7 @@ name = "cleanup"
 template = "restic_forget"
 params.keep_daily = "14"
 params.keep_weekly = "8"
+params.keep_monthly = "12"
 
 # グループ2: 一時データ（静音、短期保存）
 [[groups]]
@@ -562,6 +563,7 @@ name = "cleanup"
 template = "restic_forget"
 params.keep_daily = "3"
 params.keep_weekly = "1"
+params.keep_monthly = "0"
 ```
 
 ### 11.8.2 データベース操作の共通化
@@ -577,7 +579,7 @@ risk_level = "medium"
 
 [command_templates.pg_restore]
 cmd = "/usr/bin/pg_restore"
-args = ["${?verbose}", "-d", "${database}", "${input_file}"]
+args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "${input_file}"]
 timeout = 3600
 risk_level = "high"
 
@@ -591,6 +593,7 @@ backup_dir = "/var/backups/postgres"
 name = "backup_main_db"
 template = "pg_dump"
 params.verbose = "--verbose"
+params.db_user = "postgres"
 params.database = "main_production"
 params.output_file = "%{backup_dir}/main_db.dump"
 
@@ -598,6 +601,7 @@ params.output_file = "%{backup_dir}/main_db.dump"
 name = "backup_logs_db"
 template = "pg_dump"
 params.verbose = ""  # 静音モード
+params.db_user = "postgres"
 params.database = "logs"
 params.output_file = "%{backup_dir}/logs_db.dump"
 ```
