@@ -944,8 +944,10 @@ name = "app_tasks"
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
-args = ["--config", "${APP_CONFIG_DIR}/config.yaml"]
-env_vars = ["APP_CONFIG_DIR=/etc/myapp"]
+args = ["--config", "%{APP_CONFIG_DIR}/config.yaml"]
+
+[groups.commands.vars]
+APP_CONFIG_DIR = "/etc/myapp"
 ```
 
 #### 例3: 空のリスト(全て拒否)

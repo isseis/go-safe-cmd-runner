@@ -973,8 +973,8 @@ my-var = "value"            # エラー: ハイフン使用不可
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
-args = ["Value: %{UNDEFINED}"]
-# UNDEFINED が vars に定義されていない → エラー
+args = ["Value: %{undefined}"]
+# undefined が vars に定義されていない → エラー
 ```
 
 **解決方法**: 必要な変数を `vars` または `env_import` で定義する

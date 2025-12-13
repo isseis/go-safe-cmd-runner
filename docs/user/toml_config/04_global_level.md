@@ -910,8 +910,10 @@ name = "app_tasks"
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
-args = ["--config", "%{APP_CONFIG_DIR}/config.yaml"]
-env_vars = ["APP_CONFIG_DIR=/etc/myapp"]
+args = ["--config", "%{app_config_dir}/config.yaml"]
+
+[groups.commands.vars]
+app_config_dir = "/etc/myapp"
 ```
 
 #### Example 3: Empty List (Deny All)

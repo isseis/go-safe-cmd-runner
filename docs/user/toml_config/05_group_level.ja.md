@@ -644,8 +644,11 @@ env_vars = [
 [[groups.commands]]
 name = "connect"
 cmd = "/usr/bin/psql"
-args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
-# DB_HOST と DB_PORT は Group.env_vars から取得
+args = ["-h", "%{db_host}", "-p", "%{db_port}"]
+
+[groups.commands.vars]
+db_host = "localhost"
+db_port = "5432"
 ```
 
 ##### 例2: グローバル設定の上書き
@@ -669,8 +672,10 @@ env_vars = [
 [[groups.commands]]
 name = "run_dev"
 cmd = "/opt/app/bin/app"
-args = ["--log-level", "${LOG_LEVEL}"]
-# LOG_LEVEL=debug が使用される
+args = ["--log-level", "%{log_level}"]
+
+[groups.commands.vars]
+log_level = "debug"
 ```
 
 ##### 例3: グループ内の変数参照
@@ -691,8 +696,13 @@ env_vars = [
 
 [[groups.commands]]
 name = "start_server"
-cmd = "${WEB_DIR}/server"
-args = ["--static", "${STATIC_DIR}", "--upload", "${UPLOAD_DIR}"]
+cmd = "%{web_dir}/server"
+args = ["--static", "%{static_dir}", "--upload", "%{upload_dir}"]
+
+[groups.commands.vars]
+web_dir = "%{app_root}/web"
+static_dir = "%{web_dir}/static"
+upload_dir = "%{web_dir}/uploads"
 ```
 
 #### 優先順位
@@ -789,16 +799,19 @@ env_vars = ["VAR=value1"]
 [[groups.commands]]
 name = "cmd1"
 cmd = "/bin/echo"
-args = ["${VAR}"]  # value1
+args = ["%{VAR}"]
+
+[groups.commands.vars]
+VAR = "value1"
 
 [[groups]]
 name = "group2"
-# env_vars で VAR を定義していない
+# vars で VAR を定義していない
 
 [[groups.commands]]
 name = "cmd2"
 cmd = "/bin/echo"
-args = ["${VAR}"]  # エラー: VAR は未定義
+args = ["%{VAR}"]  # エラー: VAR は未定義
 ```
 
 #### ベストプラクティス

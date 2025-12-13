@@ -118,11 +118,11 @@ env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # CUSTOM_VAR を追加
 # env_allowed に追加不要
 [[groups.commands]]
 name = "custom_command"
-cmd = "%{CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = []
 
 [groups.commands.vars]
-CUSTOM_TOOL = "/opt/tools/mytool"  # vars で内部変数として定義
+custom_tool = "/opt/tools/mytool"  # vars で内部変数として定義
 ```
 
 ### 11.1.5 変数展開エラー
@@ -144,20 +144,20 @@ Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 **未定義変数の場合**:
 
 ```toml
-# 誤り: TOOL_DIR が定義されていない
+# 誤り: tool_dir が定義されていない
 [[groups.commands]]
 name = "run_tool"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
 
 # 正しい: vars で定義
 [[groups.commands]]
 name = "run_tool"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
 
 [groups.commands.vars]
-TOOL_DIR = "/opt/tools"
+tool_dir = "/opt/tools"
 ```
 
 **循環参照の場合**:
@@ -378,10 +378,10 @@ go-safe-cmd-runner -file minimal.toml
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
-args = ["Value: %{VAR}"]
+args = ["Value: %{var}"]
 
 [groups.commands.vars]
-VAR = "hello"
+var = "hello"
 ```
 
 ```bash
@@ -577,17 +577,17 @@ args = ["Processing..."]
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["%{MY_HOME}"]
+args = ["%{my_home}"]
 env_vars = ["MY_HOME=/home/user"]  # これは子プロセスの環境変数のみ
 
 # 正しい: vars で内部変数を定義
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["%{MY_HOME}"]
+args = ["%{my_home}"]
 
 [groups.commands.vars]
-MY_HOME = "/home/user"
+my_home = "/home/user"
 ```
 
 ### Q2: コマンドが見つからない

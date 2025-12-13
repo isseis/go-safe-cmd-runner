@@ -135,9 +135,11 @@ args = ["-la"]
 ```toml
 [[groups.commands]]
 name = "custom_tool"
-cmd = "%{TOOL_DIR}/my-script"
+cmd = "%{tool_dir}/my-script"
 args = []
-env_vars = ["TOOL_DIR=/opt/tools"]
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"
 # Actually executes /opt/tools/my-script
 ```
 
@@ -222,11 +224,11 @@ args = []  # Or omit
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/tar"
-args = ["-czf", "%{BACKUP_FILE}", "%{SOURCE_DIR}"]
-env_vars = [
-    "BACKUP_FILE=/backups/backup.tar.gz",
-    "SOURCE_DIR=/data",
-]
+args = ["-czf", "%{backup_file}", "%{source_dir}"]
+
+[groups.commands.vars]
+backup_file = "/backups/backup.tar.gz"
+source_dir = "/data"
 ```
 
 #### Important Notes
@@ -531,7 +533,7 @@ If a variable specified in `env_import` does not exist in the system environment
 name = "example"
 cmd = "/bin/echo"
 env_import = ["NONEXISTENT_VAR"]
-args = ["Value: %{NONEXISTENT_VAR}"]  # Output: "Value: "
+args = ["Value: %{nonexistent_var}"]  # Output: "Value: "
 ```
 
 ### 6.2.3 env_vars - Process Environment Variables

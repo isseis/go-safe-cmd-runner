@@ -158,19 +158,19 @@ risk_level = "medium"
 version = "1.0"
 
 [global]
-env_allowed = ["PATH", "HOME", "APP_DIR", "ENV_TYPE"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "deployment"
 
 [[groups.commands]]
 name = "deploy"
-cmd = "${APP_DIR}/bin/deploy"
-args = ["--env", "${ENV_TYPE}", "--config", "${APP_DIR}/config/${ENV_TYPE}.yml"]
-env_vars = [
-    "APP_DIR=/opt/myapp",
-    "ENV_TYPE=production",
-]
+cmd = "%{app_dir}/bin/deploy"
+args = ["--env", "%{env_type}", "--config", "%{app_dir}/config/%{env_type}.yml"]
+
+[groups.commands.vars]
+app_dir = "/opt/myapp"
+env_type = "production"
 ```
 
 ### B.5 Privilege Management
@@ -230,7 +230,7 @@ output_file = "memory-usage.txt"
 version = "1.0"
 
 [global]
-env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
+env_allowed = ["PATH"]
 
 # Development environment
 [[groups]]
@@ -238,14 +238,14 @@ name = "dev_deploy"
 
 [[groups.commands]]
 name = "run_dev"
-cmd = "${APP_BIN}"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env_vars = [
-    "APP_BIN=/opt/app/bin/server",
-    "CONFIG_DIR=/etc/app",
-    "ENV_TYPE=development",
-    "DB_URL=postgresql://localhost/dev_db",
-]
+cmd = "%{app_bin}"
+args = ["--config", "%{config_dir}/%{env_type}.yml", "--db", "%{db_url}"]
+
+[groups.commands.vars]
+app_bin = "/opt/app/bin/server"
+config_dir = "/etc/app"
+env_type = "development"
+db_url = "postgresql://localhost/dev_db"
 
 # Production environment
 [[groups]]
@@ -253,16 +253,16 @@ name = "prod_deploy"
 
 [[groups.commands]]
 name = "run_prod"
-cmd = "${APP_BIN}"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env_vars = [
-    "APP_BIN=/opt/app/bin/server",
-    "CONFIG_DIR=/etc/app",
-    "ENV_TYPE=production",
-    "DB_URL=postgresql://prod-db/prod_db",
-]
+cmd = "%{app_bin}"
+args = ["--config", "%{config_dir}/%{env_type}.yml", "--db", "%{db_url}"]
 run_as_user = "appuser"
 risk_level = "high"
+
+[groups.commands.vars]
+app_bin = "/opt/app/bin/server"
+config_dir = "/etc/app"
+env_type = "production"
+db_url = "postgresql://prod-db/prod_db"
 ```
 
 ## Appendix C: Glossary

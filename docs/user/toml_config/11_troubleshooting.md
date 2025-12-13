@@ -118,11 +118,11 @@ env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # Add CUSTOM_VAR
 # No need to add to env_allowed
 [[groups.commands]]
 name = "custom_command"
-cmd = "%{CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = []
 
 [groups.commands.vars]
-CUSTOM_TOOL = "/opt/tools/mytool"  # Define as internal variable using vars
+custom_tool = "/opt/tools/mytool"  # Define as internal variable using vars
 ```
 
 ### 11.1.5 Variable Expansion Error
@@ -144,20 +144,20 @@ Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 **For undefined variables**:
 
 ```toml
-# Wrong: TOOL_DIR is not defined
+# Wrong: tool_dir is not defined
 [[groups.commands]]
 name = "run_tool"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
 
 # Correct: Define using vars
 [[groups.commands]]
 name = "run_tool"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
 
 [groups.commands.vars]
-TOOL_DIR = "/opt/tools"
+tool_dir = "/opt/tools"
 ```
 
 **For circular references**:
@@ -378,10 +378,10 @@ go-safe-cmd-runner -file minimal.toml
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
-args = ["Value: %{VAR}"]
+args = ["Value: %{var}"]
 
 [groups.commands.vars]
-VAR = "hello"
+var = "hello"
 ```
 
 ```bash
@@ -577,17 +577,17 @@ args = ["Processing..."]
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["%{MY_HOME}"]
+args = ["%{my_home}"]
 env_vars = ["MY_HOME=/home/user"]  # This only sets child process environment
 
 # Correct: Define internal variable using vars
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["%{MY_HOME}"]
+args = ["%{my_home}"]
 
 [groups.commands.vars]
-MY_HOME = "/home/user"
+my_home = "/home/user"
 ```
 
 ### Q2: Command not found

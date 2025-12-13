@@ -965,10 +965,10 @@ env_allowed = ["PATH", "HOME"]
 [[groups.commands]]
 name = "override_home"
 cmd = "/bin/echo"
-args = ["Home: %{MY_HOME}"]
+args = ["Home: %{my_home}"]
 
 [groups.commands.vars]
-MY_HOME = "/opt/custom-home"  # Internal variable for TOML expansion
+my_home = "/opt/custom-home"  # Internal variable for TOML expansion
 
 # Note: If you want to override the HOME environment variable for the child process:
 # env_vars = ["HOME=/opt/custom-home"]
@@ -985,11 +985,11 @@ env_allowed = ["PATH", "HOME"]
 
 [[groups.commands]]
 name = "custom_var"
-cmd = "%{CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = []
 
 [groups.commands.vars]
-CUSTOM_TOOL = "/opt/tools/mytool"  # Internal variable - no env_allowed check needed
+custom_tool = "/opt/tools/mytool"  # Internal variable - no env_allowed check needed
 ```
 
 ### 8.9.3 Command Path Requirements
@@ -1004,18 +1004,18 @@ For regular commands (without `run_as_user` or `run_as_group`), both local paths
 # Correct: expands to absolute path
 [[groups.commands]]
 name = "valid_absolute"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 
 [groups.commands.vars]
-TOOL_DIR = "/opt/tools"  # Absolute path
+tool_dir = "/opt/tools"  # Absolute path
 
 # Correct: expands to relative path (allowed for regular commands)
 [[groups.commands]]
 name = "valid_relative"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 
 [groups.commands.vars]
-TOOL_DIR = "./tools"  # Relative path - OK for regular commands
+tool_dir = "./tools"  # Relative path - OK for regular commands
 ```
 
 #### Privileged Commands
@@ -1026,20 +1026,20 @@ For privileged commands (with `run_as_user` or `run_as_group`), **only absolute 
 # Correct: expands to absolute path
 [[groups.commands]]
 name = "valid_privileged"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 run_as_user = "appuser"
 
 [groups.commands.vars]
-TOOL_DIR = "/opt/tools"  # Absolute path
+tool_dir = "/opt/tools"  # Absolute path
 
 # Incorrect: expands to relative path (error for privileged commands)
 [[groups.commands]]
 name = "invalid_privileged"
-cmd = "%{TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 run_as_user = "appuser"
 
 [groups.commands.vars]
-TOOL_DIR = "./tools"  # Relative path - error for privileged commands
+tool_dir = "./tools"  # Relative path - error for privileged commands
 ```
 
 Why absolute paths are required for privileged commands:
@@ -1056,13 +1056,13 @@ Define sensitive information (API keys, passwords, etc.) in `vars` to isolate fr
 name = "api_call"
 cmd = "/usr/bin/curl"
 args = [
-    "-H", "Authorization: Bearer %{API_TOKEN}",
-    "%{API_ENDPOINT}/data",
+    "-H", "Authorization: Bearer %{api_token}",
+    "%{api_endpoint}/data",
 ]
 
 [groups.commands.vars]
-API_TOKEN = "sk-1234567890abcdef"
-API_ENDPOINT = "https://api.example.com"
+api_token = "sk-1234567890abcdef"
+api_endpoint = "https://api.example.com"
 
 # Note: Sensitive information is isolated from system environment.
 # If you need to pass these as environment variables to the child process, use env_vars.
@@ -1103,8 +1103,8 @@ If a variable is not defined, an error occurs:
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
-args = ["Value: %{UNDEFINED}"]
-# UNDEFINED is not defined in vars → error
+args = ["Value: %{undefined}"]
+# undefined is not defined in vars → error
 ```
 
 **Solution**: Define all required variables in `vars`
@@ -1113,10 +1113,10 @@ args = ["Value: %{UNDEFINED}"]
 [[groups.commands]]
 name = "defined_var"
 cmd = "/bin/echo"
-args = ["Value: %{MY_VAR}"]
+args = ["Value: %{my_var}"]
 
 [groups.commands.vars]
-MY_VAR = "example"
+my_var = "example"
 ```
 
 ### Circular References
@@ -1127,11 +1127,11 @@ If variables reference each other, an error occurs:
 [[groups.commands]]
 name = "circular"
 cmd = "/bin/echo"
-args = ["%{VAR1}"]
+args = ["%{var1}"]
 
 [groups.commands.vars]
-VAR1 = "%{VAR2}"
-VAR2 = "%{VAR1}"  # Circular reference → error
+var1 = "%{var2}"
+var2 = "%{var1}"  # Circular reference → error
 ```
 
 **Solution**: Organize variable dependencies
@@ -1140,11 +1140,11 @@ VAR2 = "%{VAR1}"  # Circular reference → error
 [[groups.commands]]
 name = "no_circular"
 cmd = "/bin/echo"
-args = ["%{VAR2}"]
+args = ["%{var2}"]
 
 [groups.commands.vars]
-VAR1 = "/path/to/dir"
-VAR2 = "%{VAR1}/subdir"  # VAR1 → VAR2 (no circular reference)
+var1 = "/path/to/dir"
+var2 = "%{var1}/subdir"  # var1 → var2 (no circular reference)
 ```
 
 **Note**: For env_vars, self-references like `PATH=/custom:${PATH}` are not circular references because they reference the existing environment variable value.
@@ -1156,11 +1156,11 @@ If the path after expansion is invalid, an error occurs:
 ```toml
 [[groups.commands]]
 name = "invalid_path"
-cmd = "%{TOOL}"
+cmd = "%{tool}"
 args = []
 
 [groups.commands.vars]
-TOOL = "../tool"  # Relative path may cause errors depending on context
+tool = "../tool"  # Relative path may cause errors depending on context
 ```
 
 **Solution**: Use absolute paths
@@ -1168,11 +1168,11 @@ TOOL = "../tool"  # Relative path may cause errors depending on context
 ```toml
 [[groups.commands]]
 name = "valid_path"
-cmd = "%{TOOL}"
+cmd = "%{tool}"
 args = []
 
 [groups.commands.vars]
-TOOL = "/opt/tools/mytool"  # Absolute path
+tool = "/opt/tools/mytool"  # Absolute path
 ```
 
 ## Comprehensive Practical Example

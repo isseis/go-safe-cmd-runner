@@ -167,12 +167,12 @@ name = "deployment"
 
 [[groups.commands]]
 name = "deploy"
-cmd = "${APP_DIR}/bin/deploy"
-args = ["--env", "${ENV_TYPE}", "--config", "${APP_DIR}/config/${ENV_TYPE}.yml"]
-env_vars = [
-    "APP_DIR=/opt/myapp",
-    "ENV_TYPE=production",
-]
+cmd = "%{app_dir}/bin/deploy"
+args = ["--env", "%{env_type}", "--config", "%{app_dir}/config/%{env_type}.yml"]
+
+[groups.commands.vars]
+app_dir = "/opt/myapp"
+env_type = "production"
 ```
 
 ### B.5 権限管理
@@ -240,14 +240,14 @@ name = "dev_deploy"
 
 [[groups.commands]]
 name = "run_dev"
-cmd = "${APP_BIN}"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env_vars = [
-    "APP_BIN=/opt/app/bin/server",
-    "CONFIG_DIR=/etc/app",
-    "ENV_TYPE=development",
-    "DB_URL=postgresql://localhost/dev_db",
-]
+cmd = "%{app_bin}"
+args = ["--config", "%{config_dir}/%{env_type}.yml", "--db", "%{db_url}"]
+
+[groups.commands.vars]
+app_bin = "/opt/app/bin/server"
+config_dir = "/etc/app"
+env_type = "development"
+db_url = "postgresql://localhost/dev_db"
 
 # 本番環境
 [[groups]]
@@ -255,14 +255,15 @@ name = "prod_deploy"
 
 [[groups.commands]]
 name = "run_prod"
-cmd = "${APP_BIN}"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env_vars = [
-    "APP_BIN=/opt/app/bin/server",
-    "CONFIG_DIR=/etc/app",
-    "ENV_TYPE=production",
-    "DB_URL=postgresql://prod-db/prod_db",
-]
+cmd = "%{app_bin}"
+args = ["--config", "%{config_dir}/%{env_type}.yml", "--db", "%{db_url}"]
+
+[groups.commands.vars]
+app_bin = "/opt/app/bin/server"
+config_dir = "/etc/app"
+env_type = "production"
+db_url = "postgresql://prod-db/prod_db"
+
 run_as_user = "appuser"
 risk_level = "high"
 ```
@@ -329,7 +330,7 @@ risk_level = "high"
 : グループレベルで環境変数許可リストをどのように扱うかを決定するモード。
 
 **ネスト変数 (Nested Variable)**
-: 変数の値に別の変数を含める入れ子構造。例: `VAR1=%{VAR2}/path`
+: 変数の値に別の変数を含める入れ子構造。例: `var1=%{var2}/path`
 
 **エスケープシーケンス (Escape Sequence)**
 : 特殊文字をリテラル(文字通り)として扱うための記法。例: `\%`, `\$`, `\\`
@@ -457,16 +458,16 @@ name = "variable_group"
 
 [[groups.commands]]
 name = "command_with_vars"
-cmd = "${TOOL_DIR}/tool"
+cmd = "%{tool_dir}/tool"
 args = [
-    "--config", "${CONFIG_FILE}",
-    "--output", "${OUTPUT_DIR}/result.txt",
+    "--config", "%{config_file}",
+    "--output", "%{output_dir}/result.txt",
 ]
-env_vars = [
-    "TOOL_DIR=/opt/tools",
-    "CONFIG_FILE=/etc/app/config.yml",
-    "OUTPUT_DIR=/var/output",
-]
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"
+config_file = "/etc/app/config.yml"
+output_dir = "/var/output"
 ```
 
 ### D.4 多環境対応テンプレート
@@ -488,13 +489,13 @@ name = "dev_environment"
 
 [[groups.commands]]
 name = "run_dev"
-cmd = "${APP_BIN}"
-args = ["--env", "${ENV_TYPE}", "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env_vars = [
-    "APP_BIN=/opt/app/bin/server",
-    "ENV_TYPE=development",
-    "CONFIG_DIR=/etc/app/configs",
-]
+cmd = "%{app_bin}"
+args = ["--env", "%{env_type}", "--config", "%{config_dir}/%{env_type}.yml"]
+
+[groups.commands.vars]
+app_bin = "/opt/app/bin/server"
+env_type = "development"
+config_dir = "/etc/app/configs"
 
 # 本番環境
 [[groups]]
@@ -502,13 +503,14 @@ name = "prod_environment"
 
 [[groups.commands]]
 name = "run_prod"
-cmd = "${APP_BIN}"
-args = ["--env", "${ENV_TYPE}", "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env_vars = [
-    "APP_BIN=/opt/app/bin/server",
-    "ENV_TYPE=production",
-    "CONFIG_DIR=/etc/app/configs",
-]
+cmd = "%{app_bin}"
+args = ["--env", "%{env_type}", "--config", "%{config_dir}/%{env_type}.yml"]
+
+[groups.commands.vars]
+app_bin = "/opt/app/bin/server"
+env_type = "production"
+config_dir = "/etc/app/configs"
+
 run_as_user = "appuser"
 risk_level = "high"
 ```
