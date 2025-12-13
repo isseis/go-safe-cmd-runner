@@ -409,12 +409,8 @@ go-safe-cmd-runner -file with-vars.toml
 # デバッグ用コマンド
 [[groups.commands]]
 name = "debug_variables"
-cmd = "/bin/echo"
-args = [
-    "TOOL_DIR=${TOOL_DIR}",
-    "CONFIG=${CONFIG}",
-    "ENV=${ENV_TYPE}",
-]
+cmd = "/usr/bin/env"
+args = []
 env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG=/etc/app/config.yml",
@@ -425,7 +421,11 @@ output_file = "debug-vars.txt"
 
 実行後、`debug-vars.txt` を確認:
 ```
-TOOL_DIR=/opt/tools CONFIG=/etc/app/config.yml ENV=production
+TOOL_DIR=/opt/tools
+CONFIG=/etc/app/config.yml
+ENV_TYPE=production
+PATH=/usr/bin:/bin
+... (その他の環境変数)
 ```
 
 ### 11.3.2 出力キャプチャでの診断

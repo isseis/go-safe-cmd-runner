@@ -409,12 +409,8 @@ Confirm variables are expanded correctly:
 # Debug command
 [[groups.commands]]
 name = "debug_variables"
-cmd = "/bin/echo"
-args = [
-    "TOOL_DIR=${TOOL_DIR}",
-    "CONFIG=${CONFIG}",
-    "ENV=${ENV_TYPE}",
-]
+cmd = "/usr/bin/env"
+args = []
 env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG=/etc/app/config.yml",
@@ -425,7 +421,11 @@ output_file = "debug-vars.txt"
 
 After execution, check `debug-vars.txt`:
 ```
-TOOL_DIR=/opt/tools CONFIG=/etc/app/config.yml ENV=production
+TOOL_DIR=/opt/tools
+CONFIG=/etc/app/config.yml
+ENV_TYPE=production
+PATH=/usr/bin:/bin
+... (other environment variables)
 ```
 
 ### 11.3.2 Diagnosis with Output Capture
