@@ -521,7 +521,7 @@ risk_level = "medium"
 
 [command_templates.restic_forget]
 cmd = "restic"
-args = ["forget", "--prune", "--keep-daily", "${keep_daily}", "--keep-weekly", "${keep_weekly}"]
+args = ["forget", "--prune", "--keep-daily", "${keep_daily}", "--keep-weekly", "${keep_weekly}", "--keep-monthly", "${keep_monthly}"]
 timeout = 1800
 risk_level = "medium"
 
