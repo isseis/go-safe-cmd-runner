@@ -571,7 +571,7 @@ version = "1.0"
 
 [command_templates.pg_dump]
 cmd = "/usr/bin/pg_dump"
-args = ["${?verbose}", "-d", "${database}", "-f", "${output_file}"]
+args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
 timeout = 1800
 risk_level = "medium"
 
