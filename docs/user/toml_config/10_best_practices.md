@@ -1,10 +1,10 @@
-# Chapter 9: Best Practices
+# Chapter 10: Best Practices
 
 This chapter introduces best practices for creating go-safe-cmd-runner configuration files. It provides guidance for creating better configuration files from the perspectives of security, maintainability, and performance.
 
-## 9.1 Security Best Practices
+## 10.1 Security Best Practices
 
-### 9.1.1 Principle of Least Privilege
+### 10.1.1 Principle of Least Privilege
 
 Execute commands with the minimum necessary privileges.
 
@@ -27,7 +27,7 @@ args = ["/var/log/app/app.log"]
 run_as_user = "root"  # Unnecessarily using root privileges
 ```
 
-### 9.1.2 Strict Management of Environment Variables
+### 10.1.2 Strict Management of Environment Variables
 
 Set the environment variable allowlist to the minimum necessary.
 
@@ -51,7 +51,7 @@ env_allowed = [
 ]
 ```
 
-### 9.1.3 Utilizing File Verification
+### 10.1.3 Utilizing File Verification
 
 Always verify important configuration files and libraries. Command executables are automatically verified.
 
@@ -74,7 +74,7 @@ verify_files = [
 # Note: Commands themselves are automatically verified, no need to add them to verify_files
 ```
 
-### 9.1.4 Using Absolute Paths
+### 10.1.4 Using Absolute Paths
 
 Specify commands with absolute paths.
 
@@ -94,7 +94,7 @@ cmd = "tar"  # Unclear which tar will be executed
 args = ["-czf", "backup.tar.gz", "/data"]
 ```
 
-### 9.1.5 Handling Sensitive Information
+### 10.1.5 Handling Sensitive Information
 
 Manage sensitive information with Command.Env and isolate it from the system environment.
 
@@ -123,7 +123,7 @@ env_vars = ["API_TOKEN=%{api_token}"]  # Set as environment variable if needed
 env_allowed = ["PATH", "HOME", "API_TOKEN"]  # Dangerous!
 ```
 
-### 9.1.6 Appropriate Risk Level Settings
+### 10.1.6 Appropriate Risk Level Settings
 
 Set appropriate risk levels according to the nature of the command.
 
@@ -153,9 +153,9 @@ run_as_user = "root"
 risk_level = "high"
 ```
 
-## 9.2 Environment Variable Management Best Practices
+## 10.2 Environment Variable Management Best Practices
 
-### 9.2.1 Appropriate Use of Inheritance Modes
+### 10.2.1 Appropriate Use of Inheritance Modes
 
 Use environment variable inheritance modes according to purpose.
 
@@ -181,7 +181,7 @@ name = "isolated_group"
 env_allowed = []  # Deny all environment variables
 ```
 
-### 9.2.2 Variable Naming Conventions
+### 10.2.2 Variable Naming Conventions
 
 Use consistent naming conventions.
 
@@ -209,7 +209,7 @@ env_vars = [
 ]
 ```
 
-### 9.2.3 Variable Reuse
+### 10.2.3 Variable Reuse
 
 Define common values as variables and reuse them.
 
@@ -234,9 +234,9 @@ args = ["%{config_dest}/app.yml", "%{backup_dir}/app.yml"]
 # config_dest is inherited from global, no need to redefine
 ```
 
-## 9.3 Group Organization Best Practices
+## 10.3 Group Organization Best Practices
 
-### 9.3.1 Logical Grouping
+### 10.3.1 Logical Grouping
 
 Logically group related commands.
 
@@ -265,7 +265,7 @@ name = "group1"
 # Mixed database, file, and network operations
 ```
 
-### 9.3.2 Comprehensive Descriptions
+### 10.3.2 Comprehensive Descriptions
 
 Write clear descriptions for each group and command.
 
@@ -293,9 +293,9 @@ name = "backup"
 description = "Run backup"  # Lacks specificity
 ```
 
-## 9.4 Error Handling Best Practices
+## 10.4 Error Handling Best Practices
 
-### 9.4.1 Appropriate Timeout Settings
+### 10.4.1 Appropriate Timeout Settings
 
 Set appropriate timeouts according to the nature of the command.
 
@@ -324,7 +324,7 @@ args = ["-av", "/source", "/dest"]
 timeout = 7200  # Sufficient time for network transfers
 ```
 
-### 9.4.2 Appropriate Output Size Limits
+### 10.4.2 Appropriate Output Size Limits
 
 Set output size limits according to the amount of data being processed.
 
@@ -340,9 +340,9 @@ output_size_limit = 104857600  # 100MB
 output_size_limit = 1048576  # 1MB
 ```
 
-## 9.5 Maintainability Best Practices
+## 10.5 Maintainability Best Practices
 
-### 9.5.1 Using Comments
+### 10.5.1 Using Comments
 
 Document the intent and precautions in comments.
 
@@ -367,7 +367,7 @@ name = "production_deployment"
 # Use deploy_staging group for staging environment
 ```
 
-### 9.5.2 Configuration Structuring
+### 10.5.2 Configuration Structuring
 
 Structure the configuration logically to improve readability.
 
@@ -406,7 +406,7 @@ name = "verification"
 # ... command definitions
 ```
 
-### 9.5.3 Splitting Configuration Files
+### 10.5.3 Splitting Configuration Files
 
 Consider splitting large configurations into multiple files.
 
@@ -429,9 +429,9 @@ go-safe-cmd-runner -file configs/development.toml
 go-safe-cmd-runner -file configs/production.toml
 ```
 
-## 9.6 Performance Best Practices
+## 10.6 Performance Best Practices
 
-### 9.6.1 Considering Parallel Execution
+### 10.6.1 Considering Parallel Execution
 
 Design independent groups to enable parallel execution.
 
@@ -448,7 +448,7 @@ name = "backup_files"
 # File backup
 ```
 
-### 9.6.2 Optimizing File Verification
+### 10.6.2 Optimizing File Verification
 
 Specify only files that need verification.
 
@@ -471,7 +471,7 @@ verify_files = [
 ]
 ```
 
-### 9.6.3 Appropriate Use of Output Capture
+### 10.6.3 Appropriate Use of Output Capture
 
 Capture output only when necessary.
 
@@ -499,9 +499,9 @@ args = ["Processing..."]
 output_file = "echo-output.txt"  # Unnecessary capture (waste of resources)
 ```
 
-## 9.7 Testing and Validation
+## 10.7 Testing and Validation
 
-### 9.7.1 Incremental Testing
+### 10.7.1 Incremental Testing
 
 Test configuration files incrementally.
 
@@ -538,7 +538,7 @@ run_as_user = "appuser"
 risk_level = "high"
 ```
 
-### 9.7.2 Utilizing Dry Run Feature
+### 10.7.2 Utilizing Dry Run Feature
 
 Verify behavior with dry run before production execution.
 
@@ -550,9 +550,9 @@ go-safe-cmd-runner --dry-run --file config.toml
 go-safe-cmd-runner -file config.toml
 ```
 
-## 9.8 Documentation
+## 10.8 Documentation
 
-### 9.8.1 Documenting Configuration Files
+### 10.8.1 Documenting Configuration Files
 
 Create a README along with the configuration file.
 
@@ -585,7 +585,7 @@ Set the following environment variables:
 - Verify authentication credentials are correct
 ```
 
-### 9.8.2 Recording Change History
+### 10.8.2 Recording Change History
 
 Record configuration file change history in comments.
 

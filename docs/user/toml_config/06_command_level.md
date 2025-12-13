@@ -4,6 +4,11 @@
 
 The `[[groups.commands]]` section defines the commands to be actually executed. Each group requires one or more commands. Commands are executed in the order they are defined within the group.
 
+There are two ways to define commands:
+
+1. **Direct Definition**: Directly specify `cmd` and `args` for the command
+2. **Using Template**: Reference a pre-defined template (detailed in [Chapter 7](07_command_templates.md))
+
 ## 6.1 Basic Command Settings
 
 ### 6.1.1 name - Command Name
@@ -103,7 +108,7 @@ cmd = "command_path"
 | **Required/Optional** | Required |
 | **Configurable Level** | Command only |
 | **Valid Values** | Absolute path, or command name on PATH |
-| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 7) |
+| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 8) |
 
 #### Configuration Examples
 
@@ -130,9 +135,11 @@ args = ["-la"]
 ```toml
 [[groups.commands]]
 name = "custom_tool"
-cmd = "%{TOOL_DIR}/my-script"
+cmd = "%{tool_dir}/my-script"
 args = []
-env_vars = ["TOOL_DIR=/opt/tools"]
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"
 # Actually executes /opt/tools/my-script
 ```
 
@@ -180,7 +187,7 @@ args = ["arg1", "arg2", ...]
 | **Configurable Level** | Command only |
 | **Default Value** | [] (no arguments) |
 | **Valid Values** | List of any strings |
-| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 7) |
+| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 8) |
 
 #### Configuration Examples
 
@@ -217,11 +224,11 @@ args = []  # Or omit
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/tar"
-args = ["-czf", "%{BACKUP_FILE}", "%{SOURCE_DIR}"]
-env_vars = [
-    "BACKUP_FILE=/backups/backup.tar.gz",
-    "SOURCE_DIR=/data",
-]
+args = ["-czf", "%{backup_file}", "%{source_dir}"]
+
+[groups.commands.vars]
+backup_file = "/backups/backup.tar.gz"
+source_dir = "/data"
 ```
 
 #### Important Notes
@@ -526,7 +533,7 @@ If a variable specified in `env_import` does not exist in the system environment
 name = "example"
 cmd = "/bin/echo"
 env_import = ["NONEXISTENT_VAR"]
-args = ["Value: %{NONEXISTENT_VAR}"]  # Output: "Value: "
+args = ["Value: %{nonexistent_var}"]  # Output: "Value: "
 ```
 
 ### 6.2.3 env_vars - Process Environment Variables
@@ -1355,6 +1362,118 @@ timeout = 60
 risk_level = "low"
 ```
 
+## 6.7 Defining Commands Using Templates
+
+Instead of defining commands directly, you can also reference pre-defined templates. Using templates allows you to manage common command definitions in one place and reuse them across multiple groups.
+
+### 6.7.1 template - Template Reference
+
+#### Overview
+
+References a pre-defined command template.
+
+#### Syntax
+
+```toml
+[[groups.commands]]
+name = "command_name"
+template = "template_name"
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Optional (exclusive with `cmd`) |
+| **Configurable Level** | Command only |
+| **Valid Values** | Name of a defined template |
+
+#### Exclusive Fields
+
+When `template` is specified, the following fields cannot be specified:
+
+- `cmd`, `args`, `env_vars`, `workdir`, `timeout`, `run_as_user`, `run_as_group`, `risk_level`, `output_file`
+
+These fields should be defined in the template.
+
+#### Configuration Example
+
+```toml
+# Template definition
+[command_templates.disk_check]
+cmd = "/bin/df"
+args = ["-h"]
+timeout = 30
+
+# Using the template
+[[groups.commands]]
+name = "check_disk"
+template = "disk_check"
+```
+
+### 6.7.2 params - Template Parameters
+
+#### Overview
+
+Specifies parameters to pass to the template. The template's `${param}`, `${?param}`, `${@list}` are replaced with these values.
+
+#### Syntax
+
+```toml
+[[groups.commands]]
+name = "command_name"
+template = "template_name"
+params.<parameter_name> = "value"
+params.<array_parameter_name> = ["value1", "value2"]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Table (with string or string array values) |
+| **Required/Optional** | Depends on template definition |
+| **Configurable Level** | Command only (only when used with `template`) |
+
+#### Configuration Example
+
+```toml
+# Template definition
+[command_templates.backup]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}"]
+
+# Using the template with parameters
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+params.flags = ["-v", "--no-cache"]
+params.path = "/data/important"
+# Result: args = ["-v", "--no-cache", "backup", "/data/important"]
+```
+
+#### Combining with Variables
+
+Variable references (`%{...}`) can be included in `params` values:
+
+```toml
+[[groups]]
+name = "backup_group"
+
+[groups.vars]
+backup_root = "/data/backups"
+
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+params.flags = []
+params.path = "%{backup_root}/daily"
+# Result: args = ["backup", "/data/backups/daily"]
+```
+
+> **For details**: For more information on the template feature (types of parameter expansion, escaping, best practices, etc.), refer to [Chapter 7: Command Templates](07_command_templates.md).
+
 ## Next Steps
 
-The next chapter will provide detailed explanations of variable expansion functionality. You will learn how to perform dynamic command construction using `%{VAR}` format variables.
+The next chapter will provide detailed explanations of command templates. You will learn how to eliminate duplication by defining reusable command templates.

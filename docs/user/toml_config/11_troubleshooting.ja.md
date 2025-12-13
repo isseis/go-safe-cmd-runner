@@ -1,10 +1,10 @@
-# 第10章: トラブルシューティング
+# 第11章: トラブルシューティング
 
 本章では、設定ファイル作成時によくある問題とその解決方法を紹介します。エラーメッセージの読み方や、デバッグのテクニックを学びましょう。
 
-## 10.1 よくあるエラーと対処法
+## 11.1 よくあるエラーと対処法
 
-### 10.1.1 設定ファイルの読み込みエラー
+### 11.1.1 設定ファイルの読み込みエラー
 
 #### エラー例
 
@@ -32,7 +32,7 @@ name = "unclosed string
 name = "closed string"
 ```
 
-### 10.1.2 バージョン指定エラー
+### 11.1.2 バージョン指定エラー
 
 #### エラー例
 
@@ -54,7 +54,7 @@ version = "2.0"
 version = "1.0"
 ```
 
-### 10.1.3 必須フィールドの欠落
+### 11.1.3 必須フィールドの欠落
 
 #### エラー例
 
@@ -91,7 +91,7 @@ cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
 ```
 
-### 10.1.4 環境変数の許可エラー
+### 11.1.4 環境変数の許可エラー
 
 #### エラー例
 
@@ -112,18 +112,20 @@ Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowed
 env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # CUSTOM_VAR を追加
 ```
 
-**方法2**: Command.Env で定義(推奨)
+**方法2**: vars で内部変数として定義(推奨)
 
 ```toml
 # env_allowed に追加不要
 [[groups.commands]]
 name = "custom_command"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = []
-env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Command.Env で定義
+
+[groups.commands.vars]
+custom_tool = "/opt/tools/mytool"  # vars で内部変数として定義
 ```
 
-### 10.1.5 変数展開エラー
+### 11.1.5 変数展開エラー
 
 #### エラー例
 
@@ -142,18 +144,20 @@ Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 **未定義変数の場合**:
 
 ```toml
-# 誤り: TOOL_DIR が定義されていない
+# 誤り: tool_dir が定義されていない
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
 
-# 正しい: env_vars で定義
+# 正しい: vars で定義
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
-env_vars = ["TOOL_DIR=/opt/tools"]
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"
 ```
 
 **循環参照の場合**:
@@ -172,7 +176,7 @@ env_vars = [
 ]
 ```
 
-### 10.1.6 ファイル検証エラー
+### 11.1.6 ファイル検証エラー
 
 #### エラー例
 
@@ -202,7 +206,7 @@ record /usr/bin/tool /opt/app/script.sh
 record /usr/bin/tool
 ```
 
-### 10.1.7 コマンドパスのエラー
+### 11.1.7 コマンドパスのエラー
 
 #### エラー例
 
@@ -240,7 +244,7 @@ name = "run"
 cmd = "/usr/bin/existing-command"
 ```
 
-### 10.1.8 タイムアウトエラー
+### 11.1.8 タイムアウトエラー
 
 #### エラー例
 
@@ -267,7 +271,7 @@ args = []
 timeout = 3600  # このコマンドのみ 1時間
 ```
 
-### 10.1.9 権限エラー
+### 11.1.9 権限エラー
 
 #### エラー例
 
@@ -306,7 +310,7 @@ sudo chown user:group /var/secure/data
 sudo go-safe-cmd-runner -file config.toml
 ```
 
-### 10.1.10 リスクレベル超過エラー
+### 11.1.10 リスクレベル超過エラー
 
 #### エラー例
 
@@ -336,9 +340,9 @@ args = ["/tmp/data/specific-file.txt"]  # -rf を削除
 risk_level = "low"
 ```
 
-## 10.2 設定検証方法
+## 11.2 設定検証方法
 
-### 10.2.1 文法チェック
+### 11.2.1 文法チェック
 
 設定ファイルの文法を検証:
 
@@ -347,7 +351,7 @@ risk_level = "low"
 go-safe-cmd-runner --dry-run --file config.toml
 ```
 
-### 10.2.2 段階的な検証
+### 11.2.2 段階的な検証
 
 複雑な設定は段階的に検証:
 
@@ -374,8 +378,10 @@ go-safe-cmd-runner -file minimal.toml
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
-args = ["Value: ${VAR}"]
-env_vars = ["VAR=hello"]
+args = ["Value: %{var}"]
+
+[groups.commands.vars]
+var = "hello"
 ```
 
 ```bash
@@ -383,7 +389,7 @@ env_vars = ["VAR=hello"]
 go-safe-cmd-runner -file with-vars.toml
 ```
 
-### 10.2.3 ログレベルの活用
+### 11.2.3 ログレベルの活用
 
 デバッグ時は詳細なログを有効化: `-log-level debug`
 
@@ -399,9 +405,9 @@ go-safe-cmd-runner -file with-vars.toml
 [INFO] Command completed successfully
 ```
 
-## 10.3 デバッグ手法
+## 11.3 デバッグ手法
 
-### 10.3.1 エコーコマンドでの変数確認
+### 11.3.1 エコーコマンドでの変数確認
 
 変数が正しく展開されているか確認:
 
@@ -409,12 +415,8 @@ go-safe-cmd-runner -file with-vars.toml
 # デバッグ用コマンド
 [[groups.commands]]
 name = "debug_variables"
-cmd = "/bin/echo"
-args = [
-    "TOOL_DIR=${TOOL_DIR}",
-    "CONFIG=${CONFIG}",
-    "ENV=${ENV_TYPE}",
-]
+cmd = "/usr/bin/env"
+args = []
 env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG=/etc/app/config.yml",
@@ -425,10 +427,14 @@ output_file = "debug-vars.txt"
 
 実行後、`debug-vars.txt` を確認:
 ```
-TOOL_DIR=/opt/tools CONFIG=/etc/app/config.yml ENV=production
+TOOL_DIR=/opt/tools
+CONFIG=/etc/app/config.yml
+ENV_TYPE=production
+PATH=/usr/bin:/bin
+... (その他の環境変数)
 ```
 
-### 10.3.2 出力キャプチャでの診断
+### 11.3.2 出力キャプチャでの診断
 
 コマンド出力を保存して詳細を確認:
 
@@ -445,7 +451,7 @@ output_file = "service-status.txt"
 cat service-status.txt
 ```
 
-### 10.3.3 個別コマンドのテスト
+### 11.3.3 個別コマンドのテスト
 
 問題のあるコマンドを個別にテスト:
 
@@ -463,7 +469,7 @@ args = ["--option", "value"]
 env_vars = ["CUSTOM_VAR=test"]
 ```
 
-### 10.3.4 ドライランの活用
+### 11.3.4 ドライランの活用
 
 実際に実行せずに動作を確認:
 
@@ -480,7 +486,7 @@ go-safe-cmd-runner --dry-run --file config.toml
 [DRY RUN] Environment variables: PATH=/usr/bin, DB_USER=postgres
 ```
 
-### 10.3.5 権限の確認
+### 11.3.5 権限の確認
 
 権限関連の問題を診断:
 
@@ -499,7 +505,7 @@ args = ["-la", "/path/to/file"]
 output_file = "file-permissions.txt"
 ```
 
-### 10.3.6 環境変数の確認
+### 11.3.6 環境変数の確認
 
 環境変数の状態を診断:
 
@@ -511,9 +517,9 @@ args = []
 output_file = "environment.txt"
 ```
 
-## 10.4 パフォーマンス問題
+## 11.4 パフォーマンス問題
 
-### 10.4.1 起動が遅い
+### 11.4.1 起動が遅い
 
 #### 原因
 
@@ -533,7 +539,7 @@ verify_files = [
 ]
 ```
 
-### 10.4.2 実行が遅い
+### 11.4.2 実行が遅い
 
 #### 原因
 
@@ -558,25 +564,30 @@ args = ["Processing..."]
 # output を指定しない
 ```
 
-## 10.5 よくある質問 (FAQ)
+## 11.5 よくある質問 (FAQ)
 
-### Q1: 環境変数が展開されない
+### Q1: 変数が展開されない
 
-**Q**: `${HOME}` が展開されず、そのまま文字列として扱われる。
+**Q**: `%{HOME}` が展開されず、そのまま文字列として扱われる。
 
-**A**: 環境変数は `env_allowed` に含めるか、`Command.Env` で定義してください。
+**A**: 内部変数は `vars` フィールドで定義する必要があります。`env_vars` で定義した環境変数は TOML 内での展開には使えません。
 
 ```toml
-# 方法1: env_allowed に追加
-[global]
-env_allowed = ["PATH", "HOME"]
-
-# 方法2: Command.Env で定義(推奨)
+# 誤り: env_vars で定義した変数は展開できない
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["${MY_HOME}"]
-env_vars = ["MY_HOME=/home/user"]
+args = ["%{my_home}"]
+env_vars = ["MY_HOME=/home/user"]  # これは子プロセスの環境変数のみ
+
+# 正しい: vars で内部変数を定義
+[[groups.commands]]
+name = "test"
+cmd = "/bin/echo"
+args = ["%{my_home}"]
+
+[groups.commands.vars]
+my_home = "/home/user"
 ```
 
 ### Q2: コマンドが見つからない
@@ -644,7 +655,7 @@ args = []
 run_as_user = "root"
 ```
 
-## 10.6 サポートとヘルプ
+## 11.6 サポートとヘルプ
 
 ### コミュニティリソース
 

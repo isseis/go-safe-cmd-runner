@@ -1,10 +1,10 @@
-# Chapter 10: Troubleshooting
+# Chapter 11: Troubleshooting
 
 This chapter introduces common problems when creating configuration files and their solutions. Let's learn how to read error messages and debugging techniques.
 
-## 10.1 Common Errors and Solutions
+## 11.1 Common Errors and Solutions
 
-### 10.1.1 Configuration File Loading Errors
+### 11.1.1 Configuration File Loading Errors
 
 #### Error Example
 
@@ -32,7 +32,7 @@ name = "unclosed string
 name = "closed string"
 ```
 
-### 10.1.2 Version Specification Error
+### 11.1.2 Version Specification Error
 
 #### Error Example
 
@@ -54,7 +54,7 @@ version = "2.0"
 version = "1.0"
 ```
 
-### 10.1.3 Missing Required Fields
+### 11.1.3 Missing Required Fields
 
 #### Error Example
 
@@ -91,7 +91,7 @@ cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
 ```
 
-### 10.1.4 Environment Variable Permission Error
+### 11.1.4 Environment Variable Permission Error
 
 #### Error Example
 
@@ -112,18 +112,20 @@ The environment variable being used is not included in `env_allowed`.
 env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # Add CUSTOM_VAR
 ```
 
-**Method 2**: Define in Command.Env (recommended)
+**Method 2**: Define as internal variable using vars (recommended)
 
 ```toml
 # No need to add to env_allowed
 [[groups.commands]]
 name = "custom_command"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = []
-env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Define in Command.Env
+
+[groups.commands.vars]
+custom_tool = "/opt/tools/mytool"  # Define as internal variable using vars
 ```
 
-### 10.1.5 Variable Expansion Error
+### 11.1.5 Variable Expansion Error
 
 #### Error Example
 
@@ -142,18 +144,20 @@ Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 **For undefined variables**:
 
 ```toml
-# Wrong: TOOL_DIR is not defined
+# Wrong: tool_dir is not defined
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
 
-# Correct: Define in env_vars
+# Correct: Define using vars
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 args = []
-env_vars = ["TOOL_DIR=/opt/tools"]
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"
 ```
 
 **For circular references**:
@@ -172,7 +176,7 @@ env_vars = [
 ]
 ```
 
-### 10.1.6 File Verification Error
+### 11.1.6 File Verification Error
 
 #### Error Example
 
@@ -202,7 +206,7 @@ record /usr/bin/tool /opt/app/script.sh
 record /usr/bin/tool
 ```
 
-### 10.1.7 Command Path Errors
+### 11.1.7 Command Path Errors
 
 #### Error Example
 
@@ -240,7 +244,7 @@ name = "run"
 cmd = "/usr/bin/existing-command"
 ```
 
-### 10.1.8 Timeout Errors
+### 11.1.8 Timeout Errors
 
 #### Error Example
 
@@ -267,7 +271,7 @@ args = []
 timeout = 3600  # 1 hour for this command only
 ```
 
-### 10.1.9 Permission Errors
+### 11.1.9 Permission Errors
 
 #### Error Example
 
@@ -306,7 +310,7 @@ sudo chown user:group /var/secure/data
 sudo go-safe-cmd-runner -file config.toml
 ```
 
-### 10.1.10 Risk Level Exceeded Error
+### 11.1.10 Risk Level Exceeded Error
 
 #### Error Example
 
@@ -336,9 +340,9 @@ args = ["/tmp/data/specific-file.txt"]  # Remove -rf
 risk_level = "low"
 ```
 
-## 10.2 Configuration Validation Methods
+## 11.2 Configuration Validation Methods
 
-### 10.2.1 Syntax Checking
+### 11.2.1 Syntax Checking
 
 Validate configuration file syntax:
 
@@ -347,7 +351,7 @@ Validate configuration file syntax:
 go-safe-cmd-runner --dry-run --file config.toml
 ```
 
-### 10.2.2 Incremental Validation
+### 11.2.2 Incremental Validation
 
 Validate complex configurations incrementally:
 
@@ -374,8 +378,10 @@ go-safe-cmd-runner -file minimal.toml
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
-args = ["Value: ${VAR}"]
-env_vars = ["VAR=hello"]
+args = ["Value: %{var}"]
+
+[groups.commands.vars]
+var = "hello"
 ```
 
 ```bash
@@ -383,7 +389,7 @@ env_vars = ["VAR=hello"]
 go-safe-cmd-runner -file with-vars.toml
 ```
 
-### 10.2.3 Utilizing Log Levels
+### 11.2.3 Utilizing Log Levels
 
 Enable detailed logs when debugging: `-log-level debug`
 
@@ -399,9 +405,9 @@ Output example:
 [INFO] Command completed successfully
 ```
 
-## 10.3 Debugging Techniques
+## 11.3 Debugging Techniques
 
-### 10.3.1 Verifying Variables with Echo Command
+### 11.3.1 Verifying Variables with Echo Command
 
 Confirm variables are expanded correctly:
 
@@ -409,12 +415,8 @@ Confirm variables are expanded correctly:
 # Debug command
 [[groups.commands]]
 name = "debug_variables"
-cmd = "/bin/echo"
-args = [
-    "TOOL_DIR=${TOOL_DIR}",
-    "CONFIG=${CONFIG}",
-    "ENV=${ENV_TYPE}",
-]
+cmd = "/usr/bin/env"
+args = []
 env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG=/etc/app/config.yml",
@@ -425,10 +427,14 @@ output_file = "debug-vars.txt"
 
 After execution, check `debug-vars.txt`:
 ```
-TOOL_DIR=/opt/tools CONFIG=/etc/app/config.yml ENV=production
+TOOL_DIR=/opt/tools
+CONFIG=/etc/app/config.yml
+ENV_TYPE=production
+PATH=/usr/bin:/bin
+... (other environment variables)
 ```
 
-### 10.3.2 Diagnosis with Output Capture
+### 11.3.2 Diagnosis with Output Capture
 
 Save command output to examine details:
 
@@ -445,7 +451,7 @@ After execution, check output file:
 cat service-status.txt
 ```
 
-### 10.3.3 Testing Individual Commands
+### 11.3.3 Testing Individual Commands
 
 Test problematic commands individually:
 
@@ -463,7 +469,7 @@ args = ["--option", "value"]
 env_vars = ["CUSTOM_VAR=test"]
 ```
 
-### 10.3.4 Utilizing Dry Run
+### 11.3.4 Utilizing Dry Run
 
 Confirm behavior without actual execution:
 
@@ -480,7 +486,7 @@ Output example:
 [DRY RUN] Environment variables: PATH=/usr/bin, DB_USER=postgres
 ```
 
-### 10.3.5 Checking Permissions
+### 11.3.5 Checking Permissions
 
 Diagnose permission-related issues:
 
@@ -499,7 +505,7 @@ args = ["-la", "/path/to/file"]
 output_file = "file-permissions.txt"
 ```
 
-### 10.3.6 Checking Environment Variables
+### 11.3.6 Checking Environment Variables
 
 Diagnose environment variable state:
 
@@ -511,9 +517,9 @@ args = []
 output_file = "environment.txt"
 ```
 
-## 10.4 Performance Issues
+## 11.4 Performance Issues
 
-### 10.4.1 Slow Startup
+### 11.4.1 Slow Startup
 
 #### Cause
 
@@ -533,7 +539,7 @@ verify_files = [
 ]
 ```
 
-### 10.4.2 Slow Execution
+### 11.4.2 Slow Execution
 
 #### Cause
 
@@ -558,25 +564,30 @@ args = ["Processing..."]
 # Don't specify output
 ```
 
-## 10.5 Frequently Asked Questions (FAQ)
+## 11.5 Frequently Asked Questions (FAQ)
 
-### Q1: Environment variables are not expanded
+### Q1: Variables are not expanded
 
-**Q**: `${HOME}` is not expanded and is treated as a literal string.
+**Q**: `%{HOME}` is not expanded and is treated as a literal string.
 
-**A**: Environment variables must be included in `env_allowed` or defined in `Command.Env`.
+**A**: Internal variables must be defined in the `vars` field. Variables defined in `env_vars` cannot be used for TOML expansion.
 
 ```toml
-# Method 1: Add to env_allowed
-[global]
-env_allowed = ["PATH", "HOME"]
-
-# Method 2: Define in Command.Env (recommended)
+# Incorrect: Variables defined in env_vars cannot be expanded
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["${MY_HOME}"]
-env_vars = ["MY_HOME=/home/user"]
+args = ["%{my_home}"]
+env_vars = ["MY_HOME=/home/user"]  # This only sets child process environment
+
+# Correct: Define internal variable using vars
+[[groups.commands]]
+name = "test"
+cmd = "/bin/echo"
+args = ["%{my_home}"]
+
+[groups.commands.vars]
+my_home = "/home/user"
 ```
 
 ### Q2: Command not found
@@ -644,7 +655,7 @@ args = []
 run_as_user = "root"
 ```
 
-## 10.6 Support and Help
+## 11.6 Support and Help
 
 ### Community Resources
 
