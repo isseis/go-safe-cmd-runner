@@ -106,6 +106,20 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - Performance issues
 - Frequently Asked Questions (FAQ)
 
+### Chapter 11: [Command Templates](11_command_templates.md)
+- Template overview and purpose
+- Template definition section
+- Parameter expansion syntax
+  - String parameter `${param}`
+  - Optional parameter `${?param}`
+  - Array parameter `${@list}`
+- Using templates
+- Combining with variable expansion
+- Escape sequences
+- Errors and validation
+- Practical configuration examples
+- Best practices
+
 ### [Appendix](appendix.md)
 - Appendix A: Parameter Reference Table
 - Appendix B: Sample Configuration File Collection
@@ -147,7 +161,8 @@ args = ["Hello, World!"]
 2. **Intermediate**: Learn parameters with Chapters 4-6
 3. **Advanced**: Master advanced features and best practices with Chapters 7-9
 4. **Troubleshooting**: Resolve issues with Chapter 10
-5. **Reference**: Consult the appendix
+5. **Improve Reusability**: Learn command templates with Chapter 11
+6. **Reference**: Consult the appendix
 
 ## Sample Files
 

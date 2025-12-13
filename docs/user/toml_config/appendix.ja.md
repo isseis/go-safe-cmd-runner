@@ -35,8 +35,10 @@
 |-----------|-----|------|------------|------|
 | name | string | ✓ | なし | コマンド名(グループ内で一意) |
 | description | string | - | "" | コマンドの説明 |
-| cmd | string | ✓ | なし | 実行するコマンド(絶対パスまたはPATH上) |
+| cmd | string | ✓* | なし | 実行するコマンド(絶対パスまたはPATH上) |
 | args | []string | - | [] | コマンドの引数 |
+| template | string | -* | なし | 参照するテンプレート名 |
+| params | table | - | {} | テンプレートパラメータ |
 | env_vars | []string | - | [] | 環境変数("KEY=VALUE"形式) |
 | workdir | string | - | グループ設定 | 作業ディレクトリ(グループ設定をオーバーライド) |
 | timeout | int | - | グローバル設定 | タイムアウト(グローバルをオーバーライド) |
@@ -45,7 +47,35 @@
 | risk_level | string | - | "low" | 最大リスクレベル(low/medium/high) |
 | output_file | string | - | "" | 標準出力の保存先ファイルパス |
 
-### A.5 環境変数継承モード
+\* `cmd` と `template` は排他的。どちらか一方が必須。
+
+### A.5 コマンドテンプレートパラメータ ([command_templates.<name>])
+
+| パラメータ | 型 | 必須 | デフォルト値 | 説明 |
+|-----------|-----|------|------------|------|
+| cmd | string | ✓ | なし | 実行するコマンド |
+| args | []string | - | [] | コマンドの引数(パラメータ展開可) |
+| env_vars | []string | - | [] | 環境変数("KEY=VALUE"形式) |
+| workdir | string | - | なし | 作業ディレクトリ |
+| timeout | int | - | なし | タイムアウト(秒) |
+| run_as_user | string | - | "" | 実行ユーザー |
+| run_as_group | string | - | "" | 実行グループ |
+| risk_level | string | - | "low" | 最大リスクレベル |
+| output_file | string | - | "" | 標準出力の保存先 |
+
+**禁止フィールド**: `name`, `template`
+
+### A.6 テンプレートパラメータ展開
+
+| 記法 | 名称 | 用途 | 空の場合の動作 |
+|------|------|------|----------------|
+| `${param}` | 文字列パラメータ | 必須の文字列値 | 空文字列として保持 |
+| `${?param}` | オプショナルパラメータ | 省略可能な文字列値 | 要素を削除 |
+| `${@list}` | 配列パラメータ | 複数の値を展開 | 何も追加しない |
+
+**エスケープ**: `\$` → リテラル `$`
+
+### A.7 環境変数継承モード
 
 | モード | 条件 | 動作 |
 |--------|------|------|
@@ -53,7 +83,7 @@
 | 明示 (explicit) | env_allowed に値が設定 | 設定値のみを使用(グローバル無視) |
 | 拒否 (reject) | env_allowed = [] (空配列) | 全ての環境変数を拒否 |
 
-### A.6 リスクレベル
+### A.8 リスクレベル
 
 | レベル | 値 | 説明 | 例 |
 |--------|-----|------|-----|
@@ -290,7 +320,7 @@ risk_level = "high"
 ### C.4 変数展開関連用語
 
 **変数展開 (Variable Expansion)**
-: `${VAR}` 形式の変数を実際の値に置き換える処理。
+: `%{VAR}` 形式の変数を実際の値に置き換える処理。
 
 **Command.Env**
 : コマンドレベルで定義される環境変数。`env_vars` パラメータで設定。
@@ -299,12 +329,35 @@ risk_level = "high"
 : グループレベルで環境変数許可リストをどのように扱うかを決定するモード。
 
 **ネスト変数 (Nested Variable)**
-: 変数の値に別の変数を含める入れ子構造。例: `VAR1=${VAR2}/path`
+: 変数の値に別の変数を含める入れ子構造。例: `VAR1=%{VAR2}/path`
 
 **エスケープシーケンス (Escape Sequence)**
-: 特殊文字をリテラル(文字通り)として扱うための記法。例: `\$`, `\\`
+: 特殊文字をリテラル(文字通り)として扱うための記法。例: `\%`, `\$`, `\\`
 
-### C.5 実行関連用語
+### C.5 コマンドテンプレート関連用語
+
+**コマンドテンプレート (Command Template)**
+: 再利用可能なコマンド定義。`[command_templates.<name>]` セクションで定義。
+
+**テンプレートパラメータ (Template Parameter)**
+: テンプレートに渡す値。`params.<name>` で指定し、テンプレート内の `${param}` 等で展開される。
+
+**文字列パラメータ (String Parameter)**
+: `${param}` 形式で参照される文字列型のパラメータ。空文字列でも配列要素として保持される。
+
+**オプショナルパラメータ (Optional Parameter)**
+: `${?param}` 形式で参照されるパラメータ。空文字列の場合、その要素は配列から削除される。
+
+**配列パラメータ (Array Parameter)**
+: `${@list}` 形式で参照される配列型のパラメータ。配列の全要素が展開される。
+
+**テンプレート展開 (Template Expansion)**
+: テンプレート内の `${...}` パラメータ参照をパラメータ値で置換する処理。変数展開（`%{...}`）の前に実行される。
+
+**パラメータ式 (Parameter Expression)**
+: `params` で指定する値。リテラル文字列、リテラル配列、または変数参照（`%{...}`）を含む式。
+
+### C.6 実行関連用語
 
 **ドライラン (Dry Run)**
 : 実際には実行せず、実行計画のみを表示するモード。
@@ -324,7 +377,7 @@ risk_level = "high"
 **標準エラー出力 (Standard Error / stderr)**
 : コマンドがエラーメッセージを送信するストリーム。
 
-### C.6 オーバーライドと継承
+### C.7 オーバーライドと継承
 
 **オーバーライド (Override)**
 : 下位レベルの設定が上位レベルの設定を置き換えること。
@@ -460,6 +513,60 @@ run_as_user = "appuser"
 risk_level = "high"
 ```
 
+### D.5 コマンドテンプレート使用
+
+```toml
+version = "1.0"
+
+# テンプレート定義
+[command_templates.backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${path}"]
+timeout = 3600
+risk_level = "medium"
+
+[command_templates.check_service]
+cmd = "/usr/bin/systemctl"
+args = ["status", "${service_name}"]
+timeout = 30
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH", "RESTIC_REPOSITORY", "RESTIC_PASSWORD"]
+
+[[groups]]
+name = "backup_tasks"
+
+[groups.vars]
+data_dir = "/data/important"
+
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+params.verbose_flags = ["-v"]
+params.path = "%{data_dir}"
+
+[[groups.commands]]
+name = "backup_config"
+template = "backup"
+params.verbose_flags = []
+params.path = "/etc/myapp"
+
+[[groups]]
+name = "monitoring"
+
+[[groups.commands]]
+name = "check_nginx"
+template = "check_service"
+params.service_name = "nginx"
+
+[[groups.commands]]
+name = "check_postgres"
+template = "check_service"
+params.service_name = "postgresql"
+```
+
 ## 付録E: 参考リンク
 
 ### E.1 公式リソース
@@ -490,7 +597,8 @@ risk_level = "high"
 3. **第7章**: 変数展開機能をマスター
 4. **第8章〜第9章**: 実践例とベストプラクティスを習得
 5. **第10章**: トラブルシューティング手法を身につける
-6. **付録**: リファレンスとして活用
+6. **第11章**: コマンドテンプレートによる再利用性向上
+7. **付録**: リファレンスとして活用
 
 ### さらなる学習
 

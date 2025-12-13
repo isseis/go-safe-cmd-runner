@@ -45,7 +45,35 @@
 | risk_level | string | - | "low" | Maximum risk level (low/medium/high) |
 | output_file | string | - | "" | File path to save standard output |
 
-### A.5 Environment Variable Inheritance Modes
+\* `cmd` and `template` are mutually exclusive. One of them is required.
+
+### A.5 Command Template Parameters ([command_templates.<name>])
+
+| Parameter | Type | Required | Default Value | Description |
+|-----------|------|----------|---------------|-------------|
+| cmd | string | ✓ | none | Command to execute |
+| args | []string | - | [] | Command arguments (parameter expansion supported) |
+| env_vars | []string | - | [] | Environment variables ("KEY=VALUE" format) |
+| workdir | string | - | none | Working directory |
+| timeout | int | - | none | Timeout (seconds) |
+| run_as_user | string | - | "" | User to run as |
+| run_as_group | string | - | "" | Group to run as |
+| risk_level | string | - | "low" | Maximum risk level |
+| output_file | string | - | "" | File path to save standard output |
+
+**Prohibited Fields**: `name`, `template`
+
+### A.6 Template Parameter Expansion
+
+| Notation | Name | Use Case | Behavior When Empty |
+|----------|------|----------|---------------------|
+| `${param}` | String Parameter | Required string value | Preserved as empty string |
+| `${?param}` | Optional Parameter | Optional string value | Element removed |
+| `${@list}` | Array Parameter | Expand multiple values | Nothing added |
+
+**Escape**: `\$` → Literal `$`
+
+### A.7 Environment Variable Inheritance Modes
 
 | Mode | Condition | Behavior |
 |------|-----------|----------|
@@ -53,7 +81,7 @@
 | Explicit | env_allowed has value set | Use only configured values (ignore global) |
 | Reject | env_allowed = [] (empty array) | Reject all environment variables |
 
-### A.6 Risk Levels
+### A.8 Risk Levels
 
 | Level | Value | Description | Examples |
 |-------|-------|-------------|----------|
@@ -299,12 +327,35 @@ risk_level = "high"
 : A mode that determines how environment variable allowlists are handled at the group level.
 
 **Nested Variable**
-: A nested structure where a variable's value contains another variable. Example: `VAR1=${VAR2}/path`
+: A nested structure where a variable's value contains another variable. Example: `VAR1=%{VAR2}/path`
 
 **Escape Sequence**
-: A notation for treating special characters literally. Example: `\$`, `\\`
+: Notation for treating special characters literally. Example: `\%`, `\$`, `\\`
 
-### C.5 Execution Terms
+### C.5 Command Template Terms
+
+**Command Template**
+: A reusable command definition. Defined in the `[command_templates.<name>]` section.
+
+**Template Parameter**
+: A value passed to a template. Specified with `params.<name>` and expanded at `${param}` etc. in the template.
+
+**String Parameter**
+: A string-type parameter referenced in `${param}` format. Preserved as an array element even if empty string.
+
+**Optional Parameter**
+: A parameter referenced in `${?param}` format. If empty string, the element is removed from the array.
+
+**Array Parameter**
+: An array-type parameter referenced in `${@list}` format. All elements of the array are expanded.
+
+**Template Expansion**
+: The process of replacing `${...}` parameter references in a template with parameter values. Executed before variable expansion (`%{...}`).
+
+**Parameter Expression**
+: A value specified in `params`. A literal string, literal array, or expression containing variable references (`%{...}`).
+
+### C.6 Execution Terms
 
 **Dry Run**
 : A mode that displays the execution plan without actually executing.
@@ -324,7 +375,7 @@ risk_level = "high"
 **Standard Error (stderr)**
 : The stream to which commands send error messages.
 
-### C.6 Override and Inheritance
+### C.7 Override and Inheritance
 
 **Override**
 : When lower-level settings replace higher-level settings.
@@ -458,6 +509,60 @@ env_vars = [
 ]
 run_as_user = "appuser"
 risk_level = "high"
+```
+
+### D.5 Command Template Usage
+
+```toml
+version = "1.0"
+
+# Template definitions
+[command_templates.backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${path}"]
+timeout = 3600
+risk_level = "medium"
+
+[command_templates.check_service]
+cmd = "/usr/bin/systemctl"
+args = ["status", "${service_name}"]
+timeout = 30
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH", "RESTIC_REPOSITORY", "RESTIC_PASSWORD"]
+
+[[groups]]
+name = "backup_tasks"
+
+[groups.vars]
+data_dir = "/data/important"
+
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+params.verbose_flags = ["-v"]
+params.path = "%{data_dir}"
+
+[[groups.commands]]
+name = "backup_config"
+template = "backup"
+params.verbose_flags = []
+params.path = "/etc/myapp"
+
+[[groups]]
+name = "monitoring"
+
+[[groups.commands]]
+name = "check_nginx"
+template = "check_service"
+params.service_name = "nginx"
+
+[[groups.commands]]
+name = "check_postgres"
+template = "check_service"
+params.service_name = "postgresql"
 ```
 
 ## Appendix E: Reference Links

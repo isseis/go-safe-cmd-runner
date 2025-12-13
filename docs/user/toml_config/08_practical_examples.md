@@ -722,7 +722,243 @@ args = [
 ]
 ```
 
-## 8.8 Risk-Based Control Examples
+## 8.8 Command Template Usage Examples
+
+### Consolidating Backup Tasks with Templates
+
+When using the same backup command across multiple groups, you can consolidate definitions using templates:
+
+```toml
+version = "1.0"
+
+# Template definitions
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${backup_path}"]
+timeout = 3600
+risk_level = "medium"
+
+[command_templates.restic_forget]
+cmd = "restic"
+args = ["forget", "--prune", "--keep-daily", "${keep_daily}", "--keep-weekly", "${keep_weekly}", "--keep-monthly", "${keep_monthly}"]
+timeout = 1800
+risk_level = "medium"
+
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check", "${?verbose_flag}"]
+timeout = 600
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH", "HOME", "RESTIC_REPOSITORY", "RESTIC_PASSWORD"]
+
+# Group 1: Important data (detailed logs, long-term retention)
+[[groups]]
+name = "backup_important_data"
+description = "Backup of important data (long-term retention)"
+
+[groups.vars]
+data_root = "/data/important"
+
+[[groups.commands]]
+name = "backup_data"
+description = "Backup important data"
+template = "restic_backup"
+params.verbose_flags = ["-v", "-v"]
+params.backup_path = "%{data_root}"
+
+[[groups.commands]]
+name = "cleanup_old_snapshots"
+description = "Delete old snapshots (long-term retention policy)"
+template = "restic_forget"
+params.keep_daily = "14"
+params.keep_weekly = "8"
+params.keep_monthly = "12"
+
+[[groups.commands]]
+name = "verify_repository"
+description = "Verify repository integrity"
+template = "restic_check"
+params.verbose_flag = "--verbose"
+
+# Group 2: Temporary data (silent mode, short-term retention)
+[[groups]]
+name = "backup_temp_data"
+description = "Backup of temporary data (short-term retention)"
+
+[groups.vars]
+data_root = "/data/temp"
+
+[[groups.commands]]
+name = "backup_data"
+description = "Backup temporary data"
+template = "restic_backup"
+params.verbose_flags = []  # Silent mode
+params.backup_path = "%{data_root}"
+
+[[groups.commands]]
+name = "cleanup_old_snapshots"
+description = "Delete old snapshots (short-term retention policy)"
+template = "restic_forget"
+params.keep_daily = "3"
+params.keep_weekly = "1"
+params.keep_monthly = "0"
+
+[[groups.commands]]
+name = "verify_repository"
+description = "Verify repository integrity"
+template = "restic_check"
+params.verbose_flag = ""  # Omit optional parameter
+```
+
+### Consolidating Database Operations with Templates
+
+```toml
+version = "1.0"
+
+# Template definitions
+[command_templates.pg_dump]
+cmd = "/usr/bin/pg_dump"
+args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
+timeout = 1800
+risk_level = "medium"
+
+[command_templates.pg_restore]
+cmd = "/usr/bin/pg_restore"
+args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "${input_file}"]
+timeout = 3600
+risk_level = "high"
+
+[command_templates.psql_query]
+cmd = "/usr/bin/psql"
+args = ["-U", "${db_user}", "-d", "${database}", "-c", "${query}"]
+timeout = 60
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH", "PGPASSWORD"]
+
+[[groups]]
+name = "database_backup"
+description = "Database backup operations"
+
+[groups.vars]
+backup_dir = "/var/backups/postgres"
+db_admin = "postgres"
+
+# Production database backup
+[[groups.commands]]
+name = "backup_main_db"
+description = "Backup production database"
+template = "pg_dump"
+params.verbose = "--verbose"
+params.db_user = "%{db_admin}"
+params.database = "production_db"
+params.output_file = "%{backup_dir}/production_db.dump"
+
+# Log database backup (silent mode)
+[[groups.commands]]
+name = "backup_logs_db"
+description = "Backup log database"
+template = "pg_dump"
+params.verbose = ""  # Silent mode
+params.db_user = "%{db_admin}"
+params.database = "logs_db"
+params.output_file = "%{backup_dir}/logs_db.dump"
+
+# Database status check
+[[groups.commands]]
+name = "check_db_version"
+description = "Check database version"
+template = "psql_query"
+params.db_user = "%{db_admin}"
+params.database = "production_db"
+params.query = "SELECT version();"
+```
+
+### Consolidating System Monitoring with Templates
+
+```toml
+version = "1.0"
+
+# Template definitions
+[command_templates.check_service]
+cmd = "/usr/bin/systemctl"
+args = ["status", "${service_name}"]
+timeout = 30
+risk_level = "low"
+
+[command_templates.restart_service]
+cmd = "/usr/bin/systemctl"
+args = ["restart", "${service_name}"]
+run_as_user = "root"
+timeout = 60
+risk_level = "high"
+
+[command_templates.check_disk]
+cmd = "/bin/df"
+args = ["-h", "${mount_point}"]
+timeout = 30
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH"]
+
+[[groups]]
+name = "system_monitoring"
+description = "System monitoring tasks"
+workdir = "/var/reports"
+
+# Service status checks
+[[groups.commands]]
+name = "check_nginx"
+template = "check_service"
+params.service_name = "nginx"
+
+[[groups.commands]]
+name = "check_postgres"
+template = "check_service"
+params.service_name = "postgresql"
+
+[[groups.commands]]
+name = "check_redis"
+template = "check_service"
+params.service_name = "redis"
+
+# Disk usage checks
+[[groups.commands]]
+name = "check_root_disk"
+template = "check_disk"
+params.mount_point = "/"
+
+[[groups.commands]]
+name = "check_data_disk"
+template = "check_disk"
+params.mount_point = "/data"
+
+[[groups]]
+name = "system_recovery"
+description = "System recovery tasks"
+
+# Service restarts
+[[groups.commands]]
+name = "restart_nginx"
+template = "restart_service"
+params.service_name = "nginx"
+
+[[groups.commands]]
+name = "restart_postgres"
+template = "restart_service"
+params.service_name = "postgresql"
+```
+
+> **For details**: For more information on the command template feature (types of parameter expansion, escaping, security considerations, etc.), refer to [Chapter 11: Command Templates](11_command_templates.md).
+
+## 8.9 Risk-Based Control Examples
 
 ### Command Execution Based on Risk Level
 

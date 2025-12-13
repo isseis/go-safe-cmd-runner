@@ -4,6 +4,11 @@
 
 The `[[groups.commands]]` section defines the commands to be actually executed. Each group requires one or more commands. Commands are executed in the order they are defined within the group.
 
+There are two ways to define commands:
+
+1. **Direct Definition**: Directly specify `cmd` and `args` for the command
+2. **Using Template**: Reference a pre-defined template (detailed in [Chapter 11](11_command_templates.md))
+
 ## 6.1 Basic Command Settings
 
 ### 6.1.1 name - Command Name
@@ -1354,6 +1359,118 @@ workdir = "/var/output"
 timeout = 60
 risk_level = "low"
 ```
+
+## 6.7 Defining Commands Using Templates
+
+Instead of defining commands directly, you can also reference pre-defined templates. Using templates allows you to manage common command definitions in one place and reuse them across multiple groups.
+
+### 6.7.1 template - Template Reference
+
+#### Overview
+
+References a pre-defined command template.
+
+#### Syntax
+
+```toml
+[[groups.commands]]
+name = "command_name"
+template = "template_name"
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Optional (exclusive with `cmd`) |
+| **Configurable Level** | Command only |
+| **Valid Values** | Name of a defined template |
+
+#### Exclusive Fields
+
+When `template` is specified, the following fields cannot be specified:
+
+- `cmd`, `args`, `env_vars`, `workdir`, `timeout`, `run_as_user`, `run_as_group`, `risk_level`, `output_file`
+
+These fields should be defined in the template.
+
+#### Configuration Example
+
+```toml
+# Template definition
+[command_templates.disk_check]
+cmd = "/bin/df"
+args = ["-h"]
+timeout = 30
+
+# Using the template
+[[groups.commands]]
+name = "check_disk"
+template = "disk_check"
+```
+
+### 6.7.2 params - Template Parameters
+
+#### Overview
+
+Specifies parameters to pass to the template. The template's `${param}`, `${?param}`, `${@list}` are replaced with these values.
+
+#### Syntax
+
+```toml
+[[groups.commands]]
+name = "command_name"
+template = "template_name"
+params.<parameter_name> = "value"
+params.<array_parameter_name> = ["value1", "value2"]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Table (with string or string array values) |
+| **Required/Optional** | Depends on template definition |
+| **Configurable Level** | Command only (only when used with `template`) |
+
+#### Configuration Example
+
+```toml
+# Template definition
+[command_templates.backup]
+cmd = "restic"
+args = ["${@flags}", "backup", "${path}"]
+
+# Using the template with parameters
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+params.flags = ["-v", "--no-cache"]
+params.path = "/data/important"
+# Result: args = ["-v", "--no-cache", "backup", "/data/important"]
+```
+
+#### Combining with Variables
+
+Variable references (`%{...}`) can be included in `params` values:
+
+```toml
+[[groups]]
+name = "backup_group"
+
+[groups.vars]
+backup_root = "/data/backups"
+
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+params.flags = []
+params.path = "%{backup_root}/daily"
+# Result: args = ["backup", "/data/backups/daily"]
+```
+
+> **For details**: For more information on the template feature (types of parameter expansion, escaping, best practices, etc.), refer to [Chapter 11: Command Templates](11_command_templates.md).
 
 ## Next Steps
 

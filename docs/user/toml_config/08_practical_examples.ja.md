@@ -727,7 +727,243 @@ args = [
 ]
 ```
 
-## 8.8 リスクベースの制御例
+## 8.8 コマンドテンプレートを活用した設定例
+
+### テンプレートによるバックアップタスクの共通化
+
+複数のグループで同じバックアップコマンドを使用する場合、テンプレートを使用して定義を共通化できます：
+
+```toml
+version = "1.0"
+
+# テンプレート定義
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["${@verbose_flags}", "backup", "${backup_path}"]
+timeout = 3600
+risk_level = "medium"
+
+[command_templates.restic_forget]
+cmd = "restic"
+args = ["forget", "--prune", "--keep-daily", "${keep_daily}", "--keep-weekly", "${keep_weekly}", "--keep-monthly", "${keep_monthly}"]
+timeout = 1800
+risk_level = "medium"
+
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check", "${?verbose_flag}"]
+timeout = 600
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH", "HOME", "RESTIC_REPOSITORY", "RESTIC_PASSWORD"]
+
+# グループ1: 重要データ（詳細ログ、長期保存）
+[[groups]]
+name = "backup_important_data"
+description = "重要データのバックアップ（長期保存）"
+
+[groups.vars]
+data_root = "/data/important"
+
+[[groups.commands]]
+name = "backup_data"
+description = "重要データのバックアップ"
+template = "restic_backup"
+params.verbose_flags = ["-v", "-v"]
+params.backup_path = "%{data_root}"
+
+[[groups.commands]]
+name = "cleanup_old_snapshots"
+description = "古いスナップショットの削除（長期保存ポリシー）"
+template = "restic_forget"
+params.keep_daily = "14"
+params.keep_weekly = "8"
+params.keep_monthly = "12"
+
+[[groups.commands]]
+name = "verify_repository"
+description = "リポジトリの整合性確認"
+template = "restic_check"
+params.verbose_flag = "--verbose"
+
+# グループ2: 一時データ（静音モード、短期保存）
+[[groups]]
+name = "backup_temp_data"
+description = "一時データのバックアップ（短期保存）"
+
+[groups.vars]
+data_root = "/data/temp"
+
+[[groups.commands]]
+name = "backup_data"
+description = "一時データのバックアップ"
+template = "restic_backup"
+params.verbose_flags = []  # 静音モード
+params.backup_path = "%{data_root}"
+
+[[groups.commands]]
+name = "cleanup_old_snapshots"
+description = "古いスナップショットの削除（短期保存ポリシー）"
+template = "restic_forget"
+params.keep_daily = "3"
+params.keep_weekly = "1"
+params.keep_monthly = "0"
+
+[[groups.commands]]
+name = "verify_repository"
+description = "リポジトリの整合性確認"
+template = "restic_check"
+params.verbose_flag = ""  # オプショナルパラメータを省略
+```
+
+### テンプレートによるデータベース操作の共通化
+
+```toml
+version = "1.0"
+
+# テンプレート定義
+[command_templates.pg_dump]
+cmd = "/usr/bin/pg_dump"
+args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
+timeout = 1800
+risk_level = "medium"
+
+[command_templates.pg_restore]
+cmd = "/usr/bin/pg_restore"
+args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "${input_file}"]
+timeout = 3600
+risk_level = "high"
+
+[command_templates.psql_query]
+cmd = "/usr/bin/psql"
+args = ["-U", "${db_user}", "-d", "${database}", "-c", "${query}"]
+timeout = 60
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH", "PGPASSWORD"]
+
+[[groups]]
+name = "database_backup"
+description = "データベースバックアップ操作"
+
+[groups.vars]
+backup_dir = "/var/backups/postgres"
+db_admin = "postgres"
+
+# 本番データベースのバックアップ
+[[groups.commands]]
+name = "backup_main_db"
+description = "本番データベースのバックアップ"
+template = "pg_dump"
+params.verbose = "--verbose"
+params.db_user = "%{db_admin}"
+params.database = "production_db"
+params.output_file = "%{backup_dir}/production_db.dump"
+
+# ログデータベースのバックアップ（静音モード）
+[[groups.commands]]
+name = "backup_logs_db"
+description = "ログデータベースのバックアップ"
+template = "pg_dump"
+params.verbose = ""  # 静音モード
+params.db_user = "%{db_admin}"
+params.database = "logs_db"
+params.output_file = "%{backup_dir}/logs_db.dump"
+
+# データベースの状態確認
+[[groups.commands]]
+name = "check_db_version"
+description = "データベースバージョンの確認"
+template = "psql_query"
+params.db_user = "%{db_admin}"
+params.database = "production_db"
+params.query = "SELECT version();"
+```
+
+### テンプレートによるシステム監視の共通化
+
+```toml
+version = "1.0"
+
+# テンプレート定義
+[command_templates.check_service]
+cmd = "/usr/bin/systemctl"
+args = ["status", "${service_name}"]
+timeout = 30
+risk_level = "low"
+
+[command_templates.restart_service]
+cmd = "/usr/bin/systemctl"
+args = ["restart", "${service_name}"]
+run_as_user = "root"
+timeout = 60
+risk_level = "high"
+
+[command_templates.check_disk]
+cmd = "/bin/df"
+args = ["-h", "${mount_point}"]
+timeout = 30
+risk_level = "low"
+
+[global]
+timeout = 300
+env_allowed = ["PATH"]
+
+[[groups]]
+name = "system_monitoring"
+description = "システム監視タスク"
+workdir = "/var/reports"
+
+# サービス状態の確認
+[[groups.commands]]
+name = "check_nginx"
+template = "check_service"
+params.service_name = "nginx"
+
+[[groups.commands]]
+name = "check_postgres"
+template = "check_service"
+params.service_name = "postgresql"
+
+[[groups.commands]]
+name = "check_redis"
+template = "check_service"
+params.service_name = "redis"
+
+# ディスク使用量の確認
+[[groups.commands]]
+name = "check_root_disk"
+template = "check_disk"
+params.mount_point = "/"
+
+[[groups.commands]]
+name = "check_data_disk"
+template = "check_disk"
+params.mount_point = "/data"
+
+[[groups]]
+name = "system_recovery"
+description = "システム復旧タスク"
+
+# サービスの再起動
+[[groups.commands]]
+name = "restart_nginx"
+template = "restart_service"
+params.service_name = "nginx"
+
+[[groups.commands]]
+name = "restart_postgres"
+template = "restart_service"
+params.service_name = "postgresql"
+```
+
+> **詳細**: コマンドテンプレート機能の詳細（パラメータ展開の種類、エスケープ、セキュリティ考慮事項など）については[第11章: コマンドテンプレート](11_command_templates.ja.md)を参照してください。
+
+## 8.9 リスクベースの制御例
 
 ### リスクレベルに応じたコマンド実行
 
@@ -789,7 +1025,8 @@ args = ["-rf", "/tmp/old-data"]
 5. **出力キャプチャ**: ログ収集とレポート生成
 6. **変数展開**: 環境別デプロイメント
 7. **複合設定**: フルスタックアプリケーションのデプロイ
-8. **リスクベース制御**: リスクレベルに応じた実行制御
+8. **コマンドテンプレート**: テンプレートによるコマンド定義の共通化
+9. **リスクベース制御**: リスクレベルに応じた実行制御
 
 これらの例を参考に、自分の環境やユースケースに合わせた設定ファイルを作成してください。
 
