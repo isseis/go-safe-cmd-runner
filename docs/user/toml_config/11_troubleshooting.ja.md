@@ -560,23 +560,28 @@ args = ["Processing..."]
 
 ## 11.5 よくある質問 (FAQ)
 
-### Q1: 環境変数が展開されない
+### Q1: 変数が展開されない
 
-**Q**: `${HOME}` が展開されず、そのまま文字列として扱われる。
+**Q**: `%{HOME}` が展開されず、そのまま文字列として扱われる。
 
-**A**: 環境変数は `env_allowed` に含めるか、`Command.Env` で定義してください。
+**A**: 内部変数は `vars` フィールドで定義する必要があります。`env_vars` で定義した環境変数は TOML 内での展開には使えません。
 
 ```toml
-# 方法1: env_allowed に追加
-[global]
-env_allowed = ["PATH", "HOME"]
-
-# 方法2: Command.Env で定義(推奨)
+# 誤り: env_vars で定義した変数は展開できない
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["${MY_HOME}"]
-env_vars = ["MY_HOME=/home/user"]
+args = ["%{MY_HOME}"]
+env_vars = ["MY_HOME=/home/user"]  # これは子プロセスの環境変数のみ
+
+# 正しい: vars で内部変数を定義
+[[groups.commands]]
+name = "test"
+cmd = "/bin/echo"
+args = ["%{MY_HOME}"]
+
+[groups.commands.vars]
+MY_HOME = "/home/user"
 ```
 
 ### Q2: コマンドが見つからない

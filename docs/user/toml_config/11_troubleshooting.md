@@ -560,23 +560,28 @@ args = ["Processing..."]
 
 ## 11.5 Frequently Asked Questions (FAQ)
 
-### Q1: Environment variables are not expanded
+### Q1: Variables are not expanded
 
-**Q**: `${HOME}` is not expanded and is treated as a literal string.
+**Q**: `%{HOME}` is not expanded and is treated as a literal string.
 
-**A**: Environment variables must be included in `env_allowed` or defined in `Command.Env`.
+**A**: Internal variables must be defined in the `vars` field. Variables defined in `env_vars` cannot be used for TOML expansion.
 
 ```toml
-# Method 1: Add to env_allowed
-[global]
-env_allowed = ["PATH", "HOME"]
-
-# Method 2: Define in Command.Env (recommended)
+# Incorrect: Variables defined in env_vars cannot be expanded
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
-args = ["${MY_HOME}"]
-env_vars = ["MY_HOME=/home/user"]
+args = ["%{MY_HOME}"]
+env_vars = ["MY_HOME=/home/user"]  # This only sets child process environment
+
+# Correct: Define internal variable using vars
+[[groups.commands]]
+name = "test"
+cmd = "/bin/echo"
+args = ["%{MY_HOME}"]
+
+[groups.commands.vars]
+MY_HOME = "/home/user"
 ```
 
 ### Q2: Command not found
