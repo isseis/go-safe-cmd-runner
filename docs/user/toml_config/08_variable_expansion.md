@@ -703,10 +703,9 @@ env_vars = ["PATH=/custom/bin:%{path}"]  # %{path} refers to system environment 
 
 **Circular Reference (Error)**: Variables within vars reference each other circularly
 ```toml
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}",  # Error: Circular reference
-]
+[global.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # Error: Circular reference
 ```
 
 ### Important Notes
@@ -717,14 +716,16 @@ vars = [
 ```toml
 [global]
 env_allowed = ["PATH", "HOME"]  # Allow PATH and HOME to be imported
+env_import = ["system_path=PATH"]  # OK: PATH is included in allowlist
 
 [[groups.commands]]
 name = "extend_path"
 cmd = "/bin/echo"
 args = ["%{path}"]
-vars = ["path=PATH_PREFIX:/custom:%{system_path}"]
-env_import = ["system_path=PATH"]  # OK: PATH is included in allowlist
 env_vars = ["PATH=%{path}"]
+
+[groups.commands.vars]
+path = "PATH_PREFIX:/custom:%{system_path}"
 ```
 
 ## 8.10 Escape Sequences
@@ -1385,7 +1386,7 @@ The following files will be verified:
 2. **System Environment Variables Only**: verify_files can only use system environment variables, not Command.Env variables
 3. **Expansion Timing**: Expansion happens once at configuration load time (not at execution time)
 
-## 8.12 Practical Comprehensive Example
+## 8.15 Practical Comprehensive Example
 
 Below is a practical configuration example using variable expansion features:
 
@@ -1474,7 +1475,7 @@ timeout = 30
 health_url = "http://localhost:%{app_port}/health"
 ```
 
-## 8.13 Summary
+## 8.16 Summary
 
 ### Overall View of Variable System
 

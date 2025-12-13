@@ -425,11 +425,9 @@ args = ["SECRET_KEY"]
 変数間で循環参照を作成するとエラーになります:
 
 ```toml
-[global]
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}"  # エラー: 循環参照
-]
+[global.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # エラー: 循環参照
 ```
 
 #### 3. 未定義変数の参照
@@ -437,8 +435,8 @@ vars = [
 定義されていない変数を参照するとエラーになります:
 
 ```toml
-[global]
-vars = ["app_dir=/opt/app"]
+[global.vars]
+app_dir = "/opt/app"
 
 [[groups.commands]]
 name = "test"
@@ -495,9 +493,9 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "config_file=%{home}/.myapp/config.yml"
-]
+
+[global.vars]
+config_file = "%{home}/.myapp/config.yml"
 
 [[groups.commands]]
 name = "show_config"
@@ -517,10 +515,10 @@ env_import = [
     "user_path=PATH",
     "home=HOME"
 ]
-vars = [
-    "custom_bin=%{home}/bin",
-    "extended_path=%{custom_bin}:%{user_path}"
-]
+
+[global.vars]
+custom_bin = "%{home}/bin"
+extended_path = "%{custom_bin}:%{user_path}"
 
 [[groups.commands]]
 name = "run_tool"
@@ -537,10 +535,10 @@ version = "1.0"
 [global]
 env_allowed = ["APP_ENV"]
 env_import = ["environment=APP_ENV"]
-vars = [
-    "config_dir=/etc/myapp/%{environment}",
-    "log_level=%{environment}"  # 環境に応じたログレベル
-]
+
+[global.vars]
+config_dir = "/etc/myapp/%{environment}"
+log_level = "%{environment}"  # 環境に応じたログレベル
 
 [[groups.commands]]
 name = "run_app"
@@ -663,11 +661,11 @@ env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```toml
 version = "1.0"
 
+[global.vars]
+app_dir = "/opt/app"
+log_level = "info"
+
 [global]
-vars = [
-    "app_dir=/opt/app",
-    "log_level=info"
-]
 env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_LEVEL=%{log_level}",
@@ -686,12 +684,12 @@ args = []
 ```toml
 version = "1.0"
 
+[global.vars]
+base = "/opt"
+app_root = "%{base}/myapp"
+data_dir = "%{app_root}/data"
+
 [global]
-vars = [
-    "base=/opt",
-    "app_root=%{base}/myapp",
-    "data_dir=%{app_root}/data"
-]
 env_vars = [
     "APP_ROOT=%{app_root}",
     "DATA_PATH=%{data_dir}",
@@ -716,9 +714,11 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "log_dir=%{home}/logs"
-]
+
+[global.vars]
+log_dir = "%{home}/logs"
+
+[global]
 env_vars = [
     "USER_NAME=%{username}",
     "LOG_DIRECTORY=%{log_dir}"
@@ -742,8 +742,10 @@ args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
 同じ名前の環境変数が複数レベルで定義された場合、より具体的なレベル(Command > Group > Global)が優先されます。
 
 ```toml
+[global.vars]
+base = "global_value"
+
 [global]
-vars = ["base=global_value"]
 env_vars = [
     "COMMON_VAR=%{base}",
     "GLOBAL_ONLY=from_global"
@@ -751,12 +753,20 @@ env_vars = [
 
 [[groups]]
 name = "example"
-vars = ["base=group_value"]
+
+[groups.vars]
+base = "group_value"
+
+[[groups]]
 env_vars = ["COMMON_VAR=%{base}"]    # Global.env_vars を上書き
 
 [[groups.commands]]
 name = "cmd1"
-vars = ["base=command_value"]
+
+[groups.commands.vars]
+base = "command_value"
+
+[[groups.commands]]
 env_vars = ["COMMON_VAR=%{base}"]    # Group.env_vars を上書き
 
 # 実行時の環境変数:
@@ -771,8 +781,10 @@ env_vars = ["COMMON_VAR=%{base}"]    # Group.env_vars を上書き
 - **内部変数は伝播しない**: varsやfrom_envで定義した内部変数はデフォルトでは子プロセスに渡されない
 
 ```toml
+[global.vars]
+internal_value = "secret"     # 内部変数のみ
+
 [global]
-vars = ["internal_value=secret"]     # 内部変数のみ
 env_vars = ["PUBLIC_VAR=%{internal_value}"]  # 内部変数を使って環境変数を定義
 
 [[groups.commands]]
@@ -817,8 +829,10 @@ env_vars = [
 env_vars の値には内部変数を参照できますが、未定義の変数を参照するとエラーになります:
 
 ```toml
+[global.vars]
+defined = "value"
+
 [global]
-vars = ["defined=value"]
 env_vars = [
     "VALID=%{defined}",      # OK: defined は定義されている
     "INVALID=%{undefined}"   # エラー: undefined は定義されていない
@@ -830,11 +844,9 @@ env_vars = [
 env_vars 内の変数間で循環参照を作成するとエラーになります:
 
 ```toml
-[global]
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}"  # エラー: 循環参照
-]
+[global.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # エラー: 循環参照
 ```
 
 ### ベストプラクティス
@@ -849,18 +861,18 @@ vars = [
 ```toml
 # 推奨される構成
 [global]
-env_vars = [
-    # ベース設定
-    "APP_ROOT=/opt/myapp",
-    "ENV_TYPE=production",
-
-    # 派生設定（ベースを参照）
-    "BIN_DIR=${APP_ROOT}/bin",
-    "DATA_DIR=${APP_ROOT}/data",
-    "LOG_DIR=${APP_ROOT}/logs",
-    "CONFIG_FILE=${APP_ROOT}/etc/${ENV_TYPE}.yaml",
-]
 env_allowed = ["HOME", "PATH"]
+
+[global.vars]
+# ベース設定
+app_root = "/opt/myapp"
+env_type = "production"
+
+# 派生設定（ベースを参照）
+bin_dir = "%{app_root}/bin"
+data_dir = "%{app_root}/data"
+log_dir = "%{app_root}/logs"
+config_file = "%{app_root}/etc/%{env_type}.yaml"
 ```
 
 ### 次のステップ

@@ -376,17 +376,15 @@ Internal variable names must follow these rules:
 - **Reserved Prefix Prohibited**: Names starting with `__runner_` cannot be used
 
 ```toml
-[global]
-vars = [
-    "app_dir=/opt/app",        # Correct: lowercase and underscores
-    "logLevel=info",           # Correct: camelCase
-    "APP_ROOT=/opt",           # Correct: uppercase allowed
-    "_private=/tmp",           # Correct: starts with underscore
-    "var123=value",            # Correct: contains numbers
-    "__runner_var=value",      # Error: reserved prefix
-    "123invalid=value",        # Error: starts with number
-    "my-var=value"             # Error: hyphens not allowed
-]
+[global.vars]
+app_dir = "/opt/app"        # Correct: lowercase and underscores
+logLevel = "info"           # Correct: camelCase
+APP_ROOT = "/opt"           # Correct: uppercase allowed
+_private = "/tmp"           # Correct: starts with underscore
+var123 = "value"            # Correct: contains numbers
+__runner_var = "value"      # Error: reserved prefix
+123invalid = "value"        # Error: starts with number
+my-var = "value"            # Error: hyphens not allowed
 ```
 
 ### Precautions
@@ -495,9 +493,9 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "config_file=%{home}/.myapp/config.yml"
-]
+
+[global.vars]
+config_file = "%{home}/.myapp/config.yml"
 
 [[groups.commands]]
 name = "show_config"
@@ -517,10 +515,10 @@ env_import = [
     "user_path=PATH",
     "home=HOME"
 ]
-vars = [
-    "custom_bin=%{home}/bin",
-    "extended_path=%{custom_bin}:%{user_path}"
-]
+
+[global.vars]
+custom_bin = "%{home}/bin"
+extended_path = "%{custom_bin}:%{user_path}"
 
 [[groups.commands]]
 name = "run_tool"
@@ -537,10 +535,10 @@ version = "1.0"
 [global]
 env_allowed = ["APP_ENV"]
 env_import = ["environment=APP_ENV"]
-vars = [
-    "config_dir=/etc/myapp/%{environment}",
-    "log_level=%{environment}"  # Log level depends on environment
-]
+
+[global.vars]
+config_dir = "/etc/myapp/%{environment}"
+log_level = "%{environment}"  # Log level depends on environment
 
 [[groups.commands]]
 name = "run_app"
@@ -663,11 +661,11 @@ env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```toml
 version = "1.0"
 
+[global.vars]
+app_dir = "/opt/app"
+log_level = "info"
+
 [global]
-vars = [
-    "app_dir=/opt/app",
-    "log_level=info"
-]
 env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_LEVEL=%{log_level}",
@@ -686,12 +684,12 @@ args = []
 ```toml
 version = "1.0"
 
+[global.vars]
+base = "/opt"
+app_root = "%{base}/myapp"
+data_dir = "%{app_root}/data"
+
 [global]
-vars = [
-    "base=/opt",
-    "app_root=%{base}/myapp",
-    "data_dir=%{app_root}/data"
-]
 env_vars = [
     "APP_ROOT=%{app_root}",
     "DATA_PATH=%{data_dir}",
@@ -716,9 +714,11 @@ env_import = [
     "home=HOME",
     "username=USER"
 ]
-vars = [
-    "log_dir=%{home}/logs"
-]
+
+[global.vars]
+log_dir = "%{home}/logs"
+
+[global]
 env_vars = [
     "USER_NAME=%{username}",
     "LOG_DIRECTORY=%{log_dir}"
@@ -742,8 +742,10 @@ Environment variables are merged in the following order:
 When the same environment variable is defined at multiple levels, the more specific level (Command > Group > Global) takes priority:
 
 ```toml
+[global.vars]
+base = "global_value"
+
 [global]
-vars = ["base=global_value"]
 env_vars = [
     "COMMON_VAR=%{base}",
     "GLOBAL_ONLY=from_global"
@@ -751,12 +753,20 @@ env_vars = [
 
 [[groups]]
 name = "example"
-vars = ["base=group_value"]
+
+[groups.vars]
+base = "group_value"
+
+[[groups]]
 env_vars = ["COMMON_VAR=%{base}"]    # Overrides Global.env_vars
 
 [[groups.commands]]
 name = "cmd1"
-vars = ["base=command_value"]
+
+[groups.commands.vars]
+base = "command_value"
+
+[[groups.commands]]
 env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env_vars
 
 # Runtime environment variables:
@@ -771,8 +781,10 @@ env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env_vars
 - **Internal Variables Not Propagated**: Internal variables defined in vars or env_import are not passed to child processes by default
 
 ```toml
+[global.vars]
+internal_value = "secret"     # Internal variable only
+
 [global]
-vars = ["internal_value=secret"]     # Internal variable only
 env_vars = ["PUBLIC_VAR=%{internal_value}"]  # Define process environment variable using internal variable
 
 [[groups.commands]]
@@ -787,8 +799,10 @@ args = ["-c", "echo $PUBLIC_VAR"]
 Environment variable names (KEY part) must follow these rules:
 
 ```toml
+[global.vars]
+internal = "value"
+
 [global]
-vars = ["internal=value"]
 env_vars = [
     "VALID_NAME=value",      # Correct: uppercase letters, numbers, underscores
     "MY_VAR_123=value",      # Correct
@@ -822,11 +836,13 @@ env_vars = [
 [global]
 env_allowed = ["HOME", "PATH"]
 env_import = ["home=HOME"]
-vars = [
-    "app_root=/opt/myapp",
-    "data_dir=%{app_root}/data",
-    "log_dir=%{app_root}/logs"
-]
+
+[global.vars]
+app_root = "/opt/myapp"
+data_dir = "%{app_root}/data"
+log_dir = "%{app_root}/logs"
+
+[global]
 env_vars = [
     "APP_ROOT=%{app_root}",
     "DATA_DIR=%{data_dir}",
