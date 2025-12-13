@@ -112,15 +112,17 @@ The environment variable being used is not included in `env_allowed`.
 env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # Add CUSTOM_VAR
 ```
 
-**Method 2**: Define in Command.Env (recommended)
+**Method 2**: Define as internal variable using vars (recommended)
 
 ```toml
 # No need to add to env_allowed
 [[groups.commands]]
 name = "custom_command"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{CUSTOM_TOOL}"
 args = []
-env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Define in Command.Env
+
+[groups.commands.vars]
+CUSTOM_TOOL = "/opt/tools/mytool"  # Define as internal variable using vars
 ```
 
 ### 11.1.5 Variable Expansion Error
@@ -145,15 +147,17 @@ Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 # Wrong: TOOL_DIR is not defined
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{TOOL_DIR}/mytool"
 args = []
 
-# Correct: Define in env_vars
+# Correct: Define using vars
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{TOOL_DIR}/mytool"
 args = []
-env_vars = ["TOOL_DIR=/opt/tools"]
+
+[groups.commands.vars]
+TOOL_DIR = "/opt/tools"
 ```
 
 **For circular references**:
@@ -374,8 +378,10 @@ go-safe-cmd-runner -file minimal.toml
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
-args = ["Value: ${VAR}"]
-env_vars = ["VAR=hello"]
+args = ["Value: %{VAR}"]
+
+[groups.commands.vars]
+VAR = "hello"
 ```
 
 ```bash

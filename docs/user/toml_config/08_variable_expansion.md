@@ -965,26 +965,31 @@ env_allowed = ["PATH", "HOME"]
 [[groups.commands]]
 name = "override_home"
 cmd = "/bin/echo"
-args = ["Home: ${HOME}"]
-env_vars = ["HOME=/opt/custom-home"]
-# The HOME from Command.Env is used, not the system $HOME
+args = ["Home: %{MY_HOME}"]
+
+[groups.commands.vars]
+MY_HOME = "/opt/custom-home"  # Internal variable for TOML expansion
+
+# Note: If you want to override the HOME environment variable for the child process:
+# env_vars = ["HOME=/opt/custom-home"]
 ```
 
 ### 8.9.2 Relationship with env_allowed
 
-**Important**: Variables defined in `Command.Env` are not subject to `env_allowed` checks.
+**Important**: Internal variables defined in `vars` are not subject to `env_allowed` checks.
 
 ```toml
 [global]
 env_allowed = ["PATH", "HOME"]
-# CUSTOM_VAR is not in allowlist
+# CUSTOM_TOOL is not in env_allowed
 
 [[groups.commands]]
 name = "custom_var"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{CUSTOM_TOOL}"
 args = []
-env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]
-# CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
+
+[groups.commands.vars]
+CUSTOM_TOOL = "/opt/tools/mytool"  # Internal variable - no env_allowed check needed
 ```
 
 ### 8.9.3 Command Path Requirements
@@ -999,14 +1004,18 @@ For regular commands (without `run_as_user` or `run_as_group`), both local paths
 # Correct: expands to absolute path
 [[groups.commands]]
 name = "valid_absolute"
-cmd = "${TOOL_DIR}/mytool"
-env_vars = ["TOOL_DIR=/opt/tools"]  # Absolute path
+cmd = "%{TOOL_DIR}/mytool"
+
+[groups.commands.vars]
+TOOL_DIR = "/opt/tools"  # Absolute path
 
 # Correct: expands to relative path (allowed for regular commands)
 [[groups.commands]]
 name = "valid_relative"
-cmd = "${TOOL_DIR}/mytool"
-env_vars = ["TOOL_DIR=./tools"]  # Relative path - OK for regular commands
+cmd = "%{TOOL_DIR}/mytool"
+
+[groups.commands.vars]
+TOOL_DIR = "./tools"  # Relative path - OK for regular commands
 ```
 
 #### Privileged Commands
@@ -1017,16 +1026,20 @@ For privileged commands (with `run_as_user` or `run_as_group`), **only absolute 
 # Correct: expands to absolute path
 [[groups.commands]]
 name = "valid_privileged"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{TOOL_DIR}/mytool"
 run_as_user = "appuser"
-env_vars = ["TOOL_DIR=/opt/tools"]  # Absolute path
+
+[groups.commands.vars]
+TOOL_DIR = "/opt/tools"  # Absolute path
 
 # Incorrect: expands to relative path (error for privileged commands)
 [[groups.commands]]
 name = "invalid_privileged"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{TOOL_DIR}/mytool"
 run_as_user = "appuser"
-env_vars = ["TOOL_DIR=./tools"]  # Relative path - error for privileged commands
+
+[groups.commands.vars]
+TOOL_DIR = "./tools"  # Relative path - error for privileged commands
 ```
 
 Why absolute paths are required for privileged commands:
@@ -1036,21 +1049,23 @@ Why absolute paths are required for privileged commands:
 
 ### 8.9.4 Handling Sensitive Information
 
-Define sensitive information (API keys, passwords, etc.) in `Command.Env` to isolate from system environment variables:
+Define sensitive information (API keys, passwords, etc.) in `vars` to isolate from system environment variables:
 
 ```toml
 [[groups.commands]]
 name = "api_call"
 cmd = "/usr/bin/curl"
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
-    "${API_ENDPOINT}/data",
+    "-H", "Authorization: Bearer %{API_TOKEN}",
+    "%{API_ENDPOINT}/data",
 ]
-# Sensitive information is defined in Command.Env and isolated from system environment
-env_vars = [
-    "API_TOKEN=sk-1234567890abcdef",
-    "API_ENDPOINT=https://api.example.com",
-]
+
+[groups.commands.vars]
+API_TOKEN = "sk-1234567890abcdef"
+API_ENDPOINT = "https://api.example.com"
+
+# Note: Sensitive information is isolated from system environment.
+# If you need to pass these as environment variables to the child process, use env_vars.
 ```
 
 ### 8.12.5 Isolation Between Commands
@@ -1088,11 +1103,21 @@ If a variable is not defined, an error occurs:
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
-args = ["Value: ${UNDEFINED}"]
-# UNDEFINED is not defined in env_vars → error
+args = ["Value: %{UNDEFINED}"]
+# UNDEFINED is not defined in vars → error
 ```
 
-**Solution**: Define all required variables in `env_vars`
+**Solution**: Define all required variables in `vars`
+
+```toml
+[[groups.commands]]
+name = "defined_var"
+cmd = "/bin/echo"
+args = ["Value: %{MY_VAR}"]
+
+[groups.commands.vars]
+MY_VAR = "example"
+```
 
 ### Circular References
 
@@ -1102,16 +1127,27 @@ If variables reference each other, an error occurs:
 [[groups.commands]]
 name = "circular"
 cmd = "/bin/echo"
-args = ["${VAR1}"]
-env_vars = [
-    "VAR1=${VAR2}",
-    "VAR2=${VAR1}",  # Circular reference → error
-]
+args = ["%{VAR1}"]
+
+[groups.commands.vars]
+VAR1 = "%{VAR2}"
+VAR2 = "%{VAR1}"  # Circular reference → error
 ```
 
 **Solution**: Organize variable dependencies
 
-**Note**: Self-references like `PATH=/custom:${PATH}` are not circular references. See "7.6 Variable Self-Reference" for details.
+```toml
+[[groups.commands]]
+name = "no_circular"
+cmd = "/bin/echo"
+args = ["%{VAR2}"]
+
+[groups.commands.vars]
+VAR1 = "/path/to/dir"
+VAR2 = "%{VAR1}/subdir"  # VAR1 → VAR2 (no circular reference)
+```
+
+**Note**: For env_vars, self-references like `PATH=/custom:${PATH}` are not circular references because they reference the existing environment variable value.
 
 ### Path Validation Errors After Expansion
 
@@ -1120,12 +1156,24 @@ If the path after expansion is invalid, an error occurs:
 ```toml
 [[groups.commands]]
 name = "invalid_path"
-cmd = "${TOOL}"
+cmd = "%{TOOL}"
 args = []
-env_vars = ["TOOL=../tool"]  # Relative path → error
+
+[groups.commands.vars]
+TOOL = "../tool"  # Relative path may cause errors depending on context
 ```
 
 **Solution**: Use absolute paths
+
+```toml
+[[groups.commands]]
+name = "valid_path"
+cmd = "%{TOOL}"
+args = []
+
+[groups.commands.vars]
+TOOL = "/opt/tools/mytool"  # Absolute path
+```
 
 ## Comprehensive Practical Example
 

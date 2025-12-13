@@ -112,15 +112,17 @@ Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowed
 env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # CUSTOM_VAR を追加
 ```
 
-**方法2**: Command.Env で定義(推奨)
+**方法2**: vars で内部変数として定義(推奨)
 
 ```toml
 # env_allowed に追加不要
 [[groups.commands]]
 name = "custom_command"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{CUSTOM_TOOL}"
 args = []
-env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Command.Env で定義
+
+[groups.commands.vars]
+CUSTOM_TOOL = "/opt/tools/mytool"  # vars で内部変数として定義
 ```
 
 ### 11.1.5 変数展開エラー
@@ -145,15 +147,17 @@ Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 # 誤り: TOOL_DIR が定義されていない
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{TOOL_DIR}/mytool"
 args = []
 
-# 正しい: env_vars で定義
+# 正しい: vars で定義
 [[groups.commands]]
 name = "run_tool"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{TOOL_DIR}/mytool"
 args = []
-env_vars = ["TOOL_DIR=/opt/tools"]
+
+[groups.commands.vars]
+TOOL_DIR = "/opt/tools"
 ```
 
 **循環参照の場合**:
@@ -374,8 +378,10 @@ go-safe-cmd-runner -file minimal.toml
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
-args = ["Value: ${VAR}"]
-env_vars = ["VAR=hello"]
+args = ["Value: %{VAR}"]
+
+[groups.commands.vars]
+VAR = "hello"
 ```
 
 ```bash
