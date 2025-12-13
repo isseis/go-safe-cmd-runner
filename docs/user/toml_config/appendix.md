@@ -592,10 +592,11 @@ This document is a complete guide to TOML configuration files for go-safe-cmd-ru
 
 1. **Chapters 1-3**: Understand basic concepts and structure
 2. **Chapters 4-6**: Learn parameters at each level in detail
-3. **Chapter 7**: Master variable expansion features
-4. **Chapters 8-9**: Acquire practical examples and best practices
-5. **Chapter 10**: Learn troubleshooting techniques
-6. **Appendix**: Use as a reference
+3. **Chapter 7**: Improve reusability with command templates
+4. **Chapter 8**: Master variable expansion features
+5. **Chapters 9-10**: Acquire practical examples and best practices
+6. **Chapter 11**: Learn troubleshooting techniques
+7. **Appendix**: Use as a reference
 
 ### Further Learning
 

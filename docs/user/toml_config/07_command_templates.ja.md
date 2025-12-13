@@ -669,5 +669,5 @@ params.service_name = "postgresql"
 コマンドテンプレート機能を理解したら、以下の章も参照してください：
 
 - [第6章: コマンドレベル設定](06_command_level.ja.md) - テンプレートなしでのコマンド定義
-- [第7章: 変数展開機能](07_variable_expansion.ja.md) - `%{var}` 形式の変数展開
-- [第8章: 実践的な設定例](08_practical_examples.ja.md) - より多くの設定例
+- [第8章: 変数展開機能](08_variable_expansion.ja.md) - `%{var}` 形式の変数展開
+- [第9章: 実践的な設定例](09_practical_examples.ja.md) - より多くの設定例

@@ -1,24 +1,24 @@
-# Chapter 8: Practical Examples
+# 第9章: 実践的な設定例
 
-This chapter introduces practical configuration examples based on real-world use cases. Use these examples as a reference to create configuration files suited to your own environment.
+本章では、実際のユースケースに基づいた実践的な設定例を紹介します。これらの例を参考に、自分の環境に合わせた設定ファイルを作成してください。
 
-## 8.1 Basic Configuration Examples
+## 9.1 基本的な設定例
 
-### Simple Backup Task
+### シンプルなバックアップタスク
 
-Basic configuration for daily file backups:
+日次でファイルをバックアップする基本的な設定:
 
-**Pre-execution Setup:**
+**実行前の準備:**
 
 ```bash
-# Record hash of the TOML configuration file
+# TOML設定ファイルのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes backup-config.toml
 
-# Record hash of executable binaries
+# 実行バイナリのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/tar /bin/ls
 ```
 
-**Configuration File (backup-config.toml):**
+**設定ファイル (backup-config.toml):**
 
 ```toml
 version = "1.0"
@@ -30,12 +30,12 @@ env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "daily_backup"
-description = "Daily file backup"
+description = "日次ファイルバックアップ"
 workdir = "/var/backups"
 
 [[groups.commands]]
 name = "backup_configs"
-description = "Backup configuration files"
+description = "設定ファイルのバックアップ"
 cmd = "/bin/tar"
 args = [
     "-czf",
@@ -47,7 +47,7 @@ timeout = 600
 
 [[groups.commands]]
 name = "backup_logs"
-description = "Backup log files"
+description = "ログファイルのバックアップ"
 cmd = "/bin/tar"
 args = [
     "-czf",
@@ -59,32 +59,32 @@ timeout = 600
 
 [[groups.commands]]
 name = "list_backups"
-description = "List backup files"
+description = "バックアップファイルの一覧表示"
 cmd = "/bin/ls"
 args = ["-lh", "*.tar.gz"]
 output_file = "backup-list.txt"
 ```
 
-## 8.2 Security-Focused Configuration Examples
+## 9.2 セキュリティを重視した設定例
 
-### File Verification and Access Control
+### ファイル検証とアクセス制御
 
-Configuration for environments with high security requirements:
+セキュリティ要件が高い環境向けの設定:
 
-**Pre-execution Setup:**
+**実行前の準備:**
 
 ```bash
-# Record hash of the TOML configuration file
+# TOML設定ファイルのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes secure-backup.toml
 
-# Record hash of files specified in Global verify_files
+# Global verify_files で指定したファイルのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /bin/sh /bin/tar /usr/bin/gpg
 
-# Record hash of files specified in Group verify_files
+# Group verify_files で指定したファイルのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes /opt/secure/bin/backup-tool
 ```
 
-**Configuration File (secure-backup.toml):**
+**設定ファイル (secure-backup.toml):**
 
 ```toml
 version = "1.0"
@@ -92,8 +92,8 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-verify_standard_paths = true  # Verify all files
-env_allowed = ["PATH"]      # Minimal environment variables
+verify_standard_paths = true  # 全てのファイルを検証
+env_allowed = ["PATH"]      # 最小限の環境変数
 verify_files = [
     "/bin/sh",
     "/bin/tar",
@@ -102,7 +102,7 @@ verify_files = [
 
 [[groups]]
 name = "secure_backup"
-description = "Secure backup process"
+description = "セキュアなバックアップ処理"
 workdir = "/var/secure/backups"
 env_allowed = ["PATH", "GPG_KEY_ID"]
 verify_files = [
@@ -111,7 +111,7 @@ verify_files = [
 
 [[groups.commands]]
 name = "create_backup"
-description = "Create backup archive"
+description = "バックアップアーカイブの作成"
 cmd = "/bin/tar"
 args = [
     "-czf",
@@ -123,7 +123,7 @@ timeout = 1800
 
 [[groups.commands]]
 name = "encrypt_backup"
-description = "Encrypt backup"
+description = "バックアップの暗号化"
 cmd = "/usr/bin/gpg"
 vars = ["gpg_key_id=admin@example.com"]
 args = [
@@ -135,7 +135,7 @@ risk_level = "medium"
 
 [[groups.commands]]
 name = "verify_encrypted"
-description = "Verify encrypted file"
+description = "暗号化ファイルの検証"
 cmd = "/usr/bin/gpg"
 args = [
     "--verify",
@@ -144,11 +144,11 @@ args = [
 output_file = "verification-result.txt"
 ```
 
-## 8.3 Configuration Examples with Resource Management
+## 9.3 リソース管理を含む設定例
 
-### Temporary Directory and Automatic Cleanup
+### 一時ディレクトリと自動クリーンアップ
 
-Using a temporary workspace that is automatically deleted after processing:
+一時的な作業スペースを使用し、処理後に自動削除:
 
 ```toml
 version = "1.0"
@@ -159,12 +159,12 @@ env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "temp_processing"
-description = "Data processing in temporary directory"
-# Working directory uses automatically created temporary directory
+description = "一時ディレクトリでのデータ処理"
+# 作業ディレクトリは自動的に作成される一時ディレクトリを使用
 
 [[groups.commands]]
 name = "download_data"
-description = "Download data"
+description = "データのダウンロード"
 cmd = "/usr/bin/curl"
 args = [
     "-o", "data.csv",
@@ -175,7 +175,7 @@ timeout = 600
 
 [[groups.commands]]
 name = "process_data"
-description = "Process data"
+description = "データの加工"
 cmd = "/opt/tools/process"
 args = [
     "--input", "data.csv",
@@ -186,7 +186,7 @@ timeout = 900
 
 [[groups.commands]]
 name = "upload_result"
-description = "Upload processing result"
+description = "処理結果のアップロード"
 cmd = "/usr/bin/curl"
 args = [
     "-X", "POST",
@@ -196,13 +196,15 @@ args = [
 risk_level = "medium"
 timeout = 600
 output_file = "upload-response.txt"
+
+# 一時ディレクトリは自動的に削除される
 ```
 
-## 8.4 Configuration Examples with Privilege Escalation
+## 9.4 権限昇格を伴う設定例
 
-### System Administration Tasks
+### システム管理タスク
 
-System maintenance requiring root privileges:
+root 権限が必要なシステムメンテナンス:
 
 ```toml
 version = "1.0"
@@ -218,49 +220,49 @@ verify_files = [
 
 [[groups]]
 name = "system_maintenance"
-description = "System maintenance tasks"
+description = "システムメンテナンスタスク"
 
-# Non-privileged task: Check system status
+# 非特権タスク: システム状態の確認
 [[groups.commands]]
 name = "check_disk_space"
-description = "Check disk usage"
+description = "ディスク使用量の確認"
 cmd = "/bin/df"
 args = ["-h"]
 output_file = "disk-usage.txt"
 
-# Privileged task: Update packages
+# 特権タスク: パッケージの更新
 [[groups.commands]]
 name = "update_packages"
-description = "Update package list"
+description = "パッケージリストの更新"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
 risk_level = "high"
 timeout = 900
 
-# Privileged task: Restart service
+# 特権タスク: サービスの再起動
 [[groups.commands]]
 name = "restart_service"
-description = "Restart application service"
+description = "アプリケーションサービスの再起動"
 cmd = "/usr/bin/systemctl"
 args = ["restart", "myapp.service"]
 run_as_user = "root"
 risk_level = "high"
 
-# Non-privileged task: Check service status
+# 非特権タスク: サービス状態の確認
 [[groups.commands]]
 name = "check_service_status"
-description = "Check service status"
+description = "サービス状態の確認"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
 output_file = "service-status.txt"
 ```
 
-## 8.5 Configuration Examples Using Output Capture
+## 9.5 出力キャプチャを使用した設定例
 
-### Log Collection and Report Generation
+### ログ収集とレポート生成
 
-Collecting output from multiple commands to create a report:
+複数のコマンド出力を収集してレポートを作成:
 
 ```toml
 version = "1.0"
@@ -273,47 +275,47 @@ output_size_limit = 10485760  # 10MB
 
 [[groups]]
 name = "system_report"
-description = "Generate system status report"
+description = "システム状態レポートの生成"
 
 [[groups.commands]]
 name = "disk_usage_report"
-description = "Disk usage report"
+description = "ディスク使用量レポート"
 cmd = "/bin/df"
 args = ["-h"]
 output_file = "reports/disk-usage.txt"
 
 [[groups.commands]]
 name = "memory_report"
-description = "Memory usage report"
+description = "メモリ使用状況レポート"
 cmd = "/usr/bin/free"
 args = ["-h"]
 output_file = "reports/memory-usage.txt"
 
 [[groups.commands]]
 name = "process_report"
-description = "Process list report"
+description = "プロセス一覧レポート"
 cmd = "/bin/ps"
 args = ["aux"]
 output_file = "reports/processes.txt"
 
 [[groups.commands]]
 name = "network_report"
-description = "Network connection status report"
+description = "ネットワーク接続状況レポート"
 cmd = "/bin/netstat"
 args = ["-tuln"]
 output_file = "reports/network-connections.txt"
 
 [[groups.commands]]
 name = "service_report"
-description = "Service status report"
+description = "サービス状態レポート"
 cmd = "/usr/bin/systemctl"
 args = ["list-units", "--type=service", "--state=running"]
 output_file = "reports/services.txt"
 
-# Archive report files
+# レポートファイルのアーカイブ
 [[groups.commands]]
 name = "archive_reports"
-description = "Compress reports"
+description = "レポートの圧縮"
 cmd = "/bin/tar"
 vars = ["date=2025-10-02"]
 args = [
@@ -324,11 +326,11 @@ args = [
 risk_level = "medium"
 ```
 
-## 8.6 Configuration Examples Using Variable Expansion
+## 9.6 変数展開を活用した設定例
 
-### Environment-Specific Deployment
+### 環境別デプロイメント
 
-Using different configurations for development, staging, and production environments:
+開発・ステージング・本番環境で異なる設定を使用:
 
 ```toml
 version = "1.0"
@@ -337,10 +339,10 @@ version = "1.0"
 timeout = 600
 env_allowed = ["PATH", "HOME"]
 
-# Development environment
+# 開発環境
 [[groups]]
 name = "deploy_development"
-description = "Deploy to development environment"
+description = "開発環境へのデプロイ"
 
 [[groups.commands]]
 name = "deploy_dev_config"
@@ -370,12 +372,13 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
+env_vars = ["DB_URL=%{db_url}"]
 risk_level = "high"
 
-# Staging environment
+# ステージング環境
 [[groups]]
 name = "deploy_staging"
-description = "Deploy to staging environment"
+description = "ステージング環境へのデプロイ"
 
 [[groups.commands]]
 name = "deploy_staging_config"
@@ -405,12 +408,13 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
+env_vars = ["DB_URL=%{db_url}"]
 risk_level = "high"
 
-# Production environment
+# 本番環境
 [[groups]]
 name = "deploy_production"
-description = "Deploy to production environment"
+description = "本番環境へのデプロイ"
 
 [[groups.commands]]
 name = "deploy_prod_config"
@@ -440,28 +444,29 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
+env_vars = ["DB_URL=%{db_url}"]
 run_as_user = "appuser"
 risk_level = "high"
 ```
 
-## 8.7 Comprehensive Configuration Examples
+## 9.7 複合的な設定例
 
-### Full-Stack Application Deployment
+### フルスタックアプリケーションのデプロイ
 
-Integrated deployment of database, application, and web server:
+データベース、アプリケーション、Webサーバーの統合デプロイ:
 
-**Pre-execution Setup:**
+**実行前の準備:**
 
 ```bash
-# Record hash of the TOML configuration file
-record -d /usr/local/etc/go-safe-cmd-runner/hashes deploy-fullstack.toml
+# TOML設定ファイルのハッシュを記録
+record deploy-fullstack.toml -d /usr/local/etc/go-safe-cmd-runner/hashes
 
-# Record hash of files specified in Global verify_files
+# Global verify_files で指定したファイルのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes \
     /usr/bin/psql \
     /usr/bin/pg_dump
 
-# Record hash of executable binaries
+# 実行バイナリのハッシュを記録
 record -d /usr/local/etc/go-safe-cmd-runner/hashes \
     /bin/tar \
     /usr/bin/dpkg \
@@ -475,7 +480,7 @@ record -d /usr/local/etc/go-safe-cmd-runner/hashes \
     /bin/rm
 ```
 
-**Configuration File (deploy-fullstack.toml):**
+**設定ファイル (deploy-fullstack.toml):**
 
 ```toml
 version = "1.0"
@@ -495,15 +500,15 @@ env_allowed = [
 ]
 output_size_limit = 52428800  # 50MB
 
-# Phase 1: Preparation
+# フェーズ1: 事前準備
 [[groups]]
 name = "preparation"
-description = "Pre-deployment preparation"
+description = "デプロイ前の準備作業"
 workdir = "/opt/deploy/prep"
 
 [[groups.commands]]
 name = "backup_current_version"
-description = "Backup current version"
+description = "現在のバージョンをバックアップ"
 cmd = "/bin/tar"
 vars = [
     "backup_dir=/var/backups/app",
@@ -520,21 +525,21 @@ timeout = 1800
 
 [[groups.commands]]
 name = "check_dependencies"
-description = "Check dependencies"
+description = "依存関係の確認"
 cmd = "/usr/bin/dpkg"
 args = ["-l"]
 output_file = "installed-packages.txt"
 
-# Phase 2: Database update
+# フェーズ2: データベース更新
 [[groups]]
 name = "database_migration"
-description = "Update database schema"
+description = "データベーススキーマの更新"
 env_allowed = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
 verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 
 [[groups.commands]]
 name = "backup_database"
-description = "Backup database"
+description = "データベースのバックアップ"
 cmd = "/usr/bin/pg_dump"
 vars = [
     "db_user=appuser",
@@ -554,7 +559,7 @@ output_file = "db-backup-log.txt"
 
 [[groups.commands]]
 name = "run_migrations"
-description = "Run database migrations"
+description = "データベースマイグレーションの実行"
 cmd = "/opt/myapp/bin/migrate"
 vars = [
     "db_user=appuser",
@@ -567,15 +572,15 @@ args = [
 risk_level = "high"
 timeout = 600
 
-# Phase 3: Application deployment
+# フェーズ3: アプリケーションデプロイ
 [[groups]]
 name = "application_deployment"
-description = "Deploy application"
+description = "アプリケーションのデプロイ"
 workdir = "/opt/myapp"
 
 [[groups.commands]]
 name = "stop_application"
-description = "Stop application"
+description = "アプリケーションの停止"
 cmd = "/usr/bin/systemctl"
 args = ["stop", "myapp.service"]
 run_as_user = "root"
@@ -583,7 +588,7 @@ risk_level = "high"
 
 [[groups.commands]]
 name = "deploy_new_version"
-description = "Deploy new version"
+description = "新バージョンのデプロイ"
 cmd = "/bin/tar"
 args = [
     "-xzf",
@@ -594,7 +599,7 @@ risk_level = "medium"
 
 [[groups.commands]]
 name = "install_dependencies"
-description = "Install dependencies"
+description = "依存パッケージのインストール"
 cmd = "/usr/bin/pip3"
 args = [
     "install",
@@ -605,20 +610,20 @@ timeout = 600
 
 [[groups.commands]]
 name = "start_application"
-description = "Start application"
+description = "アプリケーションの起動"
 cmd = "/usr/bin/systemctl"
 args = ["start", "myapp.service"]
 run_as_user = "root"
 risk_level = "high"
 
-# Phase 4: Web server configuration update
+# フェーズ4: Webサーバー設定更新
 [[groups]]
 name = "web_server_update"
-description = "Update web server configuration"
+description = "Webサーバーの設定更新"
 
 [[groups.commands]]
 name = "update_nginx_config"
-description = "Update Nginx configuration"
+description = "Nginx設定の更新"
 cmd = "/bin/cp"
 args = [
     "/opt/deploy/configs/nginx/myapp.conf",
@@ -629,7 +634,7 @@ risk_level = "high"
 
 [[groups.commands]]
 name = "test_nginx_config"
-description = "Validate Nginx configuration"
+description = "Nginx設定の検証"
 cmd = "/usr/bin/nginx"
 args = ["-t"]
 run_as_user = "root"
@@ -638,20 +643,20 @@ output_file = "nginx-config-test.txt"
 
 [[groups.commands]]
 name = "reload_nginx"
-description = "Reload Nginx"
+description = "Nginxの再読み込み"
 cmd = "/usr/bin/systemctl"
 args = ["reload", "nginx"]
 run_as_user = "root"
 risk_level = "high"
 
-# Phase 5: Deployment verification
+# フェーズ5: デプロイ検証
 [[groups]]
 name = "deployment_verification"
-description = "Verify deployment"
+description = "デプロイの検証"
 
 [[groups.commands]]
 name = "health_check"
-description = "Application health check"
+description = "アプリケーションのヘルスチェック"
 cmd = "/usr/bin/curl"
 args = [
     "-f",
@@ -663,7 +668,7 @@ output_file = "health-check-result.txt"
 
 [[groups.commands]]
 name = "smoke_test"
-description = "Basic functionality test"
+description = "基本機能の動作確認"
 cmd = "/usr/bin/curl"
 args = [
     "-f",
@@ -674,7 +679,7 @@ output_file = "smoke-test-result.txt"
 
 [[groups.commands]]
 name = "verify_database_connection"
-description = "Verify database connection"
+description = "データベース接続の確認"
 cmd = "/usr/bin/psql"
 vars = [
     "db_user=appuser",
@@ -687,15 +692,15 @@ args = [
 ]
 output_file = "db-connection-test.txt"
 
-# Phase 6: Post-processing and reporting
+# フェーズ6: 後処理とレポート
 [[groups]]
 name = "post_deployment"
-description = "Post-deployment processing"
+description = "デプロイ後の処理"
 workdir = "/var/reports/deployment"
 
 [[groups.commands]]
 name = "generate_deployment_report"
-description = "Generate deployment report"
+description = "デプロイレポートの生成"
 cmd = "/opt/tools/generate-report"
 vars = ["timestamp=2025-10-02-120000"]
 args = [
@@ -705,14 +710,14 @@ args = [
 
 [[groups.commands]]
 name = "cleanup_temp_files"
-description = "Delete temporary files"
+description = "一時ファイルの削除"
 cmd = "/bin/rm"
 args = ["-rf", "/opt/deploy/temp"]
 risk_level = "medium"
 
 [[groups.commands]]
 name = "send_notification"
-description = "Send deployment completion notification"
+description = "デプロイ完了通知"
 cmd = "/usr/bin/curl"
 args = [
     "-X", "POST",
@@ -722,16 +727,16 @@ args = [
 ]
 ```
 
-## 8.8 Command Template Usage Examples
+## 9.8 コマンドテンプレートを活用した設定例
 
-### Consolidating Backup Tasks with Templates
+### テンプレートによるバックアップタスクの共通化
 
-When using the same backup command across multiple groups, you can consolidate definitions using templates:
+複数のグループで同じバックアップコマンドを使用する場合、テンプレートを使用して定義を共通化できます：
 
 ```toml
 version = "1.0"
 
-# Template definitions
+# テンプレート定義
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["${@verbose_flags}", "backup", "${backup_path}"]
@@ -754,24 +759,24 @@ risk_level = "low"
 timeout = 300
 env_allowed = ["PATH", "HOME", "RESTIC_REPOSITORY", "RESTIC_PASSWORD"]
 
-# Group 1: Important data (detailed logs, long-term retention)
+# グループ1: 重要データ（詳細ログ、長期保存）
 [[groups]]
 name = "backup_important_data"
-description = "Backup of important data (long-term retention)"
+description = "重要データのバックアップ（長期保存）"
 
 [groups.vars]
 data_root = "/data/important"
 
 [[groups.commands]]
 name = "backup_data"
-description = "Backup important data"
+description = "重要データのバックアップ"
 template = "restic_backup"
 params.verbose_flags = ["-v", "-v"]
 params.backup_path = "%{data_root}"
 
 [[groups.commands]]
 name = "cleanup_old_snapshots"
-description = "Delete old snapshots (long-term retention policy)"
+description = "古いスナップショットの削除（長期保存ポリシー）"
 template = "restic_forget"
 params.keep_daily = "14"
 params.keep_weekly = "8"
@@ -779,28 +784,28 @@ params.keep_monthly = "12"
 
 [[groups.commands]]
 name = "verify_repository"
-description = "Verify repository integrity"
+description = "リポジトリの整合性確認"
 template = "restic_check"
 params.verbose_flag = "--verbose"
 
-# Group 2: Temporary data (silent mode, short-term retention)
+# グループ2: 一時データ（静音モード、短期保存）
 [[groups]]
 name = "backup_temp_data"
-description = "Backup of temporary data (short-term retention)"
+description = "一時データのバックアップ（短期保存）"
 
 [groups.vars]
 data_root = "/data/temp"
 
 [[groups.commands]]
 name = "backup_data"
-description = "Backup temporary data"
+description = "一時データのバックアップ"
 template = "restic_backup"
-params.verbose_flags = []  # Silent mode
+params.verbose_flags = []  # 静音モード
 params.backup_path = "%{data_root}"
 
 [[groups.commands]]
 name = "cleanup_old_snapshots"
-description = "Delete old snapshots (short-term retention policy)"
+description = "古いスナップショットの削除（短期保存ポリシー）"
 template = "restic_forget"
 params.keep_daily = "3"
 params.keep_weekly = "1"
@@ -808,17 +813,17 @@ params.keep_monthly = "0"
 
 [[groups.commands]]
 name = "verify_repository"
-description = "Verify repository integrity"
+description = "リポジトリの整合性確認"
 template = "restic_check"
-params.verbose_flag = ""  # Omit optional parameter
+params.verbose_flag = ""  # オプショナルパラメータを省略
 ```
 
-### Consolidating Database Operations with Templates
+### テンプレートによるデータベース操作の共通化
 
 ```toml
 version = "1.0"
 
-# Template definitions
+# テンプレート定義
 [command_templates.pg_dump]
 cmd = "/usr/bin/pg_dump"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
@@ -843,48 +848,48 @@ env_allowed = ["PATH", "PGPASSWORD"]
 
 [[groups]]
 name = "database_backup"
-description = "Database backup operations"
+description = "データベースバックアップ操作"
 
 [groups.vars]
 backup_dir = "/var/backups/postgres"
 db_admin = "postgres"
 
-# Production database backup
+# 本番データベースのバックアップ
 [[groups.commands]]
 name = "backup_main_db"
-description = "Backup production database"
+description = "本番データベースのバックアップ"
 template = "pg_dump"
 params.verbose = "--verbose"
 params.db_user = "%{db_admin}"
 params.database = "production_db"
 params.output_file = "%{backup_dir}/production_db.dump"
 
-# Log database backup (silent mode)
+# ログデータベースのバックアップ（静音モード）
 [[groups.commands]]
 name = "backup_logs_db"
-description = "Backup log database"
+description = "ログデータベースのバックアップ"
 template = "pg_dump"
-params.verbose = ""  # Silent mode
+params.verbose = ""  # 静音モード
 params.db_user = "%{db_admin}"
 params.database = "logs_db"
 params.output_file = "%{backup_dir}/logs_db.dump"
 
-# Database status check
+# データベースの状態確認
 [[groups.commands]]
 name = "check_db_version"
-description = "Check database version"
+description = "データベースバージョンの確認"
 template = "psql_query"
 params.db_user = "%{db_admin}"
 params.database = "production_db"
 params.query = "SELECT version();"
 ```
 
-### Consolidating System Monitoring with Templates
+### テンプレートによるシステム監視の共通化
 
 ```toml
 version = "1.0"
 
-# Template definitions
+# テンプレート定義
 [command_templates.check_service]
 cmd = "/usr/bin/systemctl"
 args = ["status", "${service_name}"]
@@ -910,10 +915,10 @@ env_allowed = ["PATH"]
 
 [[groups]]
 name = "system_monitoring"
-description = "System monitoring tasks"
+description = "システム監視タスク"
 workdir = "/var/reports"
 
-# Service status checks
+# サービス状態の確認
 [[groups.commands]]
 name = "check_nginx"
 template = "check_service"
@@ -929,7 +934,7 @@ name = "check_redis"
 template = "check_service"
 params.service_name = "redis"
 
-# Disk usage checks
+# ディスク使用量の確認
 [[groups.commands]]
 name = "check_root_disk"
 template = "check_disk"
@@ -942,9 +947,9 @@ params.mount_point = "/data"
 
 [[groups]]
 name = "system_recovery"
-description = "System recovery tasks"
+description = "システム復旧タスク"
 
-# Service restarts
+# サービスの再起動
 [[groups.commands]]
 name = "restart_nginx"
 template = "restart_service"
@@ -956,11 +961,11 @@ template = "restart_service"
 params.service_name = "postgresql"
 ```
 
-> **For details**: For more information on the command template feature (types of parameter expansion, escaping, security considerations, etc.), refer to [Chapter 11: Command Templates](11_command_templates.md).
+> **詳細**: コマンドテンプレート機能の詳細（パラメータ展開の種類、エスケープ、セキュリティ考慮事項など）については[第7章: コマンドテンプレート](07_command_templates.ja.md)を参照してください。
 
-## 8.9 Risk-Based Control Examples
+## 9.9 リスクベースの制御例
 
-### Command Execution Based on Risk Level
+### リスクレベルに応じたコマンド実行
 
 ```toml
 version = "1.0"
@@ -971,59 +976,60 @@ env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "risk_controlled_operations"
-description = "Operations controlled based on risk level"
+description = "リスクレベルに基づく操作制御"
 
-# Low risk: Read-only operations
+# 低リスク: 読み取り専用操作
 [[groups.commands]]
 name = "read_config"
-description = "Read configuration file"
+description = "設定ファイルの読み取り"
 cmd = "/bin/cat"
 args = ["/etc/myapp/config.yml"]
 output_file = "config-content.txt"
 
-# Medium risk: File creation/modification
+# 中リスク: ファイル作成・変更
 [[groups.commands]]
 name = "update_cache"
-description = "Update cache file"
+description = "キャッシュファイルの更新"
 cmd = "/opt/myapp/update-cache"
 args = ["--refresh"]
 risk_level = "medium"
 
-# High risk: System changes
+# 高リスク: システム変更
 [[groups.commands]]
 name = "system_update"
-description = "Update system packages"
+description = "システムパッケージの更新"
 cmd = "/usr/bin/apt-get"
 args = ["upgrade", "-y"]
 run_as_user = "root"
 risk_level = "high"
 timeout = 1800
 
-# Example that will be rejected for exceeding risk level
+# リスクレベル超過で実行拒否される例
 [[groups.commands]]
 name = "dangerous_deletion"
-description = "Mass deletion (cannot run at default risk level)"
+description = "大量削除(デフォルトリスクレベルでは実行不可)"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/old-data"]
-# risk_level defaults to "low"
-# rm -rf requires medium risk or higher → execution rejected
+# risk_level のデフォルトは "low"
+# rm -rf は中リスク以上が必要 → 実行拒否される
 ```
 
-## Summary
+## まとめ
 
-This chapter introduced the following practical configuration examples:
+本章では、以下の実践的な設定例を紹介しました:
 
-1. **Basic Configuration**: Simple backup task
-2. **Security-Focused**: File verification and access control
-3. **Resource Management**: Temporary directory and automatic cleanup
-4. **Privilege Escalation**: System administration tasks
-5. **Output Capture**: Log collection and report generation
-6. **Variable Expansion**: Environment-specific deployment
-7. **Comprehensive Configuration**: Full-stack application deployment
-8. **Risk-Based Control**: Execution control based on risk level
+1. **基本的な設定**: シンプルなバックアップタスク
+2. **セキュリティ重視**: ファイル検証とアクセス制御
+3. **リソース管理**: 一時ディレクトリと自動クリーンアップ
+4. **権限昇格**: システム管理タスク
+5. **出力キャプチャ**: ログ収集とレポート生成
+6. **変数展開**: 環境別デプロイメント
+7. **複合設定**: フルスタックアプリケーションのデプロイ
+8. **コマンドテンプレート**: テンプレートによるコマンド定義の共通化
+9. **リスクベース制御**: リスクレベルに応じた実行制御
 
-Use these examples as references to create configuration files suited to your own environment and use cases.
+これらの例を参考に、自分の環境やユースケースに合わせた設定ファイルを作成してください。
 
-## Next Steps
+## 次のステップ
 
-In the next chapter, we will learn best practices for creating configuration files. We will provide guidelines for creating better configuration files from the perspectives of security, maintainability, and performance.
+次章では、設定ファイル作成時のベストプラクティスを学びます。セキュリティ、保守性、パフォーマンスの観点から、より良い設定ファイルを作成するための指針を提供します。

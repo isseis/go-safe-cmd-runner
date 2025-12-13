@@ -1,6 +1,6 @@
-# Chapter 11: Command Template Feature
+# Chapter 7: Command Template Feature
 
-## 11.1 Overview of Command Templates
+## 7.1 Overview of Command Templates
 
 The command template feature allows you to manage common command definitions in a single location and reuse them across multiple groups.
 
@@ -59,9 +59,9 @@ template = "restic_prune"
 4. **Improved Readability**: Only group-specific settings (parameters) are made explicit
 5. **Parameterization**: Different values can be specified for each group while maintaining common parts
 
-## 11.2 Template Definition
+## 7.2 Template Definition
 
-### 11.2.1 Basic Syntax
+### 7.2.1 Basic Syntax
 
 Templates are defined in the `[command_templates.<template_name>]` section.
 
@@ -72,7 +72,7 @@ args = ["<arg1>", "<arg2>", ...]
 # Other command execution related fields
 ```
 
-### 11.2.2 Available Fields
+### 7.2.2 Available Fields
 
 Most execution-related fields available in `[[groups.commands]]` can be specified in template definitions.
 
@@ -88,7 +88,7 @@ Most execution-related fields available in `[[groups.commands]]` can be specifie
 | `risk_level` | Risk level | Optional |
 | `output_file` | Output file | Optional |
 
-### 11.2.3 Prohibited Fields
+### 7.2.3 Prohibited Fields
 
 The following fields cannot be used in template definitions:
 
@@ -97,7 +97,7 @@ The following fields cannot be used in template definitions:
 | `name` | Command name is specified by the caller |
 | `template` | Nesting templates (referencing another template from a template) is prohibited |
 
-### 11.2.4 Template Naming Rules
+### 7.2.4 Template Naming Rules
 
 Template names must follow these rules:
 
@@ -117,7 +117,7 @@ Template names must follow these rules:
 [command_templates.__reserved]      # Reserved prefix
 ```
 
-### 11.2.5 Configuration Examples
+### 7.2.5 Configuration Examples
 
 #### Example 1: Simple Template
 
@@ -139,11 +139,11 @@ timeout = 3600
 risk_level = "medium"
 ```
 
-## 11.3 Parameter Expansion
+## 7.3 Parameter Expansion
 
 By defining parameters in templates and passing values when calling them, flexible command definitions are possible.
 
-### 11.3.1 Types of Parameter Expansion
+### 7.3.1 Types of Parameter Expansion
 
 go-safe-cmd-runner provides three types of parameter expansion syntax:
 
@@ -153,7 +153,7 @@ go-safe-cmd-runner provides three types of parameter expansion syntax:
 | `${?param}` | Optional Parameter | Optional string value | Element removed |
 | `${@list}` | Array Parameter | Expand multiple values | Nothing added |
 
-### 11.3.2 String Parameter Expansion `${param}`
+### 7.3.2 String Parameter Expansion `${param}`
 
 The `${param}` in a template is replaced with the specified string value.
 
@@ -181,7 +181,7 @@ params.path = ""
 # Result: args = ["backup", ""]  ← Empty string passed as argument
 ```
 
-### 11.3.3 Optional Parameter Expansion `${?param}`
+### 7.3.3 Optional Parameter Expansion `${?param}`
 
 The `${?param}` in a template removes the element from the array if it's an empty string.
 
@@ -211,7 +211,7 @@ params.path = "/data"
 - Suitable for optional flags and options
 - Can remove elements with empty string
 
-### 11.3.4 Array Parameter Expansion `${@list}`
+### 7.3.4 Array Parameter Expansion `${@list}`
 
 The `${@list}` in a template is expanded with all elements of the array.
 
@@ -241,7 +241,7 @@ params.path = "/data"
 - Multiple flags and options can be specified at once
 - Nothing added with empty array `[]`
 
-### 11.3.5 Parameter Naming Rules
+### 7.3.5 Parameter Naming Rules
 
 Parameter names follow the same rules as variable names:
 
@@ -261,9 +261,9 @@ params.backup-path = "/data"       # Hyphen not allowed
 params.__runner_test = "value"     # Reserved prefix
 ```
 
-## 11.4 Using Templates
+## 7.4 Using Templates
 
-### 11.4.1 Basic Usage
+### 7.4.1 Basic Usage
 
 Reference a template by specifying the `template` field in `[[groups.commands]]`.
 
@@ -275,14 +275,14 @@ params.<param1> = "<value1>"
 params.<param2> = ["<value2a>", "<value2b>"]
 ```
 
-### 11.4.2 Required Fields
+### 7.4.2 Required Fields
 
 | Field | Description |
 |-------|-------------|
 | `name` | Command name (unique within group) |
 | `template` | Template name to reference |
 
-### 11.4.3 Exclusive Fields
+### 7.4.3 Exclusive Fields
 
 When `template` is specified, the following fields cannot be specified (will result in an error):
 
@@ -306,7 +306,7 @@ template = "restic_backup"
 cmd = "foo"  # Error: template and cmd are exclusive
 ```
 
-### 11.4.4 Compatible Fields
+### 7.4.4 Compatible Fields
 
 Fields that can be used with `template`:
 
@@ -316,7 +316,7 @@ Fields that can be used with `template`:
 | `params` | Parameter specification |
 | `description` | Command description |
 
-### 11.4.5 Creating Multiple Commands from the Same Template
+### 7.4.5 Creating Multiple Commands from the Same Template
 
 Multiple commands can be defined from the same template with different `name` values:
 
@@ -344,16 +344,16 @@ template = "restic_backup"
 params.path = "/home"
 ```
 
-## 11.5 Combining with Variable Expansion
+## 7.5 Combining with Variable Expansion
 
-### 11.5.1 Expansion Order
+### 7.5.1 Expansion Order
 
 Template expansion and variable expansion (`%{...}`) are processed in the following order:
 
 1. **Template Expansion**: Replace `${...}`, `${?...}`, `${@...}` with params values
 2. **Variable Expansion**: Expand `%{...}` in the result
 
-### 11.5.2 Variable References in params
+### 7.5.2 Variable References in params
 
 Variable references (`%{...}`) can be included in `params` values. This allows group-specific variables to be passed to templates.
 
@@ -380,7 +380,7 @@ params.backup_path = "%{group_root}/volumes"
 #   args = ["backup", "/data/group1/volumes"]
 ```
 
-### 11.5.3 Prohibition of Variable References in Template Definitions
+### 7.5.3 Prohibition of Variable References in Template Definitions
 
 **Important**: For security reasons, variable references (`%{...}`) cannot be included in template definitions (`cmd`, `args`, `env_vars`, `workdir`).
 
@@ -411,9 +411,9 @@ template = "echo_message"
 params.message = "%{my_variable}"  # Allowed
 ```
 
-## 11.6 Escape Sequences
+## 7.6 Escape Sequences
 
-### 11.6.1 Writing Literal `$`
+### 7.6.1 Writing Literal `$`
 
 To use a literal `$` character in a template definition, escape it with `\$`.
 
@@ -431,16 +431,16 @@ params.item = "Widget"
 # Result: args = ["Cost: $100", "Widget"]
 ```
 
-### 11.6.2 Consistency with Existing Escapes
+### 7.6.2 Consistency with Existing Escapes
 
 This escape notation is the same as the `\%` escape for variable expansion:
 
 - `\%{var}` → `%{var}` (not expanded)
 - `\$` → `$` (literal)
 
-## 11.7 Errors and Validation
+## 7.7 Errors and Validation
 
-### 11.7.1 Common Errors
+### 7.7.1 Common Errors
 
 #### Referencing Non-Existent Template
 
@@ -488,7 +488,7 @@ cmd = "echo"
 args = ["%{secret}"]  # Error: template contains forbidden pattern "%{" in args
 ```
 
-### 11.7.2 Warnings
+### 7.7.2 Warnings
 
 #### Unused Parameters
 
@@ -505,9 +505,9 @@ template = "simple"
 params.unused = "value"  # Warning: unused parameter "unused" in template "simple"
 ```
 
-## 11.8 Practical Configuration Examples
+## 7.8 Practical Configuration Examples
 
-### 11.8.1 Common Backup Tasks
+### 7.8.1 Common Backup Tasks
 
 ```toml
 version = "1.0"
@@ -564,7 +564,7 @@ params.keep_daily = "3"
 params.keep_weekly = "1"
 ```
 
-### 11.8.2 Common Database Operations
+### 7.8.2 Common Database Operations
 
 ```toml
 version = "1.0"
@@ -602,7 +602,7 @@ params.database = "logs"
 params.output_file = "%{backup_dir}/logs_db.dump"
 ```
 
-### 11.8.3 Common System Monitoring Tasks
+### 7.8.3 Common System Monitoring Tasks
 
 ```toml
 version = "1.0"
@@ -643,22 +643,22 @@ template = "check_service"
 params.service_name = "postgresql"
 ```
 
-## 11.9 Best Practices
+## 7.9 Best Practices
 
-### 11.9.1 Template Design Guidelines
+### 7.9.1 Template Design Guidelines
 
 1. **Single Responsibility**: Each template should focus on one purpose
 2. **Appropriate Parameterization**: Parameterize parts that are likely to change
 3. **Meaningful Names**: Template names should indicate their purpose
 4. **Consider Default Values**: Leverage optional parameters (`${?...}`)
 
-### 11.9.2 Parameter Design Guidelines
+### 7.9.2 Parameter Design Guidelines
 
 1. **Required vs Optional**: Use `${param}` for always required values, `${?param}` for optional values
 2. **Leverage Arrays**: Pass multiple flags and options as arrays using `${@list}`
 3. **Combine with Variables**: Reference group-specific values using `%{var}` in `params`
 
-### 11.9.3 Security Guidelines
+### 7.9.3 Security Guidelines
 
 1. **No Variable References in Template Definitions**: Always pass explicitly via `params`
 2. **Validate Parameter Values**: Expanded commands are automatically validated for security
@@ -669,5 +669,5 @@ params.service_name = "postgresql"
 After understanding the command template feature, also refer to the following chapters:
 
 - [Chapter 6: Command Level Configuration](06_command_level.md) - Command definitions without templates
-- [Chapter 7: Variable Expansion Feature](07_variable_expansion.md) - `%{var}` format variable expansion
-- [Chapter 8: Practical Configuration Examples](08_practical_examples.md) - More configuration examples
+- [Chapter 8: Variable Expansion Feature](08_variable_expansion.md) - `%{var}` format variable expansion
+- [Chapter 9: Practical Configuration Examples](09_practical_examples.md) - More configuration examples

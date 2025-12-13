@@ -7,7 +7,7 @@ The `[[groups.commands]]` section defines the commands to be actually executed. 
 There are two ways to define commands:
 
 1. **Direct Definition**: Directly specify `cmd` and `args` for the command
-2. **Using Template**: Reference a pre-defined template (detailed in [Chapter 11](11_command_templates.md))
+2. **Using Template**: Reference a pre-defined template (detailed in [Chapter 7](07_command_templates.md))
 
 ## 6.1 Basic Command Settings
 
@@ -108,7 +108,7 @@ cmd = "command_path"
 | **Required/Optional** | Required |
 | **Configurable Level** | Command only |
 | **Valid Values** | Absolute path, or command name on PATH |
-| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 7) |
+| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 8) |
 
 #### Configuration Examples
 
@@ -185,7 +185,7 @@ args = ["arg1", "arg2", ...]
 | **Configurable Level** | Command only |
 | **Default Value** | [] (no arguments) |
 | **Valid Values** | List of any strings |
-| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 7) |
+| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 8) |
 
 #### Configuration Examples
 
@@ -1470,8 +1470,8 @@ params.path = "%{backup_root}/daily"
 # Result: args = ["backup", "/data/backups/daily"]
 ```
 
-> **For details**: For more information on the template feature (types of parameter expansion, escaping, best practices, etc.), refer to [Chapter 11: Command Templates](11_command_templates.md).
+> **For details**: For more information on the template feature (types of parameter expansion, escaping, best practices, etc.), refer to [Chapter 7: Command Templates](07_command_templates.md).
 
 ## Next Steps
 
-The next chapter will provide detailed explanations of variable expansion functionality. You will learn how to perform dynamic command construction using `%{VAR}` format variables.
+The next chapter will provide detailed explanations of command templates. You will learn how to eliminate duplication by defining reusable command templates.
