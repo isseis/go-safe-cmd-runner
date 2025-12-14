@@ -98,7 +98,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test additional-test deadcode generate-perf-configs
+.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test additional-test deadcode generate-perf-configs verify-docs verify-docs-full
 
 all: security-check
 
@@ -262,3 +262,10 @@ security-test:
 
 deadcode:
 	deadcode ./cmd/record ./cmd/runner ./cmd/verify
+
+# Documentation verification targets
+verify-docs:
+	@./scripts/verification/run_all.sh
+
+verify-docs-full:
+	@./scripts/verification/run_all.sh -v -e
