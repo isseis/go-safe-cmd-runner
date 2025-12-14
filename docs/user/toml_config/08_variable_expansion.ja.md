@@ -1,6 +1,6 @@
-# 第7章: 変数展開機能
+# 第8章: 変数展開機能
 
-## 7.1 変数展開の概要
+## 8.1 変数展開の概要
 
 変数展開機能は、コマンドやその引数に変数を埋め込み、実行時に実際の値に置き換える機能です。go-safe-cmd-runnerでは、**内部変数**(TOML展開専用)と**プロセス環境変数**(子プロセスに渡される環境変数)を明確に分離し、セキュリティと明確性を向上させています。
 
@@ -31,7 +31,7 @@ go-safe-cmd-runnerでは、2種類の変数を扱います:
 - **verify_files**: 検証対象ファイルパス(`%{var}` を使用)
 - **vars**: 内部変数の定義(`%{var}` で他の内部変数を参照可能)
 
-## 7.2 変数展開の文法
+## 8.2 変数展開の文法
 
 ### 内部変数の参照構文
 
@@ -66,9 +66,9 @@ env_vars = ["VAR=%{value}"]
 "%{__runner_test}"  # 予約プレフィックス
 ```
 
-## 7.3 内部変数の定義
+## 8.3 内部変数の定義
 
-### 7.3.1 `vars` フィールドによる内部変数定義
+### 8.3.1 `vars` フィールドによる内部変数定義
 
 #### 概要
 
@@ -134,7 +134,7 @@ timestamp = "20250114"
 output_file = "%{base_dir}/dump_%{timestamp}.sql"
 ```
 
-### 7.3.2 `env_import` によるシステム環境変数の取り込み
+### 8.3.2 `env_import` によるシステム環境変数の取り込み
 
 #### 概要
 
@@ -201,7 +201,7 @@ args = ["-la", "%{home}"]
 # %{home} は /home/username などに展開される
 ```
 
-### 7.3.3 内部変数のネスト
+### 8.3.3 内部変数のネスト
 
 内部変数の値には、他の内部変数への参照を含めることができます。
 
@@ -228,7 +228,7 @@ args = ["Log directory: %{log_dir}"]
 2. `app_dir` → `%{base}/myapp` → `/opt/myapp`
 3. `log_dir` → `%{app_dir}/logs` → `/opt/myapp/logs`
 
-### 7.3.4 循環参照の検出
+### 8.3.4 循環参照の検出
 
 循環参照はエラーとして検出されます:
 
@@ -243,9 +243,9 @@ var1 = "%{var2}"
 var2 = "%{var1}"  # エラー: 循環参照
 ```
 
-## 7.4 プロセス環境変数の定義
+## 8.4 プロセス環境変数の定義
 
-### 7.4.1 `env_vars` フィールドによる環境変数設定
+### 8.4.1 `env_vars` フィールドによる環境変数設定
 
 #### 概要
 
@@ -314,9 +314,9 @@ args = ["--verbose"]
 # 子プロセスは APP_HOME=/opt/myapp, LOG_PATH=/opt/myapp/logs/app.log を受け取る
 ```
 
-## 7.5 使用可能な場所の詳細
+## 8.5 使用可能な場所の詳細
 
-### 7.5.1 cmd での変数展開
+### 8.5.1 cmd での変数展開
 
 コマンドパスに内部変数を使用できます。
 
@@ -354,7 +354,7 @@ version = "11.2.0"
 - `%{version}` → `11.2.0` に展開
 - 実際の実行: `/opt/toolchains/gcc-11.2.0/bin/gcc -o output main.c`
 
-### 7.5.2 args での変数展開
+### 8.5.2 args での変数展開
 
 コマンド引数に内部変数を使用できます。
 
@@ -404,7 +404,7 @@ env_type = "production"
 実行時:
 - `%{config_dir}/%{env_type}.yml` → `/etc/myapp/configs/production.yml` に展開
 
-### 7.5.3 複数変数の組み合わせ
+### 8.5.3 複数変数の組み合わせ
 
 複数の変数を組み合わせて、複雑なパスや文字列を構築できます。
 
@@ -444,9 +444,9 @@ db_name = "myapp_db"
 実行時:
 - 接続文字列が完全に展開される
 - `postgresql://appuser:secret123@localhost:5432/myapp_db`
-## 7.6 実践例
+## 8.6 実践例
 
-### 7.6.1 コマンドパスの動的構築
+### 8.6.1 コマンドパスの動的構築
 
 環境に応じてコマンドパスを切り替える例:
 
@@ -480,7 +480,7 @@ python_root = "/usr/local"
 py_version = "3.11"
 ```
 
-### 7.6.2 引数の動的生成
+### 8.6.2 引数の動的生成
 
 Docker コンテナの起動パラメータを動的に構築:
 
@@ -528,7 +528,7 @@ image_tag = "v1.2.3"
   myapp:v1.2.3
 ```
 
-### 7.6.3 環境別設定の切り替え
+### 8.6.3 環境別設定の切り替え
 
 開発環境と本番環境で異なる設定を使用:
 
@@ -577,7 +577,7 @@ env_type = "production"
 db_url = "postgresql://prod-server/prod_db"
 ```
 
-### 7.6.4 システム環境変数の活用
+### 8.6.4 システム環境変数の活用
 
 `env_import` を使用してシステム環境変数を安全に取り込む例:
 
@@ -609,7 +609,7 @@ cmd = "/bin/tail"
 args = ["-f", "%{log_file}"]
 ```
 
-## 7.7 エスケープシーケンス
+## 8.7 エスケープシーケンス
 
 リテラル(文字通りの)`%` や `\` を使用したい場合、エスケープが必要です。
 
@@ -661,9 +661,157 @@ vars = ["percent=100"]
 
 出力: `Literal % is different from 100`
 
-## 7.8 自動変数
+## 8.8 変数のネスト
 
-### 7.8.1 概要
+変数の値には他の変数を含めることができます。
+
+### 基本例
+
+```toml
+[[groups.commands]]
+name = "nested_vars"
+cmd = "/bin/echo"
+args = ["Message: %{full_msg}"]
+
+[groups.commands.vars]
+full_msg = "Hello, %{user}!"
+user = "Alice"
+```
+
+展開の順序:
+1. `%{user}` → `Alice` に展開
+2. `%{full_msg}` → `Hello, Alice!` に展開
+3. 最終的な引数: `Message: Hello, Alice!`
+
+### 複雑なパス構築
+
+```toml
+[[groups.commands]]
+name = "complex_path"
+cmd = "/bin/echo"
+args = ["Config path: %{config_path}"]
+
+[groups.commands.vars]
+config_path = "%{base_dir}/%{env_type}/config.yml"
+base_dir = "/opt/myapp"
+env_type = "production"
+```
+
+展開の順序:
+1. `%{base_dir}` → `/opt/myapp` に展開
+2. `%{env_type}` → `production` に展開
+3. `%{config_path}` → `/opt/myapp/production/config.yml` に展開
+
+## 8.9 変数の自己参照
+
+変数の自己参照は、環境変数を拡張する際によく使用される重要な機能です。特に `PATH` のような環境変数で、既存の値に新しい値を追加したい場合に便利です。
+
+### 自己参照の仕組み
+
+`PATH=/custom/bin:%{path}` のような式では、`%{path}` は **`env_import` でインポートされたシステム環境変数**または内部変数を参照します。これは循環参照ではなく、意図的にサポートされている機能です。
+
+### 基本例: PATH の拡張
+
+```toml
+[global]
+env_allowed = ["PATH"]
+env_import = ["path=PATH"]
+
+[[groups.commands]]
+name = "extend_path"
+cmd = "/bin/echo"
+args = ["PATH is: %{path}"]
+env_vars = ["PATH=/opt/mytools/bin:%{path}"]
+```
+
+展開プロセス:
+1. システム環境変数 `PATH` を `%{path}` としてインポート（例: `/usr/bin:/bin`）
+2. `%{path}` → `/usr/bin:/bin` に展開
+3. 最終値: `/opt/mytools/bin:/usr/bin:/bin`
+
+### 実践例: カスタムツールディレクトリの追加
+
+```toml
+[global]
+env_allowed = ["PATH"]
+env_import = ["path=PATH"]
+
+[[groups.commands]]
+name = "use_custom_tools"
+cmd = "%{custom_tool}"
+args = ["--version"]
+env_vars = [
+    "PATH=%{tool_dir}/bin:%{path}"
+]
+
+[groups.commands.vars]
+tool_dir = "/opt/custom-tools"
+custom_tool = "%{tool_dir}/bin/mytool"
+```
+
+この設定により:
+- `%{custom_tool}` は拡張された `PATH` から見つけられます（フルパスでなくコマンド名だけで指定しても）
+- 既存のシステム `PATH` は保持されます
+
+### 他の環境変数での自己参照
+
+`PATH` だけでなく、他の環境変数でも自己参照を使用できます:
+
+```toml
+[global]
+env_allowed = ["LD_LIBRARY_PATH", "PYTHONPATH"]
+env_import = [
+    "ld_library_path=LD_LIBRARY_PATH",
+    "pythonpath=PYTHONPATH"
+]
+
+[[groups.commands]]
+name = "extend_lib_path"
+cmd = "/opt/myapp/bin/app"
+args = []
+env_vars = [
+    "LD_LIBRARY_PATH=/opt/myapp/lib:%{ld_library_path}",
+    "PYTHONPATH=/opt/myapp/python:%{pythonpath}"
+]
+```
+
+### 自己参照と循環参照の違い
+
+**自己参照（正常）**: `env_import` でインポートしたシステム環境変数または内部変数を参照
+```toml
+env_vars = ["PATH=/custom/bin:%{path}"]  # %{path} はシステム環境変数を参照
+```
+
+**循環参照（エラー）**: vars 内の変数が互いに循環参照
+```toml
+[global.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # エラー: 循環参照
+```
+
+### 重要な注意事項
+
+1. **システム環境変数が存在しない場合**: `env_import` で参照するシステム環境変数が存在しない場合、エラーが発生します
+2. **allowlist との関係**: `env_import` でシステム環境変数を参照する場合、その変数は `env_allowed` に含まれている必要があります
+
+```toml
+[global]
+env_allowed = ["PATH", "HOME"]  # PATH と HOME のインポートを許可
+env_import = ["system_path=PATH"]  # OK: PATH は allowlist に含まれている
+
+[[groups.commands]]
+name = "extend_path"
+cmd = "/bin/echo"
+args = ["%{path}"]
+env_vars = ["PATH=%{path}"]
+
+[groups.commands.vars]
+path = "PATH_PREFIX:/custom:%{system_path}"
+```
+
+## 8.10 自動変数
+
+### 8.10.1 概要
 
 システムは以下の内部変数を自動的に設定します:
 
@@ -673,7 +821,7 @@ vars = ["percent=100"]
 
 これらの変数は、**内部変数として利用可能**であり、`%{__runner_datetime}`、`%{__runner_pid}`、`%{__runner_workdir}` の形式で参照できます。
 
-### 7.8.2 使用例
+### 8.10.2 使用例
 
 #### タイムスタンプ付きバックアップ
 
@@ -762,7 +910,7 @@ args = [
 - 出力ファイル: `/reports/20251005143022.123-12345.html`
 - レポートタイトル: `Report 20251005143022.123`
 
-### 7.8.3 日時フォーマット
+### 8.10.3 日時フォーマット
 
 `__runner_datetime` のフォーマット仕様:
 
@@ -780,7 +928,7 @@ args = [
 
 **注意**: タイムゾーンは常にUTCです。ローカルタイムゾーンではありません。
 
-### 7.8.4 予約プレフィックス
+### 8.10.4 予約プレフィックス
 
 プレフィックス `__runner_` は自動変数用に予約されており、ユーザー定義の変数では使用できません。
 
@@ -810,7 +958,7 @@ args = ["%{my_custom_var}"]
 vars = ["my_custom_var=value"]  # OK: 予約プレフィックスを使用していない
 ```
 
-### 7.8.5 変数生成のタイミング
+### 8.10.5 変数生成のタイミング
 
 自動変数（`__runner_datetime` と `__runner_pid`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
 
@@ -835,9 +983,9 @@ args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 
 これにより、コマンドが異なる時刻に実行される場合や、異なるグループに属している場合でも、単一のrunner実行内のすべてのコマンド間で一貫性が保証されます。
 
-## 7.9 セキュリティ考慮事項
+## 8.11 セキュリティ考慮事項
 
-### 7.9.1 内部変数とプロセス環境変数の分離
+### 8.11.1 内部変数とプロセス環境変数の分離
 
 内部変数(vars, env_import)とプロセス環境変数(env_vars)は明確に分離されています:
 
@@ -858,7 +1006,7 @@ args = ["--config", "%{config_path}"]  # 内部変数を使用
 # 子プロセスは APP_HOME 環境変数を受け取るが、app_dir や config_path は受け取らない
 ```
 
-### 7.9.2 env_import のセキュリティ制約
+### 8.11.2 env_import のセキュリティ制約
 
 `env_import` で取り込めるシステム環境変数は、`env_allowed` で明示的に許可されたもののみです:
 
@@ -872,7 +1020,7 @@ env_import = [
 ]
 ```
 
-### 7.9.3 コマンドパスの要件
+### 8.11.3 コマンドパスの要件
 
 展開後のコマンドパスは以下の要件を満たす必要があります:
 
@@ -927,7 +1075,7 @@ tool_dir = "./tools"  # 相対パス - 特権コマンドではエラー
 - 実行するコマンドの正確な位置を明示
 - 予期しないコマンド実行のリスクを低減
 
-### 7.9.4 機密情報の扱い
+### 8.11.4 機密情報の扱い
 
 機密情報は内部変数として定義し、必要な場合のみプロセス環境変数として渡します:
 
@@ -946,7 +1094,7 @@ api_endpoint = "https://api.example.com"
 # api_token と api_endpoint は内部変数のみで、子プロセスには渡されない
 ```
 
-### 7.9.5 変数名の検証
+### 8.11.5 変数名の検証
 
 変数名は POSIX 準拠の命名規則に従う必要があり、予約プレフィックス `__runner_` は使用できません:
 
@@ -963,7 +1111,7 @@ __runner_custom = "value"  # エラー: 予約プレフィックス
 my-var = "value"            # エラー: ハイフン使用不可
 ```
 
-## 7.10 トラブルシューティング
+## 8.12 トラブルシューティング
 
 ### 未定義変数
 
@@ -973,8 +1121,8 @@ my-var = "value"            # エラー: ハイフン使用不可
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
-args = ["Value: %{UNDEFINED}"]
-# UNDEFINED が vars に定義されていない → エラー
+args = ["Value: %{undefined}"]
+# undefined が vars に定義されていない → エラー
 ```
 
 **解決方法**: 必要な変数を `vars` または `env_import` で定義する
@@ -1125,20 +1273,20 @@ vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
 ```
 
-## 7.11 verify_files での変数展開
+## 8.13 verify_files での変数展開
 
-### 7.11.1 概要
+### 8.13.1 概要
 
 `verify_files` フィールドでも環境変数展開を使用できます。これにより、ファイル検証パスを動的に構築し、環境に応じた柔軟な検証設定が可能になります。
 
-### 7.11.2 対象フィールド
+### 8.13.2 対象フィールド
 
 変数展開は以下の `verify_files` フィールドで使用できます:
 
 - **グローバルレベル**: `[global]` セクションの `verify_files`
 - **グループレベル**: `[[groups]]` セクションの `verify_files`
 
-### 7.11.3 基本例
+### 8.13.3 基本例
 
 #### グローバルレベルでの展開
 
@@ -1192,7 +1340,7 @@ args = ["Starting app"]
 - `%{app_root}/config/app.yml` → `/opt/myapp/config/app.yml`
 - `%{app_root}/bin/server` → `/opt/myapp/bin/server`
 
-### 7.11.4 複雑な例
+### 8.13.4 複雑な例
 
 動的なパス構築を含む例:
 
@@ -1240,13 +1388,13 @@ cmd = "/opt/deploy.sh"
 - `/opt/myapp/db/schema.sql`
 - `/opt/myapp/db/migrations/production/`
 
-### 7.11.5 制限事項
+### 8.13.5 制限事項
 
 1. **絶対パスの要件**: 展開後のパスは絶対パスである必要があります
 2. **システム環境変数のみ**: verify_files では Command.Env の変数は使用できません
 3. **展開タイミング**: 設定ロード時に1度だけ展開されます（実行時ではありません）
 
-## 7.12 実践的な総合例
+## 8.14 実践的な総合例
 
 以下は、変数展開機能を活用した実践的な設定例です:
 
@@ -1335,7 +1483,7 @@ timeout = 30
 health_url = "http://localhost:%{app_port}/health"
 ```
 
-## 7.13 まとめ
+## 8.15 まとめ
 
 ### 変数システムの全体像
 

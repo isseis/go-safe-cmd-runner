@@ -105,7 +105,6 @@ Specifies the path to the TOML format configuration file.
 
 ```bash
 runner -config <path>
-# Short form:
 runner -c <path>
 ```
 
@@ -118,18 +117,13 @@ runner -c <path>
 ```bash
 # Specify with relative path
 runner -config config.toml
-# Short form:
 runner -c config.toml
 
 # Specify with absolute path
 runner -config /etc/go-safe-cmd-runner/production.toml
-# Short form:
-runner -c /etc/go-safe-cmd-runner/production.toml
 
 # Specify from home directory
 runner -config ~/configs/backup.toml
-# Short form:
-runner -c ~/configs/backup.toml
 ```
 
 **Notes**
@@ -151,7 +145,6 @@ Simulates and displays the execution content without actually running commands.
 
 ```bash
 runner -config <path> -dry-run
-# Short form:
 runner -c <path> -n
 ```
 
@@ -160,13 +153,10 @@ runner -c <path> -n
 ```bash
 # Basic dry run
 runner -config config.toml -dry-run
-# Short form:
 runner -c config.toml -n
 
 # Specify detail level and format
 runner -config config.toml -dry-run -dry-run-detail full -dry-run-format json
-# Short form:
-runner -c config.toml -n -dry-run-detail full -dry-run-format json
 ```
 
 **Use Cases**
@@ -670,7 +660,6 @@ Specifies the log output level. Logs at or above the specified level are output.
 
 ```bash
 runner -config <path> -log-level <level>
-# Short form:
 runner -c <path> -l <level>
 ```
 
@@ -686,18 +675,13 @@ runner -c <path> -l <level>
 ```bash
 # Execute in debug mode
 runner -config config.toml -log-level debug
-# Short form:
 runner -c config.toml -l debug
 
 # Show warnings and errors only
 runner -config config.toml -log-level warn
-# Short form:
-runner -c config.toml -l warn
 
 # Show errors only
 runner -config config.toml -log-level error
-# Short form:
-runner -c config.toml -l error
 ```
 
 **Information Output at Each Level**
@@ -955,7 +939,6 @@ Forces non-interactive mode. Color output and progress display are disabled.
 
 ```bash
 runner -config <path> -quiet
-# Short form:
 runner -c <path> -q
 ```
 
@@ -964,13 +947,10 @@ runner -c <path> -q
 ```bash
 # Execute in non-interactive mode
 runner -config config.toml -quiet
-# Short form:
 runner -c config.toml -q
 
 # Redirect to log file
 runner -config config.toml -quiet > output.log 2>&1
-# Short form:
-runner -c config.toml -q > output.log 2>&1
 ```
 
 **Non-Interactive Mode Features**
@@ -1037,7 +1017,6 @@ Specifies groups to execute, separated by commas. When not specified, all groups
 
 ```bash
 runner -config <path> --groups <names>
-# Short form:
 runner -c <path> -g <names>
 ```
 
@@ -1058,23 +1037,17 @@ Group names follow the same naming convention as environment variables:
 ```bash
 # Execute single group
 runner -config config.toml --groups build
-# Short form:
 runner -c config.toml -g build
 
 # Execute multiple groups
 runner -config config.toml --groups build,test
-# Short form:
 runner -c config.toml -g build,test
 
 # Specification with whitespace (whitespace is automatically trimmed)
 runner -config config.toml --groups "build, test, deploy"
-# Short form:
-runner -c config.toml -g "build, test, deploy"
 
 # Execute all groups (when --groups is omitted)
 runner -config config.toml
-# Short form:
-runner -c config.toml
 ```
 
 **Automatic Dependency Resolution**
@@ -1177,6 +1150,7 @@ jobs:
 - Group names are case-sensitive
 - Specifying a non-existent group results in an error
 - Groups with dependencies are automatically included
+- Execution order is determined based on priority and depends_on
 
 #### `--keep-temp-dirs`
 

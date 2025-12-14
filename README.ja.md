@@ -176,7 +176,7 @@ cmd = "/usr/bin/mysqldump"
 args = ["--all-databases"]
 output = "backup.sql"  # ファイルに出力を保存
 run_as_user = "mysql"
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ## 設定
@@ -207,7 +207,7 @@ description = "バックアップ操作"
 name = "database_backup"
 cmd = "/usr/bin/mysqldump"
 args = ["--all-databases", "--result-file=%{__runner_workdir}/db.sql"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "maintenance"
@@ -218,7 +218,7 @@ workdir = "/tmp/maintenance"  # 固定作業ディレクトリを指定
 name = "system_check"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### 自動変数

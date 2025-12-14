@@ -1,6 +1,6 @@
-# Chapter 7: Variable Expansion
+# Chapter 8: Variable Expansion
 
-## 7.1 Overview of Variable Expansion
+## 8.1 Overview of Variable Expansion
 
 Variable expansion is a feature that allows you to embed variables in commands and their arguments, which are then replaced with actual values at runtime. In go-safe-cmd-runner, **internal variables** (for TOML expansion only) and **process environment variables** (environment variables passed to child processes) are clearly separated to improve security and clarity.
 
@@ -31,7 +31,7 @@ Variable expansion can be used in the following locations:
 - **verify_files**: Paths of files to verify (use `%{var}`)
 - **vars**: Internal variable definitions (can reference other internal variables with `%{var}`)
 
-## 7.2 Variable Expansion Syntax
+## 8.2 Variable Expansion Syntax
 
 ### Internal Variable Reference Syntax
 
@@ -66,9 +66,9 @@ env_vars = ["VAR=%{value}"]
 "%{__runner_test}"  # Reserved prefix
 ```
 
-## 7.3 Internal Variable Definition
+## 8.3 Internal Variable Definition
 
-### 7.3.1 Defining Internal Variables Using the `vars` Field
+### 8.3.1 Defining Internal Variables Using the `vars` Field
 
 #### Overview
 
@@ -134,7 +134,7 @@ timestamp = "20250114"
 output_file = "%{base_dir}/dump_%{timestamp}.sql"
 ```
 
-### 7.3.2 Importing System Environment Variables Using `env_import`
+### 8.3.2 Importing System Environment Variables Using `env_import`
 
 #### Overview
 
@@ -201,7 +201,7 @@ args = ["-la", "%{home}"]
 # %{home} expands to /home/username, etc.
 ```
 
-### 7.3.3 Nesting Internal Variables
+### 8.3.3 Nesting Internal Variables
 
 Internal variable values can contain references to other internal variables.
 
@@ -228,7 +228,7 @@ Variables are expanded in the order of definition:
 2. `app_dir` → `%{base}/myapp` → `/opt/myapp`
 3. `log_dir` → `%{app_dir}/logs` → `/opt/myapp/logs`
 
-### 7.3.4 Circular Reference Detection
+### 8.3.4 Circular Reference Detection
 
 Circular references are detected as errors:
 
@@ -243,9 +243,9 @@ var1 = "%{var2}"
 var2 = "%{var1}"  # Error: circular reference
 ```
 
-## 7.4 Defining Process Environment Variables
+## 8.4 Defining Process Environment Variables
 
-### 7.4.1 Setting Environment Variables Using the `env_vars` Field
+### 8.4.1 Setting Environment Variables Using the `env_vars` Field
 
 #### Overview
 
@@ -316,9 +316,9 @@ args = ["--verbose"]
 # Child process receives APP_HOME=/opt/myapp, LOG_PATH=/opt/myapp/logs/app.log
 ```
 
-## 7.5 Detailed Locations Where Variables Can Be Used
+## 8.5 Detailed Locations Where Variables Can Be Used
 
-### 7.5.1 Variable Expansion in cmd
+### 8.5.1 Variable Expansion in cmd
 
 Internal variables can be used in command paths.
 
@@ -356,7 +356,7 @@ At runtime:
 - `%{version}` → expands to `11.2.0`
 - Actual execution: `/opt/toolchains/gcc-11.2.0/bin/gcc -o output main.c`
 
-### 7.5.2 Variable Expansion in args
+### 8.5.2 Variable Expansion in args
 
 Internal variables can be used in command arguments.
 
@@ -406,7 +406,7 @@ env_type = "production"
 At runtime:
 - `%{config_dir}/%{env_type}.yml` → expands to `/etc/myapp/configs/production.yml`
 
-### 7.5.3 Combining Multiple Variables
+### 8.5.3 Combining Multiple Variables
 
 Multiple variables can be combined to construct complex paths and strings.
 
@@ -447,9 +447,9 @@ At runtime:
 - Connection string is fully expanded
 - `postgresql://appuser:secret123@localhost:5432/myapp_db`
 
-## 7.6 Practical Examples
+## 8.6 Practical Examples
 
-### 7.6.1 Dynamic Command Path Construction
+### 8.6.1 Dynamic Command Path Construction
 
 Example of switching command paths based on environment:
 
@@ -483,7 +483,7 @@ python_root = "/usr/local"
 py_version = "3.11"
 ```
 
-### 7.6.2 Dynamic Argument Generation
+### 8.6.2 Dynamic Argument Generation
 
 Dynamically constructing Docker container startup parameters:
 
@@ -531,7 +531,7 @@ Executed command:
   myapp:v1.2.3
 ```
 
-### 7.6.3 Environment-Specific Configuration Switching
+### 8.6.3 Environment-Specific Configuration Switching
 
 Using different configurations for development and production environments:
 
@@ -580,7 +580,7 @@ env_type = "production"
 db_url = "postgresql://prod-server/prod_db"
 ```
 
-## 7.8 Nested Variables
+## 8.8 Nested Variables
 
 Variable values can contain other variables.
 
@@ -621,7 +621,7 @@ Expansion order:
 2. `%{env_type}` → expands to `production`
 3. `%{config_path}` → expands to `/opt/myapp/production/config.yml`
 
-## 7.9 Variable Self-Reference
+## 8.9 Variable Self-Reference
 
 Variable self-reference is an important feature commonly used when extending environment variables. It is particularly useful for environment variables like `PATH`, where you want to add new values to existing ones.
 
@@ -703,10 +703,9 @@ env_vars = ["PATH=/custom/bin:%{path}"]  # %{path} refers to system environment 
 
 **Circular Reference (Error)**: Variables within vars reference each other circularly
 ```toml
-vars = [
-    "var1=%{var2}",
-    "var2=%{var1}",  # Error: Circular reference
-]
+[global.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # Error: Circular reference
 ```
 
 ### Important Notes
@@ -717,17 +716,19 @@ vars = [
 ```toml
 [global]
 env_allowed = ["PATH", "HOME"]  # Allow PATH and HOME to be imported
+env_import = ["system_path=PATH"]  # OK: PATH is included in allowlist
 
 [[groups.commands]]
 name = "extend_path"
 cmd = "/bin/echo"
 args = ["%{path}"]
-vars = ["path=PATH_PREFIX:/custom:%{system_path}"]
-env_import = ["system_path=PATH"]  # OK: PATH is included in allowlist
 env_vars = ["PATH=%{path}"]
+
+[groups.commands.vars]
+path = "PATH_PREFIX:/custom:%{system_path}"
 ```
 
-## 7.10 Escape Sequences
+## 8.10 Escape Sequences
 
 When you want to use literal `%` or `\` characters, escaping is required.
 
@@ -774,9 +775,9 @@ home = "/home/user"
 
 Output: `Literal $HOME is different from /home/user`
 
-## 7.11 Automatic Variables
+## 8.11 Automatic Variables
 
-### 7.11.1 Overview
+### 8.11.1 Overview
 
 The system automatically sets the following internal variables:
 
@@ -786,7 +787,7 @@ The system automatically sets the following internal variables:
 
 These variables can be used in command paths, arguments, and environment variable values just like regular internal variables.
 
-### 7.11.2 Usage Examples
+### 8.11.2 Usage Examples
 
 #### Timestamped Backups
 
@@ -875,7 +876,7 @@ Example execution:
 - Output file: `/reports/20251005143022.123-12345.html`
 - Report title: `Report 20251005143022.123`
 
-### 7.11.3 DateTime Format
+### 8.11.3 DateTime Format
 
 Format specification for `__runner_datetime`:
 
@@ -893,7 +894,7 @@ Complete example: `20251005143045.123` = October 5, 2025 14:30:45.123 (UTC)
 
 **Note**: The timezone is always UTC, not local timezone.
 
-### 7.11.4 Reserved Prefix
+### 8.11.4 Reserved Prefix
 
 The prefix `__runner_` is reserved for automatic variables and cannot be used for user-defined variables.
 
@@ -927,7 +928,7 @@ args = ["%{my_custom_var}"]
 my_custom_var = "value"  # OK: Not using reserved prefix
 ```
 
-### 7.11.5 Timing of Variable Generation
+### 8.11.5 Timing of Variable Generation
 
 Automatic variables (`__runner_datetime` and `__runner_pid`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
 
@@ -952,9 +953,9 @@ args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 
 This ensures consistency across all commands in a single runner execution, even if commands are executed at different times or in different groups.
 
-## 7.12 Security Considerations
+## 8.12 Security Considerations
 
-### 7.9.1 Command.Env Priority
+### 8.9.1 Command.Env Priority
 
 Variables defined in `Command.Env` take priority over system environment variables:
 
@@ -965,29 +966,34 @@ env_allowed = ["PATH", "HOME"]
 [[groups.commands]]
 name = "override_home"
 cmd = "/bin/echo"
-args = ["Home: ${HOME}"]
-env_vars = ["HOME=/opt/custom-home"]
-# The HOME from Command.Env is used, not the system $HOME
+args = ["Home: %{my_home}"]
+
+[groups.commands.vars]
+my_home = "/opt/custom-home"  # Internal variable for TOML expansion
+
+# Note: If you want to override the HOME environment variable for the child process:
+# env_vars = ["HOME=/opt/custom-home"]
 ```
 
-### 7.9.2 Relationship with env_allowed
+### 8.9.2 Relationship with env_allowed
 
-**Important**: Variables defined in `Command.Env` are not subject to `env_allowed` checks.
+**Important**: Internal variables defined in `vars` are not subject to `env_allowed` checks.
 
 ```toml
 [global]
 env_allowed = ["PATH", "HOME"]
-# CUSTOM_VAR is not in allowlist
+# CUSTOM_TOOL is not in env_allowed
 
 [[groups.commands]]
 name = "custom_var"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = []
-env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]
-# CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
+
+[groups.commands.vars]
+custom_tool = "/opt/tools/mytool"  # Internal variable - no env_allowed check needed
 ```
 
-### 7.9.3 Command Path Requirements
+### 8.9.3 Command Path Requirements
 
 Command paths after expansion must meet the following requirements:
 
@@ -999,14 +1005,18 @@ For regular commands (without `run_as_user` or `run_as_group`), both local paths
 # Correct: expands to absolute path
 [[groups.commands]]
 name = "valid_absolute"
-cmd = "${TOOL_DIR}/mytool"
-env_vars = ["TOOL_DIR=/opt/tools"]  # Absolute path
+cmd = "%{tool_dir}/mytool"
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"  # Absolute path
 
 # Correct: expands to relative path (allowed for regular commands)
 [[groups.commands]]
 name = "valid_relative"
-cmd = "${TOOL_DIR}/mytool"
-env_vars = ["TOOL_DIR=./tools"]  # Relative path - OK for regular commands
+cmd = "%{tool_dir}/mytool"
+
+[groups.commands.vars]
+tool_dir = "./tools"  # Relative path - OK for regular commands
 ```
 
 #### Privileged Commands
@@ -1017,16 +1027,20 @@ For privileged commands (with `run_as_user` or `run_as_group`), **only absolute 
 # Correct: expands to absolute path
 [[groups.commands]]
 name = "valid_privileged"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 run_as_user = "appuser"
-env_vars = ["TOOL_DIR=/opt/tools"]  # Absolute path
+
+[groups.commands.vars]
+tool_dir = "/opt/tools"  # Absolute path
 
 # Incorrect: expands to relative path (error for privileged commands)
 [[groups.commands]]
 name = "invalid_privileged"
-cmd = "${TOOL_DIR}/mytool"
+cmd = "%{tool_dir}/mytool"
 run_as_user = "appuser"
-env_vars = ["TOOL_DIR=./tools"]  # Relative path - error for privileged commands
+
+[groups.commands.vars]
+tool_dir = "./tools"  # Relative path - error for privileged commands
 ```
 
 Why absolute paths are required for privileged commands:
@@ -1034,26 +1048,28 @@ Why absolute paths are required for privileged commands:
 - Explicitly specifies the exact location of the command
 - Reduces the risk of executing unintended commands
 
-### 7.9.4 Handling Sensitive Information
+### 8.9.4 Handling Sensitive Information
 
-Define sensitive information (API keys, passwords, etc.) in `Command.Env` to isolate from system environment variables:
+Define sensitive information (API keys, passwords, etc.) in `vars` to isolate from system environment variables:
 
 ```toml
 [[groups.commands]]
 name = "api_call"
 cmd = "/usr/bin/curl"
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
-    "${API_ENDPOINT}/data",
+    "-H", "Authorization: Bearer %{api_token}",
+    "%{api_endpoint}/data",
 ]
-# Sensitive information is defined in Command.Env and isolated from system environment
-env_vars = [
-    "API_TOKEN=sk-1234567890abcdef",
-    "API_ENDPOINT=https://api.example.com",
-]
+
+[groups.commands.vars]
+api_token = "sk-1234567890abcdef"
+api_endpoint = "https://api.example.com"
+
+# Note: Sensitive information is isolated from system environment.
+# If you need to pass these as environment variables to the child process, use env_vars.
 ```
 
-### 7.12.5 Isolation Between Commands
+### 8.12.5 Isolation Between Commands
 
 Each command's `env_vars` is independent and does not affect other commands:
 
@@ -1078,7 +1094,7 @@ env_vars = ["DB_HOST=%{db_host}"]
 db_host = "db2.example.com"
 ```
 
-## 7.13 Troubleshooting
+## 8.13 Troubleshooting
 
 ### Undefined Variables
 
@@ -1088,11 +1104,21 @@ If a variable is not defined, an error occurs:
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
-args = ["Value: ${UNDEFINED}"]
-# UNDEFINED is not defined in env_vars → error
+args = ["Value: %{undefined}"]
+# undefined is not defined in vars → error
 ```
 
-**Solution**: Define all required variables in `env_vars`
+**Solution**: Define all required variables in `vars`
+
+```toml
+[[groups.commands]]
+name = "defined_var"
+cmd = "/bin/echo"
+args = ["Value: %{my_var}"]
+
+[groups.commands.vars]
+my_var = "example"
+```
 
 ### Circular References
 
@@ -1102,16 +1128,27 @@ If variables reference each other, an error occurs:
 [[groups.commands]]
 name = "circular"
 cmd = "/bin/echo"
-args = ["${VAR1}"]
-env_vars = [
-    "VAR1=${VAR2}",
-    "VAR2=${VAR1}",  # Circular reference → error
-]
+args = ["%{var1}"]
+
+[groups.commands.vars]
+var1 = "%{var2}"
+var2 = "%{var1}"  # Circular reference → error
 ```
 
 **Solution**: Organize variable dependencies
 
-**Note**: Self-references like `PATH=/custom:${PATH}` are not circular references. See "7.6 Variable Self-Reference" for details.
+```toml
+[[groups.commands]]
+name = "no_circular"
+cmd = "/bin/echo"
+args = ["%{var2}"]
+
+[groups.commands.vars]
+var1 = "/path/to/dir"
+var2 = "%{var1}/subdir"  # var1 → var2 (no circular reference)
+```
+
+**Note**: For env_vars, self-references like `PATH=/custom:${PATH}` are not circular references because they reference the existing environment variable value.
 
 ### Path Validation Errors After Expansion
 
@@ -1120,12 +1157,24 @@ If the path after expansion is invalid, an error occurs:
 ```toml
 [[groups.commands]]
 name = "invalid_path"
-cmd = "${TOOL}"
+cmd = "%{tool}"
 args = []
-env_vars = ["TOOL=../tool"]  # Relative path → error
+
+[groups.commands.vars]
+tool = "../tool"  # Relative path may cause errors depending on context
 ```
 
 **Solution**: Use absolute paths
+
+```toml
+[[groups.commands]]
+name = "valid_path"
+cmd = "%{tool}"
+args = []
+
+[groups.commands.vars]
+tool = "/opt/tools/mytool"  # Absolute path
+```
 
 ## Comprehensive Practical Example
 
@@ -1216,20 +1265,20 @@ timeout = 30
 health_url = "http://localhost:%{app_port}/health"
 ```
 
-## 7.14 Variable Expansion in verify_files
+## 8.14 Variable Expansion in verify_files
 
-### 7.11.1 Overview
+### 8.11.1 Overview
 
 The `verify_files` field also supports environment variable expansion. This allows you to dynamically construct file verification paths and provides flexible verification configuration depending on the environment.
 
-### 7.11.2 Target Fields
+### 8.11.2 Target Fields
 
 Variable expansion can be used in the following `verify_files` fields:
 
 - **Global level**: `verify_files` in the `[global]` section
 - **Group level**: `verify_files` in the `[[groups]]` section
 
-### 7.11.3 Basic Examples
+### 8.11.3 Basic Examples
 
 #### Global Level Expansion
 
@@ -1283,7 +1332,7 @@ Expansion result (when `APP_ROOT=/opt/myapp`):
 - `%{app_root}/config/app.yml` → `/opt/myapp/config/app.yml`
 - `%{app_root}/bin/server` → `/opt/myapp/bin/server`
 
-### 7.11.4 Complex Example
+### 8.11.4 Complex Example
 
 Example with dynamic path construction:
 
@@ -1331,13 +1380,13 @@ The following files will be verified:
 - `/opt/myapp/db/schema.sql`
 - `/opt/myapp/db/migrations/production/`
 
-### 7.11.5 Limitations
+### 8.11.5 Limitations
 
 1. **Absolute Path Requirement**: Expanded paths must be absolute paths
 2. **System Environment Variables Only**: verify_files can only use system environment variables, not Command.Env variables
 3. **Expansion Timing**: Expansion happens once at configuration load time (not at execution time)
 
-## 7.12 Practical Comprehensive Example
+## 8.15 Practical Comprehensive Example
 
 Below is a practical configuration example using variable expansion features:
 
@@ -1426,7 +1475,7 @@ timeout = 30
 health_url = "http://localhost:%{app_port}/health"
 ```
 
-## 7.13 Summary
+## 8.16 Summary
 
 ### Overall View of Variable System
 

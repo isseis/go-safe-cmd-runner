@@ -163,7 +163,7 @@ version = "1.0"
 [global]
 timeout = 3600
 log_level = "info"
-env_allowed = ["PATH", "HOME", "USER"]
+env_allowlist = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "backup"
@@ -174,7 +174,7 @@ name = "database_backup"
 description = "Backup database"
 cmd = "/usr/bin/mysqldump"
 args = ["--all-databases"]
-output_file = "backup.sql"  # Save output to file
+output = "backup.sql"  # Save output to file
 run_as_user = "mysql"
 risk_level = "medium"
 ```
@@ -196,12 +196,12 @@ version = "1.0"
 [global]
 timeout = 3600
 log_level = "info"
-env_allowed = ["PATH", "HOME", "USER", "LANG"]
+env_allowlist = ["PATH", "HOME", "USER", "LANG"]
 
 [[groups]]
 name = "backup"
 description = "Backup operations"
-# No workdir specified - automatic temporary directory will be created
+# workdir not specified - automatic temporary directory will be created
 
 [[groups.commands]]
 name = "database_backup"
@@ -212,7 +212,7 @@ risk_level = "medium"
 [[groups]]
 name = "maintenance"
 description = "System maintenance tasks"
-workdir = "/tmp/maintenance"  # Fixed working directory
+workdir = "/tmp/maintenance"  # Specify fixed working directory
 
 [[groups.commands]]
 name = "system_check"
@@ -221,17 +221,15 @@ args = ["status"]
 risk_level = "medium"
 ```
 
-### Detailed Configuration Guide
-
 ### Automatic Variables
 
 The system automatically provides the following internal variables:
 
-- `__runner_datetime`: Runner start timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
-- `__runner_pid`: Process ID of the runner
-- `__runner_workdir`: Working directory for the group (available at command level)
+- `__runner_datetime`: Runner execution start timestamp (UTC) in `YYYYMMDDHHmmSS.msec` format
+- `__runner_pid`: Process ID of runner
+- `__runner_workdir`: Working directory of the group (available at command level)
 
-These variables can be referenced using `%{var}` syntax in command paths, arguments, and environment variable values:
+These variables can be referenced using `%{variable_name}` format in command paths, arguments, and environment variable values:
 
 ```toml
 [[groups.commands]]
@@ -290,15 +288,7 @@ For more details, see [Command Templates Guide](docs/user/command_templates.md).
 
 ### Group-Level Command Allowlist
 
-Groups can define additional allowed commands beyond the hardcoded global patterns:
-
-**Hardcoded global patterns** (not configurable from TOML):
-```
-^/bin/.*
-^/usr/bin/.*
-^/usr/sbin/.*
-^/usr/local/bin/.*
-```
+For each group, you can allow additional commands beyond the hardcoded global patterns (`^/bin/.*`, `^/usr/bin/.*`, `^/usr/sbin/.*`, `^/usr/local/bin/.*`):
 
 ```toml
 [global]
@@ -319,13 +309,14 @@ args = ["--verbose"]
 ```
 
 **Key features**:
-- Commands pass if they match EITHER hardcoded global patterns OR group-level `cmd_allowed` list
+- Commands can be executed if they match EITHER hardcoded global patterns OR group-level `cmd_allowed` list
 - Variable expansion (`%{variable}`) is supported in `cmd_allowed` paths
 - Only absolute paths are allowed (relative paths are rejected for security)
-- All other security checks (permissions, risk assessment) remain active
-- Global patterns are hardcoded for security (cannot be configured from TOML)
+- Other security checks (permissions, risk assessment, etc.) continue to be executed
 
 See `sample/group_cmd_allowed.toml` for complete examples.
+
+### Detailed Configuration Guide
 
 For detailed configuration file documentation, refer to the following documents:
 
@@ -408,45 +399,15 @@ go-safe-cmd-runner provides three command-line tools:
 ### runner - Main Execution Command
 
 ```bash
-# Basic execution (long form)
-./runner --config config.toml
+# Basic execution
+./runner -config config.toml
 
-# Basic execution (short form)
-./runner -c config.toml
-
-# Dry run (preview execution)
-./runner -c config.toml --dry-run
-./runner -c config.toml -n          # Short form
+# Dry run (verify execution content)
+./runner -config config.toml -dry-run
 
 # Validate configuration
-./runner -c config.toml --validate
-./runner -c config.toml -V           # Short form
-
-# Group filtering
-./runner -c config.toml --groups=build,test
-./runner -c config.toml -g build,test  # Short form
-
-# Quiet mode
-./runner -c config.toml --quiet
-./runner -c config.toml -q           # Short form
-
-# Set log level
-./runner -c config.toml --log-level=debug
-./runner -c config.toml -l debug     # Short form
+./runner -config config.toml -validate
 ```
-
-#### Short Flags
-
-The runner command supports the following short flags for commonly used options:
-
-| Long Form | Short Form | Description |
-|-----------|------------|-------------|
-| `--config` | `-c` | Configuration file path |
-| `--dry-run` | `-n` | Dry run mode (preview execution) |
-| `--groups` | `-g` | Filter groups to execute |
-| `--log-level` | `-l` | Set logging level |
-| `--quiet` | `-q` | Quiet mode (disable colored output) |
-| `--validate` | `-V` | Validate configuration and exit |
 
 For details, see the [runner command guide](docs/user/runner_command.md).
 
@@ -482,94 +443,26 @@ depends_on = ["build"]
 # Execution order: preparation -> build -> test
 ```
 
-Group names follow the same constraints as environment variable identifiers: they must match the pattern `[A-Za-z_][A-Za-z0-9_]*` (letters or underscore first, followed by alphanumerics or underscores).
+Group names follow the same naming rules as environment variables and must be `[A-Za-z_][A-Za-z0-9_]*` (first character is letter or underscore, subsequent characters are alphanumeric or underscore).
 
 ### record - Hash Recording Command
 
 ```bash
-# Record hash for a single file
-./record --hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /path/to/executable
-
-# Record hash using short form
-./record -d /usr/local/etc/go-safe-cmd-runner/hashes /path/to/executable
-
-# Record hashes for multiple files at once
-./record -d /usr/local/etc/go-safe-cmd-runner/hashes file1.dat file2.txt file3.sh
+# Record file hash
+./record -file /path/to/executable
 
 # Force overwrite existing hash
-./record -d /usr/local/etc/go-safe-cmd-runner/hashes -force /path/to/file
+./record -file /path/to/file -force
 ```
-
-#### Multiple File Processing
-
-The record command can process multiple files in a single invocation:
-
-```bash
-# Process multiple files
-./record -d /tmp/hash file1.dat file2.txt file3.sh
-
-# Output example:
-# Processing 3 files...
-# [1/3] file1.dat: OK
-# [2/3] file2.txt: OK
-# [3/3] file3.sh: OK
-#
-# Summary: 3 succeeded, 0 failed
-```
-
-- Files are specified as positional arguments after flags
-- Progress is shown as `[current/total]` for each file
-- Final summary reports success and failure counts
-- Non-zero exit code if any file fails
-
-#### Short Flags
-
-| Long Form | Short Form | Description |
-|-----------|------------|-------------|
-| `--hash-dir` | `-d` | Hash directory path |
 
 For details, see the [record command guide](docs/user/record_command.md).
 
 ### verify - File Verification Command
 
 ```bash
-# Verify single file integrity
-./verify --hash-dir /usr/local/etc/go-safe-cmd-runner/hashes /path/to/file
-
-# Verify using short form
-./verify -d /usr/local/etc/go-safe-cmd-runner/hashes /path/to/file
-
-# Verify multiple files at once
-./verify -d /usr/local/etc/go-safe-cmd-runner/hashes file1.dat file2.txt file3.sh
+# Verify file integrity
+./verify -file /path/to/file
 ```
-
-#### Multiple File Processing
-
-The verify command can verify multiple files in a single invocation:
-
-```bash
-# Verify multiple files
-./verify -d /tmp/hash file1.dat file2.txt file3.sh
-
-# Output example:
-# Verifying 3 files...
-# [1/3] file1.dat: OK
-# [2/3] file2.txt: OK
-# [3/3] file3.sh: OK
-#
-# Summary: 3 succeeded, 0 failed
-```
-
-- Files are specified as positional arguments after flags
-- Progress is shown as `[current/total]` for each file
-- Final summary reports success and failure counts
-- Non-zero exit code if any file fails
-
-#### Short Flags
-
-| Long Form | Short Form | Description |
-|-----------|------------|-------------|
-| `--hash-dir` | `-d` | Hash directory path |
 
 For details, see the [verify command guide](docs/user/verify_command.md).
 
@@ -672,7 +565,7 @@ The codebase follows Go best practices:
 ### Execution Identification with ULID
 
 The system uses ULID (Universally Unique Lexicographically Sortable Identifier):
-- **Time-ordered sortable**: Naturally sorted by creation time
+- **Time-ordered sortable**: Naturally ordered by creation time
 - **URL-safe**: No special characters, suitable for filenames
 - **Compact**: Fixed 26-character length
 - **Collision-resistant**: Monotonic entropy ensures uniqueness

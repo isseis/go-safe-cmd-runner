@@ -64,7 +64,21 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - Output management
   - output - Standard output capture
 
-### Chapter 7: [Variable Expansion](07_variable_expansion.md)
+### Chapter 7: [Command Templates](07_command_templates.md)
+- Template overview and purpose
+- Template definition section
+- Parameter expansion syntax
+  - String parameter `${param}`
+  - Optional parameter `${?param}`
+  - Array parameter `${@list}`
+- Using templates
+- Combining with variable expansion
+- Escape sequences
+- Errors and validation
+- Practical configuration examples
+- Best practices
+
+### Chapter 8: [Variable Expansion](08_variable_expansion.md)
 - Overview of variable expansion
 - Variable expansion syntax
 - Available locations
@@ -79,7 +93,7 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - Escape sequences
 - Security considerations
 
-### Chapter 8: [Practical Examples](08_practical_examples.md)
+### Chapter 9: [Practical Examples](09_practical_examples.md)
 - Basic configuration examples
 - Security-focused configuration examples
 - Configuration examples with resource management
@@ -88,8 +102,9 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - Configuration examples utilizing variable expansion
 - Complex configuration examples
 - Risk-based control examples
+- Template usage examples
 
-### Chapter 9: [Best Practices](09_best_practices.md)
+### Chapter 10: [Best Practices](10_best_practices.md)
 - Security best practices
 - Environment variable management best practices
 - Group configuration best practices
@@ -99,7 +114,7 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - Testing and validation
 - Documentation
 
-### Chapter 10: [Troubleshooting](10_troubleshooting.md)
+### Chapter 11: [Troubleshooting](11_troubleshooting.md)
 - Common errors and solutions
 - Configuration validation methods
 - Debugging techniques
@@ -145,9 +160,10 @@ args = ["Hello, World!"]
 
 1. **Beginners**: Understand the basics with Chapters 1-3
 2. **Intermediate**: Learn parameters with Chapters 4-6
-3. **Advanced**: Master advanced features and best practices with Chapters 7-9
-4. **Troubleshooting**: Resolve issues with Chapter 10
-5. **Reference**: Consult the appendix
+3. **Improve Reusability**: Learn command templates with Chapter 7
+4. **Advanced**: Master advanced features and best practices with Chapters 8-10
+5. **Troubleshooting**: Resolve issues with Chapter 11
+6. **Reference**: Consult the appendix
 
 ## Sample Files
 
