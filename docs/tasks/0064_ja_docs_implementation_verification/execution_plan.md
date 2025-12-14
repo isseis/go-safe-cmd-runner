@@ -29,8 +29,8 @@
 | 12 | 04_global_level.ja.md | V-002 | 🔧 Fixed | グローバルレベル設定 |
 | 13 | 05_group_level.ja.md | V-002 | 🔧 Fixed | グループレベル設定 |
 | 14 | 06_command_level.ja.md | V-002 | 🔧 Fixed | コマンドレベル設定 |
-| 15 | 07_command_templates.ja.md | V-002 | ⬜ Not Started | コマンドテンプレート設定 |
-| 16 | 08_variable_expansion.ja.md | V-002 | ⬜ Not Started | 変数展開機能 |
+| 15 | 07_command_templates.ja.md | V-002 | 🔧 Fixed | コマンドテンプレート設定 |
+| 16 | 08_variable_expansion.ja.md | V-002 | ✅ Completed | 変数展開機能 |
 | 17 | 09_practical_examples.ja.md | V-002 | ⬜ Not Started | 実践的な設定例 |
 | 18 | 10_best_practices.ja.md | V-002 | ⬜ Not Started | ベストプラクティス |
 | 19 | 11_troubleshooting.ja.md | V-002 | ⬜ Not Started | トラブルシューティング |
