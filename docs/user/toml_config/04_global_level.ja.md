@@ -549,7 +549,7 @@ args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
 
 ### セキュリティ制約
 
-`from_env` で参照するシステム環境変数は、必ず `env_allowed` に含まれている必要があります:
+`env_import` で参照するシステム環境変数は、必ず `env_allowed` に含まれている必要があります:
 
 ```toml
 [global]
@@ -562,7 +562,7 @@ env_import = [
 
 エラーメッセージ例:
 ```
-system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowed: [HOME]
+system environment variable 'PATH' (mapped to 'path' in global.env_import) is not in env_allowed: [HOME]
 ```
 
 ### 変数名のマッピング
@@ -778,7 +778,7 @@ env_vars = ["COMMON_VAR=%{base}"]    # Group.env_vars を上書き
 
 - **env_vars の値**: 内部変数 `%{VAR}` を使用可能
 - **子プロセスへの伝播**: env_vars で定義された変数は子プロセスに渡される
-- **内部変数は伝播しない**: varsやfrom_envで定義した内部変数はデフォルトでは子プロセスに渡されない
+- **内部変数は伝播しない**: varsやenv_importで定義した内部変数はデフォルトでは子プロセスに渡されない
 
 ```toml
 [global.vars]
@@ -885,7 +885,7 @@ config_file = "%{app_root}/etc/%{env_type}.yaml"
 
 ### 概要
 
-`from_env` でシステム環境変数を取り込む際に許可する環境変数を指定します。リストにない環境変数は取り込めません。
+`env_import` でシステム環境変数を取り込む際に許可する環境変数を指定します。リストにない環境変数は取り込めません。
 
 ### 文法
 

@@ -12,8 +12,8 @@
 |-----|-----------|--------|------|------|
 | 1 | README.ja.md | V-001 | 🔧 Fixed | プロジェクト概要、クイックスタート |
 | 2 | runner_command.ja.md | V-001 | 🔧 Fixed | runner コマンドの引数・オプション |
-| 3 | record_command.ja.md | V-001 | ⬜ Not Started | record コマンドの引数・オプション |
-| 4 | verify_command.ja.md | V-001 | ⬜ Not Started | verify コマンドの引数・オプション |
+| 3 | record_command.ja.md | V-001 | ✅ Completed | record コマンドの引数・オプション |
+| 4 | verify_command.ja.md | V-001 | ✅ Completed | verify コマンドの引数・オプション |
 | 5 | command_templates.ja.md | V-003 | ⬜ Not Started | コマンドテンプレート機能 |
 | 6 | dry_run_json_schema.ja.md | V-003 | ⬜ Not Started | ドライラン JSON スキーマ |
 | 7 | security-risk-assessment.ja.md | V-003 | ⬜ Not Started | セキュリティリスク評価 |
