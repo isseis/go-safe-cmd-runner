@@ -1,23 +1,23 @@
 # Documentation Verification Scripts
 
-このディレクトリには、日本語ドキュメントと実装コードの整合性を検証するための自動化スクリプトが含まれています。
+This directory contains automation scripts for verifying consistency between Japanese documentation and implementation code.
 
 ## Overview
 
-これらのスクリプトは、[docs/tasks/0064_ja_docs_implementation_verification/execution_plan.md](../../docs/tasks/0064_ja_docs_implementation_verification/execution_plan.md) の「8. 自動化の検討」セクションで提案された自動化を実装したものです。
+These scripts implement the automation proposed in the "8. Automation Considerations" section of [docs/tasks/0064_ja_docs_implementation_verification/execution_plan.md](../../docs/tasks/0064_ja_docs_implementation_verification/execution_plan.md).
 
 ## Scripts
 
 ### 1. verify_toml_keys.go
 
-TOMLの設定キーをGoのソースコードから抽出し、ドキュメントに記載されているキーと比較します。
+Extracts TOML configuration keys from Go source code and compares them with keys documented in documentation.
 
-**機能:**
-- Goコードからstructタグの`toml:"key"`を抽出
-- ドキュメント内のTOMLキーを抽出
-- 両者を比較して、不足しているキーや余分なキーを検出
+**Features:**
+- Extract `toml:"key"` struct tags from Go code
+- Extract TOML keys from documentation
+- Compare both to detect missing or extra keys
 
-**使用方法:**
+**Usage:**
 ```bash
 go run verify_toml_keys.go \
   --source=../../internal \
@@ -26,22 +26,22 @@ go run verify_toml_keys.go \
   --output=toml_report.json
 ```
 
-**オプション:**
-- `--source`: Goソースコードのルートディレクトリ（デフォルト: `.`）
-- `--docs`: ドキュメントのルートディレクトリ（デフォルト: `docs/user`）
-- `--verbose`: 詳細な出力
-- `--output`: JSON形式のレポート出力先（オプション）
+**Options:**
+- `--source`: Root directory of Go source code (default: `.`)
+- `--docs`: Root directory of documentation (default: `docs/user`)
+- `--verbose`: Verbose output
+- `--output`: JSON format report output destination (optional)
 
 ### 2. verify_cli_args.go
 
-コマンドライン引数をGoのflagパッケージの呼び出しから抽出し、ドキュメントと比較します。
+Extracts command-line arguments from Go flag package calls and compares them with documentation.
 
-**機能:**
-- `flag.String()`, `flag.Bool()` などの呼び出しを解析
-- コマンド名、引数名、型、デフォルト値、説明を抽出
-- ドキュメント内の引数記述と比較
+**Features:**
+- Parse calls to `flag.String()`, `flag.Bool()`, etc.
+- Extract command name, argument name, type, default value, and description
+- Compare with argument descriptions in documentation
 
-**使用方法:**
+**Usage:**
 ```bash
 go run verify_cli_args.go \
   --source=../../cmd \
@@ -50,22 +50,22 @@ go run verify_cli_args.go \
   --output=cli_report.json
 ```
 
-**オプション:**
-- `--source`: コマンドソースコードのディレクトリ（デフォルト: `cmd`）
-- `--docs`: ドキュメントのルートディレクトリ（デフォルト: `docs/user`）
-- `--verbose`: 詳細な出力
-- `--output`: JSON形式のレポート出力先（オプション）
+**Options:**
+- `--source`: Command source code directory (default: `cmd`)
+- `--docs`: Root directory of documentation (default: `docs/user`)
+- `--verbose`: Verbose output
+- `--output`: JSON format report output destination (optional)
 
 ### 3. compare_doc_structure.go
 
-日本語ドキュメント（.ja.md）と英語ドキュメント（.md）の構造を比較します。
+Compares structure between Japanese documentation (.ja.md) and English documentation (.md).
 
-**機能:**
-- 見出しレベルと数の比較
-- コードブロック、テーブル、リストの数を比較
-- セクション構造の差異を検出
+**Features:**
+- Compare heading levels and count
+- Compare count of code blocks, tables, and lists
+- Detect differences in section structure
 
-**使用方法:**
+**Usage:**
 ```bash
 go run compare_doc_structure.go \
   --docs=../../docs/user \
@@ -73,21 +73,21 @@ go run compare_doc_structure.go \
   --output=structure_report.json
 ```
 
-**オプション:**
-- `--docs`: ドキュメントのルートディレクトリ（デフォルト: `docs/user`）
-- `--verbose`: 詳細な出力
-- `--output`: JSON形式のレポート出力先（オプション）
+**Options:**
+- `--docs`: Root directory of documentation (default: `docs/user`)
+- `--verbose`: Verbose output
+- `--output`: JSON format report output destination (optional)
 
 ### 4. verify_links.go
 
-ドキュメント内のリンク（内部リンクと外部リンク）を検証します。
+Verifies links (internal links and external links) in documentation.
 
-**機能:**
-- Markdown形式のリンクを抽出
-- 内部リンク（ファイルパス）の存在確認
-- 外部リンク（HTTP/HTTPS）のアクセス確認（オプション）
+**Features:**
+- Extract Markdown format links
+- Verify existence of internal links (file paths)
+- Verify access to external links (HTTP/HTTPS) (optional)
 
-**使用方法:**
+**Usage:**
 ```bash
 go run verify_links.go \
   --docs=../../docs \
@@ -96,56 +96,56 @@ go run verify_links.go \
   --output=links_report.json
 ```
 
-**オプション:**
-- `--docs`: ドキュメントのルートディレクトリ（デフォルト: `docs`）
-- `--external`: 外部リンクも確認（時間がかかる可能性あり）
-- `--verbose`: 詳細な出力
-- `--timeout`: 外部リンク確認のタイムアウト秒数（デフォルト: 10）
-- `--output`: JSON形式のレポート出力先（オプション）
+**Options:**
+- `--docs`: Root directory of documentation (default: `docs`)
+- `--external`: Also verify external links (may take time)
+- `--verbose`: Verbose output
+- `--timeout`: Timeout in seconds for external link verification (default: 10)
+- `--output`: JSON format report output destination (optional)
 
 ### 5. run_all.sh
 
-すべての検証スクリプトを一括実行するオーケストレーションスクリプト。
+Orchestration script to execute all verification scripts in batch.
 
-**機能:**
-- すべての検証ツールをビルド
-- 各検証を順次実行
-- レポートを統一された場所に出力
-- サマリーを表示
+**Features:**
+- Build all verification tools
+- Execute each verification sequentially
+- Output reports to unified location
+- Display summary
 
-**使用方法:**
+**Usage:**
 ```bash
 ./run_all.sh [OPTIONS]
 ```
 
-**オプション:**
-- `-v, --verbose`: 詳細な出力
-- `-e, --external`: 外部リンクもチェック（時間がかかる）
-- `-n, --no-json`: JSONレポートを生成しない
-- `-o, --output DIR`: 出力ディレクトリを指定（デフォルト: `build/verification-reports`）
-- `-h, --help`: ヘルプメッセージを表示
+**Options:**
+- `-v, --verbose`: Verbose output
+- `-e, --external`: Also check external links (takes time)
+- `-n, --no-json`: Do not generate JSON reports
+- `-o, --output DIR`: Specify output directory (default: `build/verification-reports`)
+- `-h, --help`: Display help message
 
-**例:**
+**Examples:**
 ```bash
-# デフォルト設定で実行
+# Execute with default settings
 ./run_all.sh
 
-# 詳細出力と外部リンクチェック
+# Verbose output and external link checking
 ./run_all.sh -v -e
 
-# カスタム出力ディレクトリ
+# Custom output directory
 ./run_all.sh -o /tmp/my-reports
 ```
 
-## 出力形式
+## Output Format
 
-各スクリプトは以下の形式でレポートを出力します：
+Each script outputs reports in the following formats:
 
-### テキストレポート
+### Text Report
 
-標準出力に人間が読みやすい形式でレポートを表示します。
+Displays reports in human-readable format to standard output.
 
-例:
+Example:
 ```
 === TOML Configuration Key Verification Report ===
 
@@ -162,11 +162,11 @@ Keys in both: 40
   ...
 ```
 
-### JSONレポート
+### JSON Report
 
-`--output` オプションでJSON形式のレポートを生成できます。これは後続の自動処理やCIパイプラインでの利用に適しています。
+JSON format reports can be generated with the `--output` option. This is suitable for subsequent automated processing and CI pipeline usage.
 
-例:
+Example:
 ```json
 {
   "in_code_only": [
@@ -186,34 +186,34 @@ Keys in both: 40
 }
 ```
 
-## Makefile統合
+## Makefile Integration
 
-プロジェクトのMakefileに以下のターゲットを追加することで、簡単に検証を実行できます：
+Verification can be executed easily by adding the following targets to the project Makefile:
 
 ```makefile
-# ドキュメント検証
+# Documentation verification
 .PHONY: verify-docs
 verify-docs:
 	@./scripts/verification/run_all.sh
 
-# 詳細な検証（外部リンクも含む）
+# Detailed verification (including external links)
 .PHONY: verify-docs-full
 verify-docs-full:
 	@./scripts/verification/run_all.sh -v -e
 ```
 
-使用方法:
+Usage:
 ```bash
-make verify-docs      # 基本的な検証
-make verify-docs-full # 完全な検証（外部リンク含む）
+make verify-docs      # Basic verification
+make verify-docs-full # Complete verification (including external links)
 ```
 
-## CI/CD統合
+## CI/CD Integration
 
-これらのスクリプトはCI/CDパイプラインに統合できます：
+These scripts can be integrated into CI/CD pipelines:
 
 ```yaml
-# GitHub Actions の例
+# GitHub Actions example
 - name: Verify Documentation
   run: |
     cd scripts/verification
@@ -227,47 +227,47 @@ make verify-docs-full # 完全な検証（外部リンク含む）
     path: build/verification-reports/
 ```
 
-## 定期実行の推奨
+## Recommended Regular Execution
 
-ドキュメントと実装の整合性を保つため、以下のタイミングでの実行を推奨します：
+To maintain consistency between documentation and implementation, execution is recommended at the following timings:
 
-1. **Pull Request時**: 新しいコード変更がドキュメントと整合しているか確認
-2. **週次**: 定期的なチェックで問題の早期発見
-3. **リリース前**: リリース前の最終確認
+1. **During Pull Requests**: Verify that new code changes are consistent with documentation
+2. **Weekly**: Early detection of issues with regular checks
+3. **Before Releases**: Final verification before release
 
-## トラブルシューティング
+## Troubleshooting
 
-### 誤検出が多い場合
+### When There Are Many False Positives
 
-- `verify_toml_keys.go` や `verify_cli_args.go` の `isValidTOMLKey()` や `isValidArgName()` 関数で除外リストを調整
-- 正規表現パターンを調整して精度を向上
+- Adjust exclusion lists in `isValidTOMLKey()` or `isValidArgName()` functions in `verify_toml_keys.go` or `verify_cli_args.go`
+- Improve accuracy by adjusting regex patterns
 
-### ビルドエラー
+### Build Errors
 
 ```bash
-# 依存関係の確認
+# Verify dependencies
 go mod tidy
 
-# クリーンビルド
+# Clean build
 rm -rf build/verification-reports
 ./run_all.sh
 ```
 
-### 外部リンクチェックが遅い
+### External Link Checking Is Slow
 
-- `--timeout` オプションでタイムアウトを短縮
-- 外部リンクチェックは必要な時のみ実行（`-e` オプションなし）
+- Shorten timeout with `--timeout` option
+- Execute external link checking only when necessary (without `-e` option)
 
-## 今後の改善案
+## Future Improvement Ideas
 
-- [ ] マルチスレッド対応による高速化
-- [ ] より精密な構造解析（セクション順序の比較など）
-- [ ] 差分ベースの検証（変更されたファイルのみ）
-- [ ] HTMLレポート生成
-- [ ] 自動修正機能（可能な範囲で）
-- [ ] 翻訳用語集の自動整合性チェック
+- [ ] Acceleration through multi-threading support
+- [ ] More precise structure analysis (such as comparing section order)
+- [ ] Diff-based verification (only changed files)
+- [ ] HTML report generation
+- [ ] Automatic correction feature (within feasible range)
+- [ ] Automatic consistency checking of translation glossary
 
-## 参考資料
+## Reference Materials
 
-- [execution_plan.md](../../docs/tasks/0064_ja_docs_implementation_verification/execution_plan.md) - 検証プロジェクトの全体計画
-- [CLAUDE.md](../../CLAUDE.md) - プロジェクト全体のガイドライン
+- [execution_plan.md](../../docs/tasks/0064_ja_docs_implementation_verification/execution_plan.md) - Overall plan for verification project
+- [CLAUDE.md](../../CLAUDE.md) - Project-wide guidelines
