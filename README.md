@@ -176,7 +176,7 @@ cmd = "/usr/bin/mysqldump"
 args = ["--all-databases"]
 output = "backup.sql"  # Save output to file
 run_as_user = "mysql"
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ## Configuration
@@ -207,7 +207,7 @@ description = "Backup operations"
 name = "database_backup"
 cmd = "/usr/bin/mysqldump"
 args = ["--all-databases", "--result-file=%{__runner_workdir}/db.sql"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "maintenance"
@@ -218,7 +218,7 @@ workdir = "/tmp/maintenance"  # Specify fixed working directory
 name = "system_check"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### Automatic Variables
