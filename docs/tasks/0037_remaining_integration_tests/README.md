@@ -223,6 +223,6 @@ result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]str
 
 ## 参考資料
 
-- [完了済み: output_capture_integration_test.go](../../internal/runner/output_capture_integration_test.go)
+- [完了済み: output_capture_integration_test.go](../../../internal/runner/output_capture_integration_test.go)
 - [Task 0036: runner_test.go 移行ガイド](../0036_runner_test_migration/)
-- [group_executor_test.go 移行例](../../internal/runner/group_executor_test.go)
+- [group_executor_test.go 移行例](../../../internal/runner/group_executor_test.go)

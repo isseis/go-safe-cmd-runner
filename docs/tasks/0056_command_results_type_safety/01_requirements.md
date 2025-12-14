@@ -232,7 +232,7 @@
 ## 関連ドキュメント
 
 - [アーキテクチャ設計書](./02_architecture.md)
-- [実装計画](./03_implementation_plan.md)（後で作成予定）
+- [実装計画](./04_implementation_plan.md)（後で作成予定）
 - [RedactingHandler スライス型変換の動作](../../dev/redaction_slice_type_conversion.md)
 - [CommandResult ログスキーマ](../../../internal/common/logschema.go)
 

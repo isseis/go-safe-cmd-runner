@@ -6,7 +6,7 @@
 
 現在、runner の `-dry-run` モードでは実行計画の表示のみを行い、ファイルのハッシュ検証は完全にスキップされる。これは以下の実装によるものである：
 
-**現在の実装** ([internal/verification/manager.go:330-336](internal/verification/manager.go#L330-L336)):
+**現在の実装** ([../../../internal/verification/manager.go:330-336](../../../internal/verification/manager.go#L330-L336)):
 ```go
 func (m *Manager) verifyFileWithFallback(filePath string) error {
     if m.fileValidator == nil {
@@ -17,7 +17,7 @@ func (m *Manager) verifyFileWithFallback(filePath string) error {
 }
 ```
 
-**初期化処理** ([internal/verification/manager_production.go:28-42](internal/verification/manager_production.go#L28-L42)):
+**初期化処理** ([../../../internal/verification/manager_production.go:28-42](../../../internal/verification/manager_production.go#L28-L42)):
 ```go
 func NewManagerForDryRun() (*Manager, error) {
     // ...
@@ -164,7 +164,7 @@ dry-run モードで検証する対象ファイルは、通常実行モードと
 
 #### 2.3.1 DryRunResult 構造体の拡張
 
-`DryRunResult` ([internal/runner/resource/types.go:147-158](internal/runner/resource/types.go#L147-L158)) に検証結果フィールドを追加：
+`DryRunResult` ([../../../internal/runner/resource/types.go:147-158](../../../internal/runner/resource/types.go#L147-L158)) に検証結果フィールドを追加：
 
 ```go
 type DryRunResult struct {
@@ -505,10 +505,10 @@ runner -c audit.toml --dry-run --dry-run-format=json | jq '.file_verification.fa
 
 ### 9.1 関連ファイル
 
-- [internal/verification/manager.go](../../internal/verification/manager.go) - 検証マネージャー
-- [internal/verification/manager_production.go](../../internal/verification/manager_production.go) - dry-run 用初期化
-- [internal/runner/resource/types.go](../../internal/runner/resource/types.go) - DryRunResult 定義
-- [cmd/runner/main.go](../../cmd/runner/main.go) - dry-run 実行フロー
+- [../../../internal/verification/manager.go](../../../internal/verification/manager.go) - 検証マネージャー
+- [../../../internal/verification/manager_production.go](../../../internal/verification/manager_production.go) - dry-run 用初期化
+- [../../../internal/runner/resource/types.go](../../../internal/runner/resource/types.go) - DryRunResult 定義
+- [cmd/runner/main.go](../../../cmd/runner/main.go) - dry-run 実行フロー
 
 ### 9.2 設計原則
 

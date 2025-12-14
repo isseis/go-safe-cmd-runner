@@ -303,7 +303,7 @@ Environment variables (2):
 
 ## 参考資料
 
-- [debug.PrintFinalEnvironment実装](../../internal/runner/debug/environment.go)
-- [DryRunManager実装](../../internal/runner/resource/dryrun_manager.go)
-- [TextFormatter実装](../../internal/runner/resource/formatter.go)
-- [DetailLevel定義](../../internal/runner/resource/types.go)
+- debug.PrintFinalEnvironment実装
+- [DryRunManager実装](../../../internal/runner/resource/dryrun_manager.go)
+- [TextFormatter実装](../../../internal/runner/resource/formatter.go)
+- [DetailLevel定義](../../../internal/runner/resource/types.go)

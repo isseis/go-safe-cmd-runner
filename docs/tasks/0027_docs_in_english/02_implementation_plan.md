@@ -300,4 +300,4 @@
 
 - [要件定義書](01_requirements.md)
 - [用語集](glossary.md)
-- [CLAUDE.md](../../CLAUDE.md) - プロジェクト全体のドキュメントガイドライン
+- [CLAUDE.md](../../../CLAUDE.md) - プロジェクト全体のドキュメントガイドライン

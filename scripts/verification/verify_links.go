@@ -63,9 +63,16 @@ func main() {
 	// Verify internal links
 	for i := range allLinks {
 		if allLinks[i].Type == "internal" {
-			allLinks[i].IsValid = verifyInternalLink(allLinks[i].URL, config.DocsRoot)
+			allLinks[i].IsValid = verifyInternalLink(allLinks[i].URL, allLinks[i].SourceFile)
 			if !allLinks[i].IsValid {
-				allLinks[i].Error = "File or anchor not found"
+				// Debug: print resolved path
+				dir := filepath.Dir(allLinks[i].SourceFile)
+				resolved := filepath.Join(dir, allLinks[i].URL)
+				// Remove anchor for path check
+				if idx := strings.Index(resolved, "#"); idx != -1 {
+					resolved = resolved[:idx]
+				}
+				allLinks[i].Error = fmt.Sprintf("File or anchor not found (Resolved: %s)", resolved)
 			}
 		}
 	}
@@ -79,6 +86,13 @@ func main() {
 				if err != nil {
 					allLinks[i].Error = err.Error()
 				}
+			}
+		}
+	} else {
+		// Mark all external links as valid if not checking
+		for i := range allLinks {
+			if allLinks[i].Type == "external" {
+				allLinks[i].IsValid = true
 			}
 		}
 	}
@@ -218,7 +232,7 @@ func isExternalURL(url string) bool {
 }
 
 // verifyInternalLink verifies an internal link
-func verifyInternalLink(url, docsRoot string) bool {
+func verifyInternalLink(url, sourceFile string) bool {
 	// Remove anchor if present
 	parts := strings.SplitN(url, "#", 2)
 	filePath := parts[0]
@@ -230,7 +244,8 @@ func verifyInternalLink(url, docsRoot string) bool {
 
 	// Convert relative path to absolute
 	if !filepath.IsAbs(filePath) {
-		filePath = filepath.Join(docsRoot, filePath)
+		sourceDir := filepath.Dir(sourceFile)
+		filePath = filepath.Join(sourceDir, filePath)
 	}
 
 	// Check if file exists
@@ -304,7 +319,13 @@ func printReport(links []Link, verbose bool) {
 		for _, link := range links {
 			if link.Type == "internal" && !link.IsValid {
 				fmt.Printf("  - %s\n", link.URL)
-				fmt.Printf("    File: %s:%d\n", filepath.Base(link.SourceFile), link.Line)
+				relPath := link.SourceFile
+				if cwd, err := os.Getwd(); err == nil {
+					if rel, err := filepath.Rel(cwd, link.SourceFile); err == nil {
+						relPath = rel
+					}
+				}
+				fmt.Printf("    File: %s:%d\n", relPath, link.Line)
 				if link.Error != "" {
 					fmt.Printf("    Error: %s\n", link.Error)
 				}
@@ -319,7 +340,13 @@ func printReport(links []Link, verbose bool) {
 		for _, link := range links {
 			if link.Type == "external" && !link.IsValid {
 				fmt.Printf("  - %s\n", link.URL)
-				fmt.Printf("    File: %s:%d\n", filepath.Base(link.SourceFile), link.Line)
+				relPath := link.SourceFile
+				if cwd, err := os.Getwd(); err == nil {
+					if rel, err := filepath.Rel(cwd, link.SourceFile); err == nil {
+						relPath = rel
+					}
+				}
+				fmt.Printf("    File: %s:%d\n", relPath, link.Line)
 				if link.Error != "" {
 					fmt.Printf("    Error: %s\n", link.Error)
 				}

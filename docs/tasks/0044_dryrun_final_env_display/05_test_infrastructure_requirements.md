@@ -273,7 +273,7 @@ VerifyGroupFiles(group *runnertypes.GroupSpec) (*verification.Result, error)
 ### 10.1 参考資料
 
 1. [04_implementation_plan.md - Section 11](04_implementation_plan.md#11-テストカバレッジ改善戦略)
-2. [既存モック実装](../../internal/runner/testing/mocks.go)
+2. [既存モック実装](../../../internal/runner/testing/mocks.go)
 3. [testify/mock ドキュメント](https://pkg.go.dev/github.com/stretchr/testify/mock)
 
 ### 10.2 用語集

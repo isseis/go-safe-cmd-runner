@@ -92,8 +92,8 @@ Dry-runモードでの出力は2つの独立した箇所から行われる:
 ### 2.3 関連コードの所在
 
 #### デバッグ出力関数
-- [internal/runner/debug/inheritance.go:14-107](../../../internal/runner/debug/inheritance.go#L14-L107) - `PrintFromEnvInheritance()`
-- [internal/runner/debug/environment.go](../../../internal/runner/debug/environment.go) - `PrintFinalEnvironment()`
+- internal/runner/debug/inheritance.go:14-107 - `PrintFromEnvInheritance()`
+- internal/runner/debug/environment.go - `PrintFinalEnvironment()`
 
 #### フォーマッター
 - [internal/runner/resource/formatter.go:32-43](../../../internal/runner/resource/formatter.go#L32-L43) - `JSONFormatter`, `TextFormatter`

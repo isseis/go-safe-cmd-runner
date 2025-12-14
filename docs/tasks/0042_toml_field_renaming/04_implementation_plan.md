@@ -699,4 +699,4 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
 - [要件定義書](01_requirements.md)
 - [アーキテクチャ設計書](02_architecture.md)
 - [詳細仕様書](03_specification.md)
-- [Translation Guidelines](../../CLAUDE.md#translation-guidelines-japanese-to-english)
+- [Translation Guidelines](../../../CLAUDE.md#translation-guidelines-japanese-to-english)

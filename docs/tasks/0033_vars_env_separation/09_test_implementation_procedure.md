@@ -3,7 +3,7 @@
 **目的**: test_recommendations.mdで特定されたテストカバレッジギャップを段階的に実装する
 
 **前提条件**:
-- [test_recommendations.md](test_recommendations.md)を読んで各テストの目的を理解している
+- test_recommendations.mdを読んで各テストの目的を理解している
 - ブランチ: `issei/vars-env-separation-16` で作業する
 - TDD原則に従い、テストを先に書いて実装は後にする(今回は実装済みなので検証のみ)
 
@@ -761,4 +761,4 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 **ドキュメントバージョン**: 1.0
 **作成日**: 2025-10-16
 **ステータス**: 実装準備完了
-**関連ドキュメント**: [test_recommendations.md](test_recommendations.md)
+**関連ドキュメント**: test_recommendations.md

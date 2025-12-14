@@ -1151,8 +1151,8 @@ Task 0056 で CommandResults 型を導入し、この問題を解決した。
    - コード行数: 約60行 → 約30行
 
 詳細は以下を参照:
-- [Task 0056 要件定義書](../tasks/0056_command_results_type_safety/01_requirements.md)
-- [Task 0056 アーキテクチャ設計書](../tasks/0056_command_results_type_safety/02_architecture.md)
+- [Task 0056 要件定義書](./01_requirements.md)
+- [Task 0056 アーキテクチャ設計書](./02_architecture.md)
 ```
 
 **チェックリスト**:

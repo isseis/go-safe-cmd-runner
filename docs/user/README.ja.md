@@ -138,17 +138,17 @@ runner コマンドで使用する設定ファイルの詳細な記述方法を�
    - 個別コマンドの詳細設定
    - 実行ユーザー、リスクレベル、出力管理
 
-7. **[変数展開機能](toml_config/07_variable_expansion.ja.md)**
+7. **[変数展開機能](toml_config/08_variable_expansion.ja.md)**
    - `%{VAR}` 形式の変数展開
    - 動的な設定構築
 
-8. **[実践的な設定例](toml_config/08_practical_examples.ja.md)**
+8. **[実践的な設定例](toml_config/09_practical_examples.ja.md)**
    - バックアップ、デプロイ、メンテナンスなどの実例
 
-9. **[ベストプラクティス](toml_config/09_best_practices.ja.md)**
+9. **[ベストプラクティス](toml_config/10_best_practices.ja.md)**
    - セキュリティ、保守性、パフォーマンスの向上
 
-10. **[トラブルシューティング](toml_config/10_troubleshooting.ja.md)**
+10. **[トラブルシューティング](toml_config/11_troubleshooting.ja.md)**
     - よくあるエラーと対処法
 
 **クイックスタート:**
@@ -328,7 +328,7 @@ A: 以下の順序で確認してください：
 3. **デバッグログ**: `runner -config config.toml -log-level debug`
 4. **トラブルシューティングガイド**:
    - [runner のトラブルシューティング](runner_command.ja.md#6-トラブルシューティング)
-   - [TOML設定のトラブルシューティング](toml_config/10_troubleshooting.ja.md)
+   - [TOML設定のトラブルシューティング](toml_config/11_troubleshooting.ja.md)
 
 ### Q: CI/CD環境で使用できますか？
 
@@ -354,7 +354,7 @@ A: 主な注意点：
 1. [プロジェクトREADME](../../README.ja.md) - 全体概要（15分）
 2. [runner コマンド - 概要とクイックスタート](runner_command.ja.md#1-概要) - 基本操作（30分）
 3. [TOML設定 - はじめに](toml_config/01_introduction.ja.md) - 設定の基本（15分）
-4. [TOML設定 - 実践例](toml_config/08_practical_examples.ja.md) - サンプルで学習（30分）
+4. [TOML設定 - 実践例](toml_config/09_practical_examples.ja.md) - サンプルで学習（30分）
 
 ### 🎓 中級者向け（3-4時間）
 
@@ -362,17 +362,17 @@ A: 主な注意点：
 
 5. [runner コマンド - 全フラグ詳解](runner_command.ja.md#3-コマンドラインフラグ詳解) - 詳細オプション（1時間）
 6. [TOML設定 - グローバル/グループ/コマンドレベル](toml_config/04_global_level.ja.md) - 階層的設定（1時間）
-7. [TOML設定 - 変数展開](toml_config/07_variable_expansion.ja.md) - 高度な機能（30分）
+7. [TOML設定 - 変数展開](toml_config/08_variable_expansion.ja.md) - 高度な機能（30分）
 8. [record/verify コマンド](record_command.ja.md) - ハッシュ管理（30分）
 
 ### 🚀 上級者向け（フル習得）
 
 上記に加えて：
 
-9. [TOML設定 - ベストプラクティス](toml_config/09_best_practices.ja.md) - 設計パターン
+9. [TOML設定 - ベストプラクティス](toml_config/10_best_practices.ja.md) - 設計パターン
 10. [セキュリティリスク評価](security-risk-assessment.ja.md) - セキュリティモデル
 11. [開発者向けドキュメント](../dev/) - アーキテクチャとセキュリティ設計
-12. [トラブルシューティング](toml_config/10_troubleshooting.ja.md) - 問題解決スキル
+12. [トラブルシューティング](toml_config/11_troubleshooting.ja.md) - 問題解決スキル
 
 ---
 

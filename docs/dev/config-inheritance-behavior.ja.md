@@ -23,8 +23,8 @@ runner の設定は以下の4階層に分かれています：
 
 | 設定項目 | Global | Group | Command | 継承・マージ動作 | 備考 |
 |---------|--------|-------|---------|-----------------|------|
-| **timeout** | ✓ | - | ✓ | **Override**: Command.Timeout > 0 の場合はそれを使用、それ以外は Global.Timeout を使用 | Command レベルで上書き可能<br>実装: [runner.go:582-586](../../internal/runner/runner.go#L582-L586) |
-| **workdir** | ✓ | ✓ | ✓ | **Override**: Command.Dir が空文字列の場合のみ Global.WorkDir を設定 | Group.WorkDir は temp_dir 用途<br>Command.Dir は実行時に使用<br>実装: [runner.go:526-528](../../internal/runner/runner.go#L526-L528) |
+| **timeout** | ✓ | - | ✓ | **Override**: Command.Timeout > 0 の場合はそれを使用、それ以外は Global.Timeout を使用 | Command レベルで上書き可能<br>実装: [runner.go](../../internal/runner/runner.go) |
+| **workdir** | ✓ | ✓ | ✓ | **Override**: Command.Dir が空文字列の場合のみ Global.WorkDir を設定 | Group.WorkDir は temp_dir 用途<br>Command.Dir は実行時に使用<br>実装: [runner.go](../../internal/runner/runner.go) |
 | **max_output_size** | ✓ | - | - | **Global only**: Global.MaxOutputSize のみ定義可能 | Command や Group レベルでは未対応 |
 | **skip_standard_paths** | ✓ | - | - | **Global only**: Global.SkipStandardPaths のみ定義可能 | Command や Group レベルでは未対応 |
 | **risk_level** | - | - | ✓ | **Command only**: Command.RiskLevel のみ定義可能 | Global や Group レベルでは未対応 |
@@ -39,8 +39,8 @@ runner の設定は以下の4階層に分かれています：
 | 設定項目 | Global | Group | Command | 継承・マージ動作 | 備考 |
 |---------|--------|-------|---------|-----------------|------|
 | **env_vars** | - | - | ✓ | **Independent (層間マージなし)**: Command.Env で定義された環境変数のみ使用。複数 Command 間では独立 | 各 Command が独自の env_vars を持つ<br>Union ではなく Independent 動作 |
-| **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist が `nil` → Inherit (Global を継承)<br>• Group.EnvAllowlist が `[]` → Prohibit (すべて拒否)<br>• Group.EnvAllowlist が `["VAR1", ...]` → Override (Group の値のみ使用) | 3つの継承モード<br>**Union ではなく Override** を採用<br>実装: [filter.go:141-153](../../internal/runner/environment/filter.go#L141-L153)<br>型定義: [config.go:121-135](../../internal/runner/runnertypes/config.go#L121-L135) |
-| **verify_files** | ✓ | ✓ | - | **Effective Union**: Global と Group で個別に管理されるが、実行時には両方の検証成功が必要。Global 失敗→プログラム終了、Group 失敗→グループスキップ | ユーザー観点では実質的に Union 動作<br>両方の検証成功が Group 実行の前提条件<br>実装: [main.go:129-133](../../cmd/runner/main.go#L129-L133), [runner.go:406-417](../../internal/runner/runner.go#L406-L417) |
+| **env_allowlist** | ✓ | ✓ | - | **Inherit/Override/Prohibit**: <br>• Group.EnvAllowlist が `nil` → Inherit (Global を継承)<br>• Group.EnvAllowlist が `[]` → Prohibit (すべて拒否)<br>• Group.EnvAllowlist が `["VAR1", ...]` → Override (Group の値のみ使用) | 3つの継承モード<br>**Union ではなく Override** を採用<br>実装: [filter.go](../../internal/runner/environment/filter.go)<br>型定義: [config.go](../../internal/runner/runnertypes/config.go) |
+| **verify_files** | ✓ | ✓ | - | **Effective Union**: Global と Group で個別に管理されるが、実行時には両方の検証成功が必要。Global 失敗→プログラム終了、Group 失敗→グループスキップ | ユーザー観点では実質的に Union 動作<br>両方の検証成功が Group 実行の前提条件<br>実装: [main.go](../../cmd/runner/main.go), [runner.go](../../internal/runner/runner.go) |
 
 #### 複数値項目の設計方針
 
@@ -56,7 +56,7 @@ runner の設定は以下の4階層に分かれています：
 
 - Runner 呼び出し時の OS 環境変数は `env_allowlist` でフィルタリングされ、Command 実行時に利用可能
 - `Filter.ResolveGroupEnvironmentVars()` が Group レベルの `env_allowlist` に基づいてシステム環境変数をフィルタリング
-- 実装: [filter.go:114-139](../../internal/runner/environment/filter.go#L114-L139)
+- 実装: [filter.go](../../internal/runner/environment/filter.go)
 
 ### 2. 自動変数 (Auto Variables)
 
@@ -66,7 +66,7 @@ runner の設定は以下の4階層に分かれています：
 
 ### 3. env_allowlist の継承モード詳細
 
-[config.go:120-136](../../internal/runner/runnertypes/config.go#L120-L136) で定義されている3つの継承モード：
+[config.go](../../internal/runner/runnertypes/config.go) で定義されている3つの継承モード：
 
 #### InheritanceModeInherit (継承モード)
 
@@ -116,11 +116,11 @@ runner の設定は以下の4階層に分かれています：
 
 verify_files の検証は以下の順序で実行されます：
 
-1. **Global 検証** ([main.go:137-145](../../cmd/runner/main.go#L137-L145))
+1. **Global 検証** ([main.go](../../cmd/runner/main.go))
    - プログラム開始時に Global.VerifyFiles の全ファイルを検証
    - **検証失敗 → プログラム全体が終了**
 
-2. **Group 検証** ([runner.go:406-417](../../internal/runner/runner.go#L406-L417))
+2. **Group 検証** ([runner.go](../../internal/runner/runner.go))
    - 各グループ実行前に Group.VerifyFiles の全ファイルを検証
    - **検証失敗 → 該当グループをスキップ、他グループは継続実行**
 
@@ -141,7 +141,7 @@ verify_files 内のパスに環境変数が含まれる場合、展開に使用�
 #### Global レベル
 
 - **使用する allowlist**: `Global.EnvAllowlist`
-- **実装**: [expansion.go:194-216](../../internal/runner/config/expansion.go#L194-L216)
+- **実装**: [expansion.go](../../internal/runner/config/expansion.go)
 - **例**:
   ```toml
   [global]
@@ -152,7 +152,7 @@ verify_files 内のパスに環境変数が含まれる場合、展開に使用�
 #### Group レベル
 
 - **使用する allowlist**: Group の `env_allowlist` 継承ルール (`InheritanceMode`) に従って決定
-- **実装**: [expansion.go:218-247](../../internal/runner/config/expansion.go#L218-L247)
+- **実装**: [expansion.go](../../internal/runner/config/expansion.go)
 - **例**:
   ```toml
   [global]
@@ -178,7 +178,7 @@ verify_files 内のパスに環境変数が含まれる場合、展開に使用�
 
 - Command.Timeout が 0 より大きい → Command.Timeout を使用
 - Command.Timeout が 0 以下 → Global.Timeout を使用
-- 実装: [runner.go:582-586](../../internal/runner/runner.go#L582-L586)
+- 実装: [runner.go](../../internal/runner/runner.go)
 
 ```go
 timeout := time.Duration(r.config.Global.Timeout) * time.Second
@@ -191,7 +191,7 @@ if cmd.Timeout > 0 {
 
 - Command.Dir が空文字列でない → Command.Dir を使用
 - Command.Dir が空文字列 → Global.WorkDir を設定
-- 実装: [runner.go:526-528](../../internal/runner/runner.go#L526-L528)
+- 実装: [runner.go](../../internal/runner/runner.go)
 
 ```go
 if cmd.Dir == "" {

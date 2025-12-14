@@ -956,7 +956,7 @@ template = "restart_service"
 params.service_name = "postgresql"
 ```
 
-> **For details**: For more information on the command template feature (types of parameter expansion, escaping, security considerations, etc.), refer to [Chapter 11: Command Templates](11_command_templates.md).
+> **For details**: For more information on the command template feature (types of parameter expansion, escaping, security considerations, etc.), refer to [Chapter 7: Command Templates](07_command_templates.md).
 
 ## 9.9 Risk-Based Control Examples
 
