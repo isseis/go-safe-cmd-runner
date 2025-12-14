@@ -3,15 +3,26 @@
 // verify_links.go - Verify internal and external links in documentation
 //
 // This script checks for broken links in markdown documentation files.
+//
+// SECURITY WARNING:
+// External link checking makes HTTP requests to URLs found in documentation.
+// To prevent Server-Side Request Forgery (SSRF) attacks:
+// - Only trusted domains are allowed (see allowedHosts)
+// - Private IP addresses are blocked (RFC 1918, loopback, link-local)
+// - DNS rebinding attacks are mitigated
+// See docs/security/SSRF-001-external-link-verification.md for details.
 
 package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +48,35 @@ type Config struct {
 	OutputJSON    string
 	Verbose       bool
 	Timeout       int
+}
+
+// allowedHosts is a map of trusted domains for external link checking.
+// SECURITY: Only these hosts can be checked to prevent SSRF attacks.
+// Add new trusted domains here as needed.
+var allowedHosts = map[string]bool{
+	// Go ecosystem
+	"golang.org":          true,
+	"go.dev":              true,
+	"pkg.go.dev":          true,
+	"go.googlesource.com": true,
+
+	// Documentation and references
+	"en.wikipedia.org": true,
+	"ja.wikipedia.org": true,
+	"owasp.org":        true,
+	"cwe.mitre.org":    true,
+
+	// Code hosting
+	"github.com": true,
+	"gitlab.com": true,
+
+	// Rust ecosystem (if needed)
+	"docs.rs":   true,
+	"crates.io": true,
+
+	// Standards and RFCs
+	"www.rfc-editor.org":   true,
+	"datatracker.ietf.org": true,
 }
 
 func main() {
@@ -253,11 +293,88 @@ func verifyInternalLink(url, sourceFile string) bool {
 	return err == nil
 }
 
-// verifyExternalLink verifies an external link
+// isPrivateIP checks if an IP address is in a private range.
+// SECURITY: Blocks access to internal networks to prevent SSRF.
+func isPrivateIP(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Try resolving hostname to IP
+		addrs, err := net.LookupIP(host)
+		if err != nil || len(addrs) == 0 {
+			// Cannot resolve - be conservative and block
+			return true
+		}
+		ip = addrs[0]
+	}
+
+	// Check for private, loopback, and link-local addresses
+	// These include:
+	// - 10.0.0.0/8 (RFC 1918)
+	// - 172.16.0.0/12 (RFC 1918)
+	// - 192.168.0.0/16 (RFC 1918)
+	// - 127.0.0.0/8 (loopback)
+	// - 169.254.0.0/16 (link-local)
+	// - fc00::/7 (IPv6 unique local)
+	// - fe80::/10 (IPv6 link-local)
+	// - ::1 (IPv6 loopback)
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
+// isAllowedHost checks if a URL's host is in the allowlist.
+// SECURITY: Only allowlisted hosts can be accessed to prevent SSRF.
+func isAllowedHost(urlStr string) error {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Extract hostname without port
+	hostname := u.Hostname()
+
+	// Block all private/internal IP ranges
+	if isPrivateIP(hostname) {
+		return fmt.Errorf("private IP addresses are not allowed: %s", hostname)
+	}
+
+	// Check against allowlist
+	if !allowedHosts[u.Host] {
+		return fmt.Errorf("host not in allowlist: %s (add to allowedHosts if trusted)", u.Host)
+	}
+
+	return nil
+}
+
+// verifyExternalLink verifies an external link with SSRF protection.
+// SECURITY: Validates URL against allowlist and blocks private IPs.
 func verifyExternalLink(url string, timeoutSec int) (bool, error) {
+	// SECURITY: Validate URL before making any requests
+	if err := isAllowedHost(url); err != nil {
+		return false, fmt.Errorf("security check failed: %w", err)
+	}
+	// SECURITY: Custom transport with DNS rebinding protection
 	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// SECURITY: Re-validate IP addresses at connection time to prevent DNS rebinding
+				host, _, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid address: %w", err)
+				}
+				if isPrivateIP(host) {
+					return nil, fmt.Errorf("connection blocked to private IP: %s", host)
+				}
+				return (&net.Dialer{
+					Timeout:   time.Duration(timeoutSec) * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext(ctx, network, addr)
+			},
+		},
 		Timeout: time.Duration(timeoutSec) * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// SECURITY: Validate redirect targets against allowlist
+			if err := isAllowedHost(req.URL.String()); err != nil {
+				return fmt.Errorf("redirect blocked: %w", err)
+			}
 			// Allow up to 10 redirects
 			if len(via) >= 10 {
 				return fmt.Errorf("too many redirects")

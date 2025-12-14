@@ -35,10 +35,17 @@ OPTIONS:
     -o, --output DIR      Output directory (default: build/verification-reports)
     -h, --help            Show this help message
 
+SECURITY WARNING:
+    The -e/--external flag makes HTTP requests to all URLs found in documentation.
+    DO NOT use this flag on untrusted branches or pull requests, as it can lead to
+    Server-Side Request Forgery (SSRF) attacks. Only use for trusted content.
+
+    See docs/security/SSRF-001-external-link-verification.md for details.
+
 EXAMPLES:
     $0                    # Run all checks with default settings
     $0 -v                 # Run with verbose output
-    $0 -e                 # Include external link checking
+    $0 -e                 # Include external link checking (TRUSTED CONTENT ONLY)
     $0 -v -e -o /tmp/reports  # Verbose, external links, custom output dir
 
 EOF
