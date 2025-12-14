@@ -428,11 +428,11 @@ cmd = "%{app_dir}/bin/app"
 args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
 ```
 
-### 5.3.3 from_env - システム環境変数の取り込み(グループレベル)
+### 5.3.3 env_import - システム環境変数の取り込み(グループレベル)
 
 #### 概要
 
-グループレベルでシステム環境変数を内部変数として取り込みます。**Merge(マージ)方式**で、グループが `from_env` を定義すると Global.from_env と統合されます。
+グループレベルでシステム環境変数を内部変数として取り込みます。**Merge(マージ)方式**で、グループが `env_import` を定義すると Global.env_import と統合されます。
 
 #### 文法
 
@@ -449,21 +449,21 @@ env_import = ["内部変数名=システム環境変数名", ...]
 | **型** | 文字列配列 (array of strings) |
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | nil (Global.from_env を継承) |
+| **デフォルト値** | nil (Global.env_import を継承) |
 | **書式** | `"内部変数名=システム環境変数名"` 形式 |
 | **継承動作** | **Merge(マージ)方式** |
 
 #### 継承ルール(Merge方式)
 
-| Group.from_env の状態 | 動作 |
+| Group.env_import の状態 | 動作 |
 |---------------------|------|
-| **未定義(nil)** | Global.from_env を継承 |
-| **空配列 `[]`** | Global.from_env を継承 |
-| **定義あり** | Global.from_env + Group.from_env をマージ（同名は Group が優先） |
+| **未定義(nil)** | Global.env_import を継承 |
+| **空配列 `[]`** | Global.env_import を継承 |
+| **定義あり** | Global.env_import + Group.env_import をマージ（同名は Group が優先） |
 
 #### 設定例
 
-#### 例1: Global.from_env の継承
+#### 例1: Global.env_import の継承
 
 ```toml
 version = "1.0"
@@ -477,7 +477,7 @@ env_import = [
 
 [[groups]]
 name = "inherit_group"
-# from_env 未定義 → Global.from_env を継承
+# env_import 未定義 → Global.env_import を継承
 
 [[groups.commands]]
 name = "show_home"
@@ -486,7 +486,7 @@ args = ["Home: %{home}, User: %{username}"]
 # home と username が利用可能
 ```
 
-#### 例2: Global.from_env とマージ
+#### 例2: Global.env_import とマージ
 
 ```toml
 version = "1.0"
@@ -501,7 +501,7 @@ env_import = [
 [[groups]]
 name = "merge_group"
 env_import = [
-    "path=PATH"  # Global.from_env と統合（マージ）
+    "path=PATH"  # Global.env_import と統合（マージ）
 ]
 
 [[groups.commands]]
@@ -548,7 +548,7 @@ env_import = ["home=HOME"]
 
 [[groups]]
 name = "empty_merge_group"
-env_import = []  # 空配列: Global.from_env を継承（Merge方式）
+env_import = []  # 空配列: Global.env_import を継承（Merge方式）
 
 [[groups.commands]]
 name = "show_home"
@@ -565,7 +565,7 @@ args = ["Home: %{home}"]
 
 #### 概要
 
-グループレベルで `from_env` によるシステム環境変数の取り込みを制御します。**Override(上書き)方式**で動作します。
+グループレベルで `env_import` によるシステム環境変数の取り込みを制御します。**Override(上書き)方式**で動作します。
 
 #### 文法
 
