@@ -284,7 +284,7 @@ repo = "/backup/repo"
 - `${?param}`: オプショナルパラメータ（空の場合は省略）
 - `${@param}`: 配列パラメータ（複数の引数に展開）
 
-詳細は[コマンドテンプレートガイド](docs/user/command_templates.md)を参照してください。
+詳細は[コマンドテンプレートガイド](docs/user/command_templates.ja.md)を参照してください。
 
 ### グループレベルコマンド許可リスト
 
@@ -325,8 +325,9 @@ args = ["--verbose"]
   - [グローバルレベル設定](docs/user/toml_config/04_global_level.ja.md)
   - [グループレベル設定](docs/user/toml_config/05_group_level.ja.md)
   - [コマンドレベル設定](docs/user/toml_config/06_command_level.ja.md)
-  - [変数展開機能](docs/user/toml_config/07_variable_expansion.ja.md)
-  - [実践的な設定例](docs/user/toml_config/08_practical_examples.ja.md)
+  - [コマンドテンプレート設定](docs/user/toml_config/07_command_templates.ja.md)
+  - [変数展開機能](docs/user/toml_config/08_variable_expansion.ja.md)
+  - [実践的な設定例](docs/user/toml_config/09_practical_examples.ja.md)
 
 ## セキュリティモデル
 
@@ -424,23 +425,6 @@ go-safe-cmd-runnerは3つのコマンドラインツールを提供します：
 
 # 省略時（全グループ）
 ./runner -config config.toml
-```
-
-選択したグループが `depends_on` を持つ場合は、依存先が自動的に追加され先に実行されます。
-
-```toml
-[[groups]]
-name = "build"
-depends_on = ["preparation"]
-
-[[groups]]
-name = "test"
-depends_on = ["build"]
-```
-
-```bash
-./runner -config config.toml --groups=test
-# 実行順序: preparation -> build -> test
 ```
 
 グループ名は環境変数と同じ命名規則に従い、`[A-Za-z_][A-Za-z0-9_]*`（先頭は英字またはアンダースコア、以降は英数字またはアンダースコア）でなければなりません。

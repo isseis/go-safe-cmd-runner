@@ -10,8 +10,8 @@
 
 | No. | ファイル名 | 検証ID | 状態 | 備考 |
 |-----|-----------|--------|------|------|
-| 1 | README.ja.md | V-001 | ⬜ Not Started | プロジェクト概要、クイックスタート |
-| 2 | runner_command.ja.md | V-001 | ⬜ Not Started | runner コマンドの引数・オプション |
+| 1 | README.ja.md | V-001 | 🔧 Fixed | プロジェクト概要、クイックスタート |
+| 2 | runner_command.ja.md | V-001 | 🔧 Fixed | runner コマンドの引数・オプション |
 | 3 | record_command.ja.md | V-001 | ⬜ Not Started | record コマンドの引数・オプション |
 | 4 | verify_command.ja.md | V-001 | ⬜ Not Started | verify コマンドの引数・オプション |
 | 5 | command_templates.ja.md | V-003 | ⬜ Not Started | コマンドテンプレート機能 |
@@ -26,9 +26,9 @@
 | 9 | 01_introduction.ja.md | V-002 | ⬜ Not Started | TOML 設定の導入 |
 | 10 | 02_hierarchy.ja.md | V-002 | ⬜ Not Started | 設定の階層構造 |
 | 11 | 03_root_level.ja.md | V-002 | ⬜ Not Started | ルートレベル設定 |
-| 12 | 04_global_level.ja.md | V-002 | ⬜ Not Started | グローバルレベル設定 |
-| 13 | 05_group_level.ja.md | V-002 | ⬜ Not Started | グループレベル設定 |
-| 14 | 06_command_level.ja.md | V-002 | ⬜ Not Started | コマンドレベル設定 |
+| 12 | 04_global_level.ja.md | V-002 | 🔧 Fixed | グローバルレベル設定 |
+| 13 | 05_group_level.ja.md | V-002 | 🔧 Fixed | グループレベル設定 |
+| 14 | 06_command_level.ja.md | V-002 | 🔧 Fixed | コマンドレベル設定 |
 | 15 | 07_command_templates.ja.md | V-002 | ⬜ Not Started | コマンドテンプレート設定 |
 | 16 | 08_variable_expansion.ja.md | V-002 | ⬜ Not Started | 変数展開機能 |
 | 17 | 09_practical_examples.ja.md | V-002 | ⬜ Not Started | 実践的な設定例 |
