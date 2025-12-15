@@ -15,7 +15,7 @@ TOML設定ファイル解析時に環境変数allowlistの継承モード（`Inh
 ## 2. 現状分析
 
 ### 2.1 InheritanceMode型の定義
-[internal/runner/runnertypes/config.go:13-27](../../internal/runner/runnertypes/config.go#L13-L27)にて定義されている:
+[internal/runner/runnertypes/config.go:13-27](../../../internal/runner/runnertypes/config.go#L13-L27)にて定義されている:
 
 ```go
 type InheritanceMode int
@@ -35,7 +35,7 @@ const (
 )
 ```
 
-`String()`メソッドも実装済み（[config.go:162-173](../../internal/runner/runnertypes/config.go#L162-L173)）:
+`String()`メソッドも実装済み（[config.go:162-173](../../../internal/runner/runnertypes/config.go#L162-L173)）:
 - `InheritanceModeInherit` → "inherit"
 - `InheritanceModeExplicit` → "explicit"
 - `InheritanceModeReject` → "reject"
@@ -46,13 +46,13 @@ const (
 `InheritanceMode`型は定義されているが、プロダクションコードでは使用されていない。
 
 **該当箇所:**
-- [internal/runner/config/validator.go:328-359](../../internal/runner/config/validator.go#L328-L359) - `analyzeInheritanceMode`関数は`InheritanceMode`型を使用せず、`group.EnvAllowed`を直接チェック
+- [internal/runner/config/validation.go:328-359](../../../internal/runner/config/validation.go#L328-L359) - `analyzeInheritanceMode`関数は`InheritanceMode`型を使用せず、`group.EnvAllowed`を直接チェック
 
 #### 2.2.2 継承モード判定ロジックの重複
 継承モードの判定が各所で重複している:
 
 ```go
-// 例1: validator.go
+// 例1: validation.go
 if group.EnvAllowed == nil {
     // Inherit mode
 } else if len(group.EnvAllowed) == 0 {
@@ -70,11 +70,11 @@ if len(group.EnvAllowed) > 0 {
 ```
 
 **該当箇所:**
-- [internal/runner/config/validator.go:329-358](../../internal/runner/config/validator.go#L329-L358)
-- [internal/runner/debug/inheritance.go:80-96](../../internal/runner/debug/inheritance.go#L80-L96)
+- [internal/runner/config/validation.go:329-358](../../../internal/runner/config/validation.go#L329-L358)
+- internal/runner/debug/inheritance.go:80-96
 
 #### 2.2.3 PrintFromEnvInheritance関数の可読性
-[internal/runner/debug/inheritance.go:14-98](../../internal/runner/debug/inheritance.go#L14-L98)の`PrintFromEnvInheritance`関数は:
+internal/runner/debug/inheritance.go:14-98の`PrintFromEnvInheritance`関数は:
 - `group.EnvAllowed`の値を解析して継承モードを推測
 - 推測結果に基づいて異なる表示メッセージを出力
 - 条件分岐が多く、コードの意図が不明瞭
@@ -99,8 +99,8 @@ if len(group.EnvAllowed) > 0 {
 
 ### 2.3 dry-runモードでの表示
 現在のdry-runモードでは、環境変数allowlistの継承モードは直接表示されていない:
-- [internal/runner/resource/formatter.go](../../internal/runner/resource/formatter.go) - 継承モードの表示なし
-- [internal/runner/resource/dryrun_manager.go](../../internal/runner/resource/dryrun_manager.go) - 継承モード情報を追跡していない
+- [internal/runner/resource/formatter.go](../../../internal/runner/resource/formatter.go) - 継承モードの表示なし
+- [internal/runner/resource/dryrun_manager.go](../../../internal/runner/resource/dryrun_manager.go) - 継承モード情報を追跡していない
 
 ## 3. 提案する改善策
 
@@ -124,7 +124,7 @@ type RuntimeGroup struct {
 #### 3.2.2 継承モード判定ロジックの集約
 
 ##### 3.2.2.1 実行順序の課題
-現在の実装では、設定検証（`config/validator.go`）が設定展開（`config/expansion.go`）より先に実行される。この実行順序により、検証フェーズで`RuntimeGroup`の新フィールドを使用することができない。
+現在の実装では、設定検証（`config/validation.go`）が設定展開（`config/expansion.go`）より先に実行される。この実行順序により、検証フェーズで`RuntimeGroup`の新フィールドを使用することができない。
 
 ##### 3.2.2.2 解決策：共有ヘルパー関数
 継承モード判定ロジックを共有パッケージ（例: `runnertypes`）に独立したヘルパー関数として実装:
@@ -147,7 +147,7 @@ func DetermineInheritanceMode(envAllowed []string) InheritanceMode {
 
 この関数を以下の2箇所で使用:
 
-1. **`config/validator.go`**: `analyzeInheritanceMode`関数で検証に使用
+1. **`config/validation.go`**: `analyzeInheritanceMode`関数で検証に使用
 2. **`config/expansion.go`**: `ExpandGroup`関数で`RuntimeGroup`フィールドに設定
 
 判定ロジック:
@@ -218,7 +218,7 @@ case InheritanceModeReject:
 - `internal/runner/runnertypes/inheritance.go` - 継承モード判定ヘルパー関数（新規ファイル）
 
 #### 4.1.2 継承モード判定・設定
-- `internal/runner/config/validator.go` - `analyzeInheritanceMode`でヘルパー関数を使用
+- `internal/runner/config/validation.go` - `analyzeInheritanceMode`でヘルパー関数を使用
 - `internal/runner/config/expansion.go` - `ExpandGroup`でヘルパー関数を使用し`RuntimeGroup`に設定
 
 #### 4.1.3 継承モード使用
@@ -275,7 +275,7 @@ case InheritanceModeReject:
    - アクセサメソッド追加（必要に応じて）
 
 3. **フェーズ3**: 検証・展開での使用
-   - `config/validator.go`でヘルパー関数を使用
+   - `config/validation.go`でヘルパー関数を使用
    - `config/expansion.go`でヘルパー関数を使用し`RuntimeGroup`に設定
    - ユニットテスト作成・更新
 

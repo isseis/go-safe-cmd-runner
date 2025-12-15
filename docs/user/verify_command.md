@@ -675,7 +675,7 @@ fi
 - [TOML Configuration File User Guide](toml_config/README.md)
   - [Global Level Configuration](toml_config/04_global_level.md) - `verify_files` parameter
   - [Group Level Configuration](toml_config/05_group_level.md) - File verification per group
-  - [Troubleshooting](toml_config/10_troubleshooting.md) - Handling verification errors
+  - [Troubleshooting](toml_config/11_troubleshooting.md) - Handling verification errors
 
 ### Project Information
 

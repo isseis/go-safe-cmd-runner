@@ -879,7 +879,7 @@ All TOML configuration field names have been updated to improve clarity and cons
 
 #### Migration Guide
 
-See [Migration Guide](docs/migration/v2.0.0.md) for detailed instructions.
+See Migration Guide for detailed instructions.
 ```
 
 ## 9. テスト仕様

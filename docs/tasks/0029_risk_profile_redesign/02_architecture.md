@@ -776,8 +776,8 @@ func (p CommandRiskProfile) DebugString() string {
 ### 13.1 関連ドキュメント
 
 - [要件定義書](01_requirements.md)
-- [CLAUDE.md](../../CLAUDE.md)
-- [既存のcommand_analysis.go](../../internal/runner/security/command_analysis.go)
+- [CLAUDE.md](../../../CLAUDE.md)
+- [既存のcommand_analysis.go](../../../internal/runner/security/command_analysis.go)
 
 ### 13.2 設計パターン
 

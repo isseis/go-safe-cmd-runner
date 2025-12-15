@@ -30,9 +30,9 @@ parseAndSubstitute (Core parsing and substitution logic)
 
 | Function | Role | Visibility | Implementation |
 |----------|------|------------|----------------|
-| `ExpandString` | Public API (entry point) | public | [expansion.go:59-67](../../internal/runner/config/expansion.go#L59-L67) |
-| `resolveAndExpand` | Generate resolver from variable map and expand recursively | private | [expansion.go:71-124](../../internal/runner/config/expansion.go#L71-L124) |
-| `parseAndSubstitute` | Core logic for parsing, escape handling, and variable substitution | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
+| `ExpandString` | Public API (entry point) | public | [expansion.go](../../internal/runner/config/expansion.go) |
+| `resolveAndExpand` | Generate resolver from variable map and expand recursively | private | [expansion.go](../../internal/runner/config/expansion.go) |
+| `parseAndSubstitute` | Core logic for parsing, escape handling, and variable substitution | private | [expansion.go](../../internal/runner/config/expansion.go) |
 
 #### Lazy Expansion (via `varExpander`)
 
@@ -46,9 +46,9 @@ parseAndSubstitute (Core parsing and substitution logic)
 
 | Function | Role | Visibility | Implementation |
 |----------|------|------------|----------------|
-| `varExpander.expandString` | Entry point (expansion of internal variables) | private | [expansion.go:350-366](../../internal/runner/config/expansion.go#L350-L366) |
-| `varExpander.resolveVariable` | Variable resolution with lazy evaluation and memoization | private | [expansion.go:370-460](../../internal/runner/config/expansion.go#L370-L460) |
-| `parseAndSubstitute` | Core logic for parsing, escape handling, and variable substitution (shared by both strategies) | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
+| `varExpander.expandString` | Entry point (expansion of internal variables) | private | [expansion.go](../../internal/runner/config/expansion.go) |
+| `varExpander.resolveVariable` | Variable resolution with lazy evaluation and memoization | private | [expansion.go](../../internal/runner/config/expansion.go) |
+| `parseAndSubstitute` | Core logic for parsing, escape handling, and variable substitution (shared by both strategies) | private | [expansion.go](../../internal/runner/config/expansion.go) |
 
 ### Two Expansion Strategies
 
@@ -64,7 +64,7 @@ The implementation uses two different expansion strategies depending on the use 
 - State: Stateless (no memoization needed)
 - Performance: Fast (map lookup only)
 
-**Implementation**: [expansion.go:59-124](../../internal/runner/config/expansion.go#L59-L124)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 #### 2. Lazy Expansion (via `varExpander`)
 
@@ -76,7 +76,7 @@ The implementation uses two different expansion strategies depending on the use 
 - State: Stateful (with memoization)
 - Performance: Expansion cost on first access, cache hit on subsequent accesses
 
-**Implementation**: [expansion.go:307-460](../../internal/runner/config/expansion.go#L307-L460)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ## Lazy Expansion Details
 
@@ -99,7 +99,7 @@ Lazy evaluation is achieved by using three separate maps:
 
 ### Resolution Algorithm
 
-Processing flow of the `resolveVariable` method ([expansion.go:370-460](../../internal/runner/config/expansion.go#L370-L460)):
+Processing flow of the `resolveVariable` method ([expansion.go](../../internal/runner/config/expansion.go)):
 
 ```
 1. Cache check
@@ -201,7 +201,7 @@ Detects circular references to prevent infinite loops.
 
 **Detection method**: Track currently expanding variables using `visited` map
 
-**Implementation**: [expansion.go:407-436](../../internal/runner/config/expansion.go#L407-L436)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ```go
 visited[varName] = struct{}{}  // Mark at expansion start
@@ -237,7 +237,7 @@ Limits recursion depth to prevent stack overflow.
 
 **Limit**: `MaxRecursionDepth = 100`
 
-**Implementation**: [expansion.go:150-158](../../internal/runner/config/expansion.go#L150-L158)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ```go
 if depth >= MaxRecursionDepth {
@@ -251,7 +251,7 @@ Limits the number of variables per level to prevent DoS attacks.
 
 **Limit**: `MaxVarsPerLevel = 1000`
 
-**Implementation**: [expansion.go:504-511](../../internal/runner/config/expansion.go#L504-L511)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ### 4. Size Limits
 
@@ -261,13 +261,13 @@ Limits string length and array size to prevent memory exhaustion.
 - `MaxStringValueLen = 10KB`
 - `MaxArrayElements = 1000`
 
-**Implementation**: [expansion.go:598-605](../../internal/runner/config/expansion.go#L598-L605), [expansion.go:628-635](../../internal/runner/config/expansion.go#L628-L635)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go), [expansion.go](../../internal/runner/config/expansion.go)
 
 ### 5. Variable Name Validation
 
 Validates variable names to prevent injection attacks.
 
-**Implementation**: Uses `security.ValidateVariableName()` ([expansion.go:205-212](../../internal/runner/config/expansion.go#L205-L212))
+**Implementation**: Uses `security.ValidateVariableName()` ([expansion.go](../../internal/runner/config/expansion.go))
 
 ### 6. Type Safety
 
@@ -278,7 +278,7 @@ Prevents mixing of string and array variables.
 - Overriding array variable with string variable → error
 - Referencing array variable in string context → error
 
-**Implementation**: [expansion.go:588-595](../../internal/runner/config/expansion.go#L588-L595), [expansion.go:617-625](../../internal/runner/config/expansion.go#L617-L625)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go), [expansion.go](../../internal/runner/config/expansion.go)
 
 ## Escape Sequences
 
@@ -288,7 +288,7 @@ Supports escaping for literal use of variable expansion syntax.
 - `\%` → `%` (percent sign)
 - `\\` → `\` (backslash)
 
-**Implementation**: [expansion.go:164-184](../../internal/runner/config/expansion.go#L164-L184)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 **Examples**:
 
@@ -304,7 +304,7 @@ escaped_backslash = "path\\\\to\\\\file"  # → "path\to\file"
 
 Once a variable is expanded, it is cached for fast subsequent access.
 
-**Implementation**: [expansion.go:438-439](../../internal/runner/config/expansion.go#L438-L439)
+**Implementation**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ```go
 e.expandedVars[varName] = expanded
@@ -330,17 +330,17 @@ Possible errors during variable expansion and their respective detection timing:
 
 | Error Type | Description | Detection Timing | Implementation |
 |-----------|-------------|------------------|----------------|
-| `ErrUndefinedVariableDetail` | Reference to undefined variable | Variable resolution | [expansion.go:92-97](../../internal/runner/config/expansion.go#L92-L97) |
-| `ErrCircularReferenceDetail` | Circular reference | Variable resolution | [expansion.go:215-221](../../internal/runner/config/expansion.go#L215-L221) |
-| `ErrMaxRecursionDepthExceededDetail` | Recursion depth exceeded | Parsing | [expansion.go:151-157](../../internal/runner/config/expansion.go#L151-L157) |
-| `ErrInvalidVariableNameDetail` | Invalid variable name | Parsing | [expansion.go:206-211](../../internal/runner/config/expansion.go#L206-L211) |
-| `ErrUnclosedVariableReferenceDetail` | Unclosed `%{` | Parsing | [expansion.go:194-198](../../internal/runner/config/expansion.go#L194-L198) |
-| `ErrInvalidEscapeSequenceDetail` | Invalid escape sequence | Parsing | [expansion.go:178-182](../../internal/runner/config/expansion.go#L178-L182) |
-| `ErrTypeMismatchDetail` | Type mismatch (string⇔array) | Variable validation | [expansion.go:589-594](../../internal/runner/config/expansion.go#L589-L594) |
-| `ErrArrayVariableInStringContextDetail` | Array variable in string context | Variable resolution | [expansion.go:383-388](../../internal/runner/config/expansion.go#L383-L388) |
-| `ErrTooManyVariablesDetail` | Variable count exceeded | Variable validation | [expansion.go:505-510](../../internal/runner/config/expansion.go#L505-L510) |
-| `ErrValueTooLongDetail` | String length exceeded | Variable validation | [expansion.go:599-604](../../internal/runner/config/expansion.go#L599-L604) |
-| `ErrArrayTooLargeDetail` | Array size exceeded | Variable validation | [expansion.go:629-634](../../internal/runner/config/expansion.go#L629-L634) |
+| `ErrUndefinedVariableDetail` | Reference to undefined variable | Variable resolution | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrCircularReferenceDetail` | Circular reference | Variable resolution | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrMaxRecursionDepthExceededDetail` | Recursion depth exceeded | Parsing | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrInvalidVariableNameDetail` | Invalid variable name | Parsing | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrUnclosedVariableReferenceDetail` | Unclosed `%{` | Parsing | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrInvalidEscapeSequenceDetail` | Invalid escape sequence | Parsing | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrTypeMismatchDetail` | Type mismatch (string⇔array) | Variable validation | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrArrayVariableInStringContextDetail` | Array variable in string context | Variable resolution | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrTooManyVariablesDetail` | Variable count exceeded | Variable validation | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrValueTooLongDetail` | String length exceeded | Variable validation | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrArrayTooLargeDetail` | Array size exceeded | Variable validation | [expansion.go](../../internal/runner/config/expansion.go) |
 
 All errors include detailed context information (level, field, variable name, etc.) for easy debugging.
 

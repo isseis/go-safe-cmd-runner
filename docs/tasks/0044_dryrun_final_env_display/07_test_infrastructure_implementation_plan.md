@@ -644,5 +644,5 @@ total:										(statements)			83.7%
 - [04_implementation_plan.md - Section 11](04_implementation_plan.md#11-テストカバレッジ改善戦略)
 - [05_test_infrastructure_requirements.md](05_test_infrastructure_requirements.md)
 - [06_test_infrastructure_specifications.md](06_test_infrastructure_specifications.md)
-- [既存モック実装](../../internal/runner/testing/mocks.go)
+- [既存モック実装](../../../internal/runner/testing/mocks.go)
 - [testify/mock ドキュメント](https://pkg.go.dev/github.com/stretchr/testify/mock)

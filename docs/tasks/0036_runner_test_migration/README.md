@@ -177,4 +177,4 @@ git diff --stat internal/runner/runner_test.go
 
 - [Task 0035: Spec/Runtime Separation](../0035_spec_runtime_separation/)
 - [テスト再有効化計画](../0035_spec_runtime_separation/test_reactivation_plan.md)
-- [group_executor_test.go 移行例](../../internal/runner/group_executor_test.go)
+- [group_executor_test.go 移行例](../../../internal/runner/group_executor_test.go)

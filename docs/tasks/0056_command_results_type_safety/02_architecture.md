@@ -1201,7 +1201,7 @@ grep -r "TODO(task-0056-phase4)" --include="*.go" | \
 
 3. **Phase 4 チェックリスト**
 
-実装計画書（`03_implementation_plan.md`）に明確なチェックリストを含める:
+実装計画書（`04_implementation_plan.md`）に明確なチェックリストを含める:
 
 ```markdown
 ### Phase 4: 後方互換コードの削除
@@ -1762,5 +1762,5 @@ func TestExtractCommandResults_LegacyFormat(t *testing.T) {
 ## 参照
 
 - [要件定義書](./01_requirements.md)
-- [実装計画](./03_implementation_plan.md)（作成予定）
+- [実装計画](./04_implementation_plan.md)（作成予定）
 - [RedactingHandler スライス型変換の動作](../../dev/redaction_slice_type_conversion.md)

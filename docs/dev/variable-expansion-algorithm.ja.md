@@ -30,9 +30,9 @@ parseAndSubstitute (パース・置換のコアロジック)
 
 | 関数名 | 役割 | 可視性 | 実装 |
 |--------|------|--------|------|
-| `ExpandString` | パブリックAPI（エントリーポイント） | public | [expansion.go:59-67](../../internal/runner/config/expansion.go#L59-L67) |
-| `resolveAndExpand` | 変数マップからresolverを生成し再帰展開 | private | [expansion.go:71-124](../../internal/runner/config/expansion.go#L71-L124) |
-| `parseAndSubstitute` | パース、エスケープ処理、変数置換のコアロジック | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
+| `ExpandString` | パブリックAPI（エントリーポイント） | public | [expansion.go](../../internal/runner/config/expansion.go) |
+| `resolveAndExpand` | 変数マップからresolverを生成し再帰展開 | private | [expansion.go](../../internal/runner/config/expansion.go) |
+| `parseAndSubstitute` | パース、エスケープ処理、変数置換のコアロジック | private | [expansion.go](../../internal/runner/config/expansion.go) |
 
 #### 遅延展開（varExpander経由）
 
@@ -46,9 +46,9 @@ parseAndSubstitute (パース・置換のコアロジック)
 
 | 関数名 | 役割 | 可視性 | 実装 |
 |--------|------|--------|------|
-| `varExpander.expandString` | エントリーポイント（内部変数の展開） | private | [expansion.go:350-366](../../internal/runner/config/expansion.go#L350-L366) |
-| `varExpander.resolveVariable` | 変数解決とメモ化による遅延評価 | private | [expansion.go:370-460](../../internal/runner/config/expansion.go#L370-L460) |
-| `parseAndSubstitute` | パース、エスケープ処理、変数置換のコアロジック（両戦略で共有） | private | [expansion.go:141-241](../../internal/runner/config/expansion.go#L141-L241) |
+| `varExpander.expandString` | エントリーポイント（内部変数の展開） | private | [expansion.go](../../internal/runner/config/expansion.go) |
+| `varExpander.resolveVariable` | 変数解決とメモ化による遅延評価 | private | [expansion.go](../../internal/runner/config/expansion.go) |
+| `parseAndSubstitute` | パース、エスケープ処理、変数置換のコアロジック（両戦略で共有） | private | [expansion.go](../../internal/runner/config/expansion.go) |
 
 ### 2つの展開戦略
 
@@ -64,7 +64,7 @@ parseAndSubstitute (パース・置換のコアロジック)
 - 状態: ステートレス（メモ化不要）
 - 性能: 高速（マップ検索のみ）
 
-**実装**: [expansion.go:59-124](../../internal/runner/config/expansion.go#L59-L124)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 #### 2. 遅延展開（`varExpander` 経由）
 
@@ -76,7 +76,7 @@ parseAndSubstitute (パース・置換のコアロジック)
 - 状態: ステートフル（メモ化あり）
 - 性能: 初回は展開コスト、2回目以降はキャッシュヒット
 
-**実装**: [expansion.go:307-460](../../internal/runner/config/expansion.go#L307-L460)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ## 遅延展開の詳細
 
@@ -99,7 +99,7 @@ type varExpander struct {
 
 ### 解決アルゴリズム
 
-`resolveVariable` メソッド（[expansion.go:370-460](../../internal/runner/config/expansion.go#L370-L460)）の処理フロー：
+`resolveVariable` メソッド（[expansion.go](../../internal/runner/config/expansion.go)）の処理フロー：
 
 ```
 1. キャッシュチェック
@@ -201,7 +201,7 @@ expandedVars = {
 
 **検出方法**: `visited` マップで現在展開中の変数を追跡
 
-**実装**: [expansion.go:407-436](../../internal/runner/config/expansion.go#L407-L436)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ```go
 visited[varName] = struct{}{}  // 展開開始時にマーク
@@ -237,7 +237,7 @@ resolveVariable("A")
 
 **制限値**: `MaxRecursionDepth = 100`
 
-**実装**: [expansion.go:150-158](../../internal/runner/config/expansion.go#L150-L158)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ```go
 if depth >= MaxRecursionDepth {
@@ -251,7 +251,7 @@ DoS攻撃を防ぐため、各レベルでの変数数を制限しています�
 
 **制限値**: `MaxVarsPerLevel = 1000`
 
-**実装**: [expansion.go:504-511](../../internal/runner/config/expansion.go#L504-L511)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ### 4. サイズ制限
 
@@ -261,13 +261,13 @@ DoS攻撃を防ぐため、各レベルでの変数数を制限しています�
 - `MaxStringValueLen = 10KB`
 - `MaxArrayElements = 1000`
 
-**実装**: [expansion.go:598-605](../../internal/runner/config/expansion.go#L598-L605), [expansion.go:628-635](../../internal/runner/config/expansion.go#L628-L635)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go), [expansion.go](../../internal/runner/config/expansion.go)
 
 ### 5. 変数名の検証
 
 インジェクション攻撃を防ぐため、変数名を検証しています。
 
-**実装**: `security.ValidateVariableName()` を使用 ([expansion.go:205-212](../../internal/runner/config/expansion.go#L205-L212))
+**実装**: `security.ValidateVariableName()` を使用 ([expansion.go](../../internal/runner/config/expansion.go))
 
 ### 6. 型安全性
 
@@ -278,7 +278,7 @@ DoS攻撃を防ぐため、各レベルでの変数数を制限しています�
 - 配列変数を文字列変数で上書き → エラー
 - 文字列コンテキストで配列変数を参照 → エラー
 
-**実装**: [expansion.go:588-595](../../internal/runner/config/expansion.go#L588-L595), [expansion.go:617-625](../../internal/runner/config/expansion.go#L617-L625)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go), [expansion.go](../../internal/runner/config/expansion.go)
 
 ## エスケープシーケンス
 
@@ -288,7 +288,7 @@ DoS攻撃を防ぐため、各レベルでの変数数を制限しています�
 - `\%` → `%` （パーセント記号）
 - `\\` → `\` （バックスラッシュ）
 
-**実装**: [expansion.go:164-184](../../internal/runner/config/expansion.go#L164-L184)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 **例**:
 
@@ -304,7 +304,7 @@ escaped_backslash = "path\\\\to\\\\file"  # → "path\to\file"
 
 一度展開した変数はキャッシュされ、次回以降の参照は高速化されます。
 
-**実装**: [expansion.go:438-439](../../internal/runner/config/expansion.go#L438-L439)
+**実装**: [expansion.go](../../internal/runner/config/expansion.go)
 
 ```go
 e.expandedVars[varName] = expanded
@@ -330,17 +330,17 @@ e.expandedVars[varName] = expanded
 
 | エラー型 | 説明 | 検出タイミング | 実装 |
 |---------|------|--------------|------|
-| `ErrUndefinedVariableDetail` | 未定義の変数を参照 | 変数解決時 | [expansion.go:92-97](../../internal/runner/config/expansion.go#L92-L97) |
-| `ErrCircularReferenceDetail` | 循環参照 | 変数解決時 | [expansion.go:215-221](../../internal/runner/config/expansion.go#L215-L221) |
-| `ErrMaxRecursionDepthExceededDetail` | 再帰深度超過 | パース時 | [expansion.go:151-157](../../internal/runner/config/expansion.go#L151-L157) |
-| `ErrInvalidVariableNameDetail` | 不正な変数名 | パース時 | [expansion.go:206-211](../../internal/runner/config/expansion.go#L206-L211) |
-| `ErrUnclosedVariableReferenceDetail` | 閉じられていない `%{` | パース時 | [expansion.go:194-198](../../internal/runner/config/expansion.go#L194-L198) |
-| `ErrInvalidEscapeSequenceDetail` | 不正なエスケープシーケンス | パース時 | [expansion.go:178-182](../../internal/runner/config/expansion.go#L178-L182) |
-| `ErrTypeMismatchDetail` | 型の不一致（文字列⇔配列） | 変数検証時 | [expansion.go:589-594](../../internal/runner/config/expansion.go#L589-L594) |
-| `ErrArrayVariableInStringContextDetail` | 文字列コンテキストでの配列変数参照 | 変数解決時 | [expansion.go:383-388](../../internal/runner/config/expansion.go#L383-L388) |
-| `ErrTooManyVariablesDetail` | 変数数超過 | 変数検証時 | [expansion.go:505-510](../../internal/runner/config/expansion.go#L505-L510) |
-| `ErrValueTooLongDetail` | 文字列長超過 | 変数検証時 | [expansion.go:599-604](../../internal/runner/config/expansion.go#L599-L604) |
-| `ErrArrayTooLargeDetail` | 配列サイズ超過 | 変数検証時 | [expansion.go:629-634](../../internal/runner/config/expansion.go#L629-L634) |
+| `ErrUndefinedVariableDetail` | 未定義の変数を参照 | 変数解決時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrCircularReferenceDetail` | 循環参照 | 変数解決時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrMaxRecursionDepthExceededDetail` | 再帰深度超過 | パース時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrInvalidVariableNameDetail` | 不正な変数名 | パース時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrUnclosedVariableReferenceDetail` | 閉じられていない `%{` | パース時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrInvalidEscapeSequenceDetail` | 不正なエスケープシーケンス | パース時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrTypeMismatchDetail` | 型の不一致（文字列⇔配列） | 変数検証時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrArrayVariableInStringContextDetail` | 文字列コンテキストでの配列変数参照 | 変数解決時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrTooManyVariablesDetail` | 変数数超過 | 変数検証時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrValueTooLongDetail` | 文字列長超過 | 変数検証時 | [expansion.go](../../internal/runner/config/expansion.go) |
+| `ErrArrayTooLargeDetail` | 配列サイズ超過 | 変数検証時 | [expansion.go](../../internal/runner/config/expansion.go) |
 
 すべてのエラーには詳細な文脈情報（level, field, 変数名など）が含まれ、デバッグが容易です。
 

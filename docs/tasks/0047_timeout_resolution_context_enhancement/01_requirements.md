@@ -12,19 +12,19 @@ dry-runモードにおいて、タイムアウト値の解決過程を可視化�
 
 現在、タイムアウト値の解決は以下の2つの関数で実装されている：
 
-1. **`ResolveTimeout`** ([internal/common/timeout_resolver.go:24](internal/common/timeout_resolver.go))
+1. **`ResolveTimeout`** ([../../../internal/common/timeout_resolver.go:24](../../../internal/common/timeout_resolver.go))
    - 戻り値: `(int, TimeoutResolutionContext)`
    - 解決されたタイムアウト値と、その値がどのレベルで設定されたかのコンテキスト情報を返す
    - **現状**: プロダクションコードで使用されていない（テストコードとドキュメントのみ）
 
-2. **`ResolveEffectiveTimeout`** ([internal/common/timeout.go:111](internal/common/timeout.go))
+2. **`ResolveEffectiveTimeout`** ([../../../internal/common/timeout.go:111](../../../internal/common/timeout.go))
    - 戻り値: `int`
    - 解決されたタイムアウト値のみを返す（コンテキスト情報なし）
    - **現状**: プロダクションコードで実際に使用されている
 
 #### 使用箇所
 
-`ResolveEffectiveTimeout`は[internal/runner/runnertypes/runtime.go:202](internal/runner/runnertypes/runtime.go#L202)の`NewRuntimeCommand`で使用されている：
+`ResolveEffectiveTimeout`は[../../../internal/runner/runnertypes/runtime.go:202](../../../internal/runner/runnertypes/runtime.go#L202)の`NewRuntimeCommand`で使用されている：
 
 ```go
 func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*RuntimeCommand, error) {
@@ -41,7 +41,7 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*Runtim
 
 #### dry-runモードでの表示
 
-[internal/runner/resource/dryrun_manager.go:171](internal/runner/resource/dryrun_manager.go#L171)で、タイムアウト値をParametersに含めているが、**誤った値**を使用している：
+[../../../internal/runner/resource/dryrun_manager.go:171](../../../internal/runner/resource/dryrun_manager.go#L171)で、タイムアウト値をParametersに含めているが、**誤った値**を使用している：
 
 ```go
 Parameters: map[string]any{
@@ -183,10 +183,10 @@ Parameters: map[string]any{
 ## 9. 参考情報
 
 ### 関連ファイル
-- [internal/common/timeout_resolver.go](internal/common/timeout_resolver.go) - `ResolveTimeout`実装
-- [internal/common/timeout.go](internal/common/timeout.go) - `Timeout`型と`ResolveEffectiveTimeout`
-- [internal/runner/runnertypes/runtime.go](internal/runner/runnertypes/runtime.go) - `RuntimeCommand`定義
-- [internal/runner/resource/dryrun_manager.go](internal/runner/resource/dryrun_manager.go) - dry-run実装
+- [../../../internal/common/timeout_resolver.go](../../../internal/common/timeout_resolver.go) - `ResolveTimeout`実装
+- [../../../internal/common/timeout.go](../../../internal/common/timeout.go) - `Timeout`型と`ResolveEffectiveTimeout`
+- [../../../internal/runner/runnertypes/runtime.go](../../../internal/runner/runnertypes/runtime.go) - `RuntimeCommand`定義
+- [../../../internal/runner/resource/dryrun_manager.go](../../../internal/runner/resource/dryrun_manager.go) - dry-run実装
 
 ### 関連タスク
 - Task 0043: Timeout Specification Refinement（タイムアウト仕様の整理）

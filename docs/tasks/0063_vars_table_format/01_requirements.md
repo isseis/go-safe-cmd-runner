@@ -21,7 +21,7 @@ vars = [
 3. **TOMLらしくない記法**: TOMLの標準的な構造を活用していない
 4. **拡張性の低さ**: 将来的に新しい型を追加する際の柔軟性が低い
 
-現在の実装では、配列形式の利点として**定義順序が保証**されており、`ProcessVars` 関数（[internal/runner/config/expansion.go:231-285](internal/runner/config/expansion.go:231-285)）が順次展開を行っている。ただし、既存の `ExpandString` 関数は再帰的に依存変数を解決するため、実際には処理順序に依存しない設計になっている。
+現在の実装では、配列形式の利点として**定義順序が保証**されており、`ProcessVars` 関数（[../../../internal/runner/config/expansion.go#L231-L285](../../../internal/runner/config/expansion.go#L231-L285)）が順次展開を行っている。ただし、既存の `ExpandString` 関数は再帰的に依存変数を解決するため、実際には処理順序に依存しない設計になっている。
 
 コマンドテンプレート機能（Task 0062）の導入に伴い、テンプレートパラメータとして文字列配列を渡す必要性が生じた。この要求に対応するため、`vars` の定義形式をテーブルベース（`[vars]` セクション）に変更する。テーブル形式では反復順序が不定だが、既存の `ExpandString` の再帰展開機能により、依存関係は自動的に解決される。
 
@@ -158,7 +158,7 @@ include_files = [
 4. 循環依存は `expandStringRecursive` の visited マップで検出（既存実装）
 
 **実装方針**:
-- 既存の `ExpandString` 関数（[expansion.go:26-34](internal/runner/config/expansion.go:26-34)）をそのまま活用
+- 既存の `ExpandString` 関数（[expansion.go#L26-L34](../../../internal/runner/config/expansion.go#L26-L34)）をそのまま活用
 - 処理順序に依存しない設計のため、`map` の反復順序が不定でも問題なし
 
 **例**:
@@ -198,7 +198,7 @@ circular reference detected in vars: variable 'a' -> 'b' -> 'c' -> 'a'
 ```
 
 **実装**:
-- 既存の `ErrCircularReferenceDetail` エラー型を使用（[expansion.go:111-118](internal/runner/config/expansion.go:111-118)）
+- 既存の `ErrCircularReferenceDetail` エラー型を使用（[expansion.go#L111-L118](../../../internal/runner/config/expansion.go#L111-L118)）
 - 新たな実装は不要
 
 ### 2.3 変数の上書きと型の整合性
@@ -431,7 +431,7 @@ config_files = []  # グローバル設定をクリアし、空の配列を使�
 **要件**: 変数展開の深さに制限を設け、無限ループや DoS 攻撃を防止すること。
 
 **実装方針**:
-- 既存の `MaxRecursionDepth` (100) がそのまま適用される（[expansion.go:19-20](internal/runner/config/expansion.go:19-20)）
+- 既存の `MaxRecursionDepth` (100) がそのまま適用される（[expansion.go#L19-L20](../../../internal/runner/config/expansion.go#L19-L20)）
 - 新たな実装は不要
 
 #### NF-008: リソース制限
@@ -457,7 +457,7 @@ config_files = []  # グローバル設定をクリアし、空の配列を使�
 #### Phase 1: 型定義の変更
 
 **対象ファイル**:
-- `internal/runner/runnertypes/spec.go` - `Vars` フィールドの型変更
+- `../../../internal/runner/runnertypes/spec.go` - `Vars` フィールドの型変更
 
 **実装内容**:
 - `Vars []string` から `Vars map[string]interface{}` に変更
@@ -472,7 +472,7 @@ config_files = []  # グローバル設定をクリアし、空の配列を使�
 
 **型定義**:
 ```go
-// internal/runner/runnertypes/spec.go
+// ../../../internal/runner/runnertypes/spec.go
 type GlobalSpec struct {
     // ... existing fields ...
     Vars map[string]interface{} `toml:"vars"` // Changed from []string
@@ -504,7 +504,7 @@ type VarValue struct {
 このアプローチは、TOMLパーサーのカスタムアンマーシャラーが必要となり、実装の複雑さが増すため、`map[string]interface{}` を使用する方針とする。
 
 **追加作業**:
-- `internal/runner/config/loader.go` でのエラーハンドリング改善
+- `../../../internal/runner/config/loader.go` でのエラーハンドリング改善
   - TOMLパースエラーを捕捉し、旧形式の可能性がある場合は移行ガイドを含むエラーメッセージを返す
   - 実装例はRisk-005を参照
 
@@ -516,7 +516,7 @@ type VarValue struct {
 #### Phase 2: 変数展開ロジックの更新
 
 **対象ファイル**:
-- `internal/runner/config/expansion.go` - `ProcessVars` 関数の更新
+- `../../../internal/runner/config/expansion.go` - `ProcessVars` 関数の更新
 
 **実装内容**:
 - `ProcessVars` の引数を `vars []string` から `vars map[string]interface{}` に変更
@@ -635,7 +635,7 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 #### Phase 3: バリデーションの統合
 
 **対象ファイル**:
-- `internal/runner/config/expansion.go`（既存ファイルに統合）
+- `../../../internal/runner/config/expansion.go`（既存ファイルに統合）
 
 **実装内容**:
 - 変数名のバリデーション（`ValidateVariableName` 使用）- 既存ロジックを再利用
@@ -652,8 +652,8 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 #### Phase 4: 統合テスト
 
 **対象ファイル**:
-- `internal/runner/config/loader_test.go` - エンドツーエンドテスト
-- `internal/runner/config/expansion_test.go` - ユニットテスト
+- `../../../internal/runner/config/loader_test.go` - エンドツーエンドテスト
+- `../../../internal/runner/config/expansion_test.go` - ユニットテスト
 
 **実装内容**:
 - TOML 読み込み → 依存解決 → 変数展開の全フロー
@@ -680,12 +680,12 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 
 | ファイル | 変更内容 |
 |---------|---------|
-| `internal/runner/runnertypes/spec.go` | `Vars` フィールドの型変更 |
-| `internal/runner/runnertypes/runtime.go` | `ExpandedArrayVars` フィールド追加 |
-| `internal/runner/config/expansion.go` | `ProcessVars` の更新 |
-| `internal/runner/config/expansion_test.go` | テスト更新 |
-| `internal/runner/config/loader.go` | TOML パース部分の更新（必要に応じて） |
-| `internal/runner/config/loader_test.go` | 統合テスト更新 |
+| `../../../internal/runner/runnertypes/spec.go` | `Vars` フィールドの型変更 |
+| `../../../internal/runner/runnertypes/runtime.go` | `ExpandedArrayVars` フィールド追加 |
+| `../../../internal/runner/config/expansion.go` | `ProcessVars` の更新 |
+| `../../../internal/runner/config/expansion_test.go` | テスト更新 |
+| `../../../internal/runner/config/loader.go` | TOML パース部分の更新（必要に応じて） |
+| `../../../internal/runner/config/loader_test.go` | 統合テスト更新 |
 | `sample/*.toml` | すべてのサンプルファイル |
 | `cmd/runner/testdata/*.toml` | テストデータファイル |
 
@@ -714,7 +714,7 @@ func ProcessVars(vars map[string]interface{}, baseExpandedVars map[string]string
 **リスク**: 既存の `ExpandString` の循環依存検出が、テーブル形式でも正しく動作するか。
 
 **対策**:
-- 既存の `expandStringRecursive` は visited マップで循環依存を検出（[expansion.go:111-118](internal/runner/config/expansion.go:111-118)）
+- 既存の `expandStringRecursive` は visited マップで循環依存を検出（[expansion.go#L111-L118](../../../internal/runner/config/expansion.go#L111-L118)）
 - この仕組みは処理順序に依存しないため、テーブル形式でもそのまま動作
 - テストケースで動作を確認
 
@@ -991,12 +991,12 @@ backup_suffix = ".bak"
 
 ### 9.1 関連ファイル
 
-- `internal/runner/runnertypes/spec.go` - 設定ファイルの型定義
-- `internal/runner/runnertypes/runtime.go` - ランタイム型定義
-- `internal/runner/config/loader.go` - TOML 読み込み処理
-- `internal/runner/config/expansion.go` - 変数展開ロジック
-- `internal/runner/config/validation.go` - バリデーションロジック
-- `internal/runner/security/environment_validation.go` - セキュリティ検証
+- `../../../internal/runner/runnertypes/spec.go` - 設定ファイルの型定義
+- `../../../internal/runner/runnertypes/runtime.go` - ランタイム型定義
+- `../../../internal/runner/config/loader.go` - TOML 読み込み処理
+- `../../../internal/runner/config/expansion.go` - 変数展開ロジック
+- `../../../internal/runner/config/validation.go` - バリデーションロジック
+- `../../../internal/runner/security/environment_validation.go` - セキュリティ検証
 - `sample/variable_expansion_advanced.toml` - サンプル設定ファイル
 
 ### 9.2 関連タスク

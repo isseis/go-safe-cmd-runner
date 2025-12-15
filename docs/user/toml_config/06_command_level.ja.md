@@ -411,11 +411,11 @@ cmd = "/usr/bin/logger"
 args = ["Executed at %{__runner_datetime} by PID %{__runner_pid}"]
 ```
 
-### 6.2.2 from_env - システム環境変数のインポート
+### 6.2.2 env_import - システム環境変数のインポート
 
 #### 概要
 
-Runner プロセスが動作しているシステム環境変数を TOML 内の変数展開用にインポートする変数名を指定します。コマンドレベルの `from_env` は、グローバルおよびグループレベルの `from_env` とマージされます(Merge 動作)。
+Runner プロセスが動作しているシステム環境変数を TOML 内の変数展開用にインポートする変数名を指定します。コマンドレベルの `env_import` は、グローバルおよびグループレベルの `env_import` とマージされます(Merge 動作)。
 
 #### 文法
 
@@ -468,12 +468,12 @@ env_import = ["HOME", "USER"]  # グローバルレベル
 
 [[groups]]
 name = "intl_tasks"
-env_import = ["LANG"]  # グループレベル: グローバルの from_env とマージ
+env_import = ["LANG"]  # グループレベル: グローバルの env_import とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-# from_env を指定しないため、グループの from_env が適用される
+# env_import を指定しないため、グループの env_import が適用される
 # 継承された変数: HOME, USER (global) + LANG (group)
 args = ["User: %{USER}, Language: %{LANG}"]
 
@@ -489,7 +489,7 @@ args = ["Path: %{PATH}, Home: %{HOME}"]
 
 ##### 1. env_allowed との関係
 
-`from_env` でインポートする変数は、必ず `env_allowed` に含まれている必要があります:
+`env_import` でインポートする変数は、必ず `env_allowed` に含まれている必要があります:
 
 ```toml
 [global]
@@ -504,7 +504,7 @@ args = ["%{HOME}"]
 
 ##### 2. Merge による結合
 
-コマンドレベルで `from_env` を指定すると、グローバル、グループ、コマンドの各レベルの `from_env` がマージされます:
+コマンドレベルで `env_import` を指定すると、グローバル、グループ、コマンドの各レベルの `env_import` がマージされます:
 
 ```toml
 [global]
@@ -692,9 +692,9 @@ workdir = "ディレクトリパス"
 |-----|------|
 | **型** | 文字列 (string) |
 | **必須/オプション** | オプション |
-| **設定可能な階層** | コマンドのみ |
+| **設定可能な階層** | グループ、コマンド |
 | **有効な値** | 絶対パス |
-| **オーバーライド** | グループまたはグローバルの作業ディレクトリ設定 |
+| **オーバーライド** | グループの作業ディレクトリ設定 |
 | **自動作成** | 指定されたディレクトリが存在しない場合は自動作成 |
 
 #### 使用可能な変数
@@ -1119,7 +1119,7 @@ risk_level = "high"  # システム変更と権限昇格
 
 ## 6.6 出力管理
 
-### 6.6.1 output - 標準出力キャプチャ
+### 6.6.1 output_file - 標準出力キャプチャ
 
 #### 概要
 

@@ -1842,10 +1842,10 @@ unset NO_COLOR  # Unset if set
   - [Global Level Configuration](toml_config/04_global_level.md)
   - [Group Level Configuration](toml_config/05_group_level.md)
   - [Command Level Configuration](toml_config/06_command_level.md)
-  - [Variable Expansion](toml_config/07_variable_expansion.md)
-  - [Practical Examples](toml_config/08_practical_examples.md)
-  - [Best Practices](toml_config/09_best_practices.md)
-  - [Troubleshooting](toml_config/10_troubleshooting.md)
+  - [Variable Expansion](toml_config/08_variable_expansion.md)
+  - [Practical Examples](toml_config/09_practical_examples.md)
+  - [Best Practices](toml_config/10_best_practices.md)
+  - [Troubleshooting](toml_config/11_troubleshooting.md)
 
 ### Security
 

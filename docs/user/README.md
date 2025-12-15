@@ -138,17 +138,17 @@ Detailed explanation of how to write configuration files used by the runner comm
    - Detailed settings for individual commands
    - Execution user, risk level, output management
 
-7. **[Variable Expansion](toml_config/07_variable_expansion.md)**
+7. **[Variable Expansion](toml_config/08_variable_expansion.md)**
    - Variable expansion in `%{VAR}` format
    - Dynamic configuration construction
 
-8. **[Practical Examples](toml_config/08_practical_examples.md)**
+8. **[Practical Examples](toml_config/09_practical_examples.md)**
    - Real-world examples: backup, deployment, maintenance, etc.
 
-9. **[Best Practices](toml_config/09_best_practices.md)**
+9. **[Best Practices](toml_config/10_best_practices.md)**
    - Improving security, maintainability, and performance
 
-10. **[Troubleshooting](toml_config/10_troubleshooting.md)**
+10. **[Troubleshooting](toml_config/11_troubleshooting.md)**
     - Common errors and solutions
 
 **Quick Start:**
@@ -328,7 +328,7 @@ A: Check in the following order:
 3. **Debug logging**: `runner -config config.toml -log-level debug`
 4. **Troubleshooting guides**:
    - [runner Troubleshooting](runner_command.md#6-troubleshooting)
-   - [TOML Configuration Troubleshooting](toml_config/10_troubleshooting.md)
+   - [TOML Configuration Troubleshooting](toml_config/11_troubleshooting.md)
 
 ### Q: Can I use this in CI/CD environments?
 
@@ -354,7 +354,7 @@ A: Key considerations:
 1. [Project README](../../README.md) - Overall overview (15 min)
 2. [runner Command - Overview and Quick Start](runner_command.md#1-overview) - Basic operations (30 min)
 3. [TOML Configuration - Introduction](toml_config/01_introduction.md) - Configuration basics (15 min)
-4. [TOML Configuration - Practical Examples](toml_config/08_practical_examples.md) - Learn from samples (30 min)
+4. [TOML Configuration - Practical Examples](toml_config/09_practical_examples.md) - Learn from samples (30 min)
 
 ### 🎓 For Intermediate Users (3-4 hours)
 
@@ -362,17 +362,17 @@ In addition to the above:
 
 5. [runner Command - All Flags Explained](runner_command.md#3-command-line-flags-explained) - Detailed options (1 hour)
 6. [TOML Configuration - Global/Group/Command Levels](toml_config/04_global_level.md) - Hierarchical configuration (1 hour)
-7. [TOML Configuration - Variable Expansion](toml_config/07_variable_expansion.md) - Advanced features (30 min)
+7. [TOML Configuration - Variable Expansion](toml_config/08_variable_expansion.md) - Advanced features (30 min)
 8. [record/verify Commands](record_command.md) - Hash management (30 min)
 
 ### 🚀 For Advanced Users (Full Mastery)
 
 In addition to the above:
 
-9. [TOML Configuration - Best Practices](toml_config/09_best_practices.md) - Design patterns
+9. [TOML Configuration - Best Practices](toml_config/10_best_practices.md) - Design patterns
 10. [Security Risk Assessment](security-risk-assessment.md) - Security model
 11. [Developer Documentation](../dev/) - Architecture and security design
-12. [Troubleshooting](toml_config/10_troubleshooting.md) - Problem-solving skills
+12. [Troubleshooting](toml_config/11_troubleshooting.md) - Problem-solving skills
 
 ---
 

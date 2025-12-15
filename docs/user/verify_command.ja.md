@@ -675,7 +675,7 @@ fi
 - [TOML設定ファイル ユーザーガイド](toml_config/README.ja.md)
   - [グローバルレベル設定](toml_config/04_global_level.ja.md) - `verify_files` パラメータ
   - [グループレベル設定](toml_config/05_group_level.ja.md) - グループごとのファイル検証
-  - [トラブルシューティング](toml_config/10_troubleshooting.ja.md) - 検証エラーの対処法
+  - [トラブルシューティング](toml_config/11_troubleshooting.ja.md) - 検証エラーの対処法
 
 ### プロジェクト情報
 

@@ -317,7 +317,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 
 - [実装計画書（04_implementation_plan.md）](04_implementation_plan.md)
 - [テストインフラ実装計画書（07_test_infrastructure_implementation_plan.md）](07_test_infrastructure_implementation_plan.md)
-- [カバレッジレポート（coverage.out）](../../coverage.out)
+- [カバレッジレポート（coverage.out）](../../../coverage.out)
 
 ---
 

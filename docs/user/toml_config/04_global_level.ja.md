@@ -196,17 +196,17 @@ timeout = 0  # ✅ 無制限実行（タイムアウトなし）
 timeout = -1  # ❌ 無効: 負の値は許可されません
 ```
 
-## 4.2 skip_standard_paths - 標準パス検証のスキップ
+## 4.2 verify_standard_paths - 標準パス検証の有効化
 
 ### 概要
 
-標準的なシステムパス(`/bin`, `/usr/bin` など)に対するファイル検証をスキップします。
+標準的なシステムパス(`/bin`, `/usr/bin` など)に対するファイル検証を行うかどうかを指定します。
 
 ### 文法
 
 ```toml
 [global]
-verify_standard_paths = false/false
+verify_standard_paths = true
 ```
 
 ### パラメータの詳細
@@ -216,17 +216,17 @@ verify_standard_paths = false/false
 | **型** | 真偽値 (boolean) |
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバルのみ |
-| **デフォルト値** | false |
+| **デフォルト値** | true (検証する) |
 | **有効な値** | true, false |
 
 ### 役割
 
-- **パフォーマンス向上**: 標準コマンドの検証をスキップして起動時間を短縮
-- **利便性**: 標準的なシステムコマンドのハッシュファイル作成を不要に
+- **セキュリティ強化**: `true`の場合、標準コマンドも改ざんされていないか検証します
+- **パフォーマンス調整**: `false`の場合、標準コマンドの検証をスキップして起動時間を短縮します
 
 ### 設定例
 
-#### 例1: 標準パスの検証をスキップ
+#### 例1: 標準パスの検証をスキップ（非推奨）
 
 ```toml
 version = "1.0"
@@ -264,7 +264,7 @@ args = ["pattern", "file.txt"]
 
 ### セキュリティ上の注意
 
-`verify_standard_paths = false` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
+`verify_standard_paths = false` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `true` (デフォルト)のままにすることを推奨します。
 
 ## 4.3 vars - グローバル内部変数
 
@@ -549,7 +549,7 @@ args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
 
 ### セキュリティ制約
 
-`from_env` で参照するシステム環境変数は、必ず `env_allowed` に含まれている必要があります:
+`env_import` で参照するシステム環境変数は、必ず `env_allowed` に含まれている必要があります:
 
 ```toml
 [global]
@@ -562,7 +562,7 @@ env_import = [
 
 エラーメッセージ例:
 ```
-system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowed: [HOME]
+system environment variable 'PATH' (mapped to 'path' in global.env_import) is not in env_allowed: [HOME]
 ```
 
 ### 変数名のマッピング
@@ -778,7 +778,7 @@ env_vars = ["COMMON_VAR=%{base}"]    # Group.env_vars を上書き
 
 - **env_vars の値**: 内部変数 `%{VAR}` を使用可能
 - **子プロセスへの伝播**: env_vars で定義された変数は子プロセスに渡される
-- **内部変数は伝播しない**: varsやfrom_envで定義した内部変数はデフォルトでは子プロセスに渡されない
+- **内部変数は伝播しない**: varsやenv_importで定義した内部変数はデフォルトでは子プロセスに渡されない
 
 ```toml
 [global.vars]
@@ -885,7 +885,7 @@ config_file = "%{app_root}/etc/%{env_type}.yaml"
 
 ### 概要
 
-`from_env` でシステム環境変数を取り込む際に許可する環境変数を指定します。リストにない環境変数は取り込めません。
+`env_import` でシステム環境変数を取り込む際に許可する環境変数を指定します。リストにない環境変数は取り込めません。
 
 ### 文法
 
@@ -1306,12 +1306,6 @@ version = "1.0"
 [global]
 # タイムアウト設定
 timeout = 300  # デフォルト5分
-
-# 作業ディレクトリ
-workdir = "/var/app/workspace"
-
-# ログレベル
-log_level = "info"
 
 # 標準パスの検証スキップ
 verify_standard_paths = false

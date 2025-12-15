@@ -1050,35 +1050,6 @@ runner -config config.toml --groups "build, test, deploy"
 runner -config config.toml
 ```
 
-**依存関係の自動解決**
-
-`--groups` で指定したグループが他のグループに依存している場合、依存グループも自動的に実行されます。
-
-設定例:
-
-```toml
-[[groups]]
-name = "preparation"
-
-[[groups]]
-name = "build"
-depends_on = ["preparation"]
-
-[[groups]]
-name = "test"
-depends_on = ["build"]
-```
-
-実行例:
-
-```bash
-# testグループのみ指定
-runner -config config.toml --groups test
-
-# 実行されるグループ: preparation → build → test
-# （依存関係に基づき、preparation と build も自動的に実行される）
-```
-
 **エラーハンドリング**
 
 **無効なグループ名**
@@ -1149,8 +1120,7 @@ jobs:
 
 - グループ名は大文字・小文字を区別します
 - 存在しないグループを指定するとエラーになります
-- 依存関係のあるグループは自動的に含まれます
-- 実行順序は優先度（priority）と依存関係（depends_on）に基づいて決定されます
+- 実行順序は設定ファイル内の記述順序に従います
 
 #### `--keep-temp-dirs`
 
@@ -1842,10 +1812,11 @@ unset NO_COLOR  # 設定されている場合は解除
   - [グローバルレベル設定](toml_config/04_global_level.ja.md)
   - [グループレベル設定](toml_config/05_group_level.ja.md)
   - [コマンドレベル設定](toml_config/06_command_level.ja.md)
-  - [変数展開機能](toml_config/07_variable_expansion.ja.md)
-  - [実践的な設定例](toml_config/08_practical_examples.ja.md)
-  - [ベストプラクティス](toml_config/09_best_practices.ja.md)
-  - [トラブルシューティング](toml_config/10_troubleshooting.ja.md)
+  - [コマンドテンプレート設定](toml_config/07_command_templates.ja.md)
+  - [変数展開機能](toml_config/08_variable_expansion.ja.md)
+  - [実践的な設定例](toml_config/09_practical_examples.ja.md)
+  - [ベストプラクティス](toml_config/10_best_practices.ja.md)
+  - [トラブルシューティング](toml_config/11_troubleshooting.ja.md)
 
 ### セキュリティ
 

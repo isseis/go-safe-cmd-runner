@@ -325,8 +325,9 @@ For detailed configuration file documentation, refer to the following documents:
   - [Global Level Settings](docs/user/toml_config/04_global_level.md)
   - [Group Level Settings](docs/user/toml_config/05_group_level.md)
   - [Command Level Settings](docs/user/toml_config/06_command_level.md)
-  - [Variable Expansion](docs/user/toml_config/07_variable_expansion.md)
-  - [Practical Configuration Examples](docs/user/toml_config/08_practical_examples.md)
+  - [Command Templates](docs/user/toml_config/07_command_templates.md)
+  - [Variable Expansion](docs/user/toml_config/08_variable_expansion.md)
+  - [Practical Configuration Examples](docs/user/toml_config/09_practical_examples.md)
 
 ## Security Model
 
@@ -424,23 +425,6 @@ Run only the groups you need by passing the `--groups` flag with a comma-separat
 
 # Default (all groups)
 ./runner -config config.toml
-```
-
-When a selected group declares dependencies via `depends_on`, those prerequisite groups are automatically appended and executed first.
-
-```toml
-[[groups]]
-name = "build"
-depends_on = ["preparation"]
-
-[[groups]]
-name = "test"
-depends_on = ["build"]
-```
-
-```bash
-./runner -config config.toml --groups=test
-# Execution order: preparation -> build -> test
 ```
 
 Group names follow the same naming rules as environment variables and must be `[A-Za-z_][A-Za-z0-9_]*` (first character is letter or underscore, subsequent characters are alphanumeric or underscore).

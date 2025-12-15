@@ -384,8 +384,8 @@ func (r *AllowlistResolution) GetGroupAllowlist() []string {
 - [internal/runner/config/expansion.go](../../../internal/runner/config/expansion.go)
 
 ### 9.2 関連ドキュメント
-- [Task 0011: Allowlist refinement](../../0011_allowlist_refinement/03_specification.md)
-- [Task 0031: Global group environment](../../0031_global_group_env/02_architecture.md)
+- [Task 0011: Allowlist refinement](../0011_allowlist_refinement/03_specification.md)
+- [Task 0031: Global group environment](../0031_global_group_env/02_architecture.md)
 
 ### 9.3 ベンチマーク
 - [filter_benchmark_test.go](../../../internal/runner/environment/filter_benchmark_test.go)
