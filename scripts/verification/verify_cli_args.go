@@ -289,14 +289,14 @@ func isValidArgName(name string) bool {
 		return false
 	}
 
-	// Common false positives
+	// Common false positives to exclude from tracking
 	excludeList := []string{
 		"h", "help", "version", "v",
 	}
 
 	for _, exclude := range excludeList {
 		if name == exclude {
-			return true // Actually, these are valid but common
+			return false // Filter out these common arguments
 		}
 	}
 

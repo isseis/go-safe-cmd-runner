@@ -242,6 +242,7 @@ func parseDocStructure(filePath, lang string) (*DocStructure, error) {
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 	inCodeBlock := false
+	prevWasTable := false
 
 	headingRegex := regexp.MustCompile(`^(#{1,6})\s+(.+)$`)
 	tableRegex := regexp.MustCompile(`^\|.*\|$`)
@@ -259,10 +260,12 @@ func parseDocStructure(filePath, lang string) (*DocStructure, error) {
 			} else {
 				inCodeBlock = false
 			}
+			prevWasTable = false
 			continue
 		}
 
 		if inCodeBlock {
+			prevWasTable = false
 			continue
 		}
 
@@ -275,20 +278,19 @@ func parseDocStructure(filePath, lang string) (*DocStructure, error) {
 				Text:  text,
 				Line:  lineNum,
 			})
+			prevWasTable = false
 			continue
 		}
 
 		// Count tables
 		if tableRegex.MatchString(line) {
-			// Simple heuristic: if we see a table row, count it as one table
-			// (not perfect but good enough for structure comparison)
-			if lineNum > 1 {
-				prevWasTable := false
-				// This is a simplified check; a real implementation would track table state
-				if !prevWasTable {
-					structure.Tables++
-				}
+			// Count as a new table only if the previous line was not a table
+			if !prevWasTable {
+				structure.Tables++
 			}
+			prevWasTable = true
+		} else {
+			prevWasTable = false
 		}
 
 		// Count lists (simple heuristic)

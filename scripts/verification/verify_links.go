@@ -304,7 +304,15 @@ func isPrivateIP(host string) bool {
 			// Cannot resolve - be conservative and block
 			return true
 		}
-		ip = addrs[0]
+		// SECURITY: Check ALL returned IP addresses, not just the first.
+		// A malicious DNS server could return a public IP first and private IPs later
+		// to bypass this check.
+		for _, addr := range addrs {
+			if addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() {
+				return true
+			}
+		}
+		return false
 	}
 
 	// Check for private, loopback, and link-local addresses
