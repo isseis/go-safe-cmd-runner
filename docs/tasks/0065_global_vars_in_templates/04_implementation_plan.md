@@ -189,158 +189,154 @@ Phase 1で実装した変数スコープとレジストリを、既存の設定�
 
 **ファイル**: `internal/runner/config/errors.go`
 
-- [ ] テンプレート検証用のエラー型を追加
-  - [ ] `ErrLocalVariableInTemplate`
-  - [ ] `ErrUndefinedGlobalVariableInTemplate`
-  - [ ] `ErrInvalidVariableNameDetail`（オプション）
-- [ ] 各エラー型の `Error()` メソッドを実装
-- [ ] エラーメッセージが明確で修正方法を含むことを確認
+- [x] テンプレート検証用のエラー型を追加
+  - [x] `ErrLocalVariableInTemplate`
+  - [x] `ErrUndefinedGlobalVariableInTemplate`
+  - [x] `ErrInvalidVariableScopeDetail`
+- [x] 各エラー型の `Error()` メソッドを実装
+- [x] エラーメッセージが明確で修正方法を含むことを確認
 
 **完了基準**:
-- エラー型が定義されている
-- エラーメッセージが分かりやすい
-- コンパイルエラーがない
+- [x] エラー型が定義されている
+- [x] エラーメッセージが分かりやすい
+- [x] コンパイルエラーがない
 
 #### 3.2.2 テンプレート検証の実装
 
 **ファイル**: `internal/runner/config/template_expansion.go`
 
-- [ ] `validateStringFieldVariableReferences()` 関数を実装
-  - [ ] `parseAndSubstitute()` を使用して変数参照を抽出
-  - [ ] 各変数参照のスコープを判定
-  - [ ] ローカル変数参照をエラーとして検出
-  - [ ] 未定義のグローバル変数をエラーとして検出
-- [ ] `ValidateTemplateVariableReferences()` 関数を実装
-  - [ ] `cmd` フィールドの検証
-  - [ ] `args` 配列の検証
-  - [ ] `env` 配列の検証
-  - [ ] `workdir` フィールドの検証
-- [ ] `ValidateAllTemplates()` 関数を実装
-  - [ ] 全てのテンプレートをループで検証
-  - [ ] 最初のエラーで停止
+- [x] `validateStringFieldVariableReferences()` 関数を実装
+  - [x] `parseAndSubstitute()` を使用して変数参照を抽出
+  - [x] 各変数参照のスコープを判定
+  - [x] ローカル変数参照をエラーとして検出
+  - [x] 未定義のグローバル変数をエラーとして検出
+- [x] `ValidateTemplateVariableReferences()` 関数を実装
+  - [x] `cmd` フィールドの検証
+  - [x] `args` 配列の検証
+  - [x] `env` 配列の検証（KEY=value形式）
+  - [x] `workdir` フィールドの検証
+- [x] `ValidateAllTemplates()` 関数を実装
+  - [x] 全てのテンプレートをループで検証
+  - [x] 最初のエラーで停止
 
 **完了基準**:
-- 全ての関数が実装されている
-- `parseAndSubstitute()` を再利用している
-- エラー処理が適切
-- コンパイルエラーがない
+- [x] 全ての関数が実装されている
+- [x] `parseAndSubstitute()` を再利用している
+- [x] エラー処理が適切
+- [x] コンパイルエラーがない
 
 #### 3.2.3 テンプレート検証のテスト
 
-**ファイル**: `internal/runner/config/template_expansion_test.go`
+**ファイル**: `internal/runner/config/template_expansion_validation_test.go`
 
-- [ ] `TestValidateTemplateVariableReferences_Success` を実装
-  - [ ] グローバル変数のみを参照するテンプレート
-- [ ] `TestValidateTemplateVariableReferences_LocalVariableError` を実装
-  - [ ] ローカル変数を参照するテンプレート
-- [ ] `TestValidateTemplateVariableReferences_UndefinedGlobalError` を実装
-  - [ ] 未定義のグローバル変数を参照するテンプレート
-- [ ] `TestValidateTemplateVariableReferences_EnvField` を実装
-  - [ ] env配列の値の検証
-- [ ] `TestValidateTemplateVariableReferences_WorkDirField` を実装
-  - [ ] workdirフィールドの検証
-- [ ] `TestValidateAllTemplates` を実装
-  - [ ] 複数テンプレートの検証
-
-**完了基準**:
-- 全てのテストケースが実装されている
-- 全てのテストが通過する
-- エラーメッセージが検証されている
-
-#### 3.2.4 ExpandGlobal の修正
-
-**ファイル**: `internal/runner/config/expansion.go`
-
-- [ ] グローバル変数処理前に命名規則検証を追加
-  - [ ] `spec.Vars` の各変数名を検証
-  - [ ] `variable.ValidateVariableNameForScope()` を呼び出し
-  - [ ] 検証エラーを適切にラップして返す
-- [ ] 既存の `ProcessVars()` 呼び出しは変更しない
-- [ ] テストコメントを追加
+- [x] `TestValidateTemplateVariableReferences` を実装（17テストケース）
+  - [x] グローバル変数のみを参照するテンプレート
+  - [x] ローカル変数を参照するテンプレート（エラー）
+  - [x] 未定義のグローバル変数を参照するテンプレート（エラー）
+  - [x] env配列の値の検証
+  - [x] workdirフィールドの検証
+  - [x] エスケープされた%の処理
+  - [x] 複数フィールドの検証
+- [x] `TestValidateStringFieldVariableReferences` を実装（7テストケース）
+  - [x] 無効文字を含む変数参照の検出
+- [x] `TestValidateAllTemplates` を実装（4テストケース）
+  - [x] 複数テンプレートの検証
+- [x] `TestErrorMessages` を実装（2テストケース）
+  - [x] エラーメッセージの内容検証
 
 **完了基準**:
-- 命名規則検証が追加されている
-- 既存のロジックが保持されている
-- エラーハンドリングが適切
+- [x] 全てのテストケースが実装されている
+- [x] 全てのテストが通過する
+- [x] エラーメッセージが検証されている
+- [x] テストカバレッジ: 88.2%達成
 
-#### 3.2.5 ExpandGroup の修正
+#### 3.2.4 スコープ検証の統合（validation.go）
 
-**ファイル**: `internal/runner/config/expansion.go`
+**ファイル**: `internal/runner/config/validation.go`
 
-- [ ] グループ変数処理前に命名規則検証を追加
-  - [ ] `spec.Vars` の各変数名を検証
-  - [ ] `variable.ValidateVariableNameForScope()` を呼び出し（ローカルスコープ）
-  - [ ] 検証エラーを適切にラップして返す
-- [ ] 既存の `ProcessVars()` 呼び出しは変更しない
-
-**完了基準**:
-- 命名規則検証が追加されている
-- 既存のロジックが保持されている
-
-#### 3.2.6 expandCommandVars の修正
-
-**ファイル**: `internal/runner/config/expansion.go`
-
-- [ ] コマンド変数処理前に命名規則検証を追加
-  - [ ] `spec.Vars` の各変数名を検証
-  - [ ] `variable.ValidateVariableNameForScope()` を呼び出し（ローカルスコープ）
-  - [ ] 検証エラーを適切にラップして返す
-- [ ] 既存の `ProcessVars()` 呼び出しは変更しない
+- [x] `validateVariableName` 関数にスコープ検証を追加
+  - [x] level が "global" の場合は ScopeGlobal を期待
+  - [x] それ以外の場合は ScopeLocal を期待
+  - [x] `variable.ValidateVariableNameForScope()` を呼び出し
+  - [x] 検証エラーを ErrInvalidVariableScopeDetail としてラップ
+- [x] 既存の POSIX検証と予約済みプレフィックスチェックを保持
 
 **完了基準**:
-- 命名規則検証が追加されている
-- 既存のロジックが保持されている
+- [x] 命名規則検証が追加されている
+- [x] 既存のロジックが保持されている
+- [x] エラーハンドリングが適切
 
-#### 3.2.7 LoadConfig への統合
+#### 3.2.5 main.go への統合
 
-**ファイル**: `internal/runner/config/loader.go`
+**ファイル**: `cmd/runner/main.go`
 
-- [ ] グローバル展開後にテンプレート検証を追加
-  - [ ] `ValidateAllTemplates()` を呼び出し
-  - [ ] `globalRuntime.ExpandedVars` を渡す
-  - [ ] エラーを適切にラップして返す
-- [ ] コメントで検証の目的を説明
-- [ ] 処理フローの順序を維持
+- [x] グローバル展開後にテンプレート検証を追加
+  - [x] `ValidateAllTemplates()` を呼び出し（line ~225）
+  - [x] `runtimeGlobal.ExpandedVars` を渡す
+  - [x] エラーを PreExecutionError としてラップして返す
+- [x] コメントで検証の目的を説明
+- [x] 処理フローの順序を維持（ExpandGlobal → ValidateAllTemplates → ExpandGroup）
 
 **完了基準**:
-- テンプレート検証が適切な位置に追加されている
-- エラーハンドリングが適切
-- コメントが明確
+- [x] テンプレート検証が適切な位置に追加されている
+- [x] エラーハンドリングが適切
+- [x] コメントが明確
 
-#### 3.2.8 既存テストの更新
+#### 3.2.6 既存テストの更新
 
 **ファイル**: `internal/runner/config/expansion_unit_test.go`
 
-- [ ] 既存の全テストを実行し、失敗がないか確認
-- [ ] 必要に応じてテストケースを更新
-  - [ ] グローバル変数は大文字始まりに変更
-  - [ ] ローカル変数は小文字始まりに変更
-- [ ] テストケース名やコメントを更新
+- [x] TestProcessVars系のテストを更新
+  - [x] TestProcessVars_ComplexReferenceChain - 変数名を小文字に変更（a, b, c, d, base, new_var）
+  - [x] TestProcessVars_UndefinedReference - 変数名を小文字に変更（var, undefined）
+  - [x] TestProcessVars_EnvImportVarsConflict - 変数名を小文字に変更（my_var, var1, var2）
+- [x] TestProcessVars_InvalidVariableScope を追加（6テストケース）
+  - [x] グローバルレベルでの小文字変数（エラー）
+  - [x] ローカルレベルでの大文字変数（エラー）
+  - [x] 正常なケースの検証
 
 **完了基準**:
-- 既存の全テストが通過する
-- テストケースが新しい命名規則に従っている
+- [x] 変更されたテストケースが新スコープルールに適合
+- [x] 更新されたテストが通過する
+
+#### 3.2.7 既存テスト修正（残作業）
+
+**多数のテストファイル**
+
+- [ ] 既存の統合テストを全て実行し、失敗を修正
+  - [ ] `cmd/runner/*_test.go` - スコープ検証エラー多数
+  - [ ] `internal/runner/config/*_test.go` - 命名規則違反多数
+  - [ ] `internal/runner/bootstrap/*_test.go` - 同上
+- [ ] 各テストの変数名をスコープルールに適合させる
+  - [ ] グローバルレベル: 大文字始まりに変更
+  - [ ] グループ/コマンドレベル: 小文字始まりに変更
+
+**完了基準**:
+- 全ての統合テストが通過する
+- スコープルールが全体で適用されている
 
 ### 3.3 Phase 2 完了チェックリスト
 
-- [ ] 全てのファイルが修正されている
-  - [ ] `internal/runner/config/errors.go`
-  - [ ] `internal/runner/config/template_expansion.go`
-  - [ ] `internal/runner/config/template_expansion_test.go`
-  - [ ] `internal/runner/config/expansion.go`
-  - [ ] `internal/runner/config/loader.go`
-  - [ ] `internal/runner/config/expansion_unit_test.go`
-- [ ] 新しいテストが全て通過する
-- [ ] 既存のテストが全て通過する（`make test`）
-- [ ] テストカバレッジが維持または向上している
-- [ ] コードレビュー完了
-- [ ] リンターチェック通過（`make lint`）
+- [x] コア機能ファイルが実装されている
+  - [x] `internal/runner/config/errors.go` - 3エラー型追加
+  - [x] `internal/runner/config/template_expansion.go` - 検証関数追加
+  - [x] `internal/runner/config/template_expansion_validation_test.go` - 新規テスト
+  - [x] `internal/runner/config/validation.go` - スコープ検証統合
+  - [x] `cmd/runner/main.go` - テンプレート検証呼び出し
+  - [x] `internal/runner/config/expansion_unit_test.go` - 一部更新
+- [x] 新機能のテストが全て通過する（36テストケース）
+- [ ] 既存のテストが全て通過する（残作業 - 多数のテスト失敗）
+- [x] テストカバレッジ 88.2% (config package)
+- [-] コードレビュー完了
+- [x] リンターチェック通過
+- [x] Phase 2 コミット完了 (d448db30)
 
 ### 3.4 Phase 2 の成果物
 
-- テンプレート検証機能の完全な実装
-- 既存コードへの統合完了
-- 全てのテストが通過する状態
+- [x] テンプレート検証機能の完全な実装
+- [x] スコープ検証の統合
+- [x] 新機能の包括的なテスト
+- [ ] 既存テストの修正（次フェーズで対応予定）
 
 ---
 
