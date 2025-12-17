@@ -32,24 +32,24 @@
 
 **ファイル**: `internal/runner/variable/scope.go`
 
-- [ ] パッケージとファイルを作成
-- [ ] `VariableScope` 列挙型を定義（`ScopeError`, `ScopeGlobal`, `ScopeLocal`）
-- [ ] `VariableScope.String()` メソッドを実装
-- [ ] `DetermineScope(name string)` 関数を実装
-  - [ ] 空文字列チェック
-  - [ ] 予約済みプレフィックス（`__`）チェック
-  - [ ] 先頭文字によるスコープ判定（大文字→グローバル、小文字/`_`→ローカル）
-  - [ ] 無効な先頭文字のエラー処理
-- [ ] `ValidateVariableNameForScope(name, scope, location)` 関数を実装
-  - [ ] `DetermineScope()` を呼び出してスコープを判定
-  - [ ] スコープの一致を検証
-  - [ ] `security.ValidateVariableName()` を呼び出して文字種を検証
-- [ ] エラー型を定義
-  - [ ] `ErrReservedVariableName`
-  - [ ] `ErrInvalidVariableName`
-  - [ ] `ErrScopeMismatch`
-  - [ ] `ErrUndefinedGlobalVariable`
-  - [ ] `ErrUndefinedLocalVariable`
+- [x] パッケージとファイルを作成
+- [x] `VariableScope` 列挙型を定義（`ScopeError`, `ScopeGlobal`, `ScopeLocal`）
+- [x] `VariableScope.String()` メソッドを実装
+- [x] `DetermineScope(name string)` 関数を実装
+  - [x] 空文字列チェック
+  - [x] 予約済みプレフィックス（`__`）チェック
+  - [x] 先頭文字によるスコープ判定（大文字→グローバル、小文字/`_`→ローカル）
+  - [x] 無効な先頭文字のエラー処理
+- [x] `ValidateVariableNameForScope(name, scope, location)` 関数を実装
+  - [x] `DetermineScope()` を呼び出してスコープを判定
+  - [x] スコープの一致を検証
+  - [x] `security.ValidateVariableName()` を呼び出して文字種を検証
+- [x] エラー型を定義
+  - [x] `ErrReservedVariableName`
+  - [x] `ErrInvalidVariableName`
+  - [x] `ErrScopeMismatch`
+  - [x] `ErrUndefinedGlobalVariable`
+  - [x] `ErrUndefinedLocalVariable`
 
 **完了基準**:
 - 全ての関数とエラー型が実装されている
@@ -60,22 +60,22 @@
 
 **ファイル**: `internal/runner/variable/scope_test.go`
 
-- [ ] `TestDetermineScope` を実装
-  - [ ] グローバル変数の成功ケース（大文字始まり）
-  - [ ] ローカル変数の成功ケース（小文字始まり）
-  - [ ] ローカル変数の成功ケース（アンダースコア始まり）
-  - [ ] 予約済み変数のエラーケース（`__`始まり）
-  - [ ] 無効な変数名のエラーケース（数字始まり、特殊文字始まり）
-  - [ ] 空文字列のエラーケース
-- [ ] `TestValidateVariableNameForScope` を実装
-  - [ ] グローバルスコープでの有効な名前
-  - [ ] ローカルスコープでの有効な名前
-  - [ ] スコープミスマッチのエラー（グローバルで小文字）
-  - [ ] スコープミスマッチのエラー（ローカルで大文字）
-  - [ ] 予約済み変数のエラー
-- [ ] `TestErrorMessages` を実装
-  - [ ] 各エラー型のメッセージが明確で修正方法を含むことを検証
-- [ ] テストカバレッジを確認（目標: 90%以上）
+- [x] `TestDetermineScope` を実装
+  - [x] グローバル変数の成功ケース（大文字始まり）
+  - [x] ローカル変数の成功ケース（小文字始まり）
+  - [x] ローカル変数の成功ケース（アンダースコア始まり）
+  - [x] 予約済み変数のエラーケース（`__`始まり）
+  - [x] 無効な変数名のエラーケース（数字始まり、特殊文字始まり）
+  - [x] 空文字列のエラーケース
+- [x] `TestValidateVariableNameForScope` を実装
+  - [x] グローバルスコープでの有効な名前
+  - [x] ローカルスコープでの有効な名前
+  - [x] スコープミスマッチのエラー（グローバルで小文字）
+  - [x] スコープミスマッチのエラー（ローカルで大文字）
+  - [x] 予約済み変数のエラー
+- [x] `TestErrorMessages` を実装
+  - [x] 各エラー型のメッセージが明確で修正方法を含むことを検証
+- [x] テストカバレッジを確認（目標: 90%以上）
 
 **完了基準**:
 - 全てのテストケースが実装されている
@@ -87,34 +87,34 @@
 
 **ファイル**: `internal/runner/variable/registry.go`
 
-- [ ] `VariableRegistry` インターフェースを定義
-  - [ ] `RegisterGlobal(name, value string) error`
-  - [ ] `WithLocals(locals map[string]string) (VariableRegistry, error)`
-  - [ ] `Resolve(name string) (string, error)`
-  - [ ] `GlobalVars() []VariableEntry`
-  - [ ] `LocalVars() []VariableEntry`
-- [ ] `VariableEntry` 構造体を定義
-- [ ] `variableRegistry` 構造体を実装
-  - [ ] `globals` と `locals` のマップフィールド
-  - [ ] `sync.RWMutex` フィールド
-- [ ] `NewVariableRegistry()` コンストラクタを実装
-- [ ] `RegisterGlobal()` メソッドを実装
-  - [ ] `ValidateVariableNameForScope()` で検証
-  - [ ] グローバルマップに追加
-- [ ] `WithLocals()` メソッドを実装
-  - [ ] 全てのローカル変数名を検証
-  - [ ] 新しいレジストリを作成（グローバルをコピー）
-  - [ ] ローカル変数を設定
-- [ ] `Resolve()` メソッドを実装
-  - [ ] `DetermineScope()` でスコープを判定
-  - [ ] 適切なマップから値を検索
-  - [ ] 未定義エラーを返す
-- [ ] `GlobalVars()` メソッドを実装
-  - [ ] スライスに変換
-  - [ ] 名前順にソート
-- [ ] `LocalVars()` メソッドを実装
-  - [ ] スライスに変換
-  - [ ] 名前順にソート
+- [x] `VariableRegistry` インターフェースを定義
+  - [x] `RegisterGlobal(name, value string) error`
+  - [x] `WithLocals(locals map[string]string) (VariableRegistry, error)`
+  - [x] `Resolve(name string) (string, error)`
+  - [x] `GlobalVars() []VariableEntry`
+  - [x] `LocalVars() []VariableEntry`
+- [x] `VariableEntry` 構造体を定義
+- [x] `variableRegistry` 構造体を実装
+  - [x] `globals` と `locals` のマップフィールド
+  - [x] `sync.RWMutex` フィールド
+- [x] `NewVariableRegistry()` コンストラクタを実装
+- [x] `RegisterGlobal()` メソッドを実装
+  - [x] `ValidateVariableNameForScope()` で検証
+  - [x] グローバルマップに追加
+- [x] `WithLocals()` メソッドを実装
+  - [x] 全てのローカル変数名を検証
+  - [x] 新しいレジストリを作成（グローバルをコピー）
+  - [x] ローカル変数を設定
+- [x] `Resolve()` メソッドを実装
+  - [x] `DetermineScope()` でスコープを判定
+  - [x] 適切なマップから値を検索
+  - [x] 未定義エラーを返す
+- [x] `GlobalVars()` メソッドを実装
+  - [x] スライスに変換
+  - [x] 名前順にソート
+- [x] `LocalVars()` メソッドを実装
+  - [x] スライスに変換
+  - [x] 名前順にソート
 
 **完了基準**:
 - 全てのメソッドが実装されている
@@ -125,30 +125,30 @@
 
 **ファイル**: `internal/runner/variable/registry_test.go`
 
-- [ ] `TestVariableRegistry_RegisterGlobal` を実装
-  - [ ] 有効なグローバル変数の登録成功
-  - [ ] 小文字名の拒否
-  - [ ] 予約済み名の拒否
-- [ ] `TestVariableRegistry_WithLocals` を実装
-  - [ ] 有効なローカル変数の追加成功
-  - [ ] 大文字名の拒否
-  - [ ] 予約済み名の拒否
-  - [ ] 元のレジストリが変更されないことの検証
-- [ ] `TestVariableRegistry_Resolve` を実装
-  - [ ] 親レジストリからのグローバル変数解決
-  - [ ] 子レジストリからのグローバル変数解決
-  - [ ] 子レジストリからのローカル変数解決
-  - [ ] 親レジストリでローカル変数が未定義
-  - [ ] 未定義のグローバル変数エラー
-- [ ] `TestVariableRegistry_NamespaceIsolation` を実装
-  - [ ] 同名の異なるスコープ変数の分離
-- [ ] `TestVariableRegistry_GlobalVars` を実装
-  - [ ] ソート順の検証
-  - [ ] 全ての変数が含まれることの検証
-- [ ] `TestVariableRegistry_LocalVars` を実装
-  - [ ] ソート順の検証
-  - [ ] 全ての変数が含まれることの検証
-- [ ] 並行アクセスのテスト（オプション）
+- [x] `TestVariableRegistry_RegisterGlobal` を実装
+  - [x] 有効なグローバル変数の登録成功
+  - [x] 小文字名の拒否
+  - [x] 予約済み名の拒否
+- [x] `TestVariableRegistry_WithLocals` を実装
+  - [x] 有効なローカル変数の追加成功
+  - [x] 大文字名の拒否
+  - [x] 予約済み名の拒否
+  - [x] 元のレジストリが変更されないことの検証
+- [x] `TestVariableRegistry_Resolve` を実装
+  - [x] 親レジストリからのグローバル変数解決
+  - [x] 子レジストリからのグローバル変数解決
+  - [x] 子レジストリからのローカル変数解決
+  - [x] 親レジストリでローカル変数が未定義
+  - [x] 未定義のグローバル変数エラー
+- [x] `TestVariableRegistry_NamespaceIsolation` を実装
+  - [x] 同名の異なるスコープ変数の分離
+- [x] `TestVariableRegistry_GlobalVars` を実装
+  - [x] ソート順の検証
+  - [x] 全ての変数が含まれることの検証
+- [x] `TestVariableRegistry_LocalVars` を実装
+  - [x] ソート順の検証
+  - [x] 全ての変数が含まれることの検証
+- [-] 並行アクセスのテスト（オプション）
 
 **完了基準**:
 - 全てのテストケースが実装されている
@@ -158,16 +158,16 @@
 
 ### 2.3 Phase 1 完了チェックリスト
 
-- [ ] 全てのファイルが作成されている
-  - [ ] `internal/runner/variable/scope.go`
-  - [ ] `internal/runner/variable/scope_test.go`
-  - [ ] `internal/runner/variable/registry.go`
-  - [ ] `internal/runner/variable/registry_test.go`
-- [ ] 全てのテストが通過する（`make test`）
-- [ ] テストカバレッジが90%以上（`go test -cover`）
-- [ ] godocコメントが完全
-- [ ] コードレビュー完了
-- [ ] リンターチェック通過（`make lint`）
+- [x] 全てのファイルが作成されている
+  - [x] `internal/runner/variable/scope.go`
+  - [x] `internal/runner/variable/scope_test.go`
+  - [x] `internal/runner/variable/registry.go`
+  - [x] `internal/runner/variable/registry_test.go`
+- [x] 全てのテストが通過する（`make test`）
+- [x] テストカバレッジが90%以上（`go test -cover`） - 97.8%達成
+- [x] godocコメントが完全
+- [-] コードレビュー完了
+- [x] リンターチェック通過（`make lint`）
 
 ### 2.4 Phase 1 の成果物
 
