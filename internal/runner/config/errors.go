@@ -573,3 +573,53 @@ func (e *ErrEnvImportVarsConflictDetail) Error() string {
 func (e *ErrEnvImportVarsConflictDetail) Unwrap() error {
 	return ErrEnvImportVarsConflict
 }
+
+// ErrLocalVariableInTemplate is returned when a template references a local variable
+type ErrLocalVariableInTemplate struct {
+	TemplateName string
+	Field        string // e.g., "cmd", "args[0]", "env[PATH]"
+	VariableName string
+}
+
+func (e *ErrLocalVariableInTemplate) Error() string {
+	return fmt.Sprintf(
+		"template %q field %q: cannot reference local variable %q (templates can only reference global variables starting with uppercase)",
+		e.TemplateName,
+		e.Field,
+		e.VariableName,
+	)
+}
+
+// ErrUndefinedGlobalVariableInTemplate is returned when a template references an undefined global variable
+type ErrUndefinedGlobalVariableInTemplate struct {
+	TemplateName string
+	Field        string
+	VariableName string
+}
+
+func (e *ErrUndefinedGlobalVariableInTemplate) Error() string {
+	return fmt.Sprintf(
+		"template %q field %q: global variable %q is not defined in [global.vars]",
+		e.TemplateName,
+		e.Field,
+		e.VariableName,
+	)
+}
+
+// ErrInvalidVariableScopeDetail is returned when a variable name doesn't match the expected scope
+type ErrInvalidVariableScopeDetail struct {
+	Level        string
+	Field        string
+	VariableName string
+	Reason       string
+}
+
+func (e *ErrInvalidVariableScopeDetail) Error() string {
+	return fmt.Sprintf(
+		"invalid variable scope in %s.%s: variable %q - %s",
+		e.Level,
+		e.Field,
+		e.VariableName,
+		e.Reason,
+	)
+}

@@ -222,6 +222,17 @@ func run(runID string) error {
 		}
 	}
 
+	// Validate template variable references after global expansion
+	// Templates can only reference global variables, which are now expanded
+	if err := config.ValidateAllTemplates(cfg.CommandTemplates, runtimeGlobal.ExpandedVars); err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Template validation failed: %v", err),
+			Component: string(resource.ComponentConfig),
+			RunID:     runID,
+		}
+	}
+
 	// Perform global file verification (using verification manager directly)
 	result, err := verificationManager.VerifyGlobalFiles(runtimeGlobal)
 	if err != nil {
