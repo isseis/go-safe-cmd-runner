@@ -4,10 +4,10 @@
 [global]
 env_import = ["DB_HOST=DB_HOST", "API_KEY=API_KEY"]
 env_allowed = ["PATH", "HOME", "USER", "DB_HOST", "API_KEY"]
-env_vars = ["BASE_DIR=%{Base_dir}", "LOG_LEVEL=info"]
+env_vars = ["BASE_DIR=%{BaseDir}", "LOG_LEVEL=info"]
 
 [global.vars]
-Base_dir = "/opt/app"
+BaseDir = "/opt/app"
 
 [[groups]]
 name = "test_group_inherit"

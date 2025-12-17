@@ -36,8 +36,8 @@ version = "1.0"
 timeout = 60
 
 [global.vars]
-Output_file = "%s"
-Backup_file = "%%{Output_file}.%%{__runner_datetime}.bak"
+OutputFile = "%s"
+BackupFile = "%%{OutputFile}.%%{__runner_datetime}.bak"
 
 [[groups]]
 name = "test_group"
@@ -45,12 +45,12 @@ name = "test_group"
 [[groups.commands]]
 name = "test_auto_vars"
 cmd = "/bin/sh"
-args = ["-c", "echo 'Executed at %%{__runner_datetime} by PID %%{__runner_pid}' > %%{Output_file}"]
+args = ["-c", "echo 'Executed at %%{__runner_datetime} by PID %%{__runner_pid}' > %%{OutputFile}"]
 
 [[groups.commands]]
 name = "test_backup_file"
 cmd = "/bin/sh"
-args = ["-c", "echo 'backup' > %%{Backup_file}"]
+args = ["-c", "echo 'backup' > %%{BackupFile}"]
 `, outputFile)
 
 	err = os.WriteFile(configPath, []byte(configContent), 0o600)
@@ -82,9 +82,9 @@ args = ["-c", "echo 'backup' > %%{Backup_file}"]
 	assert.Equal(t, fmt.Sprintf("%d", os.Getpid()), pid)
 
 	// Verify vars expansion using auto variables
-	backupFile := runtimeGlobal.ExpandedVars["Backup_file"]
+	backupFile := runtimeGlobal.ExpandedVars["BackupFile"]
 	expectedBackup := fmt.Sprintf("%s.%s.bak", outputFile, datetime)
-	assert.Equal(t, expectedBackup, backupFile, "Backup_file should be expanded with __runner_datetime")
+	assert.Equal(t, expectedBackup, backupFile, "BackupFile should be expanded with __runner_datetime")
 
 	// Create and execute runner
 	r, err := runner.NewRunner(cfg,

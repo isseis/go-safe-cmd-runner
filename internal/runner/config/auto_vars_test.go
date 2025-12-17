@@ -71,8 +71,8 @@ func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		Timeout: &timeout,
 		Vars: map[string]any{
-			"Output_file": "/tmp/backup-%{__runner_datetime}.tar.gz",
-			"Lock_file":   "/var/run/myapp-%{__runner_pid}.lock",
+			"OutputFile": "/tmp/backup-%{__runner_datetime}.tar.gz",
+			"LockFile":   "/var/run/myapp-%{__runner_pid}.lock",
 		},
 	}
 
@@ -81,8 +81,8 @@ func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {
 	require.NotNil(t, runtime)
 
 	// Check that auto variables were expanded in user vars
-	outputFile := runtime.ExpandedVars["Output_file"]
-	lockFile := runtime.ExpandedVars["Lock_file"]
+	outputFile := runtime.ExpandedVars["OutputFile"]
+	lockFile := runtime.ExpandedVars["LockFile"]
 
 	// Should contain expanded values, not the template
 	assert.NotContains(t, outputFile, "%{__runner_datetime}")

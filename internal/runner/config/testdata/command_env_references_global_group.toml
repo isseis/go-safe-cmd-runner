@@ -7,18 +7,18 @@
 # - New system: vars (internal variables) and %{VAR} syntax
 
 [global]
-env_vars = ["BASE_DIR=%{Base_dir}"]
+env_vars = ["BASE_DIR=%{BaseDir}"]
 env_allowed = ["HOME", "PATH"]
 
 [global.vars]
-Base_dir = "/opt"
+BaseDir = "/opt"
 
 [[groups]]
 name = "app_group"
 env_vars = ["APP_DIR=%{app_dir}"]
 
 [groups.vars]
-app_dir = "%{Base_dir}/myapp"
+app_dir = "%{BaseDir}/myapp"
 
 [[groups.commands]]
 name = "run_app"

@@ -6,14 +6,14 @@
 env_allowed = ["HOME", "USER", "PATH"]
 env_import = ["HOME=HOME", "USER=USER", "PATH=PATH"]
 env_vars = [
-    "BASE_DIR=%{Base_dir}",
+    "BASE_DIR=%{BaseDir}",
     "LOG_LEVEL=info",
     "PATH=/opt/tools/bin:%{PATH}"
 ]
-verify_files = ["%{Base_dir}/verify.sh"]
+verify_files = ["%{BaseDir}/verify.sh"]
 
 [global.vars]
-Base_dir = "/opt/app"
+BaseDir = "/opt/app"
 
 [[groups]]
 name = "database"
@@ -27,11 +27,11 @@ verify_files = ["%{db_data}/schema.sql"]
 [groups.vars]
 db_host = "localhost"
 db_port = "5432"
-db_data = "%{Base_dir}/db-data"
+db_data = "%{BaseDir}/db-data"
 
 [[groups.commands]]
 name = "migrate"
-cmd = "%{Base_dir}/bin/migrate"
+cmd = "%{BaseDir}/bin/migrate"
 args = ["-h", "%{db_host}", "-p", "%{db_port}"]
 env_vars = ["MIGRATION_DIR=%{migration_dir}"]
 

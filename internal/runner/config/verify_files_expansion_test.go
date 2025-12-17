@@ -13,8 +13,8 @@ import (
 func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 	t.Run("GlobalVerifyFiles_WithSpaces", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        map[string]any{"Base_dir": "/opt/my app", "File_name": "test-file_v1.0.sh"},
-			VerifyFiles: []string{"%{Base_dir}/%{File_name}"},
+			Vars:        map[string]any{"BaseDir": "/opt/my app", "FileName": "test-file_v1.0.sh"},
+			VerifyFiles: []string{"%{BaseDir}/%{FileName}"},
 		}
 
 		runtime, err := config.ExpandGlobal(spec)
@@ -26,8 +26,8 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 
 	t.Run("GlobalVerifyFiles_WithDashes", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        map[string]any{"Base_dir": "/opt/app", "Sub_dir": "sub-dir_v2.0"},
-			VerifyFiles: []string{"%{Base_dir}/%{Sub_dir}/script.sh"},
+			Vars:        map[string]any{"BaseDir": "/opt/app", "SubDir": "sub-dir_v2.0"},
+			VerifyFiles: []string{"%{BaseDir}/%{SubDir}/script.sh"},
 		}
 
 		runtime, err := config.ExpandGlobal(spec)
@@ -62,8 +62,8 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 	t.Run("GlobalVerifyFiles_NestedReferences", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        map[string]any{"Root": "/opt", "App_name": "myapp", "App_dir": "%{Root}/%{App_name}"},
-			VerifyFiles: []string{"%{App_dir}/verify.sh"},
+			Vars:        map[string]any{"Root": "/opt", "App_name": "myapp", "AppDir": "%{Root}/%{App_name}"},
+			VerifyFiles: []string{"%{AppDir}/verify.sh"},
 		}
 
 		runtime, err := config.ExpandGlobal(spec)
@@ -79,8 +79,8 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 				"Root":          "/opt",
 				"App_name":      "myapp",
 				"Version":       "v1.0",
-				"App_dir":       "%{Root}/%{App_name}",
-				"Versioned_dir": "%{App_dir}/%{Version}",
+				"AppDir":        "%{Root}/%{App_name}",
+				"Versioned_dir": "%{AppDir}/%{Version}",
 			},
 			VerifyFiles: []string{"%{Versioned_dir}/scripts/verify.sh"},
 		}
@@ -94,14 +94,14 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 
 	t.Run("GroupVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
 		globalSpec := &runnertypes.GlobalSpec{
-			Vars: map[string]any{"Root": "/opt", "App_name": "myapp", "App_dir": "%{Root}/%{App_name}"},
+			Vars: map[string]any{"Root": "/opt", "App_name": "myapp", "AppDir": "%{Root}/%{App_name}"},
 		}
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
 
 		groupSpec := &runnertypes.GroupSpec{
 			Name:        "test_group",
-			Vars:        map[string]any{"subdir": "scripts", "full_path": "%{App_dir}/%{subdir}"},
+			Vars:        map[string]any{"subdir": "scripts", "full_path": "%{AppDir}/%{subdir}"},
 			VerifyFiles: []string{"%{full_path}/check.sh"},
 		}
 
@@ -117,7 +117,7 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 	t.Run("UndefinedVariable", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        map[string]any{"Existing_var": "/opt"},
+			Vars:        map[string]any{"ExistingVar": "/opt"},
 			VerifyFiles: []string{"%{Undefined_var}/script.sh"},
 		}
 
@@ -139,9 +139,9 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 
 	t.Run("MultipleVerifyFilesWithMixedErrors", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars: map[string]any{"Valid_dir": "/opt"},
+			Vars: map[string]any{"ValidDir": "/opt"},
 			VerifyFiles: []string{
-				"%{Valid_dir}/good.sh",
+				"%{ValidDir}/good.sh",
 				"%{Invalid_var}/bad.sh",
 			},
 		}
@@ -153,7 +153,7 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 
 	t.Run("GroupVerifyFiles_UndefinedVariable", func(t *testing.T) {
 		globalSpec := &runnertypes.GlobalSpec{
-			Vars: map[string]any{"Global_var": "/opt"},
+			Vars: map[string]any{"GlobalVar": "/opt"},
 		}
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)

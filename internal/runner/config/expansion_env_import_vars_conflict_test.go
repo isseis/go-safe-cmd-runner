@@ -81,9 +81,9 @@ func TestExpandGroup_SameLevelConflict(t *testing.T) {
 func TestExpandGlobal_NoConflict(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		EnvAllowed: []string{"PATH"},
-		EnvImport:  []string{"Sys_path=PATH"},
+		EnvImport:  []string{"SysPath=PATH"},
 		Vars: map[string]any{
-			"Custom_path": "/custom/path", // Different name - no conflict
+			"CustomPath": "/custom/path", // Different name - no conflict
 		},
 	}
 
@@ -92,9 +92,9 @@ func TestExpandGlobal_NoConflict(t *testing.T) {
 	assert.NotNil(t, runtime)
 
 	// Verify both variables exist
-	assert.Contains(t, runtime.ExpandedVars, "Sys_path")
-	assert.Contains(t, runtime.ExpandedVars, "Custom_path")
-	assert.Equal(t, "/custom/path", runtime.ExpandedVars["Custom_path"])
+	assert.Contains(t, runtime.ExpandedVars, "SysPath")
+	assert.Contains(t, runtime.ExpandedVars, "CustomPath")
+	assert.Equal(t, "/custom/path", runtime.ExpandedVars["CustomPath"])
 }
 
 // TestExpandGroup_InheritedEnvImportVarsTracking tests that env_import tracking is inherited
@@ -102,7 +102,7 @@ func TestExpandGroup_InheritedEnvImportVarsTracking(t *testing.T) {
 	// Global defines env_import
 	globalSpec := &runnertypes.GlobalSpec{
 		EnvAllowed: []string{"PATH", "USER"},
-		EnvImport:  []string{"Global_path=PATH"},
+		EnvImport:  []string{"GlobalPath=PATH"},
 	}
 	globalRuntime, err := config.ExpandGlobal(globalSpec)
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestExpandGroup_InheritedEnvImportVarsTracking(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify EnvImportVars contains both global and group level variables
-	assert.Contains(t, groupRuntime.EnvImportVars, "Global_path")
+	assert.Contains(t, groupRuntime.EnvImportVars, "GlobalPath")
 	assert.Contains(t, groupRuntime.EnvImportVars, "group_home")
 	assert.NotContains(t, groupRuntime.EnvImportVars, "group_var") // vars should not be in EnvImportVars
 }

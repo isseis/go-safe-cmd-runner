@@ -519,7 +519,7 @@ func TestRunner_SystemEnvCache(t *testing.T) {
 			configTOML: `
 [global]
 env_allowed = ["PATH", "HOME", "USER"]
-env_import = ["Global_path=PATH"]
+env_import = ["GlobalPath=PATH"]
 
 [[groups]]
 name = "group1"

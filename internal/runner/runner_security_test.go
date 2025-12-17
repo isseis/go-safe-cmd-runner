@@ -120,12 +120,12 @@ env_allowed = ["SAFE_VAR"]
 [global]
 env_import = ["Home=SAFE_HOME", "Allowed=ALLOWED_VAR"]
 env_allowed = ["SAFE_HOME", "ALLOWED_VAR"]
-env_vars = ["WORK_DIR=%{Work_dir}", "CONFIG_DIR=%{Config_dir}"]
-verify_files = ["%{Config_dir}/app.conf"]
+env_vars = ["WORK_DIR=%{WorkDir}", "CONFIG_DIR=%{ConfigDir}"]
+verify_files = ["%{ConfigDir}/app.conf"]
 
 [global.vars]
-Work_dir = "%{Home}/work"
-Config_dir = "%{Home}/config"
+WorkDir = "%{Home}/work"
+ConfigDir = "%{Home}/config"
 
 [[groups]]
 name = "secure_group"
@@ -161,8 +161,8 @@ env_vars = ["CMD_VAR=%{group_path}"]
 				require.NoError(t, err)
 				require.NotNil(t, runtimeGlobal.ExpandedVars)
 				require.NotNil(t, runtimeGlobal.ExpandedEnv)
-				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedVars["Work_dir"])
-				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedVars["Config_dir"])
+				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedVars["WorkDir"])
+				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedVars["ConfigDir"])
 				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedEnv["WORK_DIR"])
 				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedEnv["CONFIG_DIR"])
 
