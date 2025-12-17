@@ -710,16 +710,16 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 	// Create a GlobalSpec that uses all three: from_env, vars, env
 	spec := &runnertypes.GlobalSpec{
 		EnvImport: []string{
-			"sys_path=PATH",
-			"sys_home=HOME",
+			"Sys_path=PATH",
+			"Sys_home=HOME",
 		},
 		Vars: map[string]any{
-			"base_dir": "%{sys_home}/app",
-			"bin_dir":  "%{base_dir}/bin",
+			"Base_dir": "%{Sys_home}/app",
+			"Bin_dir":  "%{Base_dir}/bin",
 		},
 		EnvVars: []string{
-			"APP_HOME=%{base_dir}",
-			"PATH=%{bin_dir}:%{sys_path}",
+			"APP_HOME=%{Base_dir}",
+			"PATH=%{Bin_dir}:%{Sys_path}",
 		},
 		EnvAllowed: []string{"PATH", "HOME"},
 	}
@@ -734,10 +734,10 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 	require.NotNil(t, runtime)
 
 	// Verify internal variables
-	assert.Equal(t, "/usr/bin:/bin", runtime.ExpandedVars["sys_path"])
-	assert.Equal(t, "/home/testuser", runtime.ExpandedVars["sys_home"])
-	assert.Equal(t, "/home/testuser/app", runtime.ExpandedVars["base_dir"])
-	assert.Equal(t, "/home/testuser/app/bin", runtime.ExpandedVars["bin_dir"])
+	assert.Equal(t, "/usr/bin:/bin", runtime.ExpandedVars["Sys_path"])
+	assert.Equal(t, "/home/testuser", runtime.ExpandedVars["Sys_home"])
+	assert.Equal(t, "/home/testuser/app", runtime.ExpandedVars["Base_dir"])
+	assert.Equal(t, "/home/testuser/app/bin", runtime.ExpandedVars["Bin_dir"])
 
 	// Verify environment variables
 	assert.Equal(t, "/home/testuser/app", runtime.ExpandedEnv["APP_HOME"])

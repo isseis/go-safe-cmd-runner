@@ -69,7 +69,7 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 
 	// Verify inheritance analysis fields for inherit group
 	ia := inheritGroupAnalysis.DebugInfo.InheritanceAnalysis
-	assert.Equal(t, []string{"db_host=DB_HOST", "api_key=API_KEY"}, ia.GlobalEnvImport, "should have global env_import")
+	assert.Equal(t, []string{"DB_HOST=DB_HOST", "API_KEY=API_KEY"}, ia.GlobalEnvImport, "should have global env_import")
 	assert.Equal(t, []string{"PATH", "HOME", "USER", "DB_HOST", "API_KEY"}, ia.GlobalAllowlist, "should have global env_allowed")
 	assert.Equal(t, []string{}, ia.GroupEnvImport, "inherit group should have empty group env_import")
 	assert.Equal(t, []string{}, ia.GroupAllowlist, "inherit group should have empty group env_allowed")
@@ -90,7 +90,7 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 
 	// Verify inheritance analysis fields for explicit group
 	iaExplicit := explicitGroupAnalysis.DebugInfo.InheritanceAnalysis
-	assert.Equal(t, []string{"db_host=DB_HOST", "api_key=API_KEY"}, iaExplicit.GlobalEnvImport, "should have global env_import")
+	assert.Equal(t, []string{"DB_HOST=DB_HOST", "API_KEY=API_KEY"}, iaExplicit.GlobalEnvImport, "should have global env_import")
 	assert.Equal(t, []string{"PATH", "HOME", "USER", "DB_HOST", "API_KEY"}, iaExplicit.GlobalAllowlist, "should have global env_allowed")
 	assert.Equal(t, []string{"db_host=DB_HOST"}, iaExplicit.GroupEnvImport, "explicit group should have group env_import")
 	assert.Equal(t, []string{"PATH", "DB_HOST"}, iaExplicit.GroupAllowlist, "explicit group should have group env_allowed")
@@ -103,7 +103,7 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 	assert.Contains(t, iaExplicit.RemovedAllowlistVariables, "API_KEY", "should show API_KEY as removed")
 
 	assert.NotNil(t, iaExplicit.UnavailableEnvImportVariables, "should have unavailable env_import variables")
-	assert.Contains(t, iaExplicit.UnavailableEnvImportVariables, "api_key", "should show api_key as unavailable")
+	assert.Contains(t, iaExplicit.UnavailableEnvImportVariables, "API_KEY", "should show API_KEY as unavailable")
 
 	// Find command analyses
 	var commandAnalyses []*resource.ResourceAnalysis

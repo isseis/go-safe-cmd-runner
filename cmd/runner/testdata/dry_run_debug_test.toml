@@ -2,12 +2,12 @@
 # Tests environment variable inheritance and debug info output
 
 [global]
-env_import = ["db_host=DB_HOST", "api_key=API_KEY"]
+env_import = ["DB_HOST=DB_HOST", "API_KEY=API_KEY"]
 env_allowed = ["PATH", "HOME", "USER", "DB_HOST", "API_KEY"]
-env_vars = ["BASE_DIR=%{base_dir}", "LOG_LEVEL=info"]
+env_vars = ["BASE_DIR=%{Base_dir}", "LOG_LEVEL=info"]
 
 [global.vars]
-base_dir = "/opt/app"
+Base_dir = "/opt/app"
 
 [[groups]]
 name = "test_group_inherit"

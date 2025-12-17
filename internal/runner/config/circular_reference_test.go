@@ -26,10 +26,10 @@ func TestCircularReference_DirectSelfReference(t *testing.T) {
 		{
 			name: "vars direct self-reference",
 			spec: &runnertypes.GlobalSpec{
-				Vars: map[string]any{"v": "%{v}"},
+				Vars: map[string]any{"V": "%{V}"},
 			},
 			wantErr:      config.ErrCircularReference,
-			wantVarInErr: "v",
+			wantVarInErr: "V",
 		},
 		{
 			name: "vars self-reference with prefix",
@@ -77,30 +77,30 @@ func TestCircularReference_TwoVariables(t *testing.T) {
 			name: "simple two-variable cycle",
 			spec: &runnertypes.GlobalSpec{
 				Vars: map[string]any{
-					"a": "%{b}",
-					"b": "%{a}",
+					"A": "%{B}",
+					"B": "%{A}",
 				},
 			},
 			wantErr:           config.ErrCircularReference,
-			wantVarInErrOneOf: []string{"a", "b"},
+			wantVarInErrOneOf: []string{"A", "B"},
 		},
 		{
 			name: "two-variable cycle with reverse order",
 			spec: &runnertypes.GlobalSpec{
 				Vars: map[string]any{
-					"b": "%{a}",
-					"a": "%{b}",
+					"B": "%{A}",
+					"A": "%{B}",
 				},
 			},
 			wantErr:           config.ErrCircularReference,
-			wantVarInErrOneOf: []string{"a", "b"},
+			wantVarInErrOneOf: []string{"A", "B"},
 		},
 		{
 			name: "valid chain with existing variable",
 			spec: &runnertypes.GlobalSpec{
 				Vars: map[string]any{
-					"a": "initial",
-					"b": "%{a}",
+					"A": "initial",
+					"B": "%{A}",
 				},
 			},
 			// With map format, this is a valid chain (no cycle)
@@ -142,23 +142,23 @@ func TestCircularReference_ComplexChain(t *testing.T) {
 			name: "three-variable cycle",
 			spec: &runnertypes.GlobalSpec{
 				Vars: map[string]any{
-					"a": "%{b}",
-					"b": "%{c}",
-					"c": "%{a}",
+					"A": "%{B}",
+					"B": "%{C}",
+					"C": "%{A}",
 				},
 			},
-			wantVarInErrOneOf: []string{"a", "b", "c"},
+			wantVarInErrOneOf: []string{"A", "B", "C"},
 		},
 		{
 			name: "three-variable cycle (reverse order in map)",
 			spec: &runnertypes.GlobalSpec{
 				Vars: map[string]any{
-					"c": "%{a}",
-					"a": "%{b}",
-					"b": "%{c}",
+					"C": "%{A}",
+					"A": "%{B}",
+					"B": "%{C}",
 				},
 			},
-			wantVarInErrOneOf: []string{"a", "b", "c"},
+			wantVarInErrOneOf: []string{"A", "B", "C"},
 		},
 		{
 			name: "four-variable cycle",
@@ -244,14 +244,14 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 		{
 			name: "group vars references global var that doesn't exist yet",
 			global: &runnertypes.GlobalSpec{
-				Vars: map[string]any{"GLOBAL_VAR": "%{GROUP_VAR}"},
+				Vars: map[string]any{"GLOBAL_VAR": "%{group_var}"},
 			},
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: map[string]any{"GROUP_VAR": "%{GLOBAL_VAR}"},
+				Vars: map[string]any{"group_var": "%{GLOBAL_VAR}"},
 			},
 			wantErr:      config.ErrUndefinedVariable,
-			wantVarInErr: "GROUP_VAR",
+			wantVarInErr: "group_var",
 		},
 		{
 			name: "group vars with forward reference",
@@ -261,12 +261,12 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 			group: &runnertypes.GroupSpec{
 				Name: "test",
 				Vars: map[string]any{
-					"CYCLE":   "%{DERIVED}",
-					"DERIVED": "%{CYCLE}",
+					"cycle":   "%{derived}",
+					"derived": "%{cycle}",
 				},
 			},
 			wantErr:         config.ErrCircularReference,
-			wantVarsInChain: []string{"CYCLE", "DERIVED"},
+			wantVarsInChain: []string{"cycle", "derived"},
 		},
 	}
 
@@ -322,12 +322,12 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 			name: "command env references undefined group var",
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: map[string]any{"GROUP_VAR": "value"},
+				Vars: map[string]any{"group_var": "value"},
 			},
 			command: &runnertypes.CommandSpec{
 				Name:    "test",
 				Cmd:     "/bin/test",
-				EnvVars: []string{"CMD_ENV=%{UNDEFINED}"},
+				EnvVars: []string{"cmd_env=%{UNDEFINED}"},
 			},
 			wantErr:      config.ErrUndefinedVariable,
 			wantVarInErr: "UNDEFINED",
@@ -336,18 +336,18 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 			name: "command vars with forward reference",
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: map[string]any{"GROUP_VAR": "base"},
+				Vars: map[string]any{"group_var": "base"},
 			},
 			command: &runnertypes.CommandSpec{
 				Name: "test",
 				Cmd:  "/bin/test",
 				Vars: map[string]any{
-					"CMD_B": "%{CMD_A}",
-					"CMD_A": "%{CMD_B}",
+					"cmd_b": "%{cmd_a}",
+					"cmd_a": "%{cmd_b}",
 				},
 			},
 			wantErr:           config.ErrCircularReference,
-			wantVarInErrOneOf: []string{"CMD_A", "CMD_B"},
+			wantVarInErrOneOf: []string{"cmd_a", "cmd_b"},
 		},
 	}
 
@@ -537,17 +537,17 @@ func TestCircularReference_CommandVarsToGroupVars(t *testing.T) {
 			name: "command vars reference group vars - valid",
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: map[string]any{"GROUP_VAR": "group_value"},
+				Vars: map[string]any{"group_var": "group_value"},
 			},
 			command: &runnertypes.CommandSpec{
 				Name: "test",
 				Cmd:  "/bin/test",
 				Vars: map[string]any{
-					"CMD_VAR": "%{GROUP_VAR}",
+					"cmd_var": "%{group_var}",
 				},
 			},
 			wantErr:     nil,
-			checkVar:    "CMD_VAR",
+			checkVar:    "cmd_var",
 			wantVal:     "group_value",
 			description: "Command vars can reference group vars defined in [[groups]] section",
 		},
@@ -555,13 +555,13 @@ func TestCircularReference_CommandVarsToGroupVars(t *testing.T) {
 			name: "group vars reference command vars - should fail",
 			group: &runnertypes.GroupSpec{
 				Name: "test",
-				Vars: map[string]any{"GROUP_VAR": "%{CMD_VAR}"},
+				Vars: map[string]any{"group_var": "%{cmd_var}"},
 			},
 			command: &runnertypes.CommandSpec{
 				Name: "test",
 				Cmd:  "/bin/test",
 				Vars: map[string]any{
-					"CMD_VAR": "cmd_value",
+					"cmd_var": "cmd_value",
 				},
 			},
 			wantErr:     config.ErrUndefinedVariable,
@@ -572,19 +572,19 @@ func TestCircularReference_CommandVarsToGroupVars(t *testing.T) {
 			group: &runnertypes.GroupSpec{
 				Name: "test",
 				Vars: map[string]any{
-					"BASE":    "base",
-					"DERIVED": "%{BASE}_derived",
+					"base":    "base",
+					"derived": "%{base}_derived",
 				},
 			},
 			command: &runnertypes.CommandSpec{
 				Name: "test",
 				Cmd:  "/bin/test",
 				Vars: map[string]any{
-					"CMD_VAR": "%{DERIVED}_cmd",
+					"cmd_var": "%{derived}_cmd",
 				},
 			},
 			wantErr:     nil,
-			checkVar:    "CMD_VAR",
+			checkVar:    "cmd_var",
 			wantVal:     "base_derived_cmd",
 			description: "Command vars can reference group vars that themselves reference other group vars",
 		},

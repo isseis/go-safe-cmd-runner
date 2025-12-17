@@ -1456,7 +1456,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 
 	group := &runnertypes.GroupSpec{
 		Name: "test-group",
-		Vars: map[string]any{"TEST_VAR": "test_value"},
+		Vars: map[string]any{"test_var": "test_value"},
 		Commands: []runnertypes.CommandSpec{
 			{Name: "test-cmd", Cmd: "/bin/echo"},
 		},

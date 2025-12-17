@@ -201,10 +201,10 @@ func TestRunner_EnvironmentVariablePriority_WithVars(t *testing.T) {
 [global]
 env_import = ["USER=USER"]
 env_allowed = ["USER"]
-env_vars = ["HOME=%{myvar}"]
+env_vars = ["HOME=%{Myvar}"]
 
 [global.vars]
-myvar = "%{USER}"
+Myvar = "%{USER}"
 
 [[groups]]
 name = "test_group"
@@ -224,7 +224,7 @@ args = ["HOME"]
 [global]
 
 [global.vars]
-v = "global"
+V = "global"
 
 [[groups]]
 name = "test_group"
@@ -256,13 +256,13 @@ env_import = ["HOME=HOME"]
 env_allowed = ["HOME"]
 
 [global.vars]
-gv2 = "%{HOME}/global"
+Gv2 = "%{HOME}/global"
 
 [[groups]]
 name = "test_group"
 
 [groups.vars]
-gv3 = "%{gv2}/group"
+gv3 = "%{Gv2}/group"
 
 [[groups.commands]]
 name = "test"
@@ -405,10 +405,10 @@ func TestRunner_ResolveEnvironmentVars_Integration(t *testing.T) {
 [global]
 env_import = ["HOME=HOME", "USER=USER"]
 env_allowed = ["HOME", "USER"]
-env_vars = ["APP_BASE=%{base}"]
+env_vars = ["APP_BASE=%{Base}"]
 
 [global.vars]
-base = "%{HOME}/app"
+Base = "%{HOME}/app"
 
 [[groups]]
 name = "test_group"
@@ -416,7 +416,7 @@ env_vars = ["DATA_DIR=%{data_dir}"]
 
 [groups.vars]
 rel_path = "data"
-data_dir = "%{base}/%{rel_path}"
+data_dir = "%{Base}/%{rel_path}"
 
 [[groups.commands]]
 name = "test"
@@ -446,7 +446,7 @@ output = "%{data_dir}/%{filename}"
 	require.NoError(t, err, "Failed to expand command config")
 
 	// Verify vars expansion at each level
-	assert.Equal(t, "/home/test/app", runtimeGlobal.ExpandedVars["base"], "Global vars: base mismatch")
+	assert.Equal(t, "/home/test/app", runtimeGlobal.ExpandedVars["Base"], "Global vars: Base mismatch")
 	assert.Equal(t, "data", runtimeGroup.ExpandedVars["rel_path"], "Group vars: rel_path mismatch")
 	assert.Equal(t, "/home/test/app/data", runtimeGroup.ExpandedVars["data_dir"], "Group vars: data_dir mismatch")
 	assert.Equal(t, "output.txt", runtimeCmd.ExpandedVars["filename"], "Command vars: filename mismatch")

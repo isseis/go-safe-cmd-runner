@@ -22,7 +22,7 @@ func TestValidateVariableName(t *testing.T) {
 		{
 			name:         "valid lowercase name",
 			variableName: "home",
-			level:        "global",
+			level:        "group:mygroup",
 			field:        "vars",
 			wantErr:      false,
 		},
@@ -49,7 +49,7 @@ func TestValidateVariableName(t *testing.T) {
 		},
 		{
 			name:         "valid name with numbers",
-			variableName: "var123",
+			variableName: "Var123",
 			level:        "global",
 			field:        "vars",
 			wantErr:      false,
