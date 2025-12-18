@@ -245,6 +245,74 @@ args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/l
 
 **Note**: The prefix `__runner_` is reserved and cannot be used for user-defined variables.
 
+### User-Defined Variables
+
+The system supports user-defined variables at different configuration levels with strict naming conventions that enforce variable scope:
+
+#### Global Variables
+
+Global variables are defined in the `[global.vars]` section and are available to all groups and commands. Global variable names **must start with an uppercase letter (A-Z)**:
+
+```toml
+[global.vars]
+BackupDir = "/data/backups"
+MaxRetries = "3"
+Environment = "production"
+```
+
+#### Local Variables
+
+Local variables are defined in the `[groups.vars]` or `[groups.commands.vars]` sections and are only available within their scope. Local variable names **must start with a lowercase letter (a-z) or underscore (_)**:
+
+```toml
+[[groups]]
+name = "backup"
+
+[groups.vars]
+backup_date = "20250101"
+_temp_file = "/tmp/backup.tmp"
+
+[[groups.commands]]
+name = "database_backup"
+cmd = "/usr/bin/mysqldump"
+args = ["--all-databases", "--result-file=%{BackupDir}/db-%{backup_date}.sql"]
+
+[groups.commands.vars]
+connection_timeout = "30"
+retry_count = "%{MaxRetries}"
+```
+
+#### Variable Naming Rules
+
+All variable names (global and local) must follow these rules:
+- **First Character**: Global variables must start with uppercase letter (A-Z), local variables must start with lowercase letter (a-z) or underscore (_)
+- **Subsequent Characters**: Alphanumeric (A-Z, a-z, 0-9) or underscore (_)
+- **Reserved Prefix**: Variable names starting with `__` (double underscore) are reserved for system use
+
+#### Variable Scope Validation
+
+The system enforces strict scope rules:
+- **Within Templates**: Only global variables can be referenced (uppercase variables)
+- **Within params**: Both global and local variables can be referenced
+- **Validation**: The system validates variable names at configuration load time and reports scope violations as errors
+
+Error case examples:
+```toml
+# Error: Global variables must start with uppercase letter
+[global.vars]
+backupDir = "/data/backups"  # ❌ Rejected
+
+# Error: Local variables must start with lowercase letter or _
+[groups.vars]
+BackupDate = "20250101"  # ❌ Rejected
+
+# Error: Reserved prefix cannot be used
+[global.vars]
+__custom_var = "value"  # ❌ Rejected
+```
+
+For detailed variable expansion documentation, refer to the [Variable Expansion Guide](docs/user/toml_config/08_variable_expansion.md).
+
 ### Command Templates
 
 Command templates allow you to define reusable command patterns with parameters, reducing configuration duplication:
@@ -292,19 +360,19 @@ For each group, you can allow additional commands beyond the hardcoded global pa
 
 ```toml
 [global]
-env_import = ["home=HOME"]
+env_import = ["Home=HOME"]
 
 [[groups]]
 name = "custom_build"
 # Additional commands allowed only in this group
 cmd_allowed = [
-    "%{home}/bin/custom_tool",
+    "%{Home}/bin/custom_tool",
     "/opt/myapp/bin/processor"
 ]
 
 [[groups.commands]]
 name = "run_custom"
-cmd = "%{home}/bin/custom_tool"
+cmd = "%{Home}/bin/custom_tool"
 args = ["--verbose"]
 ```
 
