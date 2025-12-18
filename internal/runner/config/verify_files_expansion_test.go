@@ -62,7 +62,7 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 	t.Run("GlobalVerifyFiles_NestedReferences", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
-			Vars:        map[string]any{"Root": "/opt", "App_name": "myapp", "AppDir": "%{Root}/%{App_name}"},
+			Vars:        map[string]any{"Root": "/opt", "AppName": "myapp", "AppDir": "%{Root}/%{AppName}"},
 			VerifyFiles: []string{"%{AppDir}/verify.sh"},
 		}
 
@@ -76,13 +76,13 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 	t.Run("GlobalVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
 			Vars: map[string]any{
-				"Root":          "/opt",
-				"App_name":      "myapp",
-				"Version":       "v1.0",
-				"AppDir":        "%{Root}/%{App_name}",
-				"Versioned_dir": "%{AppDir}/%{Version}",
+				"Root":         "/opt",
+				"AppName":      "myapp",
+				"Version":      "v1.0",
+				"AppDir":       "%{Root}/%{AppName}",
+				"VersionedDir": "%{AppDir}/%{Version}",
 			},
-			VerifyFiles: []string{"%{Versioned_dir}/scripts/verify.sh"},
+			VerifyFiles: []string{"%{VersionedDir}/scripts/verify.sh"},
 		}
 
 		runtime, err := config.ExpandGlobal(spec)
@@ -118,12 +118,12 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 	t.Run("UndefinedVariable", func(t *testing.T) {
 		spec := &runnertypes.GlobalSpec{
 			Vars:        map[string]any{"ExistingVar": "/opt"},
-			VerifyFiles: []string{"%{Undefined_var}/script.sh"},
+			VerifyFiles: []string{"%{UndefinedVar}/script.sh"},
 		}
 
 		_, err := config.ExpandGlobal(spec)
 		require.Error(t, err, "Should fail when verify_files references undefined variable")
-		assert.Contains(t, err.Error(), "Undefined_var", "Error should mention the undefined variable name")
+		assert.Contains(t, err.Error(), "UndefinedVar", "Error should mention the undefined variable name")
 		assert.Contains(t, err.Error(), "undefined variable", "Error should indicate it's an undefined variable error")
 	})
 
@@ -142,13 +142,13 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 			Vars: map[string]any{"ValidDir": "/opt"},
 			VerifyFiles: []string{
 				"%{ValidDir}/good.sh",
-				"%{Invalid_var}/bad.sh",
+				"%{InvalidVar}/bad.sh",
 			},
 		}
 
 		_, err := config.ExpandGlobal(spec)
 		require.Error(t, err, "Should fail on first invalid verify_files entry")
-		assert.Contains(t, err.Error(), "Invalid_var", "Error should mention the first invalid variable")
+		assert.Contains(t, err.Error(), "InvalidVar", "Error should mention the first invalid variable")
 	})
 
 	t.Run("GroupVerifyFiles_UndefinedVariable", func(t *testing.T) {
