@@ -380,35 +380,64 @@ params.backup_path = "%{group_root}/volumes"
 #   args = ["backup", "/data/group1/volumes"]
 ```
 
-### 7.5.3 Prohibition of Variable References in Template Definitions
+### 7.5.3 Variable References in Template Definitions
 
-**Important**: For security reasons, variable references (`%{...}`) cannot be included in template definitions (`cmd`, `args`, `env_vars`, `workdir`).
+In template definitions, **only global variables** can be referenced. Global variables are those that start with an uppercase letter (e.g., `%{BackupDir}`).
+
+#### Allowed Variable References
 
 ```toml
-# Error: Using %{ in template definition
-[command_templates.dangerous]
+# Define global variables
+[global.vars]
+BackupDir = "/data/backups"
+ToolsPath = "/opt/tools"
+
+# OK: Reference global variables in template
+[command_templates.backup_tool]
+cmd = "%{ToolsPath}/backup"
+args = ["--output", "%{BackupDir}", "${path}"]
+```
+
+#### Prohibited Variable References
+
+**Local variables** (starting with lowercase or underscore) cannot be referenced in template definitions:
+
+```toml
+[groups.vars]
+backup_date = "20250101"  # Local variable
+
+# Error: Referencing local variable in template
+[command_templates.bad_template]
 cmd = "echo"
-args = ["%{secret_var}"]  # Error: %{ prohibited in template definition
+args = ["%{backup_date}"]  # Error: Local variables cannot be referenced
 ```
 
 **Reason**:
 - Templates are reused across multiple groups
-- The same variable name may have different meanings in different group contexts
-- Prevents the risk of unintentionally referencing sensitive variables
+- Local variables may have different values per group
+- Restricting to global variables ensures predictable and safe behavior
 
-**Correct Approach**: Variable references should be made explicitly via `params`
+#### Recommended Pattern
+
+To use local variables, pass them via `params`:
 
 ```toml
-# Correct: No variable references in template definition
-[command_templates.echo_message]
-cmd = "echo"
-args = ["${message}"]
+# Template definition: Use global variables and parameters
+[command_templates.backup_with_date]
+cmd = "%{ToolsPath}/backup"
+args = ["--output", "%{BackupDir}/${date}", "${path}"]
 
-# Explicitly reference variables in params
+# Group level: Define local variables
+[groups.vars]
+backup_date = "20250101"
+
+# Command: Pass local variable via params
 [[groups.commands]]
-name = "echo_test"
-template = "echo_message"
-params.message = "%{my_variable}"  # Allowed
+name = "daily_backup"
+template = "backup_with_date"
+[groups.commands.params]
+date = "%{backup_date}"  # Reference local variable in params
+path = "/data/volumes"
 ```
 
 ## 7.6 Escape Sequences
