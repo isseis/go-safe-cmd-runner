@@ -45,26 +45,57 @@ env_vars = ["VAR=%{value}"]
 
 ### Variable Naming Rules
 
+#### Basic Character Rules
+
 - Letters (uppercase/lowercase), numbers, and underscores (`_`) are allowed
-- Recommended to use lowercase and underscores (e.g., `my_variable`, `app_dir`)
 - Must start with a letter or underscore
 - Case-sensitive (`home` and `HOME` are different variables)
-- Reserved prefix `__runner_` cannot be used to start variable names
+- Reserved prefix `__` (double underscore) cannot be used to start variable names (reserved for system use)
+
+#### Naming Conventions by Scope
+
+Variable names have constraints on their first character depending on their scope:
+
+| Scope | Definition Location | Naming Convention | Examples |
+|-------|---------------------|-------------------|----------|
+| **Global Variables** | `[global.vars]` | **Must start with uppercase letter (A-Z)** | `BackupDir`, `MaxRetries`, `Environment` |
+| **Local Variables** | `[groups.vars]`<br>`[groups.commands.vars]` | **Must start with lowercase letter (a-z) or underscore (_)** | `backup_date`, `_temp_file`, `retry_count` |
+
+This naming convention makes the variable scope immediately recognizable from the variable name and prevents configuration errors.
 
 ```
-# Valid variable names
-"%{path}"
-"%{my_tool}"
-"%{_private_var}"
-"%{var123}"
-"%{HOME}"
+# Examples of global variables (start with uppercase)
+[global.vars]
+BackupDir = "/data/backups"      # ✓ Valid
+MaxRetries = "3"                  # ✓ Valid
+Environment = "production"        # ✓ Valid
 
-# Invalid variable names
-"%{123var}"         # Starts with a number
-"%{my-var}"         # Hyphens not allowed
-"%{my.var}"         # Dots not allowed
-"%{__runner_test}"  # Reserved prefix
+backup_dir = "/data/backups"      # ✗ Error: Global scope must start with uppercase
+
+# Examples of local variables (start with lowercase or underscore)
+[groups.vars]
+backup_date = "20250101"          # ✓ Valid
+_temp_file = "/tmp/backup.tmp"    # ✓ Valid
+retry_count = "5"                 # ✓ Valid
+
+BackupDate = "20250101"           # ✗ Error: Local scope must start with lowercase or _
+
+# Examples of invalid variable names
+[global.vars]
+123var = "value"                  # ✗ Starts with a number
+my-var = "value"                  # ✗ Hyphens not allowed
+my.var = "value"                  # ✗ Dots not allowed
+__custom_var = "value"            # ✗ Reserved prefix (__)
 ```
+
+#### System Reserved Variables
+
+Variables starting with the `__runner_` prefix are automatically provided by the system:
+- `__runner_datetime`: Execution start time (UTC)
+- `__runner_pid`: Runner process ID
+- `__runner_workdir`: Working directory of the group
+
+Users cannot define these variable names.
 
 ## 8.3 Internal Variable Definition
 
@@ -77,14 +108,16 @@ Using the `vars` field, you can define internal variables for TOML expansion onl
 #### Configuration Format
 
 ```toml
+# Global variables (start with uppercase)
 [global.vars]
-app_dir = "/opt/myapp"
+AppDir = "/opt/myapp"
 
 [[groups]]
 name = "backup"
 
+# Local variables (start with lowercase)
 [groups.vars]
-backup_dir = "%{app_dir}/backups"
+backup_dir = "%{AppDir}/backups"
 retention_days = "30"
 
 [[groups.commands]]
@@ -92,6 +125,7 @@ name = "backup_db"
 cmd = "/usr/bin/pg_dump"
 args = ["-f", "%{output_file}", "mydb"]
 
+# Local variables (start with lowercase)
 [groups.commands.vars]
 timestamp = "20250114"
 output_file = "%{backup_dir}/dump_%{timestamp}.sql"
@@ -115,23 +149,26 @@ output_file = "%{backup_dir}/dump_%{timestamp}.sql"
 ```toml
 version = "1.0"
 
+# Global variables (start with uppercase)
 [global.vars]
-base_dir = "/opt"
+BaseDir = "/opt"
 
 [[groups]]
 name = "prod_backup"
 
+# Local variables (start with lowercase)
 [groups.vars]
-db_tools = "%{base_dir}/db-tools"
+db_tools = "%{BaseDir}/db-tools"
 
 [[groups.commands]]
 name = "db_dump"
 cmd = "%{db_tools}/dump.sh"
 args = ["-o", "%{output_file}"]
 
+# Local variables (start with lowercase)
 [groups.commands.vars]
 timestamp = "20250114"
-output_file = "%{base_dir}/dump_%{timestamp}.sql"
+output_file = "%{BaseDir}/dump_%{timestamp}.sql"
 ```
 
 ### 8.3.2 Importing System Environment Variables Using `env_import`
@@ -162,7 +199,9 @@ env_import = [
 
 Written in the format `internal_variable_name=system_environment_variable_name`:
 
-- **Left side**: Internal variable name (recommended lowercase, e.g., `home`, `user_path`)
+- **Left side**: Internal variable name
+  - Global.env_import: Start with uppercase (e.g., `Home`, `UserPath`)
+  - Group/Command.env_import: Start with lowercase or _ (e.g., `home`, `user_path`)
 - **Right side**: System environment variable name (typically uppercase, e.g., `HOME`, `PATH`)
 
 #### Security Constraints
@@ -208,15 +247,16 @@ Internal variable values can contain references to other internal variables.
 #### Basic Example
 
 ```toml
+# Global variables (start with uppercase)
 [global.vars]
-base = "/opt"
-app_dir = "%{base}/myapp"
-log_dir = "%{app_dir}/logs"
+Base = "/opt"
+AppDir = "%{Base}/myapp"
+LogDir = "%{AppDir}/logs"
 
 [[groups.commands]]
 name = "show_log_dir"
 cmd = "/bin/echo"
-args = ["Log directory: %{log_dir}"]
+args = ["Log directory: %{LogDir}"]
 # Actual: Log directory: /opt/myapp/logs
 ```
 
@@ -224,9 +264,9 @@ args = ["Log directory: %{log_dir}"]
 
 Variables are expanded in the order of definition:
 
-1. `base` → `/opt`
-2. `app_dir` → `%{base}/myapp` → `/opt/myapp`
-3. `log_dir` → `%{app_dir}/logs` → `/opt/myapp/logs`
+1. `Base` → `/opt`
+2. `AppDir` → `%{Base}/myapp` → `/opt/myapp`
+3. `LogDir` → `%{AppDir}/logs` → `/opt/myapp/logs`
 
 ### 8.3.4 Circular Reference Detection
 
@@ -299,14 +339,15 @@ When the same environment variable name is defined at multiple levels, the more 
 ```toml
 version = "1.0"
 
+# Global variables (start with uppercase)
 [global.vars]
-app_dir = "/opt/myapp"
-log_dir = "%{app_dir}/logs"
+AppDir = "/opt/myapp"
+LogDir = "%{AppDir}/logs"
 
 [global]
 env_vars = [
-    "APP_HOME=%{app_dir}",
-    "LOG_PATH=%{log_dir}/app.log"
+    "APP_HOME=%{AppDir}",
+    "LOG_PATH=%{LogDir}/app.log"
 ]
 
 [[groups.commands]]
