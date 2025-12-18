@@ -45,26 +45,57 @@ env_vars = ["VAR=%{value}"]
 
 ### 変数名のルール
 
+#### 基本的な文字ルール
+
 - 英字(大文字・小文字)、数字、アンダースコア(`_`)が使用可能
-- 推奨は小文字とアンダースコアを使用(例: `my_variable`, `app_dir`)
 - 先頭は英字またはアンダースコアで開始
 - 大文字小文字を区別する(`home` と `HOME` は別の変数)
-- 予約プレフィックス `__runner_` で始まる変数名は使用不可
+- 予約プレフィックス `__` (二重アンダースコア)で始まる変数名は使用不可(システム用に予約)
+
+#### スコープ別の命名規則
+
+変数のスコープによって、変数名の先頭文字に制約があります:
+
+| スコープ | 定義場所 | 命名規則 | 例 |
+|---------|---------|---------|---|
+| **グローバル変数** | `[global.vars]` | **大文字(A-Z)で開始**する必要がある | `BackupDir`, `MaxRetries`, `Environment` |
+| **ローカル変数** | `[groups.vars]`<br>`[groups.commands.vars]` | **小文字(a-z)またはアンダースコア(_)で開始**する必要がある | `backup_date`, `_temp_file`, `retry_count` |
+
+この命名規則により、変数のスコープが名前から明確に判別でき、設定ミスを防止できます。
 
 ```
-# 有効な変数名
-"%{path}"
-"%{my_tool}"
-"%{_private_var}"
-"%{var123}"
-"%{HOME}"
+# グローバル変数の例(大文字で開始)
+[global.vars]
+BackupDir = "/data/backups"      # ✓ 有効
+MaxRetries = "3"                  # ✓ 有効
+Environment = "production"        # ✓ 有効
 
-# 無効な変数名
-"%{123var}"         # 数字で開始
-"%{my-var}"         # ハイフンは使用不可
-"%{my.var}"         # ドットは使用不可
-"%{__runner_test}"  # 予約プレフィックス
+backup_dir = "/data/backups"      # ✗ エラー: グローバルスコープでは大文字で開始する必要がある
+
+# ローカル変数の例(小文字またはアンダースコアで開始)
+[groups.vars]
+backup_date = "20250101"          # ✓ 有効
+_temp_file = "/tmp/backup.tmp"    # ✓ 有効
+retry_count = "5"                 # ✓ 有効
+
+BackupDate = "20250101"           # ✗ エラー: ローカルスコープでは小文字または_で開始する必要がある
+
+# 無効な変数名の例
+[global.vars]
+123var = "value"                  # ✗ 数字で開始
+my-var = "value"                  # ✗ ハイフンは使用不可
+my.var = "value"                  # ✗ ドットは使用不可
+__custom_var = "value"            # ✗ 予約プレフィックス(__)
 ```
+
+#### システム予約変数
+
+`__runner_` プレフィックスで始まる変数は、システムが自動的に提供する変数です:
+- `__runner_datetime`: 実行開始時刻(UTC)
+- `__runner_pid`: runnerプロセスのプロセスID
+- `__runner_workdir`: グループの作業ディレクトリ
+
+これらの変数名をユーザーが定義することはできません。
 
 ## 8.3 内部変数の定義
 
@@ -77,14 +108,16 @@ env_vars = ["VAR=%{value}"]
 #### 設定形式
 
 ```toml
+# グローバル変数(大文字で開始)
 [global.vars]
-app_dir = "/opt/myapp"
+AppDir = "/opt/myapp"
 
 [[groups]]
 name = "backup"
 
+# ローカル変数(小文字で開始)
 [groups.vars]
-backup_dir = "%{app_dir}/backups"
+backup_dir = "%{AppDir}/backups"
 retention_days = "30"
 
 [[groups.commands]]
@@ -92,6 +125,7 @@ name = "backup_db"
 cmd = "/usr/bin/pg_dump"
 args = ["-f", "%{output_file}", "mydb"]
 
+# ローカル変数(小文字で開始)
 [groups.commands.vars]
 timestamp = "20250114"
 output_file = "%{backup_dir}/dump_%{timestamp}.sql"
@@ -115,23 +149,26 @@ output_file = "%{backup_dir}/dump_%{timestamp}.sql"
 ```toml
 version = "1.0"
 
+# グローバル変数(大文字で開始)
 [global.vars]
-base_dir = "/opt"
+BaseDir = "/opt"
 
 [[groups]]
 name = "prod_backup"
 
+# ローカル変数(小文字で開始)
 [groups.vars]
-db_tools = "%{base_dir}/db-tools"
+db_tools = "%{BaseDir}/db-tools"
 
 [[groups.commands]]
 name = "db_dump"
 cmd = "%{db_tools}/dump.sh"
 args = ["-o", "%{output_file}"]
 
+# ローカル変数(小文字で開始)
 [groups.commands.vars]
 timestamp = "20250114"
-output_file = "%{base_dir}/dump_%{timestamp}.sql"
+output_file = "%{BaseDir}/dump_%{timestamp}.sql"
 ```
 
 ### 8.3.2 `env_import` によるシステム環境変数の取り込み
@@ -162,7 +199,9 @@ env_import = [
 
 `内部変数名=システム環境変数名` の形式で記述します:
 
-- **左辺**: 内部変数名(推奨は小文字、例: `home`, `user_path`)
+- **左辺**: 内部変数名
+  - Global.env_import: 大文字で開始(例: `Home`, `UserPath`)
+  - Group/Command.env_import: 小文字または_で開始(例: `home`, `user_path`)
 - **右辺**: システム環境変数名(通常は大文字、例: `HOME`, `PATH`)
 
 #### セキュリティ制約
@@ -208,15 +247,16 @@ args = ["-la", "%{home}"]
 #### 基本例
 
 ```toml
+# グローバル変数(大文字で開始)
 [global.vars]
-base = "/opt"
-app_dir = "%{base}/myapp"
-log_dir = "%{app_dir}/logs"
+Base = "/opt"
+AppDir = "%{Base}/myapp"
+LogDir = "%{AppDir}/logs"
 
 [[groups.commands]]
 name = "show_log_dir"
 cmd = "/bin/echo"
-args = ["Log directory: %{log_dir}"]
+args = ["Log directory: %{LogDir}"]
 # 実際: Log directory: /opt/myapp/logs
 ```
 
@@ -224,9 +264,9 @@ args = ["Log directory: %{log_dir}"]
 
 変数は定義順に展開されます:
 
-1. `base` → `/opt`
-2. `app_dir` → `%{base}/myapp` → `/opt/myapp`
-3. `log_dir` → `%{app_dir}/logs` → `/opt/myapp/logs`
+1. `Base` → `/opt`
+2. `AppDir` → `%{Base}/myapp` → `/opt/myapp`
+3. `LogDir` → `%{AppDir}/logs` → `/opt/myapp/logs`
 
 ### 8.3.4 循環参照の検出
 
@@ -297,14 +337,15 @@ vars = ["config_path=/etc/myapp/config.yml"]
 ```toml
 version = "1.0"
 
+# グローバル変数(大文字で開始)
 [global.vars]
-app_dir = "/opt/myapp"
-log_dir = "%{app_dir}/logs"
+AppDir = "/opt/myapp"
+LogDir = "%{AppDir}/logs"
 
 [global]
 env_vars = [
-    "APP_HOME=%{app_dir}",
-    "LOG_PATH=%{log_dir}/app.log"
+    "APP_HOME=%{AppDir}",
+    "LOG_PATH=%{LogDir}/app.log"
 ]
 
 [[groups.commands]]

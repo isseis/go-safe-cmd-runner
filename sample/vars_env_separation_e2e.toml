@@ -11,23 +11,25 @@ env_allowed = ["HOME", "USER", "PATH"]
 
 # Import system environment variables as internal variables
 # Format: "internal_name=SYSTEM_VAR"
+# Note: Global env_import creates global variables, must use uppercase
 env_import = [
-    "home=HOME",
-    "user=USER",
-    "system_path=PATH"
+    "Home=HOME",
+    "User=USER",
+    "SystemPath=PATH"
 ]
 
 # Define internal variables (TOML expansion only, not process env vars)
+# Note: Global variables must start with uppercase letter
 [global.vars]
-app_name = "test_app"
-app_dir = "%{home}/%{app_name}"
-data_dir = "%{app_dir}/data"
-log_dir = "%{app_dir}/logs"
+AppName = "test_app"
+AppDir = "%{Home}/%{AppName}"
+DataDir = "%{AppDir}/data"
+LogDir = "%{AppDir}/logs"
 
 # Define process environment variables (visible to child processes)
 env_vars = [
-    "APP_DIR=%{app_dir}",
-    "APP_NAME=%{app_name}",
+    "APP_DIR=%{AppDir}",
+    "APP_NAME=%{AppName}",
     "CUSTOM_PATH=/usr/local/bin:/usr/bin"
 ]
 
@@ -41,18 +43,19 @@ env_vars = [
 name = "test_group"
 
 # Inherit env_import from Global (because env_import is not defined here)
-# Inherited variables: home, user, system_path
+# Inherited variables: Home, User, SystemPath
 
 # Group-level internal variables
+# Note: Local variables must start with lowercase letter or underscore
 [groups.vars]
-input_file = "%{data_dir}/input.txt"
-output_file = "%{data_dir}/output.txt"
-temp_dir = "%{data_dir}/temp"
+input_file = "%{DataDir}/input.txt"
+output_file = "%{DataDir}/output.txt"
+temp_dir = "%{DataDir}/temp"
 
 # Group-level process environment variables
 env_vars = [
-    "DATA_DIR=%{data_dir}",
-    "LOG_DIR=%{log_dir}"
+    "DATA_DIR=%{DataDir}",
+    "LOG_DIR=%{LogDir}"
 ]
 
 # Test 1: Print all environment variables to verify they are set correctly
@@ -93,8 +96,8 @@ mode = "user"
 name = "echo_internal_vars"
 cmd = "/bin/echo"
 args = [
-    "app_dir=%{app_dir}",
-    "data_dir=%{data_dir}",
+    "app_dir=%{AppDir}",
+    "data_dir=%{DataDir}",
     "input_file=%{input_file}",
     "output_file=%{output_file}"
 ]
@@ -130,13 +133,15 @@ mode = "user"
 name = "override_group"
 
 # Override env_import (Global.env_import is ignored)
+# Note: Group env_import creates local variables, must use lowercase
 env_allowed = ["USER", "PATH"]
 env_import = [
     "user=USER",
     "path=PATH"
 ]
 
-# This group does NOT have access to %{home} because env_import is overridden
+# This group does NOT have access to %{Home} because env_import is overridden
+# Note: Local variables must start with lowercase letter or underscore
 [groups.vars]
 group_specific = "/opt/override_app"
 config = "%{group_specific}/config"

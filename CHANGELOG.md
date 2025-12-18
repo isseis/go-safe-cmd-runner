@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Variable Scope and Naming Conventions
+
+Added strict naming conventions for user-defined variables to enforce scope separation and prevent configuration errors.
+
+**Features:**
+- **Global Variables**: Must start with uppercase letter (A-Z)
+  - Defined in `[global.vars]` section
+  - Available across all groups and commands
+  - Example: `BackupDir`, `MaxRetries`, `Environment`
+- **Local Variables**: Must start with lowercase letter (a-z) or underscore (_)
+  - Defined in `[groups.vars]` or `[groups.commands.vars]` sections
+  - Only available within their scope
+  - Example: `backup_date`, `_temp_file`, `retry_count`
+- **Reserved Prefix**: Variable names starting with `__` (double underscore) are reserved for system use
+- **Validation**: Scope violations are detected at configuration load time with clear error messages
+
+**Benefits:**
+- Variable scope is immediately recognizable from the variable name
+- Prevents accidental scope misuse
+- Improves configuration maintainability
+- Enables future optimizations (template variable references can only use global variables)
+
+**Example:**
+```toml
+# Global variables (uppercase)
+[global.vars]
+BackupDir = "/data/backups"
+MaxRetries = "3"
+
+[[groups]]
+name = "backup"
+
+# Local variables (lowercase or underscore)
+[groups.vars]
+backup_date = "20250101"
+_temp_file = "/tmp/backup.tmp"
+
+[[groups.commands]]
+name = "database_backup"
+cmd = "/usr/bin/mysqldump"
+args = ["--all-databases", "--result-file=%{BackupDir}/db-%{backup_date}.sql"]
+```
+
+**Migration Guide:**
+- Review all variable definitions in your configuration files
+- Rename global variables to start with uppercase letters
+- Rename local variables to start with lowercase letters or underscore
+- The system will report clear error messages if naming violations are detected
+
+**Documentation:**
+- Updated: `docs/user/toml_config/08_variable_expansion.ja.md`
+- Sample files updated to follow new naming conventions
+
 #### Command Templates
 
 Added reusable command templates with parameter substitution to reduce configuration duplication and improve maintainability.

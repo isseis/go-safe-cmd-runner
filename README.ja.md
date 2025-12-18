@@ -245,6 +245,74 @@ args = ["-c", "echo 'PID: %{__runner_pid}, Time: %{__runner_datetime}' >> /var/l
 
 **注意**: プレフィックス `__runner_` は予約されており、ユーザー定義の変数では使用できません。
 
+### ユーザー定義変数
+
+システムは異なる設定レベルでユーザー定義変数をサポートし、変数スコープを強制する厳格な命名規則を持っています：
+
+#### グローバル変数
+
+グローバル変数は `[global.vars]` セクションで定義され、すべてのグループとコマンドで利用可能です。グローバル変数名は**大文字(A-Z)で開始**する必要があります：
+
+```toml
+[global.vars]
+BackupDir = "/data/backups"
+MaxRetries = "3"
+Environment = "production"
+```
+
+#### ローカル変数
+
+ローカル変数は `[groups.vars]` または `[groups.commands.vars]` セクションで定義され、そのスコープ内でのみ利用可能です。ローカル変数名は**小文字(a-z)またはアンダースコア(_)で開始**する必要があります：
+
+```toml
+[[groups]]
+name = "backup"
+
+[groups.vars]
+backup_date = "20250101"
+_temp_file = "/tmp/backup.tmp"
+
+[[groups.commands]]
+name = "database_backup"
+cmd = "/usr/bin/mysqldump"
+args = ["--all-databases", "--result-file=%{BackupDir}/db-%{backup_date}.sql"]
+
+[groups.commands.vars]
+connection_timeout = "30"
+retry_count = "%{MaxRetries}"
+```
+
+#### 変数命名ルール
+
+すべての変数名（グローバルとローカル）は以下のルールに従う必要があります：
+- **先頭文字**: グローバル変数は大文字(A-Z)、ローカル変数は小文字(a-z)またはアンダースコア(_)
+- **後続文字**: 英数字(A-Z, a-z, 0-9)またはアンダースコア(_)
+- **予約プレフィックス**: `__`（二重アンダースコア）で始まる変数名はシステム用に予約
+
+#### 変数スコープの検証
+
+システムは厳格なスコープルールを強制します：
+- **テンプレート内**: グローバル変数のみ参照可能（大文字変数）
+- **params内**: グローバル変数とローカル変数の両方を参照可能
+- **検証**: システムは設定ロード時に変数名を検証し、スコープ違反をエラーとして報告
+
+エラーケースの例：
+```toml
+# エラー: グローバル変数は大文字で開始する必要がある
+[global.vars]
+backupDir = "/data/backups"  # ❌ 拒否される
+
+# エラー: ローカル変数は小文字または_で開始する必要がある
+[groups.vars]
+BackupDate = "20250101"  # ❌ 拒否される
+
+# エラー: 予約プレフィックスは使用できない
+[global.vars]
+__custom_var = "value"  # ❌ 拒否される
+```
+
+詳細な変数展開のドキュメントは[変数展開ガイド](docs/user/toml_config/08_variable_expansion.ja.md)を参照してください。
+
 ### コマンドテンプレート
 
 コマンドテンプレートを使用すると、パラメータを持つ再利用可能なコマンドパターンを定義でき、設定の重複を減らすことができます：
@@ -292,19 +360,20 @@ repo = "/backup/repo"
 
 ```toml
 [global]
-env_import = ["home=HOME"]
+# グローバル変数は大文字で開始
+env_import = ["Home=HOME"]
 
 [[groups]]
 name = "custom_build"
 # このグループでのみ許可される追加コマンド
 cmd_allowed = [
-    "%{home}/bin/custom_tool",
+    "%{Home}/bin/custom_tool",
     "/opt/myapp/bin/processor"
 ]
 
 [[groups.commands]]
 name = "run_custom"
-cmd = "%{home}/bin/custom_tool"
+cmd = "%{Home}/bin/custom_tool"
 args = ["--verbose"]
 ```
 

@@ -23,11 +23,13 @@ version = "1.0"
 timeout = 60
 
 # Import HOME environment variable for use in cmd_allowed
-env_import = ["home=HOME"]
+# Note: Global env_import creates global variables, must use uppercase
+env_import = ["Home=HOME"]
 
 # Define custom variables
+# Note: Global variables must start with uppercase letter
 [global.vars]
-custom_tools = "/opt/myproject/bin"
+CustomTools = "/opt/myproject/bin"
 
 # Group using global allowed_commands only
 [[groups]]
@@ -47,20 +49,20 @@ description = "Build group with custom tool access"
 # This group allows /home/user/bin/build_tool even though
 # it's not matched by hardcoded global allowed command patterns
 cmd_allowed = [
-    "%{home}/bin/build_tool",
-    "%{custom_tools}/processor"
+    "%{Home}/bin/build_tool",
+    "%{CustomTools}/processor"
 ]
 
 [[groups.commands]]
 name = "run_custom_build"
 # This command works because it's listed in cmd_allowed
-cmd = "%{home}/bin/build_tool"
+cmd = "%{Home}/bin/build_tool"
 args = ["--verbose", "--config=release"]
 
 [[groups.commands]]
 name = "run_processor"
 # This also works via cmd_allowed
-cmd = "%{custom_tools}/processor"
+cmd = "%{CustomTools}/processor"
 args = ["--input=data.txt"]
 
 # Group with mixed commands (both global and group-level)
@@ -71,13 +73,13 @@ description = "Uses both system tools and custom scripts"
 # Only the custom script needs to be in cmd_allowed
 # System tools (/bin/*, /usr/bin/*) are already allowed globally
 cmd_allowed = [
-    "%{home}/scripts/prepare.sh"
+    "%{Home}/scripts/prepare.sh"
 ]
 
 [[groups.commands]]
 name = "prepare"
 # Custom script allowed via cmd_allowed
-cmd = "%{home}/scripts/prepare.sh"
+cmd = "%{Home}/scripts/prepare.sh"
 args = []
 
 [[groups.commands]]
