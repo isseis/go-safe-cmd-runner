@@ -264,10 +264,10 @@ args = ["private"]
 [global]
 env_import = ["Dir=SAFE_DIR"]
 env_allowed = ["SAFE_DIR"]
-verify_files = ["%{File_path}"]
+verify_files = ["%{FilePath}"]
 
 [global.vars]
-File_path = "%{Dir}/test_security_file.txt"
+FilePath = "%{Dir}/test_security_file.txt"
 `
 				err = os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)
