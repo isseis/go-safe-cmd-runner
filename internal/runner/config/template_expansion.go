@@ -604,13 +604,19 @@ func ValidateTemplateName(name string) error {
 
 // ValidateTemplateDefinition validates a template definition for security.
 //
-// This function enforces NF-006: Variable references (%{var}) are NOT allowed
-// in template definitions to prevent context-dependent security issues.
+// This function enforces variable reference rules in templates:
+//   - Global variables (%{GlobalVar} - uppercase start) ARE allowed
+//   - Local variables (%{local_var} - lowercase start) are NOT allowed
 //
 // Rationale:
 //   - Templates are reused across multiple groups with different variable contexts
-//   - A variable reference safe in one group may expose secrets in another group
-//   - Variable references should be explicit in params, not hidden in templates
+//   - Global variables are safe because they're defined once at [global.vars]
+//   - Local variables would create context-dependent security issues
+//   - Variable references should be explicit in params for local variables
+//
+// Note: This function only validates that %{} references follow naming rules.
+// The actual validation of whether global variables are defined happens in
+// ValidateTemplateVariableReferences() which is called after global vars are loaded.
 func ValidateTemplateDefinition(
 	name string,
 	template *runnertypes.CommandTemplate,
@@ -623,43 +629,82 @@ func ValidateTemplateDefinition(
 		}
 	}
 
-	// Check cmd for forbidden %{ pattern
-	if strings.Contains(template.Cmd, "%{") {
-		return &ErrForbiddenPatternInTemplate{
-			TemplateName: name,
-			Field:        "cmd",
-			Value:        template.Cmd,
-		}
+	// Check cmd for local variable references (lowercase/underscore start)
+	if err := validateNoLocalVariableReferences(template.Cmd, name, "cmd"); err != nil {
+		return err
 	}
 
-	// Check args for forbidden %{ pattern
+	// Check args for local variable references
 	for i, arg := range template.Args {
-		if strings.Contains(arg, "%{") {
-			return &ErrForbiddenPatternInTemplate{
-				TemplateName: name,
-				Field:        fmt.Sprintf("args[%d]", i),
-				Value:        arg,
-			}
+		if err := validateNoLocalVariableReferences(arg, name, fmt.Sprintf("args[%d]", i)); err != nil {
+			return err
 		}
 	}
 
-	// Check env for forbidden %{ pattern
+	// Check env for local variable references
 	for i, env := range template.Env {
-		if strings.Contains(env, "%{") {
-			return &ErrForbiddenPatternInTemplate{
-				TemplateName: name,
-				Field:        fmt.Sprintf("env[%d]", i),
-				Value:        env,
-			}
+		if err := validateNoLocalVariableReferences(env, name, fmt.Sprintf("env[%d]", i)); err != nil {
+			return err
 		}
 	}
 
-	// Check workdir for forbidden %{ pattern
-	if template.WorkDir != "" && strings.Contains(template.WorkDir, "%{") {
-		return &ErrForbiddenPatternInTemplate{
-			TemplateName: name,
-			Field:        workDirKey,
-			Value:        template.WorkDir,
+	// Check workdir for local variable references
+	if template.WorkDir != "" {
+		if err := validateNoLocalVariableReferences(template.WorkDir, name, workDirKey); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateNoLocalVariableReferences checks that a string does not contain
+// references to local variables (lowercase or underscore start).
+// Global variable references (uppercase start) are allowed.
+func validateNoLocalVariableReferences(input, templateName, field string) error {
+	// Collect all %{VAR} references
+	var refs []string
+	refCollector := func(
+		varName string,
+		_ string,
+		_ map[string]struct{},
+		_ []string,
+		_ int,
+	) (string, error) {
+		refs = append(refs, varName)
+		return "", nil
+	}
+
+	// Use parseAndSubstitute to extract variable names
+	_, err := parseAndSubstitute(
+		input,
+		refCollector,
+		fmt.Sprintf("template[%s]", templateName),
+		field,
+		make(map[string]struct{}),
+		make([]string, 0),
+		0,
+	)
+	if err != nil {
+		// parseAndSubstitute validates variable names and reports errors
+		return err
+	}
+
+	// Check each reference - only global variables (uppercase start) are allowed
+	for _, varName := range refs {
+		if len(varName) == 0 {
+			continue
+		}
+
+		firstChar := varName[0]
+		isGlobal := firstChar >= 'A' && firstChar <= 'Z'
+
+		if !isGlobal {
+			return &ErrLocalVariableInTemplate{
+				TemplateName: templateName,
+				Field:        field,
+				VariableName: varName,
+			}
 		}
 	}
 
@@ -1009,5 +1054,79 @@ func ValidateAllTemplates(
 			return err
 		}
 	}
+	return nil
+}
+
+// ExpandTemplateGlobalVariables expands all %{GlobalVar} references in a template
+// using the provided global variables map.
+//
+// This function is called during template resolution to expand global variable
+// references before template parameters (${param}) are expanded.
+//
+// Parameters:
+//   - template: The template to expand (will be modified in place)
+//   - globalVars: Map of global variables for expansion
+//   - templateName: Template name for error messages
+//
+// Returns:
+//   - error: Expansion error (e.g., undefined variable, syntax error)
+func ExpandTemplateGlobalVariables(
+	template *runnertypes.CommandTemplate,
+	globalVars map[string]string,
+	templateName string,
+) error {
+	level := fmt.Sprintf("template[%s]", templateName)
+
+	// Expand cmd
+	if template.Cmd != "" {
+		expandedCmd, err := ExpandString(template.Cmd, globalVars, level, "cmd")
+		if err != nil {
+			return err
+		}
+		template.Cmd = expandedCmd
+	}
+
+	// Expand args
+	for i, arg := range template.Args {
+		expandedArg, err := ExpandString(arg, globalVars, level, fmt.Sprintf("args[%d]", i))
+		if err != nil {
+			return err
+		}
+		template.Args[i] = expandedArg
+	}
+
+	// Expand env (VALUE part only in KEY=VALUE format)
+	for i, envMapping := range template.Env {
+		const envSplitParts = 2
+		parts := strings.SplitN(envMapping, "=", envSplitParts)
+		if len(parts) != envSplitParts {
+			// If no '=' found, expand the whole string (might be element-level placeholder)
+			expandedEnv, err := ExpandString(envMapping, globalVars, level, fmt.Sprintf("env[%d]", i))
+			if err != nil {
+				return err
+			}
+			template.Env[i] = expandedEnv
+			continue
+		}
+
+		// Expand VALUE part only (KEY part should not contain variables for security)
+		key := parts[0]
+		value := parts[1]
+		expandedValue, err := ExpandString(value, globalVars, level, fmt.Sprintf("env[%d]", i))
+		if err != nil {
+			return err
+		}
+		template.Env[i] = key + "=" + expandedValue
+	}
+
+	// Expand workdir
+	if template.WorkDir != "" {
+		expandedWorkDir, err := ExpandString(template.WorkDir, globalVars, level, "workdir")
+		if err != nil {
+			return err
+		}
+		template.WorkDir = expandedWorkDir
+	}
+
 	return nil
 }
