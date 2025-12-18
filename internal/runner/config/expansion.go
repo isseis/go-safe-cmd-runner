@@ -1068,7 +1068,6 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 func resolveAndPrepareCommandSpec(
 	spec *runnertypes.CommandSpec,
 	templates map[string]runnertypes.CommandTemplate,
-	globalVars map[string]string,
 ) (*runnertypes.CommandSpec, error) {
 	if spec.Template == "" {
 		return spec, nil
@@ -1091,13 +1090,9 @@ func resolveAndPrepareCommandSpec(
 	// Make a copy of the template to avoid modifying the shared template
 	templateCopy := template
 
-	// Expand global variables in the template first
-	// This must be done before template parameter expansion
-	if err := ExpandTemplateGlobalVariables(&templateCopy, globalVars, spec.Template); err != nil {
-		return nil, fmt.Errorf("failed to expand global variables in template %q: %w", spec.Template, err)
-	}
-
 	// Expand template parameters (${param}) to CommandSpec
+	// Global variables (%{...}) remain unexpanded and will be expanded
+	// later by expandCommandFields, maintaining the correct expansion order
 	expandedSpec, warnings, err := expandTemplateToSpec(spec, &templateCopy, spec.Template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand template %q for command %q: %w", spec.Template, spec.Name, err)
@@ -1234,16 +1229,8 @@ func expandCommandFields(
 //   - EffectiveOutputSizeLimit is set by NewRuntimeCommand using output size limit resolution.
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
 func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertypes.CommandTemplate, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout, globalOutputSizeLimit common.OutputSizeLimit) (*runnertypes.RuntimeCommand, error) {
-	// Get global variables for template expansion
-	var globalVars map[string]string
-	if globalRuntime != nil {
-		globalVars = globalRuntime.ExpandedVars
-	} else {
-		globalVars = make(map[string]string)
-	}
-
 	// 0. Resolve template if present
-	workingSpec, err := resolveAndPrepareCommandSpec(spec, templates, globalVars)
+	workingSpec, err := resolveAndPrepareCommandSpec(spec, templates)
 	if err != nil {
 		return nil, err
 	}
