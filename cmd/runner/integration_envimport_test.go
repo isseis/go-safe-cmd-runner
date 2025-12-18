@@ -266,7 +266,7 @@ full_path = "%{cmd_path}:%{cmd_home}/bin"
 env_allowed = ["USER"]
 
 [global.vars]
-Global_prefix = "/opt"
+GlobalPrefix = "/opt"
 
 [[groups]]
 name = "test_group"
@@ -282,7 +282,7 @@ cmd = "echo"
 args = ["test"]
 
 [groups.commands.vars]
-full_path = "%{Global_prefix}/%{cmd_user}/%{group_suffix}"
+full_path = "%{GlobalPrefix}/%{cmd_user}/%{group_suffix}"
 `,
 			expectVars: map[string]string{
 				"DATA_PATH": "/opt/testuser/data",
@@ -566,7 +566,7 @@ args = ["test"]
 			configTOML: `
 [global]
 env_allowed = ["PATH", "HOME"]
-env_import = ["G_path=PATH"]
+env_import = ["GPath=PATH"]
 
 [[groups]]
 name = "group1"
@@ -657,14 +657,14 @@ env_allowed = ["BASE_PATH", "APP_NAME", "VERSION"]
 env_import = ["Base=BASE_PATH"]
 
 [global.vars]
-App_base = "%{Base}/apps"
+AppBase = "%{Base}/apps"
 
 [[groups]]
 name = "app_group"
 env_import = ["app=APP_NAME"]
 
 [groups.vars]
-app_path = "%{App_base}/%{app}"
+app_path = "%{AppBase}/%{app}"
 
 [[groups.commands]]
 name = "deploy_cmd"
@@ -718,14 +718,14 @@ env_allowed = ["USER", "DOMAIN"]
 env_import = ["U=USER"]
 
 [global.vars]
-User_prefix = "user"
+UserPrefix = "user"
 
 [[groups]]
 name = "test_group"
 env_import = ["d=DOMAIN"]
 
 [groups.vars]
-email = "%{User_prefix}_%{U}@%{d}"
+email = "%{UserPrefix}_%{U}@%{d}"
 
 [[groups.commands]]
 name = "test_cmd"
