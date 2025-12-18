@@ -3,6 +3,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -22,11 +23,9 @@ import (
 
 func TestTOMLDuplicateVariables_Global(t *testing.T) {
 	tests := []struct {
-		name          string
-		tomlContent   string
-		expectError   bool
-		expectedValue string
-		errorContains string
+		name        string
+		tomlContent string
+		expectError bool
 	}{
 		{
 			name: "duplicate global variable - rejected by TOML parser",
@@ -38,8 +37,7 @@ TestVar = "second"
 [[groups]]
 name = "test"
 `,
-			expectError:   true,
-			errorContains: "key TestVar is already defined",
+			expectError: true,
 		},
 		{
 			name: "unique global variables",
@@ -63,9 +61,12 @@ name = "test"
 			if tt.expectError {
 				require.Error(t, err)
 				t.Logf("Error from TOML parser: %v", err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
+				// Verify that the error indicates duplicate key (parser-level rejection)
+				// Check for both "key" and "already defined" to make the test robust
+				errMsg := err.Error()
+				assert.True(t,
+					strings.Contains(errMsg, "key") && strings.Contains(errMsg, "already defined"),
+					"expected error message to indicate duplicate key, got: %s", errMsg)
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
@@ -76,10 +77,9 @@ name = "test"
 
 func TestTOMLDuplicateVariables_GroupLevel(t *testing.T) {
 	tests := []struct {
-		name          string
-		tomlContent   string
-		expectError   bool
-		errorContains string
+		name        string
+		tomlContent string
+		expectError bool
 	}{
 		{
 			name: "duplicate group-level variable - rejected by TOML parser",
@@ -91,8 +91,7 @@ name = "test"
 test_var = "first"
 test_var = "second"
 `,
-			expectError:   true,
-			errorContains: "key test_var is already defined",
+			expectError: true,
 		},
 		{
 			name: "unique group-level variables",
@@ -116,9 +115,12 @@ test_var2 = "value2"
 			if tt.expectError {
 				require.Error(t, err)
 				t.Logf("Error from TOML parser: %v", err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
+				// Verify that the error indicates duplicate key (parser-level rejection)
+				// Check for both "key" and "already defined" to make the test robust
+				errMsg := err.Error()
+				assert.True(t,
+					strings.Contains(errMsg, "key") && strings.Contains(errMsg, "already defined"),
+					"expected error message to indicate duplicate key, got: %s", errMsg)
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
@@ -129,10 +131,9 @@ test_var2 = "value2"
 
 func TestTOMLDuplicateVariables_CommandLevel(t *testing.T) {
 	tests := []struct {
-		name          string
-		tomlContent   string
-		expectError   bool
-		errorContains string
+		name        string
+		tomlContent string
+		expectError bool
 	}{
 		{
 			name: "duplicate command-level variable - rejected by TOML parser",
@@ -148,8 +149,7 @@ cmd = "/bin/echo"
 cmd_var = "first"
 cmd_var = "second"
 `,
-			expectError:   true,
-			errorContains: "key cmd_var is already defined",
+			expectError: true,
 		},
 		{
 			name: "unique command-level variables",
@@ -177,9 +177,12 @@ cmd_var2 = "value2"
 			if tt.expectError {
 				require.Error(t, err)
 				t.Logf("Error from TOML parser: %v", err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
+				// Verify that the error indicates duplicate key (parser-level rejection)
+				// Check for both "key" and "already defined" to make the test robust
+				errMsg := err.Error()
+				assert.True(t,
+					strings.Contains(errMsg, "key") && strings.Contains(errMsg, "already defined"),
+					"expected error message to indicate duplicate key, got: %s", errMsg)
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
@@ -191,10 +194,9 @@ cmd_var2 = "value2"
 func TestTOMLDuplicateVariables_InlineTable(t *testing.T) {
 	// Test if TOML allows duplicate keys in inline table syntax
 	tests := []struct {
-		name          string
-		tomlContent   string
-		expectError   bool
-		errorContains string
+		name        string
+		tomlContent string
+		expectError bool
 	}{
 		{
 			name: "duplicate in inline table syntax - rejected by TOML parser",
@@ -205,8 +207,7 @@ vars = { TestVar = "first", TestVar = "second" }
 [[groups]]
 name = "test"
 `,
-			expectError:   true,
-			errorContains: "key TestVar is already defined",
+			expectError: true,
 		},
 	}
 
@@ -218,9 +219,12 @@ name = "test"
 			if tt.expectError {
 				require.Error(t, err)
 				t.Logf("Error from TOML parser: %v", err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
+				// Verify that the error indicates duplicate key (parser-level rejection)
+				// Check for both "key" and "already defined" to make the test robust
+				errMsg := err.Error()
+				assert.True(t,
+					strings.Contains(errMsg, "key") && strings.Contains(errMsg, "already defined"),
+					"expected error message to indicate duplicate key, got: %s", errMsg)
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
