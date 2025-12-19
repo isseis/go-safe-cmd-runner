@@ -18,27 +18,27 @@ restore_target = "/mnt/restore"
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 # Template with optional parameters
 # ${?param} syntax means the parameter is optional and will be omitted if not provided
 [command_templates.restic_backup_with_options]
 cmd = "restic"
 args = ["${?verbose}", "backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 # Template with array parameters
 # ${@param} syntax expands an array into multiple arguments
 [command_templates.restic_backup_advanced]
 cmd = "restic"
 args = ["${@flags}", "backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD=${?password}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD=${?password}"]
 
 # Template with workdir
 [command_templates.restic_restore]
 cmd = "restic"
 args = ["restore", "latest", "--target", "${target}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 workdir = "${workdir}"
 
 # Template with timeout and risk level

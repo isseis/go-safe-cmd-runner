@@ -1314,10 +1314,10 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template args: %w", err)
 	}
 
-	// Expand env (supports element-level ${@param} expansion)
-	expandedEnv, err := ExpandTemplateEnv(template.Env, cmdSpec.Params, templateName)
+	// Expand env_vars (supports element-level ${@param} expansion)
+	expandedEnv, err := ExpandTemplateEnv(template.EnvVars, cmdSpec.Params, templateName)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template env: %w", err)
+		return nil, warnings, fmt.Errorf("failed to expand template env_vars: %w", err)
 	}
 
 	// Expand workdir from template

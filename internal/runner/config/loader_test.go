@@ -447,7 +447,7 @@ args = ["%{var}", "hello"]
 version = "1.0"
 [command_templates.bad]
 cmd = "echo"
-env = ["VAR=%{value}"]
+env_vars = ["VAR=%{value}"]
 `,
 			wantErr:     true,
 			wantErrType: &ErrForbiddenPatternInTemplate{},
@@ -511,7 +511,7 @@ version = "1.0"
 [command_templates.restic_advanced]
 cmd = "restic"
 args = ["${@flags}", "backup", "${path}", "${?optional}"]
-env = ["RESTIC_REPO=${repo}"]
+env_vars = ["RESTIC_REPO=${repo}"]
 workdir = "${workdir}"
 
 [[groups]]

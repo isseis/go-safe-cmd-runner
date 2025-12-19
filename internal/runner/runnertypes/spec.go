@@ -25,10 +25,10 @@ type CommandTemplate struct {
 	// Optional, defaults to empty array
 	Args []string `toml:"args"`
 
-	// Env is the list of environment variables in KEY=VALUE format
+	// EnvVars is the list of environment variables in KEY=VALUE format
 	// (may contain template parameters in the VALUE part)
 	// Optional, defaults to empty array
-	Env []string `toml:"env"`
+	EnvVars []string `toml:"env_vars"`
 
 	// WorkDir is the working directory for the command (optional)
 	WorkDir string `toml:"workdir"`
