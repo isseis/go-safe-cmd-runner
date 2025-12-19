@@ -11,7 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTemplateRiskLevelDebug は、テンプレートのrisk_levelが正しく適用されることを確認するデバッグテスト
+// TestTemplateRiskLevelDebug verifies that the risk_level from a template is
+// correctly applied to a command.
 func TestTemplateRiskLevelDebug(t *testing.T) {
 	toml := `version = "1.0"
 
@@ -61,13 +62,13 @@ dst = "s3://my-bucket/test.txt"
 		t.Logf("Spec RiskLevel: nil")
 	}
 
-	// テンプレートのcmdが正しく展開されていることを確認
+	// Verify that the cmd from the template is correctly expanded.
 	assert.Equal(t, "/usr/bin/echo", runtimeCmd.Spec.Cmd)
 
-	// テンプレートのargsが正しく展開されていることを確認
+	// Verify that the args from the template are correctly expanded.
 	assert.Equal(t, []string{"s3", "cp", "/tmp/test.txt", "s3://my-bucket/test.txt"}, runtimeCmd.Spec.Args)
 
-	// テンプレートのrisk_levelが正しく適用されていることを確認
+	// Verify that the risk_level from the template is correctly applied.
 	require.NotNil(t, runtimeCmd.Spec.RiskLevel)
 	assert.Equal(t, "medium", *runtimeCmd.Spec.RiskLevel)
 
@@ -76,8 +77,8 @@ dst = "s3://my-bucket/test.txt"
 	t.Logf("Parsed RiskLevel: %v", riskLevel)
 }
 
-// TestTemplateRiskLevelOverride は、コマンドでrisk_levelを明示的に指定した場合に
-// テンプレートの値を上書きすることを確認するテスト
+// TestTemplateRiskLevelOverride verifies that when risk_level is explicitly
+// specified in a command, it overrides the value from the template.
 func TestTemplateRiskLevelOverride(t *testing.T) {
 	toml := `version = "1.0"
 
@@ -119,7 +120,7 @@ dst = "s3://my-bucket/test.txt"
 	)
 	require.NoError(t, err)
 
-	// コマンドで明示的に指定したrisk_levelがテンプレートの値を上書きすることを確認
+	// Verify that the explicitly specified risk_level in the command overrides the template value.
 	require.NotNil(t, runtimeCmd.Spec.RiskLevel)
 	assert.Equal(t, "high", *runtimeCmd.Spec.RiskLevel)
 
