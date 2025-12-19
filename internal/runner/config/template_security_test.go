@@ -267,8 +267,8 @@ func TestValidateParams(t *testing.T) {
 	}
 }
 
-// TestValidateCommandSpecExclusivity tests mutual exclusivity validation
-func TestValidateCommandSpecExclusivity(t *testing.T) {
+// TestValidateCmdSpec tests mutual exclusivity validation
+func TestValidateCmdSpec(t *testing.T) {
 	tests := []struct {
 		name    string
 		spec    runnertypes.CommandSpec
@@ -345,7 +345,7 @@ func TestValidateCommandSpecExclusivity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateCommandSpecExclusivity("test_group", 0, &tt.spec)
+			err := validateCmdSpec("test_group", 0, &tt.spec)
 
 			if tt.wantErr {
 				require.Error(t, err)

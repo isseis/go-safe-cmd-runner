@@ -447,7 +447,7 @@ func ExpandTemplateEnv(
 		field := fmt.Sprintf("env_vars[%d]", i)
 
 		// Pre-validate: check if KEY part contains placeholders (before expansion)
-		if err := validateEnvEntryBeforeExpansion(envEntry, templateName, field); err != nil {
+		if err := validateEnvPre(envEntry, templateName, field); err != nil {
 			return nil, err
 		}
 
@@ -464,7 +464,7 @@ func ExpandTemplateEnv(
 
 		// Post-validate: check each expanded element is in KEY=VALUE format
 		for j, entry := range expanded {
-			shouldInclude, err := validateEnvEntryAfterExpansion(entry, templateName, field, j)
+			shouldInclude, err := validateEnvPost(entry, templateName, field, j)
 			if err != nil {
 				return nil, err
 			}
@@ -475,16 +475,16 @@ func ExpandTemplateEnv(
 	}
 
 	// Validate no duplicate keys in the expanded env array
-	if err := validateNoDuplicateEnvKeys(result, templateName); err != nil {
+	if err := validateEnvUnique(result, templateName); err != nil {
 		return nil, err
 	}
 
 	return result, nil
 }
 
-// validateEnvEntryBeforeExpansion validates env_vars entry before placeholder expansion.
+// validateEnvPre validates env_vars entry before placeholder expansion.
 // This checks that the KEY part (before '=') does not contain placeholders.
-func validateEnvEntryBeforeExpansion(entry, templateName, _ string) error {
+func validateEnvPre(entry, templateName, _ string) error {
 	// Check if this is a pure placeholder (entire element is ${...} or ${?...} or ${@...})
 	placeholders, err := parsePlaceholders(entry)
 	if err != nil {
@@ -522,10 +522,10 @@ func validateEnvEntryBeforeExpansion(entry, templateName, _ string) error {
 	return nil
 }
 
-// validateEnvEntryAfterExpansion validates that an env_vars entry is in KEY=VALUE format
+// validateEnvPost validates that an env_vars entry is in KEY=VALUE format
 // after placeholder expansion.
 // Returns (shouldInclude=false, nil) if the entry should be skipped (empty VALUE).
-func validateEnvEntryAfterExpansion(entry, templateName, field string, expandedIndex int) (bool, error) {
+func validateEnvPost(entry, templateName, field string, expandedIndex int) (bool, error) {
 	// Check KEY=VALUE format
 	idx := strings.IndexByte(entry, '=')
 	if idx == -1 {
@@ -544,22 +544,22 @@ func validateEnvEntryAfterExpansion(entry, templateName, field string, expandedI
 		return false, nil
 	}
 
-	// Note: KEY part placeholder validation is done in validateEnvEntryBeforeExpansion
+	// Note: KEY part placeholder validation is done in validateEnvPre
 	// This function only validates the format after expansion
 
 	return true, nil
 }
 
-// validateNoDuplicateEnvKeys validates that there are no duplicate environment variable keys
+// validateEnvUnique validates that there are no duplicate environment variable keys
 // in the expanded env_vars array.
-func validateNoDuplicateEnvKeys(env []string, templateName string) error {
+func validateEnvUnique(env []string, templateName string) error {
 	seen := make(map[string]struct{}, len(env))
 
 	for _, entry := range env {
 		// Extract KEY from "KEY=VALUE"
 		idx := strings.IndexByte(entry, '=')
 		if idx == -1 {
-			// Format error should have been caught by validateEnvEntryAfterExpansion
+			// Format error should have been caught by validateEnvPost
 			continue
 		}
 
@@ -631,27 +631,27 @@ func ValidateTemplateDefinition(
 	}
 
 	// Check cmd for local variable references (lowercase/underscore start)
-	if err := validateNoLocalVariableReferences(template.Cmd, name, "cmd"); err != nil {
+	if err := validateGlobalOnly(template.Cmd, name, "cmd"); err != nil {
 		return err
 	}
 
 	// Check args for local variable references
 	for i, arg := range template.Args {
-		if err := validateNoLocalVariableReferences(arg, name, fmt.Sprintf("args[%d]", i)); err != nil {
+		if err := validateGlobalOnly(arg, name, fmt.Sprintf("args[%d]", i)); err != nil {
 			return err
 		}
 	}
 
 	// Check env_vars for local variable references
 	for i, env := range template.EnvVars {
-		if err := validateNoLocalVariableReferences(env, name, fmt.Sprintf("env_vars[%d]", i)); err != nil {
+		if err := validateGlobalOnly(env, name, fmt.Sprintf("env_vars[%d]", i)); err != nil {
 			return err
 		}
 	}
 
 	// Check workdir for local variable references
 	if template.WorkDir != "" {
-		if err := validateNoLocalVariableReferences(template.WorkDir, name, workDirKey); err != nil {
+		if err := validateGlobalOnly(template.WorkDir, name, workDirKey); err != nil {
 			return err
 		}
 	}
@@ -659,10 +659,10 @@ func ValidateTemplateDefinition(
 	return nil
 }
 
-// validateNoLocalVariableReferences checks that a string does not contain
+// validateGlobalOnly checks that a string does not contain
 // references to local variables (lowercase or underscore start).
 // Global variable references (uppercase start) are allowed.
-func validateNoLocalVariableReferences(input, templateName, field string) error {
+func validateGlobalOnly(input, templateName, field string) error {
 	// Collect all %{VAR} references
 	var refs []string
 	refCollector := func(
@@ -767,7 +767,7 @@ func ValidateParams(params map[string]any, templateName string) error {
 	return nil
 }
 
-// ValidateCommandSpecExclusivity validates that template and command fields
+// validateCmdSpec validates that template and command fields
 // are mutually exclusive in a CommandSpec.
 //
 // When Template is set, the following fields MUST NOT be set:
@@ -785,7 +785,7 @@ func ValidateParams(params map[string]any, templateName string) error {
 // This enforces separation between:
 //   - Template: defines command execution logic (cmd, args, env_vars)
 //   - Caller: specifies execution context (workdir, output, etc.)
-func ValidateCommandSpecExclusivity(
+func validateCmdSpec(
 	groupName string,
 	commandIndex int,
 	spec *runnertypes.CommandSpec,
@@ -899,7 +899,7 @@ func collectFromString(input string, used map[string]struct{}) error {
 	return nil
 }
 
-// ValidateTemplateVariableReferences validates that all variable references in a template
+// ValidateTemplateVars validates that all variable references in a template
 // follow the rules for template variables:
 // - Only global variables (uppercase start) can be referenced
 // - All referenced variables must be defined in [global.vars]
@@ -908,7 +908,7 @@ func collectFromString(input string, used map[string]struct{}) error {
 // - cmd, workdir (string fields)
 // - args (string array)
 // - env (string array with KEY=value format)
-func ValidateTemplateVariableReferences(
+func ValidateTemplateVars(
 	template *runnertypes.CommandTemplate,
 	templateName string,
 	globalVars map[string]string,
@@ -927,7 +927,7 @@ func ValidateTemplateVariableReferences(
 		if field.value == "" {
 			continue
 		}
-		if err := validateStringFieldVariableReferences(field.value, templateName, field.name, globalVars); err != nil {
+		if err := validateFieldVars(field.value, templateName, field.name, globalVars); err != nil {
 			return err
 		}
 	}
@@ -935,7 +935,7 @@ func ValidateTemplateVariableReferences(
 	// Check args array
 	for i, arg := range template.Args {
 		fieldName := fmt.Sprintf("args[%d]", i)
-		if err := validateStringFieldVariableReferences(arg, templateName, fieldName, globalVars); err != nil {
+		if err := validateFieldVars(arg, templateName, fieldName, globalVars); err != nil {
 			return err
 		}
 	}
@@ -953,7 +953,7 @@ func ValidateTemplateVariableReferences(
 		value := parts[1]
 
 		fieldName := fmt.Sprintf("env_vars[%d]", i)
-		if err := validateStringFieldVariableReferences(value, templateName, fieldName, globalVars); err != nil {
+		if err := validateFieldVars(value, templateName, fieldName, globalVars); err != nil {
 			return err
 		}
 	}
@@ -961,12 +961,12 @@ func ValidateTemplateVariableReferences(
 	return nil
 }
 
-// validateStringFieldVariableReferences validates variable references in a single string field
+// validateFieldVars validates variable references in a single string field
 // by collecting all %{VAR} references and checking each one against scope and definition rules.
 //
 // This function reuses the parsing logic from parseAndSubstitute (which is used for actual variable
 // expansion) to ensure consistent extraction of variable references across the codebase.
-func validateStringFieldVariableReferences(
+func validateFieldVars(
 	input string,
 	templateName string,
 	fieldName string,
@@ -1049,7 +1049,7 @@ func ValidateAllTemplates(
 	globalVars map[string]string,
 ) error {
 	for templateName, template := range templates {
-		if err := ValidateTemplateVariableReferences(&template, templateName, globalVars); err != nil {
+		if err := ValidateTemplateVars(&template, templateName, globalVars); err != nil {
 			return err
 		}
 	}

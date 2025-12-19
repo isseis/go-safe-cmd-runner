@@ -170,7 +170,7 @@ func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
 	for groupIdx, group := range cfg.Groups {
 		for cmdIdx, cmd := range group.Commands {
 			// Validate command spec exclusivity
-			if err := ValidateCommandSpecExclusivity(group.Name, cmdIdx, &cmd); err != nil {
+			if err := validateCmdSpec(group.Name, cmdIdx, &cmd); err != nil {
 				return fmt.Errorf("group[%d] (%s): %w", groupIdx, group.Name, err)
 			}
 		}

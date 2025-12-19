@@ -208,7 +208,7 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateTemplateVariableReferences(&tt.template, tt.templateName, tt.globalVars)
+			err := ValidateTemplateVars(&tt.template, tt.templateName, tt.globalVars)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -302,7 +302,7 @@ func TestValidateStringFieldVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateStringFieldVariableReferences(tt.input, tt.templateName, tt.fieldName, tt.globalVars)
+			err := validateFieldVars(tt.input, tt.templateName, tt.fieldName, tt.globalVars)
 
 			if tt.wantErr {
 				require.Error(t, err)
