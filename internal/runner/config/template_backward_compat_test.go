@@ -152,7 +152,7 @@ name = "build"
 cmd = "make"
 args = ["build"]
 workdir = "%{project_root}"
-env = ["GO111MODULE=on", "GOOS=linux"]
+env_vars = ["GO111MODULE=on", "GOOS=linux"]
 `,
 			groupName: "test_group",
 			cmdName:   "build",

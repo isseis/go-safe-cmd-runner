@@ -643,12 +643,12 @@ func ValidateTemplateDefinition(
 		}
 	}
 
-	// Check env for forbidden %{ pattern
-	for i, env := range template.Env {
+	// Check env_vars for forbidden %{ pattern
+	for i, env := range template.EnvVars {
 		if strings.Contains(env, "%{") {
 			return &ErrForbiddenPatternInTemplate{
 				TemplateName: name,
-				Field:        fmt.Sprintf("env[%d]", i),
+				Field:        fmt.Sprintf("env_vars[%d]", i),
 				Value:        env,
 			}
 		}
@@ -810,10 +810,10 @@ func CollectUsedParams(template *runnertypes.CommandTemplate) (map[string]struct
 		}
 	}
 
-	// Collect from env
+	// Collect from env_vars
 	// - For "KEY=VALUE" format: collect from VALUE part only
 	// - For element-level expansion (e.g., "${@env_vars}"): collect from entire string
-	for _, env := range template.Env {
+	for _, env := range template.EnvVars {
 		if idx := strings.IndexByte(env, '='); idx != -1 {
 			// KEY=VALUE format - collect from value part only
 			if err := collectFromString(env[idx+1:], used); err != nil {

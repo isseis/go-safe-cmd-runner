@@ -14,7 +14,7 @@
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 ```
 
 ### テンプレートの使用
@@ -75,7 +75,7 @@ args = ["${@flags}", "backup", "${path}"]
 [command_templates.docker_run]
 cmd = "docker"
 args = ["run", "${image}"]
-env = ["REQUIRED=value", "${@optional_env}"]
+env_vars = ["REQUIRED=value", "${@optional_env}"]
 
 # params.optional_env = ["DEBUG=1", "VERBOSE=1"] の場合
 # 展開結果: env = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
@@ -87,10 +87,10 @@ env = ["REQUIRED=value", "${@optional_env}"]
 **注意:** `env` の VALUE 部分（`=` の右側）では `${@param}` は使用できません：
 ```toml
 # ❌ エラー: env の VALUE 部分で配列展開は不可
-env = ["PATH=${@paths}"]  # 無効
+env_vars = ["PATH=${@paths}"]  # 無効
 
 # ✓ OK: env の要素レベルでの配列展開
-env = ["${@path_defs}"]
+env_vars = ["${@path_defs}"]
 # path_defs = ["PATH=/usr/bin", "LD_LIBRARY_PATH=/lib"]
 ```
 
@@ -228,7 +228,7 @@ workdir = "/custom/dir"  # テンプレートの workdir を上書き
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups]]
 name = "daily_backup"
@@ -256,7 +256,7 @@ repo = "/backup/repo"
 [command_templates.restic_backup_flexible]
 cmd = "restic"
 args = ["${?verbose}", "backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups.commands]]
 name = "backup_verbose"
@@ -283,7 +283,7 @@ repo = "/backup/repo"
 [command_templates.restic_backup_advanced]
 cmd = "restic"
 args = ["${@flags}", "backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups.commands]]
 name = "backup_full"
@@ -310,7 +310,7 @@ repo = "/backup/repo"
 [command_templates.docker_run]
 cmd = "docker"
 args = ["run", "${@docker_flags}", "${image}"]
-env = ["${@common_env}", "${@app_env}"]
+env_vars = ["${@common_env}", "${@app_env}"]
 
 [[groups.commands]]
 name = "run_dev"
@@ -355,7 +355,7 @@ backup_root = "/data/backups"
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups]]
 name = "daily_backup"
@@ -435,7 +435,7 @@ args = ["${?verbose}", "${@extra_flags}", "backup", "${path}"]
 [command_templates.backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 # 使用側: 環境固有
 [groups.commands.params]

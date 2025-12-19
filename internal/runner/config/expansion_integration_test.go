@@ -379,8 +379,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 				},
 			},
 			template: &runnertypes.CommandTemplate{
-				Cmd: "echo",
-				Env: []string{"PATHS=${@paths}"},
+				Cmd:     "echo",
+				EnvVars: []string{"PATHS=${@paths}"},
 			},
 			templateName: "env_tmpl",
 			expectErr:    true,
@@ -413,8 +413,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 				},
 			},
 			template: &runnertypes.CommandTemplate{
-				Cmd: "echo",
-				Env: []string{"PATH=${@path}"},
+				Cmd:     "echo",
+				EnvVars: []string{"PATH=${@path}"},
 			},
 			templateName: "env_tmpl",
 			expectErr:    true,
@@ -447,8 +447,8 @@ func TestExpandTemplateToSpec_ArrayInEnvWorkdir(t *testing.T) {
 				},
 			},
 			template: &runnertypes.CommandTemplate{
-				Cmd: "echo",
-				Env: []string{"VALUE=${value}"},
+				Cmd:     "echo",
+				EnvVars: []string{"VALUE=${value}"},
 			},
 			templateName: "env_tmpl",
 			expectErr:    false,

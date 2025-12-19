@@ -802,7 +802,7 @@ version = "1.0"
 [command_templates.cmd_with_env]
 cmd = "echo"
 args = ["message"]
-env = ["STATIC=value", "${@env_vars}"]
+env_vars = ["STATIC=value", "${@env_vars}"]
 
 [[groups]]
 name = "test"
@@ -828,7 +828,7 @@ version = "1.0"
 [command_templates.cmd_with_both]
 cmd = "echo"
 args = ["${@flags}", "message"]
-env = ["REQUIRED=foo", "${@env_vars}"]
+env_vars = ["REQUIRED=foo", "${@env_vars}"]
 
 [[groups]]
 name = "test"
@@ -855,7 +855,7 @@ version = "1.0"
 [command_templates.cmd_multi_array]
 cmd = "echo"
 args = ["${@common_flags}", "${@app_flags}", "message"]
-env = ["${@common_env}", "${@app_env}"]
+env_vars = ["${@common_env}", "${@app_env}"]
 
 [[groups]]
 name = "test"
@@ -884,7 +884,7 @@ version = "1.0"
 [command_templates.cmd_empty_array]
 cmd = "echo"
 args = ["${@flags}", "message"]
-env = ["REQUIRED=foo", "${@env_vars}"]
+env_vars = ["REQUIRED=foo", "${@env_vars}"]
 
 [[groups]]
 name = "test"

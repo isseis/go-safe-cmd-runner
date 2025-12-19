@@ -14,7 +14,7 @@ Templates are defined in `[command_templates.template_name]` sections:
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 ```
 
 ### Using Templates
@@ -75,7 +75,7 @@ args = ["${@flags}", "backup", "${path}"]
 [command_templates.docker_run]
 cmd = "docker"
 args = ["run", "${image}"]
-env = ["REQUIRED=value", "${@optional_env}"]
+env_vars = ["REQUIRED=value", "${@optional_env}"]
 
 # If params.optional_env = ["DEBUG=1", "VERBOSE=1"]
 # Expansion result: env = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
@@ -87,10 +87,10 @@ env = ["REQUIRED=value", "${@optional_env}"]
 **Note:** `${@param}` cannot be used in the VALUE portion (right side of `=`) in `env`:
 ```toml
 # ❌ Error: Array expansion in VALUE portion of env is not allowed
-env = ["PATH=${@paths}"]  # Invalid
+env_vars = ["PATH=${@paths}"]  # Invalid
 
 # ✓ OK: Array expansion at element level in env
-env = ["${@path_defs}"]
+env_vars = ["${@path_defs}"]
 # path_defs = ["PATH=/usr/bin", "LD_LIBRARY_PATH=/lib"]
 ```
 
@@ -228,7 +228,7 @@ Template names must follow these rules:
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups]]
 name = "daily_backup"
@@ -256,7 +256,7 @@ repo = "/backup/repo"
 [command_templates.restic_backup_flexible]
 cmd = "restic"
 args = ["${?verbose}", "backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups.commands]]
 name = "backup_verbose"
@@ -283,7 +283,7 @@ repo = "/backup/repo"
 [command_templates.restic_backup_advanced]
 cmd = "restic"
 args = ["${@flags}", "backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups.commands]]
 name = "backup_full"
@@ -310,7 +310,7 @@ repo = "/backup/repo"
 [command_templates.docker_run]
 cmd = "docker"
 args = ["run", "${@docker_flags}", "${image}"]
-env = ["${@common_env}", "${@app_env}"]
+env_vars = ["${@common_env}", "${@app_env}"]
 
 [[groups.commands]]
 name = "run_dev"
@@ -355,7 +355,7 @@ backup_root = "/data/backups"
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 [[groups]]
 name = "daily_backup"
@@ -435,7 +435,7 @@ Keep template definitions generic and inject environment-specific values via par
 [command_templates.backup]
 cmd = "restic"
 args = ["backup", "${path}"]
-env = ["RESTIC_REPOSITORY=${repo}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 # Usage: Environment-specific
 [groups.commands.params]
