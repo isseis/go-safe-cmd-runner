@@ -58,7 +58,7 @@ args = ["${?verbose}", "backup", "${path}"]
 
 ### Array Parameters: `${@param}`
 
-Expands array values as multiple elements. Can be used at the array element level in `args` and `env`.
+Expands array values as multiple elements. Can be used at the array element level in `args` and `env_vars`.
 
 **Usage in args:**
 ```toml
@@ -70,7 +70,7 @@ args = ["${@flags}", "backup", "${path}"]
 # Expansion result: args = ["-v", "-q", "backup", "/data"]
 ```
 
-**Usage in env:**
+**Usage in env_vars:**
 ```toml
 [command_templates.docker_run]
 cmd = "docker"
@@ -78,18 +78,18 @@ args = ["run", "${image}"]
 env_vars = ["REQUIRED=value", "${@optional_env}"]
 
 # If params.optional_env = ["DEBUG=1", "VERBOSE=1"]
-# Expansion result: env = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
+# Expansion result: env_vars = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
 
 # If params.optional_env is empty array or unspecified
-# Expansion result: env = ["REQUIRED=value"]
+# Expansion result: env_vars = ["REQUIRED=value"]
 ```
 
-**Note:** `${@param}` cannot be used in the VALUE portion (right side of `=`) in `env`:
+**Note:** `${@param}` cannot be used in the VALUE portion (right side of `=`) in `env_vars`:
 ```toml
-# ❌ Error: Array expansion in VALUE portion of env is not allowed
+# ❌ Error: Array expansion in VALUE portion of env_vars is not allowed
 env_vars = ["PATH=${@paths}"]  # Invalid
 
-# ✓ OK: Array expansion at element level in env
+# ✓ OK: Array expansion at element level in env_vars
 env_vars = ["${@path_defs}"]
 # path_defs = ["PATH=/usr/bin", "LD_LIBRARY_PATH=/lib"]
 ```
@@ -141,7 +141,7 @@ The following fields can be used in template definitions:
 |-------|------|----------|-------------|
 | `cmd` | string | ✓ | Command path |
 | `args` | []string | | Command arguments |
-| `env` | []string | | Environment variables (KEY=VALUE format) |
+| `env_vars` | []string | | Environment variables (KEY=VALUE format) |
 | `workdir` | string | | Working directory |
 | `timeout` | int32 | | Timeout (seconds) ※1 |
 | `output_size_limit` | int64 | | Output size limit (bytes) ※1 |
@@ -155,7 +155,7 @@ The following fields can be used in template definitions:
 
 ### Constraints Within Template Definitions
 
-In template definitions (`cmd`, `args`, `env`, `workdir`), **the `%{var}` syntax is prohibited**. This is to avoid ambiguity in the expansion order.
+In template definitions (`cmd`, `args`, `env_vars`, `workdir`), **the `%{var}` syntax is prohibited**. This is to avoid ambiguity in the expansion order.
 
 ```toml
 # ❌ Error: %{var} cannot be used in template definitions
@@ -182,7 +182,7 @@ path = "%{backup_root}/data"  # OK
 When using `template` in a command definition, the following fields cannot be specified simultaneously:
 - `cmd`
 - `args`
-- `env`
+- `env_vars`
 
 **Note**: `workdir` can be used together with templates (it can override the template's default value).
 
@@ -324,7 +324,7 @@ app_env = ["DEBUG=1", "LOG_LEVEL=debug"]
 
 # Expansion result:
 # cmd = docker run -it --rm myapp:dev
-# env = [
+# env_vars = [
 #   "PATH=/usr/local/bin:/usr/bin",
 #   "LANG=C.UTF-8",
 #   "DEBUG=1",
@@ -343,7 +343,7 @@ app_env = []  # No additional environment variables in production
 
 # Expansion result:
 # cmd = docker run -d myapp:latest
-# env = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
+# env_vars = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
 ```
 
 ### Example 5: Combination with Group Variables
@@ -395,13 +395,13 @@ Common errors and their solutions:
 ### `array parameter ${@xxx} cannot be used in mixed context`
 - An array parameter is mixed with a string
 - Array parameters must be used as standalone elements
-- In env, array expansion cannot be used in the VALUE portion (right side of `=`)
+- In env_vars, array expansion cannot be used in the VALUE portion (right side of `=`)
   ```toml
   # ❌ Error
-  env = ["PATH=${@paths}"]
+  env_vars = ["PATH=${@paths}"]
 
   # ✓ OK
-  env = ["${@env_vars}"]
+  env_vars = ["${@env_vars}"]
   ```
 
 ## Best Practices

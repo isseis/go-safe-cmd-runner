@@ -58,7 +58,7 @@ args = ["${?verbose}", "backup", "${path}"]
 
 ### 配列パラメータ: `${@param}`
 
-配列値を複数の要素として展開します。`args` と `env` の配列要素レベルで使用できます。
+配列値を複数の要素として展開します。`args` と `env_vars` の配列要素レベルで使用できます。
 
 **args での使用:**
 ```toml
@@ -70,7 +70,7 @@ args = ["${@flags}", "backup", "${path}"]
 # 展開結果: args = ["-v", "-q", "backup", "/data"]
 ```
 
-**env での使用:**
+**env_vars での使用:**
 ```toml
 [command_templates.docker_run]
 cmd = "docker"
@@ -78,18 +78,18 @@ args = ["run", "${image}"]
 env_vars = ["REQUIRED=value", "${@optional_env}"]
 
 # params.optional_env = ["DEBUG=1", "VERBOSE=1"] の場合
-# 展開結果: env = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
+# 展開結果: env_vars = ["REQUIRED=value", "DEBUG=1", "VERBOSE=1"]
 
 # params.optional_env が空配列または未指定の場合
-# 展開結果: env = ["REQUIRED=value"]
+# 展開結果: env_vars = ["REQUIRED=value"]
 ```
 
-**注意:** `env` の VALUE 部分（`=` の右側）では `${@param}` は使用できません：
+**注意:** `env_vars` の VALUE 部分（`=` の右側）では `${@param}` は使用できません：
 ```toml
-# ❌ エラー: env の VALUE 部分で配列展開は不可
+# ❌ エラー: env_vars の VALUE 部分で配列展開は不可
 env_vars = ["PATH=${@paths}"]  # 無効
 
-# ✓ OK: env の要素レベルでの配列展開
+# ✓ OK: env_vars の要素レベルでの配列展開
 env_vars = ["${@path_defs}"]
 # path_defs = ["PATH=/usr/bin", "LD_LIBRARY_PATH=/lib"]
 ```
@@ -141,7 +141,7 @@ repo = "%{backup_root}/repo"  # "/data/backups/repo" に展開
 |-----------|-----|------|------|
 | `cmd` | string | ✓ | コマンドパス |
 | `args` | []string | | コマンド引数 |
-| `env` | []string | | 環境変数（KEY=VALUE形式） |
+| `env_vars` | []string | | 環境変数（KEY=VALUE形式） |
 | `workdir` | string | | 作業ディレクトリ |
 | `timeout` | int32 | | タイムアウト（秒）※1 |
 | `output_size_limit` | int64 | | 出力サイズ制限（バイト）※1 |
@@ -155,7 +155,7 @@ repo = "%{backup_root}/repo"  # "/data/backups/repo" に展開
 
 ### テンプレート定義内での制約
 
-テンプレート定義（`cmd`, `args`, `env`, `workdir`）では、**`%{var}` 構文は禁止**されています。これは展開順序の曖昧さを避けるためです。
+テンプレート定義（`cmd`, `args`, `env_vars`, `workdir`）では、**`%{var}` 構文は禁止**されています。これは展開順序の曖昧さを避けるためです。
 
 ```toml
 # ❌ エラー: テンプレート定義内で %{var} は使用不可
@@ -182,7 +182,7 @@ path = "%{backup_root}/data"  # OK
 コマンド定義で `template` を使用する場合、以下のフィールドは同時に指定できません：
 - `cmd`
 - `args`
-- `env`
+- `env_vars`
 
 **注意**: `workdir` はテンプレートと併用可能です（テンプレートのデフォルト値を上書きできます）。
 
@@ -324,7 +324,7 @@ app_env = ["DEBUG=1", "LOG_LEVEL=debug"]
 
 # 展開結果:
 # cmd = docker run -it --rm myapp:dev
-# env = [
+# env_vars = [
 #   "PATH=/usr/local/bin:/usr/bin",
 #   "LANG=C.UTF-8",
 #   "DEBUG=1",
@@ -343,7 +343,7 @@ app_env = []  # プロダクションでは追加の環境変数なし
 
 # 展開結果:
 # cmd = docker run -d myapp:latest
-# env = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
+# env_vars = ["PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8"]
 ```
 
 ### 例5: グループ変数との組み合わせ
@@ -395,13 +395,13 @@ repo = "%{backup_root}/repo"           # グローバル変数参照
 ### `array parameter ${@xxx} cannot be used in mixed context`
 - 配列パラメータが文字列と混在しています
 - 配列パラメータは単独の要素として使用してください
-- env の場合、VALUE 部分（`=` の右側）では配列展開はできません
+- env_vars の場合、VALUE 部分（`=` の右側）では配列展開はできません
   ```toml
   # ❌ エラー
-  env = ["PATH=${@paths}"]
+  env_vars = ["PATH=${@paths}"]
 
   # ✓ OK
-  env = ["${@env_vars}"]
+  env_vars = ["${@env_vars}"]
   ```
 
 ## ベストプラクティス
