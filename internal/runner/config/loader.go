@@ -52,11 +52,6 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 
 	// Apply default values
 	ApplyGlobalDefaults(&cfg.Global)
-	for i := range cfg.Groups {
-		for j := range cfg.Groups[i].Commands {
-			ApplyCommandDefaults(&cfg.Groups[i].Commands[j])
-		}
-	}
 
 	// Validate timeout values are non-negative
 	if err := ValidateTimeouts(&cfg); err != nil {
