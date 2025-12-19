@@ -151,7 +151,7 @@ func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 		{
 			name: "low risk level",
 			spec: &CommandSpec{
-				RiskLevel: "low",
+				RiskLevel: StringPtr("low"),
 			},
 			want:    RiskLevelLow,
 			wantErr: false,
@@ -159,7 +159,7 @@ func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 		{
 			name: "medium risk level",
 			spec: &CommandSpec{
-				RiskLevel: "medium",
+				RiskLevel: StringPtr("medium"),
 			},
 			want:    RiskLevelMedium,
 			wantErr: false,
@@ -167,15 +167,15 @@ func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 		{
 			name: "high risk level",
 			spec: &CommandSpec{
-				RiskLevel: "high",
+				RiskLevel: StringPtr("high"),
 			},
 			want:    RiskLevelHigh,
 			wantErr: false,
 		},
 		{
-			name: "empty defaults to low",
+			name: "nil defaults to low",
 			spec: &CommandSpec{
-				RiskLevel: "",
+				RiskLevel: nil,
 			},
 			want:    RiskLevelLow,
 			wantErr: false,
@@ -183,7 +183,7 @@ func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 		{
 			name: "invalid risk level",
 			spec: &CommandSpec{
-				RiskLevel: "invalid",
+				RiskLevel: StringPtr("invalid"),
 			},
 			want:    RiskLevelUnknown,
 			wantErr: true,

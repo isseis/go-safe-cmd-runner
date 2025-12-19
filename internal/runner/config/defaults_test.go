@@ -6,6 +6,7 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApplyGlobalDefaults(t *testing.T) {
@@ -67,30 +68,30 @@ func TestApplyCommandDefaults(t *testing.T) {
 		expected *runnertypes.CommandSpec
 	}{
 		{
-			name: "RiskLevel empty -> default low",
+			name: "RiskLevel nil -> stays nil (no default applied)",
 			input: &runnertypes.CommandSpec{
-				RiskLevel: "",
+				RiskLevel: nil,
 			},
 			expected: &runnertypes.CommandSpec{
-				RiskLevel: "low",
+				RiskLevel: nil,
 			},
 		},
 		{
 			name: "RiskLevel medium -> unchanged",
 			input: &runnertypes.CommandSpec{
-				RiskLevel: "medium",
+				RiskLevel: func() *string { s := "medium"; return &s }(),
 			},
 			expected: &runnertypes.CommandSpec{
-				RiskLevel: "medium",
+				RiskLevel: func() *string { s := "medium"; return &s }(),
 			},
 		},
 		{
 			name: "RiskLevel high -> unchanged",
 			input: &runnertypes.CommandSpec{
-				RiskLevel: "high",
+				RiskLevel: func() *string { s := "high"; return &s }(),
 			},
 			expected: &runnertypes.CommandSpec{
-				RiskLevel: "high",
+				RiskLevel: func() *string { s := "high"; return &s }(),
 			},
 		},
 	}
@@ -99,7 +100,12 @@ func TestApplyCommandDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ApplyCommandDefaults(tt.input)
 
-			assert.Equal(t, tt.expected.RiskLevel, tt.input.RiskLevel, "RiskLevel mismatch")
+			if tt.expected.RiskLevel == nil {
+				assert.Nil(t, tt.input.RiskLevel, "RiskLevel should be nil")
+			} else {
+				require.NotNil(t, tt.input.RiskLevel, "RiskLevel should not be nil")
+				assert.Equal(t, *tt.expected.RiskLevel, *tt.input.RiskLevel, "RiskLevel mismatch")
+			}
 		})
 	}
 }

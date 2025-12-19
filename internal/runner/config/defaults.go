@@ -17,8 +17,8 @@ func ApplyGlobalDefaults(spec *runnertypes.GlobalSpec) {
 }
 
 // ApplyCommandDefaults applies default values to CommandSpec fields
-func ApplyCommandDefaults(spec *runnertypes.CommandSpec) {
-	if spec.RiskLevel == "" {
-		spec.RiskLevel = DefaultRiskLevel
-	}
+func ApplyCommandDefaults(_ *runnertypes.CommandSpec) {
+	// RiskLevel is now a pointer type, so we don't need to apply defaults here.
+	// nil means "use default", which is handled by GetRiskLevel() method.
+	// This change allows proper inheritance from templates.
 }
