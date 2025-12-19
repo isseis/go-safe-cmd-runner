@@ -11,19 +11,19 @@ import (
 
 // Template field parameter usage constraints:
 //
-//   Field    | ${param} | ${?param} | ${@param} | In Key (env only) | Override at call site
-//   ---------|----------|-----------|-----------|-------------------|----------------------
-//   cmd      |    ✓     |     ✓     |     ✗     |       N/A         |        ✗
-//   args     |    ✓     |     ✓     |     ✓     |       N/A         |        ✗
-//   env      |    ✓     |     ✓     |  ✓ (※1)  |   ✗ (※2)         |        ✗
-//   workdir  |    ✓     |     ✓     |     ✗     |       N/A         |   ✓ (※3)
+//   Field    | ${param} | ${?param} | ${@param} | In Key (env_vars only) | Override at call site
+//   ---------|----------|-----------|-----------|------------------------|----------------------
+//   cmd      |    ✓     |     ✓     |     ✗     |          N/A           |        ✗
+//   args     |    ✓     |     ✓     |     ✓     |          N/A           |        ✗
+//   env_vars |    ✓     |     ✓     |  ✓ (※1)  |        ✗ (※2)         |        ✗
+//   workdir  |    ✓     |     ✓     |     ✗     |          N/A           |   ✓ (※3)
 //
 // Rationale:
 //   - cmd, workdir: Must expand to exactly one string value
 //   - args: Can expand to multiple strings (array expansion at element level)
-//   - env:
-//     ※1 Array expansion is allowed at element level (e.g., env = ["${@vars}"])
-//        but NOT in VALUE part (e.g., env = ["PATH=${@paths}"] is invalid)
+//   - env_vars:
+//     ※1 Array expansion is allowed at element level (e.g., env_vars = ["${@vars}"])
+//        but NOT in VALUE part (e.g., env_vars = ["PATH=${@paths}"] is invalid)
 //     ※2 KEY part (before '=') cannot contain any placeholders (security constraint)
 //   - workdir override:
 //     ※3 Caller can override template's workdir to adjust execution context
@@ -33,10 +33,10 @@ import (
 //   ✓ cmd = "${binary}"                    # OK: single value
 //   ✗ cmd = "${@bins}"                     # Error: array not allowed
 //   ✓ args = ["${@flags}", "${file}"]      # OK: array expansion
-//   ✓ env = ["${@env_vars}"]               # OK: element-level array expansion
-//   ✗ env = ["PATH=${@paths}"]             # Error: array in VALUE part
-//   ✗ env = ["${key}=value"]               # Error: placeholder in KEY part
-//   ✓ env = ["KEY=${value}"]               # OK: placeholder in VALUE part only
+//   ✓ env_vars = ["${@env_vars}"]          # OK: element-level array expansion
+//   ✗ env_vars = ["PATH=${@paths}"]        # Error: array in VALUE part
+//   ✗ env_vars = ["${key}=value"]          # Error: placeholder in KEY part
+//   ✓ env_vars = ["KEY=${value}"]          # OK: placeholder in VALUE part only
 //   ✓ workdir = "${dir}"                   # OK: single value (in template)
 //   ✗ workdir = "${@dirs}"                 # Error: array not allowed
 //   ✓ workdir = "%{work_dir}/temp"         # OK: override at call site (uses %{} not ${})
@@ -432,7 +432,7 @@ func ExpandTemplateArgs(
 	return result, nil
 }
 
-// ExpandTemplateEnv expands all placeholders in a template's env array.
+// ExpandTemplateEnv expands all placeholders in a template's env_vars array.
 // Each element must expand to valid KEY=VALUE format(s).
 // Placeholders in the KEY part are forbidden for security reasons.
 func ExpandTemplateEnv(
@@ -443,7 +443,7 @@ func ExpandTemplateEnv(
 	result := make([]string, 0, len(env))
 
 	for i, envEntry := range env {
-		field := fmt.Sprintf("env[%d]", i)
+		field := fmt.Sprintf("env_vars[%d]", i)
 
 		// Pre-validate: check if KEY part contains placeholders (before expansion)
 		if err := validateEnvEntryBeforeExpansion(envEntry, templateName, field); err != nil {
@@ -481,7 +481,7 @@ func ExpandTemplateEnv(
 	return result, nil
 }
 
-// validateEnvEntryBeforeExpansion validates env entry before placeholder expansion.
+// validateEnvEntryBeforeExpansion validates env_vars entry before placeholder expansion.
 // This checks that the KEY part (before '=') does not contain placeholders.
 func validateEnvEntryBeforeExpansion(entry, templateName, _ string) error {
 	// Check if this is a pure placeholder (entire element is ${...} or ${?...} or ${@...})
@@ -508,7 +508,7 @@ func validateEnvEntryBeforeExpansion(entry, templateName, _ string) error {
 	// Check that KEY part does not contain placeholders (security requirement)
 	keyPlaceholders, err := parsePlaceholders(key)
 	if err != nil {
-		return fmt.Errorf("failed to parse env key %q: %w", key, err)
+		return fmt.Errorf("failed to parse env_vars key %q: %w", key, err)
 	}
 	if len(keyPlaceholders) > 0 {
 		return &ErrPlaceholderInEnvKey{
@@ -521,7 +521,7 @@ func validateEnvEntryBeforeExpansion(entry, templateName, _ string) error {
 	return nil
 }
 
-// validateEnvEntryAfterExpansion validates that an env entry is in KEY=VALUE format
+// validateEnvEntryAfterExpansion validates that an env_vars entry is in KEY=VALUE format
 // after placeholder expansion.
 // Returns (shouldInclude=false, nil) if the entry should be skipped (empty VALUE).
 func validateEnvEntryAfterExpansion(entry, templateName, field string, expandedIndex int) (bool, error) {
@@ -550,7 +550,7 @@ func validateEnvEntryAfterExpansion(entry, templateName, field string, expandedI
 }
 
 // validateNoDuplicateEnvKeys validates that there are no duplicate environment variable keys
-// in the expanded env array.
+// in the expanded env_vars array.
 func validateNoDuplicateEnvKeys(env []string, templateName string) error {
 	seen := make(map[string]struct{}, len(env))
 
@@ -568,7 +568,7 @@ func validateNoDuplicateEnvKeys(env []string, templateName string) error {
 		if _, exists := seen[key]; exists {
 			return &ErrDuplicateEnvVariableDetail{
 				TemplateName: templateName,
-				Field:        "env",
+				Field:        "env_vars",
 				EnvKey:       key,
 			}
 		}
@@ -735,7 +735,7 @@ func ValidateParams(params map[string]any, templateName string) error {
 // The Name and Params fields are allowed with Template.
 //
 // This enforces separation between:
-//   - Template: defines command execution logic (cmd, args, env)
+//   - Template: defines command execution logic (cmd, args, env_vars)
 //   - Caller: specifies execution context (workdir, output, etc.)
 func ValidateCommandSpecExclusivity(
 	groupName string,
