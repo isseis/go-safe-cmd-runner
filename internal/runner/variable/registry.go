@@ -1,6 +1,7 @@
 package variable
 
 import (
+	"maps"
 	"sort"
 	"sync"
 )
@@ -94,15 +95,8 @@ func (r *variableRegistry) WithLocals(locals map[string]string) (VariableRegistr
 		locals:  make(map[string]string, len(locals)),
 	}
 
-	// Copy globals
-	for k, v := range r.globals {
-		newRegistry.globals[k] = v
-	}
-
-	// Set locals
-	for k, v := range locals {
-		newRegistry.locals[k] = v
-	}
+	maps.Copy(newRegistry.globals, r.globals)
+	maps.Copy(newRegistry.locals, locals)
 
 	return newRegistry, nil
 }
