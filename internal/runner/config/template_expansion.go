@@ -7,6 +7,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 )
 
 // Template field parameter usage constraints:
@@ -696,10 +697,12 @@ func validateNoLocalVariableReferences(input, templateName, field string) error 
 			continue
 		}
 
-		firstChar := varName[0]
-		isGlobal := firstChar >= 'A' && firstChar <= 'Z'
+		scope, err := variable.DetermineScope(varName)
+		if err != nil {
+			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, field, varName, err)
+		}
 
-		if !isGlobal {
+		if scope != variable.ScopeGlobal {
 			return &ErrLocalVariableInTemplate{
 				TemplateName: templateName,
 				Field:        field,
@@ -1006,23 +1009,19 @@ func validateStringFieldVariableReferences(
 		return err
 	}
 
-	// Import variable package for scope checking
-	// We need to add this import at the top of the file
-	// For now, we'll do a simple uppercase check as a temporary solution
-	// until we can properly import the variable package
-
 	// Now validate each collected reference
 	for _, varName := range collectedRefs {
-		// Simple scope check: global variables must start with uppercase
 		if len(varName) == 0 {
 			continue
 		}
 
-		firstChar := varName[0]
-		isGlobal := firstChar >= 'A' && firstChar <= 'Z'
+		scope, err := variable.DetermineScope(varName)
+		if err != nil {
+			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, fieldName, varName, err)
+		}
 
 		// Check if it's a local variable (not allowed in templates)
-		if !isGlobal {
+		if scope != variable.ScopeGlobal {
 			return &ErrLocalVariableInTemplate{
 				TemplateName: templateName,
 				Field:        fieldName,
