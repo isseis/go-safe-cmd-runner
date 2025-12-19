@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestValidateTemplateVariableReferences tests validation of variable references in templates.
-func TestValidateTemplateVariableReferences(t *testing.T) {
+// TestValidateTemplateVars tests validation of variable references in templates.
+func TestValidateTemplateVars(t *testing.T) {
 	tests := []struct {
 		name         string
 		template     runnertypes.CommandTemplate
@@ -222,8 +222,8 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 	}
 }
 
-// TestValidateStringFieldVariableReferences tests validation of variable references in a single string field.
-func TestValidateStringFieldVariableReferences(t *testing.T) {
+// TestValidateFieldVars tests validation of variable references in a single string field.
+func TestValidateFieldVars(t *testing.T) {
 	tests := []struct {
 		name         string
 		input        string
