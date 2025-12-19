@@ -1087,13 +1087,10 @@ func resolveAndPrepareCommandSpec(
 		}
 	}
 
-	// Make a copy of the template to avoid modifying the shared template
-	templateCopy := template
-
 	// Expand template parameters (${param}) to CommandSpec
 	// Global variables (%{...}) remain unexpanded and will be expanded
 	// later by expandCommandFields, maintaining the correct expansion order
-	expandedSpec, warnings, err := expandTemplateToSpec(spec, &templateCopy, spec.Template)
+	expandedSpec, warnings, err := expandTemplateToSpec(spec, &template, spec.Template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand template %q for command %q: %w", spec.Template, spec.Name, err)
 	}
