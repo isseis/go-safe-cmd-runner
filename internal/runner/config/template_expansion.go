@@ -676,8 +676,8 @@ func validateGlobalOnly(input, templateName, field string) error {
 		return "", nil
 	}
 
-	// Use parseAndSubstitute to extract variable names
-	_, err := parseAndSubstitute(
+	// Use processVarRefs to extract variable names
+	_, err := processVarRefs(
 		input,
 		refCollector,
 		fmt.Sprintf("template[%s]", templateName),
@@ -687,7 +687,7 @@ func validateGlobalOnly(input, templateName, field string) error {
 		0,
 	)
 	if err != nil {
-		// parseAndSubstitute validates variable names and reports errors
+		// processVarRefs validates variable names and reports errors
 		return err
 	}
 
@@ -964,7 +964,7 @@ func ValidateTemplateVars(
 // validateFieldVars validates variable references in a single string field
 // by collecting all %{VAR} references and checking each one against scope and definition rules.
 //
-// This function reuses the parsing logic from parseAndSubstitute (which is used for actual variable
+// This function reuses the parsing logic from processVarRefs (which is used for actual variable
 // expansion) to ensure consistent extraction of variable references across the codebase.
 func validateFieldVars(
 	input string,
@@ -992,9 +992,9 @@ func validateFieldVars(
 		return "", nil
 	}
 
-	// Use parseAndSubstitute to extract variable names using the same logic as expansion
-	// If parseAndSubstitute returns an error (e.g., unclosed %{), report it as-is
-	_, err := parseAndSubstitute(
+	// Use processVarRefs to extract variable names using the same logic as expansion
+	// If processVarRefs returns an error (e.g., unclosed %{), report it as-is
+	_, err := processVarRefs(
 		input,
 		refCollector,
 		fmt.Sprintf("template[%s]", templateName),
@@ -1004,7 +1004,7 @@ func validateFieldVars(
 		0,                         // depth 0
 	)
 	if err != nil {
-		// parseAndSubstitute validates variable names and reports errors
+		// processVarRefs validates variable names and reports errors
 		// If there's a parsing error, return it as-is
 		return err
 	}
