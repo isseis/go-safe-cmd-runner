@@ -49,8 +49,8 @@ template = "full_settings"
 [groups.commands.params]
 msg = "hello"
 `,
-			expectedTimeout:          func() *int32 { v := int32(30); return &v }(),
-			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
+			expectedTimeout:          commontesting.Int32Ptr(30),
+			expectedOutputSizeLimit:  commontesting.Int64Ptr(2048),
 			expectedRiskLevel:        runnertypes.StringPtr("medium"),
 			expectedEffectiveTimeout: 30,
 		},
@@ -73,7 +73,7 @@ template = "unlimited"
 [groups.commands.params]
 msg = "hello"
 `,
-			expectedTimeout:          func() *int32 { v := int32(0); return &v }(),
+			expectedTimeout:          commontesting.Int32Ptr(0),
 			expectedOutputSizeLimit:  nil,
 			expectedRiskLevel:        nil, // Neither template nor command set it, so nil (default from GetRiskLevel())
 			expectedEffectiveTimeout: 0,
@@ -98,7 +98,7 @@ timeout = 0
 [groups.commands.params]
 msg = "hello"
 `,
-			expectedTimeout:          func() *int32 { v := int32(0); return &v }(),
+			expectedTimeout:          commontesting.Int32Ptr(0),
 			expectedOutputSizeLimit:  nil,
 			expectedRiskLevel:        nil, // Neither template nor command set it, so nil (default from GetRiskLevel())
 			expectedEffectiveTimeout: 0,
