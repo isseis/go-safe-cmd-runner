@@ -153,7 +153,7 @@ output_file = "/tmp/output.log"
 				Cmd:        "/bin/echo",
 				EnvVars:    []string{"CMD_VAR=test"},
 				EnvImport:  []string{"cmd_user=USER"},
-				RiskLevel:  "low",
+				RiskLevel:  StringPtr("low"),
 				OutputFile: "/tmp/output.log",
 			},
 		},
@@ -362,7 +362,7 @@ TEST_VAR = "value"
 								Timeout:     commontesting.Int32Ptr(60),
 								RunAsUser:   "testuser",
 								RunAsGroup:  "testgroup",
-								RiskLevel:   "medium",
+								RiskLevel:   StringPtr("medium"),
 								OutputFile:  "/tmp/output.log",
 								EnvVars:     []string{"PYTHONPATH=/opt/lib"},
 								EnvImport:   []string{"path=PATH"},
@@ -540,8 +540,12 @@ func TestCommandSpec_GetRiskLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var riskLevelPtr *string
+			if tt.riskLevel != "" {
+				riskLevelPtr = StringPtr(tt.riskLevel)
+			}
 			spec := &CommandSpec{
-				RiskLevel: tt.riskLevel,
+				RiskLevel: riskLevelPtr,
 			}
 			got, err := spec.GetRiskLevel()
 			if tt.wantErr {

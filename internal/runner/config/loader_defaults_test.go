@@ -53,7 +53,7 @@ cmd = "/bin/echo"
 			},
 		},
 		{
-			name: "risk_level omitted -> default low",
+			name: "risk_level omitted -> stays nil",
 			toml: `
 version = "1.0"
 
@@ -69,11 +69,11 @@ cmd = "/bin/echo"
 `,
 			expected: func(cfg *runnertypes.ConfigSpec) bool {
 				return len(cfg.Groups) > 0 && len(cfg.Groups[0].Commands) > 0 &&
-					cfg.Groups[0].Commands[0].RiskLevel == "low"
+					cfg.Groups[0].Commands[0].RiskLevel == nil
 			},
 		},
 		{
-			name: "risk_level = medium -> unchanged",
+			name: "risk_level = medium -> set to medium",
 			toml: `
 version = "1.0"
 
@@ -90,7 +90,8 @@ risk_level = "medium"
 `,
 			expected: func(cfg *runnertypes.ConfigSpec) bool {
 				return len(cfg.Groups) > 0 && len(cfg.Groups[0].Commands) > 0 &&
-					cfg.Groups[0].Commands[0].RiskLevel == "medium"
+					cfg.Groups[0].Commands[0].RiskLevel != nil &&
+					*cfg.Groups[0].Commands[0].RiskLevel == "medium"
 			},
 		},
 	}

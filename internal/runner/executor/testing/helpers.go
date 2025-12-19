@@ -26,7 +26,7 @@ type runtimeCommandConfig struct {
 	runAsGroup          string
 	outputFile          string
 	expandedEnv         map[string]string
-	riskLevel           string
+	riskLevel           *string
 }
 
 // WithName sets the command name.
@@ -106,7 +106,7 @@ func WithOutputFile(outputFile string) RuntimeCommandOption {
 // WithRiskLevel sets the risk level for the command.
 func WithRiskLevel(riskLevel string) RuntimeCommandOption {
 	return func(c *runtimeCommandConfig) {
-		c.riskLevel = riskLevel
+		c.riskLevel = runnertypes.StringPtr(riskLevel)
 	}
 }
 
