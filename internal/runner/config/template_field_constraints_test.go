@@ -230,15 +230,15 @@ func TestTemplateFieldConstraints(t *testing.T) {
 
 			case "env":
 				template = &runnertypes.CommandTemplate{
-					Cmd: "test",
-					Env: []string{tt.placeholder},
+					Cmd:     "test",
+					EnvVars: []string{tt.placeholder},
 				}
 				setupParams(params, tt.placeholder)
 
 			case "env_element":
 				template = &runnertypes.CommandTemplate{
-					Cmd: "test",
-					Env: []string{tt.placeholder},
+					Cmd:     "test",
+					EnvVars: []string{tt.placeholder},
 				}
 				setupParamsForEnvElement(params, tt.placeholder)
 
@@ -258,7 +258,7 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			case "args":
 				_, err = ExpandTemplateArgs(template.Args, params, "test_template")
 			case "env", "env_element":
-				_, err = ExpandTemplateEnv(template.Env, params, "test_template")
+				_, err = ExpandTemplateEnv(template.EnvVars, params, "test_template")
 			case "workdir":
 				_, err = expandSingleArg(template.WorkDir, params, "test_template", "workdir")
 			}

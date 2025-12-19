@@ -27,7 +27,7 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 				Cmd:     "echo",
 				Args:    []string{"hello", "world"},
 				WorkDir: "/tmp",
-				Env:     []string{"KEY=value"},
+				EnvVars: []string{"KEY=value"},
 			},
 			templateName: "test",
 			globalVars:   map[string]string{},
@@ -39,7 +39,7 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 				Cmd:     "echo %{GREETING}",
 				Args:    []string{"%{NAME}", "%{MESSAGE}"},
 				WorkDir: "%{WORK_DIR}",
-				Env:     []string{"KEY=%{VALUE}"},
+				EnvVars: []string{"KEY=%{VALUE}"},
 			},
 			templateName: "test",
 			globalVars: map[string]string{
@@ -57,7 +57,7 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 				Cmd:     "echo %{MSG}",
 				Args:    []string{"%{ARG1}", "%{ARG2}"},
 				WorkDir: "%{DIR}",
-				Env:     []string{"KEY1=%{VAL1}", "KEY2=%{VAL2}"},
+				EnvVars: []string{"KEY1=%{VAL1}", "KEY2=%{VAL2}"},
 			},
 			templateName: "test",
 			globalVars: map[string]string{
@@ -105,8 +105,8 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 		{
 			name: "error: local variable in env",
 			template: runnertypes.CommandTemplate{
-				Cmd: "echo",
-				Env: []string{"KEY=%{local_value}"},
+				Cmd:     "echo",
+				EnvVars: []string{"KEY=%{local_value}"},
 			},
 			templateName: "test",
 			globalVars:   map[string]string{},
@@ -148,8 +148,8 @@ func TestValidateTemplateVariableReferences(t *testing.T) {
 		{
 			name: "error: undefined global variable in env",
 			template: runnertypes.CommandTemplate{
-				Cmd: "echo",
-				Env: []string{"KEY=%{UNDEFINED_VALUE}"},
+				Cmd:     "echo",
+				EnvVars: []string{"KEY=%{UNDEFINED_VALUE}"},
 			},
 			templateName: "test",
 			globalVars:   map[string]string{},

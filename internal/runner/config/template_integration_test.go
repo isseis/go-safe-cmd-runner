@@ -8,6 +8,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -575,7 +576,7 @@ func TestTemplateExecutionSettingsOverride(t *testing.T) {
 		toml                     string
 		expectedTimeout          *int32
 		expectedOutputSizeLimit  *int64
-		expectedRiskLevel        string
+		expectedRiskLevel        *string
 		expectedEffectiveTimeout int32
 	}{
 		{
@@ -604,7 +605,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
-			expectedRiskLevel:        "high",
+			expectedRiskLevel:        runnertypes.StringPtr("high"),
 			expectedEffectiveTimeout: 300,
 		},
 		{
@@ -631,7 +632,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(1024); return &v }(),
-			expectedRiskLevel:        "low",
+			expectedRiskLevel:        runnertypes.StringPtr("low"),
 			expectedEffectiveTimeout: 300,
 		},
 		{
@@ -657,7 +658,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(10); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(1024); return &v }(),
-			expectedRiskLevel:        "low",
+			expectedRiskLevel:        runnertypes.StringPtr("low"),
 			expectedEffectiveTimeout: 10,
 		},
 		{
@@ -682,7 +683,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(0); return &v }(),
 			expectedOutputSizeLimit:  nil,
-			expectedRiskLevel:        "low", // Default risk level is applied when neither template nor command specify it
+			expectedRiskLevel:        nil, // Neither template nor command specify it, so it's nil (default will be applied by GetRiskLevel())
 			expectedEffectiveTimeout: 0,
 		},
 		{
@@ -708,7 +709,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
-			expectedRiskLevel:        "medium",
+			expectedRiskLevel:        runnertypes.StringPtr("medium"),
 			expectedEffectiveTimeout: 300,
 		},
 	}
@@ -750,7 +751,12 @@ msg = "hello"
 				assert.Nil(t, runtimeCmd.Spec.OutputSizeLimit, "expected output_size_limit to be nil")
 			}
 
-			assert.Equal(t, tt.expectedRiskLevel, runtimeCmd.Spec.RiskLevel, "risk_level mismatch")
+			if tt.expectedRiskLevel != nil {
+				require.NotNil(t, runtimeCmd.Spec.RiskLevel, "expected risk_level to be set")
+				assert.Equal(t, *tt.expectedRiskLevel, *runtimeCmd.Spec.RiskLevel, "risk_level mismatch")
+			} else {
+				assert.Nil(t, runtimeCmd.Spec.RiskLevel, "expected risk_level to be nil")
+			}
 
 			// Check effective timeout (resolved value)
 			assert.Equal(t, tt.expectedEffectiveTimeout, runtimeCmd.EffectiveTimeout, "effective timeout mismatch")
@@ -796,7 +802,7 @@ version = "1.0"
 [command_templates.cmd_with_env]
 cmd = "echo"
 args = ["message"]
-env = ["STATIC=value", "${@env_vars}"]
+env_vars = ["STATIC=value", "${@env_vars}"]
 
 [[groups]]
 name = "test"
@@ -822,7 +828,7 @@ version = "1.0"
 [command_templates.cmd_with_both]
 cmd = "echo"
 args = ["${@flags}", "message"]
-env = ["REQUIRED=foo", "${@env_vars}"]
+env_vars = ["REQUIRED=foo", "${@env_vars}"]
 
 [[groups]]
 name = "test"
@@ -849,7 +855,7 @@ version = "1.0"
 [command_templates.cmd_multi_array]
 cmd = "echo"
 args = ["${@common_flags}", "${@app_flags}", "message"]
-env = ["${@common_env}", "${@app_env}"]
+env_vars = ["${@common_env}", "${@app_env}"]
 
 [[groups]]
 name = "test"
@@ -878,7 +884,7 @@ version = "1.0"
 [command_templates.cmd_empty_array]
 cmd = "echo"
 args = ["${@flags}", "message"]
-env = ["REQUIRED=foo", "${@env_vars}"]
+env_vars = ["REQUIRED=foo", "${@env_vars}"]
 
 [[groups]]
 name = "test"

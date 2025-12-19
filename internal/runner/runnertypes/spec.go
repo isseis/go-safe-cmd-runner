@@ -25,10 +25,10 @@ type CommandTemplate struct {
 	// Optional, defaults to empty array
 	Args []string `toml:"args"`
 
-	// Env is the list of environment variables in KEY=VALUE format
+	// EnvVars is the list of environment variables in KEY=VALUE format
 	// (may contain template parameters in the VALUE part)
 	// Optional, defaults to empty array
-	Env []string `toml:"env"`
+	EnvVars []string `toml:"env_vars"`
 
 	// WorkDir is the working directory for the command (optional)
 	WorkDir string `toml:"workdir"`
@@ -42,8 +42,8 @@ type CommandTemplate struct {
 	OutputSizeLimit *int64 `toml:"output_size_limit"`
 
 	// RiskLevel specifies the maximum allowed risk level (optional)
-	// Valid values: "low", "medium", "high"
-	RiskLevel string `toml:"risk_level"`
+	// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"
+	RiskLevel *string `toml:"risk_level"`
 
 	// NOTE: The "name" field is NOT allowed in template definitions.
 	// Command names must be specified in the [[groups.commands]] section
@@ -205,12 +205,12 @@ type CommandSpec struct {
 	// nil: inherit from parent (group or global)
 	// 0: unlimited execution (no timeout)
 	// Positive value: timeout after N seconds
-	Timeout         *int32 `toml:"timeout"`           // Command-specific timeout in seconds (nil=inherit, 0=unlimited)
-	OutputSizeLimit *int64 `toml:"output_size_limit"` // Command-specific output size limit in bytes (nil=inherit from global, 0=unlimited) - raw value for TOML unmarshaling
-	RunAsUser       string `toml:"run_as_user"`       // User to execute command as (using seteuid)
-	RunAsGroup      string `toml:"run_as_group"`      // Group to execute command as (using setegid)
-	RiskLevel       string `toml:"risk_level"`        // Maximum allowed risk level: low, medium, high
-	OutputFile      string `toml:"output_file"`       // Standard output file path for capture
+	Timeout         *int32  `toml:"timeout"`           // Command-specific timeout in seconds (nil=inherit, 0=unlimited)
+	OutputSizeLimit *int64  `toml:"output_size_limit"` // Command-specific output size limit in bytes (nil=inherit from global, 0=unlimited) - raw value for TOML unmarshaling
+	RunAsUser       string  `toml:"run_as_user"`       // User to execute command as (using seteuid)
+	RunAsGroup      string  `toml:"run_as_group"`      // Group to execute command as (using setegid)
+	RiskLevel       *string `toml:"risk_level"`        // Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)
+	OutputFile      string  `toml:"output_file"`       // Standard output file path for capture
 
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Command-level environment variables in KEY=VALUE format
@@ -231,10 +231,20 @@ type CommandSpec struct {
 
 // GetRiskLevel parses and returns the maximum risk level for this command.
 // Returns RiskLevelUnknown and an error if the risk level string is invalid.
+// If RiskLevel is nil, returns the default risk level (RiskLevelLow).
 //
 // Critical risk level cannot be set in configuration (reserved for internal use only).
 func (s *CommandSpec) GetRiskLevel() (RiskLevel, error) {
-	return ParseRiskLevel(s.RiskLevel)
+	if s.RiskLevel == nil {
+		return RiskLevelLow, nil
+	}
+	return ParseRiskLevel(*s.RiskLevel)
+}
+
+// StringPtr is a helper function to create *string from string literal.
+// This is useful for test code when setting RiskLevel field.
+func StringPtr(s string) *string {
+	return &s
 }
 
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified.

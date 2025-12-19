@@ -1322,10 +1322,10 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template args: %w", err)
 	}
 
-	// Expand env (supports element-level ${@param} expansion)
-	expandedEnv, err := ExpandTemplateEnv(template.Env, cmdSpec.Params, templateName)
+	// Expand env_vars (supports element-level ${@param} expansion)
+	expandedEnv, err := ExpandTemplateEnv(template.EnvVars, cmdSpec.Params, templateName)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template env: %w", err)
+		return nil, warnings, fmt.Errorf("failed to expand template env_vars: %w", err)
 	}
 
 	// Expand workdir from template
@@ -1358,8 +1358,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		EnvVars:     expandedEnv,
 		WorkDir:     finalWorkDir,
 
-		// Execution settings: prefer command-level, fallback to template
-		// This allows commands to override template defaults
+		// Execution settings from command (template fallback applied below)
 		Timeout:         cmdSpec.Timeout,
 		OutputSizeLimit: cmdSpec.OutputSizeLimit,
 		RiskLevel:       cmdSpec.RiskLevel,
@@ -1376,14 +1375,15 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		Params:   nil,
 	}
 
-	// Apply template defaults for execution settings only if command didn't set them
-	if expandedSpec.Timeout == nil && template.Timeout != nil {
+	// Apply template defaults for execution settings only if command didn't set them.
+	// All settings use pointer types: nil = inherit from template, explicit value = override.
+	if expandedSpec.Timeout == nil {
 		expandedSpec.Timeout = template.Timeout
 	}
-	if expandedSpec.OutputSizeLimit == nil && template.OutputSizeLimit != nil {
+	if expandedSpec.OutputSizeLimit == nil {
 		expandedSpec.OutputSizeLimit = template.OutputSizeLimit
 	}
-	if expandedSpec.RiskLevel == "" && template.RiskLevel != "" {
+	if expandedSpec.RiskLevel == nil {
 		expandedSpec.RiskLevel = template.RiskLevel
 	}
 

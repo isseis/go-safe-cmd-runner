@@ -70,7 +70,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "valid template with env",
 			tmplName: "with_env",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", Env: []string{"KEY=${value}"}},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", EnvVars: []string{"KEY=${value}"}},
 			wantErr:  false,
 		},
 		{
@@ -94,7 +94,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "allowed global variable in env",
 			tmplName: "good_template",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", Env: []string{"KEY=%{DefaultKey}"}},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", EnvVars: []string{"KEY=%{DefaultKey}"}},
 			wantErr:  false,
 		},
 		{
@@ -120,7 +120,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "forbidden local variable in env",
 			tmplName: "bad_template",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", Env: []string{"KEY=%{secret}"}},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", EnvVars: []string{"KEY=%{secret}"}},
 			wantErr:  true,
 			errType:  &ErrLocalVariableInTemplate{},
 		},
@@ -370,9 +370,9 @@ func TestCollectUsedParams(t *testing.T) {
 		{
 			name: "multiple params from different fields",
 			template: runnertypes.CommandTemplate{
-				Cmd:  "restic",
-				Args: []string{"${@flags}", "backup", "${path}"},
-				Env:  []string{"RESTIC_REPO=${repo}"},
+				Cmd:     "restic",
+				Args:    []string{"${@flags}", "backup", "${path}"},
+				EnvVars: []string{"RESTIC_REPO=${repo}"},
 			},
 			expected: map[string]struct{}{
 				"flags": {},
@@ -432,8 +432,8 @@ func TestCollectUsedParams(t *testing.T) {
 		{
 			name: "env value only (key not extracted)",
 			template: runnertypes.CommandTemplate{
-				Cmd: "cmd",
-				Env: []string{"KEY=${value}", "OTHER=static"},
+				Cmd:     "cmd",
+				EnvVars: []string{"KEY=${value}", "OTHER=static"},
 			},
 			expected: map[string]struct{}{
 				"value": {},
