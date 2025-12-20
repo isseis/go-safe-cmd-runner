@@ -165,6 +165,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | グローバル | global | |
+| グローバル変数 | global variable | |
 | グローバルレベル | global level | |
 | グループ | group | |
 | グループレベル | group level | |
@@ -219,6 +220,7 @@
 | リスト | list | |
 | リテラル | literal | Literal string value |
 | 場所 | location | ファイルやコマンドの場所 |
+| ローカル変数 | local variable | |
 | ロケール | locale | |
 | ログ | log | |
 | ログレベル | log level | |
@@ -372,6 +374,7 @@
 |--------|---------|------|
 | 安全 | safe | |
 | サンプル | sample | |
+| スコープ | scope | 変数スコープの文脈 |
 | スクリプト | script | |
 | 検索 | search | |
 | Secret | secret | 機密情報・秘密情報 |
@@ -475,6 +478,7 @@
 | 値 | value | |
 | 変数 | variable | |
 | 変数名 | variable name | |
+| 変数スコープ | variable scope | |
 | 検証 | verification | ファイル整合性検証の文脈 |
 | バージョン | version | |
 | 詳細度 | verbosity | ログ出力の詳細度 |
@@ -595,6 +599,7 @@
 | 2025-12-02 | 設定継承動作ドキュメント関連の用語を追加 (cross-level, deny, prohibit, prerequisite, single-value, multi-value, at runtime, explicit, union, uniform, robustness, independent, independence, flexibility) |
 | 2025-12-07 | 変数展開アルゴリズムドキュメント関連の用語を追加 (cache, core logic, DoS attack, entry point, expanded, immediate expansion, injection attack, lazy evaluation, memoization, memory exhaustion, order-independent, parse/parser/parsing, recursion depth, source, stack overflow, substitution, syntax, type safety, unexpanded) |
 | 2025-12-11 | コマンドテンプレート機能ドキュメント関連の用語を追加 (ambiguity, duplication, exclusivity, generic, inject/injection, leverage/leveraging, literal, mixed, parameter value, placeholder/placeholder syntax, priority order, reusable, responsibility, simultaneous/simultaneously, solution (error context), spelling, standalone) |
+| 2025-12-18 | 変数スコープと命名規則関連の用語を追加 (global variable, local variable, scope, variable scope) |
 
 ---
 

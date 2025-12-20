@@ -56,10 +56,10 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 [global]
 env_import = ["MY_SAFE=SAFE_VAR"]
 env_allowed = ["SAFE_VAR"]
-env_vars = ["MY_ENV=%{derived}"]
+env_vars = ["MY_ENV=%{Derived}"]
 
 [global.vars]
-derived = "%{MY_SAFE}/subdir"
+Derived = "%{MY_SAFE}/subdir"
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)
@@ -74,7 +74,7 @@ derived = "%{MY_SAFE}/subdir"
 				require.NoError(t, err)
 				require.NotNil(t, runtimeGlobal.ExpandedVars)
 				require.NotNil(t, runtimeGlobal.ExpandedEnv)
-				assert.Equal(t, "safe_value/subdir", runtimeGlobal.ExpandedVars["derived"])
+				assert.Equal(t, "safe_value/subdir", runtimeGlobal.ExpandedVars["Derived"])
 				assert.Equal(t, "safe_value/subdir", runtimeGlobal.ExpandedEnv["MY_ENV"])
 			},
 		},
@@ -118,14 +118,14 @@ env_allowed = ["SAFE_VAR"]
 
 				configContent := `
 [global]
-env_import = ["home=SAFE_HOME", "allowed=ALLOWED_VAR"]
+env_import = ["Home=SAFE_HOME", "Allowed=ALLOWED_VAR"]
 env_allowed = ["SAFE_HOME", "ALLOWED_VAR"]
-env_vars = ["WORK_DIR=%{work_dir}", "CONFIG_DIR=%{config_dir}"]
-verify_files = ["%{config_dir}/app.conf"]
+env_vars = ["WORK_DIR=%{WorkDir}", "CONFIG_DIR=%{ConfigDir}"]
+verify_files = ["%{ConfigDir}/app.conf"]
 
 [global.vars]
-work_dir = "%{home}/work"
-config_dir = "%{home}/config"
+WorkDir = "%{Home}/work"
+ConfigDir = "%{Home}/config"
 
 [[groups]]
 name = "secure_group"
@@ -161,8 +161,8 @@ env_vars = ["CMD_VAR=%{group_path}"]
 				require.NoError(t, err)
 				require.NotNil(t, runtimeGlobal.ExpandedVars)
 				require.NotNil(t, runtimeGlobal.ExpandedEnv)
-				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedVars["work_dir"])
-				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedVars["config_dir"])
+				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedVars["WorkDir"])
+				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedVars["ConfigDir"])
 				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedEnv["WORK_DIR"])
 				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedEnv["CONFIG_DIR"])
 
@@ -262,12 +262,12 @@ args = ["private"]
 
 				configContent := `
 [global]
-env_import = ["dir=SAFE_DIR"]
+env_import = ["Dir=SAFE_DIR"]
 env_allowed = ["SAFE_DIR"]
-verify_files = ["%{file_path}"]
+verify_files = ["%{FilePath}"]
 
 [global.vars]
-file_path = "%{dir}/test_security_file.txt"
+FilePath = "%{Dir}/test_security_file.txt"
 `
 				err = os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)

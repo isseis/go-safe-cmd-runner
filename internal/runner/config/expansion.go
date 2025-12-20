@@ -68,7 +68,7 @@ func ExpandString(
 }
 
 // resolveAndExpand resolves variable references from expandedVars and expands them recursively.
-// It creates a resolver that looks up variables from the provided map and delegates to parseAndSubstitute.
+// It creates a resolver that looks up variables from the provided map and delegates to processVarRefs.
 func resolveAndExpand(
 	input string,
 	expandedVars map[string]string,
@@ -121,15 +121,20 @@ func resolveAndExpand(
 		return expandedValue, nil
 	}
 
-	return parseAndSubstitute(input, resolver, level, field, visited, expansionChain, depth)
+	return processVarRefs(input, resolver, level, field, visited, expansionChain, depth)
 }
 
-// parseAndSubstitute parses variable references and performs substitution using a custom resolver.
+// processVarRefs parses variable references and processes them using a custom resolver.
 // This is the core expansion logic shared by both ExpandString and varExpander.
 //
+// The resolver determines the actual behavior:
+//   - For expansion: resolver returns the variable's value
+//   - For collection: resolver collects the variable name and returns empty string
+//   - For validation: resolver can perform custom checks
+//
 // Parameters:
-//   - input: the string to expand (may contain %{VAR} references and escape sequences)
-//   - resolver: function to resolve variable names to their values
+//   - input: the string to process (may contain %{VAR} references and escape sequences)
+//   - resolver: function to process variable names
 //   - level: context for error messages (e.g., "global", "group[deploy]")
 //   - field: field name for error messages (e.g., "vars", "env.PATH")
 //   - visited: tracks variables currently being expanded (for circular reference detection)
@@ -137,9 +142,9 @@ func resolveAndExpand(
 //   - depth: current recursion depth
 //
 // Returns:
-//   - string: the fully expanded string
-//   - error: expansion error (syntax error, undefined variable, circular reference, etc.)
-func parseAndSubstitute(
+//   - string: the processed string (expanded or empty, depending on resolver)
+//   - error: processing error (syntax error, undefined variable, circular reference, etc.)
+func processVarRefs(
 	input string,
 	resolver variableResolver,
 	level string,
@@ -352,7 +357,7 @@ func (e *varExpander) expandString(input string, field string) (string, error) {
 	visited := make(map[string]struct{})
 	expansionChain := make([]string, 0)
 
-	// Use parseAndSubstitute with varExpander's resolver
+	// Use processVarRefs with varExpander's resolver
 	resolver := func(
 		varName string,
 		resolverField string,
@@ -363,7 +368,7 @@ func (e *varExpander) expandString(input string, field string) (string, error) {
 		return e.resolveVariable(varName, resolverField, resolverVisited, resolverChain, resolverDepth)
 	}
 
-	return parseAndSubstitute(input, resolver, e.level, field, visited, expansionChain, 0)
+	return processVarRefs(input, resolver, e.level, field, visited, expansionChain, 0)
 }
 
 // resolveVariable looks up and expands a variable by name.
@@ -420,7 +425,7 @@ func (e *varExpander) resolveVariable(
 		}
 
 		// Expand the raw value using the shared expansion logic
-		expanded, err := parseAndSubstitute(
+		expanded, err := processVarRefs(
 			rv,
 			resolver,
 			e.level,
@@ -1061,6 +1066,9 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 // If a template is referenced, it expands the template into the spec.
 // Otherwise, returns the spec unchanged.
 //
+// Global variables (%{GlobalVar}) are expanded in the template before
+// template parameters (${param}) are expanded.
+//
 // Returns the resolved spec (either expanded from template or the input spec unchanged).
 func resolveAndPrepareCommandSpec(
 	spec *runnertypes.CommandSpec,
@@ -1084,7 +1092,9 @@ func resolveAndPrepareCommandSpec(
 		}
 	}
 
-	// Expand template to CommandSpec
+	// Expand template parameters (${param}) to CommandSpec
+	// Global variables (%{...}) remain unexpanded and will be expanded
+	// later by expandCommandFields, maintaining the correct expansion order
 	expandedSpec, warnings, err := expandTemplateToSpec(spec, &template, spec.Template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand template %q for command %q: %w", spec.Template, spec.Name, err)

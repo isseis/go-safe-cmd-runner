@@ -111,7 +111,7 @@ args = ["%{grp_user}"]
 env_allowed = ["PATH"]
 
 [global.vars]
-mypath = "/global/path"
+Mypath = "/global/path"
 
 [[groups]]
 name = "test_group"
@@ -266,7 +266,7 @@ full_path = "%{cmd_path}:%{cmd_home}/bin"
 env_allowed = ["USER"]
 
 [global.vars]
-global_prefix = "/opt"
+GlobalPrefix = "/opt"
 
 [[groups]]
 name = "test_group"
@@ -282,7 +282,7 @@ cmd = "echo"
 args = ["test"]
 
 [groups.commands.vars]
-full_path = "%{global_prefix}/%{cmd_user}/%{group_suffix}"
+full_path = "%{GlobalPrefix}/%{cmd_user}/%{group_suffix}"
 `,
 			expectVars: map[string]string{
 				"DATA_PATH": "/opt/testuser/data",
@@ -519,7 +519,7 @@ func TestRunner_SystemEnvCache(t *testing.T) {
 			configTOML: `
 [global]
 env_allowed = ["PATH", "HOME", "USER"]
-env_import = ["global_path=PATH"]
+env_import = ["GlobalPath=PATH"]
 
 [[groups]]
 name = "group1"
@@ -566,7 +566,7 @@ args = ["test"]
 			configTOML: `
 [global]
 env_allowed = ["PATH", "HOME"]
-env_import = ["g_path=PATH"]
+env_import = ["GPath=PATH"]
 
 [[groups]]
 name = "group1"
@@ -654,17 +654,17 @@ func TestRunner_EnvImportIntegration(t *testing.T) {
 			configTOML: `
 [global]
 env_allowed = ["BASE_PATH", "APP_NAME", "VERSION"]
-env_import = ["base=BASE_PATH"]
+env_import = ["Base=BASE_PATH"]
 
 [global.vars]
-app_base = "%{base}/apps"
+AppBase = "%{Base}/apps"
 
 [[groups]]
 name = "app_group"
 env_import = ["app=APP_NAME"]
 
 [groups.vars]
-app_path = "%{app_base}/%{app}"
+app_path = "%{AppBase}/%{app}"
 
 [[groups.commands]]
 name = "deploy_cmd"
@@ -690,7 +690,7 @@ deploy_path = "%{app_path}/v%{ver}"
 env_allowed = ["SYS_VAR"]
 
 [global.vars]
-myvar = "from_global_vars"
+Myvar = "from_global_vars"
 
 [[groups]]
 name = "test_group"
@@ -715,17 +715,17 @@ args = ["test"]
 			configTOML: `
 [global]
 env_allowed = ["USER", "DOMAIN"]
-env_import = ["u=USER"]
+env_import = ["U=USER"]
 
 [global.vars]
-user_prefix = "user"
+UserPrefix = "user"
 
 [[groups]]
 name = "test_group"
 env_import = ["d=DOMAIN"]
 
 [groups.vars]
-email = "%{user_prefix}_%{u}@%{d}"
+email = "%{UserPrefix}_%{U}@%{d}"
 
 [[groups.commands]]
 name = "test_cmd"

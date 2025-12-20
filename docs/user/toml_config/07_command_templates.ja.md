@@ -380,35 +380,64 @@ params.backup_path = "%{group_root}/volumes"
 #   args = ["backup", "/data/group1/volumes"]
 ```
 
-### 7.5.3 テンプレート定義での変数参照の禁止
+### 7.5.3 テンプレート定義での変数参照
 
-**重要**: セキュリティ上の理由から、テンプレート定義（`cmd`, `args`, `env_vars`, `workdir`）には変数参照（`%{...}`）を含めることができません。
+テンプレート定義では、**グローバル変数のみ**参照できます。グローバル変数は大文字で開始する変数です（例：`%{BackupDir}`）。
+
+#### 許可される変数参照
 
 ```toml
-# エラー: テンプレート定義で %{ を使用
-[command_templates.dangerous]
+# グローバル変数の定義
+[global.vars]
+BackupDir = "/data/backups"
+ToolsPath = "/opt/tools"
+
+# OK: テンプレートでグローバル変数を参照
+[command_templates.backup_tool]
+cmd = "%{ToolsPath}/backup"
+args = ["--output", "%{BackupDir}", "${path}"]
+```
+
+#### 禁止される変数参照
+
+**ローカル変数**（小文字またはアンダースコアで開始）はテンプレート定義で参照できません：
+
+```toml
+[groups.vars]
+backup_date = "20250101"  # ローカル変数
+
+# エラー: テンプレートでローカル変数を参照
+[command_templates.bad_template]
 cmd = "echo"
-args = ["%{secret_var}"]  # エラー: テンプレート定義で %{ 禁止
+args = ["%{backup_date}"]  # エラー: ローカル変数は参照不可
 ```
 
 **理由**:
 - テンプレートは複数のグループで再利用される
-- 異なるグループコンテキストで同じ変数名が異なる意味を持つ可能性がある
-- 機密変数が意図せず参照される危険性を防ぐ
+- ローカル変数はグループごとに異なる値を持つ可能性がある
+- グローバル変数のみに制限することで、予測可能で安全な動作を保証
 
-**正しい方法**: 変数参照は `params` 経由で明示的に行う
+#### 推奨パターン
+
+ローカル変数を使用したい場合は、`params` 経由で渡します：
 
 ```toml
-# 正しい: テンプレート定義には変数参照なし
-[command_templates.echo_message]
-cmd = "echo"
-args = ["${message}"]
+# テンプレート定義: グローバル変数とパラメータを使用
+[command_templates.backup_with_date]
+cmd = "%{ToolsPath}/backup"
+args = ["--output", "%{BackupDir}/${date}", "${path}"]
 
-# params 内で明示的に変数を参照
+# グループレベル: ローカル変数を定義
+[groups.vars]
+backup_date = "20250101"
+
+# コマンド: paramsでローカル変数を渡す
 [[groups.commands]]
-name = "echo_test"
-template = "echo_message"
-params.message = "%{my_variable}"  # 許可される
+name = "daily_backup"
+template = "backup_with_date"
+[groups.commands.params]
+date = "%{backup_date}"  # paramsでローカル変数を参照
+path = "/data/volumes"
 ```
 
 ## 7.6 エスケープシーケンス

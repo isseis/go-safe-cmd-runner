@@ -25,9 +25,10 @@ env_allowed = [
 ]
 
 # Global internal variables available for TOML expansion
+# Note: Global variables must start with uppercase letter
 [global.vars]
-app_name = "cmd-runner"
-test_mode = "comprehensive"
+AppName = "cmd-runner"
+TestMode = "comprehensive"
 
 verify_files = ["/etc/passwd", "/bin/sh"]
 

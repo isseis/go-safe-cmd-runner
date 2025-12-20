@@ -80,32 +80,56 @@ func TestValidateTemplateDefinition(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:     "forbidden %{ in cmd",
+			name:     "allowed global variable in cmd",
+			tmplName: "good_template",
+			template: runnertypes.CommandTemplate{Cmd: "%{AwsPath}"},
+			wantErr:  false,
+		},
+		{
+			name:     "allowed global variable in args",
+			tmplName: "good_template",
+			template: runnertypes.CommandTemplate{Cmd: "restic", Args: []string{"%{DataRoot}/data"}},
+			wantErr:  false,
+		},
+		{
+			name:     "allowed global variable in env",
+			tmplName: "good_template",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", EnvVars: []string{"KEY=%{DefaultKey}"}},
+			wantErr:  false,
+		},
+		{
+			name:     "allowed global variable in workdir",
+			tmplName: "good_template",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: "%{BaseDir}/work"},
+			wantErr:  false,
+		},
+		{
+			name:     "forbidden local variable in cmd",
 			tmplName: "bad_template",
 			template: runnertypes.CommandTemplate{Cmd: "%{root}/bin/restic"},
 			wantErr:  true,
-			errType:  &ErrForbiddenPatternInTemplate{},
+			errType:  &ErrLocalVariableInTemplate{},
 		},
 		{
-			name:     "forbidden %{ in args",
+			name:     "forbidden local variable in args",
 			tmplName: "bad_template",
 			template: runnertypes.CommandTemplate{Cmd: "restic", Args: []string{"%{group_root}/data"}},
 			wantErr:  true,
-			errType:  &ErrForbiddenPatternInTemplate{},
+			errType:  &ErrLocalVariableInTemplate{},
 		},
 		{
-			name:     "forbidden %{ in env",
+			name:     "forbidden local variable in env",
 			tmplName: "bad_template",
 			template: runnertypes.CommandTemplate{Cmd: "cmd", EnvVars: []string{"KEY=%{secret}"}},
 			wantErr:  true,
-			errType:  &ErrForbiddenPatternInTemplate{},
+			errType:  &ErrLocalVariableInTemplate{},
 		},
 		{
-			name:     "forbidden %{ in workdir",
+			name:     "forbidden local variable in workdir",
 			tmplName: "bad_template",
 			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: "%{base_dir}/work"},
 			wantErr:  true,
-			errType:  &ErrForbiddenPatternInTemplate{},
+			errType:  &ErrLocalVariableInTemplate{},
 		},
 		{
 			name:     "missing cmd",
@@ -243,8 +267,8 @@ func TestValidateParams(t *testing.T) {
 	}
 }
 
-// TestValidateCommandSpecExclusivity tests mutual exclusivity validation
-func TestValidateCommandSpecExclusivity(t *testing.T) {
+// TestValidateCmdSpec tests mutual exclusivity validation
+func TestValidateCmdSpec(t *testing.T) {
 	tests := []struct {
 		name    string
 		spec    runnertypes.CommandSpec
@@ -321,7 +345,7 @@ func TestValidateCommandSpecExclusivity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateCommandSpecExclusivity("test_group", 0, &tt.spec)
+			err := validateCmdSpec("test_group", 0, &tt.spec)
 
 			if tt.wantErr {
 				require.Error(t, err)

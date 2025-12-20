@@ -7,6 +7,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 )
 
 // reservedVariablePrefix is the prefix reserved for internal variables
@@ -99,6 +100,23 @@ func validateVariableName(varName, level, field string) error {
 		}
 	}
 
+	// Check variable scope based on level
+	// Global variables must start with uppercase, local variables with lowercase
+	expectedScope := variable.ScopeLocal
+	if level == "global" {
+		expectedScope = variable.ScopeGlobal
+	}
+
+	location := fmt.Sprintf("%s.%s", level, field)
+	if err := variable.ValidateVariableNameForScope(varName, expectedScope, location); err != nil {
+		return &ErrInvalidVariableScopeDetail{
+			Level:        level,
+			Field:        field,
+			VariableName: varName,
+			Reason:       err.Error(),
+		}
+	}
+
 	return nil
 }
 
@@ -152,7 +170,7 @@ func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
 	for groupIdx, group := range cfg.Groups {
 		for cmdIdx, cmd := range group.Commands {
 			// Validate command spec exclusivity
-			if err := ValidateCommandSpecExclusivity(group.Name, cmdIdx, &cmd); err != nil {
+			if err := validateCmdSpec(group.Name, cmdIdx, &cmd); err != nil {
 				return fmt.Errorf("group[%d] (%s): %w", groupIdx, group.Name, err)
 			}
 		}

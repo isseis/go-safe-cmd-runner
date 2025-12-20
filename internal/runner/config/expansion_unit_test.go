@@ -395,6 +395,78 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 	}
 }
 
+// TestProcessVars_InvalidVariableScope tests variable scope validation
+func TestProcessVars_InvalidVariableScope(t *testing.T) {
+	tests := []struct {
+		name    string
+		vars    map[string]any
+		level   string
+		wantErr bool
+	}{
+		{
+			name: "global level with uppercase variable - valid",
+			vars: map[string]any{
+				"GLOBAL_VAR": "value",
+			},
+			level:   "global",
+			wantErr: false,
+		},
+		{
+			name: "global level with lowercase variable - invalid",
+			vars: map[string]any{
+				"local_var": "value",
+			},
+			level:   "global",
+			wantErr: true,
+		},
+		{
+			name: "local level (group) with lowercase variable - valid",
+			vars: map[string]any{
+				"local_var": "value",
+			},
+			level:   "group[test]",
+			wantErr: false,
+		},
+		{
+			name: "local level (group) with uppercase variable - invalid",
+			vars: map[string]any{
+				"GLOBAL_VAR": "value",
+			},
+			level:   "group[test]",
+			wantErr: true,
+		},
+		{
+			name: "local level (command) with lowercase variable - valid",
+			vars: map[string]any{
+				"cmd_var": "value",
+			},
+			level:   "group[test].command[cmd1]",
+			wantErr: false,
+		},
+		{
+			name: "local level (command) with uppercase variable - invalid",
+			vars: map[string]any{
+				"CMD_VAR": "value",
+			},
+			level:   "group[test].command[cmd1]",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseVars := make(map[string]string)
+			envImportVars := make(map[string]string)
+			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, envImportVars, tt.level)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // TestProcessVars_ComplexReferenceChain tests complex variable reference chains
 func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 	tests := []struct {
@@ -408,38 +480,38 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 		{
 			name: "linear chain",
 			vars: map[string]any{
-				"A": "base",
-				"B": "%{A}/level1",
-				"C": "%{B}/level2",
-				"D": "%{C}/level3",
+				"a": "base",
+				"b": "%{a}/level1",
+				"c": "%{b}/level2",
+				"d": "%{c}/level3",
 			},
 			baseVars: make(map[string]string),
-			checkVar: "D",
+			checkVar: "d",
 			wantVal:  "base/level1/level2/level3",
 			wantErr:  false,
 		},
 		{
 			name: "reference base variables",
 			vars: map[string]any{
-				"NEW_VAR": "%{BASE1}/%{BASE2}",
+				"new_var": "%{base1}/%{base2}",
 			},
 			baseVars: map[string]string{
-				"BASE1": "first",
-				"BASE2": "second",
+				"base1": "first",
+				"base2": "second",
 			},
-			checkVar: "NEW_VAR",
+			checkVar: "new_var",
 			wantVal:  "first/second",
 			wantErr:  false,
 		},
 		{
 			name: "override base variable",
 			vars: map[string]any{
-				"BASE": "%{BASE}_extended",
+				"base": "%{base}_extended",
 			},
 			baseVars: map[string]string{
-				"BASE": "original",
+				"base": "original",
 			},
-			checkVar: "BASE",
+			checkVar: "base",
 			wantVal:  "original_extended",
 			wantErr:  false,
 		},
@@ -462,7 +534,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 // TestProcessVars_UndefinedReference tests undefined variable references
 func TestProcessVars_UndefinedReference(t *testing.T) {
 	vars := map[string]any{
-		"VAR": "%{UNDEFINED}",
+		"var": "%{undefined}",
 	}
 	baseVars := make(map[string]string)
 	envImportVars := make(map[string]string)
@@ -483,34 +555,34 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 		{
 			name: "conflict with env_import variable",
 			vars: map[string]any{
-				"MY_VAR": "value_from_vars",
+				"my_var": "value_from_vars",
 			},
 			envImportVars: map[string]string{
-				"MY_VAR": "value_from_env_import",
+				"my_var": "value_from_env_import",
 			},
 			wantErr: true,
 		},
 		{
 			name: "no conflict - different variable names",
 			vars: map[string]any{
-				"VAR1": "value1",
+				"var1": "value1",
 			},
 			envImportVars: map[string]string{
-				"VAR2": "value2",
+				"var2": "value2",
 			},
 			wantErr: false,
 		},
 		{
 			name: "no conflict - empty env_import",
 			vars: map[string]any{
-				"MY_VAR": "value",
+				"my_var": "value",
 			},
 			envImportVars: map[string]string{},
 			wantErr:       false,
 		},
 		{
 			name:          "no conflict - nil env_import",
-			vars:          map[string]any{"MY_VAR": "value"},
+			vars:          map[string]any{"my_var": "value"},
 			envImportVars: nil,
 			wantErr:       false,
 		},
@@ -638,16 +710,16 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 	// Create a GlobalSpec that uses all three: from_env, vars, env
 	spec := &runnertypes.GlobalSpec{
 		EnvImport: []string{
-			"sys_path=PATH",
-			"sys_home=HOME",
+			"SysPath=PATH",
+			"SysHome=HOME",
 		},
 		Vars: map[string]any{
-			"base_dir": "%{sys_home}/app",
-			"bin_dir":  "%{base_dir}/bin",
+			"BaseDir": "%{SysHome}/app",
+			"BinDir":  "%{BaseDir}/bin",
 		},
 		EnvVars: []string{
-			"APP_HOME=%{base_dir}",
-			"PATH=%{bin_dir}:%{sys_path}",
+			"APP_HOME=%{BaseDir}",
+			"PATH=%{BinDir}:%{SysPath}",
 		},
 		EnvAllowed: []string{"PATH", "HOME"},
 	}
@@ -662,10 +734,10 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 	require.NotNil(t, runtime)
 
 	// Verify internal variables
-	assert.Equal(t, "/usr/bin:/bin", runtime.ExpandedVars["sys_path"])
-	assert.Equal(t, "/home/testuser", runtime.ExpandedVars["sys_home"])
-	assert.Equal(t, "/home/testuser/app", runtime.ExpandedVars["base_dir"])
-	assert.Equal(t, "/home/testuser/app/bin", runtime.ExpandedVars["bin_dir"])
+	assert.Equal(t, "/usr/bin:/bin", runtime.ExpandedVars["SysPath"])
+	assert.Equal(t, "/home/testuser", runtime.ExpandedVars["SysHome"])
+	assert.Equal(t, "/home/testuser/app", runtime.ExpandedVars["BaseDir"])
+	assert.Equal(t, "/home/testuser/app/bin", runtime.ExpandedVars["BinDir"])
 
 	// Verify environment variables
 	assert.Equal(t, "/home/testuser/app", runtime.ExpandedEnv["APP_HOME"])

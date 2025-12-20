@@ -86,7 +86,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 			},
 			groupSpec: &runnertypes.GroupSpec{
 				Name:      "test-group",
-				EnvImport: []string{"GROUP_VAR=HOME"},
+				EnvImport: []string{"group_var=HOME"},
 			},
 			wantErr:     true,
 			description: "Group-level from_env should respect global allowlist",
@@ -98,7 +98,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 			},
 			groupSpec: &runnertypes.GroupSpec{
 				Name:      "test-group",
-				EnvImport: []string{"GROUP_VAR=HOME"},
+				EnvImport: []string{"group_var=HOME"},
 			},
 			wantErr:     true,
 			description: "Group-level from_env should check global allowlist",
@@ -110,7 +110,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 			},
 			groupSpec: &runnertypes.GroupSpec{
 				Name:      "test-group",
-				EnvImport: []string{"GROUP_VAR=HOME"},
+				EnvImport: []string{"group_var=HOME"},
 			},
 			wantErr:     false,
 			description: "Group-level from_env should succeed with allowed variable",
@@ -156,7 +156,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			cmdSpec: &runnertypes.CommandSpec{
 				Name:      "test-cmd",
 				Cmd:       "echo",
-				EnvImport: []string{"CMD_VAR=HOME"},
+				EnvImport: []string{"cmd_var=HOME"},
 			},
 			wantErr:     true,
 			description: "Command-level from_env should respect global allowlist",
@@ -172,7 +172,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			cmdSpec: &runnertypes.CommandSpec{
 				Name:      "test-cmd",
 				Cmd:       "echo",
-				EnvImport: []string{"CMD_VAR=HOME"},
+				EnvImport: []string{"cmd_var=HOME"},
 			},
 			wantErr:     true,
 			description: "Command-level from_env should check global allowlist",
@@ -188,7 +188,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			cmdSpec: &runnertypes.CommandSpec{
 				Name:      "test-cmd",
 				Cmd:       "echo",
-				EnvImport: []string{"CMD_VAR=HOME"},
+				EnvImport: []string{"cmd_var=HOME"},
 			},
 			wantErr:     false,
 			description: "Command-level from_env should succeed with allowed variable",
@@ -296,7 +296,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		}
 		groupSpec := &runnertypes.GroupSpec{
 			Name:      "test-group",
-			EnvImport: []string{"VAR=HOME"}, // Should be allowed
+			EnvImport: []string{"var=HOME"}, // Should be allowed
 		}
 
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
@@ -316,7 +316,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		cmdSpec := &runnertypes.CommandSpec{
 			Name:      "test-cmd",
 			Cmd:       "echo",
-			EnvImport: []string{"VAR=PATH"}, // Should be allowed
+			EnvImport: []string{"var=PATH"}, // Should be allowed
 		}
 
 		globalRuntime, err := config.ExpandGlobal(globalSpec)

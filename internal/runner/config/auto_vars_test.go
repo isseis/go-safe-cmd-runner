@@ -71,8 +71,8 @@ func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		Timeout: &timeout,
 		Vars: map[string]any{
-			"output_file": "/tmp/backup-%{__runner_datetime}.tar.gz",
-			"lock_file":   "/var/run/myapp-%{__runner_pid}.lock",
+			"OutputFile": "/tmp/backup-%{__runner_datetime}.tar.gz",
+			"LockFile":   "/var/run/myapp-%{__runner_pid}.lock",
 		},
 	}
 
@@ -81,8 +81,8 @@ func TestExpandGlobal_AutoVarsAvailableForVarsExpansion(t *testing.T) {
 	require.NotNil(t, runtime)
 
 	// Check that auto variables were expanded in user vars
-	outputFile := runtime.ExpandedVars["output_file"]
-	lockFile := runtime.ExpandedVars["lock_file"]
+	outputFile := runtime.ExpandedVars["OutputFile"]
+	lockFile := runtime.ExpandedVars["LockFile"]
 
 	// Should contain expanded values, not the template
 	assert.NotContains(t, outputFile, "%{__runner_datetime}")
@@ -110,10 +110,10 @@ func TestExpandGlobal_AutoVarsConsistentAcrossExpansions(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		Timeout: &timeout,
 		Vars: map[string]any{
-			"file1": "/tmp/file1-%{__runner_datetime}.log",
-			"file2": "/tmp/file2-%{__runner_datetime}.log",
-			"lock1": "/tmp/lock1-%{__runner_pid}.pid",
-			"lock2": "/tmp/lock2-%{__runner_pid}.pid",
+			"File1": "/tmp/file1-%{__runner_datetime}.log",
+			"File2": "/tmp/file2-%{__runner_datetime}.log",
+			"Lock1": "/tmp/lock1-%{__runner_pid}.pid",
+			"Lock2": "/tmp/lock2-%{__runner_pid}.pid",
 		},
 	}
 
@@ -121,10 +121,10 @@ func TestExpandGlobal_AutoVarsConsistentAcrossExpansions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, runtime)
 
-	file1 := runtime.ExpandedVars["file1"]
-	file2 := runtime.ExpandedVars["file2"]
-	lock1 := runtime.ExpandedVars["lock1"]
-	lock2 := runtime.ExpandedVars["lock2"]
+	file1 := runtime.ExpandedVars["File1"]
+	file2 := runtime.ExpandedVars["File2"]
+	lock1 := runtime.ExpandedVars["Lock1"]
+	lock2 := runtime.ExpandedVars["Lock2"]
 
 	// Extract datetime from file1 and file2
 	re := regexp.MustCompile(`/tmp/file\d+-(\d{14}\.\d{3})\.log`)
@@ -155,9 +155,9 @@ func TestExpandGlobal_AutoVarsWithEnvImport(t *testing.T) {
 	spec := &runnertypes.GlobalSpec{
 		Timeout:    &timeout,
 		EnvAllowed: []string{"TEST_VAR"},
-		EnvImport:  []string{"test_var=TEST_VAR"}, // Correct format: internal_name=SYSTEM_VAR
+		EnvImport:  []string{"TEST_VAR=TEST_VAR"}, // Correct format: internal_name=SYSTEM_VAR (global vars must be uppercase)
 		Vars: map[string]any{
-			"combined": "%{test_var}-%{__runner_datetime}",
+			"Combined": "%{TEST_VAR}-%{__runner_datetime}",
 		},
 	}
 
@@ -166,9 +166,9 @@ func TestExpandGlobal_AutoVarsWithEnvImport(t *testing.T) {
 	require.NotNil(t, runtime)
 
 	// Check that both env import and auto vars work
-	combined := runtime.ExpandedVars["combined"]
+	combined := runtime.ExpandedVars["Combined"]
 	assert.Contains(t, combined, "test_value-")
-	assert.NotContains(t, combined, "%{test_var}")
+	assert.NotContains(t, combined, "%{TEST_VAR}")
 	assert.NotContains(t, combined, "%{__runner_datetime}")
 
 	// Verify the actual expanded value
