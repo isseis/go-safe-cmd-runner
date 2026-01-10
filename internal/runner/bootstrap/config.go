@@ -56,8 +56,9 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// Load config from the verified content
 	// All expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args) is now
 	// performed inside config.Loader.LoadConfig()
+	// LoadConfigWithPath processes includes and merges templates from multiple files
 	cfgLoader := config.NewLoader()
-	cfg, err := cfgLoader.LoadConfig(content)
+	cfg, err := cfgLoader.LoadConfigWithPath(configPath, content)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
