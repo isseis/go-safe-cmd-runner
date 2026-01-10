@@ -30,12 +30,35 @@ func (e *ErrTemplateFieldConflict) Error() string {
 }
 
 // ErrDuplicateTemplateName is returned when a template name is defined more than once.
+// When multiple locations are provided, it means the template is defined in multiple files.
 type ErrDuplicateTemplateName struct {
 	Name string
+
+	// Locations is the list of file paths where the template is defined.
+	// If empty or has only one element, only Name is used for the error message.
+	Locations []string
 }
 
 func (e *ErrDuplicateTemplateName) Error() string {
-	return fmt.Sprintf("duplicate template name %q", e.Name)
+	if len(e.Locations) == 0 {
+		return fmt.Sprintf("duplicate template name %q", e.Name)
+	}
+	if len(e.Locations) == 1 {
+		return fmt.Sprintf("duplicate template name %q", e.Name)
+	}
+	locations := ""
+	for i, loc := range e.Locations {
+		if i > 0 {
+			locations += "\n    - "
+		}
+		locations += loc
+	}
+	return fmt.Sprintf(
+		"duplicate command template name %q\n"+
+			"  Defined in:\n    - %s",
+		e.Name,
+		locations,
+	)
 }
 
 // ErrInvalidTemplateName is returned when a template name is invalid.

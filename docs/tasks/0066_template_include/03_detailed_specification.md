@@ -852,10 +852,10 @@ test/e2e/include_feature/
 ## 9. 実装の優先順位とマイルストーン
 
 ### Phase 1: 基本構造（1-2日）
-- [ ] `ConfigSpec` に `Includes` フィールドを追加
-- [ ] `TemplateFileSpec` 構造体を作成
-- [ ] `TemplateSource` 構造体を作成
-- [ ] エラー型を定義
+- [x] `ConfigSpec` に `Includes` フィールドを追加
+- [x] `TemplateFileSpec` 構造体を作成
+- [x] `TemplateSource` 構造体を作成
+- [x] エラー型を定義
 
 ### Phase 2: コアコンポーネント（2-3日）
 - [ ] `PathResolver` の実装とテスト

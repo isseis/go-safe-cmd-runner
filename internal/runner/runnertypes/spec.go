@@ -72,10 +72,24 @@ type ConfigSpec struct {
 	// Version specifies the configuration file version (e.g., "1.0")
 	Version string `toml:"version"`
 
+	// Includes specifies template files to include.
+	// Paths can be relative (to the config file directory) or absolute.
+	// Each included file must contain only 'version' and 'command_templates'.
+	// Multi-level includes are not allowed (template files cannot include other files).
+	//
+	// Example:
+	//   includes = ["templates/common.toml", "../shared/backup.toml"]
+	Includes []string `toml:"includes"`
+
 	// Global contains global-level configuration
 	Global GlobalSpec `toml:"global"`
 
 	// CommandTemplates contains reusable command template definitions.
+	// After loading, this will contain templates from:
+	//   1. All included template files (in order)
+	//   2. The main config file's command_templates section
+	// Duplicate template names across sources will cause an error.
+	//
 	// Templates are defined using TOML table syntax:
 	//   [command_templates.template_name]
 	//   cmd = "..."
