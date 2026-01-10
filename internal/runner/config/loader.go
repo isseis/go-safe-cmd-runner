@@ -36,9 +36,148 @@ func NewLoaderWithFS(fs common.FileSystem) *Loader {
 	}
 }
 
+// LoadConfigWithPath loads and validates configuration from a file path,
+// processing includes and merging templates
+func (l *Loader) LoadConfigWithPath(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
+	// Process includes if present
+	cfg, err := l.loadConfigWithIncludes(configPath, content, make(map[string]bool))
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
 // LoadConfig loads and validates configuration from byte content instead of file path
 // This prevents TOCTOU attacks by using already-verified file content
+// Note: This function does not process includes. Use LoadConfigWithPath for full functionality.
 func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
+	return l.loadConfigInternal(content, nil)
+}
+
+// loadConfigWithIncludes recursively loads config and processes includes
+func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visited map[string]bool) (*runnertypes.ConfigSpec, error) {
+	// Check for circular reference
+	if visited[configPath] {
+		return nil, &ErrCircularInclude{
+			Path:  configPath,
+			Chain: nil, // Will be populated by caller
+		}
+	}
+	visited[configPath] = true
+
+	// Load the main config (without includes processing)
+	cfg, err := l.loadConfigInternal(content, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Process includes if present
+	if len(cfg.Includes) > 0 {
+		templateSources, err := l.processIncludes(configPath, cfg.Includes, visited)
+		if err != nil {
+			return nil, err
+		}
+
+		// Merge templates
+		if len(templateSources) > 0 {
+			merger := NewDefaultTemplateMerger()
+			mergedTemplates, err := merger.MergeTemplates(templateSources)
+			if err != nil {
+				return nil, err
+			}
+
+			// Merge with main config templates
+			if cfg.CommandTemplates == nil {
+				cfg.CommandTemplates = make(map[string]runnertypes.CommandTemplate)
+			}
+
+			// Check for duplicates with main config
+			for name := range mergedTemplates {
+				if _, exists := cfg.CommandTemplates[name]; exists {
+					// Find the source of the duplicate
+					var locations []string
+					locations = append(locations, configPath) // Main config
+					for _, src := range templateSources {
+						if _, found := src.Templates[name]; found {
+							locations = append(locations, src.FilePath)
+							break
+						}
+					}
+					return nil, &ErrDuplicateTemplateName{
+						Name:      name,
+						Locations: locations,
+					}
+				}
+			}
+
+			// Merge templates from includes into main config
+			for name, tmpl := range mergedTemplates {
+				cfg.CommandTemplates[name] = tmpl
+			}
+		}
+	}
+
+	return cfg, nil
+}
+
+// processIncludes loads all included template files
+func (l *Loader) processIncludes(baseConfigPath string, includes []string, visited map[string]bool) ([]TemplateSource, error) {
+	if len(includes) == 0 {
+		return nil, nil
+	}
+
+	// Get base directory from config path
+	baseDir := baseConfigPath
+	if idx := len(baseDir) - 1; idx >= 0 {
+		for ; idx >= 0; idx-- {
+			if baseDir[idx] == '/' {
+				baseDir = baseDir[:idx]
+				break
+			}
+		}
+		if idx < 0 {
+			baseDir = "."
+		}
+	}
+
+	resolver := NewDefaultPathResolver(l.fs)
+	loader := NewDefaultTemplateFileLoader()
+
+	var sources []TemplateSource
+
+	for _, includePath := range includes {
+		// Resolve path
+		resolvedPath, err := resolver.ResolvePath(includePath, baseDir)
+		if err != nil {
+			return nil, err
+		}
+
+		// Check for circular reference
+		if visited[resolvedPath] {
+			return nil, &ErrCircularInclude{
+				Path:  resolvedPath,
+				Chain: nil,
+			}
+		}
+
+		// Load template file
+		templates, err := loader.LoadTemplateFile(resolvedPath)
+		if err != nil {
+			return nil, err
+		}
+
+		sources = append(sources, TemplateSource{
+			FilePath:  resolvedPath,
+			Templates: templates,
+		})
+	}
+
+	return sources, nil
+}
+
+// loadConfigInternal loads and validates configuration from byte content
+func (l *Loader) loadConfigInternal(content []byte, _ []TemplateSource) (*runnertypes.ConfigSpec, error) {
 	// Parse the config content
 	var cfg runnertypes.ConfigSpec
 	if err := toml.Unmarshal(content, &cfg); err != nil {

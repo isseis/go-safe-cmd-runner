@@ -707,3 +707,33 @@ func (e *ErrTemplateFileInvalidFormat) Error() string {
 func (e *ErrTemplateFileInvalidFormat) Unwrap() error {
 	return e.ParseError
 }
+
+// ErrCircularInclude is returned when circular include reference is detected.
+type ErrCircularInclude struct {
+	// Path is the file that creates the circular reference
+	Path string
+
+	// Chain is the list of files in the include chain
+	Chain []string
+}
+
+func (e *ErrCircularInclude) Error() string {
+	if len(e.Chain) == 0 {
+		return fmt.Sprintf("circular include detected: %s", e.Path)
+	}
+	chain := ""
+	for i, path := range e.Chain {
+		if i > 0 {
+			chain += " -> "
+		}
+		chain += path
+	}
+	return fmt.Sprintf(
+		"circular include detected\n"+
+			"  File: %s\n"+
+			"  Include chain: %s -> %s",
+		e.Path,
+		chain,
+		e.Path,
+	)
+}
