@@ -344,16 +344,202 @@ template = "restic_backup"
 params.path = "/home"
 ```
 
-## 7.5 Combining with Variable Expansion
+## 7.5 Field Inheritance
 
-### 7.5.1 Expansion Order
+### 7.5.1 Inheritance Overview
+
+Fields defined in templates are automatically inherited unless explicitly overridden in command definitions. This feature allows you to define common settings in templates and customize them at the command level as needed.
+
+### 7.5.2 Inheritable Fields
+
+The following fields support inheritance:
+
+| Field | Inheritance Model | Description |
+|-------|-------------------|-------------|
+| `workdir` | Override | Overwrite only when specified in command |
+| `output_file` | Override | Overwrite only when specified in command |
+| `env_import` | Union Merge | Combine values from both template and command |
+| `vars` | Map Merge | Command variables override template variables |
+
+### 7.5.3 Override Model (workdir, output_file)
+
+**Behavior:**
+- When field is not specified in command: Inherit value from template
+- When field is specified in command: Completely overwrite template value
+- Specifying empty string: Explicitly represents "unspecified" (`workdir=""` uses current directory)
+
+**Example: workdir Inheritance**
+
+```toml
+# Template definition
+[command_templates.build_template]
+cmd = "make"
+workdir = "/workspace/project"
+
+# Case 1: Inherit workdir
+[[groups.commands]]
+name = "build-default"
+template = "build_template"
+# Result: workdir="/workspace/project" (inherited from template)
+
+# Case 2: Override workdir
+[[groups.commands]]
+name = "build-custom"
+template = "build_template"
+workdir = "/opt/custom"
+# Result: workdir="/opt/custom" (overrides template)
+
+# Case 3: Explicitly set workdir to empty
+[[groups.commands]]
+name = "build-current"
+template = "build_template"
+workdir = ""
+# Result: workdir="" (use current directory)
+```
+
+### 7.5.4 Union Merge Model (env_import)
+
+**Behavior:**
+- Combine environment variables specified in both template and command
+- Duplicates are automatically removed
+- Template values are inherited even if empty array is specified
+
+**Example: env_import Merge**
+
+```toml
+[global]
+env_allowed = ["CC", "CXX", "LDFLAGS", "CFLAGS", "PATH"]
+
+[command_templates.compiler_template]
+cmd = "gcc"
+env_import = ["CC", "CXX"]
+
+# Case 1: Import additional environment variables
+[[groups.commands]]
+name = "compile-with-flags"
+template = "compiler_template"
+env_import = ["LDFLAGS", "CFLAGS"]
+# Result: env_import=["CC", "CXX", "LDFLAGS", "CFLAGS"] (union)
+
+# Case 2: Use template only
+[[groups.commands]]
+name = "compile-basic"
+template = "compiler_template"
+# Result: env_import=["CC", "CXX"] (inherited from template)
+
+# Case 3: When duplicates exist
+[[groups.commands]]
+name = "compile-dup"
+template = "compiler_template"
+env_import = ["CC", "LDFLAGS"]
+# Result: env_import=["CC", "CXX", "LDFLAGS"] (remove duplicates)
+```
+
+### 7.5.5 Map Merge Model (vars)
+
+**Behavior:**
+- Combine variables defined in both template and command
+- When same key exists, command level value takes priority
+- New variables can be added at command level
+
+**Example: vars Merge**
+
+```toml
+[command_templates.backup_template]
+cmd = "restic"
+args = ["backup"]
+
+[command_templates.backup_template.vars]
+retention_days = "7"
+compression = "auto"
+backup_type = "incremental"
+
+# Case 1: Add variables
+[[groups.commands]]
+name = "backup-with-tag"
+template = "backup_template"
+
+[groups.commands.vars]
+backup_tag = "daily"
+# Result: {retention_days: "7", compression: "auto", backup_type: "incremental", backup_tag: "daily"}
+
+# Case 2: Override variables
+[[groups.commands]]
+name = "backup-full"
+template = "backup_template"
+
+[groups.commands.vars]
+backup_type = "full"  # Override template value
+retention_days = "30"  # Override template value
+# Result: {retention_days: "30", compression: "auto", backup_type: "full"}
+
+# Case 3: Use template only
+[[groups.commands]]
+name = "backup-default"
+template = "backup_template"
+# Result: {retention_days: "7", compression: "auto", backup_type: "incremental"}
+```
+
+### 7.5.6 Combining Inheritance and Parameter Expansion
+
+Parameter expansion can also be used in template `workdir`, `output_file`, `env_import`, `vars` fields.
+
+```toml
+[command_templates.project_template]
+cmd = "make"
+workdir = "/workspace/${project}"
+output_file = "/var/log/${project}.log"
+env_import = ["${?extra_env}"]
+
+[command_templates.project_template.vars]
+build_type = "${?type}"
+
+[[groups.commands]]
+name = "build-projectA"
+template = "project_template"
+
+[groups.commands.params]
+project = "projectA"
+type = "release"
+# Result:
+#   workdir="/workspace/projectA"
+#   output_file="/var/log/projectA.log"
+#   vars={build_type: "release"}
+
+[[groups.commands]]
+name = "build-projectB"
+template = "project_template"
+workdir = "/opt/builds"  # Override template workdir
+
+[groups.commands.params]
+project = "projectB"
+extra_env = "CC"
+# Result:
+#   workdir="/opt/builds" (override)
+#   output_file="/var/log/projectB.log"
+#   env_import=["CC"]
+```
+
+### 7.5.7 Inheritance Priority
+
+Field values are determined in the following priority order:
+
+1. **Explicit specification at command level** (highest priority)
+2. **Template value**
+3. **System default** (lowest priority)
+
+This priority order allows you to define common settings in templates while customizing them at the command level as needed.
+
+## 7.6 Combining with Variable Expansion
+
+### 7.6.1 Expansion Order
 
 Template expansion and variable expansion (`%{...}`) are processed in the following order:
 
 1. **Template Expansion**: Replace `${...}`, `${?...}`, `${@...}` with params values
 2. **Variable Expansion**: Expand `%{...}` in the result
 
-### 7.5.2 Variable References in params
+### 7.6.2 Variable References in params
 
 Variable references (`%{...}`) can be included in `params` values. This allows group-specific variables to be passed to templates.
 
@@ -380,7 +566,7 @@ params.backup_path = "%{group_root}/volumes"
 #   args = ["backup", "/data/group1/volumes"]
 ```
 
-### 7.5.3 Variable References in Template Definitions
+### 7.6.3 Variable References in Template Definitions
 
 In template definitions, **only global variables** can be referenced. Global variables are those that start with an uppercase letter (e.g., `%{BackupDir}`).
 
@@ -440,9 +626,9 @@ date = "%{backup_date}"  # Reference local variable in params
 path = "/data/volumes"
 ```
 
-## 7.6 Escape Sequences
+## 7.7 Escape Sequences
 
-### 7.6.1 Writing Literal `$`
+### 7.7.1 Writing Literal `$`
 
 To use a literal `$` character in a template definition, escape it with `\$`.
 
@@ -460,16 +646,16 @@ params.item = "Widget"
 # Result: args = ["Cost: $100", "Widget"]
 ```
 
-### 7.6.2 Consistency with Existing Escapes
+### 7.7.2 Consistency with Existing Escapes
 
 This escape notation is the same as the `\%` escape for variable expansion:
 
 - `\%{var}` → `%{var}` (not expanded)
 - `\$` → `$` (literal)
 
-## 7.7 Errors and Validation
+## 7.8 Errors and Validation
 
-### 7.7.1 Common Errors
+### 7.8.1 Common Errors
 
 #### Referencing Non-Existent Template
 
@@ -517,7 +703,7 @@ cmd = "echo"
 args = ["%{secret}"]  # Error: template contains forbidden pattern "%{" in args
 ```
 
-### 7.7.2 Warnings
+### 7.8.2 Warnings
 
 #### Unused Parameters
 
@@ -534,27 +720,37 @@ template = "simple"
 params.unused = "value"  # Warning: unused parameter "unused" in template "simple"
 ```
 
-## 7.8 Practical Configuration Examples
+## 7.9 Practical Configuration Examples
 
-### 7.8.1 Common Backup Tasks
+### 7.9.1 Common Backup Tasks (Inheriting workdir and output_file)
+
+This example demonstrates efficient backup task management leveraging `workdir` and `output_file` inheritance features.
 
 ```toml
 version = "1.0"
 
-# Template definitions
+[global.vars]
+BackupRoot = "/var/backups"
+LogDir = "/var/log/backups"
+
+# Template definition: Define common working directory and log output
 [command_templates.restic_backup]
 cmd = "restic"
 args = ["${@verbose_flags}", "backup", "${backup_path}"]
+workdir = "/opt/restic"  # Default working directory
+output_file = "%{LogDir}/${log_name}.log"  # Log file (parameterized)
 timeout = 3600
 risk_level = "medium"
 
 [command_templates.restic_forget]
 cmd = "restic"
 args = ["forget", "--prune", "--keep-daily", "${keep_daily}", "--keep-weekly", "${keep_weekly}", "--keep-monthly", "${keep_monthly}"]
+workdir = "/opt/restic"  # Common working directory
+output_file = "%{LogDir}/${log_name}.log"
 timeout = 1800
 risk_level = "medium"
 
-# Group 1: Important data (detailed logs, long-term retention)
+# Group 1: Important data (detailed logs, long-term retention, custom working directory)
 [[groups]]
 name = "important_data"
 
@@ -564,17 +760,27 @@ data_root = "/data/important"
 [[groups.commands]]
 name = "backup"
 template = "restic_backup"
+workdir = "/data/important"  # Override template workdir
 params.verbose_flags = ["-v", "-v"]
 params.backup_path = "%{data_root}"
+params.log_name = "important_backup"
+# Inheritance result:
+#   workdir="/data/important" (override)
+#   output_file="/var/log/backups/important_backup.log" (inherited, parameter expansion)
 
 [[groups.commands]]
 name = "cleanup"
 template = "restic_forget"
+# workdir inherited from template: "/opt/restic"
 params.keep_daily = "14"
 params.keep_weekly = "8"
 params.keep_monthly = "12"
+params.log_name = "important_cleanup"
+# Inheritance result:
+#   workdir="/opt/restic" (inherited)
+#   output_file="/var/log/backups/important_cleanup.log" (inherited, parameter expansion)
 
-# Group 2: Temporary data (silent mode, short-term retention)
+# Group 2: Temporary data (silent mode, short-term retention, inherit default settings)
 [[groups]]
 name = "temp_data"
 
@@ -584,8 +790,13 @@ data_root = "/data/temp"
 [[groups.commands]]
 name = "backup"
 template = "restic_backup"
+# Inherit workdir and output_file from template
 params.verbose_flags = []  # Silent mode
 params.backup_path = "%{data_root}"
+params.log_name = "temp_backup"
+# Inheritance result:
+#   workdir="/opt/restic" (inherited)
+#   output_file="/var/log/backups/temp_backup.log" (inherited, parameter expansion)
 
 [[groups.commands]]
 name = "cleanup"
@@ -593,49 +804,105 @@ template = "restic_forget"
 params.keep_daily = "3"
 params.keep_weekly = "1"
 params.keep_monthly = "0"
+params.log_name = "temp_cleanup"
+# Inheritance result:
+#   workdir="/opt/restic" (inherited)
+#   output_file="/var/log/backups/temp_cleanup.log" (inherited, parameter expansion)
 ```
 
-### 7.8.2 Common Database Operations
+### 7.9.2 Common Database Operations (Inheriting env_import and vars)
+
+This example demonstrates efficient database operation management leveraging `env_import` and `vars` inheritance features.
 
 ```toml
 version = "1.0"
 
+[global]
+env_allowed = ["PGHOST", "PGPORT", "PGPASSWORD", "PGUSER", "PATH"]
+
+[global.vars]
+BackupDir = "/var/backups/postgres"
+
+# Template definition: Define common environment variables and configuration variables
 [command_templates.pg_dump]
 cmd = "/usr/bin/pg_dump"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
+env_import = ["PGHOST", "PGPORT"]  # Basic environment variables
 timeout = 1800
 risk_level = "medium"
+
+# Template level vars: Provide default values
+[command_templates.pg_dump.vars]
+dump_format = "custom"
+compression_level = "6"
 
 [command_templates.pg_restore]
 cmd = "/usr/bin/pg_restore"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "${input_file}"]
+env_import = ["PGHOST", "PGPORT"]  # Basic environment variables
 timeout = 3600
 risk_level = "high"
+
+[command_templates.pg_restore.vars]
+restore_mode = "clean"
 
 [[groups]]
 name = "database_backup"
 
 [groups.vars]
-backup_dir = "/var/backups/postgres"
+backup_dir = "%{BackupDir}"
 
+# Command 1: Main DB (add environment variables, override vars)
 [[groups.commands]]
 name = "backup_main_db"
 template = "pg_dump"
+env_import = ["PGPASSWORD"]  # Add to template env_import
 params.verbose = "--verbose"
 params.db_user = "postgres"
 params.database = "main_production"
 params.output_file = "%{backup_dir}/main_db.dump"
 
+[groups.commands.vars]
+compression_level = "9"  # Override template default (high compression)
+backup_priority = "high"  # Add new variable
+# Inheritance result:
+#   env_import=["PGHOST", "PGPORT", "PGPASSWORD"] (merge)
+#   vars={dump_format: "custom", compression_level: "9", backup_priority: "high"}
+
+# Command 2: Logs DB (inherit template settings as-is)
 [[groups.commands]]
 name = "backup_logs_db"
 template = "pg_dump"
+# env_import inherited from template
 params.verbose = ""  # Silent mode
 params.db_user = "postgres"
 params.database = "logs"
 params.output_file = "%{backup_dir}/logs_db.dump"
+
+[groups.commands.vars]
+backup_priority = "low"  # Add new variable
+# Inheritance result:
+#   env_import=["PGHOST", "PGPORT"] (inherited)
+#   vars={dump_format: "custom", compression_level: "6", backup_priority: "low"}
+
+# Command 3: Restore (requires additional user environment variables)
+[[groups.commands]]
+name = "restore_main_db"
+template = "pg_restore"
+env_import = ["PGPASSWORD", "PGUSER"]  # Add to template
+params.verbose = "--verbose"
+params.db_user = "postgres"
+params.database = "main_production_restored"
+params.input_file = "%{backup_dir}/main_db.dump"
+
+[groups.commands.vars]
+restore_mode = "drop"  # Override template default
+# Inheritance result:
+#   env_import=["PGHOST", "PGPORT", "PGPASSWORD", "PGUSER"] (merge, remove duplicates)
+#   vars={restore_mode: "drop"}
 ```
 
-### 7.8.3 Common System Monitoring Tasks
+### 7.9.3 Common System Monitoring Tasks
 
 ```toml
 version = "1.0"
@@ -676,214 +943,9 @@ template = "check_service"
 params.service_name = "postgresql"
 ```
 
-## 7.9 Best Practices
+### 7.9.4 Leveraging Combined Inheritance
 
-### 7.9.1 Template Design Guidelines
-
-1. **Single Responsibility**: Each template should focus on one purpose
-2. **Appropriate Parameterization**: Parameterize parts that are likely to change
-3. **Meaningful Names**: Template names should indicate their purpose
-4. **Consider Default Values**: Leverage optional parameters (`${?...}`)
-
-### 7.9.2 Parameter Design Guidelines
-
-1. **Required vs Optional**: Use `${param}` for always required values, `${?param}` for optional values
-2. **Leverage Arrays**: Pass multiple flags and options as arrays using `${@list}`
-3. **Combine with Variables**: Reference group-specific values using `%{var}` in `params`
-
-### 7.9.3 Security Guidelines
-
-1. **No Variable References in Template Definitions**: Always pass explicitly via `params`
-2. **Validate Parameter Values**: Expanded commands are automatically validated for security
-3. **Principle of Least Privilege**: Set `run_as_user` and `risk_level` appropriately in templates
-
-## 7.10 Field Inheritance
-
-### 7.10.1 Inheritance Overview
-
-Fields defined in templates are automatically inherited unless explicitly overridden in command definitions. This feature allows you to define common settings in templates and customize them at the command level as needed.
-
-### 7.10.2 Inheritable Fields
-
-The following fields support inheritance:
-
-| Field | Inheritance Model | Description |
-|-------|------------------|-------------|
-| `workdir` | Override | Only overridden when specified in command |
-| `output_file` | Override | Only overridden when specified in command |
-| `env_import` | Union Merge | Combines values from both template and command |
-| `vars` | Map Merge | Command variables override template variables |
-
-### 7.10.3 Override Model (workdir, output_file)
-
-**Behavior:**
-- When field is not specified in command: Inherit value from template
-- When field is specified in command: Completely override template value
-- When empty string is specified: Explicitly means "unspecified" (`workdir=""` uses current directory)
-
-**Example: workdir Inheritance**
-
-```toml
-# Template definition
-[command_templates.build_template]
-cmd = "make"
-workdir = "/workspace/project"
-
-# Case 1: Inherit workdir
-[[groups.commands]]
-name = "build-default"
-template = "build_template"
-# Result: workdir="/workspace/project" (inherited from template)
-
-# Case 2: Override workdir
-[[groups.commands]]
-name = "build-custom"
-template = "build_template"
-workdir = "/opt/custom"
-# Result: workdir="/opt/custom" (overrides template)
-
-# Case 3: Explicitly set workdir to empty
-[[groups.commands]]
-name = "build-current"
-template = "build_template"
-workdir = ""
-# Result: workdir="" (use current directory)
-```
-
-### 7.10.4 Union Merge Model (env_import)
-
-**Behavior:**
-- Combines environment variables specified in both template and command
-- Duplicates are automatically removed
-- Even if an empty array is specified, template values are inherited
-
-**Example: env_import Merging**
-
-```toml
-[global]
-env_allowed = ["CC", "CXX", "LDFLAGS", "CFLAGS", "PATH"]
-
-[command_templates.compiler_template]
-cmd = "gcc"
-env_import = ["CC", "CXX"]
-
-# Case 1: Import additional environment variables
-[[groups.commands]]
-name = "compile-with-flags"
-template = "compiler_template"
-env_import = ["LDFLAGS", "CFLAGS"]
-# Result: env_import=["CC", "CXX", "LDFLAGS", "CFLAGS"] (union)
-
-# Case 2: Use template only
-[[groups.commands]]
-name = "compile-basic"
-template = "compiler_template"
-# Result: env_import=["CC", "CXX"] (inherited from template)
-
-# Case 3: With duplicates
-[[groups.commands]]
-name = "compile-dup"
-template = "compiler_template"
-env_import = ["CC", "LDFLAGS"]
-# Result: env_import=["CC", "CXX", "LDFLAGS"] (duplicates removed)
-```
-
-### 7.10.5 Map Merge Model (vars)
-
-**Behavior:**
-- Combines variables defined in both template and command
-- When the same key exists, command-level value takes precedence
-- New variables can be added at command level
-
-**Example: vars Merging**
-
-```toml
-[command_templates.backup_template]
-cmd = "restic"
-args = ["backup"]
-
-[command_templates.backup_template.vars]
-retention_days = "7"
-compression = "auto"
-backup_type = "incremental"
-
-# Case 1: Add variables
-[[groups.commands]]
-name = "backup-with-tag"
-template = "backup_template"
-
-[groups.commands.vars]
-backup_tag = "daily"
-# Result: {retention_days: "7", compression: "auto", backup_type: "incremental", backup_tag: "daily"}
-
-# Case 2: Override variables
-[[groups.commands]]
-name = "backup-full"
-template = "backup_template"
-
-[groups.commands.vars]
-backup_type = "full"  # Override template value
-retention_days = "30"  # Override template value
-# Result: {retention_days: "30", compression: "auto", backup_type: "full"}
-
-# Case 3: Use template only
-[[groups.commands]]
-name = "backup-default"
-template = "backup_template"
-# Result: {retention_days: "7", compression: "auto", backup_type: "incremental"}
-```
-
-### 7.10.6 Combining Inheritance and Parameter Expansion
-
-Parameter expansion can also be used in template `workdir`, `output_file`, `env_import`, and `vars` fields.
-
-```toml
-[command_templates.project_template]
-cmd = "make"
-workdir = "/workspace/${project}"
-output_file = "/var/log/${project}.log"
-env_import = ["${?extra_env}"]
-
-[command_templates.project_template.vars]
-build_type = "${?type}"
-
-[[groups.commands]]
-name = "build-projectA"
-template = "project_template"
-
-[groups.commands.params]
-project = "projectA"
-type = "release"
-# Result:
-#   workdir="/workspace/projectA"
-#   output_file="/var/log/projectA.log"
-#   vars={build_type: "release"}
-
-[[groups.commands]]
-name = "build-projectB"
-template = "project_template"
-workdir = "/opt/builds"  # Override template workdir
-
-[groups.commands.params]
-project = "projectB"
-extra_env = "CC"
-# Result:
-#   workdir="/opt/builds" (overridden)
-#   output_file="/var/log/projectB.log"
-#   env_import=["CC"]
-```
-
-### 7.10.7 Inheritance Priority
-
-Field values are determined in the following priority order:
-
-1. **Explicit specification at command level** (highest priority)
-2. **Template value**
-3. **System default** (lowest priority)
-
-This priority allows you to define common settings in templates while customizing at the command level as needed.
-
-### 7.10.8 Practical Example: Complex Inheritance
+This example demonstrates using all inheritance features (workdir, output_file, env_import, vars) together.
 
 ```toml
 [global]
@@ -917,8 +979,8 @@ debug = "true"       # Enable debug mode
 # Inheritance result:
 #   workdir="/workspace" (inherited from template)
 #   output_file="/var/log/build.log" (inherited from template)
-#   env_import=["CC", "CXX", "CFLAGS"] (merged)
-#   vars={optimization: "O0", debug: "true"} (overridden)
+#   env_import=["CC", "CXX", "CFLAGS"] (merge)
+#   vars={optimization: "O0", debug: "true"} (override)
 #   timeout=3600 (inherited from template)
 
 # Release build: Change working directory and output destination
@@ -933,32 +995,51 @@ env_import = ["LDFLAGS"]
 [groups.commands.vars]
 optimization = "O3"
 # Inheritance result:
-#   workdir="/opt/releases" (overridden)
-#   output_file="/var/log/release.log" (overridden)
-#   env_import=["CC", "CXX", "LDFLAGS"] (merged)
-#   vars={optimization: "O3", debug: "false"} (partially overridden)
+#   workdir="/opt/releases" (override)
+#   output_file="/var/log/release.log" (override)
+#   env_import=["CC", "CXX", "LDFLAGS"] (merge)
+#   vars={optimization: "O3", debug: "false"} (partial override)
 #   timeout=3600 (inherited from template)
 ```
 
-## 7.11 Best Practices (Considering Inheritance)
+## 7.10 Best Practices
 
-### 7.11.1 Design Leveraging Inheritance
+### 7.10.1 Template Design Guidelines
+
+1. **Single Responsibility**: Each template should focus on one purpose
+2. **Appropriate Parameterization**: Parameterize parts that are likely to change
+3. **Meaningful Names**: Template names should indicate their purpose
+4. **Consider Default Values**: Leverage optional parameters (`${?...}`)
+
+### 7.10.2 Parameter Design Guidelines
+
+1. **Required vs Optional**: Use `${param}` for always required values, `${?param}` for optional values
+2. **Leverage Arrays**: Pass multiple flags and options as arrays using `${@list}`
+3. **Combine with Variables**: Reference group-specific values using `%{var}` in `params`
+
+### 7.10.3 Leveraging Inheritance in Design
 
 1. **Define Common Settings in Templates**: Consolidate common settings like `workdir`, `env_import`, `vars` in templates
 2. **Specify Only Differences in Commands**: Explicitly specify only command-specific settings
-3. **Understand Inheritance Models**: Understand and use inheritance behavior for each field appropriately
+3. **Understand Appropriate Inheritance Models**: Understand and leverage the inheritance behavior for each field
 
-### 7.11.2 vars Inheritance Guidelines
+### 7.10.4 vars Inheritance Guidelines
 
-1. **Provide Default Values**: Set general default values in templates
-2. **Design for Overriding**: Allow flexible customization at command level
-3. **Variable Name Consistency**: Use the same variable names between templates and commands
+1. **Provide Default Values**: Set common default values in templates
+2. **Design for Overrideability**: Allow flexible customization at command level
+3. **Variable Name Consistency**: Use same variable names between template and commands
 
-### 7.11.3 env_import Inheritance Guidelines
+### 7.10.5 env_import Inheritance Guidelines
 
-1. **Minimal Import**: Import only required environment variables in templates
-2. **Additional Import at Command Level**: Add optional environment variables at command level
-3. **Maintain env_allowed**: Define importable environment variables appropriately
+1. **Minimum Imports**: Import only required environment variables in templates
+2. **Additional Imports in Commands**: Add optional environment variables at command level
+3. **Maintain env_allowed**: Define allowed environment variables appropriately
+
+### 7.10.6 Security Guidelines
+
+1. **No Variable References in Template Definitions**: Always pass explicitly via `params`
+2. **Validate Parameter Values**: Expanded commands are automatically validated for security
+3. **Principle of Least Privilege**: Set `run_as_user` and `risk_level` appropriately in templates
 
 ## Next Steps
 
