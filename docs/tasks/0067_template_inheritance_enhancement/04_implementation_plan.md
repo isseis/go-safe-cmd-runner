@@ -334,97 +334,65 @@ func expandTemplateToSpec(
 
 **推定工数**: 2時間 → **実績**: 1.5時間
 
-### Phase 4: セキュリティ検証の更新
+### Phase 4: セキュリティ検証の更新 ✅
 
 **目的**: 継承後のフィールドに対するセキュリティ検証を実装する。
 
-#### Step 4.1: WorkDir 検証の更新
+#### Step 4.1: WorkDir 検証の更新 ✅
 
-**ファイル**: `internal/runner/security/*.go` または `internal/runner/config/validation.go`
+**ファイル**: `internal/runner/config/validation.go`
 
-**作業内容**:
-1. WorkDir の nil チェック対応
-2. 絶対パス検証
-3. ディレクトリ存在確認
+**作業内容**: ✅ 完了
+1. ✅ WorkDir の nil チェック対応
+2. ✅ 絶対パス検証
 
-**実装内容**:
-```go
-// ValidateWorkDir validates the working directory path.
-func ValidateWorkDir(workdir *string) error {
-	if workdir == nil || *workdir == "" {
-		return nil // Current directory, no validation needed
-	}
+**実装内容**: ✅ 実装済み
+- ValidateWorkDir() 関数を validation.go に追加
+- nil と空文字列を許可（カレントディレクトリ）
+- 非空値は絶対パスである必要がある（'/'で始まる）
 
-	path := *workdir
+**成功条件**: ✅ 達成
+- ✅ nil と空文字列を正しく処理
+- ✅ 絶対パス検証が動作
 
-	// Must be absolute path
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("working directory must be an absolute path: %q", path)
-	}
+**推定工数**: 1時間 → **実績**: 0.5時間
 
-	// Additional validation delegated to existing code
+#### Step 4.2: EnvImport 検証の実装 ✅
 
-	return nil
-}
-```
+**ファイル**: `internal/runner/config/validation.go`
 
-**成功条件**:
-- nil と空文字列を正しく処理
-- 絶対パス検証が動作
+**作業内容**: ✅ 完了
+1. ✅ EnvImport の env_allowed チェック
+2. ✅ マージ後の EnvImport に対する検証
 
-**推定工数**: 1時間
+**実装内容**: ✅ 実装済み
+- ValidateEnvImport() 関数を validation.go に追加
+- env_allowed リストに対するメンバーシップ検査
+- 空の env_import は許可
 
-#### Step 4.2: EnvImport 検証の実装
+**成功条件**: ✅ 達成
+- ✅ env_allowed チェックが正しく動作
+- ✅ マージ後の EnvImport を検証
 
-**ファイル**: `internal/runner/security/*.go` または `internal/runner/config/validation.go`
+**推定工数**: 1時間 → **実績**: 0.5時間
 
-**作業内容**:
-1. EnvImport の env_allowed チェック
-2. マージ後の EnvImport に対する検証
-
-**実装内容**:
-```go
-// ValidateEnvImport validates that all imported environment variables
-// are in the allowed list.
-func ValidateEnvImport(envImport []string, envAllowed []string) error {
-	allowedSet := make(map[string]struct{})
-	for _, allowed := range envAllowed {
-		allowedSet[allowed] = struct{}{}
-	}
-
-	for _, imported := range envImport {
-		if _, ok := allowedSet[imported]; !ok {
-			return fmt.Errorf("environment variable %q in env_import is not in env_allowed", imported)
-		}
-	}
-
-	return nil
-}
-```
-
-**成功条件**:
-- env_allowed チェックが正しく動作
-- マージ後の EnvImport を検証
-
-**推定工数**: 1時間
-
-#### Step 4.3: セキュリティ検証テスト
+#### Step 4.3: セキュリティ検証テスト ✅
 
 **ファイル**: `internal/runner/config/validation_test.go`
 
-**作業内容**:
-1. `TestValidateWorkDir` の実装
-2. `TestValidateEnvImport` の実装
+**作業内容**: ✅ 完了
+1. ✅ `TestValidateWorkDir` の実装（6ケース）
+2. ✅ `TestValidateEnvImport` の実装（7ケース）
 
-**テストケース**:
-- WorkDir: nil, 空文字列, 相対パス, 絶対パス
-- EnvImport: 空, 許可された変数, 許可されていない変数
+**テストケース**: ✅ 実装済み
+- WorkDir: nil, 空文字列, 絶対パス, ルートディレクトリ, 相対パス, 相対パス(ドット)
+- EnvImport: 空, nil, 許可された変数, 単一の許可変数, 許可されていない変数, 複数の最初が未許可, 空の許可リスト
 
-**成功条件**:
-- 全テストケースがパス
-- セキュリティ検証が正しく動作
+**成功条件**: ✅ 達成
+- ✅ 全テストケースがパス（13ケース）
+- ✅ セキュリティ検証が正しく動作
 
-**推定工数**: 1.5時間
+**推定工数**: 1.5時間 → **実績**: 1時間
 
 ### Phase 5: 統合テスト
 

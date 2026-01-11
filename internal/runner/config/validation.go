@@ -178,3 +178,43 @@ func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
 
 	return nil
 }
+
+// ValidateWorkDir validates the working directory path.
+// It checks that:
+// 1. nil or empty string are allowed (current directory)
+// 2. Non-empty paths must be absolute (start with '/')
+func ValidateWorkDir(workdir *string) error {
+	if workdir == nil || *workdir == "" {
+		return nil // Current directory, no validation needed
+	}
+
+	path := *workdir
+
+	// Must be absolute path
+	if path[0] != '/' {
+		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, path)
+	}
+
+	return nil
+}
+
+// ValidateEnvImport validates that all imported environment variables
+// are in the allowed list.
+func ValidateEnvImport(envImport []string, envAllowed []string) error {
+	if len(envImport) == 0 {
+		return nil // No env_import, nothing to validate
+	}
+
+	allowedSet := make(map[string]struct{}, len(envAllowed))
+	for _, allowed := range envAllowed {
+		allowedSet[allowed] = struct{}{}
+	}
+
+	for _, imported := range envImport {
+		if _, ok := allowedSet[imported]; !ok {
+			return fmt.Errorf("%w: %q", ErrInvalidEnvImport, imported)
+		}
+	}
+
+	return nil
+}

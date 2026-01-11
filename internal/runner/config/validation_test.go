@@ -612,3 +612,129 @@ func TestValidateTimeouts(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateWorkDir tests WorkDir validation with nil and absolute path checking
+func TestValidateWorkDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		workdir *string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "nil workdir",
+			workdir: nil,
+			wantErr: false,
+		},
+		{
+			name:    "empty string workdir",
+			workdir: stringPtr(""),
+			wantErr: false,
+		},
+		{
+			name:    "absolute path",
+			workdir: stringPtr("/home/user/dir"),
+			wantErr: false,
+		},
+		{
+			name:    "root directory",
+			workdir: stringPtr("/"),
+			wantErr: false,
+		},
+		{
+			name:    "relative path",
+			workdir: stringPtr("relative/path"),
+			wantErr: true,
+			errMsg:  "working directory",
+		},
+		{
+			name:    "relative path with dot",
+			workdir: stringPtr("./path"),
+			wantErr: true,
+			errMsg:  "working directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateWorkDir(tt.workdir)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateEnvImport tests EnvImport validation against env_allowed list
+func TestValidateEnvImport(t *testing.T) {
+	tests := []struct {
+		name       string
+		envImport  []string
+		envAllowed []string
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "empty env_import",
+			envImport:  []string{},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+		{
+			name:       "nil env_import",
+			envImport:  nil,
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+		{
+			name:       "allowed variables",
+			envImport:  []string{"HOME", "PATH"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+		{
+			name:       "single allowed variable",
+			envImport:  []string{"HOME"},
+			envAllowed: []string{"HOME"},
+			wantErr:    false,
+		},
+		{
+			name:       "variable not in allowlist",
+			envImport:  []string{"HOME", "SECRET"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    true,
+			errMsg:     "SECRET",
+		},
+		{
+			name:       "first of multiple not allowed",
+			envImport:  []string{"SECRET", "HOME"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    true,
+			errMsg:     "SECRET",
+		},
+		{
+			name:       "empty allowlist rejects all",
+			envImport:  []string{"HOME"},
+			envAllowed: []string{},
+			wantErr:    true,
+			errMsg:     "HOME",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateEnvImport(tt.envImport, tt.envAllowed)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
