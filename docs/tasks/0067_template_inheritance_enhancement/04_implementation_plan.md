@@ -227,60 +227,39 @@ func MergeVars(templateVars map[string]any, cmdVars map[string]any) map[string]a
 
 **推定工数**: 1.5時間
 
-### Phase 3: テンプレート展開への統合
+### Phase 3: テンプレート展開への統合 ✅
 
 **目的**: 既存のテンプレート展開処理に継承・マージロジックを統合する。
 
-#### Step 3.1: ApplyTemplateInheritance 関数の実装
+#### Step 3.1: ApplyTemplateInheritance 関数の実装 ✅
 
 **ファイル**: `internal/runner/config/expansion.go`
 
-**作業内容**:
-1. `ApplyTemplateInheritance()` 関数の実装
-2. WorkDir, OutputFile, EnvImport, Vars の継承・マージ処理
+**作業内容**: ✅ 完了
+1. ✅ `ApplyTemplateInheritance()` 関数の実装
+2. ✅ WorkDir, OutputFile, EnvImport, Vars の継承・マージ処理
 
-**実装内容**:
-```go
-// ApplyTemplateInheritance applies template field inheritance to an expanded CommandSpec.
-func ApplyTemplateInheritance(
-	expandedSpec *runnertypes.CommandSpec,
-	template *runnertypes.CommandTemplate,
-) *runnertypes.CommandSpec {
-	// WorkDir: Override model
-	if expandedSpec.WorkDir == nil && template.WorkDir != nil {
-		expandedSpec.WorkDir = template.WorkDir
-	}
+**実装内容**: ✅ 実装済み
+- ApplyTemplateInheritance 関数を expansion.go に追加
+- OverrideStringPointer を WorkDir と OutputFile に適用
+- MergeEnvImport と MergeVars を適切に呼び出し
 
-	// OutputFile: Override model
-	if expandedSpec.OutputFile == nil && template.OutputFile != nil {
-		expandedSpec.OutputFile = template.OutputFile
-	}
+**成功条件**: ✅ 達成
+- ✅ 関数が正しく動作する
+- ✅ 各継承モデルが正しく適用される
 
-	// EnvImport: Merge model
-	expandedSpec.EnvImport = MergeEnvImport(template.EnvImport, expandedSpec.EnvImport)
+**推定工数**: 1時間 → **実績**: 1時間
 
-	// Vars: Merge model
-	expandedSpec.Vars = MergeVars(template.Vars, expandedSpec.Vars)
-
-	return expandedSpec
-}
-```
-
-**成功条件**:
-- 関数が正しく動作する
-- 各継承モデルが正しく適用される
-
-**推定工数**: 1時間
-
-#### Step 3.2: expandTemplateToSpec の更新
+#### Step 3.2: expandTemplateToSpec の更新 ✅
 
 **ファイル**: `internal/runner/config/expansion.go`
 
-**作業内容**:
-1. `expandTemplateToSpec()` に `ApplyTemplateInheritance()` 呼び出しを追加
-2. WorkDir と OutputFile の展開処理を追加（nil でない場合のみ）
+**作業内容**: ✅ 完了
+1. ✅ `expandTemplateToSpec()` に `ApplyTemplateInheritance()` 呼び出しを追加
+2. ✅ WorkDir と OutputFile の展開処理を追加（nil でない場合のみ）
+3. ✅ 既存の処理を継承モデルに置き換え
 
-**変更箇所**:
+**変更箇所**: ✅ 実装済み
 ```go
 func expandTemplateToSpec(
 	cmdSpec *runnertypes.CommandSpec,
@@ -325,32 +304,35 @@ func expandTemplateToSpec(
 }
 ```
 
-**成功条件**:
-- テンプレート展開が正しく動作する
-- 継承・マージが適用される
+**成功条件**: ✅ 達成
+- ✅ テンプレート展開が正しく動作する
+- ✅ 継承・マージが適用される
 
-**推定工数**: 1.5時間
+**推定工数**: 1.5時間 → **実績**: 1時間
 
-#### Step 3.3: 統合テストの実装
+#### Step 3.3: 統合テストの実装 ✅
 
-**ファイル**: `internal/runner/config/expansion_test.go`
+**ファイル**: `internal/runner/config/expansion_test.go` (新規作成)
 
-**作業内容**:
-1. `TestApplyTemplateInheritance` の実装
-2. `TestExpandTemplateToSpecWithInheritance` の実装
+**作業内容**: ✅ 完了
+1. ✅ `TestApplyTemplateInheritance_WorkDir` の実装
+2. ✅ `TestApplyTemplateInheritance_OutputFile` の実装
+3. ✅ `TestApplyTemplateInheritance_EnvImport` の実装
+4. ✅ `TestApplyTemplateInheritance_Vars` の実装
+5. ✅ `TestApplyTemplateInheritance_Combined` の実装
 
-**テストケース**:
-- WorkDir 継承テスト
-- OutputFile 継承テスト
-- EnvImport マージテスト
-- Vars マージテスト
-- 複合シナリオテスト
+**テストケース**: ✅ 実装済み
+- ✅ WorkDir 継承テスト（4ケース）
+- ✅ OutputFile 継承テスト（4ケース）
+- ✅ EnvImport マージテスト（5ケース）
+- ✅ Vars マージテスト（5ケース）
+- ✅ 複合シナリオテスト（1ケース）
 
-**成功条件**:
-- 全テストケースがパス
-- 継承・マージが正しく動作する
+**成功条件**: ✅ 達成
+- ✅ 全テストケースがパス
+- ✅ 継承・マージが正しく動作する
 
-**推定工数**: 2時間
+**推定工数**: 2時間 → **実績**: 1.5時間
 
 ### Phase 4: セキュリティ検証の更新
 

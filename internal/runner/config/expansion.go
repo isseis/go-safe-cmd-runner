@@ -1270,6 +1270,26 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 	return runtime, nil
 }
 
+// ApplyTemplateInheritance applies template field inheritance to the expanded command spec.
+// This function merges template and command-level settings according to the inheritance model:
+//   - WorkDir: Override model (command overrides template, nil = inherit)
+//   - OutputFile: Override model (command overrides template, nil = inherit)
+//   - EnvImport: Merge model (template entries added first, command entries appended, duplicates removed)
+//   - Vars: Merge model (template vars as baseline, command vars overlay with precedence on conflicts)
+func ApplyTemplateInheritance(expandedSpec *runnertypes.CommandSpec, cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, expandedWorkDir *string, expandedOutputFile *string) {
+	// WorkDir: Override model
+	expandedSpec.WorkDir = OverrideStringPointer(cmdSpec.WorkDir, expandedWorkDir)
+
+	// OutputFile: Override model
+	expandedSpec.OutputFile = OverrideStringPointer(cmdSpec.OutputFile, expandedOutputFile)
+
+	// EnvImport: Merge model (template first, command appended, deduplicate)
+	expandedSpec.EnvImport = MergeEnvImport(template.EnvImport, cmdSpec.EnvImport)
+
+	// Vars: Merge model (template baseline, command overlay)
+	expandedSpec.Vars = MergeVars(template.Vars, cmdSpec.Vars)
+}
+
 // expandTemplateToSpec expands a template into a CommandSpec by substituting parameters.
 // It returns the expanded CommandSpec and a list of warnings for unused parameters.
 // The expanded spec will have Template field cleared and Cmd/Args/Env/WorkDir fields populated.
@@ -1278,7 +1298,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 //   - If the command explicitly sets a value, that value is used
 //   - Otherwise, the template's value is used as a fallback
 //
-// This allows templates to provide sensible defaults while permitting per-command customization.
+// This allows templates to provide sensible defaults while permitting per-command customization.// This allows templates to provide sensible defaults while permitting per-command customization.
 //
 //nolint:gocyclo // Template expansion requires sequential validation and transformation steps
 func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, templateName string) (*runnertypes.CommandSpec, []string, error) {
@@ -1367,18 +1387,6 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		expandedOutputFile = &empty
 	}
 
-	// Determine final workdir: command-level overrides template (nil = not set)
-	finalWorkDir := cmdSpec.WorkDir
-	if finalWorkDir == nil {
-		finalWorkDir = expandedWorkDir
-	}
-
-	// Determine final output_file: command-level overrides template (nil = not set)
-	finalOutputFile := cmdSpec.OutputFile
-	if finalOutputFile == nil {
-		finalOutputFile = expandedOutputFile
-	}
-
 	// Create expanded spec
 	expandedSpec := &runnertypes.CommandSpec{
 		Name:        cmdSpec.Name,
@@ -1386,17 +1394,13 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		Cmd:         expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
 		Args:        expandedArgs,
 		EnvVars:     expandedEnv,
-		WorkDir:     finalWorkDir,
 
 		// Execution settings from command (template fallback applied below)
 		Timeout:         cmdSpec.Timeout,
 		OutputSizeLimit: cmdSpec.OutputSizeLimit,
 		RiskLevel:       cmdSpec.RiskLevel,
 
-		// Copy non-template fields from original spec
-		EnvImport:  cmdSpec.EnvImport,
-		Vars:       cmdSpec.Vars,
-		OutputFile: finalOutputFile,
+		// RunAsUser and RunAsGroup
 		RunAsUser:  cmdSpec.RunAsUser,
 		RunAsGroup: cmdSpec.RunAsGroup,
 
@@ -1404,6 +1408,9 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		Template: "",
 		Params:   nil,
 	}
+
+	// Apply template inheritance for WorkDir, OutputFile, EnvImport, and Vars
+	ApplyTemplateInheritance(expandedSpec, cmdSpec, template, expandedWorkDir, expandedOutputFile)
 
 	// Apply template defaults for execution settings only if command didn't set them.
 	// All settings use pointer types: nil = inherit from template, explicit value = override.
