@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -191,7 +192,7 @@ func ValidateWorkDir(workdir *string) error {
 	path := *workdir
 
 	// Must be absolute path
-	if path[0] != '/' {
+	if !filepath.IsAbs(path) {
 		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, path)
 	}
 
