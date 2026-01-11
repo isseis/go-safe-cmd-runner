@@ -46,7 +46,7 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 	// Assuming we're in internal/runner/config and sample is at repo root
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	
+
 	// Navigate up to repo root (from internal/runner/config -> ../../..)
 	repoRoot := filepath.Join(wd, "..", "..", "..")
 	sampleDir := filepath.Join(repoRoot, "sample")
@@ -54,19 +54,19 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 	for _, filename := range sampleFiles {
 		t.Run(filename, func(t *testing.T) {
 			filePath := filepath.Join(sampleDir, filename)
-			
+
 			// Read the file
 			content, err := os.ReadFile(filePath)
 			require.NoError(t, err, "Failed to read %s", filename)
-			
+
 			// Create loader and load the config
 			loader := NewLoader()
 			cfg, err := loader.LoadConfig(content)
-			
+
 			// Assert no errors during loading
 			assert.NoError(t, err, "Failed to load %s", filename)
 			assert.NotNil(t, cfg, "Config should not be nil for %s", filename)
-			
+
 			// Basic structure validation
 			// Note: Some test files may not have version field
 			if cfg != nil && cfg.Version != "" {

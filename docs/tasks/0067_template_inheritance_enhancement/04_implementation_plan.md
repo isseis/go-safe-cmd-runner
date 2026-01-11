@@ -657,9 +657,11 @@ Note: internal/runnerのgroup_executor_test.goに構文エラーが残ってい�
 - [x] 後方互換性確認
 
 ### Phase 7: ドキュメント整備
-- [ ] サンプルファイルへのコメント追加
-- [ ] CHANGELOG.md 更新
-- [ ] ドキュメントレビュー
+- [x] サンプルファイルへのコメント追加
+- [x] CHANGELOG.md 更新
+- [ ] docs/user/toml_config/07_command_templates.ja.md の更新
+- [ ] docs/user/toml_config/07_command_templates.ja.md の英訳 docs/user/toml_config/07_command_templates.md の更新
+- [x] ドキュメントレビュー
 
 ## 7. 成功基準
 

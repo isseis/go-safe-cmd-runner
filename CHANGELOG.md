@@ -9,6 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Template Inheritance Enhancement
+
+Extended command template functionality to support inheritance and merging of additional fields.
+
+**New Inheritable Fields:**
+- **WorkDir**: Working directory path
+  - Inheritance model: Override (command-level value takes precedence if specified)
+  - `nil`: Field not specified, inheritable from template
+  - Empty string: Explicitly set to current directory
+  - Non-empty: Use specified absolute path
+- **OutputFile**: Output file path for command output capture
+  - Inheritance model: Override (command-level value takes precedence if specified)
+  - `nil`: Field not specified, inheritable from template
+  - Non-empty: Use specified file path
+- **EnvImport**: List of environment variables to import as internal variables
+  - Inheritance model: Union merge (combines template and command-level lists)
+  - Duplicates are automatically removed
+  - All variables must be in the `env_allowed` list
+- **Vars**: Internal variable definitions
+  - Inheritance model: Map merge (command-level variables override template variables with same key)
+  - Template variables are inherited first
+  - Command-level variables override conflicting keys
+
+**Benefits:**
+- Reduce configuration duplication by defining common fields in templates
+- Flexible inheritance models for different field types
+- Maintain backward compatibility with existing configurations
+
+**Example:**
+```toml
+[command_templates.build_template]
+cmd = "make"
+workdir = "/workspace"
+env_import = ["CC", "CXX"]
+
+[command_templates.build_template.vars]
+optimization = "O2"
+
+[[groups.commands]]
+name = "build-debug"
+template = "build_template"
+args = ["debug"]
+# Inherits: workdir="/workspace", env_import=["CC", "CXX"], vars={optimization: "O2"}
+
+[[groups.commands]]
+name = "build-release"
+template = "build_template"
+args = ["release"]
+workdir = "/opt/build"  # Overrides template workdir
+env_import = ["LDFLAGS"]  # Merges with template: ["CC", "CXX", "LDFLAGS"]
+
+[groups.commands.vars]
+optimization = "O3"  # Overrides template variable
+```
+
 #### Variable Scope and Naming Conventions
 
 Added strict naming conventions for user-defined variables to enforce scope separation and prevent configuration errors.
@@ -106,6 +161,26 @@ repo = "/backup/repo"
 - Sample configuration: `sample/command_template_example.toml`
 
 ### Changed
+
+#### WorkDir and OutputFile Type Changes
+
+**What Changed:**
+The `workdir` field in `CommandTemplate` and `CommandSpec` has been changed from `string` to `*string` (pointer type) to support proper inheritance semantics.
+
+**Behavior:**
+- `nil`: Field not specified, can inherit from template
+- Empty string pointer (`""`): Explicitly set to use current directory
+- Non-nil with value: Use the specified absolute path
+
+**Impact:**
+- Existing configurations continue to work without modification
+- TOML parser automatically converts string values to pointers
+- Code referencing `WorkDir` must handle nil case: `if cmdSpec.WorkDir == nil || *cmdSpec.WorkDir == "" { ... }`
+
+**Benefits:**
+- Enables distinction between "not specified" (nil) and "explicitly empty" ("")
+- Consistent with other pointer-type fields like `Timeout`, `OutputSizeLimit`, `RiskLevel`
+- Required for proper template inheritance support
 
 #### BREAKING CHANGE: Vars Configuration Format
 
