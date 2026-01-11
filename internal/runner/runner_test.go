@@ -1371,9 +1371,11 @@ args = ["No output capture"]
 		assert.Len(t, config.Groups[0].Commands, 3)
 
 		// Verify commands have correct output configuration
-		assert.Equal(t, "toml-output.txt", config.Groups[0].Commands[0].OutputFile)
-		assert.Equal(t, "multiline-toml-output.txt", config.Groups[0].Commands[1].OutputFile)
-		assert.Equal(t, "", config.Groups[0].Commands[2].OutputFile) // No output field
+		require.NotNil(t, config.Groups[0].Commands[0].OutputFile)
+		assert.Equal(t, "toml-output.txt", *config.Groups[0].Commands[0].OutputFile)
+		require.NotNil(t, config.Groups[0].Commands[1].OutputFile)
+		assert.Equal(t, "multiline-toml-output.txt", *config.Groups[0].Commands[1].OutputFile)
+		assert.Nil(t, config.Groups[0].Commands[2].OutputFile) // No output field
 
 		// Create runner to verify basic initialization works
 		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-toml-config"))
