@@ -87,9 +87,9 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 	)
 
 	// Set default workDir if not specified
-	workDir := spec.WorkDir
-	if workDir == "" {
-		workDir = "/tmp" // Use /tmp as default for runner package tests
+	workDir := "/tmp" // Use /tmp as default for runner package tests
+	if spec.WorkDir != nil && *spec.WorkDir != "" {
+		workDir = *spec.WorkDir
 	}
 
 	return &runnertypes.RuntimeCommand{

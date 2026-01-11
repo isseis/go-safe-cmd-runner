@@ -672,11 +672,11 @@ func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 	runtimeGroup *runnertypes.RuntimeGroup,
 ) (string, error) {
 	// Priority 1: Command-level WorkDir (from spec)
-	if runtimeCmd.Spec.WorkDir != "" {
+	if runtimeCmd.Spec.WorkDir != nil && *runtimeCmd.Spec.WorkDir != "" {
 		// Expand variables in command workdir
 		level := fmt.Sprintf("command[%s]", runtimeCmd.Spec.Name)
 		expandedWorkDir, err := config.ExpandString(
-			runtimeCmd.Spec.WorkDir,
+			*runtimeCmd.Spec.WorkDir,
 			runtimeCmd.ExpandedVars, // Use command's expanded vars
 			level,
 			"workdir",

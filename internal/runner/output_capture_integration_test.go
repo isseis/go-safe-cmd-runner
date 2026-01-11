@@ -17,6 +17,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// stringToStringPtr converts a string to *string. Returns nil for empty strings.
+// (Duplicate definition for output_capture_integration_test.go)
+func stringToStringPtrForOutput(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // TestRunner_OutputCaptureIntegration tests basic output capture integration
 func TestRunner_OutputCaptureIntegration(t *testing.T) {
 	setupSafeTestEnv(t)
@@ -71,7 +80,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: "output.txt",
+								OutputFile: runnertypes.StringPtr("output.txt"),
 							},
 						},
 					},
@@ -166,7 +175,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: tt.outputPath,
+								OutputFile: stringToStringPtrForOutput(tt.outputPath),
 							},
 						},
 					},

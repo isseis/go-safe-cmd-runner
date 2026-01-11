@@ -228,7 +228,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: "${?dir}",
+				WorkDir: runnertypes.StringPtr("${?dir}"),
 			},
 			expectDir:   "/my/dir",
 			description: "Pure optional should return the value when provided",
@@ -242,7 +242,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: "${?dir}",
+				WorkDir: runnertypes.StringPtr("${?dir}"),
 			},
 			expectDir:   "",
 			description: "Pure optional workdir should be empty when parameter missing",
@@ -258,7 +258,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: "/home/${?subdir}",
+				WorkDir: runnertypes.StringPtr("/home/${?subdir}"),
 			},
 			expectDir:   "/home/myproject",
 			description: "Mixed context optional should substitute value",
@@ -272,7 +272,7 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 			},
 			template: &runnertypes.CommandTemplate{
 				Cmd:     "echo",
-				WorkDir: "/home/${?subdir}",
+				WorkDir: runnertypes.StringPtr("/home/${?subdir}"),
 			},
 			expectDir:   "/home/",
 			description: "Mixed context optional should substitute empty string when missing",
@@ -283,7 +283,11 @@ func TestOptionalParameter_InWorkDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			spec, _, err := expandTemplateToSpec(tt.command, tt.template, "dir_tmpl")
 			require.NoError(t, err, tt.description)
-			assert.Equal(t, tt.expectDir, spec.WorkDir, tt.description)
+			if spec.WorkDir != nil {
+				assert.Equal(t, tt.expectDir, *spec.WorkDir, tt.description)
+			} else {
+				assert.Equal(t, tt.expectDir, "", tt.description)
+			}
 		})
 	}
 }

@@ -649,9 +649,9 @@ func ValidateTemplateDefinition(
 		}
 	}
 
-	// Check workdir for local variable references
-	if template.WorkDir != "" {
-		if err := validateGlobalOnly(template.WorkDir, name, workDirKey); err != nil {
+	// Check workdir for local variable references (if non-nil and non-empty)
+	if template.WorkDir != nil && *template.WorkDir != "" {
+		if err := validateGlobalOnly(*template.WorkDir, name, workDirKey); err != nil {
 			return err
 		}
 	}
@@ -875,9 +875,9 @@ func CollectUsedParams(template *runnertypes.CommandTemplate) (map[string]struct
 		}
 	}
 
-	// Collect from workdir
-	if template.WorkDir != "" {
-		if err := collectFromString(template.WorkDir, used); err != nil {
+	// Collect from workdir (if non-nil and non-empty)
+	if template.WorkDir != nil && *template.WorkDir != "" {
+		if err := collectFromString(*template.WorkDir, used); err != nil {
 			return nil, err
 		}
 	}
@@ -913,21 +913,16 @@ func ValidateTemplateVars(
 	templateName string,
 	globalVars map[string]string,
 ) error {
-	// Fields to check for variable references
-	fieldsToCheck := []struct {
-		name  string
-		value string
-	}{
-		{"cmd", template.Cmd},
-		{"workdir", template.WorkDir},
+	// Check cmd field
+	if template.Cmd != "" {
+		if err := validateFieldVars(template.Cmd, templateName, "cmd", globalVars); err != nil {
+			return err
+		}
 	}
 
-	// Check string fields
-	for _, field := range fieldsToCheck {
-		if field.value == "" {
-			continue
-		}
-		if err := validateFieldVars(field.value, templateName, field.name, globalVars); err != nil {
+	// Check workdir field (if non-nil and non-empty)
+	if template.WorkDir != nil && *template.WorkDir != "" {
+		if err := validateFieldVars(*template.WorkDir, templateName, "workdir", globalVars); err != nil {
 			return err
 		}
 	}

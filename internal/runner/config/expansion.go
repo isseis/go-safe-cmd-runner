@@ -1330,10 +1330,10 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template env_vars: %w", err)
 	}
 
-	// Expand workdir from template
-	var expandedWorkDir string
-	if template.WorkDir != "" {
-		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, workDirKey)
+	// Expand workdir from template (if non-nil)
+	var expandedWorkDir *string
+	if template.WorkDir != nil && *template.WorkDir != "" {
+		result, err := expandSingleArg(*template.WorkDir, cmdSpec.Params, templateName, workDirKey)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
 		}
@@ -1341,14 +1341,42 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		// Note: Array placeholders (${@param}) are rejected at expansion time
 		// by expandArrayPlaceholder, so result will always have 0 or 1 element here
 		if len(result) > 0 {
-			expandedWorkDir = result[0]
+			expanded := result[0]
+			expandedWorkDir = &expanded
 		}
+	} else if template.WorkDir != nil {
+		// Empty string pointer: preserve the empty value
+		empty := ""
+		expandedWorkDir = &empty
 	}
 
-	// Determine final workdir: command-level overrides template
+	// Expand output_file from template (if non-nil)
+	var expandedOutputFile *string
+	if template.OutputFile != nil && *template.OutputFile != "" {
+		result, err := expandSingleArg(*template.OutputFile, cmdSpec.Params, templateName, "output_file")
+		if err != nil {
+			return nil, warnings, fmt.Errorf("failed to expand template output_file: %w", err)
+		}
+		if len(result) > 0 {
+			expanded := result[0]
+			expandedOutputFile = &expanded
+		}
+	} else if template.OutputFile != nil {
+		// Empty string pointer: preserve the empty value
+		empty := ""
+		expandedOutputFile = &empty
+	}
+
+	// Determine final workdir: command-level overrides template (nil = not set)
 	finalWorkDir := cmdSpec.WorkDir
-	if finalWorkDir == "" {
+	if finalWorkDir == nil {
 		finalWorkDir = expandedWorkDir
+	}
+
+	// Determine final output_file: command-level overrides template (nil = not set)
+	finalOutputFile := cmdSpec.OutputFile
+	if finalOutputFile == nil {
+		finalOutputFile = expandedOutputFile
 	}
 
 	// Create expanded spec
@@ -1368,7 +1396,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		// Copy non-template fields from original spec
 		EnvImport:  cmdSpec.EnvImport,
 		Vars:       cmdSpec.Vars,
-		OutputFile: cmdSpec.OutputFile,
+		OutputFile: finalOutputFile,
 		RunAsUser:  cmdSpec.RunAsUser,
 		RunAsGroup: cmdSpec.RunAsGroup,
 

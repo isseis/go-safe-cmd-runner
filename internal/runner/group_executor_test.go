@@ -208,7 +208,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 					{
 						Name:    "test-cmd",
 						Cmd:     "/bin/echo",
-						WorkDir: tt.commandDir,
+						WorkDir: runnertypes.StringPtr(tt.commandDir),
 					},
 				},
 			}
@@ -621,8 +621,8 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	spec := &runnertypes.CommandSpec{
 		Name:       "test-cmd",
 		Cmd:        "/bin/echo",
-		OutputFile: "/invalid/output/path",
-		WorkDir:    "/work",
+		OutputFile: runnertypes.StringPtr("/invalid/output/path"),
+		WorkDir:    runnertypes.StringPtr("/work"),
 	}
 	cmd := createRuntimeCommand(spec)
 
@@ -944,7 +944,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			runtimeCmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
 					Name:    "test-cmd",
-					WorkDir: tt.commandWorkDir,
+					WorkDir: runnertypes.StringPtr(tt.commandWorkDir),
 				},
 				ExpandedVars: tt.commandVars,
 			}
@@ -1068,7 +1068,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 						Name:    "test-cmd",
 						Cmd:     "echo",
 						Args:    tt.commandArgs,
-						WorkDir: tt.commandWorkDir,
+						WorkDir: runnertypes.StringPtr(tt.commandWorkDir),
 					},
 				},
 			}
@@ -1133,13 +1133,17 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 			// 4. Verify command-level workdir expansion with __runner_workdir
 			if tt.commandWorkDir != "" {
 				// Manually expand command workdir (normally done by executor)
-				expandedCmdWorkDir, err := config.ExpandString(
-					cmdSpec.WorkDir,
-					runtimeGroup.ExpandedVars,
-					fmt.Sprintf("command[%s]", cmdSpec.Name),
-					"workdir",
-				)
-				require.NoError(t, err, "Command workdir expansion should succeed")
+				var expandedCmdWorkDir string
+				if cmdSpec.WorkDir != nil {
+					var err error
+					expandedCmdWorkDir, err = config.ExpandString(
+						*cmdSpec.WorkDir,
+						runtimeGroup.ExpandedVars,
+						fmt.Sprintf("command[%s]", cmdSpec.Name),
+						"workdir",
+					)
+					require.NoError(t, err, "Command workdir expansion should succeed")
+				}
 
 				if tt.expectedWorkDir != "" {
 					// Fixed path test - expect exact match
@@ -1913,7 +1917,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 			{
 				Name:    "test-cmd",
 				Cmd:     "/bin/echo",
-				WorkDir: "/tmp/%{UNDEFINED_VAR}/path", // Undefined variable in command WorkDir
+				WorkDir: runnertypes.StringPtr("/tmp/%{UNDEFINED_VAR}/path"), // Undefined variable in command WorkDir
 			},
 		},
 	}
@@ -2934,7 +2938,7 @@ func TestPreExpandCommands_Error(t *testing.T) {
 					{
 						Name:    "cmd1",
 						Cmd:     "/bin/echo",
-						WorkDir: "%{undefined_workdir}",
+						WorkDir: runnertypes.StringPtr("%{undefined_workdir}"),
 					},
 				},
 			},
