@@ -292,3 +292,13 @@ func (e *ErrDuplicateEnvVariableDetail) Error() string {
 func (e *ErrDuplicateEnvVariableDetail) Unwrap() error {
 	return ErrDuplicateEnvVariable
 }
+
+// ErrTemplateVarUnexpectedMultipleValues is returned when a template var string expansion results in multiple values.
+type ErrTemplateVarUnexpectedMultipleValues struct {
+	TemplateName string
+	Field        string
+}
+
+func (e *ErrTemplateVarUnexpectedMultipleValues) Error() string {
+	return fmt.Sprintf("template %q field %q: unexpected multiple values from expansion", e.TemplateName, e.Field)
+}

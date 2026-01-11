@@ -1276,18 +1276,33 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 //   - OutputFile: Override model (command overrides template, nil = inherit)
 //   - EnvImport: Merge model (template entries added first, command entries appended, duplicates removed)
 //   - Vars: Merge model (template vars as baseline, command vars overlay with precedence on conflicts)
-func ApplyTemplateInheritance(expandedSpec *runnertypes.CommandSpec, cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, expandedWorkDir *string, expandedOutputFile *string) {
+//
+// Parameters:
+//   - expandedSpec: The spec being constructed (output)
+//   - cmdSpec: The original command spec (contains command-level overrides)
+//   - expandedWorkDir: WorkDir from template after parameter expansion (nil if not set in template)
+//   - expandedOutputFile: OutputFile from template after parameter expansion (nil if not set in template)
+//   - expandedEnvImport: EnvImport from template after parameter expansion
+//   - expandedVars: Vars from template after parameter expansion
+func ApplyTemplateInheritance(
+	expandedSpec *runnertypes.CommandSpec,
+	cmdSpec *runnertypes.CommandSpec,
+	expandedWorkDir *string,
+	expandedOutputFile *string,
+	expandedEnvImport []string,
+	expandedVars map[string]any,
+) {
 	// WorkDir: Override model
 	expandedSpec.WorkDir = OverrideStringPointer(cmdSpec.WorkDir, expandedWorkDir)
 
 	// OutputFile: Override model
 	expandedSpec.OutputFile = OverrideStringPointer(cmdSpec.OutputFile, expandedOutputFile)
 
-	// EnvImport: Merge model (template first, command appended, deduplicate)
-	expandedSpec.EnvImport = MergeEnvImport(template.EnvImport, cmdSpec.EnvImport)
+	// EnvImport: Merge model (expanded template first, command appended, deduplicate)
+	expandedSpec.EnvImport = MergeEnvImport(expandedEnvImport, cmdSpec.EnvImport)
 
-	// Vars: Merge model (template baseline, command overlay)
-	expandedSpec.Vars = MergeVars(template.Vars, cmdSpec.Vars)
+	// Vars: Merge model (expanded template baseline, command overlay)
+	expandedSpec.Vars = MergeVars(expandedVars, cmdSpec.Vars)
 }
 
 // expandTemplateToSpec expands a template into a CommandSpec by substituting parameters.
@@ -1387,6 +1402,18 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		expandedOutputFile = &empty
 	}
 
+	// Expand env_import from template
+	expandedEnvImport, err := ExpandTemplateEnvImport(template.EnvImport, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template env_import: %w", err)
+	}
+
+	// Expand vars from template
+	expandedVars, err := ExpandTemplateVars(template.Vars, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template vars: %w", err)
+	}
+
 	// Create expanded spec
 	expandedSpec := &runnertypes.CommandSpec{
 		Name:        cmdSpec.Name,
@@ -1410,7 +1437,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	}
 
 	// Apply template inheritance for WorkDir, OutputFile, EnvImport, and Vars
-	ApplyTemplateInheritance(expandedSpec, cmdSpec, template, expandedWorkDir, expandedOutputFile)
+	ApplyTemplateInheritance(expandedSpec, cmdSpec, expandedWorkDir, expandedOutputFile, expandedEnvImport, expandedVars)
 
 	// Apply template defaults for execution settings only if command didn't set them.
 	// All settings use pointer types: nil = inherit from template, explicit value = override.

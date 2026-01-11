@@ -839,6 +839,141 @@ func validateCmdSpec(
 	return nil
 }
 
+// ExpandTemplateEnvImport expands all placeholders in a template's env_import array.
+// Each element can be:
+//   - A simple string like "CC" (no expansion needed)
+//   - A mapping like "internal_name=SYSTEM_VAR" (no expansion needed)
+//   - A placeholder like "${?extra_env}" (expands to value or removed if empty)
+//   - An array placeholder like "${@env_vars}" (expands to multiple elements)
+func ExpandTemplateEnvImport(
+	envImport []string,
+	params map[string]any,
+	templateName string,
+) ([]string, error) {
+	result := make([]string, 0, len(envImport))
+
+	for i, entry := range envImport {
+		field := fmt.Sprintf("env_import[%d]", i)
+
+		// Expand the entry (may expand to multiple elements for ${@param})
+		expanded, err := expandSingleArg(entry, params, templateName, field)
+		if err != nil {
+			return nil, err
+		}
+
+		// Skip if expansion resulted in empty (e.g., ${?param} with missing/empty value)
+		if len(expanded) == 0 {
+			continue
+		}
+
+		result = append(result, expanded...)
+	}
+
+	return result, nil
+}
+
+// ExpandTemplateVars expands all placeholders in a template's vars map.
+// Only the values are expanded, not the keys.
+// String values and array element values can contain placeholders.
+func ExpandTemplateVars(
+	vars map[string]any,
+	params map[string]any,
+	templateName string,
+) (map[string]any, error) {
+	if len(vars) == 0 {
+		return make(map[string]any), nil
+	}
+
+	result := make(map[string]any, len(vars))
+
+	for varName, varValue := range vars {
+		field := fmt.Sprintf("vars.%s", varName)
+
+		switch v := varValue.(type) {
+		case string:
+			// Expand string value
+			// Note: expandSingleArg returns []string, but for vars values,
+			// we need to handle different cases:
+			// - ${param} or ${?param} with value: single string (join if multiple, but should be one)
+			// - ${?param} with empty/missing: should result in empty string
+			// - ${@param}: not allowed in vars string values (mixed context)
+			expanded, err := expandSingleArg(v, params, templateName, field)
+			if err != nil {
+				return nil, err
+			}
+
+			switch len(expanded) {
+			case 0:
+				// Optional parameter was empty/missing - store as empty string
+				result[varName] = ""
+			case 1:
+				result[varName] = expanded[0]
+			default:
+				// This shouldn't happen for string values (array expansion should error)
+				return nil, &ErrTemplateVarUnexpectedMultipleValues{
+					TemplateName: templateName,
+					Field:        field,
+				}
+			}
+
+		case []any:
+			// Expand array elements
+			expandedArray := make([]any, 0, len(v))
+			for i, elem := range v {
+				str, ok := elem.(string)
+				if !ok {
+					return nil, &ErrTemplateInvalidArrayElement{
+						TemplateName: templateName,
+						Field:        field,
+						ParamName:    varName,
+						Index:        i,
+						ActualType:   fmt.Sprintf("%T", elem),
+					}
+				}
+
+				elemField := fmt.Sprintf("%s[%d]", field, i)
+				expanded, err := expandSingleArg(str, params, templateName, elemField)
+				if err != nil {
+					return nil, err
+				}
+
+				// Add expanded elements (may be 0, 1, or multiple)
+				for _, exp := range expanded {
+					expandedArray = append(expandedArray, exp)
+				}
+			}
+			result[varName] = expandedArray
+
+		case []string:
+			// Expand array elements
+			expandedArray := make([]any, 0, len(v))
+			for i, str := range v {
+				elemField := fmt.Sprintf("%s[%d]", field, i)
+				expanded, err := expandSingleArg(str, params, templateName, elemField)
+				if err != nil {
+					return nil, err
+				}
+
+				// Add expanded elements (may be 0, 1, or multiple)
+				for _, exp := range expanded {
+					expandedArray = append(expandedArray, exp)
+				}
+			}
+			result[varName] = expandedArray
+
+		default:
+			return nil, &ErrUnsupportedParamType{
+				TemplateName: templateName,
+				Field:        "vars",
+				ParamName:    varName,
+				ActualType:   fmt.Sprintf("%T", varValue),
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // CollectUsedParams extracts all parameter names used in a template.
 // This is used for:
 //  1. Required params validation
@@ -846,43 +981,113 @@ func validateCmdSpec(
 func CollectUsedParams(template *runnertypes.CommandTemplate) (map[string]struct{}, error) {
 	used := make(map[string]struct{})
 
-	// Collect from cmd
-	if err := collectFromString(template.Cmd, used); err != nil {
+	// Collect from basic fields
+	if err := collectFromBasicFields(template, used); err != nil {
 		return nil, err
 	}
 
-	// Collect from args
+	// Collect from env_vars
+	if err := collectFromEnvVars(template.EnvVars, used); err != nil {
+		return nil, err
+	}
+
+	// Collect from optional fields
+	if err := collectFromOptionalFields(template, used); err != nil {
+		return nil, err
+	}
+
+	// Collect from vars
+	if err := collectFromVars(template.Vars, used); err != nil {
+		return nil, err
+	}
+
+	return used, nil
+}
+
+// collectFromBasicFields collects params from cmd and args.
+func collectFromBasicFields(template *runnertypes.CommandTemplate, used map[string]struct{}) error {
+	if err := collectFromString(template.Cmd, used); err != nil {
+		return err
+	}
+
 	for _, arg := range template.Args {
 		if err := collectFromString(arg, used); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	// Collect from env_vars
-	// - For "KEY=VALUE" format: collect from VALUE part only
-	// - For element-level expansion (e.g., "${@env_vars}"): collect from entire string
-	for _, env := range template.EnvVars {
+	return nil
+}
+
+// collectFromEnvVars collects params from env_vars array.
+func collectFromEnvVars(envVars []string, used map[string]struct{}) error {
+	for _, env := range envVars {
 		if idx := strings.IndexByte(env, '='); idx != -1 {
 			// KEY=VALUE format - collect from value part only
 			if err := collectFromString(env[idx+1:], used); err != nil {
-				return nil, err
+				return err
 			}
 		} else {
 			// No '=' - this might be element-level expansion like "${@env_vars}"
 			if err := collectFromString(env, used); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
+	return nil
+}
 
+// collectFromOptionalFields collects params from optional pointer fields and env_import.
+func collectFromOptionalFields(template *runnertypes.CommandTemplate, used map[string]struct{}) error {
 	// Collect from workdir (if non-nil and non-empty)
 	if template.WorkDir != nil && *template.WorkDir != "" {
 		if err := collectFromString(*template.WorkDir, used); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return used, nil
+	// Collect from output_file (if non-nil and non-empty)
+	if template.OutputFile != nil && *template.OutputFile != "" {
+		if err := collectFromString(*template.OutputFile, used); err != nil {
+			return err
+		}
+	}
+
+	// Collect from env_import
+	for _, envImport := range template.EnvImport {
+		if err := collectFromString(envImport, used); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// collectFromVars collects params from vars map values.
+func collectFromVars(vars map[string]any, used map[string]struct{}) error {
+	for _, varValue := range vars {
+		switch v := varValue.(type) {
+		case string:
+			if err := collectFromString(v, used); err != nil {
+				return err
+			}
+		case []any:
+			for _, elem := range v {
+				if str, ok := elem.(string); ok {
+					if err := collectFromString(str, used); err != nil {
+						return err
+					}
+				}
+			}
+		case []string:
+			for _, str := range v {
+				if err := collectFromString(str, used); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // collectFromString extracts parameter names from placeholders in a string.

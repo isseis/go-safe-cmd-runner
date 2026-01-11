@@ -51,9 +51,8 @@ func TestApplyTemplateInheritance_WorkDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expandedSpec := &runnertypes.CommandSpec{}
 			cmdSpec := &runnertypes.CommandSpec{WorkDir: tt.cmdWorkDir}
-			template := &runnertypes.CommandTemplate{WorkDir: tt.templateWorkDir}
 
-			ApplyTemplateInheritance(expandedSpec, cmdSpec, template, tt.expandedWorkDir, nil)
+			ApplyTemplateInheritance(expandedSpec, cmdSpec, tt.expandedWorkDir, nil, nil, nil)
 
 			if tt.expectedWorkDir == nil {
 				assert.Nil(t, expandedSpec.WorkDir)
@@ -107,9 +106,8 @@ func TestApplyTemplateInheritance_OutputFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expandedSpec := &runnertypes.CommandSpec{}
 			cmdSpec := &runnertypes.CommandSpec{OutputFile: tt.cmdOutputFile}
-			template := &runnertypes.CommandTemplate{OutputFile: tt.templateOutputFile}
 
-			ApplyTemplateInheritance(expandedSpec, cmdSpec, template, nil, tt.expandedOutputFile)
+			ApplyTemplateInheritance(expandedSpec, cmdSpec, nil, tt.expandedOutputFile, nil, nil)
 
 			if tt.expectedOutputFile == nil {
 				assert.Nil(t, expandedSpec.OutputFile)
@@ -164,9 +162,8 @@ func TestApplyTemplateInheritance_EnvImport(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expandedSpec := &runnertypes.CommandSpec{}
 			cmdSpec := &runnertypes.CommandSpec{EnvImport: tt.cmdEnvImport}
-			template := &runnertypes.CommandTemplate{EnvImport: tt.templateEnvImport}
 
-			ApplyTemplateInheritance(expandedSpec, cmdSpec, template, nil, nil)
+			ApplyTemplateInheritance(expandedSpec, cmdSpec, nil, nil, tt.templateEnvImport, nil)
 
 			assert.Equal(t, tt.expectedEnvImport, expandedSpec.EnvImport)
 		})
@@ -216,9 +213,8 @@ func TestApplyTemplateInheritance_Vars(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expandedSpec := &runnertypes.CommandSpec{}
 			cmdSpec := &runnertypes.CommandSpec{Vars: tt.cmdVars}
-			template := &runnertypes.CommandTemplate{Vars: tt.templateVars}
 
-			ApplyTemplateInheritance(expandedSpec, cmdSpec, template, nil, nil)
+			ApplyTemplateInheritance(expandedSpec, cmdSpec, nil, nil, nil, tt.templateVars)
 
 			assert.Equal(t, tt.expectedVars, expandedSpec.Vars)
 		})
@@ -234,14 +230,12 @@ func TestApplyTemplateInheritance_Combined(t *testing.T) {
 		EnvImport:  []string{"CMD_VAR", "SHARED"},          // Merge with template
 		Vars:       map[string]any{"cmd_key": "cmd_value"}, // Merge with template
 	}
-	template := &runnertypes.CommandTemplate{
-		WorkDir:    stringPtr("/tmpl/dir"),
-		OutputFile: stringPtr("/tmpl/output.txt"),
-		EnvImport:  []string{"TMPL_VAR", "SHARED"},
-		Vars:       map[string]any{"tmpl_key": "tmpl_value", "cmd_key": "tmpl_override"},
-	}
+	expandedWorkDir := stringPtr("/tmpl/dir")
+	expandedOutputFile := stringPtr("/tmpl/output.txt")
+	expandedEnvImport := []string{"TMPL_VAR", "SHARED"}
+	expandedVars := map[string]any{"tmpl_key": "tmpl_value", "cmd_key": "tmpl_override"}
 
-	ApplyTemplateInheritance(expandedSpec, cmdSpec, template, stringPtr("/tmpl/dir"), stringPtr("/tmpl/output.txt"))
+	ApplyTemplateInheritance(expandedSpec, cmdSpec, expandedWorkDir, expandedOutputFile, expandedEnvImport, expandedVars)
 
 	// WorkDir: Inherited from template
 	assert.NotNil(t, expandedSpec.WorkDir)
