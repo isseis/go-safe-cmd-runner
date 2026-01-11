@@ -703,13 +703,13 @@ vars.command_key = "command_value"
 Note: internal/runnerのgroup_executor_test.goに構文エラーが残っているが、重要なパッケージ（config, runnertypes）のテストは通過しているため、Phase 1は基本的に完了とする。残りのテスト修正は別途対応。
 
 ### Phase 2: 継承・マージロジックの実装
-- [ ] OverrideStringPointer() 実装
-- [ ] MergeEnvImport() 実装
-- [ ] MergeVars() 実装
-- [ ] TestOverrideStringPointer 実装
-- [ ] TestMergeEnvImport 実装
-- [ ] TestMergeVars 実装
-- [ ] ユニットテスト全パス
+- [x] OverrideStringPointer() 実装
+- [x] MergeEnvImport() 実装
+- [x] MergeVars() 実装
+- [x] TestOverrideStringPointer 実装
+- [x] TestMergeEnvImport 実装
+- [x] TestMergeVars 実装
+- [x] ユニットテスト全パス
 
 ### Phase 3: テンプレート展開への統合
 - [ ] ApplyTemplateInheritance() 実装
