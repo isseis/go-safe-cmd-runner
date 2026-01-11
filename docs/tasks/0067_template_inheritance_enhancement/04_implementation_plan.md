@@ -651,10 +651,10 @@ Note: internal/runnerのgroup_executor_test.goに構文エラーが残ってい�
 - [x] 統合テスト全パス
 
 ### Phase 6: 後方互換性テスト
-- [ ] backward_compat_test.go 実装
-- [ ] 既存サンプルファイルのテスト
-- [ ] WorkDir 参照箇所の動作確認
-- [ ] 後方互換性確認
+- [x] backward_compat_test.go 実装
+- [x] 既存サンプルファイルのテスト
+- [x] WorkDir 参照箇所の動作確認
+- [x] 後方互換性確認
 
 ### Phase 7: ドキュメント整備
 - [ ] サンプルファイルへのコメント追加
