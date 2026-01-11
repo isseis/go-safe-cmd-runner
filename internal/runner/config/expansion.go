@@ -1313,7 +1313,7 @@ func ApplyTemplateInheritance(
 //   - If the command explicitly sets a value, that value is used
 //   - Otherwise, the template's value is used as a fallback
 //
-// This allows templates to provide sensible defaults while permitting per-command customization.// This allows templates to provide sensible defaults while permitting per-command customization.
+// This allows templates to provide sensible defaults while permitting per-command customization.
 //
 //nolint:gocyclo // Template expansion requires sequential validation and transformation steps
 func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertypes.CommandTemplate, templateName string) (*runnertypes.CommandSpec, []string, error) {
