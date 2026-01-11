@@ -1,0 +1,84 @@
+version = "1.0"
+
+# Example: Using template includes feature
+# This configuration demonstrates how to organize templates across multiple files
+
+# Include template files (relative paths from this config file)
+includes = [
+    "templates_backup_commands.toml",
+    "templates_docker_commands.toml"
+]
+
+[global]
+timeout = 300
+
+[global.vars]
+BACKUP_ROOT = "/data/backups"
+DOCKER_REGISTRY = "registry.example.com"
+
+[[groups]]
+name = "backup_tasks"
+
+[groups.vars]
+restic_repo = "%{BACKUP_ROOT}/restic-repo"
+restic_password = "/etc/safe-cmd-runner/restic-password"
+
+[[groups.commands]]
+name = "backup_volumes"
+template = "restic_backup"  # From templates_backup_commands.toml
+
+[groups.commands.params]
+path = "/data/volumes"
+repo = "%{restic_repo}"
+password_file = "%{restic_password}"
+tag = "volumes"
+
+[[groups.commands]]
+name = "backup_check"
+template = "restic_check"  # From templates_backup_commands.toml
+
+[groups.commands.params]
+repo = "%{restic_repo}"
+password_file = "%{restic_password}"
+
+[[groups.commands]]
+name = "cleanup_old_backups"
+template = "restic_forget"  # From templates_backup_commands.toml
+
+[groups.commands.params]
+repo = "%{restic_repo}"
+password_file = "%{restic_password}"
+keep_daily = "7"
+keep_weekly = "4"
+
+[[groups]]
+name = "docker_tasks"
+
+[groups.vars]
+app_image = "%{DOCKER_REGISTRY}/myapp:latest"
+
+[[groups.commands]]
+name = "pull_app_image"
+template = "docker_image_pull"  # From templates_docker_commands.toml
+
+[groups.commands.params]
+image = "%{app_image}"
+
+[[groups.commands]]
+name = "start_app_container"
+template = "docker_run"  # From templates_docker_commands.toml
+
+[groups.commands.params]
+container_name = "myapp"
+image = "%{app_image}"
+flags = ["-d", "-p", "8080:8080"]
+env_vars = ["ENV=production", "LOG_LEVEL=info"]
+cmd_args = []
+
+[[groups.commands]]
+name = "check_app_logs"
+template = "docker_container_logs"  # From templates_docker_commands.toml
+
+[groups.commands.params]
+container_name = "myapp"
+flags = ["--tail", "100"]

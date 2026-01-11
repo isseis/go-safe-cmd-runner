@@ -858,24 +858,24 @@ test/e2e/include_feature/
 - [x] エラー型を定義
 
 ### Phase 2: コアコンポーネント（2-3日）
-- [ ] `PathResolver` の実装とテスト
-- [ ] `TemplateFileLoader` の実装とテスト
-- [ ] `TemplateMerger` の実装とテスト
+- [x] `PathResolver` の実装とテスト
+- [x] `TemplateFileLoader` の実装とテスト
+- [x] `TemplateMerger` の実装とテスト
 
 ### Phase 3: Loader 統合（2-3日）
-- [ ] `LoadConfig` の変更（DisallowUnknownFields対応）
-- [ ] `processIncludes` の実装
-- [ ] baseDir 決定の設計と実装
+- [x] `LoadConfig` の変更（DisallowUnknownFields対応）
+- [x] `processIncludes` の実装
+- [x] baseDir 決定の設計と実装
 
 ### Phase 4: Verification 統合（1-2日）
-- [ ] `Verification Manager` の拡張
-- [ ] `runner` での include ファイル検証
+- [x] `Verification Manager` の拡張
+- [x] `runner` での include ファイル検証
 
 ### Phase 5: テストとドキュメント（2-3日）
-- [ ] 統合テストの作成
-- [ ] E2Eテストの作成
-- [ ] ユーザードキュメントの作成
-- [ ] サンプル設定ファイルの作成
+- [x] 統合テストの作成
+- [x] E2Eテストの作成
+- [x] ユーザードキュメントの作成
+- [x] サンプル設定ファイルの作成
 
 ## 10. パフォーマンス考慮事項
 

@@ -31,6 +31,142 @@ path = "/data/volumes"
 repo = "/backup/repo"
 ```
 
+## テンプレートインクルード機能
+
+### 概要
+
+インクルード機能により、コマンドテンプレートを複数のファイルに分割して管理し、メイン設定ファイルにインポートすることができます。以下のような用途に便利です：
+
+- 複数プロジェクト間での共通テンプレートの共有
+- カテゴリや用途別のテンプレート整理
+- チーム全体で使用するテンプレートライブラリの維持
+
+### 基本的なインクルードの使い方
+
+メイン設定ファイルで、`includes` 配列を使ってテンプレートファイルを指定します：
+
+```toml
+version = "1.0"
+
+# テンプレートファイルをインクルード（この設定ファイルからの相対パス）
+includes = ["templates/backup.toml", "templates/docker.toml"]
+
+[global]
+timeout = 300
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"  # templates/backup.toml で定義
+
+[groups.commands.params]
+path = "/data"
+repo = "/backup/repo"
+```
+
+### テンプレートファイルのフォーマット
+
+テンプレートファイルには、**`version` と `command_templates` セクションのみ**を含めることができます：
+
+**templates/backup.toml:**
+```toml
+version = "1.0"
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+```
+
+**無効なテンプレートファイル（エラーになります）:**
+```toml
+version = "1.0"
+
+# ❌ エラー: テンプレートファイルに 'global' や 'groups' は含められません
+[global]
+timeout = 300
+
+[command_templates.example]
+cmd = "echo"
+```
+
+### パス解決
+
+インクルードパスは以下の形式で指定できます：
+
+1. **相対パス**（設定ファイルのディレクトリからの相対パス）：
+   ```toml
+   includes = ["templates/common.toml"]           # 同じディレクトリ
+   includes = ["../shared/backup.toml"]          # 親ディレクトリ
+   includes = ["../../lib/templates/db.toml"]    # 複数階層上
+   ```
+
+2. **絶対パス**：
+   ```toml
+   includes = ["/etc/safe-cmd-runner/templates/system.toml"]
+   ```
+
+### テンプレートマージのルール
+
+複数のソースからテンプレートが読み込まれる場合：
+
+1. **読み込み順序**：
+   - インクルードされたファイルのテンプレート（`includes` で指定された順序）
+   - メイン設定ファイルの `command_templates` セクションのテンプレート
+
+2. **重複検出**：
+   - 同じテンプレート名が複数のファイルに存在する場合、エラーが発生します
+   - エラーメッセージには、テンプレートが定義されている全ての場所が表示されます
+
+3. **例**：
+   ```toml
+   # main.toml
+   includes = ["a.toml", "b.toml"]
+
+   [command_templates.backup]
+   cmd = "rsync"
+   # ...
+   ```
+
+   もし `a.toml` にも `backup` テンプレートが定義されていると、エラーが発生します：
+   ```
+   Error: duplicate command template name "backup"
+     Defined in: /path/to/a.toml
+     Also found in: /path/to/main.toml
+   ```
+
+### 制限事項
+
+1. **多段階インクルード不可**: テンプレートファイルは他のテンプレートファイルをインクルードできません
+2. **循環参照不可**: 上記の制限により循環参照は発生しません
+3. **テンプレートのみ**: インクルードされたファイルには、グローバル設定やグループを含めることができません
+
+### セキュリティ上の考慮事項
+
+インクルード機能は、システムの他の部分と同じセキュリティモデルに従います：
+
+- **パストラバーサル対策**: パスは検証され、不正なファイルへのアクセスを防ぎます
+- **チェックサム検証**: 全てのインクルードファイルは、同じハッシュベースのシステムで検証されます
+- **シンボリックリンクチェック**: セキュリティのためにシンボリックリンクが検証されます
+
+インクルードファイルのハッシュを記録するには：
+```bash
+# 全てのファイル（メイン設定 + インクルード）のハッシュを記録
+safe-cmd-runner record -c config.toml -o hashes/
+
+# ハッシュディレクトリには以下が含まれます：
+# - config.toml.sha256 (メイン設定)
+# - templates_backup.toml.sha256 (インクルードファイル)
+# - templates_docker.toml.sha256 (インクルードファイル)
+```
+
 ## プレースホルダー構文
 
 テンプレート内では、以下のプレースホルダー構文が使用できます：

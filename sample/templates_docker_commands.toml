@@ -1,0 +1,37 @@
+version = "1.0"
+
+# Docker command templates
+# This file contains reusable templates for Docker operations
+
+[command_templates.docker_run]
+cmd = "docker"
+args = ["run", "${@flags}", "--name", "${container_name}", "${image}", "${@cmd_args}"]
+env_vars = ["${@env_vars}"]
+timeout = 300
+
+[command_templates.docker_exec]
+cmd = "docker"
+args = ["exec", "${@flags}", "${container_name}", "${@cmd_args}"]
+timeout = 60
+
+[command_templates.docker_compose_up]
+cmd = "docker-compose"
+args = ["-f", "${compose_file}", "up", "${@flags}"]
+workdir = "${?workdir}"
+timeout = 600
+
+[command_templates.docker_compose_down]
+cmd = "docker-compose"
+args = ["-f", "${compose_file}", "down", "${@flags}"]
+workdir = "${?workdir}"
+timeout = 300
+
+[command_templates.docker_image_pull]
+cmd = "docker"
+args = ["pull", "${image}"]
+timeout = 600
+
+[command_templates.docker_container_logs]
+cmd = "docker"
+args = ["logs", "${@flags}", "${container_name}"]
+timeout = 30

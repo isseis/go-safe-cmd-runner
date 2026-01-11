@@ -31,6 +31,142 @@ path = "/data/volumes"
 repo = "/backup/repo"
 ```
 
+## Template Includes
+
+### Overview
+
+The includes feature allows you to organize command templates across multiple files and import them into your main configuration. This is particularly useful for:
+
+- Sharing common templates across multiple projects
+- Organizing templates by category or purpose
+- Maintaining team-wide template libraries
+
+### Basic Include Usage
+
+In your main configuration file, use the `includes` array to specify template files:
+
+```toml
+version = "1.0"
+
+# Include template files (paths relative to this config file)
+includes = ["templates/backup.toml", "templates/docker.toml"]
+
+[global]
+timeout = 300
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"  # Defined in templates/backup.toml
+
+[groups.commands.params]
+path = "/data"
+repo = "/backup/repo"
+```
+
+### Template File Format
+
+Template files must contain **only** `version` and `command_templates` sections:
+
+**templates/backup.toml:**
+```toml
+version = "1.0"
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+```
+
+**Invalid template file (will cause error):**
+```toml
+version = "1.0"
+
+# ❌ Error: Template files cannot contain 'global' or 'groups'
+[global]
+timeout = 300
+
+[command_templates.example]
+cmd = "echo"
+```
+
+### Path Resolution
+
+Include paths can be specified as:
+
+1. **Relative paths** (resolved relative to the config file directory):
+   ```toml
+   includes = ["templates/common.toml"]           # Same directory
+   includes = ["../shared/backup.toml"]          # Parent directory
+   includes = ["../../lib/templates/db.toml"]    # Multiple levels up
+   ```
+
+2. **Absolute paths**:
+   ```toml
+   includes = ["/etc/safe-cmd-runner/templates/system.toml"]
+   ```
+
+### Template Merging Rules
+
+When templates are loaded from multiple sources:
+
+1. **Loading order**:
+   - Templates from included files (in the order specified in `includes`)
+   - Templates from the main config file's `command_templates` section
+
+2. **Duplicate detection**:
+   - If the same template name appears in multiple files, an error is raised
+   - The error message shows all locations where the template is defined
+
+3. **Example**:
+   ```toml
+   # main.toml
+   includes = ["a.toml", "b.toml"]
+
+   [command_templates.backup]
+   cmd = "rsync"
+   # ...
+   ```
+
+   If `a.toml` also defines a `backup` template, you'll get an error:
+   ```
+   Error: duplicate command template name "backup"
+     Defined in: /path/to/a.toml
+     Also found in: /path/to/main.toml
+   ```
+
+### Limitations
+
+1. **No multi-level includes**: Template files cannot include other template files
+2. **No circular references**: Not possible due to the above limitation
+3. **Template-only content**: Included files can only contain templates, not global config or groups
+
+### Security Considerations
+
+The includes feature follows the same security model as the rest of the system:
+
+- **Path traversal protection**: Paths are validated to prevent accessing unauthorized files
+- **Checksum verification**: All included files are verified using the same hash-based system
+- **Symbolic link checks**: Symbolic links are validated for security
+
+To record hashes for included files:
+```bash
+# Record hashes for all files (main config + includes)
+safe-cmd-runner record -c config.toml -o hashes/
+
+# The hash directory will contain:
+# - config.toml.sha256 (main config)
+# - templates_backup.toml.sha256 (included file)
+# - templates_docker.toml.sha256 (included file)
+```
+
 ## Placeholder Syntax
 
 The following placeholder syntax can be used within templates:

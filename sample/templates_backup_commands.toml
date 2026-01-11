@@ -1,0 +1,28 @@
+version = "1.0"
+
+# Backup command templates
+# This file contains reusable templates for backup operations
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}", "--tag", "${?tag}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD_FILE=${password_file}"]
+workdir = "${?workdir}"
+timeout = 3600
+
+[command_templates.restic_check]
+cmd = "restic"
+args = ["check"]
+env_vars = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD_FILE=${password_file}"]
+timeout = 600
+
+[command_templates.restic_forget]
+cmd = "restic"
+args = ["forget", "--keep-daily", "${keep_daily}", "--keep-weekly", "${keep_weekly}", "--prune"]
+env_vars = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD_FILE=${password_file}"]
+timeout = 1800
+
+[command_templates.tar_backup]
+cmd = "tar"
+args = ["czf", "${output}", "-C", "${source_dir}", "${?exclude_pattern}"]
+timeout = 1800
