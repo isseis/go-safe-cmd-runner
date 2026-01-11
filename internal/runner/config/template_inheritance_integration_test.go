@@ -69,16 +69,16 @@ func TestTemplateInheritance_CommandReferences(t *testing.T) {
 	group := cfg.Groups[0]
 
 	tests := []struct {
-		name               string
-		templateRef        string
-		hasWorkDir         bool
-		workDirValue       string
-		hasOutputFile      bool
-		outputFileValue    string
-		hasEnvImport       bool
-		envImportCount     int
-		hasVars            bool
-		varsCount          int
+		name            string
+		templateRef     string
+		hasWorkDir      bool
+		workDirValue    string
+		hasOutputFile   bool
+		outputFileValue string
+		hasEnvImport    bool
+		envImportCount  int
+		hasVars         bool
+		varsCount       int
 	}{
 		{
 			name:        "inherit_all",
