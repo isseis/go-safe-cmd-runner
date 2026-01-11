@@ -697,6 +697,269 @@ params.service_name = "postgresql"
 2. **Validate Parameter Values**: Expanded commands are automatically validated for security
 3. **Principle of Least Privilege**: Set `run_as_user` and `risk_level` appropriately in templates
 
+## 7.10 Field Inheritance
+
+### 7.10.1 Inheritance Overview
+
+Fields defined in templates are automatically inherited unless explicitly overridden in command definitions. This feature allows you to define common settings in templates and customize them at the command level as needed.
+
+### 7.10.2 Inheritable Fields
+
+The following fields support inheritance:
+
+| Field | Inheritance Model | Description |
+|-------|------------------|-------------|
+| `workdir` | Override | Only overridden when specified in command |
+| `output_file` | Override | Only overridden when specified in command |
+| `env_import` | Union Merge | Combines values from both template and command |
+| `vars` | Map Merge | Command variables override template variables |
+
+### 7.10.3 Override Model (workdir, output_file)
+
+**Behavior:**
+- When field is not specified in command: Inherit value from template
+- When field is specified in command: Completely override template value
+- When empty string is specified: Explicitly means "unspecified" (`workdir=""` uses current directory)
+
+**Example: workdir Inheritance**
+
+```toml
+# Template definition
+[command_templates.build_template]
+cmd = "make"
+workdir = "/workspace/project"
+
+# Case 1: Inherit workdir
+[[groups.commands]]
+name = "build-default"
+template = "build_template"
+# Result: workdir="/workspace/project" (inherited from template)
+
+# Case 2: Override workdir
+[[groups.commands]]
+name = "build-custom"
+template = "build_template"
+workdir = "/opt/custom"
+# Result: workdir="/opt/custom" (overrides template)
+
+# Case 3: Explicitly set workdir to empty
+[[groups.commands]]
+name = "build-current"
+template = "build_template"
+workdir = ""
+# Result: workdir="" (use current directory)
+```
+
+### 7.10.4 Union Merge Model (env_import)
+
+**Behavior:**
+- Combines environment variables specified in both template and command
+- Duplicates are automatically removed
+- Even if an empty array is specified, template values are inherited
+
+**Example: env_import Merging**
+
+```toml
+[global]
+env_allowed = ["CC", "CXX", "LDFLAGS", "CFLAGS", "PATH"]
+
+[command_templates.compiler_template]
+cmd = "gcc"
+env_import = ["CC", "CXX"]
+
+# Case 1: Import additional environment variables
+[[groups.commands]]
+name = "compile-with-flags"
+template = "compiler_template"
+env_import = ["LDFLAGS", "CFLAGS"]
+# Result: env_import=["CC", "CXX", "LDFLAGS", "CFLAGS"] (union)
+
+# Case 2: Use template only
+[[groups.commands]]
+name = "compile-basic"
+template = "compiler_template"
+# Result: env_import=["CC", "CXX"] (inherited from template)
+
+# Case 3: With duplicates
+[[groups.commands]]
+name = "compile-dup"
+template = "compiler_template"
+env_import = ["CC", "LDFLAGS"]
+# Result: env_import=["CC", "CXX", "LDFLAGS"] (duplicates removed)
+```
+
+### 7.10.5 Map Merge Model (vars)
+
+**Behavior:**
+- Combines variables defined in both template and command
+- When the same key exists, command-level value takes precedence
+- New variables can be added at command level
+
+**Example: vars Merging**
+
+```toml
+[command_templates.backup_template]
+cmd = "restic"
+args = ["backup"]
+
+[command_templates.backup_template.vars]
+retention_days = "7"
+compression = "auto"
+backup_type = "incremental"
+
+# Case 1: Add variables
+[[groups.commands]]
+name = "backup-with-tag"
+template = "backup_template"
+
+[groups.commands.vars]
+backup_tag = "daily"
+# Result: {retention_days: "7", compression: "auto", backup_type: "incremental", backup_tag: "daily"}
+
+# Case 2: Override variables
+[[groups.commands]]
+name = "backup-full"
+template = "backup_template"
+
+[groups.commands.vars]
+backup_type = "full"  # Override template value
+retention_days = "30"  # Override template value
+# Result: {retention_days: "30", compression: "auto", backup_type: "full"}
+
+# Case 3: Use template only
+[[groups.commands]]
+name = "backup-default"
+template = "backup_template"
+# Result: {retention_days: "7", compression: "auto", backup_type: "incremental"}
+```
+
+### 7.10.6 Combining Inheritance and Parameter Expansion
+
+Parameter expansion can also be used in template `workdir`, `output_file`, `env_import`, and `vars` fields.
+
+```toml
+[command_templates.project_template]
+cmd = "make"
+workdir = "/workspace/${project}"
+output_file = "/var/log/${project}.log"
+env_import = ["${?extra_env}"]
+
+[command_templates.project_template.vars]
+build_type = "${?type}"
+
+[[groups.commands]]
+name = "build-projectA"
+template = "project_template"
+
+[groups.commands.params]
+project = "projectA"
+type = "release"
+# Result:
+#   workdir="/workspace/projectA"
+#   output_file="/var/log/projectA.log"
+#   vars={build_type: "release"}
+
+[[groups.commands]]
+name = "build-projectB"
+template = "project_template"
+workdir = "/opt/builds"  # Override template workdir
+
+[groups.commands.params]
+project = "projectB"
+extra_env = "CC"
+# Result:
+#   workdir="/opt/builds" (overridden)
+#   output_file="/var/log/projectB.log"
+#   env_import=["CC"]
+```
+
+### 7.10.7 Inheritance Priority
+
+Field values are determined in the following priority order:
+
+1. **Explicit specification at command level** (highest priority)
+2. **Template value**
+3. **System default** (lowest priority)
+
+This priority allows you to define common settings in templates while customizing at the command level as needed.
+
+### 7.10.8 Practical Example: Complex Inheritance
+
+```toml
+[global]
+env_allowed = ["CC", "CXX", "CFLAGS", "LDFLAGS", "PATH", "HOME"]
+
+# Generic build template
+[command_templates.build_base]
+cmd = "make"
+workdir = "/workspace"
+output_file = "/var/log/build.log"
+env_import = ["CC", "CXX"]
+timeout = 3600
+
+[command_templates.build_base.vars]
+optimization = "O2"
+debug = "false"
+
+[[groups]]
+name = "development"
+
+# Debug build: Override some settings
+[[groups.commands]]
+name = "build-debug"
+template = "build_base"
+args = ["debug"]
+env_import = ["CFLAGS"]  # Import CFLAGS in addition to CC, CXX
+
+[groups.commands.vars]
+optimization = "O0"  # Disable optimization
+debug = "true"       # Enable debug mode
+# Inheritance result:
+#   workdir="/workspace" (inherited from template)
+#   output_file="/var/log/build.log" (inherited from template)
+#   env_import=["CC", "CXX", "CFLAGS"] (merged)
+#   vars={optimization: "O0", debug: "true"} (overridden)
+#   timeout=3600 (inherited from template)
+
+# Release build: Change working directory and output destination
+[[groups.commands]]
+name = "build-release"
+template = "build_base"
+args = ["release"]
+workdir = "/opt/releases"
+output_file = "/var/log/release.log"
+env_import = ["LDFLAGS"]
+
+[groups.commands.vars]
+optimization = "O3"
+# Inheritance result:
+#   workdir="/opt/releases" (overridden)
+#   output_file="/var/log/release.log" (overridden)
+#   env_import=["CC", "CXX", "LDFLAGS"] (merged)
+#   vars={optimization: "O3", debug: "false"} (partially overridden)
+#   timeout=3600 (inherited from template)
+```
+
+## 7.11 Best Practices (Considering Inheritance)
+
+### 7.11.1 Design Leveraging Inheritance
+
+1. **Define Common Settings in Templates**: Consolidate common settings like `workdir`, `env_import`, `vars` in templates
+2. **Specify Only Differences in Commands**: Explicitly specify only command-specific settings
+3. **Understand Inheritance Models**: Understand and use inheritance behavior for each field appropriately
+
+### 7.11.2 vars Inheritance Guidelines
+
+1. **Provide Default Values**: Set general default values in templates
+2. **Design for Overriding**: Allow flexible customization at command level
+3. **Variable Name Consistency**: Use the same variable names between templates and commands
+
+### 7.11.3 env_import Inheritance Guidelines
+
+1. **Minimal Import**: Import only required environment variables in templates
+2. **Additional Import at Command Level**: Add optional environment variables at command level
+3. **Maintain env_allowed**: Define importable environment variables appropriately
+
 ## Next Steps
 
 After understanding the command template feature, also refer to the following chapters:

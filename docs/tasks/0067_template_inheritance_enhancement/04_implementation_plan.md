@@ -659,8 +659,8 @@ Note: internal/runnerのgroup_executor_test.goに構文エラーが残ってい�
 ### Phase 7: ドキュメント整備
 - [x] サンプルファイルへのコメント追加
 - [x] CHANGELOG.md 更新
-- [ ] docs/user/toml_config/07_command_templates.ja.md の更新
-- [ ] docs/user/toml_config/07_command_templates.ja.md の英訳 docs/user/toml_config/07_command_templates.md の更新
+- [x] docs/user/toml_config/07_command_templates.ja.md の更新
+- [x] docs/user/toml_config/07_command_templates.md の更新
 - [x] ドキュメントレビュー
 
 ## 7. 成功基準

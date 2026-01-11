@@ -697,6 +697,269 @@ params.service_name = "postgresql"
 2. **パラメータ値の検証**: 展開後のコマンドは自動的にセキュリティ検証される
 3. **最小権限の原則**: テンプレートで `run_as_user` や `risk_level` を適切に設定
 
+## 7.10 フィールド継承
+
+### 7.10.1 継承の概要
+
+テンプレートで定義したフィールドは、コマンド定義で明示的に上書きしない限り、自動的に継承されます。この機能により、共通設定をテンプレートで定義し、必要に応じてコマンドレベルでカスタマイズできます。
+
+### 7.10.2 継承可能なフィールド
+
+以下のフィールドは継承をサポートしています：
+
+| フィールド | 継承モデル | 説明 |
+|-----------|-----------|------|
+| `workdir` | オーバーライド | コマンドで指定した場合のみ上書き |
+| `output_file` | オーバーライド | コマンドで指定した場合のみ上書き |
+| `env_import` | 和集合マージ | テンプレートとコマンドの両方の値を結合 |
+| `vars` | マップマージ | コマンドの変数がテンプレートの変数を上書き |
+
+### 7.10.3 オーバーライドモデル（workdir, output_file）
+
+**動作:**
+- コマンドでフィールドを指定しない場合: テンプレートの値を継承
+- コマンドでフィールドを指定した場合: テンプレートの値を完全に上書き
+- 空文字列を指定: 明示的に「未指定」を表す（`workdir=""` で現在のディレクトリを使用）
+
+**例: workdir の継承**
+
+```toml
+# テンプレート定義
+[command_templates.build_template]
+cmd = "make"
+workdir = "/workspace/project"
+
+# ケース1: workdir を継承
+[[groups.commands]]
+name = "build-default"
+template = "build_template"
+# 結果: workdir="/workspace/project" (テンプレートから継承)
+
+# ケース2: workdir を上書き
+[[groups.commands]]
+name = "build-custom"
+template = "build_template"
+workdir = "/opt/custom"
+# 結果: workdir="/opt/custom" (テンプレートを上書き)
+
+# ケース3: workdir を明示的に空にする
+[[groups.commands]]
+name = "build-current"
+template = "build_template"
+workdir = ""
+# 結果: workdir="" (カレントディレクトリを使用)
+```
+
+### 7.10.4 和集合マージモデル（env_import）
+
+**動作:**
+- テンプレートとコマンドの両方で指定された環境変数を結合
+- 重複は自動的に除去される
+- 空配列を指定した場合でもテンプレートの値は継承される
+
+**例: env_import のマージ**
+
+```toml
+[global]
+env_allowed = ["CC", "CXX", "LDFLAGS", "CFLAGS", "PATH"]
+
+[command_templates.compiler_template]
+cmd = "gcc"
+env_import = ["CC", "CXX"]
+
+# ケース1: 追加の環境変数をインポート
+[[groups.commands]]
+name = "compile-with-flags"
+template = "compiler_template"
+env_import = ["LDFLAGS", "CFLAGS"]
+# 結果: env_import=["CC", "CXX", "LDFLAGS", "CFLAGS"] (和集合)
+
+# ケース2: テンプレートのみ使用
+[[groups.commands]]
+name = "compile-basic"
+template = "compiler_template"
+# 結果: env_import=["CC", "CXX"] (テンプレートから継承)
+
+# ケース3: 重複がある場合
+[[groups.commands]]
+name = "compile-dup"
+template = "compiler_template"
+env_import = ["CC", "LDFLAGS"]
+# 結果: env_import=["CC", "CXX", "LDFLAGS"] (重複を除去)
+```
+
+### 7.10.5 マップマージモデル（vars）
+
+**動作:**
+- テンプレートとコマンドの両方で定義された変数を結合
+- 同じキーが存在する場合、コマンドレベルの値が優先される
+- コマンドレベルで新しい変数を追加可能
+
+**例: vars のマージ**
+
+```toml
+[command_templates.backup_template]
+cmd = "restic"
+args = ["backup"]
+
+[command_templates.backup_template.vars]
+retention_days = "7"
+compression = "auto"
+backup_type = "incremental"
+
+# ケース1: 変数を追加
+[[groups.commands]]
+name = "backup-with-tag"
+template = "backup_template"
+
+[groups.commands.vars]
+backup_tag = "daily"
+# 結果: {retention_days: "7", compression: "auto", backup_type: "incremental", backup_tag: "daily"}
+
+# ケース2: 変数を上書き
+[[groups.commands]]
+name = "backup-full"
+template = "backup_template"
+
+[groups.commands.vars]
+backup_type = "full"  # テンプレートの値を上書き
+retention_days = "30"  # テンプレートの値を上書き
+# 結果: {retention_days: "30", compression: "auto", backup_type: "full"}
+
+# ケース3: テンプレートのみ使用
+[[groups.commands]]
+name = "backup-default"
+template = "backup_template"
+# 結果: {retention_days: "7", compression: "auto", backup_type: "incremental"}
+```
+
+### 7.10.6 継承とパラメータ展開の組み合わせ
+
+テンプレートの `workdir`, `output_file`, `env_import`, `vars` フィールドでもパラメータ展開が使用できます。
+
+```toml
+[command_templates.project_template]
+cmd = "make"
+workdir = "/workspace/${project}"
+output_file = "/var/log/${project}.log"
+env_import = ["${?extra_env}"]
+
+[command_templates.project_template.vars]
+build_type = "${?type}"
+
+[[groups.commands]]
+name = "build-projectA"
+template = "project_template"
+
+[groups.commands.params]
+project = "projectA"
+type = "release"
+# 結果:
+#   workdir="/workspace/projectA"
+#   output_file="/var/log/projectA.log"
+#   vars={build_type: "release"}
+
+[[groups.commands]]
+name = "build-projectB"
+template = "project_template"
+workdir = "/opt/builds"  # テンプレートの workdir を上書き
+
+[groups.commands.params]
+project = "projectB"
+extra_env = "CC"
+# 結果:
+#   workdir="/opt/builds" (上書き)
+#   output_file="/var/log/projectB.log"
+#   env_import=["CC"]
+```
+
+### 7.10.7 継承の優先順位
+
+フィールド値の決定は以下の優先順位で行われます：
+
+1. **コマンドレベルの明示的な指定** （最優先）
+2. **テンプレートの値**
+3. **システムデフォルト** （最低優先）
+
+この優先順位により、テンプレートで共通設定を定義しつつ、必要に応じてコマンドレベルでカスタマイズできます。
+
+### 7.10.8 実践例: 複合的な継承
+
+```toml
+[global]
+env_allowed = ["CC", "CXX", "CFLAGS", "LDFLAGS", "PATH", "HOME"]
+
+# 汎用ビルドテンプレート
+[command_templates.build_base]
+cmd = "make"
+workdir = "/workspace"
+output_file = "/var/log/build.log"
+env_import = ["CC", "CXX"]
+timeout = 3600
+
+[command_templates.build_base.vars]
+optimization = "O2"
+debug = "false"
+
+[[groups]]
+name = "development"
+
+# デバッグビルド: 一部の設定を上書き
+[[groups.commands]]
+name = "build-debug"
+template = "build_base"
+args = ["debug"]
+env_import = ["CFLAGS"]  # CC, CXX に加えて CFLAGS もインポート
+
+[groups.commands.vars]
+optimization = "O0"  # 最適化を無効化
+debug = "true"       # デバッグモードを有効化
+# 継承結果:
+#   workdir="/workspace" (テンプレートから継承)
+#   output_file="/var/log/build.log" (テンプレートから継承)
+#   env_import=["CC", "CXX", "CFLAGS"] (マージ)
+#   vars={optimization: "O0", debug: "true"} (上書き)
+#   timeout=3600 (テンプレートから継承)
+
+# リリースビルド: 作業ディレクトリと出力先を変更
+[[groups.commands]]
+name = "build-release"
+template = "build_base"
+args = ["release"]
+workdir = "/opt/releases"
+output_file = "/var/log/release.log"
+env_import = ["LDFLAGS"]
+
+[groups.commands.vars]
+optimization = "O3"
+# 継承結果:
+#   workdir="/opt/releases" (上書き)
+#   output_file="/var/log/release.log" (上書き)
+#   env_import=["CC", "CXX", "LDFLAGS"] (マージ)
+#   vars={optimization: "O3", debug: "false"} (部分的に上書き)
+#   timeout=3600 (テンプレートから継承)
+```
+
+## 7.11 ベストプラクティス（継承を考慮）
+
+### 7.11.1 継承を活用した設計
+
+1. **共通設定はテンプレートで定義**: `workdir`, `env_import`, `vars` などの共通設定をテンプレートに集約
+2. **差分のみコマンドで指定**: コマンド固有の設定のみを明示的に指定
+3. **適切な継承モデルの理解**: フィールドごとの継承動作を理解して使い分ける
+
+### 7.11.2 vars 継承のガイドライン
+
+1. **デフォルト値の提供**: テンプレートで一般的なデフォルト値を設定
+2. **上書き可能な設計**: コマンドレベルで柔軟にカスタマイズできるようにする
+3. **変数名の一貫性**: テンプレートとコマンド間で同じ変数名を使用
+
+### 7.11.3 env_import 継承のガイドライン
+
+1. **最小限のインポート**: テンプレートでは必須の環境変数のみインポート
+2. **追加インポートはコマンドで**: オプショナルな環境変数はコマンドレベルで追加
+3. **env_allowed の整備**: インポート可能な環境変数を適切に定義
+
 ## 次のステップ
 
 コマンドテンプレート機能を理解したら、以下の章も参照してください：
