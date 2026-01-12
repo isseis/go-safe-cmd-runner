@@ -1,6 +1,3 @@
-// Copyright 2025 Issei Horie
-// SPDX-License-Identifier: Apache-2.0
-
 //go:build test
 
 package config_test
