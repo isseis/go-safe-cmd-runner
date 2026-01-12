@@ -881,14 +881,14 @@ params.output_file = "%{backup_dir}/logs_db.dump"
 [groups.commands.vars]
 backup_priority = "low"  # Add new variable
 # Inheritance result:
-#   env_import=["PGHOST", "PGPORT"] (inherited)
+#   env_import=["pghost=PGHOST", "pgport=PGPORT"] (inherited)
 #   vars={dump_format: "custom", compression_level: "6", backup_priority: "low"}
 
 # Command 3: Restore (requires additional user environment variables)
 [[groups.commands]]
 name = "restore_main_db"
 template = "pg_restore"
-env_import = ["PGPASSWORD", "PGUSER"]  # Add to template
+env_import = ["pgpassword=PGPASSWORD", "pguser=PGUSER"]  # Add to template
 params.verbose = "--verbose"
 params.db_user = "postgres"
 params.database = "main_production_restored"
@@ -897,7 +897,7 @@ params.input_file = "%{backup_dir}/main_db.dump"
 [groups.commands.vars]
 restore_mode = "drop"  # Override template default
 # Inheritance result:
-#   env_import=["PGHOST", "PGPORT", "PGPASSWORD", "PGUSER"] (merge, remove duplicates)
+#   env_import=["pghost=PGHOST", "pgport=PGPORT", "pgpassword=PGPASSWORD", "pguser=PGUSER"] (merge, remove duplicates)
 #   vars={restore_mode: "drop"}
 ```
 

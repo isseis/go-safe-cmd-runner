@@ -881,14 +881,14 @@ params.output_file = "%{backup_dir}/logs_db.dump"
 [groups.commands.vars]
 backup_priority = "low"  # 新しい変数を追加
 # 継承結果:
-#   env_import=["PGHOST", "PGPORT"] (継承)
+#   env_import=["pghost=PGHOST", "pgport=PGPORT"] (継承)
 #   vars={dump_format: "custom", compression_level: "6", backup_priority: "low"}
 
 # コマンド3: リストア（追加のユーザー環境変数が必要）
 [[groups.commands]]
 name = "restore_main_db"
 template = "pg_restore"
-env_import = ["PGPASSWORD", "PGUSER"]  # テンプレートに追加
+env_import = ["pgpassword=PGPASSWORD", "pguser=PGUSER"]  # テンプレートに追加
 params.verbose = "--verbose"
 params.db_user = "postgres"
 params.database = "main_production_restored"
@@ -897,7 +897,7 @@ params.input_file = "%{backup_dir}/main_db.dump"
 [groups.commands.vars]
 restore_mode = "drop"  # テンプレートのデフォルトを上書き
 # 継承結果:
-#   env_import=["PGHOST", "PGPORT", "PGPASSWORD", "PGUSER"] (マージ、重複除去)
+#   env_import=["pghost=PGHOST", "pgport=PGPORT", "pgpassword=PGPASSWORD", "pguser=PGUSER"] (マージ、重複除去)
 #   vars={restore_mode: "drop"}
 ```
 

@@ -203,29 +203,29 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 
 #### env_import (System Environment Variable Import) - Merge Inheritance
 
-`env_import` is inherited through **Merge**. When specified at a lower level, it is merged with the upper level configuration.
+`env_import` is inherited through **Merge**. Use the explicit mapping format `internal_name=SYSTEM_VAR`; abbreviated entries such as `env_import = ["CC"]` are not supported. When specified at a lower level, it is merged with the upper level configuration.
 
 ```toml
 [global]
-env_import = ["HOME", "USER"]
+env_import = ["Home=HOME", "User=USER"]
 
 [[groups]]
 name = "tasks"
-env_import = ["LANG", "LC_ALL"]  # Merges with global env_import
+env_import = ["lang=LANG", "locale=LC_ALL"]  # Merges with global env_import
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # env_import not specified → group's env_import is applied
-# Inherited variables: HOME, USER (global) + LANG, LC_ALL (group)
-args = ["User: %{USER}, Lang: %{LANG}"]
+# Inherited variables: Home, User (global) + lang, locale (group)
+args = ["User: %{User}, Lang: %{lang}"]
 
 [[groups.commands]]
 name = "task2"
-env_import = ["PWD"]  # Merges with group's env_import
+env_import = ["pwd=PWD"]  # Merges with group's env_import
 cmd = "/bin/echo"
-# Inherited variables: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
-args = ["Home: %{HOME}, PWD: %{PWD}"]
+# Inherited variables: Home, User (global) + lang, locale (group) + pwd (command)
+args = ["Home: %{Home}, PWD: %{pwd}"]
 ```
 
 ### 2.3.5 Configuration Priority Summary

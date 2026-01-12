@@ -42,7 +42,7 @@ Extended command template functionality to support inheritance and merging of ad
 [command_templates.build_template]
 cmd = "make"
 workdir = "/workspace"
-env_import = ["CC", "CXX"]
+env_import = ["cc=CC", "cxx=CXX"]
 
 [command_templates.build_template.vars]
 optimization = "O2"
@@ -51,14 +51,14 @@ optimization = "O2"
 name = "build-debug"
 template = "build_template"
 args = ["debug"]
-# Inherits: workdir="/workspace", env_import=["CC", "CXX"], vars={optimization: "O2"}
+# Inherits: workdir="/workspace", env_import=["cc=CC", "cxx=CXX"], vars={optimization: "O2"}
 
 [[groups.commands]]
 name = "build-release"
 template = "build_template"
 args = ["release"]
 workdir = "/opt/build"  # Overrides template workdir
-env_import = ["LDFLAGS"]  # Merges with template: ["CC", "CXX", "LDFLAGS"]
+env_import = ["ldflags=LDFLAGS"]  # Merges with template: ["cc=CC", "cxx=CXX", "ldflags=LDFLAGS"]
 
 [groups.commands.vars]
 optimization = "O3"  # Overrides template variable

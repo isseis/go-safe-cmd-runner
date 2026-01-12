@@ -3,7 +3,6 @@
 ## Overview
 
 The `[[groups.commands]]` section defines the commands to be actually executed. Each group requires one or more commands. Commands are executed in the order they are defined within the group.
-
 There are two ways to define commands:
 
 1. **Direct Definition**: Directly specify `cmd` and `args` for the command
@@ -219,22 +218,7 @@ args = []  # Or omit
 ```
 
 #### Example 4: Arguments with Variable Expansion
-
-```toml
-[[groups.commands]]
-name = "backup"
-cmd = "/usr/bin/tar"
-args = ["-czf", "%{backup_file}", "%{source_dir}"]
-
-[groups.commands.vars]
-backup_file = "/backups/backup.tar.gz"
-source_dir = "/data"
-```
-
-#### Important Notes
-
-##### 1. Argument Security
-
+# Actually executes /opt/tools/my-script
 Specify each argument as a separate array element. Shell quoting and escaping are not needed.
 
 ```toml
@@ -426,22 +410,19 @@ Specifies the names of system environment variables for go-safe-cmd-runner to im
 [[groups.commands]]
 name = "example"
 cmd = "command"
-env_import = ["VAR1", "VAR2", ...]
+env_import = ["internal_name=SYSTEM_VAR", ...]
 ```
 
-`env_import` supports two formats:
-
-1. **Simple format**: `"VARNAME"` - Import system environment variable with the same internal name
-2. **Mapping format**: `"internal_name=SYSTEM_VAR"` - Import system environment variable `SYSTEM_VAR` as internal name `internal_name`
+`env_import` must use the explicit mapping format `internal_name=SYSTEM_VAR`. Abbreviated entries such as `env_import = ["CC"]` are not supported. Choose internal variable names that follow the scope-specific naming rules (Global: starts with uppercase; Group/Command: starts with lowercase or `_`).
 
 ```toml
-# Example: Using both formats
+# Example: Explicit mappings only
 env_import = [
-    "PATH",              # Simple format: imports PATH as PATH
-    "home=HOME",         # Mapping format: imports HOME as home
-    "user=USER"          # Mapping format: imports USER as user
+    "Path=PATH",   # Imports PATH as internal variable Path (global scope)
+    "home=HOME",   # Imports HOME as internal variable home (group/command scope)
+    "user=USER"    # Imports USER as internal variable user (group/command scope)
 ]
-# With this configuration, %{PATH}, %{home}, and %{user} are available
+# With this configuration, %{Path}, %{home}, and %{user} are available
 ```
 
 #### Parameter Details
@@ -452,7 +433,7 @@ env_import = [
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Group, Command |
 | **Default Value** | [] |
-| **Format** | `"VAR"` or `"internal=SYSTEM_VAR"` |
+| **Format** | `"internal=SYSTEM_VAR"` |
 | **Security Constraint** | Only variables in `env_allowed` can be imported |
 | **Inheritance Behavior** | Merge - lower levels are merged with upper levels |
 
@@ -473,8 +454,8 @@ env_allowed = ["HOME", "USER", "PATH"]
 [[groups.commands]]
 name = "show_user_info"
 cmd = "/bin/echo"
-env_import = ["USER", "HOME"]
-args = ["User: %{USER}, Home: %{HOME}"]
+env_import = ["user=USER", "home=HOME"]
+args = ["User: %{user}, Home: %{home}"]
 ```
 
 ##### Example 2: Merge Behavior
@@ -482,25 +463,25 @@ args = ["User: %{USER}, Home: %{HOME}"]
 ```toml
 [global]
 env_allowed = ["HOME", "USER", "PATH", "LANG"]
-env_import = ["HOME", "USER"]  # Global level
+env_import = ["Home=HOME", "User=USER"]  # Global level
 
 [[groups]]
 name = "intl_tasks"
-env_import = ["LANG"]  # Group level: merges with global env_import
+env_import = ["lang=LANG"]  # Group level: merges with global env_import
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # env_import not specified → group's env_import is applied
-# Inherited variables: HOME, USER (global) + LANG (group)
-args = ["User: %{USER}, Language: %{LANG}"]
+# Inherited variables: Home, User (global) + lang (group)
+args = ["User: %{User}, Language: %{lang}"]
 
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-env_import = ["PATH"]  # Command level: merges with group
-# Inherited variables: HOME, USER (global) + LANG (group) + PATH (command)
-args = ["Path: %{PATH}, Home: %{HOME}"]
+env_import = ["path=PATH"]  # Command level: merges with group
+# Inherited variables: Home, User (global) + lang (group) + path (command)
+args = ["Path: %{path}, Home: %{Home}"]
 ```
 
 #### Important Notes
@@ -516,8 +497,8 @@ env_allowed = ["HOME", "USER"]
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-env_import = ["HOME", "PATH"]  # Error: PATH not in env_allowed
-args = ["%{HOME}"]
+env_import = ["Home=HOME", "Path=PATH"]  # Error: PATH not in env_allowed
+args = ["%{Home}"]
 ```
 
 ##### 2. Merge Behavior
@@ -526,17 +507,17 @@ When `env_import` is specified at command level, it is merged with global and gr
 
 ```toml
 [global]
-env_import = ["HOME", "USER"]
+env_import = ["Home=HOME", "User=USER"]
 
 [[groups]]
 name = "tasks"
-env_import = ["LANG", "LC_ALL"]
+env_import = ["lang=LANG", "lc_all=LC_ALL"]
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-env_import = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD all available
-args = ["User: %{USER}, PWD: %{PWD}"]
+env_import = ["pwd=PWD"]  # Home, User, lang, lc_all, pwd all available
+args = ["User: %{User}, PWD: %{pwd}"]
 ```
 
 ##### 3. Non-Existent Variables
@@ -547,8 +528,8 @@ If a variable specified in `env_import` does not exist in the system environment
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-env_import = ["NONEXISTENT_VAR"]
-args = ["Value: %{nonexistent_var}"]  # Output: "Value: "
+env_import = ["nonexistent=NONEXISTENT_VAR"]
+args = ["Value: %{nonexistent}"]  # Output: "Value: "
 ```
 
 ### 6.2.3 env_vars - Process Environment Variables

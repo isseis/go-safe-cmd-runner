@@ -423,22 +423,19 @@ Runner プロセスが動作しているシステム環境変数を TOML 内の�
 [[groups.commands]]
 name = "example"
 cmd = "コマンド"
-env_import = ["VAR1", "VAR2", ...]
+env_import = ["internal_name=SYSTEM_VAR", ...]
 ```
 
-`env_import` には以下の2つの形式を使用できます:
-
-1. **単純形式**: `"VARNAME"` - システム環境変数を同じ名前で内部変数としてインポート
-2. **マッピング形式**: `"internal_name=SYSTEM_VAR"` - システム環境変数 `SYSTEM_VAR` を内部変数名 `internal_name` としてインポート
+`env_import` は `internal_name=SYSTEM_VAR` の明示形式のみをサポートします。`env_import = ["CC"]` のような省略形式は非対応です。内部変数名はスコープごとの命名規則 (グローバル: 先頭大文字、グループ/コマンド: 先頭小文字または `_`) に従ってください。
 
 ```toml
-# 例: 両方の形式を使用
+# 例: 明示的なマッピングのみ
 env_import = [
-    "PATH",              # 単純形式: PATH を PATH としてインポート
-    "home=HOME",         # マッピング形式: HOME を home としてインポート
-    "user=USER"          # マッピング形式: USER を user としてインポート
+    "Path=PATH",  # グローバル用: PATH を Path としてインポート
+    "home=HOME",  # グループ/コマンド用: HOME を home としてインポート
+    "user=USER"   # グループ/コマンド用: USER を user としてインポート
 ]
-# 上記の設定で %{PATH}, %{home}, %{user} が使用可能
+# 上記の設定で %{Path}, %{home}, %{user} が使用可能
 ```
 
 #### パラメータの詳細
@@ -449,7 +446,7 @@ env_import = [
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバル、グループ、コマンド |
 | **デフォルト値** | [] |
-| **形式** | `"VAR"` または `"internal=SYSTEM_VAR"` |
+| **形式** | `"internal=SYSTEM_VAR"` |
 | **セキュリティ制約** | `env_allowed` に含まれる変数のみインポート可能 |
 | **継承動作** | マージ (Merge) - 下位レベルが上位レベルとマージされる |
 
@@ -470,8 +467,8 @@ env_allowed = ["HOME", "USER", "PATH"]
 [[groups.commands]]
 name = "show_user_info"
 cmd = "/bin/echo"
-env_import = ["USER", "HOME"]
-args = ["User: %{USER}, Home: %{HOME}"]
+env_import = ["user=USER", "home=HOME"]
+args = ["User: %{user}, Home: %{home}"]
 ```
 
 #### 例2: Merge 動作
@@ -479,25 +476,25 @@ args = ["User: %{USER}, Home: %{HOME}"]
 ```toml
 [global]
 env_allowed = ["HOME", "USER", "PATH", "LANG"]
-env_import = ["HOME", "USER"]  # グローバルレベル
+env_import = ["Home=HOME", "User=USER"]  # グローバルレベル
 
 [[groups]]
 name = "intl_tasks"
-env_import = ["LANG"]  # グループレベル: グローバルの env_import とマージ
+env_import = ["lang=LANG"]  # グループレベル: グローバルの env_import とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # env_import を指定しないため、グループの env_import が適用される
-# 継承された変数: HOME, USER (global) + LANG (group)
-args = ["User: %{USER}, Language: %{LANG}"]
+# 継承された変数: Home, User (global) + lang (group)
+args = ["User: %{User}, Language: %{lang}"]
 
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-env_import = ["PATH"]  # コマンドレベル: グループとマージ
-# 継承された変数: HOME, USER (global) + LANG (group) + PATH (command)
-args = ["Path: %{PATH}, Home: %{HOME}"]
+env_import = ["path=PATH"]  # コマンドレベル: グループとマージ
+# 継承された変数: Home, User (global) + lang (group) + path (command)
+args = ["Path: %{path}, Home: %{Home}"]
 ```
 
 #### 重要な注意事項
@@ -513,8 +510,8 @@ env_allowed = ["HOME", "USER"]
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-env_import = ["HOME", "PATH"]  # エラー: PATH は env_allowed に含まれていない
-args = ["%{HOME}"]
+env_import = ["Home=HOME", "Path=PATH"]  # エラー: PATH は env_allowed に含まれていない
+args = ["%{Home}"]
 ```
 
 ##### 2. Merge による結合
@@ -523,17 +520,17 @@ args = ["%{HOME}"]
 
 ```toml
 [global]
-env_import = ["HOME", "USER"]
+env_import = ["Home=HOME", "User=USER"]
 
 [[groups]]
 name = "tasks"
-env_import = ["LANG", "LC_ALL"]
+env_import = ["lang=LANG", "lc_all=LC_ALL"]
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-env_import = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD がすべて利用可能
-args = ["User: %{USER}, PWD: %{PWD}"]
+env_import = ["pwd=PWD"]  # Home, User, lang, lc_all, pwd がすべて利用可能
+args = ["User: %{User}, PWD: %{pwd}"]
 ```
 
 ##### 3. 存在しない変数のインポート
@@ -544,8 +541,8 @@ args = ["User: %{USER}, PWD: %{PWD}"]
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-env_import = ["NONEXISTENT_VAR"]
-args = ["Value: %{NONEXISTENT_VAR}"]  # "Value: " と出力される
+env_import = ["nonexistent=NONEXISTENT_VAR"]
+args = ["Value: %{nonexistent}"]  # "Value: " と出力される
 ```
 
 ### 6.2.3 env_vars - プロセス環境変数
