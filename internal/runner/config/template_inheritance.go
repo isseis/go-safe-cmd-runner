@@ -2,6 +2,8 @@
 // for merging and overriding configuration values from templates to commands.
 package config
 
+import "maps"
+
 // OverrideStringPointer applies the override model for *string fields.
 // If cmdValue is nil, it returns templateValue (inheritance).
 // If cmdValue is non-nil (including empty string), it returns cmdValue (override).
@@ -45,14 +47,10 @@ func MergeVars(templateVars map[string]any, cmdVars map[string]any) map[string]a
 	result := make(map[string]any, len(templateVars)+len(cmdVars))
 
 	// Copy template vars
-	for key, value := range templateVars {
-		result[key] = value
-	}
+	maps.Copy(result, templateVars)
 
 	// Overlay command vars (these take precedence)
-	for key, value := range cmdVars {
-		result[key] = value
-	}
+	maps.Copy(result, cmdVars)
 
 	return result
 }
