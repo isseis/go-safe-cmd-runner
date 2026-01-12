@@ -16,11 +16,6 @@ func OverrideStringPointer(cmdValue *string, templateValue *string) *string {
 // Template entries are added first, then command entries.
 // Duplicates are removed (first occurrence wins).
 func MergeEnvImport(templateEnvImport []string, cmdEnvImport []string) []string {
-	// If both are empty or nil, return empty slice (not nil)
-	if len(templateEnvImport) == 0 && len(cmdEnvImport) == 0 {
-		return []string{}
-	}
-
 	seen := make(map[string]struct{})
 	result := []string{}
 
@@ -47,10 +42,6 @@ func MergeEnvImport(templateEnvImport []string, cmdEnvImport []string) []string 
 // Template variables are added first, then command variables overlay them.
 // Command variables take precedence in case of key conflicts.
 func MergeVars(templateVars map[string]any, cmdVars map[string]any) map[string]any {
-	if len(templateVars) == 0 && len(cmdVars) == 0 {
-		return make(map[string]any)
-	}
-
 	result := make(map[string]any, len(templateVars)+len(cmdVars))
 
 	// Copy template vars
