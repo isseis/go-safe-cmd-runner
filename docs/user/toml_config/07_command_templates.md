@@ -482,14 +482,15 @@ template = "backup_template"
 
 ### 7.5.6 Combining Inheritance and Parameter Expansion
 
-Parameter expansion can also be used in template `workdir`, `output_file`, `env_import`, `vars` fields.
+Parameter expansion can be used in template `workdir`, `output_file`, and `vars` fields.
+
+**Note**: Parameter expansion is not supported in `env_import`. Environment variable imports must be statically defined.
 
 ```toml
 [command_templates.project_template]
 cmd = "make"
 workdir = "/workspace/${project}"
 output_file = "/var/log/${project}.log"
-env_import = ["${?extra_env}"]
 
 [command_templates.project_template.vars]
 build_type = "${?type}"
@@ -513,11 +514,9 @@ workdir = "/opt/builds"  # Override template workdir
 
 [groups.commands.params]
 project = "projectB"
-extra_env = "CC"
 # Result:
 #   workdir="/opt/builds" (override)
 #   output_file="/var/log/projectB.log"
-#   env_import=["CC"]
 ```
 
 ### 7.5.7 Inheritance Priority

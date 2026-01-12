@@ -482,14 +482,15 @@ template = "backup_template"
 
 ### 7.5.6 継承とパラメータ展開の組み合わせ
 
-テンプレートの `workdir`, `output_file`, `env_import`, `vars` フィールドでもパラメータ展開が使用できます。
+テンプレートの `workdir`, `output_file`, `vars` フィールドではパラメータ展開が使用できます。
+
+**注意**: `env_import` ではパラメータ展開はサポートされていません。環境変数のインポートは静的に定義する必要があります。
 
 ```toml
 [command_templates.project_template]
 cmd = "make"
 workdir = "/workspace/${project}"
 output_file = "/var/log/${project}.log"
-env_import = ["${?extra_env}"]
 
 [command_templates.project_template.vars]
 build_type = "${?type}"
@@ -513,11 +514,9 @@ workdir = "/opt/builds"  # テンプレートの workdir を上書き
 
 [groups.commands.params]
 project = "projectB"
-extra_env = "CC"
 # 結果:
 #   workdir="/opt/builds" (上書き)
 #   output_file="/var/log/projectB.log"
-#   env_import=["CC"]
 ```
 
 ### 7.5.7 継承の優先順位

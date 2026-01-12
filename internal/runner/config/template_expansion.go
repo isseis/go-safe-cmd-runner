@@ -844,36 +844,27 @@ func validateCmdSpec(
 	return nil
 }
 
-// ExpandTemplateEnvImport expands all placeholders in a template's env_import array.
+// ExpandTemplateEnvImport returns the template's env_import array without modification.
+// Parameter expansion is not supported in env_import for security and simplicity reasons.
+//
 // Each element can be:
-//   - A simple string like "CC" (no expansion needed)
-//   - A mapping like "internal_name=SYSTEM_VAR" (no expansion needed)
-//   - A placeholder like "${?extra_env}" (expands to value or removed if empty)
-//   - An array placeholder like "${@env_vars}" (expands to multiple elements)
+//   - A simple string like "CC" (imports system env var CC as internal variable CC)
+//   - A mapping like "internal_name=SYSTEM_VAR" (imports SYSTEM_VAR as internal_name)
+//
+// Note: This function currently takes params and templateName parameters for API compatibility,
+// but does not use them. These parameters may be removed in a future version.
 func ExpandTemplateEnvImport(
 	envImport []string,
-	params map[string]any,
-	templateName string,
+	_ map[string]any,
+	_ string,
 ) ([]string, error) {
-	result := make([]string, 0, len(envImport))
-
-	for i, entry := range envImport {
-		field := fmt.Sprintf("env_import[%d]", i)
-
-		// Expand the entry (may expand to multiple elements for ${@param})
-		expanded, err := expandSingleArg(entry, params, templateName, field)
-		if err != nil {
-			return nil, err
-		}
-
-		// Skip if expansion resulted in empty (e.g., ${?param} with missing/empty value)
-		if len(expanded) == 0 {
-			continue
-		}
-
-		result = append(result, expanded...)
+	// Return a copy to avoid modifying the original slice
+	if len(envImport) == 0 {
+		return []string{}, nil
 	}
 
+	result := make([]string, len(envImport))
+	copy(result, envImport)
 	return result, nil
 }
 

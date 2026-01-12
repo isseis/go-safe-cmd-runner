@@ -429,6 +429,21 @@ cmd = "command"
 env_import = ["VAR1", "VAR2", ...]
 ```
 
+`env_import` supports two formats:
+
+1. **Simple format**: `"VARNAME"` - Import system environment variable with the same internal name
+2. **Mapping format**: `"internal_name=SYSTEM_VAR"` - Import system environment variable `SYSTEM_VAR` as internal name `internal_name`
+
+```toml
+# Example: Using both formats
+env_import = [
+    "PATH",              # Simple format: imports PATH as PATH
+    "home=HOME",         # Mapping format: imports HOME as home
+    "user=USER"          # Mapping format: imports USER as user
+]
+# With this configuration, %{PATH}, %{home}, and %{user} are available
+```
+
 #### Parameter Details
 
 | Item | Description |
@@ -437,7 +452,7 @@ env_import = ["VAR1", "VAR2", ...]
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Group, Command |
 | **Default Value** | [] |
-| **Format** | Variable names only (VALUE not needed) |
+| **Format** | `"VAR"` or `"internal=SYSTEM_VAR"` |
 | **Security Constraint** | Only variables in `env_allowed` can be imported |
 | **Inheritance Behavior** | Merge - lower levels are merged with upper levels |
 
