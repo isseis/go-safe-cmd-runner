@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -52,7 +53,7 @@ func (l *Loader) LoadConfigWithPath(configPath string, content []byte) (*runnert
 // This prevents TOCTOU attacks by using already-verified file content
 // Note: This function does not process includes. Use LoadConfigWithPath for full functionality.
 func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
-	return l.loadConfigInternal(content, nil)
+	return l.loadConfigInternal(content)
 }
 
 // loadConfigWithIncludes recursively loads config and processes includes
@@ -67,7 +68,7 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 	visited[configPath] = true
 
 	// Load the main config (without includes processing)
-	cfg, err := l.loadConfigInternal(content, nil)
+	cfg, err := l.loadConfigInternal(content)
 	if err != nil {
 		return nil, err
 	}
@@ -107,18 +108,7 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string, visit
 	}
 
 	// Get base directory from config path
-	baseDir := baseConfigPath
-	if idx := len(baseDir) - 1; idx >= 0 {
-		for ; idx >= 0; idx-- {
-			if baseDir[idx] == '/' {
-				baseDir = baseDir[:idx]
-				break
-			}
-		}
-		if idx < 0 {
-			baseDir = "."
-		}
-	}
+	baseDir := filepath.Dir(baseConfigPath)
 
 	resolver := NewDefaultPathResolver(l.fs)
 	loader := NewDefaultTemplateFileLoader()
@@ -156,7 +146,7 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string, visit
 }
 
 // loadConfigInternal loads and validates configuration from byte content
-func (l *Loader) loadConfigInternal(content []byte, _ []TemplateSource) (*runnertypes.ConfigSpec, error) {
+func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, error) {
 	// Parse the config content
 	var cfg runnertypes.ConfigSpec
 	if err := toml.Unmarshal(content, &cfg); err != nil {
