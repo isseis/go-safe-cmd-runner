@@ -183,6 +183,22 @@ env_vars = ["RESTIC_REPOSITORY=${repo}"]
 - 相対パス: 設定ファイルの位置からの相対指定 (例: `includes = ["templates/common.toml"]`)
 - 絶対パス: `includes = ["/etc/safe-cmd-runner/templates/system.toml"]`
 
+**シンボリックリンクの動作:**
+
+設定ファイルがシンボリックリンクの場合、相対パスはシンボリックリンク自体の位置を基準として解決されます（実体ファイルの位置ではありません）。
+
+```
+例:
+/etc/config/real_config.toml        # 実体ファイル
+/home/user/config_link.toml         # シンボリックリンク → /etc/config/real_config.toml
+
+/home/user/config_link.toml に includes = ["templates/common.toml"] と記載した場合:
+→ /home/user/templates/common.toml として解決される
+  (/etc/config/templates/common.toml ではない)
+```
+
+この動作は多くのツール（例: Nginx, Apache）の設定ファイル処理と一貫しています。
+
 #### マージと重複検出
 
 読み込み順は `includes` で指定した順 → メインファイルの `command_templates`。同名テンプレートが複数ファイルにある場合は重複エラーとなり、定義場所がエラーメッセージに列挙されます。

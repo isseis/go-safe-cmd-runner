@@ -232,3 +232,82 @@ name = "test"
 		})
 	}
 }
+
+func TestTOMLDuplicateFields_CommandTemplates(t *testing.T) {
+	tests := []struct {
+		name        string
+		tomlContent string
+		expectError bool
+	}{
+		{
+			name: "duplicate cmd field in template - rejected by TOML parser",
+			tomlContent: `
+[command_templates.test]
+cmd = "first"
+cmd = "second"
+`,
+			expectError: true,
+		},
+		{
+			name: "duplicate args field in template - rejected by TOML parser",
+			tomlContent: `
+[command_templates.test]
+cmd = "test"
+args = ["first"]
+args = ["second"]
+`,
+			expectError: true,
+		},
+		{
+			name: "duplicate env field in template - rejected by TOML parser",
+			tomlContent: `
+[command_templates.test]
+cmd = "test"
+env = ["A=1"]
+env = ["B=2"]
+`,
+			expectError: true,
+		},
+		{
+			name: "duplicate workdir field in template - rejected by TOML parser",
+			tomlContent: `
+[command_templates.test]
+cmd = "test"
+workdir = "/first"
+workdir = "/second"
+`,
+			expectError: true,
+		},
+		{
+			name: "unique template fields",
+			tomlContent: `
+[command_templates.test]
+cmd = "test"
+args = ["arg1"]
+env = ["VAR=value"]
+workdir = "/path"
+`,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := config.NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+
+			if tt.expectError {
+				require.Error(t, err)
+				t.Logf("Error from TOML parser: %v", err)
+				// Verify that the error indicates duplicate key (parser-level rejection)
+				errMsg := err.Error()
+				assert.True(t,
+					strings.Contains(errMsg, "key") && strings.Contains(errMsg, "already defined"),
+					"expected error message to indicate duplicate key, got: %s", errMsg)
+			} else {
+				require.NoError(t, err)
+				assert.NotNil(t, cfg)
+			}
+		})
+	}
+}

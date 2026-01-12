@@ -183,6 +183,22 @@ Including `global` or `groups` in template files results in an error.
 - Relative paths: Resolved from the directory of the main config (e.g., `includes = ["templates/common.toml"]`).
 - Absolute paths: Allowed (e.g., `includes = ["/etc/safe-cmd-runner/templates/system.toml"]`).
 
+**Symlink Behavior:**
+
+When the config file is a symlink, relative paths are resolved from the symlink's location, not the target file's location.
+
+```
+Example:
+/etc/config/real_config.toml        # Real file
+/home/user/config_link.toml         # Symlink → /etc/config/real_config.toml
+
+If /home/user/config_link.toml contains includes = ["templates/common.toml"]:
+→ Resolves to /home/user/templates/common.toml
+  (NOT /etc/config/templates/common.toml)
+```
+
+This behavior is consistent with many tools (e.g., Nginx, Apache) that process config files.
+
 #### Merge Order and Duplicate Detection
 
 Templates are loaded in the order listed in `includes`, then from the main file. Duplicate template names across files cause an error, and the error lists all definition locations.

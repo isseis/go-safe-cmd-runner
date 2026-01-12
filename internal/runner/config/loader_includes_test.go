@@ -330,3 +330,88 @@ cmd = "echo"
 	assert.NotNil(t, cfg)
 	assert.Len(t, cfg.CommandTemplates, 2)
 }
+
+func TestLoadConfigWithPath_SymlinkBehavior(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create directory structure:
+	// tmpDir/
+	//   real_dir/
+	//     config.toml (real file)
+	//     templates.toml
+	//   link_dir/
+	//     config_link.toml -> ../real_dir/config.toml (symlink)
+	realDir := filepath.Join(tmpDir, "real_dir")
+	linkDir := filepath.Join(tmpDir, "link_dir")
+	err := os.MkdirAll(realDir, 0o755)
+	require.NoError(t, err)
+	err = os.MkdirAll(linkDir, 0o755)
+	require.NoError(t, err)
+
+	// Create template file in real_dir
+	templatePath := filepath.Join(realDir, "templates.toml")
+	templateContent := []byte(`version = "1.0"
+
+[command_templates.test_template]
+cmd = "echo"
+args = ["from template"]
+`)
+	err = os.WriteFile(templatePath, templateContent, 0o644)
+	require.NoError(t, err)
+
+	// Create real config file that includes relative path
+	realConfigPath := filepath.Join(realDir, "config.toml")
+	realConfigContent := []byte(`version = "1.0"
+includes = ["templates.toml"]
+
+[[groups]]
+name = "test"
+`)
+	err = os.WriteFile(realConfigPath, realConfigContent, 0o644)
+	require.NoError(t, err)
+
+	// Create symlink in link_dir pointing to real config
+	symlinkPath := filepath.Join(linkDir, "config_link.toml")
+	err = os.Symlink(realConfigPath, symlinkPath)
+	require.NoError(t, err)
+
+	t.Run("access via real path - includes resolved from real_dir", func(t *testing.T) {
+		loader := NewLoader()
+		cfg, err := loader.LoadConfigWithPath(realConfigPath, realConfigContent)
+
+		require.NoError(t, err)
+		assert.NotNil(t, cfg)
+		assert.Len(t, cfg.CommandTemplates, 1)
+		assert.Equal(t, "echo", cfg.CommandTemplates["test_template"].Cmd)
+	})
+
+	t.Run("access via symlink - includes resolved from symlink location (link_dir)", func(t *testing.T) {
+		// When accessing via symlink, includes are resolved relative to the symlink's directory (link_dir),
+		// not the real file's directory (real_dir).
+		// Since templates.toml does not exist in link_dir, this should fail.
+		loader := NewLoader()
+		cfg, err := loader.LoadConfigWithPath(symlinkPath, realConfigContent)
+
+		// This should fail because templates.toml is not in link_dir
+		require.Error(t, err)
+		assert.Nil(t, cfg)
+		assert.Contains(t, err.Error(), "templates.toml")
+	})
+
+	t.Run("symlink with working relative path", func(t *testing.T) {
+		// Create a case where relative path from symlink location works
+		// Copy template to link_dir
+		linkTemplateDir := linkDir
+		linkTemplatePath := filepath.Join(linkTemplateDir, "templates.toml")
+		err = os.WriteFile(linkTemplatePath, templateContent, 0o644)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		cfg, err := loader.LoadConfigWithPath(symlinkPath, realConfigContent)
+
+		require.NoError(t, err)
+		assert.NotNil(t, cfg)
+		assert.Len(t, cfg.CommandTemplates, 1)
+		assert.Equal(t, "echo", cfg.CommandTemplates["test_template"].Cmd)
+	})
+}
