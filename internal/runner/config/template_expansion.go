@@ -649,8 +649,8 @@ func ValidateTemplateDefinition(
 		}
 	}
 
-	// Check workdir for local variable references (if non-nil and non-empty)
-	if template.WorkDir != nil && *template.WorkDir != "" {
+	// Check workdir for local variable references (if non-nil)
+	if template.WorkDir != nil {
 		if err := validateGlobalOnly(*template.WorkDir, name, workDirKey); err != nil {
 			return err
 		}
@@ -663,6 +663,11 @@ func ValidateTemplateDefinition(
 // references to local variables (lowercase or underscore start).
 // Global variable references (uppercase start) are allowed.
 func validateGlobalOnly(input, templateName, field string) error {
+	// Empty strings cannot contain variable references, skip validation
+	if input == "" {
+		return nil
+	}
+
 	// Collect all %{VAR} references
 	var refs []string
 	refCollector := func(
