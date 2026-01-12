@@ -412,27 +412,27 @@ env_allowed = ["CC", "CXX", "LDFLAGS", "CFLAGS", "PATH"]
 
 [command_templates.compiler_template]
 cmd = "gcc"
-env_import = ["CC", "CXX"]
+env_import = ["cc=CC", "cxx=CXX"]
 
 # ケース1: 追加の環境変数をインポート
 [[groups.commands]]
 name = "compile-with-flags"
 template = "compiler_template"
-env_import = ["LDFLAGS", "CFLAGS"]
-# 結果: env_import=["CC", "CXX", "LDFLAGS", "CFLAGS"] (和集合)
+env_import = ["ldflags=LDFLAGS", "cflags=CFLAGS"]
+# 結果: env_import=["cc=CC", "cxx=CXX", "ldflags=LDFLAGS", "cflags=CFLAGS"] (和集合)
 
 # ケース2: テンプレートのみ使用
 [[groups.commands]]
 name = "compile-basic"
 template = "compiler_template"
-# 結果: env_import=["CC", "CXX"] (テンプレートから継承)
+# 結果: env_import=["cc=CC", "cxx=CXX"] (テンプレートから継承)
 
-# ケース3: 重複がある場合
+# ケース3: 重複がある場合（コマンドが上書き）
 [[groups.commands]]
 name = "compile-dup"
 template = "compiler_template"
-env_import = ["CC", "LDFLAGS"]
-# 結果: env_import=["CC", "CXX", "LDFLAGS"] (重複を除去)
+env_import = ["cc=GCC", "ldflags=LDFLAGS"]
+# 結果: env_import=["cc=GCC", "cxx=CXX", "ldflags=LDFLAGS"] (コマンドの cc=GCC がテンプレートの cc=CC を上書き)
 ```
 
 ### 7.5.5 マップマージモデル（vars）
@@ -826,7 +826,7 @@ BackupDir = "/var/backups/postgres"
 [command_templates.pg_dump]
 cmd = "/usr/bin/pg_dump"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
-env_import = ["PGHOST", "PGPORT"]  # 基本的な環境変数
+env_import = ["pghost=PGHOST", "pgport=PGPORT"]  # 基本的な環境変数
 timeout = 1800
 risk_level = "medium"
 
@@ -838,7 +838,7 @@ compression_level = "6"
 [command_templates.pg_restore]
 cmd = "/usr/bin/pg_restore"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "${input_file}"]
-env_import = ["PGHOST", "PGPORT"]  # 基本的な環境変数
+env_import = ["pghost=PGHOST", "pgport=PGPORT"]  # 基本的な環境変数
 timeout = 3600
 risk_level = "high"
 
@@ -855,7 +855,7 @@ backup_dir = "%{BackupDir}"
 [[groups.commands]]
 name = "backup_main_db"
 template = "pg_dump"
-env_import = ["PGPASSWORD"]  # テンプレートの env_import に追加
+env_import = ["pgpassword=PGPASSWORD"]  # テンプレートの env_import に追加
 params.verbose = "--verbose"
 params.db_user = "postgres"
 params.database = "main_production"
@@ -865,7 +865,7 @@ params.output_file = "%{backup_dir}/main_db.dump"
 compression_level = "9"  # テンプレートのデフォルトを上書き（高圧縮）
 backup_priority = "high"  # 新しい変数を追加
 # 継承結果:
-#   env_import=["PGHOST", "PGPORT", "PGPASSWORD"] (マージ)
+#   env_import=["pghost=PGHOST", "pgport=PGPORT", "pgpassword=PGPASSWORD"] (マージ)
 #   vars={dump_format: "custom", compression_level: "9", backup_priority: "high"}
 
 # コマンド2: ログDB（テンプレートの設定をそのまま継承）
@@ -955,7 +955,7 @@ env_allowed = ["CC", "CXX", "CFLAGS", "LDFLAGS", "PATH", "HOME"]
 cmd = "make"
 workdir = "/workspace"
 output_file = "/var/log/build.log"
-env_import = ["CC", "CXX"]
+env_import = ["cc=CC", "cxx=CXX"]
 timeout = 3600
 
 [command_templates.build_base.vars]
@@ -970,7 +970,7 @@ name = "development"
 name = "build-debug"
 template = "build_base"
 args = ["debug"]
-env_import = ["CFLAGS"]  # CC, CXX に加えて CFLAGS もインポート
+env_import = ["cflags=CFLAGS"]  # cc, cxx に加えて cflags もインポート
 
 [groups.commands.vars]
 optimization = "O0"  # 最適化を無効化
@@ -978,7 +978,7 @@ debug = "true"       # デバッグモードを有効化
 # 継承結果:
 #   workdir="/workspace" (テンプレートから継承)
 #   output_file="/var/log/build.log" (テンプレートから継承)
-#   env_import=["CC", "CXX", "CFLAGS"] (マージ)
+#   env_import=["cc=CC", "cxx=CXX", "cflags=CFLAGS"] (マージ)
 #   vars={optimization: "O0", debug: "true"} (上書き)
 #   timeout=3600 (テンプレートから継承)
 
@@ -989,14 +989,14 @@ template = "build_base"
 args = ["release"]
 workdir = "/opt/releases"
 output_file = "/var/log/release.log"
-env_import = ["LDFLAGS"]
+env_import = ["ldflags=LDFLAGS"]
 
 [groups.commands.vars]
 optimization = "O3"
 # 継承結果:
 #   workdir="/opt/releases" (上書き)
 #   output_file="/var/log/release.log" (上書き)
-#   env_import=["CC", "CXX", "LDFLAGS"] (マージ)
+#   env_import=["cc=CC", "cxx=CXX", "ldflags=LDFLAGS"] (マージ)
 #   vars={optimization: "O3", debug: "false"} (部分的に上書き)
 #   timeout=3600 (テンプレートから継承)
 ```

@@ -412,27 +412,27 @@ env_allowed = ["CC", "CXX", "LDFLAGS", "CFLAGS", "PATH"]
 
 [command_templates.compiler_template]
 cmd = "gcc"
-env_import = ["CC", "CXX"]
+env_import = ["cc=CC", "cxx=CXX"]
 
 # Case 1: Import additional environment variables
 [[groups.commands]]
 name = "compile-with-flags"
 template = "compiler_template"
-env_import = ["LDFLAGS", "CFLAGS"]
-# Result: env_import=["CC", "CXX", "LDFLAGS", "CFLAGS"] (union)
+env_import = ["ldflags=LDFLAGS", "cflags=CFLAGS"]
+# Result: env_import=["cc=CC", "cxx=CXX", "ldflags=LDFLAGS", "cflags=CFLAGS"] (union)
 
 # Case 2: Use template only
 [[groups.commands]]
 name = "compile-basic"
 template = "compiler_template"
-# Result: env_import=["CC", "CXX"] (inherited from template)
+# Result: env_import=["cc=CC", "cxx=CXX"] (inherited from template)
 
-# Case 3: When duplicates exist
+# Case 3: When duplicates exist (command overrides)
 [[groups.commands]]
 name = "compile-dup"
 template = "compiler_template"
-env_import = ["CC", "LDFLAGS"]
-# Result: env_import=["CC", "CXX", "LDFLAGS"] (remove duplicates)
+env_import = ["cc=GCC", "ldflags=LDFLAGS"]
+# Result: env_import=["cc=GCC", "cxx=CXX", "ldflags=LDFLAGS"] (command's cc=GCC overrides template's cc=CC)
 ```
 
 ### 7.5.5 Map Merge Model (vars)
@@ -826,7 +826,7 @@ BackupDir = "/var/backups/postgres"
 [command_templates.pg_dump]
 cmd = "/usr/bin/pg_dump"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "-f", "${output_file}"]
-env_import = ["PGHOST", "PGPORT"]  # Basic environment variables
+env_import = ["pghost=PGHOST", "pgport=PGPORT"]  # Basic environment variables
 timeout = 1800
 risk_level = "medium"
 
@@ -838,7 +838,7 @@ compression_level = "6"
 [command_templates.pg_restore]
 cmd = "/usr/bin/pg_restore"
 args = ["${?verbose}", "-U", "${db_user}", "-d", "${database}", "${input_file}"]
-env_import = ["PGHOST", "PGPORT"]  # Basic environment variables
+env_import = ["pghost=PGHOST", "pgport=PGPORT"]  # Basic environment variables
 timeout = 3600
 risk_level = "high"
 
@@ -855,7 +855,7 @@ backup_dir = "%{BackupDir}"
 [[groups.commands]]
 name = "backup_main_db"
 template = "pg_dump"
-env_import = ["PGPASSWORD"]  # Add to template env_import
+env_import = ["pgpassword=PGPASSWORD"]  # Add to template env_import
 params.verbose = "--verbose"
 params.db_user = "postgres"
 params.database = "main_production"
@@ -865,7 +865,7 @@ params.output_file = "%{backup_dir}/main_db.dump"
 compression_level = "9"  # Override template default (high compression)
 backup_priority = "high"  # Add new variable
 # Inheritance result:
-#   env_import=["PGHOST", "PGPORT", "PGPASSWORD"] (merge)
+#   env_import=["pghost=PGHOST", "pgport=PGPORT", "pgpassword=PGPASSWORD"] (merge)
 #   vars={dump_format: "custom", compression_level: "9", backup_priority: "high"}
 
 # Command 2: Logs DB (inherit template settings as-is)
@@ -955,7 +955,7 @@ env_allowed = ["CC", "CXX", "CFLAGS", "LDFLAGS", "PATH", "HOME"]
 cmd = "make"
 workdir = "/workspace"
 output_file = "/var/log/build.log"
-env_import = ["CC", "CXX"]
+env_import = ["cc=CC", "cxx=CXX"]
 timeout = 3600
 
 [command_templates.build_base.vars]
@@ -970,7 +970,7 @@ name = "development"
 name = "build-debug"
 template = "build_base"
 args = ["debug"]
-env_import = ["CFLAGS"]  # Import CFLAGS in addition to CC, CXX
+env_import = ["cflags=CFLAGS"]  # Import cflags in addition to cc, cxx
 
 [groups.commands.vars]
 optimization = "O0"  # Disable optimization
@@ -978,7 +978,7 @@ debug = "true"       # Enable debug mode
 # Inheritance result:
 #   workdir="/workspace" (inherited from template)
 #   output_file="/var/log/build.log" (inherited from template)
-#   env_import=["CC", "CXX", "CFLAGS"] (merge)
+#   env_import=["cc=CC", "cxx=CXX", "cflags=CFLAGS"] (merge)
 #   vars={optimization: "O0", debug: "true"} (override)
 #   timeout=3600 (inherited from template)
 
@@ -989,14 +989,14 @@ template = "build_base"
 args = ["release"]
 workdir = "/opt/releases"
 output_file = "/var/log/release.log"
-env_import = ["LDFLAGS"]
+env_import = ["ldflags=LDFLAGS"]
 
 [groups.commands.vars]
 optimization = "O3"
 # Inheritance result:
 #   workdir="/opt/releases" (override)
 #   output_file="/var/log/release.log" (override)
-#   env_import=["CC", "CXX", "LDFLAGS"] (merge)
+#   env_import=["cc=CC", "cxx=CXX", "ldflags=LDFLAGS"] (merge)
 #   vars={optimization: "O3", debug: "false"} (partial override)
 #   timeout=3600 (inherited from template)
 ```
