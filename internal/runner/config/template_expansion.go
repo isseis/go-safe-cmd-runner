@@ -844,30 +844,6 @@ func validateCmdSpec(
 	return nil
 }
 
-// ExpandTemplateEnvImport returns the template's env_import array without modification.
-// Parameter expansion is not supported in env_import for security and simplicity reasons.
-//
-// Each element can be:
-//   - A simple string like "CC" (imports system env var CC as internal variable CC)
-//   - A mapping like "internal_name=SYSTEM_VAR" (imports SYSTEM_VAR as internal_name)
-//
-// Note: This function currently takes params and templateName parameters for API compatibility,
-// but does not use them. These parameters may be removed in a future version.
-func ExpandTemplateEnvImport(
-	envImport []string,
-	_ map[string]any,
-	_ string,
-) ([]string, error) {
-	// Return a copy to avoid modifying the original slice
-	if len(envImport) == 0 {
-		return []string{}, nil
-	}
-
-	result := make([]string, len(envImport))
-	copy(result, envImport)
-	return result, nil
-}
-
 // ExpandTemplateVars expands all placeholders in a template's vars map.
 // Only the values are expanded, not the keys.
 // String values and array element values can contain placeholders.

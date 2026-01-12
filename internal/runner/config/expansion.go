@@ -1402,12 +1402,6 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		expandedOutputFile = &empty
 	}
 
-	// Expand env_import from template
-	expandedEnvImport, err := ExpandTemplateEnvImport(template.EnvImport, cmdSpec.Params, templateName)
-	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template env_import: %w", err)
-	}
-
 	// Expand vars from template
 	expandedVars, err := ExpandTemplateVars(template.Vars, cmdSpec.Params, templateName)
 	if err != nil {
@@ -1437,7 +1431,8 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	}
 
 	// Apply template inheritance for WorkDir, OutputFile, EnvImport, and Vars
-	ApplyTemplateInheritance(expandedSpec, cmdSpec, expandedWorkDir, expandedOutputFile, expandedEnvImport, expandedVars)
+	// Note: env_import does not support parameter expansion (passed as-is from template)
+	ApplyTemplateInheritance(expandedSpec, cmdSpec, expandedWorkDir, expandedOutputFile, template.EnvImport, expandedVars)
 
 	// Apply template defaults for execution settings only if command didn't set them.
 	// All settings use pointer types: nil = inherit from template, explicit value = override.
