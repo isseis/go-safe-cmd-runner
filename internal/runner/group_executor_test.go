@@ -884,7 +884,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 func TestResolveCommandWorkDir(t *testing.T) {
 	tests := []struct {
 		name                  string
-		commandWorkDir        string
+		commandWorkDir        *string // nil means inherit from group
 		commandVars           map[string]string
 		groupEffectiveWorkDir string
 		expectedWorkDir       string
@@ -892,23 +892,31 @@ func TestResolveCommandWorkDir(t *testing.T) {
 	}{
 		{
 			name:                  "command workdir takes priority",
-			commandWorkDir:        "/cmd/workdir",
+			commandWorkDir:        runnertypes.StringPtr("/cmd/workdir"),
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "/cmd/workdir",
 			expectError:           false,
 		},
 		{
-			name:                  "use group workdir when command workdir is empty",
-			commandWorkDir:        "",
+			name:                  "nil command workdir inherits group workdir",
+			commandWorkDir:        nil,
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "/group/workdir",
 			expectError:           false,
 		},
 		{
+			name:                  "empty command workdir overrides group workdir",
+			commandWorkDir:        runnertypes.StringPtr(""),
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "", // Empty string is valid (current directory)
+			expectError:           false,
+		},
+		{
 			name:                  "both empty returns empty",
-			commandWorkDir:        "",
+			commandWorkDir:        runnertypes.StringPtr(""),
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "",
 			expectedWorkDir:       "",
@@ -916,7 +924,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 		},
 		{
 			name:                  "command workdir with variable expansion",
-			commandWorkDir:        "/opt/%{project}",
+			commandWorkDir:        runnertypes.StringPtr("/opt/%{project}"),
 			commandVars:           map[string]string{"project": "myapp"},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "/opt/myapp",
@@ -924,7 +932,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 		},
 		{
 			name:                  "variable expansion error stops execution",
-			commandWorkDir:        "/opt/%{undefined_var}",
+			commandWorkDir:        runnertypes.StringPtr("/opt/%{undefined_var}"),
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "",
@@ -944,7 +952,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			runtimeCmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
 					Name:    "test-cmd",
-					WorkDir: runnertypes.StringPtr(tt.commandWorkDir),
+					WorkDir: tt.commandWorkDir,
 				},
 				ExpandedVars: tt.commandVars,
 			}

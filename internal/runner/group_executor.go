@@ -667,13 +667,15 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 // resolveCommandWorkDir determines the working directory for a command.
 // Priority: Command.WorkDir > RuntimeGroup.EffectiveWorkDir
 // Returns (workdir, error). Returns error if variable expansion fails.
+// Note: Empty string ("") is a valid value meaning current directory.
 func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 	runtimeCmd *runnertypes.RuntimeCommand,
 	runtimeGroup *runnertypes.RuntimeGroup,
 ) (string, error) {
 	// Priority 1: Command-level WorkDir (from spec)
-	if runtimeCmd.Spec.WorkDir != nil && *runtimeCmd.Spec.WorkDir != "" {
-		// Expand variables in command workdir
+	// If WorkDir is non-nil (including empty string), use it and skip group-level
+	if runtimeCmd.Spec.WorkDir != nil {
+		// Expand variables in command workdir (empty string expands to empty string)
 		level := fmt.Sprintf("command[%s]", runtimeCmd.Spec.Name)
 		expandedWorkDir, err := config.ExpandString(
 			*runtimeCmd.Spec.WorkDir,

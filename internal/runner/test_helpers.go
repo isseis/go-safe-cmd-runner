@@ -87,8 +87,9 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 	)
 
 	// Set default workDir if not specified
+	// Note: nil means inherit from group/global, empty string means current directory
 	workDir := "/tmp" // Use /tmp as default for runner package tests
-	if spec.WorkDir != nil && *spec.WorkDir != "" {
+	if spec.WorkDir != nil {
 		workDir = *spec.WorkDir
 	}
 
