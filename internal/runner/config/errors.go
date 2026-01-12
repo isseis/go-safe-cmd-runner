@@ -721,13 +721,7 @@ func (e *ErrCircularInclude) Error() string {
 	if len(e.Chain) == 0 {
 		return fmt.Sprintf("circular include detected: %s", e.Path)
 	}
-	chain := ""
-	for i, path := range e.Chain {
-		if i > 0 {
-			chain += " -> "
-		}
-		chain += path
-	}
+	chain := strings.Join(e.Chain, " -> ")
 	return fmt.Sprintf(
 		"circular include detected\n"+
 			"  File: %s\n"+
