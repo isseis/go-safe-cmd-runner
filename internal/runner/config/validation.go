@@ -189,11 +189,9 @@ func ValidateWorkDir(workdir *string) error {
 		return nil // Current directory, no validation needed
 	}
 
-	path := *workdir
-
 	// Must be absolute path
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, path)
+	if !filepath.IsAbs(*workdir) {
+		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, *workdir)
 	}
 
 	return nil
@@ -202,10 +200,6 @@ func ValidateWorkDir(workdir *string) error {
 // ValidateEnvImport validates that all imported environment variables
 // are in the allowed list.
 func ValidateEnvImport(envImport []string, envAllowed []string) error {
-	if len(envImport) == 0 {
-		return nil // No env_import, nothing to validate
-	}
-
 	allowedSet := make(map[string]struct{}, len(envAllowed))
 	for _, allowed := range envAllowed {
 		allowedSet[allowed] = struct{}{}
