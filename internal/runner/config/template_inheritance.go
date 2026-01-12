@@ -18,8 +18,9 @@ func OverrideStringPointer(cmdValue *string, templateValue *string) *string {
 // Template entries are added first, then command entries.
 // Duplicates are removed (first occurrence wins).
 func MergeEnvImport(templateEnvImport []string, cmdEnvImport []string) []string {
-	seen := make(map[string]struct{})
-	result := []string{}
+	capacity := len(templateEnvImport) + len(cmdEnvImport)
+	seen := make(map[string]struct{}, capacity)
+	result := make([]string, 0, capacity)
 
 	// Add template entries first
 	for _, item := range templateEnvImport {
