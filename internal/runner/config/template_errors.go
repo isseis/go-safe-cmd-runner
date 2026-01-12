@@ -40,10 +40,7 @@ type ErrDuplicateTemplateName struct {
 }
 
 func (e *ErrDuplicateTemplateName) Error() string {
-	if len(e.Locations) == 0 {
-		return fmt.Sprintf("duplicate template name %q", e.Name)
-	}
-	if len(e.Locations) == 1 {
+	if len(e.Locations) <= 1 {
 		return fmt.Sprintf("duplicate template name %q", e.Name)
 	}
 	locations := ""
