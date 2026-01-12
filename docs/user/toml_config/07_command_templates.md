@@ -139,6 +139,64 @@ timeout = 3600
 risk_level = "medium"
 ```
 
+### 7.2.6 Template File Includes
+
+#### Overview
+
+You can split command template definitions into separate files and load them from the main config via the `includes` array. This is useful for sharing common templates across projects or organizing them by category.
+
+#### Basic Usage
+
+```toml
+version = "1.0"
+includes = ["templates/backup.toml", "templates/docker.toml"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"  # defined in templates/backup.toml
+
+[groups.commands.params]
+path = "/data"
+repo = "/backup/repo"
+```
+
+#### Template File Format
+
+Included files may contain only `version` and `command_templates` sections.
+
+```toml
+version = "1.0"
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+```
+
+Including `global` or `groups` in template files results in an error.
+
+#### Path Resolution
+
+- Relative paths: Resolved from the directory of the main config (e.g., `includes = ["templates/common.toml"]`).
+- Absolute paths: Allowed (e.g., `includes = ["/etc/safe-cmd-runner/templates/system.toml"]`).
+
+#### Merge Order and Duplicate Detection
+
+Templates are loaded in the order listed in `includes`, then from the main file. Duplicate template names across files cause an error, and the error lists all definition locations.
+
+#### Limitations
+
+1. No multi-level include (a template file cannot include another template file).
+2. No circular references (prevented by the rule above).
+3. Template-only files (no `global`/`groups`).
+
+#### Security and Hash Verification
+
+Included files follow the same path traversal and symlink checks as the main config. Hash recording also covers included files (e.g., `safe-cmd-runner record -c config.toml -o hashes/`).
+
 ## 7.3 Parameter Expansion
 
 By defining parameters in templates and passing values when calling them, flexible command definitions are possible.
