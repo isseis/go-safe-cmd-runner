@@ -13,34 +13,20 @@ type TemplateSource struct {
 	Templates map[string]runnertypes.CommandTemplate
 }
 
-// TemplateMerger merges templates from multiple sources.
-type TemplateMerger interface {
-	// MergeTemplates merges templates from multiple sources.
-	//
-	// Parameters:
-	//   - sources: List of template sources (in order)
-	//
-	// Returns:
-	//   - Merged map of template name to CommandTemplate
-	//   - Error if duplicate template names are found
-	//
-	// Behavior:
-	//   - Sources are processed in order
-	//   - Duplicate names across sources cause an error
-	//   - Error message includes all locations where duplicate is defined
-	MergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTemplate, error)
-}
-
-// DefaultTemplateMerger is the production implementation.
-type DefaultTemplateMerger struct{}
-
-// NewDefaultTemplateMerger creates a new DefaultTemplateMerger.
-func NewDefaultTemplateMerger() *DefaultTemplateMerger {
-	return &DefaultTemplateMerger{}
-}
-
 // MergeTemplates merges templates from multiple sources.
-func (m *DefaultTemplateMerger) MergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTemplate, error) {
+//
+// Parameters:
+//   - sources: List of template sources (in order)
+//
+// Returns:
+//   - Merged map of template name to CommandTemplate
+//   - Error if duplicate template names are found
+//
+// Behavior:
+//   - Sources are processed in order
+//   - Duplicate names across sources cause an error
+//   - Error message includes all locations where duplicate is defined
+func MergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTemplate, error) {
 	// Map to store merged templates
 	merged := make(map[string]runnertypes.CommandTemplate)
 

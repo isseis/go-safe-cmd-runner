@@ -81,10 +81,9 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 		})
 	}
 
-	// Merge all templates. The merger will handle duplicate detection across all sources.
+	// Merge all templates. MergeTemplates will handle duplicate detection across all sources.
 	if len(templateSources) > 0 {
-		merger := NewDefaultTemplateMerger()
-		mergedTemplates, err := merger.MergeTemplates(templateSources)
+		mergedTemplates, err := MergeTemplates(templateSources)
 		if err != nil {
 			return nil, err
 		}
