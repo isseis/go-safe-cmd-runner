@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
@@ -198,16 +199,23 @@ func ValidateWorkDir(workdir *string) error {
 }
 
 // ValidateEnvImport validates that all imported environment variables
-// are in the allowed list.
+// are in the allowed list. Supports "internal_name=SYSTEM_VAR" format.
 func ValidateEnvImport(envImport []string, envAllowed []string) error {
 	allowedSet := make(map[string]struct{}, len(envAllowed))
 	for _, allowed := range envAllowed {
 		allowedSet[allowed] = struct{}{}
 	}
 
-	for _, imported := range envImport {
-		if _, ok := allowedSet[imported]; !ok {
-			return fmt.Errorf("%w: %q", ErrInvalidEnvImport, imported)
+	for _, mapping := range envImport {
+		// Parse "internal_name=SYSTEM_VAR" format
+		_, systemVarName, ok := common.ParseKeyValue(mapping)
+		if !ok {
+			return fmt.Errorf("%w: invalid format %q (expected 'internal_name=SYSTEM_VAR')", ErrInvalidEnvImport, mapping)
+		}
+
+		// Check if system variable is in allowlist
+		if _, ok := allowedSet[systemVarName]; !ok {
+			return fmt.Errorf("%w: %q", ErrInvalidEnvImport, systemVarName)
 		}
 	}
 
