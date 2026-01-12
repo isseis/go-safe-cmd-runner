@@ -41,7 +41,7 @@ func NewLoaderWithFS(fs common.FileSystem) *Loader {
 // processing includes and merging templates
 func (l *Loader) LoadConfig(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
 	// Process includes if present
-	cfg, err := l.loadConfigWithIncludes(configPath, content, make(map[string]bool))
+	cfg, err := l.loadConfigWithIncludes(configPath, content, make(map[string]struct{}))
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +50,15 @@ func (l *Loader) LoadConfig(configPath string, content []byte) (*runnertypes.Con
 }
 
 // loadConfigWithIncludes recursively loads config and processes includes
-func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visited map[string]bool) (*runnertypes.ConfigSpec, error) {
+func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visited map[string]struct{}) (*runnertypes.ConfigSpec, error) {
 	// Check for circular reference
-	if visited[configPath] {
+	if _, exists := visited[configPath]; exists {
 		return nil, &ErrCircularInclude{
 			Path:  configPath,
 			Chain: nil, // Will be populated by caller
 		}
 	}
-	visited[configPath] = true
+	visited[configPath] = struct{}{}
 
 	// Load the main config (without includes processing)
 	cfg, err := l.loadConfigInternal(content)
@@ -95,7 +95,7 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 }
 
 // processIncludes loads all included template files
-func (l *Loader) processIncludes(baseConfigPath string, includes []string, visited map[string]bool) ([]TemplateSource, error) {
+func (l *Loader) processIncludes(baseConfigPath string, includes []string, visited map[string]struct{}) ([]TemplateSource, error) {
 	if len(includes) == 0 {
 		return nil, nil
 	}
@@ -116,7 +116,7 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string, visit
 		}
 
 		// Check for circular reference
-		if visited[resolvedPath] {
+		if _, exists := visited[resolvedPath]; exists {
 			return nil, &ErrCircularInclude{
 				Path:  resolvedPath,
 				Chain: nil,
