@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
@@ -173,6 +175,47 @@ func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
 			if err := validateCmdSpec(group.Name, cmdIdx, &cmd); err != nil {
 				return fmt.Errorf("group[%d] (%s): %w", groupIdx, group.Name, err)
 			}
+		}
+	}
+
+	return nil
+}
+
+// ValidateWorkDir validates the working directory path.
+// It checks that:
+// 1. nil or empty string are allowed (current directory)
+// 2. Non-empty paths must be absolute (start with '/')
+func ValidateWorkDir(workdir *string) error {
+	if workdir == nil || *workdir == "" {
+		return nil // Current directory, no validation needed
+	}
+
+	// Must be absolute path
+	if !filepath.IsAbs(*workdir) {
+		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, *workdir)
+	}
+
+	return nil
+}
+
+// ValidateEnvImport validates that all imported environment variables
+// are in the allowed list. Supports "internal_name=SYSTEM_VAR" format.
+func ValidateEnvImport(envImport []string, envAllowed []string) error {
+	allowedSet := make(map[string]struct{}, len(envAllowed))
+	for _, allowed := range envAllowed {
+		allowedSet[allowed] = struct{}{}
+	}
+
+	for _, mapping := range envImport {
+		// Parse "internal_name=SYSTEM_VAR" format
+		_, systemVarName, ok := common.ParseKeyValue(mapping)
+		if !ok {
+			return fmt.Errorf("%w: invalid format %q (expected 'internal_name=SYSTEM_VAR')", ErrInvalidEnvImport, mapping)
+		}
+
+		// Check if system variable is in allowlist
+		if _, ok := allowedSet[systemVarName]; !ok {
+			return fmt.Errorf("%w: %q", ErrInvalidEnvImport, systemVarName)
 		}
 	}
 

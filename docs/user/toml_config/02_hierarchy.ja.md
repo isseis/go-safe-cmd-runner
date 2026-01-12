@@ -203,29 +203,29 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 
 #### env_import (システム環境変数のインポート) - Merge 継承
 
-`env_import` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
+`env_import` は **Merge (マージ)** によって継承されます。`internal_name=SYSTEM_VAR` の明示形式のみを使用し、`env_import = ["CC"]` のような省略形式は非対応です。下位レベルで指定した場合、上位レベルの設定とマージされます。
 
 ```toml
 [global]
-env_import = ["HOME", "USER"]
+env_import = ["Home=HOME", "User=USER"]
 
 [[groups]]
 name = "tasks"
-env_import = ["LANG", "LC_ALL"]  # グローバルの env_import とマージ
+env_import = ["lang=LANG", "locale=LC_ALL"]  # グローバルの env_import とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # env_import を指定しないため、グループの env_import が適用される
-# 継承された変数: HOME, USER (global) + LANG, LC_ALL (group)
-args = ["User: %{USER}, Lang: %{LANG}"]
+# 継承された変数: Home, User (global) + lang, locale (group)
+args = ["User: %{User}, Lang: %{lang}"]
 
 [[groups.commands]]
 name = "task2"
-env_import = ["PWD"]  # グループの env_import とマージ
+env_import = ["pwd=PWD"]  # グループの env_import とマージ
 cmd = "/bin/echo"
-# 継承された変数: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
-args = ["Home: %{HOME}, PWD: %{PWD}"]
+# 継承された変数: Home, User (global) + lang, locale (group) + pwd (command)
+args = ["Home: %{Home}, PWD: %{pwd}"]
 ```
 
 ### 2.3.5 設定の優先順位まとめ

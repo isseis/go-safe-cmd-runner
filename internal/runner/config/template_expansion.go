@@ -649,9 +649,9 @@ func ValidateTemplateDefinition(
 		}
 	}
 
-	// Check workdir for local variable references
-	if template.WorkDir != "" {
-		if err := validateGlobalOnly(template.WorkDir, name, workDirKey); err != nil {
+	// Check workdir for local variable references (if non-nil)
+	if template.WorkDir != nil {
+		if err := validateGlobalOnly(*template.WorkDir, name, workDirKey); err != nil {
 			return err
 		}
 	}
@@ -663,6 +663,11 @@ func ValidateTemplateDefinition(
 // references to local variables (lowercase or underscore start).
 // Global variable references (uppercase start) are allowed.
 func validateGlobalOnly(input, templateName, field string) error {
+	// Empty strings cannot contain variable references, skip validation
+	if input == "" {
+		return nil
+	}
+
 	// Collect all %{VAR} references
 	var refs []string
 	refCollector := func(
@@ -839,6 +844,108 @@ func validateCmdSpec(
 	return nil
 }
 
+// ExpandTemplateVars expands all placeholders in a template's vars map.
+// Only the values are expanded, not the keys.
+// String values and array element values can contain placeholders.
+func ExpandTemplateVars(
+	vars map[string]any,
+	params map[string]any,
+	templateName string,
+) (map[string]any, error) {
+	if len(vars) == 0 {
+		return make(map[string]any), nil
+	}
+
+	result := make(map[string]any, len(vars))
+
+	for varName, varValue := range vars {
+		field := fmt.Sprintf("vars.%s", varName)
+
+		switch v := varValue.(type) {
+		case string:
+			// Expand string value
+			// Note: expandSingleArg returns []string, but for vars values,
+			// we need to handle different cases:
+			// - ${param} or ${?param} with value: single string (join if multiple, but should be one)
+			// - ${?param} with empty/missing: should result in empty string
+			// - ${@param}: not allowed in vars string values (mixed context)
+			expanded, err := expandSingleArg(v, params, templateName, field)
+			if err != nil {
+				return nil, err
+			}
+
+			switch len(expanded) {
+			case 0:
+				// Optional parameter was empty/missing - store as empty string
+				result[varName] = ""
+			case 1:
+				result[varName] = expanded[0]
+			default:
+				// This shouldn't happen for string values (array expansion should error)
+				return nil, &ErrTemplateVarUnexpectedMultipleValues{
+					TemplateName: templateName,
+					Field:        field,
+				}
+			}
+
+		case []any:
+			// Expand array elements
+			expandedArray := make([]any, 0, len(v))
+			for i, elem := range v {
+				str, ok := elem.(string)
+				if !ok {
+					return nil, &ErrTemplateInvalidArrayElement{
+						TemplateName: templateName,
+						Field:        field,
+						ParamName:    varName,
+						Index:        i,
+						ActualType:   fmt.Sprintf("%T", elem),
+					}
+				}
+
+				elemField := fmt.Sprintf("%s[%d]", field, i)
+				expanded, err := expandSingleArg(str, params, templateName, elemField)
+				if err != nil {
+					return nil, err
+				}
+
+				// Add expanded elements (may be 0, 1, or multiple)
+				for _, exp := range expanded {
+					expandedArray = append(expandedArray, exp)
+				}
+			}
+			result[varName] = expandedArray
+
+		case []string:
+			// Expand array elements
+			expandedArray := make([]any, 0, len(v))
+			for i, str := range v {
+				elemField := fmt.Sprintf("%s[%d]", field, i)
+				expanded, err := expandSingleArg(str, params, templateName, elemField)
+				if err != nil {
+					return nil, err
+				}
+
+				// Add expanded elements (may be 0, 1, or multiple)
+				for _, exp := range expanded {
+					expandedArray = append(expandedArray, exp)
+				}
+			}
+			result[varName] = expandedArray
+
+		default:
+			return nil, &ErrUnsupportedParamType{
+				TemplateName: templateName,
+				Field:        "vars",
+				ParamName:    varName,
+				ActualType:   fmt.Sprintf("%T", varValue),
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // CollectUsedParams extracts all parameter names used in a template.
 // This is used for:
 //  1. Required params validation
@@ -846,43 +953,107 @@ func validateCmdSpec(
 func CollectUsedParams(template *runnertypes.CommandTemplate) (map[string]struct{}, error) {
 	used := make(map[string]struct{})
 
-	// Collect from cmd
-	if err := collectFromString(template.Cmd, used); err != nil {
+	// Collect from basic fields
+	if err := collectFromBasicFields(template, used); err != nil {
 		return nil, err
 	}
 
-	// Collect from args
+	// Collect from env_vars
+	if err := collectFromEnvVars(template.EnvVars, used); err != nil {
+		return nil, err
+	}
+
+	// Collect from optional fields
+	if err := collectFromOptionalFields(template, used); err != nil {
+		return nil, err
+	}
+
+	// Collect from vars
+	if err := collectFromVars(template.Vars, used); err != nil {
+		return nil, err
+	}
+
+	return used, nil
+}
+
+// collectFromBasicFields collects params from cmd and args.
+func collectFromBasicFields(template *runnertypes.CommandTemplate, used map[string]struct{}) error {
+	if err := collectFromString(template.Cmd, used); err != nil {
+		return err
+	}
+
 	for _, arg := range template.Args {
 		if err := collectFromString(arg, used); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	// Collect from env_vars
-	// - For "KEY=VALUE" format: collect from VALUE part only
-	// - For element-level expansion (e.g., "${@env_vars}"): collect from entire string
-	for _, env := range template.EnvVars {
+	return nil
+}
+
+// collectFromEnvVars collects params from env_vars array.
+func collectFromEnvVars(envVars []string, used map[string]struct{}) error {
+	for _, env := range envVars {
 		if idx := strings.IndexByte(env, '='); idx != -1 {
 			// KEY=VALUE format - collect from value part only
 			if err := collectFromString(env[idx+1:], used); err != nil {
-				return nil, err
+				return err
 			}
 		} else {
 			// No '=' - this might be element-level expansion like "${@env_vars}"
 			if err := collectFromString(env, used); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
+	return nil
+}
 
-	// Collect from workdir
-	if template.WorkDir != "" {
-		if err := collectFromString(template.WorkDir, used); err != nil {
-			return nil, err
+// collectFromOptionalFields collects params from optional pointer fields.
+// Note: env_import does not support parameter expansion, so it is not included.
+func collectFromOptionalFields(template *runnertypes.CommandTemplate, used map[string]struct{}) error {
+	// Collect from workdir (if non-nil and non-empty)
+	if template.WorkDir != nil && *template.WorkDir != "" {
+		if err := collectFromString(*template.WorkDir, used); err != nil {
+			return err
 		}
 	}
 
-	return used, nil
+	// Collect from output_file (if non-nil and non-empty)
+	if template.OutputFile != nil && *template.OutputFile != "" {
+		if err := collectFromString(*template.OutputFile, used); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// collectFromVars collects params from vars map values.
+func collectFromVars(vars map[string]any, used map[string]struct{}) error {
+	for _, varValue := range vars {
+		switch v := varValue.(type) {
+		case string:
+			if err := collectFromString(v, used); err != nil {
+				return err
+			}
+		case []any:
+			for _, elem := range v {
+				if str, ok := elem.(string); ok {
+					if err := collectFromString(str, used); err != nil {
+						return err
+					}
+				}
+			}
+		case []string:
+			for _, str := range v {
+				if err := collectFromString(str, used); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // collectFromString extracts parameter names from placeholders in a string.
@@ -913,21 +1084,16 @@ func ValidateTemplateVars(
 	templateName string,
 	globalVars map[string]string,
 ) error {
-	// Fields to check for variable references
-	fieldsToCheck := []struct {
-		name  string
-		value string
-	}{
-		{"cmd", template.Cmd},
-		{"workdir", template.WorkDir},
+	// Check cmd field
+	if template.Cmd != "" {
+		if err := validateFieldVars(template.Cmd, templateName, "cmd", globalVars); err != nil {
+			return err
+		}
 	}
 
-	// Check string fields
-	for _, field := range fieldsToCheck {
-		if field.value == "" {
-			continue
-		}
-		if err := validateFieldVars(field.value, templateName, field.name, globalVars); err != nil {
+	// Check workdir field (if non-nil)
+	if template.WorkDir != nil {
+		if err := validateFieldVars(*template.WorkDir, templateName, "workdir", globalVars); err != nil {
 			return err
 		}
 	}
@@ -972,6 +1138,11 @@ func validateFieldVars(
 	fieldName string,
 	globalVars map[string]string,
 ) error {
+	// Empty strings cannot contain variable references
+	if input == "" {
+		return nil
+	}
+
 	// Import the variable package for scope determination
 	// Note: This creates a dependency from config to variable package
 	// which is acceptable since variable scope validation is a core feature

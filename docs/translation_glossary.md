@@ -84,6 +84,7 @@
 | データベース | database | |
 | デフォルト | default | |
 | デフォルト値 | default value | |
+| デフォルト設定 | default settings | |
 | 定義 | define / definition | |
 | 拒否 | deny | 許可リストの文脈では "deny" |
 | デプロイ | deploy / deployment | |
@@ -195,6 +196,8 @@
 | 注入 | inject / injection | Parameter injection context |
 | 影響 | impact | |
 | 継承 | inheritance | |
+| 継承可能 | inheritable | |
+| 継承モデル | inheritance model | |
 | インジェクション攻撃 | injection attack | セキュリティの文脈 |
 | 整合性 | integrity | |
 | 整数 | integer | |
@@ -249,6 +252,8 @@
 | メリット | advantage | |
 | メッセージ | message | |
 | マージ | merge / merging | |
+| 和集合マージ | union merge | 設定の継承の文脈 |
+| マップマージ | map merge | 設定の継承の文脈 |
 | メソッド | method | |
 | 中級者 | intermediate (user) | |
 | 移行 | migration | |
@@ -283,7 +288,9 @@
 | オーバーヘッド | overhead | |
 | 概要 | overview | |
 | オーバーライド | override | |
+| オーバーライドモデル | override model | 設定の継承の文脈 |
 | 上書き | overwrite | |
+| 上書き可能 | overrideable | |
 
 ### P
 
@@ -479,6 +486,8 @@
 | 変数 | variable | |
 | 変数名 | variable name | |
 | 変数スコープ | variable scope | |
+| カスタマイズ | customize / customization | |
+| カスタム | custom | |
 | 検証 | verification | ファイル整合性検証の文脈 |
 | バージョン | version | |
 | 詳細度 | verbosity | ログ出力の詳細度 |
@@ -600,6 +609,7 @@
 | 2025-12-07 | 変数展開アルゴリズムドキュメント関連の用語を追加 (cache, core logic, DoS attack, entry point, expanded, immediate expansion, injection attack, lazy evaluation, memoization, memory exhaustion, order-independent, parse/parser/parsing, recursion depth, source, stack overflow, substitution, syntax, type safety, unexpanded) |
 | 2025-12-11 | コマンドテンプレート機能ドキュメント関連の用語を追加 (ambiguity, duplication, exclusivity, generic, inject/injection, leverage/leveraging, literal, mixed, parameter value, placeholder/placeholder syntax, priority order, reusable, responsibility, simultaneous/simultaneously, solution (error context), spelling, standalone) |
 | 2025-12-18 | 変数スコープと命名規則関連の用語を追加 (global variable, local variable, scope, variable scope) |
+| 2026-01-11 | フィールド継承関連の用語を追加 (inheritable, inheritance model, override model, union merge, map merge, overrideable, customize/customization, custom, default settings) |
 
 ---
 

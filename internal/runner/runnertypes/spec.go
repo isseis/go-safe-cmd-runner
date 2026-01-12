@@ -31,7 +31,8 @@ type CommandTemplate struct {
 	EnvVars []string `toml:"env_vars"`
 
 	// WorkDir is the working directory for the command (optional)
-	WorkDir string `toml:"workdir"`
+	// nil: not specified (can be inherited), empty string: current directory, non-empty: specified path
+	WorkDir *string `toml:"workdir"`
 
 	// Timeout specifies the command timeout in seconds (optional)
 	// nil: inherit from group/global, 0: unlimited, positive: timeout in seconds
@@ -44,6 +45,18 @@ type CommandTemplate struct {
 	// RiskLevel specifies the maximum allowed risk level (optional)
 	// nil: inherit from global default, otherwise must be one of: "low", "medium", "high"
 	RiskLevel *string `toml:"risk_level"`
+
+	// OutputFile specifies the output file path for redirection (optional)
+	// nil: not specified (can be inherited), non-nil: output file path
+	OutputFile *string `toml:"output_file"`
+
+	// EnvImport specifies environment variables to import from the system
+	// Optional, defaults to empty array
+	EnvImport []string `toml:"env_import"`
+
+	// Vars defines template-level internal variables as a TOML table.
+	// Optional, defaults to empty map
+	Vars map[string]any `toml:"vars"`
 
 	// NOTE: The "name" field is NOT allowed in template definitions.
 	// Command names must be specified in the [[groups.commands]] section
@@ -200,7 +213,9 @@ type CommandSpec struct {
 	Args []string `toml:"args"` // Command arguments (may contain variables)
 
 	// Execution settings
-	WorkDir string `toml:"workdir"` // Working directory for this command (raw value)
+	// WorkDir is the working directory for this command (raw value)
+	// nil: not specified (can be inherited), empty string: current directory, non-empty: specified path
+	WorkDir *string `toml:"workdir"`
 	// Timeout specifies command-specific timeout
 	// nil: inherit from parent (group or global)
 	// 0: unlimited execution (no timeout)
@@ -210,7 +225,9 @@ type CommandSpec struct {
 	RunAsUser       string  `toml:"run_as_user"`       // User to execute command as (using seteuid)
 	RunAsGroup      string  `toml:"run_as_group"`      // Group to execute command as (using setegid)
 	RiskLevel       *string `toml:"risk_level"`        // Maximum allowed risk level (nil=inherit default, otherwise: low, medium, high)
-	OutputFile      string  `toml:"output_file"`       // Standard output file path for capture
+	// OutputFile specifies the output file path for redirection
+	// nil: not specified (can be inherited), non-nil: output file path
+	OutputFile *string `toml:"output_file"`
 
 	// Variable definitions (raw values, not yet expanded)
 	EnvVars   []string `toml:"env_vars"`   // Command-level environment variables in KEY=VALUE format

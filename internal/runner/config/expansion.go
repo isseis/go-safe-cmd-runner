@@ -1270,6 +1270,41 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 	return runtime, nil
 }
 
+// ApplyTemplateInheritance applies template field inheritance to the expanded command spec.
+// This function merges template and command-level settings according to the inheritance model:
+//   - WorkDir: Override model (command overrides template, nil = inherit)
+//   - OutputFile: Override model (command overrides template, nil = inherit)
+//   - EnvImport: Merge model (template entries added first, command entries appended, duplicates removed)
+//   - Vars: Merge model (template vars as baseline, command vars overlay with precedence on conflicts)
+//
+// Parameters:
+//   - expandedSpec: The spec being constructed (output)
+//   - cmdSpec: The original command spec (contains command-level overrides)
+//   - expandedWorkDir: WorkDir from template after parameter expansion (nil if not set in template)
+//   - expandedOutputFile: OutputFile from template after parameter expansion (nil if not set in template)
+//   - expandedEnvImport: EnvImport from template after parameter expansion
+//   - expandedVars: Vars from template after parameter expansion
+func ApplyTemplateInheritance(
+	expandedSpec *runnertypes.CommandSpec,
+	cmdSpec *runnertypes.CommandSpec,
+	expandedWorkDir *string,
+	expandedOutputFile *string,
+	expandedEnvImport []string,
+	expandedVars map[string]any,
+) {
+	// WorkDir: Override model
+	expandedSpec.WorkDir = OverrideStringPointer(cmdSpec.WorkDir, expandedWorkDir)
+
+	// OutputFile: Override model
+	expandedSpec.OutputFile = OverrideStringPointer(cmdSpec.OutputFile, expandedOutputFile)
+
+	// EnvImport: Merge model (expanded template first, command appended, deduplicate)
+	expandedSpec.EnvImport = MergeEnvImport(expandedEnvImport, cmdSpec.EnvImport)
+
+	// Vars: Merge model (expanded template baseline, command overlay)
+	expandedSpec.Vars = MergeVars(expandedVars, cmdSpec.Vars)
+}
+
 // expandTemplateToSpec expands a template into a CommandSpec by substituting parameters.
 // It returns the expanded CommandSpec and a list of warnings for unused parameters.
 // The expanded spec will have Template field cleared and Cmd/Args/Env/WorkDir fields populated.
@@ -1330,10 +1365,10 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		return nil, warnings, fmt.Errorf("failed to expand template env_vars: %w", err)
 	}
 
-	// Expand workdir from template
-	var expandedWorkDir string
-	if template.WorkDir != "" {
-		result, err := expandSingleArg(template.WorkDir, cmdSpec.Params, templateName, workDirKey)
+	// Expand workdir from template (if non-nil)
+	var expandedWorkDir *string
+	if template.WorkDir != nil {
+		result, err := expandSingleArg(*template.WorkDir, cmdSpec.Params, templateName, workDirKey)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
 		}
@@ -1341,14 +1376,28 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		// Note: Array placeholders (${@param}) are rejected at expansion time
 		// by expandArrayPlaceholder, so result will always have 0 or 1 element here
 		if len(result) > 0 {
-			expandedWorkDir = result[0]
+			expanded := result[0]
+			expandedWorkDir = &expanded
 		}
 	}
 
-	// Determine final workdir: command-level overrides template
-	finalWorkDir := cmdSpec.WorkDir
-	if finalWorkDir == "" {
-		finalWorkDir = expandedWorkDir
+	// Expand output_file from template (if non-nil)
+	var expandedOutputFile *string
+	if template.OutputFile != nil {
+		result, err := expandSingleArg(*template.OutputFile, cmdSpec.Params, templateName, "output_file")
+		if err != nil {
+			return nil, warnings, fmt.Errorf("failed to expand template output_file: %w", err)
+		}
+		if len(result) > 0 {
+			expanded := result[0]
+			expandedOutputFile = &expanded
+		}
+	}
+
+	// Expand vars from template
+	expandedVars, err := ExpandTemplateVars(template.Vars, cmdSpec.Params, templateName)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("failed to expand template vars: %w", err)
 	}
 
 	// Create expanded spec
@@ -1358,17 +1407,13 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		Cmd:         expandedCmd[0], // expandSingleArg always returns at least one element for non-optional
 		Args:        expandedArgs,
 		EnvVars:     expandedEnv,
-		WorkDir:     finalWorkDir,
 
 		// Execution settings from command (template fallback applied below)
 		Timeout:         cmdSpec.Timeout,
 		OutputSizeLimit: cmdSpec.OutputSizeLimit,
 		RiskLevel:       cmdSpec.RiskLevel,
 
-		// Copy non-template fields from original spec
-		EnvImport:  cmdSpec.EnvImport,
-		Vars:       cmdSpec.Vars,
-		OutputFile: cmdSpec.OutputFile,
+		// RunAsUser and RunAsGroup
 		RunAsUser:  cmdSpec.RunAsUser,
 		RunAsGroup: cmdSpec.RunAsGroup,
 
@@ -1376,6 +1421,10 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 		Template: "",
 		Params:   nil,
 	}
+
+	// Apply template inheritance for WorkDir, OutputFile, EnvImport, and Vars
+	// Note: env_import does not support parameter expansion (passed as-is from template)
+	ApplyTemplateInheritance(expandedSpec, cmdSpec, expandedWorkDir, expandedOutputFile, template.EnvImport, expandedVars)
 
 	// Apply template defaults for execution settings only if command didn't set them.
 	// All settings use pointer types: nil = inherit from template, explicit value = override.

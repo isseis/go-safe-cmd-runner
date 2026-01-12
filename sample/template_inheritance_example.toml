@@ -1,0 +1,182 @@
+# Template Inheritance Example
+# This file demonstrates template inheritance features including:
+# - WorkDir inheritance and override
+# - OutputFile inheritance
+# - EnvImport merging
+# - Vars merging
+
+version = "1.0"
+
+# Global environment variable allowlist
+[global]
+env_allowed = [
+    "TEMPLATE_VAR_A",
+    "TEMPLATE_VAR_B",
+    "COMMAND_VAR_C",
+    "GROUP_VAR_D",
+    "PATH",
+    "HOME",
+]
+
+# Global variables (accessible from templates)
+[global.vars]
+global_key = "global_value"
+
+# Template with all inheritable fields
+[command_templates.full_template]
+cmd = "pwd"
+workdir = "/template/dir"
+output_file = "/var/log/template.log"
+env_import = ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B"]
+
+[command_templates.full_template.vars]
+template_key = "template_value"
+
+# Template with minimal fields
+[command_templates.minimal_template]
+cmd = "echo"
+args = ["Hello from template"]
+
+# Template with only cmd (for testing selective inheritance)
+[command_templates.cmd_only]
+cmd = "ls"
+
+[[groups]]
+name = "test_inheritance"
+
+[groups.vars]
+group_var = "group_value"
+
+# Test 1: Inherit all fields from template
+[[groups.commands]]
+name = "inherit_all"
+template = "full_template"
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/template/dir" (from template)
+# - output_file: "/var/log/template.log" (from template)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B"] (from template)
+# - vars: {template_key: "template_value"} (from template)
+
+# Test 2: Override WorkDir
+[[groups.commands]]
+name = "override_workdir"
+template = "full_template"
+workdir = "/custom/dir"
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/custom/dir" (OVERRIDE - from command)
+# - output_file: "/var/log/template.log" (from template)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B"] (from template)
+# - vars: {template_key: "template_value"} (from template)
+
+# Test 3: Override OutputFile
+[[groups.commands]]
+name = "override_output"
+template = "full_template"
+output_file = "/custom/output.log"
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/template/dir" (from template)
+# - output_file: "/custom/output.log" (OVERRIDE - from command)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B"] (from template)
+# - vars: {template_key: "template_value"} (from template)
+
+# Test 4: Merge EnvImport
+[[groups.commands]]
+name = "merge_env_import"
+template = "full_template"
+env_import = ["COMMAND_VAR_C"]
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/template/dir" (from template)
+# - output_file: "/var/log/template.log" (from template)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B", "COMMAND_VAR_C"] (MERGED)
+# - vars: {template_key: "template_value"} (from template)
+
+# Test 5: Merge Vars
+[[groups.commands]]
+name = "merge_vars"
+template = "full_template"
+
+[groups.commands.vars]
+command_key = "command_value"
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/template/dir" (from template)
+# - output_file: "/var/log/template.log" (from template)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B"] (from template)
+# - vars: {template_key: "template_value", command_key: "command_value"} (MERGED)
+
+# Test 6: Merge both EnvImport and Vars
+[[groups.commands]]
+name = "merge_both"
+template = "full_template"
+env_import = ["COMMAND_VAR_C"]
+
+[groups.commands.vars]
+command_key = "command_value"
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/template/dir" (from template)
+# - output_file: "/var/log/template.log" (from template)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B", "COMMAND_VAR_C"] (MERGED)
+# - vars: {template_key: "template_value", command_key: "command_value"} (MERGED)
+
+# Test 7: Override all fields
+[[groups.commands]]
+name = "override_all"
+template = "full_template"
+workdir = "/override/dir"
+output_file = "/override/output.log"
+env_import = ["GROUP_VAR_D"]
+
+[groups.commands.vars]
+override_key = "override_value"
+# Expected behavior:
+# - cmd: "pwd" (from template)
+# - workdir: "/override/dir" (OVERRIDE - from command)
+# - output_file: "/override/output.log" (OVERRIDE - from command)
+# - env_import: ["TEMPLATE_VAR_A", "TEMPLATE_VAR_B", "GROUP_VAR_D"] (MERGED)
+# - vars: {template_key: "template_value", override_key: "override_value"} (MERGED)
+
+# Test 8: Minimal template (no inheritable fields)
+[[groups.commands]]
+name = "minimal_inheritance"
+template = "minimal_template"
+# Expected behavior:
+# - cmd: "echo" (from template)
+# - args: ["Hello from template"] (from template)
+# - workdir: nil (no value in template or command)
+# - output_file: "" (no value in template or command)
+# - env_import: [] (no value in template or command)
+# - vars: {} (no value in template or command)
+
+# Test 9: Cmd-only template with added fields
+[[groups.commands]]
+name = "extend_cmd_only"
+template = "cmd_only"
+workdir = "/new/dir"
+output_file = "/new/output.log"
+env_import = ["PATH"]
+
+[groups.commands.vars]
+new_key = "new_value"
+# Expected behavior:
+# - cmd: "ls" (from template)
+# - workdir: "/new/dir" (from command)
+# - output_file: "/new/output.log" (from command)
+# - env_import: ["PATH"] (from command)
+# - vars: {new_key: "new_value"} (from command)
+
+# Test 10: No template (baseline for comparison)
+[[groups.commands]]
+name = "no_template"
+cmd = "date"
+workdir = "/baseline/dir"
+# Expected behavior:
+# - cmd: "date" (from command)
+# - workdir: "/baseline/dir" (from command)
+# - output_file: "" (no value)
+# - env_import: [] (no value)
+# - vars: {} (no value)

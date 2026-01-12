@@ -68,3 +68,18 @@ func Int64Ptr(v int64) *int64 {
 func BoolPtr(v bool) *bool {
 	return &v
 }
+
+// StringPtr returns a pointer to the given string value.
+// This is a convenience function for creating string pointer values in tests.
+func StringPtr(s string) *string {
+	return &s
+}
+
+// StringPtrOrNil returns a pointer to the given string value, or nil if the string is empty.
+// This is useful for optional string fields in tests where empty strings should be treated as unset.
+func StringPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

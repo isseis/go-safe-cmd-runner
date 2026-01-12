@@ -117,14 +117,14 @@ func TestRuntimeCommand_Output(t *testing.T) {
 		{
 			name: "output path specified",
 			spec: &CommandSpec{
-				OutputFile: "/tmp/output.log",
+				OutputFile: StringPtr("/tmp/output.log"),
 			},
 			want: "/tmp/output.log",
 		},
 		{
 			name: "no output specified",
 			spec: &CommandSpec{
-				OutputFile: "",
+				OutputFile: StringPtr(""),
 			},
 			want: "",
 		},
@@ -319,7 +319,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		WorkDir: "/tmp",
+		WorkDir: StringPtr("/tmp"),
 		Timeout: commontesting.Int32Ptr(60),
 		EnvVars: []string{"TEST=value"},
 	}

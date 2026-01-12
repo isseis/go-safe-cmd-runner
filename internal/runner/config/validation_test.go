@@ -612,3 +612,149 @@ func TestValidateTimeouts(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateWorkDir tests WorkDir validation with nil and absolute path checking
+func TestValidateWorkDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		workdir *string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "nil workdir",
+			workdir: nil,
+			wantErr: false,
+		},
+		{
+			name:    "empty string workdir",
+			workdir: commontesting.StringPtr(""),
+			wantErr: false,
+		},
+		{
+			name:    "absolute path",
+			workdir: commontesting.StringPtr("/home/user/dir"),
+			wantErr: false,
+		},
+		{
+			name:    "root directory",
+			workdir: commontesting.StringPtr("/"),
+			wantErr: false,
+		},
+		{
+			name:    "relative path",
+			workdir: commontesting.StringPtr("relative/path"),
+			wantErr: true,
+			errMsg:  "working directory",
+		},
+		{
+			name:    "relative path with dot",
+			workdir: commontesting.StringPtr("./path"),
+			wantErr: true,
+			errMsg:  "working directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateWorkDir(tt.workdir)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateEnvImport tests EnvImport validation against env_allowed list
+func TestValidateEnvImport(t *testing.T) {
+	tests := []struct {
+		name       string
+		envImport  []string
+		envAllowed []string
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "empty env_import",
+			envImport:  []string{},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+		{
+			name:       "nil env_import",
+			envImport:  nil,
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+		{
+			name:       "allowed variables with mapping format",
+			envImport:  []string{"home=HOME", "path=PATH"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+		{
+			name:       "single allowed variable with mapping",
+			envImport:  []string{"home_dir=HOME"},
+			envAllowed: []string{"HOME"},
+			wantErr:    false,
+		},
+		{
+			name:       "variable not in allowlist",
+			envImport:  []string{"home=HOME", "secret=SECRET"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    true,
+			errMsg:     "SECRET",
+		},
+		{
+			name:       "first of multiple not allowed",
+			envImport:  []string{"secret=SECRET", "home=HOME"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    true,
+			errMsg:     "SECRET",
+		},
+		{
+			name:       "empty allowlist rejects all",
+			envImport:  []string{"home=HOME"},
+			envAllowed: []string{},
+			wantErr:    true,
+			errMsg:     "HOME",
+		},
+		{
+			name:       "invalid format - missing equals sign",
+			envImport:  []string{"HOME"},
+			envAllowed: []string{"HOME"},
+			wantErr:    true,
+			errMsg:     "invalid format",
+		},
+		{
+			name:       "empty system var name not in allowlist",
+			envImport:  []string{"home="},
+			envAllowed: []string{"HOME"},
+			wantErr:    true,
+			errMsg:     "\"\"", // Empty string is valid format but not in allowlist
+		},
+		{
+			name:       "same internal name different system var",
+			envImport:  []string{"dir=HOME", "dir=PATH"},
+			envAllowed: []string{"HOME", "PATH"},
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateEnvImport(tt.envImport, tt.envAllowed)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

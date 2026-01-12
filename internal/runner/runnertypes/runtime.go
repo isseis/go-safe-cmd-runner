@@ -374,12 +374,16 @@ func (r *RuntimeCommand) RunAsGroup() string {
 }
 
 // Output returns the output file path from the spec.
+// Returns empty string if OutputFile is nil.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) Output() string {
 	if r == nil || r.Spec == nil {
 		panic("RuntimeCommand.OutputFile: nil receiver or Spec (programming error - use NewRuntimeCommand)")
 	}
-	return r.Spec.OutputFile
+	if r.Spec.OutputFile == nil {
+		return ""
+	}
+	return *r.Spec.OutputFile
 }
 
 // Cmd returns the command path from the spec (not yet expanded).

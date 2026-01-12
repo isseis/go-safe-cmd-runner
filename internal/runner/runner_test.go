@@ -765,7 +765,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 				Name:    "test-existing-dir",
 				WorkDir: "/tmp",
 				Commands: []runnertypes.CommandSpec{
-					{Name: "test", Cmd: "echo", Args: []string{"hello"}, WorkDir: "/usr"},
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}, WorkDir: runnertypes.StringPtr("/usr")},
 				},
 				EnvAllowed: []string{"PATH"},
 			},
@@ -1042,7 +1042,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 					Name:       "test-echo",
 					Cmd:        "echo",
 					Args:       []string{"Hello World"},
-					OutputFile: "test-output.txt",
+					OutputFile: runnertypes.StringPtr("test-output.txt"),
 				},
 			},
 			expectError: false, // Note: This may fail due to output capture implementation, which is expected
@@ -1068,7 +1068,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 					Name:       "with-output",
 					Cmd:        "echo",
 					Args:       []string{"Captured"},
-					OutputFile: "mixed-output.txt",
+					OutputFile: runnertypes.StringPtr("mixed-output.txt"),
 				},
 				{
 					Name: "without-output",
@@ -1144,7 +1144,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 					Name:       "path-traversal",
 					Cmd:        "echo",
 					Args:       []string{"attempt"},
-					OutputFile: "../../../etc/passwd",
+					OutputFile: runnertypes.StringPtr("../../../etc/passwd"),
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
@@ -1161,7 +1161,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 					Name:       "non-existent-dir",
 					Cmd:        "echo",
 					Args:       []string{"test"},
-					OutputFile: "/non/existent/directory/output.txt",
+					OutputFile: runnertypes.StringPtr("/non/existent/directory/output.txt"),
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
@@ -1178,7 +1178,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 					Name:       "permission-denied",
 					Cmd:        "echo",
 					Args:       []string{"test"},
-					OutputFile: "/root/output.txt",
+					OutputFile: runnertypes.StringPtr("/root/output.txt"),
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
@@ -1247,7 +1247,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 						Name:       "dryrun-echo",
 						Cmd:        "echo",
 						Args:       []string{"Dry run test"},
-						OutputFile: "dryrun-output.txt",
+						OutputFile: runnertypes.StringPtr("dryrun-output.txt"),
 					},
 				},
 			},
@@ -1371,9 +1371,11 @@ args = ["No output capture"]
 		assert.Len(t, config.Groups[0].Commands, 3)
 
 		// Verify commands have correct output configuration
-		assert.Equal(t, "toml-output.txt", config.Groups[0].Commands[0].OutputFile)
-		assert.Equal(t, "multiline-toml-output.txt", config.Groups[0].Commands[1].OutputFile)
-		assert.Equal(t, "", config.Groups[0].Commands[2].OutputFile) // No output field
+		require.NotNil(t, config.Groups[0].Commands[0].OutputFile)
+		assert.Equal(t, "toml-output.txt", *config.Groups[0].Commands[0].OutputFile)
+		require.NotNil(t, config.Groups[0].Commands[1].OutputFile)
+		assert.Equal(t, "multiline-toml-output.txt", *config.Groups[0].Commands[1].OutputFile)
+		assert.Nil(t, config.Groups[0].Commands[2].OutputFile) // No output field
 
 		// Create runner to verify basic initialization works
 		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-toml-config"))
@@ -1486,7 +1488,7 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: "output.txt",
+								OutputFile: runnertypes.StringPtr("output.txt"),
 							},
 						},
 					},
@@ -1592,7 +1594,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 								Name:       "test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: "output.txt",
+								OutputFile: runnertypes.StringPtr("output.txt"),
 							},
 						},
 					},
@@ -1771,7 +1773,7 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 								Name:       "security-test-cmd",
 								Cmd:        "echo",
 								Args:       []string{"test"},
-								OutputFile: tt.outputPath,
+								OutputFile: runnertypes.StringPtr(tt.outputPath),
 							},
 						},
 					},

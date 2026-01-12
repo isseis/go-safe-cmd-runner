@@ -163,15 +163,24 @@ func CreateRuntimeCommand(cmd string, args []string, opts ...RuntimeCommandOptio
 	// Tests that need a specific workDir should set it explicitly with WithWorkDir
 
 	// Build CommandSpec
+	var workDir *string
+	if cfg.workDir != "" {
+		workDir = &cfg.workDir
+	}
+	var outputFile *string
+	if cfg.outputFile != "" {
+		outputFile = &cfg.outputFile
+	}
+
 	spec := &runnertypes.CommandSpec{
 		Name:       cfg.name,
 		Cmd:        cmd,
 		Args:       args,
-		WorkDir:    cfg.workDir,
+		WorkDir:    workDir,
 		Timeout:    cfg.timeout,
 		RunAsUser:  cfg.runAsUser,
 		RunAsGroup: cfg.runAsGroup,
-		OutputFile: cfg.outputFile,
+		OutputFile: outputFile,
 		RiskLevel:  cfg.riskLevel,
 	}
 
@@ -245,9 +254,11 @@ func CreateRuntimeCommandFromSpec(spec *runnertypes.CommandSpec) *runnertypes.Ru
 
 	// Set effective working directory
 	// If spec.WorkDir is set, use it; otherwise default to temporary directory
-	effectiveWorkDir := spec.WorkDir
-	if effectiveWorkDir == "" {
+	effectiveWorkDir := ""
+	if spec.WorkDir == nil || *spec.WorkDir == "" {
 		effectiveWorkDir = os.TempDir()
+	} else {
+		effectiveWorkDir = *spec.WorkDir
 	}
 
 	return &runnertypes.RuntimeCommand{

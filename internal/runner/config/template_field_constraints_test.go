@@ -245,7 +245,7 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			case "workdir":
 				template = &runnertypes.CommandTemplate{
 					Cmd:     "test",
-					WorkDir: tt.placeholder,
+					WorkDir: runnertypes.StringPtr(tt.placeholder),
 				}
 				setupParams(params, tt.placeholder)
 			}
@@ -260,7 +260,9 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			case "env", "env_element":
 				_, err = ExpandTemplateEnv(template.EnvVars, params, "test_template")
 			case "workdir":
-				_, err = expandSingleArg(template.WorkDir, params, "test_template", "workdir")
+				if template.WorkDir != nil {
+					_, err = expandSingleArg(*template.WorkDir, params, "test_template", "workdir")
+				}
 			}
 
 			// Verify result

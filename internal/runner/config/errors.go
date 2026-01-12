@@ -89,6 +89,12 @@ var (
 	// ErrEmptyPath is returned when a path is empty
 	ErrEmptyPath = errors.New("path cannot be empty")
 
+	// ErrInvalidWorkDir is returned when working directory path is not absolute
+	ErrInvalidWorkDir = errors.New("working directory must be an absolute path")
+
+	// ErrInvalidEnvImport is returned when env_import contains variables not in env_allowed
+	ErrInvalidEnvImport = errors.New("environment variable in env_import is not in env_allowed")
+
 	// ErrDuplicatePath is returned when duplicate paths are found in cmd_allowed
 	ErrDuplicatePath = errors.New("duplicate path in cmd_allowed")
 

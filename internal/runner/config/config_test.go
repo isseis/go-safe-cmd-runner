@@ -11,6 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// assertOutputFile compares expected string with actual *string OutputFile
+func assertOutputFile(t *testing.T, expected string, actual *string, msg string) {
+	t.Helper()
+	if expected == "" {
+		if actual != nil && *actual != "" {
+			t.Errorf("%s: expected empty, got %q", msg, *actual)
+		}
+	} else {
+		require.NotNil(t, actual, msg)
+		assert.Equal(t, expected, *actual, msg)
+	}
+}
+
 // Test parsing Command with output field
 func TestCommandOutputFieldParsing(t *testing.T) {
 	tests := []struct {
@@ -78,7 +91,7 @@ output_file = ""
 			require.NotEmpty(t, config.Groups[0].Commands, "Expected at least one command")
 
 			command := config.Groups[0].Commands[0]
-			assert.Equal(t, tt.wantOutput, command.OutputFile, "Output file mismatch")
+			assertOutputFile(t, tt.wantOutput, command.OutputFile, "Output file mismatch")
 		})
 	}
 }
@@ -197,17 +210,17 @@ args = ["-la"]
 	require.Len(t, buildGroup.Commands, 2, "Expected 2 commands in build group")
 
 	makeCmd := buildGroup.Commands[0]
-	assert.Equal(t, "/tmp/build.log", makeCmd.OutputFile, "make command output mismatch")
+	assertOutputFile(t, "/tmp/build.log", makeCmd.OutputFile, "make command output mismatch")
 
 	testCmd := buildGroup.Commands[1]
-	assert.Equal(t, "/tmp/test.log", testCmd.OutputFile, "test command output mismatch")
+	assertOutputFile(t, "/tmp/test.log", testCmd.OutputFile, "test command output mismatch")
 
 	// Test second group command (no output specified)
 	utilGroup := config.Groups[1]
 	assert.Equal(t, "utilities", utilGroup.Name, "Group name mismatch")
 
 	lsCmd := utilGroup.Commands[0]
-	assert.Equal(t, "", lsCmd.OutputFile, "ls command output should be empty")
+	assertOutputFile(t, "", lsCmd.OutputFile, "ls command output should be empty")
 }
 
 // Test direct unmarshaling of structures with new fields
@@ -222,7 +235,7 @@ output_file = "/tmp/test.txt"
 		var cmd runnertypes.CommandSpec
 		err := toml.Unmarshal([]byte(tomlData), &cmd)
 		require.NoError(t, err, "Failed to unmarshal command")
-		assert.Equal(t, "/tmp/test.txt", cmd.OutputFile, "output field mismatch")
+		assertOutputFile(t, "/tmp/test.txt", cmd.OutputFile, "output field mismatch")
 	})
 
 	t.Run("GlobalConfig with max_output_size field", func(t *testing.T) {
@@ -347,9 +360,9 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 			assert.Equal(t, tt.expectedCmdName, cmdSpec.Name, "Command name mismatch")
 
 			// 6. Verify command workdir expansion (if specified)
-			if cmdSpec.WorkDir != "" {
+			if cmdSpec.WorkDir != nil && *cmdSpec.WorkDir != "" {
 				expandedWorkDir, err := ExpandString(
-					cmdSpec.WorkDir,
+					*cmdSpec.WorkDir,
 					runtimeGroup.ExpandedVars,
 					"command["+cmdSpec.Name+"]",
 					"workdir",

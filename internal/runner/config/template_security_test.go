@@ -76,7 +76,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "valid template with workdir",
 			tmplName: "with_workdir",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: "/tmp/${path}"},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("/tmp/${path}")},
 			wantErr:  false,
 		},
 		{
@@ -100,7 +100,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "allowed global variable in workdir",
 			tmplName: "good_template",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: "%{BaseDir}/work"},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("%{BaseDir}/work")},
 			wantErr:  false,
 		},
 		{
@@ -127,7 +127,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		{
 			name:     "forbidden local variable in workdir",
 			tmplName: "bad_template",
-			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: "%{base_dir}/work"},
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("%{base_dir}/work")},
 			wantErr:  true,
 			errType:  &ErrLocalVariableInTemplate{},
 		},
@@ -317,12 +317,12 @@ func TestValidateCmdSpec(t *testing.T) {
 		},
 		{
 			name:    "template + workdir (valid - override allowed)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", WorkDir: "/tmp"},
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", WorkDir: runnertypes.StringPtr("/tmp")},
 			wantErr: false,
 		},
 		{
 			name:    "template + output_file (valid - override allowed)",
-			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", OutputFile: "/tmp/output.txt"},
+			spec:    runnertypes.CommandSpec{Name: "backup", Template: "restic_backup", OutputFile: runnertypes.StringPtr("/tmp/output.txt")},
 			wantErr: false,
 		},
 		{
@@ -403,7 +403,7 @@ func TestCollectUsedParams(t *testing.T) {
 			name: "param in workdir",
 			template: runnertypes.CommandTemplate{
 				Cmd:     "cmd",
-				WorkDir: "${base_dir}/work",
+				WorkDir: runnertypes.StringPtr("${base_dir}/work"),
 			},
 			expected: map[string]struct{}{
 				"base_dir": {},
