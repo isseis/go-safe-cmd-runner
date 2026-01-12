@@ -2,7 +2,11 @@
 // for merging and overriding configuration values from templates to commands.
 package config
 
-import "maps"
+import (
+	"maps"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+)
 
 // OverrideStringPointer applies the override model for *string fields.
 // If cmdValue is nil, it returns templateValue (inheritance).
@@ -15,27 +19,53 @@ func OverrideStringPointer(cmdValue *string, templateValue *string) *string {
 }
 
 // MergeEnvImport merges environment import lists.
-// Template entries are added first, then command entries.
-// Duplicates are removed (first occurrence wins).
+// For entries in "internal_name=SYSTEM_VAR" format, duplicates are detected
+// by internal_name. Command entries override template entries with the same
+// internal_name (similar to MergeVars behavior).
+// For invalid format entries, duplicates are detected by the full string.
 func MergeEnvImport(templateEnvImport []string, cmdEnvImport []string) []string {
 	capacity := len(templateEnvImport) + len(cmdEnvImport)
-	seen := make(map[string]struct{}, capacity)
-	result := make([]string, 0, capacity)
+	// Map from internal name to the mapping string
+	mappings := make(map[string]string, capacity)
+	// Track insertion order for deterministic output
+	order := make([]string, 0, capacity)
 
 	// Add template entries first
-	for _, item := range templateEnvImport {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
+	for _, mapping := range templateEnvImport {
+		internalName, _, ok := common.ParseKeyValue(mapping)
+		if !ok {
+			// Invalid format: treat whole string as key (for backward compatibility)
+			internalName = mapping
+		}
+
+		if _, exists := mappings[internalName]; !exists {
+			mappings[internalName] = mapping
+			order = append(order, internalName)
 		}
 	}
 
-	// Add command entries
-	for _, item := range cmdEnvImport {
-		if _, exists := seen[item]; !exists {
-			seen[item] = struct{}{}
-			result = append(result, item)
+	// Add command entries (these override template entries with same internal name)
+	for _, mapping := range cmdEnvImport {
+		internalName, _, ok := common.ParseKeyValue(mapping)
+		if !ok {
+			// Invalid format: treat whole string as key (for backward compatibility)
+			internalName = mapping
 		}
+
+		if _, exists := mappings[internalName]; exists {
+			// Override template entry
+			mappings[internalName] = mapping
+		} else {
+			// New entry
+			mappings[internalName] = mapping
+			order = append(order, internalName)
+		}
+	}
+
+	// Build result maintaining insertion order
+	result := make([]string, 0, len(order))
+	for _, internalName := range order {
+		result = append(result, mappings[internalName])
 	}
 
 	return result

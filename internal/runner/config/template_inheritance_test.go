@@ -102,11 +102,11 @@ func TestMergeEnvImport(t *testing.T) {
 			description:    "When no duplicates, should merge both lists",
 		},
 		{
-			name:           "with duplicates",
+			name:           "with duplicates - invalid format (backward compatibility)",
 			templateImport: []string{"VAR1", "VAR2", "VAR3"},
 			cmdImport:      []string{"VAR2", "VAR4", "VAR1"},
 			want:           []string{"VAR1", "VAR2", "VAR3", "VAR4"},
-			description:    "When duplicates exist, first occurrence wins",
+			description:    "When duplicates exist with invalid format, command overrides template (order preserved from template)",
 		},
 		{
 			name:           "template nil, command non-nil",
@@ -121,6 +121,41 @@ func TestMergeEnvImport(t *testing.T) {
 			cmdImport:      nil,
 			want:           []string{"TEMPLATE_VAR1"},
 			description:    "When command is nil, should handle gracefully",
+		},
+		{
+			name:           "mapping format - no duplicates",
+			templateImport: []string{"home=HOME", "path=PATH"},
+			cmdImport:      []string{"user=USER", "shell=SHELL"},
+			want:           []string{"home=HOME", "path=PATH", "user=USER", "shell=SHELL"},
+			description:    "When using mapping format with no duplicates, should merge both lists",
+		},
+		{
+			name:           "mapping format - command overrides template",
+			templateImport: []string{"cc=CC", "cxx=CXX"},
+			cmdImport:      []string{"cc=GCC", "ldflags=LDFLAGS"},
+			want:           []string{"cc=GCC", "cxx=CXX", "ldflags=LDFLAGS"},
+			description:    "When same internal name exists, command entry should override template entry",
+		},
+		{
+			name:           "mapping format - multiple overrides",
+			templateImport: []string{"a=A1", "b=B1", "c=C1"},
+			cmdImport:      []string{"b=B2", "c=C2", "d=D2"},
+			want:           []string{"a=A1", "b=B2", "c=C2", "d=D2"},
+			description:    "Multiple command overrides should work correctly",
+		},
+		{
+			name:           "mixed format - mapping and invalid",
+			templateImport: []string{"home=HOME", "INVALID_VAR"},
+			cmdImport:      []string{"path=PATH", "INVALID_VAR"},
+			want:           []string{"home=HOME", "INVALID_VAR", "path=PATH"},
+			description:    "Mixed valid mapping and invalid format should be handled",
+		},
+		{
+			name:           "command overrides with different system var",
+			templateImport: []string{"compiler=CC"},
+			cmdImport:      []string{"compiler=GCC"},
+			want:           []string{"compiler=GCC"},
+			description:    "Command can override template with different system variable for same internal name",
 		},
 	}
 
