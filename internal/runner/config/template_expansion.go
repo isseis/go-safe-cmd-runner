@@ -1009,7 +1009,8 @@ func collectFromEnvVars(envVars []string, used map[string]struct{}) error {
 	return nil
 }
 
-// collectFromOptionalFields collects params from optional pointer fields and env_import.
+// collectFromOptionalFields collects params from optional pointer fields.
+// Note: env_import does not support parameter expansion, so it is not included.
 func collectFromOptionalFields(template *runnertypes.CommandTemplate, used map[string]struct{}) error {
 	// Collect from workdir (if non-nil and non-empty)
 	if template.WorkDir != nil && *template.WorkDir != "" {
@@ -1021,13 +1022,6 @@ func collectFromOptionalFields(template *runnertypes.CommandTemplate, used map[s
 	// Collect from output_file (if non-nil and non-empty)
 	if template.OutputFile != nil && *template.OutputFile != "" {
 		if err := collectFromString(*template.OutputFile, used); err != nil {
-			return err
-		}
-	}
-
-	// Collect from env_import
-	for _, envImport := range template.EnvImport {
-		if err := collectFromString(envImport, used); err != nil {
 			return err
 		}
 	}
