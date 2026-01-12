@@ -1091,8 +1091,8 @@ func ValidateTemplateVars(
 		}
 	}
 
-	// Check workdir field (if non-nil and non-empty)
-	if template.WorkDir != nil && *template.WorkDir != "" {
+	// Check workdir field (if non-nil)
+	if template.WorkDir != nil {
 		if err := validateFieldVars(*template.WorkDir, templateName, "workdir", globalVars); err != nil {
 			return err
 		}
@@ -1138,6 +1138,11 @@ func validateFieldVars(
 	fieldName string,
 	globalVars map[string]string,
 ) error {
+	// Empty strings cannot contain variable references
+	if input == "" {
+		return nil
+	}
+
 	// Import the variable package for scope determination
 	// Note: This creates a dependency from config to variable package
 	// which is acceptable since variable scope validation is a core feature
