@@ -81,9 +81,9 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 		})
 	}
 
-	// Merge all templates. MergeTemplates will handle duplicate detection across all sources.
+	// Merge all templates. mergeTemplates will handle duplicate detection across all sources.
 	if len(templateSources) > 0 {
-		mergedTemplates, err := MergeTemplates(templateSources)
+		mergedTemplates, err := mergeTemplates(templateSources)
 		if err != nil {
 			return nil, err
 		}
@@ -91,6 +91,17 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 	}
 
 	return cfg, nil
+}
+
+// TemplateSource represents templates loaded from a single file.
+// This structure is used during the merge process to track the origin
+// of each template for error reporting.
+type TemplateSource struct {
+	// FilePath is the absolute path to the source file
+	FilePath string
+
+	// Templates is the map of template name to template definition
+	Templates map[string]runnertypes.CommandTemplate
 }
 
 // processIncludes loads all included template files
@@ -135,6 +146,52 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string, visit
 	}
 
 	return sources, nil
+}
+
+// mergeTemplates merges templates from multiple sources.
+//
+// Parameters:
+//   - sources: List of template sources (in order)
+//
+// Returns:
+//   - Merged map of template name to CommandTemplate
+//   - Error if duplicate template names are found
+//
+// Behavior:
+//   - Sources are processed in order
+//   - Duplicate names across sources cause an error
+//   - Error message includes all locations where duplicate is defined
+func mergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTemplate, error) {
+	// Map to store merged templates
+	merged := make(map[string]runnertypes.CommandTemplate)
+
+	// Map to track the file where each template is defined
+	locations := make(map[string][]string)
+
+	// Process each source in order
+	for _, source := range sources {
+		for name, template := range source.Templates {
+			// Check for duplicates
+			if _, exists := merged[name]; exists {
+				// Record this location
+				locations[name] = append(locations[name], source.FilePath)
+
+				// Return error with all locations
+				return nil, &ErrDuplicateTemplateName{
+					Name:      name,
+					Locations: locations[name],
+				}
+			}
+
+			// Add template to merged map
+			merged[name] = template
+
+			// Record location (for potential future error)
+			locations[name] = []string{source.FilePath}
+		}
+	}
+
+	return merged, nil
 }
 
 // loadConfigInternal loads and validates configuration from byte content

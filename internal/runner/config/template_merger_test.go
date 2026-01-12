@@ -164,7 +164,7 @@ func TestDefaultTemplateMerger_MergeTemplates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotTemplates, err := MergeTemplates(tt.sources)
+			gotTemplates, err := mergeTemplates(tt.sources)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -208,7 +208,7 @@ func TestDefaultTemplateMerger_MergeOrder(t *testing.T) {
 		},
 	}
 
-	merged, err := MergeTemplates(sources)
+	merged, err := mergeTemplates(sources)
 
 	require.NoError(t, err)
 	assert.Equal(t, "first", merged["test"].Cmd)
