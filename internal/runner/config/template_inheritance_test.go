@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,29 +25,29 @@ func TestOverrideStringPointer(t *testing.T) {
 		{
 			name:          "command nil, template non-nil",
 			cmdValue:      nil,
-			templateValue: stringPtr("/template/dir"),
-			want:          stringPtr("/template/dir"),
+			templateValue: commontesting.StringPtr("/template/dir"),
+			want:          commontesting.StringPtr("/template/dir"),
 			description:   "When command is nil, should inherit from template",
 		},
 		{
 			name:          "command non-nil, template non-nil",
-			cmdValue:      stringPtr("/command/dir"),
-			templateValue: stringPtr("/template/dir"),
-			want:          stringPtr("/command/dir"),
+			cmdValue:      commontesting.StringPtr("/command/dir"),
+			templateValue: commontesting.StringPtr("/template/dir"),
+			want:          commontesting.StringPtr("/command/dir"),
 			description:   "When command is non-nil, should use command value",
 		},
 		{
 			name:          "command empty string, template non-nil",
-			cmdValue:      stringPtr(""),
-			templateValue: stringPtr("/template/dir"),
-			want:          stringPtr(""),
+			cmdValue:      commontesting.StringPtr(""),
+			templateValue: commontesting.StringPtr("/template/dir"),
+			want:          commontesting.StringPtr(""),
 			description:   "When command is empty string (non-nil), should use empty string",
 		},
 		{
 			name:          "command non-nil, template nil",
-			cmdValue:      stringPtr("/command/dir"),
+			cmdValue:      commontesting.StringPtr("/command/dir"),
 			templateValue: nil,
-			want:          stringPtr("/command/dir"),
+			want:          commontesting.StringPtr("/command/dir"),
 			description:   "When command is non-nil and template is nil, should use command value",
 		},
 	}
@@ -203,9 +204,4 @@ func TestMergeVars(t *testing.T) {
 			assert.Equal(t, tt.want, got, tt.description)
 		})
 	}
-}
-
-// Helper function to create string pointer
-func stringPtr(s string) *string {
-	return &s
 }

@@ -628,28 +628,28 @@ func TestValidateWorkDir(t *testing.T) {
 		},
 		{
 			name:    "empty string workdir",
-			workdir: stringPtr(""),
+			workdir: commontesting.StringPtr(""),
 			wantErr: false,
 		},
 		{
 			name:    "absolute path",
-			workdir: stringPtr("/home/user/dir"),
+			workdir: commontesting.StringPtr("/home/user/dir"),
 			wantErr: false,
 		},
 		{
 			name:    "root directory",
-			workdir: stringPtr("/"),
+			workdir: commontesting.StringPtr("/"),
 			wantErr: false,
 		},
 		{
 			name:    "relative path",
-			workdir: stringPtr("relative/path"),
+			workdir: commontesting.StringPtr("relative/path"),
 			wantErr: true,
 			errMsg:  "working directory",
 		},
 		{
 			name:    "relative path with dot",
-			workdir: stringPtr("./path"),
+			workdir: commontesting.StringPtr("./path"),
 			wantErr: true,
 			errMsg:  "working directory",
 		},
