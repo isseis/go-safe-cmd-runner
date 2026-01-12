@@ -195,7 +195,20 @@ Templates are loaded in the order listed in `includes`, then from the main file.
 
 #### Security and Hash Verification
 
-Included files follow the same path traversal and symlink checks as the main config. Hash recording also covers included files (e.g., `safe-cmd-runner record -c config.toml -o hashes/`).
+Included files follow the same path traversal and symlink checks as the main config.
+
+**Important**: The `record` command does not recognize the include feature, so each file must be recorded individually.
+
+```bash
+# Record the main config file
+safe-cmd-runner record -f config.toml -o hashes/
+
+# Each included file must be recorded separately
+safe-cmd-runner record -f templates/common.toml -o hashes/
+safe-cmd-runner record -f templates/backup.toml -o hashes/
+```
+
+At runtime (`runner` command), when you specify the main config file, all files referenced in `includes` are automatically verified.
 
 ## 7.3 Parameter Expansion
 

@@ -195,7 +195,20 @@ env_vars = ["RESTIC_REPOSITORY=${repo}"]
 
 #### セキュリティとハッシュ検証
 
-インクルードファイルもメイン設定と同様にパストラバーサル検証・シンボリックリンク検証・ハッシュ記録の対象です。`safe-cmd-runner record -c config.toml -o hashes/` でメインとインクルードのハッシュが生成されます。
+インクルードファイルもメイン設定と同様にパストラバーサル検証・シンボリックリンク検証・ハッシュ記録の対象です。
+
+**重要**: `record` コマンドは include 機能を認識しないため、各ファイルを個別に記録する必要があります。
+
+```bash
+# メイン設定ファイルを記録
+safe-cmd-runner record -f config.toml -o hashes/
+
+# インクルードファイルも個別に記録が必要
+safe-cmd-runner record -f templates/common.toml -o hashes/
+safe-cmd-runner record -f templates/backup.toml -o hashes/
+```
+
+実行時（`runner` コマンド）は、メイン設定ファイルを指定すると、`includes` で参照されているすべてのファイルが自動的に検証されます。
 
 ## 7.3 パラメータ展開
 
