@@ -5,7 +5,7 @@ version = "1.0"
 
 [command_templates.restic_backup]
 cmd = "restic"
-args = ["backup", "${path}", "--tag", "${?tag}"]
+args = ["backup", "${path}", "--tag", "${tag}"]
 env_vars = ["RESTIC_REPOSITORY=${repo}", "RESTIC_PASSWORD_FILE=${password_file}"]
 workdir = "${?workdir}"
 timeout = 3600
