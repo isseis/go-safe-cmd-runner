@@ -99,7 +99,7 @@ risk_level = "medium"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			if err != nil {
 				assert.NoError(t, err, "LoadConfig() should not error")
 				return

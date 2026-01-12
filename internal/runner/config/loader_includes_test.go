@@ -26,7 +26,7 @@ args = ["hello"]
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfigWithPath(configPath, content)
+	cfg, err := loader.LoadConfig(configPath, content)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
@@ -61,7 +61,7 @@ args = ["hello"]
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfigWithPath(configPath, configContent)
+	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
@@ -107,7 +107,7 @@ cmd = "echo"
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfigWithPath(configPath, configContent)
+	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
@@ -147,7 +147,7 @@ cmd = "echo"
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfigWithPath(configPath, configContent)
+	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
@@ -179,7 +179,7 @@ cmd = "echo"
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	_, err = loader.LoadConfigWithPath(configPath, configContent)
+	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
 	var errDup *ErrDuplicateTemplateName
@@ -219,7 +219,7 @@ includes = ["template1.toml", "template2.toml"]
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	_, err = loader.LoadConfigWithPath(configPath, configContent)
+	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
 	var errDup *ErrDuplicateTemplateName
@@ -242,7 +242,7 @@ includes = ["nonexistent.toml"]
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	_, err = loader.LoadConfigWithPath(configPath, configContent)
+	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
 	var errNotFound *ErrIncludedFileNotFound
@@ -274,7 +274,7 @@ includes = ["invalid.toml"]
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	_, err = loader.LoadConfigWithPath(configPath, configContent)
+	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
 	var errInvalid *ErrTemplateFileInvalidFormat
@@ -291,7 +291,7 @@ args = ["hello"]
 `)
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
@@ -324,7 +324,7 @@ cmd = "echo"
 	require.NoError(t, err)
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfigWithPath(configPath, configContent)
+	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
@@ -377,7 +377,7 @@ name = "test"
 
 	t.Run("access via real path - includes resolved from real_dir", func(t *testing.T) {
 		loader := NewLoader()
-		cfg, err := loader.LoadConfigWithPath(realConfigPath, realConfigContent)
+		cfg, err := loader.LoadConfig(realConfigPath, realConfigContent)
 
 		require.NoError(t, err)
 		assert.NotNil(t, cfg)
@@ -390,7 +390,7 @@ name = "test"
 		// not the real file's directory (real_dir).
 		// Since templates.toml does not exist in link_dir, this should fail.
 		loader := NewLoader()
-		cfg, err := loader.LoadConfigWithPath(symlinkPath, realConfigContent)
+		cfg, err := loader.LoadConfig(symlinkPath, realConfigContent)
 
 		// This should fail because templates.toml is not in link_dir
 		require.Error(t, err)
@@ -407,7 +407,7 @@ name = "test"
 		require.NoError(t, err)
 
 		loader := NewLoader()
-		cfg, err := loader.LoadConfigWithPath(symlinkPath, realConfigContent)
+		cfg, err := loader.LoadConfig(symlinkPath, realConfigContent)
 
 		require.NoError(t, err)
 		assert.NotNil(t, cfg)

@@ -37,9 +37,9 @@ func NewLoaderWithFS(fs common.FileSystem) *Loader {
 	}
 }
 
-// LoadConfigWithPath loads and validates configuration from a file path,
+// LoadConfig loads and validates configuration from a file path,
 // processing includes and merging templates
-func (l *Loader) LoadConfigWithPath(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
+func (l *Loader) LoadConfig(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
 	// Process includes if present
 	cfg, err := l.loadConfigWithIncludes(configPath, content, make(map[string]bool))
 	if err != nil {
@@ -47,13 +47,6 @@ func (l *Loader) LoadConfigWithPath(configPath string, content []byte) (*runnert
 	}
 
 	return cfg, nil
-}
-
-// LoadConfig loads and validates configuration from byte content instead of file path
-// This prevents TOCTOU attacks by using already-verified file content
-// Note: This function does not process includes. Use LoadConfigWithPath for full functionality.
-func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
-	return l.loadConfigInternal(content)
 }
 
 // loadConfigWithIncludes recursively loads config and processes includes

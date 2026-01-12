@@ -59,7 +59,7 @@ func TestBackwardCompatibility(t *testing.T) {
 				return
 			}
 
-			cfg, err := loader.LoadConfig(content)
+			cfg, err := loader.LoadConfigForTest(content)
 			require.NoError(t, err, "failed to load %s", relPath)
 
 			// Verify basic structure
@@ -164,7 +164,7 @@ env_vars = ["GO111MODULE=on", "GOOS=linux"]
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 			require.NoError(t, err)
 
 			// Find the target group
@@ -266,7 +266,7 @@ args = ["%{msg}"]
 	loader := NewLoader()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 			require.NoError(t, err, tt.description)
 			assert.NotNil(t, cfg)
 		})

@@ -25,7 +25,7 @@ func TestTemplateInheritance_TOMLLoad(t *testing.T) {
 	require.NoError(t, err, "Failed to read sample TOML file")
 
 	loader := config.NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err, "Failed to load sample TOML file")
 	require.NotNil(t, cfg, "Config should not be nil")
 
@@ -60,7 +60,7 @@ func TestTemplateInheritance_CommandReferences(t *testing.T) {
 	require.NoError(t, err)
 
 	loader := config.NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err)
 
 	group := cfg.Groups[0]
@@ -168,7 +168,7 @@ func TestTemplateInheritance_GlobalConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	loader := config.NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err)
 
 	// Verify env_allowed

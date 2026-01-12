@@ -1359,7 +1359,7 @@ args = ["No output capture"]
 		require.NoError(t, err, "Should be able to read TOML config file")
 
 		loader := configpkg.NewLoader()
-		config, err := loader.LoadConfig(configContent)
+		config, err := loader.LoadConfigForTest(configContent)
 		require.NoError(t, err, "Should be able to load TOML configuration")
 
 		// Verify configuration was loaded correctly
@@ -1423,7 +1423,7 @@ output = "output.txt"
 		require.NoError(t, err, "Should be able to read invalid TOML config file")
 
 		loader := configpkg.NewLoader()
-		config, err := loader.LoadConfig(invalidConfigContent)
+		config, err := loader.LoadConfigForTest(invalidConfigContent)
 		require.NoError(t, err, "Config loader should parse TOML structure")
 
 		// Verify negative output_size_limit was loaded (validation happens later)

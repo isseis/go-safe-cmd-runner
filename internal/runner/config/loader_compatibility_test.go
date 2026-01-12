@@ -54,7 +54,7 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 			require.NoError(t, err, "Failed to read sample file %s", filename)
 
 			loader := config.NewLoader()
-			cfg, err := loader.LoadConfig(content)
+			cfg, err := loader.LoadConfigForTest(content)
 
 			// All sample files should load without errors
 			require.NoError(t, err, "Sample file %s should load without errors", filename)
@@ -79,7 +79,7 @@ func TestBackwardCompatibility_NoGlobalEnv(t *testing.T) {
 	require.NoError(t, err, "Failed to read configuration file")
 
 	loader := config.NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err, "Configuration should load without errors")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -103,7 +103,7 @@ func TestBackwardCompatibility_NoGroupEnv(t *testing.T) {
 	require.NoError(t, err, "Failed to read configuration file")
 
 	loader := config.NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err, "Configuration should load without errors")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -133,7 +133,7 @@ func TestBackwardCompatibility_ExistingBehavior(t *testing.T) {
 	require.NoError(t, err, "Failed to read configuration file")
 
 	loader := config.NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err, "Configuration should load without errors")
 	require.NotNil(t, cfg, "Configuration should not be nil")

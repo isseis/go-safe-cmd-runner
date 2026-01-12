@@ -61,7 +61,7 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 
 			// Create loader and load the config
 			loader := NewLoader()
-			cfg, err := loader.LoadConfig(content)
+			cfg, err := loader.LoadConfigForTest(content)
 
 			// Assert no errors during loading
 			assert.NoError(t, err, "Failed to load %s", filename)
@@ -200,7 +200,7 @@ workdir = ""
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
 				assert.Error(t, err)

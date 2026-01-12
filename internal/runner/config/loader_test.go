@@ -37,7 +37,7 @@ version = "1.0"
 
 	// Load config from content
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfigFromContent() returned error")
 
 	require.NotNil(t, cfg, "LoadConfigFromContent() returned nil config")
@@ -70,7 +70,7 @@ args = ["test"]
 `
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
@@ -101,7 +101,7 @@ args = ["test"]
 `
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
@@ -137,7 +137,7 @@ args = ["test"]
 `
 
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
@@ -160,7 +160,7 @@ func TestLoader_GroupEnvIntegration(t *testing.T) {
 
 	// Load configuration
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -204,7 +204,7 @@ func TestTOML_ParseFromEnvAndVars(t *testing.T) {
 
 	// Load configuration
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg, "Config should not be nil")
 
@@ -368,7 +368,7 @@ version = "1.0"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.configToml))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.configToml))
 
 			if tt.expectError {
 				require.Error(t, err, "expected error but got none")
@@ -532,7 +532,7 @@ workdir = "/tmp"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")

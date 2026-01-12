@@ -58,7 +58,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// performed inside config.Loader.LoadConfig()
 	// LoadConfigWithPath processes includes and merges templates from multiple files
 	cfgLoader := config.NewLoader()
-	cfg, err := cfgLoader.LoadConfigWithPath(configPath, content)
+	cfg, err := cfgLoader.LoadConfig(configPath, content)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
