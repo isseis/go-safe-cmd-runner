@@ -73,49 +73,28 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 	}
 
 	// Process includes if present
-	if len(cfg.Includes) > 0 {
-		templateSources, err := l.processIncludes(configPath, cfg.Includes, visited)
+	templateSources, err := l.processIncludes(configPath, cfg.Includes, visited)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add the main config's templates as a source to let the merger handle all
+	// duplicate checks and merging in one pass.
+	if len(cfg.CommandTemplates) > 0 {
+		templateSources = append(templateSources, TemplateSource{
+			FilePath:  configPath,
+			Templates: cfg.CommandTemplates,
+		})
+	}
+
+	// Merge all templates. The merger will handle duplicate detection across all sources.
+	if len(templateSources) > 0 {
+		merger := NewDefaultTemplateMerger()
+		mergedTemplates, err := merger.MergeTemplates(templateSources)
 		if err != nil {
 			return nil, err
 		}
-
-		// Merge templates
-		if len(templateSources) > 0 {
-			merger := NewDefaultTemplateMerger()
-			mergedTemplates, err := merger.MergeTemplates(templateSources)
-			if err != nil {
-				return nil, err
-			}
-
-			// Merge with main config templates
-			if cfg.CommandTemplates == nil {
-				cfg.CommandTemplates = make(map[string]runnertypes.CommandTemplate)
-			}
-
-			// Check for duplicates with main config
-			for name := range mergedTemplates {
-				if _, exists := cfg.CommandTemplates[name]; exists {
-					// Find the source of the duplicate
-					var locations []string
-					locations = append(locations, configPath) // Main config
-					for _, src := range templateSources {
-						if _, found := src.Templates[name]; found {
-							locations = append(locations, src.FilePath)
-							break
-						}
-					}
-					return nil, &ErrDuplicateTemplateName{
-						Name:      name,
-						Locations: locations,
-					}
-				}
-			}
-
-			// Merge templates from includes into main config
-			for name, tmpl := range mergedTemplates {
-				cfg.CommandTemplates[name] = tmpl
-			}
-		}
+		cfg.CommandTemplates = mergedTemplates
 	}
 
 	return cfg, nil
