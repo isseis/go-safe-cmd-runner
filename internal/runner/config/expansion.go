@@ -1367,7 +1367,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 
 	// Expand workdir from template (if non-nil)
 	var expandedWorkDir *string
-	if template.WorkDir != nil && *template.WorkDir != "" {
+	if template.WorkDir != nil {
 		result, err := expandSingleArg(*template.WorkDir, cmdSpec.Params, templateName, workDirKey)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
@@ -1379,15 +1379,11 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 			expanded := result[0]
 			expandedWorkDir = &expanded
 		}
-	} else if template.WorkDir != nil {
-		// Empty string pointer: preserve the empty value
-		empty := ""
-		expandedWorkDir = &empty
 	}
 
 	// Expand output_file from template (if non-nil)
 	var expandedOutputFile *string
-	if template.OutputFile != nil && *template.OutputFile != "" {
+	if template.OutputFile != nil {
 		result, err := expandSingleArg(*template.OutputFile, cmdSpec.Params, templateName, "output_file")
 		if err != nil {
 			return nil, warnings, fmt.Errorf("failed to expand template output_file: %w", err)
@@ -1396,10 +1392,6 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 			expanded := result[0]
 			expandedOutputFile = &expanded
 		}
-	} else if template.OutputFile != nil {
-		// Empty string pointer: preserve the empty value
-		empty := ""
-		expandedOutputFile = &empty
 	}
 
 	// Expand vars from template
