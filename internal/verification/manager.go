@@ -61,6 +61,38 @@ func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
 	return content, nil
 }
 
+// VerifyAndReadTemplateFile performs atomic verification and reading of a template file
+func (m *Manager) VerifyAndReadTemplateFile(templatePath string) ([]byte, error) {
+	slog.Debug("Starting atomic template file verification and reading",
+		"template_path", templatePath,
+		"hash_directory", m.hashDir)
+
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
+	}
+
+	// Read and verify file content atomically using filevalidator
+	content, err := m.readAndVerifyFileWithFallback(templatePath, "template")
+	if err != nil {
+		slog.Error("Template file verification and reading failed",
+			"template_path", templatePath,
+			"error", err)
+		return nil, &Error{
+			Op:   "ReadAndVerifyHash",
+			Path: templatePath,
+			Err:  err,
+		}
+	}
+
+	slog.Info("Template file verification and reading completed successfully",
+		"template_path", templatePath,
+		"hash_directory", m.hashDir,
+		"content_size", len(content))
+
+	return content, nil
+}
+
 // VerifyEnvironmentFile verifies the integrity of an environment file using hash validation
 func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 	slog.Debug("Starting environment file verification",

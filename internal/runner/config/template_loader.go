@@ -53,6 +53,11 @@ func (l *DefaultTemplateFileLoader) LoadTemplateFile(path string) (map[string]ru
 		return nil, fmt.Errorf("failed to read template file %s: %w", path, err)
 	}
 
+	return ParseTemplateContent(content, path)
+}
+
+// ParseTemplateContent parses the content of a template file.
+func ParseTemplateContent(content []byte, path string) (map[string]runnertypes.CommandTemplate, error) {
 	// Step 2: Create decoder with DisallowUnknownFields
 	decoder := toml.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()

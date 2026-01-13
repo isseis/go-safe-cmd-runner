@@ -16,7 +16,8 @@ import (
 
 // Loader handles loading and validating configurations
 type Loader struct {
-	fs common.FileSystem
+	fs             common.FileSystem
+	templateLoader TemplateFileLoader
 }
 
 // Error definitions for the config package
@@ -33,8 +34,14 @@ func NewLoader() *Loader {
 // NewLoaderWithFS creates a new config loader with a custom FileSystem
 func NewLoaderWithFS(fs common.FileSystem) *Loader {
 	return &Loader{
-		fs: fs,
+		fs:             fs,
+		templateLoader: NewDefaultTemplateFileLoader(),
 	}
+}
+
+// SetTemplateLoader sets the template loader to use
+func (l *Loader) SetTemplateLoader(loader TemplateFileLoader) {
+	l.templateLoader = loader
 }
 
 // LoadConfig loads and validates configuration from a file path,
@@ -114,7 +121,7 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string, visit
 	baseDir := filepath.Dir(baseConfigPath)
 
 	resolver := NewDefaultPathResolver(l.fs)
-	loader := NewDefaultTemplateFileLoader()
+	loader := l.templateLoader
 
 	var sources []TemplateSource
 

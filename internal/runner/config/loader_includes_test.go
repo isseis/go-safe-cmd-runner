@@ -415,3 +415,54 @@ name = "test"
 		assert.Equal(t, "echo", cfg.CommandTemplates["test_template"].Cmd)
 	})
 }
+
+func TestLoadConfig_WithVerifiedTemplateLoader(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create main config
+	configPath := filepath.Join(tmpDir, "config.toml")
+	configContent := []byte(`version = "1.0"
+includes = ["templates.toml"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_data"
+template = "backup"
+
+[groups.commands.params]
+path = "/data"
+`)
+	err := os.WriteFile(configPath, configContent, 0o644)
+	require.NoError(t, err)
+
+	// Create template file
+	templatePath := filepath.Join(tmpDir, "templates.toml")
+	templateContent := []byte(`version = "1.0"
+
+[command_templates.backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+`)
+	err = os.WriteFile(templatePath, templateContent, 0o644)
+	require.NoError(t, err)
+
+	// Create mock verified loader that tracks calls
+	mockVerifiedLoader := &MockTemplateLoader{}
+
+	// Create loader and set mock verified loader
+	loader := NewLoader()
+	loader.SetTemplateLoader(mockVerifiedLoader)
+
+	// Load config - should use the mock loader for templates
+	cfg, err := loader.LoadConfig(configPath, configContent)
+
+	require.NoError(t, err)
+	assert.NotNil(t, cfg)
+	// Mock loader should have been called to load templates
+	assert.True(t, mockVerifiedLoader.Called)
+	assert.Contains(t, mockVerifiedLoader.Path, "templates.toml")
+	// Template from mock should be present
+	assert.Contains(t, cfg.CommandTemplates, "mock_template")
+}
