@@ -81,6 +81,12 @@ const (
 	DefaultDirectoryPermissions = 0o755
 	// DefaultMaxPathLength defines the default maximum allowed path length
 	DefaultMaxPathLength = 4096
+
+	// SecurePathEnv defines the secure fixed PATH used for command resolution
+	// This hardcoded PATH prevents PATH manipulation attacks by completely
+	// eliminating environment variable PATH inheritance
+	// Note: /sbin is included for compatibility with system commands that may only exist there
+	SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 )
 
 // Constants for security configuration
@@ -175,10 +181,12 @@ func DefaultConfig() *Config {
 		AllowedCommands: []string{
 			// System commands. The regex pattern is used to match the full path of the command
 			// after resolving the path using the PATH environment variable.
+			// These patterns must be consistent with SecurePathEnv to ensure only commands
+			// discoverable through the secure PATH can be executed.
+			"^/sbin/.*",
+			"^/usr/sbin/.*",
 			"^/bin/.*",
 			"^/usr/bin/.*",
-			"^/usr/sbin/.*",
-			"^/usr/local/bin/.*",
 		},
 		RequiredFilePermissions:      DefaultFilePermissions,
 		RequiredDirectoryPermissions: DefaultDirectoryPermissions,

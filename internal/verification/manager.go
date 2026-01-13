@@ -14,8 +14,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
-
 // fileType represents the type of file being verified
 type fileType string
 
@@ -506,7 +504,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.customPathResolver != nil {
 		pathResolver = opts.customPathResolver
 	} else {
-		pathResolver = NewPathResolver(securePathEnv, securityValidator, false)
+		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator, false)
 	}
 
 	manager.security = securityValidator
