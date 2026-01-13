@@ -26,12 +26,23 @@ var (
 	ErrInvalidConfigPath = errors.New("invalid config file path")
 )
 
-// NewLoader creates a new config loader
-func NewLoader() *Loader {
-	return NewLoaderWithFS(common.NewDefaultFileSystem(), NewDefaultTemplateFileLoader())
+// NewLoader creates a new config loader with specified dependencies.
+// This is the standard constructor used in production code.
+func NewLoader(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
+	return &Loader{
+		fs:             fs,
+		templateLoader: templateLoader,
+	}
 }
 
-// NewLoaderWithFS creates a new config loader with a custom FileSystem and TemplateFileLoader
+// NewLoaderForTest creates a new config loader with default dependencies for testing.
+// This convenience constructor should only be used in test code.
+func NewLoaderForTest() *Loader {
+	return NewLoader(common.NewDefaultFileSystem(), NewDefaultTemplateFileLoader())
+}
+
+// NewLoaderWithFS is deprecated. Use NewLoader instead.
+// This alias is kept for backward compatibility and will be removed in a future version.
 func NewLoaderWithFS(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
 	return &Loader{
 		fs:             fs,

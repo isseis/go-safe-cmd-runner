@@ -53,7 +53,7 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 			content, err := os.ReadFile(configPath)
 			require.NoError(t, err, "Failed to read sample file %s", filename)
 
-			loader := config.NewLoader()
+			loader := config.NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest(content)
 
 			// All sample files should load without errors
@@ -78,7 +78,7 @@ func TestBackwardCompatibility_NoGlobalEnv(t *testing.T) {
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err, "Configuration should load without errors")
@@ -102,7 +102,7 @@ func TestBackwardCompatibility_NoGroupEnv(t *testing.T) {
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err, "Configuration should load without errors")
@@ -132,7 +132,7 @@ func TestBackwardCompatibility_ExistingBehavior(t *testing.T) {
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err, "Configuration should load without errors")

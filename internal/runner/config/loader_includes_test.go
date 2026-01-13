@@ -26,7 +26,7 @@ args = ["hello"]
 	err := os.WriteFile(configPath, content, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfig(configPath, content)
 
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ args = ["hello"]
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ cmd = "echo"
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ cmd = "echo"
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ cmd = "echo"
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
@@ -219,7 +219,7 @@ includes = ["template1.toml", "template2.toml"]
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
@@ -238,7 +238,7 @@ includes = ["nonexistent.toml"]
 	err := os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
@@ -270,7 +270,7 @@ includes = ["invalid.toml"]
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	_, err = loader.LoadConfig(configPath, configContent)
 
 	require.Error(t, err)
@@ -287,7 +287,7 @@ cmd = "echo"
 args = ["hello"]
 `)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 
 	require.NoError(t, err)
@@ -320,7 +320,7 @@ cmd = "echo"
 	err = os.WriteFile(configPath, configContent, 0o644)
 	require.NoError(t, err)
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
@@ -373,7 +373,7 @@ name = "test"
 	require.NoError(t, err)
 
 	t.Run("access via real path - includes resolved from real_dir", func(t *testing.T) {
-		loader := NewLoader()
+		loader := NewLoaderForTest()
 		cfg, err := loader.LoadConfig(realConfigPath, realConfigContent)
 
 		require.NoError(t, err)
@@ -386,7 +386,7 @@ name = "test"
 		// When accessing via symlink, includes are resolved relative to the symlink's directory (link_dir),
 		// not the real file's directory (real_dir).
 		// Since templates.toml does not exist in link_dir, this should fail.
-		loader := NewLoader()
+		loader := NewLoaderForTest()
 		cfg, err := loader.LoadConfig(symlinkPath, realConfigContent)
 
 		// This should fail because templates.toml is not in link_dir
@@ -403,7 +403,7 @@ name = "test"
 		err = os.WriteFile(linkTemplatePath, templateContent, 0o644)
 		require.NoError(t, err)
 
-		loader := NewLoader()
+		loader := NewLoaderForTest()
 		cfg, err := loader.LoadConfig(symlinkPath, realConfigContent)
 
 		require.NoError(t, err)

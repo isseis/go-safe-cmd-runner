@@ -59,7 +59,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// performed inside config.Loader.LoadConfig()
 	// LoadConfigWithPath processes includes and merges templates from multiple files
 	// Use verified template loader to ensure included files are also verified against hashes
-	cfgLoader := config.NewLoaderWithFS(
+	cfgLoader := config.NewLoader(
 		common.NewDefaultFileSystem(),
 		config.NewVerifiedTemplateFileLoader(verificationManager),
 	)

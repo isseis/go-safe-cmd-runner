@@ -43,7 +43,7 @@ func TestBackwardCompatibility(t *testing.T) {
 		"sample/vars_env_separation_e2e.toml",
 	}
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 
 	// Get the project root (go up 3 levels from internal/runner/config)
 	wd, err := os.Getwd()
@@ -163,7 +163,7 @@ env_vars = ["GO111MODULE=on", "GOOS=linux"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 			require.NoError(t, err)
 
@@ -263,7 +263,7 @@ args = ["%{msg}"]
 		},
 	}
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))

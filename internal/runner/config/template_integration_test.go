@@ -20,7 +20,7 @@ func TestTemplateIntegrationWithSampleFile(t *testing.T) {
 	content, err := os.ReadFile("../../../sample/command_template_example.toml")
 	require.NoError(t, err, "failed to read sample file")
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err, "failed to load config")
 	require.NotNil(t, cfg)
@@ -142,7 +142,7 @@ template = "echo_msg"
 message = "%{greeting} %{name}"
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
@@ -188,7 +188,7 @@ template = "list_files"
 path = "/home"
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
@@ -293,7 +293,7 @@ message = 123
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 
 			if tt.wantErr {
@@ -359,7 +359,7 @@ template = "safe_cmd"
 msg = "hello"
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
@@ -467,7 +467,7 @@ mycmd = "echo"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			require.NoError(t, err)
 
@@ -531,7 +531,7 @@ template = "echo_msg"
 message = "%{msg}"
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
@@ -716,7 +716,7 @@ msg = "hello"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			require.NoError(t, err)
 
@@ -905,7 +905,7 @@ env_vars = []
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			require.NoError(t, err)
 

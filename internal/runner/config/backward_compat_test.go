@@ -60,7 +60,7 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 			require.NoError(t, err, "Failed to read %s", filename)
 
 			// Create loader and load the config
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest(content)
 
 			// Assert no errors during loading
@@ -199,7 +199,7 @@ workdir = ""
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {

@@ -301,7 +301,7 @@ FilePath = "%{Dir}/test_security_file.txt"
 			require.NoError(t, err)
 
 			// Load configuration using config loader directly
-			cfgLoader := config.NewLoader()
+			cfgLoader := config.NewLoaderForTest()
 			cfg, err := cfgLoader.LoadConfigForTest(content)
 			require.NoError(t, err) // LoadConfig should always succeed (it only parses TOML)
 			require.NotNil(t, cfg)

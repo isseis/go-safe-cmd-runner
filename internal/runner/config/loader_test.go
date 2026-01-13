@@ -36,7 +36,7 @@ version = "1.0"
 	defer log.SetOutput(os.Stderr)
 
 	// Load config from content
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfigFromContent() returned error")
 
@@ -69,7 +69,7 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
@@ -100,7 +100,7 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
@@ -136,7 +136,7 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
@@ -159,7 +159,7 @@ func TestLoader_GroupEnvIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load configuration
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
@@ -203,7 +203,7 @@ func TestTOML_ParseFromEnvAndVars(t *testing.T) {
 	require.NoError(t, err, "Failed to read test config file")
 
 	// Load configuration
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg, "Config should not be nil")
@@ -367,7 +367,7 @@ version = "1.0"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.configToml))
 
 			if tt.expectError {
@@ -531,7 +531,7 @@ workdir = "/tmp"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 
 			if tt.wantErr {

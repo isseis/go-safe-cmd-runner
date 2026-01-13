@@ -77,7 +77,7 @@ output_file = ""
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			config, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.wantErr {
@@ -137,7 +137,7 @@ output_size_limit = 0
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			config, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.wantErr {
@@ -196,7 +196,7 @@ args = ["-la"]
 # No output field - should default to empty string
 `
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	config, err := loader.LoadConfigForTest([]byte(tomlContent))
 	require.NoError(t, err, "Unexpected error")
 
@@ -330,7 +330,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// 1. Parse TOML
-			loader := NewLoader()
+			loader := NewLoaderForTest()
 			config, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 			require.NoError(t, err, "Failed to parse TOML")
 			require.NotEmpty(t, config.Groups, "Expected at least one group")

@@ -55,7 +55,7 @@ name = "test"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
+			loader := config.NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
@@ -109,7 +109,7 @@ test_var2 = "value2"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
+			loader := config.NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
@@ -171,7 +171,7 @@ cmd_var2 = "value2"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
+			loader := config.NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
@@ -213,7 +213,7 @@ name = "test"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
+			loader := config.NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
@@ -293,7 +293,7 @@ workdir = "/path"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
+			loader := config.NewLoaderForTest()
 			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
