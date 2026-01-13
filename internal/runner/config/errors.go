@@ -644,11 +644,10 @@ type ErrIncludedFileNotFound struct {
 
 func (e *ErrIncludedFileNotFound) Error() string {
 	return fmt.Sprintf(
-		"included file not found: %q\n"+
+		"included file not found\n"+
 			"  Include path: %s (as written)\n"+
 			"  Resolved path: %s\n"+
 			"  Referenced from: %s",
-		e.IncludePath,
 		e.IncludePath,
 		e.ResolvedPath,
 		e.ReferencedFrom,
