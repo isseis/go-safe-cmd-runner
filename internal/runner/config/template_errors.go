@@ -1,7 +1,10 @@
 // Package config provides configuration loading and validation for the command runner.
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Template-related errors
 
@@ -43,13 +46,7 @@ func (e *ErrDuplicateTemplateName) Error() string {
 	if len(e.Locations) <= 1 {
 		return fmt.Sprintf("duplicate template name %q", e.Name)
 	}
-	locations := ""
-	for i, loc := range e.Locations {
-		if i > 0 {
-			locations += "\n    - "
-		}
-		locations += loc
-	}
+	locations := strings.Join(e.Locations, "\n    - ")
 	return fmt.Sprintf(
 		"duplicate command template name %q\n"+
 			"  Defined in:\n    - %s",

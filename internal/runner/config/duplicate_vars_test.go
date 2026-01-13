@@ -259,12 +259,12 @@ args = ["second"]
 			expectError: true,
 		},
 		{
-			name: "duplicate env field in template - rejected by TOML parser",
+			name: "duplicate env_vars field in template - rejected by TOML parser",
 			tomlContent: `
 [command_templates.test]
 cmd = "test"
-env = ["A=1"]
-env = ["B=2"]
+env_vars = ["A=1"]
+env_vars = ["B=2"]
 `,
 			expectError: true,
 		},
@@ -284,7 +284,7 @@ workdir = "/second"
 [command_templates.test]
 cmd = "test"
 args = ["arg1"]
-env = ["VAR=value"]
+env_vars = ["VAR=value"]
 workdir = "/path"
 `,
 			expectError: false,
