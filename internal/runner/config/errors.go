@@ -667,11 +667,10 @@ type ErrConfigFileInvalidFormat struct {
 
 func (e *ErrConfigFileInvalidFormat) Error() string {
 	return fmt.Sprintf(
-		"config file contains invalid fields or sections: %s\n"+
+		"config file contains invalid fields or sections\n"+
 			"  File: %s\n"+
 			"  Config files can only contain 'version', 'includes', 'global', 'command_templates', and 'groups'\n"+
 			"  Detail: %v",
-		e.ConfigFile,
 		e.ConfigFile,
 		e.ParseError,
 	)
@@ -693,11 +692,10 @@ type ErrTemplateFileInvalidFormat struct {
 
 func (e *ErrTemplateFileInvalidFormat) Error() string {
 	return fmt.Sprintf(
-		"template file contains invalid fields or sections: %s\n"+
+		"template file contains invalid fields or sections\n"+
 			"  File: %s\n"+
 			"  Template files can only contain 'version' and 'command_templates'\n"+
 			"  Detail: %v",
-		e.TemplateFile,
 		e.TemplateFile,
 		e.ParseError,
 	)
@@ -723,9 +721,7 @@ func (e *ErrCircularInclude) Error() string {
 	chain := strings.Join(e.Chain, " -> ")
 	return fmt.Sprintf(
 		"circular include detected\n"+
-			"  File: %s\n"+
 			"  Include chain: %s -> %s",
-		e.Path,
 		chain,
 		e.Path,
 	)
