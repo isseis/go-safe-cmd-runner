@@ -16,9 +16,12 @@ import (
 
 const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 
+// fileType represents the type of file being verified
+type fileType string
+
 const (
-	fileTypeConfig   = "config"
-	fileTypeTemplate = "template"
+	fileTypeConfig   fileType = "config"
+	fileTypeTemplate fileType = "template"
 )
 
 // Manager provides file verification capabilities
@@ -47,9 +50,9 @@ func (m *Manager) VerifyAndReadTemplateFile(templatePath string) ([]byte, error)
 // verifyAndReadFile is a private helper method that performs atomic verification and reading
 // of files. It handles hash directory validation, file reading, and comprehensive logging
 // for both configuration and template files to prevent TOCTOU attacks.
-func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, error) {
+func (m *Manager) verifyAndReadFile(filePath string, ft fileType) ([]byte, error) {
 	// Log debug message based on file type
-	switch fileType {
+	switch ft {
 	case fileTypeConfig:
 		slog.Debug("Starting atomic config file verification and reading",
 			"config_path", filePath,
@@ -66,10 +69,10 @@ func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, e
 	}
 
 	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(filePath, fileType)
+	content, err := m.readAndVerifyFileWithFallback(filePath, string(ft))
 	if err != nil {
 		// Log error message based on file type
-		switch fileType {
+		switch ft {
 		case fileTypeConfig:
 			slog.Error("Config file verification and reading failed",
 				"config_path", filePath,
@@ -87,7 +90,7 @@ func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, e
 	}
 
 	// Log success message based on file type
-	switch fileType {
+	switch ft {
 	case fileTypeConfig:
 		slog.Info("Config file verification and reading completed successfully",
 			"config_path", filePath,
