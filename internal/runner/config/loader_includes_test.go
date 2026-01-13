@@ -227,10 +227,6 @@ includes = ["template1.toml", "template2.toml"]
 	assert.Equal(t, "backup", errDup.Name)
 }
 
-func TestLoadConfigWithPath_CircularInclude(t *testing.T) {
-	t.Skip("Circular includes are not possible with current design - template files cannot have includes field")
-}
-
 func TestLoadConfigWithPath_IncludeNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 

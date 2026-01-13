@@ -48,7 +48,7 @@ func (l *Loader) SetTemplateLoader(loader TemplateFileLoader) {
 // processing includes and merging templates
 func (l *Loader) LoadConfig(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
 	// Process includes if present
-	cfg, err := l.loadConfigWithIncludes(configPath, content, make(map[string]struct{}))
+	cfg, err := l.loadConfigWithIncludes(configPath, content)
 	if err != nil {
 		return nil, err
 	}
@@ -56,17 +56,9 @@ func (l *Loader) LoadConfig(configPath string, content []byte) (*runnertypes.Con
 	return cfg, nil
 }
 
-// loadConfigWithIncludes recursively loads config and processes includes
-func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visited map[string]struct{}) (*runnertypes.ConfigSpec, error) {
-	// Check for circular reference
-	if _, exists := visited[configPath]; exists {
-		return nil, &ErrCircularInclude{
-			Path:  configPath,
-			Chain: nil, // Will be populated by caller
-		}
-	}
-	visited[configPath] = struct{}{}
-
+// loadConfigWithIncludes loads config and processes includes.
+// Note: Circular includes are not possible because template files cannot contain includes.
+func (l *Loader) loadConfigWithIncludes(configPath string, content []byte) (*runnertypes.ConfigSpec, error) {
 	// Load the main config (without includes processing)
 	cfg, err := l.loadConfigInternal(content)
 	if err != nil {
@@ -74,7 +66,7 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte, visit
 	}
 
 	// Process includes if present
-	templateSources, err := l.processIncludes(configPath, cfg.Includes, visited)
+	templateSources, err := l.processIncludes(configPath, cfg.Includes)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +104,7 @@ type TemplateSource struct {
 }
 
 // processIncludes loads all included template files
-func (l *Loader) processIncludes(baseConfigPath string, includes []string, visited map[string]struct{}) ([]TemplateSource, error) {
+func (l *Loader) processIncludes(baseConfigPath string, includes []string) ([]TemplateSource, error) {
 	if len(includes) == 0 {
 		return nil, nil
 	}
@@ -130,14 +122,6 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string, visit
 		resolvedPath, err := resolver.ResolvePath(includePath, baseDir)
 		if err != nil {
 			return nil, err
-		}
-
-		// Check for circular reference
-		if _, exists := visited[resolvedPath]; exists {
-			return nil, &ErrCircularInclude{
-				Path:  resolvedPath,
-				Chain: nil,
-			}
 		}
 
 		// Load template file
