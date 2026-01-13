@@ -28,20 +28,15 @@ var (
 
 // NewLoader creates a new config loader
 func NewLoader() *Loader {
-	return NewLoaderWithFS(common.NewDefaultFileSystem())
+	return NewLoaderWithFS(common.NewDefaultFileSystem(), NewDefaultTemplateFileLoader())
 }
 
-// NewLoaderWithFS creates a new config loader with a custom FileSystem
-func NewLoaderWithFS(fs common.FileSystem) *Loader {
+// NewLoaderWithFS creates a new config loader with a custom FileSystem and TemplateFileLoader
+func NewLoaderWithFS(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
 	return &Loader{
 		fs:             fs,
-		templateLoader: NewDefaultTemplateFileLoader(),
+		templateLoader: templateLoader,
 	}
-}
-
-// SetTemplateLoader sets the template loader to use
-func (l *Loader) SetTemplateLoader(loader TemplateFileLoader) {
-	l.templateLoader = loader
 }
 
 // LoadConfig loads and validates configuration from a file path,

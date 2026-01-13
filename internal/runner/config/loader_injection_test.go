@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +28,7 @@ func (m *MockTemplateLoader) LoadTemplateFile(path string) (map[string]runnertyp
 	}, nil
 }
 
-func TestLoader_SetTemplateLoader(t *testing.T) {
+func TestLoader_TemplateLoaderInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.toml")
 
@@ -45,9 +46,8 @@ includes = ["mock_template.toml"]
 		t.Fatal(err)
 	}
 
-	loader := NewLoader()
 	mockLoader := &MockTemplateLoader{}
-	loader.SetTemplateLoader(mockLoader)
+	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockLoader)
 
 	// We expect LoadConfig to call our mock loader instead of reading the file
 	cfg, err := loader.LoadConfig(configPath, content)

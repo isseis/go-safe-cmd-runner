@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -447,9 +448,8 @@ args = ["backup", "${path}"]
 	// Create mock verified loader that tracks calls
 	mockVerifiedLoader := &MockTemplateLoader{}
 
-	// Create loader and set mock verified loader
-	loader := NewLoader()
-	loader.SetTemplateLoader(mockVerifiedLoader)
+	// Create loader with mock verified loader
+	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockVerifiedLoader)
 
 	// Load config - should use the mock loader for templates
 	cfg, err := loader.LoadConfig(configPath, configContent)
