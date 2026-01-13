@@ -18,10 +18,15 @@ Example workflow:
 # 1. Validate the configuration with includes
 safe-cmd-runner runner -c sample/includes_example.toml --dry-run
 
-# 2. Record hashes for all files (main config + included templates)
-safe-cmd-runner record -c sample/includes_example.toml -o /tmp/hashes/
+# 2. Record hashes for each file individually
+# The record command does not recognize the includes feature,
+# so each file must be recorded separately
+safe-cmd-runner record -f sample/includes_example.toml -o /tmp/hashes/
+safe-cmd-runner record -f sample/templates_backup_commands.toml -o /tmp/hashes/
+safe-cmd-runner record -f sample/templates_docker_commands.toml -o /tmp/hashes/
 
 # 3. Run commands using templates from included files
+# At runtime, the runner command automatically verifies all included files
 safe-cmd-runner runner -c sample/includes_example.toml -g backup_tasks -d /tmp/hashes/ -r backup-run-001
 ```
 

@@ -18,10 +18,15 @@
 # 1. インクルード機能を含む設定を検証します
 safe-cmd-runner runner -c sample/includes_example.toml --dry-run
 
-# 2. すべてのファイル（メイン設定＋インクルードされたテンプレート）のハッシュを記録します
-safe-cmd-runner record -c sample/includes_example.toml -o /tmp/hashes/
+# 2. 各ファイルのハッシュを個別に記録します
+# record コマンドは include 機能を認識しないため、
+# 各ファイルを個別に記録する必要があります
+safe-cmd-runner record -f sample/includes_example.toml -o /tmp/hashes/
+safe-cmd-runner record -f sample/templates_backup_commands.toml -o /tmp/hashes/
+safe-cmd-runner record -f sample/templates_docker_commands.toml -o /tmp/hashes/
 
 # 3. インクルードされたファイルのテンプレートを使用してコマンドを実行します
+# 実行時には、runner コマンドが自動的にすべてのインクルードされたファイルを検証します
 safe-cmd-runner runner -c sample/includes_example.toml -g backup_tasks -d /tmp/hashes/ -r backup-run-001
 ```
 
