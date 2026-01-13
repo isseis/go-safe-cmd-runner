@@ -16,6 +16,11 @@ import (
 
 const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 
+const (
+	fileTypeConfig   = "config"
+	fileTypeTemplate = "template"
+)
+
 // Manager provides file verification capabilities
 type Manager struct {
 	hashDir                     string
@@ -31,41 +36,29 @@ type Manager struct {
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
 func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
-	slog.Debug("Starting atomic config file verification and reading",
-		"config_path", configPath,
-		"hash_directory", m.hashDir)
-
-	// Ensure hash directory is validated
-	if err := m.ensureHashDirectoryValidated(); err != nil {
-		return nil, err
-	}
-
-	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(configPath, "config")
-	if err != nil {
-		slog.Error("Config file verification and reading failed",
-			"config_path", configPath,
-			"error", err)
-		return nil, &Error{
-			Op:   "ReadAndVerifyHash",
-			Path: configPath,
-			Err:  err,
-		}
-	}
-
-	slog.Info("Config file verification and reading completed successfully",
-		"config_path", configPath,
-		"hash_directory", m.hashDir,
-		"content_size", len(content))
-
-	return content, nil
+	return m.verifyAndReadFile(configPath, fileTypeConfig)
 }
 
 // VerifyAndReadTemplateFile performs atomic verification and reading of a template file
 func (m *Manager) VerifyAndReadTemplateFile(templatePath string) ([]byte, error) {
-	slog.Debug("Starting atomic template file verification and reading",
-		"template_path", templatePath,
-		"hash_directory", m.hashDir)
+	return m.verifyAndReadFile(templatePath, fileTypeTemplate)
+}
+
+// verifyAndReadFile is a private helper method that performs atomic verification and reading
+// of files. It handles hash directory validation, file reading, and comprehensive logging
+// for both configuration and template files to prevent TOCTOU attacks.
+func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, error) {
+	// Log debug message based on file type
+	switch fileType {
+	case fileTypeConfig:
+		slog.Debug("Starting atomic config file verification and reading",
+			"config_path", filePath,
+			"hash_directory", m.hashDir)
+	case fileTypeTemplate:
+		slog.Debug("Starting atomic template file verification and reading",
+			"template_path", filePath,
+			"hash_directory", m.hashDir)
+	}
 
 	// Ensure hash directory is validated
 	if err := m.ensureHashDirectoryValidated(); err != nil {
@@ -73,22 +66,39 @@ func (m *Manager) VerifyAndReadTemplateFile(templatePath string) ([]byte, error)
 	}
 
 	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(templatePath, "template")
+	content, err := m.readAndVerifyFileWithFallback(filePath, fileType)
 	if err != nil {
-		slog.Error("Template file verification and reading failed",
-			"template_path", templatePath,
-			"error", err)
+		// Log error message based on file type
+		switch fileType {
+		case fileTypeConfig:
+			slog.Error("Config file verification and reading failed",
+				"config_path", filePath,
+				"error", err)
+		case fileTypeTemplate:
+			slog.Error("Template file verification and reading failed",
+				"template_path", filePath,
+				"error", err)
+		}
 		return nil, &Error{
 			Op:   "ReadAndVerifyHash",
-			Path: templatePath,
+			Path: filePath,
 			Err:  err,
 		}
 	}
 
-	slog.Info("Template file verification and reading completed successfully",
-		"template_path", templatePath,
-		"hash_directory", m.hashDir,
-		"content_size", len(content))
+	// Log success message based on file type
+	switch fileType {
+	case fileTypeConfig:
+		slog.Info("Config file verification and reading completed successfully",
+			"config_path", filePath,
+			"hash_directory", m.hashDir,
+			"content_size", len(content))
+	case fileTypeTemplate:
+		slog.Info("Template file verification and reading completed successfully",
+			"template_path", filePath,
+			"hash_directory", m.hashDir,
+			"content_size", len(content))
+	}
 
 	return content, nil
 }
