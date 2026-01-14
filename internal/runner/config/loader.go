@@ -29,9 +29,25 @@ var (
 )
 
 // NewLoader creates a new config loader with specified dependencies.
-// If verificationManager is nil, template files are loaded without hash verification.
-// If verificationManager is not nil, template files are verified against their hashes.
+// Both fs and verificationManager are required - nil values will panic.
+// This constructor is designed for production use where verification is mandatory.
 func NewLoader(fs common.FileSystem, verificationManager *verification.Manager) *Loader {
+	if fs == nil {
+		panic("FileSystem is required: programming error")
+	}
+	if verificationManager == nil {
+		panic("VerificationManager is required: programming error")
+	}
+	return &Loader{
+		fs:              fs,
+		verificationMgr: verificationManager,
+	}
+}
+
+// newLoaderInternal creates a new config loader without nil checks.
+// This is an internal helper for testing code that needs to pass nil values.
+// ONLY use this in test code - production code must use NewLoader.
+func newLoaderInternal(fs common.FileSystem, verificationManager *verification.Manager) *Loader {
 	return &Loader{
 		fs:              fs,
 		verificationMgr: verificationManager,
@@ -40,9 +56,9 @@ func NewLoader(fs common.FileSystem, verificationManager *verification.Manager) 
 
 // NewLoaderForTest creates a new config loader with default dependencies for testing.
 // This convenience constructor should only be used in test code.
-// Template files are loaded without hash verification.
+// It allows verificationManager to be nil for tests that don't need verification.
 func NewLoaderForTest() *Loader {
-	return NewLoader(common.NewDefaultFileSystem(), nil)
+	return newLoaderInternal(common.NewDefaultFileSystem(), nil)
 }
 
 // LoadConfig loads and validates configuration from a file path,
@@ -109,11 +125,13 @@ func (l *Loader) loadTemplate(path string) (map[string]runnertypes.CommandTempla
 	var content []byte
 	var err error
 
+	// In production code, verificationMgr is always non-nil (guaranteed by NewLoader).
+	// In test code, it may be nil (via NewLoaderForTest with newLoaderInternal).
 	if l.verificationMgr != nil {
-		// Verify and read file with hash verification
 		content, err = l.verificationMgr.VerifyAndReadTemplateFile(path)
 	} else {
-		// Read file without verification
+		// Test path: read without verification
+		// This is only used in test code via NewLoaderForTest() -> newLoaderInternal()
 		content, err = safefileio.SafeReadFile(path)
 	}
 

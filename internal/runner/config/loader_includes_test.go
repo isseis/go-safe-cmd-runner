@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -445,8 +444,8 @@ args = ["backup", "${path}"]
 	err = os.WriteFile(templatePath, templateContent, 0o644)
 	require.NoError(t, err)
 
-	// Create loader without verification manager (uses plain file reading)
-	loader := NewLoader(common.NewDefaultFileSystem(), nil)
+	// Create loader for test (uses test verification manager)
+	loader := NewLoaderForTest()
 
 	// Load config - should load templates from the included file
 	cfg, err := loader.LoadConfig(configPath, configContent)
