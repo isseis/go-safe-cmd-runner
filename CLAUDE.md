@@ -254,27 +254,47 @@ When implementing new features or security-critical functionality, follow this p
 #### F-XXX Acceptance Criteria Verification
 
 **AC-1: [First acceptance criterion]**
-- [ ] Test: [Test description]
+- [ ] Test location: `internal/package/subpackage_test.go::TestFunctionName`
 - [ ] Implementation: [File path and line numbers]
 - [ ] Verification method: [How to verify]
 
 **AC-2: [Second acceptance criterion]**
+- [ ] Test location: `internal/package/integration_test.go::TestIntegrationScenario`
+- [ ] Implementation: [File path and line numbers]
+- [ ] Verification method: [How to verify]
 ...
 ```
 
 ### 3. Acceptance Tests
 
-**Create dedicated test file:**
-- File naming: `*_acceptance_test.go` or include "AcceptanceCriteria" in test names
-- Each acceptance criterion gets at least one test
-- Test names should reference the criterion (e.g., `TestAcceptanceCriteria_F006_AC2_...`)
+**Create appropriate test coverage:**
+- Place tests in standard test files (`*_test.go`)
+- Follow normal test naming conventions based on what is being tested
+- Tests can be unit tests, integration tests, or any appropriate type
+- Each acceptance criterion must have at least one test
 - Tests must verify the actual behavior, not just the happy path
+- Link tests to acceptance criteria in the detailed specification document
 
-**Example:**
+**Traceability in detailed specification:**
+Document which tests verify each acceptance criterion in `03_detailed_specification.md`:
+
+```markdown
+**AC-1: [First acceptance criterion]**
+- Test location: `internal/package/subpackage_test.go::TestFunctionName`
+- Implementation: `internal/package/subpackage.go:123-145`
+- Verification method: [How to verify]
+
+**AC-2: [Second acceptance criterion]**
+- Test location: `internal/package/integration_test.go::TestIntegrationScenario`
+- Implementation: `internal/package/another.go:67-89`
+- Verification method: [How to verify]
+```
+
+**Example test with traceability comment:**
 ```go
-// TestAcceptanceCriteria_F006_AC2_IncludeFileVerification tests AC-2:
-// Hash verification for all included template files
-func TestAcceptanceCriteria_F006_AC2_IncludeFileVerification(t *testing.T) {
+// TestIncludeFileVerification verifies that included template files
+// are subject to hash verification (requirement F-006, AC-2).
+func TestIncludeFileVerification(t *testing.T) {
     // Test implementation that verifies the specific criterion
 }
 ```
