@@ -2,10 +2,8 @@ package config
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -18,42 +16,6 @@ type TemplateFileSpec struct {
 
 	// CommandTemplates contains template definitions
 	CommandTemplates map[string]runnertypes.CommandTemplate `toml:"command_templates"`
-}
-
-// TemplateFileLoader loads and validates template files.
-type TemplateFileLoader interface {
-	// LoadTemplateFile loads a template file from the given path.
-	//
-	// Parameters:
-	//   - path: Absolute path to the template file
-	//
-	// Returns:
-	//   - Map of template name to CommandTemplate
-	//   - Error if file cannot be loaded or contains invalid format
-	//
-	// Validation:
-	//   - Uses DisallowUnknownFields() to reject unknown fields
-	//   - Only 'version' and 'command_templates' are allowed
-	LoadTemplateFile(path string) (map[string]runnertypes.CommandTemplate, error)
-}
-
-// DefaultTemplateFileLoader is the production implementation.
-type DefaultTemplateFileLoader struct{}
-
-// NewDefaultTemplateFileLoader creates a new DefaultTemplateFileLoader.
-func NewDefaultTemplateFileLoader() *DefaultTemplateFileLoader {
-	return &DefaultTemplateFileLoader{}
-}
-
-// LoadTemplateFile loads a template file from the given path.
-func (l *DefaultTemplateFileLoader) LoadTemplateFile(path string) (map[string]runnertypes.CommandTemplate, error) {
-	// Step 1: Read file content using safefileio for security
-	content, err := safefileio.SafeReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read template file %s: %w", path, err)
-	}
-
-	return ParseTemplateContent(content, path)
 }
 
 // ParseTemplateContent parses the content of a template file.

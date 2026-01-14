@@ -3,8 +3,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -12,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultTemplateFileLoader_LoadTemplateFile(t *testing.T) {
+func TestParseTemplateContent(t *testing.T) {
 	tests := []struct {
 		name          string
 		fileContent   string
@@ -133,14 +131,7 @@ cmd = "restic"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary file
-			tmpDir := t.TempDir()
-			tmpFile := filepath.Join(tmpDir, "template.toml")
-			err := os.WriteFile(tmpFile, []byte(tt.fileContent), 0o644)
-			require.NoError(t, err)
-
-			loader := NewDefaultTemplateFileLoader()
-			gotTemplates, err := loader.LoadTemplateFile(tmpFile)
+			gotTemplates, err := ParseTemplateContent([]byte(tt.fileContent), "test.toml")
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -164,25 +155,12 @@ cmd = "restic"
 	}
 }
 
-func TestDefaultTemplateFileLoader_FileNotFound(t *testing.T) {
-	loader := NewDefaultTemplateFileLoader()
-
-	_, err := loader.LoadTemplateFile("/nonexistent/path/template.toml")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read template file")
-}
-
-func TestDefaultTemplateFileLoader_MalformedTOML(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpFile := filepath.Join(tmpDir, "malformed.toml")
-	err := os.WriteFile(tmpFile, []byte("invalid toml content [[["), 0o644)
-	require.NoError(t, err)
-
-	loader := NewDefaultTemplateFileLoader()
-	_, err = loader.LoadTemplateFile(tmpFile)
+func TestParseTemplateContent_MalformedTOML(t *testing.T) {
+	content := []byte("invalid toml content [[[")
+	_, err := ParseTemplateContent(content, "malformed.toml")
 
 	require.Error(t, err)
 	var errInvalidFormat *ErrTemplateFileInvalidFormat
 	require.ErrorAs(t, err, &errInvalidFormat)
-	assert.Equal(t, tmpFile, errInvalidFormat.TemplateFile)
+	assert.Equal(t, "malformed.toml", errInvalidFormat.TemplateFile)
 }

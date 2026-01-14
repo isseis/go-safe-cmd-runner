@@ -413,7 +413,7 @@ name = "test"
 	})
 }
 
-func TestLoadConfig_WithVerifiedTemplateLoader(t *testing.T) {
+func TestLoadConfig_WithTemplateIncludes(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create main config
@@ -445,20 +445,15 @@ args = ["backup", "${path}"]
 	err = os.WriteFile(templatePath, templateContent, 0o644)
 	require.NoError(t, err)
 
-	// Create mock verified loader that tracks calls
-	mockVerifiedLoader := &MockTemplateLoader{}
+	// Create loader without verification manager (uses plain file reading)
+	loader := NewLoader(common.NewDefaultFileSystem(), nil)
 
-	// Create loader with mock verified loader
-	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockVerifiedLoader)
-
-	// Load config - should use the mock loader for templates
+	// Load config - should load templates from the included file
 	cfg, err := loader.LoadConfig(configPath, configContent)
 
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
-	// Mock loader should have been called to load templates
-	assert.True(t, mockVerifiedLoader.Called)
-	assert.Contains(t, mockVerifiedLoader.Path, "templates.toml")
-	// Template from mock should be present
-	assert.Contains(t, cfg.CommandTemplates, "mock_template")
+	// Template from included file should be present
+	assert.Contains(t, cfg.CommandTemplates, "backup")
+	assert.Equal(t, "restic", cfg.CommandTemplates["backup"].Cmd)
 }

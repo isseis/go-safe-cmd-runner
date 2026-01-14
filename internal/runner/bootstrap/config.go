@@ -58,10 +58,10 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// All expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args) is now
 	// performed inside config.Loader.LoadConfig()
 	// LoadConfigWithPath processes includes and merges templates from multiple files
-	// Use verified template loader to ensure included files are also verified against hashes
+	// Use verified template manager to ensure included files are also verified against hashes
 	cfgLoader := config.NewLoader(
 		common.NewDefaultFileSystem(),
-		config.NewVerifiedTemplateFileLoader(verificationManager),
+		verificationManager,
 	)
 
 	cfg, err := cfgLoader.LoadConfig(configPath, content)

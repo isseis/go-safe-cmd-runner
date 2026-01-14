@@ -11,13 +11,15 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/pelletier/go-toml/v2"
 )
 
 // Loader handles loading and validating configurations
 type Loader struct {
-	fs             common.FileSystem
-	templateLoader TemplateFileLoader
+	fs              common.FileSystem
+	verificationMgr *verification.Manager
 }
 
 // Error definitions for the config package
@@ -27,27 +29,20 @@ var (
 )
 
 // NewLoader creates a new config loader with specified dependencies.
-// This is the standard constructor used in production code.
-func NewLoader(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
+// If verificationManager is nil, template files are loaded without hash verification.
+// If verificationManager is not nil, template files are verified against their hashes.
+func NewLoader(fs common.FileSystem, verificationManager *verification.Manager) *Loader {
 	return &Loader{
-		fs:             fs,
-		templateLoader: templateLoader,
+		fs:              fs,
+		verificationMgr: verificationManager,
 	}
 }
 
 // NewLoaderForTest creates a new config loader with default dependencies for testing.
 // This convenience constructor should only be used in test code.
+// Template files are loaded without hash verification.
 func NewLoaderForTest() *Loader {
-	return NewLoader(common.NewDefaultFileSystem(), NewDefaultTemplateFileLoader())
-}
-
-// NewLoaderWithFS is deprecated. Use NewLoader instead.
-// This alias is kept for backward compatibility and will be removed in a future version.
-func NewLoaderWithFS(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
-	return &Loader{
-		fs:             fs,
-		templateLoader: templateLoader,
-	}
+	return NewLoader(common.NewDefaultFileSystem(), nil)
 }
 
 // LoadConfig loads and validates configuration from a file path,
@@ -109,6 +104,26 @@ type TemplateSource struct {
 	Templates map[string]runnertypes.CommandTemplate
 }
 
+// loadTemplate loads a template file using verification if manager is available.
+func (l *Loader) loadTemplate(path string) (map[string]runnertypes.CommandTemplate, error) {
+	var content []byte
+	var err error
+
+	if l.verificationMgr != nil {
+		// Verify and read file with hash verification
+		content, err = l.verificationMgr.VerifyAndReadTemplateFile(path)
+	} else {
+		// Read file without verification
+		content, err = safefileio.SafeReadFile(path)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template file %s: %w", path, err)
+	}
+
+	return ParseTemplateContent(content, path)
+}
+
 // processIncludes loads all included template files
 func (l *Loader) processIncludes(baseConfigPath string, includes []string) ([]TemplateSource, error) {
 	if len(includes) == 0 {
@@ -119,7 +134,6 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string) ([]Te
 	baseDir := filepath.Dir(baseConfigPath)
 
 	resolver := NewDefaultPathResolver(l.fs)
-	loader := l.templateLoader
 
 	var sources []TemplateSource
 
@@ -131,7 +145,7 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string) ([]Te
 		}
 
 		// Load template file
-		templates, err := loader.LoadTemplateFile(resolvedPath)
+		templates, err := l.loadTemplate(resolvedPath)
 		if err != nil {
 			return nil, err
 		}
