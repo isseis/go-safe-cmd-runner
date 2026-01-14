@@ -136,6 +136,32 @@ func TestDefaultTemplateMerger_MergeTemplates(t *testing.T) {
 			errLocations: []string{"/tmp/template1.toml", "/tmp/config.toml"},
 		},
 		{
+			name: "duplicate across three sources - all locations reported",
+			sources: []TemplateSource{
+				{
+					FilePath: "/tmp/template1.toml",
+					Templates: map[string]runnertypes.CommandTemplate{
+						"backup": {Cmd: "restic", Args: []string{"backup", "v1"}},
+					},
+				},
+				{
+					FilePath: "/tmp/template2.toml",
+					Templates: map[string]runnertypes.CommandTemplate{
+						"backup": {Cmd: "restic", Args: []string{"backup", "v2"}},
+					},
+				},
+				{
+					FilePath: "/tmp/template3.toml",
+					Templates: map[string]runnertypes.CommandTemplate{
+						"backup": {Cmd: "restic", Args: []string{"backup", "v3"}},
+					},
+				},
+			},
+			wantErr:      true,
+			errType:      &ErrDuplicateTemplateName{},
+			errLocations: []string{"/tmp/template1.toml", "/tmp/template2.toml", "/tmp/template3.toml"},
+		},
+		{
 			name:          "empty sources",
 			sources:       []TemplateSource{},
 			wantTemplates: map[string]runnertypes.CommandTemplate{},

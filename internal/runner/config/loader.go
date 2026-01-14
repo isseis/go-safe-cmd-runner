@@ -187,40 +187,36 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string) ([]Te
 //   - Error if duplicate template names are found
 //
 // Behavior:
-//   - Sources are processed in order
-//   - Duplicate names across sources cause an error
-//   - Error message includes all locations where duplicate is defined
+//   - First pass: collect all template locations across all sources
+//   - Check for duplicates (templates defined in multiple files)
+//   - Second pass: build merged map if no duplicates found
+//   - Error message includes ALL locations where duplicate is defined
 func mergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTemplate, error) {
-	// Map to store merged templates
-	merged := make(map[string]runnertypes.CommandTemplate)
-
-	// Map to track the file where each template is defined
+	// First pass: collect all locations for each template name
 	locations := make(map[string][]string)
+	templates := make(map[string]runnertypes.CommandTemplate)
 
-	// Process each source in order
 	for _, source := range sources {
 		for name, template := range source.Templates {
-			// Check for duplicates
-			if _, exists := merged[name]; exists {
-				// Record this location
-				locations[name] = append(locations[name], source.FilePath)
-
-				// Return error with all locations
-				return nil, &ErrDuplicateTemplateName{
-					Name:      name,
-					Locations: locations[name],
-				}
+			locations[name] = append(locations[name], source.FilePath)
+			// Keep the first definition for the merged result
+			if _, exists := templates[name]; !exists {
+				templates[name] = template
 			}
-
-			// Add template to merged map
-			merged[name] = template
-
-			// Record location (for potential future error)
-			locations[name] = []string{source.FilePath}
 		}
 	}
 
-	return merged, nil
+	// Check for duplicates and return error with all locations
+	for name, locs := range locations {
+		if len(locs) > 1 {
+			return nil, &ErrDuplicateTemplateName{
+				Name:      name,
+				Locations: locs,
+			}
+		}
+	}
+
+	return templates, nil
 }
 
 // loadConfigInternal loads and validates configuration from byte content
