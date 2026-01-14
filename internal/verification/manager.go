@@ -14,14 +14,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-// fileType represents the type of file being verified
-type fileType string
-
-const (
-	fileTypeConfig   fileType = "config"
-	fileTypeTemplate fileType = "template"
-)
-
 // Manager provides file verification capabilities
 type Manager struct {
 	hashDir                     string
@@ -37,29 +29,22 @@ type Manager struct {
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
 func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
-	return m.verifyAndReadFile(configPath, fileTypeConfig)
+	return m.verifyAndReadFile(configPath, "config")
 }
 
 // VerifyAndReadTemplateFile performs atomic verification and reading of a template file
 func (m *Manager) VerifyAndReadTemplateFile(templatePath string) ([]byte, error) {
-	return m.verifyAndReadFile(templatePath, fileTypeTemplate)
+	return m.verifyAndReadFile(templatePath, "template")
 }
 
 // verifyAndReadFile is a private helper method that performs atomic verification and reading
 // of files. It handles hash directory validation, file reading, and comprehensive logging
 // for both configuration and template files to prevent TOCTOU attacks.
-func (m *Manager) verifyAndReadFile(filePath string, ft fileType) ([]byte, error) {
-	// Log debug message based on file type
-	switch ft {
-	case fileTypeConfig:
-		slog.Debug("Starting atomic config file verification and reading",
-			"config_path", filePath,
-			"hash_directory", m.hashDir)
-	case fileTypeTemplate:
-		slog.Debug("Starting atomic template file verification and reading",
-			"template_path", filePath,
-			"hash_directory", m.hashDir)
-	}
+func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, error) {
+	slog.Debug("Starting atomic file verification and reading",
+		"file_path", filePath,
+		"file_type", fileType,
+		"hash_directory", m.hashDir)
 
 	// Ensure hash directory is validated
 	if err := m.ensureHashDirectoryValidated(); err != nil {
@@ -67,19 +52,12 @@ func (m *Manager) verifyAndReadFile(filePath string, ft fileType) ([]byte, error
 	}
 
 	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(filePath, string(ft))
+	content, err := m.readAndVerifyFileWithFallback(filePath, fileType)
 	if err != nil {
-		// Log error message based on file type
-		switch ft {
-		case fileTypeConfig:
-			slog.Error("Config file verification and reading failed",
-				"config_path", filePath,
-				"error", err)
-		case fileTypeTemplate:
-			slog.Error("Template file verification and reading failed",
-				"template_path", filePath,
-				"error", err)
-		}
+		slog.Error("File verification and reading failed",
+			"file_path", filePath,
+			"file_type", fileType,
+			"error", err)
 		return nil, &Error{
 			Op:   "ReadAndVerifyHash",
 			Path: filePath,
@@ -87,19 +65,11 @@ func (m *Manager) verifyAndReadFile(filePath string, ft fileType) ([]byte, error
 		}
 	}
 
-	// Log success message based on file type
-	switch ft {
-	case fileTypeConfig:
-		slog.Info("Config file verification and reading completed successfully",
-			"config_path", filePath,
-			"hash_directory", m.hashDir,
-			"content_size", len(content))
-	case fileTypeTemplate:
-		slog.Info("Template file verification and reading completed successfully",
-			"template_path", filePath,
-			"hash_directory", m.hashDir,
-			"content_size", len(content))
-	}
+	slog.Info("File verification and reading completed successfully",
+		"file_path", filePath,
+		"file_type", fileType,
+		"hash_directory", m.hashDir,
+		"content_size", len(content))
 
 	return content, nil
 }
