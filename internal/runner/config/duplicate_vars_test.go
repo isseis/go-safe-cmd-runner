@@ -55,8 +55,8 @@ name = "test"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			loader := config.NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -109,8 +109,8 @@ test_var2 = "value2"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			loader := config.NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -171,8 +171,8 @@ cmd_var2 = "value2"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			loader := config.NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -213,8 +213,8 @@ name = "test"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := config.NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			loader := config.NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 
 			if tt.expectError {
 				require.Error(t, err)

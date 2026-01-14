@@ -33,8 +33,8 @@ src = "/tmp/test.txt"
 dst = "s3://my-bucket/test.txt"
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(toml))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
 	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -100,8 +100,8 @@ src = "/tmp/test.txt"
 dst = "s3://my-bucket/test.txt"
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(toml))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
 	runtimeGlobal, err := ExpandGlobal(&cfg.Global)

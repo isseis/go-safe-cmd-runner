@@ -36,8 +36,8 @@ version = "1.0"
 	defer log.SetOutput(os.Stderr)
 
 	// Load config from content
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfigFromContent() returned error")
 
 	require.NotNil(t, cfg, "LoadConfigFromContent() returned nil config")
@@ -69,8 +69,8 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
@@ -100,8 +100,8 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
@@ -136,8 +136,8 @@ cmd = "/bin/echo"
 args = ["test"]
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(configContent))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(configContent))
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
@@ -159,8 +159,8 @@ func TestLoader_GroupEnvIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load configuration
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -203,8 +203,8 @@ func TestTOML_ParseFromEnvAndVars(t *testing.T) {
 	require.NoError(t, err, "Failed to read test config file")
 
 	// Load configuration
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg, "Config should not be nil")
 
@@ -367,8 +367,8 @@ version = "1.0"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.configToml))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.configToml))
 
 			if tt.expectError {
 				require.Error(t, err, "expected error but got none")
@@ -531,8 +531,8 @@ workdir = "/tmp"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")

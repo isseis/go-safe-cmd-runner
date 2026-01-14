@@ -27,7 +27,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read E2E test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load E2E test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -185,7 +185,7 @@ env_vars = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -267,7 +267,7 @@ env_vars = ["REJECT_VAR=value"]
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -337,7 +337,7 @@ verify_files = ["%{group_dir}/group_verify.sh"]
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -381,7 +381,7 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -509,7 +509,7 @@ verify_files = ["%{base_dir}/%{sub_dir}/script.sh"]
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -558,7 +558,7 @@ verify_files = ["%{full_path}/check.sh"]
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
 
-	loader := config.NewLoader()
+	loader := config.NewLoaderForTest()
 	cfg, err := loader.LoadConfig(content)
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
@@ -606,7 +606,7 @@ name = "test_group"
 		content, err := os.ReadFile(configPath)
 		require.NoError(t, err, "Failed to read test configuration file")
 
-		loader := config.NewLoader()
+		loader := config.NewLoaderForTest()
 		_, err = loader.LoadConfig(content)
 		require.Error(t, err, "Should fail when verify_files references undefined variable")
 		assert.Contains(t, err.Error(), "undefined_var", "Error should mention the undefined variable name")
@@ -629,7 +629,7 @@ name = "test_group"
 		content, err := os.ReadFile(configPath)
 		require.NoError(t, err, "Failed to read test configuration file")
 
-		loader := config.NewLoader()
+		loader := config.NewLoaderForTest()
 		_, err = loader.LoadConfig(content)
 		require.Error(t, err, "Should fail when verify_files has empty variable name")
 		assert.Contains(t, err.Error(), "empty variable name", "Error should mention empty variable name")
@@ -655,7 +655,7 @@ name = "test_group"
 		content, err := os.ReadFile(configPath)
 		require.NoError(t, err, "Failed to read test configuration file")
 
-		loader := config.NewLoader()
+		loader := config.NewLoaderForTest()
 		_, err = loader.LoadConfig(content)
 		require.Error(t, err, "Should fail on first invalid verify_files entry")
 		assert.Contains(t, err.Error(), "invalid_var", "Error should mention the first invalid variable")

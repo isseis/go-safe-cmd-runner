@@ -162,6 +162,108 @@ func TestConfig_GetSuspiciousFilePatterns(t *testing.T) {
 	}
 }
 
+func TestGenerateAllowedCommandsFromPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		pathEnv     string
+		expected    []string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:    "standard secure PATH",
+			pathEnv: "/sbin:/usr/sbin:/bin:/usr/bin",
+			expected: []string{
+				"^/sbin/.*",
+				"^/usr/sbin/.*",
+				"^/bin/.*",
+				"^/usr/bin/.*",
+			},
+			expectError: false,
+		},
+		{
+			name:    "single directory",
+			pathEnv: "/usr/bin",
+			expected: []string{
+				"^/usr/bin/.*",
+			},
+			expectError: false,
+		},
+		{
+			name:        "empty PATH - error",
+			pathEnv:     "",
+			expectError: true,
+			errorMsg:    "pathEnv cannot be empty",
+		},
+		{
+			name:        "PATH with empty components - error",
+			pathEnv:     "/bin::/usr/bin",
+			expectError: true,
+			errorMsg:    "path component at index 1 is empty",
+		},
+		{
+			name:        "PATH with trailing colon - error",
+			pathEnv:     "/bin:/usr/bin:",
+			expectError: true,
+			errorMsg:    "path component at index 2 is empty",
+		},
+		{
+			name:        "PATH with leading colon - error",
+			pathEnv:     ":/bin:/usr/bin",
+			expectError: true,
+			errorMsg:    "path component at index 0 is empty",
+		},
+		{
+			name:        "relative path - error",
+			pathEnv:     "bin:/usr/bin",
+			expectError: true,
+			errorMsg:    "is not an absolute path",
+		},
+		{
+			name:        "mixed absolute and relative - error",
+			pathEnv:     "/bin:usr/bin",
+			expectError: true,
+			errorMsg:    "is not an absolute path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := GenerateAllowedCommandsFromPath(tt.pathEnv)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidSecurePathEnv,
+					"error should wrap ErrInvalidSecurePathEnv")
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+				assert.Nil(t, result)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestDefaultConfig_AllowedCommandsConsistency(t *testing.T) {
+	// Test that DefaultConfig uses generated patterns from SecurePathEnv
+	config := DefaultConfig()
+	expected, err := GenerateAllowedCommandsFromPath(SecurePathEnv)
+
+	assert.NoError(t, err, "SecurePathEnv should be valid")
+	assert.Equal(t, expected, config.AllowedCommands,
+		"DefaultConfig().AllowedCommands should match GenerateAllowedCommandsFromPath(SecurePathEnv)")
+}
+
+func TestDefaultConfig_DoesNotPanic(t *testing.T) {
+	// Test that DefaultConfig does not panic with the current SecurePathEnv
+	assert.NotPanics(t, func() {
+		_ = DefaultConfig()
+	}, "DefaultConfig should not panic with valid SecurePathEnv")
+}
+
 func TestConfig_GetSuspiciousFilePatterns_Invariants(t *testing.T) {
 	// Test with a known set of patterns to verify algorithm behavior
 	testConfig := &Config{

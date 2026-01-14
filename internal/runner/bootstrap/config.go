@@ -4,6 +4,7 @@ package bootstrap
 import (
 	"fmt"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -56,8 +57,14 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// Load config from the verified content
 	// All expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args) is now
 	// performed inside config.Loader.LoadConfig()
-	cfgLoader := config.NewLoader()
-	cfg, err := cfgLoader.LoadConfig(content)
+	// LoadConfigWithPath processes includes and merges templates from multiple files
+	// Use verified template manager to ensure included files are also verified against hashes
+	cfgLoader := config.NewLoader(
+		common.NewDefaultFileSystem(),
+		verificationManager,
+	)
+
+	cfg, err := cfgLoader.LoadConfig(configPath, content)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,

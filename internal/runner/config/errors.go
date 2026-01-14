@@ -629,3 +629,78 @@ func (e *ErrInvalidVariableScopeDetail) Error() string {
 		e.Reason,
 	)
 }
+
+// ErrIncludedFileNotFound is returned when an included file does not exist.
+type ErrIncludedFileNotFound struct {
+	// IncludePath is the path as written in the includes array
+	IncludePath string
+
+	// ResolvedPath is the resolved absolute path
+	ResolvedPath string
+
+	// ReferencedFrom is the path of the config file containing the include
+	ReferencedFrom string
+}
+
+func (e *ErrIncludedFileNotFound) Error() string {
+	return fmt.Sprintf(
+		"included file not found\n"+
+			"  Include path: %s (as written)\n"+
+			"  Resolved path: %s\n"+
+			"  Referenced from: %s",
+		e.IncludePath,
+		e.ResolvedPath,
+		e.ReferencedFrom,
+	)
+}
+
+// ErrConfigFileInvalidFormat is returned when a config file contains
+// unknown fields or sections.
+type ErrConfigFileInvalidFormat struct {
+	// ConfigFile is the path to the config file
+	ConfigFile string
+
+	// ParseError is the original error from go-toml
+	// (contains details about the unknown field)
+	ParseError error
+}
+
+func (e *ErrConfigFileInvalidFormat) Error() string {
+	return fmt.Sprintf(
+		"config file contains invalid fields or sections\n"+
+			"  File: %s\n"+
+			"  Config files can only contain 'version', 'includes', 'global', 'command_templates', and 'groups'\n"+
+			"  Detail: %v",
+		e.ConfigFile,
+		e.ParseError,
+	)
+}
+
+func (e *ErrConfigFileInvalidFormat) Unwrap() error {
+	return e.ParseError
+}
+
+// ErrTemplateFileInvalidFormat is returned when a template file contains
+// unknown fields or sections.
+type ErrTemplateFileInvalidFormat struct {
+	// TemplateFile is the path to the template file
+	TemplateFile string
+
+	// ParseError is the original error from go-toml
+	ParseError error
+}
+
+func (e *ErrTemplateFileInvalidFormat) Error() string {
+	return fmt.Sprintf(
+		"template file contains invalid fields or sections\n"+
+			"  File: %s\n"+
+			"  Template files can only contain 'version' and 'command_templates'\n"+
+			"  Detail: %v",
+		e.TemplateFile,
+		e.ParseError,
+	)
+}
+
+func (e *ErrTemplateFileInvalidFormat) Unwrap() error {
+	return e.ParseError
+}

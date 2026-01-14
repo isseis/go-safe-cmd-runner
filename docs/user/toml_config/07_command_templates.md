@@ -139,6 +139,93 @@ timeout = 3600
 risk_level = "medium"
 ```
 
+### 7.2.6 Template File Includes
+
+#### Overview
+
+You can split command template definitions into separate files and load them from the main config via the `includes` array. This is useful for sharing common templates across projects or organizing them by category.
+
+#### Basic Usage
+
+```toml
+version = "1.0"
+includes = ["templates/backup.toml", "templates/docker.toml"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"  # defined in templates/backup.toml
+
+[groups.commands.params]
+path = "/data"
+repo = "/backup/repo"
+```
+
+#### Template File Format
+
+Included files may contain only `version` and `command_templates` sections.
+
+```toml
+version = "1.0"
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+```
+
+Including `global` or `groups` in template files results in an error.
+
+#### Path Resolution
+
+- Relative paths: Resolved from the directory of the main config (e.g., `includes = ["templates/common.toml"]`).
+- Absolute paths: Allowed (e.g., `includes = ["/etc/safe-cmd-runner/templates/system.toml"]`).
+
+**Symlink Behavior:**
+
+When the config file is a symlink, relative paths are resolved from the symlink's location, not the target file's location.
+
+```
+Example:
+/etc/config/real_config.toml        # Real file
+/home/user/config_link.toml         # Symlink → /etc/config/real_config.toml
+
+If /home/user/config_link.toml contains includes = ["templates/common.toml"]:
+→ Resolves to /home/user/templates/common.toml
+  (NOT /etc/config/templates/common.toml)
+```
+
+This behavior is consistent with many tools (e.g., Nginx, Apache) that process config files.
+
+#### Merge Order and Duplicate Detection
+
+Templates are loaded in the order listed in `includes`, then from the main file. Duplicate template names across files cause an error, and the error lists all definition locations.
+
+#### Limitations
+
+1. No multi-level include (a template file cannot include another template file).
+2. No circular references (prevented by the rule above).
+3. Template-only files (no `global`/`groups`).
+
+#### Security and Hash Verification
+
+Included files follow the same path traversal and symlink checks as the main config.
+
+**Important**: The `record` command does not recognize the include feature, so each file must be recorded individually.
+
+```bash
+# Record the main config file
+safe-cmd-runner record -f config.toml -o hashes/
+
+# Each included file must be recorded separately
+safe-cmd-runner record -f templates/common.toml -o hashes/
+safe-cmd-runner record -f templates/backup.toml -o hashes/
+```
+
+At runtime (`runner` command), when you specify the main config file, all files referenced in `includes` are automatically verified.
+
 ## 7.3 Parameter Expansion
 
 By defining parameters in templates and passing values when calling them, flexible command definitions are possible.

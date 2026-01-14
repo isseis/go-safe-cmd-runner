@@ -14,8 +14,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
-
 // Manager provides file verification capabilities
 type Manager struct {
 	hashDir                     string
@@ -31,8 +29,21 @@ type Manager struct {
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
 func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
-	slog.Debug("Starting atomic config file verification and reading",
-		"config_path", configPath,
+	return m.verifyAndReadFile(configPath, "config")
+}
+
+// VerifyAndReadTemplateFile performs atomic verification and reading of a template file
+func (m *Manager) VerifyAndReadTemplateFile(templatePath string) ([]byte, error) {
+	return m.verifyAndReadFile(templatePath, "template")
+}
+
+// verifyAndReadFile is a private helper method that performs atomic verification and reading
+// of files. It handles hash directory validation, file reading, and comprehensive logging
+// for both configuration and template files to prevent TOCTOU attacks.
+func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, error) {
+	slog.Debug("Starting atomic file verification and reading",
+		"file_path", filePath,
+		"file_type", fileType,
 		"hash_directory", m.hashDir)
 
 	// Ensure hash directory is validated
@@ -41,20 +52,22 @@ func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
 	}
 
 	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(configPath, "config")
+	content, err := m.readAndVerifyFileWithFallback(filePath, fileType)
 	if err != nil {
-		slog.Error("Config file verification and reading failed",
-			"config_path", configPath,
+		slog.Error("File verification and reading failed",
+			"file_path", filePath,
+			"file_type", fileType,
 			"error", err)
 		return nil, &Error{
 			Op:   "ReadAndVerifyHash",
-			Path: configPath,
+			Path: filePath,
 			Err:  err,
 		}
 	}
 
-	slog.Info("Config file verification and reading completed successfully",
-		"config_path", configPath,
+	slog.Info("File verification and reading completed successfully",
+		"file_path", filePath,
+		"file_type", fileType,
 		"hash_directory", m.hashDir,
 		"content_size", len(content))
 
@@ -461,7 +474,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.customPathResolver != nil {
 		pathResolver = opts.customPathResolver
 	} else {
-		pathResolver = NewPathResolver(securePathEnv, securityValidator, false)
+		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator, false)
 	}
 
 	manager.security = securityValidator

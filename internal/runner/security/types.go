@@ -5,6 +5,7 @@ package security
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,6 +72,9 @@ var (
 
 	// ErrEmptyCommandPath is returned when a command path is empty
 	ErrEmptyCommandPath = errors.New("command path cannot be empty")
+
+	// ErrInvalidSecurePathEnv is returned when SecurePathEnv or similar PATH strings are invalid
+	ErrInvalidSecurePathEnv = errors.New("invalid secure PATH environment")
 )
 
 // Constants for security configuration
@@ -81,6 +85,12 @@ const (
 	DefaultDirectoryPermissions = 0o755
 	// DefaultMaxPathLength defines the default maximum allowed path length
 	DefaultMaxPathLength = 4096
+
+	// SecurePathEnv defines the secure fixed PATH used for command resolution
+	// This hardcoded PATH prevents PATH manipulation attacks by completely
+	// eliminating environment variable PATH inheritance
+	// Note: /sbin is included for compatibility with system commands that may only exist there
+	SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 )
 
 // Constants for security configuration
@@ -171,15 +181,20 @@ type DangerousCommandPattern struct {
 
 // DefaultConfig returns a default security configuration
 func DefaultConfig() *Config {
+	// Generate AllowedCommands from SecurePathEnv
+	// This should never fail as SecurePathEnv is a compile-time constant
+	allowedCommands, err := GenerateAllowedCommandsFromPath(SecurePathEnv)
+	if err != nil {
+		// This is a programming error in the constant definition
+		panic(fmt.Sprintf("failed to generate AllowedCommands from SecurePathEnv: %v", err))
+	}
+
 	return &Config{
-		AllowedCommands: []string{
-			// System commands. The regex pattern is used to match the full path of the command
-			// after resolving the path using the PATH environment variable.
-			"^/bin/.*",
-			"^/usr/bin/.*",
-			"^/usr/sbin/.*",
-			"^/usr/local/bin/.*",
-		},
+		// AllowedCommands patterns are automatically generated from SecurePathEnv
+		// to ensure consistency between PATH resolution and command validation.
+		// This prevents configuration drift and ensures that only commands
+		// discoverable through the secure PATH can be executed.
+		AllowedCommands:              allowedCommands,
 		RequiredFilePermissions:      DefaultFilePermissions,
 		RequiredDirectoryPermissions: DefaultDirectoryPermissions,
 		SensitiveEnvVars: []string{
@@ -334,4 +349,41 @@ func DefaultLoggingOptions() LoggingOptions {
 		TruncateStdout:        true,                      // Truncate stdout for security
 		MaxStdoutLength:       DefaultStdoutLength,       // Very limited stdout in logs
 	}
+}
+
+// GenerateAllowedCommandsFromPath generates AllowedCommands regex patterns
+// from the SecurePathEnv constant. This ensures consistency between the
+// PATH used for command resolution and the allowlist patterns.
+//
+// Returns an error if:
+// - pathEnv is empty
+// - Any path component is empty
+// - Any path component is not an absolute path
+//
+// These are programming errors that should be caught at initialization time.
+func GenerateAllowedCommandsFromPath(pathEnv string) ([]string, error) {
+	if pathEnv == "" {
+		return nil, fmt.Errorf("%w: pathEnv cannot be empty", ErrInvalidSecurePathEnv)
+	}
+
+	paths := strings.Split(pathEnv, ":")
+	patterns := make([]string, 0, len(paths))
+
+	for i, path := range paths {
+		// Empty path component is a programming error
+		if path == "" {
+			return nil, fmt.Errorf("%w: path component at index %d is empty in pathEnv %q", ErrInvalidSecurePathEnv, i, pathEnv)
+		}
+
+		// Relative path is a security risk and programming error
+		if !filepath.IsAbs(path) {
+			return nil, fmt.Errorf("%w: path component %q at index %d is not an absolute path in pathEnv %q", ErrInvalidSecurePathEnv, path, i, pathEnv)
+		}
+
+		// Generate regex pattern: /path/to/dir -> ^/path/to/dir/.*
+		pattern := "^" + path + "/.*"
+		patterns = append(patterns, pattern)
+	}
+
+	return patterns, nil
 }

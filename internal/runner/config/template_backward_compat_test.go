@@ -43,7 +43,7 @@ func TestBackwardCompatibility(t *testing.T) {
 		"sample/vars_env_separation_e2e.toml",
 	}
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 
 	// Get the project root (go up 3 levels from internal/runner/config)
 	wd, err := os.Getwd()
@@ -59,7 +59,7 @@ func TestBackwardCompatibility(t *testing.T) {
 				return
 			}
 
-			cfg, err := loader.LoadConfig(content)
+			cfg, err := loader.LoadConfigForTest(content)
 			require.NoError(t, err, "failed to load %s", relPath)
 
 			// Verify basic structure
@@ -163,8 +163,8 @@ env_vars = ["GO111MODULE=on", "GOOS=linux"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 			require.NoError(t, err)
 
 			// Find the target group
@@ -263,10 +263,10 @@ args = ["%{msg}"]
 		},
 	}
 
-	loader := NewLoader()
+	loader := NewLoaderForTest()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := loader.LoadConfig([]byte(tt.tomlContent))
+			cfg, err := loader.LoadConfigForTest([]byte(tt.tomlContent))
 			require.NoError(t, err, tt.description)
 			assert.NotNil(t, cfg)
 		})

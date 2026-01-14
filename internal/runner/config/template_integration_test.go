@@ -20,8 +20,8 @@ func TestTemplateIntegrationWithSampleFile(t *testing.T) {
 	content, err := os.ReadFile("../../../sample/command_template_example.toml")
 	require.NoError(t, err, "failed to read sample file")
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest(content)
 	require.NoError(t, err, "failed to load config")
 	require.NotNil(t, cfg)
 
@@ -142,8 +142,8 @@ template = "echo_msg"
 message = "%{greeting} %{name}"
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(toml))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
 	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -188,8 +188,8 @@ template = "list_files"
 path = "/home"
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(toml))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
 	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -293,8 +293,8 @@ message = 123
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 
 			if tt.wantErr {
 				if err != nil {
@@ -359,8 +359,8 @@ template = "safe_cmd"
 msg = "hello"
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(toml))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
 	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -467,8 +467,8 @@ mycmd = "echo"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			require.NoError(t, err)
 
 			runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -531,8 +531,8 @@ template = "echo_msg"
 message = "%{msg}"
 `
 
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig([]byte(toml))
+	loader := NewLoaderForTest()
+	cfg, err := loader.LoadConfigForTest([]byte(toml))
 	require.NoError(t, err)
 
 	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -716,8 +716,8 @@ msg = "hello"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			require.NoError(t, err)
 
 			runtimeGlobal, err := ExpandGlobal(&cfg.Global)
@@ -905,8 +905,8 @@ env_vars = []
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.toml))
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
 			require.NoError(t, err)
 
 			runtimeGlobal, err := ExpandGlobal(&cfg.Global)

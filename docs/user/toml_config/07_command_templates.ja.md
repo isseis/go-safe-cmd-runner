@@ -139,6 +139,93 @@ timeout = 3600
 risk_level = "medium"
 ```
 
+### 7.2.6 テンプレートファイルのインクルード
+
+#### 概要
+
+テンプレート定義を複数ファイルに分割し、メイン設定から `includes` 配列で読み込めます。共通テンプレートの共有やカテゴリ別管理に有用です。
+
+#### 基本的な使い方
+
+```toml
+version = "1.0"
+includes = ["templates/backup.toml", "templates/docker.toml"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "backup_data"
+template = "restic_backup"  # templates/backup.toml で定義
+
+[groups.commands.params]
+path = "/data"
+repo = "/backup/repo"
+```
+
+#### テンプレートファイルのフォーマット
+
+インクルードするファイルには `version` と `command_templates` セクションのみを含めます。
+
+```toml
+version = "1.0"
+
+[command_templates.restic_backup]
+cmd = "restic"
+args = ["backup", "${path}"]
+env_vars = ["RESTIC_REPOSITORY=${repo}"]
+```
+
+`global` や `groups` を含めるとエラーになります。
+
+#### パス解決
+
+- 相対パス: 設定ファイルの位置からの相対指定 (例: `includes = ["templates/common.toml"]`)
+- 絶対パス: `includes = ["/etc/safe-cmd-runner/templates/system.toml"]`
+
+**シンボリックリンクの動作:**
+
+設定ファイルがシンボリックリンクの場合、相対パスはシンボリックリンク自体の位置を基準として解決されます（実体ファイルの位置ではありません）。
+
+```
+例:
+/etc/config/real_config.toml        # 実体ファイル
+/home/user/config_link.toml         # シンボリックリンク → /etc/config/real_config.toml
+
+/home/user/config_link.toml に includes = ["templates/common.toml"] と記載した場合:
+→ /home/user/templates/common.toml として解決される
+  (/etc/config/templates/common.toml ではない)
+```
+
+この動作は多くのツール（例: Nginx, Apache）の設定ファイル処理と一貫しています。
+
+#### マージと重複検出
+
+読み込み順は `includes` で指定した順 → メインファイルの `command_templates`。同名テンプレートが複数ファイルにある場合は重複エラーとなり、定義場所がエラーメッセージに列挙されます。
+
+#### 制限事項
+
+1. 多段階インクルード不可（テンプレートファイルからさらに include はできない）
+2. 循環参照なし（上記制限により発生しない）
+3. テンプレート以外のセクションを含めない
+
+#### セキュリティとハッシュ検証
+
+インクルードファイルもメイン設定と同様にパストラバーサル検証・シンボリックリンク検証・ハッシュ記録の対象です。
+
+**重要**: `record` コマンドは include 機能を認識しないため、各ファイルを個別に記録する必要があります。
+
+```bash
+# メイン設定ファイルを記録
+safe-cmd-runner record -f config.toml -o hashes/
+
+# インクルードファイルも個別に記録が必要
+safe-cmd-runner record -f templates/common.toml -o hashes/
+safe-cmd-runner record -f templates/backup.toml -o hashes/
+```
+
+実行時（`runner` コマンド）は、メイン設定ファイルを指定すると、`includes` で参照されているすべてのファイルが自動的に検証されます。
+
 ## 7.3 パラメータ展開
 
 テンプレートにパラメータを定義し、呼び出し時に値を渡すことで、柔軟なコマンド定義が可能です。
