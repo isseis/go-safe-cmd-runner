@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultTemplateFileLoader_LoadTemplateFile(t *testing.T) {
+func TestLoadTemplateFile(t *testing.T) {
 	tests := []struct {
 		name          string
 		fileContent   string
@@ -139,8 +139,7 @@ cmd = "restic"
 			err := os.WriteFile(tmpFile, []byte(tt.fileContent), 0o644)
 			require.NoError(t, err)
 
-			loader := NewDefaultTemplateFileLoader()
-			gotTemplates, err := loader.LoadTemplateFile(tmpFile)
+			gotTemplates, err := LoadTemplateFile(tmpFile)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -164,22 +163,19 @@ cmd = "restic"
 	}
 }
 
-func TestDefaultTemplateFileLoader_FileNotFound(t *testing.T) {
-	loader := NewDefaultTemplateFileLoader()
-
-	_, err := loader.LoadTemplateFile("/nonexistent/path/template.toml")
+func TestLoadTemplateFile_FileNotFound(t *testing.T) {
+	_, err := LoadTemplateFile("/nonexistent/path/template.toml")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read template file")
 }
 
-func TestDefaultTemplateFileLoader_MalformedTOML(t *testing.T) {
+func TestLoadTemplateFile_MalformedTOML(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "malformed.toml")
 	err := os.WriteFile(tmpFile, []byte("invalid toml content [[["), 0o644)
 	require.NoError(t, err)
 
-	loader := NewDefaultTemplateFileLoader()
-	_, err = loader.LoadTemplateFile(tmpFile)
+	_, err = LoadTemplateFile(tmpFile)
 
 	require.Error(t, err)
 	var errInvalidFormat *ErrTemplateFileInvalidFormat

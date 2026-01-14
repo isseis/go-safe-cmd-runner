@@ -49,7 +49,7 @@ args = ["test"]
 	loader := NewVerifiedTemplateFileLoader(vm)
 
 	// AC-2: Load template file - should verify hash
-	templates, err := loader.LoadTemplateFile(templateFile)
+	templates, err := loader(templateFile)
 	require.NoError(t, err)
 	assert.Contains(t, templates, "test_template")
 }
@@ -101,11 +101,11 @@ args = ["two"]
 	loader := NewVerifiedTemplateFileLoader(vm)
 
 	// AC-2: Load both template files - should verify hashes for all
-	templates1, err := loader.LoadTemplateFile(template1)
+	templates1, err := loader(template1)
 	require.NoError(t, err)
 	assert.Contains(t, templates1, "template1")
 
-	templates2, err := loader.LoadTemplateFile(template2)
+	templates2, err := loader(template2)
 	require.NoError(t, err)
 	assert.Contains(t, templates2, "template2")
 }
@@ -140,7 +140,7 @@ args = ["test"]
 	loader := NewVerifiedTemplateFileLoader(vm)
 
 	// AC-4: Load template file - should fail with hash not found error
-	_, err = loader.LoadTemplateFile(templateFile)
+	_, err = loader(templateFile)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "hash file not found")
 }
@@ -191,7 +191,7 @@ args = ["-rf", "/"]
 	loader := NewVerifiedTemplateFileLoader(vm)
 
 	// AC-5: Load template file - should fail with hash mismatch error
-	_, err = loader.LoadTemplateFile(templateFile)
+	_, err = loader(templateFile)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match the recorded hash")
 }
@@ -234,7 +234,7 @@ args = ["test"]
 	// SEC-1: Load template file
 	// The VerifyAndReadTemplateFile method should read the file only once
 	// and verify the hash atomically
-	templates, err := loader.LoadTemplateFile(templateFile)
+	templates, err := loader(templateFile)
 	require.NoError(t, err)
 	assert.Contains(t, templates, "test_template")
 

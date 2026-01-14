@@ -17,7 +17,7 @@ import (
 // Loader handles loading and validating configurations
 type Loader struct {
 	fs             common.FileSystem
-	templateLoader TemplateFileLoader
+	templateLoader TemplateFileLoaderFunc
 }
 
 // Error definitions for the config package
@@ -28,7 +28,7 @@ var (
 
 // NewLoader creates a new config loader with specified dependencies.
 // This is the standard constructor used in production code.
-func NewLoader(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
+func NewLoader(fs common.FileSystem, templateLoader TemplateFileLoaderFunc) *Loader {
 	return &Loader{
 		fs:             fs,
 		templateLoader: templateLoader,
@@ -38,12 +38,12 @@ func NewLoader(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader 
 // NewLoaderForTest creates a new config loader with default dependencies for testing.
 // This convenience constructor should only be used in test code.
 func NewLoaderForTest() *Loader {
-	return NewLoader(common.NewDefaultFileSystem(), NewDefaultTemplateFileLoader())
+	return NewLoader(common.NewDefaultFileSystem(), LoadTemplateFile)
 }
 
 // NewLoaderWithFS is deprecated. Use NewLoader instead.
 // This alias is kept for backward compatibility and will be removed in a future version.
-func NewLoaderWithFS(fs common.FileSystem, templateLoader TemplateFileLoader) *Loader {
+func NewLoaderWithFS(fs common.FileSystem, templateLoader TemplateFileLoaderFunc) *Loader {
 	return &Loader{
 		fs:             fs,
 		templateLoader: templateLoader,
@@ -131,7 +131,7 @@ func (l *Loader) processIncludes(baseConfigPath string, includes []string) ([]Te
 		}
 
 		// Load template file
-		templates, err := loader.LoadTemplateFile(resolvedPath)
+		templates, err := loader(resolvedPath)
 		if err != nil {
 			return nil, err
 		}

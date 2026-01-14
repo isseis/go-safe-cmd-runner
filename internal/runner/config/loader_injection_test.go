@@ -47,7 +47,7 @@ includes = ["mock_template.toml"]
 	}
 
 	mockLoader := &MockTemplateLoader{}
-	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockLoader)
+	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockLoader.LoadTemplateFile)
 
 	// We expect LoadConfig to call our mock loader instead of reading the file
 	cfg, err := loader.LoadConfig(configPath, content)

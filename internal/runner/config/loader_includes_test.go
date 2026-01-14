@@ -449,7 +449,7 @@ args = ["backup", "${path}"]
 	mockVerifiedLoader := &MockTemplateLoader{}
 
 	// Create loader with mock verified loader
-	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockVerifiedLoader)
+	loader := NewLoaderWithFS(common.NewDefaultFileSystem(), mockVerifiedLoader.LoadTemplateFile)
 
 	// Load config - should use the mock loader for templates
 	cfg, err := loader.LoadConfig(configPath, configContent)
