@@ -20,11 +20,11 @@ type TemplateFileSpec struct {
 
 // ParseTemplateContent parses the content of a template file.
 func ParseTemplateContent(content []byte, path string) (map[string]runnertypes.CommandTemplate, error) {
-	// Step 2: Create decoder with DisallowUnknownFields
+	// Create TOML decoder with strict validation (unknown fields are rejected)
 	decoder := toml.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 
-	// Step 3: Parse into TemplateFileSpec
+	// Parse the template file into TemplateFileSpec
 	var spec TemplateFileSpec
 	if err := decoder.Decode(&spec); err != nil {
 		// Check if error is due to unknown field
@@ -34,7 +34,7 @@ func ParseTemplateContent(content []byte, path string) (map[string]runnertypes.C
 		}
 	}
 
-	// Step 4: Return command_templates
+	// Return command_templates (empty map if not defined)
 	// Note: spec.CommandTemplates may be nil if not defined
 	if spec.CommandTemplates == nil {
 		return make(map[string]runnertypes.CommandTemplate), nil
