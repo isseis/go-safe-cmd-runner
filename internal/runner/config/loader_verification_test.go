@@ -562,5 +562,6 @@ includes = ["new_templates.toml"]
 
 	// Loading should fail because new template lacks hash
 	_, err = loader.LoadConfig(newConfigPath, newConfigContent)
-	assert.Error(t, err, "should fail when template file lacks hash verification")
+	require.Error(t, err, "should fail when template file lacks hash verification")
+	assert.Contains(t, err.Error(), "verification error")
 }
