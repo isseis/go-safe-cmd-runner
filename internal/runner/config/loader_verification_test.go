@@ -120,7 +120,7 @@ args = ["hello"]
 		content, err := verificationMgr.VerifyAndReadConfigFile(configPath)
 
 		// Should fail because hash is not recorded
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, content)
 		assert.Contains(t, err.Error(), "verification error")
 	})
@@ -186,7 +186,7 @@ args = ["hello"]
 		_, err = loader.LoadConfig(configPath, configContent)
 
 		// Should fail because template file hash is not recorded
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "verification error")
 	})
 
@@ -263,7 +263,7 @@ includes = ["backup.toml", "restore.toml"]
 
 		// Loading should fail because second template file hash is not recorded
 		_, err = loader.LoadConfig(configPath, configContent)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "verification error")
 	})
 
@@ -325,7 +325,7 @@ includes = ["templates.toml"]
 
 	// Loading should fail because hash verification fails
 	_, err = loader.LoadConfig(configPath, configContent)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "verification error")
 }
 
@@ -366,7 +366,7 @@ includes = ["templates.toml"]
 
 	// Loading should fail because hash is not recorded
 	_, err = loader.LoadConfig(configPath, configContent)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "verification error")
 }
 
@@ -417,7 +417,7 @@ includes = ["templates.toml"]
 
 	// Loading should fail because file was tampered with
 	_, err = loader.LoadConfig(configPath, configContent)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "verification error")
 }
 
