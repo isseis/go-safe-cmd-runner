@@ -16,26 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to create a hash manifest file for testing
-func createHashManifest(t *testing.T, hashDir, filePath string, content []byte) string {
+// writeHashManifestFile writes a hash manifest to the appropriate location.
+// This is the common helper used by createHashManifest and createWrongHashManifestForLoader.
+func writeHashManifestFile(t *testing.T, hashDir, filePath string, manifest filevalidator.HashManifest) string {
 	t.Helper()
-
-	// Calculate SHA256 hash of the content
-	hasher := &filevalidator.SHA256{}
-	hash, err := hasher.Sum(bytes.NewReader(content))
-	require.NoError(t, err)
-
-	manifest := filevalidator.HashManifest{
-		Version: "1.0",
-		Format:  "file-hash",
-		File: filevalidator.FileInfo{
-			Path: filePath,
-			Hash: filevalidator.HashInfo{
-				Algorithm: "sha256",
-				Value:     hash,
-			},
-		},
-	}
 
 	jsonData, err := json.MarshalIndent(manifest, "", "  ")
 	require.NoError(t, err)
@@ -58,8 +42,32 @@ func createHashManifest(t *testing.T, hashDir, filePath string, content []byte) 
 	return hashFile
 }
 
+// Helper function to create a hash manifest file for testing
+func createHashManifest(t *testing.T, hashDir, filePath string, content []byte) {
+	t.Helper()
+
+	// Calculate SHA256 hash of the content
+	hasher := &filevalidator.SHA256{}
+	hash, err := hasher.Sum(bytes.NewReader(content))
+	require.NoError(t, err)
+
+	manifest := filevalidator.HashManifest{
+		Version: "1.0",
+		Format:  "file-hash",
+		File: filevalidator.FileInfo{
+			Path: filePath,
+			Hash: filevalidator.HashInfo{
+				Algorithm: "sha256",
+				Value:     hash,
+			},
+		},
+	}
+
+	writeHashManifestFile(t, hashDir, filePath, manifest)
+}
+
 // Helper function to create a wrong hash manifest file for testing
-func createWrongHashManifestForLoader(t *testing.T, hashDir, filePath, wrongHash string) string {
+func createWrongHashManifestForLoader(t *testing.T, hashDir, filePath, wrongHash string) {
 	t.Helper()
 
 	manifest := filevalidator.HashManifest{
@@ -74,25 +82,7 @@ func createWrongHashManifestForLoader(t *testing.T, hashDir, filePath, wrongHash
 		},
 	}
 
-	jsonData, err := json.MarshalIndent(manifest, "", "  ")
-	require.NoError(t, err)
-	jsonData = append(jsonData, '\n')
-
-	// Use HybridHashFilePathGetter to get the correct hash file path
-	getter := filevalidator.NewHybridHashFilePathGetter()
-	resolvedPath, err := common.NewResolvedPath(filePath)
-	require.NoError(t, err)
-	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
-	require.NoError(t, err)
-
-	// Ensure parent directory exists
-	err = os.MkdirAll(filepath.Dir(hashFile), 0o755)
-	require.NoError(t, err)
-
-	err = os.WriteFile(hashFile, jsonData, 0o644)
-	require.NoError(t, err)
-
-	return hashFile
+	writeHashManifestFile(t, hashDir, filePath, manifest)
 }
 
 // =============================================================================
