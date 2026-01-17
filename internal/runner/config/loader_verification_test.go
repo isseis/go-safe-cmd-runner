@@ -85,6 +85,24 @@ func createManifestWithCustomHash(t *testing.T, hashDir, filePath, customHash st
 	writeHashManifestFile(t, hashDir, filePath, manifest)
 }
 
+// writeFile writes content to a file in the specified directory and returns the full path.
+func writeFile(t *testing.T, dir, name string, content []byte) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	err := os.WriteFile(path, content, 0o644)
+	require.NoError(t, err)
+	return path
+}
+
+// createTestVerificationLoader creates a verification manager and loader for testing.
+func createTestVerificationLoader(t *testing.T, hashDir string) (*verification.Manager, *Loader) {
+	t.Helper()
+	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
+	require.NoError(t, err)
+	loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
+	return verificationMgr, loader
+}
+
 // =============================================================================
 // Hash Verification Tests for Include Feature (F-006)
 // =============================================================================
@@ -97,23 +115,15 @@ func TestLoadConfig_MainConfigHashVerification(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 
 [command_templates.test]
 cmd = "echo"
 args = ["hello"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
 
-	// Create verification manager with hash verification enabled
-	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
-
-	// Create loader with verification manager
-	loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
+	verificationMgr, loader := createTestVerificationLoader(t, hashDir)
 
 	t.Run("verification fails when hash not recorded", func(t *testing.T) {
 		// Read config content (simulating what runner does)
@@ -150,19 +160,14 @@ func TestLoadConfig_SingleIncludeFileHashVerification(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create template file
-	templatePath := filepath.Join(tmpDir, "templates.toml")
 	templateContent := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 args = ["backup", "${path}"]
 `)
-	err = os.WriteFile(templatePath, templateContent, 0o644)
-	require.NoError(t, err)
+	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]
 
@@ -170,17 +175,11 @@ includes = ["templates.toml"]
 cmd = "echo"
 args = ["hello"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
+
+	_, loader := createTestVerificationLoader(t, hashDir)
 
 	t.Run("single include file hash verification fails when not recorded", func(t *testing.T) {
-		// Create verification manager
-		verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Create loader with verification manager
-		loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
-
 		// Loading should fail because template file hash is not recorded
 		// (even if we provide content directly, the includes processing will verify)
 		_, err = loader.LoadConfig(configPath, configContent)
@@ -193,13 +192,6 @@ args = ["hello"]
 	t.Run("single include file hash verification succeeds when recorded", func(t *testing.T) {
 		// Create hash manifest for the template file
 		createHashManifest(t, hashDir, templatePath, templateContent)
-
-		// Create verification manager
-		verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Create loader with verification manager
-		loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
 
 		// Now loading should succeed
 		cfg, err := loader.LoadConfig(configPath, configContent)
@@ -219,47 +211,33 @@ func TestLoadConfig_MultipleIncludeFilesHashVerification(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create first template file
-	template1Path := filepath.Join(tmpDir, "backup.toml")
 	template1Content := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 args = ["backup"]
 `)
-	err = os.WriteFile(template1Path, template1Content, 0o644)
-	require.NoError(t, err)
+	template1Path := writeFile(t, tmpDir, "backup.toml", template1Content)
 
-	// Create second template file
-	template2Path := filepath.Join(tmpDir, "restore.toml")
 	template2Content := []byte(`version = "1.0"
 
 [command_templates.restore]
 cmd = "restic"
 args = ["restore"]
 `)
-	err = os.WriteFile(template2Path, template2Content, 0o644)
-	require.NoError(t, err)
+	template2Path := writeFile(t, tmpDir, "restore.toml", template2Content)
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 includes = ["backup.toml", "restore.toml"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
+
+	_, loader := createTestVerificationLoader(t, hashDir)
 
 	t.Run("fails when one of multiple include files lacks hash", func(t *testing.T) {
 		// Create hash manifest only for the first template file
 		createHashManifest(t, hashDir, template1Path, template1Content)
 		// NOTE: second template file has no hash
-
-		// Create verification manager
-		verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Create loader with verification manager
-		loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
 
 		// Loading should fail because second template file hash is not recorded
 		_, err = loader.LoadConfig(configPath, configContent)
@@ -270,13 +248,6 @@ includes = ["backup.toml", "restore.toml"]
 	t.Run("succeeds when all include files have hashes", func(t *testing.T) {
 		// Create hash manifest for the second template file as well
 		createHashManifest(t, hashDir, template2Path, template2Content)
-
-		// Create verification manager
-		verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Create loader with verification manager
-		loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
 
 		// Now loading should succeed
 		cfg, err := loader.LoadConfig(configPath, configContent)
@@ -294,34 +265,23 @@ func TestLoadConfig_HashMismatchReturnsError(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create template file
-	templatePath := filepath.Join(tmpDir, "templates.toml")
 	templateContent := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 `)
-	err = os.WriteFile(templatePath, templateContent, 0o644)
-	require.NoError(t, err)
+	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
 	// Create hash manifest with WRONG hash
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
 	createManifestWithCustomHash(t, hashDir, templatePath, wrongHash)
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
 
-	// Create verification manager
-	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
-
-	// Create loader with verification manager
-	loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
+	_, loader := createTestVerificationLoader(t, hashDir)
 
 	// Loading should fail because hash verification fails
 	_, err = loader.LoadConfig(configPath, configContent)
@@ -337,32 +297,21 @@ func TestLoadConfig_MissingHashReturnsError(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create template file
-	templatePath := filepath.Join(tmpDir, "templates.toml")
 	templateContent := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 `)
-	err = os.WriteFile(templatePath, templateContent, 0o644)
-	require.NoError(t, err)
+	writeFile(t, tmpDir, "templates.toml", templateContent)
 
 	// NOTE: NO hash manifest created for the template file
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
 
-	// Create verification manager
-	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
-
-	// Create loader with verification manager
-	loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
+	_, loader := createTestVerificationLoader(t, hashDir)
 
 	// Loading should fail because hash is not recorded
 	_, err = loader.LoadConfig(configPath, configContent)
@@ -378,15 +327,12 @@ func TestLoadConfig_TamperedFileDetection(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create template file
-	templatePath := filepath.Join(tmpDir, "templates.toml")
 	originalContent := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 `)
-	err = os.WriteFile(templatePath, originalContent, 0o644)
-	require.NoError(t, err)
+	templatePath := writeFile(t, tmpDir, "templates.toml", originalContent)
 
 	// Create hash manifest for the ORIGINAL content
 	createHashManifest(t, hashDir, templatePath, originalContent)
@@ -400,20 +346,12 @@ cmd = "malicious_command"
 	err = os.WriteFile(templatePath, tamperedContent, 0o644)
 	require.NoError(t, err)
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
 
-	// Create verification manager
-	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
-
-	// Create loader with verification manager
-	loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
+	_, loader := createTestVerificationLoader(t, hashDir)
 
 	// Loading should fail because file was tampered with
 	_, err = loader.LoadConfig(configPath, configContent)
@@ -433,22 +371,17 @@ func TestVerifyAndReadTemplateFile_AtomicOperation(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create template file
-	templatePath := filepath.Join(tmpDir, "templates.toml")
 	templateContent := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 `)
-	err = os.WriteFile(templatePath, templateContent, 0o644)
-	require.NoError(t, err)
+	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
 	// Create hash manifest
 	createHashManifest(t, hashDir, templatePath, templateContent)
 
-	// Create verification manager
-	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
+	verificationMgr, _ := createTestVerificationLoader(t, hashDir)
 
 	// The VerifyAndReadTemplateFile method should perform verification and reading
 	// in a single operation (atomic) to prevent TOCTOU attacks.
@@ -507,33 +440,22 @@ func TestLoadConfig_ProductionPathUsesVerification(t *testing.T) {
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
 
-	// Create template file
-	templatePath := filepath.Join(tmpDir, "templates.toml")
 	templateContent := []byte(`version = "1.0"
 
 [command_templates.backup]
 cmd = "restic"
 `)
-	err = os.WriteFile(templatePath, templateContent, 0o644)
-	require.NoError(t, err)
+	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
 	// Create hash manifest
 	createHashManifest(t, hashDir, templatePath, templateContent)
 
-	// Create main config file
-	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]
 `)
-	err = os.WriteFile(configPath, configContent, 0o644)
-	require.NoError(t, err)
+	configPath := writeFile(t, tmpDir, "config.toml", configContent)
 
-	// Create verification manager
-	verificationMgr, err := verification.NewManagerForTest(hashDir, verification.WithSkipHashDirectoryValidation())
-	require.NoError(t, err)
-
-	// Create loader with verification manager (production pattern)
-	loader := NewLoader(common.NewDefaultFileSystem(), verificationMgr)
+	_, loader := createTestVerificationLoader(t, hashDir)
 
 	// Loading should succeed and use verified template loading
 	cfg, err := loader.LoadConfig(configPath, configContent)
@@ -543,22 +465,18 @@ includes = ["templates.toml"]
 
 	// Now test that without hash, it fails (proving verification is being used)
 	// Create a new template file without hash
-	newTemplatePath := filepath.Join(tmpDir, "new_templates.toml")
 	newTemplateContent := []byte(`version = "1.0"
 
 [command_templates.new_backup]
 cmd = "restic"
 `)
-	err = os.WriteFile(newTemplatePath, newTemplateContent, 0o644)
-	require.NoError(t, err)
+	writeFile(t, tmpDir, "new_templates.toml", newTemplateContent)
 
 	// Create config that includes the new template (without hash)
-	newConfigPath := filepath.Join(tmpDir, "new_config.toml")
 	newConfigContent := []byte(`version = "1.0"
 includes = ["new_templates.toml"]
 `)
-	err = os.WriteFile(newConfigPath, newConfigContent, 0o644)
-	require.NoError(t, err)
+	newConfigPath := writeFile(t, tmpDir, "new_config.toml", newConfigContent)
 
 	// Loading should fail because new template lacks hash
 	_, err = loader.LoadConfig(newConfigPath, newConfigContent)
