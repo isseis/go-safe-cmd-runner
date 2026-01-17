@@ -882,43 +882,53 @@ test/e2e/include_feature/
 #### F-006の受け入れ基準検証
 
 **AC-1: メイン設定ファイルのハッシュ検証**
-- [ ] テスト: メイン設定ファイルのハッシュが検証されることを確認
-- [ ] 実装箇所: `bootstrap/config.go:46` の `VerifyAndReadConfigFile`
-- [ ] 検証方法: 既存の検証機構が動作していることを確認
+- [x] テスト: メイン設定ファイルのハッシュが検証されることを確認
+  - テストファイル: `internal/runner/config/loader_verification_test.go`
+  - テスト関数: `TestLoadConfig_MainConfigHashVerification`
+- 実装箇所: `verification/manager.go` の `VerifyAndReadConfigFile`
+- 検証方法: 既存の検証機構が動作していることを確認
 
 **AC-2: includeされた全てのテンプレートファイルのハッシュ検証**
-- [ ] テスト: 単一includeファイルのハッシュ検証
-- [ ] テスト: 複数includeファイルのハッシュ検証
-- [ ] 実装箇所: `config/verified_template_loader.go:27` の `VerifyAndReadTemplateFile`
-- [ ] 検証方法: `VerifiedTemplateFileLoader` が全includeファイルに対して呼ばれることを確認
+- [x] テスト: 単一includeファイルのハッシュ検証
+  - テスト関数: `TestLoadConfig_SingleIncludeFileHashVerification`
+- [x] テスト: 複数includeファイルのハッシュ検証
+  - テスト関数: `TestLoadConfig_MultipleIncludeFilesHashVerification`
+- 実装箇所: `verification/manager.go` の `VerifyAndReadTemplateFile`
+- 検証方法: `VerifyAndReadTemplateFile` が全includeファイルに対して呼ばれることを確認
 
 **AC-3: ハッシュ検証失敗時のエラー処理**
-- [ ] テスト: いずれかのファイルのハッシュ検証が失敗した場合、実行前にエラーが返されることを確認
-- [ ] 実装箇所: `verification.Manager` のエラーハンドリング
-- [ ] 検証方法: 改ざんされたファイルで実行し、エラーが返されることを確認
+- [x] テスト: いずれかのファイルのハッシュ検証が失敗した場合、実行前にエラーが返されることを確認
+  - テスト関数: `TestLoadConfig_HashMismatchReturnsError`
+- 実装箇所: `verification.Manager` のエラーハンドリング
+- 検証方法: 改ざんされたファイルで実行し、エラーが返されることを確認
 
 **AC-4: ハッシュ未記録時のエラー処理**
-- [ ] テスト: テンプレートファイルのハッシュが記録されていない場合、実行前にエラーが返されることを確認
-- [ ] 実装箇所: `verification.Manager` のエラーハンドリング
-- [ ] 検証方法: ハッシュファイルが存在しない状態で実行し、エラーが返されることを確認
+- [x] テスト: テンプレートファイルのハッシュが記録されていない場合、実行前にエラーが返されることを確認
+  - テスト関数: `TestLoadConfig_MissingHashReturnsError`
+- 実装箇所: `verification.Manager` のエラーハンドリング
+- 検証方法: ハッシュファイルが存在しない状態で実行し、エラーが返されることを確認
 
 **AC-5: 改ざん検知**
-- [ ] テスト: テンプレートファイルが改ざんされた場合、実行前にエラーが返されることを確認
-- [ ] 実装箇所: `verification.Manager` のハッシュ比較
-- [ ] 検証方法: 記録後にファイル内容を変更し、エラーが返されることを確認
+- [x] テスト: テンプレートファイルが改ざんされた場合、実行前にエラーが返されることを確認
+  - テスト関数: `TestLoadConfig_TamperedFileDetection`
+- 実装箇所: `verification.Manager` のハッシュ比較
+- 検証方法: 記録後にファイル内容を変更し、エラーが返されることを確認
 
 #### セキュリティ要件の検証
 
 **SEC-1: TOCTOU対策**
-- [ ] テスト: ファイル検証と読み込みが原子的に行われることを確認
-- [ ] 実装箇所: `verification.Manager.VerifyAndReadTemplateFile`
-- [ ] 検証方法: 1回のファイル読み込みでハッシュ検証とコンテンツ取得が完了することを確認
+- [x] テスト: ファイル検証と読み込みが原子的に行われることを確認
+  - テスト関数: `TestVerifyAndReadTemplateFile_AtomicOperation`
+- 実装箇所: `verification.Manager.VerifyAndReadTemplateFile`
+- 検証方法: 1回のファイル読み込みでハッシュ検証とコンテンツ取得が完了することを確認
 
 **SEC-2: 検証なしでの直接読み込みの防止**
-- [ ] テスト: `VerifiedTemplateFileLoader` が設定されていない場合のエラー検証
-- [ ] テスト: `DefaultTemplateFileLoader` が本番環境で使用されないことの確認
-- [ ] 実装箇所: `bootstrap/config.go:62` の `SetTemplateLoader`
-- [ ] 検証方法: 本番コードパスで必ず `VerifiedTemplateFileLoader` が使用されることを確認
+- [x] テスト: `NewLoader` が nil の verificationManager を拒否することの確認
+  - テスト関数: `TestNewLoader_RequiresVerificationManager`
+- [x] テスト: 本番環境で検証付きの読み込みが使用されることの確認
+  - テスト関数: `TestLoadConfig_ProductionPathUsesVerification`
+- 実装箇所: `config/loader.go` の `NewLoader`
+- 検証方法: 本番コードパスで必ず `VerifyAndReadTemplateFile` が使用されることを確認
 
 ## 10. パフォーマンス考慮事項
 
