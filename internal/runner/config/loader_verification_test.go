@@ -17,7 +17,7 @@ import (
 )
 
 // writeHashManifestFile writes a hash manifest to the appropriate location.
-// This is the common helper used by createHashManifest and createWrongHashManifestForLoader.
+// This is the common helper used by createHashManifest and createManifestWithCustomHash.
 func writeHashManifestFile(t *testing.T, hashDir, filePath string, manifest filevalidator.HashManifest) string {
 	t.Helper()
 
@@ -66,8 +66,8 @@ func createHashManifest(t *testing.T, hashDir, filePath string, content []byte) 
 	writeHashManifestFile(t, hashDir, filePath, manifest)
 }
 
-// Helper function to create a wrong hash manifest file for testing
-func createWrongHashManifestForLoader(t *testing.T, hashDir, filePath, wrongHash string) {
+// Helper function to create a hash manifest file with a custom hash value for testing
+func createManifestWithCustomHash(t *testing.T, hashDir, filePath, customHash string) {
 	t.Helper()
 
 	manifest := filevalidator.HashManifest{
@@ -77,7 +77,7 @@ func createWrongHashManifestForLoader(t *testing.T, hashDir, filePath, wrongHash
 			Path: filePath,
 			Hash: filevalidator.HashInfo{
 				Algorithm: "sha256",
-				Value:     wrongHash,
+				Value:     customHash,
 			},
 		},
 	}
@@ -306,7 +306,7 @@ cmd = "restic"
 
 	// Create hash manifest with WRONG hash
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	createWrongHashManifestForLoader(t, hashDir, templatePath, wrongHash)
+	createManifestWithCustomHash(t, hashDir, templatePath, wrongHash)
 
 	// Create main config file
 	configPath := filepath.Join(tmpDir, "config.toml")
