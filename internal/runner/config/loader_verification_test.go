@@ -179,7 +179,7 @@ args = ["hello"]
 
 	_, loader := createTestVerificationLoader(t, hashDir)
 
-	t.Run("single include file hash verification fails when not recorded", func(t *testing.T) {
+	t.Run("verification fails when hash not recorded", func(t *testing.T) {
 		// Loading should fail because template file hash is not recorded
 		// (even if we provide content directly, the includes processing will verify)
 		_, err = loader.LoadConfig(configPath, configContent)
@@ -189,7 +189,7 @@ args = ["hello"]
 		assert.Contains(t, err.Error(), "verification error")
 	})
 
-	t.Run("single include file hash verification succeeds when recorded", func(t *testing.T) {
+	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
 		// Create hash manifest for the template file
 		createHashManifest(t, hashDir, templatePath, templateContent)
 
@@ -234,7 +234,7 @@ includes = ["backup.toml", "restore.toml"]
 
 	_, loader := createTestVerificationLoader(t, hashDir)
 
-	t.Run("fails when one of multiple include files lacks hash", func(t *testing.T) {
+	t.Run("verification fails when one of multiple include files lacks hash", func(t *testing.T) {
 		// Create hash manifest only for the first template file
 		createHashManifest(t, hashDir, template1Path, template1Content)
 		// NOTE: second template file has no hash
@@ -245,7 +245,7 @@ includes = ["backup.toml", "restore.toml"]
 		assert.Contains(t, err.Error(), "verification error")
 	})
 
-	t.Run("succeeds when all include files have hashes", func(t *testing.T) {
+	t.Run("verification succeeds when all include files have hashes", func(t *testing.T) {
 		// Create hash manifest for the second template file as well
 		createHashManifest(t, hashDir, template2Path, template2Content)
 
