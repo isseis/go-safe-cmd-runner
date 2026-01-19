@@ -69,7 +69,7 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 	f1 := summary.Failures[0]
 	assert.Equal(t, "/path/to/file1.toml", f1.Path)
 	assert.Equal(t, ReasonHashFileNotFound, f1.Reason)
-	assert.Equal(t, "warn", f1.Level)
+	assert.Equal(t, "error", f1.Level) // ERROR because it would fail in production
 	assert.Equal(t, "config", f1.Context)
 
 	// Second failure
@@ -217,7 +217,7 @@ func TestDetermineLogLevel(t *testing.T) {
 		expected string
 	}{
 		{ReasonHashDirNotFound, "info"},
-		{ReasonHashFileNotFound, "warn"},
+		{ReasonHashFileNotFound, "error"},
 		{ReasonHashMismatch, "error"},
 		{ReasonFileReadError, "error"},
 		{ReasonPermissionDenied, "error"},
@@ -291,9 +291,9 @@ func TestResultCollector_MixedResults(t *testing.T) {
 	// Check failures details
 	require.Equal(t, 2, len(summary.Failures), "expected 2 failures")
 
-	// Verify first failure (WARN level)
-	assert.Equal(t, "warn", summary.Failures[0].Level)
+	// Verify first failure (ERROR level - hash file not found would fail in production)
+	assert.Equal(t, "error", summary.Failures[0].Level)
 
-	// Verify second failure (ERROR level)
+	// Verify second failure (ERROR level - hash mismatch)
 	assert.Equal(t, "error", summary.Failures[1].Level)
 }
