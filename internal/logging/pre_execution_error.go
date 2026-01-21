@@ -35,6 +35,8 @@ const (
 	ErrorTypeBuildConfig ErrorType = "build_config_error"
 	// ErrorTypeSystemError represents system errors
 	ErrorTypeSystemError ErrorType = "system_error"
+	// ErrorTypeGroupFileVerification represents group file verification failures
+	ErrorTypeGroupFileVerification ErrorType = "group_file_verification_failed"
 )
 
 // PreExecutionError represents an error that occurs before command execution

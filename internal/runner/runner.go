@@ -12,6 +12,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -379,16 +380,18 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 				return err
 			}
 
-			// Check if this is a verification error - if so, log warning and continue
+			// Check if this is a verification error - if so, notify via Slack and continue
 			var verErr *verification.VerificationError
 			if errors.As(err, &verErr) {
-				slog.Warn("Group file verification failed, skipping group",
-					"group", verErr.Group,
-					"total_files", verErr.TotalFiles,
-					"verified_files", verErr.VerifiedFiles,
-					"failed_files", verErr.FailedFiles,
-					"skipped_files", verErr.SkippedFiles,
-					"error", verErr.Err.Error())
+				errorMsg := fmt.Sprintf("Group: %s, Total: %d, Verified: %d, Failed: %d, Skipped: %d, Error: %s",
+					verErr.Group, verErr.TotalFiles, verErr.VerifiedFiles,
+					verErr.FailedFiles, verErr.SkippedFiles, verErr.Err.Error())
+				logging.HandlePreExecutionError(
+					logging.ErrorTypeGroupFileVerification,
+					errorMsg,
+					"runner",
+					r.runID,
+				)
 				continue // Skip this group but continue with the next one
 			}
 			// Collect error but continue with next group
