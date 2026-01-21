@@ -144,9 +144,8 @@ func determineLogLevel(reason FailureReason) string {
 	switch reason {
 	case ReasonHashDirNotFound:
 		return logLevelInfo
-	case ReasonHashFileNotFound:
-		return logLevelWarn
-	case ReasonHashMismatch, ReasonFileReadError, ReasonPermissionDenied:
+	case ReasonHashFileNotFound, ReasonHashMismatch, ReasonFileReadError, ReasonPermissionDenied:
+		// HashFileNotFound is ERROR because it would fail in production execution
 		return logLevelError
 	default:
 		return logLevelWarn

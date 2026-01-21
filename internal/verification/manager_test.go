@@ -1330,7 +1330,7 @@ func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 }
 
 // TestVerifyGroupFiles_DryRun_HashFileNotFound tests group file verification in dry-run mode
-// when hash file is not found (WARN level logging)
+// when hash file is not found (ERROR level logging, but execution continues)
 func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	tmpDir, hashDir, logBuffer, cleanup := setupDryRunTest(t)
 	defer cleanup()
@@ -1344,7 +1344,7 @@ func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	// Create RuntimeGroup
 	runtimeGroup := createRuntimeGroup([]string{testFile})
 
-	// In dry-run mode, verification should complete without error
+	// In dry-run mode, verification should complete without error (execution continues)
 	result, err := manager.VerifyGroupFiles(runtimeGroup)
 	assert.NoError(t, err, "dry-run mode should not return errors")
 	assert.NotNil(t, result)
@@ -1354,13 +1354,13 @@ func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	require.NotNil(t, summary)
 	assert.True(t, summary.TotalFiles > 0, "should have files to verify")
 
-	// Verify that WARN level logging occurred (hash file not found)
+	// Verify that ERROR level logging occurred (hash file not found)
 	logOutput := logBuffer.String()
 	assert.Contains(t, logOutput, "security_risk", "log should contain security_risk")
 }
 
 // TestVerifyConfigFile_DryRun_HashFileNotFound tests config file verification in dry-run mode
-// when hash file is not found (WARN level logging)
+// when hash file is not found (ERROR level logging, but execution continues)
 func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
 	tmpDir, hashDir, logBuffer, cleanup := setupDryRunTest(t)
 	defer cleanup()
@@ -1383,12 +1383,12 @@ func TestVerifyConfigFile_DryRun_HashFileNotFound(t *testing.T) {
 	assert.Equal(t, 1, summary.FailedFiles, "should have 1 failed file")
 	assert.Len(t, summary.Failures, 1, "should have 1 failure recorded")
 
-	// Verify WARN level logging (hash file not found)
+	// Verify ERROR level logging (hash file not found - would fail in production)
 	logOutput := logBuffer.String()
 	assert.Contains(t, logOutput, "security_risk", "log should contain security_risk")
 	require.NotEmpty(t, summary.Failures)
 	assert.Equal(t, ReasonHashFileNotFound, summary.Failures[0].Reason)
-	assert.Equal(t, logLevelWarn, summary.Failures[0].Level)
+	assert.Equal(t, logLevelError, summary.Failures[0].Level)
 }
 
 // TestVerifyGroupFiles_DryRun_HashMismatch tests group file verification in dry-run mode

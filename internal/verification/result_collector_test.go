@@ -69,14 +69,14 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 	f1 := summary.Failures[0]
 	assert.Equal(t, "/path/to/file1.toml", f1.Path)
 	assert.Equal(t, ReasonHashFileNotFound, f1.Reason)
-	assert.Equal(t, "warn", f1.Level)
+	assert.Equal(t, logLevelError, f1.Level) // ERROR because it would fail in production
 	assert.Equal(t, "config", f1.Context)
 
 	// Second failure
 	f2 := summary.Failures[1]
 	assert.Equal(t, "/path/to/file2.toml", f2.Path)
 	assert.Equal(t, ReasonHashMismatch, f2.Reason)
-	assert.Equal(t, "error", f2.Level)
+	assert.Equal(t, logLevelError, f2.Level)
 	assert.Equal(t, "global", f2.Context)
 }
 
@@ -216,12 +216,12 @@ func TestDetermineLogLevel(t *testing.T) {
 		reason   FailureReason
 		expected string
 	}{
-		{ReasonHashDirNotFound, "info"},
-		{ReasonHashFileNotFound, "warn"},
-		{ReasonHashMismatch, "error"},
-		{ReasonFileReadError, "error"},
-		{ReasonPermissionDenied, "error"},
-		{FailureReason("unknown"), "warn"},
+		{ReasonHashDirNotFound, logLevelInfo},
+		{ReasonHashFileNotFound, logLevelError},
+		{ReasonHashMismatch, logLevelError},
+		{ReasonFileReadError, logLevelError},
+		{ReasonPermissionDenied, logLevelError},
+		{FailureReason("unknown"), logLevelWarn},
 	}
 
 	for _, tt := range tests {
@@ -291,9 +291,9 @@ func TestResultCollector_MixedResults(t *testing.T) {
 	// Check failures details
 	require.Equal(t, 2, len(summary.Failures), "expected 2 failures")
 
-	// Verify first failure (WARN level)
-	assert.Equal(t, "warn", summary.Failures[0].Level)
+	// Verify first failure (ERROR level - hash file not found would fail in production)
+	assert.Equal(t, logLevelError, summary.Failures[0].Level)
 
-	// Verify second failure (ERROR level)
-	assert.Equal(t, "error", summary.Failures[1].Level)
+	// Verify second failure (ERROR level - hash mismatch)
+	assert.Equal(t, logLevelError, summary.Failures[1].Level)
 }
