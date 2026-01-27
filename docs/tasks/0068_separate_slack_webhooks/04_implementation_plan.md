@@ -73,27 +73,27 @@
 
 ### フェーズ 3: LoggerConfig の変更
 
-- [ ] **3.1** `LoggerConfig` 構造体の変更
+- [x] **3.1** `LoggerConfig` 構造体の変更
   - ファイル: `internal/runner/bootstrap/logger.go`
   - 内容: `SlackWebhookURL` を `SlackWebhookURLSuccess`, `SlackWebhookURLError` に置換
 
-- [ ] **3.2** `SetupLoggerWithConfig` の変更
+- [x] **3.2** `SetupLoggerWithConfig` の変更
   - ファイル: `internal/runner/bootstrap/logger.go`
   - 内容: 2つの SlackHandler 作成ロジックの実装
 
-- [ ] **3.3** `SetupLoggingOptions` 構造体の変更
+- [x] **3.3** `SetupLoggingOptions` 構造体の変更
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: `SlackWebhookURL` を `SlackWebhookURLSuccess`, `SlackWebhookURLError` に置換
 
-- [ ] **3.4** `SetupLogging` 関数の変更
+- [x] **3.4** `SetupLogging` 関数の変更
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: 新しいフィールドを `LoggerConfig` に渡すよう更新
 
-- [ ] **3.5** `cmd/runner/main.go` の変更
+- [x] **3.5** `cmd/runner/main.go` の変更
   - ファイル: `cmd/runner/main.go`
   - 内容: 環境変数バリデーション呼び出し、`SetupLoggingOptions` への設定
 
-- [ ] **3.6** LoggerConfig 統合テスト作成
+- [x] **3.6** LoggerConfig 統合テスト作成
   - ファイル: `internal/runner/bootstrap/logger_test.go`
   - 内容: 2つのハンドラが正しく作成されることを検証
 

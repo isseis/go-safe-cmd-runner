@@ -547,3 +547,83 @@ workdir = "/tmp"
 		})
 	}
 }
+
+// TestCheckSlackWebhookField tests that slack_webhook_url in TOML is rejected
+func TestCheckSlackWebhookField(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr bool
+	}{
+		{
+			name: "TOML-01: slack_webhook_url in global section should error",
+			toml: `
+version = "1.0"
+[global]
+slack_webhook_url = "https://hooks.slack.com/services/test"
+`,
+			wantErr: true,
+		},
+		{
+			name: "TOML-02: config without slack_webhook_url should parse",
+			toml: `
+version = "1.0"
+[global]
+timeout = 30
+
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "echo"
+cmd = "echo"
+args = ["hello"]
+`,
+			wantErr: false,
+		},
+		{
+			name: "config with empty global section",
+			toml: `
+version = "1.0"
+[global]
+
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "echo"
+cmd = "echo"
+`,
+			wantErr: false,
+		},
+		{
+			name: "config without global section",
+			toml: `
+version = "1.0"
+
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "echo"
+cmd = "echo"
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error but got none")
+				require.ErrorIs(t, err, ErrSlackWebhookInTOML, "error should wrap ErrSlackWebhookInTOML")
+				assert.Contains(t, err.Error(), "GSCR_SLACK_WEBHOOK_URL_SUCCESS",
+					"error message should mention the correct environment variable")
+				assert.Nil(t, cfg, "config should be nil when validation fails")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+				require.NotNil(t, cfg, "config should not be nil")
+			}
+		})
+	}
+}

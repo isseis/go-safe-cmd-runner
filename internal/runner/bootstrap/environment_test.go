@@ -20,7 +20,8 @@ func TestSetupLogging_Success(t *testing.T) {
 		runID            string
 		forceInteractive bool
 		forceQuiet       bool
-		slackURL         string
+		slackSuccessURL  string
+		slackErrorURL    string
 		wantErr          bool
 	}{
 		{
@@ -30,7 +31,8 @@ func TestSetupLogging_Success(t *testing.T) {
 			runID:            "test-run-001",
 			forceInteractive: false,
 			forceQuiet:       false,
-			slackURL:         "",
+			slackSuccessURL:  "",
+			slackErrorURL:    "",
 			wantErr:          false,
 		},
 		{
@@ -40,17 +42,19 @@ func TestSetupLogging_Success(t *testing.T) {
 			runID:            "test-run-002",
 			forceInteractive: false,
 			forceQuiet:       false,
-			slackURL:         "",
+			slackSuccessURL:  "",
+			slackErrorURL:    "",
 			wantErr:          false,
 		},
 		{
-			name:             "with Slack webhook URL",
+			name:             "with both Slack webhook URLs",
 			logLevel:         slog.LevelWarn,
 			logDir:           "",
 			runID:            "test-run-003",
 			forceInteractive: false,
 			forceQuiet:       false,
-			slackURL:         "https://hooks.slack.com/services/test",
+			slackSuccessURL:  "https://hooks.slack.com/services/test-success",
+			slackErrorURL:    "https://hooks.slack.com/services/test-error",
 			wantErr:          false,
 		},
 		{
@@ -60,7 +64,8 @@ func TestSetupLogging_Success(t *testing.T) {
 			runID:            "test-run-004",
 			forceInteractive: true,
 			forceQuiet:       false,
-			slackURL:         "",
+			slackSuccessURL:  "",
+			slackErrorURL:    "",
 			wantErr:          false,
 		},
 		{
@@ -70,7 +75,8 @@ func TestSetupLogging_Success(t *testing.T) {
 			runID:            "test-run-005",
 			forceInteractive: false,
 			forceQuiet:       true,
-			slackURL:         "",
+			slackSuccessURL:  "",
+			slackErrorURL:    "",
 			wantErr:          false,
 		},
 	}
@@ -78,13 +84,14 @@ func TestSetupLogging_Success(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := SetupLogging(SetupLoggingOptions{
-				LogLevel:         tt.logLevel,
-				LogDir:           tt.logDir,
-				RunID:            tt.runID,
-				ForceInteractive: tt.forceInteractive,
-				ForceQuiet:       tt.forceQuiet,
-				ConsoleWriter:    nil,
-				SlackWebhookURL:  tt.slackURL,
+				LogLevel:               tt.logLevel,
+				LogDir:                 tt.logDir,
+				RunID:                  tt.runID,
+				ForceInteractive:       tt.forceInteractive,
+				ForceQuiet:             tt.forceQuiet,
+				ConsoleWriter:          nil,
+				SlackWebhookURLSuccess: tt.slackSuccessURL,
+				SlackWebhookURLError:   tt.slackErrorURL,
 			})
 
 			if (err != nil) != tt.wantErr {
@@ -142,13 +149,14 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 			}
 
 			err := SetupLogging(SetupLoggingOptions{
-				LogLevel:         tt.logLevel,
-				LogDir:           logDir,
-				RunID:            tt.runID,
-				ForceInteractive: tt.forceInteractive,
-				ForceQuiet:       tt.forceQuiet,
-				ConsoleWriter:    nil,
-				SlackWebhookURL:  "",
+				LogLevel:               tt.logLevel,
+				LogDir:                 logDir,
+				RunID:                  tt.runID,
+				ForceInteractive:       tt.forceInteractive,
+				ForceQuiet:             tt.forceQuiet,
+				ConsoleWriter:          nil,
+				SlackWebhookURLSuccess: "",
+				SlackWebhookURLError:   "",
 			})
 
 			if (err != nil) != tt.wantErr {
@@ -175,13 +183,14 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	defer os.Chmod(readOnlyDir, 0o755)
 
 	err := SetupLogging(SetupLoggingOptions{
-		LogLevel:         slog.LevelInfo,
-		LogDir:           readOnlyDir,
-		RunID:            "test-run-perm",
-		ForceInteractive: false,
-		ForceQuiet:       false,
-		ConsoleWriter:    nil,
-		SlackWebhookURL:  "",
+		LogLevel:               slog.LevelInfo,
+		LogDir:                 readOnlyDir,
+		RunID:                  "test-run-perm",
+		ForceInteractive:       false,
+		ForceQuiet:             false,
+		ConsoleWriter:          nil,
+		SlackWebhookURLSuccess: "",
+		SlackWebhookURLError:   "",
 	})
 
 	assert.Error(t, err, "SetupLogging() expected error for read-only directory")

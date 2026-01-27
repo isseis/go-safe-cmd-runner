@@ -77,29 +77,44 @@ To use the same webhook for both success and error notifications:
   export GSCR_SLACK_WEBHOOK_URL_ERROR="<your_webhook_url>"`
 }
 
+// FormatSlackWebhookInTOMLError formats the error message when slack_webhook_url is found in TOML
+func FormatSlackWebhookInTOMLError() string {
+	return `Error: slack_webhook_url in TOML is not supported.
+
+Slack webhook URLs must be configured via environment variables:
+  export GSCR_SLACK_WEBHOOK_URL_SUCCESS="<your_webhook_url>"
+  export GSCR_SLACK_WEBHOOK_URL_ERROR="<your_webhook_url>"
+
+Please remove the slack_webhook_url field from your TOML configuration file.
+
+For more information, see the documentation at:
+  https://github.com/isseis/go-safe-cmd-runner/docs/user/runner_command.md#slack-webhook-configuration`
+}
+
 // SetupLoggingOptions holds configuration for SetupLogging
 type SetupLoggingOptions struct {
-	LogLevel         slog.Level
-	LogDir           string
-	RunID            string
-	ForceInteractive bool
-	ForceQuiet       bool
-	ConsoleWriter    io.Writer // If nil, defaults to stdout for backward compatibility
-	SlackWebhookURL  string    // Slack webhook URL for notifications. Empty string disables Slack handler.
-	DryRun           bool      // If true, Slack notifications are not sent
+	LogLevel               slog.Level
+	LogDir                 string
+	RunID                  string
+	ForceInteractive       bool
+	ForceQuiet             bool
+	ConsoleWriter          io.Writer // If nil, defaults to stdout for backward compatibility
+	SlackWebhookURLSuccess string    // Slack webhook URL for success (INFO) notifications. Empty string disables.
+	SlackWebhookURLError   string    // Slack webhook URL for error (WARN/ERROR) notifications. Empty string disables.
+	DryRun                 bool      // If true, Slack notifications are not sent
 }
 
 // SetupLogging sets up logging system without environment file handling
 func SetupLogging(opts SetupLoggingOptions) error {
 	// Setup logging system with all configuration including Slack
-	// Empty SlackWebhookURL disables Slack notifications (e.g., in dry-run mode)
 	loggerConfig := LoggerConfig{
-		Level:           opts.LogLevel,
-		LogDir:          opts.LogDir,
-		RunID:           opts.RunID,
-		SlackWebhookURL: opts.SlackWebhookURL,
-		ConsoleWriter:   opts.ConsoleWriter,
-		DryRun:          opts.DryRun,
+		Level:                  opts.LogLevel,
+		LogDir:                 opts.LogDir,
+		RunID:                  opts.RunID,
+		SlackWebhookURLSuccess: opts.SlackWebhookURLSuccess,
+		SlackWebhookURLError:   opts.SlackWebhookURLError,
+		ConsoleWriter:          opts.ConsoleWriter,
+		DryRun:                 opts.DryRun,
 	}
 
 	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
