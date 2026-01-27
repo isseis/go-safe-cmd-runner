@@ -47,27 +47,27 @@
 
 ### フェーズ 2: 環境変数バリデーション
 
-- [ ] **2.1** 環境変数定数の追加
+- [x] **2.1** 環境変数定数の追加
   - ファイル: `internal/logging/pre_execution_error.go`
   - 内容: `SlackWebhookURLSuccessEnvVar`, `SlackWebhookURLErrorEnvVar` 定義
 
-- [ ] **2.2** `SlackWebhookConfig` 構造体の作成
+- [x] **2.2** `SlackWebhookConfig` 構造体の作成
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: `SuccessURL`, `ErrorURL` フィールドを持つ構造体
 
-- [ ] **2.3** エラー型の定義
+- [x] **2.3** エラー型の定義
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: `ErrDeprecatedSlackWebhook`, `ErrSuccessWithoutError` 定義
 
-- [ ] **2.4** `ValidateSlackWebhookEnv` 関数の実装
+- [x] **2.4** `ValidateSlackWebhookEnv` 関数の実装
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: 環境変数の読み取りとバリデーションロジック
 
-- [ ] **2.5** エラーメッセージフォーマット関数の実装
+- [x] **2.5** エラーメッセージフォーマット関数の実装
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: `FormatDeprecatedSlackWebhookError`, `FormatSuccessWithoutErrorError`
 
-- [ ] **2.6** 環境変数バリデーションユニットテスト作成
+- [x] **2.6** 環境変数バリデーションユニットテスト作成
   - ファイル: `internal/runner/bootstrap/environment_test.go`
   - 内容: テストケース ENV-01 〜 ENV-07 の実装
 
