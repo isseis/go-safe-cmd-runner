@@ -17,31 +17,31 @@
 
 ### フェーズ 1: SlackHandler の拡張
 
-- [ ] **1.1** `SlackHandlerLevelMode` 型と定数の追加
+- [x] **1.1** `SlackHandlerLevelMode` 型と定数の追加
   - ファイル: `internal/logging/slack_handler.go`
   - 内容: `LevelModeDefault`, `LevelModeExactInfo`, `LevelModeWarnAndAbove` 定義
 
-- [ ] **1.2** `SlackHandlerOptions` に `LevelMode` フィールド追加
+- [x] **1.2** `SlackHandlerOptions` に `LevelMode` フィールド追加
   - ファイル: `internal/logging/slack_handler.go`
   - 内容: 構造体に `LevelMode SlackHandlerLevelMode` を追加
 
-- [ ] **1.3** `SlackHandler` 構造体に `levelMode` フィールド追加
+- [x] **1.3** `SlackHandler` 構造体に `levelMode` フィールド追加
   - ファイル: `internal/logging/slack_handler.go`
   - 内容: 構造体に `levelMode SlackHandlerLevelMode` を追加
 
-- [ ] **1.4** `Enabled` メソッドの変更
+- [x] **1.4** `Enabled` メソッドの変更
   - ファイル: `internal/logging/slack_handler.go`
   - 内容: `levelMode` に応じたフィルタリングロジック実装
 
-- [ ] **1.5** `NewSlackHandler` の変更
+- [x] **1.5** `NewSlackHandler` の変更
   - ファイル: `internal/logging/slack_handler.go`
   - 内容: `LevelMode` オプションの処理追加
 
-- [ ] **1.6** `WithAttrs`/`WithGroup` での `levelMode` 引き継ぎ
+- [x] **1.6** `WithAttrs`/`WithGroup` での `levelMode` 引き継ぎ
   - ファイル: `internal/logging/slack_handler.go`
   - 内容: 新しいハンドラ作成時に `levelMode` をコピー
 
-- [ ] **1.7** SlackHandler LevelMode ユニットテスト作成
+- [x] **1.7** SlackHandler LevelMode ユニットテスト作成
   - ファイル: `internal/logging/slack_handler_test.go`
   - 内容: テストケース SH-LM-01 〜 SH-LM-10 の実装
 
