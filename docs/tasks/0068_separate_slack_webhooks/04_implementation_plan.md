@@ -99,33 +99,33 @@
 
 ### フェーズ 4: Runner のログレベル変更
 
-- [ ] **4.1** `logGroupExecutionSummary` のログレベル変更
+- [x] **4.1** `logGroupExecutionSummary` のログレベル変更
   - ファイル: `internal/runner/runner.go`
   - 内容: status=error 時に `slog.LevelError` を使用
 
-- [ ] **4.2** Runner ユニットテスト更新
+- [x] **4.2** Runner ユニットテスト更新
   - ファイル: `internal/runner/runner_test.go`
   - 内容: ログレベル変更の検証
 
 ### フェーズ 5: TOML 設定検証
 
-- [ ] **5.1** TOML 検証関数の実装
+- [x] **5.1** TOML 検証関数の実装
   - ファイル: `internal/runner/config/loader.go`
   - 内容: `checkSlackWebhookField` 関数（既存の `checkTemplateNameField` と同様のパターン）
 
-- [ ] **5.2** エラー型の実装
+- [x] **5.2** エラー型の実装
   - ファイル: `internal/runner/config/loader.go`
   - 内容: `ErrSlackWebhookInTOML` エラー変数
 
-- [ ] **5.3** エラーメッセージフォーマットの実装
+- [x] **5.3** エラーメッセージフォーマットの実装
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: `FormatSlackWebhookInTOMLError` 関数
 
-- [ ] **5.4** ローダーへの検証統合
+- [x] **5.4** ローダーへの検証統合
   - ファイル: `internal/runner/config/loader.go`
   - 内容: `loadConfigInternal` 内で `checkSlackWebhookField` を呼び出し
 
-- [ ] **5.5** TOML 検証ユニットテスト作成
+- [x] **5.5** TOML 検証ユニットテスト作成
   - ファイル: `internal/runner/config/loader_test.go`
   - 内容: テストケース TOML-01, TOML-02 の実装
     - TOML-01: slack_webhook_url 記述時にエラー
@@ -133,27 +133,27 @@
 
 ### フェーズ 6: ドキュメント更新
 
-- [ ] **6.1** runner_command.md の更新
+- [x] **6.1** runner_command.md の更新
   - ファイル: `docs/user/runner_command.md`
   - 内容: 新しい環境変数の説明、移行手順
 
-- [ ] **6.2** runner_command.ja.md の更新
+- [x] **6.2** runner_command.ja.md の更新
   - ファイル: `docs/user/runner_command.ja.md`
   - 内容: 同上（日本語版）
 
-- [ ] **6.3** README.md の更新
+- [x] **6.3** README.md の更新
   - ファイル: `README.md`
   - 内容: 環境変数一覧の更新
 
-- [ ] **6.4** README.ja.md の更新
+- [x] **6.4** README.ja.md の更新
   - ファイル: `README.ja.md`
   - 内容: 同上（日本語版）
 
-- [ ] **6.5** dot.env.sample の更新
+- [x] **6.5** dot.env.sample の更新
   - ファイル: `sample/dot.env.sample`
   - 内容: 新しい環境変数のサンプル
 
-- [ ] **6.6** translation_glossary.md の更新
+- [x] **6.6** translation_glossary.md の更新
   - ファイル: `docs/translation_glossary.md`
   - 内容: 新用語の追加
 
