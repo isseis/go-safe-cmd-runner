@@ -1,9 +1,11 @@
 package logging
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -635,4 +637,118 @@ func TestExecutionError_ErrorsIs(t *testing.T) {
 				tt.want, tt.wrappedIn, tt.target)
 		})
 	}
+}
+
+// TestHandlePreExecutionError_SlackNotification verifies that PreExecutionErrors
+// are sent to Slack ERROR webhook via slog.Error().
+// This test uses a mock slog handler to capture log records.
+func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
+	// Capture slog.Error() calls using a custom handler
+	var capturedRecords []slog.Record
+	captureHandler := &mockLogHandler{
+		onHandle: func(r slog.Record) {
+			capturedRecords = append(capturedRecords, r)
+		},
+	}
+
+	// Replace default logger with capture handler
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(captureHandler))
+	defer slog.SetDefault(originalLogger)
+
+	tests := []struct {
+		name      string
+		errorType ErrorType
+		message   string
+		component string
+		runID     string
+	}{
+		{
+			name:      "TOML parse error should trigger Slack notification",
+			errorType: ErrorTypeConfigParsing,
+			message:   "failed to parse TOML: unexpected character",
+			component: "config",
+			runID:     "test-toml-error-001",
+		},
+		{
+			name:      "hash verification failure should trigger Slack notification",
+			errorType: ErrorTypeFileAccess,
+			message:   "hash verification failed for /etc/config.toml",
+			component: "verification",
+			runID:     "test-hash-error-001",
+		},
+		{
+			name:      "file access error should trigger Slack notification",
+			errorType: ErrorTypeFileAccess,
+			message:   "permission denied: /var/log/app.log",
+			component: "filesystem",
+			runID:     "test-file-error-001",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear captured records for each test
+			capturedRecords = nil
+
+			// Call HandlePreExecutionError
+			HandlePreExecutionError(tt.errorType, tt.message, tt.component, tt.runID)
+
+			// Verify slog.Error() was called
+			require.Len(t, capturedRecords, 1, "HandlePreExecutionError should call slog.Error() once")
+
+			record := capturedRecords[0]
+
+			// Verify log level is ERROR (which goes to ERROR webhook)
+			assert.Equal(t, slog.LevelError, record.Level,
+				"PreExecutionError should be logged at ERROR level for Slack ERROR webhook")
+
+			// Verify log message
+			assert.Equal(t, "Pre-execution error occurred", record.Message)
+
+			// Verify slack_notify attribute is set to true
+			var slackNotify bool
+			var errorTypeAttr string
+			var errorMessageAttr string
+			record.Attrs(func(a slog.Attr) bool {
+				switch a.Key {
+				case "slack_notify":
+					slackNotify = a.Value.Bool()
+				case "error_type":
+					errorTypeAttr = a.Value.String()
+				case "error_message":
+					errorMessageAttr = a.Value.String()
+				}
+				return true
+			})
+
+			assert.True(t, slackNotify, "slack_notify should be true for PreExecutionErrors")
+			assert.Equal(t, string(tt.errorType), errorTypeAttr)
+			assert.Equal(t, tt.message, errorMessageAttr)
+		})
+	}
+}
+
+// mockLogHandler is a test helper that captures slog records
+type mockLogHandler struct {
+	onHandle func(slog.Record)
+}
+
+func (h *mockLogHandler) Enabled(_ context.Context, _ slog.Level) bool {
+	return true
+}
+
+func (h *mockLogHandler) Handle(_ context.Context, r slog.Record) error {
+	if h.onHandle != nil {
+		h.onHandle(r)
+	}
+	return nil
+}
+
+func (h *mockLogHandler) WithAttrs(_ []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *mockLogHandler) WithGroup(_ string) slog.Handler {
+	return h
 }

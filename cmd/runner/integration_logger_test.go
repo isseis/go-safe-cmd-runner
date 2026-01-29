@@ -25,10 +25,8 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		{
 			name: "interactive_environment_with_color_support",
 			config: bootstrap.LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "",
-				RunID:           "test-run-001",
-				SlackWebhookURL: "",
+				Level: slog.LevelInfo,
+				RunID: "test-run-001",
 			},
 			envVars: map[string]string{
 				"TERM":     "xterm-256color",
@@ -40,10 +38,8 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		{
 			name: "non_interactive_environment",
 			config: bootstrap.LoggerConfig{
-				Level:           slog.LevelDebug,
-				LogDir:          "",
-				RunID:           "test-run-002",
-				SlackWebhookURL: "",
+				Level: slog.LevelDebug,
+				RunID: "test-run-002",
 			},
 			envVars: map[string]string{
 				"CI":       "true",
@@ -55,24 +51,24 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		{
 			name: "full_handler_chain_with_log_and_slack",
 			config: bootstrap.LoggerConfig{
-				Level:           slog.LevelWarn,
-				LogDir:          t.TempDir(),
-				RunID:           "test-run-003",
-				SlackWebhookURL: "https://hooks.slack.com/test/webhook",
+				Level:                  slog.LevelWarn,
+				LogDir:                 t.TempDir(),
+				RunID:                  "test-run-003",
+				SlackWebhookURLSuccess: "https://hooks.slack.com/test/webhook-success",
+				SlackWebhookURLError:   "https://hooks.slack.com/test/webhook-error",
 			},
 			envVars: map[string]string{
 				"TERM": "xterm",
 			},
-			expectHandlers: 4, // Interactive + Conditional text + JSON + Slack
+			expectHandlers: 5, // Interactive + Conditional text + JSON + 2x Slack
 			expectError:    false,
 		},
 		{
 			name: "invalid_log_directory",
 			config: bootstrap.LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "/invalid/nonexistent/path",
-				RunID:           "test-run-004",
-				SlackWebhookURL: "",
+				Level:  slog.LevelInfo,
+				LogDir: "/invalid/nonexistent/path",
+				RunID:  "test-run-004",
 			},
 			envVars:        map[string]string{},
 			expectHandlers: 0,
@@ -192,11 +188,11 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// Create temporary directory for log files
 	logDir := t.TempDir()
 
+	// Slack webhook URLs are omitted (zero value) to disable Slack for this test
 	config := bootstrap.LoggerConfig{
-		Level:           slog.LevelDebug,
-		LogDir:          logDir,
-		RunID:           "integration-test-run",
-		SlackWebhookURL: "", // Skip Slack for this test
+		Level:  slog.LevelDebug,
+		LogDir: logDir,
+		RunID:  "integration-test-run",
 	}
 
 	// Capture original logger and streams
@@ -266,12 +262,13 @@ func TestErrorHandling(t *testing.T) {
 		errorType   string
 	}{
 		{
-			name: "invalid_slack_webhook",
+			name: "invalid_slack_webhook_success",
 			config: bootstrap.LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "",
-				RunID:           "test-error-002",
-				SlackWebhookURL: "not-a-valid-url",
+				Level:                  slog.LevelInfo,
+				LogDir:                 "",
+				RunID:                  "test-error-002",
+				SlackWebhookURLSuccess: "not-a-valid-url",
+				SlackWebhookURLError:   "https://hooks.slack.com/valid",
 			},
 			expectError: true,
 			errorType:   "slack handler creation",
@@ -279,10 +276,9 @@ func TestErrorHandling(t *testing.T) {
 		{
 			name: "nonexistent_log_directory",
 			config: bootstrap.LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "/path/does/not/exist",
-				RunID:           "test-error-003",
-				SlackWebhookURL: "",
+				Level:  slog.LevelInfo,
+				LogDir: "/path/does/not/exist",
+				RunID:  "test-error-003",
 			},
 			expectError: true,
 			errorType:   "log directory validation",

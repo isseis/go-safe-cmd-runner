@@ -113,6 +113,33 @@ func TestSlackHandler_WithAttrsAndGroups(t *testing.T) {
 	assert.Equal(t, "testgroup", combined.groups[0], "Group name should be 'testgroup'")
 }
 
+func TestSlackHandler_WithAttrs_PreservesLevelMode(t *testing.T) {
+	handler := &SlackHandler{
+		webhookURL: "https://hooks.slack.com/test",
+		runID:      "test-run",
+		level:      slog.LevelInfo,
+		levelMode:  LevelModeExactInfo,
+	}
+
+	attrs := []slog.Attr{slog.String("key", "value")}
+	newHandler := handler.WithAttrs(attrs).(*SlackHandler)
+
+	assert.Equal(t, LevelModeExactInfo, newHandler.levelMode, "LevelMode should be preserved")
+}
+
+func TestSlackHandler_WithGroup_PreservesLevelMode(t *testing.T) {
+	handler := &SlackHandler{
+		webhookURL: "https://hooks.slack.com/test",
+		runID:      "test-run",
+		level:      slog.LevelInfo,
+		levelMode:  LevelModeWarnAndAbove,
+	}
+
+	newHandler := handler.WithGroup("testgroup").(*SlackHandler)
+
+	assert.Equal(t, LevelModeWarnAndAbove, newHandler.levelMode, "LevelMode should be preserved")
+}
+
 func TestSlackHandler_ApplyAccumulatedContext(t *testing.T) {
 	// Create a SlackHandler with some accumulated context
 	handler := &SlackHandler{
@@ -285,6 +312,7 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				assert.NotNil(t, handler.httpClient, "HTTP client should be set to default")
 				assert.Equal(t, DefaultBackoffConfig, handler.backoffConfig, "Backoff config should be default")
 				assert.False(t, handler.isDryRun, "IsDryRun should be false by default")
+				assert.Equal(t, LevelModeDefault, handler.levelMode, "LevelMode should be default")
 			},
 		},
 		{
@@ -305,6 +333,30 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 				assert.Equal(t, 3*time.Second, handler.backoffConfig.Base, "Custom backoff base should be used")
 				assert.Equal(t, 5, handler.backoffConfig.RetryCount, "Custom retry count should be used")
 				assert.True(t, handler.isDryRun, "IsDryRun should be true")
+			},
+		},
+		{
+			name: "with LevelModeExactInfo",
+			opts: SlackHandlerOptions{
+				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:      "test-run-exact-info",
+				LevelMode:  LevelModeExactInfo,
+			},
+			expectError: false,
+			validate: func(t *testing.T, handler *SlackHandler) {
+				assert.Equal(t, LevelModeExactInfo, handler.levelMode, "LevelMode should be ExactInfo")
+			},
+		},
+		{
+			name: "with LevelModeWarnAndAbove",
+			opts: SlackHandlerOptions{
+				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:      "test-run-warn-above",
+				LevelMode:  LevelModeWarnAndAbove,
+			},
+			expectError: false,
+			validate: func(t *testing.T, handler *SlackHandler) {
+				assert.Equal(t, LevelModeWarnAndAbove, handler.levelMode, "LevelMode should be WarnAndAbove")
 			},
 		},
 		{
@@ -396,6 +448,104 @@ func TestSlackHandler_Enabled(t *testing.T) {
 			enabled := handler.Enabled(ctx, tt.recordLevel)
 
 			assert.Equal(t, tt.expectEnabled, enabled, "Enabled should return expected value")
+		})
+	}
+}
+
+// TestSlackHandler_Enabled_LevelMode tests Enabled behavior with different LevelMode settings.
+// Test cases: SH-LM-01 ~ SH-LM-10
+func TestSlackHandler_Enabled_LevelMode(t *testing.T) {
+	tests := []struct {
+		name          string
+		levelMode     SlackHandlerLevelMode
+		recordLevel   slog.Level
+		expectEnabled bool
+	}{
+		// SH-LM-01: LevelModeDefault + INFO
+		{
+			name:          "SH-LM-01: LevelModeDefault + INFO",
+			levelMode:     LevelModeDefault,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: true,
+		},
+		// SH-LM-02: LevelModeDefault + WARN
+		{
+			name:          "SH-LM-02: LevelModeDefault + WARN",
+			levelMode:     LevelModeDefault,
+			recordLevel:   slog.LevelWarn,
+			expectEnabled: true,
+		},
+		// SH-LM-03: LevelModeDefault + ERROR
+		{
+			name:          "SH-LM-03: LevelModeDefault + ERROR",
+			levelMode:     LevelModeDefault,
+			recordLevel:   slog.LevelError,
+			expectEnabled: true,
+		},
+		// SH-LM-04: LevelModeExactInfo + INFO
+		{
+			name:          "SH-LM-04: LevelModeExactInfo + INFO",
+			levelMode:     LevelModeExactInfo,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: true,
+		},
+		// SH-LM-05: LevelModeExactInfo + WARN
+		{
+			name:          "SH-LM-05: LevelModeExactInfo + WARN",
+			levelMode:     LevelModeExactInfo,
+			recordLevel:   slog.LevelWarn,
+			expectEnabled: false,
+		},
+		// SH-LM-06: LevelModeExactInfo + ERROR
+		{
+			name:          "SH-LM-06: LevelModeExactInfo + ERROR",
+			levelMode:     LevelModeExactInfo,
+			recordLevel:   slog.LevelError,
+			expectEnabled: false,
+		},
+		// SH-LM-07: LevelModeExactInfo + DEBUG
+		{
+			name:          "SH-LM-07: LevelModeExactInfo + DEBUG",
+			levelMode:     LevelModeExactInfo,
+			recordLevel:   slog.LevelDebug,
+			expectEnabled: false,
+		},
+		// SH-LM-08: LevelModeWarnAndAbove + INFO
+		{
+			name:          "SH-LM-08: LevelModeWarnAndAbove + INFO",
+			levelMode:     LevelModeWarnAndAbove,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: false,
+		},
+		// SH-LM-09: LevelModeWarnAndAbove + WARN
+		{
+			name:          "SH-LM-09: LevelModeWarnAndAbove + WARN",
+			levelMode:     LevelModeWarnAndAbove,
+			recordLevel:   slog.LevelWarn,
+			expectEnabled: true,
+		},
+		// SH-LM-10: LevelModeWarnAndAbove + ERROR
+		{
+			name:          "SH-LM-10: LevelModeWarnAndAbove + ERROR",
+			levelMode:     LevelModeWarnAndAbove,
+			recordLevel:   slog.LevelError,
+			expectEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &SlackHandler{
+				webhookURL: "https://hooks.slack.com/test",
+				runID:      "test-run",
+				level:      slog.LevelInfo, // Default level (used by LevelModeDefault)
+				levelMode:  tt.levelMode,
+			}
+
+			ctx := context.Background()
+			enabled := handler.Enabled(ctx, tt.recordLevel)
+
+			assert.Equal(t, tt.expectEnabled, enabled, "Enabled should return expected value for %s", tt.name)
 		})
 	}
 }

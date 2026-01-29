@@ -66,15 +66,27 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 
 	t.Logf("Mock server URL: %s", mockServer.URL)
 
-	// Create real Slack handler with mock server URL and HTTP client that accepts self-signed certs
-	realSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
+	// Create real Slack handlers with mock server URL and HTTP client that accepts self-signed certs
+	// Use both SUCCESS and ERROR webhooks pointing to the same mock server
+	successSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:    mockServer.URL,
 		RunID:         "e2e-mock-test-" + timeBasedID(),
 		HTTPClient:    mockServer.Client(),
 		BackoffConfig: logging.DefaultBackoffConfig,
 		IsDryRun:      false,
+		LevelMode:     logging.LevelModeExactInfo, // SUCCESS webhook: INFO only
 	})
-	require.NoError(t, err, "Failed to create Slack handler")
+	require.NoError(t, err, "Failed to create SUCCESS Slack handler")
+
+	errorSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
+		WebhookURL:    mockServer.URL,
+		RunID:         "e2e-mock-test-" + timeBasedID(),
+		HTTPClient:    mockServer.Client(),
+		BackoffConfig: logging.DefaultBackoffConfig,
+		IsDryRun:      false,
+		LevelMode:     logging.LevelModeWarnAndAbove, // ERROR webhook: WARN and above
+	})
+	require.NoError(t, err, "Failed to create ERROR Slack handler")
 
 	// Create failure logger (stderr only, no Slack)
 	var failureLogBuffer bytes.Buffer
@@ -83,9 +95,14 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	})
 	failureLogger := slog.New(failureHandler)
 
-	// Wrap real Slack handler with RedactingHandler
-	redactingHandler := redaction.NewRedactingHandler(realSlackHandler, nil, failureLogger)
-	logger := slog.New(redactingHandler)
+	// Wrap real Slack handlers with RedactingHandler
+	// Combine both SUCCESS and ERROR handlers using MultiHandler pattern
+	combinedHandler, err := logging.NewMultiHandler(
+		redaction.NewRedactingHandler(successSlackHandler, nil, failureLogger),
+		redaction.NewRedactingHandler(errorSlackHandler, nil, failureLogger),
+	)
+	require.NoError(t, err, "Failed to create MultiHandler")
+	logger := slog.New(combinedHandler)
 	slog.SetDefault(logger)
 
 	// Create test configuration with command that outputs sensitive data

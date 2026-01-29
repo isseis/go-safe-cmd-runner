@@ -273,6 +273,8 @@
 |--------|---------|------|
 | 名前 | name | |
 | 命名 | naming | |
+| 通知 | notification | |
+| 通知先 | notification destination | |
 
 ### O
 
@@ -400,6 +402,10 @@
 | サイズ制限 | size limit | |
 | スキップ | skip | |
 | Slack | Slack | |
+| Slack通知 | Slack notification | |
+| 成功通知 | success notification | Slackへの正常完了通知 |
+| エラー通知 | error notification | Slackへのエラー・警告通知 |
+| Webhook URL | webhook URL | |
 | スライス | slice | Go言語のスライス型 |
 | ソース | source | データソースの文脈 |
 | スペル | spelling | |
@@ -610,6 +616,7 @@
 | 2025-12-11 | コマンドテンプレート機能ドキュメント関連の用語を追加 (ambiguity, duplication, exclusivity, generic, inject/injection, leverage/leveraging, literal, mixed, parameter value, placeholder/placeholder syntax, priority order, reusable, responsibility, simultaneous/simultaneously, solution (error context), spelling, standalone) |
 | 2025-12-18 | 変数スコープと命名規則関連の用語を追加 (global variable, local variable, scope, variable scope) |
 | 2026-01-11 | フィールド継承関連の用語を追加 (inheritable, inheritance model, override model, union merge, map merge, overrideable, customize/customization, custom, default settings) |
+| 2026-01-27 | Slack Webhook分離機能関連の用語を追加 (notification, notification destination, Slack notification, success notification, error notification, webhook URL) |
 
 ---
 

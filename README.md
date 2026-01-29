@@ -600,7 +600,7 @@ go test -v ./internal/runner
 # Run integration tests
 make integration-test
 
-# Run Slack notification tests (requires GSCR_SLACK_WEBHOOK_URL)
+# Run Slack notification tests (requires GSCR_SLACK_WEBHOOK_URL_SUCCESS and GSCR_SLACK_WEBHOOK_URL_ERROR)
 make slack-notify-test
 make slack-group-notification-test
 ```

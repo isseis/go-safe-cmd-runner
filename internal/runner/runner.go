@@ -495,9 +495,12 @@ func (r *Runner) SetDryRunExecutionError(errType, message, component string, det
 // "slack_notify" and "message_type") that notification handlers (for
 // example `internal/logging.SlackHandler`) can use to send alerts. The
 // function itself only logs; it does not perform network I/O.
+//
+// The log level is determined by the execution status:
+//   - Success: INFO level (sent to success webhook if configured)
+//   - Error: ERROR level (sent to error webhook if configured)
 func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration) {
-	slog.Info(
-		"Command group execution completed",
+	attrs := []any{
 		common.GroupSummaryAttrs.Group, groupSpec.Name,
 		common.GroupSummaryAttrs.Status, result.status,
 		common.GroupSummaryAttrs.Commands, result.commands,
@@ -505,7 +508,13 @@ func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, resu
 		"run_id", r.runID,
 		"slack_notify", true,
 		"message_type", "command_group_summary",
-	)
+	}
+
+	if result.status == GroupExecutionStatusError {
+		slog.Error("Command group execution completed", attrs...)
+	} else {
+		slog.Info("Command group execution completed", attrs...)
+	}
 }
 
 // hasUserGroupCommands checks if the configuration contains any commands with user/group specifications

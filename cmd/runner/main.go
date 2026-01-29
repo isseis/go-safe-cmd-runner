@@ -167,17 +167,33 @@ func run(runID string) error {
 	if dryRun {
 		consoleWriter = os.Stderr
 	}
-	// Get Slack webhook URL from environment (empty in dry-run mode to disable notifications)
-	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
+
+	// Validate Slack webhook environment variables
+	slackConfig, err := bootstrap.ValidateSlackWebhookEnv()
+	if err != nil {
+		if errors.Is(err, bootstrap.ErrDeprecatedSlackWebhook) {
+			fmt.Fprint(os.Stderr, bootstrap.FormatDeprecatedSlackWebhookError())
+		} else if errors.Is(err, bootstrap.ErrSuccessWithoutError) {
+			fmt.Fprint(os.Stderr, bootstrap.FormatSuccessWithoutErrorError())
+		}
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   err.Error(),
+			Component: string(resource.ComponentLogging),
+			RunID:     runID,
+		}
+	}
+
 	if err := bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{
-		LogLevel:         logLevelValue,
-		LogDir:           logDir,
-		RunID:            runID,
-		ForceInteractive: forceInteractive,
-		ForceQuiet:       forceQuiet,
-		ConsoleWriter:    consoleWriter,
-		SlackWebhookURL:  slackURL,
-		DryRun:           dryRun,
+		LogLevel:               logLevelValue,
+		LogDir:                 logDir,
+		RunID:                  runID,
+		ForceInteractive:       forceInteractive,
+		ForceQuiet:             forceQuiet,
+		ConsoleWriter:          consoleWriter,
+		SlackWebhookURLSuccess: slackConfig.SuccessURL,
+		SlackWebhookURLError:   slackConfig.ErrorURL,
+		DryRun:                 dryRun,
 	}); err != nil {
 		return err
 	}

@@ -1328,26 +1328,53 @@ CLICOLOR=1 NO_COLOR=1 runner -config config.toml
 
 ### 4.2 Notification Configuration
 
-#### `GSCR_SLACK_WEBHOOK_URL`
+Slack notifications can be configured using environment variables. Success and error notifications can be sent to different webhooks.
 
-Specifies the Webhook URL for Slack notifications. When set, errors and important events are notified to Slack.
+#### `GSCR_SLACK_WEBHOOK_URL_SUCCESS`
+
+Specifies the Webhook URL for success notifications. When set, command group completion with success status is notified to this webhook (INFO level).
+
+#### `GSCR_SLACK_WEBHOOK_URL_ERROR`
+
+Specifies the Webhook URL for error notifications. When set, warnings and errors are notified to this webhook (WARN and ERROR levels).
+
+**Configuration Patterns**
+
+| SUCCESS URL | ERROR URL | Behavior |
+|-------------|-----------|----------|
+| Not set | Not set | Slack notifications disabled |
+| Not set | Set | Error notifications only |
+| Set | Set | Both success and error notifications |
+| Set | Not set | **Invalid configuration** (error) |
 
 **Usage Examples**
 
 ```bash
-# Enable Slack notifications
-export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+# Error notifications only (recommended for production)
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+runner -config config.toml
+
+# Both success and error notifications
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T00000000/B00000000/YYYYYYYYYYYY"
+runner -config config.toml
+
+# Use same webhook for both (all notifications to one channel)
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
 runner -config config.toml
 ```
 
-**Events to be Notified**
+**Events Sent to Each Webhook**
 
-- Start of command execution
-- Command success/failure
-- Security-related events (privilege escalation, file verification failure, etc.)
-- Errors and warnings
+| Event Type | Sent to SUCCESS | Sent to ERROR |
+|------------|-----------------|---------------|
+| Command group success | ✓ | - |
+| Command group failure | - | ✓ |
+| Warnings | - | ✓ |
+| Errors | - | ✓ |
 
-**Notification Example**
+**Notification Example (Success)**
 
 ```
 🤖 go-safe-cmd-runner
@@ -1359,11 +1386,44 @@ Duration: 5.2s
 Run ID: 01K2YK812JA735M4TWZ6BK0JH9
 ```
 
+**Notification Example (Error)**
+
+```
+🤖 go-safe-cmd-runner
+
+❌ Command failed
+Group: backup
+Command: db_backup
+Error: exit status 1
+Run ID: 01K2YK812JA735M4TWZ6BK0JH9
+```
+
 **Security Notes**
 
-- Treat Webhook URL as sensitive information
+- Treat Webhook URLs as sensitive information
 - Recommended to manage with environment variables or secret management tools
 - Not included in logs or error messages
+- In dry-run mode, no notifications are sent to either webhook
+
+#### Migration from `GSCR_SLACK_WEBHOOK_URL`
+
+The old `GSCR_SLACK_WEBHOOK_URL` environment variable is deprecated. If set, the runner will fail with an error message explaining how to migrate.
+
+**Migration Steps**
+
+```bash
+# Before (deprecated)
+export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+
+# After (recommended: error notifications only)
+unset GSCR_SLACK_WEBHOOK_URL
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+
+# After (if you want both success and error notifications)
+unset GSCR_SLACK_WEBHOOK_URL
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/..."
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+```
 
 ### 4.3 CI Environment Auto-Detection
 
@@ -1584,7 +1644,7 @@ jobs:
         run: |
           runner -c config.toml -q -log-dir ./logs
         env:
-          GSCR_SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GSCR_SLACK_WEBHOOK_URL_ERROR: ${{ secrets.SLACK_WEBHOOK_URL_ERROR }}
 
       - name: Upload logs
         if: always()
@@ -1609,9 +1669,9 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_WEBHOOK')]) {
+                withCredentials([string(credentialsId: 'slack-webhook-error', variable: 'SLACK_WEBHOOK_ERROR')]) {
                     sh '''
-                        export GSCR_SLACK_WEBHOOK_URL="${SLACK_WEBHOOK}"
+                        export GSCR_SLACK_WEBHOOK_URL_ERROR="${SLACK_WEBHOOK_ERROR}"
                         runner -config config.toml -quiet -log-dir ./logs -run-id "jenkins-${BUILD_NUMBER}"
                     '''
                 }
