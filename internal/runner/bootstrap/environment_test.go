@@ -159,7 +159,6 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 }
 
 // TestValidateSlackWebhookEnv tests Slack webhook environment variable validation.
-// Test cases: ENV-01 ~ ENV-07
 func TestValidateSlackWebhookEnv(t *testing.T) {
 	// Save and restore original environment variables
 	origOld := os.Getenv(logging.SlackWebhookURLEnvVar)
@@ -180,9 +179,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 		wantSuccess string
 		wantError   string
 	}{
-		// ENV-01: 両方設定
 		{
-			name:        "ENV-01: both SUCCESS and ERROR set",
+			name:        "both SUCCESS and ERROR set",
 			successURL:  "https://hooks.slack.com/success",
 			errorURL:    "https://hooks.slack.com/error",
 			oldURL:      "",
@@ -190,9 +188,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			wantSuccess: "https://hooks.slack.com/success",
 			wantError:   "https://hooks.slack.com/error",
 		},
-		// ENV-02: ERROR のみ
 		{
-			name:        "ENV-02: only ERROR set",
+			name:        "only ERROR set",
 			successURL:  "",
 			errorURL:    "https://hooks.slack.com/error",
 			oldURL:      "",
@@ -200,9 +197,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			wantSuccess: "",
 			wantError:   "https://hooks.slack.com/error",
 		},
-		// ENV-03: SUCCESS のみ
 		{
-			name:        "ENV-03: only SUCCESS set",
+			name:        "only SUCCESS set - error because ERROR is required",
 			successURL:  "https://hooks.slack.com/success",
 			errorURL:    "",
 			oldURL:      "",
@@ -210,9 +206,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			wantSuccess: "",
 			wantError:   "",
 		},
-		// ENV-04: 両方未設定
 		{
-			name:        "ENV-04: neither set (Slack disabled)",
+			name:        "neither set - Slack disabled",
 			successURL:  "",
 			errorURL:    "",
 			oldURL:      "",
@@ -220,9 +215,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			wantSuccess: "",
 			wantError:   "",
 		},
-		// ENV-05: 旧変数設定
 		{
-			name:        "ENV-05: deprecated env var set",
+			name:        "deprecated env var set - error",
 			successURL:  "",
 			errorURL:    "",
 			oldURL:      "https://hooks.slack.com/old",
@@ -230,9 +224,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			wantSuccess: "",
 			wantError:   "",
 		},
-		// ENV-06: 旧変数+新変数
 		{
-			name:        "ENV-06: deprecated env var with new vars",
+			name:        "deprecated env var with new vars - error",
 			successURL:  "https://hooks.slack.com/success",
 			errorURL:    "https://hooks.slack.com/error",
 			oldURL:      "https://hooks.slack.com/old",
@@ -240,9 +233,8 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			wantSuccess: "",
 			wantError:   "",
 		},
-		// ENV-07: 同一URL
 		{
-			name:        "ENV-07: same URL for both",
+			name:        "same URL for both SUCCESS and ERROR",
 			successURL:  "https://hooks.slack.com/same",
 			errorURL:    "https://hooks.slack.com/same",
 			oldURL:      "",
