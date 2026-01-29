@@ -25,59 +25,34 @@ func TestSetupLogging_Success(t *testing.T) {
 		wantErr          bool
 	}{
 		{
-			name:             "minimal config with info level",
-			logLevel:         slog.LevelInfo,
-			logDir:           "",
-			runID:            "test-run-001",
-			forceInteractive: false,
-			forceQuiet:       false,
-			slackSuccessURL:  "",
-			slackErrorURL:    "",
-			wantErr:          false,
+			name:     "minimal config with info level",
+			logLevel: slog.LevelInfo,
+			runID:    "test-run-001",
 		},
 		{
-			name:             "with log directory",
-			logLevel:         slog.LevelDebug,
-			logDir:           t.TempDir(),
-			runID:            "test-run-002",
-			forceInteractive: false,
-			forceQuiet:       false,
-			slackSuccessURL:  "",
-			slackErrorURL:    "",
-			wantErr:          false,
+			name:     "with log directory",
+			logLevel: slog.LevelDebug,
+			logDir:   t.TempDir(),
+			runID:    "test-run-002",
 		},
 		{
-			name:             "with both Slack webhook URLs",
-			logLevel:         slog.LevelWarn,
-			logDir:           "",
-			runID:            "test-run-003",
-			forceInteractive: false,
-			forceQuiet:       false,
-			slackSuccessURL:  "https://hooks.slack.com/services/test-success",
-			slackErrorURL:    "https://hooks.slack.com/services/test-error",
-			wantErr:          false,
+			name:            "with both Slack webhook URLs",
+			logLevel:        slog.LevelWarn,
+			runID:           "test-run-003",
+			slackSuccessURL: "https://hooks.slack.com/services/test-success",
+			slackErrorURL:   "https://hooks.slack.com/services/test-error",
 		},
 		{
 			name:             "force interactive mode",
 			logLevel:         slog.LevelInfo,
-			logDir:           "",
 			runID:            "test-run-004",
 			forceInteractive: true,
-			forceQuiet:       false,
-			slackSuccessURL:  "",
-			slackErrorURL:    "",
-			wantErr:          false,
 		},
 		{
-			name:             "force quiet mode",
-			logLevel:         slog.LevelError,
-			logDir:           "",
-			runID:            "test-run-005",
-			forceInteractive: false,
-			forceQuiet:       true,
-			slackSuccessURL:  "",
-			slackErrorURL:    "",
-			wantErr:          false,
+			name:       "force quiet mode",
+			logLevel:   slog.LevelError,
+			runID:      "test-run-005",
+			forceQuiet: true,
 		},
 	}
 
@@ -113,22 +88,17 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 		wantErr          bool
 	}{
 		{
-			name:             "invalid log directory - does not exist",
-			logLevel:         slog.LevelInfo,
-			logDir:           "/nonexistent/path/to/logs",
-			runID:            "test-run-error-001",
-			forceInteractive: false,
-			forceQuiet:       false,
-			setupFunc:        func(_ *testing.T) string { return "/nonexistent/path/to/logs" },
-			wantErr:          true,
+			name:      "invalid log directory - does not exist",
+			logLevel:  slog.LevelInfo,
+			logDir:    "/nonexistent/path/to/logs",
+			runID:     "test-run-error-001",
+			setupFunc: func(_ *testing.T) string { return "/nonexistent/path/to/logs" },
+			wantErr:   true,
 		},
 		{
-			name:             "invalid log directory - not writable",
-			logLevel:         slog.LevelInfo,
-			logDir:           "",
-			runID:            "test-run-error-002",
-			forceInteractive: false,
-			forceQuiet:       false,
+			name:     "invalid log directory - not writable",
+			logLevel: slog.LevelInfo,
+			runID:    "test-run-error-002",
 			setupFunc: func(t *testing.T) string {
 				// Create a directory with no write permissions
 				dir := filepath.Join(t.TempDir(), "readonly")
@@ -149,14 +119,11 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 			}
 
 			err := SetupLogging(SetupLoggingOptions{
-				LogLevel:               tt.logLevel,
-				LogDir:                 logDir,
-				RunID:                  tt.runID,
-				ForceInteractive:       tt.forceInteractive,
-				ForceQuiet:             tt.forceQuiet,
-				ConsoleWriter:          nil,
-				SlackWebhookURLSuccess: "",
-				SlackWebhookURLError:   "",
+				LogLevel:         tt.logLevel,
+				LogDir:           logDir,
+				RunID:            tt.runID,
+				ForceInteractive: tt.forceInteractive,
+				ForceQuiet:       tt.forceQuiet,
 			})
 
 			if (err != nil) != tt.wantErr {
@@ -183,14 +150,9 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	defer os.Chmod(readOnlyDir, 0o755)
 
 	err := SetupLogging(SetupLoggingOptions{
-		LogLevel:               slog.LevelInfo,
-		LogDir:                 readOnlyDir,
-		RunID:                  "test-run-perm",
-		ForceInteractive:       false,
-		ForceQuiet:             false,
-		ConsoleWriter:          nil,
-		SlackWebhookURLSuccess: "",
-		SlackWebhookURLError:   "",
+		LogLevel: slog.LevelInfo,
+		LogDir:   readOnlyDir,
+		RunID:    "test-run-perm",
 	})
 
 	assert.Error(t, err, "SetupLogging() expected error for read-only directory")

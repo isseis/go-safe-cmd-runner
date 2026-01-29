@@ -25,11 +25,8 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		{
 			name: "interactive_environment_with_color_support",
 			config: bootstrap.LoggerConfig{
-				Level:                  slog.LevelInfo,
-				LogDir:                 "",
-				RunID:                  "test-run-001",
-				SlackWebhookURLSuccess: "",
-				SlackWebhookURLError:   "",
+				Level: slog.LevelInfo,
+				RunID: "test-run-001",
 			},
 			envVars: map[string]string{
 				"TERM":     "xterm-256color",
@@ -41,11 +38,8 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		{
 			name: "non_interactive_environment",
 			config: bootstrap.LoggerConfig{
-				Level:                  slog.LevelDebug,
-				LogDir:                 "",
-				RunID:                  "test-run-002",
-				SlackWebhookURLSuccess: "",
-				SlackWebhookURLError:   "",
+				Level: slog.LevelDebug,
+				RunID: "test-run-002",
 			},
 			envVars: map[string]string{
 				"CI":       "true",
@@ -72,11 +66,9 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		{
 			name: "invalid_log_directory",
 			config: bootstrap.LoggerConfig{
-				Level:                  slog.LevelInfo,
-				LogDir:                 "/invalid/nonexistent/path",
-				RunID:                  "test-run-004",
-				SlackWebhookURLSuccess: "",
-				SlackWebhookURLError:   "",
+				Level:  slog.LevelInfo,
+				LogDir: "/invalid/nonexistent/path",
+				RunID:  "test-run-004",
 			},
 			envVars:        map[string]string{},
 			expectHandlers: 0,
@@ -196,12 +188,11 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// Create temporary directory for log files
 	logDir := t.TempDir()
 
+	// Slack webhook URLs are omitted (zero value) to disable Slack for this test
 	config := bootstrap.LoggerConfig{
-		Level:                  slog.LevelDebug,
-		LogDir:                 logDir,
-		RunID:                  "integration-test-run",
-		SlackWebhookURLSuccess: "", // Skip Slack for this test
-		SlackWebhookURLError:   "",
+		Level:  slog.LevelDebug,
+		LogDir: logDir,
+		RunID:  "integration-test-run",
 	}
 
 	// Capture original logger and streams
@@ -285,11 +276,9 @@ func TestErrorHandling(t *testing.T) {
 		{
 			name: "nonexistent_log_directory",
 			config: bootstrap.LoggerConfig{
-				Level:                  slog.LevelInfo,
-				LogDir:                 "/path/does/not/exist",
-				RunID:                  "test-error-003",
-				SlackWebhookURLSuccess: "",
-				SlackWebhookURLError:   "",
+				Level:  slog.LevelInfo,
+				LogDir: "/path/does/not/exist",
+				RunID:  "test-error-003",
 			},
 			expectError: true,
 			errorType:   "log directory validation",
