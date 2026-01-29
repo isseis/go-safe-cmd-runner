@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -645,6 +646,12 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 			return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
 		}
 
+		// Security: Ensure expanded workdir is an absolute path
+		if expandedWorkDir != "" && !filepath.IsAbs(expandedWorkDir) {
+			return "", nil, fmt.Errorf("group %q: %w: %q (relative paths are not allowed for security reasons)",
+				runtimeGroup.Spec.Name, config.ErrInvalidWorkDir, expandedWorkDir)
+		}
+
 		slog.Info("Using group workdir",
 			"group", runtimeGroup.Spec.Name,
 			"workdir", expandedWorkDir)
@@ -686,6 +693,13 @@ func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 		if err != nil {
 			return "", fmt.Errorf("failed to expand command workdir: %w", err)
 		}
+
+		// Security: Ensure expanded workdir is an absolute path
+		if expandedWorkDir != "" && !filepath.IsAbs(expandedWorkDir) {
+			return "", fmt.Errorf("command %q: %w: %q (relative paths are not allowed for security reasons)",
+				runtimeCmd.Spec.Name, config.ErrInvalidWorkDir, expandedWorkDir)
+		}
+
 		return expandedWorkDir, nil
 	}
 

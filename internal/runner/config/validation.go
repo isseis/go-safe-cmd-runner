@@ -181,18 +181,74 @@ func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
 	return nil
 }
 
+// containsVariableReference checks if a string contains variable references.
+// This includes:
+// - %{VAR} syntax (internal variables)
+// - ${VAR} or ${?VAR} syntax (TOML parameter substitution)
+func containsVariableReference(s string) bool {
+	return strings.Contains(s, "%{") || strings.Contains(s, "${")
+}
+
 // ValidateWorkDir validates the working directory path.
 // It checks that:
 // 1. nil or empty string are allowed (current directory)
 // 2. Non-empty paths must be absolute (start with '/')
+// 3. If the path contains variable references, validation is deferred to expansion time
 func ValidateWorkDir(workdir *string) error {
 	if workdir == nil || *workdir == "" {
 		return nil // Current directory, no validation needed
 	}
 
+	// If the path contains variable references, skip validation here.
+	// The expanded path will be validated later during expansion/resolution.
+	if containsVariableReference(*workdir) {
+		return nil
+	}
+
 	// Must be absolute path
 	if !filepath.IsAbs(*workdir) {
 		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, *workdir)
+	}
+
+	return nil
+}
+
+// ValidateWorkDirWithContext validates the working directory path with context information.
+// This is used for group and command-level validation where context information is needed.
+func ValidateWorkDirWithContext(workdir *string, groupName string, cmdName string) error {
+	if err := ValidateWorkDir(workdir); err != nil {
+		if cmdName != "" {
+			return fmt.Errorf("command %q in group %q: %w", cmdName, groupName, err)
+		}
+		return fmt.Errorf("group %q: %w", groupName, err)
+	}
+	return nil
+}
+
+// ValidateGroupWorkDirs validates working directories for all groups in the configuration.
+// This is called during configuration loading to ensure early validation.
+func ValidateGroupWorkDirs(cfg *runnertypes.ConfigSpec) error {
+	if cfg == nil {
+		return ErrNilConfig
+	}
+
+	for _, group := range cfg.Groups {
+		// Validate group-level workdir
+		if group.WorkDir != "" {
+			workdir := group.WorkDir
+			if err := ValidateWorkDirWithContext(&workdir, group.Name, ""); err != nil {
+				return err
+			}
+		}
+
+		// Validate command-level workdirs
+		for _, cmd := range group.Commands {
+			if cmd.WorkDir != nil {
+				if err := ValidateWorkDirWithContext(cmd.WorkDir, group.Name, cmd.Name); err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	return nil

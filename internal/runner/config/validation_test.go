@@ -653,6 +653,26 @@ func TestValidateWorkDir(t *testing.T) {
 			wantErr: true,
 			errMsg:  "working directory",
 		},
+		{
+			name:    "path with variable reference %{VAR}",
+			workdir: commontesting.StringPtr("%{base_dir}/subdir"),
+			wantErr: false, // Allowed - will be validated after expansion
+		},
+		{
+			name:    "path with variable reference ${VAR}",
+			workdir: commontesting.StringPtr("${workdir}"),
+			wantErr: false, // Allowed - will be validated after expansion
+		},
+		{
+			name:    "path with optional variable reference ${?VAR}",
+			workdir: commontesting.StringPtr("${?workdir}"),
+			wantErr: false, // Allowed - will be validated after expansion
+		},
+		{
+			name:    "relative path containing variable but not starting with it",
+			workdir: commontesting.StringPtr("relative/%{subdir}"),
+			wantErr: false, // Contains variable reference, deferred to expansion
+		},
 	}
 
 	for _, tt := range tests {
@@ -748,6 +768,162 @@ func TestValidateEnvImport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateEnvImport(tt.envImport, tt.envAllowed)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateGroupWorkDirs tests validation of working directories at config load time
+func TestValidateGroupWorkDirs(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *runnertypes.ConfigSpec
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "nil config",
+			config:  nil,
+			wantErr: true,
+			errMsg:  "configuration must not be nil",
+		},
+		{
+			name: "empty groups",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid absolute group workdir",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name:    "test_group",
+						WorkDir: "/opt/app",
+						Commands: []runnertypes.CommandSpec{
+							{Name: "cmd1", Cmd: "/bin/echo"},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "relative group workdir",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name:    "test_group",
+						WorkDir: "relative/path",
+						Commands: []runnertypes.CommandSpec{
+							{Name: "cmd1", Cmd: "/bin/echo"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "test_group",
+		},
+		{
+			name: "valid absolute command workdir",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd1",
+								Cmd:     "/bin/echo",
+								WorkDir: commontesting.StringPtr("/opt/app"),
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "relative command workdir",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd1",
+								Cmd:     "/bin/echo",
+								WorkDir: commontesting.StringPtr("./relative"),
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "cmd1",
+		},
+		{
+			name: "group workdir with variable reference",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name:    "test_group",
+						WorkDir: "%{base_dir}/subdir",
+						Commands: []runnertypes.CommandSpec{
+							{Name: "cmd1", Cmd: "/bin/echo"},
+						},
+					},
+				},
+			},
+			wantErr: false, // Variable references are allowed, validated after expansion
+		},
+		{
+			name: "command workdir with variable reference",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd1",
+								Cmd:     "/bin/echo",
+								WorkDir: commontesting.StringPtr("${workdir}"),
+							},
+						},
+					},
+				},
+			},
+			wantErr: false, // Variable references are allowed, validated after expansion
+		},
+		{
+			name: "empty command workdir is allowed",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd1",
+								Cmd:     "/bin/echo",
+								WorkDir: commontesting.StringPtr(""),
+							},
+						},
+					},
+				},
+			},
+			wantErr: false, // Empty string means current directory
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGroupWorkDirs(tt.config)
 
 			if tt.wantErr {
 				require.Error(t, err)

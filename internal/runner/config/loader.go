@@ -264,6 +264,11 @@ func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, er
 		return nil, err
 	}
 
+	// Validate working directories (absolute path requirement)
+	if err := ValidateGroupWorkDirs(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
