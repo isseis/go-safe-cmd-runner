@@ -160,16 +160,6 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 
 // TestValidateSlackWebhookEnv tests Slack webhook environment variable validation.
 func TestValidateSlackWebhookEnv(t *testing.T) {
-	// Save and restore original environment variables
-	origOld := os.Getenv(logging.SlackWebhookURLEnvVar)
-	origSuccess := os.Getenv(logging.SlackWebhookURLSuccessEnvVar)
-	origError := os.Getenv(logging.SlackWebhookURLErrorEnvVar)
-	t.Cleanup(func() {
-		setOrUnset(logging.SlackWebhookURLEnvVar, origOld)
-		setOrUnset(logging.SlackWebhookURLSuccessEnvVar, origSuccess)
-		setOrUnset(logging.SlackWebhookURLErrorEnvVar, origError)
-	})
-
 	tests := []struct {
 		name        string
 		successURL  string
@@ -246,10 +236,10 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variables for this test
-			setOrUnset(logging.SlackWebhookURLEnvVar, tt.oldURL)
-			setOrUnset(logging.SlackWebhookURLSuccessEnvVar, tt.successURL)
-			setOrUnset(logging.SlackWebhookURLErrorEnvVar, tt.errorURL)
+			// Set environment variables for this test (t.Setenv automatically restores on cleanup)
+			t.Setenv(logging.SlackWebhookURLEnvVar, tt.oldURL)
+			t.Setenv(logging.SlackWebhookURLSuccessEnvVar, tt.successURL)
+			t.Setenv(logging.SlackWebhookURLErrorEnvVar, tt.errorURL)
 
 			config, err := ValidateSlackWebhookEnv()
 
@@ -264,15 +254,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 				assert.Equal(t, tt.wantError, config.ErrorURL)
 			}
 		})
-	}
-}
-
-// setOrUnset sets or unsets an environment variable
-func setOrUnset(key, value string) {
-	if value == "" {
-		os.Unsetenv(key)
-	} else {
-		os.Setenv(key, value)
 	}
 }
 
