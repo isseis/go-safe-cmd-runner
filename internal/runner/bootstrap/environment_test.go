@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -245,7 +244,7 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
-				assert.True(t, errors.Is(err, tt.wantErr), "Expected error %v, got %v", tt.wantErr, err)
+				assert.ErrorIs(t, err, tt.wantErr, "Expected error %v, got %v", tt.wantErr, err)
 				assert.Nil(t, config)
 			} else {
 				require.NoError(t, err)
