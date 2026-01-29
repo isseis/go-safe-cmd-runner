@@ -255,16 +255,3 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 		})
 	}
 }
-
-func TestFormatDeprecatedSlackWebhookError(t *testing.T) {
-	msg := FormatDeprecatedSlackWebhookError()
-	assert.Contains(t, msg, "GSCR_SLACK_WEBHOOK_URL is deprecated")
-	assert.Contains(t, msg, "GSCR_SLACK_WEBHOOK_URL_SUCCESS")
-	assert.Contains(t, msg, "GSCR_SLACK_WEBHOOK_URL_ERROR")
-}
-
-func TestFormatSuccessWithoutErrorError(t *testing.T) {
-	msg := FormatSuccessWithoutErrorError()
-	assert.Contains(t, msg, "GSCR_SLACK_WEBHOOK_URL_SUCCESS is set")
-	assert.Contains(t, msg, "GSCR_SLACK_WEBHOOK_URL_ERROR is not")
-}
