@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestE2E_SlackWebhookSeparation_SuccessOnly tests IT-01: SUCCESS webhook receives INFO logs
+// TestE2E_SlackWebhookSeparation_SuccessOnly verifies that SUCCESS webhook receives INFO logs only.
 func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 	var successPayloads []string
 	var errorPayloads []string
@@ -132,10 +132,10 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 	assert.Contains(t, allSuccessPayloads, "success-test-group", "should contain group name")
 	assert.Contains(t, allSuccessPayloads, "SUCCESS", "should indicate success")
 
-	t.Logf("✓ IT-01: SUCCESS webhook correctly receives INFO logs only")
+	t.Logf("SUCCESS webhook correctly receives INFO logs only")
 }
 
-// TestE2E_SlackWebhookSeparation_ErrorOnly tests IT-02: ERROR webhook receives ERROR logs
+// TestE2E_SlackWebhookSeparation_ErrorOnly verifies that ERROR webhook receives ERROR logs only.
 func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 	var successPayloads []string
 	var errorPayloads []string
@@ -229,10 +229,10 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 	allErrorPayloads := strings.Join(errorPayloads, "\n")
 	assert.Contains(t, allErrorPayloads, "error-test-group", "should contain group name")
 
-	t.Logf("✓ IT-02: ERROR webhook correctly receives ERROR logs only")
+	t.Logf("ERROR webhook correctly receives ERROR logs only")
 }
 
-// TestE2E_SlackWebhookSeparation_WarnToError tests IT-03: WARN logs go to ERROR webhook
+// TestE2E_SlackWebhookSeparation_WarnToError verifies that WARN logs go to ERROR webhook.
 func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 	var successPayloads []string
 	var errorPayloads []string
@@ -294,10 +294,10 @@ func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 	allErrorPayloads := strings.Join(errorPayloads, "\n")
 	assert.Contains(t, allErrorPayloads, "Test warning message", "should contain warning message")
 
-	t.Logf("✓ IT-03: WARN logs correctly sent to ERROR webhook")
+	t.Logf("WARN logs correctly sent to ERROR webhook")
 }
 
-// TestE2E_SlackWebhookSeparation_ErrorOnlyConfig tests IT-04: ERROR webhook only (no SUCCESS)
+// TestE2E_SlackWebhookSeparation_ErrorOnlyConfig verifies that ERROR-only configuration works correctly.
 func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
 	var errorPayloads []string
 
@@ -342,10 +342,10 @@ func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
 	assert.Contains(t, allErrorPayloads, "Error message", "should contain error message")
 	assert.NotContains(t, allErrorPayloads, "Success message", "should NOT contain info message")
 
-	t.Logf("✓ IT-04: ERROR-only configuration works correctly")
+	t.Logf("ERROR-only configuration works correctly")
 }
 
-// TestE2E_SlackWebhookSeparation_DryRunMode tests IT-05: dry-run disables both webhooks
+// TestE2E_SlackWebhookSeparation_DryRunMode verifies that dry-run mode disables both webhooks.
 func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 	var successPayloads []string
 	var errorPayloads []string
@@ -408,7 +408,7 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 	assert.Empty(t, successPayloads, "SUCCESS webhook should NOT receive notifications in dry-run")
 	assert.Empty(t, errorPayloads, "ERROR webhook should NOT receive notifications in dry-run")
 
-	t.Logf("✓ IT-05: Dry-run mode correctly disables both webhooks")
+	t.Logf("Dry-run mode correctly disables both webhooks")
 }
 
 // TestE2E_SlackWebhookSeparation_MessageFormat tests message formatting
