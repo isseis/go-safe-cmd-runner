@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -634,22 +633,16 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 ) (string, executor.TempDirManager, error) {
 	// Check if group-level WorkDir is specified
 	if runtimeGroup.Spec.WorkDir != "" {
-		// Expand variables (note: __runner_workdir is not yet defined at this point)
+		// Expand variables and validate absolute path
+		// Note: __runner_workdir is not yet defined at this point
 		level := fmt.Sprintf("group[%s]", runtimeGroup.Spec.Name)
-		expandedWorkDir, err := config.ExpandString(
+		expandedWorkDir, err := config.ExpandWorkDir(
 			runtimeGroup.Spec.WorkDir,
-			runtimeGroup.ExpandedVars, // __runner_workdir is not included
+			runtimeGroup.ExpandedVars,
 			level,
-			"workdir",
 		)
 		if err != nil {
-			return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
-		}
-
-		// Security: Ensure expanded workdir is an absolute path
-		if expandedWorkDir != "" && !filepath.IsAbs(expandedWorkDir) {
-			return "", nil, fmt.Errorf("group %q: %w: %q (relative paths are not allowed for security reasons)",
-				runtimeGroup.Spec.Name, config.ErrInvalidWorkDir, expandedWorkDir)
+			return "", nil, err
 		}
 
 		slog.Info("Using group workdir",
@@ -682,22 +675,15 @@ func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 	// Priority 1: Command-level WorkDir (from spec)
 	// If WorkDir is non-nil (including empty string), use it and skip group-level
 	if runtimeCmd.Spec.WorkDir != nil {
-		// Expand variables in command workdir (empty string expands to empty string)
+		// Expand variables and validate absolute path
 		level := fmt.Sprintf("command[%s]", runtimeCmd.Spec.Name)
-		expandedWorkDir, err := config.ExpandString(
+		expandedWorkDir, err := config.ExpandWorkDir(
 			*runtimeCmd.Spec.WorkDir,
-			runtimeCmd.ExpandedVars, // Use command's expanded vars
+			runtimeCmd.ExpandedVars,
 			level,
-			"workdir",
 		)
 		if err != nil {
-			return "", fmt.Errorf("failed to expand command workdir: %w", err)
-		}
-
-		// Security: Ensure expanded workdir is an absolute path
-		if expandedWorkDir != "" && !filepath.IsAbs(expandedWorkDir) {
-			return "", fmt.Errorf("command %q: %w: %q (relative paths are not allowed for security reasons)",
-				runtimeCmd.Spec.Name, config.ErrInvalidWorkDir, expandedWorkDir)
+			return "", err
 		}
 
 		return expandedWorkDir, nil

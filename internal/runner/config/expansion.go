@@ -54,6 +54,36 @@ type variableResolver func(
 	depth int,
 ) (string, error)
 
+// ExpandWorkDir expands %{VAR} references in a workdir string and validates
+// that the result is an absolute path. Empty string is allowed and returned as-is.
+//
+// Parameters:
+//   - workdir: The workdir string to expand (may contain %{VAR} references)
+//   - expandedVars: Map of variable names to their expanded values
+//   - level: Context for error messages (e.g., "group[deploy]", "command[build]")
+//
+// Returns:
+//   - string: The expanded workdir path
+//   - error: Expansion error or ErrInvalidWorkDir if result is not absolute
+func ExpandWorkDir(
+	workdir string,
+	expandedVars map[string]string,
+	level string,
+) (string, error) {
+	expanded, err := ExpandString(workdir, expandedVars, level, "workdir")
+	if err != nil {
+		return "", fmt.Errorf("failed to expand workdir: %w", err)
+	}
+
+	// Security: Ensure expanded workdir is an absolute path (empty string is allowed)
+	if expanded != "" && !filepath.IsAbs(expanded) {
+		return "", fmt.Errorf("%s: %w: %q (relative paths are not allowed for security reasons)",
+			level, ErrInvalidWorkDir, expanded)
+	}
+
+	return expanded, nil
+}
+
 // ExpandString expands %{VAR} references in a string using the provided
 // internal variables. It detects circular references and reports detailed
 // errors. The function is package-level (stateless) and follows Go conventions.
