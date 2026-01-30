@@ -264,10 +264,8 @@ func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, er
 		return nil, err
 	}
 
-	// Validate working directories (absolute path requirement)
-	if err := ValidateGroupWorkDirs(&cfg); err != nil {
-		return nil, err
-	}
+	// Note: Working directory validation (absolute path check) is deferred to
+	// expansion time in group_executor.go (resolveGroupWorkDir/resolveCommandWorkDir)
 
 	return &cfg, nil
 }

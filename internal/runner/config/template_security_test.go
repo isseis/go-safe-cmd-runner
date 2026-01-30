@@ -111,20 +111,16 @@ func TestValidateTemplateDefinition(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:     "forbidden relative path workdir",
-			tmplName: "bad_template",
+			name:     "relative path workdir - validated at expansion time",
+			tmplName: "relative_workdir",
 			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("relative/path")},
-			wantErr:  true,
-			errType:  nil, // Use string matching instead
-			errMsg:   "working directory must be an absolute path",
+			wantErr:  false, // Validation deferred to expansion time in group_executor.go
 		},
 		{
-			name:     "forbidden relative path workdir with dot",
-			tmplName: "bad_template",
+			name:     "relative path workdir with dot - validated at expansion time",
+			tmplName: "relative_workdir_dot",
 			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("./relative/path")},
-			wantErr:  true,
-			errType:  nil, // Use string matching instead
-			errMsg:   "working directory must be an absolute path",
+			wantErr:  false, // Validation deferred to expansion time in group_executor.go
 		},
 		{
 			name:     "empty workdir string is allowed",
