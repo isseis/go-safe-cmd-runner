@@ -24,50 +24,30 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 		{
 			name: "minimal config with info level",
 			config: LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "",
-				RunID:           "test-min-001",
-				SlackWebhookURL: "",
+				Level: slog.LevelInfo,
+				RunID: "test-min-001",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
 			name: "minimal config with debug level",
 			config: LoggerConfig{
-				Level:           slog.LevelDebug,
-				LogDir:          "",
-				RunID:           "test-min-002",
-				SlackWebhookURL: "",
+				Level: slog.LevelDebug,
+				RunID: "test-min-002",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
 			name: "minimal config with warn level",
 			config: LoggerConfig{
-				Level:           slog.LevelWarn,
-				LogDir:          "",
-				RunID:           "test-min-003",
-				SlackWebhookURL: "",
+				Level: slog.LevelWarn,
+				RunID: "test-min-003",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
 			name: "minimal config with error level",
 			config: LoggerConfig{
-				Level:           slog.LevelError,
-				LogDir:          "",
-				RunID:           "test-min-004",
-				SlackWebhookURL: "",
+				Level: slog.LevelError,
+				RunID: "test-min-004",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 	}
 
@@ -97,62 +77,47 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		{
 			name: "full config with file handler",
 			config: LoggerConfig{
-				Level:           slog.LevelDebug,
-				LogDir:          tempDir,
-				RunID:           "test-full-001",
-				SlackWebhookURL: "",
+				Level:  slog.LevelDebug,
+				LogDir: tempDir,
+				RunID:  "test-full-001",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
-			name: "full config with Slack handler",
+			name: "full config with both Slack handlers",
 			config: LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "",
-				RunID:           "test-full-002",
-				SlackWebhookURL: "https://hooks.slack.com/services/test",
+				Level:                  slog.LevelInfo,
+				RunID:                  "test-full-002",
+				SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
+				SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
 			name: "full config with all handlers",
 			config: LoggerConfig{
-				Level:           slog.LevelWarn,
-				LogDir:          tempDir,
-				RunID:           "test-full-003",
-				SlackWebhookURL: "https://hooks.slack.com/services/test",
+				Level:                  slog.LevelWarn,
+				LogDir:                 tempDir,
+				RunID:                  "test-full-003",
+				SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
+				SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
 			},
-			forceInteractive: false,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
 			name: "full config with interactive mode",
 			config: LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          tempDir,
-				RunID:           "test-full-004",
-				SlackWebhookURL: "",
+				Level:  slog.LevelInfo,
+				LogDir: tempDir,
+				RunID:  "test-full-004",
 			},
 			forceInteractive: true,
-			forceQuiet:       false,
-			wantErr:          false,
 		},
 		{
 			name: "full config with quiet mode",
 			config: LoggerConfig{
-				Level:           slog.LevelError,
-				LogDir:          tempDir,
-				RunID:           "test-full-005",
-				SlackWebhookURL: "",
+				Level:  slog.LevelError,
+				LogDir: tempDir,
+				RunID:  "test-full-005",
 			},
-			forceInteractive: false,
-			forceQuiet:       true,
-			wantErr:          false,
+			forceQuiet: true,
 		},
 	}
 
@@ -195,10 +160,9 @@ func TestSetupLoggerWithConfig_InvalidLogDirectory(t *testing.T) {
 		{
 			name: "log directory does not exist",
 			config: LoggerConfig{
-				Level:           slog.LevelInfo,
-				LogDir:          "/nonexistent/path/to/logs",
-				RunID:           "test-dir-001",
-				SlackWebhookURL: "",
+				Level:  slog.LevelInfo,
+				LogDir: "/nonexistent/path/to/logs",
+				RunID:  "test-dir-001",
 			},
 			wantErr: true,
 		},
@@ -233,10 +197,9 @@ func TestSetupLoggerWithConfig_LogDirectoryPermissionError(t *testing.T) {
 	defer os.Chmod(readOnlyDir, 0o755)
 
 	config := LoggerConfig{
-		Level:           slog.LevelInfo,
-		LogDir:          readOnlyDir,
-		RunID:           "test-perm-001",
-		SlackWebhookURL: "",
+		Level:  slog.LevelInfo,
+		LogDir: readOnlyDir,
+		RunID:  "test-perm-001",
 	}
 
 	err = SetupLoggerWithConfig(config, false, false)
@@ -369,11 +332,12 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
-		Level:           slog.LevelDebug,
-		LogDir:          tempDir,
-		RunID:           "test-slack-exclusion-001",
-		SlackWebhookURL: "https://hooks.slack.com/services/test",
-		ConsoleWriter:   &consoleBuffer,
+		Level:                  slog.LevelDebug,
+		LogDir:                 tempDir,
+		RunID:                  "test-slack-exclusion-001",
+		SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
+		SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
+		ConsoleWriter:          &consoleBuffer,
 	}
 
 	err := SetupLoggerWithConfig(config, false, true)

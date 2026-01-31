@@ -1298,26 +1298,53 @@ CLICOLOR=1 NO_COLOR=1 runner -config config.toml
 
 ### 4.2 通知設定
 
-#### `GSCR_SLACK_WEBHOOK_URL`
+Slack通知は環境変数で設定できます。成功通知とエラー通知を別々のWebhookに送信できます。
 
-Slack通知用のWebhook URLを指定します。設定すると、エラーや重要なイベントがSlackに通知されます。
+#### `GSCR_SLACK_WEBHOOK_URL_SUCCESS`
+
+成功通知用のWebhook URLを指定します。設定すると、コマンドグループの正常完了がこのWebhookに通知されます（INFOレベル）。
+
+#### `GSCR_SLACK_WEBHOOK_URL_ERROR`
+
+エラー通知用のWebhook URLを指定します。設定すると、警告とエラーがこのWebhookに通知されます（WARNおよびERRORレベル）。
+
+**設定パターン**
+
+| SUCCESS URL | ERROR URL | 動作 |
+|-------------|-----------|------|
+| 未設定 | 未設定 | Slack通知無効 |
+| 未設定 | 設定済み | エラー通知のみ |
+| 設定済み | 設定済み | 成功とエラー両方の通知 |
+| 設定済み | 未設定 | **無効な設定**（エラー） |
 
 **使用例**
 
 ```bash
-# Slack通知を有効化
-export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+# エラー通知のみ（本番環境推奨）
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+runner -config config.toml
+
+# 成功とエラー両方の通知
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T00000000/B00000000/YYYYYYYYYYYY"
+runner -config config.toml
+
+# 同じWebhookを両方に使用（すべての通知を1つのチャンネルへ）
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
 runner -config config.toml
 ```
 
-**通知されるイベント**
+**各Webhookに送信されるイベント**
 
-- コマンド実行の開始
-- コマンドの成功/失敗
-- セキュリティ関連のイベント（権限昇格、ファイル検証失敗など）
-- エラーや警告
+| イベント種別 | SUCCESS に送信 | ERROR に送信 |
+|-------------|---------------|-------------|
+| コマンドグループ成功 | ✓ | - |
+| コマンドグループ失敗 | - | ✓ |
+| 警告 | - | ✓ |
+| エラー | - | ✓ |
 
-**通知例**
+**通知例（成功）**
 
 ```
 🤖 go-safe-cmd-runner
@@ -1329,11 +1356,44 @@ Duration: 5.2s
 Run ID: 01K2YK812JA735M4TWZ6BK0JH9
 ```
 
+**通知例（エラー）**
+
+```
+🤖 go-safe-cmd-runner
+
+❌ Command failed
+Group: backup
+Command: db_backup
+Error: exit status 1
+Run ID: 01K2YK812JA735M4TWZ6BK0JH9
+```
+
 **セキュリティ上の注意**
 
 - Webhook URLは機密情報として扱ってください
 - 環境変数やシークレット管理ツールで管理することを推奨します
 - ログやエラーメッセージには含まれません
+- dry-runモードでは、どちらのWebhookにも通知は送信されません
+
+#### `GSCR_SLACK_WEBHOOK_URL` からの移行
+
+旧 `GSCR_SLACK_WEBHOOK_URL` 環境変数は廃止されました。設定されている場合、runnerは移行方法を説明するエラーメッセージを出力して失敗します。
+
+**移行手順**
+
+```bash
+# 以前（廃止）
+export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+
+# 以後（推奨：エラー通知のみ）
+unset GSCR_SLACK_WEBHOOK_URL
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+
+# 以後（成功とエラー両方の通知が必要な場合）
+unset GSCR_SLACK_WEBHOOK_URL
+export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/..."
+export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
+```
 
 ### 4.3 CI環境の自動検出
 
@@ -1554,7 +1614,7 @@ jobs:
         run: |
           runner -c config.toml -q -log-dir ./logs
         env:
-          GSCR_SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GSCR_SLACK_WEBHOOK_URL_ERROR: ${{ secrets.SLACK_WEBHOOK_URL_ERROR }}
 
       - name: Upload logs
         if: always()
@@ -1579,9 +1639,9 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_WEBHOOK')]) {
+                withCredentials([string(credentialsId: 'slack-webhook-error', variable: 'SLACK_WEBHOOK_ERROR')]) {
                     sh '''
-                        export GSCR_SLACK_WEBHOOK_URL="${SLACK_WEBHOOK}"
+                        export GSCR_SLACK_WEBHOOK_URL_ERROR="${SLACK_WEBHOOK_ERROR}"
                         runner -config config.toml -quiet -log-dir ./logs -run-id "jenkins-${BUILD_NUMBER}"
                     '''
                 }

@@ -167,19 +167,42 @@ func run(runID string) error {
 	if dryRun {
 		consoleWriter = os.Stderr
 	}
-	// Get Slack webhook URL from environment (empty in dry-run mode to disable notifications)
-	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
+
+	// Validate Slack webhook environment variables
+	slackConfig, err := bootstrap.ValidateSlackWebhookEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   err.Error(),
+			Component: string(resource.ComponentLogging),
+			RunID:     runID,
+		}
+	}
+
 	if err := bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{
-		LogLevel:         logLevelValue,
-		LogDir:           logDir,
-		RunID:            runID,
-		ForceInteractive: forceInteractive,
-		ForceQuiet:       forceQuiet,
-		ConsoleWriter:    consoleWriter,
-		SlackWebhookURL:  slackURL,
-		DryRun:           dryRun,
+		LogLevel:               logLevelValue,
+		LogDir:                 logDir,
+		RunID:                  runID,
+		ForceInteractive:       forceInteractive,
+		ForceQuiet:             forceQuiet,
+		ConsoleWriter:          consoleWriter,
+		SlackWebhookURLSuccess: slackConfig.SuccessURL,
+		SlackWebhookURLError:   slackConfig.ErrorURL,
+		DryRun:                 dryRun,
 	}); err != nil {
 		return err
+	}
+
+	// Validate required arguments before initializing verification manager
+	// This ensures proper error messages for missing arguments even if hash directory doesn't exist
+	if configPath == "" {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeRequiredArgumentMissing,
+			Message:   "Config file path is required",
+			Component: string(resource.ComponentConfig),
+			RunID:     runID,
+		}
 	}
 
 	// Initialize verification manager with secure default hash directory

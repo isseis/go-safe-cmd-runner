@@ -654,6 +654,7 @@ func ValidateTemplateDefinition(
 		if err := validateGlobalOnly(*template.WorkDir, name, workDirKey); err != nil {
 			return err
 		}
+		// Note: Absolute path validation is deferred to expansion time in group_executor.go
 	}
 
 	return nil

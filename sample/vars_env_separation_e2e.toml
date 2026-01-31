@@ -64,32 +64,27 @@ name = "print_all_env"
 cmd = "/usr/bin/printenv"
 args = []
 env_vars = []  # Use inherited env from group and global
-mode = "user"
 
 # Test 2: Print specific environment variables
 [[groups.commands]]
 name = "print_app_dir"
 cmd = "/usr/bin/printenv"
 args = ["APP_DIR"]
-mode = "user"
 
 [[groups.commands]]
 name = "print_app_name"
 cmd = "/usr/bin/printenv"
 args = ["APP_NAME"]
-mode = "user"
 
 [[groups.commands]]
 name = "print_data_dir"
 cmd = "/usr/bin/printenv"
 args = ["DATA_DIR"]
-mode = "user"
 
 [[groups.commands]]
 name = "print_log_dir"
 cmd = "/usr/bin/printenv"
 args = ["LOG_DIR"]
-mode = "user"
 
 # Test 3: Use internal variables in args
 [[groups.commands]]
@@ -101,7 +96,6 @@ args = [
     "input_file=%{input_file}",
     "output_file=%{output_file}"
 ]
-mode = "user"
 
 # Test 4: Command-level variables
 [[groups.commands]]
@@ -114,7 +108,6 @@ args = [
 env_vars = [
     "CMD_VAR=%{cmd_var}"
 ]
-mode = "user"
 [groups.commands.vars]
 cmd_var = "%{temp_dir}/command_specific.log"
 
@@ -127,7 +120,6 @@ args = ["APP_NAME"]
 env_vars = [
     "APP_NAME=command_override"
 ]
-mode = "user"
 
 [[groups]]
 name = "override_group"
@@ -160,7 +152,6 @@ args = [
     "group_specific=%{group_specific}"
 ]
 env_vars = []
-mode = "user"
 
 [[groups]]
 name = "empty_env_import_group"
@@ -181,4 +172,3 @@ cmd = "/bin/echo"
 args = [
     "static_var=%{static_var}"
 ]
-mode = "user"

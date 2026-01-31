@@ -70,7 +70,6 @@ output_file = "${HOME}/Documents/user_identity.txt" # Note: variable expansion i
 [[groups]]
 name = "controlled_temp_usage"
 description = "Controlled usage of temporary directories"
-cleanup = true
 
 [[groups.commands]]
 name = "temp_system_info"

@@ -806,6 +806,7 @@ func TestResolveGroupWorkDir(t *testing.T) {
 		expectTempDir   bool
 		expectError     bool
 		expectedWorkDir string // For fixed workdir cases
+		errMsg          string // For error cases
 	}{
 		{
 			name:            "fixed workdir specified",
@@ -841,6 +842,22 @@ func TestResolveGroupWorkDir(t *testing.T) {
 			expectTempDir: true,
 			expectError:   false,
 		},
+		{
+			name:         "relative workdir rejected after expansion",
+			groupWorkDir: "relative/path",
+			groupVars:    map[string]string{},
+			isDryRun:     false,
+			expectError:  true,
+			errMsg:       "relative paths are not allowed",
+		},
+		{
+			name:         "variable expansion resulting in relative path rejected",
+			groupWorkDir: "%{relative}",
+			groupVars:    map[string]string{"relative": "not/absolute"},
+			isDryRun:     false,
+			expectError:  true,
+			errMsg:       "relative paths are not allowed",
+		},
 	}
 
 	for _, tt := range tests {
@@ -865,6 +882,9 @@ func TestResolveGroupWorkDir(t *testing.T) {
 
 			if tt.expectError {
 				require.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
 				return
 			}
 
@@ -939,6 +959,22 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			name:                  "variable expansion error stops execution",
 			commandWorkDir:        runnertypes.StringPtr("/opt/%{undefined_var}"),
 			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "",
+			expectError:           true,
+		},
+		{
+			name:                  "relative command workdir rejected",
+			commandWorkDir:        runnertypes.StringPtr("./relative/path"),
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "",
+			expectError:           true,
+		},
+		{
+			name:                  "variable expansion resulting in relative path rejected",
+			commandWorkDir:        runnertypes.StringPtr("%{relative}"),
+			commandVars:           map[string]string{"relative": "not/absolute"},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "",
 			expectError:           true,

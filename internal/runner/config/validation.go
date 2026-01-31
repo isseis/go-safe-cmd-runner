@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -181,22 +180,9 @@ func ValidateCommands(cfg *runnertypes.ConfigSpec) error {
 	return nil
 }
 
-// ValidateWorkDir validates the working directory path.
-// It checks that:
-// 1. nil or empty string are allowed (current directory)
-// 2. Non-empty paths must be absolute (start with '/')
-func ValidateWorkDir(workdir *string) error {
-	if workdir == nil || *workdir == "" {
-		return nil // Current directory, no validation needed
-	}
-
-	// Must be absolute path
-	if !filepath.IsAbs(*workdir) {
-		return fmt.Errorf("%w: %q", ErrInvalidWorkDir, *workdir)
-	}
-
-	return nil
-}
+// Note: Working directory validation (absolute path check) is performed at expansion time
+// in group_executor.go (resolveGroupWorkDir and resolveCommandWorkDir).
+// This ensures consistent validation regardless of whether the path contains variables.
 
 // ValidateEnvImport validates that all imported environment variables
 // are in the allowed list. Supports "internal_name=SYSTEM_VAR" format.

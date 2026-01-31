@@ -5,6 +5,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -221,9 +222,12 @@ func mergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTem
 
 // loadConfigInternal loads and validates configuration from byte content
 func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, error) {
-	// Parse the config content
+	// Parse the config content with strict validation (unknown fields are rejected)
+	decoder := toml.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+
 	var cfg runnertypes.ConfigSpec
-	if err := toml.Unmarshal(content, &cfg); err != nil {
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
@@ -254,6 +258,9 @@ func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, er
 	if err := ValidateCommands(&cfg); err != nil {
 		return nil, err
 	}
+
+	// Note: Working directory validation (absolute path check) is deferred to
+	// expansion time in group_executor.go (resolveGroupWorkDir/resolveCommandWorkDir)
 
 	return &cfg, nil
 }

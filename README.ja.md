@@ -601,7 +601,7 @@ go test -v ./internal/runner
 # 統合テストを実行
 make integration-test
 
-# Slack通知テストを実行（GSCR_SLACK_WEBHOOK_URLが必要）
+# Slack通知テストを実行（GSCR_SLACK_WEBHOOK_URL_SUCCESSとGSCR_SLACK_WEBHOOK_URL_ERRORが必要）
 make slack-notify-test
 make slack-group-notification-test
 ```

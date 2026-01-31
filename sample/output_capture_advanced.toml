@@ -80,7 +80,6 @@ output_file = "kernel_modules.txt"
 [[groups]]
 name = "complex_path_scenarios"
 description = "Test various path configurations for output files"
-cleanup = true
 
 [[groups.commands]]
 name = "temp_dir_output"

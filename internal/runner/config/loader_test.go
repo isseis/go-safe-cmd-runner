@@ -547,3 +547,92 @@ workdir = "/tmp"
 		})
 	}
 }
+
+// TestUnknownFieldsRejected tests that unknown fields in TOML are rejected.
+// This includes the deprecated slack_webhook_url field.
+func TestUnknownFieldsRejected(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr bool
+	}{
+		{
+			name: "slack_webhook_url in global section should error",
+			toml: `
+version = "1.0"
+[global]
+slack_webhook_url = "https://hooks.slack.com/services/test"
+`,
+			wantErr: true,
+		},
+		{
+			name: "unknown_field in global section should error",
+			toml: `
+version = "1.0"
+[global]
+unknown_field = "value"
+`,
+			wantErr: true,
+		},
+		{
+			name: "config without unknown fields should parse",
+			toml: `
+version = "1.0"
+[global]
+timeout = 30
+
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "echo"
+cmd = "echo"
+args = ["hello"]
+`,
+			wantErr: false,
+		},
+		{
+			name: "config with empty global section",
+			toml: `
+version = "1.0"
+[global]
+
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "echo"
+cmd = "echo"
+`,
+			wantErr: false,
+		},
+		{
+			name: "config without global section",
+			toml: `
+version = "1.0"
+
+[[groups]]
+name = "test"
+[[groups.commands]]
+name = "echo"
+cmd = "echo"
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoaderForTest()
+			cfg, err := loader.LoadConfigForTest([]byte(tt.toml))
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error but got none")
+				assert.Contains(t, err.Error(), "strict mode",
+					"error message should indicate strict mode rejection")
+				assert.Nil(t, cfg, "config should be nil when validation fails")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+				require.NotNil(t, cfg, "config should not be nil")
+			}
+		})
+	}
+}

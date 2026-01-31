@@ -108,7 +108,6 @@ func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
 			name: "global config with max_output_size",
 			tomlContent: `
 [global]
-workdir = "/tmp"
 output_size_limit = 10485760
 `,
 			wantMaxSize: commontesting.Int64Ptr(10485760), // 10MB
@@ -118,7 +117,7 @@ output_size_limit = 10485760
 			name: "global config without max_output_size",
 			tomlContent: `
 [global]
-workdir = "/tmp"
+timeout = 30
 `,
 			wantMaxSize: nil, // Not specified, should be nil
 			wantErr:     false,
@@ -127,7 +126,6 @@ workdir = "/tmp"
 			name: "global config with zero max_output_size",
 			tomlContent: `
 [global]
-workdir = "/tmp"
 output_size_limit = 0
 `,
 			wantMaxSize: commontesting.Int64Ptr(0), // Explicitly set to 0 (unlimited)
@@ -162,7 +160,6 @@ func TestCompleteConfigWithOutput(t *testing.T) {
 version = "1.0"
 
 [global]
-workdir = "/tmp"
 timeout = 300
 output_size_limit = 20971520
 

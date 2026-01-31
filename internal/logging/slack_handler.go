@@ -60,6 +60,20 @@ var (
 	ErrInvalidWebhookURL = errors.New("invalid webhook URL")
 )
 
+// SlackHandlerLevelMode defines how the handler filters log levels
+type SlackHandlerLevelMode int
+
+const (
+	// LevelModeDefault handles all levels >= configured level (existing behavior)
+	LevelModeDefault SlackHandlerLevelMode = iota
+
+	// LevelModeExactInfo handles only INFO level (for success webhook)
+	LevelModeExactInfo
+
+	// LevelModeWarnAndAbove handles only WARN and above (for error webhook)
+	LevelModeWarnAndAbove
+)
+
 // SlackHandler is a slog.Handler that sends notifications to Slack
 type SlackHandler struct {
 	webhookURL    string
@@ -69,7 +83,8 @@ type SlackHandler struct {
 	attrs         []slog.Attr // Accumulated attributes from WithAttrs calls
 	groups        []string    // Accumulated group names from WithGroup calls
 	backoffConfig BackoffConfig
-	isDryRun      bool // Whether running in dry-run mode (suppresses actual notifications)
+	isDryRun      bool                  // Whether running in dry-run mode (suppresses actual notifications)
+	levelMode     SlackHandlerLevelMode // Level filtering mode
 }
 
 // SlackMessage represents the structure of a Slack webhook message
@@ -106,11 +121,12 @@ type SlackAttachmentField struct {
 
 // SlackHandlerOptions holds configuration for creating a SlackHandler
 type SlackHandlerOptions struct {
-	WebhookURL    string        // Slack webhook URL (required)
-	RunID         string        // Run ID for tracking (required)
-	HTTPClient    *http.Client  // Custom HTTP client (optional, defaults to client with httpTimeout)
-	BackoffConfig BackoffConfig // Retry backoff configuration (optional, defaults to DefaultBackoffConfig)
-	IsDryRun      bool          // If true, suppresses actual Slack notifications (used for dry-run mode)
+	WebhookURL    string                // Slack webhook URL (required)
+	RunID         string                // Run ID for tracking (required)
+	HTTPClient    *http.Client          // Custom HTTP client (optional, defaults to client with httpTimeout)
+	BackoffConfig BackoffConfig         // Retry backoff configuration (optional, defaults to DefaultBackoffConfig)
+	IsDryRun      bool                  // If true, suppresses actual Slack notifications (used for dry-run mode)
+	LevelMode     SlackHandlerLevelMode // Level filtering mode (optional, defaults to LevelModeDefault)
 }
 
 // validateWebhookURL validates that the webhook URL is a valid HTTPS URL
@@ -155,12 +171,13 @@ func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
 	}
 
 	slog.Debug("Creating Slack handler",
-		slog.String("webhook_url", opts.WebhookURL),
+		slog.Bool("webhook_configured", opts.WebhookURL != ""),
 		slog.String("run_id", opts.RunID),
 		slog.Duration("timeout", httpClient.Timeout),
 		slog.Duration("backoff_base", backoffConfig.Base),
 		slog.Int("retry_count", backoffConfig.RetryCount),
-		slog.Bool("dry_run", opts.IsDryRun))
+		slog.Bool("dry_run", opts.IsDryRun),
+		slog.Int("level_mode", int(opts.LevelMode)))
 
 	return &SlackHandler{
 		webhookURL:    opts.WebhookURL,
@@ -169,12 +186,20 @@ func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
 		level:         slog.LevelInfo, // Only handle info level and above
 		backoffConfig: backoffConfig,
 		isDryRun:      opts.IsDryRun,
+		levelMode:     opts.LevelMode,
 	}, nil
 }
 
 // Enabled reports whether the handler handles records at the given level
 func (s *SlackHandler) Enabled(_ context.Context, level slog.Level) bool {
-	return level >= s.level
+	switch s.levelMode {
+	case LevelModeExactInfo:
+		return level == slog.LevelInfo
+	case LevelModeWarnAndAbove:
+		return level >= slog.LevelWarn
+	default:
+		return level >= s.level
+	}
 }
 
 // Handle processes the log record and sends it to Slack if appropriate
@@ -250,6 +275,7 @@ func (s *SlackHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		groups:        s.groups, // Copy existing groups
 		backoffConfig: s.backoffConfig,
 		isDryRun:      s.isDryRun,
+		levelMode:     s.levelMode, // Preserve levelMode
 	}
 }
 
@@ -273,6 +299,7 @@ func (s *SlackHandler) WithGroup(name string) slog.Handler {
 		groups:        newGroups,
 		backoffConfig: s.backoffConfig,
 		isDryRun:      s.isDryRun,
+		levelMode:     s.levelMode, // Preserve levelMode
 	}
 }
 
@@ -795,7 +822,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		return fmt.Errorf("failed to marshal Slack message: %w", err)
 	}
 
-	slog.Debug("Sending Slack notification", slog.String("webhook_url", s.webhookURL), slog.String("run_id", s.runID), slog.String("message_text", message.Text))
+	slog.Debug("Sending Slack notification", slog.String("run_id", s.runID), slog.String("message_text", message.Text))
 
 	var lastErr error
 

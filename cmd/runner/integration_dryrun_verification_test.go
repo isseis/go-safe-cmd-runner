@@ -218,8 +218,7 @@ func TestDryRunE2E_NoSideEffects(t *testing.T) {
 	require.NoError(t, err)
 
 	configContent := `
-run_id = "test-no-side-effects"
-log_dir = "` + logDir + `"
+version = "1.0"
 
 [[groups]]
 name = "test_group"
@@ -244,8 +243,10 @@ args = ["hello"]
 	// Run command in dry-run mode with Slack webhook configured
 	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text", "-log-level", "debug")
 	cmd.Dir = "."
-	// Set fake Slack webhook URL to enable Slack notifications
-	cmd.Env = append(os.Environ(), "GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/TEST/FAKE/WEBHOOK")
+	// Set fake Slack webhook URLs to enable Slack notifications (both success and error)
+	cmd.Env = append(os.Environ(),
+		"GSCR_SLACK_WEBHOOK_URL_SUCCESS=https://hooks.slack.com/services/TEST/FAKE/SUCCESS",
+		"GSCR_SLACK_WEBHOOK_URL_ERROR=https://hooks.slack.com/services/TEST/FAKE/ERROR")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

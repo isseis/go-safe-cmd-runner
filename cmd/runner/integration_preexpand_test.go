@@ -32,24 +32,22 @@ func TestIntegration_PreExpand_CommandLevelVariableInVerification(t *testing.T) 
 version = "1.0"
 
 [global]
-hash_directory = "%s"
+timeout = 30
 
 [[groups]]
 name = "test_group"
+# Use group-level variable in verify_files (verify_files is a group-level field)
+verify_files = ["%%{verify_path}"]
 
 [groups.vars]
 group_var = "%s"
+verify_path = "%s"
 
 [[groups.commands]]
 name = "test_cmd"
 cmd = "/usr/bin/echo"
 args = ["test"]
-# Use command-level variable in verify_files
-verify_files = ["%%{cmd_var}"]
-
-[groups.commands.vars]
-cmd_var = "%s"
-`, env.HashDir, env.TestDir, verifyFile)
+`, env.TestDir, verifyFile)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -69,7 +67,7 @@ func TestIntegration_PreExpand_FailFast_UndefinedVariable(t *testing.T) {
 version = "1.0"
 
 [global]
-hash_directory = "%s"
+timeout = 30
 
 [[groups]]
 name = "test_group"
@@ -78,7 +76,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "/usr/bin/echo"
 args = ["test", "%%{undefined_var}"]
-`, env.HashDir)
+`)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -107,7 +105,7 @@ func TestIntegration_PreExpand_FailFast_WorkdirResolutionError(t *testing.T) {
 version = "1.0"
 
 [global]
-hash_directory = "%s"
+timeout = 30
 
 [[groups]]
 name = "test_group"
@@ -120,7 +118,7 @@ workdir = "/nonexistent/directory/%%{some_var}"
 
 [groups.commands.vars]
 some_var = "subdir"
-`, env.HashDir)
+`)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -145,8 +143,7 @@ func TestIntegration_PreExpand_DryRunMode(t *testing.T) {
 version = "1.0"
 
 [global]
-hash_directory = "%s"
-dry_run = true
+timeout = 30
 
 [[groups]]
 name = "test_group"
@@ -159,7 +156,7 @@ name = "test_cmd"
 cmd = "/usr/bin/echo"
 args = ["test output"]
 output_file = "%%{output_file}"
-`, env.HashDir, outputFile)
+`, outputFile)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -184,7 +181,7 @@ func TestIntegration_PreExpand_MultipleCommands_FirstFails(t *testing.T) {
 version = "1.0"
 
 [global]
-hash_directory = "%s"
+timeout = 30
 
 [[groups]]
 name = "test_group"
@@ -206,7 +203,7 @@ args = ["second"]
 name = "third_cmd"
 cmd = "/usr/bin/echo"
 args = ["third"]
-`, env.HashDir)
+`)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -239,7 +236,7 @@ func TestIntegration_PreExpand_CommandVarsInArgs(t *testing.T) {
 version = "1.0"
 
 [global]
-hash_directory = "%s"
+timeout = 30
 
 [[groups]]
 name = "test_group"
@@ -251,7 +248,7 @@ args = ["-c", "echo 'test output' > %%{cmd_output}"]
 
 [groups.commands.vars]
 cmd_output = "%s"
-`, env.HashDir, outputFile)
+`, outputFile)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -283,7 +280,7 @@ func TestIntegration_PreExpand_WorkdirWithCommandVars(t *testing.T) {
 version = "1.0"
 
 [global]
-hash_directory = "%s"
+timeout = 30
 
 [[groups]]
 name = "test_group"
@@ -296,7 +293,7 @@ workdir = "%%{work_directory}"
 
 [groups.commands.vars]
 work_directory = "%s"
-`, env.HashDir, subdir)
+`, subdir)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)

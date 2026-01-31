@@ -613,61 +613,8 @@ func TestValidateTimeouts(t *testing.T) {
 	}
 }
 
-// TestValidateWorkDir tests WorkDir validation with nil and absolute path checking
-func TestValidateWorkDir(t *testing.T) {
-	tests := []struct {
-		name    string
-		workdir *string
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name:    "nil workdir",
-			workdir: nil,
-			wantErr: false,
-		},
-		{
-			name:    "empty string workdir",
-			workdir: commontesting.StringPtr(""),
-			wantErr: false,
-		},
-		{
-			name:    "absolute path",
-			workdir: commontesting.StringPtr("/home/user/dir"),
-			wantErr: false,
-		},
-		{
-			name:    "root directory",
-			workdir: commontesting.StringPtr("/"),
-			wantErr: false,
-		},
-		{
-			name:    "relative path",
-			workdir: commontesting.StringPtr("relative/path"),
-			wantErr: true,
-			errMsg:  "working directory",
-		},
-		{
-			name:    "relative path with dot",
-			workdir: commontesting.StringPtr("./path"),
-			wantErr: true,
-			errMsg:  "working directory",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateWorkDir(tt.workdir)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
+// Note: WorkDir validation (absolute path check) is performed at expansion time
+// in group_executor.go (resolveGroupWorkDir and resolveCommandWorkDir).
 
 // TestValidateEnvImport tests EnvImport validation against env_allowed list
 func TestValidateEnvImport(t *testing.T) {

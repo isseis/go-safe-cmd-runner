@@ -60,6 +60,7 @@ func TestValidateTemplateDefinition(t *testing.T) {
 		template runnertypes.CommandTemplate
 		wantErr  bool
 		errType  error
+		errMsg   string // For workdir validation errors
 	}{
 		{
 			name:     "valid template",
@@ -102,6 +103,36 @@ func TestValidateTemplateDefinition(t *testing.T) {
 			tmplName: "good_template",
 			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("%{BaseDir}/work")},
 			wantErr:  false,
+		},
+		{
+			name:     "absolute path workdir without variables",
+			tmplName: "absolute_workdir",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("/opt/app")},
+			wantErr:  false,
+		},
+		{
+			name:     "relative path workdir - validated at expansion time",
+			tmplName: "relative_workdir",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("relative/path")},
+			wantErr:  false, // Validation deferred to expansion time in group_executor.go
+		},
+		{
+			name:     "relative path workdir with dot - validated at expansion time",
+			tmplName: "relative_workdir_dot",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("./relative/path")},
+			wantErr:  false, // Validation deferred to expansion time in group_executor.go
+		},
+		{
+			name:     "empty workdir string is allowed",
+			tmplName: "empty_workdir",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("")},
+			wantErr:  false, // Empty string means current directory
+		},
+		{
+			name:     "workdir with variable reference is allowed (validation deferred to expansion)",
+			tmplName: "variable_workdir",
+			template: runnertypes.CommandTemplate{Cmd: "cmd", WorkDir: runnertypes.StringPtr("${base_dir}/relative")},
+			wantErr:  false, // Variable references are allowed - validation happens after expansion
 		},
 		{
 			name:     "forbidden local variable in cmd",
@@ -148,6 +179,9 @@ func TestValidateTemplateDefinition(t *testing.T) {
 				require.Error(t, err)
 				if tt.errType != nil {
 					assert.ErrorAs(t, err, &tt.errType)
+				}
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
 				}
 			} else {
 				assert.NoError(t, err)

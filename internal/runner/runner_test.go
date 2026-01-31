@@ -1322,7 +1322,6 @@ func TestRunner_OutputCaptureWithTOMLConfig(t *testing.T) {
 	tomlContent := `
 [global]
 timeout = 30
-workdir = "` + tempDir + `"
 output_size_limit = 1048576
 
 [[groups]]
@@ -1401,7 +1400,6 @@ args = ["No output capture"]
 		invalidTomlContent := `
 [global]
 timeout = 30
-workdir = "` + tempDir + `"
 output_size_limit = -1  # Invalid negative size
 
 [[groups]]
@@ -1411,7 +1409,7 @@ name = "invalid_group"
 name = "invalid-echo"
 cmd = "echo"
 args = ["test"]
-output = "output.txt"
+output_file = "output.txt"
 `
 
 		invalidConfigPath := filepath.Join(tempDir, "invalid-config.toml")
@@ -2263,4 +2261,117 @@ func TestGroupFilteringE2E(t *testing.T) {
 	// Without dependency resolution, only the specified group should execute
 	assert.Equal(t, []string{"test"}, executedGroups)
 	mockGroupExecutor.AssertExpectations(t)
+}
+
+// TestLogGroupExecutionSummary_LogLevel tests that logGroupExecutionSummary uses
+// the correct log level based on execution status:
+// - INFO for success (sent to success webhook)
+// - ERROR for error (sent to error webhook)
+func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
+	// Create a custom handler to capture log records
+	type logRecord struct {
+		level   slog.Level
+		message string
+	}
+	var capturedLogs []logRecord
+	captureHandler := &logCaptureHandler{
+		onHandle: func(r slog.Record) {
+			capturedLogs = append(capturedLogs, logRecord{
+				level:   r.Level,
+				message: r.Message,
+			})
+		},
+	}
+
+	// Save original logger and restore after test
+	originalLogger := slog.Default()
+	defer slog.SetDefault(originalLogger)
+
+	// Set up test logger
+	slog.SetDefault(slog.New(captureHandler))
+
+	// Create a runner for testing
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+	runner, err := NewRunner(config,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-log-level"))
+	require.NoError(t, err)
+
+	t.Run("success status logs at INFO level", func(t *testing.T) {
+		capturedLogs = nil // Clear previous logs
+
+		groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+		result := &groupExecutionResult{
+			status:   GroupExecutionStatusSuccess,
+			commands: nil,
+		}
+
+		runner.logGroupExecutionSummary(groupSpec, result, time.Second)
+
+		// Find the execution summary log
+		var found bool
+		for _, log := range capturedLogs {
+			if log.message == "Command group execution completed" {
+				found = true
+				assert.Equal(t, slog.LevelInfo, log.level,
+					"Success status should log at INFO level")
+				break
+			}
+		}
+		assert.True(t, found, "Should have logged execution summary")
+	})
+
+	t.Run("error status logs at ERROR level", func(t *testing.T) {
+		capturedLogs = nil // Clear previous logs
+
+		groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
+		result := &groupExecutionResult{
+			status:   GroupExecutionStatusError,
+			commands: nil,
+			errorMsg: "command failed",
+		}
+
+		runner.logGroupExecutionSummary(groupSpec, result, time.Second)
+
+		// Find the execution summary log
+		var found bool
+		for _, log := range capturedLogs {
+			if log.message == "Command group execution completed" {
+				found = true
+				assert.Equal(t, slog.LevelError, log.level,
+					"Error status should log at ERROR level")
+				break
+			}
+		}
+		assert.True(t, found, "Should have logged execution summary")
+	})
+}
+
+// logCaptureHandler is a simple slog.Handler that captures log records for testing
+type logCaptureHandler struct {
+	onHandle func(slog.Record)
+}
+
+func (h *logCaptureHandler) Enabled(_ context.Context, _ slog.Level) bool {
+	return true
+}
+
+func (h *logCaptureHandler) Handle(_ context.Context, r slog.Record) error {
+	if h.onHandle != nil {
+		h.onHandle(r)
+	}
+	return nil
+}
+
+func (h *logCaptureHandler) WithAttrs(_ []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
+	return h
 }
