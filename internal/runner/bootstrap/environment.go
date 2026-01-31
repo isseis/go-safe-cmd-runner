@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,41 +16,14 @@ type SlackWebhookConfig struct {
 	ErrorURL   string
 }
 
-// ErrDeprecatedSlackWebhook is returned when the deprecated env var is set
-var ErrDeprecatedSlackWebhook = errors.New("GSCR_SLACK_WEBHOOK_URL is deprecated")
+// ErrDeprecatedSlackWebhook is returned when the deprecated env var is set.
+// Use errors.Is(err, ErrDeprecatedSlackWebhook) to check for this error type.
+var ErrDeprecatedSlackWebhook = &DeprecatedSlackWebhookError{}
 
-// ErrSuccessWithoutError is returned when SUCCESS is set but ERROR is not
-var ErrSuccessWithoutError = errors.New("GSCR_SLACK_WEBHOOK_URL_SUCCESS requires GSCR_SLACK_WEBHOOK_URL_ERROR")
+// DeprecatedSlackWebhookError indicates that the deprecated GSCR_SLACK_WEBHOOK_URL is set.
+type DeprecatedSlackWebhookError struct{}
 
-// ValidateSlackWebhookEnv validates Slack webhook environment variables
-func ValidateSlackWebhookEnv() (*SlackWebhookConfig, error) {
-	// Check for deprecated environment variable
-	if os.Getenv(logging.SlackWebhookURLEnvVar) != "" {
-		return nil, fmt.Errorf("%w: please migrate to GSCR_SLACK_WEBHOOK_URL_SUCCESS and GSCR_SLACK_WEBHOOK_URL_ERROR",
-			ErrDeprecatedSlackWebhook)
-	}
-
-	successURL := os.Getenv(logging.SlackWebhookURLSuccessEnvVar)
-	errorURL := os.Getenv(logging.SlackWebhookURLErrorEnvVar)
-
-	// Validate combinations
-	if successURL != "" && errorURL == "" {
-		return nil, fmt.Errorf("%w: error notifications must be enabled",
-			ErrSuccessWithoutError)
-	}
-
-	// Both empty is valid (Slack disabled)
-	// ERROR only is valid (no success notifications)
-	// Both set is valid
-
-	return &SlackWebhookConfig{
-		SuccessURL: successURL,
-		ErrorURL:   errorURL,
-	}, nil
-}
-
-// FormatDeprecatedSlackWebhookError formats the error message for deprecated env var
-func FormatDeprecatedSlackWebhookError() string {
+func (e *DeprecatedSlackWebhookError) Error() string {
 	return `Error: GSCR_SLACK_WEBHOOK_URL is deprecated.
 
 Please migrate to the new webhook configuration:
@@ -62,8 +34,21 @@ For more information, see the migration guide at:
   https://github.com/isseis/go-safe-cmd-runner/docs/user/runner_command.md#slack-webhook-configuration`
 }
 
-// FormatSuccessWithoutErrorError formats the error message for invalid config
-func FormatSuccessWithoutErrorError() string {
+// Is implements errors.Is support.
+func (e *DeprecatedSlackWebhookError) Is(target error) bool {
+	_, ok := target.(*DeprecatedSlackWebhookError)
+	return ok
+}
+
+// ErrSuccessWithoutError is returned when SUCCESS is set but ERROR is not.
+// Use errors.Is(err, ErrSuccessWithoutError) to check for this error type.
+var ErrSuccessWithoutError = &SuccessWithoutErrorError{}
+
+// SuccessWithoutErrorError indicates that GSCR_SLACK_WEBHOOK_URL_SUCCESS is set
+// but GSCR_SLACK_WEBHOOK_URL_ERROR is not.
+type SuccessWithoutErrorError struct{}
+
+func (e *SuccessWithoutErrorError) Error() string {
 	return `Error: Invalid Slack webhook configuration.
 
 GSCR_SLACK_WEBHOOK_URL_SUCCESS is set but GSCR_SLACK_WEBHOOK_URL_ERROR is not.
@@ -75,6 +60,37 @@ Please set GSCR_SLACK_WEBHOOK_URL_ERROR:
 To use the same webhook for both success and error notifications:
   export GSCR_SLACK_WEBHOOK_URL_SUCCESS="<your_webhook_url>"
   export GSCR_SLACK_WEBHOOK_URL_ERROR="<your_webhook_url>"`
+}
+
+// Is implements errors.Is support.
+func (e *SuccessWithoutErrorError) Is(target error) bool {
+	_, ok := target.(*SuccessWithoutErrorError)
+	return ok
+}
+
+// ValidateSlackWebhookEnv validates Slack webhook environment variables
+func ValidateSlackWebhookEnv() (*SlackWebhookConfig, error) {
+	// Check for deprecated environment variable
+	if os.Getenv(logging.SlackWebhookURLEnvVar) != "" {
+		return nil, &DeprecatedSlackWebhookError{}
+	}
+
+	successURL := os.Getenv(logging.SlackWebhookURLSuccessEnvVar)
+	errorURL := os.Getenv(logging.SlackWebhookURLErrorEnvVar)
+
+	// Validate combinations
+	if successURL != "" && errorURL == "" {
+		return nil, &SuccessWithoutErrorError{}
+	}
+
+	// Both empty is valid (Slack disabled)
+	// ERROR only is valid (no success notifications)
+	// Both set is valid
+
+	return &SlackWebhookConfig{
+		SuccessURL: successURL,
+		ErrorURL:   errorURL,
+	}, nil
 }
 
 // FormatSlackWebhookInTOMLError formats the error message when slack_webhook_url is found in TOML

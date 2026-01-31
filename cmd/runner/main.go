@@ -171,11 +171,7 @@ func run(runID string) error {
 	// Validate Slack webhook environment variables
 	slackConfig, err := bootstrap.ValidateSlackWebhookEnv()
 	if err != nil {
-		if errors.Is(err, bootstrap.ErrDeprecatedSlackWebhook) {
-			fmt.Fprint(os.Stderr, bootstrap.FormatDeprecatedSlackWebhookError())
-		} else if errors.Is(err, bootstrap.ErrSuccessWithoutError) {
-			fmt.Fprint(os.Stderr, bootstrap.FormatSuccessWithoutErrorError())
-		}
+		fmt.Fprintln(os.Stderr, err.Error())
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   err.Error(),
