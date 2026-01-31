@@ -5,7 +5,6 @@ version = "1.0"
 
 # Global configuration
 [global]
-workdir = "/tmp"
 
 [global.vars]
 BackupRoot = "/data/backups"

@@ -1322,7 +1322,6 @@ func TestRunner_OutputCaptureWithTOMLConfig(t *testing.T) {
 	tomlContent := `
 [global]
 timeout = 30
-workdir = "` + tempDir + `"
 output_size_limit = 1048576
 
 [[groups]]
@@ -1401,7 +1400,6 @@ args = ["No output capture"]
 		invalidTomlContent := `
 [global]
 timeout = 30
-workdir = "` + tempDir + `"
 output_size_limit = -1  # Invalid negative size
 
 [[groups]]
@@ -1411,7 +1409,7 @@ name = "invalid_group"
 name = "invalid-echo"
 cmd = "echo"
 args = ["test"]
-output = "output.txt"
+output_file = "output.txt"
 `
 
 		invalidConfigPath := filepath.Join(tempDir, "invalid-config.toml")

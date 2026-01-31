@@ -93,20 +93,6 @@ func ValidateSlackWebhookEnv() (*SlackWebhookConfig, error) {
 	}, nil
 }
 
-// FormatSlackWebhookInTOMLError formats the error message when slack_webhook_url is found in TOML
-func FormatSlackWebhookInTOMLError() string {
-	return `Error: slack_webhook_url in TOML is not supported.
-
-Slack webhook URLs must be configured via environment variables:
-  export GSCR_SLACK_WEBHOOK_URL_SUCCESS="<your_webhook_url>"
-  export GSCR_SLACK_WEBHOOK_URL_ERROR="<your_webhook_url>"
-
-Please remove the slack_webhook_url field from your TOML configuration file.
-
-For more information, see the documentation at:
-  https://github.com/isseis/go-safe-cmd-runner/docs/user/runner_command.md#slack-webhook-configuration`
-}
-
 // SetupLoggingOptions holds configuration for SetupLogging
 type SetupLoggingOptions struct {
 	LogLevel               slog.Level

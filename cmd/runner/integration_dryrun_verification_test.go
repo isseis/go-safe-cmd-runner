@@ -218,8 +218,7 @@ func TestDryRunE2E_NoSideEffects(t *testing.T) {
 	require.NoError(t, err)
 
 	configContent := `
-run_id = "test-no-side-effects"
-log_dir = "` + logDir + `"
+version = "1.0"
 
 [[groups]]
 name = "test_group"

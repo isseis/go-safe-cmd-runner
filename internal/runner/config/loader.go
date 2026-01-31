@@ -5,6 +5,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -26,10 +27,6 @@ type Loader struct {
 var (
 	// ErrInvalidConfigPath is returned when the config file path is invalid
 	ErrInvalidConfigPath = errors.New("invalid config file path")
-
-	// ErrSlackWebhookInTOML is returned when slack_webhook_url is found in the TOML config.
-	// Slack webhook URLs must be configured via environment variables, not in the config file.
-	ErrSlackWebhookInTOML = errors.New("slack_webhook_url in TOML is not supported")
 )
 
 // NewLoader creates a new config loader with specified dependencies.
@@ -225,19 +222,17 @@ func mergeTemplates(sources []TemplateSource) (map[string]runnertypes.CommandTem
 
 // loadConfigInternal loads and validates configuration from byte content
 func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, error) {
-	// Parse the config content
+	// Parse the config content with strict validation (unknown fields are rejected)
+	decoder := toml.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+
 	var cfg runnertypes.ConfigSpec
-	if err := toml.Unmarshal(content, &cfg); err != nil {
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	// Check for prohibited "name" field in command_templates
 	if err := checkTemplateNameField(content); err != nil {
-		return nil, err
-	}
-
-	// Check for slack_webhook_url in [global] section (not supported in TOML)
-	if err := checkSlackWebhookField(content); err != nil {
 		return nil, err
 	}
 
@@ -299,32 +294,6 @@ func checkTemplateNameField(content []byte) error {
 				TemplateName: templateName,
 			}
 		}
-	}
-
-	return nil
-}
-
-// checkSlackWebhookField checks if the TOML config contains a slack_webhook_url field
-// in the [global] section. This field is not supported in TOML - Slack webhook URLs
-// must be configured via environment variables (GSCR_SLACK_WEBHOOK_URL_SUCCESS,
-// GSCR_SLACK_WEBHOOK_URL_ERROR).
-func checkSlackWebhookField(content []byte) error {
-	var raw map[string]any
-	if err := toml.Unmarshal(content, &raw); err != nil {
-		// If we can't parse as map, the structured parse will also fail
-		// so we can skip this check
-		return nil
-	}
-
-	// Check global section
-	globalSection, ok := raw["global"].(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	// Check for slack_webhook_url field (deprecated)
-	if _, hasField := globalSection["slack_webhook_url"]; hasField {
-		return fmt.Errorf("%w: use GSCR_SLACK_WEBHOOK_URL_SUCCESS and GSCR_SLACK_WEBHOOK_URL_ERROR environment variables instead", ErrSlackWebhookInTOML)
 	}
 
 	return nil

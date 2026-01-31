@@ -23,14 +23,13 @@ env_allowed = [
     "GOTRACEBACK",
     "SLACK_WEBHOOK_URL",
 ]
+verify_files = ["/etc/passwd", "/bin/sh"]
 
 # Global internal variables available for TOML expansion
 # Note: Global variables must start with uppercase letter
 [global.vars]
 AppName = "cmd-runner"
 TestMode = "comprehensive"
-
-verify_files = ["/etc/passwd", "/bin/sh"]
 
 # Group 1: Basic functionality test - no dependencies
 [[groups]]
@@ -76,11 +75,10 @@ cmd = "printenv"
 args = ["TEST_SECURITY_VAR"]
 env_vars = ["TEST_SECURITY_VAR=security_value"]
 
-# Group 3: Resource management tests - temporary directories and cleanup
+# Group 3: Resource management tests - temporary directories
 [[groups]]
 name = "resource_tests"
-description = "Test temporary directory creation and cleanup"
-cleanup = true
+description = "Test temporary directory creation"
 
 [[groups.commands]]
 name = "create_temp_file"
@@ -245,7 +243,6 @@ args = ["DateTime: %{__runner_datetime}, PID: %{__runner_pid}"]
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-cleanup = true
 workdir = "/tmp/final-comprehensive-test"
 env_allowed = ["PATH", "HOME", "FINAL_TEST_VAR"]
 verify_files = ["/bin/echo"]

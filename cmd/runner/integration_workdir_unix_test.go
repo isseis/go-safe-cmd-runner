@@ -33,20 +33,20 @@ name = "cmd_with_custom_workdir1"
 cmd = "pwd"
 args = []
 workdir = "` + fixedWorkdir1 + `"
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "cmd_with_custom_workdir2"
 cmd = "pwd"
 args = []
 workdir = "` + fixedWorkdir2 + `"
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "cmd_with_group_default"
 cmd = "pwd"
 args = []
-max_risk_level = "medium"
+risk_level = "medium"
 `
 
 	// 1. Create Runner with output capture enabled

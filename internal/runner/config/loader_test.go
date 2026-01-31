@@ -548,15 +548,16 @@ workdir = "/tmp"
 	}
 }
 
-// TestCheckSlackWebhookField tests that slack_webhook_url in TOML is rejected
-func TestCheckSlackWebhookField(t *testing.T) {
+// TestUnknownFieldsRejected tests that unknown fields in TOML are rejected.
+// This includes the deprecated slack_webhook_url field.
+func TestUnknownFieldsRejected(t *testing.T) {
 	tests := []struct {
 		name    string
 		toml    string
 		wantErr bool
 	}{
 		{
-			name: "TOML-01: slack_webhook_url in global section should error",
+			name: "slack_webhook_url in global section should error",
 			toml: `
 version = "1.0"
 [global]
@@ -565,7 +566,16 @@ slack_webhook_url = "https://hooks.slack.com/services/test"
 			wantErr: true,
 		},
 		{
-			name: "TOML-02: config without slack_webhook_url should parse",
+			name: "unknown_field in global section should error",
+			toml: `
+version = "1.0"
+[global]
+unknown_field = "value"
+`,
+			wantErr: true,
+		},
+		{
+			name: "config without unknown fields should parse",
 			toml: `
 version = "1.0"
 [global]
@@ -616,9 +626,8 @@ cmd = "echo"
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")
-				require.ErrorIs(t, err, ErrSlackWebhookInTOML, "error should wrap ErrSlackWebhookInTOML")
-				assert.Contains(t, err.Error(), "GSCR_SLACK_WEBHOOK_URL_SUCCESS",
-					"error message should mention the correct environment variable")
+				assert.Contains(t, err.Error(), "strict mode",
+					"error message should indicate strict mode rejection")
 				assert.Nil(t, cfg, "config should be nil when validation fails")
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
