@@ -194,6 +194,17 @@ func run(runID string) error {
 		return err
 	}
 
+	// Validate required arguments before initializing verification manager
+	// This ensures proper error messages for missing arguments even if hash directory doesn't exist
+	if configPath == "" {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeRequiredArgumentMissing,
+			Message:   "Config file path is required",
+			Component: string(resource.ComponentConfig),
+			RunID:     runID,
+		}
+	}
+
 	// Initialize verification manager with secure default hash directory
 	// For dry-run mode, skip hash directory validation since no actual file verification is needed
 	var verificationManager *verification.Manager
