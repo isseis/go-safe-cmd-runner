@@ -171,7 +171,7 @@ func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
 	}
 
 	slog.Debug("Creating Slack handler",
-		slog.String("webhook_url", opts.WebhookURL),
+		slog.Bool("webhook_configured", opts.WebhookURL != ""),
 		slog.String("run_id", opts.RunID),
 		slog.Duration("timeout", httpClient.Timeout),
 		slog.Duration("backoff_base", backoffConfig.Base),
@@ -822,7 +822,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		return fmt.Errorf("failed to marshal Slack message: %w", err)
 	}
 
-	slog.Debug("Sending Slack notification", slog.String("webhook_url", s.webhookURL), slog.String("run_id", s.runID), slog.String("message_text", message.Text))
+	slog.Debug("Sending Slack notification", slog.String("run_id", s.runID), slog.String("message_text", message.Text))
 
 	var lastErr error
 

@@ -153,7 +153,7 @@ func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
     }
 
     slog.Debug("Creating Slack handler",
-        slog.String("webhook_url", opts.WebhookURL),
+        slog.Bool("webhook_configured", opts.WebhookURL != ""),  // Don't log URL - it contains credentials
         slog.String("run_id", opts.RunID),
         slog.Duration("timeout", httpClient.Timeout),
         slog.Duration("backoff_base", backoffConfig.Base),
