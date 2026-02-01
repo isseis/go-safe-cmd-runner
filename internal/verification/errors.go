@@ -121,6 +121,11 @@ func (e *VerificationError) Error() string {
 		return fmt.Sprintf("%s: %d of %d files failed: %v", base, e.FailedFiles, e.TotalFiles, e.Details)
 	}
 
+	// Include underlying error if no details but error exists
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", base, e.Err)
+	}
+
 	return base
 }
 

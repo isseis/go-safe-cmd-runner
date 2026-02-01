@@ -347,6 +347,27 @@ func TestVerificationErrorStructure(t *testing.T) {
 		var _ error = err
 		assert.NotEmpty(t, err.Error())
 	})
+
+	t.Run("error_without_details_includes_underlying_error", func(t *testing.T) {
+		err := &VerificationError{
+			Op:  "global",
+			Err: baseErr,
+		}
+
+		// Should include underlying error when Details is empty
+		expectedMessage := "global verification failed: config invalid"
+		assert.Equal(t, expectedMessage, err.Error())
+	})
+
+	t.Run("error_without_details_or_underlying_error", func(t *testing.T) {
+		err := &VerificationError{
+			Op: "global",
+		}
+
+		// Should return base message only
+		expectedMessage := "global verification failed"
+		assert.Equal(t, expectedMessage, err.Error())
+	})
 }
 
 // TestPredefinedErrorsComplete tests all predefined error variables
