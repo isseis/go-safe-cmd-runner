@@ -31,7 +31,7 @@ func TestError_Error(t *testing.T) {
 				Path: "/path/to/config.toml",
 				Err:  ErrHashMismatch,
 			},
-			expected: "verification error in VerifyHash for /path/to/config.toml: hash mismatch",
+			expected: "/path/to/config.toml: hash mismatch",
 		},
 		{
 			name: "error without path",
@@ -39,7 +39,7 @@ func TestError_Error(t *testing.T) {
 				Op:  "ValidateConfig",
 				Err: ErrConfigInvalid,
 			},
-			expected: "verification error in ValidateConfig: config invalid",
+			expected: "ValidateConfig failed: config invalid",
 		},
 		{
 			name: "error with all fields",
@@ -48,7 +48,7 @@ func TestError_Error(t *testing.T) {
 				Path: "/etc/config.toml",
 				Err:  ErrValuesDontMatch,
 			},
-			expected: "verification error in CompareHash for /etc/config.toml: values don't match",
+			expected: "/etc/config.toml: values don't match",
 		},
 	}
 
@@ -238,7 +238,7 @@ func TestErrorStructure(t *testing.T) {
 			Err:  baseErr,
 		}
 
-		expectedMessage := "verification error in VerifyHash for /path/to/config.toml: original error"
+		expectedMessage := "/path/to/config.toml: original error"
 		assert.Equal(t, expectedMessage, err.Error())
 	})
 
@@ -248,7 +248,7 @@ func TestErrorStructure(t *testing.T) {
 			Err: baseErr,
 		}
 
-		expectedMessage := "verification error in ValidateDirectory: original error"
+		expectedMessage := "ValidateDirectory failed: original error"
 		assert.Equal(t, expectedMessage, err.Error())
 	})
 

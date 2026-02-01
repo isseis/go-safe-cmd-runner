@@ -132,7 +132,7 @@ args = ["hello"]
 		// Should fail because hash is not recorded
 		require.Error(t, err)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), "verification error")
+		assert.Contains(t, err.Error(), configPath)
 	})
 
 	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
@@ -186,7 +186,7 @@ args = ["hello"]
 
 		// Should fail because template file hash is not recorded
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "verification error")
+		assert.Contains(t, err.Error(), templatePath)
 	})
 
 	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
@@ -242,7 +242,7 @@ includes = ["backup.toml", "restore.toml"]
 		// Loading should fail because second template file hash is not recorded
 		_, err = loader.LoadConfig(configPath, configContent)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "verification error")
+		assert.Contains(t, err.Error(), template2Path)
 	})
 
 	t.Run("verification succeeds when all include files have hashes", func(t *testing.T) {
@@ -286,7 +286,7 @@ includes = ["templates.toml"]
 	// Loading should fail because hash verification fails
 	_, err = loader.LoadConfig(configPath, configContent)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "verification error")
+	assert.Contains(t, err.Error(), templatePath)
 }
 
 // TestLoadConfig_MissingHashReturnsError tests that missing hash records
@@ -302,7 +302,7 @@ func TestLoadConfig_MissingHashReturnsError(t *testing.T) {
 [command_templates.backup]
 cmd = "restic"
 `)
-	writeFile(t, tmpDir, "templates.toml", templateContent)
+	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
 	// NOTE: NO hash manifest created for the template file
 
@@ -316,7 +316,7 @@ includes = ["templates.toml"]
 	// Loading should fail because hash is not recorded
 	_, err = loader.LoadConfig(configPath, configContent)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "verification error")
+	assert.Contains(t, err.Error(), templatePath)
 }
 
 // TestLoadConfig_TamperedFileDetection tests that tampering with a template file
@@ -356,7 +356,7 @@ includes = ["templates.toml"]
 	// Loading should fail because file was tampered with
 	_, err = loader.LoadConfig(configPath, configContent)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "verification error")
+	assert.Contains(t, err.Error(), templatePath)
 }
 
 // =============================================================================
@@ -470,7 +470,7 @@ includes = ["templates.toml"]
 [command_templates.new_backup]
 cmd = "restic"
 `)
-	writeFile(t, tmpDir, "new_templates.toml", newTemplateContent)
+	newTemplatePath := writeFile(t, tmpDir, "new_templates.toml", newTemplateContent)
 
 	// Create config that includes the new template (without hash)
 	newConfigContent := []byte(`version = "1.0"
@@ -481,5 +481,5 @@ includes = ["new_templates.toml"]
 	// Loading should fail because new template lacks hash
 	_, err = loader.LoadConfig(newConfigPath, newConfigContent)
 	require.Error(t, err, "should fail when template file lacks hash verification")
-	assert.Contains(t, err.Error(), "verification error")
+	assert.Contains(t, err.Error(), newTemplatePath)
 }

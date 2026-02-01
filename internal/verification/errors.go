@@ -78,9 +78,9 @@ type Error struct {
 // Error returns the error message
 func (e *Error) Error() string {
 	if e.Path != "" {
-		return fmt.Sprintf("verification error in %s for %s: %v", e.Op, e.Path, e.Err)
+		return fmt.Sprintf("%s: %v", e.Path, e.Err)
 	}
-	return fmt.Sprintf("verification error in %s: %v", e.Op, e.Err)
+	return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
 }
 
 // Unwrap returns the underlying error
