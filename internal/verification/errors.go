@@ -4,6 +4,7 @@ package verification
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -78,9 +79,9 @@ type Error struct {
 // Error returns the error message
 func (e *Error) Error() string {
 	if e.Path != "" {
-		return fmt.Sprintf("verification error in %s for %s: %v", e.Op, e.Path, e.Err)
+		return fmt.Sprintf("%s: %v", e.Path, e.Err)
 	}
-	return fmt.Sprintf("verification error in %s: %v", e.Op, e.Err)
+	return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
 }
 
 // Unwrap returns the underlying error
@@ -109,10 +110,24 @@ type VerificationError struct {
 
 // Error returns the error message
 func (e *VerificationError) Error() string {
+	var base string
 	if e.Group != "" {
-		return fmt.Sprintf("verification error in %s for group %s: %v", e.Op, e.Group, e.Err)
+		base = fmt.Sprintf("%s verification failed for group %s", e.Op, e.Group)
+	} else {
+		base = fmt.Sprintf("%s verification failed", e.Op)
 	}
-	return fmt.Sprintf("verification error in %s: %v", e.Op, e.Err)
+
+	// Include failed file details if available
+	if len(e.Details) > 0 {
+		return fmt.Sprintf("%s: %d of %d files failed: %s", base, e.FailedFiles, e.TotalFiles, strings.Join(e.Details, ", "))
+	}
+
+	// Include underlying error if no details but error exists
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", base, e.Err)
+	}
+
+	return base
 }
 
 // Unwrap returns the underlying error

@@ -2,8 +2,6 @@
 package bootstrap
 
 import (
-	"fmt"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -48,7 +46,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Config verification and reading failed: %v", err),
+			Message:   err.Error(),
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
@@ -68,7 +66,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
-			Message:   fmt.Sprintf("Failed to load config: %v", err),
+			Message:   err.Error(),
 			Component: string(resource.ComponentConfig),
 			RunID:     runID,
 		}

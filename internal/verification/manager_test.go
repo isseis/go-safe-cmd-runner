@@ -454,7 +454,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		// Should fail for non-existent file
 		assert.Error(t, err)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), "verification error")
+		assert.Contains(t, err.Error(), nonExistentConfig)
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -468,7 +468,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, content)
-		assert.Contains(t, err.Error(), "ValidateHashDirectory")
+		assert.Contains(t, err.Error(), "security validator not initialized")
 	})
 }
 
@@ -511,7 +511,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 
 		// Should fail for non-existent file
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "verification error")
+		assert.Contains(t, err.Error(), nonExistentEnv)
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
@@ -524,7 +524,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 
 		// Should fail hash directory validation
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "ValidateHashDirectory")
+		assert.Contains(t, err.Error(), "security validator not initialized")
 	})
 }
 
@@ -576,7 +576,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "ValidateHashDirectory")
+		assert.Contains(t, err.Error(), "security validator not initialized")
 	})
 }
 
@@ -628,7 +628,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 		// Should fail hash directory validation
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "ValidateHashDirectory")
+		assert.Contains(t, err.Error(), "security validator not initialized")
 	})
 }
 

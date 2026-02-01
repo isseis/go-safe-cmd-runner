@@ -31,7 +31,7 @@ func TestError_Error(t *testing.T) {
 				Path: "/path/to/config.toml",
 				Err:  ErrHashMismatch,
 			},
-			expected: "verification error in VerifyHash for /path/to/config.toml: hash mismatch",
+			expected: "/path/to/config.toml: hash mismatch",
 		},
 		{
 			name: "error without path",
@@ -39,7 +39,7 @@ func TestError_Error(t *testing.T) {
 				Op:  "ValidateConfig",
 				Err: ErrConfigInvalid,
 			},
-			expected: "verification error in ValidateConfig: config invalid",
+			expected: "ValidateConfig failed: config invalid",
 		},
 		{
 			name: "error with all fields",
@@ -48,7 +48,7 @@ func TestError_Error(t *testing.T) {
 				Path: "/etc/config.toml",
 				Err:  ErrValuesDontMatch,
 			},
-			expected: "verification error in CompareHash for /etc/config.toml: values don't match",
+			expected: "/etc/config.toml: values don't match",
 		},
 	}
 
@@ -238,7 +238,7 @@ func TestErrorStructure(t *testing.T) {
 			Err:  baseErr,
 		}
 
-		expectedMessage := "verification error in VerifyHash for /path/to/config.toml: original error"
+		expectedMessage := "/path/to/config.toml: original error"
 		assert.Equal(t, expectedMessage, err.Error())
 	})
 
@@ -248,7 +248,7 @@ func TestErrorStructure(t *testing.T) {
 			Err: baseErr,
 		}
 
-		expectedMessage := "verification error in ValidateDirectory: original error"
+		expectedMessage := "ValidateDirectory failed: original error"
 		assert.Equal(t, expectedMessage, err.Error())
 	})
 
@@ -294,7 +294,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 			Err:           baseErr,
 		}
 
-		expectedMessage := "verification error in group for group test-group: config invalid"
+		expectedMessage := "group verification failed for group test-group: 2 of 10 files failed: file1.txt, file2.txt"
 		assert.Equal(t, expectedMessage, err.Error())
 		assert.Equal(t, "test-group", err.Group)
 		assert.Equal(t, []string{"file1.txt", "file2.txt"}, err.Details)
@@ -315,7 +315,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 			Err:           baseErr,
 		}
 
-		expectedMessage := "verification error in global: config invalid"
+		expectedMessage := "global verification failed: 1 of 5 files failed: global_file.txt"
 		assert.Equal(t, expectedMessage, err.Error())
 		assert.Empty(t, err.Group)
 		assert.Equal(t, 5, err.TotalFiles)
@@ -346,6 +346,27 @@ func TestVerificationErrorStructure(t *testing.T) {
 		// Should implement error interface
 		var _ error = err
 		assert.NotEmpty(t, err.Error())
+	})
+
+	t.Run("error_without_details_includes_underlying_error", func(t *testing.T) {
+		err := &VerificationError{
+			Op:  "global",
+			Err: baseErr,
+		}
+
+		// Should include underlying error when Details is empty
+		expectedMessage := "global verification failed: config invalid"
+		assert.Equal(t, expectedMessage, err.Error())
+	})
+
+	t.Run("error_without_details_or_underlying_error", func(t *testing.T) {
+		err := &VerificationError{
+			Op: "global",
+		}
+
+		// Should return base message only
+		expectedMessage := "global verification failed"
+		assert.Equal(t, expectedMessage, err.Error())
 	})
 }
 
