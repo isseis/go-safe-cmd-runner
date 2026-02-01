@@ -412,6 +412,11 @@ func containsSSHStyleAddress(args []string) bool {
 			if colonIndex > 0 && colonIndex < len(arg)-1 {
 				// Simple heuristic: if it looks like a path (contains / or ~) after :, it's likely SSH-style
 				pathPart := arg[colonIndex+1:]
+				// SSH-style paths must start immediately after : (no leading space)
+				// e.g., "host:/path" is SSH, but "text: /path" is not
+				if strings.HasPrefix(pathPart, " ") {
+					continue
+				}
 				if strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "~") {
 					return true
 				}

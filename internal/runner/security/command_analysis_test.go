@@ -414,6 +414,16 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "text with colon and path (not SSH)",
+			args:     []string{"Current working directory: /tmp/test"},
+			expected: false, // Space after colon indicates this is not SSH-style
+		},
+		{
+			name:     "label with path (not SSH)",
+			args:     []string{"Output path: ~/documents/file.txt"},
+			expected: false, // Space after colon indicates this is not SSH-style
+		},
+		{
 			name:     "ratio or mathematical expression",
 			args:     []string{"3:2"},
 			expected: false,
