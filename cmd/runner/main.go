@@ -261,7 +261,7 @@ func run(runID string) error {
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Global files verification failed: %v", err),
+			Message:   err.Error(),
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}

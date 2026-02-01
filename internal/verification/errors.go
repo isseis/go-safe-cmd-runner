@@ -109,10 +109,19 @@ type VerificationError struct {
 
 // Error returns the error message
 func (e *VerificationError) Error() string {
+	var base string
 	if e.Group != "" {
-		return fmt.Sprintf("verification error in %s for group %s: %v", e.Op, e.Group, e.Err)
+		base = fmt.Sprintf("%s verification failed for group %s", e.Op, e.Group)
+	} else {
+		base = fmt.Sprintf("%s verification failed", e.Op)
 	}
-	return fmt.Sprintf("verification error in %s: %v", e.Op, e.Err)
+
+	// Include failed file details if available
+	if len(e.Details) > 0 {
+		return fmt.Sprintf("%s: %d of %d files failed: %v", base, e.FailedFiles, e.TotalFiles, e.Details)
+	}
+
+	return base
 }
 
 // Unwrap returns the underlying error
