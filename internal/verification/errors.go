@@ -4,6 +4,7 @@ package verification
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -118,7 +119,7 @@ func (e *VerificationError) Error() string {
 
 	// Include failed file details if available
 	if len(e.Details) > 0 {
-		return fmt.Sprintf("%s: %d of %d files failed: %v", base, e.FailedFiles, e.TotalFiles, e.Details)
+		return fmt.Sprintf("%s: %d of %d files failed: %s", base, e.FailedFiles, e.TotalFiles, strings.Join(e.Details, ", "))
 	}
 
 	// Include underlying error if no details but error exists

@@ -294,7 +294,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 			Err:           baseErr,
 		}
 
-		expectedMessage := "group verification failed for group test-group: 2 of 10 files failed: [file1.txt file2.txt]"
+		expectedMessage := "group verification failed for group test-group: 2 of 10 files failed: file1.txt, file2.txt"
 		assert.Equal(t, expectedMessage, err.Error())
 		assert.Equal(t, "test-group", err.Group)
 		assert.Equal(t, []string{"file1.txt", "file2.txt"}, err.Details)
@@ -315,7 +315,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 			Err:           baseErr,
 		}
 
-		expectedMessage := "global verification failed: 1 of 5 files failed: [global_file.txt]"
+		expectedMessage := "global verification failed: 1 of 5 files failed: global_file.txt"
 		assert.Equal(t, expectedMessage, err.Error())
 		assert.Empty(t, err.Group)
 		assert.Equal(t, 5, err.TotalFiles)
