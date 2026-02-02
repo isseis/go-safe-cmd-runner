@@ -25,12 +25,17 @@ define check_gofumpt
 	fi
 endef
 
-# Check for Slack webhook URL environment variable
+# Check for Slack webhook URL environment variables
+# Note: The application supports ERROR-only configuration (success notifications disabled),
+# but these tests require both URLs for full notification coverage.
 define check_slack_webhook
 	@if [ -z "$$GSCR_SLACK_WEBHOOK_URL_SUCCESS" -o -z "$$GSCR_SLACK_WEBHOOK_URL_ERROR" ]; then \
-		echo "Warning: GSCR_SLACK_WEBHOOK_URL_SUCCESS and GSCR_SLACK_WEBHOOK_URL_ERROR environment variables must be set"; \
-		echo "Slack notifications will be disabled during this test"; \
-		echo "To enable notifications, set:"; \
+		echo "Warning: For full test coverage, both Slack webhook environment variables should be set"; \
+		echo "Currently missing:"; \
+		[ -z "$$GSCR_SLACK_WEBHOOK_URL_SUCCESS" ] && echo "  - GSCR_SLACK_WEBHOOK_URL_SUCCESS (success notifications)"; \
+		[ -z "$$GSCR_SLACK_WEBHOOK_URL_ERROR" ] && echo "  - GSCR_SLACK_WEBHOOK_URL_ERROR (error notifications)"; \
+		echo ""; \
+		echo "To enable all notifications, set:"; \
 		echo "  export GSCR_SLACK_WEBHOOK_URL_SUCCESS=your_webhook_url"; \
 		echo "  export GSCR_SLACK_WEBHOOK_URL_ERROR=your_webhook_url"; \
 		echo ""; \
