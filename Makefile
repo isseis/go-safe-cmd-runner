@@ -100,7 +100,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage coverage-internal hash hash-integration-test integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test additional-test deadcode generate-perf-configs verify-docs verify-docs-full e2e-test
+.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full
 
 all: security-check
 
@@ -175,13 +175,46 @@ hash-integration-test: $(BINARY_RECORD)
 # Test build with test tags enabled
 build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 
-test: build-test
+# =============================================================================
+# Test Targets
+# =============================================================================
+# Individual test targets:
+#   unit-test              - Unit tests (race detection enabled and disabled)
+#   integration-test       - Integration tests with runner binary
+#   e2e-test               - End-to-end tests (dry-run validation + security checks)
+#   security-test          - Security-focused tests
+#   performance-test       - Performance and benchmark tests
+#   slack-notify-test      - Slack notification tests
+#   slack-group-notification-test - Slack group notification tests
+#
+# Composite test targets:
+#   test                   - Tests for pre-commit (unit-test only)
+#   test-ci                - Tests for CI environments (no sudo required)
+#   test-all               - All tests including integration (requires sudo)
+# =============================================================================
+
+# Unit tests - core functionality tests
+# Runs twice: with race detection (CGO_ENABLED=1) and without (CGO_ENABLED=0)
+unit-test: build-test
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
 
-additional-test: test
+# End-to-end tests - validates binary execution and security checks
+e2e-test: build-test
 	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
+
+# Pre-commit test target - runs unit tests only
+# This is the default test target for daily development
+test: unit-test
+
+# CI test target - tests that can run without sudo or external services
+# Suitable for GitHub Actions and other CI environments
+test-ci: unit-test e2e-test security-test performance-test
+
+# All tests - comprehensive test suite (requires sudo for integration-test)
+# Excludes Slack notification tests (require external webhook configuration)
+test-all: unit-test integration-test e2e-test security-test performance-test
 
 fmt:
 	$(call check_gofumpt)
@@ -212,6 +245,7 @@ coverage-internal:
 	@echo "Internal packages coverage report generated: coverage_internal.html"
 	@$(GOCMD) tool cover -func=coverage_internal.out | tail -1
 
+# Integration tests - tests with actual runner binary execution
 integration-test: $(BINARY_RUNNER) hash-integration-test
 	$(call check_slack_webhook)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test /tmp/final-comprehensive-test
@@ -223,6 +257,11 @@ integration-test: $(BINARY_RUNNER) hash-integration-test
 	echo "Integration test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
 
+# =============================================================================
+# Slack Notification Tests (require external webhook configuration)
+# =============================================================================
+
+# Slack notification test - tests basic Slack notification functionality
 slack-notify-test: $(BINARY_RUNNER)
 	$(call check_slack_webhook)
 	$(MKDIR) /tmp/cmd-runner-slack-test
@@ -234,8 +273,7 @@ slack-notify-test: $(BINARY_RUNNER)
 	echo "Slack notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
 
-# Test the new group-level Slack notification functionality
-# This target tests notifications sent after each command group execution
+# Slack group notification test - tests notifications sent after each command group execution
 slack-group-notification-test: $(BINARY_RUNNER)
 	$(call check_slack_webhook)
 	@$(MKDIR) /tmp/slack-group-test
@@ -271,11 +309,13 @@ generate-perf-configs:
 	@cd test/performance && ./generate_large.sh
 	@echo "Performance test configurations generated successfully"
 
+# Performance tests - performance and memory usage tests
 performance-test: generate-perf-configs
 	$(ENVSET) $(GOTEST) -tags performance -v ./test/performance/
 
+# Security tests - security-focused test cases
 security-test:
-	$(ENVTEST) $(GOTEST) -tags test -v ./test/security/
+	$(ENVSET) $(GOTEST) -tags test -v ./test/security/
 
 deadcode:
 	deadcode ./cmd/record ./cmd/runner ./cmd/verify
