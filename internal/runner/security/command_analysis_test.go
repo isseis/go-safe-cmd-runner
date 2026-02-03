@@ -374,6 +374,21 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 			args:     []string{"-v", "user@host:/remote/path", "./local/"},
 			expected: true,
 		},
+		{
+			name:     "ssh style with relative path",
+			args:     []string{"user@host:file.txt"},
+			expected: true,
+		},
+		{
+			name:     "ssh style with bare directory name",
+			args:     []string{"user@host:backup"},
+			expected: true,
+		},
+		{
+			name:     "scp with relative path",
+			args:     []string{"root@server:backup.tar.gz", "./local/"},
+			expected: true,
+		},
 
 		// Valid host:path addresses without user@
 		{
@@ -446,7 +461,7 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 		{
 			name:     "at symbol in middle of word",
 			args:     []string{"some@text:word"},
-			expected: false, // This is ambiguous but we consider it invalid since no path indicators
+			expected: true, // Matches user@host:path pattern (relative path)
 		},
 
 		// Edge cases
