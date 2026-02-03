@@ -374,6 +374,21 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 			args:     []string{"-v", "user@host:/remote/path", "./local/"},
 			expected: true,
 		},
+		{
+			name:     "ssh style with relative path",
+			args:     []string{"user@host:file.txt"},
+			expected: true,
+		},
+		{
+			name:     "ssh style with bare directory name",
+			args:     []string{"user@host:backup"},
+			expected: true,
+		},
+		{
+			name:     "scp with relative path",
+			args:     []string{"root@server:backup.tar.gz", "./local/"},
+			expected: true,
+		},
 
 		// Valid host:path addresses without user@
 		{
@@ -414,6 +429,26 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "text with colon and path (not SSH)",
+			args:     []string{"Current working directory: /tmp/test"},
+			expected: false, // Space after colon indicates this is not SSH-style
+		},
+		{
+			name:     "label with path (not SSH)",
+			args:     []string{"Output path: ~/documents/file.txt"},
+			expected: false, // Space after colon indicates this is not SSH-style
+		},
+		{
+			name:     "user@host with space after colon (not SSH)",
+			args:     []string{"user@host: /tmp/test"},
+			expected: false, // Space after colon indicates this is not SSH-style
+		},
+		{
+			name:     "user@host with tab after colon (not SSH)",
+			args:     []string{"user@host:\t/tmp/test"},
+			expected: false, // Tab after colon indicates this is not SSH-style
+		},
+		{
 			name:     "ratio or mathematical expression",
 			args:     []string{"3:2"},
 			expected: false,
@@ -426,7 +461,7 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 		{
 			name:     "at symbol in middle of word",
 			args:     []string{"some@text:word"},
-			expected: false, // This is ambiguous but we consider it invalid since no path indicators
+			expected: true, // Matches user@host:path pattern (relative path)
 		},
 
 		// Edge cases

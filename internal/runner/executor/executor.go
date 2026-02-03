@@ -303,7 +303,7 @@ func (e *DefaultExecutor) Validate(cmd *runnertypes.RuntimeCommand) error {
 			return fmt.Errorf("failed to check directory %s: %w", cmd.EffectiveWorkDir, err)
 		}
 		if !exists {
-			return fmt.Errorf("working directory %q does not exist: %w", cmd.EffectiveWorkDir, ErrDirNotExists)
+			return fmt.Errorf("%w: %s", ErrDirNotExists, cmd.EffectiveWorkDir)
 		}
 	}
 

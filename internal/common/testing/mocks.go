@@ -1,4 +1,4 @@
-//go:build test
+//go:build test || performance
 
 // Package testing provides mock implementations for testing common interfaces.
 package testing

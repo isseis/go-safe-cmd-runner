@@ -1,4 +1,4 @@
-name: Security Enhanced CI
+name: CI
 
 on:
   pull_request:
@@ -94,7 +94,6 @@ jobs:
     strategy:
       matrix:
         cgo: [0, 1]
-        build-type: [production, test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -110,29 +109,19 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential
 
       - name: Build production binaries
-        if: matrix.build-type == 'production'
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           make build
           echo "Built production binaries with CGO_ENABLED=${{ matrix.cgo }}"
 
-      - name: Build test binaries
-        if: matrix.build-type == 'test'
-        env:
-          CGO_ENABLED: ${{ matrix.cgo }}
-        run: |
-          make build-test
-          echo "Built test binaries with CGO_ENABLED=${{ matrix.cgo }}"
-
       - name: Run security checks on production binaries
-        if: matrix.build-type == 'production'
         run: |
           python3 scripts/additional-security-checks.py production-validation
           echo "Security validation passed for production binaries"
 
       - name: Upload production artifacts
-        if: matrix.build-type == 'production' && matrix.cgo == 1
+        if: matrix.cgo == 1
         uses: actions/upload-artifact@v4
         with:
           name: production-binaries-cgo${{ matrix.cgo }}
@@ -142,14 +131,11 @@ jobs:
             build/prod/runner
           retention-days: 30
 
-  test-comprehensive:
-    name: Comprehensive Testing
+  test-ci:
+    name: CI Tests
     runs-on: ubuntu-latest
-    needs: [check-changes, build-security-validation]
+    needs: [check-changes, security-scan]
     if: needs.check-changes.outputs.has-non-md-changes == 'true'
-    strategy:
-      matrix:
-        cgo: [0, 1]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -161,32 +147,25 @@ jobs:
           cache: true
 
       - name: Install CGO dependencies
-        if: matrix.cgo == 1
         run: sudo apt-get update && sudo apt-get install -y build-essential
 
-      - name: Run comprehensive tests
-        env:
-          CGO_ENABLED: ${{ matrix.cgo }}
+      - name: Run CI tests
         run: |
-          make test
-          echo "Comprehensive tests completed with CGO_ENABLED=${{ matrix.cgo }}"
+          make test-ci
+          echo "CI tests completed (unit + e2e + security + performance)"
 
       - name: Generate test coverage
-        if: matrix.cgo == 1
-        env:
-          CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           make coverage
           echo "Test coverage report generated"
 
       - name: Upload coverage to Codecov
-        if: matrix.cgo == 1
         continue-on-error: true
         uses: codecov/codecov-action@v3
         with:
           file: ./coverage.out
-          flags: cgo${{ matrix.cgo }}
-          name: codecov-security-enhanced-cgo${{ matrix.cgo }}
+          flags: ci-tests
+          name: codecov-security-enhanced-ci
           fail_ci_if_error: false
 
   lint:
@@ -223,7 +202,7 @@ jobs:
   deployment-validation:
     name: Deployment Validation
     runs-on: ubuntu-latest
-    needs: [check-changes, build-security-validation, test-comprehensive, lint]
+    needs: [check-changes, build-security-validation, test-ci, lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check-changes.outputs.has-non-md-changes == 'true'
     steps:
       - name: Checkout code

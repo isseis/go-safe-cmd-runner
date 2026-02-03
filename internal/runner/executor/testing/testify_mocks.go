@@ -1,4 +1,4 @@
-//go:build test
+//go:build test || performance
 
 // Package testing provides testify-based mock implementations for executor interfaces.
 package testing
