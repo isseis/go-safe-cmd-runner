@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -384,43 +385,51 @@ func findFirstSubcommand(args []string) string {
 	return ""
 }
 
-// containsSSHStyleAddress checks if any argument contains SSH-style addresses (user@host:path)
-// This is more specific than just checking for "@" to avoid false positives with email addresses
+// Regex patterns for SSH-style address detection.
+//
+// Pattern 1: user@host:path (e.g., "user@example.com:/path/to/file", "git@github.com:user/repo.git")
+//   - .+@      : one or more chars before @  (user part)
+//   - [^:@]+   : one or more chars that are not : or @  (host part)
+//   - :        : literal colon separator
+//   - [^ \t]   : first char after : must not be space/tab (excludes "user@host: /path")
+//   - \S*      : remaining non-whitespace chars  (rest of path)
+//   - The path portion (after :) must contain / or ~
+//
+// Pattern 2: host:path without @ (e.g., "server:/path", "host:~/documents")
+//   - ^[^@:]+  : one or more chars that are not @ or :  (host part, no @ allowed)
+//   - :        : literal colon separator
+//   - [^ \t]   : first char after : must not be space/tab
+//   - \S*      : remaining non-whitespace chars
+//   - The path portion (after :) must contain / or ~
+var (
+	sshUserHostPathRe = regexp.MustCompile(`.+@[^:@]+:[^ \t]\S*`)
+	sshHostPathRe     = regexp.MustCompile(`^[^@:]+:[^ \t]\S*`)
+)
+
+// containsSSHStyleAddress checks if any argument contains SSH-style addresses ([user@]host:path).
+// This is more specific than just checking for "@" to avoid false positives with email addresses,
+// port numbers, time formats, and natural-language text containing colons.
 func containsSSHStyleAddress(args []string) bool {
 	for _, arg := range args {
-		// Look for pattern: [user@]host:path
-		// Must contain both @ and : with @ appearing before :
-		atIndex := strings.Index(arg, "@")
-		colonIndex := strings.Index(arg, ":")
+		var pathPart string
 
-		// SSH-style address requires both @ and : with @ before :
-		if atIndex != -1 && colonIndex != -1 && atIndex < colonIndex {
-			// Additional validation: ensure there's content before @, between @ and :, and after :
-			if atIndex > 0 && colonIndex > atIndex+1 && colonIndex < len(arg)-1 {
-				// More specific validation: check if the part after : looks like a path
-				pathPart := arg[colonIndex+1:]
-				// SSH-style paths typically start with / or ~ or contain /
-				if strings.HasPrefix(pathPart, "/") || strings.HasPrefix(pathPart, "~") || strings.Contains(pathPart, "/") {
-					return true
-				}
-			}
+		switch {
+		case sshUserHostPathRe.MatchString(arg):
+			// user@host:path — extract the part after the first : that follows @
+			atIndex := strings.Index(arg, "@")
+			colonIndex := strings.Index(arg[atIndex:], ":") + atIndex
+			pathPart = arg[colonIndex+1:]
+		case sshHostPathRe.MatchString(arg):
+			// host:path (no @)
+			colonIndex := strings.Index(arg, ":")
+			pathPart = arg[colonIndex+1:]
+		default:
+			continue
 		}
 
-		// Also check for host:path pattern (without user@)
-		if colonIndex != -1 && atIndex == -1 {
-			// Ensure there's content before and after :
-			if colonIndex > 0 && colonIndex < len(arg)-1 {
-				// Simple heuristic: if it looks like a path (contains / or ~) after :, it's likely SSH-style
-				pathPart := arg[colonIndex+1:]
-				// SSH-style paths must start immediately after : (no leading space)
-				// e.g., "host:/path" is SSH, but "text: /path" is not
-				if strings.HasPrefix(pathPart, " ") {
-					continue
-				}
-				if strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "~") {
-					return true
-				}
-			}
+		// SSH-style paths must contain / or start with ~
+		if strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "~") {
+			return true
 		}
 	}
 	return false

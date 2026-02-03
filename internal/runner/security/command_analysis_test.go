@@ -424,6 +424,16 @@ func TestContainsSSHStyleAddress(t *testing.T) {
 			expected: false, // Space after colon indicates this is not SSH-style
 		},
 		{
+			name:     "user@host with space after colon (not SSH)",
+			args:     []string{"user@host: /tmp/test"},
+			expected: false, // Space after colon indicates this is not SSH-style
+		},
+		{
+			name:     "user@host with tab after colon (not SSH)",
+			args:     []string{"user@host:\t/tmp/test"},
+			expected: false, // Tab after colon indicates this is not SSH-style
+		},
+		{
 			name:     "ratio or mathematical expression",
 			args:     []string{"3:2"},
 			expected: false,
