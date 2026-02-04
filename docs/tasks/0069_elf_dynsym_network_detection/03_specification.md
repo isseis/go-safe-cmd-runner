@@ -523,6 +523,7 @@ import (
     "fmt"
     "log/slog"
     "os/exec"
+    "path/filepath"
     "slices"
     "strings"
     "sync"
@@ -632,6 +633,16 @@ func analyzeELFForNetwork(cmdName string) bool {
     if err != nil {
         // Cannot find command, skip ELF analysis
         slog.Debug("ELF analysis skipped: command not found in PATH",
+            "command", cmdName,
+            "error", err)
+        return false
+    }
+
+    // LookPath may return a relative path if PATH contains relative entries.
+    // AnalyzeNetworkSymbols requires an absolute path.
+    cmdPath, err = filepath.Abs(cmdPath)
+    if err != nil {
+        slog.Debug("ELF analysis skipped: failed to resolve absolute path",
             "command", cmdName,
             "error", err)
         return false
