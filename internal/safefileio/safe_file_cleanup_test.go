@@ -18,10 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockFile is a test implementation of File interface
+// mockFile is a test implementation of File interface.
+// Thread-safety note: The pos and data fields are protected by mu to prevent race conditions
+// when the mock is used in concurrent test scenarios (e.g., with t.Parallel()).
+// ReadAt is an exception: it reads data but does NOT modify pos per io.ReaderAt contract.
 type mockFile struct {
-	data        []byte // raw data for ReadAt/Seek support
-	pos         int64  // current position
+	mu          sync.Mutex
+	data        []byte // raw data for ReadAt/Seek support; protected by mu
+	pos         int64  // current position; protected by mu
 	statErr     error
 	writeErr    error
 	closeErr    error
@@ -40,6 +44,8 @@ func newMockFile(content []byte, fileInfo os.FileInfo) *mockFile {
 }
 
 func (m *mockFile) Read(p []byte) (n int, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.pos >= int64(len(m.data)) {
 		return 0, io.EOF
 	}
@@ -52,6 +58,8 @@ func (m *mockFile) Write(p []byte) (n int, err error) {
 	if m.writeErr != nil {
 		return 0, m.writeErr
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	// Extend data if needed
 	endPos := m.pos + int64(len(p))
 	if endPos > int64(len(m.data)) {
@@ -65,6 +73,8 @@ func (m *mockFile) Write(p []byte) (n int, err error) {
 }
 
 func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var newPos int64
 	switch whence {
 	case io.SeekStart:
@@ -87,6 +97,9 @@ func (m *mockFile) ReadAt(p []byte, off int64) (n int, err error) {
 	if off < 0 {
 		return 0, fmt.Errorf("negative offset: %d", off)
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Note: ReadAt does NOT modify pos per io.ReaderAt contract
 	if off >= int64(len(m.data)) {
 		return 0, io.EOF
 	}
@@ -115,6 +128,8 @@ func (m *mockFile) Truncate(size int64) error {
 	if m.truncateErr != nil {
 		return m.truncateErr
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	// Reject negative size (matches os.File.Truncate behavior)
 	if size < 0 {
 		return fmt.Errorf("negative size: %d", size)
