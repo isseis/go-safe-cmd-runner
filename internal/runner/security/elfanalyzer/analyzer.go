@@ -85,18 +85,11 @@ func (o AnalysisOutput) IsIndeterminate() bool {
 }
 
 // ELFAnalyzer defines the interface for ELF binary network analysis.
-// Implementations that need privilege escalation (e.g., for execute-only binaries)
-// should receive a PrivilegeManager via constructor injection.
 type ELFAnalyzer interface {
 	// AnalyzeNetworkSymbols examines the ELF binary at the given path
 	// and determines if it contains network-related symbols in .dynsym.
 	//
 	// The path must be an absolute path to an executable file.
-	// The analyzer uses safe file I/O to prevent symlink attacks.
-	//
-	// If the file requires elevated privileges and a PrivilegeManager was
-	// provided at construction time, OpenFileWithPrivileges will be used
-	// to temporarily escalate privileges.
 	//
 	// Returns:
 	//   - NetworkDetected: Binary contains network symbols
