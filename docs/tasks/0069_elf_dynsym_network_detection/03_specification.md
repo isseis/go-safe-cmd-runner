@@ -1080,9 +1080,16 @@ import (
 )
 
 func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
-    // Save and restore original analyzer
+    // Save and restore original analyzer and sync.Once state.
+    // Both must be restored: SetELFAnalyzer marks elfAnalyzerOnce as done,
+    // so restoring only defaultELFAnalyzer would leave sync.Once exhausted
+    // and getELFAnalyzer would never re-initialize a nil analyzer.
     originalAnalyzer := defaultELFAnalyzer
-    defer func() { defaultELFAnalyzer = originalAnalyzer }()
+    originalOnce := elfAnalyzerOnce
+    defer func() {
+        defaultELFAnalyzer = originalAnalyzer
+        elfAnalyzerOnce = originalOnce
+    }()
 
     tests := []struct {
         name            string
