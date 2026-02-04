@@ -44,6 +44,12 @@ flowchart TB
         SFR[SafeReadFile]
     end
 
+    subgraph PrivilegeManagement[Privilege Management]
+        direction TB
+        PM[PrivilegeManager]
+        OFP[OpenFileWithPrivileges]
+    end
+
     RE --> INO
     INO --> CPD
     INO -->|"not found in<br/>profiles"| ELF
@@ -51,6 +57,8 @@ flowchart TB
     EA --> SEA
     SEA --> NS
     SEA --> SFR
+    SEA -.->|"permission error"| OFP
+    OFP --> PM
 
     style ELFAnalysis fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style ELF fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
@@ -342,7 +350,28 @@ flowchart LR
 - ファイルを再オープンする必要がないため、TOCTOU 競合状態を完全に排除
 - ファイルパスの検証は呼び出し元（`extractAllCommandNames`）で実施済み
 
-### 7.2 悪意のある ELF ファイルへの耐性
+### 7.2 実行専用バイナリ（Execute-Only Permissions）への対応
+
+実行権限のみ（`0111` 等）を持つバイナリは読み取りができないため、既存の特権昇格メカニズムを活用：
+
+**安全な特権昇格**:
+- `filevalidator.OpenFileWithPrivileges()` を使用（`run_as_user` と同じ仕組み）
+- `OperationFileValidation` operation type で特権を一時的に昇格
+- `WithPrivileges()` が defer で自動的に特権を復元
+- Mutex ロックにより並行アクセス時の安全性を保証
+- 復元失敗時は emergency shutdown で安全性を確保
+
+**フォールバック動作**:
+- 特権昇格が利用できない場合（非 setuid 環境）は `AnalysisError` を返す
+- Middle Risk として扱われ、ユーザーに確認を促す
+- ログに明確なエラーメッセージと推奨対応を出力
+
+**設計の一貫性**:
+- `run_as_user` 機能と同じ安全性モデルを再利用
+- 新たな特権昇格コードパスを追加しない
+- 実績のあるインフラストラクチャを活用
+
+### 7.3 悪意のある ELF ファイルへの耐性
 
 - Go 標準ライブラリ `debug/elf` の安全性に依存
 - パースエラー時はパニックせず、`AnalysisError` を返す

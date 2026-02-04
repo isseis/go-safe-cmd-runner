@@ -142,13 +142,18 @@ type ELFAnalyzer interface {
     // The path must be an absolute path to an executable file.
     // The analyzer uses safe file I/O to prevent symlink attacks.
     //
+    // privManager is an optional PrivilegeManager for reading execute-only
+    // binaries (permissions like 0111). If nil, normal file access is used.
+    // If the file requires elevated privileges and privManager is available,
+    // OpenFileWithPrivileges will be used to temporarily escalate privileges.
+    //
     // Returns:
     //   - NetworkDetected: Binary contains network symbols
     //   - NoNetworkSymbols: Binary has .dynsym but no network symbols
     //   - NotELFBinary: File is not an ELF binary
     //   - StaticBinary: Binary is statically linked (no .dynsym)
     //   - AnalysisError: An error occurred (check Error field)
-    AnalyzeNetworkSymbols(path string) AnalysisOutput
+    AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput
 }
 ```
 
@@ -332,14 +337,25 @@ func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, symbols map[str
 }
 
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface.
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput {
     // Step 1: Open file safely using safefileio
     // This prevents symlink attacks and TOCTOU race conditions
     file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
-        return AnalysisOutput{
-            Result: AnalysisError,
-            Error:  fmt.Errorf("failed to open file: %w", err),
+        // If it's a permission error and we have privilege manager, try privileged access
+        if errors.Is(err, os.ErrPermission) && privManager != nil {
+            file, err = filevalidator.OpenFileWithPrivileges(path, privManager)
+            if err != nil {
+                return AnalysisOutput{
+                    Result: AnalysisError,
+                    Error:  fmt.Errorf("failed to open execute-only binary even with privileges: %w", err),
+                }
+            }
+        } else {
+            return AnalysisOutput{
+                Result: AnalysisError,
+                Error:  fmt.Errorf("failed to open file: %w", err),
+            }
         }
     }
     defer file.Close()
