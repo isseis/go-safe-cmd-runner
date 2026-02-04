@@ -52,6 +52,8 @@ package elfanalyzer
 
 import (
     "fmt"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // AnalysisResult represents the result type of ELF network symbol analysis.
