@@ -255,14 +255,14 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput
 ### 5.2 Network Symbols Registry
 
 ```go
-// NetworkSymbolCategory defines categories of network symbols
-type NetworkSymbolCategory string
+// SymbolCategory represents the category of a network-related symbol.
+type SymbolCategory string
 
 const (
-    CategorySocket NetworkSymbolCategory = "socket"  // POSIX socket API
-    CategoryDNS    NetworkSymbolCategory = "dns"     // DNS resolution
-    CategoryHTTP   NetworkSymbolCategory = "http"    // HTTP libraries
-    CategoryTLS    NetworkSymbolCategory = "tls"     // TLS/SSL libraries
+    CategorySocket SymbolCategory = "socket"  // POSIX socket API
+    CategoryDNS    SymbolCategory = "dns"     // DNS resolution
+    CategoryHTTP   SymbolCategory = "http"    // HTTP libraries
+    CategoryTLS    SymbolCategory = "tls"     // TLS/SSL libraries
 )
 
 // DefaultNetworkSymbols returns the default set of network-related symbols
