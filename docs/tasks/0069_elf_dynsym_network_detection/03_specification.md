@@ -520,25 +520,35 @@ import (
     "os/exec"
     "slices"
     "strings"
+    "sync"
 
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
+// elfAnalyzerOnce ensures the default ELF analyzer is initialized exactly once.
+var elfAnalyzerOnce sync.Once
+
 // defaultELFAnalyzer is the package-level ELF analyzer instance.
-// Initialized lazily to avoid import cycle issues.
 var defaultELFAnalyzer elfanalyzer.ELFAnalyzer
 
 // getELFAnalyzer returns the default ELF analyzer, creating it if necessary.
+// Concurrency-safe via sync.Once.
 func getELFAnalyzer() elfanalyzer.ELFAnalyzer {
-    if defaultELFAnalyzer == nil {
+    elfAnalyzerOnce.Do(func() {
         defaultELFAnalyzer = elfanalyzer.NewStandardELFAnalyzer(nil)
-    }
+    })
     return defaultELFAnalyzer
 }
 
 // SetELFAnalyzer sets a custom ELF analyzer for testing purposes.
+// Must be called before any concurrent calls to IsNetworkOperation.
+// Typically called in TestMain or test setup.
 func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
     defaultELFAnalyzer = analyzer
+    // Reset Once so that getELFAnalyzer does not overwrite the test analyzer.
+    // This is safe because SetELFAnalyzer is called during test setup,
+    // before any concurrent access.
+    elfAnalyzerOnce.Do(func() {})
 }
 
 // IsNetworkOperation checks if the command performs network operations.

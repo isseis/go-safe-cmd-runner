@@ -212,7 +212,8 @@ type ELFAnalyzer interface {
     // AnalyzeNetworkSymbols checks if the binary at the given path contains
     // network-related symbols in its .dynsym section.
     // The path should be an absolute path to the executable.
-    AnalyzeNetworkSymbols(path string) AnalysisOutput
+    // privManager is an optional PrivilegeManager for reading execute-only binaries.
+    AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput
 }
 ```
 
@@ -245,7 +246,7 @@ type StandardELFAnalyzer struct {
 func NewStandardELFAnalyzer(fs safefileio.FileSystem) *StandardELFAnalyzer
 
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput
 ```
 
 ### 5.2 Network Symbols Registry
