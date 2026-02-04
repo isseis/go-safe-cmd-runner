@@ -551,9 +551,12 @@ func getELFAnalyzer() elfanalyzer.ELFAnalyzer {
 // Typically called in TestMain or test setup.
 func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
     defaultELFAnalyzer = analyzer
-    // Reset Once so that getELFAnalyzer does not overwrite the test analyzer.
-    // This is safe because SetELFAnalyzer is called during test setup,
-    // before any concurrent access.
+    // Mark elfAnalyzerOnce as "done" so that getELFAnalyzer's sync.Once
+    // initialization block will never run and overwrite the injected analyzer.
+    // Note: sync.Once cannot be reset. Tests that need to restore the original
+    // state must explicitly reset both defaultELFAnalyzer and elfAnalyzerOnce
+    // (e.g., save their previous values and restore them with elfAnalyzerOnce =
+    // sync.Once{} in t.Cleanup) to avoid leaking state across tests.
     elfAnalyzerOnce.Do(func() {})
 }
 
