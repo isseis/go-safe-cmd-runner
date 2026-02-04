@@ -120,7 +120,8 @@ type AnalysisOutput struct {
     DetectedSymbols []DetectedSymbol
 
     // Error contains the error details when Result == AnalysisError.
-    // nil for other result types.
+    // May also be set for other result types to provide diagnostic context
+    // (e.g., NotELFBinary when the file is not a regular file).
     Error error
 }
 
