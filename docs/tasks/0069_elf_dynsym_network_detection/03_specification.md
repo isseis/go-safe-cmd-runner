@@ -350,16 +350,27 @@ func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager run
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface.
 func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
     // Step 1: Open file safely using safefileio
-    // This prevents symlink attacks and TOCTOU race conditions
+    // This prevents symlink attacks and TOCTOU race conditions.
     file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
-        // If it's a permission error and we have privilege manager, try privileged access
+        // If it's a permission error and we have privilege manager, try privileged access.
+        // OpenFileWithPrivileges now uses safefileio internally, providing full
+        // symlink/TOCTOU protection even during privilege escalation.
         if errors.Is(err, os.ErrPermission) && a.privManager != nil {
             file, err = filevalidator.OpenFileWithPrivileges(path, a.privManager)
             if err != nil {
+                // If still permission denied after privilege escalation,
+                // this is likely a true execute-only binary (0111).
+                // Return StaticBinary to indicate analysis is not possible.
+                if errors.Is(err, os.ErrPermission) {
+                    return AnalysisOutput{
+                        Result: StaticBinary,
+                        Error:  fmt.Errorf("execute-only binary cannot be analyzed: %w", err),
+                    }
+                }
                 return AnalysisOutput{
                     Result: AnalysisError,
-                    Error:  fmt.Errorf("failed to open execute-only binary even with privileges: %w", err),
+                    Error:  fmt.Errorf("failed to open file with privileges: %w", err),
                 }
             }
         } else {
@@ -1179,25 +1190,56 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 
 ## 8. 実装順序
 
-### Phase 0: 前提条件（safefileio パッケージの拡張）
+### Phase 0: 前提条件（safefileio および filevalidator パッケージの拡張）
 
-**重要**: 本タスクの実装前に、`internal/safefileio/safe_file.go` の `File` インターフェースに `io.ReaderAt` を追加する必要があります。
+**重要**: 本タスクの実装前に、以下の変更が必要です。
+
+#### 8.0.1 safefileio.File インターフェースの拡張
+
+`internal/safefileio/safe_file.go` の `File` インターフェースに `io.Seeker` と `io.ReaderAt` を追加：
 
 ```go
 // File is an interface that abstracts file operations
+// The underlying *os.File implements all these interfaces.
 type File interface {
     io.Reader
     io.Writer
-    io.ReaderAt  // 追加: debug/elf.NewFile との互換性のため
+    io.Seeker   // 追加: VerifyFromHandle との互換性のため
+    io.ReaderAt // 追加: debug/elf.NewFile との互換性のため
     Close() error
     Stat() (os.FileInfo, error)
     Truncate(size int64) error
 }
 ```
 
-`*os.File` は既に `io.ReaderAt` を実装しているため、`*os.File` 自体の変更は不要です。
+`*os.File` は既に `io.Seeker` と `io.ReaderAt` を実装しているため、`*os.File` 自体の変更は不要です。
 ただし、`safefileio.File` インターフェースを実装しているその他の型（モックやラッパー
-型を含む）は、互換性を保つために `ReadAt` メソッドを追加実装する必要があります。
+型を含む）は、互換性を保つために `Seek` と `ReadAt` メソッドを追加実装する必要があります。
+
+#### 8.0.2 OpenFileWithPrivileges の変更
+
+`internal/filevalidator/privileged_file.go` を変更して、特権昇格時も `safefileio` を使用：
+
+```go
+// OpenFileWithPrivileges opens a file with elevated privileges and immediately restores them.
+// This function uses safefileio for secure file access, preventing symlink attacks and
+// TOCTOU race conditions even during privilege escalation.
+//
+// Returns safefileio.File which implements io.Reader, io.Writer, io.Seeker, and io.ReaderAt.
+func OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (safefileio.File, error)
+```
+
+これにより、TOCTOU 攻撃を完全に防ぐことができます。
+
+#### 8.0.3 VerifyFromHandle の変更
+
+`internal/filevalidator/validator.go` の `VerifyFromHandle` を `io.ReadSeeker` を受け取るように変更：
+
+```go
+// VerifyFromHandle verifies a file's hash using an already opened file handle.
+// The file parameter must implement io.ReadSeeker (satisfied by *os.File and safefileio.File).
+func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.ResolvedPath) error
+```
 
 ### Phase 1: 基盤（elfanalyzer パッケージ）
 

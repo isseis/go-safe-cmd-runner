@@ -369,6 +369,14 @@ flowchart LR
 - Mutex ロックにより並行アクセス時の安全性を保証
 - 復元失敗時は emergency shutdown で安全性を確保
 
+**TOCTOU に関する制約**:
+- `OpenFileWithPrivileges()` は内部で `os.Open()` を使用しており、`safefileio.SafeOpenFile` のシンボリックリンク防止・TOCTOU 対策は適用されない
+- これは既存の `filevalidator` インフラストラクチャ（`VerifyWithPrivileges` 等）と同じ制約であり、本タスク固有の問題ではない
+- リスク緩和要因：
+  - 特権昇格ウィンドウは最小限（mutex 保護されたコールバック内のみ）
+  - 解析結果はリスク分類にのみ影響し、コード実行には使用されない
+  - 最悪ケースでも誤分類 → `RiskLevelMedium`（安全側に倒れる）
+
 **フォールバック動作**:
 - 特権昇格が利用できない場合（非 setuid 環境）は `AnalysisError` を返す
 - Middle Risk として扱われ、ユーザーに確認を促す
