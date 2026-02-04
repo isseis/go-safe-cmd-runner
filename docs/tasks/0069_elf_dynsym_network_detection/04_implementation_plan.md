@@ -39,10 +39,10 @@ ELF 解析に必要なインターフェース等の実装状況を確認し、�
 4. **VerifyFromHandle の変更**: `io.ReadSeeker` を受け取るように変更済み。
 
 **チェックリスト**:
-- [ ] `internal/safefileio/safe_file.go` の確認
-- [ ] `internal/safefileio/safe_file_cleanup_test.go` の確認
-- [ ] `internal/filevalidator/privileged_file.go` の確認
-- [ ] `internal/filevalidator/validator.go` の確認
+- [x] `internal/safefileio/safe_file.go` の確認
+- [x] `internal/safefileio/safe_file_cleanup_test.go` の確認
+- [x] `internal/filevalidator/privileged_file.go` の確認
+- [x] `internal/filevalidator/validator.go` の確認
 
 #### 2.2.2 mockFile テストの追加
 
@@ -55,15 +55,15 @@ ELF 解析に必要なインターフェース等の実装状況を確認し、�
 - `TestMockFileReadAt`: 正常系、範囲外アクセス、負のオフセット
 
 **チェックリスト**:
-- [ ] `TestMockFileSeek` の実装
-- [ ] `TestMockFileReadAt` の実装
-- [ ] 全ての safefileio テストのパス確認
+- [x] `TestMockFileSeek` の実装
+- [x] `TestMockFileReadAt` の実装
+- [x] 全ての safefileio テストのパス確認
 
 ### 2.3 完了条件
 
-- [ ] 実装済みのコードが仕様通りであることを確認
-- [ ] `mockFile` の `Seek` と `ReadAt` のテストが追加され、パスしている
-- [ ] 全ての既存テストがパス
+- [x] 実装済みのコードが仕様通りであることを確認
+- [x] `mockFile` の `Seek` と `ReadAt` のテストが追加され、パスしている
+- [x] 全ての既存テストがパス
 
 ### 2.4 リスク
 
