@@ -226,7 +226,7 @@ func isNoDynsymError(err error) bool {
 	// Any malformed .dynsym should remain AnalysisError for fail-safe behavior.
 	errStr := err.Error()
 	return errors.Is(err, elf.ErrNoSymbols) ||
-		containsAny(errStr, "no symbol", "no dynamic symbol")
+		containsAny(errStr, "no symbol", "no dynamic symbol", ".dynsym not found")
 }
 
 // containsAny checks if s contains any of the substrings.

@@ -254,6 +254,7 @@ func TestContainsAny(t *testing.T) {
 	}{
 		{"matches first", "no symbol section", []string{"no symbol", "missing"}, true},
 		{"matches second", "missing section", []string{"no symbol", "missing"}, true},
+		{"matches dynsym not found", "section .dynsym not found", []string{"no symbol", ".dynsym not found"}, true},
 		{"no match", "valid section", []string{"no symbol", "missing"}, false},
 		{"empty string", "", []string{"no symbol"}, false},
 		{"empty substrs", "some text", []string{}, false},
