@@ -299,6 +299,7 @@ import (
     "fmt"
     "io"
     "os"
+    "strings"
 
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -375,16 +376,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager run
         }
     }
 
-    // Step 3: Get file info for size
-    stat, err := file.Stat()
-    if err != nil {
-        return AnalysisOutput{
-            Result: AnalysisError,
-            Error:  fmt.Errorf("failed to stat file: %w", err),
-        }
-    }
-
-    // Step 4: Parse ELF using debug/elf.NewFile
+    // Step 3: Parse ELF using debug/elf.NewFile
     // The safefileio.File interface implements io.ReaderAt, so we can
     // pass it directly to elf.NewFile without re-opening the file.
     // This eliminates potential TOCTOU race conditions.
@@ -397,7 +389,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager run
     }
     defer elfFile.Close()
 
-    // Step 5: Get dynamic symbols
+    // Step 4: Get dynamic symbols
     dynsyms, err := elfFile.DynamicSymbols()
     if err != nil {
         // Check if error indicates no .dynsym section (static binary)
@@ -419,7 +411,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager run
         }
     }
 
-    // Step 6: Check for network symbols
+    // Step 5: Check for network symbols
     var detected []DetectedSymbol
     for _, sym := range dynsyms {
         // Only check undefined symbols (imported from shared libraries)
@@ -474,12 +466,8 @@ func isNoDynsymError(err error) bool {
 // containsAny checks if s contains any of the substrings.
 func containsAny(s string, substrs ...string) bool {
     for _, sub := range substrs {
-        if len(sub) > 0 && len(s) >= len(sub) {
-            for i := 0; i <= len(s)-len(sub); i++ {
-                if s[i:i+len(sub)] == sub {
-                    return true
-                }
-            }
+        if strings.Contains(s, sub) {
+            return true
         }
     }
     return false
@@ -494,8 +482,11 @@ func containsAny(s string, substrs ...string) bool {
 // Package security に追加するコード
 
 import (
+    "fmt"
     "log/slog"
     "os/exec"
+    "slices"
+    "strings"
 
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
