@@ -359,15 +359,6 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
         if errors.Is(err, os.ErrPermission) && a.privManager != nil {
             file, err = filevalidator.OpenFileWithPrivileges(path, a.privManager)
             if err != nil {
-                // If still permission denied after privilege escalation,
-                // this is likely a true execute-only binary (0111).
-                // Return StaticBinary to indicate analysis is not possible.
-                if errors.Is(err, os.ErrPermission) {
-                    return AnalysisOutput{
-                        Result: StaticBinary,
-                        Error:  fmt.Errorf("execute-only binary cannot be analyzed: %w", err),
-                    }
-                }
                 return AnalysisOutput{
                     Result: AnalysisError,
                     Error:  fmt.Errorf("failed to open file with privileges: %w", err),
