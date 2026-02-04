@@ -413,11 +413,13 @@ ELF `.dynsym` 解析は以下の理由で十分に軽量：
 ```
 internal/runner/security/elfanalyzer/
 ├── testdata/
-│   ├── with_network_symbols      # socket/connect を使用するバイナリ
-│   ├── without_network_symbols   # ネットワークシンボルなしのバイナリ
-│   ├── static_binary             # 静的リンクされたバイナリ
-│   ├── not_elf_script            # シェルスクリプト
-│   └── corrupted_elf             # 破損した ELF ファイル
+│   ├── with_socket.elf   # socket/connect を使用するバイナリ
+│   ├── with_curl.elf     # libcurl をリンクするバイナリ
+│   ├── with_ssl.elf      # OpenSSL をリンクするバイナリ
+│   ├── no_network.elf    # ネットワークシンボルなしのバイナリ
+│   ├── static.elf        # 静的リンクされたバイナリ
+│   ├── script.sh         # シェルスクリプト（非 ELF）
+│   └── corrupted.elf     # 破損した ELF ファイル
 ```
 
 ### 9.2 テストバイナリの生成
