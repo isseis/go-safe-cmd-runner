@@ -355,8 +355,8 @@ flowchart LR
 - 既存の `safefileio.SafeOpenFile` を使用してシンボリックリンク攻撃を防止
 - ファイル全体を読み込む代わりに、`io.ReaderAt` ハンドルを `debug/elf.NewFile` に直接渡す
 - 軽量な .dynsym セクション解析のみ実行（ELF ヘッダとセクションメタデータの読み込みのみ）
-- ファイルを再オープンする必要がないため、TOCTOU 競合状態を完全に排除
-- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは `safefileio.SafeOpenFile` 側で行う
+- 設計上はファイルを再オープンする必要がないため、TOCTOU 競合状態のリスクを低減（`openat2` 非対応環境では safefileio の二段階検証により検出・緩和を行うが、完全排除ではない）
+- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは `safefileio.SafeOpenFile` 側で行う（実行専用バイナリに対する特権付き再オープン経路など、一部の例外では TOCTOU リスクが残りうることを明示）
 
 ### 7.2 実行専用バイナリ（Execute-Only Permissions）への対応
 
