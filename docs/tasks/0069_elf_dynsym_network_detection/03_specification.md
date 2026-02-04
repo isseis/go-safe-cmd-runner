@@ -893,8 +893,12 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
                 t.Fatalf("required test file %s not found", tt.filename)
             }
 
-            output := analyzer.AnalyzeNetworkSymbols(path)
+            absPath, err := filepath.Abs(path)
+            if err != nil {
+                t.Fatalf("failed to get absolute path for %s: %v", path, err)
+            }
 
+            output := analyzer.AnalyzeNetworkSymbols(absPath, nil)
             assert.Equal(t, tt.expectedResult, output.Result,
                 "unexpected result for %s", tt.filename)
 
