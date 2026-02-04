@@ -432,14 +432,14 @@ cat > /tmp/with_net.c << 'EOF'
 #include <sys/socket.h>
 int main() { socket(AF_INET, SOCK_STREAM, 0); return 0; }
 EOF
-gcc -o testdata/with_network_symbols /tmp/with_net.c
+gcc -o testdata/with_socket.elf /tmp/with_net.c
 
 # ネットワークシンボルなしのバイナリ
 cat > /tmp/no_net.c << 'EOF'
 #include <stdio.h>
 int main() { printf("hello\n"); return 0; }
 EOF
-gcc -o testdata/without_network_symbols /tmp/no_net.c
+gcc -o testdata/no_network.elf /tmp/no_net.c
 ```
 
 ## 10. 2nd Step との統合計画

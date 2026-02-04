@@ -299,6 +299,7 @@ func SymbolCount() int {
 package elfanalyzer
 
 import (
+    "bytes"
     "debug/elf"
     "errors"
     "fmt"
@@ -487,12 +488,7 @@ func isELFMagic(magic []byte) bool {
     if len(magic) < 4 {
         return false
     }
-    for i := 0; i < 4; i++ {
-        if magic[i] != elfMagic[i] {
-            return false
-        }
-    }
-    return true
+    return bytes.Equal(magic[:4], elfMagic)
 }
 
 // isNoDynsymError checks if the error indicates no .dynsym section exists.
@@ -504,7 +500,7 @@ func isNoDynsymError(err error) bool {
     // The exact error message may vary, so we check for common patterns
     errStr := err.Error()
     return errors.Is(err, elf.ErrNoSymbols) ||
-        containsAny(errStr, "no symbol", "no dynamic symbol", "SHT_DYNSYM")
+        containsAny(errStr, "no symbol", "no dynamic symbol", ".dynsym")
 }
 
 // containsAny checks if s contains any of the substrings.
