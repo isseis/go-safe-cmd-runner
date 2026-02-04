@@ -318,7 +318,8 @@ var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 type StandardELFAnalyzer struct {
     fs             safefileio.FileSystem
     networkSymbols map[string]SymbolCategory
-    privManager    runnertypes.PrivilegeManager // optional, for execute-only binaries
+    privManager    runnertypes.PrivilegeManager          // optional, for execute-only binaries
+    pfv            *filevalidator.PrivilegedFileValidator // used for privileged file access
 }
 
 // NewStandardELFAnalyzer creates a new StandardELFAnalyzer with the given file system.
@@ -332,6 +333,7 @@ func NewStandardELFAnalyzer(fs safefileio.FileSystem, privManager runnertypes.Pr
         fs:             fs,
         networkSymbols: GetNetworkSymbols(),
         privManager:    privManager,
+        pfv:            filevalidator.NewPrivilegedFileValidator(fs),
     }
 }
 
@@ -345,6 +347,7 @@ func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager run
         fs:             fs,
         networkSymbols: symbols,
         privManager:    privManager,
+        pfv:            filevalidator.NewPrivilegedFileValidator(fs),
     }
 }
 
@@ -358,7 +361,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
         // OpenFileWithPrivileges now uses safefileio internally, providing full
         // symlink/TOCTOU protection even during privilege escalation.
         if errors.Is(err, os.ErrPermission) && a.privManager != nil {
-            file, err = filevalidator.OpenFileWithPrivileges(path, a.privManager)
+            file, err = a.pfv.OpenFileWithPrivileges(path, a.privManager)
             if err != nil {
                 return AnalysisOutput{
                     Result: AnalysisError,
@@ -1220,7 +1223,7 @@ type File interface {
 // TOCTOU race conditions even during privilege escalation.
 //
 // Returns safefileio.File which implements io.Reader, io.Writer, io.Seeker, and io.ReaderAt.
-func OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (safefileio.File, error)
+func (pfv *PrivilegedFileValidator) OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (safefileio.File, error)
 ```
 
 これにより、TOCTOU 攻撃を完全に防ぐことができます。
