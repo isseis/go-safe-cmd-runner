@@ -305,6 +305,8 @@ import (
     "strings"
 
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/filevalidator"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // ELF magic number bytes
