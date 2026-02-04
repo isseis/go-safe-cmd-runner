@@ -120,7 +120,7 @@ package elfanalyzer
 ```
 
 **チェックリスト**:
-- [ ] パッケージドキュメントの作成
+- [x] パッケージドキュメントの作成
 
 #### 3.3.2 型定義とインターフェース
 
@@ -129,14 +129,14 @@ package elfanalyzer
 **実装内容**: 仕様書 3.1 節の内容を実装
 
 **チェックリスト**:
-- [ ] `AnalysisResult` enum の定義
-- [ ] `AnalysisResult.String()` の実装
-- [ ] `DetectedSymbol` 構造体の定義
-- [ ] `AnalysisOutput` 構造体の定義
-- [ ] `AnalysisOutput.IsNetworkCapable()` の実装
-- [ ] `AnalysisOutput.IsIndeterminate()` の実装
-- [ ] `ELFAnalyzer` インターフェースの定義
-- [ ] doc コメントの完備
+- [x] `AnalysisResult` enum の定義
+- [x] `AnalysisResult.String()` の実装
+- [x] `DetectedSymbol` 構造体の定義
+- [x] `AnalysisOutput` 構造体の定義
+- [x] `AnalysisOutput.IsNetworkCapable()` の実装
+- [x] `AnalysisOutput.IsIndeterminate()` の実装
+- [x] `ELFAnalyzer` インターフェースの定義
+- [x] doc コメントの完備
 
 #### 3.3.3 ネットワークシンボルレジストリ
 
@@ -151,13 +151,13 @@ package elfanalyzer
 - TLS (SSL_connect, SSL_new, gnutls_init, etc.)
 
 **チェックリスト**:
-- [ ] `SymbolCategory` 型の定義
-- [ ] `networkSymbolRegistry` マップの定義
-- [ ] 各カテゴリのシンボル登録（30個以上）
-- [ ] `GetNetworkSymbols()` の実装
-- [ ] `IsNetworkSymbol()` の実装
-- [ ] `SymbolCount()` の実装
-- [ ] doc コメントの完備
+- [x] `SymbolCategory` 型の定義
+- [x] `networkSymbolRegistry` マップの定義
+- [x] 各カテゴリのシンボル登録（30個以上）
+- [x] `GetNetworkSymbols()` の実装
+- [x] `IsNetworkSymbol()` の実装
+- [x] `SymbolCount()` の実装
+- [x] doc コメントの完備
 
 #### 3.3.4 ELF アナライザの実装
 
@@ -176,16 +176,16 @@ package elfanalyzer
 8. 結果の返却
 
 **チェックリスト**:
-- [ ] `StandardELFAnalyzer` 構造体の定義
-- [ ] `NewStandardELFAnalyzer()` の実装
-- [ ] `NewStandardELFAnalyzerWithSymbols()` の実装（テスト用）
-- [ ] `AnalyzeNetworkSymbols()` の実装
-- [ ] `isELFMagic()` ヘルパー関数の実装
-- [ ] `isNoDynsymError()` ヘルパー関数の実装
-- [ ] `containsAny()` ヘルパー関数の実装
-- [ ] エラーハンドリングの完備
-- [ ] ファイルサイズ制限（1GB）の実装
-- [ ] doc コメントの完備
+- [x] `StandardELFAnalyzer` 構造体の定義
+- [x] `NewStandardELFAnalyzer()` の実装
+- [x] `NewStandardELFAnalyzerWithSymbols()` の実装（テスト用）
+- [x] `AnalyzeNetworkSymbols()` の実装
+- [x] `isELFMagic()` ヘルパー関数の実装
+- [x] `isNoDynsymError()` ヘルパー関数の実装
+- [x] `containsAny()` ヘルパー関数の実装
+- [x] エラーハンドリングの完備
+- [x] ファイルサイズ制限（1GB）の実装
+- [x] doc コメントの完備
 
 #### 3.3.5 テストフィクスチャの生成
 
@@ -201,10 +201,10 @@ package elfanalyzer
 7. `corrupted.elf` - 破損した ELF
 
 **チェックリスト**:
-- [ ] `README.md` に生成手順を記載
-- [ ] 各テストバイナリの生成スクリプト作成
-- [ ] バイナリの生成と配置
-- [ ] `.gitignore` への追加（バイナリは Git 管理外）
+- [x] `README.md` に生成手順を記載
+- [-] 各テストバイナリの生成スクリプト作成
+- [x] バイナリの生成と配置
+- [x] `.gitignore` への追加（バイナリは Git 管理外）
 
 #### 3.3.6 ユニットテストの実装
 
@@ -221,20 +221,20 @@ package elfanalyzer
 - `TestSymbolCount` - レジストリサイズのテスト
 
 **チェックリスト**:
-- [ ] 全テストケースの実装
-- [ ] testify/assert, testify/require の使用
-- [ ] テストフィクスチャがない場合の Skip 処理
-- [ ] テーブル駆動テストの活用
-- [ ] エラーケースのカバレッジ
-- [ ] 全テストのパス確認
+- [x] 全テストケースの実装
+- [x] testify/assert, testify/require の使用
+- [x] テストフィクスチャがない場合の Skip 処理
+- [x] テーブル駆動テストの活用
+- [x] エラーケースのカバレッジ
+- [x] 全テストのパス確認
 
 ### 3.4 完了条件
 
-- [ ] `elfanalyzer` パッケージの全ファイルを実装
-- [ ] ユニットテストのカバレッジ 80% 以上
-- [ ] `go test ./internal/runner/security/elfanalyzer/...` が成功
-- [ ] `golangci-lint` のエラーなし
-- [ ] doc コメントの完備
+- [x] `elfanalyzer` パッケージの全ファイルを実装
+- [x] ユニットテストのカバレッジ 80% 以上
+- [x] `go test ./internal/runner/security/elfanalyzer/...` が成功
+- [x] `golangci-lint` のエラーなし
+- [x] doc コメントの完備
 
 ### 3.5 リスク
 
