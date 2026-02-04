@@ -142,9 +142,8 @@ func (m *mockFile) Truncate(size int64) error {
 		}
 	} else if size > int64(len(m.data)) {
 		// Handle extension with null bytes (matches os.File.Truncate behavior)
-		newData := make([]byte, size)
-		copy(newData, m.data)
-		m.data = newData
+		diff := size - int64(len(m.data))
+		m.data = append(m.data, make([]byte, diff)...)
 		// Position stays unchanged when extending
 	}
 	// size == len(m.data) - no change needed
