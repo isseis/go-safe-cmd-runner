@@ -257,6 +257,7 @@ type NetworkSymbolCategory string
 
 const (
     CategorySocket NetworkSymbolCategory = "socket"  // POSIX socket API
+    CategoryDNS    NetworkSymbolCategory = "dns"     // DNS resolution
     CategoryHTTP   NetworkSymbolCategory = "http"    // HTTP libraries
     CategoryTLS    NetworkSymbolCategory = "tls"     // TLS/SSL libraries
 )
@@ -277,10 +278,10 @@ func DefaultNetworkSymbols() map[string]SymbolCategory {
         "recv":          CategorySocket,
         "recvfrom":      CategorySocket,
         "recvmsg":       CategorySocket,
-        "getaddrinfo":   CategorySocket,
-        "getnameinfo":   CategorySocket,
-        "gethostbyname": CategorySocket,
-        "gethostbyname2": CategorySocket,
+        "getaddrinfo":   CategoryDNS,
+        "getnameinfo":   CategoryDNS,
+        "gethostbyname": CategoryDNS,
+        "gethostbyname2": CategoryDNS,
         "inet_ntop":     CategorySocket,
         "inet_pton":     CategorySocket,
         "getpeername":   CategorySocket,
