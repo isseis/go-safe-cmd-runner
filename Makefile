@@ -105,7 +105,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full
+.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean
 
 all: security-check
 
@@ -160,6 +160,71 @@ clean:
 	rm -f coverage.out coverage.html
 	rm -f test/performance/medium_scale.toml test/performance/large_scale.toml
 
+# =============================================================================
+# ELF Analyzer Test Data Generation
+# =============================================================================
+# Generates test binaries for elfanalyzer package unit tests.
+# Prerequisites: GCC, libssl-dev
+# Optional: libcurl4-openssl-dev (for with_curl.elf)
+
+ELFANALYZER_TESTDATA_DIR := internal/runner/security/elfanalyzer/testdata
+
+# List of required test binaries
+ELFANALYZER_TEST_BINARIES := \
+	$(ELFANALYZER_TESTDATA_DIR)/with_socket.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/with_ssl.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/no_network.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/static.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/corrupted.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/script.sh
+
+# Verify elfanalyzer test binaries by running elfanalyzer tests
+# This ensures the generated binaries have the expected symbols
+elfanalyzer-testdata-verify: $(ELFANALYZER_TEST_BINARIES)
+	@echo "Verifying elfanalyzer test binaries..."
+	@$(GOTEST) -tags test -v ./internal/runner/security/elfanalyzer/ -run TestStandardELFAnalyzer_AnalyzeNetworkSymbols > /dev/null 2>&1 || \
+		(echo "ERROR: elfanalyzer test binaries verification failed"; exit 1)
+	@echo "elfanalyzer test binaries verified successfully"
+
+# Individual test binary targets
+$(ELFANALYZER_TESTDATA_DIR)/with_socket.elf:
+	@echo "Generating $@..."
+	@echo '#include <sys/socket.h>\n#include <netinet/in.h>\nint main() { int fd = socket(AF_INET, SOCK_STREAM, 0); struct sockaddr_in addr = {0}; connect(fd, (struct sockaddr*)&addr, sizeof(addr)); return 0; }' | \
+		gcc -x c -o $@ -
+
+$(ELFANALYZER_TESTDATA_DIR)/with_ssl.elf:
+	@echo "Generating $@..."
+	@echo '#include <openssl/ssl.h>\nint main() { SSL_CTX *ctx = SSL_CTX_new(TLS_client_method()); SSL_CTX_free(ctx); return 0; }' | \
+		gcc -x c -o $@ - -lssl -lcrypto
+
+$(ELFANALYZER_TESTDATA_DIR)/no_network.elf:
+	@echo "Generating $@..."
+	@echo '#include <stdio.h>\nint main() { printf("Hello, World!\\n"); return 0; }' | \
+		gcc -x c -o $@ -
+
+$(ELFANALYZER_TESTDATA_DIR)/static.elf:
+	@echo "Generating $@..."
+	@echo '#include <stdio.h>\nint main() { printf("Hello, World!\\n"); return 0; }' | \
+		gcc -x c -static -o $@ -
+
+$(ELFANALYZER_TESTDATA_DIR)/corrupted.elf:
+	@echo "Generating $@..."
+	@/usr/bin/printf '\x7fELF' > $@
+	@dd if=/dev/urandom bs=100 count=1 >> $@ 2>/dev/null
+
+$(ELFANALYZER_TESTDATA_DIR)/script.sh:
+	@echo "Generating $@..."
+	@echo '#!/bin/bash\necho "Hello"' > $@
+	@chmod +x $@
+
+# Convenience target to generate all test binaries
+elfanalyzer-testdata: $(ELFANALYZER_TEST_BINARIES)
+	@echo "elfanalyzer test binaries generated successfully"
+
+# Clean elfanalyzer test binaries
+elfanalyzer-testdata-clean:
+	rm -f $(ELFANALYZER_TEST_BINARIES)
+
 hash:
 	$(foreach file, $(HASH_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
@@ -200,7 +265,7 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 
 # Unit tests - core functionality tests
 # Runs twice: with race detection (CGO_ENABLED=1) and without (CGO_ENABLED=0)
-unit-test: build-test
+unit-test: build-test elfanalyzer-testdata-verify
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
 
