@@ -465,5 +465,5 @@ flowchart TB
 ### 10.2 インターフェースの互換性
 
 `ELFAnalyzer` インターフェースは 2nd step でも再利用可能：
-- `AnalysisResult.StaticBinary` を返すことで、2nd step の解析にフォールバック可能
+- `StaticBinary` を返すことで、2nd step の解析にフォールバック可能
 - 検出結果の構造体は拡張可能な設計
