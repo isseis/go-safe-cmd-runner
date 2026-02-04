@@ -351,7 +351,7 @@ flowchart LR
 - ファイル全体を読み込む代わりに、`io.ReaderAt` ハンドルを `debug/elf.NewFile` に直接渡す
 - 軽量な .dynsym セクション解析のみ実行（ELF ヘッダとセクションメタデータの読み込みのみ）
 - ファイルを再オープンする必要がないため、TOCTOU 競合状態を完全に排除
-- ファイルパスの検証は呼び出し元（`extractAllCommandNames`）で実施済み
+- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは `safefileio.SafeOpenFile` 側で行う
 
 ### 7.2 実行専用バイナリ（Execute-Only Permissions）への対応
 
