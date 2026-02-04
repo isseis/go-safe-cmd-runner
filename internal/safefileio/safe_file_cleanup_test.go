@@ -3,6 +3,8 @@ package safefileio
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,7 +20,8 @@ import (
 
 // mockFile is a test implementation of File interface
 type mockFile struct {
-	content     *bytes.Buffer
+	data        []byte // raw data for ReadAt/Seek support
+	pos         int64  // current position
 	statErr     error
 	writeErr    error
 	closeErr    error
@@ -30,20 +33,68 @@ type mockFile struct {
 
 func newMockFile(content []byte, fileInfo os.FileInfo) *mockFile {
 	return &mockFile{
-		content:  bytes.NewBuffer(content),
+		data:     content,
+		pos:      0,
 		fileInfo: fileInfo,
 	}
 }
 
 func (m *mockFile) Read(p []byte) (n int, err error) {
-	return m.content.Read(p)
+	if m.pos >= int64(len(m.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, m.data[m.pos:])
+	m.pos += int64(n)
+	return n, nil
 }
 
 func (m *mockFile) Write(p []byte) (n int, err error) {
 	if m.writeErr != nil {
 		return 0, m.writeErr
 	}
-	return m.content.Write(p)
+	// Extend data if needed
+	endPos := m.pos + int64(len(p))
+	if endPos > int64(len(m.data)) {
+		newData := make([]byte, endPos)
+		copy(newData, m.data)
+		m.data = newData
+	}
+	n = copy(m.data[m.pos:], p)
+	m.pos += int64(n)
+	return n, nil
+}
+
+func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
+	var newPos int64
+	switch whence {
+	case io.SeekStart:
+		newPos = offset
+	case io.SeekCurrent:
+		newPos = m.pos + offset
+	case io.SeekEnd:
+		newPos = int64(len(m.data)) + offset
+	default:
+		return 0, fmt.Errorf("invalid whence: %d", whence)
+	}
+	if newPos < 0 {
+		return 0, fmt.Errorf("negative position: %d", newPos)
+	}
+	m.pos = newPos
+	return m.pos, nil
+}
+
+func (m *mockFile) ReadAt(p []byte, off int64) (n int, err error) {
+	if off < 0 {
+		return 0, fmt.Errorf("negative offset: %d", off)
+	}
+	if off >= int64(len(m.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, m.data[off:])
+	if n < len(p) {
+		err = io.EOF
+	}
+	return n, err
 }
 
 func (m *mockFile) Close() error {
@@ -64,9 +115,15 @@ func (m *mockFile) Truncate(size int64) error {
 	if m.truncateErr != nil {
 		return m.truncateErr
 	}
-	// Simulate truncate by resetting the buffer
+	// Simulate truncate
 	if size == 0 {
-		m.content.Reset()
+		m.data = nil
+		m.pos = 0
+	} else if size < int64(len(m.data)) {
+		m.data = m.data[:size]
+		if m.pos > size {
+			m.pos = size
+		}
 	}
 	return nil
 }
@@ -167,7 +224,7 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 		mockFS.openFunc = func(_ string, _ int, _ os.FileMode) (File, error) {
 			// Simulate file creation that will fail validation
 			mockFile := &mockFile{
-				content:  bytes.NewBuffer(nil),
+				data:     nil,
 				statErr:  errors.New("stat error to trigger validation failure"),
 				isClosed: false,
 			}
@@ -248,7 +305,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 			assert.False(t, flag&os.O_EXCL != 0, "Should NOT be using O_EXCL for overwrite")
 
 			mockFile := &mockFile{
-				content:  bytes.NewBuffer(nil),
+				data:     nil,
 				statErr:  errors.New("validation error"),
 				isClosed: false,
 			}
@@ -367,7 +424,7 @@ func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
 		// Setup: File creation and validation succeed, but Remove fails
 		mockFS.openFunc = func(_ string, _ int, _ os.FileMode) (File, error) {
 			mockFile := &mockFile{
-				content:  bytes.NewBuffer(nil),
+				data:     nil,
 				statErr:  errors.New("validation error"), // Trigger cleanup
 				isClosed: false,
 			}

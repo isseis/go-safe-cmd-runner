@@ -279,8 +279,9 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, fo
 	return safefileio.SafeWriteFile(filePath, jsonData, 0o644)
 }
 
-// VerifyFromHandle verifies a file's hash using an already opened file handle
-func (v *Validator) VerifyFromHandle(file *os.File, targetPath common.ResolvedPath) error {
+// VerifyFromHandle verifies a file's hash using an already opened file handle.
+// The file parameter must implement io.ReadSeeker (satisfied by *os.File and safefileio.File).
+func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.ResolvedPath) error {
 	// Calculate hash directly from file handle (normal privilege)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to seek file to start: %w", err)

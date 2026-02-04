@@ -60,9 +60,12 @@ type FileSystem interface {
 }
 
 // File is an interface that abstracts file operations
+// The underlying *os.File implements all these interfaces.
 type File interface {
 	io.Reader
 	io.Writer
+	io.Seeker   // Required for VerifyFromHandle and similar operations
+	io.ReaderAt // Required for debug/elf.NewFile and similar operations
 	Close() error
 	Stat() (os.FileInfo, error)
 	Truncate(size int64) error
