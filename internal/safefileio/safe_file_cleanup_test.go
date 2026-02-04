@@ -115,16 +115,24 @@ func (m *mockFile) Truncate(size int64) error {
 	if m.truncateErr != nil {
 		return m.truncateErr
 	}
-	// Simulate truncate
-	if size == 0 {
-		m.data = nil
-		m.pos = 0
-	} else if size < int64(len(m.data)) {
+	// Reject negative size (matches os.File.Truncate behavior)
+	if size < 0 {
+		return fmt.Errorf("negative size: %d", size)
+	}
+	// Handle shrinking
+	if size < int64(len(m.data)) {
 		m.data = m.data[:size]
 		if m.pos > size {
 			m.pos = size
 		}
+	} else if size > int64(len(m.data)) {
+		// Handle extension with null bytes (matches os.File.Truncate behavior)
+		newData := make([]byte, size)
+		copy(newData, m.data)
+		m.data = newData
+		// Position stays unchanged when extending
 	}
+	// size == len(m.data) - no change needed
 	return nil
 }
 
@@ -508,5 +516,79 @@ func TestFileCleanup_Integration(t *testing.T) {
 		content, readErr := os.ReadFile(filePath)
 		require.NoError(t, readErr)
 		assert.Equal(t, originalContent, content, "Original content should be preserved when validation fails")
+	})
+}
+
+// Test suite for mockFile.Truncate method enhancements
+func TestMockFileTruncate(t *testing.T) {
+	t.Run("truncate_with_negative_size_returns_error", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		err := mockFile.Truncate(-1)
+		assert.Error(t, err, "Truncate with negative size should return error")
+		assert.Equal(t, []byte("test content"), mockFile.data, "Data should not change on error")
+	})
+
+	t.Run("truncate_shrinks_file", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		err := mockFile.Truncate(4)
+		require.NoError(t, err)
+		assert.Equal(t, []byte("test"), mockFile.data, "File should be truncated to 4 bytes")
+	})
+
+	t.Run("truncate_shrinks_file_and_resets_position", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		mockFile.pos = 10
+		err := mockFile.Truncate(5)
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), mockFile.pos, "Position should be reset to truncate size when beyond")
+		assert.Equal(t, []byte("test "), mockFile.data, "File should be truncated to 5 bytes")
+	})
+
+	t.Run("truncate_extends_file_with_null_bytes", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
+		err := mockFile.Truncate(8)
+		require.NoError(t, err)
+		assert.Equal(t, 8, len(mockFile.data), "File should be extended to 8 bytes")
+		// First 4 bytes should be original content
+		assert.Equal(t, []byte("test"), mockFile.data[:4], "Original content should be preserved")
+		// Last 4 bytes should be null bytes
+		assert.Equal(t, []byte{0, 0, 0, 0}, mockFile.data[4:], "Extended portion should be null bytes")
+	})
+
+	t.Run("truncate_extends_file_preserves_position", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
+		mockFile.pos = 2
+		err := mockFile.Truncate(10)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), mockFile.pos, "Position should not change when extending")
+		assert.Equal(t, 10, len(mockFile.data), "File should be extended to 10 bytes")
+	})
+
+	t.Run("truncate_to_same_size_is_noop", func(t *testing.T) {
+		original := []byte("test content")
+		mockFile := newMockFile(original, &mockFileInfo{name: "test.txt", size: 12})
+		mockFile.pos = 5
+		err := mockFile.Truncate(12)
+		require.NoError(t, err)
+		assert.Equal(t, original, mockFile.data, "Data should not change when truncating to same size")
+		assert.Equal(t, int64(5), mockFile.pos, "Position should not change")
+	})
+
+	t.Run("truncate_to_zero", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		mockFile.pos = 5
+		err := mockFile.Truncate(0)
+		require.NoError(t, err)
+		assert.Equal(t, 0, len(mockFile.data), "File should be empty after truncate to 0")
+		assert.Equal(t, int64(0), mockFile.pos, "Position should be reset to 0")
+	})
+
+	t.Run("truncate_error_handling", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
+		mockFile.truncateErr = errors.New("permission denied")
+		err := mockFile.Truncate(8)
+		assert.Error(t, err)
+		assert.Equal(t, "permission denied", err.Error())
+		assert.Equal(t, []byte("test"), mockFile.data, "Data should not change when error is set")
 	})
 }
