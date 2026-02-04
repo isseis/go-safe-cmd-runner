@@ -364,6 +364,34 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager run
     }
     defer file.Close()
 
+    // Step 1b: Validate the file is a regular file and check size
+    // This prevents resource exhaustion from devices, FIFOs, or extremely large files
+    const maxFileSize = 1 << 30 // 1 GB limit
+
+    fileInfo, err := file.Stat()
+    if err != nil {
+        return AnalysisOutput{
+            Result: AnalysisError,
+            Error:  fmt.Errorf("failed to stat file: %w", err),
+        }
+    }
+
+    // Ensure it's a regular file, not a device, FIFO, socket, or directory
+    if !fileInfo.Mode().IsRegular() {
+        return AnalysisOutput{
+            Result: NotELFBinary,
+            Error:  fmt.Errorf("not a regular file: %s", fileInfo.Mode()),
+        }
+    }
+
+    // Check file size is reasonable
+    if fileInfo.Size() > maxFileSize {
+        return AnalysisOutput{
+            Result: AnalysisError,
+            Error:  fmt.Errorf("file too large: %d bytes (max %d)", fileInfo.Size(), maxFileSize),
+        }
+    }
+
     // Step 2: Check ELF magic number
     magic := make([]byte, 4)
     if _, err := io.ReadFull(file.(io.Reader), magic); err != nil {
