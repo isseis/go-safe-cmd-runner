@@ -96,11 +96,12 @@ func createBenchmarkTestFile(b *testing.B, content string) string {
 // BenchmarkOpenFileWithPrivileges benchmarks the privilege file opening
 func BenchmarkOpenFileWithPrivileges(b *testing.B) {
 	testFile := createBenchmarkTestFile(b, "benchmark test content")
+	pfv := NewPrivilegedFileValidator(nil) // Use default FileSystem
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Test normal file access (fast path)
-		file, err := OpenFileWithPrivileges(testFile, nil)
+		file, err := pfv.OpenFileWithPrivileges(testFile, nil)
 		if err != nil {
 			b.Fatalf("OpenFileWithPrivileges failed: %v", err)
 		}

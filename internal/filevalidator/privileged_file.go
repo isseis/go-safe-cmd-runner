@@ -9,20 +9,25 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
-// defaultFS is the default FileSystem used by OpenFileWithPrivileges.
-// It can be overridden for testing via SetFileSystemForTesting.
-var defaultFS safefileio.FileSystem = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-
-// SetFileSystemForTesting allows tests to inject a mock FileSystem.
-// This should only be used in tests.
-func SetFileSystemForTesting(fs safefileio.FileSystem) {
-	defaultFS = fs
+// PrivilegedFileValidator provides secure file operations with privilege escalation support.
+// It encapsulates the FileSystem dependency to avoid global state and enable
+// safe parallel testing without race conditions.
+type PrivilegedFileValidator struct {
+	fs safefileio.FileSystem
 }
 
-// ResetFileSystemForTesting resets the FileSystem to the default implementation.
-// This should be called in test cleanup.
-func ResetFileSystemForTesting() {
-	defaultFS = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+// NewPrivilegedFileValidator creates a new PrivilegedFileValidator with an optional custom FileSystem.
+// If fs is nil, a default FileSystem is created.
+func NewPrivilegedFileValidator(fs safefileio.FileSystem) *PrivilegedFileValidator {
+	if fs == nil {
+		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	}
+	return &PrivilegedFileValidator{fs: fs}
+}
+
+// DefaultPrivilegedFileValidator returns a PrivilegedFileValidator instance with the default FileSystem.
+func DefaultPrivilegedFileValidator() *PrivilegedFileValidator {
+	return NewPrivilegedFileValidator(nil)
 }
 
 // OpenFileWithPrivileges opens a file with elevated privileges and immediately restores them.
@@ -30,16 +35,10 @@ func ResetFileSystemForTesting() {
 // TOCTOU race conditions even during privilege escalation.
 //
 // Returns safefileio.File which implements io.Reader, io.Writer, io.Seeker, and io.ReaderAt.
-func OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (safefileio.File, error) {
-	return OpenFileWithPrivilegesFS(filepath, privManager, defaultFS)
-}
-
-// OpenFileWithPrivilegesFS opens a file with elevated privileges using the provided FileSystem.
-// This allows for dependency injection in tests.
-func OpenFileWithPrivilegesFS(filepath string, privManager runnertypes.PrivilegeManager, fs safefileio.FileSystem) (safefileio.File, error) {
+func (pfv *PrivilegedFileValidator) OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (safefileio.File, error) {
 	// Attempt normal access with standard privileges first using safefileio
 	// This prevents symlink attacks and TOCTOU race conditions
-	file, err := fs.SafeOpenFile(filepath, os.O_RDONLY, 0)
+	file, err := pfv.fs.SafeOpenFile(filepath, os.O_RDONLY, 0)
 	if err == nil {
 		return file, nil
 	}
@@ -66,7 +65,7 @@ func OpenFileWithPrivilegesFS(filepath string, privManager runnertypes.Privilege
 		FilePath:  filepath,
 	}, func() error {
 		var openErr error
-		privilegedFile, openErr = fs.SafeOpenFile(filepath, os.O_RDONLY, 0)
+		privilegedFile, openErr = pfv.fs.SafeOpenFile(filepath, os.O_RDONLY, 0)
 		return openErr
 	})
 
