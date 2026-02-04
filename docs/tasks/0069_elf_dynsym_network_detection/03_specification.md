@@ -1186,27 +1186,22 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 
 **重要**: 本タスクの実装前に、以下の変更が必要です。
 
-#### 8.0.1 safefileio.File インターフェースの拡張
+#### 8.0.1 safefileio.File インターフェースの確認（実装済み）
 
-`internal/safefileio/safe_file.go` の `File` インターフェースに `io.Seeker` と `io.ReaderAt` を追加：
+`internal/safefileio/safe_file.go` の `File` インターフェースには既に `io.Seeker` と `io.ReaderAt` が含まれている（`safe_file.go:64-72`）。追加の変更は不要。
 
 ```go
-// File is an interface that abstracts file operations
-// The underlying *os.File implements all these interfaces.
+// 現在の File インターフェース（参考）
 type File interface {
     io.Reader
     io.Writer
-    io.Seeker   // 追加: VerifyFromHandle との互換性のため
-    io.ReaderAt // 追加: debug/elf.NewFile との互換性のため
+    io.Seeker   // Required for VerifyFromHandle and similar operations
+    io.ReaderAt // Required for debug/elf.NewFile and similar operations
     Close() error
     Stat() (os.FileInfo, error)
     Truncate(size int64) error
 }
 ```
-
-`*os.File` は既に `io.Seeker` と `io.ReaderAt` を実装しているため、`*os.File` 自体の変更は不要です。
-ただし、`safefileio.File` インターフェースを実装しているその他の型（モックやラッパー
-型を含む）は、互換性を保つために `Seek` と `ReadAt` メソッドを追加実装する必要があります。
 
 #### 8.0.2 OpenFileWithPrivileges の変更
 
