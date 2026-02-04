@@ -262,44 +262,44 @@ const (
 
 // DefaultNetworkSymbols returns the default set of network-related symbols
 func DefaultNetworkSymbols() map[string]SymbolCategory {
-    return map[string]string{
+    return map[string]SymbolCategory{
         // Socket API
-        "socket":        "socket",
-        "connect":       "socket",
-        "bind":          "socket",
-        "listen":        "socket",
-        "accept":        "socket",
-        "accept4":       "socket",
-        "send":          "socket",
-        "sendto":        "socket",
-        "sendmsg":       "socket",
-        "recv":          "socket",
-        "recvfrom":      "socket",
-        "recvmsg":       "socket",
-        "getaddrinfo":   "socket",
-        "getnameinfo":   "socket",
-        "gethostbyname": "socket",
-        "gethostbyname2":"socket",
-        "inet_ntop":     "socket",
-        "inet_pton":     "socket",
-        "getpeername":   "socket",
-        "getsockname":   "socket",
+        "socket":        CategorySocket,
+        "connect":       CategorySocket,
+        "bind":          CategorySocket,
+        "listen":        CategorySocket,
+        "accept":        CategorySocket,
+        "accept4":       CategorySocket,
+        "send":          CategorySocket,
+        "sendto":        CategorySocket,
+        "sendmsg":       CategorySocket,
+        "recv":          CategorySocket,
+        "recvfrom":      CategorySocket,
+        "recvmsg":       CategorySocket,
+        "getaddrinfo":   CategorySocket,
+        "getnameinfo":   CategorySocket,
+        "gethostbyname": CategorySocket,
+        "gethostbyname2": CategorySocket,
+        "inet_ntop":     CategorySocket,
+        "inet_pton":     CategorySocket,
+        "getpeername":   CategorySocket,
+        "getsockname":   CategorySocket,
 
         // libcurl
-        "curl_easy_init":    "http",
-        "curl_easy_perform": "http",
-        "curl_multi_perform":"http",
+        "curl_easy_init":    CategoryHTTP,
+        "curl_easy_perform": CategoryHTTP,
+        "curl_multi_perform": CategoryHTTP,
 
         // OpenSSL
-        "SSL_connect": "tls",
-        "SSL_read":    "tls",
-        "SSL_write":   "tls",
-        "SSL_new":     "tls",
+        "SSL_connect": CategoryTLS,
+        "SSL_read":    CategoryTLS,
+        "SSL_write":   CategoryTLS,
+        "SSL_new":     CategoryTLS,
 
         // GnuTLS
-        "gnutls_handshake":   "tls",
-        "gnutls_record_send": "tls",
-        "gnutls_record_recv": "tls",
+        "gnutls_handshake":   CategoryTLS,
+        "gnutls_record_send": CategoryTLS,
+        "gnutls_record_recv": CategoryTLS,
     }
 }
 ```

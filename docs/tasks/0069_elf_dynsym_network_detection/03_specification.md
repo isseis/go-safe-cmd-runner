@@ -591,7 +591,7 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
 
     // Perform ELF analysis
     analyzer := getELFAnalyzer()
-    output := analyzer.AnalyzeNetworkSymbols(cmdPath)
+    output := analyzer.AnalyzeNetworkSymbols(cmdPath, nil)
 
     switch output.Result {
     case elfanalyzer.NetworkDetected:
@@ -713,7 +713,7 @@ slog.Warn("ELF analysis failed, treating as potential network operation",
 
 `testdata/README.md` に以下の生成方法を記載：
 
-```markdown
+````markdown
 # Test Fixtures for ELF Analyzer
 
 ## Generation Instructions
@@ -798,7 +798,7 @@ chmod +x script.sh
 printf '\x7fELF' > corrupted.elf
 dd if=/dev/urandom bs=100 count=1 >> corrupted.elf 2>/dev/null
 ```
-```
+````
 
 ### 6.2 ユニットテスト
 
@@ -1002,6 +1002,14 @@ func TestSymbolCount(t *testing.T) {
 ```go
 // command_analysis_test.go に追加
 
+import (
+    "errors"
+    "testing"
+
+    "github.com/stretchr/testify/assert"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+)
+
 func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
     // Save and restore original analyzer
     originalAnalyzer := defaultELFAnalyzer
@@ -1077,7 +1085,7 @@ type mockELFAnalyzer struct {
     result elfanalyzer.AnalysisResult
 }
 
-func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.AnalysisOutput {
+func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) elfanalyzer.AnalysisOutput {
     output := elfanalyzer.AnalysisOutput{Result: m.result}
     if m.result == elfanalyzer.NetworkDetected {
         output.DetectedSymbols = []elfanalyzer.DetectedSymbol{
