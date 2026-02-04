@@ -125,9 +125,10 @@ type AnalysisOutput struct {
 }
 
 // IsNetworkCapable returns true if the analysis indicates the binary
-// might perform network operations.
+// might perform network operations. This includes both detected network symbols
+// and analysis errors (treated as potential network operations for safety).
 func (o AnalysisOutput) IsNetworkCapable() bool {
-    return o.Result == NetworkDetected
+    return o.Result == NetworkDetected || o.Result == AnalysisError
 }
 
 // IsIndeterminate returns true if the analysis could not determine
@@ -938,7 +939,7 @@ func TestAnalysisOutput_IsNetworkCapable(t *testing.T) {
         {NoNetworkSymbols, false},
         {NotELFBinary, false},
         {StaticBinary, false},
-        {AnalysisError, false},
+        {AnalysisError, true}, // Errors are treated as potential network for safety
     }
 
     for _, tt := range tests {
