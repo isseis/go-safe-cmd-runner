@@ -53,6 +53,7 @@ ELF バイナリの `.dynsym` セクションからインポートされた関�
 - `send`, `sendto`, `sendmsg`
 - `recv`, `recvfrom`, `recvmsg`
 - `getaddrinfo`, `getnameinfo`, `gethostbyname`, `gethostbyname2`
+- `inet_ntop`, `inet_pton`, `getpeername`, `getsockname`
 
 **HTTP/TLS ライブラリ:**
 - libcurl 系: `curl_easy_init`, `curl_easy_perform`, `curl_multi_perform`
