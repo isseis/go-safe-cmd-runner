@@ -659,6 +659,15 @@ func formatDetectedSymbols(symbols []elfanalyzer.DetectedSymbol) string {
 | .dynsym セクションなし | 静的リンクバイナリ | `StaticBinary` | 2nd step に委ねる（現時点では検出なし） |
 | シンボル読み取りエラー | 破損した .dynsym | `AnalysisError` | Middle Risk として扱う |
 
+**特記事項：実行専用権限バイナリ**
+
+実行権限のみ（`--x--x--x`、octal `0111`）のバイナリは実行可能だが読み取り不可。この場合：
+- `SafeOpenFile` が `Permission denied` で失敗
+- `AnalysisError` として扱い、Middle Risk 判定
+- 詳細は [04_edge_cases.md](04_edge_cases.md) を参照
+
+**推奨**: バイナリには読み取り権限も付与すること（例：`0755` = rwxr-xr-x）
+
 ### 5.2 ログメッセージフォーマット
 
 ```go
