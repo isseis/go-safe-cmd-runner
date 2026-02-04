@@ -50,9 +50,10 @@ func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
-	algorithm          HashAlgorithm
-	hashDir            string
-	hashFilePathGetter HashFilePathGetter
+	algorithm               HashAlgorithm
+	hashDir                 string
+	hashFilePathGetter      HashFilePathGetter
+	privilegedFileValidator *PrivilegedFileValidator
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -86,9 +87,10 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 	}
 
 	return &Validator{
-		algorithm:          algorithm,
-		hashDir:            hashDir,
-		hashFilePathGetter: hashFilePathGetter,
+		algorithm:               algorithm,
+		hashDir:                 hashDir,
+		hashFilePathGetter:      hashFilePathGetter,
+		privilegedFileValidator: DefaultPrivilegedFileValidator(),
 	}, nil
 }
 
@@ -279,8 +281,9 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, fo
 	return safefileio.SafeWriteFile(filePath, jsonData, 0o644)
 }
 
-// VerifyFromHandle verifies a file's hash using an already opened file handle
-func (v *Validator) VerifyFromHandle(file *os.File, targetPath common.ResolvedPath) error {
+// VerifyFromHandle verifies a file's hash using an already opened file handle.
+// The file parameter must implement io.ReadSeeker (satisfied by *os.File and safefileio.File).
+func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.ResolvedPath) error {
 	// Calculate hash directly from file handle (normal privilege)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to seek file to start: %w", err)
@@ -324,7 +327,7 @@ func (v *Validator) VerifyWithPrivileges(filePath string, privManager runnertype
 	}
 
 	// Open file with privileges
-	file, openErr := OpenFileWithPrivileges(targetPath.String(), privManager)
+	file, openErr := v.privilegedFileValidator.OpenFileWithPrivileges(targetPath.String(), privManager)
 	if openErr != nil {
 		return fmt.Errorf("failed to open file with privileges: %w", openErr)
 	}
@@ -404,7 +407,7 @@ func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager run
 	// Use common verification logic with privileged file reading
 	return v.verifyAndReadContent(targetPath, func() ([]byte, error) {
 		// Open file with privileges
-		file, openErr := OpenFileWithPrivileges(targetPath.String(), privManager)
+		file, openErr := v.privilegedFileValidator.OpenFileWithPrivileges(targetPath.String(), privManager)
 		if openErr != nil {
 			return nil, fmt.Errorf("failed to open file with privileges: %w", openErr)
 		}

@@ -3,6 +3,8 @@ package safefileio
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -16,9 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockFile is a test implementation of File interface
+// mockFile is a test implementation of File interface.
+// Thread-safety note: The pos and data fields are protected by mu to prevent race conditions
+// when the mock is used in concurrent test scenarios (e.g., with t.Parallel()).
+// ReadAt is an exception: it reads data but does NOT modify pos per io.ReaderAt contract.
 type mockFile struct {
-	content     *bytes.Buffer
+	mu          sync.Mutex
+	data        []byte // raw data for ReadAt/Seek support; protected by mu
+	pos         int64  // current position; protected by mu
 	statErr     error
 	writeErr    error
 	closeErr    error
@@ -30,20 +37,77 @@ type mockFile struct {
 
 func newMockFile(content []byte, fileInfo os.FileInfo) *mockFile {
 	return &mockFile{
-		content:  bytes.NewBuffer(content),
+		data:     content,
+		pos:      0,
 		fileInfo: fileInfo,
 	}
 }
 
 func (m *mockFile) Read(p []byte) (n int, err error) {
-	return m.content.Read(p)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pos >= int64(len(m.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, m.data[m.pos:])
+	m.pos += int64(n)
+	return n, nil
 }
 
 func (m *mockFile) Write(p []byte) (n int, err error) {
 	if m.writeErr != nil {
 		return 0, m.writeErr
 	}
-	return m.content.Write(p)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Extend data if needed
+	endPos := m.pos + int64(len(p))
+	if endPos > int64(len(m.data)) {
+		newData := make([]byte, endPos)
+		copy(newData, m.data)
+		m.data = newData
+	}
+	n = copy(m.data[m.pos:], p)
+	m.pos += int64(n)
+	return n, nil
+}
+
+func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var newPos int64
+	switch whence {
+	case io.SeekStart:
+		newPos = offset
+	case io.SeekCurrent:
+		newPos = m.pos + offset
+	case io.SeekEnd:
+		newPos = int64(len(m.data)) + offset
+	default:
+		return 0, fmt.Errorf("invalid whence: %d", whence)
+	}
+	if newPos < 0 {
+		return 0, fmt.Errorf("negative position: %d", newPos)
+	}
+	m.pos = newPos
+	return m.pos, nil
+}
+
+func (m *mockFile) ReadAt(p []byte, off int64) (n int, err error) {
+	if off < 0 {
+		return 0, fmt.Errorf("negative offset: %d", off)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Note: ReadAt does NOT modify pos per io.ReaderAt contract
+	if off >= int64(len(m.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, m.data[off:])
+	if n < len(p) {
+		err = io.EOF
+	}
+	return n, err
 }
 
 func (m *mockFile) Close() error {
@@ -64,10 +128,25 @@ func (m *mockFile) Truncate(size int64) error {
 	if m.truncateErr != nil {
 		return m.truncateErr
 	}
-	// Simulate truncate by resetting the buffer
-	if size == 0 {
-		m.content.Reset()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Reject negative size (matches os.File.Truncate behavior)
+	if size < 0 {
+		return fmt.Errorf("negative size: %d", size)
 	}
+	// Handle shrinking
+	if size < int64(len(m.data)) {
+		m.data = m.data[:size]
+		if m.pos > size {
+			m.pos = size
+		}
+	} else if size > int64(len(m.data)) {
+		// Handle extension with null bytes (matches os.File.Truncate behavior)
+		diff := size - int64(len(m.data))
+		m.data = append(m.data, make([]byte, diff)...)
+		// Position stays unchanged when extending
+	}
+	// size == len(m.data) - no change needed
 	return nil
 }
 
@@ -167,7 +246,7 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 		mockFS.openFunc = func(_ string, _ int, _ os.FileMode) (File, error) {
 			// Simulate file creation that will fail validation
 			mockFile := &mockFile{
-				content:  bytes.NewBuffer(nil),
+				data:     nil,
 				statErr:  errors.New("stat error to trigger validation failure"),
 				isClosed: false,
 			}
@@ -248,7 +327,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 			assert.False(t, flag&os.O_EXCL != 0, "Should NOT be using O_EXCL for overwrite")
 
 			mockFile := &mockFile{
-				content:  bytes.NewBuffer(nil),
+				data:     nil,
 				statErr:  errors.New("validation error"),
 				isClosed: false,
 			}
@@ -367,7 +446,7 @@ func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
 		// Setup: File creation and validation succeed, but Remove fails
 		mockFS.openFunc = func(_ string, _ int, _ os.FileMode) (File, error) {
 			mockFile := &mockFile{
-				content:  bytes.NewBuffer(nil),
+				data:     nil,
 				statErr:  errors.New("validation error"), // Trigger cleanup
 				isClosed: false,
 			}
@@ -451,5 +530,79 @@ func TestFileCleanup_Integration(t *testing.T) {
 		content, readErr := os.ReadFile(filePath)
 		require.NoError(t, readErr)
 		assert.Equal(t, originalContent, content, "Original content should be preserved when validation fails")
+	})
+}
+
+// Test suite for mockFile.Truncate method enhancements
+func TestMockFileTruncate(t *testing.T) {
+	t.Run("truncate_with_negative_size_returns_error", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		err := mockFile.Truncate(-1)
+		assert.Error(t, err, "Truncate with negative size should return error")
+		assert.Equal(t, []byte("test content"), mockFile.data, "Data should not change on error")
+	})
+
+	t.Run("truncate_shrinks_file", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		err := mockFile.Truncate(4)
+		require.NoError(t, err)
+		assert.Equal(t, []byte("test"), mockFile.data, "File should be truncated to 4 bytes")
+	})
+
+	t.Run("truncate_shrinks_file_and_resets_position", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		mockFile.pos = 10
+		err := mockFile.Truncate(5)
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), mockFile.pos, "Position should be reset to truncate size when beyond")
+		assert.Equal(t, []byte("test "), mockFile.data, "File should be truncated to 5 bytes")
+	})
+
+	t.Run("truncate_extends_file_with_null_bytes", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
+		err := mockFile.Truncate(8)
+		require.NoError(t, err)
+		assert.Equal(t, 8, len(mockFile.data), "File should be extended to 8 bytes")
+		// First 4 bytes should be original content
+		assert.Equal(t, []byte("test"), mockFile.data[:4], "Original content should be preserved")
+		// Last 4 bytes should be null bytes
+		assert.Equal(t, []byte{0, 0, 0, 0}, mockFile.data[4:], "Extended portion should be null bytes")
+	})
+
+	t.Run("truncate_extends_file_preserves_position", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
+		mockFile.pos = 2
+		err := mockFile.Truncate(10)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), mockFile.pos, "Position should not change when extending")
+		assert.Equal(t, 10, len(mockFile.data), "File should be extended to 10 bytes")
+	})
+
+	t.Run("truncate_to_same_size_is_noop", func(t *testing.T) {
+		original := []byte("test content")
+		mockFile := newMockFile(original, &mockFileInfo{name: "test.txt", size: 12})
+		mockFile.pos = 5
+		err := mockFile.Truncate(12)
+		require.NoError(t, err)
+		assert.Equal(t, original, mockFile.data, "Data should not change when truncating to same size")
+		assert.Equal(t, int64(5), mockFile.pos, "Position should not change")
+	})
+
+	t.Run("truncate_to_zero", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
+		mockFile.pos = 5
+		err := mockFile.Truncate(0)
+		require.NoError(t, err)
+		assert.Equal(t, 0, len(mockFile.data), "File should be empty after truncate to 0")
+		assert.Equal(t, int64(0), mockFile.pos, "Position should be reset to 0")
+	})
+
+	t.Run("truncate_error_handling", func(t *testing.T) {
+		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
+		mockFile.truncateErr = errors.New("permission denied")
+		err := mockFile.Truncate(8)
+		assert.Error(t, err)
+		assert.Equal(t, "permission denied", err.Error())
+		assert.Equal(t, []byte("test"), mockFile.data, "Data should not change when error is set")
 	})
 }
