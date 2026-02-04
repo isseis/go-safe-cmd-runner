@@ -364,7 +364,7 @@ flowchart LR
 実行権限のみ（`0111` 等）を持つバイナリは読み取りができないため、既存の特権昇格メカニズムを活用：
 
 **安全な特権昇格**:
-- `filevalidator.OpenFileWithPrivileges()` を使用（`run_as_user` と同じ仕組み）
+- `PrivilegedFileValidator.OpenFileWithPrivileges()` を使用（`run_as_user` と同じ仕組み）
 - 特権昇格コールバック内でも `safefileio.SafeOpenFile` を使用し、シンボリックリンク防止・TOCTOU 対策を維持
 - `OperationFileValidation` operation type で特権を一時的に昇格
 - `WithPrivileges()` が defer で自動的に特権を復元
