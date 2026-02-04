@@ -607,9 +607,8 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 
     // NEW: If not found in profiles, try ELF analysis
     if !foundInProfiles {
-        isNetwork, isMiddleRisk := analyzeELFForNetwork(cmdName)
-        if isNetwork || isMiddleRisk {
-            return isNetwork, false // isMiddleRisk maps to isNetwork for safety
+        if analyzeELFForNetwork(cmdName) {
+            return true, false
         }
     }
 
@@ -623,10 +622,11 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 }
 
 // analyzeELFForNetwork performs ELF .dynsym analysis on the command binary.
-// Returns (isNetwork, isMiddleRisk) where:
-//   - isNetwork: true if network symbols were detected
-//   - isMiddleRisk: true if analysis failed (treat as potential network operation)
-func analyzeELFForNetwork(cmdName string) (bool, bool) {
+// Returns true if the command should be treated as a network operation.
+// This includes both confirmed network symbols (NetworkDetected) and
+// analysis failures (AnalysisError), which are treated as potential
+// network operations for safety (middle risk → RiskLevelMedium).
+func analyzeELFForNetwork(cmdName string) bool {
     // Resolve command path
     cmdPath, err := exec.LookPath(cmdName)
     if err != nil {
@@ -634,7 +634,7 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
         slog.Debug("ELF analysis skipped: command not found in PATH",
             "command", cmdName,
             "error", err)
-        return false, false
+        return false
     }
 
     // Perform ELF analysis
@@ -647,19 +647,19 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
             "command", cmdName,
             "path", cmdPath,
             "symbols", formatDetectedSymbols(output.DetectedSymbols))
-        return true, false
+        return true
 
     case elfanalyzer.NoNetworkSymbols:
         slog.Debug("ELF analysis found no network symbols",
             "command", cmdName,
             "path", cmdPath)
-        return false, false
+        return false
 
     case elfanalyzer.NotELFBinary:
         slog.Debug("ELF analysis skipped: not an ELF binary",
             "command", cmdName,
             "path", cmdPath)
-        return false, false
+        return false
 
     case elfanalyzer.StaticBinary:
         // Static binary: cannot determine network capability
@@ -667,7 +667,7 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
         slog.Debug("ELF analysis: static binary detected, cannot determine network capability",
             "command", cmdName,
             "path", cmdPath)
-        return false, false
+        return false
 
     case elfanalyzer.AnalysisError:
         // Analysis failed: treat as potential network operation for safety
@@ -676,7 +676,7 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
             "path", cmdPath,
             "error", output.Error,
             "reason", "Unable to determine network capability, assuming middle risk for safety")
-        return true, true // isNetwork=true for safety, isMiddleRisk=true
+        return true
 
     default:
         // Unknown result: treat as potential network operation for safety
@@ -684,7 +684,7 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
             "command", cmdName,
             "path", cmdPath,
             "result", output.Result)
-        return true, true
+        return true
     }
 }
 
