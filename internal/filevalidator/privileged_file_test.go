@@ -1,42 +1,17 @@
 package filevalidator
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
 	"github.com/stretchr/testify/assert"
 )
-
-// mockFileSystem implements safefileio.FileSystem for testing
-type mockFileSystem struct {
-	openFunc func(name string, flag int, perm os.FileMode) (safefileio.File, error)
-}
-
-func (m *mockFileSystem) SafeOpenFile(name string, flag int, perm os.FileMode) (safefileio.File, error) {
-	if m.openFunc != nil {
-		return m.openFunc(name, flag, perm)
-	}
-	return nil, errors.New("not implemented")
-}
-
-func (m *mockFileSystem) GetGroupMembership() *groupmembership.GroupMembership {
-	return nil
-}
-
-func (m *mockFileSystem) Remove(name string) error {
-	return os.Remove(name)
-}
-
-func (m *mockFileSystem) AtomicMoveFile(_, _ string, _ os.FileMode) error {
-	return errors.New("not implemented")
-}
 
 func TestOpenFileWithPrivileges(t *testing.T) {
 	tests := []struct {
@@ -82,8 +57,8 @@ func TestOpenFileWithPrivileges_PermissionError(t *testing.T) {
 	// This test simulates a permission error scenario using a mock FileSystem
 	t.Run("permission denied without privilege manager", func(t *testing.T) {
 		// Create a mock FileSystem that returns a permission error
-		mockFS := &mockFileSystem{
-			openFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		mockFS := &safefileiotesting.MockFileSystem{
+			SafeOpenFileFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
 				return nil, os.ErrPermission
 			},
 		}
@@ -100,8 +75,8 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 
 	t.Run("privilege manager not supported", func(t *testing.T) {
 		// Create a mock FileSystem that returns a permission error
-		mockFS := &mockFileSystem{
-			openFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		mockFS := &safefileiotesting.MockFileSystem{
+			SafeOpenFileFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
 				return nil, os.ErrPermission
 			},
 		}
@@ -115,8 +90,8 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 
 	t.Run("privilege manager supported but execution fails", func(t *testing.T) {
 		// Create a mock FileSystem that returns a permission error
-		mockFS := &mockFileSystem{
-			openFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+		mockFS := &safefileiotesting.MockFileSystem{
+			SafeOpenFileFunc: func(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
 				return nil, os.ErrPermission
 			},
 		}

@@ -8,74 +8,10 @@ import (
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
-	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// MockSafeFileSystem implements safefileio.FileSystem for testing
-type MockSafeFileSystem struct {
-	// SafeOpenFileFunc allows customizing SafeOpenFile behavior
-	SafeOpenFileFunc func(name string, flag int, perm os.FileMode) (safefileio.File, error)
-	// GetGroupMembershipFunc allows customizing GetGroupMembership behavior
-	GetGroupMembershipFunc func() *groupmembership.GroupMembership
-	// RemoveFunc allows customizing Remove behavior
-	RemoveFunc func(name string) error
-	// AtomicMoveFileFunc allows customizing AtomicMoveFile behavior
-	AtomicMoveFileFunc func(srcPath, dstPath string, requiredPerm os.FileMode) error
-
-	// Call tracking for verification
-	AtomicMoveFileCalls []struct {
-		SrcPath      string
-		DstPath      string
-		RequiredPerm os.FileMode
-	}
-	RemoveCalls []string
-}
-
-// SafeOpenFile implements safefileio.FileSystem
-func (m *MockSafeFileSystem) SafeOpenFile(name string, flag int, perm os.FileMode) (safefileio.File, error) {
-	if m.SafeOpenFileFunc != nil {
-		return m.SafeOpenFileFunc(name, flag, perm)
-	}
-	return nil, errors.New("SafeOpenFile not implemented in mock")
-}
-
-// GetGroupMembership implements safefileio.FileSystem
-func (m *MockSafeFileSystem) GetGroupMembership() *groupmembership.GroupMembership {
-	if m.GetGroupMembershipFunc != nil {
-		return m.GetGroupMembershipFunc()
-	}
-	return groupmembership.New()
-}
-
-// Remove implements safefileio.FileSystem
-func (m *MockSafeFileSystem) Remove(name string) error {
-	m.RemoveCalls = append(m.RemoveCalls, name)
-	if m.RemoveFunc != nil {
-		return m.RemoveFunc(name)
-	}
-	return nil
-}
-
-// AtomicMoveFile implements safefileio.FileSystem
-func (m *MockSafeFileSystem) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
-	m.AtomicMoveFileCalls = append(m.AtomicMoveFileCalls, struct {
-		SrcPath      string
-		DstPath      string
-		RequiredPerm os.FileMode
-	}{srcPath, dstPath, requiredPerm})
-	if m.AtomicMoveFileFunc != nil {
-		return m.AtomicMoveFileFunc(srcPath, dstPath, requiredPerm)
-	}
-	return nil
-}
-
-// NewMockSafeFileSystem creates a new MockSafeFileSystem with default implementations
-func NewMockSafeFileSystem() *MockSafeFileSystem {
-	return &MockSafeFileSystem{}
-}
 
 func TestSafeFileManager_CreateTempFile(t *testing.T) {
 	tests := []struct {
@@ -629,7 +565,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up mock safefileio.FileSystem
-			mockSafeFS := NewMockSafeFileSystem()
+			mockSafeFS := safefileiotesting.NewMockFileSystem()
 			mockSafeFS.AtomicMoveFileFunc = func(_, _ string, _ os.FileMode) error {
 				return tt.atomicMoveError
 			}
@@ -714,7 +650,7 @@ func TestSafeFileManager_EnsureDirectory_WithMock(t *testing.T) {
 			}
 
 			// Set up mock safefileio.FileSystem (not used in EnsureDirectory)
-			mockSafeFS := NewMockSafeFileSystem()
+			mockSafeFS := safefileiotesting.NewMockFileSystem()
 
 			// Create SafeFileManager with mocks
 			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
@@ -779,7 +715,7 @@ func TestSafeFileManager_RemoveTemp_WithMock(t *testing.T) {
 			}
 
 			// Set up mock safefileio.FileSystem (not used in RemoveTemp)
-			mockSafeFS := NewMockSafeFileSystem()
+			mockSafeFS := safefileiotesting.NewMockFileSystem()
 
 			// Create SafeFileManager with mocks
 			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
@@ -838,7 +774,7 @@ func TestSafeFileManager_CreateTempFile_WithMock(t *testing.T) {
 			}
 
 			// Set up mock safefileio.FileSystem (not used in CreateTempFile)
-			mockSafeFS := NewMockSafeFileSystem()
+			mockSafeFS := safefileiotesting.NewMockFileSystem()
 
 			// Create SafeFileManager with mocks
 			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)

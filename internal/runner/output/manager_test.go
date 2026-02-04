@@ -14,6 +14,7 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
 )
 
 // Test errors for manager_test
@@ -438,7 +439,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 
 func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 	// Setup mocks
-	mockSafeFS := NewMockSafeFileSystem()
+	mockSafeFS := safefileiotesting.NewMockFileSystem()
 	mockCommonFS := commontesting.NewMockFileSystem()
 
 	// Add a dummy file to mock FS
