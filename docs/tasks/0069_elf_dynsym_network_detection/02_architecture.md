@@ -340,7 +340,7 @@ flowchart LR
     subgraph SafeFileIO["safefileio パッケージ"]
         SOF[SafeOpenFile]
         NOFOLLOW[O_NOFOLLOW<br/>シンボリックリンク防止]
-        TOCTOU[TOCTOU 対策<br/>openat2/fstat]
+        TOCTOU[TOCTOU 対策<br/>openat2 / 二段階検証]
         READERAT[io.ReaderAt ハンドル]
         READAHEAD[debug/elf.NewFile<br/>ハンドルベース解析]
     end
