@@ -33,14 +33,11 @@ func getELFAnalyzer() elfanalyzer.ELFAnalyzer {
 // SetELFAnalyzer sets a custom ELF analyzer for testing purposes.
 // Must be called before any concurrent calls to IsNetworkOperation.
 // Typically called in TestMain or test setup.
+// Use ResetELFAnalyzer in t.Cleanup to restore state after tests.
 func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
 	defaultELFAnalyzer = analyzer
 	// Mark elfAnalyzerOnce as "done" so that getELFAnalyzer's sync.Once
 	// initialization block will never run and overwrite the injected analyzer.
-	// Note: sync.Once cannot be reset. Tests that need to restore the original
-	// state must explicitly reset both defaultELFAnalyzer and elfAnalyzerOnce
-	// (e.g., save their previous values and restore them with elfAnalyzerOnce =
-	// sync.Once{} in t.Cleanup) to avoid leaking state across tests.
 	elfAnalyzerOnce.Do(func() {})
 }
 
@@ -496,11 +493,19 @@ func formatDetectedSymbols(symbols []elfanalyzer.DetectedSymbol) string {
 	if len(symbols) == 0 {
 		return "[]"
 	}
-	var parts []string
-	for _, s := range symbols {
-		parts = append(parts, fmt.Sprintf("%s(%s)", s.Name, s.Category))
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, s := range symbols {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(s.Name)
+		b.WriteByte('(')
+		b.WriteString(s.Category)
+		b.WriteByte(')')
 	}
-	return "[" + strings.Join(parts, ", ") + "]"
+	b.WriteByte(']')
+	return b.String()
 }
 
 // findFirstSubcommand returns the first non-option argument from args.
