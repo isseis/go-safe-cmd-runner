@@ -294,10 +294,10 @@ func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
 ```
 
 **チェックリスト**:
-- [ ] `getELFAnalyzer()` の実装
-- [ ] `SetELFAnalyzer()` の実装（テスト用）
-- [ ] `sync.Once` によるスレッドセーフな初期化
-- [ ] doc コメントの追加
+- [x] `getELFAnalyzer()` の実装
+- [x] `SetELFAnalyzer()` の実装（テスト用）
+- [x] `sync.Once` によるスレッドセーフな初期化
+- [x] doc コメントの追加
 
 #### 4.2.2 IsNetworkOperation への統合
 
@@ -313,14 +313,14 @@ func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
 **実装内容**: 仕様書 4.1 節の内容を実装
 
 **チェックリスト**:
-- [ ] `analyzeELFForNetwork()` ヘルパー関数の実装
-- [ ] `exec.LookPath` でコマンドパスを解決
-- [ ] `filepath.Abs` で絶対パスに変換
-- [ ] `getELFAnalyzer()` でアナライザを取得
-- [ ] `AnalyzeNetworkSymbols()` を呼び出し
-- [ ] 結果に応じた分岐処理
-- [ ] 適切なログ出力（slog.Debug, slog.Warn）
-- [ ] `formatDetectedSymbols()` ヘルパー関数の実装
+- [x] `analyzeELFForNetwork()` ヘルパー関数の実装
+- [x] `exec.LookPath` でコマンドパスを解決
+- [x] `filepath.Abs` で絶対パスに変換
+- [x] `getELFAnalyzer()` でアナライザを取得
+- [x] `AnalyzeNetworkSymbols()` を呼び出し
+- [x] 結果に応じた分岐処理
+- [x] 適切なログ出力（slog.Debug, slog.Warn）
+- [x] `formatDetectedSymbols()` ヘルパー関数の実装
 
 #### 4.2.3 統合テストの実装
 
@@ -347,19 +347,19 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 ```
 
 **チェックリスト**:
-- [ ] `TestIsNetworkOperation_ELFAnalysis` の実装
-- [ ] `mockELFAnalyzer` の実装
-- [ ] 各テストケースの実装
-- [ ] `SetELFAnalyzer()` を使用したモック注入
-- [ ] テスト後のクリーンアップ
-- [ ] 全テストのパス確認
+- [x] `TestIsNetworkOperation_ELFAnalysis` の実装
+- [x] `mockELFAnalyzer` の実装
+- [x] 各テストケースの実装
+- [x] `SetELFAnalyzer()` を使用したモック注入
+- [x] テスト後のクリーンアップ
+- [x] 全テストのパス確認
 
 ### 4.3 完了条件
 
-- [ ] `IsNetworkOperation` が ELF 解析を統合
-- [ ] 統合テストが全てパス
-- [ ] 既存テストへの影響なし
-- [ ] ログメッセージが適切に出力される
+- [x] `IsNetworkOperation` が ELF 解析を統合
+- [x] 統合テストが全てパス
+- [x] 既存テストへの影響なし
+- [x] ログメッセージが適切に出力される
 
 ### 4.4 リスク
 

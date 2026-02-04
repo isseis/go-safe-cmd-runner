@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -2315,4 +2316,234 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 				"Command %s should have at least 2 risk reasons", cmd)
 		})
 	}
+}
+
+// mockELFAnalyzer is a mock implementation of elfanalyzer.ELFAnalyzer for testing.
+type mockELFAnalyzer struct {
+	result       elfanalyzer.AnalysisResult
+	symbols      []elfanalyzer.DetectedSymbol
+	err          error
+	analyzedPath string // Last path analyzed (for verification)
+}
+
+func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.AnalysisOutput {
+	m.analyzedPath = path
+	return elfanalyzer.AnalysisOutput{
+		Result:          m.result,
+		DetectedSymbols: m.symbols,
+		Error:           m.err,
+	}
+}
+
+// TestIsNetworkOperation_ELFAnalysis tests ELF analysis integration in IsNetworkOperation.
+func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
+	tests := []struct {
+		name           string
+		cmdName        string
+		args           []string
+		mockResult     elfanalyzer.AnalysisResult
+		mockSymbols    []elfanalyzer.DetectedSymbol
+		mockError      error
+		expectNetwork  bool
+		expectHighRisk bool
+		expectELFCall  bool // Whether ELF analysis should be called
+	}{
+		{
+			name:           "profile command curl bypasses ELF analysis",
+			cmdName:        "curl",
+			args:           []string{"http://example.com"},
+			mockResult:     elfanalyzer.NoNetworkSymbols, // Should not be used
+			expectNetwork:  true,
+			expectHighRisk: false,
+			expectELFCall:  false, // curl is in profiles, ELF should not be called
+		},
+		{
+			name:           "profile command git without network subcommand",
+			cmdName:        "git",
+			args:           []string{"status"},
+			mockResult:     elfanalyzer.NoNetworkSymbols,
+			expectNetwork:  false,
+			expectHighRisk: false,
+			expectELFCall:  false, // git is in profiles
+		},
+		{
+			name:           "profile command git with network subcommand",
+			cmdName:        "git",
+			args:           []string{"fetch", "origin"},
+			mockResult:     elfanalyzer.NoNetworkSymbols,
+			expectNetwork:  true,
+			expectHighRisk: false,
+			expectELFCall:  false, // git is in profiles
+		},
+		{
+			name:       "unknown command with network symbols detected",
+			cmdName:    "ls", // ls is not in network profiles
+			args:       []string{"-la"},
+			mockResult: elfanalyzer.NetworkDetected,
+			mockSymbols: []elfanalyzer.DetectedSymbol{
+				{Name: "socket", Category: "socket"},
+			},
+			expectNetwork:  true,
+			expectHighRisk: false,
+			expectELFCall:  true,
+		},
+		{
+			name:           "unknown command with no network symbols",
+			cmdName:        "ls",
+			args:           []string{"-la"},
+			mockResult:     elfanalyzer.NoNetworkSymbols,
+			expectNetwork:  false,
+			expectHighRisk: false,
+			expectELFCall:  true,
+		},
+		{
+			name:           "unknown command - not ELF binary (script)",
+			cmdName:        "ls",
+			args:           []string{},
+			mockResult:     elfanalyzer.NotELFBinary,
+			expectNetwork:  false,
+			expectHighRisk: false,
+			expectELFCall:  true,
+		},
+		{
+			name:           "unknown command - static binary",
+			cmdName:        "ls",
+			args:           []string{},
+			mockResult:     elfanalyzer.StaticBinary,
+			expectNetwork:  false,
+			expectHighRisk: false,
+			expectELFCall:  true,
+		},
+		{
+			name:           "unknown command - analysis error treats as network",
+			cmdName:        "ls",
+			args:           []string{},
+			mockResult:     elfanalyzer.AnalysisError,
+			mockError:      fmt.Errorf("permission denied"),
+			expectNetwork:  true, // Safety: analysis failure = assume network
+			expectHighRisk: false,
+			expectELFCall:  true,
+		},
+		{
+			name:           "unknown command with URL in args (fallback detection)",
+			cmdName:        "ls",
+			args:           []string{"http://example.com"},
+			mockResult:     elfanalyzer.NoNetworkSymbols,
+			expectNetwork:  true, // Detected via argument, not ELF
+			expectHighRisk: false,
+			expectELFCall:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up mock analyzer
+			mock := &mockELFAnalyzer{
+				result:  tc.mockResult,
+				symbols: tc.mockSymbols,
+				err:     tc.mockError,
+			}
+
+			// Reset and restore state after test using ResetELFAnalyzer
+			// Note: sync.Once cannot be copied, so we use ResetELFAnalyzer for cleanup
+			t.Cleanup(func() {
+				ResetELFAnalyzer()
+			})
+
+			// Inject mock
+			SetELFAnalyzer(mock)
+
+			// Run test
+			isNetwork, isHighRisk := IsNetworkOperation(tc.cmdName, tc.args)
+
+			// Verify results
+			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
+			assert.Equal(t, tc.expectHighRisk, isHighRisk, "isHighRisk mismatch")
+
+			// Verify whether ELF analysis was called
+			if tc.expectELFCall {
+				assert.NotEmpty(t, mock.analyzedPath, "ELF analysis should have been called")
+			} else {
+				assert.Empty(t, mock.analyzedPath, "ELF analysis should NOT have been called")
+			}
+		})
+	}
+}
+
+// TestFormatDetectedSymbols tests the formatDetectedSymbols helper function.
+func TestFormatDetectedSymbols(t *testing.T) {
+	tests := []struct {
+		name     string
+		symbols  []elfanalyzer.DetectedSymbol
+		expected string
+	}{
+		{
+			name:     "empty symbols",
+			symbols:  []elfanalyzer.DetectedSymbol{},
+			expected: "[]",
+		},
+		{
+			name:     "nil symbols",
+			symbols:  nil,
+			expected: "[]",
+		},
+		{
+			name: "single symbol",
+			symbols: []elfanalyzer.DetectedSymbol{
+				{Name: "socket", Category: "socket"},
+			},
+			expected: "[socket(socket)]",
+		},
+		{
+			name: "multiple symbols",
+			symbols: []elfanalyzer.DetectedSymbol{
+				{Name: "socket", Category: "socket"},
+				{Name: "connect", Category: "socket"},
+				{Name: "SSL_connect", Category: "tls"},
+			},
+			expected: "[socket(socket), connect(socket), SSL_connect(tls)]",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatDetectedSymbols(tc.symbols)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// TestGetELFAnalyzer tests the lazy initialization of the default ELF analyzer.
+func TestGetELFAnalyzer(t *testing.T) {
+	// Reset state before test
+	ResetELFAnalyzer()
+	t.Cleanup(func() {
+		ResetELFAnalyzer()
+	})
+
+	// First call should initialize
+	analyzer1 := getELFAnalyzer()
+	assert.NotNil(t, analyzer1)
+
+	// Second call should return the same instance
+	analyzer2 := getELFAnalyzer()
+	assert.Same(t, analyzer1, analyzer2, "getELFAnalyzer should return the same instance")
+}
+
+// TestSetELFAnalyzer tests the injection of custom ELF analyzer.
+func TestSetELFAnalyzer(t *testing.T) {
+	// Reset state before test
+	ResetELFAnalyzer()
+	t.Cleanup(func() {
+		ResetELFAnalyzer()
+	})
+
+	mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
+
+	// Inject mock
+	SetELFAnalyzer(mock)
+
+	// Get should return the injected mock
+	analyzer := getELFAnalyzer()
+	assert.Same(t, mock, analyzer, "getELFAnalyzer should return the injected mock")
 }
