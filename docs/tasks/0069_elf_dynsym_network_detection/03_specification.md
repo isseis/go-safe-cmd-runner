@@ -1164,7 +1164,9 @@ type File interface {
 }
 ```
 
-`*os.File` は既に `io.ReaderAt` を実装しているため、実装側の変更は不要です。
+`*os.File` は既に `io.ReaderAt` を実装しているため、`*os.File` 自体の変更は不要です。
+ただし、`safefileio.File` インターフェースを実装しているその他の型（モックやラッパー
+型を含む）は、互換性を保つために `ReadAt` メソッドを追加実装する必要があります。
 
 ### Phase 1: 基盤（elfanalyzer パッケージ）
 
