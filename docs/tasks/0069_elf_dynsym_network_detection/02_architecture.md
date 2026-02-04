@@ -237,7 +237,7 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool)
 ```go
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package
 type StandardELFAnalyzer struct {
-    networkSymbols map[string]string // symbol name -> category
+    networkSymbols map[string]SymbolCategory // symbol name -> category
     fs             safefileio.FileSystem
 }
 
