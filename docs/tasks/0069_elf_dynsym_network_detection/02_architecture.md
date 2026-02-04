@@ -41,7 +41,7 @@ flowchart TB
 
     subgraph SafeFileIO[Safe File I/O]
         direction TB
-        SFO[SafeOpenFile<br/>(io.ReaderAt handle)]
+        SFO["SafeOpenFile<br/>(io.ReaderAt handle)"]
     end
 
     subgraph PrivilegeManagement[Privilege Management]
