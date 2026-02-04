@@ -1226,7 +1226,7 @@ type File interface {
 func (pfv *PrivilegedFileValidator) OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (safefileio.File, error)
 ```
 
-これにより、TOCTOU 攻撃を完全に防ぐことができます。
+これにより、TOCTOU 攻撃に対処します（`openat2` 利用可能環境ではカーネルレベルで排除、非対応環境では二段階検証による検出・緩和）。
 
 #### 8.0.3 VerifyFromHandle の変更
 
