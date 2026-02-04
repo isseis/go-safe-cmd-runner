@@ -356,7 +356,8 @@ flowchart LR
 - ファイル全体を読み込む代わりに、`io.ReaderAt` ハンドルを `debug/elf.NewFile` に直接渡す
 - 軽量な .dynsym セクション解析のみ実行（ELF ヘッダとセクションメタデータの読み込みのみ）
 - 設計上はファイルを再オープンする必要がないため、TOCTOU 競合状態のリスクを低減（`openat2` 非対応環境では safefileio の二段階検証により検出・緩和を行うが、完全排除ではない）
-- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは `safefileio.SafeOpenFile` 側で行う（実行専用バイナリに対する特権付き再オープン経路など、一部の例外では TOCTOU リスクが残りうることを明示）
+- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは `safefileio.SafeOpenFile` 側で行う
+- 実行専用バイナリに対する特権付き再オープン経路でも `safefileio.SafeOpenFile` を使用するため、全経路で同一の TOCTOU 対策が適用される（Phase 0 で `OpenFileWithPrivileges` を `safefileio` ベースに変更）
 
 ### 7.2 実行専用バイナリ（Execute-Only Permissions）への対応
 
@@ -364,18 +365,11 @@ flowchart LR
 
 **安全な特権昇格**:
 - `filevalidator.OpenFileWithPrivileges()` を使用（`run_as_user` と同じ仕組み）
+- 特権昇格コールバック内でも `safefileio.SafeOpenFile` を使用し、シンボリックリンク防止・TOCTOU 対策を維持
 - `OperationFileValidation` operation type で特権を一時的に昇格
 - `WithPrivileges()` が defer で自動的に特権を復元
 - Mutex ロックにより並行アクセス時の安全性を保証
 - 復元失敗時は emergency shutdown で安全性を確保
-
-**TOCTOU に関する制約**:
-- `OpenFileWithPrivileges()` は内部で `os.Open()` を使用しており、`safefileio.SafeOpenFile` のシンボリックリンク防止・TOCTOU 対策は適用されない
-- これは既存の `filevalidator` インフラストラクチャ（`VerifyWithPrivileges` 等）と同じ制約であり、本タスク固有の問題ではない
-- リスク緩和要因：
-  - 特権昇格ウィンドウは最小限（mutex 保護されたコールバック内のみ）
-  - 解析結果はリスク分類にのみ影響し、コード実行には使用されない
-  - 最悪ケースでも誤分類 → `RiskLevelMedium`（安全側に倒れる）
 
 **フォールバック動作**:
 - 特権昇格が利用できない場合（非 setuid 環境）は `AnalysisError` を返す
