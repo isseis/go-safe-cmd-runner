@@ -280,8 +280,15 @@ func getELFAnalyzer() elfanalyzer.ELFAnalyzer {
 
 // SetELFAnalyzer sets a custom ELF analyzer for testing purposes.
 // Must be called before any concurrent calls to IsNetworkOperation.
+// Typically called in TestMain or test setup.
 func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
     defaultELFAnalyzer = analyzer
+    // Mark elfAnalyzerOnce as "done" so that getELFAnalyzer's sync.Once
+    // initialization block will never run and overwrite the injected analyzer.
+    // Note: sync.Once cannot be reset. Tests that need to restore the original
+    // state must explicitly reset both defaultELFAnalyzer and elfAnalyzerOnce
+    // (e.g., save their previous values and restore them with elfAnalyzerOnce =
+    // sync.Once{} in t.Cleanup) to avoid leaking state across tests.
     elfAnalyzerOnce.Do(func() {})
 }
 ```
@@ -436,8 +443,8 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 
 3. **大きなバイナリ**:
    ```bash
-   # Create 2GB file (should be rejected)
-   dd if=/dev/zero of=/tmp/huge bs=1M count=2048
+   # Create 2GB sparse file (should be rejected; uses no actual disk space)
+   truncate -s 2G /tmp/huge
    ./runner sample/test_elf_analysis.toml /tmp/huge
    # Expected: AnalysisError (file too large)
    ```
