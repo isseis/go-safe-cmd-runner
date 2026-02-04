@@ -261,7 +261,7 @@ const (
 )
 
 // DefaultNetworkSymbols returns the default set of network-related symbols
-func DefaultNetworkSymbols() map[string]string {
+func DefaultNetworkSymbols() map[string]SymbolCategory {
     return map[string]string{
         // Socket API
         "socket":        "socket",
