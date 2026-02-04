@@ -41,7 +41,7 @@ flowchart TB
 
     subgraph SafeFileIO[Safe File I/O]
         direction TB
-        SFR[SafeReadFile]
+        SFO[SafeOpenFile<br/>(io.ReaderAt handle)]
     end
 
     subgraph PrivilegeManagement[Privilege Management]
@@ -56,7 +56,7 @@ flowchart TB
     ELF --> EA
     EA --> SEA
     SEA --> NS
-    SEA --> SFR
+    SEA --> SFO
     SEA -.->|"permission error"| OFP
     OFP --> PM
 
@@ -139,8 +139,8 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start([ELF 解析開始])
-    SafeRead[SafeReadFile で<br/>ファイルオープン]
-    ReadFailed{読み取り失敗?}
+    SafeOpen[SafeOpenFile で<br/>ReaderAt ハンドルを開く]
+    OpenFailed{オープン失敗?}
     ParseELF[debug/elf で ELF パース]
     ParseFailed{パース失敗?}
     GetDynsym[DynamicSymbols 取得]
@@ -152,10 +152,10 @@ flowchart TD
     ReturnStatic[StaticBinary<br/>検出なし]
     ReturnError[AnalysisError<br/>Middle Risk]
 
-    Start --> SafeRead
-    SafeRead --> ReadFailed
-    ReadFailed -->|Yes| ReturnError
-    ReadFailed -->|No| ParseELF
+    Start --> SafeOpen
+    SafeOpen --> OpenFailed
+    OpenFailed -->|Yes| ReturnError
+    OpenFailed -->|No| ParseELF
     ParseELF --> ParseFailed
     ParseFailed -->|Yes| ReturnError
     ParseFailed -->|No| GetDynsym
@@ -333,20 +333,23 @@ slog.Warn("ELF analysis failed, treating as potential network operation",
 ```mermaid
 flowchart LR
     subgraph SafeFileIO["safefileio パッケージ"]
-        SRF[SafeOpenFile]
+        SOF[SafeOpenFile]
         NOFOLLOW[O_NOFOLLOW<br/>シンボリックリンク防止]
         TOCTOU[TOCTOU 対策<br/>openat2/fstat]
-        READERAT[io.ReaderAt<br/>再オープン不要]
+        READERAT[io.ReaderAt ハンドル]
+        READAHEAD[debug/elf.NewFile<br/>ハンドルベース解析]
     end
 
-    ELF[ELF Analyzer] --> SRF
-    SRF --> NOFOLLOW
-    SRF --> TOCTOU
-    SRF --> READERAT
+    ELF[ELF Analyzer] --> SOF
+    SOF --> NOFOLLOW
+    SOF --> TOCTOU
+    SOF --> READERAT
+    READERAT --> READAHEAD
 ```
 
 - 既存の `safefileio.SafeOpenFile` を使用してシンボリックリンク攻撃を防止
-- `File` インターフェースが `io.ReaderAt` を実装することで、`debug/elf.NewFile` に安全に渡せる
+- ファイル全体を読み込む代わりに、`io.ReaderAt` ハンドルを `debug/elf.NewFile` に直接渡す
+- 軽量な .dynsym セクション解析のみ実行（ELF ヘッダとセクションメタデータの読み込みのみ）
 - ファイルを再オープンする必要がないため、TOCTOU 競合状態を完全に排除
 - ファイルパスの検証は呼び出し元（`extractAllCommandNames`）で実施済み
 
