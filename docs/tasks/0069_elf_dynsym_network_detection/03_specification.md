@@ -496,11 +496,13 @@ func isNoDynsymError(err error) bool {
     if err == nil {
         return false
     }
-    // debug/elf returns specific errors for missing sections
-    // The exact error message may vary, so we check for common patterns
+    // debug/elf returns specific errors for missing sections.
+    // We only check for explicit "no symbol" patterns to avoid misclassifying
+    // corruption/parsing errors as StaticBinary (which would lower safety).
+    // Any malformed .dynsym should remain AnalysisError for fail-safe behavior.
     errStr := err.Error()
     return errors.Is(err, elf.ErrNoSymbols) ||
-        containsAny(errStr, "no symbol", "no dynamic symbol", ".dynsym")
+        containsAny(errStr, "no symbol", "no dynamic symbol")
 }
 
 // containsAny checks if s contains any of the substrings.
@@ -733,7 +735,7 @@ func formatDetectedSymbols(symbols []elfanalyzer.DetectedSymbol) string {
 **特記事項：実行専用権限バイナリ**
 
 実行権限のみ（`--x--x--x`、octal `0111`）のバイナリは実行可能だが読み取り不可。この場合：
-- `SafeOpenFile` が `Permission denied` で失敗
+- FileSystem の `SafeOpenFile` メソッドが `Permission denied` で失敗
 - `AnalysisError` として扱い、Middle Risk 判定
 - 詳細は [04_edge_cases.md](04_edge_cases.md) を参照
 
@@ -1079,16 +1081,7 @@ import (
 )
 
 func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
-    // Save and restore original analyzer and sync.Once state.
-    // Both must be restored: SetELFAnalyzer marks elfAnalyzerOnce as done,
-    // so restoring only defaultELFAnalyzer would leave sync.Once exhausted
-    // and getELFAnalyzer would never re-initialize a nil analyzer.
-    originalAnalyzer := defaultELFAnalyzer
-    originalOnce := elfAnalyzerOnce
-    defer func() {
-        defaultELFAnalyzer = originalAnalyzer
-        elfAnalyzerOnce = originalOnce
-    }()
+    setELFAnalyzerForTest(t, nil)
 
     tests := []struct {
         name            string
@@ -1153,6 +1146,22 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
                 "unexpected risk result")
         })
     }
+}
+
+var elfAnalyzerTestMu sync.Mutex
+
+// setELFAnalyzerForTest installs a test analyzer and resets global state safely.
+// It avoids copying sync.Once by reinitializing it under a test-only mutex.
+func setELFAnalyzerForTest(t *testing.T, analyzer elfanalyzer.ELFAnalyzer) {
+    t.Helper()
+    elfAnalyzerTestMu.Lock()
+    defaultELFAnalyzer = analyzer
+    elfAnalyzerOnce = sync.Once{}
+    t.Cleanup(func() {
+        defaultELFAnalyzer = nil
+        elfAnalyzerOnce = sync.Once{}
+        elfAnalyzerTestMu.Unlock()
+    })
 }
 
 // mockELFAnalyzer implements elfanalyzer.ELFAnalyzer for testing

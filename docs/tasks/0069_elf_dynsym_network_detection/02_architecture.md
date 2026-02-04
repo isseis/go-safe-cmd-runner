@@ -265,8 +265,8 @@ const (
     CategoryTLS    SymbolCategory = "tls"     // TLS/SSL libraries
 )
 
-// DefaultNetworkSymbols returns the default set of network-related symbols
-func DefaultNetworkSymbols() map[string]SymbolCategory {
+// GetNetworkSymbols returns the default set of network-related symbols
+func GetNetworkSymbols() map[string]SymbolCategory {
     return map[string]SymbolCategory{
         // Socket API
         "socket":        CategorySocket,
@@ -352,12 +352,12 @@ flowchart LR
     READERAT --> READAHEAD
 ```
 
-- 既存の `safefileio.SafeOpenFile` を使用してシンボリックリンク攻撃を防止
+- 既存の `safefileio.FileSystem.SafeOpenFile` メソッドを使用してシンボリックリンク攻撃を防止
 - ファイル全体を読み込む代わりに、`io.ReaderAt` ハンドルを `debug/elf.NewFile` に直接渡す
 - 軽量な .dynsym セクション解析のみ実行（ELF ヘッダとセクションメタデータの読み込みのみ）
 - 設計上はファイルを再オープンする必要がないため、TOCTOU 競合状態のリスクを低減（`openat2` 非対応環境では safefileio の二段階検証により検出・緩和を行うが、完全排除ではない）
-- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは `safefileio.SafeOpenFile` 側で行う
-- 実行専用バイナリに対する特権付き再オープン経路でも `safefileio.SafeOpenFile` を使用するため、全経路で同一の TOCTOU 対策が適用される（Phase 0 で `OpenFileWithPrivileges` を `safefileio` ベースに変更）
+- コマンドパスの収集とシンボリックリンクのネスト制限は呼び出し元（`extractAllCommandNames`）で実施し、パスの安全性や通常ファイルであることの検証、および安全なオープンは FileSystem インスタンスの SafeOpenFile メソッド側で行う
+- 実行専用バイナリに対する特権付き再オープン経路でも FileSystem の SafeOpenFile メソッドを使用するため、全経路で同一の TOCTOU 対策が適用される（Phase 0 で `OpenFileWithPrivileges` を `safefileio` ベースに変更）
 
 ### 7.2 実行専用バイナリ（Execute-Only Permissions）への対応
 
@@ -365,7 +365,7 @@ flowchart LR
 
 **安全な特権昇格**:
 - `PrivilegedFileValidator.OpenFileWithPrivileges()` を使用（`run_as_user` と同じ仕組み）
-- 特権昇格コールバック内でも `safefileio.SafeOpenFile` を使用し、シンボリックリンク防止・TOCTOU 対策を維持
+- 特権昇格コールバック内でも FileSystem の SafeOpenFile メソッドを使用し、シンボリックリンク防止・TOCTOU 対策を維持
 - `OperationFileValidation` operation type で特権を一時的に昇格
 - `WithPrivileges()` が defer で自動的に特権を復元
 - Mutex ロックにより並行アクセス時の安全性を保証
