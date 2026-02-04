@@ -207,13 +207,14 @@ type AnalysisOutput struct {
     Error           error            // Error details if Result == AnalysisError
 }
 
-// ELFAnalyzer analyzes ELF binaries to detect network operation capability
+// ELFAnalyzer analyzes ELF binaries to detect network operation capability.
+// Implementations that need privilege escalation (e.g., for execute-only binaries)
+// should receive a PrivilegeManager via constructor injection.
 type ELFAnalyzer interface {
     // AnalyzeNetworkSymbols checks if the binary at the given path contains
     // network-related symbols in its .dynsym section.
     // The path should be an absolute path to the executable.
-    // privManager is an optional PrivilegeManager for reading execute-only binaries.
-    AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput
+    AnalyzeNetworkSymbols(path string) AnalysisOutput
 }
 ```
 
@@ -240,13 +241,15 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool)
 type StandardELFAnalyzer struct {
     networkSymbols map[string]SymbolCategory // symbol name -> category
     fs             safefileio.FileSystem
+    privManager    runnertypes.PrivilegeManager // optional, for execute-only binaries
 }
 
-// NewStandardELFAnalyzer creates a new analyzer with default network symbols
-func NewStandardELFAnalyzer(fs safefileio.FileSystem) *StandardELFAnalyzer
+// NewStandardELFAnalyzer creates a new analyzer with default network symbols.
+// privManager is optional (nil = no privilege escalation).
+func NewStandardELFAnalyzer(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager) *StandardELFAnalyzer
 
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput
 ```
 
 ### 5.2 Network Symbols Registry

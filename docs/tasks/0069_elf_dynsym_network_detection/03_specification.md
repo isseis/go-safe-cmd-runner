@@ -138,6 +138,8 @@ func (o AnalysisOutput) IsIndeterminate() bool {
 }
 
 // ELFAnalyzer defines the interface for ELF binary network analysis.
+// Implementations that need privilege escalation (e.g., for execute-only binaries)
+// should receive a PrivilegeManager via constructor injection.
 type ELFAnalyzer interface {
     // AnalyzeNetworkSymbols examines the ELF binary at the given path
     // and determines if it contains network-related symbols in .dynsym.
@@ -145,10 +147,9 @@ type ELFAnalyzer interface {
     // The path must be an absolute path to an executable file.
     // The analyzer uses safe file I/O to prevent symlink attacks.
     //
-    // privManager is an optional PrivilegeManager for reading execute-only
-    // binaries (permissions like 0111). If nil, normal file access is used.
-    // If the file requires elevated privileges and privManager is available,
-    // OpenFileWithPrivileges will be used to temporarily escalate privileges.
+    // If the file requires elevated privileges and a PrivilegeManager was
+    // provided at construction time, OpenFileWithPrivileges will be used
+    // to temporarily escalate privileges.
     //
     // Returns:
     //   - NetworkDetected: Binary contains network symbols
@@ -156,7 +157,7 @@ type ELFAnalyzer interface {
     //   - NotELFBinary: File is not an ELF binary
     //   - StaticBinary: Binary is statically linked (no .dynsym)
     //   - AnalysisError: An error occurred (check Error field)
-    AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput
+    AnalyzeNetworkSymbols(path string) AnalysisOutput
 }
 ```
 
@@ -316,41 +317,45 @@ var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 type StandardELFAnalyzer struct {
     fs             safefileio.FileSystem
     networkSymbols map[string]SymbolCategory
+    privManager    runnertypes.PrivilegeManager // optional, for execute-only binaries
 }
 
 // NewStandardELFAnalyzer creates a new StandardELFAnalyzer with the given file system.
 // If fs is nil, the default safefileio.FileSystem is used.
-func NewStandardELFAnalyzer(fs safefileio.FileSystem) *StandardELFAnalyzer {
+// privManager is optional (nil = no privilege escalation for execute-only binaries).
+func NewStandardELFAnalyzer(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager) *StandardELFAnalyzer {
     if fs == nil {
         fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
     }
     return &StandardELFAnalyzer{
         fs:             fs,
         networkSymbols: GetNetworkSymbols(),
+        privManager:    privManager,
     }
 }
 
 // NewStandardELFAnalyzerWithSymbols creates an analyzer with custom network symbols.
 // This is primarily for testing purposes.
-func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, symbols map[string]SymbolCategory) *StandardELFAnalyzer {
+func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager, symbols map[string]SymbolCategory) *StandardELFAnalyzer {
     if fs == nil {
         fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
     }
     return &StandardELFAnalyzer{
         fs:             fs,
         networkSymbols: symbols,
+        privManager:    privManager,
     }
 }
 
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface.
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) AnalysisOutput {
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
     // Step 1: Open file safely using safefileio
     // This prevents symlink attacks and TOCTOU race conditions
     file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
         // If it's a permission error and we have privilege manager, try privileged access
-        if errors.Is(err, os.ErrPermission) && privManager != nil {
-            file, err = filevalidator.OpenFileWithPrivileges(path, privManager)
+        if errors.Is(err, os.ErrPermission) && a.privManager != nil {
+            file, err = filevalidator.OpenFileWithPrivileges(path, a.privManager)
             if err != nil {
                 return AnalysisOutput{
                     Result: AnalysisError,
@@ -535,7 +540,7 @@ var defaultELFAnalyzer elfanalyzer.ELFAnalyzer
 // Concurrency-safe via sync.Once.
 func getELFAnalyzer() elfanalyzer.ELFAnalyzer {
     elfAnalyzerOnce.Do(func() {
-        defaultELFAnalyzer = elfanalyzer.NewStandardELFAnalyzer(nil)
+        defaultELFAnalyzer = elfanalyzer.NewStandardELFAnalyzer(nil, nil)
     })
     return defaultELFAnalyzer
 }
@@ -634,7 +639,7 @@ func analyzeELFForNetwork(cmdName string) (bool, bool) {
 
     // Perform ELF analysis
     analyzer := getELFAnalyzer()
-    output := analyzer.AnalyzeNetworkSymbols(cmdPath, nil)
+    output := analyzer.AnalyzeNetworkSymbols(cmdPath)
 
     switch output.Result {
     case elfanalyzer.NetworkDetected:
@@ -866,7 +871,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
         t.Skip("testdata directory not found, skipping ELF analysis tests")
     }
 
-    analyzer := NewStandardELFAnalyzer(nil)
+    analyzer := NewStandardELFAnalyzer(nil, nil)
 
     tests := []struct {
         name           string
@@ -941,7 +946,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
                 t.Fatalf("failed to get absolute path for %s: %v", path, err)
             }
 
-            output := analyzer.AnalyzeNetworkSymbols(absPath, nil)
+            output := analyzer.AnalyzeNetworkSymbols(absPath)
             assert.Equal(t, tt.expectedResult, output.Result,
                 "unexpected result for %s", tt.filename)
 
@@ -962,7 +967,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
-    analyzer := NewStandardELFAnalyzer(nil)
+    analyzer := NewStandardELFAnalyzer(nil, nil)
 
     output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary")
 
@@ -1132,7 +1137,7 @@ type mockELFAnalyzer struct {
     result elfanalyzer.AnalysisResult
 }
 
-func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string, privManager runnertypes.PrivilegeManager) elfanalyzer.AnalysisOutput {
+func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.AnalysisOutput {
     output := elfanalyzer.AnalysisOutput{Result: m.result}
     if m.result == elfanalyzer.NetworkDetected {
         output.DetectedSymbols = []elfanalyzer.DetectedSymbol{
