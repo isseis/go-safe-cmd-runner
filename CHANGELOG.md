@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### ELF Dynamic Symbol Analysis for Network Detection
+
+Added ELF binary analysis capability to improve network operation detection for unknown commands.
+
+**Features:**
+- Analyzes `.dynsym` section of ELF binaries to detect network-related symbols
+- Detects Socket API (socket, connect, bind, listen, etc.)
+- Detects DNS resolution functions (getaddrinfo, gethostbyname, etc.)
+- Detects HTTP libraries (libcurl functions)
+- Detects TLS/SSL libraries (OpenSSL, GnuTLS)
+- Gracefully handles non-ELF files, static binaries, and analysis errors
+
+**Security Considerations:**
+- Uses safefileio for symlink attack prevention
+- TOCTOU protection via kernel-level path validation (openat2) where available
+- Fail-safe behavior: analysis errors treated as potential network operations
+- File size limit (1GB) to prevent resource exhaustion
+
+**Integration:**
+- `IsNetworkOperation()` now performs ELF analysis for unknown commands
+- Profile-based detection takes precedence over ELF analysis
+- Static binaries (like Go binaries) identified and handled separately
+
+**Performance:**
+- Average analysis time: <15 microseconds per binary
+- Negligible memory overhead
+
+**New Package:**
+- `internal/runner/security/elfanalyzer`: Standalone ELF analysis package
+
 #### Template Inheritance Enhancement
 
 Extended command template functionality to support inheritance and merging of additional fields.
