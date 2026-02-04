@@ -585,7 +585,7 @@ Week 3:
 - [ELF Specification](https://refspecs.linuxfoundation.org/elf/elf.pdf)
 - [Go debug/elf documentation](https://pkg.go.dev/debug/elf)
 - [Task 0069 Specification](03_specification.md)
-- [Task 0069 Edge Cases](04_edge_cases.md)
+- [Task 0069 Architecture §7.2 (Execute-Only Binaries)](02_architecture.md)
 
 ### 9.3 変更履歴
 

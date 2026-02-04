@@ -737,7 +737,7 @@ func formatDetectedSymbols(symbols []elfanalyzer.DetectedSymbol) string {
 実行権限のみ（`--x--x--x`、octal `0111`）のバイナリは実行可能だが読み取り不可。この場合：
 - FileSystem の `SafeOpenFile` メソッドが `Permission denied` で失敗
 - `AnalysisError` として扱い、Middle Risk 判定
-- 詳細は [04_edge_cases.md](04_edge_cases.md) を参照
+- 詳細は [02_architecture.md §7.2](02_architecture.md) を参照
 
 **推奨**: バイナリには読み取り権限も付与すること（例：`0755` = rwxr-xr-x）
 
