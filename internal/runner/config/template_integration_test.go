@@ -605,7 +605,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
-			expectedRiskLevel:        runnertypes.StringPtr("high"),
+			expectedRiskLevel:        runnertypes.RiskLevelHighPtr,
 			expectedEffectiveTimeout: 300,
 		},
 		{
@@ -632,7 +632,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(1024); return &v }(),
-			expectedRiskLevel:        runnertypes.StringPtr("low"),
+			expectedRiskLevel:        runnertypes.RiskLevelLowPtr,
 			expectedEffectiveTimeout: 300,
 		},
 		{
@@ -658,7 +658,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(10); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(1024); return &v }(),
-			expectedRiskLevel:        runnertypes.StringPtr("low"),
+			expectedRiskLevel:        runnertypes.RiskLevelLowPtr,
 			expectedEffectiveTimeout: 10,
 		},
 		{
@@ -709,7 +709,7 @@ msg = "hello"
 `,
 			expectedTimeout:          func() *int32 { v := int32(300); return &v }(),
 			expectedOutputSizeLimit:  func() *int64 { v := int64(2048); return &v }(),
-			expectedRiskLevel:        runnertypes.StringPtr("medium"),
+			expectedRiskLevel:        runnertypes.RiskLevelMediumPtr,
 			expectedEffectiveTimeout: 300,
 		},
 	}

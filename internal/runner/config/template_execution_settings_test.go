@@ -51,7 +51,7 @@ msg = "hello"
 `,
 			expectedTimeout:          commontesting.Int32Ptr(30),
 			expectedOutputSizeLimit:  commontesting.Int64Ptr(2048),
-			expectedRiskLevel:        runnertypes.StringPtr("medium"),
+			expectedRiskLevel:        runnertypes.RiskLevelMediumPtr,
 			expectedEffectiveTimeout: 30,
 		},
 		{
@@ -127,8 +127,8 @@ msg = "hello"
 			expectedOutputSizeLimit: nil,
 			// With pointer type, we can now distinguish between nil (not set) and explicit value
 			// When user explicitly sets risk_level = "low" in TOML, it overrides template's value
-			expectedRiskLevel:        runnertypes.StringPtr("low"), // Command's explicit value overrides template
-			expectedEffectiveTimeout: -1,                           // unset
+			expectedRiskLevel:        runnertypes.RiskLevelLowPtr, // Command's explicit value overrides template
+			expectedEffectiveTimeout: -1,                          // unset
 		},
 		{
 			name: "template has no execution settings, command sets risk_level explicitly",
@@ -151,7 +151,7 @@ msg = "hello"
 `,
 			expectedTimeout:          nil,
 			expectedOutputSizeLimit:  nil,
-			expectedRiskLevel:        runnertypes.StringPtr("high"),
+			expectedRiskLevel:        runnertypes.RiskLevelHighPtr,
 			expectedEffectiveTimeout: -1, // unset
 		},
 	}

@@ -64,7 +64,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 				Name:      "test-cmd",
 				Cmd:       "/bin/sh",
 				Args:      []string{"-c", "echo 'stdout output'; echo 'stderr output' >&2; exit 1"},
-				RiskLevel: runnertypes.StringPtr("medium"),
+				RiskLevel: runnertypes.RiskLevelMediumPtr,
 			},
 		},
 	}
@@ -238,7 +238,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 						Name:      "test-cmd",
 						Cmd:       "/bin/sh",
 						Args:      []string{"-c", tt.command},
-						RiskLevel: runnertypes.StringPtr("medium"),
+						RiskLevel: runnertypes.RiskLevelMediumPtr,
 					},
 				},
 			}
