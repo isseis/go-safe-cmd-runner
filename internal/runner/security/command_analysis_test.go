@@ -2428,13 +2428,8 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 				err:     tc.mockError,
 			}
 
-			// Create analyzer with injected mock
 			analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
-
-			// Run test
 			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args)
-
-			// Verify results
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
 	}
