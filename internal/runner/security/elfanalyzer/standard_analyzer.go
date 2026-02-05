@@ -15,11 +15,14 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
+// elfMagicStr is the ELF magic number string literal.
+const elfMagicStr = "\x7fELF"
+
 // elfMagic is the ELF magic number bytes.
-var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
+var elfMagic = []byte(elfMagicStr)
 
 // elfMagicLen is the number of bytes in the ELF magic number.
-const elfMagicLen = len("\x7fELF")
+const elfMagicLen = len(elfMagicStr)
 
 // maxFileSize is the maximum file size for ELF analysis (1 GB).
 const maxFileSize = 1 << 30
