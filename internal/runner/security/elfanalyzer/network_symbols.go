@@ -42,6 +42,8 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 	"recv":     CategorySocket,
 	"recvfrom": CategorySocket,
 	"recvmsg":  CategorySocket,
+	"sendmmsg": CategorySocket, // Linux-specific
+	"recvmmsg": CategorySocket, // Linux-specific
 
 	// Socket information
 	"getpeername": CategorySocket,
@@ -59,6 +61,10 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 	"getnameinfo":    CategoryDNS,
 	"gethostbyname":  CategoryDNS, // Legacy, but still widely used
 	"gethostbyname2": CategoryDNS, // IPv4/IPv6 variant
+	"gethostbyaddr":  CategoryDNS,
+	"res_init":       CategoryDNS,
+	"res_query":      CategoryDNS,
+	"res_search":     CategoryDNS,
 
 	// =========================================
 	// HTTP Libraries (libcurl)
