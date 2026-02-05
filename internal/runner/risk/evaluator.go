@@ -17,13 +17,9 @@ type StandardEvaluator struct {
 	networkAnalyzer *security.NetworkAnalyzer
 }
 
-// NewStandardEvaluator creates a new standard risk evaluator
-// If networkAnalyzer is nil, a default NetworkAnalyzer is created.
-func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
-	if networkAnalyzer == nil {
-		networkAnalyzer = security.NewNetworkAnalyzer(nil)
-	}
-	return &StandardEvaluator{networkAnalyzer: networkAnalyzer}
+// NewStandardEvaluator creates a new standard risk evaluator.
+func NewStandardEvaluator() Evaluator {
+	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzer()}
 }
 
 // EvaluateRisk analyzes a command and returns its risk level

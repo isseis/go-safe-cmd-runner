@@ -15,13 +15,9 @@ type NetworkAnalyzer struct {
 	elfAnalyzer elfanalyzer.ELFAnalyzer
 }
 
-// NewNetworkAnalyzer creates a new NetworkAnalyzer with the given ELFAnalyzer.
-// If elfAnalyzer is nil, a default StandardELFAnalyzer is used.
-func NewNetworkAnalyzer(elfAnalyzer elfanalyzer.ELFAnalyzer) *NetworkAnalyzer {
-	if elfAnalyzer == nil {
-		elfAnalyzer = elfanalyzer.NewStandardELFAnalyzer(nil, nil)
-	}
-	return &NetworkAnalyzer{elfAnalyzer: elfAnalyzer}
+// NewNetworkAnalyzer creates a new NetworkAnalyzer with a default StandardELFAnalyzer.
+func NewNetworkAnalyzer() *NetworkAnalyzer {
+	return &NetworkAnalyzer{elfAnalyzer: elfanalyzer.NewStandardELFAnalyzer(nil, nil)}
 }
 
 // IsNetworkOperation checks if the command performs network operations.

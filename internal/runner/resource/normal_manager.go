@@ -52,7 +52,7 @@ func NewNormalResourceManagerWithOutput(
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
-		riskEvaluator:    risk.NewStandardEvaluator(nil),
+		riskEvaluator:    risk.NewStandardEvaluator(),
 		outputManager:    outputMgr,
 		maxOutputSize:    maxOutputSize,
 		logger:           logger,

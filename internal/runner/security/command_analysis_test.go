@@ -711,7 +711,7 @@ func TestIsNetworkOperation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			analyzer := NewNetworkAnalyzer(nil)
+			analyzer := NewNetworkAnalyzer()
 			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args)
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
 				tt.cmdName, tt.args, tt.description)
@@ -1794,7 +1794,7 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			analyzer := NewNetworkAnalyzer(nil)
+			analyzer := NewNetworkAnalyzer()
 			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args)
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
@@ -2428,7 +2428,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			}
 
 			// Create analyzer with injected mock
-			analyzer := NewNetworkAnalyzer(mock)
+			analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
 
 			// Run test
 			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args)
@@ -2486,16 +2486,16 @@ func TestFormatDetectedSymbols(t *testing.T) {
 func TestNewNetworkAnalyzer(t *testing.T) {
 	t.Parallel()
 
-	t.Run("with nil elfAnalyzer uses default", func(t *testing.T) {
+	t.Run("creates analyzer with default elfAnalyzer", func(t *testing.T) {
 		t.Parallel()
-		analyzer := NewNetworkAnalyzer(nil)
+		analyzer := NewNetworkAnalyzer()
 		assert.NotNil(t, analyzer)
 	})
 
 	t.Run("with custom elfAnalyzer", func(t *testing.T) {
 		t.Parallel()
 		mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
-		analyzer := NewNetworkAnalyzer(mock)
+		analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
 		assert.NotNil(t, analyzer)
 
 		// Verify mock is used by calling IsNetworkOperation on an unknown command
