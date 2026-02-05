@@ -98,10 +98,9 @@ func hasNetworkArguments(args []string) bool {
 // analysis failures (AnalysisError), which are treated as potential
 // network operations for safety (middle risk → RiskLevelMedium).
 //
-// IMPORTANT: cmdPath is expected to be an absolute path, already resolved by
-// the caller (e.g., via verification.PathResolver.ResolvePath()).
-// This avoids inconsistency between different path resolution implementations
-// (e.g., exec.LookPath vs custom PathResolver).
+// IMPORTANT: cmdPath is expected to be an absolute, symlink-resolved path,
+// already resolved by the caller (via verification.PathResolver.ResolvePath()).
+// This ensures TOCTOU safety and consistency across all security checks.
 func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string) bool {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
@@ -110,17 +109,8 @@ func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string) bool {
 		panic("isNetworkViaELFAnalysis: cmdPath must be an absolute path, got: " + cmdPath)
 	}
 
-	// Resolve symlinks to get the actual binary path.
-	// This is necessary because safefileio.SafeOpenFile rejects symlinks for security.
-	// Standard system paths like /bin/echo -> /usr/bin/echo are legitimate symlinks.
-	realPath, err := filepath.EvalSymlinks(cmdPath)
-	if err != nil {
-		slog.Debug("ELF analysis skipped: failed to resolve symlinks",
-			"path", cmdPath,
-			"error", err)
-		return false
-	}
-	cmdPath = realPath
+	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
+	// so no need for filepath.EvalSymlinks() here.
 
 	// Perform ELF analysis
 	output := a.elfAnalyzer.AnalyzeNetworkSymbols(cmdPath)

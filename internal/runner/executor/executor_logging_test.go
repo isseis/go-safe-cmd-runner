@@ -68,8 +68,9 @@ func TestExecutor_ErrorLogging_CommandNotFound(t *testing.T) {
 	require.Error(t, err)
 
 	// Check that the error log contains the failure reason
+	// The command path is absolute and non-existent, so it fails at execution time
 	logOutput := buf.String()
-	assert.Contains(t, logOutput, "Failed to find command")
+	assert.Contains(t, logOutput, "Command execution failed")
 	assert.Contains(t, logOutput, "/nonexistent/command")
 }
 

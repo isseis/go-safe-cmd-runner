@@ -4,6 +4,8 @@ package testing
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -11,6 +13,24 @@ import (
 
 // RuntimeCommandOption is a functional option for configuring RuntimeCommand creation.
 type RuntimeCommandOption func(*runtimeCommandConfig)
+
+// ResolveCommand resolves a command name to its absolute, symlink-resolved path.
+// This is useful in tests where executor expects an absolute, symlink-resolved path
+// (as would be provided by PathResolver.ResolvePath in production).
+// Panics if the command cannot be found (test failure).
+func ResolveCommand(cmd string) string {
+	path, err := exec.LookPath(cmd)
+	if err != nil {
+		panic("ResolveCommand: failed to resolve command: " + cmd + ": " + err.Error())
+	}
+
+	// Resolve symlinks to get the canonical path (like PathResolver.ResolvePath does)
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		panic("ResolveCommand: failed to resolve symlinks for: " + path + ": " + err.Error())
+	}
+	return resolved
+}
 
 // runtimeCommandConfig holds the configuration for creating a RuntimeCommand.
 type runtimeCommandConfig struct {

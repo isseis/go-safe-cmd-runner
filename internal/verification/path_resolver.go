@@ -55,7 +55,9 @@ func (pr *PathResolver) ShouldSkipVerification(path string) bool {
 	return false
 }
 
-// validateAndCacheCommand validates that a path points to an executable file and caches it
+// validateAndCacheCommand validates that a path points to an executable file,
+// resolves symlinks, and caches the result.
+// Returns the symlink-resolved absolute path.
 func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, error) {
 	if info, err := os.Stat(path); err != nil {
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cacheKey)
@@ -63,15 +65,27 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 		return "", fmt.Errorf("%w: %s is a directory", ErrCommandNotFound, cacheKey)
 	}
 
+	// Resolve symlinks to get the canonical path.
+	// This ensures consistency across all subsequent security checks and execution.
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve symlinks for %s: %w", cacheKey, err)
+	}
+
 	pr.mu.Lock()
-	pr.cache[cacheKey] = path
+	pr.cache[cacheKey] = resolvedPath
 	pr.mu.Unlock()
-	return path, nil
+	return resolvedPath, nil
 }
 
-// ResolvePath resolves a command to its full path without security validation.
+// ResolvePath resolves a command to its full, symlink-resolved path without security validation.
 //
-// This method only performs path resolution and basic file existence checks.
+// This method performs path resolution, symlink resolution, and basic file existence checks.
+// The returned path is:
+//   - An absolute path
+//   - Symlink-resolved (canonical path)
+//   - Verified to exist and not be a directory
+//
 // Command allowlist validation is intentionally NOT performed here - it is the
 // responsibility of the caller (GroupExecutor) to validate the resolved path
 // using security.ValidateCommandAllowed(), which checks both global patterns
@@ -81,6 +95,7 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 //  1. Path resolution remains independent of group context
 //  2. Validation can properly consider group-specific allowlists
 //  3. The same resolved path can be validated differently in different contexts
+//  4. TOCTOU vulnerabilities are mitigated by resolving symlinks once at the start
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Check cache first
 	pr.mu.RLock()

@@ -24,6 +24,7 @@ var (
 	ErrEmptyCommand                  = errors.New("command cannot be empty")
 	ErrDirNotExists                  = errors.New("directory does not exist")
 	ErrInvalidPath                   = errors.New("invalid command path")
+	ErrPathNotAbsolute               = errors.New("command path must be absolute")
 	ErrNoPrivilegeManager            = errors.New("privileged execution requested but no privilege manager available")
 	ErrUserGroupPrivilegeUnsupported = errors.New("user/group privilege changes are not supported")
 	ErrPrivilegedCmdSecurity         = errors.New("privileged command failed security validation")
@@ -169,14 +170,15 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.Ru
 		return nil, ErrEmptyCommand
 	}
 
-	// Resolve the command path
-	path, lookErr := exec.LookPath(cmd.ExpandedCmd)
-	if lookErr != nil {
-		e.Logger.Error("Failed to find command", "error", lookErr, "command", cmd.ExpandedCmd)
-		return nil, fmt.Errorf("failed to find command %q: %w", cmd.ExpandedCmd, lookErr)
+	// cmd.ExpandedCmd should already be an absolute, symlink-resolved path
+	// (resolved by verification.PathResolver.ResolvePath() in group_executor).
+	// No need for exec.LookPath() here as the path is already resolved.
+	if !filepath.IsAbs(cmd.ExpandedCmd) {
+		e.Logger.Error("Command path is not absolute", "command", cmd.ExpandedCmd)
+		return nil, fmt.Errorf("%w: %s", ErrPathNotAbsolute, cmd.ExpandedCmd)
 	}
 
-	return e.executeCommandWithPath(ctx, path, cmd, envVars, outputWriter)
+	return e.executeCommandWithPath(ctx, cmd.ExpandedCmd, cmd, envVars, outputWriter)
 }
 
 // executeCommandWithPath executes a command with the given resolved path

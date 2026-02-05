@@ -20,6 +20,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Resolve commands to absolute paths once for all tests.
+// This is required because executor expects absolute paths (resolved by PathResolver in production).
+var (
+	echoCmd = executortesting.ResolveCommand("echo")
+	shCmd   = executortesting.ResolveCommand("sh")
+)
+
 // TestPathTraversalAttack tests protection against path traversal attacks
 func TestPathTraversalAttack(t *testing.T) {
 	tempDir := t.TempDir()
@@ -71,7 +78,7 @@ func TestPathTraversalAttack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			runtimeCmd := executortesting.CreateRuntimeCommand(
-				"echo",
+				echoCmd,
 				[]string{"test output"},
 				executortesting.WithName("path_traversal_test"),
 				executortesting.WithOutputFile(tc.outputPath),
@@ -127,7 +134,7 @@ func TestSymlinkAttack(t *testing.T) {
 	require.NoError(t, err)
 
 	runtimeCmd := executortesting.CreateRuntimeCommand(
-		"echo",
+		echoCmd,
 		[]string{"malicious content"},
 		executortesting.WithName("symlink_attack_test"),
 		executortesting.WithOutputFile(symlinkPath),
@@ -202,7 +209,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			runtimeCmd := executortesting.CreateRuntimeCommand(
-				"echo",
+				echoCmd,
 				[]string{"test output"},
 				executortesting.WithName("privilege_escalation_test"),
 				executortesting.WithOutputFile(tc.outputPath),
@@ -255,7 +262,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	// Create command that attempts to generate very large output
 	largeSize := 100 * 1024 * 1024 // 100MB
 	runtimeCmd := executortesting.CreateRuntimeCommand(
-		"sh",
+		shCmd,
 		[]string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
 		executortesting.WithName("disk_exhaustion_test"),
 		executortesting.WithOutputFile(outputPath),
@@ -300,7 +307,7 @@ func TestFilePermissionValidation(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
 	runtimeCmd := executortesting.CreateRuntimeCommand(
-		"echo",
+		echoCmd,
 		[]string{"test output"},
 		executortesting.WithName("permission_test"),
 		executortesting.WithOutputFile(outputPath),
@@ -362,7 +369,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
 			runtimeCmd := executortesting.CreateRuntimeCommand(
-				"echo",
+				echoCmd,
 				[]string{"concurrent test output"},
 				executortesting.WithName("concurrent_security_test"),
 				executortesting.WithOutputFile(outputPath),
@@ -425,7 +432,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			runtimeCmd := executortesting.CreateRuntimeCommand(
-				"echo",
+				echoCmd,
 				[]string{"test output"},
 				executortesting.WithName("security_integration_test"),
 				executortesting.WithOutputFile(tc.outputPath),
@@ -485,7 +492,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 	for i := range numGoroutines {
 		go func(index int) {
 			runtimeCmd := executortesting.CreateRuntimeCommand(
-				"echo",
+				echoCmd,
 				[]string{fmt.Sprintf("content from goroutine %d", index)},
 				executortesting.WithName("race_condition_test"),
 				executortesting.WithOutputFile(outputPath),
