@@ -1,0 +1,1662 @@
+# 詳細仕様書: ELF 機械語解析による syscall 静的解析
+
+## 0. 既存機能活用方針
+
+この実装では、重複開発を避け既存のインフラを最大限活用します：
+
+- **elfanalyzer パッケージ**: ELF ファイルのオープン、セクション解析、AnalysisOutput 構造体
+  - `StandardELFAnalyzer`: 静的バイナリ検出時のフォールバック先として拡張
+  - `AnalysisOutput`, `AnalysisResult`: 既存の結果型を再利用
+- **filevalidator パッケージ**: ハッシュ計算、パス生成
+  - `HybridHashFilePathGetter`: キャッシュファイルパス生成
+  - `SHA256`: ハッシュアルゴリズム
+- **safefileio パッケージ**: 安全なファイル I/O
+  - シンボリックリンク攻撃への防御
+
+これにより**実装工数を削減**し、**実証済みセキュリティ機能を継承**できます。
+
+## 1. パッケージ構成詳細
+
+```
+# 既存コンポーネント（再利用・拡張）
+internal/runner/security/elfanalyzer/
+    analyzer.go                    # AnalysisResult, AnalysisOutput（既存）
+    standard_analyzer.go           # StandardELFAnalyzer（拡張）
+    network_symbols.go             # ネットワークシンボル定義（既存）
+
+# 新規コンポーネント
+internal/runner/security/elfanalyzer/
+    syscall_analyzer.go            # SyscallAnalyzer
+    syscall_decoder.go             # MachineCodeDecoder, X86Decoder
+    syscall_numbers.go             # SyscallNumberTable, X86_64SyscallTable
+    go_wrapper_resolver.go         # GoWrapperResolver
+
+internal/runner/security/syscallcache/
+    cache.go                       # SyscallCache
+    schema.go                      # CacheEntry, スキーマ定義
+    errors.go                      # キャッシュ関連エラー
+
+# 拡張対象
+cmd/record/
+    main.go                        # --analyze-syscalls オプション追加
+
+# 既存コンポーネント（依存）
+internal/filevalidator/
+    hybrid_hash_path_getter.go     # パス生成（既存）
+    hash_algo.go                   # SHA256（既存）
+```
+
+## 2. 型定義とインターフェース
+
+### 2.1 SyscallAnalyzer
+
+```go
+// internal/runner/security/elfanalyzer/syscall_analyzer.go
+
+package elfanalyzer
+
+import (
+    "debug/elf"
+    "fmt"
+)
+
+// SyscallAnalysisResult represents the result of syscall analysis.
+type SyscallAnalysisResult struct {
+    // DetectedSyscalls contains all syscall instructions found with their numbers.
+    DetectedSyscalls []SyscallInfo
+
+    // HasUnknownSyscalls indicates whether any syscall number could not be determined.
+    HasUnknownSyscalls bool
+
+    // HighRiskReasons explains why the analysis resulted in high risk, if applicable.
+    HighRiskReasons []string
+
+    // Summary provides aggregated information about the analysis.
+    Summary SyscallSummary
+}
+
+// SyscallInfo represents information about a single syscall instruction.
+type SyscallInfo struct {
+    // Number is the syscall number (e.g., 41 for socket on x86_64).
+    // -1 indicates the number could not be determined.
+    Number int
+
+    // Name is the human-readable syscall name (e.g., "socket").
+    // Empty if the number is unknown or not in the table.
+    Name string
+
+    // IsNetwork indicates whether this syscall is network-related.
+    IsNetwork bool
+
+    // Location is the offset within the .text section where the syscall was found.
+    Location uint64
+
+    // DeterminationMethod describes how the syscall number was determined.
+    // Possible values: "immediate", "go_wrapper", "unknown"
+    DeterminationMethod string
+}
+
+// SyscallSummary provides aggregated analysis information.
+type SyscallSummary struct {
+    // HasNetworkSyscalls indicates presence of network-related syscalls.
+    HasNetworkSyscalls bool
+
+    // IsHighRisk indicates the analysis could not fully determine network capability.
+    IsHighRisk bool
+
+    // TotalSyscallInstructions is the count of syscall instructions found.
+    TotalSyscallInstructions int
+
+    // NetworkSyscallCount is the count of network-related syscalls.
+    NetworkSyscallCount int
+}
+
+// SyscallAnalyzer analyzes ELF binaries for syscall instructions.
+type SyscallAnalyzer struct {
+    decoder      MachineCodeDecoder
+    syscallTable SyscallNumberTable
+    goResolver   *GoWrapperResolver
+
+    // maxBackwardScan is the maximum number of instructions to scan backward
+    // from a syscall instruction to find the syscall number.
+    maxBackwardScan int
+}
+
+// NewSyscallAnalyzer creates a new SyscallAnalyzer with default settings.
+func NewSyscallAnalyzer() *SyscallAnalyzer {
+    return &SyscallAnalyzer{
+        decoder:         NewX86Decoder(),
+        syscallTable:    NewX86_64SyscallTable(),
+        goResolver:      NewGoWrapperResolver(),
+        maxBackwardScan: 5, // Default: scan up to 5 instructions backward
+    }
+}
+
+// NewSyscallAnalyzerWithConfig creates a SyscallAnalyzer with custom configuration.
+func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumberTable, maxScan int) *SyscallAnalyzer {
+    return &SyscallAnalyzer{
+        decoder:         decoder,
+        syscallTable:    table,
+        goResolver:      NewGoWrapperResolver(),
+        maxBackwardScan: maxScan,
+    }
+}
+
+// AnalyzeSyscalls analyzes the given ELF file for syscall instructions.
+// Returns SyscallAnalysisResult containing all found syscalls and risk assessment.
+func (a *SyscallAnalyzer) AnalyzeSyscalls(path string) (*SyscallAnalysisResult, error) {
+    // Open ELF file
+    elfFile, err := elf.Open(path)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open ELF file: %w", err)
+    }
+    defer elfFile.Close()
+
+    // Verify architecture
+    if elfFile.Machine != elf.EM_X86_64 {
+        return nil, &UnsupportedArchitectureError{
+            Machine: elfFile.Machine,
+        }
+    }
+
+    // Load .text section
+    textSection := elfFile.Section(".text")
+    if textSection == nil {
+        return nil, ErrNoTextSection
+    }
+
+    code, err := textSection.Data()
+    if err != nil {
+        return nil, fmt.Errorf("failed to read .text section: %w", err)
+    }
+
+    // Load symbols for Go wrapper resolution
+    if err := a.goResolver.LoadSymbols(elfFile); err != nil {
+        // Non-fatal: continue without Go wrapper resolution
+        // This handles stripped binaries
+    }
+
+    // Analyze syscalls
+    return a.analyzeSyscallsInCode(code, textSection.Addr)
+}
+
+// analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
+func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*SyscallAnalysisResult, error) {
+    result := &SyscallAnalysisResult{
+        DetectedSyscalls: make([]SyscallInfo, 0),
+    }
+
+    // Find all syscall instruction locations
+    syscallLocs := a.findSyscallInstructions(code, baseAddr)
+
+    for _, loc := range syscallLocs {
+        info := a.extractSyscallInfo(code, loc, baseAddr)
+        result.DetectedSyscalls = append(result.DetectedSyscalls, info)
+
+        if info.Number == -1 {
+            result.HasUnknownSyscalls = true
+            result.HighRiskReasons = append(result.HighRiskReasons,
+                fmt.Sprintf("syscall at 0x%x: number could not be determined (%s)",
+                    info.Location, info.DeterminationMethod))
+        }
+
+        if info.IsNetwork {
+            result.Summary.NetworkSyscallCount++
+        }
+    }
+
+    // Build summary
+    result.Summary.TotalSyscallInstructions = len(syscallLocs)
+    result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
+    result.Summary.IsHighRisk = result.HasUnknownSyscalls
+
+    return result, nil
+}
+
+// findSyscallInstructions scans the code for syscall instructions (0F 05).
+func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) []uint64 {
+    var locations []uint64
+
+    for i := 0; i < len(code)-1; i++ {
+        if code[i] == 0x0F && code[i+1] == 0x05 {
+            locations = append(locations, baseAddr+uint64(i))
+        }
+    }
+
+    return locations
+}
+
+// extractSyscallInfo extracts syscall number by backward scanning.
+func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, baseAddr uint64) SyscallInfo {
+    info := SyscallInfo{
+        Number:   -1,
+        Location: syscallAddr,
+    }
+
+    // Calculate offset in code
+    offset := int(syscallAddr - baseAddr)
+    if offset < 0 || offset >= len(code) {
+        info.DeterminationMethod = "unknown:invalid_offset"
+        return info
+    }
+
+    // Backward scan to find eax/rax modification
+    number, method := a.backwardScanForSyscallNumber(code, offset, baseAddr)
+    info.Number = number
+    info.DeterminationMethod = method
+
+    if number >= 0 {
+        info.Name = a.syscallTable.GetSyscallName(number)
+        info.IsNetwork = a.syscallTable.IsNetworkSyscall(number)
+    }
+
+    return info
+}
+
+// backwardScanForSyscallNumber scans backward from syscall instruction
+// to find where eax/rax is set.
+func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffset int, baseAddr uint64) (int, string) {
+    // Build instruction list by forward decoding up to syscall
+    instructions := a.decodeInstructionsUpTo(code, syscallOffset)
+    if len(instructions) == 0 {
+        return -1, "unknown:decode_failed"
+    }
+
+    // Scan backward through decoded instructions
+    scanCount := 0
+    for i := len(instructions) - 1; i >= 0 && scanCount < a.maxBackwardScan; i-- {
+        inst := instructions[i]
+        scanCount++
+
+        // Check for control flow instruction (basic block boundary)
+        if a.decoder.IsControlFlowInstruction(inst) {
+            return -1, "unknown:control_flow_boundary"
+        }
+
+        // Check if this instruction modifies eax/rax
+        if !a.decoder.ModifiesEAXorRAX(inst) {
+            continue
+        }
+
+        // Check if it's an immediate move
+        if isImm, value := a.decoder.IsImmediateMove(inst); isImm {
+            return int(value), "immediate"
+        }
+
+        // Found eax/rax modification but not immediate - try Go wrapper resolution
+        if a.goResolver != nil && a.goResolver.HasSymbols() {
+            if number, ok := a.goResolver.TryResolve(code, instructions, i, baseAddr); ok {
+                return number, "go_wrapper"
+            }
+        }
+
+        // Non-immediate modification found
+        return -1, "unknown:indirect_setting"
+    }
+
+    // Reached scan limit without finding eax/rax modification
+    return -1, "unknown:scan_limit_exceeded"
+}
+
+// decodeInstructionsUpTo decodes all instructions from start up to the given offset.
+func (a *SyscallAnalyzer) decodeInstructionsUpTo(code []byte, targetOffset int) []DecodedInstruction {
+    var instructions []DecodedInstruction
+    pos := 0
+
+    for pos < targetOffset {
+        inst, err := a.decoder.Decode(code[pos:], uint64(pos))
+        if err != nil {
+            // Skip problematic byte and continue
+            pos++
+            continue
+        }
+        instructions = append(instructions, inst)
+        pos += inst.Len
+    }
+
+    return instructions
+}
+```
+
+### 2.2 MachineCodeDecoder
+
+```go
+// internal/runner/security/elfanalyzer/syscall_decoder.go
+
+package elfanalyzer
+
+import (
+    "golang.org/x/arch/x86/x86asm"
+)
+
+// DecodedInstruction represents a decoded x86_64 instruction.
+type DecodedInstruction struct {
+    // Offset is the instruction's offset within the code section.
+    Offset uint64
+
+    // Len is the instruction length in bytes.
+    Len int
+
+    // Op is the instruction opcode (e.g., MOV, SYSCALL).
+    Op x86asm.Op
+
+    // Args are the instruction arguments.
+    Args []x86asm.Arg
+
+    // Raw contains the raw instruction bytes.
+    Raw []byte
+}
+
+// MachineCodeDecoder defines the interface for decoding machine code.
+type MachineCodeDecoder interface {
+    // Decode decodes a single instruction at the given offset.
+    Decode(code []byte, offset uint64) (DecodedInstruction, error)
+
+    // IsSyscallInstruction returns true if the instruction is a syscall.
+    IsSyscallInstruction(inst DecodedInstruction) bool
+
+    // ModifiesEAXorRAX returns true if the instruction modifies eax or rax.
+    ModifiesEAXorRAX(inst DecodedInstruction) bool
+
+    // IsImmediateMove returns (true, value) if the instruction moves an immediate to eax/rax.
+    IsImmediateMove(inst DecodedInstruction) (bool, int64)
+
+    // IsControlFlowInstruction returns true if the instruction is a control flow instruction.
+    IsControlFlowInstruction(inst DecodedInstruction) bool
+}
+
+// X86Decoder implements MachineCodeDecoder for x86_64.
+type X86Decoder struct{}
+
+// NewX86Decoder creates a new X86Decoder.
+func NewX86Decoder() *X86Decoder {
+    return &X86Decoder{}
+}
+
+// Decode decodes a single x86_64 instruction.
+func (d *X86Decoder) Decode(code []byte, offset uint64) (DecodedInstruction, error) {
+    inst, err := x86asm.Decode(code, 64) // 64-bit mode
+    if err != nil {
+        return DecodedInstruction{}, err
+    }
+
+    decoded := DecodedInstruction{
+        Offset: offset,
+        Len:    inst.Len,
+        Op:     inst.Op,
+        Args:   inst.Args[:],
+        Raw:    code[:inst.Len],
+    }
+
+    return decoded, nil
+}
+
+// IsSyscallInstruction checks if the instruction is a syscall.
+func (d *X86Decoder) IsSyscallInstruction(inst DecodedInstruction) bool {
+    return inst.Op == x86asm.SYSCALL
+}
+
+// ModifiesEAXorRAX checks if the instruction modifies eax or rax.
+func (d *X86Decoder) ModifiesEAXorRAX(inst DecodedInstruction) bool {
+    if len(inst.Args) == 0 {
+        return false
+    }
+
+    // Check destination register (first argument for most instructions)
+    switch arg := inst.Args[0].(type) {
+    case x86asm.Reg:
+        return arg == x86asm.EAX || arg == x86asm.RAX ||
+               arg == x86asm.AX || arg == x86asm.AL
+    }
+
+    return false
+}
+
+// IsImmediateMove checks if the instruction is a MOV immediate to eax/rax.
+func (d *X86Decoder) IsImmediateMove(inst DecodedInstruction) (bool, int64) {
+    // Check for MOV instruction
+    if inst.Op != x86asm.MOV {
+        return false, 0
+    }
+
+    // Need at least 2 arguments
+    if len(inst.Args) < 2 {
+        return false, 0
+    }
+
+    // Check destination is eax/rax
+    destReg, ok := inst.Args[0].(x86asm.Reg)
+    if !ok {
+        return false, 0
+    }
+    if destReg != x86asm.EAX && destReg != x86asm.RAX {
+        return false, 0
+    }
+
+    // Check source is immediate
+    switch src := inst.Args[1].(type) {
+    case x86asm.Imm:
+        return true, int64(src)
+    }
+
+    return false, 0
+}
+
+// IsControlFlowInstruction checks if the instruction is a control flow instruction.
+func (d *X86Decoder) IsControlFlowInstruction(inst DecodedInstruction) bool {
+    switch inst.Op {
+    case x86asm.JMP, x86asm.JA, x86asm.JAE, x86asm.JB, x86asm.JBE,
+         x86asm.JE, x86asm.JG, x86asm.JGE, x86asm.JL, x86asm.JLE,
+         x86asm.JNE, x86asm.JNO, x86asm.JNP, x86asm.JNS, x86asm.JO,
+         x86asm.JP, x86asm.JS, x86asm.JCXZ, x86asm.JECXZ, x86asm.JRCXZ,
+         x86asm.CALL, x86asm.RET, x86asm.IRET, x86asm.INT,
+         x86asm.LOOP, x86asm.LOOPE, x86asm.LOOPNE:
+        return true
+    }
+    return false
+}
+```
+
+### 2.3 SyscallNumberTable
+
+```go
+// internal/runner/security/elfanalyzer/syscall_numbers.go
+
+package elfanalyzer
+
+// SyscallNumberTable defines the interface for syscall number lookup.
+type SyscallNumberTable interface {
+    // GetSyscallName returns the syscall name for the given number.
+    // Returns empty string if the number is unknown.
+    GetSyscallName(number int) string
+
+    // IsNetworkSyscall returns true if the syscall is network-related.
+    IsNetworkSyscall(number int) bool
+
+    // GetNetworkSyscalls returns all network-related syscall numbers.
+    GetNetworkSyscalls() []int
+}
+
+// SyscallDefinition defines a single syscall.
+type SyscallDefinition struct {
+    Number      int
+    Name        string
+    IsNetwork   bool
+    Description string
+}
+
+// X86_64SyscallTable implements SyscallNumberTable for x86_64 Linux.
+type X86_64SyscallTable struct {
+    syscalls       map[int]SyscallDefinition
+    networkNumbers []int
+}
+
+// NewX86_64SyscallTable creates a new syscall table for x86_64 Linux.
+func NewX86_64SyscallTable() *X86_64SyscallTable {
+    table := &X86_64SyscallTable{
+        syscalls: make(map[int]SyscallDefinition),
+    }
+
+    // Network-related syscalls (as specified in requirements)
+    networkSyscalls := []SyscallDefinition{
+        {41, "socket", true, "Create a socket"},
+        {42, "connect", true, "Connect to a remote address"},
+        {43, "accept", true, "Accept a connection"},
+        {44, "sendto", true, "Send data to address"},
+        {45, "recvfrom", true, "Receive data from address"},
+        {46, "sendmsg", true, "Send message"},
+        {47, "recvmsg", true, "Receive message"},
+        {49, "bind", true, "Bind to an address"},
+        {50, "listen", true, "Listen for connections"},
+    }
+
+    for _, def := range networkSyscalls {
+        table.syscalls[def.Number] = def
+        table.networkNumbers = append(table.networkNumbers, def.Number)
+    }
+
+    // Common non-network syscalls (for reference/logging)
+    nonNetworkSyscalls := []SyscallDefinition{
+        {0, "read", false, "Read from file descriptor"},
+        {1, "write", false, "Write to file descriptor"},
+        {2, "open", false, "Open file"},
+        {3, "close", false, "Close file descriptor"},
+        {9, "mmap", false, "Map memory"},
+        {11, "munmap", false, "Unmap memory"},
+        {12, "brk", false, "Change data segment size"},
+        {60, "exit", false, "Terminate process"},
+        {231, "exit_group", false, "Terminate all threads"},
+    }
+
+    for _, def := range nonNetworkSyscalls {
+        table.syscalls[def.Number] = def
+    }
+
+    return table
+}
+
+// GetSyscallName returns the syscall name for the given number.
+func (t *X86_64SyscallTable) GetSyscallName(number int) string {
+    if def, ok := t.syscalls[number]; ok {
+        return def.Name
+    }
+    return ""
+}
+
+// IsNetworkSyscall returns true if the syscall is network-related.
+func (t *X86_64SyscallTable) IsNetworkSyscall(number int) bool {
+    if def, ok := t.syscalls[number]; ok {
+        return def.IsNetwork
+    }
+    return false
+}
+
+// GetNetworkSyscalls returns all network-related syscall numbers.
+func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
+    return t.networkNumbers
+}
+```
+
+### 2.4 GoWrapperResolver
+
+```go
+// internal/runner/security/elfanalyzer/go_wrapper_resolver.go
+
+package elfanalyzer
+
+import (
+    "debug/elf"
+    "strings"
+
+    "golang.org/x/arch/x86/x86asm"
+)
+
+// GoSyscallWrapper represents a known Go syscall wrapper function.
+type GoSyscallWrapper struct {
+    Name            string
+    SyscallArgIndex int // Which argument contains the syscall number (0-based)
+}
+
+// knownGoWrappers lists standard Go syscall wrapper functions.
+var knownGoWrappers = []GoSyscallWrapper{
+    {"syscall.Syscall", 0},
+    {"syscall.Syscall6", 0},
+    {"syscall.RawSyscall", 0},
+    {"syscall.RawSyscall6", 0},
+    {"runtime.syscall", 0},
+    {"runtime.syscall6", 0},
+}
+
+// SymbolInfo represents information about a symbol in the ELF file.
+type SymbolInfo struct {
+    Name    string
+    Address uint64
+    Size    uint64
+}
+
+// GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
+type GoWrapperResolver struct {
+    symbols     map[string]SymbolInfo
+    wrapperAddrs map[uint64]GoSyscallWrapper
+    hasSymbols  bool
+}
+
+// NewGoWrapperResolver creates a new GoWrapperResolver.
+func NewGoWrapperResolver() *GoWrapperResolver {
+    return &GoWrapperResolver{
+        symbols:      make(map[string]SymbolInfo),
+        wrapperAddrs: make(map[uint64]GoSyscallWrapper),
+    }
+}
+
+// LoadSymbols loads symbols from the ELF file.
+// Returns error if symbol table cannot be read (e.g., stripped binary).
+func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
+    // Try .symtab first
+    symbols, err := elfFile.Symbols()
+    if err != nil {
+        // Try .dynsym as fallback
+        symbols, err = elfFile.DynamicSymbols()
+        if err != nil {
+            return ErrNoSymbolTable
+        }
+    }
+
+    for _, sym := range symbols {
+        r.symbols[sym.Name] = SymbolInfo{
+            Name:    sym.Name,
+            Address: sym.Value,
+            Size:    sym.Size,
+        }
+
+        // Check if this is a known Go wrapper
+        for _, wrapper := range knownGoWrappers {
+            if strings.Contains(sym.Name, wrapper.Name) {
+                r.wrapperAddrs[sym.Value] = wrapper
+            }
+        }
+    }
+
+    r.hasSymbols = len(r.symbols) > 0
+    return nil
+}
+
+// HasSymbols returns true if symbols were successfully loaded.
+func (r *GoWrapperResolver) HasSymbols() bool {
+    return r.hasSymbols
+}
+
+// TryResolve attempts to resolve syscall number from a Go wrapper call.
+// It analyzes the call site to find the first argument (syscall number).
+//
+// Parameters:
+//   - code: the code section bytes
+//   - instructions: decoded instructions up to the call site
+//   - callIndex: index of the CALL instruction in the instructions slice
+//   - baseAddr: base address of the code section
+//
+// Returns:
+//   - (number, true) if syscall number was resolved
+//   - (-1, false) if resolution failed
+func (r *GoWrapperResolver) TryResolve(code []byte, instructions []DecodedInstruction, callIndex int, baseAddr uint64) (int, bool) {
+    if callIndex >= len(instructions) || callIndex < 0 {
+        return -1, false
+    }
+
+    callInst := instructions[callIndex]
+
+    // Verify this is a CALL to a known wrapper and get wrapper info
+    wrapper, isWrapper := r.resolveWrapper(callInst)
+    if !isWrapper {
+        return -1, false
+    }
+
+    // Look for syscall number argument being set before the call
+    // Scan backward from call to find MOV immediate to the argument register
+
+    // Determine target register based on calling convention and ArgIndex
+    // For Go 1.17+ ABI (amd64), arg0 is RAX.
+    // If we support other args later, we need a map from index to register.
+    // Currently, we only support arg index 0 (RAX).
+    if wrapper.SyscallArgIndex != 0 {
+        return -1, false
+    }
+    targetReg := x86asm.RAX
+
+    decoder := NewX86Decoder()
+    for i := callIndex - 1; i >= 0 && i >= callIndex-5; i-- {
+        inst := instructions[i]
+
+        // Check for control flow boundary
+        if decoder.IsControlFlowInstruction(inst) {
+            break
+        }
+
+        // Check for immediate move to target register
+        if isImm, value := decoder.IsImmediateMove(inst); isImm {
+            // Verify destination is target register
+            if reg, ok := inst.Args[0].(x86asm.Reg); ok && reg == targetReg {
+                return int(value), true
+            }
+        }
+    }
+
+    return -1, false
+}
+
+// resolveWrapper checks if the instruction is a CALL to a known wrapper
+// and returns the wrapper information if found.
+func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWrapper, bool) {
+    if inst.Op != x86asm.CALL {
+        return GoSyscallWrapper{}, false
+    }
+
+    // Extract call target
+    if len(inst.Args) == 0 {
+        return GoSyscallWrapper{}, false
+    }
+
+    // For direct calls, check if target is a known wrapper
+    switch target := inst.Args[0].(type) {
+    case x86asm.Rel:
+        // Relative call - calculate absolute address
+        targetAddr := uint64(int64(inst.Offset) + int64(inst.Len) + int64(target))
+        if wrapper, ok := r.wrapperAddrs[targetAddr]; ok {
+            return wrapper, true
+        }
+    }
+
+    return GoSyscallWrapper{}, false
+}
+```
+
+**注記**: 上記コードでは `x86asm.Reg`, `x86asm.Rel`, `x86asm.Mem` などの型を使用しているため、パッケージ冒頭のインポートで `"golang.org/x/arch/x86/x86asm"` を追加する必要がある。
+
+### 2.5 SyscallCache
+
+```go
+// internal/runner/security/syscallcache/cache.go
+
+package syscallcache
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
+    "time"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/common"
+    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+    "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+)
+
+const (
+    // CurrentSchemaVersion is the current cache schema version.
+    // Increment this when making breaking changes to the cache format.
+    CurrentSchemaVersion = 1
+
+    // CacheFormat identifies this cache type.
+    CacheFormat = "syscall_analysis"
+
+    // CacheFilePrefix is used to distinguish syscall cache files from hash files.
+    CacheFilePrefix = "syscall~"
+)
+
+// SyscallCache manages syscall analysis cache files.
+type SyscallCache struct {
+    cacheDir   string
+    pathGetter *SyscallCachePathGetter
+    fs         safefileio.FileSystem
+}
+
+// NewSyscallCache creates a new SyscallCache.
+func NewSyscallCache(cacheDir string) (*SyscallCache, error) {
+    // Validate cache directory
+    info, err := os.Lstat(cacheDir)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return nil, fmt.Errorf("cache directory does not exist: %s", cacheDir)
+        }
+        return nil, fmt.Errorf("failed to access cache directory: %w", err)
+    }
+    if !info.IsDir() {
+        return nil, fmt.Errorf("cache path is not a directory: %s", cacheDir)
+    }
+
+    return &SyscallCache{
+        cacheDir:   cacheDir,
+        pathGetter: NewSyscallCachePathGetter(),
+        fs:         safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+    }, nil
+}
+
+// SaveCache saves the analysis result to cache.
+func (c *SyscallCache) SaveCache(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
+    entry := &CacheEntry{
+        SchemaVersion: CurrentSchemaVersion,
+        Format:        CacheFormat,
+        FilePath:      filePath,
+        FileHash:      fileHash,
+        AnalyzedAt:    time.Now().UTC(),
+        Architecture:  "x86_64",
+        Result:        result,
+    }
+
+    // Get cache file path
+    cachePath, err := c.getCachePath(filePath)
+    if err != nil {
+        return fmt.Errorf("failed to get cache path: %w", err)
+    }
+
+    // Marshal to JSON
+    data, err := json.MarshalIndent(entry, "", "  ")
+    if err != nil {
+        return fmt.Errorf("failed to marshal cache entry: %w", err)
+    }
+
+    // Write file safely
+    if err := c.fs.SafeWriteFile(cachePath, data, 0o600); err != nil {
+        return fmt.Errorf("failed to write cache file: %w", err)
+    }
+
+    return nil
+}
+
+// LoadCache loads the analysis result from cache.
+// Returns error if cache is missing, invalid, or hash mismatch.
+func (c *SyscallCache) LoadCache(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, error) {
+    // Get cache file path
+    cachePath, err := c.getCachePath(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get cache path: %w", err)
+    }
+
+    // Read cache file safely
+    data, err := c.fs.SafeReadFile(cachePath)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return nil, ErrCacheNotFound
+        }
+        return nil, fmt.Errorf("failed to read cache file: %w", err)
+    }
+
+    // Parse JSON
+    var entry CacheEntry
+    if err := json.Unmarshal(data, &entry); err != nil {
+        return nil, &CacheCorruptedError{Path: cachePath, Cause: err}
+    }
+
+    // Validate schema version
+    if entry.SchemaVersion != CurrentSchemaVersion {
+        return nil, &SchemaVersionMismatchError{
+            Expected: CurrentSchemaVersion,
+            Actual:   entry.SchemaVersion,
+        }
+    }
+
+    // Validate format
+    if entry.Format != CacheFormat {
+        return nil, &InvalidCacheFormatError{
+            Expected: CacheFormat,
+            Actual:   entry.Format,
+        }
+    }
+
+    // Validate hash
+    if entry.FileHash != expectedHash {
+        return nil, &HashMismatchError{
+            Expected: expectedHash,
+            Actual:   entry.FileHash,
+        }
+    }
+
+    return entry.Result, nil
+}
+
+// InvalidateCache removes the cache file for the given path.
+func (c *SyscallCache) InvalidateCache(filePath string) error {
+    cachePath, err := c.getCachePath(filePath)
+    if err != nil {
+        return err
+    }
+
+    if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+        return fmt.Errorf("failed to remove cache file: %w", err)
+    }
+
+    return nil
+}
+
+// getCachePath returns the cache file path for the given file.
+func (c *SyscallCache) getCachePath(filePath string) (string, error) {
+    absPath, err := filepath.Abs(filePath)
+    if err != nil {
+        return "", fmt.Errorf("failed to get absolute path: %w", err)
+    }
+
+    resolvedPath, err := common.NewResolvedPath(absPath)
+    if err != nil {
+        return "", fmt.Errorf("failed to create resolved path: %w", err)
+    }
+
+    return c.pathGetter.GetCacheFilePath(c.cacheDir, resolvedPath)
+}
+```
+
+### 2.6 キャッシュスキーマ
+
+```go
+// internal/runner/security/syscallcache/schema.go
+
+package syscallcache
+
+import (
+    "time"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+)
+
+// CacheEntry represents a single syscall analysis cache entry.
+type CacheEntry struct {
+    // SchemaVersion identifies the cache format version.
+    SchemaVersion int `json:"schema_version"`
+
+    // Format identifies the cache type ("syscall_analysis").
+    Format string `json:"format"`
+
+    // FilePath is the absolute path to the analyzed file.
+    FilePath string `json:"file_path"`
+
+    // FileHash is the SHA256 hash of the analyzed file.
+    FileHash string `json:"file_hash"`
+
+    // AnalyzedAt is when the analysis was performed.
+    AnalyzedAt time.Time `json:"analyzed_at"`
+
+    // Architecture is the target architecture (e.g., "x86_64").
+    Architecture string `json:"architecture"`
+
+    // Result contains the analysis result.
+    Result *elfanalyzer.SyscallAnalysisResult `json:"result"`
+}
+```
+
+### 2.7 キャッシュエラー
+
+```go
+// internal/runner/security/syscallcache/errors.go
+
+package syscallcache
+
+import (
+    "errors"
+    "fmt"
+)
+
+// Static errors
+var (
+    ErrCacheNotFound = errors.New("cache file not found")
+)
+
+// SchemaVersionMismatchError indicates cache schema version mismatch.
+type SchemaVersionMismatchError struct {
+    Expected int
+    Actual   int
+}
+
+func (e *SchemaVersionMismatchError) Error() string {
+    return fmt.Sprintf("schema version mismatch: expected %d, got %d", e.Expected, e.Actual)
+}
+
+// HashMismatchError indicates file hash mismatch.
+type HashMismatchError struct {
+    Expected string
+    Actual   string
+}
+
+func (e *HashMismatchError) Error() string {
+    return fmt.Sprintf("hash mismatch: expected %s, got %s", e.Expected, e.Actual)
+}
+
+// CacheCorruptedError indicates cache file is corrupted.
+type CacheCorruptedError struct {
+    Path  string
+    Cause error
+}
+
+func (e *CacheCorruptedError) Error() string {
+    return fmt.Sprintf("cache file corrupted at %s: %v", e.Path, e.Cause)
+}
+
+func (e *CacheCorruptedError) Unwrap() error {
+    return e.Cause
+}
+
+// InvalidCacheFormatError indicates invalid cache format.
+type InvalidCacheFormatError struct {
+    Expected string
+    Actual   string
+}
+
+func (e *InvalidCacheFormatError) Error() string {
+    return fmt.Sprintf("invalid cache format: expected %s, got %s", e.Expected, e.Actual)
+}
+```
+
+### 2.8 SyscallCachePathGetter
+
+```go
+// internal/runner/security/syscallcache/path_getter.go
+
+package syscallcache
+
+import (
+    "path/filepath"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/common"
+    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator/encoding"
+)
+
+// SyscallCachePathGetter generates cache file paths for syscall analysis.
+// Uses the same encoding strategy as HybridHashFilePathGetter with a prefix.
+type SyscallCachePathGetter struct {
+    encoder        *encoding.SubstitutionHashEscape
+    fallbackGetter *filevalidator.SHA256PathHashGetter
+}
+
+// NewSyscallCachePathGetter creates a new SyscallCachePathGetter.
+func NewSyscallCachePathGetter() *SyscallCachePathGetter {
+    return &SyscallCachePathGetter{
+        encoder:        encoding.NewSubstitutionHashEscape(),
+        fallbackGetter: filevalidator.NewSHA256PathHashGetter(),
+    }
+}
+
+// GetCacheFilePath returns the cache file path for the given file.
+func (g *SyscallCachePathGetter) GetCacheFilePath(cacheDir string, filePath common.ResolvedPath) (string, error) {
+    // Try normal encoding first
+    encodedName, err := g.encoder.Encode(filePath.String())
+    if err != nil {
+        return "", err
+    }
+
+    // Add prefix
+    prefixedName := CacheFilePrefix + encodedName
+
+    // Check length limit
+    if len(prefixedName) <= filevalidator.MaxFilenameLength {
+        return filepath.Join(cacheDir, prefixedName), nil
+    }
+
+    // Use SHA256 fallback with prefix
+    hashPath, err := g.fallbackGetter.GetHashFilePath(cacheDir, filePath)
+    if err != nil {
+        return "", err
+    }
+
+    // Insert prefix into the filename
+    dir := filepath.Dir(hashPath)
+    name := CacheFilePrefix + filepath.Base(hashPath)
+    return filepath.Join(dir, name), nil
+}
+```
+
+## 3. StandardELFAnalyzer の拡張
+
+```go
+// internal/runner/security/elfanalyzer/standard_analyzer.go
+// 既存の StandardELFAnalyzer に syscall キャッシュ参照を追加
+
+// SyscallCache defines the interface for syscall analysis result caching.
+// This decouples the analyzer from the concrete cache implementation to avoid circular dependencies.
+// The concrete implementation is provided by the syscallcache package.
+type SyscallCache interface {
+    LoadCache(filePath, expectedHash string) (*SyscallAnalysisResult, error)
+}
+
+// StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
+type StandardELFAnalyzer struct {
+    fs             safefileio.FileSystem
+    networkSymbols map[string]SymbolCategory
+    privManager    runnertypes.PrivilegeManager
+    pfv            *filevalidator.PrivilegedFileValidator
+
+    // New: syscall cache for static binary analysis
+    syscallCache   SyscallCache
+    hashAlgo       filevalidator.HashAlgorithm
+}
+
+// NewStandardELFAnalyzerWithSyscallCache creates an analyzer with syscall cache support.
+// Uses dependency injection for SyscallCache to avoid circular dependencies.
+func NewStandardELFAnalyzerWithSyscallCache(
+    fs safefileio.FileSystem,
+    privManager runnertypes.PrivilegeManager,
+    cache SyscallCache,
+) *StandardELFAnalyzer {
+    analyzer := NewStandardELFAnalyzer(fs, privManager)
+
+    if cache != nil {
+        analyzer.syscallCache = cache
+        analyzer.hashAlgo = filevalidator.NewSHA256()
+    }
+
+    return analyzer, nil
+}
+
+// In AnalyzeNetworkSymbols, add syscall cache lookup for static binaries:
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
+    // ... existing code for dynamic binary analysis ...
+
+    // If static binary detected and syscall cache is available
+    if !hasDynsym && a.syscallCache != nil {
+        result := a.lookupSyscallCache(path)
+        if result.Result != StaticBinary {
+            return result
+        }
+    }
+
+    // ... existing fallback to StaticBinary ...
+}
+
+// lookupSyscallCache checks the syscall cache for analysis results.
+func (a *StandardELFAnalyzer) lookupSyscallCache(path string) AnalysisOutput {
+    // Calculate file hash
+    hash, err := a.calculateFileHash(path)
+    if err != nil {
+        slog.Debug("Failed to calculate hash for syscall cache lookup",
+            "path", path,
+            "error", err)
+        return AnalysisOutput{Result: StaticBinary}
+    }
+
+    // Load cache
+    // Note: ErrCacheNotFound should be handled by the implementation or checked here
+    // assuming LoadCache returns specific error or nil on hit
+    result, err := a.syscallCache.LoadCache(path, hash)
+    if err != nil {
+        // Log error except for cache miss
+        // Note: The interface doesn't define ErrCacheNotFound, so we might need to rely on
+        // the error string or simple nil check if the interface contract allows nil result for miss.
+        // For this implementation, we assume any error means "no valid cache".
+        slog.Debug("Syscall cache lookup failed or miss",
+            "path", path,
+            "error", err)
+
+        return AnalysisOutput{Result: StaticBinary}
+    }
+
+    // Convert syscall analysis result to AnalysisOutput
+    return a.convertSyscallResult(result)
+}
+
+// convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
+func (a *StandardELFAnalyzer) convertSyscallResult(result *elfanalyzer.SyscallAnalysisResult) AnalysisOutput {
+    if result.Summary.HasNetworkSyscalls {
+        // Build detected symbols from syscall info
+        var symbols []DetectedSymbol
+        for _, info := range result.DetectedSyscalls {
+            if info.IsNetwork {
+                symbols = append(symbols, DetectedSymbol{
+                    Name:     info.Name,
+                    Category: "syscall",
+                })
+            }
+        }
+        return AnalysisOutput{
+            Result:          NetworkDetected,
+            DetectedSymbols: symbols,
+        }
+    }
+
+    if result.Summary.IsHighRisk {
+        // High risk: treat as potential network operation
+        return AnalysisOutput{
+            Result: AnalysisError,
+            Error:  fmt.Errorf("syscall analysis high risk: %v", result.HighRiskReasons),
+        }
+    }
+
+    return AnalysisOutput{Result: NoNetworkSymbols}
+}
+
+// calculateFileHash calculates SHA256 hash of the file.
+func (a *StandardELFAnalyzer) calculateFileHash(path string) (string, error) {
+    file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
+    if err != nil {
+        return "", err
+    }
+    defer file.Close()
+
+    return a.hashAlgo.Hash(file)
+}
+```
+
+## 4. record コマンドの拡張
+
+```go
+// cmd/record/main.go に追加するオプションと処理
+
+import (
+    "debug/elf"
+    "flag"
+    "fmt"
+    "log/slog"
+    "os"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/syscallcache"
+)
+
+// Command line flags
+var (
+    analyzeSyscalls = flag.Bool("analyze-syscalls", false, "Analyze syscalls for static ELF binaries")
+)
+
+// In main function, after hash recording:
+func main() {
+    // ... existing hash recording logic ...
+
+    // Note: hashDir is determined from args or config in the actual implementation
+    // e.g. defined along with recordDir
+
+    if *analyzeSyscalls {
+        // Check if file is a static ELF binary
+        if isStaticELF(filePath) {
+            if err := analyzeSyscallsForFile(filePath, hashDir); err != nil {
+                slog.Warn("Syscall analysis failed",
+                    "path", filePath,
+                    "error", err)
+                // Non-fatal: continue with hash recording
+            }
+        }
+    }
+}
+
+// isStaticELF checks if the file is a static ELF binary.
+func isStaticELF(path string) bool {
+    elfFile, err := elf.Open(path)
+    if err != nil {
+        return false
+    }
+    defer elfFile.Close()
+
+    // Check for .dynsym section
+    dynsym := elfFile.Section(".dynsym")
+    return dynsym == nil
+}
+
+// analyzeSyscallsForFile performs syscall analysis and caches the result.
+func analyzeSyscallsForFile(path, cacheDir string) error {
+    // Create syscall analyzer
+    analyzer := elfanalyzer.NewSyscallAnalyzer()
+
+    // Perform analysis
+    result, err := analyzer.AnalyzeSyscalls(path)
+    if err != nil {
+        return fmt.Errorf("analysis failed: %w", err)
+    }
+
+    // Calculate file hash
+    hashAlgo := filevalidator.NewSHA256()
+    file, err := os.Open(path)
+    if err != nil {
+        return fmt.Errorf("failed to open file for hashing: %w", err)
+    }
+    defer file.Close()
+
+    hash, err := hashAlgo.Hash(file)
+    if err != nil {
+        return fmt.Errorf("failed to calculate hash: %w", err)
+    }
+
+    // Save to cache
+    cache, err := syscallcache.NewSyscallCache(cacheDir)
+    if err != nil {
+        return fmt.Errorf("failed to create cache: %w", err)
+    }
+
+    if err := cache.SaveCache(path, hash, result); err != nil {
+        return fmt.Errorf("failed to save cache: %w", err)
+    }
+
+    // Log summary
+    slog.Info("Syscall analysis completed",
+        "path", path,
+        "total_syscalls", result.Summary.TotalSyscallInstructions,
+        "network_syscalls", result.Summary.NetworkSyscallCount,
+        "high_risk", result.Summary.IsHighRisk)
+
+    return nil
+}
+```
+
+## 5. エラー定義
+
+```go
+// internal/runner/security/elfanalyzer/errors.go
+
+package elfanalyzer
+
+import (
+    "debug/elf"
+    "errors"
+    "fmt"
+)
+
+// Static errors
+var (
+    // ErrNoTextSection indicates the ELF file has no .text section.
+    ErrNoTextSection = errors.New("ELF file has no .text section")
+
+    // ErrNoSymbolTable indicates the ELF file has no symbol table.
+    ErrNoSymbolTable = errors.New("ELF file has no symbol table (possibly stripped)")
+)
+
+// UnsupportedArchitectureError indicates the ELF architecture is not supported.
+type UnsupportedArchitectureError struct {
+    Machine elf.Machine
+}
+
+func (e *UnsupportedArchitectureError) Error() string {
+    return fmt.Sprintf("unsupported ELF architecture: %s", e.Machine)
+}
+```
+
+## 6. テスト仕様
+
+### 6.1 MachineCodeDecoder のユニットテスト
+
+```go
+// internal/runner/security/elfanalyzer/syscall_decoder_test.go
+
+package elfanalyzer
+
+import (
+    "testing"
+
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+)
+
+func TestX86Decoder_IsImmediateMove(t *testing.T) {
+    decoder := NewX86Decoder()
+
+    tests := []struct {
+        name     string
+        code     []byte
+        wantImm  bool
+        wantVal  int64
+    }{
+        {
+            name:    "mov $0x29, %eax",
+            code:    []byte{0xb8, 0x29, 0x00, 0x00, 0x00},
+            wantImm: true,
+            wantVal: 41, // socket syscall
+        },
+        {
+            name:    "mov $0x2a, %eax",
+            code:    []byte{0xb8, 0x2a, 0x00, 0x00, 0x00},
+            wantImm: true,
+            wantVal: 42, // connect syscall
+        },
+        {
+            name:    "mov %ebx, %eax (register move)",
+            code:    []byte{0x89, 0xd8},
+            wantImm: false,
+            wantVal: 0,
+        },
+        {
+            name:    "mov (%rsp), %eax (memory load)",
+            code:    []byte{0x8b, 0x04, 0x24},
+            wantImm: false,
+            wantVal: 0,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            inst, err := decoder.Decode(tt.code, 0)
+            require.NoError(t, err)
+
+            gotImm, gotVal := decoder.IsImmediateMove(inst)
+            assert.Equal(t, tt.wantImm, gotImm)
+            if tt.wantImm {
+                assert.Equal(t, tt.wantVal, gotVal)
+            }
+        })
+    }
+}
+
+func TestX86Decoder_IsControlFlowInstruction(t *testing.T) {
+    decoder := NewX86Decoder()
+
+    tests := []struct {
+        name string
+        code []byte
+        want bool
+    }{
+        {"jmp", []byte{0xeb, 0x00}, true},
+        {"call", []byte{0xe8, 0x00, 0x00, 0x00, 0x00}, true},
+        {"ret", []byte{0xc3}, true},
+        {"mov", []byte{0xb8, 0x00, 0x00, 0x00, 0x00}, false},
+        {"nop", []byte{0x90}, false},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            inst, err := decoder.Decode(tt.code, 0)
+            require.NoError(t, err)
+            assert.Equal(t, tt.want, decoder.IsControlFlowInstruction(inst))
+        })
+    }
+}
+```
+
+### 6.2 SyscallAnalyzer のユニットテスト
+
+```go
+// internal/runner/security/elfanalyzer/syscall_analyzer_test.go
+
+func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
+    tests := []struct {
+        name       string
+        code       []byte
+        wantNumber int
+        wantMethod string
+    }{
+        {
+            name: "immediate mov before syscall",
+            // mov $0x29, %eax; syscall
+            code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05},
+            wantNumber: 41,
+            wantMethod: "immediate",
+        },
+        {
+            name: "immediate with unrelated instruction",
+            // mov $0x2a, %eax; mov %rsi, %rdi; syscall
+            code:       []byte{0xb8, 0x2a, 0x00, 0x00, 0x00, 0x48, 0x89, 0xf7, 0x0f, 0x05},
+            wantNumber: 42,
+            wantMethod: "immediate",
+        },
+        {
+            name: "register move (indirect)",
+            // mov %ebx, %eax; syscall
+            code:       []byte{0x89, 0xd8, 0x0f, 0x05},
+            wantNumber: -1,
+            wantMethod: "unknown:indirect_setting",
+        },
+        {
+            name: "control flow boundary",
+            // jmp label; mov $0x29, %eax; syscall (jmp creates boundary)
+            code:       []byte{0xeb, 0x05, 0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05},
+            wantNumber: -1,
+            wantMethod: "unknown:control_flow_boundary",
+        },
+        {
+            name: "syscall only (no eax modification)",
+            code:       []byte{0x0f, 0x05},
+            wantNumber: -1,
+            wantMethod: "unknown:scan_limit_exceeded",
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            analyzer := NewSyscallAnalyzer()
+            result, err := analyzer.analyzeSyscallsInCode(tt.code, 0)
+            require.NoError(t, err)
+            require.Len(t, result.DetectedSyscalls, 1)
+
+            info := result.DetectedSyscalls[0]
+            assert.Equal(t, tt.wantNumber, info.Number)
+            assert.Equal(t, tt.wantMethod, info.DeterminationMethod)
+        })
+    }
+}
+```
+
+### 6.3 SyscallCache のユニットテスト
+
+```go
+// internal/runner/security/syscallcache/cache_test.go
+
+package syscallcache
+
+import (
+    "encoding/json"
+    "errors"
+    "os"
+    "path/filepath"
+    "testing"
+
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+)
+
+func TestSyscallCache_SaveAndLoad(t *testing.T) {
+    tmpDir := t.TempDir()
+    cache, err := NewSyscallCache(tmpDir)
+    require.NoError(t, err)
+
+    result := &elfanalyzer.SyscallAnalysisResult{
+        DetectedSyscalls: []elfanalyzer.SyscallInfo{
+            {Number: 41, Name: "socket", IsNetwork: true},
+        },
+        Summary: elfanalyzer.SyscallSummary{
+            HasNetworkSyscalls: true,
+            TotalSyscallInstructions: 1,
+            NetworkSyscallCount: 1,
+        },
+    }
+
+    // Save
+    err = cache.SaveCache("/test/path", "sha256:abc123", result)
+    require.NoError(t, err)
+
+    // Load with matching hash
+    loaded, err := cache.LoadCache("/test/path", "sha256:abc123")
+    require.NoError(t, err)
+    assert.Equal(t, result.Summary.HasNetworkSyscalls, loaded.Summary.HasNetworkSyscalls)
+
+    // Load with mismatched hash
+    _, err = cache.LoadCache("/test/path", "sha256:different")
+    assert.Error(t, err)
+    var hashErr *HashMismatchError
+    assert.True(t, errors.As(err, &hashErr))
+}
+
+func TestSyscallCache_SchemaVersionMismatch(t *testing.T) {
+    tmpDir := t.TempDir()
+    cache, err := NewSyscallCache(tmpDir)
+    require.NoError(t, err)
+
+    // Create cache file with different schema version
+    entry := &CacheEntry{
+        SchemaVersion: 999, // Future version
+        Format:        CacheFormat,
+        FilePath:      "/test/path",
+        FileHash:      "sha256:abc123",
+    }
+
+    data, _ := json.Marshal(entry)
+    cachePath := filepath.Join(tmpDir, "syscall~test~path")
+    os.WriteFile(cachePath, data, 0o600)
+
+    // Load should fail with schema version mismatch
+    _, err = cache.LoadCache("/test/path", "sha256:abc123")
+    assert.Error(t, err)
+    var schemaErr *SchemaVersionMismatchError
+    assert.True(t, errors.As(err, &schemaErr))
+}
+```
+
+### 6.4 統合テスト
+
+```go
+// internal/runner/security/elfanalyzer/syscall_analyzer_integration_test.go
+
+//go:build integration && cgo
+
+package elfanalyzer
+
+import (
+    "os"
+    "os/exec"
+    "path/filepath"
+    "testing"
+
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+)
+
+func TestSyscallAnalyzer_RealBinary(t *testing.T) {
+    // Skip if gcc not available
+    if _, err := exec.LookPath("gcc"); err != nil {
+        t.Skip("gcc not available")
+    }
+
+    // Create test C program
+    src := `
+#include <sys/socket.h>
+int main() {
+    socket(AF_INET, SOCK_STREAM, 0);
+    return 0;
+}
+`
+    tmpDir := t.TempDir()
+    srcFile := filepath.Join(tmpDir, "test.c")
+    binFile := filepath.Join(tmpDir, "test")
+
+    require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
+
+    // Compile with static linking
+    cmd := exec.Command("gcc", "-static", "-o", binFile, srcFile)
+    require.NoError(t, cmd.Run())
+
+    // Analyze
+    analyzer := NewSyscallAnalyzer()
+    result, err := analyzer.AnalyzeSyscalls(binFile)
+    require.NoError(t, err)
+
+    // Verify network syscall detected
+    assert.True(t, result.Summary.HasNetworkSyscalls)
+    assert.Greater(t, result.Summary.NetworkSyscallCount, 0)
+
+    // Verify socket syscall found
+    found := false
+    for _, info := range result.DetectedSyscalls {
+        if info.Name == "socket" {
+            found = true
+            break
+        }
+    }
+    assert.True(t, found, "socket syscall should be detected")
+}
+```
+
+## 7. 受け入れ条件とテストのマッピング
+
+| 受け入れ条件 | テスト |
+|------------|--------|
+| AC-1: syscall 命令の検出 | `TestSyscallAnalyzer_BackwardScan` |
+| AC-2: ネットワーク関連 syscall の判定 | `TestX86_64SyscallTable_IsNetworkSyscall` |
+| AC-3: 間接設定の high risk 判定 | `TestSyscallAnalyzer_BackwardScan` (indirect case) |
+| AC-4: キャッシュの保存と読み込み | `TestSyscallCache_SaveAndLoad` |
+| AC-5: キャッシュの整合性検証 | `TestSyscallCache_SchemaVersionMismatch` |
+| AC-6: キャッシュ不在時の安全な動作 | `TestStandardELFAnalyzer_CacheMiss` |
+| AC-7: 非 ELF ファイルのエラーハンドリング | `TestSyscallAnalyzer_NonELF` |
+| AC-8: フォールバックチェーンの統合 | `TestNetworkAnalyzer_FallbackChain` |
+| AC-9: 既存機能への非影響 | 既存テストの維持 |
+| AC-10: Go syscall ラッパーの解決 | `TestGoWrapperResolver_Resolve` |
+
+## 8. 実装上の注意点
+
+### 8.1 x86asm パッケージの制約
+
+- `golang.org/x/arch/x86/x86asm` は Intel/AT&T 両方の構文をサポート
+- 64-bit モードのデコードには第2引数に `64` を指定
+- 不正な命令バイト列ではエラーを返す（エラーハンドリング必須）
+
+### 8.2 逆方向スキャンの実装
+
+- 前方デコードで命令リストを構築し、そのリストを逆順に走査
+- 直接逆方向デコードは可変長命令のため困難
+- スキャン幅は設定可能にし、テストで調整可能に
+
+### 8.3 Go ABI の考慮
+
+- Go 1.17 以降はレジスタベース ABI（RAX で第1引数）
+- Go 1.16 以前はスタックベース ABI
+- 本実装は Go 1.17+ を想定（RAX レジスタを優先的にチェック）
+
+### 8.4 パフォーマンス最適化
+
+- `.text` セクションのみを解析（他のセクションは無視）
+- 大規模バイナリでは進捗表示を検討
+- syscall 命令のバイトパターン検索は線形スキャン（O(n)）
