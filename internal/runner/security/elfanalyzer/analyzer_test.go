@@ -25,56 +25,48 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		filename       string
 		expectedResult AnalysisResult
 		expectSymbols  bool
-		skipIfMissing  bool
 	}{
 		{
 			name:           "binary with socket symbols",
 			filename:       "with_socket.elf",
 			expectedResult: NetworkDetected,
 			expectSymbols:  true,
-			skipIfMissing:  true,
 		},
 		{
 			name:           "binary with curl symbols",
 			filename:       "with_curl.elf",
 			expectedResult: NetworkDetected,
 			expectSymbols:  true,
-			skipIfMissing:  true,
 		},
 		{
 			name:           "binary with ssl symbols",
 			filename:       "with_ssl.elf",
 			expectedResult: NetworkDetected,
 			expectSymbols:  true,
-			skipIfMissing:  true,
 		},
 		{
 			name:           "binary without network symbols",
 			filename:       "no_network.elf",
 			expectedResult: NoNetworkSymbols,
 			expectSymbols:  false,
-			skipIfMissing:  true,
 		},
 		{
 			name:           "static binary",
 			filename:       "static.elf",
 			expectedResult: StaticBinary,
 			expectSymbols:  false,
-			skipIfMissing:  true,
 		},
 		{
 			name:           "shell script (non-ELF)",
 			filename:       "script.sh",
 			expectedResult: NotELFBinary,
 			expectSymbols:  false,
-			skipIfMissing:  true,
 		},
 		{
 			name:           "corrupted ELF",
 			filename:       "corrupted.elf",
 			expectedResult: AnalysisError,
 			expectSymbols:  false,
-			skipIfMissing:  true,
 		},
 	}
 
@@ -82,10 +74,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(testdataDir, tt.filename)
 			if _, err := os.Stat(path); os.IsNotExist(err) {
-				if tt.skipIfMissing {
-					t.Skipf("test file %s not found", tt.filename)
-				}
-				t.Fatalf("required test file %s not found", tt.filename)
+				t.Skipf("test file %s not found", tt.filename)
 			}
 
 			absPath, err := filepath.Abs(path)
