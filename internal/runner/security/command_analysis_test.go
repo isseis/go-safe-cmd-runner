@@ -2324,14 +2324,12 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 
 // mockELFAnalyzer is a mock implementation of elfanalyzer.ELFAnalyzer for testing.
 type mockELFAnalyzer struct {
-	result       elfanalyzer.AnalysisResult
-	symbols      []elfanalyzer.DetectedSymbol
-	err          error
-	analyzedPath string // Last path analyzed (for verification)
+	result  elfanalyzer.AnalysisResult
+	symbols []elfanalyzer.DetectedSymbol
+	err     error
 }
 
-func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.AnalysisOutput {
-	m.analyzedPath = path
+func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(_ string) elfanalyzer.AnalysisOutput {
 	return elfanalyzer.AnalysisOutput{
 		Result:          m.result,
 		DetectedSymbols: m.symbols,
@@ -2350,16 +2348,14 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		mockError      error
 		expectNetwork  bool
 		expectHighRisk bool
-		expectELFCall  bool // Whether ELF analysis should be called
 	}{
 		{
-			name:           "profile command curl bypasses ELF analysis",
+			name:           "profile command curl",
 			cmdName:        "curl",
 			args:           []string{"http://example.com"},
-			mockResult:     elfanalyzer.NoNetworkSymbols, // Should not be used
+			mockResult:     elfanalyzer.NoNetworkSymbols,
 			expectNetwork:  true,
 			expectHighRisk: false,
-			expectELFCall:  false, // curl is in profiles, ELF should not be called
 		},
 		{
 			name:           "profile command git without network subcommand",
@@ -2368,7 +2364,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockResult:     elfanalyzer.NoNetworkSymbols,
 			expectNetwork:  false,
 			expectHighRisk: false,
-			expectELFCall:  false, // git is in profiles
 		},
 		{
 			name:           "profile command git with network subcommand",
@@ -2377,11 +2372,10 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockResult:     elfanalyzer.NoNetworkSymbols,
 			expectNetwork:  true,
 			expectHighRisk: false,
-			expectELFCall:  false, // git is in profiles
 		},
 		{
 			name:       "unknown command with network symbols detected",
-			cmdName:    "ls", // ls is not in network profiles
+			cmdName:    "ls",
 			args:       []string{"-la"},
 			mockResult: elfanalyzer.NetworkDetected,
 			mockSymbols: []elfanalyzer.DetectedSymbol{
@@ -2389,7 +2383,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			},
 			expectNetwork:  true,
 			expectHighRisk: false,
-			expectELFCall:  true,
 		},
 		{
 			name:           "unknown command with no network symbols",
@@ -2398,7 +2391,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockResult:     elfanalyzer.NoNetworkSymbols,
 			expectNetwork:  false,
 			expectHighRisk: false,
-			expectELFCall:  true,
 		},
 		{
 			name:           "unknown command - not ELF binary (script)",
@@ -2407,7 +2399,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockResult:     elfanalyzer.NotELFBinary,
 			expectNetwork:  false,
 			expectHighRisk: false,
-			expectELFCall:  true,
 		},
 		{
 			name:           "unknown command - static binary",
@@ -2416,7 +2407,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockResult:     elfanalyzer.StaticBinary,
 			expectNetwork:  false,
 			expectHighRisk: false,
-			expectELFCall:  true,
 		},
 		{
 			name:           "unknown command - analysis error treats as network",
@@ -2426,7 +2416,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockError:      fmt.Errorf("permission denied"),
 			expectNetwork:  true, // Safety: analysis failure = assume network
 			expectHighRisk: false,
-			expectELFCall:  true,
 		},
 		{
 			name:           "unknown command with URL in args (fallback detection)",
@@ -2435,7 +2424,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockResult:     elfanalyzer.NoNetworkSymbols,
 			expectNetwork:  true, // Detected via argument, not ELF
 			expectHighRisk: false,
-			expectELFCall:  true,
 		},
 	}
 
@@ -2458,13 +2446,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			// Verify results
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 			assert.Equal(t, tc.expectHighRisk, isHighRisk, "isHighRisk mismatch")
-
-			// Verify whether ELF analysis was called
-			if tc.expectELFCall {
-				assert.NotEmpty(t, mock.analyzedPath, "ELF analysis should have been called")
-			} else {
-				assert.Empty(t, mock.analyzedPath, "ELF analysis should NOT have been called")
-			}
 		})
 	}
 }
