@@ -10,7 +10,6 @@ Binaries are NOT checked into Git (see `.gitignore`). They must be generated loc
 - GCC (for dynamic binaries)
 - GCC with `-static` support (for static binaries)
 - libssl-dev (for OpenSSL test binary)
-- libcurl4-openssl-dev (optional, for libcurl test binary)
 
 ## Generation Instructions
 
@@ -30,25 +29,7 @@ EOF
 gcc -o with_socket.elf /tmp/with_socket.c
 ```
 
-### 2. Binary with libcurl (`with_curl.elf`)
-
-Requires `libcurl4-openssl-dev`.
-
-```bash
-cat > /tmp/with_curl.c << 'EOF'
-#include <curl/curl.h>
-int main() {
-    CURL *curl = curl_easy_init();
-    if(curl) {
-        curl_easy_cleanup(curl);
-    }
-    return 0;
-}
-EOF
-gcc -o with_curl.elf /tmp/with_curl.c -lcurl
-```
-
-### 3. Binary with OpenSSL (`with_ssl.elf`)
+### 2. Binary with OpenSSL (`with_ssl.elf`)
 
 Requires `libssl-dev`.
 
@@ -64,7 +45,7 @@ EOF
 gcc -o with_ssl.elf /tmp/with_ssl.c -lssl -lcrypto
 ```
 
-### 4. Binary without network symbols (`no_network.elf`)
+### 3. Binary without network symbols (`no_network.elf`)
 
 ```bash
 cat > /tmp/no_network.c << 'EOF'
@@ -78,13 +59,13 @@ EOF
 gcc -o no_network.elf /tmp/no_network.c
 ```
 
-### 5. Statically linked binary (`static.elf`)
+### 4. Statically linked binary (`static.elf`)
 
 ```bash
 gcc -static -o static.elf /tmp/no_network.c
 ```
 
-### 6. Shell script (`script.sh`)
+### 5. Shell script (`script.sh`)
 
 ```bash
 echo '#!/bin/bash' > script.sh
@@ -92,7 +73,7 @@ echo 'echo "Hello"' >> script.sh
 chmod +x script.sh
 ```
 
-### 7. Corrupted ELF (`corrupted.elf`)
+### 6. Corrupted ELF (`corrupted.elf`)
 
 ```bash
 printf '\x7fELF' > corrupted.elf
@@ -104,7 +85,6 @@ dd if=/dev/urandom bs=100 count=1 >> corrupted.elf 2>/dev/null
 | File | Type | Expected Result |
 |------|------|-----------------|
 | `with_socket.elf` | Dynamic, socket API | `NetworkDetected` |
-| `with_curl.elf` | Dynamic, libcurl | `NetworkDetected` |
 | `with_ssl.elf` | Dynamic, OpenSSL | `NetworkDetected` |
 | `no_network.elf` | Dynamic, no network | `NoNetworkSymbols` |
 | `static.elf` | Static | `StaticBinary` |

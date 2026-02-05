@@ -165,7 +165,6 @@ clean:
 # =============================================================================
 # Generates test binaries for elfanalyzer package unit tests.
 # Prerequisites: GCC, libssl-dev
-# Optional: libcurl4-openssl-dev (for with_curl.elf)
 
 ELFANALYZER_TESTDATA_DIR := internal/runner/security/elfanalyzer/testdata
 

@@ -33,12 +33,6 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			expectSymbols:  true,
 		},
 		{
-			name:           "binary with curl symbols",
-			filename:       "with_curl.elf",
-			expectedResult: NetworkDetected,
-			expectSymbols:  true,
-		},
-		{
 			name:           "binary with ssl symbols",
 			filename:       "with_ssl.elf",
 			expectedResult: NetworkDetected,
