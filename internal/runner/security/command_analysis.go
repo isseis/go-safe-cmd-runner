@@ -88,6 +88,18 @@ var commandProfileDefinitions = []CommandProfileDef{
 		NetworkRisk(runnertypes.RiskLevelMedium, "JavaScript runtime with built-in network capabilities").
 		AlwaysNetwork().
 		Build(),
+	NewProfile("python", "python2", "python3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Python interpreter with built-in network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("perl").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Perl interpreter with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("ruby").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Ruby interpreter with built-in network libraries").
+		AlwaysNetwork().
+		Build(),
 	NewProfile("php").
 		NetworkRisk(runnertypes.RiskLevelMedium, "PHP interpreter can perform network operations").
 		AlwaysNetwork().
