@@ -59,6 +59,23 @@ const (
 	CriticalRiskLevelString = "critical"
 )
 
+// Risk level string pointers for use in configuration structs that require *string.
+// These should be used instead of StringPtr("low") etc. to ensure consistency.
+var (
+	// RiskLevelLowPtr is a pointer to the "low" risk level string.
+	RiskLevelLowPtr = ptr(LowRiskLevelString)
+	// RiskLevelMediumPtr is a pointer to the "medium" risk level string.
+	RiskLevelMediumPtr = ptr(MediumRiskLevelString)
+	// RiskLevelHighPtr is a pointer to the "high" risk level string.
+	RiskLevelHighPtr = ptr(HighRiskLevelString)
+)
+
+// ptr is a helper function to create a pointer to a string.
+// This is used internally to initialize the risk level pointer variables.
+func ptr(s string) *string {
+	return &s
+}
+
 // String returns a string representation of RiskLevel
 func (r RiskLevel) String() string {
 	switch r {
