@@ -39,6 +39,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 		[]string{"-c", "yes 'A' | head -c 10240"},
 		executortesting.WithName("large_output_test"),
 		executortesting.WithOutputFile(outputPath),
+		executortesting.WithRiskLevel("medium"),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
@@ -115,6 +116,7 @@ func TestOutputSizeLimit(t *testing.T) {
 		[]string{"-c", "yes 'A' | head -c 2048"},
 		executortesting.WithName("size_limit_test"),
 		executortesting.WithOutputFile(outputPath),
+		executortesting.WithRiskLevel("medium"),
 	)
 	// Set the output size limit on the command (1KB limit for 2KB data)
 	outputLimit, err := common.NewOutputSizeLimit(1024)
@@ -234,6 +236,7 @@ func TestLongRunningStability(t *testing.T) {
 		executortesting.WithName("long_running_test"),
 		executortesting.WithOutputFile(outputPath),
 		executortesting.WithTimeout(commontesting.Int32Ptr(30)),
+		executortesting.WithRiskLevel("medium"),
 	)
 
 	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}

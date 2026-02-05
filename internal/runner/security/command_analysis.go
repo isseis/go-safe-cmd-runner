@@ -77,6 +77,21 @@ var commandProfileDefinitions = []CommandProfileDef{
 		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations when using remote sources/destinations").
 		ConditionalNetwork().
 		Build(),
+
+	// Script interpreters and shells - can execute arbitrary network commands internally
+	// These may not have network symbols in their main binary but can invoke network tools
+	NewProfile("bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Shell can execute arbitrary commands including network tools").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("node", "nodejs", "deno", "bun").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JavaScript runtime with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("php").
+		NetworkRisk(runnertypes.RiskLevelMedium, "PHP interpreter can perform network operations").
+		AlwaysNetwork().
+		Build(),
 }
 
 // commandRiskProfiles is built from commandProfileDefinitions (new structure)

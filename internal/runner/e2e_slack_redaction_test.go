@@ -112,9 +112,10 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 		Name: "test-group-integration",
 		Commands: []runnertypes.CommandSpec{
 			{
-				Name: "test-cmd",
-				Cmd:  "/bin/sh",
-				Args: []string{"-c", "echo 'API response: api_key=secret123 password=mypassword'"},
+				Name:      "test-cmd",
+				Cmd:       "/bin/sh",
+				Args:      []string{"-c", "echo 'API response: api_key=secret123 password=mypassword'"},
+				RiskLevel: runnertypes.StringPtr("medium"),
 			},
 		},
 	}
@@ -233,9 +234,10 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 		Name: "test-group-multihandler",
 		Commands: []runnertypes.CommandSpec{
 			{
-				Name: "test-cmd",
-				Cmd:  "/bin/sh",
-				Args: []string{"-c", "echo 'token=xyz789 password=secretpass'"},
+				Name:      "test-cmd",
+				Cmd:       "/bin/sh",
+				Args:      []string{"-c", "echo 'token=xyz789 password=secretpass'"},
+				RiskLevel: runnertypes.StringPtr("medium"),
 			},
 		},
 	}

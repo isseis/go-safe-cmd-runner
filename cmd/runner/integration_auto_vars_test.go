@@ -46,11 +46,13 @@ name = "test_group"
 name = "test_auto_vars"
 cmd = "/bin/sh"
 args = ["-c", "echo 'Executed at %%{__runner_datetime} by PID %%{__runner_pid}' > %%{OutputFile}"]
+risk_level = "medium"
 
 [[groups.commands]]
 name = "test_backup_file"
 cmd = "/bin/sh"
 args = ["-c", "echo 'backup' > %%{BackupFile}"]
+risk_level = "medium"
 `, outputFile)
 
 	err = os.WriteFile(configPath, []byte(configContent), 0o600)

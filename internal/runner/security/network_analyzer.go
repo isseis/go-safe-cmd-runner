@@ -145,10 +145,13 @@ func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
 		return false
 
 	case elfanalyzer.NotELFBinary:
-		slog.Debug("ELF analysis skipped: not an ELF binary",
+		// Non-ELF binaries (scripts, shell commands) can invoke arbitrary commands internally,
+		// so they should be treated as potential network operations for safety.
+		slog.Debug("ELF analysis: not an ELF binary, treating as potential network operation",
 			"command", cmdName,
-			"path", cmdPath)
-		return false
+			"path", cmdPath,
+			"reason", "Scripts and shell commands can invoke network commands internally")
+		return true
 
 	case elfanalyzer.StaticBinary:
 		// Static binary: cannot determine network capability

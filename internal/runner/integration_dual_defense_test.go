@@ -50,9 +50,10 @@ func TestIntegration_DualDefense(t *testing.T) {
 		Name: "test-group",
 		Commands: []runnertypes.CommandSpec{
 			{
-				Name: "test-cmd",
-				Cmd:  "/bin/sh",
-				Args: []string{"-c", "echo 'API response: api_key=secret123'; echo 'password=mypass' >&2"},
+				Name:      "test-cmd",
+				Cmd:       "/bin/sh",
+				Args:      []string{"-c", "echo 'API response: api_key=secret123'; echo 'password=mypass' >&2"},
+				RiskLevel: runnertypes.StringPtr("medium"),
 			},
 		},
 	}
@@ -156,9 +157,10 @@ func TestIntegration_Case1Only(t *testing.T) {
 		Name: "test-group",
 		Commands: []runnertypes.CommandSpec{
 			{
-				Name: "test-cmd",
-				Cmd:  "/bin/sh",
-				Args: []string{"-c", "echo 'token=abc123xyz'"},
+				Name:      "test-cmd",
+				Cmd:       "/bin/sh",
+				Args:      []string{"-c", "echo 'token=abc123xyz'"},
+				RiskLevel: runnertypes.StringPtr("medium"),
 			},
 		},
 	}
@@ -255,9 +257,10 @@ func TestIntegration_Case2Only(t *testing.T) {
 		Name: "test-group",
 		Commands: []runnertypes.CommandSpec{
 			{
-				Name: "test-cmd",
-				Cmd:  "/bin/sh",
-				Args: []string{"-c", "echo 'password=secret999'"},
+				Name:      "test-cmd",
+				Cmd:       "/bin/sh",
+				Args:      []string{"-c", "echo 'password=secret999'"},
+				RiskLevel: runnertypes.StringPtr("medium"),
 			},
 		},
 	}
@@ -357,9 +360,10 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 		Name: "test-group",
 		Commands: []runnertypes.CommandSpec{
 			{
-				Name: "test-cmd",
-				Cmd:  "/bin/sh",
-				Args: []string{"-c", "echo 'api_key=leaked_secret_456'"},
+				Name:      "test-cmd",
+				Cmd:       "/bin/sh",
+				Args:      []string{"-c", "echo 'api_key=leaked_secret_456'"},
+				RiskLevel: runnertypes.StringPtr("medium"),
 			},
 		},
 	}

@@ -47,6 +47,7 @@ cmd_allowed = ["%s"]
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Hello from cmd_allowed' > %s"]
+risk_level = "medium"
 `, testCmd, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)
@@ -98,6 +99,7 @@ cmd_dir = "%s"
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Variable expansion works' > %s"]
+risk_level = "medium"
 `, cmdBase, cmdDir, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)
@@ -139,6 +141,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Global pattern works' > %s"]
+risk_level = "medium"
 `, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)
@@ -180,6 +183,7 @@ cmd_allowed = ["%s"]
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Both match - OR condition' > %s"]
+risk_level = "medium"
 `, testCmd, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)
@@ -221,6 +225,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Existing behavior maintained' > %s"]
+risk_level = "medium"
 `, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)

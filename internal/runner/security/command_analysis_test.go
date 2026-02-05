@@ -2218,6 +2218,10 @@ func TestMigration_NetworkTypeConsistency(t *testing.T) {
 	alwaysNetwork := []string{
 		"curl", "wget", "nc", "netcat", "telnet", "ssh", "scp", "aws",
 		"claude", "gemini", "chatgpt", "gpt", "openai", "anthropic",
+		// Shells - can execute arbitrary network commands
+		"bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish",
+		// Script interpreters - have built-in network capabilities
+		"node", "nodejs", "deno", "bun", "php",
 	}
 	conditionalNetwork := []string{"git", "rsync"}
 	noneNetwork := []string{"sudo", "su", "doas", "systemctl", "service", "rm", "dd"}
@@ -2391,7 +2395,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			cmdName:       "ls",
 			args:          []string{},
 			mockResult:    elfanalyzer.NotELFBinary,
-			expectNetwork: false,
+			expectNetwork: true, // Scripts can invoke network commands internally
 		},
 		{
 			name:          "unknown command - static binary",
