@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -164,8 +163,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
 	// Step 4: Get dynamic symbols
 	dynsyms, err := elfFile.DynamicSymbols()
 	if err != nil {
-		// Check if error indicates no .dynsym section (static binary)
-		if isNoDynsymError(err) {
+		// ErrNoSymbols indicates no .dynsym section exists (static binary)
+		if errors.Is(err, elf.ErrNoSymbols) {
 			return AnalysisOutput{
 				Result: StaticBinary,
 			}
@@ -216,28 +215,4 @@ func isELFMagic(magic []byte) bool {
 		return false
 	}
 	return bytes.Equal(magic[:elfMagicLen], elfMagic)
-}
-
-// isNoDynsymError checks if the error indicates no .dynsym section exists.
-func isNoDynsymError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// debug/elf returns specific errors for missing sections.
-	// We only check for explicit "no symbol" patterns to avoid misclassifying
-	// corruption/parsing errors as StaticBinary (which would lower safety).
-	// Any malformed .dynsym should remain AnalysisError for fail-safe behavior.
-	errStr := err.Error()
-	return errors.Is(err, elf.ErrNoSymbols) ||
-		containsAny(errStr, "no symbol", "no dynamic symbol", ".dynsym not found")
-}
-
-// containsAny checks if s contains any of the substrings.
-func containsAny(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
 }

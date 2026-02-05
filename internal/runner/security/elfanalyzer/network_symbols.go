@@ -1,5 +1,7 @@
 package elfanalyzer
 
+import "maps"
+
 // SymbolCategory represents the category of a network-related symbol.
 type SymbolCategory string
 
@@ -112,9 +114,7 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 func GetNetworkSymbols() map[string]SymbolCategory {
 	// Return a copy to prevent external modification
 	result := make(map[string]SymbolCategory, len(networkSymbolRegistry))
-	for k, v := range networkSymbolRegistry {
-		result[k] = v
-	}
+	maps.Copy(result, networkSymbolRegistry)
 	return result
 }
 
