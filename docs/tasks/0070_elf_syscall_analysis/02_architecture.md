@@ -552,9 +552,9 @@ flowchart TB
     "architecture": "x86_64",
     "analyzed_at": "2025-02-05T10:30:00Z",
     "detected_syscalls": [
-      {"number": 41, "name": "socket", "is_network": true, "count": 3},
-      {"number": 42, "name": "connect", "is_network": true, "count": 2},
-      {"number": 1, "name": "write", "is_network": false, "count": 15}
+      {"number": 41, "name": "socket", "is_network": true, "location": 4096, "determination_method": "immediate"},
+      {"number": 42, "name": "connect", "is_network": true, "location": 4128, "determination_method": "immediate"},
+      {"number": 1, "name": "write", "is_network": false, "location": 4256, "determination_method": "immediate"}
     ],
     "has_unknown_syscalls": false,
     "high_risk_reasons": [],
