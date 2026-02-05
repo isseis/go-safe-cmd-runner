@@ -1246,7 +1246,7 @@ func NewStandardELFAnalyzerWithSyscallCache(
         analyzer.hashAlgo = filevalidator.NewSHA256()
     }
 
-    return analyzer, nil
+    return analyzer
 }
 
 // In AnalyzeNetworkSymbols, add syscall cache lookup for static binaries:
@@ -1294,7 +1294,7 @@ func (a *StandardELFAnalyzer) lookupSyscallCache(path string) AnalysisOutput {
 }
 
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
-func (a *StandardELFAnalyzer) convertSyscallResult(result *elfanalyzer.SyscallAnalysisResult) AnalysisOutput {
+func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) AnalysisOutput {
     if result.Summary.HasNetworkSyscalls {
         // Build detected symbols from syscall info
         var symbols []DetectedSymbol
@@ -1740,7 +1740,7 @@ func TestIntegratedCache_PreservesExistingFields(t *testing.T) {
 ```go
 // internal/runner/security/elfanalyzer/syscall_analyzer_integration_test.go
 
-//go:build integration && cgo
+//go:build integration
 
 package elfanalyzer
 
@@ -1839,3 +1839,20 @@ int main() {
 - `.text` セクションのみを解析（他のセクションは無視）
 - 大規模バイナリでは進捗表示を検討
 - syscall 命令のバイトパターン検索は線形スキャン（O(n)）
+
+### 8.5 デコード失敗時の動作
+
+命令デコードに失敗した場合、1バイトスキップして次の位置からデコードを再試行する（`pos++`）。
+
+**設計上の考慮事項**:
+
+1. **x86_64 の可変長命令**: 命令長が1〜15バイトと可変のため、「次の正しい命令境界」を確実に見つける方法がない
+2. **実用上の影響**: `.text` セクションは通常ほぼ全てが有効な命令で構成されており、デコード失敗は稀。発生しても数バイト後に正常な命令境界に「再同期」する
+3. **安全側への設計**: 検出できない場合は High Risk として扱うため（FR-3.1.4）、多少の見落としがあっても安全側に倒れる
+
+**制限事項**:
+
+- デコード失敗後の誤検出リスク: 偶然 `0F 05` パターンがデータ領域内に現れた場合、誤って syscall 命令として検出する可能性がある
+- 命令境界のずれ: 不正確なアラインメントで再開すると、本来の命令を見落とす可能性がある
+
+これらの制限は、実装の複雑さとのトレードオフとして許容している。より堅牢なアプローチ（シンボルテーブルを使った関数境界の特定など）は将来の改善課題とする。
