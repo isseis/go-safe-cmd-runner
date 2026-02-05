@@ -140,6 +140,8 @@ graph TB
 
 ### 2.3 データフロー（事前解析）
 
+解析は2つの独立したパスで構成される。
+
 ```mermaid
 sequenceDiagram
     participant RC as "record command"
@@ -152,31 +154,45 @@ sequenceDiagram
     RC->>SA: AnalyzeSyscalls(binaryPath)
     SA->>FS: Open ELF file
     FS-->>SA: ELF handle
-
     SA->>SA: Load .text section
-    SA->>MD: DecodeInstructions(code)
-    MD-->>SA: Instruction stream
+    SA->>GW: LoadSymbols(elfFile)
 
+    Note over SA,MD: Pass 1: Direct syscall instructions
     SA->>SA: Find syscall instructions (0F 05)
-    SA->>SA: Backward scan for eax/rax
+    loop For each syscall location
+        SA->>MD: Decode instructions up to syscall
+        SA->>SA: Backward scan for eax/rax
+        alt Immediate value found
+            SA->>SA: Extract syscall number
+        else Indirect setting (FR-3.1.4)
+            SA->>SA: Mark as unknown (High Risk)
+        end
+    end
 
-    alt Immediate value found
-        SA->>SA: Extract syscall number
-    else Indirect setting (FR-3.1.4)
-        SA->>GW: TryResolve (FR-3.1.6)
-        alt Go wrapper resolved
-            GW-->>SA: Syscall number
-        else Cannot resolve
-            GW-->>SA: High Risk
+    Note over SA,GW: Pass 2: Go wrapper calls (FR-3.1.6)
+    alt Symbols available
+        SA->>GW: FindWrapperCalls(code, baseAddr)
+        GW->>GW: Scan for CALL to known wrappers
+        loop For each wrapper call
+            GW->>GW: Backward scan for RAX argument
+            alt Immediate value found
+                GW-->>SA: WrapperCall with syscall number
+            else Cannot resolve
+                GW-->>SA: WrapperCall with unknown (-1)
+            end
         end
     end
 
     SA-->>RC: SyscallAnalysisResult
-    RC->>SC: SaveCache(path, hash, result)
-    SC->>FS: Write cache file (same dir as hash files)
+    RC->>SC: SaveSyscallAnalysis(path, hash, result)
+    SC->>FS: Write to integrated cache file
 ```
 
-**注記**: 逆方向スキャンの実装では、x86_64 の可変長命令の性質上、直接逆方向にデコードすることは困難である。そのため、syscall 命令の位置まで前方向にデコードして命令リストを構築し、そのリストを逆順に走査する方式を採用する。
+**注記**:
+- Pass 1 と Pass 2 は独立した解析パスであり、それぞれ異なる検出対象を持つ
+- Pass 1: `syscall` 命令（0F 05）を直接検出し、逆方向スキャンで syscall 番号を特定
+- Pass 2: Go syscall ラッパー関数（`syscall.Syscall` 等）への CALL 命令を検出し、引数から syscall 番号を特定
+- 逆方向スキャンでは、x86_64 の可変長命令の性質上、直接逆方向にデコードすることは困難なため、前方向にデコードして命令リストを構築し、そのリストを逆順に走査する
 
 ### 2.4 データフロー（実行時）
 
@@ -284,21 +300,29 @@ classDiagram
 ### 3.3 GoWrapperResolver
 
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
+直接の syscall 命令解析とは**別の解析パス**として動作する。
 
 ```mermaid
 classDiagram
     class GoWrapperResolver {
         -symbolTable map[string]SymbolInfo
+        -wrapperAddrs map[uint64]GoSyscallWrapper
         -decoder MachineCodeDecoder
         +LoadSymbols(elfFile *elf.File) error
+        +HasSymbols() bool
         +FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall
-        +ResolveCallSiteArgument(code []byte, callSite uint64) (int, error)
+        -resolveSyscallArgument(recentInsts []DecodedInstruction, wrapper GoSyscallWrapper) int
     }
 
     class SymbolInfo {
         +Name string
         +Address uint64
         +Size uint64
+    }
+
+    class GoSyscallWrapper {
+        +Name string
+        +SyscallArgIndex int
     }
 
     class WrapperCall {
@@ -309,6 +333,7 @@ classDiagram
     }
 
     GoWrapperResolver --> SymbolInfo
+    GoWrapperResolver --> GoSyscallWrapper
     GoWrapperResolver --> WrapperCall
 ```
 

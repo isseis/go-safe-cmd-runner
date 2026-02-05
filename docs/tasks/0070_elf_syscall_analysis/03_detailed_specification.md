@@ -185,14 +185,16 @@ func (a *SyscallAnalyzer) AnalyzeSyscalls(path string) (*SyscallAnalysisResult, 
 }
 
 // analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
+// This method uses two separate analysis passes:
+//   1. Direct syscall instruction analysis (syscall opcode 0F 05)
+//   2. Go wrapper call analysis (calls to syscall.Syscall, etc.)
 func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*SyscallAnalysisResult, error) {
     result := &SyscallAnalysisResult{
         DetectedSyscalls: make([]SyscallInfo, 0),
     }
 
-    // Find all syscall instruction locations
+    // Pass 1: Analyze direct syscall instructions
     syscallLocs := a.findSyscallInstructions(code, baseAddr)
-
     for _, loc := range syscallLocs {
         info := a.extractSyscallInfo(code, loc, baseAddr)
         result.DetectedSyscalls = append(result.DetectedSyscalls, info)
@@ -209,8 +211,36 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
         }
     }
 
+    // Pass 2: Analyze Go wrapper calls (if symbols are available)
+    if a.goResolver != nil && a.goResolver.HasSymbols() {
+        wrapperCalls := a.goResolver.FindWrapperCalls(code, baseAddr)
+        for _, call := range wrapperCalls {
+            info := SyscallInfo{
+                Number:              call.SyscallNumber,
+                Location:            call.CallSiteAddress,
+                DeterminationMethod: "go_wrapper",
+            }
+
+            if call.SyscallNumber >= 0 {
+                info.Name = a.syscallTable.GetSyscallName(call.SyscallNumber)
+                info.IsNetwork = a.syscallTable.IsNetworkSyscall(call.SyscallNumber)
+            } else {
+                result.HasUnknownSyscalls = true
+                result.HighRiskReasons = append(result.HighRiskReasons,
+                    fmt.Sprintf("go wrapper call at 0x%x: syscall number could not be determined",
+                        call.CallSiteAddress))
+            }
+
+            result.DetectedSyscalls = append(result.DetectedSyscalls, info)
+
+            if info.IsNetwork {
+                result.Summary.NetworkSyscallCount++
+            }
+        }
+    }
+
     // Build summary
-    result.Summary.TotalSyscallInstructions = len(syscallLocs)
+    result.Summary.TotalSyscallInstructions = len(result.DetectedSyscalls)
     result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
     result.Summary.IsHighRisk = result.HasUnknownSyscalls
 
@@ -259,6 +289,8 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 
 // backwardScanForSyscallNumber scans backward from syscall instruction
 // to find where eax/rax is set.
+// Note: This method only handles direct syscall instructions.
+// Go wrapper calls are analyzed separately by analyzeGoWrapperCalls.
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffset int, baseAddr uint64) (int, string) {
     // Build instruction list by forward decoding up to syscall
     instructions := a.decodeInstructionsUpTo(code, syscallOffset)
@@ -287,14 +319,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffse
             return int(value), "immediate"
         }
 
-        // Found eax/rax modification but not immediate - try Go wrapper resolution
-        if a.goResolver != nil && a.goResolver.HasSymbols() {
-            if number, ok := a.goResolver.TryResolve(code, instructions, i, baseAddr); ok {
-                return number, "go_wrapper"
-            }
-        }
-
-        // Non-immediate modification found
+        // Non-immediate modification found (register move, memory load, etc.)
         return -1, "unknown:indirect_setting"
     }
 
@@ -650,62 +675,95 @@ func (r *GoWrapperResolver) HasSymbols() bool {
     return r.hasSymbols
 }
 
-// TryResolve attempts to resolve syscall number from a Go wrapper call.
-// It analyzes the call site to find the first argument (syscall number).
+// FindWrapperCalls scans the code section for calls to known Go syscall wrappers.
+// This is a separate analysis pass from direct syscall instruction scanning.
 //
 // Parameters:
 //   - code: the code section bytes
-//   - instructions: decoded instructions up to the call site
-//   - callIndex: index of the CALL instruction in the instructions slice
 //   - baseAddr: base address of the code section
 //
 // Returns:
-//   - (number, true) if syscall number was resolved
-//   - (-1, false) if resolution failed
-func (r *GoWrapperResolver) TryResolve(code []byte, instructions []DecodedInstruction, callIndex int, baseAddr uint64) (int, bool) {
-    if callIndex >= len(instructions) || callIndex < 0 {
-        return -1, false
+//   - slice of WrapperCall structs containing call site info and resolved syscall numbers
+func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall {
+    if len(r.wrapperAddrs) == 0 {
+        return nil
     }
 
-    callInst := instructions[callIndex]
+    var results []WrapperCall
+    decoder := NewX86Decoder()
 
-    // Verify this is a CALL to a known wrapper and get wrapper info
-    wrapper, isWrapper := r.resolveWrapper(callInst)
-    if !isWrapper {
-        return -1, false
+    // Decode entire code section and find CALL instructions to known wrappers
+    pos := 0
+    var recentInstructions []DecodedInstruction
+    maxRecentInstructions := 10 // Keep recent instructions for backward scan
+
+    for pos < len(code) {
+        inst, err := decoder.Decode(code[pos:], baseAddr+uint64(pos))
+        if err != nil {
+            pos++
+            continue
+        }
+
+        // Keep track of recent instructions for backward scanning
+        recentInstructions = append(recentInstructions, inst)
+        if len(recentInstructions) > maxRecentInstructions {
+            recentInstructions = recentInstructions[1:]
+        }
+
+        // Check if this is a CALL to a known wrapper
+        if inst.Op == x86asm.CALL {
+            wrapper, isWrapper := r.resolveWrapper(inst)
+            if isWrapper {
+                // Found a call to a wrapper, try to resolve the syscall number
+                syscallNum := r.resolveSyscallArgument(recentInstructions, wrapper)
+                results = append(results, WrapperCall{
+                    CallSiteAddress: baseAddr + uint64(pos),
+                    TargetFunction:  wrapper.Name,
+                    SyscallNumber:   syscallNum,
+                    Resolved:        syscallNum >= 0,
+                })
+            }
+        }
+
+        pos += inst.Len
     }
 
-    // Look for syscall number argument being set before the call
-    // Scan backward from call to find MOV immediate to the argument register
+    return results
+}
 
-    // Determine target register based on calling convention and ArgIndex
-    // For Go 1.17+ ABI (amd64), arg0 is RAX.
-    // If we support other args later, we need a map from index to register.
-    // Currently, we only support arg index 0 (RAX).
+// resolveSyscallArgument analyzes instructions before a wrapper call
+// to determine the syscall number argument.
+func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction, wrapper GoSyscallWrapper) int {
+    if len(recentInstructions) < 2 {
+        return -1
+    }
+
+    // Currently only support arg index 0 (RAX for Go 1.17+ ABI)
     if wrapper.SyscallArgIndex != 0 {
-        return -1, false
+        return -1
     }
     targetReg := x86asm.RAX
 
     decoder := NewX86Decoder()
-    for i := callIndex - 1; i >= 0 && i >= callIndex-5; i-- {
-        inst := instructions[i]
 
-        // Check for control flow boundary
+    // Scan backward through recent instructions (excluding the CALL itself)
+    for i := len(recentInstructions) - 2; i >= 0 && i >= len(recentInstructions)-6; i-- {
+        inst := recentInstructions[i]
+
+        // Stop at control flow boundary
         if decoder.IsControlFlowInstruction(inst) {
             break
         }
 
         // Check for immediate move to target register
         if isImm, value := decoder.IsImmediateMove(inst); isImm {
-            // Verify destination is target register
             if reg, ok := inst.Args[0].(x86asm.Reg); ok && reg == targetReg {
-                return int(value), true
+                return int(value)
             }
         }
     }
 
-    return -1, false
+    return -1
 }
 
 // resolveWrapper checks if the instruction is a CALL to a known wrapper
