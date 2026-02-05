@@ -2484,16 +2484,12 @@ func TestFormatDetectedSymbols(t *testing.T) {
 
 // TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
 func TestNewNetworkAnalyzer(t *testing.T) {
-	t.Parallel()
-
 	t.Run("creates analyzer with default elfAnalyzer", func(t *testing.T) {
-		t.Parallel()
 		analyzer := NewNetworkAnalyzer()
 		assert.NotNil(t, analyzer)
 	})
 
 	t.Run("with custom elfAnalyzer", func(t *testing.T) {
-		t.Parallel()
 		mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
 		analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
 		assert.NotNil(t, analyzer)
