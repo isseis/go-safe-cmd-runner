@@ -87,6 +87,7 @@ name = "test_cmd"
 # Execute via original path - should work because resolved path is allowed
 cmd = "%s"
 args = ["-c", "echo 'Symlink resolution works' > %s"]
+risk_level = "medium"
 `, resolvedPath, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)
@@ -164,6 +165,7 @@ cmd_allowed = ["%s"]
 name = "test_cmd"
 cmd = "%s"
 args = ["-c", "echo 'Security checks remain active' > %s"]
+risk_level = "medium"
 `, testCmd, testCmd, outputFile)
 
 	env.writeConfig(t, configContent)

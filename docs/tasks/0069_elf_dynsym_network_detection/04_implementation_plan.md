@@ -39,10 +39,10 @@ ELF 解析に必要なインターフェース等の実装状況を確認し、�
 4. **VerifyFromHandle の変更**: `io.ReadSeeker` を受け取るように変更済み。
 
 **チェックリスト**:
-- [ ] `internal/safefileio/safe_file.go` の確認
-- [ ] `internal/safefileio/safe_file_cleanup_test.go` の確認
-- [ ] `internal/filevalidator/privileged_file.go` の確認
-- [ ] `internal/filevalidator/validator.go` の確認
+- [x] `internal/safefileio/safe_file.go` の確認
+- [x] `internal/safefileio/safe_file_cleanup_test.go` の確認
+- [x] `internal/filevalidator/privileged_file.go` の確認
+- [x] `internal/filevalidator/validator.go` の確認
 
 #### 2.2.2 mockFile テストの追加
 
@@ -55,15 +55,15 @@ ELF 解析に必要なインターフェース等の実装状況を確認し、�
 - `TestMockFileReadAt`: 正常系、範囲外アクセス、負のオフセット
 
 **チェックリスト**:
-- [ ] `TestMockFileSeek` の実装
-- [ ] `TestMockFileReadAt` の実装
-- [ ] 全ての safefileio テストのパス確認
+- [x] `TestMockFileSeek` の実装
+- [x] `TestMockFileReadAt` の実装
+- [x] 全ての safefileio テストのパス確認
 
 ### 2.3 完了条件
 
-- [ ] 実装済みのコードが仕様通りであることを確認
-- [ ] `mockFile` の `Seek` と `ReadAt` のテストが追加され、パスしている
-- [ ] 全ての既存テストがパス
+- [x] 実装済みのコードが仕様通りであることを確認
+- [x] `mockFile` の `Seek` と `ReadAt` のテストが追加され、パスしている
+- [x] 全ての既存テストがパス
 
 ### 2.4 リスク
 
@@ -120,7 +120,7 @@ package elfanalyzer
 ```
 
 **チェックリスト**:
-- [ ] パッケージドキュメントの作成
+- [x] パッケージドキュメントの作成
 
 #### 3.3.2 型定義とインターフェース
 
@@ -129,14 +129,14 @@ package elfanalyzer
 **実装内容**: 仕様書 3.1 節の内容を実装
 
 **チェックリスト**:
-- [ ] `AnalysisResult` enum の定義
-- [ ] `AnalysisResult.String()` の実装
-- [ ] `DetectedSymbol` 構造体の定義
-- [ ] `AnalysisOutput` 構造体の定義
-- [ ] `AnalysisOutput.IsNetworkCapable()` の実装
-- [ ] `AnalysisOutput.IsIndeterminate()` の実装
-- [ ] `ELFAnalyzer` インターフェースの定義
-- [ ] doc コメントの完備
+- [x] `AnalysisResult` enum の定義
+- [x] `AnalysisResult.String()` の実装
+- [x] `DetectedSymbol` 構造体の定義
+- [x] `AnalysisOutput` 構造体の定義
+- [x] `AnalysisOutput.IsNetworkCapable()` の実装
+- [x] `AnalysisOutput.IsIndeterminate()` の実装
+- [x] `ELFAnalyzer` インターフェースの定義
+- [x] doc コメントの完備
 
 #### 3.3.3 ネットワークシンボルレジストリ
 
@@ -151,13 +151,13 @@ package elfanalyzer
 - TLS (SSL_connect, SSL_new, gnutls_init, etc.)
 
 **チェックリスト**:
-- [ ] `SymbolCategory` 型の定義
-- [ ] `networkSymbolRegistry` マップの定義
-- [ ] 各カテゴリのシンボル登録（30個以上）
-- [ ] `GetNetworkSymbols()` の実装
-- [ ] `IsNetworkSymbol()` の実装
-- [ ] `SymbolCount()` の実装
-- [ ] doc コメントの完備
+- [x] `SymbolCategory` 型の定義
+- [x] `networkSymbolRegistry` マップの定義
+- [x] 各カテゴリのシンボル登録（30個以上）
+- [x] `GetNetworkSymbols()` の実装
+- [x] `IsNetworkSymbol()` の実装
+- [x] `SymbolCount()` の実装
+- [x] doc コメントの完備
 
 #### 3.3.4 ELF アナライザの実装
 
@@ -176,16 +176,16 @@ package elfanalyzer
 8. 結果の返却
 
 **チェックリスト**:
-- [ ] `StandardELFAnalyzer` 構造体の定義
-- [ ] `NewStandardELFAnalyzer()` の実装
-- [ ] `NewStandardELFAnalyzerWithSymbols()` の実装（テスト用）
-- [ ] `AnalyzeNetworkSymbols()` の実装
-- [ ] `isELFMagic()` ヘルパー関数の実装
-- [ ] `isNoDynsymError()` ヘルパー関数の実装
-- [ ] `containsAny()` ヘルパー関数の実装
-- [ ] エラーハンドリングの完備
-- [ ] ファイルサイズ制限（1GB）の実装
-- [ ] doc コメントの完備
+- [x] `StandardELFAnalyzer` 構造体の定義
+- [x] `NewStandardELFAnalyzer()` の実装
+- [x] `NewStandardELFAnalyzerWithSymbols()` の実装（テスト用）
+- [x] `AnalyzeNetworkSymbols()` の実装
+- [x] `isELFMagic()` ヘルパー関数の実装
+- [x] `isNoDynsymError()` ヘルパー関数の実装
+- [x] `containsAny()` ヘルパー関数の実装
+- [x] エラーハンドリングの完備
+- [x] ファイルサイズ制限（1GB）の実装
+- [x] doc コメントの完備
 
 #### 3.3.5 テストフィクスチャの生成
 
@@ -201,10 +201,10 @@ package elfanalyzer
 7. `corrupted.elf` - 破損した ELF
 
 **チェックリスト**:
-- [ ] `README.md` に生成手順を記載
-- [ ] 各テストバイナリの生成スクリプト作成
-- [ ] バイナリの生成と配置
-- [ ] `.gitignore` への追加（バイナリは Git 管理外）
+- [x] `README.md` に生成手順を記載
+- [-] 各テストバイナリの生成スクリプト作成
+- [x] バイナリの生成と配置
+- [x] `.gitignore` への追加（バイナリは Git 管理外）
 
 #### 3.3.6 ユニットテストの実装
 
@@ -221,20 +221,20 @@ package elfanalyzer
 - `TestSymbolCount` - レジストリサイズのテスト
 
 **チェックリスト**:
-- [ ] 全テストケースの実装
-- [ ] testify/assert, testify/require の使用
-- [ ] テストフィクスチャがない場合の Skip 処理
-- [ ] テーブル駆動テストの活用
-- [ ] エラーケースのカバレッジ
-- [ ] 全テストのパス確認
+- [x] 全テストケースの実装
+- [x] testify/assert, testify/require の使用
+- [x] テストフィクスチャがない場合の Skip 処理
+- [x] テーブル駆動テストの活用
+- [x] エラーケースのカバレッジ
+- [x] 全テストのパス確認
 
 ### 3.4 完了条件
 
-- [ ] `elfanalyzer` パッケージの全ファイルを実装
-- [ ] ユニットテストのカバレッジ 80% 以上
-- [ ] `go test ./internal/runner/security/elfanalyzer/...` が成功
-- [ ] `golangci-lint` のエラーなし
-- [ ] doc コメントの完備
+- [x] `elfanalyzer` パッケージの全ファイルを実装
+- [x] ユニットテストのカバレッジ 80% 以上
+- [x] `go test ./internal/runner/security/elfanalyzer/...` が成功
+- [x] `golangci-lint` のエラーなし
+- [x] doc コメントの完備
 
 ### 3.5 リスク
 
@@ -294,10 +294,10 @@ func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
 ```
 
 **チェックリスト**:
-- [ ] `getELFAnalyzer()` の実装
-- [ ] `SetELFAnalyzer()` の実装（テスト用）
-- [ ] `sync.Once` によるスレッドセーフな初期化
-- [ ] doc コメントの追加
+- [x] `getELFAnalyzer()` の実装
+- [x] `SetELFAnalyzer()` の実装（テスト用）
+- [x] `sync.Once` によるスレッドセーフな初期化
+- [x] doc コメントの追加
 
 #### 4.2.2 IsNetworkOperation への統合
 
@@ -313,14 +313,14 @@ func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
 **実装内容**: 仕様書 4.1 節の内容を実装
 
 **チェックリスト**:
-- [ ] `analyzeELFForNetwork()` ヘルパー関数の実装
-- [ ] `exec.LookPath` でコマンドパスを解決
-- [ ] `filepath.Abs` で絶対パスに変換
-- [ ] `getELFAnalyzer()` でアナライザを取得
-- [ ] `AnalyzeNetworkSymbols()` を呼び出し
-- [ ] 結果に応じた分岐処理
-- [ ] 適切なログ出力（slog.Debug, slog.Warn）
-- [ ] `formatDetectedSymbols()` ヘルパー関数の実装
+- [x] `analyzeELFForNetwork()` ヘルパー関数の実装
+- [x] `exec.LookPath` でコマンドパスを解決
+- [x] `filepath.Abs` で絶対パスに変換
+- [x] `getELFAnalyzer()` でアナライザを取得
+- [x] `AnalyzeNetworkSymbols()` を呼び出し
+- [x] 結果に応じた分岐処理
+- [x] 適切なログ出力（slog.Debug, slog.Warn）
+- [x] `formatDetectedSymbols()` ヘルパー関数の実装
 
 #### 4.2.3 統合テストの実装
 
@@ -347,19 +347,19 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 ```
 
 **チェックリスト**:
-- [ ] `TestIsNetworkOperation_ELFAnalysis` の実装
-- [ ] `mockELFAnalyzer` の実装
-- [ ] 各テストケースの実装
-- [ ] `SetELFAnalyzer()` を使用したモック注入
-- [ ] テスト後のクリーンアップ
-- [ ] 全テストのパス確認
+- [x] `TestIsNetworkOperation_ELFAnalysis` の実装
+- [x] `mockELFAnalyzer` の実装
+- [x] 各テストケースの実装
+- [x] `SetELFAnalyzer()` を使用したモック注入
+- [x] テスト後のクリーンアップ
+- [x] 全テストのパス確認
 
 ### 4.3 完了条件
 
-- [ ] `IsNetworkOperation` が ELF 解析を統合
-- [ ] 統合テストが全てパス
-- [ ] 既存テストへの影響なし
-- [ ] ログメッセージが適切に出力される
+- [x] `IsNetworkOperation` が ELF 解析を統合
+- [x] 統合テストが全てパス
+- [x] 既存テストへの影響なし
+- [x] ログメッセージが適切に出力される
 
 ### 4.4 リスク
 
@@ -380,18 +380,18 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 #### 5.2.1 ユニットテストの完全実行
 
 **チェックリスト**:
-- [ ] `go test ./internal/runner/security/elfanalyzer/...` の成功
-- [ ] `go test ./internal/runner/security/...` の成功
-- [ ] `go test ./internal/filevalidator/...` の成功
-- [ ] `go test ./internal/safefileio/...` の成功
-- [ ] カバレッジレポートの確認（80% 以上）
+- [x] `go test ./internal/runner/security/elfanalyzer/...` の成功
+- [x] `go test ./internal/runner/security/...` の成功
+- [x] `go test ./internal/filevalidator/...` の成功
+- [x] `go test ./internal/safefileio/...` の成功
+- [x] カバレッジレポートの確認（80% 以上）: elfanalyzer 84.2%
 
 #### 5.2.2 統合テストの実行
 
 **チェックリスト**:
-- [ ] `make test` の成功
-- [ ] 全ての既存テストがパス
-- [ ] リグレッションなし
+- [x] `make test` の成功
+- [x] 全ての既存テストがパス
+- [x] リグレッションなし
 
 #### 5.2.3 実環境テスト
 
@@ -416,12 +416,12 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 ```
 
 **チェックリスト**:
-- [ ] 既知のネットワークコマンドが正しく検出される
-- [ ] 未知のネットワークコマンドが ELF 解析で検出される
-- [ ] 非ネットワークコマンドが誤検出されない
-- [ ] 静的バイナリがフォールバック動作する
-- [ ] ログメッセージが適切に出力される
-- [ ] パフォーマンスが許容範囲内
+- [x] 既知のネットワークコマンドが正しく検出される
+- [x] 未知のネットワークコマンドが ELF 解析で検出される
+- [x] 非ネットワークコマンドが誤検出されない
+- [x] 静的バイナリがフォールバック動作する
+- [x] ログメッセージが適切に出力される
+- [x] パフォーマンスが許容範囲内（平均 <15μs）
 
 #### 5.2.4 エッジケーステスト
 
@@ -458,10 +458,10 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
    ```
 
 **チェックリスト**:
-- [ ] 実行専用バイナリの動作確認
-- [ ] シンボリックリンクの動作確認
-- [ ] 大きなバイナリの拒否確認
-- [ ] 破損した ELF の動作確認
+- [-] 実行専用バイナリの動作確認（要 root 権限のためスキップ、ユニットテストでカバー済み）
+- [x] シンボリックリンクの動作確認（safefileio により正しく拒否）
+- [x] 大きなバイナリの拒否確認（2GB sparse file で検証、正しく拒否）
+- [x] 破損した ELF の動作確認（正しく AnalysisError を返す）
 
 #### 5.2.5 パフォーマンステスト
 
@@ -471,38 +471,38 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(path string) elfanalyzer.Analysi
 - キャッシュなしでの連続実行
 
 **チェックリスト**:
-- [ ] ベンチマークテストの実装
-- [ ] パフォーマンス測定結果の記録
-- [ ] ボトルネックの特定と対策
+- [x] ベンチマークテストの実装（analyzer_benchmark_test.go）
+- [x] パフォーマンス測定結果の記録（ls: 12.8μs, curl: 13.5μs, testdata: 5-7μs）
+- [x] ボトルネックの特定と対策（目標 10ms を大幅に下回る、対策不要）
 
 #### 5.2.6 ドキュメントの更新
 
 **チェックリスト**:
-- [ ] `CHANGELOG.md` の更新
-- [ ] `README.md` の更新（必要に応じて）
-- [ ] タスクドキュメントの完成度確認
-- [ ] 実装ノートの記録（問題と解決策）
+- [x] `CHANGELOG.md` の更新
+- [-] `README.md` の更新（内部機能のため不要）
+- [x] タスクドキュメントの完成度確認
+- [x] 実装ノートの記録（問題と解決策）
 
 ### 5.3 完了条件
 
-- [ ] 全ユニットテストがパス
-- [ ] 全統合テストがパス
-- [ ] 実環境テストが成功
-- [ ] エッジケーステストが成功
-- [ ] パフォーマンスが許容範囲内
-- [ ] ドキュメントが最新
+- [x] 全ユニットテストがパス
+- [x] 全統合テストがパス
+- [x] 実環境テストが成功
+- [x] エッジケーステストが成功
+- [x] パフォーマンスが許容範囲内
+- [x] ドキュメントが最新
 
 ### 5.4 受け入れ基準
 
 仕様書の受け入れ条件（AC-1 〜 AC-7）の全てを満たすこと：
 
-- [ ] AC-1: ELF バイナリを正しく判定
-- [ ] AC-2: ネットワークシンボルを検出
-- [ ] AC-3: HTTP/TLS ライブラリを検出
-- [ ] AC-4: 既存機能にフォールバック
-- [ ] AC-5: 静的バイナリを識別
-- [ ] AC-6: 解析失敗時に安全に動作
-- [ ] AC-7: 既存プロファイル優先
+- [x] AC-1: ELF バイナリを正しく判定
+- [x] AC-2: ネットワークシンボルを検出
+- [x] AC-3: HTTP/TLS ライブラリを検出
+- [x] AC-4: 既存機能にフォールバック
+- [x] AC-5: 静的バイナリを識別
+- [x] AC-6: 解析失敗時に安全に動作
+- [x] AC-7: 既存プロファイル優先
 
 ## 6. リスク管理
 
@@ -558,24 +558,24 @@ Week 3:
 
 ### 8.1 コード品質
 
-- [ ] `golangci-lint` エラーなし
-- [ ] `go fmt` 適用済み
-- [ ] doc コメント完備
-- [ ] ユニットテストカバレッジ 80% 以上
-- [ ] 統合テストカバレッジ 70% 以上
+- [x] `golangci-lint` エラーなし
+- [x] `go fmt` 適用済み
+- [x] doc コメント完備
+- [x] ユニットテストカバレッジ 80% 以上（elfanalyzer: 84.2%）
+- [x] 統合テストカバレッジ 70% 以上
 
 ### 8.2 パフォーマンス
 
-- [ ] ELF 解析 < 10ms（平均）
-- [ ] メモリ増加 < 10MB
-- [ ] 既存機能のパフォーマンス劣化なし
+- [x] ELF 解析 < 10ms（平均）: 実測 <15μs
+- [x] メモリ増加 < 10MB: ベンチマーク結果 ~30KB/操作
+- [x] 既存機能のパフォーマンス劣化なし
 
 ### 8.3 セキュリティ
 
-- [ ] TOCTOU 攻撃対策（safefileio 使用）
-- [ ] シンボリックリンク攻撃対策
-- [ ] リソース枯渇対策（ファイルサイズ制限）
-- [ ] 権限昇格の適切な使用
+- [x] TOCTOU 攻撃対策（safefileio 使用）
+- [x] シンボリックリンク攻撃対策
+- [x] リソース枯渇対策（ファイルサイズ制限）
+- [x] 権限昇格の適切な使用
 
 ## 9. 付録
 

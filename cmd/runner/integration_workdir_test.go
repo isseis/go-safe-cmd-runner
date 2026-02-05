@@ -560,7 +560,7 @@ risk_level = "medium"
 		analysis := &result.ResourceAnalyses[i]
 		if analysis.Type == resource.ResourceTypeCommand &&
 			analysis.Operation == resource.OperationExecute &&
-			(analysis.Target == "echo" || analysis.Target == "/bin/echo") {
+			filepath.Base(analysis.Target) == "echo" {
 			cmdAnalysis = analysis
 			break
 		}

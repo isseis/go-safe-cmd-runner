@@ -1,0 +1,2 @@
+# Test binaries (generated locally, not checked into Git)
+*.elf

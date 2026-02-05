@@ -606,3 +606,180 @@ func TestMockFileTruncate(t *testing.T) {
 		assert.Equal(t, []byte("test"), mockFile.data, "Data should not change when error is set")
 	})
 }
+
+// TestMockFileSeek tests the Seek method of mockFile for all whence values and error cases.
+func TestMockFileSeek(t *testing.T) {
+	t.Run("seek_start", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		pos, err := mf.Seek(5, io.SeekStart)
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), pos)
+		assert.Equal(t, int64(5), mf.pos)
+	})
+
+	t.Run("seek_start_to_beginning", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		mf.pos = 7
+		pos, err := mf.Seek(0, io.SeekStart)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), pos)
+	})
+
+	t.Run("seek_start_beyond_end", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		pos, err := mf.Seek(100, io.SeekStart)
+		require.NoError(t, err)
+		assert.Equal(t, int64(100), pos, "Seek beyond end should be allowed (like os.File)")
+	})
+
+	t.Run("seek_current_forward", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		mf.pos = 3
+		pos, err := mf.Seek(4, io.SeekCurrent)
+		require.NoError(t, err)
+		assert.Equal(t, int64(7), pos)
+	})
+
+	t.Run("seek_current_backward", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		mf.pos = 8
+		pos, err := mf.Seek(-3, io.SeekCurrent)
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), pos)
+	})
+
+	t.Run("seek_current_zero", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		mf.pos = 6
+		pos, err := mf.Seek(0, io.SeekCurrent)
+		require.NoError(t, err)
+		assert.Equal(t, int64(6), pos, "Seek(0, SeekCurrent) should return current position")
+	})
+
+	t.Run("seek_end", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		pos, err := mf.Seek(0, io.SeekEnd)
+		require.NoError(t, err)
+		assert.Equal(t, int64(11), pos, "Seek(0, SeekEnd) should return file length")
+	})
+
+	t.Run("seek_end_negative_offset", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		pos, err := mf.Seek(-5, io.SeekEnd)
+		require.NoError(t, err)
+		assert.Equal(t, int64(6), pos)
+	})
+
+	t.Run("seek_negative_position_from_start", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		_, err := mf.Seek(-1, io.SeekStart)
+		assert.Error(t, err, "Negative position should return error")
+		assert.Contains(t, err.Error(), "negative position")
+	})
+
+	t.Run("seek_negative_position_from_current", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		mf.pos = 2
+		_, err := mf.Seek(-5, io.SeekCurrent)
+		assert.Error(t, err, "Resulting negative position should return error")
+		assert.Contains(t, err.Error(), "negative position")
+	})
+
+	t.Run("seek_negative_position_from_end", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		_, err := mf.Seek(-10, io.SeekEnd)
+		assert.Error(t, err, "Resulting negative position should return error")
+		assert.Contains(t, err.Error(), "negative position")
+	})
+
+	t.Run("seek_invalid_whence", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		_, err := mf.Seek(0, 99)
+		assert.Error(t, err, "Invalid whence should return error")
+		assert.Contains(t, err.Error(), "invalid whence")
+	})
+
+	t.Run("seek_then_read", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		_, err := mf.Seek(6, io.SeekStart)
+		require.NoError(t, err)
+
+		buf := make([]byte, 5)
+		n, err := mf.Read(buf)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, []byte("world"), buf)
+	})
+}
+
+// TestMockFileReadAt tests the ReadAt method of mockFile.
+func TestMockFileReadAt(t *testing.T) {
+	t.Run("read_at_beginning", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		buf := make([]byte, 5)
+		n, err := mf.ReadAt(buf, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, []byte("hello"), buf)
+	})
+
+	t.Run("read_at_offset", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		buf := make([]byte, 5)
+		n, err := mf.ReadAt(buf, 6)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, []byte("world"), buf)
+	})
+
+	t.Run("read_at_partial_eof", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		buf := make([]byte, 10)
+		n, err := mf.ReadAt(buf, 3)
+		assert.ErrorIs(t, err, io.EOF, "Partial read should return io.EOF")
+		assert.Equal(t, 2, n, "Should read remaining bytes")
+		assert.Equal(t, []byte("lo"), buf[:n])
+	})
+
+	t.Run("read_at_exact_end", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		buf := make([]byte, 5)
+		n, err := mf.ReadAt(buf, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, []byte("hello"), buf)
+	})
+
+	t.Run("read_at_beyond_end", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		buf := make([]byte, 5)
+		n, err := mf.ReadAt(buf, 10)
+		assert.ErrorIs(t, err, io.EOF)
+		assert.Equal(t, 0, n)
+	})
+
+	t.Run("read_at_negative_offset", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		buf := make([]byte, 5)
+		_, err := mf.ReadAt(buf, -1)
+		assert.Error(t, err, "Negative offset should return error")
+		assert.Contains(t, err.Error(), "negative offset")
+	})
+
+	t.Run("read_at_does_not_modify_position", func(t *testing.T) {
+		mf := newMockFile([]byte("hello world"), &mockFileInfo{name: "test.txt", size: 11})
+		mf.pos = 3
+		buf := make([]byte, 5)
+		_, err := mf.ReadAt(buf, 6)
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), mf.pos, "ReadAt should not modify the file position")
+	})
+
+	t.Run("read_at_empty_buffer", func(t *testing.T) {
+		mf := newMockFile([]byte("hello"), &mockFileInfo{name: "test.txt", size: 5})
+		buf := make([]byte, 0)
+		n, err := mf.ReadAt(buf, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 0, n)
+	})
+}

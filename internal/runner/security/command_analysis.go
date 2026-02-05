@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
 // NetworkOperationType indicates the type of network operation a command performs
@@ -75,6 +76,33 @@ var commandProfileDefinitions = []CommandProfileDef{
 	NewProfile("rsync").
 		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations when using remote sources/destinations").
 		ConditionalNetwork().
+		Build(),
+
+	// Script interpreters and shells - can execute arbitrary network commands internally
+	// These may not have network symbols in their main binary but can invoke network tools
+	NewProfile("bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Shell can execute arbitrary commands including network tools").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("node", "nodejs", "deno", "bun").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JavaScript runtime with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("python", "python2", "python3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Python interpreter with built-in network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("perl").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Perl interpreter with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("ruby").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Ruby interpreter with built-in network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("php").
+		NetworkRisk(runnertypes.RiskLevelMedium, "PHP interpreter can perform network operations").
+		AlwaysNetwork().
 		Build(),
 }
 
@@ -292,58 +320,24 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	return false, nil
 }
 
-// IsNetworkOperation checks if the command performs network operations
-// This function considers symbolic links to detect network commands properly
-// Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded
-func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
-	// Extract all possible command names including symlink targets
-	commandNames, exceededDepth := extractAllCommandNames(cmdName)
-
-	// If symlink depth exceeded, this is a high risk security concern
-	if exceededDepth {
-		return false, true
+// formatDetectedSymbols formats detected symbols for logging.
+func formatDetectedSymbols(symbols []elfanalyzer.DetectedSymbol) string {
+	if len(symbols) == 0 {
+		return "[]"
 	}
-
-	// Check command profiles for network type using unified profiles
-	var conditionalProfile *CommandRiskProfile
-	for name := range commandNames {
-		if profile, exists := commandRiskProfiles[name]; exists {
-			switch profile.NetworkType {
-			case NetworkTypeAlways:
-				return true, false
-			case NetworkTypeConditional:
-				conditionalProfile = &profile
-			}
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, s := range symbols {
+		if i > 0 {
+			b.WriteString(", ")
 		}
+		b.WriteString(s.Name)
+		b.WriteByte('(')
+		b.WriteString(s.Category)
+		b.WriteByte(')')
 	}
-
-	if conditionalProfile != nil {
-		// Check for network subcommands (e.g., git fetch, git push)
-		// Skip command-line options to find the actual subcommand
-		if len(conditionalProfile.NetworkSubcommands) > 0 {
-			subcommand := findFirstSubcommand(args)
-			if subcommand != "" && slices.Contains(conditionalProfile.NetworkSubcommands, subcommand) {
-				return true, false
-			}
-		}
-
-		// Check for network-related arguments
-		allArgs := strings.Join(args, " ")
-		if strings.Contains(allArgs, "://") || // URLs
-			containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
-			return true, false
-		}
-		return false, false
-	}
-
-	// Check for network-related arguments in any command
-	allArgs := strings.Join(args, " ")
-	if strings.Contains(allArgs, "://") || // URLs
-		containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
-		return true, false
-	}
-
-	return false, false
+	b.WriteByte(']')
+	return b.String()
 }
 
 // findFirstSubcommand returns the first non-option argument from args.

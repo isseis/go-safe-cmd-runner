@@ -247,8 +247,12 @@ func validateDangerousRootPatterns(patterns []string) error {
 // a symlink like /usr/bin/safe-looking-name points to a disallowed command.
 //
 // Parameters:
-//   - cmdPath: absolute command path (already expanded)
+//   - cmdPath: absolute, symlink-resolved command path (resolved by PathResolver.ResolvePath)
 //   - groupCmdAllowed: expanded, normalized, symlink-resolved group-level allowed command map (may be nil or empty)
+//
+// IMPORTANT: cmdPath is expected to be already symlink-resolved by the caller
+// (via verification.PathResolver.ResolvePath()). This ensures TOCTOU safety
+// by resolving symlinks once at the start of the execution flow.
 //
 // Returns:
 //   - nil if allowed
@@ -259,30 +263,26 @@ func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[s
 		return ErrEmptyCommandPath
 	}
 
-	// 1. Resolve symlinks to get canonical path for security
-	// This must happen before any allowlist checks to prevent symlink bypass attacks
-	resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
-	if err != nil {
-		return fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
-	}
+	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
+	// so no need for filepath.EvalSymlinks() here.
 
-	// 2. Global AllowedCommands pattern match (using precompiled regexps)
+	// 1. Global AllowedCommands pattern match (using precompiled regexps)
 	// Patterns are matched against the resolved canonical path
 	for _, re := range v.allowedCommandRegexps {
-		if re.MatchString(resolvedCmd) {
+		if re.MatchString(cmdPath) {
 			return nil
 		}
 	}
 
-	// 3. Group-level cmd_allowed map check (O(1) lookup)
+	// 2. Group-level cmd_allowed map check (O(1) lookup)
 	// The map already contains symlink-resolved paths, so we compare resolved paths
 	if len(groupCmdAllowed) > 0 {
-		if _, exists := groupCmdAllowed[resolvedCmd]; exists {
+		if _, exists := groupCmdAllowed[cmdPath]; exists {
 			return nil
 		}
 	}
 
-	// 4. Neither global patterns nor group-level map matched -> not allowed
+	// 3. Neither global patterns nor group-level map matched -> not allowed
 	// Convert map keys to slice and sort for stable error messages
 	groupCmdAllowedSlice := make([]string, 0, len(groupCmdAllowed))
 	for path := range groupCmdAllowed {
@@ -291,7 +291,7 @@ func (v *Validator) ValidateCommandAllowed(cmdPath string, groupCmdAllowed map[s
 	sort.Strings(groupCmdAllowedSlice)
 	return &CommandNotAllowedError{
 		CommandPath:     cmdPath,
-		ResolvedPath:    resolvedCmd,
+		ResolvedPath:    cmdPath, // Already resolved
 		AllowedPatterns: v.config.AllowedCommands,
 		GroupCmdAllowed: groupCmdAllowedSlice,
 	}

@@ -245,6 +245,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "/bin/sh"
 args = ["-c", "echo 'test output' > %%{cmd_output}"]
+risk_level = "medium"
 
 [groups.commands.vars]
 cmd_output = "%s"
@@ -290,6 +291,7 @@ name = "test_cmd"
 cmd = "/bin/sh"
 args = ["-c", "pwd > marker.txt"]
 workdir = "%%{work_directory}"
+risk_level = "medium"
 
 [groups.commands.vars]
 work_directory = "%s"
