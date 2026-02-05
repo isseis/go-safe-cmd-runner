@@ -181,8 +181,15 @@ ELFANALYZER_TEST_BINARIES := \
 # This ensures the generated binaries have the expected symbols
 elfanalyzer-testdata-verify: $(ELFANALYZER_TEST_BINARIES)
 	@echo "Verifying elfanalyzer test binaries..."
-	@$(GOTEST) -tags test -v ./internal/runner/security/elfanalyzer/ -run TestStandardELFAnalyzer_AnalyzeNetworkSymbols > /dev/null 2>&1 || \
-		(echo "ERROR: elfanalyzer test binaries verification failed"; exit 1)
+	@TEMP_FILE=$$(mktemp); \
+	if $(GOTEST) -tags test -v ./internal/runner/security/elfanalyzer/ -run TestStandardELFAnalyzer_AnalyzeNetworkSymbols > "$$TEMP_FILE" 2>&1; then \
+		rm -f "$$TEMP_FILE"; \
+	else \
+		cat "$$TEMP_FILE"; \
+		rm -f "$$TEMP_FILE"; \
+		echo "ERROR: elfanalyzer test binaries verification failed"; \
+		exit 1; \
+	fi
 	@echo "elfanalyzer test binaries verified successfully"
 
 # Individual test binary targets
