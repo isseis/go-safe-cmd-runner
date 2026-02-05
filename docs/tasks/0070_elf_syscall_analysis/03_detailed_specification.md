@@ -638,17 +638,18 @@ func NewGoWrapperResolver() *GoWrapperResolver {
     }
 }
 
-// LoadSymbols loads symbols from the ELF file.
+// LoadSymbols loads symbols from the ELF file's .symtab section.
 // Returns error if symbol table cannot be read (e.g., stripped binary).
+//
+// Note: This method only reads .symtab, not .dynsym. The target symbols
+// (syscall.Syscall, etc.) are Go runtime internal symbols that exist in
+// .symtab of statically-linked binaries. The .dynsym section is for
+// dynamic linking and would not contain these internal symbols.
+// If .symtab is stripped, Go wrapper analysis cannot proceed (FR-3.1.6).
 func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
-    // Try .symtab first
     symbols, err := elfFile.Symbols()
     if err != nil {
-        // Try .dynsym as fallback
-        symbols, err = elfFile.DynamicSymbols()
-        if err != nil {
-            return ErrNoSymbolTable
-        }
+        return ErrNoSymbolTable
     }
 
     for _, sym := range symbols {
