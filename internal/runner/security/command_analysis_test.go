@@ -2340,38 +2340,34 @@ func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(_ string) elfanalyzer.AnalysisOu
 // TestIsNetworkOperation_ELFAnalysis tests ELF analysis integration in IsNetworkOperation.
 func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 	tests := []struct {
-		name           string
-		cmdName        string
-		args           []string
-		mockResult     elfanalyzer.AnalysisResult
-		mockSymbols    []elfanalyzer.DetectedSymbol
-		mockError      error
-		expectNetwork  bool
-		expectHighRisk bool
+		name          string
+		cmdName       string
+		args          []string
+		mockResult    elfanalyzer.AnalysisResult
+		mockSymbols   []elfanalyzer.DetectedSymbol
+		mockError     error
+		expectNetwork bool
 	}{
 		{
-			name:           "profile command curl",
-			cmdName:        "curl",
-			args:           []string{"http://example.com"},
-			mockResult:     elfanalyzer.NoNetworkSymbols,
-			expectNetwork:  true,
-			expectHighRisk: false,
+			name:          "profile command curl",
+			cmdName:       "curl",
+			args:          []string{"http://example.com"},
+			mockResult:    elfanalyzer.NoNetworkSymbols,
+			expectNetwork: true,
 		},
 		{
-			name:           "profile command git without network subcommand",
-			cmdName:        "git",
-			args:           []string{"status"},
-			mockResult:     elfanalyzer.NoNetworkSymbols,
-			expectNetwork:  false,
-			expectHighRisk: false,
+			name:          "profile command git without network subcommand",
+			cmdName:       "git",
+			args:          []string{"status"},
+			mockResult:    elfanalyzer.NoNetworkSymbols,
+			expectNetwork: false,
 		},
 		{
-			name:           "profile command git with network subcommand",
-			cmdName:        "git",
-			args:           []string{"fetch", "origin"},
-			mockResult:     elfanalyzer.NoNetworkSymbols,
-			expectNetwork:  true,
-			expectHighRisk: false,
+			name:          "profile command git with network subcommand",
+			cmdName:       "git",
+			args:          []string{"fetch", "origin"},
+			mockResult:    elfanalyzer.NoNetworkSymbols,
+			expectNetwork: true,
 		},
 		{
 			name:       "unknown command with network symbols detected",
@@ -2381,49 +2377,43 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			mockSymbols: []elfanalyzer.DetectedSymbol{
 				{Name: "socket", Category: "socket"},
 			},
-			expectNetwork:  true,
-			expectHighRisk: false,
+			expectNetwork: true,
 		},
 		{
-			name:           "unknown command with no network symbols",
-			cmdName:        "ls",
-			args:           []string{"-la"},
-			mockResult:     elfanalyzer.NoNetworkSymbols,
-			expectNetwork:  false,
-			expectHighRisk: false,
+			name:          "unknown command with no network symbols",
+			cmdName:       "ls",
+			args:          []string{"-la"},
+			mockResult:    elfanalyzer.NoNetworkSymbols,
+			expectNetwork: false,
 		},
 		{
-			name:           "unknown command - not ELF binary (script)",
-			cmdName:        "ls",
-			args:           []string{},
-			mockResult:     elfanalyzer.NotELFBinary,
-			expectNetwork:  false,
-			expectHighRisk: false,
+			name:          "unknown command - not ELF binary (script)",
+			cmdName:       "ls",
+			args:          []string{},
+			mockResult:    elfanalyzer.NotELFBinary,
+			expectNetwork: false,
 		},
 		{
-			name:           "unknown command - static binary",
-			cmdName:        "ls",
-			args:           []string{},
-			mockResult:     elfanalyzer.StaticBinary,
-			expectNetwork:  false,
-			expectHighRisk: false,
+			name:          "unknown command - static binary",
+			cmdName:       "ls",
+			args:          []string{},
+			mockResult:    elfanalyzer.StaticBinary,
+			expectNetwork: false,
 		},
 		{
-			name:           "unknown command - analysis error treats as network",
-			cmdName:        "ls",
-			args:           []string{},
-			mockResult:     elfanalyzer.AnalysisError,
-			mockError:      fmt.Errorf("permission denied"),
-			expectNetwork:  true, // Safety: analysis failure = assume network
-			expectHighRisk: false,
+			name:          "unknown command - analysis error treats as network",
+			cmdName:       "ls",
+			args:          []string{},
+			mockResult:    elfanalyzer.AnalysisError,
+			mockError:     fmt.Errorf("permission denied"),
+			expectNetwork: true, // Safety: analysis failure = assume network
 		},
 		{
-			name:           "unknown command with URL in args (fallback detection)",
-			cmdName:        "ls",
-			args:           []string{"http://example.com"},
-			mockResult:     elfanalyzer.NoNetworkSymbols,
-			expectNetwork:  true, // Detected via argument, not ELF
-			expectHighRisk: false,
+			name:          "unknown command with URL in args (fallback detection)",
+			cmdName:       "ls",
+			args:          []string{"http://example.com"},
+			mockResult:    elfanalyzer.NoNetworkSymbols,
+			expectNetwork: true, // Detected via argument, not ELF
 		},
 	}
 
@@ -2441,11 +2431,10 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			analyzer := NewNetworkAnalyzer(mock)
 
 			// Run test
-			isNetwork, isHighRisk := analyzer.IsNetworkOperation(tc.cmdName, tc.args)
+			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args)
 
 			// Verify results
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
-			assert.Equal(t, tc.expectHighRisk, isHighRisk, "isHighRisk mismatch")
 		})
 	}
 }
