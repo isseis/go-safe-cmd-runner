@@ -555,13 +555,12 @@ risk_level = "medium"
 	require.Greater(t, len(result.ResourceAnalyses), 0, "Expected at least one resource analysis")
 
 	// Find the echo command analysis
-	// Note: Target can be "echo", "/bin/echo", or "/usr/bin/echo" depending on symlink resolution
 	var cmdAnalysis *resource.ResourceAnalysis
 	for i := range result.ResourceAnalyses {
 		analysis := &result.ResourceAnalyses[i]
 		if analysis.Type == resource.ResourceTypeCommand &&
 			analysis.Operation == resource.OperationExecute &&
-			(analysis.Target == "echo" || analysis.Target == "/bin/echo" || analysis.Target == "/usr/bin/echo") {
+			filepath.Base(analysis.Target) == "echo" {
 			cmdAnalysis = analysis
 			break
 		}
