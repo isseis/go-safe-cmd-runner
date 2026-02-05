@@ -437,8 +437,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
         if a.syscallCache != nil {
             hash, err := a.calculateHash(path)
             if err == nil {
-                result, err := a.syscallCache.LoadCache(path, hash)
-                if err == nil {
+                result, found, err := a.syscallCache.LoadSyscallAnalysis(path, hash)
+                if err == nil && found {
                     return convertSyscallResultToAnalysisOutput(result)
                 }
             }
