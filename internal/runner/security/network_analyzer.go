@@ -2,7 +2,6 @@ package security
 
 import (
 	"log/slog"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -63,55 +62,52 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string) (boo
 		}
 
 		// Check for network-related arguments
-		allArgs := strings.Join(args, " ")
-		if strings.Contains(allArgs, "://") || // URLs
-			containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
+		if hasNetworkArguments(args) {
 			return true, false
 		}
 		return false, false
 	}
 
-	// If not found in profiles, try ELF analysis for unknown commands
-	if !foundInProfiles {
-		if a.analyzeELFForNetwork(cmdName) {
+	// If not found in profiles, try ELF analysis for unknown commands.
+	// ELF analysis requires an absolute path (should be resolved by caller via PathResolver).
+	// If cmdName is not absolute, skip ELF analysis silently.
+	if !foundInProfiles && filepath.IsAbs(cmdName) {
+		if a.isNetworkViaELFAnalysis(cmdName) {
 			return true, false
 		}
 	}
 
 	// Check for network-related arguments in any command
-	allArgs := strings.Join(args, " ")
-	if strings.Contains(allArgs, "://") || // URLs
-		containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
+	if hasNetworkArguments(args) {
 		return true, false
 	}
 
 	return false, false
 }
 
-// analyzeELFForNetwork performs ELF .dynsym analysis on the command binary.
+// hasNetworkArguments checks if the arguments contain network indicators.
+func hasNetworkArguments(args []string) bool {
+	allArgs := strings.Join(args, " ")
+	return strings.Contains(allArgs, "://") || // URLs
+		containsSSHStyleAddress(args) // SSH-style user@host:path addresses
+}
+
+// isNetworkViaELFAnalysis performs ELF .dynsym analysis on the command binary.
 // Returns true if the command should be treated as a network operation.
 // This includes both confirmed network symbols (NetworkDetected) and
 // analysis failures (AnalysisError), which are treated as potential
 // network operations for safety (middle risk → RiskLevelMedium).
-func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
-	// Resolve command path
-	cmdPath, err := exec.LookPath(cmdName)
-	if err != nil {
-		// Cannot find command, skip ELF analysis
-		slog.Debug("ELF analysis skipped: command not found in PATH",
-			"command", cmdName,
-			"error", err)
-		return false
-	}
-
-	// LookPath may return a relative path if PATH contains relative entries.
-	// AnalyzeNetworkSymbols requires an absolute path.
-	cmdPath, err = filepath.Abs(cmdPath)
-	if err != nil {
-		slog.Debug("ELF analysis skipped: failed to resolve absolute path",
-			"command", cmdName,
-			"error", err)
-		return false
+//
+// IMPORTANT: cmdPath is expected to be an absolute path, already resolved by
+// the caller (e.g., via verification.PathResolver.ResolvePath()).
+// This avoids inconsistency between different path resolution implementations
+// (e.g., exec.LookPath vs custom PathResolver).
+func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string) bool {
+	// Validate that cmdPath is an absolute path.
+	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
+	// A non-absolute path here indicates a programming error in the call chain.
+	if !filepath.IsAbs(cmdPath) {
+		panic("isNetworkViaELFAnalysis: cmdPath must be an absolute path, got: " + cmdPath)
 	}
 
 	// Resolve symlinks to get the actual binary path.
@@ -120,7 +116,6 @@ func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
 	realPath, err := filepath.EvalSymlinks(cmdPath)
 	if err != nil {
 		slog.Debug("ELF analysis skipped: failed to resolve symlinks",
-			"command", cmdName,
 			"path", cmdPath,
 			"error", err)
 		return false
@@ -133,14 +128,12 @@ func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
 	switch output.Result {
 	case elfanalyzer.NetworkDetected:
 		slog.Debug("ELF analysis detected network symbols",
-			"command", cmdName,
 			"path", cmdPath,
 			"symbols", formatDetectedSymbols(output.DetectedSymbols))
 		return true
 
 	case elfanalyzer.NoNetworkSymbols:
 		slog.Debug("ELF analysis found no network symbols",
-			"command", cmdName,
 			"path", cmdPath)
 		return false
 
@@ -148,7 +141,6 @@ func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
 		// Non-ELF binaries (scripts, shell commands) can invoke arbitrary commands internally,
 		// so they should be treated as potential network operations for safety.
 		slog.Debug("ELF analysis: not an ELF binary, treating as potential network operation",
-			"command", cmdName,
 			"path", cmdPath,
 			"reason", "Scripts and shell commands can invoke network commands internally")
 		return true
@@ -157,14 +149,12 @@ func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
 		// Static binary: cannot determine network capability
 		// Return false for now, 2nd step (Task 0070) will handle this
 		slog.Debug("ELF analysis: static binary detected, cannot determine network capability",
-			"command", cmdName,
 			"path", cmdPath)
 		return false
 
 	case elfanalyzer.AnalysisError:
 		// Analysis failed: treat as potential network operation for safety
 		slog.Warn("ELF analysis failed, treating as potential network operation",
-			"command", cmdName,
 			"path", cmdPath,
 			"error", output.Error,
 			"reason", "Unable to determine network capability, assuming middle risk for safety")
@@ -173,7 +163,6 @@ func (a *NetworkAnalyzer) analyzeELFForNetwork(cmdName string) bool {
 	default:
 		// Unknown result: treat as potential network operation for safety
 		slog.Warn("ELF analysis returned unknown result",
-			"command", cmdName,
 			"path", cmdPath,
 			"result", output.Result)
 		return true

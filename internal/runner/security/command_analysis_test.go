@@ -2373,7 +2373,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		},
 		{
 			name:       "unknown command with network symbols detected",
-			cmdName:    "ls",
+			cmdName:    "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:       []string{"-la"},
 			mockResult: elfanalyzer.NetworkDetected,
 			mockSymbols: []elfanalyzer.DetectedSymbol{
@@ -2383,28 +2383,28 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		},
 		{
 			name:          "unknown command with no network symbols",
-			cmdName:       "ls",
+			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{"-la"},
 			mockResult:    elfanalyzer.NoNetworkSymbols,
 			expectNetwork: false,
 		},
 		{
 			name:          "unknown command - not ELF binary (script)",
-			cmdName:       "ls",
+			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
 			mockResult:    elfanalyzer.NotELFBinary,
 			expectNetwork: true, // Scripts can invoke network commands internally
 		},
 		{
 			name:          "unknown command - static binary",
-			cmdName:       "ls",
+			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
 			mockResult:    elfanalyzer.StaticBinary,
 			expectNetwork: false,
 		},
 		{
 			name:          "unknown command - analysis error treats as network",
-			cmdName:       "ls",
+			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
 			mockResult:    elfanalyzer.AnalysisError,
 			mockError:     fmt.Errorf("permission denied"),
@@ -2412,7 +2412,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		},
 		{
 			name:          "unknown command with URL in args (fallback detection)",
-			cmdName:       "ls",
+			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{"http://example.com"},
 			mockResult:    elfanalyzer.NoNetworkSymbols,
 			expectNetwork: true, // Detected via argument, not ELF
@@ -2490,9 +2490,10 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 		analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
 		assert.NotNil(t, analyzer)
 
-		// Verify mock is used by calling IsNetworkOperation on an unknown command
-		isNet, _ := analyzer.IsNetworkOperation("unknowncmd", []string{})
-		// Since mock returns NoNetworkSymbols, result depends on whether command exists
+		// Verify mock is used by calling IsNetworkOperation on an absolute path
+		// (ELF analysis is skipped for non-absolute paths)
+		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{})
+		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic
 	})
 }
