@@ -13,11 +13,17 @@ type Evaluator interface {
 }
 
 // StandardEvaluator implements risk evaluation using predefined patterns
-type StandardEvaluator struct{}
+type StandardEvaluator struct {
+	networkAnalyzer *security.NetworkAnalyzer
+}
 
 // NewStandardEvaluator creates a new standard risk evaluator
-func NewStandardEvaluator() Evaluator {
-	return &StandardEvaluator{}
+// If networkAnalyzer is nil, a default NetworkAnalyzer is created.
+func NewStandardEvaluator(networkAnalyzer *security.NetworkAnalyzer) Evaluator {
+	if networkAnalyzer == nil {
+		networkAnalyzer = security.NewNetworkAnalyzer(nil)
+	}
+	return &StandardEvaluator{networkAnalyzer: networkAnalyzer}
 }
 
 // EvaluateRisk analyzes a command and returns its risk level
@@ -37,7 +43,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runne
 	}
 
 	// Check for network operations
-	isNetwork, isHighRisk := security.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs)
+	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs)
 	if isHighRisk {
 		return runnertypes.RiskLevelHigh, nil
 	}

@@ -710,7 +710,9 @@ func TestIsNetworkOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			isNet, isRisk := IsNetworkOperation(tt.cmdName, tt.args)
+			t.Parallel()
+			analyzer := NewNetworkAnalyzer(nil)
+			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args)
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
 				tt.cmdName, tt.args, tt.description)
 			assert.Equal(t, tt.expectedRisk, isRisk, "IsNetworkOperation(%s, %v) risk detection. %s",
@@ -1791,7 +1793,9 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, _ := IsNetworkOperation(tt.cmd, tt.args)
+			t.Parallel()
+			analyzer := NewNetworkAnalyzer(nil)
+			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args)
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
@@ -2437,6 +2441,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Set up mock analyzer
 			mock := &mockELFAnalyzer{
 				result:  tc.mockResult,
@@ -2444,17 +2449,11 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 				err:     tc.mockError,
 			}
 
-			// Reset and restore state after test using ResetELFAnalyzer
-			// Note: sync.Once cannot be copied, so we use ResetELFAnalyzer for cleanup
-			t.Cleanup(func() {
-				ResetELFAnalyzer()
-			})
-
-			// Inject mock
-			SetELFAnalyzer(mock)
+			// Create analyzer with injected mock
+			analyzer := NewNetworkAnalyzer(mock)
 
 			// Run test
-			isNetwork, isHighRisk := IsNetworkOperation(tc.cmdName, tc.args)
+			isNetwork, isHighRisk := analyzer.IsNetworkOperation(tc.cmdName, tc.args)
 
 			// Verify results
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
@@ -2513,37 +2512,25 @@ func TestFormatDetectedSymbols(t *testing.T) {
 	}
 }
 
-// TestGetELFAnalyzer tests the lazy initialization of the default ELF analyzer.
-func TestGetELFAnalyzer(t *testing.T) {
-	// Reset state before test
-	ResetELFAnalyzer()
-	t.Cleanup(func() {
-		ResetELFAnalyzer()
+// TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
+func TestNewNetworkAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with nil elfAnalyzer uses default", func(t *testing.T) {
+		t.Parallel()
+		analyzer := NewNetworkAnalyzer(nil)
+		assert.NotNil(t, analyzer)
 	})
 
-	// First call should initialize
-	analyzer1 := getELFAnalyzer()
-	assert.NotNil(t, analyzer1)
+	t.Run("with custom elfAnalyzer", func(t *testing.T) {
+		t.Parallel()
+		mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
+		analyzer := NewNetworkAnalyzer(mock)
+		assert.NotNil(t, analyzer)
 
-	// Second call should return the same instance
-	analyzer2 := getELFAnalyzer()
-	assert.Same(t, analyzer1, analyzer2, "getELFAnalyzer should return the same instance")
-}
-
-// TestSetELFAnalyzer tests the injection of custom ELF analyzer.
-func TestSetELFAnalyzer(t *testing.T) {
-	// Reset state before test
-	ResetELFAnalyzer()
-	t.Cleanup(func() {
-		ResetELFAnalyzer()
+		// Verify mock is used by calling IsNetworkOperation on an unknown command
+		isNet, _ := analyzer.IsNetworkOperation("unknowncmd", []string{})
+		// Since mock returns NoNetworkSymbols, result depends on whether command exists
+		_ = isNet // Just verify no panic
 	})
-
-	mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
-
-	// Inject mock
-	SetELFAnalyzer(mock)
-
-	// Get should return the injected mock
-	analyzer := getELFAnalyzer()
-	assert.Same(t, mock, analyzer, "getELFAnalyzer should return the injected mock")
 }

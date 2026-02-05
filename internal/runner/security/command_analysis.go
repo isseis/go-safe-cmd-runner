@@ -2,52 +2,15 @@ package security
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
-
-// elfAnalyzerOnce ensures the default ELF analyzer is initialized exactly once.
-var elfAnalyzerOnce sync.Once
-
-// defaultELFAnalyzer is the package-level ELF analyzer instance.
-var defaultELFAnalyzer elfanalyzer.ELFAnalyzer
-
-// getELFAnalyzer returns the default ELF analyzer, creating it if necessary.
-// Concurrency-safe via sync.Once.
-func getELFAnalyzer() elfanalyzer.ELFAnalyzer {
-	elfAnalyzerOnce.Do(func() {
-		defaultELFAnalyzer = elfanalyzer.NewStandardELFAnalyzer(nil, nil)
-	})
-	return defaultELFAnalyzer
-}
-
-// SetELFAnalyzer sets a custom ELF analyzer for testing purposes.
-// Must be called before any concurrent calls to IsNetworkOperation.
-// Typically called in TestMain or test setup.
-// Use ResetELFAnalyzer in t.Cleanup to restore state after tests.
-func SetELFAnalyzer(analyzer elfanalyzer.ELFAnalyzer) {
-	defaultELFAnalyzer = analyzer
-	// Mark elfAnalyzerOnce as "done" so that getELFAnalyzer's sync.Once
-	// initialization block will never run and overwrite the injected analyzer.
-	elfAnalyzerOnce.Do(func() {})
-}
-
-// ResetELFAnalyzer resets the ELF analyzer to its uninitialized state for testing.
-// This allows tests to cleanly restore state after using SetELFAnalyzer.
-// This function is NOT safe for concurrent use and should only be called in test setup/teardown.
-func ResetELFAnalyzer() {
-	elfAnalyzerOnce = sync.Once{}
-	defaultELFAnalyzer = nil
-}
 
 // NetworkOperationType indicates the type of network operation a command performs
 type NetworkOperationType int
@@ -328,164 +291,6 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	}
 
 	return false, nil
-}
-
-// IsNetworkOperation checks if the command performs network operations.
-// This function considers symbolic links to detect network commands properly.
-// Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded.
-//
-// Detection priority:
-// 1. commandProfileDefinitions (hardcoded list) - takes precedence
-// 2. ELF .dynsym analysis for unknown commands
-// 3. Argument-based detection (URLs, SSH-style addresses)
-func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
-	// Extract all possible command names including symlink targets
-	commandNames, exceededDepth := extractAllCommandNames(cmdName)
-
-	// If symlink depth exceeded, this is a high risk security concern
-	if exceededDepth {
-		return false, true
-	}
-
-	// Check command profiles for network type using unified profiles
-	var conditionalProfile *CommandRiskProfile
-	foundInProfiles := false
-	for name := range commandNames {
-		if profile, exists := commandRiskProfiles[name]; exists {
-			foundInProfiles = true
-			switch profile.NetworkType {
-			case NetworkTypeAlways:
-				return true, false
-			case NetworkTypeConditional:
-				conditionalProfile = &profile
-			}
-		}
-	}
-
-	if conditionalProfile != nil {
-		// Check for network subcommands (e.g., git fetch, git push)
-		// Skip command-line options to find the actual subcommand
-		if len(conditionalProfile.NetworkSubcommands) > 0 {
-			subcommand := findFirstSubcommand(args)
-			if subcommand != "" && slices.Contains(conditionalProfile.NetworkSubcommands, subcommand) {
-				return true, false
-			}
-		}
-
-		// Check for network-related arguments
-		allArgs := strings.Join(args, " ")
-		if strings.Contains(allArgs, "://") || // URLs
-			containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
-			return true, false
-		}
-		return false, false
-	}
-
-	// If not found in profiles, try ELF analysis for unknown commands
-	if !foundInProfiles {
-		if analyzeELFForNetwork(cmdName) {
-			return true, false
-		}
-	}
-
-	// Check for network-related arguments in any command
-	allArgs := strings.Join(args, " ")
-	if strings.Contains(allArgs, "://") || // URLs
-		containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
-		return true, false
-	}
-
-	return false, false
-}
-
-// analyzeELFForNetwork performs ELF .dynsym analysis on the command binary.
-// Returns true if the command should be treated as a network operation.
-// This includes both confirmed network symbols (NetworkDetected) and
-// analysis failures (AnalysisError), which are treated as potential
-// network operations for safety (middle risk → RiskLevelMedium).
-func analyzeELFForNetwork(cmdName string) bool {
-	// Resolve command path
-	cmdPath, err := exec.LookPath(cmdName)
-	if err != nil {
-		// Cannot find command, skip ELF analysis
-		slog.Debug("ELF analysis skipped: command not found in PATH",
-			"command", cmdName,
-			"error", err)
-		return false
-	}
-
-	// LookPath may return a relative path if PATH contains relative entries.
-	// AnalyzeNetworkSymbols requires an absolute path.
-	cmdPath, err = filepath.Abs(cmdPath)
-	if err != nil {
-		slog.Debug("ELF analysis skipped: failed to resolve absolute path",
-			"command", cmdName,
-			"error", err)
-		return false
-	}
-
-	// Resolve symlinks to get the actual binary path.
-	// This is necessary because safefileio.SafeOpenFile rejects symlinks for security.
-	// Standard system paths like /bin/echo -> /usr/bin/echo are legitimate symlinks.
-	realPath, err := filepath.EvalSymlinks(cmdPath)
-	if err != nil {
-		slog.Debug("ELF analysis skipped: failed to resolve symlinks",
-			"command", cmdName,
-			"path", cmdPath,
-			"error", err)
-		return false
-	}
-	cmdPath = realPath
-
-	// Perform ELF analysis
-	analyzer := getELFAnalyzer()
-	output := analyzer.AnalyzeNetworkSymbols(cmdPath)
-
-	switch output.Result {
-	case elfanalyzer.NetworkDetected:
-		slog.Debug("ELF analysis detected network symbols",
-			"command", cmdName,
-			"path", cmdPath,
-			"symbols", formatDetectedSymbols(output.DetectedSymbols))
-		return true
-
-	case elfanalyzer.NoNetworkSymbols:
-		slog.Debug("ELF analysis found no network symbols",
-			"command", cmdName,
-			"path", cmdPath)
-		return false
-
-	case elfanalyzer.NotELFBinary:
-		slog.Debug("ELF analysis skipped: not an ELF binary",
-			"command", cmdName,
-			"path", cmdPath)
-		return false
-
-	case elfanalyzer.StaticBinary:
-		// Static binary: cannot determine network capability
-		// Return false for now, 2nd step (Task 0070) will handle this
-		slog.Debug("ELF analysis: static binary detected, cannot determine network capability",
-			"command", cmdName,
-			"path", cmdPath)
-		return false
-
-	case elfanalyzer.AnalysisError:
-		// Analysis failed: treat as potential network operation for safety
-		slog.Warn("ELF analysis failed, treating as potential network operation",
-			"command", cmdName,
-			"path", cmdPath,
-			"error", output.Error,
-			"reason", "Unable to determine network capability, assuming middle risk for safety")
-		return true
-
-	default:
-		// Unknown result: treat as potential network operation for safety
-		slog.Warn("ELF analysis returned unknown result",
-			"command", cmdName,
-			"path", cmdPath,
-			"result", output.Result)
-		return true
-	}
 }
 
 // formatDetectedSymbols formats detected symbols for logging.
