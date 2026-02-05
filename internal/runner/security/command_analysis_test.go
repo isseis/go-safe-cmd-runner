@@ -710,7 +710,6 @@ func TestIsNetworkOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			analyzer := NewNetworkAnalyzer()
 			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args)
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
@@ -1793,7 +1792,6 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			analyzer := NewNetworkAnalyzer()
 			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args)
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
@@ -2423,7 +2421,6 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			// Set up mock analyzer
 			mock := &mockELFAnalyzer{
 				result:  tc.mockResult,
