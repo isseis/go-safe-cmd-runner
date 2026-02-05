@@ -108,12 +108,12 @@ graph TB
         end
 
         subgraph "internal/filevalidator"
-            H["validator.go<br>(既存)"]
+            H["validator.go<br>(既存・拡張)"]
             I["hybrid_hash_path_getter.go<br>(既存)"]
         end
 
-        subgraph "internal/runner/security/syscallcache"
-            J["cache.go<br>(新規)"]
+        subgraph "internal/cache"
+            J["integrated_cache.go<br>(新規)"]
             K["schema.go<br>(新規)"]
         end
 
@@ -126,6 +126,8 @@ graph TB
     D --> F
     D --> G
     B --> D
+    B --> J
+    H --> J
     J --> I
     L --> D
     L --> J
@@ -133,6 +135,8 @@ graph TB
     class A,B,C,H,I,L process
     class D,E,F,G,J,K new
 ```
+
+**注記**: `internal/cache` パッケージは統合キャッシュの共通層であり、`filevalidator` と `elfanalyzer` の両方から利用される。
 
 ### 2.3 データフロー（事前解析）
 
@@ -310,36 +314,52 @@ classDiagram
 
 ### 3.4 SyscallCache
 
-解析結果のキャッシュ管理。`filevalidator` のパス生成機構を再利用。
+syscall 解析結果の読み書きを担当。統合キャッシュファイルの syscall_analysis フィールドを操作。
 
 ```mermaid
 classDiagram
     class SyscallCache {
-        -cacheDir string
-        -pathGetter HashFilePathGetter
-        -fs FileSystem
-        +SaveCache(path string, hash string, result SyscallAnalysisResult) error
-        +LoadCache(path string, hash string) (SyscallAnalysisResult, error)
-        +InvalidateCache(path string) error
+        <<interface>>
+        +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
+        +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
+    }
+
+    class IntegratedCacheSyscallCache {
+        -cacheStore IntegratedCacheStore
+        +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
+        +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
+    }
+
+    class IntegratedCacheStore {
+        <<interface>>
+        +Load(path string) (CacheEntry, error)
+        +Save(path string, entry CacheEntry) error
     }
 
     class CacheEntry {
         +SchemaVersion int
-        +Format string
         +FilePath string
-        +FileHash string
+        +ContentHash string
+        +UpdatedAt time.Time
+        +SyscallAnalysis *SyscallAnalysisData
+    }
+
+    class SyscallAnalysisData {
+        +Architecture string
         +AnalyzedAt time.Time
-        +Result SyscallAnalysisResult
+        +DetectedSyscalls []SyscallInfo
+        +HasUnknownSyscalls bool
+        +HighRiskReasons []string
+        +Summary SyscallSummary
     }
 
-    class HashFilePathGetter {
-        <<interface>>
-        +GetHashFilePath(dir string, path ResolvedPath) (string, error)
-    }
-
-    SyscallCache --> CacheEntry
-    SyscallCache --> HashFilePathGetter
+    SyscallCache <|.. IntegratedCacheSyscallCache
+    IntegratedCacheSyscallCache --> IntegratedCacheStore
+    IntegratedCacheStore --> CacheEntry
+    CacheEntry --> SyscallAnalysisData
 ```
+
+**注記**: `IntegratedCacheStore` は filevalidator と elfanalyzer の両方から利用される共通のキャッシュ読み書き層である。各パッケージは自分の関心事（ハッシュ検証または syscall 解析）のみを扱い、キャッシュファイルの詳細を意識しない。
 
 ### 3.5 SyscallNumberTable
 
@@ -454,17 +474,58 @@ flowchart TD
 
 ## 5. キャッシュ設計
 
-### 5.1 キャッシュファイル形式
+### 5.1 統合キャッシュ方式
+
+ハッシュ検証情報と syscall 解析結果を単一のキャッシュファイルに統合する。
+
+**設計方針**:
+- **キャッシュファイル**: 1ファイルに両方の情報を格納
+- **利用側インターフェース**: 分離を維持（各パッケージは自分の関心事のみを扱う）
+
+```mermaid
+flowchart TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00
+    classDef cache fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400
+
+    subgraph "利用側（分離を維持）"
+        FV["filevalidator<br>（ハッシュ検証）"]
+        EA["elfanalyzer<br>（syscall 解析）"]
+    end
+
+    subgraph "共通キャッシュ層"
+        CL["CacheLayer<br>（読み書きの統合）"]
+    end
+
+    subgraph "ストレージ"
+        CF[("統合キャッシュファイル<br>~path~to~file")]
+    end
+
+    FV --> CL
+    EA --> CL
+    CL --> CF
+
+    class FV,EA process
+    class CL cache
+    class CF data
+```
+
+**メリット**:
+- キャッシュファイル数が半減（管理の簡素化）
+- 1回のファイル読み込みで両方の情報を取得可能
+- キャッシュディレクトリの管理が単純化
+
+### 5.2 キャッシュファイル形式
 
 ```json
 {
   "schema_version": 1,
-  "format": "syscall_analysis",
   "file_path": "/usr/local/bin/myapp",
-  "file_hash": "sha256:abc123...",
-  "analyzed_at": "2025-02-05T10:30:00Z",
-  "architecture": "x86_64",
-  "result": {
+  "content_hash": "sha256:abc123...",
+  "updated_at": "2025-02-05T10:30:00Z",
+  "syscall_analysis": {
+    "architecture": "x86_64",
+    "analyzed_at": "2025-02-05T10:30:00Z",
     "detected_syscalls": [
       {"number": 41, "name": "socket", "is_network": true, "count": 3},
       {"number": 42, "name": "connect", "is_network": true, "count": 2},
@@ -482,16 +543,20 @@ flowchart TD
 }
 ```
 
-### 5.2 キャッシュファイル命名規則
+**フィールド説明**:
+- `content_hash`: ファイルの内容ハッシュ（既存の filevalidator が使用）
+- `syscall_analysis`: syscall 解析結果（オプション、ELF ファイルの場合のみ）
+  - 非 ELF ファイルや動的リンクバイナリの場合、このフィールドは存在しない
 
-既存の `HybridHashFilePathGetter` を拡張し、プレフィックスで区別：
+### 5.3 キャッシュファイル命名規則
 
-- ハッシュ検証ファイル: `~path~to~file` (現行)
-- syscall 解析キャッシュ: `syscall~path~to~file`
+既存の `HybridHashFilePathGetter` の命名規則を維持：
 
-**保存先**: キャッシュファイルは既存の `filevalidator` と同じディレクトリ（`--hash-dir` で指定）に保存する。これにより、ユーザーは単一のディレクトリでハッシュファイルと syscall 解析キャッシュの両方を管理できる。
+- キャッシュファイル: `~path~to~file`
 
-### 5.3 キャッシュ無効化条件
+**保存先**: キャッシュファイルは既存の `--hash-dir` で指定されたディレクトリに保存する。
+
+### 5.4 キャッシュ無効化条件
 
 1. ファイルハッシュの不一致
 2. スキーマバージョンの不一致
@@ -656,11 +721,12 @@ flowchart TB
 - [ ] Go syscall ラッパーの検出
 - [ ] 呼び出し元での引数解析
 
-### Phase 4: キャッシュ機構
+### Phase 4: 統合キャッシュ機構
 
-- [ ] SyscallCache の実装
-- [ ] キャッシュスキーマの設計
-- [ ] HybridHashFilePathGetter の拡張
+- [ ] IntegratedCacheStore の実装（internal/cache パッケージ）
+- [ ] 統合キャッシュスキーマの設計（CacheEntry 構造体）
+- [ ] SyscallCache インターフェースと IntegratedCacheSyscallCache 実装
+- [ ] filevalidator の統合キャッシュ対応
 
 ### Phase 5: 統合
 
@@ -697,12 +763,14 @@ flowchart TB
 | High Risk | `AnalysisError` | 安全側に倒す（中リスクとして扱う） |
 | キャッシュなし | `StaticBinary` | 従来と同じ（不明として扱う） |
 
-### 11.3 キャッシュディレクトリの共有
+### 11.3 統合キャッシュ方式
 
-**採用案**: filevalidator と同じディレクトリを共有
-- ユーザーが管理するディレクトリが1つで済む
-- ファイル名のプレフィックスで区別
+**採用案**: ハッシュ検証情報と syscall 解析結果を単一ファイルに統合
+- キャッシュファイル数が半減（管理の簡素化）
+- 1回のファイル読み込みで両方の情報を取得可能
+- 利用側インターフェースは分離を維持（各パッケージは自分の関心事のみを扱う）
 
-**代替案（不採用）**: 別ディレクトリに保存
-- 追加の設定オプションが必要
-- ユーザーの管理負担が増加
+**代替案（不採用）**: ファイル名プレフィックスで区別した別ファイル
+- `~path~to~file`（ハッシュ検証）と `syscall~path~to~file`（syscall 解析）
+- キャッシュファイル数が2倍になる
+- 同じ対象ファイルに対して2回の I/O が必要になる場合がある

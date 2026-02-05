@@ -31,14 +31,18 @@ internal/runner/security/elfanalyzer/
     syscall_numbers.go             # SyscallNumberTable, X86_64SyscallTable
     go_wrapper_resolver.go         # GoWrapperResolver
 
-internal/runner/security/syscallcache/
-    cache.go                       # SyscallCache
-    schema.go                      # CacheEntry, スキーマ定義
+internal/cache/
+    integrated_cache.go            # IntegratedCacheStore（統合キャッシュ層）
+    schema.go                      # CacheEntry, 統合スキーマ定義
     errors.go                      # キャッシュ関連エラー
+    syscall_cache.go               # SyscallCache インターフェース実装
 
 # 拡張対象
 cmd/record/
     main.go                        # --analyze-syscalls オプション追加
+
+internal/filevalidator/
+    validator.go                   # 統合キャッシュ対応（拡張）
 
 # 既存コンポーネント（依存）
 internal/filevalidator/
@@ -732,12 +736,17 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 
 **注記**: 上記コードでは `x86asm.Reg`, `x86asm.Rel`, `x86asm.Mem` などの型を使用しているため、パッケージ冒頭のインポートで `"golang.org/x/arch/x86/x86asm"` を追加する必要がある。
 
-### 2.5 SyscallCache
+### 2.5 統合キャッシュ層
+
+統合キャッシュは、ハッシュ検証情報と syscall 解析結果を単一ファイルに格納する。
+利用側（filevalidator, elfanalyzer）はそれぞれ自分の関心事のみを扱うインターフェースを通じてアクセスする。
+
+#### 2.5.1 IntegratedCacheStore
 
 ```go
-// internal/runner/security/syscallcache/cache.go
+// internal/cache/integrated_cache.go
 
-package syscallcache
+package cache
 
 import (
     "encoding/json"
@@ -748,31 +757,19 @@ import (
 
     "github.com/isseis/go-safe-cmd-runner/internal/common"
     "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
-const (
-    // CurrentSchemaVersion is the current cache schema version.
-    // Increment this when making breaking changes to the cache format.
-    CurrentSchemaVersion = 1
-
-    // CacheFormat identifies this cache type.
-    CacheFormat = "syscall_analysis"
-
-    // CacheFilePrefix is used to distinguish syscall cache files from hash files.
-    CacheFilePrefix = "syscall~"
-)
-
-// SyscallCache manages syscall analysis cache files.
-type SyscallCache struct {
+// IntegratedCacheStore manages unified cache files containing both
+// hash validation and syscall analysis data.
+type IntegratedCacheStore struct {
     cacheDir   string
-    pathGetter *SyscallCachePathGetter
+    pathGetter filevalidator.HashFilePathGetter
     fs         safefileio.FileSystem
 }
 
-// NewSyscallCache creates a new SyscallCache.
-func NewSyscallCache(cacheDir string) (*SyscallCache, error) {
+// NewIntegratedCacheStore creates a new IntegratedCacheStore.
+func NewIntegratedCacheStore(cacheDir string, pathGetter filevalidator.HashFilePathGetter) (*IntegratedCacheStore, error) {
     // Validate cache directory
     info, err := os.Lstat(cacheDir)
     if err != nil {
@@ -785,56 +782,22 @@ func NewSyscallCache(cacheDir string) (*SyscallCache, error) {
         return nil, fmt.Errorf("cache path is not a directory: %s", cacheDir)
     }
 
-    return &SyscallCache{
+    return &IntegratedCacheStore{
         cacheDir:   cacheDir,
-        pathGetter: NewSyscallCachePathGetter(),
+        pathGetter: pathGetter,
         fs:         safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
     }, nil
 }
 
-// SaveCache saves the analysis result to cache.
-func (c *SyscallCache) SaveCache(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
-    entry := &CacheEntry{
-        SchemaVersion: CurrentSchemaVersion,
-        Format:        CacheFormat,
-        FilePath:      filePath,
-        FileHash:      fileHash,
-        AnalyzedAt:    time.Now().UTC(),
-        Architecture:  "x86_64",
-        Result:        result,
-    }
-
-    // Get cache file path
-    cachePath, err := c.getCachePath(filePath)
-    if err != nil {
-        return fmt.Errorf("failed to get cache path: %w", err)
-    }
-
-    // Marshal to JSON
-    data, err := json.MarshalIndent(entry, "", "  ")
-    if err != nil {
-        return fmt.Errorf("failed to marshal cache entry: %w", err)
-    }
-
-    // Write file safely
-    if err := c.fs.SafeWriteFile(cachePath, data, 0o600); err != nil {
-        return fmt.Errorf("failed to write cache file: %w", err)
-    }
-
-    return nil
-}
-
-// LoadCache loads the analysis result from cache.
-// Returns error if cache is missing, invalid, or hash mismatch.
-func (c *SyscallCache) LoadCache(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, error) {
-    // Get cache file path
-    cachePath, err := c.getCachePath(filePath)
+// Load loads the cache entry for the given file path.
+// Returns ErrCacheNotFound if the cache file does not exist.
+func (s *IntegratedCacheStore) Load(filePath string) (*CacheEntry, error) {
+    cachePath, err := s.getCachePath(filePath)
     if err != nil {
         return nil, fmt.Errorf("failed to get cache path: %w", err)
     }
 
-    // Read cache file safely
-    data, err := c.fs.SafeReadFile(cachePath)
+    data, err := s.fs.SafeReadFile(cachePath)
     if err != nil {
         if os.IsNotExist(err) {
             return nil, ErrCacheNotFound
@@ -842,7 +805,6 @@ func (c *SyscallCache) LoadCache(filePath, expectedHash string) (*elfanalyzer.Sy
         return nil, fmt.Errorf("failed to read cache file: %w", err)
     }
 
-    // Parse JSON
     var entry CacheEntry
     if err := json.Unmarshal(data, &entry); err != nil {
         return nil, &CacheCorruptedError{Path: cachePath, Cause: err}
@@ -856,41 +818,60 @@ func (c *SyscallCache) LoadCache(filePath, expectedHash string) (*elfanalyzer.Sy
         }
     }
 
-    // Validate format
-    if entry.Format != CacheFormat {
-        return nil, &InvalidCacheFormatError{
-            Expected: CacheFormat,
-            Actual:   entry.Format,
-        }
-    }
-
-    // Validate hash
-    if entry.FileHash != expectedHash {
-        return nil, &HashMismatchError{
-            Expected: expectedHash,
-            Actual:   entry.FileHash,
-        }
-    }
-
-    return entry.Result, nil
+    return &entry, nil
 }
 
-// InvalidateCache removes the cache file for the given path.
-func (c *SyscallCache) InvalidateCache(filePath string) error {
-    cachePath, err := c.getCachePath(filePath)
+// Save saves the cache entry for the given file path.
+// This performs a read-modify-write to preserve existing fields.
+func (s *IntegratedCacheStore) Save(filePath string, entry *CacheEntry) error {
+    cachePath, err := s.getCachePath(filePath)
     if err != nil {
-        return err
+        return fmt.Errorf("failed to get cache path: %w", err)
     }
 
-    if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
-        return fmt.Errorf("failed to remove cache file: %w", err)
+    entry.SchemaVersion = CurrentSchemaVersion
+    entry.FilePath = filePath
+    entry.UpdatedAt = time.Now().UTC()
+
+    data, err := json.MarshalIndent(entry, "", "  ")
+    if err != nil {
+        return fmt.Errorf("failed to marshal cache entry: %w", err)
+    }
+
+    if err := s.fs.SafeWriteFile(cachePath, data, 0o600); err != nil {
+        return fmt.Errorf("failed to write cache file: %w", err)
     }
 
     return nil
 }
 
+// Update performs a read-modify-write operation on the cache.
+// The updateFn receives the existing entry (or a new empty one if not found)
+// and should modify it in place.
+func (s *IntegratedCacheStore) Update(filePath string, updateFn func(*CacheEntry) error) error {
+    // Try to load existing entry
+    entry, err := s.Load(filePath)
+    if err != nil {
+        if err == ErrCacheNotFound {
+            // Create new entry
+            entry = &CacheEntry{}
+        } else {
+            // For other errors (corrupted, schema mismatch), create fresh entry
+            entry = &CacheEntry{}
+        }
+    }
+
+    // Apply update
+    if err := updateFn(entry); err != nil {
+        return err
+    }
+
+    // Save updated entry
+    return s.Save(filePath, entry)
+}
+
 // getCachePath returns the cache file path for the given file.
-func (c *SyscallCache) getCachePath(filePath string) (string, error) {
+func (s *IntegratedCacheStore) getCachePath(filePath string) (string, error) {
     absPath, err := filepath.Abs(filePath)
     if err != nil {
         return "", fmt.Errorf("failed to get absolute path: %w", err)
@@ -901,16 +882,16 @@ func (c *SyscallCache) getCachePath(filePath string) (string, error) {
         return "", fmt.Errorf("failed to create resolved path: %w", err)
     }
 
-    return c.pathGetter.GetCacheFilePath(c.cacheDir, resolvedPath)
+    return s.pathGetter.GetHashFilePath(s.cacheDir, resolvedPath)
 }
 ```
 
-### 2.6 キャッシュスキーマ
+#### 2.5.2 SyscallCache（elfanalyzer 用インターフェース実装）
 
 ```go
-// internal/runner/security/syscallcache/schema.go
+// internal/cache/syscall_cache.go
 
-package syscallcache
+package cache
 
 import (
     "time"
@@ -918,37 +899,215 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-// CacheEntry represents a single syscall analysis cache entry.
+// SyscallCache provides syscall analysis cache operations.
+// This is the interface used by elfanalyzer package.
+type SyscallCache struct {
+    store *IntegratedCacheStore
+}
+
+// NewSyscallCache creates a new SyscallCache backed by IntegratedCacheStore.
+func NewSyscallCache(store *IntegratedCacheStore) *SyscallCache {
+    return &SyscallCache{store: store}
+}
+
+// SaveSyscallAnalysis saves the syscall analysis result.
+// This updates only the syscall_analysis field, preserving other fields.
+func (c *SyscallCache) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
+    return c.store.Update(filePath, func(entry *CacheEntry) error {
+        entry.ContentHash = fileHash
+        entry.SyscallAnalysis = &SyscallAnalysisData{
+            Architecture:       "x86_64",
+            AnalyzedAt:         time.Now().UTC(),
+            DetectedSyscalls:   convertSyscallInfos(result.DetectedSyscalls),
+            HasUnknownSyscalls: result.HasUnknownSyscalls,
+            HighRiskReasons:    result.HighRiskReasons,
+            Summary:            convertSummary(result.Summary),
+        }
+        return nil
+    })
+}
+
+// LoadSyscallAnalysis loads the syscall analysis result.
+// Returns (result, true, nil) if found and hash matches.
+// Returns (nil, false, nil) if not found or hash mismatch.
+// Returns (nil, false, error) on other errors.
+func (c *SyscallCache) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
+    entry, err := c.store.Load(filePath)
+    if err != nil {
+        if err == ErrCacheNotFound {
+            return nil, false, nil
+        }
+        return nil, false, err
+    }
+
+    // Check hash match
+    if entry.ContentHash != expectedHash {
+        return nil, false, nil
+    }
+
+    // Check if syscall analysis exists
+    if entry.SyscallAnalysis == nil {
+        return nil, false, nil
+    }
+
+    // Convert back to elfanalyzer types
+    result := &elfanalyzer.SyscallAnalysisResult{
+        DetectedSyscalls:   convertToSyscallInfos(entry.SyscallAnalysis.DetectedSyscalls),
+        HasUnknownSyscalls: entry.SyscallAnalysis.HasUnknownSyscalls,
+        HighRiskReasons:    entry.SyscallAnalysis.HighRiskReasons,
+        Summary:            convertToSummary(entry.SyscallAnalysis.Summary),
+    }
+
+    return result, true, nil
+}
+
+// Helper functions for type conversion
+func convertSyscallInfos(infos []elfanalyzer.SyscallInfo) []SyscallInfoData {
+    result := make([]SyscallInfoData, len(infos))
+    for i, info := range infos {
+        result[i] = SyscallInfoData{
+            Number:              info.Number,
+            Name:                info.Name,
+            IsNetwork:           info.IsNetwork,
+            Location:            info.Location,
+            DeterminationMethod: info.DeterminationMethod,
+        }
+    }
+    return result
+}
+
+func convertToSyscallInfos(data []SyscallInfoData) []elfanalyzer.SyscallInfo {
+    result := make([]elfanalyzer.SyscallInfo, len(data))
+    for i, d := range data {
+        result[i] = elfanalyzer.SyscallInfo{
+            Number:              d.Number,
+            Name:                d.Name,
+            IsNetwork:           d.IsNetwork,
+            Location:            d.Location,
+            DeterminationMethod: d.DeterminationMethod,
+        }
+    }
+    return result
+}
+
+func convertSummary(s elfanalyzer.SyscallSummary) SyscallSummaryData {
+    return SyscallSummaryData{
+        HasNetworkSyscalls:       s.HasNetworkSyscalls,
+        IsHighRisk:               s.IsHighRisk,
+        TotalSyscallInstructions: s.TotalSyscallInstructions,
+        NetworkSyscallCount:      s.NetworkSyscallCount,
+    }
+}
+
+func convertToSummary(d SyscallSummaryData) elfanalyzer.SyscallSummary {
+    return elfanalyzer.SyscallSummary{
+        HasNetworkSyscalls:       d.HasNetworkSyscalls,
+        IsHighRisk:               d.IsHighRisk,
+        TotalSyscallInstructions: d.TotalSyscallInstructions,
+        NetworkSyscallCount:      d.NetworkSyscallCount,
+    }
+}
+```
+
+### 2.6 統合キャッシュスキーマ
+
+```go
+// internal/cache/schema.go
+
+package cache
+
+import (
+    "time"
+)
+
+const (
+    // CurrentSchemaVersion is the current cache schema version.
+    // Increment this when making breaking changes to the cache format.
+    CurrentSchemaVersion = 1
+)
+
+// CacheEntry represents a unified cache entry containing both
+// hash validation and syscall analysis data.
 type CacheEntry struct {
     // SchemaVersion identifies the cache format version.
     SchemaVersion int `json:"schema_version"`
 
-    // Format identifies the cache type ("syscall_analysis").
-    Format string `json:"format"`
-
-    // FilePath is the absolute path to the analyzed file.
+    // FilePath is the absolute path to the cached file.
     FilePath string `json:"file_path"`
 
-    // FileHash is the SHA256 hash of the analyzed file.
-    FileHash string `json:"file_hash"`
+    // ContentHash is the SHA256 hash of the file content.
+    // Used by both filevalidator and elfanalyzer for cache validation.
+    ContentHash string `json:"content_hash"`
 
-    // AnalyzedAt is when the analysis was performed.
-    AnalyzedAt time.Time `json:"analyzed_at"`
+    // UpdatedAt is when the cache was last updated.
+    UpdatedAt time.Time `json:"updated_at"`
 
+    // SyscallAnalysis contains syscall analysis result (optional).
+    // Only present for static ELF binaries that have been analyzed.
+    SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
+}
+
+// SyscallAnalysisData contains syscall analysis information.
+type SyscallAnalysisData struct {
     // Architecture is the target architecture (e.g., "x86_64").
     Architecture string `json:"architecture"`
 
-    // Result contains the analysis result.
-    Result *elfanalyzer.SyscallAnalysisResult `json:"result"`
+    // AnalyzedAt is when the syscall analysis was performed.
+    AnalyzedAt time.Time `json:"analyzed_at"`
+
+    // DetectedSyscalls contains all syscall instructions found.
+    DetectedSyscalls []SyscallInfoData `json:"detected_syscalls"`
+
+    // HasUnknownSyscalls indicates if any syscall number could not be determined.
+    HasUnknownSyscalls bool `json:"has_unknown_syscalls"`
+
+    // HighRiskReasons explains why the analysis resulted in high risk.
+    HighRiskReasons []string `json:"high_risk_reasons,omitempty"`
+
+    // Summary provides aggregated information about the analysis.
+    Summary SyscallSummaryData `json:"summary"`
+}
+
+// SyscallInfoData represents information about a single syscall instruction.
+type SyscallInfoData struct {
+    // Number is the syscall number (-1 if unknown).
+    Number int `json:"number"`
+
+    // Name is the human-readable syscall name.
+    Name string `json:"name,omitempty"`
+
+    // IsNetwork indicates whether this syscall is network-related.
+    IsNetwork bool `json:"is_network"`
+
+    // Location is the offset within the .text section.
+    Location uint64 `json:"location"`
+
+    // DeterminationMethod describes how the syscall number was determined.
+    DeterminationMethod string `json:"determination_method"`
+}
+
+// SyscallSummaryData provides aggregated analysis information.
+type SyscallSummaryData struct {
+    // HasNetworkSyscalls indicates presence of network-related syscalls.
+    HasNetworkSyscalls bool `json:"has_network_syscalls"`
+
+    // IsHighRisk indicates the analysis could not fully determine network capability.
+    IsHighRisk bool `json:"is_high_risk"`
+
+    // TotalSyscallInstructions is the count of syscall instructions found.
+    TotalSyscallInstructions int `json:"total_syscalls"`
+
+    // NetworkSyscallCount is the count of network-related syscalls.
+    NetworkSyscallCount int `json:"network_syscalls"`
 }
 ```
 
 ### 2.7 キャッシュエラー
 
 ```go
-// internal/runner/security/syscallcache/errors.go
+// internal/cache/errors.go
 
-package syscallcache
+package cache
 
 import (
     "errors"
@@ -957,6 +1116,7 @@ import (
 
 // Static errors
 var (
+    // ErrCacheNotFound indicates the cache file does not exist.
     ErrCacheNotFound = errors.New("cache file not found")
 )
 
@@ -968,16 +1128,6 @@ type SchemaVersionMismatchError struct {
 
 func (e *SchemaVersionMismatchError) Error() string {
     return fmt.Sprintf("schema version mismatch: expected %d, got %d", e.Expected, e.Actual)
-}
-
-// HashMismatchError indicates file hash mismatch.
-type HashMismatchError struct {
-    Expected string
-    Actual   string
-}
-
-func (e *HashMismatchError) Error() string {
-    return fmt.Sprintf("hash mismatch: expected %s, got %s", e.Expected, e.Actual)
 }
 
 // CacheCorruptedError indicates cache file is corrupted.
@@ -993,75 +1143,6 @@ func (e *CacheCorruptedError) Error() string {
 func (e *CacheCorruptedError) Unwrap() error {
     return e.Cause
 }
-
-// InvalidCacheFormatError indicates invalid cache format.
-type InvalidCacheFormatError struct {
-    Expected string
-    Actual   string
-}
-
-func (e *InvalidCacheFormatError) Error() string {
-    return fmt.Sprintf("invalid cache format: expected %s, got %s", e.Expected, e.Actual)
-}
-```
-
-### 2.8 SyscallCachePathGetter
-
-```go
-// internal/runner/security/syscallcache/path_getter.go
-
-package syscallcache
-
-import (
-    "path/filepath"
-
-    "github.com/isseis/go-safe-cmd-runner/internal/common"
-    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator/encoding"
-)
-
-// SyscallCachePathGetter generates cache file paths for syscall analysis.
-// Uses the same encoding strategy as HybridHashFilePathGetter with a prefix.
-type SyscallCachePathGetter struct {
-    encoder        *encoding.SubstitutionHashEscape
-    fallbackGetter *filevalidator.SHA256PathHashGetter
-}
-
-// NewSyscallCachePathGetter creates a new SyscallCachePathGetter.
-func NewSyscallCachePathGetter() *SyscallCachePathGetter {
-    return &SyscallCachePathGetter{
-        encoder:        encoding.NewSubstitutionHashEscape(),
-        fallbackGetter: filevalidator.NewSHA256PathHashGetter(),
-    }
-}
-
-// GetCacheFilePath returns the cache file path for the given file.
-func (g *SyscallCachePathGetter) GetCacheFilePath(cacheDir string, filePath common.ResolvedPath) (string, error) {
-    // Try normal encoding first
-    encodedName, err := g.encoder.Encode(filePath.String())
-    if err != nil {
-        return "", err
-    }
-
-    // Add prefix
-    prefixedName := CacheFilePrefix + encodedName
-
-    // Check length limit
-    if len(prefixedName) <= filevalidator.MaxFilenameLength {
-        return filepath.Join(cacheDir, prefixedName), nil
-    }
-
-    // Use SHA256 fallback with prefix
-    hashPath, err := g.fallbackGetter.GetHashFilePath(cacheDir, filePath)
-    if err != nil {
-        return "", err
-    }
-
-    // Insert prefix into the filename
-    dir := filepath.Dir(hashPath)
-    name := CacheFilePrefix + filepath.Base(hashPath)
-    return filepath.Join(dir, name), nil
-}
 ```
 
 ## 3. StandardELFAnalyzer の拡張
@@ -1072,9 +1153,13 @@ func (g *SyscallCachePathGetter) GetCacheFilePath(cacheDir string, filePath comm
 
 // SyscallCache defines the interface for syscall analysis result caching.
 // This decouples the analyzer from the concrete cache implementation to avoid circular dependencies.
-// The concrete implementation is provided by the syscallcache package.
+// The concrete implementation is provided by the internal/cache package.
 type SyscallCache interface {
-    LoadCache(filePath, expectedHash string) (*SyscallAnalysisResult, error)
+    // LoadSyscallAnalysis loads syscall analysis from cache.
+    // Returns (result, true, nil) if found and hash matches.
+    // Returns (nil, false, nil) if not found or hash mismatch.
+    // Returns (nil, false, error) on other errors.
+    LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, bool, error)
 }
 
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
@@ -1133,18 +1218,16 @@ func (a *StandardELFAnalyzer) lookupSyscallCache(path string) AnalysisOutput {
     }
 
     // Load cache
-    // Note: ErrCacheNotFound should be handled by the implementation or checked here
-    // assuming LoadCache returns specific error or nil on hit
-    result, err := a.syscallCache.LoadCache(path, hash)
+    result, found, err := a.syscallCache.LoadSyscallAnalysis(path, hash)
     if err != nil {
-        // Log error except for cache miss
-        // Note: The interface doesn't define ErrCacheNotFound, so we might need to rely on
-        // the error string or simple nil check if the interface contract allows nil result for miss.
-        // For this implementation, we assume any error means "no valid cache".
-        slog.Debug("Syscall cache lookup failed or miss",
+        slog.Debug("Syscall cache lookup error",
             "path", path,
             "error", err)
+        return AnalysisOutput{Result: StaticBinary}
+    }
 
+    if !found {
+        // Cache miss or hash mismatch
         return AnalysisOutput{Result: StaticBinary}
     }
 
@@ -1206,9 +1289,9 @@ import (
     "log/slog"
     "os"
 
+    "github.com/isseis/go-safe-cmd-runner/internal/cache"
     "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/syscallcache"
 )
 
 // Command line flags
@@ -1226,7 +1309,7 @@ func main() {
     if *analyzeSyscalls {
         // Check if file is a static ELF binary
         if isStaticELF(filePath) {
-            if err := analyzeSyscallsForFile(filePath, hashDir); err != nil {
+            if err := analyzeSyscallsForFile(filePath, hashDir, pathGetter); err != nil {
                 slog.Warn("Syscall analysis failed",
                     "path", filePath,
                     "error", err)
@@ -1249,8 +1332,8 @@ func isStaticELF(path string) bool {
     return dynsym == nil
 }
 
-// analyzeSyscallsForFile performs syscall analysis and caches the result.
-func analyzeSyscallsForFile(path, cacheDir string) error {
+// analyzeSyscallsForFile performs syscall analysis and saves to integrated cache.
+func analyzeSyscallsForFile(path, cacheDir string, pathGetter filevalidator.HashFilePathGetter) error {
     // Create syscall analyzer
     analyzer := elfanalyzer.NewSyscallAnalyzer()
 
@@ -1273,13 +1356,16 @@ func analyzeSyscallsForFile(path, cacheDir string) error {
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
 
-    // Save to cache
-    cache, err := syscallcache.NewSyscallCache(cacheDir)
+    // Create integrated cache store and syscall cache
+    store, err := cache.NewIntegratedCacheStore(cacheDir, pathGetter)
     if err != nil {
-        return fmt.Errorf("failed to create cache: %w", err)
+        return fmt.Errorf("failed to create cache store: %w", err)
     }
 
-    if err := cache.SaveCache(path, hash, result); err != nil {
+    syscallCache := cache.NewSyscallCache(store)
+
+    // Save syscall analysis to integrated cache
+    if err := syscallCache.SaveSyscallAnalysis(path, hash, result); err != nil {
         return fmt.Errorf("failed to save cache: %w", err)
     }
 
@@ -1479,12 +1565,12 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 }
 ```
 
-### 6.3 SyscallCache のユニットテスト
+### 6.3 統合キャッシュのユニットテスト
 
 ```go
-// internal/runner/security/syscallcache/cache_test.go
+// internal/cache/syscall_cache_test.go
 
-package syscallcache
+package cache
 
 import (
     "encoding/json"
@@ -1496,13 +1582,17 @@ import (
     "github.com/stretchr/testify/assert"
     "github.com/stretchr/testify/require"
 
+    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
 func TestSyscallCache_SaveAndLoad(t *testing.T) {
     tmpDir := t.TempDir()
-    cache, err := NewSyscallCache(tmpDir)
+    pathGetter := filevalidator.NewHybridHashFilePathGetter()
+    store, err := NewIntegratedCacheStore(tmpDir, pathGetter)
     require.NoError(t, err)
+
+    cache := NewSyscallCache(store)
 
     result := &elfanalyzer.SyscallAnalysisResult{
         DetectedSyscalls: []elfanalyzer.SyscallInfo{
@@ -1516,43 +1606,74 @@ func TestSyscallCache_SaveAndLoad(t *testing.T) {
     }
 
     // Save
-    err = cache.SaveCache("/test/path", "sha256:abc123", result)
+    err = cache.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
     require.NoError(t, err)
 
     // Load with matching hash
-    loaded, err := cache.LoadCache("/test/path", "sha256:abc123")
+    loaded, found, err := cache.LoadSyscallAnalysis("/test/path", "sha256:abc123")
     require.NoError(t, err)
+    require.True(t, found)
     assert.Equal(t, result.Summary.HasNetworkSyscalls, loaded.Summary.HasNetworkSyscalls)
 
     // Load with mismatched hash
-    _, err = cache.LoadCache("/test/path", "sha256:different")
-    assert.Error(t, err)
-    var hashErr *HashMismatchError
-    assert.True(t, errors.As(err, &hashErr))
+    _, found, err = cache.LoadSyscallAnalysis("/test/path", "sha256:different")
+    require.NoError(t, err)
+    assert.False(t, found)  // Hash mismatch returns found=false, not error
 }
 
-func TestSyscallCache_SchemaVersionMismatch(t *testing.T) {
+func TestIntegratedCacheStore_SchemaVersionMismatch(t *testing.T) {
     tmpDir := t.TempDir()
-    cache, err := NewSyscallCache(tmpDir)
+    pathGetter := filevalidator.NewHybridHashFilePathGetter()
+    store, err := NewIntegratedCacheStore(tmpDir, pathGetter)
     require.NoError(t, err)
 
     // Create cache file with different schema version
     entry := &CacheEntry{
         SchemaVersion: 999, // Future version
-        Format:        CacheFormat,
         FilePath:      "/test/path",
-        FileHash:      "sha256:abc123",
+        ContentHash:   "sha256:abc123",
     }
 
     data, _ := json.Marshal(entry)
-    cachePath := filepath.Join(tmpDir, "syscall~test~path")
+    cachePath := filepath.Join(tmpDir, "~test~path")
     os.WriteFile(cachePath, data, 0o600)
 
     // Load should fail with schema version mismatch
-    _, err = cache.LoadCache("/test/path", "sha256:abc123")
+    _, err = store.Load("/test/path")
     assert.Error(t, err)
     var schemaErr *SchemaVersionMismatchError
     assert.True(t, errors.As(err, &schemaErr))
+}
+
+func TestIntegratedCache_PreservesExistingFields(t *testing.T) {
+    tmpDir := t.TempDir()
+    pathGetter := filevalidator.NewHybridHashFilePathGetter()
+    store, err := NewIntegratedCacheStore(tmpDir, pathGetter)
+    require.NoError(t, err)
+
+    // First, save a cache entry with just content hash
+    entry := &CacheEntry{
+        ContentHash: "sha256:abc123",
+    }
+    err = store.Save("/test/path", entry)
+    require.NoError(t, err)
+
+    // Now update with syscall analysis
+    cache := NewSyscallCache(store)
+    result := &elfanalyzer.SyscallAnalysisResult{
+        Summary: elfanalyzer.SyscallSummary{
+            HasNetworkSyscalls: true,
+        },
+    }
+    err = cache.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
+    require.NoError(t, err)
+
+    // Verify both fields are present
+    loaded, err := store.Load("/test/path")
+    require.NoError(t, err)
+    assert.Equal(t, "sha256:abc123", loaded.ContentHash)
+    assert.NotNil(t, loaded.SyscallAnalysis)
+    assert.True(t, loaded.SyscallAnalysis.Summary.HasNetworkSyscalls)
 }
 ```
 
