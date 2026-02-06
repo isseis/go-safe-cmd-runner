@@ -692,7 +692,7 @@ flowchart TD
 | メモリからのロード | High Risk | 実行時依存 | FR-3.1.4 |
 | スキャン範囲外 | High Risk | 解析限界 | FR-3.1.4 |
 | 制御フロー境界 | High Risk | 静的解析限界 | FR-3.1.4 |
-| strip されたバイナリ | High Risk | シンボル情報なし | FR-3.1.6 |
+| Go ラッパーの引数が特定不能 | High Risk | syscall 番号が静的に決定できない | FR-3.1.6 |
 
 ### 6.3 キャッシュセキュリティ
 
