@@ -623,6 +623,21 @@ type SymbolInfo struct {
     Size    uint64
 }
 
+// WrapperCall represents a call to a Go syscall wrapper function.
+type WrapperCall struct {
+    // CallSiteAddress is the address of the CALL instruction.
+    CallSiteAddress uint64
+
+    // TargetFunction is the name of the wrapper function being called.
+    TargetFunction string
+
+    // SyscallNumber is the resolved syscall number, or -1 if unresolved.
+    SyscallNumber int
+
+    // Resolved indicates whether the syscall number was successfully determined.
+    Resolved bool
+}
+
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
     symbols     map[string]SymbolInfo
@@ -1171,6 +1186,7 @@ package cache
 import (
     "errors"
     "fmt"
+    "log/slog"
 )
 
 // Static errors
