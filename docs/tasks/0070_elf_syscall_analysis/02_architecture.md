@@ -105,6 +105,7 @@ graph TB
             E["syscall_decoder.go<br>(新規)"]
             F["syscall_numbers.go<br>(新規)"]
             G["go_wrapper_resolver.go<br>(新規)"]
+            P["pclntab_parser.go<br>(新規)"]
         end
 
         subgraph "internal/filevalidator"
@@ -125,6 +126,7 @@ graph TB
     D --> E
     D --> F
     D --> G
+    G --> P
     B --> D
     B --> J
     H --> J
@@ -133,7 +135,7 @@ graph TB
     L --> J
 
     class A,B,C,H,I,L process
-    class D,E,F,G,J,K new
+    class D,E,F,G,P,J,K new
 ```
 
 **注記**: `internal/cache` パッケージは統合キャッシュの共通層であり、`filevalidator` と `elfanalyzer` の両方から利用される。
@@ -148,6 +150,7 @@ sequenceDiagram
     participant SA as "SyscallAnalyzer"
     participant MD as "MachineCodeDecoder"
     participant GW as "GoWrapperResolver"
+    participant PP as "PclntabParser"
     participant SC as "SyscallCache"
     participant FS as "FileSystem"
 
@@ -155,7 +158,15 @@ sequenceDiagram
     SA->>FS: Open ELF file
     FS-->>SA: ELF handle
     SA->>SA: Load .text section
+
+    Note over GW,PP: Symbol loading (FR-3.1.6)
     SA->>GW: LoadSymbols(elfFile)
+    alt .symtab available
+        GW->>GW: Load from .symtab
+    else .symtab stripped
+        GW->>PP: Parse .gopclntab
+        PP-->>GW: Function names and addresses
+    end
 
     Note over SA,MD: Pass 1: Direct syscall instructions
     SA->>SA: Find syscall instructions (0F 05)
@@ -170,7 +181,7 @@ sequenceDiagram
     end
 
     Note over SA,GW: Pass 2: Go wrapper calls (FR-3.1.6)
-    alt Symbols available
+    alt Symbols available (from .symtab or .gopclntab)
         SA->>GW: FindWrapperCalls(code, baseAddr)
         GW->>GW: Scan for CALL to known wrappers
         loop For each wrapper call
@@ -193,6 +204,7 @@ sequenceDiagram
 - Pass 1: `syscall` 命令（0F 05）を直接検出し、逆方向スキャンで syscall 番号を特定
 - Pass 2: Go syscall ラッパー関数（`syscall.Syscall` 等）への CALL 命令を検出し、引数から syscall 番号を特定
 - 逆方向スキャンでは、x86_64 の可変長命令の性質上、直接逆方向にデコードすることは困難なため、前方向にデコードして命令リストを構築し、そのリストを逆順に走査する
+- **Strip されたバイナリ対応**: `.symtab` が存在しない場合、`.gopclntab` から関数情報を復元（Go ランタイムがスタックトレース生成とガベージコレクションに必要なため strip 後も保持される）
 
 ### 2.4 データフロー（実行時）
 
@@ -297,10 +309,49 @@ classDiagram
     X86Decoder --> Instruction
 ```
 
-### 3.3 GoWrapperResolver
+### 3.3 PclntabParser
+
+Go バイナリの `.gopclntab` セクション（pclntab: Program Counter Line Table）から関数情報を復元。
+Strip されたバイナリでも関数名とアドレスを取得可能。
+
+```mermaid
+classDiagram
+    class PclntabParser {
+        -ptrSize int
+        -goVersion string
+        -funcData []PclntabFunc
+        +Parse(elfFile *elf.File) error
+        +GetFunctions() []PclntabFunc
+        +FindFunction(name string) (PclntabFunc, bool)
+        +GetGoVersion() string
+        -parseGo118Plus(data []byte) error
+        -parseGo116(data []byte) error
+        -parseGo12(data []byte) error
+        -parseFuncTable(data []byte) error
+    }
+
+    class PclntabFunc {
+        +Name string
+        +Entry uint64
+        +End uint64
+    }
+
+    PclntabParser --> PclntabFunc
+```
+
+**pclntab について**:
+- Go ランタイムがスタックトレース生成とガベージコレクションに使用するため、strip 後も `.gopclntab` セクションは保持される
+- マジックナンバーで Go バージョンを識別:
+  - Go 1.2-1.15: `0xFFFFFFFB`
+  - Go 1.16-1.17: `0xFFFFFFFA`
+  - Go 1.18-1.19: `0xFFFFFFF0`
+  - Go 1.20+: `0xFFFFFFF1`
+
+### 3.4 GoWrapperResolver
 
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
 直接の syscall 命令解析とは**別の解析パス**として動作する。
+`.symtab` と `.gopclntab` の両方に対応し、strip されたバイナリでも解析可能。
 
 ```mermaid
 classDiagram
@@ -308,10 +359,22 @@ classDiagram
         -symbolTable map[string]SymbolInfo
         -wrapperAddrs map[uint64]GoSyscallWrapper
         -decoder MachineCodeDecoder
+        -symbolSource SymbolSource
+        -pclntabParser PclntabParser
         +LoadSymbols(elfFile *elf.File) error
         +HasSymbols() bool
+        +GetSymbolSource() SymbolSource
         +FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall
+        -loadFromSymtab(elfFile *elf.File) error
+        -loadFromPclntab(elfFile *elf.File) error
         -resolveSyscallArgument(recentInsts []DecodedInstruction, wrapper GoSyscallWrapper) int
+    }
+
+    class SymbolSource {
+        <<enumeration>>
+        None
+        Symtab
+        Pclntab
     }
 
     class SymbolInfo {
@@ -332,12 +395,18 @@ classDiagram
         +Resolved bool
     }
 
+    GoWrapperResolver --> SymbolSource
     GoWrapperResolver --> SymbolInfo
     GoWrapperResolver --> GoSyscallWrapper
     GoWrapperResolver --> WrapperCall
+    GoWrapperResolver --> PclntabParser
 ```
 
-### 3.4 SyscallCache
+**シンボル取得の優先順位**:
+1. `.symtab` セクション（通常のシンボルテーブル）
+2. `.gopclntab` セクション（strip されたバイナリ用フォールバック）
+
+### 3.5 SyscallCache
 
 syscall 解析結果の読み書きを担当。統合キャッシュファイルの syscall_analysis フィールドを操作。
 
@@ -386,7 +455,7 @@ classDiagram
 
 **注記**: `IntegratedCacheStore` は filevalidator と elfanalyzer の両方から利用される共通のキャッシュ読み書き層である。各パッケージは自分の関心事（ハッシュ検証または syscall 解析）のみを扱い、キャッシュファイルの詳細を意識しない。
 
-### 3.5 SyscallNumberTable
+### 3.6 SyscallNumberTable
 
 アーキテクチャ別の syscall 番号とネットワーク判定。
 

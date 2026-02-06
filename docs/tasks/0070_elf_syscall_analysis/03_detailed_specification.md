@@ -586,7 +586,202 @@ func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
 }
 ```
 
-### 2.4 GoWrapperResolver
+### 2.4 PclntabParser
+
+Go バイナリの `.gopclntab` セクションから関数情報を復元するパーサー。
+strip されたバイナリでも関数名とアドレスを取得可能。
+
+```go
+// internal/runner/security/elfanalyzer/pclntab_parser.go
+
+package elfanalyzer
+
+import (
+    "debug/elf"
+    "encoding/binary"
+    "errors"
+    "fmt"
+)
+
+// pclntab magic numbers for different Go versions
+const (
+    pclntabMagicGo12  = 0xFFFFFFFB // Go 1.2 - 1.15
+    pclntabMagicGo116 = 0xFFFFFFFA // Go 1.16 - 1.17
+    pclntabMagicGo118 = 0xFFFFFFF0 // Go 1.18 - 1.19
+    pclntabMagicGo120 = 0xFFFFFFF1 // Go 1.20+
+)
+
+// Errors
+var (
+    ErrNoPclntab          = errors.New("no .gopclntab section found")
+    ErrUnsupportedPclntab = errors.New("unsupported pclntab format")
+    ErrInvalidPclntab     = errors.New("invalid pclntab structure")
+)
+
+// PclntabFunc represents a function entry in pclntab.
+type PclntabFunc struct {
+    Name    string
+    Entry   uint64 // Function entry address
+    End     uint64 // Function end address (if available)
+}
+
+// PclntabParser parses Go's pclntab to extract function information.
+type PclntabParser struct {
+    ptrSize    int    // 4 or 8 bytes
+    goVersion  string // Detected Go version range
+    funcData   []PclntabFunc
+}
+
+// NewPclntabParser creates a new PclntabParser.
+func NewPclntabParser() *PclntabParser {
+    return &PclntabParser{
+        funcData: make([]PclntabFunc, 0),
+    }
+}
+
+// Parse reads the .gopclntab section and extracts function information.
+// This works even on stripped binaries because Go runtime requires pclntab
+// for stack traces and garbage collection.
+func (p *PclntabParser) Parse(elfFile *elf.File) error {
+    // Find .gopclntab section
+    section := elfFile.Section(".gopclntab")
+    if section == nil {
+        return ErrNoPclntab
+    }
+
+    data, err := section.Data()
+    if err != nil {
+        return fmt.Errorf("failed to read .gopclntab: %w", err)
+    }
+
+    if len(data) < 8 {
+        return ErrInvalidPclntab
+    }
+
+    // Read magic number (first 4 bytes, little-endian)
+    magic := binary.LittleEndian.Uint32(data[0:4])
+
+    switch magic {
+    case pclntabMagicGo118, pclntabMagicGo120:
+        // Go 1.18+ format - supported
+        return p.parseGo118Plus(data)
+    case pclntabMagicGo116:
+        // Go 1.16-1.17 format - supported with limitations
+        return p.parseGo116(data)
+    case pclntabMagicGo12:
+        // Go 1.2-1.15 format - legacy, limited support
+        return p.parseGo12(data)
+    default:
+        return fmt.Errorf("%w: unknown magic 0x%08X", ErrUnsupportedPclntab, magic)
+    }
+}
+
+// parseGo118Plus parses pclntab for Go 1.18 and later.
+// Reference: https://go.dev/src/runtime/symtab.go
+func (p *PclntabParser) parseGo118Plus(data []byte) error {
+    if len(data) < 16 {
+        return ErrInvalidPclntab
+    }
+
+    // Header layout for Go 1.18+:
+    // [0:4]   magic
+    // [4:5]   padding (0)
+    // [5:6]   padding (0)
+    // [6:7]   instruction size quantum (1 for x86, 4 for ARM)
+    // [7:8]   pointer size (4 or 8)
+    // [8:16]  nfunc (number of functions) - uint64 or uint32 depending on arch
+
+    p.ptrSize = int(data[7])
+    if p.ptrSize != 4 && p.ptrSize != 8 {
+        return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
+    }
+
+    p.goVersion = "go1.18+"
+
+    // Parse function table
+    // The structure varies by Go version, but function entries contain:
+    // - entry PC (function start address)
+    // - offset to function name in string table
+    return p.parseFuncTable(data)
+}
+
+// parseGo116 parses pclntab for Go 1.16-1.17.
+func (p *PclntabParser) parseGo116(data []byte) error {
+    if len(data) < 16 {
+        return ErrInvalidPclntab
+    }
+
+    p.ptrSize = int(data[7])
+    if p.ptrSize != 4 && p.ptrSize != 8 {
+        return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
+    }
+
+    p.goVersion = "go1.16-1.17"
+    return p.parseFuncTable(data)
+}
+
+// parseGo12 parses pclntab for Go 1.2-1.15 (legacy format).
+func (p *PclntabParser) parseGo12(data []byte) error {
+    if len(data) < 8 {
+        return ErrInvalidPclntab
+    }
+
+    // Go 1.2-1.15 header:
+    // [0:4]   magic
+    // [4:5]   padding
+    // [5:6]   padding
+    // [6:7]   instruction size quantum
+    // [7:8]   pointer size
+
+    p.ptrSize = int(data[7])
+    p.goVersion = "go1.2-1.15"
+    return p.parseFuncTable(data)
+}
+
+// parseFuncTable extracts function entries from the pclntab.
+// This is a simplified implementation that extracts function names and addresses.
+func (p *PclntabParser) parseFuncTable(data []byte) error {
+    // Note: Full pclntab parsing is complex and varies by Go version.
+    // This implementation focuses on extracting function names and entry addresses.
+    // For production use, consider using debug/gosym with additional fallbacks.
+
+    // The actual parsing logic would:
+    // 1. Read the number of functions from the header
+    // 2. Iterate through the function table
+    // 3. For each entry, read the entry PC and name offset
+    // 4. Resolve the name from the string table
+
+    // Placeholder: actual implementation would parse the binary structure
+    // See: https://cloud.google.com/blog/topics/threat-intelligence/golang-internals-symbol-recovery
+
+    return nil
+}
+
+// GetFunctions returns all parsed function information.
+func (p *PclntabParser) GetFunctions() []PclntabFunc {
+    return p.funcData
+}
+
+// FindFunction finds a function by name.
+func (p *PclntabParser) FindFunction(name string) (PclntabFunc, bool) {
+    for _, f := range p.funcData {
+        if f.Name == name {
+            return f, true
+        }
+    }
+    return PclntabFunc{}, false
+}
+
+// GetGoVersion returns the detected Go version range.
+func (p *PclntabParser) GetGoVersion() string {
+    return p.goVersion
+}
+```
+
+### 2.5 GoWrapperResolver
+
+Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
+`.gopclntab` と `.symtab` の両方に対応。
 
 ```go
 // internal/runner/security/elfanalyzer/go_wrapper_resolver.go
@@ -623,6 +818,15 @@ type SymbolInfo struct {
     Size    uint64
 }
 
+// SymbolSource indicates where the symbol information was obtained from.
+type SymbolSource int
+
+const (
+    SymbolSourceNone     SymbolSource = iota
+    SymbolSourceSymtab                // From .symtab section
+    SymbolSourcePclntab               // From .gopclntab section (stripped binary)
+)
+
 // WrapperCall represents a call to a Go syscall wrapper function.
 type WrapperCall struct {
     // CallSiteAddress is the address of the CALL instruction.
@@ -640,31 +844,51 @@ type WrapperCall struct {
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
-    symbols     map[string]SymbolInfo
+    symbols      map[string]SymbolInfo
     wrapperAddrs map[uint64]GoSyscallWrapper
-    hasSymbols  bool
+    hasSymbols   bool
+    symbolSource SymbolSource
+    pclntabParser *PclntabParser
 }
 
 // NewGoWrapperResolver creates a new GoWrapperResolver.
 func NewGoWrapperResolver() *GoWrapperResolver {
     return &GoWrapperResolver{
-        symbols:      make(map[string]SymbolInfo),
-        wrapperAddrs: make(map[uint64]GoSyscallWrapper),
+        symbols:       make(map[string]SymbolInfo),
+        wrapperAddrs:  make(map[uint64]GoSyscallWrapper),
+        pclntabParser: NewPclntabParser(),
     }
 }
 
-// LoadSymbols loads symbols from the ELF file's .symtab section.
-// Returns error if symbol table cannot be read (e.g., stripped binary).
+// LoadSymbols loads symbols from the ELF file.
+// It tries the following sources in order:
+// 1. .symtab section (standard symbol table)
+// 2. .gopclntab section (pclntab - works on stripped Go binaries)
 //
-// Note: This method only reads .symtab, not .dynsym. The target symbols
-// (syscall.Syscall, etc.) are Go runtime internal symbols that exist in
-// .symtab of statically-linked binaries. The .dynsym section is for
-// dynamic linking and would not contain these internal symbols.
-// If .symtab is stripped, Go wrapper analysis cannot proceed (FR-3.1.6).
+// Returns error only if neither source is available.
 func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
+    // First, try .symtab
+    if err := r.loadFromSymtab(elfFile); err == nil {
+        r.symbolSource = SymbolSourceSymtab
+        r.hasSymbols = len(r.symbols) > 0
+        return nil
+    }
+
+    // Fallback: try .gopclntab (for stripped Go binaries)
+    if err := r.loadFromPclntab(elfFile); err == nil {
+        r.symbolSource = SymbolSourcePclntab
+        r.hasSymbols = len(r.symbols) > 0
+        return nil
+    }
+
+    return ErrNoSymbolTable
+}
+
+// loadFromSymtab loads symbols from the .symtab section.
+func (r *GoWrapperResolver) loadFromSymtab(elfFile *elf.File) error {
     symbols, err := elfFile.Symbols()
     if err != nil {
-        return ErrNoSymbolTable
+        return err
     }
 
     for _, sym := range symbols {
@@ -682,13 +906,44 @@ func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
         }
     }
 
-    r.hasSymbols = len(r.symbols) > 0
+    return nil
+}
+
+// loadFromPclntab loads symbols from the .gopclntab section.
+// This is used as a fallback for stripped Go binaries.
+// The pclntab persists even after stripping because Go runtime needs it
+// for stack traces and garbage collection.
+func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
+    if err := r.pclntabParser.Parse(elfFile); err != nil {
+        return err
+    }
+
+    for _, fn := range r.pclntabParser.GetFunctions() {
+        r.symbols[fn.Name] = SymbolInfo{
+            Name:    fn.Name,
+            Address: fn.Entry,
+            Size:    fn.End - fn.Entry,
+        }
+
+        // Check if this is a known Go wrapper
+        for _, wrapper := range knownGoWrappers {
+            if strings.Contains(fn.Name, wrapper.Name) {
+                r.wrapperAddrs[fn.Entry] = wrapper
+            }
+        }
+    }
+
     return nil
 }
 
 // HasSymbols returns true if symbols were successfully loaded.
 func (r *GoWrapperResolver) HasSymbols() bool {
     return r.hasSymbols
+}
+
+// GetSymbolSource returns the source of loaded symbols.
+func (r *GoWrapperResolver) GetSymbolSource() SymbolSource {
+    return r.symbolSource
 }
 
 // FindWrapperCalls scans the code section for calls to known Go syscall wrappers.
