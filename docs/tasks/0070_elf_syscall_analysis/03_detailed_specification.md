@@ -60,6 +60,7 @@ internal/filevalidator/
 package elfanalyzer
 
 import (
+    "bytes"
     "debug/elf"
     "fmt"
 )
@@ -251,10 +252,19 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) []uint64 {
     var locations []uint64
 
-    for i := 0; i < len(code)-1; i++ {
-        if code[i] == 0x0F && code[i+1] == 0x05 {
-            locations = append(locations, baseAddr+uint64(i))
+    pattern := []byte{0x0F, 0x05}
+    if len(code) < len(pattern) {
+        return locations
+    }
+
+    for i := 0; i <= len(code)-len(pattern); {
+        idx := bytes.Index(code[i:], pattern)
+        if idx == -1 {
+            break
         }
+        pos := i + idx
+        locations = append(locations, baseAddr+uint64(pos))
+        i = pos + 1
     }
 
     return locations
@@ -1970,7 +1980,7 @@ func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
         ContentHash:   "sha256:abc123",
     }
 
-    data, _ := json.Marshal(entry)
+    data, _ := json.Marshal(record)
     recordPath := filepath.Join(tmpDir, "~test~path")
     os.WriteFile(recordPath, data, 0o600)
 
@@ -1991,7 +2001,7 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
     record := &FileAnalysisRecord{
         ContentHash: "sha256:abc123",
     }
-    err = store.Save("/test/path", entry)
+    err = store.Save("/test/path", record)
     require.NoError(t, err)
 
     // Now update with syscall analysis
