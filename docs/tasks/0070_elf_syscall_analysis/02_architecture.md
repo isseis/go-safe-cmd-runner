@@ -831,7 +831,7 @@ flowchart TB
 |--------------|----------------------|------|
 | ネットワーク syscall あり | `NetworkDetected` | 確実にネットワーク操作を行う |
 | ネットワーク syscall なし | `NoNetworkSymbols` | ネットワーク操作を行わない |
-| High Risk | `AnalysisError` | 安全側に倒す（中リスクとして扱う） |
+| High Risk | `AnalysisError` | 安全側に倒す（高リスクとして扱う） |
 | 解析結果なし | `StaticBinary` | 従来と同じ（不明として扱う） |
 
 ### 11.3 GoWrapperResolver のシンボルソース統一
