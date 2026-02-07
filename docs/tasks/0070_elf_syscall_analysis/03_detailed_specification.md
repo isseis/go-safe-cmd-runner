@@ -1494,7 +1494,7 @@ type SyscallInfoData struct {
     // IsNetwork indicates whether this syscall is network-related.
     IsNetwork bool `json:"is_network"`
 
-    // Location is the offset within the .text section.
+    // Location is the virtual address of the syscall instruction.
     Location uint64 `json:"location"`
 
     // DeterminationMethod describes how the syscall number was determined.
