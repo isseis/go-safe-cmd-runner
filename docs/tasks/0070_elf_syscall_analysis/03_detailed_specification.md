@@ -93,11 +93,17 @@ type SyscallInfo struct {
     // IsNetwork indicates whether this syscall is network-related.
     IsNetwork bool
 
-    // Location is the offset within the .text section where the syscall was found.
+    // Location is the virtual address of the syscall instruction
+    // (typically located within the .text section).
     Location uint64
 
     // DeterminationMethod describes how the syscall number was determined.
-    // Possible values: "immediate", "go_wrapper", "unknown"
+    // Possible values:
+    // - "immediate"
+    // - "go_wrapper"
+    // - "unknown" or "unknown:<reason>" (e.g., "unknown:decode_failed",
+    //   "unknown:control_flow_boundary", "unknown:indirect_setting",
+    //   "unknown:scan_limit_exceeded", "unknown:invalid_offset")
     DeterminationMethod string
 }
 
@@ -285,7 +291,7 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
     }
 
     // Backward scan to find eax/rax modification
-    number, method := a.backwardScanForSyscallNumber(code, offset, baseAddr)
+    number, method := a.backwardScanForSyscallNumber(code, offset)
     info.Number = number
     info.DeterminationMethod = method
 
@@ -301,7 +307,7 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 // to find where eax/rax is set.
 // Note: This method only handles direct syscall instructions.
 // Go wrapper calls are analyzed separately by analyzeGoWrapperCalls.
-func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffset int, baseAddr uint64) (int, string) {
+func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffset int) (int, string) {
     // Build instruction list by forward decoding up to syscall
     instructions := a.decodeInstructionsUpTo(code, syscallOffset)
     if len(instructions) == 0 {
@@ -546,6 +552,7 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
         {41, "socket", true, "Create a socket"},
         {42, "connect", true, "Connect to a remote address"},
         {43, "accept", true, "Accept a connection"},
+        {288, "accept4", true, "Accept a connection with flags"},
         {44, "sendto", true, "Send data to address"},
         {45, "recvfrom", true, "Receive data from address"},
         {46, "sendmsg", true, "Send message"},
@@ -1593,7 +1600,7 @@ func NewStandardELFAnalyzerWithSyscallStore(
 
     if store != nil {
         analyzer.syscallStore = store
-        analyzer.hashAlgo = filevalidator.NewSHA256()
+        analyzer.hashAlgo = filevalidator.SHA256()
     }
 
     return analyzer
@@ -1681,7 +1688,7 @@ func (a *StandardELFAnalyzer) calculateFileHash(path string) (string, error) {
     }
     defer file.Close()
 
-    return a.hashAlgo.Hash(file)
+    return a.hashAlgo.Sum(file)
 }
 ```
 
@@ -1752,14 +1759,14 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter filevalidator.H
     }
 
     // Calculate file hash
-    hashAlgo := filevalidator.NewSHA256()
+    hashAlgo := &filevalidator.SHA256{}
     file, err := os.Open(path)
     if err != nil {
         return fmt.Errorf("failed to open file for hashing: %w", err)
     }
     defer file.Close()
 
-    hash, err := hashAlgo.Hash(file)
+    hash, err := hashAlgo.Sum(file)
     if err != nil {
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
