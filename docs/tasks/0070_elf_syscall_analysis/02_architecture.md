@@ -391,7 +391,6 @@ syscall 解析結果の読み書きを担当。解析結果ファイルの sysca
 classDiagram
     class elfanalyzer.SyscallAnalysisStore {
         <<interface>>
-        +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
         +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
     }
 
@@ -402,9 +401,12 @@ classDiagram
     }
 
     class FileAnalysisStore {
-        <<interface>>
+        +analysisDir string
+        +pathGetter HashFilePathGetter
+        +fs FileSystem
         +Load(path string) (FileAnalysisRecord, error)
         +Save(path string, record FileAnalysisRecord) error
+        +Update(path string, updateFn func) error
     }
 
     class FileAnalysisRecord {
@@ -430,7 +432,10 @@ classDiagram
     FileAnalysisRecord --> SyscallAnalysisData
 ```
 
-**注記**: `FileAnalysisStore` は filevalidator と elfanalyzer の両方から利用される共通の解析結果読み書き層である。各パッケージは自分の関心事（ハッシュ検証または syscall 解析）のみを扱い、解析結果ファイルの詳細を意識しない。
+**注記**:
+- `elfanalyzer.SyscallAnalysisStore` インターフェースは `LoadSyscallAnalysis` のみを定義する。これは elfanalyzer パッケージが解析結果を読み取るだけで、書き込みは record コマンドが `fileanalysis.SyscallAnalysisStore` を直接使用して行うためである。
+- `fileanalysis.SyscallAnalysisStore` は具象型であり、`SaveSyscallAnalysis` と `LoadSyscallAnalysis` の両方を実装する。
+- `FileAnalysisStore` は filevalidator と elfanalyzer の両方から利用される共通の解析結果読み書き層である。各パッケージは自分の関心事（ハッシュ検証または syscall 解析）のみを扱い、解析結果ファイルの詳細を意識しない。
 
 ### 3.6 SyscallNumberTable
 
