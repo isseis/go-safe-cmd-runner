@@ -376,7 +376,9 @@ import (
 
 // DecodedInstruction represents a decoded x86_64 instruction.
 type DecodedInstruction struct {
-    // Offset is the instruction's offset within the code section.
+    // Offset is the instruction's virtual address (e.g., section base VA plus
+    // section-relative offset) corresponding to the first byte of this
+    // instruction.
     Offset uint64
 
     // Len is the instruction length in bytes.
@@ -1600,7 +1602,7 @@ func NewStandardELFAnalyzerWithSyscallStore(
 
     if store != nil {
         analyzer.syscallStore = store
-        analyzer.hashAlgo = filevalidator.SHA256()
+        analyzer.hashAlgo = &filevalidator.SHA256{}
     }
 
     return analyzer
