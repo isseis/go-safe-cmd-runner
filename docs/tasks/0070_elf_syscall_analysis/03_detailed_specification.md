@@ -8,7 +8,7 @@
   - `StandardELFAnalyzer`: 静的バイナリ検出時のフォールバック先として拡張
   - `AnalysisOutput`, `AnalysisResult`: 既存の結果型を再利用
 - **filevalidator パッケージ**: ハッシュ計算、パス生成
-  - `HybridHashFilePathGetter`: キャッシュファイルパス生成
+  - `HybridHashFilePathGetter`: 解析結果ファイルパス生成
   - `SHA256`: ハッシュアルゴリズム
 - **safefileio パッケージ**: 安全なファイル I/O
   - シンボリックリンク攻撃への防御
@@ -1065,9 +1065,9 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 
 **注記**: 上記コードでは `x86asm.Reg`, `x86asm.Rel`, `x86asm.Mem` などの型を使用しているため、パッケージ冒頭のインポートで `"golang.org/x/arch/x86/x86asm"` を追加する必要がある。
 
-### 2.5 統合キャッシュ層
+### 2.5 統合解析結果ストア層
 
-統合キャッシュは、ハッシュ検証情報と syscall 解析結果を単一ファイルに格納する。
+統合解析結果ストアは、ハッシュ検証情報と syscall 解析結果を単一ファイルに格納する。
 利用側（filevalidator, elfanalyzer）はそれぞれ自分の関心事のみを扱うインターフェースを通じてアクセスする。
 
 #### 2.5.1 FileAnalysisStore
@@ -1338,7 +1338,7 @@ func convertToSummary(d SyscallSummaryData) elfanalyzer.SyscallSummary {
 }
 ```
 
-### 2.6 統合キャッシュスキーマ
+### 2.6 統合解析結果スキーマ
 
 ```go
 // internal/fileanalysis/schema.go
@@ -1431,7 +1431,7 @@ type SyscallSummaryData struct {
 }
 ```
 
-### 2.7 キャッシュエラー
+### 2.7 解析結果ストアエラー
 
 ```go
 // internal/fileanalysis/errors.go
@@ -1479,7 +1479,7 @@ func (e *RecordCorruptedError) Unwrap() error {
 
 ```go
 // internal/runner/security/elfanalyzer/standard_analyzer.go
-// 既存の StandardELFAnalyzer に syscall キャッシュ参照を追加
+// 既存の StandardELFAnalyzer に syscall 解析結果参照を追加
 
 // SyscallAnalysisStore defines the interface for syscall analysis result storage.
 // This decouples the analyzer from the concrete storage implementation to avoid circular dependencies.
@@ -1895,7 +1895,7 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 }
 ```
 
-### 6.3 統合キャッシュのユニットテスト
+### 6.3 統合解析結果ストアのユニットテスト
 
 ```go
 // internal/fileanalysis/syscall_store_test.go
@@ -2078,9 +2078,9 @@ int main() {
 | AC-1: syscall 命令の検出 | `TestSyscallAnalyzer_BackwardScan` |
 | AC-2: ネットワーク関連 syscall の判定 | `TestX86_64SyscallTable_IsNetworkSyscall` |
 | AC-3: 間接設定の high risk 判定 | `TestSyscallAnalyzer_BackwardScan` (indirect case) |
-| AC-4: キャッシュの保存と読み込み | `TestSyscallAnalysisStore_SaveAndLoad` |
-| AC-5: キャッシュの整合性検証 | `TestFileAnalysisStore_SchemaVersionMismatch` |
-| AC-6: キャッシュ不在時の安全な動作 | `TestStandardELFAnalyzer_ResultNotFound` |
+| AC-4: 解析結果の保存と読み込み | `TestSyscallAnalysisStore_SaveAndLoad` |
+| AC-5: 解析結果の整合性検証 | `TestFileAnalysisStore_SchemaVersionMismatch` |
+| AC-6: 解析結果不在時の安全な動作 | `TestStandardELFAnalyzer_ResultNotFound` |
 | AC-7: 非 ELF ファイルのエラーハンドリング | `TestSyscallAnalyzer_NonELF` |
 | AC-8: フォールバックチェーンの統合 | `TestNetworkAnalyzer_FallbackChain` |
 | AC-9: 既存機能への非影響 | 既存テストの維持 |
