@@ -1315,7 +1315,7 @@ import (
 )
 
 // SyscallAnalysisStore provides syscall analysis storage operations.
-// This is the interface used by elfanalyzer package.
+// This is a concrete adapter backed by FileAnalysisStore and used by elfanalyzer.
 type SyscallAnalysisStore struct {
     store *FileAnalysisStore
 }
