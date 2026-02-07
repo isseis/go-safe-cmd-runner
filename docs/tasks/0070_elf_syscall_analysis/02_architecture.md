@@ -6,14 +6,14 @@
 
 - Go 標準/準公式ライブラリのみを使用した ELF 機械語解析
 - 静的リンクバイナリ（特に Go バイナリ）のネットワーク syscall 検出
-- 事前解析 + キャッシュ方式による実行時コストの最小化
+- 事前解析 + 解析結果保存方式による実行時コストの最小化
 - 既存の `elfanalyzer` パッケージおよび `filevalidator` パッケージとの統合
 
 ### 1.2 設計原則
 
 - **Security First**: 番号不明の syscall は high risk として扱う
 - **外部依存排除**: objdump 等の外部コマンドに依存しない
-- **既存活用**: `filevalidator` のキャッシュ機構と `elfanalyzer` の解析基盤を再利用
+- **既存活用**: `filevalidator` の解析結果ストアと `elfanalyzer` の解析基盤を再利用
 - **拡張性**: アーキテクチャ別の syscall 番号/命令パターンの分離
 
 ### 1.3 スコープと位置づけ
@@ -70,13 +70,13 @@ flowchart TD
         B --> C["Machine Code Decoder<br>(x86asm)"]
         C --> D["Syscall Number Extractor"]
         D --> E["Go Wrapper Resolver"]
-        E --> F[("Syscall Cache")]
+        E --> F[("Analysis Result Store")]
     end
 
     subgraph "実行時フェーズ（runner）"
         G[("ELF Binary")] --> H["Hash Calculator"]
-        H --> I{"Cache Lookup"}
-        I -->|"Hit"| J["Use Cached Result"]
+        H --> I{"Analysis Lookup"}
+        I -->|"Hit"| J["Use Stored Result"]
         I -->|"Miss"| K["Unknown<br>(Fallback)"]
         J --> L["Network Analyzer"]
         K --> L
@@ -107,19 +107,16 @@ graph TB
             G["go_wrapper_resolver.go<br>(新規)"]
             P["pclntab_parser.go<br>(新規)"]
         end
-
+        subgraph "internal/fileanalysis"
+            J["FileAnalysisStore<br>(新規)"]
+            K["FileAnalysisStoreSyscall<br>(新規)"]
+        end
         subgraph "internal/filevalidator"
-            H["validator.go<br>(既存・拡張)"]
+            H["FileValidator<br>(拡張)"]
             I["hybrid_hash_path_getter.go<br>(既存)"]
         end
-
-        subgraph "internal/cache"
-            J["integrated_cache.go<br>(新規)"]
-            K["schema.go<br>(新規)"]
-        end
-
         subgraph "cmd/record"
-            L["main.go<br>(既存・拡張)"]
+            L["record command<br>(拡張)"]
         end
     end
 
@@ -128,7 +125,7 @@ graph TB
     D --> G
     G --> P
     B --> D
-    B --> J
+    J --> K
     H --> J
     J --> I
     L --> D
@@ -138,7 +135,7 @@ graph TB
     class D,E,F,G,P,J,K new
 ```
 
-**注記**: `internal/cache` パッケージは統合キャッシュの共通層であり、`filevalidator` と `elfanalyzer` の両方から利用される。
+**注記**: `internal/fileanalysis` パッケージはファイル解析結果の共通層であり、`filevalidator` と `elfanalyzer` の両方から利用される。
 
 ### 2.3 データフロー（事前解析）
 
@@ -151,7 +148,7 @@ sequenceDiagram
     participant MD as "MachineCodeDecoder"
     participant GW as "GoWrapperResolver"
     participant PP as "PclntabParser"
-    participant SC as "SyscallCache"
+    participant AS as "AnalysisStore"
     participant FS as "FileSystem"
 
     RC->>SA: AnalyzeSyscalls(binaryPath)
@@ -195,8 +192,8 @@ sequenceDiagram
     end
 
     SA-->>RC: SyscallAnalysisResult
-    RC->>SC: SaveSyscallAnalysis(path, hash, result)
-    SC->>FS: Write to integrated cache file
+    RC->>AS: SaveSyscallAnalysis(path, hash, result)
+    AS->>FS: Write to file analysis record
 ```
 
 **注記**:
@@ -212,7 +209,7 @@ sequenceDiagram
 sequenceDiagram
     participant NA as "NetworkAnalyzer"
     participant EA as "StandardELFAnalyzer"
-    participant SC as "SyscallCache"
+    participant AS as "AnalysisStore"
     participant FV as "FileValidator"
 
     NA->>EA: AnalyzeNetworkSymbols(path)
@@ -222,12 +219,12 @@ sequenceDiagram
     else Static binary
         EA->>FV: CalculateHash(path)
         FV-->>EA: SHA256 hash
-        EA->>SC: LoadCache(path, hash)
+        EA->>AS: LoadSyscallAnalysis(path, hash)
 
-        alt Cache hit & schema valid
-            SC-->>EA: Cached result
-            EA-->>NA: Result from cache
-        else Cache miss or invalid
+        alt Analysis found & schema valid
+            AS-->>EA: Stored result
+            EA-->>NA: Result from store
+        else Not found or invalid
             EA-->>NA: StaticBinary (unknown)
         end
     end
@@ -406,31 +403,31 @@ classDiagram
 1. `.symtab` セクション（通常のシンボルテーブル）
 2. `.gopclntab` セクション（strip されたバイナリ用フォールバック）
 
-### 3.5 SyscallCache
+### 3.5 SyscallAnalysisStore
 
-syscall 解析結果の読み書きを担当。統合キャッシュファイルの syscall_analysis フィールドを操作。
+syscall 解析結果の読み書きを担当。解析結果ファイルの syscall_analysis フィールドを操作。
 
 ```mermaid
 classDiagram
-    class SyscallCache {
+    class SyscallAnalysisStore {
         <<interface>>
         +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
         +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
     }
 
-    class IntegratedCacheSyscallCache {
-        -cacheStore IntegratedCacheStore
+    class FileAnalysisStoreSyscall {
+        -fileStore FileAnalysisStore
         +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
         +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
     }
 
-    class IntegratedCacheStore {
+    class FileAnalysisStore {
         <<interface>>
-        +Load(path string) (CacheEntry, error)
-        +Save(path string, entry CacheEntry) error
+        +Load(path string) (FileAnalysisRecord, error)
+        +Save(path string, record FileAnalysisRecord) error
     }
 
-    class CacheEntry {
+    class FileAnalysisRecord {
         +SchemaVersion int
         +FilePath string
         +ContentHash string
@@ -447,13 +444,13 @@ classDiagram
         +Summary SyscallSummary
     }
 
-    SyscallCache <|.. IntegratedCacheSyscallCache
-    IntegratedCacheSyscallCache --> IntegratedCacheStore
-    IntegratedCacheStore --> CacheEntry
-    CacheEntry --> SyscallAnalysisData
+    SyscallAnalysisStore <|.. FileAnalysisStoreSyscall
+    FileAnalysisStoreSyscall --> FileAnalysisStore
+    FileAnalysisStore --> FileAnalysisRecord
+    FileAnalysisRecord --> SyscallAnalysisData
 ```
 
-**注記**: `IntegratedCacheStore` は filevalidator と elfanalyzer の両方から利用される共通のキャッシュ読み書き層である。各パッケージは自分の関心事（ハッシュ検証または syscall 解析）のみを扱い、キャッシュファイルの詳細を意識しない。
+**注記**: `FileAnalysisStore` は filevalidator と elfanalyzer の両方から利用される共通の解析結果読み書き層である。各パッケージは自分の関心事（ハッシュ検証または syscall 解析）のみを扱い、解析結果ファイルの詳細を意識しない。
 
 ### 3.6 SyscallNumberTable
 
@@ -502,9 +499,9 @@ flowchart TD
     B -->|"Not Found"| D{"2nd: .dynsym Analysis"}
     D -->|"Network Detected"| E["Network: Yes"]
     D -->|"No Network"| F["Network: No"]
-    D -->|"Static Binary"| G{"3rd: Syscall Cache"}
-    G -->|"Cache Hit"| H["Use Cached Result"]
-    G -->|"Cache Miss"| I["Unknown"]
+    D -->|"Static Binary"| G{"3rd: Analysis Store"}
+    G -->|"Result Found"| H["Use Stored Result"]
+    G -->|"Not Found"| I["Unknown"]
     H -->|"Network syscall"| E
     H -->|"No Network"| F
     H -->|"High Risk"| J["Network: Unknown<br>(High Risk)"]
@@ -520,18 +517,18 @@ flowchart TD
 
 ```go
 // 既存の StandardELFAnalyzer.AnalyzeNetworkSymbols の拡張ポイント
-// StaticBinary が返される箇所で syscall キャッシュを参照
+// StaticBinary が返される箇所で syscall 解析結果を参照
 
 func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
     // ... 既存の処理 ...
 
-    // 静的バイナリの場合、syscall キャッシュを参照
+    // 静的バイナリの場合、syscall 解析結果を参照
     if !hasDynsym {
-        // Task 0070: syscall cache lookup
-        if a.syscallCache != nil {
+        // Task 0070: syscall analysis lookup
+        if a.syscallStore != nil {
             hash, err := a.calculateHash(path)
             if err == nil {
-                result, found, err := a.syscallCache.LoadSyscallAnalysis(path, hash)
+                result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
                 if err == nil && found {
                     return convertSyscallResultToAnalysisOutput(result)
                 }
@@ -558,7 +555,7 @@ flowchart TD
     D -->|"No"| C
     D -->|"Yes"| E["Syscall Analysis"]
     E --> F["Calculate Hash"]
-    F --> G["Save Cache"]
+    F --> G["Save Analysis Result"]
     G --> H["Save Hash File<br>(existing)"]
 
     class A enhanced
@@ -566,33 +563,33 @@ flowchart TD
     class E,F,G,H process
 ```
 
-## 5. キャッシュ設計
+## 5. 解析結果ストア設計
 
-### 5.1 統合キャッシュ方式
+### 5.1 統合ストア方式
 
-ハッシュ検証情報と syscall 解析結果を単一のキャッシュファイルに統合する。
+ハッシュ検証情報と syscall 解析結果を単一の解析結果ファイルに統合する。
 
 **設計方針**:
-- **キャッシュファイル**: 1ファイルに両方の情報を格納
+- **解析結果ファイル**: 1ファイルに両方の情報を格納
 - **利用側インターフェース**: 分離を維持（各パッケージは自分の関心事のみを扱う）
 
 ```mermaid
 flowchart TB
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00
-    classDef cache fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400
+    classDef store fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400
 
     subgraph "利用側（分離を維持）"
         FV["filevalidator<br>（ハッシュ検証）"]
         EA["elfanalyzer<br>（syscall 解析）"]
     end
 
-    subgraph "共通キャッシュ層"
-        CL["CacheLayer<br>（読み書きの統合）"]
+    subgraph "共通解析結果層"
+        CL["FileAnalysisStore<br>（読み書きの統合）"]
     end
 
     subgraph "ストレージ"
-        CF[("統合キャッシュファイル<br>~path~to~file")]
+        CF[("解析結果ファイル<br>~path~to~file")]
     end
 
     FV --> CL
@@ -600,16 +597,16 @@ flowchart TB
     CL --> CF
 
     class FV,EA process
-    class CL cache
+    class CL store
     class CF data
 ```
 
 **メリット**:
-- キャッシュファイル数が半減（管理の簡素化）
+- 解析結果ファイル数が半減（管理の簡素化）
 - 1回のファイル読み込みで両方の情報を取得可能
-- キャッシュディレクトリの管理が単純化
+- 解析結果ディレクトリの管理が単純化
 
-### 5.2 キャッシュファイル形式
+### 5.2 解析結果ファイル形式
 
 ```json
 {
@@ -642,20 +639,20 @@ flowchart TB
 - `syscall_analysis`: syscall 解析結果（オプション、ELF ファイルの場合のみ）
   - 非 ELF ファイルや動的リンクバイナリの場合、このフィールドは存在しない
 
-### 5.3 キャッシュファイル命名規則
+### 5.3 解析結果ファイル命名規則
 
 既存の `HybridHashFilePathGetter` の命名規則を維持：
 
-- キャッシュファイル: `~path~to~file`
+- 解析結果ファイル: `~path~to~file`
 
-**保存先**: キャッシュファイルは既存の `--hash-dir` で指定されたディレクトリに保存する。
+**保存先**: 解析結果ファイルは既存の `--hash-dir` で指定されたディレクトリに保存する。
 
-### 5.4 キャッシュ無効化条件
+### 5.4 解析結果無効化条件
 
 1. ファイルハッシュの不一致
 2. スキーマバージョンの不一致
 3. アーキテクチャの不一致
-4. キャッシュファイルの破損（JSON パースエラー）
+4. 解析結果ファイルの破損（JSON パースエラー）
 
 ## 6. セキュリティアーキテクチャ
 
@@ -694,12 +691,12 @@ flowchart TD
 | 制御フロー境界 | High Risk | 静的解析限界 | FR-3.1.4 |
 | Go ラッパーの引数が特定不能 | High Risk | syscall 番号が静的に決定できない | FR-3.1.6 |
 
-### 6.3 キャッシュセキュリティ
+### 6.3 解析結果ファイルのセキュリティ
 
-- キャッシュファイルの読み書きは `safefileio` を使用
+- 解析結果ファイルの読み書きは `safefileio` を使用
 - シンボリックリンク攻撃への防御
 - ファイルハッシュによる改竄検知（NFR-4.2.1）
-- スキーマバージョンによるキャッシュ無効化（FR-3.2.1）
+- スキーマバージョンによる解析結果無効化（FR-3.2.1）
 
 ## 7. パフォーマンス設計
 
@@ -715,8 +712,8 @@ flowchart TD
 
 | 処理 | 目標 | 備考 |
 |------|------|------|
-| ハッシュ計算 | < 100ms | キャッシュキー生成 |
-| キャッシュ読み込み | < 10ms | ファイル I/O |
+| ハッシュ計算 | < 100ms | 解析結果特定用 |
+| 解析結果読み込み | < 10ms | ファイル I/O |
 | 合計 | < 200ms | 実行時オーバーヘッド（NFR-4.1.1） |
 
 ### 7.3 最適化戦略
@@ -735,7 +732,7 @@ flowchart TD
 
     A["SyscallAnalysisError"] --> B["ELFParseError"]
     A --> C["DecoderError"]
-    A --> D["CacheError"]
+    A --> D["StoreError"]
 
     B --> B1["InvalidELFFormat"]
     B --> B2["UnsupportedArchitecture"]
@@ -744,8 +741,8 @@ flowchart TD
     C --> C1["DecodeFailure"]
     C --> C2["InvalidInstruction"]
 
-    D --> D1["CacheReadError"]
-    D --> D2["CacheWriteError"]
+    D --> D1["StoreReadError"]
+    D --> D2["StoreWriteError"]
     D --> D3["SchemaVersionMismatch"]
     D --> D4["HashMismatch"]
 
@@ -759,8 +756,8 @@ flowchart TD
 | ELF パースエラー | スキップ | NotELFBinary |
 | 非対応アーキテクチャ | スキップ | StaticBinary |
 | デコードエラー | 継続 | 部分解析 + High Risk |
-| キャッシュ読み込みエラー | フォールバック | Unknown |
-| キャッシュ書き込みエラー | ログ出力 | 解析結果は利用可能 |
+| ストア読み込みエラー | フォールバック | Unknown |
+| ストア書き込みエラー | ログ出力 | 解析結果は利用可能 |
 
 ## 9. テスト戦略
 
@@ -788,7 +785,7 @@ flowchart TB
 
 **コンポーネントテスト**:
 - SyscallAnalyzer: モックデコーダーを使用した解析フロー
-- SyscallCache: キャッシュの保存/読み込み
+- SyscallAnalysisStore: 解析結果の保存/読み込み
 
 **統合テスト** (gcc 依存):
 - 実際の C プログラムのコンパイル → 解析
@@ -815,12 +812,12 @@ flowchart TB
 - [ ] Go syscall ラッパーの検出
 - [ ] 呼び出し元での引数解析
 
-### Phase 4: 統合キャッシュ機構
+### Phase 4: 統合解析結果ストア機構
 
-- [ ] IntegratedCacheStore の実装（internal/cache パッケージ）
-- [ ] 統合キャッシュスキーマの設計（CacheEntry 構造体）
-- [ ] SyscallCache インターフェースと IntegratedCacheSyscallCache 実装
-- [ ] filevalidator の統合キャッシュ対応
+- [ ] FileAnalysisStore の実装（internal/fileanalysis パッケージ）
+- [ ] 解析結果スキーマの設計（FileAnalysisRecord 構造体）
+- [ ] SyscallAnalysisStore インターフェースと FileAnalysisStoreSyscall 実装
+- [ ] filevalidator の統合解析結果ストア対応
 
 ### Phase 5: 統合
 
@@ -848,23 +845,23 @@ flowchart TB
 
 ### 11.2 AnalysisResult の拡張
 
-既存の `StaticBinary` 結果を、syscall キャッシュの結果に応じて以下のように変換：
+既存の `StaticBinary` 結果を、syscall 解析結果に応じて以下のように変換：
 
-| キャッシュ結果 | 変換後の AnalysisResult | 理由 |
+| 解析結果 | 変換後の AnalysisResult | 理由 |
 |--------------|----------------------|------|
 | ネットワーク syscall あり | `NetworkDetected` | 確実にネットワーク操作を行う |
 | ネットワーク syscall なし | `NoNetworkSymbols` | ネットワーク操作を行わない |
 | High Risk | `AnalysisError` | 安全側に倒す（中リスクとして扱う） |
-| キャッシュなし | `StaticBinary` | 従来と同じ（不明として扱う） |
+| 解析結果なし | `StaticBinary` | 従来と同じ（不明として扱う） |
 
-### 11.3 統合キャッシュ方式
+### 11.3 統合解析結果ストア方式
 
 **採用案**: ハッシュ検証情報と syscall 解析結果を単一ファイルに統合
-- キャッシュファイル数が半減（管理の簡素化）
+- 解析結果ファイル数が半減（管理の簡素化）
 - 1回のファイル読み込みで両方の情報を取得可能
 - 利用側インターフェースは分離を維持（各パッケージは自分の関心事のみを扱う）
 
 **代替案（不採用）**: ファイル名プレフィックスで区別した別ファイル
 - `~path~to~file`（ハッシュ検証）と `syscall~path~to~file`（syscall 解析）
-- キャッシュファイル数が2倍になる
+- 解析結果ファイル数が2倍になる
 - 同じ対象ファイルに対して2回の I/O が必要になる場合がある

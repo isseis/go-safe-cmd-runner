@@ -31,18 +31,18 @@ internal/runner/security/elfanalyzer/
     syscall_numbers.go             # SyscallNumberTable, X86_64SyscallTable
     go_wrapper_resolver.go         # GoWrapperResolver
 
-internal/cache/
-    integrated_cache.go            # IntegratedCacheStore（統合キャッシュ層）
-    schema.go                      # CacheEntry, 統合スキーマ定義
-    errors.go                      # キャッシュ関連エラー
-    syscall_cache.go               # SyscallCache インターフェース実装
+internal/fileanalysis/
+    file_analysis_store.go         # FileAnalysisStore（解析結果ストア層）
+    schema.go                      # FileAnalysisRecord, 統合スキーマ定義
+    errors.go                      # 解析結果ストア関連エラー
+    syscall_store.go               # SyscallAnalysisStore インターフェース実装
 
 # 拡張対象
 cmd/record/
     main.go                        # --analyze-syscalls オプション追加
 
 internal/filevalidator/
-    validator.go                   # 統合キャッシュ対応（拡張）
+    validator.go                   # 統合解析結果ストア対応（拡張）
 
 # 既存コンポーネント（依存）
 internal/filevalidator/
@@ -1070,12 +1070,12 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 統合キャッシュは、ハッシュ検証情報と syscall 解析結果を単一ファイルに格納する。
 利用側（filevalidator, elfanalyzer）はそれぞれ自分の関心事のみを扱うインターフェースを通じてアクセスする。
 
-#### 2.5.1 IntegratedCacheStore
+#### 2.5.1 FileAnalysisStore
 
 ```go
-// internal/cache/integrated_cache.go
+// internal/fileanalysis/file_analysis_store.go
 
-package cache
+package fileanalysis
 
 import (
     "encoding/json"
@@ -1089,118 +1089,118 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
-// IntegratedCacheStore manages unified cache files containing both
+// FileAnalysisStore manages unified file analysis record files containing both
 // hash validation and syscall analysis data.
-type IntegratedCacheStore struct {
-    cacheDir   string
-    pathGetter filevalidator.HashFilePathGetter
-    fs         safefileio.FileSystem
+type FileAnalysisStore struct {
+    analysisDir string
+    pathGetter  filevalidator.HashFilePathGetter
+    fs          safefileio.FileSystem
 }
 
-// NewIntegratedCacheStore creates a new IntegratedCacheStore.
-func NewIntegratedCacheStore(cacheDir string, pathGetter filevalidator.HashFilePathGetter) (*IntegratedCacheStore, error) {
-    // Validate cache directory
-    info, err := os.Lstat(cacheDir)
+// NewFileAnalysisStore creates a new FileAnalysisStore.
+func NewFileAnalysisStore(analysisDir string, pathGetter filevalidator.HashFilePathGetter) (*FileAnalysisStore, error) {
+    // Validate analysis result directory
+    info, err := os.Lstat(analysisDir)
     if err != nil {
         if os.IsNotExist(err) {
-            return nil, fmt.Errorf("cache directory does not exist: %s", cacheDir)
+            return nil, fmt.Errorf("analysis result directory does not exist: %s", analysisDir)
         }
-        return nil, fmt.Errorf("failed to access cache directory: %w", err)
+        return nil, fmt.Errorf("failed to access analysis result directory: %w", err)
     }
     if !info.IsDir() {
-        return nil, fmt.Errorf("cache path is not a directory: %s", cacheDir)
+        return nil, fmt.Errorf("analysis result path is not a directory: %s", analysisDir)
     }
 
-    return &IntegratedCacheStore{
-        cacheDir:   cacheDir,
-        pathGetter: pathGetter,
-        fs:         safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+    return &FileAnalysisStore{
+        analysisDir: analysisDir,
+        pathGetter:  pathGetter,
+        fs:          safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
     }, nil
 }
 
-// Load loads the cache entry for the given file path.
-// Returns ErrCacheNotFound if the cache file does not exist.
-func (s *IntegratedCacheStore) Load(filePath string) (*CacheEntry, error) {
-    cachePath, err := s.getCachePath(filePath)
+// Load loads the analysis record for the given file path.
+// Returns ErrRecordNotFound if the analysis record file does not exist.
+func (s *FileAnalysisStore) Load(filePath string) (*FileAnalysisRecord, error) {
+    recordPath, err := s.getRecordPath(filePath)
     if err != nil {
-        return nil, fmt.Errorf("failed to get cache path: %w", err)
+        return nil, fmt.Errorf("failed to get analysis record path: %w", err)
     }
 
-    data, err := s.fs.SafeReadFile(cachePath)
+    data, err := s.fs.SafeReadFile(recordPath)
     if err != nil {
         if os.IsNotExist(err) {
-            return nil, ErrCacheNotFound
+            return nil, ErrRecordNotFound
         }
-        return nil, fmt.Errorf("failed to read cache file: %w", err)
+        return nil, fmt.Errorf("failed to read analysis record file: %w", err)
     }
 
-    var entry CacheEntry
-    if err := json.Unmarshal(data, &entry); err != nil {
-        return nil, &CacheCorruptedError{Path: cachePath, Cause: err}
+    var record FileAnalysisRecord
+    if err := json.Unmarshal(data, &record); err != nil {
+        return nil, &RecordCorruptedError{Path: recordPath, Cause: err}
     }
 
     // Validate schema version
-    if entry.SchemaVersion != CurrentSchemaVersion {
+    if record.SchemaVersion != CurrentSchemaVersion {
         return nil, &SchemaVersionMismatchError{
             Expected: CurrentSchemaVersion,
-            Actual:   entry.SchemaVersion,
+            Actual:   record.SchemaVersion,
         }
     }
 
-    return &entry, nil
+    return &record, nil
 }
 
-// Save saves the cache entry for the given file path.
+// Save saves the analysis record for the given file path.
 // This performs a read-modify-write to preserve existing fields.
-func (s *IntegratedCacheStore) Save(filePath string, entry *CacheEntry) error {
-    cachePath, err := s.getCachePath(filePath)
+func (s *FileAnalysisStore) Save(filePath string, record *FileAnalysisRecord) error {
+    recordPath, err := s.getRecordPath(filePath)
     if err != nil {
-        return fmt.Errorf("failed to get cache path: %w", err)
+        return fmt.Errorf("failed to get analysis record path: %w", err)
     }
 
-    entry.SchemaVersion = CurrentSchemaVersion
-    entry.FilePath = filePath
-    entry.UpdatedAt = time.Now().UTC()
+    record.SchemaVersion = CurrentSchemaVersion
+    record.FilePath = filePath
+    record.UpdatedAt = time.Now().UTC()
 
-    data, err := json.MarshalIndent(entry, "", "  ")
+    data, err := json.MarshalIndent(record, "", "  ")
     if err != nil {
-        return fmt.Errorf("failed to marshal cache entry: %w", err)
+        return fmt.Errorf("failed to marshal analysis record: %w", err)
     }
 
-    if err := s.fs.SafeWriteFile(cachePath, data, 0o600); err != nil {
-        return fmt.Errorf("failed to write cache file: %w", err)
+    if err := s.fs.SafeWriteFile(recordPath, data, 0o600); err != nil {
+        return fmt.Errorf("failed to write analysis record file: %w", err)
     }
 
     return nil
 }
 
-// Update performs a read-modify-write operation on the cache.
-// The updateFn receives the existing entry (or a new empty one if not found)
+// Update performs a read-modify-write operation on the analysis record.
+// The updateFn receives the existing record (or a new empty one if not found)
 // and should modify it in place.
-func (s *IntegratedCacheStore) Update(filePath string, updateFn func(*CacheEntry) error) error {
-    // Try to load existing entry
-    entry, err := s.Load(filePath)
+func (s *FileAnalysisStore) Update(filePath string, updateFn func(*FileAnalysisRecord) error) error {
+    // Try to load existing record
+    record, err := s.Load(filePath)
     if err != nil {
-        if err == ErrCacheNotFound {
-            // Create new entry
-            entry = &CacheEntry{}
+        if err == ErrRecordNotFound {
+            // Create new record
+            record = &FileAnalysisRecord{}
         } else {
-            // For other errors (corrupted, schema mismatch), create fresh entry
-            entry = &CacheEntry{}
+            // For other errors (corrupted, schema mismatch), create fresh record
+            record = &FileAnalysisRecord{}
         }
     }
 
     // Apply update
-    if err := updateFn(entry); err != nil {
+    if err := updateFn(record); err != nil {
         return err
     }
 
-    // Save updated entry
-    return s.Save(filePath, entry)
+    // Save updated record
+    return s.Save(filePath, record)
 }
 
-// getCachePath returns the cache file path for the given file.
-func (s *IntegratedCacheStore) getCachePath(filePath string) (string, error) {
+// getRecordPath returns the analysis record file path for the given file.
+func (s *FileAnalysisStore) getRecordPath(filePath string) (string, error) {
     absPath, err := filepath.Abs(filePath)
     if err != nil {
         return "", fmt.Errorf("failed to get absolute path: %w", err)
@@ -1211,16 +1211,16 @@ func (s *IntegratedCacheStore) getCachePath(filePath string) (string, error) {
         return "", fmt.Errorf("failed to create resolved path: %w", err)
     }
 
-    return s.pathGetter.GetHashFilePath(s.cacheDir, resolvedPath)
+    return s.pathGetter.GetHashFilePath(s.analysisDir, resolvedPath)
 }
 ```
 
-#### 2.5.2 SyscallCache（elfanalyzer 用インターフェース実装）
+#### 2.5.2 SyscallAnalysisStore（elfanalyzer 用インターフェース実装）
 
 ```go
-// internal/cache/syscall_cache.go
+// internal/fileanalysis/syscall_store.go
 
-package cache
+package fileanalysis
 
 import (
     "time"
@@ -1228,23 +1228,23 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-// SyscallCache provides syscall analysis cache operations.
+// SyscallAnalysisStore provides syscall analysis storage operations.
 // This is the interface used by elfanalyzer package.
-type SyscallCache struct {
-    store *IntegratedCacheStore
+type SyscallAnalysisStore struct {
+    store *FileAnalysisStore
 }
 
-// NewSyscallCache creates a new SyscallCache backed by IntegratedCacheStore.
-func NewSyscallCache(store *IntegratedCacheStore) *SyscallCache {
-    return &SyscallCache{store: store}
+// NewSyscallAnalysisStore creates a new SyscallAnalysisStore backed by FileAnalysisStore.
+func NewSyscallAnalysisStore(store *FileAnalysisStore) *SyscallAnalysisStore {
+    return &SyscallAnalysisStore{store: store}
 }
 
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
-func (c *SyscallCache) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
-    return c.store.Update(filePath, func(entry *CacheEntry) error {
-        entry.ContentHash = fileHash
-        entry.SyscallAnalysis = &SyscallAnalysisData{
+func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
+    return c.store.Update(filePath, func(record *FileAnalysisRecord) error {
+        record.ContentHash = fileHash
+        record.SyscallAnalysis = &SyscallAnalysisData{
             Architecture:       "x86_64",
             AnalyzedAt:         time.Now().UTC(),
             DetectedSyscalls:   convertSyscallInfos(result.DetectedSyscalls),
@@ -1260,31 +1260,31 @@ func (c *SyscallCache) SaveSyscallAnalysis(filePath, fileHash string, result *el
 // Returns (result, true, nil) if found and hash matches.
 // Returns (nil, false, nil) if not found or hash mismatch.
 // Returns (nil, false, error) on other errors.
-func (c *SyscallCache) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
-    entry, err := c.store.Load(filePath)
+func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
+    record, err := c.store.Load(filePath)
     if err != nil {
-        if err == ErrCacheNotFound {
+        if err == ErrRecordNotFound {
             return nil, false, nil
         }
         return nil, false, err
     }
 
     // Check hash match
-    if entry.ContentHash != expectedHash {
+    if record.ContentHash != expectedHash {
         return nil, false, nil
     }
 
     // Check if syscall analysis exists
-    if entry.SyscallAnalysis == nil {
+    if record.SyscallAnalysis == nil {
         return nil, false, nil
     }
 
     // Convert back to elfanalyzer types
     result := &elfanalyzer.SyscallAnalysisResult{
-        DetectedSyscalls:   convertToSyscallInfos(entry.SyscallAnalysis.DetectedSyscalls),
-        HasUnknownSyscalls: entry.SyscallAnalysis.HasUnknownSyscalls,
-        HighRiskReasons:    entry.SyscallAnalysis.HighRiskReasons,
-        Summary:            convertToSummary(entry.SyscallAnalysis.Summary),
+        DetectedSyscalls:   convertToSyscallInfos(record.SyscallAnalysis.DetectedSyscalls),
+        HasUnknownSyscalls: record.SyscallAnalysis.HasUnknownSyscalls,
+        HighRiskReasons:    record.SyscallAnalysis.HighRiskReasons,
+        Summary:            convertToSummary(record.SyscallAnalysis.Summary),
     }
 
     return result, true, nil
@@ -1341,34 +1341,34 @@ func convertToSummary(d SyscallSummaryData) elfanalyzer.SyscallSummary {
 ### 2.6 統合キャッシュスキーマ
 
 ```go
-// internal/cache/schema.go
+// internal/fileanalysis/schema.go
 
-package cache
+package fileanalysis
 
 import (
     "time"
 )
 
 const (
-    // CurrentSchemaVersion is the current cache schema version.
-    // Increment this when making breaking changes to the cache format.
+    // CurrentSchemaVersion is the current analysis record schema version.
+    // Increment this when making breaking changes to the analysis record format.
     CurrentSchemaVersion = 1
 )
 
-// CacheEntry represents a unified cache entry containing both
+// FileAnalysisRecord represents a unified file analysis record containing both
 // hash validation and syscall analysis data.
-type CacheEntry struct {
-    // SchemaVersion identifies the cache format version.
+type FileAnalysisRecord struct {
+    // SchemaVersion identifies the analysis record format version.
     SchemaVersion int `json:"schema_version"`
 
-    // FilePath is the absolute path to the cached file.
+    // FilePath is the absolute path to the analyzed file.
     FilePath string `json:"file_path"`
 
     // ContentHash is the SHA256 hash of the file content.
-    // Used by both filevalidator and elfanalyzer for cache validation.
+    // Used by both filevalidator and elfanalyzer for validation.
     ContentHash string `json:"content_hash"`
 
-    // UpdatedAt is when the cache was last updated.
+    // UpdatedAt is when the analysis record was last updated.
     UpdatedAt time.Time `json:"updated_at"`
 
     // SyscallAnalysis contains syscall analysis result (optional).
@@ -1434,9 +1434,9 @@ type SyscallSummaryData struct {
 ### 2.7 キャッシュエラー
 
 ```go
-// internal/cache/errors.go
+// internal/fileanalysis/errors.go
 
-package cache
+package fileanalysis
 
 import (
     "errors"
@@ -1446,11 +1446,11 @@ import (
 
 // Static errors
 var (
-    // ErrCacheNotFound indicates the cache file does not exist.
-    ErrCacheNotFound = errors.New("cache file not found")
+    // ErrRecordNotFound indicates the analysis record file does not exist.
+    ErrRecordNotFound = errors.New("analysis record file not found")
 )
 
-// SchemaVersionMismatchError indicates cache schema version mismatch.
+// SchemaVersionMismatchError indicates analysis record schema version mismatch.
 type SchemaVersionMismatchError struct {
     Expected int
     Actual   int
@@ -1460,17 +1460,17 @@ func (e *SchemaVersionMismatchError) Error() string {
     return fmt.Sprintf("schema version mismatch: expected %d, got %d", e.Expected, e.Actual)
 }
 
-// CacheCorruptedError indicates cache file is corrupted.
-type CacheCorruptedError struct {
+// RecordCorruptedError indicates analysis record file is corrupted.
+type RecordCorruptedError struct {
     Path  string
     Cause error
 }
 
-func (e *CacheCorruptedError) Error() string {
-    return fmt.Sprintf("cache file corrupted at %s: %v", e.Path, e.Cause)
+func (e *RecordCorruptedError) Error() string {
+    return fmt.Sprintf("analysis record file corrupted at %s: %v", e.Path, e.Cause)
 }
 
-func (e *CacheCorruptedError) Unwrap() error {
+func (e *RecordCorruptedError) Unwrap() error {
     return e.Cause
 }
 ```
@@ -1481,11 +1481,11 @@ func (e *CacheCorruptedError) Unwrap() error {
 // internal/runner/security/elfanalyzer/standard_analyzer.go
 // 既存の StandardELFAnalyzer に syscall キャッシュ参照を追加
 
-// SyscallCache defines the interface for syscall analysis result caching.
-// This decouples the analyzer from the concrete cache implementation to avoid circular dependencies.
-// The concrete implementation is provided by the internal/cache package.
-type SyscallCache interface {
-    // LoadSyscallAnalysis loads syscall analysis from cache.
+// SyscallAnalysisStore defines the interface for syscall analysis result storage.
+// This decouples the analyzer from the concrete storage implementation to avoid circular dependencies.
+// The concrete implementation is provided by the internal/fileanalysis package.
+type SyscallAnalysisStore interface {
+    // LoadSyscallAnalysis loads syscall analysis from storage.
     // Returns (result, true, nil) if found and hash matches.
     // Returns (nil, false, nil) if not found or hash mismatch.
     // Returns (nil, false, error) on other errors.
@@ -1499,35 +1499,35 @@ type StandardELFAnalyzer struct {
     privManager    runnertypes.PrivilegeManager
     pfv            *filevalidator.PrivilegedFileValidator
 
-    // New: syscall cache for static binary analysis
-    syscallCache   SyscallCache
+    // New: syscall analysis store for static binary analysis
+    syscallStore   SyscallAnalysisStore
     hashAlgo       filevalidator.HashAlgorithm
 }
 
-// NewStandardELFAnalyzerWithSyscallCache creates an analyzer with syscall cache support.
-// Uses dependency injection for SyscallCache to avoid circular dependencies.
-func NewStandardELFAnalyzerWithSyscallCache(
+// NewStandardELFAnalyzerWithSyscallStore creates an analyzer with syscall analysis store support.
+// Uses dependency injection for SyscallAnalysisStore to avoid circular dependencies.
+func NewStandardELFAnalyzerWithSyscallStore(
     fs safefileio.FileSystem,
     privManager runnertypes.PrivilegeManager,
-    cache SyscallCache,
+    store SyscallAnalysisStore,
 ) *StandardELFAnalyzer {
     analyzer := NewStandardELFAnalyzer(fs, privManager)
 
-    if cache != nil {
-        analyzer.syscallCache = cache
+    if store != nil {
+        analyzer.syscallStore = store
         analyzer.hashAlgo = filevalidator.NewSHA256()
     }
 
     return analyzer
 }
 
-// In AnalyzeNetworkSymbols, add syscall cache lookup for static binaries:
+// In AnalyzeNetworkSymbols, add syscall analysis lookup for static binaries:
 func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
     // ... existing code for dynamic binary analysis ...
 
-    // If static binary detected and syscall cache is available
-    if !hasDynsym && a.syscallCache != nil {
-        result := a.lookupSyscallCache(path)
+    // If static binary detected and syscall analysis store is available
+    if !hasDynsym && a.syscallStore != nil {
+        result := a.lookupSyscallAnalysis(path)
         if result.Result != StaticBinary {
             return result
         }
@@ -1536,28 +1536,28 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
     // ... existing fallback to StaticBinary ...
 }
 
-// lookupSyscallCache checks the syscall cache for analysis results.
-func (a *StandardELFAnalyzer) lookupSyscallCache(path string) AnalysisOutput {
+// lookupSyscallAnalysis checks the syscall analysis store for analysis results.
+func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string) AnalysisOutput {
     // Calculate file hash
     hash, err := a.calculateFileHash(path)
     if err != nil {
-        slog.Debug("Failed to calculate hash for syscall cache lookup",
+        slog.Debug("Failed to calculate hash for syscall analysis lookup",
             "path", path,
             "error", err)
         return AnalysisOutput{Result: StaticBinary}
     }
 
-    // Load cache
-    result, found, err := a.syscallCache.LoadSyscallAnalysis(path, hash)
+    // Load analysis result
+    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
     if err != nil {
-        slog.Debug("Syscall cache lookup error",
+        slog.Debug("Syscall analysis lookup error",
             "path", path,
             "error", err)
         return AnalysisOutput{Result: StaticBinary}
     }
 
     if !found {
-        // Cache miss or hash mismatch
+        // Result not found or hash mismatch
         return AnalysisOutput{Result: StaticBinary}
     }
 
@@ -1619,7 +1619,7 @@ import (
     "log/slog"
     "os"
 
-    "github.com/isseis/go-safe-cmd-runner/internal/cache"
+    "github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
     "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
@@ -1662,8 +1662,8 @@ func isStaticELF(path string) bool {
     return dynsym == nil
 }
 
-// analyzeSyscallsForFile performs syscall analysis and saves to integrated cache.
-func analyzeSyscallsForFile(path, cacheDir string, pathGetter filevalidator.HashFilePathGetter) error {
+// analyzeSyscallsForFile performs syscall analysis and saves to file analysis store.
+func analyzeSyscallsForFile(path, analysisDir string, pathGetter filevalidator.HashFilePathGetter) error {
     // Create syscall analyzer
     analyzer := elfanalyzer.NewSyscallAnalyzer()
 
@@ -1686,17 +1686,17 @@ func analyzeSyscallsForFile(path, cacheDir string, pathGetter filevalidator.Hash
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
 
-    // Create integrated cache store and syscall cache
-    store, err := cache.NewIntegratedCacheStore(cacheDir, pathGetter)
+    // Create file analysis store
+    store, err := fileanalysis.NewFileAnalysisStore(analysisDir, pathGetter)
     if err != nil {
-        return fmt.Errorf("failed to create cache store: %w", err)
+        return fmt.Errorf("failed to create file analysis store: %w", err)
     }
 
-    syscallCache := cache.NewSyscallCache(store)
+    analysisStore := fileanalysis.NewSyscallAnalysisStore(store)
 
-    // Save syscall analysis to integrated cache
-    if err := syscallCache.SaveSyscallAnalysis(path, hash, result); err != nil {
-        return fmt.Errorf("failed to save cache: %w", err)
+    // Save syscall analysis to file analysis store
+    if err := analysisStore.SaveSyscallAnalysis(path, hash, result); err != nil {
+        return fmt.Errorf("failed to save analysis result: %w", err)
     }
 
     // Log summary
@@ -1898,9 +1898,9 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 ### 6.3 統合キャッシュのユニットテスト
 
 ```go
-// internal/cache/syscall_cache_test.go
+// internal/fileanalysis/syscall_store_test.go
 
-package cache
+package fileanalysis
 
 import (
     "encoding/json"
@@ -1916,13 +1916,13 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-func TestSyscallCache_SaveAndLoad(t *testing.T) {
+func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
     tmpDir := t.TempDir()
     pathGetter := filevalidator.NewHybridHashFilePathGetter()
-    store, err := NewIntegratedCacheStore(tmpDir, pathGetter)
+    store, err := NewFileAnalysisStore(tmpDir, pathGetter)
     require.NoError(t, err)
 
-    cache := NewSyscallCache(store)
+    analysisStore := NewSyscallAnalysisStore(store)
 
     result := &elfanalyzer.SyscallAnalysisResult{
         DetectedSyscalls: []elfanalyzer.SyscallInfo{
@@ -1936,37 +1936,37 @@ func TestSyscallCache_SaveAndLoad(t *testing.T) {
     }
 
     // Save
-    err = cache.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
+    err = analysisStore.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
     require.NoError(t, err)
 
     // Load with matching hash
-    loaded, found, err := cache.LoadSyscallAnalysis("/test/path", "sha256:abc123")
+    loaded, found, err := analysisStore.LoadSyscallAnalysis("/test/path", "sha256:abc123")
     require.NoError(t, err)
     require.True(t, found)
     assert.Equal(t, result.Summary.HasNetworkSyscalls, loaded.Summary.HasNetworkSyscalls)
 
     // Load with mismatched hash
-    _, found, err = cache.LoadSyscallAnalysis("/test/path", "sha256:different")
+    _, found, err = analysisStore.LoadSyscallAnalysis("/test/path", "sha256:different")
     require.NoError(t, err)
     assert.False(t, found)  // Hash mismatch returns found=false, not error
 }
 
-func TestIntegratedCacheStore_SchemaVersionMismatch(t *testing.T) {
+func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
     tmpDir := t.TempDir()
     pathGetter := filevalidator.NewHybridHashFilePathGetter()
-    store, err := NewIntegratedCacheStore(tmpDir, pathGetter)
+    store, err := NewFileAnalysisStore(tmpDir, pathGetter)
     require.NoError(t, err)
 
-    // Create cache file with different schema version
-    entry := &CacheEntry{
+    // Create analysis record file with different schema version
+    record := &FileAnalysisRecord{
         SchemaVersion: 999, // Future version
         FilePath:      "/test/path",
         ContentHash:   "sha256:abc123",
     }
 
     data, _ := json.Marshal(entry)
-    cachePath := filepath.Join(tmpDir, "~test~path")
-    os.WriteFile(cachePath, data, 0o600)
+    recordPath := filepath.Join(tmpDir, "~test~path")
+    os.WriteFile(recordPath, data, 0o600)
 
     // Load should fail with schema version mismatch
     _, err = store.Load("/test/path")
@@ -1975,27 +1975,27 @@ func TestIntegratedCacheStore_SchemaVersionMismatch(t *testing.T) {
     assert.True(t, errors.As(err, &schemaErr))
 }
 
-func TestIntegratedCache_PreservesExistingFields(t *testing.T) {
+func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
     tmpDir := t.TempDir()
     pathGetter := filevalidator.NewHybridHashFilePathGetter()
-    store, err := NewIntegratedCacheStore(tmpDir, pathGetter)
+    store, err := NewFileAnalysisStore(tmpDir, pathGetter)
     require.NoError(t, err)
 
-    // First, save a cache entry with just content hash
-    entry := &CacheEntry{
+    // First, save an analysis record with just content hash
+    record := &FileAnalysisRecord{
         ContentHash: "sha256:abc123",
     }
     err = store.Save("/test/path", entry)
     require.NoError(t, err)
 
     // Now update with syscall analysis
-    cache := NewSyscallCache(store)
+    analysisStore := NewSyscallAnalysisStore(store)
     result := &elfanalyzer.SyscallAnalysisResult{
         Summary: elfanalyzer.SyscallSummary{
             HasNetworkSyscalls: true,
         },
     }
-    err = cache.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
+    err = analysisStore.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
     require.NoError(t, err)
 
     // Verify both fields are present
@@ -2078,9 +2078,9 @@ int main() {
 | AC-1: syscall 命令の検出 | `TestSyscallAnalyzer_BackwardScan` |
 | AC-2: ネットワーク関連 syscall の判定 | `TestX86_64SyscallTable_IsNetworkSyscall` |
 | AC-3: 間接設定の high risk 判定 | `TestSyscallAnalyzer_BackwardScan` (indirect case) |
-| AC-4: キャッシュの保存と読み込み | `TestSyscallCache_SaveAndLoad` |
-| AC-5: キャッシュの整合性検証 | `TestSyscallCache_SchemaVersionMismatch` |
-| AC-6: キャッシュ不在時の安全な動作 | `TestStandardELFAnalyzer_CacheMiss` |
+| AC-4: キャッシュの保存と読み込み | `TestSyscallAnalysisStore_SaveAndLoad` |
+| AC-5: キャッシュの整合性検証 | `TestFileAnalysisStore_SchemaVersionMismatch` |
+| AC-6: キャッシュ不在時の安全な動作 | `TestStandardELFAnalyzer_ResultNotFound` |
 | AC-7: 非 ELF ファイルのエラーハンドリング | `TestSyscallAnalyzer_NonELF` |
 | AC-8: フォールバックチェーンの統合 | `TestNetworkAnalyzer_FallbackChain` |
 | AC-9: 既存機能への非影響 | 既存テストの維持 |
