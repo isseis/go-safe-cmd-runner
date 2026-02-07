@@ -919,10 +919,16 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
     }
 
     for _, fn := range r.pclntabParser.GetFunctions() {
+        // Calculate size, guarding against missing/zero End to avoid underflow
+        size := uint64(0)
+        if fn.End > fn.Entry {
+            size = fn.End - fn.Entry
+        }
+
         r.symbols[fn.Name] = SymbolInfo{
             Name:    fn.Name,
             Address: fn.Entry,
-            Size:    fn.End - fn.Entry,
+            Size:    size,
         }
 
         // Check if this is a known Go wrapper
