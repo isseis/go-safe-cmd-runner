@@ -791,7 +791,7 @@ func (p *PclntabParser) GetGoVersion() string {
 ### 2.5 GoWrapperResolver
 
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
-`.gopclntab` と `.symtab` の両方に対応。
+`.gopclntab` から関数情報を取得し、strip されたバイナリにも対応。
 
 ```go
 // internal/runner/security/elfanalyzer/go_wrapper_resolver.go
@@ -828,15 +828,6 @@ type SymbolInfo struct {
     Size    uint64
 }
 
-// SymbolSource indicates where the symbol information was obtained from.
-type SymbolSource int
-
-const (
-    SymbolSourceNone     SymbolSource = iota
-    SymbolSourceSymtab                // From .symtab section
-    SymbolSourcePclntab               // From .gopclntab section (stripped binary)
-)
-
 // WrapperCall represents a call to a Go syscall wrapper function.
 type WrapperCall struct {
     // CallSiteAddress is the address of the CALL instruction.
@@ -854,10 +845,9 @@ type WrapperCall struct {
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
-    symbols      map[string]SymbolInfo
-    wrapperAddrs map[uint64]GoSyscallWrapper
-    hasSymbols   bool
-    symbolSource SymbolSource
+    symbols       map[string]SymbolInfo
+    wrapperAddrs  map[uint64]GoSyscallWrapper
+    hasSymbols    bool
     pclntabParser *PclntabParser
 }
 
@@ -870,59 +860,21 @@ func NewGoWrapperResolver() *GoWrapperResolver {
     }
 }
 
-// LoadSymbols loads symbols from the ELF file.
-// It tries the following sources in order:
-// 1. .symtab section (standard symbol table)
-// 2. .gopclntab section (pclntab - works on stripped Go binaries)
+// LoadSymbols loads symbols from the .gopclntab section.
+// The pclntab persists even after stripping because Go runtime needs it
+// for stack traces and garbage collection.
 //
-// Returns error only if neither source is available.
+// Returns error if .gopclntab is not available.
 func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
-    // First, try .symtab
-    if err := r.loadFromSymtab(elfFile); err == nil {
-        r.symbolSource = SymbolSourceSymtab
-        r.hasSymbols = len(r.symbols) > 0
-        return nil
-    }
-
-    // Fallback: try .gopclntab (for stripped Go binaries)
-    if err := r.loadFromPclntab(elfFile); err == nil {
-        r.symbolSource = SymbolSourcePclntab
-        r.hasSymbols = len(r.symbols) > 0
-        return nil
-    }
-
-    return ErrNoSymbolTable
-}
-
-// loadFromSymtab loads symbols from the .symtab section.
-func (r *GoWrapperResolver) loadFromSymtab(elfFile *elf.File) error {
-    symbols, err := elfFile.Symbols()
-    if err != nil {
+    if err := r.loadFromPclntab(elfFile); err != nil {
         return err
     }
 
-    for _, sym := range symbols {
-        r.symbols[sym.Name] = SymbolInfo{
-            Name:    sym.Name,
-            Address: sym.Value,
-            Size:    sym.Size,
-        }
-
-        // Check if this is a known Go wrapper
-        for _, wrapper := range knownGoWrappers {
-            if strings.Contains(sym.Name, wrapper.Name) {
-                r.wrapperAddrs[sym.Value] = wrapper
-            }
-        }
-    }
-
+    r.hasSymbols = len(r.symbols) > 0
     return nil
 }
 
 // loadFromPclntab loads symbols from the .gopclntab section.
-// This is used as a fallback for stripped Go binaries.
-// The pclntab persists even after stripping because Go runtime needs it
-// for stack traces and garbage collection.
 func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
     if err := r.pclntabParser.Parse(elfFile); err != nil {
         return err
@@ -955,11 +907,6 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 // HasSymbols returns true if symbols were successfully loaded.
 func (r *GoWrapperResolver) HasSymbols() bool {
     return r.hasSymbols
-}
-
-// GetSymbolSource returns the source of loaded symbols.
-func (r *GoWrapperResolver) GetSymbolSource() SymbolSource {
-    return r.symbolSource
 }
 
 // FindWrapperCalls scans the code section for calls to known Go syscall wrappers.

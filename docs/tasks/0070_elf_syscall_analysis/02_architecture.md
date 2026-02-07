@@ -158,12 +158,8 @@ sequenceDiagram
 
     Note over GW,PP: Symbol loading (FR-3.1.6)
     SA->>GW: LoadSymbols(elfFile)
-    alt .symtab available
-        GW->>GW: Load from .symtab
-    else .symtab stripped
-        GW->>PP: Parse .gopclntab
-        PP-->>GW: Function names and addresses
-    end
+    GW->>PP: Parse .gopclntab
+    PP-->>GW: Function names and addresses
 
     Note over SA,MD: Pass 1: Direct syscall instructions
     SA->>SA: Find syscall instructions (0F 05)
@@ -201,7 +197,7 @@ sequenceDiagram
 - Pass 1: `syscall` 命令（0F 05）を直接検出し、逆方向スキャンで syscall 番号を特定
 - Pass 2: Go syscall ラッパー関数（`syscall.Syscall` 等）への CALL 命令を検出し、引数から syscall 番号を特定
 - 逆方向スキャンでは、x86_64 の可変長命令の性質上、直接逆方向にデコードすることは困難なため、前方向にデコードして命令リストを構築し、そのリストを逆順に走査する
-- **Strip されたバイナリ対応**: `.symtab` が存在しない場合、`.gopclntab` から関数情報を復元（Go ランタイムがスタックトレース生成とガベージコレクションに必要なため strip 後も保持される）
+- **Strip されたバイナリ対応**: `.gopclntab` から関数情報を復元（Go ランタイムがスタックトレース生成とガベージコレクションに必要なため strip 後も保持される）
 
 ### 2.4 データフロー（実行時）
 
@@ -348,7 +344,7 @@ classDiagram
 
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
 直接の syscall 命令解析とは**別の解析パス**として動作する。
-`.symtab` と `.gopclntab` の両方に対応し、strip されたバイナリでも解析可能。
+`.gopclntab` から関数情報を取得し、strip されたバイナリでも解析可能。
 
 ```mermaid
 classDiagram
@@ -356,22 +352,11 @@ classDiagram
         -symbolTable map[string]SymbolInfo
         -wrapperAddrs map[uint64]GoSyscallWrapper
         -decoder MachineCodeDecoder
-        -symbolSource SymbolSource
         -pclntabParser PclntabParser
         +LoadSymbols(elfFile *elf.File) error
         +HasSymbols() bool
-        +GetSymbolSource() SymbolSource
         +FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall
-        -loadFromSymtab(elfFile *elf.File) error
-        -loadFromPclntab(elfFile *elf.File) error
         -resolveSyscallArgument(recentInsts []DecodedInstruction, wrapper GoSyscallWrapper) int
-    }
-
-    class SymbolSource {
-        <<enumeration>>
-        None
-        Symtab
-        Pclntab
     }
 
     class SymbolInfo {
@@ -392,16 +377,11 @@ classDiagram
         +Resolved bool
     }
 
-    GoWrapperResolver --> SymbolSource
     GoWrapperResolver --> SymbolInfo
     GoWrapperResolver --> GoSyscallWrapper
     GoWrapperResolver --> WrapperCall
     GoWrapperResolver --> PclntabParser
 ```
-
-**シンボル取得の優先順位**:
-1. `.symtab` セクション（通常のシンボルテーブル）
-2. `.gopclntab` セクション（strip されたバイナリ用フォールバック）
 
 ### 3.5 SyscallAnalysisStore
 
@@ -854,7 +834,19 @@ flowchart TB
 | High Risk | `AnalysisError` | 安全側に倒す（中リスクとして扱う） |
 | 解析結果なし | `StaticBinary` | 従来と同じ（不明として扱う） |
 
-### 11.3 統合解析結果ストア方式
+### 11.3 GoWrapperResolver のシンボルソース統一
+
+**採用案**: `.gopclntab` のみを使用
+- プロダクションバイナリは strip されているのが通常であるため、`.symtab` が存在することは稀
+- Go バイナリでは `.symtab` が存在する場合でも `.gopclntab` も必ず存在するため、`.symtab` パスは冗長
+- 実装コストが低い（Go `debug/elf` パッケージの数行のコード）一方、テスト・保守負担が増加
+- シンボル取得の優先順位ロジックの複雑さが不要になる
+
+**代替案（不採用）**: `.symtab` と `.gopclntab` の両方に対応
+- 開発・デバッグ時のバイナリには対応できるが、実際のユースケースではほぼ無意味
+- Go 非バイナリの場合、GoWrapperResolver 自体が不要なため、`.symtab` 対応の汎用性も低い
+
+### 11.4 統合解析結果ストア方式
 
 **採用案**: ハッシュ検証情報と syscall 解析結果を単一ファイルに統合
 - 解析結果ファイル数が半減（管理の簡素化）
