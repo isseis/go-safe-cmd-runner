@@ -1237,7 +1237,7 @@ func (s *FileAnalysisStore) Load(filePath string) (*FileAnalysisRecord, error) {
 }
 
 // Save saves the analysis record for the given file path.
-// This performs a read-modify-write to preserve existing fields.
+// This overwrites the entire record. Use Update for read-modify-write operations.
 func (s *FileAnalysisStore) Save(filePath string, record *FileAnalysisRecord) error {
     recordPath, err := s.getRecordPath(filePath)
     if err != nil {
