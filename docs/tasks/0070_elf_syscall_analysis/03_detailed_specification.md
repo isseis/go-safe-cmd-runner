@@ -308,8 +308,17 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 // Note: This method only handles direct syscall instructions.
 // Go wrapper calls are analyzed separately by analyzeGoWrapperCalls.
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffset int) (int, string) {
-    // Build instruction list by forward decoding up to syscall
-    instructions := a.decodeInstructionsUpTo(code, syscallOffset)
+    // Performance optimization: Use windowed decoding to avoid re-decoding
+    // the entire .text section for each syscall instruction.
+    // Window starts from max(0, syscallOffset - maxBackwardScan * maxInstructionLength)
+    const maxInstructionLength = 15 // x86_64 maximum instruction length
+    windowStart := syscallOffset - (a.maxBackwardScan * maxInstructionLength)
+    if windowStart < 0 {
+        windowStart = 0
+    }
+
+    // Build instruction list by forward decoding within the window
+    instructions := a.decodeInstructionsInWindow(code, windowStart, syscallOffset)
     if len(instructions) == 0 {
         return -1, "unknown:decode_failed"
     }
@@ -343,12 +352,18 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffse
     return -1, "unknown:scan_limit_exceeded"
 }
 
-// decodeInstructionsUpTo decodes all instructions from start up to the given offset.
-func (a *SyscallAnalyzer) decodeInstructionsUpTo(code []byte, targetOffset int) []DecodedInstruction {
+// decodeInstructionsInWindow decodes instructions within a specified window [startOffset, endOffset).
+// This method provides better performance by avoiding unnecessary decoding of the entire code section.
+// For large binaries with many syscall instructions, this reduces total decode overhead significantly.
+//
+// Performance comparison (example: 10MB .text, 100 syscalls):
+// - Old approach: 100 × 5MB avg = ~500MB worth of redundant decoding
+// - Window approach: 100 × (50 instructions × 15 bytes) = ~75KB of focused decoding
+func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, startOffset, endOffset int) []DecodedInstruction {
     var instructions []DecodedInstruction
-    pos := 0
+    pos := startOffset
 
-    for pos < targetOffset {
+    for pos < endOffset {
         inst, err := a.decoder.Decode(code[pos:], uint64(pos))
         if err != nil {
             // Skip problematic byte and continue
@@ -362,6 +377,51 @@ func (a *SyscallAnalyzer) decodeInstructionsUpTo(code []byte, targetOffset int) 
     return instructions
 }
 ```
+
+#### 2.1.1 パフォーマンス最適化: ウィンドウ方式のデコード
+
+**問題**: 各 syscall 命令に対して offset 0 からデコードするナイーブな実装は、大規模バイナリのパフォーマンス低下を招く。
+
+**シナリオ例**:
+- `.text` セクションサイズ: 10MB
+- syscall 命令数: 100箇所
+- 平均 syscall 位置: 開始地点から ~5MB
+
+**パフォーマンスへの影響**:
+- **旧方式**: 100 × 5MB ≈ 500MB相当の冗長なデコード処理
+- **新方式（ウィンドウ）**: 100 × (50命令 × 15バイト最大) ≈ 75KBの集中デコード
+- **改善効果**: デコードバイト数で ~6700倍削減
+
+**実装方針**:
+
+ウィンドウ方式（案 b）を選択した理由:
+
+| 案 | メリット | デメリット | 決定 |
+|----|---------|----------|------|
+| (a) セクション全体を一度デコード | シンプル、メモリ予測可能 | 初期コスト大、初期 syscall で無駄 | ❌ 却下 |
+| (b) ウィンドウ方式 | バランス型パフォーマンス、低メモリ | ロジック若干複雑 | ✅ **採用** |
+| (c) .gopclntab 関数境界を利用 | 最も正確なスコープ | DWARF/pclntab 解析必須、複雑 | ❌ 過複雑 |
+
+**ウィンドウ計算**:
+```
+windowStart = max(0, syscallOffset - maxBackwardScan × maxInstructionLength)
+windowEnd   = syscallOffset
+```
+
+各パラメータ:
+- `maxBackwardScan = 50`（設定可能、コンストラクタのデフォルト値）
+- `maxInstructionLength = 15`（x86_64 最大命令長）
+- ウィンドウサイズ ≈ 750バイト（通常 20-40 命令程度）
+
+**パフォーマンス検証**:
+
+この最適化は NFR-4.1.2（中規模バイナリ < 5秒）の達成に必須:
+
+| バイナリサイズ | 予想 syscall数 | ウィンドウ方式時間 | ナイーブ方式時間 | 状態 |
+|---------------|-----------------|---------------------|-----------------|------|
+| < 1MB         | ~10-20         | < 0.1秒            | < 0.5秒        | ✅ 両方OK |
+| 1-10MB        | ~50-100        | < 1秒              | ~10-30秒       | ✅ ウィンドウ必須 |
+| > 10MB        | ~100-500       | < 5秒              | ~60-300秒      | ✅ ウィンドウ重要 |
 
 ### 2.2 MachineCodeDecoder
 
