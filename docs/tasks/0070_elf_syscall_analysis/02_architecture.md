@@ -109,7 +109,7 @@ graph TB
         end
         subgraph "internal/fileanalysis"
             J["FileAnalysisStore<br>(新規)"]
-            K["FileAnalysisStoreSyscall<br>(新規)"]
+            K["SyscallAnalysisStore<br>(新規)"]
         end
         subgraph "internal/filevalidator"
             H["FileValidator<br>(拡張)"]
@@ -243,7 +243,7 @@ classDiagram
         -goResolver GoWrapperResolver
         -syscallNumbers SyscallNumberTable
         +AnalyzeSyscalls(path string) SyscallAnalysisResult
-        -findSyscallInstructions(code []byte) []SyscallLocation
+        -findSyscallInstructions(code []byte) []uint64
         -extractSyscallNumber(code []byte, loc SyscallLocation) SyscallInfo
     }
 
@@ -409,13 +409,13 @@ syscall 解析結果の読み書きを担当。解析結果ファイルの sysca
 
 ```mermaid
 classDiagram
-    class SyscallAnalysisStore {
+    class elfanalyzer.SyscallAnalysisStore {
         <<interface>>
         +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
         +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
     }
 
-    class FileAnalysisStoreSyscall {
+    class fileanalysis.SyscallAnalysisStore {
         -fileStore FileAnalysisStore
         +SaveSyscallAnalysis(path string, hash string, result SyscallAnalysisResult) error
         +LoadSyscallAnalysis(path string, hash string) (SyscallAnalysisResult, bool, error)
@@ -444,8 +444,8 @@ classDiagram
         +Summary SyscallSummary
     }
 
-    SyscallAnalysisStore <|.. FileAnalysisStoreSyscall
-    FileAnalysisStoreSyscall --> FileAnalysisStore
+    elfanalyzer.SyscallAnalysisStore <|.. fileanalysis.SyscallAnalysisStore
+    fileanalysis.SyscallAnalysisStore --> FileAnalysisStore
     FileAnalysisStore --> FileAnalysisRecord
     FileAnalysisRecord --> SyscallAnalysisData
 ```
@@ -816,7 +816,7 @@ flowchart TB
 
 - [ ] FileAnalysisStore の実装（internal/fileanalysis パッケージ）
 - [ ] 解析結果スキーマの設計（FileAnalysisRecord 構造体）
-- [ ] SyscallAnalysisStore インターフェースと FileAnalysisStoreSyscall 実装
+- [ ] SyscallAnalysisStore インターフェースと SyscallAnalysisStore 実装
 - [ ] filevalidator の統合解析結果ストア対応
 
 ### Phase 5: 統合
