@@ -605,7 +605,7 @@ func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
 
 Go バイナリの `.gopclntab` セクションから関数情報を復元するパーサー。
 本仕様では **Go 1.16+ の pclntab 形式に対して関数名・アドレスの抽出を実装** する。
-Go 1.2-1.15 の legacy 形式はベストエフォートとし、解析不能の場合はエラーを返す。
+Go 1.2-1.15 の legacy 形式はベストエフォートとし、解析不能時は `ErrInvalidPclntab` を返す。
 
 ```go
 // internal/runner/security/elfanalyzer/pclntab_parser.go
