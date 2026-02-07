@@ -611,7 +611,7 @@ func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
 ### 2.4 PclntabParser
 
 Go バイナリの `.gopclntab` セクションから関数情報を復元するパーサー。
-本仕様では **Go 1.16+ の pclntab 形式に対して関数名・アドレスの抽出を実装** する。
+本仕様では **Go 1.18+ の pclntab 形式に対して関数名・アドレスの抽出を実装** する。
 Go 1.2-1.15 の legacy 形式はベストエフォートとし、解析不能時は `ErrInvalidPclntab` を返す。
 
 ```go
@@ -762,8 +762,8 @@ func (p *PclntabParser) parseGo12(data []byte) error {
 }
 
 // parseFuncTable extracts function entries from the pclntab.
-// This implementation targets Go 1.16+ pclntab layout (pcHeader + functab).
-// Legacy formats (Go 1.2-1.15) are best-effort and may return ErrInvalidPclntab.
+// This implementation targets Go 1.18+ pclntab layout (pcHeader + functab).
+// Legacy formats (Go 1.2-1.17) are best-effort and may return ErrInvalidPclntab.
 func (p *PclntabParser) parseFuncTable(data []byte) error {
     // pcHeader layout (Go 1.16+)
     // offset 0x00: magic (uint32)
@@ -913,7 +913,7 @@ func (p *PclntabParser) GetGoVersion() string {
 
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
 `.gopclntab` から関数情報を取得する設計であり、
-**Go 1.16+ の pclntab 形式であれば strip されたバイナリにも対応**。
+**Go 1.18+ の pclntab 形式であれば strip されたバイナリにも対応**。
 Go 1.2-1.15 の legacy 形式はベストエフォートとする。
 
 ```go
@@ -2188,8 +2188,7 @@ int main() {
 ### 8.3 Go ABI の考慮
 
 - Go 1.17 以降はレジスタベース ABI（RAX で第1引数）
-- Go 1.16 以前はスタックベース ABI
-- 本実装は Go 1.17+ を想定（RAX レジスタを優先的にチェック）
+- 本実装は Go 1.18+ を対象としており、レジスタベース ABI のみをサポート（RAX レジスタを優先的にチェック）
 
 ### 8.4 パフォーマンス最適化
 

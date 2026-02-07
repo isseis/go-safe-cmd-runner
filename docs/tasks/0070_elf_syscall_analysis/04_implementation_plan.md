@@ -147,9 +147,9 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     `GetGoVersion()`
   - 仕様: 詳細仕様書 §2.4
   - 要件: FR-3.1.6
-  - 設計判断: Go 1.16+ の pclntab 形式に限定して
+  - 設計判断: Go 1.18+ の pclntab 形式に限定して
     関数名・アドレスの抽出を実装する。
-    Go 1.2-1.15 はベストエフォートとし、
+    Go 1.2-1.17 はベストエフォートとし、
     解析不能時は `ErrInvalidPclntab` を返す
     （詳細仕様書 §2.4 参照）。
 - [ ] `pclntab_parser_test.go` を新規作成
