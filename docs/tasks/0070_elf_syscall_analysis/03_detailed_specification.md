@@ -419,11 +419,16 @@ func (d *X86Decoder) Decode(code []byte, offset uint64) (DecodedInstruction, err
         return DecodedInstruction{}, err
     }
 
+    args := inst.Args[:]
+    for len(args) > 0 && args[len(args)-1] == x86asm.None {
+        args = args[:len(args)-1]
+    }
+
     decoded := DecodedInstruction{
         Offset: offset,
         Len:    inst.Len,
         Op:     inst.Op,
-        Args:   inst.Args[:],
+        Args:   args,
         Raw:    code[:inst.Len],
     }
 
@@ -599,7 +604,8 @@ func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
 ### 2.4 PclntabParser
 
 Go バイナリの `.gopclntab` セクションから関数情報を復元するパーサー。
-strip されたバイナリでも関数名とアドレスを取得可能。
+本仕様では **Go 1.16+ の pclntab 形式に対して関数名・アドレスの抽出を実装** する。
+Go 1.2-1.15 の legacy 形式はベストエフォートとし、解析不能の場合はエラーを返す。
 
 ```go
 // internal/runner/security/elfanalyzer/pclntab_parser.go
@@ -749,21 +755,129 @@ func (p *PclntabParser) parseGo12(data []byte) error {
 }
 
 // parseFuncTable extracts function entries from the pclntab.
-// This is a simplified implementation that extracts function names and addresses.
+// This implementation targets Go 1.16+ pclntab layout (pcHeader + functab).
+// Legacy formats (Go 1.2-1.15) are best-effort and may return ErrInvalidPclntab.
 func (p *PclntabParser) parseFuncTable(data []byte) error {
-    // Note: Full pclntab parsing is complex and varies by Go version.
-    // This implementation focuses on extracting function names and entry addresses.
-    // For production use, consider using debug/gosym with additional fallbacks.
+    // pcHeader layout (Go 1.16+)
+    // offset 0x00: magic (uint32)
+    // offset 0x04: pad1 (byte)
+    // offset 0x05: pad2 (byte)
+    // offset 0x06: minLC (byte)
+    // offset 0x07: ptrSize (byte)
+    // offset 0x08: nfunc (uint64/uint32)
+    // offset 0x10: nfiles (uint64/uint32)
+    // offset 0x18: textStart (uintptr)
+    // offset 0x20: funcnameOffset (uintptr)
+    // offset 0x28: cuOffset (uintptr)
+    // offset 0x30: filetabOffset (uintptr)
+    // offset 0x38: pctabOffset (uintptr)
+    // offset 0x40: pclntabOffset (uintptr)
+    // offset 0x48: ftabOffset (uintptr)
 
-    // The actual parsing logic would:
-    // 1. Read the number of functions from the header
-    // 2. Iterate through the function table
-    // 3. For each entry, read the entry PC and name offset
-    // 4. Resolve the name from the string table
+    if p.ptrSize != 4 && p.ptrSize != 8 {
+        return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
+    }
 
-    // Placeholder: actual implementation would parse the binary structure
-    // See: https://cloud.google.com/blog/topics/threat-intelligence/golang-internals-symbol-recovery
+    readPtr := func(off int) (uint64, error) {
+        end := off + p.ptrSize
+        if off < 0 || end > len(data) {
+            return 0, ErrInvalidPclntab
+        }
+        if p.ptrSize == 4 {
+            return uint64(binary.LittleEndian.Uint32(data[off:end])), nil
+        }
+        return binary.LittleEndian.Uint64(data[off:end]), nil
+    }
 
+    if len(data) < 0x50 {
+        return ErrInvalidPclntab
+    }
+
+    nfunc, err := readPtr(0x08)
+    if err != nil {
+        return err
+    }
+    textStart, err := readPtr(0x18)
+    if err != nil {
+        return err
+    }
+    funcNameOff, err := readPtr(0x20)
+    if err != nil {
+        return err
+    }
+    ftabOff, err := readPtr(0x48)
+    if err != nil {
+        return err
+    }
+
+    // Function table: nfunc+1 entries, each entry is {entryoff uint32, funcoff uint32}
+    // entry address = textStart + entryoff
+    // funcoff points to _func struct; nameoff is at +4 in _func
+    entrySize := 8
+    ftabStart := int(ftabOff)
+    ftabBytes := int((nfunc + 1) * uint64(entrySize))
+    if ftabStart < 0 || ftabStart+ftabBytes > len(data) {
+        return ErrInvalidPclntab
+    }
+
+    funcs := make([]PclntabFunc, 0, nfunc)
+    readUint32 := func(b []byte, off int) (uint32, error) {
+        if off < 0 || off+4 > len(b) {
+            return 0, ErrInvalidPclntab
+        }
+        return binary.LittleEndian.Uint32(b[off : off+4]), nil
+    }
+
+    for i := uint64(0); i < nfunc; i++ {
+        entryOff, err := readUint32(data, ftabStart+int(i)*entrySize)
+        if err != nil {
+            return err
+        }
+        funcOff, err := readUint32(data, ftabStart+int(i)*entrySize+4)
+        if err != nil {
+            return err
+        }
+
+        entry := uint64(entryOff) + textStart
+        funcDataOff := int(funcOff)
+        nameOff32, err := readUint32(data, funcDataOff+4)
+        if err != nil {
+            return err
+        }
+
+        nameStart := int(funcNameOff) + int(nameOff32)
+        if nameStart < 0 || nameStart >= len(data) {
+            return ErrInvalidPclntab
+        }
+
+        // Read null-terminated function name
+        nameEnd := nameStart
+        for nameEnd < len(data) && data[nameEnd] != 0x00 {
+            nameEnd++
+        }
+        if nameEnd == len(data) {
+            return ErrInvalidPclntab
+        }
+        name := string(data[nameStart:nameEnd])
+
+        // Determine end address from next function entry (if available)
+        end := uint64(0)
+        if i+1 < nfunc {
+            nextEntryOff, err := readUint32(data, ftabStart+int(i+1)*entrySize)
+            if err != nil {
+                return err
+            }
+            end = uint64(nextEntryOff) + textStart
+        }
+
+        funcs = append(funcs, PclntabFunc{
+            Name:  name,
+            Entry: entry,
+            End:   end,
+        })
+    }
+
+    p.funcData = funcs
     return nil
 }
 
@@ -791,7 +905,9 @@ func (p *PclntabParser) GetGoVersion() string {
 ### 2.5 GoWrapperResolver
 
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
-`.gopclntab` から関数情報を取得し、strip されたバイナリにも対応。
+`.gopclntab` から関数情報を取得する設計であり、
+**Go 1.16+ の pclntab 形式であれば strip されたバイナリにも対応**。
+Go 1.2-1.15 の legacy 形式はベストエフォートとする。
 
 ```go
 // internal/runner/security/elfanalyzer/go_wrapper_resolver.go
@@ -1404,7 +1520,6 @@ package fileanalysis
 import (
     "errors"
     "fmt"
-    "log/slog"
 )
 
 // Static errors
