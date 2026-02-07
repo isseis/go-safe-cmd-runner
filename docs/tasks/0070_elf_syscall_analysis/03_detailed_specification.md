@@ -1182,7 +1182,6 @@ import (
 type FileAnalysisStore struct {
     analysisDir string
     pathGetter  filevalidator.HashFilePathGetter
-    fs          safefileio.FileSystem
 }
 
 // NewFileAnalysisStore creates a new FileAnalysisStore.
@@ -1202,7 +1201,6 @@ func NewFileAnalysisStore(analysisDir string, pathGetter filevalidator.HashFileP
     return &FileAnalysisStore{
         analysisDir: analysisDir,
         pathGetter:  pathGetter,
-        fs:          safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
     }, nil
 }
 
@@ -1214,7 +1212,7 @@ func (s *FileAnalysisStore) Load(filePath string) (*FileAnalysisRecord, error) {
         return nil, fmt.Errorf("failed to get analysis record path: %w", err)
     }
 
-    data, err := s.fs.SafeReadFile(recordPath)
+    data, err := safefileio.SafeReadFile(recordPath)
     if err != nil {
         if os.IsNotExist(err) {
             return nil, ErrRecordNotFound
@@ -1255,7 +1253,7 @@ func (s *FileAnalysisStore) Save(filePath string, record *FileAnalysisRecord) er
         return fmt.Errorf("failed to marshal analysis record: %w", err)
     }
 
-    if err := s.fs.SafeWriteFile(recordPath, data, 0o600); err != nil {
+    if err := safefileio.SafeWriteFileOverwrite(recordPath, data, 0o600); err != nil {
         return fmt.Errorf("failed to write analysis record file: %w", err)
     }
 
