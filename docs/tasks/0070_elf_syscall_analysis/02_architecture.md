@@ -174,7 +174,7 @@ sequenceDiagram
     end
 
     Note over SA,GW: Pass 2: Go wrapper calls (FR-3.1.6)
-    alt Symbols available (from .symtab or .gopclntab)
+    alt Symbols available (from .gopclntab)
         SA->>GW: FindWrapperCalls(code, baseAddr)
         GW->>GW: Scan for CALL to known wrappers
         loop For each wrapper call
@@ -246,7 +246,6 @@ classDiagram
     class SyscallAnalysisResult {
         +DetectedSyscalls []SyscallInfo
         +HasUnknownSyscalls bool
-        +NetworkSyscalls []SyscallInfo
         +HighRiskReasons []string
     }
 
@@ -351,7 +350,6 @@ classDiagram
     class GoWrapperResolver {
         -symbolTable map[string]SymbolInfo
         -wrapperAddrs map[uint64]GoSyscallWrapper
-        -decoder MachineCodeDecoder
         -pclntabParser PclntabParser
         +LoadSymbols(elfFile *elf.File) error
         +HasSymbols() bool

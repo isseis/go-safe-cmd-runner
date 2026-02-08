@@ -30,6 +30,7 @@ internal/runner/security/elfanalyzer/
     syscall_decoder.go             # MachineCodeDecoder, X86Decoder
     syscall_numbers.go             # SyscallNumberTable, X86_64SyscallTable
     go_wrapper_resolver.go         # GoWrapperResolver
+    pclntab_parser.go              # PclntabParser
 
 internal/fileanalysis/
     file_analysis_store.go         # FileAnalysisStore（解析結果ストア層）
@@ -185,6 +186,9 @@ func (a *SyscallAnalyzer) AnalyzeSyscalls(path string) (*SyscallAnalysisResult, 
     if err := a.goResolver.LoadSymbols(elfFile); err != nil {
         // Non-fatal: continue without Go wrapper resolution
         // This handles stripped binaries
+        slog.Debug("failed to load symbols for Go wrapper resolution",
+            slog.String("path", path),
+            slog.String("error", err.Error()))
     }
 
     // Analyze syscalls
@@ -1213,7 +1217,7 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 
 **注記**: 上記コードでは `x86asm.Reg`, `x86asm.Rel`, `x86asm.Mem` などの型を使用しているため、パッケージ冒頭のインポートで `"golang.org/x/arch/x86/x86asm"` を追加する必要がある。
 
-### 2.5 統合解析結果ストア層
+### 2.6 統合解析結果ストア層
 
 統合解析結果ストアは、ハッシュ検証情報と syscall 解析結果を単一ファイルに格納する。
 利用側（filevalidator, elfanalyzer）はそれぞれ自分の関心事のみを扱うインターフェースを通じてアクセスする。
@@ -1484,7 +1488,7 @@ func convertToSummary(d SyscallSummaryData) elfanalyzer.SyscallSummary {
 }
 ```
 
-### 2.6 統合解析結果スキーマ
+### 2.7 統合解析結果スキーマ
 
 ```go
 // internal/fileanalysis/schema.go
@@ -1577,7 +1581,7 @@ type SyscallSummaryData struct {
 }
 ```
 
-### 2.7 解析結果ストアエラー
+### 2.8 解析結果ストアエラー
 
 ```go
 // internal/fileanalysis/errors.go
