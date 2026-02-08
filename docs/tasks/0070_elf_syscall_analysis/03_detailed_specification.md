@@ -1850,7 +1850,7 @@ func (v *Validator) VerifyHash(filePath string) (bool, error) {
     // Try to load from new format first
     record, err := v.store.Load(hashFilePath)
     if err == nil {
-        return record.FileHash == actualHash, nil
+        return record.Hash.Value == actualHash, nil
     }
 
     // Fall back to old format for backward compatibility
