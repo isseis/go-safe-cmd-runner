@@ -2032,7 +2032,8 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string) AnalysisOutput 
     }
 
     // Load analysis result
-    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
+    hashInfo := fileanalysis.HashInfo{Algorithm: a.hashAlgo.Name(), Value: hash}
+    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hashInfo)
     if err != nil {
         slog.Debug("Syscall analysis lookup error",
             "path", path,
