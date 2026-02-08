@@ -1830,7 +1830,7 @@ func (v *Validator) RecordHash(filePath string) error {
         return fmt.Errorf("failed to compute hash: %w", err)
     }
 
-    hashFilePath, err := v.pathGen.GetHashFilePath(filePath)
+    hashFilePath, err := v.GetHashFilePath(filePath)
     if err != nil {
         return fmt.Errorf("failed to get hash file path: %w", err)
     }
