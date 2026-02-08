@@ -68,7 +68,9 @@ import (
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 type SyscallAnalysisResult struct {
-    // DetectedSyscalls contains all syscall instructions found with their numbers.
+    // DetectedSyscalls contains all detected syscall events with their numbers.
+    // This includes both direct syscall instructions (opcode 0F 05) and
+    // indirect syscalls via Go wrapper function calls (e.g., syscall.Syscall).
     DetectedSyscalls []SyscallInfo
 
     // HasUnknownSyscalls indicates whether any syscall number could not be determined.
@@ -81,7 +83,9 @@ type SyscallAnalysisResult struct {
     Summary SyscallSummary
 }
 
-// SyscallInfo represents information about a single syscall instruction.
+// SyscallInfo represents information about a single detected syscall event.
+// An event can be either a direct syscall instruction or an indirect syscall
+// via a Go wrapper function call.
 type SyscallInfo struct {
     // Number is the syscall number (e.g., 41 for socket on x86_64).
     // -1 indicates the number could not be determined.
@@ -116,14 +120,22 @@ type SyscallSummary struct {
     // IsHighRisk indicates the analysis could not fully determine network capability.
     IsHighRisk bool
 
-    // TotalSyscallInstructions is the count of syscall instructions found.
-    TotalSyscallInstructions int
+    // TotalDetectedEvents is the count of detected syscall events.
+    // This includes both direct syscall instructions and indirect syscalls
+    // via Go wrapper function calls.
+    TotalDetectedEvents int
 
-    // NetworkSyscallCount is the count of network-related syscalls.
+    // NetworkSyscallCount is the count of network-related syscall events.
     NetworkSyscallCount int
 }
 
 // SyscallAnalyzer analyzes ELF binaries for syscall instructions.
+//
+// Security Note: This analyzer is designed to work with pre-opened *elf.File
+// instances. The caller is responsible for opening files securely using
+// safefileio.SafeOpenFile() followed by elf.NewFile(). This design ensures
+// TOCTOU safety and symlink attack prevention, consistent with the existing
+// StandardELFAnalyzer pattern.
 type SyscallAnalyzer struct {
     decoder      MachineCodeDecoder
     syscallTable SyscallNumberTable
@@ -140,7 +152,7 @@ func NewSyscallAnalyzer() *SyscallAnalyzer {
         decoder:         NewX86Decoder(),
         syscallTable:    NewX86_64SyscallTable(),
         goResolver:      NewGoWrapperResolver(),
-        maxBackwardScan: 5, // Default: scan up to 5 instructions backward
+        maxBackwardScan: 50, // Default: scan up to 50 instructions backward
     }
 }
 
@@ -156,13 +168,12 @@ func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumbe
 
 // AnalyzeSyscalls analyzes the given ELF file for syscall instructions.
 // Returns SyscallAnalysisResult containing all found syscalls and risk assessment.
-func (a *SyscallAnalyzer) AnalyzeSyscalls(path string) (*SyscallAnalysisResult, error) {
-    // Open ELF file
-    elfFile, err := elf.Open(path)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open ELF file: %w", err)
-    }
-    defer elfFile.Close()
+//
+// Note: This method accepts an *elf.File that has already been opened securely.
+// The caller is responsible for using safefileio.SafeOpenFile() to prevent
+// symlink attacks and TOCTOU race conditions, then wrapping with elf.NewFile().
+// See StandardELFAnalyzer.AnalyzeNetworkSymbols() for the recommended pattern.
+func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAnalysisResult, error) {
 
     // Verify architecture
     if elfFile.Machine != elf.EM_X86_64 {
@@ -251,7 +262,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
     }
 
     // Build summary
-    result.Summary.TotalSyscallInstructions = len(result.DetectedSyscalls)
+    result.Summary.TotalDetectedEvents = len(result.DetectedSyscalls)
     result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
     result.Summary.IsHighRisk = result.HasUnknownSyscalls
 
@@ -1227,6 +1238,33 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 統合解析結果ストアは、ハッシュ検証情報と syscall 解析結果を単一ファイルに格納する。
 利用側（filevalidator, elfanalyzer）はそれぞれ自分の関心事のみを扱うインターフェースを通じてアクセスする。
 
+**循環依存回避設計**:
+
+`fileanalysis` パッケージは `filevalidator` パッケージの型に依存せず、独自のインターフェースを定義する。
+`filevalidator.HybridHashFilePathGetter` は「たまたま同じメソッドを持つ」ため、このインターフェースを満たす。
+これにより import cycle を回避しつつ、既存の実装を再利用できる。
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ fileanalysis パッケージ                                                  │
+│   ┌─────────────────────────────────────────┐                          │
+│   │ HashFilePathGetter interface            │                          │
+│   │   GetHashFilePath(hash string) string   │                          │
+│   └─────────────────────────────────────────┘                          │
+│                   △ implements                                          │
+└───────────────────│─────────────────────────────────────────────────────┘
+                    │
+                    │ (型の一致により自動的に実装)
+                    │
+┌───────────────────│─────────────────────────────────────────────────────┐
+│ filevalidator パッケージ                                                 │
+│   ┌─────────────────────────────────────────┐                          │
+│   │ HybridHashFilePathGetter struct         │                          │
+│   │   GetHashFilePath(hash string) string   │                          │
+│   └─────────────────────────────────────────┘                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 #### 2.5.1 FileAnalysisStore
 
 ```go
@@ -1242,19 +1280,26 @@ import (
     "time"
 
     "github.com/isseis/go-safe-cmd-runner/internal/common"
-    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
+
+// HashFilePathGetter generates file paths from content hashes.
+// This interface is defined locally to avoid import cycles with filevalidator.
+// filevalidator.HybridHashFilePathGetter implements this interface implicitly
+// by having the same method signature.
+type HashFilePathGetter interface {
+    GetHashFilePath(hash string) string
+}
 
 // FileAnalysisStore manages unified file analysis record files containing both
 // hash validation and syscall analysis data.
 type FileAnalysisStore struct {
     analysisDir string
-    pathGetter  filevalidator.HashFilePathGetter
+    pathGetter  HashFilePathGetter
 }
 
 // NewFileAnalysisStore creates a new FileAnalysisStore.
-func NewFileAnalysisStore(analysisDir string, pathGetter filevalidator.HashFilePathGetter) (*FileAnalysisStore, error) {
+func NewFileAnalysisStore(analysisDir string, pathGetter HashFilePathGetter) (*FileAnalysisStore, error) {
     // Validate analysis result directory
     info, err := os.Lstat(analysisDir)
     if err != nil {
@@ -1476,19 +1521,19 @@ func convertToSyscallInfos(data []SyscallInfoData) []elfanalyzer.SyscallInfo {
 
 func convertSummary(s elfanalyzer.SyscallSummary) SyscallSummaryData {
     return SyscallSummaryData{
-        HasNetworkSyscalls:       s.HasNetworkSyscalls,
-        IsHighRisk:               s.IsHighRisk,
-        TotalSyscallInstructions: s.TotalSyscallInstructions,
-        NetworkSyscallCount:      s.NetworkSyscallCount,
+        HasNetworkSyscalls:  s.HasNetworkSyscalls,
+        IsHighRisk:          s.IsHighRisk,
+        TotalDetectedEvents: s.TotalDetectedEvents,
+        NetworkSyscallCount: s.NetworkSyscallCount,
     }
 }
 
 func convertToSummary(d SyscallSummaryData) elfanalyzer.SyscallSummary {
     return elfanalyzer.SyscallSummary{
-        HasNetworkSyscalls:       d.HasNetworkSyscalls,
-        IsHighRisk:               d.IsHighRisk,
-        TotalSyscallInstructions: d.TotalSyscallInstructions,
-        NetworkSyscallCount:      d.NetworkSyscallCount,
+        HasNetworkSyscalls:  d.HasNetworkSyscalls,
+        IsHighRisk:          d.IsHighRisk,
+        TotalDetectedEvents: d.TotalDetectedEvents,
+        NetworkSyscallCount: d.NetworkSyscallCount,
     }
 }
 ```
@@ -1519,7 +1564,10 @@ type FileAnalysisRecord struct {
     // FilePath is the absolute path to the analyzed file.
     FilePath string `json:"file_path"`
 
-    // ContentHash is the SHA256 hash of the file content.
+    // ContentHash is the SHA256 hash of the file content in prefixed format.
+    // Format: "sha256:<64-char-hex>" (e.g., "sha256:abc123...def789")
+    // Note: filevalidator.SHA256.Sum() returns unprefixed hex, so callers
+    // must prepend "sha256:" when constructing ContentHash values.
     // Used by both filevalidator and elfanalyzer for validation.
     ContentHash string `json:"content_hash"`
 
@@ -1578,10 +1626,12 @@ type SyscallSummaryData struct {
     // IsHighRisk indicates the analysis could not fully determine network capability.
     IsHighRisk bool `json:"is_high_risk"`
 
-    // TotalSyscallInstructions is the count of syscall instructions found.
-    TotalSyscallInstructions int `json:"total_syscalls"`
+    // TotalDetectedEvents is the count of detected syscall events.
+    // This includes both direct syscall instructions and indirect syscalls
+    // via Go wrapper function calls.
+    TotalDetectedEvents int `json:"total_detected_events"`
 
-    // NetworkSyscallCount is the count of network-related syscalls.
+    // NetworkSyscallCount is the count of network-related syscall events.
     NetworkSyscallCount int `json:"network_syscalls"`
 }
 ```
@@ -1776,6 +1826,7 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
     "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+    "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // Command line flags
@@ -1790,10 +1841,13 @@ func main() {
     // Note: hashDir is determined from args or config in the actual implementation
     // e.g. defined along with recordDir
 
+    // Create secure file system instance
+    fs := safefileio.NewSecureFileSystem()
+
     if *analyzeSyscalls {
         // Check if file is a static ELF binary
-        if isStaticELF(filePath) {
-            if err := analyzeSyscallsForFile(filePath, hashDir, pathGetter); err != nil {
+        if isStaticELF(filePath, fs) {
+            if err := analyzeSyscallsForFile(filePath, hashDir, pathGetter, fs); err != nil {
                 slog.Warn("Syscall analysis failed",
                     "path", filePath,
                     "error", err)
@@ -1804,8 +1858,16 @@ func main() {
 }
 
 // isStaticELF checks if the file is a static ELF binary.
-func isStaticELF(path string) bool {
-    elfFile, err := elf.Open(path)
+// Uses safefileio for secure file access.
+func isStaticELF(path string, fs safefileio.FileSystem) bool {
+    // Open file securely to prevent symlink attacks
+    file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+    if err != nil {
+        return false
+    }
+    defer file.Close()
+
+    elfFile, err := elf.NewFile(file)
     if err != nil {
         return false
     }
@@ -1817,28 +1879,42 @@ func isStaticELF(path string) bool {
 }
 
 // analyzeSyscallsForFile performs syscall analysis and saves to file analysis store.
-func analyzeSyscallsForFile(path, analysisDir string, pathGetter filevalidator.HashFilePathGetter) error {
-    // Create syscall analyzer
-    analyzer := elfanalyzer.NewSyscallAnalyzer()
+// Uses safefileio for secure file access to prevent TOCTOU and symlink attacks.
+func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.HashFilePathGetter, fs safefileio.FileSystem) error {
+    // Open file securely
+    file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+    if err != nil {
+        return fmt.Errorf("failed to open file securely: %w", err)
+    }
+    defer file.Close()
 
-    // Perform analysis
-    result, err := analyzer.AnalyzeSyscalls(path)
+    // Parse ELF from secure file handle
+    elfFile, err := elf.NewFile(file)
+    if err != nil {
+        return fmt.Errorf("failed to parse ELF: %w", err)
+    }
+    defer elfFile.Close()
+
+    // Create syscall analyzer and perform analysis
+    analyzer := elfanalyzer.NewSyscallAnalyzer()
+    result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
     if err != nil {
         return fmt.Errorf("analysis failed: %w", err)
     }
 
+    // Rewind file for hash calculation
+    if _, err := file.Seek(0, 0); err != nil {
+        return fmt.Errorf("failed to rewind file: %w", err)
+    }
+
     // Calculate file hash
     hashAlgo := &filevalidator.SHA256{}
-    file, err := os.Open(path)
-    if err != nil {
-        return fmt.Errorf("failed to open file for hashing: %w", err)
-    }
-    defer file.Close()
-
-    hash, err := hashAlgo.Sum(file)
+    rawHash, err := hashAlgo.Sum(file)
     if err != nil {
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
+    // Add algorithm prefix for ContentHash format
+    contentHash := fmt.Sprintf("%s:%s", hashAlgo.Name(), rawHash)
 
     // Create file analysis store
     store, err := fileanalysis.NewFileAnalysisStore(analysisDir, pathGetter)
@@ -1849,14 +1925,14 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter filevalidator.H
     analysisStore := fileanalysis.NewSyscallAnalysisStore(store)
 
     // Save syscall analysis to file analysis store
-    if err := analysisStore.SaveSyscallAnalysis(path, hash, result); err != nil {
+    if err := analysisStore.SaveSyscallAnalysis(path, contentHash, result); err != nil {
         return fmt.Errorf("failed to save analysis result: %w", err)
     }
 
     // Log summary
     slog.Info("Syscall analysis completed",
         "path", path,
-        "total_syscalls", result.Summary.TotalSyscallInstructions,
+        "total_detected_events", result.Summary.TotalDetectedEvents,
         "network_syscalls", result.Summary.NetworkSyscallCount,
         "high_risk", result.Summary.IsHighRisk)
 
@@ -2083,8 +2159,8 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
             {Number: 41, Name: "socket", IsNetwork: true},
         },
         Summary: elfanalyzer.SyscallSummary{
-            HasNetworkSyscalls: true,
-            TotalSyscallInstructions: 1,
+            HasNetworkSyscalls:  true,
+            TotalDetectedEvents: 1,
             NetworkSyscallCount: 1,
         },
     }
