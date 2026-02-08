@@ -1700,6 +1700,202 @@ func (e *RecordCorruptedError) Unwrap() error {
 }
 ```
 
+### 2.9 filevalidator の統合ストア対応
+
+既存の `filevalidator.Validator` を拡張し、従来のテキスト形式ハッシュファイルから
+新しい統合解析結果ストア（JSON 形式）への移行を実装します。
+
+#### 2.9.1 旧形式の検出と移行ロジック
+
+```go
+// internal/filevalidator/validator.go
+
+// Validator manages file hash validation and analysis result storage.
+type Validator struct {
+    fs       safefileio.FileSystem
+    hashAlgo HashAlgorithm
+    pathGen  HashFilePathGetter
+
+    // New: FileAnalysisStore for unified analysis results
+    store    *fileanalysis.FileAnalysisStore
+}
+
+// NewValidatorWithAnalysisStore creates a Validator with unified analysis store support.
+func NewValidatorWithAnalysisStore(
+    fs safefileio.FileSystem,
+    hashAlgo HashAlgorithm,
+    pathGen HashFilePathGetter,
+) (*Validator, error) {
+    store := fileanalysis.NewFileAnalysisStore(fs)
+
+    return &Validator{
+        fs:       fs,
+        hashAlgo: hashAlgo,
+        pathGen:  pathGen,
+        store:    store,
+    }, nil
+}
+
+// RecordHash stores file hash using the new unified analysis store format.
+// Migrates from old text format if found.
+func (v *Validator) RecordHash(filePath string) error {
+    actualHash, err := v.hashAlgo.HashFile(v.fs, filePath)
+    if err != nil {
+        return fmt.Errorf("failed to compute hash: %w", err)
+    }
+
+    hashFilePath, err := v.pathGen.GetHashFilePath(filePath)
+    if err != nil {
+        return fmt.Errorf("failed to get hash file path: %w", err)
+    }
+
+    // Check if old format exists and perform migration
+    if err := v.migrateFromOldFormatIfNeeded(hashFilePath, filePath, actualHash); err != nil {
+        return fmt.Errorf("failed to migrate old format: %w", err)
+    }
+
+    // Use FileAnalysisStore.Update to preserve existing fields
+    err = v.store.Update(hashFilePath, func(record *fileanalysis.FileAnalysisRecord) error {
+        record.FileHash = actualHash
+        record.LastUpdated = time.Now()
+        return nil
+    })
+
+    if err != nil {
+        return fmt.Errorf("failed to update analysis record: %w", err)
+    }
+
+    return nil
+}
+
+// VerifyHash checks file hash using the unified analysis store.
+// Supports backward compatibility with old text format.
+func (v *Validator) VerifyHash(filePath string) (bool, error) {
+    actualHash, err := v.hashAlgo.HashFile(v.fs, filePath)
+    if err != nil {
+        return false, fmt.Errorf("failed to compute hash: %w", err)
+    }
+
+    hashFilePath, err := v.pathGen.GetHashFilePath(filePath)
+    if err != nil {
+        return false, fmt.Errorf("failed to get hash file path: %w", err)
+    }
+
+    // Try to load from new format first
+    record, err := v.store.Load(hashFilePath)
+    if err == nil {
+        return record.FileHash == actualHash, nil
+    }
+
+    // Fall back to old format for backward compatibility
+    if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+        return v.verifyHashFromOldFormat(hashFilePath, actualHash)
+    }
+
+    return false, fmt.Errorf("failed to load analysis record: %w", err)
+}
+
+// migrateFromOldFormatIfNeeded detects old text format and migrates to new format.
+func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, currentHash string) error {
+    // Check if new format already exists
+    if _, err := v.store.Load(hashFilePath); err == nil {
+        return nil // New format already exists, no migration needed
+    }
+
+    // Check if old format exists
+    oldHash, err := v.loadHashFromOldFormat(hashFilePath)
+    if err != nil {
+        return nil // No old format found, proceed with new creation
+    }
+
+    // Migrate from old format to new format
+    record := &fileanalysis.FileAnalysisRecord{
+        SchemaVersion: fileanalysis.CurrentSchemaVersion,
+        FileHash:      oldHash,
+        LastUpdated:   time.Now(),
+        // SyscallAnalysis will be nil, added later by record command
+    }
+
+    if err := v.store.Save(hashFilePath, record); err != nil {
+        return fmt.Errorf("failed to save migrated record: %w", err)
+    }
+
+    // Remove old format file after successful migration
+    if err := v.fs.Remove(hashFilePath); err != nil {
+        // Log warning but don't fail - migration was successful
+        // The old file will be overwritten by new format access
+    }
+
+    return nil
+}
+
+// loadHashFromOldFormat reads hash from old text format.
+// Returns error if file doesn't exist or doesn't match old format.
+func (v *Validator) loadHashFromOldFormat(hashFilePath string) (string, error) {
+    data, err := v.fs.ReadFile(hashFilePath)
+    if err != nil {
+        return "", err
+    }
+
+    content := strings.TrimSpace(string(data))
+
+    // Old format detection: pure hexadecimal string (64 chars for SHA256)
+    if len(content) == 64 && isHexString(content) {
+        return content, nil
+    }
+
+    // If content starts with '{', it's likely JSON format, not old format
+    if strings.HasPrefix(content, "{") {
+        return "", fmt.Errorf("file appears to be JSON format, not old text format")
+    }
+
+    return "", fmt.Errorf("unrecognized format")
+}
+
+// verifyHashFromOldFormat verifies hash against old text format.
+func (v *Validator) verifyHashFromOldFormat(hashFilePath, actualHash string) (bool, error) {
+    expectedHash, err := v.loadHashFromOldFormat(hashFilePath)
+    if err != nil {
+        return false, err
+    }
+
+    return expectedHash == actualHash, nil
+}
+
+// isHexString checks if string contains only hexadecimal characters.
+func isHexString(s string) bool {
+    for _, r := range s {
+        if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+            return false
+        }
+    }
+    return true
+}
+```
+
+#### 2.9.2 移行期の動作仕様
+
+**移行検出**:
+- ハッシュファイルパスに新形式（JSON）が存在する場合 → 新形式を使用
+- 新形式が存在せず、旧形式（64文字の16進数テキスト）が存在する場合 → 旧形式から移行
+- どちらも存在しない場合 → 新形式で新規作成
+
+**移行プロセス**:
+1. 旧形式ファイルからハッシュ値を読み取り
+2. 新形式の `FileAnalysisRecord` を作成（`SyscallAnalysis` は `nil`）
+3. 新形式ファイルとして保存
+4. 旧形式ファイルを削除（失敗してもエラーとしない）
+
+**エラーハンドリング**:
+- 旧形式の読み取りエラー: 無視（新規作成として処理）
+- 新形式への変換エラー: 操作を中止
+- 旧形式ファイル削除エラー: ログ出力のみ（処理続行）
+
+**後方互換性保証**:
+- `VerifyHash()` は旧形式ファイルでも正常動作
+- `RecordHash()` は旧形式が存在する場合、自動的に新形式へ移行
+- 既存の syscall 解析結果は移行時に保持される
+
 ## 3. StandardELFAnalyzer の拡張
 
 ```go
