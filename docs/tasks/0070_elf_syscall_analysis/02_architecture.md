@@ -151,7 +151,7 @@ sequenceDiagram
     participant AS as "AnalysisStore"
     participant FS as "FileSystem"
 
-    RC->>SA: AnalyzeSyscalls(binaryPath)
+    RC->>SA: AnalyzeSyscallsFromELF(elfFile)
     SA->>FS: Open ELF file
     FS-->>SA: ELF handle
     SA->>SA: Load .text section
@@ -238,7 +238,7 @@ classDiagram
         -decoder MachineCodeDecoder
         -goResolver GoWrapperResolver
         -syscallNumbers SyscallNumberTable
-        +AnalyzeSyscalls(path string) SyscallAnalysisResult
+        +AnalyzeSyscallsFromELF(elfFile *elf.File) SyscallAnalysisResult
         -findSyscallInstructions(code []byte) []uint64
         -extractSyscallNumber(code []byte, loc SyscallLocation) SyscallInfo
     }

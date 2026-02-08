@@ -520,8 +520,9 @@ func (d *X86Decoder) Decode(code []byte, offset uint64) (DecodedInstruction, err
         return DecodedInstruction{}, err
     }
 
+    // Trim trailing nil arguments (x86asm.Arg is an interface, unused slots are nil)
     args := inst.Args[:]
-    for len(args) > 0 && args[len(args)-1] == x86asm.None {
+    for len(args) > 0 && args[len(args)-1] == nil {
         args = args[:len(args)-1]
     }
 
@@ -1126,8 +1127,10 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
         }
 
         // Check if this is a known Go wrapper
+        // Use exact match or suffix match to avoid false positives
+        // (e.g., "mysyscall.Syscall6Helper" should not match "syscall.Syscall6")
         for _, wrapper := range knownGoWrappers {
-            if strings.Contains(fn.Name, wrapper.Name) {
+            if fn.Name == wrapper.Name || strings.HasSuffix(fn.Name, "."+wrapper.Name) {
                 r.wrapperAddrs[fn.Entry] = wrapper
             }
         }
@@ -1150,6 +1153,17 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 //
 // Returns:
 //   - slice of WrapperCall structs containing call site info and resolved syscall numbers
+//
+// Performance Note:
+// This function performs linear decoding of the entire code section, unlike
+// Pass 1 (findSyscallInstructions) which uses window-based scanning.
+// For typical static Go binaries (1-10 MB code section), linear decoding
+// completes in approximately 50-200ms, which is acceptable for the record
+// command's batch processing use case.
+// Future optimization: If performance becomes an issue for very large binaries,
+// consider implementing window-based scanning similar to Pass 1, but this adds
+// complexity for maintaining CALL instruction context for backward scanning.
+// See NFR-4.1.2 for performance requirements.
 func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall {
     if len(r.wrapperAddrs) == 0 {
         return nil
@@ -1667,6 +1681,11 @@ type SyscallAnalysisData struct {
     HasUnknownSyscalls bool `json:"has_unknown_syscalls"`
 
     // HighRiskReasons explains why the analysis resulted in high risk.
+    // Note: With omitempty, nil and empty slice ([]string{}) have different JSON output:
+    //   - nil: field is omitted entirely
+    //   - []string{}: field appears as "high_risk_reasons": []
+    // When initializing SyscallAnalysisResult, use nil (not empty slice) for no high risk
+    // to ensure the field is omitted in JSON output.
     HighRiskReasons []string `json:"high_risk_reasons,omitempty"`
 
     // Summary provides aggregated information about the analysis.
@@ -1705,7 +1724,7 @@ type SyscallSummaryData struct {
     TotalDetectedEvents int `json:"total_detected_events"`
 
     // NetworkSyscallCount is the count of network-related syscall events.
-    NetworkSyscallCount int `json:"network_syscalls"`
+    NetworkSyscallCount int `json:"network_syscall_count"`
 }
 ```
 
@@ -2051,11 +2070,16 @@ type StandardELFAnalyzer struct {
 
 // NewStandardELFAnalyzerWithSyscallStore creates an analyzer with syscall analysis store support.
 // Uses dependency injection for SyscallAnalysisStore to avoid circular dependencies.
+//
+// Note: This constructor delegates to NewStandardELFAnalyzer which initializes all existing fields
+// including pfv (*filevalidator.PrivilegedFileValidator). The new syscall-related fields are then
+// set on the returned analyzer.
 func NewStandardELFAnalyzerWithSyscallStore(
     fs safefileio.FileSystem,
     privManager runnertypes.PrivilegeManager,
     store SyscallAnalysisStore,
 ) *StandardELFAnalyzer {
+    // NewStandardELFAnalyzer initializes fs, networkSymbols, privManager, and pfv
     analyzer := NewStandardELFAnalyzer(fs, privManager)
 
     if store != nil {
@@ -2200,43 +2224,29 @@ func main() {
     fs := safefileio.NewSecureFileSystem()
 
     if *analyzeSyscalls {
-        // Check if file is a static ELF binary
-        if isStaticELF(filePath, fs) {
-            if err := analyzeSyscallsForFile(filePath, hashDir, pathGetter, fs); err != nil {
+        // Perform syscall analysis with single file open to prevent TOCTOU attacks
+        if err := analyzeSyscallsForFile(filePath, hashDir, pathGetter, fs); err != nil {
+            // ErrNotStaticELF is expected for non-static binaries, not a warning
+            if !errors.Is(err, elfanalyzer.ErrNotStaticELF) {
                 slog.Warn("Syscall analysis failed",
                     "path", filePath,
                     "error", err)
-                // Non-fatal: continue with hash recording
             }
+            // Non-fatal: continue with hash recording
         }
     }
 }
 
-// isStaticELF checks if the file is a static ELF binary.
-// Uses safefileio for secure file access.
-func isStaticELF(path string, fs safefileio.FileSystem) bool {
-    // Open file securely to prevent symlink attacks
-    file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
-    if err != nil {
-        return false
-    }
-    defer file.Close()
-
-    elfFile, err := elf.NewFile(file)
-    if err != nil {
-        return false
-    }
-    defer elfFile.Close()
-
-    // Check for .dynsym section
-    dynsym := elfFile.Section(".dynsym")
-    return dynsym == nil
-}
+// ErrNotStaticELF indicates the file is not a static ELF binary.
+// This is defined in elfanalyzer package; shown here for reference.
+// var ErrNotStaticELF = errors.New("not a static ELF binary")
 
 // analyzeSyscallsForFile performs syscall analysis and saves to file analysis store.
-// Uses safefileio for secure file access to prevent TOCTOU and symlink attacks.
+// Opens the file once and performs both static ELF check and analysis to prevent
+// TOCTOU (time-of-check-time-of-use) vulnerabilities.
+// Returns ErrNotStaticELF if the file is not a static ELF binary.
 func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.HashFilePathGetter, fs safefileio.FileSystem) error {
-    // Open file securely
+    // Open file securely - single open for both check and analysis
     file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
         return fmt.Errorf("failed to open file securely: %w", err)
@@ -2246,9 +2256,15 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
     // Parse ELF from secure file handle
     elfFile, err := elf.NewFile(file)
     if err != nil {
-        return fmt.Errorf("failed to parse ELF: %w", err)
+        // Not an ELF file - this is not an error, just skip analysis
+        return elfanalyzer.ErrNotStaticELF
     }
     defer elfFile.Close()
+
+    // Check if static ELF (no .dynsym section) using the already-opened file
+    if dynsym := elfFile.Section(".dynsym"); dynsym != nil {
+        return elfanalyzer.ErrNotStaticELF
+    }
 
     // Create syscall analyzer and perform analysis
     analyzer := elfanalyzer.NewSyscallAnalyzer()
@@ -2763,6 +2779,32 @@ int main() {
   - 出力項目: ファイルパス、デコード失敗回数、解析した総バイト数
 
 これにより、デコード失敗が多発するバイナリの調査が可能となり、必要に応じて解析ロジックの改善や対象バイナリの手動検証を行える。
+
+### 8.6 Go wrapper CALL 命令の制限事項
+
+`GoWrapperResolver.resolveWrapper()` は相対 CALL 命令（`x86asm.Rel` オペランド）のみを解決対象とする。
+
+**対応する CALL 形式**:
+
+- 相対 CALL（E8 xx xx xx xx）: `call rel32` - 静的にリンクされた関数への直接呼び出し
+
+**非対応の CALL 形式**:
+
+- 絶対アドレス CALL: `call r/m64` - ほとんど使用されない
+- 間接 CALL（レジスタ経由）: `call rax` - 関数ポインタ経由の呼び出し
+- 間接 CALL（メモリ経由）: `call [rax+8]` - vtable やクロージャ経由の呼び出し
+
+**理由**:
+
+Go コンパイラ（gc）は syscall ラッパー関数（`syscall.Syscall` 等）への呼び出しに静的リンクと
+相対 CALL を使用する。間接 CALL は通常インターフェースメソッドやクロージャに使用され、
+syscall ラッパーへの直接呼び出しには使用されない。
+
+**影響**:
+
+間接 CALL 経由で syscall ラッパーを呼び出す非標準的なコードパターン（例: 関数ポインタ経由）は
+検出されない。この場合、Go wrapper 経由の syscall は「検出されない」として扱われるが、
+Pass 1 の直接 syscall 命令検出は引き続き機能する。
 
 ## 9. 実装後タスク
 
