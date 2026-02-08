@@ -1787,6 +1787,7 @@ func (e *RecordCorruptedError) Unwrap() error {
 type Validator struct {
     fs       safefileio.FileSystem
     hashAlgo HashAlgorithm
+    hashDir  string
     pathGen  HashFilePathGetter
 
     // New: FileAnalysisStore for unified analysis results
@@ -1797,13 +1798,18 @@ type Validator struct {
 func NewValidatorWithAnalysisStore(
     fs safefileio.FileSystem,
     hashAlgo HashAlgorithm,
+    hashDir string,
     pathGen HashFilePathGetter,
 ) (*Validator, error) {
-    store := fileanalysis.NewFileAnalysisStore(fs)
+    store, err := fileanalysis.NewFileAnalysisStore(hashDir, pathGen)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create analysis store: %w", err)
+    }
 
     return &Validator{
         fs:       fs,
         hashAlgo: hashAlgo,
+        hashDir:  hashDir,
         pathGen:  pathGen,
         store:    store,
     }, nil
