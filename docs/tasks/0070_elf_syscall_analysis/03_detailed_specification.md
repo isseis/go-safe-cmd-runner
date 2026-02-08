@@ -874,6 +874,14 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
     }
 
+    // Helper function to safely convert uint64 to int with overflow check
+    safeUint64ToInt := func(val uint64, context string) (int, error) {
+        if val > uint64(^uint(0)>>1) { // Check if val > max int
+            return 0, fmt.Errorf("%w: %s value %d exceeds maximum int", ErrInvalidPclntab, context, val)
+        }
+        return int(val), nil
+    }
+
     readPtr := func(off int) (uint64, error) {
         end := off + p.ptrSize
         if off < 0 || end > len(data) {
@@ -906,17 +914,38 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         return err
     }
 
+    // Validate nfunc count to prevent excessive memory allocation
+    if nfunc > 10000000 { // Reasonable upper bound: 10M functions
+        return fmt.Errorf("%w: function count %d exceeds reasonable limit", ErrInvalidPclntab, nfunc)
+    }
+
+    // Convert to int with overflow protection
+    nfuncInt, err := safeUint64ToInt(nfunc, "nfunc")
+    if err != nil {
+        return err
+    }
+
     // Function table: nfunc+1 entries, each entry is {entryoff uint32, funcoff uint32}
     // entry address = textStart + entryoff
     // funcoff points to _func struct; nameoff is at +4 in _func
     entrySize := 8
-    ftabStart := int(ftabOff)
-    ftabBytes := int((nfunc + 1) * uint64(entrySize))
+    ftabStart, err := safeUint64ToInt(ftabOff, "ftabOff")
+    if err != nil {
+        return err
+    }
+
+    // Calculate ftabBytes with overflow check
+    ftabEntriesU64 := (nfunc + 1) * uint64(entrySize)
+    ftabBytes, err := safeUint64ToInt(ftabEntriesU64, "ftabBytes")
+    if err != nil {
+        return err
+    }
+
     if ftabStart < 0 || ftabStart+ftabBytes > len(data) {
         return ErrInvalidPclntab
     }
 
-    funcs := make([]PclntabFunc, 0, nfunc)
+    funcs := make([]PclntabFunc, 0, nfuncInt)
     readUint32 := func(b []byte, off int) (uint32, error) {
         if off < 0 || off+4 > len(b) {
             return 0, ErrInvalidPclntab
@@ -925,23 +954,36 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
     }
 
     for i := uint64(0); i < nfunc; i++ {
-        entryOff, err := readUint32(data, ftabStart+int(i)*entrySize)
+        // Safe conversion with bounds check
+        iInt, err := safeUint64ToInt(i, "loop index")
         if err != nil {
             return err
         }
-        funcOff, err := readUint32(data, ftabStart+int(i)*entrySize+4)
+
+        entryOff, err := readUint32(data, ftabStart+iInt*entrySize)
+        if err != nil {
+            return err
+        }
+        funcOff, err := readUint32(data, ftabStart+iInt*entrySize+4)
         if err != nil {
             return err
         }
 
         entry := uint64(entryOff) + textStart
-        funcDataOff := int(funcOff)
+        funcDataOff, err := safeUint64ToInt(uint64(funcOff), "funcOff")
+        if err != nil {
+            return err
+        }
         nameOff32, err := readUint32(data, funcDataOff+4)
         if err != nil {
             return err
         }
 
-        nameStart := int(funcNameOff) + int(nameOff32)
+        nameStartU64 := funcNameOff + uint64(nameOff32)
+        nameStart, err := safeUint64ToInt(nameStartU64, "nameStart")
+        if err != nil {
+            return err
+        }
         if nameStart < 0 || nameStart >= len(data) {
             return ErrInvalidPclntab
         }
@@ -959,7 +1001,11 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         // Determine end address from next function entry (if available)
         end := uint64(0)
         if i+1 < nfunc {
-            nextEntryOff, err := readUint32(data, ftabStart+int(i+1)*entrySize)
+            nextIInt, err := safeUint64ToInt(i+1, "next loop index")
+            if err != nil {
+                return err
+            }
+            nextEntryOff, err := readUint32(data, ftabStart+nextIInt*entrySize)
             if err != nil {
                 return err
             }
