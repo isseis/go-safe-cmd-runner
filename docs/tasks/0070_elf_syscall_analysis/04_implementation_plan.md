@@ -87,8 +87,7 @@ syscall 番号抽出を実装する。
   を新規作成
   - `SyscallAnalysisResult`, `SyscallInfo`, `SyscallSummary` 構造体
   - `SyscallAnalyzer` 構造体と `NewSyscallAnalyzer()` コンストラクタ
-  - `AnalyzeSyscalls(path)`:
-    ELF ファイルを開き `.text` セクションを解析
+  - `AnalyzeSyscallsFromELF(elfFile)`:
   - `findSyscallInstructions()`: `0F 05` パターンの検出
   - `extractSyscallInfo()`:
     逆方向スキャンによる syscall 番号抽出
