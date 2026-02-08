@@ -1997,10 +1997,11 @@ func isHexString(s string) bool {
 // The concrete implementation is provided by the internal/fileanalysis package.
 type SyscallAnalysisStore interface {
     // LoadSyscallAnalysis loads syscall analysis from storage.
+    // `expectedHash` contains both the hash algorithm and the expected hash value.
     // Returns (result, true, nil) if found and hash matches.
     // Returns (nil, false, nil) if not found or hash mismatch.
     // Returns (nil, false, error) on other errors.
-    LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, bool, error)
+    LoadSyscallAnalysis(filePath string, expectedHash hashInfo) (*SyscallAnalysisResult, bool, error)
 }
 
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
