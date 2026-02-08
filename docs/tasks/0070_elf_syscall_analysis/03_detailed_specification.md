@@ -1877,8 +1877,8 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
     // Migrate from old format to new format
     record := &fileanalysis.FileAnalysisRecord{
         SchemaVersion: fileanalysis.CurrentSchemaVersion,
-        FileHash:      oldHash,
-        LastUpdated:   time.Now(),
+        Hash:      fileanalysis.HashInfo{Algorithm: v.hashAlgo.Name(), Value: oldHash},
+        UpdatedAt:   time.Now(),
         // SyscallAnalysis will be nil, added later by record command
     }
 
