@@ -404,7 +404,7 @@ classDiagram
         +fs FileSystem
         +Load(path string) (FileAnalysisRecord, error)
         +Save(path string, record FileAnalysisRecord) error
-        +Update(path string, updateFn func) error
+        +Update(path string, updateFn func(*FileAnalysisRecord) error) error
     }
 
     class FileAnalysisRecord {
