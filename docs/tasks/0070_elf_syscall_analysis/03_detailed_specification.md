@@ -304,12 +304,19 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
         Location: syscallAddr,
     }
 
-    // Calculate offset in code
-    offset := int(syscallAddr - baseAddr)
-    if offset < 0 || offset >= len(code) {
+    // Calculate offset in code with bounds checking
+    // Check for underflow before subtraction (uint64 subtraction wraps)
+    if syscallAddr < baseAddr {
         info.DeterminationMethod = "unknown:invalid_offset"
         return info
     }
+    offsetU64 := syscallAddr - baseAddr
+    // Check for overflow when converting to int and bounds
+    if offsetU64 > uint64(len(code)-1) {
+        info.DeterminationMethod = "unknown:invalid_offset"
+        return info
+    }
+    offset := int(offsetU64)
 
     // Backward scan to find eax/rax modification
     number, method := a.backwardScanForSyscallNumber(code, offset)
