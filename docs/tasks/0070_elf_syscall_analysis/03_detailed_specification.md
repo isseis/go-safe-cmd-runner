@@ -1374,13 +1374,24 @@ func (s *FileAnalysisStore) Load(filePath string) (*FileAnalysisRecord, error) {
 // Save saves the analysis record for the given file path.
 // This overwrites the entire record. Use Update for read-modify-write operations.
 func (s *FileAnalysisStore) Save(filePath string, record *FileAnalysisRecord) error {
-    recordPath, err := s.getRecordPath(filePath)
+    // Canonicalize the path to ensure FilePath is always absolute and resolved
+    absPath, err := filepath.Abs(filePath)
+    if err != nil {
+        return fmt.Errorf("failed to get absolute path: %w", err)
+    }
+
+    resolvedPath, err := common.NewResolvedPath(absPath)
+    if err != nil {
+        return fmt.Errorf("failed to create resolved path: %w", err)
+    }
+
+    recordPath, err := s.pathGetter.GetHashFilePath(s.analysisDir, resolvedPath)
     if err != nil {
         return fmt.Errorf("failed to get analysis record path: %w", err)
     }
 
     record.SchemaVersion = CurrentSchemaVersion
-    record.FilePath = filePath
+    record.FilePath = resolvedPath.String() // Store canonical absolute path
     record.UpdatedAt = time.Now().UTC()
 
     data, err := json.MarshalIndent(record, "", "  ")
@@ -1462,9 +1473,9 @@ func NewSyscallAnalysisStore(store *FileAnalysisStore) *SyscallAnalysisStore {
 
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
-func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
+func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath string, hash HashInfo, result *elfanalyzer.SyscallAnalysisResult) error {
     return c.store.Update(filePath, func(record *FileAnalysisRecord) error {
-        record.ContentHash = fileHash
+        record.Hash = hash
         record.SyscallAnalysis = &SyscallAnalysisData{
             Architecture:       "x86_64",
             AnalyzedAt:         time.Now().UTC(),
@@ -1481,7 +1492,7 @@ func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 // Returns (result, true, nil) if found and hash matches.
 // Returns (nil, false, nil) if not found or hash mismatch.
 // Returns (nil, false, error) on other errors.
-func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
+func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath string, expectedHash HashInfo) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
     record, err := c.store.Load(filePath)
     if err != nil {
         if err == ErrRecordNotFound {
@@ -1490,8 +1501,8 @@ func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string
         return nil, false, err
     }
 
-    // Check hash match
-    if record.ContentHash != expectedHash {
+    // Check hash match (both algorithm and value must match)
+    if record.Hash.Algorithm != expectedHash.Algorithm || record.Hash.Value != expectedHash.Value {
         return nil, false, nil
     }
 
@@ -1585,12 +1596,9 @@ type FileAnalysisRecord struct {
     // FilePath is the absolute path to the analyzed file.
     FilePath string `json:"file_path"`
 
-    // ContentHash is the SHA256 hash of the file content in prefixed format.
-    // Format: "sha256:<64-char-hex>" (e.g., "sha256:abc123...def789")
-    // Note: filevalidator.SHA256.Sum() returns unprefixed hex, so callers
-    // must prepend "sha256:" when constructing ContentHash values.
+    // Hash contains the content hash information, following filevalidator's HashInfo format.
     // Used by both filevalidator and elfanalyzer for validation.
-    ContentHash string `json:"content_hash"`
+    Hash HashInfo `json:"hash"`
 
     // UpdatedAt is when the analysis record was last updated.
     UpdatedAt time.Time `json:"updated_at"`
@@ -1598,6 +1606,15 @@ type FileAnalysisRecord struct {
     // SyscallAnalysis contains syscall analysis result (optional).
     // Only present for static ELF binaries that have been analyzed.
     SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
+}
+
+// HashInfo contains hash algorithm and value, matching filevalidator.HashInfo format.
+type HashInfo struct {
+    // Algorithm is the hash algorithm name (e.g., "sha256").
+    Algorithm string `json:"algorithm"`
+
+    // Value is the hash value as a hexadecimal string.
+    Value string `json:"value"`
 }
 
 // SyscallAnalysisData contains syscall analysis information.
@@ -2126,12 +2143,14 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
 
     // Calculate file hash
     hashAlgo := &filevalidator.SHA256{}
-    rawHash, err := hashAlgo.Sum(file)
+    hashValue, err := hashAlgo.Sum(file)
     if err != nil {
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
-    // Add algorithm prefix for ContentHash format
-    contentHash := fmt.Sprintf("%s:%s", hashAlgo.Name(), rawHash)
+    hash := fileanalysis.HashInfo{
+        Algorithm: hashAlgo.Name(),
+        Value:     hashValue,
+    }
 
     // Create file analysis store
     store, err := fileanalysis.NewFileAnalysisStore(analysisDir, pathGetter)
@@ -2142,7 +2161,7 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
     analysisStore := fileanalysis.NewSyscallAnalysisStore(store)
 
     // Save syscall analysis to file analysis store
-    if err := analysisStore.SaveSyscallAnalysis(path, contentHash, result); err != nil {
+    if err := analysisStore.SaveSyscallAnalysis(path, hash, result); err != nil {
         return fmt.Errorf("failed to save analysis result: %w", err)
     }
 
@@ -2383,17 +2402,19 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
     }
 
     // Save
-    err = analysisStore.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
+    hash := HashInfo{Algorithm: "sha256", Value: "abc123"}
+    err = analysisStore.SaveSyscallAnalysis("/test/path", hash, result)
     require.NoError(t, err)
 
     // Load with matching hash
-    loaded, found, err := analysisStore.LoadSyscallAnalysis("/test/path", "sha256:abc123")
+    loaded, found, err := analysisStore.LoadSyscallAnalysis("/test/path", hash)
     require.NoError(t, err)
     require.True(t, found)
     assert.Equal(t, result.Summary.HasNetworkSyscalls, loaded.Summary.HasNetworkSyscalls)
 
-    // Load with mismatched hash
-    _, found, err = analysisStore.LoadSyscallAnalysis("/test/path", "sha256:different")
+    // Load with mismatched hash value
+    differentHash := HashInfo{Algorithm: "sha256", Value: "different"}
+    _, found, err = analysisStore.LoadSyscallAnalysis("/test/path", differentHash)
     require.NoError(t, err)
     assert.False(t, found)  // Hash mismatch returns found=false, not error
 }
@@ -2408,7 +2429,7 @@ func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
     record := &FileAnalysisRecord{
         SchemaVersion: 999, // Future version
         FilePath:      "/test/path",
-        ContentHash:   "sha256:abc123",
+        Hash:          HashInfo{Algorithm: "sha256", Value: "abc123"},
     }
 
     data, _ := json.Marshal(record)
@@ -2429,8 +2450,9 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
     require.NoError(t, err)
 
     // First, save an analysis record with just content hash
+    hash := HashInfo{Algorithm: "sha256", Value: "abc123"}
     record := &FileAnalysisRecord{
-        ContentHash: "sha256:abc123",
+        Hash: hash,
     }
     err = store.Save("/test/path", record)
     require.NoError(t, err)
@@ -2442,13 +2464,14 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
             HasNetworkSyscalls: true,
         },
     }
-    err = analysisStore.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
+    err = analysisStore.SaveSyscallAnalysis("/test/path", hash, result)
     require.NoError(t, err)
 
     // Verify both fields are present
     loaded, err := store.Load("/test/path")
     require.NoError(t, err)
-    assert.Equal(t, "sha256:abc123", loaded.ContentHash)
+    assert.Equal(t, "sha256", loaded.Hash.Algorithm)
+    assert.Equal(t, "abc123", loaded.Hash.Value)
     assert.NotNil(t, loaded.SyscallAnalysis)
     assert.True(t, loaded.SyscallAnalysis.Summary.HasNetworkSyscalls)
 }

@@ -410,9 +410,14 @@ classDiagram
     class FileAnalysisRecord {
         +SchemaVersion int
         +FilePath string
-        +ContentHash string
+        +Hash HashInfo
         +UpdatedAt time.Time
         +SyscallAnalysis *SyscallAnalysisData
+    }
+
+    class HashInfo {
+        +Algorithm string
+        +Value string
     }
 
     class SyscallAnalysisData {
@@ -427,6 +432,7 @@ classDiagram
     elfanalyzer.SyscallAnalysisStore <|.. fileanalysis.SyscallAnalysisStore
     fileanalysis.SyscallAnalysisStore --> FileAnalysisStore
     FileAnalysisStore --> FileAnalysisRecord
+    FileAnalysisRecord --> HashInfo
     FileAnalysisRecord --> SyscallAnalysisData
 ```
 
@@ -595,7 +601,10 @@ flowchart TB
 {
   "schema_version": 1,
   "file_path": "/usr/local/bin/myapp",
-  "content_hash": "sha256:abc123...",
+  "hash": {
+    "algorithm": "sha256",
+    "value": "abc123..."
+  },
   "updated_at": "2025-02-05T10:30:00Z",
   "syscall_analysis": {
     "architecture": "x86_64",
@@ -618,7 +627,9 @@ flowchart TB
 ```
 
 **フィールド説明**:
-- `content_hash`: ファイルの内容ハッシュ（既存の filevalidator が使用）
+- `hash`: ファイルの内容ハッシュ情報（filevalidator.HashInfo 形式に準拠）
+  - `algorithm`: ハッシュアルゴリズム名（例: "sha256"）
+  - `value`: ハッシュ値（16進数文字列）
 - `syscall_analysis`: syscall 解析結果（オプション、ELF ファイルの場合のみ）
   - 非 ELF ファイルや動的リンクバイナリの場合、このフィールドは存在しない
 
