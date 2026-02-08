@@ -261,7 +261,13 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
         }
     }
 
-    // Build summary
+    // Build summary with consistent field calculation rules:
+    // - TotalDetectedEvents: total count of all detected syscall events (Pass 1 + Pass 2)
+    // - HasNetworkSyscalls: true if NetworkSyscallCount > 0
+    // - IsHighRisk: true if HasUnknownSyscalls (any syscall number could not be determined)
+    // - NetworkSyscallCount: incremented during Pass 1 and Pass 2
+    // These rules ensure convertSyscallResult() in StandardELFAnalyzer correctly
+    // interprets the analysis result for network capability detection.
     result.Summary.TotalDetectedEvents = len(result.DetectedSyscalls)
     result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
     result.Summary.IsHighRisk = result.HasUnknownSyscalls
@@ -1320,17 +1326,26 @@ type FileAnalysisStore struct {
 }
 
 // NewFileAnalysisStore creates a new FileAnalysisStore.
+// If analysisDir does not exist, it will be created with mode 0o755.
+// This simplifies operational workflows by eliminating the need for
+// manual directory creation before running the record command.
 func NewFileAnalysisStore(analysisDir string, pathGetter HashFilePathGetter) (*FileAnalysisStore, error) {
-    // Validate analysis result directory
+    // Check if directory exists
     info, err := os.Lstat(analysisDir)
     if err != nil {
         if os.IsNotExist(err) {
-            return nil, fmt.Errorf("analysis result directory does not exist: %s", analysisDir)
+            // Create directory if it doesn't exist
+            if err := os.MkdirAll(analysisDir, 0o755); err != nil {
+                return nil, fmt.Errorf("failed to create analysis result directory: %w", err)
+            }
+        } else {
+            return nil, fmt.Errorf("failed to access analysis result directory: %w", err)
         }
-        return nil, fmt.Errorf("failed to access analysis result directory: %w", err)
-    }
-    if !info.IsDir() {
-        return nil, fmt.Errorf("analysis result path is not a directory: %s", analysisDir)
+    } else {
+        // Path exists, verify it's a directory
+        if !info.IsDir() {
+            return nil, fmt.Errorf("analysis result path is not a directory: %s", analysisDir)
+        }
     }
 
     return &FileAnalysisStore{
@@ -1398,6 +1413,12 @@ func (s *FileAnalysisStore) Save(filePath string, record *FileAnalysisRecord) er
 // Update performs a read-modify-write operation on the analysis record.
 // The updateFn receives the existing record (or a new empty one if not found)
 // and should modify it in place.
+//
+// Error Handling:
+//   - ErrRecordNotFound: creates a new record
+//   - RecordCorruptedError: creates a new record (overwriting corrupted data)
+//   - SchemaVersionMismatchError: returns error without overwriting
+//     (preserves forward/backward compatibility until migration strategy is defined)
 func (s *FileAnalysisStore) Update(filePath string, updateFn func(*FileAnalysisRecord) error) error {
     // Try to load existing record
     record, err := s.Load(filePath)
@@ -1406,8 +1427,23 @@ func (s *FileAnalysisStore) Update(filePath string, updateFn func(*FileAnalysisR
             // Create new record
             record = &FileAnalysisRecord{}
         } else {
-            // For other errors (corrupted, schema mismatch), create fresh record
-            record = &FileAnalysisRecord{}
+            // Check for schema version mismatch
+            var schemaErr *SchemaVersionMismatchError
+            if errors.As(err, &schemaErr) {
+                // Do not overwrite records with different schema versions
+                // This prevents accidental data loss when:
+                //   - Record was created by a newer version (forward compatibility)
+                //   - Record uses an old schema that requires migration
+                return fmt.Errorf("cannot update record: %w", err)
+            }
+            // For corrupted records, create fresh record
+            var corruptedErr *RecordCorruptedError
+            if errors.As(err, &corruptedErr) {
+                record = &FileAnalysisRecord{}
+            } else {
+                // Unknown error - fail safely
+                return fmt.Errorf("failed to load existing record: %w", err)
+            }
         }
     }
 
@@ -1588,7 +1624,10 @@ type FileAnalysisRecord struct {
     // ContentHash is the SHA256 hash of the file content in prefixed format.
     // Format: "sha256:<64-char-hex>" (e.g., "sha256:abc123...def789")
     // Note: filevalidator.SHA256.Sum() returns unprefixed hex, so callers
-    // must prepend "sha256:" when constructing ContentHash values.
+    // must prepend "sha256:" prefix when constructing ContentHash values.
+    // Example: fmt.Sprintf("%s:%s", hashAlgo.Name(), rawHash)
+    // This prefixed format ensures consistency with record command output
+    // and enables future support for multiple hash algorithms.
     // Used by both filevalidator and elfanalyzer for validation.
     ContentHash string `json:"content_hash"`
 
@@ -1657,7 +1696,41 @@ type SyscallSummaryData struct {
 }
 ```
 
-### 2.8 解析結果ストアエラー
+### 2.8 解析結果ストアの運用方針とセキュリティ
+
+#### 2.8.1 ディレクトリ管理方針
+
+**自動作成による運用簡略化:**
+- `NewFileAnalysisStore()` は `analysisDir` が存在しない場合、自動的に作成します（`os.MkdirAll`）
+- これにより、`cmd/record` の実行前にディレクトリを手動作成する必要がなくなります
+- ディレクトリ作成時のパーミッションは `0o755` です
+- 既存ディレクトリの場合、パーミッションは変更されません
+
+**セキュリティ上の考慮事項:**
+- シンボリックリンク攻撃を防ぐため、`os.Lstat()` を使用してディレクトリの実体を確認します
+- ディレクトリパスが既存ファイルへのシンボリックリンクの場合、エラーとなります
+- 解析結果ファイル自体の I/O は `safefileio` パッケージを使用し、TOCTOU 攻撃を防ぎます
+
+#### 2.8.2 スキーマバージョン互換性戦略
+
+**保守的な互換性維持:**
+- `FileAnalysisStore.Update()` は `SchemaVersionMismatchError` 発生時、既存レコードを**上書きせず**エラーを返します
+- これにより以下のシナリオでデータ損失を防ぎます：
+  - 新バージョンで作成されたレコードを旧バージョンが読み取る（前方互換性）
+  - 旧バージョンのレコードをマイグレーション戦略なしで上書きする（後方互換性）
+- マイグレーション戦略が定義されるまで、スキーマミスマッチは明示的なエラーとします
+
+**RecordCorruptedError の処理:**
+- JSON パースエラーなど、明らかに破損したレコードは新規レコードとして上書きします
+- これにより、ファイルシステム障害やディスク破損からの自動復旧が可能です
+- 破損レコードの保存は行いません（上書き時に失われます）
+
+**将来のマイグレーション実装時の指針:**
+- `Update()` に `migrationFn` オプションを追加し、旧スキーマからの変換を許可
+- マイグレーション中は元のレコードをバックアップファイルとして保存
+- マイグレーション失敗時はロールバック可能な設計とする
+
+### 2.9 解析結果ストアエラー
 
 ```go
 // internal/fileanalysis/errors.go
@@ -1700,12 +1773,12 @@ func (e *RecordCorruptedError) Unwrap() error {
 }
 ```
 
-### 2.9 filevalidator の統合ストア対応
+### 2.10 filevalidator の統合ストア対応
 
 既存の `filevalidator.Validator` を拡張し、従来のテキスト形式ハッシュファイルから
 新しい統合解析結果ストア（JSON 形式）への移行を実装します。
 
-#### 2.9.1 旧形式の検出と移行ロジック
+#### 2.10.1 旧形式の検出と移行ロジック
 
 ```go
 // internal/filevalidator/validator.go
@@ -1755,9 +1828,11 @@ func (v *Validator) RecordHash(filePath string) error {
     }
 
     // Use FileAnalysisStore.Update to preserve existing fields
-    err = v.store.Update(hashFilePath, func(record *fileanalysis.FileAnalysisRecord) error {
-        record.FileHash = actualHash
-        record.LastUpdated = time.Now()
+    err = v.store.Update(filePath, func(record *fileanalysis.FileAnalysisRecord) error {
+        // Note: actualHash from hashAlgo.HashFile() is unprefixed hex.
+        // ContentHash field requires prefixed format "sha256:<hex>".
+        record.ContentHash = fmt.Sprintf("%s:%s", v.hashAlgo.Name(), actualHash)
+        record.UpdatedAt = time.Now()
         return nil
     })
 
@@ -1782,9 +1857,11 @@ func (v *Validator) VerifyHash(filePath string) (bool, error) {
     }
 
     // Try to load from new format first
-    record, err := v.store.Load(hashFilePath)
+    record, err := v.store.Load(filePath)
     if err == nil {
-        return record.FileHash == actualHash, nil
+        // ContentHash is in prefixed format "sha256:<hex>"
+        expectedHash := fmt.Sprintf("%s:%s", v.hashAlgo.Name(), actualHash)
+        return record.ContentHash == expectedHash, nil
     }
 
     // Fall back to old format for backward compatibility
@@ -1811,8 +1888,8 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
     // Migrate from old format to new format
     record := &fileanalysis.FileAnalysisRecord{
         SchemaVersion: fileanalysis.CurrentSchemaVersion,
-        FileHash:      oldHash,
-        LastUpdated:   time.Now(),
+        ContentHash:   fmt.Sprintf("%s:%s", v.hashAlgo.Name(), oldHash),
+        UpdatedAt:     time.Now(),
         // SyscallAnalysis will be nil, added later by record command
     }
 
@@ -1987,7 +2064,12 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string) AnalysisOutput 
 }
 
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
+// This method relies on Summary fields set by analyzeSyscallsInCode():
+//   - HasNetworkSyscalls: true if any network-related syscall was detected
+//   - IsHighRisk: true if any syscall number could not be determined
+// These fields are guaranteed to be set according to the rules in §2.1.
 func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) AnalysisOutput {
+    // Check HasNetworkSyscalls first (set when NetworkSyscallCount > 0)
     if result.Summary.HasNetworkSyscalls {
         // Build detected symbols from syscall info
         var symbols []DetectedSymbol
@@ -2005,6 +2087,7 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
         }
     }
 
+    // Check IsHighRisk (set when HasUnknownSyscalls is true)
     if result.Summary.IsHighRisk {
         // High risk: treat as potential network operation
         return AnalysisOutput{
@@ -2017,6 +2100,8 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 }
 
 // calculateFileHash calculates SHA256 hash of the file.
+// Returns hash in prefixed format: "sha256:<hex>" for consistency with
+// FileAnalysisRecord.ContentHash schema.
 func (a *StandardELFAnalyzer) calculateFileHash(path string) (string, error) {
     file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
@@ -2024,7 +2109,13 @@ func (a *StandardELFAnalyzer) calculateFileHash(path string) (string, error) {
     }
     defer file.Close()
 
-    return a.hashAlgo.Sum(file)
+    rawHash, err := a.hashAlgo.Sum(file)
+    if err != nil {
+        return "", err
+    }
+
+    // Return prefixed format: "sha256:<hex>"
+    return fmt.Sprintf("%s:%s", a.hashAlgo.Name(), rawHash), nil
 }
 ```
 
@@ -2124,13 +2215,14 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
         return fmt.Errorf("failed to rewind file: %w", err)
     }
 
-    // Calculate file hash
+    // Calculate file hash with algorithm prefix
     hashAlgo := &filevalidator.SHA256{}
     rawHash, err := hashAlgo.Sum(file)
     if err != nil {
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
-    // Add algorithm prefix for ContentHash format
+    // ContentHash requires prefixed format: "sha256:<hex>"
+    // This matches FileAnalysisRecord.ContentHash schema (§2.7)
     contentHash := fmt.Sprintf("%s:%s", hashAlgo.Name(), rawHash)
 
     // Create file analysis store
@@ -2404,22 +2496,45 @@ func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
     store, err := NewFileAnalysisStore(tmpDir, pathGetter)
     require.NoError(t, err)
 
+    testFilePath := filepath.Join(tmpDir, "test_binary")
+    // Create test file to ensure path resolution works
+    require.NoError(t, os.WriteFile(testFilePath, []byte("test"), 0o644))
+
+    // Get actual record path using pathGetter (not hardcoded)
+    resolvedPath, err := common.NewResolvedPath(testFilePath)
+    require.NoError(t, err)
+    recordPath, err := pathGetter.GetHashFilePath(tmpDir, resolvedPath)
+    require.NoError(t, err)
+
     // Create analysis record file with different schema version
     record := &FileAnalysisRecord{
         SchemaVersion: 999, // Future version
-        FilePath:      "/test/path",
+        FilePath:      testFilePath,
         ContentHash:   "sha256:abc123",
     }
 
     data, _ := json.Marshal(record)
-    recordPath := filepath.Join(tmpDir, "~test~path")
     os.WriteFile(recordPath, data, 0o600)
 
     // Load should fail with schema version mismatch
-    _, err = store.Load("/test/path")
+    _, err = store.Load(testFilePath)
     assert.Error(t, err)
     var schemaErr *SchemaVersionMismatchError
     assert.True(t, errors.As(err, &schemaErr))
+
+    // Update should also fail without overwriting
+    err = store.Update(testFilePath, func(record *FileAnalysisRecord) error {
+        record.ContentHash = "sha256:newHash"
+        return nil
+    })
+    assert.Error(t, err)
+    assert.True(t, errors.As(err, &schemaErr))
+
+    // Verify original record was not overwritten
+    data2, _ := os.ReadFile(recordPath)
+    var record2 FileAnalysisRecord
+    json.Unmarshal(data2, &record2)
+    assert.Equal(t, 999, record2.SchemaVersion, "record should not be overwritten")
 }
 
 func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
@@ -2497,9 +2612,20 @@ int main() {
     cmd := exec.Command("gcc", "-static", "-o", binFile, srcFile)
     require.NoError(t, cmd.Run())
 
-    // Analyze
+    // Open file securely using safefileio to prevent symlink attacks
+    fs := safefileio.NewSecureFileSystem()
+    file, err := fs.SafeOpenFile(binFile, os.O_RDONLY, 0)
+    require.NoError(t, err)
+    defer file.Close()
+
+    // Parse ELF from secure file handle
+    elfFile, err := elf.NewFile(file)
+    require.NoError(t, err)
+    defer elfFile.Close()
+
+    // Analyze using AnalyzeSyscallsFromELF (correct API name)
     analyzer := NewSyscallAnalyzer()
-    result, err := analyzer.AnalyzeSyscalls(binFile)
+    result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
     require.NoError(t, err)
 
     // Verify network syscall detected
