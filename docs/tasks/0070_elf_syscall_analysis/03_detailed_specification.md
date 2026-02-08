@@ -1313,6 +1313,7 @@ package fileanalysis
 
 import (
     "encoding/json"
+    "errors"
     "fmt"
     "os"
     "path/filepath"
@@ -1790,6 +1791,30 @@ func (e *RecordCorruptedError) Unwrap() error {
 既存の `filevalidator.Validator` を拡張し、従来のテキスト形式ハッシュファイルから
 新しい統合解析結果ストア（JSON 形式）への移行を実装します。
 
+#### FileValidator インターフェースとの関係
+
+既存の `FileValidator` インターフェース（`internal/filevalidator/validator.go:30-36`）:
+
+```go
+type FileValidator interface {
+    Record(filePath string, force bool) (string, error)
+    Verify(filePath string) error
+    VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
+    VerifyAndRead(filePath string) ([]byte, error)
+    VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
+}
+```
+
+本仕様で追加する `RecordHash()` と `VerifyHash()` は `FileValidator` インターフェースの
+メソッドではなく、`Validator` 構造体の内部ヘルパーメソッドです。
+これらは既存の `Record()` と `Verify()` の内部実装から呼び出され、
+新しい統合解析ストア形式への移行ロジックをカプセル化します。
+
+- `Record()` → 内部で `RecordHash()` を呼び出し、ハッシュ保存処理を委譲
+- `Verify()` → 内部で `VerifyHash()` を呼び出し、ハッシュ検証処理を委譲
+
+既存の `FileValidator` インターフェースのシグネチャは変更されません。
+
 #### 2.10.1 旧形式の検出と移行ロジック
 
 ```go
@@ -1893,7 +1918,9 @@ func (v *Validator) VerifyHash(filePath string) (bool, error) {
 // migrateFromOldFormatIfNeeded detects old text format and migrates to new format.
 func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, currentHash string) error {
     // Check if new format already exists
-    if _, err := v.store.Load(hashFilePath); err == nil {
+    // Note: Load() takes the binary file path, not the hash file path.
+    // It internally computes the record path using getRecordPath().
+    if _, err := v.store.Load(filePath); err == nil {
         return nil // New format already exists, no migration needed
     }
 
@@ -1911,7 +1938,9 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
         // SyscallAnalysis will be nil, added later by record command
     }
 
-    if err := v.store.Save(hashFilePath, record); err != nil {
+    // Note: Save() takes the binary file path, not the hash file path.
+    // It internally computes the record path using getRecordPath().
+    if err := v.store.Save(filePath, record); err != nil {
         return fmt.Errorf("failed to save migrated record: %w", err)
     }
 
@@ -1927,7 +1956,7 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
 // loadHashFromOldFormat reads hash from old text format.
 // Returns error if file doesn't exist or doesn't match old format.
 func (v *Validator) loadHashFromOldFormat(hashFilePath string) (string, error) {
-    data, err := v.fs.ReadFile(hashFilePath)
+    data, err := safefileio.SafeReadFileWithFS(hashFilePath, v.fs)
     if err != nil {
         return "", err
     }
@@ -2424,8 +2453,10 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
         },
         {
             name: "control flow boundary",
-            // jmp label; mov $0x29, %eax; syscall (jmp creates boundary)
-            code:       []byte{0xeb, 0x05, 0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05},
+            // mov $0x29, %eax; jmp label(+5); syscall
+            // When backwardScanForSyscallNumber scans backward from syscall,
+            // it encounters jmp first, which creates a control flow boundary.
+            code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0xeb, 0x05, 0x0f, 0x05},
             wantNumber: -1,
             wantMethod: "unknown:control_flow_boundary",
         },
