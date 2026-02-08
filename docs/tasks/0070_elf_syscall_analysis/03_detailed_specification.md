@@ -874,14 +874,6 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
     }
 
-    // Helper function to safely convert uint64 to int with overflow check
-    safeUint64ToInt := func(val uint64, context string) (int, error) {
-        if val > uint64(^uint(0)>>1) { // Check if val > max int
-            return 0, fmt.Errorf("%w: %s value %d exceeds maximum int", ErrInvalidPclntab, context, val)
-        }
-        return int(val), nil
-    }
-
     readPtr := func(off int) (uint64, error) {
         end := off + p.ptrSize
         if off < 0 || end > len(data) {
@@ -914,38 +906,17 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         return err
     }
 
-    // Validate nfunc count to prevent excessive memory allocation
-    if nfunc > 10000000 { // Reasonable upper bound: 10M functions
-        return fmt.Errorf("%w: function count %d exceeds reasonable limit", ErrInvalidPclntab, nfunc)
-    }
-
-    // Convert to int with overflow protection
-    nfuncInt, err := safeUint64ToInt(nfunc, "nfunc")
-    if err != nil {
-        return err
-    }
-
     // Function table: nfunc+1 entries, each entry is {entryoff uint32, funcoff uint32}
     // entry address = textStart + entryoff
     // funcoff points to _func struct; nameoff is at +4 in _func
     entrySize := 8
-    ftabStart, err := safeUint64ToInt(ftabOff, "ftabOff")
-    if err != nil {
-        return err
-    }
-
-    // Calculate ftabBytes with overflow check
-    ftabEntriesU64 := (nfunc + 1) * uint64(entrySize)
-    ftabBytes, err := safeUint64ToInt(ftabEntriesU64, "ftabBytes")
-    if err != nil {
-        return err
-    }
-
+    ftabStart := int(ftabOff)
+    ftabBytes := int((nfunc + 1) * uint64(entrySize))
     if ftabStart < 0 || ftabStart+ftabBytes > len(data) {
         return ErrInvalidPclntab
     }
 
-    funcs := make([]PclntabFunc, 0, nfuncInt)
+    funcs := make([]PclntabFunc, 0, nfunc)
     readUint32 := func(b []byte, off int) (uint32, error) {
         if off < 0 || off+4 > len(b) {
             return 0, ErrInvalidPclntab
@@ -954,36 +925,23 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
     }
 
     for i := uint64(0); i < nfunc; i++ {
-        // Safe conversion with bounds check
-        iInt, err := safeUint64ToInt(i, "loop index")
+        entryOff, err := readUint32(data, ftabStart+int(i)*entrySize)
         if err != nil {
             return err
         }
-
-        entryOff, err := readUint32(data, ftabStart+iInt*entrySize)
-        if err != nil {
-            return err
-        }
-        funcOff, err := readUint32(data, ftabStart+iInt*entrySize+4)
+        funcOff, err := readUint32(data, ftabStart+int(i)*entrySize+4)
         if err != nil {
             return err
         }
 
         entry := uint64(entryOff) + textStart
-        funcDataOff, err := safeUint64ToInt(uint64(funcOff), "funcOff")
-        if err != nil {
-            return err
-        }
+        funcDataOff := int(funcOff)
         nameOff32, err := readUint32(data, funcDataOff+4)
         if err != nil {
             return err
         }
 
-        nameStartU64 := funcNameOff + uint64(nameOff32)
-        nameStart, err := safeUint64ToInt(nameStartU64, "nameStart")
-        if err != nil {
-            return err
-        }
+        nameStart := int(funcNameOff) + int(nameOff32)
         if nameStart < 0 || nameStart >= len(data) {
             return ErrInvalidPclntab
         }
@@ -1001,11 +959,7 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         // Determine end address from next function entry (if available)
         end := uint64(0)
         if i+1 < nfunc {
-            nextIInt, err := safeUint64ToInt(i+1, "next loop index")
-            if err != nil {
-                return err
-            }
-            nextEntryOff, err := readUint32(data, ftabStart+nextIInt*entrySize)
+            nextEntryOff, err := readUint32(data, ftabStart+int(i+1)*entrySize)
             if err != nil {
                 return err
             }
@@ -1312,24 +1266,24 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 これにより import cycle を回避しつつ、既存の実装を再利用できる。
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ fileanalysis パッケージ                                                  │
-│   ┌─────────────────────────────────────────┐                          │
-│   │ HashFilePathGetter interface            │                          │
-│   │   GetHashFilePath(hash string) string   │                          │
-│   └─────────────────────────────────────────┘                          │
-│                   △ implements                                          │
-└───────────────────│─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│ fileanalysis パッケージ                                                                │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ HashFilePathGetter interface                                                    │ │
+│   │   GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) │ │
+│   └─────────────────────────────────────────────────────────────────────────────────┘ │
+│                   △ implements                                                        │
+└───────────────────│───────────────────────────────────────────────────────────────────┘
                     │
                     │ (型の一致により自動的に実装)
                     │
-┌───────────────────│─────────────────────────────────────────────────────┐
-│ filevalidator パッケージ                                                 │
-│   ┌─────────────────────────────────────────┐                          │
-│   │ HybridHashFilePathGetter struct         │                          │
-│   │   GetHashFilePath(hash string) string   │                          │
-│   └─────────────────────────────────────────┘                          │
-└─────────────────────────────────────────────────────────────────────────┘
+┌───────────────────│───────────────────────────────────────────────────────────────────┐
+│ filevalidator パッケージ                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ HybridHashFilePathGetter struct                                                 │ │
+│   │   GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) │ │
+│   └─────────────────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### 2.6.1 FileAnalysisStore
@@ -1420,24 +1374,13 @@ func (s *FileAnalysisStore) Load(filePath string) (*FileAnalysisRecord, error) {
 // Save saves the analysis record for the given file path.
 // This overwrites the entire record. Use Update for read-modify-write operations.
 func (s *FileAnalysisStore) Save(filePath string, record *FileAnalysisRecord) error {
-    // Canonicalize the path to ensure FilePath is always absolute and resolved
-    absPath, err := filepath.Abs(filePath)
-    if err != nil {
-        return fmt.Errorf("failed to get absolute path: %w", err)
-    }
-
-    resolvedPath, err := common.NewResolvedPath(absPath)
-    if err != nil {
-        return fmt.Errorf("failed to create resolved path: %w", err)
-    }
-
-    recordPath, err := s.pathGetter.GetHashFilePath(s.analysisDir, resolvedPath)
+    recordPath, err := s.getRecordPath(filePath)
     if err != nil {
         return fmt.Errorf("failed to get analysis record path: %w", err)
     }
 
     record.SchemaVersion = CurrentSchemaVersion
-    record.FilePath = resolvedPath.String() // Store canonical absolute path
+    record.FilePath = filePath
     record.UpdatedAt = time.Now().UTC()
 
     data, err := json.MarshalIndent(record, "", "  ")
@@ -1519,9 +1462,9 @@ func NewSyscallAnalysisStore(store *FileAnalysisStore) *SyscallAnalysisStore {
 
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
-func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath string, hash HashInfo, result *elfanalyzer.SyscallAnalysisResult) error {
+func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
     return c.store.Update(filePath, func(record *FileAnalysisRecord) error {
-        record.Hash = hash
+        record.ContentHash = fileHash
         record.SyscallAnalysis = &SyscallAnalysisData{
             Architecture:       "x86_64",
             AnalyzedAt:         time.Now().UTC(),
@@ -1538,7 +1481,7 @@ func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath string, hash HashInf
 // Returns (result, true, nil) if found and hash matches.
 // Returns (nil, false, nil) if not found or hash mismatch.
 // Returns (nil, false, error) on other errors.
-func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath string, expectedHash HashInfo) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
+func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
     record, err := c.store.Load(filePath)
     if err != nil {
         if err == ErrRecordNotFound {
@@ -1547,8 +1490,8 @@ func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath string, expectedHash
         return nil, false, err
     }
 
-    // Check hash match (both algorithm and value must match)
-    if record.Hash.Algorithm != expectedHash.Algorithm || record.Hash.Value != expectedHash.Value {
+    // Check hash match
+    if record.ContentHash != expectedHash {
         return nil, false, nil
     }
 
@@ -1642,9 +1585,12 @@ type FileAnalysisRecord struct {
     // FilePath is the absolute path to the analyzed file.
     FilePath string `json:"file_path"`
 
-    // Hash contains the content hash information, following filevalidator's HashInfo format.
+    // ContentHash is the SHA256 hash of the file content in prefixed format.
+    // Format: "sha256:<64-char-hex>" (e.g., "sha256:abc123...def789")
+    // Note: filevalidator.SHA256.Sum() returns unprefixed hex, so callers
+    // must prepend "sha256:" when constructing ContentHash values.
     // Used by both filevalidator and elfanalyzer for validation.
-    Hash HashInfo `json:"hash"`
+    ContentHash string `json:"content_hash"`
 
     // UpdatedAt is when the analysis record was last updated.
     UpdatedAt time.Time `json:"updated_at"`
@@ -1652,15 +1598,6 @@ type FileAnalysisRecord struct {
     // SyscallAnalysis contains syscall analysis result (optional).
     // Only present for static ELF binaries that have been analyzed.
     SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
-}
-
-// HashInfo contains hash algorithm and value, matching filevalidator.HashInfo format.
-type HashInfo struct {
-    // Algorithm is the hash algorithm name (e.g., "sha256").
-    Algorithm string `json:"algorithm"`
-
-    // Value is the hash value as a hexadecimal string.
-    Value string `json:"value"`
 }
 
 // SyscallAnalysisData contains syscall analysis information.
@@ -1789,10 +1726,7 @@ func NewValidatorWithAnalysisStore(
     hashAlgo HashAlgorithm,
     pathGen HashFilePathGetter,
 ) (*Validator, error) {
-    store, err := fileanalysis.NewFileAnalysisStore(v.hashDir, v.pathGen)
-    if err != nil {
-        return nil, err
-    }
+    store := fileanalysis.NewFileAnalysisStore(fs)
 
     return &Validator{
         fs:       fs,
@@ -1822,8 +1756,8 @@ func (v *Validator) RecordHash(filePath string) error {
 
     // Use FileAnalysisStore.Update to preserve existing fields
     err = v.store.Update(hashFilePath, func(record *fileanalysis.FileAnalysisRecord) error {
-        record.Hash = fileanalysis.HashInfo{Algorithm: v.hashAlgo.Name(), Value: actualHash}
-        record.UpdatedAt = time.Now()
+        record.FileHash = actualHash
+        record.LastUpdated = time.Now()
         return nil
     })
 
@@ -1850,7 +1784,7 @@ func (v *Validator) VerifyHash(filePath string) (bool, error) {
     // Try to load from new format first
     record, err := v.store.Load(hashFilePath)
     if err == nil {
-        return record.Hash.Value == actualHash, nil
+        return record.FileHash == actualHash, nil
     }
 
     // Fall back to old format for backward compatibility
@@ -1877,8 +1811,8 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
     // Migrate from old format to new format
     record := &fileanalysis.FileAnalysisRecord{
         SchemaVersion: fileanalysis.CurrentSchemaVersion,
-        Hash:      fileanalysis.HashInfo{Algorithm: v.hashAlgo.Name(), Value: oldHash},
-        UpdatedAt:   time.Now(),
+        FileHash:      oldHash,
+        LastUpdated:   time.Now(),
         // SyscallAnalysis will be nil, added later by record command
     }
 
@@ -2035,8 +1969,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string) AnalysisOutput 
     }
 
     // Load analysis result
-    hashInfo := fileanalysis.HashInfo{Algorithm: a.hashAlgo.Name(), Value: hash}
-    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hashInfo)
+    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
     if err != nil {
         slog.Debug("Syscall analysis lookup error",
             "path", path,
@@ -2193,14 +2126,12 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
 
     // Calculate file hash
     hashAlgo := &filevalidator.SHA256{}
-    hashValue, err := hashAlgo.Sum(file)
+    rawHash, err := hashAlgo.Sum(file)
     if err != nil {
         return fmt.Errorf("failed to calculate hash: %w", err)
     }
-    hash := fileanalysis.HashInfo{
-        Algorithm: hashAlgo.Name(),
-        Value:     hashValue,
-    }
+    // Add algorithm prefix for ContentHash format
+    contentHash := fmt.Sprintf("%s:%s", hashAlgo.Name(), rawHash)
 
     // Create file analysis store
     store, err := fileanalysis.NewFileAnalysisStore(analysisDir, pathGetter)
@@ -2211,7 +2142,7 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
     analysisStore := fileanalysis.NewSyscallAnalysisStore(store)
 
     // Save syscall analysis to file analysis store
-    if err := analysisStore.SaveSyscallAnalysis(path, hash, result); err != nil {
+    if err := analysisStore.SaveSyscallAnalysis(path, contentHash, result); err != nil {
         return fmt.Errorf("failed to save analysis result: %w", err)
     }
 
@@ -2452,19 +2383,17 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
     }
 
     // Save
-    hash := HashInfo{Algorithm: "sha256", Value: "abc123"}
-    err = analysisStore.SaveSyscallAnalysis("/test/path", hash, result)
+    err = analysisStore.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
     require.NoError(t, err)
 
     // Load with matching hash
-    loaded, found, err := analysisStore.LoadSyscallAnalysis("/test/path", hash)
+    loaded, found, err := analysisStore.LoadSyscallAnalysis("/test/path", "sha256:abc123")
     require.NoError(t, err)
     require.True(t, found)
     assert.Equal(t, result.Summary.HasNetworkSyscalls, loaded.Summary.HasNetworkSyscalls)
 
-    // Load with mismatched hash value
-    differentHash := HashInfo{Algorithm: "sha256", Value: "different"}
-    _, found, err = analysisStore.LoadSyscallAnalysis("/test/path", differentHash)
+    // Load with mismatched hash
+    _, found, err = analysisStore.LoadSyscallAnalysis("/test/path", "sha256:different")
     require.NoError(t, err)
     assert.False(t, found)  // Hash mismatch returns found=false, not error
 }
@@ -2479,7 +2408,7 @@ func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
     record := &FileAnalysisRecord{
         SchemaVersion: 999, // Future version
         FilePath:      "/test/path",
-        Hash:          HashInfo{Algorithm: "sha256", Value: "abc123"},
+        ContentHash:   "sha256:abc123",
     }
 
     data, _ := json.Marshal(record)
@@ -2500,9 +2429,8 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
     require.NoError(t, err)
 
     // First, save an analysis record with just content hash
-    hash := HashInfo{Algorithm: "sha256", Value: "abc123"}
     record := &FileAnalysisRecord{
-        Hash: hash,
+        ContentHash: "sha256:abc123",
     }
     err = store.Save("/test/path", record)
     require.NoError(t, err)
@@ -2514,14 +2442,13 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
             HasNetworkSyscalls: true,
         },
     }
-    err = analysisStore.SaveSyscallAnalysis("/test/path", hash, result)
+    err = analysisStore.SaveSyscallAnalysis("/test/path", "sha256:abc123", result)
     require.NoError(t, err)
 
     // Verify both fields are present
     loaded, err := store.Load("/test/path")
     require.NoError(t, err)
-    assert.Equal(t, "sha256", loaded.Hash.Algorithm)
-    assert.Equal(t, "abc123", loaded.Hash.Value)
+    assert.Equal(t, "sha256:abc123", loaded.ContentHash)
     assert.NotNil(t, loaded.SyscallAnalysis)
     assert.True(t, loaded.SyscallAnalysis.Summary.HasNetworkSyscalls)
 }
@@ -2537,7 +2464,6 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
 package elfanalyzer
 
 import (
-    "debug/elf"
     "os"
     "os/exec"
     "path/filepath"
@@ -2571,18 +2497,9 @@ int main() {
     cmd := exec.Command("gcc", "-static", "-o", binFile, srcFile)
     require.NoError(t, cmd.Run())
 
-    // Open and parse ELF file
-    file, err := os.Open(binFile)
-    require.NoError(t, err)
-    defer file.Close()
-
-    elfFile, err := elf.NewFile(file)
-    require.NoError(t, err)
-    defer elfFile.Close()
-
     // Analyze
     analyzer := NewSyscallAnalyzer()
-    result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
+    result, err := analyzer.AnalyzeSyscalls(binFile)
     require.NoError(t, err)
 
     // Verify network syscall detected

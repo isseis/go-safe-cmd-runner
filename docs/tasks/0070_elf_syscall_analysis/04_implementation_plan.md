@@ -278,7 +278,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - 既存のハッシュファイル形式（テキスト形式）の
     読み込みサポート（後方互換性）
     - 旧形式ファイルが存在する場合、新形式へ自動移行
-  - 仕様: 詳細仕様書 §2.8（新規追加予定）
+  - 仕様: 詳細仕様書 §2.9
   - 要件: FR-3.2.1, FR-3.2.2, NFR-4.2.2
 - [ ] `internal/filevalidator/validator_test.go` を更新
   - `TestValidator_RecordAndVerifyHash`:
@@ -293,7 +293,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 4.6 詳細仕様書への追加
 
-- [ ] `03_detailed_specification.md` に §2.8 を追加
+- [x] `03_detailed_specification.md` に §2.9 を追加（追加済み）
   - `filevalidator.Validator` の統合ストア対応
   - 後方互換性の実装方針
     - 旧形式（テキスト）の検出方法
