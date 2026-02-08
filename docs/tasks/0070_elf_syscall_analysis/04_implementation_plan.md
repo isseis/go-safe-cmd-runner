@@ -268,6 +268,41 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     syscall 解析結果がない場合
   - 受け入れ条件: AC-4, AC-5
 
+### 4.5 filevalidator の統合ストア移行
+
+- [ ] `internal/filevalidator/validator.go` を修正
+  - `Validator` 構造体に `FileAnalysisStore`
+    への参照を追加
+  - `RecordHash()`: `FileAnalysisStore.Update()` 経由で
+    `FileAnalysisRecord.FileHash` フィールドを更新
+  - `VerifyHash()`: `FileAnalysisStore.Load()` 経由で
+    ハッシュ値を検証
+  - 既存のハッシュファイル形式（テキスト形式）の
+    読み込みサポート（後方互換性）
+    - 旧形式ファイルが存在する場合、新形式へ自動移行
+  - 仕様: 詳細仕様書 §2.8（新規追加予定）
+  - 要件: FR-3.2.1, FR-3.2.2, NFR-4.2.2
+- [ ] `internal/filevalidator/validator_test.go` を更新
+  - `TestValidator_RecordAndVerifyHash`:
+    新形式での保存・検証往復テスト
+  - `TestValidator_BackwardCompatibility`:
+    旧形式ハッシュファイルの読み込みテスト
+  - `TestValidator_MigrationFromOldFormat`:
+    旧形式から新形式への自動移行テスト
+  - `TestValidator_PreservesExistingFields`:
+    既存 syscall 解析結果の保持確認
+  - 受け入れ条件: AC-11（新規追加）
+
+### 4.6 詳細仕様書への追加
+
+- [ ] `03_detailed_specification.md` に §2.8 を追加
+  - `filevalidator.Validator` の統合ストア対応
+  - 後方互換性の実装方針
+    - 旧形式（テキスト）の検出方法
+    - 新形式への移行ロジック
+  - エラーハンドリング
+  - 移行期の動作仕様
+
 ## Phase 5: システム統合
 
 各コンポーネントを既存システムに統合する。
@@ -372,3 +407,4 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 | AC-8: フォールバックチェーン統合 | 5, 6 | `TestStandardELFAnalyzer_SyscallLookup_*`, E2E |
 | AC-9: 既存機能への非影響 | 5 | 既存テスト全件パス |
 | AC-10: Go syscall ラッパー解決 | 3, 6 | `TestGoWrapperResolver_*`, 統合テスト |
+| AC-11: filevalidator 統合ストア移行 | 4 | `TestValidator_BackwardCompatibility`, `TestValidator_MigrationFromOldFormat` |
