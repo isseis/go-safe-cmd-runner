@@ -64,6 +64,7 @@ import (
     "bytes"
     "debug/elf"
     "fmt"
+    "log/slog"
 )
 
 // SyscallAnalysisResult represents the result of syscall analysis.
@@ -198,7 +199,6 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
         // Non-fatal: continue without Go wrapper resolution
         // This handles stripped binaries
         slog.Debug("failed to load symbols for Go wrapper resolution",
-            slog.String("path", path),
             slog.String("error", err.Error()))
     }
 
@@ -688,8 +688,20 @@ func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
 ### 2.4 PclntabParser
 
 Go バイナリの `.gopclntab` セクションから関数情報を復元するパーサー。
-本仕様では **Go 1.18+ の pclntab 形式に対して関数名・アドレスの抽出を実装** する。
-Go 1.2-1.15 の legacy 形式はベストエフォートとし、解析不能時は `ErrInvalidPclntab` を返す。
+
+**バージョン別サポート方針**:
+
+| Go バージョン | pclntab magic | サポートレベル | 失敗時の動作 |
+|--------------|---------------|---------------|-------------|
+| Go 1.18+ | `0xFFFFFFF0` / `0xFFFFFFF1` | **正式サポート** | エラーを返す（解析バグの可能性） |
+| Go 1.16-1.17 | `0xFFFFFFFA` | **ベストエフォート** | `ErrInvalidPclntab` を返し、Go wrapper 解析をスキップ（Pass 1 の直接 syscall 検出は継続） |
+| Go 1.2-1.15 | `0xFFFFFFFB` | **ベストエフォート（legacy）** | 同上 |
+| 上記以外 | 不明 | **非サポート** | `ErrUnsupportedPclntab` を返す |
+
+本仕様では **Go 1.18+ の pclntab 形式に対して関数名・アドレスの抽出を正式に実装** する。
+Go 1.16-1.17 および Go 1.2-1.15 の形式はベストエフォートとし、解析不能時は `ErrInvalidPclntab` を返す。
+ベストエフォート対象のバージョンで解析が失敗した場合、SyscallAnalyzer は Go wrapper 解析（Pass 2）をスキップし、
+直接 syscall 命令の検出（Pass 1）のみで結果を返す。
 
 ```go
 // internal/runner/security/elfanalyzer/pclntab_parser.go
@@ -991,7 +1003,9 @@ func (p *PclntabParser) GetGoVersion() string {
 Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番号を特定。
 `.gopclntab` から関数情報を取得する設計であり、
 **Go 1.18+ の pclntab 形式であれば strip されたバイナリにも対応**。
-Go 1.2-1.15 の legacy 形式はベストエフォートとする。
+Go 1.16-1.17 および Go 1.2-1.15 はベストエフォートとする（詳細は 2.4 節のバージョン別サポート方針を参照）。
+pclntab 解析に失敗した場合、GoWrapperResolver はシンボルなしとして動作し、
+Pass 2（Go wrapper 解析）がスキップされるが、Pass 1（直接 syscall 検出）には影響しない。
 
 ```go
 // internal/runner/security/elfanalyzer/go_wrapper_resolver.go
@@ -1168,10 +1182,17 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 // resolveSyscallArgument analyzes instructions before a wrapper call
 // to determine the syscall number argument.
 //
-// Currently supports Go 1.17+ calling convention where the syscall number
-// is passed in RAX (first argument, register-based ABI). Future extensions
-// for other argument positions or calling conventions are not yet defined
-// and would follow the YAGNI principle.
+// LIMITATION: This implementation ONLY supports Go 1.17+ register-based ABI
+// where the first argument (syscall number) is passed in RAX.
+// This is a known limited specification:
+//   - Go 1.16 and earlier use stack-based ABI (not supported)
+//   - Compiler optimizations or unusual wrapper patterns may place the
+//     syscall number in a different register or via memory indirection
+//   - Calls where the syscall number is not resolved are reported as
+//     unknown (SyscallNumber = -1), triggering High Risk classification
+//
+// The target Go version should be fixed and validated with acceptance
+// tests using real Go binaries compiled with the specific Go toolchain.
 func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction, wrapper GoSyscallWrapper) int {
     if len(recentInstructions) < 2 {
         return -1
@@ -1265,7 +1286,7 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 2.5.1 FileAnalysisStore
+#### 2.6.1 FileAnalysisStore
 
 ```go
 // internal/fileanalysis/file_analysis_store.go
@@ -1415,7 +1436,7 @@ func (s *FileAnalysisStore) getRecordPath(filePath string) (string, error) {
 }
 ```
 
-#### 2.5.2 SyscallAnalysisStore（elfanalyzer 用インターフェース実装）
+#### 2.6.2 SyscallAnalysisStore（elfanalyzer 用インターフェース実装）
 
 ```go
 // internal/fileanalysis/syscall_store.go
@@ -2333,7 +2354,10 @@ int main() {
 ### 8.3 Go ABI の考慮
 
 - Go 1.17 以降はレジスタベース ABI（RAX で第1引数）
-- 本実装は Go 1.18+ を対象としており、レジスタベース ABI のみをサポート（RAX レジスタを優先的にチェック）
+- **本実装は RAX レジスタのみ対応の限定仕様**であり、Go 1.17+ のレジスタベース ABI を前提とする
+- Go 1.16 以前のスタックベース ABI には非対応（Go wrapper 解析が機能しない）
+- コンパイラ最適化やインライン化により RAX 以外のレジスタ経由で syscall 番号が設定されるケースでは、番号未解決（unknown）として High Risk に分類される
+- **推奨**: 対象 Go バージョンを固定し（例: Go 1.21, 1.22）、受け入れテストで実際のバイナリを用いて ABI 前提が正しいことを実証すること
 
 ### 8.4 パフォーマンス最適化
 
