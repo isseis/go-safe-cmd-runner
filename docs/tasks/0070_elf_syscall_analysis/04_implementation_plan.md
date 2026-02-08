@@ -395,14 +395,14 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 | 受け入れ条件 | Phase | テスト |
 |------------|-------|--------|
-| AC-1: syscall 命令の検出 | 1, 2 | `TestX86Decoder_*`, `TestSyscallAnalyzer_BackwardScan` |
-| AC-2: ネットワーク syscall 判定 | 1 | `TestX86_64SyscallTable_IsNetworkSyscall` |
-| AC-3: 間接設定の high risk 判定 | 2 | `TestSyscallAnalyzer_BackwardScan` (indirect cases) |
-| AC-4: 解析結果の保存と読み込み | 4 | `TestSyscallAnalysisStore_SaveAndLoad` |
-| AC-5: 解析結果の整合性検証 | 4 | `TestFileAnalysisStore_SchemaVersionMismatch` |
-| AC-6: 解析結果不在時の安全動作 | 5 | `TestStandardELFAnalyzer_SyscallLookup_NotFound` |
-| AC-7: 非 ELF エラーハンドリング | 5 | `TestSyscallAnalyzer_NonELF` |
-| AC-8: フォールバックチェーン統合 | 5, 6 | `TestStandardELFAnalyzer_SyscallLookup_*`, E2E |
-| AC-9: 既存機能への非影響 | 5 | 既存テスト全件パス |
-| AC-10: Go syscall ラッパー解決 | 3, 6 | `TestGoWrapperResolver_*`, 統合テスト |
-| AC-11: filevalidator 統合ストア移行 | 4 | `TestValidator_BackwardCompatibility`, `TestValidator_MigrationFromOldFormat` |
+| AC-1: syscall 命令の検出 | 1, 2 | `TestX86Decoder_Decode`, `TestX86Decoder_IsSyscallInstruction`, `TestX86Decoder_ModifiesEAXorRAX`, `TestX86Decoder_IsImmediateMove`, `TestX86Decoder_IsControlFlowInstruction`, `TestSyscallAnalyzer_BackwardScan`, `TestSyscallAnalyzer_MultipleSyscalls` |
+| AC-2: ネットワーク syscall 判定 | 1 | `TestX86_64SyscallTable_GetSyscallName`, `TestX86_64SyscallTable_IsNetworkSyscall`, `TestX86_64SyscallTable_GetNetworkSyscalls` |
+| AC-3: 間接設定の high risk 判定 | 2 | `TestSyscallAnalyzer_BackwardScan` (indirect_setting, control_flow_boundary, scan_limit_exceeded, memory_load cases) |
+| AC-4: 解析結果の保存と読み込み | 4 | `TestFileAnalysisStore_SaveAndLoad`, `TestSyscallAnalysisStore_SaveAndLoad` |
+| AC-5: 解析結果の整合性検証 | 4 | `TestFileAnalysisStore_SchemaVersionMismatch`, `TestFileAnalysisStore_RecordNotFound`, `TestFileAnalysisStore_CorruptedRecord`, `TestFileAnalysisStore_PreservesExistingFields`, `TestSyscallAnalysisStore_HashMismatch`, `TestSyscallAnalysisStore_NoSyscallAnalysis` |
+| AC-6: 解析結果不在時の安全動作 | 5 | `TestStandardELFAnalyzer_SyscallLookup_NotFound`, `TestStandardELFAnalyzer_SyscallLookup_HashMismatch` |
+| AC-7: 非 ELF ファイル処理 | 5 | record コマンドテスト: 非 ELF ファイルのスキップ確認 |
+| AC-8: フォールバックチェーン統合 | 5, 6 | `TestStandardELFAnalyzer_SyscallLookup_NetworkDetected`, `TestStandardELFAnalyzer_SyscallLookup_NoNetwork`, `TestStandardELFAnalyzer_SyscallLookup_HighRisk`, E2E テスト |
+| AC-9: 既存機能への非影響 | 5 | 既存テスト全件パス (`make test`) |
+| AC-10: Go syscall ラッパー解決 | 3, 6 | `TestGoWrapperResolver_HasSymbols`, `TestGoWrapperResolver_FindWrapperCalls`, `TestGoWrapperResolver_ResolveSyscallArgument`, 統合テスト |
+| AC-11: filevalidator 統合ストア移行 | 4 | `TestValidator_RecordAndVerifyHash`, `TestValidator_BackwardCompatibility`, `TestValidator_MigrationFromOldFormat`, `TestValidator_PreservesExistingFields` |
