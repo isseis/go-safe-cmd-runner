@@ -1355,7 +1355,7 @@ import (
 // filevalidator.HybridHashFilePathGetter implements this interface implicitly
 // by having the same method signature.
 type HashFilePathGetter interface {
-    GetHashFilePath(hash string) string
+    GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error)
 }
 
 // FileAnalysisStore manages unified file analysis record files containing both
