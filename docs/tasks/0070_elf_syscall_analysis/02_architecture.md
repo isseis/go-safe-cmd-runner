@@ -423,7 +423,7 @@ classDiagram
     class SyscallAnalysisData {
         +Architecture string
         +AnalyzedAt time.Time
-        +DetectedSyscalls []SyscallInfo
+        +DetectedSyscalls []SyscallInfoData
         +HasUnknownSyscalls bool
         +HighRiskReasons []string
         +Summary SyscallSummary
