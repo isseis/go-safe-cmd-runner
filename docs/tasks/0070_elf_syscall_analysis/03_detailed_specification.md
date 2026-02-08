@@ -1819,8 +1819,8 @@ func (v *Validator) RecordHash(filePath string) error {
 
     // Use FileAnalysisStore.Update to preserve existing fields
     err = v.store.Update(hashFilePath, func(record *fileanalysis.FileAnalysisRecord) error {
-        record.FileHash = actualHash
-        record.LastUpdated = time.Now()
+        record.Hash = fileanalysis.HashInfo{Algorithm: v.hashAlgo.Name(), Value: actualHash}
+        record.UpdatedAt = time.Now()
         return nil
     })
 
