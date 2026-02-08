@@ -231,7 +231,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     解析結果ファイルの書き込み（`safefileio` 使用）
   - `Update(filePath, updateFn)`:
     read-modify-write 操作
-  - 仕様: 詳細仕様書 §2.5.1
+  - 仕様: 詳細仕様書 §2.6.1
   - 要件: FR-3.2.1, FR-3.2.2, NFR-4.2.2
 - [ ] `file_analysis_store_test.go` を新規作成
   - `TestFileAnalysisStore_SaveAndLoad`:
@@ -255,7 +255,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - `LoadSyscallAnalysis(path, expectedHash)`:
     解析結果の読み込み + ハッシュ検証
   - 型変換ヘルパー関数群
-  - 仕様: 詳細仕様書 §2.5.2
+  - 仕様: 詳細仕様書 §2.6.2
   - 要件: NFR-4.2.1
 - [ ] `syscall_store_test.go` を新規作成
   - `TestSyscallAnalysisStore_SaveAndLoad`:
