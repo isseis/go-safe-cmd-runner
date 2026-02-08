@@ -1789,7 +1789,10 @@ func NewValidatorWithAnalysisStore(
     hashAlgo HashAlgorithm,
     pathGen HashFilePathGetter,
 ) (*Validator, error) {
-    store := fileanalysis.NewFileAnalysisStore(fs)
+    store, err := fileanalysis.NewFileAnalysisStore(v.hashDir, v.pathGen)
+    if err != nil {
+        return nil, err
+    }
 
     return &Validator{
         fs:       fs,
