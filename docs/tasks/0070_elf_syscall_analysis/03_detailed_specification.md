@@ -2025,7 +2025,7 @@ func (v *Validator) verifyHashFromOldFormat(hashFilePath, actualHash string) (bo
 }
 ```
 
-#### 2.9.2 移行期の動作仕様
+#### 2.10.2 移行期の動作仕様
 
 **移行検出**:
 - 新形式（FileAnalysisRecord JSON）が存在する場合 → 新形式を使用
@@ -2338,6 +2338,10 @@ import (
 
 // Static errors
 var (
+    // ErrNotStaticELF indicates the ELF file is dynamically linked, not statically linked.
+    // This error is returned when syscall analysis is attempted on a dynamic binary.
+    ErrNotStaticELF = errors.New("ELF file is not statically linked")
+
     // ErrNoTextSection indicates the ELF file has no .text section.
     ErrNoTextSection = errors.New("ELF file has no .text section")
 

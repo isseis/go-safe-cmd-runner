@@ -40,6 +40,7 @@ Phase 4 は Phase 2・3 と独立して実施可能。
 ### 1.1 エラー定義
 
 - [ ] `internal/runner/security/elfanalyzer/errors.go` を新規作成
+  - `ErrNotStaticELF`
   - `ErrNoTextSection`
   - `ErrNoSymbolTable`
   - `UnsupportedArchitectureError`

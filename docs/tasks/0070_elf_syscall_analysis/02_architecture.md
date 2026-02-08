@@ -228,6 +228,9 @@ sequenceDiagram
 
 ## 3. コンポーネント設計
 
+> **注記**: 以下のクラス図は概念モデルであり、実装上の正確な型名・メソッド名は詳細仕様書（03_detailed_specification.md）§2 を参照してください。
+> 例: `SyscallLocation` → 詳細仕様では `SyscallInfo.Location`、`extractSyscallNumber` → `extractSyscallInfo`、`Instruction` → `DecodedInstruction`
+
 ### 3.1 SyscallAnalyzer
 
 syscall 命令の検出と syscall 番号の抽出を行うメインコンポーネント。
