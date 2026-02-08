@@ -619,7 +619,7 @@ flowchart TB
     "summary": {
       "has_network_syscalls": true,
       "is_high_risk": false,
-      "total_syscalls": 20,
+      "total_detected_events": 20,
       "network_syscalls": 5
     }
   }
