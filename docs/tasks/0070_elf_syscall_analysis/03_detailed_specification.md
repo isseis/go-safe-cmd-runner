@@ -319,7 +319,7 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
     offset := int(delta)
 
     // Backward scan to find eax/rax modification
-    number, method := a.backwardScanForSyscallNumber(code, offset)
+    number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset)
     info.Number = number
     info.DeterminationMethod = method
 
@@ -335,7 +335,7 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 // to find where eax/rax is set.
 // Note: This method only handles direct syscall instructions.
 // Go wrapper calls are analyzed separately by analyzeGoWrapperCalls.
-func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffset int) (int, string) {
+func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int) (int, string) {
     // Performance optimization: Use windowed decoding to avoid re-decoding
     // the entire .text section for each syscall instruction.
     // Window starts from max(0, syscallOffset - maxBackwardScan * maxInstructionLength)
@@ -346,7 +346,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffse
     }
 
     // Build instruction list by forward decoding within the window
-    instructions := a.decodeInstructionsInWindow(code, windowStart, syscallOffset)
+    instructions := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset)
     if len(instructions) == 0 {
         return -1, "unknown:decode_failed"
     }
@@ -384,15 +384,20 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, syscallOffse
 // This method provides better performance by avoiding unnecessary decoding of the entire code section.
 // For large binaries with many syscall instructions, this reduces total decode overhead significantly.
 //
+// Parameters:
+//   - code: the code section bytes
+//   - baseAddr: base virtual address of the code section (used to compute instruction VAs)
+//   - startOffset, endOffset: section-relative byte offsets defining the decode window
+//
 // Performance comparison (example: 10MB .text, 100 syscalls):
 // - Old approach: 100 × 5MB avg = ~500MB worth of redundant decoding
 // - Window approach: 100 × (50 instructions × 15 bytes) = ~75KB of focused decoding
-func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, startOffset, endOffset int) []DecodedInstruction {
+func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint64, startOffset, endOffset int) []DecodedInstruction {
     var instructions []DecodedInstruction
     pos := startOffset
 
     for pos < endOffset {
-        inst, err := a.decoder.Decode(code[pos:], uint64(pos))
+        inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos))
         if err != nil {
             // Skip problematic byte and continue
             pos++
