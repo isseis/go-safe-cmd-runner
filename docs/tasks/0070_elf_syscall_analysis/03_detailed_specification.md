@@ -1355,7 +1355,7 @@ import (
 // filevalidator.HybridHashFilePathGetter implements this interface implicitly
 // by having the same method signature.
 type HashFilePathGetter interface {
-    GetHashFilePath(hash string) string
+    GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error)
 }
 
 // FileAnalysisStore manages unified file analysis record files containing both
@@ -1789,7 +1789,10 @@ func NewValidatorWithAnalysisStore(
     hashAlgo HashAlgorithm,
     pathGen HashFilePathGetter,
 ) (*Validator, error) {
-    store := fileanalysis.NewFileAnalysisStore(fs)
+    store, err := fileanalysis.NewFileAnalysisStore(v.hashDir, v.pathGen)
+    if err != nil {
+        return nil, err
+    }
 
     return &Validator{
         fs:       fs,
@@ -1819,8 +1822,8 @@ func (v *Validator) RecordHash(filePath string) error {
 
     // Use FileAnalysisStore.Update to preserve existing fields
     err = v.store.Update(hashFilePath, func(record *fileanalysis.FileAnalysisRecord) error {
-        record.FileHash = actualHash
-        record.LastUpdated = time.Now()
+        record.Hash = fileanalysis.HashInfo{Algorithm: v.hashAlgo.Name(), Value: actualHash}
+        record.UpdatedAt = time.Now()
         return nil
     })
 
@@ -1847,7 +1850,7 @@ func (v *Validator) VerifyHash(filePath string) (bool, error) {
     // Try to load from new format first
     record, err := v.store.Load(hashFilePath)
     if err == nil {
-        return record.FileHash == actualHash, nil
+        return record.Hash.Value == actualHash, nil
     }
 
     // Fall back to old format for backward compatibility
@@ -1874,8 +1877,8 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
     // Migrate from old format to new format
     record := &fileanalysis.FileAnalysisRecord{
         SchemaVersion: fileanalysis.CurrentSchemaVersion,
-        FileHash:      oldHash,
-        LastUpdated:   time.Now(),
+        Hash:      fileanalysis.HashInfo{Algorithm: v.hashAlgo.Name(), Value: oldHash},
+        UpdatedAt:   time.Now(),
         // SyscallAnalysis will be nil, added later by record command
     }
 
@@ -2032,7 +2035,8 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string) AnalysisOutput 
     }
 
     // Load analysis result
-    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
+    hashInfo := fileanalysis.HashInfo{Algorithm: a.hashAlgo.Name(), Value: hash}
+    result, found, err := a.syscallStore.LoadSyscallAnalysis(path, hashInfo)
     if err != nil {
         slog.Debug("Syscall analysis lookup error",
             "path", path,

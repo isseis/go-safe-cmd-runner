@@ -93,8 +93,7 @@ syscall 番号抽出を実装する。
   - `extractSyscallInfo()`:
     逆方向スキャンによる syscall 番号抽出
   - `backwardScanForSyscallNumber()`: 前方デコード + 逆順走査
-  - `decodeInstructionsUpTo()`:
-    指定オフセットまでの前方デコード
+  - `decodeInstructionsInWindow()`:
   - 仕様: 詳細仕様書 §2.1
   - 要件: FR-3.1.2, FR-3.1.3, FR-3.1.4
 
