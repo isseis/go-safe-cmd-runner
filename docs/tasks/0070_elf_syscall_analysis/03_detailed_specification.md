@@ -1156,6 +1156,11 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 
 // resolveSyscallArgument analyzes instructions before a wrapper call
 // to determine the syscall number argument.
+//
+// Currently supports Go 1.17+ calling convention where the syscall number
+// is passed in RAX (first argument, register-based ABI). Future extensions
+// for other argument positions or calling conventions are not yet defined
+// and would follow the YAGNI principle.
 func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction, wrapper GoSyscallWrapper) int {
     if len(recentInstructions) < 2 {
         return -1
