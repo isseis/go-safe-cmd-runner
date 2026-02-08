@@ -2533,6 +2533,7 @@ func TestFileAnalysisStore_PreservesExistingFields(t *testing.T) {
 package elfanalyzer
 
 import (
+    "debug/elf"
     "os"
     "os/exec"
     "path/filepath"
@@ -2566,9 +2567,18 @@ int main() {
     cmd := exec.Command("gcc", "-static", "-o", binFile, srcFile)
     require.NoError(t, cmd.Run())
 
+    // Open and parse ELF file
+    file, err := os.Open(binFile)
+    require.NoError(t, err)
+    defer file.Close()
+
+    elfFile, err := elf.NewFile(file)
+    require.NoError(t, err)
+    defer elfFile.Close()
+
     // Analyze
     analyzer := NewSyscallAnalyzer()
-    result, err := analyzer.AnalyzeSyscalls(binFile)
+    result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
     require.NoError(t, err)
 
     // Verify network syscall detected
