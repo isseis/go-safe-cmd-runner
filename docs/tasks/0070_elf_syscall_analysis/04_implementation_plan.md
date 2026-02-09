@@ -282,7 +282,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - `Validator` 構造体に `FileAnalysisStore`
     への参照を追加
   - `RecordHash()`: `FileAnalysisStore.Update()` 経由で
-    `FileAnalysisRecord.FileHash` フィールドを更新
+    `FileAnalysisRecord.ContentHash` フィールドを更新
   - `VerifyHash()`: `FileAnalysisStore.Load()` 経由で
     ハッシュ値を検証
   - 既存のハッシュファイル形式（テキスト形式）の
