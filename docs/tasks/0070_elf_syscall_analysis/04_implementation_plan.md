@@ -269,6 +269,15 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 4.5 filevalidator の統合ストア移行
 
+> **リスクノート**: このタスクは Phase 4 内で最も複雑であり、以下の理由で慎重な実装が必要です：
+> - Phase 4.3（FileAnalysisStore）への依存があり、そのインターフェースが確定している必要がある
+> - 既存の `Validator` 構造体のフィールド名・メソッドシグネチャとの整合性確認が必要
+> - 既存の HashManifest JSON 形式との後方互換性を維持しながらの移行ロジック実装
+> - テスト時は実際の HashManifest ファイルを使用した移行動作の検証が必須
+>
+> 推奨事項: 実装前に詳細仕様書 §2.10 と既存の `validator.go` を再度確認し、
+> フィールド名・メソッド名の不整合がないことを確認すること。
+
 - [ ] `internal/filevalidator/validator.go` を修正
   - `Validator` 構造体に `FileAnalysisStore`
     への参照を追加

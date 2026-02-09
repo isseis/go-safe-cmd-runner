@@ -1082,6 +1082,7 @@ type GoWrapperResolver struct {
     wrapperAddrs  map[uint64]GoSyscallWrapper
     hasSymbols    bool
     pclntabParser *PclntabParser
+    decoder       *X86Decoder // Shared decoder instance to avoid repeated allocation
 }
 
 // NewGoWrapperResolver creates a new GoWrapperResolver.
@@ -1090,6 +1091,7 @@ func NewGoWrapperResolver() *GoWrapperResolver {
         symbols:       make(map[string]SymbolInfo),
         wrapperAddrs:  make(map[uint64]GoSyscallWrapper),
         pclntabParser: NewPclntabParser(),
+        decoder:       NewX86Decoder(),
     }
 }
 
@@ -1170,15 +1172,15 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
     }
 
     var results []WrapperCall
-    decoder := NewX86Decoder()
 
     // Decode entire code section and find CALL instructions to known wrappers
+    // Use the shared decoder instance (r.decoder) to avoid repeated allocation
     pos := 0
     var recentInstructions []DecodedInstruction
     maxRecentInstructions := 10 // Keep recent instructions for backward scan
 
     for pos < len(code) {
-        inst, err := decoder.Decode(code[pos:], baseAddr+uint64(pos))
+        inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos))
         if err != nil {
             pos++
             continue
@@ -1234,23 +1236,21 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
     if wrapper.SyscallArgIndex != 0 {
         return -1
     }
-    targetReg := x86asm.RAX
-
-    decoder := NewX86Decoder()
 
     // Scan backward through recent instructions (excluding the CALL itself)
+    // Use the shared decoder instance (r.decoder) to avoid repeated allocation
     for i := len(recentInstructions) - 2; i >= 0 && i >= len(recentInstructions)-6; i-- {
         inst := recentInstructions[i]
 
         // Stop at control flow boundary
-        if decoder.IsControlFlowInstruction(inst) {
+        if r.decoder.IsControlFlowInstruction(inst) {
             break
         }
 
         // Check for immediate move to target register
         // Note: Go compiler often generates "mov $N, %eax" (x86asm.EAX) instead of
         // "mov $N, %rax" (x86asm.RAX) for syscall numbers, so we must check both.
-        if isImm, value := decoder.IsImmediateMove(inst); isImm {
+        if isImm, value := r.decoder.IsImmediateMove(inst); isImm {
             if reg, ok := inst.Args[0].(x86asm.Reg); ok && (reg == x86asm.RAX || reg == x86asm.EAX) {
                 return int(value)
             }
@@ -1358,6 +1358,13 @@ type FileAnalysisStore struct {
 // If analysisDir does not exist, it will be created with mode 0o755.
 // This simplifies operational workflows by eliminating the need for
 // manual directory creation before running the record command.
+//
+// TOCTOU Note: There is a potential race condition between os.Lstat() and
+// os.MkdirAll() where a symlink could be created in between. However, this
+// risk is mitigated because:
+// 1. Individual file I/O operations use safefileio which protects against symlink attacks
+// 2. The analysisDir is typically under a trusted location controlled by the operator
+// 3. An attacker with write access to the parent directory already has significant control
 func NewFileAnalysisStore(analysisDir string, pathGetter HashFilePathGetter) (*FileAnalysisStore, error) {
     // Check if directory exists
     info, err := os.Lstat(analysisDir)
@@ -2781,6 +2788,19 @@ int main() {
 
 - デコード失敗後の誤検出リスク: 偶然 `0F 05` パターンがデータ領域内に現れた場合、誤って syscall 命令として検出する可能性がある
 - 命令境界のずれ: 不正確なアラインメントで再開すると、本来の命令を見落とす可能性がある
+
+**偽陽性発生時の動作**:
+
+`findSyscallInstructions()` は命令境界を考慮せず `bytes.Index()` でバイトパターンを検索するため、
+即値オペランド内に `0F 05` が含まれる命令（例: `mov $0x12340F05, %rax`）で偽陽性が発生する可能性がある。
+
+偽陽性が発生した場合の動作:
+1. `backwardScanForSyscallNumber()` が逆方向スキャンを試みるが、通常は syscall 番号設定パターンを検出できない
+2. syscall 番号が特定できない場合、`SyscallInfo.Number = -1`（unknown）として記録
+3. `HasUnknownSyscalls = true` となり、`HighRiskReasons` に理由が追加される
+4. 結果として High Risk として報告される（FR-3.1.4 に従う安全側設計）
+
+つまり、偽陽性は「存在しない syscall の誤検出」として表れるが、High Risk 扱いとなるため安全側に倒れる。
 
 これらの制限は、実装の複雑さとのトレードオフとして許容している。より堅牢なアプローチ（シンボルテーブルを使った関数境界の特定など）は将来の改善課題とする。
 
