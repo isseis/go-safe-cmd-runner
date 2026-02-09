@@ -219,7 +219,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - `ErrRecordNotFound`
   - `SchemaVersionMismatchError`
   - `RecordCorruptedError`
-  - 仕様: 詳細仕様書 §2.7
+  - 仕様: 詳細仕様書 §2.8
 
 ### 4.3 FileAnalysisStore
 
