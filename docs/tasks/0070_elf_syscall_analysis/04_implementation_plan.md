@@ -303,12 +303,12 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 4.6 詳細仕様書への追加
 
-- [x] `03_detailed_specification.md` に §2.9 を追加（追加済み）
-  - `filevalidator.Validator` の統合ストア対応
+- [x] `03_detailed_specification.md` に §2.9, §2.10 を追加（追加済み）
+  - `filevalidator.Validator` の統合ストア対応 (§2.10)
   - 後方互換性の実装方針
     - 旧形式（テキスト）の検出方法
     - 新形式への移行ロジック
-  - エラーハンドリング
+  - エラーハンドリング (§2.9)
   - 移行期の動作仕様
 
 ## Phase 5: システム統合
