@@ -1910,7 +1910,7 @@ func (v *Validator) RecordHash(filePath string) error {
 
     // Use FileAnalysisStore.Update to preserve existing fields
     err = v.store.Update(filePath, func(record *fileanalysis.FileAnalysisRecord) error {
-        // Note: actualHash from hashAlgo.HashFile() is unprefixed hex.
+        // Note: actualHash from calculateHash() is unprefixed hex.
         // ContentHash field requires prefixed format "sha256:<hex>".
         record.ContentHash = fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
         record.UpdatedAt = time.Now()
@@ -1990,7 +1990,7 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
     }
 
     // Remove old format file after successful migration
-    if err := v.fs.Remove(hashFilePath); err != nil {
+    if err := os.Remove(hashFilePath); err != nil {
         // Log warning but don't fail - migration was successful
         // The old file will be overwritten by new format access
     }

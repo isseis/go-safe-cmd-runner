@@ -600,14 +600,14 @@ flowchart TB
 
 ### 5.2 解析結果ファイル形式
 
+> **注記**: 以下の JSON サンプルは概念的な例です。実装上の正確なフィールド名・形式は
+> 詳細仕様書（03_detailed_specification.md）§2.7 の `FileAnalysisRecord` 型定義を参照してください。
+
 ```json
 {
   "schema_version": 1,
   "file_path": "/usr/local/bin/myapp",
-  "hash": {
-    "algorithm": "sha256",
-    "value": "abc123..."
-  },
+  "content_hash": "sha256:abc123def456...",
   "updated_at": "2025-02-05T10:30:00Z",
   "syscall_analysis": {
     "architecture": "x86_64",
@@ -618,23 +618,21 @@ flowchart TB
       {"number": 1, "name": "write", "is_network": false, "location": 4256, "determination_method": "immediate"}
     ],
     "has_unknown_syscalls": false,
-    "high_risk_reasons": [],
     "summary": {
       "has_network_syscalls": true,
       "is_high_risk": false,
-      "total_syscalls": 20,
-      "network_syscalls": 5
+      "total_detected_events": 20,
+      "network_syscall_count": 5
     }
   }
 }
 ```
 
 **フィールド説明**:
-- `hash`: ファイルの内容ハッシュ情報（filevalidator.HashInfo 形式に準拠）
-  - `algorithm`: ハッシュアルゴリズム名（例: "sha256"）
-  - `value`: ハッシュ値（16進数文字列）
-- `syscall_analysis`: syscall 解析結果（オプション、ELF ファイルの場合のみ）
+- `content_hash`: ファイルの内容ハッシュ（プレフィックス付き形式: "sha256:&lt;hex&gt;"）
+- `syscall_analysis`: syscall 解析結果（オプション、静的リンク ELF ファイルの場合のみ）
   - 非 ELF ファイルや動的リンクバイナリの場合、このフィールドは存在しない
+  - `high_risk_reasons`: High Risk の理由（`omitempty` のため、空の場合はフィールド自体が省略される）
 
 ### 5.3 解析結果ファイル命名規則
 
