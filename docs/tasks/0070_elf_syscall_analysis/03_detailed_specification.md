@@ -1913,7 +1913,7 @@ func (v *Validator) RecordHash(filePath string) error {
         // Note: actualHash from calculateHash() is unprefixed hex.
         // ContentHash field requires prefixed format "sha256:<hex>".
         record.ContentHash = fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
-        record.UpdatedAt = time.Now()
+        record.UpdatedAt = time.Now().UTC()
         return nil
     })
 
@@ -1979,7 +1979,7 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
     record := &fileanalysis.FileAnalysisRecord{
         SchemaVersion: fileanalysis.CurrentSchemaVersion,
         ContentHash:   fmt.Sprintf("%s:%s", v.algorithm.Name(), oldHash),
-        UpdatedAt:     time.Now(),
+        UpdatedAt:     time.Now().UTC(),
         // SyscallAnalysis will be nil, added later by record command
     }
 
