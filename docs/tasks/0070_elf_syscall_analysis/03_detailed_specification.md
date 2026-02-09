@@ -2072,7 +2072,7 @@ type SyscallAnalysisStore interface {
     // Returns (result, true, nil) if found and hash matches.
     // Returns (nil, false, nil) if not found or hash mismatch.
     // Returns (nil, false, error) on other errors.
-    LoadSyscallAnalysis(filePath string, expectedHash hashInfo) (*SyscallAnalysisResult, bool, error)
+    LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, bool, error)
 }
 
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
@@ -2772,7 +2772,11 @@ int main() {
 ### 8.4 パフォーマンス最適化
 
 - `.text` セクションのみを解析（他のセクションは無視）
-- 大規模バイナリでは進捗表示を検討
+- 大規模バイナリでは進捗表示を実装（NFR-4.1.2）
+  - record コマンドは標準エラー出力に進捗メッセージを出力
+  - 進捗メッセージ例: `"Analyzing syscalls: <filepath>..."`、`"Analyzing syscalls: <filepath>... done"`
+  - `SyscallAnalyzer` は進捗コールバック用インターフェースを提供しない（シンプル化のため）
+  - 進捗表示は record コマンド側で解析呼び出し前後に出力
 - syscall 命令のバイトパターン検索は線形スキャン（O(n)）
 
 ### 8.5 デコード失敗時の動作
