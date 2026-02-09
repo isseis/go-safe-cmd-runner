@@ -397,7 +397,9 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
     pos := startOffset
 
     for pos < endOffset {
-        inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos))
+        // Slice input to [pos:endOffset] to prevent decoding beyond window boundary.
+        // This ensures the decoder cannot consume bytes past endOffset (e.g., the syscall instruction itself).
+        inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos))
         if err != nil {
             // Skip problematic byte and continue
             pos++
