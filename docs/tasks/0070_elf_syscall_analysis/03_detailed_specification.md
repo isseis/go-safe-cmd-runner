@@ -36,7 +36,7 @@ internal/fileanalysis/
     file_analysis_store.go         # FileAnalysisStore（解析結果ストア層）
     schema.go                      # FileAnalysisRecord, 統合スキーマ定義
     errors.go                      # 解析結果ストア関連エラー
-    syscall_store.go               # SyscallAnalysisStore インターフェース実装
+    syscall_store.go               # elfanalyzer.SyscallAnalysisStore 実装
 
 # 拡張対象
 cmd/record/
@@ -1554,7 +1554,11 @@ func (s *FileAnalysisStore) getRecordPath(filePath string) (string, error) {
 }
 ```
 
-#### 2.6.2 SyscallAnalysisStore（elfanalyzer 用インターフェース実装）
+#### 2.6.2 syscallAnalysisStoreImpl（elfanalyzer.SyscallAnalysisStore インターフェース実装）
+
+elfanalyzer パッケージで定義される `SyscallAnalysisStore` インターフェースの実装です。
+struct 名を unexported (`syscallAnalysisStoreImpl`) にすることで、
+interface との混同を防ぎます。
 
 ```go
 // internal/fileanalysis/syscall_store.go
@@ -1567,21 +1571,23 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-// SyscallAnalysisStore provides syscall analysis storage operations.
-// This is a concrete adapter backed by FileAnalysisStore and used by elfanalyzer.
-type SyscallAnalysisStore struct {
+// syscallAnalysisStoreImpl implements elfanalyzer.SyscallAnalysisStore.
+// This is a concrete adapter backed by FileAnalysisStore.
+// The type is unexported to avoid confusion with the interface defined in elfanalyzer.
+type syscallAnalysisStoreImpl struct {
     store *FileAnalysisStore
 }
 
-// NewSyscallAnalysisStore creates a new SyscallAnalysisStore backed by FileAnalysisStore.
-func NewSyscallAnalysisStore(store *FileAnalysisStore) *SyscallAnalysisStore {
-    return &SyscallAnalysisStore{store: store}
+// NewSyscallAnalysisStore creates a new elfanalyzer.SyscallAnalysisStore
+// backed by FileAnalysisStore.
+func NewSyscallAnalysisStore(store *FileAnalysisStore) elfanalyzer.SyscallAnalysisStore {
+    return &syscallAnalysisStoreImpl{store: store}
 }
 
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
-func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
-    return c.store.Update(filePath, func(record *FileAnalysisRecord) error {
+func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
+    return s.store.Update(filePath, func(record *FileAnalysisRecord) error {
         record.ContentHash = fileHash
         record.SyscallAnalysis = &SyscallAnalysisData{
             Architecture:       "x86_64",
@@ -1599,8 +1605,8 @@ func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 // Returns (result, true, nil) if found and hash matches.
 // Returns (nil, false, nil) if not found or hash mismatch.
 // Returns (nil, false, error) on other errors.
-func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
-    record, err := c.store.Load(filePath)
+func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
+    record, err := s.store.Load(filePath)
     if err != nil {
         if err == ErrRecordNotFound {
             return nil, false, nil
@@ -1785,7 +1791,11 @@ func (e *RecordCorruptedError) Unwrap() error {
 既存の `filevalidator.Validator` を拡張し、従来の HashManifest JSON 形式から
 新しい統合解析結果ストア（FileAnalysisRecord JSON 形式）への移行を実装します。
 
-#### FileValidator インターフェースとの関係
+#### 設計方針
+
+**FileValidator インターフェースは変更しない**: 既存の `Record()` / `Verify()` メソッド内部で
+直接 `FileAnalysisStore` を呼び出し、新形式への移行ロジックを実装します。
+中間ヘルパーメソッド（`RecordHash()` / `VerifyHash()` 等）は追加しません。
 
 既存の `FileValidator` インターフェース（`internal/filevalidator/validator.go:30-36`）:
 
@@ -1799,17 +1809,7 @@ type FileValidator interface {
 }
 ```
 
-本仕様で追加する `RecordHash()` と `VerifyHash()` は `FileValidator` インターフェースの
-メソッドではなく、`Validator` 構造体の内部ヘルパーメソッドです。
-これらは既存の `Record()` と `Verify()` の内部実装から呼び出され、
-新しい統合解析ストア形式への移行ロジックをカプセル化します。
-
-- `Record()` → 内部で `RecordHash()` を呼び出し、ハッシュ保存処理を委譲
-- `Verify()` → 内部で `VerifyHash()` を呼び出し、ハッシュ検証処理を委譲
-
-既存の `FileValidator` インターフェースのシグネチャは変更されません。
-
-#### 2.10.1 旧形式の検出と移行ロジック
+#### 2.10.1 Validator 構造体の拡張
 
 ```go
 // internal/filevalidator/validator.go
@@ -1848,82 +1848,109 @@ func NewValidatorWithAnalysisStore(
 
     return v, nil
 }
+```
 
-// RecordHash stores file hash using the new unified analysis store format.
-// Migrates from old HashManifest format if found.
-func (v *Validator) RecordHash(filePath string) error {
-    // Validate the file path (reuse existing validatePath)
+#### 2.10.2 Record() の拡張
+
+既存の `Record()` メソッド内で、新形式ストアへの保存と旧形式からの移行を処理します。
+
+```go
+// Record calculates the hash of the file at filePath and saves it.
+// If unified analysis store is enabled, saves to new FileAnalysisRecord format.
+// Otherwise, uses legacy HashManifest format for backward compatibility.
+func (v *Validator) Record(filePath string, force bool) (string, error) {
+    // Validate the file path
+    targetPath, err := validatePath(filePath)
+    if err != nil {
+        return "", err
+    }
+
+    // Calculate the hash of the file
+    hash, err := v.calculateHash(targetPath.String())
+    if err != nil {
+        return "", fmt.Errorf("failed to calculate hash: %w", err)
+    }
+
+    // Get the path for the hash file
+    hashFilePath, err := v.GetHashFilePath(targetPath)
+    if err != nil {
+        return "", err
+    }
+
+    // If unified analysis store is enabled, use new format
+    if v.store != nil {
+        // Check if old format exists and perform migration
+        if err := v.migrateFromOldFormatIfNeeded(hashFilePath, filePath, hash); err != nil {
+            return "", fmt.Errorf("failed to migrate old format: %w", err)
+        }
+
+        // Use FileAnalysisStore.Update to preserve existing fields (e.g., SyscallAnalysis)
+        err = v.store.Update(filePath, func(record *fileanalysis.FileAnalysisRecord) error {
+            // ContentHash field uses prefixed format "sha256:<hex>"
+            record.ContentHash = fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
+            record.UpdatedAt = time.Now().UTC()
+            return nil
+        })
+        if err != nil {
+            return "", fmt.Errorf("failed to update analysis record: %w", err)
+        }
+
+        return hash, nil
+    }
+
+    // Fallback: use legacy HashManifest format (existing implementation)
+    // ... existing Record() logic for HashManifest format ...
+}
+```
+
+#### 2.10.3 Verify() の拡張
+
+既存の `Verify()` メソッド内で、新形式と旧形式の両方をサポートします。
+
+```go
+// Verify checks that the file at filePath has a valid recorded hash.
+// If unified analysis store is enabled, checks new FileAnalysisRecord format first,
+// then falls back to legacy HashManifest format for backward compatibility.
+func (v *Validator) Verify(filePath string) error {
+    // Validate the file path
     targetPath, err := validatePath(filePath)
     if err != nil {
         return err
     }
 
-    // Calculate hash using existing method
+    // Calculate the current hash of the file
     actualHash, err := v.calculateHash(targetPath.String())
     if err != nil {
-        return fmt.Errorf("failed to compute hash: %w", err)
+        return fmt.Errorf("failed to calculate hash: %w", err)
     }
 
     hashFilePath, err := v.GetHashFilePath(targetPath)
     if err != nil {
-        return fmt.Errorf("failed to get hash file path: %w", err)
+        return err
     }
 
-    // Check if old format exists and perform migration
-    if err := v.migrateFromOldFormatIfNeeded(hashFilePath, filePath, actualHash); err != nil {
-        return fmt.Errorf("failed to migrate old format: %w", err)
+    // If unified analysis store is enabled, try new format first
+    if v.store != nil {
+        record, err := v.store.Load(filePath)
+        if err == nil {
+            // ContentHash is in prefixed format "sha256:<hex>"
+            expectedHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
+            if record.ContentHash == expectedHash {
+                return nil
+            }
+            return ErrHashMismatch
+        }
+
+        // Fall back to old format for backward compatibility
+        if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+            return v.verifyFromOldFormat(hashFilePath, actualHash)
+        }
+
+        return fmt.Errorf("failed to load analysis record: %w", err)
     }
 
-    // Use FileAnalysisStore.Update to preserve existing fields
-    err = v.store.Update(filePath, func(record *fileanalysis.FileAnalysisRecord) error {
-        // Note: actualHash from calculateHash() is unprefixed hex.
-        // ContentHash field requires prefixed format "sha256:<hex>".
-        record.ContentHash = fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
-        record.UpdatedAt = time.Now().UTC()
-        return nil
-    })
-
-    if err != nil {
-        return fmt.Errorf("failed to update analysis record: %w", err)
-    }
-
-    return nil
-}
-
-// VerifyHash checks file hash using the unified analysis store.
-// Supports backward compatibility with old HashManifest format.
-func (v *Validator) VerifyHash(filePath string) (bool, error) {
-    // Validate the file path (reuse existing validatePath)
-    targetPath, err := validatePath(filePath)
-    if err != nil {
-        return false, err
-    }
-
-    // Calculate hash using existing method
-    actualHash, err := v.calculateHash(targetPath.String())
-    if err != nil {
-        return false, fmt.Errorf("failed to compute hash: %w", err)
-    }
-
-    hashFilePath, err := v.GetHashFilePath(targetPath)
-    if err != nil {
-        return false, fmt.Errorf("failed to get hash file path: %w", err)
-    }
-
-    // Try to load from new format first
-    record, err := v.store.Load(filePath)
-    if err == nil {
-        // ContentHash is in prefixed format "sha256:<hex>"
-        expectedHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
-        return record.ContentHash == expectedHash, nil
-    }
-
-    // Fall back to old format for backward compatibility
-    if errors.Is(err, fileanalysis.ErrRecordNotFound) {
-        return v.verifyHashFromOldFormat(hashFilePath, actualHash)
-    }
-
-    return false, fmt.Errorf("failed to load analysis record: %w", err)
+    // Fallback: use legacy HashManifest format (existing implementation)
+    // ... existing Verify() logic for HashManifest format ...
 }
 
 // migrateFromOldFormatIfNeeded detects old HashManifest format and migrates to new FileAnalysisRecord format.
@@ -1987,18 +2014,22 @@ func (v *Validator) loadHashFromOldFormat(hashFilePath string) (string, error) {
     return manifest.File.Hash.Value, nil
 }
 
-// verifyHashFromOldFormat verifies hash against old HashManifest JSON format.
-func (v *Validator) verifyHashFromOldFormat(hashFilePath, actualHash string) (bool, error) {
+// verifyFromOldFormat verifies hash against old HashManifest JSON format.
+// Returns nil if hash matches, ErrHashMismatch if not, or error on failure.
+func (v *Validator) verifyFromOldFormat(hashFilePath, actualHash string) error {
     expectedHash, err := v.loadHashFromOldFormat(hashFilePath)
     if err != nil {
-        return false, err
+        return err
     }
 
-    return expectedHash == actualHash, nil
+    if expectedHash != actualHash {
+        return ErrHashMismatch
+    }
+    return nil
 }
 ```
 
-#### 2.10.2 移行期の動作仕様
+#### 2.10.4 移行期の動作仕様
 
 **移行検出**:
 - 新形式（FileAnalysisRecord JSON）が存在する場合 → 新形式を使用
@@ -2019,9 +2050,9 @@ func (v *Validator) verifyHashFromOldFormat(hashFilePath, actualHash string) (bo
 - 旧形式ファイル削除エラー: ログ出力のみ（処理続行）
 
 **後方互換性保証**:
-- `VerifyHash()` は旧形式ファイルでも正常動作
-- `RecordHash()` は旧形式が存在する場合、自動的に新形式へ移行
-- 既存の syscall 解析結果は移行時に保持される
+- `Verify()` は旧形式ファイルでも正常動作（新形式優先、旧形式へフォールバック）
+- `Record()` は旧形式が存在する場合、自動的に新形式へ移行
+- 既存の syscall 解析結果は移行時に保持される（`Update()` により既存フィールドを維持）
 
 ## 3. StandardELFAnalyzer の拡張
 
