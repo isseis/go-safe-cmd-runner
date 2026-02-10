@@ -2034,9 +2034,9 @@ func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, current
 // Returns error if file doesn't exist or doesn't match old format.
 //
 // Note: The "old format" refers to the existing HashManifest JSON format
-// ({"version":1,"format":"hash-manifest","file":{...}}), NOT plain hex text.
+// ({"version":"1.0","format":"file-hash","file":{...}}), NOT plain hex text.
 // This function extracts the hash value from the existing JSON structure
-// for migration to the new FileAnalysisRecord format.
+// for migration to the new FileAnalysisRecord-based storage format.
 func (v *Validator) loadHashFromOldFormat(hashFilePath string) (string, error) {
     data, err := safefileio.SafeReadFile(hashFilePath)
     if err != nil {
