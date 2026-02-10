@@ -948,17 +948,30 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         return err
     }
 
+    // Validate uint64 values fit in int before conversion to prevent overflow.
+    // math.MaxInt is the maximum value that can be safely converted to int.
+    const maxInt = int(^uint(0) >> 1)
+    if nfunc > uint64(maxInt) || ftabOff > uint64(maxInt) ||
+        funcNameOff > uint64(maxInt) {
+        return ErrInvalidPclntab
+    }
+
     // Function table: nfunc+1 entries, each entry is {entryoff uint32, funcoff uint32}
     // entry address = textStart + entryoff
     // funcoff points to _func struct; nameoff is at +4 in _func
     entrySize := 8
+    nfuncInt := int(nfunc)
     ftabStart := int(ftabOff)
-    ftabBytes := int((nfunc + 1) * uint64(entrySize))
-    if ftabStart < 0 || ftabStart+ftabBytes > len(data) {
+    // Check for overflow in ftabBytes calculation
+    if nfuncInt > (maxInt-entrySize)/entrySize {
+        return ErrInvalidPclntab
+    }
+    ftabBytes := (nfuncInt + 1) * entrySize
+    if ftabStart+ftabBytes > len(data) {
         return ErrInvalidPclntab
     }
 
-    funcs := make([]PclntabFunc, 0, nfunc)
+    funcs := make([]PclntabFunc, 0, nfuncInt)
     readUint32 := func(b []byte, off int) (uint32, error) {
         if off < 0 || off+4 > len(b) {
             return 0, ErrInvalidPclntab
@@ -966,25 +979,36 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
         return binary.LittleEndian.Uint32(b[off : off+4]), nil
     }
 
-    for i := uint64(0); i < nfunc; i++ {
-        entryOff, err := readUint32(data, ftabStart+int(i)*entrySize)
+    // nfuncInt is already validated to fit in int above
+    funcNameOffInt := int(funcNameOff)
+    for i := 0; i < nfuncInt; i++ {
+        entryOff, err := readUint32(data, ftabStart+i*entrySize)
         if err != nil {
             return err
         }
-        funcOff, err := readUint32(data, ftabStart+int(i)*entrySize+4)
+        funcOff, err := readUint32(data, ftabStart+i*entrySize+4)
         if err != nil {
             return err
         }
 
         entry := uint64(entryOff) + textStart
+        // funcOff is uint32, safe to convert to int on 64-bit systems
         funcDataOff := int(funcOff)
+        if funcDataOff+4 > len(data) {
+            return ErrInvalidPclntab
+        }
         nameOff32, err := readUint32(data, funcDataOff+4)
         if err != nil {
             return err
         }
 
-        nameStart := int(funcNameOff) + int(nameOff32)
-        if nameStart < 0 || nameStart >= len(data) {
+        // Check for overflow in nameStart calculation
+        // Both funcNameOffInt and nameOff32 are non-negative, check sum doesn't overflow
+        if int(nameOff32) > maxInt-funcNameOffInt {
+            return ErrInvalidPclntab
+        }
+        nameStart := funcNameOffInt + int(nameOff32)
+        if nameStart >= len(data) {
             return ErrInvalidPclntab
         }
 
@@ -1000,8 +1024,8 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
 
         // Determine end address from next function entry (if available)
         end := uint64(0)
-        if i+1 < nfunc {
-            nextEntryOff, err := readUint32(data, ftabStart+int(i+1)*entrySize)
+        if i+1 < nfuncInt {
+            nextEntryOff, err := readUint32(data, ftabStart+(i+1)*entrySize)
             if err != nil {
                 return err
             }
