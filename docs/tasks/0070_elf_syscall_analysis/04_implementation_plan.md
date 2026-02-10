@@ -88,12 +88,12 @@ syscall 番号抽出を実装する。
   を新規作成
   - `SyscallAnalysisResult`, `SyscallInfo`, `SyscallSummary` 構造体
   - `SyscallAnalyzer` 構造体と `NewSyscallAnalyzer()` コンストラクタ
-  - `AnalyzeSyscallsFromELF(elfFile)`:
+  - `AnalyzeSyscallsFromELF(elfFile)`: ELF ファイル全体を解析し、検出した syscall 情報を集約して返す
   - `findSyscallInstructions()`: `0F 05` パターンの検出
   - `extractSyscallInfo()`:
     逆方向スキャンによる syscall 番号抽出
   - `backwardScanForSyscallNumber()`: 前方デコード + 逆順走査
-  - `decodeInstructionsInWindow()`:
+  - `decodeInstructionsInWindow()`: 指定ウィンドウ内の命令列をデコードして解析対象とする
   - 仕様: 詳細仕様書 §2.1
   - 要件: FR-3.1.2, FR-3.1.3, FR-3.1.4
 
