@@ -2551,6 +2551,7 @@ import (
     "github.com/stretchr/testify/assert"
     "github.com/stretchr/testify/require"
 
+    "github.com/isseis/go-safe-cmd-runner/internal/common"
     "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
