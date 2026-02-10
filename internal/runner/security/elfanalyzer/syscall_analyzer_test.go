@@ -250,12 +250,12 @@ func TestSyscallAnalyzer_InvalidOffset(t *testing.T) {
 	// syscallAddr < baseAddr
 	info := analyzer.extractSyscallInfo(code, 0, 100)
 	assert.Equal(t, -1, info.Number)
-	assert.Equal(t, "unknown:invalid_offset", info.DeterminationMethod)
+	assert.Equal(t, determinationUnknownInvalidOffset, info.DeterminationMethod)
 
 	// syscallAddr beyond code length
 	info = analyzer.extractSyscallInfo(code, 200, 0)
 	assert.Equal(t, -1, info.Number)
-	assert.Equal(t, "unknown:invalid_offset", info.DeterminationMethod)
+	assert.Equal(t, determinationUnknownInvalidOffset, info.DeterminationMethod)
 }
 
 func TestSyscallAnalyzer_FindSyscallInstructions(t *testing.T) {

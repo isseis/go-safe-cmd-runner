@@ -5,6 +5,7 @@ import (
 	"debug/elf"
 	"fmt"
 	"log/slog"
+	"math"
 )
 
 // SyscallAnalysisResult represents the result of syscall analysis.
@@ -76,6 +77,11 @@ const maxInstructionLength = 15
 // defaultMaxBackwardScan is the default maximum number of instructions to scan
 // backward from a syscall instruction to find the syscall number.
 const defaultMaxBackwardScan = 50
+
+// Determination method constants for syscall number extraction.
+const (
+	determinationUnknownInvalidOffset = "unknown:invalid_offset"
+)
 
 // SyscallAnalyzer analyzes ELF binaries for syscall instructions.
 //
@@ -182,7 +188,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 	}
 
 	// Pass 2: Analyze Go wrapper calls (if symbols are available)
-	if a.goResolver != nil && a.goResolver.HasSymbols() {
+	if a.goResolver != nil {
 		wrapperCalls := a.goResolver.FindWrapperCalls(code, baseAddr)
 		for _, call := range wrapperCalls {
 			info := SyscallInfo{
@@ -228,9 +234,6 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 	var locations []uint64
 
 	pattern := []byte{0x0F, 0x05}
-	if len(code) < len(pattern) {
-		return locations
-	}
 
 	for i := 0; i <= len(code)-len(pattern); {
 		idx := bytes.Index(code[i:], pattern)
@@ -264,18 +267,21 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 	// NOTE: syscallAddr and baseAddr are uint64, so we must avoid unsigned
 	// underflow and ensure the result fits into an int before converting.
 	if syscallAddr < baseAddr {
-		info.DeterminationMethod = "unknown:invalid_offset"
+		info.DeterminationMethod = determinationUnknownInvalidOffset
 		return info
 	}
 	delta := syscallAddr - baseAddr
-	if delta > uint64(len(code)) { // Use > instead of >= to allow offset to be len(code)
-		info.DeterminationMethod = "unknown:invalid_offset"
+	if delta > uint64(len(code)) {
+		info.DeterminationMethod = determinationUnknownInvalidOffset
 		return info
 	}
-	// The conversion is safe because we've established delta <= len(code),
-	// and slice lengths in Go are bound by the maximum value of int.
-	// offset is guaranteed to be >= 0 and fit in int from the above checks.
-	offset := int(delta) //nolint:gosec
+	// Explicitly check against math.MaxInt to prevent overflow during conversion.
+	// While we know delta <= len(code) < math.MaxInt, gosec requires explicit validation.
+	if delta > uint64(math.MaxInt) {
+		info.DeterminationMethod = determinationUnknownInvalidOffset
+		return info
+	}
+	offset := int(delta)
 
 	// Backward scan to find eax/rax modification
 	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset)
@@ -371,9 +377,11 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 	for pos < endOffset {
 		// Slice input to [pos:endOffset] to prevent decoding beyond window boundary.
 		// This ensures the decoder cannot consume bytes past endOffset (e.g., the syscall instruction itself).
-		// pos is a valid slice index: maintained by loop invariant (pos >= 0 initially, incremented by inst.Len)
-		// and the condition (pos < endOffset). The conversion to uint64 is safe.
-		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) //nolint:gosec
+		// Validate pos is non-negative before converting to uint64 to prevent overflow.
+		if pos < 0 {
+			break
+		}
+		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos))
 		if err != nil {
 			// Skip problematic byte and continue
 			pos++
