@@ -26,7 +26,8 @@ flowchart LR
     P4 --> P5
     P5 --> P6
 
-    class P1,P2,P3,P4,P5,P6 todo
+    class P1 done
+    class P2,P3,P4,P5,P6 todo
 ```
 
 **注記**: Phase 2 と Phase 3 は Phase 1 完了後に並行して実施可能。
@@ -39,7 +40,7 @@ Phase 4 は Phase 2・3 と独立して実施可能。
 
 ### 1.1 エラー定義
 
-- [ ] `internal/runner/security/elfanalyzer/errors.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/errors.go` を新規作成
   - `ErrNotStaticELF`
   - `ErrNoTextSection`
   - `ErrNoSymbolTable`
@@ -48,13 +49,13 @@ Phase 4 は Phase 2・3 と独立して実施可能。
 
 ### 1.2 MachineCodeDecoder
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_decoder.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/syscall_decoder.go` を新規作成
   - `DecodedInstruction` 構造体
   - `MachineCodeDecoder` インターフェース
   - `X86Decoder` 実装（`golang.org/x/arch/x86/x86asm` をラップ）
   - 仕様: 詳細仕様書 §2.2
-- [ ] `go.mod` に `golang.org/x/arch` 依存を追加
-- [ ] `syscall_decoder_test.go` を新規作成
+- [x] `go.mod` に `golang.org/x/arch` 依存を追加
+- [x] `syscall_decoder_test.go` を新規作成
   - `TestX86Decoder_Decode`: 基本デコード
   - `TestX86Decoder_IsSyscallInstruction`: syscall 命令検出
   - `TestX86Decoder_ModifiesEAXorRAX`: レジスタ変更検出
@@ -64,13 +65,13 @@ Phase 4 は Phase 2・3 と独立して実施可能。
 
 ### 1.3 SyscallNumberTable
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_numbers.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/syscall_numbers.go` を新規作成
   - `SyscallNumberTable` インターフェース
   - `SyscallDefinition` 構造体
   - `X86_64SyscallTable` 実装
     （ネットワーク syscall 10 種 + 主要な非ネットワーク syscall）
   - 仕様: 詳細仕様書 §2.3、要件 FR-3.1.5
-- [ ] `syscall_numbers_test.go` を新規作成
+- [x] `syscall_numbers_test.go` を新規作成
   - `TestX86_64SyscallTable_GetSyscallName`
   - `TestX86_64SyscallTable_IsNetworkSyscall`
   - `TestX86_64SyscallTable_GetNetworkSyscalls`
