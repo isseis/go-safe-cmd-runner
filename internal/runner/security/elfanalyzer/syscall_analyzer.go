@@ -238,7 +238,15 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 			break
 		}
 		pos := i + idx
-		locations = append(locations, baseAddr+uint64(pos)) //nolint:gosec // pos is a non-negative index into code slice
+		// Check for potential overflow before converting pos (int) to uint64 for addition.
+		// While pos is an index within code and thus likely safe, this is a gosec best practice.
+		if pos < 0 { // Should not happen with bytes.Index, but good practice
+			break
+		}
+		// The addition of two non-negative numbers (baseAddr, uint64(pos)) won't overflow
+		// unless the address space is extremely large, which is a theoretical concern.
+		// The nolint is for the conversion, which is safe due to the non-negative check.
+		locations = append(locations, baseAddr+uint64(pos)) //nolint:gosec
 		i = pos + 1
 	}
 
@@ -260,11 +268,14 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 		return info
 	}
 	delta := syscallAddr - baseAddr
-	if delta >= uint64(len(code)) {
+	if delta > uint64(len(code)) { // Use > instead of >= to allow offset to be len(code)
 		info.DeterminationMethod = "unknown:invalid_offset"
 		return info
 	}
-	offset := int(delta) //nolint:gosec // delta < uint64(len(code)), guaranteed to fit in int
+	// The conversion is safe because we've established delta <= len(code),
+	// and slice lengths in Go are bound by the maximum value of int.
+	// offset is guaranteed to be >= 0 and fit in int from the above checks.
+	offset := int(delta) //nolint:gosec
 
 	// Backward scan to find eax/rax modification
 	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset)
@@ -360,7 +371,9 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 	for pos < endOffset {
 		// Slice input to [pos:endOffset] to prevent decoding beyond window boundary.
 		// This ensures the decoder cannot consume bytes past endOffset (e.g., the syscall instruction itself).
-		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) //nolint:gosec // pos is a non-negative index into code slice
+		// pos is a valid slice index: maintained by loop invariant (pos >= 0 initially, incremented by inst.Len)
+		// and the condition (pos < endOffset). The conversion to uint64 is safe.
+		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) //nolint:gosec
 		if err != nil {
 			// Skip problematic byte and continue
 			pos++
