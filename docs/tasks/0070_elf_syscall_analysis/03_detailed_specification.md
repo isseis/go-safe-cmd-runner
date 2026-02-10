@@ -1926,7 +1926,7 @@ func (v *Validator) Verify(filePath string) error {
     // ContentHash is in prefixed format "sha256:<hex>"
     expectedHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
     if record.ContentHash != expectedHash {
-        return ErrHashMismatch
+        return ErrMismatch
     }
 
     return nil
