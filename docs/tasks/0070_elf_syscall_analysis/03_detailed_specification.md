@@ -1885,7 +1885,11 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 
 #### 2.10.3 Verify() の拡張
 
-既存の `Verify()` メソッド内で、新形式と旧形式の両方をサポートします。
+既存の `Verify()` メソッド内で、FileAnalysisRecord 形式のレコードを検証します。
+
+**注記**: HashManifest 形式（旧形式）からの自動移行ロジックは実装しない。
+旧形式のハッシュファイルが存在する場合、ユーザーは `record` コマンドを
+再実行して新形式のレコードを作成する必要がある。
 
 ```go
 // Verify checks that the file at filePath has a valid recorded hash.
