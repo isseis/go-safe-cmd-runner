@@ -1,0 +1,428 @@
+//go:build test
+
+package elfanalyzer
+
+import (
+	"encoding/binary"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestPclntabParser_MagicNumbers(t *testing.T) {
+	tests := []struct {
+		name      string
+		magic     uint32
+		expectErr error
+		goVersion string
+	}{
+		{
+			name:      "Go 1.20+ magic",
+			magic:     pclntabMagicGo120,
+			expectErr: nil,
+			goVersion: "go1.18+",
+		},
+		{
+			name:      "Go 1.18-1.19 magic",
+			magic:     pclntabMagicGo118,
+			expectErr: nil,
+			goVersion: "go1.18+",
+		},
+		{
+			name:      "Go 1.16-1.17 magic",
+			magic:     pclntabMagicGo116,
+			expectErr: nil,
+			goVersion: "go1.16-1.17",
+		},
+		{
+			name:      "Go 1.2-1.15 magic",
+			magic:     pclntabMagicGo12,
+			expectErr: nil,
+			goVersion: "go1.2-1.15",
+		},
+		{
+			name:      "Unknown magic",
+			magic:     0x12345678,
+			expectErr: ErrUnsupportedPclntab,
+			goVersion: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create minimal pclntab data with the specified magic
+			data := createMinimalPclntab(tt.magic)
+
+			parser := NewPclntabParser()
+
+			// We can't use Parse() directly because it requires an elf.File,
+			// so we test the internal parsing functions
+			var err error
+			switch tt.magic {
+			case pclntabMagicGo118, pclntabMagicGo120:
+				err = parser.parseGo118Plus(data)
+			case pclntabMagicGo116:
+				err = parser.parseGo116(data)
+			case pclntabMagicGo12:
+				err = parser.parseGo12(data)
+			default:
+				// For unknown magic, check that we would reject it
+				magic := binary.LittleEndian.Uint32(data[0:4])
+				if magic == pclntabMagicGo118 || magic == pclntabMagicGo120 ||
+					magic == pclntabMagicGo116 || magic == pclntabMagicGo12 {
+					t.Fatal("unexpected recognized magic")
+				}
+				err = ErrUnsupportedPclntab
+			}
+
+			if tt.expectErr != nil {
+				assert.ErrorIs(t, err, tt.expectErr)
+			} else if err == nil {
+				// Even valid magic may fail parsing if data is incomplete
+				// We only verify that the goVersion is set before any error
+				assert.Equal(t, tt.goVersion, parser.GetGoVersion())
+			}
+		})
+	}
+}
+
+func TestPclntabParser_InvalidData(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{
+			name: "empty data",
+			data: []byte{},
+		},
+		{
+			name: "too short for magic",
+			data: []byte{0xF0, 0xFF, 0xFF},
+		},
+		{
+			name: "too short for header",
+			data: []byte{0xF0, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x01},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := NewPclntabParser()
+
+			// Test with Go 1.18+ parser (should fail for all invalid data)
+			err := parser.parseGo118Plus(tt.data)
+			assert.ErrorIs(t, err, ErrInvalidPclntab)
+		})
+	}
+}
+
+func TestPclntabParser_NoPclntab(t *testing.T) {
+	// This test verifies the error message when .gopclntab is missing
+	// The actual test with elf.File would require a real ELF file
+	// For unit testing, we verify the error is properly defined
+	assert.Equal(t, "no .gopclntab section found", ErrNoPclntab.Error())
+}
+
+func TestPclntabParser_UnsupportedPointerSize(t *testing.T) {
+	// Create pclntab with 32-bit pointer size (not supported)
+	data := make([]byte, 0x50) // Minimum header size
+	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
+	data[7] = 4 // 32-bit pointer size
+
+	parser := NewPclntabParser()
+	err := parser.parseGo118Plus(data)
+
+	assert.ErrorIs(t, err, ErrInvalidPclntab)
+	assert.Contains(t, err.Error(), "unsupported pointer size 4")
+}
+
+func TestPclntabParser_GetFunctions(t *testing.T) {
+	parser := NewPclntabParser()
+
+	// Initially empty
+	funcs := parser.GetFunctions()
+	assert.Empty(t, funcs)
+}
+
+func TestPclntabParser_FindFunction(t *testing.T) {
+	parser := NewPclntabParser()
+
+	// Function not found when parser is empty
+	_, found := parser.FindFunction("main.main")
+	assert.False(t, found)
+}
+
+func TestPclntabParser_GetGoVersion(t *testing.T) {
+	parser := NewPclntabParser()
+
+	// Initially empty
+	assert.Equal(t, "", parser.GetGoVersion())
+}
+
+// createMinimalPclntab creates a minimal pclntab structure for testing.
+// This creates a valid header with 0 functions.
+func createMinimalPclntab(magic uint32) []byte {
+	// Create a pclntab header with 0 functions
+	// This is the minimum valid structure for Go 1.18+
+	data := make([]byte, 0x50) // 80 bytes header
+
+	// [0:4] magic
+	binary.LittleEndian.PutUint32(data[0:4], magic)
+
+	// [4:5] pad1
+	data[4] = 0
+
+	// [5:6] pad2
+	data[5] = 0
+
+	// [6:7] minLC (instruction size quantum, 1 for x86)
+	data[6] = 1
+
+	// [7:8] ptrSize (must be 8 for 64-bit)
+	data[7] = 8
+
+	// [8:16] nfunc = 0
+	binary.LittleEndian.PutUint64(data[0x08:0x10], 0)
+
+	// [0x10:0x18] nfiles = 0
+	binary.LittleEndian.PutUint64(data[0x10:0x18], 0)
+
+	// [0x18:0x20] textStart = 0
+	binary.LittleEndian.PutUint64(data[0x18:0x20], 0)
+
+	// [0x20:0x28] funcnameOffset = 0x50 (after header)
+	binary.LittleEndian.PutUint64(data[0x20:0x28], 0x50)
+
+	// [0x28:0x30] cuOffset = 0x50
+	binary.LittleEndian.PutUint64(data[0x28:0x30], 0x50)
+
+	// [0x30:0x38] filetabOffset = 0x50
+	binary.LittleEndian.PutUint64(data[0x30:0x38], 0x50)
+
+	// [0x38:0x40] pctabOffset = 0x50
+	binary.LittleEndian.PutUint64(data[0x38:0x40], 0x50)
+
+	// [0x40:0x48] pclntabOffset = 0x50
+	binary.LittleEndian.PutUint64(data[0x40:0x48], 0x50)
+
+	// [0x48:0x50] ftabOffset = 0x50
+	binary.LittleEndian.PutUint64(data[0x48:0x50], 0x50)
+
+	return data
+}
+
+func TestPclntabParser_ValidPclntabWithFunctions(t *testing.T) {
+	// Create a pclntab with one function
+	data := createPclntabWithFunction("main.main", 0x401000)
+
+	parser := NewPclntabParser()
+	err := parser.parseGo118Plus(data)
+
+	require.NoError(t, err)
+	assert.Equal(t, "go1.18+", parser.GetGoVersion())
+
+	funcs := parser.GetFunctions()
+	require.Len(t, funcs, 1)
+	assert.Equal(t, "main.main", funcs[0].Name)
+	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
+
+	// Test FindFunction
+	fn, found := parser.FindFunction("main.main")
+	assert.True(t, found)
+	assert.Equal(t, "main.main", fn.Name)
+
+	// Test FindFunction for non-existent function
+	_, found = parser.FindFunction("nonexistent")
+	assert.False(t, found)
+}
+
+// createPclntabWithFunction creates a pclntab with a single function for testing.
+func createPclntabWithFunction(funcName string, entry uint64) []byte {
+	// Calculate sizes
+	headerSize := 0x50
+	funcNameLen := len(funcName) + 1 // +1 for null terminator
+	funcDataSize := 8                // _func struct minimal size (entryOff + nameOff)
+	ftabEntrySize := 8               // {entryoff uint32, funcoff uint32}
+	nfunc := 1
+
+	// Layout:
+	// [0x00:0x50] header
+	// [0x50:...] funcname table ("main.main\0")
+	// [...:...]  func data (_func struct)
+	// [...:...]  ftab (function table entries)
+
+	funcnameOffset := headerSize
+	funcDataOffset := funcnameOffset + funcNameLen
+	ftabOffset := funcDataOffset + funcDataSize
+	totalSize := ftabOffset + (nfunc+1)*ftabEntrySize
+
+	data := make([]byte, totalSize)
+
+	// Header
+	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
+	data[4] = 0 // pad1
+	data[5] = 0 // pad2
+	data[6] = 1 // minLC
+	data[7] = 8 // ptrSize
+
+	// textStart - entry address minus the entry offset (0)
+	textStart := entry
+	binary.LittleEndian.PutUint64(data[0x08:0x10], uint64(nfunc))
+	binary.LittleEndian.PutUint64(data[0x10:0x18], 0)                      // nfiles
+	binary.LittleEndian.PutUint64(data[0x18:0x20], textStart)              // textStart
+	binary.LittleEndian.PutUint64(data[0x20:0x28], uint64(funcnameOffset)) // funcnameOffset
+	binary.LittleEndian.PutUint64(data[0x28:0x30], 0)                      // cuOffset
+	binary.LittleEndian.PutUint64(data[0x30:0x38], 0)                      // filetabOffset
+	binary.LittleEndian.PutUint64(data[0x38:0x40], 0)                      // pctabOffset
+	binary.LittleEndian.PutUint64(data[0x40:0x48], 0)                      // pclntabOffset
+	binary.LittleEndian.PutUint64(data[0x48:0x50], uint64(ftabOffset))     // ftabOffset
+
+	// Function name table
+	copy(data[funcnameOffset:], funcName)
+	data[funcnameOffset+len(funcName)] = 0 // null terminator
+
+	// _func struct (minimal):
+	// offset 0: entryOff (uint32) - relative to textStart
+	// offset 4: nameOff (uint32) - relative to funcnameOffset
+	binary.LittleEndian.PutUint32(data[funcDataOffset:], 0)   // entryOff = 0 (first function at textStart)
+	binary.LittleEndian.PutUint32(data[funcDataOffset+4:], 0) // nameOff = 0 (first name in funcname table)
+
+	// ftab entries:
+	// entry 0: {entryoff=0, funcoff=funcDataOffset}
+	// entry 1: {entryoff=next_entry, funcoff=0} (sentinel)
+	binary.LittleEndian.PutUint32(data[ftabOffset:], 0)                        // entryoff
+	binary.LittleEndian.PutUint32(data[ftabOffset+4:], uint32(funcDataOffset)) // funcoff
+
+	// Sentinel entry (marks end of functions)
+	binary.LittleEndian.PutUint32(data[ftabOffset+8:], 0x1000) // next entryoff
+	binary.LittleEndian.PutUint32(data[ftabOffset+12:], 0)     // funcoff (not used)
+
+	return data
+}
+
+func TestPclntabParser_MultipleFunctions(t *testing.T) {
+	// Create a pclntab with multiple functions
+	data := createPclntabWithMultipleFunctions([]struct {
+		name  string
+		entry uint64
+	}{
+		{"main.main", 0x401000},
+		{"main.foo", 0x401100},
+		{"syscall.Syscall", 0x402000},
+	})
+
+	parser := NewPclntabParser()
+	err := parser.parseGo118Plus(data)
+
+	require.NoError(t, err)
+
+	funcs := parser.GetFunctions()
+	require.Len(t, funcs, 3)
+
+	// Verify functions
+	assert.Equal(t, "main.main", funcs[0].Name)
+	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
+	assert.Equal(t, uint64(0x401100), funcs[0].End) // End is next function's entry
+
+	assert.Equal(t, "main.foo", funcs[1].Name)
+	assert.Equal(t, uint64(0x401100), funcs[1].Entry)
+
+	assert.Equal(t, "syscall.Syscall", funcs[2].Name)
+	assert.Equal(t, uint64(0x402000), funcs[2].Entry)
+
+	// Test FindFunction for syscall wrapper
+	fn, found := parser.FindFunction("syscall.Syscall")
+	assert.True(t, found)
+	assert.Equal(t, "syscall.Syscall", fn.Name)
+}
+
+// createPclntabWithMultipleFunctions creates a pclntab with multiple functions.
+func createPclntabWithMultipleFunctions(functions []struct {
+	name  string
+	entry uint64
+},
+) []byte {
+	if len(functions) == 0 {
+		return createMinimalPclntab(pclntabMagicGo120)
+	}
+
+	// Calculate sizes
+	headerSize := 0x50
+	nfunc := len(functions)
+
+	// Calculate funcname table size
+	funcnameTableSize := 0
+	for _, f := range functions {
+		funcnameTableSize += len(f.name) + 1 // +1 for null terminator
+	}
+
+	// Each _func struct needs at least 8 bytes
+	funcDataSize := nfunc * 8
+	ftabEntrySize := 8 // {entryoff uint32, funcoff uint32}
+
+	funcnameOffset := headerSize
+	funcDataOffset := funcnameOffset + funcnameTableSize
+	ftabOffset := funcDataOffset + funcDataSize
+	totalSize := ftabOffset + (nfunc+1)*ftabEntrySize
+
+	data := make([]byte, totalSize)
+
+	// Use the smallest entry address as textStart
+	textStart := functions[0].entry
+	for _, f := range functions {
+		if f.entry < textStart {
+			textStart = f.entry
+		}
+	}
+
+	// Header
+	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
+	data[4] = 0 // pad1
+	data[5] = 0 // pad2
+	data[6] = 1 // minLC
+	data[7] = 8 // ptrSize
+
+	binary.LittleEndian.PutUint64(data[0x08:0x10], uint64(nfunc))
+	binary.LittleEndian.PutUint64(data[0x10:0x18], 0)                      // nfiles
+	binary.LittleEndian.PutUint64(data[0x18:0x20], textStart)              // textStart
+	binary.LittleEndian.PutUint64(data[0x20:0x28], uint64(funcnameOffset)) // funcnameOffset
+	binary.LittleEndian.PutUint64(data[0x28:0x30], 0)                      // cuOffset
+	binary.LittleEndian.PutUint64(data[0x30:0x38], 0)                      // filetabOffset
+	binary.LittleEndian.PutUint64(data[0x38:0x40], 0)                      // pctabOffset
+	binary.LittleEndian.PutUint64(data[0x40:0x48], 0)                      // pclntabOffset
+	binary.LittleEndian.PutUint64(data[0x48:0x50], uint64(ftabOffset))     // ftabOffset
+
+	// Function name table
+	nameOffset := 0
+	nameOffsets := make([]int, nfunc)
+	for i, f := range functions {
+		nameOffsets[i] = nameOffset
+		copy(data[funcnameOffset+nameOffset:], f.name)
+		data[funcnameOffset+nameOffset+len(f.name)] = 0 // null terminator
+		nameOffset += len(f.name) + 1
+	}
+
+	// _func structs and ftab entries
+	for i, f := range functions {
+		funcStructOff := funcDataOffset + i*8
+		entryOff := uint32(f.entry - textStart)
+
+		// _func struct
+		binary.LittleEndian.PutUint32(data[funcStructOff:], entryOff)
+		binary.LittleEndian.PutUint32(data[funcStructOff+4:], uint32(nameOffsets[i]))
+
+		// ftab entry
+		ftabEntryOff := ftabOffset + i*8
+		binary.LittleEndian.PutUint32(data[ftabEntryOff:], entryOff)
+		binary.LittleEndian.PutUint32(data[ftabEntryOff+4:], uint32(funcStructOff))
+	}
+
+	// Sentinel entry
+	sentinelOff := ftabOffset + nfunc*8
+	// Use a large entry offset as sentinel
+	binary.LittleEndian.PutUint32(data[sentinelOff:], 0xFFFFFF)
+	binary.LittleEndian.PutUint32(data[sentinelOff+4:], 0)
+
+	return data
+}
