@@ -90,18 +90,18 @@ type SyscallAnalysisResult struct {
 type SyscallInfo struct {
     // Number is the syscall number (e.g., 41 for socket on x86_64).
     // -1 indicates the number could not be determined.
-    Number int
+    Number int `json:"number"`
 
     // Name is the human-readable syscall name (e.g., "socket").
     // Empty if the number is unknown or not in the table.
-    Name string
+    Name string `json:"name,omitempty"`
 
     // IsNetwork indicates whether this syscall is network-related.
-    IsNetwork bool
+    IsNetwork bool `json:"is_network"`
 
     // Location is the virtual address of the syscall instruction
     // (typically located within the .text section).
-    Location uint64
+    Location uint64 `json:"location"`
 
     // DeterminationMethod describes how the syscall number was determined.
     // Possible values:
@@ -110,24 +110,24 @@ type SyscallInfo struct {
     // - "unknown" or "unknown:<reason>" (e.g., "unknown:decode_failed",
     //   "unknown:control_flow_boundary", "unknown:indirect_setting",
     //   "unknown:scan_limit_exceeded", "unknown:invalid_offset")
-    DeterminationMethod string
+    DeterminationMethod string `json:"determination_method"`
 }
 
 // SyscallSummary provides aggregated analysis information.
 type SyscallSummary struct {
     // HasNetworkSyscalls indicates presence of network-related syscalls.
-    HasNetworkSyscalls bool
+    HasNetworkSyscalls bool `json:"has_network_syscalls"`
 
     // IsHighRisk indicates the analysis could not fully determine network capability.
-    IsHighRisk bool
+    IsHighRisk bool `json:"is_high_risk"`
 
     // TotalDetectedEvents is the count of detected syscall events.
     // This includes both direct syscall instructions and indirect syscalls
     // via Go wrapper function calls.
-    TotalDetectedEvents int
+    TotalDetectedEvents int `json:"total_detected_events"`
 
     // NetworkSyscallCount is the count of network-related syscall events.
-    NetworkSyscallCount int
+    NetworkSyscallCount int `json:"network_syscall_count"`
 }
 
 // SyscallAnalyzer analyzes ELF binaries for syscall instructions.
@@ -1586,10 +1586,10 @@ func (c *SyscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
         record.SyscallAnalysis = &SyscallAnalysisData{
             Architecture:       "x86_64",
             AnalyzedAt:         time.Now().UTC(),
-            DetectedSyscalls:   convertSyscallInfos(result.DetectedSyscalls),
+            DetectedSyscalls:   result.DetectedSyscalls,
             HasUnknownSyscalls: result.HasUnknownSyscalls,
             HighRiskReasons:    result.HighRiskReasons,
-            Summary:            convertSummary(result.Summary),
+            Summary:            result.Summary,
         }
         return nil
     })
@@ -1618,63 +1618,17 @@ func (c *SyscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string
         return nil, false, nil
     }
 
-    // Convert back to elfanalyzer types
+    // Return result directly (no conversion needed)
     result := &elfanalyzer.SyscallAnalysisResult{
-        DetectedSyscalls:   convertToSyscallInfos(record.SyscallAnalysis.DetectedSyscalls),
+        DetectedSyscalls:   record.SyscallAnalysis.DetectedSyscalls,
         HasUnknownSyscalls: record.SyscallAnalysis.HasUnknownSyscalls,
         HighRiskReasons:    record.SyscallAnalysis.HighRiskReasons,
-        Summary:            convertToSummary(record.SyscallAnalysis.Summary),
+        Summary:            record.SyscallAnalysis.Summary,
     }
 
     return result, true, nil
 }
 
-// Helper functions for type conversion
-func convertSyscallInfos(infos []elfanalyzer.SyscallInfo) []SyscallInfoData {
-    result := make([]SyscallInfoData, len(infos))
-    for i, info := range infos {
-        result[i] = SyscallInfoData{
-            Number:              info.Number,
-            Name:                info.Name,
-            IsNetwork:           info.IsNetwork,
-            Location:            info.Location,
-            DeterminationMethod: info.DeterminationMethod,
-        }
-    }
-    return result
-}
-
-func convertToSyscallInfos(data []SyscallInfoData) []elfanalyzer.SyscallInfo {
-    result := make([]elfanalyzer.SyscallInfo, len(data))
-    for i, d := range data {
-        result[i] = elfanalyzer.SyscallInfo{
-            Number:              d.Number,
-            Name:                d.Name,
-            IsNetwork:           d.IsNetwork,
-            Location:            d.Location,
-            DeterminationMethod: d.DeterminationMethod,
-        }
-    }
-    return result
-}
-
-func convertSummary(s elfanalyzer.SyscallSummary) SyscallSummaryData {
-    return SyscallSummaryData{
-        HasNetworkSyscalls:  s.HasNetworkSyscalls,
-        IsHighRisk:          s.IsHighRisk,
-        TotalDetectedEvents: s.TotalDetectedEvents,
-        NetworkSyscallCount: s.NetworkSyscallCount,
-    }
-}
-
-func convertToSummary(d SyscallSummaryData) elfanalyzer.SyscallSummary {
-    return elfanalyzer.SyscallSummary{
-        HasNetworkSyscalls:  d.HasNetworkSyscalls,
-        IsHighRisk:          d.IsHighRisk,
-        TotalDetectedEvents: d.TotalDetectedEvents,
-        NetworkSyscallCount: d.NetworkSyscallCount,
-    }
-}
 ```
 
 ### 2.7 統合解析結果スキーマ
@@ -1730,7 +1684,7 @@ type SyscallAnalysisData struct {
     AnalyzedAt time.Time `json:"analyzed_at"`
 
     // DetectedSyscalls contains all syscall instructions found.
-    DetectedSyscalls []SyscallInfoData `json:"detected_syscalls"`
+    DetectedSyscalls []elfanalyzer.SyscallInfo `json:"detected_syscalls"`
 
     // HasUnknownSyscalls indicates if any syscall number could not be determined.
     HasUnknownSyscalls bool `json:"has_unknown_syscalls"`
@@ -1744,43 +1698,9 @@ type SyscallAnalysisData struct {
     HighRiskReasons []string `json:"high_risk_reasons,omitempty"`
 
     // Summary provides aggregated information about the analysis.
-    Summary SyscallSummaryData `json:"summary"`
+    Summary elfanalyzer.SyscallSummary `json:"summary"`
 }
 
-// SyscallInfoData represents information about a single syscall instruction.
-type SyscallInfoData struct {
-    // Number is the syscall number (-1 if unknown).
-    Number int `json:"number"`
-
-    // Name is the human-readable syscall name.
-    Name string `json:"name,omitempty"`
-
-    // IsNetwork indicates whether this syscall is network-related.
-    IsNetwork bool `json:"is_network"`
-
-    // Location is the virtual address of the syscall instruction.
-    Location uint64 `json:"location"`
-
-    // DeterminationMethod describes how the syscall number was determined.
-    DeterminationMethod string `json:"determination_method"`
-}
-
-// SyscallSummaryData provides aggregated analysis information.
-type SyscallSummaryData struct {
-    // HasNetworkSyscalls indicates presence of network-related syscalls.
-    HasNetworkSyscalls bool `json:"has_network_syscalls"`
-
-    // IsHighRisk indicates the analysis could not fully determine network capability.
-    IsHighRisk bool `json:"is_high_risk"`
-
-    // TotalDetectedEvents is the count of detected syscall events.
-    // This includes both direct syscall instructions and indirect syscalls
-    // via Go wrapper function calls.
-    TotalDetectedEvents int `json:"total_detected_events"`
-
-    // NetworkSyscallCount is the count of network-related syscall events.
-    NetworkSyscallCount int `json:"network_syscall_count"`
-}
 ```
 
 ### 2.8 解析結果ストアの運用方針とセキュリティ
