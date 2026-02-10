@@ -389,6 +389,20 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 //   - baseAddr: base virtual address of the code section (used to compute instruction VAs)
 //   - startOffset, endOffset: section-relative byte offsets defining the decode window
 //
+// Instruction boundary handling:
+// The startOffset may not align with an instruction boundary (since we calculate it by
+// subtracting a fixed byte count from syscallOffset). When decoding fails at startOffset,
+// we skip one byte (pos++) and retry. This "resynchronization" approach works because:
+//   1. x86_64 instruction encoding is self-synchronizing within a few bytes
+//   2. We decode forward toward syscallOffset which IS a known instruction boundary
+//   3. Even if initial instructions are mis-decoded, the final instructions before
+//      syscallOffset will be correct (they align with the known syscall instruction)
+//   4. We only need the last few instructions for backward scan, not the entire window
+//
+// In practice, resynchronization typically occurs within 1-3 bytes for x86_64 code.
+// The worst case (15 bytes of invalid decodes) is rare and doesn't affect correctness
+// since we scan backward from the end of the decoded instruction list.
+//
 // Performance comparison (example: 10MB .text, 100 syscalls):
 // - Old approach: 100 × 5MB avg = ~500MB worth of redundant decoding
 // - Window approach: 100 × (50 instructions × 15 bytes) = ~75KB of focused decoding
