@@ -37,21 +37,28 @@ pclntab は Go ランタイムがスタックトレース生成とガベージ�
 
 ```go
 // pcHeader 構造（Go 1.18+）
+// 参照: https://go.dev/src/runtime/symtab.go
 type pcHeader struct {
-    magic          uint32  // マジックナンバー
-    pad1, pad2     uint8   // パディング
-    minLC          uint8   // 最小命令サイズ (PC quantum)
-    ptrSize        uint8   // ポインタサイズ
-    nfunc          int     // 関数数
-    nfiles         uint    // ファイルテーブルエントリ数
-    textStart      uintptr // 関数エントリ PC のベースアドレス
-    funcnameOffset uintptr // 関数名テーブルへのオフセット
-    cuOffset       uintptr // コンパイル単位テーブルへのオフセット
-    filetabOffset  uintptr // ファイルテーブルへのオフセット
-    pctabOffset    uintptr // PC テーブルへのオフセット
-    pclnOffset     uintptr // pclntab データへのオフセット
+    magic          uint32  // offset 0x00: マジックナンバー
+    pad1, pad2     uint8   // offset 0x04-0x05: パディング
+    minLC          uint8   // offset 0x06: 最小命令サイズ (PC quantum)
+    ptrSize        uint8   // offset 0x07: ポインタサイズ（4 or 8）
+    nfunc          int     // offset 0x08: 関数数
+    nfiles         uint    // offset 0x10: ファイルテーブルエントリ数
+    textStart      uintptr // offset 0x18: 関数エントリ PC のベースアドレス
+    funcnameOffset uintptr // offset 0x20: 関数名テーブルへのオフセット
+    cuOffset       uintptr // offset 0x28: コンパイル単位テーブルへのオフセット
+    filetabOffset  uintptr // offset 0x30: ファイルテーブルへのオフセット
+    pctabOffset    uintptr // offset 0x38: PC テーブルへのオフセット
+    pclnOffset     uintptr // offset 0x40: pclntab データへのオフセット
+    ftabOffset     uintptr // offset 0x48: 関数テーブル（functab）へのオフセット
 }
 ```
+
+**注記**:
+- `nfunc` と `nfiles` のサイズは `ptrSize` に依存（32-bit: 4 bytes, 64-bit: 8 bytes）
+- `ftabOffset` は関数エントリを取得するために必須。詳細仕様書 §2.4 `parseFuncTable` を参照
+- 総ヘッダーサイズ: 64-bit の場合は 80 バイト（0x50）、32-bit の場合は 52 バイト
 
 ## 新バージョン対応時の作業手順
 
