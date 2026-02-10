@@ -89,6 +89,9 @@ func (t *X86_64SyscallTable) IsNetworkSyscall(number int) bool {
 }
 
 // GetNetworkSyscalls returns all network-related syscall numbers.
+// Returns a copy to prevent callers from mutating the internal state.
 func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {
-	return t.networkNumbers
+	result := make([]int, len(t.networkNumbers))
+	copy(result, t.networkNumbers)
+	return result
 }
