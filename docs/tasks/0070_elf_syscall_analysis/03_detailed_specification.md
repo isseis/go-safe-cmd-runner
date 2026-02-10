@@ -2277,8 +2277,8 @@ func main() {
     if *analyzeSyscalls {
         // Perform syscall analysis with single file open to prevent TOCTOU attacks
         if err := analyzeSyscallsForFile(filePath, hashDir, pathGetter, fs); err != nil {
-            // ErrNotStaticELF is expected for non-static binaries, not a warning
-            if !errors.Is(err, elfanalyzer.ErrNotStaticELF) {
+            // ErrNotELF and ErrNotStaticELF are expected for non-analyzable files, not warnings
+            if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) {
                 slog.Warn("Syscall analysis failed",
                     "path", filePath,
                     "error", err)
@@ -2288,14 +2288,15 @@ func main() {
     }
 }
 
-// ErrNotStaticELF indicates the file is not a static ELF binary.
-// This is defined in elfanalyzer package; shown here for reference.
-// var ErrNotStaticELF = errors.New("not a static ELF binary")
+// ErrNotELF and ErrNotStaticELF are defined in elfanalyzer package; shown here for reference.
+// var ErrNotELF = errors.New("file is not an ELF binary")
+// var ErrNotStaticELF = errors.New("ELF file is not statically linked")
 
 // analyzeSyscallsForFile performs syscall analysis and saves to file analysis store.
 // Opens the file once and performs both static ELF check and analysis to prevent
 // TOCTOU (time-of-check-time-of-use) vulnerabilities.
-// Returns ErrNotStaticELF if the file is not a static ELF binary.
+// Returns ErrNotELF if the file is not an ELF binary.
+// Returns ErrNotStaticELF if the ELF file is dynamically linked.
 func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.HashFilePathGetter, fs safefileio.FileSystem) error {
     // Open file securely - single open for both check and analysis
     file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -2308,7 +2309,7 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
     elfFile, err := elf.NewFile(file)
     if err != nil {
         // Not an ELF file - this is not an error, just skip analysis
-        return elfanalyzer.ErrNotStaticELF
+        return elfanalyzer.ErrNotELF
     }
     defer elfFile.Close()
 
@@ -2378,6 +2379,10 @@ import (
 
 // Static errors
 var (
+    // ErrNotELF indicates the file is not an ELF binary.
+    // This error is returned when the file cannot be parsed as ELF format.
+    ErrNotELF = errors.New("file is not an ELF binary")
+
     // ErrNotStaticELF indicates the ELF file is dynamically linked, not statically linked.
     // This error is returned when syscall analysis is attempted on a dynamic binary.
     ErrNotStaticELF = errors.New("ELF file is not statically linked")
