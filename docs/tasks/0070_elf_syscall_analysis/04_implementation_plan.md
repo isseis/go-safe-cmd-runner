@@ -209,9 +209,9 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 - [ ] `internal/fileanalysis/schema.go` を新規作成
   - `CurrentSchemaVersion` 定数
   - `FileAnalysisRecord` 構造体（JSON タグ付き）
-  - `SyscallAnalysisData`, `SyscallInfoData`,
-    `SyscallSummaryData` 構造体
-  - 仕様: 詳細仕様書 §2.6、アーキテクチャ §5.2
+  - `SyscallAnalysisData` 構造体
+    （`elfanalyzer.SyscallInfo`, `elfanalyzer.SyscallSummary` を埋め込み）
+  - 仕様: 詳細仕様書 §2.7、アーキテクチャ §5.2
 
 ### 4.2 エラー定義
 
