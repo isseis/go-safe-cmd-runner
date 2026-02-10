@@ -285,18 +285,18 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     `FileAnalysisRecord.ContentHash` フィールドを更新
   - `VerifyHash()`: `FileAnalysisStore.Load()` 経由で
     ハッシュ値を検証
-  - 既存のハッシュファイル形式（テキスト形式）の
+  - 既存のハッシュファイル形式（HashManifest JSON 形式）の
     読み込みサポート（後方互換性）
-    - 旧形式ファイルが存在する場合、新形式へ自動移行
+    - 旧形式（HashManifest）が存在する場合、新形式（FileAnalysisRecord）へ自動移行
   - 仕様: 詳細仕様書 §2.9
   - 要件: FR-3.2.1, FR-3.2.2, NFR-4.2.2
 - [ ] `internal/filevalidator/validator_test.go` を更新
   - `TestValidator_RecordAndVerifyHash`:
     新形式での保存・検証往復テスト
   - `TestValidator_BackwardCompatibility`:
-    旧形式ハッシュファイルの読み込みテスト
+    旧形式（HashManifest JSON）ハッシュファイルの読み込みテスト
   - `TestValidator_MigrationFromOldFormat`:
-    旧形式から新形式への自動移行テスト
+    旧形式（HashManifest）から新形式（FileAnalysisRecord）への自動移行テスト
   - `TestValidator_PreservesExistingFields`:
     既存 syscall 解析結果の保持確認
   - 受け入れ条件: AC-11（新規追加）
@@ -306,8 +306,8 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 - [x] `03_detailed_specification.md` に §2.9, §2.10 を追加（追加済み）
   - `filevalidator.Validator` の統合ストア対応 (§2.10)
   - 後方互換性の実装方針
-    - 旧形式（テキスト）の検出方法
-    - 新形式への移行ロジック
+    - 旧形式（HashManifest JSON）の検出方法
+    - 新形式（FileAnalysisRecord JSON）への移行ロジック
   - エラーハンドリング (§2.9)
   - 移行期の動作仕様
 

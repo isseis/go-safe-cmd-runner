@@ -348,6 +348,9 @@ Go の syscall ラッパー関数を解析し、呼び出し元で syscall 番�
 直接の syscall 命令解析とは**別の解析パス**として動作する。
 `.gopclntab` から関数情報を取得し、strip されたバイナリでも解析可能。
 
+**ラッパー関数名マッチング**: 既知のラッパー（`syscall.Syscall` 等）との照合には境界文字（`.` または `/`）を考慮したサフィックスマッチを使用。
+これにより `fakesyscall.Syscall` のような誤検出を防止する（詳細は詳細仕様書 §2.5 `isWrapperSuffixMatch` を参照）。
+
 ```mermaid
 classDiagram
     class GoWrapperResolver {
@@ -413,14 +416,9 @@ classDiagram
     class FileAnalysisRecord {
         +SchemaVersion int
         +FilePath string
-        +Hash HashInfo
+        +ContentHash string
         +UpdatedAt time.Time
         +SyscallAnalysis *SyscallAnalysisData
-    }
-
-    class HashInfo {
-        +Algorithm string
-        +Value string
     }
 
     class SyscallAnalysisData {
@@ -435,7 +433,6 @@ classDiagram
     elfanalyzer.SyscallAnalysisStore <|.. fileanalysis.SyscallAnalysisStore
     fileanalysis.SyscallAnalysisStore --> FileAnalysisStore
     FileAnalysisStore --> FileAnalysisRecord
-    FileAnalysisRecord --> HashInfo
     FileAnalysisRecord --> SyscallAnalysisData
 ```
 

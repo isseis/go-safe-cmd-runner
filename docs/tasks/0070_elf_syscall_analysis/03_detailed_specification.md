@@ -1131,18 +1131,46 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
         }
 
         // Check if this is a known Go wrapper
-        // Use exact match or suffix match to avoid false positives
-        // (e.g., "mysyscall.Syscall6Helper" should not match "syscall.Syscall6")
-        // Suffix match handles cases where the symbol has a longer path prefix
-        // (e.g., "vendor/golang.org/x/sys/unix.syscall.Syscall" matching "syscall.Syscall")
+        // Use exact match or boundary-aware suffix match to avoid false positives.
+        //
+        // Simple suffix match is insufficient because:
+        //   - "fakesyscall.Syscall" would incorrectly match "syscall.Syscall"
+        //   - "mysyscall.Syscall6Helper" would incorrectly match "syscall.Syscall6"
+        //
+        // Boundary-aware suffix match requires a path separator (. or /) before the wrapper name:
+        //   - "vendor/golang.org/x/sys/unix.Syscall" matches (boundary: .)
+        //   - "internal/syscall.Syscall" matches (boundary: /)
+        //   - "fakesyscall.Syscall" does NOT match (no boundary before "syscall")
         for _, wrapper := range knownGoWrappers {
-            if fn.Name == wrapper.Name || strings.HasSuffix(fn.Name, wrapper.Name) {
+            if fn.Name == wrapper.Name || isWrapperSuffixMatch(fn.Name, wrapper.Name) {
                 r.wrapperAddrs[fn.Entry] = wrapper
             }
         }
     }
 
     return nil
+}
+
+// isWrapperSuffixMatch checks if symbolName ends with wrapperName preceded by a boundary character.
+// A boundary character is either '.' (package separator) or '/' (path separator).
+// This prevents false positives like "fakesyscall.Syscall" matching "syscall.Syscall".
+//
+// Examples:
+//   - isWrapperSuffixMatch("syscall.Syscall", "syscall.Syscall") -> false (use exact match instead)
+//   - isWrapperSuffixMatch("vendor/golang.org/x/sys/unix.Syscall", "unix.Syscall") -> true (boundary: /)
+//   - isWrapperSuffixMatch("internal/poll.Syscall", "syscall.Syscall") -> false (different package)
+//   - isWrapperSuffixMatch("fakesyscall.Syscall", "syscall.Syscall") -> false (no boundary)
+func isWrapperSuffixMatch(symbolName, wrapperName string) bool {
+    if !strings.HasSuffix(symbolName, wrapperName) {
+        return false
+    }
+    // Check that there's a boundary character before the wrapper name
+    prefixLen := len(symbolName) - len(wrapperName)
+    if prefixLen == 0 {
+        return false // Exact match should be handled separately
+    }
+    boundary := symbolName[prefixLen-1]
+    return boundary == '.' || boundary == '/'
 }
 
 // HasSymbols returns true if symbols were successfully loaded.
@@ -1820,8 +1848,8 @@ func (e *RecordCorruptedError) Unwrap() error {
 
 ### 2.10 filevalidator の統合ストア対応
 
-既存の `filevalidator.Validator` を拡張し、従来のテキスト形式ハッシュファイルから
-新しい統合解析結果ストア（JSON 形式）への移行を実装します。
+既存の `filevalidator.Validator` を拡張し、従来の HashManifest JSON 形式から
+新しい統合解析結果ストア（FileAnalysisRecord JSON 形式）への移行を実装します。
 
 #### FileValidator インターフェースとの関係
 
@@ -1964,7 +1992,7 @@ func (v *Validator) VerifyHash(filePath string) (bool, error) {
     return false, fmt.Errorf("failed to load analysis record: %w", err)
 }
 
-// migrateFromOldFormatIfNeeded detects old text format and migrates to new format.
+// migrateFromOldFormatIfNeeded detects old HashManifest format and migrates to new FileAnalysisRecord format.
 func (v *Validator) migrateFromOldFormatIfNeeded(hashFilePath, filePath, currentHash string) error {
     // Check if new format already exists
     // Note: Load() takes the binary file path, not the hash file path.
@@ -2584,9 +2612,15 @@ func TestGoWrapperResolver_WrapperNameMatching(t *testing.T) {
             wantWrapper: "",
         },
         {
-            name:        "no match - partial overlap",
+            name:        "no match - no boundary before wrapper name",
             fnName:      "fakesyscall.Syscall",
-            wantMatch:   true, // Note: suffix match will match this
+            wantMatch:   false, // Requires boundary (. or /) before wrapper name
+            wantWrapper: "",
+        },
+        {
+            name:        "suffix match with path separator boundary",
+            fnName:      "internal/syscall.Syscall",
+            wantMatch:   true,
             wantWrapper: "syscall.Syscall",
         },
     }
@@ -2596,9 +2630,10 @@ func TestGoWrapperResolver_WrapperNameMatching(t *testing.T) {
             resolver := NewGoWrapperResolver()
 
             // Simulate what loadFromPclntab does: check each known wrapper
+            // Uses boundary-aware suffix matching to avoid false positives
             var matchedWrapper string
             for _, wrapper := range knownGoWrappers {
-                if tt.fnName == wrapper.Name || strings.HasSuffix(tt.fnName, wrapper.Name) {
+                if tt.fnName == wrapper.Name || isWrapperSuffixMatch(tt.fnName, wrapper.Name) {
                     matchedWrapper = wrapper.Name
                     break
                 }
@@ -2610,6 +2645,42 @@ func TestGoWrapperResolver_WrapperNameMatching(t *testing.T) {
             } else {
                 assert.Empty(t, matchedWrapper, "expected no wrapper match")
             }
+        })
+    }
+}
+
+func TestIsWrapperSuffixMatch(t *testing.T) {
+    tests := []struct {
+        symbolName  string
+        wrapperName string
+        want        bool
+    }{
+        // Exact match cases (should return false - handled separately)
+        {"syscall.Syscall", "syscall.Syscall", false},
+
+        // Valid suffix matches with boundary
+        {"vendor/golang.org/x/sys/unix.Syscall", "unix.Syscall", true},
+        {"internal/syscall.Syscall", "syscall.Syscall", true},
+        {"foo.syscall.Syscall", "syscall.Syscall", true},
+
+        // Invalid suffix matches without proper boundary
+        {"fakesyscall.Syscall", "syscall.Syscall", false},
+        {"mysyscall.Syscall6", "syscall.Syscall6", false},
+        {"xsyscall.RawSyscall", "syscall.RawSyscall", false},
+
+        // No suffix match at all
+        {"mypackage.MyFunction", "syscall.Syscall", false},
+        {"syscall.Syscall6", "syscall.Syscall", false}, // Different function
+
+        // Edge cases
+        {"", "syscall.Syscall", false},
+        {"a.syscall.Syscall", "syscall.Syscall", true}, // Single char prefix with boundary
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.symbolName+"_vs_"+tt.wrapperName, func(t *testing.T) {
+            got := isWrapperSuffixMatch(tt.symbolName, tt.wrapperName)
+            assert.Equal(t, tt.want, got)
         })
     }
 }
