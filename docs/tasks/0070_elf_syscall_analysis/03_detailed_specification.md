@@ -2611,8 +2611,10 @@ func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
         ContentHash:   "sha256:abc123",
     }
 
-    data, _ := json.Marshal(record)
-    os.WriteFile(recordPath, data, 0o600)
+    data, err := json.Marshal(record)
+    require.NoError(t, err)
+    err = os.WriteFile(recordPath, data, 0o600)
+    require.NoError(t, err)
 
     // Load should fail with schema version mismatch
     _, err = store.Load(testFilePath)
@@ -2629,9 +2631,11 @@ func TestFileAnalysisStore_SchemaVersionMismatch(t *testing.T) {
     assert.True(t, errors.As(err, &schemaErr))
 
     // Verify original record was not overwritten
-    data2, _ := os.ReadFile(recordPath)
+    data2, err := os.ReadFile(recordPath)
+    require.NoError(t, err)
     var record2 FileAnalysisRecord
-    json.Unmarshal(data2, &record2)
+    err = json.Unmarshal(data2, &record2)
+    require.NoError(t, err)
     assert.Equal(t, 999, record2.SchemaVersion, "record should not be overwritten")
 }
 
