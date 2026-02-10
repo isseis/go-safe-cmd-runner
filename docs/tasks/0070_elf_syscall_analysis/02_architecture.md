@@ -151,10 +151,10 @@ sequenceDiagram
     participant AS as "AnalysisStore"
     participant FS as "FileSystem"
 
+    RC->>FS: OpenELF(path)
+    FS-->>RC: elfFile (*elf.File)
     RC->>SA: AnalyzeSyscallsFromELF(elfFile)
-    SA->>FS: Open ELF file
-    FS-->>SA: ELF handle
-    SA->>SA: Load .text section
+    SA->>SA: Load .text section from elfFile
 
     Note over GW,PP: Symbol loading (FR-3.1.6)
     SA->>GW: LoadSymbols(elfFile)
