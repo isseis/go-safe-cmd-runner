@@ -2,41 +2,160 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"strings"
+
+	"golang.org/x/arch/x86/x86asm"
 )
 
-// WrapperCall represents a detected call to a known Go syscall wrapper function.
-type WrapperCall struct {
-	// SyscallNumber is the syscall number passed to the wrapper.
-	// -1 indicates the number could not be determined.
-	SyscallNumber int
+// Constants for backward scan
+const (
+	// minRecentInstructionsForScan is the minimum number of recent instructions
+	// needed to attempt syscall argument resolution.
+	minRecentInstructionsForScan = 2
 
-	// CallSiteAddress is the virtual address of the CALL instruction.
+	// maxBackwardScanSteps is the maximum number of instructions to scan backward
+	// when resolving syscall arguments in wrapper calls.
+	maxBackwardScanSteps = 6
+
+	// maxRecentInstructionsToKeep is the maximum number of recent instructions
+	// to keep in memory for backward scanning.
+	maxRecentInstructionsToKeep = 10
+)
+
+// GoSyscallWrapper represents a known Go syscall wrapper function.
+type GoSyscallWrapper struct {
+	Name            string
+	SyscallArgIndex int // Which argument contains the syscall number (0-based)
+}
+
+// knownGoWrappers lists standard Go syscall wrapper functions.
+var knownGoWrappers = []GoSyscallWrapper{
+	{"syscall.Syscall", 0},
+	{"syscall.Syscall6", 0},
+	{"syscall.RawSyscall", 0},
+	{"syscall.RawSyscall6", 0},
+	{"runtime.syscall", 0},
+	{"runtime.syscall6", 0},
+}
+
+// SymbolInfo represents information about a symbol in the ELF file.
+type SymbolInfo struct {
+	Name    string
+	Address uint64
+	Size    uint64
+}
+
+// WrapperCall represents a call to a Go syscall wrapper function.
+type WrapperCall struct {
+	// CallSiteAddress is the address of the CALL instruction.
 	CallSiteAddress uint64
 
-	// WrapperName is the name of the detected wrapper function.
+	// TargetFunction is the name of the wrapper function being called.
+	TargetFunction string
+
+	// SyscallNumber is the resolved syscall number, or -1 if unresolved.
+	SyscallNumber int
+
+	// Resolved indicates whether the syscall number was successfully determined.
+	Resolved bool
+
+	// WrapperName is an alias for TargetFunction for backward compatibility.
 	WrapperName string
 }
 
-// GoWrapperResolver resolves Go syscall wrapper function calls.
-// It identifies calls to known wrapper functions (e.g., syscall.Syscall,
-// syscall.Syscall6) and attempts to determine the syscall number argument.
+// GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
-	hasSymbols bool
+	symbols       map[string]SymbolInfo
+	wrapperAddrs  map[uint64]GoSyscallWrapper
+	hasSymbols    bool
+	pclntabParser *PclntabParser
+	decoder       *X86Decoder // Shared decoder instance to avoid repeated allocation
 }
 
 // NewGoWrapperResolver creates a new GoWrapperResolver.
 func NewGoWrapperResolver() *GoWrapperResolver {
-	return &GoWrapperResolver{}
+	return &GoWrapperResolver{
+		symbols:       make(map[string]SymbolInfo),
+		wrapperAddrs:  make(map[uint64]GoSyscallWrapper),
+		pclntabParser: NewPclntabParser(),
+		decoder:       NewX86Decoder(),
+	}
 }
 
-// LoadSymbols loads function symbols from the ELF file.
-// This populates the resolver with function address information
-// needed to identify wrapper calls.
+// LoadSymbols loads symbols from the .gopclntab section.
+// The pclntab persists even after stripping because Go runtime needs it
+// for stack traces and garbage collection.
 //
-// Currently a stub; full implementation in Phase 3 (pclntab_parser.go + go_wrapper_resolver.go).
+// Returns error if .gopclntab is not available.
 func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
-	_ = elfFile
-	return ErrSymbolLoadingNotImplemented
+	if err := r.loadFromPclntab(elfFile); err != nil {
+		return err
+	}
+
+	r.hasSymbols = len(r.symbols) > 0
+	return nil
+}
+
+// loadFromPclntab loads symbols from the .gopclntab section.
+func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
+	if err := r.pclntabParser.Parse(elfFile); err != nil {
+		return err
+	}
+
+	for _, fn := range r.pclntabParser.GetFunctions() {
+		// Calculate size, guarding against missing/zero End to avoid underflow
+		size := uint64(0)
+		if fn.End > fn.Entry {
+			size = fn.End - fn.Entry
+		}
+
+		r.symbols[fn.Name] = SymbolInfo{
+			Name:    fn.Name,
+			Address: fn.Entry,
+			Size:    size,
+		}
+
+		// Check if this is a known Go wrapper
+		// Use exact match or boundary-aware suffix match to avoid false positives.
+		//
+		// Simple suffix match is insufficient because:
+		//   - "fakesyscall.Syscall" would incorrectly match "syscall.Syscall"
+		//   - "mysyscall.Syscall6Helper" would incorrectly match "syscall.Syscall6"
+		//
+		// Boundary-aware suffix match requires a boundary character (. or /) before the wrapper name:
+		//   - "internal/syscall.Syscall" matches "syscall.Syscall" (boundary: /)
+		//   - "foo.syscall.Syscall" matches "syscall.Syscall" (boundary: .)
+		//   - "fakesyscall.Syscall" does NOT match (no boundary before "syscall")
+		for _, wrapper := range knownGoWrappers {
+			if fn.Name == wrapper.Name || isWrapperSuffixMatch(fn.Name, wrapper.Name) {
+				r.wrapperAddrs[fn.Entry] = wrapper
+			}
+		}
+	}
+
+	return nil
+}
+
+// isWrapperSuffixMatch checks if symbolName ends with wrapperName preceded by a boundary character.
+// A boundary character is either '/' (path separator) or '.' (package separator).
+// This prevents false positives like "fakesyscall.Syscall" matching "syscall.Syscall".
+//
+// Examples:
+//   - isWrapperSuffixMatch("syscall.Syscall", "syscall.Syscall") -> false (use exact match instead)
+//   - isWrapperSuffixMatch("internal/syscall.Syscall", "syscall.Syscall") -> true (boundary: /)
+//   - isWrapperSuffixMatch("foo.syscall.Syscall", "syscall.Syscall") -> true (boundary: .)
+//   - isWrapperSuffixMatch("fakesyscall.Syscall", "syscall.Syscall") -> false (no boundary)
+func isWrapperSuffixMatch(symbolName, wrapperName string) bool {
+	if !strings.HasSuffix(symbolName, wrapperName) {
+		return false
+	}
+	// Check that there's a boundary character before the wrapper name
+	prefixLen := len(symbolName) - len(wrapperName)
+	if prefixLen == 0 {
+		return false // Exact match should be handled separately
+	}
+	boundary := symbolName[prefixLen-1]
+	return boundary == '.' || boundary == '/'
 }
 
 // HasSymbols returns true if symbols were successfully loaded.
@@ -44,11 +163,164 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 	return r.hasSymbols
 }
 
-// FindWrapperCalls scans the code for calls to known Go syscall wrappers.
-// Returns a list of detected wrapper calls with their syscall numbers.
+// FindWrapperCalls scans the code section for calls to known Go syscall wrappers.
+// This is a separate analysis pass from direct syscall instruction scanning.
+//
+// Parameters:
+//   - code: the code section bytes
+//   - baseAddr: base address of the code section
+//
+// Returns:
+//   - slice of WrapperCall structs containing call site info and resolved syscall numbers
+//
+// Performance Note:
+// This function performs linear decoding of the entire code section, unlike
+// Pass 1 (findSyscallInstructions) which uses window-based scanning.
+// For typical static Go binaries (1-10 MB code section), linear decoding
+// completes in approximately 50-200ms, which is acceptable for the record
+// command's batch processing use case.
+// Future optimization: If performance becomes an issue for very large binaries,
+// consider implementing window-based scanning similar to Pass 1, but this adds
+// complexity for maintaining CALL instruction context for backward scanning.
+// See NFR-4.1.2 for performance requirements.
 func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall {
-	// Full implementation in Phase 3
-	_ = code
-	_ = baseAddr
-	return nil
+	if len(r.wrapperAddrs) == 0 {
+		return nil
+	}
+
+	var results []WrapperCall
+
+	// Decode entire code section and find CALL instructions to known wrappers
+	// Use the shared decoder instance (r.decoder) to avoid repeated allocation
+	pos := 0
+	var recentInstructions []DecodedInstruction
+
+	for pos < len(code) {
+		// pos is guaranteed non-negative (starts at 0, only incremented)
+		// and less than len(code) (loop condition), so conversion is safe
+		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // pos is validated by loop condition
+		if err != nil {
+			pos++
+			continue
+		}
+
+		// Keep track of recent instructions for backward scanning
+		recentInstructions = append(recentInstructions, inst)
+		if len(recentInstructions) > maxRecentInstructionsToKeep {
+			recentInstructions = recentInstructions[1:]
+		}
+
+		// Check if this is a CALL to a known wrapper
+		if inst.Op == x86asm.CALL {
+			wrapper, isWrapper := r.resolveWrapper(inst)
+			if isWrapper {
+				// Found a call to a wrapper, try to resolve the syscall number
+				syscallNum := r.resolveSyscallArgument(recentInstructions, wrapper)
+				// pos is validated same as above
+				results = append(results, WrapperCall{
+					CallSiteAddress: baseAddr + uint64(pos), //nolint:gosec // pos is validated by loop condition
+					TargetFunction:  wrapper.Name,
+					SyscallNumber:   syscallNum,
+					Resolved:        syscallNum >= 0,
+					WrapperName:     wrapper.Name, // Alias for backward compatibility
+				})
+			}
+		}
+
+		pos += inst.Len
+	}
+
+	return results
+}
+
+// resolveSyscallArgument analyzes instructions before a wrapper call
+// to determine the syscall number argument.
+//
+// LIMITATION: This implementation ONLY supports Go 1.17+ register-based ABI
+// where the first argument (syscall number) is passed in RAX.
+// This is a known limited specification:
+//   - Go 1.16 and earlier use stack-based ABI (not supported)
+//   - Compiler optimizations or unusual wrapper patterns may place the
+//     syscall number in a different register or via memory indirection
+//   - Calls where the syscall number is not resolved are reported as
+//     unknown (SyscallNumber = -1), triggering High Risk classification
+//
+// The target Go version should be fixed and validated with acceptance
+// tests using real Go binaries compiled with the specific Go toolchain.
+func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction, wrapper GoSyscallWrapper) int {
+	if len(recentInstructions) < minRecentInstructionsForScan {
+		return -1
+	}
+
+	// Currently only support arg index 0 (RAX for Go 1.17+ ABI)
+	if wrapper.SyscallArgIndex != 0 {
+		return -1
+	}
+
+	// Scan backward through recent instructions (excluding the CALL itself)
+	// Use the shared decoder instance (r.decoder) to avoid repeated allocation
+	// Start from the instruction before the CALL (len-2) and scan up to maxBackwardScanSteps
+	startIdx := len(recentInstructions) - minRecentInstructionsForScan
+	minIdx := len(recentInstructions) - maxBackwardScanSteps
+	for i := startIdx; i >= 0 && i >= minIdx; i-- {
+		inst := recentInstructions[i]
+
+		// Stop at control flow boundary
+		if r.decoder.IsControlFlowInstruction(inst) {
+			break
+		}
+
+		// Check for immediate move to target register
+		// Note: Go compiler often generates "mov $N, %eax" (x86asm.EAX) instead of
+		// "mov $N, %rax" (x86asm.RAX) for syscall numbers, so we must check both.
+		if isImm, value := r.decoder.IsImmediateMove(inst); isImm {
+			if reg, ok := inst.Args[0].(x86asm.Reg); ok && (reg == x86asm.RAX || reg == x86asm.EAX) {
+				return int(value)
+			}
+		}
+	}
+
+	return -1
+}
+
+// resolveWrapper checks if the instruction is a CALL to a known wrapper
+// and returns the wrapper information if found.
+func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWrapper, bool) {
+	if inst.Op != x86asm.CALL {
+		return GoSyscallWrapper{}, false
+	}
+
+	// Extract call target
+	if len(inst.Args) == 0 {
+		return GoSyscallWrapper{}, false
+	}
+
+	// For direct calls, check if target is a known wrapper
+	// Only handle relative calls (x86asm.Rel type)
+	target, ok := inst.Args[0].(x86asm.Rel)
+	if !ok {
+		return GoSyscallWrapper{}, false
+	}
+
+	// Relative call - calculate absolute address
+	// inst.Offset and inst.Len are uint64 and int respectively, both fit in int64
+	// target is x86asm.Rel (int32), so int64 conversion is safe
+	targetAddr := uint64(int64(inst.Offset) + int64(inst.Len) + int64(target)) //nolint:gosec // Offset is valid instruction address, Len is small
+	if wrapper, found := r.wrapperAddrs[targetAddr]; found {
+		return wrapper, true
+	}
+
+	return GoSyscallWrapper{}, false
+}
+
+// GetWrapperAddresses returns all known wrapper function addresses.
+// This is primarily useful for testing.
+func (r *GoWrapperResolver) GetWrapperAddresses() map[uint64]GoSyscallWrapper {
+	return r.wrapperAddrs
+}
+
+// GetSymbols returns all loaded symbols.
+// This is primarily useful for testing.
+func (r *GoWrapperResolver) GetSymbols() map[string]SymbolInfo {
+	return r.symbols
 }
