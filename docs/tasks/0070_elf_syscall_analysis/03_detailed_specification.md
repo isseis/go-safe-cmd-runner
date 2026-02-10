@@ -1158,9 +1158,9 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
         //   - "fakesyscall.Syscall" would incorrectly match "syscall.Syscall"
         //   - "mysyscall.Syscall6Helper" would incorrectly match "syscall.Syscall6"
         //
-        // Boundary-aware suffix match requires a path separator (. or /) before the wrapper name:
-        //   - "vendor/golang.org/x/sys/unix.Syscall" matches (boundary: .)
-        //   - "internal/syscall.Syscall" matches (boundary: /)
+        // Boundary-aware suffix match requires a boundary character (. or /) before the wrapper name:
+        //   - "internal/syscall.Syscall" matches "syscall.Syscall" (boundary: /)
+        //   - "foo.syscall.Syscall" matches "syscall.Syscall" (boundary: .)
         //   - "fakesyscall.Syscall" does NOT match (no boundary before "syscall")
         for _, wrapper := range knownGoWrappers {
             if fn.Name == wrapper.Name || isWrapperSuffixMatch(fn.Name, wrapper.Name) {
@@ -1173,13 +1173,13 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 }
 
 // isWrapperSuffixMatch checks if symbolName ends with wrapperName preceded by a boundary character.
-// A boundary character is either '.' (package separator) or '/' (path separator).
+// A boundary character is either '/' (path separator) or '.' (package separator).
 // This prevents false positives like "fakesyscall.Syscall" matching "syscall.Syscall".
 //
 // Examples:
 //   - isWrapperSuffixMatch("syscall.Syscall", "syscall.Syscall") -> false (use exact match instead)
-//   - isWrapperSuffixMatch("vendor/golang.org/x/sys/unix.Syscall", "unix.Syscall") -> true (boundary: /)
-//   - isWrapperSuffixMatch("internal/poll.Syscall", "syscall.Syscall") -> false (different package)
+//   - isWrapperSuffixMatch("internal/syscall.Syscall", "syscall.Syscall") -> true (boundary: /)
+//   - isWrapperSuffixMatch("foo.syscall.Syscall", "syscall.Syscall") -> true (boundary: .)
 //   - isWrapperSuffixMatch("fakesyscall.Syscall", "syscall.Syscall") -> false (no boundary)
 func isWrapperSuffixMatch(symbolName, wrapperName string) bool {
     if !strings.HasSuffix(symbolName, wrapperName) {
@@ -2505,9 +2505,9 @@ func TestIsWrapperSuffixMatch(t *testing.T) {
         {"syscall.Syscall", "syscall.Syscall", false},
 
         // Valid suffix matches with boundary
-        {"vendor/golang.org/x/sys/unix.Syscall", "unix.Syscall", true},
-        {"internal/syscall.Syscall", "syscall.Syscall", true},
-        {"foo.syscall.Syscall", "syscall.Syscall", true},
+        {"internal/syscall.Syscall", "syscall.Syscall", true},        // boundary: /
+        {"foo.syscall.Syscall", "syscall.Syscall", true},             // boundary: .
+        {"vendor/x/internal/syscall.Syscall", "syscall.Syscall", true}, // boundary: /
 
         // Invalid suffix matches without proper boundary
         {"fakesyscall.Syscall", "syscall.Syscall", false},
