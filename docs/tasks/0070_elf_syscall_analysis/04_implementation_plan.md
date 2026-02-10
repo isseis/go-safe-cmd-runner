@@ -373,7 +373,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - 設計判断の根拠
     （デコード失敗を High Risk としない理由）
   - 仕様: 詳細仕様書 §9.1
-- [ ] `docs/development/pclntab_maintenance.md` の作成
+- [x] `docs/development/pclntab_maintenance.md` の作成（本PRで作成済み）
   - pclntab 解析の制約と前提の明記
   - Go メジャーリリース時の確認手順
   - 要件: 要件定義書 §3.1.6 メンテナンスコスト
