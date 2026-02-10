@@ -1653,6 +1653,8 @@ package fileanalysis
 
 import (
     "time"
+
+    "github.com/user/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
 const (
