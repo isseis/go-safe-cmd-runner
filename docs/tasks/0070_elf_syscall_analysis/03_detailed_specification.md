@@ -773,8 +773,9 @@ type PclntabFunc struct {
 }
 
 // PclntabParser parses Go's pclntab to extract function information.
+// Only 64-bit binaries (ptrSize == 8) are supported (x86_64 target).
 type PclntabParser struct {
-    ptrSize    int    // 4 or 8 bytes
+    ptrSize    int    // Must be 8 for x86_64
     goVersion  string // Detected Go version range
     funcData   []PclntabFunc
 }
@@ -835,12 +836,12 @@ func (p *PclntabParser) parseGo118Plus(data []byte) error {
     // [4:5]   padding (0)
     // [5:6]   padding (0)
     // [6:7]   instruction size quantum (1 for x86, 4 for ARM)
-    // [7:8]   pointer size (4 or 8)
-    // [8:16]  nfunc (number of functions) - uint64 or uint32 depending on arch
+    // [7:8]   pointer size (must be 8 for x86_64)
+    // [8:16]  nfunc (number of functions) - uint64 for 64-bit
 
     p.ptrSize = int(data[7])
-    if p.ptrSize != 4 && p.ptrSize != 8 {
-        return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
+    if p.ptrSize != 8 {
+        return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
     }
 
     p.goVersion = "go1.18+"
@@ -859,8 +860,8 @@ func (p *PclntabParser) parseGo116(data []byte) error {
     }
 
     p.ptrSize = int(data[7])
-    if p.ptrSize != 4 && p.ptrSize != 8 {
-        return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
+    if p.ptrSize != 8 {
+        return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
     }
 
     p.goVersion = "go1.16-1.17"
@@ -878,65 +879,71 @@ func (p *PclntabParser) parseGo12(data []byte) error {
     // [4:5]   padding
     // [5:6]   padding
     // [6:7]   instruction size quantum
-    // [7:8]   pointer size
+    // [7:8]   pointer size (must be 8 for x86_64)
 
     p.ptrSize = int(data[7])
+    if p.ptrSize != 8 {
+        return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
+    }
+
     p.goVersion = "go1.2-1.15"
     return p.parseFuncTable(data)
 }
 
 // parseFuncTable extracts function entries from the pclntab.
-// This implementation targets Go 1.18+ pclntab layout (pcHeader + functab).
+// This implementation targets Go 1.18+ pclntab layout (pcHeader + functab) on x86_64.
 // Legacy formats (Go 1.2-1.17) are best-effort and may return ErrInvalidPclntab.
+//
+// Note: This implementation only supports 64-bit binaries (ptrSize == 8).
+// 32-bit binaries are not supported as the target architecture is x86_64 only.
 func (p *PclntabParser) parseFuncTable(data []byte) error {
-    // pcHeader layout (Go 1.16+)
+    // Validate pointer size: only 64-bit is supported (x86_64 target)
+    if p.ptrSize != 8 {
+        return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
+    }
+
+    // pcHeader layout (Go 1.16+, 64-bit)
     // offset 0x00: magic (uint32)
     // offset 0x04: pad1 (byte)
     // offset 0x05: pad2 (byte)
     // offset 0x06: minLC (byte)
     // offset 0x07: ptrSize (byte)
-    // offset 0x08: nfunc (uint64/uint32)
-    // offset 0x10: nfiles (uint64/uint32)
-    // offset 0x18: textStart (uintptr)
-    // offset 0x20: funcnameOffset (uintptr)
-    // offset 0x28: cuOffset (uintptr)
-    // offset 0x30: filetabOffset (uintptr)
-    // offset 0x38: pctabOffset (uintptr)
-    // offset 0x40: pclntabOffset (uintptr)
-    // offset 0x48: ftabOffset (uintptr)
+    // offset 0x08: nfunc (uint64)
+    // offset 0x10: nfiles (uint64)
+    // offset 0x18: textStart (uint64)
+    // offset 0x20: funcnameOffset (uint64)
+    // offset 0x28: cuOffset (uint64)
+    // offset 0x30: filetabOffset (uint64)
+    // offset 0x38: pctabOffset (uint64)
+    // offset 0x40: pclntabOffset (uint64)
+    // offset 0x48: ftabOffset (uint64)
+    // Total header size: 0x50 (80 bytes)
 
-    if p.ptrSize != 4 && p.ptrSize != 8 {
-        return fmt.Errorf("%w: invalid pointer size %d", ErrInvalidPclntab, p.ptrSize)
-    }
-
-    readPtr := func(off int) (uint64, error) {
-        end := off + p.ptrSize
-        if off < 0 || end > len(data) {
-            return 0, ErrInvalidPclntab
-        }
-        if p.ptrSize == 4 {
-            return uint64(binary.LittleEndian.Uint32(data[off:end])), nil
-        }
-        return binary.LittleEndian.Uint64(data[off:end]), nil
-    }
-
-    if len(data) < 0x50 {
+    const pcHeaderSize = 0x50 // 80 bytes for 64-bit
+    if len(data) < pcHeaderSize {
         return ErrInvalidPclntab
     }
 
-    nfunc, err := readPtr(0x08)
+    readUint64 := func(off int) (uint64, error) {
+        if off < 0 || off+8 > len(data) {
+            return 0, ErrInvalidPclntab
+        }
+        return binary.LittleEndian.Uint64(data[off : off+8]), nil
+    }
+
+    nfunc, err := readUint64(0x08)
     if err != nil {
         return err
     }
-    textStart, err := readPtr(0x18)
+    textStart, err := readUint64(0x18)
     if err != nil {
         return err
     }
-    funcNameOff, err := readPtr(0x20)
+    funcNameOff, err := readUint64(0x20)
     if err != nil {
         return err
     }
-    ftabOff, err := readPtr(0x48)
+    ftabOff, err := readUint64(0x48)
     if err != nil {
         return err
     }
@@ -2851,15 +2858,15 @@ Pass 1 の直接 syscall 命令検出は引き続き機能する。
 
 ### 8.7 バイナリレイアウト解析の可読性
 
-`parseFuncTable` 等のバイナリ構造解析コードは、手続き的なオフセット計算と `readPtr()` 呼び出しの
+`parseFuncTable` 等のバイナリ構造解析コードは、手続き的なオフセット計算と `readUint64()` 呼び出しの
 繰り返しで構成されている。可読性向上のため、宣言的なレイアウト定義を検討した。
 
 **検討した代替案**:
 
 | 案 | アプローチ | メリット | デメリット |
 |----|-----------|---------|----------|
-| (a) 現行方式 | 手続き的 readPtr() | シンプル、依存なし | オフセット計算が散在 |
-| (b) 構造体 + encoding/binary | `binary.Read()` | Go 標準、型安全 | ptrSize 可変に非対応 |
+| (a) 現行方式 | 手続き的 readUint64() | シンプル、依存なし | オフセット計算が散在 |
+| (b) 構造体 + encoding/binary | `binary.Read()` | Go 標準、型安全 | 柔軟性が低い |
 | (c) 宣言的レイアウト DSL | カスタム型定義 | 自己文書化 | 過剰な抽象化 |
 | (d) コメント強化 | オフセットテーブル | 低コスト | コードは変わらず |
 
@@ -2867,8 +2874,8 @@ Pass 1 の直接 syscall 命令検出は引き続き機能する。
 
 **理由**:
 
-1. **ptrSize 可変長フィールド**: pcHeader の `nfunc`, `nfiles` 等は `ptrSize` (4 or 8) に依存する可変長。
-   `encoding/binary.Read()` は固定サイズ構造体を前提とするため、そのままでは使用できない。
+1. **64-bit 専用の簡潔さ**: 対象アーキテクチャが x86_64 のみのため、ptrSize は常に 8。
+   固定サイズの `readUint64()` で十分であり、可変長対応の複雑さは不要。
 2. **パース箇所が限定的**: pclntab パーサーは単一ファイル内の限定的なコードであり、
    汎用的な DSL を導入するほどの再利用性がない。
 3. **コメントによる自己文書化**: 現行コードは詳細なオフセットコメントを含んでおり、
@@ -2880,17 +2887,17 @@ Pass 1 の直接 syscall 命令検出は引き続き機能する。
 
 ```go
 // 良い例: オフセットをコメントで明示
-// pcHeader layout (Go 1.18+)
-// offset 0x08: nfunc (ptrSize bytes)
-// offset 0x18: textStart (ptrSize bytes)
-// offset 0x48: ftabOffset (ptrSize bytes)
-nfunc, _ := readPtr(0x08)
-textStart, _ := readPtr(0x18)
-ftabOff, _ := readPtr(0x48)
+// pcHeader layout (Go 1.18+, 64-bit)
+// offset 0x08: nfunc (uint64)
+// offset 0x18: textStart (uint64)
+// offset 0x48: ftabOffset (uint64)
+nfunc, _ := readUint64(0x08)
+textStart, _ := readUint64(0x18)
+ftabOff, _ := readUint64(0x48)
 
 // 避けるべき例: マジックナンバーのみ
-nfunc, _ := readPtr(8)
-textStart, _ := readPtr(24)
+nfunc, _ := readUint64(8)
+textStart, _ := readUint64(24)
 ```
 
 ## 9. 実装後タスク
