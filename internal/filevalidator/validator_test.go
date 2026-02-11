@@ -457,7 +457,10 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 	// Open the file
 	file, err := os.Open(testFile)
 	require.NoError(t, err, "Failed to open test file")
-	defer file.Close()
+	defer func() {
+		err := file.Close()
+		assert.NoError(t, err, "Failed to close file")
+	}()
 
 	// Test VerifyFromHandle
 	err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
@@ -485,7 +488,10 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	// Open the second file
 	file, err := os.Open(testFile2)
 	require.NoError(t, err, "Failed to open test file")
-	defer file.Close()
+	defer func() {
+		err := file.Close()
+		assert.NoError(t, err, "Failed to close file")
+	}()
 
 	// Test VerifyFromHandle - should fail with mismatch
 	err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))

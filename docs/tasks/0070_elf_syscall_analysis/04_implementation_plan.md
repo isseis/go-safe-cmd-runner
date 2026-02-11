@@ -26,8 +26,8 @@ flowchart LR
     P4 --> P5
     P5 --> P6
 
-    class P1 done
-    class P2,P3,P4,P5,P6 todo
+    class P1,P2 done
+    class P3,P4,P5,P6 todo
 ```
 
 **注記**: Phase 2 と Phase 3 は Phase 1 完了後に並行して実施可能。
@@ -85,7 +85,7 @@ syscall 番号抽出を実装する。
 
 ### 2.1 SyscallAnalyzer 本体
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer.go`
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go`
   を新規作成
   - `SyscallAnalysisResult`, `SyscallInfo`, `SyscallSummary` 構造体
   - `SyscallAnalyzer` 構造体と `NewSyscallAnalyzer()` コンストラクタ
@@ -100,7 +100,7 @@ syscall 番号抽出を実装する。
 
 ### 2.2 逆方向スキャンのテスト
 
-- [ ] `syscall_analyzer_test.go` を新規作成
+- [x] `syscall_analyzer_test.go` を新規作成
   - `TestSyscallAnalyzer_BackwardScan`:
     - `mov $0x29, %eax` + `syscall`
       → socket(41) 検出（immediate）

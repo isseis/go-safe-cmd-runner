@@ -21,6 +21,10 @@ var (
 
 	// ErrNoSymbolTable indicates the ELF file has no symbol table.
 	ErrNoSymbolTable = errors.New("ELF file has no symbol table (possibly stripped)")
+
+	// ErrSymbolLoadingNotImplemented indicates symbol loading is not yet implemented.
+	// This is returned during Phase 2 as a stub; full implementation is in Phase 3.
+	ErrSymbolLoadingNotImplemented = errors.New("symbol loading not yet implemented")
 )
 
 // UnsupportedArchitectureError indicates the ELF architecture is not supported.
