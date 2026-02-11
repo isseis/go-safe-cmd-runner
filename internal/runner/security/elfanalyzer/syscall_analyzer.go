@@ -45,12 +45,7 @@ type SyscallInfo struct {
 	Location uint64 `json:"location"`
 
 	// DeterminationMethod describes how the syscall number was determined.
-	// Possible values:
-	// - "immediate"
-	// - "go_wrapper"
-	// - "unknown" or "unknown:<reason>" (e.g., "unknown:decode_failed",
-	//   "unknown:control_flow_boundary", "unknown:indirect_setting",
-	//   "unknown:scan_limit_exceeded", "unknown:invalid_offset")
+	// See DeterminationMethod* constants for possible values.
 	DeterminationMethod string `json:"determination_method"`
 }
 
@@ -79,8 +74,35 @@ const maxInstructionLength = 15
 const defaultMaxBackwardScan = 50
 
 // Determination method constants for syscall number extraction.
+// These constants describe how the syscall number was determined during analysis.
 const (
-	determinationUnknownInvalidOffset = "unknown:invalid_offset"
+	// DeterminationMethodImmediate indicates the syscall number was determined
+	// from an immediate value (e.g., mov eax, 42).
+	DeterminationMethodImmediate = "immediate"
+
+	// DeterminationMethodGoWrapper indicates the syscall number was determined
+	// from a Go wrapper function call (e.g., syscall.Syscall).
+	DeterminationMethodGoWrapper = "go_wrapper"
+
+	// DeterminationMethodUnknownDecodeFailed indicates the syscall number
+	// could not be determined because instruction decoding failed.
+	DeterminationMethodUnknownDecodeFailed = "unknown:decode_failed"
+
+	// DeterminationMethodUnknownControlFlowBoundary indicates the syscall number
+	// could not be determined because a control flow boundary was encountered.
+	DeterminationMethodUnknownControlFlowBoundary = "unknown:control_flow_boundary"
+
+	// DeterminationMethodUnknownIndirectSetting indicates the syscall number
+	// could not be determined because it was set indirectly (e.g., from a register or memory).
+	DeterminationMethodUnknownIndirectSetting = "unknown:indirect_setting"
+
+	// DeterminationMethodUnknownScanLimitExceeded indicates the syscall number
+	// could not be determined because the backward scan limit was exceeded.
+	DeterminationMethodUnknownScanLimitExceeded = "unknown:scan_limit_exceeded"
+
+	// DeterminationMethodUnknownInvalidOffset indicates the syscall number
+	// could not be determined because the offset was invalid.
+	DeterminationMethodUnknownInvalidOffset = "unknown:invalid_offset"
 )
 
 // SyscallAnalyzer analyzes ELF binaries for syscall instructions.
@@ -194,7 +216,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 			info := SyscallInfo{
 				Number:              call.SyscallNumber,
 				Location:            call.CallSiteAddress,
-				DeterminationMethod: "go_wrapper",
+				DeterminationMethod: DeterminationMethodGoWrapper,
 			}
 
 			if call.SyscallNumber >= 0 {
@@ -267,7 +289,7 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 	// NOTE: syscallAddr and baseAddr are uint64, so we must avoid unsigned
 	// underflow and ensure the result fits into an int before converting.
 	if syscallAddr < baseAddr {
-		info.DeterminationMethod = determinationUnknownInvalidOffset
+		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
 		return info
 	}
 	delta := syscallAddr - baseAddr
@@ -277,7 +299,7 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 	// for safe uint64 to int conversion, although it's logically redundant
 	// since len(code) is an int.
 	if delta > uint64(math.MaxInt) || int(delta) > len(code)-2 {
-		info.DeterminationMethod = determinationUnknownInvalidOffset
+		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
 		return info
 	}
 	offset := int(delta)
@@ -312,7 +334,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 	// Build instruction list by forward decoding within the window
 	instructions := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset)
 	if len(instructions) == 0 {
-		return -1, "unknown:decode_failed"
+		return -1, DeterminationMethodUnknownDecodeFailed
 	}
 
 	// Scan backward through decoded instructions
@@ -323,7 +345,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 
 		// Check for control flow instruction (basic block boundary)
 		if a.decoder.IsControlFlowInstruction(inst) {
-			return -1, "unknown:control_flow_boundary"
+			return -1, DeterminationMethodUnknownControlFlowBoundary
 		}
 
 		// Check if this instruction modifies eax/rax
@@ -333,15 +355,15 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 
 		// Check if it's an immediate move
 		if isImm, value := a.decoder.IsImmediateMove(inst); isImm {
-			return int(value), "immediate"
+			return int(value), DeterminationMethodImmediate
 		}
 
 		// Non-immediate modification found (register move, memory load, etc.)
-		return -1, "unknown:indirect_setting"
+		return -1, DeterminationMethodUnknownIndirectSetting
 	}
 
 	// Reached scan limit without finding eax/rax modification
-	return -1, "unknown:scan_limit_exceeded"
+	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 
 // decodeInstructionsInWindow decodes instructions within a specified window [startOffset, endOffset).
