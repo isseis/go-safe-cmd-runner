@@ -1,7 +1,6 @@
 package elfanalyzer
 
 import (
-	"bytes"
 	"debug/elf"
 	"fmt"
 	"log/slog"
@@ -252,27 +251,36 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 }
 
 // findSyscallInstructions scans the code for syscall instructions (0F 05).
+// This method decodes instructions at proper boundaries to avoid false positives
+// from 0F 05 bytes appearing inside other instructions or immediate values.
 func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) []uint64 {
 	var locations []uint64
+	pos := 0
 
-	pattern := []byte{0x0F, 0x05}
-
-	for i := 0; i <= len(code)-len(pattern); {
-		idx := bytes.Index(code[i:], pattern)
-		if idx == -1 {
+	for pos < len(code) {
+		// Validate pos is non-negative before converting to uint64 to prevent overflow.
+		if pos < 0 {
 			break
 		}
-		pos := i + idx
-		// Check for potential overflow before converting pos (int) to uint64 for addition.
-		// While pos is an index within code and thus likely safe, this is a gosec best practice.
-		if pos < 0 { // Should not happen with bytes.Index, but good practice
-			break
+		inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec
+		if err != nil {
+			// Skip problematic byte and continue
+			pos++
+			continue
 		}
-		// The addition of two non-negative numbers (baseAddr, uint64(pos)) won't overflow
-		// unless the address space is extremely large, which is a theoretical concern.
-		// The nolint is for the conversion, which is safe due to the non-negative check.
-		locations = append(locations, baseAddr+uint64(pos)) //nolint:gosec
-		i = pos + 1
+		// Defensively guard against a decoder returning a non-positive length.
+		if inst.Len <= 0 {
+			pos++
+			continue
+		}
+
+		// Check if this is a syscall instruction at proper instruction boundary.
+		// Verify both the instruction length (2 bytes) and the actual opcode bytes.
+		if inst.Len == 2 && pos+1 < len(code) && code[pos] == 0x0F && code[pos+1] == 0x05 {
+			locations = append(locations, inst.Offset)
+		}
+
+		pos += inst.Len
 	}
 
 	return locations
