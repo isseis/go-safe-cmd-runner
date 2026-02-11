@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // pclntab magic numbers for different Go versions
@@ -241,10 +242,8 @@ func (p *PclntabParser) readHeaderFields(data []byte) (nfunc, textStart, funcNam
 // extractFunctions extracts function entries from the functab.
 func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcNameOff, ftabOff uint64) error {
 	// Validate uint64 values fit in int before conversion to prevent overflow.
-	// math.MaxInt is the maximum value that can be safely converted to int.
-	const maxInt = int(^uint(0) >> 1)
-	if nfunc > uint64(maxInt) || ftabOff > uint64(maxInt) ||
-		funcNameOff > uint64(maxInt) {
+	if nfunc > uint64(math.MaxInt) || ftabOff > uint64(math.MaxInt) ||
+		funcNameOff > uint64(math.MaxInt) {
 		return ErrInvalidPclntab
 	}
 
@@ -255,7 +254,7 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 	nfuncInt := int(nfunc)
 	ftabStart := int(ftabOff)
 	// Check for overflow in ftabBytes calculation
-	if nfuncInt > (maxInt-entrySize)/entrySize {
+	if nfuncInt > (math.MaxInt-entrySize)/entrySize {
 		return ErrInvalidPclntab
 	}
 	ftabBytes := (nfuncInt + 1) * entrySize
@@ -280,8 +279,6 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 
 // extractSingleFunction extracts a single function entry from the functab.
 func (p *PclntabParser) extractSingleFunction(data []byte, ftabStart, funcNameOffInt, idx, entrySize, nfuncInt int, textStart uint64) (PclntabFunc, error) {
-	const maxInt = int(^uint(0) >> 1)
-
 	readUint32 := func(b []byte, off int) (uint32, error) {
 		if off < 0 || off+funcStructOffsetNameOff > len(b) {
 			return 0, ErrInvalidPclntab
@@ -311,7 +308,7 @@ func (p *PclntabParser) extractSingleFunction(data []byte, ftabStart, funcNameOf
 
 	// Check for overflow in nameStart calculation
 	// Both funcNameOffInt and nameOff32 are non-negative, check sum doesn't overflow
-	if int(nameOff32) > maxInt-funcNameOffInt {
+	if int(nameOff32) > math.MaxInt-funcNameOffInt {
 		return PclntabFunc{}, ErrInvalidPclntab
 	}
 	nameStart := funcNameOffInt + int(nameOff32)
