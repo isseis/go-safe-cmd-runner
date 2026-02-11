@@ -23,7 +23,7 @@ var (
 	ErrNoSymbolTable = errors.New("ELF file has no symbol table (possibly stripped)")
 
 	// ErrSymbolLoadingNotImplemented indicates symbol loading is not yet implemented.
-	// This is returned during Phase 1 as a stub; full implementation is in Phase 3.
+	// This is returned during Phase 2 as a stub; full implementation is in Phase 3.
 	ErrSymbolLoadingNotImplemented = errors.New("symbol loading not yet implemented")
 )
 
