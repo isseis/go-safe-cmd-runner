@@ -280,10 +280,11 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 // extractSingleFunction extracts a single function entry from the functab.
 func (p *PclntabParser) extractSingleFunction(data []byte, ftabStart, funcNameOffInt, idx, entrySize, nfuncInt int, textStart uint64) (PclntabFunc, error) {
 	readUint32 := func(b []byte, off int) (uint32, error) {
-		if off < 0 || off+funcStructOffsetNameOff > len(b) {
+		const uint32Size = 4 // Size of uint32 in bytes
+		if off < 0 || off+uint32Size > len(b) {
 			return 0, ErrInvalidPclntab
 		}
-		return binary.LittleEndian.Uint32(b[off : off+funcStructOffsetNameOff]), nil
+		return binary.LittleEndian.Uint32(b[off : off+uint32Size]), nil
 	}
 
 	entryOff, err := readUint32(data, ftabStart+idx*entrySize)
