@@ -115,7 +115,7 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 		},
 		{
 			name:       "control flow boundary is high risk",
-			code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0xeb, 0x05, 0x0f, 0x05},
+			code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0xeb, 0x05, 0x0f, 0x05}, // mov $0x29, %eax; jmp label(+5); syscall
 			wantMethod: "unknown:control_flow_boundary",
 		},
 		{
