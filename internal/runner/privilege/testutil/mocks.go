@@ -1,7 +1,7 @@
 //go:build test
 
-// Package testing provides shared test utilities for privilege management.
-package testing
+// Package testutil provides shared test utilities for privilege management.
+package testutil
 
 import (
 	"context"

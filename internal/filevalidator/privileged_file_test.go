@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
-	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
+	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
-	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	"github.com/stretchr/testify/assert"
 )
 

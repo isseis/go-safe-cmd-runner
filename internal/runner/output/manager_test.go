@@ -14,7 +14,7 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 )
 
 // Test errors for manager_test

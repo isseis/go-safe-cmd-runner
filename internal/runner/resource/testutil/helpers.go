@@ -1,7 +1,7 @@
 //go:build test || performance
 
-// Package testing provides test helper functions for resource management testing.
-package testing
+// Package testutil provides test helper functions for resource management testing.
+package testutil
 
 import (
 	"log/slog"

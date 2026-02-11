@@ -1,7 +1,7 @@
 //go:build test
 
-// Package testing provides testing utilities for safefileio package.
-package testing
+// Package testutil provides testing utilities for safefileio package.
+package testutil
 
 import (
 	"errors"

@@ -18,7 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
-	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testing"
+	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 
 	"github.com/stretchr/testify/require"

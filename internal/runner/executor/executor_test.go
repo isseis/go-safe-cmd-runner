@@ -10,7 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
-	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
+	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
