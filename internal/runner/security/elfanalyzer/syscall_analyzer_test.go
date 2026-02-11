@@ -295,20 +295,20 @@ func TestSyscallAnalyzer_FindSyscallInstructions(t *testing.T) {
 	}{
 		{
 			name:      "no syscall instructions",
-			code:      []byte{0x90, 0x90, 0xc3},
+			code:      []byte{0x90, 0x90, 0xc3}, // nop; nop; ret
 			baseAddr:  0,
 			wantCount: 0,
 		},
 		{
 			name:      "single syscall",
-			code:      []byte{0x0f, 0x05},
+			code:      []byte{0x0f, 0x05}, // syscall
 			baseAddr:  0x1000,
 			wantCount: 1,
 			wantLocs:  []uint64{0x1000},
 		},
 		{
 			name:      "multiple syscalls",
-			code:      []byte{0x0f, 0x05, 0x90, 0x0f, 0x05},
+			code:      []byte{0x0f, 0x05, 0x90, 0x0f, 0x05}, // syscall; nop; syscall
 			baseAddr:  0x2000,
 			wantCount: 2,
 			wantLocs:  []uint64{0x2000, 0x2003},
