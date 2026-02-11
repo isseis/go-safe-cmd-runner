@@ -187,7 +187,7 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	}
 
 	// Load symbols for Go wrapper resolution
-	if a.goResolver != nil {
+	if a.goResolver != nil && a.goResolver.HasSymbols() {
 		if err := a.goResolver.LoadSymbols(elfFile); err != nil {
 			// Non-fatal: continue without Go wrapper resolution
 			// This handles stripped binaries
