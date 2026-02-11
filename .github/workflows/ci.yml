@@ -65,6 +65,13 @@ jobs:
         run: gosec -fmt sarif -out gosec-report.sarif -stdout -verbose=text ./...
         continue-on-error: true
 
+      - name: Fix Gosec SARIF (remove null relationships)
+        if: always() && hashFiles('gosec-report.sarif') != ''
+        run: |
+          jq '(.runs[].tool.driver.rules[]?.relationships) |= (if . then map(select(. != null)) else . end)' \
+            gosec-report.sarif > gosec-report-fixed.sarif
+          mv gosec-report-fixed.sarif gosec-report.sarif
+
       - name: Upload Gosec SARIF file
         uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('gosec-report.sarif') != ''
