@@ -2,6 +2,8 @@
 //
 // This file defines all error types used throughout the encoding package,
 // providing structured error handling with detailed context information.
+//
+//nolint:revive // package name conflicts with standard library
 package encoding
 
 import (
