@@ -72,6 +72,12 @@ const maxInstructionLength = 15
 // backward from a syscall instruction to find the syscall number.
 const defaultMaxBackwardScan = 50
 
+// maxValidSyscallNumber is the maximum valid syscall number on x86_64.
+// This is a conservative upper bound to filter out invalid immediates.
+// Current x86_64 Linux syscalls range from 0-288, but we allow up to 500
+// to account for future syscall additions and various kernel configurations.
+const maxValidSyscallNumber = 500
+
 // Determination method constants for syscall number extraction.
 // These constants describe how the syscall number was determined during analysis.
 const (
@@ -275,7 +281,7 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 		if pos < 0 {
 			break
 		}
-		inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec
+		inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
 		if err != nil {
 			// Skip problematic byte and continue
 			pos++
@@ -376,7 +382,15 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 
 		// Check if it's an immediate move
 		if isImm, value := a.decoder.IsImmediateMove(inst); isImm {
-			return int(value), DeterminationMethodImmediate
+			// Validate immediate value is a valid syscall number.
+			// Reject negative immediates (e.g., 0xffffffff as -1) and out-of-range values.
+			// This prevents inconsistency where Number=-1 (unknown sentinel) with
+			// DeterminationMethodImmediate could indicate a successful decode of an invalid value.
+			if value >= 0 && value <= maxValidSyscallNumber {
+				return int(value), DeterminationMethodImmediate
+			}
+			// Immediate value is out of valid range; treat as indirect setting
+			return -1, DeterminationMethodUnknownIndirectSetting
 		}
 
 		// Non-immediate modification found (register move, memory load, etc.)
@@ -424,7 +438,7 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 		if pos < 0 {
 			break
 		}
-		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) //nolint:gosec
+		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
 		if err != nil {
 			// Skip problematic byte and continue
 			pos++

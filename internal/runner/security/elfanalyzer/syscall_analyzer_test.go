@@ -140,6 +140,56 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 	}
 }
 
+func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
+	// Test that negative immediate values (e.g., 0xffffffff decoded as -1)
+	// are rejected and return unknown:indirect_setting, not immediate.
+	// This prevents inconsistency where Number=-1 (unknown sentinel) with
+	// DeterminationMethodImmediate could occur.
+	//
+	// mov $0xffffffff, %eax; syscall
+	// The immediate 0xffffffff is sign-extended to -1 in a signed int64.
+	code := []byte{
+		0xb8, 0xff, 0xff, 0xff, 0xff, // mov $0xffffffff, %eax
+		0x0f, 0x05, // syscall
+	}
+
+	analyzer := NewSyscallAnalyzer()
+	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	require.NoError(t, err)
+	require.Len(t, result.DetectedSyscalls, 1)
+
+	info := result.DetectedSyscalls[0]
+	// Number should be -1 (unknown), not the negative value itself
+	assert.Equal(t, -1, info.Number)
+	// Method should be unknown:indirect_setting, not immediate
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
+	// Should be marked as high risk
+	assert.True(t, result.HasUnknownSyscalls)
+	assert.True(t, result.Summary.IsHighRisk)
+}
+
+func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
+	// Test that immediate values outside the valid syscall range
+	// are rejected and return unknown:indirect_setting.
+	//
+	// mov $0x1000, %eax; syscall (0x1000 = 4096, well beyond valid syscall range)
+	code := []byte{
+		0xb8, 0x00, 0x10, 0x00, 0x00, // mov $0x1000, %eax
+		0x0f, 0x05, // syscall
+	}
+
+	analyzer := NewSyscallAnalyzer()
+	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	require.NoError(t, err)
+	require.Len(t, result.DetectedSyscalls, 1)
+
+	info := result.DetectedSyscalls[0]
+	assert.Equal(t, -1, info.Number)
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
+	assert.True(t, result.HasUnknownSyscalls)
+	assert.True(t, result.Summary.IsHighRisk)
+}
+
 func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	// mov $0x29, %eax; syscall; mov $0x2a, %eax; syscall
 	code := []byte{

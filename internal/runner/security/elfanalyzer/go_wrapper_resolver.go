@@ -32,10 +32,11 @@ func NewGoWrapperResolver() *GoWrapperResolver {
 // LoadSymbols loads function symbols from the ELF file.
 // This populates the resolver with function address information
 // needed to identify wrapper calls.
+//
+// Currently a stub; full implementation in Phase 3 (pclntab_parser.go + go_wrapper_resolver.go).
 func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
-	// Full implementation in Phase 3 (pclntab_parser.go + go_wrapper_resolver.go)
 	_ = elfFile
-	return nil
+	return ErrSymbolLoadingNotImplemented
 }
 
 // HasSymbols returns true if symbols were successfully loaded.
