@@ -198,7 +198,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 	for pos < len(code) {
 		// pos is guaranteed non-negative (starts at 0, only incremented)
 		// and less than len(code) (loop condition), so conversion is safe
-		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // pos is validated by loop condition
+		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos is validated by loop condition
 		if err != nil {
 			pos++
 			continue
@@ -218,7 +218,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 				syscallNum := r.resolveSyscallArgument(recentInstructions, wrapper)
 				// pos is validated same as above
 				results = append(results, WrapperCall{
-					CallSiteAddress: baseAddr + uint64(pos), //nolint:gosec // pos is validated by loop condition
+					CallSiteAddress: baseAddr + uint64(pos), //nolint:gosec // G115: pos is validated by loop condition
 					TargetFunction:  wrapper.Name,
 					SyscallNumber:   syscallNum,
 					Resolved:        syscallNum >= 0,
@@ -305,7 +305,7 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 	// Relative call - calculate absolute address
 	// inst.Offset and inst.Len are uint64 and int respectively, both fit in int64
 	// target is x86asm.Rel (int32), so int64 conversion is safe
-	targetAddr := uint64(int64(inst.Offset) + int64(inst.Len) + int64(target)) //nolint:gosec // Offset is valid instruction address, Len is small
+	targetAddr := uint64(int64(inst.Offset) + int64(inst.Len) + int64(target)) //nolint:gosec // G115: Offset is valid instruction address, Len is small
 	if wrapper, found := r.wrapperAddrs[targetAddr]; found {
 		return wrapper, true
 	}
