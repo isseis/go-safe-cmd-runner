@@ -1,4 +1,6 @@
 // Package errors provides error classification and handling for the runner.
+//
+//revive:disable:var-naming
 package errors
 
 import "time"

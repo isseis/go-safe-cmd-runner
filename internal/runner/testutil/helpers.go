@@ -1,6 +1,6 @@
 //go:build test
 
-package testing
+package testutil
 
 import (
 	"testing"

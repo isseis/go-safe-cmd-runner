@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"

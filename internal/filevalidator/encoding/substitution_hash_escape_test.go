@@ -1,15 +1,16 @@
-package encoding
+package encoding_test
 
 import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator/encoding"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSubstitutionHashEscape_Encode(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
+	encoder := encoding.NewSubstitutionHashEscape()
 
 	tests := []struct {
 		name        string
@@ -69,7 +70,7 @@ func TestSubstitutionHashEscape_Encode(t *testing.T) {
 }
 
 func TestSubstitutionHashEscape_Encode_ErrorCases(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
+	encoder := encoding.NewSubstitutionHashEscape()
 
 	tests := []struct {
 		name        string
@@ -123,7 +124,7 @@ func TestSubstitutionHashEscape_Encode_ErrorCases(t *testing.T) {
 }
 
 func TestSubstitutionHashEscape_Decode(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
+	encoder := encoding.NewSubstitutionHashEscape()
 
 	tests := []struct {
 		name     string
@@ -172,7 +173,7 @@ func TestSubstitutionHashEscape_Decode(t *testing.T) {
 }
 
 func TestSubstitutionHashEscape_Decode_FallbackError(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
+	encoder := encoding.NewSubstitutionHashEscape()
 
 	// Test fallback encoded strings (those that don't start with ~)
 	fallbackStrings := []string{
@@ -193,7 +194,7 @@ func TestSubstitutionHashEscape_Decode_FallbackError(t *testing.T) {
 }
 
 func TestSubstitutionHashEscape_EncodeDecode_Roundtrip(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
+	encoder := encoding.NewSubstitutionHashEscape()
 
 	testPaths := []string{
 		"/usr/bin/python3",
@@ -222,7 +223,7 @@ func TestSubstitutionHashEscape_EncodeDecode_Roundtrip(t *testing.T) {
 }
 
 func TestSubstitutionHashEscape_EdgeCases(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
+	encoder := encoding.NewSubstitutionHashEscape()
 
 	tests := []struct {
 		name     string

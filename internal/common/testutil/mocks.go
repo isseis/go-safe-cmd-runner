@@ -1,7 +1,7 @@
 //go:build test || performance
 
-// Package testing provides mock implementations for testing common interfaces.
-package testing
+// Package testutil provides mock implementations for testing common interfaces.
+package testutil
 
 import (
 	"errors"

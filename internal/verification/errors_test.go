@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

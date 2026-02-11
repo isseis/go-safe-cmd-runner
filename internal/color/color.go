@@ -2,6 +2,8 @@
 // ANSI escape sequences. It is intended for internal example and logging
 // use; functions here return formatted strings and helpers to conditionally
 // enable/disable color output.
+//
+//revive:disable:var-naming
 package color
 
 // ANSI color codes

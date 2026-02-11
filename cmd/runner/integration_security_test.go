@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"

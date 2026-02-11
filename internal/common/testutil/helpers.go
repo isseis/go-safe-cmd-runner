@@ -1,6 +1,6 @@
 //go:build test || performance
 
-package testing
+package testutil
 
 import (
 	"fmt"

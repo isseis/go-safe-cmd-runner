@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

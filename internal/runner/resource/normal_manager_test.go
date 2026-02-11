@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -17,7 +17,7 @@ import (
 
 // Mock implementations for testing
 
-// MockExecutor is now imported from internal/runner/executor/testing
+// MockExecutor is now imported from internal/runner/executor/testutil
 
 // MockFileSystem implements executor.FileSystem for testing
 type MockFileSystem struct {

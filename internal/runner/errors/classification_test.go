@@ -1,22 +1,23 @@
-package errors
+package errors_test
 
 import (
-	"errors"
+	goerrors "errors"
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/errors"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestClassifyVerificationError_AllFields(t *testing.T) {
-	testErr := errors.New("test error")
+	testErr := goerrors.New("test error")
 	testFilePath := "/path/to/test/file"
 	testMessage := "verification failed"
 
 	beforeTime := time.Now()
-	result := ClassifyVerificationError(
-		ErrorTypeConfigVerification,
-		ErrorSeverityCritical,
+	result := errors.ClassifyVerificationError(
+		errors.ErrorTypeConfigVerification,
+		errors.ErrorSeverityCritical,
 		testMessage,
 		testFilePath,
 		testErr,
@@ -24,10 +25,10 @@ func TestClassifyVerificationError_AllFields(t *testing.T) {
 	afterTime := time.Now()
 
 	// Verify error type
-	assert.Equal(t, ErrorTypeConfigVerification, result.Type)
+	assert.Equal(t, errors.ErrorTypeConfigVerification, result.Type)
 
 	// Verify severity
-	assert.Equal(t, ErrorSeverityCritical, result.Severity)
+	assert.Equal(t, errors.ErrorSeverityCritical, result.Severity)
 
 	// Verify message
 	assert.Equal(t, testMessage, result.Message)
@@ -46,10 +47,10 @@ func TestClassifyVerificationError_AllFields(t *testing.T) {
 }
 
 func TestClassifyVerificationError_WithCause(t *testing.T) {
-	originalErr := errors.New("original error")
-	wrappedErr := ClassifyVerificationError(
-		ErrorTypeEnvironmentVerification,
-		ErrorSeverityWarning,
+	originalErr := goerrors.New("original error")
+	wrappedErr := errors.ClassifyVerificationError(
+		errors.ErrorTypeEnvironmentVerification,
+		errors.ErrorSeverityWarning,
 		"wrapped error",
 		"/test/path",
 		originalErr,
@@ -67,34 +68,34 @@ func TestClassifyVerificationError_WithCause(t *testing.T) {
 func TestClassifyVerificationError_DifferentTypes(t *testing.T) {
 	tests := []struct {
 		name      string
-		errorType ErrorType
-		severity  ErrorSeverity
+		errorType errors.ErrorType
+		severity  errors.ErrorSeverity
 	}{
 		{
 			name:      "config verification critical",
-			errorType: ErrorTypeConfigVerification,
-			severity:  ErrorSeverityCritical,
+			errorType: errors.ErrorTypeConfigVerification,
+			severity:  errors.ErrorSeverityCritical,
 		},
 		{
 			name:      "environment verification warning",
-			errorType: ErrorTypeEnvironmentVerification,
-			severity:  ErrorSeverityWarning,
+			errorType: errors.ErrorTypeEnvironmentVerification,
+			severity:  errors.ErrorSeverityWarning,
 		},
 		{
 			name:      "hash directory validation info",
-			errorType: ErrorTypeHashDirectoryValidation,
-			severity:  ErrorSeverityInfo,
+			errorType: errors.ErrorTypeHashDirectoryValidation,
+			severity:  errors.ErrorSeverityInfo,
 		},
 		{
 			name:      "global verification critical",
-			errorType: ErrorTypeGlobalVerification,
-			severity:  ErrorSeverityCritical,
+			errorType: errors.ErrorTypeGlobalVerification,
+			severity:  errors.ErrorSeverityCritical,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ClassifyVerificationError(
+			result := errors.ClassifyVerificationError(
 				tt.errorType,
 				tt.severity,
 				"test message",
@@ -110,9 +111,9 @@ func TestClassifyVerificationError_DifferentTypes(t *testing.T) {
 
 func TestClassifyVerificationError_NilCause(t *testing.T) {
 	// Test that nil cause is handled correctly
-	result := ClassifyVerificationError(
-		ErrorTypeConfigVerification,
-		ErrorSeverityCritical,
+	result := errors.ClassifyVerificationError(
+		errors.ErrorTypeConfigVerification,
+		errors.ErrorSeverityCritical,
 		"error without cause",
 		"/test/path",
 		nil,

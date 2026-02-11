@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -21,7 +21,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
-	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
+	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
 	"github.com/stretchr/testify/assert"
