@@ -242,27 +242,28 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 4.1 スキーマ定義
 
-- [ ] `internal/fileanalysis/` パッケージを新規作成
-- [ ] `internal/fileanalysis/schema.go` を新規作成
+- [x] `internal/fileanalysis/` パッケージを新規作成
+- [x] `internal/fileanalysis/schema.go` を新規作成
   - `CurrentSchemaVersion` 定数
-  - `FileAnalysisRecord` 構造体（JSON タグ付き）
-  - `SyscallAnalysisData` 構造体
-    （`elfanalyzer.SyscallInfo`, `elfanalyzer.SyscallSummary` を埋め込み）
+  - `Record` 構造体（JSON タグ付き、stuttering 回避のため名称変更）
+  - `SyscallInfo`, `SyscallSummary`, `SyscallAnalysisData` 構造体
+    （循環依存回避のため `fileanalysis` パッケージ内に独自定義）
   - 仕様: 詳細仕様書 §2.7、アーキテクチャ §5.2
 
 ### 4.2 エラー定義
 
-- [ ] `internal/fileanalysis/errors.go` を新規作成
+- [x] `internal/fileanalysis/errors.go` を新規作成
   - `ErrRecordNotFound`
+  - `ErrAnalysisDirNotDirectory`
   - `SchemaVersionMismatchError`
   - `RecordCorruptedError`
   - 仕様: 詳細仕様書 §2.8
 
 ### 4.3 FileAnalysisStore
 
-- [ ] `internal/fileanalysis/file_analysis_store.go` を新規作成
-  - `FileAnalysisStore` 構造体と
-    `NewFileAnalysisStore()` コンストラクタ
+- [x] `internal/fileanalysis/file_analysis_store.go` を新規作成
+  - `Store` 構造体と `NewStore()` コンストラクタ
+    （stuttering 回避のため名称変更）
   - `Load(filePath)`:
     解析結果ファイルの読み込み + スキーマバージョン検証
   - `Save(filePath, record)`:
@@ -271,31 +272,32 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     read-modify-write 操作
   - 仕様: 詳細仕様書 §2.6.1
   - 要件: FR-3.2.1, FR-3.2.2, NFR-4.2.2
-- [ ] `file_analysis_store_test.go` を新規作成
-  - `TestFileAnalysisStore_SaveAndLoad`:
+- [x] `file_analysis_store_test.go` を新規作成
+  - `TestStore_SaveAndLoad`:
     保存・読み込み往復テスト
-  - `TestFileAnalysisStore_SchemaVersionMismatch`:
+  - `TestStore_SchemaVersionMismatch`:
     スキーマバージョン不一致
-  - `TestFileAnalysisStore_RecordNotFound`:
+  - `TestStore_RecordNotFound`:
     レコード不在
-  - `TestFileAnalysisStore_CorruptedRecord`: 不正 JSON
-  - `TestFileAnalysisStore_PreservesExistingFields`:
+  - `TestStore_CorruptedRecord`: 不正 JSON
+  - `TestStore_PreservesExistingFields`:
     既存フィールド保持
   - 受け入れ条件: AC-4, AC-5
 
 ### 4.4 SyscallAnalysisStore
 
-- [ ] `internal/fileanalysis/syscall_store.go` を新規作成
-  - `SyscallAnalysisStore` 構造体と
+- [x] `internal/fileanalysis/syscall_store.go` を新規作成
+  - `SyscallAnalysisStore` インターフェースと
     `NewSyscallAnalysisStore()` コンストラクタ
+  - `SyscallAnalysisResult` 構造体
+    （循環依存回避のため `fileanalysis` パッケージ内に独自定義）
   - `SaveSyscallAnalysis(path, hash, result)`:
     syscall 解析結果の保存
   - `LoadSyscallAnalysis(path, expectedHash)`:
     解析結果の読み込み + ハッシュ検証
-  - 型変換ヘルパー関数群
   - 仕様: 詳細仕様書 §2.6.2
   - 要件: NFR-4.2.1
-- [ ] `syscall_store_test.go` を新規作成
+- [x] `syscall_store_test.go` を新規作成
   - `TestSyscallAnalysisStore_SaveAndLoad`:
     保存・読み込み往復テスト
   - `TestSyscallAnalysisStore_HashMismatch`:
@@ -312,17 +314,18 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 > - ユーザーは `record` コマンドを再実行するだけで新形式に移行可能
 > - 旧形式ファイルは既存の filevalidator で引き続き動作する
 
-- [ ] `internal/filevalidator/validator.go` を修正
-  - `Validator` 構造体に `FileAnalysisStore` への参照を追加
-  - `Record()`: `FileAnalysisStore.Update()` 経由で
-    `FileAnalysisRecord.ContentHash` フィールドを更新
-  - `Verify()`: `FileAnalysisStore.Load()` 経由でハッシュ値を検証
+- [x] `internal/filevalidator/validator.go` を修正
+  - `Validator` 構造体に `store *fileanalysis.Store` フィールドを追加
+  - `NewWithAnalysisStore()` コンストラクタを追加
+  - `Record()`: store が設定されている場合は `Store.Update()` 経由で保存
+  - `Verify()`: store が設定されている場合は `Store.Load()` 経由で検証
+  - `GetStore()`: store へのアクセサ
   - 仕様: 詳細仕様書 §2.10
   - 要件: FR-3.2.1, FR-3.2.2, NFR-4.2.2
-- [ ] `internal/filevalidator/validator_test.go` を更新
-  - `TestValidator_RecordAndVerifyHash`:
+- [x] `internal/filevalidator/validator_test.go` を更新
+  - `TestNewWithAnalysisStore_RecordAndVerify`:
     新形式での保存・検証往復テスト
-  - `TestValidator_PreservesExistingFields`:
+  - `TestNewWithAnalysisStore_PreservesExistingFields`:
     既存 syscall 解析結果の保持確認
   - 受け入れ条件: AC-11
 
