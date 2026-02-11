@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -47,6 +48,13 @@ func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error
 	return v.hashFilePathGetter.GetHashFilePath(v.hashDir, filePath)
 }
 
+// GetStore returns the underlying fileanalysis.Store, or nil if the validator
+// was created without analysis store support.
+// This is useful for accessing syscall analysis results stored alongside hashes.
+func (v *Validator) GetStore() *fileanalysis.Store {
+	return v.store
+}
+
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
@@ -54,12 +62,36 @@ type Validator struct {
 	hashDir                 string
 	hashFilePathGetter      HashFilePathGetter
 	privilegedFileValidator *PrivilegedFileValidator
+
+	// store is the unified analysis store for FileAnalysisRecord format.
+	// If nil, the validator uses the legacy HashManifest format.
+	store *fileanalysis.Store
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
+// This constructor uses the legacy HashManifest format for backward compatibility.
 func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 	return newValidator(algorithm, hashDir, NewHybridHashFilePathGetter())
+}
+
+// NewWithAnalysisStore creates a Validator with unified analysis store support.
+// This uses the FileAnalysisRecord format for storing hash and analysis results.
+// The analysis store preserves existing fields (e.g., SyscallAnalysis) when updating hashes.
+func NewWithAnalysisStore(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
+	v, err := New(algorithm, hashDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create analysis store using the same hash directory
+	store, err := fileanalysis.NewStore(hashDir, v.hashFilePathGetter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create analysis store: %w", err)
+	}
+	v.store = store
+
+	return v, nil
 }
 
 // newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -98,6 +130,10 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
 // Hash collisions (different file paths with same hash) always return an error regardless of force.
+//
+// If the Validator was created with NewWithAnalysisStore, the hash is saved in
+// FileAnalysisRecord format which preserves existing fields (e.g., SyscallAnalysis).
+// Otherwise, the legacy HashManifest format is used.
 func (v *Validator) Record(filePath string, force bool) (string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
@@ -117,6 +153,53 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 		return "", err
 	}
 
+	// Use new format if analysis store is available
+	if v.store != nil {
+		return v.recordWithAnalysisStore(targetPath.String(), hash, hashFilePath, force)
+	}
+
+	// Legacy format: use HashManifest
+	return v.recordWithHashManifest(targetPath, hash, hashFilePath, force)
+}
+
+// recordWithAnalysisStore saves the hash using FileAnalysisRecord format.
+// This format preserves existing fields (e.g., SyscallAnalysis) when updating.
+func (v *Validator) recordWithAnalysisStore(filePath, hash, hashFilePath string, force bool) (string, error) {
+	// Check for existing record
+	existingRecord, err := v.store.Load(filePath)
+	if err == nil {
+		// Record exists
+		if existingRecord.FilePath != filePath {
+			return "", fmt.Errorf("%w: hash collision detected between %s and %s",
+				ErrHashCollision, existingRecord.FilePath, filePath)
+		}
+		if !force {
+			return "", fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
+		}
+	} else if !errors.Is(err, fileanalysis.ErrRecordNotFound) {
+		// Ignore schema mismatch and corrupted errors - will be overwritten
+		var schemaErr *fileanalysis.SchemaVersionMismatchError
+		var corruptedErr *fileanalysis.RecordCorruptedError
+		if !errors.As(err, &schemaErr) && !errors.As(err, &corruptedErr) {
+			return "", fmt.Errorf("failed to check existing record: %w", err)
+		}
+	}
+
+	// Use Update to preserve existing fields (e.g., SyscallAnalysis)
+	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
+	err = v.store.Update(filePath, func(record *fileanalysis.Record) error {
+		record.ContentHash = contentHash
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to update analysis record: %w", err)
+	}
+
+	return hashFilePath, nil
+}
+
+// recordWithHashManifest saves the hash using the legacy HashManifest format.
+func (v *Validator) recordWithHashManifest(targetPath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
 	// Ensure the directory exists with restrictive permissions
 	if err := os.MkdirAll(filepath.Dir(hashFilePath), hashDirectoryPermissions); err != nil {
 		return "", fmt.Errorf("failed to create hash directory: %w", err)
@@ -150,7 +233,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 	// Create manifest hash file
 	manifest := createHashManifest(targetPath, hash, v.algorithm.Name())
 
-	err = v.writeHashManifest(hashFilePath, manifest, force)
+	err := v.writeHashManifest(hashFilePath, manifest, force)
 	if err != nil {
 		return "", fmt.Errorf("failed to write hash manifest: %w", err)
 	}
@@ -160,6 +243,9 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 
 // Verify checks if the file at filePath matches its recorded hash.
 // Returns ErrMismatch if the hashes don't match, or ErrHashFileNotFound if no hash is recorded.
+//
+// If the Validator was created with NewWithAnalysisStore, verification uses
+// FileAnalysisRecord format. Otherwise, the legacy HashManifest format is used.
 func (v *Validator) Verify(filePath string) error {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
@@ -176,6 +262,36 @@ func (v *Validator) Verify(filePath string) error {
 		return fmt.Errorf("failed to calculate file hash: %w", err)
 	}
 
+	// Use new format if analysis store is available
+	if v.store != nil {
+		return v.verifyWithAnalysisStore(targetPath.String(), actualHash)
+	}
+
+	// Legacy format: use HashManifest
+	return v.verifyWithHashManifest(targetPath, actualHash)
+}
+
+// verifyWithAnalysisStore verifies the hash using FileAnalysisRecord format.
+func (v *Validator) verifyWithAnalysisStore(filePath, actualHash string) error {
+	record, err := v.store.Load(filePath)
+	if err != nil {
+		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return ErrHashFileNotFound
+		}
+		return fmt.Errorf("failed to load analysis record: %w", err)
+	}
+
+	// ContentHash is in prefixed format "sha256:<hex>"
+	expectedHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash)
+	if record.ContentHash != expectedHash {
+		return ErrMismatch
+	}
+
+	return nil
+}
+
+// verifyWithHashManifest verifies the hash using the legacy HashManifest format.
+func (v *Validator) verifyWithHashManifest(targetPath common.ResolvedPath, actualHash string) error {
 	_, expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return err
