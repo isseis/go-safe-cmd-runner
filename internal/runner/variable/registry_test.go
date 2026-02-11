@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVariableRegistry_RegisterGlobal(t *testing.T) {
+func TestRegistry_RegisterGlobal(t *testing.T) {
 	t.Run("valid_global_variable", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
 		require.NoError(t, err)
@@ -21,7 +21,7 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 
 	t.Run("valid_global_variable_uppercase_snake", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("AWS_PATH", "/usr/bin/aws")
 		require.NoError(t, err)
@@ -32,7 +32,7 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 
 	t.Run("multiple_global_variables", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
 		require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 
 	t.Run("reject_lowercase_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("awsPath", "/usr/bin/aws")
 		require.Error(t, err)
@@ -59,7 +59,7 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 
 	t.Run("reject_underscore_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("_internal", "/var/internal")
 		require.Error(t, err)
@@ -67,7 +67,7 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 
 	t.Run("reject_reserved_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("__reserved", "value")
 		require.Error(t, err)
@@ -75,7 +75,7 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 
 	t.Run("reject_invalid_characters", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("Aws-Path", "/usr/bin/aws")
 		require.Error(t, err)
@@ -83,9 +83,9 @@ func TestVariableRegistry_RegisterGlobal(t *testing.T) {
 	})
 }
 
-func TestVariableRegistry_WithLocals(t *testing.T) {
+func TestRegistry_WithLocals(t *testing.T) {
 	t.Run("valid_local_variables", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		// Register global variable
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
@@ -114,7 +114,7 @@ func TestVariableRegistry_WithLocals(t *testing.T) {
 	})
 
 	t.Run("valid_local_with_underscore", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		childRegistry, err := registry.WithLocals(map[string]string{
 			"_internal": "/var/internal",
@@ -127,7 +127,7 @@ func TestVariableRegistry_WithLocals(t *testing.T) {
 	})
 
 	t.Run("reject_uppercase_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.WithLocals(map[string]string{
 			"AwsPath": "/usr/bin/aws",
@@ -137,7 +137,7 @@ func TestVariableRegistry_WithLocals(t *testing.T) {
 	})
 
 	t.Run("reject_reserved_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.WithLocals(map[string]string{
 			"__reserved": "value",
@@ -147,7 +147,7 @@ func TestVariableRegistry_WithLocals(t *testing.T) {
 	})
 
 	t.Run("original_registry_unchanged", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		// Register global variable
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
@@ -171,7 +171,7 @@ func TestVariableRegistry_WithLocals(t *testing.T) {
 	})
 
 	t.Run("empty_locals_map", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
 		require.NoError(t, err)
@@ -186,9 +186,9 @@ func TestVariableRegistry_WithLocals(t *testing.T) {
 	})
 }
 
-func TestVariableRegistry_Resolve(t *testing.T) {
+func TestRegistry_Resolve(t *testing.T) {
 	t.Run("resolve_global_from_parent", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
 		require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("resolve_global_from_child", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		err := registry.RegisterGlobal("AwsPath", "/usr/bin/aws")
 		require.NoError(t, err)
@@ -215,7 +215,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("resolve_local_from_child", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		childRegistry, err := registry.WithLocals(map[string]string{
 			"dataDir": "/var/data",
@@ -228,7 +228,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("local_not_accessible_from_parent", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.WithLocals(map[string]string{
 			"dataDir": "/var/data",
@@ -242,7 +242,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("undefined_global_variable", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.Resolve("UndefinedVar")
 		require.Error(t, err)
@@ -251,7 +251,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("undefined_local_variable", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.Resolve("undefinedVar")
 		require.Error(t, err)
@@ -260,7 +260,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("invalid_variable_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.Resolve("123invalid")
 		require.Error(t, err)
@@ -268,7 +268,7 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 
 	t.Run("reserved_variable_name", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_, err := registry.Resolve("__reserved")
 		require.Error(t, err)
@@ -276,11 +276,11 @@ func TestVariableRegistry_Resolve(t *testing.T) {
 	})
 }
 
-func TestVariableRegistry_NamespaceIsolation(t *testing.T) {
+func TestRegistry_NamespaceIsolation(t *testing.T) {
 	t.Run("same_name_different_scopes", func(t *testing.T) {
 		// This test verifies that global "Path" and local "path" are different variables
 		// due to the naming convention (uppercase vs lowercase)
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		// Register global variable "Path"
 		err := registry.RegisterGlobal("Path", "/usr/bin")
@@ -306,9 +306,9 @@ func TestVariableRegistry_NamespaceIsolation(t *testing.T) {
 	})
 }
 
-func TestVariableRegistry_GlobalVars(t *testing.T) {
+func TestRegistry_GlobalVars(t *testing.T) {
 	t.Run("sorted_order", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		// Register variables in random order
 		_ = registry.RegisterGlobal("ZebraPath", "/zebra")
@@ -328,14 +328,14 @@ func TestVariableRegistry_GlobalVars(t *testing.T) {
 	})
 
 	t.Run("empty_registry", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		entries := registry.GlobalVars()
 		assert.Empty(t, entries)
 	})
 
 	t.Run("includes_all_globals", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		_ = registry.RegisterGlobal("AwsPath", "/aws")
 		_ = registry.RegisterGlobal("DataDir", "/data")
@@ -350,9 +350,9 @@ func TestVariableRegistry_GlobalVars(t *testing.T) {
 	})
 }
 
-func TestVariableRegistry_LocalVars(t *testing.T) {
+func TestRegistry_LocalVars(t *testing.T) {
 	t.Run("sorted_order", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		childRegistry, err := registry.WithLocals(map[string]string{
 			"zebraPath": "/zebra",
@@ -374,7 +374,7 @@ func TestVariableRegistry_LocalVars(t *testing.T) {
 	})
 
 	t.Run("empty_locals", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		childRegistry, err := registry.WithLocals(map[string]string{})
 		require.NoError(t, err)
@@ -384,14 +384,14 @@ func TestVariableRegistry_LocalVars(t *testing.T) {
 	})
 
 	t.Run("parent_has_no_locals", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		entries := registry.LocalVars()
 		assert.Empty(t, entries)
 	})
 
 	t.Run("includes_all_locals", func(t *testing.T) {
-		registry := NewVariableRegistry()
+		registry := NewRegistry()
 
 		childRegistry, err := registry.WithLocals(map[string]string{
 			"awsPath": "/aws",

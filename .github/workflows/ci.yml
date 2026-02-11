@@ -65,8 +65,15 @@ jobs:
         run: gosec -fmt sarif -out gosec-report.sarif -stdout -verbose=text ./...
         continue-on-error: true
 
+      - name: Fix Gosec SARIF (remove null relationships)
+        if: always() && hashFiles('gosec-report.sarif') != ''
+        run: |
+          jq '(.runs[].tool.driver.rules[]?.relationships) |= (if . then map(select(. != null)) else . end)' \
+            gosec-report.sarif > gosec-report-fixed.sarif
+          mv gosec-report-fixed.sarif gosec-report.sarif
+
       - name: Upload Gosec SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('gosec-report.sarif') != ''
         with:
           sarif_file: gosec-report.sarif
@@ -81,7 +88,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
@@ -175,18 +182,19 @@ jobs:
     if: needs.check-changes.outputs.has-non-md-changes == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.5
+          install-mode: goinstall
+          version: v2.9
           args: --build-tags test --timeout=5m
 
       - name: Verify modules

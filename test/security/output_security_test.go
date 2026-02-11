@@ -12,9 +12,9 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
-	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testing"
+	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 
 	"github.com/stretchr/testify/require"

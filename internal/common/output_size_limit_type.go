@@ -1,6 +1,6 @@
 // Package common provides shared data types and constants used throughout the command runner.
 //
-//nolint:revive // "common" is an appropriate name for shared utilities package
+//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 import (

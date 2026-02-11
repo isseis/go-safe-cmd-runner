@@ -13,7 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/debug"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/debuginfo"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -52,7 +52,7 @@ type DefaultGroupExecutor struct {
 	config              *runnertypes.ConfigSpec
 	validator           security.ValidatorInterface
 	verificationManager verification.ManagerInterface
-	resourceManager     resource.ResourceManager
+	resourceManager     resource.Manager
 	runID               string
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
@@ -74,7 +74,7 @@ func NewDefaultGroupExecutor(
 	config *runnertypes.ConfigSpec,
 	validator security.ValidatorInterface,
 	verificationManager verification.ManagerInterface,
-	resourceManager resource.ResourceManager,
+	resourceManager resource.Manager,
 	runID string,
 	options ...GroupExecutorOption,
 ) *DefaultGroupExecutor {
@@ -361,7 +361,7 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 // outputDryRunDebugInfo outputs debug information in dry-run mode
 func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) {
 	// Collect inheritance analysis data
-	analysis := debug.CollectInheritanceAnalysis(
+	analysis := debuginfo.CollectInheritanceAnalysis(
 		runtimeGlobal,
 		runtimeGroup,
 		ge.dryRunDetailLevel,
@@ -381,7 +381,7 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 	} else {
 		// Text format: output immediately
 		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
-		output := debug.FormatInheritanceAnalysisText(analysis, groupSpec.Name)
+		output := debuginfo.FormatInheritanceAnalysisText(analysis, groupSpec.Name)
 		if output != "" {
 			_, _ = fmt.Fprint(os.Stdout, output)
 		}
@@ -470,10 +470,10 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	}
 
 	// Phase 2: Update final environment debug info in dry-run mode (after command execution)
-	// Uses the token to update the ResourceAnalysis with environment origin metadata
+	// Uses the token to update the resource.Analysis with environment origin metadata
 	if ge.isDryRun {
 		// Collect final environment data
-		finalEnv := debug.CollectFinalEnvironment(
+		finalEnv := debuginfo.CollectFinalEnvironment(
 			envMap,
 			ge.dryRunDetailLevel,
 			ge.dryRunShowSensitive,
@@ -481,7 +481,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 		if finalEnv != nil {
 			if ge.dryRunFormat == resource.OutputFormatJSON {
-				// Update the command's ResourceAnalysis with debug info using token
+				// Update the command's resource.Analysis with debug info using token
 				debugInfo := &resource.DebugInfo{
 					FinalEnvironment: finalEnv,
 				}
@@ -491,7 +491,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 				}
 			} else {
 				// Text format: output immediately
-				output := debug.FormatFinalEnvironmentText(finalEnv)
+				output := debuginfo.FormatFinalEnvironmentText(finalEnv)
 				if output != "" {
 					_, _ = fmt.Fprint(os.Stdout, output)
 				}

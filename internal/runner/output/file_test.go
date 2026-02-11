@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
-	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

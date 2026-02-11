@@ -98,7 +98,7 @@ func (f *TextFormatter) writeSummary(buf *strings.Builder, result *DryRunResult)
 	buf.WriteString("----- Summary -----\n\n")
 
 	// Resource operations count
-	resourceCounts := make(map[ResourceType]int)
+	resourceCounts := make(map[Type]int)
 	for _, analysis := range result.ResourceAnalyses {
 		resourceCounts[analysis.Type]++
 	}
@@ -200,7 +200,7 @@ func (f *TextFormatter) formatLevelMarker(level string) string {
 }
 
 // writeResourceAnalyses writes the resource analyses section
-func (f *TextFormatter) writeResourceAnalyses(buf *strings.Builder, analyses []ResourceAnalysis, opts FormatterOptions) {
+func (f *TextFormatter) writeResourceAnalyses(buf *strings.Builder, analyses []Analysis, opts FormatterOptions) {
 	if len(analyses) == 0 {
 		return
 	}

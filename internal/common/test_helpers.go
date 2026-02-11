@@ -1,7 +1,7 @@
 //go:build test
 
 //
-//nolint:revive // common is an appropriate name for shared utilities package
+//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 import "fmt"

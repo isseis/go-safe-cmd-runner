@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
@@ -111,7 +111,7 @@ func TestSecurityAnalysis(t *testing.T) {
 			analysis := dryRunResult.ResourceAnalyses[0]
 
 			// Verify basic analysis properties
-			assert.Equal(t, ResourceTypeCommand, analysis.Type)
+			assert.Equal(t, TypeCommand, analysis.Type)
 			assert.Equal(t, OperationExecute, analysis.Operation)
 
 			// Verify security analysis results
@@ -321,7 +321,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 		},
 	}
 
-	var analyses []ResourceAnalysis
+	var analyses []Analysis
 	for _, cmdSpec := range commandSpecs {
 		cmd := executortesting.CreateRuntimeCommand(
 			cmdSpec.Cmd,
@@ -353,5 +353,5 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	// Safe command may or may not have security info, but should not fail
 	safeAnalysis := analyses[2]
-	assert.Equal(t, ResourceTypeCommand, safeAnalysis.Type, "safe command should still be analyzed")
+	assert.Equal(t, TypeCommand, safeAnalysis.Type, "safe command should still be analyzed")
 }

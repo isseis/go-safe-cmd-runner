@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -122,7 +122,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 
 			// Verify that each analysis has required fields
 			for i, analysis := range dryRunResult.ResourceAnalyses {
-				assert.Equal(t, ResourceTypeCommand, analysis.Type,
+				assert.Equal(t, TypeCommand, analysis.Type,
 					"analysis %d should be command type", i)
 				assert.Equal(t, OperationExecute, analysis.Operation,
 					"analysis %d should be execute operation", i)

@@ -1,6 +1,6 @@
 // Package common provides shared interfaces and utilities used across the runner packages.
 //
-//nolint:revive // common is an appropriate name for shared utilities package
+//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 import (

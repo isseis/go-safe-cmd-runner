@@ -64,7 +64,7 @@ type Runner struct {
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 	runID               string                       // Unique identifier for this execution run
-	resourceManager     resource.ResourceManager     // Manages all side-effects (commands, filesystem, privileges, etc.)
+	resourceManager     resource.Manager             // Manages all side-effects (commands, filesystem, privileges, etc.)
 	groupExecutor       GroupExecutor                // Executes command groups
 }
 
@@ -78,7 +78,7 @@ type runnerOptions struct {
 	privilegeManager        runnertypes.PrivilegeManager
 	auditLogger             *audit.Logger
 	runID                   string
-	resourceManager         resource.ResourceManager
+	resourceManager         resource.Manager
 	dryRun                  bool
 	dryRunOptions           *resource.DryRunOptions
 	runtimeGlobal           *runnertypes.RuntimeGlobal
@@ -137,7 +137,7 @@ func WithExecutor(exec executor.CommandExecutor) Option {
 }
 
 // WithResourceManager sets the resource manager.
-func WithResourceManager(manager resource.ResourceManager) Option {
+func WithResourceManager(manager resource.Manager) Option {
 	return func(opts *runnerOptions) {
 		opts.resourceManager = manager
 	}
@@ -381,7 +381,7 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 			}
 
 			// Check if this is a verification error - if so, notify via Slack and continue
-			var verErr *verification.VerificationError
+			var verErr *verification.Error
 			if errors.As(err, &verErr) {
 				errorMsg := fmt.Sprintf("Group: %s, Total: %d, Verified: %d, Failed: %d, Skipped: %d, Error: %s",
 					verErr.Group, verErr.TotalFiles, verErr.VerifiedFiles,

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 
 	configpkg "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -1272,9 +1272,9 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 
 	// Mock dry-run results
 	mockResourceManager.On("GetDryRunResults").Return(&resource.DryRunResult{
-		ResourceAnalyses: []resource.ResourceAnalysis{
+		ResourceAnalyses: []resource.Analysis{
 			{
-				Type:      resource.ResourceTypeCommand,
+				Type:      resource.TypeCommand,
 				Operation: resource.OperationExecute,
 				Target:    "dryrun-echo",
 			},

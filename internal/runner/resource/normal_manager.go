@@ -19,7 +19,7 @@ var (
 	ErrOutputManagerUnavailable = errors.New("output manager not available for validation")
 )
 
-// NormalResourceManager implements ResourceManager for normal execution mode
+// NormalResourceManager implements Manager for normal execution mode
 type NormalResourceManager struct {
 	// Core dependencies
 	executor         executor.CommandExecutor

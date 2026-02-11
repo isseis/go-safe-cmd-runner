@@ -4,15 +4,13 @@ import (
 	"context"
 	"testing"
 
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
-	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
+	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-// MockExecutor is now imported from internal/runner/executor/testing
 
 func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	t.Run("valid_user_group_specification", func(t *testing.T) {

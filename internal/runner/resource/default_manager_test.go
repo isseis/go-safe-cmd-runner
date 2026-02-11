@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -110,7 +110,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	if assert.NotNil(t, res) {
 		if assert.GreaterOrEqual(t, len(res.ResourceAnalyses), 1) {
 			last := res.ResourceAnalyses[len(res.ResourceAnalyses)-1]
-			assert.Equal(t, ResourceTypePrivilege, last.Type)
+			assert.Equal(t, TypePrivilege, last.Type)
 			assert.Equal(t, OperationEscalate, last.Operation)
 			assert.Equal(t, "system_privileges", last.Target)
 			// Parameters should include context of escalation
@@ -128,7 +128,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	if assert.NotNil(t, res2) {
 		assert.Equal(t, prevLen+1, len(res2.ResourceAnalyses))
 		last := res2.ResourceAnalyses[len(res2.ResourceAnalyses)-1]
-		assert.Equal(t, ResourceTypeNetwork, last.Type)
+		assert.Equal(t, TypeNetwork, last.Type)
 		assert.Equal(t, OperationSend, last.Operation)
 		assert.Equal(t, "notification_service", last.Target)
 		// Parameters should include message and details
@@ -169,8 +169,8 @@ func TestDefaultResourceManager_RecordAnalysis(t *testing.T) {
 		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
 		require.NoError(t, err)
 
-		analysis := &ResourceAnalysis{
-			Type:      ResourceTypeFilesystem,
+		analysis := &Analysis{
+			Type:      TypeFilesystem,
 			Operation: OperationCreate,
 			Target:    "/test/file.txt",
 		}
@@ -186,8 +186,8 @@ func TestDefaultResourceManager_RecordAnalysis(t *testing.T) {
 		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
 		require.NoError(t, err)
 
-		analysis := &ResourceAnalysis{
-			Type:      ResourceTypeFilesystem,
+		analysis := &Analysis{
+			Type:      TypeFilesystem,
 			Operation: OperationCreate,
 			Target:    "/test/output.txt",
 		}

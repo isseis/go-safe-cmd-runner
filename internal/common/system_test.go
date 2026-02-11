@@ -1,6 +1,6 @@
 //go:build test
 
-//nolint:revive // Package name "common" is intentional for internal common utilities
+//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 import (

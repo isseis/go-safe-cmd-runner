@@ -9,7 +9,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
+	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
 	"github.com/stretchr/testify/mock"
 )
 

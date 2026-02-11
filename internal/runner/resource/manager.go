@@ -1,4 +1,4 @@
-// Package resource provides the ResourceManager interface and related types
+// Package resource provides the Manager interface and related types
 // for managing all side-effects in both normal execution and dry-run modes.
 package resource
 
@@ -52,9 +52,8 @@ func (e ExecutionMode) String() string {
 // Used to safely update debug information even in parallel execution scenarios
 type CommandToken string
 
-// ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
-// nolint:revive // ResourceManager is intentionally named to be clear about its purpose
-type ResourceManager interface {
+// Manager manages all side-effects (commands, filesystem, privileges, etc.)
+type Manager interface {
 	// Command execution - returns a token that can be used to update debug info
 	ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (CommandToken, *ExecutionResult, error)
 
@@ -82,12 +81,12 @@ type ResourceManager interface {
 
 // ExecutionResult unified result for both normal and dry-run
 type ExecutionResult struct {
-	ExitCode int               `json:"exit_code"`
-	Stdout   string            `json:"stdout"`
-	Stderr   string            `json:"stderr"`
-	Duration int64             `json:"duration_ms"` // Duration in milliseconds
-	DryRun   bool              `json:"dry_run"`
-	Analysis *ResourceAnalysis `json:"analysis,omitempty"`
+	ExitCode int       `json:"exit_code"`
+	Stdout   string    `json:"stdout"`
+	Stderr   string    `json:"stderr"`
+	Duration int64     `json:"duration_ms"` // Duration in milliseconds
+	DryRun   bool      `json:"dry_run"`
+	Analysis *Analysis `json:"analysis,omitempty"`
 }
 
 // validateCommand validates command for consistency across execution modes

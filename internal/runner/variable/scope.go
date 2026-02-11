@@ -7,15 +7,13 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-// VariableScope represents the scope of a variable (global or local)
-//
-//nolint:revive // VariableScope is descriptive and matches specification document naming
-type VariableScope int
+// Scope represents the scope of a variable (global or local)
+type Scope int
 
 const (
 	// ScopeError represents an invalid scope (error sentinel value)
 	// Returned by DetermineScope when the variable name is invalid
-	ScopeError VariableScope = iota
+	ScopeError Scope = iota
 
 	// ScopeGlobal represents a global variable (uppercase start)
 	// Defined in: [global.vars]
@@ -29,7 +27,7 @@ const (
 )
 
 // String returns the string representation of the scope
-func (s VariableScope) String() string {
+func (s Scope) String() string {
 	switch s {
 	case ScopeGlobal:
 		return "global"
@@ -60,7 +58,7 @@ func (s VariableScope) String() string {
 //   - "_internal" → ScopeLocal, nil
 //   - "__reserved" → ScopeError, ErrReservedVariableName
 //   - "123invalid" → ScopeError, ErrInvalidVariableName
-func DetermineScope(name string) (VariableScope, error) {
+func DetermineScope(name string) (Scope, error) {
 	if name == "" {
 		return ScopeError, &ErrInvalidVariableName{
 			Name:   name,
@@ -108,7 +106,7 @@ func DetermineScope(name string) (VariableScope, error) {
 //
 // Returns:
 //   - error: validation error if the name is invalid or doesn't match the expected scope
-func ValidateVariableNameForScope(name string, expectedScope VariableScope, location string) error {
+func ValidateVariableNameForScope(name string, expectedScope Scope, location string) error {
 	// First, determine the scope from the name
 	actualScope, err := DetermineScope(name)
 	if err != nil {
@@ -157,8 +155,8 @@ func (e *ErrInvalidVariableName) Error() string {
 type ErrScopeMismatch struct {
 	Name          string
 	Location      string
-	ExpectedScope VariableScope
-	ActualScope   VariableScope
+	ExpectedScope Scope
+	ActualScope   Scope
 }
 
 func (e *ErrScopeMismatch) Error() string {
@@ -173,7 +171,7 @@ func (e *ErrScopeMismatch) Error() string {
 	)
 }
 
-func (e *ErrScopeMismatch) scopeStartCharDescription(scope VariableScope) string {
+func (e *ErrScopeMismatch) scopeStartCharDescription(scope Scope) string {
 	switch scope {
 	case ScopeGlobal:
 		return "uppercase A-Z"

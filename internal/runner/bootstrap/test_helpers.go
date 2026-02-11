@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	runnererrors "github.com/isseis/go-safe-cmd-runner/internal/runner/errors"
+	runnererrors "github.com/isseis/go-safe-cmd-runner/internal/runner/runerrors"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 

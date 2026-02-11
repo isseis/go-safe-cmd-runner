@@ -11,7 +11,7 @@ func TestDetermineScope(t *testing.T) {
 	tests := []struct {
 		name          string
 		variableName  string
-		expectedScope VariableScope
+		expectedScope Scope
 		expectError   bool
 		errorType     string
 	}{
@@ -186,7 +186,7 @@ func TestValidateVariableNameForScope(t *testing.T) {
 	tests := []struct {
 		name          string
 		variableName  string
-		expectedScope VariableScope
+		expectedScope Scope
 		location      string
 		expectError   bool
 		errorContains string
@@ -370,15 +370,15 @@ func TestErrorMessages(t *testing.T) {
 	})
 }
 
-func TestVariableScopeString(t *testing.T) {
+func TestScopeString(t *testing.T) {
 	tests := []struct {
-		scope    VariableScope
+		scope    Scope
 		expected string
 	}{
 		{ScopeGlobal, "global"},
 		{ScopeLocal, "local"},
 		{ScopeError, "error"},
-		{VariableScope(999), "unknown"}, // invalid scope
+		{Scope(999), "unknown"}, // invalid scope
 	}
 
 	for _, tt := range tests {

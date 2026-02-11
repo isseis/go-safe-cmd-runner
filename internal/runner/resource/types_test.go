@@ -9,16 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResourceTypeString(t *testing.T) {
+func TestTypeString(t *testing.T) {
 	tests := []struct {
-		rType    ResourceType
+		rType    Type
 		expected string
 	}{
-		{ResourceTypeCommand, "command"},
-		{ResourceTypeGroup, "group"},
-		{ResourceTypeFilesystem, "filesystem"},
-		{ResourceTypePrivilege, "privilege"},
-		{ResourceTypeNetwork, "network"},
+		{TypeCommand, "command"},
+		{TypeGroup, "group"},
+		{TypeFilesystem, "filesystem"},
+		{TypePrivilege, "privilege"},
+		{TypeNetwork, "network"},
 	}
 
 	for _, test := range tests {
@@ -26,9 +26,9 @@ func TestResourceTypeString(t *testing.T) {
 	}
 }
 
-func TestResourceOperationString(t *testing.T) {
+func TestOperationString(t *testing.T) {
 	tests := []struct {
-		op       ResourceOperation
+		op       Operation
 		expected string
 	}{
 		{OperationCreate, "create"},
@@ -74,16 +74,16 @@ func TestOutputFormatString(t *testing.T) {
 	}
 }
 
-func TestResourceAnalysis(t *testing.T) {
+func TestAnalysis(t *testing.T) {
 	timestamp := time.Now()
-	analysis := &ResourceAnalysis{
-		Type:      ResourceTypeCommand,
+	analysis := &Analysis{
+		Type:      TypeCommand,
 		Operation: OperationExecute,
 		Target:    "echo test",
 		Parameters: map[string]ParameterValue{
 			"timeout": NewIntValue(30),
 		},
-		Impact: ResourceImpact{
+		Impact: Impact{
 			Reversible:  true,
 			Persistent:  false,
 			Description: "Test command execution",
@@ -91,7 +91,7 @@ func TestResourceAnalysis(t *testing.T) {
 		Timestamp: timestamp,
 	}
 
-	assert.Equal(t, ResourceTypeCommand, analysis.Type)
+	assert.Equal(t, TypeCommand, analysis.Type)
 	assert.Equal(t, OperationExecute, analysis.Operation)
 	assert.Equal(t, "echo test", analysis.Target)
 	assert.Equal(t, int64(30), analysis.Parameters["timeout"].Value())
@@ -147,7 +147,7 @@ func TestDryRunResult(t *testing.T) {
 			Version:         "1.0.0",
 			Duration:        time.Second * 5,
 		},
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		SecurityAnalysis: &SecurityAnalysis{
 			Risks:             []SecurityRisk{},
 			PrivilegeChanges:  []PrivilegeChange{},

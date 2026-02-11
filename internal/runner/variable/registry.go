@@ -6,14 +6,12 @@ import (
 	"sync"
 )
 
-// VariableRegistry manages variable registration and resolution with scope enforcement.
+// Registry manages variable registration and resolution with scope enforcement.
 // It separates global and local variables into distinct namespaces based on naming conventions.
 //
 // This interface is required by the requirements document (section 5.2) to enforce
 // type safety and namespace separation between global and local variables.
-//
-//nolint:revive // VariableRegistry is descriptive and matches specification document naming
-type VariableRegistry interface {
+type Registry interface {
 	// RegisterGlobal registers a global variable (must start with uppercase)
 	// Returns error if the name doesn't follow global naming rules
 	RegisterGlobal(name, value string) error
@@ -21,7 +19,7 @@ type VariableRegistry interface {
 	// WithLocals creates a new registry with the current global variables and the provided local variables.
 	// It validates that all local variable names follow local naming rules.
 	// The returned registry is independent of the original one regarding local variables.
-	WithLocals(locals map[string]string) (VariableRegistry, error)
+	WithLocals(locals map[string]string) (Registry, error)
 
 	// Resolve resolves a variable name to its value
 	// The scope is automatically determined from the variable name (F-003 requirement)
@@ -30,37 +28,35 @@ type VariableRegistry interface {
 
 	// GlobalVars returns all global variables as a sorted slice of key-value pairs
 	// Used for dry-run output to display variable state in a stable order
-	GlobalVars() []VariableEntry
+	GlobalVars() []Entry
 
 	// LocalVars returns all local variables as a sorted slice of key-value pairs
 	// Used for dry-run output to display variable state in a stable order
-	LocalVars() []VariableEntry
+	LocalVars() []Entry
 }
 
-// VariableEntry represents a single variable for display purposes
-//
-//nolint:revive // VariableEntry is descriptive and matches specification document naming
-type VariableEntry struct {
+// Entry represents a single variable for display purposes
+type Entry struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
-// variableRegistry is the concrete implementation of VariableRegistry
-type variableRegistry struct {
+// registryImpl is the concrete implementation of Registry
+type registryImpl struct {
 	globals map[string]string
 	locals  map[string]string
 	mu      sync.RWMutex // Protects concurrent access to maps
 }
 
-// NewVariableRegistry creates a new variable registry
-func NewVariableRegistry() VariableRegistry {
-	return &variableRegistry{
+// NewRegistry creates a new variable registry
+func NewRegistry() Registry {
+	return &registryImpl{
 		globals: make(map[string]string),
 		locals:  make(map[string]string),
 	}
 }
 
-func (r *variableRegistry) RegisterGlobal(name, value string) error {
+func (r *registryImpl) RegisterGlobal(name, value string) error {
 	// Validate that the name is a valid global variable name
 	if err := ValidateVariableNameForScope(name, ScopeGlobal, "[global.vars]"); err != nil {
 		return err
@@ -78,7 +74,7 @@ func (r *variableRegistry) RegisterGlobal(name, value string) error {
 	return nil
 }
 
-func (r *variableRegistry) WithLocals(locals map[string]string) (VariableRegistry, error) {
+func (r *registryImpl) WithLocals(locals map[string]string) (Registry, error) {
 	// Validate all local variable names first
 	for name := range locals {
 		if err := ValidateVariableNameForScope(name, ScopeLocal, "[local scope]"); err != nil {
@@ -90,7 +86,7 @@ func (r *variableRegistry) WithLocals(locals map[string]string) (VariableRegistr
 	defer r.mu.RUnlock()
 
 	// Create new registry with copy of globals
-	newRegistry := &variableRegistry{
+	newRegistry := &registryImpl{
 		globals: make(map[string]string, len(r.globals)),
 		locals:  make(map[string]string, len(locals)),
 	}
@@ -101,7 +97,7 @@ func (r *variableRegistry) WithLocals(locals map[string]string) (VariableRegistr
 	return newRegistry, nil
 }
 
-func (r *variableRegistry) Resolve(name string) (string, error) {
+func (r *registryImpl) Resolve(name string) (string, error) {
 	// Determine scope from name
 	scope, err := DetermineScope(name)
 	if err != nil {
@@ -137,14 +133,14 @@ func (r *variableRegistry) Resolve(name string) (string, error) {
 	}
 }
 
-func (r *variableRegistry) GlobalVars() []VariableEntry {
+func (r *registryImpl) GlobalVars() []Entry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	// Create sorted slice of variable entries
-	entries := make([]VariableEntry, 0, len(r.globals))
+	entries := make([]Entry, 0, len(r.globals))
 	for name, value := range r.globals {
-		entries = append(entries, VariableEntry{
+		entries = append(entries, Entry{
 			Name:  name,
 			Value: value,
 		})
@@ -158,14 +154,14 @@ func (r *variableRegistry) GlobalVars() []VariableEntry {
 	return entries
 }
 
-func (r *variableRegistry) LocalVars() []VariableEntry {
+func (r *registryImpl) LocalVars() []Entry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	// Create sorted slice of variable entries
-	entries := make([]VariableEntry, 0, len(r.locals))
+	entries := make([]Entry, 0, len(r.locals))
 	for name, value := range r.locals {
-		entries = append(entries, VariableEntry{
+		entries = append(entries, Entry{
 			Name:  name,
 			Value: value,
 		})

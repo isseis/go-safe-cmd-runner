@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testing"
+	safefileiotesting "github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
 )
 
 // Test errors for manager_test
