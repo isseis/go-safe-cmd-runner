@@ -1,5 +1,4 @@
-//nolint:revive // package name conflicts with standard library
-package color
+package ansicolor
 
 import (
 	"strings"

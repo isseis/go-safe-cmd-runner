@@ -58,7 +58,7 @@ func TestJSONFormatterNilResult(t *testing.T) {
 func TestTextFormatterMinimalResult(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		Errors:           []DryRunError{},
 		Warnings:         []DryRunWarning{},
 	}
@@ -83,7 +83,7 @@ func TestTextFormatterWithMetadata(t *testing.T) {
 			RunID:       "test-run-123",
 			Duration:    time.Second * 5,
 		},
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 	}
 	opts := FormatterOptions{
 		DetailLevel:  DetailLevelSummary,
@@ -101,12 +101,12 @@ func TestTextFormatterWithMetadata(t *testing.T) {
 func TestTextFormatterSummaryLevel(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "echo test",
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test command",
 				},
 			},
@@ -145,13 +145,13 @@ func TestTextFormatterSummaryLevel(t *testing.T) {
 func TestTextFormatterDetailedLevel(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "echo test",
 				Timestamp: time.Now(),
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description:  "Test command",
 					Reversible:   true,
 					Persistent:   false,
@@ -193,9 +193,9 @@ func TestTextFormatterDetailedLevel(t *testing.T) {
 func TestTextFormatterFullLevel(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "echo test",
 				Timestamp: time.Now(),
@@ -203,7 +203,7 @@ func TestTextFormatterFullLevel(t *testing.T) {
 					"timeout": NewIntValue(30),
 					"retries": NewIntValue(3),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test command",
 					Reversible:  true,
 					Persistent:  false,
@@ -240,9 +240,9 @@ func TestTextFormatterFullLevel(t *testing.T) {
 func TestTextFormatterSensitiveRedaction(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
@@ -251,7 +251,7 @@ func TestTextFormatterSensitiveRedaction(t *testing.T) {
 					"api_key":  NewStringValue("key123"),
 					"timeout":  NewIntValue(30),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test",
 				},
 			},
@@ -289,11 +289,11 @@ func TestTextFormatterSensitiveRedaction(t *testing.T) {
 func TestTextFormatterResourceCounts(t *testing.T) {
 	formatter := NewTextFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
-			{Type: ResourceTypeCommand, Impact: ResourceImpact{Description: "cmd1"}},
-			{Type: ResourceTypeCommand, Impact: ResourceImpact{Description: "cmd2"}},
-			{Type: ResourceTypeFilesystem, Impact: ResourceImpact{Description: "fs1"}},
-			{Type: ResourceTypePrivilege, Impact: ResourceImpact{Description: "priv1"}},
+		ResourceAnalyses: []Analysis{
+			{Type: TypeCommand, Impact: Impact{Description: "cmd1"}},
+			{Type: TypeCommand, Impact: Impact{Description: "cmd2"}},
+			{Type: TypeFilesystem, Impact: Impact{Description: "fs1"}},
+			{Type: TypePrivilege, Impact: Impact{Description: "priv1"}},
 		},
 	}
 	opts := FormatterOptions{
@@ -403,13 +403,13 @@ func TestJSONFormatterValidJSON(t *testing.T) {
 			GeneratedAt: time.Now(),
 			RunID:       "test-123",
 		},
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test",
 				},
 			},
@@ -433,16 +433,16 @@ func TestJSONFormatterValidJSON(t *testing.T) {
 func TestJSONFormatterSummaryFilter(t *testing.T) {
 	formatter := NewJSONFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
 				Parameters: map[string]ParameterValue{
 					"timeout": NewIntValue(30),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test",
 				},
 			},
@@ -472,9 +472,9 @@ func TestJSONFormatterSummaryFilter(t *testing.T) {
 func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 	formatter := NewJSONFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
@@ -483,7 +483,7 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 					"api_key":  NewStringValue("key123"),
 					"timeout":  NewIntValue(30),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test",
 				},
 			},
@@ -514,9 +514,9 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 	t.Run("ShowSensitive=true shows in JSON", func(t *testing.T) {
 		// Create a fresh result for this test to avoid interference
 		freshResult := &DryRunResult{
-			ResourceAnalyses: []ResourceAnalysis{
+			ResourceAnalyses: []Analysis{
 				{
-					Type:      ResourceTypeCommand,
+					Type:      TypeCommand,
 					Operation: OperationExecute,
 					Target:    "test",
 					Timestamp: time.Now(),
@@ -525,7 +525,7 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 						"api_key":  NewStringValue("key123"),
 						"timeout":  NewIntValue(30),
 					},
-					Impact: ResourceImpact{
+					Impact: Impact{
 						Description: "Test",
 					},
 				},
@@ -555,16 +555,16 @@ func TestJSONFormatterSensitiveRedaction(t *testing.T) {
 func TestJSONFormatterOriginalUnmodified(t *testing.T) {
 	formatter := NewJSONFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
 				Parameters: map[string]ParameterValue{
 					"password": NewStringValue("secret123"),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test",
 				},
 			},
@@ -602,16 +602,16 @@ func TestJSONFormatterOriginalUnmodified(t *testing.T) {
 func TestJSONFormatterDetailedLevel(t *testing.T) {
 	formatter := NewJSONFormatter()
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
 				Parameters: map[string]ParameterValue{
 					"timeout": NewIntValue(30),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test",
 				},
 			},
@@ -702,7 +702,7 @@ func TestFormatterComplexSecurityAnalysis(t *testing.T) {
 // TestFormatterEmptyCollections tests formatting with empty collections
 func TestFormatterEmptyCollections(t *testing.T) {
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		SecurityAnalysis: &SecurityAnalysis{
 			Risks:            []SecurityRisk{},
 			PrivilegeChanges: []PrivilegeChange{},
@@ -782,16 +782,16 @@ func TestFormatterNilFields(t *testing.T) {
 // TestFormatterSpecialCharacters tests handling of special characters
 func TestFormatterSpecialCharacters(t *testing.T) {
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    `test "command" with 'quotes' and \backslash`,
 				Timestamp: time.Now(),
 				Parameters: map[string]ParameterValue{
 					"special": NewStringValue(`{"nested": "json"}`),
 				},
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: "Test with special chars: <>&\"'",
 				},
 			},
@@ -835,13 +835,13 @@ func TestFormatterSpecialCharacters(t *testing.T) {
 func TestFormatterLongStrings(t *testing.T) {
 	longString := strings.Repeat("very long description ", 1000)
 	result := &DryRunResult{
-		ResourceAnalyses: []ResourceAnalysis{
+		ResourceAnalyses: []Analysis{
 			{
-				Type:      ResourceTypeCommand,
+				Type:      TypeCommand,
 				Operation: OperationExecute,
 				Target:    "test",
 				Timestamp: time.Now(),
-				Impact: ResourceImpact{
+				Impact: Impact{
 					Description: longString,
 				},
 			},
@@ -879,7 +879,7 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 			GeneratedAt: time.Now(),
 			RunID:       "test-run-verification",
 		},
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    10,
 			VerifiedFiles: 7,
@@ -945,7 +945,7 @@ func TestTextFormatter_WriteFileVerification_AllSuccess(t *testing.T) {
 			GeneratedAt: time.Now(),
 			RunID:       "test-all-success",
 		},
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    5,
 			VerifiedFiles: 5,
@@ -979,7 +979,7 @@ func TestTextFormatter_WriteFileVerification_WithFailures(t *testing.T) {
 			GeneratedAt: time.Now(),
 			RunID:       "test-with-failures",
 		},
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    10,
 			VerifiedFiles: 5,
@@ -1051,7 +1051,7 @@ func TestJSONFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		},
 		Status:           StatusSuccess,
 		Phase:            PhaseCompleted,
-		ResourceAnalyses: []ResourceAnalysis{},
+		ResourceAnalyses: []Analysis{},
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    8,
 			VerifiedFiles: 6,

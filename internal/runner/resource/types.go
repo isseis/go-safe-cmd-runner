@@ -7,72 +7,68 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
-// ResourceAnalysis captures analysis of a resource operation
-// nolint:revive // ResourceAnalysis is intentionally named to be clear about its purpose
-type ResourceAnalysis struct {
-	Type       ResourceType      `json:"type"`
-	Operation  ResourceOperation `json:"operation"`
-	Target     string            `json:"target"`
-	Status     ExecutionStatus   `json:"status"`
-	Error      *ExecutionError   `json:"error,omitempty"`
-	SkipReason string            `json:"skip_reason,omitempty"`
-	Parameters ParametersMap     `json:"parameters"`
-	Impact     ResourceImpact    `json:"impact"`
-	Timestamp  time.Time         `json:"timestamp"`
+// Analysis captures analysis of a resource operation
+type Analysis struct {
+	Type       Type            `json:"type"`
+	Operation  Operation       `json:"operation"`
+	Target     string          `json:"target"`
+	Status     ExecutionStatus `json:"status"`
+	Error      *ExecutionError `json:"error,omitempty"`
+	SkipReason string          `json:"skip_reason,omitempty"`
+	Parameters ParametersMap   `json:"parameters"`
+	Impact     Impact          `json:"impact"`
+	Timestamp  time.Time       `json:"timestamp"`
 
 	// DebugInfo is optional and only populated based on dry-run detail level
 	DebugInfo *DebugInfo `json:"debug_info,omitempty"`
 }
 
-// ResourceType represents the type of resource being operated on
-// nolint:revive // ResourceType is intentionally named to be clear about its purpose
-type ResourceType string
+// Type represents the type of resource being operated on
+type Type string
 
 const (
-	// ResourceTypeCommand represents command execution
-	ResourceTypeCommand ResourceType = "command"
-	// ResourceTypeGroup represents group configuration analysis
-	ResourceTypeGroup ResourceType = "group"
-	// ResourceTypeFilesystem represents filesystem operations
-	ResourceTypeFilesystem ResourceType = "filesystem"
-	// ResourceTypePrivilege represents privilege management
-	ResourceTypePrivilege ResourceType = "privilege"
-	// ResourceTypeNetwork represents network operations
-	ResourceTypeNetwork ResourceType = "network"
+	// TypeCommand represents command execution
+	TypeCommand Type = "command"
+	// TypeGroup represents group configuration analysis
+	TypeGroup Type = "group"
+	// TypeFilesystem represents filesystem operations
+	TypeFilesystem Type = "filesystem"
+	// TypePrivilege represents privilege management
+	TypePrivilege Type = "privilege"
+	// TypeNetwork represents network operations
+	TypeNetwork Type = "network"
 )
 
-// String returns the string representation of ResourceType
-func (r ResourceType) String() string {
+// String returns the string representation of Type
+func (r Type) String() string {
 	return string(r)
 }
 
-// ResourceOperation represents the operation being performed
-// nolint:revive // ResourceOperation is intentionally named to be clear about its purpose
-type ResourceOperation string
+// Operation represents the operation being performed
+type Operation string
 
 const (
 	// OperationAnalyze represents an analyze operation (e.g., group configuration analysis)
-	OperationAnalyze ResourceOperation = "analyze"
+	OperationAnalyze Operation = "analyze"
 	// OperationCreate represents a create operation
-	OperationCreate ResourceOperation = "create"
+	OperationCreate Operation = "create"
 	// OperationDelete represents a delete operation
-	OperationDelete ResourceOperation = "delete"
+	OperationDelete Operation = "delete"
 	// OperationExecute represents an execute operation
-	OperationExecute ResourceOperation = "execute"
+	OperationExecute Operation = "execute"
 	// OperationEscalate represents a privilege escalation operation
-	OperationEscalate ResourceOperation = "escalate"
+	OperationEscalate Operation = "escalate"
 	// OperationSend represents a send operation (e.g., notifications)
-	OperationSend ResourceOperation = "send"
+	OperationSend Operation = "send"
 )
 
-// String returns the string representation of ResourceOperation
-func (r ResourceOperation) String() string {
+// String returns the string representation of Operation
+func (r Operation) String() string {
 	return string(r)
 }
 
-// ResourceImpact describes the impact of a resource operation
-// nolint:revive // ResourceImpact is intentionally named to be clear about its purpose
-type ResourceImpact struct {
+// Impact describes the impact of a resource operation
+type Impact struct {
 	Reversible   bool   `json:"reversible"`
 	Persistent   bool   `json:"persistent"`
 	SecurityRisk string `json:"security_risk,omitempty"`
@@ -149,7 +145,7 @@ type DryRunResult struct {
 	Phase            ExecutionPhase                        `json:"phase"`
 	Error            *ExecutionError                       `json:"error,omitempty"`
 	Summary          *ExecutionSummary                     `json:"summary"`
-	ResourceAnalyses []ResourceAnalysis                    `json:"resource_analyses"`
+	ResourceAnalyses []Analysis                            `json:"resource_analyses"`
 	SecurityAnalysis *SecurityAnalysis                     `json:"security_analysis"`
 	EnvironmentInfo  *EnvironmentInfo                      `json:"environment_info"`
 	FileVerification *verification.FileVerificationSummary `json:"file_verification,omitempty"`
@@ -210,7 +206,6 @@ type ExecutionSummary struct {
 }
 
 // Counts provides counts for a specific resource type
-// nolint:revive // Counts is intentionally named to avoid stuttering with resource.ResourceCounts
 type Counts struct {
 	Total      int `json:"total"`
 	Successful int `json:"successful"`

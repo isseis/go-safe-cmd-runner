@@ -28,7 +28,7 @@ func (m *mockCommandExecutor) Execute(_ context.Context, cmd *runnertypes.Runtim
 }
 
 func (m *mockCommandExecutor) Validate(_ *runnertypes.RuntimeCommand) error {
-	// Executor level validation is minimal since validation happens at ResourceManager level
+	// Executor level validation is minimal since validation happens at Manager level
 	return nil
 }
 
@@ -191,12 +191,12 @@ func TestErrorScenariosConsistency(t *testing.T) {
 
 	executionModes := []struct {
 		name     string
-		setup    func() ResourceManager
+		setup    func() Manager
 		isDryRun bool
 	}{
 		{
 			name: "DryRun",
-			setup: func() ResourceManager {
+			setup: func() Manager {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
@@ -211,7 +211,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "Normal",
-			setup: func() ResourceManager {
+			setup: func() Manager {
 				mockExecutor := &mockCommandExecutor{}
 				mockFS := &mockFileSystem{}
 				return NewNormalResourceManager(mockExecutor, mockFS, nil, slog.Default())
@@ -260,12 +260,12 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 
 	executionModes := []struct {
 		name     string
-		setup    func() ResourceManager
+		setup    func() Manager
 		isDryRun bool
 	}{
 		{
 			name: "DryRun",
-			setup: func() ResourceManager {
+			setup: func() Manager {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
@@ -280,7 +280,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 		},
 		{
 			name: "Normal",
-			setup: func() ResourceManager {
+			setup: func() Manager {
 				mockExecutor := &mockCommandExecutor{}
 				mockFS := &mockFileSystem{}
 				return NewNormalResourceManager(mockExecutor, mockFS, nil, slog.Default())
@@ -551,10 +551,10 @@ func TestFormatterErrorScenarios(t *testing.T) {
 			name: "corrupted resource analyses",
 			result: &DryRunResult{
 				Metadata: &ResultMetadata{},
-				ResourceAnalyses: []ResourceAnalysis{
+				ResourceAnalyses: []Analysis{
 					{
-						Type:      ResourceType("invalid"),
-						Operation: ResourceOperation("invalid"),
+						Type:      Type("invalid"),
+						Operation: Operation("invalid"),
 						Target:    "",
 					},
 				},

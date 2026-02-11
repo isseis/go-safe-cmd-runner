@@ -18,15 +18,15 @@ var (
 	ErrDifferentError  = errors.New("different error")
 )
 
-func TestError_Error(t *testing.T) {
+func TestOpError_Error(t *testing.T) {
 	testCases := []struct {
 		name     string
-		err      *Error
+		err      *OpError
 		expected string
 	}{
 		{
 			name: "error with path",
-			err: &Error{
+			err: &OpError{
 				Op:   "VerifyHash",
 				Path: "/path/to/config.toml",
 				Err:  ErrHashMismatch,
@@ -35,7 +35,7 @@ func TestError_Error(t *testing.T) {
 		},
 		{
 			name: "error without path",
-			err: &Error{
+			err: &OpError{
 				Op:  "ValidateConfig",
 				Err: ErrConfigInvalid,
 			},
@@ -43,7 +43,7 @@ func TestError_Error(t *testing.T) {
 		},
 		{
 			name: "error with all fields",
-			err: &Error{
+			err: &OpError{
 				Op:   "CompareHash",
 				Path: "/etc/config.toml",
 				Err:  ErrValuesDontMatch,
@@ -59,8 +59,8 @@ func TestError_Error(t *testing.T) {
 	}
 }
 
-func TestError_Unwrap(t *testing.T) {
-	verificationErr := &Error{
+func TestOpError_Unwrap(t *testing.T) {
+	verificationErr := &OpError{
 		Op:  "TestOperation",
 		Err: ErrOriginalError,
 	}
@@ -68,8 +68,8 @@ func TestError_Unwrap(t *testing.T) {
 	assert.Equal(t, ErrOriginalError, verificationErr.Unwrap())
 }
 
-func TestError_Is(t *testing.T) {
-	verificationErr := &Error{
+func TestOpError_Is(t *testing.T) {
+	verificationErr := &OpError{
 		Op:  "TestOperation",
 		Err: ErrOriginalError,
 	}
@@ -227,12 +227,12 @@ func TestHashDirectorySecurityErrorAdvanced(t *testing.T) {
 
 // Additional error constants for complete error testing
 
-// TestErrorStructure tests the general verification Error type structure
-func TestErrorStructure(t *testing.T) {
+// TestOpErrorStructure tests the general verification OpError type structure
+func TestOpErrorStructure(t *testing.T) {
 	baseErr := ErrOriginalError
 
 	t.Run("error_with_path", func(t *testing.T) {
-		err := &Error{
+		err := &OpError{
 			Op:   "VerifyHash",
 			Path: "/path/to/config.toml",
 			Err:  baseErr,
@@ -243,7 +243,7 @@ func TestErrorStructure(t *testing.T) {
 	})
 
 	t.Run("error_without_path", func(t *testing.T) {
-		err := &Error{
+		err := &OpError{
 			Op:  "ValidateDirectory",
 			Err: baseErr,
 		}
@@ -253,7 +253,7 @@ func TestErrorStructure(t *testing.T) {
 	})
 
 	t.Run("unwrap_functionality", func(t *testing.T) {
-		err := &Error{
+		err := &OpError{
 			Op:   "TestOp",
 			Path: "/test/path",
 			Err:  baseErr,
@@ -270,7 +270,7 @@ func TestErrorStructure(t *testing.T) {
 	})
 
 	t.Run("error_interface_compliance", func(t *testing.T) {
-		err := &Error{Op: "Test", Err: baseErr}
+		err := &OpError{Op: "Test", Err: baseErr}
 
 		// Should implement error interface
 		var _ error = err
@@ -278,12 +278,12 @@ func TestErrorStructure(t *testing.T) {
 	})
 }
 
-// TestVerificationErrorStructure tests the VerificationError type
-func TestVerificationErrorStructure(t *testing.T) {
+// TestErrorStructure tests the Error type
+func TestErrorStructure(t *testing.T) {
 	baseErr := ErrConfigInvalid
 
 	t.Run("error_with_group", func(t *testing.T) {
-		err := &VerificationError{
+		err := &Error{
 			Op:            "group",
 			Group:         "test-group",
 			Details:       []string{"file1.txt", "file2.txt"},
@@ -305,7 +305,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 	})
 
 	t.Run("error_without_group", func(t *testing.T) {
-		err := &VerificationError{
+		err := &Error{
 			Op:            "global",
 			Details:       []string{"global_file.txt"},
 			TotalFiles:    5,
@@ -325,7 +325,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 	})
 
 	t.Run("unwrap_functionality", func(t *testing.T) {
-		err := &VerificationError{
+		err := &Error{
 			Op:  "test",
 			Err: baseErr,
 		}
@@ -341,7 +341,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 	})
 
 	t.Run("error_interface_compliance", func(t *testing.T) {
-		err := &VerificationError{Op: "test", Err: baseErr}
+		err := &Error{Op: "test", Err: baseErr}
 
 		// Should implement error interface
 		var _ error = err
@@ -349,7 +349,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 	})
 
 	t.Run("error_without_details_includes_underlying_error", func(t *testing.T) {
-		err := &VerificationError{
+		err := &Error{
 			Op:  "global",
 			Err: baseErr,
 		}
@@ -360,7 +360,7 @@ func TestVerificationErrorStructure(t *testing.T) {
 	})
 
 	t.Run("error_without_details_or_underlying_error", func(t *testing.T) {
-		err := &VerificationError{
+		err := &Error{
 			Op: "global",
 		}
 
@@ -473,13 +473,13 @@ func TestErrorWrappingBehavior(t *testing.T) {
 		// Create a chain of errors
 		rootErr := ErrValuesDontMatch
 
-		verifyErr := &Error{
+		verifyErr := &OpError{
 			Op:   "VerifyHash",
 			Path: "/config.toml",
 			Err:  rootErr,
 		}
 
-		verificationErr := &VerificationError{
+		verificationErr := &Error{
 			Op:      "global",
 			Group:   "",
 			Details: []string{"/config.toml"},

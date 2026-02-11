@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator/encoding"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator/pathencoding"
 )
 
 const (
@@ -31,14 +31,14 @@ const (
 //   - "/home/user/file.txt" → "~home~user~file.txt" (normal encoding, no extension)
 //   - "/very/long/path/..." → "AbCdEf123456.json" (SHA256 fallback with .json extension)
 type HybridHashFilePathGetter struct {
-	encoder        *encoding.SubstitutionHashEscape
+	encoder        *pathencoding.SubstitutionHashEscape
 	fallbackGetter *SHA256PathHashGetter
 }
 
 // NewHybridHashFilePathGetter creates a new HybridHashFilePathGetter instance.
 func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 	return &HybridHashFilePathGetter{
-		encoder:        encoding.NewSubstitutionHashEscape(),
+		encoder:        pathencoding.NewSubstitutionHashEscape(),
 		fallbackGetter: NewSHA256PathHashGetter(),
 	}
 }

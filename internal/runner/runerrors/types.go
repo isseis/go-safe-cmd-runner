@@ -1,7 +1,5 @@
-// Package errors provides error classification and handling for the runner.
-//
-//nolint:revive // package name conflicts with standard library
-package errors
+// Package runerrors provides error classification and handling for the runner.
+package runerrors
 
 import "time"
 

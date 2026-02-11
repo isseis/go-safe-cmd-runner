@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/color"
+	"github.com/isseis/go-safe-cmd-runner/internal/ansicolor"
 )
 
 // MessageFormatter handles formatting log messages with optional color support.
@@ -177,7 +177,7 @@ func (f *DefaultMessageFormatter) FormatLogFileHint(lineNumber int, useColor boo
 	var sb strings.Builder
 
 	if useColor {
-		sb.WriteString(color.Cyan("* "))
+		sb.WriteString(ansicolor.Cyan("* "))
 	} else {
 		sb.WriteString("HINT: ")
 	}
@@ -194,15 +194,15 @@ func (f *DefaultMessageFormatter) formatLevel(level slog.Level, useColor bool) s
 	if useColor {
 		switch level {
 		case slog.LevelDebug:
-			return color.Gray("* DEBUG")
+			return ansicolor.Gray("* DEBUG")
 		case slog.LevelInfo:
-			return color.Green("+ INFO ")
+			return ansicolor.Green("+ INFO ")
 		case slog.LevelWarn:
-			return color.Yellow("! WARN ")
+			return ansicolor.Yellow("! WARN ")
 		case slog.LevelError:
-			return color.Red("X ERROR")
+			return ansicolor.Red("X ERROR")
 		default:
-			return color.Gray("> " + level.String())
+			return ansicolor.Gray("> " + level.String())
 		}
 	} else {
 		switch level {

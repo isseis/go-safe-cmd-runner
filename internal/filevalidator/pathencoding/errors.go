@@ -1,10 +1,8 @@
-// Package encoding provides error types for hybrid hash filename encoding operations.
+// Package pathencoding provides error types for hybrid hash filename encoding operations.
 //
-// This file defines all error types used throughout the encoding package,
+// This file defines all error types used throughout the pathencoding package,
 // providing structured error handling with detailed context information.
-//
-//nolint:revive // package name conflicts with standard library
-package encoding
+package pathencoding
 
 import (
 	"errors"

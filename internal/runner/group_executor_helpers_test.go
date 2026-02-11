@@ -11,7 +11,7 @@ import (
 // NewTestGroupExecutor creates a DefaultGroupExecutor with common test defaults.
 func NewTestGroupExecutor(
 	config *runnertypes.ConfigSpec,
-	resourceManager resource.ResourceManager,
+	resourceManager resource.Manager,
 	options ...GroupExecutorOption,
 ) *DefaultGroupExecutor {
 	return NewDefaultGroupExecutor(
@@ -31,7 +31,7 @@ type TestGroupExecutorConfig struct {
 	Config              *runnertypes.ConfigSpec
 	Validator           security.ValidatorInterface
 	VerificationManager verification.ManagerInterface
-	ResourceManager     resource.ResourceManager
+	ResourceManager     resource.Manager
 	RunID               string
 }
 

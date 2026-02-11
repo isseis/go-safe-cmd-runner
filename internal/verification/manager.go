@@ -58,7 +58,7 @@ func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, e
 			"file_path", filePath,
 			"file_type", fileType,
 			"error", err)
-		return nil, &Error{
+		return nil, &OpError{
 			Op:   "ReadAndVerifyHash",
 			Path: filePath,
 			Err:  err,
@@ -90,7 +90,7 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 		slog.Error("Environment file verification failed",
 			"env_file_path", envFilePath,
 			"error", err)
-		return &Error{
+		return &OpError{
 			Op:   "VerifyHash",
 			Path: envFilePath,
 			Err:  err,
@@ -131,7 +131,7 @@ func (m *Manager) ValidateHashDirectory() error {
 // into the package Error type used by Manager public methods.
 func (m *Manager) ensureHashDirectoryValidated() error {
 	if err := m.ValidateHashDirectory(); err != nil {
-		return &Error{
+		return &OpError{
 			Op:   "ValidateHashDirectory",
 			Path: m.hashDir,
 			Err:  err,
@@ -195,7 +195,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 			"failed_files", result.FailedFiles,
 			"verified_files", result.VerifiedFiles,
 			"total_files", result.TotalFiles)
-		return nil, &VerificationError{
+		return nil, &Error{
 			Op:            "global",
 			Details:       result.FailedFiles,
 			TotalFiles:    result.TotalFiles,
@@ -261,7 +261,7 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	}
 
 	if len(result.FailedFiles) > 0 {
-		return nil, &VerificationError{
+		return nil, &Error{
 			Op:            "group",
 			Group:         groupName,
 			Details:       result.FailedFiles,

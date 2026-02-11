@@ -13,7 +13,7 @@ import (
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
 // NormalResourceManager or DryRunResourceManager depending on ExecutionMode.
-// It implements ResourceManager so callers can always query dry-run results
+// It implements Manager so callers can always query dry-run results
 // (returns nil in normal mode) and record analyses (no-op in normal mode).
 type DefaultResourceManager struct {
 	mode   ExecutionMode
@@ -52,7 +52,7 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 func (d *DefaultResourceManager) GetMode() ExecutionMode { return d.mode }
 
 // activeManager returns the manager corresponding to the current execution mode.
-func (d *DefaultResourceManager) activeManager() ResourceManager {
+func (d *DefaultResourceManager) activeManager() Manager {
 	if d.mode == ExecutionModeDryRun {
 		return d.dryrun
 	}
@@ -103,7 +103,7 @@ func (d *DefaultResourceManager) GetDryRunResults() *DryRunResult {
 }
 
 // RecordAnalysis records an analysis in dry-run mode; no-op in normal mode.
-func (d *DefaultResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
+func (d *DefaultResourceManager) RecordAnalysis(analysis *Analysis) {
 	if d.mode == ExecutionModeDryRun {
 		d.dryrun.RecordAnalysis(analysis)
 	}

@@ -1,4 +1,3 @@
-//nolint:revive // VerificationError is descriptive and distinguishes from the base Error type
 package verification
 
 import (
@@ -69,15 +68,15 @@ func (e *HashDirectorySecurityError) Error() string {
 		e.RequestedDir, e.DefaultDir, e.Reason, e.Time.Format(time.RFC3339))
 }
 
-// Error represents a verification error with context
-type Error struct {
+// OpError represents a verification error with context
+type OpError struct {
 	Op   string // operation that failed
 	Path string // file path (if applicable)
 	Err  error  // underlying error
 }
 
 // Error returns the error message
-func (e *Error) Error() string {
+func (e *OpError) Error() string {
 	if e.Path != "" {
 		return fmt.Sprintf("%s: %v", e.Path, e.Err)
 	}
@@ -85,19 +84,17 @@ func (e *Error) Error() string {
 }
 
 // Unwrap returns the underlying error
-func (e *Error) Unwrap() error {
+func (e *OpError) Unwrap() error {
 	return e.Err
 }
 
 // Is checks if the error matches the target error
-func (e *Error) Is(target error) bool {
+func (e *OpError) Is(target error) bool {
 	return errors.Is(e.Err, target)
 }
 
-// VerificationError represents an error that occurred during file verification
-//
-//nolint:revive // VerificationError is descriptive and distinguishes from the base Error type
-type VerificationError struct {
+// Error represents an error that occurred during file verification
+type Error struct {
 	Op            string   // operation that failed (e.g., "global", "group")
 	Group         string   // group name (if applicable)
 	Details       []string // details about the error (e.g., failed files)
@@ -109,7 +106,7 @@ type VerificationError struct {
 }
 
 // Error returns the error message
-func (e *VerificationError) Error() string {
+func (e *Error) Error() string {
 	var base string
 	if e.Group != "" {
 		base = fmt.Sprintf("%s verification failed for group %s", e.Op, e.Group)
@@ -131,12 +128,12 @@ func (e *VerificationError) Error() string {
 }
 
 // Unwrap returns the underlying error
-func (e *VerificationError) Unwrap() error {
+func (e *Error) Unwrap() error {
 	return e.Err
 }
 
 // Is checks if the error matches the target error
-func (e *VerificationError) Is(target error) bool {
+func (e *Error) Is(target error) bool {
 	return errors.Is(e.Err, target)
 }
 

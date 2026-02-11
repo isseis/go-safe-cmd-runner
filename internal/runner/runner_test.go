@@ -1272,9 +1272,9 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 
 	// Mock dry-run results
 	mockResourceManager.On("GetDryRunResults").Return(&resource.DryRunResult{
-		ResourceAnalyses: []resource.ResourceAnalysis{
+		ResourceAnalyses: []resource.Analysis{
 			{
-				Type:      resource.ResourceTypeCommand,
+				Type:      resource.TypeCommand,
 				Operation: resource.OperationExecute,
 				Target:    "dryrun-echo",
 			},

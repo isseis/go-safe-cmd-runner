@@ -1,4 +1,4 @@
-package errors_test
+package runerrors_test
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/errors"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runerrors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,7 +22,7 @@ func TestLogCriticalToStderr_Output(t *testing.T) {
 	testComponent := "test-component"
 	testMessage := "critical test message"
 
-	errors.LogCriticalToStderr(testComponent, testMessage, testErr)
+	runerrors.LogCriticalToStderr(testComponent, testMessage, testErr)
 
 	// Close writer and restore stderr
 	w.Close()
@@ -46,22 +46,22 @@ func TestLogCriticalToStderr_Output(t *testing.T) {
 func TestLogClassifiedError_AllSeverities(t *testing.T) {
 	tests := []struct {
 		name         string
-		severity     errors.ErrorSeverity
+		severity     runerrors.ErrorSeverity
 		shouldStderr bool
 	}{
 		{
 			name:         "critical severity",
-			severity:     errors.ErrorSeverityCritical,
+			severity:     runerrors.ErrorSeverityCritical,
 			shouldStderr: true,
 		},
 		{
 			name:         "warning severity",
-			severity:     errors.ErrorSeverityWarning,
+			severity:     runerrors.ErrorSeverityWarning,
 			shouldStderr: false,
 		},
 		{
 			name:         "info severity",
-			severity:     errors.ErrorSeverityInfo,
+			severity:     runerrors.ErrorSeverityInfo,
 			shouldStderr: false,
 		},
 	}
@@ -73,15 +73,15 @@ func TestLogClassifiedError_AllSeverities(t *testing.T) {
 			r, w, _ := os.Pipe()
 			os.Stderr = w
 
-			classifiedErr := errors.ClassifyVerificationError(
-				errors.ErrorTypeConfigVerification,
+			classifiedErr := runerrors.ClassifyVerificationError(
+				runerrors.ErrorTypeConfigVerification,
 				tt.severity,
 				"test message",
 				"/test/path",
 				goerrors.New("test error"),
 			)
 
-			errors.LogClassifiedError(classifiedErr)
+			runerrors.LogClassifiedError(classifiedErr)
 
 			// Close writer and restore stderr
 			w.Close()
@@ -107,9 +107,9 @@ func TestLogClassifiedError_WithStructuredFields(t *testing.T) {
 	testMessage := "test structured message"
 	testFilePath := "/test/structured/path"
 
-	classifiedErr := errors.ClassifyVerificationError(
-		errors.ErrorTypeConfigVerification,
-		errors.ErrorSeverityCritical,
+	classifiedErr := runerrors.ClassifyVerificationError(
+		runerrors.ErrorTypeConfigVerification,
+		runerrors.ErrorSeverityCritical,
 		testMessage,
 		testFilePath,
 		testErr,
@@ -120,8 +120,8 @@ func TestLogClassifiedError_WithStructuredFields(t *testing.T) {
 	assert.Equal(t, testFilePath, classifiedErr.FilePath)
 	assert.Equal(t, testErr, classifiedErr.Cause)
 	assert.Equal(t, "verification", classifiedErr.Component)
-	assert.Equal(t, errors.ErrorTypeConfigVerification, classifiedErr.Type)
-	assert.Equal(t, errors.ErrorSeverityCritical, classifiedErr.Severity)
+	assert.Equal(t, runerrors.ErrorTypeConfigVerification, classifiedErr.Type)
+	assert.Equal(t, runerrors.ErrorSeverityCritical, classifiedErr.Severity)
 
 	// Verify timestamp is reasonable
 	now := time.Now()

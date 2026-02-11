@@ -47,6 +47,6 @@ type TestGroupExecutorConfig struct {
 	Config              *runnertypes.ConfigSpec
 	Validator           security.ValidatorInterface
 	VerificationManager verification.ManagerInterface
-	ResourceManager     resource.ResourceManager
+	ResourceManager     resource.Manager
 	RunID               string
 }

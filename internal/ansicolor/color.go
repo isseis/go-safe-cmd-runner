@@ -1,10 +1,8 @@
-// Package color provides small helpers for coloring terminal output using
+// Package ansicolor provides small helpers for coloring terminal output using
 // ANSI escape sequences. It is intended for internal example and logging
 // use; functions here return formatted strings and helpers to conditionally
 // enable/disable color output.
-//
-//nolint:revive // package name conflicts with standard library
-package color
+package ansicolor
 
 // ANSI color codes
 const (

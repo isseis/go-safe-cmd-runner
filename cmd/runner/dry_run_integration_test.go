@@ -49,10 +49,10 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 	require.NotEmpty(t, result.ResourceAnalyses, "should have resource analyses")
 
 	// Find group analyses
-	var inheritGroupAnalysis *resource.ResourceAnalysis
-	var explicitGroupAnalysis *resource.ResourceAnalysis
+	var inheritGroupAnalysis *resource.Analysis
+	var explicitGroupAnalysis *resource.Analysis
 	for i := range result.ResourceAnalyses {
-		if result.ResourceAnalyses[i].Type == resource.ResourceTypeGroup {
+		if result.ResourceAnalyses[i].Type == resource.TypeGroup {
 			switch result.ResourceAnalyses[i].Target {
 			case "test_group_inherit":
 				inheritGroupAnalysis = &result.ResourceAnalyses[i]
@@ -106,9 +106,9 @@ func TestDryRunJSONOutput_WithDebugInfo(t *testing.T) {
 	assert.Contains(t, iaExplicit.UnavailableEnvImportVariables, "API_KEY", "should show API_KEY as unavailable")
 
 	// Find command analyses
-	var commandAnalyses []*resource.ResourceAnalysis
+	var commandAnalyses []*resource.Analysis
 	for i := range result.ResourceAnalyses {
-		if result.ResourceAnalyses[i].Type == resource.ResourceTypeCommand {
+		if result.ResourceAnalyses[i].Type == resource.TypeCommand {
 			commandAnalyses = append(commandAnalyses, &result.ResourceAnalyses[i])
 		}
 	}
@@ -193,7 +193,7 @@ func TestDryRunJSONOutput_DetailLevels(t *testing.T) {
 			require.NoError(t, err, "JSON output should be valid")
 
 			// Check group analysis
-			groupAnalysis := findResourceAnalysisByTypeAndTarget(result, resource.ResourceTypeGroup, "test_group_inherit")
+			groupAnalysis := findResourceAnalysisByTypeAndTarget(result, resource.TypeGroup, "test_group_inherit")
 			require.NotNil(t, groupAnalysis, "should have group analysis")
 
 			if tt.expectDebugInfo {
@@ -219,7 +219,7 @@ func TestDryRunJSONOutput_DetailLevels(t *testing.T) {
 			}
 
 			// Check command analysis
-			commandAnalyses := findAllResourceAnalysesByType(result, resource.ResourceTypeCommand)
+			commandAnalyses := findAllResourceAnalysesByType(result, resource.TypeCommand)
 			require.NotEmpty(t, commandAnalyses, "should have command analyses")
 
 			if tt.expectFinalEnv {
@@ -337,9 +337,9 @@ func TestDryRunSensitiveMasking(t *testing.T) {
 			require.NoError(t, err, "JSON output should be valid")
 
 			// Find command with final environment
-			var cmdWithEnv *resource.ResourceAnalysis
+			var cmdWithEnv *resource.Analysis
 			for i := range result.ResourceAnalyses {
-				if result.ResourceAnalyses[i].Type == resource.ResourceTypeCommand &&
+				if result.ResourceAnalyses[i].Type == resource.TypeCommand &&
 					result.ResourceAnalyses[i].DebugInfo != nil &&
 					result.ResourceAnalyses[i].DebugInfo.FinalEnvironment != nil {
 					cmdWithEnv = &result.ResourceAnalyses[i]
@@ -423,7 +423,7 @@ func runDryRun(t *testing.T, binaryPath, configPath, format, detailLevel string,
 }
 
 // findResourceAnalysisByTypeAndTarget finds a resource analysis by type and target
-func findResourceAnalysisByTypeAndTarget(result resource.DryRunResult, resType resource.ResourceType, target string) *resource.ResourceAnalysis {
+func findResourceAnalysisByTypeAndTarget(result resource.DryRunResult, resType resource.Type, target string) *resource.Analysis {
 	for i := range result.ResourceAnalyses {
 		if result.ResourceAnalyses[i].Type == resType && result.ResourceAnalyses[i].Target == target {
 			return &result.ResourceAnalyses[i]
@@ -433,8 +433,8 @@ func findResourceAnalysisByTypeAndTarget(result resource.DryRunResult, resType r
 }
 
 // findAllResourceAnalysesByType finds all resource analyses of a given type
-func findAllResourceAnalysesByType(result resource.DryRunResult, resType resource.ResourceType) []*resource.ResourceAnalysis {
-	var analyses []*resource.ResourceAnalysis
+func findAllResourceAnalysesByType(result resource.DryRunResult, resType resource.Type) []*resource.Analysis {
+	var analyses []*resource.Analysis
 	for i := range result.ResourceAnalyses {
 		if result.ResourceAnalyses[i].Type == resType {
 			analyses = append(analyses, &result.ResourceAnalyses[i])

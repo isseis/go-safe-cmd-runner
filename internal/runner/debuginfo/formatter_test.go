@@ -1,5 +1,4 @@
-//nolint:revive // package name conflicts with standard library
-package debug
+package debuginfo
 
 import (
 	"fmt"

@@ -555,10 +555,10 @@ risk_level = "medium"
 	require.Greater(t, len(result.ResourceAnalyses), 0, "Expected at least one resource analysis")
 
 	// Find the echo command analysis
-	var cmdAnalysis *resource.ResourceAnalysis
+	var cmdAnalysis *resource.Analysis
 	for i := range result.ResourceAnalyses {
 		analysis := &result.ResourceAnalyses[i]
-		if analysis.Type == resource.ResourceTypeCommand &&
+		if analysis.Type == resource.TypeCommand &&
 			analysis.Operation == resource.OperationExecute &&
 			filepath.Base(analysis.Target) == "echo" {
 			cmdAnalysis = analysis

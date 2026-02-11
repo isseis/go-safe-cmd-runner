@@ -1,7 +1,6 @@
 //go:build test
 
-//nolint:revive // package name conflicts with standard library
-package debug
+package debuginfo
 
 import (
 	"testing"

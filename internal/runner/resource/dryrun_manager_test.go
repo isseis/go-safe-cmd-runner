@@ -56,7 +56,7 @@ func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	assert.Contains(t, result.Stdout, cmd.ExpandedCmd)
 	assert.True(t, result.DryRun)
 	assert.NotNil(t, result.Analysis)
-	assert.Equal(t, ResourceTypeCommand, result.Analysis.Type)
+	assert.Equal(t, TypeCommand, result.Analysis.Type)
 	assert.Equal(t, OperationExecute, result.Analysis.Operation)
 	assert.Equal(t, cmd.ExpandedCmd, result.Analysis.Target)
 }
@@ -75,7 +75,7 @@ func TestDryRunResourceManager_CreateTempDir(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result.ResourceAnalyses, 1)
 	analysis := result.ResourceAnalyses[0]
-	assert.Equal(t, ResourceTypeFilesystem, analysis.Type)
+	assert.Equal(t, TypeFilesystem, analysis.Type)
 	assert.Equal(t, OperationCreate, analysis.Operation)
 }
 
@@ -92,7 +92,7 @@ func TestDryRunResourceManager_CleanupTempDir(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result.ResourceAnalyses, 1)
 	analysis := result.ResourceAnalyses[0]
-	assert.Equal(t, ResourceTypeFilesystem, analysis.Type)
+	assert.Equal(t, TypeFilesystem, analysis.Type)
 	assert.Equal(t, OperationDelete, analysis.Operation)
 	assert.Equal(t, tempPath, analysis.Target)
 }
@@ -117,7 +117,7 @@ func TestDryRunResourceManager_WithPrivileges(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result.ResourceAnalyses, 1)
 	analysis := result.ResourceAnalyses[0]
-	assert.Equal(t, ResourceTypePrivilege, analysis.Type)
+	assert.Equal(t, TypePrivilege, analysis.Type)
 	assert.Equal(t, OperationEscalate, analysis.Operation)
 }
 
@@ -135,7 +135,7 @@ func TestDryRunResourceManager_SendNotification(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result.ResourceAnalyses, 1)
 	analysis := result.ResourceAnalyses[0]
-	assert.Equal(t, ResourceTypeNetwork, analysis.Type)
+	assert.Equal(t, TypeNetwork, analysis.Type)
 	assert.Equal(t, OperationSend, analysis.Operation)
 	assert.Equal(t, "notification_service", analysis.Target)
 }
@@ -486,16 +486,16 @@ func TestDryRunResourceManager_RecordGroupAnalysis(t *testing.T) {
 				require.Greater(t, len(result.ResourceAnalyses), 0)
 
 				// Find the group analysis
-				var foundAnalysis *ResourceAnalysis
+				var foundAnalysis *Analysis
 				for i := range result.ResourceAnalyses {
-					if result.ResourceAnalyses[i].Type == ResourceTypeGroup {
+					if result.ResourceAnalyses[i].Type == TypeGroup {
 						foundAnalysis = &result.ResourceAnalyses[i]
 						break
 					}
 				}
 
 				require.NotNil(t, foundAnalysis, "Group analysis should be recorded")
-				assert.Equal(t, ResourceTypeGroup, foundAnalysis.Type)
+				assert.Equal(t, TypeGroup, foundAnalysis.Type)
 				assert.Equal(t, OperationAnalyze, foundAnalysis.Operation)
 				assert.Equal(t, tt.groupName, foundAnalysis.Target)
 				assert.Equal(t, tt.debugInfo, foundAnalysis.DebugInfo)
@@ -543,9 +543,9 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 				require.Greater(t, len(result.ResourceAnalyses), 0)
 
 				// Find the command analysis
-				var cmdAnalysis *ResourceAnalysis
+				var cmdAnalysis *Analysis
 				for i := range result.ResourceAnalyses {
-					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+					if result.ResourceAnalyses[i].Type == TypeCommand {
 						cmdAnalysis = &result.ResourceAnalyses[i]
 						break
 					}
@@ -602,9 +602,9 @@ func TestDryRunResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 				require.NotNil(t, result)
 
 				// Find the command analysis
-				var cmdAnalysis *ResourceAnalysis
+				var cmdAnalysis *Analysis
 				for i := range result.ResourceAnalyses {
-					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+					if result.ResourceAnalyses[i].Type == TypeCommand {
 						cmdAnalysis = &result.ResourceAnalyses[i]
 						break
 					}
@@ -686,67 +686,67 @@ func TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted(t *testi
 	// Manually add resource analyses with different statuses
 
 	// Add 2 successful groups
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeGroup,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeGroup,
 		Status: StatusSuccess,
 		Target: "group1",
 	})
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeGroup,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeGroup,
 		Status: StatusSuccess,
 		Target: "group2",
 	})
 
 	// Add 1 failed group
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeGroup,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeGroup,
 		Status: StatusError,
 		Target: "group3",
 	})
 
 	// Add 1 skipped group (with skip_reason)
 	// CRITICAL: This should ONLY be counted as skipped, NOT as successful
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:       ResourceTypeGroup,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:       TypeGroup,
 		Status:     StatusSuccess, // Status doesn't matter when skip_reason is set
 		SkipReason: "parent_group_failed",
 		Target:     "group4",
 	})
 
 	// Add 3 successful commands
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeCommand,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeCommand,
 		Status: StatusSuccess,
 		Target: "cmd1",
 	})
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeCommand,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeCommand,
 		Status: StatusSuccess,
 		Target: "cmd2",
 	})
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeCommand,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeCommand,
 		Status: StatusSuccess,
 		Target: "cmd3",
 	})
 
 	// Add 1 failed command
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:   ResourceTypeCommand,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:   TypeCommand,
 		Status: StatusError,
 		Target: "cmd4",
 	})
 
 	// Add 2 skipped commands (with skip_reason)
 	// CRITICAL: These should ONLY be counted as skipped, NOT as successful
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:       ResourceTypeCommand,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:       TypeCommand,
 		Status:     StatusSuccess, // Status doesn't matter when skip_reason is set
 		SkipReason: "dependency_not_met",
 		Target:     "cmd5",
 	})
-	manager.resourceAnalyses = append(manager.resourceAnalyses, ResourceAnalysis{
-		Type:       ResourceTypeCommand,
+	manager.resourceAnalyses = append(manager.resourceAnalyses, Analysis{
+		Type:       TypeCommand,
 		Status:     StatusError, // Even with error status, skip_reason takes precedence
 		SkipReason: "user_requested",
 		Target:     "cmd6",

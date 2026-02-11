@@ -88,20 +88,20 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 			ConfigPath: "/test/config.toml",
 			Version:    "test",
 		},
-		ResourceAnalyses: make([]ResourceAnalysis, 100),
+		ResourceAnalyses: make([]Analysis, 100),
 	}
 
 	// Fill with test data
 	for i := 0; i < 100; i++ {
-		result.ResourceAnalyses[i] = ResourceAnalysis{
-			Type:      ResourceTypeCommand,
+		result.ResourceAnalyses[i] = Analysis{
+			Type:      TypeCommand,
 			Operation: OperationExecute,
 			Target:    "echo test command",
 			Parameters: map[string]ParameterValue{
 				"working_directory": NewStringValue("/test"),
 				"timeout":           NewIntValue(30),
 			},
-			Impact: ResourceImpact{
+			Impact: Impact{
 				Reversible:  true,
 				Persistent:  false,
 				Description: "Execute echo command",

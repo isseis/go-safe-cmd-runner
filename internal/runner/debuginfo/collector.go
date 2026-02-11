@@ -1,7 +1,5 @@
-// Package debug provides debug information collection and formatting for dry-run mode.
-//
-//nolint:revive // package name conflicts with standard library
-package debug
+// Package debuginfo provides debug information collection and formatting for dry-run mode.
+package debuginfo
 
 import (
 	"sort"
