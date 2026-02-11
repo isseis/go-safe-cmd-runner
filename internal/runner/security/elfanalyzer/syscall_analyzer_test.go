@@ -46,21 +46,21 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 			// mov $0x29, %eax; syscall
 			code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05},
 			wantNumber: 41,
-			wantMethod: "immediate",
+			wantMethod: DeterminationMethodImmediate,
 		},
 		{
 			name: "immediate with unrelated instruction",
 			// mov $0x2a, %eax; mov %rsi, %rdi; syscall
 			code:       []byte{0xb8, 0x2a, 0x00, 0x00, 0x00, 0x48, 0x89, 0xf7, 0x0f, 0x05},
 			wantNumber: 42,
-			wantMethod: "immediate",
+			wantMethod: DeterminationMethodImmediate,
 		},
 		{
 			name: "register move (indirect)",
 			// mov %ebx, %eax; syscall
 			code:       []byte{0x89, 0xd8, 0x0f, 0x05},
 			wantNumber: -1,
-			wantMethod: "unknown:indirect_setting",
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
 		},
 		{
 			name: "control flow boundary",
@@ -69,7 +69,7 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 			// it encounters jmp first, which creates a control flow boundary.
 			code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0xeb, 0x05, 0x0f, 0x05},
 			wantNumber: -1,
-			wantMethod: "unknown:control_flow_boundary",
+			wantMethod: DeterminationMethodUnknownControlFlowBoundary,
 		},
 		{
 			name: "syscall only (no eax modification)",
@@ -77,14 +77,14 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 			// With only the syscall instruction and no prior instructions,
 			// the decode window is empty [0, 0), so decode_failed is returned.
 			wantNumber: -1,
-			wantMethod: "unknown:decode_failed",
+			wantMethod: DeterminationMethodUnknownDecodeFailed,
 		},
 		{
 			name: "memory load to eax (indirect)",
 			// mov (%rsp), %eax; syscall
 			code:       []byte{0x8b, 0x04, 0x24, 0x0f, 0x05},
 			wantNumber: -1,
-			wantMethod: "unknown:indirect_setting",
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
 		},
 	}
 
@@ -111,17 +111,17 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 		{
 			name:       "indirect setting is high risk",
 			code:       []byte{0x89, 0xd8, 0x0f, 0x05}, // mov %ebx, %eax; syscall
-			wantMethod: "unknown:indirect_setting",
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
 		},
 		{
 			name:       "control flow boundary is high risk",
 			code:       []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0xeb, 0x05, 0x0f, 0x05}, // mov $0x29, %eax; jmp label(+5); syscall
-			wantMethod: "unknown:control_flow_boundary",
+			wantMethod: DeterminationMethodUnknownControlFlowBoundary,
 		},
 		{
 			name:       "decode failed is high risk",
 			code:       []byte{0x0f, 0x05},
-			wantMethod: "unknown:decode_failed",
+			wantMethod: DeterminationMethodUnknownDecodeFailed,
 		},
 	}
 
@@ -161,13 +161,13 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", result.DetectedSyscalls[0].Name)
 	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
-	assert.Equal(t, "immediate", result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
 
 	// Second syscall: connect (42)
 	assert.Equal(t, 42, result.DetectedSyscalls[1].Number)
 	assert.Equal(t, "connect", result.DetectedSyscalls[1].Name)
 	assert.True(t, result.DetectedSyscalls[1].IsNetwork)
-	assert.Equal(t, "immediate", result.DetectedSyscalls[1].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[1].DeterminationMethod)
 
 	// Summary
 	assert.Equal(t, 2, result.Summary.TotalDetectedEvents)
@@ -241,11 +241,11 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 
 	// First: socket (known)
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
-	assert.Equal(t, "immediate", result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
 
 	// Second: unknown (indirect)
 	assert.Equal(t, -1, result.DetectedSyscalls[1].Number)
-	assert.Equal(t, "unknown:indirect_setting", result.DetectedSyscalls[1].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, result.DetectedSyscalls[1].DeterminationMethod)
 
 	// Overall result should be high risk because of unknown syscall
 	assert.True(t, result.HasUnknownSyscalls)
@@ -378,7 +378,7 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
-	assert.Equal(t, "unknown:scan_limit_exceeded", result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result.DetectedSyscalls[0].DeterminationMethod)
 	assert.True(t, result.Summary.IsHighRisk)
 }
 

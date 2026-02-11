@@ -132,7 +132,20 @@ func NewSyscallAnalyzer() *SyscallAnalyzer {
 }
 
 // NewSyscallAnalyzerWithConfig creates a SyscallAnalyzer with custom configuration.
+// If a nil decoder or syscall table is provided, this function falls back to the
+// default x86 decoder and x86_64 syscall table to avoid panics during analysis.
+// If maxScan is non-positive, it is clamped to defaultMaxBackwardScan to keep
+// backward scanning behavior predictable.
 func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumberTable, maxScan int) *SyscallAnalyzer {
+	if decoder == nil {
+		decoder = NewX86Decoder()
+	}
+	if table == nil {
+		table = NewX86_64SyscallTable()
+	}
+	if maxScan <= 0 {
+		maxScan = defaultMaxBackwardScan
+	}
 	return &SyscallAnalyzer{
 		decoder:         decoder,
 		syscallTable:    table,
@@ -411,7 +424,7 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 		if pos < 0 {
 			break
 		}
-		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos))
+		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) //nolint:gosec
 		if err != nil {
 			// Skip problematic byte and continue
 			pos++
