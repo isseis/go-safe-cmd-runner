@@ -261,7 +261,7 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
 	// Use the shared decoder instance (r.decoder) to avoid repeated allocation
 	// Start from the instruction before the CALL (len-2) and scan up to maxBackwardScanSteps
 	startIdx := len(recentInstructions) - minRecentInstructionsForScan
-	minIdx := len(recentInstructions) - maxBackwardScanSteps
+	minIdx := len(recentInstructions) - 1 - maxBackwardScanSteps
 	for i := startIdx; i >= 0 && i >= minIdx; i-- {
 		inst := recentInstructions[i]
 
