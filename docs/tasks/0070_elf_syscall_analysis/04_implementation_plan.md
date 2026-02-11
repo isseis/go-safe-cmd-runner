@@ -341,13 +341,14 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 5.1 StandardELFAnalyzer への統合
 
-- [ ] `standard_analyzer.go` に syscall 解析結果参照を追加
+- [x] `standard_analyzer.go` に syscall 解析結果参照を追加
   - `SyscallAnalysisStore` インターフェース定義
     （elfanalyzer パッケージ内、循環依存回避）
   - `StandardELFAnalyzer` に `syscallStore`, `hashAlgo`
     フィールドを追加
   - `NewStandardELFAnalyzerWithSyscallStore()`
     コンストラクタ
+  - `handleStaticBinary()`: 静的バイナリ処理の統一
   - `lookupSyscallAnalysis()`:
     ハッシュ計算 → ストア参照 → 結果変換
   - `convertSyscallResult()`:
@@ -356,23 +357,27 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     - ネットワーク syscall なし → `NoNetworkSymbols`
     - High Risk → `AnalysisError`（高リスクとして扱う）
     - 解析結果なし → `StaticBinary`（従来と同じ）
+  - `calculateFileHash()`: TOCTOU安全なハッシュ計算
   - `AnalyzeNetworkSymbols()` の静的バイナリ分岐に
     syscall 参照を追加
   - 仕様: 詳細仕様書 §3、アーキテクチャ §4.2
   - 要件: FR-3.4.1, FR-3.4.2
-- [ ] `standard_analyzer_test.go` に追加テスト
+- [x] `analyzer_test.go` に追加テスト
   - `TestStandardELFAnalyzer_SyscallLookup_NetworkDetected`
   - `TestStandardELFAnalyzer_SyscallLookup_NoNetwork`
   - `TestStandardELFAnalyzer_SyscallLookup_HighRisk`
   - `TestStandardELFAnalyzer_SyscallLookup_NotFound`
   - `TestStandardELFAnalyzer_SyscallLookup_HashMismatch`
+  - `TestStandardELFAnalyzer_WithoutSyscallStore`
   - 受け入れ条件: AC-6, AC-8, AC-9
 
 ### 5.2 record コマンドへの統合
 
-- [ ] `cmd/record/main.go` に `--analyze-syscalls` オプションを追加
-  - 静的 ELF バイナリの判定
-  - `SyscallAnalyzer` による解析実行
+- [x] `cmd/record/main.go` に `--analyze-syscalls` オプションを追加
+  - `syscallAnalysisContext` 構造体による解析リソース管理
+  - `analyzeFile()`: 静的 ELF バイナリの判定と解析実行
+  - `convertToFileanalysisResult()`: 型変換ヘルパー
+    （elfanalyzer.SyscallAnalysisResult → fileanalysis.SyscallAnalysisResult）
   - ハッシュ計算と解析結果の保存
   - 非 ELF ファイルや動的リンクバイナリのスキップ
   - 進捗メッセージの出力（解析開始時・完了時に stderr へ出力）
@@ -380,16 +385,16 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     （`result.DecodeStats` を使用、ファイルパス付き `slog.Debug`）
   - 仕様: 詳細仕様書 §4, §8.4, §8.5.3
   - 要件: FR-3.3.1, NFR-4.1.2
-- [ ] `cmd/record/main_test.go` に追加テスト
-  - `--analyze-syscalls` オプションの動作確認
-  - 非 ELF ファイルのスキップ確認
+- [x] `cmd/record/main_test.go` に追加テスト
+  - `TestRunWithAnalyzeSyscallsOption`: オプション動作確認
+  - `TestRunWithAnalyzeSyscallsSkipsNonELF`: 非 ELF ファイルのスキップ確認
   - 受け入れ条件: AC-7
 
 ### 5.3 既存テストの維持確認
 
-- [ ] 既存テスト全件パスの確認（`make test`）
-- [ ] lint パスの確認（`make lint`）
-- [ ] 受け入れ条件: AC-9
+- [x] 既存テスト全件パスの確認（`make test`）
+- [x] lint パスの確認（`make lint`）
+- [x] 受け入れ条件: AC-9
 
 ## Phase 6: 統合テスト・ドキュメント
 
