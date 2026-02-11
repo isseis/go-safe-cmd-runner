@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockExecutor is now imported from internal/runner/executor/testutil
-
 func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	t.Run("valid_user_group_specification", func(t *testing.T) {
 		mockExec := executortesting.NewMockExecutor()

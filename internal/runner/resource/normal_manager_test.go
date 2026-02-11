@@ -15,10 +15,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// Mock implementations for testing
-
-// MockExecutor is now imported from internal/runner/executor/testutil
-
 // MockFileSystem implements executor.FileSystem for testing
 type MockFileSystem struct {
 	mock.Mock
