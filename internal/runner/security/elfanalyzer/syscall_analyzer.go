@@ -271,13 +271,25 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 		return info
 	}
 	delta := syscallAddr - baseAddr
-	if delta > uint64(len(code)) {
+	// Reject offsets that are at or beyond the end of the code buffer.
+	if delta >= uint64(len(code)) {
 		info.DeterminationMethod = determinationUnknownInvalidOffset
 		return info
 	}
 	// Explicitly check against math.MaxInt to prevent overflow during conversion.
-	// While we know delta <= len(code) < math.MaxInt, gosec requires explicit validation.
+	// While we know delta < len(code) < math.MaxInt, gosec requires explicit validation.
 	if delta > uint64(math.MaxInt) {
+		info.DeterminationMethod = determinationUnknownInvalidOffset
+		return info
+	}
+	// Ensure there is enough room for the 2-byte syscall opcode (0F 05) at syscallAddr.
+	// This guarantees that any forward inspection of the opcode stays within bounds.
+	if delta+1 >= uint64(len(code)) {
+		info.DeterminationMethod = determinationUnknownInvalidOffset
+		return info
+	}
+	// Verify delta fits within int range before conversion (gosec requires explicit check at conversion point).
+	if delta >= uint64(math.MaxInt) {
 		info.DeterminationMethod = determinationUnknownInvalidOffset
 		return info
 	}
