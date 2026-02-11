@@ -128,7 +128,7 @@ func (m *Manager) ValidateHashDirectory() error {
 }
 
 // ensureHashDirectoryValidated calls ValidateHashDirectory and wraps any error
-// into the package Error type used by Manager public methods.
+// into the package OpError type used by Manager public methods.
 func (m *Manager) ensureHashDirectoryValidated() error {
 	if err := m.ValidateHashDirectory(); err != nil {
 		return &OpError{

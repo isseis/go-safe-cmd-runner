@@ -470,7 +470,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	}
 
 	// Phase 2: Update final environment debug info in dry-run mode (after command execution)
-	// Uses the token to update the ResourceAnalysis with environment origin metadata
+	// Uses the token to update the resource.Analysis with environment origin metadata
 	if ge.isDryRun {
 		// Collect final environment data
 		finalEnv := debuginfo.CollectFinalEnvironment(
@@ -481,7 +481,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 		if finalEnv != nil {
 			if ge.dryRunFormat == resource.OutputFormatJSON {
-				// Update the command's ResourceAnalysis with debug info using token
+				// Update the command's resource.Analysis with debug info using token
 				debugInfo := &resource.DebugInfo{
 					FinalEnvironment: finalEnv,
 				}
