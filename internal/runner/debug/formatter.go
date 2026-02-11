@@ -1,6 +1,8 @@
 // Package debug provides debug information collection and formatting functionality
 // for the dry-run mode. This package contains functions to format debug information
 // as text output that matches the existing output format.
+//
+//nolint:revive // package name conflicts with standard library
 package debug
 
 import (

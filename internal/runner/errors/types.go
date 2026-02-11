@@ -1,6 +1,6 @@
 // Package errors provides error classification and handling for the runner.
 //
-//revive:disable:var-naming
+//nolint:revive // package name conflicts with standard library
 package errors
 
 import "time"

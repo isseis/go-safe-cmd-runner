@@ -3,7 +3,7 @@
 // use; functions here return formatted strings and helpers to conditionally
 // enable/disable color output.
 //
-//revive:disable:var-naming
+//nolint:revive // package name conflicts with standard library
 package color
 
 // ANSI color codes

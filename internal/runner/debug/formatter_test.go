@@ -1,4 +1,4 @@
-//revive:disable:var-naming
+//nolint:revive // package name conflicts with standard library
 package debug
 
 import (
