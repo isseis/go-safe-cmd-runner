@@ -9,6 +9,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// MockMachineCodeDecoder is a test mock for MachineCodeDecoder.
+type MockMachineCodeDecoder struct {
+	decodeFunc func(buf []byte, baseAddr uint64) (DecodedInstruction, error)
+}
+
+func (m *MockMachineCodeDecoder) Decode(code []byte, offset uint64) (DecodedInstruction, error) {
+	return m.decodeFunc(code, offset)
+}
+
+func (m *MockMachineCodeDecoder) IsSyscallInstruction(_ DecodedInstruction) bool {
+	return false
+}
+
+func (m *MockMachineCodeDecoder) ModifiesEAXorRAX(_ DecodedInstruction) bool {
+	return false
+}
+
+func (m *MockMachineCodeDecoder) IsImmediateMove(_ DecodedInstruction) (bool, int64) {
+	return false, 0
+}
+
+func (m *MockMachineCodeDecoder) IsControlFlowInstruction(_ DecodedInstruction) bool {
+	return false
+}
+
 func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -355,4 +380,55 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "unknown:scan_limit_exceeded", result.DetectedSyscalls[0].DeterminationMethod)
 	assert.True(t, result.Summary.IsHighRisk)
+}
+
+func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing.T) {
+	// Test that decodeInstructionsInWindow guards against decoders returning
+	// non-positive instruction lengths, which could cause infinite loops.
+	code := []byte{0x90, 0x90, 0x90} // 3 nop instructions
+
+	// Create a mock decoder that returns non-positive lengths
+	mockDecoder := &MockMachineCodeDecoder{
+		decodeFunc: func(_ []byte, baseAddr uint64) (DecodedInstruction, error) {
+			// Return instruction with zero length
+			return DecodedInstruction{
+				Offset: baseAddr,
+				Len:    0, // Non-positive length
+			}, nil
+		},
+	}
+
+	analyzer := NewSyscallAnalyzerWithConfig(mockDecoder, NewX86_64SyscallTable(), 50)
+
+	// This should not hang (infinite loop) despite the decoder returning Len=0.
+	// The decodeInstructionsInWindow method should skip problematic bytes.
+	instructions := analyzer.decodeInstructionsInWindow(code, 0, 0, 3)
+
+	// We expect it to skip all bytes because the mock decoder always returns Len=0.
+	// With the guard in place, it increments pos and continues, eventually exiting.
+	assert.Len(t, instructions, 0)
+}
+
+func TestSyscallAnalyzer_DecodeInstructionsInWindow_NegativeLength(t *testing.T) {
+	// Test that decodeInstructionsInWindow handles negative instruction lengths.
+	code := []byte{0x90, 0x90, 0x90} // 3 nop instructions
+
+	// Create a mock decoder that returns negative lengths
+	mockDecoder := &MockMachineCodeDecoder{
+		decodeFunc: func(_ []byte, baseAddr uint64) (DecodedInstruction, error) {
+			// Return instruction with negative length
+			return DecodedInstruction{
+				Offset: baseAddr,
+				Len:    -1, // Negative length (invalid)
+			}, nil
+		},
+	}
+
+	analyzer := NewSyscallAnalyzerWithConfig(mockDecoder, NewX86_64SyscallTable(), 50)
+
+	// This should not hang despite the decoder returning Len=-1.
+	instructions := analyzer.decodeInstructionsInWindow(code, 0, 0, 3)
+
+	// We expect it to skip all bytes and return empty.
+	assert.Len(t, instructions, 0)
 }

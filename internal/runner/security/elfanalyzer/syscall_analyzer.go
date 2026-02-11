@@ -399,6 +399,13 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 			pos++
 			continue
 		}
+		// Defensively guard against a decoder returning a non-positive length.
+		// This prevents an infinite loop if a buggy or mocked MachineCodeDecoder
+		// produces an instruction with Len <= 0 while pos < endOffset.
+		if inst.Len <= 0 {
+			pos++
+			continue
+		}
 		instructions = append(instructions, inst)
 		pos += inst.Len
 	}
