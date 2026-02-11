@@ -299,7 +299,8 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 // backwardScanForSyscallNumber scans backward from syscall instruction
 // to find where eax/rax is set.
 // Note: This method only handles direct syscall instructions.
-// Go wrapper calls are analyzed separately by analyzeGoWrapperCalls.
+// Go wrapper calls (e.g., Go's syscall wrappers) are handled separately
+// via goResolver.FindWrapperCalls.
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int) (int, string) {
 	// Performance optimization: Use windowed decoding to avoid re-decoding
 	// the entire .text section for each syscall instruction.
