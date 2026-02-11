@@ -175,18 +175,18 @@ jobs:
     if: needs.check-changes.outputs.has-non-md-changes == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.5
+          version: latest
           args: --build-tags test --timeout=5m
 
       - name: Verify modules
