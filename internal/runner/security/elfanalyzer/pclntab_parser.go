@@ -70,6 +70,11 @@ func NewPclntabParser() *PclntabParser {
 // This works even on stripped binaries because Go runtime requires pclntab
 // for stack traces and garbage collection.
 func (p *PclntabParser) Parse(elfFile *elf.File) error {
+	// Reset state to ensure failed parse doesn't leave stale data
+	p.funcData = make([]PclntabFunc, 0)
+	p.goVersion = ""
+	p.ptrSize = 0
+
 	// Find .gopclntab section
 	section := elfFile.Section(".gopclntab")
 	if section == nil {
