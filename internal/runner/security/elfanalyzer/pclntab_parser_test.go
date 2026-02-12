@@ -20,25 +20,25 @@ func TestPclntabParser_MagicNumbers(t *testing.T) {
 		{
 			name:      "Go 1.20+ magic",
 			magic:     pclntabMagicGo120,
-			expectErr: nil,
+			expectErr: ErrInvalidPclntab,
 			goVersion: "go1.18+",
 		},
 		{
 			name:      "Go 1.18-1.19 magic",
 			magic:     pclntabMagicGo118,
-			expectErr: nil,
+			expectErr: ErrInvalidPclntab,
 			goVersion: "go1.18+",
 		},
 		{
 			name:      "Go 1.16-1.17 magic",
 			magic:     pclntabMagicGo116,
-			expectErr: nil,
+			expectErr: ErrInvalidPclntab,
 			goVersion: "go1.16-1.17",
 		},
 		{
 			name:      "Go 1.2-1.15 magic",
 			magic:     pclntabMagicGo12,
-			expectErr: nil,
+			expectErr: ErrInvalidPclntab,
 			goVersion: "go1.2-1.15",
 		},
 		{
@@ -76,12 +76,14 @@ func TestPclntabParser_MagicNumbers(t *testing.T) {
 				err = ErrUnsupportedPclntab
 			}
 
+			if tt.goVersion != "" {
+				// For supported magic values, the parser should always set the Go
+				// version based on the pclntab header, even if deeper parsing
+				// fails due to the minimal pclntab structure used in this test.
+				assert.Equal(t, tt.goVersion, parser.GetGoVersion())
+			}
 			if tt.expectErr != nil {
 				assert.ErrorIs(t, err, tt.expectErr)
-			} else if err == nil {
-				// Even valid magic may fail parsing if data is incomplete
-				// We only verify that the goVersion is set before any error
-				assert.Equal(t, tt.goVersion, parser.GetGoVersion())
 			}
 		})
 	}
