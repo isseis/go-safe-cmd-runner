@@ -34,6 +34,11 @@ const (
 	pcHeaderOffsetFtab        = 0x48 // ftabOffset; Go 1.20-1.24 only, removed in Go 1.25+
 )
 
+// functab entry field offsets
+const (
+	ftabEntryOffsetFuncOff = 4 // Offset to funcoff within functab entry (uint32)
+)
+
 // _func struct field offsets
 const (
 	funcStructOffsetNameOff = 4 // Offset to nameoff within _func struct
@@ -324,7 +329,7 @@ func (p *PclntabParser) extractSingleFunction(data []byte, ftabStart, funcNameOf
 	if err != nil {
 		return PclntabFunc{}, err
 	}
-	funcOff, err := readUint32(data, ftabStart+idx*entrySize+funcStructOffsetNameOff)
+	funcOff, err := readUint32(data, ftabStart+idx*entrySize+ftabEntryOffsetFuncOff)
 	if err != nil {
 		return PclntabFunc{}, err
 	}
