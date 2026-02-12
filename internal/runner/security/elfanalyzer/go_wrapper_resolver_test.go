@@ -3,6 +3,7 @@
 package elfanalyzer
 
 import (
+	"debug/elf"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -377,6 +378,32 @@ func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 	assert.Equal(t, "syscall.Syscall6", result[1].TargetFunction)
 	assert.Equal(t, 42, result[1].SyscallNumber) // connect
 	assert.True(t, result[1].Resolved)
+}
+
+func TestGoWrapperResolver_LoadSymbols_ClearsPriorState(t *testing.T) {
+	resolver := NewGoWrapperResolver()
+
+	// Simulate state from a previous LoadSymbols call
+	resolver.symbols["old.Function"] = SymbolInfo{
+		Name:    "old.Function",
+		Address: 0x500000,
+		Size:    100,
+	}
+	resolver.wrapperAddrs[0x500000] = GoSyscallWrapper{
+		Name:            "syscall.Syscall",
+		SyscallArgIndex: 0,
+	}
+	resolver.hasSymbols = true
+
+	// Call LoadSymbols with an ELF file that has no .gopclntab
+	// This will return ErrNoPclntab, but the state should still be cleared
+	err := resolver.LoadSymbols(&elf.File{})
+	require.Error(t, err)
+
+	// Verify that prior state was cleared
+	assert.Empty(t, resolver.symbols, "symbols should be cleared on LoadSymbols")
+	assert.Empty(t, resolver.wrapperAddrs, "wrapperAddrs should be cleared on LoadSymbols")
+	assert.False(t, resolver.hasSymbols, "hasSymbols should be reset on LoadSymbols")
 }
 
 func TestGoWrapperResolver_DecodedInstruction_Args(t *testing.T) {

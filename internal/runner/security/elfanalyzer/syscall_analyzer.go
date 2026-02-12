@@ -187,8 +187,10 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 		return nil, fmt.Errorf("failed to read .text section: %w", err)
 	}
 
-	// Load symbols for Go wrapper resolution
-	if a.goResolver != nil && !a.goResolver.HasSymbols() {
+	// Load symbols for Go wrapper resolution.
+	// Always reload symbols for each ELF file to avoid carrying over
+	// stale wrapper addresses from a previously analyzed binary.
+	if a.goResolver != nil {
 		if err := a.goResolver.LoadSymbols(elfFile); err != nil && !errors.Is(err, ErrSymbolLoadingNotImplemented) {
 			// Non-fatal: continue without Go wrapper resolution
 			// This handles stripped binaries

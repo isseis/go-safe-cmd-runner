@@ -86,8 +86,16 @@ func NewGoWrapperResolver() *GoWrapperResolver {
 // The pclntab persists even after stripping because Go runtime needs it
 // for stack traces and garbage collection.
 //
+// Prior state is cleared so the resolver can safely be reused across
+// multiple ELF files without carrying over stale symbols or wrapper addresses.
+//
 // Returns error if .gopclntab is not available.
 func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
+	// Reset state from any previous call to prevent cross-binary contamination.
+	r.symbols = make(map[string]SymbolInfo)
+	r.wrapperAddrs = make(map[uint64]GoSyscallWrapper)
+	r.hasSymbols = false
+
 	if err := r.loadFromPclntab(elfFile); err != nil {
 		return err
 	}
