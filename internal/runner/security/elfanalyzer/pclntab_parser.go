@@ -272,7 +272,7 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 	funcs := make([]PclntabFunc, 0, nfuncInt)
 	funcNameOffInt := int(funcNameOff)
 
-	for i := 0; i < nfuncInt; i++ {
+	for i := range nfuncInt {
 		fn, err := p.extractSingleFunction(data, ftabStart, funcNameOffInt, i, entrySize, nfuncInt, textStart)
 		if err != nil {
 			return err
