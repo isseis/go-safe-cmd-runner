@@ -40,40 +40,6 @@ func TestGoWrapperResolver_HasSymbols(t *testing.T) {
 	assert.True(t, resolver.HasSymbols())
 }
 
-func TestGoWrapperResolver_isWrapperSuffixMatch(t *testing.T) {
-	tests := []struct {
-		symbolName  string
-		wrapperName string
-		expected    bool
-	}{
-		// Exact match should return false (handled separately)
-		{"syscall.Syscall", "syscall.Syscall", false},
-
-		// Valid boundary matches
-		{"internal/syscall.Syscall", "syscall.Syscall", true}, // / boundary
-		{"foo.syscall.Syscall", "syscall.Syscall", true},      // . boundary
-		{"vendor/syscall.Syscall6", "syscall.Syscall6", true}, // / boundary
-
-		// Invalid - no boundary
-		{"fakesyscall.Syscall", "syscall.Syscall", false},
-		{"xsyscall.Syscall6", "syscall.Syscall6", false},
-
-		// Partial suffix (doesn't end with wrapper name)
-		{"syscall.SyscallX", "syscall.Syscall", false},
-
-		// Empty cases
-		{"", "syscall.Syscall", false},
-		{"syscall.Syscall", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.symbolName+"_"+tt.wrapperName, func(t *testing.T) {
-			result := isWrapperSuffixMatch(tt.symbolName, tt.wrapperName)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 	resolver := NewGoWrapperResolver()
 

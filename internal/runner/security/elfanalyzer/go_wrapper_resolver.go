@@ -3,7 +3,6 @@ package elfanalyzer
 import (
 	"debug/elf"
 	"math"
-	"strings"
 
 	"golang.org/x/arch/x86/x86asm"
 )
@@ -118,47 +117,17 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 			Size:    size,
 		}
 
-		// Check if this is a known Go wrapper
-		// Use exact match or boundary-aware suffix match to avoid false positives.
-		//
-		// Simple suffix match is insufficient because:
-		//   - "fakesyscall.Syscall" would incorrectly match "syscall.Syscall"
-		//   - "mysyscall.Syscall6Helper" would incorrectly match "syscall.Syscall6"
-		//
-		// Boundary-aware suffix match requires a boundary character (. or /) before the wrapper name:
-		//   - "internal/syscall.Syscall" matches "syscall.Syscall" (boundary: /)
-		//   - "foo.syscall.Syscall" matches "syscall.Syscall" (boundary: .)
-		//   - "fakesyscall.Syscall" does NOT match (no boundary before "syscall")
+		// Check if this is a known Go wrapper (exact match).
+		// Go standard library syscall wrappers use stable, unqualified symbol names
+		// (e.g. "syscall.Syscall") in pclntab, so exact match is sufficient.
 		for _, wrapper := range knownGoWrappers {
-			if fn.Name == string(wrapper) || isWrapperSuffixMatch(fn.Name, string(wrapper)) {
+			if fn.Name == string(wrapper) {
 				r.wrapperAddrs[fn.Entry] = wrapper
 			}
 		}
 	}
 
 	return nil
-}
-
-// isWrapperSuffixMatch checks if symbolName ends with wrapperName preceded by a boundary character.
-// A boundary character is either '/' (path separator) or '.' (package separator).
-// This prevents false positives like "fakesyscall.Syscall" matching "syscall.Syscall".
-//
-// Examples:
-//   - isWrapperSuffixMatch("syscall.Syscall", "syscall.Syscall") -> false (use exact match instead)
-//   - isWrapperSuffixMatch("internal/syscall.Syscall", "syscall.Syscall") -> true (boundary: /)
-//   - isWrapperSuffixMatch("foo.syscall.Syscall", "syscall.Syscall") -> true (boundary: .)
-//   - isWrapperSuffixMatch("fakesyscall.Syscall", "syscall.Syscall") -> false (no boundary)
-func isWrapperSuffixMatch(symbolName, wrapperName string) bool {
-	if !strings.HasSuffix(symbolName, wrapperName) {
-		return false
-	}
-	// Check that there's a boundary character before the wrapper name
-	prefixLen := len(symbolName) - len(wrapperName)
-	if prefixLen == 0 {
-		return false // Exact match should be handled separately
-	}
-	boundary := symbolName[prefixLen-1]
-	return boundary == '.' || boundary == '/'
 }
 
 // HasSymbols returns true if symbols were successfully loaded.
