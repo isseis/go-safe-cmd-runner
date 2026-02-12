@@ -25,14 +25,14 @@ const (
 // GoSyscallWrapper represents the name of a known Go syscall wrapper function.
 type GoSyscallWrapper string
 
-// knownGoWrappers lists standard Go syscall wrapper functions.
-var knownGoWrappers = []GoSyscallWrapper{
-	"syscall.Syscall",
-	"syscall.Syscall6",
-	"syscall.RawSyscall",
-	"syscall.RawSyscall6",
-	"runtime.syscall",
-	"runtime.syscall6",
+// knownGoWrappers is a set of known Go syscall wrapper function names for O(1) lookup.
+var knownGoWrappers = map[GoSyscallWrapper]struct{}{
+	"syscall.Syscall":     {},
+	"syscall.Syscall6":    {},
+	"syscall.RawSyscall":  {},
+	"syscall.RawSyscall6": {},
+	"runtime.syscall":     {},
+	"runtime.syscall6":    {},
 }
 
 // SymbolInfo represents information about a symbol in the ELF file.
@@ -120,10 +120,9 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 		// Check if this is a known Go wrapper (exact match).
 		// Go standard library syscall wrappers use stable, unqualified symbol names
 		// (e.g. "syscall.Syscall") in pclntab, so exact match is sufficient.
-		for _, wrapper := range knownGoWrappers {
-			if fn.Name == string(wrapper) {
-				r.wrapperAddrs[fn.Entry] = wrapper
-			}
+		wrapper := GoSyscallWrapper(fn.Name)
+		if _, ok := knownGoWrappers[wrapper]; ok {
+			r.wrapperAddrs[fn.Entry] = wrapper
 		}
 	}
 

@@ -330,20 +330,21 @@ func TestGoWrapperResolver_GetSymbols(t *testing.T) {
 }
 
 func TestGoWrapperResolver_KnownGoWrappers(t *testing.T) {
-	// Verify the known wrapper list
-	expectedWrappers := []string{
-		"syscall.Syscall",
-		"syscall.Syscall6",
-		"syscall.RawSyscall",
-		"syscall.RawSyscall6",
-		"runtime.syscall",
-		"runtime.syscall6",
+	// Verify the known wrapper set contains all expected entries
+	expectedWrappers := map[GoSyscallWrapper]struct{}{
+		"syscall.Syscall":     {},
+		"syscall.Syscall6":    {},
+		"syscall.RawSyscall":  {},
+		"syscall.RawSyscall6": {},
+		"runtime.syscall":     {},
+		"runtime.syscall6":    {},
 	}
 
 	assert.Len(t, knownGoWrappers, len(expectedWrappers))
 
-	for i, expected := range expectedWrappers {
-		assert.Equal(t, expected, string(knownGoWrappers[i]))
+	for name := range expectedWrappers {
+		_, ok := knownGoWrappers[name]
+		assert.True(t, ok, "wrapper %q not found in knownGoWrappers", name)
 	}
 }
 
