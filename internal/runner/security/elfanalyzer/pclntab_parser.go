@@ -253,11 +253,17 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 	const entrySize = pclntab64PtrSize // 8 bytes: {entryoff uint32, funcoff uint32}
 	nfuncInt := int(nfunc)
 	ftabStart := int(ftabOff)
-	// Check for overflow in ftabBytes calculation
-	if nfuncInt > (math.MaxInt-entrySize)/entrySize {
+	// Check for overflow in ftabBytes calculation:
+	// ensure nfuncInt is non-negative and (nfuncInt + 1) * entrySize fits in int.
+	if nfuncInt < 0 {
 		return ErrInvalidPclntab
 	}
-	ftabBytes := (nfuncInt + 1) * entrySize
+	maxEntries := int64(math.MaxInt / entrySize)
+	nfuncPlusOne := int64(nfuncInt) + 1
+	if nfuncPlusOne > maxEntries {
+		return ErrInvalidPclntab
+	}
+	ftabBytes := int(nfuncPlusOne) * entrySize
 	if ftabStart+ftabBytes > len(data) {
 		return ErrInvalidPclntab
 	}
