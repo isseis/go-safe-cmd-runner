@@ -274,6 +274,40 @@ func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
 	assert.Equal(t, GoSyscallWrapper{}, wrapper)
 }
 
+func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
+	resolver := NewGoWrapperResolver()
+
+	// Negative instruction length should be rejected by the pre-check.
+	inst := DecodedInstruction{
+		Op:     x86asm.CALL,
+		Offset: 0x1000,
+		Len:    -5,
+		Args:   []x86asm.Arg{x86asm.Rel(1)},
+	}
+
+	wrapper, isWrapper := resolver.resolveWrapper(inst)
+	assert.False(t, isWrapper)
+	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+}
+
+func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
+	resolver := NewGoWrapperResolver()
+
+	// Create a CALL whose rel32 points far backwards such that
+	// int64(nextPC) + int64(target) < 0. resolveWrapper should reject it.
+	// Choose nextPC = 0x10 (Offset 0x0b with Len 5) and target = -0x100
+	inst := DecodedInstruction{
+		Op:     x86asm.CALL,
+		Offset: 0x0b, // nextPC = 0x0b + 5 = 0x10
+		Len:    5,
+		Args:   []x86asm.Arg{x86asm.Rel(-0x100)},
+	}
+
+	wrapper, isWrapper := resolver.resolveWrapper(inst)
+	assert.False(t, isWrapper)
+	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+}
+
 func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
 	resolver := NewGoWrapperResolver()
 
