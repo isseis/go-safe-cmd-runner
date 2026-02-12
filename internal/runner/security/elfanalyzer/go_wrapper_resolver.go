@@ -315,15 +315,34 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 	// nextPC is the address of the instruction following the CALL.
 	// target (x86asm.Rel / int32) is the signed displacement from nextPC.
 	//
-	// Guard against nextPC > math.MaxInt64 to prevent silent overflow
-	// when converting to int64 for the signed displacement addition.
+	// Defense-in-depth overflow prevention:
+	// 1. Guard against overflow in nextPC calculation
+	// 2. Guard against negative displacement result (invalid address)
+	// 3. Ensure final address is in valid user-space range
+	//
 	// In practice x86_64 user-space addresses are always < 2^47 (canonical),
-	// so this is a defensive check rather than a reachable code path.
-	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Len is a small positive int (≤15)
+	// so these are defensive checks rather than reachable code paths.
+
+	// Check: inst.Offset + inst.Len won't overflow uint64
+	// inst.Len is typically ≤15 for x86-64, so this is extremely unlikely
+	if inst.Len < 0 || inst.Offset > math.MaxUint64-uint64(inst.Len) { //nolint:gosec // G115: Len validated non-negative
+		return GoSyscallWrapper{}, false
+	}
+	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Overflow checked above
+
+	// Check: nextPC fits in int64 for signed displacement calculation
 	if nextPC > uint64(math.MaxInt64) {
 		return GoSyscallWrapper{}, false
 	}
-	targetAddr := uint64(int64(nextPC) + int64(target)) //nolint:gosec // G115: nextPC is validated above
+
+	// Check: signed displacement doesn't result in negative address
+	// target is x86asm.Rel (int32), so int64 conversion is safe
+	displacement := int64(nextPC) + int64(target)
+	if displacement < 0 {
+		return GoSyscallWrapper{}, false
+	}
+
+	targetAddr := uint64(displacement)
 	if wrapper, found := r.wrapperAddrs[targetAddr]; found {
 		return wrapper, true
 	}
