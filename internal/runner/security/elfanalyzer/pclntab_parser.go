@@ -181,11 +181,6 @@ func (p *PclntabParser) parseGo12(data []byte) error {
 // Note: This implementation only supports 64-bit binaries (ptrSize == 8).
 // 32-bit binaries are not supported as the target architecture is x86_64 only.
 func (p *PclntabParser) parseFuncTable(data []byte) error {
-	// Validate pointer size: only 64-bit is supported (x86_64 target)
-	if p.ptrSize != pclntab64PtrSize {
-		return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
-	}
-
 	// pcHeader layout (Go 1.16+, 64-bit)
 	// offset 0x00: magic (uint32)
 	// offset 0x04: pad1 (byte)
@@ -202,6 +197,9 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
 	// offset 0x40: pclntabOffset (uint64)
 	// offset 0x48: ftabOffset (uint64)
 	// Total header size: 0x50 (80 bytes)
+	//
+	// Note: ptrSize validation is skipped here as it's already performed in
+	// parseGo118Plus, parseGo116, and parseGo12 before calling parseFuncTable.
 
 	if len(data) < pcHeaderSizeFull {
 		return ErrInvalidPclntab
@@ -259,11 +257,9 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 	nfuncInt := int(nfunc)
 	ftabStart := int(ftabOff)
 	// Check for overflow in ftabBytes calculation:
-	// ensure nfuncInt is non-negative and (nfuncInt + 1) * entrySize fits in int.
-	if nfuncInt < 0 {
-		return ErrInvalidPclntab
-	}
-	// Check if (nfuncInt + 1) * entrySize would overflow int.
+	// (nfuncInt + 1) * entrySize must fit in int.
+	// nfuncInt is guaranteed non-negative because nfunc (uint64) was checked
+	// against math.MaxInt above.
 	if nfuncInt > (math.MaxInt/entrySize)-1 {
 		return ErrInvalidPclntab
 	}
