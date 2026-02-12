@@ -258,13 +258,14 @@ func (p *PclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 	if nfuncInt < 0 {
 		return ErrInvalidPclntab
 	}
-	maxEntries := int64(math.MaxInt / entrySize)
-	nfuncPlusOne := int64(nfuncInt) + 1
-	if nfuncPlusOne > maxEntries {
+	// Check if (nfuncInt + 1) * entrySize would overflow int.
+	if nfuncInt > (math.MaxInt/entrySize)-1 {
 		return ErrInvalidPclntab
 	}
-	ftabBytes := int(nfuncPlusOne) * entrySize
-	if ftabStart+ftabBytes > len(data) {
+	ftabBytes := (nfuncInt + 1) * entrySize
+	// Check if ftabStart + ftabBytes would overflow or exceed data length.
+	// This single check handles both overflow and bounds validation safely.
+	if ftabStart > len(data)-ftabBytes {
 		return ErrInvalidPclntab
 	}
 
