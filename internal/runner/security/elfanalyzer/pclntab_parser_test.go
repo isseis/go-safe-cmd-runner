@@ -428,3 +428,226 @@ func createPclntabWithMultipleFunctions(functions []struct {
 
 	return data
 }
+
+// createMinimalPclntabGo125 creates a minimal Go 1.25+ pclntab with the given
+// magic and zero functions. Go 1.25+ removed the ftabOffset field from pcHeader,
+// shrinking the header from 80 to 72 bytes.
+func createMinimalPclntabGo125(magic uint32) []byte {
+	data := make([]byte, pcHeaderSizeGo125) // 0x48 = 72 bytes
+
+	// [0:4] magic
+	binary.LittleEndian.PutUint32(data[0:4], magic)
+	data[4] = 0 // pad1
+	data[5] = 0 // pad2
+	data[6] = 1 // minLC
+	data[7] = 8 // ptrSize
+
+	// [0x08:0x10] nfunc = 0
+	binary.LittleEndian.PutUint64(data[0x08:0x10], 0)
+	// [0x10:0x18] nfiles = 0
+	binary.LittleEndian.PutUint64(data[0x10:0x18], 0)
+	// [0x18:0x20] textStart = 0x400000
+	binary.LittleEndian.PutUint64(data[0x18:0x20], 0x400000)
+	// [0x20:0x28] funcnameOffset = 0x48 (right after 72-byte header)
+	binary.LittleEndian.PutUint64(data[0x20:0x28], 0x48)
+	// [0x28:0x30] cuOffset = 0x48
+	binary.LittleEndian.PutUint64(data[0x28:0x30], 0x48)
+	// [0x30:0x38] filetabOffset = 0x48
+	binary.LittleEndian.PutUint64(data[0x30:0x38], 0x48)
+	// [0x38:0x40] pctabOffset = 0x48
+	binary.LittleEndian.PutUint64(data[0x38:0x40], 0x48)
+	// [0x40:0x48] pclntabOffset = 0x48 (also serves as ftab offset in Go 1.25+)
+	binary.LittleEndian.PutUint64(data[0x40:0x48], 0x48)
+
+	return data
+}
+
+// createPclntabGo125WithFunction creates a Go 1.25+ pclntab with a single function.
+// The Go 1.25+ header is 72 bytes (ftabOffset field removed); ftab is at pclntabOffset.
+func createPclntabGo125WithFunction(funcName string, entry uint64) []byte {
+	headerSize := pcHeaderSizeGo125 // 0x48 = 72 bytes
+	funcNameLen := len(funcName) + 1
+	funcDataSize := 8  // _func struct minimal (entryOff + nameOff)
+	ftabEntrySize := 8 // {entryoff uint32, funcoff uint32}
+	nfunc := 1
+
+	funcnameOffset := headerSize
+	funcDataOffset := funcnameOffset + funcNameLen
+	ftabOffset := funcDataOffset + funcDataSize
+	totalSize := ftabOffset + (nfunc+1)*ftabEntrySize
+
+	data := make([]byte, totalSize)
+
+	// Header
+	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
+	data[4] = 0 // pad1
+	data[5] = 0 // pad2
+	data[6] = 1 // minLC
+	data[7] = 8 // ptrSize
+
+	textStart := entry
+	binary.LittleEndian.PutUint64(data[0x08:0x10], uint64(nfunc))
+	binary.LittleEndian.PutUint64(data[0x10:0x18], 0)                      // nfiles
+	binary.LittleEndian.PutUint64(data[0x18:0x20], textStart)              // textStart
+	binary.LittleEndian.PutUint64(data[0x20:0x28], uint64(funcnameOffset)) // funcnameOffset
+	binary.LittleEndian.PutUint64(data[0x28:0x30], 0)                      // cuOffset
+	binary.LittleEndian.PutUint64(data[0x30:0x38], 0)                      // filetabOffset
+	binary.LittleEndian.PutUint64(data[0x38:0x40], 0)                      // pctabOffset
+	// pclntabOffset = ftabOffset (merged in Go 1.25+)
+	binary.LittleEndian.PutUint64(data[0x40:0x48], uint64(ftabOffset))
+
+	// Function name table
+	copy(data[funcnameOffset:], funcName)
+	data[funcnameOffset+len(funcName)] = 0 // null terminator
+
+	// _func struct
+	binary.LittleEndian.PutUint32(data[funcDataOffset:], 0)   // entryOff = 0
+	binary.LittleEndian.PutUint32(data[funcDataOffset+4:], 0) // nameOff = 0
+
+	// ftab entries
+	binary.LittleEndian.PutUint32(data[ftabOffset:], 0)                        // entryoff
+	binary.LittleEndian.PutUint32(data[ftabOffset+4:], uint32(funcDataOffset)) // funcoff
+
+	// Sentinel entry
+	binary.LittleEndian.PutUint32(data[ftabOffset+8:], 0x1000)
+	binary.LittleEndian.PutUint32(data[ftabOffset+12:], 0)
+
+	return data
+}
+
+func TestPclntabParser_Go125MinimalHeader(t *testing.T) {
+	// Go 1.25+ uses the same magic (0xFFFFFFF1) but a 72-byte header.
+	// A minimal header with 0 functions will fail during ftab bounds check
+	// (same as the Go 1.20-1.24 minimal header), but Go version should be detected.
+	data := createMinimalPclntabGo125(pclntabMagicGo120)
+
+	parser := NewPclntabParser()
+	err := parser.parseGo118Plus(data)
+
+	assert.ErrorIs(t, err, ErrInvalidPclntab)
+	assert.Equal(t, "go1.18+", parser.GetGoVersion())
+}
+
+func TestPclntabParser_Go125WithFunction(t *testing.T) {
+	data := createPclntabGo125WithFunction("main.main", 0x401000)
+
+	parser := NewPclntabParser()
+	err := parser.parseGo118Plus(data)
+
+	require.NoError(t, err)
+	assert.Equal(t, "go1.18+", parser.GetGoVersion())
+
+	funcs := parser.GetFunctions()
+	require.Len(t, funcs, 1)
+	assert.Equal(t, "main.main", funcs[0].Name)
+	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
+
+	fn, found := parser.FindFunction("main.main")
+	assert.True(t, found)
+	assert.Equal(t, "main.main", fn.Name)
+}
+
+func TestPclntabParser_Go125MultipleFunctions(t *testing.T) {
+	// Build a Go 1.25+ pclntab with multiple functions to verify
+	// full parsing works with the 72-byte header format.
+	type funcEntry struct {
+		name  string
+		entry uint64
+	}
+	functions := []funcEntry{
+		{"main.main", 0x401000},
+		{"main.foo", 0x401100},
+		{"syscall.Syscall", 0x402000},
+	}
+
+	// Calculate layout
+	headerSize := pcHeaderSizeGo125
+	nfunc := len(functions)
+
+	funcnameTableSize := 0
+	for _, f := range functions {
+		funcnameTableSize += len(f.name) + 1
+	}
+	funcDataSize := nfunc * 8
+	ftabEntrySize := 8
+
+	funcnameOffset := headerSize
+	funcDataOffset := funcnameOffset + funcnameTableSize
+	ftabOffset := funcDataOffset + funcDataSize
+	totalSize := ftabOffset + (nfunc+1)*ftabEntrySize
+
+	data := make([]byte, totalSize)
+
+	textStart := functions[0].entry
+	for _, f := range functions {
+		if f.entry < textStart {
+			textStart = f.entry
+		}
+	}
+
+	// Header (72 bytes)
+	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
+	data[4] = 0
+	data[5] = 0
+	data[6] = 1
+	data[7] = 8
+
+	binary.LittleEndian.PutUint64(data[0x08:0x10], uint64(nfunc))
+	binary.LittleEndian.PutUint64(data[0x10:0x18], 0)
+	binary.LittleEndian.PutUint64(data[0x18:0x20], textStart)
+	binary.LittleEndian.PutUint64(data[0x20:0x28], uint64(funcnameOffset))
+	binary.LittleEndian.PutUint64(data[0x28:0x30], 0)
+	binary.LittleEndian.PutUint64(data[0x30:0x38], 0)
+	binary.LittleEndian.PutUint64(data[0x38:0x40], 0)
+	binary.LittleEndian.PutUint64(data[0x40:0x48], uint64(ftabOffset))
+
+	// Function name table
+	nameOffset := 0
+	nameOffsets := make([]int, nfunc)
+	for i, f := range functions {
+		nameOffsets[i] = nameOffset
+		copy(data[funcnameOffset+nameOffset:], f.name)
+		data[funcnameOffset+nameOffset+len(f.name)] = 0
+		nameOffset += len(f.name) + 1
+	}
+
+	// _func structs and ftab entries
+	for i, f := range functions {
+		funcStructOff := funcDataOffset + i*8
+		entryOff := uint32(f.entry - textStart)
+
+		binary.LittleEndian.PutUint32(data[funcStructOff:], entryOff)
+		binary.LittleEndian.PutUint32(data[funcStructOff+4:], uint32(nameOffsets[i]))
+
+		ftabEntryOff := ftabOffset + i*8
+		binary.LittleEndian.PutUint32(data[ftabEntryOff:], entryOff)
+		binary.LittleEndian.PutUint32(data[ftabEntryOff+4:], uint32(funcStructOff))
+	}
+
+	// Sentinel
+	sentinelOff := ftabOffset + nfunc*8
+	binary.LittleEndian.PutUint32(data[sentinelOff:], 0xFFFFFF)
+	binary.LittleEndian.PutUint32(data[sentinelOff+4:], 0)
+
+	parser := NewPclntabParser()
+	err := parser.parseGo118Plus(data)
+
+	require.NoError(t, err)
+
+	funcs := parser.GetFunctions()
+	require.Len(t, funcs, 3)
+
+	assert.Equal(t, "main.main", funcs[0].Name)
+	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
+	assert.Equal(t, uint64(0x401100), funcs[0].End)
+
+	assert.Equal(t, "main.foo", funcs[1].Name)
+	assert.Equal(t, uint64(0x401100), funcs[1].Entry)
+
+	assert.Equal(t, "syscall.Syscall", funcs[2].Name)
+	assert.Equal(t, uint64(0x402000), funcs[2].Entry)
+
+	fn, found := parser.FindFunction("syscall.Syscall")
+	assert.True(t, found)
+	assert.Equal(t, "syscall.Syscall", fn.Name)
+}

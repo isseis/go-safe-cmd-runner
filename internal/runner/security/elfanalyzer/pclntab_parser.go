@@ -21,7 +21,8 @@ const (
 	pclntabMinMagicSize  = 8    // Minimum bytes needed to read magic
 	pclntabMinHeaderSize = 16   // Minimum bytes needed for basic header
 	pclntab64PtrSize     = 8    // Expected pointer size for 64-bit binaries
-	pcHeaderSizeFull     = 0x50 // Full pcHeader size for Go 1.16+ 64-bit (80 bytes)
+	pcHeaderSizeGo125    = 0x48 // pcHeader size for Go 1.25+ 64-bit (72 bytes, ftabOffset removed)
+	pcHeaderSizeFull     = 0x50 // pcHeader size for Go 1.16-1.24 64-bit (80 bytes)
 )
 
 // pcHeader field offsets (Go 1.16+, 64-bit)
@@ -29,7 +30,8 @@ const (
 	pcHeaderOffsetNfunc       = 0x08
 	pcHeaderOffsetTextStart   = 0x18
 	pcHeaderOffsetFuncnameOff = 0x20
-	pcHeaderOffsetFtab        = 0x48
+	pcHeaderOffsetPclnOff     = 0x40 // pclntabOffset; in Go 1.25+ also serves as ftabOffset
+	pcHeaderOffsetFtab        = 0x48 // ftabOffset; Go 1.20-1.24 only, removed in Go 1.25+
 )
 
 // _func struct field offsets
@@ -195,13 +197,15 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
 	// offset 0x30: filetabOffset (uint64)
 	// offset 0x38: pctabOffset (uint64)
 	// offset 0x40: pclntabOffset (uint64)
-	// offset 0x48: ftabOffset (uint64)
-	// Total header size: 0x50 (80 bytes)
+	// offset 0x48: ftabOffset (uint64)  -- Go 1.20-1.24 only; removed in Go 1.25+
+	//
+	// Go 1.20-1.24 header size: 0x50 (80 bytes)
+	// Go 1.25+     header size: 0x48 (72 bytes)
 	//
 	// Note: ptrSize validation is skipped here as it's already performed in
 	// parseGo118Plus, parseGo116, and parseGo12 before calling parseFuncTable.
 
-	if len(data) < pcHeaderSizeFull {
+	if len(data) < pcHeaderSizeGo125 {
 		return ErrInvalidPclntab
 	}
 
@@ -214,6 +218,8 @@ func (p *PclntabParser) parseFuncTable(data []byte) error {
 }
 
 // readHeaderFields reads the key fields from the pcHeader.
+// Supports both Go 1.20-1.24 (80-byte header with ftabOffset) and
+// Go 1.25+ (72-byte header where ftab is at pclntabOffset).
 func (p *PclntabParser) readHeaderFields(data []byte) (nfunc, textStart, funcNameOff, ftabOff uint64, err error) {
 	readUint64 := func(off int) (uint64, error) {
 		if off < 0 || off+pclntab64PtrSize > len(data) {
@@ -234,9 +240,28 @@ func (p *PclntabParser) readHeaderFields(data []byte) (nfunc, textStart, funcNam
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
-	ftabOff, err = readUint64(pcHeaderOffsetFtab)
+	pclnOff, err := readUint64(pcHeaderOffsetPclnOff)
 	if err != nil {
 		return 0, 0, 0, 0, err
+	}
+
+	// Detect Go 1.25+ vs Go 1.20-1.24 header format.
+	// In Go 1.25+, the ftabOffset field was removed from pcHeader (72 bytes).
+	// The ftab is located at the same offset as the pclntab.
+	//
+	// Detection: In Go 1.20-1.24, the header is 80 bytes (0x50), so the first
+	// table (funcname) begins at offset >= 0x50. In Go 1.25+, the header is
+	// 72 bytes (0x48), so tables can start at offset 0x48. If funcNameOff < 0x50,
+	// the header must be the shorter Go 1.25+ format.
+	if funcNameOff < pcHeaderSizeFull {
+		// Go 1.25+: ftab is at pclntabOffset (merged with pclntab)
+		ftabOff = pclnOff
+	} else {
+		// Go 1.20-1.24: ftab offset is stored as a separate field at offset 0x48
+		ftabOff, err = readUint64(pcHeaderOffsetFtab)
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
 	}
 
 	return nfunc, textStart, funcNameOff, ftabOff, nil
