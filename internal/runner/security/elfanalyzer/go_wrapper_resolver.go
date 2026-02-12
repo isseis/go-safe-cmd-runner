@@ -2,6 +2,7 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"math"
 	"strings"
 
 	"golang.org/x/arch/x86/x86asm"
@@ -310,10 +311,19 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 		return GoSyscallWrapper{}, false
 	}
 
-	// Relative call - calculate absolute address
-	// inst.Offset and inst.Len are uint64 and int respectively, both fit in int64
-	// target is x86asm.Rel (int32), so int64 conversion is safe
-	targetAddr := uint64(int64(inst.Offset) + int64(inst.Len) + int64(target)) //nolint:gosec // G115: Offset is valid instruction address, Len is small
+	// Relative call - calculate absolute address.
+	// nextPC is the address of the instruction following the CALL.
+	// target (x86asm.Rel / int32) is the signed displacement from nextPC.
+	//
+	// Guard against nextPC > math.MaxInt64 to prevent silent overflow
+	// when converting to int64 for the signed displacement addition.
+	// In practice x86_64 user-space addresses are always < 2^47 (canonical),
+	// so this is a defensive check rather than a reachable code path.
+	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Len is a small positive int (≤15)
+	if nextPC > uint64(math.MaxInt64) {
+		return GoSyscallWrapper{}, false
+	}
+	targetAddr := uint64(int64(nextPC) + int64(target)) //nolint:gosec // G115: nextPC is validated above
 	if wrapper, found := r.wrapperAddrs[targetAddr]; found {
 		return wrapper, true
 	}

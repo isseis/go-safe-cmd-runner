@@ -4,6 +4,7 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -252,6 +253,23 @@ func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
 	nopInst, _ := decoder.Decode(nopCode, 0x401000)
 
 	wrapper, isWrapper := resolver.resolveWrapper(nopInst)
+	assert.False(t, isWrapper)
+	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+}
+
+func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
+	resolver := NewGoWrapperResolver()
+
+	// Construct a DecodedInstruction with Offset > math.MaxInt64.
+	// resolveWrapper should bail out rather than silently overflow.
+	inst := DecodedInstruction{
+		Op:     x86asm.CALL,
+		Offset: math.MaxUint64 - 10,
+		Len:    5,
+		Args:   []x86asm.Arg{x86asm.Rel(1)},
+	}
+
+	wrapper, isWrapper := resolver.resolveWrapper(inst)
 	assert.False(t, isWrapper)
 	assert.Equal(t, GoSyscallWrapper{}, wrapper)
 }
