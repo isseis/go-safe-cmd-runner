@@ -213,6 +213,12 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 			continue
 		}
 
+		// Decoder invariant: successful decode must have positive length.
+		// If this fails, it indicates a programming bug in the decoder implementation.
+		if inst.Len <= 0 {
+			panic("decoder returned non-positive instruction length without error")
+		}
+
 		// Keep track of recent instructions for backward scanning
 		recentInstructions = append(recentInstructions, inst)
 		if len(recentInstructions) > maxRecentInstructionsToKeep {

@@ -290,10 +290,11 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 			pos++
 			continue
 		}
-		// Defensively guard against a decoder returning a non-positive length.
+
+		// Decoder invariant: successful decode must have positive length.
+		// If this fails, it indicates a programming bug in the decoder implementation.
 		if inst.Len <= 0 {
-			pos++
-			continue
+			panic("decoder returned non-positive instruction length without error")
 		}
 
 		// Check if this is a syscall instruction at proper instruction boundary.
@@ -447,13 +448,13 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 			pos++
 			continue
 		}
-		// Defensively guard against a decoder returning a non-positive length.
-		// This prevents an infinite loop if a buggy or mocked MachineCodeDecoder
-		// produces an instruction with Len <= 0 while pos < endOffset.
+
+		// Decoder invariant: successful decode must have positive length.
+		// If this fails, it indicates a programming bug in the decoder implementation.
 		if inst.Len <= 0 {
-			pos++
-			continue
+			panic("decoder returned non-positive instruction length without error")
 		}
+
 		instructions = append(instructions, inst)
 		pos += inst.Len
 	}
