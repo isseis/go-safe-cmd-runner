@@ -87,10 +87,7 @@ func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 
 	// Manually register a wrapper at a known address
 	wrapperAddr := uint64(0x402000)
-	resolver.wrapperAddrs[wrapperAddr] = GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
+	resolver.wrapperAddrs[wrapperAddr] = "syscall.Syscall"
 
 	// Create a code segment with:
 	// mov $0x29, %eax  ; socket syscall number (41)
@@ -125,10 +122,7 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 
 	// Register a wrapper
 	wrapperAddr := uint64(0x402000)
-	resolver.wrapperAddrs[wrapperAddr] = GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
+	resolver.wrapperAddrs[wrapperAddr] = "syscall.Syscall"
 
 	// Create code with a call but no clear mov to eax/rax before it
 	// Just a CALL instruction without any mov to rax
@@ -149,11 +143,6 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing.T) {
 	resolver := NewGoWrapperResolver()
 
-	wrapper := GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
-
 	// Create recent instructions with a jump between mov and call
 	// The control flow boundary (jmp) should stop backward scanning before reaching mov
 	// Instructions order: mov, jmp, call
@@ -172,17 +161,12 @@ func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing
 	// Scanning backward from call: jmp is hit first, which is a control flow boundary
 	recentInstructions := []DecodedInstruction{movInst, jmpInst, callInst}
 
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions, wrapper)
+	syscallNum := resolver.resolveSyscallArgument(recentInstructions)
 	assert.Equal(t, -1, syscallNum) // Should not find syscall number due to control flow boundary
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 	resolver := NewGoWrapperResolver()
-
-	wrapper := GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
 
 	// Test with mov to RAX (64-bit)
 	// 48 c7 c0 29 00 00 00  mov $0x29, %rax
@@ -195,17 +179,12 @@ func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 
 	recentInstructions := []DecodedInstruction{movInst, callInst}
 
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions, wrapper)
+	syscallNum := resolver.resolveSyscallArgument(recentInstructions)
 	assert.Equal(t, 41, syscallNum) // socket syscall
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 	resolver := NewGoWrapperResolver()
-
-	wrapper := GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
 
 	// Test with mov to EAX (32-bit, commonly used by Go compiler)
 	// b8 29 00 00 00  mov $0x29, %eax
@@ -218,39 +197,12 @@ func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 
 	recentInstructions := []DecodedInstruction{movInst, callInst}
 
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions, wrapper)
+	syscallNum := resolver.resolveSyscallArgument(recentInstructions)
 	assert.Equal(t, 41, syscallNum) // socket syscall
-}
-
-func TestGoWrapperResolver_ResolveSyscallArgument_NonZeroArgIndex(t *testing.T) {
-	resolver := NewGoWrapperResolver()
-
-	// Wrapper with non-zero arg index (not currently supported)
-	wrapper := GoSyscallWrapper{
-		Name:            "custom.Wrapper",
-		SyscallArgIndex: 1, // Not supported
-	}
-
-	movCode := []byte{0xb8, 0x29, 0x00, 0x00, 0x00}
-	callCode := []byte{0xe8, 0x00, 0x00, 0x00, 0x00}
-
-	decoder := NewX86Decoder()
-	movInst, _ := decoder.Decode(movCode, 0x401000)
-	callInst, _ := decoder.Decode(callCode, 0x401005)
-
-	recentInstructions := []DecodedInstruction{movInst, callInst}
-
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions, wrapper)
-	assert.Equal(t, -1, syscallNum) // Should not resolve
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 	resolver := NewGoWrapperResolver()
-
-	wrapper := GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
 
 	decoder := NewX86Decoder()
 
@@ -291,7 +243,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 
 			recentInstructions := []DecodedInstruction{movInst, callInst}
 
-			syscallNum := resolver.resolveSyscallArgument(recentInstructions, wrapper)
+			syscallNum := resolver.resolveSyscallArgument(recentInstructions)
 			assert.Equal(t, tt.expected, syscallNum, tt.reason)
 		})
 	}
@@ -307,7 +259,7 @@ func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
 
 	wrapper, isWrapper := resolver.resolveWrapper(nopInst)
 	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+	assert.Equal(t, GoSyscallWrapper(""), wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
@@ -324,7 +276,7 @@ func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
 
 	wrapper, isWrapper := resolver.resolveWrapper(inst)
 	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+	assert.Equal(t, GoSyscallWrapper(""), wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
@@ -340,7 +292,7 @@ func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
 
 	wrapper, isWrapper := resolver.resolveWrapper(inst)
 	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+	assert.Equal(t, GoSyscallWrapper(""), wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
@@ -358,17 +310,14 @@ func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
 
 	wrapper, isWrapper := resolver.resolveWrapper(inst)
 	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+	assert.Equal(t, GoSyscallWrapper(""), wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
 	resolver := NewGoWrapperResolver()
 
 	// Register a wrapper at a different address
-	resolver.wrapperAddrs[0x403000] = GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
+	resolver.wrapperAddrs[0x403000] = "syscall.Syscall"
 
 	// Create a CALL to a different address
 	decoder := NewX86Decoder()
@@ -377,7 +326,7 @@ func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
 
 	wrapper, isWrapper := resolver.resolveWrapper(callInst)
 	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper{}, wrapper)
+	assert.Equal(t, GoSyscallWrapper(""), wrapper)
 }
 
 func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
@@ -388,14 +337,11 @@ func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
 	assert.Empty(t, addrs)
 
 	// Add a wrapper
-	resolver.wrapperAddrs[0x401000] = GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
+	resolver.wrapperAddrs[0x401000] = "syscall.Syscall"
 
 	addrs = resolver.GetWrapperAddresses()
 	assert.Len(t, addrs, 1)
-	assert.Equal(t, "syscall.Syscall", addrs[0x401000].Name)
+	assert.Equal(t, GoSyscallWrapper("syscall.Syscall"), addrs[0x401000])
 }
 
 func TestGoWrapperResolver_GetSymbols(t *testing.T) {
@@ -431,8 +377,7 @@ func TestGoWrapperResolver_KnownGoWrappers(t *testing.T) {
 	assert.Len(t, knownGoWrappers, len(expectedWrappers))
 
 	for i, expected := range expectedWrappers {
-		assert.Equal(t, expected, knownGoWrappers[i].Name)
-		assert.Equal(t, 0, knownGoWrappers[i].SyscallArgIndex) // All use arg 0
+		assert.Equal(t, expected, string(knownGoWrappers[i]))
 	}
 }
 
@@ -440,14 +385,8 @@ func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 	resolver := NewGoWrapperResolver()
 
 	// Register multiple wrappers
-	resolver.wrapperAddrs[0x402000] = GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
-	resolver.wrapperAddrs[0x403000] = GoSyscallWrapper{
-		Name:            "syscall.Syscall6",
-		SyscallArgIndex: 0,
-	}
+	resolver.wrapperAddrs[0x402000] = "syscall.Syscall"
+	resolver.wrapperAddrs[0x403000] = "syscall.Syscall6"
 
 	// Create code with multiple wrapper calls
 	// First call: mov $0x29, %eax; call 0x402000
@@ -494,10 +433,7 @@ func TestGoWrapperResolver_LoadSymbols_ClearsPriorState(t *testing.T) {
 		Address: 0x500000,
 		Size:    100,
 	}
-	resolver.wrapperAddrs[0x500000] = GoSyscallWrapper{
-		Name:            "syscall.Syscall",
-		SyscallArgIndex: 0,
-	}
+	resolver.wrapperAddrs[0x500000] = "syscall.Syscall"
 	resolver.hasSymbols = true
 
 	// Call LoadSymbols with an ELF file that has no .gopclntab

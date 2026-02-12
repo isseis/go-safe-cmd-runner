@@ -23,20 +23,17 @@ const (
 	maxRecentInstructionsToKeep = 10
 )
 
-// GoSyscallWrapper represents a known Go syscall wrapper function.
-type GoSyscallWrapper struct {
-	Name            string
-	SyscallArgIndex int // Which argument contains the syscall number (0-based)
-}
+// GoSyscallWrapper represents the name of a known Go syscall wrapper function.
+type GoSyscallWrapper string
 
 // knownGoWrappers lists standard Go syscall wrapper functions.
 var knownGoWrappers = []GoSyscallWrapper{
-	{"syscall.Syscall", 0},
-	{"syscall.Syscall6", 0},
-	{"syscall.RawSyscall", 0},
-	{"syscall.RawSyscall6", 0},
-	{"runtime.syscall", 0},
-	{"runtime.syscall6", 0},
+	"syscall.Syscall",
+	"syscall.Syscall6",
+	"syscall.RawSyscall",
+	"syscall.RawSyscall6",
+	"runtime.syscall",
+	"runtime.syscall6",
 }
 
 // SymbolInfo represents information about a symbol in the ELF file.
@@ -133,7 +130,7 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 		//   - "foo.syscall.Syscall" matches "syscall.Syscall" (boundary: .)
 		//   - "fakesyscall.Syscall" does NOT match (no boundary before "syscall")
 		for _, wrapper := range knownGoWrappers {
-			if fn.Name == wrapper.Name || isWrapperSuffixMatch(fn.Name, wrapper.Name) {
+			if fn.Name == string(wrapper) || isWrapperSuffixMatch(fn.Name, string(wrapper)) {
 				r.wrapperAddrs[fn.Entry] = wrapper
 			}
 		}
@@ -227,11 +224,11 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 			wrapper, isWrapper := r.resolveWrapper(inst)
 			if isWrapper {
 				// Found a call to a wrapper, try to resolve the syscall number
-				syscallNum := r.resolveSyscallArgument(recentInstructions, wrapper)
+				syscallNum := r.resolveSyscallArgument(recentInstructions)
 				// pos is validated same as above
 				results = append(results, WrapperCall{
 					CallSiteAddress: baseAddr + uint64(pos), //nolint:gosec // G115: pos is validated by loop condition
-					TargetFunction:  wrapper.Name,
+					TargetFunction:  string(wrapper),
 					SyscallNumber:   syscallNum,
 					Resolved:        syscallNum >= 0,
 				})
@@ -258,13 +255,8 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 //
 // The target Go version should be fixed and validated with acceptance
 // tests using real Go binaries compiled with the specific Go toolchain.
-func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction, wrapper GoSyscallWrapper) int {
+func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction) int {
 	if len(recentInstructions) < minRecentInstructionsForScan {
-		return -1
-	}
-
-	// Currently only support arg index 0 (RAX for Go 1.17+ ABI)
-	if wrapper.SyscallArgIndex != 0 {
 		return -1
 	}
 
@@ -305,19 +297,19 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
 // and returns the wrapper information if found.
 func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWrapper, bool) {
 	if inst.Op != x86asm.CALL {
-		return GoSyscallWrapper{}, false
+		return "", false
 	}
 
 	// Extract call target
 	if len(inst.Args) == 0 {
-		return GoSyscallWrapper{}, false
+		return "", false
 	}
 
 	// For direct calls, check if target is a known wrapper
 	// Only handle relative calls (x86asm.Rel type)
 	target, ok := inst.Args[0].(x86asm.Rel)
 	if !ok {
-		return GoSyscallWrapper{}, false
+		return "", false
 	}
 
 	// Relative call - calculate absolute address.
@@ -335,20 +327,20 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 	// Check: inst.Offset + inst.Len won't overflow uint64
 	// inst.Len is typically ≤15 for x86-64, so this is extremely unlikely
 	if inst.Len < 0 || inst.Offset > math.MaxUint64-uint64(inst.Len) { //nolint:gosec // G115: Len validated non-negative
-		return GoSyscallWrapper{}, false
+		return "", false
 	}
 	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Overflow checked above
 
 	// Check: nextPC fits in int64 for signed displacement calculation
 	if nextPC > uint64(math.MaxInt64) {
-		return GoSyscallWrapper{}, false
+		return "", false
 	}
 
 	// Check: signed displacement doesn't result in negative address
 	// target is x86asm.Rel (int32), so int64 conversion is safe
 	displacement := int64(nextPC) + int64(target)
 	if displacement < 0 {
-		return GoSyscallWrapper{}, false
+		return "", false
 	}
 
 	targetAddr := uint64(displacement)
@@ -356,7 +348,7 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 		return wrapper, true
 	}
 
-	return GoSyscallWrapper{}, false
+	return "", false
 }
 
 // GetWrapperAddresses returns all known wrapper function addresses.
