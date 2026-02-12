@@ -290,7 +290,14 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
 		// "mov $N, %rax" (x86asm.RAX) for syscall numbers, so we must check both.
 		if isImm, value := r.decoder.IsImmediateMove(inst); isImm {
 			if reg, ok := inst.Args[0].(x86asm.Reg); ok && (reg == x86asm.RAX || reg == x86asm.EAX) {
-				return int(value)
+				// Validate immediate value is a plausible syscall number.
+				// Reject negative immediates and out-of-range values to prevent
+				// incorrect marking of wrapper calls as resolved.
+				if value >= 0 && value <= maxValidSyscallNumber {
+					return int(value)
+				}
+				// Immediate value is out of valid range; treat as unresolved
+				return -1
 			}
 		}
 	}

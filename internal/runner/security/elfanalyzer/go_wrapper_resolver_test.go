@@ -244,6 +244,59 @@ func TestGoWrapperResolver_ResolveSyscallArgument_NonZeroArgIndex(t *testing.T) 
 	assert.Equal(t, -1, syscallNum) // Should not resolve
 }
 
+func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
+	resolver := NewGoWrapperResolver()
+
+	wrapper := GoSyscallWrapper{
+		Name:            "syscall.Syscall",
+		SyscallArgIndex: 0,
+	}
+
+	decoder := NewX86Decoder()
+
+	tests := []struct {
+		name     string
+		code     []byte
+		expected int
+		reason   string
+	}{
+		{
+			name:     "value too large",
+			code:     []byte{0xb8, 0xe8, 0x03, 0x00, 0x00}, // mov $1000, %eax (exceeds maxValidSyscallNumber)
+			expected: -1,
+			reason:   "1000 exceeds max valid syscall number (500)",
+		},
+		{
+			name:     "value at boundary (valid)",
+			code:     []byte{0x48, 0xc7, 0xc0, 0xf4, 0x01, 0x00, 0x00}, // mov $500, %rax (at boundary)
+			expected: 500,
+			reason:   "500 is exactly at max valid syscall number",
+		},
+		{
+			name:     "value zero (valid)",
+			code:     []byte{0xb8, 0x00, 0x00, 0x00, 0x00}, // mov $0, %eax
+			expected: 0,
+			reason:   "0 is a valid syscall number (read)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callCode := []byte{0xe8, 0x00, 0x00, 0x00, 0x00}
+
+			movInst, err := decoder.Decode(tt.code, 0x401000)
+			require.NoError(t, err)
+			callInst, err := decoder.Decode(callCode, 0x401000+uint64(len(tt.code)))
+			require.NoError(t, err)
+
+			recentInstructions := []DecodedInstruction{movInst, callInst}
+
+			syscallNum := resolver.resolveSyscallArgument(recentInstructions, wrapper)
+			assert.Equal(t, tt.expected, syscallNum, tt.reason)
+		})
+	}
+}
+
 func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
 	resolver := NewGoWrapperResolver()
 
