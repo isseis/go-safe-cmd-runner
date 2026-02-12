@@ -59,9 +59,6 @@ type WrapperCall struct {
 
 	// Resolved indicates whether the syscall number was successfully determined.
 	Resolved bool
-
-	// WrapperName is an alias for TargetFunction for backward compatibility.
-	WrapperName string
 }
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
@@ -237,7 +234,6 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 					TargetFunction:  wrapper.Name,
 					SyscallNumber:   syscallNum,
 					Resolved:        syscallNum >= 0,
-					WrapperName:     wrapper.Name, // Alias for backward compatibility
 				})
 			}
 		}
