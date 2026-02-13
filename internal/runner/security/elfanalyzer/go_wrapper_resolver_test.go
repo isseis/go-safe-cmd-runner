@@ -81,6 +81,7 @@ func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 	assert.Equal(t, "syscall.Syscall", result[0].TargetFunction)
 	assert.Equal(t, 41, result[0].SyscallNumber) // socket syscall
 	assert.True(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodGoWrapper, result[0].DeterminationMethod)
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
@@ -104,6 +105,7 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 	assert.Equal(t, uint64(0x401005), result[0].CallSiteAddress)
 	assert.Equal(t, -1, result[0].SyscallNumber)
 	assert.False(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result[0].DeterminationMethod)
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing.T) {
@@ -127,8 +129,9 @@ func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing
 	// Scanning backward from call: jmp is hit first, which is a control flow boundary
 	recentInstructions := []DecodedInstruction{movInst, jmpInst, callInst}
 
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions)
+	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
 	assert.Equal(t, -1, syscallNum) // Should not find syscall number due to control flow boundary
+	assert.Equal(t, DeterminationMethodUnknownControlFlowBoundary, method)
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
@@ -145,8 +148,9 @@ func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 
 	recentInstructions := []DecodedInstruction{movInst, callInst}
 
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions)
+	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
 	assert.Equal(t, 41, syscallNum) // socket syscall
+	assert.Equal(t, DeterminationMethodGoWrapper, method)
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
@@ -163,8 +167,9 @@ func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 
 	recentInstructions := []DecodedInstruction{movInst, callInst}
 
-	syscallNum := resolver.resolveSyscallArgument(recentInstructions)
+	syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
 	assert.Equal(t, 41, syscallNum) // socket syscall
+	assert.Equal(t, DeterminationMethodGoWrapper, method)
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
@@ -173,28 +178,32 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	tests := []struct {
-		name     string
-		code     []byte
-		expected int
-		reason   string
+		name           string
+		code           []byte
+		expected       int
+		expectedMethod string
+		reason         string
 	}{
 		{
-			name:     "value too large",
-			code:     []byte{0xb8, 0xe8, 0x03, 0x00, 0x00}, // mov $1000, %eax (exceeds maxValidSyscallNumber)
-			expected: -1,
-			reason:   "1000 exceeds max valid syscall number (500)",
+			name:           "value too large",
+			code:           []byte{0xb8, 0xe8, 0x03, 0x00, 0x00}, // mov $1000, %eax (exceeds maxValidSyscallNumber)
+			expected:       -1,
+			expectedMethod: DeterminationMethodUnknownIndirectSetting,
+			reason:         "1000 exceeds max valid syscall number (500)",
 		},
 		{
-			name:     "value at boundary (valid)",
-			code:     []byte{0x48, 0xc7, 0xc0, 0xf4, 0x01, 0x00, 0x00}, // mov $500, %rax (at boundary)
-			expected: 500,
-			reason:   "500 is exactly at max valid syscall number",
+			name:           "value at boundary (valid)",
+			code:           []byte{0x48, 0xc7, 0xc0, 0xf4, 0x01, 0x00, 0x00}, // mov $500, %rax (at boundary)
+			expected:       500,
+			expectedMethod: DeterminationMethodGoWrapper,
+			reason:         "500 is exactly at max valid syscall number",
 		},
 		{
-			name:     "value zero (valid)",
-			code:     []byte{0xb8, 0x00, 0x00, 0x00, 0x00}, // mov $0, %eax
-			expected: 0,
-			reason:   "0 is a valid syscall number (read)",
+			name:           "value zero (valid)",
+			code:           []byte{0xb8, 0x00, 0x00, 0x00, 0x00}, // mov $0, %eax
+			expected:       0,
+			expectedMethod: DeterminationMethodGoWrapper,
+			reason:         "0 is a valid syscall number (read)",
 		},
 	}
 
@@ -209,8 +218,9 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 
 			recentInstructions := []DecodedInstruction{movInst, callInst}
 
-			syscallNum := resolver.resolveSyscallArgument(recentInstructions)
+			syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
 			assert.Equal(t, tt.expected, syscallNum, tt.reason)
+			assert.Equal(t, tt.expectedMethod, method, tt.reason)
 		})
 	}
 }
@@ -378,12 +388,14 @@ func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 	assert.Equal(t, "syscall.Syscall", result[0].TargetFunction)
 	assert.Equal(t, 41, result[0].SyscallNumber) // socket
 	assert.True(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodGoWrapper, result[0].DeterminationMethod)
 
 	// Second call
 	assert.Equal(t, uint64(0x40100f), result[1].CallSiteAddress)
 	assert.Equal(t, "syscall.Syscall6", result[1].TargetFunction)
 	assert.Equal(t, 42, result[1].SyscallNumber) // connect
 	assert.True(t, result[1].Resolved)
+	assert.Equal(t, DeterminationMethodGoWrapper, result[1].DeterminationMethod)
 }
 
 func TestGoWrapperResolver_LoadSymbols_ClearsPriorState(t *testing.T) {

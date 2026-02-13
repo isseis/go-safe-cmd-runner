@@ -59,6 +59,11 @@ type WrapperCall struct {
 
 	// Resolved indicates whether the syscall number was successfully determined.
 	Resolved bool
+
+	// DeterminationMethod describes how the syscall number was determined,
+	// or the reason it could not be determined.
+	// See DeterminationMethod* constants in syscall_analyzer.go.
+	DeterminationMethod string
 }
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
@@ -195,13 +200,14 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 		if inst.Op == x86asm.CALL {
 			if wrapper := r.resolveWrapper(inst); wrapper != NoWrapper {
 				// Found a call to a wrapper, try to resolve the syscall number
-				syscallNum := r.resolveSyscallArgument(recentInstructions)
+				syscallNum, method := r.resolveSyscallArgument(recentInstructions)
 				// pos is validated same as above
 				results = append(results, WrapperCall{
-					CallSiteAddress: baseAddr + uint64(pos), //nolint:gosec // G115: pos is validated by loop condition
-					TargetFunction:  string(wrapper),
-					SyscallNumber:   syscallNum,
-					Resolved:        syscallNum >= 0,
+					CallSiteAddress:     baseAddr + uint64(pos), //nolint:gosec // G115: pos is validated by loop condition
+					TargetFunction:      string(wrapper),
+					SyscallNumber:       syscallNum,
+					Resolved:            syscallNum >= 0,
+					DeterminationMethod: method,
 				})
 			}
 		}
@@ -215,6 +221,10 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 // resolveSyscallArgument analyzes instructions before a wrapper call
 // to determine the syscall number argument.
 //
+// Returns the syscall number and a DeterminationMethod string describing
+// how the result was obtained. On failure, returns -1 and one of the
+// DeterminationMethodUnknown* constants indicating the reason.
+//
 // LIMITATION: This implementation ONLY supports Go 1.17+ register-based ABI
 // where the first argument (syscall number) is passed in RAX.
 // This is a known limited specification:
@@ -226,9 +236,9 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 //
 // The target Go version should be fixed and validated with acceptance
 // tests using real Go binaries compiled with the specific Go toolchain.
-func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction) int {
+func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedInstruction) (int, string) {
 	if len(recentInstructions) < minRecentInstructionsForScan {
-		return -1
+		return -1, DeterminationMethodUnknownDecodeFailed
 	}
 
 	// Scan backward through recent instructions (excluding the CALL itself)
@@ -241,7 +251,7 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
 
 		// Stop at control flow boundary
 		if r.decoder.IsControlFlowInstruction(inst) {
-			break
+			return -1, DeterminationMethodUnknownControlFlowBoundary
 		}
 
 		// Check for immediate move to target register
@@ -253,15 +263,15 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
 				// Reject negative immediates and out-of-range values to prevent
 				// incorrect marking of wrapper calls as resolved.
 				if value >= 0 && value <= maxValidSyscallNumber {
-					return int(value)
+					return int(value), DeterminationMethodGoWrapper
 				}
-				// Immediate value is out of valid range; treat as unresolved
-				return -1
+				// Immediate value is out of valid range; treat as indirect setting
+				return -1, DeterminationMethodUnknownIndirectSetting
 			}
 		}
 	}
 
-	return -1
+	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 
 // resolveWrapper checks if the instruction is a CALL to a known wrapper

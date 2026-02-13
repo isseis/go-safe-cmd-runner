@@ -237,7 +237,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 			info := SyscallInfo{
 				Number:              call.SyscallNumber,
 				Location:            call.CallSiteAddress,
-				DeterminationMethod: DeterminationMethodGoWrapper,
+				DeterminationMethod: call.DeterminationMethod,
 			}
 
 			if call.SyscallNumber >= 0 {
@@ -246,8 +246,8 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 			} else {
 				result.HasUnknownSyscalls = true
 				result.HighRiskReasons = append(result.HighRiskReasons,
-					fmt.Sprintf("go wrapper call at 0x%x: syscall number could not be determined",
-						call.CallSiteAddress))
+					fmt.Sprintf("go wrapper call at 0x%x: %s",
+						call.CallSiteAddress, call.DeterminationMethod))
 			}
 
 			result.DetectedSyscalls = append(result.DetectedSyscalls, info)
