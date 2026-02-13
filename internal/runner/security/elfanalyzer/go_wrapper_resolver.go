@@ -307,7 +307,7 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) GoSyscallWra
 
 	// Check: inst.Offset + inst.Len won't overflow uint64
 	// inst.Len is typically ≤15 for x86-64, so this is extremely unlikely
-	if inst.Len < 0 || inst.Offset > math.MaxUint64-uint64(inst.Len) { //nolint:gosec // G115: Len validated non-negative
+	if inst.Offset > math.MaxUint64-uint64(inst.Len) { //nolint:gosec // G115: Len validated non-negative
 		return NoWrapper
 	}
 	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Overflow checked above
