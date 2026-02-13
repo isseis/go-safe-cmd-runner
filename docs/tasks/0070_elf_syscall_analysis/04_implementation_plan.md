@@ -98,7 +98,34 @@ syscall 番号抽出を実装する。
   - 仕様: 詳細仕様書 §2.1
   - 要件: FR-3.1.2, FR-3.1.3, FR-3.1.4
 
-### 2.2 逆方向スキャンのテスト
+### 2.2 デコード失敗の統計とログ出力
+
+- [ ] `DecodeStatistics` 構造体と `maxDecodeFailureLogs`
+  定数を追加
+  - `SyscallAnalysisResult.DecodeStats` フィールド
+  - `DecodeFailureCount`: Pass 1 + Pass 2 合算値
+  - `TotalBytesAnalyzed`: `.text` セクション総バイト数
+  - `maxDecodeFailureLogs = 10`:
+    個別デコード失敗ログの上限
+  - 仕様: 詳細仕様書 §2.1, §8.5
+- [ ] `findSyscallInstructions()` にデコード失敗カウンタ
+  と個別ログ出力を追加
+  - 戻り値に `decodeFailures int` を追加
+  - デコード失敗時に `slog.Debug` で個別ログ出力
+    （`maxDecodeFailureLogs` で上限制御）
+  - 出力項目: offset（仮想アドレス）、bytes（先頭 4 バイト）
+  - 仕様: 詳細仕様書 §8.5.1
+- [ ] `decodeInstructionsInWindow()` にデコード失敗カウンタ
+  を追加
+  - 戻り値に `decodeFailures int` を追加
+  - ただし `backwardScanForSyscallNumber()` からの呼び出し時は
+    カウントを破棄（二重計上防止）
+  - 仕様: 詳細仕様書 §8.5.2
+- [ ] `analyzeSyscallsInCode()` で Pass 1 のデコード失敗数を
+  `result.DecodeStats` に集約
+  - 仕様: 詳細仕様書 §2.1
+
+### 2.3 逆方向スキャンのテスト
 
 - [x] `syscall_analyzer_test.go` を新規作成
   - `TestSyscallAnalyzer_BackwardScan`:
@@ -198,6 +225,15 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - いずれかのパスで番号不明の syscall が検出された場合、
     全体を High Risk と判定
   - 仕様: 詳細仕様書 §2.1 `analyzeSyscallsInCode`
+
+### 3.4 GoWrapperResolver のデコード失敗カウンタ
+
+- [ ] `FindWrapperCalls()` の戻り値に
+  `decodeFailures int` を追加
+  - Pass 2 のデコード失敗数を返す
+  - `analyzeSyscallsInCode()` で
+    `result.DecodeStats.DecodeFailureCount` に合算
+  - 仕様: 詳細仕様書 §2.5, §8.5.2
 
 ## Phase 4: 統合解析結果ストア
 
@@ -337,7 +373,9 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
   - ハッシュ計算と解析結果の保存
   - 非 ELF ファイルや動的リンクバイナリのスキップ
   - 進捗メッセージの出力（解析開始時・完了時に stderr へ出力）
-  - 仕様: 詳細仕様書 §4, §8.4
+  - デコード失敗サマリログの出力
+    （`result.DecodeStats` を使用、ファイルパス付き `slog.Debug`）
+  - 仕様: 詳細仕様書 §4, §8.4, §8.5.3
   - 要件: FR-3.3.1, NFR-4.1.2
 - [ ] `cmd/record/main_test.go` に追加テスト
   - `--analyze-syscalls` オプションの動作確認

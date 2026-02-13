@@ -61,11 +61,16 @@ internal/filevalidator/
 package elfanalyzer
 
 import (
-    "bytes"
     "debug/elf"
     "fmt"
     "log/slog"
 )
+
+// maxDecodeFailureLogs is the maximum number of individual decode failure
+// log messages to emit per analysis. This prevents excessive log output
+// for binaries with many decode failures (e.g., binaries containing
+// large data sections interleaved with code).
+const maxDecodeFailureLogs = 10
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 type SyscallAnalysisResult struct {
@@ -82,6 +87,24 @@ type SyscallAnalysisResult struct {
 
     // Summary provides aggregated information about the analysis.
     Summary SyscallSummary
+
+    // DecodeStats contains statistics about instruction decoding.
+    // These are populated during analysis and intended for diagnostic
+    // logging by the caller (e.g., record command).
+    DecodeStats DecodeStatistics
+}
+
+// DecodeStatistics contains instruction decode failure statistics.
+// This is used for diagnostic logging, not for risk assessment.
+// Decode failures do not affect risk classification (see §8.5 / §9.1.2).
+type DecodeStatistics struct {
+    // DecodeFailureCount is the total number of instruction decode failures
+    // across all passes (Pass 1: findSyscallInstructions + decodeInstructionsInWindow,
+    // Pass 2: FindWrapperCalls).
+    DecodeFailureCount int `json:"-"`
+
+    // TotalBytesAnalyzed is the total number of bytes in the .text section.
+    TotalBytesAnalyzed int `json:"-"`
 }
 
 // SyscallInfo represents information about a single detected syscall event.
@@ -216,7 +239,9 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
     }
 
     // Pass 1: Analyze direct syscall instructions
-    syscallLocs := a.findSyscallInstructions(code, baseAddr)
+    syscallLocs, pass1DecodeFailures := a.findSyscallInstructions(code, baseAddr)
+    result.DecodeStats.DecodeFailureCount += pass1DecodeFailures
+    result.DecodeStats.TotalBytesAnalyzed = len(code)
     for _, loc := range syscallLocs {
         info := a.extractSyscallInfo(code, loc, baseAddr)
         result.DetectedSyscalls = append(result.DetectedSyscalls, info)
@@ -235,7 +260,8 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 
     // Pass 2: Analyze Go wrapper calls (if symbols are available)
     if a.goResolver != nil && a.goResolver.HasSymbols() {
-        wrapperCalls := a.goResolver.FindWrapperCalls(code, baseAddr)
+        wrapperCalls, pass2DecodeFailures := a.goResolver.FindWrapperCalls(code, baseAddr)
+        result.DecodeStats.DecodeFailureCount += pass2DecodeFailures
         for _, call := range wrapperCalls {
             info := SyscallInfo{
                 Number:              call.SyscallNumber,
@@ -276,25 +302,35 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 }
 
 // findSyscallInstructions scans the code for syscall instructions (0F 05).
-func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) []uint64 {
+// Decode failures during instruction-boundary scanning are counted in
+// decodeFailureCount and logged up to maxDecodeFailureLogs times via slog.Debug.
+func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) ([]uint64, int) {
     var locations []uint64
+    decodeFailures := 0
+    pos := 0
 
-    pattern := []byte{0x0F, 0x05}
-    if len(code) < len(pattern) {
-        return locations
-    }
-
-    for i := 0; i <= len(code)-len(pattern); {
-        idx := bytes.Index(code[i:], pattern)
-        if idx == -1 {
-            break
+    for pos < len(code) {
+        inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos))
+        if err != nil {
+            decodeFailures++
+            if decodeFailures <= maxDecodeFailureLogs {
+                slog.Debug("instruction decode failed",
+                    slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))),
+                    slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+4, len(code))])))
+            }
+            pos++
+            continue
         }
-        pos := i + idx
-        locations = append(locations, baseAddr+uint64(pos))
-        i = pos + 1
+
+        // Check if this is a syscall instruction at proper instruction boundary
+        if inst.Len == 2 && pos+1 < len(code) && code[pos] == 0x0F && code[pos+1] == 0x05 {
+            locations = append(locations, baseAddr+uint64(pos))
+        }
+
+        pos += inst.Len
     }
 
-    return locations
+    return locations, decodeFailures
 }
 
 // extractSyscallInfo extracts syscall number by backward scanning.
@@ -345,8 +381,13 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
         windowStart = 0
     }
 
-    // Build instruction list by forward decoding within the window
-    instructions := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset)
+    // Build instruction list by forward decoding within the window.
+    // NOTE: Decode failures in the backward scan window are NOT counted
+    // in DecodeStats. These windows overlap with findSyscallInstructions'
+    // scan range, and counting them would double-count failures.
+    // Only findSyscallInstructions (Pass 1) and FindWrapperCalls (Pass 2)
+    // contribute to DecodeStats.DecodeFailureCount.
+    instructions, _ := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset)
     if len(instructions) == 0 {
         return -1, "unknown:decode_failed"
     }
@@ -406,8 +447,9 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 // Performance comparison (example: 10MB .text, 100 syscalls):
 // - Old approach: 100 × 5MB avg = ~500MB worth of redundant decoding
 // - Window approach: 100 × (50 instructions × 15 bytes) = ~75KB of focused decoding
-func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint64, startOffset, endOffset int) []DecodedInstruction {
+func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint64, startOffset, endOffset int) ([]DecodedInstruction, int) {
     var instructions []DecodedInstruction
+    decodeFailures := 0
     pos := startOffset
 
     for pos < endOffset {
@@ -415,6 +457,7 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
         // This ensures the decoder cannot consume bytes past endOffset (e.g., the syscall instruction itself).
         inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos))
         if err != nil {
+            decodeFailures++
             // Skip problematic byte and continue
             pos++
             continue
@@ -423,7 +466,7 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
         pos += inst.Len
     }
 
-    return instructions
+    return instructions, decodeFailures
 }
 ```
 
@@ -1243,12 +1286,13 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 // consider implementing window-based scanning similar to Pass 1, but this adds
 // complexity for maintaining CALL instruction context for backward scanning.
 // See NFR-4.1.2 for performance requirements.
-func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall {
+func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([]WrapperCall, int) {
     if len(r.wrapperAddrs) == 0 {
-        return nil
+        return nil, 0
     }
 
     var results []WrapperCall
+    decodeFailures := 0
 
     // Decode entire code section and find CALL instructions to known wrappers
     // Use the shared decoder instance (r.decoder) to avoid repeated allocation
@@ -1259,6 +1303,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
     for pos < len(code) {
         inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos))
         if err != nil {
+            decodeFailures++
             pos++
             continue
         }
@@ -1287,7 +1332,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
         pos += inst.Len
     }
 
-    return results
+    return results, decodeFailures
 }
 
 // resolveSyscallArgument analyzes instructions before a wrapper call
@@ -2228,6 +2273,17 @@ func analyzeSyscallsForFile(path, analysisDir string, pathGetter fileanalysis.Ha
         "network_syscalls", result.Summary.NetworkSyscallCount,
         "high_risk", result.Summary.IsHighRisk)
 
+    // Log decode failure summary if any failures occurred.
+    // This provides visibility into potential decode issues without
+    // flooding logs (individual failure logs are capped at maxDecodeFailureLogs
+    // inside findSyscallInstructions).
+    if result.DecodeStats.DecodeFailureCount > 0 {
+        slog.Debug("Instruction decode failures during syscall analysis",
+            slog.String("path", path),
+            slog.Int("decode_failures", result.DecodeStats.DecodeFailureCount),
+            slog.Int("total_bytes_analyzed", result.DecodeStats.TotalBytesAnalyzed))
+    }
+
     return nil
 }
 ```
@@ -2838,8 +2894,11 @@ int main() {
 
 **偽陽性発生時の動作**:
 
-`findSyscallInstructions()` は命令境界を考慮せず `bytes.Index()` でバイトパターンを検索するため、
-即値オペランド内に `0F 05` が含まれる命令（例: `mov $0x12340F05, %rax`）で偽陽性が発生する可能性がある。
+`findSyscallInstructions()` は命令境界に沿ってデコードを行い、
+デコード成功した命令のうちバイトパターン `0F 05` と一致するもののみを検出する。
+ただし、デコード失敗後の再同期過程で命令境界がずれた場合、
+即値オペランド内に `0F 05` が含まれる命令（例: `mov $0x12340F05, %rax`）を
+別の命令として誤デコードし、偽陽性が発生する可能性がある。
 
 偽陽性が発生した場合の動作:
 1. `backwardScanForSyscallNumber()` が逆方向スキャンを試みるが、通常は syscall 番号設定パターンを検出できない
@@ -2853,12 +2912,73 @@ int main() {
 
 **ログ出力要件**:
 
-デコード失敗の発生状況を可視化するため、以下のログ出力を実装すること：
+デコード失敗の発生状況を可視化するため、以下のログ出力を実装する。
 
-- デコード失敗が発生した場合、`slog.Debug` でログを出力する
-  - 出力項目: ファイルパス、失敗位置（オフセット）、失敗したバイト列（先頭数バイト）
-- 解析完了時に、デコード失敗の総数をサマリとして `slog.Debug` で出力する
-  - 出力項目: ファイルパス、デコード失敗回数、解析した総バイト数
+#### 8.5.1 個別デコード失敗ログ（`findSyscallInstructions` 内）
+
+`findSyscallInstructions()` でデコードに失敗した場合、`slog.Debug` で個別ログを出力する。
+大規模バイナリでの大量出力を防ぐため、出力件数を `maxDecodeFailureLogs`（= 10）で制限する。
+
+```go
+const maxDecodeFailureLogs = 10
+
+// findSyscallInstructions 内:
+if decodeFailures <= maxDecodeFailureLogs {
+    slog.Debug("instruction decode failed",
+        slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))),
+        slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+4, len(code))])))
+}
+```
+
+出力項目:
+- `offset`: 失敗位置（仮想アドレス）
+- `bytes`: 失敗したバイト列（先頭 4 バイト）
+
+**注記**: `decodeInstructionsInWindow()` と `FindWrapperCalls()` でもデコード失敗は発生するが、
+個別ログは `findSyscallInstructions()` のみで出力する。理由:
+- `decodeInstructionsInWindow()` のウィンドウ開始位置は命令境界と一致しないことが多く、
+  最初の数バイトでのデコード失敗は正常な再同期プロセスであり、ログの価値が低い
+- `FindWrapperCalls()` は Pass 1 と同じコード領域を走査するため、
+  個別ログを出力すると重複が発生する
+
+#### 8.5.2 デコード失敗カウンタ（`DecodeStatistics`）
+
+デコード失敗の総数を `SyscallAnalysisResult.DecodeStats` に集約する。
+`DecodeFailureCount` は全パスの合算値:
+- Pass 1: `findSyscallInstructions()` でのデコード失敗
+- Pass 2: `FindWrapperCalls()` でのデコード失敗
+
+**注記**: `decodeInstructionsInWindow()` でのデコード失敗は
+`findSyscallInstructions()` の走査範囲と重複するため、カウントに含めない
+（二重計上の防止）。
+
+```go
+type DecodeStatistics struct {
+    DecodeFailureCount int `json:"-"`  // JSON 出力対象外
+    TotalBytesAnalyzed int `json:"-"`  // JSON 出力対象外
+}
+```
+
+#### 8.5.3 サマリログ（呼び出し元で出力）
+
+`AnalyzeSyscallsFromELF()` はファイルパスを持たないため、サマリログは出力しない。
+代わりに `SyscallAnalysisResult.DecodeStats` に統計情報を返し、
+呼び出し元（例: `analyzeSyscallsForFile()`）がファイルパス付きで出力する。
+
+```go
+// analyzeSyscallsForFile() 内（§4 record コマンド）:
+if result.DecodeStats.DecodeFailureCount > 0 {
+    slog.Debug("Instruction decode failures during syscall analysis",
+        slog.String("path", path),
+        slog.Int("decode_failures", result.DecodeStats.DecodeFailureCount),
+        slog.Int("total_bytes_analyzed", result.DecodeStats.TotalBytesAnalyzed))
+}
+```
+
+出力項目:
+- `path`: 解析対象ファイルのパス
+- `decode_failures`: デコード失敗の総数（Pass 1 + Pass 2 合算）
+- `total_bytes_analyzed`: `.text` セクションの総バイト数
 
 これにより、デコード失敗が多発するバイナリの調査が可能となり、必要に応じて解析ロジックの改善や対象バイナリの手動検証を行える。
 
