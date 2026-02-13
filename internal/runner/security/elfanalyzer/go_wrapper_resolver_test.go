@@ -223,9 +223,8 @@ func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
 	nopCode := []byte{0x90}
 	nopInst, _ := decoder.Decode(nopCode, 0x401000)
 
-	wrapper, isWrapper := resolver.resolveWrapper(nopInst)
-	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper(""), wrapper)
+	wrapper := resolver.resolveWrapper(nopInst)
+	assert.Equal(t, NoWrapper, wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
@@ -240,9 +239,8 @@ func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
 		Args:   []x86asm.Arg{x86asm.Rel(1)},
 	}
 
-	wrapper, isWrapper := resolver.resolveWrapper(inst)
-	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper(""), wrapper)
+	wrapper := resolver.resolveWrapper(inst)
+	assert.Equal(t, NoWrapper, wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
@@ -256,9 +254,8 @@ func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
 		Args:   []x86asm.Arg{x86asm.Rel(1)},
 	}
 
-	wrapper, isWrapper := resolver.resolveWrapper(inst)
-	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper(""), wrapper)
+	wrapper := resolver.resolveWrapper(inst)
+	assert.Equal(t, NoWrapper, wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
@@ -274,9 +271,8 @@ func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
 		Args:   []x86asm.Arg{x86asm.Rel(-0x100)},
 	}
 
-	wrapper, isWrapper := resolver.resolveWrapper(inst)
-	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper(""), wrapper)
+	wrapper := resolver.resolveWrapper(inst)
+	assert.Equal(t, NoWrapper, wrapper)
 }
 
 func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
@@ -290,9 +286,8 @@ func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
 	callCode := []byte{0xe8, 0xfb, 0x0f, 0x00, 0x00} // call to 0x402000
 	callInst, _ := decoder.Decode(callCode, 0x401000)
 
-	wrapper, isWrapper := resolver.resolveWrapper(callInst)
-	assert.False(t, isWrapper)
-	assert.Equal(t, GoSyscallWrapper(""), wrapper)
+	wrapper := resolver.resolveWrapper(callInst)
+	assert.Equal(t, NoWrapper, wrapper)
 }
 
 func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {

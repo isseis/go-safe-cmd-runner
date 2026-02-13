@@ -23,7 +23,11 @@ const (
 )
 
 // GoSyscallWrapper represents the name of a known Go syscall wrapper function.
+// The zero value (NoWrapper) means no wrapper was found.
 type GoSyscallWrapper string
+
+// NoWrapper is the zero value of GoSyscallWrapper, indicating no wrapper was found.
+const NoWrapper GoSyscallWrapper = ""
 
 // knownGoWrappers is a set of known Go syscall wrapper function names for O(1) lookup.
 var knownGoWrappers = map[GoSyscallWrapper]struct{}{
@@ -189,8 +193,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 
 		// Check if this is a CALL to a known wrapper
 		if inst.Op == x86asm.CALL {
-			wrapper, isWrapper := r.resolveWrapper(inst)
-			if isWrapper {
+			if wrapper := r.resolveWrapper(inst); wrapper != NoWrapper {
 				// Found a call to a wrapper, try to resolve the syscall number
 				syscallNum := r.resolveSyscallArgument(recentInstructions)
 				// pos is validated same as above
@@ -262,22 +265,22 @@ func (r *GoWrapperResolver) resolveSyscallArgument(recentInstructions []DecodedI
 }
 
 // resolveWrapper checks if the instruction is a CALL to a known wrapper
-// and returns the wrapper information if found.
-func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWrapper, bool) {
+// and returns the wrapper name if found, or NoWrapper otherwise.
+func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) GoSyscallWrapper {
 	if inst.Op != x86asm.CALL {
-		return "", false
+		return NoWrapper
 	}
 
 	// Extract call target
 	if len(inst.Args) == 0 {
-		return "", false
+		return NoWrapper
 	}
 
 	// For direct calls, check if target is a known wrapper
 	// Only handle relative calls (x86asm.Rel type)
 	target, ok := inst.Args[0].(x86asm.Rel)
 	if !ok {
-		return "", false
+		return NoWrapper
 	}
 
 	// Relative call - calculate absolute address.
@@ -295,28 +298,24 @@ func (r *GoWrapperResolver) resolveWrapper(inst DecodedInstruction) (GoSyscallWr
 	// Check: inst.Offset + inst.Len won't overflow uint64
 	// inst.Len is typically ≤15 for x86-64, so this is extremely unlikely
 	if inst.Len < 0 || inst.Offset > math.MaxUint64-uint64(inst.Len) { //nolint:gosec // G115: Len validated non-negative
-		return "", false
+		return NoWrapper
 	}
 	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Overflow checked above
 
 	// Check: nextPC fits in int64 for signed displacement calculation
 	if nextPC > uint64(math.MaxInt64) {
-		return "", false
+		return NoWrapper
 	}
 
 	// Check: signed displacement doesn't result in negative address
 	// target is x86asm.Rel (int32), so int64 conversion is safe
 	displacement := int64(nextPC) + int64(target)
 	if displacement < 0 {
-		return "", false
+		return NoWrapper
 	}
 
 	targetAddr := uint64(displacement)
-	if wrapper, found := r.wrapperAddrs[targetAddr]; found {
-		return wrapper, true
-	}
-
-	return "", false
+	return r.wrapperAddrs[targetAddr]
 }
 
 // GetWrapperAddresses returns all known wrapper function addresses.
