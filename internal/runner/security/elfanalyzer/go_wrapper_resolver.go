@@ -68,11 +68,10 @@ type WrapperCall struct {
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
-	symbols       map[string]SymbolInfo
-	wrapperAddrs  map[uint64]GoSyscallWrapper
-	hasSymbols    bool
-	pclntabParser *PclntabParser
-	decoder       *X86Decoder // Shared decoder instance to avoid repeated allocation
+	symbols      map[string]SymbolInfo
+	wrapperAddrs map[uint64]GoSyscallWrapper
+	hasSymbols   bool
+	decoder      *X86Decoder // Shared decoder instance to avoid repeated allocation
 }
 
 // NewGoWrapperResolver creates a new GoWrapperResolver and loads symbols
@@ -94,20 +93,20 @@ func NewGoWrapperResolver(elfFile *elf.File) (*GoWrapperResolver, error) {
 // This is used internally and by tests that set up symbols manually.
 func newGoWrapperResolver() *GoWrapperResolver {
 	return &GoWrapperResolver{
-		symbols:       make(map[string]SymbolInfo),
-		wrapperAddrs:  make(map[uint64]GoSyscallWrapper),
-		pclntabParser: NewPclntabParser(),
-		decoder:       NewX86Decoder(),
+		symbols:      make(map[string]SymbolInfo),
+		wrapperAddrs: make(map[uint64]GoSyscallWrapper),
+		decoder:      NewX86Decoder(),
 	}
 }
 
 // loadFromPclntab loads symbols from the .gopclntab section.
 func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
-	if err := r.pclntabParser.Parse(elfFile); err != nil {
+	result, err := ParsePclntab(elfFile)
+	if err != nil {
 		return err
 	}
 
-	for _, fn := range r.pclntabParser.GetFunctions() {
+	for _, fn := range result.Functions {
 		// Calculate size, guarding against missing/zero End to avoid underflow
 		size := uint64(0)
 		if fn.End > fn.Entry {

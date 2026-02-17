@@ -96,7 +96,7 @@ type pcHeader struct {
 
 2. **パース関数の追加**
    ```go
-   func (p *PclntabParser) parseGoXXX(data []byte) error {
+   func (p *pclntabParser) parseGoXXX(data []byte) error {
        // 新バージョン固有のパースロジック
    }
    ```

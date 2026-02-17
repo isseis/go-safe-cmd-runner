@@ -54,9 +54,9 @@ func TestPclntabParser_MagicNumbers(t *testing.T) {
 			// Create minimal pclntab data with the specified magic
 			data := createMinimalPclntab(tt.magic)
 
-			parser := NewPclntabParser()
+			parser := &pclntabParser{}
 
-			// We can't use Parse() directly because it requires an elf.File,
+			// We can't use parse() directly because it requires an elf.File,
 			// so we test the internal parsing functions
 			var err error
 			switch tt.magic {
@@ -80,7 +80,7 @@ func TestPclntabParser_MagicNumbers(t *testing.T) {
 				// For supported magic values, the parser should always set the Go
 				// version based on the pclntab header, even if deeper parsing
 				// fails due to the minimal pclntab structure used in this test.
-				assert.Equal(t, tt.goVersion, parser.GetGoVersion())
+				assert.Equal(t, tt.goVersion, parser.goVersion)
 			}
 			if tt.expectErr != nil {
 				assert.ErrorIs(t, err, tt.expectErr)
@@ -110,7 +110,7 @@ func TestPclntabParser_InvalidData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			parser := NewPclntabParser()
+			parser := &pclntabParser{}
 
 			// Test with Go 1.18+ parser (should fail for all invalid data)
 			err := parser.parseGo118Plus(tt.data)
@@ -132,7 +132,7 @@ func TestPclntabParser_UnsupportedPointerSize(t *testing.T) {
 	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
 	data[7] = 4 // 32-bit pointer size
 
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 	err := parser.parseGo118Plus(data)
 
 	assert.ErrorIs(t, err, ErrInvalidPclntab)
@@ -140,26 +140,25 @@ func TestPclntabParser_UnsupportedPointerSize(t *testing.T) {
 }
 
 func TestPclntabParser_GetFunctions(t *testing.T) {
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 
 	// Initially empty
-	funcs := parser.GetFunctions()
-	assert.Empty(t, funcs)
+	assert.Empty(t, parser.funcData)
 }
 
 func TestPclntabParser_FindFunction(t *testing.T) {
-	parser := NewPclntabParser()
+	result := &PclntabResult{}
 
-	// Function not found when parser is empty
-	_, found := parser.FindFunction("main.main")
+	// Function not found when result is empty
+	_, found := result.FindFunction("main.main")
 	assert.False(t, found)
 }
 
 func TestPclntabParser_GetGoVersion(t *testing.T) {
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 
 	// Initially empty
-	assert.Equal(t, "", parser.GetGoVersion())
+	assert.Equal(t, "", parser.goVersion)
 }
 
 // createMinimalPclntab creates a minimal pclntab structure for testing.
@@ -218,24 +217,24 @@ func TestPclntabParser_ValidPclntabWithFunctions(t *testing.T) {
 	// Create a pclntab with one function
 	data := createPclntabWithFunction("main.main", 0x401000)
 
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 	err := parser.parseGo118Plus(data)
 
 	require.NoError(t, err)
-	assert.Equal(t, "go1.18+", parser.GetGoVersion())
+	assert.Equal(t, "go1.18+", parser.goVersion)
 
-	funcs := parser.GetFunctions()
-	require.Len(t, funcs, 1)
-	assert.Equal(t, "main.main", funcs[0].Name)
-	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
+	require.Len(t, parser.funcData, 1)
+	assert.Equal(t, "main.main", parser.funcData[0].Name)
+	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
 
-	// Test FindFunction
-	fn, found := parser.FindFunction("main.main")
+	// Test FindFunction via PclntabResult
+	result := &PclntabResult{Functions: parser.funcData}
+	fn, found := result.FindFunction("main.main")
 	assert.True(t, found)
 	assert.Equal(t, "main.main", fn.Name)
 
 	// Test FindFunction for non-existent function
-	_, found = parser.FindFunction("nonexistent")
+	_, found = result.FindFunction("nonexistent")
 	assert.False(t, found)
 }
 
@@ -314,27 +313,27 @@ func TestPclntabParser_MultipleFunctions(t *testing.T) {
 		{"syscall.Syscall", 0x402000},
 	})
 
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 	err := parser.parseGo118Plus(data)
 
 	require.NoError(t, err)
 
-	funcs := parser.GetFunctions()
-	require.Len(t, funcs, 3)
+	require.Len(t, parser.funcData, 3)
 
 	// Verify functions
-	assert.Equal(t, "main.main", funcs[0].Name)
-	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
-	assert.Equal(t, uint64(0x401100), funcs[0].End) // End is next function's entry
+	assert.Equal(t, "main.main", parser.funcData[0].Name)
+	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
+	assert.Equal(t, uint64(0x401100), parser.funcData[0].End) // End is next function's entry
 
-	assert.Equal(t, "main.foo", funcs[1].Name)
-	assert.Equal(t, uint64(0x401100), funcs[1].Entry)
+	assert.Equal(t, "main.foo", parser.funcData[1].Name)
+	assert.Equal(t, uint64(0x401100), parser.funcData[1].Entry)
 
-	assert.Equal(t, "syscall.Syscall", funcs[2].Name)
-	assert.Equal(t, uint64(0x402000), funcs[2].Entry)
+	assert.Equal(t, "syscall.Syscall", parser.funcData[2].Name)
+	assert.Equal(t, uint64(0x402000), parser.funcData[2].Entry)
 
-	// Test FindFunction for syscall wrapper
-	fn, found := parser.FindFunction("syscall.Syscall")
+	// Test FindFunction for syscall wrapper via PclntabResult
+	result := &PclntabResult{Functions: parser.funcData}
+	fn, found := result.FindFunction("syscall.Syscall")
 	assert.True(t, found)
 	assert.Equal(t, "syscall.Syscall", fn.Name)
 }
@@ -521,28 +520,28 @@ func TestPclntabParser_Go125MinimalHeader(t *testing.T) {
 	// (same as the Go 1.20-1.24 minimal header), but Go version should be detected.
 	data := createMinimalPclntabGo125(pclntabMagicGo120)
 
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 	err := parser.parseGo118Plus(data)
 
 	assert.ErrorIs(t, err, ErrInvalidPclntab)
-	assert.Equal(t, "go1.18+", parser.GetGoVersion())
+	assert.Equal(t, "go1.18+", parser.goVersion)
 }
 
 func TestPclntabParser_Go125WithFunction(t *testing.T) {
 	data := createPclntabGo125WithFunction("main.main", 0x401000)
 
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 	err := parser.parseGo118Plus(data)
 
 	require.NoError(t, err)
-	assert.Equal(t, "go1.18+", parser.GetGoVersion())
+	assert.Equal(t, "go1.18+", parser.goVersion)
 
-	funcs := parser.GetFunctions()
-	require.Len(t, funcs, 1)
-	assert.Equal(t, "main.main", funcs[0].Name)
-	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
+	require.Len(t, parser.funcData, 1)
+	assert.Equal(t, "main.main", parser.funcData[0].Name)
+	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
 
-	fn, found := parser.FindFunction("main.main")
+	result := &PclntabResult{Functions: parser.funcData}
+	fn, found := result.FindFunction("main.main")
 	assert.True(t, found)
 	assert.Equal(t, "main.main", fn.Name)
 }
@@ -629,25 +628,25 @@ func TestPclntabParser_Go125MultipleFunctions(t *testing.T) {
 	binary.LittleEndian.PutUint32(data[sentinelOff:], 0xFFFFFF)
 	binary.LittleEndian.PutUint32(data[sentinelOff+4:], 0)
 
-	parser := NewPclntabParser()
+	parser := &pclntabParser{}
 	err := parser.parseGo118Plus(data)
 
 	require.NoError(t, err)
 
-	funcs := parser.GetFunctions()
-	require.Len(t, funcs, 3)
+	require.Len(t, parser.funcData, 3)
 
-	assert.Equal(t, "main.main", funcs[0].Name)
-	assert.Equal(t, uint64(0x401000), funcs[0].Entry)
-	assert.Equal(t, uint64(0x401100), funcs[0].End)
+	assert.Equal(t, "main.main", parser.funcData[0].Name)
+	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
+	assert.Equal(t, uint64(0x401100), parser.funcData[0].End)
 
-	assert.Equal(t, "main.foo", funcs[1].Name)
-	assert.Equal(t, uint64(0x401100), funcs[1].Entry)
+	assert.Equal(t, "main.foo", parser.funcData[1].Name)
+	assert.Equal(t, uint64(0x401100), parser.funcData[1].Entry)
 
-	assert.Equal(t, "syscall.Syscall", funcs[2].Name)
-	assert.Equal(t, uint64(0x402000), funcs[2].Entry)
+	assert.Equal(t, "syscall.Syscall", parser.funcData[2].Name)
+	assert.Equal(t, uint64(0x402000), parser.funcData[2].Entry)
 
-	fn, found := parser.FindFunction("syscall.Syscall")
+	result := &PclntabResult{Functions: parser.funcData}
+	fn, found := result.FindFunction("syscall.Syscall")
 	assert.True(t, found)
 	assert.Equal(t, "syscall.Syscall", fn.Name)
 }
