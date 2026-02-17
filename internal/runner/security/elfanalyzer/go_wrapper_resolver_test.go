@@ -3,7 +3,6 @@
 package elfanalyzer
 
 import (
-	"debug/elf"
 	"math"
 	"testing"
 
@@ -12,8 +11,8 @@ import (
 	"golang.org/x/arch/x86/x86asm"
 )
 
-func TestGoWrapperResolver_NewGoWrapperResolver(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+func TestGoWrapperResolver_newGoWrapperResolver(t *testing.T) {
+	resolver := newGoWrapperResolver()
 
 	assert.NotNil(t, resolver)
 	assert.NotNil(t, resolver.symbols)
@@ -24,7 +23,7 @@ func TestGoWrapperResolver_NewGoWrapperResolver(t *testing.T) {
 }
 
 func TestGoWrapperResolver_HasSymbols(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Initially no symbols
 	assert.False(t, resolver.HasSymbols())
@@ -41,7 +40,7 @@ func TestGoWrapperResolver_HasSymbols(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// With no wrappers loaded, should return nil
 	result := resolver.FindWrapperCalls([]byte{0x90, 0x90}, 0x401000)
@@ -49,7 +48,7 @@ func TestGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Manually register a wrapper at a known address
 	wrapperAddr := uint64(0x402000)
@@ -85,7 +84,7 @@ func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Register a wrapper
 	wrapperAddr := uint64(0x402000)
@@ -109,7 +108,7 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Create recent instructions with a jump between mov and call
 	// The control flow boundary (jmp) should stop backward scanning before reaching mov
@@ -135,7 +134,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Test with mov to RAX (64-bit)
 	// 48 c7 c0 29 00 00 00  mov $0x29, %rax
@@ -154,7 +153,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Test with mov to EAX (32-bit, commonly used by Go compiler)
 	// b8 29 00 00 00  mov $0x29, %eax
@@ -173,7 +172,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	decoder := NewX86Decoder()
 
@@ -226,7 +225,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Create a non-CALL instruction
 	decoder := NewX86Decoder()
@@ -238,7 +237,7 @@ func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Construct a DecodedInstruction with Offset > math.MaxInt64.
 	// resolveWrapper should bail out rather than silently overflow.
@@ -254,7 +253,7 @@ func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Negative instruction length should be rejected by the pre-check.
 	inst := DecodedInstruction{
@@ -269,7 +268,7 @@ func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Create a CALL whose rel32 points far backwards such that
 	// int64(nextPC) + int64(target) < 0. resolveWrapper should reject it.
@@ -286,7 +285,7 @@ func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Register a wrapper at a different address
 	resolver.wrapperAddrs[0x403000] = "syscall.Syscall"
@@ -301,7 +300,7 @@ func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
 }
 
 func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Initially empty
 	addrs := resolver.GetWrapperAddresses()
@@ -316,7 +315,7 @@ func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
 }
 
 func TestGoWrapperResolver_GetSymbols(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Initially empty
 	symbols := resolver.GetSymbols()
@@ -354,7 +353,7 @@ func TestGoWrapperResolver_KnownGoWrappers(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
-	resolver := NewGoWrapperResolver()
+	resolver := newGoWrapperResolver()
 
 	// Register multiple wrappers
 	resolver.wrapperAddrs[0x402000] = "syscall.Syscall"
@@ -396,29 +395,6 @@ func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 	assert.Equal(t, 42, result[1].SyscallNumber) // connect
 	assert.True(t, result[1].Resolved)
 	assert.Equal(t, DeterminationMethodGoWrapper, result[1].DeterminationMethod)
-}
-
-func TestGoWrapperResolver_LoadSymbols_ClearsPriorState(t *testing.T) {
-	resolver := NewGoWrapperResolver()
-
-	// Simulate state from a previous LoadSymbols call
-	resolver.symbols["old.Function"] = SymbolInfo{
-		Name:    "old.Function",
-		Address: 0x500000,
-		Size:    100,
-	}
-	resolver.wrapperAddrs[0x500000] = "syscall.Syscall"
-	resolver.hasSymbols = true
-
-	// Call LoadSymbols with an ELF file that has no .gopclntab
-	// This will return ErrNoPclntab, but the state should still be cleared
-	err := resolver.LoadSymbols(&elf.File{})
-	require.Error(t, err)
-
-	// Verify that prior state was cleared
-	assert.Empty(t, resolver.symbols, "symbols should be cleared on LoadSymbols")
-	assert.Empty(t, resolver.wrapperAddrs, "wrapperAddrs should be cleared on LoadSymbols")
-	assert.False(t, resolver.hasSymbols, "hasSymbols should be reset on LoadSymbols")
 }
 
 func TestGoWrapperResolver_DecodedInstruction_Args(t *testing.T) {

@@ -75,36 +75,30 @@ type GoWrapperResolver struct {
 	decoder       *X86Decoder // Shared decoder instance to avoid repeated allocation
 }
 
-// NewGoWrapperResolver creates a new GoWrapperResolver.
-func NewGoWrapperResolver() *GoWrapperResolver {
+// NewGoWrapperResolver creates a new GoWrapperResolver and loads symbols
+// from the given ELF file's .gopclntab section.
+//
+// Returns an error if symbol loading fails (e.g., missing .gopclntab).
+// Even on error, the returned resolver is safe to use; it simply has no
+// symbols loaded and FindWrapperCalls will return nil.
+func NewGoWrapperResolver(elfFile *elf.File) (*GoWrapperResolver, error) {
+	r := newGoWrapperResolver()
+	if err := r.loadFromPclntab(elfFile); err != nil {
+		return r, err
+	}
+	r.hasSymbols = len(r.symbols) > 0
+	return r, nil
+}
+
+// newGoWrapperResolver creates an empty GoWrapperResolver without loading symbols.
+// This is used internally and by tests that set up symbols manually.
+func newGoWrapperResolver() *GoWrapperResolver {
 	return &GoWrapperResolver{
 		symbols:       make(map[string]SymbolInfo),
 		wrapperAddrs:  make(map[uint64]GoSyscallWrapper),
 		pclntabParser: NewPclntabParser(),
 		decoder:       NewX86Decoder(),
 	}
-}
-
-// LoadSymbols loads symbols from the .gopclntab section.
-// The pclntab persists even after stripping because Go runtime needs it
-// for stack traces and garbage collection.
-//
-// Prior state is cleared so the resolver can safely be reused across
-// multiple ELF files without carrying over stale symbols or wrapper addresses.
-//
-// Returns error if .gopclntab is not available.
-func (r *GoWrapperResolver) LoadSymbols(elfFile *elf.File) error {
-	// Reset state from any previous call to prevent cross-binary contamination.
-	r.symbols = make(map[string]SymbolInfo)
-	r.wrapperAddrs = make(map[uint64]GoSyscallWrapper)
-	r.hasSymbols = false
-
-	if err := r.loadFromPclntab(elfFile); err != nil {
-		return err
-	}
-
-	r.hasSymbols = len(r.symbols) > 0
-	return nil
 }
 
 // loadFromPclntab loads symbols from the .gopclntab section.

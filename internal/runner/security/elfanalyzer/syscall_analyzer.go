@@ -121,7 +121,6 @@ const (
 type SyscallAnalyzer struct {
 	decoder      MachineCodeDecoder
 	syscallTable SyscallNumberTable
-	goResolver   *GoWrapperResolver
 
 	// maxBackwardScan is the maximum number of instructions to scan backward
 	// from a syscall instruction to find the syscall number.
@@ -133,7 +132,6 @@ func NewSyscallAnalyzer() *SyscallAnalyzer {
 	return &SyscallAnalyzer{
 		decoder:         NewX86Decoder(),
 		syscallTable:    NewX86_64SyscallTable(),
-		goResolver:      NewGoWrapperResolver(),
 		maxBackwardScan: defaultMaxBackwardScan,
 	}
 }
@@ -156,7 +154,6 @@ func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumbe
 	return &SyscallAnalyzer{
 		decoder:         decoder,
 		syscallTable:    table,
-		goResolver:      NewGoWrapperResolver(),
 		maxBackwardScan: maxScan,
 	}
 }
@@ -187,27 +184,28 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 		return nil, fmt.Errorf("failed to read .text section: %w", err)
 	}
 
-	// Load symbols for Go wrapper resolution.
-	// Always reload symbols for each ELF file to avoid carrying over
-	// stale wrapper addresses from a previously analyzed binary.
-	if a.goResolver != nil {
-		if err := a.goResolver.LoadSymbols(elfFile); err != nil && !errors.Is(err, ErrSymbolLoadingNotImplemented) {
-			// Non-fatal: continue without Go wrapper resolution
-			// This handles stripped binaries
-			slog.Debug("failed to load symbols for Go wrapper resolution",
-				slog.String("error", err.Error()))
-		}
+	// Create a fresh GoWrapperResolver for this ELF file.
+	// A new instance is created per call to guarantee no stale state
+	// carries over between different binaries.
+	goResolver, err := NewGoWrapperResolver(elfFile)
+	if err != nil && !errors.Is(err, ErrSymbolLoadingNotImplemented) {
+		// Non-fatal: continue without Go wrapper resolution
+		// This handles stripped binaries
+		slog.Debug("failed to load symbols for Go wrapper resolution",
+			slog.String("error", err.Error()))
 	}
 
 	// Analyze syscalls
-	return a.analyzeSyscallsInCode(code, textSection.Addr)
+	return a.analyzeSyscallsInCode(code, textSection.Addr, goResolver)
 }
 
 // analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
 // This method uses two separate analysis passes:
 //  1. Direct syscall instruction analysis (syscall opcode 0F 05)
 //  2. Go wrapper call analysis (calls to syscall.Syscall, etc.)
-func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*SyscallAnalysisResult, error) {
+//
+// goResolver may be nil if symbol loading failed or was not attempted.
+func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, goResolver *GoWrapperResolver) (*SyscallAnalysisResult, error) {
 	result := &SyscallAnalysisResult{
 		DetectedSyscalls: make([]SyscallInfo, 0),
 	}
@@ -231,8 +229,8 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 	}
 
 	// Pass 2: Analyze Go wrapper calls (if symbols are available)
-	if a.goResolver != nil {
-		wrapperCalls := a.goResolver.FindWrapperCalls(code, baseAddr)
+	if goResolver != nil {
+		wrapperCalls := goResolver.FindWrapperCalls(code, baseAddr)
 		for _, call := range wrapperCalls {
 			info := SyscallInfo{
 				Number:              call.SyscallNumber,
