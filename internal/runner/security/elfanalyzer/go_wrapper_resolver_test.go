@@ -3,6 +3,7 @@
 package elfanalyzer
 
 import (
+	"debug/elf"
 	"math"
 	"testing"
 
@@ -11,38 +12,24 @@ import (
 	"golang.org/x/arch/x86/x86asm"
 )
 
-func TestGoWrapperResolver_newGoWrapperResolver(t *testing.T) {
-	resolver := newGoWrapperResolver()
+func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
+	// An empty elf.File has no .gopclntab section.
+	// NewGoWrapperResolver should return a usable resolver and ErrNoPclntab.
+	resolver, err := NewGoWrapperResolver(&elf.File{})
 
+	require.ErrorIs(t, err, ErrNoPclntab)
 	assert.NotNil(t, resolver)
-	assert.NotNil(t, resolver.symbols)
-	assert.NotNil(t, resolver.wrapperAddrs)
-	assert.NotNil(t, resolver.pclntabParser)
-	assert.NotNil(t, resolver.decoder)
-	assert.False(t, resolver.HasSymbols())
-}
-
-func TestGoWrapperResolver_HasSymbols(t *testing.T) {
-	resolver := newGoWrapperResolver()
-
-	// Initially no symbols
 	assert.False(t, resolver.HasSymbols())
 
-	// Manually add a symbol to simulate loading
-	resolver.symbols["main.main"] = SymbolInfo{
-		Name:    "main.main",
-		Address: 0x401000,
-		Size:    100,
-	}
-	resolver.hasSymbols = true
-
-	assert.True(t, resolver.HasSymbols())
+	// Returned resolver should be safe to call without panic.
+	assert.Nil(t, resolver.FindWrapperCalls([]byte{0x90}, 0))
 }
 
-func TestGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
-	resolver := newGoWrapperResolver()
+func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
+	// A resolver created from an ELF without .gopclntab has no wrappers loaded.
+	resolver, err := NewGoWrapperResolver(&elf.File{})
+	require.ErrorIs(t, err, ErrNoPclntab)
 
-	// With no wrappers loaded, should return nil
 	result := resolver.FindWrapperCalls([]byte{0x90, 0x90}, 0x401000)
 	assert.Nil(t, result)
 }
