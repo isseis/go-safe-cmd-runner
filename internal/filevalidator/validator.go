@@ -180,12 +180,12 @@ func (v *Validator) recordWithAnalysisStore(filePath, hash, hashFilePath string,
 			return "", fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
 		}
 	} else if !errors.Is(err, fileanalysis.ErrRecordNotFound) {
-		// For errors other than "not found", we proceed only if the error is an ignorable
-		// schema mismatch or corruption error. Otherwise, we fail.
+		// For errors other than "not found", we proceed to Update only if the error is a
+		// schema mismatch or corruption error that can be handled there. Otherwise, we fail.
 		var schemaErr *fileanalysis.SchemaVersionMismatchError
 		var corruptedErr *fileanalysis.RecordCorruptedError
-		isIgnorableError := errors.As(err, &schemaErr) || errors.As(err, &corruptedErr)
-		if !isIgnorableError {
+		canProceedToUpdate := errors.As(err, &schemaErr) || errors.As(err, &corruptedErr)
+		if !canProceedToUpdate {
 			return "", fmt.Errorf("failed to check existing record: %w", err)
 		}
 	}
