@@ -26,8 +26,8 @@ flowchart LR
     P4 --> P5
     P5 --> P6
 
-    class P1,P2 done
-    class P3,P4,P5,P6 todo
+    class P1,P2,P3 done
+    class P4,P5,P6 todo
 ```
 
 **注記**: Phase 2 と Phase 3 は Phase 1 完了後に並行して実施可能。
@@ -126,7 +126,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 3.1 PclntabParser
 
-- [ ] `internal/runner/security/elfanalyzer/pclntab_parser.go`
+- [x] `internal/runner/security/elfanalyzer/pclntab_parser.go`
   を新規作成
   - `PclntabFunc` 構造体
   - `PclntabParser` 構造体と
@@ -152,7 +152,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     Go 1.2-1.17 はベストエフォートとし、
     解析不能時は `ErrInvalidPclntab` を返す
     （詳細仕様書 §2.4 参照）。
-- [ ] `pclntab_parser_test.go` を新規作成
+- [x] `pclntab_parser_test.go` を新規作成
   - `TestPclntabParser_MagicNumbers`: マジックナンバー判定
   - `TestPclntabParser_InvalidData`:
     不正データのエラーハンドリング
@@ -160,7 +160,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 3.2 GoWrapperResolver
 
-- [ ] `internal/runner/security/elfanalyzer/go_wrapper_resolver.go`
+- [x] `internal/runner/security/elfanalyzer/go_wrapper_resolver.go`
   を新規作成
   - `GoSyscallWrapper`, `SymbolInfo`, `WrapperCall` 構造体
   - `knownGoWrappers` 変数
@@ -178,7 +178,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
     CALL ターゲットが既知ラッパーか判定
   - 仕様: 詳細仕様書 §2.5
   - 要件: FR-3.1.6
-- [ ] `go_wrapper_resolver_test.go` を新規作成
+- [x] `go_wrapper_resolver_test.go` を新規作成
   - `TestGoWrapperResolver_HasSymbols`:
     シンボル有無の確認
   - `TestGoWrapperResolver_FindWrapperCalls`:
@@ -189,7 +189,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 3.3 SyscallAnalyzer への Pass 2 統合
 
-- [ ] `syscall_analyzer.go` の `analyzeSyscallsInCode()` に
+- [x] `syscall_analyzer.go` の `analyzeSyscallsInCode()` に
   Pass 2 を統合
   - `.gopclntab` の関数抽出結果が `GoWrapperResolver`
     に反映されることを確認する

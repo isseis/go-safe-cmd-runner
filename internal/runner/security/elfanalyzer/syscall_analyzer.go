@@ -121,7 +121,6 @@ const (
 type SyscallAnalyzer struct {
 	decoder      MachineCodeDecoder
 	syscallTable SyscallNumberTable
-	goResolver   *GoWrapperResolver
 
 	// maxBackwardScan is the maximum number of instructions to scan backward
 	// from a syscall instruction to find the syscall number.
@@ -133,7 +132,6 @@ func NewSyscallAnalyzer() *SyscallAnalyzer {
 	return &SyscallAnalyzer{
 		decoder:         NewX86Decoder(),
 		syscallTable:    NewX86_64SyscallTable(),
-		goResolver:      NewGoWrapperResolver(),
 		maxBackwardScan: defaultMaxBackwardScan,
 	}
 }
@@ -156,7 +154,6 @@ func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumbe
 	return &SyscallAnalyzer{
 		decoder:         decoder,
 		syscallTable:    table,
-		goResolver:      NewGoWrapperResolver(),
 		maxBackwardScan: maxScan,
 	}
 }
@@ -187,25 +184,28 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 		return nil, fmt.Errorf("failed to read .text section: %w", err)
 	}
 
-	// Load symbols for Go wrapper resolution
-	if a.goResolver != nil && !a.goResolver.HasSymbols() {
-		if err := a.goResolver.LoadSymbols(elfFile); err != nil && !errors.Is(err, ErrSymbolLoadingNotImplemented) {
-			// Non-fatal: continue without Go wrapper resolution
-			// This handles stripped binaries
-			slog.Debug("failed to load symbols for Go wrapper resolution",
-				slog.String("error", err.Error()))
-		}
+	// Create a fresh GoWrapperResolver for this ELF file.
+	// A new instance is created per call to guarantee no stale state
+	// carries over between different binaries.
+	goResolver, err := NewGoWrapperResolver(elfFile)
+	if err != nil && !errors.Is(err, ErrSymbolLoadingNotImplemented) {
+		// Non-fatal: continue without Go wrapper resolution
+		// This handles stripped binaries
+		slog.Debug("failed to load symbols for Go wrapper resolution",
+			slog.String("error", err.Error()))
 	}
 
 	// Analyze syscalls
-	return a.analyzeSyscallsInCode(code, textSection.Addr)
+	return a.analyzeSyscallsInCode(code, textSection.Addr, goResolver)
 }
 
 // analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
 // This method uses two separate analysis passes:
 //  1. Direct syscall instruction analysis (syscall opcode 0F 05)
 //  2. Go wrapper call analysis (calls to syscall.Syscall, etc.)
-func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*SyscallAnalysisResult, error) {
+//
+// goResolver may be nil if symbol loading failed or was not attempted.
+func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, goResolver *GoWrapperResolver) (*SyscallAnalysisResult, error) {
 	result := &SyscallAnalysisResult{
 		DetectedSyscalls: make([]SyscallInfo, 0),
 	}
@@ -229,13 +229,13 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 	}
 
 	// Pass 2: Analyze Go wrapper calls (if symbols are available)
-	if a.goResolver != nil {
-		wrapperCalls := a.goResolver.FindWrapperCalls(code, baseAddr)
+	if goResolver != nil {
+		wrapperCalls := goResolver.FindWrapperCalls(code, baseAddr)
 		for _, call := range wrapperCalls {
 			info := SyscallInfo{
 				Number:              call.SyscallNumber,
 				Location:            call.CallSiteAddress,
-				DeterminationMethod: DeterminationMethodGoWrapper,
+				DeterminationMethod: call.DeterminationMethod,
 			}
 
 			if call.SyscallNumber >= 0 {
@@ -244,8 +244,8 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64) (*
 			} else {
 				result.HasUnknownSyscalls = true
 				result.HighRiskReasons = append(result.HighRiskReasons,
-					fmt.Sprintf("go wrapper call at 0x%x: syscall number could not be determined",
-						call.CallSiteAddress))
+					fmt.Sprintf("go wrapper call at 0x%x: %s",
+						call.CallSiteAddress, call.DeterminationMethod))
 			}
 
 			result.DetectedSyscalls = append(result.DetectedSyscalls, info)
@@ -288,10 +288,11 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 			pos++
 			continue
 		}
-		// Defensively guard against a decoder returning a non-positive length.
+
+		// Decoder invariant: successful decode must have positive length.
+		// If this fails, it indicates a programming bug in the decoder implementation.
 		if inst.Len <= 0 {
-			pos++
-			continue
+			panic("decoder returned non-positive instruction length without error")
 		}
 
 		// Check if this is a syscall instruction at proper instruction boundary.
@@ -445,13 +446,13 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 			pos++
 			continue
 		}
-		// Defensively guard against a decoder returning a non-positive length.
-		// This prevents an infinite loop if a buggy or mocked MachineCodeDecoder
-		// produces an instruction with Len <= 0 while pos < endOffset.
+
+		// Decoder invariant: successful decode must have positive length.
+		// If this fails, it indicates a programming bug in the decoder implementation.
 		if inst.Len <= 0 {
-			pos++
-			continue
+			panic("decoder returned non-positive instruction length without error")
 		}
+
 		instructions = append(instructions, inst)
 		pos += inst.Len
 	}

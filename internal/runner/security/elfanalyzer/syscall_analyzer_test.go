@@ -89,7 +89,7 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewSyscallAnalyzer()
-			result, err := analyzer.analyzeSyscallsInCode(tt.code, 0)
+			result, err := analyzer.analyzeSyscallsInCode(tt.code, 0, nil)
 			require.NoError(t, err)
 			require.Len(t, result.DetectedSyscalls, 1)
 
@@ -126,7 +126,7 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewSyscallAnalyzer()
-			result, err := analyzer.analyzeSyscallsInCode(tt.code, 0)
+			result, err := analyzer.analyzeSyscallsInCode(tt.code, 0, nil)
 			require.NoError(t, err)
 			require.Len(t, result.DetectedSyscalls, 1)
 
@@ -154,7 +154,7 @@ func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 	require.Len(t, result.DetectedSyscalls, 1)
 
@@ -179,7 +179,7 @@ func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 	require.Len(t, result.DetectedSyscalls, 1)
 
@@ -200,7 +200,7 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 
 	require.Len(t, result.DetectedSyscalls, 2)
@@ -230,7 +230,7 @@ func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
 	code := []byte{0x90, 0x90, 0xc3}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 
 	assert.Empty(t, result.DetectedSyscalls)
@@ -251,7 +251,7 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 
 	require.Len(t, result.DetectedSyscalls, 2)
@@ -282,7 +282,7 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 
 	require.Len(t, result.DetectedSyscalls, 2)
@@ -307,7 +307,7 @@ func TestSyscallAnalyzer_WithBaseAddress(t *testing.T) {
 	baseAddr := uint64(0x401000)
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, baseAddr)
+	result, err := analyzer.analyzeSyscallsInCode(code, baseAddr, nil)
 	require.NoError(t, err)
 
 	require.Len(t, result.DetectedSyscalls, 1)
@@ -421,7 +421,7 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzerWithConfig(NewX86Decoder(), NewX86_64SyscallTable(), 3)
-	result, err := analyzer.analyzeSyscallsInCode(code, 0)
+	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.NoError(t, err)
 	require.Len(t, result.DetectedSyscalls, 1)
 
@@ -431,8 +431,8 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 }
 
 func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing.T) {
-	// Test that decodeInstructionsInWindow guards against decoders returning
-	// non-positive instruction lengths, which could cause infinite loops.
+	// Test that decodeInstructionsInWindow panics when decoder returns
+	// non-positive instruction lengths, indicating a programming bug.
 	code := []byte{0x90, 0x90, 0x90} // 3 nop instructions
 
 	// Create a mock decoder that returns non-positive lengths
@@ -448,17 +448,14 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing
 
 	analyzer := NewSyscallAnalyzerWithConfig(mockDecoder, NewX86_64SyscallTable(), 50)
 
-	// This should not hang (infinite loop) despite the decoder returning Len=0.
-	// The decodeInstructionsInWindow method should skip problematic bytes.
-	instructions := analyzer.decodeInstructionsInWindow(code, 0, 0, 3)
-
-	// We expect it to skip all bytes because the mock decoder always returns Len=0.
-	// With the guard in place, it increments pos and continues, eventually exiting.
-	assert.Len(t, instructions, 0)
+	// This should panic because returning Len=0 without error is a programming bug.
+	assert.Panics(t, func() {
+		analyzer.decodeInstructionsInWindow(code, 0, 0, 3)
+	}, "expected panic when decoder returns non-positive instruction length")
 }
 
 func TestSyscallAnalyzer_DecodeInstructionsInWindow_NegativeLength(t *testing.T) {
-	// Test that decodeInstructionsInWindow handles negative instruction lengths.
+	// Test that decodeInstructionsInWindow panics when decoder returns negative lengths.
 	code := []byte{0x90, 0x90, 0x90} // 3 nop instructions
 
 	// Create a mock decoder that returns negative lengths
@@ -474,9 +471,8 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow_NegativeLength(t *testing.T)
 
 	analyzer := NewSyscallAnalyzerWithConfig(mockDecoder, NewX86_64SyscallTable(), 50)
 
-	// This should not hang despite the decoder returning Len=-1.
-	instructions := analyzer.decodeInstructionsInWindow(code, 0, 0, 3)
-
-	// We expect it to skip all bytes and return empty.
-	assert.Len(t, instructions, 0)
+	// This should panic because returning Len=-1 without error is a programming bug.
+	assert.Panics(t, func() {
+		analyzer.decodeInstructionsInWindow(code, 0, 0, 3)
+	}, "expected panic when decoder returns negative instruction length")
 }
