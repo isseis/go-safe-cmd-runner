@@ -36,13 +36,6 @@ type FileValidator interface {
 	VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
 }
 
-// HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.
-// This is used to test file validation logic for handling hash collisions.
-type HashFilePathGetter interface {
-	// GetHashFilePath returns the path where the given file's hash would be stored.
-	GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error)
-}
-
 // GetHashFilePath returns the path where the hash for the given file would be stored.
 func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error) {
 	return v.hashFilePathGetter.GetHashFilePath(v.hashDir, filePath)
@@ -60,7 +53,7 @@ func (v *Validator) GetStore() *fileanalysis.Store {
 type Validator struct {
 	algorithm               HashAlgorithm
 	hashDir                 string
-	hashFilePathGetter      HashFilePathGetter
+	hashFilePathGetter      common.HashFilePathGetter
 	privilegedFileValidator *PrivilegedFileValidator
 
 	// store is the unified analysis store for FileAnalysisRecord format.
@@ -103,7 +96,7 @@ func NewWithAnalysisStore(algorithm HashAlgorithm, hashDir string) (*Validator, 
 
 // newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
-func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter HashFilePathGetter) (*Validator, error) {
+func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter common.HashFilePathGetter) (*Validator, error) {
 	if algorithm == nil {
 		return nil, ErrNilAlgorithm
 	}

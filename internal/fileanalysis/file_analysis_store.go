@@ -12,14 +12,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
-// HashFilePathGetter generates file paths from content hashes.
-// This interface is defined locally to avoid import cycles with filevalidator.
-// filevalidator.HybridHashFilePathGetter implements this interface implicitly
-// by having the same method signature.
-type HashFilePathGetter interface {
-	GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error)
-}
-
 const (
 	// filePermission is the permission mode for analysis record files.
 	filePermission = 0o600
@@ -35,7 +27,7 @@ const (
 // (fileanalysis.Store instead of fileanalysis.FileAnalysisStore).
 type Store struct {
 	analysisDir string
-	pathGetter  HashFilePathGetter
+	pathGetter  common.HashFilePathGetter
 }
 
 // NewStore creates a new Store.
@@ -49,7 +41,7 @@ type Store struct {
 // 1. Individual file I/O operations use safefileio which protects against symlink attacks
 // 2. The analysisDir is typically under a trusted location controlled by the operator
 // 3. An attacker with write access to the parent directory already has significant control
-func NewStore(analysisDir string, pathGetter HashFilePathGetter) (*Store, error) {
+func NewStore(analysisDir string, pathGetter common.HashFilePathGetter) (*Store, error) {
 	// Check if directory exists
 	info, err := os.Lstat(analysisDir)
 	if err != nil {
