@@ -10,6 +10,9 @@ import (
 // The elfanalyzer package will define its own interface that refers to its types,
 // and adapters in Phase 5 will handle type conversion.
 type SyscallAnalysisResult struct {
+	// Architecture is the ELF machine architecture that was analyzed (e.g., "x86_64").
+	Architecture string
+
 	// DetectedSyscalls contains all detected syscall events with their numbers.
 	DetectedSyscalls []SyscallInfo
 
@@ -57,7 +60,7 @@ func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string
 	return s.store.Update(filePath, func(record *Record) error {
 		record.ContentHash = fileHash
 		record.SyscallAnalysis = &SyscallAnalysisData{
-			Architecture:       "x86_64",
+			Architecture:       result.Architecture,
 			AnalyzedAt:         time.Now().UTC(),
 			DetectedSyscalls:   result.DetectedSyscalls,
 			HasUnknownSyscalls: result.HasUnknownSyscalls,
@@ -102,6 +105,7 @@ func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash st
 
 	// Convert SyscallAnalysisData to SyscallAnalysisResult
 	result := &SyscallAnalysisResult{
+		Architecture:       record.SyscallAnalysis.Architecture,
 		DetectedSyscalls:   record.SyscallAnalysis.DetectedSyscalls,
 		HasUnknownSyscalls: record.SyscallAnalysis.HasUnknownSyscalls,
 		HighRiskReasons:    record.SyscallAnalysis.HighRiskReasons,

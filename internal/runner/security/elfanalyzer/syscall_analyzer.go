@@ -9,6 +9,9 @@ import (
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 type SyscallAnalysisResult struct {
+	// Architecture is the ELF machine architecture that was analyzed (e.g., "x86_64").
+	Architecture string
+
 	// DetectedSyscalls contains all detected syscall events with their numbers.
 	// This includes both direct syscall instructions (opcode 0F 05) and
 	// indirect syscalls via Go wrapper function calls (e.g., syscall.Syscall).
@@ -195,7 +198,9 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	}
 
 	// Analyze syscalls
-	return a.analyzeSyscallsInCode(code, textSection.Addr, goResolver)
+	result := a.analyzeSyscallsInCode(code, textSection.Addr, goResolver)
+	result.Architecture = "x86_64"
+	return result, nil
 }
 
 // analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
@@ -204,7 +209,7 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 //  2. Go wrapper call analysis (calls to syscall.Syscall, etc.)
 //
 // goResolver may be nil if symbol loading failed or was not attempted.
-func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, goResolver *GoWrapperResolver) (*SyscallAnalysisResult, error) {
+func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, goResolver *GoWrapperResolver) *SyscallAnalysisResult {
 	result := &SyscallAnalysisResult{
 		DetectedSyscalls: make([]SyscallInfo, 0),
 	}
@@ -266,7 +271,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, go
 	result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
 	result.Summary.IsHighRisk = result.HasUnknownSyscalls
 
-	return result, nil
+	return result
 }
 
 // findSyscallInstructions scans the code for syscall instructions (0F 05).

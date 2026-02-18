@@ -27,6 +27,7 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 
 	// Create test syscall analysis result
 	result := &SyscallAnalysisResult{
+		Architecture: "x86_64",
 		DetectedSyscalls: []SyscallInfo{
 			{
 				Number:              41,
@@ -57,6 +58,7 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 	require.NotNil(t, loadedResult)
 
 	// Verify loaded result
+	assert.Equal(t, "x86_64", loadedResult.Architecture)
 	assert.Len(t, loadedResult.DetectedSyscalls, 1)
 	assert.Equal(t, 41, loadedResult.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", loadedResult.DetectedSyscalls[0].Name)
