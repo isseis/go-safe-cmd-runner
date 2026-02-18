@@ -8,24 +8,20 @@ import (
 	"math"
 )
 
-// pclntab magic numbers for different Go versions
+// pclntab magic number
 const (
-	pclntabMagicGo12  = 0xFFFFFFFB // Go 1.2 - 1.15
-	pclntabMagicGo116 = 0xFFFFFFFA // Go 1.16 - 1.17
-	pclntabMagicGo118 = 0xFFFFFFF0 // Go 1.18 - 1.19
 	pclntabMagicGo120 = 0xFFFFFFF1 // Go 1.20+
 )
 
 // pclntab header constants
 const (
-	pclntabMinMagicSize  = 8    // Minimum bytes needed to read magic
-	pclntabMinHeaderSize = 16   // Minimum bytes needed for basic header
-	pclntab64PtrSize     = 8    // Expected pointer size for 64-bit binaries
-	pcHeaderSizeGo120    = 0x50 // pcHeader size for Go 1.20-1.24 64-bit (80 bytes)
-	pcHeaderSizeGo125    = 0x48 // pcHeader size for Go 1.25+ 64-bit (72 bytes, ftabOffset removed)
+	pclntabMinMagicSize = 8    // Minimum bytes needed to read magic
+	pclntab64PtrSize    = 8    // Expected pointer size for 64-bit binaries
+	pcHeaderSizeGo120   = 0x50 // pcHeader size for Go 1.20-1.24 64-bit (80 bytes)
+	pcHeaderSizeGo125   = 0x48 // pcHeader size for Go 1.25+ 64-bit (72 bytes, ftabOffset removed)
 )
 
-// pcHeader field offsets (Go 1.16+, 64-bit)
+// pcHeader field offsets (Go 1.20+, 64-bit)
 const (
 	pcHeaderOffsetNfunc       = 0x08
 	pcHeaderOffsetTextStart   = 0x18
@@ -115,28 +111,21 @@ func (p *pclntabParser) parse(elfFile *elf.File) error {
 	magic := binary.LittleEndian.Uint32(data[0:4])
 
 	switch magic {
-	case pclntabMagicGo118, pclntabMagicGo120:
-		// Go 1.18+ format - supported
-		return p.parseGo118Plus(data)
-	case pclntabMagicGo116:
-		// Go 1.16-1.17 format - supported with limitations
-		return p.parseGo116(data)
-	case pclntabMagicGo12:
-		// Go 1.2-1.15 format - legacy, limited support
-		return p.parseGo12(data)
+	case pclntabMagicGo120:
+		return p.parseGo120Plus(data)
 	default:
 		return fmt.Errorf("%w: unknown magic 0x%08X", ErrUnsupportedPclntab, magic)
 	}
 }
 
-// parseGo118Plus parses pclntab for Go 1.18 and later.
+// parseGo120Plus parses pclntab for Go 1.20 and later.
 // Reference: https://go.dev/src/runtime/symtab.go
-func (p *pclntabParser) parseGo118Plus(data []byte) error {
-	if len(data) < pclntabMinHeaderSize {
+func (p *pclntabParser) parseGo120Plus(data []byte) error {
+	if len(data) < pcHeaderSizeGo125 {
 		return ErrInvalidPclntab
 	}
 
-	// Header layout for Go 1.18+:
+	// Header layout for Go 1.20+:
 	// [0:4]   magic
 	// [4:5]   padding (0)
 	// [5:6]   padding (0)
@@ -149,60 +138,18 @@ func (p *pclntabParser) parseGo118Plus(data []byte) error {
 		return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
 	}
 
-	p.goVersion = "go1.18+"
+	p.goVersion = "go1.20+"
 
-	// Parse function table
-	// The structure varies by Go version, but function entries contain:
-	// - entry PC (function start address)
-	// - offset to function name in string table
-	return p.parseFuncTable(data)
-}
-
-// parseGo116 parses pclntab for Go 1.16-1.17.
-func (p *pclntabParser) parseGo116(data []byte) error {
-	if len(data) < pclntabMinHeaderSize {
-		return ErrInvalidPclntab
-	}
-
-	p.ptrSize = int(data[7])
-	if p.ptrSize != pclntab64PtrSize {
-		return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
-	}
-
-	p.goVersion = "go1.16-1.17"
-	return p.parseFuncTable(data)
-}
-
-// parseGo12 parses pclntab for Go 1.2-1.15 (legacy format).
-func (p *pclntabParser) parseGo12(data []byte) error {
-	if len(data) < pclntabMinMagicSize {
-		return ErrInvalidPclntab
-	}
-
-	// Go 1.2-1.15 header:
-	// [0:4]   magic
-	// [4:5]   padding
-	// [5:6]   padding
-	// [6:7]   instruction size quantum
-	// [7:8]   pointer size (must be 8 for x86_64)
-
-	p.ptrSize = int(data[7])
-	if p.ptrSize != pclntab64PtrSize {
-		return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
-	}
-
-	p.goVersion = "go1.2-1.15"
 	return p.parseFuncTable(data)
 }
 
 // parseFuncTable extracts function entries from the pclntab.
-// This implementation targets Go 1.18+ pclntab layout (pcHeader + functab) on x86_64.
-// Legacy formats (Go 1.2-1.17) are best-effort and may return ErrInvalidPclntab.
+// This implementation targets Go 1.20+ pclntab layout (pcHeader + functab) on x86_64.
 //
 // Note: This implementation only supports 64-bit binaries (ptrSize == 8).
 // 32-bit binaries are not supported as the target architecture is x86_64 only.
 func (p *pclntabParser) parseFuncTable(data []byte) error {
-	// pcHeader layout (Go 1.16+, 64-bit)
+	// pcHeader layout (Go 1.20+, 64-bit)
 	// offset 0x00: magic (uint32)
 	// offset 0x04: pad1 (byte)
 	// offset 0x05: pad2 (byte)
@@ -221,8 +168,7 @@ func (p *pclntabParser) parseFuncTable(data []byte) error {
 	// Go 1.20-1.24 header size: 0x50 (80 bytes)
 	// Go 1.25+     header size: 0x48 (72 bytes)
 	//
-	// Note: ptrSize validation is skipped here as it's already performed in
-	// parseGo118Plus, parseGo116, and parseGo12 before calling parseFuncTable.
+	// Note: ptrSize validation is already performed in parseGo120Plus.
 
 	if len(data) < pcHeaderSizeGo125 {
 		return ErrInvalidPclntab

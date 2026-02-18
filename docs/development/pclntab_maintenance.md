@@ -31,12 +31,12 @@ pclntab は Go ランタイムがスタックトレース生成とガベージ�
 ```
 
 **注記**:
-- Go 1.18+ は追加フィールドにより 16 バイト以上のヘッダーが必要
+- Go 1.20+ は追加フィールドにより 72 バイト以上のヘッダーが必要
 
-### Go 1.18+ (ver118, ver120) の追加フィールド
+### Go 1.20+ (ver120) の追加フィールド
 
 ```go
-// pcHeader 構造（Go 1.18+）
+// pcHeader 構造（Go 1.20+）
 // 参照: https://go.dev/src/runtime/symtab.go
 type pcHeader struct {
     magic          uint32  // offset 0x00: マジックナンバー
@@ -86,10 +86,7 @@ type pcHeader struct {
 1. **マジックナンバー定数の追加**
    ```go
    const (
-       pclntabMagicGo12  = 0xFFFFFFFB
-       pclntabMagicGo116 = 0xFFFFFFFA
-       pclntabMagicGo118 = 0xFFFFFFF0
-       pclntabMagicGo120 = 0xFFFFFFF1
+       pclntabMagicGo120 = 0xFFFFFFF1  // Go 1.20+（現在サポート中）
        pclntabMagicGoXXX = 0xXXXXXXXX  // 新規追加
    )
    ```
@@ -183,7 +180,7 @@ Go 標準ライブラリの `debug/gosym` パッケージを直接利用する�
 
 ### 3. サポートバージョンの限定
 
-現行バージョン（Go 1.18+）のみをサポートし、古いバージョンは High Risk として扱う方法。
+現行バージョン（Go 1.20+）のみをサポートし、古いバージョンは High Risk として扱う方法。現在この方式を採用している。
 
 **メリット**:
 - 実装・メンテナンスが単純化
