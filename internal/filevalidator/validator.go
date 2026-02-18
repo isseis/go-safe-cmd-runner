@@ -78,16 +78,23 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 // NewWithAnalysisStore creates a Validator with unified analysis store support.
 // This uses the FileAnalysisRecord format for storing hash and analysis results.
 // The analysis store preserves existing fields (e.g., SyscallAnalysis) when updating hashes.
+//
+// Unlike New(), this constructor automatically creates the hash directory if it
+// does not exist (via fileanalysis.NewStore). The Store is created first to ensure
+// the directory exists before newValidator() validates it.
 func NewWithAnalysisStore(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
-	v, err := New(algorithm, hashDir)
-	if err != nil {
-		return nil, err
-	}
+	hashFilePathGetter := NewHybridHashFilePathGetter()
 
-	// Create analysis store using the same hash directory
-	store, err := fileanalysis.NewStore(hashDir, v.hashFilePathGetter)
+	// Create analysis store first — this creates the directory if it doesn't exist.
+	store, err := fileanalysis.NewStore(hashDir, hashFilePathGetter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create analysis store: %w", err)
+	}
+
+	// Now create the validator — the directory is guaranteed to exist.
+	v, err := newValidator(algorithm, hashDir, hashFilePathGetter)
+	if err != nil {
+		return nil, err
 	}
 	v.store = store
 

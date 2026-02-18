@@ -1080,3 +1080,31 @@ func TestNewWithAnalysisStore_PreservesExistingFields(t *testing.T) {
 	require.Len(t, record.SyscallAnalysis.HighRiskReasons, 1, "HighRiskReasons should be preserved")
 	assert.Equal(t, "test reason", record.SyscallAnalysis.HighRiskReasons[0], "HighRiskReason content should be preserved")
 }
+
+// TestNewWithAnalysisStore_CreatesDirectory tests that NewWithAnalysisStore
+// automatically creates the hash directory if it doesn't exist.
+// This verifies the fix for the ordering bug where New() was called before
+// NewStore(), causing a failure because newValidator() requires the directory
+// to already exist, while NewStore() is the one that creates it.
+func TestNewWithAnalysisStore_CreatesDirectory(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "nonexistent_subdir")
+
+	// Verify directory does not exist yet
+	_, err := os.Stat(hashDir)
+	require.True(t, os.IsNotExist(err), "hashDir should not exist before calling NewWithAnalysisStore")
+
+	// NewWithAnalysisStore should succeed even though hashDir doesn't exist
+	validator, err := NewWithAnalysisStore(&SHA256{}, hashDir)
+	require.NoError(t, err, "NewWithAnalysisStore should create the directory automatically")
+	require.NotNil(t, validator)
+
+	// Verify directory was created
+	info, err := os.Stat(hashDir)
+	require.NoError(t, err, "hashDir should exist after NewWithAnalysisStore")
+	assert.True(t, info.IsDir(), "hashDir should be a directory")
+
+	// Verify the store is usable
+	store := validator.GetStore()
+	require.NotNil(t, store, "GetStore should return non-nil store")
+}
