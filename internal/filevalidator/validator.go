@@ -173,13 +173,9 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
 func (v *Validator) recordWithAnalysisStore(filePath, hash, hashFilePath string, force bool) (string, error) {
 	// Check for existing record
-	existingRecord, err := v.store.Load(filePath)
+	_, err := v.store.Load(filePath)
 	if err == nil {
 		// Record exists
-		if existingRecord.FilePath != filePath {
-			return "", fmt.Errorf("%w: hash collision detected between %s and %s",
-				ErrHashCollision, existingRecord.FilePath, filePath)
-		}
 		if !force {
 			return "", fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
 		}
