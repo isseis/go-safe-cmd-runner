@@ -82,12 +82,7 @@ func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash st
 			return nil, false, nil
 		}
 		// For schema mismatch or corrupted records, return not found
-		var schemaErr *SchemaVersionMismatchError
-		if errors.As(err, &schemaErr) {
-			return nil, false, nil
-		}
-		var corruptedErr *RecordCorruptedError
-		if errors.As(err, &corruptedErr) {
+		if errors.As(err, new(*SchemaVersionMismatchError)) || errors.As(err, new(*RecordCorruptedError)) {
 			return nil, false, nil
 		}
 		return nil, false, err

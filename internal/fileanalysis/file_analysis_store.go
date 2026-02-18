@@ -141,8 +141,7 @@ func (s *Store) Update(filePath string, updateFn func(*Record) error) error {
 	// Try to load existing record
 	record, err := s.Load(filePath)
 	if err != nil {
-		var schemaErr *SchemaVersionMismatchError
-		if errors.As(err, &schemaErr) {
+		if errors.As(err, new(*SchemaVersionMismatchError)) {
 			// Do not overwrite records with different schema versions.
 			// This prevents accidental data loss when a record was created by a
 			// newer version (forward compatibility) or uses an old schema that
@@ -150,8 +149,7 @@ func (s *Store) Update(filePath string, updateFn func(*Record) error) error {
 			return fmt.Errorf("cannot update record: %w", err)
 		}
 
-		var corruptedErr *RecordCorruptedError
-		if errors.Is(err, ErrRecordNotFound) || errors.As(err, &corruptedErr) {
+		if errors.Is(err, ErrRecordNotFound) || errors.As(err, new(*RecordCorruptedError)) {
 			// Create a new record if it's not found or if the existing one is corrupted.
 			record = &Record{}
 		} else {
