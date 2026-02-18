@@ -13,9 +13,13 @@ pclntab は Go ランタイムがスタックトレース生成とガベージ�
 | Go 1.2-1.15 | ver12 | `0xFFFFFFFB` | 初期フォーマット。全データが単一配列に格納 |
 | Go 1.16-1.17 | ver116 | `0xFFFFFFFA` | テーブル分離。絶対ポインタ使用 |
 | Go 1.18-1.19 | ver118 | `0xFFFFFFF0` | エントリ PC が 32 ビットオフセットに変更 |
-| Go 1.20+ | ver120 | `0xFFFFFFF1` | 現行フォーマット |
+| Go 1.20-1.24 | ver120 | `0xFFFFFFF1` | pcHeader 80 バイト（ftabOffset フィールドあり） |
+| **Go 1.25+** | **ver120** | **`0xFFFFFFF1`** | **pcHeader 72 バイト（ftabOffset 削除）。現在サポート中** |
 
-**重要**: pclntab バージョンは Go ランタイムバージョンと常に一致するわけではない。例えば Go 1.19 は ver118 (Go 1.18 形式) を使用する。
+**重要**:
+- pclntab バージョンは Go ランタイムバージョンと常に一致するわけではない。例えば Go 1.19 は ver118 (Go 1.18 形式) を使用する
+- Go 1.20-1.24 と Go 1.25+ は同一のマジックナンバー (`0xFFFFFFF1`) を使用するが、ヘッダーサイズが異なる（80 バイト vs 72 バイト）
+- **本パーサーは Go 1.25+ のみをサポート**。Go 1.24 以前はすべて `ErrUnsupportedPclntab` を返す
 
 ## ヘッダー構造
 
@@ -31,12 +35,12 @@ pclntab は Go ランタイムがスタックトレース生成とガベージ�
 ```
 
 **注記**:
-- Go 1.20+ は追加フィールドにより 72 バイト以上のヘッダーが必要
+- Go 1.25+ は追加フィールドにより 72 バイト以上のヘッダーが必要
 
-### Go 1.20+ (ver120) の追加フィールド
+### Go 1.25+ (ver120) の pcHeader 構造
 
 ```go
-// pcHeader 構造（Go 1.20+）
+// pcHeader 構造（Go 1.25+）
 // 参照: https://go.dev/src/runtime/symtab.go
 type pcHeader struct {
     magic          uint32  // offset 0x00: マジックナンバー
@@ -50,15 +54,15 @@ type pcHeader struct {
     cuOffset       uintptr // offset 0x28: コンパイル単位テーブルへのオフセット
     filetabOffset  uintptr // offset 0x30: ファイルテーブルへのオフセット
     pctabOffset    uintptr // offset 0x38: PC テーブルへのオフセット
-    pclnOffset     uintptr // offset 0x40: pclntab データへのオフセット
-    ftabOffset     uintptr // offset 0x48: 関数テーブル（functab）へのオフセット
+    pclnOffset     uintptr // offset 0x40: pclntab データへのオフセット（functab も兼ねる）
 }
 ```
 
 **注記**:
 - `nfunc` と `nfiles` のサイズは `ptrSize` に依存（32-bit: 4 bytes, 64-bit: 8 bytes）
-- `ftabOffset` は関数エントリを取得するために必須。詳細仕様書 §2.4 `parseFuncTable` を参照
-- 総ヘッダーサイズ: 64-bit の場合は 80 バイト（0x50）、32-bit の場合は 52 バイト
+- Go 1.25+ では `ftabOffset` フィールドが削除され、`pclnOffset` が functab のオフセットも兼ねる
+- 総ヘッダーサイズ: 64-bit の場合は 72 バイト（0x48）
+- Go 1.20-1.24 では 80 バイト（0x50）のヘッダーに `ftabOffset` が含まれていたが、本パーサーでは非サポート
 
 ## 新バージョン対応時の作業手順
 
@@ -180,14 +184,15 @@ Go 標準ライブラリの `debug/gosym` パッケージを直接利用する�
 
 ### 3. サポートバージョンの限定
 
-現行バージョン（Go 1.20+）のみをサポートし、古いバージョンは High Risk として扱う方法。現在この方式を採用している。
+現行バージョン（Go 1.25+）のみをサポートし、古いバージョンは `ErrUnsupportedPclntab` を返す方法。現在この方式を採用している。
 
 **メリット**:
 - 実装・メンテナンスが単純化
+- テストされていないコードパスを排除
 - 実務上、古いバージョンの Go でビルドされたバイナリは少数
 
 **デメリット**:
-- 古いバイナリが false positive になる
+- Go 1.24 以前のバイナリはパース不可（エラーとなる）
 
 ## 関連ファイル
 

@@ -19,10 +19,10 @@ func TestPclntabParser_MagicNumbers(t *testing.T) {
 		goVersion string
 	}{
 		{
-			name:      "Go 1.20+ magic",
+			name:      "Go 1.20+ magic (Go 1.20-1.24 header detected as unsupported)",
 			magic:     pclntabMagicGo120,
-			expectErr: ErrInvalidPclntab,
-			goVersion: "go1.20+",
+			expectErr: ErrUnsupportedPclntab,
+			goVersion: "go1.25+",
 		},
 		{
 			name:      "Go 1.18-1.19 magic (unsupported)",
@@ -48,13 +48,14 @@ func TestPclntabParser_MagicNumbers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := createMinimalPclntab(tt.magic)
-
 			parser := &pclntabParser{}
 
 			var err error
 			if tt.magic == pclntabMagicGo120 {
-				err = parser.parseGo120Plus(data)
+				// createMinimalPclntab creates a Go 1.20-1.24 format (80-byte header,
+				// funcnameOffset=0x50), which parseGo125Plus rejects as unsupported.
+				data := createMinimalPclntabGo120(tt.magic)
+				err = parser.parseGo125Plus(data)
 			} else {
 				// Non-Go 1.20+ magics are rejected at the parse() level.
 				// Simulate the rejection here since parse() requires elf.File.
@@ -92,7 +93,7 @@ func TestPclntabParser_InvalidData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := &pclntabParser{}
 
-			err := parser.parseGo120Plus(tt.data)
+			err := parser.parseGo125Plus(tt.data)
 			assert.ErrorIs(t, err, ErrInvalidPclntab)
 		})
 	}
@@ -107,12 +108,12 @@ func TestPclntabParser_NoPclntab(t *testing.T) {
 
 func TestPclntabParser_UnsupportedPointerSize(t *testing.T) {
 	// Create pclntab with 32-bit pointer size (not supported)
-	data := make([]byte, 0x50) // Minimum header size
+	data := make([]byte, pcHeaderSizeGo125)
 	binary.LittleEndian.PutUint32(data[0:4], pclntabMagicGo120)
 	data[7] = 4 // 32-bit pointer size
 
 	parser := &pclntabParser{}
-	err := parser.parseGo120Plus(data)
+	err := parser.parseGo125Plus(data)
 
 	assert.ErrorIs(t, err, ErrInvalidPclntab)
 	assert.Contains(t, err.Error(), "unsupported pointer size 4")
@@ -140,11 +141,9 @@ func TestPclntabParser_GetGoVersion(t *testing.T) {
 	assert.Equal(t, "", parser.goVersion)
 }
 
-// createMinimalPclntab creates a minimal pclntab structure for testing.
-// This creates a valid header with 0 functions.
-func createMinimalPclntab(magic uint32) []byte {
-	// Create a pclntab header with 0 functions
-	// This is the minimum valid structure for Go 1.20+
+// createMinimalPclntabGo120 creates a minimal Go 1.20-1.24 pclntab (80-byte header)
+// for testing. This format is rejected by the parser (Go 1.25+ only).
+func createMinimalPclntabGo120(magic uint32) []byte {
 	data := make([]byte, 0x50) // 80 bytes header
 
 	// [0:4] magic
@@ -192,34 +191,20 @@ func createMinimalPclntab(magic uint32) []byte {
 	return data
 }
 
-func TestPclntabParser_ValidPclntabWithFunctions(t *testing.T) {
-	// Create a pclntab with one function
-	data := createPclntabWithFunction("main.main", 0x401000)
+func TestPclntabParser_Go120PclntabRejected(t *testing.T) {
+	// Go 1.20-1.24 format (80-byte header) should be rejected.
+	data := createPclntabGo120WithFunction("main.main", 0x401000)
 
 	parser := &pclntabParser{}
-	err := parser.parseGo120Plus(data)
+	err := parser.parseGo125Plus(data)
 
-	require.NoError(t, err)
-	assert.Equal(t, "go1.20+", parser.goVersion)
-
-	require.Len(t, parser.funcData, 1)
-	fn, ok := parser.funcData["main.main"]
-	require.True(t, ok)
-	assert.Equal(t, uint64(0x401000), fn.Entry)
-
-	// Test FindFunction via PclntabResult
-	result := &PclntabResult{Functions: parser.funcData}
-	fn, found := result.FindFunction("main.main")
-	assert.True(t, found)
-	assert.Equal(t, "main.main", fn.Name)
-
-	// Test FindFunction for non-existent function
-	_, found = result.FindFunction("nonexistent")
-	assert.False(t, found)
+	assert.ErrorIs(t, err, ErrUnsupportedPclntab)
+	assert.Contains(t, err.Error(), errMsgGo120Unsupported)
 }
 
-// createPclntabWithFunction creates a pclntab with a single function for testing.
-func createPclntabWithFunction(funcName string, entry uint64) []byte {
+// createPclntabGo120WithFunction creates a Go 1.20-1.24 pclntab (80-byte header)
+// with a single function. This format is rejected by the parser (Go 1.25+ only).
+func createPclntabGo120WithFunction(funcName string, entry uint64) []byte {
 	// Calculate sizes
 	headerSize := 0x50
 	funcNameLen := len(funcName) + 1 // +1 for null terminator
@@ -282,9 +267,9 @@ func createPclntabWithFunction(funcName string, entry uint64) []byte {
 	return data
 }
 
-func TestPclntabParser_MultipleFunctions(t *testing.T) {
-	// Create a pclntab with multiple functions
-	data := createPclntabWithMultipleFunctions([]struct {
+func TestPclntabParser_Go120MultipleFunctionsRejected(t *testing.T) {
+	// Go 1.20-1.24 format with multiple functions should be rejected.
+	data := createPclntabGo120WithMultipleFunctions([]struct {
 		name  string
 		entry uint64
 	}{
@@ -294,38 +279,21 @@ func TestPclntabParser_MultipleFunctions(t *testing.T) {
 	})
 
 	parser := &pclntabParser{}
-	err := parser.parseGo120Plus(data)
+	err := parser.parseGo125Plus(data)
 
-	require.NoError(t, err)
-
-	require.Len(t, parser.funcData, 3)
-
-	// Verify functions
-	mainMain := parser.funcData["main.main"]
-	assert.Equal(t, uint64(0x401000), mainMain.Entry)
-	assert.Equal(t, uint64(0x401100), mainMain.End) // End is next function's entry
-
-	mainFoo := parser.funcData["main.foo"]
-	assert.Equal(t, uint64(0x401100), mainFoo.Entry)
-
-	syscallSyscall := parser.funcData["syscall.Syscall"]
-	assert.Equal(t, uint64(0x402000), syscallSyscall.Entry)
-
-	// Test FindFunction for syscall wrapper via PclntabResult
-	result := &PclntabResult{Functions: parser.funcData}
-	fn, found := result.FindFunction("syscall.Syscall")
-	assert.True(t, found)
-	assert.Equal(t, "syscall.Syscall", fn.Name)
+	assert.ErrorIs(t, err, ErrUnsupportedPclntab)
+	assert.Contains(t, err.Error(), errMsgGo120Unsupported)
 }
 
-// createPclntabWithMultipleFunctions creates a pclntab with multiple functions.
-func createPclntabWithMultipleFunctions(functions []struct {
+// createPclntabGo120WithMultipleFunctions creates a Go 1.20-1.24 pclntab (80-byte header)
+// with multiple functions. This format is rejected by the parser (Go 1.25+ only).
+func createPclntabGo120WithMultipleFunctions(functions []struct {
 	name  string
 	entry uint64
 },
 ) []byte {
 	if len(functions) == 0 {
-		return createMinimalPclntab(pclntabMagicGo120)
+		return createMinimalPclntabGo120(pclntabMagicGo120)
 	}
 
 	// Calculate sizes
@@ -496,25 +464,25 @@ func createPclntabGo125WithFunction(funcName string, entry uint64) []byte {
 
 func TestPclntabParser_Go125MinimalHeader(t *testing.T) {
 	// Go 1.25+ uses the same magic (0xFFFFFFF1) but a 72-byte header.
-	// A minimal header with 0 functions will fail during ftab bounds check
-	// (same as the Go 1.20-1.24 minimal header), but Go version should be detected.
+	// A minimal header with 0 functions will fail during ftab bounds check,
+	// but Go version should be detected.
 	data := createMinimalPclntabGo125(pclntabMagicGo120)
 
 	parser := &pclntabParser{}
-	err := parser.parseGo120Plus(data)
+	err := parser.parseGo125Plus(data)
 
 	assert.ErrorIs(t, err, ErrInvalidPclntab)
-	assert.Equal(t, "go1.20+", parser.goVersion)
+	assert.Equal(t, "go1.25+", parser.goVersion)
 }
 
 func TestPclntabParser_Go125WithFunction(t *testing.T) {
 	data := createPclntabGo125WithFunction("main.main", 0x401000)
 
 	parser := &pclntabParser{}
-	err := parser.parseGo120Plus(data)
+	err := parser.parseGo125Plus(data)
 
 	require.NoError(t, err)
-	assert.Equal(t, "go1.20+", parser.goVersion)
+	assert.Equal(t, "go1.25+", parser.goVersion)
 
 	require.Len(t, parser.funcData, 1)
 	fn, ok := parser.funcData["main.main"]
@@ -610,7 +578,7 @@ func TestPclntabParser_Go125MultipleFunctions(t *testing.T) {
 	binary.LittleEndian.PutUint32(data[sentinelOff+4:], 0)
 
 	parser := &pclntabParser{}
-	err := parser.parseGo120Plus(data)
+	err := parser.parseGo125Plus(data)
 
 	require.NoError(t, err)
 
