@@ -141,27 +141,22 @@ func (s *Store) Update(filePath string, updateFn func(*Record) error) error {
 	// Try to load existing record
 	record, err := s.Load(filePath)
 	if err != nil {
-		if errors.Is(err, ErrRecordNotFound) {
-			// Create new record
+		var schemaErr *SchemaVersionMismatchError
+		if errors.As(err, &schemaErr) {
+			// Do not overwrite records with different schema versions.
+			// This prevents accidental data loss when a record was created by a
+			// newer version (forward compatibility) or uses an old schema that
+			// requires migration.
+			return fmt.Errorf("cannot update record: %w", err)
+		}
+
+		var corruptedErr *RecordCorruptedError
+		if errors.Is(err, ErrRecordNotFound) || errors.As(err, &corruptedErr) {
+			// Create a new record if it's not found or if the existing one is corrupted.
 			record = &Record{}
 		} else {
-			// Check for schema version mismatch
-			var schemaErr *SchemaVersionMismatchError
-			if errors.As(err, &schemaErr) {
-				// Do not overwrite records with different schema versions
-				// This prevents accidental data loss when:
-				//   - Record was created by a newer version (forward compatibility)
-				//   - Record uses an old schema that requires migration
-				return fmt.Errorf("cannot update record: %w", err)
-			}
-			// For corrupted records, create fresh record
-			var corruptedErr *RecordCorruptedError
-			if errors.As(err, &corruptedErr) {
-				record = &Record{}
-			} else {
-				// Unknown error - fail safely
-				return fmt.Errorf("failed to load existing record: %w", err)
-			}
+			// For any other unknown error, fail safely.
+			return fmt.Errorf("failed to load existing record: %w", err)
 		}
 	}
 
