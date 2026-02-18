@@ -136,7 +136,10 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 // Record calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
-// Hash collisions (different file paths with same hash) always return an error regardless of force.
+// In the legacy HashManifest format, hash collisions (different file paths with the same
+// hash) always return an error regardless of force. When using NewWithAnalysisStore
+// (FileAnalysisRecord format), records are stored by file path, so collisions between
+// different files with identical content are not detected by design.
 //
 // If the Validator was created with NewWithAnalysisStore, the hash is saved in
 // FileAnalysisRecord format which preserves existing fields (e.g., SyscallAnalysis).
