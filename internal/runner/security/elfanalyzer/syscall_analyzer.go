@@ -2,7 +2,6 @@ package elfanalyzer
 
 import (
 	"debug/elf"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -188,7 +187,7 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	// A new instance is created per call to guarantee no stale state
 	// carries over between different binaries.
 	goResolver, err := NewGoWrapperResolver(elfFile)
-	if err != nil && !errors.Is(err, ErrSymbolLoadingNotImplemented) {
+	if err != nil {
 		// Non-fatal: continue without Go wrapper resolution
 		// This handles stripped binaries
 		slog.Debug("failed to load symbols for Go wrapper resolution",
