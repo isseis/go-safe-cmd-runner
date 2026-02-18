@@ -224,8 +224,9 @@ func TestPclntabParser_ValidPclntabWithFunctions(t *testing.T) {
 	assert.Equal(t, "go1.18+", parser.goVersion)
 
 	require.Len(t, parser.funcData, 1)
-	assert.Equal(t, "main.main", parser.funcData[0].Name)
-	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
+	fn, ok := parser.funcData["main.main"]
+	require.True(t, ok)
+	assert.Equal(t, uint64(0x401000), fn.Entry)
 
 	// Test FindFunction via PclntabResult
 	result := &PclntabResult{Functions: parser.funcData}
@@ -321,15 +322,15 @@ func TestPclntabParser_MultipleFunctions(t *testing.T) {
 	require.Len(t, parser.funcData, 3)
 
 	// Verify functions
-	assert.Equal(t, "main.main", parser.funcData[0].Name)
-	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
-	assert.Equal(t, uint64(0x401100), parser.funcData[0].End) // End is next function's entry
+	mainMain := parser.funcData["main.main"]
+	assert.Equal(t, uint64(0x401000), mainMain.Entry)
+	assert.Equal(t, uint64(0x401100), mainMain.End) // End is next function's entry
 
-	assert.Equal(t, "main.foo", parser.funcData[1].Name)
-	assert.Equal(t, uint64(0x401100), parser.funcData[1].Entry)
+	mainFoo := parser.funcData["main.foo"]
+	assert.Equal(t, uint64(0x401100), mainFoo.Entry)
 
-	assert.Equal(t, "syscall.Syscall", parser.funcData[2].Name)
-	assert.Equal(t, uint64(0x402000), parser.funcData[2].Entry)
+	syscallSyscall := parser.funcData["syscall.Syscall"]
+	assert.Equal(t, uint64(0x402000), syscallSyscall.Entry)
 
 	// Test FindFunction for syscall wrapper via PclntabResult
 	result := &PclntabResult{Functions: parser.funcData}
@@ -537,8 +538,9 @@ func TestPclntabParser_Go125WithFunction(t *testing.T) {
 	assert.Equal(t, "go1.18+", parser.goVersion)
 
 	require.Len(t, parser.funcData, 1)
-	assert.Equal(t, "main.main", parser.funcData[0].Name)
-	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
+	fn, ok := parser.funcData["main.main"]
+	require.True(t, ok)
+	assert.Equal(t, uint64(0x401000), fn.Entry)
 
 	result := &PclntabResult{Functions: parser.funcData}
 	fn, found := result.FindFunction("main.main")
@@ -635,15 +637,15 @@ func TestPclntabParser_Go125MultipleFunctions(t *testing.T) {
 
 	require.Len(t, parser.funcData, 3)
 
-	assert.Equal(t, "main.main", parser.funcData[0].Name)
-	assert.Equal(t, uint64(0x401000), parser.funcData[0].Entry)
-	assert.Equal(t, uint64(0x401100), parser.funcData[0].End)
+	mainMain := parser.funcData["main.main"]
+	assert.Equal(t, uint64(0x401000), mainMain.Entry)
+	assert.Equal(t, uint64(0x401100), mainMain.End)
 
-	assert.Equal(t, "main.foo", parser.funcData[1].Name)
-	assert.Equal(t, uint64(0x401100), parser.funcData[1].Entry)
+	mainFoo := parser.funcData["main.foo"]
+	assert.Equal(t, uint64(0x401100), mainFoo.Entry)
 
-	assert.Equal(t, "syscall.Syscall", parser.funcData[2].Name)
-	assert.Equal(t, uint64(0x402000), parser.funcData[2].Entry)
+	syscallSyscall := parser.funcData["syscall.Syscall"]
+	assert.Equal(t, uint64(0x402000), syscallSyscall.Entry)
 
 	result := &PclntabResult{Functions: parser.funcData}
 	fn, found := result.FindFunction("syscall.Syscall")

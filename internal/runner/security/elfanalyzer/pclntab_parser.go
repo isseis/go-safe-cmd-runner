@@ -61,17 +61,13 @@ type PclntabFunc struct {
 // PclntabResult holds the parsed pclntab data.
 type PclntabResult struct {
 	GoVersion string
-	Functions []PclntabFunc
+	Functions map[string]PclntabFunc
 }
 
 // FindFunction finds a function by name.
 func (r *PclntabResult) FindFunction(name string) (PclntabFunc, bool) {
-	for _, f := range r.Functions {
-		if f.Name == name {
-			return f, true
-		}
-	}
-	return PclntabFunc{}, false
+	fn, ok := r.Functions[name]
+	return fn, ok
 }
 
 // ParsePclntab reads the .gopclntab section from an ELF file and extracts
@@ -95,7 +91,7 @@ func ParsePclntab(elfFile *elf.File) (*PclntabResult, error) {
 type pclntabParser struct {
 	ptrSize   int    // Must be 8 for x86_64
 	goVersion string // Detected Go version range
-	funcData  []PclntabFunc
+	funcData  map[string]PclntabFunc
 }
 
 // parse reads the .gopclntab section and extracts function information.
@@ -318,7 +314,7 @@ func (p *pclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 		return ErrInvalidPclntab
 	}
 
-	funcs := make([]PclntabFunc, 0, nfuncInt)
+	funcs := make(map[string]PclntabFunc, nfuncInt)
 	funcNameOffInt := int(funcNameOff)
 
 	for i := range nfuncInt {
@@ -326,7 +322,7 @@ func (p *pclntabParser) extractFunctions(data []byte, nfunc, textStart, funcName
 		if err != nil {
 			return err
 		}
-		funcs = append(funcs, fn)
+		funcs[fn.Name] = fn
 	}
 
 	p.funcData = funcs

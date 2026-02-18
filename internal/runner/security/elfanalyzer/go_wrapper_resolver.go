@@ -106,15 +106,15 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 		return err
 	}
 
-	for _, fn := range result.Functions {
+	for name, fn := range result.Functions {
 		// Calculate size, guarding against missing/zero End to avoid underflow
 		size := uint64(0)
 		if fn.End > fn.Entry {
 			size = fn.End - fn.Entry
 		}
 
-		r.symbols[fn.Name] = SymbolInfo{
-			Name:    fn.Name,
+		r.symbols[name] = SymbolInfo{
+			Name:    name,
 			Address: fn.Entry,
 			Size:    size,
 		}
@@ -122,7 +122,7 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 		// Check if this is a known Go wrapper (exact match).
 		// Go standard library syscall wrappers use stable, unqualified symbol names
 		// (e.g. "syscall.Syscall") in pclntab, so exact match is sufficient.
-		wrapper := GoSyscallWrapper(fn.Name)
+		wrapper := GoSyscallWrapper(name)
 		if _, ok := knownGoWrappers[wrapper]; ok {
 			r.wrapperAddrs[fn.Entry] = wrapper
 		}
