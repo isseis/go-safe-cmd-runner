@@ -140,12 +140,12 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 		return "", err
 	}
 
-	return v.recordWithAnalysisStore(targetPath, hash, hashFilePath, force)
+	return v.saveHash(targetPath, hash, hashFilePath, force)
 }
 
-// recordWithAnalysisStore saves the hash using FileAnalysisRecord format.
+// saveHash saves the hash using FileAnalysisRecord format.
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
-func (v *Validator) recordWithAnalysisStore(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
+func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
 	// Check for existing record
 	_, err := v.store.Load(filePath)
 	if err == nil {
@@ -195,11 +195,11 @@ func (v *Validator) Verify(filePath string) error {
 		return fmt.Errorf("failed to calculate file hash: %w", err)
 	}
 
-	return v.verifyWithAnalysisStore(targetPath, actualHash)
+	return v.verifyHash(targetPath, actualHash)
 }
 
-// verifyWithAnalysisStore verifies the hash using FileAnalysisRecord format.
-func (v *Validator) verifyWithAnalysisStore(filePath common.ResolvedPath, actualHash string) error {
+// verifyHash verifies the hash using FileAnalysisRecord format.
+func (v *Validator) verifyHash(filePath common.ResolvedPath, actualHash string) error {
 	record, err := v.store.Load(filePath)
 	if err != nil {
 		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
@@ -266,7 +266,7 @@ func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.Resol
 		return fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
-	return v.verifyWithAnalysisStore(targetPath, actualHash)
+	return v.verifyHash(targetPath, actualHash)
 }
 
 // VerifyWithPrivileges verifies a file's integrity using privilege escalation
@@ -316,7 +316,7 @@ func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readCon
 		return nil, err
 	}
 
-	if verifyErr := v.verifyWithAnalysisStore(targetPath, actualHash); verifyErr != nil {
+	if verifyErr := v.verifyHash(targetPath, actualHash); verifyErr != nil {
 		return nil, verifyErr
 	}
 	return content, nil
