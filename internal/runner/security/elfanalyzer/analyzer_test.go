@@ -130,18 +130,18 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 // mockSyscallAnalysisStore is a mock implementation of SyscallAnalysisStore for testing.
 type mockSyscallAnalysisStore struct {
 	result *SyscallAnalysisResult
-	found  bool
 	err    error
-	// expectedHash is used to verify hash matching behavior
+	// expectedHash is used to verify hash matching behavior.
+	// When set, returns ErrHashMismatch if the provided hash does not match.
 	expectedHash string
 }
 
-func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash string) (*SyscallAnalysisResult, bool, error) {
+func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash string) (*SyscallAnalysisResult, error) {
 	// If expectedHash is set, only return result when hash matches
 	if m.expectedHash != "" && m.expectedHash != expectedHash {
-		return nil, false, nil
+		return nil, ErrHashMismatch
 	}
-	return m.result, m.found, m.err
+	return m.result, m.err
 }
 
 // createStaticELFFile creates a minimal static ELF file for testing.
@@ -234,7 +234,6 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 				TotalDetectedEvents: 2,
 			},
 		},
-		found: true,
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
@@ -268,7 +267,6 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 				TotalDetectedEvents: 1,
 			},
 		},
-		found: true,
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
@@ -303,7 +301,6 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 				TotalDetectedEvents: 1,
 			},
 		},
-		found: true,
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
@@ -321,8 +318,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 
 	// Create mock store that returns not found
 	mockStore := &mockSyscallAnalysisStore{
-		result: nil,
-		found:  false,
+		err: ErrRecordNotFound,
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
@@ -345,7 +341,6 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 			},
 			Summary: SyscallSummary{HasNetworkSyscalls: true},
 		},
-		found:        true,
 		expectedHash: "sha256:differenthash", // This won't match the actual file hash
 	}
 

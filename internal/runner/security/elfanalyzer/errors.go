@@ -21,6 +21,15 @@ var (
 
 	// ErrNoSymbolTable indicates the ELF file has no symbol table.
 	ErrNoSymbolTable = errors.New("ELF file has no symbol table (possibly stripped)")
+
+	// ErrRecordNotFound indicates that no analysis record exists for the file.
+	ErrRecordNotFound = errors.New("syscall analysis record not found")
+
+	// ErrHashMismatch indicates that the file content hash does not match the stored record.
+	ErrHashMismatch = errors.New("syscall analysis hash mismatch")
+
+	// ErrNoSyscallAnalysis indicates that the record exists but contains no syscall analysis data.
+	ErrNoSyscallAnalysis = errors.New("no syscall analysis data in record")
 )
 
 // UnsupportedArchitectureError indicates the ELF architecture is not supported.

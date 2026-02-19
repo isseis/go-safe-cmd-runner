@@ -9,8 +9,8 @@ import (
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 // This type mirrors elfanalyzer.SyscallAnalysisResult to avoid import cycles.
-// The elfanalyzer package will define its own interface that refers to its types,
-// and adapters in Phase 5 will handle type conversion.
+// Type conversion between this and elfanalyzer.SyscallAnalysisResult is handled
+// by cmd/record (convertToFileanalysisResult).
 type SyscallAnalysisResult struct {
 	// Architecture is the ELF machine architecture that was analyzed (e.g., "x86_64").
 	Architecture string
@@ -30,7 +30,7 @@ type SyscallAnalysisResult struct {
 
 // SyscallAnalysisStore defines the interface for storing and loading syscall analysis results.
 // This interface uses fileanalysis types to avoid import cycles with elfanalyzer.
-// Adapters in elfanalyzer package (Phase 5) will convert between types.
+// Used directly by cmd/record for saving/loading syscall analysis.
 type SyscallAnalysisStore interface {
 	// LoadSyscallAnalysis loads syscall analysis from storage.
 	// `expectedHash` contains both the hash algorithm and the expected hash value.

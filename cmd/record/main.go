@@ -268,6 +268,7 @@ func convertToFileanalysisResult(result *elfanalyzer.SyscallAnalysisResult) *fil
 	}
 
 	return &fileanalysis.SyscallAnalysisResult{
+		Architecture:       result.Architecture,
 		DetectedSyscalls:   syscalls,
 		HasUnknownSyscalls: result.HasUnknownSyscalls,
 		HighRiskReasons:    result.HighRiskReasons,
