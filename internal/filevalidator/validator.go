@@ -140,32 +140,23 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 
 // saveHash saves the hash using FileAnalysisRecord format.
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
+//
+// Collision and duplicate detection are performed inside the Update callback,
+// which avoids a redundant Load() call and keeps error handling in sync with
+// Store.Update()'s own semantics (e.g., SchemaVersionMismatchError is rejected
+// by Update before the callback runs).
 func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
-	// Check for existing record
-	existingRecord, err := v.store.Load(filePath)
-	if err == nil {
-		// Record exists — check for hash file path collision
-		if existingRecord.FilePath != filePath.String() {
-			return "", fmt.Errorf("%w: %s and %s map to the same record file",
-				ErrHashFilePathCollision, filePath, existingRecord.FilePath)
-		}
-		if !force {
-			return "", fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
-		}
-	} else if !errors.Is(err, fileanalysis.ErrRecordNotFound) {
-		// For errors other than "not found", we proceed to Update only if the error is a
-		// schema mismatch or corruption error that can be handled there. Otherwise, we fail.
-		var schemaErr *fileanalysis.SchemaVersionMismatchError
-		var corruptedErr *fileanalysis.RecordCorruptedError
-		canProceedToUpdate := errors.As(err, &schemaErr) || errors.As(err, &corruptedErr)
-		if !canProceedToUpdate {
-			return "", fmt.Errorf("failed to check existing record: %w", err)
-		}
-	}
-
-	// Use Update to preserve existing fields (e.g., SyscallAnalysis)
 	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
-	err = v.store.Update(filePath, func(record *fileanalysis.Record) error {
+	err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
+		// record.FilePath is non-empty when a valid existing record was loaded.
+		// An empty FilePath means the record is new (not found or was corrupted).
+		if record.FilePath != "" && record.FilePath != filePath.String() {
+			return fmt.Errorf("%w: %s and %s map to the same record file",
+				ErrHashFilePathCollision, filePath, record.FilePath)
+		}
+		if record.FilePath == filePath.String() && !force {
+			return fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
+		}
 		record.ContentHash = contentHash
 		return nil
 	})
