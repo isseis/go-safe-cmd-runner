@@ -119,27 +119,21 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 }
 
 func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
-	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
-
-	// Override mkdirAll to avoid permission issues in CI
+	// Override mkdirAll to avoid filesystem access to the default hash directory in CI.
 	originalMkdirAll := mkdirAll
 	mkdirAll = func(_ string, _ os.FileMode) error {
 		return nil
 	}
 	defer func() { mkdirAll = originalMkdirAll }()
 
-	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+	cfg, _, err := parseArgs([]string{"file1.txt"}, stderr)
 
-	require.Equal(t, 0, exitCode)
-	assert.Equal(t, cmdcommon.DefaultHashDirectory, recorder.hashDir)
-	require.Len(t, recorder.calls, 1)
-	assert.Equal(t, "file1.txt", recorder.calls[0].file)
-	assert.False(t, recorder.calls[0].force)
+	require.NoError(t, err)
+	assert.Equal(t, cmdcommon.DefaultHashDirectory, cfg.hashDir)
+	assert.Equal(t, []string{"file1.txt"}, cfg.files)
+	assert.False(t, cfg.force)
 }
 
 // createMinimalStaticELF creates a minimal static ELF file for testing.

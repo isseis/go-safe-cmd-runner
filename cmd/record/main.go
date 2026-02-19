@@ -68,7 +68,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	return processFiles(recorder, cfg, stdout, stderr)
+	syscallCtx, err := newSyscallAnalysisContext(cfg.hashDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
+		return 1
+	}
+
+	return processFiles(recorder, syscallCtx, cfg, stdout, stderr)
 }
 
 func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
@@ -123,7 +129,7 @@ func printUsage(fs *flag.FlagSet, w io.Writer) {
 	fs.PrintDefaults()
 }
 
-func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Writer) int {
+func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg *recordConfig, stdout, stderr io.Writer) int {
 	total := len(cfg.files)
 	label := "files"
 	if total == 1 {
@@ -132,13 +138,6 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 	fmt.Fprintf(stdout, "Processing %d %s...\n", total, label) //nolint:errcheck
 	successes := 0
 	failures := 0
-
-	// Create syscall analyzer context for static ELF binary analysis
-	syscallCtx, err := newSyscallAnalysisContext(cfg.hashDir)
-	if err != nil {
-		fmt.Fprintf(stderr, "Error: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
-		return 1
-	}
 
 	for idx, filePath := range cfg.files {
 		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck
