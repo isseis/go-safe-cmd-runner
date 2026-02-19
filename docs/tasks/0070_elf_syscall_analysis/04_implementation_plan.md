@@ -26,8 +26,7 @@ flowchart LR
     P4 --> P5
     P5 --> P6
 
-    class P1,P2,P3 done
-    class P4,P5,P6 todo
+    class P1,P2,P3,P4,P5,P6 done
 ```
 
 **注記**: Phase 2 と Phase 3 は Phase 1 完了後に並行して実施可能。
@@ -400,22 +399,26 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 6.1 統合テスト（gcc 依存）
 
-- [ ] `syscall_analyzer_integration_test.go` を新規作成
+- [x] `syscall_analyzer_integration_test.go` を新規作成
   （`//go:build integration` タグ）
   - C プログラム（`socket()` 呼び出し）のコンパイル
     → 解析 → ネットワーク syscall 検出
   - gcc が存在しない場合はスキップ
+  - x86_64 以外のアーキテクチャではスキップ
   - 仕様: 詳細仕様書 §6.4
-- [ ] Go プログラムのコンパイル → 解析
+- [x] Go プログラムのコンパイル → 解析
   → ラッパー解決の統合テスト
+  - `TestSyscallAnalyzer_RealGoBinary`: ネットワーク使用バイナリ
+  - `TestSyscallAnalyzer_RealGoBinary_NoNetwork`: 非ネットワークバイナリ
   - 受け入れ条件: AC-10
-- [ ] record コマンド → runner フォールバックチェーンの
+- [x] record コマンド → runner フォールバックチェーンの
   E2E テスト
+  - `TestE2E_RecordToRunnerFallbackChain`: 解析→保存→読み込み→変換
   - 受け入れ条件: AC-8
 
 ### 6.2 ドキュメント
 
-- [ ] `docs/development/` に x86_64 命令デコードの技術詳細を追加
+- [x] `docs/development/x86_64_instruction_decode.md` を新規作成
   - デコード失敗時の動作と再同期メカニズム
   - 設計判断の根拠
     （デコード失敗を High Risk としない理由）
@@ -427,10 +430,13 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 6.3 パフォーマンス確認
 
-- [ ] 小規模バイナリ (< 1MB): < 1秒の目標確認
-- [ ] 中規模バイナリ (1-10MB): < 5秒の目標確認
-- [ ] 実行時オーバーヘッド
+- [-] 小規模バイナリ (< 1MB): < 1秒の目標確認
+  （arm64 環境のためスキップ、x86_64 環境で要確認）
+- [-] 中規模バイナリ (1-10MB): < 5秒の目標確認
+  （arm64 環境のためスキップ、x86_64 環境で要確認）
+- [-] 実行時オーバーヘッド
   （ハッシュ計算 + 解析結果読み込み）: < 200ms
+  （arm64 環境のためスキップ、x86_64 環境で要確認）
   - 要件: NFR-4.1.1, NFR-4.1.2
 
 ## 受け入れ条件とテストのマッピング
