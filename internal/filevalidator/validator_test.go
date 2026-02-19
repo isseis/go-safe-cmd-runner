@@ -908,3 +908,80 @@ func TestNew_CreatesDirectory(t *testing.T) {
 	store := validator.GetStore()
 	require.NotNil(t, store, "GetStore should return non-nil store")
 }
+
+// collidingHashFilePathGetter always maps every file path to the same
+// record file, simulating a hash file path collision.
+type collidingHashFilePathGetter struct {
+	fixedName string
+}
+
+func (c *collidingHashFilePathGetter) GetHashFilePath(hashDir string, _ common.ResolvedPath) (string, error) {
+	return filepath.Join(hashDir, c.fixedName), nil
+}
+
+// newCollisionValidator creates a Validator whose HashFilePathGetter always
+// returns the same record path, so that recording two different files will
+// trigger a collision on the second call.
+func newCollisionValidator(t *testing.T) (*Validator, string) {
+	t.Helper()
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o750))
+
+	getter := &collidingHashFilePathGetter{fixedName: "collision.json"}
+
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+
+	v, err := newValidator(&SHA256{}, hashDir, getter)
+	require.NoError(t, err)
+	v.store = store
+
+	return v, tempDir
+}
+
+func TestValidator_Record_HashFilePathCollision(t *testing.T) {
+	v, tempDir := newCollisionValidator(t)
+
+	// Create two different test files
+	file1 := filepath.Join(tempDir, "file1.txt")
+	file2 := filepath.Join(tempDir, "file2.txt")
+	require.NoError(t, os.WriteFile(file1, []byte("content1"), 0o644))
+	require.NoError(t, os.WriteFile(file2, []byte("content2"), 0o644))
+
+	// Record first file — should succeed
+	_, err := v.Record(file1, false)
+	require.NoError(t, err, "first Record should succeed")
+
+	// Record second file (different path, same record file) — should fail with collision
+	_, err = v.Record(file2, false)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashFilePathCollision,
+		"second Record should detect collision")
+
+	// Even with force=true, collision should still be detected
+	_, err = v.Record(file2, true)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashFilePathCollision,
+		"force=true should not bypass collision detection")
+}
+
+func TestValidator_Verify_HashFilePathCollision(t *testing.T) {
+	v, tempDir := newCollisionValidator(t)
+
+	// Create two different test files
+	file1 := filepath.Join(tempDir, "file1.txt")
+	file2 := filepath.Join(tempDir, "file2.txt")
+	require.NoError(t, os.WriteFile(file1, []byte("content1"), 0o644))
+	require.NoError(t, os.WriteFile(file2, []byte("content2"), 0o644))
+
+	// Record first file
+	_, err := v.Record(file1, false)
+	require.NoError(t, err)
+
+	// Verify second file — record belongs to file1, should detect collision
+	err = v.Verify(file2)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrHashFilePathCollision,
+		"Verify should detect collision when record belongs to a different file")
+}

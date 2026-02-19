@@ -118,8 +118,8 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 // Record calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
-// Records are stored by file path (FileAnalysisRecord format), so identical content in
-// different files does not cause a collision error.
+// Returns ErrHashFilePathCollision if a different file's record occupies the same
+// hash file path (possible with SHA256 fallback encoding for very long paths).
 // Existing fields (e.g., SyscallAnalysis) in the record are preserved when updating.
 func (v *Validator) Record(filePath string, force bool) (string, error) {
 	// Validate the file path
@@ -147,9 +147,13 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
 func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
 	// Check for existing record
-	_, err := v.store.Load(filePath)
+	existingRecord, err := v.store.Load(filePath)
 	if err == nil {
-		// Record exists
+		// Record exists — check for hash file path collision
+		if existingRecord.FilePath != filePath.String() {
+			return "", fmt.Errorf("%w: %s and %s map to the same record file",
+				ErrHashFilePathCollision, filePath, existingRecord.FilePath)
+		}
 		if !force {
 			return "", fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
 		}
@@ -206,6 +210,12 @@ func (v *Validator) verifyHash(filePath common.ResolvedPath, actualHash string) 
 			return ErrHashFileNotFound
 		}
 		return fmt.Errorf("failed to load analysis record: %w", err)
+	}
+
+	// Check for hash file path collision
+	if record.FilePath != filePath.String() {
+		return fmt.Errorf("%w: record belongs to %s, not %s",
+			ErrHashFilePathCollision, record.FilePath, filePath)
 	}
 
 	// ContentHash is in prefixed format "sha256:<hex>"

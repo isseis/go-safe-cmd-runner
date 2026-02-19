@@ -33,4 +33,9 @@ var (
 
 	// ErrEmptyHashDir indicates that the hash directory path is empty.
 	ErrEmptyHashDir = errors.New("hash directory cannot be empty")
+
+	// ErrHashFilePathCollision indicates that two different file paths map to
+	// the same hash record file. This can happen when the SHA256 fallback
+	// encoding is used for very long paths and the truncated hashes collide.
+	ErrHashFilePathCollision = errors.New("hash file path collision detected")
 )
