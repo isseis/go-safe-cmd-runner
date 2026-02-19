@@ -19,15 +19,6 @@ var (
 	// ErrHashPathNotDir indicates that the hash path is not a directory.
 	ErrHashPathNotDir = errors.New("hash path is not a directory")
 
-	// ErrInvalidHashFileFormat indicates that the hash file has an invalid format.
-	ErrInvalidHashFileFormat = errors.New("invalid hash file format")
-
-	// ErrInvalidFilePathFormat indicates an invalid file path format was provided.
-	ErrInvalidFilePathFormat = errors.New("invalid file path format")
-
-	// ErrSuspiciousFilePath indicates a potentially malicious file path was detected.
-	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
-
 	// ErrHashFileExists indicates that the hash file already exists.
 	ErrHashFileExists = errors.New("hash file already exists")
 
