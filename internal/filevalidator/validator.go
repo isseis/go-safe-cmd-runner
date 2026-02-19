@@ -410,7 +410,12 @@ func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.Resol
 		return fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
-	// Read recorded hash (normal privilege)
+	// Use new format if analysis store is available
+	if v.store != nil {
+		return v.verifyWithAnalysisStore(targetPath, actualHash)
+	}
+
+	// Read recorded hash (legacy format)
 	_, expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return err
@@ -471,7 +476,15 @@ func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readCon
 		return nil, err
 	}
 
-	// Get expected hash
+	// Use new format if analysis store is available
+	if v.store != nil {
+		if verifyErr := v.verifyWithAnalysisStore(targetPath, actualHash); verifyErr != nil {
+			return nil, verifyErr
+		}
+		return content, nil
+	}
+
+	// Get expected hash (legacy format)
 	_, expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return nil, err

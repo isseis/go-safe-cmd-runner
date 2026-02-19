@@ -68,9 +68,9 @@
 **対象ファイル**: `internal/filevalidator/validator.go`
 
 **作業内容**:
-- [ ] `VerifyFromHandle()` を修正: `readAndParseHashFile()` の代わりに `store.Load()` で期待ハッシュを取得
-- [ ] `verifyAndReadContent()` を修正: 同上
-- [ ] `Record()` と `Verify()` から `if v.store != nil` 分岐を削除し、`store` を常に使用
+- [x] `VerifyFromHandle()` を修正: `readAndParseHashFile()` の代わりに `store.Load()` で期待ハッシュを取得
+- [x] `verifyAndReadContent()` を修正: 同上
+- [-] `Record()` と `Verify()` から `if v.store != nil` 分岐を削除し、`store` を常に使用
 
 **成功条件**: 既存テストがすべてパスすること（この時点では `New()` も `NewWithAnalysisStore()` も残す）
 
