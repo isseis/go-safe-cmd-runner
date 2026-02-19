@@ -45,6 +45,7 @@ linters:
             - $gostd
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/common
+            - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/redaction
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
             - github.com/isseis/go-safe-cmd-runner/internal/groupmembership

@@ -89,8 +89,7 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewSyscallAnalyzer()
-			result, err := analyzer.analyzeSyscallsInCode(tt.code, 0, nil)
-			require.NoError(t, err)
+			result := analyzer.analyzeSyscallsInCode(tt.code, 0, nil)
 			require.Len(t, result.DetectedSyscalls, 1)
 
 			info := result.DetectedSyscalls[0]
@@ -126,8 +125,7 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewSyscallAnalyzer()
-			result, err := analyzer.analyzeSyscallsInCode(tt.code, 0, nil)
-			require.NoError(t, err)
+			result := analyzer.analyzeSyscallsInCode(tt.code, 0, nil)
 			require.Len(t, result.DetectedSyscalls, 1)
 
 			info := result.DetectedSyscalls[0]
@@ -154,8 +152,7 @@ func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	info := result.DetectedSyscalls[0]
@@ -179,8 +176,7 @@ func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	info := result.DetectedSyscalls[0]
@@ -200,8 +196,7 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 
 	require.Len(t, result.DetectedSyscalls, 2)
 
@@ -230,8 +225,7 @@ func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
 	code := []byte{0x90, 0x90, 0xc3}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 
 	assert.Empty(t, result.DetectedSyscalls)
 	assert.Equal(t, 0, result.Summary.TotalDetectedEvents)
@@ -251,8 +245,7 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 
 	require.Len(t, result.DetectedSyscalls, 2)
 
@@ -282,8 +275,7 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 
 	require.Len(t, result.DetectedSyscalls, 2)
 
@@ -307,8 +299,7 @@ func TestSyscallAnalyzer_WithBaseAddress(t *testing.T) {
 	baseAddr := uint64(0x401000)
 
 	analyzer := NewSyscallAnalyzer()
-	result, err := analyzer.analyzeSyscallsInCode(code, baseAddr, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, baseAddr, nil)
 
 	require.Len(t, result.DetectedSyscalls, 1)
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
@@ -421,8 +412,7 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzerWithConfig(NewX86Decoder(), NewX86_64SyscallTable(), 3)
-	result, err := analyzer.analyzeSyscallsInCode(code, 0, nil)
-	require.NoError(t, err)
+	result := analyzer.analyzeSyscallsInCode(code, 0, nil)
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)

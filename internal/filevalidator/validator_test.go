@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -978,4 +979,132 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 		assert.Equal(t, content1, content2, "Both methods should return identical content")
 		assert.Equal(t, testContent, string(content1), "Content should match original")
 	})
+}
+
+// TestNewWithAnalysisStore_RecordAndVerify tests that NewWithAnalysisStore creates a validator
+// that uses the FileAnalysisRecord format and preserves existing fields.
+func TestNewWithAnalysisStore_RecordAndVerify(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator with analysis store support
+	validator, err := NewWithAnalysisStore(&SHA256{}, tempDir)
+	require.NoError(t, err, "Failed to create validator with analysis store")
+
+	// Verify that GetStore returns a non-nil store
+	store := validator.GetStore()
+	require.NotNil(t, store, "GetStore should return non-nil store")
+
+	// Create a test file
+	testContent := "test content for analysis store"
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	err = os.WriteFile(testFilePath, []byte(testContent), 0o644)
+	require.NoError(t, err, "Failed to create test file")
+
+	t.Run("Record with analysis store format", func(t *testing.T) {
+		// Record the hash
+		_, err = validator.Record(testFilePath, false)
+		require.NoError(t, err, "Failed to record hash")
+
+		// Load record directly from store to verify format
+		record, err := store.Load(common.ResolvedPath(testFilePath))
+		require.NoError(t, err, "Failed to load record from store")
+
+		// Verify the record fields
+		assert.Equal(t, testFilePath, record.FilePath, "FilePath should match")
+		assert.True(t, strings.HasPrefix(record.ContentHash, "sha256:"), "ContentHash should have sha256 prefix")
+		assert.False(t, record.UpdatedAt.IsZero(), "UpdatedAt should be set")
+	})
+
+	t.Run("Verify with analysis store format", func(t *testing.T) {
+		// Verify the hash
+		err = validator.Verify(testFilePath)
+		assert.NoError(t, err, "Verify should succeed")
+	})
+
+	t.Run("Verify modified file fails", func(t *testing.T) {
+		// Modify the file
+		err = os.WriteFile(testFilePath, []byte("modified content"), 0o644)
+		require.NoError(t, err, "Failed to modify test file")
+
+		// Verify should fail
+		err = validator.Verify(testFilePath)
+		assert.ErrorIs(t, err, ErrMismatch, "Verify should fail with modified file")
+	})
+}
+
+// TestNewWithAnalysisStore_PreservesExistingFields tests that updating a record
+// preserves existing fields like SyscallAnalysis.
+func TestNewWithAnalysisStore_PreservesExistingFields(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator with analysis store support
+	validator, err := NewWithAnalysisStore(&SHA256{}, tempDir)
+	require.NoError(t, err, "Failed to create validator with analysis store")
+
+	store := validator.GetStore()
+	require.NotNil(t, store, "GetStore should return non-nil store")
+
+	// Create a test file
+	testContent := "test content for preserving fields"
+	testFilePath := filepath.Join(tempDir, "test_preserve.txt")
+	err = os.WriteFile(testFilePath, []byte(testContent), 0o644)
+	require.NoError(t, err, "Failed to create test file")
+
+	// First, save a record with SyscallAnalysis directly via store
+	err = store.Save(common.ResolvedPath(testFilePath), &fileanalysis.Record{
+		ContentHash: "sha256:old_hash",
+		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
+			Architecture:       "x86_64",
+			HasUnknownSyscalls: true,
+			HighRiskReasons:    []string{"test reason"},
+		},
+	})
+	require.NoError(t, err, "Failed to save initial record")
+
+	// Now use validator.Record with force to update the content hash
+	_, err = validator.Record(testFilePath, true)
+	require.NoError(t, err, "Failed to record hash with force")
+
+	// Load the record and verify SyscallAnalysis is preserved
+	record, err := store.Load(common.ResolvedPath(testFilePath))
+	require.NoError(t, err, "Failed to load updated record")
+
+	// Verify the content hash was updated
+	assert.True(t, strings.HasPrefix(record.ContentHash, "sha256:"), "ContentHash should have sha256 prefix")
+	assert.NotEqual(t, "sha256:old_hash", record.ContentHash, "ContentHash should be updated")
+
+	// Verify the SyscallAnalysis was preserved
+	require.NotNil(t, record.SyscallAnalysis, "SyscallAnalysis should be preserved")
+	assert.Equal(t, "x86_64", record.SyscallAnalysis.Architecture, "Architecture should be preserved")
+	assert.True(t, record.SyscallAnalysis.HasUnknownSyscalls, "HasUnknownSyscalls should be preserved")
+	require.Len(t, record.SyscallAnalysis.HighRiskReasons, 1, "HighRiskReasons should be preserved")
+	assert.Equal(t, "test reason", record.SyscallAnalysis.HighRiskReasons[0], "HighRiskReason content should be preserved")
+}
+
+// TestNewWithAnalysisStore_CreatesDirectory tests that NewWithAnalysisStore
+// automatically creates the hash directory if it doesn't exist.
+// This verifies the fix for the ordering bug where New() was called before
+// NewStore(), causing a failure because newValidator() requires the directory
+// to already exist, while NewStore() is the one that creates it.
+func TestNewWithAnalysisStore_CreatesDirectory(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "nonexistent_subdir")
+
+	// Verify directory does not exist yet
+	_, err := os.Stat(hashDir)
+	require.True(t, os.IsNotExist(err), "hashDir should not exist before calling NewWithAnalysisStore")
+
+	// NewWithAnalysisStore should succeed even though hashDir doesn't exist
+	validator, err := NewWithAnalysisStore(&SHA256{}, hashDir)
+	require.NoError(t, err, "NewWithAnalysisStore should create the directory automatically")
+	require.NotNil(t, validator)
+
+	// Verify directory was created
+	info, err := os.Stat(hashDir)
+	require.NoError(t, err, "hashDir should exist after NewWithAnalysisStore")
+	assert.True(t, info.IsDir(), "hashDir should be a directory")
+
+	// Verify the store is usable
+	store := validator.GetStore()
+	require.NotNil(t, store, "GetStore should return non-nil store")
 }
