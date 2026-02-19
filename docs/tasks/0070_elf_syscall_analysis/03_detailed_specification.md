@@ -1630,10 +1630,10 @@ func (s *FileAnalysisStore) getRecordPath(filePath string) (string, error) {
 }
 ```
 
-#### 2.6.2 syscallAnalysisStoreImpl（elfanalyzer.SyscallAnalysisStore インターフェース実装）
+#### 2.6.2 syscallAnalysisStore（elfanalyzer.SyscallAnalysisStore インターフェース実装）
 
 elfanalyzer パッケージで定義される `SyscallAnalysisStore` インターフェースの実装です。
-struct 名を unexported (`syscallAnalysisStoreImpl`) にすることで、
+struct 名を unexported (`syscallAnalysisStore`) にすることで、
 interface との混同を防ぎます。
 
 ```go
@@ -1647,22 +1647,22 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-// syscallAnalysisStoreImpl implements elfanalyzer.SyscallAnalysisStore.
+// syscallAnalysisStore implements elfanalyzer.SyscallAnalysisStore.
 // This is a concrete adapter backed by FileAnalysisStore.
 // The type is unexported to avoid confusion with the interface defined in elfanalyzer.
-type syscallAnalysisStoreImpl struct {
+type syscallAnalysisStore struct {
     store *FileAnalysisStore
 }
 
 // NewSyscallAnalysisStore creates a new elfanalyzer.SyscallAnalysisStore
 // backed by FileAnalysisStore.
 func NewSyscallAnalysisStore(store *FileAnalysisStore) elfanalyzer.SyscallAnalysisStore {
-    return &syscallAnalysisStoreImpl{store: store}
+    return &syscallAnalysisStore{store: store}
 }
 
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
-func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
+func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *elfanalyzer.SyscallAnalysisResult) error {
     return s.store.Update(filePath, func(record *FileAnalysisRecord) error {
         record.ContentHash = fileHash
         record.SyscallAnalysis = &SyscallAnalysisData{
@@ -1681,7 +1681,7 @@ func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string
 // Returns (result, true, nil) if found and hash matches.
 // Returns (nil, false, nil) if not found or hash mismatch.
 // Returns (nil, false, error) on other errors.
-func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
+func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, bool, error) {
     record, err := s.store.Load(filePath)
     if err != nil {
         if err == ErrRecordNotFound {

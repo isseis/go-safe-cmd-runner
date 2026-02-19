@@ -43,22 +43,22 @@ type SyscallAnalysisStore interface {
 	SaveSyscallAnalysis(filePath, fileHash string, result *SyscallAnalysisResult) error
 }
 
-// syscallAnalysisStoreImpl implements SyscallAnalysisStore.
+// syscallAnalysisStore implements SyscallAnalysisStore.
 // This is a concrete adapter backed by Store.
 // The type is unexported to avoid confusion with the interface defined above.
-type syscallAnalysisStoreImpl struct {
+type syscallAnalysisStore struct {
 	store *Store
 }
 
 // NewSyscallAnalysisStore creates a new SyscallAnalysisStore
 // backed by Store.
 func NewSyscallAnalysisStore(store *Store) SyscallAnalysisStore {
-	return &syscallAnalysisStoreImpl{store: store}
+	return &syscallAnalysisStore{store: store}
 }
 
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
-func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string, result *SyscallAnalysisResult) error {
+func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *SyscallAnalysisResult) error {
 	return s.store.Update(filePath, func(record *Record) error {
 		record.ContentHash = fileHash
 		record.SyscallAnalysis = &SyscallAnalysisData{
@@ -79,7 +79,7 @@ func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string
 // Returns (nil, ErrHashMismatch) if hash mismatch.
 // Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
 // Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
-func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, error) {
+func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, error) {
 	record, err := s.store.Load(filePath)
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
