@@ -1006,7 +1006,7 @@ func TestNewWithAnalysisStore_RecordAndVerify(t *testing.T) {
 		require.NoError(t, err, "Failed to record hash")
 
 		// Load record directly from store to verify format
-		record, err := store.Load(testFilePath)
+		record, err := store.Load(common.ResolvedPath(testFilePath))
 		require.NoError(t, err, "Failed to load record from store")
 
 		// Verify the record fields
@@ -1051,7 +1051,7 @@ func TestNewWithAnalysisStore_PreservesExistingFields(t *testing.T) {
 	require.NoError(t, err, "Failed to create test file")
 
 	// First, save a record with SyscallAnalysis directly via store
-	err = store.Save(testFilePath, &fileanalysis.Record{
+	err = store.Save(common.ResolvedPath(testFilePath), &fileanalysis.Record{
 		ContentHash: "sha256:old_hash",
 		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
 			Architecture:       "x86_64",
@@ -1066,7 +1066,7 @@ func TestNewWithAnalysisStore_PreservesExistingFields(t *testing.T) {
 	require.NoError(t, err, "Failed to record hash with force")
 
 	// Load the record and verify SyscallAnalysis is preserved
-	record, err := store.Load(testFilePath)
+	record, err := store.Load(common.ResolvedPath(testFilePath))
 	require.NoError(t, err, "Failed to load updated record")
 
 	// Verify the content hash was updated

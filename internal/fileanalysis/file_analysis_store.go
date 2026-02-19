@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -66,7 +65,7 @@ func NewStore(analysisDir string, pathGetter common.HashFilePathGetter) (*Store,
 
 // Load loads the analysis record for the given file path.
 // Returns ErrRecordNotFound if the analysis record file does not exist.
-func (s *Store) Load(filePath string) (*Record, error) {
+func (s *Store) Load(filePath common.ResolvedPath) (*Record, error) {
 	recordPath, err := s.getRecordPath(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get analysis record path: %w", err)
@@ -98,14 +97,14 @@ func (s *Store) Load(filePath string) (*Record, error) {
 
 // Save saves the analysis record for the given file path.
 // This overwrites the entire record. Use Update for read-modify-write operations.
-func (s *Store) Save(filePath string, record *Record) error {
+func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 	recordPath, err := s.getRecordPath(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to get analysis record path: %w", err)
 	}
 
 	record.SchemaVersion = CurrentSchemaVersion
-	record.FilePath = filePath
+	record.FilePath = filePath.String()
 	record.UpdatedAt = time.Now().UTC()
 
 	data, err := json.MarshalIndent(record, "", "  ")
@@ -129,7 +128,7 @@ func (s *Store) Save(filePath string, record *Record) error {
 //   - RecordCorruptedError: creates a new record (overwriting corrupted data)
 //   - SchemaVersionMismatchError: returns error without overwriting
 //     (preserves forward/backward compatibility until migration strategy is defined)
-func (s *Store) Update(filePath string, updateFn func(*Record) error) error {
+func (s *Store) Update(filePath common.ResolvedPath, updateFn func(*Record) error) error {
 	// Try to load existing record
 	record, err := s.Load(filePath)
 	if err != nil {
@@ -160,16 +159,6 @@ func (s *Store) Update(filePath string, updateFn func(*Record) error) error {
 }
 
 // getRecordPath returns the analysis record file path for the given file.
-func (s *Store) getRecordPath(filePath string) (string, error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	resolvedPath, err := common.NewResolvedPath(absPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create resolved path: %w", err)
-	}
-
-	return s.pathGetter.GetHashFilePath(s.analysisDir, resolvedPath)
+func (s *Store) getRecordPath(filePath common.ResolvedPath) (string, error) {
+	return s.pathGetter.GetHashFilePath(s.analysisDir, filePath)
 }

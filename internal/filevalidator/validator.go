@@ -158,7 +158,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 
 	// Use new format if analysis store is available
 	if v.store != nil {
-		return v.recordWithAnalysisStore(targetPath.String(), hash, hashFilePath, force)
+		return v.recordWithAnalysisStore(targetPath, hash, hashFilePath, force)
 	}
 
 	// Legacy format: use HashManifest
@@ -167,7 +167,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 
 // recordWithAnalysisStore saves the hash using FileAnalysisRecord format.
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
-func (v *Validator) recordWithAnalysisStore(filePath, hash, hashFilePath string, force bool) (string, error) {
+func (v *Validator) recordWithAnalysisStore(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
 	// Check for existing record
 	_, err := v.store.Load(filePath)
 	if err == nil {
@@ -265,7 +265,7 @@ func (v *Validator) Verify(filePath string) error {
 
 	// Use new format if analysis store is available
 	if v.store != nil {
-		return v.verifyWithAnalysisStore(targetPath.String(), actualHash)
+		return v.verifyWithAnalysisStore(targetPath, actualHash)
 	}
 
 	// Legacy format: use HashManifest
@@ -273,7 +273,7 @@ func (v *Validator) Verify(filePath string) error {
 }
 
 // verifyWithAnalysisStore verifies the hash using FileAnalysisRecord format.
-func (v *Validator) verifyWithAnalysisStore(filePath, actualHash string) error {
+func (v *Validator) verifyWithAnalysisStore(filePath common.ResolvedPath, actualHash string) error {
 	record, err := v.store.Load(filePath)
 	if err != nil {
 		if errors.Is(err, fileanalysis.ErrRecordNotFound) {

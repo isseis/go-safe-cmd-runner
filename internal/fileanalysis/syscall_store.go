@@ -1,7 +1,10 @@
 package fileanalysis
 
 import (
+	"fmt"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // SyscallAnalysisResult represents the result of syscall analysis.
@@ -58,7 +61,11 @@ func NewSyscallAnalysisStore(store *Store) SyscallAnalysisStore {
 // SaveSyscallAnalysis saves the syscall analysis result.
 // This updates only the syscall_analysis field, preserving other fields.
 func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, result *SyscallAnalysisResult) error {
-	return s.store.Update(filePath, func(record *Record) error {
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path: %w", err)
+	}
+	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash
 		record.SyscallAnalysis = &SyscallAnalysisData{
 			Architecture:       result.Architecture,
@@ -79,7 +86,11 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 // Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
 // Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
 func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, error) {
-	record, err := s.store.Load(filePath)
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve path: %w", err)
+	}
+	record, err := s.store.Load(resolvedPath)
 	if err != nil {
 		return nil, err
 	}

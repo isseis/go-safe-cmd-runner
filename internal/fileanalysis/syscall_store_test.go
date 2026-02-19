@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,7 +111,7 @@ func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
 	require.NoError(t, err)
 
 	// Save record without syscall analysis (only content hash)
-	err = fileStore.Save(testFile, &Record{
+	err = fileStore.Save(common.ResolvedPath(testFile), &Record{
 		ContentHash:     "sha256:abc123",
 		SyscallAnalysis: nil,
 	})
@@ -219,7 +220,7 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the record directly to verify
-	record, err := fileStore.Load(testFile)
+	record, err := fileStore.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 
 	// Content hash should be updated

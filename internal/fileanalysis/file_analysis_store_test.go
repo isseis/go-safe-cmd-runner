@@ -38,11 +38,11 @@ func TestStore_SaveAndLoad(t *testing.T) {
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
 	}
-	err = store.Save(testFile, originalRecord)
+	err = store.Save(common.ResolvedPath(testFile), originalRecord)
 	require.NoError(t, err)
 
 	// Load record
-	loadedRecord, err := store.Load(testFile)
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 
 	// Verify fields
@@ -60,7 +60,7 @@ func TestStore_RecordNotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to load non-existent record
-	_, err = store.Load("/nonexistent/file.bin")
+	_, err = store.Load(common.ResolvedPath("/nonexistent/file.bin"))
 	assert.ErrorIs(t, err, ErrRecordNotFound)
 }
 
@@ -90,7 +90,7 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to load - should get schema version mismatch error
-	_, err = store.Load(testFile)
+	_, err = store.Load(common.ResolvedPath(testFile))
 	var schemaErr *SchemaVersionMismatchError
 	assert.ErrorAs(t, err, &schemaErr)
 	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
@@ -115,7 +115,7 @@ func TestStore_CorruptedRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to load - should get corrupted error
-	_, err = store.Load(testFile)
+	_, err = store.Load(common.ResolvedPath(testFile))
 	var corruptedErr *RecordCorruptedError
 	assert.ErrorAs(t, err, &corruptedErr)
 }
@@ -142,18 +142,18 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 			HighRiskReasons:    []string{"reason1"},
 		},
 	}
-	err = store.Save(testFile, originalRecord)
+	err = store.Save(common.ResolvedPath(testFile), originalRecord)
 	require.NoError(t, err)
 
 	// Update only the content hash
-	err = store.Update(testFile, func(record *Record) error {
+	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
 		record.ContentHash = "sha256:def456"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify syscall analysis is preserved
-	loadedRecord, err := store.Load(testFile)
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:def456", loadedRecord.ContentHash)
 	assert.NotNil(t, loadedRecord.SyscallAnalysis)
@@ -174,14 +174,14 @@ func TestStore_Update_CreatesNewRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update non-existent record - should create new
-	err = store.Update(testFile, func(record *Record) error {
+	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
 		record.ContentHash = "sha256:newrecord"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify
-	loadedRecord, err := store.Load(testFile)
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:newrecord", loadedRecord.ContentHash)
 }
@@ -212,7 +212,7 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update should fail due to schema version mismatch
-	err = store.Update(testFile, func(record *Record) error {
+	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
 		record.ContentHash = "sha256:newvalue"
 		return nil
 	})
@@ -247,14 +247,14 @@ func TestStore_Update_CorruptedRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update should succeed by creating fresh record
-	err = store.Update(testFile, func(record *Record) error {
+	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
 		record.ContentHash = "sha256:fresh"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify new record
-	loadedRecord, err := store.Load(testFile)
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:fresh", loadedRecord.ContentHash)
 }
