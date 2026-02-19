@@ -1,7 +1,6 @@
 package fileanalysis
 
 import (
-	"errors"
 	"time"
 )
 
@@ -82,13 +81,6 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, error) {
 	record, err := s.store.Load(filePath)
 	if err != nil {
-		if errors.Is(err, ErrRecordNotFound) {
-			return nil, ErrRecordNotFound
-		}
-		// For schema mismatch or corrupted records, return as-is
-		if errors.As(err, new(*SchemaVersionMismatchError)) || errors.As(err, new(*RecordCorruptedError)) {
-			return nil, err
-		}
 		return nil, err
 	}
 
