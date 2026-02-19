@@ -180,10 +180,11 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 
 // syscallAnalysisContext holds resources for syscall analysis.
 type syscallAnalysisContext struct {
-	store    *fileanalysis.Store
-	analyzer *elfanalyzer.SyscallAnalyzer
-	hashAlgo filevalidator.HashAlgorithm
-	fs       safefileio.FileSystem
+	store        *fileanalysis.Store
+	syscallStore fileanalysis.SyscallAnalysisStore
+	analyzer     *elfanalyzer.SyscallAnalyzer
+	hashAlgo     filevalidator.HashAlgorithm
+	fs           safefileio.FileSystem
 }
 
 // newSyscallAnalysisContext creates a new syscall analysis context.
@@ -195,10 +196,11 @@ func newSyscallAnalysisContext(hashDir string) (*syscallAnalysisContext, error) 
 	}
 
 	return &syscallAnalysisContext{
-		store:    store,
-		analyzer: elfanalyzer.NewSyscallAnalyzer(),
-		hashAlgo: &filevalidator.SHA256{},
-		fs:       safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+		store:        store,
+		syscallStore: fileanalysis.NewSyscallAnalysisStore(store),
+		analyzer:     elfanalyzer.NewSyscallAnalyzer(),
+		hashAlgo:     &filevalidator.SHA256{},
+		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
 	}, nil
 }
 
@@ -248,9 +250,8 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string) error {
 	// Convert elfanalyzer.SyscallAnalysisResult to fileanalysis.SyscallAnalysisResult
 	faResult := convertToFileanalysisResult(result)
 
-	// Create syscall analysis store and save
-	syscallStore := fileanalysis.NewSyscallAnalysisStore(ctx.store)
-	if err := syscallStore.SaveSyscallAnalysis(path, contentHash, faResult); err != nil {
+	// Save syscall analysis using the reusable store
+	if err := ctx.syscallStore.SaveSyscallAnalysis(path, contentHash, faResult); err != nil {
 		return fmt.Errorf("failed to save analysis result: %w", err)
 	}
 
