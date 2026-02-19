@@ -22,7 +22,9 @@ func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
 	assert.False(t, resolver.HasSymbols())
 
 	// Returned resolver should be safe to call without panic.
-	assert.Nil(t, resolver.FindWrapperCalls([]byte{0x90}, 0))
+	calls, decodeFailures := resolver.FindWrapperCalls([]byte{0x90}, 0)
+	assert.Nil(t, calls)
+	assert.Equal(t, 0, decodeFailures)
 }
 
 func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
@@ -30,8 +32,9 @@ func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 	resolver, err := NewGoWrapperResolver(&elf.File{})
 	require.ErrorIs(t, err, ErrNoPclntab)
 
-	result := resolver.FindWrapperCalls([]byte{0x90, 0x90}, 0x401000)
+	result, decodeFailures := resolver.FindWrapperCalls([]byte{0x90, 0x90}, 0x401000)
 	assert.Nil(t, result)
+	assert.Equal(t, 0, decodeFailures)
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
@@ -60,7 +63,8 @@ func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 		0xe8, 0xf6, 0x0f, 0x00, 0x00, // call rel32 (target = 0x402000)
 	}
 
-	result := resolver.FindWrapperCalls(code, baseAddr)
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
 
 	require.Len(t, result, 1)
 	assert.Equal(t, uint64(0x401005), result[0].CallSiteAddress)
@@ -85,7 +89,8 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 		0xe8, 0xf6, 0x0f, 0x00, 0x00, // call rel32 (target = 0x402000)
 	}
 
-	result := resolver.FindWrapperCalls(code, baseAddr)
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
 
 	require.Len(t, result, 1)
 	assert.Equal(t, uint64(0x401005), result[0].CallSiteAddress)
@@ -365,7 +370,8 @@ func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 		0xe8, 0xec, 0x1f, 0x00, 0x00, // call 0x403000 (rel = 0x1fec)
 	}
 
-	result := resolver.FindWrapperCalls(code, baseAddr)
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
 
 	require.Len(t, result, 2)
 

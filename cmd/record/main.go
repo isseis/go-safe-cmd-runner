@@ -259,6 +259,17 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 		"network_syscalls", result.Summary.NetworkSyscallCount,
 		"high_risk", result.Summary.IsHighRisk)
 
+	// Log decode failure summary if any failures occurred.
+	// This provides visibility into potential decode issues without
+	// flooding logs (individual failure logs are capped at maxDecodeFailureLogs
+	// inside findSyscallInstructions).
+	if result.DecodeStats.DecodeFailureCount > 0 {
+		slog.Debug("Instruction decode failures during syscall analysis",
+			slog.String("path", path),
+			slog.Int("decode_failures", result.DecodeStats.DecodeFailureCount),
+			slog.Int("total_bytes_analyzed", result.DecodeStats.TotalBytesAnalyzed))
+	}
+
 	return nil
 }
 

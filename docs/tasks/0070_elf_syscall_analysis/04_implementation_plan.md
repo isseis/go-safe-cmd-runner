@@ -100,7 +100,7 @@ syscall 番号抽出を実装する。
 
 ### 2.2 デコード失敗の統計とログ出力
 
-- [ ] `DecodeStatistics` 構造体と `maxDecodeFailureLogs`
+- [x] `DecodeStatistics` 構造体と `maxDecodeFailureLogs`
   定数を追加
   - `SyscallAnalysisResult.DecodeStats` フィールド
   - `DecodeFailureCount`: Pass 1 + Pass 2 合算値
@@ -108,20 +108,20 @@ syscall 番号抽出を実装する。
   - `maxDecodeFailureLogs = 10`:
     個別デコード失敗ログの上限
   - 仕様: 詳細仕様書 §2.1, §8.5
-- [ ] `findSyscallInstructions()` にデコード失敗カウンタ
+- [x] `findSyscallInstructions()` にデコード失敗カウンタ
   と個別ログ出力を追加
   - 戻り値に `decodeFailures int` を追加
   - デコード失敗時に `slog.Debug` で個別ログ出力
     （`maxDecodeFailureLogs` で上限制御）
   - 出力項目: offset（仮想アドレス）、bytes（先頭 4 バイト）
   - 仕様: 詳細仕様書 §8.5.1
-- [ ] `decodeInstructionsInWindow()` にデコード失敗カウンタ
+- [x] `decodeInstructionsInWindow()` にデコード失敗カウンタ
   を追加
   - 戻り値に `decodeFailures int` を追加
   - ただし `backwardScanForSyscallNumber()` からの呼び出し時は
     カウントを破棄（二重計上防止）
   - 仕様: 詳細仕様書 §8.5.2
-- [ ] `analyzeSyscallsInCode()` で Pass 1 のデコード失敗数を
+- [x] `analyzeSyscallsInCode()` で Pass 1 のデコード失敗数を
   `result.DecodeStats` に集約
   - 仕様: 詳細仕様書 §2.1
 
@@ -228,7 +228,7 @@ Go バイナリの `.gopclntab` 解析と syscall ラッパー関数の解決を
 
 ### 3.4 GoWrapperResolver のデコード失敗カウンタ
 
-- [ ] `FindWrapperCalls()` の戻り値に
+- [x] `FindWrapperCalls()` の戻り値に
   `decodeFailures int` を追加
   - Pass 2 のデコード失敗数を返す
   - `analyzeSyscallsInCode()` で

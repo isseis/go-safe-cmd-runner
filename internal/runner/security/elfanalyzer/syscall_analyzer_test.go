@@ -368,7 +368,7 @@ func TestSyscallAnalyzer_FindSyscallInstructions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			locs := analyzer.findSyscallInstructions(tt.code, tt.baseAddr)
+			locs, _ := analyzer.findSyscallInstructions(tt.code, tt.baseAddr)
 			assert.Len(t, locs, tt.wantCount)
 			if tt.wantLocs != nil {
 				assert.Equal(t, tt.wantLocs, locs)
@@ -384,8 +384,9 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow(t *testing.T) {
 	code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x90, 0x0f, 0x05}
 
 	// Decode window [0, 6) - should decode "mov" and "nop" but not "syscall"
-	instructions := analyzer.decodeInstructionsInWindow(code, 0, 0, 6)
+	instructions, decodeFailures := analyzer.decodeInstructionsInWindow(code, 0, 0, 6)
 	require.Len(t, instructions, 2) // mov (5 bytes) + nop (1 byte)
+	assert.Equal(t, 0, decodeFailures)
 
 	assert.Equal(t, uint64(0), instructions[0].Offset)
 	assert.Equal(t, 5, instructions[0].Len)

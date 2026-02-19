@@ -145,6 +145,7 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 //
 // Returns:
 //   - slice of WrapperCall structs containing call site info and resolved syscall numbers
+//   - decodeFailures: the number of instruction decode failures during scanning
 //
 // Performance Note:
 // This function performs linear decoding of the entire code section, unlike
@@ -156,12 +157,13 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 // consider implementing window-based scanning similar to Pass 1, but this adds
 // complexity for maintaining CALL instruction context for backward scanning.
 // See NFR-4.1.2 for performance requirements.
-func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall {
+func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([]WrapperCall, int) {
 	if len(r.wrapperAddrs) == 0 {
-		return nil
+		return nil, 0
 	}
 
 	var results []WrapperCall
+	decodeFailures := 0
 
 	// Decode entire code section and find CALL instructions to known wrappers
 	// Use the shared decoder instance (r.decoder) to avoid repeated allocation
@@ -173,6 +175,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 		// and less than len(code) (loop condition), so conversion is safe
 		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos is validated by loop condition
 		if err != nil {
+			decodeFailures++
 			pos++
 			continue
 		}
@@ -208,7 +211,7 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 		pos += inst.Len
 	}
 
-	return results
+	return results, decodeFailures
 }
 
 // resolveSyscallArgument analyzes instructions before a wrapper call
