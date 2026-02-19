@@ -37,11 +37,10 @@ type hashRecorder interface {
 }
 
 type recordConfig struct {
-	files           []string
-	hashDir         string
-	force           bool
-	analyzeSyscalls bool
-	usedDeprecated  bool
+	files          []string
+	hashDir        string
+	force          bool
+	usedDeprecated bool
 }
 
 func main() {
@@ -74,10 +73,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
 	options := struct {
-		deprecatedFile  string
-		hashDir         string
-		force           bool
-		analyzeSyscalls bool
+		deprecatedFile string
+		hashDir        string
+		force          bool
 	}{}
 
 	fs := flag.NewFlagSet("record", flag.ContinueOnError)
@@ -87,7 +85,6 @@ func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, e
 	fs.StringVar(&options.hashDir, "hash-dir", "", "Directory containing hash files (default: current working directory)")
 	fs.StringVar(&options.hashDir, "d", "", "Short alias for -hash-dir")
 	fs.BoolVar(&options.force, "force", false, "Force overwrite existing hash files")
-	fs.BoolVar(&options.analyzeSyscalls, "analyze-syscalls", false, "Analyze syscalls for static ELF binaries")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fs, err
@@ -111,11 +108,10 @@ func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, e
 	}
 
 	return &recordConfig{
-		files:           files,
-		hashDir:         dir,
-		force:           options.force,
-		analyzeSyscalls: options.analyzeSyscalls,
-		usedDeprecated:  options.deprecatedFile != "",
+		files:          files,
+		hashDir:        dir,
+		force:          options.force,
+		usedDeprecated: options.deprecatedFile != "",
 	}, fs, nil
 }
 
@@ -137,15 +133,11 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 	successes := 0
 	failures := 0
 
-	// Create syscall analyzer context if enabled
-	var syscallCtx *syscallAnalysisContext
-	if cfg.analyzeSyscalls {
-		var err error
-		syscallCtx, err = newSyscallAnalysisContext(cfg.hashDir)
-		if err != nil {
-			fmt.Fprintf(stderr, "Warning: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
-			// Continue without syscall analysis
-		}
+	// Create syscall analyzer context for static ELF binary analysis
+	syscallCtx, err := newSyscallAnalysisContext(cfg.hashDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
+		return 1
 	}
 
 	for idx, filePath := range cfg.files {
@@ -160,13 +152,11 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 		successes++
 		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck
 
-		// Perform syscall analysis if enabled
-		if syscallCtx != nil {
-			if err := syscallCtx.analyzeFile(filePath); err != nil {
-				// ErrNotELF and ErrNotStaticELF are expected for non-analyzable files
-				if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) {
-					fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck
-				}
+		// Perform syscall analysis for static ELF binaries
+		if err := syscallCtx.analyzeFile(filePath); err != nil {
+			// ErrNotELF, ErrNotStaticELF, and file-not-found are expected for non-analyzable files
+			if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) && !errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck
 			}
 		}
 	}

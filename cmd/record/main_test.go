@@ -203,7 +203,7 @@ func createMinimalStaticELF(t *testing.T, path string) {
 	require.NoError(t, err)
 }
 
-func TestRunWithAnalyzeSyscallsOption(t *testing.T) {
+func TestRunWithSyscallAnalysis(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, recorder)
@@ -216,8 +216,8 @@ func TestRunWithAnalyzeSyscallsOption(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// Run with --analyze-syscalls option
-	exitCode := run([]string{"-d", tempDir, "-analyze-syscalls", staticELF}, stdout, stderr)
+	// Syscall analysis is always enabled
+	exitCode := run([]string{"-d", tempDir, staticELF}, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 1)
@@ -225,7 +225,7 @@ func TestRunWithAnalyzeSyscallsOption(t *testing.T) {
 	assert.Contains(t, stdout.String(), "OK")
 }
 
-func TestRunWithAnalyzeSyscallsSkipsNonELF(t *testing.T) {
+func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
 	cleanup := overrideValidatorFactory(t, recorder)
@@ -239,8 +239,8 @@ func TestRunWithAnalyzeSyscallsSkipsNonELF(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// Run with --analyze-syscalls option - should skip without warning
-	exitCode := run([]string{"-d", tempDir, "-analyze-syscalls", nonELF}, stdout, stderr)
+	// Syscall analysis is always enabled but should skip non-ELF files without warning
+	exitCode := run([]string{"-d", tempDir, nonELF}, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 1)
@@ -248,12 +248,11 @@ func TestRunWithAnalyzeSyscallsSkipsNonELF(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
 
-func TestRunWithAnalyzeSyscallsSavesResult(t *testing.T) {
+func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
 	// Skip this test - the minimal ELF doesn't have a .text section
 	// which is required for syscall analysis. A proper test would need
 	// a real static binary or a more complete ELF generator.
-	// The TestRunWithAnalyzeSyscallsOption test verifies the flag parsing
-	// and basic flow work correctly.
+	// The TestRunWithSyscallAnalysis test verifies the basic flow works correctly.
 	t.Skip("Requires real static ELF binary with .text section for syscall analysis")
 
 	tempDir := t.TempDir()
@@ -268,8 +267,8 @@ func TestRunWithAnalyzeSyscallsSavesResult(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	// Run with --analyze-syscalls option
-	exitCode := run([]string{"-d", tempDir, "-analyze-syscalls", staticELF}, stdout, stderr)
+	// Syscall analysis is always enabled
+	exitCode := run([]string{"-d", tempDir, staticELF}, stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 
