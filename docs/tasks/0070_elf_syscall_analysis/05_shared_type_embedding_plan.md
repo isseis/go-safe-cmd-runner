@@ -344,12 +344,12 @@ type SyscallAnalysisData struct {
 
 ### Step 5: 最終確認
 
-- [ ] `make test` — 全テスト通過
-- [ ] `make lint` — lint エラーなし
-- [ ] JSON 互換性の確認
-  - [ ] 既存テストの JSON 往復テストが通過していることで
+- [x] `make test` — 全テスト通過
+- [x] `make lint` — lint エラーなし
+- [x] JSON 互換性の確認
+  - [x] 既存テストの JSON 往復テストが通過していることで
         暗黙的に確認される
-  - [ ] Step 1 で追加した明示的テストでも確認
+  - [x] Step 1 で追加した明示的テストでも確認
 
 ## 5. リスクと対策
 
