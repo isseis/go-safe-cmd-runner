@@ -79,9 +79,9 @@
 **対象ファイル**: `internal/filevalidator/validator.go`
 
 **作業内容**:
-- [ ] `New()` の実装を `NewWithAnalysisStore()` と同じにする（`store` を常に作成）
-- [ ] `NewWithAnalysisStore()` を削除し、`New()` に一本化
-- [ ] `Validator` 構造体の `store` フィールドのコメントから「If nil」の記述を削除
+- [x] `New()` の実装を `NewWithAnalysisStore()` と同じにする（`store` を常に作成）
+- [x] `NewWithAnalysisStore()` を削除し、`New()` に一本化
+- [x] `Validator` 構造体の `store` フィールドのコメントから「If nil」の記述を削除
 
 **成功条件**: `make test && make lint` がパスすること
 
@@ -93,8 +93,8 @@
 - `internal/verification/manager.go`
 
 **作業内容**:
-- [ ] `filevalidator.NewWithAnalysisStore` → `filevalidator.New` に変更（Step 2 で `New` に統合済みのため）
-- [ ] `NewWithAnalysisStore` が残っている全参照を `New` に更新
+- [-] `filevalidator.NewWithAnalysisStore` → `filevalidator.New` に変更（Step 2 で `New` に統合済みのため）
+- [x] `NewWithAnalysisStore` が残っている全参照を `New` に更新（テストコード内で更新済み）
 
 **成功条件**: `make test && make lint` がパスすること
 

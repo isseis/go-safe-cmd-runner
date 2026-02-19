@@ -41,8 +41,7 @@ func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error
 	return v.hashFilePathGetter.GetHashFilePath(v.hashDir, filePath)
 }
 
-// GetStore returns the underlying fileanalysis.Store, or nil if the validator
-// was created without analysis store support.
+// GetStore returns the underlying fileanalysis.Store.
 // This is useful for accessing syscall analysis results stored alongside hashes.
 func (v *Validator) GetStore() *fileanalysis.Store {
 	return v.store
@@ -57,25 +56,22 @@ type Validator struct {
 	privilegedFileValidator *PrivilegedFileValidator
 
 	// store is the unified analysis store for FileAnalysisRecord format.
-	// If nil, the validator uses the legacy HashManifest format.
 	store *fileanalysis.Store
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
-// This constructor uses the legacy HashManifest format for backward compatibility.
-func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
-	return newValidator(algorithm, hashDir, NewHybridHashFilePathGetter())
-}
-
-// NewWithAnalysisStore creates a Validator with unified analysis store support.
-// This uses the FileAnalysisRecord format for storing hash and analysis results.
+// The hash directory is created automatically if it does not exist.
+// This constructor uses the FileAnalysisRecord format for storing hash and analysis results.
 // The analysis store preserves existing fields (e.g., SyscallAnalysis) when updating hashes.
-//
-// Unlike New(), this constructor automatically creates the hash directory if it
-// does not exist (via fileanalysis.NewStore). The Store is created first to ensure
-// the directory exists before newValidator() validates it.
-func NewWithAnalysisStore(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
+func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
+	// Resolve to absolute path early, consistent with newValidator behavior.
+	var err error
+	hashDir, err = filepath.Abs(hashDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for hash directory: %w", err)
+	}
+
 	hashFilePathGetter := NewHybridHashFilePathGetter()
 
 	// Create analysis store first — this creates the directory if it doesn't exist.
@@ -129,14 +125,9 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 // Record calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
-// In the legacy HashManifest format, hash collisions (different file paths with the same
-// hash) always return an error regardless of force. When using NewWithAnalysisStore
-// (FileAnalysisRecord format), records are stored by file path, so collisions between
-// different files with identical content are not detected by design.
-//
-// If the Validator was created with NewWithAnalysisStore, the hash is saved in
-// FileAnalysisRecord format which preserves existing fields (e.g., SyscallAnalysis).
-// Otherwise, the legacy HashManifest format is used.
+// Records are stored by file path (FileAnalysisRecord format), so identical content in
+// different files does not cause a collision error.
+// Existing fields (e.g., SyscallAnalysis) in the record are preserved when updating.
 func (v *Validator) Record(filePath string, force bool) (string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
@@ -244,9 +235,6 @@ func (v *Validator) recordWithHashManifest(targetPath common.ResolvedPath, hash,
 
 // Verify checks if the file at filePath matches its recorded hash.
 // Returns ErrMismatch if the hashes don't match, or ErrHashFileNotFound if no hash is recorded.
-//
-// If the Validator was created with NewWithAnalysisStore, verification uses
-// FileAnalysisRecord format. Otherwise, the legacy HashManifest format is used.
 func (v *Validator) Verify(filePath string) error {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
@@ -293,7 +281,7 @@ func (v *Validator) verifyWithAnalysisStore(filePath common.ResolvedPath, actual
 
 // verifyWithHashManifest verifies the hash using the legacy HashManifest format.
 func (v *Validator) verifyWithHashManifest(targetPath common.ResolvedPath, actualHash string) error {
-	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return err
 	}
@@ -305,26 +293,27 @@ func (v *Validator) verifyWithHashManifest(targetPath common.ResolvedPath, actua
 	return nil
 }
 
-// readAndParseHashFile reads and parses a hash file, returning the file path and hash value.
+// readAndParseHashFile reads and parses a hash file, returning the expected hash value.
 // It returns an error if the file cannot be read, the JSON is invalid, or the hash file format is incorrect.
-func (v *Validator) readAndParseHashFile(targetPath common.ResolvedPath) (string, string, error) {
+func (v *Validator) readAndParseHashFile(targetPath common.ResolvedPath) (string, error) {
 	// Get the path to the hash file
 	hashFilePath, err := v.GetHashFilePath(targetPath)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	// Read the stored hash file
 	hashFileContent, err := safefileio.SafeReadFile(hashFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", "", ErrHashFileNotFound
+			return "", ErrHashFileNotFound
 		}
-		return "", "", fmt.Errorf("failed to read hash file: %w", err)
+		return "", fmt.Errorf("failed to read hash file: %w", err)
 	}
 
 	// Parse and validate the hash file content
-	return v.parseAndValidateHashFile(hashFileContent, targetPath)
+	_, hash, err := v.parseAndValidateHashFile(hashFileContent, targetPath)
+	return hash, err
 }
 
 // validatePath validates and normalizes the given file path.
@@ -416,7 +405,7 @@ func (v *Validator) VerifyFromHandle(file io.ReadSeeker, targetPath common.Resol
 	}
 
 	// Read recorded hash (legacy format)
-	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return err
 	}
@@ -485,7 +474,7 @@ func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readCon
 	}
 
 	// Get expected hash (legacy format)
-	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return nil, err
 	}

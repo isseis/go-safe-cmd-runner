@@ -163,13 +163,14 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	_, err = validator.Record(symlinkPath, false)
 	assert.NoError(t, err, "Record failed")
 
-	targetPath, err := validatePath(symlinkPath)
-	assert.NoError(t, err, "validatePath failed")
+	// Use store.Load() to verify the recorded path and hash
+	store := validator.GetStore()
+	require.NotNil(t, store, "Store should not be nil")
 
-	recordedPath, expectedHash, err := validator.readAndParseHashFile(targetPath)
-	assert.NoError(t, err, "readAndParseHashFile failed")
-	assert.Equal(t, expectedPath, recordedPath, "Expected recorded path '%s', got '%s'", expectedPath, recordedPath)
-	assert.NotEmpty(t, expectedHash, "Expected non-empty hash, got empty hash")
+	record, err := store.Load(common.ResolvedPath(resolvedSymlinkPath))
+	assert.NoError(t, err, "store.Load failed")
+	assert.Equal(t, expectedPath, record.FilePath, "Expected recorded path '%s', got '%s'", expectedPath, record.FilePath)
+	assert.NotEmpty(t, record.ContentHash, "Expected non-empty content hash, got empty")
 }
 
 func TestValidator_Verify_Symlink(t *testing.T) {
@@ -322,17 +323,22 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	// Create the hash directory
 	require.NoError(t, os.MkdirAll(filepath.Dir(hashFilePath), 0o750), "Failed to create hash directory")
 
-	// Create an empty hash file
+	// Create an empty (corrupted) hash file
 	require.NoError(t, os.WriteFile(hashFilePath, []byte(""), 0o640), "Failed to create empty hash file")
 
-	// Test Record with empty hash file - this should return ErrInvalidManifestFormat
-	_, err = validator.Record(testFilePath, false)
-	assert.Error(t, err, "Expected error with empty hash file")
-	assert.ErrorIs(t, err, ErrInvalidManifestFormat, "Expected ErrInvalidManifestFormat")
+	// With the FileAnalysisRecord format, a corrupted/empty file is treated as "no valid record"
+	// and is overwritten. Record() should succeed, creating a valid record.
+	hashFile, err := validator.Record(testFilePath, false)
+	require.NoError(t, err, "Record should succeed by overwriting the corrupted empty file")
+
+	// The record file should now contain valid content
+	content, err := os.ReadFile(hashFile)
+	require.NoError(t, err, "Failed to read hash file")
+	assert.NotEmpty(t, content, "Hash file should not be empty after Record")
 }
 
-// TestValidator_ManifestFormat tests that hash files are created in manifest format
-func TestValidator_ManifestFormat(t *testing.T) {
+// TestValidator_FileAnalysisRecordFormat tests that hash files are created in FileAnalysisRecord format
+func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a test file
@@ -347,24 +353,18 @@ func TestValidator_ManifestFormat(t *testing.T) {
 	_, err = validator.Record(testFilePath, false)
 	require.NoError(t, err, "Record failed")
 
-	// Get the hash file path
-	hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
-	require.NoError(t, err, "GetHashFilePath failed")
+	// Load from store and verify the FileAnalysisRecord format
+	store := validator.GetStore()
+	require.NotNil(t, store, "Store should not be nil")
 
-	// Read the hash file content
-	content, err := os.ReadFile(hashFilePath)
-	require.NoError(t, err, "Failed to read hash file")
+	record, err := store.Load(common.ResolvedPath(testFilePath))
+	require.NoError(t, err, "Failed to load record from store")
 
-	// Parse and validate the manifest content
-	var manifest HashManifest
-	require.NoError(t, json.Unmarshal(content, &manifest), "Failed to parse manifest")
-
-	// Verify the manifest structure
-	assert.Equal(t, HashManifestVersion, manifest.Version, "Expected version %s, got %s", HashManifestVersion, manifest.Version)
-	assert.Equal(t, HashManifestFormat, manifest.Format, "Expected format %s, got %s", HashManifestFormat, manifest.Format)
-	assert.NotEmpty(t, manifest.File.Path, "File path is empty")
-	assert.Equal(t, "sha256", manifest.File.Hash.Algorithm, "Expected algorithm sha256, got %s", manifest.File.Hash.Algorithm)
-	assert.NotEmpty(t, manifest.File.Hash.Value, "Hash value is empty")
+	// Verify the record fields
+	assert.Equal(t, testFilePath, record.FilePath, "File path is empty")
+	assert.True(t, strings.HasPrefix(record.ContentHash, "sha256:"),
+		"ContentHash should have sha256: prefix, got: %s", record.ContentHash)
+	assert.False(t, record.UpdatedAt.IsZero(), "UpdatedAt should be set")
 }
 
 func TestValidator_Record(t *testing.T) {
@@ -615,33 +615,30 @@ func TestValidator_HashAlgorithmConsistency(t *testing.T) {
 	err = validator.Verify(testFilePath)
 	assert.NoError(t, err, "Verification failed - this indicates hash algorithm inconsistency")
 
-	// Additional verification: Check that the hash file contains the expected algorithm name and hash
+	// Additional verification: Check that the hash file (FileAnalysisRecord) contains
+	// the expected algorithm name and hash in the content_hash field.
 	hashFileContent, err := testSafeReadFile(tempDir, hashFilePath)
 	require.NoError(t, err, "Failed to read hash file")
 
-	var manifest map[string]any
-	err = json.Unmarshal(hashFileContent, &manifest)
+	var record map[string]any
+	err = json.Unmarshal(hashFileContent, &record)
 	require.NoError(t, err, "Failed to unmarshal hash file")
 
-	// Verify the file structure: manifest.file.hash.algorithm and manifest.file.hash.value
-	require.Contains(t, manifest, "file", "Hash file should contain 'file' section")
-	fileSection, ok := manifest["file"].(map[string]any)
-	require.True(t, ok, "File section should be a map")
+	// Verify the FileAnalysisRecord structure: record["content_hash"] = "mock:<hash>"
+	require.Contains(t, record, "content_hash", "Hash file should contain 'content_hash' field")
+	contentHash, ok := record["content_hash"].(string)
+	require.True(t, ok, "content_hash should be a string")
 
-	require.Contains(t, fileSection, "hash", "File section should contain 'hash'")
-	hashSection, ok := fileSection["hash"].(map[string]any)
-	require.True(t, ok, "Hash section should be a map")
-
-	// Verify the algorithm name is correctly stored
-	require.Contains(t, hashSection, "algorithm", "Hash section should contain 'algorithm'")
-	assert.Equal(t, "mock", hashSection["algorithm"], "Hash file should contain the correct algorithm name")
+	// Verify the algorithm name is correctly stored as prefix
+	assert.True(t, strings.HasPrefix(contentHash, "mock:"),
+		"content_hash should have 'mock:' prefix, got: %s", contentHash)
 
 	// Verify the hash value is what MockHashAlgorithm would produce
-	expectedHash, err := mockAlgo.Sum(strings.NewReader(testContent))
+	expectedHashValue, err := mockAlgo.Sum(strings.NewReader(testContent))
 	require.NoError(t, err, "Failed to calculate expected hash")
 
-	require.Contains(t, hashSection, "value", "Hash section should contain 'value'")
-	assert.Equal(t, expectedHash, hashSection["value"], "Hash file should contain the hash from MockHashAlgorithm")
+	assert.Equal(t, "mock:"+expectedHashValue, contentHash,
+		"content_hash should contain the hash from MockHashAlgorithm")
 }
 
 // TestValidator_CrossAlgorithmVerificationFails tests that verification properly fails when
@@ -664,10 +661,11 @@ func TestValidator_CrossAlgorithmVerificationFails(t *testing.T) {
 	sha256Validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create SHA-256 validator")
 
-	// This should fail due to algorithm mismatch
+	// This should fail because the stored hash uses mock: prefix but sha256 validator
+	// computes sha256: prefix — the two content_hash values will not match.
 	err = sha256Validator.Verify(testFilePath)
 	assert.Error(t, err, "Cross-algorithm verification should fail")
-	assert.Contains(t, err.Error(), "algorithm mismatch", "Error should indicate algorithm mismatch")
+	assert.ErrorIs(t, err, ErrMismatch, "Expected ErrMismatch for cross-algorithm verification")
 }
 
 // TestValidator_VerifyAndRead tests the VerifyAndRead method which atomically
@@ -981,13 +979,13 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 	})
 }
 
-// TestNewWithAnalysisStore_RecordAndVerify tests that NewWithAnalysisStore creates a validator
+// TestNew_RecordAndVerify tests that New creates a validator
 // that uses the FileAnalysisRecord format and preserves existing fields.
-func TestNewWithAnalysisStore_RecordAndVerify(t *testing.T) {
+func TestNew_RecordAndVerify(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a validator with analysis store support
-	validator, err := NewWithAnalysisStore(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator with analysis store")
 
 	// Verify that GetStore returns a non-nil store
@@ -1032,13 +1030,13 @@ func TestNewWithAnalysisStore_RecordAndVerify(t *testing.T) {
 	})
 }
 
-// TestNewWithAnalysisStore_PreservesExistingFields tests that updating a record
+// TestNew_PreservesExistingFields tests that updating a record
 // preserves existing fields like SyscallAnalysis.
-func TestNewWithAnalysisStore_PreservesExistingFields(t *testing.T) {
+func TestNew_PreservesExistingFields(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a validator with analysis store support
-	validator, err := NewWithAnalysisStore(&SHA256{}, tempDir)
+	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator with analysis store")
 
 	store := validator.GetStore()
@@ -1081,27 +1079,26 @@ func TestNewWithAnalysisStore_PreservesExistingFields(t *testing.T) {
 	assert.Equal(t, "test reason", record.SyscallAnalysis.HighRiskReasons[0], "HighRiskReason content should be preserved")
 }
 
-// TestNewWithAnalysisStore_CreatesDirectory tests that NewWithAnalysisStore
+// TestNew_CreatesDirectory tests that New
 // automatically creates the hash directory if it doesn't exist.
-// This verifies the fix for the ordering bug where New() was called before
-// NewStore(), causing a failure because newValidator() requires the directory
-// to already exist, while NewStore() is the one that creates it.
-func TestNewWithAnalysisStore_CreatesDirectory(t *testing.T) {
+// This verifies that New() handles directory creation correctly via
+// NewStore(), which creates it before newValidator() validates it.
+func TestNew_CreatesDirectory(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "nonexistent_subdir")
 
 	// Verify directory does not exist yet
 	_, err := os.Stat(hashDir)
-	require.True(t, os.IsNotExist(err), "hashDir should not exist before calling NewWithAnalysisStore")
+	require.True(t, os.IsNotExist(err), "hashDir should not exist before calling New")
 
-	// NewWithAnalysisStore should succeed even though hashDir doesn't exist
-	validator, err := NewWithAnalysisStore(&SHA256{}, hashDir)
-	require.NoError(t, err, "NewWithAnalysisStore should create the directory automatically")
+	// New should succeed even though hashDir doesn't exist
+	validator, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err, "New should create the directory automatically")
 	require.NotNil(t, validator)
 
 	// Verify directory was created
 	info, err := os.Stat(hashDir)
-	require.NoError(t, err, "hashDir should exist after NewWithAnalysisStore")
+	require.NoError(t, err, "hashDir should exist after New")
 	assert.True(t, info.IsDir(), "hashDir should be a directory")
 
 	// Verify the store is usable
