@@ -200,111 +200,6 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 	assert.NoError(t, err, "Verify failed")
 }
 
-type CollidingHashFilePathGetter struct{}
-
-// GetHashFilePath always returns the same path, so it simulates a hash collision.
-func (t *CollidingHashFilePathGetter) GetHashFilePath(hashDir string, _ common.ResolvedPath) (string, error) {
-	return filepath.Join(hashDir, "test.json"), nil
-}
-
-func TestValidator_HashCollision(t *testing.T) {
-	tempDir := safeTempDir(t)
-	hashDir := filepath.Join(tempDir, "hashes")
-
-	// Create the hash directory
-	require.NoError(t, os.MkdirAll(hashDir, 0o755), "Failed to create hash directory")
-
-	// Create two different test files that will have the same hash with our test algorithm
-	file1Path := filepath.Join(tempDir, "file1.txt")
-	file2Path := filepath.Join(tempDir, "file2.txt")
-
-	// Create the files with different content but same hash (due to our test algorithm)
-	require.NoError(t, os.WriteFile(file1Path, []byte("test content 1"), 0o644), "Failed to create test file 1")
-
-	require.NoError(t, os.WriteFile(file2Path, []byte("test content 2"), 0o644), "Failed to create test file 2")
-
-	// Create a validator with a colliding hash algorithm
-	// This algorithm will return the same hash for any input
-	fixedHash := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-	validator, err := newValidator(NewCollidingHashAlgorithm(fixedHash), hashDir, &CollidingHashFilePathGetter{})
-	require.NoError(t, err, "Failed to create validator")
-
-	// Record the first file - should succeed
-	t.Run("Record first file", func(t *testing.T) {
-		_, err := validator.Record(file1Path, false)
-		require.NoError(t, err, "Failed to record first file")
-		// Verify the hash file was created with the correct content
-		hashFilePath := filepath.Join(hashDir, "test.json")
-		_, err = testSafeReadFile(hashDir, hashFilePath)
-		require.NoError(t, err, "Failed to read hash file")
-	})
-
-	// Verify the first file - should succeed
-	t.Run("Verify first file", func(t *testing.T) {
-		// The first file was recorded, so verification should succeed
-		err := validator.Verify(file1Path)
-		assert.NoError(t, err, "Failed to verify first file")
-	})
-
-	// Record the second file - should fail with hash collision
-	t.Run("Record second file with collision", func(t *testing.T) {
-		_, err := validator.Record(file2Path, false)
-		assert.Error(t, err, "Expected error when recording second file with same hash")
-		assert.ErrorIs(t, err, ErrHashCollision, "Expected ErrHashCollision")
-	})
-
-	// Now test the Verify function with a hash collision
-	t.Run("Verify with hash collision", func(t *testing.T) {
-		// Create a new test file that will have the same hash as file1
-		file3Path := filepath.Join(tempDir, "file3.txt")
-		require.NoError(t, os.WriteFile(file3Path, []byte("different content"), 0o644), "Failed to create test file 3")
-
-		// Get the hash file path for file1
-		hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(file1Path))
-		require.NoError(t, err, "Failed to get hash file path")
-
-		// Verify the hash file exists
-		_, err = os.Lstat(hashFilePath)
-		require.NoError(t, err, "Hash file should exist: %s", hashFilePath)
-
-		// Read the original hash file content using test-safe function
-		originalContent, err := testSafeReadFile(hashDir, hashFilePath)
-		require.NoError(t, err, "Failed to read hash file")
-
-		// Restore the original content after the test
-		defer func() {
-			if err := os.WriteFile(hashFilePath, originalContent, 0o644); err != nil {
-				t.Logf("Warning: failed to restore original hash file: %v", err)
-			}
-		}()
-
-		// Create a modified hash manifest with file3's path but file1's hash
-		modifiedHashManifest := HashManifest{
-			Version: HashManifestVersion,
-			Format:  HashManifestFormat,
-			File: FileInfo{
-				Path: file3Path,
-				Hash: HashInfo{
-					Algorithm: "sha256",
-					Value:     fixedHash,
-				},
-			},
-		}
-
-		// Write the modified hash manifest
-		jsonData, err := json.MarshalIndent(modifiedHashManifest, "", "  ")
-		require.NoError(t, err, "Failed to marshal manifest")
-		jsonData = append(jsonData, '\n')
-
-		require.NoError(t, os.WriteFile(hashFilePath, jsonData, 0o644), "Failed to modify hash file")
-
-		// Now try to verify file1 - it should detect the path mismatch
-		err = validator.Verify(file1Path)
-		assert.Error(t, err, "Expected error when verifying with hash collision")
-		assert.ErrorIs(t, err, ErrHashCollision, "Expected ErrHashCollision")
-	})
-}
-
 func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	tempDir := safeTempDir(t)
 
@@ -365,79 +260,6 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	assert.True(t, strings.HasPrefix(record.ContentHash, "sha256:"),
 		"ContentHash should have sha256: prefix, got: %s", record.ContentHash)
 	assert.False(t, record.UpdatedAt.IsZero(), "UpdatedAt should be set")
-}
-
-func TestValidator_Record(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create test files
-	testFile1Path := filepath.Join(tempDir, "test1.txt")
-	testFile2Path := filepath.Join(tempDir, "test2.txt")
-
-	require.NoError(t, os.WriteFile(testFile1Path, []byte("content1"), 0o644), "Failed to create test file 1")
-	require.NoError(t, os.WriteFile(testFile2Path, []byte("content2"), 0o644), "Failed to create test file 2")
-
-	// Create mock hash file path getter to simulate hash collision
-	mockGetter := &MockHashFilePathGetter{
-		filePath: filepath.Join(tempDir, "collision.json"),
-	}
-
-	testValidator := &Validator{
-		algorithm:          &SHA256{},
-		hashDir:            tempDir,
-		hashFilePathGetter: mockGetter,
-	}
-
-	t.Run("Record without force on new file", func(t *testing.T) {
-		hashFile, err := testValidator.Record(testFile1Path, false)
-		require.NoError(t, err, "Failed to record hash without force")
-
-		// Verify the hash file was created
-		_, err = os.Stat(hashFile)
-		assert.NoError(t, err, "Hash file should exist: %s", hashFile)
-	})
-
-	t.Run("Record without force on existing file with different path should fail", func(t *testing.T) {
-		// Try to record the second file which will have the same hash file path
-		_, err := testValidator.Record(testFile2Path, false)
-		assert.Error(t, err, "Expected error for hash collision")
-		assert.ErrorIs(t, err, ErrHashCollision, "Expected ErrHashCollision")
-	})
-
-	t.Run("Record with force on existing file with different path should still fail", func(t *testing.T) {
-		// Try to record the second file with force=true - should still fail due to hash collision
-		_, err := testValidator.Record(testFile2Path, true)
-		assert.Error(t, err, "Expected error for hash collision even with force=true")
-		assert.ErrorIs(t, err, ErrHashCollision, "Expected ErrHashCollision")
-	})
-
-	t.Run("Record with force on same file should succeed", func(t *testing.T) {
-		// Try to record the same file again with force=true - should succeed
-		hashFile, err := testValidator.Record(testFile1Path, true)
-		require.NoError(t, err, "Failed to record hash with force for same file")
-
-		// Verify the hash file was updated
-		_, err = os.Stat(hashFile)
-		assert.NoError(t, err, "Hash file should exist: %s", hashFile)
-
-		// Verify the content still has the correct file path
-		content, err := os.ReadFile(hashFile)
-		require.NoError(t, err, "Failed to read hash file")
-
-		var manifest HashManifest
-		require.NoError(t, json.Unmarshal(content, &manifest), "Failed to unmarshal hash file")
-
-		assert.Equal(t, testFile1Path, manifest.File.Path, "Expected path %s, got %s", testFile1Path, manifest.File.Path)
-	})
-
-	t.Run("Record without force on same file should fail", func(t *testing.T) {
-		// Try to record the same file again without force - should fail because file exists
-		_, err := testValidator.Record(testFile1Path, false)
-		assert.Error(t, err, "Expected error when recording same file without force")
-
-		// The error should be file exists error, not hash collision
-		assert.NotErrorIs(t, err, ErrHashCollision, "Got ErrHashCollision for same file, expected file exists error")
-	})
 }
 
 // TestValidator_VerifyFromHandle tests the VerifyFromHandle method
@@ -849,17 +671,12 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 		restrictedPath, err := common.NewResolvedPath(restrictedFile)
 		require.NoError(t, err, "Failed to create resolved path")
 
-		hashFilePath, err := validator.GetHashFilePath(restrictedPath)
-		require.NoError(t, err, "Failed to get hash file path")
-
-		// Create the hash directory
-		err = os.MkdirAll(filepath.Dir(hashFilePath), 0o750)
-		require.NoError(t, err, "Failed to create hash directory")
-
-		// Create a mock hash manifest for the restricted file
-		manifest := createHashManifest(restrictedPath, "mock_hash_for_restricted_file", "SHA256")
-		err = validator.writeHashManifest(hashFilePath, manifest, false)
-		require.NoError(t, err, "Failed to write hash manifest")
+		// Create a FileAnalysisRecord for the restricted file using the analysis store.
+		err = validator.GetStore().Update(restrictedPath, func(record *fileanalysis.Record) error {
+			record.ContentHash = "sha256:mock_hash_for_restricted_file"
+			return nil
+		})
+		require.NoError(t, err, "Failed to write hash record")
 
 		// Use failing mock privilege manager
 		mockPM := privtesting.NewFailingMockPrivilegeManager(true)
@@ -885,21 +702,16 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 		// This test validates the error handling when privilege escalation would be needed
 		restrictedFile := "/root/some_restricted_file.txt"
 
-		// Create hash file for this restricted path (simulating it was recorded when accessible)
+		// Create hash record for this restricted path (simulating it was recorded when accessible)
 		restrictedPath, err := common.NewResolvedPath(restrictedFile)
 		require.NoError(t, err, "Failed to create resolved path")
 
-		hashFilePath, err := validator.GetHashFilePath(restrictedPath)
-		require.NoError(t, err, "Failed to get hash file path")
-
-		// Create the hash directory
-		err = os.MkdirAll(filepath.Dir(hashFilePath), 0o750)
-		require.NoError(t, err, "Failed to create hash directory")
-
-		// Create a hash manifest
-		manifest := createHashManifest(restrictedPath, "some_hash_value", "SHA256")
-		err = validator.writeHashManifest(hashFilePath, manifest, false)
-		require.NoError(t, err, "Failed to write hash manifest")
+		// Create a FileAnalysisRecord for the restricted file using the analysis store.
+		err = validator.GetStore().Update(restrictedPath, func(record *fileanalysis.Record) error {
+			record.ContentHash = "sha256:some_hash_value"
+			return nil
+		})
+		require.NoError(t, err, "Failed to write hash record")
 
 		// Create a mock privilege manager
 		mockPM := privtesting.NewMockPrivilegeManager(true)

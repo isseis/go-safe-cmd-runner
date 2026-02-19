@@ -22,23 +22,11 @@ var (
 	// ErrInvalidHashFileFormat indicates that the hash file has an invalid format.
 	ErrInvalidHashFileFormat = errors.New("invalid hash file format")
 
-	// ErrHashCollision indicates a hash collision was detected.
-	ErrHashCollision = errors.New("hash collision detected")
-
 	// ErrInvalidFilePathFormat indicates an invalid file path format was provided.
 	ErrInvalidFilePathFormat = errors.New("invalid file path format")
 
 	// ErrSuspiciousFilePath indicates a potentially malicious file path was detected.
 	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
-
-	// ErrInvalidManifestFormat indicates that the hash file is not in valid manifest format.
-	ErrInvalidManifestFormat = errors.New("invalid manifest format in hash file")
-
-	// ErrUnsupportedVersion indicates that the hash file version is not supported.
-	ErrUnsupportedVersion = errors.New("unsupported hash file version")
-
-	// ErrJSONParseError indicates that JSON parsing failed.
-	ErrJSONParseError = errors.New("failed to parse JSON hash file")
 
 	// ErrHashFileExists indicates that the hash file already exists.
 	ErrHashFileExists = errors.New("hash file already exists")

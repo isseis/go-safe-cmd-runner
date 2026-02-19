@@ -70,7 +70,7 @@
 **作業内容**:
 - [x] `VerifyFromHandle()` を修正: `readAndParseHashFile()` の代わりに `store.Load()` で期待ハッシュを取得
 - [x] `verifyAndReadContent()` を修正: 同上
-- [-] `Record()` と `Verify()` から `if v.store != nil` 分岐を削除し、`store` を常に使用
+- [x] `Record()` と `Verify()` から `if v.store != nil` 分岐を削除し、`store` を常に使用
 
 **成功条件**: 既存テストがすべてパスすること（この時点では `New()` も `NewWithAnalysisStore()` も残す）
 
@@ -103,14 +103,14 @@
 **対象ファイル**: `internal/filevalidator/`
 
 **作業内容**:
-- [ ] `recordWithHashManifest()` を削除
-- [ ] `verifyWithHashManifest()` を削除
-- [ ] `readAndParseHashFile()` を削除
-- [ ] `parseAndValidateHashFile()` を削除
-- [ ] `writeHashManifest()` を削除
-- [ ] `hash_manifest.go` ファイル全体を削除
-- [ ] 不要になったエラー定数を削除: `ErrHashCollision`, `ErrInvalidManifestFormat`, `ErrUnsupportedVersion`, `ErrJSONParseError`
-- [ ] 不要になった import を整理
+- [x] `recordWithHashManifest()` を削除
+- [x] `verifyWithHashManifest()` を削除
+- [x] `readAndParseHashFile()` を削除
+- [x] `parseAndValidateHashFile()` を削除
+- [x] `writeHashManifest()` を削除
+- [x] `hash_manifest.go` ファイル全体を削除
+- [x] 不要になったエラー定数を削除: `ErrHashCollision`, `ErrInvalidManifestFormat`, `ErrUnsupportedVersion`, `ErrJSONParseError`
+- [x] 不要になった import を整理
 
 **成功条件**: `make test && make lint` がパスすること
 
