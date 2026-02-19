@@ -180,7 +180,6 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 
 // syscallAnalysisContext holds resources for syscall analysis.
 type syscallAnalysisContext struct {
-	store        *fileanalysis.Store
 	syscallStore fileanalysis.SyscallAnalysisStore
 	analyzer     *elfanalyzer.SyscallAnalyzer
 	hashAlgo     filevalidator.HashAlgorithm
@@ -196,7 +195,6 @@ func newSyscallAnalysisContext(hashDir string) (*syscallAnalysisContext, error) 
 	}
 
 	return &syscallAnalysisContext{
-		store:        store,
 		syscallStore: fileanalysis.NewSyscallAnalysisStore(store),
 		analyzer:     elfanalyzer.NewSyscallAnalyzer(),
 		hashAlgo:     &filevalidator.SHA256{},
