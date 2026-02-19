@@ -32,10 +32,12 @@ type SyscallAnalysisResult struct {
 type SyscallAnalysisStore interface {
 	// LoadSyscallAnalysis loads syscall analysis from storage.
 	// `expectedHash` contains both the hash algorithm and the expected hash value.
-	// Returns (result, true, nil) if found and hash matches.
-	// Returns (nil, false, nil) if not found or hash mismatch.
-	// Returns (nil, false, error) on other errors.
-	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, bool, error)
+	// Returns (result, nil) if found and hash matches.
+	// Returns (nil, ErrRecordNotFound) if record not found.
+	// Returns (nil, ErrHashMismatch) if hash mismatch.
+	// Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
+	// Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
+	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
 
 	// SaveSyscallAnalysis saves the syscall analysis result.
 	SaveSyscallAnalysis(filePath, fileHash string, result *SyscallAnalysisResult) error
@@ -72,30 +74,32 @@ func (s *syscallAnalysisStoreImpl) SaveSyscallAnalysis(filePath, fileHash string
 }
 
 // LoadSyscallAnalysis loads the syscall analysis result.
-// Returns (result, true, nil) if found and hash matches.
-// Returns (nil, false, nil) if not found or hash mismatch.
-// Returns (nil, false, error) on other errors.
-func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, bool, error) {
+// Returns (result, nil) if found and hash matches.
+// Returns (nil, ErrRecordNotFound) if record not found.
+// Returns (nil, ErrHashMismatch) if hash mismatch.
+// Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
+// Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
+func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, error) {
 	record, err := s.store.Load(filePath)
 	if err != nil {
 		if errors.Is(err, ErrRecordNotFound) {
-			return nil, false, nil
+			return nil, ErrRecordNotFound
 		}
-		// For schema mismatch or corrupted records, return not found
+		// For schema mismatch or corrupted records, return as-is
 		if errors.As(err, new(*SchemaVersionMismatchError)) || errors.As(err, new(*RecordCorruptedError)) {
-			return nil, false, nil
+			return nil, err
 		}
-		return nil, false, err
+		return nil, err
 	}
 
 	// Check hash match
 	if record.ContentHash != expectedHash {
-		return nil, false, nil
+		return nil, ErrHashMismatch
 	}
 
 	// Check if syscall analysis exists
 	if record.SyscallAnalysis == nil {
-		return nil, false, nil
+		return nil, ErrNoSyscallAnalysis
 	}
 
 	// Convert SyscallAnalysisData to SyscallAnalysisResult
@@ -107,5 +111,5 @@ func (s *syscallAnalysisStoreImpl) LoadSyscallAnalysis(filePath, expectedHash st
 		Summary:            record.SyscallAnalysis.Summary,
 	}
 
-	return result, true, nil
+	return result, nil
 }

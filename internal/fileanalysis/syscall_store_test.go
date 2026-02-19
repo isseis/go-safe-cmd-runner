@@ -52,9 +52,8 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load with matching hash
-	loadedResult, found, err := store.LoadSyscallAnalysis(testFile, fileHash)
+	loadedResult, err := store.LoadSyscallAnalysis(testFile, fileHash)
 	require.NoError(t, err)
-	assert.True(t, found)
 	require.NotNil(t, loadedResult)
 
 	// Verify loaded result
@@ -91,9 +90,8 @@ func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to load with different hash
-	loadedResult, found, err := store.LoadSyscallAnalysis(testFile, "sha256:differenthash")
-	require.NoError(t, err)
-	assert.False(t, found, "should not find result with mismatched hash")
+	loadedResult, err := store.LoadSyscallAnalysis(testFile, "sha256:differenthash")
+	assert.ErrorIs(t, err, ErrHashMismatch, "should return ErrHashMismatch for mismatched hash")
 	assert.Nil(t, loadedResult)
 }
 
@@ -118,10 +116,9 @@ func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Try to load - should return not found since no syscall analysis
-	loadedResult, found, err := store.LoadSyscallAnalysis(testFile, "sha256:abc123")
-	require.NoError(t, err)
-	assert.False(t, found, "should not find result when syscall analysis is nil")
+	// Try to load - should return ErrNoSyscallAnalysis since no syscall analysis
+	loadedResult, err := store.LoadSyscallAnalysis(testFile, "sha256:abc123")
+	assert.ErrorIs(t, err, ErrNoSyscallAnalysis, "should return ErrNoSyscallAnalysis when syscall analysis is nil")
 	assert.Nil(t, loadedResult)
 }
 
@@ -135,9 +132,8 @@ func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
 	store := NewSyscallAnalysisStore(fileStore)
 
 	// Try to load non-existent record
-	loadedResult, found, err := store.LoadSyscallAnalysis("/nonexistent/file.bin", "sha256:anyhash")
-	require.NoError(t, err)
-	assert.False(t, found)
+	loadedResult, err := store.LoadSyscallAnalysis("/nonexistent/file.bin", "sha256:anyhash")
+	assert.ErrorIs(t, err, ErrRecordNotFound, "should return ErrRecordNotFound for non-existent record")
 	assert.Nil(t, loadedResult)
 }
 
@@ -179,9 +175,8 @@ func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
 	err = store.SaveSyscallAnalysis(testFile, fileHash, result)
 	require.NoError(t, err)
 
-	loadedResult, found, err := store.LoadSyscallAnalysis(testFile, fileHash)
+	loadedResult, err := store.LoadSyscallAnalysis(testFile, fileHash)
 	require.NoError(t, err)
-	assert.True(t, found)
 	require.NotNil(t, loadedResult)
 
 	// Verify high risk information
