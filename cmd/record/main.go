@@ -55,17 +55,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 0
 		}
 		printUsage(fs, stderr)
-		_, _ = fmt.Fprintf(stderr, "Error: %v\n", err)
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
 		return 1
 	}
 
 	if cfg.usedDeprecated {
-		_, _ = fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.")
+		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
 	}
 
 	recorder, err := validatorFactory(cfg.hashDir)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "Error creating validator: %v\n", err)
+		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
 		return 1
 	}
 
@@ -123,7 +123,7 @@ func printUsage(fs *flag.FlagSet, w io.Writer) {
 	if fs == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0])) //nolint:errcheck
 	fs.PrintDefaults()
 }
 
@@ -133,7 +133,7 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 	if total == 1 {
 		label = "file"
 	}
-	_, _ = fmt.Fprintf(stdout, "Processing %d %s...\n", total, label)
+	fmt.Fprintf(stdout, "Processing %d %s...\n", total, label) //nolint:errcheck
 	successes := 0
 	failures := 0
 
@@ -143,35 +143,35 @@ func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Wr
 		var err error
 		syscallCtx, err = newSyscallAnalysisContext(cfg.hashDir)
 		if err != nil {
-			_, _ = fmt.Fprintf(stderr, "Warning: Failed to initialize syscall analysis: %v\n", err)
+			fmt.Fprintf(stderr, "Warning: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
 			// Continue without syscall analysis
 		}
 	}
 
 	for idx, filePath := range cfg.files {
-		_, _ = fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath)
+		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck
 		hashFile, err := recorder.Record(filePath, cfg.force)
 		if err != nil {
 			failures++
-			_, _ = fmt.Fprintln(stdout, "FAILED")
-			_, _ = fmt.Fprintf(stderr, "Error recording hash for %s: %v\n", filePath, err)
+			fmt.Fprintln(stdout, "FAILED")                                          //nolint:errcheck
+			fmt.Fprintf(stderr, "Error recording hash for %s: %v\n", filePath, err) //nolint:errcheck
 			continue
 		}
 		successes++
-		_, _ = fmt.Fprintf(stdout, "OK (%s)\n", hashFile)
+		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck
 
 		// Perform syscall analysis if enabled
 		if syscallCtx != nil {
 			if err := syscallCtx.analyzeFile(filePath); err != nil {
 				// ErrNotELF and ErrNotStaticELF are expected for non-analyzable files
 				if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) {
-					_, _ = fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err)
+					fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck
 				}
 			}
 		}
 	}
 
-	_, _ = fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures)
+	fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures) //nolint:errcheck
 	if failures > 0 {
 		return 1
 	}

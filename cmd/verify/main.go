@@ -45,17 +45,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 0
 		}
 		printUsage(fs, stderr)
-		_, _ = fmt.Fprintf(stderr, "Error: %v\n", err)
+		fmt.Fprintf(stderr, "Error: %v\n", err) //nolint:errcheck
 		return 1
 	}
 
 	if cfg.usedDeprecated {
-		_, _ = fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.")
+		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
 	}
 
 	validator, err := validatorFactory(cfg.hashDir)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "Error creating validator: %v\n", err)
+		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
 		return 1
 	}
 
@@ -107,7 +107,7 @@ func printUsage(fs *flag.FlagSet, w io.Writer) {
 	if fs == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0]))
+	fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0])) //nolint:errcheck
 	fs.PrintDefaults()
 }
 
@@ -118,24 +118,24 @@ func processFiles(validator hashValidator, files []string, stdout, stderr io.Wri
 		label = "file"
 	}
 
-	_, _ = fmt.Fprintf(stdout, "Verifying %d %s...\n", total, label)
+	fmt.Fprintf(stdout, "Verifying %d %s...\n", total, label) //nolint:errcheck
 
 	successes := 0
 	failures := 0
 
 	for idx, filePath := range files {
-		_, _ = fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath)
+		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck
 		if err := validator.Verify(filePath); err != nil {
 			failures++
-			_, _ = fmt.Fprintln(stdout, "FAILED")
-			_, _ = fmt.Fprintf(stderr, "Verification failed for %s: %v\n", filePath, err)
+			fmt.Fprintln(stdout, "FAILED")                                         //nolint:errcheck
+			fmt.Fprintf(stderr, "Verification failed for %s: %v\n", filePath, err) //nolint:errcheck
 			continue
 		}
 		successes++
-		_, _ = fmt.Fprintln(stdout, "OK")
+		fmt.Fprintln(stdout, "OK") //nolint:errcheck
 	}
 
-	_, _ = fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures)
+	fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures) //nolint:errcheck
 	if failures > 0 {
 		return 1
 	}

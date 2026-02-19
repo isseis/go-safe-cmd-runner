@@ -380,10 +380,10 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 		}
 	} else {
 		// Text format: output immediately
-		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+		fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n") //nolint:errcheck
 		output := debuginfo.FormatInheritanceAnalysisText(analysis, groupSpec.Name)
 		if output != "" {
-			_, _ = fmt.Fprint(os.Stdout, output)
+			fmt.Fprint(os.Stdout, output) //nolint:errcheck
 		}
 	}
 }
