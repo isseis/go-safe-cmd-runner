@@ -134,9 +134,9 @@
 ### Step 6: ドキュメント・コメントの更新
 
 **作業内容**:
-- [ ] `validator.go` の `Record()`, `Verify()` 等の doc コメントから「legacy」「HashManifest」の記述を削除
-- [ ] `FileValidator` インターフェースの doc コメント更新
-- [ ] `Validator` 構造体の doc コメント更新
+- [x] `validator.go` の `Record()`, `Verify()` 等の doc コメントから「legacy」「HashManifest」の記述を削除
+- [x] `FileValidator` インターフェースの doc コメント更新
+- [x] `Validator` 構造体の doc コメント更新
 
 **成功条件**: `make test && make lint` がパスすること
 
