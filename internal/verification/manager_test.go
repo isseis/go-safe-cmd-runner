@@ -33,7 +33,7 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 // Helper to create a hash record file with wrong hash value in FileAnalysisRecord format.
 // Uses HybridHashFilePathGetter strategy (SubstitutionHashEscape for short paths)
 // Returns the path of the created hash file
-func createWrongHashManifest(hashDir, filePath, wrongHash string) (string, error) {
+func createWrongHashRecord(hashDir, filePath, wrongHash string) (string, error) {
 	// Use fileanalysis.Store to write a FileAnalysisRecord with wrong hash.
 	getter := filevalidator.NewHybridHashFilePathGetter()
 	store, err := fileanalysis.NewStore(hashDir, getter)
@@ -1396,7 +1396,7 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	hashFile, err := createWrongHashManifest(hashDir, testFile, wrongHash)
+	hashFile, err := createWrongHashRecord(hashDir, testFile, wrongHash)
 	require.NoError(t, err)
 
 	// Verify hash file was created
@@ -1449,7 +1449,7 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	_, err := createWrongHashManifest(hashDir, configFile, wrongHash)
+	_, err := createWrongHashRecord(hashDir, configFile, wrongHash)
 	require.NoError(t, err)
 
 	// Create manager in dry-run mode

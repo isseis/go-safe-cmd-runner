@@ -321,15 +321,6 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	assert.ErrorIs(t, err, ErrMismatch, "Expected ErrMismatch")
 }
 
-// MockHashFilePathGetter is a mock implementation for testing hash collisions
-type MockHashFilePathGetter struct {
-	filePath string
-}
-
-func (m *MockHashFilePathGetter) GetHashFilePath(_ string, _ common.ResolvedPath) (string, error) {
-	return m.filePath, nil
-}
-
 // TestValidator_VerifyWithPrivileges tests the VerifyWithPrivileges method
 func TestValidator_VerifyWithPrivileges(t *testing.T) {
 	tempDir := safeTempDir(t)

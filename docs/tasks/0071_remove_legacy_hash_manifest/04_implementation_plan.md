@@ -124,10 +124,10 @@
 - `internal/runner/bootstrap/config_test.go`
 
 **作業内容**:
-- [ ] `newValidator()` を直接使うテストを `New()` に移行
-- [ ] HashManifest 固有のテストを削除（マニフェストフォーマット検証、ハッシュ衝突テスト等）
-- [ ] `filevalidator.New` を使うテストのシグネチャ変更対応（`New` が `error` を返す形式は維持されるため軽微）
-- [ ] ベンチマークテストの更新
+- [x] `newValidator()` を直接使うテストを `New()` に移行
+- [x] HashManifest 固有のテストを削除（マニフェストフォーマット検証、ハッシュ衝突テスト等）
+- [x] `filevalidator.New` を使うテストのシグネチャ変更対応（`New` が `error` を返す形式は維持されるため軽微）
+- [x] ベンチマークテストの更新
 
 **成功条件**: `make test && make lint` がパスすること
 

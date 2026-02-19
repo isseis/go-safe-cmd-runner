@@ -31,37 +31,3 @@ func (m *MockHashAlgorithm) Sum(r io.Reader) (string, error) {
 	}
 	return hash, nil
 }
-
-// CollidingHashAlgorithm is a test implementation of HashAlgorithm that always returns the same hash.
-// This is used to test hash collision scenarios.
-type CollidingHashAlgorithm struct {
-	// The fixed hash value to return for all inputs
-	fixedHash string
-	// The fixed name to return for the hash file
-	fixedName string
-}
-
-// NewCollidingHashAlgorithm creates a new CollidingHashAlgorithm that always returns the given hash.
-// If name is empty, it defaults to "colliding".
-func NewCollidingHashAlgorithm(hash string) *CollidingHashAlgorithm {
-	return &CollidingHashAlgorithm{
-		fixedHash: hash,
-		fixedName: "colliding",
-	}
-}
-
-// WithName sets the name of the hash algorithm and returns the receiver for chaining.
-func (c *CollidingHashAlgorithm) WithName(name string) *CollidingHashAlgorithm {
-	c.fixedName = name
-	return c
-}
-
-// Name returns the fixed algorithm name.
-func (c *CollidingHashAlgorithm) Name() string {
-	return c.fixedName
-}
-
-// Sum always returns the fixed hash value, regardless of input.
-func (c *CollidingHashAlgorithm) Sum(_ io.Reader) (string, error) {
-	return c.fixedHash, nil
-}
