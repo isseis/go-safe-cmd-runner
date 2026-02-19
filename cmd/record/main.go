@@ -267,29 +267,11 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string) error {
 }
 
 // convertToFileanalysisResult converts elfanalyzer.SyscallAnalysisResult to fileanalysis.SyscallAnalysisResult.
-// This is necessary because the two packages have independent type definitions to avoid import cycles.
+// Both types embed common.SyscallAnalysisResultCore, enabling direct struct copy
+// without field-by-field assignment. The elfanalyzer-specific DecodeStats field
+// is intentionally excluded as it is not persisted to storage.
 func convertToFileanalysisResult(result *elfanalyzer.SyscallAnalysisResult) *fileanalysis.SyscallAnalysisResult {
-	syscalls := make([]fileanalysis.SyscallInfo, len(result.DetectedSyscalls))
-	for i, s := range result.DetectedSyscalls {
-		syscalls[i] = fileanalysis.SyscallInfo{
-			Number:              s.Number,
-			Name:                s.Name,
-			IsNetwork:           s.IsNetwork,
-			Location:            s.Location,
-			DeterminationMethod: s.DeterminationMethod,
-		}
-	}
-
 	return &fileanalysis.SyscallAnalysisResult{
-		Architecture:       result.Architecture,
-		DetectedSyscalls:   syscalls,
-		HasUnknownSyscalls: result.HasUnknownSyscalls,
-		HighRiskReasons:    result.HighRiskReasons,
-		Summary: fileanalysis.SyscallSummary{
-			HasNetworkSyscalls:  result.Summary.HasNetworkSyscalls,
-			IsHighRisk:          result.Summary.IsHighRisk,
-			TotalDetectedEvents: result.Summary.TotalDetectedEvents,
-			NetworkSyscallCount: result.Summary.NetworkSyscallCount,
-		},
+		SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
 	}
 }

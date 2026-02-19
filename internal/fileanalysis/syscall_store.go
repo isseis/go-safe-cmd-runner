@@ -9,23 +9,14 @@ import (
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 // This type mirrors elfanalyzer.SyscallAnalysisResult to avoid import cycles.
-// Type conversion between this and elfanalyzer.SyscallAnalysisResult is handled
-// by cmd/record (convertToFileanalysisResult).
+// Both types embed common.SyscallAnalysisResultCore, enabling direct struct copy
+// for type conversion between these packages.
 type SyscallAnalysisResult struct {
-	// Architecture is the ELF machine architecture that was analyzed (e.g., "x86_64").
-	Architecture string
-
-	// DetectedSyscalls contains all detected syscall events with their numbers.
-	DetectedSyscalls []SyscallInfo
-
-	// HasUnknownSyscalls indicates whether any syscall number could not be determined.
-	HasUnknownSyscalls bool
-
-	// HighRiskReasons explains why the analysis resulted in high risk, if applicable.
-	HighRiskReasons []string
-
-	// Summary provides aggregated information about the analysis.
-	Summary SyscallSummary
+	// SyscallAnalysisResultCore contains the common fields shared with
+	// elfanalyzer.SyscallAnalysisResult. Embedding ensures field-level
+	// consistency between packages and enables direct struct copy for
+	// type conversion.
+	common.SyscallAnalysisResultCore
 }
 
 // SyscallAnalysisStore defines the interface for storing and loading syscall analysis results.
@@ -67,13 +58,11 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 	}
 	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash
+		// Copy the shared core fields directly via the embedded struct,
+		// then set the fileanalysis-specific AnalyzedAt field.
 		record.SyscallAnalysis = &SyscallAnalysisData{
-			Architecture:       result.Architecture,
-			AnalyzedAt:         time.Now().UTC(),
-			DetectedSyscalls:   result.DetectedSyscalls,
-			HasUnknownSyscalls: result.HasUnknownSyscalls,
-			HighRiskReasons:    result.HighRiskReasons,
-			Summary:            result.Summary,
+			SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
+			AnalyzedAt:                time.Now().UTC(),
 		}
 		return nil
 	})
@@ -105,13 +94,11 @@ func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string
 		return nil, ErrNoSyscallAnalysis
 	}
 
-	// Convert SyscallAnalysisData to SyscallAnalysisResult
+	// Convert SyscallAnalysisData to SyscallAnalysisResult.
+	// Both types embed common.SyscallAnalysisResultCore, so the core fields
+	// can be copied directly without field-by-field assignment.
 	result := &SyscallAnalysisResult{
-		Architecture:       record.SyscallAnalysis.Architecture,
-		DetectedSyscalls:   record.SyscallAnalysis.DetectedSyscalls,
-		HasUnknownSyscalls: record.SyscallAnalysis.HasUnknownSyscalls,
-		HighRiskReasons:    record.SyscallAnalysis.HighRiskReasons,
-		Summary:            record.SyscallAnalysis.Summary,
+		SyscallAnalysisResultCore: record.SyscallAnalysis.SyscallAnalysisResultCore,
 	}
 
 	return result, nil

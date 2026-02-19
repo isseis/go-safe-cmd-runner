@@ -314,27 +314,33 @@ type SyscallAnalysisData struct {
 
 ### Step 3: fileanalysis パッケージの移行
 
-- [ ] `schema.go` を変更
-  - [ ] `SyscallInfo`, `SyscallSummary` の型定義を削除
-  - [ ] `SyscallAnalysisData` を `common.SyscallAnalysisResultCore`
+- [x] `schema.go` を変更
+  - [x] `SyscallInfo`, `SyscallSummary` の型定義を削除
+        （型エイリアス `type SyscallInfo = common.SyscallInfo` に変更して
+        後方互換性を保持）
+  - [x] `SyscallAnalysisData` を `common.SyscallAnalysisResultCore`
         の embedding に変更
-- [ ] `syscall_store.go` を変更
-  - [ ] `SyscallAnalysisResult` を
+- [x] `syscall_store.go` を変更
+  - [x] `SyscallAnalysisResult` を
         `common.SyscallAnalysisResultCore` の embedding に変更
-  - [ ] `SaveSyscallAnalysis`: `SyscallAnalysisResultCore`
+  - [x] `SaveSyscallAnalysis`: `SyscallAnalysisResultCore`
         の直接コピーに簡略化
-  - [ ] `LoadSyscallAnalysis`: 同上
-- [ ] テストファイルの型参照を更新
-  - [ ] `syscall_store_test.go`
-- [ ] `make test` で fileanalysis パッケージのテスト通過を確認
+  - [x] `LoadSyscallAnalysis`: 同上
+- [x] テストファイルの型参照を更新
+  - [x] `syscall_store_test.go` — `SyscallAnalysisResult` の struct literal を
+        embedding 形式に更新
+  - [x] `file_analysis_store_test.go` — `SyscallAnalysisData` の struct literal を
+        embedding 形式に更新
+  - [x] `internal/filevalidator/validator_test.go` — 同上（依存パッケージの修正）
+- [x] `make test` で fileanalysis パッケージのテスト通過を確認
 
 ### Step 4: 変換コードの簡略化
 
-- [ ] `cmd/record/main.go`
-  - [ ] `convertToFileanalysisResult()` を
-        `SyscallAnalysisResultCore` の直接コピーに簡略化
-- [ ] 統合テストの変換コードを簡略化
-- [ ] `make test` で全テスト通過を確認
+- [x] `cmd/record/main.go`
+  - [x] `convertToFileanalysisResult()` を
+        `SyscallAnalysisResultCore` の直接コピーに簡略化（26行→9行）
+- [-] 統合テストの変換コードを簡略化 — Step 2 にて実施済み
+- [x] `make test` で全テスト通過を確認
 
 ### Step 5: 最終確認
 

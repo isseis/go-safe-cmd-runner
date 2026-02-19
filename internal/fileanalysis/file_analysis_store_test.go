@@ -136,10 +136,12 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
 		SyscallAnalysis: &SyscallAnalysisData{
-			Architecture:       "x86_64",
-			AnalyzedAt:         time.Now().UTC(),
-			HasUnknownSyscalls: true,
-			HighRiskReasons:    []string{"reason1"},
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture:       "x86_64",
+				HasUnknownSyscalls: true,
+				HighRiskReasons:    []string{"reason1"},
+			},
+			AnalyzedAt: time.Now().UTC(),
 		},
 	}
 	err = store.Save(common.ResolvedPath(testFile), originalRecord)

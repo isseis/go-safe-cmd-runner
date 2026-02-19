@@ -855,9 +855,11 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	err = store.Save(common.ResolvedPath(testFilePath), &fileanalysis.Record{
 		ContentHash: "sha256:old_hash",
 		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
-			Architecture:       "x86_64",
-			HasUnknownSyscalls: true,
-			HighRiskReasons:    []string{"test reason"},
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture:       "x86_64",
+				HasUnknownSyscalls: true,
+				HighRiskReasons:    []string{"test reason"},
+			},
 		},
 	})
 	require.NoError(t, err, "Failed to save initial record")
