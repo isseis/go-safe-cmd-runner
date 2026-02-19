@@ -90,11 +90,6 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 		return nil, ErrNilAlgorithm
 	}
 
-	hashDir, err := filepath.Abs(hashDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for hash directory: %w", err)
-	}
-
 	// Ensure the hash directory exists and is a directory
 	info, err := os.Lstat(hashDir)
 	if err != nil {
