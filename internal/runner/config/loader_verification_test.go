@@ -3,86 +3,47 @@
 package config
 
 import (
-	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// writeHashManifestFile writes a hash manifest to the appropriate location.
-// This is the common helper used by createHashManifest and createManifestWithCustomHash.
-func writeHashManifestFile(t *testing.T, hashDir, filePath string, manifest filevalidator.HashManifest) string {
+// createHashRecord creates a FileAnalysisRecord for the given file using filevalidator.New().Record().
+// The file must already exist on disk.
+func createHashRecord(t *testing.T, hashDir, filePath string) {
 	t.Helper()
 
-	jsonData, err := json.MarshalIndent(manifest, "", "  ")
-	require.NoError(t, err)
-	jsonData = append(jsonData, '\n')
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err, "Failed to create validator for createHashRecord")
 
-	// Use HybridHashFilePathGetter to get the correct hash file path
+	_, err = validator.Record(filePath, false)
+	require.NoError(t, err, "Failed to record hash for %s", filePath)
+}
+
+// createRecordWithCustomHash creates a FileAnalysisRecord with a custom (potentially wrong)
+// hash value. Used for testing hash mismatch scenarios.
+func createRecordWithCustomHash(t *testing.T, hashDir, filePath, customHash string) {
+	t.Helper()
+
 	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err, "Failed to create store for createRecordWithCustomHash")
+
 	resolvedPath, err := common.NewResolvedPath(filePath)
-	require.NoError(t, err)
-	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
-	require.NoError(t, err)
+	require.NoError(t, err, "Failed to resolve file path")
 
-	// Ensure parent directory exists
-	err = os.MkdirAll(filepath.Dir(hashFile), 0o755)
-	require.NoError(t, err)
-
-	err = os.WriteFile(hashFile, jsonData, 0o644)
-	require.NoError(t, err)
-
-	return hashFile
-}
-
-// Helper function to create a hash manifest file for testing
-func createHashManifest(t *testing.T, hashDir, filePath string, content []byte) {
-	t.Helper()
-
-	// Calculate SHA256 hash of the content
-	hasher := &filevalidator.SHA256{}
-	hash, err := hasher.Sum(bytes.NewReader(content))
-	require.NoError(t, err)
-
-	manifest := filevalidator.HashManifest{
-		Version: "1.0",
-		Format:  "file-hash",
-		File: filevalidator.FileInfo{
-			Path: filePath,
-			Hash: filevalidator.HashInfo{
-				Algorithm: "sha256",
-				Value:     hash,
-			},
-		},
-	}
-
-	writeHashManifestFile(t, hashDir, filePath, manifest)
-}
-
-// Helper function to create a hash manifest file with a custom hash value for testing
-func createManifestWithCustomHash(t *testing.T, hashDir, filePath, customHash string) {
-	t.Helper()
-
-	manifest := filevalidator.HashManifest{
-		Version: "1.0",
-		Format:  "file-hash",
-		File: filevalidator.FileInfo{
-			Path: filePath,
-			Hash: filevalidator.HashInfo{
-				Algorithm: "sha256",
-				Value:     customHash,
-			},
-		},
-	}
-
-	writeHashManifestFile(t, hashDir, filePath, manifest)
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:" + customHash
+		return nil
+	})
+	require.NoError(t, err, "Failed to write custom hash record")
 }
 
 // writeFile writes content to a file in the specified directory and returns the full path.
@@ -136,8 +97,8 @@ args = ["hello"]
 	})
 
 	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
-		// Create hash manifest for the config file
-		createHashManifest(t, hashDir, configPath, configContent)
+		// Create hash record for the config file
+		createHashRecord(t, hashDir, configPath)
 
 		// Now verification should succeed
 		content, err := verificationMgr.VerifyAndReadConfigFile(configPath)
@@ -190,8 +151,8 @@ args = ["hello"]
 	})
 
 	t.Run("verification succeeds when hash is recorded", func(t *testing.T) {
-		// Create hash manifest for the template file
-		createHashManifest(t, hashDir, templatePath, templateContent)
+		// Create hash record for the template file
+		createHashRecord(t, hashDir, templatePath)
 
 		// Now loading should succeed
 		cfg, err := loader.LoadConfig(configPath, configContent)
@@ -235,8 +196,8 @@ includes = ["backup.toml", "restore.toml"]
 	_, loader := createTestVerificationLoader(t, hashDir)
 
 	t.Run("verification fails when one of multiple include files lacks hash", func(t *testing.T) {
-		// Create hash manifest only for the first template file
-		createHashManifest(t, hashDir, template1Path, template1Content)
+		// Create hash record only for the first template file
+		createHashRecord(t, hashDir, template1Path)
 		// NOTE: second template file has no hash
 
 		// Loading should fail because second template file hash is not recorded
@@ -246,8 +207,8 @@ includes = ["backup.toml", "restore.toml"]
 	})
 
 	t.Run("verification succeeds when all include files have hashes", func(t *testing.T) {
-		// Create hash manifest for the second template file as well
-		createHashManifest(t, hashDir, template2Path, template2Content)
+		// Create hash record for the second template file as well
+		createHashRecord(t, hashDir, template2Path)
 
 		// Now loading should succeed
 		cfg, err := loader.LoadConfig(configPath, configContent)
@@ -272,9 +233,9 @@ cmd = "restic"
 `)
 	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
-	// Create hash manifest with WRONG hash
+	// Create hash record with WRONG hash
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	createManifestWithCustomHash(t, hashDir, templatePath, wrongHash)
+	createRecordWithCustomHash(t, hashDir, templatePath, wrongHash)
 
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]
@@ -334,8 +295,8 @@ cmd = "restic"
 `)
 	templatePath := writeFile(t, tmpDir, "templates.toml", originalContent)
 
-	// Create hash manifest for the ORIGINAL content
-	createHashManifest(t, hashDir, templatePath, originalContent)
+	// Create hash record for the ORIGINAL content
+	createHashRecord(t, hashDir, templatePath)
 
 	// Now tamper with the file (modify content after hash recording)
 	tamperedContent := []byte(`version = "1.0"
@@ -378,8 +339,8 @@ cmd = "restic"
 `)
 	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
-	// Create hash manifest
-	createHashManifest(t, hashDir, templatePath, templateContent)
+	// Create hash record
+	createHashRecord(t, hashDir, templatePath)
 
 	verificationMgr, _ := createTestVerificationLoader(t, hashDir)
 
@@ -447,8 +408,8 @@ cmd = "restic"
 `)
 	templatePath := writeFile(t, tmpDir, "templates.toml", templateContent)
 
-	// Create hash manifest
-	createHashManifest(t, hashDir, templatePath, templateContent)
+	// Create hash record
+	createHashRecord(t, hashDir, templatePath)
 
 	configContent := []byte(`version = "1.0"
 includes = ["templates.toml"]

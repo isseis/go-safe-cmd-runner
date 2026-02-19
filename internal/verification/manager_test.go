@@ -1,7 +1,7 @@
 package verification
 
 import (
-	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -29,40 +30,33 @@ func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
 	return runtime
 }
 
-// Helper to create a hash manifest file with wrong hash value
+// Helper to create a hash record file with wrong hash value in FileAnalysisRecord format.
 // Uses HybridHashFilePathGetter strategy (SubstitutionHashEscape for short paths)
 // Returns the path of the created hash file
-func createWrongHashManifest(hashDir, filePath, wrongHash string) (string, error) {
-	manifest := filevalidator.HashManifest{
-		Version: "1.0",
-		Format:  "file-hash",
-		File: filevalidator.FileInfo{
-			Path: filePath,
-			Hash: filevalidator.HashInfo{
-				Algorithm: "sha256",
-				Value:     wrongHash,
-			},
-		},
-	}
-
-	jsonData, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	jsonData = append(jsonData, '\n')
-
-	// Use HybridHashFilePathGetter to get the correct hash file path
+func createWrongHashRecord(hashDir, filePath, wrongHash string) (string, error) {
+	// Use fileanalysis.Store to write a FileAnalysisRecord with wrong hash.
 	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	if err != nil {
+		return "", fmt.Errorf("failed to create store: %w", err)
+	}
+
 	resolvedPath, err := common.NewResolvedPath(filePath)
 	if err != nil {
 		return "", err
 	}
-	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
+
+	// Write a record with a wrong (tampered) content hash
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:" + wrongHash
+		return nil
+	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to write wrong hash record: %w", err)
 	}
 
-	if err := os.WriteFile(hashFile, jsonData, 0o644); err != nil {
+	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	if err != nil {
 		return "", err
 	}
 
@@ -1402,7 +1396,7 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	hashFile, err := createWrongHashManifest(hashDir, testFile, wrongHash)
+	hashFile, err := createWrongHashRecord(hashDir, testFile, wrongHash)
 	require.NoError(t, err)
 
 	// Verify hash file was created
@@ -1455,7 +1449,7 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 
 	// Write hash file with incorrect hash value
 	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
-	_, err := createWrongHashManifest(hashDir, configFile, wrongHash)
+	_, err := createWrongHashRecord(hashDir, configFile, wrongHash)
 	require.NoError(t, err)
 
 	// Create manager in dry-run mode

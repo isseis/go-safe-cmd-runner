@@ -38,14 +38,18 @@ func TestCreateValidator_DefaultHashDirectory(t *testing.T) {
 }
 
 func TestCreateValidator_NonExistentDirectory(t *testing.T) {
-	// Use a non-existent directory path
+	// Use a non-existent directory path inside a writable temp dir
 	nonExistentDir := filepath.Join(t.TempDir(), "nonexistent", "hash", "dir")
 
 	validator, err := CreateValidator(nonExistentDir)
 
-	// The validator should return an error if the directory doesn't exist
-	require.Error(t, err, "CreateValidator should return an error for non-existent directory")
-	require.Nil(t, validator, "validator should be nil when creation fails")
+	// New() now automatically creates the hash directory, so this should succeed.
+	require.NoError(t, err, "CreateValidator should auto-create the directory and not return an error")
+	require.NotNil(t, validator, "validator should be non-nil when directory is auto-created")
+
+	// Verify the directory was actually created
+	_, statErr := os.Stat(nonExistentDir)
+	assert.NoError(t, statErr, "hash directory should have been created automatically")
 }
 
 func TestCreateValidator_RelativePath(t *testing.T) {

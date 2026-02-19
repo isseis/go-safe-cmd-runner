@@ -19,30 +19,14 @@ var (
 	// ErrHashPathNotDir indicates that the hash path is not a directory.
 	ErrHashPathNotDir = errors.New("hash path is not a directory")
 
-	// ErrInvalidHashFileFormat indicates that the hash file has an invalid format.
-	ErrInvalidHashFileFormat = errors.New("invalid hash file format")
-
-	// ErrHashCollision indicates a hash collision was detected.
-	ErrHashCollision = errors.New("hash collision detected")
-
-	// ErrInvalidFilePathFormat indicates an invalid file path format was provided.
-	ErrInvalidFilePathFormat = errors.New("invalid file path format")
-
-	// ErrSuspiciousFilePath indicates a potentially malicious file path was detected.
-	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
-
-	// ErrInvalidManifestFormat indicates that the hash file is not in valid manifest format.
-	ErrInvalidManifestFormat = errors.New("invalid manifest format in hash file")
-
-	// ErrUnsupportedVersion indicates that the hash file version is not supported.
-	ErrUnsupportedVersion = errors.New("unsupported hash file version")
-
-	// ErrJSONParseError indicates that JSON parsing failed.
-	ErrJSONParseError = errors.New("failed to parse JSON hash file")
-
 	// ErrHashFileExists indicates that the hash file already exists.
 	ErrHashFileExists = errors.New("hash file already exists")
 
 	// ErrEmptyHashDir indicates that the hash directory path is empty.
 	ErrEmptyHashDir = errors.New("hash directory cannot be empty")
+
+	// ErrHashFilePathCollision indicates that two different file paths map to
+	// the same hash record file. This can happen when the SHA256 fallback
+	// encoding is used for very long paths and the truncated hashes collide.
+	ErrHashFilePathCollision = errors.New("hash file path collision detected")
 )

@@ -105,9 +105,9 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		assert.True(t, manager.isDryRun, "Should be in dry-run mode")
 	})
 
-	t.Run("missing_hash_dir_keeps_validator_nil", func(t *testing.T) {
-		// Point the default hash directory to a path that does not exist so the
-		// validator initialization fails with ErrHashDirNotExist.
+	t.Run("auto_creates_missing_hash_dir_and_enables_validator", func(t *testing.T) {
+		// Point the default hash directory to a path that does not exist.
+		// New() now auto-creates the directory, so the validator should be non-nil.
 		tmpDir := t.TempDir()
 		nonexistentHashDir := filepath.Join(tmpDir, "missing")
 
@@ -118,7 +118,12 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 		manager, err := NewManagerForDryRun()
 		require.NoError(t, err)
 		require.NotNil(t, manager)
-		assert.Nil(t, manager.fileValidator, "file validator should remain nil on recoverable errors")
+		// filevalidator.New() auto-creates missing directories, so validator should be non-nil
+		assert.NotNil(t, manager.fileValidator, "file validator should be initialized after auto-creating the directory")
+
+		// Verify the directory was actually created
+		_, statErr := os.Stat(nonexistentHashDir)
+		assert.NoError(t, statErr, "hash directory should have been auto-created")
 	})
 
 	t.Run("dry_run_security_audit_logging", func(t *testing.T) {
