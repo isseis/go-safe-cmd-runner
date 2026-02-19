@@ -293,19 +293,24 @@ type SyscallAnalysisData struct {
 
 ### Step 2: elfanalyzer パッケージの移行
 
-- [ ] `syscall_analyzer.go` を変更
-  - [ ] `SyscallInfo`, `SyscallSummary` の型定義を削除
-  - [ ] `SyscallAnalysisResult` を `common.SyscallAnalysisResultCore`
+- [x] `syscall_analyzer.go` を変更
+  - [x] `SyscallInfo`, `SyscallSummary` のローカル定義を削除
+        （型エイリアス `type SyscallInfo = common.SyscallInfo` に変更して
+        後方互換性を保持）
+  - [x] `SyscallAnalysisResult` を `common.SyscallAnalysisResultCore`
         の embedding に変更
-  - [ ] `import` に `common` パッケージを追加
-  - [ ] `analyzeSyscallsInCode()` 等の内部コードで
+  - [x] `import` に `common` パッケージを追加
+  - [x] `analyzeSyscallsInCode()` 等の内部コードで
         `SyscallInfo{...}` → `common.SyscallInfo{...}` に更新
-  - [ ] `SyscallSummary{...}` → `common.SyscallSummary{...}` に更新
-- [ ] テストファイルの型参照を更新
-  - [ ] `syscall_analyzer_test.go`
-  - [ ] `analyzer_test.go`
-  - [ ] `syscall_analyzer_integration_test.go`
-- [ ] `make test` で elfanalyzer パッケージのテスト通過を確認
+  - [x] `SyscallSummary{...}` → `common.SyscallSummary{...}` に更新
+- [x] テストファイルの型参照を更新
+  - [-] `syscall_analyzer_test.go` — 変更不要（型エイリアスにより互換性維持）
+  - [x] `analyzer_test.go` — `SyscallAnalysisResult` の struct literal を
+        embedding 形式に更新
+  - [x] `syscall_analyzer_integration_test.go` — `faResult`/`eaResult` の
+        変換コードを `SyscallAnalysisResultCore` 直接コピーに簡略化
+        （`//go:build integration` のため Step 2 テストには影響なし）
+- [x] `make test` で elfanalyzer パッケージのテスト通過を確認
 
 ### Step 3: fileanalysis パッケージの移行
 

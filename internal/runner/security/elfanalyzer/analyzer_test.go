@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -214,24 +215,26 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	// Create mock store that returns network syscall result
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
-			DetectedSyscalls: []SyscallInfo{
-				{
-					Number:    41, // socket
-					Name:      "socket",
-					IsNetwork: true,
-					Location:  0x401000,
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:    41, // socket
+						Name:      "socket",
+						IsNetwork: true,
+						Location:  0x401000,
+					},
+					{
+						Number:    42, // connect
+						Name:      "connect",
+						IsNetwork: true,
+						Location:  0x401010,
+					},
 				},
-				{
-					Number:    42, // connect
-					Name:      "connect",
-					IsNetwork: true,
-					Location:  0x401010,
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  true,
+					NetworkSyscallCount: 2,
+					TotalDetectedEvents: 2,
 				},
-			},
-			Summary: SyscallSummary{
-				HasNetworkSyscalls:  true,
-				NetworkSyscallCount: 2,
-				TotalDetectedEvents: 2,
 			},
 		},
 	}
@@ -253,18 +256,20 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 	// Create mock store that returns non-network syscall result
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
-			DetectedSyscalls: []SyscallInfo{
-				{
-					Number:    1, // write
-					Name:      "write",
-					IsNetwork: false,
-					Location:  0x401000,
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:    1, // write
+						Name:      "write",
+						IsNetwork: false,
+						Location:  0x401000,
+					},
 				},
-			},
-			Summary: SyscallSummary{
-				HasNetworkSyscalls:  false,
-				NetworkSyscallCount: 0,
-				TotalDetectedEvents: 1,
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  false,
+					NetworkSyscallCount: 0,
+					TotalDetectedEvents: 1,
+				},
 			},
 		},
 	}
@@ -284,21 +289,23 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	// Create mock store that returns high-risk result (unknown syscalls)
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
-			DetectedSyscalls: []SyscallInfo{
-				{
-					Number:              -1,
-					DeterminationMethod: "unknown:indirect_setting",
-					Location:            0x401000,
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:              -1,
+						DeterminationMethod: "unknown:indirect_setting",
+						Location:            0x401000,
+					},
 				},
-			},
-			HasUnknownSyscalls: true,
-			HighRiskReasons: []string{
-				"syscall at 0x401000: number could not be determined (unknown:indirect_setting)",
-			},
-			Summary: SyscallSummary{
-				HasNetworkSyscalls:  false,
-				IsHighRisk:          true,
-				TotalDetectedEvents: 1,
+				HasUnknownSyscalls: true,
+				HighRiskReasons: []string{
+					"syscall at 0x401000: number could not be determined (unknown:indirect_setting)",
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  false,
+					IsHighRisk:          true,
+					TotalDetectedEvents: 1,
+				},
 			},
 		},
 	}
@@ -336,10 +343,12 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	// Create mock store that expects a specific hash
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
-			DetectedSyscalls: []SyscallInfo{
-				{Number: 41, Name: "socket", IsNetwork: true},
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{Number: 41, Name: "socket", IsNetwork: true},
+				},
+				Summary: SyscallSummary{HasNetworkSyscalls: true},
 			},
-			Summary: SyscallSummary{HasNetworkSyscalls: true},
 		},
 		expectedHash: "sha256:differenthash", // This won't match the actual file hash
 	}
