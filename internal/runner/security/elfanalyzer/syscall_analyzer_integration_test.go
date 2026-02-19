@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/stretchr/testify/assert"
@@ -235,27 +236,9 @@ func main() {
 	contentHash := "sha256:" + rawHash
 
 	// Convert elfanalyzer result to fileanalysis result (same as record command)
-	faSyscalls := make([]fileanalysis.SyscallInfo, len(analysisResult.DetectedSyscalls))
-	for i, s := range analysisResult.DetectedSyscalls {
-		faSyscalls[i] = fileanalysis.SyscallInfo{
-			Number:              s.Number,
-			Name:                s.Name,
-			IsNetwork:           s.IsNetwork,
-			Location:            s.Location,
-			DeterminationMethod: s.DeterminationMethod,
-		}
-	}
+	// Both types embed common.SyscallAnalysisResultCore, enabling direct struct copy.
 	faResult := &fileanalysis.SyscallAnalysisResult{
-		Architecture:       analysisResult.Architecture,
-		DetectedSyscalls:   faSyscalls,
-		HasUnknownSyscalls: analysisResult.HasUnknownSyscalls,
-		HighRiskReasons:    analysisResult.HighRiskReasons,
-		Summary: fileanalysis.SyscallSummary{
-			HasNetworkSyscalls:  analysisResult.Summary.HasNetworkSyscalls,
-			IsHighRisk:          analysisResult.Summary.IsHighRisk,
-			TotalDetectedEvents: analysisResult.Summary.TotalDetectedEvents,
-			NetworkSyscallCount: analysisResult.Summary.NetworkSyscallCount,
-		},
+		SyscallAnalysisResultCore: analysisResult.SyscallAnalysisResultCore,
 	}
 
 	// Save via SyscallAnalysisStore
@@ -267,26 +250,11 @@ func main() {
 	loadedResult, err := syscallStore.LoadSyscallAnalysis(binFile, contentHash)
 	require.NoError(t, err)
 
-	// Convert back to elfanalyzer types for convertSyscallResult
+	// Convert back to elfanalyzer types for convertSyscallResult.
+	// Both types embed common.SyscallAnalysisResultCore, enabling direct struct copy.
+	_ = common.SyscallAnalysisResultCore{} // ensure common is used
 	eaResult := &SyscallAnalysisResult{
-		Architecture:       loadedResult.Architecture,
-		HasUnknownSyscalls: loadedResult.HasUnknownSyscalls,
-		HighRiskReasons:    loadedResult.HighRiskReasons,
-		Summary: SyscallSummary{
-			HasNetworkSyscalls:  loadedResult.Summary.HasNetworkSyscalls,
-			IsHighRisk:          loadedResult.Summary.IsHighRisk,
-			TotalDetectedEvents: loadedResult.Summary.TotalDetectedEvents,
-			NetworkSyscallCount: loadedResult.Summary.NetworkSyscallCount,
-		},
-	}
-	for _, s := range loadedResult.DetectedSyscalls {
-		eaResult.DetectedSyscalls = append(eaResult.DetectedSyscalls, SyscallInfo{
-			Number:              s.Number,
-			Name:                s.Name,
-			IsNetwork:           s.IsNetwork,
-			Location:            s.Location,
-			DeterminationMethod: s.DeterminationMethod,
-		})
+		SyscallAnalysisResultCore: loadedResult.SyscallAnalysisResultCore,
 	}
 
 	// Step 5: Verify StandardELFAnalyzer's convertSyscallResult produces correct output
