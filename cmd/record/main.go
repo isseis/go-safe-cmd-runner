@@ -26,11 +26,25 @@ const (
 var (
 	errNoFilesProvided = errors.New("at least one file path must be provided as a positional argument or via -file (deprecated)")
 	errEnsureHashDir   = errors.New("error creating hash directory")
-	validatorFactory   = func(hashDir string) (hashRecorder, error) {
-		return cmdcommon.CreateValidator(hashDir)
-	}
-	mkdirAll = os.MkdirAll
 )
+
+// deps holds injectable dependencies for the record command.
+// This makes the dependency graph visible at call sites and simplifies testing.
+type deps struct {
+	validatorFactory      func(hashDir string) (hashRecorder, error)
+	syscallContextFactory func(hashDir string) (*syscallAnalysisContext, error)
+	mkdirAll              func(path string, perm os.FileMode) error
+}
+
+func defaultDeps() deps {
+	return deps{
+		validatorFactory: func(hashDir string) (hashRecorder, error) {
+			return cmdcommon.CreateValidator(hashDir)
+		},
+		syscallContextFactory: newSyscallAnalysisContext,
+		mkdirAll:              os.MkdirAll,
+	}
+}
 
 type hashRecorder interface {
 	Record(filePath string, force bool) (string, error)
@@ -44,11 +58,11 @@ type recordConfig struct {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], defaultDeps(), os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
-	cfg, fs, err := parseArgs(args, stderr)
+func run(args []string, d deps, stdout, stderr io.Writer) int {
+	cfg, fs, err := parseArgs(args, d, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -62,13 +76,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
 	}
 
-	recorder, err := validatorFactory(cfg.hashDir)
+	recorder, err := d.validatorFactory(cfg.hashDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
 		return 1
 	}
 
-	syscallCtx, err := newSyscallAnalysisContext(cfg.hashDir)
+	syscallCtx, err := d.syscallContextFactory(cfg.hashDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
 		return 1
@@ -77,7 +91,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return processFiles(recorder, syscallCtx, cfg, stdout, stderr)
 }
 
-func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
+func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
 	options := struct {
 		deprecatedFile string
 		hashDir        string
@@ -109,7 +123,7 @@ func parseArgs(args []string, stderr io.Writer) (*recordConfig, *flag.FlagSet, e
 		dir = cmdcommon.DefaultHashDirectory
 	}
 
-	if err := mkdirAll(dir, hashDirPermissions); err != nil {
+	if err := d.mkdirAll(dir, hashDirPermissions); err != nil {
 		return nil, fs, fmt.Errorf("%w: %w", errEnsureHashDir, err)
 	}
 

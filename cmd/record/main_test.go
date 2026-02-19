@@ -36,15 +36,18 @@ func (f *fakeRecorder) Record(filePath string, force bool) (string, error) {
 	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), nil
 }
 
-func overrideValidatorFactory(t *testing.T, recorder *fakeRecorder) func() {
-	t.Helper()
-	originalFactory := validatorFactory
-	validatorFactory = func(hashDir string) (hashRecorder, error) {
-		recorder.hashDir = hashDir
-		return recorder, nil
-	}
-	return func() {
-		validatorFactory = originalFactory
+// testDeps returns a deps with the given recorder wired as the validatorFactory.
+// Callers can override individual fields afterwards when needed.
+func testDeps(recorder *fakeRecorder) deps {
+	return deps{
+		validatorFactory: func(hashDir string) (hashRecorder, error) {
+			if recorder != nil {
+				recorder.hashDir = hashDir
+			}
+			return recorder, nil
+		},
+		syscallContextFactory: newSyscallAnalysisContext,
+		mkdirAll:              os.MkdirAll,
 	}
 }
 
@@ -52,7 +55,7 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{}, stdout, stderr)
+	exitCode := run([]string{}, testDeps(nil), stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "at least one file path")
@@ -61,13 +64,11 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 func TestRunProcessesMultipleFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	assert.Equal(t, tempDir, recorder.hashDir)
@@ -83,13 +84,11 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 	recorder := &fakeRecorder{responses: map[string]error{
 		"bad.dat": errors.New("calculate hash failure"),
 	}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-force", "-hash-dir", tempDir, "good1", "bad.dat", "good2"}, stdout, stderr)
+	exitCode := run([]string{"-force", "-hash-dir", tempDir, "good1", "bad.dat", "good2"}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	require.Len(t, recorder.calls, 3)
@@ -104,13 +103,11 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 2)
@@ -119,16 +116,14 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 }
 
 func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
-	// Override mkdirAll to avoid filesystem access to the default hash directory in CI.
-	originalMkdirAll := mkdirAll
-	mkdirAll = func(_ string, _ os.FileMode) error {
-		return nil
+	// Pass a no-op mkdirAll to avoid filesystem access to the default hash directory in CI.
+	d := deps{
+		mkdirAll: func(_ string, _ os.FileMode) error { return nil },
 	}
-	defer func() { mkdirAll = originalMkdirAll }()
 
 	stderr := &bytes.Buffer{}
 
-	cfg, _, err := parseArgs([]string{"file1.txt"}, stderr)
+	cfg, _, err := parseArgs([]string{"file1.txt"}, d, stderr)
 
 	require.NoError(t, err)
 	assert.Equal(t, cmdcommon.DefaultHashDirectory, cfg.hashDir)
@@ -200,8 +195,6 @@ func createMinimalStaticELF(t *testing.T, path string) {
 func TestRunWithSyscallAnalysis(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	// Create a static ELF file for testing
 	staticELF := filepath.Join(tempDir, "static.elf")
@@ -211,7 +204,7 @@ func TestRunWithSyscallAnalysis(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	// Syscall analysis is always enabled
-	exitCode := run([]string{"-d", tempDir, staticELF}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, staticELF}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 1)
@@ -222,8 +215,6 @@ func TestRunWithSyscallAnalysis(t *testing.T) {
 func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	// Create a non-ELF file
 	nonELF := filepath.Join(tempDir, "script.sh")
@@ -234,7 +225,7 @@ func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	// Syscall analysis is always enabled but should skip non-ELF files without warning
-	exitCode := run([]string{"-d", tempDir, nonELF}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, nonELF}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 1)
@@ -251,8 +242,6 @@ func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
 
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	// Create a static ELF file
 	staticELF := filepath.Join(tempDir, "static_binary.elf")
@@ -262,7 +251,7 @@ func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	// Syscall analysis is always enabled
-	exitCode := run([]string{"-d", tempDir, staticELF}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, staticELF}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 
