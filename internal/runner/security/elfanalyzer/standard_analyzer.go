@@ -323,6 +323,9 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	if result.Summary.HasNetworkSyscalls {
 		// Build detected symbols from syscall info
 		var symbols []DetectedSymbol
+		if result.Summary.NetworkSyscallCount > 0 {
+			symbols = make([]DetectedSymbol, 0, result.Summary.NetworkSyscallCount)
+		}
 		for _, info := range result.DetectedSyscalls {
 			if info.IsNetwork {
 				symbols = append(symbols, DetectedSymbol{
