@@ -46,8 +46,12 @@ func defaultDeps() deps {
 	}
 }
 
+// hashRecorder records the hash of a file and returns the hash file path,
+// the content hash in prefixed format (e.g., "sha256:<hex>"), and any error.
+// Implementations must return the content hash in "<algorithm>:<hex>" format,
+// as it is passed directly to syscall analysis storage.
 type hashRecorder interface {
-	Record(filePath string, force bool) (string, error)
+	Record(filePath string, force bool) (string, string, error)
 }
 
 type recordConfig struct {
@@ -155,7 +159,7 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 
 	for idx, filePath := range cfg.files {
 		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck
-		hashFile, err := recorder.Record(filePath, cfg.force)
+		hashFile, contentHash, err := recorder.Record(filePath, cfg.force)
 		if err != nil {
 			failures++
 			fmt.Fprintln(stdout, "FAILED")                                          //nolint:errcheck
@@ -166,7 +170,7 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck
 
 		// Perform syscall analysis for static ELF binaries
-		if err := syscallCtx.analyzeFile(filePath); err != nil {
+		if err := syscallCtx.analyzeFile(filePath, contentHash); err != nil {
 			// ErrNotELF, ErrNotStaticELF, and file-not-found are expected for non-analyzable files
 			if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) && !errors.Is(err, os.ErrNotExist) {
 				fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck
@@ -185,7 +189,6 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 type syscallAnalysisContext struct {
 	syscallStore fileanalysis.SyscallAnalysisStore
 	analyzer     *elfanalyzer.SyscallAnalyzer
-	hashAlgo     filevalidator.HashAlgorithm
 	fs           safefileio.FileSystem
 }
 
@@ -200,15 +203,15 @@ func newSyscallAnalysisContext(hashDir string) (*syscallAnalysisContext, error) 
 	return &syscallAnalysisContext{
 		syscallStore: fileanalysis.NewSyscallAnalysisStore(store),
 		analyzer:     elfanalyzer.NewSyscallAnalyzer(),
-		hashAlgo:     &filevalidator.SHA256{},
 		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
 	}, nil
 }
 
 // analyzeFile performs syscall analysis on a file if it's a static ELF binary.
+// contentHash is the prefixed hash (e.g., "sha256:<hex>") already computed by Record.
 // Returns ErrNotELF if the file is not an ELF binary.
 // Returns ErrNotStaticELF if the ELF file is dynamically linked.
-func (ctx *syscallAnalysisContext) analyzeFile(path string) error {
+func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) error {
 	// Open file securely - single open for both check and analysis
 	file, err := ctx.fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
@@ -234,19 +237,6 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("analysis failed: %w", err)
 	}
-
-	// Rewind file for hash calculation
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to rewind file: %w", err)
-	}
-
-	// Calculate file hash with algorithm prefix
-	rawHash, err := ctx.hashAlgo.Sum(file)
-	if err != nil {
-		return fmt.Errorf("failed to calculate hash: %w", err)
-	}
-	// ContentHash requires prefixed format: "sha256:<hex>"
-	contentHash := fmt.Sprintf("%s:%s", ctx.hashAlgo.Name(), rawHash)
 
 	// Convert elfanalyzer.SyscallAnalysisResult to fileanalysis.SyscallAnalysisResult
 	faResult := convertToFileanalysisResult(result)

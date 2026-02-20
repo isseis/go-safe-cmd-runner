@@ -60,7 +60,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 
 	// Test Record
 	t.Run("Record", func(t *testing.T) {
-		_, err := validator.Record(testFilePath, false)
+		_, _, err := validator.Record(testFilePath, false)
 		require.NoError(t, err, "Record failed")
 
 		// Verify the hash file exists
@@ -160,7 +160,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 
 	// Test Record with symlink
 	// Symlinks are resolved before writing the hash file
-	_, err = validator.Record(symlinkPath, false)
+	_, _, err = validator.Record(symlinkPath, false)
 	assert.NoError(t, err, "Record failed")
 
 	// Use store.Load() to verify the recorded path and hash
@@ -188,7 +188,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator")
 
-	_, err = validator.Record(testFilePath, false)
+	_, _, err = validator.Record(testFilePath, false)
 	require.NoError(t, err, "Record failed")
 
 	// Create a symlink to the test file
@@ -223,7 +223,7 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 
 	// With the FileAnalysisRecord format, a corrupted/empty file is treated as "no valid record"
 	// and is overwritten. Record() should succeed, creating a valid record.
-	hashFile, err := validator.Record(testFilePath, false)
+	hashFile, _, err := validator.Record(testFilePath, false)
 	require.NoError(t, err, "Record should succeed by overwriting the corrupted empty file")
 
 	// The record file should now contain valid content
@@ -245,7 +245,7 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	require.NoError(t, err, "Failed to create validator")
 
 	// Record the file
-	_, err = validator.Record(testFilePath, false)
+	_, _, err = validator.Record(testFilePath, false)
 	require.NoError(t, err, "Record failed")
 
 	// Load from store and verify the FileAnalysisRecord format
@@ -274,7 +274,7 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 	testFile := createTestFile(t, "test content for VerifyFromHandle")
 
 	// Record the hash
-	_, err = validator.Record(testFile, false)
+	_, _, err = validator.Record(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	// Open the file
@@ -302,7 +302,7 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	testFile := createTestFile(t, "test content")
 
 	// Record the hash
-	_, err = validator.Record(testFile, false)
+	_, _, err = validator.Record(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	// Create another file with different content
@@ -333,7 +333,7 @@ func TestValidator_VerifyWithPrivileges(t *testing.T) {
 	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
 
 	// Record the hash
-	_, err = validator.Record(testFile, false)
+	_, _, err = validator.Record(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
@@ -369,7 +369,7 @@ func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
 
 	// Create a test file and record its hash first
 	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
-	_, err = validator.Record(testFile, false)
+	_, _, err = validator.Record(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	t.Run("privilege manager not supported", func(t *testing.T) {
@@ -418,7 +418,7 @@ func TestValidator_HashAlgorithmConsistency(t *testing.T) {
 	require.NoError(t, err, "Failed to create validator")
 
 	// Record the file - this should use mockAlgo.Sum()
-	hashFilePath, err := validator.Record(testFilePath, false)
+	hashFilePath, _, err := validator.Record(testFilePath, false)
 	require.NoError(t, err, "Failed to record file")
 
 	// Verify the file - this should also use mockAlgo.Sum()
@@ -467,7 +467,7 @@ func TestValidator_CrossAlgorithmVerificationFails(t *testing.T) {
 	// Record with MockHashAlgorithm
 	mockValidator, err := New(&MockHashAlgorithm{}, tempDir)
 	require.NoError(t, err, "Failed to create mock validator")
-	_, err = mockValidator.Record(testFilePath, false)
+	_, _, err = mockValidator.Record(testFilePath, false)
 	require.NoError(t, err, "Failed to record file with MockHashAlgorithm")
 
 	// Attempt verification with SHA-256 validator (different algorithm)
@@ -497,7 +497,7 @@ func TestValidator_VerifyAndRead(t *testing.T) {
 		testFile := createTestFile(t, testContent)
 
 		// Record the hash
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// VerifyAndRead should succeed
@@ -509,7 +509,7 @@ func TestValidator_VerifyAndRead(t *testing.T) {
 	t.Run("file content mismatch", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Modify the file content
@@ -590,7 +590,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	t.Run("privilege execution not supported", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Use mock privilege manager that doesn't support privileged execution
@@ -606,7 +606,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	t.Run("successful privileged verification and read", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Use mock privilege manager that supports privileged execution
@@ -621,7 +621,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	t.Run("file content mismatch with privileges", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Modify the file content
@@ -732,7 +732,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 	t.Run("VerifyAndRead atomic operation", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// VerifyAndRead should return the content that matches the hash
@@ -747,7 +747,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 	t.Run("VerifyAndReadWithPrivileges atomic operation", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Use mock privilege manager
@@ -764,7 +764,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 		// to prevent TOCTOU attacks where the file could be modified between
 		// reading and verification
 		testFile := createTestFile(t, testContent)
-		_, err = validator.Record(testFile, false)
+		_, _, err = validator.Record(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Test VerifyAndRead
@@ -803,7 +803,7 @@ func TestNew_RecordAndVerify(t *testing.T) {
 
 	t.Run("Record with analysis store format", func(t *testing.T) {
 		// Record the hash
-		_, err = validator.Record(testFilePath, false)
+		_, _, err = validator.Record(testFilePath, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Load record directly from store to verify format
@@ -865,7 +865,7 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	require.NoError(t, err, "Failed to save initial record")
 
 	// Now use validator.Record with force to update the content hash
-	_, err = validator.Record(testFilePath, true)
+	_, _, err = validator.Record(testFilePath, true)
 	require.NoError(t, err, "Failed to record hash with force")
 
 	// Load the record and verify SyscallAnalysis is preserved
@@ -952,17 +952,17 @@ func TestValidator_Record_HashFilePathCollision(t *testing.T) {
 	require.NoError(t, os.WriteFile(file2, []byte("content2"), 0o644))
 
 	// Record first file — should succeed
-	_, err := v.Record(file1, false)
+	_, _, err := v.Record(file1, false)
 	require.NoError(t, err, "first Record should succeed")
 
 	// Record second file (different path, same record file) — should fail with collision
-	_, err = v.Record(file2, false)
+	_, _, err = v.Record(file2, false)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHashFilePathCollision,
 		"second Record should detect collision")
 
 	// Even with force=true, collision should still be detected
-	_, err = v.Record(file2, true)
+	_, _, err = v.Record(file2, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHashFilePathCollision,
 		"force=true should not bypass collision detection")
@@ -978,7 +978,7 @@ func TestValidator_Verify_HashFilePathCollision(t *testing.T) {
 	require.NoError(t, os.WriteFile(file2, []byte("content2"), 0o644))
 
 	// Record first file
-	_, err := v.Record(file1, false)
+	_, _, err := v.Record(file1, false)
 	require.NoError(t, err)
 
 	// Verify second file — record belongs to file1, should detect collision

@@ -28,12 +28,12 @@ type fakeRecorder struct {
 	hashDir   string
 }
 
-func (f *fakeRecorder) Record(filePath string, force bool) (string, error) {
+func (f *fakeRecorder) Record(filePath string, force bool) (string, string, error) {
 	f.calls = append(f.calls, recordCall{file: filePath, force: force})
 	if err, ok := f.responses[filePath]; ok && err != nil {
-		return "", err
+		return "", "", err
 	}
-	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), nil
+	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), "sha256:fakehash", nil
 }
 
 // testDeps returns a deps with the given recorder wired as the validatorFactory.
