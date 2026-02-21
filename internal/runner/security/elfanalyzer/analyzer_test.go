@@ -318,6 +318,53 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	assert.Contains(t, output.Error.Error(), "high risk")
 }
 
+func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	createStaticELFFile(t, testFile)
+
+	// Create mock store that returns both network syscalls and high-risk (unknown syscalls).
+	// IsHighRisk must win: incomplete analysis makes the result unreliable regardless of
+	// what network activity was detected.
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:    41, // socket
+						Name:      "socket",
+						IsNetwork: true,
+						Location:  0x401000,
+					},
+					{
+						Number:              -1,
+						DeterminationMethod: "unknown:indirect_setting",
+						Location:            0x401010,
+					},
+				},
+				HasUnknownSyscalls: true,
+				HighRiskReasons: []string{
+					"syscall at 0x401010: number could not be determined (unknown:indirect_setting)",
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  true,
+					NetworkSyscallCount: 1,
+					IsHighRisk:          true,
+					TotalDetectedEvents: 2,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	// IsHighRisk must take precedence over HasNetworkSyscalls
+	assert.Equal(t, AnalysisError, output.Result)
+	assert.NotNil(t, output.Error)
+	assert.ErrorIs(t, output.Error, ErrSyscallAnalysisHighRisk)
+}
+
 func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")

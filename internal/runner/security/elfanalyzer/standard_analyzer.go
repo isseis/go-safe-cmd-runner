@@ -316,6 +316,16 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio
 //
 // These fields are guaranteed to be set according to the rules in the detailed specification.
 func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) AnalysisOutput {
+	// IsHighRisk takes precedence over NetworkDetected: when unknown syscalls are present,
+	// the analysis is incomplete and unreliable, so we must treat the result as an error
+	// even if network syscalls were also detected.
+	if result.Summary.IsHighRisk {
+		return AnalysisOutput{
+			Result: AnalysisError,
+			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.HighRiskReasons),
+		}
+	}
+
 	if result.Summary.HasNetworkSyscalls {
 		var symbols []DetectedSymbol
 		if result.Summary.NetworkSyscallCount > 0 {
@@ -332,13 +342,6 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 		return AnalysisOutput{
 			Result:          NetworkDetected,
 			DetectedSymbols: symbols,
-		}
-	}
-
-	if result.Summary.IsHighRisk {
-		return AnalysisOutput{
-			Result: AnalysisError,
-			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.HighRiskReasons),
 		}
 	}
 
