@@ -34,7 +34,7 @@ func BenchmarkAnalyzeNetworkSymbols(b *testing.B) {
 			analyzer := NewStandardELFAnalyzer(nil, nil)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = analyzer.AnalyzeNetworkSymbols(absPath)
+				_ = analyzer.AnalyzeNetworkSymbols(absPath, "")
 			}
 		})
 	}
@@ -71,7 +71,7 @@ func BenchmarkAnalyzeNetworkSymbols_TestdataFixtures(b *testing.B) {
 			analyzer := NewStandardELFAnalyzer(nil, nil)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = analyzer.AnalyzeNetworkSymbols(absPath)
+				_ = analyzer.AnalyzeNetworkSymbols(absPath, "")
 			}
 		})
 	}

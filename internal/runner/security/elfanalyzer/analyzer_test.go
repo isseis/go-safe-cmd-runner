@@ -76,7 +76,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			absPath, err := filepath.Abs(path)
 			require.NoError(t, err)
 
-			output := analyzer.AnalyzeNetworkSymbols(absPath)
+			output := analyzer.AnalyzeNetworkSymbols(absPath, "")
 			assert.Equal(t, tt.expectedResult, output.Result,
 				"unexpected result for %s", tt.filename)
 
@@ -99,7 +99,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
 	analyzer := NewStandardELFAnalyzer(nil, nil)
 
-	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary")
+	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "")
 
 	assert.Equal(t, AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
@@ -122,7 +122,7 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 	absPath, err := filepath.Abs(path)
 	require.NoError(t, err)
 
-	output := analyzer.AnalyzeNetworkSymbols(absPath)
+	output := analyzer.AnalyzeNetworkSymbols(absPath, "")
 	// with_socket.elf has "socket" and "connect", but our custom set only has "my_network_func"
 	assert.Equal(t, NoNetworkSymbols, output.Result,
 		"custom symbols should not match standard socket symbols")
@@ -240,7 +240,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	assert.Equal(t, NetworkDetected, output.Result)
 	assert.Len(t, output.DetectedSymbols, 2)
@@ -275,7 +275,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	assert.Equal(t, NoNetworkSymbols, output.Result)
 	assert.Empty(t, output.DetectedSymbols)
@@ -311,7 +311,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	assert.Equal(t, AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
@@ -329,7 +329,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// Should fallback to StaticBinary when no analysis found
 	assert.Equal(t, StaticBinary, output.Result)
@@ -354,7 +354,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// Should fallback to StaticBinary when hash doesn't match
 	assert.Equal(t, StaticBinary, output.Result)
@@ -367,7 +367,7 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 
 	// Create analyzer without syscall store (nil)
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, nil)
-	output := analyzer.AnalyzeNetworkSymbols(testFile)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// Should behave like regular analyzer - return StaticBinary for static ELF
 	assert.Equal(t, StaticBinary, output.Result)

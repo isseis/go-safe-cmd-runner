@@ -122,7 +122,7 @@ func NewStandardELFAnalyzerWithSyscallStore(
 }
 
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface.
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput {
 	// Step 1: Open file safely using safefileio
 	// This prevents symlink attacks and TOCTOU race conditions.
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -214,7 +214,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
 	if err != nil {
 		// ErrNoSymbols indicates no .dynsym section exists (static binary)
 		if errors.Is(err, elf.ErrNoSymbols) {
-			return a.handleStaticBinary(path, file)
+			return a.handleStaticBinary(path, file, contentHash)
 		}
 		return AnalysisOutput{
 			Result: AnalysisError,
@@ -224,7 +224,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
 
 	// Empty .dynsym is treated as static binary
 	if len(dynsyms) == 0 {
-		return a.handleStaticBinary(path, file)
+		return a.handleStaticBinary(path, file, contentHash)
 	}
 
 	// Step 5: Check for network symbols
@@ -265,12 +265,13 @@ func isELFMagic(magic []byte) bool {
 // handleStaticBinary handles static binary detection and syscall analysis lookup.
 // If syscallStore is configured, it attempts to lookup pre-computed syscall analysis.
 // Otherwise, it returns StaticBinary directly.
-func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File) AnalysisOutput {
+// contentHash is a pre-computed hash in "algo:hex" format; empty string means compute it here.
+func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File, contentHash string) AnalysisOutput {
 	if a.syscallStore == nil {
 		return AnalysisOutput{Result: StaticBinary}
 	}
 
-	result := a.lookupSyscallAnalysis(path, file)
+	result := a.lookupSyscallAnalysis(path, file, contentHash)
 	if result.Result != StaticBinary {
 		return result
 	}
@@ -279,14 +280,19 @@ func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.Fi
 }
 
 // lookupSyscallAnalysis checks the syscall analysis store for analysis results.
-// Uses the already-opened file handle to calculate hash (TOCTOU safe).
-func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio.File) AnalysisOutput {
-	hash, err := a.calculateFileHash(file)
-	if err != nil {
-		slog.Debug("Failed to calculate hash for syscall analysis lookup",
-			"path", path,
-			"error", err)
-		return AnalysisOutput{Result: StaticBinary}
+// If contentHash is non-empty it is used directly, skipping a redundant file read.
+// Otherwise the hash is computed from the already-opened file handle (TOCTOU safe).
+func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio.File, contentHash string) AnalysisOutput {
+	hash := contentHash
+	if hash == "" {
+		var err error
+		hash, err = a.calculateFileHash(file)
+		if err != nil {
+			slog.Debug("Failed to calculate hash for syscall analysis lookup",
+				"path", path,
+				"error", err)
+			return AnalysisOutput{Result: StaticBinary}
+		}
 	}
 
 	result, err := a.syscallStore.LoadSyscallAnalysis(path, hash)

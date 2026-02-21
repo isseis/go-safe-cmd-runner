@@ -72,7 +72,7 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string) (boo
 	// ELF analysis requires an absolute path (should be resolved by caller via PathResolver).
 	// If cmdName is not absolute, skip ELF analysis silently.
 	if !foundInProfiles && filepath.IsAbs(cmdName) {
-		if a.isNetworkViaELFAnalysis(cmdName) {
+		if a.isNetworkViaELFAnalysis(cmdName, "") {
 			return true, false
 		}
 	}
@@ -101,7 +101,11 @@ func hasNetworkArguments(args []string) bool {
 // IMPORTANT: cmdPath is expected to be an absolute, symlink-resolved path,
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
 // This ensures TOCTOU safety and consistency across all security checks.
-func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string) bool {
+//
+// contentHash is a pre-computed hash in "algo:hex" format that is forwarded to
+// the ELF analyzer to avoid redundant hashing for static binaries with a
+// syscall store configured. Pass empty string when no hash is available.
+func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string, contentHash string) bool {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
 	// A non-absolute path here indicates a programming error in the call chain.
@@ -113,7 +117,7 @@ func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string) bool {
 	// so no need for filepath.EvalSymlinks() here.
 
 	// Perform ELF analysis
-	output := a.elfAnalyzer.AnalyzeNetworkSymbols(cmdPath)
+	output := a.elfAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
 
 	switch output.Result {
 	case elfanalyzer.NetworkDetected:

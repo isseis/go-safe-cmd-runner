@@ -2331,7 +2331,7 @@ type mockELFAnalyzer struct {
 	err     error
 }
 
-func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(_ string) elfanalyzer.AnalysisOutput {
+func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) elfanalyzer.AnalysisOutput {
 	return elfanalyzer.AnalysisOutput{
 		Result:          m.result,
 		DetectedSymbols: m.symbols,

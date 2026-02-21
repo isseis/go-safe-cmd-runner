@@ -91,11 +91,16 @@ type ELFAnalyzer interface {
 	//
 	// The path must be an absolute path to an executable file.
 	//
+	// contentHash is the pre-computed hash of the file in "algo:hex" format
+	// (e.g. "sha256:abc123..."). When non-empty it is passed directly to the
+	// syscall analysis store lookup, avoiding a redundant read of the file.
+	// Pass an empty string when no pre-computed hash is available.
+	//
 	// Returns:
 	//   - NetworkDetected: Binary contains network symbols
 	//   - NoNetworkSymbols: Binary has .dynsym but no network symbols
 	//   - NotELFBinary: File is not an ELF binary
 	//   - StaticBinary: Binary is statically linked (no .dynsym)
 	//   - AnalysisError: An error occurred (check Error field)
-	AnalyzeNetworkSymbols(path string) AnalysisOutput
+	AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput
 }
