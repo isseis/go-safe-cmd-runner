@@ -224,9 +224,10 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	allFiles := m.collectVerificationFiles(runtimeGroup)
 
 	result := &Result{
-		TotalFiles:   len(allFiles),
-		FailedFiles:  []string{},
-		SkippedFiles: []string{},
+		TotalFiles:    len(allFiles),
+		FailedFiles:   []string{},
+		SkippedFiles:  []string{},
+		ContentHashes: make(map[string]string),
 	}
 
 	start := time.Now()
@@ -248,8 +249,9 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 			continue
 		}
 
-		// Verify file hash (try normal verification first, then with privileges if needed)
-		if err := m.verifyFileWithFallback(file, "group:"+groupName); err != nil {
+		// Verify file hash and collect the computed hash for downstream consumers.
+		contentHash, err := m.verifyFileWithHash(file, "group:"+groupName)
+		if err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
 				"group", groupName,
@@ -257,6 +259,9 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 				"error", err)
 		} else {
 			result.VerifiedFiles++
+			if contentHash != "" {
+				result.ContentHashes[file] = contentHash
+			}
 		}
 	}
 
@@ -379,6 +384,33 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 
 	// In normal mode, return the error
 	return err
+}
+
+// verifyFileWithHash verifies the file and returns the computed content hash on success.
+// It mirrors verifyFileWithFallback but also returns the hash so callers can forward
+// it to downstream consumers (e.g. ELF analysis) to avoid re-reading the file.
+// Returns ("", nil) when the file validator is disabled or in dry-run mode.
+func (m *Manager) verifyFileWithHash(filePath string, context string) (string, error) {
+	if m.fileValidator == nil {
+		return "", nil
+	}
+
+	contentHash, err := m.fileValidator.VerifyWithHash(filePath)
+
+	if m.isDryRun && m.resultCollector != nil {
+		if err == nil {
+			m.resultCollector.RecordSuccess()
+		} else {
+			m.resultCollector.RecordFailure(filePath, err, context)
+			logVerificationFailure(filePath, context, err, "File verification")
+		}
+		return "", nil
+	}
+
+	if err != nil {
+		return "", err
+	}
+	return contentHash, nil
 }
 
 // readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,

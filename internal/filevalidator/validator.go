@@ -24,6 +24,9 @@ var (
 type FileValidator interface {
 	Record(filePath string, force bool) (string, string, error)
 	Verify(filePath string) error
+	// VerifyWithHash verifies the file and returns the prefixed content hash ("algo:hex")
+	// so callers can forward it to downstream consumers without a redundant file read.
+	VerifyWithHash(filePath string) (string, error)
 	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
 	VerifyAndRead(filePath string) ([]byte, error)
 	VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
@@ -186,6 +189,32 @@ func (v *Validator) Verify(filePath string) error {
 	}
 
 	return v.verifyHash(targetPath, actualHash)
+}
+
+// VerifyWithHash checks if the file at filePath matches its recorded hash and
+// returns the prefixed content hash ("algo:hex") on success.
+// It behaves identically to Verify but also returns the computed hash so that
+// callers can forward it to downstream consumers (e.g. ELF analysis) without
+// a redundant read of the file.
+func (v *Validator) VerifyWithHash(filePath string) (string, error) {
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	actualHash, err := v.calculateHash(targetPath.String())
+	if os.IsNotExist(err) {
+		return "", err
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to calculate file hash: %w", err)
+	}
+
+	if err := v.verifyHash(targetPath, actualHash); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash), nil
 }
 
 // verifyHash verifies the hash using FileAnalysisRecord format.

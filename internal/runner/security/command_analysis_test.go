@@ -711,7 +711,7 @@ func TestIsNetworkOperation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewNetworkAnalyzer()
-			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args)
+			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args, "")
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
 				tt.cmdName, tt.args, tt.description)
 			assert.Equal(t, tt.expectedRisk, isRisk, "IsNetworkOperation(%s, %v) risk detection. %s",
@@ -1793,7 +1793,7 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewNetworkAnalyzer()
-			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args)
+			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args, "")
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
@@ -2429,7 +2429,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			}
 
 			analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
-			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args)
+			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "")
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
 	}
@@ -2492,7 +2492,7 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 
 		// Verify mock is used by calling IsNetworkOperation on an absolute path
 		// (ELF analysis is skipped for non-absolute paths)
-		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{})
+		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "")
 		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic
 	})

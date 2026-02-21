@@ -38,8 +38,10 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runne
 		return runnertypes.RiskLevelHigh, nil
 	}
 
-	// Check for network operations
-	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs)
+	// Check for network operations.
+	// Forward the pre-verified content hash so ELF analysis of static binaries
+	// can skip a redundant file read when looking up syscall analysis results.
+	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash)
 	if isHighRisk {
 		return runnertypes.RiskLevelHigh, nil
 	}

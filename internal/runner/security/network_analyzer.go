@@ -23,11 +23,15 @@ func NewNetworkAnalyzer() *NetworkAnalyzer {
 // This function considers symbolic links to detect network commands properly.
 // Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded.
 //
+// contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
+// When non-empty it is forwarded to ELF analysis for static binaries to avoid
+// re-reading the binary. Pass empty string when no hash is available.
+//
 // Detection priority:
 // 1. commandProfileDefinitions (hardcoded list) - takes precedence
 // 2. ELF .dynsym analysis for unknown commands
 // 3. Argument-based detection (URLs, SSH-style addresses)
-func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string) (bool, bool) {
+func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string) (bool, bool) {
 	// Extract all possible command names including symlink targets
 	commandNames, exceededDepth := extractAllCommandNames(cmdName)
 
@@ -72,7 +76,7 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string) (boo
 	// ELF analysis requires an absolute path (should be resolved by caller via PathResolver).
 	// If cmdName is not absolute, skip ELF analysis silently.
 	if !foundInProfiles && filepath.IsAbs(cmdName) {
-		if a.isNetworkViaELFAnalysis(cmdName, "") {
+		if a.isNetworkViaELFAnalysis(cmdName, contentHash) {
 			return true, false
 		}
 	}

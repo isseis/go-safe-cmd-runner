@@ -289,6 +289,13 @@ type RuntimeCommand struct {
 	// Key: internal variable name, Value: expanded value from system environment
 	EnvImportVars map[string]string
 
+	// ExpandedCmdContentHash holds the prefixed content hash ("algo:hex") of the
+	// command binary as computed during file verification (VerifyGroupFiles).
+	// It is set by the group executor after verification completes and forwarded
+	// to the ELF analyzer to avoid a redundant read of the binary.
+	// Empty string means no hash is available (file was skipped or not verified).
+	ExpandedCmdContentHash string
+
 	// EffectiveWorkDir is the resolved working directory for this command
 	EffectiveWorkDir string
 
