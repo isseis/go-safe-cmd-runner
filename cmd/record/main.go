@@ -185,10 +185,16 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 	return 0
 }
 
+// elfSyscallAnalyzer is the interface for analyzing syscalls from an ELF file.
+// It is satisfied by *elfanalyzer.SyscallAnalyzer and can be replaced in tests.
+type elfSyscallAnalyzer interface {
+	AnalyzeSyscallsFromELF(elfFile *elf.File) (*elfanalyzer.SyscallAnalysisResult, error)
+}
+
 // syscallAnalysisContext holds resources for syscall analysis.
 type syscallAnalysisContext struct {
 	syscallStore fileanalysis.SyscallAnalysisStore
-	analyzer     *elfanalyzer.SyscallAnalyzer
+	analyzer     elfSyscallAnalyzer
 	fs           safefileio.FileSystem
 }
 
