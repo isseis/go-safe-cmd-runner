@@ -9,24 +9,21 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // SyscallAnalysisStore defines the interface for syscall analysis result storage.
-// This decouples the analyzer from the concrete storage implementation to avoid
-// circular dependencies with the internal/fileanalysis package.
-// The concrete implementation should wrap fileanalysis.SyscallAnalysisStore,
-// converting between fileanalysis and elfanalyzer types.
 type SyscallAnalysisStore interface {
 	// LoadSyscallAnalysis loads syscall analysis from storage.
 	// `expectedHash` contains both the hash algorithm and the expected hash value.
 	// Format: "sha256:<hex>" (e.g., "sha256:abc123...def789")
 	// Returns (result, nil) if found and hash matches.
-	// Returns (nil, ErrRecordNotFound) if not found.
-	// Returns (nil, ErrHashMismatch) if hash mismatch.
-	// Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
+	// Returns (nil, fileanalysis.ErrRecordNotFound) if not found.
+	// Returns (nil, fileanalysis.ErrHashMismatch) if hash mismatch.
+	// Returns (nil, fileanalysis.ErrNoSyscallAnalysis) if no syscall analysis data exists.
 	// Returns (nil, error) on other errors.
 	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
 }
@@ -297,7 +294,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio
 
 	result, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
 	if err != nil {
-		if errors.Is(err, ErrRecordNotFound) || errors.Is(err, ErrHashMismatch) || errors.Is(err, ErrNoSyscallAnalysis) {
+		if errors.Is(err, fileanalysis.ErrRecordNotFound) || errors.Is(err, fileanalysis.ErrHashMismatch) || errors.Is(err, fileanalysis.ErrNoSyscallAnalysis) {
 			return AnalysisOutput{Result: StaticBinary}
 		}
 		slog.Debug("Syscall analysis lookup error",

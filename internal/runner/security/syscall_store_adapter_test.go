@@ -8,7 +8,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,40 +50,18 @@ func TestNewELFSyscallStoreAdapter_ReturnResult(t *testing.T) {
 	assert.Equal(t, core, got.SyscallAnalysisResultCore)
 }
 
-func TestNewELFSyscallStoreAdapter_TranslatesErrRecordNotFound(t *testing.T) {
-	inner := &mockFileanalysisSyscallStore{err: fileanalysis.ErrRecordNotFound}
-	adapter := NewELFSyscallStoreAdapter(inner)
+func TestNewELFSyscallStoreAdapter_PassesThroughErrors(t *testing.T) {
+	for _, sentinel := range []error{
+		fileanalysis.ErrRecordNotFound,
+		fileanalysis.ErrHashMismatch,
+		fileanalysis.ErrNoSyscallAnalysis,
+		errors.New("unexpected store error"),
+	} {
+		inner := &mockFileanalysisSyscallStore{err: sentinel}
+		adapter := NewELFSyscallStoreAdapter(inner)
 
-	_, err := adapter.LoadSyscallAnalysis("/bin/foo", "sha256:abc")
+		_, err := adapter.LoadSyscallAnalysis("/bin/foo", "sha256:abc")
 
-	assert.ErrorIs(t, err, elfanalyzer.ErrRecordNotFound)
-	assert.NotErrorIs(t, err, fileanalysis.ErrRecordNotFound)
-}
-
-func TestNewELFSyscallStoreAdapter_TranslatesErrHashMismatch(t *testing.T) {
-	inner := &mockFileanalysisSyscallStore{err: fileanalysis.ErrHashMismatch}
-	adapter := NewELFSyscallStoreAdapter(inner)
-
-	_, err := adapter.LoadSyscallAnalysis("/bin/foo", "sha256:abc")
-
-	assert.ErrorIs(t, err, elfanalyzer.ErrHashMismatch)
-}
-
-func TestNewELFSyscallStoreAdapter_TranslatesErrNoSyscallAnalysis(t *testing.T) {
-	inner := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	adapter := NewELFSyscallStoreAdapter(inner)
-
-	_, err := adapter.LoadSyscallAnalysis("/bin/foo", "sha256:abc")
-
-	assert.ErrorIs(t, err, elfanalyzer.ErrNoSyscallAnalysis)
-}
-
-func TestNewELFSyscallStoreAdapter_PassesThroughOtherErrors(t *testing.T) {
-	sentinel := errors.New("unexpected store error")
-	inner := &mockFileanalysisSyscallStore{err: sentinel}
-	adapter := NewELFSyscallStoreAdapter(inner)
-
-	_, err := adapter.LoadSyscallAnalysis("/bin/foo", "sha256:abc")
-
-	assert.ErrorIs(t, err, sentinel)
+		assert.ErrorIs(t, err, sentinel)
+	}
 }

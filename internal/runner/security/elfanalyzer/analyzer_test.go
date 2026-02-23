@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,7 +141,7 @@ type mockSyscallAnalysisStore struct {
 func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash string) (*SyscallAnalysisResult, error) {
 	// If expectedHash is set, only return result when hash matches
 	if m.expectedHash != "" && m.expectedHash != expectedHash {
-		return nil, ErrHashMismatch
+		return nil, fileanalysis.ErrHashMismatch
 	}
 	return m.result, m.err
 }
@@ -310,7 +311,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 
 	// Create mock store that returns not found
 	mockStore := &mockSyscallAnalysisStore{
-		err: ErrRecordNotFound,
+		err: fileanalysis.ErrRecordNotFound,
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)

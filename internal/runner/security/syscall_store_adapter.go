@@ -1,8 +1,6 @@
 package security
 
 import (
-	"errors"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
@@ -26,29 +24,14 @@ func NewELFSyscallStoreAdapter(store fileanalysis.SyscallAnalysisStore) elfanaly
 }
 
 // LoadSyscallAnalysis implements elfanalyzer.SyscallAnalysisStore.
-// It translates fileanalysis sentinel errors to elfanalyzer sentinel errors and
-// converts the result type via the shared common.SyscallAnalysisResultCore embedding.
+// Converts the result type via the shared common.SyscallAnalysisResultCore embedding.
+// fileanalysis sentinel errors are passed through unchanged; elfanalyzer checks them directly.
 func (a *fileanalysisSyscallStoreAdapter) LoadSyscallAnalysis(filePath string, expectedHash string) (*elfanalyzer.SyscallAnalysisResult, error) {
 	result, err := a.inner.LoadSyscallAnalysis(filePath, expectedHash)
 	if err != nil {
-		return nil, a.translateError(err)
+		return nil, err
 	}
 	return &elfanalyzer.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
 	}, nil
-}
-
-// translateError maps fileanalysis sentinel errors to the corresponding elfanalyzer sentinels.
-// Non-sentinel errors are passed through unchanged.
-func (a *fileanalysisSyscallStoreAdapter) translateError(err error) error {
-	switch {
-	case errors.Is(err, fileanalysis.ErrRecordNotFound):
-		return elfanalyzer.ErrRecordNotFound
-	case errors.Is(err, fileanalysis.ErrHashMismatch):
-		return elfanalyzer.ErrHashMismatch
-	case errors.Is(err, fileanalysis.ErrNoSyscallAnalysis):
-		return elfanalyzer.ErrNoSyscallAnalysis
-	default:
-		return err
-	}
 }
