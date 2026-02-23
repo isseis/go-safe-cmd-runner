@@ -403,6 +403,51 @@ func TestNewSyscallAnalyzerWithConfig(t *testing.T) {
 	assert.Equal(t, 10, analyzer.maxBackwardScan)
 }
 
+func TestSyscallAnalyzer_DecodeStats(t *testing.T) {
+	t.Run("decode failures are counted", func(t *testing.T) {
+		// 0x06 is invalid in 64-bit mode, causing a decode failure.
+		// After skipping it, 0x0f 0x05 (syscall) is found normally.
+		code := []byte{
+			0x06,       // invalid byte (PUSH ES, illegal in 64-bit mode)
+			0x0f, 0x05, // syscall
+		}
+
+		analyzer := NewSyscallAnalyzer()
+		result := analyzer.analyzeSyscallsInCode(code, 0, nil)
+
+		assert.Greater(t, result.DecodeStats.DecodeFailureCount, 0,
+			"expected at least one decode failure from invalid instruction byte")
+		assert.Equal(t, len(code), result.DecodeStats.TotalBytesAnalyzed,
+			"TotalBytesAnalyzed should equal the length of the code section")
+	})
+
+	t.Run("no decode failures on valid code", func(t *testing.T) {
+		// mov $0x01, %eax; syscall — all valid instructions, no decode failures.
+		code := []byte{
+			0xb8, 0x01, 0x00, 0x00, 0x00, // mov $0x01, %eax
+			0x0f, 0x05, // syscall
+		}
+
+		analyzer := NewSyscallAnalyzer()
+		result := analyzer.analyzeSyscallsInCode(code, 0, nil)
+
+		assert.Equal(t, 0, result.DecodeStats.DecodeFailureCount,
+			"expected no decode failures for valid instruction sequence")
+		assert.Equal(t, len(code), result.DecodeStats.TotalBytesAnalyzed,
+			"TotalBytesAnalyzed should equal the length of the code section")
+	})
+
+	t.Run("TotalBytesAnalyzed is set even for empty code", func(t *testing.T) {
+		code := []byte{}
+
+		analyzer := NewSyscallAnalyzer()
+		result := analyzer.analyzeSyscallsInCode(code, 0, nil)
+
+		assert.Equal(t, 0, result.DecodeStats.DecodeFailureCount)
+		assert.Equal(t, 0, result.DecodeStats.TotalBytesAnalyzed)
+	})
+}
+
 func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	// Create a code sequence with many non-eax instructions followed by syscall.
 	// Use maxBackwardScan = 3 to make the test small.
