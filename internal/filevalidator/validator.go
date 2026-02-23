@@ -22,8 +22,11 @@ var (
 
 // FileValidator interface defines the basic file validation methods
 type FileValidator interface {
-	Record(filePath string, force bool) (string, error)
+	Record(filePath string, force bool) (string, string, error)
 	Verify(filePath string) error
+	// VerifyWithHash verifies the file and returns the prefixed content hash ("algo:hex")
+	// so callers can forward it to downstream consumers without a redundant file read.
+	VerifyWithHash(filePath string) (string, error)
 	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
 	VerifyAndRead(filePath string) ([]byte, error)
 	VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
@@ -116,23 +119,23 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 // Returns ErrHashFilePathCollision if a different file's record occupies the same
 // hash file path (possible with SHA256 fallback encoding for very long paths).
 // Existing fields (e.g., SyscallAnalysis) in the record are preserved when updating.
-func (v *Validator) Record(filePath string, force bool) (string, error) {
+func (v *Validator) Record(filePath string, force bool) (string, string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// Calculate the hash of the file
 	hash, err := v.calculateHash(targetPath.String())
 	if err != nil {
-		return "", fmt.Errorf("failed to calculate hash: %w", err)
+		return "", "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
 	// Get the path for the hash file
 	hashFilePath, err := v.GetHashFilePath(targetPath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	return v.saveHash(targetPath, hash, hashFilePath, force)
@@ -145,7 +148,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 // which avoids a redundant Load() call and keeps error handling in sync with
 // Store.Update()'s own semantics (e.g., SchemaVersionMismatchError is rejected
 // by Update before the callback runs).
-func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, error) {
+func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
 	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
 	err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
 		// record.FilePath is non-empty when a valid existing record was loaded.
@@ -161,10 +164,10 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to update analysis record: %w", err)
+		return "", "", fmt.Errorf("failed to update analysis record: %w", err)
 	}
 
-	return hashFilePath, nil
+	return hashFilePath, contentHash, nil
 }
 
 // Verify checks if the file at filePath matches its recorded hash.
@@ -186,6 +189,32 @@ func (v *Validator) Verify(filePath string) error {
 	}
 
 	return v.verifyHash(targetPath, actualHash)
+}
+
+// VerifyWithHash checks if the file at filePath matches its recorded hash and
+// returns the prefixed content hash ("algo:hex") on success.
+// It behaves identically to Verify but also returns the computed hash so that
+// callers can forward it to downstream consumers (e.g. ELF analysis) without
+// a redundant read of the file.
+func (v *Validator) VerifyWithHash(filePath string) (string, error) {
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	actualHash, err := v.calculateHash(targetPath.String())
+	if os.IsNotExist(err) {
+		return "", err
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to calculate file hash: %w", err)
+	}
+
+	if err := v.verifyHash(targetPath, actualHash); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s:%s", v.algorithm.Name(), actualHash), nil
 }
 
 // verifyHash verifies the hash using FileAnalysisRecord format.

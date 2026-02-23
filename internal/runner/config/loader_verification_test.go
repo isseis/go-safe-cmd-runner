@@ -23,7 +23,7 @@ func createHashRecord(t *testing.T, hashDir, filePath string) {
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	require.NoError(t, err, "Failed to create validator for createHashRecord")
 
-	_, err = validator.Record(filePath, false)
+	_, _, err = validator.Record(filePath, false)
 	require.NoError(t, err, "Failed to record hash for %s", filePath)
 }
 

@@ -333,7 +333,9 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 	return nil
 }
 
-// verifyGroupFiles verifies files specified in the group before execution
+// verifyGroupFiles verifies files specified in the group before execution.
+// After successful verification it copies the computed content hashes into each
+// RuntimeCommand so that downstream ELF analysis can skip re-hashing the binary.
 func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) error {
 	if ge.verificationManager == nil {
 		return nil
@@ -353,6 +355,22 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			"verified_files", result.VerifiedFiles,
 			"skipped_files", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds())
+	}
+
+	// Propagate verified hashes to each command.
+	// executeCommandInGroup resolves the command path via ResolvePath before
+	// calling EvaluateRisk, so we use the same resolver here to build a
+	// resolved-path → hash lookup that matches what ResolvePath will return.
+	if len(result.ContentHashes) > 0 {
+		for _, cmd := range runtimeGroup.Commands {
+			resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
+			if resolveErr != nil {
+				continue
+			}
+			if hash, ok := result.ContentHashes[resolvedPath]; ok {
+				cmd.ExpandedCmdContentHash = hash
+			}
+		}
 	}
 
 	return nil
@@ -380,10 +398,10 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 		}
 	} else {
 		// Text format: output immediately
-		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+		fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n") //nolint:errcheck
 		output := debuginfo.FormatInheritanceAnalysisText(analysis, groupSpec.Name)
 		if output != "" {
-			_, _ = fmt.Fprint(os.Stdout, output)
+			fmt.Fprint(os.Stdout, output) //nolint:errcheck
 		}
 	}
 }

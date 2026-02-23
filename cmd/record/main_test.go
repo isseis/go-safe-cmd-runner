@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"debug/elf"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,12 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,23 +31,26 @@ type fakeRecorder struct {
 	hashDir   string
 }
 
-func (f *fakeRecorder) Record(filePath string, force bool) (string, error) {
+func (f *fakeRecorder) Record(filePath string, force bool) (string, string, error) {
 	f.calls = append(f.calls, recordCall{file: filePath, force: force})
 	if err, ok := f.responses[filePath]; ok && err != nil {
-		return "", err
+		return "", "", err
 	}
-	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), nil
+	return fmt.Sprintf("/hash/%s.json", filepath.Base(filePath)), "sha256:fakehash", nil
 }
 
-func overrideValidatorFactory(t *testing.T, recorder *fakeRecorder) func() {
-	t.Helper()
-	originalFactory := validatorFactory
-	validatorFactory = func(hashDir string) (hashRecorder, error) {
-		recorder.hashDir = hashDir
-		return recorder, nil
-	}
-	return func() {
-		validatorFactory = originalFactory
+// testDeps returns a deps with the given recorder wired as the validatorFactory.
+// Callers can override individual fields afterwards when needed.
+func testDeps(recorder *fakeRecorder) deps {
+	return deps{
+		validatorFactory: func(hashDir string) (hashRecorder, error) {
+			if recorder != nil {
+				recorder.hashDir = hashDir
+			}
+			return recorder, nil
+		},
+		syscallContextFactory: newSyscallAnalysisContext,
+		mkdirAll:              os.MkdirAll,
 	}
 }
 
@@ -48,7 +58,7 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{}, stdout, stderr)
+	exitCode := run([]string{}, testDeps(nil), stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "at least one file path")
@@ -57,13 +67,11 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 func TestRunProcessesMultipleFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, stdout, stderr)
+	exitCode := run([]string{"-d", tempDir, "file1.txt", "file2.txt"}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	assert.Equal(t, tempDir, recorder.hashDir)
@@ -79,13 +87,11 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 	recorder := &fakeRecorder{responses: map[string]error{
 		"bad.dat": errors.New("calculate hash failure"),
 	}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-force", "-hash-dir", tempDir, "good1", "bad.dat", "good2"}, stdout, stderr)
+	exitCode := run([]string{"-force", "-hash-dir", tempDir, "good1", "bad.dat", "good2"}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 1, exitCode)
 	require.Len(t, recorder.calls, 3)
@@ -100,13 +106,11 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, stdout, stderr)
+	exitCode := run([]string{"-hash-dir", tempDir, "-file", "legacy.txt", "new.txt"}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
 	require.Len(t, recorder.calls, 2)
@@ -115,25 +119,125 @@ func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
 }
 
 func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
-	recorder := &fakeRecorder{responses: map[string]error{}}
-	cleanup := overrideValidatorFactory(t, recorder)
-	defer cleanup()
-
-	// Override mkdirAll to avoid permission issues in CI
-	originalMkdirAll := mkdirAll
-	mkdirAll = func(_ string, _ os.FileMode) error {
-		return nil
+	// Pass a no-op mkdirAll to avoid filesystem access to the default hash directory in CI.
+	d := deps{
+		mkdirAll: func(_ string, _ os.FileMode) error { return nil },
 	}
-	defer func() { mkdirAll = originalMkdirAll }()
+
+	stderr := &bytes.Buffer{}
+
+	cfg, _, err := parseArgs([]string{"file1.txt"}, d, stderr)
+
+	require.NoError(t, err)
+	assert.Equal(t, cmdcommon.DefaultHashDirectory, cfg.hashDir)
+	assert.Equal(t, []string{"file1.txt"}, cfg.files)
+	assert.False(t, cfg.force)
+}
+
+func TestRunWithSyscallAnalysis(t *testing.T) {
+	tempDir := t.TempDir()
+	recorder := &fakeRecorder{responses: map[string]error{}}
+
+	// Create a static ELF file for testing
+	staticELF := filepath.Join(tempDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	exitCode := run([]string{"file1.txt"}, stdout, stderr)
+	// Syscall analysis is always enabled
+	exitCode := run([]string{"-d", tempDir, staticELF}, testDeps(recorder), stdout, stderr)
 
 	require.Equal(t, 0, exitCode)
-	assert.Equal(t, cmdcommon.DefaultHashDirectory, recorder.hashDir)
 	require.Len(t, recorder.calls, 1)
-	assert.Equal(t, "file1.txt", recorder.calls[0].file)
-	assert.False(t, recorder.calls[0].force)
+	assert.Equal(t, staticELF, recorder.calls[0].file)
+	assert.Contains(t, stdout.String(), "OK")
+}
+
+func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
+	tempDir := t.TempDir()
+	recorder := &fakeRecorder{responses: map[string]error{}}
+
+	// Create a non-ELF file
+	nonELF := filepath.Join(tempDir, "script.sh")
+	err := os.WriteFile(nonELF, []byte("#!/bin/bash\necho hello"), 0o755)
+	require.NoError(t, err)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	// Syscall analysis is always enabled but should skip non-ELF files without warning
+	exitCode := run([]string{"-d", tempDir, nonELF}, testDeps(recorder), stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+	require.Len(t, recorder.calls, 1)
+	// No warning should be printed for non-ELF files
+	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
+}
+
+// fakeELFAnalyzer is a test double for elfSyscallAnalyzer that returns a
+// pre-configured result without needing a real ELF binary with a .text section.
+type fakeELFAnalyzer struct {
+	result *elfanalyzer.SyscallAnalysisResult
+	err    error
+}
+
+func (f *fakeELFAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) (*elfanalyzer.SyscallAnalysisResult, error) {
+	return f.result, f.err
+}
+
+func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
+	tempDir := t.TempDir()
+	recorder := &fakeRecorder{responses: map[string]error{}}
+
+	// Create a static ELF file (no .text section needed — the analyzer is faked)
+	staticELF := filepath.Join(tempDir, "static_binary.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
+
+	// Build a fake analyzer that returns a known result.
+	fakeResult := &elfanalyzer.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			Summary: common.SyscallSummary{
+				TotalDetectedEvents: 3,
+				NetworkSyscallCount: 1,
+				IsHighRisk:          false,
+			},
+		},
+	}
+
+	// Build a real store so we can verify what gets persisted.
+	pathGetter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(tempDir, pathGetter)
+	require.NoError(t, err)
+	syscallStore := fileanalysis.NewSyscallAnalysisStore(store)
+
+	// Wire the context with the fake analyzer and real store.
+	prebuiltCtx := &syscallAnalysisContext{
+		syscallStore: syscallStore,
+		analyzer:     &fakeELFAnalyzer{result: fakeResult},
+		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+	}
+
+	d := testDeps(recorder)
+	d.syscallContextFactory = func(_ string) (*syscallAnalysisContext, error) {
+		return prebuiltCtx, nil
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", tempDir, staticELF}, d, stdout, stderr)
+
+	require.Equal(t, 0, exitCode)
+
+	// fakeRecorder returns "sha256:fakehash" as the content hash.
+	const fakeHash = "sha256:fakehash"
+	loaded, err := syscallStore.LoadSyscallAnalysis(staticELF, fakeHash)
+	require.NoError(t, err)
+
+	assert.Equal(t, "x86_64", loaded.Architecture)
+	assert.Equal(t, 3, loaded.Summary.TotalDetectedEvents)
+	assert.Equal(t, 1, loaded.Summary.NetworkSyscallCount)
+	assert.False(t, loaded.Summary.IsHighRisk)
 }

@@ -70,7 +70,7 @@ func TestErrorCases(t *testing.T) {
 			assert.NoError(t, err, "Setup failed")
 
 			// Test Record
-			_, err = validator.Record(filePath, false)
+			_, _, err = validator.Record(filePath, false)
 			if tt.wantErr != nil {
 				assert.Error(t, err, "Expected error")
 				assert.ErrorIs(t, err, tt.wantErr, "Expected specific error type")
@@ -100,7 +100,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		// Create and record a file
 		filePath := filepath.Join(tempDir, "deleted.txt")
 		assert.NoError(t, os.WriteFile(filePath, []byte("test"), 0o644), "Failed to create test file")
-		_, err := validator.Record(filePath, false)
+		_, _, err := validator.Record(filePath, false)
 		assert.NoError(t, err, "Failed to record file")
 
 		// Delete the file
@@ -117,7 +117,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		dirPath := filepath.Join(tempDir, "subdir")
 		assert.NoError(t, os.Mkdir(dirPath, 0o755), "Failed to create directory")
 
-		_, err := validator.Record(dirPath, false)
+		_, _, err := validator.Record(dirPath, false)
 		assert.Error(t, err, "Expected error for directory")
 		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePath, "Expected invalid file path error")
 	})
@@ -161,7 +161,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		filePath := filepath.Join(roDir, "test.txt")
 		assert.NoError(t, os.WriteFile(filePath, []byte("test"), 0o644), "Failed to create test file")
 
-		_, err := validator.Record(filePath, false)
+		_, _, err := validator.Record(filePath, false)
 		assert.Error(t, err, "Expected error for read-only filesystem")
 		assert.ErrorIs(t, err, os.ErrPermission, "Expected permission error")
 	})
@@ -198,7 +198,7 @@ func TestErrorMessages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Record
-			_, err := validator.Record(tt.filePath, false)
+			_, _, err := validator.Record(tt.filePath, false)
 			require.Error(t, err, "Expected error, got nil")
 
 			// Check error type if expectedErr is set

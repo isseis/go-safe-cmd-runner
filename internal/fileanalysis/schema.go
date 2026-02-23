@@ -2,6 +2,8 @@ package fileanalysis
 
 import (
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 const (
@@ -39,66 +41,24 @@ type Record struct {
 	SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 }
 
-// SyscallInfo represents information about a single detected syscall event.
-// This type mirrors elfanalyzer.SyscallInfo to avoid import cycles.
-// The SyscallAnalysisStore converts between the two types.
-type SyscallInfo struct {
-	// Number is the syscall number (e.g., 41 for socket on x86_64).
-	// -1 indicates the number could not be determined.
-	Number int `json:"number"`
+// SyscallInfo is an alias for common.SyscallInfo.
+// Using a type alias preserves backward compatibility for code that references
+// fileanalysis.SyscallInfo while the canonical definition lives in common.
+type SyscallInfo = common.SyscallInfo
 
-	// Name is the human-readable syscall name (e.g., "socket").
-	// Empty if the number is unknown or not in the table.
-	Name string `json:"name,omitempty"`
-
-	// IsNetwork indicates whether this syscall is network-related.
-	IsNetwork bool `json:"is_network"`
-
-	// Location is the virtual address of the syscall instruction.
-	Location uint64 `json:"location"`
-
-	// DeterminationMethod describes how the syscall number was determined.
-	DeterminationMethod string `json:"determination_method"`
-}
-
-// SyscallSummary provides aggregated analysis information.
-// This type mirrors elfanalyzer.SyscallSummary to avoid import cycles.
-type SyscallSummary struct {
-	// HasNetworkSyscalls indicates presence of network-related syscalls.
-	HasNetworkSyscalls bool `json:"has_network_syscalls"`
-
-	// IsHighRisk indicates the analysis could not fully determine network capability.
-	IsHighRisk bool `json:"is_high_risk"`
-
-	// TotalDetectedEvents is the count of detected syscall events.
-	TotalDetectedEvents int `json:"total_detected_events"`
-
-	// NetworkSyscallCount is the count of network-related syscall events.
-	NetworkSyscallCount int `json:"network_syscall_count"`
-}
+// SyscallSummary is an alias for common.SyscallSummary.
+// Using a type alias preserves backward compatibility for code that references
+// fileanalysis.SyscallSummary while the canonical definition lives in common.
+type SyscallSummary = common.SyscallSummary
 
 // SyscallAnalysisData contains syscall analysis information.
 type SyscallAnalysisData struct {
-	// Architecture is the target architecture (e.g., "x86_64").
-	Architecture string `json:"architecture"`
+	// SyscallAnalysisResultCore contains the common fields shared with
+	// elfanalyzer.SyscallAnalysisResult. Embedding ensures field-level
+	// consistency between packages and enables direct struct copy for
+	// type conversion.
+	common.SyscallAnalysisResultCore
 
 	// AnalyzedAt is when the syscall analysis was performed.
 	AnalyzedAt time.Time `json:"analyzed_at"`
-
-	// DetectedSyscalls contains all syscall instructions found.
-	DetectedSyscalls []SyscallInfo `json:"detected_syscalls"`
-
-	// HasUnknownSyscalls indicates if any syscall number could not be determined.
-	HasUnknownSyscalls bool `json:"has_unknown_syscalls"`
-
-	// HighRiskReasons explains why the analysis resulted in high risk.
-	// Note: With omitempty, nil and empty slice ([]string{}) have different JSON output:
-	//   - nil: field is omitted entirely
-	//   - []string{}: field appears as "high_risk_reasons": []
-	// When initializing SyscallAnalysisResult, use nil (not empty slice) for no high risk
-	// to ensure the field is omitted in JSON output.
-	HighRiskReasons []string `json:"high_risk_reasons,omitempty"`
-
-	// Summary provides aggregated information about the analysis.
-	Summary SyscallSummary `json:"summary"`
 }

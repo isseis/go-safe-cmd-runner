@@ -27,7 +27,7 @@ Dry-runモードでの出力は2つの独立した箇所から行われる:
 1. **グループ実行中のデバッグ出力** ([internal/runner/group_executor.go:131-136](../../../internal/runner/group_executor.go#L131-L136))
    ```go
    if ge.isDryRun {
-       _, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+       fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
        debug.PrintFromEnvInheritance(os.Stdout, &ge.config.Global, groupSpec, runtimeGroup)
    }
    ```

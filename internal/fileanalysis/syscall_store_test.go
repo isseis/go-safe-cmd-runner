@@ -28,22 +28,24 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 
 	// Create test syscall analysis result
 	result := &SyscallAnalysisResult{
-		Architecture: "x86_64",
-		DetectedSyscalls: []SyscallInfo{
-			{
-				Number:              41,
-				Name:                "socket",
-				IsNetwork:           true,
-				Location:            0x401000,
-				DeterminationMethod: "immediate",
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			DetectedSyscalls: []SyscallInfo{
+				{
+					Number:              41,
+					Name:                "socket",
+					IsNetwork:           true,
+					Location:            0x401000,
+					DeterminationMethod: "immediate",
+				},
 			},
-		},
-		HasUnknownSyscalls: false,
-		Summary: SyscallSummary{
-			HasNetworkSyscalls:  true,
-			IsHighRisk:          false,
-			TotalDetectedEvents: 1,
-			NetworkSyscallCount: 1,
+			HasUnknownSyscalls: false,
+			Summary: SyscallSummary{
+				HasNetworkSyscalls:  true,
+				IsHighRisk:          false,
+				TotalDetectedEvents: 1,
+				NetworkSyscallCount: 1,
+			},
 		},
 	}
 
@@ -83,8 +85,10 @@ func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
 
 	// Save with one hash
 	result := &SyscallAnalysisResult{
-		DetectedSyscalls: []SyscallInfo{
-			{Number: 41, Name: "socket"},
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []SyscallInfo{
+				{Number: 41, Name: "socket"},
+			},
 		},
 	}
 	err = store.SaveSyscallAnalysis(testFile, "sha256:originalhash", result)
@@ -154,20 +158,22 @@ func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
 
 	// Create result with high risk reasons
 	result := &SyscallAnalysisResult{
-		DetectedSyscalls: []SyscallInfo{
-			{
-				Number:              -1,
-				DeterminationMethod: "unknown:indirect_setting",
-				Location:            0x402000,
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []SyscallInfo{
+				{
+					Number:              -1,
+					DeterminationMethod: "unknown:indirect_setting",
+					Location:            0x402000,
+				},
 			},
-		},
-		HasUnknownSyscalls: true,
-		HighRiskReasons: []string{
-			"syscall at 0x402000: number could not be determined (unknown:indirect_setting)",
-		},
-		Summary: SyscallSummary{
-			IsHighRisk:          true,
-			TotalDetectedEvents: 1,
+			HasUnknownSyscalls: true,
+			HighRiskReasons: []string{
+				"syscall at 0x402000: number could not be determined (unknown:indirect_setting)",
+			},
+			Summary: SyscallSummary{
+				IsHighRisk:          true,
+				TotalDetectedEvents: 1,
+			},
 		},
 	}
 
@@ -203,8 +209,10 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 
 	// First save some syscall analysis
 	firstResult := &SyscallAnalysisResult{
-		DetectedSyscalls: []SyscallInfo{
-			{Number: 41, Name: "socket"},
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []SyscallInfo{
+				{Number: 41, Name: "socket"},
+			},
 		},
 	}
 	err = store.SaveSyscallAnalysis(testFile, "sha256:hash1", firstResult)
@@ -212,8 +220,10 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 
 	// Update with new analysis
 	secondResult := &SyscallAnalysisResult{
-		DetectedSyscalls: []SyscallInfo{
-			{Number: 42, Name: "connect"},
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []SyscallInfo{
+				{Number: 42, Name: "connect"},
+			},
 		},
 	}
 	err = store.SaveSyscallAnalysis(testFile, "sha256:hash2", secondResult)

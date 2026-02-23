@@ -144,6 +144,13 @@ type Result struct {
 	FailedFiles   []string      // list of files that failed verification
 	SkippedFiles  []string      // list of files that were skipped
 	Duration      time.Duration // time taken for verification
+
+	// ContentHashes maps each successfully verified file path (resolved, absolute)
+	// to its prefixed content hash ("algo:hex", e.g. "sha256:abc123...").
+	// Only populated for files verified by VerifyGroupFiles; nil for other callers.
+	// Callers can forward these hashes to downstream consumers (e.g. ELF analysis)
+	// to avoid re-reading the file.
+	ContentHashes map[string]string
 }
 
 // FileDetail represents detailed information about a single file verification

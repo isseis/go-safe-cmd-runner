@@ -19,7 +19,7 @@ func BenchmarkValidator_Verify(b *testing.B) {
 	testFile := createBenchmarkTestFile(b, "benchmark test content")
 
 	// Record hash
-	_, err = validator.Record(testFile, false)
+	_, _, err = validator.Record(testFile, false)
 	if err != nil {
 		b.Fatalf("Failed to record hash: %v", err)
 	}
@@ -45,7 +45,7 @@ func BenchmarkValidator_VerifyFromHandle(b *testing.B) {
 	testFile := createBenchmarkTestFile(b, "benchmark test content")
 
 	// Record hash
-	_, err = validator.Record(testFile, false)
+	_, _, err = validator.Record(testFile, false)
 	if err != nil {
 		b.Fatalf("Failed to record hash: %v", err)
 	}

@@ -9,10 +9,24 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
+
+// SyscallAnalysisStore defines the interface for syscall analysis result storage.
+type SyscallAnalysisStore interface {
+	// LoadSyscallAnalysis loads syscall analysis from storage.
+	// `expectedHash` contains both the hash algorithm and the expected hash value.
+	// Format: "sha256:<hex>" (e.g., "sha256:abc123...def789")
+	// Returns (result, nil) if found and hash matches.
+	// Returns (nil, fileanalysis.ErrRecordNotFound) if not found.
+	// Returns (nil, fileanalysis.ErrHashMismatch) if hash mismatch.
+	// Returns (nil, fileanalysis.ErrNoSyscallAnalysis) if no syscall analysis data exists.
+	// Returns (nil, error) on other errors.
+	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
+}
 
 // elfMagicStr is the ELF magic number string literal.
 const elfMagicStr = "\x7fELF"
@@ -33,6 +47,9 @@ var (
 
 	// ErrFileTooLarge indicates the file exceeds the maximum size for analysis.
 	ErrFileTooLarge = errors.New("file too large")
+
+	// ErrSyscallAnalysisHighRisk indicates syscall analysis found unknown syscalls.
+	ErrSyscallAnalysisHighRisk = errors.New("syscall analysis high risk")
 )
 
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
@@ -41,6 +58,14 @@ type StandardELFAnalyzer struct {
 	networkSymbols map[string]SymbolCategory
 	privManager    runnertypes.PrivilegeManager           // optional, for execute-only binaries
 	pfv            *filevalidator.PrivilegedFileValidator // used for privileged file access
+
+	// syscallStore is the optional syscall analysis store for static binary analysis.
+	// When set, the analyzer will lookup pre-computed syscall analysis results
+	// for static binaries instead of returning StaticBinary directly.
+	syscallStore SyscallAnalysisStore
+	// hashAlgo is the hash algorithm used for file hash calculation.
+	// Required when syscallStore is set.
+	hashAlgo filevalidator.HashAlgorithm
 }
 
 // NewStandardELFAnalyzer creates a new StandardELFAnalyzer with the given file system.
@@ -72,8 +97,29 @@ func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager run
 	}
 }
 
+// NewStandardELFAnalyzerWithSyscallStore creates an analyzer with syscall analysis store support.
+// Uses dependency injection for SyscallAnalysisStore to avoid circular dependencies.
+//
+// When a static binary is detected, the analyzer will lookup pre-computed syscall
+// analysis results from the store using the file's hash for validation.
+// If store is nil, the analyzer behaves like NewStandardELFAnalyzer.
+func NewStandardELFAnalyzerWithSyscallStore(
+	fs safefileio.FileSystem,
+	privManager runnertypes.PrivilegeManager,
+	store SyscallAnalysisStore,
+) *StandardELFAnalyzer {
+	analyzer := NewStandardELFAnalyzer(fs, privManager)
+
+	if store != nil {
+		analyzer.syscallStore = store
+		analyzer.hashAlgo = &filevalidator.SHA256{}
+	}
+
+	return analyzer
+}
+
 // AnalyzeNetworkSymbols implements ELFAnalyzer interface.
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput {
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput {
 	// Step 1: Open file safely using safefileio
 	// This prevents symlink attacks and TOCTOU race conditions.
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -165,9 +211,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
 	if err != nil {
 		// ErrNoSymbols indicates no .dynsym section exists (static binary)
 		if errors.Is(err, elf.ErrNoSymbols) {
-			return AnalysisOutput{
-				Result: StaticBinary,
-			}
+			return a.handleStaticBinary(path, file, contentHash)
 		}
 		return AnalysisOutput{
 			Result: AnalysisError,
@@ -177,9 +221,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string) AnalysisOutput 
 
 	// Empty .dynsym is treated as static binary
 	if len(dynsyms) == 0 {
-		return AnalysisOutput{
-			Result: StaticBinary,
-		}
+		return a.handleStaticBinary(path, file, contentHash)
 	}
 
 	// Step 5: Check for network symbols
@@ -215,4 +257,112 @@ func isELFMagic(magic []byte) bool {
 		return false
 	}
 	return bytes.Equal(magic[:elfMagicLen], elfMagic)
+}
+
+// handleStaticBinary handles static binary detection and syscall analysis lookup.
+// If syscallStore is configured, it attempts to lookup pre-computed syscall analysis.
+// Otherwise, it returns StaticBinary directly.
+// contentHash is a pre-computed hash in "algo:hex" format; empty string means compute it here.
+func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File, contentHash string) AnalysisOutput {
+	if a.syscallStore == nil {
+		return AnalysisOutput{Result: StaticBinary}
+	}
+
+	result := a.lookupSyscallAnalysis(path, file, contentHash)
+	if result.Result != StaticBinary {
+		return result
+	}
+
+	return AnalysisOutput{Result: StaticBinary}
+}
+
+// lookupSyscallAnalysis checks the syscall analysis store for analysis results.
+// If contentHash is non-empty it is used directly, skipping a redundant file read.
+// Otherwise the hash is computed from the already-opened file handle (TOCTOU safe).
+func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio.File, contentHash string) AnalysisOutput {
+	hash := contentHash
+	if hash == "" {
+		var err error
+		hash, err = a.calculateFileHash(file)
+		if err != nil {
+			slog.Debug("Failed to calculate hash for syscall analysis lookup",
+				"path", path,
+				"error", err)
+			return AnalysisOutput{Result: StaticBinary}
+		}
+	}
+
+	result, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
+	if err != nil {
+		switch {
+		case errors.Is(err, fileanalysis.ErrRecordNotFound),
+			errors.Is(err, fileanalysis.ErrHashMismatch),
+			errors.Is(err, fileanalysis.ErrNoSyscallAnalysis):
+			// Expected errors, fall back silently.
+		default:
+			// Unexpected error, log it before falling back.
+			slog.Debug("Syscall analysis lookup error",
+				"path", path,
+				"error", err)
+		}
+		return AnalysisOutput{Result: StaticBinary}
+	}
+
+	return a.convertSyscallResult(result)
+}
+
+// convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
+// This method relies on Summary fields set by analyzeSyscallsInCode():
+//   - HasNetworkSyscalls: true if any network-related syscall was detected
+//   - IsHighRisk: true if any syscall number could not be determined
+//
+// These fields are guaranteed to be set according to the rules in the detailed specification.
+func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) AnalysisOutput {
+	// IsHighRisk takes precedence over NetworkDetected: when unknown syscalls are present,
+	// the analysis is incomplete and unreliable, so we must treat the result as an error
+	// even if network syscalls were also detected.
+	if result.Summary.IsHighRisk {
+		return AnalysisOutput{
+			Result: AnalysisError,
+			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.HighRiskReasons),
+		}
+	}
+
+	if result.Summary.HasNetworkSyscalls {
+		var symbols []DetectedSymbol
+		if result.Summary.NetworkSyscallCount > 0 {
+			symbols = make([]DetectedSymbol, 0, result.Summary.NetworkSyscallCount)
+		}
+		for _, info := range result.DetectedSyscalls {
+			if info.IsNetwork {
+				symbols = append(symbols, DetectedSymbol{
+					Name:     info.Name,
+					Category: "syscall",
+				})
+			}
+		}
+		return AnalysisOutput{
+			Result:          NetworkDetected,
+			DetectedSymbols: symbols,
+		}
+	}
+
+	return AnalysisOutput{Result: NoNetworkSymbols}
+}
+
+// calculateFileHash calculates SHA256 hash of the file.
+// Returns hash in prefixed format: "sha256:<hex>" for consistency with
+// FileAnalysisRecord.ContentHash schema.
+// Uses the already-opened file handle to avoid TOCTOU vulnerabilities.
+func (a *StandardELFAnalyzer) calculateFileHash(file safefileio.File) (string, error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("failed to seek to file start: %w", err)
+	}
+
+	rawHash, err := a.hashAlgo.Sum(file)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s:%s", a.hashAlgo.Name(), rawHash), nil
 }

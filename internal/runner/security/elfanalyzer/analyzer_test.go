@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -74,7 +77,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			absPath, err := filepath.Abs(path)
 			require.NoError(t, err)
 
-			output := analyzer.AnalyzeNetworkSymbols(absPath)
+			output := analyzer.AnalyzeNetworkSymbols(absPath, "")
 			assert.Equal(t, tt.expectedResult, output.Result,
 				"unexpected result for %s", tt.filename)
 
@@ -97,7 +100,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
 	analyzer := NewStandardELFAnalyzer(nil, nil)
 
-	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary")
+	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "")
 
 	assert.Equal(t, AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
@@ -120,8 +123,238 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 	absPath, err := filepath.Abs(path)
 	require.NoError(t, err)
 
-	output := analyzer.AnalyzeNetworkSymbols(absPath)
+	output := analyzer.AnalyzeNetworkSymbols(absPath, "")
 	// with_socket.elf has "socket" and "connect", but our custom set only has "my_network_func"
 	assert.Equal(t, NoNetworkSymbols, output.Result,
 		"custom symbols should not match standard socket symbols")
+}
+
+// mockSyscallAnalysisStore is a mock implementation of SyscallAnalysisStore for testing.
+type mockSyscallAnalysisStore struct {
+	result *SyscallAnalysisResult
+	err    error
+	// expectedHash is used to verify hash matching behavior.
+	// When set, returns ErrHashMismatch if the provided hash does not match.
+	expectedHash string
+}
+
+func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash string) (*SyscallAnalysisResult, error) {
+	// If expectedHash is set, only return result when hash matches
+	if m.expectedHash != "" && m.expectedHash != expectedHash {
+		return nil, fileanalysis.ErrHashMismatch
+	}
+	return m.result, m.err
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create mock store that returns network syscall result
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:    41, // socket
+						Name:      "socket",
+						IsNetwork: true,
+						Location:  0x401000,
+					},
+					{
+						Number:    42, // connect
+						Name:      "connect",
+						IsNetwork: true,
+						Location:  0x401010,
+					},
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  true,
+					NetworkSyscallCount: 2,
+					TotalDetectedEvents: 2,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	assert.Equal(t, NetworkDetected, output.Result)
+	assert.Len(t, output.DetectedSymbols, 2)
+	assert.Equal(t, "socket", output.DetectedSymbols[0].Name)
+	assert.Equal(t, "syscall", output.DetectedSymbols[0].Category)
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create mock store that returns non-network syscall result
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:    1, // write
+						Name:      "write",
+						IsNetwork: false,
+						Location:  0x401000,
+					},
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  false,
+					NetworkSyscallCount: 0,
+					TotalDetectedEvents: 1,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	assert.Equal(t, NoNetworkSymbols, output.Result)
+	assert.Empty(t, output.DetectedSymbols)
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create mock store that returns high-risk result (unknown syscalls)
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:              -1,
+						DeterminationMethod: "unknown:indirect_setting",
+						Location:            0x401000,
+					},
+				},
+				HasUnknownSyscalls: true,
+				HighRiskReasons: []string{
+					"syscall at 0x401000: number could not be determined (unknown:indirect_setting)",
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  false,
+					IsHighRisk:          true,
+					TotalDetectedEvents: 1,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	assert.Equal(t, AnalysisError, output.Result)
+	assert.NotNil(t, output.Error)
+	assert.Contains(t, output.Error.Error(), "high risk")
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create mock store that returns both network syscalls and high-risk (unknown syscalls).
+	// IsHighRisk must win: incomplete analysis makes the result unreliable regardless of
+	// what network activity was detected.
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:    41, // socket
+						Name:      "socket",
+						IsNetwork: true,
+						Location:  0x401000,
+					},
+					{
+						Number:              -1,
+						DeterminationMethod: "unknown:indirect_setting",
+						Location:            0x401010,
+					},
+				},
+				HasUnknownSyscalls: true,
+				HighRiskReasons: []string{
+					"syscall at 0x401010: number could not be determined (unknown:indirect_setting)",
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  true,
+					NetworkSyscallCount: 1,
+					IsHighRisk:          true,
+					TotalDetectedEvents: 2,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	// IsHighRisk must take precedence over HasNetworkSyscalls
+	assert.Equal(t, AnalysisError, output.Result)
+	assert.NotNil(t, output.Error)
+	assert.ErrorIs(t, output.Error, ErrSyscallAnalysisHighRisk)
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create mock store that returns not found
+	mockStore := &mockSyscallAnalysisStore{
+		err: fileanalysis.ErrRecordNotFound,
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	// Should fallback to StaticBinary when no analysis found
+	assert.Equal(t, StaticBinary, output.Result)
+}
+
+func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create mock store that expects a specific hash
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{Number: 41, Name: "socket", IsNetwork: true},
+				},
+				Summary: SyscallSummary{HasNetworkSyscalls: true},
+			},
+		},
+		expectedHash: "sha256:differenthash", // This won't match the actual file hash
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	// Should fallback to StaticBinary when hash doesn't match
+	assert.Equal(t, StaticBinary, output.Result)
+}
+
+func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "static.elf")
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
+
+	// Create analyzer without syscall store (nil)
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, nil)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+
+	// Should behave like regular analyzer - return StaticBinary for static ELF
+	assert.Equal(t, StaticBinary, output.Result)
 }

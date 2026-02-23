@@ -539,7 +539,7 @@ func FormatFinalEnvironmentText(
 ```go
 // 既存のコード（131-136行目付近）
 if ge.isDryRun {
-	_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+	fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
 	debug.PrintFromEnvInheritance(os.Stdout, &ge.config.Global, groupSpec, runtimeGroup)
 }
 
@@ -569,7 +569,7 @@ if ge.isDryRun {
 		}
 	} else {
 		// Text format: output immediately
-		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+		fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
 		debug.FormatInheritanceAnalysisText(os.Stdout, analysis, groupSpec.Name)
 	}
 }

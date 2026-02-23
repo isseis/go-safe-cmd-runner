@@ -5,68 +5,28 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 type SyscallAnalysisResult struct {
-	// Architecture is the ELF machine architecture that was analyzed (e.g., "x86_64").
-	Architecture string
-
-	// DetectedSyscalls contains all detected syscall events with their numbers.
-	// This includes both direct syscall instructions (opcode 0F 05) and
-	// indirect syscalls via Go wrapper function calls (e.g., syscall.Syscall).
-	DetectedSyscalls []SyscallInfo
-
-	// HasUnknownSyscalls indicates whether any syscall number could not be determined.
-	HasUnknownSyscalls bool
-
-	// HighRiskReasons explains why the analysis resulted in high risk, if applicable.
-	HighRiskReasons []string
-
-	// Summary provides aggregated information about the analysis.
-	Summary SyscallSummary
+	// SyscallAnalysisResultCore contains the common fields shared with
+	// fileanalysis.SyscallAnalysisResult. Embedding ensures field-level
+	// consistency between packages and enables direct struct copy for
+	// type conversion.
+	common.SyscallAnalysisResultCore
 }
 
-// SyscallInfo represents information about a single detected syscall event.
-// An event can be either a direct syscall instruction or an indirect syscall
-// via a Go wrapper function call.
-type SyscallInfo struct {
-	// Number is the syscall number (e.g., 41 for socket on x86_64).
-	// -1 indicates the number could not be determined.
-	Number int `json:"number"`
+// SyscallInfo is an alias for common.SyscallInfo.
+// Using a type alias preserves backward compatibility for code that references
+// elfanalyzer.SyscallInfo while the canonical definition lives in common.
+type SyscallInfo = common.SyscallInfo
 
-	// Name is the human-readable syscall name (e.g., "socket").
-	// Empty if the number is unknown or not in the table.
-	Name string `json:"name,omitempty"`
-
-	// IsNetwork indicates whether this syscall is network-related.
-	IsNetwork bool `json:"is_network"`
-
-	// Location is the virtual address of the syscall instruction
-	// (typically located within the .text section).
-	Location uint64 `json:"location"`
-
-	// DeterminationMethod describes how the syscall number was determined.
-	// See DeterminationMethod* constants for possible values.
-	DeterminationMethod string `json:"determination_method"`
-}
-
-// SyscallSummary provides aggregated analysis information.
-type SyscallSummary struct {
-	// HasNetworkSyscalls indicates presence of network-related syscalls.
-	HasNetworkSyscalls bool `json:"has_network_syscalls"`
-
-	// IsHighRisk indicates the analysis could not fully determine network capability.
-	IsHighRisk bool `json:"is_high_risk"`
-
-	// TotalDetectedEvents is the count of detected syscall events.
-	// This includes both direct syscall instructions and indirect syscalls
-	// via Go wrapper function calls.
-	TotalDetectedEvents int `json:"total_detected_events"`
-
-	// NetworkSyscallCount is the count of network-related syscall events.
-	NetworkSyscallCount int `json:"network_syscall_count"`
-}
+// SyscallSummary is an alias for common.SyscallSummary.
+// Using a type alias preserves backward compatibility for code that references
+// elfanalyzer.SyscallSummary while the canonical definition lives in common.
+type SyscallSummary = common.SyscallSummary
 
 // maxInstructionLength is the maximum instruction length in bytes for x86_64.
 const maxInstructionLength = 15
@@ -210,9 +170,8 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 //
 // goResolver may be nil if symbol loading failed or was not attempted.
 func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, goResolver *GoWrapperResolver) *SyscallAnalysisResult {
-	result := &SyscallAnalysisResult{
-		DetectedSyscalls: make([]SyscallInfo, 0),
-	}
+	result := &SyscallAnalysisResult{}
+	result.DetectedSyscalls = make([]common.SyscallInfo, 0)
 
 	// Pass 1: Analyze direct syscall instructions
 	syscallLocs := a.findSyscallInstructions(code, baseAddr)
@@ -236,7 +195,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, go
 	if goResolver != nil {
 		wrapperCalls := goResolver.FindWrapperCalls(code, baseAddr)
 		for _, call := range wrapperCalls {
-			info := SyscallInfo{
+			info := common.SyscallInfo{
 				Number:              call.SyscallNumber,
 				Location:            call.CallSiteAddress,
 				DeterminationMethod: call.DeterminationMethod,
@@ -312,15 +271,12 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 }
 
 // extractSyscallInfo extracts syscall number by backward scanning.
-func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, baseAddr uint64) SyscallInfo {
-	info := SyscallInfo{
+func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, baseAddr uint64) common.SyscallInfo {
+	info := common.SyscallInfo{
 		Number:   -1,
 		Location: syscallAddr,
 	}
 
-	// Calculate offset in code.
-	// NOTE: syscallAddr and baseAddr are uint64, so we must avoid unsigned
-	// underflow and ensure the result fits into an int before converting.
 	if syscallAddr < baseAddr {
 		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
 		return info
