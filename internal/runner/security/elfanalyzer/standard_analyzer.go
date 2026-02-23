@@ -294,12 +294,17 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio
 
 	result, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
 	if err != nil {
-		if errors.Is(err, fileanalysis.ErrRecordNotFound) || errors.Is(err, fileanalysis.ErrHashMismatch) || errors.Is(err, fileanalysis.ErrNoSyscallAnalysis) {
-			return AnalysisOutput{Result: StaticBinary}
+		switch {
+		case errors.Is(err, fileanalysis.ErrRecordNotFound),
+			errors.Is(err, fileanalysis.ErrHashMismatch),
+			errors.Is(err, fileanalysis.ErrNoSyscallAnalysis):
+			// Expected errors, fall back silently.
+		default:
+			// Unexpected error, log it before falling back.
+			slog.Debug("Syscall analysis lookup error",
+				"path", path,
+				"error", err)
 		}
-		slog.Debug("Syscall analysis lookup error",
-			"path", path,
-			"error", err)
 		return AnalysisOutput{Result: StaticBinary}
 	}
 
