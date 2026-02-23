@@ -252,7 +252,6 @@ func main() {
 
 	// Convert back to elfanalyzer types for convertSyscallResult.
 	// Both types embed common.SyscallAnalysisResultCore, enabling direct struct copy.
-	_ = common.SyscallAnalysisResultCore{} // ensure common is used
 	eaResult := &SyscallAnalysisResult{
 		SyscallAnalysisResultCore: loadedResult.SyscallAnalysisResultCore,
 	}
