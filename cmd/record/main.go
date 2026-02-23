@@ -233,7 +233,7 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 	}
 	defer func() { _ = elfFile.Close() }()
 
-	// Check if static ELF (no .dynsym section) using the already-opened file
+	// Check if the ELF is dynamically linked (i.e., not static) by checking for a .dynsym section
 	if dynsym := elfFile.Section(".dynsym"); dynsym != nil {
 		return elfanalyzer.ErrNotStaticELF
 	}
