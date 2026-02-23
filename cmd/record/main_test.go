@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,74 +134,13 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.False(t, cfg.force)
 }
 
-// createMinimalStaticELF creates a minimal static ELF file for testing.
-// The file has no .dynsym section, simulating a statically linked binary.
-func createMinimalStaticELF(t *testing.T, path string) {
-	t.Helper()
-
-	// Create a minimal ELF header for x86_64 without .dynsym section
-	elfHeader := []byte{
-		// ELF magic
-		0x7f, 'E', 'L', 'F',
-		// Class: 64-bit
-		0x02,
-		// Data: little endian
-		0x01,
-		// Version
-		0x01,
-		// OS/ABI: System V
-		0x00,
-		// ABI version
-		0x00,
-		// Padding
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Type: Executable
-		0x02, 0x00,
-		// Machine: x86_64
-		0x3e, 0x00,
-		// Version
-		0x01, 0x00, 0x00, 0x00,
-		// Entry point
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Program header offset
-		0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Section header offset (0 = none)
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Flags
-		0x00, 0x00, 0x00, 0x00,
-		// ELF header size
-		0x40, 0x00,
-		// Program header size
-		0x38, 0x00,
-		// Number of program headers
-		0x00, 0x00,
-		// Section header size
-		0x40, 0x00,
-		// Number of section headers
-		0x00, 0x00,
-		// Section name string table index
-		0x00, 0x00,
-	}
-
-	err := os.WriteFile(path, elfHeader, 0o644)
-	require.NoError(t, err)
-
-	// Verify it can be parsed as ELF
-	f, err := os.Open(path)
-	require.NoError(t, err)
-	defer f.Close()
-
-	_, err = elf.NewFile(f)
-	require.NoError(t, err)
-}
-
 func TestRunWithSyscallAnalysis(t *testing.T) {
 	tempDir := t.TempDir()
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	// Create a static ELF file for testing
 	staticELF := filepath.Join(tempDir, "static.elf")
-	createMinimalStaticELF(t, staticELF)
+	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -252,7 +192,7 @@ func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
 
 	// Create a static ELF file (no .text section needed — the analyzer is faked)
 	staticELF := filepath.Join(tempDir, "static_binary.elf")
-	createMinimalStaticELF(t, staticELF)
+	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
 
 	// Build a fake analyzer that returns a known result.
 	fakeResult := &elfanalyzer.SyscallAnalysisResult{

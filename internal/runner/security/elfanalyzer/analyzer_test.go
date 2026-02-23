@@ -3,12 +3,12 @@
 package elfanalyzer
 
 import (
-	"debug/elf"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -145,72 +145,10 @@ func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash st
 	return m.result, m.err
 }
 
-// createStaticELFFile creates a minimal static ELF file for testing.
-// The file has no .dynsym section, simulating a statically linked binary.
-func createStaticELFFile(t *testing.T, path string) {
-	t.Helper()
-
-	// Create a minimal ELF header for x86_64
-	// This is a valid ELF header that will parse but has no .dynsym section
-	elfHeader := []byte{
-		// ELF magic
-		0x7f, 'E', 'L', 'F',
-		// Class: 64-bit
-		0x02,
-		// Data: little endian
-		0x01,
-		// Version
-		0x01,
-		// OS/ABI: System V
-		0x00,
-		// ABI version
-		0x00,
-		// Padding
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Type: Executable
-		0x02, 0x00,
-		// Machine: x86_64
-		0x3e, 0x00,
-		// Version
-		0x01, 0x00, 0x00, 0x00,
-		// Entry point
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Program header offset
-		0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Section header offset (0 = none)
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// Flags
-		0x00, 0x00, 0x00, 0x00,
-		// ELF header size
-		0x40, 0x00,
-		// Program header size
-		0x38, 0x00,
-		// Number of program headers
-		0x00, 0x00,
-		// Section header size
-		0x40, 0x00,
-		// Number of section headers
-		0x00, 0x00,
-		// Section name string table index
-		0x00, 0x00,
-	}
-
-	err := os.WriteFile(path, elfHeader, 0o644)
-	require.NoError(t, err)
-
-	// Verify it can be parsed as ELF
-	f, err := os.Open(path)
-	require.NoError(t, err)
-	defer f.Close()
-
-	_, err = elf.NewFile(f)
-	require.NoError(t, err)
-}
-
 func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns network syscall result
 	mockStore := &mockSyscallAnalysisStore{
@@ -251,7 +189,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns non-network syscall result
 	mockStore := &mockSyscallAnalysisStore{
@@ -284,7 +222,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns high-risk result (unknown syscalls)
 	mockStore := &mockSyscallAnalysisStore{
@@ -321,7 +259,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns both network syscalls and high-risk (unknown syscalls).
 	// IsHighRisk must win: incomplete analysis makes the result unreliable regardless of
@@ -368,7 +306,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns not found
 	mockStore := &mockSyscallAnalysisStore{
@@ -385,7 +323,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that expects a specific hash
 	mockStore := &mockSyscallAnalysisStore{
@@ -410,7 +348,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "static.elf")
-	createStaticELFFile(t, testFile)
+	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create analyzer without syscall store (nil)
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, nil)
