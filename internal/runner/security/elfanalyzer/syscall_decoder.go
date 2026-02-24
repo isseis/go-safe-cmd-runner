@@ -103,19 +103,15 @@ func (d *X86Decoder) ModifiesEAXorRAX(inst DecodedInstruction) bool {
 	return false
 }
 
-// IsImmediateMove checks if the instruction is a MOV immediate to eax/rax.
+// IsImmediateMove checks if the instruction sets eax/rax to a known immediate value.
+// This covers two common compiler patterns:
+//   - MOV EAX/RAX, <imm>  — direct immediate load
+//   - XOR EAX, EAX        — idiom for zeroing EAX (equivalent to MOV EAX, 0)
 func (d *X86Decoder) IsImmediateMove(inst DecodedInstruction) (bool, int64) {
-	// Check for MOV instruction
-	if inst.Op != x86asm.MOV {
-		return false, 0
-	}
-
-	// Need at least 2 arguments
 	if len(inst.Args) < minArgsForImmediateMove {
 		return false, 0
 	}
 
-	// Check destination is eax/rax
 	destReg, ok := inst.Args[0].(x86asm.Reg)
 	if !ok {
 		return false, 0
@@ -124,9 +120,18 @@ func (d *X86Decoder) IsImmediateMove(inst DecodedInstruction) (bool, int64) {
 		return false, 0
 	}
 
-	// Check source is immediate
-	if src, ok := inst.Args[1].(x86asm.Imm); ok {
-		return true, int64(src)
+	switch inst.Op {
+	case x86asm.MOV:
+		// MOV EAX/RAX, <imm>
+		if src, ok := inst.Args[1].(x86asm.Imm); ok {
+			return true, int64(src)
+		}
+	case x86asm.XOR:
+		// XOR EAX, EAX (or XOR RAX, RAX) — sets register to 0.
+		// Only match when both operands are the same register (self-XOR idiom).
+		if srcReg, ok := inst.Args[1].(x86asm.Reg); ok && srcReg == destReg {
+			return true, 0
+		}
 	}
 
 	return false, 0

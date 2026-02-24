@@ -1,8 +1,6 @@
 module github.com/isseis/go-safe-cmd-runner
 
-go 1.24.0
-
-toolchain go1.24.6
+go 1.26.0
 
 require (
 	github.com/oklog/ulid/v2 v2.1.1

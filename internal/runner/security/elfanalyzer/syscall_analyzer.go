@@ -206,6 +206,12 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, go
 	result.DecodeStats.DecodeFailureCount += pass1DecodeFailures
 	result.DecodeStats.TotalBytesAnalyzed = len(code)
 	for _, loc := range syscallLocs {
+		// Skip direct syscall instructions that fall inside known wrapper/impl functions.
+		// These functions receive the syscall number from their caller and the number
+		// cannot be determined statically from the function body.
+		if goResolver != nil && goResolver.isInsideWrapper(loc) {
+			continue
+		}
 		info := a.extractSyscallInfo(code, loc, baseAddr)
 		result.DetectedSyscalls = append(result.DetectedSyscalls, info)
 

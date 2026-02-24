@@ -188,6 +188,18 @@ func TestX86Decoder_IsImmediateMove(t *testing.T) {
 			wantImm: false,
 			wantVal: 0,
 		},
+		{
+			name:    "xor %eax, %eax (self-XOR zeroing idiom)",
+			code:    []byte{0x31, 0xc0},
+			wantImm: true,
+			wantVal: 0, // read syscall number
+		},
+		{
+			name:    "xor %ebx, %eax (different register, not zeroing idiom)",
+			code:    []byte{0x31, 0xd8},
+			wantImm: false,
+			wantVal: 0,
+		},
 	}
 
 	for _, tt := range tests {

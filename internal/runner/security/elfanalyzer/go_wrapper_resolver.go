@@ -32,6 +32,9 @@ type GoSyscallWrapper string
 const NoWrapper GoSyscallWrapper = ""
 
 // knownGoWrappers is a set of known Go syscall wrapper function names for O(1) lookup.
+// These are the public-facing wrapper functions that callers use to make syscalls.
+// When a CALL to one of these is found in user code, the syscall number is resolved
+// from the argument setup preceding the call.
 var knownGoWrappers = map[GoSyscallWrapper]struct{}{
 	"syscall.Syscall":     {},
 	"syscall.Syscall6":    {},
@@ -39,6 +42,17 @@ var knownGoWrappers = map[GoSyscallWrapper]struct{}{
 	"syscall.RawSyscall6": {},
 	"runtime.syscall":     {},
 	"runtime.syscall6":    {},
+}
+
+// knownSyscallImpls is a set of low-level syscall implementation function names
+// whose bodies contain direct SYSCALL instructions with caller-supplied numbers.
+// The syscall number cannot be determined statically from these functions' bodies,
+// so both direct SYSCALL instructions and CALL-to-wrapper instructions within
+// these functions are excluded from analysis.
+var knownSyscallImpls = map[string]struct{}{
+	"syscall.rawVforkSyscall":                 {},
+	"syscall.rawSyscallNoError":               {},
+	"internal/runtime/syscall/linux.Syscall6": {},
 }
 
 // SymbolInfo represents information about a symbol in the ELF file.
@@ -70,10 +84,17 @@ type WrapperCall struct {
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
-	symbols      map[string]SymbolInfo
-	wrapperAddrs map[uint64]GoSyscallWrapper
-	hasSymbols   bool
-	decoder      *X86Decoder // Shared decoder instance to avoid repeated allocation
+	symbols       map[string]SymbolInfo
+	wrapperAddrs  map[uint64]GoSyscallWrapper
+	wrapperRanges []wrapperRange // sorted address ranges of wrapper functions
+	hasSymbols    bool
+	decoder       *X86Decoder // Shared decoder instance to avoid repeated allocation
+}
+
+// wrapperRange represents the address range [start, end) of a wrapper function.
+type wrapperRange struct {
+	start uint64
+	end   uint64
 }
 
 // NewGoWrapperResolver creates a new GoWrapperResolver and loads symbols
@@ -99,6 +120,19 @@ func newGoWrapperResolver() *GoWrapperResolver {
 		wrapperAddrs: make(map[uint64]GoSyscallWrapper),
 		decoder:      NewX86Decoder(),
 	}
+}
+
+// isInsideWrapper returns true if addr falls within any known wrapper function's body.
+// This is used to skip CALL instructions emitted from within a wrapper itself
+// (e.g. syscall.Syscall calling an internal helper), which would otherwise be
+// reported as unresolved wrapper calls and inflate the high-risk count.
+func (r *GoWrapperResolver) isInsideWrapper(addr uint64) bool {
+	for _, wr := range r.wrapperRanges {
+		if addr >= wr.start && addr < wr.end {
+			return true
+		}
+	}
+	return false
 }
 
 // loadFromPclntab loads symbols from the .gopclntab section.
@@ -127,6 +161,24 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 		wrapper := GoSyscallWrapper(name)
 		if _, ok := knownGoWrappers[wrapper]; ok {
 			r.wrapperAddrs[fn.Entry] = wrapper
+			if fn.End > fn.Entry {
+				r.wrapperRanges = append(r.wrapperRanges, wrapperRange{
+					start: fn.Entry,
+					end:   fn.End,
+				})
+			}
+		}
+
+		// Also track low-level syscall implementation functions.
+		// Their bodies contain direct SYSCALL instructions with caller-supplied numbers
+		// and must be excluded from both Pass 1 and Pass 2 analysis.
+		if _, ok := knownSyscallImpls[name]; ok {
+			if fn.End > fn.Entry {
+				r.wrapperRanges = append(r.wrapperRanges, wrapperRange{
+					start: fn.Entry,
+					end:   fn.End,
+				})
+			}
 		}
 	}
 
@@ -201,17 +253,23 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([]Wr
 
 		// Check if this is a CALL to a known wrapper
 		if inst.Op == x86asm.CALL {
-			if wrapper := r.resolveWrapper(inst); wrapper != NoWrapper {
-				// Found a call to a wrapper, try to resolve the syscall number
-				syscallNum, method := r.resolveSyscallArgument(recentInstructions)
-				// pos is validated same as above
-				results = append(results, WrapperCall{
-					CallSiteAddress:     baseAddr + uint64(pos), //nolint:gosec // G115: pos is validated by loop condition
-					TargetFunction:      string(wrapper),
-					SyscallNumber:       syscallNum,
-					Resolved:            syscallNum >= 0,
-					DeterminationMethod: method,
-				})
+			callAddr := baseAddr + uint64(pos) //nolint:gosec // G115: pos is validated by loop condition
+			// Skip CALL instructions that originate from inside a wrapper function body.
+			// Wrapper functions (e.g. syscall.Syscall) may themselves call other wrappers
+			// or internal helpers; those internal calls do not represent user-level
+			// syscall usage and cannot have their syscall number resolved from context.
+			if !r.isInsideWrapper(callAddr) {
+				if wrapper := r.resolveWrapper(inst); wrapper != NoWrapper {
+					// Found a call to a wrapper, try to resolve the syscall number
+					syscallNum, method := r.resolveSyscallArgument(recentInstructions)
+					results = append(results, WrapperCall{
+						CallSiteAddress:     callAddr,
+						TargetFunction:      string(wrapper),
+						SyscallNumber:       syscallNum,
+						Resolved:            syscallNum >= 0,
+						DeterminationMethod: method,
+					})
+				}
 			}
 		}
 
