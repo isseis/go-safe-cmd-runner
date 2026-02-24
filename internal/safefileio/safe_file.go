@@ -534,7 +534,7 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 		if os.IsNotExist(err) {
 			return nil, err // Return the original error for file not found
 		}
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, err
 	}
 
 	// Detect symlink attack after ensureParentDirNoSymlinks call above.
