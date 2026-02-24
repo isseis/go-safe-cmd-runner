@@ -9,11 +9,11 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
-// maxDecodeFailureLogs is the maximum number of individual decode failure
+// MaxDecodeFailureLogs is the maximum number of individual decode failure
 // log messages to emit per analysis. This prevents excessive log output
 // for binaries with many decode failures (e.g., binaries containing
 // large data sections interleaved with code).
-const maxDecodeFailureLogs = 10
+const MaxDecodeFailureLogs = 10
 
 // SyscallAnalysisResult represents the result of syscall analysis.
 type SyscallAnalysisResult struct {
@@ -55,9 +55,9 @@ type SyscallSummary = common.SyscallSummary
 // maxInstructionLength is the maximum instruction length in bytes for x86_64.
 const maxInstructionLength = 15
 
-// decodeFailureLogBytesLen is the number of leading bytes to include
+// DecodeFailureLogBytesLen is the number of leading bytes to include
 // in decode-failure log messages for diagnostic purposes.
-const decodeFailureLogBytesLen = 4
+const DecodeFailureLogBytesLen = 4
 
 // defaultMaxBackwardScan is the default maximum number of instructions to scan
 // backward from a syscall instruction to find the syscall number.
@@ -280,10 +280,10 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 		inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
 		if err != nil {
 			decodeFailures++
-			if decodeFailures <= maxDecodeFailureLogs {
+			if decodeFailures <= MaxDecodeFailureLogs {
 				slog.Debug("instruction decode failed",
 					slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))),                                // #nosec G115 safe: pos is checked non-negative above
-					slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+decodeFailureLogBytesLen, len(code))]))) //nolint:gosec // G115: pos is validated above
+					slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+DecodeFailureLogBytesLen, len(code))]))) //nolint:gosec // G115: pos is validated above
 			}
 			// Skip problematic byte and continue
 			pos++

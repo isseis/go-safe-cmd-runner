@@ -2,6 +2,8 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"fmt"
+	"log/slog"
 	"math"
 
 	"golang.org/x/arch/x86/x86asm"
@@ -176,6 +178,11 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([]Wr
 		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos is validated by loop condition
 		if err != nil {
 			decodeFailures++
+			if decodeFailures <= MaxDecodeFailureLogs {
+				slog.Debug("instruction decode failed in go wrapper resolver",
+					slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))), //nolint:gosec // G115: pos is validated by loop condition
+					slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+DecodeFailureLogBytesLen, len(code))])))
+			}
 			pos++
 			continue
 		}
