@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 
 	"golang.org/x/arch/x86/x86asm"
 )
@@ -126,13 +127,18 @@ func newGoWrapperResolver() *GoWrapperResolver {
 // This is used to skip CALL instructions emitted from within a wrapper itself
 // (e.g. syscall.Syscall calling an internal helper), which would otherwise be
 // reported as unresolved wrapper calls and inflate the high-risk count.
+//
+// wrapperRanges is kept sorted by start address so this can use binary search
+// (O(log n)) instead of a linear scan (O(n)).
 func (r *GoWrapperResolver) isInsideWrapper(addr uint64) bool {
-	for _, wr := range r.wrapperRanges {
-		if addr >= wr.start && addr < wr.end {
-			return true
-		}
+	// Find the last range whose start <= addr.
+	i := sort.Search(len(r.wrapperRanges), func(i int) bool {
+		return r.wrapperRanges[i].start > addr
+	}) - 1
+	if i < 0 {
+		return false
 	}
-	return false
+	return addr < r.wrapperRanges[i].end
 }
 
 // loadFromPclntab loads symbols from the .gopclntab section.
@@ -181,6 +187,11 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 			}
 		}
 	}
+
+	// Sort wrapperRanges by start address so isInsideWrapper can use binary search.
+	sort.Slice(r.wrapperRanges, func(i, j int) bool {
+		return r.wrapperRanges[i].start < r.wrapperRanges[j].start
+	})
 
 	return nil
 }

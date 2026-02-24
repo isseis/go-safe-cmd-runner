@@ -5,6 +5,7 @@ package elfanalyzer
 import (
 	"debug/elf"
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -212,6 +213,45 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 			syscallNum, method := resolver.resolveSyscallArgument(recentInstructions)
 			assert.Equal(t, tt.expected, syscallNum, tt.reason)
 			assert.Equal(t, tt.expectedMethod, method, tt.reason)
+		})
+	}
+}
+
+func TestGoWrapperResolver_IsInsideWrapper(t *testing.T) {
+	resolver := newGoWrapperResolver()
+
+	// Set up three non-overlapping ranges in unsorted order to verify that
+	// loadFromPclntab sorting (and hence binary search) works correctly.
+	resolver.wrapperRanges = []wrapperRange{
+		{start: 0x403000, end: 0x403100}, // range C (added last)
+		{start: 0x401000, end: 0x401100}, // range A (added first)
+		{start: 0x402000, end: 0x402100}, // range B
+	}
+
+	tests := []struct {
+		addr     uint64
+		expected bool
+		label    string
+	}{
+		{0x401000, true, "start of range A"},
+		{0x4010ff, true, "last byte of range A"},
+		{0x401100, false, "one past end of range A"},
+		{0x402050, true, "middle of range B"},
+		{0x403000, true, "start of range C"},
+		{0x403100, false, "one past end of range C"},
+		{0x400fff, false, "before all ranges"},
+		{0x404000, false, "after all ranges"},
+		{0x4011ff, false, "gap between A and B"},
+	}
+
+	// Sort as loadFromPclntab would.
+	sort.Slice(resolver.wrapperRanges, func(i, j int) bool {
+		return resolver.wrapperRanges[i].start < resolver.wrapperRanges[j].start
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.label, func(t *testing.T) {
+			assert.Equal(t, tt.expected, resolver.isInsideWrapper(tt.addr))
 		})
 	}
 }
