@@ -150,7 +150,7 @@ func TestParsePclntab_InvalidData(t *testing.T) {
 			// it returns an empty table. Verify ParsePclntab reflects that.
 			require.NoError(t, err)
 			assert.NotNil(t, result)
-			assert.Empty(t, result.Functions)
+			assert.Empty(t, result)
 		})
 	}
 }
@@ -167,27 +167,17 @@ func TestPclntabParser_NoPclntab(t *testing.T) {
 	assert.Equal(t, "no .gopclntab section found", ErrNoPclntab.Error())
 }
 
-func TestPclntabParser_FindFunction(t *testing.T) {
-	result := &PclntabResult{}
-
-	// Function not found when result is empty
-	_, found := result.FindFunction("main.main")
-	assert.False(t, found)
-}
-
-func TestPclntabResult_FindFunction(t *testing.T) {
-	result := &PclntabResult{
-		Functions: map[string]PclntabFunc{
-			"main.main": {Name: "main.main", Entry: 0x401000, End: 0x401100},
-		},
+func TestPclntabResult_Lookup(t *testing.T) {
+	result := map[string]PclntabFunc{
+		"main.main": {Name: "main.main", Entry: 0x401000, End: 0x401100},
 	}
 
-	fn, found := result.FindFunction("main.main")
+	fn, found := result["main.main"]
 	assert.True(t, found)
 	assert.Equal(t, "main.main", fn.Name)
 	assert.Equal(t, uint64(0x401000), fn.Entry)
 	assert.Equal(t, uint64(0x401100), fn.End)
 
-	_, found = result.FindFunction("nonexistent")
+	_, found = result["nonexistent"]
 	assert.False(t, found)
 }

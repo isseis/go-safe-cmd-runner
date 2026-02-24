@@ -21,22 +21,10 @@ type PclntabFunc struct {
 	End   uint64 // Function end address (if available)
 }
 
-// PclntabResult holds the parsed pclntab data.
-type PclntabResult struct {
-	GoVersion string
-	Functions map[string]PclntabFunc
-}
-
-// FindFunction finds a function by name.
-func (r *PclntabResult) FindFunction(name string) (PclntabFunc, bool) {
-	fn, ok := r.Functions[name]
-	return fn, ok
-}
-
 // ParsePclntab reads the .gopclntab section from an ELF file and extracts
 // function information. This works even on stripped binaries because Go
 // runtime requires pclntab for stack traces and garbage collection.
-func ParsePclntab(elfFile *elf.File) (*PclntabResult, error) {
+func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
 	pclntabSection := elfFile.Section(".gopclntab")
 	if pclntabSection == nil {
 		return nil, ErrNoPclntab
@@ -72,8 +60,5 @@ func ParsePclntab(elfFile *elf.File) (*PclntabResult, error) {
 		}
 	}
 
-	return &PclntabResult{
-		GoVersion: "go1.2+",
-		Functions: functions,
-	}, nil
+	return functions, nil
 }

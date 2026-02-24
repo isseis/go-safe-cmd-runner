@@ -143,12 +143,12 @@ func (r *GoWrapperResolver) isInsideWrapper(addr uint64) bool {
 
 // loadFromPclntab loads symbols from the .gopclntab section.
 func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
-	result, err := ParsePclntab(elfFile)
+	functions, err := ParsePclntab(elfFile)
 	if err != nil {
 		return err
 	}
 
-	for name, fn := range result.Functions {
+	for name, fn := range functions {
 		// Calculate size, guarding against missing/zero End to avoid underflow
 		size := uint64(0)
 		if fn.End > fn.Entry {
