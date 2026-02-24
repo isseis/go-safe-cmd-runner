@@ -368,7 +368,7 @@ func TestSyscallAnalyzer_FindSyscallInstructions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			locs := analyzer.findSyscallInstructions(tt.code, tt.baseAddr)
+			locs, _ := analyzer.findSyscallInstructions(tt.code, tt.baseAddr)
 			assert.Len(t, locs, tt.wantCount)
 			if tt.wantLocs != nil {
 				assert.Equal(t, tt.wantLocs, locs)
@@ -384,8 +384,9 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow(t *testing.T) {
 	code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x90, 0x0f, 0x05}
 
 	// Decode window [0, 6) - should decode "mov" and "nop" but not "syscall"
-	instructions := analyzer.decodeInstructionsInWindow(code, 0, 0, 6)
+	instructions, decodeFailures := analyzer.decodeInstructionsInWindow(code, 0, 0, 6)
 	require.Len(t, instructions, 2) // mov (5 bytes) + nop (1 byte)
+	assert.Equal(t, 0, decodeFailures)
 
 	assert.Equal(t, uint64(0), instructions[0].Offset)
 	assert.Equal(t, 5, instructions[0].Len)
@@ -400,6 +401,51 @@ func TestNewSyscallAnalyzerWithConfig(t *testing.T) {
 	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 10)
 	assert.NotNil(t, analyzer)
 	assert.Equal(t, 10, analyzer.maxBackwardScan)
+}
+
+func TestSyscallAnalyzer_DecodeStats(t *testing.T) {
+	t.Run("decode failures are counted", func(t *testing.T) {
+		// 0x06 is invalid in 64-bit mode, causing a decode failure.
+		// After skipping it, 0x0f 0x05 (syscall) is found normally.
+		code := []byte{
+			0x06,       // invalid byte (PUSH ES, illegal in 64-bit mode)
+			0x0f, 0x05, // syscall
+		}
+
+		analyzer := NewSyscallAnalyzer()
+		result := analyzer.analyzeSyscallsInCode(code, 0, nil)
+
+		assert.Greater(t, result.DecodeStats.DecodeFailureCount, 0,
+			"expected at least one decode failure from invalid instruction byte")
+		assert.Equal(t, len(code), result.DecodeStats.TotalBytesAnalyzed,
+			"TotalBytesAnalyzed should equal the length of the code section")
+	})
+
+	t.Run("no decode failures on valid code", func(t *testing.T) {
+		// mov $0x01, %eax; syscall — all valid instructions, no decode failures.
+		code := []byte{
+			0xb8, 0x01, 0x00, 0x00, 0x00, // mov $0x01, %eax
+			0x0f, 0x05, // syscall
+		}
+
+		analyzer := NewSyscallAnalyzer()
+		result := analyzer.analyzeSyscallsInCode(code, 0, nil)
+
+		assert.Equal(t, 0, result.DecodeStats.DecodeFailureCount,
+			"expected no decode failures for valid instruction sequence")
+		assert.Equal(t, len(code), result.DecodeStats.TotalBytesAnalyzed,
+			"TotalBytesAnalyzed should equal the length of the code section")
+	})
+
+	t.Run("TotalBytesAnalyzed is set even for empty code", func(t *testing.T) {
+		code := []byte{}
+
+		analyzer := NewSyscallAnalyzer()
+		result := analyzer.analyzeSyscallsInCode(code, 0, nil)
+
+		assert.Equal(t, 0, result.DecodeStats.DecodeFailureCount)
+		assert.Equal(t, 0, result.DecodeStats.TotalBytesAnalyzed)
+	})
 }
 
 func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {

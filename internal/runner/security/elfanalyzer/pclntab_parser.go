@@ -2,42 +2,9 @@ package elfanalyzer
 
 import (
 	"debug/elf"
-	"encoding/binary"
+	"debug/gosym"
 	"errors"
 	"fmt"
-	"math"
-)
-
-// pclntab magic number
-const (
-	pclntabMagicGo120 = 0xFFFFFFF1 // Go 1.20+
-)
-
-// pclntab header constants
-const (
-	pclntabMinMagicSize    = 8    // Minimum bytes needed to read magic
-	pclntab64PtrSize       = 8    // Expected pointer size for 64-bit binaries
-	pcHeaderSizeGo120      = 0x50 // pcHeader size for Go 1.20-1.24 64-bit (80 bytes); used to detect unsupported versions
-	pcHeaderSizeGo125      = 0x48 // pcHeader size for Go 1.25+ 64-bit (72 bytes, ftabOffset removed)
-	errMsgGo120Unsupported = "Go 1.20-1.24 pclntab detected (80-byte header); only Go 1.25+ is supported"
-)
-
-// pcHeader field offsets (Go 1.25+, 64-bit)
-const (
-	pcHeaderOffsetNfunc       = 0x08
-	pcHeaderOffsetTextStart   = 0x18
-	pcHeaderOffsetFuncnameOff = 0x20
-	pcHeaderOffsetPclnOff     = 0x40 // pclntabOffset; also serves as ftabOffset in Go 1.25+
-)
-
-// functab entry field offsets
-const (
-	ftabEntryOffsetFuncOff = 4 // Offset to funcoff within functab entry (uint32)
-)
-
-// _func struct field offsets
-const (
-	funcStructOffsetNameOff = 4 // Offset to nameoff within _func struct
 )
 
 // Errors
@@ -54,282 +21,44 @@ type PclntabFunc struct {
 	End   uint64 // Function end address (if available)
 }
 
-// PclntabResult holds the parsed pclntab data.
-type PclntabResult struct {
-	GoVersion string
-	Functions map[string]PclntabFunc
-}
-
-// FindFunction finds a function by name.
-func (r *PclntabResult) FindFunction(name string) (PclntabFunc, bool) {
-	fn, ok := r.Functions[name]
-	return fn, ok
-}
-
 // ParsePclntab reads the .gopclntab section from an ELF file and extracts
 // function information. This works even on stripped binaries because Go
 // runtime requires pclntab for stack traces and garbage collection.
-func ParsePclntab(elfFile *elf.File) (*PclntabResult, error) {
-	p := &pclntabParser{}
-
-	if err := p.parse(elfFile); err != nil {
-		return nil, err
+func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
+	pclntabSection := elfFile.Section(".gopclntab")
+	if pclntabSection == nil {
+		return nil, ErrNoPclntab
 	}
 
-	return &PclntabResult{
-		GoVersion: p.goVersion,
-		Functions: p.funcData,
-	}, nil
-}
-
-// pclntabParser parses Go's pclntab to extract function information.
-// Only 64-bit binaries (ptrSize == 8) are supported (x86_64 target).
-type pclntabParser struct {
-	ptrSize   int    // Must be 8 for x86_64
-	goVersion string // Detected Go version range
-	funcData  map[string]PclntabFunc
-}
-
-// parse reads the .gopclntab section and extracts function information.
-func (p *pclntabParser) parse(elfFile *elf.File) error {
-	// Find .gopclntab section
-	section := elfFile.Section(".gopclntab")
-	if section == nil {
-		return ErrNoPclntab
-	}
-
-	data, err := section.Data()
+	pclntabData, err := pclntabSection.Data()
 	if err != nil {
-		return fmt.Errorf("failed to read .gopclntab: %w", err)
+		return nil, fmt.Errorf("failed to read .gopclntab: %w", err)
 	}
 
-	if len(data) < pclntabMinMagicSize {
-		return ErrInvalidPclntab
+	// The text start address is required by gosym.NewLineTable.
+	// In Go 1.26+, textStart was removed from the pclntab header and must be
+	// obtained from the ELF .text section directly.
+	var textStart uint64
+	textSection := elfFile.Section(".text")
+	if textSection != nil {
+		textStart = textSection.Addr
 	}
 
-	// Read magic number (first 4 bytes, little-endian)
-	magic := binary.LittleEndian.Uint32(data[0:4])
-
-	switch magic {
-	case pclntabMagicGo120:
-		return p.parseGo125Plus(data)
-	default:
-		return fmt.Errorf("%w: unknown magic 0x%08X", ErrUnsupportedPclntab, magic)
-	}
-}
-
-// parseGo125Plus parses pclntab for Go 1.25 and later.
-// Go 1.20-1.24 share the same magic number (0xFFFFFFF1) but use a larger 80-byte
-// header; these are detected and rejected in readHeaderFields.
-// Reference: https://go.dev/src/runtime/symtab.go
-func (p *pclntabParser) parseGo125Plus(data []byte) error {
-	if len(data) < pcHeaderSizeGo125 {
-		return ErrInvalidPclntab
-	}
-
-	// Header layout for Go 1.25+:
-	// [0:4]   magic
-	// [4:5]   padding (0)
-	// [5:6]   padding (0)
-	// [6:7]   instruction size quantum (1 for x86, 4 for ARM)
-	// [7:8]   pointer size (must be 8 for x86_64)
-	// [8:16]  nfunc (number of functions) - uint64 for 64-bit
-
-	p.ptrSize = int(data[7])
-	if p.ptrSize != pclntab64PtrSize {
-		return fmt.Errorf("%w: unsupported pointer size %d (only 64-bit supported)", ErrInvalidPclntab, p.ptrSize)
-	}
-
-	p.goVersion = "go1.25+"
-
-	return p.parseFuncTable(data)
-}
-
-// parseFuncTable extracts function entries from the pclntab.
-// This implementation targets Go 1.25+ pclntab layout (pcHeader + functab) on x86_64.
-//
-// Note: This implementation only supports 64-bit binaries (ptrSize == 8).
-// 32-bit binaries are not supported as the target architecture is x86_64 only.
-func (p *pclntabParser) parseFuncTable(data []byte) error {
-	// pcHeader layout (Go 1.25+, 64-bit)
-	// offset 0x00: magic (uint32)
-	// offset 0x04: pad1 (byte)
-	// offset 0x05: pad2 (byte)
-	// offset 0x06: minLC (byte)
-	// offset 0x07: ptrSize (byte)
-	// offset 0x08: nfunc (uint64)
-	// offset 0x10: nfiles (uint64)
-	// offset 0x18: textStart (uint64)
-	// offset 0x20: funcnameOffset (uint64)
-	// offset 0x28: cuOffset (uint64)
-	// offset 0x30: filetabOffset (uint64)
-	// offset 0x38: pctabOffset (uint64)
-	// offset 0x40: pclntabOffset (uint64) — also serves as ftabOffset
-	//
-	// Header size: 0x48 (72 bytes)
-	//
-	// Note: ptrSize validation is already performed in parseGo125Plus.
-
-	if len(data) < pcHeaderSizeGo125 {
-		return ErrInvalidPclntab
-	}
-
-	nfunc, textStart, funcNameOff, ftabOff, err := p.readHeaderFields(data)
+	lineTable := gosym.NewLineTable(pclntabData, textStart)
+	symTable, err := gosym.NewTable(nil, lineTable)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("%w: %w", ErrUnsupportedPclntab, err)
 	}
 
-	return p.extractFunctions(data, nfunc, textStart, funcNameOff, ftabOff)
-}
-
-// readHeaderFields reads the key fields from the Go 1.25+ pcHeader (72 bytes).
-// Go 1.20-1.24 binaries share the same magic number (0xFFFFFFF1) but use an
-// 80-byte header with funcnameOffset >= 0x50; these are detected and rejected.
-func (p *pclntabParser) readHeaderFields(data []byte) (nfunc, textStart, funcNameOff, ftabOff uint64, err error) {
-	readUint64 := func(off int) (uint64, error) {
-		if off < 0 || off+pclntab64PtrSize > len(data) {
-			return 0, ErrInvalidPclntab
+	functions := make(map[string]PclntabFunc, len(symTable.Funcs))
+	for i := range symTable.Funcs {
+		fn := &symTable.Funcs[i]
+		functions[fn.Name] = PclntabFunc{
+			Name:  fn.Name,
+			Entry: fn.Entry,
+			End:   fn.End,
 		}
-		return binary.LittleEndian.Uint64(data[off : off+pclntab64PtrSize]), nil
 	}
 
-	nfunc, err = readUint64(pcHeaderOffsetNfunc)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	textStart, err = readUint64(pcHeaderOffsetTextStart)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	funcNameOff, err = readUint64(pcHeaderOffsetFuncnameOff)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-
-	// Detect Go 1.20-1.24 vs Go 1.25+ header format.
-	// In Go 1.20-1.24, the header is 80 bytes (0x50), so the first table
-	// (funcname) begins at offset >= 0x50. In Go 1.25+, the header is
-	// 72 bytes (0x48), so tables start at offset 0x48.
-	// If funcNameOff >= 0x50, the binary is Go 1.20-1.24 and unsupported.
-	if funcNameOff >= pcHeaderSizeGo120 {
-		return 0, 0, 0, 0, fmt.Errorf("%w: %s", ErrUnsupportedPclntab, errMsgGo120Unsupported)
-	}
-
-	// Go 1.25+: ftab is at pclntabOffset (ftabOffset field was removed)
-	ftabOff, err = readUint64(pcHeaderOffsetPclnOff)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-
-	return nfunc, textStart, funcNameOff, ftabOff, nil
-}
-
-// extractFunctions extracts function entries from the functab.
-func (p *pclntabParser) extractFunctions(data []byte, nfunc, textStart, funcNameOff, ftabOff uint64) error {
-	// Validate uint64 values fit in int before conversion to prevent overflow.
-	if nfunc > uint64(math.MaxInt) || ftabOff > uint64(math.MaxInt) ||
-		funcNameOff > uint64(math.MaxInt) {
-		return ErrInvalidPclntab
-	}
-
-	// Function table: nfunc+1 entries, each entry is {entryoff uint32, funcoff uint32}
-	// entry address = textStart + entryoff
-	// funcoff points to _func struct; nameoff is at +4 in _func
-	const entrySize = pclntab64PtrSize // 8 bytes: {entryoff uint32, funcoff uint32}
-	nfuncInt := int(nfunc)
-	ftabStart := int(ftabOff)
-	// Check for overflow in ftabBytes calculation:
-	// (nfuncInt + 1) * entrySize must fit in int.
-	// nfuncInt is guaranteed non-negative because nfunc (uint64) was checked
-	// against math.MaxInt above.
-	if nfuncInt > (math.MaxInt/entrySize)-1 {
-		return ErrInvalidPclntab
-	}
-	ftabBytes := (nfuncInt + 1) * entrySize
-	// Check if ftabStart + ftabBytes would overflow or exceed data length.
-	// This single check handles both overflow and bounds validation safely.
-	if ftabStart > len(data)-ftabBytes {
-		return ErrInvalidPclntab
-	}
-
-	funcs := make(map[string]PclntabFunc, nfuncInt)
-	funcNameOffInt := int(funcNameOff)
-
-	for i := range nfuncInt {
-		fn, err := p.extractSingleFunction(data, ftabStart, funcNameOffInt, i, entrySize, nfuncInt, textStart)
-		if err != nil {
-			return err
-		}
-		funcs[fn.Name] = fn
-	}
-
-	p.funcData = funcs
-	return nil
-}
-
-// extractSingleFunction extracts a single function entry from the functab.
-func (p *pclntabParser) extractSingleFunction(data []byte, ftabStart, funcNameOffInt, idx, entrySize, nfuncInt int, textStart uint64) (PclntabFunc, error) {
-	readUint32 := func(b []byte, off int) (uint32, error) {
-		const uint32Size = 4 // Size of uint32 in bytes
-		if off < 0 || off+uint32Size > len(b) {
-			return 0, ErrInvalidPclntab
-		}
-		return binary.LittleEndian.Uint32(b[off : off+uint32Size]), nil
-	}
-
-	entryOff, err := readUint32(data, ftabStart+idx*entrySize)
-	if err != nil {
-		return PclntabFunc{}, err
-	}
-	funcOff, err := readUint32(data, ftabStart+idx*entrySize+ftabEntryOffsetFuncOff)
-	if err != nil {
-		return PclntabFunc{}, err
-	}
-
-	entry := uint64(entryOff) + textStart
-	// funcOff is uint32, safe to convert to int on 64-bit systems
-	funcDataOff := int(funcOff)
-	if funcDataOff+funcStructOffsetNameOff > len(data) {
-		return PclntabFunc{}, ErrInvalidPclntab
-	}
-	nameOff32, err := readUint32(data, funcDataOff+funcStructOffsetNameOff)
-	if err != nil {
-		return PclntabFunc{}, err
-	}
-
-	// Check for overflow in nameStart calculation
-	// Both funcNameOffInt and nameOff32 are non-negative, check sum doesn't overflow
-	if int(nameOff32) > math.MaxInt-funcNameOffInt {
-		return PclntabFunc{}, ErrInvalidPclntab
-	}
-	nameStart := funcNameOffInt + int(nameOff32)
-	if nameStart >= len(data) {
-		return PclntabFunc{}, ErrInvalidPclntab
-	}
-
-	// Read null-terminated function name
-	nameEnd := nameStart
-	for nameEnd < len(data) && data[nameEnd] != 0x00 {
-		nameEnd++
-	}
-	if nameEnd == len(data) {
-		return PclntabFunc{}, ErrInvalidPclntab
-	}
-	name := string(data[nameStart:nameEnd])
-
-	// Determine end address from next function entry (if available)
-	end := uint64(0)
-	if idx+1 < nfuncInt {
-		nextEntryOff, err := readUint32(data, ftabStart+(idx+1)*entrySize)
-		if err != nil {
-			return PclntabFunc{}, err
-		}
-		end = uint64(nextEntryOff) + textStart
-	}
-
-	return PclntabFunc{
-		Name:  name,
-		Entry: entry,
-		End:   end,
-	}, nil
+	return functions, nil
 }

@@ -105,7 +105,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean
+.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test
 
 all: security-check
 
@@ -284,9 +284,15 @@ e2e-test: build-test
 # This is the default test target for daily development
 test: unit-test
 
+# ELF analyzer integration tests - runs integration-tagged tests for elfanalyzer package
+# Requires: gcc (for TestSyscallAnalyzer_RealCBinary), amd64 arch
+# Tests gracefully skip if requirements are not met (t.Skip)
+elfanalyzer-integration-test:
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/runner/security/elfanalyzer/
+
 # CI test target - tests that can run without sudo or external services
 # Suitable for GitHub Actions and other CI environments
-test-ci: unit-test e2e-test security-test performance-test
+test-ci: unit-test e2e-test security-test performance-test elfanalyzer-integration-test
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
 # Excludes Slack notification tests (require external webhook configuration)

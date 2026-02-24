@@ -2,7 +2,10 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"fmt"
+	"log/slog"
 	"math"
+	"sort"
 
 	"golang.org/x/arch/x86/x86asm"
 )
@@ -30,6 +33,9 @@ type GoSyscallWrapper string
 const NoWrapper GoSyscallWrapper = ""
 
 // knownGoWrappers is a set of known Go syscall wrapper function names for O(1) lookup.
+// These are the public-facing wrapper functions that callers use to make syscalls.
+// When a CALL to one of these is found in user code, the syscall number is resolved
+// from the argument setup preceding the call.
 var knownGoWrappers = map[GoSyscallWrapper]struct{}{
 	"syscall.Syscall":     {},
 	"syscall.Syscall6":    {},
@@ -37,6 +43,17 @@ var knownGoWrappers = map[GoSyscallWrapper]struct{}{
 	"syscall.RawSyscall6": {},
 	"runtime.syscall":     {},
 	"runtime.syscall6":    {},
+}
+
+// knownSyscallImpls is a set of low-level syscall implementation function names
+// whose bodies contain direct SYSCALL instructions with caller-supplied numbers.
+// The syscall number cannot be determined statically from these functions' bodies,
+// so both direct SYSCALL instructions and CALL-to-wrapper instructions within
+// these functions are excluded from analysis.
+var knownSyscallImpls = map[string]struct{}{
+	"syscall.rawVforkSyscall":                 {},
+	"syscall.rawSyscallNoError":               {},
+	"internal/runtime/syscall/linux.Syscall6": {},
 }
 
 // SymbolInfo represents information about a symbol in the ELF file.
@@ -68,10 +85,17 @@ type WrapperCall struct {
 
 // GoWrapperResolver resolves Go syscall wrapper calls to determine syscall numbers.
 type GoWrapperResolver struct {
-	symbols      map[string]SymbolInfo
-	wrapperAddrs map[uint64]GoSyscallWrapper
-	hasSymbols   bool
-	decoder      *X86Decoder // Shared decoder instance to avoid repeated allocation
+	symbols       map[string]SymbolInfo
+	wrapperAddrs  map[uint64]GoSyscallWrapper
+	wrapperRanges []wrapperRange // sorted address ranges of wrapper functions
+	hasSymbols    bool
+	decoder       *X86Decoder // Shared decoder instance to avoid repeated allocation
+}
+
+// wrapperRange represents the address range [start, end) of a wrapper function.
+type wrapperRange struct {
+	start uint64
+	end   uint64
 }
 
 // NewGoWrapperResolver creates a new GoWrapperResolver and loads symbols
@@ -99,14 +123,32 @@ func newGoWrapperResolver() *GoWrapperResolver {
 	}
 }
 
+// isInsideWrapper returns true if addr falls within any known wrapper function's body.
+// This is used to skip CALL instructions emitted from within a wrapper itself
+// (e.g. syscall.Syscall calling an internal helper), which would otherwise be
+// reported as unresolved wrapper calls and inflate the high-risk count.
+//
+// wrapperRanges is kept sorted by start address so this can use binary search
+// (O(log n)) instead of a linear scan (O(n)).
+func (r *GoWrapperResolver) isInsideWrapper(addr uint64) bool {
+	// Find the last range whose start <= addr.
+	i := sort.Search(len(r.wrapperRanges), func(i int) bool {
+		return r.wrapperRanges[i].start > addr
+	}) - 1
+	if i < 0 {
+		return false
+	}
+	return addr < r.wrapperRanges[i].end
+}
+
 // loadFromPclntab loads symbols from the .gopclntab section.
 func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
-	result, err := ParsePclntab(elfFile)
+	functions, err := ParsePclntab(elfFile)
 	if err != nil {
 		return err
 	}
 
-	for name, fn := range result.Functions {
+	for name, fn := range functions {
 		// Calculate size, guarding against missing/zero End to avoid underflow
 		size := uint64(0)
 		if fn.End > fn.Entry {
@@ -125,8 +167,31 @@ func (r *GoWrapperResolver) loadFromPclntab(elfFile *elf.File) error {
 		wrapper := GoSyscallWrapper(name)
 		if _, ok := knownGoWrappers[wrapper]; ok {
 			r.wrapperAddrs[fn.Entry] = wrapper
+			if fn.End > fn.Entry {
+				r.wrapperRanges = append(r.wrapperRanges, wrapperRange{
+					start: fn.Entry,
+					end:   fn.End,
+				})
+			}
+		}
+
+		// Also track low-level syscall implementation functions.
+		// Their bodies contain direct SYSCALL instructions with caller-supplied numbers
+		// and must be excluded from both Pass 1 and Pass 2 analysis.
+		if _, ok := knownSyscallImpls[name]; ok {
+			if fn.End > fn.Entry {
+				r.wrapperRanges = append(r.wrapperRanges, wrapperRange{
+					start: fn.Entry,
+					end:   fn.End,
+				})
+			}
 		}
 	}
+
+	// Sort wrapperRanges by start address so isInsideWrapper can use binary search.
+	sort.Slice(r.wrapperRanges, func(i, j int) bool {
+		return r.wrapperRanges[i].start < r.wrapperRanges[j].start
+	})
 
 	return nil
 }
@@ -145,6 +210,7 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 //
 // Returns:
 //   - slice of WrapperCall structs containing call site info and resolved syscall numbers
+//   - decodeFailures: the number of instruction decode failures during scanning
 //
 // Performance Note:
 // This function performs linear decoding of the entire code section, unlike
@@ -156,12 +222,13 @@ func (r *GoWrapperResolver) HasSymbols() bool {
 // consider implementing window-based scanning similar to Pass 1, but this adds
 // complexity for maintaining CALL instruction context for backward scanning.
 // See NFR-4.1.2 for performance requirements.
-func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []WrapperCall {
+func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([]WrapperCall, int) {
 	if len(r.wrapperAddrs) == 0 {
-		return nil
+		return nil, 0
 	}
 
 	var results []WrapperCall
+	decodeFailures := 0
 
 	// Decode entire code section and find CALL instructions to known wrappers
 	// Use the shared decoder instance (r.decoder) to avoid repeated allocation
@@ -173,6 +240,12 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 		// and less than len(code) (loop condition), so conversion is safe
 		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos is validated by loop condition
 		if err != nil {
+			decodeFailures++
+			if decodeFailures <= MaxDecodeFailureLogs {
+				slog.Debug("instruction decode failed in go wrapper resolver",
+					slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))), //nolint:gosec // G115: pos is validated by loop condition
+					slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+DecodeFailureLogBytesLen, len(code))])))
+			}
 			pos++
 			continue
 		}
@@ -191,24 +264,30 @@ func (r *GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) []Wra
 
 		// Check if this is a CALL to a known wrapper
 		if inst.Op == x86asm.CALL {
-			if wrapper := r.resolveWrapper(inst); wrapper != NoWrapper {
-				// Found a call to a wrapper, try to resolve the syscall number
-				syscallNum, method := r.resolveSyscallArgument(recentInstructions)
-				// pos is validated same as above
-				results = append(results, WrapperCall{
-					CallSiteAddress:     baseAddr + uint64(pos), //nolint:gosec // G115: pos is validated by loop condition
-					TargetFunction:      string(wrapper),
-					SyscallNumber:       syscallNum,
-					Resolved:            syscallNum >= 0,
-					DeterminationMethod: method,
-				})
+			callAddr := baseAddr + uint64(pos) //nolint:gosec // G115: pos is validated by loop condition
+			// Skip CALL instructions that originate from inside a wrapper function body.
+			// Wrapper functions (e.g. syscall.Syscall) may themselves call other wrappers
+			// or internal helpers; those internal calls do not represent user-level
+			// syscall usage and cannot have their syscall number resolved from context.
+			if !r.isInsideWrapper(callAddr) {
+				if wrapper := r.resolveWrapper(inst); wrapper != NoWrapper {
+					// Found a call to a wrapper, try to resolve the syscall number
+					syscallNum, method := r.resolveSyscallArgument(recentInstructions)
+					results = append(results, WrapperCall{
+						CallSiteAddress:     callAddr,
+						TargetFunction:      string(wrapper),
+						SyscallNumber:       syscallNum,
+						Resolved:            syscallNum >= 0,
+						DeterminationMethod: method,
+					})
+				}
 			}
 		}
 
 		pos += inst.Len
 	}
 
-	return results
+	return results, decodeFailures
 }
 
 // resolveSyscallArgument analyzes instructions before a wrapper call
