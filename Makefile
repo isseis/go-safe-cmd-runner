@@ -233,7 +233,7 @@ elfanalyzer-testdata-clean:
 
 hash:
 	$(foreach file, $(HASH_TARGETS), \
-		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
+		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
 
 # Update hash for integration-test target
 # Includes: config file and all files referenced in verify_files
@@ -246,7 +246,7 @@ HASH_INTEGRATION_TEST_TARGETS := \
 
 hash-integration-test: $(BINARY_RECORD)
 	$(foreach file, $(HASH_INTEGRATION_TEST_TARGETS), \
-		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
+		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
 
 # Test build with test tags enabled
 build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)

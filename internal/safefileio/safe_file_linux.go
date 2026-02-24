@@ -8,7 +8,6 @@
 package safefileio
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -121,7 +120,7 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 				return nil, os.ErrNotExist // Return standard not exist error
 			}
 		}
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, err
 	}
 	return os.NewFile(uintptr(fd), absPath), nil
 }
