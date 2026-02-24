@@ -531,9 +531,6 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 		if isNoFollowError(err) {
 			return nil, ErrIsSymlink
 		}
-		if os.IsNotExist(err) {
-			return nil, err // Return the original error for file not found
-		}
 		return nil, err
 	}
 
