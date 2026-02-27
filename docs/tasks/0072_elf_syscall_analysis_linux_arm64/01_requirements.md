@@ -120,6 +120,7 @@ arm64 Linux の syscall 番号でネットワーク関連 syscall を判定す�
 | syscall | 番号 (arm64 Linux) | 意味 |
 |---------|---------------------|------|
 | `socket` | 198 | ソケット作成 |
+| `socketpair` | 199 | ソケットペア作成 |
 | `bind` | 200 | アドレスにバインド |
 | `listen` | 201 | 接続待ち受け |
 | `accept` | 202 | 接続受け入れ |
@@ -129,6 +130,8 @@ arm64 Linux の syscall 番号でネットワーク関連 syscall を判定す�
 | `sendmsg` | 211 | メッセージ送信 |
 | `recvmsg` | 212 | メッセージ受信 |
 | `accept4` | 242 | 接続受け入れ（フラグ付き） |
+| `recvmmsg` | 243 | 複数メッセージ受信 |
+| `sendmmsg` | 269 | 複数メッセージ送信 |
 
 #### FR-3.1.6: Go syscall ラッパーの解析（arm64）
 
