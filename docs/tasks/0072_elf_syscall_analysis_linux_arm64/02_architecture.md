@@ -566,8 +566,8 @@ sequenceDiagram
     "summary": {
       "has_network_syscalls": true,
       "is_high_risk": false,
-      "total_detected_events": 15,
-      "network_syscall_count": 3
+      "total_detected_events": 2,
+      "network_syscall_count": 2
     }
   }
 }
