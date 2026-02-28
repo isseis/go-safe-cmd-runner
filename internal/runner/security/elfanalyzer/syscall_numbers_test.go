@@ -50,6 +50,8 @@ func TestX86_64SyscallTable_NetworkSyscalls(t *testing.T) {
 		assert.True(t, networkNumSet[tc.number],
 			"syscall %d (%s) should appear in GetNetworkSyscalls()", tc.number, tc.name)
 	}
+	assert.Equal(t, len(requiredNetworkSyscalls), len(networkNums),
+		"GetNetworkSyscalls() should return exactly the required network syscalls")
 }
 
 func TestX86_64SyscallTable_NonNetworkSyscall(t *testing.T) {
