@@ -38,13 +38,16 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 		{41, "socket", true, "Create a socket"},
 		{42, "connect", true, "Connect to a remote address"},
 		{43, "accept", true, "Accept a connection"},
-		{288, "accept4", true, "Accept a connection with flags"},
 		{44, "sendto", true, "Send data to address"},
 		{45, "recvfrom", true, "Receive data from address"},
 		{46, "sendmsg", true, "Send message"},
 		{47, "recvmsg", true, "Receive message"},
 		{49, "bind", true, "Bind to an address"},
 		{50, "listen", true, "Listen for connections"},
+		{53, "socketpair", true, "Create a pair of connected sockets"},
+		{288, "accept4", true, "Accept a connection with flags"},
+		{299, "recvmmsg", true, "Receive multiple messages"},
+		{307, "sendmmsg", true, "Send multiple messages"},
 	}
 
 	for _, def := range networkSyscalls {
