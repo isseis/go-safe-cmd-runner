@@ -415,10 +415,9 @@ func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (i
 
 `GetCallTarget` の実装:
 - `Op == arm64asm.BL` を確認
-- `Args[0]` が `arm64asm.PCRel` 型: ターゲットアドレス = `instAddr + uint64(inst.Len) + uint64(pcrel)`
-  - `arm64asm.PCRel` は `int64` 型の相対オフセット; 実際には命令アドレス自体からのオフセット
-  - **注意**: `arm64asm.PCRel` の意味を `arm64asm` パッケージのドキュメントで確認し、
-    `BL` 命令のアドレス + オフセット として計算する
+- `Args[0]` が `arm64asm.PCRel` 型: ターゲットアドレス = `instAddr + uint64(pcrel)`
+  - `arm64asm.PCRel` は命令アドレス自体（`instAddr`）からの相対オフセット（`int64` 型）
+  - ARM64 では PC は現在の命令アドレスを指すため、x86 のように `inst.Len` を加算しない
 
 `IsImmediateToFirstArgRegister` の実装:
 - `Op == arm64asm.MOV`
