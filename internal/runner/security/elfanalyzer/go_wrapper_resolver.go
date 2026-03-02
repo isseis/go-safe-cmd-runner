@@ -192,15 +192,6 @@ func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
 	return nil
 }
 
-// NewGoWrapperResolver creates a new X86GoWrapperResolver and loads symbols
-// from the given ELF file's .gopclntab section.
-//
-// Deprecated: Use NewX86GoWrapperResolver directly.
-// This function exists for backward compatibility.
-func NewGoWrapperResolver(elfFile *elf.File) (*X86GoWrapperResolver, error) {
-	return NewX86GoWrapperResolver(elfFile)
-}
-
 // noopGoWrapperResolver is a no-op implementation of GoWrapperResolver.
 // It is used as a fallback when GoWrapperResolver initialization fails
 // (e.g., missing .gopclntab section in a stripped binary).

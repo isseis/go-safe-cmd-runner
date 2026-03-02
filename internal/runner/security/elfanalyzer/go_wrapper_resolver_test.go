@@ -13,7 +13,7 @@ import (
 
 func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
 	// An empty elf.File has no .gopclntab section.
-	// NewGoWrapperResolver should return a usable resolver and ErrNoPclntab.
+	// NewX86GoWrapperResolver should return a usable resolver and ErrNoPclntab.
 	resolver, err := NewX86GoWrapperResolver(&elf.File{})
 
 	require.ErrorIs(t, err, ErrNoPclntab)

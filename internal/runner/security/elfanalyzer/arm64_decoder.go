@@ -163,7 +163,7 @@ func arm64ImmValue(arg arm64asm.Arg) (int64, bool) {
 	case arm64asm.Imm:
 		return int64(v.Imm), true
 	case arm64asm.Imm64:
-		return int64(v.Imm), true //nolint:gosec // G115: syscall numbers 0-500 are safe to cast
+		return int64(v.Imm), true //nolint:gosec // G115: caller validates range via maxValidSyscallNumber before using the value
 	}
 	return 0, false
 }
