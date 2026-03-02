@@ -40,14 +40,14 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 1.1 DecodedInstruction の汎用化
 
-- [ ] `syscall_decoder.go` の `DecodedInstruction` を更新する
+- [x] `syscall_decoder.go` の `DecodedInstruction` を更新する
   - `Op x86asm.Op` フィールドを削除し `arch any` フィールド（unexported）を追加
   - `Args []x86asm.Arg` フィールドを削除
   - 仕様: 詳細仕様書 §2.1
 
 ### 1.2 MachineCodeDecoder インターフェースの汎用化
 
-- [ ] `syscall_decoder.go` の `MachineCodeDecoder` インターフェースを更新する
+- [x] `syscall_decoder.go` の `MachineCodeDecoder` インターフェースを更新する
   - `ModifiesEAXorRAX` → `ModifiesSyscallNumberRegister` にリネーム
   - `IsImmediateMove` → `IsImmediateToSyscallNumberRegister` にリネーム
   - `InstructionAlignment() int` メソッドを追加
@@ -55,7 +55,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 1.3 X86Decoder の更新
 
-- [ ] `syscall_decoder.go` の `X86Decoder` を新インターフェースに適合させる
+- [x] `syscall_decoder.go` の `X86Decoder` を新インターフェースに適合させる
   - `Decode` メソッドで `arch = inst`（`x86asm.Inst`）をセット、`Op`/`Args` フィールドへの設定を除去
   - 各判定メソッド内で `inst.arch.(x86asm.Inst)` で型アサーション
   - `ModifiesEAXorRAX` → `ModifiesSyscallNumberRegister` にリネーム
@@ -65,32 +65,32 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 1.4 X86Decoder の GoWrapperResolver 専用メソッド追加
 
-- [ ] `syscall_decoder.go` または `x86_go_wrapper_resolver.go` に専用メソッドを追加
+- [x] `syscall_decoder.go` または `x86_go_wrapper_resolver.go` に専用メソッドを追加
   - `GetCallTarget(inst DecodedInstruction, instAddr uint64) (uint64, bool)`
   - `IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)`
   - 仕様: 詳細仕様書 §2.3
 
 ### 1.5 GoWrapperResolver インターフェース定義と共通ベース抽出
 
-- [ ] `go_wrapper_resolver.go` に `GoWrapperResolver` インターフェースを追加
+- [x] `go_wrapper_resolver.go` に `GoWrapperResolver` インターフェースを追加
   - `HasSymbols() bool`
   - `FindWrapperCalls(code []byte, baseAddr uint64) ([]WrapperCall, int)`
   - `IsInsideWrapper(addr uint64) bool`
   - 仕様: 詳細仕様書 §3.1
-- [ ] `go_wrapper_resolver.go` に `goWrapperBase` 構造体を定義し共通ロジックを移動
+- [x] `go_wrapper_resolver.go` に `goWrapperBase` 構造体を定義し共通ロジックを移動
   - `symbols`, `wrapperAddrs`, `wrapperRanges`, `hasSymbols` フィールド
   - `HasSymbols()`, `IsInsideWrapper()`, `loadFromPclntab()` メソッド
   - 仕様: 詳細仕様書 §3.2
 
 ### 1.6 X86GoWrapperResolver への移行
 
-- [ ] `x86_go_wrapper_resolver.go` を新規作成し `X86GoWrapperResolver` を実装
+- [x] `x86_go_wrapper_resolver.go` を新規作成し `X86GoWrapperResolver` を実装
   - `goWrapperBase` を埋め込む
   - `FindWrapperCalls` のロジックを既存 `GoWrapperResolver` から移動
   - `decoder *X86Decoder` を保持し、`GetCallTarget` / `IsImmediateToFirstArgRegister`
     専用メソッド経由で命令情報にアクセス
   - 仕様: 詳細仕様書 §3.3
-- [ ] `go_wrapper_resolver.go` に関数エイリアスを追加（後方互換）
+- [x] `go_wrapper_resolver.go` に関数エイリアスを追加（後方互換）
   - `func NewGoWrapperResolver(elfFile *elf.File) (*X86GoWrapperResolver, error)`
   - 型エイリアス `type GoWrapperResolver = X86GoWrapperResolver` は **定義しない**
     （同名インターフェースとの `redeclared in this block` コンパイルエラーを防ぐため）
@@ -98,7 +98,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 1.7 SyscallAnalyzer の内部メソッドをパラメータ化
 
-- [ ] `syscall_analyzer.go` の内部メソッドを変更
+- [x] `syscall_analyzer.go` の内部メソッドを変更
   - `analyzeSyscallsInCode` のシグネチャに `decoder`, `table`, `goResolver` 引数を追加
   - `findSyscallInstructions` のバイトパターンマッチを `decoder.IsSyscallInstruction(inst)` に変更
   - デコード失敗時スキップを `decoder.InstructionAlignment()` から取得
@@ -110,19 +110,19 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 1.8 既存テストの更新
 
-- [ ] `syscall_decoder_test.go` のメソッド名をリネーム
+- [x] `syscall_decoder_test.go` のメソッド名をリネーム
   - `TestX86Decoder_ModifiesEAXorRAX` → `TestX86Decoder_ModifiesSyscallNumberRegister`
   - `TestX86Decoder_IsImmediateMove` → `TestX86Decoder_IsImmediateToSyscallNumberRegister`
   - `InstructionAlignment` のテスト（戻り値 `1`）を追加
   - 仕様: 詳細仕様書 §8.5
-- [ ] `syscall_analyzer_test.go` の `MockMachineCodeDecoder` を更新
+- [x] `syscall_analyzer_test.go` の `MockMachineCodeDecoder` を更新
   - `ModifiesEAXorRAX` → `ModifiesSyscallNumberRegister`
   - `IsImmediateMove` → `IsImmediateToSyscallNumberRegister`
   - `InstructionAlignment() int` を追加（デフォルト戻り値 `1`）
   - 仕様: 詳細仕様書 §7
-- [ ] `go_wrapper_resolver_test.go` を `x86_go_wrapper_resolver_test.go` に移動・更新
+- [x] `go_wrapper_resolver_test.go` を `x86_go_wrapper_resolver_test.go` に移動・更新
   - 型名の変更に追従
-- [ ] `make test` を実行し全テストがパスすることを確認
+- [x] `make test` を実行し全テストがパスすることを確認
 
 ## Phase 2: ARM64Decoder & ARM64LinuxSyscallTable
 

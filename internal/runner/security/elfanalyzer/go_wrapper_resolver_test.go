@@ -4,19 +4,17 @@ package elfanalyzer
 
 import (
 	"debug/elf"
-	"math"
 	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/arch/x86/x86asm"
 )
 
 func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
 	// An empty elf.File has no .gopclntab section.
 	// NewGoWrapperResolver should return a usable resolver and ErrNoPclntab.
-	resolver, err := NewGoWrapperResolver(&elf.File{})
+	resolver, err := NewX86GoWrapperResolver(&elf.File{})
 
 	require.ErrorIs(t, err, ErrNoPclntab)
 	assert.NotNil(t, resolver)
@@ -30,7 +28,7 @@ func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
 
 func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 	// A resolver created from an ELF without .gopclntab has no wrappers loaded.
-	resolver, err := NewGoWrapperResolver(&elf.File{})
+	resolver, err := NewX86GoWrapperResolver(&elf.File{})
 	require.ErrorIs(t, err, ErrNoPclntab)
 
 	result, decodeFailures := resolver.FindWrapperCalls([]byte{0x90, 0x90}, 0x401000)
@@ -39,7 +37,7 @@ func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Manually register a wrapper at a known address
 	wrapperAddr := uint64(0x402000)
@@ -76,7 +74,7 @@ func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Register a wrapper
 	wrapperAddr := uint64(0x402000)
@@ -101,7 +99,7 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Create recent instructions with a jump between mov and call
 	// The control flow boundary (jmp) should stop backward scanning before reaching mov
@@ -127,7 +125,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Test with mov to RAX (64-bit)
 	// 48 c7 c0 29 00 00 00  mov $0x29, %rax
@@ -146,7 +144,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Test with mov to EAX (32-bit, commonly used by Go compiler)
 	// b8 29 00 00 00  mov $0x29, %eax
@@ -165,7 +163,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 }
 
 func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	decoder := NewX86Decoder()
 
@@ -218,7 +216,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 }
 
 func TestGoWrapperResolver_IsInsideWrapper(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Set up three non-overlapping ranges in unsorted order to verify that
 	// loadFromPclntab sorting (and hence binary search) works correctly.
@@ -251,88 +249,13 @@ func TestGoWrapperResolver_IsInsideWrapper(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {
-			assert.Equal(t, tt.expected, resolver.isInsideWrapper(tt.addr))
+			assert.Equal(t, tt.expected, resolver.IsInsideWrapper(tt.addr))
 		})
 	}
 }
 
-func TestGoWrapperResolver_ResolveWrapper_NotACall(t *testing.T) {
-	resolver := newGoWrapperResolver()
-
-	// Create a non-CALL instruction
-	decoder := NewX86Decoder()
-	nopCode := []byte{0x90}
-	nopInst, _ := decoder.Decode(nopCode, 0x401000)
-
-	wrapper := resolver.resolveWrapper(nopInst)
-	assert.Equal(t, NoWrapper, wrapper)
-}
-
-func TestGoWrapperResolver_ResolveWrapper_HighOffsetOverflow(t *testing.T) {
-	resolver := newGoWrapperResolver()
-
-	// Construct a DecodedInstruction with Offset > math.MaxInt64.
-	// resolveWrapper should bail out rather than silently overflow.
-	inst := DecodedInstruction{
-		Op:     x86asm.CALL,
-		Offset: math.MaxUint64 - 10,
-		Len:    5,
-		Args:   []x86asm.Arg{x86asm.Rel(1)},
-	}
-
-	wrapper := resolver.resolveWrapper(inst)
-	assert.Equal(t, NoWrapper, wrapper)
-}
-
-func TestGoWrapperResolver_ResolveWrapper_NegativeLen(t *testing.T) {
-	resolver := newGoWrapperResolver()
-
-	// Negative instruction length should be rejected by the pre-check.
-	inst := DecodedInstruction{
-		Op:     x86asm.CALL,
-		Offset: 0x1000,
-		Len:    -5,
-		Args:   []x86asm.Arg{x86asm.Rel(1)},
-	}
-
-	wrapper := resolver.resolveWrapper(inst)
-	assert.Equal(t, NoWrapper, wrapper)
-}
-
-func TestGoWrapperResolver_ResolveWrapper_NegativeDisplacement(t *testing.T) {
-	resolver := newGoWrapperResolver()
-
-	// Create a CALL whose rel32 points far backwards such that
-	// int64(nextPC) + int64(target) < 0. resolveWrapper should reject it.
-	// Choose nextPC = 0x10 (Offset 0x0b with Len 5) and target = -0x100
-	inst := DecodedInstruction{
-		Op:     x86asm.CALL,
-		Offset: 0x0b, // nextPC = 0x0b + 5 = 0x10
-		Len:    5,
-		Args:   []x86asm.Arg{x86asm.Rel(-0x100)},
-	}
-
-	wrapper := resolver.resolveWrapper(inst)
-	assert.Equal(t, NoWrapper, wrapper)
-}
-
-func TestGoWrapperResolver_ResolveWrapper_UnknownTarget(t *testing.T) {
-	resolver := newGoWrapperResolver()
-
-	// Register a wrapper at a different address
-	resolver.wrapperAddrs[0x403000] = "syscall.Syscall"
-
-	// Create a CALL to a different address
-	decoder := NewX86Decoder()
-	callCode := []byte{0xe8, 0xfb, 0x0f, 0x00, 0x00} // call to 0x402000
-	callInst, _ := decoder.Decode(callCode, 0x401000)
-
-	wrapper := resolver.resolveWrapper(callInst)
-	assert.Equal(t, NoWrapper, wrapper)
-}
-
 func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Initially empty
 	addrs := resolver.GetWrapperAddresses()
@@ -347,7 +270,7 @@ func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
 }
 
 func TestGoWrapperResolver_GetSymbols(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Initially empty
 	symbols := resolver.GetSymbols()
@@ -385,7 +308,7 @@ func TestGoWrapperResolver_KnownGoWrappers(t *testing.T) {
 }
 
 func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
-	resolver := newGoWrapperResolver()
+	resolver := newX86GoWrapperResolver()
 
 	// Register multiple wrappers
 	resolver.wrapperAddrs[0x402000] = "syscall.Syscall"
@@ -428,26 +351,4 @@ func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 	assert.Equal(t, 42, result[1].SyscallNumber) // connect
 	assert.True(t, result[1].Resolved)
 	assert.Equal(t, DeterminationMethodGoWrapper, result[1].DeterminationMethod)
-}
-
-func TestGoWrapperResolver_DecodedInstruction_Args(t *testing.T) {
-	// Test that DecodedInstruction.Args properly contains x86asm types
-	decoder := NewX86Decoder()
-
-	// mov $0x29, %eax
-	code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00}
-	inst, err := decoder.Decode(code, 0x401000)
-
-	require.NoError(t, err)
-	require.Len(t, inst.Args, 2)
-
-	// First arg should be EAX register
-	reg, ok := inst.Args[0].(x86asm.Reg)
-	assert.True(t, ok)
-	assert.Equal(t, x86asm.EAX, reg)
-
-	// Second arg should be an immediate
-	imm, ok := inst.Args[1].(x86asm.Imm)
-	assert.True(t, ok)
-	assert.Equal(t, int64(0x29), int64(imm))
 }

@@ -7,41 +7,39 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/arch/x86/x86asm"
 )
 
 func TestX86Decoder_Decode(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	tests := []struct {
-		name    string
-		code    []byte
-		wantOp  x86asm.Op
-		wantLen int
+		name         string
+		code         []byte
+		wantLen      int
+		wantSyscall  bool
+		wantCtrlFlow bool
 	}{
 		{
 			name:    "nop",
 			code:    []byte{0x90},
-			wantOp:  x86asm.NOP,
 			wantLen: 1,
 		},
 		{
-			name:    "syscall",
-			code:    []byte{0x0f, 0x05},
-			wantOp:  x86asm.SYSCALL,
-			wantLen: 2,
+			name:        "syscall",
+			code:        []byte{0x0f, 0x05},
+			wantLen:     2,
+			wantSyscall: true,
 		},
 		{
 			name:    "mov eax immediate",
 			code:    []byte{0xb8, 0x29, 0x00, 0x00, 0x00},
-			wantOp:  x86asm.MOV,
 			wantLen: 5,
 		},
 		{
-			name:    "ret",
-			code:    []byte{0xc3},
-			wantOp:  x86asm.RET,
-			wantLen: 1,
+			name:         "ret",
+			code:         []byte{0xc3},
+			wantLen:      1,
+			wantCtrlFlow: true,
 		},
 	}
 
@@ -50,10 +48,11 @@ func TestX86Decoder_Decode(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0x1000)
 			require.NoError(t, err)
 
-			assert.Equal(t, tt.wantOp, inst.Op)
 			assert.Equal(t, tt.wantLen, inst.Len)
 			assert.Equal(t, uint64(0x1000), inst.Offset)
 			assert.Equal(t, tt.code[:tt.wantLen], inst.Raw)
+			assert.Equal(t, tt.wantSyscall, decoder.IsSyscallInstruction(inst))
+			assert.Equal(t, tt.wantCtrlFlow, decoder.IsControlFlowInstruction(inst))
 		})
 	}
 }
@@ -105,7 +104,7 @@ func TestX86Decoder_IsSyscallInstruction(t *testing.T) {
 	}
 }
 
-func TestX86Decoder_ModifiesEAXorRAX(t *testing.T) {
+func TestX86Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	tests := []struct {
@@ -150,12 +149,12 @@ func TestX86Decoder_ModifiesEAXorRAX(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, decoder.ModifiesEAXorRAX(inst))
+			assert.Equal(t, tt.want, decoder.ModifiesSyscallNumberRegister(inst))
 		})
 	}
 }
 
-func TestX86Decoder_IsImmediateMove(t *testing.T) {
+func TestX86Decoder_IsImmediateToSyscallNumberRegister(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	tests := []struct {
@@ -207,13 +206,18 @@ func TestX86Decoder_IsImmediateMove(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0)
 			require.NoError(t, err)
 
-			gotImm, gotVal := decoder.IsImmediateMove(inst)
+			gotImm, gotVal := decoder.IsImmediateToSyscallNumberRegister(inst)
 			assert.Equal(t, tt.wantImm, gotImm)
 			if tt.wantImm {
 				assert.Equal(t, tt.wantVal, gotVal)
 			}
 		})
 	}
+}
+
+func TestX86Decoder_InstructionAlignment(t *testing.T) {
+	decoder := NewX86Decoder()
+	assert.Equal(t, 1, decoder.InstructionAlignment())
 }
 
 func TestX86Decoder_IsControlFlowInstruction(t *testing.T) {
@@ -238,4 +242,90 @@ func TestX86Decoder_IsControlFlowInstruction(t *testing.T) {
 			assert.Equal(t, tt.want, decoder.IsControlFlowInstruction(inst))
 		})
 	}
+}
+
+func TestX86Decoder_GetCallTarget(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	t.Run("valid forward call", func(t *testing.T) {
+		// e8 f5 0f 00 00 = call rel32(0xff5); target = 0x401000 + 5 + 0xff5 = 0x401ffa -> 0x401ffa
+		// Layout: instAddr=0x401000, Len=5, rel=0xff5 => nextPC=0x401005, target=0x402000
+		code := []byte{0xe8, 0xfb, 0x0f, 0x00, 0x00} // rel = 0xffb; target = 0x401000+5+0xffb = 0x402000
+		inst, err := decoder.Decode(code, 0x401000)
+		require.NoError(t, err)
+		target, ok := decoder.GetCallTarget(inst, 0x401000)
+		assert.True(t, ok)
+		assert.Equal(t, uint64(0x402000), target)
+	})
+
+	t.Run("non-call instruction returns false", func(t *testing.T) {
+		code := []byte{0x90} // nop
+		inst, err := decoder.Decode(code, 0x401000)
+		require.NoError(t, err)
+		_, ok := decoder.GetCallTarget(inst, 0x401000)
+		assert.False(t, ok)
+	})
+
+	t.Run("overflow address returns false", func(t *testing.T) {
+		// Valid CALL bytes, but the instruction address overflows int64
+		code := []byte{0xe8, 0x01, 0x00, 0x00, 0x00} // call +1
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		// instAddr > math.MaxInt64 should return false
+		_, ok := decoder.GetCallTarget(inst, 0x8000000000000001)
+		assert.False(t, ok)
+	})
+
+	t.Run("negative displacement returns false", func(t *testing.T) {
+		// e8 f6 ff ff ff = call rel32(-10); target = 0 + 5 + (-10) = -5 < 0
+		code := []byte{0xe8, 0xf6, 0xff, 0xff, 0xff}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		_, ok := decoder.GetCallTarget(inst, 0)
+		assert.False(t, ok)
+	})
+}
+
+func TestX86Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	// In Go's register-based ABI for amd64, the first argument register is AX/EAX.
+	// This is the same as the syscall number register (RAX/EAX), because Go's
+	// syscall wrappers pass the syscall number as the first argument.
+	t.Run("mov imm to EAX (first arg register in Go ABI)", func(t *testing.T) {
+		// b8 29 00 00 00 = mov $0x29, %eax
+		code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		imm, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(0x29), imm)
+	})
+
+	t.Run("mov imm to RAX (first arg register in Go ABI, 64-bit form)", func(t *testing.T) {
+		// 48 c7 c0 29 00 00 00 = mov $0x29, %rax
+		code := []byte{0x48, 0xc7, 0xc0, 0x29, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		imm, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(0x29), imm)
+	})
+
+	t.Run("mov imm to RDI (C ABI first arg, not Go ABI)", func(t *testing.T) {
+		// 48 c7 c7 29 00 00 00 = mov $0x29, %rdi
+		code := []byte{0x48, 0xc7, 0xc7, 0x29, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		assert.False(t, ok)
+	})
+
+	t.Run("non-mov instruction returns false", func(t *testing.T) {
+		code := []byte{0x90} // nop
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		assert.False(t, ok)
+	})
 }

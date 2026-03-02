@@ -186,7 +186,7 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	}
 
 	// Analyze syscalls
-	result := a.analyzeSyscallsInCode(code, textSection.Addr, goResolver)
+	result := a.analyzeSyscallsInCode(code, textSection.Addr, a.decoder, a.syscallTable, goResolver)
 	result.Architecture = "x86_64"
 	return result, nil
 }
@@ -197,22 +197,22 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 //  2. Go wrapper call analysis (calls to syscall.Syscall, etc.)
 //
 // goResolver may be nil if symbol loading failed or was not attempted.
-func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, goResolver *GoWrapperResolver) *SyscallAnalysisResult {
+func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, decoder MachineCodeDecoder, table SyscallNumberTable, goResolver GoWrapperResolver) *SyscallAnalysisResult {
 	result := &SyscallAnalysisResult{}
 	result.DetectedSyscalls = make([]common.SyscallInfo, 0)
 
 	// Pass 1: Analyze direct syscall instructions
-	syscallLocs, pass1DecodeFailures := a.findSyscallInstructions(code, baseAddr)
+	syscallLocs, pass1DecodeFailures := a.findSyscallInstructions(code, baseAddr, decoder)
 	result.DecodeStats.DecodeFailureCount += pass1DecodeFailures
 	result.DecodeStats.TotalBytesAnalyzed = len(code)
 	for _, loc := range syscallLocs {
 		// Skip direct syscall instructions that fall inside known wrapper/impl functions.
 		// These functions receive the syscall number from their caller and the number
 		// cannot be determined statically from the function body.
-		if goResolver != nil && goResolver.isInsideWrapper(loc) {
+		if goResolver != nil && goResolver.IsInsideWrapper(loc) {
 			continue
 		}
-		info := a.extractSyscallInfo(code, loc, baseAddr)
+		info := a.extractSyscallInfo(code, loc, baseAddr, decoder, table)
 		result.DetectedSyscalls = append(result.DetectedSyscalls, info)
 
 		if info.Number == -1 {
@@ -239,8 +239,8 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, go
 			}
 
 			if call.SyscallNumber >= 0 {
-				info.Name = a.syscallTable.GetSyscallName(call.SyscallNumber)
-				info.IsNetwork = a.syscallTable.IsNetworkSyscall(call.SyscallNumber)
+				info.Name = table.GetSyscallName(call.SyscallNumber)
+				info.IsNetwork = table.IsNetworkSyscall(call.SyscallNumber)
 			} else {
 				result.HasUnknownSyscalls = true
 				result.HighRiskReasons = append(result.HighRiskReasons,
@@ -270,10 +270,22 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, go
 	return result
 }
 
-// findSyscallInstructions scans the code for syscall instructions (0F 05).
+// maxWindowBytesPerInstruction returns the number of bytes to allocate per
+// instruction in the backward scan window.
+// For x86_64 (alignment=1), we use the maximum instruction length (15 bytes).
+// For arm64 (alignment=4), all instructions are exactly 4 bytes, so we use 4.
+func maxWindowBytesPerInstruction(decoder MachineCodeDecoder) int {
+	align := decoder.InstructionAlignment()
+	if align == 1 {
+		return maxInstructionLength // 15 for x86_64
+	}
+	return align
+}
+
+// findSyscallInstructions scans the code for syscall instructions.
 // Decode failures during instruction-boundary scanning are counted in
 // decodeFailureCount and logged up to maxDecodeFailureLogs times via slog.Debug.
-func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) ([]uint64, int) {
+func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64, decoder MachineCodeDecoder) ([]uint64, int) {
 	var locations []uint64
 	decodeFailures := 0
 	pos := 0
@@ -283,7 +295,7 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 		if pos < 0 {
 			break
 		}
-		inst, err := a.decoder.Decode(code[pos:], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
+		inst, err := decoder.Decode(code[pos:], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
 		if err != nil {
 			decodeFailures++
 			if decodeFailures <= MaxDecodeFailureLogs {
@@ -291,8 +303,8 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 					slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))),                                // #nosec G115 safe: pos is checked non-negative above
 					slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+DecodeFailureLogBytesLen, len(code))]))) //nolint:gosec // G115: pos is validated above
 			}
-			// Skip problematic byte and continue
-			pos++
+			// Skip by alignment granularity on decode failure
+			pos += decoder.InstructionAlignment()
 			continue
 		}
 
@@ -302,9 +314,8 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 			panic("decoder returned non-positive instruction length without error")
 		}
 
-		// Check if this is a syscall instruction at proper instruction boundary.
-		// Verify both the instruction length (2 bytes) and the actual opcode bytes.
-		if inst.Len == 2 && pos+1 < len(code) && code[pos] == 0x0F && code[pos+1] == 0x05 {
+		// Check if this is a syscall instruction using the architecture-specific decoder.
+		if decoder.IsSyscallInstruction(inst) {
 			locations = append(locations, inst.Offset)
 		}
 
@@ -315,7 +326,7 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64) 
 }
 
 // extractSyscallInfo extracts syscall number by backward scanning.
-func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, baseAddr uint64) common.SyscallInfo {
+func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, baseAddr uint64, decoder MachineCodeDecoder, table SyscallNumberTable) common.SyscallInfo {
 	info := common.SyscallInfo{
 		Number:   -1,
 		Location: syscallAddr,
@@ -337,29 +348,29 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 	}
 	offset := int(delta)
 
-	// Backward scan to find eax/rax modification
-	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset)
+	// Backward scan to find syscall number register modification
+	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
 	info.Number = number
 	info.DeterminationMethod = method
 
 	if number >= 0 {
-		info.Name = a.syscallTable.GetSyscallName(number)
-		info.IsNetwork = a.syscallTable.IsNetworkSyscall(number)
+		info.Name = table.GetSyscallName(number)
+		info.IsNetwork = table.IsNetworkSyscall(number)
 	}
 
 	return info
 }
 
 // backwardScanForSyscallNumber scans backward from syscall instruction
-// to find where eax/rax is set.
+// to find where the syscall number register is set.
 // Note: This method only handles direct syscall instructions.
 // Go wrapper calls (e.g., Go's syscall wrappers) are handled separately
 // via goResolver.FindWrapperCalls.
-func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int) (int, string) {
+func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string) {
 	// Performance optimization: Use windowed decoding to avoid re-decoding
 	// the entire .text section for each syscall instruction.
-	// Window starts from max(0, syscallOffset - maxBackwardScan * maxInstructionLength)
-	windowStart := syscallOffset - (a.maxBackwardScan * maxInstructionLength)
+	// Window starts from max(0, syscallOffset - maxBackwardScan * maxWindowBytesPerInstruction)
+	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(decoder))
 	if windowStart < 0 {
 		windowStart = 0
 	}
@@ -370,7 +381,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 	// scan range, and counting them would double-count failures.
 	// Only findSyscallInstructions (Pass 1) and FindWrapperCalls (Pass 2)
 	// contribute to DecodeStats.DecodeFailureCount.
-	instructions, _ := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset)
+	instructions, _ := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset, decoder)
 	if len(instructions) == 0 {
 		return -1, DeterminationMethodUnknownDecodeFailed
 	}
@@ -382,17 +393,17 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 		scanCount++
 
 		// Check for control flow instruction (basic block boundary)
-		if a.decoder.IsControlFlowInstruction(inst) {
+		if decoder.IsControlFlowInstruction(inst) {
 			return -1, DeterminationMethodUnknownControlFlowBoundary
 		}
 
-		// Check if this instruction modifies eax/rax
-		if !a.decoder.ModifiesEAXorRAX(inst) {
+		// Check if this instruction modifies the syscall number register
+		if !decoder.ModifiesSyscallNumberRegister(inst) {
 			continue
 		}
 
-		// Check if it's an immediate move
-		if isImm, value := a.decoder.IsImmediateMove(inst); isImm {
+		// Check if it's an immediate value to the syscall number register
+		if isImm, value := decoder.IsImmediateToSyscallNumberRegister(inst); isImm {
 			// Validate immediate value is a valid syscall number.
 			// Reject negative immediates (e.g., 0xffffffff as -1) and out-of-range values.
 			// This prevents inconsistency where Number=-1 (unknown sentinel) with
@@ -408,7 +419,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 		return -1, DeterminationMethodUnknownIndirectSetting
 	}
 
-	// Reached scan limit without finding eax/rax modification
+	// Reached scan limit without finding syscall number register modification
 	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 
@@ -420,11 +431,13 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 //   - code: the code section bytes
 //   - baseAddr: base virtual address of the code section (used to compute instruction VAs)
 //   - startOffset, endOffset: section-relative byte offsets defining the decode window
+//   - decoder: the architecture-specific decoder to use
 //
 // Instruction boundary handling:
 // The startOffset may not align with an instruction boundary (since we calculate it by
 // subtracting a fixed byte count from syscallOffset). When decoding fails at startOffset,
-// we skip one byte (pos++) and retry. This "resynchronization" approach works because:
+// we skip by InstructionAlignment() bytes and retry. This "resynchronization" approach
+// works because:
 //  1. x86_64 instruction encoding is self-synchronizing within a few bytes
 //  2. We decode forward toward syscallOffset which IS a known instruction boundary
 //  3. Even if initial instructions are mis-decoded, the final instructions before
@@ -438,7 +451,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 // Performance comparison (example: 10MB .text, 100 syscalls):
 //   - Old approach: 100 * 5MB avg = ~500MB worth of redundant decoding
 //   - Window approach: 100 * (50 instructions * 15 bytes) = ~75KB of focused decoding
-func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint64, startOffset, endOffset int) ([]DecodedInstruction, int) {
+func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint64, startOffset, endOffset int, decoder MachineCodeDecoder) ([]DecodedInstruction, int) {
 	var instructions []DecodedInstruction
 	decodeFailures := 0
 	pos := startOffset
@@ -450,11 +463,11 @@ func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint6
 		if pos < 0 {
 			break
 		}
-		inst, err := a.decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
+		inst, err := decoder.Decode(code[pos:endOffset], baseAddr+uint64(pos)) // #nosec G115 safe: pos is checked to be non-negative above
 		if err != nil {
 			decodeFailures++
-			// Skip problematic byte and continue
-			pos++
+			// Skip by alignment granularity on decode failure
+			pos += decoder.InstructionAlignment()
 			continue
 		}
 
