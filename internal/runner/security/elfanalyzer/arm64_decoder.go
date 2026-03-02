@@ -1,6 +1,7 @@
 package elfanalyzer
 
 import (
+	"errors"
 	"math"
 
 	"golang.org/x/arch/arm64/arm64asm"
@@ -15,19 +16,22 @@ type ARM64Decoder struct{}
 // NewARM64Decoder creates a new ARM64Decoder.
 func NewARM64Decoder() *ARM64Decoder { return &ARM64Decoder{} }
 
+var errCodeTooShort = errors.New("code too short for arm64 instruction")
+
 // Decode decodes a single arm64 instruction (always 4 bytes).
 // Returns an error if decoding fails or if the code slice is shorter than 4 bytes.
 func (d *ARM64Decoder) Decode(code []byte, offset uint64) (DecodedInstruction, error) {
+	if len(code) < arm64InstructionLen {
+		return DecodedInstruction{}, errCodeTooShort
+	}
 	inst, err := arm64asm.Decode(code)
 	if err != nil {
 		return DecodedInstruction{}, err
 	}
-	raw := make([]byte, arm64InstructionLen)
-	copy(raw, code[:arm64InstructionLen]) //nolint:gosec // G602: arm64asm.Decode succeeded so len(code) >= 4
 	return DecodedInstruction{
 		Offset: offset,
 		Len:    arm64InstructionLen,
-		Raw:    raw,
+		Raw:    code[:arm64InstructionLen],
 		arch:   inst,
 	}, nil
 }
