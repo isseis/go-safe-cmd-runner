@@ -2,6 +2,8 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"fmt"
+	"log/slog"
 	"sort"
 )
 
@@ -190,6 +192,113 @@ func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
 	})
 
 	return nil
+}
+
+// findWrapperCalls is the shared implementation of FindWrapperCalls for all
+// GoWrapperResolver implementations. It decodes the entire code section and
+// collects calls to known Go syscall wrappers.
+func (b *goWrapperBase) findWrapperCalls(code []byte, baseAddr uint64, decoder MachineCodeDecoder) ([]WrapperCall, int) {
+	if len(b.wrapperAddrs) == 0 {
+		return nil, 0
+	}
+
+	var results []WrapperCall
+	decodeFailures := 0
+
+	pos := 0
+	var recentInstructions []DecodedInstruction
+
+	for pos < len(code) {
+		// pos is guaranteed non-negative (starts at 0, only incremented)
+		// and less than len(code) (loop condition), so conversion is safe
+		inst, err := decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos is validated by loop condition
+		if err != nil {
+			decodeFailures++
+			if decodeFailures <= MaxDecodeFailureLogs {
+				slog.Debug("instruction decode failed in go wrapper resolver",
+					slog.String("offset", fmt.Sprintf("0x%x", baseAddr+uint64(pos))), //nolint:gosec // G115: pos is validated by loop condition
+					slog.String("bytes", fmt.Sprintf("%x", code[pos:min(pos+DecodeFailureLogBytesLen, len(code))])))
+			}
+			pos += decoder.InstructionAlignment()
+			continue
+		}
+
+		// Decoder invariant: successful decode must have positive length.
+		// If this fails, it indicates a programming bug in the decoder implementation.
+		if inst.Len <= 0 {
+			panic("decoder returned non-positive instruction length without error")
+		}
+
+		// Keep track of recent instructions for backward scanning
+		recentInstructions = append(recentInstructions, inst)
+		if len(recentInstructions) > maxRecentInstructionsToKeep {
+			recentInstructions = recentInstructions[1:]
+		}
+
+		// Check if this is a call instruction targeting a known wrapper
+		if target, ok := decoder.GetCallTarget(inst, inst.Offset); ok {
+			callAddr := baseAddr + uint64(pos) //nolint:gosec // G115: pos is validated by loop condition
+			// Skip call instructions that originate from inside a wrapper function body.
+			// Wrapper functions (e.g. syscall.Syscall) may themselves call other wrappers
+			// or internal helpers; those internal calls do not represent user-level
+			// syscall usage and cannot have their syscall number resolved from context.
+			if !b.IsInsideWrapper(callAddr) {
+				if wrapper, ok := b.wrapperAddrs[target]; ok {
+					syscallNum, method := b.resolveSyscallArgument(recentInstructions, decoder)
+					results = append(results, WrapperCall{
+						CallSiteAddress:     callAddr,
+						TargetFunction:      string(wrapper),
+						SyscallNumber:       syscallNum,
+						Resolved:            syscallNum >= 0,
+						DeterminationMethod: method,
+					})
+				}
+			}
+		}
+
+		pos += inst.Len
+	}
+
+	return results, decodeFailures
+}
+
+// resolveSyscallArgument scans recent instructions backward from a call to
+// determine the syscall number passed as the first argument.
+//
+// Returns the syscall number and a DeterminationMethod string describing
+// how the result was obtained. On failure, returns -1 and one of the
+// DeterminationMethodUnknown* constants indicating the reason.
+func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstruction, decoder MachineCodeDecoder) (int, string) {
+	if len(recentInstructions) < minRecentInstructionsForScan {
+		return -1, DeterminationMethodUnknownDecodeFailed
+	}
+
+	// Scan backward through recent instructions (excluding the call itself).
+	// Start from the instruction before the call (len-2) and scan up to maxBackwardScanSteps.
+	startIdx := len(recentInstructions) - minRecentInstructionsForScan
+	minIdx := len(recentInstructions) - 1 - maxBackwardScanSteps
+	for i := startIdx; i >= 0 && i >= minIdx; i-- {
+		inst := recentInstructions[i]
+
+		// Stop at control flow boundary
+		if decoder.IsControlFlowInstruction(inst) {
+			return -1, DeterminationMethodUnknownControlFlowBoundary
+		}
+
+		// Check for immediate move to first argument register.
+		if value, ok := decoder.IsImmediateToFirstArgRegister(inst); ok {
+			// Validate immediate value is a plausible syscall number.
+			// Reject negative immediates and out-of-range values to prevent
+			// incorrect marking of wrapper calls as resolved.
+			if value >= 0 && value <= maxValidSyscallNumber {
+				return int(value), DeterminationMethodGoWrapper
+			}
+			// Immediate value is out of valid range; treat as indirect setting
+			return -1, DeterminationMethodUnknownIndirectSetting
+		}
+	}
+
+	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 
 // noopGoWrapperResolver is a no-op implementation of GoWrapperResolver.

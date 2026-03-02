@@ -73,6 +73,18 @@ type MachineCodeDecoder interface {
 	// x86_64: 1 (variable-length instructions, byte-by-byte recovery)
 	// arm64:  4 (fixed-length 4-byte instructions)
 	InstructionAlignment() int
+
+	// GetCallTarget returns the target address of a call instruction (CALL on
+	// x86_64, BL on arm64). instAddr is the virtual address of inst.
+	// Returns (addr, true) on success, (0, false) otherwise.
+	GetCallTarget(inst DecodedInstruction, instAddr uint64) (uint64, bool)
+
+	// IsImmediateToFirstArgRegister returns (value, true) if the instruction
+	// sets the first integer argument register to a known immediate.
+	// x86_64: MOV EAX/RAX, imm  (RAX is the first argument register in Go ABI)
+	// arm64:  MOV W0/X0, #imm   (X0 is the first argument register in Go ABI)
+	// Returns (0, false) otherwise.
+	IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)
 }
 
 // X86Decoder implements MachineCodeDecoder for x86_64.

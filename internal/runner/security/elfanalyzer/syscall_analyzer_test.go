@@ -37,6 +37,14 @@ func (m *MockMachineCodeDecoder) InstructionAlignment() int {
 	return 1 // default: x86_64 behavior
 }
 
+func (m *MockMachineCodeDecoder) GetCallTarget(_ DecodedInstruction, _ uint64) (uint64, bool) {
+	return 0, false
+}
+
+func (m *MockMachineCodeDecoder) IsImmediateToFirstArgRegister(_ DecodedInstruction) (int64, bool) {
+	return 0, false
+}
+
 func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	tests := []struct {
 		name       string
