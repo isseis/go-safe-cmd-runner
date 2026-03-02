@@ -185,7 +185,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 3.1 ARM64GoWrapperResolver の実装
 
-- [ ] `arm64_go_wrapper_resolver.go` を新規作成
+- [x] `arm64_go_wrapper_resolver.go` を新規作成
   - `ARM64GoWrapperResolver` 構造体
   - `goWrapperBase` を埋め込む
   - `decoder *ARM64Decoder` フィールド
@@ -198,7 +198,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 3.2 ARM64GoWrapperResolver 単体テスト
 
-- [ ] `arm64_go_wrapper_resolver_test.go` を新規作成
+- [x] `arm64_go_wrapper_resolver_test.go` を新規作成
   - `TestARM64GoWrapperResolver_FindWrapperCalls_ImmediateX0`:
     `mov x0, #198 / bl <wrapper>` パターンで socket が解决されること
   - `TestARM64GoWrapperResolver_FindWrapperCalls_Unresolved`:
