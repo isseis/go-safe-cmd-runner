@@ -108,6 +108,9 @@ func (d *ARM64Decoder) IsControlFlowInstruction(inst DecodedInstruction) bool {
 // InstructionAlignment returns 4, reflecting arm64's fixed 4-byte instruction width.
 func (d *ARM64Decoder) InstructionAlignment() int { return arm64InstructionLen }
 
+// MaxInstructionLength returns 4, since all arm64 instructions are exactly 4 bytes.
+func (d *ARM64Decoder) MaxInstructionLength() int { return arm64InstructionLen }
+
 // GetCallTarget returns the target address of a BL instruction.
 // For BL with a PCRel operand, target = instAddr + int64(pcrel).
 // arm64 PC points to the current instruction, so Len is not added.

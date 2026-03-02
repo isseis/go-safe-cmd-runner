@@ -309,14 +309,8 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 
 // maxWindowBytesPerInstruction returns the number of bytes to allocate per
 // instruction in the backward scan window.
-// For x86_64 (alignment=1), we use the maximum instruction length (15 bytes).
-// For arm64 (alignment=4), all instructions are exactly 4 bytes, so we use 4.
 func maxWindowBytesPerInstruction(decoder MachineCodeDecoder) int {
-	align := decoder.InstructionAlignment()
-	if align == 1 {
-		return maxInstructionLength // 15 for x86_64
-	}
-	return align
+	return decoder.MaxInstructionLength()
 }
 
 // findSyscallInstructions scans the code for syscall instructions.

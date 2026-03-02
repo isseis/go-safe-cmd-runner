@@ -74,6 +74,12 @@ type MachineCodeDecoder interface {
 	// arm64:  4 (fixed-length 4-byte instructions)
 	InstructionAlignment() int
 
+	// MaxInstructionLength returns the maximum possible byte length of a single
+	// instruction for this architecture. Used to size the backward-scan window.
+	// x86_64: 15 (the architectural maximum for x86_64 instructions)
+	// arm64:  4  (all instructions are exactly 4 bytes)
+	MaxInstructionLength() int
+
 	// GetCallTarget returns the target address of a call instruction (CALL on
 	// x86_64, BL on arm64). instAddr is the virtual address of inst.
 	// Returns (addr, true) on success, (0, false) otherwise.
@@ -217,6 +223,9 @@ func (d *X86Decoder) IsControlFlowInstruction(inst DecodedInstruction) bool {
 
 // InstructionAlignment returns 1 for x86_64 variable-length instructions.
 func (d *X86Decoder) InstructionAlignment() int { return 1 }
+
+// MaxInstructionLength returns 15, the architectural maximum for x86_64 instructions.
+func (d *X86Decoder) MaxInstructionLength() int { return maxInstructionLength }
 
 // GetCallTarget returns the target address of a CALL instruction.
 // Returns (addr, true) if inst is a CALL with a relative (Rel) operand.
