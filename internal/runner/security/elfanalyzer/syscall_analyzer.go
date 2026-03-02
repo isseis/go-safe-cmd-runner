@@ -230,7 +230,7 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 
 // analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
 // This method uses two separate analysis passes:
-//  1. Direct syscall instruction analysis (syscall opcode 0F 05)
+//  1. Direct syscall instruction analysis (architecture-specific: SYSCALL on x86_64, SVC #0 on arm64)
 //  2. Go wrapper call analysis (calls to syscall.Syscall, etc.)
 //
 // goResolver may be nil if symbol loading failed or was not attempted.
