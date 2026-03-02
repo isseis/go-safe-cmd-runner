@@ -1,6 +1,7 @@
 package elfanalyzer
 
 import (
+	"debug/elf"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -93,7 +94,8 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewSyscallAnalyzer()
-			result := analyzer.analyzeSyscallsInCode(tt.code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+			cfg := analyzer.archConfigs[elf.EM_X86_64]
+			result := analyzer.analyzeSyscallsInCode(tt.code, 0, cfg.decoder, cfg.syscallTable, nil)
 			require.Len(t, result.DetectedSyscalls, 1)
 
 			info := result.DetectedSyscalls[0]
@@ -129,7 +131,8 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewSyscallAnalyzer()
-			result := analyzer.analyzeSyscallsInCode(tt.code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+			cfg := analyzer.archConfigs[elf.EM_X86_64]
+			result := analyzer.analyzeSyscallsInCode(tt.code, 0, cfg.decoder, cfg.syscallTable, nil)
 			require.Len(t, result.DetectedSyscalls, 1)
 
 			info := result.DetectedSyscalls[0]
@@ -156,7 +159,8 @@ func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	info := result.DetectedSyscalls[0]
@@ -180,7 +184,8 @@ func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	info := result.DetectedSyscalls[0]
@@ -200,7 +205,8 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 	require.Len(t, result.DetectedSyscalls, 2)
 
@@ -229,7 +235,8 @@ func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
 	code := []byte{0x90, 0x90, 0xc3}
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 	assert.Empty(t, result.DetectedSyscalls)
 	assert.Equal(t, 0, result.Summary.TotalDetectedEvents)
@@ -249,7 +256,8 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 	require.Len(t, result.DetectedSyscalls, 2)
 
@@ -279,7 +287,8 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 	require.Len(t, result.DetectedSyscalls, 2)
 
@@ -303,7 +312,8 @@ func TestSyscallAnalyzer_WithBaseAddress(t *testing.T) {
 	baseAddr := uint64(0x401000)
 
 	analyzer := NewSyscallAnalyzer()
-	result := analyzer.analyzeSyscallsInCode(code, baseAddr, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, baseAddr, cfg.decoder, cfg.syscallTable, nil)
 
 	require.Len(t, result.DetectedSyscalls, 1)
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
@@ -316,12 +326,13 @@ func TestSyscallAnalyzer_InvalidOffset(t *testing.T) {
 	code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05}
 
 	// syscallAddr < baseAddr
-	info := analyzer.extractSyscallInfo(code, 0, 100, analyzer.decoder, analyzer.syscallTable)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	info := analyzer.extractSyscallInfo(code, 0, 100, cfg.decoder, cfg.syscallTable)
 	assert.Equal(t, -1, info.Number)
 	assert.Equal(t, DeterminationMethodUnknownInvalidOffset, info.DeterminationMethod)
 
 	// syscallAddr beyond code length
-	info = analyzer.extractSyscallInfo(code, 200, 0, analyzer.decoder, analyzer.syscallTable)
+	info = analyzer.extractSyscallInfo(code, 200, 0, cfg.decoder, cfg.syscallTable)
 	assert.Equal(t, -1, info.Number)
 	assert.Equal(t, DeterminationMethodUnknownInvalidOffset, info.DeterminationMethod)
 }
@@ -372,7 +383,8 @@ func TestSyscallAnalyzer_FindSyscallInstructions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			locs, _ := analyzer.findSyscallInstructions(tt.code, tt.baseAddr, analyzer.decoder)
+			cfg := analyzer.archConfigs[elf.EM_X86_64]
+			locs, _ := analyzer.findSyscallInstructions(tt.code, tt.baseAddr, cfg.decoder)
 			assert.Len(t, locs, tt.wantCount)
 			if tt.wantLocs != nil {
 				assert.Equal(t, tt.wantLocs, locs)
@@ -388,7 +400,8 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow(t *testing.T) {
 	code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x90, 0x0f, 0x05}
 
 	// Decode window [0, 6) - should decode "mov" and "nop" but not "syscall"
-	instructions, decodeFailures := analyzer.decodeInstructionsInWindow(code, 0, 0, 6, analyzer.decoder)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	instructions, decodeFailures := analyzer.decodeInstructionsInWindow(code, 0, 0, 6, cfg.decoder)
 	require.Len(t, instructions, 2) // mov (5 bytes) + nop (1 byte)
 	assert.Equal(t, 0, decodeFailures)
 
@@ -417,7 +430,8 @@ func TestSyscallAnalyzer_DecodeStats(t *testing.T) {
 		}
 
 		analyzer := NewSyscallAnalyzer()
-		result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+		cfg := analyzer.archConfigs[elf.EM_X86_64]
+		result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 		assert.Greater(t, result.DecodeStats.DecodeFailureCount, 0,
 			"expected at least one decode failure from invalid instruction byte")
@@ -433,7 +447,8 @@ func TestSyscallAnalyzer_DecodeStats(t *testing.T) {
 		}
 
 		analyzer := NewSyscallAnalyzer()
-		result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+		cfg := analyzer.archConfigs[elf.EM_X86_64]
+		result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 		assert.Equal(t, 0, result.DecodeStats.DecodeFailureCount,
 			"expected no decode failures for valid instruction sequence")
@@ -445,7 +460,8 @@ func TestSyscallAnalyzer_DecodeStats(t *testing.T) {
 		code := []byte{}
 
 		analyzer := NewSyscallAnalyzer()
-		result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+		cfg := analyzer.archConfigs[elf.EM_X86_64]
+		result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 
 		assert.Equal(t, 0, result.DecodeStats.DecodeFailureCount)
 		assert.Equal(t, 0, result.DecodeStats.TotalBytesAnalyzed)
@@ -462,7 +478,8 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	}
 
 	analyzer := NewSyscallAnalyzerWithConfig(NewX86Decoder(), NewX86_64SyscallTable(), 3)
-	result := analyzer.analyzeSyscallsInCode(code, 0, analyzer.decoder, analyzer.syscallTable, nil)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
@@ -490,7 +507,7 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing
 
 	// This should panic because returning Len=0 without error is a programming bug.
 	assert.Panics(t, func() {
-		analyzer.decodeInstructionsInWindow(code, 0, 0, 3, analyzer.decoder)
+		analyzer.decodeInstructionsInWindow(code, 0, 0, 3, analyzer.archConfigs[elf.EM_X86_64].decoder)
 	}, "expected panic when decoder returns non-positive instruction length")
 }
 
@@ -513,6 +530,46 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow_NegativeLength(t *testing.T)
 
 	// This should panic because returning Len=-1 without error is a programming bug.
 	assert.Panics(t, func() {
-		analyzer.decodeInstructionsInWindow(code, 0, 0, 3, analyzer.decoder)
+		analyzer.decodeInstructionsInWindow(code, 0, 0, 3, analyzer.archConfigs[elf.EM_X86_64].decoder)
 	}, "expected panic when decoder returns negative instruction length")
+}
+
+func TestSyscallAnalyzer_UnsupportedArchitecture(t *testing.T) {
+	// AnalyzeSyscallsFromELF should return UnsupportedArchitectureError for
+	// architectures that are not registered in archConfigs.
+	analyzer := NewSyscallAnalyzer()
+
+	// elf.EM_386 (32-bit x86) is not supported; only x86_64 and arm64 are.
+	elfFile := &elf.File{FileHeader: elf.FileHeader{Machine: elf.EM_386}}
+	_, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
+
+	require.Error(t, err)
+	var unsupportedErr *UnsupportedArchitectureError
+	require.ErrorAs(t, err, &unsupportedErr)
+	assert.Equal(t, elf.EM_386, unsupportedErr.Machine)
+}
+
+func TestSyscallAnalyzer_ARM64AnalysisPath(t *testing.T) {
+	// Verify that arm64 syscall analysis is registered in NewSyscallAnalyzer()
+	// and produces correct results when called directly via analyzeSyscallsInCode.
+	analyzer := NewSyscallAnalyzer()
+	arm64Cfg := analyzer.archConfigs[elf.EM_AARCH64]
+	require.NotNil(t, arm64Cfg, "arm64 archConfig must be registered by NewSyscallAnalyzer")
+	assert.Equal(t, "arm64", arm64Cfg.archName)
+
+	// arm64 machine code: mov x8, #198 (socket syscall number); svc #0
+	// svc #0:       {0x01, 0x00, 0x00, 0xD4}
+	// mov x8, #198: {0xC8, 0x18, 0x80, 0xD2}
+	code := []byte{
+		0xC8, 0x18, 0x80, 0xD2, // mov x8, #198 (socket syscall)
+		0x01, 0x00, 0x00, 0xD4, // svc #0
+	}
+
+	result := analyzer.analyzeSyscallsInCode(code, 0, arm64Cfg.decoder, arm64Cfg.syscallTable, nil)
+
+	require.Len(t, result.DetectedSyscalls, 1)
+	assert.Equal(t, 198, result.DetectedSyscalls[0].Number)
+	assert.Equal(t, "socket", result.DetectedSyscalls[0].Name)
+	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
 }

@@ -211,7 +211,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 4.1 archConfig 構造体の追加
 
-- [ ] `syscall_analyzer.go` に `archConfig` 構造体を追加
+- [x] `syscall_analyzer.go` に `archConfig` 構造体を追加
   - `decoder MachineCodeDecoder`
   - `syscallTable SyscallNumberTable`
   - `archName string`
@@ -220,23 +220,23 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 4.2 SyscallAnalyzer フィールド変更
 
-- [ ] `SyscallAnalyzer` のフィールドを変更
+- [x] `SyscallAnalyzer` のフィールドを変更
   - `decoder`・`syscallTable` フィールドを削除
   - `archConfigs map[elf.Machine]*archConfig` フィールドを追加
   - 仕様: 詳細仕様書 §6.2
 
 ### 4.3 コンストラクタの更新
 
-- [ ] `NewSyscallAnalyzer()` を更新
+- [x] `NewSyscallAnalyzer()` を更新
   - x86_64 と arm64 の両方を `archConfigs` に登録
   - 仕様: 詳細仕様書 §6.3
-- [ ] `NewSyscallAnalyzerWithConfig()` のシグネチャを維持しつつ内部実装を更新
+- [x] `NewSyscallAnalyzerWithConfig()` のシグネチャを維持しつつ内部実装を更新
   - `archConfigs[EM_X86_64]` にモックを登録する実装に変更
   - 仕様: 詳細仕様書 §6.3
 
 ### 4.4 AnalyzeSyscallsFromELF のアーキテクチャディスパッチ
 
-- [ ] `AnalyzeSyscallsFromELF` をアーキテクチャディスパッチに対応させる
+- [x] `AnalyzeSyscallsFromELF` をアーキテクチャディスパッチに対応させる
   - `archConfigs[elfFile.Machine]` で設定を取得
   - 存在しない場合は `UnsupportedArchitectureError` を返す
   - `GoWrapperResolver` 初期化失敗時は警告ログ + `noopGoWrapperResolver` で継続
@@ -245,14 +245,14 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 4.5 noopGoWrapperResolver の追加
 
-- [ ] `go_wrapper_resolver.go` または `syscall_analyzer.go` に内部型を追加
+- [x] `go_wrapper_resolver.go` または `syscall_analyzer.go` に内部型を追加
   - `HasSymbols() bool` → `false`
   - `FindWrapperCalls(...) ([]WrapperCall, int)` → `nil, 0`
   - `IsInsideWrapper(addr uint64) bool` → `false`
 
 ### 4.6 コンポーネントテストの追加
 
-- [ ] `syscall_analyzer_test.go` にテストを追加
+- [x] `syscall_analyzer_test.go` にテストを追加
   - `TestSyscallAnalyzer_UnsupportedArchitecture`:
     `elf.EM_386` 等で `UnsupportedArchitectureError` が返ること
   - 受け入れ条件: AC-4

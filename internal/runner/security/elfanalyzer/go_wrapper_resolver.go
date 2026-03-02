@@ -200,3 +200,23 @@ func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
 func NewGoWrapperResolver(elfFile *elf.File) (*X86GoWrapperResolver, error) {
 	return NewX86GoWrapperResolver(elfFile)
 }
+
+// noopGoWrapperResolver is a no-op implementation of GoWrapperResolver.
+// It is used as a fallback when GoWrapperResolver initialization fails
+// (e.g., missing .gopclntab section in a stripped binary).
+type noopGoWrapperResolver struct{}
+
+func newNoopGoWrapperResolver() *noopGoWrapperResolver {
+	return &noopGoWrapperResolver{}
+}
+
+// HasSymbols returns false, indicating no symbols are available.
+func (n *noopGoWrapperResolver) HasSymbols() bool { return false }
+
+// FindWrapperCalls returns nil and 0, performing no analysis.
+func (n *noopGoWrapperResolver) FindWrapperCalls(_ []byte, _ uint64) ([]WrapperCall, int) {
+	return nil, 0
+}
+
+// IsInsideWrapper returns false for all addresses.
+func (n *noopGoWrapperResolver) IsInsideWrapper(_ uint64) bool { return false }

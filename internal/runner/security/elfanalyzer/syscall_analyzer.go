@@ -101,6 +101,14 @@ const (
 	DeterminationMethodUnknownInvalidOffset = "unknown:invalid_offset"
 )
 
+// archConfig holds architecture-specific components for syscall analysis.
+type archConfig struct {
+	decoder              MachineCodeDecoder
+	syscallTable         SyscallNumberTable
+	archName             string
+	newGoWrapperResolver func(*elf.File) (GoWrapperResolver, error)
+}
+
 // SyscallAnalyzer analyzes ELF binaries for syscall instructions.
 //
 // Security Note: This analyzer is designed to work with pre-opened *elf.File
@@ -109,24 +117,42 @@ const (
 // TOCTOU safety and symlink attack prevention, consistent with the existing
 // StandardELFAnalyzer pattern.
 type SyscallAnalyzer struct {
-	decoder      MachineCodeDecoder
-	syscallTable SyscallNumberTable
+	// archConfigs maps ELF machine type to architecture-specific components.
+	archConfigs map[elf.Machine]*archConfig
 
 	// maxBackwardScan is the maximum number of instructions to scan backward
 	// from a syscall instruction to find the syscall number.
 	maxBackwardScan int
 }
 
-// NewSyscallAnalyzer creates a new SyscallAnalyzer with default settings.
+// NewSyscallAnalyzer creates a new SyscallAnalyzer with x86_64 and arm64 support.
 func NewSyscallAnalyzer() *SyscallAnalyzer {
-	return &SyscallAnalyzer{
-		decoder:         NewX86Decoder(),
-		syscallTable:    NewX86_64SyscallTable(),
+	a := &SyscallAnalyzer{
+		archConfigs:     make(map[elf.Machine]*archConfig),
 		maxBackwardScan: defaultMaxBackwardScan,
 	}
+	a.archConfigs[elf.EM_X86_64] = &archConfig{
+		decoder:      NewX86Decoder(),
+		syscallTable: NewX86_64SyscallTable(),
+		archName:     "x86_64",
+		newGoWrapperResolver: func(f *elf.File) (GoWrapperResolver, error) {
+			return NewX86GoWrapperResolver(f)
+		},
+	}
+	a.archConfigs[elf.EM_AARCH64] = &archConfig{
+		decoder:      NewARM64Decoder(),
+		syscallTable: NewARM64LinuxSyscallTable(),
+		archName:     "arm64",
+		newGoWrapperResolver: func(f *elf.File) (GoWrapperResolver, error) {
+			return NewARM64GoWrapperResolver(f)
+		},
+	}
+	return a
 }
 
 // NewSyscallAnalyzerWithConfig creates a SyscallAnalyzer with custom configuration.
+// The provided decoder and table are registered for elf.EM_X86_64.
+// This is primarily used for testing with mock decoder/table.
 // If a nil decoder or syscall table is provided, this function falls back to the
 // default x86 decoder and x86_64 syscall table to avoid panics during analysis.
 // If maxScan is non-positive, it is clamped to defaultMaxBackwardScan to keep
@@ -141,11 +167,19 @@ func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumbe
 	if maxScan <= 0 {
 		maxScan = defaultMaxBackwardScan
 	}
-	return &SyscallAnalyzer{
-		decoder:         decoder,
-		syscallTable:    table,
+	a := &SyscallAnalyzer{
+		archConfigs:     make(map[elf.Machine]*archConfig),
 		maxBackwardScan: maxScan,
 	}
+	a.archConfigs[elf.EM_X86_64] = &archConfig{
+		decoder:      decoder,
+		syscallTable: table,
+		archName:     "x86_64",
+		newGoWrapperResolver: func(f *elf.File) (GoWrapperResolver, error) {
+			return NewX86GoWrapperResolver(f)
+		},
+	}
+	return a
 }
 
 // AnalyzeSyscallsFromELF analyzes the given ELF file for syscall instructions.
@@ -156,8 +190,9 @@ func NewSyscallAnalyzerWithConfig(decoder MachineCodeDecoder, table SyscallNumbe
 // symlink attacks and TOCTOU race conditions, then wrapping with elf.NewFile().
 // See StandardELFAnalyzer.AnalyzeNetworkSymbols() for the recommended pattern.
 func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAnalysisResult, error) {
-	// Verify architecture
-	if elfFile.Machine != elf.EM_X86_64 {
+	// Look up arch config for this ELF's machine type.
+	cfg, ok := a.archConfigs[elfFile.Machine]
+	if !ok {
 		return nil, &UnsupportedArchitectureError{
 			Machine: elfFile.Machine,
 		}
@@ -177,17 +212,19 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	// Create a fresh GoWrapperResolver for this ELF file.
 	// A new instance is created per call to guarantee no stale state
 	// carries over between different binaries.
-	goResolver, err := NewGoWrapperResolver(elfFile)
+	goResolver, err := cfg.newGoWrapperResolver(elfFile)
 	if err != nil {
-		// Non-fatal: continue without Go wrapper resolution
-		// This handles stripped binaries
-		slog.Debug("failed to load symbols for Go wrapper resolution",
+		// Non-fatal: continue with a no-op resolver.
+		// This handles stripped binaries or binaries without .gopclntab.
+		slog.Warn("GoWrapperResolver init failed, continuing without wrapper analysis",
+			slog.String("arch", cfg.archName),
 			slog.String("error", err.Error()))
+		goResolver = newNoopGoWrapperResolver()
 	}
 
 	// Analyze syscalls
-	result := a.analyzeSyscallsInCode(code, textSection.Addr, a.decoder, a.syscallTable, goResolver)
-	result.Architecture = "x86_64"
+	result := a.analyzeSyscallsInCode(code, textSection.Addr, cfg.decoder, cfg.syscallTable, goResolver)
+	result.Architecture = cfg.archName
 	return result, nil
 }
 
