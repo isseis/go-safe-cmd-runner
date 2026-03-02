@@ -263,9 +263,9 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 5.1 arm64 テストバイナリの準備
 
-- [ ] `testdata/arm64_network_program/main.go` を作成
+- [x] `testdata/arm64_network_program/main.go` を作成
   - `net.Dial` 等のネットワーク操作を含むシンプルな Go プログラム
-- [ ] arm64 バイナリをクロスコンパイルしてコミット
+- [x] arm64 バイナリをクロスコンパイルしてコミット
   ```bash
   cd internal/runner/security/elfanalyzer
   GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
@@ -275,7 +275,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 5.2 arm64 統合テストの追加
 
-- [ ] `syscall_analyzer_integration_test.go` に arm64 テストを追加
+- [x] `syscall_analyzer_integration_test.go` に arm64 テストを追加
   - `TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls`:
     arm64 バイナリを解析し socket (198) を含むネットワーク syscall が検出されること
   - `TestSyscallAnalyzer_IntegrationARM64_Architecture`:
@@ -284,12 +284,12 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 5.3 x86_64 回帰テストの確認
 
-- [ ] `make test` を実行し x86_64 既存テストが全てパスすることを確認
+- [x] `make test` を実行し x86_64 既存テストが全てパスすることを確認
 
 ### 5.4 lint・フォーマットチェック
 
-- [ ] `make fmt` を実行
-- [ ] `make lint` を実行し警告・エラーがないことを確認
+- [x] `make fmt` を実行
+- [x] `make lint` を実行し警告・エラーがないことを確認
 
 ## 受け入れ条件とテストの対応
 

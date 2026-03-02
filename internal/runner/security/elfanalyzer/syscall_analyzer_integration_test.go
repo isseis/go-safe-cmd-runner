@@ -265,3 +265,63 @@ func main() {
 	assert.NotEmpty(t, analysisOutput.DetectedSymbols,
 		"should have detected network symbols")
 }
+
+// TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls verifies that the ELF
+// analyzer correctly detects network syscalls in a pre-compiled arm64 binary.
+//
+// The test binary is at testdata/arm64_network_program/binary.
+// To regenerate it:
+//
+//	cd internal/runner/security/elfanalyzer
+//	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+//	  -o testdata/arm64_network_program/binary \
+//	  ./testdata/arm64_network_program/
+func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
+	const binaryPath = "testdata/arm64_network_program/binary"
+
+	elfFile, err := elf.Open(binaryPath)
+	require.NoError(t, err, "failed to open arm64 test binary: %s", binaryPath)
+	defer elfFile.Close()
+
+	// Verify this is actually an arm64 binary
+	require.Equal(t, elf.EM_AARCH64, elfFile.Machine,
+		"test binary must be arm64 (EM_AARCH64)")
+
+	analyzer := NewSyscallAnalyzer()
+	result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
+	require.NoError(t, err)
+
+	// The binary uses net.Dial which resolves to socket(198) on arm64
+	assert.True(t, result.Summary.HasNetworkSyscalls,
+		"arm64 binary using net.Dial should have network syscalls detected")
+	assert.Greater(t, result.Summary.NetworkSyscallCount, 0,
+		"expected at least one network syscall")
+
+	// Verify socket syscall (arm64 number 198) is among the detected syscalls
+	found := false
+	for _, info := range result.DetectedSyscalls {
+		if info.Name == "socket" && info.Number == 198 {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found,
+		"socket syscall (number 198) should be detected in the arm64 binary")
+}
+
+// TestSyscallAnalyzer_IntegrationARM64_Architecture verifies that the
+// Architecture field in the analysis result is set to "arm64".
+func TestSyscallAnalyzer_IntegrationARM64_Architecture(t *testing.T) {
+	const binaryPath = "testdata/arm64_network_program/binary"
+
+	elfFile, err := elf.Open(binaryPath)
+	require.NoError(t, err, "failed to open arm64 test binary: %s", binaryPath)
+	defer elfFile.Close()
+
+	analyzer := NewSyscallAnalyzer()
+	result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, "arm64", result.Architecture,
+		"analysis result Architecture field should be 'arm64' for an arm64 binary")
+}
