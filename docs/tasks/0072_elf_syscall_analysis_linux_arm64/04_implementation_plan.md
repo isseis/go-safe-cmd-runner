@@ -130,7 +130,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 2.1 ARM64Decoder の実装
 
-- [ ] `arm64_decoder.go` を新規作成
+- [x] `arm64_decoder.go` を新規作成
   - `ARM64Decoder` 構造体と `NewARM64Decoder()` コンストラクタ
   - `Decode(code []byte, offset uint64) (DecodedInstruction, error)`:
     `arm64asm.Decode` ラッパー; `arch = inst`（`arm64asm.Inst`）
@@ -143,7 +143,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 2.2 ARM64Decoder の GoWrapperResolver 専用メソッド
 
-- [ ] `arm64_decoder.go` に専用メソッドを追加
+- [x] `arm64_decoder.go` に専用メソッドを追加
   - `GetCallTarget(inst DecodedInstruction, instAddr uint64) (uint64, bool)`:
     `Op == arm64asm.BL && Args[0] is PCRel` → ターゲットアドレス計算
   - `IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)`:
@@ -152,7 +152,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 2.3 ARM64Decoder 単体テスト
 
-- [ ] `arm64_decoder_test.go` を新規作成
+- [x] `arm64_decoder_test.go` を新規作成
   - `TestARM64Decoder_Decode`: svc/mov/bl/ret のデコード確認
   - `TestARM64Decoder_IsSyscallInstruction`: `svc #0` のみ true
   - `TestARM64Decoder_ModifiesSyscallNumberRegister`: W8/X8 への書き込みを検出
@@ -165,7 +165,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 2.4 ARM64LinuxSyscallTable の実装
 
-- [ ] `arm64_syscall_numbers.go` を新規作成
+- [x] `arm64_syscall_numbers.go` を新規作成
   - `ARM64LinuxSyscallTable` 構造体と `NewARM64LinuxSyscallTable()` コンストラクタ
   - ネットワーク syscall 13 種（詳細仕様書 §5.2 参照）
   - `SyscallNumberTable` インターフェースの 3 メソッドを実装
@@ -173,7 +173,7 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
 
 ### 2.5 ARM64LinuxSyscallTable 単体テスト
 
-- [ ] `arm64_syscall_numbers_test.go` を新規作成
+- [x] `arm64_syscall_numbers_test.go` を新規作成
   - `TestARM64LinuxSyscallTable_GetSyscallName`
   - `TestARM64LinuxSyscallTable_IsNetworkSyscall`
   - `TestARM64LinuxSyscallTable_GetNetworkSyscalls`

@@ -28,7 +28,7 @@ type X86_64SyscallTable struct {
 }
 
 // NewX86_64SyscallTable creates a new syscall table for x86_64 Linux.
-func NewX86_64SyscallTable() *X86_64SyscallTable {
+func NewX86_64SyscallTable() *X86_64SyscallTable { //nolint:dupl // table initialisation is structurally identical to arm64
 	table := &X86_64SyscallTable{
 		syscalls: make(map[int]SyscallDefinition),
 	}
