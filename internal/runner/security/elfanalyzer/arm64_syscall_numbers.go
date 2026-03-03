@@ -1,3 +1,4 @@
+//nolint:dupl // table structure and methods are structurally identical to x86_syscall_numbers.go
 package elfanalyzer
 
 // ARM64LinuxSyscallTable implements SyscallNumberTable for arm64 Linux.
