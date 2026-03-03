@@ -90,10 +90,9 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
   - `decoder *X86Decoder` を保持し、`GetCallTarget` / `IsImmediateToFirstArgRegister`
     専用メソッド経由で命令情報にアクセス
   - 仕様: 詳細仕様書 §3.3
-- [x] `go_wrapper_resolver.go` に関数エイリアスを追加（後方互換）
-  - `func NewGoWrapperResolver(elfFile *elf.File) (*X86GoWrapperResolver, error)`
-  - 型エイリアス `type GoWrapperResolver = X86GoWrapperResolver` は **定義しない**
-    （同名インターフェースとの `redeclared in this block` コンパイルエラーを防ぐため）
+- [x] ~~`go_wrapper_resolver.go` に関数エイリアスを追加（後方互換）~~
+  - パッケージ外の呼び出し元がないことを確認し、`NewGoWrapperResolver` は追加せずに削除した
+    （commit c1f29ebb: "refactor: remove deprecated NewGoWrapperResolver and fix nolint comment"）
   - 仕様: 詳細仕様書 §3.3
 
 ### 1.7 SyscallAnalyzer の内部メソッドをパラメータ化
