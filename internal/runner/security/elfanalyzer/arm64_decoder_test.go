@@ -13,7 +13,7 @@ import (
 //   svc  #0           : 01 00 00 D4
 //   mov  w8, #198     : C8 18 80 52  (MOVZ W8, #198)
 //   mov  x8, #198     : C8 18 80 D2  (MOVZ X8, #198)
-//   mov  w8, #41      : 28 05 80 52  (MOVZ W8, #41 = socket on arm64)
+//   mov  w8, #41      : 28 05 80 52  (MOVZ W8, #41; used as an arbitrary non-network immediate)
 //   mov  x0, #41      : 20 05 80 D2  (MOVZ X0, #41)
 //   mov  w0, #198     : C0 18 80 52  (MOVZ W0, #198)
 //   bl  +8            : 02 00 00 94  (offset = instAddr + 8; BL with PCRel=8)
