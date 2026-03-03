@@ -51,7 +51,7 @@ type SyscallAnalysisResultCore struct {
 	Architecture string `json:"architecture"`
 
 	// DetectedSyscalls contains all detected syscall events with their numbers.
-	// This includes both direct syscall instructions (opcode 0F 05) and
+	// This includes both direct architecture-specific syscall instructions and
 	// indirect syscalls via Go wrapper function calls (e.g., syscall.Syscall).
 	DetectedSyscalls []SyscallInfo `json:"detected_syscalls"`
 
