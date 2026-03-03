@@ -248,8 +248,7 @@ func TestX86Decoder_GetCallTarget(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	t.Run("valid forward call", func(t *testing.T) {
-		// e8 f5 0f 00 00 = call rel32(0xff5); target = 0x401000 + 5 + 0xff5 = 0x401ffa -> 0x401ffa
-		// Layout: instAddr=0x401000, Len=5, rel=0xff5 => nextPC=0x401005, target=0x402000
+		// Layout: instAddr=0x401000, Len=5, rel=0xffb => nextPC=0x401005, target=0x402000
 		code := []byte{0xe8, 0xfb, 0x0f, 0x00, 0x00} // rel = 0xffb; target = 0x401000+5+0xffb = 0x402000
 		inst, err := decoder.Decode(code, 0x401000)
 		require.NoError(t, err)
