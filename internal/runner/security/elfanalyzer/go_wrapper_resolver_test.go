@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
+func TestNewX86GoWrapperResolver_NoPclntab(t *testing.T) {
 	// An empty elf.File has no .gopclntab section.
 	// NewX86GoWrapperResolver should return a usable resolver and ErrNoPclntab.
 	resolver, err := NewX86GoWrapperResolver(&elf.File{})
@@ -26,7 +26,7 @@ func TestNewGoWrapperResolver_NoPclntab(t *testing.T) {
 	assert.Equal(t, 0, decodeFailures)
 }
 
-func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
+func TestNewX86GoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 	// A resolver created from an ELF without .gopclntab has no wrappers loaded.
 	resolver, err := NewX86GoWrapperResolver(&elf.File{})
 	require.ErrorIs(t, err, ErrNoPclntab)
@@ -36,7 +36,7 @@ func TestNewGoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 	assert.Equal(t, 0, decodeFailures)
 }
 
-func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
+func TestX86GoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Manually register a wrapper at a known address
@@ -73,7 +73,7 @@ func TestGoWrapperResolver_FindWrapperCalls_WithWrapper(t *testing.T) {
 	assert.Equal(t, DeterminationMethodGoWrapper, result[0].DeterminationMethod)
 }
 
-func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
+func TestX86GoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Register a wrapper
@@ -98,7 +98,7 @@ func TestGoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result[0].DeterminationMethod)
 }
 
-func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing.T) {
+func TestX86GoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Create recent instructions with a jump between mov and call
@@ -124,7 +124,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_ControlFlowBoundary(t *testing
 	assert.Equal(t, DeterminationMethodUnknownControlFlowBoundary, method)
 }
 
-func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
+func TestX86GoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Test with mov to RAX (64-bit)
@@ -143,7 +143,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_RAX(t *testing.T) {
 	assert.Equal(t, DeterminationMethodGoWrapper, method)
 }
 
-func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
+func TestX86GoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Test with mov to EAX (32-bit, commonly used by Go compiler)
@@ -162,7 +162,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_EAX(t *testing.T) {
 	assert.Equal(t, DeterminationMethodGoWrapper, method)
 }
 
-func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
+func TestX86GoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	decoder := NewX86Decoder()
@@ -215,7 +215,7 @@ func TestGoWrapperResolver_ResolveSyscallArgument_OutOfRange(t *testing.T) {
 	}
 }
 
-func TestGoWrapperResolver_IsInsideWrapper(t *testing.T) {
+func TestX86GoWrapperResolver_IsInsideWrapper(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Set up three non-overlapping ranges in unsorted order to verify that
@@ -254,7 +254,7 @@ func TestGoWrapperResolver_IsInsideWrapper(t *testing.T) {
 	}
 }
 
-func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
+func TestX86GoWrapperResolver_GetWrapperAddresses(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Initially empty
@@ -269,7 +269,7 @@ func TestGoWrapperResolver_GetWrapperAddresses(t *testing.T) {
 	assert.Equal(t, GoSyscallWrapper("syscall.Syscall"), addrs[0x401000])
 }
 
-func TestGoWrapperResolver_GetSymbols(t *testing.T) {
+func TestX86GoWrapperResolver_GetSymbols(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Initially empty
@@ -288,7 +288,7 @@ func TestGoWrapperResolver_GetSymbols(t *testing.T) {
 	assert.Equal(t, uint64(0x401000), symbols["main.main"].Address)
 }
 
-func TestGoWrapperResolver_KnownGoWrappers(t *testing.T) {
+func TestX86GoWrapperResolver_KnownGoWrappers(t *testing.T) {
 	// Verify the known wrapper set contains all expected entries
 	expectedWrappers := map[GoSyscallWrapper]struct{}{
 		"syscall.Syscall":     {},
@@ -307,7 +307,7 @@ func TestGoWrapperResolver_KnownGoWrappers(t *testing.T) {
 	}
 }
 
-func TestGoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
+func TestX86GoWrapperResolver_FindWrapperCalls_MultipleCalls(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	// Register multiple wrappers

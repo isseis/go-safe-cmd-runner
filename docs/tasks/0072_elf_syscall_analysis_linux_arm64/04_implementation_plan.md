@@ -121,6 +121,8 @@ Phase 4 は Phase 2・3 の両方が完了した後に実施する。
   - 仕様: 詳細仕様書 §7
 - [x] `go_wrapper_resolver_test.go` を `x86_go_wrapper_resolver_test.go` に移動・更新
   - 型名の変更に追従
+  - テスト関数名を `TestGoWrapperResolver_*` / `TestNewGoWrapperResolver_*` から
+    `TestX86GoWrapperResolver_*` / `TestNewX86GoWrapperResolver_*` に統一
 - [x] `make test` を実行し全テストがパスすることを確認
 
 ## Phase 2: ARM64Decoder & ARM64LinuxSyscallTable
