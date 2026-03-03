@@ -2,6 +2,7 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -215,10 +216,16 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	goResolver, err := cfg.newGoWrapperResolver(elfFile)
 	if err != nil {
 		// Non-fatal: continue with a no-op resolver.
-		// This handles stripped binaries or binaries without .gopclntab.
-		slog.Warn("GoWrapperResolver init failed, continuing without wrapper analysis",
-			slog.String("arch", cfg.archName),
-			slog.String("error", err.Error()))
+		// ErrNoPclntab is expected for non-Go or stripped binaries; log at Debug.
+		// Other errors (malformed pclntab) are unexpected; log at Warn.
+		if errors.Is(err, ErrNoPclntab) {
+			slog.Debug("no .gopclntab section, skipping Go wrapper analysis",
+				slog.String("arch", cfg.archName))
+		} else {
+			slog.Warn("GoWrapperResolver init failed, continuing without wrapper analysis",
+				slog.String("arch", cfg.archName),
+				slog.String("error", err.Error()))
+		}
 		goResolver = newNoopGoWrapperResolver()
 	}
 
