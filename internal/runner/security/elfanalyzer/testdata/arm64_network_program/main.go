@@ -1,6 +1,8 @@
 // Compile with:
 //
-//	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build //	  -o testdata/arm64_network_program/binary //	  ./testdata/arm64_network_program/
+//	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+//	  -o testdata/arm64_network_program/arm64_network_program.elf \
+//	  ./testdata/arm64_network_program/
 package main
 
 import (

@@ -269,15 +269,15 @@ func main() {
 // TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls verifies that the ELF
 // analyzer correctly detects network syscalls in a pre-compiled arm64 binary.
 //
-// The test binary is at testdata/arm64_network_program/binary.
+// The test binary is at testdata/arm64_network_program/arm64_network_program.elf.
 // To regenerate it:
 //
 //	cd internal/runner/security/elfanalyzer
 //	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
-//	  -o testdata/arm64_network_program/binary \
+//	  -o testdata/arm64_network_program/arm64_network_program.elf \
 //	  ./testdata/arm64_network_program/
 func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
-	const binaryPath = "testdata/arm64_network_program/binary"
+	const binaryPath = "testdata/arm64_network_program/arm64_network_program.elf"
 
 	elfFile, err := elf.Open(binaryPath)
 	require.NoError(t, err, "failed to open arm64 test binary: %s", binaryPath)
@@ -312,7 +312,7 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 // TestSyscallAnalyzer_IntegrationARM64_Architecture verifies that the
 // Architecture field in the analysis result is set to "arm64".
 func TestSyscallAnalyzer_IntegrationARM64_Architecture(t *testing.T) {
-	const binaryPath = "testdata/arm64_network_program/binary"
+	const binaryPath = "testdata/arm64_network_program/arm64_network_program.elf"
 
 	elfFile, err := elf.Open(binaryPath)
 	require.NoError(t, err, "failed to open arm64 test binary: %s", binaryPath)
