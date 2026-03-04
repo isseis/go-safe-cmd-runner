@@ -316,10 +316,11 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 	})
 
 	t.Run("current user can read group writable file if in group", func(t *testing.T) {
-		// On macOS, group membership lookup may fail with CGO_ENABLED=0
-		// because the pure Go os/user package cannot access Directory Services.
+		// On macOS, the default group (GID 20 "staff") has multiple members,
+		// so isUserOnlyGroupMember returns false and access is denied.
+		// This is correct security behavior — skip on macOS.
 		if runtime.GOOS == "darwin" {
-			t.Skip("Skipping: macOS group membership lookup unreliable with CGO_ENABLED=0")
+			t.Skip("Skipping: macOS primary group (staff) has multiple members, access correctly denied")
 		}
 		// Test with group writable permissions - new spec: deny only if current user is NOT in the group
 		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o664)
@@ -343,8 +344,11 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 	})
 
 	t.Run("consistency with write function - read should be more permissive", func(t *testing.T) {
+		// On macOS, the default group (GID 20 "staff") has multiple members,
+		// so isUserOnlyGroupMember returns false and access is denied.
+		// This is correct security behavior — skip on macOS.
 		if runtime.GOOS == "darwin" {
-			t.Skip("Skipping: macOS group membership lookup unreliable with CGO_ENABLED=0")
+			t.Skip("Skipping: macOS primary group (staff) has multiple members, access correctly denied")
 		}
 		// Test that read function is more permissive than write function
 		writeResult, writeErr := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o664)
@@ -541,9 +545,10 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 
 	t.Run("maximum_allowed_permissions", func(t *testing.T) {
 		// MaxAllowedReadPerms (0o6775) includes group write, which triggers group
-		// membership check. On macOS with CGO_ENABLED=0 this lookup may fail.
+		// membership check. On macOS, the default group (staff) has multiple members,
+		// so isUserOnlyGroupMember returns false and access is denied.
 		if runtime.GOOS == "darwin" {
-			t.Skip("Skipping: macOS group membership lookup unreliable with CGO_ENABLED=0")
+			t.Skip("Skipping: macOS primary group (staff) has multiple members, access correctly denied")
 		}
 		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, MaxAllowedReadPerms)
 		assert.NoError(t, err)
@@ -551,8 +556,11 @@ func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("exceeding_maximum_permissions", func(t *testing.T) {
+		// MaxAllowedReadPerms|0o1000 includes group write + sticky, which triggers group
+		// membership check. On macOS, the default group (staff) has multiple members,
+		// so isUserOnlyGroupMember returns false and access is denied (but for the wrong reason).
 		if runtime.GOOS == "darwin" {
-			t.Skip("Skipping: macOS group membership lookup unreliable with CGO_ENABLED=0")
+			t.Skip("Skipping: macOS primary group (staff) has multiple members, group write check short-circuits")
 		}
 		// Add sticky bit to exceed maximum
 		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, MaxAllowedReadPerms|0o1000)

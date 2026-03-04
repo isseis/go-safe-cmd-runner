@@ -289,9 +289,14 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 
 # Unit tests - core functionality tests
 # Runs twice: with race detection (CGO_ENABLED=1) and without (CGO_ENABLED=0)
+# On macOS, only CGO_ENABLED=1 is supported (group membership requires CGO/Directory Services)
 unit-test: build-test elfanalyzer-testdata-verify
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
-	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...; \
+	else \
+		echo "macOS: skipping CGO_ENABLED=0 test run (not supported on macOS)"; \
+	fi
 
 # End-to-end tests - validates binary execution and security checks
 e2e-test: build-test
