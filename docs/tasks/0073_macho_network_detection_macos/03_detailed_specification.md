@@ -414,17 +414,15 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
     }
 
     // Fat バイナリ判定と arm64 スライス抽出
-    machOFile, output := a.parseMachO(file, magic)
+    machOFile, closer, output := a.parseMachO(file, magic)
     if output != nil {
         return *output
     }
-    if machOFile != nil {
-        defer func() {
-            if closeErr := machOFile.Close(); closeErr != nil {
-                slog.Warn("error closing Mach-O file", slog.Any("error", closeErr))
-            }
-        }()
-    }
+    defer func() {
+        if closeErr := closer.Close(); closeErr != nil {
+            slog.Warn("error closing Mach-O file", slog.Any("error", closeErr))
+        }
+    }()
 
     // インポートシンボル取得・正規化・照合
     symbols, err := machOFile.ImportedSymbols()
@@ -467,12 +465,24 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
 
 #### parseMachO ヘルパー
 
+`parseMachO` は `*macho.File` とともにそれを閉じるための `io.Closer` を返す。
+Fat バイナリの場合は `*macho.FatFile`、単一 Mach-O の場合は `*macho.File` 自身を
+`io.Closer` として返す。クローズの責務は呼び出し元（`AnalyzeNetworkSymbols`）が担う。
+
+**設計根拠**: `defer fat.Close()` を `parseMachO` 内で行うと、関数リターン時に
+`*macho.FatFile` が閉じられ、返却した `arch.File`（スライス）が use-after-close となる。
+`io.Closer` を呼び出し元に返すことでこの問題を回避する。
+
 ```go
 // parseMachO parses the file as a Mach-O or Fat binary.
 // For Fat binaries, selects the arm64 slice.
-// Returns (*macho.File, nil) on success.
-// Returns (nil, &AnalysisOutput) when the binary cannot be parsed or arm64 slice is absent.
-func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (*macho.File, *elfanalyzer.AnalysisOutput) {
+//
+// Returns (*macho.File, io.Closer, nil) on success.
+// The caller must call closer.Close() when done with the *macho.File.
+// For Fat binaries, closer is the *macho.FatFile; for single Mach-O, closer is the *macho.File itself.
+//
+// Returns (nil, nil, &AnalysisOutput) when the binary cannot be parsed or arm64 slice is absent.
+func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (*macho.File, io.Closer, *elfanalyzer.AnalysisOutput) {
     m := binary.LittleEndian.Uint32(magic)
     if m == fatMagic || m == fatCigam {
         // Fat バイナリ: arm64 スライスを抽出
@@ -482,16 +492,18 @@ func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (
                 Result: elfanalyzer.AnalysisError,
                 Error:  fmt.Errorf("failed to parse Fat binary: %w", err),
             }
-            return nil, &output
+            return nil, nil, &output
         }
-        defer fat.Close()
 
         slice, err := selectMachOFromFat(fat)
         if err != nil {
+            // arm64 スライスなし: fat を閉じてからエラーを返す
+            _ = fat.Close()
             output := elfanalyzer.AnalysisOutput{Result: elfanalyzer.NotSupportedBinary}
-            return nil, &output
+            return nil, nil, &output
         }
-        return slice, nil
+        // fat を closer として返す。slice は fat が生きている間だけ有効
+        return slice, fat, nil
     }
 
     // 単一 Mach-O
@@ -501,50 +513,26 @@ func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (
             Result: elfanalyzer.AnalysisError,
             Error:  fmt.Errorf("failed to parse Mach-O: %w", err),
         }
-        return nil, &output
+        return nil, nil, &output
     }
-    return machOFile, nil
+    return machOFile, machOFile, nil
 }
 ```
 
-**注意**: `macho.FatFile` の `defer fat.Close()` は `selectMachOFromFat` が返した
-`*macho.File`（スライス）のクローズより前に実行される。スライスの `*macho.File` は
-`FatFile.Close()` によって自動的に閉じられるため、二重クローズを避けるため呼び出し側では
-スライスの `Close()` を呼ばない。
-
-**設計上の注意**: `macho.FatFile.Close()` を `defer fat.Close()` で登録した後、
-`selectMachOFromFat` で得た `arch.File` を返す設計は、`fat.Close()` 実行後に
-スライスのメモリが解放される可能性がある。このため、Fat バイナリの場合は
-スライスのデータを `parseMachO` 内で処理するか、`macho.NewFatFile` を使わず
-`macho.NewFile` に直接 `io.SectionReader` を渡す方法を検討すること。
-
-**代替設計**: `parseMachO` では Fat バイナリの場合に arm64 スライスのオフセット・サイズを
-特定し、`io.NewSectionReader` を使って `macho.NewFile` に渡す。この方法では `FatFile` の
-ライフサイクル管理が不要になる。
+呼び出し側の `AnalyzeNetworkSymbols` でのクローズ:
 
 ```go
-// Fat バイナリから arm64 スライスを io.SectionReader として抽出し macho.NewFile に渡す
-func parseFatBinaryArm64Slice(file safefileio.File) (*macho.File, error) {
-    fat, err := macho.NewFatFile(file)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse Fat binary: %w", err)
-    }
-    // fat.Close() は呼ばない（arch.File を直接返すため）
-    for _, arch := range fat.Arches {
-        if arch.Cpu == macho.CpuArm64 {
-            return arch.File, nil
-        }
-    }
-    return nil, fmt.Errorf("no arm64 slice found")
+machOFile, closer, output := a.parseMachO(file, magic)
+if output != nil {
+    return *output
 }
+defer func() {
+    if closeErr := closer.Close(); closeErr != nil {
+        slog.Warn("error closing Mach-O file", slog.Any("error", closeErr))
+    }
+}()
+// machOFile を安全に使用できる
 ```
-
-`macho.FatArch.File` は内部に `ReaderAt` を保持する。`fat.Close()` を呼ばない限り
-`arch.File` は有効に使用できる。`fat.Close()` の呼び出しは `AnalyzeNetworkSymbols` の
-`defer` チェーン内で行う設計とする（Fat バイナリの場合のみ）。
-
-実装選択: `fat.Close()` を `AnalyzeNetworkSymbols` の defer として登録し、
-`arch.File` の処理が完了するまで Fat バイナリを開いたままにする。
 
 ## 4. NetworkAnalyzer の変更
 
