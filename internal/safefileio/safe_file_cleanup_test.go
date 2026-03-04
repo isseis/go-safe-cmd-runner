@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,7 +235,7 @@ func (m *mockFileSystem) getRemoveCallCount() int {
 // TestSafeWriteFile_CleanupOnValidationError tests that newly created files are removed when validation fails
 func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 	t.Run("file is cleaned up when validation fails after creation", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "test_cleanup.txt")
 		absPath, err := filepath.Abs(filePath)
 		require.NoError(t, err)
@@ -269,7 +270,7 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 	})
 
 	t.Run("file is cleaned up when write fails after creation", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "test_write_error.txt")
 		absPath, err := filepath.Abs(filePath)
 		require.NoError(t, err)
@@ -314,7 +315,7 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 // TestSafeWriteFileOverwrite_NoCleanupOnError tests that existing files are NOT deleted when overwrite fails
 func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	t.Run("existing file is NOT deleted when overwrite validation fails", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing_file.txt")
 
 		mockFS := newMockFileSystem()
@@ -348,7 +349,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	})
 
 	t.Run("existing file is NOT deleted when overwrite write fails", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing_write_fail.txt")
 
 		mockFS := newMockFileSystem()
@@ -386,7 +387,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 	})
 
 	t.Run("existing file is NOT deleted when truncate fails", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing_truncate_fail.txt")
 
 		mockFS := newMockFileSystem()
@@ -436,7 +437,7 @@ func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
 		slog.SetDefault(logger)
 		defer slog.SetDefault(oldDefault)
 
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "test_remove_fail.txt")
 		absPath, err := filepath.Abs(filePath)
 		require.NoError(t, err)
@@ -484,7 +485,7 @@ func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
 // TestFileCleanup_Integration tests the cleanup behavior with real filesystem
 func TestFileCleanup_Integration(t *testing.T) {
 	t.Run("real file is cleaned up on validation error", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "cleanup_test.txt")
 
 		// Create a custom filesystem that will fail validation after file creation
@@ -506,7 +507,7 @@ func TestFileCleanup_Integration(t *testing.T) {
 	})
 
 	t.Run("existing file is NOT deleted on overwrite error", func(t *testing.T) {
-		tempDir := safeTempDir(t)
+		tempDir := commontesting.SafeTempDir(t)
 		filePath := filepath.Join(tempDir, "existing.txt")
 
 		// Create an existing file with valid permissions
