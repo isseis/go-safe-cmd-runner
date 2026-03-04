@@ -192,6 +192,7 @@ type StandardMachOAnalyzer struct {
 }
 
 // NewStandardMachOAnalyzer creates a new StandardMachOAnalyzer.
+// If fs is nil, the default safefileio.FileSystem is used (same behavior as NewStandardELFAnalyzer).
 // networkSymbols is obtained from elfanalyzer.GetNetworkSymbols() for DRY compliance.
 func NewStandardMachOAnalyzer(fs safefileio.FileSystem) *StandardMachOAnalyzer
 
@@ -315,6 +316,18 @@ flowchart TD
 ### 5.1 StandardMachOAnalyzer の実装
 
 ```go
+// NewStandardMachOAnalyzer creates a new StandardMachOAnalyzer.
+// If fs is nil, safefileio.NewFileSystem(safefileio.FileSystemConfig{}) is used as the default.
+func NewStandardMachOAnalyzer(fs safefileio.FileSystem) *StandardMachOAnalyzer {
+    if fs == nil {
+        fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+    }
+    return &StandardMachOAnalyzer{
+        fs:             fs,
+        networkSymbols: elfanalyzer.GetNetworkSymbols(),
+    }
+}
+
 // AnalyzeNetworkSymbols implements elfanalyzer.BinaryAnalyzer.
 func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) elfanalyzer.AnalysisOutput {
     // 1. safefileio でファイルを安全にオープン
