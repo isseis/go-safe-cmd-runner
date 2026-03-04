@@ -18,7 +18,7 @@ repos:
         verbose: true
     -   id: golangci-lint
         name: golangci-lint
-        entry: /home/issei/go/bin/golangci-lint run --build-tags test
+        entry: golangci-lint run --build-tags test
         language: system
         types: [go]
         pass_filenames: false

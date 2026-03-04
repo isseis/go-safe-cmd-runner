@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
@@ -56,7 +57,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		{
 			name:           "shell script (non-ELF)",
 			filename:       "script.sh",
-			expectedResult: NotELFBinary,
+			expectedResult: NotExecutableBinary,
 			expectSymbols:  false,
 		},
 		{
@@ -147,7 +148,7 @@ func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash st
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -188,7 +189,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -221,7 +222,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -258,7 +259,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -305,7 +306,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -322,7 +323,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
@@ -347,7 +348,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "static.elf")
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 

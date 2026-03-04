@@ -14,9 +14,11 @@ const (
 	// The binary does not appear to use standard network APIs.
 	NoNetworkSymbols
 
-	// NotELFBinary indicates that the file is not an ELF binary.
-	// This includes scripts, text files, and other non-ELF executables.
-	NotELFBinary
+	// NotExecutableBinary indicates that the file is not in ELF format.
+	// This covers all non-ELF files: native binaries in other formats
+	// (e.g., Mach-O on macOS, PE on Windows), scripts, and text files.
+	// The ELF analyzer cannot determine network capability for these files.
+	NotExecutableBinary
 
 	// StaticBinary indicates a statically linked binary with no .dynsym section.
 	// Network capability cannot be determined by this analyzer.
@@ -35,8 +37,8 @@ func (r AnalysisResult) String() string {
 		return "network_detected"
 	case NoNetworkSymbols:
 		return "no_network_symbols"
-	case NotELFBinary:
-		return "not_elf_binary"
+	case NotExecutableBinary:
+		return "not_executable_binary"
 	case StaticBinary:
 		return "static_binary"
 	case AnalysisError:
@@ -67,7 +69,7 @@ type AnalysisOutput struct {
 
 	// Error contains the error details when Result == AnalysisError.
 	// May also be set for other result types to provide diagnostic context
-	// (e.g., NotELFBinary when the file is not a regular file).
+	// (e.g., NotExecutableBinary when the target is not a regular file).
 	Error error
 }
 
@@ -99,7 +101,7 @@ type ELFAnalyzer interface {
 	// Returns:
 	//   - NetworkDetected: Binary contains network symbols
 	//   - NoNetworkSymbols: Binary has .dynsym but no network symbols
-	//   - NotELFBinary: File is not an ELF binary
+	//   - NotExecutableBinary: File is not in ELF format (e.g., Mach-O, script)
 	//   - StaticBinary: Binary is statically linked (no .dynsym)
 	//   - AnalysisError: An error occurred (check Error field)
 	AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput

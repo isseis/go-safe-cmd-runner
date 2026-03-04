@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
@@ -87,7 +88,7 @@ func TestShouldPerformHashValidation(t *testing.T) {
 }
 
 func TestValidateFileHash(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	t.Run("non-existent file should fail", func(t *testing.T) {
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")

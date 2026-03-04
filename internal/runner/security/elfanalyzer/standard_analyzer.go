@@ -161,7 +161,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	// Ensure it's a regular file, not a device, FIFO, socket, or directory
 	if !fileInfo.Mode().IsRegular() {
 		return AnalysisOutput{
-			Result: NotELFBinary,
+			Result: NotExecutableBinary,
 			Error:  fmt.Errorf("%w: %s", ErrNotRegularFile, fileInfo.Mode()),
 		}
 	}
@@ -184,8 +184,10 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	if !isELFMagic(magic) {
+		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
+		// or a script). The ELF analyzer cannot inspect it further.
 		return AnalysisOutput{
-			Result: NotELFBinary,
+			Result: NotExecutableBinary,
 		}
 	}
 

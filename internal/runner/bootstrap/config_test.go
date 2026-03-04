@@ -25,7 +25,7 @@ import (
 // 5. Command.Args can reference Command.EnvVars
 func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 // TestLoadAndPrepareConfig_MissingConfigFile verifies error handling for missing config files
 func TestLoadAndPrepareConfig_MissingConfigFile(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestLoadAndPrepareConfig_MissingConfigFile(t *testing.T) {
 // TestLoadAndPrepareConfig_EmptyConfigPath verifies error handling for empty config path
 func TestLoadAndPrepareConfig_EmptyConfigPath(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)

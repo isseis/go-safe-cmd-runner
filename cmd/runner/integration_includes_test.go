@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -16,7 +17,7 @@ import (
 
 // TestIntegration_IncludesFeature_SingleInclude tests loading a config with a single include file
 func TestIntegration_IncludesFeature_SingleInclude(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create template file
 	templatePath := filepath.Join(tmpDir, "templates.toml")
@@ -76,7 +77,7 @@ args = ["hello"]
 
 // TestIntegration_IncludesFeature_MultipleIncludes tests loading a config with multiple include files
 func TestIntegration_IncludesFeature_MultipleIncludes(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create first template file
 	template1Path := filepath.Join(tmpDir, "backup.toml")
@@ -139,7 +140,7 @@ timeout = 60
 
 // TestIntegration_IncludesFeature_RelativePath tests include paths with relative references
 func TestIntegration_IncludesFeature_RelativePath(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create subdirectory
 	subDir := filepath.Join(tmpDir, "templates")
@@ -186,7 +187,7 @@ timeout = 60
 
 // TestIntegration_IncludesFeature_DuplicateTemplate tests error handling for duplicate template names
 func TestIntegration_IncludesFeature_DuplicateTemplate(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create template file with duplicate name
 	templatePath := filepath.Join(tmpDir, "templates.toml")
@@ -228,7 +229,7 @@ cmd = "echo"
 
 // TestIntegration_IncludesFeature_IncludeNotFound tests error handling for missing include files
 func TestIntegration_IncludesFeature_IncludeNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create main config referencing non-existent include
 	configPath := filepath.Join(tmpDir, "config.toml")
@@ -257,7 +258,7 @@ timeout = 60
 
 // TestIntegration_IncludesFeature_InvalidTemplateFile tests error handling for invalid template files
 func TestIntegration_IncludesFeature_InvalidTemplateFile(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create invalid template file (contains disallowed field)
 	templatePath := filepath.Join(tmpDir, "invalid.toml")
@@ -299,7 +300,7 @@ timeout = 60
 
 // TestIntegration_IncludesFeature_BackwardCompatibility tests that configs without includes still work
 func TestIntegration_IncludesFeature_BackwardCompatibility(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create config without includes
 	configPath := filepath.Join(tmpDir, "config.toml")

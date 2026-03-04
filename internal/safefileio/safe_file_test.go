@@ -848,7 +848,7 @@ func TestCanSafelyReadFromFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temporary file
-			tmpDir := t.TempDir()
+			tmpDir := safeTempDir(t)
 			filePath := filepath.Join(tmpDir, "test_file")
 
 			// Create test file with specified permissions
@@ -885,7 +885,7 @@ func TestCanSafelyReadFromFile(t *testing.T) {
 func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 	t.Run("SafeReadFile should succeed with group writable file using new read permissions", func(t *testing.T) {
 		// Create temporary file with group writable permissions
-		tmpDir := t.TempDir()
+		tmpDir := safeTempDir(t)
 		filePath := filepath.Join(tmpDir, "group_writable_file")
 		content := []byte("test content for group writable file")
 
@@ -900,7 +900,7 @@ func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 
 	t.Run("SafeReadFile should still fail with world writable file", func(t *testing.T) {
 		// Create temporary file with world writable permissions
-		tmpDir := t.TempDir()
+		tmpDir := safeTempDir(t)
 		filePath := filepath.Join(tmpDir, "world_writable_file")
 		content := []byte("test content for world writable file")
 

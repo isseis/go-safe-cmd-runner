@@ -6,15 +6,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 func TestOutputCaptureIntegration_CompleteWorkflow(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "integration_output.txt")
 
 	// Create a mock security validator that allows all operations for testing
@@ -87,7 +87,7 @@ func TestOutputCaptureIntegration_CompleteWorkflow(t *testing.T) {
 }
 
 func TestOutputCaptureIntegration_SizeLimitEnforcement(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "size_limit_test.txt")
 
 	// Create mock security validator that allows all operations for testing
@@ -183,7 +183,7 @@ func TestOutputCaptureIntegration_ErrorHandling(t *testing.T) {
 }
 
 func TestOutputCaptureIntegration_DryRunAnalysis(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	tests := []struct {
 		name                string
@@ -257,7 +257,7 @@ func TestOutputCaptureIntegration_DryRunAnalysis(t *testing.T) {
 }
 
 func TestOutputCaptureIntegration_UnlimitedSize(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "unlimited_output.txt")
 
 	// Create mock security validator that allows all operations for testing
@@ -304,7 +304,7 @@ func TestOutputCaptureIntegration_UnlimitedSize(t *testing.T) {
 }
 
 func TestOutputCaptureIntegration_ConcurrentWrites(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "concurrent_output.txt")
 
 	// Create mock security validator that allows all operations for testing

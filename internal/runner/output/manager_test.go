@@ -586,7 +586,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 
 func TestDefaultOutputCaptureManager_Integration(t *testing.T) {
 	// Integration test using real FileManager but mock validators
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "integration_output.txt")
 
 	// Setup mocks for validators

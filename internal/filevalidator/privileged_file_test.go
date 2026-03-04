@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -29,7 +30,7 @@ func TestOpenFileWithPrivileges(t *testing.T) {
 		{
 			name: "non-existent file",
 			setup: func(t *testing.T) string {
-				return filepath.Join(t.TempDir(), "non_existent_file")
+				return filepath.Join(commontesting.SafeTempDir(t), "non_existent_file")
 			},
 			expectError: true,
 		},

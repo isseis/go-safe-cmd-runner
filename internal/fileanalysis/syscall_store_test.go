@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -70,7 +71,7 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -101,7 +102,7 @@ func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -128,7 +129,7 @@ func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -143,7 +144,7 @@ func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
@@ -194,7 +195,7 @@ func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
 }
 
 func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
 	fileStore, err := NewStore(analysisDir, &mockPathGetter{})

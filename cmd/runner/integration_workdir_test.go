@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -330,8 +331,16 @@ func validateTempDirBehavior(
 
 	// Security check: temp dir should be under system temp dir
 	tempRoot := os.TempDir()
+	// Resolve symlinks in temp root (e.g., /var -> /private/var on macOS)
+	if resolved, err := filepath.EvalSymlinks(tempRoot); err == nil {
+		tempRoot = resolved
+	}
 	absPath, err := filepath.Abs(workdirPath)
 	require.NoError(t, err)
+	// Also resolve symlinks in absPath for consistent comparison
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = resolved
+	}
 	assert.True(t, strings.HasPrefix(absPath, tempRoot),
 		"Temp dir should be under system temp dir %s, but got: %s", tempRoot, absPath)
 
@@ -520,7 +529,7 @@ risk_level = "medium"
 	privMgr := privilege.NewManager(slog.Default())
 
 	// Setup dry-run options
-	hashDir := t.TempDir()
+	hashDir := commontesting.SafeTempDir(t)
 
 	dryRunOptions := &resource.DryRunOptions{
 		DetailLevel:         resource.DetailLevelDetailed,
@@ -574,7 +583,7 @@ risk_level = "medium"
 	require.True(t, ok, "Expected working_directory value to be a string")
 
 	// Verify virtual temp dir path pattern
-	assert.Contains(t, workDirStr, "/tmp/scr-", "Expected virtual temp dir path to start with /tmp/scr-")
+	assert.Contains(t, workDirStr, "scr-", "Expected virtual temp dir path to contain scr- prefix")
 	assert.Contains(t, workDirStr, "test_group", "Expected group name in virtual temp dir path")
 
 	// Verify that the virtual temp dir does NOT exist on the filesystem

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
@@ -65,14 +66,14 @@ func TestSecureExecutionFlow(t *testing.T) {
 			name: "successful_execution_with_valid_config_and_hash_dir",
 			// Only create the temporary directory; config file was unused by the test
 			setupFunc: func(t *testing.T) string {
-				return t.TempDir()
+				return commontesting.SafeTempDir(t)
 			},
 			expectError: false,
 		},
 		{
 			name: "failure_with_invalid_hash_directory",
 			setupFunc: func(t *testing.T) string {
-				return t.TempDir()
+				return commontesting.SafeTempDir(t)
 			},
 			hashDirectory: "/nonexistent/hash/directory",
 			expectError:   true,
@@ -114,7 +115,7 @@ func TestVerificationIntegration(t *testing.T) {
 		{
 			name: "successful_multi_step_verification",
 			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				hashDir := filepath.Join(tempDir, "hashes")
 				require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
@@ -172,7 +173,7 @@ func TestSecurityAttackScenarios(t *testing.T) {
 		{
 			name: "symlink_attack_on_hash_directory",
 			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 
 				targetDir := filepath.Join(os.TempDir(), "symlink_target")
 				require.NoError(t, os.MkdirAll(targetDir, 0o755), "Failed to create target directory")
@@ -195,7 +196,7 @@ func TestSecurityAttackScenarios(t *testing.T) {
 		{
 			name: "malicious_config_file_content",
 			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 
 				hashDir := filepath.Join(tempDir, "hashes")
 				require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
@@ -307,7 +308,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 
 			// Import required packages for mocks
 			// Note: Using the same mock setup pattern as existing tests
-			tempDir := t.TempDir()
+			tempDir := commontesting.SafeTempDir(t)
 			hashDir := filepath.Join(tempDir, "hashes")
 			require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 
@@ -393,7 +394,7 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 		{
 			name: "successful_validation_with_existing_directory",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				hashDir := filepath.Join(tempDir, "hashes")
 				require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
 				return hashDir
@@ -425,7 +426,7 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 
 // TestUnverifiedDataAccessPrevention tests that access to unverified data is properly prevented
 func TestUnverifiedDataAccessPrevention(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	// Create hash directory
 	hashDir := filepath.Join(tempDir, "hashes")

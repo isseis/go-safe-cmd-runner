@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/stretchr/testify/require"
 )
 
 // TestHashValidation_BasicBypassAttempts tests basic file hash validation bypass protection
 func TestHashValidation_BasicBypassAttempts(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 
 	// Create hash directory
@@ -110,7 +111,7 @@ func TestHashValidation_BasicBypassAttempts(t *testing.T) {
 
 // TestHashValidation_ManifestTampering tests protection against hash manifest tampering
 func TestHashValidation_ManifestTampering(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 
 	// Create hash directory
@@ -221,7 +222,7 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 
 // TestHashValidation_SymbolicLinkAttack tests protection against symlink attacks
 func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 
 	// Create hash directory
@@ -269,7 +270,7 @@ func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
 
 // TestHashValidation_RaceConditionProtection tests TOCTOU protection
 func TestHashValidation_RaceConditionProtection(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 
 	// Create hash directory

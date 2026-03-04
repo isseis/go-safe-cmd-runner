@@ -22,6 +22,7 @@ import (
 // command-level variables are available during verification phase.
 func TestIntegration_PreExpand_CommandLevelVariableInVerification(t *testing.T) {
 	env := setupTestEnvironment(t, "001")
+	echo := echoPath(t)
 
 	// Create a file to verify using command-level variable
 	verifyFile := filepath.Join(env.TestDir, "verify.txt")
@@ -45,9 +46,10 @@ verify_path = "%s"
 
 [[groups.commands]]
 name = "test_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["test"]
-`, env.TestDir, verifyFile)
+risk_level = "medium"
+`, env.TestDir, verifyFile, echo)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -62,6 +64,7 @@ args = ["test"]
 // variable errors are detected early (Fail Fast).
 func TestIntegration_PreExpand_FailFast_UndefinedVariable(t *testing.T) {
 	env := setupTestEnvironment(t, "002")
+	echo := echoPath(t)
 
 	configContent := fmt.Sprintf(`
 version = "1.0"
@@ -74,9 +77,9 @@ name = "test_group"
 
 [[groups.commands]]
 name = "test_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["test", "%%{undefined_var}"]
-`)
+`, echo)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -100,6 +103,7 @@ args = ["test", "%%{undefined_var}"]
 // resolution errors are detected during pre-expansion (Fail Fast).
 func TestIntegration_PreExpand_FailFast_WorkdirResolutionError(t *testing.T) {
 	env := setupTestEnvironment(t, "003")
+	echo := echoPath(t)
 
 	configContent := fmt.Sprintf(`
 version = "1.0"
@@ -112,13 +116,14 @@ name = "test_group"
 
 [[groups.commands]]
 name = "test_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["test"]
+risk_level = "medium"
 workdir = "/nonexistent/directory/%%{some_var}"
 
 [groups.commands.vars]
 some_var = "subdir"
-`)
+`, echo)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -136,6 +141,7 @@ some_var = "subdir"
 // in dry-run mode.
 func TestIntegration_PreExpand_DryRunMode(t *testing.T) {
 	env := setupTestEnvironment(t, "004")
+	echo := echoPath(t)
 
 	outputFile := env.outputFilePath()
 
@@ -153,10 +159,11 @@ output_file = "%s"
 
 [[groups.commands]]
 name = "test_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["test output"]
 output_file = "%%{output_file}"
-`, outputFile)
+risk_level = "medium"
+`, outputFile, echo)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)
@@ -176,6 +183,7 @@ output_file = "%%{output_file}"
 // detected immediately (Fail Fast).
 func TestIntegration_PreExpand_MultipleCommands_FirstFails(t *testing.T) {
 	env := setupTestEnvironment(t, "005")
+	echo := echoPath(t)
 
 	configContent := fmt.Sprintf(`
 version = "1.0"
@@ -189,21 +197,21 @@ name = "test_group"
 # First command with error
 [[groups.commands]]
 name = "first_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["%%{undefined_var}"]
 
 # Second command (should not be reached)
 [[groups.commands]]
 name = "second_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["second"]
 
 # Third command (should not be reached)
 [[groups.commands]]
 name = "third_cmd"
-cmd = "/usr/bin/echo"
+cmd = "%s"
 args = ["third"]
-`)
+`, echo, echo, echo)
 
 	env.writeConfig(t, configContent)
 	r := env.createRunner(t)

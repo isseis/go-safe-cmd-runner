@@ -281,7 +281,7 @@ func TestNewManagerProduction(t *testing.T) {
 // TestManager_ResolvePath_Integration tests end-to-end path resolution with securePathEnv
 func TestManager_ResolvePath_Integration(t *testing.T) {
 	// Create a temporary directory structure that mimics the secure path
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	// Create directories that match parts of securePathEnv: /sbin:/usr/sbin:/bin:/usr/bin
 	sbinDir := filepath.Join(tempDir, "sbin")
@@ -408,7 +408,7 @@ func invalidHashDirManager() *Manager {
 func TestVerifyAndReadConfigFile(t *testing.T) {
 	t.Run("successful_verification_and_read", func(t *testing.T) {
 		// Create temporary directory and test config file
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		configPath := filepath.Join(tmpDir, "config.toml")
 		configContent := `[global]
 		risk_level = "low"
@@ -434,7 +434,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 
 	t.Run("verification_failure", func(t *testing.T) {
 		// Create temporary directory
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager without disabling file validator (will try to verify hash)
 		manager, err := NewManagerForTest(tmpDir)
@@ -470,7 +470,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 func TestVerifyEnvironmentFile(t *testing.T) {
 	t.Run("successful_environment_file_verification", func(t *testing.T) {
 		// Create temporary directory and test env file
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		envPath := filepath.Join(tmpDir, ".env")
 		envContent := `DATABASE_URL=postgresql://localhost/test
 		API_KEY=test_key_123
@@ -492,7 +492,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 	})
 
 	t.Run("environment_file_verification_failure", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager without disabling file validator
 		manager, err := NewManagerForTest(tmpDir)
@@ -525,7 +525,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 // TestVerifyGlobalFiles tests the VerifyGlobalFiles method
 func TestVerifyGlobalFiles(t *testing.T) {
 	t.Run("successful_global_files_verification", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager for testing with hash directory validation skipped
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
@@ -545,7 +545,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 	})
 
 	t.Run("nil_config_failure", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -577,7 +577,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 // TestVerifyGroupFiles tests the VerifyGroupFiles method
 func TestVerifyGroupFiles(t *testing.T) {
 	t.Run("successful_group_files_verification", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager for testing with hash directory validation skipped
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
@@ -597,7 +597,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 	})
 
 	t.Run("nil_config_failure", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -629,7 +629,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 // TestResolvePath tests the ResolvePath method
 func TestResolvePath(t *testing.T) {
 	t.Run("successful_path_resolution", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager for testing
 		manager, err := NewManagerForTest(tmpDir)
@@ -662,7 +662,7 @@ func TestResolvePath(t *testing.T) {
 	})
 
 	t.Run("command_not_found", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -681,7 +681,7 @@ func TestResolvePath(t *testing.T) {
 // TestShouldSkipVerification tests the shouldSkipVerification helper method
 func TestShouldSkipVerification(t *testing.T) {
 	t.Run("skip_verification_conditions", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager for testing with hash directory validation skipped
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
@@ -695,7 +695,7 @@ func TestShouldSkipVerification(t *testing.T) {
 	})
 
 	t.Run("do_not_skip_verification", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager with file validator enabled
 		manager, err := NewManagerForTest(tmpDir)
@@ -712,7 +712,7 @@ func TestShouldSkipVerification(t *testing.T) {
 // TestCollectVerificationFiles tests the collectVerificationFiles helper method
 func TestCollectVerificationFiles(t *testing.T) {
 	t.Run("collect_files_from_config", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -731,7 +731,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 
 	t.Run("collect_empty_files", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -747,7 +747,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 
 	t.Run("collect_nil_group_config", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -760,7 +760,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 
 	t.Run("automatic_deduplication", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -779,7 +779,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 
 	t.Run("expand_command_variables", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create actual command files for PATH resolution
 		binDir := filepath.Join(tmpDir, "bin")
@@ -827,7 +827,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 
 	t.Run("skip_command_with_expansion_error", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
@@ -855,7 +855,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 
 	t.Run("skip_command_with_resolution_error", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
 		pathResolver := NewPathResolver("", nil, false)
@@ -888,7 +888,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 // TestVerifyFileWithFallback tests the verifyFileWithFallback helper method
 func TestVerifyFileWithFallback(t *testing.T) {
 	t.Run("successful_verification", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager with file validator disabled (for testing)
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
@@ -905,7 +905,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 	})
 
 	t.Run("file_not_found", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir, WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
@@ -916,7 +916,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 	})
 
 	t.Run("verification_failure_with_validator", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager with file validator enabled (will try to verify hash)
 		manager, err := NewManagerForTest(tmpDir, WithSkipHashDirectoryValidation())
@@ -937,7 +937,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 // TestReadAndVerifyFileWithFallback tests the readAndVerifyFileWithFallback helper method
 func TestReadAndVerifyFileWithFallback(t *testing.T) {
 	t.Run("successful_read_and_verification", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
@@ -955,7 +955,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 	})
 
 	t.Run("file_not_found", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
@@ -967,7 +967,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 	})
 
 	t.Run("verification_failure_with_validator", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager with file validator enabled
 		manager, err := NewManagerForTest(tmpDir, WithSkipHashDirectoryValidation())
@@ -988,7 +988,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 // TestVerifyFileWithFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
 func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 	t.Run("logs_security_risk_on_verification_failure", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Capture log output
 		var logBuffer strings.Builder
@@ -1022,7 +1022,7 @@ func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 // TestReadAndVerifyFileWithFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
 func TestReadAndVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 	t.Run("logs_security_risk_on_verification_failure", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Capture log output
 		var logBuffer strings.Builder
@@ -1057,7 +1057,7 @@ func TestReadAndVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 // TestValidateSecurityConstraints tests the validateSecurityConstraints function
 func TestValidateSecurityConstraints(t *testing.T) {
 	t.Run("testing_mode_with_skip_validation", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		opts := newInternalOptions()
 		opts.creationMode = CreationModeTesting // Use testing mode to avoid production constraints
@@ -1169,7 +1169,7 @@ func TestNewManagerInternalOptions(t *testing.T) {
 // TestManagerCreationWithFileValidator tests manager creation with file validator scenarios
 func TestManagerCreationWithFileValidator(t *testing.T) {
 	t.Run("manager_with_file_validator_enabled", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir, WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
@@ -1185,7 +1185,7 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 	})
 
 	t.Run("manager_with_file_validator_disabled", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
@@ -1201,7 +1201,7 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 	})
 
 	t.Run("manager_in_dry_run_mode", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager with dry run mode through internal options
 		manager, err := newManagerInternal(tmpDir,
@@ -1220,7 +1220,7 @@ func TestManagerCreationWithFileValidator(t *testing.T) {
 // TestSecurityIntegration tests integration between Manager and SecurityValidator
 func TestSecurityIntegration(t *testing.T) {
 	t.Run("hash_directory_validation_integration", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create manager without skipping hash directory validation
 		manager, err := NewManagerForTest(tmpDir)
@@ -1240,7 +1240,7 @@ func TestSecurityIntegration(t *testing.T) {
 	})
 
 	t.Run("path_resolver_security_integration", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir, WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
@@ -1276,7 +1276,7 @@ func TestTypeEnumMethods(t *testing.T) {
 // TestVerifyGlobalFiles_DryRun_MultipleFailures tests global file verification in dry-run mode
 // when hash files do not exist for any files (both files will fail verification)
 func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(tmpDir, "hashes")
 	err := os.MkdirAll(hashDir, 0o755)
 	require.NoError(t, err)

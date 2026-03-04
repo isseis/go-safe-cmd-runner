@@ -56,7 +56,12 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 	if m.isDryRun {
 		// Generate virtual path in dry-run mode
 		timestamp := time.Now().Format("20060102150405")
-		tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
+		// Resolve symlinks in temp dir path (e.g., /var -> /private/var on macOS)
+		resolvedTempDir, err := filepath.EvalSymlinks(os.TempDir())
+		if err != nil {
+			resolvedTempDir = os.TempDir()
+		}
+		tempDir := filepath.Join(resolvedTempDir, fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
 		m.tempDirPath = tempDir
 		slog.Info("[DRY-RUN] Would create temporary directory", slog.String("group", m.groupName), slog.String("path", tempDir))
 		return tempDir, nil
@@ -67,6 +72,12 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 	tempDir, err := os.MkdirTemp(os.TempDir(), prefix)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+
+	// Resolve symlinks in the created path (e.g., /var -> /private/var on macOS)
+	resolvedTempDir, err := filepath.EvalSymlinks(tempDir)
+	if err == nil {
+		tempDir = resolvedTempDir
 	}
 
 	// Security: ensure strict 0700 permissions

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,7 @@ import (
 const passwdPath = "/usr/bin/passwd"
 
 func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	testCases := []struct {
 		name            string
@@ -127,7 +128,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 
 func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	t.Run("normal executable without setuid/setgid", func(t *testing.T) {
 		// Create a normal executable
@@ -176,9 +177,12 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify the setgid bit is actually set
+		// On macOS, non-root users may not be able to set setgid bit
 		fileInfo, err := os.Stat(setgidExec)
 		require.NoError(t, err)
-		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		if fileInfo.Mode()&os.ModeSetgid == 0 {
+			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
+		}
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidExec, []string{}, nil)
 		require.NoError(t, err)
@@ -198,10 +202,13 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify both bits are actually set
+		// On macOS, non-root users may not be able to set setgid bit
 		fileInfo, err := os.Stat(setuidSetgidExec)
 		require.NoError(t, err)
 		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
-		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		if fileInfo.Mode()&os.ModeSetgid == 0 {
+			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
+		}
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidSetgidExec, []string{}, nil)
 		require.NoError(t, err)
@@ -246,9 +253,12 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify the setgid bit is set and it's a directory
+		// On macOS, non-root users may not be able to set setgid bit
 		fileInfo, err := os.Stat(setgidDir)
 		require.NoError(t, err)
-		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		if fileInfo.Mode()&os.ModeSetgid == 0 {
+			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
+		}
 		assert.True(t, fileInfo.IsDir(), "should be a directory")
 
 		// The function should not detect directories as risky even with setgid
@@ -722,7 +732,7 @@ func TestIsNetworkOperation(t *testing.T) {
 
 func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	t.Run("normal file without setuid/setgid", func(t *testing.T) {
 		normalFile := filepath.Join(tmpDir, "normal")
@@ -773,9 +783,12 @@ func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify the setgid bit is actually set
+		// On macOS, non-root users may not be able to set setgid bit
 		fileInfo, err := os.Stat(setgidFile)
 		require.NoError(t, err)
-		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		if fileInfo.Mode()&os.ModeSetgid == 0 {
+			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
+		}
 
 		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(setgidFile)
 		assert.NoError(t, err)
@@ -792,10 +805,13 @@ func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify both bits are actually set
+		// On macOS, non-root users may not be able to set setgid bit
 		fileInfo, err := os.Stat(bothBitsFile)
 		require.NoError(t, err)
 		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
-		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		if fileInfo.Mode()&os.ModeSetgid == 0 {
+			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
+		}
 
 		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(bothBitsFile)
 		assert.NoError(t, err)
@@ -833,9 +849,12 @@ func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify the setgid bit is set and it's a directory
+		// On macOS, non-root users may not be able to set setgid bit
 		fileInfo, err := os.Stat(setgidDir)
 		require.NoError(t, err)
-		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		if fileInfo.Mode()&os.ModeSetgid == 0 {
+			t.Skip("Skipping: OS silently ignored setgid bit (non-root on macOS)")
+		}
 		assert.True(t, fileInfo.IsDir(), "should be a directory")
 
 		// Function should return false for directories (not regular files)
@@ -1154,7 +1173,7 @@ func TestExtractAllCommandNames(t *testing.T) {
 
 func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 	// Create temporary directory for testing
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create the actual executable
 	actualCmd := tmpDir + "/actual_echo"
@@ -1369,7 +1388,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
 		// Use a temporary file in a non-standard directory to avoid directory-based risk
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		echoPath := filepath.Join(tmpDir, "echo")
 		err := os.WriteFile(echoPath, []byte("#!/bin/bash\necho hello"), 0o755)
 		require.NoError(t, err)
@@ -2389,11 +2408,11 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			expectNetwork: false,
 		},
 		{
-			name:          "unknown command - not ELF binary (script)",
+			name:          "unknown command - not an ELF binary (e.g. Mach-O on macOS)",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
-			mockResult:    elfanalyzer.NotELFBinary,
-			expectNetwork: true, // Scripts can invoke network commands internally
+			mockResult:    elfanalyzer.NotExecutableBinary,
+			expectNetwork: false, // Non-ELF executables are treated same as ELF with no network symbols
 		},
 		{
 			name:          "unknown command - static binary",
