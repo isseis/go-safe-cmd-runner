@@ -38,7 +38,7 @@ func (r AnalysisResult) String() string {
 	case NoNetworkSymbols:
 		return "no_network_symbols"
 	case NotELFBinary:
-		return "not_executable_binary"
+		return "not_elf_binary"
 	case StaticBinary:
 		return "static_binary"
 	case AnalysisError:
