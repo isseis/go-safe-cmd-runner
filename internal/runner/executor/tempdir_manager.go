@@ -59,6 +59,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 		// Resolve symlinks in temp dir path (e.g., /var -> /private/var on macOS)
 		resolvedTempDir, err := filepath.EvalSymlinks(os.TempDir())
 		if err != nil {
+			slog.Debug("[DRY-RUN] Failed to resolve symlinks in temp dir path, using original", slog.Any("error", err))
 			resolvedTempDir = os.TempDir()
 		}
 		tempDir := filepath.Join(resolvedTempDir, fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
