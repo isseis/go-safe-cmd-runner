@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os/exec"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -83,16 +84,18 @@ func TestExecutor_ErrorLogging_CommandExecutionFailure(t *testing.T) {
 
 	executor := NewDefaultExecutor(WithLogger(logger))
 
-	// Use /bin/false which always exits with non-zero status
-	cmd := createTestCommand("/bin/false", []string{})
+	// Use "false" command which always exits with non-zero status
+	falsePath, err := exec.LookPath("false")
+	require.NoError(t, err, "false command not found in PATH")
+	cmd := createTestCommand(falsePath, []string{})
 
-	_, err := executor.Execute(context.Background(), cmd, map[string]string{}, nil)
+	_, err = executor.Execute(context.Background(), cmd, map[string]string{}, nil)
 	require.Error(t, err)
 
 	// Check that the error log contains the failure information
 	logOutput := buf.String()
 	assert.Contains(t, logOutput, "Command execution failed")
-	assert.Contains(t, logOutput, "/bin/false")
+	assert.Contains(t, logOutput, falsePath)
 	assert.Contains(t, logOutput, "exit_code=1")
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +19,7 @@ func TestNewSafeFileOpener_Success(t *testing.T) {
 }
 
 func TestOpenFile_Success(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	opener := NewSafeFileOpener()
 
 	tests := []struct {
@@ -72,7 +73,7 @@ func TestOpenFile_PermissionDenied(t *testing.T) {
 		t.Skip("Skipping permission test when running as root")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 
 	// Create a read-only directory
@@ -94,7 +95,7 @@ func TestOpenFile_PermissionDenied(t *testing.T) {
 }
 
 func TestOpenFile_SymlinkAttack(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	opener := NewSafeFileOpener()
 
 	// Create a target file
@@ -155,23 +156,21 @@ func TestValidateLogDir_Valid(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name: "existing writable directory",
-			setupFunc: func(t *testing.T) string {
-				return t.TempDir()
-			},
-			wantErr: false,
+			name:      "existing writable directory",
+			setupFunc: commontesting.SafeTempDir,
+			wantErr:   false,
 		},
 		{
 			name: "non-existing directory that can be created",
 			setupFunc: func(t *testing.T) string {
-				return filepath.Join(t.TempDir(), "newdir")
+				return filepath.Join(commontesting.SafeTempDir(t), "newdir")
 			},
 			wantErr: false,
 		},
 		{
 			name: "nested directory that can be created",
 			setupFunc: func(t *testing.T) string {
-				return filepath.Join(t.TempDir(), "a", "b", "c")
+				return filepath.Join(commontesting.SafeTempDir(t), "a", "b", "c")
 			},
 			wantErr: false,
 		},
@@ -229,7 +228,7 @@ func TestValidateLogDir_NotWritable(t *testing.T) {
 		t.Skip("Skipping permission test when running as root")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 
 	// Create a read-only directory

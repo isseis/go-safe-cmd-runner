@@ -1,11 +1,14 @@
-//go:build test || performance
+//go:build test || performance || integration
 
 package testutil
 
 import (
 	"fmt"
+	"path/filepath"
+	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/stretchr/testify/require"
 )
 
 // ErrInvalidTimeout is returned when an invalid timeout value is encountered
@@ -82,4 +85,17 @@ func StringPtrOrNil(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// SafeTempDir creates a temporary directory and resolves any symlinks in its path
+// to ensure consistent behavior across different environments.
+// On macOS, /var is a symlink to /private/var, which causes safefileio's symlink
+// checks to fail. This helper resolves such OS-level symlinks so that temp paths
+// are safe for use with safefileio functions.
+func SafeTempDir(t *testing.T) string {
+	t.Helper()
+	tempDir := t.TempDir()
+	realPath, err := filepath.EvalSymlinks(tempDir)
+	require.NoError(t, err, "Failed to resolve symlinks in temp dir")
+	return realPath
 }

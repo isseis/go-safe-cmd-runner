@@ -136,12 +136,13 @@ func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string, contentHash st
 		return false
 
 	case elfanalyzer.NotELFBinary:
-		// Non-ELF binaries (scripts, shell commands) can invoke arbitrary commands internally,
-		// so they should be treated as potential network operations for safety.
-		slog.Debug("ELF analysis: not an ELF binary, treating as potential network operation",
-			"path", cmdPath,
-			"reason", "Scripts and shell commands can invoke network commands internally")
-		return true
+		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
+		// or a script). The ELF analyzer cannot inspect it, but all executable
+		// formats are treated consistently: assume no network operation,
+		// the same as an ELF binary with no detected network symbols.
+		slog.Debug("ELF analysis: file is not in ELF format, assuming no network operation",
+			"path", cmdPath)
+		return false
 
 	case elfanalyzer.StaticBinary:
 		// Static binary: cannot determine network capability

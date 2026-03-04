@@ -70,7 +70,7 @@ endef
 ENVSET=$(ENVCMD) -i \
 	HOME=$(HOME) \
 	USER=$(USER) \
-	PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/go/bin \
+	PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/go/bin:/opt/homebrew/bin \
 	LANG=C \
 	TERM=$(TERM) \
 	TEST_GLOBAL_VAR=global_test_value \
@@ -168,18 +168,32 @@ clean:
 
 ELFANALYZER_TESTDATA_DIR := internal/runner/security/elfanalyzer/testdata
 
-# List of required test binaries
-ELFANALYZER_TEST_BINARIES := \
+# List of ELF test binaries that require C compilation (Linux ELF format only)
+# On macOS, gcc produces Mach-O binaries, so these are only generated on Linux.
+ELFANALYZER_C_ELF_BINARIES := \
 	$(ELFANALYZER_TESTDATA_DIR)/with_socket.elf \
 	$(ELFANALYZER_TESTDATA_DIR)/with_ssl.elf \
-	$(ELFANALYZER_TESTDATA_DIR)/no_network.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/no_network.elf
+
+# List of all required test binaries
+ELFANALYZER_TEST_BINARIES := \
+	$(ELFANALYZER_C_ELF_BINARIES) \
 	$(ELFANALYZER_TESTDATA_DIR)/static.elf \
 	$(ELFANALYZER_TESTDATA_DIR)/corrupted.elf \
 	$(ELFANALYZER_TESTDATA_DIR)/script.sh
 
-# Verify elfanalyzer test binaries by running elfanalyzer tests
-# This ensures the generated binaries have the expected symbols
-elfanalyzer-testdata-verify: $(ELFANALYZER_TEST_BINARIES)
+# Verify elfanalyzer test binaries by running elfanalyzer tests.
+# On macOS, C-compiled ELF binaries cannot be generated (gcc produces Mach-O);
+# those test cases are skipped automatically when the files are absent.
+elfanalyzer-testdata-verify: $(ELFANALYZER_TESTDATA_DIR)/static.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/corrupted.elf \
+	$(ELFANALYZER_TESTDATA_DIR)/script.sh
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		$(MAKE) $(ELFANALYZER_C_ELF_BINARIES); \
+	else \
+		echo "macOS: skipping C-based ELF binary generation (requires Linux cross-compiler)"; \
+		rm -f $(ELFANALYZER_C_ELF_BINARIES); \
+	fi
 	@echo "Verifying elfanalyzer test binaries..."
 	@TEMP_FILE=$$(mktemp); \
 	if $(GOTEST) -tags test -v ./internal/runner/security/elfanalyzer/ -run TestStandardELFAnalyzer_AnalyzeNetworkSymbols > "$$TEMP_FILE" 2>&1; then \
@@ -192,7 +206,7 @@ elfanalyzer-testdata-verify: $(ELFANALYZER_TEST_BINARIES)
 	fi
 	@echo "elfanalyzer test binaries verified successfully"
 
-# Individual test binary targets
+# Individual test binary targets (Linux only - gcc produces Mach-O on macOS)
 $(ELFANALYZER_TESTDATA_DIR)/with_socket.elf:
 	@echo "Generating $@..."
 	@echo '#include <sys/socket.h>\n#include <netinet/in.h>\nint main() { int fd = socket(AF_INET, SOCK_STREAM, 0); struct sockaddr_in addr = {0}; connect(fd, (struct sockaddr*)&addr, sizeof(addr)); return 0; }' | \
@@ -210,8 +224,12 @@ $(ELFANALYZER_TESTDATA_DIR)/no_network.elf:
 
 $(ELFANALYZER_TESTDATA_DIR)/static.elf:
 	@echo "Generating $@..."
-	@echo '#include <stdio.h>\nint main() { printf("Hello, World!\\n"); return 0; }' | \
-		gcc -x c -static -o $@ -
+	@if [ "$$(uname -s)" = "Darwin" ]; then \
+		cp $(ELFANALYZER_TESTDATA_DIR)/arm64_network_program/arm64_network_program.elf $@; \
+	else \
+		echo '#include <stdio.h>\nint main() { printf("Hello, World!\\n"); return 0; }' | \
+			gcc -x c -static -o $@ -; \
+	fi
 
 $(ELFANALYZER_TESTDATA_DIR)/corrupted.elf:
 	@echo "Generating $@..."
@@ -271,9 +289,14 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 
 # Unit tests - core functionality tests
 # Runs twice: with race detection (CGO_ENABLED=1) and without (CGO_ENABLED=0)
+# On macOS, only CGO_ENABLED=1 is supported (group membership requires CGO/Directory Services)
 unit-test: build-test elfanalyzer-testdata-verify
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
-	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...; \
+	else \
+		echo "macOS: skipping CGO_ENABLED=0 test run (not supported on macOS)"; \
+	fi
 
 # End-to-end tests - validates binary execution and security checks
 e2e-test: build-test

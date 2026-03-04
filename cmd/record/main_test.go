@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
@@ -65,7 +66,7 @@ func TestRunRequiresAtLeastOneFile(t *testing.T) {
 }
 
 func TestRunProcessesMultipleFiles(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	stdout := &bytes.Buffer{}
@@ -83,7 +84,7 @@ func TestRunProcessesMultipleFiles(t *testing.T) {
 }
 
 func TestRunReportsFailuresAndContinues(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{
 		"bad.dat": errors.New("calculate hash failure"),
 	}}
@@ -104,7 +105,7 @@ func TestRunReportsFailuresAndContinues(t *testing.T) {
 }
 
 func TestRunWarnsWhenDeprecatedFlagUsed(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	stdout := &bytes.Buffer{}
@@ -135,7 +136,7 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 }
 
 func TestRunWithSyscallAnalysis(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	// Create a static ELF file for testing
@@ -155,7 +156,7 @@ func TestRunWithSyscallAnalysis(t *testing.T) {
 }
 
 func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	// Create a non-ELF file
@@ -187,7 +188,7 @@ func (f *fakeELFAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) (*elfanalyzer.Sysc
 }
 
 func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
 
 	// Create a static ELF file (no .text section needed — the analyzer is faked)

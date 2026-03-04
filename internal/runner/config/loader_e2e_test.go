@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -158,7 +159,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 // Command.EnvVars > Group.EnvVars > Global.EnvVars > System Env
 func TestE2E_PriorityVerification(t *testing.T) {
 	// Create a temporary test configuration
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tmpDir, "priority_test.toml")
 
 	configContent := `[global]
@@ -238,7 +239,7 @@ env_vars = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 // - Reject all (group.env_allowlist == [])
 func TestE2E_AllowlistScenarios(t *testing.T) {
 	// Create a temporary test configuration
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tmpDir, "allowlist_test.toml")
 
 	configContent := `[global]
@@ -316,7 +317,7 @@ env_vars = ["REJECT_VAR=value"]
 // environment variables from Global.EnvVars and Group.EnvVars.
 func TestE2E_VerifyFilesExpansion(t *testing.T) {
 	// Create a temporary test configuration
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tmpDir, "verify_files_test.toml")
 
 	configContent := `[global]
@@ -491,7 +492,7 @@ func findGroup(t *testing.T, cfg *runnertypes.ConfigSpec, name string) *runnerty
 
 // TestE2E_VerifyFilesExpansion_SpecialCharacters tests verify_files expansion with special characters
 func TestE2E_VerifyFilesExpansion_SpecialCharacters(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tmpDir, "verify_files_special_chars.toml")
 
 	configContent := `[global]
@@ -540,7 +541,7 @@ verify_files = ["%{base_dir}/%{sub_dir}/script.sh"]
 
 // TestE2E_VerifyFilesExpansion_NestedReferences tests verify_files with nested variable references
 func TestE2E_VerifyFilesExpansion_NestedReferences(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tmpDir, "verify_files_nested.toml")
 
 	configContent := `[global]
@@ -590,7 +591,7 @@ verify_files = ["%{full_path}/check.sh"]
 // TestE2E_VerifyFilesExpansion_ErrorHandling tests error handling for invalid verify_files expansion
 func TestE2E_VerifyFilesExpansion_ErrorHandling(t *testing.T) {
 	t.Run("UndefinedVariable", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		configPath := filepath.Join(tmpDir, "verify_files_undefined.toml")
 
 		configContent := `[global]
@@ -614,7 +615,7 @@ name = "test_group"
 	})
 
 	t.Run("EmptyVariableName", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		configPath := filepath.Join(tmpDir, "verify_files_empty_var.toml")
 
 		configContent := `[global]
@@ -636,7 +637,7 @@ name = "test_group"
 	})
 
 	t.Run("MultipleVerifyFilesWithMixedErrors", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		configPath := filepath.Join(tmpDir, "verify_files_mixed.toml")
 
 		configContent := `[global]

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 	})
 
 	t.Run("single variable expansion", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		tmpFile := filepath.Join(tmpDir, "tool")
 		err := os.WriteFile(tmpFile, []byte{}, 0o644)
 		require.NoError(t, err)
@@ -52,7 +53,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 	})
 
 	t.Run("multiple paths", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		tmpFile1 := filepath.Join(tmpDir, "tool1")
 		tmpFile2 := filepath.Join(tmpDir, "tool2")
 		err := os.WriteFile(tmpFile1, []byte{}, 0o644)
@@ -69,7 +70,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 	})
 
 	t.Run("duplicate raw path returns error", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		tmpFile := filepath.Join(tmpDir, "tool")
 		err := os.WriteFile(tmpFile, []byte{}, 0o644)
 		require.NoError(t, err)
@@ -83,7 +84,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 	})
 
 	t.Run("duplicate resolved path returns error", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		tmpFile := filepath.Join(tmpDir, "tool")
 		err := os.WriteFile(tmpFile, []byte{}, 0o644)
 		require.NoError(t, err)
@@ -102,7 +103,7 @@ func TestExpandCmdAllowed_Success(t *testing.T) {
 	})
 
 	t.Run("complex variable expansion", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		tmpFile := filepath.Join(tmpDir, "app", "bin", "tool")
 		err := os.MkdirAll(filepath.Dir(tmpFile), 0o755)
 		require.NoError(t, err)
@@ -181,7 +182,7 @@ func TestExpandCmdAllowed_Errors(t *testing.T) {
 }
 
 func TestExpandGroup_WithCmdAllowed(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	tmpFile := filepath.Join(tmpDir, "tool")
 	err := os.WriteFile(tmpFile, []byte{}, 0o644)
 	require.NoError(t, err)

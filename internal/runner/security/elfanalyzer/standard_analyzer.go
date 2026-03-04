@@ -184,6 +184,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	if !isELFMagic(magic) {
+		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
+		// or a script). The ELF analyzer cannot inspect it further.
 		return AnalysisOutput{
 			Result: NotELFBinary,
 		}

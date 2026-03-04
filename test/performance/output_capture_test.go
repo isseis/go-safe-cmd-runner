@@ -37,7 +37,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "large_output.txt")
 
 	// Create test configuration
@@ -114,7 +114,7 @@ func TestOutputSizeLimit(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "size_limited_output.txt")
 
 	// Create command that generates more output than the limit
@@ -165,7 +165,7 @@ func TestConcurrentExecution(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	numCommands := 5
 
 	// Create necessary components for ResourceManager
@@ -233,7 +233,7 @@ func TestLongRunningStability(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	outputPath := filepath.Join(tempDir, "long_running_output.txt")
 
 	// Create command that runs for a while and produces incremental output
@@ -354,7 +354,7 @@ func TestMemoryLeakDetection(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	iterations := 100
 
 	// Record initial memory

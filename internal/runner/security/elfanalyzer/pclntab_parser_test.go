@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"debug/elf"
 	"encoding/binary"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -101,7 +102,12 @@ func openELFWithPclntab(t *testing.T, pclntabData []byte) *elf.File {
 func TestParsePclntab_NoPclntabSection(t *testing.T) {
 	// ELF without .gopclntab returns ErrNoPclntab.
 	// no_network.elf is a C binary with no .gopclntab section.
-	f, err := elf.Open("testdata/no_network.elf")
+	// On macOS, this file is not generated (gcc produces Mach-O, not ELF).
+	const testFile = "testdata/no_network.elf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("Skipping: no_network.elf not available (not generated on macOS)")
+	}
+	f, err := elf.Open(testFile)
 	require.NoError(t, err)
 	defer f.Close()
 

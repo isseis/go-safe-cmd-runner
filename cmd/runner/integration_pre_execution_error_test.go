@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ import (
 // parsing error path specifically.
 func TestE2E_PreExecutionError_TOMLParseError(t *testing.T) {
 	// Create a config file with invalid TOML syntax
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "invalid.toml")
 
 	invalidTOML := `
@@ -75,7 +76,7 @@ cmd = "/bin/echo"
 func TestE2E_PreExecutionError_HashNotFound(t *testing.T) {
 	// Create a valid config file in a temp directory
 	// This file won't have a corresponding hash in the default hash directory
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "config.toml")
 
 	validTOML := `

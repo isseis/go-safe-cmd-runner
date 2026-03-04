@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			name: "valid_output_file_write_permission",
 			setupFunc: func(t *testing.T) string {
 				// Create a secure temporary directory first
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				err := os.Chmod(tempDir, 0o755)
 				require.NoError(t, err)
 
@@ -54,7 +55,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 		{
 			name: "non_existent_file_in_writable_directory",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				// Set secure directory permissions for test
 				err := os.Chmod(tempDir, 0o755)
 				require.NoError(t, err)
@@ -84,7 +85,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 		{
 			name: "directory_instead_of_file",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				return tempDir
 			},
 			uid:         currentUID,
@@ -179,7 +180,7 @@ func TestValidator_checkWritePermission(t *testing.T) {
 
 				return tempFile.Name(), info
 			},
-			uid:         65534, // Use 'nobody' user to test world-writable check
+			uid:         1, // Use 'daemon' user (exists on both Linux and macOS)
 			useTestMode: false,
 			wantErr:     true,
 			expectedErr: ErrInvalidFilePermissions,
@@ -200,7 +201,7 @@ func TestValidator_checkWritePermission(t *testing.T) {
 
 				return tempFile.Name(), info
 			},
-			uid:         65534, // Use 'nobody' user to test world-writable check
+			uid:         1, // Use 'daemon' user (exists on both Linux and macOS)
 			useTestMode: true,
 			wantErr:     false,
 		},
@@ -253,7 +254,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		{
 			name: "writable_directory_by_owner_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				// Ensure directory is writable by owner
 				err := os.Chmod(tempDir, 0o700)
 				require.NoError(t, err)
@@ -265,7 +266,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		{
 			name: "non_existent_directory_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				nonExistentDir := filepath.Join(tempDir, "non_existent")
 				return nonExistentDir
 			},
@@ -275,7 +276,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 		{
 			name: "directory_without_write_permission_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 				// Remove write permissions for all
 				err := os.Chmod(tempDir, 0o555)
 				require.NoError(t, err)
@@ -456,7 +457,7 @@ func TestValidator_ValidateOutputWritePermission_Integration(t *testing.T) {
 
 	t.Run("integration_with_directory_validation", func(t *testing.T) {
 		// Create a directory structure that should pass validation
-		tempDir := t.TempDir()
+		tempDir := commontesting.SafeTempDir(t)
 		// Set secure permissions on parent directory
 		err := os.Chmod(tempDir, 0o755)
 		require.NoError(t, err)
@@ -1549,7 +1550,7 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 		{
 			name: "output_directory_owned_by_user",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 
 				// Create subdirectory owned by current user
 				subDir := filepath.Join(tempDir, "output")
@@ -1564,7 +1565,7 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 		{
 			name: "non_existent_directory_with_existing_parent",
 			setupFunc: func(t *testing.T) string {
-				tempDir := t.TempDir()
+				tempDir := commontesting.SafeTempDir(t)
 
 				// Return path to non-existent subdirectory
 				return filepath.Join(tempDir, "nonexistent", "output")
@@ -1655,7 +1656,9 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			},
 			useNilGroup: false,
 			realUID:     currentUID,
-			wantErr:     false,
+			// On macOS, the default group (staff, GID 20) has multiple members,
+			// so the security check correctly denies group-writable access.
+			wantErr: runtime.GOOS == "darwin",
 		},
 		{
 			name: "group_write_unsafe_with_multiple_members",
@@ -1689,7 +1692,9 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			},
 			useNilGroup: false,
 			realUID:     currentUID,
-			wantErr:     false,
+			// On macOS, the default group (staff, GID 20) has multiple members,
+			// so the security check correctly denies group-writable access.
+			wantErr: runtime.GOOS == "darwin",
 		},
 	}
 

@@ -5,6 +5,7 @@ package privilege
 import (
 	"errors"
 	"log/slog"
+	"syscall"
 	"testing"
 	"time"
 
@@ -304,7 +305,8 @@ func TestRestoreUserGroupInternal(t *testing.T) {
 
 	// Test restoration with original EGID
 	// This is a unit test, so we're testing the logic flow, not actual syscalls
-	err := manager.restoreUserGroupInternal(manager.GetCurrentUID())
+	// Use the current EGID (not UID) because restoreUserGroupInternal calls Setegid
+	err := manager.restoreUserGroupInternal(syscall.Getegid())
 
 	// In test environment without actual privilege escalation, this should succeed
 	// as it's a no-op when not actually escalated

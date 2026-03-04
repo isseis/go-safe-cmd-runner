@@ -4,9 +4,11 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -30,7 +32,7 @@ type testEnvironment struct {
 // setupTestEnvironment creates the common test directory structure.
 func setupTestEnvironment(t *testing.T, runID string) *testEnvironment {
 	t.Helper()
-	testDir := t.TempDir()
+	testDir := commontesting.SafeTempDir(t)
 	hashDir := filepath.Join(testDir, "hashes")
 	configPath := filepath.Join(testDir, "config.toml")
 
@@ -81,4 +83,13 @@ func (env *testEnvironment) createRunner(t *testing.T) *runner.Runner {
 // outputFilePath returns a path for the output.txt file in the test directory.
 func (env *testEnvironment) outputFilePath() string {
 	return filepath.Join(env.TestDir, "output.txt")
+}
+
+// echoPath returns the absolute path to the echo binary.
+// On macOS (Apple Silicon), echo is at /bin/echo; on Linux it is at /usr/bin/echo.
+func echoPath(t *testing.T) string {
+	t.Helper()
+	path, err := exec.LookPath("echo")
+	require.NoError(t, err, "echo command not found in PATH")
+	return path
 }

@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLoadConfigWithPath_NoIncludes(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tmpDir, "config.toml")
 
 	content := []byte(`version = "1.0"
@@ -35,7 +36,7 @@ args = ["hello"]
 }
 
 func TestLoadConfigWithPath_SingleInclude(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create template file
 	templatePath := filepath.Join(tmpDir, "templates.toml")
@@ -71,7 +72,7 @@ args = ["hello"]
 }
 
 func TestLoadConfigWithPath_MultipleIncludes(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create first template file
 	template1Path := filepath.Join(tmpDir, "backup.toml")
@@ -118,7 +119,7 @@ cmd = "echo"
 }
 
 func TestLoadConfigWithPath_RelativePath(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create subdirectory
 	subDir := filepath.Join(tmpDir, "templates")
@@ -155,7 +156,7 @@ cmd = "echo"
 }
 
 func TestLoadConfigWithPath_DuplicateTemplate(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create template file
 	templatePath := filepath.Join(tmpDir, "templates.toml")
@@ -188,7 +189,7 @@ cmd = "echo"
 }
 
 func TestLoadConfigWithPath_DuplicateAcrossIncludes(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create first template file
 	template1Path := filepath.Join(tmpDir, "template1.toml")
@@ -228,7 +229,7 @@ includes = ["template1.toml", "template2.toml"]
 }
 
 func TestLoadConfigWithPath_IncludeNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	configPath := filepath.Join(tmpDir, "config.toml")
 	configContent := []byte(`version = "1.0"
@@ -246,7 +247,7 @@ includes = ["nonexistent.toml"]
 }
 
 func TestLoadConfigWithPath_InvalidTemplateFile(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create invalid template file (with disallowed field)
 	templatePath := filepath.Join(tmpDir, "invalid.toml")
@@ -296,7 +297,7 @@ args = ["hello"]
 }
 
 func TestLoadConfigWithPath_AbsolutePath(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create template file
 	templatePath := filepath.Join(tmpDir, "templates.toml")
@@ -328,7 +329,7 @@ cmd = "echo"
 }
 
 func TestLoadConfigWithPath_SymlinkBehavior(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create directory structure:
 	// tmpDir/
@@ -413,7 +414,7 @@ name = "test"
 }
 
 func TestLoadConfig_WithTemplateIncludes(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 
 	// Create main config
 	configPath := filepath.Join(tmpDir, "config.toml")

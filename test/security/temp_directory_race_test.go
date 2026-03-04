@@ -7,13 +7,14 @@ import (
 	"sync"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestTempDirectory_ConcurrentAccess tests concurrent file operations in temp directory
 func TestTempDirectory_ConcurrentAccess(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	// Number of concurrent goroutines
 	numGoroutines := 10
@@ -71,7 +72,7 @@ func TestTempDirectory_ConcurrentAccess(t *testing.T) {
 
 // TestTempDirectory_ConcurrentCleanup tests concurrent cleanup operations
 func TestTempDirectory_ConcurrentCleanup(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	// Create multiple subdirectories
 	numDirs := 20
@@ -129,7 +130,7 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 		t.Skip("Skipping race detection test in short mode")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	sharedFile := filepath.Join(tempDir, "shared.txt")
 
 	// Initialize the file
@@ -191,7 +192,7 @@ func TestTempDirectory_CleanupOnPanic(t *testing.T) {
 	// The deferred function should still execute to clean up the resource.
 	func() {
 		// Create a temporary file that we expect to be cleaned up.
-		tempFile, err = os.CreateTemp(t.TempDir(), "panic_cleanup_test_*.txt")
+		tempFile, err = os.CreateTemp(commontesting.SafeTempDir(t), "panic_cleanup_test_*.txt")
 		require.NoError(t, err)
 
 		// Defer the cleanup. This should run even if a panic occurs.

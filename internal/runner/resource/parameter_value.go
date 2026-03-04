@@ -220,7 +220,7 @@ func (s StringSliceValue) String() string {
 			result.WriteString(", ")
 		}
 		// Quote and escape each argument
-		result.WriteString(fmt.Sprintf("%q", v))
+		fmt.Fprintf(&result, "%q", v)
 	}
 	result.WriteString("]")
 	return result.String()

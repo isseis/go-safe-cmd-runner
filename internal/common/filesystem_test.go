@@ -16,12 +16,18 @@ func TestDefaultFileSystem_TempDir(t *testing.T) {
 	tempDir := fs.TempDir()
 	assert.NotEmpty(t, tempDir, "TempDir should return a non-empty path")
 
+	// Resolve symlinks (e.g., /tmp -> /private/tmp on macOS)
+	resolvedTempDir, err := filepath.EvalSymlinks(tempDir)
+	if err == nil {
+		tempDir = resolvedTempDir
+	}
+
 	// Verify the temporary directory exists
 	exists, err := fs.FileExists(tempDir)
 	assert.NoError(t, err, "FileExists failed for temp directory")
 	assert.True(t, exists, "Temporary directory does not exist")
 
-	// Verify it's a directory
+	// Verify it's a directory (IsDir uses Lstat, so path must be resolved)
 	isDir, err := fs.IsDir(tempDir)
 	assert.NoError(t, err, "IsDir failed for temp directory")
 	assert.True(t, isDir, "Temporary directory path is not a directory")

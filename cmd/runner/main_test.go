@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -180,7 +181,7 @@ func TestNewManagerProduction(t *testing.T) {
 func TestNewManagerForTestValidation(t *testing.T) {
 	t.Run("valid custom hash directory", func(t *testing.T) {
 		// Create temporary directory for testing
-		tempDir := t.TempDir()
+		tempDir := commontesting.SafeTempDir(t)
 
 		// This should work since we're in a test file
 		configErr, managerErr := runForTestWithCustomHashDir(t, tempDir)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +17,7 @@ import (
 func TestProductionNewManager(t *testing.T) {
 	t.Run("successful_manager_creation", func(t *testing.T) {
 		// Create a temporary directory to act as hash directory
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		hashDir := filepath.Join(tmpDir, "hashes")
 		err := os.MkdirAll(hashDir, 0o755)
 		require.NoError(t, err)
@@ -54,7 +55,7 @@ func TestProductionNewManager(t *testing.T) {
 
 	t.Run("security_audit_logging", func(t *testing.T) {
 		// Create a temporary directory to act as hash directory
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		hashDir := filepath.Join(tmpDir, "hashes")
 		err := os.MkdirAll(hashDir, 0o755)
 		require.NoError(t, err)
@@ -108,7 +109,7 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 	t.Run("auto_creates_missing_hash_dir_and_enables_validator", func(t *testing.T) {
 		// Point the default hash directory to a path that does not exist.
 		// New() now auto-creates the directory, so the validator should be non-nil.
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		nonexistentHashDir := filepath.Join(tmpDir, "missing")
 
 		originalHashDir := cmdcommon.DefaultHashDirectory
@@ -151,7 +152,7 @@ func TestProductionNewManagerForDryRun(t *testing.T) {
 
 	t.Run("basic_functionality_difference", func(t *testing.T) {
 		// Create temporary hash directory for production manager
-		tmpDir := t.TempDir()
+		tmpDir := commontesting.SafeTempDir(t)
 		hashDir := filepath.Join(tmpDir, "hashes")
 		err := os.MkdirAll(hashDir, 0o755)
 		require.NoError(t, err)

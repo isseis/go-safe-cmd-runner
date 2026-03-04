@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ int main() {
     return 0;
 }
 `
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test.c")
 	binFile := filepath.Join(tmpDir, "test")
 
@@ -90,7 +91,7 @@ func main() {
 	conn.Close()
 }
 `
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binFile := filepath.Join(tmpDir, "test")
 
@@ -145,7 +146,7 @@ func main() {
 	fmt.Println("hello, world")
 }
 `
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binFile := filepath.Join(tmpDir, "test")
 
@@ -200,7 +201,7 @@ func main() {
 	conn.Close()
 }
 `
-	tmpDir := t.TempDir()
+	tmpDir := commontesting.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "main.go")
 	binFile := filepath.Join(tmpDir, "test_binary")
 

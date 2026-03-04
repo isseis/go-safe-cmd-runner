@@ -28,7 +28,7 @@ func configSetupHelper(t *testing.T, systemEnv map[string]string, configTOML str
 	}
 
 	// Create temporary config file
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	configPath := filepath.Join(tempDir, "config.toml")
 	require.NoError(t, os.WriteFile(configPath, []byte(configTOML), 0o644), "Failed to write config file")
 

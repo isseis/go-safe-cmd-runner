@@ -20,22 +20,22 @@ type CommandNotAllowedError struct {
 // were evaluated.
 func (e *CommandNotAllowedError) Error() string {
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("command not allowed: %s\n", e.CommandPath))
+	fmt.Fprintf(&buf, "command not allowed: %s\n", e.CommandPath)
 
 	// If the command path was a symlink, show the resolved path
 	if e.ResolvedPath != e.CommandPath {
-		buf.WriteString(fmt.Sprintf("  - Resolved symlink to: %s\n", e.ResolvedPath))
+		fmt.Fprintf(&buf, "  - Resolved symlink to: %s\n", e.ResolvedPath)
 		buf.WriteString("  - Validation performed against the resolved path\n")
 	}
 
 	buf.WriteString("  - Not matched by global allowed_commands patterns:\n")
 	for _, pattern := range e.AllowedPatterns {
-		buf.WriteString(fmt.Sprintf("      %s\n", pattern))
+		fmt.Fprintf(&buf, "      %s\n", pattern)
 	}
 	if len(e.GroupCmdAllowed) > 0 {
 		buf.WriteString("  - Not in group-level cmd_allowed list:\n")
 		for _, allowed := range e.GroupCmdAllowed {
-			buf.WriteString(fmt.Sprintf("      %s\n", allowed))
+			fmt.Fprintf(&buf, "      %s\n", allowed)
 		}
 	} else {
 		buf.WriteString("  - Group-level cmd_allowed is not configured\n")

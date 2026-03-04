@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,7 +66,7 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 }
 
 func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	tests := []struct {
 		name             string
@@ -188,7 +189,7 @@ func TestSetupLoggerWithConfig_LogDirectoryPermissionError(t *testing.T) {
 	}
 
 	// Create a directory with read-only permissions
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 	err := os.Mkdir(readOnlyDir, 0o444)
 	require.NoError(t, err, "Failed to create read-only directory")
@@ -216,7 +217,7 @@ func TestSetupLoggerWithConfig_FailureLoggerUsesMultiHandler(t *testing.T) {
 	// like "test_key" will be redacted. This test verifies that logs are written
 	// to file and console handlers (but NOT Slack).
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 
 	// Create a buffer to capture console output
 	var consoleBuffer bytes.Buffer
@@ -289,7 +290,7 @@ func TestSetupLoggerWithConfig_FailureLoggerCircularDependencyPrevention(t *test
 	// This test verifies that failureLogger does not cause circular dependencies
 	// by ensuring it uses multiHandler directly (without redaction)
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
@@ -328,7 +329,7 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	// This test verifies that failureLogger does not include Slack handler
 	// This is important to prevent sensitive information from being sent to Slack
 
-	tempDir := t.TempDir()
+	tempDir := commontesting.SafeTempDir(t)
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
