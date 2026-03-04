@@ -253,7 +253,7 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 	}
 
 	// Log summary
-	slog.Info("Syscall analysis completed", //nolint:gosec // G706: path is a validated file path, not user-controlled log injection
+	slog.Info("Syscall analysis completed", //nolint:gosec // G706: slog's TextHandler escapes control characters (newlines, etc.), preventing log injection
 		"path", path,
 		"total_detected_events", result.Summary.TotalDetectedEvents,
 		"network_syscalls", result.Summary.NetworkSyscallCount,
@@ -264,7 +264,7 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 	// flooding logs (individual failure logs are capped at maxDecodeFailureLogs
 	// inside findSyscallInstructions).
 	if result.DecodeStats.DecodeFailureCount > 0 {
-		slog.Debug("Instruction decode failures during syscall analysis", //nolint:gosec // G706: path is a validated file path, not user-controlled log injection
+		slog.Debug("Instruction decode failures during syscall analysis", //nolint:gosec // G706: slog's TextHandler escapes control characters (newlines, etc.), preventing log injection
 			slog.String("path", path),
 			slog.Int("decode_failures", result.DecodeStats.DecodeFailureCount),
 			slog.Int("total_bytes_analyzed", result.DecodeStats.TotalBytesAnalyzed))
