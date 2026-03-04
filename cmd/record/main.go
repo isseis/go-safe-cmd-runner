@@ -143,7 +143,7 @@ func printUsage(fs *flag.FlagSet, w io.Writer) {
 	if fs == nil {
 		return
 	}
-	fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0])) //nolint:errcheck
+	fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0])) //nolint:errcheck,gosec // G705: writing to stdout/stderr, not an HTTP response
 	fs.PrintDefaults()
 }
 
@@ -153,27 +153,27 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 	if total == 1 {
 		label = "file"
 	}
-	fmt.Fprintf(stdout, "Processing %d %s...\n", total, label) //nolint:errcheck
+	fmt.Fprintf(stdout, "Processing %d %s...\n", total, label) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
 	successes := 0
 	failures := 0
 
 	for idx, filePath := range cfg.files {
-		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck
+		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
 		hashFile, contentHash, err := recorder.Record(filePath, cfg.force)
 		if err != nil {
 			failures++
 			fmt.Fprintln(stdout, "FAILED")                                          //nolint:errcheck
-			fmt.Fprintf(stderr, "Error recording hash for %s: %v\n", filePath, err) //nolint:errcheck
+			fmt.Fprintf(stderr, "Error recording hash for %s: %v\n", filePath, err) //nolint:errcheck,gosec // G705: writing to stderr, not an HTTP response
 			continue
 		}
 		successes++
-		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck
+		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
 
 		// Perform syscall analysis for static ELF binaries
 		if err := syscallCtx.analyzeFile(filePath, contentHash); err != nil {
 			// ErrNotELF, ErrNotStaticELF, and file-not-found are expected for non-analyzable files
 			if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) && !errors.Is(err, os.ErrNotExist) {
-				fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck
+				fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck,gosec // G705: writing to stderr, not an HTTP response
 			}
 		}
 	}
@@ -253,7 +253,7 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 	}
 
 	// Log summary
-	slog.Info("Syscall analysis completed",
+	slog.Info("Syscall analysis completed", //nolint:gosec // G706: path is a validated file path, not user-controlled log injection
 		"path", path,
 		"total_detected_events", result.Summary.TotalDetectedEvents,
 		"network_syscalls", result.Summary.NetworkSyscallCount,
@@ -264,7 +264,7 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 	// flooding logs (individual failure logs are capped at maxDecodeFailureLogs
 	// inside findSyscallInstructions).
 	if result.DecodeStats.DecodeFailureCount > 0 {
-		slog.Debug("Instruction decode failures during syscall analysis",
+		slog.Debug("Instruction decode failures during syscall analysis", //nolint:gosec // G706: path is a validated file path, not user-controlled log injection
 			slog.String("path", path),
 			slog.Int("decode_failures", result.DecodeStats.DecodeFailureCount),
 			slog.Int("total_bytes_analyzed", result.DecodeStats.TotalBytesAnalyzed))

@@ -107,7 +107,7 @@ func printUsage(fs *flag.FlagSet, w io.Writer) {
 	if fs == nil {
 		return
 	}
-	fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0])) //nolint:errcheck
+	fmt.Fprintf(w, "Usage: %s [flags] <file> [<file>...]\n", filepath.Base(os.Args[0])) //nolint:errcheck,gosec // G705: writing to stdout/stderr, not an HTTP response
 	fs.PrintDefaults()
 }
 
@@ -118,17 +118,17 @@ func processFiles(validator hashValidator, files []string, stdout, stderr io.Wri
 		label = "file"
 	}
 
-	fmt.Fprintf(stdout, "Verifying %d %s...\n", total, label) //nolint:errcheck
+	fmt.Fprintf(stdout, "Verifying %d %s...\n", total, label) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
 
 	successes := 0
 	failures := 0
 
 	for idx, filePath := range files {
-		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck
+		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
 		if err := validator.Verify(filePath); err != nil {
 			failures++
 			fmt.Fprintln(stdout, "FAILED")                                         //nolint:errcheck
-			fmt.Fprintf(stderr, "Verification failed for %s: %v\n", filePath, err) //nolint:errcheck
+			fmt.Fprintf(stderr, "Verification failed for %s: %v\n", filePath, err) //nolint:errcheck,gosec // G705: writing to stderr, not an HTTP response
 			continue
 		}
 		successes++

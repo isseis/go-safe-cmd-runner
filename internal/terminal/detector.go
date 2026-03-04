@@ -77,8 +77,8 @@ func (d *DefaultInteractiveDetector) IsTerminal() bool {
 	// First, check for actual TTY connections on stdout OR stderr
 	// Many integrated terminals and IDEs don't connect both streams as TTY
 	// but we should still provide interactive output if at least one is available
-	stdoutIsTTY := term.IsTerminal(int(os.Stdout.Fd()))
-	stderrIsTTY := term.IsTerminal(int(os.Stderr.Fd()))
+	stdoutIsTTY := term.IsTerminal(int(os.Stdout.Fd())) //nolint:gosec // G115: file descriptor fits in int
+	stderrIsTTY := term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // G115: file descriptor fits in int
 
 	// If either output stream is a TTY, we have a real terminal
 	if stdoutIsTTY || stderrIsTTY {

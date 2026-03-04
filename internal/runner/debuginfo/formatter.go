@@ -41,53 +41,53 @@ func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis, group
 	// Global Level section
 	buf.WriteString("[Global Level]\n")
 	if len(analysis.GlobalEnvImport) > 0 {
-		buf.WriteString(fmt.Sprintf("  env_import defined: %d mappings\n", len(analysis.GlobalEnvImport)))
+		fmt.Fprintf(&buf, "  env_import defined: %d mappings\n", len(analysis.GlobalEnvImport))
 		for _, mapping := range analysis.GlobalEnvImport {
-			buf.WriteString(fmt.Sprintf("    %s\n", mapping))
+			fmt.Fprintf(&buf, "    %s\n", mapping)
 		}
 		// Extract internal variable names
 		fromEnvVars := extractInternalVarNames(analysis.GlobalEnvImport)
-		buf.WriteString(fmt.Sprintf("  Internal variables created: %s\n", formatStringSlice(fromEnvVars, "")))
+		fmt.Fprintf(&buf, "  Internal variables created: %s\n", formatStringSlice(fromEnvVars, ""))
 	} else {
 		buf.WriteString("  env_import: not defined\n")
 	}
 	buf.WriteString("\n")
 
 	// Group Level section
-	buf.WriteString(fmt.Sprintf("[Group: %s]\n", groupName))
+	fmt.Fprintf(&buf, "[Group: %s]\n", groupName)
 
 	if len(analysis.GroupEnvImport) == 0 {
 		// Inheritance case
 		buf.WriteString("  env_import: Inheriting from Global\n")
 		if len(analysis.GlobalEnvImport) > 0 {
 			inheritedVars := extractInternalVarNames(analysis.GlobalEnvImport)
-			buf.WriteString(fmt.Sprintf("  Inherited variables (%d): %s\n",
-				len(inheritedVars), formatStringSlice(inheritedVars, "")))
+			fmt.Fprintf(&buf, "  Inherited variables (%d): %s\n",
+				len(inheritedVars), formatStringSlice(inheritedVars, ""))
 		} else {
 			buf.WriteString("  (Global has no env_import defined, so nothing to inherit)\n")
 		}
 	} else {
 		// Override case
 		buf.WriteString("  env_import: Overriding Global configuration\n")
-		buf.WriteString(fmt.Sprintf("  Group-specific mappings (%d):\n", len(analysis.GroupEnvImport)))
+		fmt.Fprintf(&buf, "  Group-specific mappings (%d):\n", len(analysis.GroupEnvImport))
 		for _, mapping := range analysis.GroupEnvImport {
-			buf.WriteString(fmt.Sprintf("    %s\n", mapping))
+			fmt.Fprintf(&buf, "    %s\n", mapping)
 		}
 
 		groupVars := extractInternalVarNames(analysis.GroupEnvImport)
-		buf.WriteString(fmt.Sprintf("  Group variables: %s\n", formatStringSlice(groupVars, "")))
+		fmt.Fprintf(&buf, "  Group variables: %s\n", formatStringSlice(groupVars, ""))
 
 		// Show unavailable variables if available (DetailLevelFull only)
 		if len(analysis.UnavailableEnvImportVariables) > 0 {
-			buf.WriteString(fmt.Sprintf("  Warning: Global variables (%s) are NOT available in this group\n",
-				formatStringSlice(analysis.UnavailableEnvImportVariables, "")))
+			fmt.Fprintf(&buf, "  Warning: Global variables (%s) are NOT available in this group\n",
+				formatStringSlice(analysis.UnavailableEnvImportVariables, ""))
 
 			// Format undefined variables with %{} syntax
 			undefinedVars := make([]string, len(analysis.UnavailableEnvImportVariables))
 			for i, v := range analysis.UnavailableEnvImportVariables {
 				undefinedVars[i] = fmt.Sprintf("%%{%s}", v)
 			}
-			buf.WriteString(fmt.Sprintf("  These variables will be undefined: %s\n", strings.Join(undefinedVars, ", ")))
+			fmt.Fprintf(&buf, "  These variables will be undefined: %s\n", strings.Join(undefinedVars, ", "))
 		}
 	}
 	buf.WriteString("\n")
@@ -98,24 +98,24 @@ func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis, group
 	case runnertypes.InheritanceModeInherit:
 		buf.WriteString("  Inheriting Global env_allowlist\n")
 		if len(analysis.GlobalAllowlist) > 0 {
-			buf.WriteString(fmt.Sprintf("  Allowlist (%d): %s\n",
-				len(analysis.GlobalAllowlist), formatStringSlice(analysis.GlobalAllowlist, "")))
+			fmt.Fprintf(&buf, "  Allowlist (%d): %s\n",
+				len(analysis.GlobalAllowlist), formatStringSlice(analysis.GlobalAllowlist, ""))
 		} else {
 			buf.WriteString("  (Global has no env_allowlist defined, so all variables allowed)\n")
 		}
 	case runnertypes.InheritanceModeExplicit:
 		buf.WriteString("  Using group-specific env_allowlist\n")
-		buf.WriteString(fmt.Sprintf("  Group allowlist (%d): %s\n",
-			len(analysis.GroupAllowlist), formatStringSlice(analysis.GroupAllowlist, "")))
+		fmt.Fprintf(&buf, "  Group allowlist (%d): %s\n",
+			len(analysis.GroupAllowlist), formatStringSlice(analysis.GroupAllowlist, ""))
 		if len(analysis.RemovedAllowlistVariables) > 0 {
-			buf.WriteString(fmt.Sprintf("  Removed from Global allowlist: %s\n",
-				formatStringSlice(analysis.RemovedAllowlistVariables, "")))
+			fmt.Fprintf(&buf, "  Removed from Global allowlist: %s\n",
+				formatStringSlice(analysis.RemovedAllowlistVariables, ""))
 		}
 	case runnertypes.InheritanceModeReject:
 		buf.WriteString("  Rejecting all environment variables\n")
 		buf.WriteString("  (Group has empty env_allowlist defined, blocking all env inheritance)\n")
 	default:
-		buf.WriteString(fmt.Sprintf("  ERROR: Unknown inheritance mode: %v\n", analysis.InheritanceMode))
+		fmt.Fprintf(&buf, "  ERROR: Unknown inheritance mode: %v\n", analysis.InheritanceMode)
 	}
 	buf.WriteString("\n")
 
@@ -147,7 +147,7 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 	}
 	sort.Strings(keys)
 
-	buf.WriteString(fmt.Sprintf("Environment variables (%d):\n", len(env.Variables)))
+	fmt.Fprintf(&buf, "Environment variables (%d):\n", len(env.Variables))
 	for _, k := range keys {
 		envVar := env.Variables[k]
 
@@ -161,8 +161,8 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 			displayValue = common.EscapeControlChars(displayValue)
 		}
 
-		buf.WriteString(fmt.Sprintf("  %s=%s\n", k, displayValue))
-		buf.WriteString(fmt.Sprintf("    (from %s)\n", envVar.Source))
+		fmt.Fprintf(&buf, "  %s=%s\n", k, displayValue)
+		fmt.Fprintf(&buf, "    (from %s)\n", envVar.Source)
 	}
 	buf.WriteString("\n")
 

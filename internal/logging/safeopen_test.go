@@ -156,11 +156,9 @@ func TestValidateLogDir_Valid(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name: "existing writable directory",
-			setupFunc: func(t *testing.T) string {
-				return commontesting.SafeTempDir(t)
-			},
-			wantErr: false,
+			name:      "existing writable directory",
+			setupFunc: commontesting.SafeTempDir,
+			wantErr:   false,
 		},
 		{
 			name: "non-existing directory that can be created",

@@ -65,16 +65,12 @@ func TestSecureExecutionFlow(t *testing.T) {
 		{
 			name: "successful_execution_with_valid_config_and_hash_dir",
 			// Only create the temporary directory; config file was unused by the test
-			setupFunc: func(t *testing.T) string {
-				return commontesting.SafeTempDir(t)
-			},
+			setupFunc:   commontesting.SafeTempDir,
 			expectError: false,
 		},
 		{
-			name: "failure_with_invalid_hash_directory",
-			setupFunc: func(t *testing.T) string {
-				return commontesting.SafeTempDir(t)
-			},
+			name:          "failure_with_invalid_hash_directory",
+			setupFunc:     commontesting.SafeTempDir,
 			hashDirectory: "/nonexistent/hash/directory",
 			expectError:   true,
 			errorContains: "hash directory not found",

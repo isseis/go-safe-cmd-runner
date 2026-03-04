@@ -848,7 +848,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := s.httpClient.Do(req)
+		resp, err := s.httpClient.Do(req) //nolint:gosec // G704: URL is a configured Slack webhook, not user-controlled
 		if err != nil {
 			lastErr = fmt.Errorf("failed to send request: %w", err)
 			slog.Warn("Failed to send Slack request", slog.Any("error", err), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
@@ -861,18 +861,18 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		}
 
 		if statusCode >= 200 && statusCode < 300 {
-			slog.Info("Slack notification sent successfully", slog.Int("status_code", statusCode), slog.String("run_id", s.runID))
-			return nil // Success
+			slog.Info("Slack notification sent successfully", slog.Int("status_code", statusCode), slog.String("run_id", s.runID)) //nolint:gosec // G706: run_id is an internal identifier, not user input
+			return nil                                                                                                             // Success
 		}
 
 		if statusCode == 429 || statusCode >= 500 {
 			lastErr = fmt.Errorf("%w: %d", ErrServerError, statusCode)
-			slog.Warn("Slack server error, retrying", slog.Int("status_code", statusCode), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID))
-			continue // Retry for rate limiting and server errors
+			slog.Warn("Slack server error, retrying", slog.Int("status_code", statusCode), slog.Int("attempt", attempt+1), slog.String("run_id", s.runID)) //nolint:gosec // G706: run_id is an internal identifier, not user input
+			continue                                                                                                                                       // Retry for rate limiting and server errors
 		}
 
 		// Client error (4xx except 429) - don't retry
-		slog.Error("Slack client error", slog.Int("status_code", statusCode), slog.String("run_id", s.runID))
+		slog.Error("Slack client error", slog.Int("status_code", statusCode), slog.String("run_id", s.runID)) //nolint:gosec // G706: run_id is an internal identifier, not user input
 		return fmt.Errorf("%w: %d", ErrClientError, statusCode)
 	}
 
