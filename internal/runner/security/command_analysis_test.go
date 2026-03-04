@@ -2411,7 +2411,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			name:          "unknown command - not an ELF binary (e.g. Mach-O on macOS)",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
-			mockResult:    elfanalyzer.NotExecutableBinary,
+			mockResult:    elfanalyzer.NotELFBinary,
 			expectNetwork: false, // Non-ELF executables are treated same as ELF with no network symbols
 		},
 		{

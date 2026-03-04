@@ -135,7 +135,7 @@ func (a *NetworkAnalyzer) isNetworkViaELFAnalysis(cmdPath string, contentHash st
 			"path", cmdPath)
 		return false
 
-	case elfanalyzer.NotExecutableBinary:
+	case elfanalyzer.NotELFBinary:
 		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
 		// or a script). The ELF analyzer cannot inspect it, but all executable
 		// formats are treated consistently: assume no network operation,
