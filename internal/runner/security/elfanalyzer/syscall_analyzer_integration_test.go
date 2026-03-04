@@ -1,4 +1,4 @@
-//go:build integration && test
+//go:build integration
 
 package elfanalyzer
 
