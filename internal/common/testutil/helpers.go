@@ -1,4 +1,4 @@
-//go:build test || performance
+//go:build test || performance || integration
 
 package testutil
 

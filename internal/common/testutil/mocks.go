@@ -1,4 +1,4 @@
-//go:build test || performance
+//go:build test || performance || integration
 
 // Package testutil provides mock implementations for testing common interfaces.
 package testutil
