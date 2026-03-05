@@ -3,10 +3,12 @@ package security
 import (
 	"log/slog"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 )
 
 // NetworkAnalyzer provides network operation detection for commands.
@@ -14,9 +16,17 @@ type NetworkAnalyzer struct {
 	binaryAnalyzer elfanalyzer.BinaryAnalyzer
 }
 
-// NewNetworkAnalyzer creates a new NetworkAnalyzer with a default StandardELFAnalyzer.
+// NewNetworkAnalyzer creates a new NetworkAnalyzer.
+// On macOS, uses StandardMachOAnalyzer; on Linux and other platforms, uses StandardELFAnalyzer.
 func NewNetworkAnalyzer() *NetworkAnalyzer {
-	return &NetworkAnalyzer{binaryAnalyzer: elfanalyzer.NewStandardELFAnalyzer(nil, nil)}
+	var analyzer elfanalyzer.BinaryAnalyzer
+	switch runtime.GOOS {
+	case "darwin":
+		analyzer = machoanalyzer.NewStandardMachOAnalyzer(nil)
+	default: // "linux", etc.
+		analyzer = elfanalyzer.NewStandardELFAnalyzer(nil, nil)
+	}
+	return &NetworkAnalyzer{binaryAnalyzer: analyzer}
 }
 
 // IsNetworkOperation checks if the command performs network operations.
