@@ -28,7 +28,7 @@ func testdataPath(name string) string {
 func skipIfNotExist(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Skipf("fixture not found (run Phase 4 to generate): %s", path)
+		t.Skipf("fixture not found (run machoanalyzer-testdata to generate): %s", path)
 	}
 }
 
@@ -57,9 +57,6 @@ func TestNormalizeSymbolName(t *testing.T) {
 // TestStandardMachOAnalyzer_NetworkSymbols_Detected tests that a C binary importing socket
 // returns NetworkDetected with detected symbols. (AC-2)
 func TestStandardMachOAnalyzer_NetworkSymbols_Detected(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("network_macho_arm64")
 	skipIfNotExist(t, path)
 
@@ -73,9 +70,6 @@ func TestStandardMachOAnalyzer_NetworkSymbols_Detected(t *testing.T) {
 // TestStandardMachOAnalyzer_NoNetworkSymbols tests that a C binary without network symbols
 // returns NoNetworkSymbols. (AC-2)
 func TestStandardMachOAnalyzer_NoNetworkSymbols(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("no_network_macho_arm64")
 	skipIfNotExist(t, path)
 
@@ -88,9 +82,6 @@ func TestStandardMachOAnalyzer_NoNetworkSymbols(t *testing.T) {
 // TestStandardMachOAnalyzer_SVCOnly_HighRisk tests that a binary containing only svc #0x80
 // returns AnalysisError wrapping ErrDirectSyscall. (AC-6)
 func TestStandardMachOAnalyzer_SVCOnly_HighRisk(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("svc_only_arm64")
 	skipIfNotExist(t, path)
 
@@ -106,9 +97,6 @@ func TestStandardMachOAnalyzer_SVCOnly_HighRisk(t *testing.T) {
 // TestStandardMachOAnalyzer_NetworkSymbols_SVCIgnored tests that network symbols take priority
 // over svc #0x80. (AC-6)
 func TestStandardMachOAnalyzer_NetworkSymbols_SVCIgnored(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	// network_macho_arm64 may also contain svc, but symbols take priority
 	path := testdataPath("network_macho_arm64")
 	skipIfNotExist(t, path)
@@ -122,9 +110,6 @@ func TestStandardMachOAnalyzer_NetworkSymbols_SVCIgnored(t *testing.T) {
 // TestStandardMachOAnalyzer_FatBinary_Arm64Selected tests that a Fat binary's arm64 slice
 // is selected and analyzed. (AC-1)
 func TestStandardMachOAnalyzer_FatBinary_Arm64Selected(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("fat_binary")
 	skipIfNotExist(t, path)
 
@@ -141,9 +126,6 @@ func TestStandardMachOAnalyzer_FatBinary_Arm64Selected(t *testing.T) {
 // detects the threat from the x86_64 slice. This prevents a cross-architecture security bypass
 // where an attacker hides a malicious slice behind a clean arm64 slice. (AC-1)
 func TestStandardMachOAnalyzer_FatBinary_AllSlicesAnalyzed(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("fat_network_x86_only")
 	skipIfNotExist(t, path)
 
@@ -159,9 +141,6 @@ func TestStandardMachOAnalyzer_FatBinary_AllSlicesAnalyzed(t *testing.T) {
 // TestStandardMachOAnalyzer_GoNetwork_Detected tests that a Go binary using the net package
 // returns NetworkDetected. (AC-3)
 func TestStandardMachOAnalyzer_GoNetwork_Detected(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("network_go_macho_arm64")
 	skipIfNotExist(t, path)
 
@@ -175,9 +154,6 @@ func TestStandardMachOAnalyzer_GoNetwork_Detected(t *testing.T) {
 // TestStandardMachOAnalyzer_GoNoNetwork_NoSymbols tests that a Go binary without network operations
 // returns NoNetworkSymbols. (AC-3)
 func TestStandardMachOAnalyzer_GoNoNetwork_NoSymbols(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("no_network_go_arm64")
 	skipIfNotExist(t, path)
 
@@ -190,9 +166,6 @@ func TestStandardMachOAnalyzer_GoNoNetwork_NoSymbols(t *testing.T) {
 // TestStandardMachOAnalyzer_NonMachO_Script tests that a non-Mach-O file (shell script)
 // returns NotSupportedBinary. (AC-1)
 func TestStandardMachOAnalyzer_NonMachO_Script(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
-	}
 	path := testdataPath("script.sh")
 	skipIfNotExist(t, path)
 
@@ -206,7 +179,11 @@ func TestStandardMachOAnalyzer_NonMachO_Script(t *testing.T) {
 // returns AnalysisError without panicking. (AC-5)
 func TestStandardMachOAnalyzer_InvalidMachO_NoPanic(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		t.Skip("Mach-O tests only run on macOS")
+		// safefileio rejects paths containing symlink components; on macOS the
+		// source tree is under a real path but t.TempDir() is under /private/tmp
+		// which is accessed via /tmp (a symlink). This test is darwin-only until
+		// the temp-file path issue is resolved separately.
+		t.Skip("Mach-O tests only run on macOS (temp file path limitation)")
 	}
 
 	// Create a temp file that looks like a Mach-O (valid magic) but has truncated content
