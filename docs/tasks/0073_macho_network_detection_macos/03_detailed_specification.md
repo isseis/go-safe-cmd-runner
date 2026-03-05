@@ -186,7 +186,7 @@ import (
 //     x86_64-only Fat binary (arm64 slice not found)
 //   - AnalysisError: Parse error, or svc #0x80 detected (high risk)
 func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) elfanalyzer.AnalysisOutput {
-    // Step 1: safefileio でファイルを安全にオープン
+    // Step 1: open file safely via safefileio
     file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
         return elfanalyzer.AnalysisOutput{
@@ -200,14 +200,14 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
         }
     }()
 
-    // Step 2: ファイルタイプチェック（正規ファイルのみ許可）
-    // Step 3: 先頭4バイトを読み取り、Mach-O / Fat マジックを確認
-    // Step 4: Mach-O ファイルとして解析（Fat は arm64 スライスを抽出）
-    // Step 5: ImportedSymbols() でインポートシンボルを取得し正規化してネットワークシンボルと照合
-    // Step 6: 一致あり → NetworkDetected を返す
-    // Step 7: 一致なし → __TEXT,__text セクションで svc #0x80 を検索
-    //   - 検出: AnalysisError (high risk) を返す
-    //   - 未検出: NoNetworkSymbols を返す
+    // Step 2: verify regular file (reject directories, symlinks, etc.)
+    // Step 3: read first 4 bytes and check Mach-O / Fat magic
+    // Step 4: parse as Mach-O (Fat: extract arm64 slice)
+    // Step 5: retrieve imported symbols, normalize, and match against network symbol table
+    // Step 6: match found → return NetworkDetected
+    // Step 7: no match → scan __TEXT,__text section for svc #0x80
+    //   - found:     return AnalysisError (high risk)
+    //   - not found: return NoNetworkSymbols
 }
 ```
 
@@ -241,20 +241,15 @@ func isMachOMagic(b []byte) bool {
 
 #### 3.3.2 ファイルオープンとマジックチェック
 
-```go
-// openMachOFile opens the Mach-O file at path.
-// Returns (machOFile, nil) on success.
-// Returns (nil, AnalysisOutput{NotSupportedBinary}) if file is not Mach-O.
-// Returns (nil, AnalysisOutput{AnalysisError}) on I/O or parse error.
-func (a *StandardMachOAnalyzer) openMachOFile(file safefileio.File) (*macho.File, *elfanalyzer.AnalysisOutput)
-```
+正規ファイル確認・マジックチェックは `AnalyzeNetworkSymbols` 本体で直接実施する。
+Mach-O / Fat バイナリのパースは `parseMachO` ヘルパーに委譲する（§3.6 参照）。
 
-実装手順:
-1. `file.Stat()` で正規ファイル確認（非正規ファイルは `AnalysisError`）
+処理手順:
+1. `file.Stat()` で正規ファイル確認（非正規ファイルは `NotSupportedBinary`）
 2. 先頭4バイトを `io.ReadFull` で読み取り
 3. `isMachOMagic` で確認 → false なら `NotSupportedBinary` を返す
-4. Fat バイナリの場合は `selectMachOFromFat` で arm64 スライスを抽出
-5. `macho.NewFile(file)` でパース → エラーなら `AnalysisError`
+4. `file.Seek(0, io.SeekStart)` で先頭に戻す
+5. `parseMachO(file, magic)` でパース・arm64 スライス抽出
 
 #### 3.3.3 Fat バイナリのスライス選択（standard_analyzer.go）
 
@@ -353,7 +348,7 @@ func containsSVCInstruction(f *macho.File) bool {
 ```
 
 **エンコード根拠**: `svc #0x80` の ARM64 命令語は `0xD4001001`。リトルエンディアンで格納すると
-`01 10 00 D4`。アセンブルで確認済み（要件書の `01 80 00 D4` は誤記、設計書参照）。
+`01 10 00 D4`。アセンブルで確認済み（要件書 FR-3.1.5 参照）。
 
 **x86_64 は対象外**: macOS のサポート対象は arm64 のみ。`f.Cpu != macho.CpuArm64` の
 ガードで非 arm64 バイナリに対しては `false` を返す。
@@ -378,7 +373,7 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
         }
     }()
 
-    // ファイルタイプ確認（正規ファイルのみ）
+    // Verify regular file (reject directories, symlinks, etc.)
     fileInfo, err := file.Stat()
     if err != nil {
         return elfanalyzer.AnalysisOutput{
@@ -393,7 +388,7 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
         }
     }
 
-    // マジックナンバー確認
+    // Check magic number
     magic := make([]byte, 4)
     if _, err := io.ReadFull(file, magic); err != nil {
         return elfanalyzer.AnalysisOutput{
@@ -413,7 +408,7 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
         }
     }
 
-    // Fat バイナリ判定と arm64 スライス抽出
+    // Detect Fat binary and extract arm64 slice
     machOFile, closer, output := a.parseMachO(file, magic)
     if output != nil {
         return *output
@@ -424,7 +419,7 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
         }
     }()
 
-    // インポートシンボル取得・正規化・照合
+    // Retrieve imported symbols, normalize, and match against network symbol table
     symbols, err := machOFile.ImportedSymbols()
     if err != nil {
         return elfanalyzer.AnalysisOutput{
@@ -451,11 +446,11 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, contentHash s
         }
     }
 
-    // svc #0x80 スキャン（シンボルが検出されなかった場合のみ）
+    // Scan for svc #0x80 (only when no network symbols were detected)
     if containsSVCInstruction(machOFile) {
         return elfanalyzer.AnalysisOutput{
             Result: elfanalyzer.AnalysisError,
-            Error:  fmt.Errorf("svc #0x80 instruction detected (direct syscall, high risk)"),
+            Error:  fmt.Errorf("binary analysis: %w", ErrDirectSyscall),
         }
     }
 
@@ -485,7 +480,7 @@ Fat バイナリの場合は `*macho.FatFile`、単一 Mach-O の場合は `*mac
 func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (*macho.File, io.Closer, *elfanalyzer.AnalysisOutput) {
     m := binary.LittleEndian.Uint32(magic)
     if m == fatMagic || m == fatCigam {
-        // Fat バイナリ: arm64 スライスを抽出
+        // Fat binary: extract arm64 slice
         fat, err := macho.NewFatFile(file)
         if err != nil {
             output := elfanalyzer.AnalysisOutput{
@@ -497,16 +492,16 @@ func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (
 
         slice, err := selectMachOFromFat(fat)
         if err != nil {
-            // arm64 スライスなし: fat を閉じてからエラーを返す
+            // No arm64 slice: close fat before returning error
             _ = fat.Close()
             output := elfanalyzer.AnalysisOutput{Result: elfanalyzer.NotSupportedBinary}
             return nil, nil, &output
         }
-        // fat を closer として返す。slice は fat が生きている間だけ有効
+        // Return fat as closer; slice is valid only while fat is alive
         return slice, fat, nil
     }
 
-    // 単一 Mach-O
+    // Single Mach-O
     machOFile, err := macho.NewFile(file)
     if err != nil {
         output := elfanalyzer.AnalysisOutput{
@@ -778,7 +773,7 @@ runtime       # runtime.GOOS による OS 判定
 
 | 受け入れ条件 | 実装箇所 |
 |------------|---------|
-| AC-1: Mach-O バイナリ判定 | `isMachOMagic`、`selectMachOFromFat`、`parseFatBinaryArm64Slice` |
+| AC-1: Mach-O バイナリ判定 | `isMachOMagic`、`parseMachO`、`selectMachOFromFat` |
 | AC-2: ネットワークシンボル検出 | `AnalyzeNetworkSymbols` Step 5-6 |
 | AC-3: Go バイナリ検出 | `AnalyzeNetworkSymbols`（`ImportedSymbols()` は Go バイナリのシンボルも返す） |
 | AC-4: フォールバック動作 | `NetworkAnalyzer.IsNetworkOperation`（変更なし、既存ロジック） |
