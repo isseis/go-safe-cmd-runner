@@ -10,6 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,43 +28,43 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 	tests := []struct {
 		name           string
 		filename       string
-		expectedResult AnalysisResult
+		expectedResult binaryanalyzer.AnalysisResult
 		expectSymbols  bool
 	}{
 		{
 			name:           "binary with socket symbols",
 			filename:       "with_socket.elf",
-			expectedResult: NetworkDetected,
+			expectedResult: binaryanalyzer.NetworkDetected,
 			expectSymbols:  true,
 		},
 		{
 			name:           "binary with ssl symbols",
 			filename:       "with_ssl.elf",
-			expectedResult: NetworkDetected,
+			expectedResult: binaryanalyzer.NetworkDetected,
 			expectSymbols:  true,
 		},
 		{
 			name:           "binary without network symbols",
 			filename:       "no_network.elf",
-			expectedResult: NoNetworkSymbols,
+			expectedResult: binaryanalyzer.NoNetworkSymbols,
 			expectSymbols:  false,
 		},
 		{
 			name:           "static binary",
 			filename:       "static.elf",
-			expectedResult: StaticBinary,
+			expectedResult: binaryanalyzer.StaticBinary,
 			expectSymbols:  false,
 		},
 		{
 			name:           "shell script (non-ELF)",
 			filename:       "script.sh",
-			expectedResult: NotELFBinary,
+			expectedResult: binaryanalyzer.NotSupportedBinary,
 			expectSymbols:  false,
 		},
 		{
 			name:           "corrupted ELF",
 			filename:       "corrupted.elf",
-			expectedResult: AnalysisError,
+			expectedResult: binaryanalyzer.AnalysisError,
 			expectSymbols:  false,
 		},
 	}
@@ -90,7 +91,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 					"unexpected symbols for %s", tt.filename)
 			}
 
-			if tt.expectedResult == AnalysisError {
+			if tt.expectedResult == binaryanalyzer.AnalysisError {
 				assert.NotNil(t, output.Error,
 					"expected error for %s", tt.filename)
 			}
@@ -103,14 +104,14 @@ func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
 
 	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "")
 
-	assert.Equal(t, AnalysisError, output.Result)
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
 }
 
 func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 	// Create analyzer with a minimal custom symbol set
-	customSymbols := map[string]SymbolCategory{
-		"my_network_func": CategorySocket,
+	customSymbols := map[string]binaryanalyzer.SymbolCategory{
+		"my_network_func": binaryanalyzer.CategorySocket,
 	}
 	analyzer := NewStandardELFAnalyzerWithSymbols(nil, nil, customSymbols)
 
@@ -126,7 +127,7 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 
 	output := analyzer.AnalyzeNetworkSymbols(absPath, "")
 	// with_socket.elf has "socket" and "connect", but our custom set only has "my_network_func"
-	assert.Equal(t, NoNetworkSymbols, output.Result,
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result,
 		"custom symbols should not match standard socket symbols")
 }
 
@@ -182,7 +183,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
-	assert.Equal(t, NetworkDetected, output.Result)
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.Len(t, output.DetectedSymbols, 2)
 	assert.Equal(t, "socket", output.DetectedSymbols[0].Name)
 	assert.Equal(t, "syscall", output.DetectedSymbols[0].Category)
@@ -217,7 +218,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
-	assert.Equal(t, NoNetworkSymbols, output.Result)
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 	assert.Empty(t, output.DetectedSymbols)
 }
 
@@ -253,7 +254,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
-	assert.Equal(t, AnalysisError, output.Result)
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
 	assert.Contains(t, output.Error.Error(), "high risk")
 }
@@ -300,7 +301,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// IsHighRisk must take precedence over HasNetworkSyscalls
-	assert.Equal(t, AnalysisError, output.Result)
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
 	assert.ErrorIs(t, output.Error, ErrSyscallAnalysisHighRisk)
 }
@@ -319,7 +320,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// Should fallback to StaticBinary when no analysis found
-	assert.Equal(t, StaticBinary, output.Result)
+	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
 }
 
 func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
@@ -344,7 +345,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// Should fallback to StaticBinary when hash doesn't match
-	assert.Equal(t, StaticBinary, output.Result)
+	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
@@ -357,5 +358,5 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
 
 	// Should behave like regular analyzer - return StaticBinary for static ELF
-	assert.Equal(t, StaticBinary, output.Result)
+	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
 }

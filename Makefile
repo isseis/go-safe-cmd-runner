@@ -1,5 +1,12 @@
 CHOWN=chown
 CHMOD=chmod
+
+# macOS uses 'wheel' as the root group, Linux uses 'root'
+ifeq ($(shell uname -s),Darwin)
+ROOT_GROUP=wheel
+else
+ROOT_GROUP=root
+endif
 MKDIR=mkdir -p
 RM=rm
 ENVCMD=env
@@ -105,7 +112,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test
+.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean
 
 all: security-check
 
@@ -137,7 +144,7 @@ $(BINARY_VERIFY): $(GO_SOURCES)
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
 	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
-	$(SUDOCMD) $(CHOWN) root:root $@
+	$(SUDOCMD) $(CHOWN) root:$(ROOT_GROUP) $@
 	$(SUDOCMD) $(CHMOD) u+s $@
 
 # Test binary build rules
@@ -249,6 +256,118 @@ elfanalyzer-testdata: $(ELFANALYZER_TEST_BINARIES)
 elfanalyzer-testdata-clean:
 	rm -f $(ELFANALYZER_TEST_BINARIES)
 
+# =============================================================================
+# Mach-O Analyzer Test Data Generation
+# =============================================================================
+# Generates test binaries for machoanalyzer package unit tests.
+# Prerequisites: Xcode Command Line Tools (macOS only)
+# On Linux, all targets are skipped (Mach-O binaries cannot be generated).
+
+MACHOANALYZER_TESTDATA_DIR := internal/runner/security/machoanalyzer/testdata
+
+MACHOANALYZER_TESTDATA_BINARIES := \
+	$(MACHOANALYZER_TESTDATA_DIR)/network_macho_arm64 \
+	$(MACHOANALYZER_TESTDATA_DIR)/no_network_macho_arm64 \
+	$(MACHOANALYZER_TESTDATA_DIR)/svc_only_arm64 \
+	$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64 \
+	$(MACHOANALYZER_TESTDATA_DIR)/fat_binary \
+	$(MACHOANALYZER_TESTDATA_DIR)/fat_network_x86_only \
+	$(MACHOANALYZER_TESTDATA_DIR)/network_go_macho_arm64 \
+	$(MACHOANALYZER_TESTDATA_DIR)/no_network_go_arm64 \
+	$(MACHOANALYZER_TESTDATA_DIR)/script.sh
+
+# Generate all machoanalyzer test fixtures (macOS only)
+machoanalyzer-testdata:
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "machoanalyzer-testdata: skipping (macOS only)"; \
+	else \
+		$(MAKE) $(MACHOANALYZER_TESTDATA_BINARIES); \
+		echo "machoanalyzer test binaries generated successfully"; \
+	fi
+
+$(MACHOANALYZER_TESTDATA_DIR)/network_macho_arm64:
+	@echo "Generating $@..."
+	@printf '#include <sys/socket.h>\nint main() { return socket(AF_INET, SOCK_STREAM, 0); }\n' > /tmp/macho_network.c
+	@cc -target arm64-apple-macos11 /tmp/macho_network.c -o $@
+	@rm -f /tmp/macho_network.c
+
+$(MACHOANALYZER_TESTDATA_DIR)/no_network_macho_arm64:
+	@echo "Generating $@..."
+	@printf '#include <stdio.h>\nint main() { return 0; }\n' > /tmp/macho_no_network.c
+	@cc -target arm64-apple-macos11 /tmp/macho_no_network.c -o $@
+	@rm -f /tmp/macho_no_network.c
+
+$(MACHOANALYZER_TESTDATA_DIR)/svc_only_arm64:
+	@echo "Generating $@..."
+	@printf '.section __TEXT,__text\n.globl _main\n_main:\n    .long 0xd4001001\n    ret\n' > /tmp/macho_svc_only.s
+	@as -arch arm64 /tmp/macho_svc_only.s -o /tmp/macho_svc_only.o
+	@ld -o $@ /tmp/macho_svc_only.o -lSystem \
+		-syslibroot $$(xcrun --sdk macosx --show-sdk-path) -arch arm64
+	@rm -f /tmp/macho_svc_only.s /tmp/macho_svc_only.o
+
+$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64: $(MACHOANALYZER_TESTDATA_DIR)/network_macho_arm64
+	@echo "Generating $@..."
+	@printf '#include <sys/socket.h>\nint main() { return socket(AF_INET, SOCK_STREAM, 0); }\n' > /tmp/macho_network.c
+	@cc -target x86_64-apple-macos11 /tmp/macho_network.c -o $@
+	@rm -f /tmp/macho_network.c
+
+$(MACHOANALYZER_TESTDATA_DIR)/fat_binary: \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_arm64 \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64
+	@echo "Generating $@..."
+	@lipo -create \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_arm64 \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64 \
+		-output $@
+
+# Fat binary with a clean arm64 slice and a network-capable x86_64 slice.
+# Used to verify that the analyzer detects threats in any slice, preventing
+# a cross-architecture security bypass (CVE-style: benign arm64 + malicious x86_64).
+$(MACHOANALYZER_TESTDATA_DIR)/fat_network_x86_only: \
+		$(MACHOANALYZER_TESTDATA_DIR)/no_network_macho_arm64 \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64
+	@echo "Generating $@..."
+	@lipo -create \
+		$(MACHOANALYZER_TESTDATA_DIR)/no_network_macho_arm64 \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64 \
+		-output $@
+
+$(MACHOANALYZER_TESTDATA_DIR)/network_go_macho_arm64:
+	@echo "Generating $@..."
+	@GOOS=darwin GOARCH=arm64 $(GOBUILD) \
+		-o $@ ./$(MACHOANALYZER_TESTDATA_DIR)/network_go/
+
+$(MACHOANALYZER_TESTDATA_DIR)/no_network_go_arm64:
+	@echo "Generating $@..."
+	@GOOS=darwin GOARCH=arm64 $(GOBUILD) \
+		-o $@ ./$(MACHOANALYZER_TESTDATA_DIR)/no_network_go/
+
+$(MACHOANALYZER_TESTDATA_DIR)/script.sh:
+	@echo "Generating $@..."
+	@printf '#!/bin/sh\n' > $@
+
+# Verify machoanalyzer test binaries by running machoanalyzer tests
+machoanalyzer-testdata-verify:
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "machoanalyzer-testdata-verify: skipping (macOS only)"; \
+	else \
+		echo "Verifying machoanalyzer test binaries..."; \
+		TEMP_FILE=$$(mktemp); \
+		if $(GOTEST) -tags test -v ./internal/runner/security/machoanalyzer/ > "$$TEMP_FILE" 2>&1; then \
+			rm -f "$$TEMP_FILE"; \
+		else \
+			cat "$$TEMP_FILE"; \
+			rm -f "$$TEMP_FILE"; \
+			echo "ERROR: machoanalyzer test binaries verification failed"; \
+			exit 1; \
+		fi; \
+		echo "machoanalyzer test binaries verified successfully"; \
+	fi
+
+# Clean machoanalyzer test binaries
+machoanalyzer-testdata-clean:
+	rm -f $(MACHOANALYZER_TESTDATA_BINARIES)
+
 hash:
 	$(foreach file, $(HASH_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -hash-dir $(DEFAULT_HASH_DIRECTORY) $(file);)
@@ -340,7 +459,7 @@ benchmark:
 	$(GOTEST) -tags test -bench=. -benchmem ./internal/runner/resource/ ./internal/runner/config
 
 coverage:
-	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$')
+	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$' | grep -v '/binaryanalyzer$$')
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

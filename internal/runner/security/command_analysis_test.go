@@ -8,7 +8,7 @@ import (
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -2343,15 +2343,15 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 	}
 }
 
-// mockELFAnalyzer is a mock implementation of elfanalyzer.ELFAnalyzer for testing.
-type mockELFAnalyzer struct {
-	result  elfanalyzer.AnalysisResult
-	symbols []elfanalyzer.DetectedSymbol
+// mockBinaryAnalyzer is a mock implementation of binaryanalyzer.BinaryAnalyzer for testing.
+type mockBinaryAnalyzer struct {
+	result  binaryanalyzer.AnalysisResult
+	symbols []binaryanalyzer.DetectedSymbol
 	err     error
 }
 
-func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) elfanalyzer.AnalysisOutput {
-	return elfanalyzer.AnalysisOutput{
+func (m *mockBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) binaryanalyzer.AnalysisOutput {
+	return binaryanalyzer.AnalysisOutput{
 		Result:          m.result,
 		DetectedSymbols: m.symbols,
 		Error:           m.err,
@@ -2364,8 +2364,8 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		name          string
 		cmdName       string
 		args          []string
-		mockResult    elfanalyzer.AnalysisResult
-		mockSymbols   []elfanalyzer.DetectedSymbol
+		mockResult    binaryanalyzer.AnalysisResult
+		mockSymbols   []binaryanalyzer.DetectedSymbol
 		mockError     error
 		expectNetwork bool
 	}{
@@ -2373,29 +2373,29 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			name:          "profile command curl",
 			cmdName:       "curl",
 			args:          []string{"http://example.com"},
-			mockResult:    elfanalyzer.NoNetworkSymbols,
+			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: true,
 		},
 		{
 			name:          "profile command git without network subcommand",
 			cmdName:       "git",
 			args:          []string{"status"},
-			mockResult:    elfanalyzer.NoNetworkSymbols,
+			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: false,
 		},
 		{
 			name:          "profile command git with network subcommand",
 			cmdName:       "git",
 			args:          []string{"fetch", "origin"},
-			mockResult:    elfanalyzer.NoNetworkSymbols,
+			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: true,
 		},
 		{
 			name:       "unknown command with network symbols detected",
 			cmdName:    "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:       []string{"-la"},
-			mockResult: elfanalyzer.NetworkDetected,
-			mockSymbols: []elfanalyzer.DetectedSymbol{
+			mockResult: binaryanalyzer.NetworkDetected,
+			mockSymbols: []binaryanalyzer.DetectedSymbol{
 				{Name: "socket", Category: "socket"},
 			},
 			expectNetwork: true,
@@ -2404,28 +2404,28 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			name:          "unknown command with no network symbols",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{"-la"},
-			mockResult:    elfanalyzer.NoNetworkSymbols,
+			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: false,
 		},
 		{
 			name:          "unknown command - not an ELF binary (e.g. Mach-O on macOS)",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
-			mockResult:    elfanalyzer.NotELFBinary,
+			mockResult:    binaryanalyzer.NotSupportedBinary,
 			expectNetwork: false, // Non-ELF executables are treated same as ELF with no network symbols
 		},
 		{
 			name:          "unknown command - static binary",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
-			mockResult:    elfanalyzer.StaticBinary,
+			mockResult:    binaryanalyzer.StaticBinary,
 			expectNetwork: false,
 		},
 		{
 			name:          "unknown command - analysis error treats as network",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
-			mockResult:    elfanalyzer.AnalysisError,
+			mockResult:    binaryanalyzer.AnalysisError,
 			mockError:     fmt.Errorf("permission denied"),
 			expectNetwork: true, // Safety: analysis failure = assume network
 		},
@@ -2433,7 +2433,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			name:          "unknown command with URL in args (fallback detection)",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{"http://example.com"},
-			mockResult:    elfanalyzer.NoNetworkSymbols,
+			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: true, // Detected via argument, not ELF
 		},
 	}
@@ -2441,13 +2441,13 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set up mock analyzer
-			mock := &mockELFAnalyzer{
+			mock := &mockBinaryAnalyzer{
 				result:  tc.mockResult,
 				symbols: tc.mockSymbols,
 				err:     tc.mockError,
 			}
 
-			analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
+			analyzer := NewNetworkAnalyzerWithBinaryAnalyzer(mock)
 			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "")
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
@@ -2458,12 +2458,12 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 func TestFormatDetectedSymbols(t *testing.T) {
 	tests := []struct {
 		name     string
-		symbols  []elfanalyzer.DetectedSymbol
+		symbols  []binaryanalyzer.DetectedSymbol
 		expected string
 	}{
 		{
 			name:     "empty symbols",
-			symbols:  []elfanalyzer.DetectedSymbol{},
+			symbols:  []binaryanalyzer.DetectedSymbol{},
 			expected: "[]",
 		},
 		{
@@ -2473,14 +2473,14 @@ func TestFormatDetectedSymbols(t *testing.T) {
 		},
 		{
 			name: "single symbol",
-			symbols: []elfanalyzer.DetectedSymbol{
+			symbols: []binaryanalyzer.DetectedSymbol{
 				{Name: "socket", Category: "socket"},
 			},
 			expected: "[socket(socket)]",
 		},
 		{
 			name: "multiple symbols",
-			symbols: []elfanalyzer.DetectedSymbol{
+			symbols: []binaryanalyzer.DetectedSymbol{
 				{Name: "socket", Category: "socket"},
 				{Name: "connect", Category: "socket"},
 				{Name: "SSL_connect", Category: "tls"},
@@ -2499,18 +2499,18 @@ func TestFormatDetectedSymbols(t *testing.T) {
 
 // TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
 func TestNewNetworkAnalyzer(t *testing.T) {
-	t.Run("creates analyzer with default elfAnalyzer", func(t *testing.T) {
+	t.Run("creates analyzer with default binaryAnalyzer", func(t *testing.T) {
 		analyzer := NewNetworkAnalyzer()
 		assert.NotNil(t, analyzer)
 	})
 
-	t.Run("with custom elfAnalyzer", func(t *testing.T) {
-		mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
-		analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
+	t.Run("with custom binaryAnalyzer", func(t *testing.T) {
+		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+		analyzer := NewNetworkAnalyzerWithBinaryAnalyzer(mock)
 		assert.NotNil(t, analyzer)
 
 		// Verify mock is used by calling IsNetworkOperation on an absolute path
-		// (ELF analysis is skipped for non-absolute paths)
+		// (binary analysis is skipped for non-absolute paths)
 		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "")
 		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic

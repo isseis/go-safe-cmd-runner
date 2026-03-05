@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 )
 
 // NetworkOperationType indicates the type of network operation a command performs
@@ -321,7 +321,7 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 }
 
 // formatDetectedSymbols formats detected symbols for logging.
-func formatDetectedSymbols(symbols []elfanalyzer.DetectedSymbol) string {
+func formatDetectedSymbols(symbols []binaryanalyzer.DetectedSymbol) string {
 	if len(symbols) == 0 {
 		return "[]"
 	}
