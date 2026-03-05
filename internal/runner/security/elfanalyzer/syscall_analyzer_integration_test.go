@@ -13,6 +13,7 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -261,7 +262,7 @@ func main() {
 	analysisOutput := stdAnalyzer.convertSyscallResult(eaResult)
 
 	// The binary uses net.Dial → socket syscall → should detect network
-	assert.Equal(t, NetworkDetected, analysisOutput.Result,
+	assert.Equal(t, binaryanalyzer.NetworkDetected, analysisOutput.Result,
 		"StandardELFAnalyzer should detect network capability from stored analysis")
 	assert.NotEmpty(t, analysisOutput.DetectedSymbols,
 		"should have detected network symbols")

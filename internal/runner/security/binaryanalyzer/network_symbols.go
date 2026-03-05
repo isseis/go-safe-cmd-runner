@@ -1,4 +1,4 @@
-package elfanalyzer
+package binaryanalyzer
 
 import "maps"
 
@@ -110,7 +110,7 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 }
 
 // GetNetworkSymbols returns a copy of the network symbol registry.
-// This is used by StandardELFAnalyzer for symbol matching.
+// This is used by binary analyzers for symbol matching.
 func GetNetworkSymbols() map[string]SymbolCategory {
 	// Return a copy to prevent external modification
 	result := make(map[string]SymbolCategory, len(networkSymbolRegistry))

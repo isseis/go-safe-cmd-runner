@@ -7,19 +7,20 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 )
 
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
-	binaryAnalyzer elfanalyzer.BinaryAnalyzer
+	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
 }
 
 // NewNetworkAnalyzer creates a new NetworkAnalyzer.
 // On macOS, uses StandardMachOAnalyzer; on Linux and other platforms, uses StandardELFAnalyzer.
 func NewNetworkAnalyzer() *NetworkAnalyzer {
-	var analyzer elfanalyzer.BinaryAnalyzer
+	var analyzer binaryanalyzer.BinaryAnalyzer
 	switch runtime.GOOS {
 	case "darwin":
 		analyzer = machoanalyzer.NewStandardMachOAnalyzer(nil)
@@ -134,18 +135,18 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
 
 	switch output.Result {
-	case elfanalyzer.NetworkDetected:
+	case binaryanalyzer.NetworkDetected:
 		slog.Debug("Binary analysis detected network symbols",
 			"path", cmdPath,
 			"symbols", formatDetectedSymbols(output.DetectedSymbols))
 		return true
 
-	case elfanalyzer.NoNetworkSymbols:
+	case binaryanalyzer.NoNetworkSymbols:
 		slog.Debug("Binary analysis found no network symbols",
 			"path", cmdPath)
 		return false
 
-	case elfanalyzer.NotSupportedBinary:
+	case binaryanalyzer.NotSupportedBinary:
 		// File format is not supported by this analyzer (e.g., ELF analyzer
 		// receiving a Mach-O, or Mach-O analyzer receiving an ELF).
 		// Assume no network operation, consistent with binary format mismatch handling.
@@ -153,14 +154,14 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			"path", cmdPath)
 		return false
 
-	case elfanalyzer.StaticBinary:
+	case binaryanalyzer.StaticBinary:
 		// Static binary: cannot determine network capability
 		// Return false for now, 2nd step (Task 0070) will handle this
 		slog.Debug("Binary analysis: static binary detected, cannot determine network capability",
 			"path", cmdPath)
 		return false
 
-	case elfanalyzer.AnalysisError:
+	case binaryanalyzer.AnalysisError:
 		// Analysis failed: treat as potential network operation for safety
 		slog.Warn("Binary analysis failed, treating as potential network operation",
 			"path", cmdPath,

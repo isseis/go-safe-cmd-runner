@@ -12,6 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
@@ -55,7 +56,7 @@ var (
 // StandardELFAnalyzer implements ELFAnalyzer using Go's debug/elf package.
 type StandardELFAnalyzer struct {
 	fs             safefileio.FileSystem
-	networkSymbols map[string]SymbolCategory
+	networkSymbols map[string]binaryanalyzer.SymbolCategory
 	privManager    runnertypes.PrivilegeManager           // optional, for execute-only binaries
 	pfv            *filevalidator.PrivilegedFileValidator // used for privileged file access
 
@@ -77,7 +78,7 @@ func NewStandardELFAnalyzer(fs safefileio.FileSystem, privManager runnertypes.Pr
 	}
 	return &StandardELFAnalyzer{
 		fs:             fs,
-		networkSymbols: GetNetworkSymbols(),
+		networkSymbols: binaryanalyzer.GetNetworkSymbols(),
 		privManager:    privManager,
 		pfv:            filevalidator.NewPrivilegedFileValidator(fs),
 	}
@@ -85,7 +86,7 @@ func NewStandardELFAnalyzer(fs safefileio.FileSystem, privManager runnertypes.Pr
 
 // NewStandardELFAnalyzerWithSymbols creates an analyzer with custom network symbols.
 // This is primarily for testing purposes.
-func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager, symbols map[string]SymbolCategory) *StandardELFAnalyzer {
+func NewStandardELFAnalyzerWithSymbols(fs safefileio.FileSystem, privManager runnertypes.PrivilegeManager, symbols map[string]binaryanalyzer.SymbolCategory) *StandardELFAnalyzer {
 	if fs == nil {
 		fs = safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	}
@@ -118,8 +119,8 @@ func NewStandardELFAnalyzerWithSyscallStore(
 	return analyzer
 }
 
-// AnalyzeNetworkSymbols implements ELFAnalyzer interface.
-func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput {
+// AnalyzeNetworkSymbols implements binaryanalyzer.BinaryAnalyzer.
+func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash string) binaryanalyzer.AnalysisOutput {
 	// Step 1: Open file safely using safefileio
 	// This prevents symlink attacks and TOCTOU race conditions.
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -130,14 +131,14 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		if errors.Is(err, os.ErrPermission) && a.privManager != nil {
 			file, err = a.pfv.OpenFileWithPrivileges(path, a.privManager)
 			if err != nil {
-				return AnalysisOutput{
-					Result: AnalysisError,
+				return binaryanalyzer.AnalysisOutput{
+					Result: binaryanalyzer.AnalysisError,
 					Error:  fmt.Errorf("failed to open file with privileges: %w", err),
 				}
 			}
 		} else {
-			return AnalysisOutput{
-				Result: AnalysisError,
+			return binaryanalyzer.AnalysisOutput{
+				Result: binaryanalyzer.AnalysisError,
 				Error:  fmt.Errorf("failed to open file: %w", err),
 			}
 		}
@@ -152,24 +153,24 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	// This prevents resource exhaustion from devices, FIFOs, or extremely large files
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return AnalysisOutput{
-			Result: AnalysisError,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to stat file: %w", err),
 		}
 	}
 
 	// Ensure it's a regular file, not a device, FIFO, socket, or directory
 	if !fileInfo.Mode().IsRegular() {
-		return AnalysisOutput{
-			Result: NotSupportedBinary,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.NotSupportedBinary,
 			Error:  fmt.Errorf("%w: %s", ErrNotRegularFile, fileInfo.Mode()),
 		}
 	}
 
 	// Check file size is reasonable
 	if fileInfo.Size() > maxFileSize {
-		return AnalysisOutput{
-			Result: AnalysisError,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("%w: %d bytes (max %d)", ErrFileTooLarge, fileInfo.Size(), maxFileSize),
 		}
 	}
@@ -177,8 +178,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	// Step 2: Check ELF magic number
 	magic := make([]byte, elfMagicLen)
 	if _, err := io.ReadFull(file, magic); err != nil {
-		return AnalysisOutput{
-			Result: AnalysisError,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read magic number: %w", err),
 		}
 	}
@@ -186,8 +187,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	if !isELFMagic(magic) {
 		// File is not in ELF format (e.g., Mach-O on macOS, PE on Windows,
 		// or a script). The ELF analyzer cannot inspect it further.
-		return AnalysisOutput{
-			Result: NotSupportedBinary,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.NotSupportedBinary,
 		}
 	}
 
@@ -197,8 +198,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	// This eliminates potential TOCTOU race conditions.
 	elfFile, err := elf.NewFile(file)
 	if err != nil {
-		return AnalysisOutput{
-			Result: AnalysisError,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to parse ELF: %w", err),
 		}
 	}
@@ -215,8 +216,8 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		if errors.Is(err, elf.ErrNoSymbols) {
 			return a.handleStaticBinary(path, file, contentHash)
 		}
-		return AnalysisOutput{
-			Result: AnalysisError,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("failed to read dynamic symbols: %w", err),
 		}
 	}
@@ -227,13 +228,13 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	// Step 5: Check for network symbols
-	var detected []DetectedSymbol
+	var detected []binaryanalyzer.DetectedSymbol
 	for _, sym := range dynsyms {
 		// Only check undefined symbols (imported from shared libraries)
 		// Defined symbols are exported, not imported
 		if sym.Section == elf.SHN_UNDEF {
 			if cat, found := a.networkSymbols[sym.Name]; found {
-				detected = append(detected, DetectedSymbol{
+				detected = append(detected, binaryanalyzer.DetectedSymbol{
 					Name:     sym.Name,
 					Category: string(cat),
 				})
@@ -242,14 +243,14 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	if len(detected) > 0 {
-		return AnalysisOutput{
-			Result:          NetworkDetected,
+		return binaryanalyzer.AnalysisOutput{
+			Result:          binaryanalyzer.NetworkDetected,
 			DetectedSymbols: detected,
 		}
 	}
 
-	return AnalysisOutput{
-		Result: NoNetworkSymbols,
+	return binaryanalyzer.AnalysisOutput{
+		Result: binaryanalyzer.NoNetworkSymbols,
 	}
 }
 
@@ -265,23 +266,23 @@ func isELFMagic(magic []byte) bool {
 // If syscallStore is configured, it attempts to lookup pre-computed syscall analysis.
 // Otherwise, it returns StaticBinary directly.
 // contentHash is a pre-computed hash in "algo:hex" format; empty string means compute it here.
-func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File, contentHash string) AnalysisOutput {
+func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
 	if a.syscallStore == nil {
-		return AnalysisOutput{Result: StaticBinary}
+		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
 	}
 
 	result := a.lookupSyscallAnalysis(path, file, contentHash)
-	if result.Result != StaticBinary {
+	if result.Result != binaryanalyzer.StaticBinary {
 		return result
 	}
 
-	return AnalysisOutput{Result: StaticBinary}
+	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
 }
 
 // lookupSyscallAnalysis checks the syscall analysis store for analysis results.
 // If contentHash is non-empty it is used directly, skipping a redundant file read.
 // Otherwise the hash is computed from the already-opened file handle (TOCTOU safe).
-func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio.File, contentHash string) AnalysisOutput {
+func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
 	hash := contentHash
 	if hash == "" {
 		var err error
@@ -290,7 +291,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio
 			slog.Debug("Failed to calculate hash for syscall analysis lookup",
 				"path", path,
 				"error", err)
-			return AnalysisOutput{Result: StaticBinary}
+			return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
 		}
 	}
 
@@ -307,7 +308,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio
 				"path", path,
 				"error", err)
 		}
-		return AnalysisOutput{Result: StaticBinary}
+		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
 	}
 
 	return a.convertSyscallResult(result)
@@ -319,37 +320,37 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio
 //   - IsHighRisk: true if any syscall number could not be determined
 //
 // These fields are guaranteed to be set according to the rules in the detailed specification.
-func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) AnalysisOutput {
+func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
 	// IsHighRisk takes precedence over NetworkDetected: when unknown syscalls are present,
 	// the analysis is incomplete and unreliable, so we must treat the result as an error
 	// even if network syscalls were also detected.
 	if result.Summary.IsHighRisk {
-		return AnalysisOutput{
-			Result: AnalysisError,
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.HighRiskReasons),
 		}
 	}
 
 	if result.Summary.HasNetworkSyscalls {
-		var symbols []DetectedSymbol
+		var symbols []binaryanalyzer.DetectedSymbol
 		if result.Summary.NetworkSyscallCount > 0 {
-			symbols = make([]DetectedSymbol, 0, result.Summary.NetworkSyscallCount)
+			symbols = make([]binaryanalyzer.DetectedSymbol, 0, result.Summary.NetworkSyscallCount)
 		}
 		for _, info := range result.DetectedSyscalls {
 			if info.IsNetwork {
-				symbols = append(symbols, DetectedSymbol{
+				symbols = append(symbols, binaryanalyzer.DetectedSymbol{
 					Name:     info.Name,
 					Category: "syscall",
 				})
 			}
 		}
-		return AnalysisOutput{
-			Result:          NetworkDetected,
+		return binaryanalyzer.AnalysisOutput{
+			Result:          binaryanalyzer.NetworkDetected,
 			DetectedSymbols: symbols,
 		}
 	}
 
-	return AnalysisOutput{Result: NoNetworkSymbols}
+	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
 }
 
 // calculateFileHash calculates SHA256 hash of the file.

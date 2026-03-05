@@ -1,8 +1,11 @@
 // Package elfanalyzer provides ELF binary analysis for detecting network operation capability.
 //
-// This package analyzes the dynamic symbol table (.dynsym) of ELF binaries to identify
-// imported network-related functions from shared libraries. It is designed to work with
-// dynamically linked binaries on Linux systems.
+// This package implements binaryanalyzer.BinaryAnalyzer for ELF binaries (Linux).
+// It analyzes the dynamic symbol table (.dynsym) of ELF binaries to identify
+// imported network-related functions from shared libraries.
+//
+// Common types (BinaryAnalyzer, AnalysisOutput, etc.) are defined in the
+// binaryanalyzer package.
 //
 // # Usage
 //

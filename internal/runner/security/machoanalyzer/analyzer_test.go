@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,7 +63,7 @@ func TestStandardMachOAnalyzer_NetworkSymbols_Detected(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.NetworkDetected, output.Result)
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.NotEmpty(t, output.DetectedSymbols, "expected at least one detected network symbol")
 }
 
@@ -79,7 +79,7 @@ func TestStandardMachOAnalyzer_NoNetworkSymbols(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.NoNetworkSymbols, output.Result)
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
 
 // TestStandardMachOAnalyzer_SVCOnly_HighRisk tests that a binary containing only svc #0x80
@@ -94,7 +94,7 @@ func TestStandardMachOAnalyzer_SVCOnly_HighRisk(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.AnalysisError, output.Result)
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
 	assert.True(t, errors.Is(output.Error, ErrDirectSyscall),
 		"expected ErrDirectSyscall, got: %v", output.Error)
@@ -113,7 +113,7 @@ func TestStandardMachOAnalyzer_NetworkSymbols_SVCIgnored(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.NetworkDetected, output.Result)
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 }
 
 // TestStandardMachOAnalyzer_FatBinary_Arm64Selected tests that a Fat binary's arm64 slice
@@ -129,7 +129,7 @@ func TestStandardMachOAnalyzer_FatBinary_Arm64Selected(t *testing.T) {
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
 	// fat_binary is built from network_macho_arm64 + x86_64, so arm64 should detect network symbols
-	assert.Equal(t, elfanalyzer.NetworkDetected, output.Result)
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.NotEmpty(t, output.DetectedSymbols)
 }
 
@@ -162,7 +162,7 @@ func TestStandardMachOAnalyzer_GoNetwork_Detected(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.NetworkDetected, output.Result)
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.NotEmpty(t, output.DetectedSymbols)
 }
 
@@ -178,7 +178,7 @@ func TestStandardMachOAnalyzer_GoNoNetwork_NoSymbols(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.NoNetworkSymbols, output.Result)
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
 
 // TestStandardMachOAnalyzer_NonMachO_Script tests that a non-Mach-O file (shell script)
@@ -193,7 +193,7 @@ func TestStandardMachOAnalyzer_NonMachO_Script(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "")
 
-	assert.Equal(t, elfanalyzer.NotSupportedBinary, output.Result)
+	assert.Equal(t, binaryanalyzer.NotSupportedBinary, output.Result)
 }
 
 // TestStandardMachOAnalyzer_InvalidMachO_NoPanic tests that a corrupted Mach-O file
@@ -217,7 +217,7 @@ func TestStandardMachOAnalyzer_InvalidMachO_NoPanic(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(tmp.Name(), "")
 
-	assert.Equal(t, elfanalyzer.AnalysisError, output.Result)
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
 }
 
@@ -227,7 +227,7 @@ func TestStandardMachOAnalyzer_FileOpenError(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "")
 
-	assert.Equal(t, elfanalyzer.AnalysisError, output.Result)
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
 }
 
@@ -241,6 +241,6 @@ func TestNetworkAnalyzer_Integration_MachO(t *testing.T) {
 
 	// /usr/bin/curl is a well-known network binary on macOS
 	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "")
-	assert.Equal(t, elfanalyzer.NetworkDetected, output.Result,
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result,
 		"expected NetworkDetected for /usr/bin/curl")
 }
