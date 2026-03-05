@@ -2343,14 +2343,14 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 	}
 }
 
-// mockELFAnalyzer is a mock implementation of elfanalyzer.ELFAnalyzer for testing.
-type mockELFAnalyzer struct {
+// mockBinaryAnalyzer is a mock implementation of elfanalyzer.BinaryAnalyzer for testing.
+type mockBinaryAnalyzer struct {
 	result  elfanalyzer.AnalysisResult
 	symbols []elfanalyzer.DetectedSymbol
 	err     error
 }
 
-func (m *mockELFAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) elfanalyzer.AnalysisOutput {
+func (m *mockBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) elfanalyzer.AnalysisOutput {
 	return elfanalyzer.AnalysisOutput{
 		Result:          m.result,
 		DetectedSymbols: m.symbols,
@@ -2411,7 +2411,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			name:          "unknown command - not an ELF binary (e.g. Mach-O on macOS)",
 			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
-			mockResult:    elfanalyzer.NotELFBinary,
+			mockResult:    elfanalyzer.NotSupportedBinary,
 			expectNetwork: false, // Non-ELF executables are treated same as ELF with no network symbols
 		},
 		{
@@ -2441,13 +2441,13 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set up mock analyzer
-			mock := &mockELFAnalyzer{
+			mock := &mockBinaryAnalyzer{
 				result:  tc.mockResult,
 				symbols: tc.mockSymbols,
 				err:     tc.mockError,
 			}
 
-			analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
+			analyzer := NewNetworkAnalyzerWithBinaryAnalyzer(mock)
 			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "")
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
@@ -2499,18 +2499,18 @@ func TestFormatDetectedSymbols(t *testing.T) {
 
 // TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
 func TestNewNetworkAnalyzer(t *testing.T) {
-	t.Run("creates analyzer with default elfAnalyzer", func(t *testing.T) {
+	t.Run("creates analyzer with default binaryAnalyzer", func(t *testing.T) {
 		analyzer := NewNetworkAnalyzer()
 		assert.NotNil(t, analyzer)
 	})
 
-	t.Run("with custom elfAnalyzer", func(t *testing.T) {
-		mock := &mockELFAnalyzer{result: elfanalyzer.NoNetworkSymbols}
-		analyzer := NewNetworkAnalyzerWithELFAnalyzer(mock)
+	t.Run("with custom binaryAnalyzer", func(t *testing.T) {
+		mock := &mockBinaryAnalyzer{result: elfanalyzer.NoNetworkSymbols}
+		analyzer := NewNetworkAnalyzerWithBinaryAnalyzer(mock)
 		assert.NotNil(t, analyzer)
 
 		// Verify mock is used by calling IsNetworkOperation on an absolute path
-		// (ELF analysis is skipped for non-absolute paths)
+		// (binary analysis is skipped for non-absolute paths)
 		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "")
 		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic

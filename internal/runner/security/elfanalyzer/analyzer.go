@@ -14,11 +14,10 @@ const (
 	// The binary does not appear to use standard network APIs.
 	NoNetworkSymbols
 
-	// NotELFBinary indicates that the file is not in ELF format.
-	// This covers all non-ELF files: native binaries in other formats
-	// (e.g., Mach-O on macOS, PE on Windows), scripts, and text files.
-	// The ELF analyzer cannot determine network capability for these files.
-	NotELFBinary
+	// NotSupportedBinary indicates that the file format is not supported
+	// by this analyzer (e.g., ELF analyzer receiving a Mach-O file,
+	// or Mach-O analyzer receiving an ELF file).
+	NotSupportedBinary
 
 	// StaticBinary indicates a statically linked binary with no .dynsym section.
 	// Network capability cannot be determined by this analyzer.
@@ -37,8 +36,8 @@ func (r AnalysisResult) String() string {
 		return "network_detected"
 	case NoNetworkSymbols:
 		return "no_network_symbols"
-	case NotELFBinary:
-		return "not_elf_binary"
+	case NotSupportedBinary:
+		return "not_supported_binary"
 	case StaticBinary:
 		return "static_binary"
 	case AnalysisError:
@@ -69,7 +68,7 @@ type AnalysisOutput struct {
 
 	// Error contains the error details when Result == AnalysisError.
 	// May also be set for other result types to provide diagnostic context
-	// (e.g., NotELFBinary when the target is not a regular file).
+	// (e.g., NotSupportedBinary when the target is not a regular file).
 	Error error
 }
 
@@ -86,23 +85,20 @@ func (o AnalysisOutput) IsIndeterminate() bool {
 	return o.Result == AnalysisError || o.Result == StaticBinary
 }
 
-// ELFAnalyzer defines the interface for ELF binary network analysis.
-type ELFAnalyzer interface {
-	// AnalyzeNetworkSymbols examines the ELF binary at the given path
-	// and determines if it contains network-related symbols in .dynsym.
+// BinaryAnalyzer defines the interface for binary network analysis,
+// independent of the binary format (ELF, Mach-O, etc.).
+type BinaryAnalyzer interface {
+	// AnalyzeNetworkSymbols examines the binary at the given path
+	// and determines if it contains network-related symbols.
 	//
-	// The path must be an absolute path to an executable file.
-	//
-	// contentHash is the pre-computed hash of the file in "algo:hex" format
-	// (e.g. "sha256:abc123..."). When non-empty it is passed directly to the
-	// syscall analysis store lookup, avoiding a redundant read of the file.
+	// contentHash is the pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
 	// Pass an empty string when no pre-computed hash is available.
 	//
 	// Returns:
-	//   - NetworkDetected: Binary contains network symbols
-	//   - NoNetworkSymbols: Binary has .dynsym but no network symbols
-	//   - NotELFBinary: File is not in ELF format (e.g., Mach-O, script)
-	//   - StaticBinary: Binary is statically linked (no .dynsym)
+	//   - NetworkDetected: Binary contains network-related symbols
+	//   - NoNetworkSymbols: Binary has no network-related symbols
+	//   - NotSupportedBinary: File format is not supported by this analyzer
+	//   - StaticBinary: Binary is statically linked (ELF-specific)
 	//   - AnalysisError: An error occurred (check Error field)
 	AnalyzeNetworkSymbols(path string, contentHash string) AnalysisOutput
 }

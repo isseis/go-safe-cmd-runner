@@ -57,7 +57,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		{
 			name:           "shell script (non-ELF)",
 			filename:       "script.sh",
-			expectedResult: NotELFBinary,
+			expectedResult: NotSupportedBinary,
 			expectSymbols:  false,
 		},
 		{

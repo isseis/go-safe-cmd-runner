@@ -6,8 +6,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-// NewNetworkAnalyzerWithELFAnalyzer creates a new NetworkAnalyzer with a custom ELFAnalyzer.
+// NewNetworkAnalyzerWithBinaryAnalyzer creates a new NetworkAnalyzer with a custom BinaryAnalyzer.
 // This function is only available in test builds.
-func NewNetworkAnalyzerWithELFAnalyzer(elfAnalyzer elfanalyzer.ELFAnalyzer) *NetworkAnalyzer {
-	return &NetworkAnalyzer{elfAnalyzer: elfAnalyzer}
+func NewNetworkAnalyzerWithBinaryAnalyzer(analyzer elfanalyzer.BinaryAnalyzer) *NetworkAnalyzer {
+	return &NetworkAnalyzer{binaryAnalyzer: analyzer}
 }
