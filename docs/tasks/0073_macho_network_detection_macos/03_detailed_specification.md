@@ -492,8 +492,7 @@ func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (
 
         slice, err := selectMachOFromFat(fat)
         if err != nil {
-            // No arm64 slice: close fat before returning error
-            _ = fat.Close()
+            // No arm64 slice: do not close fat here; caller's defer file.Close() handles cleanup
             output := elfanalyzer.AnalysisOutput{Result: elfanalyzer.NotSupportedBinary}
             return nil, nil, &output
         }
