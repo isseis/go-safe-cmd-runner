@@ -12,6 +12,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 )
 
+// gosDarwin is the GOOS value for macOS.
+const gosDarwin = "darwin"
+
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
 	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
@@ -22,7 +25,7 @@ type NetworkAnalyzer struct {
 func NewNetworkAnalyzer() *NetworkAnalyzer {
 	var analyzer binaryanalyzer.BinaryAnalyzer
 	switch runtime.GOOS {
-	case "darwin":
+	case gosDarwin:
 		analyzer = machoanalyzer.NewStandardMachOAnalyzer(nil)
 	default: // "linux", etc.
 		analyzer = elfanalyzer.NewStandardELFAnalyzer(nil, nil)

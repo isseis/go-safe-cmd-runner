@@ -17,6 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// gosDarwin is the GOOS value for macOS, used in darwin-only test guards.
+const gosDarwin = "darwin"
+
 // testdataPath returns the absolute path to a file in the testdata directory.
 func testdataPath(name string) string {
 	_, file, _, _ := runtime.Caller(0)
@@ -178,7 +181,7 @@ func TestStandardMachOAnalyzer_NonMachO_Script(t *testing.T) {
 // TestStandardMachOAnalyzer_InvalidMachO_NoPanic tests that a corrupted Mach-O file
 // returns AnalysisError without panicking. (AC-5)
 func TestStandardMachOAnalyzer_InvalidMachO_NoPanic(t *testing.T) {
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != gosDarwin {
 		// safefileio rejects paths containing symlink components; on macOS the
 		// source tree is under a real path but t.TempDir() is under /private/tmp
 		// which is accessed via /tmp (a symlink). This test is darwin-only until
@@ -259,7 +262,7 @@ func TestStandardMachOAnalyzer_FileOpenError(t *testing.T) {
 
 // TestNetworkAnalyzer_Integration_MachO tests real macOS binaries for network detection. (AC-4)
 func TestNetworkAnalyzer_Integration_MachO(t *testing.T) {
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != gosDarwin {
 		t.Skip("macOS-only integration test")
 	}
 

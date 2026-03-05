@@ -1658,7 +1658,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			realUID:     currentUID,
 			// On macOS, the default group (staff, GID 20) has multiple members,
 			// so the security check correctly denies group-writable access.
-			wantErr: runtime.GOOS == "darwin",
+			wantErr: runtime.GOOS == gosDarwin,
 		},
 		{
 			name: "group_write_unsafe_with_multiple_members",
@@ -1694,7 +1694,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			realUID:     currentUID,
 			// On macOS, the default group (staff, GID 20) has multiple members,
 			// so the security check correctly denies group-writable access.
-			wantErr: runtime.GOOS == "darwin",
+			wantErr: runtime.GOOS == gosDarwin,
 		},
 	}
 
