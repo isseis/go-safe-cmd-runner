@@ -18,6 +18,12 @@ var ErrDirectSyscall = errors.New("direct syscall instruction detected (svc #0x8
 // ErrNotRegularFile indicates the target is not a regular file.
 var ErrNotRegularFile = errors.New("not a regular file")
 
+// ErrFileTooLarge indicates the file exceeds the maximum size for analysis.
+var ErrFileTooLarge = errors.New("file too large")
+
+// maxFileSize is the maximum file size for Mach-O analysis (1 GB).
+const maxFileSize = 1 << 30
+
 // magicNumberSize is the number of bytes in a Mach-O magic number.
 const magicNumberSize = 4
 
@@ -159,6 +165,12 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.NotSupportedBinary,
 			Error:  fmt.Errorf("%w: %s", ErrNotRegularFile, fileInfo.Mode()),
+		}
+	}
+	if fileInfo.Size() > maxFileSize {
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("%w: %d bytes (max %d)", ErrFileTooLarge, fileInfo.Size(), maxFileSize),
 		}
 	}
 

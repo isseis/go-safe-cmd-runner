@@ -4,12 +4,15 @@ package machoanalyzer
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -222,6 +225,49 @@ func TestStandardMachOAnalyzer_InvalidMachO_NoPanic(t *testing.T) {
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
+}
+
+// largeFakeFileInfo implements os.FileInfo reporting a size larger than maxFileSize.
+type largeFakeFileInfo struct{ os.FileInfo }
+
+func (largeFakeFileInfo) Size() int64 { return maxFileSize + 1 }
+func (largeFakeFileInfo) Mode() os.FileMode {
+	return 0o644 // regular file
+}
+func (largeFakeFileInfo) IsDir() bool { return false }
+
+// largeFakeFile implements safefileio.File; only Stat() is exercised before the
+// size-check early return, so all other methods are no-ops.
+type largeFakeFile struct{}
+
+func (largeFakeFile) Read(_ []byte) (int, error)            { return 0, io.EOF }
+func (largeFakeFile) Write(_ []byte) (int, error)           { return 0, nil }
+func (largeFakeFile) Seek(_ int64, _ int) (int64, error)    { return 0, nil }
+func (largeFakeFile) ReadAt(_ []byte, _ int64) (int, error) { return 0, io.EOF }
+func (largeFakeFile) Close() error                          { return nil }
+func (largeFakeFile) Stat() (os.FileInfo, error)            { return largeFakeFileInfo{}, nil }
+func (largeFakeFile) Truncate(_ int64) error                { return nil }
+
+// largeFakeFS implements safefileio.FileSystem, returning largeFakeFile for any path.
+type largeFakeFS struct{}
+
+func (largeFakeFS) SafeOpenFile(_ string, _ int, _ os.FileMode) (safefileio.File, error) {
+	return largeFakeFile{}, nil
+}
+func (largeFakeFS) AtomicMoveFile(_, _ string, _ os.FileMode) error      { return nil }
+func (largeFakeFS) GetGroupMembership() *groupmembership.GroupMembership { return nil }
+func (largeFakeFS) Remove(_ string) error                                { return nil }
+
+// TestStandardMachOAnalyzer_FileTooLarge tests that a file exceeding maxFileSize
+// returns AnalysisError wrapping ErrFileTooLarge. (AC-5)
+func TestStandardMachOAnalyzer_FileTooLarge(t *testing.T) {
+	analyzer := NewStandardMachOAnalyzer(largeFakeFS{})
+	output := analyzer.AnalyzeNetworkSymbols("any_path", "")
+
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	require.Error(t, output.Error)
+	assert.True(t, errors.Is(output.Error, ErrFileTooLarge),
+		"expected ErrFileTooLarge, got: %v", output.Error)
 }
 
 // TestStandardMachOAnalyzer_FileOpenError tests that a non-existent path
