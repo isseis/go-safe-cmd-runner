@@ -271,6 +271,7 @@ MACHOANALYZER_TESTDATA_BINARIES := \
 	$(MACHOANALYZER_TESTDATA_DIR)/svc_only_arm64 \
 	$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64 \
 	$(MACHOANALYZER_TESTDATA_DIR)/fat_binary \
+	$(MACHOANALYZER_TESTDATA_DIR)/fat_network_x86_only \
 	$(MACHOANALYZER_TESTDATA_DIR)/network_go_macho_arm64 \
 	$(MACHOANALYZER_TESTDATA_DIR)/no_network_go_arm64 \
 	$(MACHOANALYZER_TESTDATA_DIR)/script.sh
@@ -316,6 +317,18 @@ $(MACHOANALYZER_TESTDATA_DIR)/fat_binary: \
 	@echo "Generating $@..."
 	@lipo -create \
 		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_arm64 \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64 \
+		-output $@
+
+# Fat binary with a clean arm64 slice and a network-capable x86_64 slice.
+# Used to verify that the analyzer detects threats in any slice, preventing
+# a cross-architecture security bypass (CVE-style: benign arm64 + malicious x86_64).
+$(MACHOANALYZER_TESTDATA_DIR)/fat_network_x86_only: \
+		$(MACHOANALYZER_TESTDATA_DIR)/no_network_macho_arm64 \
+		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64
+	@echo "Generating $@..."
+	@lipo -create \
+		$(MACHOANALYZER_TESTDATA_DIR)/no_network_macho_arm64 \
 		$(MACHOANALYZER_TESTDATA_DIR)/network_macho_x86_64 \
 		-output $@
 

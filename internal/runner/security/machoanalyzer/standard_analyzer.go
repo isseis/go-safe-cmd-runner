@@ -10,14 +10,10 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // ErrDirectSyscall indicates svc #0x80 was found, indicating a direct syscall.
 var ErrDirectSyscall = errors.New("direct syscall instruction detected (svc #0x80)")
-
-// ErrNoArm64Slice indicates a Fat binary has no arm64 slice.
-var ErrNoArm64Slice = errors.New("no arm64 slice found in Fat binary")
 
 // ErrNotRegularFile indicates the target is not a regular file.
 var ErrNotRegularFile = errors.New("not a regular file")
@@ -46,68 +42,96 @@ func isMachOMagic(b []byte) bool {
 	return false
 }
 
-// selectMachOFromFat selects the arm64 slice from a Fat binary.
-// Returns an error if no arm64 slice is found.
-func selectMachOFromFat(fat *macho.FatFile) (*macho.File, error) {
-	for _, arch := range fat.Arches {
-		if arch.Cpu == macho.CpuArm64 {
-			return arch.File, nil
+// analyzeSlice performs symbol and svc #0x80 analysis on a single *macho.File.
+// Returns the AnalysisOutput for that slice.
+func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.AnalysisOutput {
+	symbols, err := f.ImportedSymbols()
+	if err != nil {
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to get imported symbols: %w", err),
 		}
 	}
-	return nil, ErrNoArm64Slice
+
+	var detected []binaryanalyzer.DetectedSymbol
+	for _, sym := range symbols {
+		normalized := normalizeSymbolName(sym)
+		if cat, found := a.networkSymbols[normalized]; found {
+			detected = append(detected, binaryanalyzer.DetectedSymbol{
+				Name:     normalized,
+				Category: string(cat),
+			})
+		}
+	}
+
+	if len(detected) > 0 {
+		return binaryanalyzer.AnalysisOutput{
+			Result:          binaryanalyzer.NetworkDetected,
+			DetectedSymbols: detected,
+		}
+	}
+
+	if containsSVCInstruction(f) {
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("binary analysis: %w", ErrDirectSyscall),
+		}
+	}
+
+	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
 }
 
-// parseMachO parses the file as a Mach-O or Fat binary.
-// For Fat binaries, selects the arm64 slice.
+// analyzeAllFatSlices analyzes every slice in a Fat binary and returns the most
+// severe result found across all slices. This prevents an attacker from hiding a
+// malicious slice behind a benign one (e.g., a clean arm64 slice concealing a
+// network-capable x86_64 slice).
 //
-// Returns (*macho.File, io.Closer, nil) on success.
-// The caller must call closer.Close() when done with the *macho.File.
-// For Fat binaries, closer is the *macho.FatFile; for single Mach-O, closer is the *macho.File itself.
-//
-// Returns (nil, nil, &AnalysisOutput) when the binary cannot be parsed or arm64 slice is absent.
-func (a *StandardMachOAnalyzer) parseMachO(file safefileio.File, magic []byte) (*macho.File, io.Closer, *binaryanalyzer.AnalysisOutput) {
-	m := binary.LittleEndian.Uint32(magic)
-	if m == fatMagic || m == fatCigam {
-		// Fat binary: extract arm64 slice
-		fat, err := macho.NewFatFile(file)
-		if err != nil {
-			output := binaryanalyzer.AnalysisOutput{
-				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("failed to parse Fat binary: %w", err),
-			}
-			return nil, nil, &output
-		}
+// Severity order (highest to lowest): NetworkDetected > AnalysisError > NoNetworkSymbols.
+// NotSupportedBinary is returned only when no slice could be analyzed.
+func (a *StandardMachOAnalyzer) analyzeAllFatSlices(fat *macho.FatFile) binaryanalyzer.AnalysisOutput {
+	var worstError binaryanalyzer.AnalysisOutput
+	analyzedAny := false
 
-		slice, err := selectMachOFromFat(fat)
-		if err != nil {
-			// No arm64 slice: do not close fat here; caller's defer file.Close() handles cleanup
-			output := binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NotSupportedBinary}
-			return nil, nil, &output
+	for i := range fat.Arches {
+		slice := fat.Arches[i].File
+		result := a.analyzeSlice(slice)
+
+		switch result.Result {
+		case binaryanalyzer.NetworkDetected:
+			// Highest severity — return immediately.
+			return result
+		case binaryanalyzer.AnalysisError:
+			// Record but keep scanning; a later slice might be NetworkDetected.
+			worstError = result
+			analyzedAny = true
+		case binaryanalyzer.NoNetworkSymbols:
+			analyzedAny = true
 		}
-		// Return fat as closer; slice is valid only while fat is alive
-		return slice, fat, nil
+		// NotSupportedBinary or other: skip (don't count as analyzed)
 	}
 
-	// Single Mach-O
-	machOFile, err := macho.NewFile(file)
-	if err != nil {
-		output := binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("failed to parse Mach-O: %w", err),
-		}
-		return nil, nil, &output
+	if !analyzedAny {
+		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NotSupportedBinary}
 	}
-	return machOFile, machOFile, nil
+
+	if worstError.Result == binaryanalyzer.AnalysisError {
+		return worstError
+	}
+
+	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
 }
 
 // AnalyzeNetworkSymbols implements binaryanalyzer.BinaryAnalyzer.
 //
+// For Fat binaries, all slices are analyzed. The binary is flagged if any slice
+// contains network symbols or direct syscalls, preventing cross-architecture
+// security bypasses.
+//
 // Returns:
-//   - NetworkDetected: Binary imports network-related symbols
-//   - NoNetworkSymbols: No network symbols and no svc #0x80 detected
-//   - NotSupportedBinary: File is not in Mach-O format, or is a
-//     x86_64-only Fat binary (arm64 slice not found)
-//   - AnalysisError: Parse error, or svc #0x80 detected (high risk)
+//   - NetworkDetected: any slice imports network-related symbols
+//   - NoNetworkSymbols: all slices are clean (no network symbols, no svc #0x80)
+//   - NotSupportedBinary: not a Mach-O file, or Fat binary with no analyzable slices
+//   - AnalysisError: parse error, or svc #0x80 detected in any slice (high risk)
 func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) binaryanalyzer.AnalysisOutput {
 	// Step 1: open file safely via safefileio
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -158,52 +182,37 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 		}
 	}
 
-	// Detect Fat binary and extract arm64 slice
-	machOFile, closer, output := a.parseMachO(file, magic)
-	if output != nil {
-		return *output
+	// Step 5: dispatch on binary type
+	m := binary.LittleEndian.Uint32(magic)
+	if m == fatMagic || m == fatCigam {
+		fat, err := macho.NewFatFile(file)
+		if err != nil {
+			return binaryanalyzer.AnalysisOutput{
+				Result: binaryanalyzer.AnalysisError,
+				Error:  fmt.Errorf("failed to parse Fat binary: %w", err),
+			}
+		}
+		defer func() {
+			if closeErr := fat.Close(); closeErr != nil {
+				slog.Warn("error closing Fat Mach-O file", slog.Any("error", closeErr))
+			}
+		}()
+		return a.analyzeAllFatSlices(fat)
+	}
+
+	// Single-arch Mach-O
+	machOFile, err := macho.NewFile(file)
+	if err != nil {
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to parse Mach-O: %w", err),
+		}
 	}
 	defer func() {
-		if closeErr := closer.Close(); closeErr != nil {
+		if closeErr := machOFile.Close(); closeErr != nil {
 			slog.Warn("error closing Mach-O file", slog.Any("error", closeErr))
 		}
 	}()
 
-	// Step 5: retrieve imported symbols, normalize, and match against network symbol table
-	symbols, err := machOFile.ImportedSymbols()
-	if err != nil {
-		return binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("failed to get imported symbols: %w", err),
-		}
-	}
-
-	var detected []binaryanalyzer.DetectedSymbol
-	for _, sym := range symbols {
-		normalized := normalizeSymbolName(sym)
-		if cat, found := a.networkSymbols[normalized]; found {
-			detected = append(detected, binaryanalyzer.DetectedSymbol{
-				Name:     normalized,
-				Category: string(cat),
-			})
-		}
-	}
-
-	// Step 6: match found → return NetworkDetected
-	if len(detected) > 0 {
-		return binaryanalyzer.AnalysisOutput{
-			Result:          binaryanalyzer.NetworkDetected,
-			DetectedSymbols: detected,
-		}
-	}
-
-	// Step 7: no match → scan __TEXT,__text section for svc #0x80
-	if containsSVCInstruction(machOFile) {
-		return binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("binary analysis: %w", ErrDirectSyscall),
-		}
-	}
-
-	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
+	return a.analyzeSlice(machOFile)
 }

@@ -133,21 +133,24 @@ func TestStandardMachOAnalyzer_FatBinary_Arm64Selected(t *testing.T) {
 	assert.NotEmpty(t, output.DetectedSymbols)
 }
 
-// TestStandardMachOAnalyzer_FatBinary_NoArm64Slice tests that a Fat binary without an arm64 slice
-// returns NotSupportedBinary. (AC-1)
-func TestStandardMachOAnalyzer_FatBinary_NoArm64Slice(t *testing.T) {
+// TestStandardMachOAnalyzer_FatBinary_AllSlicesAnalyzed tests that when a Fat binary contains
+// a malicious x86_64 slice (with network symbols) and a benign arm64 slice, the analyzer
+// detects the threat from the x86_64 slice. This prevents a cross-architecture security bypass
+// where an attacker hides a malicious slice behind a clean arm64 slice. (AC-1)
+func TestStandardMachOAnalyzer_FatBinary_AllSlicesAnalyzed(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("Mach-O tests only run on macOS")
 	}
-	path := testdataPath("network_macho_x86_64")
+	path := testdataPath("fat_network_x86_only")
 	skipIfNotExist(t, path)
 
-	// Wrap the x86_64-only binary in a fat file structure by testing via fat parsing path.
-	// Since we can't easily create an x86_64-only fat binary without lipo,
-	// we test the selectMachOFromFat logic indirectly via a mock approach:
-	// We use the x86_64 single-arch binary which will not be a Fat binary,
-	// but the Fat "no arm64 slice" case is tested via unit test of selectMachOFromFat.
-	t.Skip("x86_64-only Fat binary fixture not available; selectMachOFromFat tested via unit test")
+	analyzer := NewStandardMachOAnalyzer(nil)
+	output := analyzer.AnalyzeNetworkSymbols(path, "")
+
+	// Even though the arm64 slice has no network symbols, the x86_64 slice does.
+	// The analyzer must detect the threat from any slice.
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+	assert.NotEmpty(t, output.DetectedSymbols)
 }
 
 // TestStandardMachOAnalyzer_GoNetwork_Detected tests that a Go binary using the net package
