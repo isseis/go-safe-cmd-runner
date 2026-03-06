@@ -138,11 +138,13 @@ ELF バイナリの `.dynamic` セクションから `DT_NEEDED` エントリを
 2. 各直接依存を `(parent_path, soname)` の組として、FR-3.1.2 のパス解決で `resolved_path` を求める
 3. `LibEntry { SOName: soname, ParentPath: parent_path, Path: resolved_path, Hash: ... }` を記録する
 4. `resolved_path` を次の親として（`parent_path = resolved_path`）、その `DT_NEEDED` を読み取る
-5. 既に処理済みの `resolved_path`（`visited` セット）はスキップする
+5. 既に処理済みの `(resolved_path, inherited_rpath_context)`（`visited` セット）はスキップする
 6. 未処理ライブラリがなくなるまで繰り返す
 
+ここで `inherited_rpath_context` は FR-3.1.2「間接依存の解決に適用する検索パスの決定ルール」で `resolved_path` の子依存解決に使われる、呼び出し元チェーンから継承された `DT_RPATH` エントリの順序付きリストである。
+
 **循環依存の防止**:
-処理済みライブラリのフルパスを `visited` セットで管理し、同一パスを 2 度以上解析しないこと。Linux のライブラリ依存グラフに循環はないが、実装上は必ず防御する。
+処理済みライブラリの `(フルパス, 継承 RPATH コンテキスト)` の組を `visited` セットで管理し、同一の組を 2 度以上解析しないこと。`resolved_path` 単独でのスキップは禁止する。同一 `.so` 実体でも親チェーンが異なれば継承 RPATH が変わり、その子依存の解決結果が変わり得るためである（FR-3.2.1 の `ParentPath` の役割を参照）。Linux のライブラリ依存グラフに循環はないが、実装上は必ず防御する。
 
 **解決深度の上限**:
 再帰深度の上限を設けること（推奨: 20 段）。上限超過時は `record` をエラーで終了し、記録を行わない。通常の Linux バイナリの依存深度は 3〜5 段であるため、上限超過は異常な構成または循環依存の見落としを示す。不完全な依存ツリーを記録することを避けるため、FR-3.1.7 と同様に失敗扱いとする。
