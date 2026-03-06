@@ -219,8 +219,9 @@ type Record struct {
     // Only present for ELF binaries with DT_NEEDED entries.
     DynLibDeps      *DynLibDepsData      `json:"dyn_lib_deps,omitempty"`
     // HasDynamicLoad indicates that dlopen/dlsym/dlvsym symbols were found in the binary
-    // at record time. When true, runner blocks execution because runtime-loaded libraries
-    // cannot be statically verified.
+    // at record time. When true, this is treated as a high-risk signal (equivalent to
+    // NetworkDetected) by the runner via isNetworkViaBinaryAnalysis(); runtime-loaded
+    // libraries cannot be statically verified.
     HasDynamicLoad  bool                 `json:"has_dynamic_load,omitempty"`
 }
 ```
