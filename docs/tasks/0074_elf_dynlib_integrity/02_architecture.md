@@ -124,9 +124,11 @@ sequenceDiagram
     participant SFO as "safefileio"
     participant FAS as "fileanalysis.Store"
 
-    RC->>FV: Record(filePath, force)
+    Note over RC,FAS: フェーズ 1: ハッシュ計算（永続化なし）
+    RC->>FV: ComputeHash(filePath)
     FV-->>RC: hashFilePath, contentHash
 
+    Note over RC,FAS: フェーズ 2: DynLibDeps 解析（永続化なし）
     RC->>DLA: Analyze(filePath)
     DLA->>SFO: SafeOpenFile(filePath)
     DLA->>DLA: ELF パース、DT_NEEDED 取得
@@ -143,8 +145,10 @@ sequenceDiagram
         DLA->>DLA: 間接依存の DT_NEEDED を取得
     end
 
-    DLA-->>RC: DynLibDepsData
-    RC->>FAS: Update(filePath, record.DynLibDeps = data)
+    DLA-->>RC: DynLibDepsData（エラー時は record をエラー終了）
+
+    Note over RC,FAS: フェーズ 3: 一括永続化（両フェーズ成功時のみ）
+    RC->>FAS: Update(filePath, contentHash, dynLibDeps)
 ```
 
 ### 2.4 データフロー: `runner` フェーズ（2 段階検証）
@@ -563,25 +567,52 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 // dynlibAnalysisContext holds resources for dynamic library analysis.
 type dynlibAnalysisContext struct {
     analyzer *dynlibanalysis.DynLibAnalyzer
-    store    *fileanalysis.Store
 }
 
-// analyzeFile records dynamic library dependencies for dynamic ELF binaries.
-// Returns nil for non-ELF files or static ELF binaries (no DT_NEEDED).
-func (ctx *dynlibAnalysisContext) analyzeFile(filePath string, contentHash string) error
+// computeDynLibDeps analyzes dynamic library dependencies for dynamic ELF binaries
+// and returns the result without persisting. Returns nil for non-ELF files or
+// static ELF binaries (no DT_NEEDED). Returns an error if library resolution fails
+// or recursion depth is exceeded—callers must not persist the record in this case.
+func (ctx *dynlibAnalysisContext) computeDynLibDeps(filePath string) (*fileanalysis.DynLibDepsData, error)
 ```
 
-`processFiles()` のフローに統合:
+`processFiles()` のフローに統合（ハッシュ計算・解析を先に済ませ、最後に一括永続化）:
 
 ```
 processFiles():
   for each file:
-    1. recorder.Record(filePath, force)          ← 既存
-    2. syscallCtx.analyzeFile(filePath, hash)     ← 既存（静的 ELF 用）
-    3. dynlibCtx.analyzeFile(filePath, hash)      ← NEW（動的 ELF 用）
+    1. contentHash = recorder.ComputeHash(filePath, force)   ← ハッシュ計算のみ（永続化なし）
+    2. dynLibDeps = dynlibCtx.computeDynLibDeps(filePath)    ← NEW: 解析のみ（永続化なし）
+       ├─ エラー時（解決失敗・深度超過）→ failures++; continue  ← 記録しない
+       └─ ErrNotELF / ErrNotDynELF → dynLibDeps = nil（続行）
+    3. syscallCtx.analyzeFile(filePath, hash)                ← 既存（静的 ELF 用、非致命的）
+    4. store.Update(filePath, contentHash, dynLibDeps)       ← 全フェーズ成功後に一括永続化
 ```
 
 ### 3.8 `runner` 検証フローの拡張
+
+#### 3.8.1 `FileValidator` インターフェースへの `LoadRecord` 追加
+
+`Manager` が持つのは `filevalidator.FileValidator` インターフェースのみであり、具象型 `*Validator` の `GetStore()` には直接アクセスできない。`DynLibDeps` を読み取るため、`FileValidator` に `LoadRecord` を追加する。
+
+```go
+// internal/filevalidator/validator.go
+
+// FileValidator interface defines the basic file validation methods
+type FileValidator interface {
+    Record(filePath string, force bool) (string, string, error)
+    Verify(filePath string) error
+    VerifyWithHash(filePath string) (string, error)
+    VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
+    VerifyAndRead(filePath string) ([]byte, error)
+    VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
+    // LoadRecord returns the full analysis record for the given file path.
+    // Used by verification.Manager to access DynLibDeps without exposing the store directly.
+    LoadRecord(filePath string) (*fileanalysis.Record, error)
+}
+```
+
+#### 3.8.2 `verifyDynLibDeps` の実装
 
 `verification.Manager.VerifyGroupFiles()` の検証ループ内に、`DynLibDeps` の検証を追加する。
 
@@ -591,7 +622,7 @@ processFiles():
 // verifyDynLibDeps performs dynamic library integrity verification
 // when a DynLibDeps snapshot is present in the analysis record.
 func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
-    // 1. Load analysis record from store
+    // 1. m.fileValidator.LoadRecord(cmdPath) でレコードを取得
     // 2. If DynLibDeps is nil:
     //    a. Check if target is ELF → error (record re-run required)
     //    b. Non-ELF → return nil (no verification needed)
@@ -1041,7 +1072,9 @@ flowchart TB
 | `dynlibanalysis` | `fileanalysis` | `DynLibDepsData`, `LibEntry`, `Store` |
 | `dynlibanalysis` | `safefileio` | 安全なファイル読み取り |
 | `cmd/record` | `dynlibanalysis` | `DynLibAnalyzer` |
+| `filevalidator` | `fileanalysis` | `FileValidator` インターフェースに `LoadRecord` 追加（拡張） |
 | `verification` | `dynlibanalysis` | `DynLibVerifier` |
+| `verification` | `filevalidator` | `FileValidator.LoadRecord` 経由で `DynLibDeps` 読み取り |
 | `binaryanalyzer` | — | `CategoryDynamicLoad` 追加（自己完結） |
 
 ### 10.2 アーキテクチャリスク
