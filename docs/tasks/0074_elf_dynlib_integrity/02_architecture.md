@@ -251,6 +251,14 @@ type LibEntry struct {
 
     // Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
     Hash string `json:"hash"`
+
+    // InheritedRPATH is the ordered list of RPATH entries inherited from ancestor ELFs
+    // at record time, after $ORIGIN expansion. Required for Stage 2 re-resolution at
+    // runner time: the same ParentPath ELF may be reached via different dependency
+    // chains with different inherited RPATH contexts, producing different resolution
+    // results for this entry's children. Storing it here avoids traversing the flat
+    // Libs list to reconstruct the ancestor chain.
+    InheritedRPATH []string `json:"inherited_rpath,omitempty"`
 }
 ```
 
@@ -390,6 +398,8 @@ func NewDynLibAnalyzer(fs safefileio.FileSystem) (*DynLibAnalyzer, error)
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
 // ELF binary, computes their hashes, and returns a DynLibDepsData snapshot.
+// Each LibEntry is populated with InheritedRPATH from the resolution context at
+// the time of recording, enabling accurate ResolveContext reconstruction at runner time.
 //
 // Returns nil (not an error) if the file is not ELF or has no DT_NEEDED entries.
 // Returns an error if any library cannot be resolved (FR-3.1.7).
@@ -511,7 +521,7 @@ flowchart TD
     HashError["エラー:<br/>ハッシュ不一致<br/>(soname, expected, actual)"]
 
     Stage2["第 2 段階: パス解決突合"]
-    ReResolve["LibraryResolver.Resolve<br/>(entry.SOName, ctx)<br/>※ LD_LIBRARY_PATH 含む"]
+    ReResolve["LibraryResolver.Resolve<br/>(entry.SOName, ctx)<br/>ctx = ParentPath の OwnRPATH/RUNPATH<br/>+ entry.InheritedRPATH<br/>※ LD_LIBRARY_PATH 含む"]
     ComparePath{"resolvedPath ==<br/>entry.Path?"}
     PathError["エラー:<br/>パス不一致<br/>(soname, recorded, resolved)"]
 
@@ -537,6 +547,10 @@ flowchart TD
     class EmptyError,HashError,PathError highRisk;
     class AllPass safe;
 ```
+
+**Stage 2 における `ResolveContext` の再構築**:
+
+`ParentPath` の ELF を再読して `OwnRPATH`/`OwnRUNPATH` を取得し、`entry.InheritedRPATH` と合わせて `ResolveContext` を構成する。`InheritedRPATH` が必要な理由は、同一 `ParentPath` でも依存チェーンによって継承 RPATH が異なるためである（Section 3.4 の `visited` キー設計参照）。`ResolveContext` を `LibEntry` 単位で正確に再現することで、`record` 時と同じ解決結果が得られることが保証される。
 
 ### 3.6 `dlopen` シンボル検出（方策 B）
 
