@@ -52,11 +52,11 @@ ELF バイナリの `.dynamic` セクションから `DT_NEEDED` エントリを
 
 #### FR-3.1.2: ライブラリパスの解決順序と RPATH/RUNPATH の適用スコープ
 
-`DT_NEEDED` のライブラリ名から実際のファイルパスを決定する際、以下の優先順位で解決すること。これは Linux の動的リンカー（`ld.so`）の仕様に準拠する：
+`DT_NEEDED` のライブラリ名から実際のファイルパスを決定する際、以下の優先順位で解決すること。これは Linux の動的リンカー（`ld.so`）の仕様に準拠する（`ld.so(8)` 参照）：
 
 1. **`DT_RPATH`** （`DT_RUNPATH` が存在しない場合のみ有効、適用スコープに注意）
-2. **`LD_LIBRARY_PATH`** （後述の通り `record` 時は使用しない）
-3. **`DT_RUNPATH`** （`DT_RPATH` より優先される場合、適用スコープに注意）
+2. **`DT_RUNPATH`** （適用スコープに注意）
+3. **`LD_LIBRARY_PATH`** （後述の通り `record` 時は使用しない）
 4. **`/etc/ld.so.cache`**
 5. **デフォルトパス**: `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64`（アーキテクチャに応じて）
 
@@ -75,8 +75,8 @@ ELF バイナリの `.dynamic` セクションから `DT_NEEDED` エントリを
 
 1. **`A.so` 自身の `DT_RPATH`**（`A.so` に `DT_RUNPATH` がない場合のみ）
 2. **呼び出し元チェーンを遡って継承される `DT_RPATH`**: `A.so` の親、さらにその親... と遡り、`DT_RUNPATH` を持たない ELF の `DT_RPATH` を順に追加する（`DT_RUNPATH` を持つ ELF に到達した時点で継承を打ち切る）
-3. **`LD_LIBRARY_PATH`**（`record` 時は使用しない）
-4. **`A.so` 自身の `DT_RUNPATH`**
+3. **`A.so` 自身の `DT_RUNPATH`**
+4. **`LD_LIBRARY_PATH`**（`record` 時は使用しない）
 5. **`/etc/ld.so.cache`**
 6. **デフォルトパス**
 
