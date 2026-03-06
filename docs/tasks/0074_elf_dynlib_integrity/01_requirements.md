@@ -10,16 +10,18 @@
 
 2. **動的リンクライブラリ経由のネットワーク呼び出し**: バイナリが直接はネットワーク API を呼ばず、`DT_NEEDED` で明示的にリンクしている共有ライブラリ（`.so`）がネットワーク API を提供・呼び出す。バイナリの `.dynsym` だけを見ても、ライブラリ自身のシンボルは見えない。また、記録時から共有ライブラリが差し替えられた場合にも検出できない。
 
-これらのリスクに対応するため、以下の 2 つの機能拡張を行う：
+これらのリスクに対応するため、以下の 3 つの機能拡張を行う。方策 A・B はそれぞれ 2 つのケースに対する基本的な対策であり、方策 C はケース 2（依存ライブラリ経由のネットワーク呼び出し）に対する精度向上の補完的手法である：
 
-- **方策 A**: `record` 時に ELF バイナリの `DT_NEEDED` から依存ライブラリを解決し、各ライブラリのフルパスとハッシュを記録する。`runner` 実行時に現在のライブラリのハッシュと照合し、差し替えを検出する。
-- **方策 B**: タスク 0069 の検出対象シンボルリストに `dlopen`, `dlsym`, `dlvsym` を追加し、動的ロード使用バイナリを安全側に倒してリスクありと判定する。
+- **方策 A**: `record` 時に ELF バイナリの `DT_NEEDED` から依存ライブラリを解決し、各ライブラリのフルパスとハッシュを記録する。`runner` 実行時に現在のライブラリのハッシュと照合し、差し替えを検出する。（ケース 2 への対策）
+- **方策 B**: タスク 0069 の検出対象シンボルリストに `dlopen`, `dlsym`, `dlvsym` を追加し、動的ロード使用バイナリを安全側に倒してリスクありと判定する。（ケース 1 への対策）
+- **方策 C**: 依存ライブラリ（`.so`）の `.text` セクションを逆アセンブルし、ネットワーク API を呼び出す可能性のある exported 関数を特定する。バイナリの `.text` を逆アセンブルして、それらの関数を呼び出しているかどうかを確認し、依存ライブラリ経由のネットワーク使用を関数単位で検出する。（ケース 2 に対する方策 A の補完。方策 A はライブラリの差し替えを検出するが、バイナリが依存ライブラリのネットワーク関連関数を実際に呼び出しているかどうかは判定できない。方策 C はこの精度不足を補う。）
 
 ### 1.2 目的
 
 - 動的リンクライブラリの差し替え（供給チェーン攻撃、環境の変更）を検出する
 - `dlopen()` を使用するバイナリを high-risk として検出する
 - `record` 時と `runner` 実行時の環境の一貫性を保証する
+- 依存ライブラリ経由のネットワーク使用を関数呼び出しグラフ解析により検出し、false positive を抑制する
 
 ### 1.3 スコープ
 
@@ -238,8 +240,8 @@ type LibEntry struct {
 | 状態 | 判定 | 動作 |
 |------|------|------|
 | `DynLibDeps` が記録されておらず、対象が非 ELF バイナリ | 正常 | 従来通り実行を許可 |
-| `DynLibDeps` が記録されておらず、対象が ELF バイナリ | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
-| 全ライブラリについて第 1・第 2 段階ともに一致 | 正常 | 実行を許可 |
+| `DynLibDeps` または `DynLibNetworkReach` が記録されておらず、対象が ELF バイナリ | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
+| 全ライブラリについて第 1・第 2 段階ともに一致 | 正常 | 実行を許可（`DynLibNetworkReach.NetworkReachable` の値は runner の実行許否に影響しない）|
 | 第 1 段階: ハッシュ不一致 | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
 | 第 2 段階: 解決パスが `LibEntry.Path` と不一致 | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
 | `path: ""` のエントリが存在する | エラー | 実行をブロック。不完全な記録として `record` の再実行を要求するエラーを返す |
@@ -278,6 +280,108 @@ type LibEntry struct {
 CategoryDynamicLoad SymbolCategory = "dynamic_load"
 ```
 
+### 3.5 依存ライブラリ経由のネットワーク使用検出（方策 C）
+
+#### FR-3.5.1: 概要と目的
+
+バイナリが直接ネットワーク API を呼ばず、依存ライブラリ経由でネットワーク操作を行うケースを、`.text` セクションの逆アセンブルによる関数呼び出しグラフ解析で検出する。
+
+タスク 0069 では `.dynsym` に含まれるシンボル名を検査するが、この手法では「そのバイナリがネットワーク API を使うライブラリをリンクしているかどうか」しか分からない。たとえば `libssl.so.3` をリンクしているバイナリが実際に SSL 通信を行うかどうか、それとも TLS を使わない関数しか呼んでいないかどうかは判定できない。方策 C はこの精度を向上させ、「バイナリが呼び出す関数の経路上にネットワーク API が存在するかどうか」を静的に解析する。
+
+#### FR-3.5.2: `.so` 内のネットワーク到達可能関数の特定
+
+**解析対象ライブラリの範囲**:
+FR-3.1.6 の再帰的解決で得られた依存ツリー全体（直接依存および全間接依存）の各 `.so` に対して解析を行う。`libc.so.6` 等の基本ライブラリも対象に含める。ただし、同一パスの `.so` は FR-3.1.6 と同様に visited セットで重複解析を防ぐ。
+
+依存ライブラリ（`.so`）ごとに、ネットワーク API に到達可能な exported 関数の集合（`NetworkReachableFuncs`）を求める手順：
+
+**ステップ 1: PLT エントリとネットワーク API シンボルの対応付け**
+
+`.so` の `.dynsym` セクション（`SHN_UNDEF` エントリ）からネットワーク API シンボルのリストを取得する。
+
+PLT エントリのアドレスと対応するシンボル名の対応表を構築するために、`.rela.plt` セクションを使用する：
+- `.rela.plt` の各エントリには `r_offset`（GOT エントリのアドレス）と `r_info`（シンボルインデックス）が含まれる
+- `r_info` からシンボル名を取得し、ネットワーク API シンボルであるか確認する
+- PLT エントリのアドレスは通常、PLT ベースアドレス + (インデックス × PLT エントリサイズ) で計算できる（x86_64: エントリサイズ 16 バイト、arm64: エントリサイズ 16 バイト）
+
+**ステップ 2: `.text` のスキャンによる直接ネットワーク呼び出し関数の特定**
+
+`.so` の `.text` セクションを逆アセンブルし（既存の `elfanalyzer.MachineCodeDecoder` を使用）、各 CALL 命令（x86_64: `CALL rel32`、arm64: `BL`）のターゲットアドレスを抽出する。ターゲットアドレスが PLT エントリの範囲内のネットワーク API である場合、その CALL 命令を含む関数をネットワーク呼び出し関数として記録する。
+
+CALL 命令の所属関数を特定するために、`.symtab` または `.dynsym` の関数シンボル（`STT_FUNC`）の開始アドレスと終了アドレス（開始 + サイズ）を使用する。
+
+**ステップ 3: 内部呼び出し伝播**
+
+`.text` 内の関数呼び出しグラフを構築し、ネットワーク呼び出し関数を呼び出す（直接・間接）全関数を求める。
+
+伝播アルゴリズム（BFS）:
+1. ネットワーク呼び出し関数の集合を初期キューとして追加する
+2. キューから関数 `f` を取り出す
+3. `f` を呼び出す全関数 `g` を呼び出しグラフから探索する
+4. `g` が未処理であれば `NetworkReachableFuncs` に追加し、キューに追加する
+5. キューが空になるまで繰り返す
+
+**ステップ 4: exported 関数への絞り込み**
+
+`NetworkReachableFuncs` のうち、`.dynsym` に exported として存在する関数名のみを結果として保持する。これが「この `.so` においてネットワークに到達可能な公開 API」となる。
+
+#### FR-3.5.3: バイナリからの `.so` ネットワーク到達可能関数の呼び出し検出
+
+バイナリについて、依存 `.so` のネットワーク到達可能 exported 関数を呼び出しているかどうかを確認する手順：
+
+**ステップ 1: バイナリの PLT エントリと依存 `.so` のネットワーク到達可能関数の対応付け**
+
+バイナリの `.rela.plt` を解析し、各 PLT エントリのシンボル名を取得する。そのシンボル名が、依存 `.so` の `NetworkReachableFuncs` に含まれる場合、そのバイナリの PLT エントリを「ネットワーク到達可能関数への呼び出しエントリ」として記録する。
+
+**ステップ 2: バイナリの `.text` スキャン**
+
+バイナリの `.text` セクションを逆アセンブルし、CALL 命令のターゲットが「ネットワーク到達可能関数への呼び出しエントリ」に該当するものがあれば、`NetworkDetected` を返す。
+
+#### FR-3.5.4: PLT エントリアドレス特定の代替手法（将来オプション）
+
+FR-3.5.2 ステップ 1 の厳密な PLT エントリアドレス計算が特定のアーキテクチャやリンカーバリアントで困難であることが判明した場合の代替手法として、以下の近似手法を検討する：
+
+- `.plt` セクション全体のアドレス範囲（`plt_start` 〜 `plt_end`）をネットワーク PLT の可能性範囲として使用する
+- CALL 命令のターゲットがこの範囲内であれば「ネットワーク PLT 呼び出しの可能性あり」として扱う
+
+**本タスクの初期実装では FR-3.5.2 の厳密な実装を採用する。** この近似手法は、ネットワーク API 以外の PLT エントリへの呼び出しを誤って検出する false positive が生じ得るため、本タスクでは採用しない。
+
+#### FR-3.5.5: アーキテクチャサポートと間接呼び出しの扱い
+
+- サポート対象アーキテクチャ: x86_64 および arm64（既存 `MachineCodeDecoder` を再利用）
+- 間接呼び出し（`CALL [reg]`、`BLR`）は追跡対象外とする。間接呼び出しは静的解析では解決できないため、見逃し（false negative）が生じ得ることを許容する
+- 末尾呼び出し最適化（tail call）: x86_64 の `JMP rel32` および arm64 の `B label` も CALL 命令と同様に扱う（呼び出しとして追跡する）
+
+#### FR-3.5.6: 解析結果の `record` への保存
+
+方策 C の解析結果を `fileanalysis.Record` に保存する：
+
+```go
+// DynLibNetworkReach contains the result of call graph analysis
+// for network reachability via dependency libraries.
+// Only present for ELF binaries with DT_NEEDED entries.
+DynLibNetworkReach *DynLibNetworkReachData `json:"dyn_lib_network_reach,omitempty"`
+```
+
+```go
+type DynLibNetworkReachData struct {
+    RecordedAt      time.Time `json:"recorded_at"`
+    // NetworkReachable is true if call graph analysis determined that
+    // the binary can reach network APIs via dependency libraries.
+    NetworkReachable bool      `json:"network_reachable"`
+    // ReachablePaths は検出された到達経路（診断目的）。形式は "<SOName>:<関数名>"。
+    // 例: ["libssl.so.3:SSL_connect", "libssl.so.3:SSL_read"]
+    // NetworkReachable == true の場合にのみ設定される。
+    ReachablePaths  []string  `json:"reachable_paths,omitempty"`
+}
+```
+
+#### FR-3.5.7: `runner` 実行時の判定への反映
+
+`runner` 実行時、`DynLibNetworkReach.NetworkReachable` が `true` であれば、バイナリを `NetworkDetected` として扱う（タスク 0069 の `.dynsym` 検査で `NetworkDetected` となる場合と同等）。
+
+`DynLibNetworkReach` が記録されていない既存の ELF バイナリに対しては、`record --force` の再実行を要求するエラーを返す（FR-3.3.2 の `DynLibDeps` と同様の扱い）。
+
 ## 4. 非機能要件
 
 ### 4.1 パフォーマンス
@@ -305,8 +409,8 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 本タスクでは後方互換性を維持しない。`record` の再実行が必須である。
 
 **`runner` 実行時の動作**:
-- `DynLibDeps` を持たない既存の記録ファイルで ELF バイナリを実行しようとした場合、`runner` はエラーで実行をブロックする
-- 非 ELF バイナリ（スクリプト等）の記録は `DynLibDeps` を持たないが、これは正常状態であり従来通り実行を許可する
+- `DynLibDeps` または `DynLibNetworkReach` を持たない既存の記録ファイルで ELF バイナリを実行しようとした場合、`runner` はエラーで実行をブロックする
+- 非 ELF バイナリ（スクリプト等）の記録は `DynLibDeps` / `DynLibNetworkReach` を持たないが、これは正常状態であり従来通り実行を許可する
 - ELF バイナリか否かは `runner` が記録ファイルのパスを解析して判断するのではなく、実行対象ファイルのマジックナンバーで判断する
 
 **移行手順**: 本タスクリリース後、すべての管理対象 ELF バイナリに対して `record --force` を再実行すること。この手順を README に明記する。
@@ -364,11 +468,22 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 - [ ] `dlsym` を `.dynsym` に含むバイナリが `NetworkDetected` と判定されること
 - [ ] `dlopen` のみを含むバイナリの判定理由（`DetectedSymbols`）に `dynamic_load` カテゴリが含まれること
 
-### AC-5: 既存機能への非影響
+### AC-5: 依存ライブラリ経由のネットワーク使用検出（方策 C）
+
+- [ ] ネットワーク API を直接呼び出す関数を持つ `.so` に対して、その関数が `NetworkReachableFuncs` に含まれること
+- [ ] その `.so` の exported 関数が `NetworkReachableFuncs` に含まれること（伝播が正しく機能すること）
+- [ ] バイナリが `NetworkReachableFuncs` の関数を `.text` から呼び出す場合に `NetworkDetected` と判定されること
+- [ ] バイナリが `NetworkReachableFuncs` の関数を呼び出さない場合に `NoNetworkSymbols`（または `NetworkDetected` でない状態）と判定されること
+- [ ] `DynLibNetworkReach` が `record` に保存されること
+- [ ] `DynLibNetworkReach.NetworkReachable == true` のバイナリが `runner` で `NetworkDetected` として扱われること
+- [ ] x86_64 および arm64 バイナリで動作すること
+
+### AC-6: 既存機能への非影響
 
 - [ ] 既存の `ContentHash` 検証が正常に動作すること
 - [ ] `SyscallAnalysis` フィールドが保持されること
 - [ ] 既存のテストがすべてパスすること
+
 
 ## 6. テスト方針
 
@@ -407,7 +522,21 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 | ライブラリ解決失敗（`record` 時） | `record` がエラーで終了し記録が保存されないこと |
 | `path: ""` エントリを含む記録ファイル（手動作成等）| `runner` が実行をブロックすること |
 
-### 6.3 `/etc/ld.so.cache` パーサーのユニットテスト
+### 6.3 方策 C の呼び出しグラフ解析のユニットテスト
+
+| テストケース | 検証内容 |
+|-------------|---------|
+| `.so` 内のネットワーク直接呼び出し | PLT 経由でネットワーク API を呼ぶ関数が `NetworkReachableFuncs` に含まれること |
+| 呼び出し伝播（1 ホップ） | ネットワーク呼び出し関数を呼ぶ別の関数も `NetworkReachableFuncs` に含まれること |
+| 呼び出し伝播（多段） | 複数ホップにわたる伝播が正しく機能すること |
+| ネットワーク API を呼ばない `.so` | `NetworkReachableFuncs` が空になること |
+| exported 関数への絞り込み | 内部（非 exported）関数のみがネットワーク呼び出しを行う場合、`NetworkReachableFuncs` が空になること |
+| バイナリからの呼び出し検出 | バイナリが `NetworkReachableFuncs` の関数を PLT 経由で呼び出す場合に検出されること |
+| バイナリからの非呼び出し | バイナリが `NetworkReachableFuncs` の関数を呼び出さない場合に `NetworkDetected` にならないこと |
+| x86_64 および arm64 | 両アーキテクチャで CALL/BL 命令の追跡が動作すること |
+| 末尾呼び出し最適化 | JMP（x86_64）/ B（arm64）による末尾呼び出しも追跡されること |
+
+### 6.4 `/etc/ld.so.cache` パーサーのユニットテスト
 
 テストデータとして最小構成の `ld.so.cache` バイナリファイルをリポジトリに含める。
 
@@ -423,13 +552,20 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 5. **`dlopen` 検出の対象範囲**: 方策 B はバイナリ自身の `.dynsym` に `dlopen` 等が含まれる場合のみ検出する。依存ライブラリ（`.so`）が `dlopen` を内部実装として使用する場合は検出しない。これは、`libc.so.6` 等の基本ライブラリが内部実装として `dlopen` 相当の関数（`__libc_dlopen_mode` 等）を持つため、全 `.so` を対象にするとほぼ全バイナリが high-risk となり実用性を失うためである。
 
-6. **依存ライブラリ経由のネットワーク使用検出の限界**: バイナリが直接ネットワーク API を呼ばず、依存ライブラリ（`.so`）経由でネットワーク操作を行うケースは本タスクでは検出しない。依存ライブラリの `.dynsym` を追跡してネットワーク到達可能性を判定するアプローチは、「どの関数がどの外部シンボルを呼ぶか」という関数単位の情報が ELF の再配置エントリ（`.rela.plt` 等）からは取得できないため、false positive が著しく多くなる（ほぼ全バイナリが `libc.so.6` 経由でネットワーク API に到達可能と判定される）。精度の高い検出には `.text` セクションの逆アセンブルが必要であり、将来タスクの検討課題とする。
+6. **方策 C の false negative（見逃し）ケース**: 方策 C の逆アセンブル解析は以下のケースで false negative が生じる：
+   - **間接呼び出し**: `CALL [reg]`（x86_64）、`BLR`（arm64）などの間接呼び出しは追跡対象外。関数ポインタ経由でネットワーク到達可能関数が呼ばれる場合は検出されない。
+   - **動的ロード**: `dlopen` / `dlsym` 経由でロードされた関数の呼び出しは追跡対象外（方策 B で `dlopen` 使用自体を検出）。
+   - **JIT コンパイル等**: 実行時に生成されたコードの呼び出しは静的解析では追跡不可。
+   これらは静的解析の本質的な限界であり、完全な追跡には動的解析が必要となる。
+
+7. **方策 C の false positive（誤検出）ケース**: FR-3.5.2 の厳密な実装では、PLT エントリアドレスを個別に特定するため false positive は基本的に生じない。ただし、PLT エントリサイズ（x86_64: 16 バイト、arm64: 16 バイト）やインデックス計算がリンカーバリアントによって異なる場合、PLT アドレスの計算が実際と一致しない可能性がある。この場合、CALL のターゲットが誤った PLT エントリに対応付けられ、false positive または false negative が生じる。将来 FR-3.5.4 の近似手法に切り替える場合は false positive が増加することに注意すること。
 
 ## 8. 先行タスクとの関係
 
 | 項目 | タスク 0069 | タスク 0070/0072 | タスク 0073 | 本タスク（0074）|
 |------|------------|-----------------|------------|----------------|
 | 対象 OS | Linux | Linux | macOS | Linux |
-| 解析手法 | `.dynsym` シンボル解析 | 機械語 syscall 解析 | Mach-O インポートシンボル解析 | `DT_NEEDED` + ライブラリハッシュ検証 |
+| 解析手法 | `.dynsym` シンボル解析 | 機械語 syscall 解析 | Mach-O インポートシンボル解析 | `DT_NEEDED` + ライブラリハッシュ検証 + 呼び出しグラフ解析 |
 | 実行タイミング | 実行時（毎回） | 事前解析 + 保存 | 実行時（毎回） | `record` 時記録 + `runner` 時検証 |
-| 目的 | バイナリ自身のネットワーク使用検出 | 静的バイナリの syscall 検出 | macOS バイナリ検出 | 依存ライブラリの整合性保証 + `dlopen` 検出 |
+| 目的 | バイナリ自身のネットワーク使用検出 | 静的バイナリの syscall 検出 | macOS バイナリ検出 | 依存ライブラリの整合性保証 + `dlopen` 検出 + 依存ライブラリ経由のネットワーク使用検出 |
+| `elfanalyzer` の再利用 | なし | 新規実装 | なし | 方策 C で `MachineCodeDecoder` を再利用 |
