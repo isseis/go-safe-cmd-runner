@@ -822,9 +822,11 @@ ELF ヘッダの `e_machine` フィールドから判定:
 
 | `elf.Machine` | アーキテクチャ | デフォルトパス（順番） |
 |--------------|-------------|-------------------|
-| `elf.EM_X86_64` | x86_64 | `/lib/x86_64-linux-gnu`, `/usr/lib/x86_64-linux-gnu`, `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` |
-| `elf.EM_AARCH64` | arm64 | `/lib/aarch64-linux-gnu`, `/usr/lib/aarch64-linux-gnu`, `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` |
-| その他 | — | `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` |
+| `elf.EM_X86_64` | x86_64 | `/lib/x86_64-linux-gnu`, `/usr/lib/x86_64-linux-gnu`, `/lib64`, `/usr/lib64`, `/lib`, `/usr/lib` |
+| `elf.EM_AARCH64` | arm64 | `/lib/aarch64-linux-gnu`, `/usr/lib/aarch64-linux-gnu`, `/lib64`, `/usr/lib64`, `/lib`, `/usr/lib` |
+| その他 | — | `/lib64`, `/usr/lib64`, `/lib`, `/usr/lib` |
+
+> **NOTE**: デフォルトパスは `ld.so.cache` が利用できない場合のフォールバックである（Section 5.1 ステップ 6）。64ビット専用パス（`/lib64`, `/usr/lib64`）を multi-arch パスの次に置くことで、Red Hat 系ディストリビューションとの互換性を確保しつつ、32ビットライブラリが誤って優先される問題を防ぐ。
 
 ### 5.5 vDSO のスキップ
 
