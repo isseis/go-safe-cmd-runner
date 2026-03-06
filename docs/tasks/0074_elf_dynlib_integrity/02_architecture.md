@@ -268,12 +268,13 @@ type LibraryResolver struct {
 func NewLibraryResolver(fs safefileio.FileSystem, elfMachine elf.Machine) *LibraryResolver
 
 // Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
-// The resolution order follows ld.so(8):
-//   1. DT_RPATH (only if DT_RUNPATH absent on the immediate file)
-//   2. LD_LIBRARY_PATH (only if includeLDLibraryPath is true)
-//   3. DT_RUNPATH
-//   4. /etc/ld.so.cache
-//   5. Default paths (architecture-dependent)
+// The resolution order follows ld.so(8) with inherited RPATH support (see Section 5.1):
+//   1. OwnRPATH    – ctx.OwnRPATH, only when ctx.OwnRUNPATH is absent
+//   2. InheritedRPATH – ctx.InheritedRPATH from ancestor ELFs ($ORIGIN per originating ELF)
+//   3. LD_LIBRARY_PATH – only if ctx.IncludeLDLibraryPath is true
+//   4. OwnRUNPATH  – ctx.OwnRUNPATH ($ORIGIN → ctx.ParentDir)
+//   5. /etc/ld.so.cache
+//   6. Default paths (architecture-dependent)
 func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, error)
 ```
 
