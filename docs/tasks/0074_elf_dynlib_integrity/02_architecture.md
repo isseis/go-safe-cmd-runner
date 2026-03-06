@@ -456,6 +456,14 @@ flowchart TD
     class ReturnNil,ReturnResult,Skip safe;
 ```
 
+**`visited` セットのキー設計**:
+
+`visited` セットは `(resolvedPath, inheritedRPATHContext)` の組をキーとして管理する。`resolvedPath` 単独をキーにすることは**禁止**する。
+
+同一の `.so` ファイル（同一 `resolvedPath`）でも、異なる依存チェーンを経て到達した場合は継承 RPATH が異なることがある。継承 RPATH が異なれば、その子依存の解決結果も変わり得るため、別エントリとして解析しなければ依存ツリーが不正確になる。
+
+例: `binary`（RPATH: `/opt/A`）→ `libX.so` と、`libY.so`（RPATH なし）→ `libX.so` は、同じ `libX.so` でも継承 RPATH が異なるため、`libX.so` の子依存の解決に使われるパスが変わる。
+
 ### 3.5 `DynLibVerifier`: `runner` 時の検証
 
 ```go
