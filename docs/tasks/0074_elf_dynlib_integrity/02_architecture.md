@@ -419,7 +419,7 @@ flowchart TD
     ReturnError["エラーを返す<br/>（record 失敗）"]
     CheckVisited{"visited に<br/>(path, rpathCtx)<br/>あり?"}
     RecordEntry["LibEntry を記録<br/>（soname, parentPath,<br/>path, hash）"]
-    CheckDepth{"深度 ><br/>MaxRecursionDepth?"}
+    CheckDepth{"深度 > <br/>MaxRecursionDepth?"}
     DepthError["エラーを返す<br/>（深度超過）"]
     ParseChild["子 ELF パース<br/>DT_NEEDED 取得"]
     AddChildren["子の DT_NEEDED を<br/>キューに追加"]
@@ -1026,7 +1026,7 @@ failed to resolve dynamic library: libcustom.so.1
 
 | 操作 | 処理内容 | 想定時間 |
 |------|---------|---------|
-| `ld.so.cache` 解析 | バイナリファイルのパース（毎回実行） | < 10ms |
+| `ld.so.cache` 解析 | バイナリファイルのパース（`DynLibAnalyzer` 作成時に1回のみ） | < 10ms |
 | 直接依存ライブラリ解決 | RPATH/cache/デフォルトパス検索 | < 1ms/ライブラリ |
 | ライブラリハッシュ計算 | ファイル読み取り + SHA256 | < 50ms/ライブラリ（数 MB の場合） |
 | 再帰的依存解決（典型的） | 10〜30 ライブラリ × (解決 + ハッシュ) | < 2s |
