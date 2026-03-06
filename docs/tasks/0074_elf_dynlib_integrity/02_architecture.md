@@ -11,7 +11,7 @@ ELF バイナリの `DT_NEEDED` エントリから依存ライブラリの完全
 ### 1.2 設計原則
 
 - **Security First**: ライブラリ解決失敗時は `record` を失敗させ、不完全なスナップショットを許容しない
-- **Non-Breaking Schema Migration**: `CurrentSchemaVersion` を 1 → 2 に上げ、旧記録は `SchemaVersionMismatchError` で一律拒否する
+- **Breaking Schema Migration**: `CurrentSchemaVersion` を 1 → 2 に上げ、旧記録は `SchemaVersionMismatchError` で一律拒否する。後方互換性は維持しない（`record` の再実行が必須）
 - **Zero External Dependencies**: `ldd`・`ldconfig` 等の外部コマンドに依存せず、Go 標準ライブラリ（`debug/elf`）と自前の `/etc/ld.so.cache` パーサーのみを使用する
 - **DRY**: 既存の `fileanalysis.Store` の `Update` パターン、`safefileio` によるファイル読み取り、`binaryanalyzer.GetNetworkSymbols()` のシンボルレジストリを再利用する
 - **YAGNI**: `ld.so` の挙動を完全に再現するのではなく、セキュリティ検証に必要な範囲でライブラリパス解決を実装する
