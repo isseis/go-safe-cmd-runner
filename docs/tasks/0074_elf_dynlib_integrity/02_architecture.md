@@ -168,10 +168,12 @@ sequenceDiagram
     RUN->>VM: VerifyGroupFiles(group)
     VM->>FV: VerifyWithHash(cmdPath)
     FV->>FAS: Load(cmdPath)
-    FAS-->>FV: Record (ContentHash + DynLibDeps)
+    FAS-->>FV: Record (ContentHash + DynLibDeps + HasDynamicLoad)
     FV-->>VM: contentHash
 
-    alt DynLibDeps が記録あり
+    alt record.HasDynamicLoad == true
+        VM-->>RUN: エラー（dlopen 使用バイナリは実行ブロック）
+    else DynLibDeps が記録あり
         VM->>DLV: Verify(cmdPath, record.DynLibDeps)
 
         Note over DLV: 第 1 段階: ハッシュ照合
@@ -217,6 +219,10 @@ type Record struct {
     // DynLibDeps contains the dynamic library dependency snapshot recorded at record time.
     // Only present for ELF binaries with DT_NEEDED entries.
     DynLibDeps      *DynLibDepsData      `json:"dyn_lib_deps,omitempty"`
+    // HasDynamicLoad indicates that dlopen/dlsym/dlvsym symbols were found in the binary
+    // at record time. When true, runner blocks execution because runtime-loaded libraries
+    // cannot be statically verified.
+    HasDynamicLoad  bool                 `json:"has_dynamic_load,omitempty"`
 }
 ```
 
@@ -593,12 +599,15 @@ type Validator struct {
 }
 
 // Record calculates the hash of the file and saves it together with DynLibDeps
-// in a single Store.Update call. If dynlib analysis fails (resolution error,
-// depth exceeded), the callback returns an error and nothing is persisted.
+// and HasDynamicLoad in a single Store.Update call. If dynlib analysis fails
+// (resolution error, depth exceeded), the callback returns an error and nothing
+// is persisted.
 func (v *Validator) Record(filePath string, force bool) (string, string, error) {
     // 1. calculateHash(filePath) → contentHash
-    // 2. store.Update(filePath, func(record) {
+    // 2. output = binaryanalyzer.AnalyzeNetworkSymbols(filePath) → HasDynamicLoad
+    // 3. store.Update(filePath, func(record) {
     //        record.ContentHash = contentHash
+    //        record.HasDynamicLoad = output.HasDynamicLoad
     //        if v.dynlibAnalyzer != nil {
     //            dynLibDeps, err := v.dynlibAnalyzer.Analyze(filePath)
     //            if err != nil { return err }  // ← 解析失敗 → 永続化しない
@@ -655,10 +664,12 @@ type FileValidator interface {
 // when a DynLibDeps snapshot is present in the analysis record.
 func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
     // 1. m.fileValidator.LoadRecord(cmdPath) でレコードを取得
-    // 2. If DynLibDeps is nil:
+    // 2. If record.HasDynamicLoad:
+    //    → エラー（dlopen 使用バイナリは実行ブロック）
+    // 3. If DynLibDeps is nil:
     //    a. Check if target is ELF → error (record re-run required)
     //    b. Non-ELF → return nil (no verification needed)
-    // 3. DynLibVerifier.Verify(cmdPath, record.DynLibDeps)
+    // 4. DynLibVerifier.Verify(cmdPath, record.DynLibDeps)
 }
 ```
 
@@ -674,7 +685,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
 | `LD_LIBRARY_PATH` ハイジャック | 第 2 段階 | パス解決不一致 |
 | ライブラリ丸ごと差し替え | 第 1 + 第 2 段階 | ハッシュ不一致 + パス不一致 |
 | 間接依存ライブラリの差し替え | 再帰的解決 | 全依存ツリーがスナップショットに含まれる |
-| `dlopen` による未知ライブラリのロード | 方策 B | `HasDynamicLoad: true` 判定 |
+| `dlopen` による未知ライブラリのロード | 方策 B | `record` 時に `HasDynamicLoad: true` を記録し `runner` で実行ブロック |
 | 不完全な記録（`path: ""`）の悪用 | 防御的検出 | `record` 時にエラー + `runner` 時にブロック |
 | シンボリックリンク攻撃（ライブラリ読み取り時） | `safefileio` | `O_NOFOLLOW` による防止 |
 | `record` 時と `runner` 時の `LD_LIBRARY_PATH` の非対称性 | 設計方針 | `record` 時は使用しない（基準の安定性）、`runner` 時は含める（実際のロードパスとの合致） |
@@ -934,6 +945,12 @@ type ErrEmptyLibraryPath struct {
 type ErrDynLibDepsRequired struct {
     BinaryPath string
 }
+
+// ErrDynamicLoadDetected indicates that the binary uses dlopen/dlsym/dlvsym,
+// making static library verification impossible. runner blocks execution.
+type ErrDynamicLoadDetected struct {
+    BinaryPath string
+}
 ```
 
 ### 6.2 エラーメッセージ例
@@ -1026,7 +1043,12 @@ failed to resolve dynamic library: libcustom.so.1
 - [ ] `dynamicLoadSymbolRegistry` と `IsDynamicLoadSymbol()` 追加
 - [ ] `AnalysisOutput` に `HasDynamicLoad bool` フィールド追加
 - [ ] ELF・Mach-O アナライザーに `HasDynamicLoad` セット処理追加
+- [ ] `fileanalysis.Record` に `HasDynamicLoad bool` フィールド追加
+- [ ] `Validator.Record()` で `HasDynamicLoad` を解析・記録
+- [ ] `ErrDynamicLoadDetected` エラー型追加
+- [ ] `verifyDynLibDeps()` に `HasDynamicLoad` ブロック処理追加
 - [ ] `dlopen` 検出のユニットテスト
+- [ ] `HasDynamicLoad: true` のバイナリで `runner` が実行ブロックすることの統合テスト
 - [ ] 既存テストの全パス確認
 - [ ] `make lint` / `make fmt` パス確認
 
