@@ -95,11 +95,11 @@ FR-3.1.2 の「デフォルトパス」は、解析対象バイナリの ELF ヘ
 
 | アーキテクチャ | デフォルト検索ディレクトリ（順番に試みる） |
 |--------------|------------------------------------------|
-| x86_64 | `/lib/x86_64-linux-gnu`, `/usr/lib/x86_64-linux-gnu`, `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` |
-| arm64 (aarch64) | `/lib/aarch64-linux-gnu`, `/usr/lib/aarch64-linux-gnu`, `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` |
-| その他 | `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64` |
+| x86_64 | `/lib/x86_64-linux-gnu`, `/usr/lib/x86_64-linux-gnu`, `/lib64`, `/usr/lib64`, `/lib`, `/usr/lib` |
+| arm64 (aarch64) | `/lib/aarch64-linux-gnu`, `/usr/lib/aarch64-linux-gnu`, `/lib64`, `/usr/lib64`, `/lib`, `/usr/lib` |
+| その他 | `/lib64`, `/usr/lib64`, `/lib`, `/usr/lib` |
 
-multiarch ディレクトリ（例: `/lib/x86_64-linux-gnu`）を先に試みることで、Debian/Ubuntu 系ディストリビューションでのデフォルトパスフォールバック時に標準ライブラリが解決できないケースを防ぐ。
+multiarch ディレクトリ（例: `/lib/x86_64-linux-gnu`）を先に試みることで、Debian/Ubuntu 系ディストリビューションでのデフォルトパスフォールバック時に標準ライブラリが解決できないケースを防ぐ。次に `/lib64`, `/usr/lib64` を試みることで、64 ビット専用パスを採用する Red Hat 系ディストリビューションとの互換性を確保する。`/lib`, `/usr/lib` は最後の汎用フォールバックとする。
 
 #### FR-3.1.3: `$ORIGIN` の展開
 
