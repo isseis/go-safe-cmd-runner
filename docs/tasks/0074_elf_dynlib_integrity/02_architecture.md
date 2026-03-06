@@ -45,7 +45,7 @@ flowchart TB
     subgraph SharedComponents["共通コンポーネント"]
         FAS[("fileanalysis.Store<br/>（拡張: DynLibDeps）")]
         SFO["safefileio.FileSystem<br/>（既存）"]
-        NSR[("NetworkSymbols Registry<br/>（拡張: dlopen 追加）")]
+        NSR[("DynamicLoad Registry<br/>（新規: dlopen 独立レジストリ）")]
     end
 
     REC --> FV
@@ -105,7 +105,8 @@ internal/
 ├── runner/
 │   └── security/
 │       └── binaryanalyzer/
-│           └── network_symbols.go         # dlopen/dlsym/dlvsym 追加
+│           ├── network_symbols.go         # dynamicLoadSymbolRegistry 追加、IsDynamicLoadSymbol 追加
+│           └── analyzer.go                # AnalysisOutput に HasDynamicLoad フィールド追加
 │
 └── cmd/
     └── record/
@@ -526,31 +527,52 @@ flowchart TD
 
 ### 3.6 `dlopen` シンボル検出（方策 B）
 
-#### 3.6.1 シンボルレジストリの拡張
+#### 3.6.1 設計方針
+
+`dlopen/dlsym/dlvsym` はネットワーク操作ではなく動的ロードであり、`networkSymbolRegistry` に追加して `NetworkDetected` を返す設計では `AnalysisOutput.IsNetworkCapable()` や `"network_detected"` ログの意味が崩れる。
+
+そのため、**`AnalysisOutput` に `HasDynamicLoad bool` フィールドを追加**し、`networkSymbolRegistry` とは独立したレジストリ（`dynamicLoadSymbolRegistry`）で検出する。既存の `NetworkDetected` の意味（ネットワーク操作可能）は変更しない。
+
+#### 3.6.2 `AnalysisOutput` の拡張
+
+```go
+// internal/runner/security/binaryanalyzer/analyzer.go
+
+// AnalysisOutput contains the complete result of binary analysis.
+type AnalysisOutput struct {
+    Result          AnalysisResult
+    DetectedSymbols []DetectedSymbol
+    Error           error
+    // HasDynamicLoad indicates that dlopen/dlsym/dlvsym symbols were found.
+    // When true, dynamic library integrity cannot be statically verified.
+    // This field is independent of Result (a binary can have both network
+    // symbols and dynamic load symbols).
+    HasDynamicLoad bool
+}
+```
+
+#### 3.6.3 動的ロードシンボルレジストリ
 
 ```go
 // internal/runner/security/binaryanalyzer/network_symbols.go
 
-const (
-    // CategoryDynamicLoad represents dynamic library loading functions.
-    CategoryDynamicLoad SymbolCategory = "dynamic_load"
-)
+// dynamicLoadSymbolRegistry contains symbols indicating runtime library loading.
+// Kept separate from networkSymbolRegistry to avoid conflating dynamic load
+// detection with network capability detection.
+var dynamicLoadSymbolRegistry = map[string]struct{}{
+    "dlopen":  {},  // Runtime library loading
+    "dlsym":   {},  // Symbol resolution from loaded library
+    "dlvsym":  {},  // Versioned symbol resolution
+}
 
-// networkSymbolRegistry に以下を追加:
-var networkSymbolRegistry = map[string]SymbolCategory{
-    // ... existing entries ...
-
-    // =========================================
-    // Dynamic Library Loading
-    // =========================================
-
-    "dlopen":  CategoryDynamicLoad,  // Runtime library loading
-    "dlsym":   CategoryDynamicLoad,  // Symbol resolution from loaded library
-    "dlvsym":  CategoryDynamicLoad,  // Versioned symbol resolution
+// IsDynamicLoadSymbol checks if the given symbol name is a dynamic load function.
+func IsDynamicLoadSymbol(name string) bool {
+    _, found := dynamicLoadSymbolRegistry[name]
+    return found
 }
 ```
 
-この変更は ELF・Mach-O 両方のアナライザーに波及する（共有レジストリ）。`dlopen` を使用する `python3`, `java`, `bash`, `git` 等が `NetworkDetected` と判定されるのは仕様通りの動作である。
+この変更は ELF・Mach-O 両方のアナライザーに波及する（`HasDynamicLoad` フラグのセットを各アナライザーに追加）。`dlopen` を使用する `python3`, `java`, `bash`, `git` 等が `HasDynamicLoad: true` と判定されるのは仕様通りの動作である。
 
 ### 3.7 `record` コマンドの拡張
 
@@ -652,7 +674,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
 | `LD_LIBRARY_PATH` ハイジャック | 第 2 段階 | パス解決不一致 |
 | ライブラリ丸ごと差し替え | 第 1 + 第 2 段階 | ハッシュ不一致 + パス不一致 |
 | 間接依存ライブラリの差し替え | 再帰的解決 | 全依存ツリーがスナップショットに含まれる |
-| `dlopen` による未知ライブラリのロード | 方策 B | `NetworkDetected` 判定 |
+| `dlopen` による未知ライブラリのロード | 方策 B | `HasDynamicLoad: true` 判定 |
 | 不完全な記録（`path: ""`）の悪用 | 防御的検出 | `record` 時にエラー + `runner` 時にブロック |
 | シンボリックリンク攻撃（ライブラリ読み取り時） | `safefileio` | `O_NOFOLLOW` による防止 |
 | `record` 時と `runner` 時の `LD_LIBRARY_PATH` の非対称性 | 設計方針 | `record` 時は使用しない（基準の安定性）、`runner` 時は含める（実際のロードパスとの合致） |
@@ -1001,8 +1023,9 @@ failed to resolve dynamic library: libcustom.so.1
 
 ### 8.4 Phase 4: `dlopen` シンボル検出 + 仕上げ
 
-- [ ] `CategoryDynamicLoad` 定義追加
-- [ ] `networkSymbolRegistry` に `dlopen` / `dlsym` / `dlvsym` 追加
+- [ ] `dynamicLoadSymbolRegistry` と `IsDynamicLoadSymbol()` 追加
+- [ ] `AnalysisOutput` に `HasDynamicLoad bool` フィールド追加
+- [ ] ELF・Mach-O アナライザーに `HasDynamicLoad` セット処理追加
 - [ ] `dlopen` 検出のユニットテスト
 - [ ] 既存テストの全パス確認
 - [ ] `make lint` / `make fmt` パス確認
@@ -1041,8 +1064,9 @@ flowchart TB
 | 解決失敗 | `dynlibanalysis` | エラーに soname が含まれること |
 | 循環依存防止 | `dynlibanalysis` | visited セットで無限ループ防止 |
 | 再帰深度超過 | `dynlibanalysis` | 上限超過時にエラー |
-| `dlopen` シンボル検出 | `binaryanalyzer` | レジストリに追加されていること |
-| `CategoryDynamicLoad` | `binaryanalyzer` | カテゴリが正しく設定されること |
+| `dlopen` シンボル検出 | `binaryanalyzer` | `IsDynamicLoadSymbol` が `dlopen/dlsym/dlvsym` を認識すること |
+| `HasDynamicLoad` フラグ | `binaryanalyzer` | `dlopen` を持つバイナリで `HasDynamicLoad: true` が返ること |
+| `NetworkDetected` との独立性 | `binaryanalyzer` | `dlopen` のみのバイナリで `Result != NetworkDetected` であること |
 
 ### 9.3 コンポーネントテスト
 
@@ -1118,6 +1142,6 @@ flowchart LR
 | `fileanalysis.Store` | 記録の読み書き（`Update` / `Load`） |
 | `fileanalysis.Record` | スキーマバージョン管理、`SyscallAnalysis` 共存 |
 | `safefileio.FileSystem` | シンボリックリンク攻撃防止 |
-| `binaryanalyzer.GetNetworkSymbols()` | シンボルレジストリ（`dlopen` 追加先） |
+| `binaryanalyzer.AnalysisOutput` | `HasDynamicLoad` フィールドを追加して動的ロード検出を拡張 |
 | `filevalidator.Validator` | ハッシュ計算・検証（既存フロー維持） |
 | `verification.Manager` | 検証フローの統合ポイント |
