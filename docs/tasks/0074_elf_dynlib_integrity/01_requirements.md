@@ -139,6 +139,11 @@ multiarch ディレクトリ（例: `/lib/x86_64-linux-gnu`）を先に試みる
 **キャッシュ解析失敗時の動作**:
 `/etc/ld.so.cache` が存在しない、読み取れない、またはサポート外のフォーマットである場合は、キャッシュ参照をスキップしてデフォルトパスによる解決にフォールバックする。フォールバック後もライブラリが解決できない場合は FR-3.1.7 に従い `record` をエラーで終了する。
 
+フォールバックが発生した場合は `slog.Warn` レベルのログを出力すること。ログには失敗の種別（ファイル不在・読み取りエラー・フォーマット不正）と原因を含め、運用者が原因を特定できるようにする：
+- ファイル不在: `"ld.so.cache not found, falling back to default paths"`
+- 読み取りエラー: `"failed to read ld.so.cache, falling back to default paths"` + `error` フィールド
+- フォーマット不正: `"unsupported ld.so.cache format, falling back to default paths"` + `format` フィールド（検出されたマジックバイト等）
+
 #### FR-3.1.6: 間接依存ライブラリの再帰的解決
 
 `DT_NEEDED` から解決された各 `.so` に対して、さらにその `.so` の `DT_NEEDED` を読み取る再帰的な解決を行い、完全な依存ツリーを構築すること。
