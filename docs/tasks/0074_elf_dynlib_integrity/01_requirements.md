@@ -286,14 +286,11 @@ type LibEntry struct {
 
 #### FR-3.4.1: 検出対象シンボルへの追加
 
-**Mach-O アナライザーへの波及に関する注意**: `binaryanalyzer.GetNetworkSymbols()` は ELF アナライザー（`elfanalyzer`）と Mach-O アナライザー（`machoanalyzer`）が共有するレジストリである。`dlopen` 等を共有レジストリに追加すると macOS バイナリの解析にも影響が生じる。本タスクは macOS を対象外としているため、以下のいずれかの方針で実装すること（実装時に選択する）：
+**Mach-O アナライザーへの波及**: `binaryanalyzer.GetNetworkSymbols()` は ELF アナライザー（`elfanalyzer`）と Mach-O アナライザー（`machoanalyzer`）が共有するレジストリであり、`machoanalyzer` は `macho.File.ImportedSymbols()` で取得したシンボルをこのレジストリと突合する。`dlopen` 等を共有レジストリに追加すると、`dlopen` をインポートする macOS バイナリも `NetworkDetected` と判定されるようになる。
 
-- **方針 (a): ELF 専用レジストリに分離する** — `binaryanalyzer` に `GetELFOnlySymbols()` 等の関数を追加し、`dlopen` 等の ELF 固有シンボルはそちらに登録する。`elfanalyzer` はこの ELF 専用レジストリと共有レジストリの両方を参照し、`machoanalyzer` は共有レジストリのみを参照する。
-- **方針 (b): アナライザー側でフィルタする** — 共有レジストリに追加した上で、`machoanalyzer` が `CategoryDynamicLoad` カテゴリのシンボルを無視するよう実装する。
+`dlopen` による実行時ライブラリロードのリスクは ELF・Mach-O で対称であるため、**共有レジストリへの追加（macOS バイナリへの波及）を意図的に許容する**。`dlopen` を使う macOS バイナリ（`python3`、`java` 等）も ELF バイナリと同様に `NetworkDetected` と判定されることが期待動作である。
 
-いずれの方針でも、`machoanalyzer` の動作が本タスクにより変化しないことを既存の Mach-O テストで確認すること。
-
-ELF バイナリの解析において、`elfanalyzer.GetNetworkSymbols()` 相当の検出対象シンボルリストに以下を追加する：
+`binaryanalyzer.GetNetworkSymbols()` の検出対象シンボルリストに以下を追加する：
 
 | シンボル名 | カテゴリ | 説明 |
 |-----------|---------|------|
@@ -301,7 +298,7 @@ ELF バイナリの解析において、`elfanalyzer.GetNetworkSymbols()` 相当
 | `dlsym` | `dynamic_load` | ロードしたライブラリのシンボル解決 |
 | `dlvsym` | `dynamic_load` | バージョン付きシンボル解決 |
 
-**判定方針**: `dlopen` が `.dynsym` に含まれるバイナリは「未知のライブラリをロードする可能性がある」ため、ネットワーク操作を含む可能性ありとして `NetworkDetected` を返す。これは安全側に倒した判定であり、false positive が増えることを許容する。
+**判定方針**: `dlopen` をインポートするバイナリは「未知のライブラリをロードする可能性がある」ため、ネットワーク操作を含む可能性ありとして `NetworkDetected` を返す。これは安全側に倒した判定であり、false positive が増えることを許容する。ELF・Mach-O どちらも同様に扱う。
 
 **想定される false positive の影響範囲**: `dlopen` を使用するバイナリは広範に存在するため、以下のような一般的なコマンドが `NetworkDetected` と判定される。これは仕様通りの動作（working as intended）である：
 
