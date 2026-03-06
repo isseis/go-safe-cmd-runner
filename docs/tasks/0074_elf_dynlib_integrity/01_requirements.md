@@ -286,7 +286,14 @@ type LibEntry struct {
 
 #### FR-3.4.1: 検出対象シンボルへの追加
 
-`binaryanalyzer.GetNetworkSymbols()` の検出対象シンボルリストに以下を追加する：
+**Mach-O アナライザーへの波及に関する注意**: `binaryanalyzer.GetNetworkSymbols()` は ELF アナライザー（`elfanalyzer`）と Mach-O アナライザー（`machoanalyzer`）が共有するレジストリである。`dlopen` 等を共有レジストリに追加すると macOS バイナリの解析にも影響が生じる。本タスクは macOS を対象外としているため、以下のいずれかの方針で実装すること（実装時に選択する）：
+
+- **方針 (a): ELF 専用レジストリに分離する** — `binaryanalyzer` に `GetELFOnlySymbols()` 等の関数を追加し、`dlopen` 等の ELF 固有シンボルはそちらに登録する。`elfanalyzer` はこの ELF 専用レジストリと共有レジストリの両方を参照し、`machoanalyzer` は共有レジストリのみを参照する。
+- **方針 (b): アナライザー側でフィルタする** — 共有レジストリに追加した上で、`machoanalyzer` が `CategoryDynamicLoad` カテゴリのシンボルを無視するよう実装する。
+
+いずれの方針でも、`machoanalyzer` の動作が本タスクにより変化しないことを既存の Mach-O テストで確認すること。
+
+ELF バイナリの解析において、`elfanalyzer.GetNetworkSymbols()` 相当の検出対象シンボルリストに以下を追加する：
 
 | シンボル名 | カテゴリ | 説明 |
 |-----------|---------|------|
