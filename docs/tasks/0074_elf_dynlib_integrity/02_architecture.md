@@ -124,12 +124,14 @@ sequenceDiagram
     participant SFO as "safefileio"
     participant FAS as "fileanalysis.Store"
 
-    Note over RC,FAS: フェーズ 1: ハッシュ計算（永続化なし）
-    RC->>FV: ComputeHash(filePath)
-    FV-->>RC: hashFilePath, contentHash
+    RC->>FV: Record(filePath, force)
+    Note over FV: ハッシュ計算
+    FV->>FV: calculateHash(filePath) → contentHash
 
-    Note over RC,FAS: フェーズ 2: DynLibDeps 解析（永続化なし）
-    RC->>DLA: Analyze(filePath)
+    Note over FV,FAS: Store.Update コールバック内で DynLibDeps 解析と永続化を一括実行
+    FV->>FAS: Update(filePath, callback)
+
+    FAS->>DLA: Analyze(filePath)
     DLA->>SFO: SafeOpenFile(filePath)
     DLA->>DLA: ELF パース、DT_NEEDED 取得
     DLA->>DLA: DT_RPATH / DT_RUNPATH 取得
@@ -145,10 +147,9 @@ sequenceDiagram
         DLA->>DLA: 間接依存の DT_NEEDED を取得
     end
 
-    DLA-->>RC: DynLibDepsData（エラー時は record をエラー終了）
-
-    Note over RC,FAS: フェーズ 3: 一括永続化（両フェーズ成功時のみ）
-    RC->>FAS: Update(filePath, contentHash, dynLibDeps)
+    DLA-->>FAS: DynLibDepsData（エラー時はコールバックがエラーを返し永続化しない）
+    FAS-->>FV: Update 完了（またはエラー）
+    FV-->>RC: hashFilePath, contentHash（またはエラー）
 ```
 
 ### 2.4 データフロー: `runner` フェーズ（2 段階検証）
@@ -553,37 +554,50 @@ var networkSymbolRegistry = map[string]SymbolCategory{
 
 ### 3.7 `record` コマンドの拡張
 
-既存の `syscallAnalysisContext` パターンに倣い、`dynlibAnalysisContext` を追加する。
+既存の `Validator.Record()` は内部で `Store.Update(filePath, callback)` を呼ぶ構造になっている。DynLibDeps の解析と永続化をこのコールバック内に組み込むことで、解析失敗時にコールバックがエラーを返し `Store.Update` 全体がロールバックされる（何も書かれない）。
+
+`Validator` に `DynLibAnalyzer` を注入し、`Record()` 内で呼び出す:
 
 ```go
-// cmd/record/main.go
+// internal/filevalidator/validator.go
 
-// dynlibAnalysisContext holds resources for dynamic library analysis.
-type dynlibAnalysisContext struct {
-    analyzer *dynlibanalysis.DynLibAnalyzer
+// Validator provides functionality to record and verify file hashes.
+type Validator struct {
+    algorithm          HashAlgorithm
+    hashDir            string
+    hashFilePathGetter common.HashFilePathGetter
+    // ...existing fields...
+    dynlibAnalyzer *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
 }
 
-// computeDynLibDeps analyzes dynamic library dependencies for dynamic ELF binaries
-// and returns the result without persisting. Returns nil for non-ELF files or
-// static ELF binaries (no DT_NEEDED). Returns an error if library resolution fails
-// or recursion depth is exceeded—callers must not persist the record in this case.
-func (ctx *dynlibAnalysisContext) computeDynLibDeps(filePath string) (*fileanalysis.DynLibDepsData, error)
+// Record calculates the hash of the file and saves it together with DynLibDeps
+// in a single Store.Update call. If dynlib analysis fails (resolution error,
+// depth exceeded), the callback returns an error and nothing is persisted.
+func (v *Validator) Record(filePath string, force bool) (string, string, error) {
+    // 1. calculateHash(filePath) → contentHash
+    // 2. store.Update(filePath, func(record) {
+    //        record.ContentHash = contentHash
+    //        if v.dynlibAnalyzer != nil {
+    //            dynLibDeps, err := v.dynlibAnalyzer.Analyze(filePath)
+    //            if err != nil { return err }  // ← 解析失敗 → 永続化しない
+    //            record.DynLibDeps = dynLibDeps
+    //        }
+    //    })
+}
 ```
 
-`processFiles()` のフローに統合（ハッシュ計算・解析を先に済ませ、最後に一括永続化）:
+`processFiles()` のフローに統合:
 
 ```
 processFiles():
   for each file:
-    1. contentHash = recorder.ComputeHash(filePath, force)     ← ハッシュ計算のみ（永続化なし）
-    2. dynLibDeps = dynlibCtx.computeDynLibDeps(filePath)      ← NEW: 解析のみ（永続化なし）
-       ├─ エラー時（解決失敗・深度超過）→ failures++; continue  ← 記録しない
-       └─ ErrNotELF / ErrNotDynELF → dynLibDeps = nil（続行）
-    3. store.Update(filePath, contentHash, dynLibDeps)         ← contentHash + DynLibDeps を一括永続化
-    4. syscallCtx.analyzeFile(filePath, contentHash)           ← 既存（静的 ELF 用、内部で永続化、非致命的）
+    1. recorder.Record(filePath, force)          ← 既存 API（ハッシュ計算 + DynLibDeps 解析 + 一括永続化）
+       ├─ 解析失敗（解決失敗・深度超過）→ failures++; continue  ← 何も永続化されない
+       └─ ErrNotELF / ErrNotDynELF → DynLibDeps = nil のまま永続化（正常）
+    2. syscallCtx.analyzeFile(filePath, contentHash)  ← 既存（静的 ELF 用、内部で永続化、非致命的）
 ```
 
-> **NOTE**: syscall 解析（ステップ 4）は既存実装を変更しないため、内部で `SaveSyscallAnalysis()` を呼んで独立して永続化する。`store.Update`（ステップ 3）との統合は本タスクのスコープ外である。
+> **NOTE**: syscall 解析（ステップ 2）は既存実装を変更しないため、内部で `SaveSyscallAnalysis()` を呼んで独立して永続化する。`Record()`（ステップ 1）との統合は本タスクのスコープ外である。
 
 ### 3.8 `runner` 検証フローの拡張
 
@@ -1069,7 +1083,7 @@ flowchart TB
 |-------|-------|---------|
 | `dynlibanalysis` | `fileanalysis` | `DynLibDepsData`, `LibEntry`, `Store` |
 | `dynlibanalysis` | `safefileio` | 安全なファイル読み取り |
-| `cmd/record` | `dynlibanalysis` | `DynLibAnalyzer` |
+| `filevalidator` | `dynlibanalysis` | `Validator.Record()` 内で `DynLibAnalyzer` を呼び出し（拡張） |
 | `filevalidator` | `fileanalysis` | `FileValidator` インターフェースに `LoadRecord` 追加（拡張） |
 | `verification` | `dynlibanalysis` | `DynLibVerifier` |
 | `verification` | `filevalidator` | `FileValidator.LoadRecord` 経由で `DynLibDeps` 読み取り |
