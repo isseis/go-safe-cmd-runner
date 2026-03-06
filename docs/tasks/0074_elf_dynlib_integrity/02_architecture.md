@@ -171,9 +171,8 @@ sequenceDiagram
     FAS-->>FV: Record (ContentHash + DynLibDeps + HasDynamicLoad)
     FV-->>VM: contentHash
 
-    alt record.HasDynamicLoad == true
-        VM-->>RUN: エラー（dlopen 使用バイナリは実行ブロック）
-    else DynLibDeps が記録あり
+    Note over VM: HasDynamicLoad は IsNetworkOperation() で高リスク判定に使用（別フロー）
+    alt DynLibDeps が記録あり
         VM->>DLV: Verify(cmdPath, record.DynLibDeps)
 
         Note over DLV: 第 1 段階: ハッシュ照合
@@ -664,16 +663,44 @@ type FileValidator interface {
 // when a DynLibDeps snapshot is present in the analysis record.
 func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
     // 1. m.fileValidator.LoadRecord(cmdPath) でレコードを取得
-    // 2. If record.HasDynamicLoad:
-    //    → エラー（dlopen 使用バイナリは実行ブロック）
-    // 3. If DynLibDeps is nil:
+    // 2. If DynLibDeps is nil:
     //    a. Check if target is ELF → error (record re-run required)
     //    b. Non-ELF → return nil (no verification needed)
-    // 4. DynLibVerifier.Verify(cmdPath, record.DynLibDeps)
+    // 3. DynLibVerifier.Verify(cmdPath, record.DynLibDeps)
+    //
+    // NOTE: HasDynamicLoad の判定は IsNetworkOperation() で行う（3.9節参照）
 }
 ```
 
 統合ポイント: 既存の `verifyFileWithHash()` が成功した後に `verifyDynLibDeps()` を呼び出す。
+
+### 3.9 `HasDynamicLoad` と `NetworkAnalyzer` の統合
+
+`HasDynamicLoad` は `verifyDynLibDeps()` でブロックするのではなく、既存の `NetworkAnalyzer.isNetworkViaBinaryAnalysis()` と同様に「ネットワーク操作とみなす（高リスク扱い）」として処理する。これにより `dlopen` 使用バイナリは `NetworkDetected` バイナリと同等の扱いになる。
+
+```go
+// internal/runner/security/network_analyzer.go
+
+func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) bool {
+    output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
+
+    // 既存: NetworkDetected → true
+    // 既存: AnalysisError → true（安全側）
+
+    // NEW: HasDynamicLoad → true（dlopen 使用バイナリも高リスク扱い）
+    if output.HasDynamicLoad {
+        slog.Debug("Binary analysis detected dynamic load symbols (dlopen/dlsym/dlvsym)",
+            "path", cmdPath)
+        return true
+    }
+
+    // ... 既存の switch output.Result { ... }
+}
+```
+
+`fileanalysis.Record.HasDynamicLoad` は `record` 時に保存済みのため、`runner` は再解析不要で `LoadRecord()` 経由で値を読み取れる。ただし `isNetworkViaBinaryAnalysis()` は `AnalysisOutput`（メモリ）を使う構造のため、`Record` の `HasDynamicLoad` を `AnalysisOutput.HasDynamicLoad` に反映する経路が必要である。
+
+**実装方針**: `Validator.Record()` で `AnalyzeNetworkSymbols()` を呼んで `output.HasDynamicLoad` を `record.HasDynamicLoad` に保存する（3.7節参照）。`runner` フェーズでは `LoadRecord()` で読み込んだ `record.HasDynamicLoad` を `AnalysisOutput` に注入して `isNetworkViaBinaryAnalysis()` の判定に使用する。
 
 ## 4. セキュリティアーキテクチャ
 
@@ -685,7 +712,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
 | `LD_LIBRARY_PATH` ハイジャック | 第 2 段階 | パス解決不一致 |
 | ライブラリ丸ごと差し替え | 第 1 + 第 2 段階 | ハッシュ不一致 + パス不一致 |
 | 間接依存ライブラリの差し替え | 再帰的解決 | 全依存ツリーがスナップショットに含まれる |
-| `dlopen` による未知ライブラリのロード | 方策 B | `record` 時に `HasDynamicLoad: true` を記録し `runner` で実行ブロック |
+| `dlopen` による未知ライブラリのロード | 方策 B | `record` 時に `HasDynamicLoad: true` を記録し `runner` で高リスク扱い（`NetworkDetected` と同等） |
 | 不完全な記録（`path: ""`）の悪用 | 防御的検出 | `record` 時にエラー + `runner` 時にブロック |
 | シンボリックリンク攻撃（ライブラリ読み取り時） | `safefileio` | `O_NOFOLLOW` による防止 |
 | `record` 時と `runner` 時の `LD_LIBRARY_PATH` の非対称性 | 設計方針 | `record` 時は使用しない（基準の安定性）、`runner` 時は含める（実際のロードパスとの合致） |
@@ -946,11 +973,6 @@ type ErrDynLibDepsRequired struct {
     BinaryPath string
 }
 
-// ErrDynamicLoadDetected indicates that the binary uses dlopen/dlsym/dlvsym,
-// making static library verification impossible. runner blocks execution.
-type ErrDynamicLoadDetected struct {
-    BinaryPath string
-}
 ```
 
 ### 6.2 エラーメッセージ例
@@ -1045,10 +1067,10 @@ failed to resolve dynamic library: libcustom.so.1
 - [ ] ELF・Mach-O アナライザーに `HasDynamicLoad` セット処理追加
 - [ ] `fileanalysis.Record` に `HasDynamicLoad bool` フィールド追加
 - [ ] `Validator.Record()` で `HasDynamicLoad` を解析・記録
-- [ ] `ErrDynamicLoadDetected` エラー型追加
-- [ ] `verifyDynLibDeps()` に `HasDynamicLoad` ブロック処理追加
+- [ ] `isNetworkViaBinaryAnalysis()` に `output.HasDynamicLoad` の高リスク判定を追加
+- [ ] `runner` フェーズで `LoadRecord().HasDynamicLoad` を `AnalysisOutput` に注入する経路を実装
 - [ ] `dlopen` 検出のユニットテスト
-- [ ] `HasDynamicLoad: true` のバイナリで `runner` が実行ブロックすることの統合テスト
+- [ ] `HasDynamicLoad: true` のバイナリで `runner` が高リスク扱いになることの統合テスト
 - [ ] 既存テストの全パス確認
 - [ ] `make lint` / `make fmt` パス確認
 
