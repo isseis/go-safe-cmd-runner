@@ -575,13 +575,15 @@ func (ctx *dynlibAnalysisContext) computeDynLibDeps(filePath string) (*fileanaly
 ```
 processFiles():
   for each file:
-    1. contentHash = recorder.ComputeHash(filePath, force)   ← ハッシュ計算のみ（永続化なし）
-    2. dynLibDeps = dynlibCtx.computeDynLibDeps(filePath)    ← NEW: 解析のみ（永続化なし）
+    1. contentHash = recorder.ComputeHash(filePath, force)     ← ハッシュ計算のみ（永続化なし）
+    2. dynLibDeps = dynlibCtx.computeDynLibDeps(filePath)      ← NEW: 解析のみ（永続化なし）
        ├─ エラー時（解決失敗・深度超過）→ failures++; continue  ← 記録しない
        └─ ErrNotELF / ErrNotDynELF → dynLibDeps = nil（続行）
-    3. syscallCtx.analyzeFile(filePath, hash)                ← 既存（静的 ELF 用、非致命的）
-    4. store.Update(filePath, contentHash, dynLibDeps)       ← 全フェーズ成功後に一括永続化
+    3. store.Update(filePath, contentHash, dynLibDeps)         ← contentHash + DynLibDeps を一括永続化
+    4. syscallCtx.analyzeFile(filePath, contentHash)           ← 既存（静的 ELF 用、内部で永続化、非致命的）
 ```
+
+> **NOTE**: syscall 解析（ステップ 4）は既存実装を変更しないため、内部で `SaveSyscallAnalysis()` を呼んで独立して永続化する。`store.Update`（ステップ 3）との統合は本タスクのスコープ外である。
 
 ### 3.8 `runner` 検証フローの拡張
 
