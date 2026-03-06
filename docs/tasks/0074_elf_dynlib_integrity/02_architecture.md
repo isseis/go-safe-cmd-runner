@@ -872,9 +872,10 @@ binary (/usr/bin/app)
        RUNPATH: /opt/A/lib
        └── libB.so
             → 解決に使うパス:
-              1. libA.so の OwnRUNPATH: /opt/A/lib
-              2. ld.so.cache
-              3. デフォルトパス
+              1. LD_LIBRARY_PATH （runner 実行時のみ。record 時は使用しない: Section 5.6 参照）
+              2. libA.so の OwnRUNPATH: /opt/A/lib
+              3. ld.so.cache
+              4. デフォルトパス
               ※ binary の RPATH は libA.so が RUNPATH を持つため継承打ち切り
 ```
 
