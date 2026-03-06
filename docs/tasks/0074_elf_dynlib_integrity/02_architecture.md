@@ -352,19 +352,12 @@ func (c *LDCache) Lookup(soname string) string
 
 **`ld.so.cache` バイナリフォーマット（新形式）**:
 
-```
-+----------------------------------+
-| Header: "glibc-ld.so.cache1.1"  |  (CACHEMAGIC_NEW, 19 bytes + padding)
-| nlibs (uint32)                   |  エントリ数
-| len_strings (uint32)             |  文字列テーブルサイズ
-| unused[5] (uint32)               |
-+----------------------------------+
-| Entry[0]: flags, key, value, ... |  各 24 bytes
-| Entry[1]: ...                    |
-| ...                              |
-+----------------------------------+
-| String table                     |  key/value のオフセット先
-+----------------------------------+
+```mermaid
+block-beta
+    columns 1
+    H["Header\nCACHEMAGIC_NEW: &quot;glibc-ld.so.cache1.1&quot; (19 bytes + padding)\nnlibs: uint32（エントリ数）\nlen_strings: uint32（文字列テーブルサイズ）\nunused[5]: uint32"]
+    E["Entry 配列\nEntry[0]: flags / key offset / value offset / ... （各 24 bytes）\nEntry[1]: ...\n...（nlibs 個）"]
+    S[("String table\nkey / value の文字列本体\n（各 Entry のオフセットが指す先）")]
 ```
 
 ### 3.4 `DynLibAnalyzer`: `record` 時の解析
