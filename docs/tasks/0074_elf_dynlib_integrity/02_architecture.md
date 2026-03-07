@@ -274,14 +274,14 @@ type LibEntry struct {
 // It implements a subset of the ld.so resolution algorithm sufficient for
 // security verification purposes.
 type LibraryResolver struct {
-    cache     *LDCache         // parsed /etc/ld.so.cache (may be nil)
-    fs        safefileio.FileSystem
-    archPaths []string         // architecture-specific default search paths
+    cache     *LDCache  // parsed /etc/ld.so.cache (may be nil)
+    archPaths []string  // architecture-specific default search paths
 }
 
-// NewLibraryResolver creates a new resolver. It attempts to parse /etc/ld.so.cache
-// and falls back to default paths only if the cache is unavailable.
-func NewLibraryResolver(fs safefileio.FileSystem, elfMachine elf.Machine) *LibraryResolver
+// NewLibraryResolver creates a new resolver for a specific ELF machine architecture.
+// cache is the pre-parsed ld.so.cache (may be nil if unavailable).
+// safefileio.FileSystem is not needed: tryResolve uses os.Lstat + filepath.EvalSymlinks directly.
+func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver
 
 // Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
 // The resolution order follows ld.so(8) with inherited RPATH support (see Section 5.1):
@@ -389,13 +389,15 @@ const (
 
 // DynLibAnalyzer resolves and records dynamic library dependencies for ELF binaries.
 type DynLibAnalyzer struct {
-    resolver *LibraryResolver
-    fs       safefileio.FileSystem
-    hashAlgo string // "sha256"
+    fs    safefileio.FileSystem
+    cache *LDCache // parsed once at construction time; nil if ld.so.cache is unavailable
 }
 
-// NewDynLibAnalyzer creates a new analyzer.
-func NewDynLibAnalyzer(fs safefileio.FileSystem) (*DynLibAnalyzer, error)
+// NewDynLibAnalyzer creates a new analyzer. It parses /etc/ld.so.cache once at
+// construction time and reuses the result for every Analyze() call.
+// A LibraryResolver is created per Analyze() call (not per DynLibAnalyzer) because
+// the resolver holds architecture-specific search paths that vary by binary.
+func NewDynLibAnalyzer(fs safefileio.FileSystem) *DynLibAnalyzer
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
 // ELF binary, computes their hashes, and returns a DynLibDepsData snapshot.
