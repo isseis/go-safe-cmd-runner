@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
@@ -32,6 +33,7 @@ var (
 // This makes the dependency graph visible at call sites and simplifies testing.
 type deps struct {
 	validatorFactory      func(hashDir string) (hashRecorder, error)
+	dynlibAnalyzerFactory func() *dynlibanalysis.DynLibAnalyzer // nil means dynlib analysis is disabled
 	syscallContextFactory func(hashDir string) (*syscallAnalysisContext, error)
 	mkdirAll              func(path string, perm os.FileMode) error
 }
@@ -39,7 +41,10 @@ type deps struct {
 func defaultDeps() deps {
 	return deps{
 		validatorFactory: func(hashDir string) (hashRecorder, error) {
-			return cmdcommon.CreateValidator(hashDir)
+			return filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		},
+		dynlibAnalyzerFactory: func() *dynlibanalysis.DynLibAnalyzer {
+			return dynlibanalysis.NewDynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
 		},
 		syscallContextFactory: newSyscallAnalysisContext,
 		mkdirAll:              os.MkdirAll,
@@ -80,10 +85,18 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
 	}
 
-	recorder, err := d.validatorFactory(cfg.hashDir)
+	validator, err := d.validatorFactory(cfg.hashDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error creating validator: %v\n", err) //nolint:errcheck
 		return 1
+	}
+
+	// Inject DynLibAnalyzer when the validator supports it.
+	// Uses a type assertion so that test fakes implementing only hashRecorder are unaffected.
+	if d.dynlibAnalyzerFactory != nil {
+		if fv, ok := validator.(*filevalidator.Validator); ok {
+			fv.SetDynLibAnalyzer(d.dynlibAnalyzerFactory())
+		}
 	}
 
 	syscallCtx, err := d.syscallContextFactory(cfg.hashDir)
@@ -92,7 +105,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	return processFiles(recorder, syscallCtx, cfg, stdout, stderr)
+	return processFiles(validator, syscallCtx, cfg, stdout, stderr)
 }
 
 func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {

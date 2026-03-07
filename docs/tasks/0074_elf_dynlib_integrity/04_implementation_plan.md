@@ -742,12 +742,12 @@ graph TB
 - [x] `dynlibanalysis/resolver_test.go`
 
 ### Phase 3: DynLibAnalyzer（record 拡張）
-- [ ] `dynlibanalysis/analyzer.go`: `DynLibAnalyzer`, `Analyze`, ヘルパー関数
-- [ ] `dynlibanalysis/analyzer_test.go`
-- [ ] `filevalidator/validator.go`: `dynlibAnalyzer` フィールド, `SetDynLibAnalyzer` セッター, `LoadRecord`
-- [ ] `filevalidator/validator.go`: `FileValidator` IF に `LoadRecord` 追加
-- [ ] `filevalidator/validator.go`: `saveHash` コールバック拡張
-- [ ] `cmd/record/main.go`: `DynLibAnalyzer` 統合
+- [x] `dynlibanalysis/analyzer.go`: `DynLibAnalyzer`, `Analyze`, ヘルパー関数
+- [x] `dynlibanalysis/analyzer_test.go`
+- [x] `filevalidator/validator.go`: `dynlibAnalyzer` フィールド, `SetDynLibAnalyzer` セッター, `LoadRecord`
+- [x] `filevalidator/validator.go`: `FileValidator` IF に `LoadRecord` 追加
+- [x] `filevalidator/validator.go`: `saveHash` コールバック拡張
+- [x] `cmd/record/main.go`: `DynLibAnalyzer` 統合
 
 ### Phase 4: DynLibVerifier（runner 拡張）
 - [ ] `dynlibanalysis/verifier.go`: `DynLibVerifier`, `Verify`, ヘルパー関数
