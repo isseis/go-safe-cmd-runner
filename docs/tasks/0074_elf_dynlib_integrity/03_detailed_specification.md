@@ -1408,8 +1408,8 @@ func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
 // saveHash saves the hash using FileAnalysisRecord format.
 // When analyzers are set, DynLibDeps and HasDynamicLoad are also analyzed and
 // recorded in the same Update callback (atomic with hash update).
-// HasDynamicLoad is always assigned in the Update callback (including false) so
-// that re-recording overwrites any stale true from a prior run. The json tag
+// HasDynamicLoad is always reset to false before the analyzer is consulted, so
+// disabling the analyzer clears any stale true from a prior run. The json tag
 // uses omitempty, so false is omitted from the JSON file; this is safe because
 // every record run recomputes the value from scratch.
 func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
@@ -1436,8 +1436,10 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
         }
 
         // NEW: Detect dlopen/dlsym/dlvsym symbols via BinaryAnalyzer interface.
-        // Always assign (including false) to overwrite any stale true from a prior run.
-        // omitempty means false is omitted from JSON, which is safe: every record run recomputes this.
+        // Always reset to false first so that disabling the analyzer clears any stale true
+        // from a prior record run. omitempty means false is omitted from JSON, which is safe:
+        // every record run recomputes this value from scratch.
+        record.HasDynamicLoad = false
         if v.binaryAnalyzer != nil {
             output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
             record.HasDynamicLoad = output.HasDynamicLoad
