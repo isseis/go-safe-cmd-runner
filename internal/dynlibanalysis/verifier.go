@@ -81,8 +81,11 @@ func (v *DynLibVerifier) Verify(binaryPath string, deps *fileanalysis.DynLibDeps
 	}
 
 	// Stage 2: Path resolution verification
+	// Cache ELF RPATH/RUNPATH per ParentPath to avoid re-parsing the same file.
+	elfCache := make(map[string]elfPaths)
+
 	for _, entry := range deps.Libs {
-		ctx, err := v.buildResolveContext(entry)
+		ctx, err := v.buildResolveContext(entry, elfCache)
 		if err != nil {
 			return fmt.Errorf("failed to build resolve context for %s: %w",
 				entry.SOName, err)
@@ -107,15 +110,30 @@ func (v *DynLibVerifier) Verify(binaryPath string, deps *fileanalysis.DynLibDeps
 	return nil
 }
 
+// elfPaths holds the cached RPATH and RUNPATH of a parsed ELF file.
+type elfPaths struct {
+	rpath   []string
+	runpath []string
+}
+
 // buildResolveContext reconstructs the ResolveContext for a LibEntry at runtime.
 // It re-reads the ParentPath ELF to obtain OwnRPATH/OwnRUNPATH, and uses
 // the LibEntry's InheritedRPATH for the inherited context.
 // IncludeLDLibraryPath is set to true (runner time).
-func (v *DynLibVerifier) buildResolveContext(entry fileanalysis.LibEntry) (*ResolveContext, error) {
-	// Read parent ELF to get its RPATH/RUNPATH.
-	parentRPATH, parentRUNPATH, err := v.readELFPaths(entry.ParentPath)
-	if err != nil {
-		return nil, err
+// cache memoizes ELF parses keyed by ParentPath to avoid re-parsing the same file.
+func (v *DynLibVerifier) buildResolveContext(entry fileanalysis.LibEntry, cache map[string]elfPaths) (*ResolveContext, error) {
+	// Read parent ELF to get its RPATH/RUNPATH, using cache to avoid re-parsing.
+	var parentRPATH, parentRUNPATH []string
+	if cached, ok := cache[entry.ParentPath]; ok {
+		parentRPATH = cached.rpath
+		parentRUNPATH = cached.runpath
+	} else {
+		var err error
+		parentRPATH, parentRUNPATH, err = v.readELFPaths(entry.ParentPath)
+		if err != nil {
+			return nil, err
+		}
+		cache[entry.ParentPath] = elfPaths{rpath: parentRPATH, runpath: parentRUNPATH}
 	}
 
 	ctx := &ResolveContext{
