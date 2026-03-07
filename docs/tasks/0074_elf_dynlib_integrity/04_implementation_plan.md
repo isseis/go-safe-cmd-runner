@@ -760,17 +760,17 @@ graph TB
 - [x] `verification/testing/testify_mocks.go`: `MockFileValidator` に `LoadRecord` 追加
 
 ### Phase 5: dlopen シンボル検出 + 仕上げ
-- [ ] `binaryanalyzer/network_symbols.go`: `CategoryDynamicLoad`, `dynamicLoadSymbolRegistry`, `IsDynamicLoadSymbol`
-- [ ] `binaryanalyzer/analyzer.go`: `AnalysisOutput.HasDynamicLoad`
-- [ ] `elfanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出
-- [ ] `machoanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出
-- [ ] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加・`saveHash` コールバック拡張
-- [ ] `cmd/record/main.go`: `SetBinaryAnalyzer` / `SetDynLibAnalyzer` で各アナライザーを注入
-- [ ] `network_analyzer.go`: `NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer` 公開ファクトリ関数を追加（プラットフォーム選択ロジックを `NewNetworkAnalyzer` から分離）
-- [ ] `network_analyzer.go`: `isNetworkViaBinaryAnalysis` 戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` と `output.Result` を独立して処理する拡張（`dlopen+socket` 同時検出時は `(true, true)` を返す）
-- [ ] `network_analyzer.go`: `IsNetworkOperation` の呼び出し側を `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に更新
-- [ ] 全テストパス確認
-- [ ] `make lint` / `make fmt` パス確認
+- [x] `binaryanalyzer/network_symbols.go`: `CategoryDynamicLoad`, `dynamicLoadSymbolRegistry`, `IsDynamicLoadSymbol`
+- [x] `binaryanalyzer/analyzer.go`: `AnalysisOutput.HasDynamicLoad`
+- [x] `elfanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出
+- [x] `machoanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出
+- [x] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加・`saveHash` コールバック拡張
+- [x] `cmd/record/main.go`: `SetBinaryAnalyzer` / `SetDynLibAnalyzer` で各アナライザーを注入
+- [x] `network_analyzer.go`: `NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer` 公開ファクトリ関数を追加（プラットフォーム選択ロジックを `NewNetworkAnalyzer` から分離）
+- [x] `network_analyzer.go`: `isNetworkViaBinaryAnalysis` 戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` と `output.Result` を独立して処理する拡張（`dlopen+socket` 同時検出時は `(true, true)` を返す）
+- [x] `network_analyzer.go`: `IsNetworkOperation` の呼び出し側を `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に更新
+- [x] 全テストパス確認
+- [x] `make lint` / `make fmt` パス確認
 
 ## 8. 参照
 

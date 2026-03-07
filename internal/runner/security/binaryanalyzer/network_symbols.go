@@ -17,6 +17,9 @@ const (
 
 	// CategoryDNS represents DNS resolution functions.
 	CategoryDNS SymbolCategory = "dns"
+
+	// CategoryDynamicLoad represents dynamic library loading functions (dlopen/dlsym/dlvsym).
+	CategoryDynamicLoad SymbolCategory = "dynamic_load"
 )
 
 // networkSymbolRegistry contains the default set of network-related symbols.
@@ -129,4 +132,18 @@ func IsNetworkSymbol(name string) (SymbolCategory, bool) {
 // Useful for testing and documentation.
 func SymbolCount() int {
 	return len(networkSymbolRegistry)
+}
+
+// dynamicLoadSymbolRegistry contains symbols for dynamic library loading.
+var dynamicLoadSymbolRegistry = map[string]struct{}{
+	"dlopen": {},
+	"dlsym":  {},
+	"dlvsym": {},
+}
+
+// IsDynamicLoadSymbol returns true if the given symbol name is a dynamic library
+// loading function (dlopen, dlsym, or dlvsym).
+func IsDynamicLoadSymbol(name string) bool {
+	_, found := dynamicLoadSymbolRegistry[name]
+	return found
 }

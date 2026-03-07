@@ -12,6 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
@@ -59,6 +60,7 @@ type Validator struct {
 	store *fileanalysis.Store
 
 	dynlibAnalyzer *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
+	binaryAnalyzer binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -179,6 +181,13 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 			record.DynLibDeps = dynLibDeps // nil for non-ELF or static ELF (omitted in JSON)
 		}
 
+		// Analyze binary symbols for dynamic load detection if analyzer is available.
+		// Always write the result (true or false) to overwrite stale values.
+		if v.binaryAnalyzer != nil {
+			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
+			record.HasDynamicLoad = output.HasDynamicLoad
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -205,6 +214,12 @@ func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
 // Call before the first Record() invocation. Safe to call with nil (disables dynlib analysis).
 func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
 	v.dynlibAnalyzer = a
+}
+
+// SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.
+// Call before the first Record() invocation. Safe to call with nil (disables binary analysis).
+func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
+	v.binaryAnalyzer = a
 }
 
 // Verify checks if the file at filePath matches its recorded hash.

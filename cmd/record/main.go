@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -91,12 +92,13 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Inject DynLibAnalyzer when the validator supports it.
+	// Inject DynLibAnalyzer and BinaryAnalyzer when the validator supports it.
 	// Uses a type assertion so that test fakes implementing only hashRecorder are unaffected.
-	if d.dynlibAnalyzerFactory != nil {
-		if fv, ok := validator.(*filevalidator.Validator); ok {
+	if fv, ok := validator.(*filevalidator.Validator); ok {
+		if d.dynlibAnalyzerFactory != nil {
 			fv.SetDynLibAnalyzer(d.dynlibAnalyzerFactory())
 		}
+		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())
 	}
 
 	syscallCtx, err := d.syscallContextFactory(cfg.hashDir)
