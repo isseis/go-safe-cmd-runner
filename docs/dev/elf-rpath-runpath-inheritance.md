@@ -128,8 +128,9 @@ main(RPATH=/gp) → libA(RUNPATH=/a) → libB(no RPATH, no RUNPATH) → libC
 
 - When libB is the loading object: libB has no RUNPATH → walks up to loader (libA)
   - libA has RUNPATH → chain terminates at libA
-  - main's /gp is **not used** for resolving libC
-- Therefore, search paths for libC: libA's RUNPATH (/a) only
+  - libA's RUNPATH (/a) applies only to libA's **direct dependencies (libB)** and is not used for libC
+  - main's /gp is **not used** for resolving libC either
+- Therefore, search paths for libC: no RPATH/RUNPATH → LD_LIBRARY_PATH → /etc/ld.so.cache → default paths
 
 ### Misconception 3: "DT_RUNPATH uses the same search order as DT_RPATH but just isn't inherited"
 

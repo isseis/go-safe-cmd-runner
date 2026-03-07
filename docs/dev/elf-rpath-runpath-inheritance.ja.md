@@ -128,8 +128,9 @@ main(RPATH=/gp) → libA(RUNPATH=/a) → libB(no RPATH, no RUNPATH) → libC
 
 - libB が loading object のとき: libB に RUNPATH なし → loader(libA) の RPATH チェーンに遡る
   - libA は RUNPATH を持つため、libA の段階で打ち切り
-  - libA の loader(main) の /gp は libC の解決に **使われない**
-- よって libC の検索パス: libA の RUNPATH(/a) のみ
+  - libA の RUNPATH(/a) は libA の **直接依存（libB）の解決にのみ** 使われ、libC には適用されない
+  - libA の loader(main) の /gp も libC の解決に **使われない**
+- よって libC の検索パス: RPATH/RUNPATH なし → LD_LIBRARY_PATH → /etc/ld.so.cache → デフォルトパスの順
 
 ### 誤解 3: 「DT_RUNPATH は DT_RPATH と同じ検索順序だが継承されないだけ」
 
