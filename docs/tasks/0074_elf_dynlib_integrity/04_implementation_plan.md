@@ -111,13 +111,13 @@ if errors.As(err, &schemaErr) {
 
 #### 完了条件
 
-- [ ] `CurrentSchemaVersion` が 2 に変更されていること
-- [ ] `DynLibDepsData`, `LibEntry` 型が定義されていること
-- [ ] `Record` に `DynLibDeps`, `HasDynamicLoad` フィールドが追加されていること
-- [ ] `Store.Update` が旧スキーマ（`Actual < Expected`）の `SchemaVersionMismatchError` 時に上書きを許可すること
-- [ ] `Store.Update` が新スキーマ（`Actual > Expected`）の `SchemaVersionMismatchError` 時にエラーを返すこと
-- [ ] 既存テストが全てパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `CurrentSchemaVersion` が 2 に変更されていること
+- [x] `DynLibDepsData`, `LibEntry` 型が定義されていること
+- [x] `Record` に `DynLibDeps`, `HasDynamicLoad` フィールドが追加されていること
+- [x] `Store.Update` が旧スキーマ（`Actual < Expected`）の `SchemaVersionMismatchError` 時に上書きを許可すること
+- [x] `Store.Update` が新スキーマ（`Actual > Expected`）の `SchemaVersionMismatchError` 時にエラーを返すこと
+- [x] 既存テストが全てパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 
@@ -723,10 +723,10 @@ graph TB
 ## 7. 実装チェックリスト
 
 ### Phase 1: スキーマ拡張
-- [ ] `fileanalysis/schema.go`: `CurrentSchemaVersion = 2`
-- [ ] `fileanalysis/schema.go`: `DynLibDepsData`, `LibEntry` 型定義
-- [ ] `fileanalysis/schema.go`: `Record.DynLibDeps`, `Record.HasDynamicLoad` 追加
-- [ ] 既存テストの `CurrentSchemaVersion` 依存箇所を更新
+- [x] `fileanalysis/schema.go`: `CurrentSchemaVersion = 2`
+- [x] `fileanalysis/schema.go`: `DynLibDepsData`, `LibEntry` 型定義
+- [x] `fileanalysis/schema.go`: `Record.DynLibDeps`, `Record.HasDynamicLoad` 追加
+- [x] 既存テストの `CurrentSchemaVersion` 依存箇所を更新
 
 ### Phase 2: ライブラリ解決エンジン
 - [ ] `dynlibanalysis/doc.go`: パッケージドキュメント

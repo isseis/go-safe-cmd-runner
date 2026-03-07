@@ -303,3 +303,45 @@ func TestNewStore_NotADirectory(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not a directory")
 }
+
+// TestStore_Update_OldSchemaAllowsOverwrite verifies that Store.Update allows
+// overwriting a record with an older schema version (Actual < Expected).
+// This enables `record --force` to migrate records to the current schema version.
+func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	// Create test file
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// Write a record with the previous schema version (simulating a v1 record)
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	oldVersionRecord := map[string]interface{}{
+		"schema_version": CurrentSchemaVersion - 1, // older schema
+		"file_path":      testFile,
+		"content_hash":   "sha256:oldvalue",
+		"updated_at":     time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(oldVersionRecord, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	// Update should succeed by allowing overwrite of old schema record
+	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+		record.ContentHash = "sha256:newvalue"
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Load and verify the record was overwritten with new schema
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	require.NoError(t, err)
+	assert.Equal(t, CurrentSchemaVersion, loadedRecord.SchemaVersion)
+	assert.Equal(t, "sha256:newvalue", loadedRecord.ContentHash)
+}

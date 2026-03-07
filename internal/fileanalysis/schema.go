@@ -8,8 +8,12 @@ import (
 
 const (
 	// CurrentSchemaVersion is the current analysis record schema version.
-	// Increment this when making breaking changes to the analysis record format.
-	CurrentSchemaVersion = 1
+	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 2.
+	// Store.Update treats older schemas (Actual < Expected) as overwritable
+	// (enables `record --force` migration).
+	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
+	CurrentSchemaVersion = 2
 )
 
 // Record represents a unified file analysis record containing both
@@ -39,6 +43,43 @@ type Record struct {
 	// SyscallAnalysis contains syscall analysis result (optional).
 	// Only present for static ELF binaries that have been analyzed.
 	SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
+
+	// DynLibDeps contains the dynamic library dependency snapshot recorded at record time.
+	// Only present for ELF binaries with DT_NEEDED entries.
+	DynLibDeps *DynLibDepsData `json:"dyn_lib_deps,omitempty"`
+
+	// HasDynamicLoad indicates that dlopen/dlsym/dlvsym symbols were found in the binary
+	// at record time. This is an informational snapshot; the runner re-runs live binary
+	// analysis at runtime and does NOT read this field directly.
+	HasDynamicLoad bool `json:"has_dynamic_load,omitempty"`
+}
+
+// DynLibDepsData contains the dynamic library dependency snapshot.
+type DynLibDepsData struct {
+	RecordedAt time.Time  `json:"recorded_at"`
+	Libs       []LibEntry `json:"libs"`
+}
+
+// LibEntry represents a single resolved dynamic library dependency.
+type LibEntry struct {
+	// SOName is the DT_NEEDED library name (e.g., "libssl.so.3").
+	SOName string `json:"soname"`
+
+	// ParentPath is the full path of the ELF whose DT_NEEDED references this library.
+	// Used as part of the resolution key (ParentPath, SOName) for re-resolution at runner time.
+	ParentPath string `json:"parent_path"`
+
+	// Path is the resolved full path to the library file, normalized via
+	// filepath.EvalSymlinks + filepath.Clean.
+	Path string `json:"path"`
+
+	// Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
+	Hash string `json:"hash"`
+
+	// InheritedRPATH is the ordered list of RPATH entries inherited from ancestor ELFs
+	// at record time, after $ORIGIN expansion. Required for Stage 2 re-resolution at
+	// runner time.
+	InheritedRPATH []string `json:"inherited_rpath,omitempty"`
 }
 
 // SyscallInfo is an alias for common.SyscallInfo.
