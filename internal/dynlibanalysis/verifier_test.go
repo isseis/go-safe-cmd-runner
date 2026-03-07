@@ -90,7 +90,7 @@ func TestVerify_Stage1_HashMatch(t *testing.T) {
 	writeFile(t, libPath, "fake library content for hash test")
 
 	// Compute its real hash.
-	actualHash, err := computeFileHash(libPath)
+	actualHash, err := computeFileHash(safefileio.NewFileSystem(safefileio.FileSystemConfig{}), libPath)
 	require.NoError(t, err)
 
 	deps := &fileanalysis.DynLibDepsData{
@@ -166,7 +166,7 @@ func TestVerify_Stage2_PathMatch(t *testing.T) {
 	libPath := filepath.Join(tmpDir, libName)
 	writeFile(t, libPath, "library content for stage2 path match test")
 
-	actualHash, err := computeFileHash(libPath)
+	actualHash, err := computeFileHash(safefileio.NewFileSystem(safefileio.FileSystemConfig{}), libPath)
 	require.NoError(t, err)
 
 	deps := &fileanalysis.DynLibDepsData{
@@ -206,7 +206,7 @@ func TestVerify_Stage2_PathMismatch_LDLibraryPath(t *testing.T) {
 	writeFile(t, libB, "hijacked library in dirB")
 
 	// Compute the actual hash of libA so Stage 1 passes.
-	hashA, err := computeFileHash(libA)
+	hashA, err := computeFileHash(safefileio.NewFileSystem(safefileio.FileSystemConfig{}), libA)
 	require.NoError(t, err)
 
 	// Build ELFs: binary (command), parent (no RPATH → resolver uses LD_LIBRARY_PATH).

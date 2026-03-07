@@ -64,7 +64,7 @@ func (v *DynLibVerifier) Verify(binaryPath string, deps *fileanalysis.DynLibDeps
 			}
 		}
 
-		actualHash, err := computeFileHash(entry.Path)
+		actualHash, err := computeFileHash(v.fs, entry.Path)
 		if err != nil {
 			return fmt.Errorf("failed to read library %s at %s: %w",
 				entry.SOName, entry.Path, err)
@@ -183,5 +183,3 @@ func (v *DynLibVerifier) getELFMachine(path string) (elf.Machine, error) {
 
 	return elfFile.Machine, nil
 }
-
-// computeFileHash is defined in analyzer.go and shared by DynLibVerifier.

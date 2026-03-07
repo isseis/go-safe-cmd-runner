@@ -173,7 +173,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			recorded[eKey] = struct{}{}
 
 			// Compute hash using safefileio
-			hash, err := computeFileHash(resolvedPath)
+			hash, err := computeFileHash(a.fs, resolvedPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
 			}
@@ -232,7 +232,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 }
 
 // computeFileHash computes the SHA256 hash of the file at the given path
-// using safefileio for symlink attack prevention.
+// using the provided FileSystem for symlink attack prevention.
 // Shared by DynLibAnalyzer and DynLibVerifier to avoid duplication.
 //
 // Design note: SafeReadFile loads the entire file into memory before hashing.
@@ -240,10 +240,10 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 // With 10-30 dependencies per binary, peak memory usage remains within
 // practical limits. However, very large libraries (e.g., libLLVM.so ~50MB)
 // could cause memory pressure if many such libraries are hashed concurrently.
-// Future improvement: replace with safefileio.SafeOpenFile + io.Copy(sha256.New(), file)
+// Future improvement: replace with fs.SafeOpenFile + io.Copy(sha256.New(), file)
 // for streaming hash computation without loading the full file into memory.
-func computeFileHash(path string) (string, error) {
-	content, err := safefileio.SafeReadFile(path)
+func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
+	content, err := safefileio.SafeReadFileWithFS(path, fs)
 	if err != nil {
 		return "", err
 	}
