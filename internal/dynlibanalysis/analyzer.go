@@ -5,6 +5,7 @@ import (
 	"debug/elf"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -234,22 +235,18 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 // computeFileHash computes the SHA256 hash of the file at the given path
 // using the provided FileSystem for symlink attack prevention.
 // Shared by DynLibAnalyzer and DynLibVerifier to avoid duplication.
-//
-// Design note: SafeReadFile loads the entire file into memory before hashing.
-// For typical shared libraries (libc ~2MB, libssl ~1MB), this is acceptable.
-// With 10-30 dependencies per binary, peak memory usage remains within
-// practical limits. However, very large libraries (e.g., libLLVM.so ~50MB)
-// could cause memory pressure if many such libraries are hashed concurrently.
-// Future improvement: replace with fs.SafeOpenFile + io.Copy(sha256.New(), file)
-// for streaming hash computation without loading the full file into memory.
+// Streams the file content through sha256.New() to avoid loading the entire
+// file into memory (important for large libraries such as libLLVM.so ~50MB).
 func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
-	content, err := safefileio.SafeReadFileWithFS(path, fs)
+	file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = file.Close() }()
+
 	h := sha256.New()
-	if _, err := h.Write(content); err != nil {
-		return "", err
+	if _, err := io.Copy(h, file); err != nil {
+		return "", fmt.Errorf("failed to hash %s: %w", path, err)
 	}
 	return fmt.Sprintf("%s:%s", hashPrefix, hex.EncodeToString(h.Sum(nil))), nil
 }
