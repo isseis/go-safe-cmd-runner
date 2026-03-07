@@ -22,6 +22,7 @@ import (
 type Manager struct {
 	hashDir                     string
 	fs                          common.FileSystem
+	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
 	dynlibVerifier              *dynlibanalysis.DynLibVerifier // initialized once at construction
 	security                    *security.Validator
@@ -473,15 +474,18 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 		return nil, err
 	}
 
+	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+
 	manager := &Manager{
 		hashDir:                     hashDir,
 		fs:                          opts.fs,
+		safeFS:                      safeFS,
 		isDryRun:                    opts.isDryRun,
 		skipHashDirectoryValidation: opts.skipHashDirectoryValidation,
 	}
 
 	// Initialize dynamic library verifier (parses /etc/ld.so.cache once at startup).
-	manager.dynlibVerifier = dynlibanalysis.NewDynLibVerifier(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
+	manager.dynlibVerifier = dynlibanalysis.NewDynLibVerifier(safeFS)
 
 	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
@@ -664,7 +668,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	}
 
 	// DynLibDeps is not recorded: check if this is a dynamically linked ELF binary.
-	hasDynDeps, err := hasDynamicLibraryDeps(cmdPath)
+	hasDynDeps, err := m.hasDynamicLibraryDeps(cmdPath)
 	if err != nil {
 		return fmt.Errorf("failed to check dynamic library dependencies: %w", err)
 	}
@@ -683,19 +687,17 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 // Static ELFs and ELFs with no DT_NEEDED entries return (false, nil).
 //
 // Errors are classified as follows:
-//   - os.Open failure (I/O error, permission denied, file not found) → (false, err): propagated to caller
-//   - elf.NewFile failure (not an ELF, bad magic)                    → (false, nil): file is not an ELF binary
-func hasDynamicLibraryDeps(path string) (bool, error) {
-	// Open file first: distinguish I/O failures from format errors.
-	// The path is already symlink-resolved by PathResolver, so os.Open is safe here.
-	osFile, err := os.Open(path) //nolint:gosec // path is symlink-resolved by PathResolver
+//   - SafeOpenFile failure (I/O error, permission denied, file not found) → (false, err): propagated to caller
+//   - elf.NewFile failure (not an ELF, bad magic)                         → (false, nil): file is not an ELF binary
+func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
+	file, err := m.safeFS.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		// I/O error or permission denied: propagate, do not silently skip dynlib check.
 		return false, fmt.Errorf("failed to open binary for ELF inspection: %w", err)
 	}
-	defer func() { _ = osFile.Close() }()
+	defer func() { _ = file.Close() }()
 
-	elfFile, err := elf.NewFile(osFile)
+	elfFile, err := elf.NewFile(file)
 	if err != nil {
 		// Not an ELF binary (bad magic, unsupported format, etc.).
 		return false, nil
