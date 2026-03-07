@@ -1201,9 +1201,9 @@ func (v *DynLibVerifier) buildResolveContext(entry fileanalysis.LibEntry) (*Reso
         ctx.OwnRPATH = parentRPATH
     }
 
-    // Reconstruct InheritedRPATH from recorded data
-    // At record time, InheritedRPATH was stored as expanded paths.
-    // We use ParentDir as OriginDir since $ORIGIN was already expanded at record time.
+    // Reconstruct InheritedRPATH from recorded data.
+    // Paths are already fully expanded at record time, so OriginDir is left empty
+    // ($ORIGIN expansion is a no-op when Path contains no $ORIGIN).
     if len(entry.InheritedRPATH) > 0 {
         inherited := make([]ExpandedRPATHEntry, len(entry.InheritedRPATH))
         for i, rp := range entry.InheritedRPATH {
