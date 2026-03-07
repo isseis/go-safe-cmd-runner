@@ -1457,7 +1457,7 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 
 ### 3.13 `verification/manager.go` — `verifyDynLibDeps` の実装
 
-`Manager` 構造体に `dynlibVerifier` フィールドを追加し、`NewManager`（または同等のコンストラクタ）で 1 回だけ `NewDynLibVerifier` を呼ぶ。これにより `ld.so.cache` のパースはプロセス起動時に 1 回のみ行われる。
+`Manager` 構造体に `dynlibVerifier` フィールドを追加し、`newManagerInternal` で 1 回だけ `NewDynLibVerifier` を呼ぶ。`NewManager`・`NewManagerForDryRun`・`NewManagerForTest` はいずれも `newManagerInternal` 経由で構築されるため、すべてのコンストラクタで一貫して初期化される。これにより `ld.so.cache` のパースはプロセス起動時に 1 回のみ行われる。
 
 ```go
 // internal/verification/manager.go
@@ -2068,7 +2068,7 @@ func TestIntegration_OldSchemaRejection(t *testing.T) {
 - [ ] `cmd/record/main.go`: `SetBinaryAnalyzer` で `BinaryAnalyzer` を注入
 - [ ] `runner/security/network_analyzer.go`: `isNetworkViaBinaryAnalysis` の戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` 検出時に `isHighRisk=true` を設定する高リスク判定を追加（`isNetwork` は独立して判定）
 - [ ] `runner/security/network_analyzer.go`: `IsNetworkOperation` 内の呼び出しを `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に変更
-- [ ] 上記の全ユニットテスト（`TestRecord_HasDynamicLoad_Written_WhenFalse` を含む）
+- [ ] 上記の全ユニットテスト（`TestRecord_HasDynamicLoad_WrittenWhenFalse` を含む）
 - [ ] 全既存テストのパス確認
 - [ ] `make lint` / `make fmt` パス確認
 
