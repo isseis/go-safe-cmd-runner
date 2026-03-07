@@ -117,15 +117,25 @@ func parseLDCacheData(data []byte) (*LDCache, error) {
 		return nil, fmt.Errorf("failed to read ld.so.cache header: %w", err)
 	}
 
-	// Calculate offsets
-	entryStart := headerStart + headerSize
-	stringTableStart := entryStart + int(header.NLibs)*newEntrySize
+	// Calculate offsets using uint64 to prevent integer overflow on 32-bit platforms.
+	// header.NLibs, header.LenStrings, entry.KeyOffset, and entry.ValueOffset are
+	// all uint32, so multiplying or adding them as plain int can overflow on 32-bit.
+	// We compute in uint64 and bounds-check before converting back to int.
+	// headerStart and headerSize are non-negative ints bounded by len(data).
+	// Casting to uint64 is safe and intentional: subsequent arithmetic uses
+	// uint32 fields (NLibs, LenStrings) that would overflow 32-bit int.
+	entryStartU := uint64(headerStart) + uint64(headerSize) //nolint:gosec // G115: safe, see above
+	stringTableStartU := entryStartU + uint64(header.NLibs)*newEntrySize
+	dataEndU := stringTableStartU + uint64(header.LenStrings)
 
-	if len(data) < stringTableStart+int(header.LenStrings) {
+	dataLen := uint64(len(data))
+	if dataEndU > dataLen {
 		return nil, fmt.Errorf("%w: need %d bytes, have %d",
-			errDataTruncated,
-			stringTableStart+int(header.LenStrings), len(data))
+			errDataTruncated, dataEndU, dataLen)
 	}
+
+	// entryStartU <= dataEndU <= dataLen = len(data), so it fits in int.
+	entryStart := int(entryStartU) //nolint:gosec // G115: bounded by len(data) above
 
 	// Parse entries
 	cache := &LDCache{
@@ -141,9 +151,15 @@ func parseLDCacheData(data []byte) (*LDCache, error) {
 			return nil, fmt.Errorf("failed to read cache entry %d: %w", i, err)
 		}
 
-		// Extract strings from string table
-		keyStart := stringTableStart + int(entry.KeyOffset)
-		valueStart := stringTableStart + int(entry.ValueOffset)
+		// Extract strings from string table; bounds are checked by extractCString.
+		keyStartU := stringTableStartU + uint64(entry.KeyOffset)
+		valueStartU := stringTableStartU + uint64(entry.ValueOffset)
+
+		// Convert to int only after verifying the values fit within the data slice.
+		// extractCString handles out-of-range offsets gracefully (returns ""),
+		// but we cap at len(data) to avoid int overflow on 32-bit platforms.
+		keyStart := int(min(keyStartU, dataLen))     //nolint:gosec // G115: capped by min(., dataLen) which fits in int
+		valueStart := int(min(valueStartU, dataLen)) //nolint:gosec // G115: capped by min(., dataLen) which fits in int
 
 		key := extractCString(data, keyStart)
 		value := extractCString(data, valueStart)
