@@ -120,7 +120,9 @@ func (c *ResolveContext) NewChildContext(
 	return child
 }
 
-// expandOrigin replaces $ORIGIN in the given path with the specified directory.
+// expandOrigin replaces $ORIGIN and ${ORIGIN} in the given path with the
+// specified directory. glibc accepts both syntaxes (see ld.so(8)).
 func expandOrigin(path string, originDir string) string {
-	return strings.ReplaceAll(path, "$ORIGIN", originDir)
+	result := strings.ReplaceAll(path, "${ORIGIN}", originDir)
+	return strings.ReplaceAll(result, "$ORIGIN", originDir)
 }

@@ -134,6 +134,18 @@ func TestExpandOrigin(t *testing.T) {
 			originDir: "/usr/bin",
 			expected:  "/usr/bin/..//usr/bin/lib",
 		},
+		{
+			name:      "${ORIGIN} replaced",
+			path:      "${ORIGIN}/lib",
+			originDir: "/usr/bin",
+			expected:  "/usr/bin/lib",
+		},
+		{
+			name:      "mixed $ORIGIN and ${ORIGIN}",
+			path:      "${ORIGIN}/a:$ORIGIN/b",
+			originDir: "/app",
+			expected:  "/app/a:/app/b",
+		},
 	}
 
 	for _, tc := range tests {
