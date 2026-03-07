@@ -648,6 +648,10 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		// Records with a newer schema (Actual > Expected) are rejected as usual.
 		var schemaErr *fileanalysis.SchemaVersionMismatchError
 		if errors.As(err, &schemaErr) && schemaErr.Actual < schemaErr.Expected {
+			slog.Warn("Skipping dynlib verification: record predates dynlib tracking; re-run 'record' to enable",
+				"cmd_path", cmdPath,
+				"record_schema_version", schemaErr.Actual,
+				"current_schema_version", schemaErr.Expected)
 			return nil
 		}
 		return fmt.Errorf("failed to load record for dynlib verification: %w", err)
