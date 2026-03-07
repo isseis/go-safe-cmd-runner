@@ -151,6 +151,41 @@ func TestVerify_Stage1_HashMismatch(t *testing.T) {
 	assert.NotEqual(t, wrongHash, hashErr.ActualHash)
 }
 
+// TestVerify_Stage2_PathMatch ensures Verify returns nil when Stage 2 resolves
+// to the same path as the recorded path (normal case without LD_LIBRARY_PATH hijack).
+func TestVerify_Stage2_PathMatch(t *testing.T) {
+	v := newTestVerifier()
+	tmpDir := t.TempDir()
+
+	// Build a parent ELF that has RPATH pointing to tmpDir so the resolver
+	// can locate the library from that directory during Stage 2.
+	parentPath := buildTestELFWithDeps(t, tmpDir, "parent", nil, tmpDir)
+	binaryPath := buildTestELFWithDeps(t, tmpDir, "binary", nil, "")
+
+	const libName = "libstage2.so"
+	libPath := filepath.Join(tmpDir, libName)
+	writeFile(t, libPath, "library content for stage2 path match test")
+
+	actualHash, err := computeFileHash(libPath)
+	require.NoError(t, err)
+
+	deps := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{
+				SOName:     libName,
+				ParentPath: parentPath,
+				Path:       libPath,
+				Hash:       actualHash,
+			},
+		},
+	}
+
+	// No LD_LIBRARY_PATH manipulation: Stage 2 resolves via parent's RPATH.
+	// Stage 1 passes (hash matches), Stage 2 passes (path matches).
+	err = v.Verify(binaryPath, deps)
+	assert.NoError(t, err, "Stage 2 should pass when resolved path matches recorded path")
+}
+
 // TestVerify_Stage2_PathMismatch_LDLibraryPath ensures ErrLibraryPathMismatch
 // is returned when LD_LIBRARY_PATH causes Stage 2 to resolve to a different path
 // than the one recorded in Stage 1.

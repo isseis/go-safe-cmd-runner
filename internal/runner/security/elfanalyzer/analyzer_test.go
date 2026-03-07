@@ -3,6 +3,7 @@
 package elfanalyzer
 
 import (
+	"debug/elf"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,6 +107,118 @@ func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
+}
+
+// TestHasDynamicLoad_ELF verifies that a binary importing dlopen is detected
+// with HasDynamicLoad=true, independently of network symbol detection.
+func TestHasDynamicLoad_ELF(t *testing.T) {
+	analyzer := NewStandardELFAnalyzer(nil, nil)
+
+	// Use a real system binary that is known to import dlopen.
+	// python3 uses dlopen for extension loading on Linux.
+	// Resolve symlinks: safefileio rejects symlinks, so we need the canonical path.
+	candidates := []string{
+		"/usr/bin/python3",
+		"/usr/bin/python3.11",
+		"/usr/bin/python3.12",
+		"/usr/bin/python3.10",
+	}
+	var binaryPath string
+	for _, c := range candidates {
+		resolved, err := filepath.EvalSymlinks(c)
+		if err == nil {
+			binaryPath = resolved
+			break
+		}
+	}
+	if binaryPath == "" {
+		t.Skip("no python3 binary found; skipping HasDynamicLoad_ELF test")
+	}
+
+	output := analyzer.AnalyzeNetworkSymbols(binaryPath, "")
+	// python3 uses dlopen for extension loading.
+	assert.True(t, output.HasDynamicLoad,
+		"python3 is expected to import dlopen/dlsym, got HasDynamicLoad=false")
+}
+
+// TestCheckDynamicSymbols_HasDynamicLoad verifies that checkDynamicSymbols
+// correctly sets HasDynamicLoad when dlopen/dlsym/dlvsym appear in the symbol list.
+func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
+	analyzer := NewStandardELFAnalyzer(nil, nil)
+
+	tests := []struct {
+		name            string
+		symbols         []elf.Symbol
+		wantResult      binaryanalyzer.AnalysisResult
+		wantDynamicLoad bool
+	}{
+		{
+			name: "dlopen only",
+			symbols: []elf.Symbol{
+				{Name: "dlopen", Section: elf.SHN_UNDEF},
+			},
+			wantResult:      binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoad: true,
+		},
+		{
+			name: "dlsym only",
+			symbols: []elf.Symbol{
+				{Name: "dlsym", Section: elf.SHN_UNDEF},
+			},
+			wantResult:      binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoad: true,
+		},
+		{
+			name: "dlvsym only",
+			symbols: []elf.Symbol{
+				{Name: "dlvsym", Section: elf.SHN_UNDEF},
+			},
+			wantResult:      binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoad: true,
+		},
+		{
+			name: "dlopen and socket (both signals)",
+			symbols: []elf.Symbol{
+				{Name: "dlopen", Section: elf.SHN_UNDEF},
+				{Name: "socket", Section: elf.SHN_UNDEF},
+			},
+			wantResult:      binaryanalyzer.NetworkDetected,
+			wantDynamicLoad: true,
+		},
+		{
+			name: "socket only (no dynamic load)",
+			symbols: []elf.Symbol{
+				{Name: "socket", Section: elf.SHN_UNDEF},
+			},
+			wantResult:      binaryanalyzer.NetworkDetected,
+			wantDynamicLoad: false,
+		},
+		{
+			name: "no relevant symbols",
+			symbols: []elf.Symbol{
+				{Name: "printf", Section: elf.SHN_UNDEF},
+			},
+			wantResult:      binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoad: false,
+		},
+		{
+			name: "dlopen defined (not imported, SHN_UNDEF=0)",
+			symbols: []elf.Symbol{
+				// Section != SHN_UNDEF means it's defined, not imported
+				{Name: "dlopen", Section: elf.SHN_ABS},
+			},
+			wantResult:      binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoad: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := analyzer.checkDynamicSymbols(tt.symbols)
+			assert.Equal(t, tt.wantResult, output.Result)
+			assert.Equal(t, tt.wantDynamicLoad, output.HasDynamicLoad)
+		})
+	}
 }
 
 func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {

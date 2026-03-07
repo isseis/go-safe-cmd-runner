@@ -3029,3 +3029,73 @@ func TestPreExpandCommands_Error(t *testing.T) {
 		})
 	}
 }
+
+// TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles verifies that
+// VerifyCommandDynLibDeps is called only for command binaries, not for files
+// listed in verify_files. verify_files entries are passed to VerifyGroupFiles
+// but do not appear in runtimeGroup.Commands, so they must not trigger dynlib
+// verification.
+func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	// Group has one command (/bin/echo) and one verify_files entry (/etc/hosts).
+	// VerifyCommandDynLibDeps must be called for /bin/echo but NOT for /etc/hosts.
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "echo-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+		VerifyFiles: []string{"/etc/hosts"},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	// Mock validator
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	// VerifyGroupFiles handles both verify_files and command file hash checks.
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+
+	// ResolvePath is called for each command binary.
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	// VerifyCommandDynLibDeps is expected ONLY for the command binary (/bin/echo),
+	// not for the verify_files entry (/etc/hosts).
+	mockVerificationManager.On("VerifyCommandDynLibDeps", "/bin/echo").Return(nil)
+
+	// Mock command execution to succeed.
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello", Stderr: ""}, nil)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.NoError(t, err)
+
+	// Assert that VerifyCommandDynLibDeps was called exactly once (for /bin/echo),
+	// not for /etc/hosts.
+	mockVerificationManager.AssertCalled(t, "VerifyCommandDynLibDeps", "/bin/echo")
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", "/etc/hosts")
+	mockVerificationManager.AssertExpectations(t)
+}

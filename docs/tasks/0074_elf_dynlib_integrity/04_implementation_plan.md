@@ -296,18 +296,18 @@ cmd/record/main.go                         # 拡張
 
 #### 完了条件
 
-- [ ] `DynLibAnalyzer.Analyze` が動的 ELF から `DynLibDepsData` を返すこと
-- [ ] `DynLibAnalyzer.Analyze` が非 ELF / 静的 ELF で `nil` を返すこと
-- [ ] `LibEntry` に `soname`, `parent_path`, `path`, `hash`, `inherited_rpath` が正しく記録されること
-- [ ] 間接依存が再帰的に解決・記録されること
-- [ ] vDSO がスキップされること
-- [ ] 循環依存で無限ループしないこと
-- [ ] 再帰深度超過時にエラーで `record` が失敗すること
-- [ ] ライブラリ解決失敗時にエラーで `record` が失敗し、何も永続化されないこと
-- [ ] `record --force` で `DynLibDeps` が更新されること
-- [ ] `FileValidator.LoadRecord` が正しくレコードを返すこと
-- [ ] 既存テストが全てパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `DynLibAnalyzer.Analyze` が動的 ELF から `DynLibDepsData` を返すこと
+- [x] `DynLibAnalyzer.Analyze` が非 ELF / 静的 ELF で `nil` を返すこと
+- [x] `LibEntry` に `soname`, `parent_path`, `path`, `hash`, `inherited_rpath` が正しく記録されること
+- [x] 間接依存が再帰的に解決・記録されること
+- [x] vDSO がスキップされること
+- [x] 循環依存で無限ループしないこと
+- [x] 再帰深度超過時にエラーで `record` が失敗すること
+- [x] ライブラリ解決失敗時にエラーで `record` が失敗し、何も永続化されないこと
+- [x] `record --force` で `DynLibDeps` が更新されること
+- [x] `FileValidator.LoadRecord` が正しくレコードを返すこと
+- [x] 既存テストが全てパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 
@@ -374,21 +374,21 @@ internal/verification/testing/testify_mocks.go  # 更新（MockManager, MockFile
 
 #### 完了条件
 
-- [ ] 第 1 段階: ハッシュ一致で検証成功すること
-- [ ] 第 1 段階: ハッシュ不一致で `ErrLibraryHashMismatch` が返ること
-- [ ] 第 2 段階: パス一致で検証成功すること
-- [ ] 第 2 段階: `LD_LIBRARY_PATH` ハイジャックで `ErrLibraryPathMismatch` が返ること
-- [ ] 空パスのエントリで `ErrEmptyLibraryPath` が返ること
-- [ ] 動的リンク ELF（`DT_NEEDED` あり）に `DynLibDeps` がない場合に `ErrDynLibDepsRequired` が返ること
-- [ ] 静的 ELF / `DT_NEEDED` なし ELF に `DynLibDeps` がない場合は正常動作すること
-- [ ] 非 ELF バイナリに `DynLibDeps` がない場合は正常動作すること
-- [ ] `schema_version: 1` の記録で `SchemaVersionMismatchError` が返ること
-- [ ] エラーメッセージにライブラリ名・パス・ハッシュ等の必要情報が含まれること
-- [ ] `VerifyCommandDynLibDeps` が `ManagerInterface` に追加されていること
-- [ ] `group_executor.go` の `verifyGroupFiles` が `VerifyGroupFiles` 成功後にコマンドごとに `VerifyCommandDynLibDeps` を呼び出すこと
-- [ ] `MockManager` に `VerifyCommandDynLibDeps` が追加されていること
-- [ ] 既存テストが全てパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] 第 1 段階: ハッシュ一致で検証成功すること
+- [x] 第 1 段階: ハッシュ不一致で `ErrLibraryHashMismatch` が返ること
+- [x] 第 2 段階: パス一致で検証成功すること
+- [x] 第 2 段階: `LD_LIBRARY_PATH` ハイジャックで `ErrLibraryPathMismatch` が返ること
+- [x] 空パスのエントリで `ErrEmptyLibraryPath` が返ること
+- [x] 動的リンク ELF（`DT_NEEDED` あり）に `DynLibDeps` がない場合に `ErrDynLibDepsRequired` が返ること
+- [x] 静的 ELF / `DT_NEEDED` なし ELF に `DynLibDeps` がない場合は正常動作すること
+- [x] 非 ELF バイナリに `DynLibDeps` がない場合は正常動作すること
+- [x] `schema_version: 1` の記録で `SchemaVersionMismatchError` が返ること
+- [x] エラーメッセージにライブラリ名・パス・ハッシュ等の必要情報が含まれること
+- [x] `VerifyCommandDynLibDeps` が `ManagerInterface` に追加されていること
+- [x] `group_executor.go` の `verifyGroupFiles` が `VerifyGroupFiles` 成功後にコマンドごとに `VerifyCommandDynLibDeps` を呼び出すこと
+- [x] `MockManager` に `VerifyCommandDynLibDeps` が追加されていること
+- [x] 既存テストが全てパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 
@@ -484,19 +484,19 @@ cmd/record/main.go                                            # 拡張（HasDyna
 
 #### 完了条件
 
-- [ ] `IsDynamicLoadSymbol` が `dlopen/dlsym/dlvsym` を認識すること
-- [ ] `HasDynamicLoad` が `NetworkDetected` とは独立して設定されること
-- [ ] ELF アナライザーで `dlopen` 使用バイナリが `HasDynamicLoad: true` と判定されること
-- [ ] Mach-O アナライザーで `dlopen` 使用バイナリが `HasDynamicLoad: true` と判定されること
-- [ ] `isNetworkViaBinaryAnalysis` が `HasDynamicLoad: true` かつ `NetworkDetected: false` 時に `(false, true)` を返し、`EvaluateRisk` が `RiskLevelHigh` を返すこと
-- [ ] `isNetworkViaBinaryAnalysis` が `HasDynamicLoad: true` かつ `NetworkDetected: true` 時に `(true, true)` を返し、`EvaluateRisk` が `RiskLevelHigh` を返すこと
-- [ ] `record` で `HasDynamicLoad: true` のバイナリに `true` が保存されること
-- [ ] `record` で `HasDynamicLoad: false` のバイナリに `false` が保存されること（stale 値上書き確認）
-- [ ] `Validator.binaryAnalyzer` が未設定の場合でも `Record()` が正常動作すること
-- [ ] 既存の `ContentHash` 検証が正常に動作すること
-- [ ] `SyscallAnalysis` フィールドが保持されること
-- [ ] 既存のテストがすべてパスすること
-- [ ] `make test` / `make lint` / `make fmt` が全てパスすること
+- [x] `IsDynamicLoadSymbol` が `dlopen/dlsym/dlvsym` を認識すること
+- [x] `HasDynamicLoad` が `NetworkDetected` とは独立して設定されること
+- [x] ELF アナライザーで `dlopen` 使用バイナリが `HasDynamicLoad: true` と判定されること
+- [x] Mach-O アナライザーで `dlopen` 使用バイナリが `HasDynamicLoad: true` と判定されること（コード実装済み、macOS 環境でのみ実行可能）
+- [x] `isNetworkViaBinaryAnalysis` が `HasDynamicLoad: true` かつ `NetworkDetected: false` 時に `(false, true)` を返し、`EvaluateRisk` が `RiskLevelHigh` を返すこと
+- [x] `isNetworkViaBinaryAnalysis` が `HasDynamicLoad: true` かつ `NetworkDetected: true` 時に `(true, true)` を返し、`EvaluateRisk` が `RiskLevelHigh` を返すこと
+- [x] `record` で `HasDynamicLoad: true` のバイナリに `true` が保存されること
+- [x] `record` で `HasDynamicLoad: false` のバイナリに `false` が保存されること（stale 値上書き確認）
+- [x] `Validator.binaryAnalyzer` が未設定の場合でも `Record()` が正常動作すること
+- [x] 既存の `ContentHash` 検証が正常に動作すること
+- [x] `SyscallAnalysis` フィールドが保持されること
+- [x] 既存のテストがすべてパスすること
+- [x] `make test` / `make lint` / `make fmt` が全てパスすること
 
 ## 3. タスク依存関係
 
@@ -700,25 +700,25 @@ graph TB
 
 ### 6.1 機能要件
 
-- [ ] AC-1: ライブラリパス解決が全ケースで正しく動作すること
-- [ ] AC-2: `record` で `DynLibDeps` が正しく記録されること
-- [ ] AC-3: `runner` の 2 段階検証が全ケースで正しく動作すること
-- [ ] AC-4: `dlopen` シンボルが正しく検出・判定されること
-- [ ] AC-5: 既存機能への非影響が確認されていること
+- [x] AC-1: ライブラリパス解決が全ケースで正しく動作すること
+- [x] AC-2: `record` で `DynLibDeps` が正しく記録されること
+- [x] AC-3: `runner` の 2 段階検証が全ケースで正しく動作すること
+- [x] AC-4: `dlopen` シンボルが正しく検出・判定されること
+- [x] AC-5: 既存機能への非影響が確認されていること
 
 ### 6.2 非機能要件
 
-- [ ] `record` の解析時間が一般的なバイナリで実用的な範囲内であること
-- [ ] ライブラリファイル読み取りに `safefileio` が使用されていること
-- [ ] 全パスが `filepath.EvalSymlinks` + `filepath.Clean` で正規化されていること
-- [ ] `ldd` / `ldconfig` 等の外部コマンドに依存していないこと
+- [x] `record` の解析時間が一般的なバイナリで実用的な範囲内であること
+- [x] ライブラリファイル読み取りに `safefileio` が使用されていること
+- [x] 全パスが `filepath.EvalSymlinks` + `filepath.Clean` で正規化されていること
+- [x] `ldd` / `ldconfig` 等の外部コマンドに依存していないこと
 
 ### 6.3 品質要件
 
-- [ ] `make test` が全てパスすること
-- [ ] `make lint` が全てパスすること
-- [ ] `make fmt` が全てパスすること
-- [ ] 新規コードのテストカバレッジが 80% 以上であること
+- [x] `make test` が全てパスすること
+- [x] `make lint` が全てパスすること
+- [x] `make fmt` が全てパスすること
+- [x] 新規コードのテストカバレッジが 80% 以上であること
 
 ## 7. 実装チェックリスト
 

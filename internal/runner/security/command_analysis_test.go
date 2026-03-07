@@ -2345,9 +2345,10 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 
 // mockBinaryAnalyzer is a mock implementation of binaryanalyzer.BinaryAnalyzer for testing.
 type mockBinaryAnalyzer struct {
-	result  binaryanalyzer.AnalysisResult
-	symbols []binaryanalyzer.DetectedSymbol
-	err     error
+	result         binaryanalyzer.AnalysisResult
+	symbols        []binaryanalyzer.DetectedSymbol
+	err            error
+	hasDynamicLoad bool
 }
 
 func (m *mockBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) binaryanalyzer.AnalysisOutput {
@@ -2355,6 +2356,7 @@ func (m *mockBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) binaryana
 		Result:          m.result,
 		DetectedSymbols: m.symbols,
 		Error:           m.err,
+		HasDynamicLoad:  m.hasDynamicLoad,
 	}
 }
 
@@ -2515,4 +2517,61 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic
 	})
+}
+
+// TestIsNetworkOperation_HasDynamicLoad verifies that HasDynamicLoad=true causes
+// isNetworkViaBinaryAnalysis to return isHighRisk=true independently of network detection.
+//
+// Condition 491: HasDynamicLoad=true, NetworkDetected=false → (false, true)
+// Condition 492: HasDynamicLoad=true, NetworkDetected=true  → (true, true)
+func TestIsNetworkOperation_HasDynamicLoad(t *testing.T) {
+	tests := []struct {
+		name           string
+		mockResult     binaryanalyzer.AnalysisResult
+		hasDynamicLoad bool
+		expectNetwork  bool
+		expectHighRisk bool
+	}{
+		{
+			name:           "dlopen only (no network symbols) → not network, but high risk",
+			mockResult:     binaryanalyzer.NoNetworkSymbols,
+			hasDynamicLoad: true,
+			expectNetwork:  false,
+			expectHighRisk: true,
+		},
+		{
+			name:           "dlopen + socket (both signals) → network AND high risk",
+			mockResult:     binaryanalyzer.NetworkDetected,
+			hasDynamicLoad: true,
+			expectNetwork:  true,
+			expectHighRisk: true,
+		},
+		{
+			name:           "socket only (no dlopen) → network, not high risk from dlopen",
+			mockResult:     binaryanalyzer.NetworkDetected,
+			hasDynamicLoad: false,
+			expectNetwork:  true,
+			expectHighRisk: false,
+		},
+		{
+			name:           "no symbols, no dlopen → not network, not high risk",
+			mockResult:     binaryanalyzer.NoNetworkSymbols,
+			hasDynamicLoad: false,
+			expectNetwork:  false,
+			expectHighRisk: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockBinaryAnalyzer{
+				result:         tc.mockResult,
+				hasDynamicLoad: tc.hasDynamicLoad,
+			}
+			analyzer := NewNetworkAnalyzerWithBinaryAnalyzer(mock)
+			isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "")
+			assert.Equal(t, tc.expectNetwork, isNet, "isNetwork mismatch")
+			assert.Equal(t, tc.expectHighRisk, isHigh, "isHighRisk mismatch")
+		})
+	}
 }
