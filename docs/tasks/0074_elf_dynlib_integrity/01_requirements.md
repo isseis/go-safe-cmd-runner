@@ -367,53 +367,54 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 ### AC-1: ライブラリパス解決
 
-- [ ] `DT_NEEDED` エントリのないバイナリ（静的リンク等）では `DynLibDeps` が記録されないこと
-- [ ] `DT_RPATH` が設定されたバイナリで正しいパスに解決されること
-- [ ] `DT_RUNPATH` が設定されたバイナリで正しいパスに解決されること
-- [ ] `$ORIGIN` トークンが、そのエントリを持つ ELF ファイル自身のディレクトリパスに展開されること（共有ライブラリの `RPATH`/`RUNPATH` の場合はその `.so` 自身のディレクトリが基準となること）
-- [ ] `/etc/ld.so.cache` から標準的なライブラリ（`libc.so.6` 等）が解決されること
-- [ ] デフォルトパス（FR-3.1.2a）からライブラリが解決されること（x86_64 環境では `/lib/x86_64-linux-gnu` 等の multiarch ディレクトリを含む）
-- [ ] 間接依存ライブラリ（依存の `.so` がさらに依存する `.so`）も `DynLibDeps` に記録されること
-- [ ] 循環依存が生じても無限ループせず正常終了すること
-- [ ] 再帰深度が上限を超えた場合に `record` がエラーで終了し、記録が保存されないこと
-- [ ] 解決できないライブラリが存在する場合に `record` がエラーで終了し、記録が保存されないこと
-- [ ] `record` エラーメッセージに解決できなかったライブラリ名が含まれること
+- [x] `DT_NEEDED` エントリのないバイナリ（静的リンク等）では `DynLibDeps` が記録されないこと
+- [x] `DT_RPATH` が設定されたバイナリで正しいパスに解決されること
+- [x] `DT_RUNPATH` が設定されたバイナリで正しいパスに解決されること
+- [x] `$ORIGIN` トークンが、そのエントリを持つ ELF ファイル自身のディレクトリパスに展開されること（共有ライブラリの `RPATH`/`RUNPATH` の場合はその `.so` 自身のディレクトリが基準となること）
+- [x] `/etc/ld.so.cache` から標準的なライブラリ（`libc.so.6` 等）が解決されること
+- [x] デフォルトパス（FR-3.1.2a）からライブラリが解決されること（x86_64 環境では `/lib/x86_64-linux-gnu` 等の multiarch ディレクトリを含む）
+- [x] 間接依存ライブラリ（依存の `.so` がさらに依存する `.so`）も `DynLibDeps` に記録されること
+- [x] 循環依存が生じても無限ループせず正常終了すること
+- [x] 再帰深度が上限を超えた場合に `record` がエラーで終了し、記録が保存されないこと
+- [x] 解決できないライブラリが存在する場合に `record` がエラーで終了し、記録が保存されないこと
+- [x] `record` エラーメッセージに解決できなかったライブラリ名が含まれること
 
 ### AC-2: `record` 拡張
 
-- [ ] 動的リンクされた ELF バイナリに対して `DynLibDeps` が記録されること
-- [ ] `LibEntry` に `soname`, `parent_path`, `path`, `hash` が正しく記録されること
-- [ ] 直接依存ライブラリの `parent_path` がバイナリ自身のフルパスであること
-- [ ] 間接依存ライブラリの `parent_path` がその依存元 `.so` のフルパスであること
-- [ ] 同一 `SOName` でも `parent_path` が異なる場合に別エントリとして記録されること
-- [ ] ハッシュが `"sha256:<hex>"` 形式であること
-- [ ] `record --force` で `DynLibDeps` が更新されること
-- [ ] 非 ELF ファイルでは `DynLibDeps` が記録されないこと
-- [ ] 既存の `ContentHash`, `SyscallAnalysis` フィールドが変更されないこと
+- [x] 動的リンクされた ELF バイナリに対して `DynLibDeps` が記録されること
+- [x] `LibEntry` に `soname`, `parent_path`, `path`, `hash` が正しく記録されること
+- [x] 直接依存ライブラリの `parent_path` がバイナリ自身のフルパスであること
+- [x] 間接依存ライブラリの `parent_path` がその依存元 `.so` のフルパスであること
+- [x] 同一 `SOName` でも `parent_path` が異なる場合に別エントリとして記録されること
+- [x] ハッシュが `"sha256:<hex>"` 形式であること
+- [x] `record --force` で `DynLibDeps` が更新されること
+- [x] 非 ELF ファイルでは `DynLibDeps` が記録されないこと
+- [x] 既存の `ContentHash`, `SyscallAnalysis` フィールドが変更されないこと
 
 ### AC-3: `runner` 検証拡張
 
-- [ ] ライブラリのハッシュが一致し、かつ実行時パス解決が記録済みパスと一致する場合に実行が許可されること（第 1・第 2 段階ともに正常）
-- [ ] ライブラリのハッシュが不一致の場合に実行がブロックされ、`record` 再実行を促すエラーが返されること（第 1 段階検出）
-- [ ] `runner` 実行時に `LD_LIBRARY_PATH` で別パスのライブラリが選ばれる場合に実行がブロックされること（第 2 段階検出）
-- [ ] エラーメッセージにハッシュ不一致の場合は不一致ライブラリ名・期待ハッシュ・実際のハッシュが含まれること
-- [ ] エラーメッセージにパス不一致の場合は記録済みパスと実行時解決パスが含まれること
-- [ ] `path: ""` のエントリが存在する場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
-- [ ] `schema_version: 1`（旧バージョン）の記録ファイルで実行しようとした場合に `SchemaVersionMismatchError` が返され実行がブロックされること
-- [ ] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が非 ELF バイナリの場合は従来の検証のみが行われること
-- [ ] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が ELF バイナリの場合は実行がブロックされ、`record` 再実行を促すエラーが返されること（防御的検出）
+- [x] ライブラリのハッシュが一致し、かつ実行時パス解決が記録済みパスと一致する場合に実行が許可されること（第 1・第 2 段階ともに正常）
+- [x] ライブラリのハッシュが不一致の場合に実行がブロックされ、`record` 再実行を促すエラーが返されること（第 1 段階検出）
+- [x] `runner` 実行時に `LD_LIBRARY_PATH` で別パスのライブラリが選ばれる場合に実行がブロックされること（第 2 段階検出）
+- [x] エラーメッセージにハッシュ不一致の場合は不一致ライブラリ名・期待ハッシュ・実際のハッシュが含まれること
+- [x] エラーメッセージにパス不一致の場合は記録済みパスと実行時解決パスが含まれること
+- [x] `path: ""` のエントリが存在する場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
+- [x] `schema_version: 1`（旧バージョン）の記録ファイルで実行しようとした場合に実行がブロックされること（`VerifyCommandDynLibDeps()` では dynlib 検証をスキップするが、コンテンツハッシュ検証 `VerifyWithHash()` が `SchemaVersionMismatchError` を返して実行をブロックする）
+- [x] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が非 ELF バイナリの場合は従来の検証のみが行われること
+- [x] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が ELF バイナリの場合は実行がブロックされ、`record` 再実行を促すエラーが返されること（防御的検出）
 
 ### AC-4: `dlopen` シンボル検出
 
-- [ ] `dlopen` を `.dynsym` に含むバイナリが `NetworkDetected` と判定されること
-- [ ] `dlsym` を `.dynsym` に含むバイナリが `NetworkDetected` と判定されること
-- [ ] `dlopen` のみを含むバイナリの判定理由（`DetectedSymbols`）に `dynamic_load` カテゴリが含まれること
+- [x] `dlopen` を `.dynsym` に含むバイナリで `AnalysisOutput.HasDynamicLoad` が `true` と判定されること
+- [x] `dlsym` を `.dynsym` に含むバイナリで `AnalysisOutput.HasDynamicLoad` が `true` と判定されること
+- [x] `dlopen` のみを含むバイナリの `HasDynamicLoad` が `true`、`Result` が `NoNetworkSymbols` となること（`dlopen` は `NetworkDetected` とは独立したシグナルであり、`isHighRisk=true` として上位に伝達される）
+- [x] `CategoryDynamicLoad` カテゴリ (`"dynamic_load"`) が定義されていること
 
 ### AC-5: 既存機能への非影響
 
-- [ ] 既存の `ContentHash` 検証が正常に動作すること
-- [ ] `SyscallAnalysis` フィールドが保持されること
-- [ ] 既存のテストがすべてパスすること
+- [x] 既存の `ContentHash` 検証が正常に動作すること
+- [x] `SyscallAnalysis` フィールドが保持されること
+- [x] 既存のテストがすべてパスすること
 
 
 ## 6. テスト方針
