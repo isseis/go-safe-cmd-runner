@@ -21,6 +21,10 @@
 ### 2.1 ディレクトリ構造
 
 ```
+cmd/
+└── record/
+    └── main.go                            # DynLibAnalyzer 統合
+
 internal/
 ├── fileanalysis/
 │   └── schema.go                          # Record 拡張、型定義、CurrentSchemaVersion 2
@@ -60,10 +64,6 @@ internal/
 │       │   └── standard_analyzer.go       # HasDynamicLoad 検出ロジック追加
 │       └── machoanalyzer/
 │           └── standard_analyzer.go       # HasDynamicLoad 検出ロジック追加
-│
-└── cmd/
-    └── record/
-        └── main.go                        # DynLibAnalyzer 統合
 ```
 
 ## 3. 型定義
