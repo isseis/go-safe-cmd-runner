@@ -642,7 +642,7 @@ func ParseLDCache(path string) (*LDCache, error) {
 }
 
 // parseLDCacheData parses the raw bytes of an ld.so.cache file.
-// Exported for testing with synthetic cache data.
+// Unexported; tests within the same package access it directly with synthetic cache data.
 func parseLDCacheData(data []byte) (*LDCache, error) {
     // Check for new format magic
     if len(data) < cachemagicNewLen {
