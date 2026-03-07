@@ -219,18 +219,18 @@ package dynlibanalysis
 
 #### 完了条件
 
-- [ ] `dynlibanalysis` パッケージが作成されていること
-- [ ] エラー型が全て定義されていること
-- [ ] `DefaultSearchPaths` がアーキテクチャ別に正しいパスを返すこと
-- [ ] `ParseLDCache` が新形式のキャッシュを正しくパースすること
-- [ ] `ParseLDCache` がキャッシュ不在・フォーマット不正時にエラーを返すこと
-- [ ] `NewLibraryResolver(cache, machine)` が `cache` を引数で受け取り、自身で `ParseLDCache` を呼ばないこと（`fs` 引数なし）
-- [ ] `ResolveContext.NewChildContext` が RPATH 継承ルールに従うこと
-- [ ] `ResolveContext.NewChildContext` が loading object（child）自身に RUNPATH がある場合に `InheritedRPATH = nil` とし、祖先の RPATH チェーン全体を打ち切ること（[参照](../../../docs/dev/elf-rpath-runpath-inheritance.ja.md#3-dt_rpath-継承チェーンの打ち切りルール)）
-- [ ] `LibraryResolver.Resolve` が 6 段階の優先順位で解決すること
-- [ ] `$ORIGIN` が正しく展開されること（直接・継承時ともに）
-- [ ] 全ユニットテストがパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `dynlibanalysis` パッケージが作成されていること
+- [x] エラー型が全て定義されていること
+- [x] `DefaultSearchPaths` がアーキテクチャ別に正しいパスを返すこと
+- [x] `ParseLDCache` が新形式のキャッシュを正しくパースすること
+- [x] `ParseLDCache` がキャッシュ不在・フォーマット不正時にエラーを返すこと
+- [x] `NewLibraryResolver(cache, machine)` が `cache` を引数で受け取り、自身で `ParseLDCache` を呼ばないこと（`fs` 引数なし）
+- [x] `ResolveContext.NewChildContext` が RPATH 継承ルールに従うこと
+- [x] `ResolveContext.NewChildContext` が loading object（child）自身に RUNPATH がある場合に `InheritedRPATH = nil` とし、祖先の RPATH チェーン全体を打ち切ること（[参照](../../../docs/dev/elf-rpath-runpath-inheritance.ja.md#3-dt_rpath-継承チェーンの打ち切りルール)）
+- [x] `LibraryResolver.Resolve` が 6 段階の優先順位で解決すること
+- [x] `$ORIGIN` が正しく展開されること（直接・継承時ともに）
+- [x] 全ユニットテストがパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 
@@ -729,17 +729,17 @@ graph TB
 - [x] 既存テストの `CurrentSchemaVersion` 依存箇所を更新
 
 ### Phase 2: ライブラリ解決エンジン
-- [ ] `dynlibanalysis/doc.go`: パッケージドキュメント
-- [ ] `dynlibanalysis/errors.go`: 全エラー型定義
-- [ ] `dynlibanalysis/default_paths.go`: `DefaultSearchPaths`
-- [ ] `dynlibanalysis/ldcache.go`: `ParseLDCache`, `Lookup`
-- [ ] `dynlibanalysis/resolver_context.go`: `ResolveContext`, `NewChildContext`, `expandOrigin`
-- [ ] `dynlibanalysis/resolver.go`: `LibraryResolver`, `Resolve`, `tryResolve`
-- [ ] `dynlibanalysis/testdata/README.md`
-- [ ] `dynlibanalysis/default_paths_test.go`
-- [ ] `dynlibanalysis/ldcache_test.go`
-- [ ] `dynlibanalysis/resolver_context_test.go`
-- [ ] `dynlibanalysis/resolver_test.go`
+- [x] `dynlibanalysis/doc.go`: パッケージドキュメント
+- [x] `dynlibanalysis/errors.go`: 全エラー型定義
+- [x] `dynlibanalysis/default_paths.go`: `DefaultSearchPaths`
+- [x] `dynlibanalysis/ldcache.go`: `ParseLDCache`, `Lookup`
+- [x] `dynlibanalysis/resolver_context.go`: `ResolveContext`, `NewChildContext`, `expandOrigin`
+- [x] `dynlibanalysis/resolver.go`: `LibraryResolver`, `Resolve`, `tryResolve`
+- [x] `dynlibanalysis/testdata/README.md`
+- [x] `dynlibanalysis/default_paths_test.go`
+- [x] `dynlibanalysis/ldcache_test.go`
+- [x] `dynlibanalysis/resolver_context_test.go`
+- [x] `dynlibanalysis/resolver_test.go`
 
 ### Phase 3: DynLibAnalyzer（record 拡張）
 - [ ] `dynlibanalysis/analyzer.go`: `DynLibAnalyzer`, `Analyze`, ヘルパー関数
