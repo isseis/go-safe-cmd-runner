@@ -1595,3 +1595,53 @@ func TestVerify_NonELFNoDynLibDeps(t *testing.T) {
 	err = m.VerifyCommandDynLibDeps(scriptPath)
 	assert.NoError(t, err, "non-ELF binary without DynLibDeps should be treated as normal")
 }
+
+// createFutureSchemaRecord writes a raw JSON file with schema_version > CurrentSchemaVersion
+// so that Store.Load returns SchemaVersionMismatchError with Actual > Expected.
+// Returns the path of the created record file.
+func createFutureSchemaRecord(t *testing.T, hashDir, filePath string) string {
+	t.Helper()
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	require.NoError(t, err)
+
+	recordFilePath, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	require.NoError(t, err)
+
+	record := map[string]interface{}{
+		"schema_version": fileanalysis.CurrentSchemaVersion + 1, // future schema (> CurrentSchemaVersion)
+		"file_path":      filePath,
+		"content_hash":   "sha256:aabbcc",
+		"updated_at":     time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(recordFilePath), 0o750))
+	require.NoError(t, os.WriteFile(recordFilePath, data, 0o600))
+	return recordFilePath
+}
+
+// TestVerify_FutureSchemaVersion verifies that VerifyCommandDynLibDeps returns an error
+// when the stored record has schema_version > CurrentSchemaVersion (written by a newer
+// version of the tool). The runner must not silently skip such records, as they may
+// contain integrity data the current version cannot interpret.
+func TestVerify_FutureSchemaVersion(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// Use a real binary that exists on the filesystem.
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	createFutureSchemaRecord(t, hashDir, cmdPath)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	require.Error(t, verifyErr, "future schema_version record should return an error")
+
+	var schemaErr *fileanalysis.SchemaVersionMismatchError
+	require.ErrorAs(t, verifyErr, &schemaErr)
+	assert.Greater(t, schemaErr.Actual, schemaErr.Expected,
+		"Actual schema version should be greater than Expected")
+}
