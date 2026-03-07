@@ -53,13 +53,13 @@ internal/
 ├── runner/
 │   └── security/
 │       ├── network_analyzer.go            # HasDynamicLoad による高リスク判定追加
-│       └── binaryanalyzer/
-│           ├── network_symbols.go         # dynamicLoadSymbolRegistry 追加
-│           ├── analyzer.go                # AnalysisOutput.HasDynamicLoad 追加
-│           └── elfanalyzer/
-│               └── standard_analyzer.go   # HasDynamicLoad 検出ロジック追加
-│           └── machoanalyzer/
-│               └── standard_analyzer.go   # HasDynamicLoad 検出ロジック追加
+│       ├── binaryanalyzer/
+│       │   ├── network_symbols.go         # dynamicLoadSymbolRegistry 追加
+│       │   └── analyzer.go                # AnalysisOutput.HasDynamicLoad 追加
+│       ├── elfanalyzer/
+│       │   └── standard_analyzer.go       # HasDynamicLoad 検出ロジック追加
+│       └── machoanalyzer/
+│           └── standard_analyzer.go       # HasDynamicLoad 検出ロジック追加
 │
 └── cmd/
     └── record/
