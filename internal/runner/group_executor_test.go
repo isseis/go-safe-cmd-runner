@@ -425,6 +425,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -496,6 +497,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/some-command").Return("/bin/some-command", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -572,6 +574,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 
 	// Mock verification manager to resolve paths
 	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
@@ -1382,6 +1385,9 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behavior for file verification - return empty Result
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil).Maybe()
+
+	// Setup default behavior for dynlib verification - return nil (no error)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil).Maybe()
 
 	return mockValidator, mockVerificationManager
 }
@@ -2685,6 +2691,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 			// Mock verification manager
 			mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 			mockVerificationManager.On("ResolvePath", mock.Anything).Return("/bin/false", nil)
+			mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)

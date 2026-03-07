@@ -161,6 +161,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 	// Mock verification manager
 	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group-integration")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	ctx := context.Background()
 	err = ge.ExecuteGroup(ctx, group, runtimeGlobal)
@@ -280,6 +281,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 
 	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group-multihandler")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	ctx := context.Background()
 	err = ge.ExecuteGroup(ctx, group, runtimeGlobal)

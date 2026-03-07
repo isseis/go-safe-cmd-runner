@@ -750,14 +750,14 @@ graph TB
 - [x] `cmd/record/main.go`: `DynLibAnalyzer` 統合
 
 ### Phase 4: DynLibVerifier（runner 拡張）
-- [ ] `dynlibanalysis/verifier.go`: `DynLibVerifier`, `Verify`, ヘルパー関数
-- [ ] `dynlibanalysis/verifier_test.go`
-- [ ] `verification/manager.go`: `dynlibVerifier` フィールド追加・コンストラクタで 1 回生成
-- [ ] `verification/manager.go`: `verifyDynLibDeps`, `hasDynamicLibraryDeps`
-- [ ] `verification/interfaces.go`: `ManagerInterface` に `VerifyCommandDynLibDeps` 追加
-- [ ] `internal/runner/group_executor.go`: `verifyGroupFiles` からの `VerifyCommandDynLibDeps` 呼び出し統合
-- [ ] `verification/testing/testify_mocks.go`: `MockManager` に `VerifyCommandDynLibDeps` 追加
-- [ ] `verification/testing/testify_mocks.go`: `MockFileValidator` に `LoadRecord` 追加
+- [x] `dynlibanalysis/verifier.go`: `DynLibVerifier`, `Verify`, ヘルパー関数
+- [x] `dynlibanalysis/verifier_test.go`
+- [x] `verification/manager.go`: `dynlibVerifier` フィールド追加・コンストラクタで 1 回生成
+- [x] `verification/manager.go`: `verifyDynLibDeps`, `hasDynamicLibraryDeps`
+- [x] `verification/interfaces.go`: `ManagerInterface` に `VerifyCommandDynLibDeps` 追加
+- [x] `internal/runner/group_executor.go`: `verifyGroupFiles` からの `VerifyCommandDynLibDeps` 呼び出し統合
+- [x] `verification/testing/testify_mocks.go`: `MockManager` に `VerifyCommandDynLibDeps` 追加
+- [x] `verification/testing/testify_mocks.go`: `MockFileValidator` に `LoadRecord` 追加
 
 ### Phase 5: dlopen シンボル検出 + 仕上げ
 - [ ] `binaryanalyzer/network_symbols.go`: `CategoryDynamicLoad`, `dynamicLoadSymbolRegistry`, `IsDynamicLoadSymbol`
