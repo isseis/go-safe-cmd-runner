@@ -2066,7 +2066,7 @@ func TestIntegration_OldSchemaRejection(t *testing.T) {
 - [ ] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加
 - [ ] `filevalidator/validator.go`: `saveHash` コールバックに `HasDynamicLoad` 記録を統合（常に true/false を書き込み）
 - [ ] `cmd/record/main.go`: `SetBinaryAnalyzer` で `BinaryAnalyzer` を注入
-- [ ] `runner/security/network_analyzer.go`: `isNetworkViaBinaryAnalysis` の戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` 検出時に `(false, true)` を返す高リスク判定を追加
+- [ ] `runner/security/network_analyzer.go`: `isNetworkViaBinaryAnalysis` の戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` 検出時に `isHighRisk=true` を設定する高リスク判定を追加（`isNetwork` は独立して判定）
 - [ ] `runner/security/network_analyzer.go`: `IsNetworkOperation` 内の呼び出しを `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に変更
 - [ ] 上記の全ユニットテスト（`TestRecord_HasDynamicLoad_Written_WhenFalse` を含む）
 - [ ] 全既存テストのパス確認
