@@ -93,9 +93,8 @@ type LibEntry struct {
 ```go
 // internal/fileanalysis/file_analysis_store.go
 
-if errors.As(err, new(*SchemaVersionMismatchError)) {
-    var schemaErr *SchemaVersionMismatchError
-    errors.As(err, &schemaErr)
+var schemaErr *SchemaVersionMismatchError
+if errors.As(err, &schemaErr) {
     if schemaErr.Actual > schemaErr.Expected {
         // Future schema: do NOT overwrite (forward compatibility protection)
         return fmt.Errorf("cannot update record: %w", err)
@@ -666,7 +665,7 @@ graph TB
 | 31 | `TestVerify_Stage1_HashMatch` | `dynlibanalysis` | ハッシュ一致 → 成功 |
 | 32 | `TestVerify_Stage1_HashMismatch` | `dynlibanalysis` | ハッシュ不一致 → エラー |
 | 33 | `TestVerify_Stage2_PathMatch` | `dynlibanalysis` | パス一致 → 成功（Stage 2 正常系） |
-| 34 | `TestVerify_Stage2_PathMismatch` | `dynlibanalysis` | パス不一致 → エラー（LD_LIBRARY_PATH ハイジャック検出） |
+| 34 | `TestVerify_Stage2_PathMismatch_LDLibraryPath` | `dynlibanalysis` | パス不一致 → エラー（LD_LIBRARY_PATH ハイジャック検出） |
 | 35 | `TestVerify_EmptyPath` | `dynlibanalysis` | 空パス → エラー |
 | 36 | `TestVerify_SchemaVersion` | `verification` | schema_version 1 → SchemaVersionMismatchError |
 | 37 | `TestVerify_ELFNoDynLibDeps` | `verification` | 動的 ELF（DT_NEEDED あり）に DynLibDeps なし → ErrDynLibDepsRequired |
@@ -682,7 +681,7 @@ graph TB
 
 | # | テストケース | パッケージ | 検証内容 |
 |---|-------------|----------|---------|
-| 1 | `TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles` | `runner/executor`（`group_executor_test.go`） | `verify_files` に含まれる非コマンドファイルには `VerifyCommandDynLibDeps` が呼ばれないことを `MockManager` で検証（モックを使った呼び出しパターンの単体テスト） |
+| 1 | `TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles` | `runner`（`group_executor_test.go`） | `verify_files` に含まれる非コマンドファイルには `VerifyCommandDynLibDeps` が呼ばれないことを `MockManager` で検証（モックを使った呼び出しパターンの単体テスト） |
 
 #### 統合テスト
 
