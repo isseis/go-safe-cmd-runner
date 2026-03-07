@@ -611,8 +611,8 @@ graph TB
     classDef tier3 fill:#c3f08a,stroke:#333,color:#000;
 
     T1["統合テスト (8 ケース)"]:::tier1
-    T2["コンポーネントテスト (13 ケース)"]:::tier2
-    T3["単体テスト (30+ ケース)"]:::tier3
+    T2["コンポーネントテスト (1 ケース)"]:::tier2
+    T3["単体テスト (44 ケース)"]:::tier3
 
     T3 --> T2 --> T1
 ```
@@ -754,7 +754,7 @@ graph TB
 - [ ] `dynlibanalysis/verifier.go`: `DynLibVerifier`, `Verify`, ヘルパー関数
 - [ ] `dynlibanalysis/verifier_test.go`
 - [ ] `verification/manager.go`: `dynlibVerifier` フィールド追加・コンストラクタで 1 回生成
-- [ ] `verification/manager.go`: `verifyDynLibDeps`, `isELFBinary`
+- [ ] `verification/manager.go`: `verifyDynLibDeps`, `hasDynamicLibraryDeps`
 - [ ] `verification/interfaces.go`: `ManagerInterface` に `VerifyCommandDynLibDeps` 追加
 - [ ] `internal/runner/group_executor.go`: `verifyGroupFiles` からの `VerifyCommandDynLibDeps` 呼び出し統合
 - [ ] `verification/testing/testify_mocks.go`: `MockManager` に `VerifyCommandDynLibDeps` 追加
