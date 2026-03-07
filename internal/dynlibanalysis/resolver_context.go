@@ -120,20 +120,6 @@ func (c *ResolveContext) NewChildContext(
 	return child
 }
 
-// InheritedRPATHKey returns a string key representing the inherited RPATH context.
-// Used as part of the visited set key to distinguish the same library reached via
-// different dependency chains with different RPATH contexts.
-func (c *ResolveContext) InheritedRPATHKey() string {
-	if len(c.InheritedRPATH) == 0 {
-		return ""
-	}
-	parts := make([]string, len(c.InheritedRPATH))
-	for i, entry := range c.InheritedRPATH {
-		parts[i] = entry.OriginDir + ":" + entry.Path
-	}
-	return strings.Join(parts, "|")
-}
-
 // expandOrigin replaces $ORIGIN in the given path with the specified directory.
 func expandOrigin(path string, originDir string) string {
 	return strings.ReplaceAll(path, "$ORIGIN", originDir)

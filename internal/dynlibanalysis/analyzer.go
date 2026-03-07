@@ -65,12 +65,20 @@ type resolveItem struct {
 	depth  int
 }
 
-// visitedKey is the key for the visited set.
-// Using resolvedPath is sufficient because the same physical file has the same
-// ELF content and DT_NEEDED entries regardless of the RPATH context that led
-// to it. Deduplicating by resolvedPath also prevents infinite loops on circular
-// dependency graphs.
-type visitedKey = string
+// visitedPath tracks physical files already enqueued for child dependency
+// traversal. Keyed by resolvedPath only, because the ELF content (and therefore
+// DT_NEEDED entries) is the same regardless of which RPATH context led to the
+// file. This set prevents infinite loops on circular dependency graphs.
+type visitedPath = string
+
+// entryKey identifies a unique LibEntry to record.
+// The same physical library may appear under multiple parents (e.g. both
+// lib_a.so and lib_b.so import libssl.so.3), each requiring a separate
+// LibEntry so that the verifier can re-resolve every (ParentPath, SOName) pair.
+type entryKey struct {
+	resolvedPath string
+	parentPath   string
+}
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
 // ELF binary, computes their hashes, and returns a DynLibDepsData snapshot.
@@ -114,9 +122,12 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	// Create root resolution context (LD_LIBRARY_PATH is NOT used at record time)
 	rootCtx := NewRootContext(binaryPath, rpathEntries, runpathEntries, false)
 
-	// BFS queue and visited set
+	// BFS queue and visited sets:
+	//   traversed: resolvedPath → struct{}   prevents re-traversing a file's DT_NEEDED entries
+	//   recorded:  entryKey → struct{}       prevents duplicate LibEntry for the same (path, parent)
 	var queue []resolveItem
-	visited := make(map[visitedKey]bool)
+	traversed := make(map[visitedPath]struct{})
+	recorded := make(map[entryKey]struct{})
 	var libs []fileanalysis.LibEntry
 
 	// Seed queue with direct dependencies
@@ -153,37 +164,43 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			return nil, err
 		}
 
-		// Build visited key (resolved path only)
-		vKey := resolvedPath
+		// Record a LibEntry for each unique (resolvedPath, parentPath) pair.
+		// The same physical library may be imported by multiple parents, and
+		// the verifier re-resolves every recorded (ParentPath, SOName) pair
+		// independently, so each such pair must appear as a separate entry.
+		eKey := entryKey{resolvedPath: resolvedPath, parentPath: item.ctx.ParentPath}
+		if _, ok := recorded[eKey]; !ok {
+			recorded[eKey] = struct{}{}
 
-		if visited[vKey] {
+			// Compute hash using safefileio
+			hash, err := computeFileHash(resolvedPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
+			}
+
+			// Build InheritedRPATH for serialization
+			var inheritedRPATHStrings []string
+			if len(item.ctx.InheritedRPATH) > 0 {
+				inheritedRPATHStrings = make([]string, len(item.ctx.InheritedRPATH))
+				for i, entry := range item.ctx.InheritedRPATH {
+					inheritedRPATHStrings[i] = expandOrigin(entry.Path, entry.OriginDir)
+				}
+			}
+
+			libs = append(libs, fileanalysis.LibEntry{
+				SOName:         item.soname,
+				ParentPath:     item.ctx.ParentPath,
+				Path:           resolvedPath,
+				Hash:           hash,
+				InheritedRPATH: inheritedRPATHStrings,
+			})
+		}
+
+		// Traverse child dependencies only once per physical file.
+		if _, ok := traversed[resolvedPath]; ok {
 			continue
 		}
-		visited[vKey] = true
-
-		// Compute hash using safefileio
-		hash, err := computeFileHash(resolvedPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
-		}
-
-		// Build InheritedRPATH for serialization
-		var inheritedRPATHStrings []string
-		if len(item.ctx.InheritedRPATH) > 0 {
-			inheritedRPATHStrings = make([]string, len(item.ctx.InheritedRPATH))
-			for i, entry := range item.ctx.InheritedRPATH {
-				inheritedRPATHStrings[i] = expandOrigin(entry.Path, entry.OriginDir)
-			}
-		}
-
-		// Record the library entry
-		libs = append(libs, fileanalysis.LibEntry{
-			SOName:         item.soname,
-			ParentPath:     item.ctx.ParentPath,
-			Path:           resolvedPath,
-			Hash:           hash,
-			InheritedRPATH: inheritedRPATHStrings,
-		})
+		traversed[resolvedPath] = struct{}{}
 
 		// Parse child dependencies
 		childNeeded, childRPATH, childRUNPATH, err := a.parseELFDeps(resolvedPath)

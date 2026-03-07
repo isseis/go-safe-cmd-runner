@@ -371,8 +371,23 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 	result, err := a.Analyze(mainBin)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	// lib_a and lib_b should each appear exactly once.
-	assert.Len(t, result.Libs, 2, "each library should appear exactly once")
+
+	// Expected entries (one per unique (resolvedPath, parentPath) pair):
+	//   1. lib_a.so.1  parent=main_circ   (direct dependency)
+	//   2. lib_b.so.1  parent=lib_a.so.1  (lib_a's dependency)
+	//   3. lib_a.so.1  parent=lib_b.so.1  (circular back-reference, new parent)
+	// Entry 3 is required so the verifier can re-resolve the (lib_b → lib_a) edge.
+	// ELF traversal of lib_a is performed only once (traversed set prevents re-traversal).
+	assert.Len(t, result.Libs, 3, "circular deps: 3 unique (path, parent) pairs expected")
+
+	// No physical file should be traversed more than once (no child duplication).
+	sonamePaths := make(map[string]int)
+	for _, lib := range result.Libs {
+		sonamePaths[lib.Path]++
+	}
+	// lib_a.so.1 appears under two different parents, lib_b.so.1 under one.
+	assert.Equal(t, 2, sonamePaths[result.Libs[0].Path], "lib_a should appear under 2 parents")
+	assert.Equal(t, 1, sonamePaths[result.Libs[1].Path], "lib_b should appear under 1 parent")
 }
 
 // TestAnalyze_MaxDepth verifies that Analyze returns ErrRecursionDepthExceeded

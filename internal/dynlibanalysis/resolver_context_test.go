@@ -109,52 +109,6 @@ func TestNewChildContext_ParentWithRUNPATH_NotInherited(t *testing.T) {
 	assert.Empty(t, child.InheritedRPATH)
 }
 
-func TestInheritedRPATHKey(t *testing.T) {
-	t.Run("empty InheritedRPATH returns empty string", func(t *testing.T) {
-		ctx := &ResolveContext{}
-		assert.Equal(t, "", ctx.InheritedRPATHKey())
-	})
-
-	t.Run("single entry", func(t *testing.T) {
-		ctx := &ResolveContext{
-			InheritedRPATH: []ExpandedRPATHEntry{
-				{Path: "/opt/a/lib", OriginDir: "/app"},
-			},
-		}
-		key := ctx.InheritedRPATHKey()
-		assert.NotEmpty(t, key)
-		assert.Contains(t, key, "/app")
-		assert.Contains(t, key, "/opt/a/lib")
-	})
-
-	t.Run("multiple entries produce different keys than different orders", func(t *testing.T) {
-		ctx1 := &ResolveContext{
-			InheritedRPATH: []ExpandedRPATHEntry{
-				{Path: "/opt/a/lib", OriginDir: "/app"},
-				{Path: "/opt/b/lib", OriginDir: "/lib/liba.so"},
-			},
-		}
-		ctx2 := &ResolveContext{
-			InheritedRPATH: []ExpandedRPATHEntry{
-				{Path: "/opt/b/lib", OriginDir: "/lib/liba.so"},
-				{Path: "/opt/a/lib", OriginDir: "/app"},
-			},
-		}
-		// Different orders should produce different keys
-		assert.NotEqual(t, ctx1.InheritedRPATHKey(), ctx2.InheritedRPATHKey())
-	})
-
-	t.Run("same entries produce same key", func(t *testing.T) {
-		entries := []ExpandedRPATHEntry{
-			{Path: "/opt/a/lib", OriginDir: "/app"},
-			{Path: "/opt/b/lib", OriginDir: "/lib/liba.so"},
-		}
-		ctx1 := &ResolveContext{InheritedRPATH: entries}
-		ctx2 := &ResolveContext{InheritedRPATH: entries}
-		assert.Equal(t, ctx1.InheritedRPATHKey(), ctx2.InheritedRPATHKey())
-	})
-}
-
 func TestExpandOrigin(t *testing.T) {
 	tests := []struct {
 		name      string
