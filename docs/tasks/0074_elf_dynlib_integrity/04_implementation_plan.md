@@ -522,7 +522,7 @@ gantt
     エラー型定義                  :p2a, after p1, 1d
     ld.so.cache パーサー          :p2b, after p2a, 1d
     ResolveContext                :p2c, after p2a, 1d
-    LibraryResolver               :p2d, after p2b, 1d
+    LibraryResolver               :p2d, after p2b p2c, 1d
     デフォルトパス                :p2e, after p2a, 1d
 
     section Phase 3
