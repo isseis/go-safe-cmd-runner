@@ -379,7 +379,11 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 	for _, cmd := range runtimeGroup.Commands {
 		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
 		if resolveErr != nil {
-			continue // path resolution failure: skip dynlib check for this command
+			slog.Warn("Path resolution failed during dynlib verification; skipping dynlib check for this command",
+				"group", runnertypes.ExtractGroupName(runtimeGroup),
+				"command", cmd.ExpandedCmd,
+				"error", resolveErr)
+			continue
 		}
 		if dlErr := ge.verificationManager.VerifyCommandDynLibDeps(resolvedPath); dlErr != nil {
 			slog.Error("Dynamic library verification failed",

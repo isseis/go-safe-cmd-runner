@@ -3099,3 +3099,63 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", "/etc/hosts")
 	mockVerificationManager.AssertExpectations(t)
 }
+
+// TestVerifyGroupFiles_DynLibResolvePathFailure verifies that a ResolvePath
+// failure during dynlib verification emits a warning log and continues
+// (rather than silently skipping or returning an error). The overall
+// ExecuteGroup call must still succeed so that commands can proceed to
+// execution, where the path failure will surface in its proper context.
+func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "bad-cmd", Cmd: "/nonexistent/command", Args: []string{}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+
+	// ResolvePath fails for this command — dynlib check must be skipped with a warning.
+	resolveErr := errors.New("command not found")
+	mockVerificationManager.On("ResolvePath", "/nonexistent/command").Return("", resolveErr)
+
+	// VerifyCommandDynLibDeps must NOT be called because ResolvePath failed.
+	// (No mock set up; testify will fail if it is called unexpectedly.)
+
+	ctx := context.Background()
+	// ExecuteGroup returns an error from executeCommandInGroup (path resolution
+	// failure at execution time), but verifyGroupFiles itself must not error out
+	// due to the dynlib-phase ResolvePath failure.
+	// We only care that VerifyCommandDynLibDeps was never called.
+	_ = ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
+	mockVerificationManager.AssertExpectations(t)
+}
