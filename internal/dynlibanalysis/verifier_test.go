@@ -29,7 +29,7 @@ func writeFile(t *testing.T, path, content string) {
 // TestVerify_NilDeps ensures Verify returns nil immediately for nil DynLibDeps.
 func TestVerify_NilDeps(t *testing.T) {
 	v := newTestVerifier()
-	err := v.Verify("", nil)
+	err := v.Verify(nil)
 	assert.NoError(t, err)
 }
 
@@ -37,7 +37,7 @@ func TestVerify_NilDeps(t *testing.T) {
 func TestVerify_EmptyLibs(t *testing.T) {
 	v := newTestVerifier()
 	deps := &fileanalysis.DynLibDepsData{Libs: []fileanalysis.LibEntry{}}
-	err := v.Verify("", deps)
+	err := v.Verify(deps)
 	assert.NoError(t, err)
 }
 
@@ -55,7 +55,7 @@ func TestVerify_EmptyPath(t *testing.T) {
 		},
 	}
 
-	err := v.Verify("", deps)
+	err := v.Verify(deps)
 	require.Error(t, err)
 	var errEmpty *ErrEmptyLibraryPath
 	assert.ErrorAs(t, err, &errEmpty, "expected ErrEmptyLibraryPath")
@@ -83,7 +83,7 @@ func TestVerify_HashMatch(t *testing.T) {
 		},
 	}
 
-	err = v.Verify("", deps)
+	err = v.Verify(deps)
 	assert.NoError(t, err)
 }
 
@@ -108,7 +108,7 @@ func TestVerify_HashMismatch(t *testing.T) {
 		},
 	}
 
-	err := v.Verify("", deps)
+	err := v.Verify(deps)
 	require.Error(t, err)
 
 	var hashErr *ErrLibraryHashMismatch
@@ -134,7 +134,7 @@ func TestVerify_FileNotFound(t *testing.T) {
 		},
 	}
 
-	err := v.Verify("", deps)
+	err := v.Verify(deps)
 	require.Error(t, err)
 	// Must NOT be a hash mismatch — file could not be read at all.
 	var hashErr *ErrLibraryHashMismatch

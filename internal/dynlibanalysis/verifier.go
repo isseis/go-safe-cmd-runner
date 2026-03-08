@@ -26,7 +26,7 @@ func NewDynLibVerifier(fs safefileio.FileSystem) *DynLibVerifier {
 // Note: ld.so.cache tampering is outside the threat model of this system.
 // An attacker capable of modifying /etc/ld.so.cache already has root privileges
 // and can compromise the system through more direct means. See docs/security/README.md.
-func (v *DynLibVerifier) Verify(_ string, deps *fileanalysis.DynLibDepsData) error {
+func (v *DynLibVerifier) Verify(deps *fileanalysis.DynLibDepsData) error {
 	if deps == nil || len(deps.Libs) == 0 {
 		return nil
 	}

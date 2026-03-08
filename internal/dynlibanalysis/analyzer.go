@@ -69,23 +69,6 @@ type resolveItem struct {
 	depth  int
 }
 
-// traversalKey identifies a unique physical library file for BFS child-traversal
-// deduplication. Since DT_RPATH (with its inherited chain) is not supported,
-// the resolution context is fully determined by the library's own DT_RUNPATH.
-// Two visits to the same physical file always produce the same child context,
-// so keying by resolvedPath alone is sufficient.
-type traversalKey struct {
-	resolvedPath string
-}
-
-// entryKey identifies a unique LibEntry to record.
-// Keyed by resolvedPath only: since verification is hash-based, each unique
-// physical library file needs exactly one entry regardless of how many parents
-// reference it.
-type entryKey struct {
-	resolvedPath string
-}
-
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
 // ELF binary, computes their hashes, and returns a DynLibDepsData snapshot.
 //
@@ -130,15 +113,15 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	runpath, _ := elfFile.DynString(elf.DT_RUNPATH)
 	runpathEntries := splitPathList(runpath)
 
-	// Create root resolution context (LD_LIBRARY_PATH is NOT used at record time)
-	rootCtx := NewRootContext(binaryPath, runpathEntries, false)
+	// Create root resolution context
+	rootCtx := NewRootContext(binaryPath, runpathEntries)
 
 	// BFS queue and visited sets:
-	//   traversed: traversalKey → struct{}   prevents re-traversing the same physical file
-	//   recorded:  entryKey → struct{}       prevents duplicate LibEntry for the same path
+	//   traversed: set of resolved paths already traversed for child dependencies
+	//   recorded:  set of resolved paths already added as LibEntry
 	var queue []resolveItem
-	traversed := make(map[traversalKey]struct{})
-	recorded := make(map[entryKey]struct{})
+	traversed := make(map[string]struct{})
+	recorded := make(map[string]struct{})
 	var libs []fileanalysis.LibEntry
 
 	// Seed queue with direct dependencies
@@ -178,9 +161,8 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		// Record one LibEntry per unique physical library file.
 		// Multiple parents may reference the same library; since verification
 		// is hash-based, a single entry per path is sufficient.
-		eKey := entryKey{resolvedPath: resolvedPath}
-		if _, ok := recorded[eKey]; !ok {
-			recorded[eKey] = struct{}{}
+		if _, ok := recorded[resolvedPath]; !ok {
+			recorded[resolvedPath] = struct{}{}
 
 			// Compute hash using safefileio
 			hash, err := computeFileHash(a.fs, resolvedPath)
@@ -217,11 +199,10 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		// Since DT_RPATH inheritance is not supported, a library's resolution
 		// context is fully determined by its own DT_RUNPATH, so the same
 		// physical file always produces the same child context.
-		tKey := traversalKey{resolvedPath: resolvedPath}
-		if _, ok := traversed[tKey]; ok {
+		if _, ok := traversed[resolvedPath]; ok {
 			continue
 		}
-		traversed[tKey] = struct{}{}
+		traversed[resolvedPath] = struct{}{}
 
 		for _, childSoname := range childNeeded {
 			queue = append(queue, resolveItem{

@@ -10,41 +10,33 @@ import (
 
 func TestNewRootContext(t *testing.T) {
 	t.Run("with RUNPATH", func(t *testing.T) {
-		ctx := NewRootContext("/usr/bin/myapp", []string{"/opt/myapp/lib"}, false)
+		ctx := NewRootContext("/usr/bin/myapp", []string{"/opt/myapp/lib"})
 		assert.Equal(t, "/usr/bin/myapp", ctx.ParentPath)
 		assert.Equal(t, "/usr/bin", ctx.ParentDir)
 		assert.Equal(t, []string{"/opt/myapp/lib"}, ctx.OwnRUNPATH)
-		assert.False(t, ctx.IncludeLDLibraryPath)
 	})
 
 	t.Run("without RUNPATH", func(t *testing.T) {
-		ctx := NewRootContext("/usr/bin/myapp", nil, false)
+		ctx := NewRootContext("/usr/bin/myapp", nil)
 		assert.Nil(t, ctx.OwnRUNPATH)
-	})
-
-	t.Run("with LD_LIBRARY_PATH enabled", func(t *testing.T) {
-		ctx := NewRootContext("/usr/bin/myapp", nil, true)
-		assert.True(t, ctx.IncludeLDLibraryPath)
 	})
 }
 
 func TestNewChildContext(t *testing.T) {
-	t.Run("child inherits IncludeLDLibraryPath", func(t *testing.T) {
-		parent := NewRootContext("/usr/bin/myapp", []string{"/opt/myapp/lib"}, true)
+	t.Run("child context fields", func(t *testing.T) {
+		parent := NewRootContext("/usr/bin/myapp", []string{"/opt/myapp/lib"})
 		child := parent.NewChildContext("/opt/myapp/lib/libfoo.so.1", []string{"/opt/foo/lib"})
 
 		assert.Equal(t, "/opt/myapp/lib/libfoo.so.1", child.ParentPath)
 		assert.Equal(t, "/opt/myapp/lib", child.ParentDir)
 		assert.Equal(t, []string{"/opt/foo/lib"}, child.OwnRUNPATH)
-		assert.True(t, child.IncludeLDLibraryPath)
 	})
 
 	t.Run("child with no RUNPATH", func(t *testing.T) {
-		parent := NewRootContext("/usr/bin/myapp", nil, false)
+		parent := NewRootContext("/usr/bin/myapp", nil)
 		child := parent.NewChildContext("/usr/lib/libssl.so.3", nil)
 
 		assert.Nil(t, child.OwnRUNPATH)
-		assert.False(t, child.IncludeLDLibraryPath)
 	})
 }
 

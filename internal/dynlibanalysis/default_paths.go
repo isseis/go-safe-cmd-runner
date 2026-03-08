@@ -3,7 +3,7 @@ package dynlibanalysis
 import "debug/elf"
 
 // DefaultSearchPaths returns the architecture-specific default library search paths.
-// These are used as the last resort when RPATH/RUNPATH and ld.so.cache fail to resolve.
+// These are used as the last resort when RUNPATH and ld.so.cache fail to resolve.
 // The order is: multiarch paths (Debian/Ubuntu) -> /lib64, /usr/lib64 (RHEL) -> generic.
 func DefaultSearchPaths(machine elf.Machine) []string {
 	switch machine {

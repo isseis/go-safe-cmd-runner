@@ -662,9 +662,9 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 	}
 
 	if record.DynLibDeps != nil {
-		// DynLibDeps is recorded: perform 2-stage verification.
-		// m.dynlibVerifier is initialized once at Manager construction (ld.so.cache parsed once).
-		return m.dynlibVerifier.Verify(cmdPath, record.DynLibDeps)
+		// DynLibDeps is recorded: verify library hashes.
+		// m.dynlibVerifier is initialized once at Manager construction.
+		return m.dynlibVerifier.Verify(record.DynLibDeps)
 	}
 
 	// DynLibDeps is not recorded: check if this is a dynamically linked ELF binary.

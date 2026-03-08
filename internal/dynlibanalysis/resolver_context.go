@@ -10,6 +10,9 @@ import (
 //
 // DT_RPATH is not supported; ELF files containing DT_RPATH cause an error
 // at Analyze time (see ErrDTRPATHNotSupported). Only DT_RUNPATH is used.
+//
+// LD_LIBRARY_PATH is not used: record time ignores it, and runner clears it
+// before executing commands. No LD_LIBRARY_PATH support is needed.
 type ResolveContext struct {
 	// ParentPath is the full path of the ELF whose DT_NEEDED is being resolved.
 	ParentPath string
@@ -19,20 +22,15 @@ type ResolveContext struct {
 
 	// OwnRUNPATH is the DT_RUNPATH of ParentPath.
 	OwnRUNPATH []string
-
-	// IncludeLDLibraryPath controls whether LD_LIBRARY_PATH is consulted.
-	// false at record time, true at runner time.
-	IncludeLDLibraryPath bool
 }
 
 // NewRootContext creates a ResolveContext for resolving the DT_NEEDED entries
 // of the root binary (the command being analyzed).
-func NewRootContext(binaryPath string, runpath []string, includeLDLibraryPath bool) *ResolveContext {
+func NewRootContext(binaryPath string, runpath []string) *ResolveContext {
 	return &ResolveContext{
-		ParentPath:           binaryPath,
-		ParentDir:            filepath.Dir(binaryPath),
-		OwnRUNPATH:           runpath,
-		IncludeLDLibraryPath: includeLDLibraryPath,
+		ParentPath: binaryPath,
+		ParentDir:  filepath.Dir(binaryPath),
+		OwnRUNPATH: runpath,
 	}
 }
 
@@ -40,10 +38,9 @@ func NewRootContext(binaryPath string, runpath []string, includeLDLibraryPath bo
 // of a resolved library.
 func (c *ResolveContext) NewChildContext(childPath string, childRUNPATH []string) *ResolveContext {
 	return &ResolveContext{
-		ParentPath:           childPath,
-		ParentDir:            filepath.Dir(childPath),
-		OwnRUNPATH:           childRUNPATH,
-		IncludeLDLibraryPath: c.IncludeLDLibraryPath,
+		ParentPath: childPath,
+		ParentDir:  filepath.Dir(childPath),
+		OwnRUNPATH: childRUNPATH,
 	}
 }
 

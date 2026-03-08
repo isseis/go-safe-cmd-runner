@@ -28,33 +28,17 @@ func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver
 }
 
 // Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
-// The resolution order follows ld.so(8) (DT_RPATH excluded as unsupported):
-//  1. LD_LIBRARY_PATH - only if ctx.IncludeLDLibraryPath is true
-//  2. OwnRUNPATH     - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
-//  3. /etc/ld.so.cache
-//  4. Default paths (architecture-dependent)
+// The resolution order follows ld.so(8) (DT_RPATH and LD_LIBRARY_PATH excluded):
+//  1. OwnRUNPATH     - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
+//  2. /etc/ld.so.cache
+//  3. Default paths (architecture-dependent)
 //
+// LD_LIBRARY_PATH is not consulted: record ignores it, runner clears it.
 // The resolved path is normalized via filepath.EvalSymlinks + filepath.Clean.
 func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, error) {
 	var searchedPaths []string
 
-	// Step 1: LD_LIBRARY_PATH (only at runner time)
-	if ctx.IncludeLDLibraryPath {
-		// os.Getenv is used directly; YAGNI (no injection needed).
-		// Tests should use t.Setenv("LD_LIBRARY_PATH", ...) to control this value.
-		ldLibPath := os.Getenv("LD_LIBRARY_PATH")
-		if ldLibPath != "" {
-			for _, dir := range filepath.SplitList(ldLibPath) {
-				candidate := filepath.Join(dir, soname)
-				searchedPaths = append(searchedPaths, candidate+" (LD_LIBRARY_PATH)")
-				if resolved, err := r.tryResolve(candidate); err == nil {
-					return resolved, nil
-				}
-			}
-		}
-	}
-
-	// Step 2: OwnRUNPATH
+	// Step 1: OwnRUNPATH
 	for _, rp := range ctx.OwnRUNPATH {
 		expanded := expandOrigin(rp, ctx.ParentDir)
 		candidate := filepath.Join(expanded, soname)
@@ -64,7 +48,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 		}
 	}
 
-	// Step 3: ld.so.cache
+	// Step 2: ld.so.cache
 	if r.cache != nil {
 		if cachedPath := r.cache.Lookup(soname); cachedPath != "" {
 			searchedPaths = append(searchedPaths, cachedPath+" (ld.so.cache)")
@@ -74,7 +58,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 		}
 	}
 
-	// Step 4: Default paths (architecture-dependent)
+	// Step 3: Default paths (architecture-dependent)
 	for _, dir := range r.archPaths {
 		candidate := filepath.Join(dir, soname)
 		searchedPaths = append(searchedPaths, candidate+" (default)")
