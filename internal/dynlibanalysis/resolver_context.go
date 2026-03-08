@@ -100,16 +100,32 @@ func (c *ResolveContext) NewChildContext(
 		// (Parent's own RPATH is only contributed when parent itself has no RUNPATH,
 		// which is guaranteed here because c.OwnRUNPATH is set only when RUNPATH was
 		// present, making c.OwnRPATH empty in that case.)
+		//
+		// Duplicate expanded paths are skipped: the same expanded path can only
+		// appear once in the chain (duplicates arise in circular dependency graphs
+		// where the same RPATH-bearing ELF is revisited, and re-adding it would
+		// produce an ever-growing chain that never converges to a stable fingerprint).
 		inherited := make([]ExpandedRPATHEntry, 0, len(c.InheritedRPATH)+len(c.OwnRPATH))
-		inherited = append(inherited, c.InheritedRPATH...)
+		seen := make(map[string]struct{}, len(c.InheritedRPATH)+len(c.OwnRPATH))
+		for _, entry := range c.InheritedRPATH {
+			expanded := expandOrigin(entry.Path, entry.OriginDir)
+			if _, dup := seen[expanded]; !dup {
+				seen[expanded] = struct{}{}
+				inherited = append(inherited, entry)
+			}
+		}
 
 		// Parent's own RPATH (if it had no RUNPATH) is inherited by child
 		if len(c.OwnRUNPATH) == 0 {
 			for _, rp := range c.OwnRPATH {
-				inherited = append(inherited, ExpandedRPATHEntry{
-					Path:      rp,
-					OriginDir: c.ParentDir,
-				})
+				expanded := expandOrigin(rp, c.ParentDir)
+				if _, dup := seen[expanded]; !dup {
+					seen[expanded] = struct{}{}
+					inherited = append(inherited, ExpandedRPATHEntry{
+						Path:      rp,
+						OriginDir: c.ParentDir,
+					})
+				}
 			}
 		}
 		// If parent had RUNPATH (c.OwnRUNPATH is set), parent's OwnRPATH is empty
@@ -118,6 +134,32 @@ func (c *ResolveContext) NewChildContext(
 	}
 
 	return child
+}
+
+// rpathFingerprint returns a string that uniquely identifies the RPATH search
+// paths this context will use when resolving its DT_NEEDED entries. Two
+// contexts with identical fingerprints will resolve any given soname to the
+// same path, so their child traversals can be deduplicated.
+//
+// The fingerprint is the ":"-joined list of expanded search paths in resolution
+// order: OwnRPATH (when RUNPATH absent), InheritedRPATH, then OwnRUNPATH.
+// LD_LIBRARY_PATH is intentionally excluded because it is always false at
+// record time (IncludeLDLibraryPath=false).
+func (c *ResolveContext) rpathFingerprint() string {
+	var parts []string
+	if len(c.OwnRUNPATH) == 0 {
+		for _, rp := range c.OwnRPATH {
+			parts = append(parts, expandOrigin(rp, c.ParentDir))
+		}
+		for _, entry := range c.InheritedRPATH {
+			parts = append(parts, expandOrigin(entry.Path, entry.OriginDir))
+		}
+	} else {
+		for _, rp := range c.OwnRUNPATH {
+			parts = append(parts, expandOrigin(rp, c.ParentDir))
+		}
+	}
+	return strings.Join(parts, ":")
 }
 
 // expandOrigin replaces $ORIGIN and ${ORIGIN} in the given path with the

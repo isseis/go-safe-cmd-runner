@@ -418,6 +418,85 @@ func TestAnalyze_MaxDepth(t *testing.T) {
 	assert.ErrorAs(t, err, &depthErr, "error should be ErrRecursionDepthExceeded")
 }
 
+// TestAnalyze_SharedLibDifferentContexts verifies that when the same physical
+// library (libshared.so) is reachable via two parents that carry different
+// OwnRPATH entries, and libshared.so itself has no RPATH so it resolves its
+// child via the inherited RPATH chain, both sets of grandchild dependencies are
+// recorded.
+//
+// Dependency graph and RPATH inheritance:
+//
+//	main  (RPATH=dirMain)
+//	├── libA.so  (in dirMain, RPATH=dirA:dirShared)
+//	│   └── libshared.so  → dirShared/libshared.so  (no RPATH)
+//	│       └── libgrand.so  → dirA/libgrand.so
+//	│           (inherited chain: dirMain, dirA, dirShared — dirA wins over dirShared)
+//	└── libB.so  (in dirMain, RPATH=dirB:dirShared)
+//	    └── libshared.so  → dirShared/libshared.so  (same physical file)
+//	        └── libgrand.so  → dirB/libgrand.so
+//	            (inherited chain: dirMain, dirB, dirShared — dirB wins over dirShared)
+//
+// Key: dirMain does NOT contain libgrand.so, so the first match in the
+// inherited chain differs between the two contexts (dirA vs dirB).
+//
+// A traversed key of resolvedPath alone cuts off libshared.so after the first
+// (libA) context, missing dirB/libgrand.so. The fix keys traversal on
+// (resolvedPath, rpathFingerprint) to detect the distinct contexts.
+func TestAnalyze_SharedLibDifferentContexts(t *testing.T) {
+	tmpDir := t.TempDir()
+	dirMain := filepath.Join(tmpDir, "dirMain")
+	dirA := filepath.Join(tmpDir, "dirA")
+	dirB := filepath.Join(tmpDir, "dirB")
+	dirShared := filepath.Join(tmpDir, "dirShared")
+	for _, d := range []string{dirMain, dirA, dirB, dirShared} {
+		require.NoError(t, os.MkdirAll(d, 0o755))
+	}
+
+	// libgrand.so exists only in dirA and dirB, NOT in dirMain or dirShared.
+	// This ensures the inherited RPATH order (dirA-first vs dirB-first) determines
+	// which copy is found.
+	buildTestELFWithDeps(t, dirA, "libgrand.so", nil, "")
+	buildTestELFWithDeps(t, dirB, "libgrand.so", nil, "")
+
+	// libshared.so has no RPATH; libgrand.so is resolved via the inherited chain.
+	buildTestELFWithDeps(t, dirShared, "libshared.so", []string{"libgrand.so"}, "")
+
+	// libA.so: OwnRPATH = dirA:dirShared — libgrand.so found in dirA first.
+	buildTestELFWithDeps(t, dirMain, "libA.so", []string{"libshared.so"}, dirA+":"+dirShared)
+	// libB.so: OwnRPATH = dirB:dirShared — libgrand.so found in dirB first.
+	buildTestELFWithDeps(t, dirMain, "libB.so", []string{"libshared.so"}, dirB+":"+dirShared)
+
+	// main has RPATH=dirMain to locate libA.so and libB.so.
+	// dirMain does NOT contain libgrand.so, so the inherited dirMain entry is
+	// a no-op for libgrand.so resolution, and dirA/dirB in each library's
+	// OwnRPATH determine the winning path.
+	mainBin := buildTestELFWithDeps(t, tmpDir, "main_shared_ctx",
+		[]string{"libA.so", "libB.so"}, dirMain)
+
+	a := newTestAnalyzer(t)
+	result, err := a.Analyze(mainBin)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Collect all (soname, path) pairs recorded.
+	type libKey struct{ soname, path string }
+	recordedLibs := make(map[libKey]bool)
+	for _, lib := range result.Libs {
+		recordedLibs[libKey{lib.SOName, lib.Path}] = true
+	}
+
+	grandA := filepath.Join(dirA, "libgrand.so")
+	grandB := filepath.Join(dirB, "libgrand.so")
+
+	// Both grandchild paths must be recorded.
+	// Without the fix, libshared.so's children are expanded only under libA's
+	// inherited RPATH chain, so dirB/libgrand.so is never enqueued.
+	assert.True(t, recordedLibs[libKey{"libgrand.so", grandA}],
+		"grandchild via libA context (%s) should be recorded", grandA)
+	assert.True(t, recordedLibs[libKey{"libgrand.so", grandB}],
+		"grandchild via libB context (%s) should be recorded", grandB)
+}
+
 // resolveTestBinary returns the first existing candidate path after resolving
 // symlinks. Skips the test if none are found.
 func resolveTestBinary(t *testing.T, candidates ...string) string {

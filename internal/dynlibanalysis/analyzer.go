@@ -66,11 +66,24 @@ type resolveItem struct {
 	depth  int
 }
 
-// visitedPath tracks physical files already enqueued for child dependency
-// traversal. Keyed by resolvedPath only, because the ELF content (and therefore
-// DT_NEEDED entries) is the same regardless of which RPATH context led to the
-// file. This set prevents infinite loops on circular dependency graphs.
-type visitedPath = string
+// traversalKey identifies a unique (physical file, resolution context) pair for
+// BFS child-traversal deduplication.
+//
+// Using resolvedPath alone would cut off child traversal after the first
+// context, missing grandchild dependencies that are resolved via a different
+// inherited RPATH chain. For example, if libshared.so is reached via libA
+// (RPATH=/dirA) and libB (RPATH=/dirB), its child libgrand.so may resolve to
+// /dirA/libgrand.so in the first context and /dirB/libgrand.so in the second.
+// Keying by (resolvedPath, rpathFingerprint) ensures both paths are recorded.
+//
+// rpathFingerprint is the ":"-joined list of expanded RPATH entries that the
+// child context will use to resolve its own DT_NEEDED entries. This is the
+// union of InheritedRPATH and OwnRPATH that NewChildContext would produce,
+// computed before constructing the actual child context to keep the key cheap.
+type traversalKey struct {
+	resolvedPath     string
+	rpathFingerprint string
+}
 
 // entryKey identifies a unique LibEntry to record.
 // The same physical library may appear under multiple parents (e.g. both
@@ -124,10 +137,12 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	rootCtx := NewRootContext(binaryPath, rpathEntries, runpathEntries, false)
 
 	// BFS queue and visited sets:
-	//   traversed: resolvedPath → struct{}   prevents re-traversing a file's DT_NEEDED entries
+	//   traversed: traversalKey → struct{}   prevents re-traversing the same (file, RPATH context) pair
+	//   visited:   resolvedPath → struct{}   caps total traversals per physical file to break circular graphs
 	//   recorded:  entryKey → struct{}       prevents duplicate LibEntry for the same (path, parent)
 	var queue []resolveItem
-	traversed := make(map[visitedPath]struct{})
+	traversed := make(map[traversalKey]struct{})
+	visited := make(map[string]int) // resolvedPath → traversal count
 	recorded := make(map[entryKey]struct{})
 	var libs []fileanalysis.LibEntry
 
@@ -197,12 +212,6 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			})
 		}
 
-		// Traverse child dependencies only once per physical file.
-		if _, ok := traversed[resolvedPath]; ok {
-			continue
-		}
-		traversed[resolvedPath] = struct{}{}
-
 		// Parse child dependencies
 		childNeeded, childRPATH, childRUNPATH, err := a.parseELFDeps(resolvedPath)
 		if err != nil {
@@ -213,6 +222,34 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 
 		// Create child context and enqueue
 		childCtx := item.ctx.NewChildContext(resolvedPath, childRPATH, childRUNPATH)
+
+		// Traverse child dependencies only once per (physical file, RPATH context) pair.
+		// Keying by resolvedPath alone would miss grandchildren that resolve differently
+		// under distinct inherited RPATH chains (e.g. libshared.so loaded by both
+		// libA with RPATH=/dirA and libB with RPATH=/dirB may produce different
+		// grandchild resolution results). The fingerprint covers the RPATH entries
+		// that childCtx will actually use, so two contexts that produce identical
+		// search paths are still deduplicated.
+		tKey := traversalKey{
+			resolvedPath:     resolvedPath,
+			rpathFingerprint: childCtx.rpathFingerprint(),
+		}
+		if _, ok := traversed[tKey]; ok {
+			continue
+		}
+		traversed[tKey] = struct{}{}
+
+		// Guard against circular graphs: cap traversals per physical file.
+		// A circular dependency (lib_a → lib_b → lib_a) would otherwise cycle
+		// through ever-growing inherited RPATH chains, producing new fingerprints
+		// on every loop iteration until MaxRecursionDepth terminates the run.
+		// Limiting each resolvedPath to MaxRecursionDepth total traversals ensures
+		// termination while still allowing the same file to be traversed under
+		// legitimately different RPATH contexts.
+		if visited[resolvedPath] >= MaxRecursionDepth {
+			continue
+		}
+		visited[resolvedPath]++
 		for _, childSoname := range childNeeded {
 			queue = append(queue, resolveItem{
 				soname: childSoname,
