@@ -4,12 +4,14 @@ import (
 	"crypto/sha256"
 	"debug/elf"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -67,23 +69,13 @@ type resolveItem struct {
 	depth  int
 }
 
-// traversalKey identifies a unique (physical file, resolution context) pair for
-// BFS child-traversal deduplication.
-//
-// Using resolvedPath alone would cut off child traversal after the first
-// context, missing grandchild dependencies that are resolved via a different
-// inherited RPATH chain. For example, if libshared.so is reached via libA
-// (RPATH=/dirA) and libB (RPATH=/dirB), its child libgrand.so may resolve to
-// /dirA/libgrand.so in the first context and /dirB/libgrand.so in the second.
-// Keying by (resolvedPath, rpathFingerprint) ensures both paths are recorded.
-//
-// rpathFingerprint is the ":"-joined list of expanded RPATH entries that the
-// child context will use to resolve its own DT_NEEDED entries. This is the
-// union of InheritedRPATH and OwnRPATH that NewChildContext would produce,
-// computed before constructing the actual child context to keep the key cheap.
+// traversalKey identifies a unique physical library file for BFS child-traversal
+// deduplication. Since DT_RPATH (with its inherited chain) is not supported,
+// the resolution context is fully determined by the library's own DT_RUNPATH.
+// Two visits to the same physical file always produce the same child context,
+// so keying by resolvedPath alone is sufficient.
 type traversalKey struct {
-	resolvedPath     string
-	rpathFingerprint string
+	resolvedPath string
 }
 
 // entryKey identifies a unique LibEntry to record.
@@ -128,21 +120,24 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 
 	// Get RPATH and RUNPATH
 	rpath, _ := elfFile.DynString(elf.DT_RPATH)
-	runpath, _ := elfFile.DynString(elf.DT_RUNPATH)
+	if len(rpath) > 0 {
+		return nil, &ErrDTRPATHNotSupported{
+			Path:  binaryPath,
+			RPATH: strings.Join(rpath, ":"),
+		}
+	}
 
-	rpathEntries := splitPathList(rpath)
+	runpath, _ := elfFile.DynString(elf.DT_RUNPATH)
 	runpathEntries := splitPathList(runpath)
 
 	// Create root resolution context (LD_LIBRARY_PATH is NOT used at record time)
-	rootCtx := NewRootContext(binaryPath, rpathEntries, runpathEntries, false)
+	rootCtx := NewRootContext(binaryPath, runpathEntries, false)
 
 	// BFS queue and visited sets:
-	//   traversed: traversalKey → struct{}   prevents re-traversing the same (file, RPATH context) pair
-	//   visited:   resolvedPath → struct{}   caps total traversals per physical file to break circular graphs
-	//   recorded:  entryKey → struct{}       prevents duplicate LibEntry for the same (path, parent)
+	//   traversed: traversalKey → struct{}   prevents re-traversing the same physical file
+	//   recorded:  entryKey → struct{}       prevents duplicate LibEntry for the same path
 	var queue []resolveItem
 	traversed := make(map[traversalKey]struct{})
-	visited := make(map[string]int) // resolvedPath → traversal count
 	recorded := make(map[entryKey]struct{})
 	var libs []fileanalysis.LibEntry
 
@@ -201,43 +196,33 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		}
 
 		// Parse child dependencies
-		childNeeded, childRPATH, childRUNPATH, err := a.parseELFDeps(resolvedPath)
+		childNeeded, childRUNPATH, err := a.parseELFDeps(resolvedPath)
 		if err != nil {
+			// ErrDTRPATHNotSupported must propagate: DT_RPATH in any dependency
+			// is a hard error. Other parse failures (non-ELF data sections, etc.)
+			// are non-fatal and we skip child traversal for that library.
+			var rpathErr *ErrDTRPATHNotSupported
+			if errors.As(err, &rpathErr) {
+				return nil, err
+			}
 			slog.Debug("Failed to parse child ELF dependencies",
 				"path", resolvedPath, "error", err)
 			continue
 		}
 
 		// Create child context and enqueue
-		childCtx := item.ctx.NewChildContext(resolvedPath, childRPATH, childRUNPATH)
+		childCtx := item.ctx.NewChildContext(resolvedPath, childRUNPATH)
 
-		// Traverse child dependencies only once per (physical file, RPATH context) pair.
-		// Keying by resolvedPath alone would miss grandchildren that resolve differently
-		// under distinct inherited RPATH chains (e.g. libshared.so loaded by both
-		// libA with RPATH=/dirA and libB with RPATH=/dirB may produce different
-		// grandchild resolution results). The fingerprint covers the RPATH entries
-		// that childCtx will actually use, so two contexts that produce identical
-		// search paths are still deduplicated.
-		tKey := traversalKey{
-			resolvedPath:     resolvedPath,
-			rpathFingerprint: childCtx.rpathFingerprint(),
-		}
+		// Traverse each physical library file at most once.
+		// Since DT_RPATH inheritance is not supported, a library's resolution
+		// context is fully determined by its own DT_RUNPATH, so the same
+		// physical file always produces the same child context.
+		tKey := traversalKey{resolvedPath: resolvedPath}
 		if _, ok := traversed[tKey]; ok {
 			continue
 		}
 		traversed[tKey] = struct{}{}
 
-		// Guard against circular graphs: cap traversals per physical file.
-		// A circular dependency (lib_a → lib_b → lib_a) would otherwise cycle
-		// through ever-growing inherited RPATH chains, producing new fingerprints
-		// on every loop iteration until MaxRecursionDepth terminates the run.
-		// Limiting each resolvedPath to MaxRecursionDepth total traversals ensures
-		// termination while still allowing the same file to be traversed under
-		// legitimately different RPATH contexts.
-		if visited[resolvedPath] >= MaxRecursionDepth {
-			continue
-		}
-		visited[resolvedPath]++
 		for _, childSoname := range childNeeded {
 			queue = append(queue, resolveItem{
 				soname: childSoname,
@@ -288,26 +273,34 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 	return fmt.Sprintf("%s:%s", hashPrefix, hex.EncodeToString(h.Sum(nil))), nil
 }
 
-// parseELFDeps opens the given path as ELF and extracts DT_NEEDED, DT_RPATH,
-// and DT_RUNPATH. Returns nil slices (not an error) if parsing fails.
-func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, rpath, runpath []string, err error) {
+// parseELFDeps opens the given path as ELF and extracts DT_NEEDED and DT_RUNPATH.
+// Returns ErrDTRPATHNotSupported if the library contains DT_RPATH.
+// Returns nil slices (not an error) if parsing fails for other reasons.
+func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, err error) {
 	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = file.Close() }()
 
 	elfFile, err := elf.NewFile(file)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = elfFile.Close() }()
 
-	neededRaw, _ := elfFile.DynString(elf.DT_NEEDED)
 	rpathRaw, _ := elfFile.DynString(elf.DT_RPATH)
+	if len(rpathRaw) > 0 {
+		return nil, nil, &ErrDTRPATHNotSupported{
+			Path:  path,
+			RPATH: strings.Join(rpathRaw, ":"),
+		}
+	}
+
+	neededRaw, _ := elfFile.DynString(elf.DT_NEEDED)
 	runpathRaw, _ := elfFile.DynString(elf.DT_RUNPATH)
 
-	return neededRaw, splitPathList(rpathRaw), splitPathList(runpathRaw), nil
+	return neededRaw, splitPathList(runpathRaw), nil
 }
 
 // splitPathList splits colon-separated path lists (as returned by DynString)

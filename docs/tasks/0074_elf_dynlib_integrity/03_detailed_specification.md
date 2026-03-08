@@ -27,7 +27,7 @@ cmd/
 
 internal/
 ├── fileanalysis/
-│   └── schema.go                          # Record 拡張、型定義、CurrentSchemaVersion 2
+│   └── schema.go                          # Record 拡張、型定義、CurrentSchemaVersion 3
 │
 ├── dynlibanalysis/                        # NEW: 動的ライブラリ解析パッケージ
 │   ├── analyzer.go                        # DynLibAnalyzer 構造体・コンストラクタ
@@ -75,11 +75,12 @@ internal/
 
 const (
     // CurrentSchemaVersion is the expected schema version for analysis records.
-    // Version 2 adds DynLibDeps and HasDynamicLoad fields.
-    // Load returns SchemaVersionMismatchError for records with schema_version != 2.
+    // Version 3 adds DynLibDeps and HasDynamicLoad fields. DT_RPATH は非サポートのため
+    // DT_RPATH を持つ ELF を record すると ErrDTRPATHNotSupported が返る。
+    // Load returns SchemaVersionMismatchError for records with schema_version != 3.
     // Store.Update treats older schemas (Actual < Expected) as overwritable (enables record --force migration).
     // Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-    CurrentSchemaVersion = 2 // Changed from 1 to 2
+    CurrentSchemaVersion = 3 // Changed from 1 to 3
 )
 
 // Record contains the analysis record for a file.
@@ -114,30 +115,18 @@ type LibEntry struct {
     // SOName is the DT_NEEDED library name (e.g., "libssl.so.3").
     SOName string `json:"soname"`
 
-    // ParentPath is the full path of the ELF whose DT_NEEDED references this library.
-    // Used as part of the resolution key (ParentPath, SOName) for re-resolution at runner time.
-    ParentPath string `json:"parent_path"`
-
     // Path is the resolved full path to the library file, normalized via
     // filepath.EvalSymlinks + filepath.Clean.
     Path string `json:"path"`
 
     // Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
     Hash string `json:"hash"`
-
-    // InheritedRPATH is the ordered list of RPATH entries inherited from ancestor ELFs
-    // at record time, after $ORIGIN expansion. Required for Stage 2 re-resolution at
-    // runner time: the same ParentPath ELF may be reached via different dependency
-    // chains with different inherited RPATH contexts, producing different resolution
-    // results for this entry's children. Storing it here avoids traversing the flat
-    // Libs list to reconstruct the ancestor chain.
-    InheritedRPATH []string `json:"inherited_rpath,omitempty"`
 }
 ```
 
 ### 3.1b `fileanalysis/file_analysis_store.go` — `Store.Update` 旧スキーマ上書き許可
 
-`CurrentSchemaVersion` を 1 → 2 に変更すると、`Store.Update` が既存の v1 レコードに対して `SchemaVersionMismatchError` を返し上書きを拒否するため、`record --force` による移行が不可能になる。
+`CurrentSchemaVersion` を旧バージョンから 3 に変更すると、`Store.Update` が既存の旧スキーマレコードに対して `SchemaVersionMismatchError` を返し上書きを拒否するため、`record --force` による移行が不可能になる。
 
 `SchemaVersionMismatchError` の `Actual` と `Expected` を比較して処理を分岐する:
 
@@ -162,7 +151,7 @@ func (s *Store) Update(filePath common.ResolvedPath, updateFn func(*Record) erro
                 // Future schema: do NOT overwrite (forward compatibility protection)
                 return fmt.Errorf("cannot update record: %w", err)
             }
-            // Older schema (e.g. v1 record, current binary expects v2):
+            // Older schema (e.g. v1 or v2 record, current binary expects v3):
             // allow --force to overwrite by treating it as a fresh record.
             record = &Record{}
         } else if errors.Is(err, ErrRecordNotFound) || errors.As(err, new(*RecordCorruptedError)) {
@@ -219,8 +208,7 @@ func (e *ErrRecursionDepthExceeded) Error() string {
         e.SOName, e.Depth, e.MaxDepth)
 }
 
-// ErrLibraryHashMismatch indicates that a library's hash does not match the recorded value
-// (Stage 1 verification failure).
+// ErrLibraryHashMismatch indicates that a library's hash does not match the recorded value.
 type ErrLibraryHashMismatch struct {
     SOName       string
     Path         string
@@ -237,36 +225,16 @@ func (e *ErrLibraryHashMismatch) Error() string {
         e.SOName, e.Path, e.ExpectedHash, e.ActualHash)
 }
 
-// ErrLibraryPathMismatch indicates that a library resolved to a different path
-// than what was recorded (Stage 2 verification failure).
-type ErrLibraryPathMismatch struct {
-    SOName       string
-    ParentPath   string
-    RecordedPath string
-    ResolvedPath string
-}
-
-func (e *ErrLibraryPathMismatch) Error() string {
-    return fmt.Sprintf("dynamic library path mismatch: %s\n"+
-        "  recorded path: %s\n"+
-        "  resolved path: %s\n"+
-        "  parent: %s\n"+
-        "  cause: LD_LIBRARY_PATH may have been modified\n"+
-        "  please re-run 'record' command",
-        e.SOName, e.RecordedPath, e.ResolvedPath, e.ParentPath)
-}
-
 // ErrEmptyLibraryPath indicates that a LibEntry has an empty path,
 // which should never happen in valid records (defensive check).
 type ErrEmptyLibraryPath struct {
-    SOName     string
-    ParentPath string
+    SOName string
 }
 
 func (e *ErrEmptyLibraryPath) Error() string {
-    return fmt.Sprintf("incomplete record: empty path for library %s (parent: %s)\n"+
+    return fmt.Sprintf("incomplete record: empty path for library %s\n"+
         "  please re-run 'record' command",
-        e.SOName, e.ParentPath)
+        e.SOName)
 }
 
 // ErrDynLibDepsRequired indicates that a DynLibDeps record is required
@@ -280,11 +248,28 @@ func (e *ErrDynLibDepsRequired) Error() string {
         "  please re-run 'record' command",
         e.BinaryPath)
 }
+
+// ErrDTRPATHNotSupported indicates that a DT_RPATH entry was found in the ELF binary
+// or one of its dependencies. DT_RPATH is not supported because its inheritance
+// semantics are complex and the feature is deprecated in modern linkers.
+// Use DT_RUNPATH instead.
+type ErrDTRPATHNotSupported struct {
+    Path  string
+    RPATH string
+}
+
+func (e *ErrDTRPATHNotSupported) Error() string {
+    return fmt.Sprintf("DT_RPATH is not supported: %s\n"+
+        "  rpath: %s\n"+
+        "  use DT_RUNPATH (--enable-new-dtags linker flag) instead",
+        e.Path, e.RPATH)
+}
 ```
 
-### 3.3 `dynlibanalysis/resolver_context.go` — RPATH 継承チェーン管理
+### 3.3 `dynlibanalysis/resolver_context.go` — RUNPATH コンテキスト管理
 
-> **参照**: `DT_RPATH` / `DT_RUNPATH` の継承・打ち切りルールの詳細は [docs/dev/elf-rpath-runpath-inheritance.ja.md](../../../docs/dev/elf-rpath-runpath-inheritance.ja.md) を参照のこと。本節のコードはそこに記載した glibc の動作に基づいている。
+DT_RPATH は非サポートのため、`ResolveContext` は `OwnRUNPATH` のみを保持する。
+DT_RPATH を持つ ELF を検出した場合は `ErrDTRPATHNotSupported` を返して処理を中断する。
 
 ```go
 package dynlibanalysis
@@ -295,132 +280,46 @@ import (
 )
 
 // ResolveContext holds the resolution context for a specific DT_NEEDED entry.
-// It tracks the RPATH/RUNPATH of the parent ELF and the inherited RPATH chain
-// from ancestor ELFs.
+// It tracks the RUNPATH of the parent ELF.
+// DT_RPATH は非サポート: DT_RPATH を持つ ELF を検出した場合は ErrDTRPATHNotSupported を返す。
 type ResolveContext struct {
     // ParentPath is the full path of the ELF whose DT_NEEDED is being resolved.
     ParentPath string
 
     // ParentDir is filepath.Dir(ParentPath), used for $ORIGIN expansion
-    // of the parent's own RPATH/RUNPATH.
+    // of the parent's own RUNPATH.
     ParentDir string
-
-    // OwnRPATH is the DT_RPATH of ParentPath (empty if DT_RUNPATH is present).
-    OwnRPATH []string
 
     // OwnRUNPATH is the DT_RUNPATH of ParentPath.
     OwnRUNPATH []string
 
-    // InheritedRPATH is the ordered list of RPATH entries inherited from
-    // ancestor ELFs. Each entry is an ExpandedRPATHEntry containing the
-    // search path and the originating ELF path (for $ORIGIN expansion).
-    // Inheritance is terminated when the loading object itself has DT_RUNPATH
-    // (see NewChildContext). For the full inheritance rules, refer to:
-    // docs/dev/elf-rpath-runpath-inheritance.md
-    InheritedRPATH []ExpandedRPATHEntry
-
     // IncludeLDLibraryPath controls whether LD_LIBRARY_PATH is consulted.
-    // false at record time, true at runner time.
+    // false at record time; LD_LIBRARY_PATH は runner 実行前に常にクリアされるため
+    // runner 時も false に設定する（§3.8 参照）。
     IncludeLDLibraryPath bool
-}
-
-// ExpandedRPATHEntry is an RPATH entry with its originating ELF path,
-// needed for correct $ORIGIN expansion of inherited RPATH entries.
-type ExpandedRPATHEntry struct {
-    // Path is the RPATH entry (may contain $ORIGIN).
-    Path string
-    // OriginDir is the directory of the ELF that owns this RPATH entry.
-    OriginDir string
 }
 
 // NewRootContext creates a ResolveContext for resolving the DT_NEEDED entries
 // of the root binary (the command being analyzed).
-func NewRootContext(binaryPath string, rpath, runpath []string, includeLDLibraryPath bool) *ResolveContext {
-    ctx := &ResolveContext{
+func NewRootContext(binaryPath string, runpath []string, includeLDLibraryPath bool) *ResolveContext {
+    return &ResolveContext{
         ParentPath:           binaryPath,
         ParentDir:            filepath.Dir(binaryPath),
+        OwnRUNPATH:           runpath,
         IncludeLDLibraryPath: includeLDLibraryPath,
     }
-    // DT_RUNPATH takes priority: when present, DT_RPATH is ignored
-    if len(runpath) > 0 {
-        ctx.OwnRUNPATH = runpath
-    } else {
-        ctx.OwnRPATH = rpath
-    }
-    return ctx
 }
 
 // NewChildContext creates a ResolveContext for resolving the DT_NEEDED entries
 // of a resolved library (i.e., for finding the grandchildren of c.ParentPath).
-// It computes the RPATH inheritance chain according to ld.so rules:
-//
-//   - DT_RPATH of an ELF is propagated to the resolution of all transitive
-//     dependencies, UNLESS the loading object itself has DT_RUNPATH.
-//   - DT_RUNPATH is NOT inherited: it applies only to the direct DT_NEEDED
-//     entries of the ELF that carries it, not to their children.
-//   - When child has DT_RUNPATH, the RPATH inheritance chain is terminated
-//     for child's own DT_NEEDED resolution: neither child's own DT_RPATH
-//     (which is overridden by DT_RUNPATH) nor any ancestor's RPATH is used.
-//     This matches glibc's behaviour: the loader's RPATH chain is consulted
-//     only if the loading object (child) itself has no DT_RUNPATH.
-func (c *ResolveContext) NewChildContext(
-    childPath string,
-    childRPATH []string,
-    childRUNPATH []string,
-) *ResolveContext {
-    child := &ResolveContext{
+// DT_RUNPATH は継承されない: 子の DT_NEEDED 解決には子自身の RUNPATH のみが使われる。
+func (c *ResolveContext) NewChildContext(childPath string, childRUNPATH []string) *ResolveContext {
+    return &ResolveContext{
         ParentPath:           childPath,
         ParentDir:            filepath.Dir(childPath),
+        OwnRUNPATH:           childRUNPATH,
         IncludeLDLibraryPath: c.IncludeLDLibraryPath,
     }
-
-    // Set the child's own RPATH/RUNPATH
-    if len(childRUNPATH) > 0 {
-        child.OwnRUNPATH = childRUNPATH
-        // When child has DT_RUNPATH, glibc does NOT walk up the loader RPATH
-        // chain for child's DT_NEEDED resolution. Therefore InheritedRPATH
-        // must be left nil — carrying the ancestor chain forward would cause
-        // false positives when the record-time and run-time loader environments
-        // differ (e.g. LD_LIBRARY_PATH hijack detection).
-    } else {
-        child.OwnRPATH = childRPATH
-
-        // Build inherited RPATH chain: start with parent's inherited, then add parent's own RPATH.
-        // (Parent's own RPATH is only contributed when parent itself has no RUNPATH,
-        // which is guaranteed here because c.OwnRUNPATH is set only when RUNPATH was
-        // present, making c.OwnRPATH empty in that case.)
-        inherited := make([]ExpandedRPATHEntry, 0, len(c.InheritedRPATH)+len(c.OwnRPATH))
-        inherited = append(inherited, c.InheritedRPATH...)
-
-        // Parent's own RPATH (if it had no RUNPATH) is inherited by child
-        if len(c.OwnRUNPATH) == 0 {
-            for _, rp := range c.OwnRPATH {
-                inherited = append(inherited, ExpandedRPATHEntry{
-                    Path:      rp,
-                    OriginDir: c.ParentDir,
-                })
-            }
-        }
-        // If parent had RUNPATH (c.OwnRUNPATH is set), parent's OwnRPATH is empty
-        // and OwnRUNPATH is not inherited, so we only carry forward existing inherited.
-        child.InheritedRPATH = inherited
-    }
-
-    return child
-}
-
-// InheritedRPATHKey returns a string key representing the inherited RPATH context.
-// Used as part of the visited set key to distinguish the same library reached via
-// different dependency chains with different RPATH contexts.
-func (c *ResolveContext) InheritedRPATHKey() string {
-    if len(c.InheritedRPATH) == 0 {
-        return ""
-    }
-    parts := make([]string, len(c.InheritedRPATH))
-    for i, entry := range c.InheritedRPATH {
-        parts[i] = entry.OriginDir + ":" + entry.Path
-    }
-    return strings.Join(parts, "|")
 }
 
 // expandOrigin replaces $ORIGIN in the given path with the specified directory.
@@ -463,41 +362,18 @@ func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver
 }
 
 // Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
-// The resolution order follows ld.so(8) with inherited RPATH support:
-//  1. OwnRPATH     - ctx.OwnRPATH, only when ctx.OwnRUNPATH is absent
-//  2. InheritedRPATH - ctx.InheritedRPATH from ancestor ELFs
-//  3. LD_LIBRARY_PATH - only if ctx.IncludeLDLibraryPath is true
-//  4. OwnRUNPATH   - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
-//  5. /etc/ld.so.cache
-//  6. Default paths (architecture-dependent)
+// The resolution order is:
+//  1. LD_LIBRARY_PATH - only if ctx.IncludeLDLibraryPath is true
+//  2. OwnRUNPATH   - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
+//  3. /etc/ld.so.cache
+//  4. Default paths (architecture-dependent)
 //
+// DT_RPATH は非サポート（ErrDTRPATHNotSupported を参照）。
 // The resolved path is normalized via filepath.EvalSymlinks + filepath.Clean.
 func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, error) {
     var searchedPaths []string
 
-    // Step 1: OwnRPATH (only when RUNPATH is absent)
-    if len(ctx.OwnRUNPATH) == 0 && len(ctx.OwnRPATH) > 0 {
-        for _, rp := range ctx.OwnRPATH {
-            expanded := expandOrigin(rp, ctx.ParentDir)
-            candidate := filepath.Join(expanded, soname)
-            searchedPaths = append(searchedPaths, candidate+" (RPATH)")
-            if resolved, err := r.tryResolve(candidate); err == nil {
-                return resolved, nil
-            }
-        }
-    }
-
-    // Step 2: InheritedRPATH
-    for _, entry := range ctx.InheritedRPATH {
-        expanded := expandOrigin(entry.Path, entry.OriginDir)
-        candidate := filepath.Join(expanded, soname)
-        searchedPaths = append(searchedPaths, candidate+" (inherited RPATH)")
-        if resolved, err := r.tryResolve(candidate); err == nil {
-            return resolved, nil
-        }
-    }
-
-    // Step 3: LD_LIBRARY_PATH (only at runner time)
+    // Step 1: LD_LIBRARY_PATH (only when explicitly enabled)
     if ctx.IncludeLDLibraryPath {
         // os.Getenv is used directly; YAGNI (no injection needed).
         // Tests should use t.Setenv("LD_LIBRARY_PATH", ...) to control this value.
@@ -513,7 +389,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
         }
     }
 
-    // Step 4: OwnRUNPATH
+    // Step 2: OwnRUNPATH
     for _, rp := range ctx.OwnRUNPATH {
         expanded := expandOrigin(rp, ctx.ParentDir)
         candidate := filepath.Join(expanded, soname)
@@ -523,7 +399,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
         }
     }
 
-    // Step 5: ld.so.cache
+    // Step 3: ld.so.cache
     if r.cache != nil {
         if cachedPath := r.cache.Lookup(soname); cachedPath != "" {
             searchedPaths = append(searchedPaths, cachedPath+" (ld.so.cache)")
@@ -533,7 +409,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
         }
     }
 
-    // Step 6: Default paths (architecture-dependent)
+    // Step 4: Default paths (architecture-dependent)
     for _, dir := range r.archPaths {
         candidate := filepath.Join(dir, soname)
         searchedPaths = append(searchedPaths, candidate+" (default)")
@@ -847,12 +723,10 @@ type resolveItem struct {
     depth  int
 }
 
-// visitedKey is the key for the visited set: (resolvedPath, inheritedRPATHContext).
-// Using resolvedPath alone is PROHIBITED because the same .so with different
-// inherited RPATH contexts may produce different child resolution results.
-type visitedKey struct {
-    resolvedPath     string
-    inheritedRPATHKey string
+// traversalKey is the key for the visited set.
+// DT_RPATH 非サポート化により、resolvedPath のみで一意に識別できる。
+type traversalKey struct {
+    resolvedPath string
 }
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
@@ -887,19 +761,22 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
     // a.cache was parsed once at NewDynLibAnalyzer() time and is reused here.
     resolver := NewLibraryResolver(a.cache, elfFile.Machine)
 
-    // Get RPATH and RUNPATH
+    // DT_RPATH チェック: DT_RPATH が存在する場合は非サポートとして処理中断
     rpath, _ := elfFile.DynString(elf.DT_RPATH)
-    runpath, _ := elfFile.DynString(elf.DT_RUNPATH)
+    if len(rpath) > 0 {
+        return nil, &ErrDTRPATHNotSupported{Path: binaryPath, RPATH: strings.Join(rpath, ":")}
+    }
 
-    rpathEntries := splitPathList(rpath)
+    // Get RUNPATH
+    runpath, _ := elfFile.DynString(elf.DT_RUNPATH)
     runpathEntries := splitPathList(runpath)
 
-    // Create root resolution context (LD_LIBRARY_PATH is NOT used at record time)
-    rootCtx := NewRootContext(binaryPath, rpathEntries, runpathEntries, false)
+    // Create root resolution context (LD_LIBRARY_PATH は record 時は使用しない)
+    rootCtx := NewRootContext(binaryPath, runpathEntries, false)
 
     // BFS queue and visited set
     var queue []resolveItem
-    visited := make(map[visitedKey]bool)
+    visited := make(map[traversalKey]bool)
     var libs []fileanalysis.LibEntry
 
     // Seed queue with direct dependencies
@@ -936,11 +813,8 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
             return nil, err
         }
 
-        // Build visited key
-        vKey := visitedKey{
-            resolvedPath:      resolvedPath,
-            inheritedRPATHKey: item.ctx.InheritedRPATHKey(),
-        }
+        // Build visited key (resolvedPath のみ)
+        vKey := traversalKey{resolvedPath: resolvedPath}
 
         if visited[vKey] {
             continue
@@ -953,26 +827,15 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
             return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
         }
 
-        // Build InheritedRPATH for serialization
-        var inheritedRPATHStrings []string
-        if len(item.ctx.InheritedRPATH) > 0 {
-            inheritedRPATHStrings = make([]string, len(item.ctx.InheritedRPATH))
-            for i, entry := range item.ctx.InheritedRPATH {
-                inheritedRPATHStrings[i] = expandOrigin(entry.Path, entry.OriginDir)
-            }
-        }
-
         // Record the library entry
         libs = append(libs, fileanalysis.LibEntry{
-            SOName:         item.soname,
-            ParentPath:     item.ctx.ParentPath,
-            Path:           resolvedPath,
-            Hash:           hash,
-            InheritedRPATH: inheritedRPATHStrings,
+            SOName: item.soname,
+            Path:   resolvedPath,
+            Hash:   hash,
         })
 
         // Parse child dependencies
-        childNeeded, childRPATH, childRUNPATH, err := a.parseELFDeps(resolvedPath)
+        childNeeded, childRUNPATH, err := a.parseELFDeps(resolvedPath)
         if err != nil {
             slog.Debug("Failed to parse child ELF dependencies",
                 "path", resolvedPath, "error", err)
@@ -980,7 +843,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
         }
 
         // Create child context and enqueue
-        childCtx := item.ctx.NewChildContext(resolvedPath, childRPATH, childRUNPATH)
+        childCtx := item.ctx.NewChildContext(resolvedPath, childRUNPATH)
         for _, childSoname := range childNeeded {
             queue = append(queue, resolveItem{
                 soname: childSoname,
@@ -1023,26 +886,30 @@ func computeFileHash(path string) (string, error) {
     return fmt.Sprintf("%s:%s", hashPrefix, hex.EncodeToString(h.Sum(nil))), nil
 }
 
-// parseELFDeps opens the given path as ELF and extracts DT_NEEDED, DT_RPATH,
-// and DT_RUNPATH. Returns nil slices (not an error) if parsing fails.
-func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, rpath, runpath []string, err error) {
+// parseELFDeps opens the given path as ELF and extracts DT_NEEDED and DT_RUNPATH.
+// DT_RPATH が存在する場合は ErrDTRPATHNotSupported を返す。
+// Returns nil slices (not an error) if parsing fails for other reasons.
+func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, err error) {
     file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
     if err != nil {
-        return nil, nil, nil, err
+        return nil, nil, err
     }
     defer func() { _ = file.Close() }()
 
     elfFile, err := elf.NewFile(file)
     if err != nil {
-        return nil, nil, nil, err
+        return nil, nil, err
     }
     defer func() { _ = elfFile.Close() }()
 
     neededRaw, _ := elfFile.DynString(elf.DT_NEEDED)
     rpathRaw, _ := elfFile.DynString(elf.DT_RPATH)
+    if len(rpathRaw) > 0 {
+        return nil, nil, &ErrDTRPATHNotSupported{Path: path, RPATH: strings.Join(rpathRaw, ":")}
+    }
     runpathRaw, _ := elfFile.DynString(elf.DT_RUNPATH)
 
-    return neededRaw, splitPathList(rpathRaw), splitPathList(runpathRaw), nil
+    return neededRaw, splitPathList(runpathRaw), nil
 }
 
 // splitPathList splits colon-separated path lists (as returned by DynString)
@@ -1066,50 +933,34 @@ func splitPathList(pathLists []string) []string {
 }
 ```
 
-### 3.8 `dynlibanalysis/verifier.go` — `runner` 時の 2 段階検証
+### 3.8 `dynlibanalysis/verifier.go` — `runner` 時のハッシュ検証
+
+LD_LIBRARY_PATH は runner 実行前に常にクリアされるため、第 2 段階（パス再解決）は不要。
+`Verify` はハッシュ照合のみを行う。
 
 ```go
 package dynlibanalysis
 
 import (
-    "debug/elf"
     "fmt"
-    "log/slog"
-    "os"
-    "path/filepath"
 
     "github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
-// DynLibVerifier performs two-stage verification of recorded library dependencies.
+// DynLibVerifier performs hash verification of recorded library dependencies.
 type DynLibVerifier struct {
-    fs    safefileio.FileSystem
-    cache *LDCache // parsed once at construction time; nil if ld.so.cache is unavailable
+    fs safefileio.FileSystem
 }
 
-// NewDynLibVerifier creates a new verifier. It parses /etc/ld.so.cache once at
-// construction time and reuses the result for every Verify() call.
+// NewDynLibVerifier creates a new verifier.
 func NewDynLibVerifier(fs safefileio.FileSystem) *DynLibVerifier {
-    cache, err := ParseLDCache(defaultLDCachePath)
-    if err != nil {
-        slog.Warn("ld.so.cache unavailable, falling back to default paths",
-            "error", err)
-    }
-    return &DynLibVerifier{
-        fs:    fs,
-        cache: cache,
-    }
+    return &DynLibVerifier{fs: fs}
 }
 
-// Verify performs two-stage verification of dynamic library dependencies.
+// Verify performs hash verification of dynamic library dependencies.
 //
-// Stage 1 (Hash verification): For each LibEntry, compute the hash of the file
-// at entry.Path and compare with entry.Hash.
-//
-// Stage 2 (Path resolution verification): For each LibEntry, re-resolve
-// (entry.ParentPath, entry.SOName) using the current environment (including
-// LD_LIBRARY_PATH) and verify that the resolved path matches entry.Path.
+// For each LibEntry, compute the hash of the file at entry.Path and compare with entry.Hash.
 //
 // Returns nil if all checks pass.
 // Returns a descriptive error if any check fails.
@@ -1118,20 +969,11 @@ func (v *DynLibVerifier) Verify(binaryPath string, deps *fileanalysis.DynLibDeps
         return nil
     }
 
-    // Create resolver for re-resolution (needed for Stage 2).
-    // v.cache was parsed once at NewDynLibVerifier() time and is reused here.
-    machine, err := v.getELFMachine(binaryPath)
-    if err != nil {
-        return fmt.Errorf("failed to determine ELF architecture: %w", err)
-    }
-    resolver := NewLibraryResolver(v.cache, machine)
-
-    // Stage 1: Hash verification
+    // Hash verification
     for _, entry := range deps.Libs {
         if entry.Path == "" {
             return &ErrEmptyLibraryPath{
-                SOName:     entry.SOName,
-                ParentPath: entry.ParentPath,
+                SOName: entry.SOName,
             }
         }
 
@@ -1151,108 +993,7 @@ func (v *DynLibVerifier) Verify(binaryPath string, deps *fileanalysis.DynLibDeps
         }
     }
 
-    // Stage 2: Path resolution verification
-    for _, entry := range deps.Libs {
-        ctx, err := v.buildResolveContext(entry)
-        if err != nil {
-            return fmt.Errorf("failed to build resolve context for %s: %w",
-                entry.SOName, err)
-        }
-
-        resolvedPath, err := resolver.Resolve(entry.SOName, ctx)
-        if err != nil {
-            return fmt.Errorf("failed to re-resolve library %s (parent: %s): %w",
-                entry.SOName, entry.ParentPath, err)
-        }
-
-        if resolvedPath != entry.Path {
-            return &ErrLibraryPathMismatch{
-                SOName:       entry.SOName,
-                ParentPath:   entry.ParentPath,
-                RecordedPath: entry.Path,
-                ResolvedPath: resolvedPath,
-            }
-        }
-    }
-
     return nil
-}
-
-// buildResolveContext reconstructs the ResolveContext for a LibEntry at runtime.
-// It re-reads the ParentPath ELF to obtain OwnRPATH/OwnRUNPATH, and uses
-// the LibEntry's InheritedRPATH for the inherited context.
-// IncludeLDLibraryPath is set to true (runner time).
-func (v *DynLibVerifier) buildResolveContext(entry fileanalysis.LibEntry) (*ResolveContext, error) {
-    // Read parent ELF to get its RPATH/RUNPATH
-    parentRPATH, parentRUNPATH, err := v.readELFPaths(entry.ParentPath)
-    if err != nil {
-        return nil, err
-    }
-
-    ctx := &ResolveContext{
-        ParentPath:           entry.ParentPath,
-        ParentDir:            filepath.Dir(entry.ParentPath),
-        IncludeLDLibraryPath: true, // Runner time: include LD_LIBRARY_PATH
-    }
-
-    if len(parentRUNPATH) > 0 {
-        ctx.OwnRUNPATH = parentRUNPATH
-    } else {
-        ctx.OwnRPATH = parentRPATH
-    }
-
-    // Reconstruct InheritedRPATH from recorded data.
-    // Paths are already fully expanded at record time, so OriginDir is left empty
-    // ($ORIGIN expansion is a no-op when Path contains no $ORIGIN).
-    if len(entry.InheritedRPATH) > 0 {
-        inherited := make([]ExpandedRPATHEntry, len(entry.InheritedRPATH))
-        for i, rp := range entry.InheritedRPATH {
-            inherited[i] = ExpandedRPATHEntry{
-                Path:      rp,
-                OriginDir: "", // Already expanded at record time
-            }
-        }
-        ctx.InheritedRPATH = inherited
-    }
-
-    return ctx, nil
-}
-
-// readELFPaths reads DT_RPATH and DT_RUNPATH from an ELF file.
-func (v *DynLibVerifier) readELFPaths(path string) (rpath, runpath []string, err error) {
-    file, err := v.fs.SafeOpenFile(path, os.O_RDONLY, 0)
-    if err != nil {
-        return nil, nil, err
-    }
-    defer func() { _ = file.Close() }()
-
-    elfFile, err := elf.NewFile(file)
-    if err != nil {
-        return nil, nil, err
-    }
-    defer func() { _ = elfFile.Close() }()
-
-    rpathRaw, _ := elfFile.DynString(elf.DT_RPATH)
-    runpathRaw, _ := elfFile.DynString(elf.DT_RUNPATH)
-
-    return splitPathList(rpathRaw), splitPathList(runpathRaw), nil
-}
-
-// getELFMachine returns the ELF machine type of the binary.
-func (v *DynLibVerifier) getELFMachine(path string) (elf.Machine, error) {
-    file, err := v.fs.SafeOpenFile(path, os.O_RDONLY, 0)
-    if err != nil {
-        return 0, err
-    }
-    defer func() { _ = file.Close() }()
-
-    elfFile, err := elf.NewFile(file)
-    if err != nil {
-        return 0, err
-    }
-    defer func() { _ = elfFile.Close() }()
-
-    return elfFile.Machine, nil
 }
 
 // computeFileHash is defined in analyzer.go and shared by DynLibVerifier.
@@ -1457,7 +1198,7 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 
 ### 3.13 `verification/manager.go` — `verifyDynLibDeps` の実装
 
-`Manager` 構造体に `dynlibVerifier` フィールドを追加し、`newManagerInternal` で 1 回だけ `NewDynLibVerifier` を呼ぶ。`NewManager`・`NewManagerForDryRun`・`NewManagerForTest` はいずれも `newManagerInternal` 経由で構築されるため、すべてのコンストラクタで一貫して初期化される。これにより `ld.so.cache` のパースはプロセス起動時に 1 回のみ行われる。
+`Manager` 構造体に `dynlibVerifier` フィールドを追加し、`newManagerInternal` で 1 回だけ `NewDynLibVerifier` を呼ぶ。`NewManager`・`NewManagerForDryRun`・`NewManagerForTest` はいずれも `newManagerInternal` 経由で構築されるため、すべてのコンストラクタで一貫して初期化される。
 
 ```go
 // internal/verification/manager.go
@@ -1480,8 +1221,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
     }
 
     if record.DynLibDeps != nil {
-        // DynLibDeps is recorded: perform 2-stage verification
-        // m.dynlibVerifier is initialized once at Manager construction (ld.so.cache parsed once)
+        // DynLibDeps is recorded: perform hash verification
         return m.dynlibVerifier.Verify(cmdPath, record.DynLibDeps)
     }
 
@@ -1757,10 +1497,11 @@ func run(args []string, stdout, stderr io.Writer, d dirCreator) int {
 
 | 受入基準 (AC) | テストケース | テストファイル |
 |-------------|------------|-------------|
-| AC-1: ライブラリパス解決 | `TestResolve_RPATH`, `TestResolve_RUNPATH`, `TestResolve_Origin`, `TestResolve_LDCache`, `TestResolve_DefaultPaths`, `TestResolve_Failure`, `TestResolve_RPATHvsRUNPATH`, `TestResolve_InheritedRPATH`, `TestResolve_InheritanceTermination`, `TestResolve_OriginInherited` | `resolver_test.go` |
+| AC-1: ライブラリパス解決 | `TestResolve_RUNPATH`, `TestResolve_Origin`, `TestResolve_LDCache`, `TestResolve_DefaultPaths`, `TestResolve_Failure` | `resolver_test.go` |
 | AC-1: 再帰解決・循環防止 | `TestAnalyze_TransitiveDeps`, `TestAnalyze_CircularDeps`, `TestAnalyze_MaxDepth`, `TestAnalyze_ResolutionFailure` | `analyzer_test.go` |
-| AC-2: record 拡張 | `TestAnalyze_DynamicELF`, `TestAnalyze_StaticELF`, `TestAnalyze_NonELF`, `TestAnalyze_LibEntryFields`, `TestAnalyze_ParentPath`, `TestAnalyze_Force` | `analyzer_test.go` |
-| AC-3: runner 検証拡張 | `TestVerify_Stage1_HashMatch`, `TestVerify_Stage1_HashMismatch`, `TestVerify_Stage2_PathMatch`, `TestVerify_Stage2_PathMismatch_LDLibraryPath`, `TestVerify_EmptyPath`, `TestVerify_SchemaVersion`, `TestVerify_ELFNoDynLibDeps`, `TestVerify_NonELFNoDynLibDeps` | `verifier_test.go` |
+| AC-1: DT_RPATH 非サポート | `TestAnalyze_DTRPATHNotSupported` | `analyzer_test.go` |
+| AC-2: record 拡張 | `TestAnalyze_DynamicELF`, `TestAnalyze_StaticELF`, `TestAnalyze_NonELF`, `TestAnalyze_LibEntryFields`, `TestAnalyze_Force` | `analyzer_test.go` |
+| AC-3: runner 検証拡張 | `TestVerify_HashMatch`, `TestVerify_HashMismatch`, `TestVerify_EmptyPath`, `TestVerify_SchemaVersion`, `TestVerify_ELFNoDynLibDeps`, `TestVerify_NonELFNoDynLibDeps` | `verifier_test.go` |
 | AC-3: 統合ポイント（コマンドのみ適用）[コンポーネントテスト] | `TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles`（MockManager 使用・呼び出しパターン検証）, `TestVerifyCommandDynLibDeps_DynamicELF`, `TestVerifyCommandDynLibDeps_NonELF` | `manager_test.go`, `group_executor_test.go` |
 | AC-4: dlopen シンボル検出 | `TestIsDynamicLoadSymbol`, `TestHasDynamicLoad_ELF`, `TestHasDynamicLoad_Independent` | `network_symbols_test.go`, `standard_analyzer_test.go` |
 | AC-4: HasDynamicLoad 記録（stale 防止） | `TestRecord_HasDynamicLoad_True`, `TestRecord_HasDynamicLoad_WrittenWhenFalse`, `TestRecord_BinaryAnalyzerNil_NoError` | `validator_test.go` |
@@ -1771,55 +1512,21 @@ func run(args []string, stdout, stderr io.Writer, d dirCreator) int {
 #### 4.2.1 `resolver_test.go`
 
 ```go
-func TestResolve_RPATH(t *testing.T) {
-    // Setup: create temp directory with dummy .so
-    // Create ResolveContext with OwnRPATH pointing to temp dir
-    // Verify: library resolves to the expected path
-}
-
 func TestResolve_RUNPATH(t *testing.T) {
     // Setup: create temp directory with dummy .so
     // Create ResolveContext with OwnRUNPATH pointing to temp dir
     // Verify: library resolves to the expected path
 }
 
-func TestResolve_RPATHvsRUNPATH(t *testing.T) {
-    // Setup: create two temp directories, each with a dummy .so of different content
-    // Create ResolveContext with both OwnRPATH and OwnRUNPATH
-    // Verify: RUNPATH presence makes RPATH inactive; RUNPATH path is used
-}
-
 func TestResolve_Origin(t *testing.T) {
     // Setup: create temp directory simulating binary's dir
-    // Use $ORIGIN in RPATH/RUNPATH entries
+    // Use $ORIGIN in RUNPATH entries
     // Verify: $ORIGIN is expanded to ParentDir
-}
-
-func TestResolve_OriginInherited(t *testing.T) {
-    // Setup: create temp directory simulating ancestor ELF's dir
-    // Use $ORIGIN in InheritedRPATH with OriginDir pointing to ancestor dir
-    // Verify: $ORIGIN expands to ancestor's OriginDir, not parent's dir
-}
-
-func TestResolve_InheritedRPATH(t *testing.T) {
-    // Setup: create parent and grandparent directories
-    // Parent has RPATH (no RUNPATH) -> inherited by child
-    // Verify: child resolves library using inherited RPATH
-}
-
-func TestResolve_InheritanceTermination(t *testing.T) {
-    // Setup: grandparent(RPATH=/gp) -> parent(RUNPATH=/p) -> child
-    // parent's context has InheritedRPATH=[/gp].
-    // parent calls NewChildContext for child with childRUNPATH=[/p].
-    // Verify: child's InheritedRPATH is nil (RUNPATH on loading object terminates
-    //         the ancestor RPATH chain for child's own DT_NEEDED resolution).
-    // Verify: resolving a library for child uses ONLY child's OwnRUNPATH,
-    //         not /gp (grandparent RPATH) nor /p (parent RPATH).
 }
 
 func TestResolve_LDLibraryPath(t *testing.T) {
     // Setup: set LD_LIBRARY_PATH to temp dir with dummy .so
-    // Create context with IncludeLDLibraryPath=true (runner time)
+    // Create context with IncludeLDLibraryPath=true
     // Verify: library resolves via LD_LIBRARY_PATH
     // Create context with IncludeLDLibraryPath=false (record time)
     // Verify: library does NOT resolve via LD_LIBRARY_PATH
@@ -1877,54 +1584,30 @@ func TestLDCache_Lookup(t *testing.T) {
 
 ```go
 func TestNewRootContext(t *testing.T) {
-    // Verify: with RUNPATH set, OwnRPATH is empty
-    // Verify: without RUNPATH, OwnRPATH is set
+    // Verify: OwnRUNPATH is set correctly
     // Verify: ParentDir is correctly computed
 }
 
-func TestNewChildContext_RPATHInheritance(t *testing.T) {
-    // Parent has RPATH (no RUNPATH)
-    // Child has no RUNPATH
-    // Verify: child inherits parent's RPATH via InheritedRPATH
-}
-
-func TestNewChildContext_RUNPATHTermination(t *testing.T) {
-    // grandparent(RPATH=/gp) -> parent(RPATH=/p, no RUNPATH) -> child(RUNPATH=/c)
-    // parent's context: InheritedRPATH=[/gp], OwnRPATH=[/p], OwnRUNPATH=nil
-    // Verify: child's OwnRUNPATH=[/c], OwnRPATH=nil
-    // Verify: child's InheritedRPATH is nil — glibc does not walk the loader RPATH
-    //         chain when the loading object (child) has DT_RUNPATH.
-    //         Both parent's RPATH (/p) and grandparent's inherited RPATH (/gp)
-    //         are intentionally discarded for child's DT_NEEDED resolution.
-}
-
-func TestInheritedRPATHKey(t *testing.T) {
-    // Verify: deterministic key generation
-    // Verify: different RPATH contexts produce different keys
-    // Verify: empty context produces empty key
+func TestNewChildContext(t *testing.T) {
+    // Verify: child's OwnRUNPATH is set from childRUNPATH argument
+    // Verify: child's ParentPath and ParentDir are correct
+    // Verify: DT_RUNPATH は継承されない（子は子自身の RUNPATH のみを使う）
 }
 ```
 
 #### 4.2.4 `verifier_test.go`
 
 ```go
-func TestVerify_Stage1_HashMatch(t *testing.T) {
+func TestVerify_HashMatch(t *testing.T) {
     // Setup: create temp .so files and compute their hashes
     // Create DynLibDepsData with matching hashes
     // Verify: Verify() returns nil
 }
 
-func TestVerify_Stage1_HashMismatch(t *testing.T) {
+func TestVerify_HashMismatch(t *testing.T) {
     // Setup: create temp .so, record wrong hash
     // Verify: ErrLibraryHashMismatch is returned
     // Verify: error contains soname, expected hash, actual hash
-}
-
-func TestVerify_Stage2_PathMismatch_LDLibraryPath(t *testing.T) {
-    // Setup: create two copies of .so in different directories
-    // Record with path A, set LD_LIBRARY_PATH to directory B
-    // Verify: ErrLibraryPathMismatch is returned
-    // Verify: error contains recorded path and resolved path
 }
 
 func TestVerify_EmptyPath(t *testing.T) {
@@ -1986,30 +1669,25 @@ func TestIntegration_RecordAndVerify_Normal(t *testing.T) {
 func TestIntegration_LibraryTamperingDetection(t *testing.T) {
     // 1. Record a binary
     // 2. Modify a dependent library's content
-    // 3. Run runner verification -> verify Stage 1 hash mismatch
+    // 3. Run runner verification -> verify hash mismatch
 }
 ```
 
-#### 4.3.3 `LD_LIBRARY_PATH` ハイジャック検出
+#### 4.3.3 ライブラリ改ざん検出（追加ケース）
 
-```go
-func TestIntegration_LDLibraryPathHijack(t *testing.T) {
-    // 1. Record a binary (without LD_LIBRARY_PATH)
-    // 2. Set LD_LIBRARY_PATH to insert a different library
-    // 3. Run runner verification -> verify Stage 2 path mismatch
-}
-```
+LD_LIBRARY_PATH は runner 実行前にクリアされるため、LD_LIBRARY_PATH ハイジャックの統合テストは不要。
+ライブラリ内容の改ざんはハッシュ検証で検出される（4.3.2 参照）。
 
 #### 4.3.4 旧スキーマ拒否と移行
 
 ```go
 func TestIntegration_OldSchemaRejection(t *testing.T) {
-    // 1. Create a record file with schema_version: 1
+    // 1. Create a record file with schema_version: 1 or 2
     // 2. Run runner verification (Store.Load path) -> verify SchemaVersionMismatchError
     //    (runner rejects old schema records)
     // 3. Run record --force on the same file -> verify success
     //    (Store.Update allows overwriting old schema when Actual < Expected)
-    // 4. Run runner verification again -> verify success (record now has schema_version: 2)
+    // 4. Run runner verification again -> verify success (record now has schema_version: 3)
 }
 ```
 
@@ -2022,55 +1700,58 @@ func TestIntegration_OldSchemaRejection(t *testing.T) {
 ## 5. 実装チェックリスト
 
 ### 5.1 Phase 1: 基盤型とスキーマ拡張
-- [ ] `fileanalysis/schema.go`: `CurrentSchemaVersion` を 2 に変更
-- [ ] `fileanalysis/schema.go`: `DynLibDepsData`, `LibEntry` 型定義追加
-- [ ] `fileanalysis/schema.go`: `Record` に `DynLibDeps`, `HasDynamicLoad` フィールド追加
-- [ ] `fileanalysis/file_analysis_store.go`: `Store.Update` を修正し、旧スキーマ（`Actual < Expected`）の `SchemaVersionMismatchError` を `Record{}` で上書き許可、新スキーマ（`Actual > Expected`）は引き続き拒否
-- [ ] 既存テストの `CurrentSchemaVersion` 依存箇所を更新
-- [ ] `Store.Update` の新しい分岐をユニットテストで検証
+- [x] `fileanalysis/schema.go`: `CurrentSchemaVersion` を 3 に変更
+- [x] `fileanalysis/schema.go`: `DynLibDepsData`, `LibEntry` 型定義追加（`soname`, `path`, `hash` のみ）
+- [x] `fileanalysis/schema.go`: `Record` に `DynLibDeps`, `HasDynamicLoad` フィールド追加
+- [x] `fileanalysis/file_analysis_store.go`: `Store.Update` を修正し、旧スキーマ（`Actual < Expected`）の `SchemaVersionMismatchError` を `Record{}` で上書き許可、新スキーマ（`Actual > Expected`）は引き続き拒否
+- [x] 既存テストの `CurrentSchemaVersion` 依存箇所を更新
+- [x] `Store.Update` の新しい分岐をユニットテストで検証
 
 ### 5.2 Phase 2: ライブラリ解決エンジン
-- [ ] `dynlibanalysis/` パッケージ作成
-- [ ] `dynlibanalysis/errors.go`: エラー型定義
-- [ ] `dynlibanalysis/default_paths.go`: アーキテクチャ別デフォルト検索パス
-- [ ] `dynlibanalysis/ldcache.go`: `/etc/ld.so.cache` パーサー
-- [ ] `dynlibanalysis/resolver_context.go`: `ResolveContext`, `NewChildContext`
-- [ ] `dynlibanalysis/resolver.go`: `LibraryResolver`, `Resolve`
-- [ ] 上記の全ユニットテスト
+- [x] `dynlibanalysis/` パッケージ作成
+- [x] `dynlibanalysis/errors.go`: エラー型定義（`ErrDTRPATHNotSupported` を含む）
+- [x] `dynlibanalysis/default_paths.go`: アーキテクチャ別デフォルト検索パス
+- [x] `dynlibanalysis/ldcache.go`: `/etc/ld.so.cache` パーサー
+- [x] `dynlibanalysis/resolver_context.go`: `ResolveContext`（`OwnRUNPATH` のみ）, `NewRootContext`, `NewChildContext`（RPATH 継承なし）
+- [x] `dynlibanalysis/resolver.go`: `LibraryResolver`, `Resolve`（4 段階：LD_LIBRARY_PATH → RUNPATH → cache → default）
+- [x] 上記の全ユニットテスト
 
 ### 5.3 Phase 3: DynLibAnalyzer（record 拡張）
-- [ ] `dynlibanalysis/analyzer.go`: `DynLibAnalyzer`, `Analyze`（再帰解決 + ハッシュ計算）
-- [ ] vDSO スキップリスト
-- [ ] visited セット（循環依存防止）
-- [ ] 再帰深度制限
-- [ ] `filevalidator/validator.go`: `dynlibAnalyzer` フィールド, `SetDynLibAnalyzer` セッター, `LoadRecord` 追加
-- [ ] `filevalidator/validator.go`: `saveHash` コールバックに DynLibDeps 解析統合
-- [ ] `cmd/record/main.go`: `deps.validatorFactory` を `*filevalidator.Validator` 返しに変更し `SetDynLibAnalyzer` で注入
-- [ ] 上記の全ユニットテスト・統合テスト
+- [x] `dynlibanalysis/analyzer.go`: `DynLibAnalyzer`, `Analyze`（再帰解決 + ハッシュ計算）
+  - DT_RPATH 検出時に `ErrDTRPATHNotSupported` を返す
+  - `traversalKey` は `resolvedPath` のみ
+  - `LibEntry` には `soname`, `path`, `hash` のみ記録
+- [x] vDSO スキップリスト
+- [x] visited セット（循環依存防止）
+- [x] 再帰深度制限
+- [x] `filevalidator/validator.go`: `dynlibAnalyzer` フィールド, `SetDynLibAnalyzer` セッター, `LoadRecord` 追加
+- [x] `filevalidator/validator.go`: `saveHash` コールバックに DynLibDeps 解析統合
+- [x] `cmd/record/main.go`: `deps.validatorFactory` を `*filevalidator.Validator` 返しに変更し `SetDynLibAnalyzer` で注入
+- [x] 上記の全ユニットテスト・統合テスト
 
 ### 5.4 Phase 4: DynLibVerifier（runner 拡張）
-- [ ] `dynlibanalysis/verifier.go`: `DynLibVerifier`, `Verify`（2 段階検証）
-- [ ] `FileValidator` インターフェースに `LoadRecord` 追加
-- [ ] `verification/manager.go`: `verifyDynLibDeps` 実装
-- [ ] `verification/manager.go`: `VerifyGroupFiles` への統合
-- [ ] ELF バイナリの `DynLibDeps` 未記録検出
-- [ ] `LD_LIBRARY_PATH` 対応（runner 時の `IncludeLDLibraryPath: true`）
-- [ ] 上記の全ユニットテスト・統合テスト
+- [x] `dynlibanalysis/verifier.go`: `DynLibVerifier`, `Verify`（ハッシュ検証のみ、第 2 段階は削除済み）
+- [x] `FileValidator` インターフェースに `LoadRecord` 追加
+- [x] `verification/manager.go`: `verifyDynLibDeps` 実装
+- [x] `verification/manager.go`: `VerifyGroupFiles` への統合
+- [x] ELF バイナリの `DynLibDeps` 未記録検出
+- [x] `LD_LIBRARY_PATH` 対応は不要（runner 実行前にクリア済み）
+- [x] 上記の全ユニットテスト・統合テスト
 
 ### 5.5 Phase 5: dlopen シンボル検出 + 仕上げ
-- [ ] `binaryanalyzer/network_symbols.go`: `dynamicLoadSymbolRegistry`, `IsDynamicLoadSymbol`
-- [ ] `binaryanalyzer/analyzer.go`: `AnalysisOutput.HasDynamicLoad` フィールド追加
-- [ ] `elfanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出ロジック追加
-- [ ] `machoanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出ロジック追加
-- [ ] `fileanalysis/schema.go`: `Record.HasDynamicLoad` フィールド（Phase 1 で追加済み）
-- [ ] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加
-- [ ] `filevalidator/validator.go`: `saveHash` コールバックに `HasDynamicLoad` 記録を統合（常に true/false を書き込み）
-- [ ] `cmd/record/main.go`: `SetBinaryAnalyzer` で `BinaryAnalyzer` を注入
-- [ ] `runner/security/network_analyzer.go`: `isNetworkViaBinaryAnalysis` の戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` 検出時に `isHighRisk=true` を設定する高リスク判定を追加（`isNetwork` は独立して判定）
-- [ ] `runner/security/network_analyzer.go`: `IsNetworkOperation` 内の呼び出しを `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に変更
-- [ ] 上記の全ユニットテスト（`TestRecord_HasDynamicLoad_WrittenWhenFalse` を含む）
-- [ ] 全既存テストのパス確認
-- [ ] `make lint` / `make fmt` パス確認
+- [x] `binaryanalyzer/network_symbols.go`: `dynamicLoadSymbolRegistry`, `IsDynamicLoadSymbol`
+- [x] `binaryanalyzer/analyzer.go`: `AnalysisOutput.HasDynamicLoad` フィールド追加
+- [x] `elfanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出ロジック追加
+- [x] `machoanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出ロジック追加
+- [x] `fileanalysis/schema.go`: `Record.HasDynamicLoad` フィールド（Phase 1 で追加済み）
+- [x] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加
+- [x] `filevalidator/validator.go`: `saveHash` コールバックに `HasDynamicLoad` 記録を統合（常に true/false を書き込み）
+- [x] `cmd/record/main.go`: `SetBinaryAnalyzer` で `BinaryAnalyzer` を注入
+- [x] `runner/security/network_analyzer.go`: `isNetworkViaBinaryAnalysis` の戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` 検出時に `isHighRisk=true` を設定する高リスク判定を追加（`isNetwork` は独立して判定）
+- [x] `runner/security/network_analyzer.go`: `IsNetworkOperation` 内の呼び出しを `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に変更
+- [x] 上記の全ユニットテスト（`TestRecord_HasDynamicLoad_WrittenWhenFalse` を含む）
+- [x] 全既存テストのパス確認
+- [x] `make lint` / `make fmt` パス確認
 
 ## 6. 参照
 

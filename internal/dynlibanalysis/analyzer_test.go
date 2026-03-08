@@ -17,7 +17,7 @@ import (
 // ---- ELF binary test helpers -----------------------------------------------
 
 // buildTestELFWithDeps writes a minimal ELF64 LE (x86-64, ET_DYN) file to dir
-// with the given soname entries in DT_NEEDED and an optional RPATH.
+// with the given soname entries in DT_NEEDED and an optional RUNPATH.
 // The file name is fileName. Returns the absolute path.
 //
 // Go's debug/elf.DynString requires SHT_DYNAMIC section header.
@@ -30,7 +30,7 @@ import (
 //   - .dynstr (dynamic string table)
 //   - .shstrtab (section name string table)
 //   - Section header table (4 x 64 B)
-func buildTestELFWithDeps(t *testing.T, dir, fileName string, sonames []string, rpath string) string {
+func buildTestELFWithDeps(t *testing.T, dir, fileName string, sonames []string, runpath string) string {
 	t.Helper()
 
 	// ---- constants --------------------------------------------------------
@@ -53,11 +53,11 @@ func buildTestELFWithDeps(t *testing.T, dir, fileName string, sonames []string, 
 		pfRW       = 6 // PF_R|PF_W
 
 		// Dynamic tag constants
-		dtNull   = 0
-		dtNeeded = 1
-		dtStrtab = 5
-		dtStrsz  = 10
-		dtRpath  = 15
+		dtNull    = 0
+		dtNeeded  = 1
+		dtStrtab  = 5
+		dtStrsz   = 10
+		dtRunpath = 29
 
 		// Section type constants
 		shtNull    = 0
@@ -75,10 +75,10 @@ func buildTestELFWithDeps(t *testing.T, dir, fileName string, sonames []string, 
 	var dynstrBuf bytes.Buffer
 	dynstrBuf.WriteByte(0) // offset 0 = ""
 
-	rpathIdx := uint64(0)
-	if rpath != "" {
-		rpathIdx = uint64(dynstrBuf.Len())
-		dynstrBuf.WriteString(rpath)
+	runpathIdx := uint64(0)
+	if runpath != "" {
+		runpathIdx = uint64(dynstrBuf.Len())
+		dynstrBuf.WriteString(runpath)
 		dynstrBuf.WriteByte(0)
 	}
 
@@ -101,9 +101,9 @@ func buildTestELFWithDeps(t *testing.T, dir, fileName string, sonames []string, 
 	shstrtabBuf.WriteString(".shstrtab\x00")
 	shstrtabData := shstrtabBuf.Bytes()
 
-	// Number of dynamic entries: DT_STRTAB + DT_STRSZ + DT_NULL + optional RPATH + sonames.
+	// Number of dynamic entries: DT_STRTAB + DT_STRSZ + DT_NULL + optional RUNPATH + sonames.
 	numDynEntries := 3 // DT_STRTAB, DT_STRSZ, DT_NULL
-	if rpath != "" {
+	if runpath != "" {
 		numDynEntries++
 	}
 	numDynEntries += len(sonames)
@@ -168,8 +168,8 @@ func buildTestELFWithDeps(t *testing.T, dir, fileName string, sonames []string, 
 	}
 	writeDyn(dtStrtab, dynstrVaddr)
 	writeDyn(dtStrsz, uint64(len(dynstrData)))
-	if rpath != "" {
-		writeDyn(dtRpath, rpathIdx)
+	if runpath != "" {
+		writeDyn(dtRunpath, runpathIdx)
 	}
 	for _, idx := range soIdx {
 		writeDyn(dtNeeded, idx)
@@ -343,7 +343,7 @@ func TestAnalyze_ResolutionFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	elfPath := buildTestELFWithDeps(t, tmpDir, "test.so",
 		[]string{"libnonexistent12345678.so.99"},
-		tmpDir, // RPATH points to tmpDir; no matching file there
+		tmpDir, // RUNPATH points to tmpDir; no matching file there
 	)
 
 	a := newTestAnalyzer(t)
@@ -413,83 +413,73 @@ func TestAnalyze_MaxDepth(t *testing.T) {
 	assert.ErrorAs(t, err, &depthErr, "error should be ErrRecursionDepthExceeded")
 }
 
-// TestAnalyze_SharedLibDifferentContexts verifies that when the same physical
-// library (libshared.so) is reachable via two parents that carry different
-// OwnRPATH entries, and libshared.so itself has no RPATH so it resolves its
-// child via the inherited RPATH chain, both sets of grandchild dependencies are
-// recorded.
-//
-// Dependency graph and RPATH inheritance:
-//
-//	main  (RPATH=dirMain)
-//	├── libA.so  (in dirMain, RPATH=dirA:dirShared)
-//	│   └── libshared.so  → dirShared/libshared.so  (no RPATH)
-//	│       └── libgrand.so  → dirA/libgrand.so
-//	│           (inherited chain: dirMain, dirA, dirShared — dirA wins over dirShared)
-//	└── libB.so  (in dirMain, RPATH=dirB:dirShared)
-//	    └── libshared.so  → dirShared/libshared.so  (same physical file)
-//	        └── libgrand.so  → dirB/libgrand.so
-//	            (inherited chain: dirMain, dirB, dirShared — dirB wins over dirShared)
-//
-// Key: dirMain does NOT contain libgrand.so, so the first match in the
-// inherited chain differs between the two contexts (dirA vs dirB).
-//
-// A traversed key of resolvedPath alone cuts off libshared.so after the first
-// (libA) context, missing dirB/libgrand.so. The fix keys traversal on
-// (resolvedPath, rpathFingerprint) to detect the distinct contexts.
-func TestAnalyze_SharedLibDifferentContexts(t *testing.T) {
+// TestAnalyze_DTRPATHReturnsError verifies that Analyze returns
+// ErrDTRPATHNotSupported when the binary itself contains DT_RPATH.
+func TestAnalyze_DTRPATHReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
-	dirMain := filepath.Join(tmpDir, "dirMain")
-	dirA := filepath.Join(tmpDir, "dirA")
-	dirB := filepath.Join(tmpDir, "dirB")
-	dirShared := filepath.Join(tmpDir, "dirShared")
-	for _, d := range []string{dirMain, dirA, dirB, dirShared} {
-		require.NoError(t, os.MkdirAll(d, 0o755))
+
+	// Build an ELF with DT_RPATH by temporarily writing the tag directly.
+	// We reuse buildTestELFWithDeps with a non-empty path to embed as RUNPATH,
+	// then patch the tag byte from DT_RUNPATH (29) to DT_RPATH (15).
+	elfPath := buildTestELFWithDeps(t, tmpDir, "main_rpath",
+		[]string{"libfoo.so.1"}, tmpDir)
+
+	// Patch DT_RUNPATH tag (29 = 0x1d) to DT_RPATH (15 = 0x0f) in the file.
+	data, err := os.ReadFile(elfPath)
+	require.NoError(t, err)
+	patched := false
+	for i := 0; i+8 <= len(data); i += 8 {
+		tag := int64(data[i]) | int64(data[i+1])<<8 | int64(data[i+2])<<16 | int64(data[i+3])<<24 |
+			int64(data[i+4])<<32 | int64(data[i+5])<<40 | int64(data[i+6])<<48 | int64(data[i+7])<<56
+		if tag == 29 { // DT_RUNPATH
+			data[i] = 15 // DT_RPATH
+			patched = true
+			break
+		}
 	}
-
-	// libgrand.so exists only in dirA and dirB, NOT in dirMain or dirShared.
-	// This ensures the inherited RPATH order (dirA-first vs dirB-first) determines
-	// which copy is found.
-	buildTestELFWithDeps(t, dirA, "libgrand.so", nil, "")
-	buildTestELFWithDeps(t, dirB, "libgrand.so", nil, "")
-
-	// libshared.so has no RPATH; libgrand.so is resolved via the inherited chain.
-	buildTestELFWithDeps(t, dirShared, "libshared.so", []string{"libgrand.so"}, "")
-
-	// libA.so: OwnRPATH = dirA:dirShared — libgrand.so found in dirA first.
-	buildTestELFWithDeps(t, dirMain, "libA.so", []string{"libshared.so"}, dirA+":"+dirShared)
-	// libB.so: OwnRPATH = dirB:dirShared — libgrand.so found in dirB first.
-	buildTestELFWithDeps(t, dirMain, "libB.so", []string{"libshared.so"}, dirB+":"+dirShared)
-
-	// main has RPATH=dirMain to locate libA.so and libB.so.
-	// dirMain does NOT contain libgrand.so, so the inherited dirMain entry is
-	// a no-op for libgrand.so resolution, and dirA/dirB in each library's
-	// OwnRPATH determine the winning path.
-	mainBin := buildTestELFWithDeps(t, tmpDir, "main_shared_ctx",
-		[]string{"libA.so", "libB.so"}, dirMain)
+	require.True(t, patched, "test ELF should contain DT_RUNPATH to patch")
+	require.NoError(t, os.WriteFile(elfPath, data, 0o644))
 
 	a := newTestAnalyzer(t)
-	result, err := a.Analyze(mainBin)
+	_, err = a.Analyze(elfPath)
+	require.Error(t, err)
+
+	var rpathErr *ErrDTRPATHNotSupported
+	assert.ErrorAs(t, err, &rpathErr, "error should be ErrDTRPATHNotSupported")
+	assert.Equal(t, elfPath, rpathErr.Path)
+	assert.NotEmpty(t, rpathErr.RPATH)
+}
+
+// TestAnalyze_DTRPATHInDependencyReturnsError verifies that ErrDTRPATHNotSupported
+// is returned when a transitive dependency (not the root binary) contains DT_RPATH.
+func TestAnalyze_DTRPATHInDependencyReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Build libfoo.so with DT_RUNPATH, then patch to DT_RPATH.
+	libPath := buildTestELFWithDeps(t, tmpDir, "libfoo.so.1", nil, tmpDir)
+	data, err := os.ReadFile(libPath)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-
-	// Collect all (soname, path) pairs recorded.
-	type libKey struct{ soname, path string }
-	recordedLibs := make(map[libKey]bool)
-	for _, lib := range result.Libs {
-		recordedLibs[libKey{lib.SOName, lib.Path}] = true
+	for i := 0; i+8 <= len(data); i += 8 {
+		tag := int64(data[i]) | int64(data[i+1])<<8 | int64(data[i+2])<<16 | int64(data[i+3])<<24 |
+			int64(data[i+4])<<32 | int64(data[i+5])<<40 | int64(data[i+6])<<48 | int64(data[i+7])<<56
+		if tag == 29 {
+			data[i] = 15
+			break
+		}
 	}
+	require.NoError(t, os.WriteFile(libPath, data, 0o644))
 
-	grandA := filepath.Join(dirA, "libgrand.so")
-	grandB := filepath.Join(dirB, "libgrand.so")
+	// main binary has no RPATH, depends on libfoo.so.1 via RUNPATH.
+	mainBin := buildTestELFWithDeps(t, tmpDir, "main_dep_rpath",
+		[]string{"libfoo.so.1"}, tmpDir)
 
-	// Both grandchild paths must be recorded.
-	// Without the fix, libshared.so's children are expanded only under libA's
-	// inherited RPATH chain, so dirB/libgrand.so is never enqueued.
-	assert.True(t, recordedLibs[libKey{"libgrand.so", grandA}],
-		"grandchild via libA context (%s) should be recorded", grandA)
-	assert.True(t, recordedLibs[libKey{"libgrand.so", grandB}],
-		"grandchild via libB context (%s) should be recorded", grandB)
+	a := newTestAnalyzer(t)
+	_, err = a.Analyze(mainBin)
+	require.Error(t, err)
+
+	var rpathErr *ErrDTRPATHNotSupported
+	assert.ErrorAs(t, err, &rpathErr, "error should be ErrDTRPATHNotSupported")
+	assert.Equal(t, libPath, rpathErr.Path)
 }
 
 // resolveTestBinary returns the first existing candidate path after resolving

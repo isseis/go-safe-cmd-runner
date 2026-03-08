@@ -9,7 +9,8 @@ import (
 
 // LibraryResolver resolves DT_NEEDED library names to filesystem paths.
 // It implements a subset of the ld.so resolution algorithm sufficient for
-// security verification purposes.
+// security verification purposes. DT_RPATH is not supported; ELF files
+// containing DT_RPATH are rejected at Analyze time with ErrDTRPATHNotSupported.
 type LibraryResolver struct {
 	cache     *LDCache // parsed /etc/ld.so.cache (may be nil)
 	archPaths []string // architecture-specific default search paths
@@ -19,8 +20,6 @@ type LibraryResolver struct {
 // cache is the pre-parsed ld.so.cache (may be nil if unavailable).
 // Passing the cache as a parameter allows DynLibAnalyzer to parse it once and
 // share it across all Analyze() calls.
-// fs is not needed: tryResolve uses os.Lstat + filepath.EvalSymlinks directly,
-// which is appropriate for path existence checks (safefileio is for content reads).
 func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver {
 	return &LibraryResolver{
 		cache:     cache,
@@ -29,41 +28,17 @@ func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver
 }
 
 // Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
-// The resolution order follows ld.so(8) with inherited RPATH support:
-//  1. OwnRPATH     - ctx.OwnRPATH, only when ctx.OwnRUNPATH is absent
-//  2. InheritedRPATH - ctx.InheritedRPATH from ancestor ELFs
-//  3. LD_LIBRARY_PATH - only if ctx.IncludeLDLibraryPath is true
-//  4. OwnRUNPATH   - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
-//  5. /etc/ld.so.cache
-//  6. Default paths (architecture-dependent)
+// The resolution order follows ld.so(8) (DT_RPATH excluded as unsupported):
+//  1. LD_LIBRARY_PATH - only if ctx.IncludeLDLibraryPath is true
+//  2. OwnRUNPATH     - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
+//  3. /etc/ld.so.cache
+//  4. Default paths (architecture-dependent)
 //
 // The resolved path is normalized via filepath.EvalSymlinks + filepath.Clean.
 func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, error) {
 	var searchedPaths []string
 
-	// Step 1: OwnRPATH (only when RUNPATH is absent)
-	if len(ctx.OwnRUNPATH) == 0 && len(ctx.OwnRPATH) > 0 {
-		for _, rp := range ctx.OwnRPATH {
-			expanded := expandOrigin(rp, ctx.ParentDir)
-			candidate := filepath.Join(expanded, soname)
-			searchedPaths = append(searchedPaths, candidate+" (RPATH)")
-			if resolved, err := r.tryResolve(candidate); err == nil {
-				return resolved, nil
-			}
-		}
-	}
-
-	// Step 2: InheritedRPATH
-	for _, entry := range ctx.InheritedRPATH {
-		expanded := expandOrigin(entry.Path, entry.OriginDir)
-		candidate := filepath.Join(expanded, soname)
-		searchedPaths = append(searchedPaths, candidate+" (inherited RPATH)")
-		if resolved, err := r.tryResolve(candidate); err == nil {
-			return resolved, nil
-		}
-	}
-
-	// Step 3: LD_LIBRARY_PATH (only at runner time)
+	// Step 1: LD_LIBRARY_PATH (only at runner time)
 	if ctx.IncludeLDLibraryPath {
 		// os.Getenv is used directly; YAGNI (no injection needed).
 		// Tests should use t.Setenv("LD_LIBRARY_PATH", ...) to control this value.
@@ -79,7 +54,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 		}
 	}
 
-	// Step 4: OwnRUNPATH
+	// Step 2: OwnRUNPATH
 	for _, rp := range ctx.OwnRUNPATH {
 		expanded := expandOrigin(rp, ctx.ParentDir)
 		candidate := filepath.Join(expanded, soname)
@@ -89,7 +64,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 		}
 	}
 
-	// Step 5: ld.so.cache
+	// Step 3: ld.so.cache
 	if r.cache != nil {
 		if cachedPath := r.cache.Lookup(soname); cachedPath != "" {
 			searchedPaths = append(searchedPaths, cachedPath+" (ld.so.cache)")
@@ -99,7 +74,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 		}
 	}
 
-	// Step 6: Default paths (architecture-dependent)
+	// Step 4: Default paths (architecture-dependent)
 	for _, dir := range r.archPaths {
 		candidate := filepath.Join(dir, soname)
 		searchedPaths = append(searchedPaths, candidate+" (default)")
