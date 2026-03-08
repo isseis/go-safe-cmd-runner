@@ -76,41 +76,51 @@ glibc の実装では `DT_RPATH` は `DT_RUNPATH` が存在しない場合にの
 
 ## 6. dynlibanalysis パッケージでの設計対応
 
-上記のルールを `ResolveContext` でどう表現しているか:
+`dynlibanalysis` パッケージは ld.so アルゴリズムの**セキュリティ制限サブセット**を実装している。`DT_RPATH` と `LD_LIBRARY_PATH` はどちらもサポートされない。ELF ファイル（バイナリ・ライブラリを問わず）に `DT_RPATH` が含まれている場合、`Analyze()` は直ちに `ErrDTRPATHNotSupported` を返す。ELF 組み込みの検索パスとして参照されるのは `DT_RUNPATH` のみである。
 
-| ld.so のルール | `ResolveContext` での表現 |
-|--------------|--------------------------|
-| 自分の RPATH（RUNPATH なし時）| `OwnRPATH` |
-| 自分の RUNPATH | `OwnRUNPATH` |
-| 祖先から継承された RPATH チェーン | `InheritedRPATH []ExpandedRPATHEntry`（各エントリに `OriginDir` 付き） |
-| RUNPATH があれば OwnRPATH を無効化 | `NewRootContext`/`NewChildContext` で `OwnRUNPATH` と `OwnRPATH` を排他的に設定 |
-| loading object に RUNPATH があれば継承チェーン打ち切り | `NewChildContext` で `childRUNPATH` が非空の場合 `InheritedRPATH = nil` |
+### DT_RPATH と LD_LIBRARY_PATH を除外する理由
 
-### NewChildContext の打ち切りロジック
+`DT_RPATH` は依存グラフ全体に推移的に継承され、`LD_LIBRARY_PATH` より前に検索されるため、権限昇格やライブラリハイジャックの既知のベクターとなっている。これを拒否することで、解決ロジックをシンプルに保ち、セキュリティ特性を明確にする。
 
-```go
-if len(childRUNPATH) > 0 {
-    child.OwnRUNPATH = childRUNPATH
-    // InheritedRPATH は nil のまま（打ち切り）
-} else {
-    // InheritedRPATH に親・祖先の RPATH を積む
-}
+`LD_LIBRARY_PATH` は、`record` 実行時には再現性確保のため無視し、`verify` 実行時にはハイジャック防止のためクリアする。いずれの場合も依存解決には使用しない。
+
+### 主要な型
+
+| 型 | 役割 |
+|----|------|
+| `DynLibAnalyzer` | エントリポイント。`/etc/ld.so.cache` を一度だけパースし、BFS トラバーサルを駆動する |
+| `LibraryResolver` | 単一の soname をファイルシステムパスに解決する。RUNPATH → cache → デフォルトパスの順で検索 |
+
+### BFS トラバーサルと RUNPATH の伝播
+
+`DynLibAnalyzer.Analyze()` は依存グラフに対して BFS を実行する。各キューアイテムは以下を保持する:
+
+- `soname` — 解決対象のライブラリ名
+- `parentPath` — この soname を `DT_NEEDED` に持つ ELF のパス
+- `runpath` — `parentPath` の `DT_RUNPATH` エントリ（`soname` の解決に使用）
+- `depth` — 再帰ガード
+
+ライブラリが解決されると、その `DT_NEEDED` と `DT_RUNPATH` が `parseELFDeps()` で抽出され、新たなキューアイテムとしてエンキューされる。各子は**自身の直接の親**の `DT_RUNPATH` を使って解決される。祖先の `DT_RUNPATH` は使用されない。これは ld.so の `DT_RUNPATH` 非継承ルールに自然に対応しており、複雑な祖先 RPATH チェーンロジックを完全に回避している。
+
+### LibraryResolver.Resolve() の検索順序
+
+```
+1. 親 ELF の DT_RUNPATH エントリ（$ORIGIN → filepath.Dir(parentPath)）
+2. /etc/ld.so.cache
+3. デフォルトパス（アーキテクチャ依存、例: /lib, /usr/lib）
 ```
 
-これは「child が RUNPATH を持つ場合、child の DT_NEEDED 解決で祖先 RPATH を使わない」という glibc の動作に対応する。`c.InheritedRPATH`（= 既に親が継承していた祖先 RPATH）も含めて破棄するのは正しい。なぜなら glibc は loading object（child）が RUNPATH を持つ時点でローダーチェーン全体の遡りを停止するためである。
+`LD_LIBRARY_PATH` は省略される。`record` は再現性のために無視し、`verify` はセキュリティのためにクリアする。
 
-### Resolve() の検索順序
+### ld.so ルールとの対応
 
-```
-1. OwnRPATH     （OwnRUNPATH なし時のみ）
-2. InheritedRPATH
-3. LD_LIBRARY_PATH（runner 実行時のみ）
-4. OwnRUNPATH
-5. /etc/ld.so.cache
-6. デフォルトパス
-```
-
-`OwnRUNPATH` が Step 4 なのは、ld.so の検索順序（RPATH → LD_LIBRARY_PATH → RUNPATH → cache → default）に対応している。
+| ld.so のルール | dynlibanalysis の動作 |
+|--------------|----------------------|
+| `DT_RPATH` は `LD_LIBRARY_PATH` より前に検索 | **未実装** — いずれかの ELF に `DT_RPATH` があれば `ErrDTRPATHNotSupported` |
+| `DT_RUNPATH` は直接依存のみに適用 | 自然に保証される: 各 `resolveItem` は直接の親の `runpath` のみを保持する |
+| `DT_RUNPATH` は祖先 RPATH チェーンを打ち切る | N/A — 祖先 RPATH チェーン自体を構築しない |
+| `$ORIGIN` 展開 | `expandOrigin()` が `$ORIGIN`/`${ORIGIN}` を `filepath.Dir(parentPath)` に置換 |
+| `DT_RUNPATH` は `DT_RPATH` を上書きする | N/A — `DT_RPATH` は無条件に拒否される |
 
 ## 7. よくある誤解
 
@@ -140,6 +150,6 @@ main(RPATH=/gp) → libA(RUNPATH=/a) → libB(no RPATH, no RUNPATH) → libC
 
 - `man 8 ld.so` (Linux manual page): https://man7.org/linux/man-pages/man8/ld.so.8.html
 - glibc ソース: `elf/dl-load.c` の `_dl_map_object` 関数
-- 実装: [`internal/dynlibanalysis/resolver_context.go`](../../internal/dynlibanalysis/resolver_context.go)
 - 実装: [`internal/dynlibanalysis/resolver.go`](../../internal/dynlibanalysis/resolver.go)
+- 実装: [`internal/dynlibanalysis/analyzer.go`](../../internal/dynlibanalysis/analyzer.go)
 - 仕様書: [`docs/tasks/0074_elf_dynlib_integrity/03_detailed_specification.md`](../tasks/0074_elf_dynlib_integrity/03_detailed_specification.md) §3.3, §3.4

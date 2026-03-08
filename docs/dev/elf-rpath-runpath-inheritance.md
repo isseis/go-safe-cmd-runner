@@ -76,41 +76,51 @@ In the glibc implementation, `DT_RPATH` is only consulted when `DT_RUNPATH` is a
 
 ## 6. Design Mapping in the dynlibanalysis Package
 
-How the above rules are expressed in `ResolveContext`:
+The `dynlibanalysis` package implements a **security-restricted subset** of the ld.so algorithm. Neither `DT_RPATH` nor `LD_LIBRARY_PATH` is supported: any ELF file (binary or library) containing `DT_RPATH` causes `Analyze()` to return `ErrDTRPATHNotSupported` immediately. `DT_RUNPATH` is the only ELF-embedded search path consulted.
 
-| ld.so rule | `ResolveContext` representation |
-|------------|--------------------------------|
-| Own RPATH (when no RUNPATH) | `OwnRPATH` |
-| Own RUNPATH | `OwnRUNPATH` |
-| Ancestor RPATH inheritance chain | `InheritedRPATH []ExpandedRPATHEntry` (each entry carries `OriginDir`) |
-| RUNPATH overrides RPATH | `NewRootContext`/`NewChildContext` set `OwnRUNPATH` and `OwnRPATH` mutually exclusively |
-| Loading object with RUNPATH terminates inheritance | `NewChildContext` leaves `InheritedRPATH = nil` when `childRUNPATH` is non-empty |
+### Why DT_RPATH and LD_LIBRARY_PATH are Excluded
 
-### Termination Logic in NewChildContext
+`DT_RPATH` complicates verification because it is inherited transitively across the entire dependency tree and searched before `LD_LIBRARY_PATH`, making it a well-known vector for privilege escalation and library hijacking. Rejecting it keeps the resolution logic simple and the security properties clear.
 
-```go
-if len(childRUNPATH) > 0 {
-    child.OwnRUNPATH = childRUNPATH
-    // InheritedRPATH remains nil (chain terminated)
-} else {
-    // Accumulate parent's and ancestor's RPATH into InheritedRPATH
-}
+`LD_LIBRARY_PATH` is intentionally excluded as well: `record` ignores it for reproducibility, and `verify` clears it to prevent hijacking. It is not consulted during resolution in either case.
+
+### Key Types
+
+| Type | Role |
+|------|------|
+| `DynLibAnalyzer` | Entry point; parses `/etc/ld.so.cache` once and drives BFS traversal |
+| `LibraryResolver` | Resolves a single soname to a filesystem path using RUNPATH → cache → default paths |
+
+### BFS Traversal and RUNPATH Propagation
+
+`DynLibAnalyzer.Analyze()` performs a BFS over the dependency graph. Each queue item carries:
+
+- `soname` — the library name to resolve
+- `parentPath` — path of the ELF that listed this soname as `DT_NEEDED`
+- `runpath` — the `DT_RUNPATH` entries of `parentPath` (used when resolving `soname`)
+- `depth` — recursion guard
+
+When a library is resolved, its own `DT_NEEDED` and `DT_RUNPATH` are extracted via `parseELFDeps()` and enqueued as new items. Each child is resolved using its **own** parent's `DT_RUNPATH`, not any ancestor's — matching ld.so's `DT_RUNPATH` non-inheritance rule and side-stepping the complex ancestor-RPATH chain logic entirely.
+
+### Search Order in LibraryResolver.Resolve()
+
+```
+1. DT_RUNPATH entries of the parent ELF  ($ORIGIN -> filepath.Dir(parentPath))
+2. /etc/ld.so.cache
+3. Default paths (architecture-dependent, e.g. /lib, /usr/lib)
 ```
 
-This corresponds to glibc's behavior of not using ancestor RPATHs when resolving a child's DT_NEEDED entries, given that the child has RUNPATH. Discarding `c.InheritedRPATH` (the ancestor RPATH already accumulated by the parent) is correct, because glibc stops walking the entire loader chain the moment the loading object (child) has RUNPATH.
+`LD_LIBRARY_PATH` is omitted: `record` ignores it for reproducibility; `verify` clears it for security.
 
-### Search Order in Resolve()
+### Mapping to ld.so Rules
 
-```
-1. OwnRPATH      (only when OwnRUNPATH is absent)
-2. InheritedRPATH
-3. LD_LIBRARY_PATH (runner time only)
-4. OwnRUNPATH
-5. /etc/ld.so.cache
-6. Default paths
-```
-
-`OwnRUNPATH` appearing at Step 4 reflects ld.so's search order (RPATH → LD_LIBRARY_PATH → RUNPATH → cache → default).
+| ld.so rule | dynlibanalysis behavior |
+|------------|------------------------|
+| `DT_RPATH` searched before `LD_LIBRARY_PATH` | **Not implemented** — `DT_RPATH` in any ELF → `ErrDTRPATHNotSupported` |
+| `DT_RUNPATH` scoped to direct dependencies only | Naturally enforced: each `resolveItem` carries only its immediate parent's `runpath` |
+| `DT_RUNPATH` terminates ancestor RPATH chain | N/A — ancestor RPATH chain is never built |
+| `$ORIGIN` expansion | `expandOrigin()` replaces `$ORIGIN`/`${ORIGIN}` with `filepath.Dir(parentPath)` |
+| `DT_RUNPATH` overrides `DT_RPATH` | N/A — `DT_RPATH` is rejected unconditionally |
 
 ## 7. Common Misconceptions
 
@@ -140,6 +150,6 @@ main(RPATH=/gp) → libA(RUNPATH=/a) → libB(no RPATH, no RUNPATH) → libC
 
 - `man 8 ld.so` (Linux manual page): https://man7.org/linux/man-pages/man8/ld.so.8.html
 - glibc source: `_dl_map_object` function in `elf/dl-load.c`
-- Implementation: [`internal/dynlibanalysis/resolver_context.go`](../../internal/dynlibanalysis/resolver_context.go)
 - Implementation: [`internal/dynlibanalysis/resolver.go`](../../internal/dynlibanalysis/resolver.go)
+- Implementation: [`internal/dynlibanalysis/analyzer.go`](../../internal/dynlibanalysis/analyzer.go)
 - Specification: [`docs/tasks/0074_elf_dynlib_integrity/03_detailed_specification.md`](../tasks/0074_elf_dynlib_integrity/03_detailed_specification.md) §3.3, §3.4
