@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // LibraryResolver resolves DT_NEEDED library names to filesystem paths.
@@ -27,20 +28,21 @@ func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver
 	}
 }
 
-// Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
+// Resolve resolves a DT_NEEDED soname to a filesystem path using the given
+// parentPath and runpath.
 // The resolution order follows ld.so(8) (DT_RPATH and LD_LIBRARY_PATH excluded):
-//  1. OwnRUNPATH     - ctx.OwnRUNPATH ($ORIGIN -> ctx.ParentDir)
+//  1. runpath ($ORIGIN -> filepath.Dir(parentPath))
 //  2. /etc/ld.so.cache
 //  3. Default paths (architecture-dependent)
 //
 // LD_LIBRARY_PATH is not consulted: record ignores it, runner clears it.
 // The resolved path is normalized via filepath.EvalSymlinks + filepath.Clean.
-func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, error) {
+func (r *LibraryResolver) Resolve(soname string, parentPath string, runpath []string) (string, error) {
 	var searchedPaths []string
 
-	// Step 1: OwnRUNPATH
-	for _, rp := range ctx.OwnRUNPATH {
-		expanded := expandOrigin(rp, ctx.ParentDir())
+	// Step 1: RUNPATH
+	for _, rp := range runpath {
+		expanded := expandOrigin(rp, filepath.Dir(parentPath))
 		candidate := filepath.Join(expanded, soname)
 		searchedPaths = append(searchedPaths, candidate+" (RUNPATH)")
 		if resolved, err := r.tryResolve(candidate); err == nil {
@@ -69,9 +71,16 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 
 	return "", &ErrLibraryNotResolved{
 		SOName:      soname,
-		ParentPath:  ctx.ParentPath,
+		ParentPath:  parentPath,
 		SearchPaths: searchedPaths,
 	}
+}
+
+// expandOrigin replaces $ORIGIN and ${ORIGIN} in the given path with the
+// specified directory. glibc accepts both syntaxes (see ld.so(8)).
+func expandOrigin(path string, originDir string) string {
+	result := strings.ReplaceAll(path, "${ORIGIN}", originDir)
+	return strings.ReplaceAll(result, "$ORIGIN", originDir)
 }
 
 // tryResolve checks if the candidate path exists and resolves it via

@@ -64,9 +64,10 @@ func NewDynLibAnalyzer(fs safefileio.FileSystem) *DynLibAnalyzer {
 
 // resolveItem represents a pending library to resolve in the BFS queue.
 type resolveItem struct {
-	soname string
-	ctx    *ResolveContext
-	depth  int
+	soname     string
+	parentPath string   // path of the ELF that has this soname as DT_NEEDED
+	runpath    []string // DT_RUNPATH of parentPath
+	depth      int
 }
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
@@ -113,9 +114,6 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	runpath, _ := elfFile.DynString(elf.DT_RUNPATH)
 	runpathEntries := splitPathList(runpath)
 
-	// Create root resolution context
-	rootCtx := NewResolveContext(binaryPath, runpathEntries)
-
 	// BFS queue and visited set:
 	//   recorded: set of resolved paths already processed
 	var queue []resolveItem
@@ -125,9 +123,10 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	// Seed queue with direct dependencies
 	for _, soname := range needed {
 		queue = append(queue, resolveItem{
-			soname: soname,
-			ctx:    rootCtx,
-			depth:  1,
+			soname:     soname,
+			parentPath: binaryPath,
+			runpath:    runpathEntries,
+			depth:      1,
 		})
 	}
 
@@ -151,7 +150,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		}
 
 		// Resolve library path
-		resolvedPath, err := resolver.Resolve(item.soname, item.ctx)
+		resolvedPath, err := resolver.Resolve(item.soname, item.parentPath, item.runpath)
 		if err != nil {
 			return nil, err
 		}
@@ -191,14 +190,12 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			continue
 		}
 
-		// Create child context and enqueue
-		childCtx := NewResolveContext(resolvedPath, childRUNPATH)
-
 		for _, childSoname := range childNeeded {
 			queue = append(queue, resolveItem{
-				soname: childSoname,
-				ctx:    childCtx,
-				depth:  item.depth + 1,
+				soname:     childSoname,
+				parentPath: resolvedPath,
+				runpath:    childRUNPATH,
+				depth:      item.depth + 1,
 			})
 		}
 	}
