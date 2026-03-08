@@ -40,7 +40,7 @@ func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, e
 
 	// Step 1: OwnRUNPATH
 	for _, rp := range ctx.OwnRUNPATH {
-		expanded := expandOrigin(rp, ctx.ParentDir)
+		expanded := expandOrigin(rp, ctx.ParentDir())
 		candidate := filepath.Join(expanded, soname)
 		searchedPaths = append(searchedPaths, candidate+" (RUNPATH)")
 		if resolved, err := r.tryResolve(candidate); err == nil {

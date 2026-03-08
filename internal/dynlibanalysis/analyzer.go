@@ -114,13 +114,11 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	runpathEntries := splitPathList(runpath)
 
 	// Create root resolution context
-	rootCtx := NewRootContext(binaryPath, runpathEntries)
+	rootCtx := NewResolveContext(binaryPath, runpathEntries)
 
-	// BFS queue and visited sets:
-	//   traversed: set of resolved paths already traversed for child dependencies
-	//   recorded:  set of resolved paths already added as LibEntry
+	// BFS queue and visited set:
+	//   recorded: set of resolved paths already processed
 	var queue []resolveItem
-	traversed := make(map[string]struct{})
 	recorded := make(map[string]struct{})
 	var libs []fileanalysis.LibEntry
 
@@ -158,24 +156,25 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			return nil, err
 		}
 
-		// Record one LibEntry per unique physical library file.
+		// Record and traverse each physical library file at most once.
 		// Multiple parents may reference the same library; since verification
 		// is hash-based, a single entry per path is sufficient.
-		if _, ok := recorded[resolvedPath]; !ok {
-			recorded[resolvedPath] = struct{}{}
-
-			// Compute hash using safefileio
-			hash, err := computeFileHash(a.fs, resolvedPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
-			}
-
-			libs = append(libs, fileanalysis.LibEntry{
-				SOName: item.soname,
-				Path:   resolvedPath,
-				Hash:   hash,
-			})
+		if _, ok := recorded[resolvedPath]; ok {
+			continue
 		}
+		recorded[resolvedPath] = struct{}{}
+
+		// Compute hash using safefileio
+		hash, err := computeFileHash(a.fs, resolvedPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
+		}
+
+		libs = append(libs, fileanalysis.LibEntry{
+			SOName: item.soname,
+			Path:   resolvedPath,
+			Hash:   hash,
+		})
 
 		// Parse child dependencies
 		childNeeded, childRUNPATH, err := a.parseELFDeps(resolvedPath)
@@ -193,16 +192,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		}
 
 		// Create child context and enqueue
-		childCtx := item.ctx.NewChildContext(resolvedPath, childRUNPATH)
-
-		// Traverse each physical library file at most once.
-		// Since DT_RPATH inheritance is not supported, a library's resolution
-		// context is fully determined by its own DT_RUNPATH, so the same
-		// physical file always produces the same child context.
-		if _, ok := traversed[resolvedPath]; ok {
-			continue
-		}
-		traversed[resolvedPath] = struct{}{}
+		childCtx := NewResolveContext(resolvedPath, childRUNPATH)
 
 		for _, childSoname := range childNeeded {
 			queue = append(queue, resolveItem{

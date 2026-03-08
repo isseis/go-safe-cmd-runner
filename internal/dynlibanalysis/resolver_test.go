@@ -26,7 +26,7 @@ func TestResolve_RUNPATH(t *testing.T) {
 	libPath := createLibFile(t, tmpDir, "libfoo.so.1")
 
 	resolver := NewLibraryResolver(nil, elf.EM_X86_64)
-	ctx := NewRootContext("/usr/bin/myapp", []string{tmpDir})
+	ctx := NewResolveContext("/usr/bin/myapp", []string{tmpDir})
 
 	resolved, err := resolver.Resolve("libfoo.so.1", ctx)
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestResolve_Origin(t *testing.T) {
 
 	resolver := NewLibraryResolver(nil, elf.EM_X86_64)
 	// RUNPATH uses $ORIGIN which should expand to tmpDir
-	ctx := NewRootContext(binaryPath, []string{"$ORIGIN/lib"})
+	ctx := NewResolveContext(binaryPath, []string{"$ORIGIN/lib"})
 
 	resolved, err := resolver.Resolve("libfoo.so.1", ctx)
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestResolve_LDCache(t *testing.T) {
 	require.NoError(t, err)
 
 	resolver := NewLibraryResolver(cache, elf.EM_X86_64)
-	ctx := NewRootContext("/app", nil)
+	ctx := NewResolveContext("/app", nil)
 
 	resolved, err := resolver.Resolve("libcached.so.1", ctx)
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestResolve_DefaultPaths(t *testing.T) {
 
 func TestResolve_Failure(t *testing.T) {
 	resolver := NewLibraryResolver(nil, elf.EM_X86_64)
-	ctx := NewRootContext("/app", nil)
+	ctx := NewResolveContext("/app", nil)
 
 	_, err := resolver.Resolve("libnonexistent.so.9999", ctx)
 	require.Error(t, err)
@@ -119,7 +119,7 @@ func TestResolve_WithSymlink(t *testing.T) {
 	require.NoError(t, os.Symlink(realPath, symlinkPath))
 
 	resolver := NewLibraryResolver(nil, elf.EM_X86_64)
-	ctx := NewRootContext("/app", []string{tmpDir})
+	ctx := NewResolveContext("/app", []string{tmpDir})
 
 	resolved, err := resolver.Resolve("libfoo.so.1", ctx)
 	require.NoError(t, err)

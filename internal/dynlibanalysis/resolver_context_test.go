@@ -8,35 +8,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewRootContext(t *testing.T) {
+func TestNewResolveContext(t *testing.T) {
 	t.Run("with RUNPATH", func(t *testing.T) {
-		ctx := NewRootContext("/usr/bin/myapp", []string{"/opt/myapp/lib"})
+		ctx := NewResolveContext("/usr/bin/myapp", []string{"/opt/myapp/lib"})
 		assert.Equal(t, "/usr/bin/myapp", ctx.ParentPath)
-		assert.Equal(t, "/usr/bin", ctx.ParentDir)
+		assert.Equal(t, "/usr/bin", ctx.ParentDir())
 		assert.Equal(t, []string{"/opt/myapp/lib"}, ctx.OwnRUNPATH)
 	})
 
 	t.Run("without RUNPATH", func(t *testing.T) {
-		ctx := NewRootContext("/usr/bin/myapp", nil)
+		ctx := NewResolveContext("/usr/bin/myapp", nil)
 		assert.Nil(t, ctx.OwnRUNPATH)
 	})
-}
 
-func TestNewChildContext(t *testing.T) {
 	t.Run("child context fields", func(t *testing.T) {
-		parent := NewRootContext("/usr/bin/myapp", []string{"/opt/myapp/lib"})
-		child := parent.NewChildContext("/opt/myapp/lib/libfoo.so.1", []string{"/opt/foo/lib"})
-
+		child := NewResolveContext("/opt/myapp/lib/libfoo.so.1", []string{"/opt/foo/lib"})
 		assert.Equal(t, "/opt/myapp/lib/libfoo.so.1", child.ParentPath)
-		assert.Equal(t, "/opt/myapp/lib", child.ParentDir)
+		assert.Equal(t, "/opt/myapp/lib", child.ParentDir())
 		assert.Equal(t, []string{"/opt/foo/lib"}, child.OwnRUNPATH)
-	})
-
-	t.Run("child with no RUNPATH", func(t *testing.T) {
-		parent := NewRootContext("/usr/bin/myapp", nil)
-		child := parent.NewChildContext("/usr/lib/libssl.so.3", nil)
-
-		assert.Nil(t, child.OwnRUNPATH)
 	})
 }
 

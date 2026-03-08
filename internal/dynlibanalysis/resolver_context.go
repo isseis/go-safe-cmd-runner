@@ -17,31 +17,22 @@ type ResolveContext struct {
 	// ParentPath is the full path of the ELF whose DT_NEEDED is being resolved.
 	ParentPath string
 
-	// ParentDir is filepath.Dir(ParentPath), used for $ORIGIN expansion.
-	ParentDir string
-
 	// OwnRUNPATH is the DT_RUNPATH of ParentPath.
 	OwnRUNPATH []string
 }
 
-// NewRootContext creates a ResolveContext for resolving the DT_NEEDED entries
-// of the root binary (the command being analyzed).
-func NewRootContext(binaryPath string, runpath []string) *ResolveContext {
+// NewResolveContext creates a ResolveContext for resolving DT_NEEDED entries
+// of the given ELF path.
+func NewResolveContext(parentPath string, runpath []string) *ResolveContext {
 	return &ResolveContext{
-		ParentPath: binaryPath,
-		ParentDir:  filepath.Dir(binaryPath),
+		ParentPath: parentPath,
 		OwnRUNPATH: runpath,
 	}
 }
 
-// NewChildContext creates a ResolveContext for resolving the DT_NEEDED entries
-// of a resolved library.
-func (c *ResolveContext) NewChildContext(childPath string, childRUNPATH []string) *ResolveContext {
-	return &ResolveContext{
-		ParentPath: childPath,
-		ParentDir:  filepath.Dir(childPath),
-		OwnRUNPATH: childRUNPATH,
-	}
+// ParentDir returns filepath.Dir(ParentPath) for $ORIGIN expansion.
+func (c *ResolveContext) ParentDir() string {
+	return filepath.Dir(c.ParentPath)
 }
 
 // expandOrigin replaces $ORIGIN and ${ORIGIN} in the given path with the
