@@ -39,6 +39,24 @@ var knownVDSOs = map[string]struct{}{
 	"linux-vdso64.so.1": {},
 }
 
+// closeFile safely closes a safefileio.File and logs any errors as warnings.
+// Used for file resources that should be released even if close fails.
+// This is particularly important for NFS and other remote filesystems where
+// errors can be reported on close even for read-only operations.
+func closeFile(f safefileio.File, path string) {
+	if err := f.Close(); err != nil {
+		slog.Warn("failed to close file", "path", path, "error", err)
+	}
+}
+
+// closeELF safely closes an *elf.File and logs any errors as warnings.
+// Used for ELF file resources that should be released even if close fails.
+func closeELF(f *elf.File, path string) {
+	if err := f.Close(); err != nil {
+		slog.Warn("failed to close ELF file", "path", path, "error", err)
+	}
+}
+
 // DynLibAnalyzer resolves and records dynamic library dependencies for ELF binaries.
 type DynLibAnalyzer struct {
 	fs    safefileio.FileSystem
@@ -81,7 +99,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer closeFile(file, binaryPath)
 
 	// Try to parse as ELF
 	elfFile, err := elf.NewFile(file)
@@ -89,7 +107,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		// Not an ELF file - this is normal for scripts etc.
 		return nil, nil //nolint:nilerr
 	}
-	defer func() { _ = elfFile.Close() }()
+	defer closeELF(elfFile, binaryPath)
 
 	// Get DT_NEEDED entries
 	needed, err := elfFile.DynString(elf.DT_NEEDED)
@@ -232,7 +250,7 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = file.Close() }()
+	defer closeFile(file, path)
 
 	h := sha256.New()
 	if _, err := io.Copy(h, file); err != nil {
@@ -249,13 +267,13 @@ func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, er
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = file.Close() }()
+	defer closeFile(file, path)
 
 	elfFile, err := elf.NewFile(file)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = elfFile.Close() }()
+	defer closeELF(elfFile, path)
 
 	rpathRaw, _ := elfFile.DynString(elf.DT_RPATH)
 	if len(rpathRaw) > 0 {
