@@ -1478,8 +1478,8 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 	assert.Equal(t, logLevelError, summary.Failures[0].Level)
 }
 
-// createOldSchemaRecord writes a raw JSON file with schema_version 1 (< CurrentSchemaVersion=2)
-// so that Store.Load returns SchemaVersionMismatchError with Actual < Expected.
+// createOldSchemaRecord writes a raw JSON file with schema_version = CurrentSchemaVersion-1
+// (i.e. the pre-dynlib schema) so that Store.Load returns SchemaVersionMismatchError with Actual < Expected.
 // Returns the path of the created record file.
 func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	t.Helper()
@@ -1491,7 +1491,7 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	require.NoError(t, err)
 
 	record := map[string]interface{}{
-		"schema_version": 1, // old schema (< CurrentSchemaVersion=2)
+		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // pre-dynlib schema (< CurrentSchemaVersion)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
 		"updated_at":     time.Now().UTC(),
@@ -1515,7 +1515,7 @@ func resolveSymlinks(t *testing.T, path string) string {
 }
 
 // TestVerify_SchemaVersion verifies that VerifyCommandDynLibDeps returns nil
-// (skips dynlib check) when the stored record has schema_version 1 (< CurrentSchemaVersion).
+// (skips dynlib check) when the stored record has schema_version < CurrentSchemaVersion.
 // Old records predate dynlib tracking; they should not block execution.
 func TestVerify_SchemaVersion(t *testing.T) {
 	hashDir := commontesting.SafeTempDir(t)
@@ -1530,7 +1530,7 @@ func TestVerify_SchemaVersion(t *testing.T) {
 	require.NoError(t, err)
 
 	err = m.VerifyCommandDynLibDeps(cmdPath)
-	assert.NoError(t, err, "schema_version 1 record should be skipped (not block execution)")
+	assert.NoError(t, err, "old schema_version record should be skipped (not block execution)")
 }
 
 // TestVerify_ELFNoDynLibDeps verifies that VerifyCommandDynLibDeps returns

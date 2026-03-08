@@ -9,13 +9,11 @@ import (
 const (
 	// CurrentSchemaVersion is the current analysis record schema version.
 	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
-	// Version 3 removes ParentPath and InheritedRPATH from LibEntry (ld.so.cache
-	// tampering is outside the threat model; hash-only verification is sufficient).
-	// Load returns SchemaVersionMismatchError for records with schema_version != 3.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 2.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable
 	// (enables `record --force` migration).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 3
+	CurrentSchemaVersion = 2
 )
 
 // Record represents a unified file analysis record containing both
