@@ -380,14 +380,19 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 	// ELF traversal of lib_a is performed only once (traversed set prevents re-traversal).
 	assert.Len(t, result.Libs, 3, "circular deps: 3 unique (path, parent) pairs expected")
 
-	// No physical file should be traversed more than once (no child duplication).
-	sonamePaths := make(map[string]int)
+	// Count how many entries each physical path appears under (one entry per unique parent).
+	pathCount := make(map[string]int)
+	pathToSOName := make(map[string]string)
 	for _, lib := range result.Libs {
-		sonamePaths[lib.Path]++
+		pathCount[lib.Path]++
+		pathToSOName[lib.Path] = lib.SOName
 	}
-	// lib_a.so.1 appears under two different parents, lib_b.so.1 under one.
-	assert.Equal(t, 2, sonamePaths[result.Libs[0].Path], "lib_a should appear under 2 parents")
-	assert.Equal(t, 1, sonamePaths[result.Libs[1].Path], "lib_b should appear under 1 parent")
+	libAPath := filepath.Join(tmpDir, "lib_a.so.1")
+	libBPath := filepath.Join(tmpDir, "lib_b.so.1")
+	// lib_a.so.1 appears under two different parents (main_circ and lib_b.so.1).
+	assert.Equal(t, 2, pathCount[libAPath], "lib_a should appear under 2 parents")
+	// lib_b.so.1 appears under one parent (lib_a.so.1).
+	assert.Equal(t, 1, pathCount[libBPath], "lib_b should appear under 1 parent")
 }
 
 // TestAnalyze_MaxDepth verifies that Analyze returns ErrRecursionDepthExceeded

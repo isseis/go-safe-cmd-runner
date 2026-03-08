@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -262,6 +263,18 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	if len(libs) == 0 {
 		return nil, nil
 	}
+
+	// Sort by (SOName, ParentPath) for deterministic output across runs.
+	// BFS traversal order depends on DT_NEEDED order in ELF files, which is
+	// stable for a given binary but not guaranteed across re-links or tool
+	// changes. Sorting ensures git diff noise is minimised and the JSON output
+	// is reproducible.
+	sort.Slice(libs, func(i, j int) bool {
+		if libs[i].SOName != libs[j].SOName {
+			return libs[i].SOName < libs[j].SOName
+		}
+		return libs[i].ParentPath < libs[j].ParentPath
+	})
 
 	return &fileanalysis.DynLibDepsData{
 		RecordedAt: time.Now(),
