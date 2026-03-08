@@ -276,6 +276,19 @@ func processVarRefs(
 	return result.String(), nil
 }
 
+// forbiddenEnvVars lists environment variables that must never be passed to child processes.
+// LD_LIBRARY_PATH is forbidden because the runner clears it before execution to ensure
+// that dynamic library resolution is deterministic and matches the recorded state.
+var forbiddenEnvVars = map[string]struct{}{
+	"LD_LIBRARY_PATH": {},
+}
+
+// isForbiddenEnvVar reports whether name is a forbidden environment variable.
+func isForbiddenEnvVar(name string) bool {
+	_, ok := forbiddenEnvVars[name]
+	return ok
+}
+
 // ProcessEnvImport processes env_import mappings and imports system environment variables
 // as internal variables. It validates that all referenced system variables are in the allowlist.
 func ProcessEnvImport(
@@ -320,6 +333,12 @@ func ProcessEnvImport(
 				SystemVariableName: systemVarName,
 				Reason:             err.Error(),
 			}
+		}
+
+		// Reject forbidden variables
+		if isForbiddenEnvVar(systemVarName) {
+			return nil, fmt.Errorf("%w: %s cannot be imported via env_import (level: %s)",
+				ErrForbiddenEnvVar, systemVarName, level)
 		}
 
 		// Check allowlist

@@ -9,11 +9,13 @@ import (
 const (
 	// CurrentSchemaVersion is the current analysis record schema version.
 	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 2.
+	// Version 3 removes ParentPath and InheritedRPATH from LibEntry (ld.so.cache
+	// tampering is outside the threat model; hash-only verification is sufficient).
+	// Load returns SchemaVersionMismatchError for records with schema_version != 3.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable
 	// (enables `record --force` migration).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 2
+	CurrentSchemaVersion = 3
 )
 
 // Record represents a unified file analysis record containing both
@@ -65,21 +67,12 @@ type LibEntry struct {
 	// SOName is the DT_NEEDED library name (e.g., "libssl.so.3").
 	SOName string `json:"soname"`
 
-	// ParentPath is the full path of the ELF whose DT_NEEDED references this library.
-	// Used as part of the resolution key (ParentPath, SOName) for re-resolution at runner time.
-	ParentPath string `json:"parent_path"`
-
 	// Path is the resolved full path to the library file, normalized via
 	// filepath.EvalSymlinks + filepath.Clean.
 	Path string `json:"path"`
 
 	// Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
 	Hash string `json:"hash"`
-
-	// InheritedRPATH is the ordered list of RPATH entries inherited from ancestor ELFs
-	// at record time, after $ORIGIN expansion. Required for Stage 2 re-resolution at
-	// runner time.
-	InheritedRPATH []string `json:"inherited_rpath,omitempty"`
 }
 
 // SyscallInfo is an alias for common.SyscallInfo.

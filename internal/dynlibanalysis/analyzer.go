@@ -87,12 +87,11 @@ type traversalKey struct {
 }
 
 // entryKey identifies a unique LibEntry to record.
-// The same physical library may appear under multiple parents (e.g. both
-// lib_a.so and lib_b.so import libssl.so.3), each requiring a separate
-// LibEntry so that the verifier can re-resolve every (ParentPath, SOName) pair.
+// Keyed by resolvedPath only: since verification is hash-based, each unique
+// physical library file needs exactly one entry regardless of how many parents
+// reference it.
 type entryKey struct {
 	resolvedPath string
-	parentPath   string
 }
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
@@ -181,11 +180,10 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			return nil, err
 		}
 
-		// Record a LibEntry for each unique (resolvedPath, parentPath) pair.
-		// The same physical library may be imported by multiple parents, and
-		// the verifier re-resolves every recorded (ParentPath, SOName) pair
-		// independently, so each such pair must appear as a separate entry.
-		eKey := entryKey{resolvedPath: resolvedPath, parentPath: item.ctx.ParentPath}
+		// Record one LibEntry per unique physical library file.
+		// Multiple parents may reference the same library; since verification
+		// is hash-based, a single entry per path is sufficient.
+		eKey := entryKey{resolvedPath: resolvedPath}
 		if _, ok := recorded[eKey]; !ok {
 			recorded[eKey] = struct{}{}
 
@@ -195,21 +193,10 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 				return nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
 			}
 
-			// Build InheritedRPATH for serialization
-			var inheritedRPATHStrings []string
-			if len(item.ctx.InheritedRPATH) > 0 {
-				inheritedRPATHStrings = make([]string, len(item.ctx.InheritedRPATH))
-				for i, entry := range item.ctx.InheritedRPATH {
-					inheritedRPATHStrings[i] = expandOrigin(entry.Path, entry.OriginDir)
-				}
-			}
-
 			libs = append(libs, fileanalysis.LibEntry{
-				SOName:         item.soname,
-				ParentPath:     item.ctx.ParentPath,
-				Path:           resolvedPath,
-				Hash:           hash,
-				InheritedRPATH: inheritedRPATHStrings,
+				SOName: item.soname,
+				Path:   resolvedPath,
+				Hash:   hash,
 			})
 		}
 
@@ -264,7 +251,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		return nil, nil
 	}
 
-	// Sort by (SOName, ParentPath) for deterministic output across runs.
+	// Sort by (SOName, Path) for deterministic output across runs.
 	// BFS traversal order depends on DT_NEEDED order in ELF files, which is
 	// stable for a given binary but not guaranteed across re-links or tool
 	// changes. Sorting ensures git diff noise is minimised and the JSON output
@@ -273,7 +260,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		if libs[i].SOName != libs[j].SOName {
 			return libs[i].SOName < libs[j].SOName
 		}
-		return libs[i].ParentPath < libs[j].ParentPath
+		return libs[i].Path < libs[j].Path
 	})
 
 	return &fileanalysis.DynLibDepsData{

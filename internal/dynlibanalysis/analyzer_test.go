@@ -289,23 +289,22 @@ func TestAnalyze_LibEntryFields(t *testing.T) {
 	}
 }
 
-// TestAnalyze_ParentPath verifies that direct dependencies have the binary as
-// their ParentPath.
-func TestAnalyze_ParentPath(t *testing.T) {
+// TestAnalyze_DirectDeps verifies that direct dependencies of the binary are recorded.
+func TestAnalyze_DirectDeps(t *testing.T) {
 	binaryPath := resolveTestBinary(t, "/usr/bin/true", "/bin/true")
 
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(binaryPath)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.NotEmpty(t, result.Libs)
+	require.NotEmpty(t, result.Libs, "dynamic binary should have at least one library")
 
+	// Each entry must have a non-empty SOName, absolute Path, and sha256 hash.
 	for _, lib := range result.Libs {
-		if lib.ParentPath == binaryPath {
-			return
-		}
+		assert.NotEmpty(t, lib.SOName)
+		assert.True(t, filepath.IsAbs(lib.Path))
+		assert.Contains(t, lib.Hash, "sha256:")
 	}
-	t.Errorf("no library entry has ParentPath=%q", binaryPath)
 }
 
 // TestAnalyze_TransitiveDeps verifies that transitive (indirect) dependencies
@@ -372,27 +371,18 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Expected entries (one per unique (resolvedPath, parentPath) pair):
-	//   1. lib_a.so.1  parent=main_circ   (direct dependency)
-	//   2. lib_b.so.1  parent=lib_a.so.1  (lib_a's dependency)
-	//   3. lib_a.so.1  parent=lib_b.so.1  (circular back-reference, new parent)
-	// Entry 3 is required so the verifier can re-resolve the (lib_b → lib_a) edge.
-	// ELF traversal of lib_a is performed only once (traversed set prevents re-traversal).
-	assert.Len(t, result.Libs, 3, "circular deps: 3 unique (path, parent) pairs expected")
+	// Expected entries (one per unique resolvedPath):
+	//   1. lib_a.so.1
+	//   2. lib_b.so.1
+	// Each physical file appears exactly once regardless of how many parents reference it.
+	assert.Len(t, result.Libs, 2, "circular deps: 2 unique paths expected")
 
-	// Count how many entries each physical path appears under (one entry per unique parent).
-	pathCount := make(map[string]int)
-	pathToSOName := make(map[string]string)
+	sonames := make([]string, 0, len(result.Libs))
 	for _, lib := range result.Libs {
-		pathCount[lib.Path]++
-		pathToSOName[lib.Path] = lib.SOName
+		sonames = append(sonames, lib.SOName)
 	}
-	libAPath := filepath.Join(tmpDir, "lib_a.so.1")
-	libBPath := filepath.Join(tmpDir, "lib_b.so.1")
-	// lib_a.so.1 appears under two different parents (main_circ and lib_b.so.1).
-	assert.Equal(t, 2, pathCount[libAPath], "lib_a should appear under 2 parents")
-	// lib_b.so.1 appears under one parent (lib_a.so.1).
-	assert.Equal(t, 1, pathCount[libBPath], "lib_b should appear under 1 parent")
+	assert.Contains(t, sonames, "lib_a.so.1")
+	assert.Contains(t, sonames, "lib_b.so.1")
 }
 
 // TestAnalyze_MaxDepth verifies that Analyze returns ErrRecursionDepthExceeded

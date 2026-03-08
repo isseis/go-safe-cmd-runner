@@ -77,6 +77,12 @@ func BuildProcessEnvironment(
 	// These come from command-level env_vars section
 	mergeEnvWithOrigin(result, cmd.ExpandedEnv, "command")
 
+	// Always remove LD_LIBRARY_PATH from the child process environment.
+	// The runner enforces deterministic dynamic library loading by clearing this
+	// variable regardless of how it entered the environment (env_allowlist, vars, etc.).
+	// See docs/security/README.md for the threat model.
+	delete(result, "LD_LIBRARY_PATH")
+
 	return result
 }
 

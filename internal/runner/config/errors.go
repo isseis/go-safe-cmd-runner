@@ -124,6 +124,10 @@ var (
 
 	// ErrEnvImportVarsConflict is returned when the same variable is defined in both env_import and vars
 	ErrEnvImportVarsConflict = errors.New("variable defined in both env_import and vars")
+
+	// ErrForbiddenEnvVar is returned when a forbidden environment variable (e.g. LD_LIBRARY_PATH)
+	// is referenced in env_import or env_allowlist.
+	ErrForbiddenEnvVar = errors.New("environment variable is forbidden")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.

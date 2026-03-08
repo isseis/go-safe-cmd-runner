@@ -360,6 +360,17 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
 }
 
+// TestProcessEnvImport_ForbiddenVariable tests that LD_LIBRARY_PATH cannot be imported.
+func TestProcessEnvImport_ForbiddenVariable(t *testing.T) {
+	fromEnv := []string{"Lib_path=LD_LIBRARY_PATH"}
+	allowlist := []string{"LD_LIBRARY_PATH"}
+	systemEnv := map[string]string{"LD_LIBRARY_PATH": "/some/path"}
+
+	_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "global")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrForbiddenEnvVar)
+}
+
 // TestProcessVars_DuplicateDefinition tests duplicate variable detection in vars
 // Note: With map[string]any, duplicate keys are inherently impossible in Go,
 // so this test is no longer applicable and has been removed.

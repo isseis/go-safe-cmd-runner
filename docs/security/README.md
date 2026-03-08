@@ -22,6 +22,23 @@ This directory contains security advisories, vulnerability reports, and mitigati
 - Review CI configuration to ensure `-e` flag is not used on untrusted branches
 - See [ci-configuration-example.md](ci-configuration-example.md) for safe CI setup
 
+## Security Scope and Limitations
+
+### Out of Scope: ld.so.cache Tampering
+
+Tampering with `/etc/ld.so.cache` is **outside the threat model** of this system.
+
+**Rationale**: `/etc/ld.so.cache` is owned by root and writable only by root (via `ldconfig`).
+An attacker capable of modifying it already has root privileges and can compromise the system
+through far more direct means (e.g., replacing binaries directly, loading kernel modules).
+Detecting ld.so.cache tampering would therefore provide no meaningful additional security.
+
+**Mitigations in place**:
+- `LD_LIBRARY_PATH` is **always cleared** from the child process environment before execution,
+  regardless of how it was set (env_allowlist, vars, env_import, etc.).
+- Setting `LD_LIBRARY_PATH` via `env_import` is rejected with an error at config load time.
+- Dynamic library integrity is verified by **SHA-256 hash** of each recorded library file.
+
 ## Security Features
 
 ### Implemented Security Controls
@@ -30,7 +47,8 @@ The project implements multiple layers of security:
 
 1. **Command Execution Security**
    - Command path validation
-   - Environment variable isolation
+   - Environment variable isolation (allowlist-based)
+   - `LD_LIBRARY_PATH` always cleared before execution
    - Working directory validation
    - Command injection prevention
 
@@ -38,6 +56,7 @@ The project implements multiple layers of security:
    - Symlink attack prevention (safefileio package)
    - Path traversal protection
    - File integrity verification (filevalidator package)
+   - Dynamic library integrity via SHA-256 hash verification
 
 3. **Network Security** (SSRF-001 Mitigation)
    - URL allowlisting for external requests

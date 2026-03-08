@@ -56,36 +56,16 @@ func (e *ErrLibraryHashMismatch) Error() string {
 		e.SOName, e.Path, e.ExpectedHash, e.ActualHash)
 }
 
-// ErrLibraryPathMismatch indicates that a library resolved to a different path
-// than what was recorded (Stage 2 verification failure).
-type ErrLibraryPathMismatch struct {
-	SOName       string
-	ParentPath   string
-	RecordedPath string
-	ResolvedPath string
-}
-
-func (e *ErrLibraryPathMismatch) Error() string {
-	return fmt.Sprintf("dynamic library path mismatch: %s\n"+
-		"  recorded path: %s\n"+
-		"  resolved path: %s\n"+
-		"  parent: %s\n"+
-		"  cause: LD_LIBRARY_PATH may have been modified\n"+
-		"  please re-run 'record' command",
-		e.SOName, e.RecordedPath, e.ResolvedPath, e.ParentPath)
-}
-
 // ErrEmptyLibraryPath indicates that a LibEntry has an empty path,
 // which should never happen in valid records (defensive check).
 type ErrEmptyLibraryPath struct {
-	SOName     string
-	ParentPath string
+	SOName string
 }
 
 func (e *ErrEmptyLibraryPath) Error() string {
-	return fmt.Sprintf("incomplete record: empty path for library %s (parent: %s)\n"+
+	return fmt.Sprintf("incomplete record: empty path for library %s\n"+
 		"  please re-run 'record' command",
-		e.SOName, e.ParentPath)
+		e.SOName)
 }
 
 // ErrDynLibDepsRequired indicates that a DynLibDeps record is required

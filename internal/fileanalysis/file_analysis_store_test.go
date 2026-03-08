@@ -323,18 +323,14 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 			RecordedAt: recordedAt,
 			Libs: []LibEntry{
 				{
-					SOName:         "libssl.so.3",
-					ParentPath:     testFile,
-					Path:           "/usr/lib/x86_64-linux-gnu/libssl.so.3",
-					Hash:           "sha256:deadbeef",
-					InheritedRPATH: []string{"/opt/custom/lib", "/usr/local/lib"},
+					SOName: "libssl.so.3",
+					Path:   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+					Hash:   "sha256:deadbeef",
 				},
 				{
-					SOName:     "libc.so.6",
-					ParentPath: testFile,
-					Path:       "/lib/x86_64-linux-gnu/libc.so.6",
-					Hash:       "sha256:cafebabe",
-					// InheritedRPATH omitted (empty)
+					SOName: "libc.so.6",
+					Path:   "/lib/x86_64-linux-gnu/libc.so.6",
+					Hash:   "sha256:cafebabe",
 				},
 			},
 		},
@@ -352,17 +348,13 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 
 	lib0 := loadedRecord.DynLibDeps.Libs[0]
 	assert.Equal(t, "libssl.so.3", lib0.SOName)
-	assert.Equal(t, testFile, lib0.ParentPath)
 	assert.Equal(t, "/usr/lib/x86_64-linux-gnu/libssl.so.3", lib0.Path)
 	assert.Equal(t, "sha256:deadbeef", lib0.Hash)
-	assert.Equal(t, []string{"/opt/custom/lib", "/usr/local/lib"}, lib0.InheritedRPATH)
 
 	lib1 := loadedRecord.DynLibDeps.Libs[1]
 	assert.Equal(t, "libc.so.6", lib1.SOName)
-	assert.Equal(t, testFile, lib1.ParentPath)
 	assert.Equal(t, "/lib/x86_64-linux-gnu/libc.so.6", lib1.Path)
 	assert.Equal(t, "sha256:cafebabe", lib1.Hash)
-	assert.Nil(t, lib1.InheritedRPATH)
 }
 
 func TestStore_SaveAndLoad_HasDynamicLoadFalse(t *testing.T) {
