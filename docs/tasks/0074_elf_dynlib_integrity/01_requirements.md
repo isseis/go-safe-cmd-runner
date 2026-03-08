@@ -225,7 +225,7 @@ type LibEntry struct {
 
 | 状態 | 判定 | 動作 |
 |------|------|------|
-| `schema_version` が `CurrentSchemaVersion`（3）と不一致 | エラー | `SchemaVersionMismatchError` を返し実行をブロック。`record` の再実行を要求する。旧バージョン（1, 2）の記録はこのケースに該当する |
+| `schema_version` が `CurrentSchemaVersion`（2）と不一致 | エラー | `SchemaVersionMismatchError` を返し実行をブロック。`record` の再実行を要求する。旧バージョン（1）の記録はこのケースに該当する |
 | `DynLibDeps` が記録されておらず、対象が非 ELF バイナリ | 正常 | 従来通り実行を許可 |
 | `DynLibDeps` が記録されておらず、対象が ELF バイナリ | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す（スキーマ更新により運用上は発生しないが、防御的に検出する） |
 | 全ライブラリについてハッシュが一致 | 正常 | 実行を許可 |
@@ -307,12 +307,12 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 本タスクでは後方互換性を維持しない。`record` の再実行が必須である。
 
-**`fileanalysis.CurrentSchemaVersion` を 3 に更新済み**（1 → 2: `DynLibDeps` 追加時、2 → 3: `ParentPath` 削除・第 2 段階検証廃止時）。
+**`fileanalysis.CurrentSchemaVersion` を 2 に更新済み**（1 → 2: `DynLibDeps` 追加時）。
 
-`fileanalysis.Store.Load()` は `schema_version` を厳密チェックし `SchemaVersionMismatchError` を返す設計であるため、旧バージョン（1 または 2）の記録ファイルは `SchemaVersionMismatchError` として一律に弾かれる。
+`fileanalysis.Store.Load()` は `schema_version` を厳密チェックし `SchemaVersionMismatchError` を返す設計であるため、旧バージョン（1）の記録ファイルは `SchemaVersionMismatchError` として一律に弾かれる。
 
 **`runner` 実行時の動作**:
-- `schema_version: 1` または `2` の既存記録ファイルは `SchemaVersionMismatchError` となり、バイナリ種別に関わらず `runner` はエラーで実行をブロックする
+- `schema_version: 1` の既存記録ファイルは `SchemaVersionMismatchError` となり、バイナリ種別に関わらず `runner` はエラーで実行をブロックする
 - ELF バイナリか否かは `runner` が記録ファイルのパスを解析して判断するのではなく、実行対象ファイルのマジックナンバーで判断する
 
 **移行手順**: 本タスクリリース後、すべての管理対象バイナリ（ELF・非 ELF を問わず）に対して `record --force` を再実行すること。この手順を README に明記する。
@@ -354,9 +354,9 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 - [x] ライブラリのハッシュが不一致の場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
 - [x] エラーメッセージにハッシュ不一致の場合は不一致ライブラリ名・期待ハッシュ・実際のハッシュが含まれること
 - [x] `path: ""` のエントリが存在する場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
-- [x] `schema_version: 1` または `2`（旧バージョン）の記録ファイルで実行しようとした場合に実行がブロックされること（`SchemaVersionMismatchError` を返す）
-- [x] `schema_version: 3` かつ `DynLibDeps` がない記録で対象が非 ELF バイナリの場合は従来の検証のみが行われること
-- [x] `schema_version: 3` かつ `DynLibDeps` がない記録で対象が ELF バイナリの場合は実行がブロックされ、`record` 再実行を促すエラーが返されること（防御的検出）
+- [x] `schema_version: 1`（旧バージョン）の記録ファイルで実行しようとした場合に実行がブロックされること（`SchemaVersionMismatchError` を返す）
+- [x] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が非 ELF バイナリの場合は従来の検証のみが行われること
+- [x] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が ELF バイナリの場合は実行がブロックされ、`record` 再実行を促すエラーが返されること（防御的検出）
 
 ### AC-4: `dlopen` シンボル検出
 
@@ -398,7 +398,7 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 | ライブラリ差し替え | `record` 後に同一パスへ別ライブラリをコピーしてハッシュ不一致を検出 |
 | 新規ライブラリ追加 | `record` 後にライブラリが追加されて検証失敗 |
 | 非 ELF バイナリ（スクリプト等） | `DynLibDeps` なしで正常動作 |
-| 旧スキーマ記録（`schema_version: 1` または `2`） | `SchemaVersionMismatchError` で実行をブロックし `record` 再実行を要求すること |
+| 旧スキーマ記録（`schema_version: 1`） | `SchemaVersionMismatchError` で実行をブロックし `record` 再実行を要求すること |
 | ライブラリ解決失敗（`record` 時） | `record` がエラーで終了し記録が保存されないこと |
 | `path: ""` エントリを含む記録ファイル（手動作成等）| `runner` が実行をブロックすること |
 

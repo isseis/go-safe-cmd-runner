@@ -96,7 +96,6 @@ internal/
 ├── dynlibanalysis/                        # NEW: 動的ライブラリ解析パッケージ
 │   ├── analyzer.go                        # DynLibAnalyzer 構造体・コンストラクタ
 │   ├── resolver.go                        # LibraryResolver: DT_NEEDED → フルパス解決
-│   ├── resolver_context.go                # ResolveContext: RPATH 継承チェーン管理
 │   ├── ldcache.go                         # ld.so.cache パーサー
 │   ├── default_paths.go                   # アーキテクチャ別デフォルト検索パス
 │   ├── verifier.go                        # DynLibVerifier: runner 実行時の検証
@@ -138,13 +137,13 @@ sequenceDiagram
     DLA->>DLA: DT_RPATH / DT_RUNPATH 取得
 
     loop 各 DT_NEEDED エントリ（再帰的）
-        DLA->>LR: Resolve(soname, resolveCtx)
-        LR->>LR: RPATH/RUNPATH 検索
+        DLA->>LR: Resolve(soname, parentPath, runpath)
+        LR->>LR: RUNPATH 検索
         LR->>LDC: Lookup(soname)
         LDC-->>LR: resolved path
         LR-->>DLA: fullPath
-        DLA->>SFO: SafeReadFile(fullPath)
-        DLA->>DLA: SHA256 ハッシュ計算
+        DLA->>SFO: SafeOpenFile(fullPath)
+        DLA->>DLA: SHA256 ストリーミング計算
         DLA->>DLA: 間接依存の DT_NEEDED を取得
     end
 
@@ -153,7 +152,7 @@ sequenceDiagram
     FV-->>RC: hashFilePath, contentHash（またはエラー）
 ```
 
-### 2.4 データフロー: `runner` フェーズ（2 段階検証）
+### 2.4 データフロー: `runner` フェーズ
 
 ```mermaid
 sequenceDiagram
@@ -162,7 +161,6 @@ sequenceDiagram
     participant FV as "filevalidator"
     participant FAS as "fileanalysis.Store"
     participant DLV as "DynLibVerifier"
-    participant LR as "LibraryResolver"
     participant SFO as "safefileio"
 
     RUN->>VM: VerifyGroupFiles(group)
@@ -175,17 +173,10 @@ sequenceDiagram
     alt DynLibDeps が記録あり
         VM->>DLV: Verify(cmdPath, record.DynLibDeps)
 
-        Note over DLV: 第 1 段階: ハッシュ照合
+        Note over DLV: ハッシュ照合
         loop 各 LibEntry
             DLV->>SFO: SafeReadFile(entry.Path)
             DLV->>DLV: SHA256 計算 → entry.Hash と比較
-        end
-
-        Note over DLV: 第 2 段階: パス解決突合
-        loop 各 LibEntry
-            DLV->>LR: Resolve(entry.SOName, ctx from entry.ParentPath)
-            LR-->>DLV: resolvedPath
-            DLV->>DLV: resolvedPath == entry.Path ?
         end
 
         DLV-->>VM: 検証結果
@@ -242,24 +233,12 @@ type LibEntry struct {
     // SOName is the DT_NEEDED library name (e.g., "libssl.so.3").
     SOName string `json:"soname"`
 
-    // ParentPath is the full path of the ELF whose DT_NEEDED references this library.
-    // Used as part of the resolution key (ParentPath, SOName) for re-resolution at runner time.
-    ParentPath string `json:"parent_path"`
-
     // Path is the resolved full path to the library file, normalized via
     // filepath.EvalSymlinks + filepath.Clean.
     Path string `json:"path"`
 
     // Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
     Hash string `json:"hash"`
-
-    // InheritedRPATH is the ordered list of RPATH entries inherited from ancestor ELFs
-    // at record time, after $ORIGIN expansion. Required for Stage 2 re-resolution at
-    // runner time: the same ParentPath ELF may be reached via different dependency
-    // chains with different inherited RPATH contexts, producing different resolution
-    // results for this entry's children. Storing it here avoids traversing the flat
-    // Libs list to reconstruct the ancestor chain.
-    InheritedRPATH []string `json:"inherited_rpath,omitempty"`
 }
 ```
 
@@ -284,68 +263,19 @@ type LibraryResolver struct {
 func NewLibraryResolver(cache *LDCache, elfMachine elf.Machine) *LibraryResolver
 
 // Resolve resolves a DT_NEEDED soname to a filesystem path using the given context.
-// The resolution order follows ld.so(8) with inherited RPATH support (see Section 5.1):
-//   1. OwnRPATH    – ctx.OwnRPATH, only when ctx.OwnRUNPATH is absent
-//   2. InheritedRPATH – ctx.InheritedRPATH from ancestor ELFs ($ORIGIN per originating ELF)
-//   3. LD_LIBRARY_PATH – only if ctx.IncludeLDLibraryPath is true
-//   4. OwnRUNPATH  – ctx.OwnRUNPATH ($ORIGIN → ctx.ParentDir)
-//   5. /etc/ld.so.cache
-//   6. Default paths (architecture-dependent)
-func (r *LibraryResolver) Resolve(soname string, ctx *ResolveContext) (string, error)
+// The resolution order follows ld.so(8) (DT_RPATH and LD_LIBRARY_PATH excluded):
+//   1. runpath ($ORIGIN → filepath.Dir(parentPath))
+//   2. /etc/ld.so.cache
+//   3. Default paths (architecture-dependent)
+//
+// DT_RPATH is not supported; ELFs containing DT_RPATH are rejected at Analyze time.
+// LD_LIBRARY_PATH is not consulted: record ignores it, runner clears it.
+func (r *LibraryResolver) Resolve(soname string, parentPath string, runpath []string) (string, error)
 ```
 
-#### 3.2.2 `ResolveContext`: RPATH 継承チェーン管理
+#### 3.2.2 RUNPATH コンテキスト管理（実装メモ）
 
-```go
-// internal/dynlibanalysis/resolver_context.go
-
-// ResolveContext holds the resolution context for a specific DT_NEEDED entry.
-// It tracks the RPATH/RUNPATH of the parent ELF and the inherited RPATH chain
-// from ancestor ELFs.
-type ResolveContext struct {
-    // ParentPath is the full path of the ELF whose DT_NEEDED is being resolved.
-    ParentPath string
-
-    // ParentDir is filepath.Dir(ParentPath), used for $ORIGIN expansion
-    // of the parent's own RPATH/RUNPATH.
-    ParentDir string
-
-    // OwnRPATH is the DT_RPATH of ParentPath (empty if DT_RUNPATH is present).
-    OwnRPATH []string
-
-    // OwnRUNPATH is the DT_RUNPATH of ParentPath.
-    OwnRUNPATH []string
-
-    // InheritedRPATH is the ordered list of RPATH entries inherited from
-    // ancestor ELFs. Each entry is an ExpandedRPATHEntry containing the
-    // search path and the originating ELF path (for $ORIGIN expansion).
-    // Inheritance is terminated when an ancestor with DT_RUNPATH is encountered.
-    InheritedRPATH []ExpandedRPATHEntry
-
-    // IncludeLDLibraryPath controls whether LD_LIBRARY_PATH is consulted.
-    // false at record time, true at runner time.
-    IncludeLDLibraryPath bool
-}
-
-// ExpandedRPATHEntry is an RPATH entry with its originating ELF path,
-// needed for correct $ORIGIN expansion of inherited RPATH entries.
-type ExpandedRPATHEntry struct {
-    // Path is the RPATH entry (may contain $ORIGIN).
-    Path string
-    // OriginDir is the directory of the ELF that owns this RPATH entry.
-    OriginDir string
-}
-
-// NewChildContext creates a ResolveContext for resolving the DT_NEEDED entries
-// of a resolved library. It computes the RPATH inheritance chain according to
-// ld.so rules: DT_RPATH is inherited to children (when DT_RUNPATH is absent),
-// while DT_RUNPATH is not inherited.
-func (c *ResolveContext) NewChildContext(
-    childPath string,
-    childRPATH []string,
-    childRUNPATH []string,
-) *ResolveContext
-```
+`resolver_context.go` は実装時にインライン化された。`Resolve` は `parentPath string` と `runpath []string` を直接引数として受け取る。RUNPATH の非継承は BFS キュー内の各 `resolveItem` が親自身の `runpath` のみを保持することで自然に実現される。
 
 ### 3.3 `/etc/ld.so.cache` パーサー
 
@@ -401,8 +331,6 @@ func NewDynLibAnalyzer(fs safefileio.FileSystem) *DynLibAnalyzer
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
 // ELF binary, computes their hashes, and returns a DynLibDepsData snapshot.
-// Each LibEntry is populated with InheritedRPATH from the resolution context at
-// the time of recording, enabling accurate ResolveContext reconstruction at runner time.
 //
 // Returns nil (not an error) if the file is not ELF or has no DT_NEEDED entries.
 // Returns an error if any library cannot be resolved (FR-3.1.7).
@@ -424,14 +352,14 @@ flowchart TD
     HasNeeded{"DT_NEEDED<br/>あり?"}
     ReturnNil["nil を返す<br/>（DynLibDeps 不要）"]
     InitQueue["処理キューに<br/>直接依存を追加"]
-    PopQueue["キューから取り出し<br/>(soname, resolveCtx)"]
+    PopQueue["キューから取り出し<br/>(soname, parentPath, runpath, depth)"]
     IsVDSO{"vDSO?"}
     Skip["スキップ"]
     Resolve["LibraryResolver.Resolve()"]
     ResolveFailed{"解決<br/>失敗?"}
     ReturnError["エラーを返す<br/>（record 失敗）"]
-    CheckVisited{"visited に<br/>(path, rpathCtx)<br/>あり?"}
-    RecordEntry["LibEntry を記録<br/>（soname, parentPath,<br/>path, hash）"]
+    CheckVisited{"visited に<br/>resolvedPath<br/>あり?"}
+    RecordEntry["LibEntry を記録<br/>（soname, path, hash）"]
     CheckDepth{"深度 > <br/>MaxRecursionDepth?"}
     DepthError["エラーを返す<br/>（深度超過）"]
     ParseChild["子 ELF パース<br/>DT_NEEDED 取得"]
@@ -471,18 +399,14 @@ flowchart TD
 
 **`visited` セットのキー設計**:
 
-`visited` セットは `(resolvedPath, inheritedRPATHContext)` の組をキーとして管理する。`resolvedPath` 単独をキーにすることは**禁止**する。
-
-同一の `.so` ファイル（同一 `resolvedPath`）でも、異なる依存チェーンを経て到達した場合は継承 RPATH が異なることがある。継承 RPATH が異なれば、その子依存の解決結果も変わり得るため、別エントリとして解析しなければ依存ツリーが不正確になる。
-
-例: `binary`（RPATH: `/opt/A`）→ `libX.so` と、`libY.so`（RPATH なし）→ `libX.so` は、同じ `libX.so` でも継承 RPATH が異なるため、`libX.so` の子依存の解決に使われるパスが変わる。
+`visited` セットは `resolvedPath` 単独をキーとして管理する。DT_RPATH は拒否され LD_LIBRARY_PATH は使用されないため、同一 `resolvedPath` に到達した場合は常に同じ子依存が解決される。
 
 ### 3.5 `DynLibVerifier`: `runner` 時の検証
 
 ```go
 // internal/dynlibanalysis/verifier.go
 
-// DynLibVerifier performs two-stage verification of recorded library dependencies.
+// DynLibVerifier performs hash verification of recorded library dependencies.
 type DynLibVerifier struct {
     fs safefileio.FileSystem
 }
@@ -490,22 +414,17 @@ type DynLibVerifier struct {
 // NewDynLibVerifier creates a new verifier.
 func NewDynLibVerifier(fs safefileio.FileSystem) *DynLibVerifier
 
-// Verify performs two-stage verification of dynamic library dependencies.
+// Verify performs hash verification of dynamic library dependencies.
 //
-// Stage 1 (Hash verification): For each LibEntry, compute the hash of the file
-// at entry.Path and compare with entry.Hash.
-//
-// Stage 2 (Path resolution verification): For each LibEntry, re-resolve
-// (entry.ParentPath, entry.SOName) using the current environment (including
-// LD_LIBRARY_PATH) and verify that the resolved path matches entry.Path.
+// For each LibEntry, compute the hash of the file at entry.Path and compare
+// with entry.Hash.
 //
 // Returns nil if all checks pass.
-// Returns a descriptive error if any check fails (hash mismatch, path mismatch,
-// empty path, or resolution failure).
-func (v *DynLibVerifier) Verify(binaryPath string, deps *DynLibDepsData) error
+// Returns a descriptive error if any check fails (hash mismatch, empty path).
+func (v *DynLibVerifier) Verify(deps *DynLibDepsData) error
 ```
 
-**2 段階検証のフロー**:
+**検証フロー**:
 
 ```mermaid
 flowchart TD
@@ -517,43 +436,32 @@ flowchart TD
     CheckEmpty{"entry.Path<br/>が空?"}
     EmptyError["エラー:<br/>不完全な記録"]
 
-    Stage1["第 1 段階: ハッシュ照合"]
+    HashCheck["ハッシュ照合"]
     ReadLib["safefileio で<br/>ライブラリ読み取り"]
     CalcHash["SHA256 計算"]
     CompareHash{"hash ==<br/>entry.Hash?"}
     HashError["エラー:<br/>ハッシュ不一致<br/>(soname, expected, actual)"]
-
-    Stage2["第 2 段階: パス解決突合"]
-    ReResolve["LibraryResolver.Resolve<br/>(entry.SOName, ctx)<br/>ctx = ParentPath の OwnRPATH/RUNPATH<br/>+ entry.InheritedRPATH<br/>※ LD_LIBRARY_PATH 含む"]
-    ComparePath{"resolvedPath ==<br/>entry.Path?"}
-    PathError["エラー:<br/>パス不一致<br/>(soname, recorded, resolved)"]
 
     NextEntry{"次の<br/>エントリ?"}
     AllPass["検証成功（nil）"]
 
     Start --> CheckEmpty
     CheckEmpty -->|"Yes"| EmptyError
-    CheckEmpty -->|"No"| Stage1
-    Stage1 --> ReadLib
+    CheckEmpty -->|"No"| HashCheck
+    HashCheck --> ReadLib
     ReadLib --> CalcHash
     CalcHash --> CompareHash
     CompareHash -->|"No"| HashError
-    CompareHash -->|"Yes"| Stage2
-    Stage2 --> ReResolve
-    ReResolve --> ComparePath
-    ComparePath -->|"No"| PathError
-    ComparePath -->|"Yes"| NextEntry
+    CompareHash -->|"Yes"| NextEntry
     NextEntry -->|"Yes"| CheckEmpty
     NextEntry -->|"No"| AllPass
 
-    class Start,Stage1,ReadLib,CalcHash,Stage2,ReResolve process;
-    class EmptyError,HashError,PathError highRisk;
+    class Start,HashCheck,ReadLib,CalcHash process;
+    class EmptyError,HashError highRisk;
     class AllPass safe;
 ```
 
-**Stage 2 における `ResolveContext` の再構築**:
-
-`ParentPath` の ELF を再読して `OwnRPATH`/`OwnRUNPATH` を取得し、`entry.InheritedRPATH` と合わせて `ResolveContext` を構成する。`InheritedRPATH` が必要な理由は、同一 `ParentPath` でも依存チェーンによって継承 RPATH が異なるためである（Section 3.4 の `visited` キー設計参照）。`ResolveContext` を `LibEntry` 単位で正確に再現することで、`record` 時と同じ解決結果が得られることが保証される。
+`LD_LIBRARY_PATH` は `runner` 実行前に常にクリアされる。ハッシュ照合のみで十分なセキュリティ保証が得られる。
 
 ### 3.6 `dlopen` シンボル検出（方策 B）
 
@@ -691,7 +599,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string, contentHash string) error {
     // 2. If DynLibDeps is nil:
     //    a. Check if target is ELF → error (record re-run required)
     //    b. Non-ELF → return nil (no verification needed)
-    // 3. DynLibVerifier.Verify(cmdPath, record.DynLibDeps)
+    // 3. DynLibVerifier.Verify(record.DynLibDeps)
     //
     // NOTE: HasDynamicLoad の判定は IsNetworkOperation() で行う（3.9節参照）
 }
@@ -733,14 +641,14 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 | 攻撃ベクター | 防御層 | 検出メカニズム |
 |------------|-------|-------------|
-| ライブラリ改ざん（同一パスで中身書き換え） | 第 1 段階 | ハッシュ不一致 |
-| `LD_LIBRARY_PATH` ハイジャック | 第 2 段階 | パス解決不一致 |
-| ライブラリ丸ごと差し替え | 第 1 + 第 2 段階 | ハッシュ不一致 + パス不一致 |
+| ライブラリ改ざん（同一パスで中身書き換え） | ハッシュ照合 | ハッシュ不一致 |
+| `LD_LIBRARY_PATH` ハイジャック | 設計上除外 | `runner` は `LD_LIBRARY_PATH` をクリアして実行、`record` 時も使用しない |
+| ライブラリ丸ごと差し替え | ハッシュ照合 | ハッシュ不一致 |
 | 間接依存ライブラリの差し替え | 再帰的解決 | 全依存ツリーがスナップショットに含まれる |
 | `dlopen` による未知ライブラリのロード | 方策 B | `record` 時に `HasDynamicLoad: true` を記録し `runner` で高リスク扱い（`NetworkDetected` と同等） |
 | 不完全な記録（`path: ""`）の悪用 | 防御的検出 | `record` 時にエラー + `runner` 時にブロック |
 | シンボリックリンク攻撃（ライブラリ読み取り時） | `safefileio` | `O_NOFOLLOW` による防止 |
-| `record` 時と `runner` 時の `LD_LIBRARY_PATH` の非対称性 | 設計方針 | `record` 時は使用しない（基準の安定性）、`runner` 時は含める（実際のロードパスとの合致） |
+| `LD_LIBRARY_PATH` の非対称性 | 設計方針 | `record` 時は使用しない（基準の安定性）、`runner` 時はクリアして実行（ハイジャック防止）|
 | 旧スキーマの記録による検証すり抜け | スキーマバージョン | `SchemaVersionMismatchError` で一律拒否 |
 
 ### 4.2 セキュリティ処理フロー
@@ -765,13 +673,9 @@ flowchart TD
     NonELFOK["非 ELF: 従来検証のみ"]
     ELFNoRecord["ELF なのに記録なし<br/>→ 実行ブロック"]
 
-    Stage1["第 1 段階: ライブラリハッシュ照合"]
-    Stage1OK{"全一致?"}
-    Stage1Fail["ハッシュ不一致<br/>→ 実行ブロック"]
-
-    Stage2["第 2 段階: パス解決突合<br/>（LD_LIBRARY_PATH 含む）"]
-    Stage2OK{"全一致?"}
-    Stage2Fail["パス不一致<br/>→ 実行ブロック"]
+    HashLib["ライブラリハッシュ照合"]
+    HashLibOK{"全一致?"}
+    HashLibFail["ハッシュ不一致<br/>→ 実行ブロック"]
 
     AllOK["全検証パス → 実行許可"]
 
@@ -782,31 +686,28 @@ flowchart TD
     VerifyHash --> HashOK
     HashOK -->|"No"| HashFail
     HashOK -->|"Yes"| CheckDynLib
-    CheckDynLib -->|"Yes"| Stage1
+    CheckDynLib -->|"Yes"| HashLib
     CheckDynLib -->|"No"| CheckELF
     CheckELF -->|"No"| NonELFOK
     CheckELF -->|"Yes"| ELFNoRecord
-    Stage1 --> Stage1OK
-    Stage1OK -->|"No"| Stage1Fail
-    Stage1OK -->|"Yes"| Stage2
-    Stage2 --> Stage2OK
-    Stage2OK -->|"No"| Stage2Fail
-    Stage2OK -->|"Yes"| AllOK
+    HashLib --> HashLibOK
+    HashLibOK -->|"No"| HashLibFail
+    HashLibOK -->|"Yes"| AllOK
 
-    class Start,LoadRecord,VerifyHash,Stage1,Stage2 process;
-    class SchemaError,HashFail,ELFNoRecord,Stage1Fail,Stage2Fail highRisk;
+    class Start,LoadRecord,VerifyHash,HashLib process;
+    class SchemaError,HashFail,ELFNoRecord,HashLibFail highRisk;
     class NonELFOK,AllOK safe;
 ```
 
 ### 4.3 ファイル読み取りの安全性
 
-ライブラリのハッシュ計算時は `safefileio.SafeReadFile()` を使用する。これにより、ハッシュ計算対象のファイルがシンボリックリンクでないことが保証される。
+ライブラリのハッシュ計算時は `safefileio.SafeOpenFile()` を使用してストリーミングで読み取る。これにより、ハッシュ計算対象のファイルがシンボリックリンクでないことが保証される。
 
 パスの正規化は以下の順序で行う:
 1. `filepath.EvalSymlinks()` — シンボリックリンクを解決して物理パスを取得
 2. `filepath.Clean()` — `..` や重複スラッシュを正規化
 
-この正規化は `record` 時の `LibEntry.Path` 記録前と、`runner` 時のパス比較前の両方で適用する。
+この正規化は `record` 時の `LibEntry.Path` 記録前に適用する。
 
 ## 5. ライブラリパス解決アルゴリズム
 
@@ -818,21 +719,10 @@ flowchart TD
     classDef safe fill:#f0fff0,stroke:#27ae60,stroke-width:2px,color:#1a5e20;
     classDef highRisk fill:#fff0f0,stroke:#c0392b,stroke-width:2px,color:#7b0000;
 
-    Start(["Resolve(soname, ctx)"])
-    CheckRPATH{"ctx に<br/>OwnRPATH あり?<br/>(RUNPATH なし時のみ)"}
-    SearchRPATH["OwnRPATH で検索<br/>($ORIGIN → ParentDir)"]
-    FoundRPATH{"見つかった?"}
+    Start(["Resolve(soname, parentPath, runpath)"])
 
-    CheckInherited{"InheritedRPATH<br/>あり?"}
-    SearchInherited["InheritedRPATH で検索<br/>($ORIGIN → 各 OriginDir)"]
-    FoundInherited{"見つかった?"}
-
-    CheckLDLP{"IncludeLDLibraryPath<br/>== true?"}
-    SearchLDLP["LD_LIBRARY_PATH で検索"]
-    FoundLDLP{"見つかった?"}
-
-    CheckRUNPATH{"ctx に<br/>OwnRUNPATH あり?"}
-    SearchRUNPATH["OwnRUNPATH で検索<br/>($ORIGIN → ParentDir)"]
+    CheckRUNPATH{"runpath<br/>あり?"}
+    SearchRUNPATH["RUNPATH で検索<br/>($ORIGIN → filepath.Dir(parentPath))"]
     FoundRUNPATH{"見つかった?"}
 
     SearchCache["ld.so.cache で検索"]
@@ -844,25 +734,7 @@ flowchart TD
     ReturnPath["解決成功"]
     ReturnError["解決失敗エラー"]
 
-    Start --> CheckRPATH
-    CheckRPATH -->|"Yes"| SearchRPATH
-    CheckRPATH -->|"No"| CheckInherited
-    SearchRPATH --> FoundRPATH
-    FoundRPATH -->|"Yes"| ReturnPath
-    FoundRPATH -->|"No"| CheckInherited
-
-    CheckInherited -->|"Yes"| SearchInherited
-    CheckInherited -->|"No"| CheckLDLP
-    SearchInherited --> FoundInherited
-    FoundInherited -->|"Yes"| ReturnPath
-    FoundInherited -->|"No"| CheckLDLP
-
-    CheckLDLP -->|"Yes"| SearchLDLP
-    CheckLDLP -->|"No"| CheckRUNPATH
-    SearchLDLP --> FoundLDLP
-    FoundLDLP -->|"Yes"| ReturnPath
-    FoundLDLP -->|"No"| CheckRUNPATH
-
+    Start --> CheckRUNPATH
     CheckRUNPATH -->|"Yes"| SearchRUNPATH
     CheckRUNPATH -->|"No"| SearchCache
     SearchRUNPATH --> FoundRUNPATH
@@ -876,32 +748,30 @@ flowchart TD
     FoundDefault -->|"Yes"| ReturnPath
     FoundDefault -->|"No"| ReturnError
 
-    class Start,SearchRPATH,SearchInherited,SearchLDLP,SearchRUNPATH,SearchCache,SearchDefault process;
+    class Start,SearchRUNPATH,SearchCache,SearchDefault process;
     class ReturnPath safe;
     class ReturnError highRisk;
 ```
 
-### 5.2 RPATH/RUNPATH の適用スコープ
+### 5.2 RUNPATH の適用スコープ
 
 | 属性 | 適用スコープ | `$ORIGIN` 展開基準 | 継承 |
 |------|------------|-------------------|------|
-| `DT_RPATH` | 直接依存 + 全間接依存 | エントリを持つ ELF のディレクトリ | あり（`DT_RUNPATH` を持つ ELF で打ち切り）|
+| `DT_RPATH` | 非サポート | — | — （ELF に含まれる場合は `ErrDTRPATHNotSupported` で拒否）|
 | `DT_RUNPATH` | 直接依存のみ | エントリを持つ ELF のディレクトリ | なし |
 
-**RPATH 継承の具体例**:
+**RUNPATH 非継承の具体例**:
 
 ```
 binary (/usr/bin/app)
-  RPATH: $ORIGIN/../lib          (RUNPATH なし)
+  RUNPATH: $ORIGIN/../lib
   └── libA.so (/usr/lib/libA.so)
        RUNPATH: /opt/A/lib
        └── libB.so
             → 解決に使うパス:
-              1. LD_LIBRARY_PATH （runner 実行時のみ。record 時は使用しない: Section 5.6 参照）
-              2. libA.so の OwnRUNPATH: /opt/A/lib
-              3. ld.so.cache
-              4. デフォルトパス
-              ※ binary の RPATH は libA.so が RUNPATH を持つため継承打ち切り
+              1. libA.so の RUNPATH: /opt/A/lib（binary の RUNPATH は継承されない）
+              2. ld.so.cache
+              3. デフォルトパス
 ```
 
 ### 5.3 `$ORIGIN` の展開
@@ -940,12 +810,12 @@ var knownVDSOs = map[string]struct{}{
 }
 ```
 
-### 5.6 `record` 時と `runner` 時の `LD_LIBRARY_PATH` の相違
+### 5.6 `record` 時と `runner` 時の `LD_LIBRARY_PATH` の扱い
 
 | フェーズ | `LD_LIBRARY_PATH` | 理由 |
 |---------|-------------------|------|
-| `record` 時 | **使用しない** | 基準の安定性。ユーザー環境に依存しない絶対パスを記録する |
-| `runner` 実行時 | **使用する** | `ld.so` が実際にロードするパスを模倣し、パスハイジャックを検出する |
+| `record` 時 | **使用しない（無視）** | 基準の安定性。ユーザー環境に依存しない絶対パスを記録する |
+| `runner` 実行時 | **クリアして実行** | ハイジャック攻撃防止。`LD_LIBRARY_PATH` 経由でライブラリを差し替えられないようにする |
 
 ## 6. エラーハンドリング設計
 
@@ -953,6 +823,13 @@ var knownVDSOs = map[string]struct{}{
 
 ```go
 // internal/dynlibanalysis/errors.go
+
+// ErrDTRPATHNotSupported indicates that an ELF binary or shared library uses DT_RPATH,
+// which is not supported. Returns at Analyze time.
+type ErrDTRPATHNotSupported struct {
+    Path  string // path of the ELF file that contains DT_RPATH
+    RPATH string // the DT_RPATH value
+}
 
 // ErrLibraryNotResolved indicates that a DT_NEEDED library could not be resolved.
 type ErrLibraryNotResolved struct {
@@ -977,20 +854,10 @@ type ErrLibraryHashMismatch struct {
     ActualHash   string
 }
 
-// ErrLibraryPathMismatch indicates that a library resolved to a different path
-// than what was recorded.
-type ErrLibraryPathMismatch struct {
-    SOName       string
-    ParentPath   string
-    RecordedPath string
-    ResolvedPath string
-}
-
 // ErrEmptyLibraryPath indicates that a LibEntry has an empty path,
 // which should never happen in valid records (defensive check).
 type ErrEmptyLibraryPath struct {
-    SOName     string
-    ParentPath string
+    SOName string
 }
 
 // ErrDynLibDepsRequired indicates that a DynLibDeps record is required
@@ -1003,7 +870,7 @@ type ErrDynLibDepsRequired struct {
 
 ### 6.2 エラーメッセージ例
 
-**ハッシュ不一致（第 1 段階）**:
+**ハッシュ不一致**:
 ```
 dynamic library hash mismatch: libssl.so.3
   path: /usr/lib/x86_64-linux-gnu/libssl.so.3
@@ -1012,22 +879,12 @@ dynamic library hash mismatch: libssl.so.3
   please re-run 'record' command
 ```
 
-**パス不一致（第 2 段階）**:
-```
-dynamic library path mismatch: libssl.so.3
-  recorded path: /usr/lib/x86_64-linux-gnu/libssl.so.3
-  resolved path: /tmp/evil/libssl.so.3
-  parent: /usr/bin/openssl
-  cause: LD_LIBRARY_PATH may have been modified
-  please re-run 'record' command
-```
-
 **解決失敗（`record` 時）**:
 ```
 failed to resolve dynamic library: libcustom.so.1
   parent: /usr/bin/myapp
   searched paths:
-    - /usr/bin/../lib (RPATH, $ORIGIN expanded)
+    - /usr/bin/../lib (RUNPATH, $ORIGIN expanded)
     - /etc/ld.so.cache (not found)
     - /lib/x86_64-linux-gnu (not found)
     - /usr/lib/x86_64-linux-gnu (not found)
@@ -1047,7 +904,7 @@ failed to resolve dynamic library: libcustom.so.1
 | 直接依存ライブラリ解決 | RPATH/cache/デフォルトパス検索 | < 1ms/ライブラリ |
 | ライブラリハッシュ計算 | ファイル読み取り + SHA256 | < 50ms/ライブラリ（数 MB の場合） |
 | 再帰的依存解決（典型的） | 10〜30 ライブラリ × (解決 + ハッシュ) | < 2s |
-| `runner` 2 段階検証 | ハッシュ照合 + パス再解決 | ハッシュ計算時間に支配される |
+| `runner` ハッシュ検証 | ハッシュ照合 | ハッシュ計算時間に支配される |
 
 ### 7.2 最適化方針
 
@@ -1063,8 +920,7 @@ failed to resolve dynamic library: libcustom.so.1
 - [ ] `fileanalysis.Record` に `DynLibDeps` フィールド追加
 - [ ] `CurrentSchemaVersion` を 2 に変更
 - [ ] `ld.so.cache` パーサー実装
-- [ ] `LibraryResolver` 実装（RPATH/RUNPATH/$ORIGIN/cache/デフォルトパス）
-- [ ] `ResolveContext` 実装（RPATH 継承チェーン管理）
+- [ ] `LibraryResolver` 実装（RUNPATH/$ORIGIN/cache/デフォルトパス、DT_RPATH は拒否）
 - [ ] デフォルト検索パス定義（アーキテクチャ別）
 - [ ] ライブラリ解決のユニットテスト
 
@@ -1079,10 +935,9 @@ failed to resolve dynamic library: libcustom.so.1
 
 ### 8.3 Phase 3: `DynLibVerifier`（`runner` 拡張）
 
-- [ ] `DynLibVerifier` 実装（2 段階検証）
+- [ ] `DynLibVerifier` 実装（ハッシュ照合のみ）
 - [ ] `verification.Manager` への統合
 - [ ] ELF バイナリの `DynLibDeps` 未記録検出
-- [ ] `LD_LIBRARY_PATH` 対応（`runner` 時のパス解決）
 - [ ] エラー型・エラーメッセージ実装
 - [ ] `runner` 検証の統合テスト
 
@@ -1122,13 +977,10 @@ flowchart TB
 | テストケース | パッケージ | 検証内容 |
 |-------------|----------|---------|
 | `ld.so.cache` 解析 | `dynlibanalysis` | テストデータ（最小構成バイナリ）を使ったパース |
-| RPATH 解決 | `dynlibanalysis` | RPATH ディレクトリからの解決 |
+| DT_RPATH 拒否 | `dynlibanalysis` | DT_RPATH を持つ ELF で `ErrDTRPATHNotSupported` が返ること |
 | RUNPATH 解決 | `dynlibanalysis` | RUNPATH ディレクトリからの解決 |
-| RPATH/RUNPATH 優先順位 | `dynlibanalysis` | RUNPATH 存在時に RPATH が無効化されること |
+| RUNPATH 非継承 | `dynlibanalysis` | 間接依存に親の RUNPATH が適用されないこと |
 | `$ORIGIN` 展開 | `dynlibanalysis` | ELF 自身のディレクトリに展開 |
-| RPATH 継承 | `dynlibanalysis` | 間接依存に親の RPATH が適用されること |
-| RPATH 継承打ち切り | `dynlibanalysis` | RUNPATH を持つ ELF で継承が打ち切られること |
-| `$ORIGIN` 継承時の展開基準 | `dynlibanalysis` | 継承元 ELF のディレクトリが基準 |
 | デフォルトパス | `dynlibanalysis` | アーキテクチャ別パスからの解決 |
 | vDSO スキップ | `dynlibanalysis` | `linux-vdso.so.1` 等がスキップされること |
 | 解決失敗 | `dynlibanalysis` | エラーに soname が含まれること |
@@ -1146,19 +998,16 @@ flowchart TB
 | `DynLibAnalyzer` 非 ELF | nil を返すこと |
 | `DynLibAnalyzer` 静的 ELF | nil を返すこと（DT_NEEDED なし）|
 | `DynLibAnalyzer` 解決失敗 | エラーで記録が保存されないこと |
-| `DynLibVerifier` Stage 1 正常 | ハッシュ一致で成功 |
-| `DynLibVerifier` Stage 1 不一致 | ハッシュ不一致でエラー |
-| `DynLibVerifier` Stage 2 正常 | パス一致で成功 |
-| `DynLibVerifier` Stage 2 不一致 | パス不一致でエラー |
+| `DynLibVerifier` 正常 | ハッシュ一致で成功 |
+| `DynLibVerifier` ハッシュ不一致 | ハッシュ不一致でエラー |
 | `DynLibVerifier` 空パス | エラーでブロック |
 
 ### 9.4 統合テスト
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| `record` → `runner` 正常 | 全ステージ成功 |
+| `record` → `runner` 正常 | ハッシュ照合成功 |
 | ライブラリ改ざん検出 | `record` 後にライブラリ書き換え → ブロック |
-| `LD_LIBRARY_PATH` ハイジャック | パス不一致検出 |
 | 旧スキーマ拒否 | `schema_version: 1` → `SchemaVersionMismatchError` |
 | 非 ELF の正常動作 | `DynLibDeps` なしで従来検証 |
 | `path: ""` 防御 | 手動作成の不正記録をブロック |
