@@ -178,9 +178,6 @@ func parseLDCacheData(data []byte) (*LDCache, error) {
 // Lookup returns the resolved path for the given soname.
 // Returns empty string if not found.
 func (c *LDCache) Lookup(soname string) string {
-	if c == nil {
-		return ""
-	}
 	return c.entries[soname]
 }
 

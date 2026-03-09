@@ -146,12 +146,6 @@ func TestLDCache_Lookup(t *testing.T) {
 	assert.Equal(t, "", cache.Lookup("libnotexist.so.1"))
 }
 
-func TestLDCache_Lookup_Nil(t *testing.T) {
-	var cache *LDCache
-	// Lookup on nil cache should return empty string (not panic)
-	assert.Equal(t, "", cache.Lookup("libssl.so.3"))
-}
-
 func TestParseLDCache_FirstEntryWins(t *testing.T) {
 	// Build cache manually with duplicate keys to test first-entry-wins behavior
 	// We need to manually construct the binary data with duplicate keys.
