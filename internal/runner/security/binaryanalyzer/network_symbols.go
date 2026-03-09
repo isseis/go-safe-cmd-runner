@@ -1,6 +1,9 @@
 package binaryanalyzer
 
-import "maps"
+import (
+	"maps"
+	"slices"
+)
 
 // SymbolCategory represents the category of a network-related symbol.
 type SymbolCategory string
@@ -146,4 +149,16 @@ var dynamicLoadSymbolRegistry = map[string]struct{}{
 func IsDynamicLoadSymbol(name string) bool {
 	_, found := dynamicLoadSymbolRegistry[name]
 	return found
+}
+
+// DynamicLoadSymbolNames returns the sorted list of dynamic-load symbol names
+// registered in dynamicLoadSymbolRegistry. Use this to build log messages or
+// documentation so that they automatically stay in sync with the registry.
+func DynamicLoadSymbolNames() []string {
+	names := make([]string, 0, len(dynamicLoadSymbolRegistry))
+	for name := range dynamicLoadSymbolRegistry {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }

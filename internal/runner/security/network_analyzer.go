@@ -146,8 +146,9 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 	if output.HasDynamicLoad {
 		isHighRisk = true
-		slog.Debug("Binary analysis detected dynamic load symbols (dlopen/dlsym/dlvsym)",
-			"path", cmdPath)
+		slog.Debug("Binary analysis detected dynamic load symbols",
+			"path", cmdPath,
+			"symbols", strings.Join(binaryanalyzer.DynamicLoadSymbolNames(), "/"))
 	}
 
 	switch output.Result {
