@@ -277,10 +277,13 @@ func processVarRefs(
 }
 
 // forbiddenEnvVars lists environment variables that must never be passed to child processes.
-// LD_LIBRARY_PATH is forbidden because the runner clears it before execution to ensure
-// that dynamic library resolution is deterministic and matches the recorded state.
+// These variables affect dynamic linker behavior and are forbidden to ensure that dynamic
+// library resolution is deterministic and matches the recorded state, and to prevent
+// library injection attacks.
 var forbiddenEnvVars = map[string]struct{}{
-	"LD_LIBRARY_PATH": {},
+	"LD_LIBRARY_PATH": {}, // alters shared library search path
+	"LD_PRELOAD":      {}, // injects arbitrary shared libraries into the process
+	"LD_AUDIT":        {}, // loads audit libraries that can hook all symbol bindings
 }
 
 // isForbiddenEnvVar reports whether name is a forbidden environment variable.
