@@ -208,45 +208,57 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 	assert.NotContains(t, result, "SECRET")
 }
 
-// TestBuildProcessEnvironment_LDLibraryPathAlwaysRemoved ensures LD_LIBRARY_PATH
-// is never passed to child processes regardless of how it entered the environment.
-func TestBuildProcessEnvironment_LDLibraryPathAlwaysRemoved(t *testing.T) {
-	t.Run("removed when in env_allowlist", func(t *testing.T) {
-		t.Setenv("LD_LIBRARY_PATH", "/some/injected/path")
+// TestBuildProcessEnvironment_DynamicLinkerVarsAlwaysRemoved ensures dynamic-linker
+// control variables are never passed to child processes regardless of how they entered
+// the environment.
+func TestBuildProcessEnvironment_DynamicLinkerVarsAlwaysRemoved(t *testing.T) {
+	vars := []struct {
+		name string
+		val  string
+	}{
+		{"LD_LIBRARY_PATH", "/some/injected/path"},
+		{"LD_PRELOAD", "/evil.so"},
+		{"LD_AUDIT", "/audit.so"},
+	}
 
-		global := createTestRuntimeGlobal(
-			[]string{"LD_LIBRARY_PATH"},
-			map[string]string{},
-		)
-		group := createTestRuntimeGroup(map[string]string{})
-		cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+	for _, v := range vars {
+		t.Run(v.name+"/removed when in env_allowlist", func(t *testing.T) {
+			t.Setenv(v.name, v.val)
 
-		result := executor.BuildProcessEnvironment(global, group, cmd)
-		assert.NotContains(t, result, "LD_LIBRARY_PATH")
-	})
+			global := createTestRuntimeGlobal(
+				[]string{v.name},
+				map[string]string{},
+			)
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{})
 
-	t.Run("removed when set via vars", func(t *testing.T) {
-		global := createTestRuntimeGlobal(
-			[]string{},
-			map[string]string{"LD_LIBRARY_PATH": "/injected"},
-		)
-		group := createTestRuntimeGroup(map[string]string{})
-		cmd := createTestRuntimeCommand([]string{}, map[string]string{})
-
-		result := executor.BuildProcessEnvironment(global, group, cmd)
-		assert.NotContains(t, result, "LD_LIBRARY_PATH")
-	})
-
-	t.Run("removed when set via command env", func(t *testing.T) {
-		global := createTestRuntimeGlobal([]string{}, map[string]string{})
-		group := createTestRuntimeGroup(map[string]string{})
-		cmd := createTestRuntimeCommand([]string{}, map[string]string{
-			"LD_LIBRARY_PATH": "/injected",
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, v.name)
 		})
 
-		result := executor.BuildProcessEnvironment(global, group, cmd)
-		assert.NotContains(t, result, "LD_LIBRARY_PATH")
-	})
+		t.Run(v.name+"/removed when set via vars", func(t *testing.T) {
+			global := createTestRuntimeGlobal(
+				[]string{},
+				map[string]string{v.name: v.val},
+			)
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, v.name)
+		})
+
+		t.Run(v.name+"/removed when set via command env", func(t *testing.T) {
+			global := createTestRuntimeGlobal([]string{}, map[string]string{})
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{
+				v.name: v.val,
+			})
+
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, v.name)
+		})
+	}
 }
 
 // TestBuildProcessEnvironment_EmptyEnv tests with empty environment configurations
