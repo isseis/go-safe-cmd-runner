@@ -235,11 +235,12 @@ Phase 4 は Phase 3 完了後に実施する。
     `fileanalysis.NetworkSymbolStore` に合わせる
   - 仕様: 詳細仕様書 §5.5
 
-### 4.6 シグネチャ変更に伴うテストファイル修正
+### 4.6 シグネチャ変更に伴う呼び出し元修正
 
 - [ ] `NewDefaultResourceManager()` / `NewNormalResourceManagerWithOutput()` /
-  `NewStandardEvaluator()` のシグネチャ変更に伴い、呼び出し元テストファイルで
-  `nil` を引数に追加
+  `NewStandardEvaluator()` のシグネチャ変更に伴い、`_test.go` および
+  `//go:build test || performance` タグ付きヘルパー（`internal/runner/resource/testutil/helpers.go` 等）を含む
+  全呼び出し元で `nil` を引数に追加
 
 ### 4.7 `runner` キャッシュ利用のユニットテスト
 
