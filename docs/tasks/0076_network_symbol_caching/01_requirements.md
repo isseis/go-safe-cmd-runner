@@ -66,8 +66,9 @@ type NetworkSymbolAnalysisData struct {
     // Empty when HasNetworkSymbols is false.
     DetectedSymbols []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
 
-    // HasDynamicLoad indicates that dlopen/dlsym/dlvsym symbols were found.
-    HasDynamicLoad bool `json:"has_dynamic_load,omitempty"`
+    // DynamicLoadSymbols contains the dynamic library loading symbols found (dlopen, dlsym, dlvsym).
+    // Empty when none were detected.
+    DynamicLoadSymbols []DetectedSymbolEntry `json:"dynamic_load_symbols,omitempty"`
 }
 
 type DetectedSymbolEntry struct {
@@ -76,7 +77,9 @@ type DetectedSymbolEntry struct {
 }
 ```
 
-**注意**: 既存の `HasDynamicLoad bool` フィールド（直接 `Record` に存在するもの）は削除し、`NetworkSymbolAnalysis.HasDynamicLoad` に統合する（スキーマ整理）。
+`HasDynamicLoad bool` は `len(DynamicLoadSymbols) > 0` で導出できるため、独立したフィールドとして持たない。`AnalysisOutput.HasDynamicLoad` との変換は `len(DynamicLoadSymbols) > 0` で行う。
+
+**注意**: 既存の `HasDynamicLoad bool` フィールド（直接 `Record` に存在するもの）は削除し、`NetworkSymbolAnalysis.DynamicLoadSymbols` に統合する（スキーマ整理）。
 
 #### FR-3.1.2: スキーマバージョンの更新
 
@@ -84,24 +87,38 @@ type DetectedSymbolEntry struct {
 
 後方互換性は維持しない。`record` の再実行が必須。
 
-### 3.2 `record` コマンドの拡張
+### 3.2 `binaryanalyzer.AnalysisOutput` の拡張
 
-#### FR-3.2.1: ネットワークシンボル解析の実行と記録
+#### FR-3.2.0: `DynamicLoadSymbols` フィールドの追加
+
+`binaryanalyzer.AnalysisOutput` に以下のフィールドを追加する：
+
+```go
+// DynamicLoadSymbols contains the dynamic library loading symbols found
+// (dlopen, dlsym, dlvsym). Set independently of Result and DetectedSymbols.
+DynamicLoadSymbols []DetectedSymbol
+```
+
+`HasDynamicLoad bool` は後方互換性のために残し、`len(DynamicLoadSymbols) > 0` と等価であることを保証する。`fileanalysis.NetworkSymbolAnalysisData` への変換時は `DynamicLoadSymbols` を使用する。
+
+### 3.4 `record` コマンドの拡張
+
+#### FR-3.4.1: ネットワークシンボル解析の実行と記録
 
 `filevalidator.Validator.Record()` の処理中（`saveHash` 内）で、`BinaryAnalyzer` が設定されている場合に `AnalyzeNetworkSymbols` を呼び出し、`NetworkSymbolAnalysis` を記録する。
 
 - バイナリが非 ELF の場合（`NotSupportedBinary`）は `NetworkSymbolAnalysis` を記録しない
 - 静的 ELF バイナリ（`StaticBinary`）の場合は `NetworkSymbolAnalysis` を記録しない（`SyscallAnalysis` ベースのフローを維持）
 - 解析エラー（`AnalysisError`）の場合は `record` をエラーで終了し、記録を行わない
-- 既存の `HasDynamicLoad bool` フィールドへの書き込みを廃止し、`NetworkSymbolAnalysis.HasDynamicLoad` に移行する
+- 既存の `HasDynamicLoad bool` フィールドへの書き込みを廃止し、`NetworkSymbolAnalysis.DynamicLoadSymbols` に移行する
 
-#### FR-3.2.2: `--force` フラグとの整合性
+#### FR-3.4.2: `--force` フラグとの整合性
 
 `record --force` 実行時は `NetworkSymbolAnalysis` も新しい値で上書きする。
 
-### 3.3 `runner` 実行時のネットワーク判定変更
+### 3.5 `runner` 実行時のネットワーク判定変更
 
-#### FR-3.3.1: 動的バイナリへのキャッシュ利用
+#### FR-3.5.1: 動的バイナリへのキャッシュ利用
 
 `isNetworkViaBinaryAnalysis` 関数において、対象コマンドが動的 ELF バイナリで `NetworkSymbolAnalysis` が記録済みの場合：
 
@@ -111,11 +128,11 @@ type DetectedSymbolEntry struct {
 
 キャッシュが利用できない場合（`NetworkSymbolAnalysis` が `nil`、旧スキーマ、`AnalysisError` 等）は現行の実行時解析にフォールバックする。
 
-#### FR-3.3.2: 静的バイナリの既存フロー維持
+#### FR-3.5.2: 静的バイナリの既存フロー維持
 
 静的 ELF バイナリは `SyscallAnalysis` ベースの既存フローを維持する。変更なし。
 
-#### FR-3.3.3: ログ出力の維持
+#### FR-3.5.3: ログ出力の維持
 
 `NetworkDetected` 判定時の `slog.Info` ログ（タスク 0076 の前段で追加済み）を維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Info` に出力する。
 
@@ -153,7 +170,7 @@ type DetectedSymbolEntry struct {
 
 - [ ] `NetworkSymbolAnalysisData` 型が定義されていること
 - [ ] `fileanalysis.Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドが追加されていること
-- [ ] 既存の `HasDynamicLoad bool` フィールドが `Record` から削除され、`NetworkSymbolAnalysis.HasDynamicLoad` に統合されていること
+- [ ] 既存の `HasDynamicLoad bool` フィールドが `Record` から削除され、`NetworkSymbolAnalysis.DynamicLoadSymbols` に統合されていること
 - [ ] `CurrentSchemaVersion` が 3 に更新されていること
 
 ### AC-2: `record` コマンドの拡張
@@ -161,7 +178,7 @@ type DetectedSymbolEntry struct {
 - [ ] 動的 ELF バイナリで `NetworkSymbolAnalysis` が記録されること
 - [ ] `NetworkSymbolAnalysis.HasNetworkSymbols` が正しく設定されること
 - [ ] `NetworkSymbolAnalysis.DetectedSymbols` にネットワーク関連シンボルが列挙されること
-- [ ] `NetworkSymbolAnalysis.HasDynamicLoad` が正しく設定されること
+- [ ] `NetworkSymbolAnalysis.DynamicLoadSymbols` に検出された `dlopen`/`dlsym`/`dlvsym` が列挙されること
 - [ ] `NetworkSymbolAnalysis.AnalyzedAt` が記録されること
 - [ ] 非 ELF ファイルでは `NetworkSymbolAnalysis` が記録されないこと
 - [ ] 静的 ELF バイナリでは `NetworkSymbolAnalysis` が記録されないこと
@@ -172,7 +189,7 @@ type DetectedSymbolEntry struct {
 
 - [ ] `NetworkSymbolAnalysis` が記録済みの動的 ELF バイナリで、`runner` 実行時に `.dynsym` の再解析が行われないこと
 - [ ] キャッシュ利用時に `NetworkDetected` が正しく判定されること（`HasNetworkSymbols: true` → `NetworkDetected`）
-- [ ] キャッシュ利用時に `HasDynamicLoad` が正しく判定されること
+- [ ] キャッシュ利用時に `isHighRisk`（`HasDynamicLoad` 相当）が `DynamicLoadSymbols` から正しく導出されること
 - [ ] `NetworkSymbolAnalysis` が未記録の場合に実行時解析にフォールバックすること
 - [ ] `slog.Info` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
 
@@ -195,7 +212,7 @@ type DetectedSymbolEntry struct {
 |-------------|---------|
 | ネットワークシンボルありの動的 ELF | `HasNetworkSymbols: true`、`DetectedSymbols` に検出シンボルが含まれること |
 | ネットワークシンボルなしの動的 ELF | `HasNetworkSymbols: false`、`DetectedSymbols` が空であること |
-| `dlopen` のみを持つ動的 ELF | `HasDynamicLoad: true`、`HasNetworkSymbols: false` となること |
+| `dlopen` のみを持つ動的 ELF | `DynamicLoadSymbols` に `dlopen` が含まれ、`HasNetworkSymbols: false` となること |
 | 非 ELF ファイル | `NetworkSymbolAnalysis` が `nil` であること |
 | 静的 ELF バイナリ | `NetworkSymbolAnalysis` が `nil` であること |
 | `AnalysisError` | `record` がエラーで終了し記録が保存されないこと |
@@ -207,7 +224,7 @@ type DetectedSymbolEntry struct {
 | キャッシュあり・ネットワークシンボルあり | `NetworkDetected` が返され、`.dynsym` 再解析なし |
 | キャッシュあり・ネットワークシンボルなし | `NoNetworkSymbols` が返され、`.dynsym` 再解析なし |
 | キャッシュなし（未記録） | 実行時解析にフォールバックすること |
-| キャッシュあり・`HasDynamicLoad: true` | `isHighRisk: true` が返されること |
+| キャッシュあり・`DynamicLoadSymbols` に `dlopen` を含む | `isHighRisk: true` が返されること |
 
 ### 6.3 統合テスト
 

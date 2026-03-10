@@ -27,7 +27,7 @@ flowchart TB
         REC["record コマンド"]
         FV["filevalidator.Validator"]
         BA1["BinaryAnalyzer.AnalyzeNetworkSymbols()"]
-        STORE1[("fileanalysis.Record\nContentHash\nHasDynamicLoad ← 保存\nDynLibDeps")]
+        STORE1[("fileanalysis.Record<br>ContentHash<br>HasDynamicLoad ← 保存<br>DynLibDeps")]
     end
 
     subgraph RunnerPhase["runner フェーズ（毎回実行）"]
@@ -35,7 +35,7 @@ flowchart TB
         VGF["VerifyGroupFiles()"]
         EVAL["EvaluateRisk()"]
         NA["NetworkAnalyzer.IsNetworkOperation()"]
-        BA2["BinaryAnalyzer.AnalyzeNetworkSymbols()\n（毎回 .dynsym をパース）"]
+        BA2["BinaryAnalyzer.AnalyzeNetworkSymbols()<br>（毎回 .dynsym をパース）"]
     end
 
     REC --> FV
@@ -64,18 +64,18 @@ flowchart TB
 
     subgraph RecordPhase["record フェーズ（変更あり）"]
         REC["record コマンド"]
-        FV["filevalidator.Validator\n（拡張）"]
+        FV["filevalidator.Validator<br>（拡張）"]
         BA1["BinaryAnalyzer.AnalyzeNetworkSymbols()"]
-        STORE1[("fileanalysis.Record\nContentHash\nNetworkSymbolAnalysis ← 新規追加\n  HasNetworkSymbols\n  DetectedSymbols\n  HasDynamicLoad\nDynLibDeps")]
+        STORE1[("fileanalysis.Record<br>ContentHash<br>NetworkSymbolAnalysis ← 新規追加<br>  HasNetworkSymbols<br>  DetectedSymbols<br>  DynamicLoadSymbols<br>DynLibDeps")]
     end
 
     subgraph RunnerPhase["runner フェーズ（変更あり）"]
         RUN["runner コマンド"]
         VGF["VerifyGroupFiles()"]
         EVAL["EvaluateRisk()"]
-        NA["NetworkAnalyzer.IsNetworkOperation()\n（拡張）"]
-        CACHE["Store.LoadNetworkSymbolAnalysis()\nキャッシュ読み込み"]
-        BA2["BinaryAnalyzer.AnalyzeNetworkSymbols()\n（フォールバック時のみ）"]
+        NA["NetworkAnalyzer.IsNetworkOperation()<br>（拡張）"]
+        CACHE["Store.LoadNetworkSymbolAnalysis()<br>キャッシュ読み込み"]
+        BA2["BinaryAnalyzer.AnalyzeNetworkSymbols()<br>（フォールバック時のみ）"]
     end
 
     REC --> FV
@@ -144,11 +144,13 @@ type Record struct {
 
 // 追加する型
 type NetworkSymbolAnalysisData struct {
-    AnalyzedAt      time.Time             `json:"analyzed_at"`
-    HasNetworkSymbols bool                `json:"has_network_symbols"`
-    DetectedSymbols []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
-    HasDynamicLoad  bool                  `json:"has_dynamic_load,omitempty"`
+    AnalyzedAt         time.Time             `json:"analyzed_at"`
+    HasNetworkSymbols  bool                  `json:"has_network_symbols"`
+    DetectedSymbols    []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
+    DynamicLoadSymbols []DetectedSymbolEntry `json:"dynamic_load_symbols,omitempty"`
 }
+
+// HasDynamicLoad は len(DynamicLoadSymbols) > 0 で導出する（独立フィールドなし）
 
 type DetectedSymbolEntry struct {
     Name     string `json:"name"`
@@ -181,10 +183,10 @@ if v.binaryAnalyzer != nil {
     switch output.Result {
     case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
         record.NetworkSymbolAnalysis = &fileanalysis.NetworkSymbolAnalysisData{
-            AnalyzedAt:        time.Now(),
-            HasNetworkSymbols: output.Result == binaryanalyzer.NetworkDetected,
-            DetectedSymbols:   convertDetectedSymbols(output.DetectedSymbols),
-            HasDynamicLoad:    output.HasDynamicLoad,
+            AnalyzedAt:         time.Now(),
+            HasNetworkSymbols:  output.Result == binaryanalyzer.NetworkDetected,
+            DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
+            DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
         }
     case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
         // 静的バイナリ・非 ELF: NetworkSymbolAnalysis を記録しない
@@ -234,11 +236,11 @@ flowchart TD
     classDef decision fill:#fffde7,stroke:#f9a825,stroke-width:1px,color:#5d4037;
 
     START([isNetworkViaBinaryAnalysis 呼び出し])
-    CHECK_STORE{store が\n設定されているか？}
-    LOAD["store.LoadNetworkSymbolAnalysis()\nキャッシュ読み込み"]
-    CHECK_CACHE{キャッシュ\n読み込み成功？}
-    RETURN_CACHE["キャッシュから AnalysisOutput を構築\nして返す"]
-    FALLBACK["BinaryAnalyzer.AnalyzeNetworkSymbols()\n（従来の実行時解析）"]
+    CHECK_STORE{store が<br>設定されているか？}
+    LOAD["store.LoadNetworkSymbolAnalysis()<br>キャッシュ読み込み"]
+    CHECK_CACHE{キャッシュ<br>読み込み成功？}
+    RETURN_CACHE["キャッシュから AnalysisOutput を構築<br>して返す"]
+    FALLBACK["BinaryAnalyzer.AnalyzeNetworkSymbols()<br>（従来の実行時解析）"]
     RETURN_LIVE["AnalysisOutput を返す"]
 
     START --> CHECK_STORE
@@ -263,11 +265,11 @@ flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
-    BIN[("/usr/bin/some_cmd\n（動的 ELF）")]
+    BIN[("/usr/bin/some_cmd<br>（動的 ELF）")]
     HASH["SHA256 計算"]
-    DYNSYM[".dynsym 解析\nAnalyzeNetworkSymbols()"]
-    OUT["AnalysisOutput\n  Result: NetworkDetected\n  DetectedSymbols: [socket(network)]\n  HasDynamicLoad: false"]
-    REC[("fileanalysis.Record\n  ContentHash: sha256:abc...\n  NetworkSymbolAnalysis:\n    HasNetworkSymbols: true\n    DetectedSymbols: [{socket, network}]\n    HasDynamicLoad: false")]
+    DYNSYM[".dynsym 解析<br>AnalyzeNetworkSymbols()"]
+    OUT["AnalysisOutput<br>  Result: NetworkDetected<br>  DetectedSymbols: [socket(network)]<br>  DynamicLoadSymbols: []"]
+    REC[("fileanalysis.Record<br>  ContentHash: sha256:abc...<br>  NetworkSymbolAnalysis:<br>    HasNetworkSymbols: true<br>    DetectedSymbols: [{socket, network}]<br>    DynamicLoadSymbols: []")]
 
     BIN --> HASH
     BIN --> DYNSYM
@@ -287,11 +289,11 @@ flowchart LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef new fill:#f3e8ff,stroke:#7b2d8b,stroke-width:2px,color:#4a0072;
 
-    REC[("fileanalysis.Record\n  ContentHash: sha256:abc...\n  NetworkSymbolAnalysis:\n    HasNetworkSymbols: true\n    DetectedSymbols: [{socket, network}]\n    HasDynamicLoad: false")]
-    VERIFY["VerifyGroupFiles()\nハッシュ検証済み\n→ ContentHash: sha256:abc..."]
-    LOAD["LoadNetworkSymbolAnalysis()\nキャッシュ読み込み"]
-    OUT["AnalysisOutput\n  Result: NetworkDetected\n  DetectedSymbols: [socket(network)]\n  HasDynamicLoad: false"]
-    LOG["slog.Info\n'Binary analysis detected network symbols'\nsymbols: [socket(network)]"]
+    REC[("fileanalysis.Record<br>  ContentHash: sha256:abc...<br>  NetworkSymbolAnalysis:<br>    HasNetworkSymbols: true<br>    DetectedSymbols: [{socket, network}]<br>    DynamicLoadSymbols: []")]
+    VERIFY["VerifyGroupFiles()<br>ハッシュ検証済み<br>→ ContentHash: sha256:abc..."]
+    LOAD["LoadNetworkSymbolAnalysis()<br>キャッシュ読み込み"]
+    OUT["AnalysisOutput<br>  Result: NetworkDetected<br>  DetectedSymbols: [socket(network)]<br>  HasDynamicLoad: false（DynamicLoadSymbolsから導出）"]
+    LOG["slog.Info<br>'Binary analysis detected network symbols'<br>symbols: [socket(network)]"]
     RISK["RiskLevelMedium"]
 
     REC --> LOAD
@@ -324,7 +326,7 @@ flowchart LR
 
 | ファイル | 変更種別 | 内容 |
 |---------|---------|------|
-| `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |
+| `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加（`DynamicLoadSymbols` フィールド含む）、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |
 | `internal/fileanalysis/store.go` | 変更 | `LoadNetworkSymbolAnalysis()` メソッド追加 |
 | `internal/filevalidator/validator.go` | 変更 | `saveHash` 内の `binaryAnalyzer` 呼び出しを拡張、`NetworkSymbolAnalysis` を保存 |
 | `internal/runner/security/network_analyzer.go` | 変更 | `NetworkAnalyzer` に `NetworkSymbolStore` を追加、`isNetworkViaBinaryAnalysis` にキャッシュ参照ロジックを追加 |
