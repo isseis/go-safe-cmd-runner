@@ -24,7 +24,8 @@ type Manager struct {
 	fs                          common.FileSystem
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
-	dynlibVerifier              *dynlibanalysis.DynLibVerifier // initialized once at construction
+	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
+	dynlibVerifier              *dynlibanalysis.DynLibVerifier  // initialized once at construction
 	security                    *security.Validator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -365,14 +366,9 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 }
 
 // GetNetworkSymbolStore returns a NetworkSymbolStore backed by the same hash directory,
-// or nil if not available (e.g. when fileValidator is a test mock).
+// or nil if not available (e.g. when fileValidator is a test mock or hash dir is absent).
 func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
-	if v, ok := m.fileValidator.(*filevalidator.Validator); ok {
-		if s := v.GetStore(); s != nil {
-			return fileanalysis.NewNetworkSymbolStore(s)
-		}
-	}
-	return nil
+	return m.networkSymbolStore
 }
 
 // verifyFileWithFallback attempts file verification with normal privileges first,
@@ -513,6 +509,9 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			}
 		} else {
 			manager.fileValidator = validator
+			if s := validator.GetStore(); s != nil {
+				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
+			}
 		}
 	}
 

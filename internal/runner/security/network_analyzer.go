@@ -150,9 +150,14 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
 	// so no need for filepath.EvalSymlinks() here.
 
-	// Check cache first (when store is configured).
-	if a.store != nil {
+	// Check cache first (when store is configured and contentHash is available).
+	// Skip cache lookup when contentHash is empty: the store uses hash to verify
+	// record freshness, so an empty hash would always produce ErrHashMismatch even
+	// for a valid record. That would misuse ErrHashMismatch (which signals a genuine
+	// file-content change) for a mere "no hash available" situation.
+	if a.store != nil && contentHash != "" {
 		data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
+		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
 		switch {
 		case err == nil:
 			output := binaryanalyzer.AnalysisOutput{
@@ -169,7 +174,15 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			errors.Is(err, fileanalysis.ErrHashMismatch) ||
 			errors.Is(err, fileanalysis.ErrRecordNotFound):
 			// Expected cache miss: fall through to live binary analysis.
-			// Old schema records are blocked earlier by VerifyGroupFiles.
+		case errors.As(err, &schemaMismatch):
+			// Cache record uses an old schema version. Normally VerifyGroupFiles blocks
+			// execution before reaching this point, but log a warning so that callers
+			// that bypass verification (e.g. tests, future code paths) can diagnose
+			// unexpected schema mismatches.
+			slog.Warn("network symbol analysis cache has outdated schema; falling back to live analysis",
+				"path", cmdPath,
+				"expected_schema", schemaMismatch.Expected,
+				"actual_schema", schemaMismatch.Actual)
 		default:
 			// Unexpected error (e.g. I/O failure, corrupted record): log a warning and
 			// fall through to live binary analysis so execution is not silently blocked,

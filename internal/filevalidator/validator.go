@@ -189,7 +189,7 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 			switch output.Result {
 			case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
 				record.NetworkSymbolAnalysis = &fileanalysis.NetworkSymbolAnalysisData{
-					AnalyzedAt:         time.Now(),
+					AnalyzedAt:         time.Now().UTC(),
 					HasNetworkSymbols:  output.Result == binaryanalyzer.NetworkDetected,
 					DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
 					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),

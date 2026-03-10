@@ -2591,6 +2591,18 @@ func (s *stubNetworkSymbolStore) LoadNetworkSymbolAnalysis(_ string, _ string) (
 	return s.data, s.err
 }
 
+// callTrackingStore records whether LoadNetworkSymbolAnalysis was called.
+type callTrackingStore struct {
+	called *bool
+	data   *fileanalysis.NetworkSymbolAnalysisData
+	err    error
+}
+
+func (s *callTrackingStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.NetworkSymbolAnalysisData, error) {
+	*s.called = true
+	return s.data, s.err
+}
+
 // TestIsNetworkViaBinaryAnalysis_Cache tests the cache path in isNetworkViaBinaryAnalysis.
 func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	const cmdPath = "/usr/bin/curl"
@@ -2654,11 +2666,34 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isNet, "expected network detected via live binary analysis fallback")
 	})
 
+	t.Run("SchemaVersionMismatchError → BinaryAnalyzer called as fallback", func(t *testing.T) {
+		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: 3, Actual: 2}
+		store := &stubNetworkSymbolStore{err: schemaErr}
+		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
+		analyzer := newNetworkAnalyzer(mock, store)
+		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+		assert.True(t, isNet, "expected live binary analysis fallback on schema mismatch")
+	})
+
 	t.Run("nil store → BinaryAnalyzer called directly", func(t *testing.T) {
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
 		analyzer := newNetworkAnalyzer(mock, nil)
 		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "expected network detected via live binary analysis")
+	})
+
+	t.Run("empty contentHash → cache skipped, BinaryAnalyzer called", func(t *testing.T) {
+		// When contentHash is empty the store must not be consulted.
+		// If it were, LoadNetworkSymbolAnalysis would return ErrHashMismatch
+		// (record.ContentHash != "") misusing that error for a "no hash available"
+		// situation.
+		storeCalled := false
+		store := &callTrackingStore{called: &storeCalled, err: fileanalysis.ErrHashMismatch}
+		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
+		analyzer := newNetworkAnalyzer(mock, store)
+		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, "")
+		assert.False(t, storeCalled, "store must not be called when contentHash is empty")
+		assert.True(t, isNet, "expected live binary analysis to be used when contentHash is empty")
 	})
 }
 
