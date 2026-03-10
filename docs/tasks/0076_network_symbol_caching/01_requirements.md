@@ -141,41 +141,41 @@
 
 ### AC-1: `fileanalysis.Record` フィールド追加
 
-- [ ] `NetworkSymbolAnalysisData` 型が定義されていること
-- [ ] `fileanalysis.Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドが追加されていること
-- [ ] 既存の `HasDynamicLoad bool` フィールドが `Record` から削除され、`NetworkSymbolAnalysis.DynamicLoadSymbols` に統合されていること
-- [ ] `CurrentSchemaVersion` が 3 に更新されていること
+- [x] `NetworkSymbolAnalysisData` 型が定義されていること
+- [x] `fileanalysis.Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドが追加されていること
+- [x] 既存の `HasDynamicLoad bool` フィールドが `Record` から削除され、`NetworkSymbolAnalysis.DynamicLoadSymbols` に統合されていること
+- [x] `CurrentSchemaVersion` が 3 に更新されていること
 
 ### AC-2: `record` コマンドの拡張
 
-- [ ] 動的 ELF バイナリで `NetworkSymbolAnalysis` が記録されること
-- [ ] `NetworkSymbolAnalysis.HasNetworkSymbols` が正しく設定されること
-- [ ] `NetworkSymbolAnalysis.DetectedSymbols` にネットワーク関連シンボルが列挙されること
-- [ ] `NetworkSymbolAnalysis.DynamicLoadSymbols` に検出された `dlopen`/`dlsym`/`dlvsym` が列挙されること
-- [ ] `NetworkSymbolAnalysis.AnalyzedAt` が記録されること
-- [ ] 非 ELF ファイルでは `NetworkSymbolAnalysis` が記録されないこと
-- [ ] 静的 ELF バイナリでは `NetworkSymbolAnalysis` が記録されないこと
-- [ ] `AnalysisError` 時に `record` がエラーで終了し記録が保存されないこと
-- [ ] `record --force` で `NetworkSymbolAnalysis` が更新されること
+- [x] 動的 ELF バイナリで `NetworkSymbolAnalysis` が記録されること
+- [x] `NetworkSymbolAnalysis.HasNetworkSymbols` が正しく設定されること
+- [x] `NetworkSymbolAnalysis.DetectedSymbols` にネットワーク関連シンボルが列挙されること
+- [x] `NetworkSymbolAnalysis.DynamicLoadSymbols` に検出された `dlopen`/`dlsym`/`dlvsym` が列挙されること
+- [x] `NetworkSymbolAnalysis.AnalyzedAt` が記録されること
+- [x] 非 ELF ファイルでは `NetworkSymbolAnalysis` が記録されないこと
+- [x] 静的 ELF バイナリでは `NetworkSymbolAnalysis` が記録されないこと
+- [x] `AnalysisError` 時に `record` がエラーで終了し記録が保存されないこと
+- [x] `record --force` で `NetworkSymbolAnalysis` が更新されること
 
 ### AC-3: `runner` 実行時のキャッシュ利用
 
-- [ ] `NetworkSymbolAnalysis` が記録済みの動的 ELF バイナリで、`runner` 実行時に `.dynsym` の再解析が行われないこと
-- [ ] キャッシュ利用時に `NetworkDetected` が正しく判定されること（`HasNetworkSymbols: true` → `NetworkDetected`）
-- [ ] キャッシュ利用時に `isHighRisk`（`HasDynamicLoad` 相当）が `DynamicLoadSymbols` から正しく導出されること
-- [ ] `NetworkSymbolAnalysis` が未記録の場合に実行時解析にフォールバックすること
-- [ ] `slog.Debug` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
+- [x] `NetworkSymbolAnalysis` が記録済みの動的 ELF バイナリで、`runner` 実行時に `.dynsym` の再解析が行われないこと
+- [x] キャッシュ利用時に `NetworkDetected` が正しく判定されること（`HasNetworkSymbols: true` → `NetworkDetected`）
+- [x] キャッシュ利用時に `isHighRisk`（`HasDynamicLoad` 相当）が `DynamicLoadSymbols` から正しく導出されること
+- [x] `NetworkSymbolAnalysis` が未記録の場合に実行時解析にフォールバックすること
+- [x] `slog.Debug` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
 
 ### AC-4: スキーマ移行
 
-- [ ] `schema_version: 2` 以前の記録ファイルで `runner` 実行時に `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返し、実行前に停止すること
-- [ ] 既存のテストがすべてパスすること
+- [x] `schema_version: 2` 以前の記録ファイルで `runner` 実行時に `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返し、実行前に停止すること
+- [x] 既存のテストがすべてパスすること
 
 ### AC-5: 既存機能への非影響
 
-- [ ] `commandProfileDefinitions` 登録済みコマンドの判定ロジックが変更されないこと
-- [ ] 静的 ELF バイナリの `SyscallAnalysis` ベースのフローが維持されること
-- [ ] `DynLibDeps` 検証が引き続き動作すること
+- [x] `commandProfileDefinitions` 登録済みコマンドの判定ロジックが変更されないこと
+- [x] 静的 ELF バイナリの `SyscallAnalysis` ベースのフローが維持されること
+- [x] `DynLibDeps` 検証が引き続き動作すること
 
 ## 6. テスト方針
 
