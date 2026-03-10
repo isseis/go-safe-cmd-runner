@@ -236,6 +236,7 @@ Phase 4 は Phase 3 完了後に実施する。
   - キャッシュあり・`DynamicLoadSymbols` に `dlopen` を含む →
     `isHighRisk: true`
   - store が `SchemaVersionMismatchError` を返す → エラーを伝播し、フォールバック **しない**
+  - キャッシュあり・`NetworkDetected` → `slog.Info` に `DetectedSymbols` が出力されること（`BinaryAnalyzer` 未呼出でもログが欠落しないこと）
   - 受け入れ条件: AC-3, AC-4
 
 ### 4.8 テスト確認
@@ -251,6 +252,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 - [ ] `record` → `runner` の正常フロー
   - キャッシュを利用して正しくネットワーク判定されること
+  - キャッシュ利用時に `slog.Info` ログに `DetectedSymbols` が出力されること
   - 受け入れ条件: AC-3
 - [ ] 旧スキーマ（`schema_version: 2`）の記録で実行
   - `SchemaVersionMismatchError` でブロックされること
