@@ -202,7 +202,7 @@ type NetworkSymbolStore interface {
     // Returns (nil, ErrRecordNotFound) if record not found.
     // Returns (nil, ErrHashMismatch) if hash does not match.
     // Returns (nil, ErrNoNetworkSymbolAnalysis) if no network symbol analysis exists.
-    // Returns (nil, error) on other errors (e.g., SchemaVersionMismatchError).
+    // Returns (nil, error) on other errors.
     LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error)
 }
 
@@ -299,6 +299,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
             return handleAnalysisOutput(output, cmdPath)
         }
         // キャッシュミス（ErrNoNetworkSymbolAnalysis, ErrHashMismatch 等）はフォールバック
+        // 旧スキーマはここに到達しない（VerifyGroupFiles が ErrGroupVerificationFailed で先にブロックする）
     }
 
     // フォールバック: 従来の実行時解析
@@ -309,15 +310,17 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 `convertNetworkSymbolEntries` は `fileanalysis.DetectedSymbolEntry` → `binaryanalyzer.DetectedSymbol` の逆変換ヘルパーで、`security` パッケージ内のパッケージプライベート関数として定義する。
 
-### 5.5 テスト用ヘルパーの追加（`network_analyzer_test_helpers.go`）
+### 5.5 テスト用ヘルパーの統合（`network_analyzer_test_helpers.go`）
 
-`NewNetworkAnalyzerWithStore` は本番コード（`network_analyzer.go`）に定義済みのため、テストヘルパーには定義しない。テストヘルパーには BinaryAnalyzer と store を両方差し替えられる関数のみを追加する。
+既存の `NewNetworkAnalyzerWithBinaryAnalyzer` を削除し、`binaryAnalyzer` と `store` を両方受け取る単一の関数に一本化する。
+store が不要なテストは第 2 引数に `nil` を渡す。
+名前の爆発を避けるため、パッケージ内限定の小文字関数とする。
 
 ```go
-// NewNetworkAnalyzerWithBinaryAnalyzerAndStore creates a NetworkAnalyzer
-// with both a custom BinaryAnalyzer and store for testing.
+// newNetworkAnalyzer creates a NetworkAnalyzer with a custom BinaryAnalyzer and store for testing.
+// Pass nil for store to disable cache-based analysis.
 // This function is only available in test builds.
-func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
+func newNetworkAnalyzer(
     analyzer binaryanalyzer.BinaryAnalyzer,
     store fileanalysis.NetworkSymbolStore,
 ) *NetworkAnalyzer {
@@ -325,9 +328,11 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 }
 ```
 
+既存の呼び出し元（`command_analysis_test.go` 内 3 箇所）は `newNetworkAnalyzer(mock, nil)` に更新する。
+
 ## 6. テスト仕様
 
-### 6.1 アナライザーレベルのテスト（`elfanalyzer/standard_analyzer_test.go`）
+### 6.1 アナライザーレベルのテスト（`elfanalyzer/analyzer_test.go`）
 
 `machoanalyzer` は本タスクのスコープ外のためテスト追加不要。
 
@@ -338,7 +343,17 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | ネットワークシンボルと `dlopen` を同時に持つ ELF | `socket`, `dlopen` が `.dynsym` に存在 | `DetectedSymbols` と `DynamicLoadSymbols` が独立して設定される | AC-2 |
 | dynamic_load シンボルを持たない ELF | dynamic_load シンボルなし | `DynamicLoadSymbols: nil` | AC-2 |
 
-### 6.2 `record` 拡張のテスト（`filevalidator/validator_test.go`）
+### 6.2 `NetworkSymbolStore` のユニットテスト（`fileanalysis/network_symbol_store_test.go`）
+
+| テストケース | 入力 | 期待結果 | 対応 AC |
+|------------|------|---------|--------|
+| 正常系（保存・取得） | `HasNetworkSymbols: true`、`DetectedSymbols`、`DynamicLoadSymbols` を保存 | 取得値が一致する | AC-1 |
+| ハッシュ不一致 | 保存時と異なるハッシュで取得 | `ErrHashMismatch` | AC-1 |
+| `NetworkSymbolAnalysis` が `nil` のレコード | `NetworkSymbolAnalysis` なしで保存されたレコードを取得 | `ErrNoNetworkSymbolAnalysis` | AC-1 |
+| 存在しないファイルパス | 未記録のパスで取得 | `ErrRecordNotFound` | AC-1 |
+| その他エラーの伝播 | 下位 `Store` が `SchemaVersionMismatchError` を返す | そのエラーがそのまま呼び出し元に返る（`ErrHashMismatch` 等に変換されない） | AC-1、AC-4 |
+
+### 6.3 `record` 拡張のテスト（`filevalidator/validator_test.go`）
 
 | テストケース | 入力 | 期待結果 | 対応 AC |
 |------------|------|---------|--------|
@@ -349,7 +364,7 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | 静的 ELF バイナリ | `Result: StaticBinary` | `NetworkSymbolAnalysis` が `nil` | AC-2 |
 | `AnalysisError` | `Result: AnalysisError` | `record` がエラーを返し記録が保存されない | AC-2 |
 
-### 6.3 `runner` キャッシュ利用のテスト（`security/command_analysis_test.go`）
+### 6.4 `runner` キャッシュ利用のテスト（`security/command_analysis_test.go`）
 
 | テストケース | 入力 | 期待結果 | 対応 AC |
 |------------|------|---------|--------|
@@ -358,12 +373,12 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | キャッシュなし（`ErrNoNetworkSymbolAnalysis`） | store が `ErrNoNetworkSymbolAnalysis` を返す | `BinaryAnalyzer.AnalyzeNetworkSymbols()` にフォールバック | AC-3 |
 | キャッシュあり・`DynamicLoadSymbols` に `dlopen` を含む | `DynamicLoadSymbols: [dlopen]` | `isHighRisk: true` が返される | AC-3 |
 
-### 6.4 統合テスト（`filevalidator/validator_test.go` または `runner` 統合テスト）
+### 6.5 統合テスト（`filevalidator/validator_test.go` または `runner` 統合テスト）
 
 | テストケース | 検証内容 | 対応 AC |
 |------------|---------|--------|
 | `record` → `runner` の正常フロー | キャッシュを利用して正しく判定される | AC-3 |
-| 旧スキーマ（`schema_version: 2`）の記録で実行 | `SchemaVersionMismatchError` でブロックされる | AC-4 |
+| 旧スキーマ（`schema_version: 2`）の記録で実行 | `VerifyGroupFiles` が group verification failed を返して実行前に停止する | AC-4 |
 
 ## 7. 受け入れ条件との対応
 
@@ -372,7 +387,7 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | AC-1 | `NetworkSymbolAnalysisData` 型の定義と `Record` フィールド追加、`HasDynamicLoad` 削除、スキーマバージョン更新 | § 1.2、§ 1.3 |
 | AC-2 | `record` 時の `NetworkSymbolAnalysis` 記録 | § 2.1、§ 2.2、§ 3.1 |
 | AC-3 | `runner` 時のキャッシュ利用と `isHighRisk` 導出 | § 4.1、§ 5.4 |
-| AC-4 | 旧スキーマの拒否（既存の `SchemaVersionMismatchError` 機構で対応） | § 1.2.3 |
+| AC-4 | 旧スキーマの拒否（`VerifyGroupFiles` が `ErrGroupVerificationFailed` を内包する `verification.Error` を返す） | § 1.2.3 |
 | AC-5 | 既存機能（`commandProfileDefinitions`、静的バイナリフロー、`DynLibDeps`）への非影響 | store が `nil` の場合のフォールバック（§ 5.2） |
 
 ## 8. 変更ファイル一覧

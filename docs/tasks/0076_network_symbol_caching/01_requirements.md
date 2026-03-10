@@ -96,13 +96,15 @@
 
 キャッシュが利用できない場合（`NetworkSymbolAnalysis` が `nil`、`AnalysisError` 等）は現行の実行時解析にフォールバックする。スキーマバージョン不一致の場合は `SchemaVersionMismatchError` で実行を拒否し、フォールバックしない。
 
+> **実現層の注記**: `SchemaVersionMismatchError` によるブロックは `isNetworkViaBinaryAnalysis` ではなく `VerifyGroupFiles`（`verifyFileWithHash` → `store.Load`）で実現される。スキーマ不一致のレコードはファイルハッシュ検証の時点で実行前にエラーとなるため、`isNetworkViaBinaryAnalysis` まで到達しない。`isNetworkViaBinaryAnalysis` での追加ブロックは不要。
+
 #### FR-3.5.2: 静的バイナリの既存フロー維持
 
 静的 ELF バイナリは `SyscallAnalysis` ベースの既存フローを維持する。変更なし。
 
 #### FR-3.5.3: ログ出力の維持
 
-`NetworkDetected` 判定時の `slog.Info` ログ（タスク 0076 の前段で追加済み）を維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Info` に出力する。
+`NetworkDetected` 判定時の `slog.Info` ログを維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Info` に出力する。
 
 ## 4. 非機能要件
 
@@ -132,6 +134,9 @@
 
 `SyscallAnalysis` の保存・読み込みパターン（`fileanalysis.Store` を介した `record` 時保存 / `runner` 時読み込み）と同じ構造を `NetworkSymbolAnalysis` に適用する。実装の一貫性を保つ。
 
+**`NetworkSymbolStore` に Save メソッドを持たない設計意図**:
+`SyscallAnalysis` の保存は `filevalidator` の外側（`cmd/record/main.go`）から `SyscallAnalysisStore.SaveSyscallAnalysis()` を呼ぶアーキテクチャのため、Store に Save が必要だった。一方 `NetworkSymbolAnalysis` の保存は既存の `filevalidator.saveHash()` 内で `BinaryAnalyzer` を呼ぶフローの延長として完結し、`filevalidator` 外から Save を呼ぶ経路がない。このため `NetworkSymbolStore` は Load 専用インターフェースとし、Save は `filevalidator` パッケージ内に閉じる。
+
 ## 5. 受け入れ条件
 
 ### AC-1: `fileanalysis.Record` フィールド追加
@@ -159,11 +164,11 @@
 - [ ] キャッシュ利用時に `NetworkDetected` が正しく判定されること（`HasNetworkSymbols: true` → `NetworkDetected`）
 - [ ] キャッシュ利用時に `isHighRisk`（`HasDynamicLoad` 相当）が `DynamicLoadSymbols` から正しく導出されること
 - [ ] `NetworkSymbolAnalysis` が未記録の場合に実行時解析にフォールバックすること
-- [ ] `slog.Info` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
+- [ ] `slog.Debug` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
 
 ### AC-4: スキーマ移行
 
-- [ ] `schema_version: 2` 以前の記録ファイルで `runner` 実行時に `SchemaVersionMismatchError` が返されること
+- [ ] `schema_version: 2` 以前の記録ファイルで `runner` 実行時に `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返し、実行前に停止すること
 - [ ] 既存のテストがすべてパスすること
 
 ### AC-5: 既存機能への非影響
@@ -189,14 +194,14 @@
 
 FR-3.2.0 の内部実装変更（`checkDynamicSymbols()` でのシンボル名収集）を検証する。`machoanalyzer` は本タスクのスコープ外のためテスト追加不要。
 
-**対象ファイル:** `elfanalyzer/standard_analyzer_test.go`
+**対象ファイル:** `elfanalyzer/analyzer_test.go`（既存の `HasDynamicLoad` テストの置換と新規追加）
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| `dlopen` のみを持つ ELF | `AnalysisOutput.DynamicLoadSymbols` に `{Name:"dlopen", Category:"dynamic_load"}` が含まれ、`HasDynamicLoad: true` であること |
+| `dlopen` のみを持つ ELF | `AnalysisOutput.DynamicLoadSymbols` に `{Name:"dlopen", Category:"dynamic_load"}` が含まれること |
 | `dlsym` と `dlvsym` を両方持つ ELF | `DynamicLoadSymbols` に両シンボルが列挙されること |
 | ネットワークシンボルと `dlopen` を同時に持つ ELF | `DetectedSymbols` と `DynamicLoadSymbols` が独立して正しく設定されること |
-| dynamic_load シンボルを持たない ELF | `DynamicLoadSymbols` が空スライス（または `nil`）であり、`HasDynamicLoad: false` であること |
+| dynamic_load シンボルを持たない ELF | `DynamicLoadSymbols` が空スライス（または `nil`）であること |
 
 ### 6.3 `runner` キャッシュ利用のユニットテスト
 
