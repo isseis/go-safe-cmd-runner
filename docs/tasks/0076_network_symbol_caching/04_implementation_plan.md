@@ -87,7 +87,8 @@ Phase 4 は Phase 3 完了後に実施する。
   - ハッシュ不一致 → `ErrHashMismatch`
   - `NetworkSymbolAnalysis` が `nil` のレコード → `ErrNoNetworkSymbolAnalysis`
   - 存在しないファイルパス → `ErrRecordNotFound`
-  - 受け入れ条件: AC-1（エラー契約の保証）
+  - 下位 `Store` がその他のエラー（例: `SchemaVersionMismatchError`）を返した場合、そのエラーがそのまま呼び出し元に伝播すること（キャッシュミス扱いにならないこと）
+  - 受け入れ条件: AC-1（エラー契約の保証）、AC-4（schema mismatch が握りつぶされないことの安全前提）
 
 ### 1.7 ビルド確認
 
