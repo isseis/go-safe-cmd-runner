@@ -147,7 +147,7 @@ flowchart LR
 
 #### 3.4.1 `NetworkAnalyzer` の拡張と store 注入チェーン
 
-`NetworkAnalyzer` に `store NetworkSymbolStore` フィールドを追加する。`NetworkSymbolStore` インターフェースは `LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*fileanalysis.NetworkSymbolAnalysisData, error)` メソッドを定義する。`store` が `nil` の場合はキャッシュを使用せず従来の実行時解析にフォールバックする。
+`NetworkAnalyzer` に `store fileanalysis.NetworkSymbolStore` フィールドを追加する。`store` が `nil` の場合はキャッシュを使用せず従来の実行時解析にフォールバックする。
 
 store の注入チェーンは `normal_manager.go` → `risk.NewStandardEvaluator(store)` → `security.NewNetworkAnalyzerWithStore(store)` の3段で構成する。詳細は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
 

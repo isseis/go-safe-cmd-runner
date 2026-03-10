@@ -99,15 +99,6 @@ var (
 )
 ```
 
-### 1.4 `security.NetworkSymbolStore` インターフェース（`network_analyzer.go`）
-
-```go
-// NetworkSymbolStore provides cached network symbol analysis results.
-type NetworkSymbolStore interface {
-    LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*fileanalysis.NetworkSymbolAnalysisData, error)
-}
-```
-
 ## 2. アナライザーの変更
 
 ### 2.1 `elfanalyzer/standard_analyzer.go` — `checkDynamicSymbols()` の変更
@@ -332,7 +323,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 // This function is only available in test builds.
 func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
     analyzer binaryanalyzer.BinaryAnalyzer,
-    store NetworkSymbolStore,
+    store fileanalysis.NetworkSymbolStore,
 ) *NetworkAnalyzer {
     return &NetworkAnalyzer{binaryAnalyzer: analyzer, store: store}
 }
