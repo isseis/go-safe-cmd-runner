@@ -25,7 +25,7 @@
 
 - **対象**: 動的リンクされた ELF バイナリ（`.dynsym` を持つもの）
 - **対象外**: 静的 ELF バイナリ（`SyscallAnalysis` ベースの既存フローを維持）
-- **対象外**: macOS Mach-O バイナリ（別途検討）
+- **対象外**: macOS Mach-O バイナリ（別途検討）。`binaryanalyzer.AnalysisOutput.DynamicLoadSymbols` フィールド追加に伴うビルド維持のための最小限の変更は許容するが、収集ロジックの実装は含まない
 - **対象外**: スクリプトファイル
 - **対象外**: `commandProfileDefinitions` に登録済みのコマンド（ハードコードリストが優先）
 
@@ -65,7 +65,7 @@
 
 **内部実装への波及（実装上の必須変更）:**
 
-現在の `checkDynamicSymbols()` はシンボル名を保持しないため、`elfanalyzer/standard_analyzer.go` と `machoanalyzer/standard_analyzer.go` の両ファイルで dynamic_load シンボルの収集ロジックを追加する必要がある。実装詳細は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
+現在の `checkDynamicSymbols()` はシンボル名を保持しないため、`elfanalyzer/standard_analyzer.go` で dynamic_load シンボルの収集ロジックを追加する必要がある。`machoanalyzer/standard_analyzer.go` はビルドが通る最小限の変更のみ（収集ロジックの実装は対象外）。実装詳細は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
 
 ### 3.4 `record` コマンドの拡張
 
@@ -92,7 +92,7 @@
 2. 読み込んだ結果を `AnalysisOutput` に変換して返す
 3. **`.dynsym` の再解析は行わない**
 
-キャッシュが利用できない場合（`NetworkSymbolAnalysis` が `nil`、旧スキーマ、`AnalysisError` 等）は現行の実行時解析にフォールバックする。
+キャッシュが利用できない場合（`NetworkSymbolAnalysis` が `nil`、`AnalysisError` 等）は現行の実行時解析にフォールバックする。スキーマバージョン不一致の場合は `SchemaVersionMismatchError` で実行を拒否し、フォールバックしない。
 
 #### FR-3.5.2: 静的バイナリの既存フロー維持
 
@@ -183,18 +183,18 @@
 | 静的 ELF バイナリ | `NetworkSymbolAnalysis` が `nil` であること |
 | `AnalysisError` | `record` がエラーで終了し記録が保存されないこと |
 
-### 6.2 アナライザーレベルのユニットテスト（`elfanalyzer` / `machoanalyzer`）
+### 6.2 アナライザーレベルのユニットテスト（`elfanalyzer`）
 
-FR-3.2.0 の内部実装変更（`checkDynamicSymbols()` でのシンボル名収集）を検証する。
+FR-3.2.0 の内部実装変更（`checkDynamicSymbols()` でのシンボル名収集）を検証する。`machoanalyzer` は本タスクのスコープ外のためテスト追加不要。
 
-**対象ファイル:** `elfanalyzer/standard_analyzer_test.go`、`machoanalyzer/standard_analyzer_test.go`
+**対象ファイル:** `elfanalyzer/standard_analyzer_test.go`
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| `dlopen` のみを持つ ELF/Mach-O | `AnalysisOutput.DynamicLoadSymbols` に `{Name:"dlopen", Category:"dynamic_load"}` が含まれ、`HasDynamicLoad: true` であること |
-| `dlsym` と `dlvsym` を両方持つ ELF/Mach-O | `DynamicLoadSymbols` に両シンボルが列挙されること |
-| ネットワークシンボルと `dlopen` を同時に持つ ELF/Mach-O | `DetectedSymbols` と `DynamicLoadSymbols` が独立して正しく設定されること |
-| dynamic_load シンボルを持たない ELF/Mach-O | `DynamicLoadSymbols` が空スライス（または `nil`）であり、`HasDynamicLoad: false` であること |
+| `dlopen` のみを持つ ELF | `AnalysisOutput.DynamicLoadSymbols` に `{Name:"dlopen", Category:"dynamic_load"}` が含まれ、`HasDynamicLoad: true` であること |
+| `dlsym` と `dlvsym` を両方持つ ELF | `DynamicLoadSymbols` に両シンボルが列挙されること |
+| ネットワークシンボルと `dlopen` を同時に持つ ELF | `DetectedSymbols` と `DynamicLoadSymbols` が独立して正しく設定されること |
+| dynamic_load シンボルを持たない ELF | `DynamicLoadSymbols` が空スライス（または `nil`）であり、`HasDynamicLoad: false` であること |
 
 ### 6.3 `runner` キャッシュ利用のユニットテスト
 

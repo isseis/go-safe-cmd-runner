@@ -154,7 +154,7 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryan
 
 ### 2.2 `machoanalyzer/standard_analyzer.go` の変更
 
-`hasDynamicLoad = true` とする箇所でシンボル名も収集し、返す `AnalysisOutput` の `DynamicLoadSymbols` に設定する。ELF と同様のパターンを適用する（`var dynamicLoadSyms []binaryanalyzer.DetectedSymbol` を宣言し、検出時に `append`）。
+本タスクのスコープ外（Mach-O のキャッシュ利用は別タスク）。`DynamicLoadSymbols []DetectedSymbol` フィールド追加によるビルドエラーが発生する場合のみ、最小限の修正（`DynamicLoadSymbols` を空のまま返す等）を行う。収集ロジックは実装しない。
 
 ## 3. `filevalidator` の変更
 
@@ -201,18 +201,39 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 
 `nil` を返すことで JSON 出力の `omitempty` と整合する。
 
-## 4. `fileanalysis.Store` の変更
+## 4. `fileanalysis` パッケージの変更（`network_symbol_store.go`）
 
-### 4.1 `LoadNetworkSymbolAnalysis` メソッド（`store.go`）
-
-`SyscallAnalysisStore.LoadSyscallAnalysis` の実装に倣う：
+`syscall_store.go` と同じ adapter パターンを適用する。`Store` に直接メソッドを生やさず、インターフェース + 非公開実装 + ファクトリの3点セットで構成する。
 
 ```go
-// LoadNetworkSymbolAnalysis loads the cached network symbol analysis for the given file.
-// Returns (nil, ErrHashMismatch) if the hash does not match the stored record.
-// Returns (nil, ErrNoNetworkSymbolAnalysis) if no network symbol analysis exists in the record.
-func (s *Store) LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error) {
-    record, err := s.loadRecord(filePath)
+// NetworkSymbolStore defines the interface for loading network symbol analysis results.
+// This interface uses fileanalysis types to avoid import cycles with the security package.
+type NetworkSymbolStore interface {
+    // LoadNetworkSymbolAnalysis loads the cached network symbol analysis for the given file.
+    // Returns (data, nil) if found and hash matches.
+    // Returns (nil, ErrRecordNotFound) if record not found.
+    // Returns (nil, ErrHashMismatch) if hash does not match.
+    // Returns (nil, ErrNoNetworkSymbolAnalysis) if no network symbol analysis exists.
+    // Returns (nil, error) on other errors (e.g., SchemaVersionMismatchError).
+    LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error)
+}
+
+// networkSymbolStore implements NetworkSymbolStore backed by Store.
+type networkSymbolStore struct {
+    store *Store
+}
+
+// NewNetworkSymbolStore creates a new NetworkSymbolStore backed by Store.
+func NewNetworkSymbolStore(store *Store) NetworkSymbolStore {
+    return &networkSymbolStore{store: store}
+}
+
+func (s *networkSymbolStore) LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error) {
+    resolvedPath, err := common.NewResolvedPath(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to resolve path: %w", err)
+    }
+    record, err := s.store.Load(resolvedPath)
     if err != nil {
         return nil, err
     }
@@ -230,10 +251,12 @@ func (s *Store) LoadNetworkSymbolAnalysis(filePath string, expectedHash string) 
 
 ### 5.1 `NetworkAnalyzer` 構造体の拡張（`network_analyzer.go`）
 
+`store` フィールドの型は `fileanalysis.NetworkSymbolStore` を直接使う（`security` パッケージ独自のインターフェースは定義しない）。インポートサイクルが発生しないことを事前に確認済み（`fileanalysis` → `security` の依存がないため）。
+
 ```go
 type NetworkAnalyzer struct {
     binaryAnalyzer binaryanalyzer.BinaryAnalyzer
-    store          NetworkSymbolStore  // nil の場合はキャッシュ不使用
+    store          fileanalysis.NetworkSymbolStore  // nil の場合はキャッシュ不使用
 }
 ```
 
@@ -247,18 +270,24 @@ func NewNetworkAnalyzer() *NetworkAnalyzer {
 
 // NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
 // If store is nil, falls back to live binary analysis.
-func NewNetworkAnalyzerWithStore(store NetworkSymbolStore) *NetworkAnalyzer {
+func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
     return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer(), store: store}
 }
 ```
 
 ### 5.3 store 注入チェーン
 
-| 呼び出し階層 | 変更内容 |
-|------------|---------|
-| `resource/normal_manager.go` | `risk.NewStandardEvaluator(analysisStore)` に変更（`analysisStore` は既存の `fileanalysis.Store` インスタンスを流用） |
-| `risk/evaluator.go` | `NewStandardEvaluator(store security.NetworkSymbolStore) Evaluator` に引数追加 |
-| `security/network_analyzer.go` | `NewNetworkAnalyzerWithStore(store)` を新規追加 |
+store は `runner.go` で生成され、コンストラクタ引数として下位層に渡す。
+
+| 呼び出し階層 | ファイル | 変更内容 |
+|------------|---------|---------|
+| 1. store 生成 | `runner/runner.go` | `createNormalResourceManager()` 内で `fileanalysis.NewStore(hashDir, getter)` から `*fileanalysis.Store` を生成し、`fileanalysis.NewNetworkSymbolStore(store)` で `fileanalysis.NetworkSymbolStore` に変換して `NewDefaultResourceManager()` に渡す |
+| 2. DefaultManager | `resource/default_manager.go` | `NewDefaultResourceManager()` シグネチャに `store fileanalysis.NetworkSymbolStore` を追加し、`NewNormalResourceManagerWithOutput()` に渡す |
+| 3. NormalManager | `resource/normal_manager.go` | `NewNormalResourceManagerWithOutput()` シグネチャに `store fileanalysis.NetworkSymbolStore` を追加し、`risk.NewStandardEvaluator(store)` に渡す |
+| 4. Evaluator | `risk/evaluator.go` | `NewStandardEvaluator(store fileanalysis.NetworkSymbolStore) Evaluator` に引数追加し、`security.NewNetworkAnalyzerWithStore(store)` を呼び出す |
+| 5. NetworkAnalyzer | `security/network_analyzer.go` | `NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore)` を本番コードに追加 |
+
+**注意**: `NewDefaultResourceManager()` のシグネチャ変更は呼び出し元（`runner.go`、各テストファイル）にも波及する。テストファイルでは `nil` を渡すことで既存動作を維持する。
 
 ### 5.4 `isNetworkViaBinaryAnalysis` の変更
 
@@ -295,13 +324,9 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 ### 5.5 テスト用ヘルパーの追加（`network_analyzer_test_helpers.go`）
 
-```go
-// NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a custom store for testing.
-// This function is only available in test builds.
-func NewNetworkAnalyzerWithStore(store NetworkSymbolStore) *NetworkAnalyzer {
-    return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer(), store: store}
-}
+`NewNetworkAnalyzerWithStore` は本番コード（`network_analyzer.go`）に定義済みのため、テストヘルパーには定義しない。テストヘルパーには BinaryAnalyzer と store を両方差し替えられる関数のみを追加する。
 
+```go
 // NewNetworkAnalyzerWithBinaryAnalyzerAndStore creates a NetworkAnalyzer
 // with both a custom BinaryAnalyzer and store for testing.
 // This function is only available in test builds.
@@ -315,14 +340,16 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 
 ## 6. テスト仕様
 
-### 6.1 アナライザーレベルのテスト（`elfanalyzer/standard_analyzer_test.go`、`machoanalyzer/standard_analyzer_test.go`）
+### 6.1 アナライザーレベルのテスト（`elfanalyzer/standard_analyzer_test.go`）
+
+`machoanalyzer` は本タスクのスコープ外のためテスト追加不要。
 
 | テストケース | 入力 | 期待結果 | 対応 AC |
 |------------|------|---------|--------|
-| `dlopen` のみを持つバイナリ | `dlopen` が `.dynsym` に存在 | `DynamicLoadSymbols: [{dlopen, dynamic_load}]`、`HasDynamicLoad: true`、`DetectedSymbols: nil` | AC-2 |
-| `dlsym` と `dlvsym` を両方持つバイナリ | `dlsym`, `dlvsym` が `.dynsym` に存在 | `DynamicLoadSymbols` に両シンボルが列挙される | AC-2 |
-| ネットワークシンボルと `dlopen` を同時に持つバイナリ | `socket`, `dlopen` が `.dynsym` に存在 | `DetectedSymbols` と `DynamicLoadSymbols` が独立して設定される | AC-2 |
-| dynamic_load シンボルを持たないバイナリ | dynamic_load シンボルなし | `DynamicLoadSymbols: nil`、`HasDynamicLoad: false` | AC-2 |
+| `dlopen` のみを持つ ELF | `dlopen` が `.dynsym` に存在 | `DynamicLoadSymbols: [{dlopen, dynamic_load}]`、`HasDynamicLoad: true`、`DetectedSymbols: nil` | AC-2 |
+| `dlsym` と `dlvsym` を両方持つ ELF | `dlsym`, `dlvsym` が `.dynsym` に存在 | `DynamicLoadSymbols` に両シンボルが列挙される | AC-2 |
+| ネットワークシンボルと `dlopen` を同時に持つ ELF | `socket`, `dlopen` が `.dynsym` に存在 | `DetectedSymbols` と `DynamicLoadSymbols` が独立して設定される | AC-2 |
+| dynamic_load シンボルを持たない ELF | dynamic_load シンボルなし | `DynamicLoadSymbols: nil`、`HasDynamicLoad: false` | AC-2 |
 
 ### 6.2 `record` 拡張のテスト（`filevalidator/validator_test.go`）
 
