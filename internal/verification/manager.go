@@ -364,11 +364,13 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 	return &summary
 }
 
-// GetFileAnalysisStore returns the underlying *fileanalysis.Store, or nil if not available.
-// Used by callers that share the same hash directory (e.g. NetworkSymbolStore in runner.go).
-func (m *Manager) GetFileAnalysisStore() *fileanalysis.Store {
+// GetNetworkSymbolStore returns a NetworkSymbolStore backed by the same hash directory,
+// or nil if not available (e.g. when fileValidator is a test mock).
+func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
 	if v, ok := m.fileValidator.(*filevalidator.Validator); ok {
-		return v.GetStore()
+		if s := v.GetStore(); s != nil {
+			return fileanalysis.NewNetworkSymbolStore(s)
+		}
 	}
 	return nil
 }

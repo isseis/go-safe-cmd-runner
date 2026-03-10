@@ -239,14 +239,16 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	// Obtain a NetworkSymbolStore from the verification manager if available.
-	// When no verification manager is present (e.g., tests without hash dir), store is nil
-	// and cache-based analysis is disabled (falls back to live binary analysis).
+	// Obtain a NetworkSymbolStore from the path resolver if available.
+	// When the resolver does not implement networkSymbolStoreProvider (e.g., test mocks
+	// without a hash dir), store is nil and cache-based analysis is disabled
+	// (falls back to live binary analysis).
 	var networkStore fileanalysis.NetworkSymbolStore
-	if vm, ok := pathResolver.(*verification.Manager); ok {
-		if s := vm.GetFileAnalysisStore(); s != nil {
-			networkStore = fileanalysis.NewNetworkSymbolStore(s)
-		}
+	type networkSymbolStoreProvider interface {
+		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
+	}
+	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
+		networkStore = p.GetNetworkSymbolStore()
 	}
 
 	resourceManager, err := resource.NewDefaultResourceManager(
