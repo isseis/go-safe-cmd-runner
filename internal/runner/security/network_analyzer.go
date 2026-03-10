@@ -153,7 +153,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 	switch output.Result {
 	case binaryanalyzer.NetworkDetected:
-		slog.Info("Binary analysis detected network symbols; set risk_level = \"medium\" or higher to allow execution",
+		slog.Debug("Binary analysis detected network symbols",
 			"path", cmdPath,
 			"symbols", formatDetectedSymbols(output.DetectedSymbols))
 		return true, isHighRisk
