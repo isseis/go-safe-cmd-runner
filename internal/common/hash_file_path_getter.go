@@ -1,3 +1,4 @@
+//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 // HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.

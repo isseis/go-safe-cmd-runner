@@ -1,3 +1,4 @@
+//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 // SyscallInfo represents information about a single detected syscall event.
