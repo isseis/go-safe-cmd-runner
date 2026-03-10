@@ -194,14 +194,14 @@
 
 FR-3.2.0 の内部実装変更（`checkDynamicSymbols()` でのシンボル名収集）を検証する。`machoanalyzer` は本タスクのスコープ外のためテスト追加不要。
 
-**対象ファイル:** `elfanalyzer/standard_analyzer_test.go`
+**対象ファイル:** `elfanalyzer/analyzer_test.go`（既存の `HasDynamicLoad` テストの置換と新規追加）
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| `dlopen` のみを持つ ELF | `AnalysisOutput.DynamicLoadSymbols` に `{Name:"dlopen", Category:"dynamic_load"}` が含まれ、`HasDynamicLoad: true` であること |
+| `dlopen` のみを持つ ELF | `AnalysisOutput.DynamicLoadSymbols` に `{Name:"dlopen", Category:"dynamic_load"}` が含まれること |
 | `dlsym` と `dlvsym` を両方持つ ELF | `DynamicLoadSymbols` に両シンボルが列挙されること |
 | ネットワークシンボルと `dlopen` を同時に持つ ELF | `DetectedSymbols` と `DynamicLoadSymbols` が独立して正しく設定されること |
-| dynamic_load シンボルを持たない ELF | `DynamicLoadSymbols` が空スライス（または `nil`）であり、`HasDynamicLoad: false` であること |
+| dynamic_load シンボルを持たない ELF | `DynamicLoadSymbols` が空スライス（または `nil`）であること |
 
 ### 6.3 `runner` キャッシュ利用のユニットテスト
 

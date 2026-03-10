@@ -109,9 +109,14 @@ Phase 4 は Phase 3 完了後に実施する。
   - `DynamicLoadSymbols` フィールドに設定して返す
   - 仕様: 詳細仕様書 §2.1
 
-### 2.2 `elfanalyzer` 単体テストの追加
+### 2.2 `elfanalyzer` 単体テストの更新
 
-- [ ] `elfanalyzer/standard_analyzer_test.go` にテストを追加
+- [ ] `elfanalyzer/analyzer_test.go` の既存 `HasDynamicLoad` テストを置換
+  - `TestHasDynamicLoad_ELF`（`analyzer_test.go:114`）: `HasDynamicLoad` アサーションを
+    `len(output.DynamicLoadSymbols) > 0` に更新
+  - `TestCheckDynamicSymbols_HasDynamicLoad`（`analyzer_test.go:146`）: `wantDynamicLoad bool`
+    フィールドと `HasDynamicLoad` アサーションを `DynamicLoadSymbols` ベースに置換
+- [ ] `elfanalyzer/analyzer_test.go` に新規テストケースを追加
   - `dlopen` のみを持つ ELF → `DynamicLoadSymbols: [{dlopen, dynamic_load}]`
   - `dlsym` と `dlvsym` を両方持つ ELF → 両シンボルが列挙
   - ネットワークシンボルと `dlopen` の同時検出 → 独立して設定

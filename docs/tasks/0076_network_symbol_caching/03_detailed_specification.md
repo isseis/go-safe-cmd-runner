@@ -328,7 +328,7 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 
 ## 6. テスト仕様
 
-### 6.1 アナライザーレベルのテスト（`elfanalyzer/standard_analyzer_test.go`）
+### 6.1 アナライザーレベルのテスト（`elfanalyzer/analyzer_test.go`）
 
 `machoanalyzer` は本タスクのスコープ外のためテスト追加不要。
 
