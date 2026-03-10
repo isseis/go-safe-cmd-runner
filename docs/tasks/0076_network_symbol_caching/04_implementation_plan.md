@@ -164,14 +164,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 3.1 `convertDetectedSymbols` ヘルパー関数の追加
 
-- [ ] `internal/filevalidator/validator.go` にヘルパー関数を追加
+- [x] `internal/filevalidator/validator.go` にヘルパー関数を追加
   - `binaryanalyzer.DetectedSymbol` → `fileanalysis.DetectedSymbolEntry` の変換
   - 空スライスの場合は `nil` を返す（`omitempty` との整合性）
   - 仕様: 詳細仕様書 §3.2
 
 ### 3.2 `saveHash` 関数の変更
 
-- [ ] `internal/filevalidator/validator.go` の `saveHash` を変更
+- [x] `internal/filevalidator/validator.go` の `saveHash` を変更
   - `AnalyzeNetworkSymbols` の `Result` で分岐
   - `NetworkDetected` / `NoNetworkSymbols` → `record.NetworkSymbolAnalysis` を設定
   - `StaticBinary` / `NotSupportedBinary` → 記録しない
@@ -181,7 +181,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 3.3 `record` 拡張のユニットテスト
 
-- [ ] `filevalidator/validator_test.go` にテストを追加
+- [x] `filevalidator/validator_test.go` にテストを追加
   - ネットワークシンボルありの動的 ELF → `HasNetworkSymbols: true`、
     `DetectedSymbols` に socket を含む
   - ネットワークシンボルなしの動的 ELF → `HasNetworkSymbols: false`、
@@ -195,8 +195,8 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 3.4 テスト確認
 
-- [ ] `make test` が成功すること
-- [ ] `make lint` が成功すること
+- [x] `make test` が成功すること
+- [x] `make lint` が成功すること
 
 ## Phase 4: `runner` 時のキャッシュ利用
 

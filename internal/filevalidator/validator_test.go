@@ -11,6 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1031,4 +1032,149 @@ func TestRecord_BinaryAnalyzerNil_NoError(t *testing.T) {
 
 	_, _, err = v.Record(targetFile, false)
 	assert.NoError(t, err, "Record should succeed when binaryAnalyzer is nil")
+}
+
+// stubBinaryAnalyzer is a test double for binaryanalyzer.BinaryAnalyzer.
+type stubBinaryAnalyzer struct {
+	result             binaryanalyzer.AnalysisResult
+	detectedSymbols    []binaryanalyzer.DetectedSymbol
+	dynamicLoadSymbols []binaryanalyzer.DetectedSymbol
+	err                error
+}
+
+func (s *stubBinaryAnalyzer) AnalyzeNetworkSymbols(_, _ string) binaryanalyzer.AnalysisOutput {
+	return binaryanalyzer.AnalysisOutput{
+		Result:             s.result,
+		DetectedSymbols:    s.detectedSymbols,
+		DynamicLoadSymbols: s.dynamicLoadSymbols,
+		Error:              s.err,
+	}
+}
+
+// recordWithBinaryAnalyzer is a test helper that records a file using the given stub analyzer.
+func recordWithBinaryAnalyzer(t *testing.T, stub *stubBinaryAnalyzer) (*fileanalysis.Record, error) {
+	t.Helper()
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetBinaryAnalyzer(stub)
+
+	_, _, recErr := v.Record(targetFile, false)
+	if recErr != nil {
+		return nil, recErr
+	}
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	return record, nil
+}
+
+func TestRecord_NetworkDetected_SetsNetworkSymbolAnalysis(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result: binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{
+			{Name: "socket", Category: "network"},
+		},
+	}
+	record, err := recordWithBinaryAnalyzer(t, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be set")
+	assert.True(t, record.NetworkSymbolAnalysis.HasNetworkSymbols)
+	require.Len(t, record.NetworkSymbolAnalysis.DetectedSymbols, 1)
+	assert.Equal(t, "socket", record.NetworkSymbolAnalysis.DetectedSymbols[0].Name)
+	assert.Empty(t, record.NetworkSymbolAnalysis.DynamicLoadSymbols)
+}
+
+func TestRecord_NoNetworkSymbols_SetsNetworkSymbolAnalysis(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result: binaryanalyzer.NoNetworkSymbols,
+	}
+	record, err := recordWithBinaryAnalyzer(t, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be set")
+	assert.False(t, record.NetworkSymbolAnalysis.HasNetworkSymbols)
+	assert.Empty(t, record.NetworkSymbolAnalysis.DetectedSymbols)
+}
+
+func TestRecord_DynamicLoadSymbols_Stored(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result: binaryanalyzer.NoNetworkSymbols,
+		dynamicLoadSymbols: []binaryanalyzer.DetectedSymbol{
+			{Name: "dlopen", Category: "dynamic_load"},
+		},
+	}
+	record, err := recordWithBinaryAnalyzer(t, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.NetworkSymbolAnalysis)
+	require.Len(t, record.NetworkSymbolAnalysis.DynamicLoadSymbols, 1)
+	assert.Equal(t, "dlopen", record.NetworkSymbolAnalysis.DynamicLoadSymbols[0].Name)
+	assert.Equal(t, "dynamic_load", record.NetworkSymbolAnalysis.DynamicLoadSymbols[0].Category)
+}
+
+func TestRecord_NotSupportedBinary_NetworkSymbolAnalysisNil(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result: binaryanalyzer.NotSupportedBinary,
+	}
+	record, err := recordWithBinaryAnalyzer(t, stub)
+	require.NoError(t, err)
+	assert.Nil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be nil for non-ELF")
+}
+
+func TestRecord_StaticBinary_NetworkSymbolAnalysisNil(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result: binaryanalyzer.StaticBinary,
+	}
+	record, err := recordWithBinaryAnalyzer(t, stub)
+	require.NoError(t, err)
+	assert.Nil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be nil for static binary")
+}
+
+func TestRecord_AnalysisError_RecordNotSaved(t *testing.T) {
+	stub := &stubBinaryAnalyzer{
+		result: binaryanalyzer.AnalysisError,
+		err:    errors.New("analysis failed"),
+	}
+	_, err := recordWithBinaryAnalyzer(t, stub)
+	assert.Error(t, err, "Record should fail when binaryAnalyzer returns AnalysisError")
+}
+
+func TestRecord_Force_OverwritesNetworkSymbolAnalysis(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// First record with network symbols detected.
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{
+			{Name: "socket", Category: "network"},
+		},
+	})
+	_, _, err = v.Record(targetFile, false)
+	require.NoError(t, err)
+
+	// Second record (force=true) with no network symbols: should overwrite.
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.NoNetworkSymbols,
+	})
+	_, _, err = v.Record(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.NetworkSymbolAnalysis)
+	assert.False(t, record.NetworkSymbolAnalysis.HasNetworkSymbols,
+		"NetworkSymbolAnalysis should be overwritten by second record")
+	assert.Empty(t, record.NetworkSymbolAnalysis.DetectedSymbols)
 }

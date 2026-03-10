@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
@@ -182,10 +183,22 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 		}
 
 		// Analyze binary symbols if analyzer is available.
-		// NetworkSymbolAnalysis will be written in Phase 3 implementation.
+		// Stores the result as NetworkSymbolAnalysis in the record.
 		if v.binaryAnalyzer != nil {
 			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
-			_ = output // output used in Phase 3
+			switch output.Result {
+			case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
+				record.NetworkSymbolAnalysis = &fileanalysis.NetworkSymbolAnalysisData{
+					AnalyzedAt:         time.Now(),
+					HasNetworkSymbols:  output.Result == binaryanalyzer.NetworkDetected,
+					DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
+					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+				}
+			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
+				// Static binary or unsupported format: do not record network symbol analysis.
+			case binaryanalyzer.AnalysisError:
+				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
+			}
 		}
 
 		return nil
@@ -453,4 +466,17 @@ func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager run
 		}
 		return content, nil
 	})
+}
+
+// convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to fileanalysis.DetectedSymbolEntry slice.
+// Returns nil for empty input to keep JSON output clean with omitempty.
+func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbolEntry {
+	if len(syms) == 0 {
+		return nil
+	}
+	entries := make([]fileanalysis.DetectedSymbolEntry, len(syms))
+	for i, s := range syms {
+		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
+	}
+	return entries
 }
