@@ -15,7 +15,7 @@ type NetworkSymbolStore interface {
 	// Returns (nil, ErrHashMismatch) if hash does not match.
 	// Returns (nil, ErrNoNetworkSymbolAnalysis) if no network symbol analysis exists.
 	// Returns (nil, error) on other errors.
-	LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error)
+	LoadNetworkSymbolAnalysis(filePath string, contentHash string) (*NetworkSymbolAnalysisData, error)
 }
 
 // networkSymbolStore implements NetworkSymbolStore backed by Store.
@@ -34,7 +34,7 @@ func NewNetworkSymbolStore(store *Store) NetworkSymbolStore {
 // Returns (nil, ErrHashMismatch) if hash does not match.
 // Returns (nil, ErrNoNetworkSymbolAnalysis) if no network symbol analysis exists.
 // Returns (nil, error) on other errors (e.g., schema mismatch).
-func (s *networkSymbolStore) LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error) {
+func (s *networkSymbolStore) LoadNetworkSymbolAnalysis(filePath string, contentHash string) (*NetworkSymbolAnalysisData, error) {
 	resolvedPath, err := common.NewResolvedPath(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve path: %w", err)
@@ -45,7 +45,7 @@ func (s *networkSymbolStore) LoadNetworkSymbolAnalysis(filePath string, expected
 		return nil, err
 	}
 
-	if record.ContentHash != expectedHash {
+	if record.ContentHash != contentHash {
 		return nil, ErrHashMismatch
 	}
 
