@@ -11,19 +11,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// stubBinaryAnalyzer is a minimal BinaryAnalyzer implementation for testing.
-type stubBinaryAnalyzer struct {
-	output binaryanalyzer.AnalysisOutput
-}
-
-func (s *stubBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) binaryanalyzer.AnalysisOutput {
-	return s.output
-}
 
 // testSafeReadFile is a helper function for tests to safely read files.
 // It enforces that the file is within the test directory.
@@ -1023,72 +1013,6 @@ func TestAnalyze_Force(t *testing.T) {
 	// Record with force=true — succeeds (updates the record).
 	_, _, err = v.Record(targetFile, true)
 	require.NoError(t, err, "force=true should overwrite existing record")
-}
-
-// TestRecord_HasDynamicLoad_True verifies that when BinaryAnalyzer returns
-// HasDynamicLoad=true, the record persists HasDynamicLoad=true.
-func TestRecord_HasDynamicLoad_True(t *testing.T) {
-	tempDir := safeTempDir(t)
-	hashDir := filepath.Join(tempDir, "hashes")
-	require.NoError(t, os.MkdirAll(hashDir, 0o700))
-
-	targetFile := filepath.Join(tempDir, "target.txt")
-	require.NoError(t, os.WriteFile(targetFile, []byte("content"), 0o644))
-
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		output: binaryanalyzer.AnalysisOutput{
-			Result:         binaryanalyzer.NoNetworkSymbols,
-			HasDynamicLoad: true,
-		},
-	})
-
-	_, _, err = v.Record(targetFile, false)
-	require.NoError(t, err)
-
-	record, err := v.LoadRecord(targetFile)
-	require.NoError(t, err)
-	assert.True(t, record.HasDynamicLoad,
-		"record should persist HasDynamicLoad=true from BinaryAnalyzer")
-}
-
-// TestRecord_HasDynamicLoad_WrittenWhenFalse verifies that when BinaryAnalyzer
-// returns HasDynamicLoad=false, the record persists HasDynamicLoad=false,
-// overwriting any stale true value from a previous record.
-func TestRecord_HasDynamicLoad_WrittenWhenFalse(t *testing.T) {
-	tempDir := safeTempDir(t)
-	hashDir := filepath.Join(tempDir, "hashes")
-	require.NoError(t, os.MkdirAll(hashDir, 0o700))
-
-	targetFile := filepath.Join(tempDir, "target.txt")
-	require.NoError(t, os.WriteFile(targetFile, []byte("content"), 0o644))
-
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-
-	// First record: HasDynamicLoad=true.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		output: binaryanalyzer.AnalysisOutput{HasDynamicLoad: true},
-	})
-	_, _, err = v.Record(targetFile, false)
-	require.NoError(t, err)
-
-	record, err := v.LoadRecord(targetFile)
-	require.NoError(t, err)
-	require.True(t, record.HasDynamicLoad)
-
-	// Second record with force=true and HasDynamicLoad=false: stale true must be overwritten.
-	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
-		output: binaryanalyzer.AnalysisOutput{HasDynamicLoad: false},
-	})
-	_, _, err = v.Record(targetFile, true)
-	require.NoError(t, err)
-
-	record, err = v.LoadRecord(targetFile)
-	require.NoError(t, err)
-	assert.False(t, record.HasDynamicLoad,
-		"HasDynamicLoad should be overwritten to false (no stale value)")
 }
 
 // TestRecord_BinaryAnalyzerNil_NoError verifies that Record() succeeds when

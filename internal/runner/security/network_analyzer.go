@@ -120,7 +120,7 @@ func hasNetworkArguments(args []string) bool {
 //   - isNetwork: true if confirmed network symbols were found or analysis failed (safety)
 //   - isHighRisk: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected
 //
-// HasDynamicLoad and network detection are independent signals.
+// DynamicLoadSymbols and network detection are independent signals.
 // A binary with both dlopen and socket will return (true, true).
 //
 // IMPORTANT: cmdPath is expected to be an absolute, symlink-resolved path,
@@ -144,7 +144,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// Perform binary analysis
 	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
 
-	if output.HasDynamicLoad {
+	if len(output.DynamicLoadSymbols) > 0 {
 		isHighRisk = true
 		slog.Info("Binary analysis detected dynamic load symbols; set risk_level = \"high\" or higher to allow execution",
 			"path", cmdPath,

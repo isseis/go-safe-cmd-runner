@@ -181,11 +181,11 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 			record.DynLibDeps = dynLibDeps // nil for non-ELF or static ELF (omitted in JSON)
 		}
 
-		// Analyze binary symbols for dynamic load detection if analyzer is available.
-		// Always write the result (true or false) to overwrite stale values.
+		// Analyze binary symbols if analyzer is available.
+		// NetworkSymbolAnalysis will be written in Phase 3 implementation.
 		if v.binaryAnalyzer != nil {
 			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
-			record.HasDynamicLoad = output.HasDynamicLoad
+			_ = output // output used in Phase 3
 		}
 
 		return nil

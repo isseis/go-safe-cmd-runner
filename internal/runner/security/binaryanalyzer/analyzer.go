@@ -66,10 +66,11 @@ type AnalysisOutput struct {
 	// Useful for logging and debugging purposes.
 	DetectedSymbols []DetectedSymbol
 
-	// HasDynamicLoad indicates that the binary imports dynamic library loading
-	// symbols (dlopen, dlsym, or dlvsym). This is set independently of Result
-	// and network symbol detection.
-	HasDynamicLoad bool
+	// DynamicLoadSymbols contains the dynamic library loading symbols found
+	// (dlopen, dlsym, or dlvsym). This is set independently of Result
+	// and network symbol detection. Use len(DynamicLoadSymbols) > 0 to
+	// determine if any dynamic load symbols were detected.
+	DynamicLoadSymbols []DetectedSymbol
 
 	// Error contains the error details when Result == AnalysisError.
 	// May also be set for other result types to provide diagnostic context

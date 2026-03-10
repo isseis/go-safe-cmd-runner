@@ -40,14 +40,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.1 `binaryanalyzer.AnalysisOutput` の変更
 
-- [ ] `internal/runner/security/binaryanalyzer/analyzer.go` を更新
+- [x] `internal/runner/security/binaryanalyzer/analyzer.go` を更新
   - `HasDynamicLoad bool` フィールドを削除
   - `DynamicLoadSymbols []DetectedSymbol` フィールドを追加
   - 仕様: 詳細仕様書 §1.1
 
 ### 1.2 `HasDynamicLoad` 参照箇所の修正
 
-- [ ] `HasDynamicLoad` を参照しているコード箇所を `len(DynamicLoadSymbols) > 0` に置換
+- [x] `HasDynamicLoad` を参照しているコード箇所を `len(DynamicLoadSymbols) > 0` に置換
   - `elfanalyzer/standard_analyzer.go`: `checkDynamicSymbols()` の返り値を修正
   - `machoanalyzer/standard_analyzer.go`: ビルド維持の最小限修正
   - `security/network_analyzer.go`: `output.HasDynamicLoad` の参照を修正
@@ -56,14 +56,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.3 `fileanalysis` スキーマ変更
 
-- [ ] `internal/fileanalysis/schema.go` を更新
+- [x] `internal/fileanalysis/schema.go` を更新
   - `NetworkSymbolAnalysisData` 構造体を追加
   - `DetectedSymbolEntry` 構造体を追加
   - `Record` から `HasDynamicLoad bool` フィールドを削除
   - `Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドを追加
   - `CurrentSchemaVersion` を 2 → 3 に更新
   - 仕様: 詳細仕様書 §1.2
-- [ ] `CurrentSchemaVersion` 変更に伴う既存テストのコメント・ヘルパー修正
+- [x] `CurrentSchemaVersion` 変更に伴う既存テストのコメント・ヘルパー修正
   - `verification/manager_test.go:1481` `createOldSchemaRecord` のコメントから
     「pre-dynlib schema」という説明を削除し、「schema_version 2 以前（dynlib 導入済みだが
     NetworkSymbolAnalysis 未導入）の旧レコード」と書き直す
@@ -79,13 +79,13 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.4 `fileanalysis` エラー変数の追加
 
-- [ ] `internal/fileanalysis/errors.go` を更新
+- [x] `internal/fileanalysis/errors.go` を更新
   - `ErrNoNetworkSymbolAnalysis` エラー変数を追加
   - 仕様: 詳細仕様書 §1.3
 
 ### 1.5 `fileanalysis.NetworkSymbolStore` の実装
 
-- [ ] `internal/fileanalysis/network_symbol_store.go` を新規作成
+- [x] `internal/fileanalysis/network_symbol_store.go` を新規作成
   - `NetworkSymbolStore` インターフェースを定義
   - `networkSymbolStore` 非公開実装を定義
   - `NewNetworkSymbolStore` ファクトリ関数を定義
@@ -94,7 +94,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.6 `NetworkSymbolStore` のユニットテスト
 
-- [ ] `internal/fileanalysis/network_symbol_store_test.go` を新規作成
+- [x] `internal/fileanalysis/network_symbol_store_test.go` を新規作成
   - `syscall_store_test.go` と対称なテストケースを実装する
   - 保存・取得の正常系（`HasNetworkSymbols: true`、`DetectedSymbols`、`DynamicLoadSymbols` が正しく往復すること）
   - ハッシュ不一致 → `ErrHashMismatch`
@@ -105,8 +105,8 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.7 ビルド確認
 
-- [ ] `make build` が成功すること
-- [ ] `make test` が成功すること（既存テストの `HasDynamicLoad` 参照修正含む）
+- [x] `make build` が成功すること
+- [x] `make test` が成功すること（既存テストの `HasDynamicLoad` 参照修正含む）
 
 ## Phase 2: アナライザー拡張（DynamicLoadSymbols 収集）
 

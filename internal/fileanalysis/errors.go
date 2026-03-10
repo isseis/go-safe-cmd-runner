@@ -19,6 +19,9 @@ var (
 
 	// ErrNoSyscallAnalysis indicates no syscall analysis data exists in the record.
 	ErrNoSyscallAnalysis = errors.New("no syscall analysis data")
+
+	// ErrNoNetworkSymbolAnalysis indicates no network symbol analysis data exists in the record.
+	ErrNoNetworkSymbolAnalysis = errors.New("no network symbol analysis data")
 )
 
 // SchemaVersionMismatchError indicates analysis record schema version mismatch.

@@ -317,8 +317,7 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 
 	recordedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 	originalRecord := &Record{
-		ContentHash:    "sha256:abc123",
-		HasDynamicLoad: true,
+		ContentHash: "sha256:abc123",
 		DynLibDeps: &DynLibDepsData{
 			RecordedAt: recordedAt,
 			Libs: []LibEntry{
@@ -341,7 +340,6 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 
-	assert.True(t, loadedRecord.HasDynamicLoad)
 	require.NotNil(t, loadedRecord.DynLibDeps)
 	assert.Equal(t, recordedAt, loadedRecord.DynLibDeps.RecordedAt)
 	require.Len(t, loadedRecord.DynLibDeps.Libs, 2)
@@ -355,34 +353,6 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	assert.Equal(t, "libc.so.6", lib1.SOName)
 	assert.Equal(t, "/lib/x86_64-linux-gnu/libc.so.6", lib1.Path)
 	assert.Equal(t, "sha256:cafebabe", lib1.Hash)
-}
-
-func TestStore_SaveAndLoad_HasDynamicLoadFalse(t *testing.T) {
-	tmpDir := commontesting.SafeTempDir(t)
-	analysisDir := filepath.Join(tmpDir, "analysis")
-
-	store, err := NewStore(analysisDir, &mockPathGetter{})
-	require.NoError(t, err)
-
-	testFile := filepath.Join(tmpDir, "test.bin")
-	err = os.WriteFile(testFile, []byte("test content"), 0o644)
-	require.NoError(t, err)
-
-	// HasDynamicLoad=false should round-trip correctly (omitempty means it won't be in JSON,
-	// but loading should still give false)
-	originalRecord := &Record{
-		ContentHash:    "sha256:abc123",
-		HasDynamicLoad: false,
-		DynLibDeps:     nil,
-	}
-	err = store.Save(common.ResolvedPath(testFile), originalRecord)
-	require.NoError(t, err)
-
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
-	require.NoError(t, err)
-
-	assert.False(t, loadedRecord.HasDynamicLoad)
-	assert.Nil(t, loadedRecord.DynLibDeps)
 }
 
 // TestStore_Update_OldSchemaAllowsOverwrite verifies that Store.Update allows
