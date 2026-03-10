@@ -67,6 +67,8 @@
 
 現在の `checkDynamicSymbols()` はシンボル名を保持しないため、`elfanalyzer/standard_analyzer.go` で dynamic_load シンボルの収集ロジックを追加する必要がある。`machoanalyzer/standard_analyzer.go` はビルドが通る最小限の変更のみ（収集ロジックの実装は対象外）。実装詳細は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
 
+### 3.3 （削除済み）
+
 ### 3.4 `record` コマンドの拡張
 
 #### FR-3.4.1: ネットワークシンボル解析の実行と記録
