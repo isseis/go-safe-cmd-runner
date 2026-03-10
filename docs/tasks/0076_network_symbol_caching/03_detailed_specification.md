@@ -374,3 +374,21 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | AC-3 | `runner` 時のキャッシュ利用と `isHighRisk` 導出 | § 4.1、§ 5.4 |
 | AC-4 | 旧スキーマの拒否（既存の `SchemaVersionMismatchError` 機構で対応） | § 1.2.3 |
 | AC-5 | 既存機能（`commandProfileDefinitions`、静的バイナリフロー、`DynLibDeps`）への非影響 | store が `nil` の場合のフォールバック（§ 5.2） |
+
+## 8. 変更ファイル一覧
+
+| ファイル | 変更種別 | 内容 |
+|---------|---------|------|
+| `internal/runner/security/binaryanalyzer/analyzer.go` | 変更 | `AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加し、`HasDynamicLoad bool` を削除 |
+| `internal/runner/security/elfanalyzer/standard_analyzer.go` | 変更 | `checkDynamicSymbols()` 内で dynamic_load シンボル名を収集し `AnalysisOutput.DynamicLoadSymbols` に設定 |
+| `internal/runner/security/machoanalyzer/standard_analyzer.go` | 変更（最小限） | `DynamicLoadSymbols` フィールド追加に伴うビルド維持のみ。収集ロジックの実装は対象外（別タスク） |
+| `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加（`DynamicLoadSymbols` フィールド含む）、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |
+| `internal/fileanalysis/errors.go` | 変更 | `ErrNoNetworkSymbolAnalysis` エラー変数を追加 |
+| `internal/fileanalysis/network_symbol_store.go` | 新規 | `syscall_store.go` と同じ adapter パターンで `NetworkSymbolStore` インターフェース・`networkSymbolStore` 非公開実装・`NewNetworkSymbolStore` ファクトリを定義 |
+| `internal/filevalidator/validator.go` | 変更 | `saveHash` 内の `binaryAnalyzer` 呼び出しを拡張、`NetworkSymbolAnalysis` を保存 |
+| `internal/runner/security/network_analyzer.go` | 変更 | `NetworkAnalyzer` に `NetworkSymbolStore` を追加、`isNetworkViaBinaryAnalysis` にキャッシュ参照ロジックを追加 |
+| `internal/runner/security/network_analyzer_test_helpers.go` | 変更 | store ありのテスト用ヘルパー追加 |
+| `internal/runner/risk/evaluator.go` | 変更 | `NewStandardEvaluator()` に `store fileanalysis.NetworkSymbolStore` 引数を追加 |
+| `internal/runner/resource/normal_manager.go` | 変更 | `NewNormalResourceManagerWithOutput()` シグネチャに `store fileanalysis.NetworkSymbolStore` 引数を追加し、`risk.NewStandardEvaluator(store)` に渡す |
+| `internal/runner/resource/default_manager.go` | 変更 | `NewDefaultResourceManager()` シグネチャに `store fileanalysis.NetworkSymbolStore` 引数を追加し、`NewNormalResourceManagerWithOutput()` に渡す |
+| `internal/runner/runner.go` | 変更 | `createNormalResourceManager()` 内で `fileanalysis.Store` を生成し `NewDefaultResourceManager()` に渡す |

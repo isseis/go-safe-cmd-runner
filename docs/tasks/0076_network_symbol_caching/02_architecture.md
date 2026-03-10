@@ -250,18 +250,4 @@ flowchart LR
 
 ## 6. 変更ファイル一覧
 
-| ファイル | 変更種別 | 内容 |
-|---------|---------|------|
-| `internal/runner/security/binaryanalyzer/analyzer.go` | 変更 | `AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加し、`HasDynamicLoad bool` を削除 |
-| `internal/runner/security/elfanalyzer/standard_analyzer.go` | 変更 | `checkDynamicSymbols()` 内で dynamic_load シンボル名を収集し `AnalysisOutput.DynamicLoadSymbols` に設定 |
-| `internal/runner/security/machoanalyzer/standard_analyzer.go` | 変更（最小限） | `DynamicLoadSymbols` フィールド追加に伴うビルド維持のみ。収集ロジックの実装は対象外（別タスク） |
-| `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加（`DynamicLoadSymbols` フィールド含む）、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |
-| `internal/fileanalysis/errors.go` | 変更 | `ErrNoNetworkSymbolAnalysis` エラー変数を追加 |
-| `internal/fileanalysis/network_symbol_store.go` | 新規 | `syscall_store.go` と同じ adapter パターンで `NetworkSymbolStore` インターフェース・`networkSymbolStore` 非公開実装・`NewNetworkSymbolStore` ファクトリを定義 |
-| `internal/filevalidator/validator.go` | 変更 | `saveHash` 内の `binaryAnalyzer` 呼び出しを拡張、`NetworkSymbolAnalysis` を保存 |
-| `internal/runner/security/network_analyzer.go` | 変更 | `NetworkAnalyzer` に `NetworkSymbolStore` を追加、`isNetworkViaBinaryAnalysis` にキャッシュ参照ロジックを追加 |
-| `internal/runner/security/network_analyzer_test_helpers.go` | 変更 | store ありのテスト用ヘルパー追加 |
-| `internal/runner/risk/evaluator.go` | 変更 | `NewStandardEvaluator()` に `store security.NetworkSymbolStore` 引数を追加 |
-| `internal/runner/resource/normal_manager.go` | 変更 | `NewNormalResourceManagerWithOutput()` シグネチャに `store fileanalysis.Store` 引数を追加し、`risk.NewStandardEvaluator(store)` に渡す |
-| `internal/runner/resource/default_manager.go` | 変更 | `NewDefaultResourceManager()` シグネチャに `store fileanalysis.Store` 引数を追加し、`NewNormalResourceManagerWithOutput()` に渡す |
-| `internal/runner/runner.go` | 変更 | `createNormalResourceManager()` 内で `fileanalysis.Store` を生成し `NewDefaultResourceManager()` に渡す |
+変更ファイルの詳細（ファイルパス・変更内容・シンボル名）は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md) §8）を参照。
