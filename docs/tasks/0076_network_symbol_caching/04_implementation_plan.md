@@ -281,7 +281,7 @@ Phase 4 は Phase 3 完了後に実施する。
     `BinaryAnalyzer.AnalyzeNetworkSymbols()` にフォールバック
   - キャッシュあり・`DynamicLoadSymbols` に `dlopen` を含む →
     `isHighRisk: true`
-  - キャッシュあり・`NetworkDetected` → `slog.Debug` に `DetectedSymbols` が出力されること（`BinaryAnalyzer` 未呼出でもログが欠落しないこと）
+  - キャッシュあり・`NetworkDetected` → `slog.Info` に `DetectedSymbols` が出力されること（`BinaryAnalyzer` 未呼出でもログが欠落しないこと）
   - 受け入れ条件: AC-3
 
 ### 4.8 テスト確認
