@@ -104,7 +104,7 @@
 
 #### FR-3.5.3: ログ出力の維持
 
-`NetworkDetected` 判定時の `slog.Info` ログ（タスク 0076 の前段で追加済み）を維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Info` に出力する。
+`NetworkDetected` 判定時の `slog.Debug` ログを維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Debug` に出力する。
 
 ## 4. 非機能要件
 
@@ -161,7 +161,7 @@
 - [ ] キャッシュ利用時に `NetworkDetected` が正しく判定されること（`HasNetworkSymbols: true` → `NetworkDetected`）
 - [ ] キャッシュ利用時に `isHighRisk`（`HasDynamicLoad` 相当）が `DynamicLoadSymbols` から正しく導出されること
 - [ ] `NetworkSymbolAnalysis` が未記録の場合に実行時解析にフォールバックすること
-- [ ] `slog.Info` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
+- [ ] `slog.Debug` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
 
 ### AC-4: スキーマ移行
 

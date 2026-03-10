@@ -252,7 +252,7 @@ Phase 4 は Phase 3 完了後に実施する。
     `BinaryAnalyzer.AnalyzeNetworkSymbols()` にフォールバック
   - キャッシュあり・`DynamicLoadSymbols` に `dlopen` を含む →
     `isHighRisk: true`
-  - キャッシュあり・`NetworkDetected` → `slog.Info` に `DetectedSymbols` が出力されること（`BinaryAnalyzer` 未呼出でもログが欠落しないこと）
+  - キャッシュあり・`NetworkDetected` → `slog.Debug` に `DetectedSymbols` が出力されること（`BinaryAnalyzer` 未呼出でもログが欠落しないこと）
   - 受け入れ条件: AC-3
 
 ### 4.8 テスト確認
@@ -268,7 +268,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 - [ ] `record` → `runner` の正常フロー
   - キャッシュを利用して正しくネットワーク判定されること
-  - キャッシュ利用時に `slog.Info` ログに `DetectedSymbols` が出力されること
+  - キャッシュ利用時に `slog.Debug` ログに `DetectedSymbols` が出力されること
   - 受け入れ条件: AC-3
 - [ ] 旧スキーマ（`schema_version: 2`）の記録で実行
   - `VerifyGroupFiles` が `SchemaVersionMismatchError` を返してブロックされること（`isNetworkViaBinaryAnalysis` まで到達しない）
