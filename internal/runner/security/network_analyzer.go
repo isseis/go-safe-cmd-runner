@@ -252,6 +252,11 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 }
 
 // convertNetworkSymbolEntries converts fileanalysis.DetectedSymbolEntry slice to binaryanalyzer.DetectedSymbol slice.
+//
+// NOTE: This is the inverse of convertDetectedSymbols in
+// internal/filevalidator/validator.go. Both functions map the same two fields
+// (Name, Category) between binaryanalyzer and fileanalysis types.
+// If either type gains or loses fields, update both functions together.
 func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbolEntry) []binaryanalyzer.DetectedSymbol {
 	if len(entries) == 0 {
 		return nil

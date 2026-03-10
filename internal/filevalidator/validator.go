@@ -472,6 +472,11 @@ func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager run
 
 // convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to fileanalysis.DetectedSymbolEntry slice.
 // Returns nil for empty input to keep JSON output clean with omitempty.
+//
+// NOTE: This is the inverse of convertNetworkSymbolEntries in
+// internal/runner/security/network_analyzer.go. Both functions map the same
+// two fields (Name, Category) between binaryanalyzer and fileanalysis types.
+// If either type gains or loses fields, update both functions together.
 func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbolEntry {
 	if len(syms) == 0 {
 		return nil
