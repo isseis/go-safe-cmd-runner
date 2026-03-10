@@ -196,6 +196,22 @@ if v.binaryAnalyzer != nil {
 }
 ```
 
+`convertDetectedSymbols` は `filevalidator` パッケージ内のパッケージプライベート関数として `validator.go`（または同パッケージの新ファイル）に定義する。`binaryanalyzer.DetectedSymbol` → `fileanalysis.DetectedSymbolEntry` の変換のみを担うシンプルなヘルパーであり、他パッケージへの公開は不要なためこの配置が適切である。
+
+```go
+// filevalidator パッケージ内（validator.go またはパッケージ内の別ファイル）
+func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbolEntry {
+    if len(syms) == 0 {
+        return nil
+    }
+    entries := make([]fileanalysis.DetectedSymbolEntry, len(syms))
+    for i, s := range syms {
+        entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
+    }
+    return entries
+}
+```
+
 ### 3.3 `fileanalysis.Store` の変更
 
 #### 3.3.1 `LoadNetworkSymbolAnalysis` メソッドの追加
@@ -210,9 +226,24 @@ func (s *Store) LoadNetworkSymbolAnalysis(filePath string, expectedHash string) 
 - `expectedHash` と `record.ContentHash` が一致しない場合は `ErrHashMismatch` を返す
 - `record.NetworkSymbolAnalysis` が `nil` の場合は `ErrNoNetworkSymbolAnalysis` を返す
 
+**`ErrNoNetworkSymbolAnalysis` の定義:**
+
+`ErrNoSyscallAnalysis` に倣い、`internal/fileanalysis/errors.go` の既存エラー変数と並べて追加する：
+
+```go
+// internal/fileanalysis/errors.go
+var (
+    ErrHashMismatch            = errors.New("file content hash mismatch")        // 既存
+    ErrNoSyscallAnalysis       = errors.New("no syscall analysis data")           // 既存
+    ErrNoNetworkSymbolAnalysis = errors.New("no network symbol analysis data")   // 追加
+)
+```
+
+変更ファイル一覧に `internal/fileanalysis/errors.go` を追加する（後述）。
+
 ### 3.4 `security` パッケージの変更
 
-#### 3.4.1 `NetworkAnalyzer` の拡張
+#### 3.4.1 `NetworkAnalyzer` の拡張と store 注入チェーン
 
 `NetworkAnalyzer` にストアへの参照を持たせる：
 
@@ -226,6 +257,31 @@ type NetworkSymbolStore interface {
     LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*fileanalysis.NetworkSymbolAnalysisData, error)
 }
 ```
+
+**store の注入チェーン:**
+
+現行の呼び出しは `normal_manager.go` → `risk.NewStandardEvaluator()` → `security.NewNetworkAnalyzer()` の3段になっている。store を注入するために以下の変更が必要：
+
+1. **`network_analyzer.go`** — `NewNetworkAnalyzer()` を `NewNetworkAnalyzerWithStore(store NetworkSymbolStore)` に置き換えるか、オプション引数を追加する。`store` が `nil` の場合はフォールバック動作（従来の実行時解析）を維持する。
+
+2. **`risk/evaluator.go`** — `NewStandardEvaluator()` に `store` 引数を追加し、`security.NewNetworkAnalyzer()` ではなく store を渡すコンストラクタを呼ぶ：
+   ```go
+   func NewStandardEvaluator(store security.NetworkSymbolStore) Evaluator {
+       return &StandardEvaluator{
+           networkAnalyzer: security.NewNetworkAnalyzerWithStore(store),
+       }
+   }
+   ```
+
+3. **`resource/normal_manager.go`** — `risk.NewStandardEvaluator()` の呼び出しに `fileanalysis.Store` を渡す：
+   ```go
+   riskEvaluator: risk.NewStandardEvaluator(analysisStore),
+   ```
+   `analysisStore` は `normal_manager.go` がすでに保持している `fileanalysis.Store` インスタンスを流用する（または同一パスから新規生成する）。
+
+**`network_analyzer_test_helpers.go` の対応:**
+
+テスト用ヘルパー `NewNetworkAnalyzerWithBinaryAnalyzer` は store なしの構築を担うが、store ありのテスト用ヘルパー `NewNetworkAnalyzerWithStore`（またはフル指定版）も追加する。
 
 #### 3.4.2 `isNetworkViaBinaryAnalysis` の変更
 
@@ -255,6 +311,15 @@ flowchart TD
     class LOAD new;
     class CHECK_STORE,CHECK_CACHE decision;
 ```
+
+**`cmdPath` / `contentHash` の引数整合性:**
+
+`isNetworkViaBinaryAnalysis(cmdPath string, contentHash string)` のシグネチャは変更しない。`cmdPath` と `contentHash` は呼び出し元 `IsNetworkOperation` から受け取った同一の値であり、以下のように両方の処理経路で同じ引数を使う：
+
+- キャッシュ経路: `store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)` — `cmdPath` でレコードを引き、`contentHash` でハッシュ整合性を検証する
+- フォールバック経路: `binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)` — 従来と同じ引数をそのまま渡す
+
+これにより、キャッシュ利用時とフォールバック時で `contentHash` の出所が同一であることが保証される。
 
 ## 4. データフロー
 
@@ -326,9 +391,14 @@ flowchart LR
 
 | ファイル | 変更種別 | 内容 |
 |---------|---------|------|
+| `internal/runner/security/binaryanalyzer/analyzer.go` | 変更 | `AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加 |
+| `internal/runner/security/elfanalyzer/standard_analyzer.go` | 変更 | `checkDynamicSymbols()` 内で dynamic_load シンボル名を収集し `AnalysisOutput.DynamicLoadSymbols` に設定 |
+| `internal/runner/security/machoanalyzer/standard_analyzer.go` | 変更 | 同様に dynamic_load シンボル名を収集し `AnalysisOutput.DynamicLoadSymbols` に設定 |
 | `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加（`DynamicLoadSymbols` フィールド含む）、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |
+| `internal/fileanalysis/errors.go` | 変更 | `ErrNoNetworkSymbolAnalysis` エラー変数を追加 |
 | `internal/fileanalysis/store.go` | 変更 | `LoadNetworkSymbolAnalysis()` メソッド追加 |
 | `internal/filevalidator/validator.go` | 変更 | `saveHash` 内の `binaryAnalyzer` 呼び出しを拡張、`NetworkSymbolAnalysis` を保存 |
 | `internal/runner/security/network_analyzer.go` | 変更 | `NetworkAnalyzer` に `NetworkSymbolStore` を追加、`isNetworkViaBinaryAnalysis` にキャッシュ参照ロジックを追加 |
-| `internal/runner/security/network_analyzer_test_helpers.go` | 変更 | テスト用ヘルパーの更新 |
-| `internal/runner/risk/evaluator.go` | 変更（可能性あり） | `NetworkAnalyzer` にストアを渡すコンストラクタ変更 |
+| `internal/runner/security/network_analyzer_test_helpers.go` | 変更 | store ありのテスト用ヘルパー追加 |
+| `internal/runner/risk/evaluator.go` | 変更 | `NewStandardEvaluator()` に `store security.NetworkSymbolStore` 引数を追加 |
+| `internal/runner/resource/normal_manager.go` | 変更 | `risk.NewStandardEvaluator()` 呼び出しに `fileanalysis.Store` を渡す |
