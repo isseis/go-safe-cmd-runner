@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -151,7 +152,9 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 	// Check cache first (when store is configured).
 	if a.store != nil {
-		if data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash); err == nil {
+		data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
+		switch {
+		case err == nil:
 			output := binaryanalyzer.AnalysisOutput{
 				DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
 				DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
@@ -162,9 +165,19 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 				output.Result = binaryanalyzer.NoNetworkSymbols
 			}
 			return handleAnalysisOutput(output, cmdPath)
+		case errors.Is(err, fileanalysis.ErrNoNetworkSymbolAnalysis) ||
+			errors.Is(err, fileanalysis.ErrHashMismatch) ||
+			errors.Is(err, fileanalysis.ErrRecordNotFound):
+			// Expected cache miss: fall through to live binary analysis.
+			// Old schema records are blocked earlier by VerifyGroupFiles.
+		default:
+			// Unexpected error (e.g. I/O failure, corrupted record): log a warning and
+			// fall through to live binary analysis so execution is not silently blocked,
+			// but make the error visible for diagnosis.
+			slog.Warn("unexpected error loading network symbol analysis cache; falling back to live analysis",
+				"path", cmdPath,
+				"error", err)
 		}
-		// Cache miss (ErrNoNetworkSymbolAnalysis, ErrHashMismatch, ErrRecordNotFound): fall through.
-		// Old schema records are blocked earlier by VerifyGroupFiles.
 	}
 
 	// Fallback: live binary analysis.

@@ -1178,3 +1178,81 @@ func TestRecord_Force_OverwritesNetworkSymbolAnalysis(t *testing.T) {
 		"NetworkSymbolAnalysis should be overwritten by second record")
 	assert.Empty(t, record.NetworkSymbolAnalysis.DetectedSymbols)
 }
+
+// TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis verifies that when
+// a binary previously recorded as a dynamic ELF (with NetworkSymbolAnalysis set) is
+// re-recorded with --force and the analyzer now returns StaticBinary, the stored
+// NetworkSymbolAnalysis is cleared to nil rather than left as stale data.
+func TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// First record: dynamic ELF with network symbols.
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{
+			{Name: "socket", Category: "network"},
+		},
+	})
+	_, _, err = v.Record(targetFile, false)
+	require.NoError(t, err)
+
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.NetworkSymbolAnalysis, "first record should have NetworkSymbolAnalysis")
+
+	// Second record (force=true): same binary now analysed as static — NetworkSymbolAnalysis must be nil.
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.StaticBinary,
+	})
+	_, _, err = v.Record(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr = v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	assert.Nil(t, record.NetworkSymbolAnalysis,
+		"NetworkSymbolAnalysis must be nil after re-recording as StaticBinary")
+}
+
+// TestRecord_Force_NetworkToNotSupportedBinary_ClearsNetworkSymbolAnalysis verifies the same
+// nil-transition for NotSupportedBinary (non-ELF / non-Mach-O binaries).
+func TestRecord_Force_NetworkToNotSupportedBinary_ClearsNetworkSymbolAnalysis(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// First record: dynamic ELF with network symbols.
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.NetworkDetected,
+		detectedSymbols: []binaryanalyzer.DetectedSymbol{
+			{Name: "socket", Category: "network"},
+		},
+	})
+	_, _, err = v.Record(targetFile, false)
+	require.NoError(t, err)
+
+	// Second record (force=true): now treated as unsupported format.
+	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
+		result: binaryanalyzer.NotSupportedBinary,
+	})
+	_, _, err = v.Record(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	assert.Nil(t, record.NetworkSymbolAnalysis,
+		"NetworkSymbolAnalysis must be nil after re-recording as NotSupportedBinary")
+}

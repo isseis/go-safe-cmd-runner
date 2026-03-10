@@ -195,7 +195,9 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 				}
 			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
-				// Static binary or unsupported format: do not record network symbol analysis.
+				// Static binary or unsupported format: clear any previously stored
+				// NetworkSymbolAnalysis to prevent stale data from an earlier record run.
+				record.NetworkSymbolAnalysis = nil
 			case binaryanalyzer.AnalysisError:
 				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
 			}
