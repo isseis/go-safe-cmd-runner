@@ -45,39 +45,9 @@
 
 #### FR-3.1.1: ネットワークシンボル解析結果の保存
 
-`fileanalysis.Record` に以下のフィールドを追加する：
+`fileanalysis.Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドを追加する。`NetworkSymbolAnalysisData` は解析日時・ネットワークシンボルの有無・検出シンボルリスト・dynamic_load シンボルリストを保持する。型定義の詳細は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
 
-```go
-// NetworkSymbolAnalysis contains the network symbol analysis result recorded at `record` time.
-// Only present for dynamic ELF binaries that have been analyzed.
-// nil means not analyzed (static binary, non-ELF, or old schema record).
-NetworkSymbolAnalysis *NetworkSymbolAnalysisData `json:"network_symbol_analysis,omitempty"`
-```
-
-```go
-type NetworkSymbolAnalysisData struct {
-    // AnalyzedAt is when the network symbol analysis was performed.
-    AnalyzedAt time.Time `json:"analyzed_at"`
-
-    // HasNetworkSymbols indicates whether any network-related symbols were detected.
-    HasNetworkSymbols bool `json:"has_network_symbols"`
-
-    // DetectedSymbols contains all network-related symbols found (excluding dynamic_load category).
-    // Empty when HasNetworkSymbols is false.
-    DetectedSymbols []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
-
-    // DynamicLoadSymbols contains the dynamic library loading symbols found (dlopen, dlsym, dlvsym).
-    // Empty when none were detected.
-    DynamicLoadSymbols []DetectedSymbolEntry `json:"dynamic_load_symbols,omitempty"`
-}
-
-type DetectedSymbolEntry struct {
-    Name     string `json:"name"`
-    Category string `json:"category"`
-}
-```
-
-`HasDynamicLoad bool` は `len(DynamicLoadSymbols) > 0` で導出できるため、独立したフィールドとして持たない。`AnalysisOutput.HasDynamicLoad` との変換は `len(DynamicLoadSymbols) > 0` で行う。
+`HasDynamicLoad bool` は `len(DynamicLoadSymbols) > 0` で導出できるため、独立したフィールドとして持たない。
 
 **注意**: 既存の `HasDynamicLoad bool` フィールド（直接 `Record` に存在するもの）は削除し、`NetworkSymbolAnalysis.DynamicLoadSymbols` に統合する（スキーマ整理）。
 
@@ -91,46 +61,11 @@ type DetectedSymbolEntry struct {
 
 #### FR-3.2.0: `DynamicLoadSymbols` フィールドの追加
 
-`binaryanalyzer.AnalysisOutput` に以下のフィールドを追加する：
-
-```go
-// DynamicLoadSymbols contains the dynamic library loading symbols found
-// (dlopen, dlsym, dlvsym). Set independently of Result and DetectedSymbols.
-DynamicLoadSymbols []DetectedSymbol
-```
-
-`HasDynamicLoad bool` は後方互換性のために残し、`len(DynamicLoadSymbols) > 0` と等価であることを保証する。`fileanalysis.NetworkSymbolAnalysisData` への変換時は `DynamicLoadSymbols` を使用する。
+`binaryanalyzer.AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加する。`HasDynamicLoad bool` は後方互換性のために残し、`len(DynamicLoadSymbols) > 0` と等価であることを保証する。
 
 **内部実装への波及（実装上の必須変更）:**
 
-現在の `checkDynamicSymbols()` は `binaryanalyzer.IsDynamicLoadSymbol(sym.Name)` が真の場合に `hasDynamicLoad = true` とするのみで、シンボル名を保持しない。`DynamicLoadSymbols` を正しく設定するため、以下のファイルを変更する：
-
-- `elfanalyzer/standard_analyzer.go` — `checkDynamicSymbols()` 内で `dlopen`/`dlsym`/`dlvsym` を検出したシンボルを `[]DetectedSymbol` に収集し、返す `AnalysisOutput.DynamicLoadSymbols` に設定する
-- `machoanalyzer/standard_analyzer.go` — 同様に、`hasDynamicLoad = true` とする箇所でシンボル名を収集し、`AnalysisOutput.DynamicLoadSymbols` に設定する
-
-変更後の `AnalysisOutput` 生成例（ELF）：
-
-```go
-var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
-for _, sym := range dynsyms {
-    if sym.Section == elf.SHN_UNDEF {
-        if cat, found := a.networkSymbols[sym.Name]; found {
-            detected = append(detected, ...)
-        }
-        if binaryanalyzer.IsDynamicLoadSymbol(sym.Name) {
-            dynamicLoadSyms = append(dynamicLoadSyms, binaryanalyzer.DetectedSymbol{
-                Name:     sym.Name,
-                Category: "dynamic_load",
-            })
-        }
-    }
-}
-return binaryanalyzer.AnalysisOutput{
-    ...,
-    HasDynamicLoad:     len(dynamicLoadSyms) > 0,
-    DynamicLoadSymbols: dynamicLoadSyms,
-}
-```
+現在の `checkDynamicSymbols()` はシンボル名を保持しないため、`elfanalyzer/standard_analyzer.go` と `machoanalyzer/standard_analyzer.go` の両ファイルで dynamic_load シンボルの収集ロジックを追加する必要がある。実装詳細は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
 
 ### 3.4 `record` コマンドの拡張
 
