@@ -200,7 +200,7 @@ Phase 4 は Phase 3 完了後に実施する。
   - `store != nil` の場合のみキャッシュを参照
   - キャッシュヒット → `AnalysisOutput` を構築して `handleAnalysisOutput` に渡す
   - キャッシュミス（`ErrNoNetworkSymbolAnalysis`、`ErrHashMismatch`、`ErrRecordNotFound`）→ 従来の実行時解析にフォールバック
-  - **`SchemaVersionMismatchError` はフォールバック禁止**。エラーをそのまま呼び出し元に返すこと（要件: AC-4）
+  - `SchemaVersionMismatchError` は `VerifyGroupFiles` が実行前にブロックするため、ここには到達しない。`isNetworkViaBinaryAnalysis` での追加処理は不要
   - 仕様: 詳細仕様書 §5.4
 
 ### 4.4 store 注入チェーンの実装
@@ -245,9 +245,8 @@ Phase 4 は Phase 3 完了後に実施する。
     `BinaryAnalyzer.AnalyzeNetworkSymbols()` にフォールバック
   - キャッシュあり・`DynamicLoadSymbols` に `dlopen` を含む →
     `isHighRisk: true`
-  - store が `SchemaVersionMismatchError` を返す → エラーを伝播し、フォールバック **しない**
   - キャッシュあり・`NetworkDetected` → `slog.Info` に `DetectedSymbols` が出力されること（`BinaryAnalyzer` 未呼出でもログが欠落しないこと）
-  - 受け入れ条件: AC-3, AC-4
+  - 受け入れ条件: AC-3
 
 ### 4.8 テスト確認
 
@@ -265,7 +264,7 @@ Phase 4 は Phase 3 完了後に実施する。
   - キャッシュ利用時に `slog.Info` ログに `DetectedSymbols` が出力されること
   - 受け入れ条件: AC-3
 - [ ] 旧スキーマ（`schema_version: 2`）の記録で実行
-  - `SchemaVersionMismatchError` でブロックされること
+  - `VerifyGroupFiles` が `SchemaVersionMismatchError` を返してブロックされること（`isNetworkViaBinaryAnalysis` まで到達しない）
   - 受け入れ条件: AC-4
 
 ### 5.2 既存機能への非影響確認

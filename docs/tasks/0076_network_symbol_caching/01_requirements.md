@@ -96,6 +96,8 @@
 
 キャッシュが利用できない場合（`NetworkSymbolAnalysis` が `nil`、`AnalysisError` 等）は現行の実行時解析にフォールバックする。スキーマバージョン不一致の場合は `SchemaVersionMismatchError` で実行を拒否し、フォールバックしない。
 
+> **実現層の注記**: `SchemaVersionMismatchError` によるブロックは `isNetworkViaBinaryAnalysis` ではなく `VerifyGroupFiles`（`verifyFileWithHash` → `store.Load`）で実現される。スキーマ不一致のレコードはファイルハッシュ検証の時点で実行前にエラーとなるため、`isNetworkViaBinaryAnalysis` まで到達しない。`isNetworkViaBinaryAnalysis` での追加ブロックは不要。
+
 #### FR-3.5.2: 静的バイナリの既存フロー維持
 
 静的 ELF バイナリは `SyscallAnalysis` ベースの既存フローを維持する。変更なし。

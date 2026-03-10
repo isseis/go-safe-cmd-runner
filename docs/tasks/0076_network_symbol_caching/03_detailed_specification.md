@@ -299,6 +299,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
             return handleAnalysisOutput(output, cmdPath)
         }
         // キャッシュミス（ErrNoNetworkSymbolAnalysis, ErrHashMismatch 等）はフォールバック
+        // SchemaVersionMismatchError はここに到達しない（VerifyGroupFiles が先にブロックする）
     }
 
     // フォールバック: 従来の実行時解析
