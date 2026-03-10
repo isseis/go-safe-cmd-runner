@@ -79,7 +79,17 @@ Phase 4 は Phase 3 完了後に実施する。
   - `syscall_store.go` と同じ adapter パターンを踏襲
   - 仕様: 詳細仕様書 §4
 
-### 1.6 ビルド確認
+### 1.6 `NetworkSymbolStore` のユニットテスト
+
+- [ ] `internal/fileanalysis/network_symbol_store_test.go` を新規作成
+  - `syscall_store_test.go` と対称なテストケースを実装する
+  - 保存・取得の正常系（`HasNetworkSymbols: true`、`DetectedSymbols`、`DynamicLoadSymbols` が正しく往復すること）
+  - ハッシュ不一致 → `ErrHashMismatch`
+  - `NetworkSymbolAnalysis` が `nil` のレコード → `ErrNoNetworkSymbolAnalysis`
+  - 存在しないファイルパス → `ErrRecordNotFound`
+  - 受け入れ条件: AC-1（エラー契約の保証）
+
+### 1.7 ビルド確認
 
 - [ ] `make build` が成功すること
 - [ ] `make test` が成功すること（既存テストの `HasDynamicLoad` 参照修正含む）
@@ -277,7 +287,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 | 受け入れ条件 | 要件 | テスト / 検証箇所 |
 |---|---|---|
-| AC-1: `fileanalysis.Record` フィールド追加 | FR-3.1.1, FR-3.1.2 | Phase 1（§1.3 型定義、§1.6 ビルド確認） |
+| AC-1: `fileanalysis.Record` フィールド追加 | FR-3.1.1, FR-3.1.2 | Phase 1（§1.3 型定義、§1.6 NetworkSymbolStore テスト、§1.7 ビルド確認） |
 | AC-2: `record` コマンドの拡張 | FR-3.2.0, FR-3.4.1, FR-3.4.2 | Phase 2（§2.2 アナライザーテスト）、Phase 3（§3.3 record テスト） |
 | AC-3: `runner` 時のキャッシュ利用 | FR-3.5.1, FR-3.5.3 | Phase 4（§4.7 キャッシュ利用テスト）、Phase 5（§5.1 統合テスト） |
 | AC-4: スキーマ移行 | FR-3.1.2 | Phase 5（§5.1 旧スキーマテスト） |
