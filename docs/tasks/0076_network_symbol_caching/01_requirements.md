@@ -168,7 +168,7 @@
 
 ### AC-4: スキーマ移行
 
-- [ ] `schema_version: 2` 以前の記録ファイルで `runner` 実行時に `SchemaVersionMismatchError` が返されること
+- [ ] `schema_version: 2` 以前の記録ファイルで `runner` 実行時に `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返し、実行前に停止すること
 - [ ] 既存のテストがすべてパスすること
 
 ### AC-5: 既存機能への非影響

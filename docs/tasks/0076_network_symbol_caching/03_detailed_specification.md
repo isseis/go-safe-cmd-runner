@@ -202,7 +202,7 @@ type NetworkSymbolStore interface {
     // Returns (nil, ErrRecordNotFound) if record not found.
     // Returns (nil, ErrHashMismatch) if hash does not match.
     // Returns (nil, ErrNoNetworkSymbolAnalysis) if no network symbol analysis exists.
-    // Returns (nil, error) on other errors (e.g., SchemaVersionMismatchError).
+    // Returns (nil, error) on other errors.
     LoadNetworkSymbolAnalysis(filePath string, expectedHash string) (*NetworkSymbolAnalysisData, error)
 }
 
@@ -299,7 +299,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
             return handleAnalysisOutput(output, cmdPath)
         }
         // キャッシュミス（ErrNoNetworkSymbolAnalysis, ErrHashMismatch 等）はフォールバック
-        // SchemaVersionMismatchError はここに到達しない（VerifyGroupFiles が先にブロックする）
+        // 旧スキーマはここに到達しない（VerifyGroupFiles が ErrGroupVerificationFailed で先にブロックする）
     }
 
     // フォールバック: 従来の実行時解析
@@ -364,7 +364,7 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | テストケース | 検証内容 | 対応 AC |
 |------------|---------|--------|
 | `record` → `runner` の正常フロー | キャッシュを利用して正しく判定される | AC-3 |
-| 旧スキーマ（`schema_version: 2`）の記録で実行 | `SchemaVersionMismatchError` でブロックされる | AC-4 |
+| 旧スキーマ（`schema_version: 2`）の記録で実行 | `VerifyGroupFiles` が group verification failed を返して実行前に停止する | AC-4 |
 
 ## 7. 受け入れ条件との対応
 
@@ -373,7 +373,7 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 | AC-1 | `NetworkSymbolAnalysisData` 型の定義と `Record` フィールド追加、`HasDynamicLoad` 削除、スキーマバージョン更新 | § 1.2、§ 1.3 |
 | AC-2 | `record` 時の `NetworkSymbolAnalysis` 記録 | § 2.1、§ 2.2、§ 3.1 |
 | AC-3 | `runner` 時のキャッシュ利用と `isHighRisk` 導出 | § 4.1、§ 5.4 |
-| AC-4 | 旧スキーマの拒否（既存の `SchemaVersionMismatchError` 機構で対応） | § 1.2.3 |
+| AC-4 | 旧スキーマの拒否（`VerifyGroupFiles` が `ErrGroupVerificationFailed` を内包する `verification.Error` を返す） | § 1.2.3 |
 | AC-5 | 既存機能（`commandProfileDefinitions`、静的バイナリフロー、`DynLibDeps`）への非影響 | store が `nil` の場合のフォールバック（§ 5.2） |
 
 ## 8. 変更ファイル一覧

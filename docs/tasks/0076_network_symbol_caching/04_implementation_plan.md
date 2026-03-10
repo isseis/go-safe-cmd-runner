@@ -271,7 +271,7 @@ Phase 4 は Phase 3 完了後に実施する。
   - キャッシュ利用時に `slog.Debug` ログに `DetectedSymbols` が出力されること
   - 受け入れ条件: AC-3
 - [ ] 旧スキーマ（`schema_version: 2`）の記録で実行
-  - `VerifyGroupFiles` が `SchemaVersionMismatchError` を返してブロックされること（`isNetworkViaBinaryAnalysis` まで到達しない）
+  - `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返して実行前に停止すること（`isNetworkViaBinaryAnalysis` まで到達しない）
   - 受け入れ条件: AC-4
 
 ### 5.2 既存機能への非影響確認
