@@ -17,5 +17,5 @@ func NewNormalResourceManager(
 	logger *slog.Logger,
 ) *NormalResourceManager {
 	// Delegate to NewNormalResourceManagerWithOutput with nil outputManager and 0 maxOutputSize
-	return NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger)
+	return NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger, nil)
 }

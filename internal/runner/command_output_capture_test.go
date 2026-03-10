@@ -97,6 +97,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 		nil, // dry-run options
 		outputMgr,
 		0, // max output size (0 = default)
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -271,6 +272,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 				nil,
 				outputMgr,
 				0,
+				nil,
 			)
 			require.NoError(t, err)
 

@@ -207,28 +207,28 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.0 `handleAnalysisOutput` ヘルパー関数の抽出
 
-- [ ] `internal/runner/security/network_analyzer.go` を変更
+- [x] `internal/runner/security/network_analyzer.go` を変更
   - `isNetworkViaBinaryAnalysis` 内のインライン `switch output.Result` ロジックを `handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) (isNetwork, isHighRisk bool)` として抽出する
   - 抽出後、`isNetworkViaBinaryAnalysis` 末尾は `return handleAnalysisOutput(output, cmdPath)` 一行になること
   - 動作変更なし（リファクタリングのみ）。`make test` が成功すること
 
 ### 4.1 `NetworkAnalyzer` 構造体の拡張
 
-- [ ] `internal/runner/security/network_analyzer.go` を変更
+- [x] `internal/runner/security/network_analyzer.go` を変更
   - `store fileanalysis.NetworkSymbolStore` フィールドを追加
   - `NewNetworkAnalyzerWithStore(store)` コンストラクタを本番コードに追加
   - 仕様: 詳細仕様書 §5.1, §5.2
 
 ### 4.2 `convertNetworkSymbolEntries` ヘルパー関数の追加
 
-- [ ] `internal/runner/security/network_analyzer.go` にヘルパーを追加
+- [x] `internal/runner/security/network_analyzer.go` にヘルパーを追加
   - `fileanalysis.DetectedSymbolEntry` → `binaryanalyzer.DetectedSymbol`
     の逆変換
   - 仕様: 詳細仕様書 §5.4
 
 ### 4.3 `isNetworkViaBinaryAnalysis` の変更
 
-- [ ] キャッシュ参照ロジックを先頭に追加
+- [x] キャッシュ参照ロジックを先頭に追加
   - `store != nil` の場合のみキャッシュを参照
   - キャッシュヒット → `AnalysisOutput` を構築して `handleAnalysisOutput` に渡す
   - キャッシュミス（`ErrNoNetworkSymbolAnalysis`、`ErrHashMismatch`、`ErrRecordNotFound`）→ 従来の実行時解析にフォールバック
@@ -237,25 +237,25 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.4 store 注入チェーンの実装
 
-- [ ] `internal/runner/risk/evaluator.go` を変更
+- [x] `internal/runner/risk/evaluator.go` を変更
   - `NewStandardEvaluator()` に `store fileanalysis.NetworkSymbolStore` 引数を追加
   - `security.NewNetworkAnalyzerWithStore(store)` を呼び出す
   - 仕様: 詳細仕様書 §5.3
-- [ ] `internal/runner/resource/normal_manager.go` を変更
+- [x] `internal/runner/resource/normal_manager.go` を変更
   - `NewNormalResourceManagerWithOutput()` シグネチャに
     `store fileanalysis.NetworkSymbolStore` 引数を追加
   - `risk.NewStandardEvaluator(store)` に渡す
-- [ ] `internal/runner/resource/default_manager.go` を変更
+- [x] `internal/runner/resource/default_manager.go` を変更
   - `NewDefaultResourceManager()` シグネチャに
     `store fileanalysis.NetworkSymbolStore` 引数を追加
   - `NewNormalResourceManagerWithOutput()` に渡す
-- [ ] `internal/runner/runner.go` を変更
+- [x] `internal/runner/runner.go` を変更
   - `createNormalResourceManager()` 内で `fileanalysis.Store` を生成し
     `fileanalysis.NewNetworkSymbolStore(store)` で変換して渡す
 
 ### 4.5 テスト用ヘルパーの統合
 
-- [ ] `internal/runner/security/network_analyzer_test_helpers.go` を更新
+- [x] `internal/runner/security/network_analyzer_test_helpers.go` を更新
   - 既存の `NewNetworkAnalyzerWithBinaryAnalyzer(analyzer)` を削除し、
     `newNetworkAnalyzer(analyzer binaryanalyzer.BinaryAnalyzer, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer`
     に一本化する（パッケージ内限定の小文字関数）
@@ -265,14 +265,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.6 シグネチャ変更に伴う呼び出し元修正
 
-- [ ] `NewDefaultResourceManager()` / `NewNormalResourceManagerWithOutput()` /
+- [x] `NewDefaultResourceManager()` / `NewNormalResourceManagerWithOutput()` /
   `NewStandardEvaluator()` のシグネチャ変更に伴い、`_test.go` および
   `//go:build test || performance` タグ付きヘルパー（`internal/runner/resource/testutil/helpers.go` 等）を含む
   全呼び出し元で `nil` を引数に追加
 
 ### 4.7 `runner` キャッシュ利用のユニットテスト
 
-- [ ] `security/command_analysis_test.go` にテストを追加
+- [x] `security/command_analysis_test.go` にテストを追加
   - キャッシュあり・`HasNetworkSymbols: true` → `NetworkDetected`、
     `BinaryAnalyzer` 未呼出
   - キャッシュあり・`HasNetworkSymbols: false` → `NoNetworkSymbols`、
@@ -286,8 +286,8 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.8 テスト確認
 
-- [ ] `make test` が成功すること
-- [ ] `make lint` が成功すること
+- [x] `make test` が成功すること
+- [x] `make lint` が成功すること
 
 ## Phase 5: 統合テスト & 最終確認
 

@@ -3,6 +3,7 @@
 package risk
 
 import (
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -18,8 +19,9 @@ type StandardEvaluator struct {
 }
 
 // NewStandardEvaluator creates a new standard risk evaluator.
-func NewStandardEvaluator() Evaluator {
-	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzer()}
+// Pass a non-nil store to enable cache-based network symbol analysis.
+func NewStandardEvaluator(store fileanalysis.NetworkSymbolStore) Evaluator {
+	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzerWithStore(store)}
 }
 
 // EvaluateRisk analyzes a command and returns its risk level

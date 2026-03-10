@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
@@ -18,6 +19,7 @@ const gosDarwin = "darwin"
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
 	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
+	store          fileanalysis.NetworkSymbolStore // nil means cache disabled
 }
 
 // NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the current platform.
@@ -35,6 +37,12 @@ func NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer {
 // On macOS, uses StandardMachOAnalyzer; on Linux and other platforms, uses StandardELFAnalyzer.
 func NewNetworkAnalyzer() *NetworkAnalyzer {
 	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer()}
+}
+
+// NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
+// If store is nil, falls back to live binary analysis.
+func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
+	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer(), store: store}
 }
 
 // IsNetworkOperation checks if the command performs network operations.
@@ -141,9 +149,31 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
 	// so no need for filepath.EvalSymlinks() here.
 
-	// Perform binary analysis
-	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
+	// Check cache first (when store is configured).
+	if a.store != nil {
+		if data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash); err == nil {
+			output := binaryanalyzer.AnalysisOutput{
+				DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
+				DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
+			}
+			if data.HasNetworkSymbols {
+				output.Result = binaryanalyzer.NetworkDetected
+			} else {
+				output.Result = binaryanalyzer.NoNetworkSymbols
+			}
+			return handleAnalysisOutput(output, cmdPath)
+		}
+		// Cache miss (ErrNoNetworkSymbolAnalysis, ErrHashMismatch, ErrRecordNotFound): fall through.
+		// Old schema records are blocked earlier by VerifyGroupFiles.
+	}
 
+	// Fallback: live binary analysis.
+	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
+	return handleAnalysisOutput(output, cmdPath)
+}
+
+// handleAnalysisOutput maps a binaryanalyzer.AnalysisOutput to (isNetwork, isHighRisk).
+func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) (isNetwork, isHighRisk bool) {
 	if len(output.DynamicLoadSymbols) > 0 {
 		isHighRisk = true
 		slog.Info("Binary analysis detected dynamic load symbols; set risk_level = \"high\" or higher to allow execution",
@@ -193,4 +223,16 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			"result", output.Result)
 		return true, isHighRisk
 	}
+}
+
+// convertNetworkSymbolEntries converts fileanalysis.DetectedSymbolEntry slice to binaryanalyzer.DetectedSymbol slice.
+func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbolEntry) []binaryanalyzer.DetectedSymbol {
+	if len(entries) == 0 {
+		return nil
+	}
+	syms := make([]binaryanalyzer.DetectedSymbol, len(entries))
+	for i, e := range entries {
+		syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: e.Category}
+	}
+	return syms
 }

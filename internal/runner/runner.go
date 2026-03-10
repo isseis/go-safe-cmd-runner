@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
@@ -238,6 +239,16 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
+	// Obtain a NetworkSymbolStore from the verification manager if available.
+	// When no verification manager is present (e.g., tests without hash dir), store is nil
+	// and cache-based analysis is disabled (falls back to live binary analysis).
+	var networkStore fileanalysis.NetworkSymbolStore
+	if vm, ok := pathResolver.(*verification.Manager); ok {
+		if s := vm.GetFileAnalysisStore(); s != nil {
+			networkStore = fileanalysis.NewNetworkSymbolStore(s)
+		}
+	}
+
 	resourceManager, err := resource.NewDefaultResourceManager(
 		opts.executor,
 		fs,
@@ -248,6 +259,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		&resource.DryRunOptions{}, // Empty dry-run options for normal mode
 		outputMgr,                 // Pass output manager with validator
 		maxOutputSize,             // Not used anymore (per-command limit is used instead)
+		networkStore,              // NetworkSymbolStore for cache-based analysis (nil disables cache)
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)

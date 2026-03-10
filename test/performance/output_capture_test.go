@@ -144,7 +144,7 @@ func TestOutputSizeLimit(t *testing.T) {
 	maxOutputSize := int64(1024) // 1KB limit
 
 	// Create resource manager with output capture support
-	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
+	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger, nil)
 	ctx := context.Background()
 	_, _, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -23,7 +24,7 @@ type DefaultResourceManager struct {
 
 // NewDefaultResourceManager creates a new DefaultResourceManager with output capture support.
 // If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64) (*DefaultResourceManager, error) {
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64, store fileanalysis.NetworkSymbolStore) (*DefaultResourceManager, error) {
 	// Create output manager if not provided
 	if outputMgr == nil {
 		// Create a security validator for output validation
@@ -36,7 +37,7 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 
 	mgr := &DefaultResourceManager{
 		mode:   mode,
-		normal: NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger),
+		normal: NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.

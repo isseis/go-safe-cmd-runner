@@ -146,6 +146,7 @@ func TestIntegration_SlackRedaction(t *testing.T) {
 		nil,
 		outputMgr,
 		0,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -267,6 +268,7 @@ func TestE2E_MultiHandlerLogging(t *testing.T) {
 		nil,
 		outputMgr,
 		0,
+		nil,
 	)
 	require.NoError(t, err)
 

@@ -364,6 +364,15 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 	return &summary
 }
 
+// GetFileAnalysisStore returns the underlying *fileanalysis.Store, or nil if not available.
+// Used by callers that share the same hash directory (e.g. NetworkSymbolStore in runner.go).
+func (m *Manager) GetFileAnalysisStore() *fileanalysis.Store {
+	if v, ok := m.fileValidator.(*filevalidator.Validator); ok {
+		return v.GetStore()
+	}
+	return nil
+}
+
 // verifyFileWithFallback attempts file verification with normal privileges first,
 // then falls back to privileged verification if permission errors occur
 // In dry-run mode, it records the verification result without returning errors
