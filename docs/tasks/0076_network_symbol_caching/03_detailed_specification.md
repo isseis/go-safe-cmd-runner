@@ -310,21 +310,25 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 `convertNetworkSymbolEntries` は `fileanalysis.DetectedSymbolEntry` → `binaryanalyzer.DetectedSymbol` の逆変換ヘルパーで、`security` パッケージ内のパッケージプライベート関数として定義する。
 
-### 5.5 テスト用ヘルパーの追加（`network_analyzer_test_helpers.go`）
+### 5.5 テスト用ヘルパーの統合（`network_analyzer_test_helpers.go`）
 
-`NewNetworkAnalyzerWithStore` は本番コード（`network_analyzer.go`）に定義済みのため、テストヘルパーには定義しない。テストヘルパーには BinaryAnalyzer と store を両方差し替えられる関数のみを追加する。
+既存の `NewNetworkAnalyzerWithBinaryAnalyzer` を削除し、`binaryAnalyzer` と `store` を両方受け取る単一の関数に一本化する。
+store が不要なテストは第 2 引数に `nil` を渡す。
+名前の爆発を避けるため、パッケージ内限定の小文字関数とする。
 
 ```go
-// NewNetworkAnalyzerWithBinaryAnalyzerAndStore creates a NetworkAnalyzer
-// with both a custom BinaryAnalyzer and store for testing.
+// newNetworkAnalyzer creates a NetworkAnalyzer with a custom BinaryAnalyzer and store for testing.
+// Pass nil for store to disable cache-based analysis.
 // This function is only available in test builds.
-func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
+func newNetworkAnalyzer(
     analyzer binaryanalyzer.BinaryAnalyzer,
     store fileanalysis.NetworkSymbolStore,
 ) *NetworkAnalyzer {
     return &NetworkAnalyzer{binaryAnalyzer: analyzer, store: store}
 }
 ```
+
+既存の呼び出し元（`command_analysis_test.go` 内 3 箇所）は `newNetworkAnalyzer(mock, nil)` に更新する。
 
 ## 6. テスト仕様
 

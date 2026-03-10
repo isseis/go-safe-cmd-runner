@@ -63,6 +63,19 @@ Phase 4 は Phase 3 完了後に実施する。
   - `Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドを追加
   - `CurrentSchemaVersion` を 2 → 3 に更新
   - 仕様: 詳細仕様書 §1.2
+- [ ] `CurrentSchemaVersion` 変更に伴う既存テストのコメント・ヘルパー修正
+  - `verification/manager_test.go:1481` `createOldSchemaRecord` のコメントから
+    「pre-dynlib schema」という説明を削除し、「schema_version 2 以前（dynlib 導入済みだが
+    NetworkSymbolAnalysis 未導入）の旧レコード」と書き直す
+  - `verification/manager_test.go:1494` の `// pre-dynlib schema (< CurrentSchemaVersion)`
+    コメントを同様に更新
+  - `verification/manager_test.go:1517–1519` `TestVerify_SchemaVersion` のコメントを
+    「old records predate dynlib tracking」から「old records predate network symbol caching
+    (schema_version < CurrentSchemaVersion)」に修正する
+  - `file_analysis_store_test.go:406` の `// older schema` コメントは内容的に正確なので
+    変更不要だが、`CurrentSchemaVersion - 1` が何を指すかのコンテキストを確認すること
+  - ランタイム動作（`manager.go:654` の `schemaErr.Actual < schemaErr.Expected` 比較）は
+    version 非依存のため修正不要
 
 ### 1.4 `fileanalysis` エラー変数の追加
 
@@ -124,12 +137,18 @@ Phase 4 は Phase 3 完了後に実施する。
   - dynamic_load シンボルなし → `DynamicLoadSymbols: nil`
   - 受け入れ条件: AC-2
 
-### 2.3 `machoanalyzer` のビルド維持修正
+### 2.3 `machoanalyzer` の `DynamicLoadSymbols` 移行
 
-- [ ] `machoanalyzer/standard_analyzer.go` のビルドが通ることを確認
-  - `DynamicLoadSymbols` フィールド追加に伴う最小限の修正のみ
-  - 収集ロジックの実装は対象外
+- [ ] `machoanalyzer/standard_analyzer.go` の dynamic load 検出意味論を `DynamicLoadSymbols` ベースへ移植
+  - 既存の `hasDynamicLoad bool` フラグ収集ロジック（`analyzeSlice` および
+    `analyzeAllFatSlices`）を `DynamicLoadSymbols []DetectedSymbol` 収集に置き換える
+  - fat binary 集約時のスライス間 OR 伝播（`hasDynamicLoad = true`）を
+    `DynamicLoadSymbols` の union に変更し、既存の「いずれかのスライスが dynamic load
+    シンボルを持てば集約結果も持つ」意味論を維持する
+  - 新機能の追加はしない。既存の macOS 高リスク判定を落とさないことを目的とする
   - 仕様: 詳細仕様書 §2.2
+- [ ] `machoanalyzer/standard_analyzer_test.go` の既存 `HasDynamicLoad` テストを
+  `DynamicLoadSymbols` ベースに置換（ELF 側と同様のパターン）
 
 ### 2.4 テスト確認
 
@@ -234,11 +253,14 @@ Phase 4 は Phase 3 完了後に実施する。
   - `createNormalResourceManager()` 内で `fileanalysis.Store` を生成し
     `fileanalysis.NewNetworkSymbolStore(store)` で変換して渡す
 
-### 4.5 テスト用ヘルパーの更新
+### 4.5 テスト用ヘルパーの統合
 
 - [ ] `internal/runner/security/network_analyzer_test_helpers.go` を更新
-  - `NewNetworkAnalyzerWithBinaryAnalyzerAndStore` ヘルパーの型を
-    `fileanalysis.NetworkSymbolStore` に合わせる
+  - 既存の `NewNetworkAnalyzerWithBinaryAnalyzer(analyzer)` を削除し、
+    `newNetworkAnalyzer(analyzer binaryanalyzer.BinaryAnalyzer, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer`
+    に一本化する（パッケージ内限定の小文字関数）
+  - store 不要なテストは第 2 引数に `nil` を渡す
+  - 既存の 3 呼び出し元（`command_analysis_test.go`）を `newNetworkAnalyzer(mock, nil)` に更新
   - 仕様: 詳細仕様書 §5.5
 
 ### 4.6 シグネチャ変更に伴う呼び出し元修正
