@@ -210,6 +210,15 @@ func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
 			wantResult:              binaryanalyzer.NoNetworkSymbols,
 			wantDynamicLoadSymNames: nil,
 		},
+		{
+			name: "dlsym and dlvsym both present",
+			symbols: []elf.Symbol{
+				{Name: "dlsym", Section: elf.SHN_UNDEF},
+				{Name: "dlvsym", Section: elf.SHN_UNDEF},
+			},
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: []string{"dlsym", "dlvsym"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -219,6 +228,9 @@ func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
 			var gotNames []string
 			for _, sym := range output.DynamicLoadSymbols {
 				gotNames = append(gotNames, sym.Name)
+				// All DynamicLoadSymbols must have category "dynamic_load"
+				assert.Equal(t, "dynamic_load", sym.Category,
+					"DynamicLoadSymbol %q should have category dynamic_load", sym.Name)
 			}
 			assert.Equal(t, tt.wantDynamicLoadSymNames, gotNames)
 		})

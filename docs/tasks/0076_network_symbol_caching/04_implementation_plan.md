@@ -117,7 +117,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 2.1 `elfanalyzer/standard_analyzer.go` の変更
 
-- [ ] `checkDynamicSymbols()` を変更
+- [x] `checkDynamicSymbols()` を変更
   - `hasDynamicLoad = true` の代わりに `dynamicLoadSyms` スライスに
     `DetectedSymbol{Name, Category:"dynamic_load"}` を収集
   - `DynamicLoadSymbols` フィールドに設定して返す
@@ -125,12 +125,12 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 2.2 `elfanalyzer` 単体テストの更新
 
-- [ ] `elfanalyzer/analyzer_test.go` の既存 `HasDynamicLoad` テストを置換
+- [x] `elfanalyzer/analyzer_test.go` の既存 `HasDynamicLoad` テストを置換
   - `TestHasDynamicLoad_ELF`（`analyzer_test.go:114`）: `HasDynamicLoad` アサーションを
     `len(output.DynamicLoadSymbols) > 0` に更新
   - `TestCheckDynamicSymbols_HasDynamicLoad`（`analyzer_test.go:146`）: `wantDynamicLoad bool`
     フィールドと `HasDynamicLoad` アサーションを `DynamicLoadSymbols` ベースに置換
-- [ ] `elfanalyzer/analyzer_test.go` に新規テストケースを追加
+- [x] `elfanalyzer/analyzer_test.go` に新規テストケースを追加
   - `dlopen` のみを持つ ELF → `DynamicLoadSymbols: [{dlopen, dynamic_load}]`
   - `dlsym` と `dlvsym` を両方持つ ELF → 両シンボルが列挙
   - ネットワークシンボルと `dlopen` の同時検出 → 独立して設定
@@ -139,7 +139,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 2.3 `machoanalyzer` の `DynamicLoadSymbols` 移行
 
-- [ ] `machoanalyzer/standard_analyzer.go` の dynamic load 検出意味論を `DynamicLoadSymbols` ベースへ移植
+- [x] `machoanalyzer/standard_analyzer.go` の dynamic load 検出意味論を `DynamicLoadSymbols` ベースへ移植
   - 既存の `hasDynamicLoad bool` フラグ収集ロジック（`analyzeSlice` および
     `analyzeAllFatSlices`）を `DynamicLoadSymbols []DetectedSymbol` 収集に置き換える
   - fat binary 集約時のスライス間 OR 伝播（`hasDynamicLoad = true`）を
@@ -147,13 +147,13 @@ Phase 4 は Phase 3 完了後に実施する。
     シンボルを持てば集約結果も持つ」意味論を維持する
   - 新機能の追加はしない。既存の macOS 高リスク判定を落とさないことを目的とする
   - 仕様: 詳細仕様書 §2.2
-- [ ] `machoanalyzer/standard_analyzer_test.go` の既存 `HasDynamicLoad` テストを
-  `DynamicLoadSymbols` ベースに置換（ELF 側と同様のパターン）
+- [x] `machoanalyzer/standard_analyzer_test.go` の既存 `HasDynamicLoad` テストを
+  `DynamicLoadSymbols` ベースに置換（ELF 側と同様のパターン。テストファイルに該当テストなし）
 
 ### 2.4 テスト確認
 
-- [ ] `make test` が成功すること
-- [ ] `make lint` が成功すること
+- [x] `make test` が成功すること
+- [x] `make lint` が成功すること
 
 ## Phase 3: `record` 時のキャッシュ保存
 
