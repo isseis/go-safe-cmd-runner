@@ -88,8 +88,9 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	hasSVC, err := containsSVCInstruction(f)
 	if err != nil {
 		return binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("svc scan failed: %w", err),
+			Result:             binaryanalyzer.AnalysisError,
+			DynamicLoadSymbols: dynamicLoadSyms,
+			Error:              fmt.Errorf("svc scan failed: %w", err),
 		}
 	}
 	if hasSVC {
