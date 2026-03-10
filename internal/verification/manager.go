@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"debug/elf"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,16 +10,21 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // Manager provides file verification capabilities
 type Manager struct {
 	hashDir                     string
 	fs                          common.FileSystem
+	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
+	dynlibVerifier              *dynlibanalysis.DynLibVerifier // initialized once at construction
 	security                    *security.Validator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -468,12 +474,18 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 		return nil, err
 	}
 
+	safeFS := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+
 	manager := &Manager{
 		hashDir:                     hashDir,
 		fs:                          opts.fs,
+		safeFS:                      safeFS,
 		isDryRun:                    opts.isDryRun,
 		skipHashDirectoryValidation: opts.skipHashDirectoryValidation,
 	}
+
+	// Initialize dynamic library verifier (parses /etc/ld.so.cache once at startup).
+	manager.dynlibVerifier = dynlibanalysis.NewDynLibVerifier(safeFS)
 
 	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
@@ -613,4 +625,88 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 	}
 
 	return nil
+}
+
+// VerifyCommandDynLibDeps performs dynamic library integrity verification for a command binary.
+// It is called separately from VerifyGroupFiles to avoid the need to track
+// which files in the verification set are command files vs explicit verify_files entries.
+func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
+	return m.verifyDynLibDeps(cmdPath)
+}
+
+// verifyDynLibDeps performs dynamic library integrity verification when a
+// DynLibDeps snapshot is present in the analysis record.
+func (m *Manager) verifyDynLibDeps(cmdPath string) error {
+	if m.fileValidator == nil {
+		return nil
+	}
+
+	record, err := m.fileValidator.LoadRecord(cmdPath)
+	if err != nil {
+		// No hash record: binary is not hash-verified, so dynlib check is not applicable.
+		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return nil
+		}
+		// Old schema record (schema_version < CurrentSchemaVersion): predates dynlib
+		// tracking. Treat as no DynLibDeps data available and skip the check.
+		// Records with a newer schema (Actual > Expected) are rejected as usual.
+		var schemaErr *fileanalysis.SchemaVersionMismatchError
+		if errors.As(err, &schemaErr) && schemaErr.Actual < schemaErr.Expected {
+			slog.Warn("Skipping dynlib verification: record predates dynlib tracking; re-run 'record' to enable",
+				"cmd_path", cmdPath,
+				"record_schema_version", schemaErr.Actual,
+				"current_schema_version", schemaErr.Expected)
+			return nil
+		}
+		return fmt.Errorf("failed to load record for dynlib verification: %w", err)
+	}
+
+	if record.DynLibDeps != nil {
+		// DynLibDeps is recorded: verify library hashes.
+		// m.dynlibVerifier is initialized once at Manager construction.
+		return m.dynlibVerifier.Verify(record.DynLibDeps)
+	}
+
+	// DynLibDeps is not recorded: check if this is a dynamically linked ELF binary.
+	hasDynDeps, err := m.hasDynamicLibraryDeps(cmdPath)
+	if err != nil {
+		return fmt.Errorf("failed to check dynamic library dependencies: %w", err)
+	}
+
+	if hasDynDeps {
+		// ELF binary without DynLibDeps record → requires re-recording.
+		return &dynlibanalysis.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+	}
+
+	// Non-ELF binary (or static/no-dependency ELF) without DynLibDeps → normal.
+	return nil
+}
+
+// hasDynamicLibraryDeps checks if the file at the given path is an ELF binary
+// that has at least one DT_NEEDED entry (i.e., dynamically linked).
+// Static ELFs and ELFs with no DT_NEEDED entries return (false, nil).
+//
+// Errors are classified as follows:
+//   - SafeOpenFile failure (I/O error, permission denied, file not found) → (false, err): propagated to caller
+//   - elf.NewFile failure (not an ELF, bad magic)                         → (false, nil): file is not an ELF binary
+func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
+	file, err := m.safeFS.SafeOpenFile(path, os.O_RDONLY, 0)
+	if err != nil {
+		// I/O error or permission denied: propagate, do not silently skip dynlib check.
+		return false, fmt.Errorf("failed to open binary for ELF inspection: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	elfFile, err := elf.NewFile(file)
+	if err != nil {
+		// Not an ELF binary (bad magic, unsupported format, etc.).
+		return false, nil
+	}
+	defer func() { _ = elfFile.Close() }()
+
+	needed, err := elfFile.DynString(elf.DT_NEEDED)
+	if err != nil || len(needed) == 0 {
+		return false, nil
+	}
+	return true, nil
 }

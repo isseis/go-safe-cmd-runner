@@ -360,6 +360,42 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
 }
 
+// TestProcessEnvImport_ForbiddenVariable tests that dynamic-linker control variables cannot be imported.
+func TestProcessEnvImport_ForbiddenVariable(t *testing.T) {
+	tests := []struct {
+		name   string
+		sysVar string
+		sysVal string
+	}{
+		{
+			name:   "LD_LIBRARY_PATH",
+			sysVar: "LD_LIBRARY_PATH",
+			sysVal: "/some/path",
+		},
+		{
+			name:   "LD_PRELOAD",
+			sysVar: "LD_PRELOAD",
+			sysVal: "/evil.so",
+		},
+		{
+			name:   "LD_AUDIT",
+			sysVar: "LD_AUDIT",
+			sysVal: "/audit.so",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fromEnv := []string{"Val=" + tt.sysVar}
+			allowlist := []string{tt.sysVar}
+			systemEnv := map[string]string{tt.sysVar: tt.sysVal}
+
+			_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "global")
+			require.Error(t, err)
+			assert.ErrorIs(t, err, config.ErrForbiddenEnvVar)
+		})
+	}
+}
+
 // TestProcessVars_DuplicateDefinition tests duplicate variable detection in vars
 // Note: With map[string]any, duplicate keys are inherently impossible in Go,
 // so this test is no longer applicable and has been removed.

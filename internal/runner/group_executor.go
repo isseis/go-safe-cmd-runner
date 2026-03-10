@@ -373,6 +373,27 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		}
 	}
 
+	// Verify dynamic library dependencies for each command binary.
+	// This is done after VerifyGroupFiles to ensure command files themselves
+	// have already been hash-verified by the time we check their libraries.
+	for _, cmd := range runtimeGroup.Commands {
+		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
+		if resolveErr != nil {
+			slog.Warn("Path resolution failed during dynlib verification; skipping dynlib check for this command",
+				"group", runnertypes.ExtractGroupName(runtimeGroup),
+				"command", cmd.ExpandedCmd,
+				"error", resolveErr)
+			continue
+		}
+		if dlErr := ge.verificationManager.VerifyCommandDynLibDeps(resolvedPath); dlErr != nil {
+			slog.Error("Dynamic library verification failed",
+				"group", runnertypes.ExtractGroupName(runtimeGroup),
+				"command", resolvedPath,
+				"error", dlErr)
+			return dlErr
+		}
+	}
+
 	return nil
 }
 

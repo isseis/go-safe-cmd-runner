@@ -126,24 +126,28 @@ func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 // Error Handling:
 //   - ErrRecordNotFound: creates a new record
 //   - RecordCorruptedError: creates a new record (overwriting corrupted data)
-//   - SchemaVersionMismatchError: returns error without overwriting
-//     (preserves forward/backward compatibility until migration strategy is defined)
+//   - SchemaVersionMismatchError (Actual < Expected): old schema; treat as not found,
+//     allow overwrite so that `record --force` can migrate records to the current version
+//   - SchemaVersionMismatchError (Actual > Expected): future schema written by a newer
+//     binary; refuse to overwrite to preserve forward compatibility
 func (s *Store) Update(filePath common.ResolvedPath, updateFn func(*Record) error) error {
 	// Try to load existing record
 	record, err := s.Load(filePath)
 	if err != nil {
-		if errors.As(err, new(*SchemaVersionMismatchError)) {
-			// Do not overwrite records with different schema versions.
-			// This prevents accidental data loss when a record was created by a
-			// newer version (forward compatibility) or uses an old schema that
-			// requires migration.
-			return fmt.Errorf("cannot update record: %w", err)
-		}
-
-		if errors.Is(err, ErrRecordNotFound) || errors.As(err, new(*RecordCorruptedError)) {
+		var schemaErr *SchemaVersionMismatchError
+		switch {
+		case errors.As(err, &schemaErr):
+			if schemaErr.Actual > schemaErr.Expected {
+				// Future schema: do NOT overwrite (forward compatibility protection)
+				return fmt.Errorf("cannot update record: %w", err)
+			}
+			// Older schema (e.g. v1 record, current binary expects v2):
+			// allow --force to overwrite by treating it as a fresh record.
+			record = &Record{}
+		case errors.Is(err, ErrRecordNotFound) || errors.As(err, new(*RecordCorruptedError)):
 			// Create a new record if it's not found or if the existing one is corrupted.
 			record = &Record{}
-		} else {
+		default:
 			// For any other unknown error, fail safely.
 			return fmt.Errorf("failed to load existing record: %w", err)
 		}

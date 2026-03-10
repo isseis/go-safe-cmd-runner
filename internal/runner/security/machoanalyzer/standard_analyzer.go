@@ -60,6 +60,7 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	}
 
 	var detected []binaryanalyzer.DetectedSymbol
+	hasDynamicLoad := false
 	for _, sym := range symbols {
 		normalized := normalizeSymbolName(sym)
 		if cat, found := a.networkSymbols[normalized]; found {
@@ -68,12 +69,16 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 				Category: string(cat),
 			})
 		}
+		if binaryanalyzer.IsDynamicLoadSymbol(normalized) {
+			hasDynamicLoad = true
+		}
 	}
 
 	if len(detected) > 0 {
 		return binaryanalyzer.AnalysisOutput{
 			Result:          binaryanalyzer.NetworkDetected,
 			DetectedSymbols: detected,
+			HasDynamicLoad:  hasDynamicLoad,
 		}
 	}
 
@@ -86,12 +91,13 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	}
 	if hasSVC {
 		return binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("binary analysis: %w", ErrDirectSyscall),
+			Result:         binaryanalyzer.AnalysisError,
+			HasDynamicLoad: hasDynamicLoad,
+			Error:          fmt.Errorf("binary analysis: %w", ErrDirectSyscall),
 		}
 	}
 
-	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
+	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols, HasDynamicLoad: hasDynamicLoad}
 }
 
 // analyzeAllFatSlices analyzes every slice in a Fat binary and returns the most
@@ -104,14 +110,20 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 func (a *StandardMachOAnalyzer) analyzeAllFatSlices(fat *macho.FatFile) binaryanalyzer.AnalysisOutput {
 	var worstError binaryanalyzer.AnalysisOutput
 	analyzedAny := false
+	hasDynamicLoad := false
 
 	for i := range fat.Arches {
 		slice := fat.Arches[i].File
 		result := a.analyzeSlice(slice)
 
+		if result.HasDynamicLoad {
+			hasDynamicLoad = true
+		}
+
 		switch result.Result {
 		case binaryanalyzer.NetworkDetected:
-			// Highest severity — return immediately.
+			// Highest severity — return immediately (preserve HasDynamicLoad).
+			result.HasDynamicLoad = hasDynamicLoad
 			return result
 		case binaryanalyzer.AnalysisError:
 			// Record but keep scanning; a later slice might be NetworkDetected.
@@ -128,10 +140,11 @@ func (a *StandardMachOAnalyzer) analyzeAllFatSlices(fat *macho.FatFile) binaryan
 	}
 
 	if worstError.Result == binaryanalyzer.AnalysisError {
+		worstError.HasDynamicLoad = hasDynamicLoad
 		return worstError
 	}
 
-	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
+	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols, HasDynamicLoad: hasDynamicLoad}
 }
 
 // AnalyzeNetworkSymbols implements binaryanalyzer.BinaryAnalyzer.

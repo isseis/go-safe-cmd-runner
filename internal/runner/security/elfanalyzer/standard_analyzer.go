@@ -227,8 +227,16 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		return a.handleStaticBinary(path, file, contentHash)
 	}
 
-	// Step 5: Check for network symbols
+	// Step 5: Check for network symbols and dynamic load symbols
+	return a.checkDynamicSymbols(dynsyms)
+}
+
+// checkDynamicSymbols scans the given ELF symbol list for network-related and
+// dynamic-load symbols. It only considers symbols in the undefined section
+// (i.e. imported from shared libraries).
+func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryanalyzer.AnalysisOutput {
 	var detected []binaryanalyzer.DetectedSymbol
+	hasDynamicLoad := false
 	for _, sym := range dynsyms {
 		// Only check undefined symbols (imported from shared libraries)
 		// Defined symbols are exported, not imported
@@ -239,6 +247,9 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 					Category: string(cat),
 				})
 			}
+			if binaryanalyzer.IsDynamicLoadSymbol(sym.Name) {
+				hasDynamicLoad = true
+			}
 		}
 	}
 
@@ -246,11 +257,13 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		return binaryanalyzer.AnalysisOutput{
 			Result:          binaryanalyzer.NetworkDetected,
 			DetectedSymbols: detected,
+			HasDynamicLoad:  hasDynamicLoad,
 		}
 	}
 
 	return binaryanalyzer.AnalysisOutput{
-		Result: binaryanalyzer.NoNetworkSymbols,
+		Result:         binaryanalyzer.NoNetworkSymbols,
+		HasDynamicLoad: hasDynamicLoad,
 	}
 }
 

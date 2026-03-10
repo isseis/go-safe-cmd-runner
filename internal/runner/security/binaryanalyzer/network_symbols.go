@@ -1,6 +1,9 @@
 package binaryanalyzer
 
-import "maps"
+import (
+	"maps"
+	"slices"
+)
 
 // SymbolCategory represents the category of a network-related symbol.
 type SymbolCategory string
@@ -17,6 +20,9 @@ const (
 
 	// CategoryDNS represents DNS resolution functions.
 	CategoryDNS SymbolCategory = "dns"
+
+	// CategoryDynamicLoad represents dynamic library loading functions (dlopen/dlsym/dlvsym).
+	CategoryDynamicLoad SymbolCategory = "dynamic_load"
 )
 
 // networkSymbolRegistry contains the default set of network-related symbols.
@@ -129,4 +135,30 @@ func IsNetworkSymbol(name string) (SymbolCategory, bool) {
 // Useful for testing and documentation.
 func SymbolCount() int {
 	return len(networkSymbolRegistry)
+}
+
+// dynamicLoadSymbolRegistry contains symbols for dynamic library loading.
+var dynamicLoadSymbolRegistry = map[string]struct{}{
+	"dlopen": {},
+	"dlsym":  {},
+	"dlvsym": {},
+}
+
+// IsDynamicLoadSymbol returns true if the given symbol name is a dynamic library
+// loading function (dlopen, dlsym, or dlvsym).
+func IsDynamicLoadSymbol(name string) bool {
+	_, found := dynamicLoadSymbolRegistry[name]
+	return found
+}
+
+// DynamicLoadSymbolNames returns the sorted list of dynamic-load symbol names
+// registered in dynamicLoadSymbolRegistry. Use this to build log messages or
+// documentation so that they automatically stay in sync with the registry.
+func DynamicLoadSymbolNames() []string {
+	names := make([]string, 0, len(dynamicLoadSymbolRegistry))
+	for name := range dynamicLoadSymbolRegistry {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }

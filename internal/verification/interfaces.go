@@ -9,6 +9,7 @@ import (
 type ManagerInterface interface {
 	ResolvePath(path string) (string, error)
 	VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Result, error)
+	VerifyCommandDynLibDeps(cmdPath string) error
 }
 
 // Ensure Manager implements ManagerInterface

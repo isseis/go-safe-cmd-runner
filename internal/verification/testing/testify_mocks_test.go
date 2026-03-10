@@ -79,3 +79,15 @@ func TestMockManager_VerifyGroupFiles_NilResult(t *testing.T) {
 	assert.Equal(t, expectedErr, err)
 	mockManager.AssertExpectations(t)
 }
+
+func TestMockManager_VerifyCommandDynLibDeps(t *testing.T) {
+	mockManager := new(verificationtesting.MockManager)
+	expectedErr := errors.New("dynlib verification error")
+
+	mockManager.On("VerifyCommandDynLibDeps", "/usr/bin/test").Return(expectedErr)
+
+	err := mockManager.VerifyCommandDynLibDeps("/usr/bin/test")
+
+	assert.Equal(t, expectedErr, err)
+	mockManager.AssertExpectations(t)
+}

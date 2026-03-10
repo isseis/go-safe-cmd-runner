@@ -303,3 +303,126 @@ func TestNewStore_NotADirectory(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not a directory")
 }
+
+func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	recordedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	originalRecord := &Record{
+		ContentHash:    "sha256:abc123",
+		HasDynamicLoad: true,
+		DynLibDeps: &DynLibDepsData{
+			RecordedAt: recordedAt,
+			Libs: []LibEntry{
+				{
+					SOName: "libssl.so.3",
+					Path:   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+					Hash:   "sha256:deadbeef",
+				},
+				{
+					SOName: "libc.so.6",
+					Path:   "/lib/x86_64-linux-gnu/libc.so.6",
+					Hash:   "sha256:cafebabe",
+				},
+			},
+		},
+	}
+	err = store.Save(common.ResolvedPath(testFile), originalRecord)
+	require.NoError(t, err)
+
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	require.NoError(t, err)
+
+	assert.True(t, loadedRecord.HasDynamicLoad)
+	require.NotNil(t, loadedRecord.DynLibDeps)
+	assert.Equal(t, recordedAt, loadedRecord.DynLibDeps.RecordedAt)
+	require.Len(t, loadedRecord.DynLibDeps.Libs, 2)
+
+	lib0 := loadedRecord.DynLibDeps.Libs[0]
+	assert.Equal(t, "libssl.so.3", lib0.SOName)
+	assert.Equal(t, "/usr/lib/x86_64-linux-gnu/libssl.so.3", lib0.Path)
+	assert.Equal(t, "sha256:deadbeef", lib0.Hash)
+
+	lib1 := loadedRecord.DynLibDeps.Libs[1]
+	assert.Equal(t, "libc.so.6", lib1.SOName)
+	assert.Equal(t, "/lib/x86_64-linux-gnu/libc.so.6", lib1.Path)
+	assert.Equal(t, "sha256:cafebabe", lib1.Hash)
+}
+
+func TestStore_SaveAndLoad_HasDynamicLoadFalse(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// HasDynamicLoad=false should round-trip correctly (omitempty means it won't be in JSON,
+	// but loading should still give false)
+	originalRecord := &Record{
+		ContentHash:    "sha256:abc123",
+		HasDynamicLoad: false,
+		DynLibDeps:     nil,
+	}
+	err = store.Save(common.ResolvedPath(testFile), originalRecord)
+	require.NoError(t, err)
+
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	require.NoError(t, err)
+
+	assert.False(t, loadedRecord.HasDynamicLoad)
+	assert.Nil(t, loadedRecord.DynLibDeps)
+}
+
+// TestStore_Update_OldSchemaAllowsOverwrite verifies that Store.Update allows
+// overwriting a record with an older schema version (Actual < Expected).
+// This enables `record --force` to migrate records to the current schema version.
+func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	// Create test file
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// Write a record with the previous schema version (simulating a v1 record)
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	oldVersionRecord := map[string]interface{}{
+		"schema_version": CurrentSchemaVersion - 1, // older schema
+		"file_path":      testFile,
+		"content_hash":   "sha256:oldvalue",
+		"updated_at":     time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(oldVersionRecord, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	// Update should succeed by allowing overwrite of old schema record
+	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+		record.ContentHash = "sha256:newvalue"
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Load and verify the record was overwritten with new schema
+	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	require.NoError(t, err)
+	assert.Equal(t, CurrentSchemaVersion, loadedRecord.SchemaVersion)
+	assert.Equal(t, "sha256:newvalue", loadedRecord.ContentHash)
+}

@@ -27,6 +27,8 @@
 - **対象外**: 静的リンクされたバイナリ（`.dynsym` がないもの）
 - **対象外**: macOS Mach-O バイナリ（タスク 0073 で対応済み）
 - **対象外**: スクリプトファイル
+- **対象外**: `DT_RPATH` を持つ ELF バイナリ（エラーとして処理中断。`DT_RUNPATH` への移行を推奨）
+- **対象外**: `ld.so.cache` の改竄（root 権限が必要であり、より直接的な攻撃手段が存在するためスコープ外）
 
 ## 2. 用語定義
 
@@ -35,10 +37,9 @@
 | `DT_NEEDED` | ELF の動的セクション（`.dynamic`）に記録される依存ライブラリ名。`ldd` コマンドが読み取る情報の元データ |
 | ライブラリパス解決 | `DT_NEEDED` のライブラリ名（例: `libssl.so.3`）から実際のファイルパスを決定する処理。`ldd` 相当 |
 | `DynLibDeps` | 本タスクで `fileanalysis.Record` に追加する依存ライブラリスナップショット |
-| `DT_RPATH` | ELF に埋め込まれた古い形式のライブラリ検索パス。`DT_RUNPATH` が存在しない場合のみ有効。**適用スコープが直接依存と全間接依存に及ぶ**（継承あり）。現代では非推奨 |
-| `DT_RUNPATH` | ELF に埋め込まれた新しい形式のライブラリ検索パス。**適用スコープはそのファイルの直接依存のみ**（継承なし）。`DT_RPATH` より優先される |
-| `LD_LIBRARY_PATH` | 実行時ライブラリ検索パスを指定する環境変数。`record` 時は使用しない。`runner` 実行時の第 2 段階検証では使用する（後述） |
-| 解決コンテキスト | ライブラリパスを解決する際に基準となる情報。具体的には「どの ELF（`ParentPath`）の `DT_NEEDED` から解決したか」。同一 `SOName` でも親 ELF が異なれば `RPATH`/`RUNPATH`/`$ORIGIN` が異なり、解決結果が変わり得る |
+| `DT_RPATH` | ELF に埋め込まれた古い形式のライブラリ検索パス。現代では非推奨。**本システムではサポートせず、検出した場合はエラーとする** |
+| `DT_RUNPATH` | ELF に埋め込まれた新しい形式のライブラリ検索パス。**適用スコープはそのファイルの直接依存のみ**（継承なし） |
+| `LD_LIBRARY_PATH` | 実行時ライブラリ検索パスを指定する環境変数。`record` 時は使用しない。runner 実行前に常にクリアされる |
 
 ## 3. 機能要件
 
@@ -48,46 +49,22 @@
 
 ELF バイナリの `.dynamic` セクションから `DT_NEEDED` エントリを読み取り、依存ライブラリ名のリスト（例: `["libssl.so.3", "libc.so.6"]`）を取得できること。Go 標準ライブラリの `debug/elf` を使用する（`elf.File.DynString(elf.DT_NEEDED)` 相当）。
 
-#### FR-3.1.2: ライブラリパスの解決順序と RPATH/RUNPATH の適用スコープ
+#### FR-3.1.2: ライブラリパスの解決順序
 
 `DT_NEEDED` のライブラリ名から実際のファイルパスを決定する際、以下の優先順位で解決すること。これは Linux の動的リンカー（`ld.so`）の仕様に準拠する（`ld.so(8)` 参照）：
 
-1. **`DT_RPATH`** （`DT_RUNPATH` が存在しない場合のみ有効、適用スコープに注意）
-2. **`LD_LIBRARY_PATH`** （後述の通り `record` 時は使用しない）
-3. **`DT_RUNPATH`** （適用スコープに注意）
-4. **`/etc/ld.so.cache`**
-5. **デフォルトパス**: 実行バイナリの ELF ヘッダから判定したアーキテクチャに応じた標準ライブラリディレクトリ（FR-3.1.2a 参照）
+1. **`LD_LIBRARY_PATH`** （`record` 時は使用しない）
+2. **`DT_RUNPATH`**
+3. **`/etc/ld.so.cache`**
+4. **デフォルトパス**: 実行バイナリの ELF ヘッダから判定したアーキテクチャに応じた標準ライブラリディレクトリ（FR-3.1.2a 参照）
 
-**`DT_RPATH` と `DT_RUNPATH` の適用スコープの違い（重要）**:
-
-| 属性 | 適用スコープ | `$ORIGIN` の展開基準 |
-|------|------------|-------------------|
-| `DT_RPATH` | **そのファイル自身の直接依存 + 全間接依存**（継承あり） | そのエントリを持つ ELF のディレクトリ |
-| `DT_RUNPATH` | **そのファイル自身の直接依存のみ**（継承なし） | そのエントリを持つ ELF のディレクトリ |
-
-具体的には、`RPATH` は間接依存の解決にも使われるが、`RUNPATH` は使われない。
-
-**間接依存の解決に適用する検索パスの決定ルール**:
-
-ライブラリ `A`（`ParentPath = A.so`）の `DT_NEEDED` として `B.so` を解決する際に使う検索パスの構築は以下の通り：
-
-1. **`A.so` 自身の `DT_RPATH`**（`A.so` に `DT_RUNPATH` がない場合のみ）
-2. **呼び出し元チェーンを遡って継承される `DT_RPATH`**: `A.so` の親、さらにその親... と遡り、`DT_RUNPATH` を持たない ELF の `DT_RPATH` を順に追加する（`DT_RUNPATH` を持つ ELF に到達した時点で継承を打ち切る）
-3. **`LD_LIBRARY_PATH`**（`record` 時は使用しない）
-4. **`A.so` 自身の `DT_RUNPATH`**
-5. **`/etc/ld.so.cache`**
-6. **デフォルトパス**
+**`DT_RPATH` について**: `DT_RPATH` を持つ ELF バイナリ・共有ライブラリを検出した場合は `ErrDTRPATHNotSupported` エラーを返し、`record` を中断する。`DT_RUNPATH` への移行を推奨する。`DT_RPATH` はスコープが直接依存と全間接依存に及ぶため挙動が複雑であり、本システムではサポートしない。
 
 **`LD_LIBRARY_PATH` の扱い**:
 
-`record` 実行時と `runner` 実行時でパス解決の `LD_LIBRARY_PATH` の扱いを意図的に変える：
+`record` 時は `LD_LIBRARY_PATH` を**使用しない**。`LD_LIBRARY_PATH` はユーザーの実行環境に依存し、整合性検証の基準として不適切なためである。`record` は管理者がコントロールされた環境で実行することを前提とし、バイナリの絶対パスのみを信頼する。
 
-| フェーズ | `LD_LIBRARY_PATH` の使用 | 理由 |
-|---------|------------------------|------|
-| `record` 時 | **使用しない** | `LD_LIBRARY_PATH` はユーザーの実行環境に依存し、整合性検証の基準として不適切。`record` は管理者がコントロールされた環境で実行することを前提とし、バイナリの絶対パスのみを信頼する |
-| `runner` 実行時（第 2 段階検証） | **使用する** | `runner` 実行時に `ld.so` が実際に選択するパスを模倣する必要がある。`LD_LIBRARY_PATH` が設定されている場合、`ld.so` はそのパスを優先するため、検証もこれを反映しなければ攻撃ベクトルが残る |
-
-この非対称な扱いにより、「`record` 時に記録された正規パス」と「`runner` 実行時に `ld.so` が実際にロードするパス」が一致することを保証できる。`runner` 実行時に `LD_LIBRARY_PATH` で別パスが挿入された場合、第 2 段階でパス不一致として検出される。
+`runner` は `LD_LIBRARY_PATH` を**常にクリアして子プロセスを起動する**。`env_import` で `LD_LIBRARY_PATH` を設定しようとするとエラーとなる。これにより、`LD_LIBRARY_PATH` を用いたパスハイジャック攻撃は適用外となり、ハッシュ照合のみで整合性を保証できる。
 
 #### FR-3.1.2a: デフォルトパスの定義
 
@@ -103,13 +80,13 @@ multiarch ディレクトリ（例: `/lib/x86_64-linux-gnu`）を先に試みる
 
 #### FR-3.1.3: `$ORIGIN` の展開
 
-`DT_RPATH` / `DT_RUNPATH` に含まれる `$ORIGIN` トークンを、**そのエントリを持つ ELF ファイル自身**のディレクトリパスに展開すること。
+`DT_RUNPATH` に含まれる `$ORIGIN` トークンを、**そのエントリを持つ ELF ファイル自身**のディレクトリパスに展開すること。
 
 例:
-- `/usr/bin/foo` の `RPATH` が `$ORIGIN/../lib` → `/usr/bin/../lib` = `/usr/lib` として解決
+- `/usr/bin/foo` の `RUNPATH` が `$ORIGIN/../lib` → `/usr/bin/../lib` = `/usr/lib` として解決
 - `/opt/app/lib/libssl.so.3` の `RUNPATH` が `$ORIGIN` → `/opt/app/lib` として解決（間接依存の解決に使われる場合、この `.so` 自身のディレクトリが基準）
 
-**注意**: `$ORIGIN` の展開は「その `RPATH`/`RUNPATH` エントリを持つファイルのディレクトリ」であり、解決対象の依存ライブラリのディレクトリでも、バイナリ本体のディレクトリでもない。`RPATH` 継承が発生する場合も、継承元 ELF のディレクトリが `$ORIGIN` の基準となる。
+**注意**: `$ORIGIN` の展開は「その `RUNPATH` エントリを持つファイルのディレクトリ」であり、解決対象の依存ライブラリのディレクトリでも、バイナリ本体のディレクトリでもない。
 
 #### FR-3.1.4: パスの正規化
 
@@ -120,7 +97,7 @@ multiarch ディレクトリ（例: `/lib/x86_64-linux-gnu`）を先に試みる
 
 この正規化は以下のタイミングで適用する：
 - `record` 時: 各 `LibEntry.Path` を記録する前
-- `runner` 実行時（第 2 段階検証）: 実行時に解決したパスを記録済みの `LibEntry.Path` と比較する前
+- `runner` 実行時: ハッシュ計算前に記録済みの `LibEntry.Path` を正規化する
 
 **設計方針**: `filepath.Clean` のみでは、シンボリックリンク経由のパス（例: `/lib/x86_64-linux-gnu/libssl.so.3` が実体 `/lib/x86_64-linux-gnu/libssl.so.3.0.8` へのシンボリックリンク）の違いにより、同一の物理ファイルが異なるパスとして記録・比較される偽不一致（false mismatch）が生じる。`filepath.EvalSymlinks` を先に適用することで、シンボリックリンクの有無による比較結果の差異をなくす。
 
@@ -149,23 +126,21 @@ multiarch ディレクトリ（例: `/lib/x86_64-linux-gnu`）を先に試みる
 `DT_NEEDED` から解決された各 `.so` に対して、さらにその `.so` の `DT_NEEDED` を読み取る再帰的な解決を行い、完全な依存ツリーを構築すること。
 
 **再帰解決の手順**:
-1. バイナリ（`parent_path = バイナリのフルパス`）の `DT_NEEDED` から直接依存ライブラリのリストを取得する
-2. 各直接依存を `(parent_path, soname)` の組として、FR-3.1.2 のパス解決で `resolved_path` を求める
-3. `LibEntry { SOName: soname, ParentPath: parent_path, Path: resolved_path, Hash: ... }` を記録する
-4. `resolved_path` を次の親として（`parent_path = resolved_path`）、その `DT_NEEDED` を読み取る
-5. 既に処理済みの `(resolved_path, inherited_rpath_context)`（`visited` セット）はスキップする
+1. バイナリの `DT_NEEDED` から直接依存ライブラリのリストを取得する
+2. 各直接依存を FR-3.1.2 のパス解決で `resolved_path` を求める
+3. `LibEntry { SOName: soname, Path: resolved_path, Hash: ... }` を記録する
+4. `resolved_path` の `DT_NEEDED` を読み取る
+5. 既に処理済みの `resolved_path`（`visited` セット）はスキップする
 6. 未処理ライブラリがなくなるまで繰り返す
 
-ここで `inherited_rpath_context` は FR-3.1.2「間接依存の解決に適用する検索パスの決定ルール」で `resolved_path` の子依存解決に使われる、呼び出し元チェーンから継承された `DT_RPATH` エントリの順序付きリストである。
-
 **循環依存の防止**:
-処理済みライブラリの `(フルパス, 継承 RPATH コンテキスト)` の組を `visited` セットで管理し、同一の組を 2 度以上解析しないこと。`resolved_path` 単独でのスキップは禁止する。同一 `.so` 実体でも親チェーンが異なれば継承 RPATH が変わり、その子依存の解決結果が変わり得るためである（FR-3.2.1 の `ParentPath` の役割を参照）。Linux のライブラリ依存グラフに循環はないが、実装上は必ず防御する。
+処理済みライブラリの `フルパス` を `visited` セットで管理し、同一パスを 2 度以上解析しないこと。Linux のライブラリ依存グラフに循環はないが、実装上は必ず防御する。
 
 **解決深度の上限**:
 再帰深度の上限を設けること（推奨: 20 段）。上限超過時は `record` をエラーで終了し、記録を行わない。通常の Linux バイナリの依存深度は 3〜5 段であるため、上限超過は異常な構成または循環依存の見落としを示す。不完全な依存ツリーを記録することを避けるため、FR-3.1.7 と同様に失敗扱いとする。
 
 **`record` 時のパス解決コンテキスト**:
-間接依存ライブラリのパス解決（FR-3.1.2）は、`ParentPath` とその祖先チェーンの `RPATH` 継承ルール（FR-3.1.2 の「間接依存の解決に適用する検索パスの決定ルール」）に従って行う。再帰解決の各ステップでは、現在の `ParentPath` から祖先への `RPATH` 継承チェーンを正確に追跡すること。`$ORIGIN` はそのエントリを持つ ELF ファイル自身のディレクトリを基準として展開する（FR-3.1.3 参照）。
+間接依存ライブラリのパス解決（FR-3.1.2）は、各 `.so` 自身の `DT_RUNPATH` を用いて行う。`$ORIGIN` はそのエントリを持つ ELF ファイル自身のディレクトリを基準として展開する（FR-3.1.3 参照）。
 
 **セキュリティ上の意義**:
 直接依存ライブラリのみを検証する場合、以下の攻撃が検出できない：
@@ -208,18 +183,11 @@ type DynLibDepsData struct {
 }
 
 type LibEntry struct {
-    SOName     string `json:"soname"`      // DT_NEEDED の名前（例: "libssl.so.3"）
-    ParentPath string `json:"parent_path"` // このエントリの DT_NEEDED を持つ ELF のフルパス
-                                           // （バイナリ自身 or 直接/間接依存 .so のいずれか）
-    Path       string `json:"path"`        // 解決されたフルパス
-    Hash       string `json:"hash"`        // "sha256:<hex>"
+    SOName string `json:"soname"` // DT_NEEDED の名前（例: "libssl.so.3"）
+    Path   string `json:"path"`   // 解決されたフルパス
+    Hash   string `json:"hash"`   // "sha256:<hex>"
 }
 ```
-
-**`ParentPath` の役割**:
-`SOName` だけでは解決コンテキストが一意に決まらない。同一 `SOName` であっても、どの ELF の `DT_NEEDED` から解決されたかによって異なるパスに解決される可能性がある（親 ELF の `RPATH`/`RUNPATH`/`$ORIGIN` の影響を受けるため）。
-
-`runner` 実行時の第 2 段階検証では、`(ParentPath, SOName)` を解決キーとして再度パス解決を行い、記録された `Path` と一致することを確認する。
 
 #### FR-3.2.2: `record` コマンドの拡張
 
@@ -238,26 +206,20 @@ type LibEntry struct {
 
 `runner` がコマンドを実行する前に `filevalidator.Validator.Verify()` でハッシュ検証を行う既存フローの中で、`DynLibDeps` が記録されているコマンドに対してライブラリの整合性を検証する。
 
-検証は以下の **2 段階** で行う：
+検証は以下の **1 段階**（ハッシュ照合のみ）で行う：
 
-**第 1 段階: 記録済みパスのハッシュ照合**
+**ハッシュ照合**:
 `DynLibDeps` に記録された各 `LibEntry.Path` のファイルをハッシュ計算し、`LibEntry.Hash` と比較する。これにより、`record` 時に使用されていたライブラリ自体が改ざん・差し替えされていないことを確認する。
 
-**第 2 段階: 実行時パス解決との突合**
-各 `LibEntry` の `(ParentPath, SOName)` の組を解決キーとして、`runner` 実行環境で FR-3.1.2 と同じパス解決を行い、解決されたパスが `LibEntry.Path` と一致することを確認する。
+`runner` は `LD_LIBRARY_PATH` を実行前に常にクリアするため、パスハイジャック攻撃は適用外となる。したがって、実行時パス再解決による第 2 段階検証は不要である。
 
-`ParentPath` を解決キーに含めることで、同一 `SOName` であっても親 ELF が異なれば異なる `RPATH`/`RUNPATH`/`$ORIGIN` が適用される、という正確なコンテキストで再解決できる。
+以下の攻撃ベクトルに対する防御方針を示す：
 
-この 2 段階検証により、以下の攻撃ベクトルを両方とも防御する：
-
-| 攻撃ベクトル | 第 1 段階 | 第 2 段階 |
-|------------|----------|----------|
-| ライブラリ自体の改ざん（`record` 時と同じパスで中身を書き換え） | 検出 | 検出しない |
-| パスハイジャック（`LD_LIBRARY_PATH` 等で別ライブラリにリダイレクト） | 検出しない | 検出 |
-| ライブラリ丸ごと差し替え（パスも中身も変更） | 検出（ハッシュ不一致） | 検出（パス不一致） |
-
-**`runner` 実行時のパス解決における `LD_LIBRARY_PATH` の扱い**:
-`runner` 実行時のパス解決では `LD_LIBRARY_PATH` を **含めて** 解決する（`record` 時と異なる）。`runner` 実行時に `LD_LIBRARY_PATH` が設定されている場合、`ld.so` はそのパスを優先してライブラリをロードする。第 2 段階の検証はこの実際の解決結果を模倣し、`LD_LIBRARY_PATH` によって別パスのライブラリが選ばれた場合に不一致として検出する。
+| 攻撃ベクトル | 対応 |
+|------------|------|
+| ライブラリ自体の改ざん（`record` 時と同じパスで中身を書き換え） | ハッシュ照合で検出 |
+| ライブラリ丸ごと差し替え（同一パスへ別ライブラリをコピー） | ハッシュ照合で検出 |
+| パスハイジャック（`LD_LIBRARY_PATH` 等で別ライブラリにリダイレクト） | `LD_LIBRARY_PATH` は実行前にクリアされるため適用外 |
 
 #### FR-3.3.2: 検証の判定ロジック
 
@@ -266,21 +228,19 @@ type LibEntry struct {
 | `schema_version` が `CurrentSchemaVersion`（2）と不一致 | エラー | `SchemaVersionMismatchError` を返し実行をブロック。`record` の再実行を要求する。旧バージョン（1）の記録はこのケースに該当する |
 | `DynLibDeps` が記録されておらず、対象が非 ELF バイナリ | 正常 | 従来通り実行を許可 |
 | `DynLibDeps` が記録されておらず、対象が ELF バイナリ | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す（スキーマ更新により運用上は発生しないが、防御的に検出する） |
-| 全ライブラリについて第 1・第 2 段階ともに一致 | 正常 | 実行を許可 |
-| 第 1 段階: ハッシュ不一致 | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
-| 第 2 段階: 解決パスが `LibEntry.Path` と不一致 | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
+| 全ライブラリについてハッシュが一致 | 正常 | 実行を許可 |
+| ハッシュ不一致 | エラー | 実行をブロック。`record` の再実行を要求するエラーを返す |
 | `path: ""` のエントリが存在する | エラー | 実行をブロック。不完全な記録として `record` の再実行を要求するエラーを返す |
 
 **`path: ""` エントリが `runner` 時に存在する場合について**: FR-3.1.6 により `record` 時にライブラリ解決に失敗した場合は記録自体が失敗するため、正常な運用では `path: ""` のエントリが `runner` に渡されることはない。ただし、将来の仕様変更や手動編集による記録ファイルの破損に備え、`runner` 側でも `path: ""` エントリを検出した場合は実行をブロックする防御的実装とする。
 
-**補足**: ライブラリのハッシュ不一致・パス不一致はコマンドバイナリ自身の変更と同様に扱い、`record` の再実行を要求する。
+**補足**: ライブラリのハッシュ不一致はコマンドバイナリ自身の変更と同様に扱い、`record` の再実行を要求する。
 
 #### FR-3.3.3: エラーメッセージ
 
 ライブラリ不一致検出時のエラーメッセージは以下の情報を含むこと：
 - 不一致が検出されたライブラリ名（`SOName`）
 - ハッシュ不一致の場合: 期待されるハッシュ（記録時）と実際のハッシュ（現在）
-- パス不一致の場合: 記録されたパス（`LibEntry.Path`）と実行時に解決されたパス
 - `record` の再実行を促すメッセージ
 
 ### 3.4 `dlopen` 使用バイナリの検出（方策 B）
@@ -347,9 +307,9 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 本タスクでは後方互換性を維持しない。`record` の再実行が必須である。
 
-**`fileanalysis.CurrentSchemaVersion` を 1 → 2 に増やす**。
+**`fileanalysis.CurrentSchemaVersion` を 2 に更新済み**（1 → 2: `DynLibDeps` 追加時）。
 
-`DynLibDeps` フィールド自体は `omitempty` のため JSON フォーマットへの追加は非破壊的だが、`runner` が ELF バイナリの旧記録（`DynLibDeps` なし）を実行エラーとして扱う時点でスキーマとして breaking である。`fileanalysis.Store.Load()` は `schema_version` を厳密チェックし `SchemaVersionMismatchError` を返す設計であるため、`CurrentSchemaVersion` を上げることで旧記録ファイルを `SchemaVersionMismatchError` として一律に弾き、「`DynLibDeps` があるかどうかを `runner` が個別に調べる」ロジックを不要にする。
+`fileanalysis.Store.Load()` は `schema_version` を厳密チェックし `SchemaVersionMismatchError` を返す設計であるため、旧バージョン（1）の記録ファイルは `SchemaVersionMismatchError` として一律に弾かれる。
 
 **`runner` 実行時の動作**:
 - `schema_version: 1` の既存記録ファイルは `SchemaVersionMismatchError` となり、バイナリ種別に関わらず `runner` はエラーで実行をブロックする
@@ -367,53 +327,49 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 ### AC-1: ライブラリパス解決
 
-- [ ] `DT_NEEDED` エントリのないバイナリ（静的リンク等）では `DynLibDeps` が記録されないこと
-- [ ] `DT_RPATH` が設定されたバイナリで正しいパスに解決されること
-- [ ] `DT_RUNPATH` が設定されたバイナリで正しいパスに解決されること
-- [ ] `$ORIGIN` トークンが、そのエントリを持つ ELF ファイル自身のディレクトリパスに展開されること（共有ライブラリの `RPATH`/`RUNPATH` の場合はその `.so` 自身のディレクトリが基準となること）
-- [ ] `/etc/ld.so.cache` から標準的なライブラリ（`libc.so.6` 等）が解決されること
-- [ ] デフォルトパス（FR-3.1.2a）からライブラリが解決されること（x86_64 環境では `/lib/x86_64-linux-gnu` 等の multiarch ディレクトリを含む）
-- [ ] 間接依存ライブラリ（依存の `.so` がさらに依存する `.so`）も `DynLibDeps` に記録されること
-- [ ] 循環依存が生じても無限ループせず正常終了すること
-- [ ] 再帰深度が上限を超えた場合に `record` がエラーで終了し、記録が保存されないこと
-- [ ] 解決できないライブラリが存在する場合に `record` がエラーで終了し、記録が保存されないこと
-- [ ] `record` エラーメッセージに解決できなかったライブラリ名が含まれること
+- [x] `DT_NEEDED` エントリのないバイナリ（静的リンク等）では `DynLibDeps` が記録されないこと
+- [x] `DT_RPATH` が設定されたバイナリで `ErrDTRPATHNotSupported` エラーとなること
+- [x] `DT_RUNPATH` が設定されたバイナリで正しいパスに解決されること
+- [x] `$ORIGIN` トークンが、そのエントリを持つ ELF ファイル自身のディレクトリパスに展開されること（共有ライブラリの `RUNPATH` の場合はその `.so` 自身のディレクトリが基準となること）
+- [x] `/etc/ld.so.cache` から標準的なライブラリ（`libc.so.6` 等）が解決されること
+- [x] デフォルトパス（FR-3.1.2a）からライブラリが解決されること（x86_64 環境では `/lib/x86_64-linux-gnu` 等の multiarch ディレクトリを含む）
+- [x] 間接依存ライブラリ（依存の `.so` がさらに依存する `.so`）も `DynLibDeps` に記録されること
+- [x] 循環依存が生じても無限ループせず正常終了すること
+- [x] 再帰深度が上限を超えた場合に `record` がエラーで終了し、記録が保存されないこと
+- [x] 解決できないライブラリが存在する場合に `record` がエラーで終了し、記録が保存されないこと
+- [x] `record` エラーメッセージに解決できなかったライブラリ名が含まれること
 
 ### AC-2: `record` 拡張
 
-- [ ] 動的リンクされた ELF バイナリに対して `DynLibDeps` が記録されること
-- [ ] `LibEntry` に `soname`, `parent_path`, `path`, `hash` が正しく記録されること
-- [ ] 直接依存ライブラリの `parent_path` がバイナリ自身のフルパスであること
-- [ ] 間接依存ライブラリの `parent_path` がその依存元 `.so` のフルパスであること
-- [ ] 同一 `SOName` でも `parent_path` が異なる場合に別エントリとして記録されること
-- [ ] ハッシュが `"sha256:<hex>"` 形式であること
-- [ ] `record --force` で `DynLibDeps` が更新されること
-- [ ] 非 ELF ファイルでは `DynLibDeps` が記録されないこと
-- [ ] 既存の `ContentHash`, `SyscallAnalysis` フィールドが変更されないこと
+- [x] 動的リンクされた ELF バイナリに対して `DynLibDeps` が記録されること
+- [x] `LibEntry` に `soname`, `path`, `hash` が正しく記録されること
+- [x] ハッシュが `"sha256:<hex>"` 形式であること
+- [x] `record --force` で `DynLibDeps` が更新されること
+- [x] 非 ELF ファイルでは `DynLibDeps` が記録されないこと
+- [x] 既存の `ContentHash`, `SyscallAnalysis` フィールドが変更されないこと
 
 ### AC-3: `runner` 検証拡張
 
-- [ ] ライブラリのハッシュが一致し、かつ実行時パス解決が記録済みパスと一致する場合に実行が許可されること（第 1・第 2 段階ともに正常）
-- [ ] ライブラリのハッシュが不一致の場合に実行がブロックされ、`record` 再実行を促すエラーが返されること（第 1 段階検出）
-- [ ] `runner` 実行時に `LD_LIBRARY_PATH` で別パスのライブラリが選ばれる場合に実行がブロックされること（第 2 段階検出）
-- [ ] エラーメッセージにハッシュ不一致の場合は不一致ライブラリ名・期待ハッシュ・実際のハッシュが含まれること
-- [ ] エラーメッセージにパス不一致の場合は記録済みパスと実行時解決パスが含まれること
-- [ ] `path: ""` のエントリが存在する場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
-- [ ] `schema_version: 1`（旧バージョン）の記録ファイルで実行しようとした場合に `SchemaVersionMismatchError` が返され実行がブロックされること
-- [ ] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が非 ELF バイナリの場合は従来の検証のみが行われること
-- [ ] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が ELF バイナリの場合は実行がブロックされ、`record` 再実行を促すエラーが返されること（防御的検出）
+- [x] ライブラリのハッシュが一致する場合に実行が許可されること
+- [x] ライブラリのハッシュが不一致の場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
+- [x] エラーメッセージにハッシュ不一致の場合は不一致ライブラリ名・期待ハッシュ・実際のハッシュが含まれること
+- [x] `path: ""` のエントリが存在する場合に実行がブロックされ、`record` 再実行を促すエラーが返されること
+- [x] `schema_version: 1`（旧バージョン）の記録ファイルで実行しようとした場合に実行がブロックされること（`SchemaVersionMismatchError` を返す）
+- [x] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が非 ELF バイナリの場合は従来の検証のみが行われること
+- [x] `schema_version: 2` かつ `DynLibDeps` がない記録で対象が ELF バイナリの場合は実行がブロックされ、`record` 再実行を促すエラーが返されること（防御的検出）
 
 ### AC-4: `dlopen` シンボル検出
 
-- [ ] `dlopen` を `.dynsym` に含むバイナリが `NetworkDetected` と判定されること
-- [ ] `dlsym` を `.dynsym` に含むバイナリが `NetworkDetected` と判定されること
-- [ ] `dlopen` のみを含むバイナリの判定理由（`DetectedSymbols`）に `dynamic_load` カテゴリが含まれること
+- [x] `dlopen` を `.dynsym` に含むバイナリで `AnalysisOutput.HasDynamicLoad` が `true` と判定されること
+- [x] `dlsym` を `.dynsym` に含むバイナリで `AnalysisOutput.HasDynamicLoad` が `true` と判定されること
+- [x] `dlopen` のみを含むバイナリの `HasDynamicLoad` が `true`、`Result` が `NoNetworkSymbols` となること（`dlopen` は `NetworkDetected` とは独立したシグナルであり、`isHighRisk=true` として上位に伝達される）
+- [x] `CategoryDynamicLoad` カテゴリ (`"dynamic_load"`) が定義されていること
 
 ### AC-5: 既存機能への非影響
 
-- [ ] 既存の `ContentHash` 検証が正常に動作すること
-- [ ] `SyscallAnalysis` フィールドが保持されること
-- [ ] 既存のテストがすべてパスすること
+- [x] 既存の `ContentHash` 検証が正常に動作すること
+- [x] `SyscallAnalysis` フィールドが保持されること
+- [x] 既存のテストがすべてパスすること
 
 
 ## 6. テスト方針
@@ -422,20 +378,14 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| `DT_RPATH` あり | RPATH ディレクトリからの解決 |
+| `DT_RPATH` あり | `ErrDTRPATHNotSupported` エラーが返ること |
 | `DT_RUNPATH` あり | RUNPATH ディレクトリからの解決 |
-| `$ORIGIN` 展開 | バイナリ自身のディレクトリへの展開 |
+| `$ORIGIN` 展開 | そのエントリを持つ ELF ファイル自身のディレクトリへの展開 |
 | `/etc/ld.so.cache` 解析 | 標準ライブラリのパス解決 |
 | デフォルトパス探索 | FR-3.1.2a のアーキテクチャ別ディレクトリ（multiarch 含む）からの解決 |
 | 解決失敗 | `record` がエラーで終了し記録が保存されないこと |
-| `RPATH` と `RUNPATH` の優先順位 | `RUNPATH` がある場合に `RPATH` が無効 |
-| `RPATH` の間接継承 | バイナリの `RPATH`（`RUNPATH` なし）が間接依存の解決にも使われること |
 | `RUNPATH` の非継承 | バイナリの `RUNPATH` が直接依存のみに適用され、間接依存には使われないこと |
-| `RPATH` 継承の打ち切り | 継承チェーン中に `RUNPATH` を持つ ELF が現れた時点で `RPATH` 継承が打ち切られること |
-| `$ORIGIN` 展開基準 | 継承された `RPATH` の `$ORIGIN` がバイナリ本体ではなく継承元 ELF のディレクトリに展開されること |
 | 間接依存の再帰解決 | 直接依存の `.so` がさらに依存する `.so` も記録されること |
-| 解決コンテキストの記録 | `parent_path` が正しく記録され、同一 `SOName` でも親が異なれば別エントリになること |
-| 解決コンテキストによるパスの差異 | 親 ELF の `RUNPATH` が異なることで同一 `SOName` が別パスに解決されるケース |
 | 循環依存の防止 | シンボリックリンク等で循環が生じても無限ループしないこと |
 | 再帰深度上限 | 深度上限超過時に `record` がエラーで終了し記録が保存されないこと |
 
@@ -443,10 +393,9 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| 正常ケース | `record` 後に `runner` で検証成功（第 1・第 2 段階ともに一致） |
-| ライブラリ改ざん | `record` 後にライブラリの中身を書き換えてハッシュ不一致を検出（第 1 段階） |
-| ライブラリ差し替え | `record` 後に同一パスへ別ライブラリをコピーしてハッシュ不一致を検出（第 1 段階） |
-| パスハイジャック | `record` 後に `LD_LIBRARY_PATH` で別ディレクトリを優先させてパス不一致を検出（第 2 段階） |
+| 正常ケース | `record` 後に `runner` で検証成功（ハッシュ一致） |
+| ライブラリ改ざん | `record` 後にライブラリの中身を書き換えてハッシュ不一致を検出 |
+| ライブラリ差し替え | `record` 後に同一パスへ別ライブラリをコピーしてハッシュ不一致を検出 |
 | 新規ライブラリ追加 | `record` 後にライブラリが追加されて検証失敗 |
 | 非 ELF バイナリ（スクリプト等） | `DynLibDeps` なしで正常動作 |
 | 旧スキーマ記録（`schema_version: 1`） | `SchemaVersionMismatchError` で実行をブロックし `record` 再実行を要求すること |
@@ -459,7 +408,7 @@ CategoryDynamicLoad SymbolCategory = "dynamic_load"
 
 ## 7. 設計上の制約と限界
 
-1. **`LD_LIBRARY_PATH` 依存のライブラリ配置は非対応**: `record` 時は `LD_LIBRARY_PATH` を使用しないため、`LD_LIBRARY_PATH` でのみ解決できる非標準パスのライブラリは解決失敗となり `record` がエラーで終了する。`LD_LIBRARY_PATH` 依存のライブラリ配置を使用するコマンドは本ツールの管理対象外とする。対処方法として、`ldconfig` でキャッシュに登録するか、バイナリの `RPATH`/`RUNPATH` にパスを埋め込むことを推奨する。
+1. **`LD_LIBRARY_PATH` 依存のライブラリ配置は非対応**: `record` 時は `LD_LIBRARY_PATH` を使用しないため、`LD_LIBRARY_PATH` でのみ解決できる非標準パスのライブラリは解決失敗となり `record` がエラーで終了する。また `runner` は `LD_LIBRARY_PATH` を常にクリアして子プロセスを起動するため、`LD_LIBRARY_PATH` に依存するコマンドは動作しない。`LD_LIBRARY_PATH` 依存のライブラリ配置を使用するコマンドは本ツールの管理対象外とする。対処方法として、`ldconfig` でキャッシュに登録するか、バイナリの `RUNPATH` にパスを埋め込むことを推奨する。
 
 2. **実行時動的ロード（`dlopen` の引数）**: `dlopen` に渡されるライブラリ名は実行時に決定されるため、静的解析では特定できない。方策 B（`dlopen` シンボルの検出）によりリスクを示すことはできるが、実際にロードされるライブラリの整合性検証はできない。
 

@@ -20,17 +20,21 @@ type NetworkAnalyzer struct {
 	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
 }
 
+// NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the current platform.
+// On macOS, returns StandardMachOAnalyzer; on Linux and other platforms, returns StandardELFAnalyzer.
+func NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer {
+	switch runtime.GOOS {
+	case gosDarwin:
+		return machoanalyzer.NewStandardMachOAnalyzer(nil)
+	default: // "linux", etc.
+		return elfanalyzer.NewStandardELFAnalyzer(nil, nil)
+	}
+}
+
 // NewNetworkAnalyzer creates a new NetworkAnalyzer.
 // On macOS, uses StandardMachOAnalyzer; on Linux and other platforms, uses StandardELFAnalyzer.
 func NewNetworkAnalyzer() *NetworkAnalyzer {
-	var analyzer binaryanalyzer.BinaryAnalyzer
-	switch runtime.GOOS {
-	case gosDarwin:
-		analyzer = machoanalyzer.NewStandardMachOAnalyzer(nil)
-	default: // "linux", etc.
-		analyzer = elfanalyzer.NewStandardELFAnalyzer(nil, nil)
-	}
-	return &NetworkAnalyzer{binaryAnalyzer: analyzer}
+	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer()}
 }
 
 // IsNetworkOperation checks if the command performs network operations.
@@ -90,8 +94,9 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, cont
 	// Binary analysis requires an absolute path (should be resolved by caller via PathResolver).
 	// If cmdName is not absolute, skip binary analysis silently.
 	if !foundInProfiles && filepath.IsAbs(cmdName) {
-		if a.isNetworkViaBinaryAnalysis(cmdName, contentHash) {
-			return true, false
+		isNet, isHigh := a.isNetworkViaBinaryAnalysis(cmdName, contentHash)
+		if isNet || isHigh {
+			return isNet, isHigh
 		}
 	}
 
@@ -111,10 +116,12 @@ func hasNetworkArguments(args []string) bool {
 }
 
 // isNetworkViaBinaryAnalysis performs binary analysis on the command binary.
-// Returns true if the command should be treated as a network operation.
-// This includes both confirmed network symbols (NetworkDetected) and
-// analysis failures (AnalysisError), which are treated as potential
-// network operations for safety (middle risk → RiskLevelMedium).
+// Returns (isNetwork, isHighRisk) where:
+//   - isNetwork: true if confirmed network symbols were found or analysis failed (safety)
+//   - isHighRisk: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected
+//
+// HasDynamicLoad and network detection are independent signals.
+// A binary with both dlopen and socket will return (true, true).
 //
 // IMPORTANT: cmdPath is expected to be an absolute, symlink-resolved path,
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
@@ -123,7 +130,7 @@ func hasNetworkArguments(args []string) bool {
 // contentHash is a pre-computed hash in "algo:hex" format that is forwarded to
 // the binary analyzer to avoid redundant hashing for static binaries with a
 // syscall store configured. Pass empty string when no hash is available.
-func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) bool {
+func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) (isNetwork, isHighRisk bool) {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
 	// A non-absolute path here indicates a programming error in the call chain.
@@ -137,17 +144,24 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// Perform binary analysis
 	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
 
+	if output.HasDynamicLoad {
+		isHighRisk = true
+		slog.Debug("Binary analysis detected dynamic load symbols",
+			"path", cmdPath,
+			"symbols", strings.Join(binaryanalyzer.DynamicLoadSymbolNames(), "/"))
+	}
+
 	switch output.Result {
 	case binaryanalyzer.NetworkDetected:
 		slog.Debug("Binary analysis detected network symbols",
 			"path", cmdPath,
 			"symbols", formatDetectedSymbols(output.DetectedSymbols))
-		return true
+		return true, isHighRisk
 
 	case binaryanalyzer.NoNetworkSymbols:
 		slog.Debug("Binary analysis found no network symbols",
 			"path", cmdPath)
-		return false
+		return false, isHighRisk
 
 	case binaryanalyzer.NotSupportedBinary:
 		// File format is not supported by this analyzer (e.g., ELF analyzer
@@ -155,14 +169,14 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		// Assume no network operation, consistent with binary format mismatch handling.
 		slog.Debug("Binary analysis: unsupported binary format, assuming no network operation",
 			"path", cmdPath)
-		return false
+		return false, isHighRisk
 
 	case binaryanalyzer.StaticBinary:
 		// Static binary: cannot determine network capability
 		// Return false for now, 2nd step (Task 0070) will handle this
 		slog.Debug("Binary analysis: static binary detected, cannot determine network capability",
 			"path", cmdPath)
-		return false
+		return false, isHighRisk
 
 	case binaryanalyzer.AnalysisError:
 		// Analysis failed: treat as potential network operation for safety
@@ -170,13 +184,13 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			"path", cmdPath,
 			"error", output.Error,
 			"reason", "Unable to determine network capability, assuming middle risk for safety")
-		return true
+		return true, isHighRisk
 
 	default:
 		// Unknown result: treat as potential network operation for safety
 		slog.Warn("Binary analysis returned unknown result",
 			"path", cmdPath,
 			"result", output.Result)
-		return true
+		return true, isHighRisk
 	}
 }

@@ -425,6 +425,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -496,6 +497,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/some-command").Return("/bin/some-command", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -572,6 +574,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 
 	// Mock verification manager to resolve paths
 	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
@@ -1382,6 +1385,9 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behavior for file verification - return empty Result
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil).Maybe()
+
+	// Setup default behavior for dynlib verification - return nil (no error)
+	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil).Maybe()
 
 	return mockValidator, mockVerificationManager
 }
@@ -2685,6 +2691,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 			// Mock verification manager
 			mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 			mockVerificationManager.On("ResolvePath", mock.Anything).Return("/bin/false", nil)
+			mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
@@ -3021,4 +3028,134 @@ func TestPreExpandCommands_Error(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles verifies that
+// VerifyCommandDynLibDeps is called only for command binaries, not for files
+// listed in verify_files. verify_files entries are passed to VerifyGroupFiles
+// but do not appear in runtimeGroup.Commands, so they must not trigger dynlib
+// verification.
+func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	// Group has one command (/bin/echo) and one verify_files entry (/etc/hosts).
+	// VerifyCommandDynLibDeps must be called for /bin/echo but NOT for /etc/hosts.
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "echo-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+		VerifyFiles: []string{"/etc/hosts"},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	// Mock validator
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	// VerifyGroupFiles handles both verify_files and command file hash checks.
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+
+	// ResolvePath is called for each command binary.
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	// VerifyCommandDynLibDeps is expected ONLY for the command binary (/bin/echo),
+	// not for the verify_files entry (/etc/hosts).
+	mockVerificationManager.On("VerifyCommandDynLibDeps", "/bin/echo").Return(nil)
+
+	// Mock command execution to succeed.
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "hello", Stderr: ""}, nil)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.NoError(t, err)
+
+	// Assert that VerifyCommandDynLibDeps was called exactly once (for /bin/echo),
+	// not for /etc/hosts.
+	mockVerificationManager.AssertCalled(t, "VerifyCommandDynLibDeps", "/bin/echo")
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", "/etc/hosts")
+	mockVerificationManager.AssertExpectations(t)
+}
+
+// TestVerifyGroupFiles_DynLibResolvePathFailure verifies that a ResolvePath
+// failure during dynlib verification emits a warning log and continues
+// (rather than silently skipping or returning an error). The overall
+// ExecuteGroup call must still succeed so that commands can proceed to
+// execution, where the path failure will surface in its proper context.
+func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "bad-cmd", Cmd: "/nonexistent/command", Args: []string{}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+
+	// ResolvePath fails for this command — dynlib check must be skipped with a warning.
+	resolveErr := errors.New("command not found")
+	mockVerificationManager.On("ResolvePath", "/nonexistent/command").Return("", resolveErr)
+
+	// VerifyCommandDynLibDeps must NOT be called because ResolvePath failed.
+	// (No mock set up; testify will fail if it is called unexpectedly.)
+
+	ctx := context.Background()
+	// ExecuteGroup returns an error from executeCommandInGroup (path resolution
+	// failure at execution time), but verifyGroupFiles itself must not error out
+	// due to the dynlib-phase ResolvePath failure.
+	// We only care that VerifyCommandDynLibDeps was never called.
+	_ = ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
+	mockVerificationManager.AssertExpectations(t)
 }

@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
@@ -30,6 +32,9 @@ type FileValidator interface {
 	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
 	VerifyAndRead(filePath string) ([]byte, error)
 	VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
+	// LoadRecord returns the full analysis record for the given file path.
+	// Used by verification.Manager to access DynLibDeps without exposing the store directly.
+	LoadRecord(filePath string) (*fileanalysis.Record, error)
 }
 
 // GetHashFilePath returns the path where the hash for the given file would be stored.
@@ -53,6 +58,9 @@ type Validator struct {
 
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
+
+	dynlibAnalyzer *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
+	binaryAnalyzer binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -161,6 +169,25 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 			return fmt.Errorf("hash file already exists for %s: %w", filePath, ErrHashFileExists)
 		}
 		record.ContentHash = contentHash
+
+		// Analyze dynamic library dependencies if analyzer is available.
+		// Analysis failure causes the callback to return an error, which
+		// prevents the record from being persisted (atomicity).
+		if v.dynlibAnalyzer != nil {
+			dynLibDeps, analyzeErr := v.dynlibAnalyzer.Analyze(filePath.String())
+			if analyzeErr != nil {
+				return fmt.Errorf("dynamic library analysis failed: %w", analyzeErr)
+			}
+			record.DynLibDeps = dynLibDeps // nil for non-ELF or static ELF (omitted in JSON)
+		}
+
+		// Analyze binary symbols for dynamic load detection if analyzer is available.
+		// Always write the result (true or false) to overwrite stale values.
+		if v.binaryAnalyzer != nil {
+			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
+			record.HasDynamicLoad = output.HasDynamicLoad
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -168,6 +195,31 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 	}
 
 	return hashFilePath, contentHash, nil
+}
+
+// LoadRecord returns the full analysis record for the given file path.
+func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return nil, err
+	}
+	record, err := v.store.Load(targetPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load analysis record: %w", err)
+	}
+	return record, nil
+}
+
+// SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
+// Call before the first Record() invocation. Safe to call with nil (disables dynlib analysis).
+func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
+	v.dynlibAnalyzer = a
+}
+
+// SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.
+// Call before the first Record() invocation. Safe to call with nil (disables binary analysis).
+func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
+	v.binaryAnalyzer = a
 }
 
 // Verify checks if the file at filePath matches its recorded hash.

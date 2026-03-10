@@ -1,15 +1,18 @@
 package verification
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -1473,4 +1476,172 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 	require.NotEmpty(t, summary.Failures)
 	assert.Equal(t, ReasonHashMismatch, summary.Failures[0].Reason)
 	assert.Equal(t, logLevelError, summary.Failures[0].Level)
+}
+
+// createOldSchemaRecord writes a raw JSON file with schema_version = CurrentSchemaVersion-1
+// (i.e. the pre-dynlib schema) so that Store.Load returns SchemaVersionMismatchError with Actual < Expected.
+// Returns the path of the created record file.
+func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
+	t.Helper()
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	require.NoError(t, err)
+
+	recordFilePath, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	require.NoError(t, err)
+
+	record := map[string]interface{}{
+		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // pre-dynlib schema (< CurrentSchemaVersion)
+		"file_path":      filePath,
+		"content_hash":   "sha256:aabbcc",
+		"updated_at":     time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(recordFilePath), 0o750))
+	require.NoError(t, os.WriteFile(recordFilePath, data, 0o600))
+	return recordFilePath
+}
+
+// resolveSymlinks resolves symlinks in the given path.
+// Used in tests to ensure records are stored under the canonical path,
+// matching what filevalidator.validatePath returns at verify time.
+func resolveSymlinks(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	require.NoError(t, err)
+	return resolved
+}
+
+// TestVerify_SchemaVersion verifies that VerifyCommandDynLibDeps returns nil
+// (skips dynlib check) when the stored record has schema_version < CurrentSchemaVersion.
+// Old records predate dynlib tracking; they should not block execution.
+func TestVerify_SchemaVersion(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// Use a real binary that exists on the filesystem.
+	// Resolve symlinks so the record path matches what filevalidator.validatePath computes.
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	createOldSchemaRecord(t, hashDir, cmdPath)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	err = m.VerifyCommandDynLibDeps(cmdPath)
+	assert.NoError(t, err, "old schema_version record should be skipped (not block execution)")
+}
+
+// TestVerify_ELFNoDynLibDeps verifies that VerifyCommandDynLibDeps returns
+// ErrDynLibDepsRequired when a dynamically linked ELF binary has a valid v2
+// record but DynLibDeps is nil (i.e., dynlib snapshot was never recorded).
+func TestVerify_ELFNoDynLibDeps(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// /bin/ls is a dynamically linked ELF binary on Linux.
+	// Resolve symlinks so the record path matches what filevalidator.validatePath computes.
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	// Write a v2 record with DynLibDeps=nil (no dynlib snapshot).
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedPath, err := common.NewResolvedPath(cmdPath)
+	require.NoError(t, err)
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:aabbcc"
+		// DynLibDeps intentionally left nil
+		return nil
+	})
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	require.Error(t, verifyErr)
+
+	var errRequired *dynlibanalysis.ErrDynLibDepsRequired
+	assert.ErrorAs(t, verifyErr, &errRequired, "expected ErrDynLibDepsRequired for dynamic ELF without DynLibDeps")
+}
+
+// TestVerify_NonELFNoDynLibDeps verifies that VerifyCommandDynLibDeps returns nil
+// for a non-ELF file (e.g., a shell script) even when no DynLibDeps is recorded.
+// Non-ELF binaries do not have dynamic library dependencies.
+func TestVerify_NonELFNoDynLibDeps(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// Create a non-ELF file (shell script).
+	tmpDir := commontesting.SafeTempDir(t)
+	scriptPath := filepath.Join(tmpDir, "myscript.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hello\n"), 0o755))
+
+	// Write a v2 record with no DynLibDeps.
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(hashDir, getter)
+	require.NoError(t, err)
+	resolvedPath, err := common.NewResolvedPath(scriptPath)
+	require.NoError(t, err)
+	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.ContentHash = "sha256:aabbcc"
+		return nil
+	})
+	require.NoError(t, err)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	err = m.VerifyCommandDynLibDeps(scriptPath)
+	assert.NoError(t, err, "non-ELF binary without DynLibDeps should be treated as normal")
+}
+
+// createFutureSchemaRecord writes a raw JSON file with schema_version > CurrentSchemaVersion
+// so that Store.Load returns SchemaVersionMismatchError with Actual > Expected.
+// Returns the path of the created record file.
+func createFutureSchemaRecord(t *testing.T, hashDir, filePath string) string {
+	t.Helper()
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	require.NoError(t, err)
+
+	recordFilePath, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	require.NoError(t, err)
+
+	record := map[string]interface{}{
+		"schema_version": fileanalysis.CurrentSchemaVersion + 1, // future schema (> CurrentSchemaVersion)
+		"file_path":      filePath,
+		"content_hash":   "sha256:aabbcc",
+		"updated_at":     time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(recordFilePath), 0o750))
+	require.NoError(t, os.WriteFile(recordFilePath, data, 0o600))
+	return recordFilePath
+}
+
+// TestVerify_FutureSchemaVersion verifies that VerifyCommandDynLibDeps returns an error
+// when the stored record has schema_version > CurrentSchemaVersion (written by a newer
+// version of the tool). The runner must not silently skip such records, as they may
+// contain integrity data the current version cannot interpret.
+func TestVerify_FutureSchemaVersion(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// Use a real binary that exists on the filesystem.
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	createFutureSchemaRecord(t, hashDir, cmdPath)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	require.Error(t, verifyErr, "future schema_version record should return an error")
+
+	var schemaErr *fileanalysis.SchemaVersionMismatchError
+	require.ErrorAs(t, verifyErr, &schemaErr)
+	assert.Greater(t, schemaErr.Actual, schemaErr.Expected,
+		"Actual schema version should be greater than Expected")
 }
