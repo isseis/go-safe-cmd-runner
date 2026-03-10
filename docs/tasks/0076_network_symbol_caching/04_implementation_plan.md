@@ -180,6 +180,13 @@ Phase 4 は Phase 3 完了後に実施する。
 
 仕様参照: 詳細仕様書 §5
 
+### 4.0 `handleAnalysisOutput` ヘルパー関数の抽出
+
+- [ ] `internal/runner/security/network_analyzer.go` を変更
+  - `isNetworkViaBinaryAnalysis` 内のインライン `switch output.Result` ロジックを `handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) (isNetwork, isHighRisk bool)` として抽出する
+  - 抽出後、`isNetworkViaBinaryAnalysis` 末尾は `return handleAnalysisOutput(output, cmdPath)` 一行になること
+  - 動作変更なし（リファクタリングのみ）。`make test` が成功すること
+
 ### 4.1 `NetworkAnalyzer` 構造体の拡張
 
 - [ ] `internal/runner/security/network_analyzer.go` を変更
