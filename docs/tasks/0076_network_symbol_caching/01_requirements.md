@@ -61,7 +61,7 @@
 
 #### FR-3.2.0: `DynamicLoadSymbols` フィールドの追加
 
-`binaryanalyzer.AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加する。`HasDynamicLoad bool` は後方互換性のために残し、`len(DynamicLoadSymbols) > 0` と等価であることを保証する。
+`binaryanalyzer.AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加し、`HasDynamicLoad bool` を削除する。スキーマバージョンを上げるため後方互換性は不要。呼び出し元は `len(DynamicLoadSymbols) > 0` で代替する。
 
 **内部実装への波及（実装上の必須変更）:**
 

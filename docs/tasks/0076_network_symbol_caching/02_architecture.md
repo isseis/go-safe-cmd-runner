@@ -218,7 +218,7 @@ flowchart LR
     REC[("fileanalysis.Record<br>  ContentHash: sha256:abc...<br>  NetworkSymbolAnalysis:<br>    HasNetworkSymbols: true<br>    DetectedSymbols: [{socket, network}]<br>    DynamicLoadSymbols: []")]
     VERIFY["VerifyGroupFiles()<br>ハッシュ検証済み<br>→ ContentHash: sha256:abc..."]
     LOAD["LoadNetworkSymbolAnalysis()<br>キャッシュ読み込み"]
-    OUT["AnalysisOutput<br>  Result: NetworkDetected<br>  DetectedSymbols: [socket(network)]<br>  HasDynamicLoad: false（DynamicLoadSymbolsから導出）"]
+    OUT["AnalysisOutput<br>  Result: NetworkDetected<br>  DetectedSymbols: [socket(network)]<br>  DynamicLoadSymbols: []"]
     LOG["slog.Info<br>'Binary analysis detected network symbols'<br>symbols: [socket(network)]"]
     RISK["RiskLevelMedium"]
 
@@ -252,7 +252,7 @@ flowchart LR
 
 | ファイル | 変更種別 | 内容 |
 |---------|---------|------|
-| `internal/runner/security/binaryanalyzer/analyzer.go` | 変更 | `AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加 |
+| `internal/runner/security/binaryanalyzer/analyzer.go` | 変更 | `AnalysisOutput` に `DynamicLoadSymbols []DetectedSymbol` フィールドを追加し、`HasDynamicLoad bool` を削除 |
 | `internal/runner/security/elfanalyzer/standard_analyzer.go` | 変更 | `checkDynamicSymbols()` 内で dynamic_load シンボル名を収集し `AnalysisOutput.DynamicLoadSymbols` に設定 |
 | `internal/runner/security/machoanalyzer/standard_analyzer.go` | 変更（最小限） | `DynamicLoadSymbols` フィールド追加に伴うビルド維持のみ。収集ロジックの実装は対象外（別タスク） |
 | `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加（`DynamicLoadSymbols` フィールド含む）、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |

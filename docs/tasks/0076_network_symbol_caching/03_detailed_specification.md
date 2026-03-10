@@ -11,15 +11,14 @@
 
 ### 1.1 `binaryanalyzer.AnalysisOutput` の変更（`analyzer.go`）
 
-`DynamicLoadSymbols` フィールドを追加する。`HasDynamicLoad` は後方互換性のために残す。
+`DynamicLoadSymbols` フィールドを追加し、`HasDynamicLoad` を削除する。スキーマバージョンを上げるため後方互換性は不要。呼び出し元は `len(DynamicLoadSymbols) > 0` で代替する。
 
 ```go
 type AnalysisOutput struct {
-    Result          AnalysisResult
-    DetectedSymbols []DetectedSymbol
-    HasDynamicLoad  bool             // 後方互換。len(DynamicLoadSymbols) > 0 と常に等価
-    DynamicLoadSymbols []DetectedSymbol  // 追加
-    Error           error
+    Result             AnalysisResult
+    DetectedSymbols    []DetectedSymbol
+    DynamicLoadSymbols []DetectedSymbol  // 追加。HasDynamicLoad の代替
+    Error              error
 }
 ```
 
