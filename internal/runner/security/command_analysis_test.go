@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
@@ -2658,4 +2660,47 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "expected network detected via live binary analysis")
 	})
+}
+
+// TestNetworkSymbolCache_RecordToRunner tests the record→runner cache flow.
+// It writes a NetworkSymbolAnalysisData record using fileanalysis.Store.Save,
+// then verifies that NetworkAnalyzer reads from the cache instead of calling
+// BinaryAnalyzer. This covers AC-3 (cache utilisation in runner).
+func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
+	analysisDir := commontesting.SafeTempDir(t)
+
+	// Create a real fileanalysis.Store with HybridHashFilePathGetter.
+	getter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(analysisDir, getter)
+	require.NoError(t, err)
+
+	// Write a record that simulates what the record command would produce:
+	// a dynamically-linked binary with network symbols.
+	cmdPath := "/usr/bin/curl" // use an absolute path (no need to exist on disk)
+	resolvedPath := common.ResolvedPath(cmdPath)
+	const fakeHash = "sha256:deadbeef"
+
+	record := &fileanalysis.Record{
+		ContentHash: fakeHash,
+		NetworkSymbolAnalysis: &fileanalysis.NetworkSymbolAnalysisData{
+			HasNetworkSymbols: true,
+			DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
+				{Name: "socket", Category: "socket"},
+			},
+		},
+	}
+	require.NoError(t, store.Save(resolvedPath, record))
+
+	// Create a NetworkSymbolStore backed by the real Store.
+	symStore := fileanalysis.NewNetworkSymbolStore(store)
+
+	// BinaryAnalyzer mock returns NoNetworkSymbols to prove it is never called.
+	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	analyzer := newNetworkAnalyzer(mock, symStore)
+
+	isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, fakeHash)
+
+	assert.True(t, isNet, "cache hit should report network detected")
+	// If BinaryAnalyzer were called it would have returned NoNetworkSymbols,
+	// so a true result proves only the cache path was taken.
 }

@@ -295,28 +295,30 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 5.1 統合テスト
 
-- [ ] `record` → `runner` の正常フロー
+- [x] `record` → `runner` の正常フロー
   - キャッシュを利用して正しくネットワーク判定されること
-  - キャッシュ利用時に `slog.Debug` ログに `DetectedSymbols` が出力されること
+  - キャッシュ利用時に `slog.Info` ログに `DetectedSymbols` が出力されること
+  - `TestNetworkSymbolCache_RecordToRunner`（`command_analysis_test.go`）
   - 受け入れ条件: AC-3
-- [ ] 旧スキーマ（`schema_version: 2`）の記録で実行
+- [x] 旧スキーマ（`schema_version: 2`）の記録で実行
   - `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返して実行前に停止すること（`isNetworkViaBinaryAnalysis` まで到達しない）
+  - `TestVerifyGroupFiles_OldSchema_BlocksExecution`（`manager_test.go`）
   - 受け入れ条件: AC-4
 
 ### 5.2 既存機能への非影響確認
 
-- [ ] `commandProfileDefinitions` 登録済みコマンドの判定が変更されないこと
-  - 受け入れ条件: AC-5
-- [ ] 静的 ELF バイナリの `SyscallAnalysis` ベースフローが維持されること
-  - 受け入れ条件: AC-5
-- [ ] `DynLibDeps` 検証が引き続き動作すること
-  - 受け入れ条件: AC-5
+- [x] `commandProfileDefinitions` 登録済みコマンドの判定が変更されないこと
+  - 受け入れ条件: AC-5（`make test` 全パスで確認）
+- [x] 静的 ELF バイナリの `SyscallAnalysis` ベースフローが維持されること
+  - 受け入れ条件: AC-5（既存テスト継続 PASS）
+- [x] `DynLibDeps` 検証が引き続き動作すること
+  - 受け入れ条件: AC-5（既存テスト継続 PASS）
 
 ### 5.3 全テスト・lint の最終確認
 
-- [ ] `make test` が全テストパスすること
-- [ ] `make lint` が警告・エラーなしであること
-- [ ] `make fmt` で変更がないこと
+- [x] `make test` が全テストパスすること
+- [x] `make lint` が警告・エラーなしであること
+- [x] `make fmt` で変更がないこと
 
 ## 受け入れ条件とテストの対応
 

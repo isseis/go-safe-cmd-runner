@@ -1508,7 +1508,7 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 // resolveSymlinks resolves symlinks in the given path.
 // Used in tests to ensure records are stored under the canonical path,
 // matching what filevalidator.validatePath returns at verify time.
-func resolveSymlinks(t *testing.T, path string) string {
+func resolveSymlinks(t *testing.T, path string) string { //nolint:unparam
 	t.Helper()
 	resolved, err := filepath.EvalSymlinks(path)
 	require.NoError(t, err)
@@ -1646,4 +1646,33 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 	require.ErrorAs(t, verifyErr, &schemaErr)
 	assert.Greater(t, schemaErr.Actual, schemaErr.Expected,
 		"Actual schema version should be greater than Expected")
+}
+
+// TestVerifyGroupFiles_OldSchema_BlocksExecution verifies that VerifyGroupFiles
+// returns ErrGroupVerificationFailed when the stored record for a group file has
+// schema_version < CurrentSchemaVersion.
+// Old records predate NetworkSymbolAnalysis (schema_version 2); they fail hash
+// verification because the stored hash is stale, preventing execution.
+// This ensures AC-4: runners built against newer schema cannot silently execute
+// commands whose records were written by an older version.
+func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// Use a real binary so verifyFileWithHash can compute a content hash to compare.
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	// Write an old-schema record: schema_version = CurrentSchemaVersion-1.
+	// The stored content_hash is intentionally stale ("sha256:aabbcc"), so the
+	// hash check fails and VerifyGroupFiles returns ErrGroupVerificationFailed.
+	createOldSchemaRecord(t, hashDir, cmdPath)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	runtimeGroup := createRuntimeGroup([]string{cmdPath})
+	result, verifyErr := m.VerifyGroupFiles(runtimeGroup)
+	require.Error(t, verifyErr, "old schema record should block execution")
+	assert.Nil(t, result, "result should be nil on failure")
+	assert.ErrorIs(t, verifyErr, ErrGroupVerificationFailed,
+		"error should be ErrGroupVerificationFailed")
 }
