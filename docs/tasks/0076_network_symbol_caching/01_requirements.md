@@ -104,7 +104,7 @@
 
 #### FR-3.5.3: ログ出力の維持
 
-`NetworkDetected` 判定時の `slog.Debug` ログを維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Debug` に出力する。
+`NetworkDetected` 判定時の `slog.Info` ログを維持する。キャッシュ利用時も検出シンボル（`DetectedSymbols`）を `slog.Info` に出力する。
 
 ## 4. 非機能要件
 
