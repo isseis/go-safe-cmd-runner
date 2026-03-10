@@ -129,14 +129,12 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryan
         return binaryanalyzer.AnalysisOutput{
             Result:             binaryanalyzer.NetworkDetected,
             DetectedSymbols:    detected,
-            HasDynamicLoad:     len(dynamicLoadSyms) > 0,
             DynamicLoadSymbols: dynamicLoadSyms,
         }
     }
 
     return binaryanalyzer.AnalysisOutput{
         Result:             binaryanalyzer.NoNetworkSymbols,
-        HasDynamicLoad:     len(dynamicLoadSyms) > 0,
         DynamicLoadSymbols: dynamicLoadSyms,
     }
 }
@@ -291,7 +289,6 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
             output := binaryanalyzer.AnalysisOutput{
                 DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
                 DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
-                HasDynamicLoad:     len(data.DynamicLoadSymbols) > 0,
             }
             if data.HasNetworkSymbols {
                 output.Result = binaryanalyzer.NetworkDetected
@@ -336,10 +333,10 @@ func NewNetworkAnalyzerWithBinaryAnalyzerAndStore(
 
 | テストケース | 入力 | 期待結果 | 対応 AC |
 |------------|------|---------|--------|
-| `dlopen` のみを持つ ELF | `dlopen` が `.dynsym` に存在 | `DynamicLoadSymbols: [{dlopen, dynamic_load}]`、`HasDynamicLoad: true`、`DetectedSymbols: nil` | AC-2 |
+| `dlopen` のみを持つ ELF | `dlopen` が `.dynsym` に存在 | `DynamicLoadSymbols: [{dlopen, dynamic_load}]`、`DetectedSymbols: nil` | AC-2 |
 | `dlsym` と `dlvsym` を両方持つ ELF | `dlsym`, `dlvsym` が `.dynsym` に存在 | `DynamicLoadSymbols` に両シンボルが列挙される | AC-2 |
 | ネットワークシンボルと `dlopen` を同時に持つ ELF | `socket`, `dlopen` が `.dynsym` に存在 | `DetectedSymbols` と `DynamicLoadSymbols` が独立して設定される | AC-2 |
-| dynamic_load シンボルを持たない ELF | dynamic_load シンボルなし | `DynamicLoadSymbols: nil`、`HasDynamicLoad: false` | AC-2 |
+| dynamic_load シンボルを持たない ELF | dynamic_load シンボルなし | `DynamicLoadSymbols: nil` | AC-2 |
 
 ### 6.2 `record` 拡張のテスト（`filevalidator/validator_test.go`）
 
