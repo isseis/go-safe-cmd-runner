@@ -115,12 +115,18 @@ func (a *StandardMachOAnalyzer) analyzeAllFatSlices(fat *macho.FatFile) binaryan
 	var worstError binaryanalyzer.AnalysisOutput
 	analyzedAny := false
 	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
+	seenDynLoadSyms := make(map[string]struct{})
 
 	for i := range fat.Arches {
 		slice := fat.Arches[i].File
 		result := a.analyzeSlice(slice)
 
-		dynamicLoadSyms = append(dynamicLoadSyms, result.DynamicLoadSymbols...)
+		for _, sym := range result.DynamicLoadSymbols {
+			if _, seen := seenDynLoadSyms[sym.Name]; !seen {
+				dynamicLoadSyms = append(dynamicLoadSyms, sym)
+				seenDynLoadSyms[sym.Name] = struct{}{}
+			}
+		}
 
 		switch result.Result {
 		case binaryanalyzer.NetworkDetected:
