@@ -282,7 +282,7 @@ cmd/record/main.go                         # 拡張
 - `Validator.dynlibAnalyzer` フィールド追加（`*dynlibanalysis.DynLibAnalyzer`、nil 可）
 - `LoadRecord(filePath string) (*fileanalysis.Record, error)` メソッド追加
 - `FileValidator` インターフェースに `LoadRecord` 追加
-- `saveHash` の `store.Update` コールバック内に DynLibDeps 解析を統合
+- `updateAnalysisRecord` の `store.Update` コールバック内に DynLibDeps 解析を統合
 
 > **設計注記（I/O と store.Update の関係）**: `store.Update` は現時点でファイルロック機構を持たない（Load → インメモリ修正 → Save の単純シーケンス）。そのため、コールバック内で重いI/O（再帰 ELF 探索・SHA256 計算等）を行っても「ロック保持期間の肥大化」は発生しない。並行 `record` 実行時の競合ウィンドウはコールバック外に出しても縮まるだけでゼロにはならず、YAGNI 観点からも今の設計（コールバック内で解析）で問題ない。将来 `store.Update` にファイルロックが導入される場合は、解析を事前に完了させてから `store.Update` を呼ぶ形にリファクタリングすること。
 
@@ -464,7 +464,7 @@ cmd/record/main.go                                            # 拡張（HasDyna
 
 **ファイル**: `internal/filevalidator/validator.go`, `cmd/record/main.go`
 
-案 A（`saveHash` の `store.Update` コールバック内に統合）を採用する。
+案 A（`updateAnalysisRecord` の `store.Update` コールバック内に統合）を採用する。
 
 案 B（`processFiles` 内で別途 `store.Update`）は採用しない。理由:
 - `AnalyzeNetworkSymbols` はパッケージレベル関数ではなく `BinaryAnalyzer` インターフェースのメソッドであり、`processFiles` から直接呼べない
@@ -473,7 +473,7 @@ cmd/record/main.go                                            # 拡張（HasDyna
 
 実装内容:
 - `Validator.binaryAnalyzer binaryanalyzer.BinaryAnalyzer` フィールド追加（nil 可）, `SetBinaryAnalyzer` セッター追加
-- `saveHash` コールバック内で `record.HasDynamicLoad = output.HasDynamicLoad` を常に代入（true/false 両方）
+- `updateAnalysisRecord` コールバック内で `record.HasDynamicLoad = output.HasDynamicLoad` を常に代入（true/false 両方）
 - `cmd/record/main.go` の `run()` で `security.NewBinaryAnalyzer()` を呼び、`SetBinaryAnalyzer` セッターで注入する
   （§2.3.3 と同様に `deps.validatorFactory` が `*filevalidator.Validator` を返す設計を利用する）
 
@@ -736,7 +736,7 @@ graph TB
 - [x] `dynlibanalysis/analyzer_test.go`
 - [x] `filevalidator/validator.go`: `dynlibAnalyzer` フィールド, `SetDynLibAnalyzer` セッター, `LoadRecord`
 - [x] `filevalidator/validator.go`: `FileValidator` IF に `LoadRecord` 追加
-- [x] `filevalidator/validator.go`: `saveHash` コールバック拡張
+- [x] `filevalidator/validator.go`: `updateAnalysisRecord` コールバック拡張
 - [x] `cmd/record/main.go`: `DynLibAnalyzer` 統合
 
 ### Phase 4: DynLibVerifier（runner 拡張）
@@ -754,7 +754,7 @@ graph TB
 - [x] `binaryanalyzer/analyzer.go`: `AnalysisOutput.HasDynamicLoad`
 - [x] `elfanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出
 - [x] `machoanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出
-- [x] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加・`saveHash` コールバック拡張
+- [x] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加・`updateAnalysisRecord` コールバック拡張
 - [x] `cmd/record/main.go`: `SetBinaryAnalyzer` / `SetDynLibAnalyzer` で各アナライザーを注入
 - [x] `network_analyzer.go`: `NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer` 公開ファクトリ関数を追加（プラットフォーム選択ロジックを `NewNetworkAnalyzer` から分離）
 - [x] `network_analyzer.go`: `isNetworkViaBinaryAnalysis` 戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` と `output.Result` を独立して処理する拡張（`dlopen+socket` 同時検出時は `(true, true)` を返す）

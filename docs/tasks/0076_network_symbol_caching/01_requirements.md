@@ -73,7 +73,7 @@
 
 #### FR-3.4.1: ネットワークシンボル解析の実行と記録
 
-`filevalidator.Validator.Record()` の処理中（`saveHash` 内）で、`BinaryAnalyzer` が設定されている場合に `AnalyzeNetworkSymbols` を呼び出し、`NetworkSymbolAnalysis` を記録する。
+`filevalidator.Validator.Record()` の処理中（`updateAnalysisRecord` 内）で、`BinaryAnalyzer` が設定されている場合に `AnalyzeNetworkSymbols` を呼び出し、`NetworkSymbolAnalysis` を記録する。
 
 - バイナリが非 ELF の場合（`NotSupportedBinary`）は `NetworkSymbolAnalysis` を記録しない
 - 静的 ELF バイナリ（`StaticBinary`）の場合は `NetworkSymbolAnalysis` を記録しない（`SyscallAnalysis` ベースのフローを維持）
@@ -135,7 +135,7 @@
 `SyscallAnalysis` の保存・読み込みパターン（`fileanalysis.Store` を介した `record` 時保存 / `runner` 時読み込み）と同じ構造を `NetworkSymbolAnalysis` に適用する。実装の一貫性を保つ。
 
 **`NetworkSymbolStore` に Save メソッドを持たない設計意図**:
-`SyscallAnalysis` の保存は `filevalidator` の外側（`cmd/record/main.go`）から `SyscallAnalysisStore.SaveSyscallAnalysis()` を呼ぶアーキテクチャのため、Store に Save が必要だった。一方 `NetworkSymbolAnalysis` の保存は既存の `filevalidator.saveHash()` 内で `BinaryAnalyzer` を呼ぶフローの延長として完結し、`filevalidator` 外から Save を呼ぶ経路がない。このため `NetworkSymbolStore` は Load 専用インターフェースとし、Save は `filevalidator` パッケージ内に閉じる。
+`SyscallAnalysis` の保存は `filevalidator` の外側（`cmd/record/main.go`）から `SyscallAnalysisStore.SaveSyscallAnalysis()` を呼ぶアーキテクチャのため、Store に Save が必要だった。一方 `NetworkSymbolAnalysis` の保存は既存の `filevalidator.updateAnalysisRecord()` 内で `BinaryAnalyzer` を呼ぶフローの延長として完結し、`filevalidator` 外から Save を呼ぶ経路がない。このため `NetworkSymbolStore` は Load 専用インターフェースとし、Save は `filevalidator` パッケージ内に閉じる。
 
 ## 5. 受け入れ条件
 

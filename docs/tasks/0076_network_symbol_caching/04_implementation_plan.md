@@ -157,7 +157,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ## Phase 3: `record` 時のキャッシュ保存
 
-`filevalidator` の `saveHash` を拡張し、
+`filevalidator` の `updateAnalysisRecord` を拡張し、
 `AnalyzeNetworkSymbols` の結果を `NetworkSymbolAnalysis` として記録する。
 
 仕様参照: 詳細仕様書 §3
@@ -169,9 +169,9 @@ Phase 4 は Phase 3 完了後に実施する。
   - 空スライスの場合は `nil` を返す（`omitempty` との整合性）
   - 仕様: 詳細仕様書 §3.2
 
-### 3.2 `saveHash` 関数の変更
+### 3.2 `updateAnalysisRecord` 関数の変更
 
-- [x] `internal/filevalidator/validator.go` の `saveHash` を変更
+- [x] `internal/filevalidator/validator.go` の `updateAnalysisRecord` を変更
   - `AnalyzeNetworkSymbols` の `Result` で分岐
   - `NetworkDetected` / `NoNetworkSymbols` → `record.NetworkSymbolAnalysis` を設定
   - `StaticBinary` / `NotSupportedBinary` → 記録しない

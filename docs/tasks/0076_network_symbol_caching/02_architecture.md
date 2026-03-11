@@ -125,9 +125,9 @@ flowchart LR
 
 ### 3.2 `filevalidator` パッケージの変更
 
-#### 3.2.1 `validator.go` の `saveHash` 関数
+#### 3.2.1 `validator.go` の `updateAnalysisRecord` 関数
 
-`saveHash` 内の `binaryAnalyzer` 呼び出し部分を拡張する。`AnalyzeNetworkSymbols` の返り値 `Result` で分岐し、動的バイナリ（`NetworkDetected` / `NoNetworkSymbols`）の場合に `record.NetworkSymbolAnalysis` を設定する。`StaticBinary` / `NotSupportedBinary` は記録しない。`AnalysisError` の場合はエラーを返す。
+`updateAnalysisRecord` 内の `binaryAnalyzer` 呼び出し部分を拡張する。`AnalyzeNetworkSymbols` の返り値 `Result` で分岐し、動的バイナリ（`NetworkDetected` / `NoNetworkSymbols`）の場合に `record.NetworkSymbolAnalysis` を設定する。`StaticBinary` / `NotSupportedBinary` は記録しない。`AnalysisError` の場合はエラーを返す。
 
 `binaryanalyzer.DetectedSymbol` から `fileanalysis.DetectedSymbolEntry` への変換は `filevalidator` パッケージ内のパッケージプライベート関数 `convertDetectedSymbols` で行う。詳細な実装は詳細仕様書（[03_detailed_specification.md](03_detailed_specification.md)）を参照。
 

@@ -147,17 +147,17 @@ func (v *Validator) Record(filePath string, force bool) (string, string, error) 
 		return "", "", err
 	}
 
-	return v.saveHash(targetPath, hash, hashFilePath, force)
+	return v.updateAnalysisRecord(targetPath, hash, hashFilePath, force)
 }
 
-// saveHash saves the hash using FileAnalysisRecord format.
+// updateAnalysisRecord saves the hash using FileAnalysisRecord format.
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
 //
 // Collision and duplicate detection are performed inside the Update callback,
 // which avoids a redundant Load() call and keeps error handling in sync with
 // Store.Update()'s own semantics (e.g., SchemaVersionMismatchError is rejected
 // by Update before the callback runs).
-func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
+func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
 	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
 	err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
 		// record.FilePath is non-empty when a valid existing record was loaded.

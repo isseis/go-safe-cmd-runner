@@ -146,7 +146,7 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryan
 
 ## 3. `filevalidator` の変更
 
-### 3.1 `validator.go` — `saveHash` 関数の変更
+### 3.1 `validator.go` — `updateAnalysisRecord` 関数の変更
 
 `AnalyzeNetworkSymbols` の返り値 `Result` で分岐して `NetworkSymbolAnalysis` を設定する：
 
@@ -400,7 +400,7 @@ func newNetworkAnalyzer(
 | `internal/fileanalysis/schema.go` | 変更 | `NetworkSymbolAnalysisData` / `DetectedSymbolEntry` 型追加（`DynamicLoadSymbols` フィールド含む）、`HasDynamicLoad` フィールド削除、`CurrentSchemaVersion` を 3 に更新 |
 | `internal/fileanalysis/errors.go` | 変更 | `ErrNoNetworkSymbolAnalysis` エラー変数を追加 |
 | `internal/fileanalysis/network_symbol_store.go` | 新規 | `syscall_store.go` と同じ adapter パターンで `NetworkSymbolStore` インターフェース・`networkSymbolStore` 非公開実装・`NewNetworkSymbolStore` ファクトリを定義 |
-| `internal/filevalidator/validator.go` | 変更 | `saveHash` 内の `binaryAnalyzer` 呼び出しを拡張、`NetworkSymbolAnalysis` を保存 |
+| `internal/filevalidator/validator.go` | 変更 | `updateAnalysisRecord` 内の `binaryAnalyzer` 呼び出しを拡張、`NetworkSymbolAnalysis` を保存 |
 | `internal/runner/security/network_analyzer.go` | 変更 | `NetworkAnalyzer` に `NetworkSymbolStore` を追加、`isNetworkViaBinaryAnalysis` にキャッシュ参照ロジックを追加 |
 | `internal/runner/security/network_analyzer_test_helpers.go` | 変更 | store ありのテスト用ヘルパー追加 |
 | `internal/runner/risk/evaluator.go` | 変更 | `NewStandardEvaluator()` に `store fileanalysis.NetworkSymbolStore` 引数を追加 |
