@@ -73,7 +73,7 @@
 
 #### FR-3.4.1: ネットワークシンボル解析の実行と記録
 
-`filevalidator.Validator.Record()` の処理中（`updateAnalysisRecord` 内）で、`BinaryAnalyzer` が設定されている場合に `AnalyzeNetworkSymbols` を呼び出し、`NetworkSymbolAnalysis` を記録する。
+`filevalidator.Validator.SaveRecord()` の処理中（`updateAnalysisRecord` 内）で、`BinaryAnalyzer` が設定されている場合に `AnalyzeNetworkSymbols` を呼び出し、`NetworkSymbolAnalysis` を記録する。
 
 - バイナリが非 ELF の場合（`NotSupportedBinary`）は `NetworkSymbolAnalysis` を記録しない
 - 静的 ELF バイナリ（`StaticBinary`）の場合は `NetworkSymbolAnalysis` を記録しない（`SyscallAnalysis` ベースのフローを維持）
