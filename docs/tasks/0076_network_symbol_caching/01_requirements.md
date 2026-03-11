@@ -164,7 +164,7 @@
 - [x] キャッシュ利用時に `NetworkDetected` が正しく判定されること（`HasNetworkSymbols: true` → `NetworkDetected`）
 - [x] キャッシュ利用時に `isHighRisk`（`HasDynamicLoad` 相当）が `DynamicLoadSymbols` から正しく導出されること
 - [x] `NetworkSymbolAnalysis` が未記録の場合に実行時解析にフォールバックすること
-- [x] `slog.Debug` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
+- [x] `slog.Info` ログにキャッシュ利用時も `DetectedSymbols` が出力されること
 
 ### AC-4: スキーマ移行
 
