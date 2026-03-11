@@ -241,12 +241,12 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 		return false, isHighRisk
 
 	case binaryanalyzer.AnalysisError:
-		// Analysis failed: treat as potential network operation for safety
-		slog.Warn("Binary analysis failed, treating as potential network operation",
+		// Analysis failed: cannot determine network capability, treat as high risk.
+		// This includes ErrSyscallHashMismatch (binary changed since record time).
+		slog.Warn("Binary analysis failed, treating as high risk",
 			"path", cmdPath,
-			"error", output.Error,
-			"reason", "Unable to determine network capability, assuming middle risk for safety")
-		return true, isHighRisk
+			"error", output.Error)
+		return true, true
 
 	default:
 		// Unknown result: treat as potential network operation for safety

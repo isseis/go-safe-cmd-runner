@@ -2581,6 +2581,24 @@ func TestIsNetworkOperation_HasDynamicLoad(t *testing.T) {
 	}
 }
 
+// TestIsNetworkOperation_AnalysisError verifies that AnalysisError result leads to high risk.
+//
+// This covers the ErrSyscallHashMismatch path: when the stored syscall analysis
+// record was created for a different binary (binary may have been swapped),
+// AnalyzeNetworkSymbols returns AnalysisError, which must propagate as
+// isNetwork=true AND isHighRisk=true so that execution is blocked.
+func TestIsNetworkOperation_AnalysisError(t *testing.T) {
+	sentinel := fmt.Errorf("binary may have changed since record time: /usr/bin/somecmd")
+	mock := &mockBinaryAnalyzer{
+		result: binaryanalyzer.AnalysisError,
+		err:    sentinel,
+	}
+	analyzer := newNetworkAnalyzer(mock, nil)
+	isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "sha256:abc123", false)
+	assert.True(t, isNet, "AnalysisError must report network=true (fail-safe)")
+	assert.True(t, isHigh, "AnalysisError must report highRisk=true (hash mismatch is security-relevant)")
+}
+
 // stubNetworkSymbolStore is a test double for fileanalysis.NetworkSymbolStore.
 type stubNetworkSymbolStore struct {
 	data *fileanalysis.NetworkSymbolAnalysisData
