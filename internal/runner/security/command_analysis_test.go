@@ -2352,9 +2352,11 @@ type mockBinaryAnalyzer struct {
 	symbols            []binaryanalyzer.DetectedSymbol
 	err                error
 	dynamicLoadSymbols []binaryanalyzer.DetectedSymbol
+	called             bool
 }
 
 func (m *mockBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) binaryanalyzer.AnalysisOutput {
+	m.called = true
 	return binaryanalyzer.AnalysisOutput{
 		Result:             m.result,
 		DetectedSymbols:    m.symbols,
@@ -2641,7 +2643,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isNet, "expected network detected from cache")
 		assert.False(t, isHigh, "expected not high risk (no dlopen)")
 		// BinaryAnalyzer must not have been called.
-		assert.Equal(t, binaryanalyzer.NoNetworkSymbols, mock.result, "mock result unchanged")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 
 	t.Run("cache hit HasNetworkSymbols=false → NoNetworkSymbols, BinaryAnalyzer not called", func(t *testing.T) {
@@ -2658,6 +2660,8 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network from cache")
 		assert.False(t, isHigh, "expected not high risk")
+		// BinaryAnalyzer must not have been called.
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 
 	t.Run("cache hit DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
