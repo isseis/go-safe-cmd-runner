@@ -2406,6 +2406,7 @@ func TestCreateNormalResourceManager_NetworkStoreInjected(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, storeCalled, "GetNetworkSymbolStore must be called when pathResolver implements the interface")
+	assert.NotNil(t, opts.resourceManager)
 }
 
 // TestCreateNormalResourceManager_NoStoreWhenResolverLacksInterface verifies that

@@ -3166,7 +3166,10 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 // This ensures the caching path in NetworkAnalyzer receives the hash
 // and does not fall back to live binary analysis unnecessarily.
 func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
-	const cmdPath = "/usr/bin/somecmd"
+	// cmdPath is a symlink; resolvedPath is its canonical target.
+	// Using distinct values ensures the ContentHashes lookup uses the
+	// resolved path (as returned by ResolvePath), not the raw command path.
+	const cmdPath = "/usr/local/bin/somecmd"
 	const resolvedPath = "/usr/bin/somecmd"
 	const fakeHash = "sha256:deadbeef1234"
 
@@ -3192,7 +3195,7 @@ func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
 	group := &runnertypes.GroupSpec{
 		Name: "test-group",
 		Commands: []runnertypes.CommandSpec{
-			{Name: "some-cmd", Cmd: cmdPath, Args: []string{}},
+			{Name: "some-cmd", Cmd: cmdPath},
 		},
 	}
 
