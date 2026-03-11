@@ -142,9 +142,9 @@ func hasNetworkArguments(args []string) bool {
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
 // This ensures TOCTOU safety and consistency across all security checks.
 //
-// contentHash is a pre-computed hash in "algo:hex" format that is forwarded to
-// the binary analyzer to avoid redundant hashing for static binaries with a
-// syscall store configured. Pass empty string when no hash is available.
+// contentHash is a pre-computed hash in "algo:hex" format required by
+// BinaryAnalyzer.AnalyzeNetworkSymbols. Must be non-empty; binary analysis
+// is skipped (returning false, false) when no hash is available.
 func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) (isNetwork, isHighRisk bool) {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
@@ -200,6 +200,11 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	}
 
 	// Fallback: live binary analysis.
+	// BinaryAnalyzer.AnalyzeNetworkSymbols requires a non-empty contentHash.
+	// Skip when no hash is available rather than violating the contract.
+	if contentHash == "" {
+		return false, false
+	}
 	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
 	return handleAnalysisOutput(output, cmdPath)
 }

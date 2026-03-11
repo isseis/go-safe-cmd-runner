@@ -2455,7 +2455,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			}
 
 			analyzer := newNetworkAnalyzer(mock, nil)
-			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "", false)
+			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "sha256:dummy", false)
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
 	}
@@ -2704,18 +2704,18 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isNet, "expected network detected via live binary analysis")
 	})
 
-	t.Run("empty contentHash → cache skipped, BinaryAnalyzer called", func(t *testing.T) {
-		// When contentHash is empty the store must not be consulted.
-		// If it were, LoadNetworkSymbolAnalysis would return ErrHashMismatch
-		// (record.ContentHash != "") misusing that error for a "no hash available"
-		// situation.
+	t.Run("empty contentHash → cache and BinaryAnalyzer both skipped", func(t *testing.T) {
+		// BinaryAnalyzer.AnalyzeNetworkSymbols requires a non-empty contentHash.
+		// When no hash is available, both cache and live analysis must be skipped.
 		storeCalled := false
 		store := &callTrackingStore{called: &storeCalled, err: fileanalysis.ErrHashMismatch}
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
 		analyzer := newNetworkAnalyzer(mock, store)
-		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, "")
+		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, "")
 		assert.False(t, storeCalled, "store must not be called when contentHash is empty")
-		assert.True(t, isNet, "expected live binary analysis to be used when contentHash is empty")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called when contentHash is empty")
+		assert.False(t, isNet, "expected no network result when contentHash is empty")
+		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
 }
 

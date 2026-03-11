@@ -370,7 +370,7 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 	for _, cmd := range runtimeGroup.Commands {
 		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
 		if resolveErr != nil {
-			continue
+			return fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr)
 		}
 		if hash, ok := result.ContentHashes[resolvedPath]; ok {
 			cmd.ExpandedCmdContentHash = hash
