@@ -25,7 +25,7 @@ var (
 
 // FileValidator interface defines the basic file validation methods
 type FileValidator interface {
-	Record(filePath string, force bool) (string, string, error)
+	SaveRecord(filePath string, force bool) (string, string, error)
 	Verify(filePath string) error
 	// VerifyWithHash verifies the file and returns the prefixed content hash ("algo:hex")
 	// so callers can forward it to downstream consumers without a redundant file read.
@@ -122,13 +122,13 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 	}, nil
 }
 
-// Record calculates the hash of the file at filePath and saves it to the hash directory.
+// SaveRecord calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
 // Returns ErrHashFilePathCollision if a different file's record occupies the same
 // hash file path (possible with SHA256 fallback encoding for very long paths).
 // Existing fields (e.g., SyscallAnalysis) in the record are preserved when updating.
-func (v *Validator) Record(filePath string, force bool) (string, string, error) {
+func (v *Validator) SaveRecord(filePath string, force bool) (string, string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
@@ -230,13 +230,13 @@ func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
 }
 
 // SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
-// Call before the first Record() invocation. Safe to call with nil (disables dynlib analysis).
+// Call before the first SaveRecord() invocation. Safe to call with nil (disables dynlib analysis).
 func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
 	v.dynlibAnalyzer = a
 }
 
 // SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.
-// Call before the first Record() invocation. Safe to call with nil (disables binary analysis).
+// Call before the first SaveRecord() invocation. Safe to call with nil (disables binary analysis).
 func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
 	v.binaryAnalyzer = a
 }

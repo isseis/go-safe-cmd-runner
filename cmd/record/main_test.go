@@ -32,7 +32,7 @@ type fakeRecorder struct {
 	hashDir   string
 }
 
-func (f *fakeRecorder) Record(filePath string, force bool) (string, string, error) {
+func (f *fakeRecorder) SaveRecord(filePath string, force bool) (string, string, error) {
 	f.calls = append(f.calls, recordCall{file: filePath, force: force})
 	if err, ok := f.responses[filePath]; ok && err != nil {
 		return "", "", err

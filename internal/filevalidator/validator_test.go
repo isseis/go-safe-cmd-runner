@@ -59,10 +59,10 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator")
 
-	// Test Record
-	t.Run("Record", func(t *testing.T) {
-		_, _, err := validator.Record(testFilePath, false)
-		require.NoError(t, err, "Record failed")
+	// Test SaveRecord
+	t.Run("SaveRecord", func(t *testing.T) {
+		_, _, err := validator.SaveRecord(testFilePath, false)
+		require.NoError(t, err, "SaveRecord failed")
 
 		// Verify the hash file exists
 		hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
@@ -159,10 +159,10 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator")
 
-	// Test Record with symlink
+	// Test SaveRecord with symlink
 	// Symlinks are resolved before writing the hash file
-	_, _, err = validator.Record(symlinkPath, false)
-	assert.NoError(t, err, "Record failed")
+	_, _, err = validator.SaveRecord(symlinkPath, false)
+	assert.NoError(t, err, "SaveRecord failed")
 
 	// Use store.Load() to verify the recorded path and hash
 	store := validator.GetStore()
@@ -189,8 +189,8 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator")
 
-	_, _, err = validator.Record(testFilePath, false)
-	require.NoError(t, err, "Record failed")
+	_, _, err = validator.SaveRecord(testFilePath, false)
+	require.NoError(t, err, "SaveRecord failed")
 
 	// Create a symlink to the test file
 	symlinkPath := filepath.Join(tempDir, "symlink.txt")
@@ -223,14 +223,14 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(hashFilePath, []byte(""), 0o640), "Failed to create empty hash file")
 
 	// With the FileAnalysisRecord format, a corrupted/empty file is treated as "no valid record"
-	// and is overwritten. Record() should succeed, creating a valid record.
-	hashFile, _, err := validator.Record(testFilePath, false)
-	require.NoError(t, err, "Record should succeed by overwriting the corrupted empty file")
+	// and is overwritten. SaveRecord() should succeed, creating a valid record.
+	hashFile, _, err := validator.SaveRecord(testFilePath, false)
+	require.NoError(t, err, "SaveRecord should succeed by overwriting the corrupted empty file")
 
 	// The record file should now contain valid content
 	content, err := os.ReadFile(hashFile)
 	require.NoError(t, err, "Failed to read hash file")
-	assert.NotEmpty(t, content, "Hash file should not be empty after Record")
+	assert.NotEmpty(t, content, "Hash file should not be empty after SaveRecord")
 }
 
 // TestValidator_FileAnalysisRecordFormat tests that hash files are created in FileAnalysisRecord format
@@ -245,9 +245,9 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator")
 
-	// Record the file
-	_, _, err = validator.Record(testFilePath, false)
-	require.NoError(t, err, "Record failed")
+	// Save the file record
+	_, _, err = validator.SaveRecord(testFilePath, false)
+	require.NoError(t, err, "SaveRecord failed")
 
 	// Load from store and verify the FileAnalysisRecord format
 	store := validator.GetStore()
@@ -274,8 +274,8 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 	// Create a test file
 	testFile := createTestFile(t, "test content for VerifyFromHandle")
 
-	// Record the hash
-	_, _, err = validator.Record(testFile, false)
+	// Save the record
+	_, _, err = validator.SaveRecord(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	// Open the file
@@ -302,8 +302,8 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	// Create a test file
 	testFile := createTestFile(t, "test content")
 
-	// Record the hash
-	_, _, err = validator.Record(testFile, false)
+	// Save the record
+	_, _, err = validator.SaveRecord(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	// Create another file with different content
@@ -333,8 +333,8 @@ func TestValidator_VerifyWithPrivileges(t *testing.T) {
 	// Create a test file
 	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
 
-	// Record the hash
-	_, _, err = validator.Record(testFile, false)
+	// Save the record
+	_, _, err = validator.SaveRecord(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
@@ -370,7 +370,7 @@ func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
 
 	// Create a test file and record its hash first
 	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
-	_, _, err = validator.Record(testFile, false)
+	_, _, err = validator.SaveRecord(testFile, false)
 	require.NoError(t, err, "Failed to record hash")
 
 	t.Run("privilege manager not supported", func(t *testing.T) {
@@ -418,8 +418,8 @@ func TestValidator_HashAlgorithmConsistency(t *testing.T) {
 	validator, err := New(mockAlgo, tempDir)
 	require.NoError(t, err, "Failed to create validator")
 
-	// Record the file - this should use mockAlgo.Sum()
-	hashFilePath, _, err := validator.Record(testFilePath, false)
+	// Save the file record - this should use mockAlgo.Sum()
+	hashFilePath, _, err := validator.SaveRecord(testFilePath, false)
 	require.NoError(t, err, "Failed to record file")
 
 	// Verify the file - this should also use mockAlgo.Sum()
@@ -465,10 +465,10 @@ func TestValidator_CrossAlgorithmVerificationFails(t *testing.T) {
 	err := os.WriteFile(testFilePath, []byte("test content"), 0o644)
 	require.NoError(t, err, "Failed to create test file")
 
-	// Record with MockHashAlgorithm
+	// SaveRecord with MockHashAlgorithm
 	mockValidator, err := New(&MockHashAlgorithm{}, tempDir)
 	require.NoError(t, err, "Failed to create mock validator")
-	_, _, err = mockValidator.Record(testFilePath, false)
+	_, _, err = mockValidator.SaveRecord(testFilePath, false)
 	require.NoError(t, err, "Failed to record file with MockHashAlgorithm")
 
 	// Attempt verification with SHA-256 validator (different algorithm)
@@ -497,8 +497,8 @@ func TestValidator_VerifyAndRead(t *testing.T) {
 		// Create a test file
 		testFile := createTestFile(t, testContent)
 
-		// Record the hash
-		_, _, err = validator.Record(testFile, false)
+		// Save the record
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// VerifyAndRead should succeed
@@ -510,7 +510,7 @@ func TestValidator_VerifyAndRead(t *testing.T) {
 	t.Run("file content mismatch", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Modify the file content
@@ -591,7 +591,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	t.Run("privilege execution not supported", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Use mock privilege manager that doesn't support privileged execution
@@ -607,7 +607,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	t.Run("successful privileged verification and read", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Use mock privilege manager that supports privileged execution
@@ -622,7 +622,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	t.Run("file content mismatch with privileges", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Modify the file content
@@ -733,7 +733,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 	t.Run("VerifyAndRead atomic operation", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// VerifyAndRead should return the content that matches the hash
@@ -748,7 +748,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 	t.Run("VerifyAndReadWithPrivileges atomic operation", func(t *testing.T) {
 		// Create a test file and record its hash
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Use mock privilege manager
@@ -765,7 +765,7 @@ func TestValidator_VerifyAndRead_TOCTOUPrevention(t *testing.T) {
 		// to prevent TOCTOU attacks where the file could be modified between
 		// reading and verification
 		testFile := createTestFile(t, testContent)
-		_, _, err = validator.Record(testFile, false)
+		_, _, err = validator.SaveRecord(testFile, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Test VerifyAndRead
@@ -802,9 +802,9 @@ func TestNew_RecordAndVerify(t *testing.T) {
 	err = os.WriteFile(testFilePath, []byte(testContent), 0o644)
 	require.NoError(t, err, "Failed to create test file")
 
-	t.Run("Record with analysis store format", func(t *testing.T) {
-		// Record the hash
-		_, _, err = validator.Record(testFilePath, false)
+	t.Run("SaveRecord with analysis store format", func(t *testing.T) {
+		// Save the record
+		_, _, err = validator.SaveRecord(testFilePath, false)
 		require.NoError(t, err, "Failed to record hash")
 
 		// Load record directly from store to verify format
@@ -865,8 +865,8 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	})
 	require.NoError(t, err, "Failed to save initial record")
 
-	// Now use validator.Record with force to update the content hash
-	_, _, err = validator.Record(testFilePath, true)
+	// Now use validator.SaveRecord with force to update the content hash
+	_, _, err = validator.SaveRecord(testFilePath, true)
 	require.NoError(t, err, "Failed to record hash with force")
 
 	// Load the record and verify SyscallAnalysis is preserved
@@ -952,18 +952,18 @@ func TestValidator_Record_HashFilePathCollision(t *testing.T) {
 	require.NoError(t, os.WriteFile(file1, []byte("content1"), 0o644))
 	require.NoError(t, os.WriteFile(file2, []byte("content2"), 0o644))
 
-	// Record first file — should succeed
-	_, _, err := v.Record(file1, false)
-	require.NoError(t, err, "first Record should succeed")
+	// SaveRecord first file — should succeed
+	_, _, err := v.SaveRecord(file1, false)
+	require.NoError(t, err, "first SaveRecord should succeed")
 
-	// Record second file (different path, same record file) — should fail with collision
-	_, _, err = v.Record(file2, false)
+	// SaveRecord second file (different path, same record file) — should fail with collision
+	_, _, err = v.SaveRecord(file2, false)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHashFilePathCollision,
-		"second Record should detect collision")
+		"second SaveRecord should detect collision")
 
 	// Even with force=true, collision should still be detected
-	_, _, err = v.Record(file2, true)
+	_, _, err = v.SaveRecord(file2, true)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHashFilePathCollision,
 		"force=true should not bypass collision detection")
@@ -978,8 +978,8 @@ func TestValidator_Verify_HashFilePathCollision(t *testing.T) {
 	require.NoError(t, os.WriteFile(file1, []byte("content1"), 0o644))
 	require.NoError(t, os.WriteFile(file2, []byte("content2"), 0o644))
 
-	// Record first file
-	_, _, err := v.Record(file1, false)
+	// SaveRecord first file
+	_, _, err := v.SaveRecord(file1, false)
 	require.NoError(t, err)
 
 	// Verify second file — record belongs to file1, should detect collision
@@ -1003,20 +1003,20 @@ func TestAnalyze_Force(t *testing.T) {
 	require.NoError(t, err)
 
 	// First record without force — succeeds.
-	_, _, err = v.Record(targetFile, false)
+	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
 	// Second record without force — fails (already exists).
-	_, _, err = v.Record(targetFile, false)
+	_, _, err = v.SaveRecord(targetFile, false)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHashFileExists)
 
-	// Record with force=true — succeeds (updates the record).
-	_, _, err = v.Record(targetFile, true)
+	// SaveRecord with force=true — succeeds (updates the record).
+	_, _, err = v.SaveRecord(targetFile, true)
 	require.NoError(t, err, "force=true should overwrite existing record")
 }
 
-// TestRecord_BinaryAnalyzerNil_NoError verifies that Record() succeeds when
+// TestRecord_BinaryAnalyzerNil_NoError verifies that SaveRecord() succeeds when
 // binaryAnalyzer is nil (binary analysis disabled).
 func TestRecord_BinaryAnalyzerNil_NoError(t *testing.T) {
 	tempDir := safeTempDir(t)
@@ -1030,8 +1030,8 @@ func TestRecord_BinaryAnalyzerNil_NoError(t *testing.T) {
 	require.NoError(t, err)
 	// binaryAnalyzer is nil by default — do not call SetBinaryAnalyzer.
 
-	_, _, err = v.Record(targetFile, false)
-	assert.NoError(t, err, "Record should succeed when binaryAnalyzer is nil")
+	_, _, err = v.SaveRecord(targetFile, false)
+	assert.NoError(t, err, "SaveRecord should succeed when binaryAnalyzer is nil")
 }
 
 // stubBinaryAnalyzer is a test double for binaryanalyzer.BinaryAnalyzer.
@@ -1065,7 +1065,7 @@ func recordWithBinaryAnalyzer(t *testing.T, stub *stubBinaryAnalyzer) (*fileanal
 	require.NoError(t, err)
 	v.SetBinaryAnalyzer(stub)
 
-	_, _, recErr := v.Record(targetFile, false)
+	_, _, recErr := v.SaveRecord(targetFile, false)
 	if recErr != nil {
 		return nil, recErr
 	}
@@ -1140,7 +1140,7 @@ func TestRecord_AnalysisError_RecordNotSaved(t *testing.T) {
 		err:    errors.New("analysis failed"),
 	}
 	_, err := recordWithBinaryAnalyzer(t, stub)
-	assert.Error(t, err, "Record should fail when binaryAnalyzer returns AnalysisError")
+	assert.Error(t, err, "SaveRecord should fail when binaryAnalyzer returns AnalysisError")
 }
 
 func TestRecord_Force_OverwritesNetworkSymbolAnalysis(t *testing.T) {
@@ -1161,14 +1161,14 @@ func TestRecord_Force_OverwritesNetworkSymbolAnalysis(t *testing.T) {
 			{Name: "socket", Category: "network"},
 		},
 	})
-	_, _, err = v.Record(targetFile, false)
+	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
 	// Second record (force=true) with no network symbols: should overwrite.
 	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
 		result: binaryanalyzer.NoNetworkSymbols,
 	})
-	_, _, err = v.Record(targetFile, true)
+	_, _, err = v.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr := v.LoadRecord(targetFile)
@@ -1201,7 +1201,7 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis(t *testi
 			{Name: "socket", Category: "network"},
 		},
 	})
-	_, _, err = v.Record(targetFile, false)
+	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
 	record, loadErr := v.LoadRecord(targetFile)
@@ -1212,7 +1212,7 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis(t *testi
 	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
 		result: binaryanalyzer.StaticBinary,
 	})
-	_, _, err = v.Record(targetFile, true)
+	_, _, err = v.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr = v.LoadRecord(targetFile)
@@ -1241,14 +1241,14 @@ func TestRecord_Force_NetworkToNotSupportedBinary_ClearsNetworkSymbolAnalysis(t 
 			{Name: "socket", Category: "network"},
 		},
 	})
-	_, _, err = v.Record(targetFile, false)
+	_, _, err = v.SaveRecord(targetFile, false)
 	require.NoError(t, err)
 
 	// Second record (force=true): now treated as unsupported format.
 	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
 		result: binaryanalyzer.NotSupportedBinary,
 	})
-	_, _, err = v.Record(targetFile, true)
+	_, _, err = v.SaveRecord(targetFile, true)
 	require.NoError(t, err)
 
 	record, loadErr := v.LoadRecord(targetFile)

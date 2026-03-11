@@ -40,7 +40,7 @@ func TestHashValidation_BasicBypassAttempts(t *testing.T) {
 					"Failed to create test file")
 
 				// Record hash
-				_, _, err := validator.Record(testFile, false)
+				_, _, err := validator.SaveRecord(testFile, false)
 				require.NoError(t, err, "Failed to record hash")
 
 				cleanup := func() {
@@ -58,7 +58,7 @@ func TestHashValidation_BasicBypassAttempts(t *testing.T) {
 				err := os.WriteFile(testFile, []byte("original content"), 0o644)
 				require.NoError(t, err)
 
-				_, _, err = validator.Record(testFile, false)
+				_, _, err = validator.SaveRecord(testFile, false)
 				require.NoError(t, err)
 
 				// Modify file after recording hash
@@ -133,7 +133,7 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 				err := os.WriteFile(testFile, []byte("original content"), 0o644)
 				require.NoError(t, err)
 
-				_, _, err = validator.Record(testFile, false)
+				_, _, err = validator.SaveRecord(testFile, false)
 				require.NoError(t, err)
 
 				return testFile
@@ -176,7 +176,7 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 				err := os.WriteFile(testFile, []byte("content"), 0o644)
 				require.NoError(t, err)
 
-				_, _, err = validator.Record(testFile, false)
+				_, _, err = validator.SaveRecord(testFile, false)
 				require.NoError(t, err)
 
 				return testFile
@@ -239,7 +239,7 @@ func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
 	defer os.Remove(legitFile)
 
 	// Record hash for legitimate file
-	_, _, err = validator.Record(legitFile, false)
+	_, _, err = validator.SaveRecord(legitFile, false)
 	require.NoError(t, err)
 
 	// Verify legitimate file
@@ -287,7 +287,7 @@ func TestHashValidation_RaceConditionProtection(t *testing.T) {
 	defer os.Remove(testFile)
 
 	// Record hash
-	_, _, err = validator.Record(testFile, false)
+	_, _, err = validator.SaveRecord(testFile, false)
 	require.NoError(t, err)
 
 	// Verify the file

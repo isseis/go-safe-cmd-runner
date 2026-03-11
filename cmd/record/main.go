@@ -57,7 +57,7 @@ func defaultDeps() deps {
 // Implementations must return the content hash in "<algorithm>:<hex>" format,
 // as it is passed directly to syscall analysis storage.
 type hashRecorder interface {
-	Record(filePath string, force bool) (string, string, error)
+	SaveRecord(filePath string, force bool) (string, string, error)
 }
 
 type recordConfig struct {
@@ -174,7 +174,7 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 
 	for idx, filePath := range cfg.files {
 		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
-		hashFile, contentHash, err := recorder.Record(filePath, cfg.force)
+		hashFile, contentHash, err := recorder.SaveRecord(filePath, cfg.force)
 		if err != nil {
 			failures++
 			fmt.Fprintln(stdout, "FAILED")                                          //nolint:errcheck
