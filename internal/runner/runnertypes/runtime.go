@@ -296,6 +296,13 @@ type RuntimeCommand struct {
 	// Empty string means no hash is available (file was skipped or not verified).
 	ExpandedCmdContentHash string
 
+	// SkipBinaryAnalysis is true when the command binary resides on a standard
+	// system path and verify_standard_paths = false is configured.  In that case
+	// file verification (including network-symbol analysis) is intentionally
+	// skipped for this command, so binary analysis must also be suppressed to
+	// avoid analysing an unverified binary.
+	SkipBinaryAnalysis bool
+
 	// EffectiveWorkDir is the resolved working directory for this command
 	EffectiveWorkDir string
 

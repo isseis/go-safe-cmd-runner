@@ -54,11 +54,16 @@ func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *Network
 // When non-empty it is forwarded to ELF analysis for static binaries to avoid
 // re-reading the binary. Pass empty string when no hash is available.
 //
+// skipBinaryAnalysis suppresses ELF/Mach-O binary analysis entirely.
+// Set this when the command binary has not been file-verified (e.g.
+// verify_standard_paths = false), so that analysing an unverified binary
+// is avoided. Profile-based and argument-based checks still run.
+//
 // Detection priority:
 // 1. commandProfileDefinitions (hardcoded list) - takes precedence
-// 2. ELF .dynsym analysis for unknown commands
+// 2. ELF .dynsym analysis for unknown commands (skipped when skipBinaryAnalysis is true)
 // 3. Argument-based detection (URLs, SSH-style addresses)
-func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string) (bool, bool) {
+func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string, skipBinaryAnalysis bool) (bool, bool) {
 	// Extract all possible command names including symlink targets
 	commandNames, exceededDepth := extractAllCommandNames(cmdName)
 
@@ -102,7 +107,8 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, cont
 	// If not found in profiles, try binary analysis for unknown commands.
 	// Binary analysis requires an absolute path (should be resolved by caller via PathResolver).
 	// If cmdName is not absolute, skip binary analysis silently.
-	if !foundInProfiles && filepath.IsAbs(cmdName) {
+	// Also skip when skipBinaryAnalysis is true (e.g. verify_standard_paths = false).
+	if !foundInProfiles && filepath.IsAbs(cmdName) && !skipBinaryAnalysis {
 		isNet, isHigh := a.isNetworkViaBinaryAnalysis(cmdName, contentHash)
 		if isNet || isHigh {
 			return isNet, isHigh
