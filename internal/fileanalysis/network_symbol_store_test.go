@@ -36,7 +36,7 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_Normal(t *testing.T) {
 		AnalyzedAt:        analyzedAt,
 		HasNetworkSymbols: true,
 		DetectedSymbols: []DetectedSymbolEntry{
-			{Name: "socket", Category: "socket"},
+			{Name: "socket", Category: "network"},
 		},
 		DynamicLoadSymbols: []DetectedSymbolEntry{
 			{Name: "dlopen", Category: "dynamic_load"},
@@ -57,7 +57,7 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_Normal(t *testing.T) {
 	assert.True(t, loaded.HasNetworkSymbols)
 	require.Len(t, loaded.DetectedSymbols, 1)
 	assert.Equal(t, "socket", loaded.DetectedSymbols[0].Name)
-	assert.Equal(t, "socket", loaded.DetectedSymbols[0].Category)
+	assert.Equal(t, "network", loaded.DetectedSymbols[0].Category)
 	require.Len(t, loaded.DynamicLoadSymbols, 1)
 	assert.Equal(t, "dlopen", loaded.DynamicLoadSymbols[0].Name)
 	assert.Equal(t, "dynamic_load", loaded.DynamicLoadSymbols[0].Category)
