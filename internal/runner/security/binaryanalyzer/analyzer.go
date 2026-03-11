@@ -98,7 +98,7 @@ type BinaryAnalyzer interface {
 	// and determines if it contains network-related symbols.
 	//
 	// contentHash is the pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-	// Pass an empty string when no pre-computed hash is available.
+	// Must be non-empty; callers that cannot provide a hash must skip binary analysis entirely.
 	//
 	// Returns:
 	//   - NetworkDetected: Binary contains network-related symbols

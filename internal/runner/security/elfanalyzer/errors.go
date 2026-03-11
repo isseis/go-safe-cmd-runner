@@ -21,6 +21,10 @@ var (
 
 	// ErrNoSymbolTable indicates the ELF file has no symbol table.
 	ErrNoSymbolTable = errors.New("ELF file has no symbol table (possibly stripped)")
+
+	// ErrSyscallHashMismatch indicates the stored syscall analysis record was created
+	// for a different binary. The binary has been replaced since record time.
+	ErrSyscallHashMismatch = errors.New("binary may have changed since record time")
 )
 
 // UnsupportedArchitectureError indicates the ELF architecture is not supported.

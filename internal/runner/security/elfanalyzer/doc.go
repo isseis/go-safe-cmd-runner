@@ -10,7 +10,7 @@
 // # Usage
 //
 //	analyzer := elfanalyzer.NewStandardELFAnalyzer(nil, nil)
-//	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "")
+//	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "sha256:abc123...")
 //
 //	if output.IsNetworkCapable() {
 //	    fmt.Printf("Network symbols detected: %v\n", output.DetectedSymbols)

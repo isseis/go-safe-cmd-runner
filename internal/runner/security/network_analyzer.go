@@ -51,8 +51,8 @@ func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *Network
 // Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded.
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-// When non-empty it is forwarded to ELF analysis for static binaries to avoid
-// re-reading the binary. Pass empty string when no hash is available.
+// Forwarded to ELF analysis for static binaries to avoid re-reading the binary.
+// Must be non-empty when skipBinaryAnalysis is false and binary analysis may run.
 //
 // skipBinaryAnalysis suppresses ELF/Mach-O binary analysis entirely.
 // Set this when the command binary has not been file-verified (e.g.
