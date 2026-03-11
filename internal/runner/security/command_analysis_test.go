@@ -2516,7 +2516,7 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 
 		// Verify mock is used by calling IsNetworkOperation on an absolute path
 		// (binary analysis is skipped for non-absolute paths)
-		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "", false)
+		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "sha256:dummy", false)
 		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic
 	})
@@ -2574,7 +2574,7 @@ func TestIsNetworkOperation_HasDynamicLoad(t *testing.T) {
 				dynamicLoadSymbols: tc.dynamicLoadSymbols,
 			}
 			analyzer := newNetworkAnalyzer(mock, nil)
-			isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "", false)
+			isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "sha256:dummy", false)
 			assert.Equal(t, tc.expectNetwork, isNet, "isNetwork mismatch")
 			assert.Equal(t, tc.expectHighRisk, isHigh, "isHighRisk mismatch")
 		})
