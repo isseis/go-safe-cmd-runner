@@ -974,17 +974,17 @@ func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
 }
 ```
 
-`Record` メソッドの拡張（`saveHash` 内の `store.Update` コールバックに DynLibDeps / HasDynamicLoad 解析を統合）:
+`Record` メソッドの拡張（`updateAnalysisRecord` 内の `store.Update` コールバックに DynLibDeps / HasDynamicLoad 解析を統合）:
 
 ```go
-// saveHash saves the hash using FileAnalysisRecord format.
+// updateAnalysisRecord saves the hash using FileAnalysisRecord format.
 // When analyzers are set, DynLibDeps and HasDynamicLoad are also analyzed and
 // recorded in the same Update callback (atomic with hash update).
 // HasDynamicLoad is always reset to false before the analyzer is consulted, so
 // disabling the analyzer clears any stale true from a prior run. The json tag
 // uses omitempty, so false is omitted from the JSON file; this is safe because
 // every record run recomputes the value from scratch.
-func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
+func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
     contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
     err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
         // Existing collision/duplicate checks
@@ -1289,7 +1289,7 @@ func run(args []string, stdout, stderr io.Writer, d dirCreator) int {
 
 ### 3.16 `HasDynamicLoad` の `record` 時の記録
 
-`HasDynamicLoad` の記録は §3.12 の `saveHash` の `store.Update` コールバック内に統合する（案 A）。
+`HasDynamicLoad` の記録は §3.12 の `updateAnalysisRecord` の `store.Update` コールバック内に統合する（案 A）。
 `processFiles` 内で別途 `store.Update` を呼ぶ案（案 B）は採用しない。
 
 **案 B を採用しない理由:**
@@ -1299,7 +1299,7 @@ func run(args []string, stdout, stderr io.Writer, d dirCreator) int {
 
 **案 A の統合方法:**
 
-`Validator.binaryAnalyzer` フィールドに `BinaryAnalyzer` インスタンスを注入し、`saveHash` コールバック内で `record.HasDynamicLoad` を常に書き込む（§3.12 参照）。
+`Validator.binaryAnalyzer` フィールドに `BinaryAnalyzer` インスタンスを注入し、`updateAnalysisRecord` コールバック内で `record.HasDynamicLoad` を常に書き込む（§3.12 参照）。
 
 `cmd/record/main.go` での注入:
 
@@ -1310,7 +1310,7 @@ func run(args []string, stdout, stderr io.Writer, d dirCreator) int {
     // ... existing config, validator setup ...
 
     // NEW: Inject analyzers for dynamic library dependency recording and
-    //      HasDynamicLoad detection. Both are integrated into saveHash's
+    //      HasDynamicLoad detection. Both are integrated into updateAnalysisRecord's
     //      store.Update callback for atomicity.
     dynlibAnalyzer := dynlibanalysis.NewDynLibAnalyzer(
         safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
@@ -1536,7 +1536,7 @@ func TestIntegration_OldSchemaRejection(t *testing.T) {
 - [x] visited セット（循環依存防止）
 - [x] 再帰深度制限
 - [x] `filevalidator/validator.go`: `dynlibAnalyzer` フィールド, `SetDynLibAnalyzer` セッター, `LoadRecord` 追加
-- [x] `filevalidator/validator.go`: `saveHash` コールバックに DynLibDeps 解析統合
+- [x] `filevalidator/validator.go`: `updateAnalysisRecord` コールバックに DynLibDeps 解析統合
 - [x] `cmd/record/main.go`: `deps.validatorFactory` を `*filevalidator.Validator` 返しに変更し `SetDynLibAnalyzer` で注入
 - [x] 上記の全ユニットテスト・統合テスト
 
@@ -1556,7 +1556,7 @@ func TestIntegration_OldSchemaRejection(t *testing.T) {
 - [x] `machoanalyzer/standard_analyzer.go`: `HasDynamicLoad` 検出ロジック追加
 - [x] `fileanalysis/schema.go`: `Record.HasDynamicLoad` フィールド（Phase 1 で追加済み）
 - [x] `filevalidator/validator.go`: `binaryAnalyzer` フィールド, `SetBinaryAnalyzer` セッター追加
-- [x] `filevalidator/validator.go`: `saveHash` コールバックに `HasDynamicLoad` 記録を統合（常に true/false を書き込み）
+- [x] `filevalidator/validator.go`: `updateAnalysisRecord` コールバックに `HasDynamicLoad` 記録を統合（常に true/false を書き込み）
 - [x] `cmd/record/main.go`: `SetBinaryAnalyzer` で `BinaryAnalyzer` を注入
 - [x] `runner/security/network_analyzer.go`: `isNetworkViaBinaryAnalysis` の戻り値を `(isNetwork, isHighRisk bool)` に変更し、`HasDynamicLoad` 検出時に `isHighRisk=true` を設定する高リスク判定を追加（`isNetwork` は独立して判定）
 - [x] `runner/security/network_analyzer.go`: `IsNetworkOperation` 内の呼び出しを `isNet, isHigh := a.isNetworkViaBinaryAnalysis(...)` に変更

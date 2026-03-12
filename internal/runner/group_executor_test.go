@@ -3159,3 +3159,79 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
 	mockVerificationManager.AssertExpectations(t)
 }
+
+// TestVerifyGroupFiles_ContentHashPropagatedToCommand verifies that when
+// VerifyGroupFiles returns ContentHashes, the hash is forwarded to
+// cmd.ExpandedCmdContentHash before ExecuteCommand is called.
+// This ensures the caching path in NetworkAnalyzer receives the hash
+// and does not fall back to live binary analysis unnecessarily.
+func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
+	// cmdPath is a symlink; resolvedPath is its canonical target.
+	// Using distinct values ensures the ContentHashes lookup uses the
+	// resolved path (as returned by ResolvePath), not the raw command path.
+	const cmdPath = "/usr/local/bin/somecmd"
+	const resolvedPath = "/usr/bin/somecmd"
+	const fakeHash = "sha256:deadbeef1234"
+
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVM := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "some-cmd", Cmd: cmdPath},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	// VerifyGroupFiles returns a ContentHashes entry for the resolved command path.
+	verifyResult := &verification.Result{
+		TotalFiles:    1,
+		VerifiedFiles: 1,
+		ContentHashes: map[string]string{
+			resolvedPath: fakeHash,
+		},
+	}
+	mockVM.On("VerifyGroupFiles", mock.Anything).Return(verifyResult, nil)
+
+	// ResolvePath is called twice: once in verifyGroupFiles (for ContentHashes lookup)
+	// and once in executeCommandInGroup (for path validation).
+	mockVM.On("ResolvePath", cmdPath).Return(resolvedPath, nil)
+	mockVM.On("VerifyCommandDynLibDeps", resolvedPath).Return(nil)
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	// ExecuteCommand must receive a cmd with ExpandedCmdContentHash set to fakeHash.
+	cmdWithHash := mock.MatchedBy(func(cmd *runnertypes.RuntimeCommand) bool {
+		return cmd.ExpandedCmdContentHash == fakeHash
+	})
+	mockRM.On("ExecuteCommand", mock.Anything, cmdWithHash, mock.Anything, mock.Anything).
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.NoError(t, err)
+
+	mockRM.AssertExpectations(t)
+}

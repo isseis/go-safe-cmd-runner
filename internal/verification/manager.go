@@ -24,7 +24,8 @@ type Manager struct {
 	fs                          common.FileSystem
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
-	dynlibVerifier              *dynlibanalysis.DynLibVerifier // initialized once at construction
+	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
+	dynlibVerifier              *dynlibanalysis.DynLibVerifier  // initialized once at construction
 	security                    *security.Validator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -364,6 +365,12 @@ func (m *Manager) GetVerificationSummary() *FileVerificationSummary {
 	return &summary
 }
 
+// GetNetworkSymbolStore returns a NetworkSymbolStore backed by the same hash directory,
+// or nil if not available (e.g. when fileValidator is a test mock or hash dir is absent).
+func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
+	return m.networkSymbolStore
+}
+
 // verifyFileWithFallback attempts file verification with normal privileges first,
 // then falls back to privileged verification if permission errors occur
 // In dry-run mode, it records the verification result without returning errors
@@ -491,17 +498,24 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.fileValidatorEnabled {
 		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
-			// In dry-run mode, handle recoverable errors differently. Only keep going when
-			// the error is considered recoverable; otherwise fail fast as before.
-			if opts.isDryRun {
-				if !shouldContinueOnValidatorError(err, hashDir) {
-					return nil, fmt.Errorf("failed to initialize file validator: %w", err)
-				}
+			// In dry-run mode, a permission error creating the hash directory is
+			// recoverable: the operator may be checking configuration on a machine
+			// where the hash directory is not writable (e.g. CI without sudo).
+			// Binary analysis will be skipped for commands without a content hash,
+			// but dry-run output remains useful for configuration validation.
+			// All other errors (invalid path, not a directory, etc.) are fatal
+			// in both modes.
+			if opts.isDryRun && errors.Is(err, os.ErrPermission) {
+				slog.Info("Hash directory not writable in dry-run mode; file verification and binary analysis will be skipped",
+					"hash_directory", hashDir)
 			} else {
 				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 			}
 		} else {
 			manager.fileValidator = validator
+			if s := validator.GetStore(); s != nil {
+				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
+			}
 		}
 	}
 
@@ -546,38 +560,6 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	return manager, nil
-}
-
-// shouldContinueOnValidatorError determines if execution should continue in dry-run mode
-// when file validator initialization fails.
-// Returns true for recoverable errors (directory not found, permission denied),
-// false for configuration errors (invalid path, not a directory, etc.)
-func shouldContinueOnValidatorError(err error, hashDir string) bool {
-	// Check if hash directory does not exist - recoverable in dry-run mode
-	if errors.Is(err, filevalidator.ErrHashDirNotExist) {
-		slog.Info("Hash directory not found - skipping file verification",
-			"hash_directory", hashDir,
-			"mode", "dry-run",
-			"error", err.Error())
-		return true
-	}
-
-	// Check if permission denied - recoverable in dry-run mode
-	if errors.Is(err, os.ErrPermission) {
-		slog.Info("Hash directory permission denied - skipping file verification",
-			"hash_directory", hashDir,
-			"mode", "dry-run",
-			"error", err.Error())
-		return true
-	}
-
-	// For other errors (invalid path, not a directory, etc.), fail immediately
-	// These indicate configuration problems that should be fixed
-	slog.Error("File validator initialization failed with non-recoverable error",
-		"hash_directory", hashDir,
-		"mode", "dry-run",
-		"error", err.Error())
-	return false
 }
 
 // validateSecurityConstraints validates security constraints based on creation mode and security level

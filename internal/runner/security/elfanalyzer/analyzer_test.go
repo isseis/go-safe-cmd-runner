@@ -80,7 +80,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			absPath, err := filepath.Abs(path)
 			require.NoError(t, err)
 
-			output := analyzer.AnalyzeNetworkSymbols(absPath, "")
+			output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
 			assert.Equal(t, tt.expectedResult, output.Result,
 				"unexpected result for %s", tt.filename)
 
@@ -103,14 +103,14 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 func TestStandardELFAnalyzer_NonexistentFile(t *testing.T) {
 	analyzer := NewStandardELFAnalyzer(nil, nil)
 
-	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "")
+	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
 }
 
 // TestHasDynamicLoad_ELF verifies that a binary importing dlopen is detected
-// with HasDynamicLoad=true, independently of network symbol detection.
+// with non-empty DynamicLoadSymbols, independently of network symbol detection.
 func TestHasDynamicLoad_ELF(t *testing.T) {
 	analyzer := NewStandardELFAnalyzer(nil, nil)
 
@@ -135,46 +135,46 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 		t.Skip("no python3 binary found; skipping HasDynamicLoad_ELF test")
 	}
 
-	output := analyzer.AnalyzeNetworkSymbols(binaryPath, "")
+	output := analyzer.AnalyzeNetworkSymbols(binaryPath, "sha256:dummy")
 	// python3 uses dlopen for extension loading.
-	assert.True(t, output.HasDynamicLoad,
-		"python3 is expected to import dlopen/dlsym, got HasDynamicLoad=false")
+	assert.True(t, len(output.DynamicLoadSymbols) > 0,
+		"python3 is expected to import dlopen/dlsym, got no DynamicLoadSymbols")
 }
 
 // TestCheckDynamicSymbols_HasDynamicLoad verifies that checkDynamicSymbols
-// correctly sets HasDynamicLoad when dlopen/dlsym/dlvsym appear in the symbol list.
+// correctly populates DynamicLoadSymbols when dlopen/dlsym/dlvsym appear in the symbol list.
 func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
 	analyzer := NewStandardELFAnalyzer(nil, nil)
 
 	tests := []struct {
-		name            string
-		symbols         []elf.Symbol
-		wantResult      binaryanalyzer.AnalysisResult
-		wantDynamicLoad bool
+		name                    string
+		symbols                 []elf.Symbol
+		wantResult              binaryanalyzer.AnalysisResult
+		wantDynamicLoadSymNames []string
 	}{
 		{
 			name: "dlopen only",
 			symbols: []elf.Symbol{
 				{Name: "dlopen", Section: elf.SHN_UNDEF},
 			},
-			wantResult:      binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoad: true,
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: []string{"dlopen"},
 		},
 		{
 			name: "dlsym only",
 			symbols: []elf.Symbol{
 				{Name: "dlsym", Section: elf.SHN_UNDEF},
 			},
-			wantResult:      binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoad: true,
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: []string{"dlsym"},
 		},
 		{
 			name: "dlvsym only",
 			symbols: []elf.Symbol{
 				{Name: "dlvsym", Section: elf.SHN_UNDEF},
 			},
-			wantResult:      binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoad: true,
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: []string{"dlvsym"},
 		},
 		{
 			name: "dlopen and socket (both signals)",
@@ -182,24 +182,24 @@ func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
 				{Name: "dlopen", Section: elf.SHN_UNDEF},
 				{Name: "socket", Section: elf.SHN_UNDEF},
 			},
-			wantResult:      binaryanalyzer.NetworkDetected,
-			wantDynamicLoad: true,
+			wantResult:              binaryanalyzer.NetworkDetected,
+			wantDynamicLoadSymNames: []string{"dlopen"},
 		},
 		{
 			name: "socket only (no dynamic load)",
 			symbols: []elf.Symbol{
 				{Name: "socket", Section: elf.SHN_UNDEF},
 			},
-			wantResult:      binaryanalyzer.NetworkDetected,
-			wantDynamicLoad: false,
+			wantResult:              binaryanalyzer.NetworkDetected,
+			wantDynamicLoadSymNames: nil,
 		},
 		{
 			name: "no relevant symbols",
 			symbols: []elf.Symbol{
 				{Name: "printf", Section: elf.SHN_UNDEF},
 			},
-			wantResult:      binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoad: false,
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: nil,
 		},
 		{
 			name: "dlopen defined (not imported, SHN_UNDEF=0)",
@@ -207,8 +207,17 @@ func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
 				// Section != SHN_UNDEF means it's defined, not imported
 				{Name: "dlopen", Section: elf.SHN_ABS},
 			},
-			wantResult:      binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoad: false,
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: nil,
+		},
+		{
+			name: "dlsym and dlvsym both present",
+			symbols: []elf.Symbol{
+				{Name: "dlsym", Section: elf.SHN_UNDEF},
+				{Name: "dlvsym", Section: elf.SHN_UNDEF},
+			},
+			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			wantDynamicLoadSymNames: []string{"dlsym", "dlvsym"},
 		},
 	}
 
@@ -216,7 +225,14 @@ func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			output := analyzer.checkDynamicSymbols(tt.symbols)
 			assert.Equal(t, tt.wantResult, output.Result)
-			assert.Equal(t, tt.wantDynamicLoad, output.HasDynamicLoad)
+			var gotNames []string
+			for _, sym := range output.DynamicLoadSymbols {
+				gotNames = append(gotNames, sym.Name)
+				// All DynamicLoadSymbols must have category "dynamic_load"
+				assert.Equal(t, "dynamic_load", sym.Category,
+					"DynamicLoadSymbol %q should have category dynamic_load", sym.Name)
+			}
+			assert.Equal(t, tt.wantDynamicLoadSymNames, gotNames)
 		})
 	}
 }
@@ -238,7 +254,7 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 	absPath, err := filepath.Abs(path)
 	require.NoError(t, err)
 
-	output := analyzer.AnalyzeNetworkSymbols(absPath, "")
+	output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
 	// with_socket.elf has "socket" and "connect", but our custom set only has "my_network_func"
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result,
 		"custom symbols should not match standard socket symbols")
@@ -294,7 +310,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.Len(t, output.DetectedSymbols, 2)
@@ -329,7 +345,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 	assert.Empty(t, output.DetectedSymbols)
@@ -365,7 +381,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
@@ -411,7 +427,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// IsHighRisk must take precedence over HasNetworkSyscalls
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
@@ -430,7 +446,7 @@ func TestStandardELFAnalyzer_SyscallLookup_NotFound(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// Should fallback to StaticBinary when no analysis found
 	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
@@ -455,10 +471,11 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 	}
 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
-	// Should fallback to StaticBinary when hash doesn't match
-	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
+	// Hash mismatch means the binary has changed since record time: treat as AnalysisError.
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	assert.ErrorIs(t, output.Error, ErrSyscallHashMismatch)
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
@@ -468,7 +485,7 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 
 	// Create analyzer without syscall store (nil)
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, nil)
-	output := analyzer.AnalyzeNetworkSymbols(testFile, "")
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	// Should behave like regular analyzer - return StaticBinary for static ELF
 	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)

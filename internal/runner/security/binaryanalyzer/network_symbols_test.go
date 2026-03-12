@@ -32,9 +32,9 @@ func TestIsDynamicLoadSymbol(t *testing.T) {
 	}
 }
 
-// TestHasDynamicLoad_Independent verifies that HasDynamicLoad is set
+// TestHasDynamicLoad_Independent verifies that DynamicLoadSymbols is populated
 // independently of network symbol detection.
-// A binary with both dlopen and socket symbols returns HasDynamicLoad=true
+// A binary with both dlopen and socket symbols returns non-empty DynamicLoadSymbols
 // AND Result=NetworkDetected (both signals are preserved independently).
 func TestHasDynamicLoad_Independent(t *testing.T) {
 	// Verify that dlopen/dlsym/dlvsym are NOT in the network symbol registry

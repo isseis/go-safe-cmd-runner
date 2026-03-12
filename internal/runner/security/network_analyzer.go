@@ -1,12 +1,14 @@
 package security
 
 import (
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
@@ -18,6 +20,7 @@ const gosDarwin = "darwin"
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
 	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
+	store          fileanalysis.NetworkSymbolStore // nil means cache disabled
 }
 
 // NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the current platform.
@@ -37,19 +40,30 @@ func NewNetworkAnalyzer() *NetworkAnalyzer {
 	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer()}
 }
 
+// NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
+// If store is nil, falls back to live binary analysis.
+func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
+	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer(), store: store}
+}
+
 // IsNetworkOperation checks if the command performs network operations.
 // This function considers symbolic links to detect network commands properly.
 // Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded.
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-// When non-empty it is forwarded to ELF analysis for static binaries to avoid
-// re-reading the binary. Pass empty string when no hash is available.
+// Forwarded to ELF analysis for static binaries to avoid re-reading the binary.
+// Must be non-empty when skipBinaryAnalysis is false and binary analysis may run.
+//
+// skipBinaryAnalysis suppresses ELF/Mach-O binary analysis entirely.
+// Set this when the command binary has not been file-verified (e.g.
+// verify_standard_paths = false), so that analysing an unverified binary
+// is avoided. Profile-based and argument-based checks still run.
 //
 // Detection priority:
 // 1. commandProfileDefinitions (hardcoded list) - takes precedence
-// 2. ELF .dynsym analysis for unknown commands
+// 2. ELF .dynsym analysis for unknown commands (skipped when skipBinaryAnalysis is true)
 // 3. Argument-based detection (URLs, SSH-style addresses)
-func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string) (bool, bool) {
+func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string, skipBinaryAnalysis bool) (bool, bool) {
 	// Extract all possible command names including symlink targets
 	commandNames, exceededDepth := extractAllCommandNames(cmdName)
 
@@ -93,7 +107,8 @@ func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, cont
 	// If not found in profiles, try binary analysis for unknown commands.
 	// Binary analysis requires an absolute path (should be resolved by caller via PathResolver).
 	// If cmdName is not absolute, skip binary analysis silently.
-	if !foundInProfiles && filepath.IsAbs(cmdName) {
+	// Also skip when skipBinaryAnalysis is true (e.g. verify_standard_paths = false).
+	if !foundInProfiles && filepath.IsAbs(cmdName) && !skipBinaryAnalysis {
 		isNet, isHigh := a.isNetworkViaBinaryAnalysis(cmdName, contentHash)
 		if isNet || isHigh {
 			return isNet, isHigh
@@ -120,16 +135,16 @@ func hasNetworkArguments(args []string) bool {
 //   - isNetwork: true if confirmed network symbols were found or analysis failed (safety)
 //   - isHighRisk: true if dynamic load symbols (dlopen/dlsym/dlvsym) were detected
 //
-// HasDynamicLoad and network detection are independent signals.
+// DynamicLoadSymbols and network detection are independent signals.
 // A binary with both dlopen and socket will return (true, true).
 //
 // IMPORTANT: cmdPath is expected to be an absolute, symlink-resolved path,
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
 // This ensures TOCTOU safety and consistency across all security checks.
 //
-// contentHash is a pre-computed hash in "algo:hex" format that is forwarded to
-// the binary analyzer to avoid redundant hashing for static binaries with a
-// syscall store configured. Pass empty string when no hash is available.
+// contentHash is a pre-computed hash in "algo:hex" format required by
+// BinaryAnalyzer.AnalyzeNetworkSymbols. Must be non-empty; binary analysis
+// is skipped (returning false, false) when no hash is available.
 func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) (isNetwork, isHighRisk bool) {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
@@ -141,10 +156,62 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// cmdPath is already symlink-resolved by PathResolver.ResolvePath(),
 	// so no need for filepath.EvalSymlinks() here.
 
-	// Perform binary analysis
-	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
+	// Check cache first (when store is configured and contentHash is available).
+	// Skip cache lookup when contentHash is empty: the store uses hash to verify
+	// record freshness, so an empty hash would always produce ErrHashMismatch even
+	// for a valid record. That would misuse ErrHashMismatch (which signals a genuine
+	// file-content change) for a mere "no hash available" situation.
+	if a.store != nil && contentHash != "" {
+		data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
+		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
+		switch {
+		case err == nil:
+			output := binaryanalyzer.AnalysisOutput{
+				DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
+				DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
+			}
+			if data.HasNetworkSymbols {
+				output.Result = binaryanalyzer.NetworkDetected
+			} else {
+				output.Result = binaryanalyzer.NoNetworkSymbols
+			}
+			return handleAnalysisOutput(output, cmdPath)
+		case errors.Is(err, fileanalysis.ErrNoNetworkSymbolAnalysis) ||
+			errors.Is(err, fileanalysis.ErrHashMismatch) ||
+			errors.Is(err, fileanalysis.ErrRecordNotFound):
+			// Expected cache miss: fall through to live binary analysis.
+		case errors.As(err, &schemaMismatch):
+			// Cache record uses an old schema version. Normally VerifyGroupFiles blocks
+			// execution before reaching this point, but log a warning so that callers
+			// that bypass verification (e.g. tests, future code paths) can diagnose
+			// unexpected schema mismatches.
+			slog.Warn("network symbol analysis cache has outdated schema; falling back to live analysis",
+				"path", cmdPath,
+				"expected_schema", schemaMismatch.Expected,
+				"actual_schema", schemaMismatch.Actual)
+		default:
+			// Unexpected error (e.g. I/O failure, corrupted record): log a warning and
+			// fall through to live binary analysis so execution is not silently blocked,
+			// but make the error visible for diagnosis.
+			slog.Warn("unexpected error loading network symbol analysis cache; falling back to live analysis",
+				"path", cmdPath,
+				"error", err)
+		}
+	}
 
-	if output.HasDynamicLoad {
+	// Fallback: live binary analysis.
+	// BinaryAnalyzer.AnalyzeNetworkSymbols requires a non-empty contentHash.
+	// Skip when no hash is available rather than violating the contract.
+	if contentHash == "" {
+		return false, false
+	}
+	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
+	return handleAnalysisOutput(output, cmdPath)
+}
+
+// handleAnalysisOutput maps a binaryanalyzer.AnalysisOutput to (isNetwork, isHighRisk).
+func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) (isNetwork, isHighRisk bool) {
+	if len(output.DynamicLoadSymbols) > 0 {
 		isHighRisk = true
 		slog.Info("Binary analysis detected dynamic load symbols; set risk_level = \"high\" or higher to allow execution",
 			"path", cmdPath,
@@ -179,12 +246,12 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		return false, isHighRisk
 
 	case binaryanalyzer.AnalysisError:
-		// Analysis failed: treat as potential network operation for safety
-		slog.Warn("Binary analysis failed, treating as potential network operation",
+		// Analysis failed: cannot determine network capability, treat as high risk.
+		// This includes ErrSyscallHashMismatch (binary changed since record time).
+		slog.Warn("Binary analysis failed, treating as high risk",
 			"path", cmdPath,
-			"error", output.Error,
-			"reason", "Unable to determine network capability, assuming middle risk for safety")
-		return true, isHighRisk
+			"error", output.Error)
+		return true, true
 
 	default:
 		// Unknown result: treat as potential network operation for safety
@@ -193,4 +260,21 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			"result", output.Result)
 		return true, isHighRisk
 	}
+}
+
+// convertNetworkSymbolEntries converts fileanalysis.DetectedSymbolEntry slice to binaryanalyzer.DetectedSymbol slice.
+//
+// NOTE: This is the inverse of convertDetectedSymbols in
+// internal/filevalidator/validator.go. Both functions map the same two fields
+// (Name, Category) between binaryanalyzer and fileanalysis types.
+// If either type gains or loses fields, update both functions together.
+func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbolEntry) []binaryanalyzer.DetectedSymbol {
+	if len(entries) == 0 {
+		return nil
+	}
+	syms := make([]binaryanalyzer.DetectedSymbol, len(entries))
+	for i, e := range entries {
+		syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: e.Category}
+	}
+	return syms
 }

@@ -64,9 +64,6 @@ type StandardELFAnalyzer struct {
 	// When set, the analyzer will lookup pre-computed syscall analysis results
 	// for static binaries instead of returning StaticBinary directly.
 	syscallStore SyscallAnalysisStore
-	// hashAlgo is the hash algorithm used for file hash calculation.
-	// Required when syscallStore is set.
-	hashAlgo filevalidator.HashAlgorithm
 }
 
 // NewStandardELFAnalyzer creates a new StandardELFAnalyzer with the given file system.
@@ -113,7 +110,6 @@ func NewStandardELFAnalyzerWithSyscallStore(
 
 	if store != nil {
 		analyzer.syscallStore = store
-		analyzer.hashAlgo = &filevalidator.SHA256{}
 	}
 
 	return analyzer
@@ -236,7 +232,7 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 // (i.e. imported from shared libraries).
 func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryanalyzer.AnalysisOutput {
 	var detected []binaryanalyzer.DetectedSymbol
-	hasDynamicLoad := false
+	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
 	for _, sym := range dynsyms {
 		// Only check undefined symbols (imported from shared libraries)
 		// Defined symbols are exported, not imported
@@ -248,22 +244,25 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryan
 				})
 			}
 			if binaryanalyzer.IsDynamicLoadSymbol(sym.Name) {
-				hasDynamicLoad = true
+				dynamicLoadSyms = append(dynamicLoadSyms, binaryanalyzer.DetectedSymbol{
+					Name:     sym.Name,
+					Category: "dynamic_load",
+				})
 			}
 		}
 	}
 
 	if len(detected) > 0 {
 		return binaryanalyzer.AnalysisOutput{
-			Result:          binaryanalyzer.NetworkDetected,
-			DetectedSymbols: detected,
-			HasDynamicLoad:  hasDynamicLoad,
+			Result:             binaryanalyzer.NetworkDetected,
+			DetectedSymbols:    detected,
+			DynamicLoadSymbols: dynamicLoadSyms,
 		}
 	}
 
 	return binaryanalyzer.AnalysisOutput{
-		Result:         binaryanalyzer.NoNetworkSymbols,
-		HasDynamicLoad: hasDynamicLoad,
+		Result:             binaryanalyzer.NoNetworkSymbols,
+		DynamicLoadSymbols: dynamicLoadSyms,
 	}
 }
 
@@ -278,7 +277,7 @@ func isELFMagic(magic []byte) bool {
 // handleStaticBinary handles static binary detection and syscall analysis lookup.
 // If syscallStore is configured, it attempts to lookup pre-computed syscall analysis.
 // Otherwise, it returns StaticBinary directly.
-// contentHash is a pre-computed hash in "algo:hex" format; empty string means compute it here.
+// contentHash must be non-empty (see BinaryAnalyzer.AnalyzeNetworkSymbols contract).
 func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
 	if a.syscallStore == nil {
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
@@ -293,28 +292,27 @@ func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.Fi
 }
 
 // lookupSyscallAnalysis checks the syscall analysis store for analysis results.
-// If contentHash is non-empty it is used directly, skipping a redundant file read.
-// Otherwise the hash is computed from the already-opened file handle (TOCTOU safe).
-func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, file safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
-	hash := contentHash
-	if hash == "" {
-		var err error
-		hash, err = a.calculateFileHash(file)
-		if err != nil {
-			slog.Debug("Failed to calculate hash for syscall analysis lookup",
-				"path", path,
-				"error", err)
-			return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
-		}
+// contentHash must be non-empty (see BinaryAnalyzer.AnalyzeNetworkSymbols contract).
+func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
+	if contentHash == "" {
+		panic("lookupSyscallAnalysis: contentHash must not be empty")
 	}
 
-	result, err := a.syscallStore.LoadSyscallAnalysis(path, hash)
+	result, err := a.syscallStore.LoadSyscallAnalysis(path, contentHash)
 	if err != nil {
 		switch {
 		case errors.Is(err, fileanalysis.ErrRecordNotFound),
-			errors.Is(err, fileanalysis.ErrHashMismatch),
 			errors.Is(err, fileanalysis.ErrNoSyscallAnalysis):
-			// Expected errors, fall back silently.
+			// Cache miss: no record or no syscall analysis stored yet. Fall back silently.
+		case errors.Is(err, fileanalysis.ErrHashMismatch):
+			// The stored record was created for a different binary. The binary has been
+			// replaced since record time, which is a security-relevant condition.
+			// Return AnalysisError so the caller treats this as high-risk rather than
+			// silently assuming no network capability.
+			return binaryanalyzer.AnalysisOutput{
+				Result: binaryanalyzer.AnalysisError,
+				Error:  fmt.Errorf("%w: %s", ErrSyscallHashMismatch, path),
+			}
 		default:
 			// Unexpected error, log it before falling back.
 			slog.Debug("Syscall analysis lookup error",
@@ -364,21 +362,4 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	}
 
 	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
-}
-
-// calculateFileHash calculates SHA256 hash of the file.
-// Returns hash in prefixed format: "sha256:<hex>" for consistency with
-// FileAnalysisRecord.ContentHash schema.
-// Uses the already-opened file handle to avoid TOCTOU vulnerabilities.
-func (a *StandardELFAnalyzer) calculateFileHash(file safefileio.File) (string, error) {
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("failed to seek to file start: %w", err)
-	}
-
-	rawHash, err := a.hashAlgo.Sum(file)
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("%s:%s", a.hashAlgo.Name(), rawHash), nil
 }

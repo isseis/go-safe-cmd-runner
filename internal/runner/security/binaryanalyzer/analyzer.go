@@ -66,10 +66,11 @@ type AnalysisOutput struct {
 	// Useful for logging and debugging purposes.
 	DetectedSymbols []DetectedSymbol
 
-	// HasDynamicLoad indicates that the binary imports dynamic library loading
-	// symbols (dlopen, dlsym, or dlvsym). This is set independently of Result
-	// and network symbol detection.
-	HasDynamicLoad bool
+	// DynamicLoadSymbols contains the dynamic library loading symbols found
+	// (dlopen, dlsym, or dlvsym). This is set independently of Result
+	// and network symbol detection. Use len(DynamicLoadSymbols) > 0 to
+	// determine if any dynamic load symbols were detected.
+	DynamicLoadSymbols []DetectedSymbol
 
 	// Error contains the error details when Result == AnalysisError.
 	// May also be set for other result types to provide diagnostic context
@@ -97,7 +98,7 @@ type BinaryAnalyzer interface {
 	// and determines if it contains network-related symbols.
 	//
 	// contentHash is the pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-	// Pass an empty string when no pre-computed hash is available.
+	// Must be non-empty; callers that cannot provide a hash must skip binary analysis entirely.
 	//
 	// Returns:
 	//   - NetworkDetected: Binary contains network-related symbols

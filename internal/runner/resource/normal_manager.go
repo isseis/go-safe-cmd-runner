@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
@@ -47,12 +48,13 @@ func NewNormalResourceManagerWithOutput(
 	outputMgr output.CaptureManager,
 	maxOutputSize int64,
 	logger *slog.Logger,
+	store fileanalysis.NetworkSymbolStore,
 ) *NormalResourceManager {
 	return &NormalResourceManager{
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
-		riskEvaluator:    risk.NewStandardEvaluator(),
+		riskEvaluator:    risk.NewStandardEvaluator(store),
 		outputManager:    outputMgr,
 		maxOutputSize:    maxOutputSize,
 		logger:           logger,

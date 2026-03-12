@@ -1479,7 +1479,8 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 }
 
 // createOldSchemaRecord writes a raw JSON file with schema_version = CurrentSchemaVersion-1
-// (i.e. the pre-dynlib schema) so that Store.Load returns SchemaVersionMismatchError with Actual < Expected.
+// (i.e. a schema_version 2 record that predates NetworkSymbolAnalysis) so that Store.Load
+// returns SchemaVersionMismatchError with Actual < Expected.
 // Returns the path of the created record file.
 func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	t.Helper()
@@ -1491,7 +1492,7 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	require.NoError(t, err)
 
 	record := map[string]interface{}{
-		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // pre-dynlib schema (< CurrentSchemaVersion)
+		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // old records predate network symbol caching (schema_version < CurrentSchemaVersion)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
 		"updated_at":     time.Now().UTC(),
@@ -1507,7 +1508,7 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 // resolveSymlinks resolves symlinks in the given path.
 // Used in tests to ensure records are stored under the canonical path,
 // matching what filevalidator.validatePath returns at verify time.
-func resolveSymlinks(t *testing.T, path string) string {
+func resolveSymlinks(t *testing.T, path string) string { //nolint:unparam
 	t.Helper()
 	resolved, err := filepath.EvalSymlinks(path)
 	require.NoError(t, err)
@@ -1516,7 +1517,8 @@ func resolveSymlinks(t *testing.T, path string) string {
 
 // TestVerify_SchemaVersion verifies that VerifyCommandDynLibDeps returns nil
 // (skips dynlib check) when the stored record has schema_version < CurrentSchemaVersion.
-// Old records predate dynlib tracking; they should not block execution.
+// Old records predate network symbol caching (schema_version < CurrentSchemaVersion);
+// they should not block execution.
 func TestVerify_SchemaVersion(t *testing.T) {
 	hashDir := commontesting.SafeTempDir(t)
 
@@ -1644,4 +1646,33 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 	require.ErrorAs(t, verifyErr, &schemaErr)
 	assert.Greater(t, schemaErr.Actual, schemaErr.Expected,
 		"Actual schema version should be greater than Expected")
+}
+
+// TestVerifyGroupFiles_OldSchema_BlocksExecution verifies that VerifyGroupFiles
+// returns ErrGroupVerificationFailed when the stored record for a group file has
+// schema_version < CurrentSchemaVersion.
+// Old records predate NetworkSymbolAnalysis (schema_version 2); Store.Load
+// rejects them with SchemaVersionMismatchError before hash comparison, preventing execution.
+// This ensures AC-4: runners built against newer schema cannot silently execute
+// commands whose records were written by an older version.
+func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
+	hashDir := commontesting.SafeTempDir(t)
+
+	// Use a real binary so verifyFileWithHash can compute a content hash to compare.
+	cmdPath := resolveSymlinks(t, "/bin/ls")
+
+	// Write an old-schema record: schema_version = CurrentSchemaVersion-1.
+	// Store.Load rejects it with SchemaVersionMismatchError before any hash
+	// comparison occurs, causing VerifyGroupFiles to return ErrGroupVerificationFailed.
+	createOldSchemaRecord(t, hashDir, cmdPath)
+
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	runtimeGroup := createRuntimeGroup([]string{cmdPath})
+	result, verifyErr := m.VerifyGroupFiles(runtimeGroup)
+	require.Error(t, verifyErr, "old schema record should block execution")
+	assert.Nil(t, result, "result should be nil on failure")
+	assert.ErrorIs(t, verifyErr, ErrGroupVerificationFailed,
+		"error should be ErrGroupVerificationFailed")
 }

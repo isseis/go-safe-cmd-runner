@@ -45,7 +45,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Normal Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		expected := &executor.Result{ExitCode: 0, Stdout: "ok"}
@@ -59,7 +59,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	})
 
 	t.Run("Dry Run Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed}, nil, 0, nil)
 		require.NoError(t, err)
 
 		_, res2, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
@@ -74,7 +74,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 	mocks := setupTestMocks()
 
 	t.Run("CreateTempDir Normal", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 		mocks.fs.On("CreateTempDir", "", "scr-group-").Return("/tmp/scr-group-123", nil)
 		path, err := mgr.CreateTempDir("group")
@@ -84,7 +84,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 
 	t.Run("CreateTempDir Dry Run", func(t *testing.T) {
 		// Dry-run
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		path2, err := mgr.CreateTempDir("group")
@@ -96,7 +96,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	mocks := setupTestMocks()
 
-	mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+	mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 	require.NoError(t, err)
 
 	// WithPrivileges should call provided fn in dry-run
@@ -141,7 +141,7 @@ func TestDefaultResourceManager_CleanupTempDir(t *testing.T) {
 	mocks := setupTestMocks()
 
 	t.Run("Dry Run Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		// Dry-run should not actually remove but should delegate without error
@@ -154,7 +154,7 @@ func TestDefaultResourceManager_CleanupAllTempDirs(t *testing.T) {
 	mocks := setupTestMocks()
 
 	t.Run("Dry Run Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		err = mgr.CleanupAllTempDirs()
@@ -166,7 +166,7 @@ func TestDefaultResourceManager_RecordAnalysis(t *testing.T) {
 	mocks := setupTestMocks()
 
 	t.Run("Normal Mode - No-op", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		analysis := &Analysis{
@@ -183,7 +183,7 @@ func TestDefaultResourceManager_RecordAnalysis(t *testing.T) {
 	})
 
 	t.Run("Dry Run Mode - Records Analysis", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		analysis := &Analysis{
@@ -207,7 +207,7 @@ func TestDefaultResourceManager_RecordGroupAnalysis(t *testing.T) {
 	debugInfo := &DebugInfo{}
 
 	t.Run("Normal Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		err = mgr.RecordGroupAnalysis("test-group", debugInfo)
@@ -215,7 +215,7 @@ func TestDefaultResourceManager_RecordGroupAnalysis(t *testing.T) {
 	})
 
 	t.Run("Dry Run Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		err = mgr.RecordGroupAnalysis("test-group", debugInfo)
@@ -229,7 +229,7 @@ func TestDefaultResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 	debugInfo := &DebugInfo{}
 
 	t.Run("Normal Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		token := CommandToken("test-token-123")
@@ -239,7 +239,7 @@ func TestDefaultResourceManager_UpdateCommandDebugInfo(t *testing.T) {
 	})
 
 	t.Run("Dry Run Mode - execution creates token", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
+		mgr, err := NewDefaultResourceManager(mocks.exec, mocks.fs, mocks.priv, mocks.pathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0, nil)
 		require.NoError(t, err)
 
 		// Execute a command to get a valid token

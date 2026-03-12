@@ -357,19 +357,26 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			"duration_ms", result.Duration.Milliseconds())
 	}
 
-	// Propagate verified hashes to each command.
+	// Build a set of skipped paths for O(1) lookup below.
+	skippedPaths := make(map[string]struct{}, len(result.SkippedFiles))
+	for _, p := range result.SkippedFiles {
+		skippedPaths[p] = struct{}{}
+	}
+
+	// Propagate verified hashes and skip-flags to each command.
 	// executeCommandInGroup resolves the command path via ResolvePath before
 	// calling EvaluateRisk, so we use the same resolver here to build a
 	// resolved-path → hash lookup that matches what ResolvePath will return.
-	if len(result.ContentHashes) > 0 {
-		for _, cmd := range runtimeGroup.Commands {
-			resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
-			if resolveErr != nil {
-				continue
-			}
-			if hash, ok := result.ContentHashes[resolvedPath]; ok {
-				cmd.ExpandedCmdContentHash = hash
-			}
+	for _, cmd := range runtimeGroup.Commands {
+		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
+		if resolveErr != nil {
+			return fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr)
+		}
+		if hash, ok := result.ContentHashes[resolvedPath]; ok {
+			cmd.ExpandedCmdContentHash = hash
+		}
+		if _, skipped := skippedPaths[resolvedPath]; skipped {
+			cmd.SkipBinaryAnalysis = true
 		}
 	}
 

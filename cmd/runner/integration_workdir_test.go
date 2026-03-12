@@ -614,8 +614,8 @@ args = ["working in: %{__runner_workdir}"]
 risk_level = "medium"
 
 [[groups.commands]]
-name = "invalid_cmd"
-cmd = "/nonexistent/invalid/command/path"
+name = "failing_cmd2"
+cmd = "/usr/bin/false"
 args = []
 risk_level = "medium"
 `

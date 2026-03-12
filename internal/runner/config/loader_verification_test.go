@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// createHashRecord creates a FileAnalysisRecord for the given file using filevalidator.New().Record().
+// createHashRecord creates a FileAnalysisRecord for the given file using filevalidator.New().SaveRecord().
 // The file must already exist on disk.
 func createHashRecord(t *testing.T, hashDir, filePath string) {
 	t.Helper()
@@ -24,7 +24,7 @@ func createHashRecord(t *testing.T, hashDir, filePath string) {
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	require.NoError(t, err, "Failed to create validator for createHashRecord")
 
-	_, _, err = validator.Record(filePath, false)
+	_, _, err = validator.SaveRecord(filePath, false)
 	require.NoError(t, err, "Failed to record hash for %s", filePath)
 }
 

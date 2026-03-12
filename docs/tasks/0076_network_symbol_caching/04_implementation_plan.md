@@ -40,14 +40,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.1 `binaryanalyzer.AnalysisOutput` の変更
 
-- [ ] `internal/runner/security/binaryanalyzer/analyzer.go` を更新
+- [x] `internal/runner/security/binaryanalyzer/analyzer.go` を更新
   - `HasDynamicLoad bool` フィールドを削除
   - `DynamicLoadSymbols []DetectedSymbol` フィールドを追加
   - 仕様: 詳細仕様書 §1.1
 
 ### 1.2 `HasDynamicLoad` 参照箇所の修正
 
-- [ ] `HasDynamicLoad` を参照しているコード箇所を `len(DynamicLoadSymbols) > 0` に置換
+- [x] `HasDynamicLoad` を参照しているコード箇所を `len(DynamicLoadSymbols) > 0` に置換
   - `elfanalyzer/standard_analyzer.go`: `checkDynamicSymbols()` の返り値を修正
   - `machoanalyzer/standard_analyzer.go`: ビルド維持の最小限修正
   - `security/network_analyzer.go`: `output.HasDynamicLoad` の参照を修正
@@ -56,14 +56,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.3 `fileanalysis` スキーマ変更
 
-- [ ] `internal/fileanalysis/schema.go` を更新
+- [x] `internal/fileanalysis/schema.go` を更新
   - `NetworkSymbolAnalysisData` 構造体を追加
   - `DetectedSymbolEntry` 構造体を追加
   - `Record` から `HasDynamicLoad bool` フィールドを削除
   - `Record` に `NetworkSymbolAnalysis *NetworkSymbolAnalysisData` フィールドを追加
   - `CurrentSchemaVersion` を 2 → 3 に更新
   - 仕様: 詳細仕様書 §1.2
-- [ ] `CurrentSchemaVersion` 変更に伴う既存テストのコメント・ヘルパー修正
+- [x] `CurrentSchemaVersion` 変更に伴う既存テストのコメント・ヘルパー修正
   - `verification/manager_test.go:1481` `createOldSchemaRecord` のコメントから
     「pre-dynlib schema」という説明を削除し、「schema_version 2 以前（dynlib 導入済みだが
     NetworkSymbolAnalysis 未導入）の旧レコード」と書き直す
@@ -79,13 +79,13 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.4 `fileanalysis` エラー変数の追加
 
-- [ ] `internal/fileanalysis/errors.go` を更新
+- [x] `internal/fileanalysis/errors.go` を更新
   - `ErrNoNetworkSymbolAnalysis` エラー変数を追加
   - 仕様: 詳細仕様書 §1.3
 
 ### 1.5 `fileanalysis.NetworkSymbolStore` の実装
 
-- [ ] `internal/fileanalysis/network_symbol_store.go` を新規作成
+- [x] `internal/fileanalysis/network_symbol_store.go` を新規作成
   - `NetworkSymbolStore` インターフェースを定義
   - `networkSymbolStore` 非公開実装を定義
   - `NewNetworkSymbolStore` ファクトリ関数を定義
@@ -94,7 +94,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.6 `NetworkSymbolStore` のユニットテスト
 
-- [ ] `internal/fileanalysis/network_symbol_store_test.go` を新規作成
+- [x] `internal/fileanalysis/network_symbol_store_test.go` を新規作成
   - `syscall_store_test.go` と対称なテストケースを実装する
   - 保存・取得の正常系（`HasNetworkSymbols: true`、`DetectedSymbols`、`DynamicLoadSymbols` が正しく往復すること）
   - ハッシュ不一致 → `ErrHashMismatch`
@@ -105,8 +105,8 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 1.7 ビルド確認
 
-- [ ] `make build` が成功すること
-- [ ] `make test` が成功すること（既存テストの `HasDynamicLoad` 参照修正含む）
+- [x] `make build` が成功すること
+- [x] `make test` が成功すること（既存テストの `HasDynamicLoad` 参照修正含む）
 
 ## Phase 2: アナライザー拡張（DynamicLoadSymbols 収集）
 
@@ -117,7 +117,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 2.1 `elfanalyzer/standard_analyzer.go` の変更
 
-- [ ] `checkDynamicSymbols()` を変更
+- [x] `checkDynamicSymbols()` を変更
   - `hasDynamicLoad = true` の代わりに `dynamicLoadSyms` スライスに
     `DetectedSymbol{Name, Category:"dynamic_load"}` を収集
   - `DynamicLoadSymbols` フィールドに設定して返す
@@ -125,12 +125,12 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 2.2 `elfanalyzer` 単体テストの更新
 
-- [ ] `elfanalyzer/analyzer_test.go` の既存 `HasDynamicLoad` テストを置換
+- [x] `elfanalyzer/analyzer_test.go` の既存 `HasDynamicLoad` テストを置換
   - `TestHasDynamicLoad_ELF`（`analyzer_test.go:114`）: `HasDynamicLoad` アサーションを
     `len(output.DynamicLoadSymbols) > 0` に更新
   - `TestCheckDynamicSymbols_HasDynamicLoad`（`analyzer_test.go:146`）: `wantDynamicLoad bool`
     フィールドと `HasDynamicLoad` アサーションを `DynamicLoadSymbols` ベースに置換
-- [ ] `elfanalyzer/analyzer_test.go` に新規テストケースを追加
+- [x] `elfanalyzer/analyzer_test.go` に新規テストケースを追加
   - `dlopen` のみを持つ ELF → `DynamicLoadSymbols: [{dlopen, dynamic_load}]`
   - `dlsym` と `dlvsym` を両方持つ ELF → 両シンボルが列挙
   - ネットワークシンボルと `dlopen` の同時検出 → 独立して設定
@@ -139,7 +139,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 2.3 `machoanalyzer` の `DynamicLoadSymbols` 移行
 
-- [ ] `machoanalyzer/standard_analyzer.go` の dynamic load 検出意味論を `DynamicLoadSymbols` ベースへ移植
+- [x] `machoanalyzer/standard_analyzer.go` の dynamic load 検出意味論を `DynamicLoadSymbols` ベースへ移植
   - 既存の `hasDynamicLoad bool` フラグ収集ロジック（`analyzeSlice` および
     `analyzeAllFatSlices`）を `DynamicLoadSymbols []DetectedSymbol` 収集に置き換える
   - fat binary 集約時のスライス間 OR 伝播（`hasDynamicLoad = true`）を
@@ -147,31 +147,31 @@ Phase 4 は Phase 3 完了後に実施する。
     シンボルを持てば集約結果も持つ」意味論を維持する
   - 新機能の追加はしない。既存の macOS 高リスク判定を落とさないことを目的とする
   - 仕様: 詳細仕様書 §2.2
-- [ ] `machoanalyzer/standard_analyzer_test.go` の既存 `HasDynamicLoad` テストを
-  `DynamicLoadSymbols` ベースに置換（ELF 側と同様のパターン）
+- [x] `machoanalyzer/standard_analyzer_test.go` の既存 `HasDynamicLoad` テストを
+  `DynamicLoadSymbols` ベースに置換（ELF 側と同様のパターン。テストファイルに該当テストなし）
 
 ### 2.4 テスト確認
 
-- [ ] `make test` が成功すること
-- [ ] `make lint` が成功すること
+- [x] `make test` が成功すること
+- [x] `make lint` が成功すること
 
 ## Phase 3: `record` 時のキャッシュ保存
 
-`filevalidator` の `saveHash` を拡張し、
+`filevalidator` の `updateAnalysisRecord` を拡張し、
 `AnalyzeNetworkSymbols` の結果を `NetworkSymbolAnalysis` として記録する。
 
 仕様参照: 詳細仕様書 §3
 
 ### 3.1 `convertDetectedSymbols` ヘルパー関数の追加
 
-- [ ] `internal/filevalidator/validator.go` にヘルパー関数を追加
+- [x] `internal/filevalidator/validator.go` にヘルパー関数を追加
   - `binaryanalyzer.DetectedSymbol` → `fileanalysis.DetectedSymbolEntry` の変換
   - 空スライスの場合は `nil` を返す（`omitempty` との整合性）
   - 仕様: 詳細仕様書 §3.2
 
-### 3.2 `saveHash` 関数の変更
+### 3.2 `updateAnalysisRecord` 関数の変更
 
-- [ ] `internal/filevalidator/validator.go` の `saveHash` を変更
+- [x] `internal/filevalidator/validator.go` の `updateAnalysisRecord` を変更
   - `AnalyzeNetworkSymbols` の `Result` で分岐
   - `NetworkDetected` / `NoNetworkSymbols` → `record.NetworkSymbolAnalysis` を設定
   - `StaticBinary` / `NotSupportedBinary` → 記録しない
@@ -181,7 +181,7 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 3.3 `record` 拡張のユニットテスト
 
-- [ ] `filevalidator/validator_test.go` にテストを追加
+- [x] `filevalidator/validator_test.go` にテストを追加
   - ネットワークシンボルありの動的 ELF → `HasNetworkSymbols: true`、
     `DetectedSymbols` に socket を含む
   - ネットワークシンボルなしの動的 ELF → `HasNetworkSymbols: false`、
@@ -195,8 +195,8 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 3.4 テスト確認
 
-- [ ] `make test` が成功すること
-- [ ] `make lint` が成功すること
+- [x] `make test` が成功すること
+- [x] `make lint` が成功すること
 
 ## Phase 4: `runner` 時のキャッシュ利用
 
@@ -207,28 +207,28 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.0 `handleAnalysisOutput` ヘルパー関数の抽出
 
-- [ ] `internal/runner/security/network_analyzer.go` を変更
+- [x] `internal/runner/security/network_analyzer.go` を変更
   - `isNetworkViaBinaryAnalysis` 内のインライン `switch output.Result` ロジックを `handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) (isNetwork, isHighRisk bool)` として抽出する
   - 抽出後、`isNetworkViaBinaryAnalysis` 末尾は `return handleAnalysisOutput(output, cmdPath)` 一行になること
   - 動作変更なし（リファクタリングのみ）。`make test` が成功すること
 
 ### 4.1 `NetworkAnalyzer` 構造体の拡張
 
-- [ ] `internal/runner/security/network_analyzer.go` を変更
+- [x] `internal/runner/security/network_analyzer.go` を変更
   - `store fileanalysis.NetworkSymbolStore` フィールドを追加
   - `NewNetworkAnalyzerWithStore(store)` コンストラクタを本番コードに追加
   - 仕様: 詳細仕様書 §5.1, §5.2
 
 ### 4.2 `convertNetworkSymbolEntries` ヘルパー関数の追加
 
-- [ ] `internal/runner/security/network_analyzer.go` にヘルパーを追加
+- [x] `internal/runner/security/network_analyzer.go` にヘルパーを追加
   - `fileanalysis.DetectedSymbolEntry` → `binaryanalyzer.DetectedSymbol`
     の逆変換
   - 仕様: 詳細仕様書 §5.4
 
 ### 4.3 `isNetworkViaBinaryAnalysis` の変更
 
-- [ ] キャッシュ参照ロジックを先頭に追加
+- [x] キャッシュ参照ロジックを先頭に追加
   - `store != nil` の場合のみキャッシュを参照
   - キャッシュヒット → `AnalysisOutput` を構築して `handleAnalysisOutput` に渡す
   - キャッシュミス（`ErrNoNetworkSymbolAnalysis`、`ErrHashMismatch`、`ErrRecordNotFound`）→ 従来の実行時解析にフォールバック
@@ -237,25 +237,25 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.4 store 注入チェーンの実装
 
-- [ ] `internal/runner/risk/evaluator.go` を変更
+- [x] `internal/runner/risk/evaluator.go` を変更
   - `NewStandardEvaluator()` に `store fileanalysis.NetworkSymbolStore` 引数を追加
   - `security.NewNetworkAnalyzerWithStore(store)` を呼び出す
   - 仕様: 詳細仕様書 §5.3
-- [ ] `internal/runner/resource/normal_manager.go` を変更
+- [x] `internal/runner/resource/normal_manager.go` を変更
   - `NewNormalResourceManagerWithOutput()` シグネチャに
     `store fileanalysis.NetworkSymbolStore` 引数を追加
   - `risk.NewStandardEvaluator(store)` に渡す
-- [ ] `internal/runner/resource/default_manager.go` を変更
+- [x] `internal/runner/resource/default_manager.go` を変更
   - `NewDefaultResourceManager()` シグネチャに
     `store fileanalysis.NetworkSymbolStore` 引数を追加
   - `NewNormalResourceManagerWithOutput()` に渡す
-- [ ] `internal/runner/runner.go` を変更
+- [x] `internal/runner/runner.go` を変更
   - `createNormalResourceManager()` 内で `fileanalysis.Store` を生成し
     `fileanalysis.NewNetworkSymbolStore(store)` で変換して渡す
 
 ### 4.5 テスト用ヘルパーの統合
 
-- [ ] `internal/runner/security/network_analyzer_test_helpers.go` を更新
+- [x] `internal/runner/security/network_analyzer_test_helpers.go` を更新
   - 既存の `NewNetworkAnalyzerWithBinaryAnalyzer(analyzer)` を削除し、
     `newNetworkAnalyzer(analyzer binaryanalyzer.BinaryAnalyzer, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer`
     に一本化する（パッケージ内限定の小文字関数）
@@ -265,14 +265,14 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.6 シグネチャ変更に伴う呼び出し元修正
 
-- [ ] `NewDefaultResourceManager()` / `NewNormalResourceManagerWithOutput()` /
+- [x] `NewDefaultResourceManager()` / `NewNormalResourceManagerWithOutput()` /
   `NewStandardEvaluator()` のシグネチャ変更に伴い、`_test.go` および
   `//go:build test || performance` タグ付きヘルパー（`internal/runner/resource/testutil/helpers.go` 等）を含む
   全呼び出し元で `nil` を引数に追加
 
 ### 4.7 `runner` キャッシュ利用のユニットテスト
 
-- [ ] `security/command_analysis_test.go` にテストを追加
+- [x] `security/command_analysis_test.go` にテストを追加
   - キャッシュあり・`HasNetworkSymbols: true` → `NetworkDetected`、
     `BinaryAnalyzer` 未呼出
   - キャッシュあり・`HasNetworkSymbols: false` → `NoNetworkSymbols`、
@@ -286,8 +286,8 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 4.8 テスト確認
 
-- [ ] `make test` が成功すること
-- [ ] `make lint` が成功すること
+- [x] `make test` が成功すること
+- [x] `make lint` が成功すること
 
 ## Phase 5: 統合テスト & 最終確認
 
@@ -295,28 +295,30 @@ Phase 4 は Phase 3 完了後に実施する。
 
 ### 5.1 統合テスト
 
-- [ ] `record` → `runner` の正常フロー
+- [x] `record` → `runner` の正常フロー
   - キャッシュを利用して正しくネットワーク判定されること
-  - キャッシュ利用時に `slog.Debug` ログに `DetectedSymbols` が出力されること
+  - キャッシュ利用時に `slog.Info` ログに `DetectedSymbols` が出力されること
+  - `TestNetworkSymbolCache_RecordToRunner`（`command_analysis_test.go`）
   - 受け入れ条件: AC-3
-- [ ] 旧スキーマ（`schema_version: 2`）の記録で実行
+- [x] 旧スキーマ（`schema_version: 2`）の記録で実行
   - `VerifyGroupFiles` が group verification failed（`ErrGroupVerificationFailed` を内包する `verification.Error`）を返して実行前に停止すること（`isNetworkViaBinaryAnalysis` まで到達しない）
+  - `TestVerifyGroupFiles_OldSchema_BlocksExecution`（`manager_test.go`）
   - 受け入れ条件: AC-4
 
 ### 5.2 既存機能への非影響確認
 
-- [ ] `commandProfileDefinitions` 登録済みコマンドの判定が変更されないこと
-  - 受け入れ条件: AC-5
-- [ ] 静的 ELF バイナリの `SyscallAnalysis` ベースフローが維持されること
-  - 受け入れ条件: AC-5
-- [ ] `DynLibDeps` 検証が引き続き動作すること
-  - 受け入れ条件: AC-5
+- [x] `commandProfileDefinitions` 登録済みコマンドの判定が変更されないこと
+  - 受け入れ条件: AC-5（`make test` 全パスで確認）
+- [x] 静的 ELF バイナリの `SyscallAnalysis` ベースフローが維持されること
+  - 受け入れ条件: AC-5（既存テスト継続 PASS）
+- [x] `DynLibDeps` 検証が引き続き動作すること
+  - 受け入れ条件: AC-5（既存テスト継続 PASS）
 
 ### 5.3 全テスト・lint の最終確認
 
-- [ ] `make test` が全テストパスすること
-- [ ] `make lint` が警告・エラーなしであること
-- [ ] `make fmt` で変更がないこと
+- [x] `make test` が全テストパスすること
+- [x] `make lint` が警告・エラーなしであること
+- [x] `make fmt` で変更がないこと
 
 ## 受け入れ条件とテストの対応
 

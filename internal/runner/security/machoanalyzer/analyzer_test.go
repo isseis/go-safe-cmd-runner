@@ -64,7 +64,7 @@ func TestStandardMachOAnalyzer_NetworkSymbols_Detected(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.NotEmpty(t, output.DetectedSymbols, "expected at least one detected network symbol")
@@ -77,7 +77,7 @@ func TestStandardMachOAnalyzer_NoNetworkSymbols(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
@@ -89,7 +89,7 @@ func TestStandardMachOAnalyzer_SVCOnly_HighRisk(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
@@ -105,7 +105,7 @@ func TestStandardMachOAnalyzer_NetworkSymbols_SVCIgnored(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 }
@@ -117,7 +117,7 @@ func TestStandardMachOAnalyzer_FatBinary_Arm64Selected(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	// fat_binary is built from network_macho_arm64 + x86_64, so arm64 should detect network symbols
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
@@ -133,7 +133,7 @@ func TestStandardMachOAnalyzer_FatBinary_AllSlicesAnalyzed(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	// Even though the arm64 slice has no network symbols, the x86_64 slice does.
 	// The analyzer must detect the threat from any slice.
@@ -148,7 +148,7 @@ func TestStandardMachOAnalyzer_GoNetwork_Detected(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
 	assert.NotEmpty(t, output.DetectedSymbols)
@@ -161,7 +161,7 @@ func TestStandardMachOAnalyzer_GoNoNetwork_NoSymbols(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
@@ -173,7 +173,7 @@ func TestStandardMachOAnalyzer_NonMachO_Script(t *testing.T) {
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(path, "")
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.NotSupportedBinary, output.Result)
 }
@@ -201,7 +201,7 @@ func TestStandardMachOAnalyzer_InvalidMachO_NoPanic(t *testing.T) {
 	tmp.Close()
 
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols(tmp.Name(), "")
+	output := analyzer.AnalyzeNetworkSymbols(tmp.Name(), "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
@@ -242,7 +242,7 @@ func (largeFakeFS) Remove(_ string) error                                { retur
 // returns AnalysisError wrapping ErrFileTooLarge. (AC-5)
 func TestStandardMachOAnalyzer_FileTooLarge(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(largeFakeFS{})
-	output := analyzer.AnalyzeNetworkSymbols("any_path", "")
+	output := analyzer.AnalyzeNetworkSymbols("any_path", "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
@@ -254,7 +254,7 @@ func TestStandardMachOAnalyzer_FileTooLarge(t *testing.T) {
 // returns AnalysisError. (AC-5)
 func TestStandardMachOAnalyzer_FileOpenError(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
-	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "")
+	output := analyzer.AnalyzeNetworkSymbols("/nonexistent/path/to/binary", "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	require.Error(t, output.Error)
@@ -269,7 +269,7 @@ func TestNetworkAnalyzer_Integration_MachO(t *testing.T) {
 	analyzer := NewStandardMachOAnalyzer(nil)
 
 	// /usr/bin/curl is a well-known network binary on macOS
-	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "")
+	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "sha256:dummy")
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result,
 		"expected NetworkDetected for /usr/bin/curl")
 }

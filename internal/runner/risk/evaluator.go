@@ -3,6 +3,7 @@
 package risk
 
 import (
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -18,8 +19,9 @@ type StandardEvaluator struct {
 }
 
 // NewStandardEvaluator creates a new standard risk evaluator.
-func NewStandardEvaluator() Evaluator {
-	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzer()}
+// Pass a non-nil store to enable cache-based network symbol analysis.
+func NewStandardEvaluator(store fileanalysis.NetworkSymbolStore) Evaluator {
+	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzerWithStore(store)}
 }
 
 // EvaluateRisk analyzes a command and returns its risk level
@@ -41,7 +43,9 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runne
 	// Check for network operations.
 	// Forward the pre-verified content hash so ELF analysis of static binaries
 	// can skip a redundant file read when looking up syscall analysis results.
-	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash)
+	// SkipBinaryAnalysis suppresses binary analysis for unverified binaries
+	// (e.g. standard-path commands when verify_standard_paths = false).
+	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash, cmd.SkipBinaryAnalysis)
 	if isHighRisk {
 		return runnertypes.RiskLevelHigh, nil
 	}

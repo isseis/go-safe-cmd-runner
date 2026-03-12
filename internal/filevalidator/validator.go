@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
@@ -24,7 +25,7 @@ var (
 
 // FileValidator interface defines the basic file validation methods
 type FileValidator interface {
-	Record(filePath string, force bool) (string, string, error)
+	SaveRecord(filePath string, force bool) (string, string, error)
 	Verify(filePath string) error
 	// VerifyWithHash verifies the file and returns the prefixed content hash ("algo:hex")
 	// so callers can forward it to downstream consumers without a redundant file read.
@@ -121,13 +122,13 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 	}, nil
 }
 
-// Record calculates the hash of the file at filePath and saves it to the hash directory.
+// SaveRecord calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
 // Returns ErrHashFilePathCollision if a different file's record occupies the same
 // hash file path (possible with SHA256 fallback encoding for very long paths).
 // Existing fields (e.g., SyscallAnalysis) in the record are preserved when updating.
-func (v *Validator) Record(filePath string, force bool) (string, string, error) {
+func (v *Validator) SaveRecord(filePath string, force bool) (string, string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
@@ -146,17 +147,21 @@ func (v *Validator) Record(filePath string, force bool) (string, string, error) 
 		return "", "", err
 	}
 
-	return v.saveHash(targetPath, hash, hashFilePath, force)
+	contentHash, err := v.updateAnalysisRecord(targetPath, hash, force)
+	if err != nil {
+		return "", "", err
+	}
+	return hashFilePath, contentHash, nil
 }
 
-// saveHash saves the hash using FileAnalysisRecord format.
+// updateAnalysisRecord saves the hash using FileAnalysisRecord format.
 // This format preserves existing fields (e.g., SyscallAnalysis) when updating.
 //
 // Collision and duplicate detection are performed inside the Update callback,
 // which avoids a redundant Load() call and keeps error handling in sync with
 // Store.Update()'s own semantics (e.g., SchemaVersionMismatchError is rejected
 // by Update before the callback runs).
-func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath string, force bool) (string, string, error) {
+func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash string, force bool) (string, error) {
 	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
 	err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
 		// record.FilePath is non-empty when a valid existing record was loaded.
@@ -181,20 +186,34 @@ func (v *Validator) saveHash(filePath common.ResolvedPath, hash, hashFilePath st
 			record.DynLibDeps = dynLibDeps // nil for non-ELF or static ELF (omitted in JSON)
 		}
 
-		// Analyze binary symbols for dynamic load detection if analyzer is available.
-		// Always write the result (true or false) to overwrite stale values.
+		// Analyze binary symbols if analyzer is available.
+		// Stores the result as NetworkSymbolAnalysis in the record.
 		if v.binaryAnalyzer != nil {
 			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
-			record.HasDynamicLoad = output.HasDynamicLoad
+			switch output.Result {
+			case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
+				record.NetworkSymbolAnalysis = &fileanalysis.NetworkSymbolAnalysisData{
+					AnalyzedAt:         time.Now().UTC(),
+					HasNetworkSymbols:  output.Result == binaryanalyzer.NetworkDetected,
+					DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
+					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
+				}
+			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
+				// Static binary or unsupported format: clear any previously stored
+				// NetworkSymbolAnalysis to prevent stale data from an earlier record run.
+				record.NetworkSymbolAnalysis = nil
+			case binaryanalyzer.AnalysisError:
+				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
+			}
 		}
 
 		return nil
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("failed to update analysis record: %w", err)
+		return "", fmt.Errorf("failed to update analysis record: %w", err)
 	}
 
-	return hashFilePath, contentHash, nil
+	return contentHash, nil
 }
 
 // LoadRecord returns the full analysis record for the given file path.
@@ -211,13 +230,13 @@ func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
 }
 
 // SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
-// Call before the first Record() invocation. Safe to call with nil (disables dynlib analysis).
+// Call before the first SaveRecord() invocation. Safe to call with nil (disables dynlib analysis).
 func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
 	v.dynlibAnalyzer = a
 }
 
 // SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.
-// Call before the first Record() invocation. Safe to call with nil (disables binary analysis).
+// Call before the first SaveRecord() invocation. Safe to call with nil (disables binary analysis).
 func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
 	v.binaryAnalyzer = a
 }
@@ -453,4 +472,22 @@ func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager run
 		}
 		return content, nil
 	})
+}
+
+// convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to fileanalysis.DetectedSymbolEntry slice.
+// Returns nil for empty input to keep JSON output clean with omitempty.
+//
+// NOTE: This is the inverse of convertNetworkSymbolEntries in
+// internal/runner/security/network_analyzer.go. Both functions map the same
+// two fields (Name, Category) between binaryanalyzer and fileanalysis types.
+// If either type gains or loses fields, update both functions together.
+func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbolEntry {
+	if len(syms) == 0 {
+		return nil
+	}
+	entries := make([]fileanalysis.DetectedSymbolEntry, len(syms))
+	for i, s := range syms {
+		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
+	}
+	return entries
 }
