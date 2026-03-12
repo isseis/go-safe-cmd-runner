@@ -215,5 +215,16 @@ CGO_ENABLED=1 go build -o /tmp/cgo_test main.go
 
 ## 8. 未解決事項
 
-- [ ] **検証結果**: `SyscallAnalysis` が実際の CGO バイナリで機能するか（AC-1 の検証後に更新）
+- [x] **検証結果**: `SyscallAnalysis` が実際の CGO バイナリで機能するか（AC-1 の検証後に更新）
+
+  **検証結果（詳細は `ac1_verification_result.md` 参照）:**
+  - `.dynsym` 解析が `NoNetworkSymbols` を返すことは確認（盲点の再現）✅
+  - `SyscallAnalysis` は `HasNetworkSyscalls: true` を返さず、代わりに `IsHighRisk: true` を返した
+    - 検出 syscall: `exit_group`(94), `exit`(93), `close`(57), `mmap`(222), `munmap`(215) 等（合計 34 件）
+    - `socket`(198) は未検出（`unknown:indirect_setting` → `IsHighRisk`）
+    - 原因: arm64 では `SVC #0` 直前が `LDR x8, [sp, #8]`（スタックロード）のため、後方スキャンが `indirect_setting` と判定する
+    - これは §4.2 「安全方向フェイルセーフ」として想定された挙動であり、CGO バイナリは `AnalysisError`（高リスク）扱いとなる
+  - AC-1 の 2 番目の条件（`HasNetworkSyscalls: true`）は満たされないが、安全方向（`AnalysisError`）には倒れることを確認
+  - タスク 0077 の実装では GoWrapperResolver の arm64 対応強化が必要（`knownSyscallImpls` のシンボル名更新、または Pass 2 の呼び出し元解析の改善）
+
 - [ ] **アーキテクチャ**: 検証が成功した場合の `record` / `runner` への統合方法（02_architecture.md を別途作成）
