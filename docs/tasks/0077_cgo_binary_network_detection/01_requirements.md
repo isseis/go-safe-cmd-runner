@@ -95,7 +95,19 @@
 
 現行の `StandardELFAnalyzer.AnalyzeNetworkSymbols()`（`internal/runner/security/elfanalyzer/standard_analyzer.go`）は、動的バイナリで `.dynsym` に network symbol がなければ `checkDynamicSymbols()` が `NoNetworkSymbols` を返してそのまま終了する。`syscallStore` は静的バイナリの `handleStaticBinary()` 経由でしか参照されない。
 
-本タスクでは、動的バイナリで `NoNetworkSymbols` になった場合に続けて `syscallStore` を参照するよう変更する。`StandardELFAnalyzer` には `syscallStore` フィールドが既に存在するが、`NetworkAnalyzer` から動的バイナリ向けに `syscallStore` を注入する経路も追加が必要になる。
+`StandardELFAnalyzer` には `syscallStore` フィールドと `NewStandardELFAnalyzerWithSyscallStore()` コンストラクタが既に定義されており、アダプタ `NewELFSyscallStoreAdapter()`（`internal/runner/security/syscall_store_adapter.go`）も存在する。しかし現状の production コードでは `NewBinaryAnalyzer()` が常に `NewStandardELFAnalyzer(nil, nil)` を呼んでおり、`syscallStore` は**静的バイナリを含め一切注入されていない**。`NewStandardELFAnalyzerWithSyscallStore` はテストでしか使われていない。
+
+本タスクでは以下の注入チェーンを新設・結合する：
+
+```
+normal_manager.go
+  → NewStandardEvaluator(NetworkSymbolStore, SyscallAnalysisStore)  ← 引数追加
+    → NewNetworkAnalyzerWithStore(NetworkSymbolStore, SyscallAnalysisStore)  ← 引数追加
+      → NewBinaryAnalyzer(SyscallAnalysisStore)  ← 引数追加
+        → NewStandardELFAnalyzerWithSyscallStore(nil, nil, store)  ← 既存コンストラクタ使用
+```
+
+または `fileanalysis.Store`（両方のストアのファクトリ）を単一引数として渡し、内部で `NewSyscallAnalysisStore()` / `NewNetworkSymbolAnalysisStore()` を生成する方式も検討する。具体的な設計は `02_architecture.md` で決定する。
 
 変更後の振る舞い（`checkDynamicSymbols()` が `NoNetworkSymbols` を返した後）：
 
