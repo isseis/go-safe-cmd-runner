@@ -70,7 +70,7 @@
 検証方法：
 1. Go の `syscall` パッケージ（`syscall.Socket()` 等）でソケットを直接生成する CGO バイナリを作成する。`net` パッケージは CGO ビルドで `getaddrinfo` 等の DNS 関数を `.dynsym` にリンクし `NetworkDetected` を返す可能性があるため使わない。`syscall.Socket` を使えば Go ランタイムが `SYS_SOCKET` を直接発行するため `.dynsym` に `socket` シンボルは現れない
 2. `.dynsym` 解析（タスク 0069 の `elfanalyzer.StandardELFAnalyzer.AnalyzeNetworkSymbols()`）を呼び出し `NoNetworkSymbols` が返ることを確認する
-3. 同バイナリに対して `elfanalyzer.SyscallAnalyzer` を呼び出し、`SyscallSummary.HasNetworkSyscalls` が `true` になることを確認する
+3. 同バイナリに対して `elfanalyzer.SyscallAnalyzer` を呼び出し、返り値 `*elfanalyzer.SyscallAnalysisResult` の `result.Summary.HasNetworkSyscalls` が `true` になることを確認する
 
 **この検証が失敗した場合（手順 3 で `false` になる場合）、本タスクのアプローチを再検討すること。**
 
@@ -190,8 +190,8 @@ CGO_ENABLED=1 go build -o /tmp/cgo_test main.go
 # 手順 2: .dynsym 解析が NoNetworkSymbols を返すことを確認
 # （elfanalyzer.StandardELFAnalyzer.AnalyzeNetworkSymbols() を使ったテストまたは手動確認）
 
-# 手順 3: SyscallAnalysis が HasNetworkSyscalls: true を返すことを確認
-# （elfanalyzer の SyscallAnalyzer を使ったテストまたは手動確認）
+# 手順 3: SyscallAnalysis が result.Summary.HasNetworkSyscalls == true を返すことを確認
+# （elfanalyzer.SyscallAnalyzer を使ったテストまたは手動確認）
 ```
 
 ### 6.2 ユニットテスト
