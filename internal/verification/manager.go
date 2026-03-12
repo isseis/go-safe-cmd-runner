@@ -498,11 +498,24 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.fileValidatorEnabled {
 		validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
-		}
-		manager.fileValidator = validator
-		if s := validator.GetStore(); s != nil {
-			manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
+			// In dry-run mode, a permission error creating the hash directory is
+			// recoverable: the operator may be checking configuration on a machine
+			// where the hash directory is not writable (e.g. CI without sudo).
+			// Binary analysis will be skipped for commands without a content hash,
+			// but dry-run output remains useful for configuration validation.
+			// All other errors (invalid path, not a directory, etc.) are fatal
+			// in both modes.
+			if opts.isDryRun && errors.Is(err, os.ErrPermission) {
+				slog.Info("Hash directory not writable in dry-run mode; file verification and binary analysis will be skipped",
+					"hash_directory", hashDir)
+			} else {
+				return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+			}
+		} else {
+			manager.fileValidator = validator
+			if s := validator.GetStore(); s != nil {
+				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
+			}
 		}
 	}
 
