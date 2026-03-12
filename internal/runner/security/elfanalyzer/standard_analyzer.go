@@ -224,7 +224,25 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	}
 
 	// Step 5: Check for network symbols and dynamic load symbols
-	return a.checkDynamicSymbols(dynsyms)
+	dynOutput := a.checkDynamicSymbols(dynsyms)
+	if dynOutput.Result != binaryanalyzer.NoNetworkSymbols {
+		return dynOutput
+	}
+
+	// CGO binary fallback: when .dynsym contains no network symbols, check the
+	// syscall analysis store. CGO binaries call socket() via Go runtime syscall
+	// wrappers without importing libc's socket symbol, so .dynsym analysis alone
+	// misses the network usage.
+	if a.syscallStore != nil {
+		syscallOutput := a.lookupSyscallAnalysis(path, file, contentHash)
+		if syscallOutput.Result != binaryanalyzer.StaticBinary {
+			// Store has data (NetworkDetected, AnalysisError, or NoNetworkSymbols).
+			return syscallOutput
+		}
+		// No entry in store — fall through to return the dynsym result.
+	}
+
+	return dynOutput
 }
 
 // checkDynamicSymbols scans the given ELF symbol list for network-related and

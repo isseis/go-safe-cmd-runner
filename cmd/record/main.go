@@ -184,10 +184,10 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 		successes++
 		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
 
-		// Perform syscall analysis for static ELF binaries
+		// Perform syscall analysis for ELF binaries (both static and dynamic)
 		if err := syscallCtx.analyzeFile(filePath, contentHash); err != nil {
-			// ErrNotELF, ErrNotStaticELF, and file-not-found are expected for non-analyzable files
-			if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, elfanalyzer.ErrNotStaticELF) && !errors.Is(err, os.ErrNotExist) {
+			// ErrNotELF and file-not-found are expected for non-analyzable files
+			if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, os.ErrNotExist) {
 				fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck,gosec // G705: writing to stderr, not an HTTP response
 			}
 		}
@@ -228,10 +228,9 @@ func newSyscallAnalysisContext(hashDir string) (*syscallAnalysisContext, error) 
 	}, nil
 }
 
-// analyzeFile performs syscall analysis on a file if it's a static ELF binary.
+// analyzeFile performs syscall analysis on an ELF binary (both static and dynamic).
 // contentHash is the prefixed hash (e.g., "sha256:<hex>") already computed by Record.
 // Returns ErrNotELF if the file is not an ELF binary.
-// Returns ErrNotStaticELF if the ELF file is dynamically linked.
 func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) error {
 	// Open file securely - single open for both check and analysis
 	file, err := ctx.fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -248,12 +247,7 @@ func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) 
 	}
 	defer func() { _ = elfFile.Close() }()
 
-	// Check if the ELF is dynamically linked (i.e., not static) by checking for a .dynsym section
-	if dynsym := elfFile.Section(".dynsym"); dynsym != nil {
-		return elfanalyzer.ErrNotStaticELF
-	}
-
-	// Perform syscall analysis
+	// Perform syscall analysis (both static and dynamic ELF binaries)
 	result, err := ctx.analyzer.AnalyzeSyscallsFromELF(elfFile)
 	if err != nil {
 		return fmt.Errorf("analysis failed: %w", err)
