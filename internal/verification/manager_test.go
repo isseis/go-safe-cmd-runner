@@ -1651,8 +1651,8 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 // TestVerifyGroupFiles_OldSchema_BlocksExecution verifies that VerifyGroupFiles
 // returns ErrGroupVerificationFailed when the stored record for a group file has
 // schema_version < CurrentSchemaVersion.
-// Old records predate NetworkSymbolAnalysis (schema_version 2); they fail hash
-// verification because the stored hash is stale, preventing execution.
+// Old records predate NetworkSymbolAnalysis (schema_version 2); Store.Load
+// rejects them with SchemaVersionMismatchError before hash comparison, preventing execution.
 // This ensures AC-4: runners built against newer schema cannot silently execute
 // commands whose records were written by an older version.
 func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
@@ -1662,8 +1662,8 @@ func TestVerifyGroupFiles_OldSchema_BlocksExecution(t *testing.T) {
 	cmdPath := resolveSymlinks(t, "/bin/ls")
 
 	// Write an old-schema record: schema_version = CurrentSchemaVersion-1.
-	// The stored content_hash is intentionally stale ("sha256:aabbcc"), so the
-	// hash check fails and VerifyGroupFiles returns ErrGroupVerificationFailed.
+	// Store.Load rejects it with SchemaVersionMismatchError before any hash
+	// comparison occurs, causing VerifyGroupFiles to return ErrGroupVerificationFailed.
 	createOldSchemaRecord(t, hashDir, cmdPath)
 
 	m, err := NewManagerForTest(hashDir)
