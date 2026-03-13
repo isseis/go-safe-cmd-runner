@@ -312,7 +312,7 @@ if offset := detectPclntabOffset(elfFile, pclntabData, functions); offset != 0 {
 | AC-2 | `TestDetectPclntabOffset_StrippedCGO` | `strip` 済み CGO バイナリに offset = C_startup_size |
 | AC-3 | `TestDetectPclntabOffset_NonCGO` | 純粋 Go バイナリに offset = 0 |
 | AC-4 | `TestDetectPclntabOffset_InvalidPclntab` | 壊れた pclntab → offset = 0 |
-| AC-5 | `TestDetectPclntabOffset_Go1_18_25` | Go 1.18–1.25 ビルドバイナリ（CI 環境）|
+| AC-5 | `TestDetectPclntabOffset_Go1_18_25` | Go 1.18–1.25 ビルド CGO バイナリに対して `detectPclntabOffset` を呼び出し、返値 offset を取得。`fn.Entry + offset` が .symtab の関数 VA と一致することを検証する。gosym 補正済みケース（offset = 0）と未補正ケース（offset = C_startup_size）の両方をサブテストで網羅する |
 | AC-6 | `TestDetectPclntabOffset_Go1_26` | Go 1.26 ビルドバイナリ（現テスト環境）|
 
 ---
