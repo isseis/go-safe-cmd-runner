@@ -197,20 +197,34 @@ func detectPclntabOffset(
     // around textSection.Addr do we know gosym did NOT apply the correction,
     // and the offset must be supplied by us.
     if headerTextStart, ok := readPclntabTextStart(pclntabData, elfFile.ByteOrder); ok {
-        if headerTextStart > textSection.Addr {
-            offset := int64(headerTextStart) - int64(textSection.Addr) //nolint:gosec
-            if uint64(offset) <= textSection.FileSize {
-                if gosymAlreadyAppliedTextStart(pclntabFuncs, headerTextStart, textSection) {
-                    // gosym has already corrected fn.Entry; no further offset needed.
-                    return 0
-                }
-                return offset
+        offset := int64(headerTextStart) - int64(textSection.Addr) //nolint:gosec
+        if isValidOffset(offset, textSection.FileSize) {
+            if gosymAlreadyAppliedTextStart(pclntabFuncs, headerTextStart, textSection) {
+                // gosym has already corrected fn.Entry; no further offset needed.
+                return 0
             }
+            return offset
         }
     }
 
     // Option B: CALL/BL target cross-reference (Go 1.26+ fallback).
-    return detectOffsetByCallTargets(elfFile, pclntabFuncs)
+    // Apply the same validity check as Option A: CGO binaries always have a
+    // positive offset (C startup code precedes Go text). A negative or zero
+    // result from Option B indicates detection failure.
+    offset := detectOffsetByCallTargets(elfFile, pclntabFuncs)
+    if !isValidOffset(offset, textSection.FileSize) {
+        return 0
+    }
+    return offset
+}
+
+// isValidOffset checks that offset is a plausible CGO text-start correction.
+// A valid offset is strictly positive (distinguishes CGO from non-CGO where offset=0)
+// and does not exceed the .text section size.
+// Negative offsets are theoretically impossible for CGO binaries (C startup code
+// always precedes Go text) and must be rejected to prevent address corruption.
+func isValidOffset(offset int64, textFileSize uint64) bool {
+    return offset > 0 && uint64(offset) <= textFileSize //nolint:gosec
 }
 
 // gosymAlreadyAppliedTextStart reports whether gosym has already applied

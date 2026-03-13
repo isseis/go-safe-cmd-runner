@@ -156,8 +156,9 @@ textStart フィールドはヘッダに含まれません。
      a. sortedEntries を二分探索して最近傍 entry を検索
      b. |target - entry| < 0x1000 の場合 diffCounts[target - entry]++
 7. diffCounts で最頻値を求める
-8. 最頻値の出現回数 >= minVotes(3) かつ |最頻値| <= .text.FileSize の場合:
+8. 最頻値の出現回数 >= minVotes(3) かつ 最頻値 > 0 かつ 最頻値 <= .text.FileSize の場合:
      return 最頻値
+   （負値は CGO バイナリでは理論上あり得ないため除外。6.3 バリデーション節を参照）
 9. それ以外: return 0（フェイルセーフ）
 ```
 
