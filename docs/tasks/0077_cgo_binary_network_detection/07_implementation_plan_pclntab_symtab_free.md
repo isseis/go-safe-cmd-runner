@@ -41,8 +41,9 @@
 ```go
 // detectOffsetByCallTargets detects the pclntab address offset in CGO binaries
 // by cross-referencing CALL/BL instruction targets with pclntab function entries.
-// This method works independently of the pclntab header format and Go version
-// (Go 1.18–1.26+). It is the sole offset detection mechanism.
+// This method works independently of the pclntab header format and is the sole
+// offset detection mechanism. Only called after checkPclntabVersion confirms
+// magic = 0xfffffff1 (Go 1.20+, officially supported: Go 1.26).
 //
 // It scans the first 256 KB of .text for CALL/BL targets, builds a histogram of
 // (target - nearestPclntabEntry) differences, and returns the most frequent value
