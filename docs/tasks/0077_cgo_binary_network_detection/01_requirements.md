@@ -142,7 +142,7 @@ normal_manager.go
 
 Go ランタイムの最適化によって SYSCALL 命令のレジスタ追跡が失敗した場合、`HasUnknownSyscalls = true` となり `AnalysisError` 扱いになる（安全方向のフェイルセーフ）。この挙動は許容する。
 
-**事前検証で確認された arm64 の挙動**: arm64 環境での CGO バイナリでは、`GoWrapperResolver`（Pass 2）のシンボル名不一致により、現状では `IsHighRisk: true` が返る（§3.1 FR-3.1.1 参照）。これは安全方向フェイルセーフの一例であり、CGO バイナリが誤って許可されることはない。GoWrapperResolver の arm64 対応強化（§8 参照）により、`HasNetworkSyscalls: true` での正確な検出に移行することを目指す。
+**事前検証で確認された arm64 の挙動**: arm64 環境での CGO バイナリでは、現状では `IsHighRisk: true` が返る（§3.1 FR-3.1.1 参照）。`IsHighRisk: true` の直接原因は Pass 1（直接 SVC スキャン）での `unknown:indirect_setting` 判定であり、`knownSyscallImpls` のシンボル名不一致はその一因（`internal/runtime/syscall.Syscall6.abi0` 内の `SVC #0` を除外対象と認識できず Pass 1 のスキャン対象に残る）である。Pass 2（GoWrapperResolver）の未解決原因は別途調査が必要。これは安全方向フェイルセーフの一例であり、CGO バイナリが誤って許可されることはない。Pass 1 修正（`knownSyscallImpls` のシンボル名更新）および Pass 2 修正（§8 参照）により、`HasNetworkSyscalls: true` での正確な検出に移行することを目指す。
 
 **通常の動的 C バイナリへの副作用なし**: 標準的な動的リンク C バイナリは、システムコールを本体の `.text` 内ではなく共有ライブラリ（`libc.so` 等）側で発行する。`SyscallAnalysis` はバイナリ本体の `.text` セクションのみをスキャンするため、ネットワーク通信を行わない通常の C バイナリに対してはスキャン結果が 0 件となり `HasNetworkSyscalls = false`、`IsHighRisk = false` で終了する。本タスクのフォールバック追加によって通常の C バイナリが誤って高リスク判定される頻発は起きない。
 
