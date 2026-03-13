@@ -42,7 +42,8 @@ func detectPclntabOffset(...) int64 {
 |------|--------|
 | テスト環境 | Go 1.26.0 / x86_64 / CGO_ENABLED=1 |
 | バイナリ種別 | 動的リンク ELF（not stripped） |
-| 観測されたアドレスずれ | −0x100（−256 バイト） |
+| 観測されたアドレスずれ | `fn.Entry`（pclntab 返値）が実際の VA より −0x100（−256 バイト）小さい |
+| 補正 offset の符号規約 | `offset = +0x100`（正値）。`corrected_addr = fn.Entry + offset` |
 | ずれの原因 | `.text` セクション先頭の C スタートアップコード（約 256 バイト） |
 
 `.symtab` が存在する（not stripped）状態での補正は正常動作することが確認済み。
