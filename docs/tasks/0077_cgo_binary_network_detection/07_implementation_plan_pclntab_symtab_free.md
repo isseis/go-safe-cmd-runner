@@ -186,10 +186,24 @@ func detectPclntabOffset(
     }
 
     // Option A: read textStart directly from pclntab header (Go 1.18-1.25).
+    //
+    // Double-correction risk: gosym.NewLineTable (Go 1.18–1.25) may internally
+    // apply textStart when building fn.Entry values. If so, fn.Entry already
+    // holds the correct virtual address, and adding offset again would corrupt it.
+    //
+    // Detection: if gosym has already applied textStart, every fn.Entry will
+    // lie in [headerTextStart, headerTextStart + .text.FileSize). In that case
+    // we return 0 (no correction needed). Only when fn.Entry values cluster
+    // around textSection.Addr do we know gosym did NOT apply the correction,
+    // and the offset must be supplied by us.
     if headerTextStart, ok := readPclntabTextStart(pclntabData, elfFile.ByteOrder); ok {
         if headerTextStart > textSection.Addr {
             offset := int64(headerTextStart) - int64(textSection.Addr) //nolint:gosec
             if uint64(offset) <= textSection.FileSize {
+                if gosymAlreadyAppliedTextStart(pclntabFuncs, headerTextStart, textSection) {
+                    // gosym has already corrected fn.Entry; no further offset needed.
+                    return 0
+                }
                 return offset
             }
         }
@@ -197,6 +211,35 @@ func detectPclntabOffset(
 
     // Option B: CALL/BL target cross-reference (Go 1.26+ fallback).
     return detectOffsetByCallTargets(elfFile, pclntabFuncs)
+}
+
+// gosymAlreadyAppliedTextStart reports whether gosym has already applied
+// textStart when populating fn.Entry values in pclntabFuncs.
+//
+// It samples up to sampleSize entries and checks whether a majority lie in
+// [headerTextStart, headerTextStart + textSection.FileSize). If so, gosym
+// has already corrected the addresses and no additional offset should be applied.
+func gosymAlreadyAppliedTextStart(
+    pclntabFuncs map[string]PclntabFunc,
+    headerTextStart uint64,
+    textSection *elf.Section,
+) bool {
+    const sampleSize = 8
+    correctedLow := headerTextStart
+    correctedHigh := headerTextStart + textSection.FileSize
+
+    checked, inRange := 0, 0
+    for _, fn := range pclntabFuncs {
+        if checked >= sampleSize {
+            break
+        }
+        if fn.Entry >= correctedLow && fn.Entry < correctedHigh {
+            inRange++
+        }
+        checked++
+    }
+    // Majority vote: more than half of the sampled entries are in the corrected range.
+    return checked > 0 && inRange*2 > checked
 }
 ```
 
@@ -226,6 +269,16 @@ if offset := detectPclntabOffset(elfFile, pclntabData, functions); offset != 0 {
 | `TestReadPclntabTextStart_TooShort` | データが短すぎる → (0, false) |
 | `TestReadPclntabTextStart_InvalidPtrSize` | ptrSize が 4 でも 8 でもない → (0, false) |
 | `TestReadPclntabTextStart_ZeroTextStart` | textStart = 0 → (0, false) |
+
+### ユニットテスト（`gosymAlreadyAppliedTextStart`）
+
+| テスト名 | 検証内容 |
+|---------|---------|
+| `TestGosymAlreadyAppliedTextStart_AllInRange` | 全エントリが correctedHigh 範囲内 → true |
+| `TestGosymAlreadyAppliedTextStart_AllOutOfRange` | 全エントリが範囲外（textSection.Addr 付近）→ false |
+| `TestGosymAlreadyAppliedTextStart_MajorityInRange` | 過半数が範囲内 → true |
+| `TestGosymAlreadyAppliedTextStart_MajorityOutOfRange` | 過半数が範囲外 → false |
+| `TestGosymAlreadyAppliedTextStart_EmptyFuncs` | 空マップ → false |
 
 ### ユニットテスト（`detectOffsetByCallTargets`）
 
