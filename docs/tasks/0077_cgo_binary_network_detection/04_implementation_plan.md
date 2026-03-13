@@ -6,8 +6,8 @@
 - [x] Step 2: `ParsePclntab` に pclntab オフセット自動補正を実装（Pass 2 修正）
 - [x] Step 3: `record` コマンドで動的バイナリも SyscallAnalysis を実行
 - [x] Step 4: `runner` コマンドで動的バイナリの syscall store を参照
-- [ ] Step 5: テスト追加（各 AC に対応するテスト）
-- [ ] Step 6: make test / make lint 通過確認
+- [x] Step 5: テスト追加（各 AC に対応するテスト）
+- [x] Step 6: make test / make lint 通過確認
 
 ---
 
@@ -98,14 +98,14 @@ return dynOutput
 ## Step 5: テスト追加（TODO）
 
 ### AC-2: record 拡張
-- [ ] 動的 ELF バイナリに対して SyscallAnalysis が実行・保存されること
-- [ ] `.dynsym` で `NetworkDetected` のバイナリは SyscallAnalysis が実行されても問題ないこと（既存動作維持）
+- [x] 動的 ELF バイナリに対して SyscallAnalysis が実行・保存されること
+- [-] `.dynsym` で `NetworkDetected` のバイナリは SyscallAnalysis が実行されても問題ないこと（`analyzeFile` は `.dynsym` の結果に関係なく常に実行するため、個別テスト不要）
 
 ### AC-3: runner フォールバック
-- [ ] `.dynsym` で `NoNetworkSymbols`、SyscallAnalysis で `HasNetworkSyscalls: true` の場合 `NetworkDetected` を返すこと
-- [ ] SyscallAnalysis 未記録の場合 `NoNetworkSymbols` を返すこと
-- [ ] `ErrHashMismatch` の場合 `AnalysisError` を返すこと
-- [ ] SyscallAnalysis で `IsHighRisk: true` の場合 `AnalysisError` を返すこと
+- [x] `.dynsym` で `NoNetworkSymbols`、SyscallAnalysis で `HasNetworkSyscalls: true` の場合 `NetworkDetected` を返すこと
+- [x] SyscallAnalysis 未記録の場合 `NoNetworkSymbols` を返すこと
+- [x] `ErrHashMismatch` の場合 `AnalysisError` を返すこと
+- [x] SyscallAnalysis で `IsHighRisk: true` の場合 `AnalysisError` を返すこと
 
 ### pclntab 補正
 - [x] `.symtab` なし（stripped）→ offset=0

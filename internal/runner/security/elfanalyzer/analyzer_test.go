@@ -490,3 +490,131 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 	// Should behave like regular analyzer - return StaticBinary for static ELF
 	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
 }
+
+// AC-3: runner フォールバックテスト
+// 動的ELFバイナリ（.dynsym = NoNetworkSymbols）に対する SyscallAnalysis フォールバックの
+// 各ケースを検証する。
+
+// TestAC3_DynamicELF_SyscallFallback_NetworkDetected verifies AC-3:
+// When .dynsym returns NoNetworkSymbols but SyscallAnalysis records HasNetworkSyscalls=true,
+// AnalyzeNetworkSymbols returns NetworkDetected.
+func TestAC3_DynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	testFile := filepath.Join(tmpDir, "dynamic.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+
+	// Store returns HasNetworkSyscalls=true (simulates CGO binary with socket syscall)
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{Number: 41, Name: "socket", IsNetwork: true, Location: 0x401000},
+				},
+				Summary: SyscallSummary{
+					HasNetworkSyscalls:  true,
+					NetworkSyscallCount: 1,
+					TotalDetectedEvents: 1,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+	require.Len(t, output.DetectedSymbols, 1)
+	assert.Equal(t, "socket", output.DetectedSymbols[0].Name)
+	assert.Equal(t, "syscall", output.DetectedSymbols[0].Category)
+}
+
+// TestAC3_DynamicELF_SyscallFallback_NotRecorded verifies AC-3:
+// When .dynsym returns NoNetworkSymbols and SyscallAnalysis is not recorded
+// (ErrRecordNotFound / ErrNoSyscallAnalysis), AnalyzeNetworkSymbols returns NoNetworkSymbols.
+func TestAC3_DynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	testFile := filepath.Join(tmpDir, "dynamic.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"ErrRecordNotFound", fileanalysis.ErrRecordNotFound},
+		{"ErrNoSyscallAnalysis", fileanalysis.ErrNoSyscallAnalysis},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockStore := &mockSyscallAnalysisStore{err: tt.err}
+			analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+			output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
+
+			// Should remain NoNetworkSymbols (dynsym result) when no store entry
+			assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
+		})
+	}
+}
+
+// TestAC3_DynamicELF_SyscallFallback_HashMismatch verifies AC-3:
+// When .dynsym returns NoNetworkSymbols but SyscallAnalysis returns ErrHashMismatch
+// (binary changed since record), AnalyzeNetworkSymbols returns AnalysisError.
+func TestAC3_DynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	testFile := filepath.Join(tmpDir, "dynamic.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+
+	mockStore := &mockSyscallAnalysisStore{
+		result:       &SyscallAnalysisResult{},
+		expectedHash: "sha256:differenthash", // won't match "sha256:dummy"
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	assert.ErrorIs(t, output.Error, ErrSyscallHashMismatch)
+}
+
+// TestAC3_DynamicELF_SyscallFallback_HighRisk verifies AC-3:
+// When .dynsym returns NoNetworkSymbols but SyscallAnalysis returns IsHighRisk=true,
+// AnalyzeNetworkSymbols returns AnalysisError.
+func TestAC3_DynamicELF_SyscallFallback_HighRisk(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	testFile := filepath.Join(tmpDir, "dynamic.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+
+	mockStore := &mockSyscallAnalysisStore{
+		result: &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				HasUnknownSyscalls: true,
+				HighRiskReasons:    []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},
+				Summary: SyscallSummary{
+					IsHighRisk:          true,
+					TotalDetectedEvents: 1,
+				},
+			},
+		},
+	}
+
+	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	assert.ErrorIs(t, output.Error, ErrSyscallAnalysisHighRisk)
+}
+
+// TestAC3_DynamicELF_WithoutSyscallStore verifies AC-3:
+// When syscallStore is nil, dynamic ELF with NoNetworkSymbols in .dynsym
+// returns NoNetworkSymbols (no fallback attempted).
+func TestAC3_DynamicELF_WithoutSyscallStore(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	testFile := filepath.Join(tmpDir, "dynamic.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
+
+	// No syscall store: fallback disabled
+	analyzer := NewStandardELFAnalyzer(nil, nil)
+	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
+}
