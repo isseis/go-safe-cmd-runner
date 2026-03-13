@@ -47,6 +47,11 @@
 // It scans the first 256 KB of .text for CALL/BL targets, builds a histogram of
 // (target - nearestPclntabEntry) differences, and returns the most frequent value
 // if it appears at least minVotes times. Returns 0 if detection fails.
+//
+// PRECONDITION: pclntabFuncs must contain *uncorrected* Entry values (as returned
+// by gosym.NewLineTable before any offset correction). The algorithm relies on the
+// invariant: CALL_target_VA - pclntab_Entry = C_startup_size (constant per binary).
+// If corrected entries were passed, all differences would collapse to 0.
 func detectOffsetByCallTargets(
     elfFile *elf.File,
     pclntabFuncs map[string]PclntabFunc,
@@ -194,6 +199,13 @@ func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc)
     // Only reached after checkPclntabVersion confirms a supported binary.
     // CGO binaries always have a positive offset (C startup code precedes Go
     // text), so negative or zero results indicate detection failure.
+    //
+    // IMPORTANT: pclntabFuncs must contain the *uncorrected* Entry values as
+    // returned by gosym (i.e., before any offset correction is applied).
+    // The algorithm computes (CALL target VA) - (pclntab Entry) = offset,
+    // which is only valid when pclntabFuncs entries are still offset-shifted.
+    // ParsePclntab calls detectPclntabOffset *before* applying the correction,
+    // so this invariant is guaranteed by the call order.
     offset := detectOffsetByCallTargets(elfFile, pclntabFuncs)
     if !isValidOffset(offset, textSection.FileSize) {
         return 0
