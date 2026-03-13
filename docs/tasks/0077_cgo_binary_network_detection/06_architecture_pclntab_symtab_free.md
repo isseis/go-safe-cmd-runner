@@ -20,20 +20,19 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph 目標["目標（Strip 済みバイナリでも動作）"]
-        A2[ParsePclntab] --> B2["gosym.NewLineTable<br>textStart = .text.Addr"]
+    subgraph 目標["目標（Strip 済みバイナリでも動作）※案 A 廃止・案 B 単独採用"]
+        A2[ParsePclntab] --> M2{"pclntab magic 確認<br>checkPclntabVersion"}
+        M2 -->|"magic ≠ 0xfffffff1"| ERR2["ErrUnsupportedPclntabVersion ❌"]
+        M2 -->|"magic = 0xfffffff1<br>（Go 1.20+）"| B2["gosym.NewLineTable<br>textStart = .text.Addr"]
         B2 --> C2["fn.Entry ← ずれたアドレス<br>（CGO バイナリのみ）"]
-        C2 --> D2["detectPclntabOffset v2<br>（.symtab 不要）"]
-        D2 --> E2{Go バージョン判定}
-        E2 -->|"Go 1.18–1.25<br>（案 A）"| F2["pclntab ヘッダから<br>textStart 直接読み取り"]
-        E2 -->|"Go 1.26+<br>（案 B）"| G2["CALL ターゲット<br>相互参照で offset 検出"]
-        F2 --> H2["正しい offset ✅"]
-        G2 --> H2
+        C2 --> D2["detectOffsetByCallTargets<br>CALL/BL ターゲット相互参照<br>（.symtab 不要）"]
+        D2 --> H2["正しい offset ✅"]
         H2 --> I2["GoWrapperResolver<br>正しいアドレスで Pass 2 成功"]
     end
 
     style H2 fill:#90ee90
     style I2 fill:#90ee90
+    style ERR2 fill:#ff6b6b
 ```
 
 ---
