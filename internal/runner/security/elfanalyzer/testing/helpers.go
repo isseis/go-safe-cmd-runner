@@ -159,7 +159,7 @@ func CreateDynamicELFFile(t *testing.T, path string) {
 	binary.LittleEndian.PutUint32(elfHdr[20:24], uint32(elf.EV_CURRENT))
 	// e_entry = 0
 	// e_phoff = 0 (no program headers)
-	binary.LittleEndian.PutUint64(elfHdr[40:48], uint64(sectionHdrsOffset)) // e_shoff
+	binary.LittleEndian.PutUint64(elfHdr[40:48], uint64(sectionHdrsOffset)) //nolint:gosec // G115: sectionHdrsOffset is a positive layout offset, no overflow risk
 	// e_flags = 0
 	binary.LittleEndian.PutUint16(elfHdr[52:54], uint16(elfHeaderSize))  // e_ehsize
 	binary.LittleEndian.PutUint16(elfHdr[54:56], phentSize)              // e_phentsize (irrelevant, no phdr)
@@ -192,10 +192,10 @@ func CreateDynamicELFFile(t *testing.T, path string) {
 	writeSectionHdr(shstrtabOffNull, elf.SHT_NULL, 0, 0, 0, 0, 0, 0)
 	// [1] .dynsym: link=dynstrSectionIdx (.dynstr index), info=firstGlobalSymIdx (first global symbol)
 	writeSectionHdr(uint32(shstrtabOffDynsym), elf.SHT_DYNSYM, elf.SHF_ALLOC,
-		uint64(dynsymOffset), uint64(len(dynsymData)), dynstrSectionIdx, firstGlobalSymIdx, elf64SymSize)
+		uint64(dynsymOffset), uint64(len(dynsymData)), dynstrSectionIdx, firstGlobalSymIdx, elf64SymSize) //nolint:gosec // G115: dynsymOffset is a positive layout offset, no overflow risk
 	// [2] .dynstr
 	writeSectionHdr(uint32(shstrtabOffDynstr), elf.SHT_STRTAB, elf.SHF_ALLOC,
-		uint64(dynstrOffset), uint64(len(dynstr)), 0, 0, 0)
+		uint64(dynstrOffset), uint64(len(dynstr)), 0, 0, 0) //nolint:gosec // G115: dynstrOffset is a positive layout offset, no overflow risk
 	// [3] .shstrtab
 	writeSectionHdr(uint32(shstrtabOffShstrtab), elf.SHT_STRTAB, 0,
 		uint64(shstrtabOffset), uint64(len(shstrtab)), 0, 0, 0)
