@@ -142,7 +142,8 @@ case ver118, ver120:
      x86_64: opcode E8 + int32 相対オフセット
              target = callSite + 5 + int32(data[callSite+1:callSite+5])
      arm64:  BL 命令（上位 6 bit = 0b100101）
-             target = callSite + int26(instr[25:0]) * 4
+             imm26 = int32(instr & 0x03ffffff) << 6 >> 6  // 26 bit 符号拡張
+             target = callSite + imm26 * 4
 6. 各 CALL ターゲットについて:
      a. sortedEntries を二分探索して最近傍 entry を検索
      b. |target - entry| < 0x1000 の場合 diffCounts[target - entry]++
