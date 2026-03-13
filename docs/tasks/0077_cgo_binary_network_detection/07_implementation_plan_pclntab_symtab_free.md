@@ -5,7 +5,7 @@
 - [x] Step 1: pclntab magic 値・ヘッダレイアウトを Go ソースで確認（2026-03-13 完了）
 - [x] Step 2: 案 A の調査 → **廃止**（ヘッダから textStart を読む手段が存在しないと判明）
 - [x] Step 3: Go 1.26 の pclntab 形式を確認し対応方針を確定（2026-03-13 完了）
-- [ ] Step 4: 案 B — CALL ターゲット相互参照の実装（全バージョン対応）
+- [ ] Step 4: 案 B — CALL ターゲット相互参照の実装（Go 1.20+ 対応）
 - [ ] Step 5: `detectPclntabOffset` の置き換え（.symtab 参照を削除、案 B 単独）
 - [ ] Step 6: テスト追加（AC-1〜AC-6）
 - [ ] Step 7: `make fmt && make test && make lint` 通過確認
@@ -28,11 +28,11 @@
 | `debug/gosym` の textStart | `t.textStart = t.PC`（引数の addr）— ヘッダは読まない |
 | 案 A の実現可能性 | **不可能**（全バージョンでヘッダから有効な textStart を読めない）|
 
-**方針変更: 案 A を廃止し、案 B を全バージョン対応の単独手段として採用。**
+**方針変更: 案 A を廃止し、案 B を Go 1.20+ 対応の単独手段として採用。**
 
 ---
 
-## Step 4: 案 B の実装（全バージョン対応）
+## Step 4: 案 B の実装（Go 1.20+ 対応）
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
 
