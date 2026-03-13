@@ -54,33 +54,36 @@ offset = headerTextStart - .text.Addr
 
 ### 2.2 pclntab ヘッダレイアウト
 
-```
-凡例: ptrSize = data[7] の値（4 または 8）
-      uint(x) は ELF の ByteOrder に従って読む
+**Go 1.18–1.19 (magic = 0xfffffff0)**
 
-Go 1.18–1.19 (magic = 0xfffffff0 LE):
-  offset 0:              magic     [4 bytes]
-  offset 4:              pad       [1 byte]
-  offset 5:              pad       [1 byte]
-  offset 6:              minLC     [1 byte]   ← quantum（x86: 1, ARM: 4）
-  offset 7:              ptrSize   [1 byte]   ← 4 or 8
-  offset 8:              nfunc     [ptrSize bytes]
-  offset 8 + ptrSize:    textStart [ptrSize bytes]  ← runtime.text ★
+| オフセット | フィールド | サイズ | 説明 |
+|----------|----------|-------|------|
+| 0 | magic | 4 bytes | 0xfffffff0 |
+| 4–5 | pad | 2 bytes | パディング |
+| 6 | minLC | 1 byte | quantum（x86: 1, ARM: 4） |
+| 7 | ptrSize | 1 byte | 4 or 8 |
+| 8 | nfunc | ptrSize | 関数数 |
+| 8 + ptrSize | **textStart** | ptrSize | **runtime.text** ⭐ |
 
-Go 1.20–1.25 (magic = 0xfffffff1 LE):
-  offset 0:              magic     [4 bytes]
-  offset 4:              pad       [1 byte]
-  offset 5:              pad       [1 byte]
-  offset 6:              minLC     [1 byte]
-  offset 7:              ptrSize   [1 byte]
-  offset 8:              nfunc     [ptrSize bytes]
-  offset 8 + ptrSize:    nfiles    [ptrSize bytes]  ← Go 1.20 で追加
-  offset 8 + 2*ptrSize:  textStart [ptrSize bytes]  ← runtime.text ★
+**Go 1.20–1.25 (magic = 0xfffffff1)**
 
-Go 1.26+ (新 magic, textStart 削除):
-  magic 値は実装前に $GOROOT/src/debug/gosym/pclntab.go で確認する。
-  textStart フィールドはヘッダに含まれない。
-```
+| オフセット | フィールド | サイズ | 説明 |
+|----------|----------|-------|------|
+| 0 | magic | 4 bytes | 0xfffffff1 |
+| 4–5 | pad | 2 bytes | パディング |
+| 6 | minLC | 1 byte | quantum |
+| 7 | ptrSize | 1 byte | 4 or 8 |
+| 8 | nfunc | ptrSize | 関数数 |
+| 8 + ptrSize | nfiles | ptrSize | ファイル数（Go 1.20+）|
+| 8 + 2*ptrSize | **textStart** | ptrSize | **runtime.text** ⭐ |
+
+**Go 1.26+ (新 magic, textStart 削除)**
+
+magic 値は実装前に `$GOROOT/src/debug/gosym/pclntab.go` で確認してください。
+textStart フィールドはヘッダに含まれません。
+
+> **凡例**: ptrSize の値（4 or 8）に応じてフィールドサイズが変動します。
+> ELF バイナリの ByteOrder（リトルエンディアン/ビッグエンディアン）に従ってバイナリ値を読み取ります。
 
 > **注記**: 上記レイアウトは Go 標準ライブラリの `src/debug/gosym/pclntab.go` および
 > Go リンカの `src/cmd/link/internal/ld/pcln.go` を参照して作成した。

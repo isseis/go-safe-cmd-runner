@@ -57,22 +57,16 @@ func detectPclntabOffset(...) int64 {
 CGO バイナリでは C リンカが C スタートアップコード（crt0、`_start`、`__libc_start_main` 等）を
 `.text` 先頭に挿入する。
 
-```
-CGO バイナリの .text セクションレイアウト:
-┌─────────────────────────────────────────────────────┐
-│ アドレス: .text.Addr (例: 0x402300)                  │
-│                                                     │
-│  C スタートアップコード（crt0 等）                    │
-│  ← C_startup_size バイト（例: 256 = 0x100 バイト）   │
-│                                                     │
-│─── runtime.text = .text.Addr + C_startup_size ─────│
-│    = 0x402400（例）                                 │
-│                                                     │
-│  Go ランタイム & ユーザーコード                       │
-│  ← pclntab に記録されている関数群                    │
-│                                                     │
-└─────────────────────────────────────────────────────┘
-```
+| アドレス範囲 | 内容 | 備注 |
+|-----------|------|------|
+| `.text.Addr` ～ `.text.Addr + C_startup_size` | C スタートアップコード（crt0 等） | 例：256 バイト（0x100） |
+| `.text.Addr + C_startup_size` ～ `.text + .text.Size` | Go ランタイム & ユーザーコード | `runtime.text = .text.Addr + C_startup_size` |
+
+**具体例（x86_64 CGO バイナリで観測）**:
+- `.text.Addr` = 0x402300
+- `C_startup_size` = 0x100 (256 bytes)
+- `runtime.text` = 0x402400
+- pclntab の関数アドレスは `runtime.text` を基準に記録されている
 
 ### 2.2 pclntab と textStart
 
