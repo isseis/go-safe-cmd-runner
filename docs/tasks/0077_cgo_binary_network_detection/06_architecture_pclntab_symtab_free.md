@@ -207,19 +207,36 @@ Go 1.26.0 ソースコードの調査（`$GOROOT/src/internal/abi/symtab.go`、
 
 ```mermaid
 flowchart TD
-    S[detectPclntabOffset] --> B["案 B: CALL ターゲット\n相互参照"]
-    B --> E["offset = ヒストグラム\n最頻値"]
-    E --> V{妥当性検証\nisValidOffset}
+    S[ParsePclntab] --> M{"pclntab magic\n確認"}
+    M -->|"0xfffffff1\n（Go 1.26+）"| B["detectOffsetByCallTargets\nCALL ターゲット相互参照"]
+    M -->|"その他\n（Go 1.25 以前）"| E["ErrUnsupportedPclntabVersion\n（明示的エラー）"]
+    B --> H["offset = ヒストグラム\n最頻値"]
+    H --> V{isValidOffset}
     V -->|"0 < offset <=\n.text.FileSize"| R["return offset"]
     V -->|"範囲外または失敗"| Z["return 0\n（フェイルセーフ）"]
 
     style R fill:#90ee90
     style Z fill:#ffb347
+    style E fill:#ff6b6b
 ```
 
-### 5.3 実装しないこと（スコープ外）
+### 5.3 サポートバージョン
 
-- Go 1.2–1.17 サポート（既にサポート対象外）
+**サポート対象: Go 1.26+（`CurrentPCLnTabMagic = 0xfffffff1`）のみ**
+
+Go 1.26 未満のバイナリは `ErrUnsupportedPclntabVersion` エラーとして `ParsePclntab` から返す。
+理由:
+- Go 1.18–1.25 は `0xfffffff0`（1.18–1.19）または `0xfffffff1`（1.20–1.25）の magic を持つが、
+  テスト環境が Go 1.26 のみのため動作検証ができない
+- 未検証バイナリへの誤った offset 適用は誤動作（誤検出/見逃し）を引き起こす
+- 明示的エラーにより呼び出し元が適切に処理できる（フェイルセーフより明確）
+
+> **注**: Go 1.20–1.25 の magic も `0xfffffff1` で同一だが、CALL ターゲット相互参照
+> アルゴリズム自体はバイナリ構造に依存するため、テストなしで有効性を保証できない。
+
+### 5.4 実装しないこと（スコープ外）
+
+- Go 1.25 以前のバイナリへの対応（明示的エラーで十分）
 - macOS Mach-O バイナリへの対応
 - 既存 `MachineCodeDecoder` インターフェース経由の CALL 検出
   （`ParsePclntab` 呼び出し時点では decoder インスタンスがないため、案 B は独自実装）
