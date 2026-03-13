@@ -273,14 +273,66 @@ assert.Equal(t, "unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) i
 
 ### 受け入れ基準テスト（`build` タグ: `integration`）
 
-| AC | テスト名 | 実施方法 |
+#### バイナリ調達方針
+
+既存の統合テスト（`syscall_analyzer_integration_test.go`）と同じく、
+**テスト内でオンザフライにビルド**する方針を採用する。
+`SafeTempDir(t)` でテンポラリディレクトリを作成し、テスト終了時に自動削除される。
+
+| AC | バイナリ種別 | 調達方法 | 実行条件 |
+|----|-----------|---------|---------|
+| AC-1 | not-stripped CGO バイナリ（x86_64） | `go build`（`CGO_ENABLED=1`、`GOARCH=amd64`） | `runtime.GOARCH == "amd64"` かつ `gcc` が存在する |
+| AC-2 | stripped CGO バイナリ（x86_64） | AC-1 と同バイナリを `strip` コマンドで処理 | 同上 かつ `strip` コマンドが存在する |
+| AC-3 | 非 CGO バイナリ（x86_64） | `go build`（`CGO_ENABLED=0`、`GOARCH=amd64`） | `runtime.GOARCH == "amd64"` |
+| AC-4 | — | インメモリで壊れた pclntab を構築（既存 `buildELF64WithPclntab` を流用） | なし（ユニットテストに統合可） |
+| AC-5 | — | インメモリで magic = `0xfffffff0` の pclntab を構築（`buildELF64WithPclntab` を流用） | なし（ユニットテストに統合可） |
+| AC-6 | CGO バイナリ（x86_64） | AC-1 と同バイナリを再利用 | `runtime.GOARCH == "amd64"` かつ `gcc` が存在する |
+
+#### CGO バイナリのソースコード（AC-1/AC-2/AC-6 共通）
+
+```go
+const cgoBinarySrc = `package main
+
+// #include <stdio.h>
+import "C"
+
+import "net"
+
+func main() {
+    C.puts(C.CString("hello from C"))
+    conn, _ := net.Dial("tcp", "127.0.0.1:1")
+    if conn != nil { conn.Close() }
+}
+`
+```
+
+**注:** CGO バイナリであればソースの内容は問わないが、`import "C"` が必要（これにより C スタートアップコードが `.text` 先頭に挿入される）。ネットワーク呼び出しは pclntab テストには不要だが、既存テストとの一貫性のため残す。
+
+#### strip コマンドの確認（AC-2）
+
+```go
+if _, err := exec.LookPath("strip"); err != nil {
+    t.Skip("strip command not available")
+}
+// AC-1 と同じバイナリを一時ディレクトリにコピーして strip を適用
+strippedBin := filepath.Join(tmpDir, "cgo_stripped")
+require.NoError(t, copyFile(binFile, strippedBin))
+cmd := exec.Command("strip", strippedBin)
+require.NoError(t, cmd.Run())
+```
+
+#### 各テストが検証すること
+
+| AC | テスト名 | 検証内容 |
 |----|---------|---------|
-| AC-1 | `TestParsePclntab_NotStrippedCGO` | not-stripped Go 1.26 CGO バイナリ（not stripped）→ offset = C_startup_size、pclntab アドレス補正確認 |
-| AC-2 | `TestParsePclntab_StrippedCGO` | strip 済み Go 1.26 CGO バイナリ → offset = C_startup_size（.symtab なしで検出）|
-| AC-3 | `TestParsePclntab_NonCGO` | Go 1.26 非 CGO バイナリ → offset = 0 |
-| AC-4 | `TestParsePclntab_InvalidPclntab` | 壊れた pclntab → `ErrInvalidPclntab` または `ErrUnsupportedPclntab` |
-| AC-5 | `TestParsePclntab_UnsupportedVersion` | Go 1.18–1.19 バイナリ（magic = 0xfffffff0）→ `ErrUnsupportedPclntabVersion` |
-| AC-6 | `TestParsePclntab_Go126CGO` | Go 1.26 ビルド CGO バイナリで offset = C_startup_size を検出 |
+| AC-1 | `TestParsePclntab_NotStrippedCGO` | `ParsePclntab` が成功し、`syscall.RawSyscall` 等のアドレスが `.symtab` と一致（offset 補正が正しい）|
+| AC-2 | `TestParsePclntab_StrippedCGO` | `.symtab` なしでも AC-1 と同じ offset が検出される |
+| AC-3 | `TestParsePclntab_NonCGO` | `ParsePclntab` が成功し、offset 補正なし（CALL 相互参照で最頻値が `minVotes` に達しない）|
+| AC-4 | `TestParsePclntab_InvalidPclntab` | `buildELF64WithPclntab` で不正データ → `ErrInvalidPclntab` |
+| AC-5 | `TestParsePclntab_UnsupportedVersion` | `buildELF64WithPclntab` で magic = `0xfffffff0` → `ErrUnsupportedPclntabVersion` |
+| AC-6 | `TestParsePclntab_Go126CGO` | `detectOffsetByCallTargets` が返す offset = `C_startup_size`（`> 0`）を直接検証 |
+
+**注（AC-1 のアドレス一致検証）:** `.symtab` の `syscall.RawSyscall` エントリと補正後の pclntab エントリのアドレスを比較する。厳密な一致が理想だが、関数の終端アドレス精度の違いがある場合は `|diff| < threshold`（例: 16 バイト）で許容する。AC-6（offset > 0 の確認）と組み合わせることで十分な検証精度が得られる。
 
 ---
 
