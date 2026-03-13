@@ -5,13 +5,13 @@
 ```mermaid
 flowchart TD
     subgraph 現行実装["現行実装（Strip 済みバイナリで失敗）"]
-        A[ParsePclntab] --> B["gosym.NewLineTable\ntextStart = .text.Addr"]
-        B --> C["fn.Entry ← ずれたアドレス\n（CGO バイナリのみ）"]
+        A[ParsePclntab] --> B["gosym.NewLineTable<br>textStart = .text.Addr"]
+        B --> C["fn.Entry ← ずれたアドレス<br>（CGO バイナリのみ）"]
         C --> D[detectPclntabOffset]
         D --> E{.symtab あり？}
-        E -->|"あり\n（not stripped）"| F["symtab と照合\n→ offset 検出 ✅"]
-        E -->|"なし\n（stripped）"| G["offset = 0\n補正なし ❌"]
-        G --> H["GoWrapperResolver\nアドレスずれで Pass 2 失敗"]
+        E -->|"あり<br>（not stripped）"| F["symtab と照合<br>→ offset 検出 ✅"]
+        E -->|"なし<br>（stripped）"| G["offset = 0<br>補正なし ❌"]
+        G --> H["GoWrapperResolver<br>アドレスずれで Pass 2 失敗"]
     end
 
     style G fill:#ffb347
@@ -21,15 +21,15 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph 目標["目標（Strip 済みバイナリでも動作）"]
-        A2[ParsePclntab] --> B2["gosym.NewLineTable\ntextStart = .text.Addr"]
-        B2 --> C2["fn.Entry ← ずれたアドレス\n（CGO バイナリのみ）"]
-        C2 --> D2["detectPclntabOffset v2\n（.symtab 不要）"]
+        A2[ParsePclntab] --> B2["gosym.NewLineTable<br>textStart = .text.Addr"]
+        B2 --> C2["fn.Entry ← ずれたアドレス<br>（CGO バイナリのみ）"]
+        C2 --> D2["detectPclntabOffset v2<br>（.symtab 不要）"]
         D2 --> E2{Go バージョン判定}
-        E2 -->|"Go 1.18–1.25\n（案 A）"| F2["pclntab ヘッダから\ntextStart 直接読み取り"]
-        E2 -->|"Go 1.26+\n（案 B）"| G2["CALL ターゲット\n相互参照で offset 検出"]
+        E2 -->|"Go 1.18–1.25<br>（案 A）"| F2["pclntab ヘッダから<br>textStart 直接読み取り"]
+        E2 -->|"Go 1.26+<br>（案 B）"| G2["CALL ターゲット<br>相互参照で offset 検出"]
         F2 --> H2["正しい offset ✅"]
         G2 --> H2
-        H2 --> I2["GoWrapperResolver\n正しいアドレスで Pass 2 成功"]
+        H2 --> I2["GoWrapperResolver<br>正しいアドレスで Pass 2 成功"]
     end
 
     style H2 fill:#90ee90
@@ -208,13 +208,13 @@ Go 1.26.0 ソースコードの調査（`$GOROOT/src/internal/abi/symtab.go`、
 
 ```mermaid
 flowchart TD
-    S[ParsePclntab] --> M{"pclntab magic\n確認"}
-    M -->|"0xfffffff1\n（Go 1.20–1.26）"| B["detectOffsetByCallTargets\nCALL ターゲット相互参照"]
-    M -->|"その他\n（magic ≠ 0xfffffff1）"| E["ErrUnsupportedPclntabVersion\n（明示的エラー）"]
-    B --> H["offset = ヒストグラム\n最頻値"]
+    S[ParsePclntab] --> M{"pclntab magic<br>確認"}
+    M -->|"0xfffffff1<br>（Go 1.20–1.26）"| B["detectOffsetByCallTargets<br>CALL ターゲット相互参照"]
+    M -->|"その他<br>（magic ≠ 0xfffffff1）"| E["ErrUnsupportedPclntabVersion<br>（明示的エラー）"]
+    B --> H["offset = ヒストグラム<br>最頻値"]
     H --> V{isValidOffset}
-    V -->|"0 < offset <=\n.text.FileSize"| R["return offset"]
-    V -->|"範囲外または失敗"| Z["return 0\n（フェイルセーフ）"]
+    V -->|"0 < offset <=<br>.text.FileSize"| R["return offset"]
+    V -->|"範囲外または失敗"| Z["return 0<br>（フェイルセーフ）"]
 
     style R fill:#90ee90
     style Z fill:#ffb347
