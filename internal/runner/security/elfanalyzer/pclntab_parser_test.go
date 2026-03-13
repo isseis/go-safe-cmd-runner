@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"debug/elf"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -116,33 +118,37 @@ func TestParsePclntab_NoPclntabSection(t *testing.T) {
 }
 
 // TestParsePclntab_InvalidData verifies behavior when .gopclntab contains
-// data that debug/gosym cannot interpret as valid pclntab.
+// data that cannot be parsed as valid pclntab.
 //
-// NOTE: Unlike the previous hand-rolled parser that returned ErrUnsupportedPclntab
-// or ErrInvalidPclntab for bad magic/short data, debug/gosym silently accepts
-// invalid data and returns an empty function table (no error). This is the
-// documented behavior of the standard library package. ParsePclntab therefore
-// succeeds but returns a result with no functions when the data is unrecognizable.
+// After checkPclntabVersion was added, magic validation now happens before
+// gosym is invoked:
+//   - Data shorter than 4 bytes → ErrInvalidPclntab
+//   - Data with magic != 0xfffffff1 → ErrUnsupportedPclntabVersion
 func TestParsePclntab_InvalidData(t *testing.T) {
 	cases := []struct {
-		name string
-		data []byte
+		name      string
+		data      []byte
+		expectErr error
 	}{
 		{
-			name: "empty pclntab",
-			data: []byte{},
+			name:      "empty pclntab",
+			data:      []byte{},
+			expectErr: ErrInvalidPclntab,
 		},
 		{
-			name: "too short for header",
-			data: []byte{0x01, 0x02, 0x03},
+			name:      "too short for header",
+			data:      []byte{0x01, 0x02, 0x03},
+			expectErr: ErrInvalidPclntab,
 		},
 		{
-			name: "invalid magic bytes",
-			data: []byte{0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x01, 0x08},
+			name:      "invalid magic bytes",
+			data:      []byte{0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x01, 0x08},
+			expectErr: ErrUnsupportedPclntabVersion,
 		},
 		{
-			name: "random garbage",
-			data: bytes.Repeat([]byte{0xde, 0xad, 0xbe, 0xef}, 8),
+			name:      "random garbage",
+			data:      bytes.Repeat([]byte{0xde, 0xad, 0xbe, 0xef}, 8),
+			expectErr: ErrUnsupportedPclntabVersion,
 		},
 	}
 
@@ -150,13 +156,10 @@ func TestParsePclntab_InvalidData(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := openELFWithPclntab(t, tc.data)
 
-			result, err := ParsePclntab(f)
+			_, err := ParsePclntab(f)
 
-			// debug/gosym does not return errors for unrecognizable data;
-			// it returns an empty table. Verify ParsePclntab reflects that.
-			require.NoError(t, err)
-			assert.NotNil(t, result)
-			assert.Empty(t, result)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tc.expectErr)
 		})
 	}
 }
@@ -166,6 +169,8 @@ func TestParsePclntab_ErrorWrapping(t *testing.T) {
 	assert.Equal(t, "no .gopclntab section found", ErrNoPclntab.Error())
 	assert.Equal(t, "unsupported pclntab format", ErrUnsupportedPclntab.Error())
 	assert.Equal(t, "invalid pclntab structure", ErrInvalidPclntab.Error())
+	assert.Equal(t, "unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) is supported",
+		ErrUnsupportedPclntabVersion.Error())
 }
 
 func TestPclntabParser_NoPclntab(t *testing.T) {
@@ -188,41 +193,8 @@ func TestPclntabResult_Lookup(t *testing.T) {
 	assert.False(t, found)
 }
 
-// TestDetectPclntabOffset_NoSymtab verifies that detectPclntabOffset returns 0
-// when .symtab is absent (stripped binary).
-func TestDetectPclntabOffset_NoSymtab(t *testing.T) {
-	// ELF built by buildELF64WithPclntab has no .symtab section.
-	f := openELFWithPclntab(t, []byte{})
-	defer f.Close()
-
-	pclntabFuncs := map[string]PclntabFunc{
-		"main.main": {Name: "main.main", Entry: 0x401000, End: 0x401100},
-	}
-	offset := detectPclntabOffset(f, pclntabFuncs)
-	assert.Equal(t, int64(0), offset, "no .symtab → offset must be 0")
-}
-
-// TestDetectPclntabOffset_NoMatch verifies that detectPclntabOffset returns 0
-// when no pclntab function name matches any .symtab entry.
-func TestDetectPclntabOffset_NoMatch(t *testing.T) {
-	// Use a real ELF that has .symtab but no overlap with our fake pclntab entries.
-	const testFile = "testdata/arm64_network_program/arm64_network_program.elf"
-	if _, err := os.Stat(testFile); os.IsNotExist(err) {
-		t.Skip("arm64 test binary not available")
-	}
-	f, err := elf.Open(testFile)
-	require.NoError(t, err)
-	defer f.Close()
-
-	pclntabFuncs := map[string]PclntabFunc{
-		"nonexistent.function": {Name: "nonexistent.function", Entry: 0x1000, End: 0x1100},
-	}
-	offset := detectPclntabOffset(f, pclntabFuncs)
-	assert.Equal(t, int64(0), offset, "no matching symbol → offset must be 0")
-}
-
 // TestDetectPclntabOffset_NonCGO verifies that detectPclntabOffset returns 0
-// for a non-CGO binary (pclntab addresses already match .symtab).
+// for a non-CGO binary (CALL cross-reference does not reach minVotes).
 func TestDetectPclntabOffset_NonCGO(t *testing.T) {
 	const testFile = "testdata/arm64_network_program/arm64_network_program.elf"
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
@@ -232,9 +204,15 @@ func TestDetectPclntabOffset_NonCGO(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	// Parse pclntab normally — addresses should already match .symtab.
+	// Parse pclntab normally — addresses should already match actual VAs.
 	funcs, err := ParsePclntab(f)
-	require.NoError(t, err)
+	if err != nil {
+		// If the binary uses a different magic (e.g. Go 1.18-1.19), skip.
+		if errors.Is(err, ErrUnsupportedPclntabVersion) {
+			t.Skip("test binary uses unsupported pclntab version")
+		}
+		require.NoError(t, err)
+	}
 	require.NotEmpty(t, funcs)
 
 	// For non-CGO binaries the offset should be 0 (already corrected by ParsePclntab,
@@ -242,4 +220,304 @@ func TestDetectPclntabOffset_NonCGO(t *testing.T) {
 	// on the already-corrected map should return 0).
 	offset := detectPclntabOffset(f, funcs)
 	assert.Equal(t, int64(0), offset, "non-CGO binary → offset must be 0")
+}
+
+// --- checkPclntabVersion unit tests ---
+
+func TestCheckPclntabVersion_Go120magic(t *testing.T) {
+	// magic = 0xfffffff1 (Go 1.20–1.26) should return nil.
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint32(data[0:4], 0xfffffff1)
+	err := checkPclntabVersion(data, binary.LittleEndian)
+	assert.NoError(t, err)
+}
+
+func TestCheckPclntabVersion_Go118magic(t *testing.T) {
+	// magic = 0xfffffff0 (Go 1.18–1.19) should return ErrUnsupportedPclntabVersion.
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint32(data[0:4], 0xfffffff0)
+	err := checkPclntabVersion(data, binary.LittleEndian)
+	assert.ErrorIs(t, err, ErrUnsupportedPclntabVersion)
+}
+
+func TestCheckPclntabVersion_Go116magic(t *testing.T) {
+	// magic = 0xfffffffa (Go 1.16–1.17) should return ErrUnsupportedPclntabVersion.
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint32(data[0:4], 0xfffffffa)
+	err := checkPclntabVersion(data, binary.LittleEndian)
+	assert.ErrorIs(t, err, ErrUnsupportedPclntabVersion)
+}
+
+func TestCheckPclntabVersion_Go12magic(t *testing.T) {
+	// magic = 0xfffffffb (Go 1.2–1.15) should return ErrUnsupportedPclntabVersion.
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint32(data[0:4], 0xfffffffb)
+	err := checkPclntabVersion(data, binary.LittleEndian)
+	assert.ErrorIs(t, err, ErrUnsupportedPclntabVersion)
+}
+
+func TestCheckPclntabVersion_TooShort(t *testing.T) {
+	// Data shorter than 4 bytes should return ErrInvalidPclntab.
+	data := []byte{0xff, 0xff, 0xff}
+	err := checkPclntabVersion(data, binary.LittleEndian)
+	assert.ErrorIs(t, err, ErrInvalidPclntab)
+}
+
+func TestCheckPclntabVersion_BigEndian(t *testing.T) {
+	// BigEndian encoding of 0xfffffff1 → bytes [0xff, 0xff, 0xff, 0xf1].
+	data := make([]byte, 8)
+	binary.BigEndian.PutUint32(data[0:4], 0xfffffff1)
+	err := checkPclntabVersion(data, binary.BigEndian)
+	assert.NoError(t, err)
+}
+
+// --- detectOffsetByCallTargets unit tests ---
+
+// buildELF64WithTextAndPclntab constructs a minimal ELF64 with .text and .gopclntab sections.
+// textData contains raw machine code for .text, textAddr is the load address of .text,
+// and pclntabData is placed in .gopclntab.
+func buildELF64WithTextAndPclntab(textData []byte, textAddr uint64, pclntabData []byte, machine elf.Machine) []byte {
+	var buf bytes.Buffer
+
+	// shstrtab layout: \0 .text\0 .gopclntab\0 .shstrtab\0
+	shstrtab := []byte("\x00.text\x00.gopclntab\x00.shstrtab\x00")
+
+	const elfHeaderSize = 64
+	const shEntrySize = 64
+	const numSections = 4 // null, .text, .gopclntab, .shstrtab
+
+	textOffset := elfHeaderSize
+	pclntabOffset := textOffset + len(textData)
+	shstrtabOffset := pclntabOffset + len(pclntabData)
+
+	shOffset := shstrtabOffset + len(shstrtab)
+	if shOffset%8 != 0 {
+		shOffset += 8 - (shOffset % 8)
+	}
+
+	// ELF header
+	var header [elfHeaderSize]byte
+	copy(header[0:4], []byte{0x7f, 'E', 'L', 'F'})
+	header[4] = 2                                                       // ELFCLASS64
+	header[5] = 1                                                       // ELFDATA2LSB
+	header[6] = 1                                                       // EV_CURRENT
+	binary.LittleEndian.PutUint16(header[16:18], 2)                     // ET_EXEC
+	binary.LittleEndian.PutUint16(header[18:20], uint16(machine))       //nolint:gosec
+	binary.LittleEndian.PutUint32(header[20:24], 1)                     // EV_CURRENT
+	binary.LittleEndian.PutUint64(header[40:48], uint64(shOffset))      // e_shoff
+	binary.LittleEndian.PutUint16(header[52:54], uint16(elfHeaderSize)) // e_ehsize
+	binary.LittleEndian.PutUint16(header[58:60], uint16(shEntrySize))   // e_shentsize
+	binary.LittleEndian.PutUint16(header[60:62], uint16(numSections))   // e_shnum
+	binary.LittleEndian.PutUint16(header[62:64], uint16(numSections-1)) // e_shstrndx
+
+	buf.Write(header[:])
+	buf.Write(textData)
+	buf.Write(pclntabData)
+	buf.Write(shstrtab)
+
+	for buf.Len() < shOffset {
+		buf.WriteByte(0)
+	}
+
+	// Section 0: null
+	var sh0 [shEntrySize]byte
+	buf.Write(sh0[:])
+
+	// Section 1: .text
+	var sh1 [shEntrySize]byte
+	binary.LittleEndian.PutUint32(sh1[0:4], 1)                       // sh_name: ".text"
+	binary.LittleEndian.PutUint32(sh1[4:8], 1)                       // SHT_PROGBITS
+	binary.LittleEndian.PutUint64(sh1[8:16], 6)                      // SHF_ALLOC|SHF_EXECINSTR
+	binary.LittleEndian.PutUint64(sh1[16:24], textAddr)              // sh_addr
+	binary.LittleEndian.PutUint64(sh1[24:32], uint64(textOffset))    // sh_offset
+	binary.LittleEndian.PutUint64(sh1[32:40], uint64(len(textData))) // sh_size
+	buf.Write(sh1[:])
+
+	// Section 2: .gopclntab
+	var sh2 [shEntrySize]byte
+	binary.LittleEndian.PutUint32(sh2[0:4], 7)                          // sh_name: ".gopclntab"
+	binary.LittleEndian.PutUint32(sh2[4:8], 1)                          // SHT_PROGBITS
+	binary.LittleEndian.PutUint64(sh2[24:32], uint64(pclntabOffset))    // sh_offset
+	binary.LittleEndian.PutUint64(sh2[32:40], uint64(len(pclntabData))) // sh_size
+	buf.Write(sh2[:])
+
+	// Section 3: .shstrtab
+	var sh3 [shEntrySize]byte
+	binary.LittleEndian.PutUint32(sh3[0:4], 18)                       // sh_name: ".shstrtab"
+	binary.LittleEndian.PutUint32(sh3[4:8], 3)                        // SHT_STRTAB
+	binary.LittleEndian.PutUint64(sh3[24:32], uint64(shstrtabOffset)) // sh_offset
+	binary.LittleEndian.PutUint64(sh3[32:40], uint64(len(shstrtab)))  // sh_size
+	buf.Write(sh3[:])
+
+	return buf.Bytes()
+}
+
+// encodeX86Call encodes an x86_64 CALL rel32 instruction into buf[0:5].
+// from is the VA of the CALL instruction, to is the target VA.
+func encodeX86Call(buf []byte, from, to uint64) {
+	rel := int32(int64(to) - int64(from) - 5) //nolint:gosec // G115: address difference is bounded
+	buf[0] = 0xe8
+	binary.LittleEndian.PutUint32(buf[1:5], uint32(rel)) //nolint:gosec
+}
+
+// encodeArm64BL encodes an arm64 BL instruction into buf[0:4].
+// from is the VA of the BL instruction, to is the target VA.
+func encodeArm64BL(buf []byte, from, to uint64) {
+	imm26 := (int64(to) - int64(from)) / 4                   //nolint:gosec // G115: address difference is bounded
+	instr := uint32(0b100101<<26) | uint32(imm26&0x03ffffff) //nolint:gosec
+	binary.LittleEndian.PutUint32(buf, instr)
+}
+
+// TestDetectOffsetByCallTargets_WithOffset_x86 verifies that x86_64 CALL
+// instructions whose targets match pclntab entries shifted by 0x100 are
+// detected and the offset 0x100 is returned.
+func TestDetectOffsetByCallTargets_WithOffset_x86(t *testing.T) {
+	const offsetVal = int64(0x100) // simulated C startup size
+	const textAddr = uint64(0x401000)
+	const numCalls = 5
+	// Use 0x1000 spacing so CALL targets (entry+0x100) do not coincide with
+	// other entries in the sorted slice (nearest-neighbor would hit another entry).
+	const entrySpacing = uint64(0x1000)
+
+	// pclntab entries are at textAddr (uncorrected, as gosym would return them).
+	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
+	for i := range numCalls {
+		entry := textAddr + uint64(i)*entrySpacing //nolint:gosec
+		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
+		}
+	}
+
+	// Build .text: each CALL targets (pclntab_entry + offset), simulating a
+	// CGO binary where actual function VAs = pclntab_entry + C_startup_size.
+	textData := make([]byte, numCalls*10) // 5 bytes per CALL + 5 bytes padding
+	for i := range numCalls {
+		callSiteVA := textAddr + uint64(i*10)                                            //nolint:gosec
+		targetVA := pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)].Entry + uint64(offsetVal) //nolint:gosec
+		pos := i * 10
+		encodeX86Call(textData[pos:pos+5], callSiteVA, targetVA)
+	}
+
+	elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+	f, err := elf.NewFile(bytes.NewReader(elfData))
+	require.NoError(t, err)
+	defer f.Close()
+
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, offsetVal, got, "x86_64: expected offset 0x%x, got 0x%x", offsetVal, got)
+}
+
+// TestDetectOffsetByCallTargets_WithOffset_arm64 verifies that arm64 BL
+// instructions whose targets match pclntab entries shifted by 0x100 are
+// detected and the offset 0x100 is returned.
+func TestDetectOffsetByCallTargets_WithOffset_arm64(t *testing.T) {
+	const offsetVal = int64(0x100)
+	const textAddr = uint64(0x10000)
+	const numCalls = 5
+	const entrySpacing = uint64(0x1000)
+
+	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
+	for i := range numCalls {
+		entry := textAddr + uint64(i)*entrySpacing //nolint:gosec
+		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
+		}
+	}
+
+	// Build .text: place numCalls BL instructions (4 bytes each).
+	textData := make([]byte, numCalls*4)
+	for i := range numCalls {
+		callSiteVA := textAddr + uint64(i*4)                                             //nolint:gosec
+		targetVA := pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)].Entry + uint64(offsetVal) //nolint:gosec
+		encodeArm64BL(textData[i*4:i*4+4], callSiteVA, targetVA)
+	}
+
+	elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_AARCH64)
+	f, err := elf.NewFile(bytes.NewReader(elfData))
+	require.NoError(t, err)
+	defer f.Close()
+
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, offsetVal, got, "arm64: expected offset 0x%x, got 0x%x", offsetVal, got)
+}
+
+// TestDetectOffsetByCallTargets_NoOffset verifies that when CALL targets
+// match pclntab entries exactly (offset = 0), the function returns 0
+// because isValidOffset rejects offset == 0.
+func TestDetectOffsetByCallTargets_NoOffset(t *testing.T) {
+	const textAddr = uint64(0x401000)
+	const numCalls = 5
+
+	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
+	for i := range numCalls {
+		entry := textAddr + uint64(i)*0x100 //nolint:gosec
+		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
+		}
+	}
+
+	// CALL targets equal pclntab entries (diff = 0 for all).
+	textData := make([]byte, numCalls*10)
+	for i := range numCalls {
+		callSiteVA := textAddr + uint64(i*10) //nolint:gosec
+		targetVA := pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)].Entry
+		pos := i * 10
+		encodeX86Call(textData[pos:pos+5], callSiteVA, targetVA)
+	}
+
+	elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+	f, err := elf.NewFile(bytes.NewReader(elfData))
+	require.NoError(t, err)
+	defer f.Close()
+
+	// diff = 0 for all → isValidOffset(0, ...) = false → return 0
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, int64(0), got, "no offset → must return 0")
+}
+
+// TestDetectOffsetByCallTargets_InsufficientVotes verifies that when fewer
+// than minVotes CALL instructions match, the function returns 0.
+func TestDetectOffsetByCallTargets_InsufficientVotes(t *testing.T) {
+	const offsetVal = int64(0x200)
+	const textAddr = uint64(0x401000)
+	const numCalls = 2 // below minVotes=3
+
+	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
+	for i := range numCalls {
+		entry := textAddr + uint64(i)*0x100 //nolint:gosec
+		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
+		}
+	}
+
+	textData := make([]byte, numCalls*10)
+	for i := range numCalls {
+		callSiteVA := textAddr + uint64(i*10)                                            //nolint:gosec
+		targetVA := pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)].Entry + uint64(offsetVal) //nolint:gosec
+		pos := i * 10
+		encodeX86Call(textData[pos:pos+5], callSiteVA, targetVA)
+	}
+
+	elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+	f, err := elf.NewFile(bytes.NewReader(elfData))
+	require.NoError(t, err)
+	defer f.Close()
+
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, int64(0), got, "insufficient votes → must return 0")
+}
+
+// TestDetectOffsetByCallTargets_NoText verifies that the function returns 0
+// when the ELF has no .text data (empty section returns no CALL instructions).
+func TestDetectOffsetByCallTargets_NoText(t *testing.T) {
+	// buildELF64WithPclntab creates an ELF with empty .text data.
+	f := openELFWithPclntab(t, []byte{})
+	defer f.Close()
+
+	pclntabFuncs := map[string]PclntabFunc{
+		"main.main": {Name: "main.main", Entry: 0x401000, End: 0x401100},
+	}
+	// .text section has addr=0x401000 but size=0 → no CALL data → 0 votes → return 0.
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, int64(0), got, ".text section with no data → must return 0")
 }
