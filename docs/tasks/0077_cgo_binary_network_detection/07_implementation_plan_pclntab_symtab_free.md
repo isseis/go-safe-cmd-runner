@@ -2,124 +2,37 @@
 
 ## 進捗
 
-- [ ] Step 1: pclntab magic 値・ヘッダレイアウトを Go ソースで確認
-- [ ] Step 2: 案 A — pclntab ヘッダ解析関数の実装（Go 1.18–1.25）
-- [ ] Step 3: Go 1.26 の pclntab 形式を確認し対応方針を確定
-- [ ] Step 4: 案 B — CALL ターゲット相互参照の実装（Go 1.26+ フォールバック）
-- [ ] Step 5: `detectPclntabOffset` の置き換え（.symtab 参照を削除）
+- [x] Step 1: pclntab magic 値・ヘッダレイアウトを Go ソースで確認（2026-03-13 完了）
+- [x] Step 2: 案 A の調査 → **廃止**（ヘッダから textStart を読む手段が存在しないと判明）
+- [x] Step 3: Go 1.26 の pclntab 形式を確認し対応方針を確定（2026-03-13 完了）
+- [ ] Step 4: 案 B — CALL ターゲット相互参照の実装（全バージョン対応）
+- [ ] Step 5: `detectPclntabOffset` の置き換え（.symtab 参照を削除、案 B 単独）
 - [ ] Step 6: テスト追加（AC-1〜AC-6）
 - [ ] Step 7: `make fmt && make test && make lint` 通過確認
 
 ---
 
-## Step 1: pclntab magic 値の確認（調査）
+## Step 1/2/3: 調査結果（2026-03-13 完了）
 
-**目的:** 実装に使うヘッダ定数を正確に確認する。
+**確認したソースファイル:**
+- `$GOROOT/src/internal/abi/symtab.go` — magic 定数
+- `$GOROOT/src/cmd/link/internal/ld/pcln.go` — リンカのヘッダ書き込み
+- `$GOROOT/src/debug/gosym/pclntab.go` — `debug/gosym` の解析ロジック
 
-確認先:
-```bash
-# Go 標準ライブラリの pclntab 定義を確認
-cat $GOROOT/src/debug/gosym/pclntab.go | grep -E 'magic|go11[6-9]|go12[0-9]'
+**確認結果:**
 
-# Go 1.26 での変更内容を確認（magic の変化有無）
-go version
-```
+| 項目 | 結果 |
+|------|------|
+| Go 1.26 の magic 値 | `CurrentPCLnTabMagic = Go120PCLnTabMagic = 0xfffffff1`（新 magic なし）|
+| ヘッダ `8+2*ptrSize` の内容 | Go 1.20+ では `SetUintptr(0) // unused`（常に 0）|
+| `debug/gosym` の textStart | `t.textStart = t.PC`（引数の addr）— ヘッダは読まない |
+| 案 A の実現可能性 | **不可能**（全バージョンでヘッダから有効な textStart を読めない）|
 
-確認事項:
-- `go118magic` (`0xfffffff0`) の textStart オフセット位置
-- `go120magic` (`0xfffffff1`) の textStart オフセット位置
-- Go 1.26 での magic 定数と textStart 削除の確認
-
----
-
-## Step 2: 案 A の実装（Go 1.18–1.25 対応）
-
-**ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
-
-**追加する関数:** `readPclntabTextStart`
-
-```go
-// readPclntabTextStart extracts the textStart field from the pclntab header
-// for Go 1.18–1.25 binaries. Returns (textStart, true) if the header format
-// is recognized and the field can be read; otherwise returns (0, false).
-//
-// Go 1.18–1.19 (magic 0xfffffff0): textStart is at offset 8+ptrSize
-// Go 1.20–1.25 (magic 0xfffffff1): textStart is at offset 8+2*ptrSize
-func readPclntabTextStart(data []byte, byteOrder binary.ByteOrder) (uint64, bool) {
-    const minHeaderSize = 8
-    if len(data) < minHeaderSize {
-        return 0, false
-    }
-
-    magic := byteOrder.Uint32(data[0:4])
-    ptrSize := int(data[7])
-    if ptrSize != 4 && ptrSize != 8 {
-        return 0, false
-    }
-
-    var textStartOffset int
-    switch magic {
-    case go118magic: // 0xfffffff0
-        textStartOffset = 8 + ptrSize
-    case go120magic: // 0xfffffff1
-        textStartOffset = 8 + 2*ptrSize
-    default:
-        return 0, false
-    }
-
-    if len(data) < textStartOffset+ptrSize {
-        return 0, false
-    }
-
-    var textStart uint64
-    if ptrSize == 8 {
-        textStart = byteOrder.Uint64(data[textStartOffset:])
-    } else {
-        textStart = uint64(byteOrder.Uint32(data[textStartOffset:]))
-    }
-    if textStart == 0 {
-        return 0, false
-    }
-    return textStart, true
-}
-```
-
-**magic 定数の追加（または既存定数を参照）:**
-```go
-// These constants match the Go standard library's debug/gosym package.
-const (
-    go118magic = 0xfffffff0
-    go120magic = 0xfffffff1
-)
-```
+**方針変更: 案 A を廃止し、案 B を全バージョン対応の単独手段として採用。**
 
 ---
 
-## Step 3: Go 1.26 の pclntab 形式確認（調査）
-
-**目的:** Go 1.26+ での pclntab ヘッダ形式（新 magic 値の有無）を確認し、
-案 B フォールバックの実装範囲を確定する。
-
-確認方法:
-```bash
-# 現在の GOROOT のバージョンを確認
-go version
-
-# pclntab ヘッダ定数を確認（go1.26 での変更状況）
-cat $GOROOT/src/debug/gosym/pclntab.go
-
-# テスト用 CGO バイナリの pclntab 先頭を hexdump
-readelf -S /tmp/cgo_test | grep gopclntab
-dd if=/tmp/cgo_test bs=1 skip=<offset> count=32 | hexdump -C
-```
-
-確認事項:
-- Go 1.26 に新しい magic 値があるか（あれば Step 2 に追加検討）
-- textStart が完全に削除されているかどうか
-
----
-
-## Step 4: 案 B の実装（Go 1.26+ フォールバック）
+## Step 4: 案 B の実装（全バージョン対応）
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
 
@@ -128,7 +41,8 @@ dd if=/tmp/cgo_test bs=1 skip=<offset> count=32 | hexdump -C
 ```go
 // detectOffsetByCallTargets detects the pclntab address offset in CGO binaries
 // by cross-referencing CALL/BL instruction targets with pclntab function entries.
-// This method works independently of the pclntab header format (including Go 1.26+).
+// This method works independently of the pclntab header format and Go version
+// (Go 1.18–1.26+). It is the sole offset detection mechanism.
 //
 // It scans the first 256 KB of .text for CALL/BL targets, builds a histogram of
 // (target - nearestPclntabEntry) differences, and returns the most frequent value
@@ -156,61 +70,28 @@ func detectOffsetByCallTargets(
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
 
-現行の `.symtab` ベースの実装を削除し、案 A + 案 B のハイブリッドに置き換える。
+現行の `.symtab` ベースの実装を削除し、案 B 単独に置き換える。
+案 A（`readPclntabTextStart`、`gosymAlreadyAppliedTextStart`）は実装しない。
 
-**シグネチャ変更:** `pclntabData []byte` 引数を追加（案 A で使用）。
-`ParsePclntab` 側で既に持っている `pclntabData` を渡す。
+**シグネチャ:** `pclntabData []byte` 引数は不要になったため削除。元のシグネチャを維持。
 
 ```go
-// 変更前:
+// シグネチャは変更なし:
 func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc) int64
-
-// 変更後:
-func detectPclntabOffset(
-    elfFile *elf.File,
-    pclntabData []byte,
-    pclntabFuncs map[string]PclntabFunc,
-) int64
 ```
 
 **本体:**
 ```go
-func detectPclntabOffset(
-    elfFile *elf.File,
-    pclntabData []byte,
-    pclntabFuncs map[string]PclntabFunc,
-) int64 {
+func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc) int64 {
     textSection := elfFile.Section(".text")
     if textSection == nil {
         return 0
     }
 
-    // Option A: read textStart directly from pclntab header (Go 1.18-1.25).
-    //
-    // Double-correction risk: gosym.NewLineTable (Go 1.18–1.25) may internally
-    // apply textStart when building fn.Entry values. If so, fn.Entry already
-    // holds the correct virtual address, and adding offset again would corrupt it.
-    //
-    // Detection: if gosym has already applied textStart, every fn.Entry will
-    // lie in [headerTextStart, headerTextStart + .text.FileSize). In that case
-    // we return 0 (no correction needed). Only when fn.Entry values cluster
-    // around textSection.Addr do we know gosym did NOT apply the correction,
-    // and the offset must be supplied by us.
-    if headerTextStart, ok := readPclntabTextStart(pclntabData, elfFile.ByteOrder); ok {
-        offset := int64(headerTextStart) - int64(textSection.Addr) //nolint:gosec
-        if isValidOffset(offset, textSection.FileSize) {
-            if gosymAlreadyAppliedTextStart(pclntabFuncs, headerTextStart, textSection) {
-                // gosym has already corrected fn.Entry; no further offset needed.
-                return 0
-            }
-            return offset
-        }
-    }
-
-    // Option B: CALL/BL target cross-reference (Go 1.26+ fallback).
-    // Apply the same validity check as Option A: CGO binaries always have a
-    // positive offset (C startup code precedes Go text). A negative or zero
-    // result from Option B indicates detection failure.
+    // CALL/BL target cross-reference: works for all Go versions (1.18–1.26+)
+    // without depending on pclntab header format or .symtab.
+    // CGO binaries always have a positive offset (C startup code precedes Go
+    // text), so negative or zero results indicate detection failure.
     offset := detectOffsetByCallTargets(elfFile, pclntabFuncs)
     if !isValidOffset(offset, textSection.FileSize) {
         return 0
@@ -226,73 +107,15 @@ func detectPclntabOffset(
 func isValidOffset(offset int64, textFileSize uint64) bool {
     return offset > 0 && uint64(offset) <= textFileSize //nolint:gosec
 }
-
-// gosymAlreadyAppliedTextStart reports whether gosym has already applied
-// textStart when populating fn.Entry values in pclntabFuncs.
-//
-// It samples up to sampleSize entries and checks whether a majority lie in
-// [headerTextStart, headerTextStart + textSection.FileSize). If so, gosym
-// has already corrected the addresses and no additional offset should be applied.
-func gosymAlreadyAppliedTextStart(
-    pclntabFuncs map[string]PclntabFunc,
-    headerTextStart uint64,
-    textSection *elf.Section,
-) bool {
-    const sampleSize = 8
-    correctedLow := headerTextStart
-    correctedHigh := headerTextStart + textSection.FileSize
-
-    checked, inRange := 0, 0
-    for _, fn := range pclntabFuncs {
-        if checked >= sampleSize {
-            break
-        }
-        if fn.Entry >= correctedLow && fn.Entry < correctedHigh {
-            inRange++
-        }
-        checked++
-    }
-    // Majority vote: more than half of the sampled entries are in the corrected range.
-    return checked > 0 && inRange*2 > checked
-}
 ```
 
-`ParsePclntab` 内の呼び出し箇所も更新:
-```go
-// 変更前:
-if offset := detectPclntabOffset(elfFile, functions); offset != 0 {
-
-// 変更後:
-if offset := detectPclntabOffset(elfFile, pclntabData, functions); offset != 0 {
-```
+`ParsePclntab` 内の呼び出し箇所は変更なし（シグネチャが変わらないため）。
 
 ---
 
 ## Step 6: テスト追加
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser_test.go`
-
-### ユニットテスト（`readPclntabTextStart`）
-
-| テスト名 | 検証内容 |
-|---------|---------|
-| `TestReadPclntabTextStart_Go118` | go118magic のヘッダから textStart を正しく読む（ptrSize=8）|
-| `TestReadPclntabTextStart_Go120` | go120magic のヘッダから textStart を正しく読む（ptrSize=8）|
-| `TestReadPclntabTextStart_Go118_32bit` | go118magic + ptrSize=4 で正しく読む |
-| `TestReadPclntabTextStart_UnknownMagic` | 未知 magic → (0, false) |
-| `TestReadPclntabTextStart_TooShort` | データが短すぎる → (0, false) |
-| `TestReadPclntabTextStart_InvalidPtrSize` | ptrSize が 4 でも 8 でもない → (0, false) |
-| `TestReadPclntabTextStart_ZeroTextStart` | textStart = 0 → (0, false) |
-
-### ユニットテスト（`gosymAlreadyAppliedTextStart`）
-
-| テスト名 | 検証内容 |
-|---------|---------|
-| `TestGosymAlreadyAppliedTextStart_AllInRange` | 全エントリが correctedHigh 範囲内 → true |
-| `TestGosymAlreadyAppliedTextStart_AllOutOfRange` | 全エントリが範囲外（textSection.Addr 付近）→ false |
-| `TestGosymAlreadyAppliedTextStart_MajorityInRange` | 過半数が範囲内 → true |
-| `TestGosymAlreadyAppliedTextStart_MajorityOutOfRange` | 過半数が範囲外 → false |
-| `TestGosymAlreadyAppliedTextStart_EmptyFuncs` | 空マップ → false |
 
 ### ユニットテスト（`detectOffsetByCallTargets`）
 
@@ -312,7 +135,7 @@ if offset := detectPclntabOffset(elfFile, pclntabData, functions); offset != 0 {
 | AC-2 | `TestDetectPclntabOffset_StrippedCGO` | `strip` 済み CGO バイナリに offset = C_startup_size |
 | AC-3 | `TestDetectPclntabOffset_NonCGO` | 純粋 Go バイナリに offset = 0 |
 | AC-4 | `TestDetectPclntabOffset_InvalidPclntab` | 壊れた pclntab → offset = 0 |
-| AC-5 | `TestDetectPclntabOffset_Go1_18_25` | Go 1.18–1.25 ビルド CGO バイナリに対して `detectPclntabOffset` を呼び出し、返値 offset を取得。`fn.Entry + offset` が .symtab の関数 VA と一致することを検証する。gosym 補正済みケース（offset = 0）と未補正ケース（offset = C_startup_size）の両方をサブテストで網羅する |
+| AC-5 | `TestDetectPclntabOffset_Go1_18_25` | Go 1.18–1.25 ビルド CGO バイナリに対して `detectPclntabOffset` を呼び出し、返値 offset を取得。`fn.Entry + offset` が .symtab の関数 VA と一致することを検証する。案 B（CALL ターゲット相互参照）が Go 1.18–1.25 バイナリでも正しく offset = C_startup_size を検出することを確認する（CI 環境で実施）|
 | AC-6 | `TestDetectPclntabOffset_Go1_26` | Go 1.26 ビルドバイナリ（現テスト環境）|
 
 ---
@@ -331,7 +154,7 @@ make lint
 
 # pclntab パーサのユニットテスト（追加した関数）
 go test -tags test -v \
-  -run 'TestReadPclntabTextStart|TestDetectOffsetByCallTargets|TestDetectPclntabOffset' \
+  -run 'TestDetectOffsetByCallTargets|TestDetectPclntabOffset' \
   ./internal/runner/security/elfanalyzer/
 
 # CGO バイナリ統合テスト（Go 1.26 環境）
@@ -345,20 +168,15 @@ go test -tags "test integration" -v \
 ## 実装上の依存関係
 
 ```
-Step 1（調査: magic 値確認）
+Step 1/2/3（調査完了: 2026-03-13）
     ↓
-Step 2（案 A 実装）     Step 3（調査: Go 1.26 確認）
-    ↓                       ↓
-    └─────────┬─────────────┘
-              ↓
-         Step 4（案 B 実装）
-              ↓
-         Step 5（detectPclntabOffset 置き換え）
-              ↓
-         Step 6（テスト追加）
-              ↓
-         Step 7（make fmt / test / lint）
+Step 4（案 B 実装: detectOffsetByCallTargets）
+    ↓
+Step 5（detectPclntabOffset 置き換え）
+    ↓
+Step 6（テスト追加）
+    ↓
+Step 7（make fmt / test / lint）
 ```
 
-Step 1 と Step 3 は実装開始前の調査ステップ。
-Step 2 と Step 4 は独立して実装可能（Step 5 で統合）。
+Step 1/2/3 は調査済み。Step 4 から実装を開始する。

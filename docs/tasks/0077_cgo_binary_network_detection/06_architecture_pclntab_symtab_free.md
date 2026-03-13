@@ -40,88 +40,79 @@ flowchart TD
 
 ## 2. 案 A: pclntab ヘッダからの textStart 直接読み取り
 
-### 2.1 原理
+> **⚠️ Go 1.26.0 ソースコード調査結果（2026-03-13 確認）**
+>
+> 当初の設計仮説は誤りであった。以下に実際の動作を記録する。
 
-Go 1.18–1.25 の pclntab ヘッダには `textStart` フィールド（= `runtime.text`）が埋め込まれている。
-このフィールドを直接読み取ることで、`.text.Addr`（`.text` セクション先頭）との差分
-（= C_startup_size = offset）を O(1) で計算できる。
+### 2.1 Go 1.26 確認結果: magic 値とヘッダ構造
 
-```
-offset = headerTextStart - .text.Addr
-       = runtime.text    - .text.Addr
-       = C_startup_size
-```
+**magic 値（`$GOROOT/src/internal/abi/symtab.go` より）:**
 
-### 2.2 pclntab ヘッダレイアウト
+| 定数 | 値 | 適用バージョン |
+|------|-----|--------------|
+| `Go118PCLnTabMagic` | `0xfffffff0` | Go 1.18–1.19 |
+| `Go120PCLnTabMagic` | `0xfffffff1` | Go 1.20–現在 |
+| `CurrentPCLnTabMagic` | `Go120PCLnTabMagic` | Go 1.26 も同値 |
 
-**Go 1.18–1.19 (magic = 0xfffffff0)**
+**結論: Go 1.26 で新しい magic 値は追加されていない。**
 
-| オフセット | フィールド | サイズ | 説明 |
-|----------|----------|-------|------|
-| 0 | magic | 4 bytes | 0xfffffff0 |
-| 4–5 | pad | 2 bytes | パディング |
-| 6 | minLC | 1 byte | quantum（x86: 1, ARM: 4） |
-| 7 | ptrSize | 1 byte | 4 or 8 |
-| 8 | nfunc | ptrSize | 関数数 |
-| 8 + ptrSize | **textStart** | ptrSize | **runtime.text** ⭐ |
+**pclntab ヘッダレイアウト（`$GOROOT/src/cmd/link/internal/ld/pcln.go` より）:**
 
-**Go 1.20–1.25 (magic = 0xfffffff1)**
+Go 1.18 以降すべてのバージョン（1.18–1.26）で、リンカは以下の順でヘッダを書き込む:
 
 | オフセット | フィールド | サイズ | 説明 |
 |----------|----------|-------|------|
-| 0 | magic | 4 bytes | 0xfffffff1 |
-| 4–5 | pad | 2 bytes | パディング |
-| 6 | minLC | 1 byte | quantum |
+| 0 | magic | 4 bytes | Go 1.18–1.19: 0xfffffff0, Go 1.20+: 0xfffffff1 |
+| 4–5 | pad | 2 bytes | 0, 0 |
+| 6 | minLC | 1 byte | quantum（x86: 1, ARM: 4）|
 | 7 | ptrSize | 1 byte | 4 or 8 |
 | 8 | nfunc | ptrSize | 関数数 |
-| 8 + ptrSize | nfiles | ptrSize | ファイル数（Go 1.20+）|
-| 8 + 2*ptrSize | **textStart** | ptrSize | **runtime.text** ⭐ |
+| 8 + ptrSize | nfiles | ptrSize | ファイル数（Go 1.18+）|
+| 8 + 2*ptrSize | **_(unused)_** | ptrSize | **常に 0**（`SetUintptr(0) // unused`）|
+| 8 + 3*ptrSize | funcnametab offset | ptrSize | pcHeader からの相対オフセット |
+| … | cutab, filetab, pctab, pclntab | ptrSize 各 | 同上 |
 
-**Go 1.26+ (新 magic, textStart 削除)**
+**重要: Go 1.18–1.19 のヘッダ `8+ptrSize` は textStart ではなく nfiles である。**
+`8+2*ptrSize` は Go 1.18–1.25 ではリロケーション予定フィールドだったが、
+Go 1.20 以降は `0` で固定（`// unused`）されている。
 
-magic 値は実装前に `$GOROOT/src/debug/gosym/pclntab.go` で確認してください。
-textStart フィールドはヘッダに含まれません。
+### 2.2 `debug/gosym` の textStart 処理（Go 1.26 確認）
 
-> **凡例**: ptrSize の値（4 or 8）に応じてフィールドサイズが変動します。
-> ELF バイナリの ByteOrder（リトルエンディアン/ビッグエンディアン）に従ってバイナリ値を読み取ります。
+`$GOROOT/src/debug/gosym/pclntab.go` の `parsePclnTab` 関数（ver118/ver120 分岐）:
 
-> **注記**: 上記レイアウトは Go 標準ライブラリの `src/debug/gosym/pclntab.go` および
-> Go リンカの `src/cmd/link/internal/ld/pcln.go` を参照して作成した。
-> 実装前に Go 1.26 版でオフセットと magic 値を改めて確認すること。
-
-### 2.3 アルゴリズム
-
-```
-1. pclntab 先頭 4 バイトを ELF ByteOrder で読んで magic を確認
-2. magic に応じて textStart のオフセット位置を決定:
-     go118magic: textStart offset = 8 + ptrSize
-     go120magic: textStart offset = 8 + 2*ptrSize
-     その他（Go 1.26+、不明）: return 0, false
-3. ptrSize = data[7]（4 or 8）を確認。異常値なら return 0, false
-4. データ長が textStart offset + ptrSize 以上あることを確認
-5. textStart を ELF ByteOrder で読み取る
-6. textStart が 0 なら return 0, false
-7. return textStart, true
+```go
+case ver118, ver120:
+    t.nfunctab = uint32(offset(0))   // word 0 = nfunc
+    t.nfiletab = uint32(offset(1))   // word 1 = nfiles
+    t.textStart = t.PC               // ヘッダのワード2(unused)は読まない
+    t.funcnametab = data(3)          // word 3 = funcnametab
+    ...
 ```
 
-### 2.4 長所・短所
+`t.textStart = t.PC` — `NewLineTable(data, addr)` の第2引数 `addr` が textStart になる。
+**ヘッダのバイトからは一切読まない。**
 
-| 観点 | 評価 |
-|------|------|
-| 実装複雑度 | 低（約 30 行）|
-| 計算コスト | O(1)、ヘッダの固定位置を読むだけ |
-| `.symtab` 依存 | なし |
-| 決定論的 | はい（データが正しければ常に一意の結果）|
-| **Go 1.26+ 対応** | **不可**（textStart がヘッダから削除）|
-| バージョン依存 | go118magic / go120magic の magic 値とオフセットに依存 |
+### 2.3 案 A の実際の対応範囲
 
-### 2.5 対応範囲
+| Go バージョン | ヘッダ `8+N*ptrSize` の値 | `debug/gosym` の textStart | 案 A の効果 |
+|-------------|--------------------------|--------------------------|------------|
+| 1.18–1.19 | nfunc/nfiles/reloc(textStart)/… | `t.PC`（引数） | **ヘッダ読み取り不可**（textStart 位置が誤り） |
+| 1.20–1.26 | nfunc/nfiles/**0**/funcnametab/… | `t.PC`（引数） | **ヘッダ読み取り不可**（フィールドが 0）|
 
-| Go バージョン | 案 A での offset 検出 |
-|-------------|---------------------|
-| < 1.18      | 不可（ヘッダ形式が異なる）|
-| 1.18–1.25   | **可能** |
-| 1.26+       | **不可**（textStart がヘッダから削除）|
+**結論: 案 A（`readPclntabTextStart`）は Go 1.18–1.26 のいずれのバージョンでも機能しない。**
+ヘッダから有効な textStart を読み取る方法は存在せず、案 A はすべてのバージョンで
+`return 0, false` となる（textStart が 0 または誤った位置）。
+
+### 2.4 設計への影響
+
+案 A は実質的に**常に失敗するパス**であり、有害ではないが無意味である。
+
+採用方針の変更:
+- **案 A の `readPclntabTextStart` は削除する**（または `gosymAlreadyAppliedTextStart` の前提として流用不可）
+- **案 B（CALL ターゲット相互参照）を唯一の検出手段とする**
+- Go バージョンによる分岐は不要（案 B はヘッダ形式に依存しない）
+
+比較表（4節）および 5節の採用決定も本調査結果を踏まえて更新する。
 
 ---
 
@@ -178,45 +169,47 @@ textStart フィールドはヘッダに含まれません。
 
 ## 4. 案の比較
 
-| 観点 | 案 A | 案 B |
+> **⚠️ 更新（2026-03-13 調査結果反映）**: 案 A はすべての Go バージョンで機能しないことが判明。
+
+| 観点 | 案 A（廃止） | 案 B |
 |------|------|------|
-| Go 1.18–1.25 CGO 対応 | ✅ | ✅ |
+| Go 1.18–1.25 CGO 対応 | ❌（ヘッダから textStart を読めない） | ✅ |
 | Go 1.26+ CGO 対応 | ❌ | ✅ |
 | `.symtab` 依存 | なし | なし |
-| 実装複雑度 | 低 | 中 |
-| 信頼性 | 高（決定論的）| 高（統計的；複数一致で検証）|
-| バージョン依存 | go118magic / go120magic | なし |
+| 実装複雑度 | — | 中 |
+| 信頼性 | — | 高（統計的；複数一致で検証）|
+| バージョン依存 | — | なし |
 
 ---
 
 ## 5. 採用決定
 
-### 5.1 テスト環境は Go 1.26
+### 5.1 調査結果（2026-03-13）
 
-`ac1_verification_result_x86_64.md` の検証は **Go 1.26.0** で実施されており、
-pclntab ヘッダに textStart が含まれないバージョンである。
-**案 A 単独ではテスト環境の問題を解決できない**。
+Go 1.26.0 ソースコードの調査（`$GOROOT/src/internal/abi/symtab.go`、
+`src/cmd/link/internal/ld/pcln.go`、`src/debug/gosym/pclntab.go`）により、
+以下が確認された：
 
-### 5.2 ハイブリッド戦略（案 A + 案 B フォールバック）を採用
+- **magic 値**: Go 1.26 は `CurrentPCLnTabMagic = Go120PCLnTabMagic = 0xfffffff1`。新 magic は追加されていない
+- **ヘッダの textStart フィールド**: Go 1.20 以降、`8+2*ptrSize` は `SetUintptr(0) // unused` で **常に 0**
+- **`debug/gosym` の動作**: ver118/ver120 ともに `t.textStart = t.PC`（引数の `addr`）を使用。ヘッダのバイトは読まない
+- **案 A の結論**: Go 1.18–1.26 のいずれのバージョンでも `readPclntabTextStart` は機能しない
 
-ユーザーの決定：「案 A を採用」。案 A の 実装から始め、Go 1.26+ への対応は
-案 B（CALL ターゲット相互参照）をフォールバックとして追加実装する。
+### 5.2 案 B 単独採用
+
+案 A を廃止し、案 B（CALL ターゲット相互参照）を唯一の検出手段として採用する。
 
 採用根拠：
 
-1. **案 A は Go 1.18–1.25 向けに正確・高速** — O(1) で決定論的
-2. **案 B は Go 1.26+ のフォールバックとして機能** — ヘッダ形式に依存しない
-3. **両案とも `.symtab` 不要** — strip されたプロダクションバイナリに対応
+1. **案 B はすべての Go バージョン（1.18–1.26+）に対応** — ヘッダ形式に依存しない
+2. **`.symtab` 不要** — strip されたプロダクションバイナリに対応
+3. **案 A は全バージョンで機能しないため廃止** — `readPclntabTextStart` は実装しない
 
 ```mermaid
 flowchart TD
-    S[detectPclntabOffset] --> A{"pclntab magic\n確認"}
-    A -->|"go118magic\ngo120magic"| B["案 A: ヘッダから\ntextStart 読み取り"]
-    A -->|"Go 1.26+ または不明"| C["案 B: CALL ターゲット\n相互参照"]
-    B --> D["offset = headerTextStart\n         - .text.Addr"]
-    C --> E["offset = ヒストグラム\n最頻値"]
-    D --> V{妥当性検証}
-    E --> V
+    S[detectPclntabOffset] --> B["案 B: CALL ターゲット\n相互参照"]
+    B --> E["offset = ヒストグラム\n最頻値"]
+    E --> V{妥当性検証\nisValidOffset}
     V -->|"0 < offset <=\n.text.FileSize"| R["return offset"]
     V -->|"範囲外または失敗"| Z["return 0\n（フェイルセーフ）"]
 
@@ -235,17 +228,14 @@ flowchart TD
 
 ## 6. 実装上の注意事項
 
-### 6.1 Go 1.18–1.25 での二重補正リスク
+### 6.1 `debug/gosym` の textStart 動作（参考）
 
-`gosym.NewLineTable` は Go 1.18–1.25 のバイナリでは pclntab ヘッダの textStart を
-自動的に使用してアドレスを計算する可能性がある。その場合、案 A の補正を適用すると
-二重補正になる。
+Go 1.18–1.26 の `debug/gosym` は `t.textStart = t.PC`（`NewLineTable` 第2引数）を使用する。
+現行実装では `NewLineTable(pclntabData, textSection.Addr)` として `.text.Addr` を渡しているため、
+`fn.Entry` は `.text.Addr` を基点とした値になる（CGO バイナリでは C_startup_size 分ずれている）。
 
-対処：
-- 案 A 実装後、Go 1.18–1.25 ビルドの CGO バイナリで `fn.Entry + offset` が
-  実際の仮想アドレスと一致することをテストで確認する
-- 二重補正が起きる場合は、`gosym` がすでに補正済みかどうかを `.text.Addr` との
-  比較で判定するロジックを追加する
+案 B で検出した offset を `fn.Entry + offset` として適用することで正しい VA が得られる。
+**案 A は廃止されたため、二重補正のリスクは存在しない。**
 
 ### 6.2 案 B の minVotes 調整
 
