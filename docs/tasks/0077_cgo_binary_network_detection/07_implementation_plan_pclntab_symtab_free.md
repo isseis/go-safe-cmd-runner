@@ -272,7 +272,7 @@ assert.Equal(t, "unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) i
 | `TestCheckPclntabVersion_Go116magic` | magic = 0xfffffffa → `ErrUnsupportedPclntabVersion` |
 | `TestCheckPclntabVersion_Go12magic`  | magic = 0xfffffffb → `ErrUnsupportedPclntabVersion` |
 | `TestCheckPclntabVersion_TooShort`   | データが 4 バイト未満 → `ErrInvalidPclntab` |
-| `TestCheckPclntabVersion_BigEndian`  | ビッグエンディアン + magic = 0xf1ffffff → nil |
+| `TestCheckPclntabVersion_BigEndian`  | byteOrder = BigEndian、先頭 4 バイト = `[0xff, 0xff, 0xff, 0xf1]`（big-endian で 0xfffffff1）→ nil |
 
 ### ユニットテスト（`detectOffsetByCallTargets`）
 
