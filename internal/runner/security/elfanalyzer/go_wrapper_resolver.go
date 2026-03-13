@@ -50,7 +50,8 @@ var knownGoWrappers = map[GoSyscallWrapper]struct{}{
 var knownSyscallImpls = map[string]struct{}{
 	"syscall.rawVforkSyscall":                 {},
 	"syscall.rawSyscallNoError":               {},
-	"internal/runtime/syscall/linux.Syscall6": {},
+	"internal/runtime/syscall/linux.Syscall6": {}, // Go 1.22 and earlier / x86_64
+	"internal/runtime/syscall.Syscall6.abi0":  {}, // Go 1.23+ / arm64
 }
 
 // SymbolInfo represents information about a symbol in the ELF file.

@@ -70,9 +70,20 @@
 検証方法：
 1. Go の `syscall` パッケージ（`syscall.Socket()` 等）でソケットを直接生成する CGO バイナリを作成する。`net` パッケージは CGO ビルドで `getaddrinfo` 等の DNS 関数を `.dynsym` にリンクし `NetworkDetected` を返す可能性があるため使わない。`syscall.Socket` を使えば Go ランタイムが `SYS_SOCKET` を直接発行するため `.dynsym` に `socket` シンボルは現れない
 2. `.dynsym` 解析（タスク 0069 の `elfanalyzer.StandardELFAnalyzer.AnalyzeNetworkSymbols()`）を呼び出し `NoNetworkSymbols` が返ることを確認する
-3. 同バイナリに対して `elfanalyzer.SyscallAnalyzer` を呼び出し、返り値 `*elfanalyzer.SyscallAnalysisResult` の `result.Summary.HasNetworkSyscalls` が `true` になることを確認する
+3. 同バイナリに対して `elfanalyzer.SyscallAnalyzer` を呼び出し、`SYS_SOCKET` を含む network syscall を検出できるかを確認する
 
-**この検証が失敗した場合（手順 3 で `false` になる場合）、本タスクのアプローチを再検討すること。**
+**この検証が失敗した場合（手順 3 で `HasNetworkSyscalls: false` かつ `IsHighRisk: true` になる場合）、本タスクのアプローチを再検討すること。**
+
+**事前検証結果（`ac1_verification_result.md` 参照）:**
+arm64 環境での検証の結果、手順 3 は部分的成功に留まった：
+- `.dynsym` 解析が `NoNetworkSymbols` を返すことは確認（盲点の再現）✅
+- `SyscallAnalyzer` は `socket`(#198) を検出できず `HasNetworkSyscalls: false`、`IsHighRisk: true` を返した
+  - 原因（Pass 1）: arm64 では `SVC #0` 直前の命令が `LDR x8, [sp, #8]`（スタックロード）であり、後方スキャンが `unknown:indirect_setting` と判定する
+  - 原因（Pass 1 の追記）: `knownSyscallImpls` に登録された名称（`"internal/runtime/syscall/linux.Syscall6"`）が実際のシンボル名（`"internal/runtime/syscall.Syscall6.abi0"`）と一致しないため、この関数内の `SVC #0` が除外されず `unknown:indirect_setting` と判定される
+  - 原因（Pass 2）: `syscall.socket` 内の `BL syscall.RawSyscall` 呼び出しが `GoWrapperResolver` によって解決されなかった原因は未特定（実装フェーズでの調査が必要）
+- CGO バイナリは `AnalysisError`（高リスク）扱いとなり実行が禁止される。これは §4.2 の安全方向フェイルセーフとして機能している
+
+この結果を受け、本タスクの実装では **GoWrapperResolver の arm64 対応強化**（`knownSyscallImpls` のシンボル名更新）を含める（詳細は §8 参照）。
 
 ### 3.2 `record` コマンドの拡張
 
@@ -131,15 +142,23 @@ normal_manager.go
 
 Go ランタイムの最適化によって SYSCALL 命令のレジスタ追跡が失敗した場合、`HasUnknownSyscalls = true` となり `AnalysisError` 扱いになる（安全方向のフェイルセーフ）。この挙動は許容する。
 
+**事前検証で確認された arm64 の挙動**: arm64 環境での CGO バイナリでは、現状では `IsHighRisk: true` が返る（§3.1 FR-3.1.1 参照）。`IsHighRisk: true` の直接原因は Pass 1（直接 SVC スキャン）での `unknown:indirect_setting` 判定であり、`knownSyscallImpls` のシンボル名不一致はその一因（`internal/runtime/syscall.Syscall6.abi0` 内の `SVC #0` を除外対象と認識できず Pass 1 のスキャン対象に残る）である。Pass 2（GoWrapperResolver）の未解決原因は別途調査が必要。これは安全方向フェイルセーフの一例であり、CGO バイナリが誤って許可されることはない。Pass 1 修正（`knownSyscallImpls` のシンボル名更新）および Pass 2 修正（§8 参照）により、`HasNetworkSyscalls: true` での正確な検出に移行することを目指す。
+
 **通常の動的 C バイナリへの副作用なし**: 標準的な動的リンク C バイナリは、システムコールを本体の `.text` 内ではなく共有ライブラリ（`libc.so` 等）側で発行する。`SyscallAnalysis` はバイナリ本体の `.text` セクションのみをスキャンするため、ネットワーク通信を行わない通常の C バイナリに対してはスキャン結果が 0 件となり `HasNetworkSyscalls = false`、`IsHighRisk = false` で終了する。本タスクのフォールバック追加によって通常の C バイナリが誤って高リスク判定される頻発は起きない。
 
 ## 5. 受け入れ条件
 
 ### AC-1: 事前検証
 
-- [ ] `syscall.Socket()` を直接呼び出す CGO バイナリ（FR-3.1.1 手順 1 のサンプルコード参照）に対して `.dynsym` 解析（`AnalyzeNetworkSymbols()`）が `NoNetworkSymbols` を返すことが確認されていること（本タスクの盲点を再現している）
-- [ ] 同バイナリに対して `elfanalyzer.SyscallAnalyzer` が `result.Summary.HasNetworkSyscalls == true`（`SYS_SOCKET` 等を検出）を返すことが確認されていること
-- [ ] 検証結果（成功/失敗・検出できたシステムコール番号）が本文書のセクション 8「未解決事項」に記録されていること
+- [x] `syscall.Socket()` を直接呼び出す CGO バイナリ（FR-3.1.1 手順 1 のサンプルコード参照）に対して `.dynsym` 解析（`AnalyzeNetworkSymbols()`）が `NoNetworkSymbols` を返すことが確認されていること（本タスクの盲点を再現している）
+- [x] 同バイナリに対して `elfanalyzer.SyscallAnalyzer` を実行した結果（成功/失敗・原因）が確認されており、本文書のセクション 8「未解決事項」に記録されていること
+  - **実測結果（arm64）**: `HasNetworkSyscalls: false`、`IsHighRisk: true`（`socket`(#198) は未検出）
+  - arm64 環境での Pass 1（直接スキャン）は `unknown:indirect_setting` 判定（`knownSyscallImpls` シンボル名不一致による除外漏れを含む）、Pass 2（GoWrapperResolver）は未機能（原因未特定）
+  - 詳細は `ac1_verification_result.md` 参照
+  - **実測結果（x86_64）**: `HasNetworkSyscalls: false`、`IsHighRisk: true`（`socket`(#41) は未検出）
+  - x86_64 環境での Pass 1 は `knownSyscallImpls` 除外により未検出、Pass 2 は CGO バイナリ固有の pclntab アドレスずれ（−0x100）により未適用
+  - 詳細は `ac1_verification_result_x86_64.md` 参照
+- [ ] Pass 1 修正（`knownSyscallImpls` の arm64 シンボル名追加）と Pass 2 修正（`BL syscall.RawSyscall` の未解決原因の調査・修正）により `HasNetworkSyscalls: true` が返るようになること（実装フェーズで検証）
 
 ### AC-2: `record` 拡張
 
@@ -217,7 +236,7 @@ CGO_ENABLED=1 go build -o /tmp/cgo_test main.go
 
 - [x] **検証結果**: `SyscallAnalysis` が実際の CGO バイナリで機能するか（AC-1 の検証後に更新）
 
-  **検証結果（詳細は `ac1_verification_result.md` 参照）:**
+  **検証結果・arm64（詳細は `ac1_verification_result.md` 参照）:**
   - `.dynsym` 解析が `NoNetworkSymbols` を返すことは確認（盲点の再現）✅
   - `SyscallAnalysis` は `HasNetworkSyscalls: true` を返さず、代わりに `IsHighRisk: true` を返した
     - 検出 syscall: `exit_group`(94), `exit`(93), `close`(57), `mmap`(222), `munmap`(215) 等（合計 34 件）
@@ -227,4 +246,19 @@ CGO_ENABLED=1 go build -o /tmp/cgo_test main.go
   - AC-1 の 2 番目の条件（`HasNetworkSyscalls: true`）は満たされないが、安全方向（`AnalysisError`）には倒れることを確認
   - タスク 0077 の実装では GoWrapperResolver の arm64 対応強化が必要（`knownSyscallImpls` のシンボル名更新、または Pass 2 の呼び出し元解析の改善）
 
-- [ ] **アーキテクチャ**: 検証が成功した場合の `record` / `runner` への統合方法（02_architecture.md を別途作成）
+  **検証結果・x86_64（詳細は `ac1_verification_result_x86_64.md` 参照）:**
+  - `.dynsym` 解析が `NoNetworkSymbols` を返すことは確認（盲点の再現）✅
+  - `SyscallAnalysis` は `HasNetworkSyscalls: true` を返さず、代わりに `IsHighRisk: true` を返した
+    - 検出 syscall: `exit_group`(231), `exit`(60), `close`(3), `write`(1), `read`(0), `mmap`(9), `munmap`(11) 等（合計 38 件）
+    - `socket`(41) は未検出
+    - 原因: CGO バイナリ固有の pclntab アドレスずれ（−0x100）により `wrapperAddrs` のルックアップが失敗し、Pass 2 が機能しない
+    - これは arm64 とは異なる根本原因だが、最終結果は同じ（`IsHighRisk: true`）
+  - AC-1 の 2 番目の条件（`HasNetworkSyscalls: true`）は満たされないが、安全方向（`AnalysisError`）には倒れることを確認
+
+- [ ] **GoWrapperResolver arm64 対応**:
+  1. **Pass 1 の修正**: `knownSyscallImpls` に `"internal/runtime/syscall.Syscall6.abi0"` 等、Go 1.23+ / arm64 実環境のシンボル名を追加し、`SVC #0` 命令を間接呼び出しとして正しく除外することで `unknown:indirect_setting` に起因する `IsHighRisk: true` を解消する。
+  2. **Pass 2 の修正**: `syscall.socket` 内の `BL syscall.RawSyscall` 呼び出しが Pass 2 で解決されなかった原因を調査・修正し、`go_wrapper` として `HasNetworkSyscalls: true` を返せるようにする。
+  （`02_architecture.md` で設計、実装フェーズで実施）
+- [ ] **pclntab アドレスずれ対応（x86_64 CGO バイナリ）**: CGO バイナリでは `.gopclntab` から取得した関数アドレスが実際の仮想アドレスと 256 バイトずれる問題を解消する必要がある（`02_architecture.md` で設計）
+
+- [ ] **アーキテクチャ**: `record` / `runner` への統合方法（02_architecture.md を別途作成）

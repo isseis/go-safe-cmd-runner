@@ -187,3 +187,59 @@ func TestPclntabResult_Lookup(t *testing.T) {
 	_, found = result["nonexistent"]
 	assert.False(t, found)
 }
+
+// TestDetectPclntabOffset_NoSymtab verifies that detectPclntabOffset returns 0
+// when .symtab is absent (stripped binary).
+func TestDetectPclntabOffset_NoSymtab(t *testing.T) {
+	// ELF built by buildELF64WithPclntab has no .symtab section.
+	f := openELFWithPclntab(t, []byte{})
+	defer f.Close()
+
+	pclntabFuncs := map[string]PclntabFunc{
+		"main.main": {Name: "main.main", Entry: 0x401000, End: 0x401100},
+	}
+	offset := detectPclntabOffset(f, pclntabFuncs)
+	assert.Equal(t, int64(0), offset, "no .symtab → offset must be 0")
+}
+
+// TestDetectPclntabOffset_NoMatch verifies that detectPclntabOffset returns 0
+// when no pclntab function name matches any .symtab entry.
+func TestDetectPclntabOffset_NoMatch(t *testing.T) {
+	// Use a real ELF that has .symtab but no overlap with our fake pclntab entries.
+	const testFile = "testdata/arm64_network_program/arm64_network_program.elf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("arm64 test binary not available")
+	}
+	f, err := elf.Open(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	pclntabFuncs := map[string]PclntabFunc{
+		"nonexistent.function": {Name: "nonexistent.function", Entry: 0x1000, End: 0x1100},
+	}
+	offset := detectPclntabOffset(f, pclntabFuncs)
+	assert.Equal(t, int64(0), offset, "no matching symbol → offset must be 0")
+}
+
+// TestDetectPclntabOffset_NonCGO verifies that detectPclntabOffset returns 0
+// for a non-CGO binary (pclntab addresses already match .symtab).
+func TestDetectPclntabOffset_NonCGO(t *testing.T) {
+	const testFile = "testdata/arm64_network_program/arm64_network_program.elf"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("arm64 test binary not available")
+	}
+	f, err := elf.Open(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	// Parse pclntab normally — addresses should already match .symtab.
+	funcs, err := ParsePclntab(f)
+	require.NoError(t, err)
+	require.NotEmpty(t, funcs)
+
+	// For non-CGO binaries the offset should be 0 (already corrected by ParsePclntab,
+	// but since ParsePclntab applies correction in-place, re-running detectPclntabOffset
+	// on the already-corrected map should return 0).
+	offset := detectPclntabOffset(f, funcs)
+	assert.Equal(t, int64(0), offset, "non-CGO binary → offset must be 0")
+}

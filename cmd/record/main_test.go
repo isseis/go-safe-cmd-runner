@@ -187,6 +187,60 @@ func (f *fakeELFAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) (*elfanalyzer.Sysc
 	return f.result, f.err
 }
 
+// TestRunWithSyscallAnalysis_DynamicELF verifies AC-2:
+// SyscallAnalysis is executed and saved for a dynamic ELF binary.
+func TestRunWithSyscallAnalysis_DynamicELF(t *testing.T) {
+	tempDir := commontesting.SafeTempDir(t)
+	recorder := &fakeRecorder{responses: map[string]error{}}
+
+	// Create a dynamic ELF file (has .dynsym but no network symbols → CGO-like)
+	dynamicELF := filepath.Join(tempDir, "dynamic_binary.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, dynamicELF)
+
+	// Use a fake analyzer that returns a known result to avoid real ELF analysis.
+	fakeResult := &elfanalyzer.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			Summary: common.SyscallSummary{
+				TotalDetectedEvents: 2,
+				NetworkSyscallCount: 1,
+				HasNetworkSyscalls:  true,
+				IsHighRisk:          false,
+			},
+		},
+	}
+
+	pathGetter := filevalidator.NewHybridHashFilePathGetter()
+	store, err := fileanalysis.NewStore(tempDir, pathGetter)
+	require.NoError(t, err)
+	syscallStore := fileanalysis.NewSyscallAnalysisStore(store)
+
+	prebuiltCtx := &syscallAnalysisContext{
+		syscallStore: syscallStore,
+		analyzer:     &fakeELFAnalyzer{result: fakeResult},
+		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+	}
+
+	d := testDeps(recorder)
+	d.syscallContextFactory = func(_ string) (*syscallAnalysisContext, error) {
+		return prebuiltCtx, nil
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	exitCode := run([]string{"-d", tempDir, dynamicELF}, d, stdout, stderr)
+	require.Equal(t, 0, exitCode)
+	assert.Empty(t, stderr.String())
+
+	const fakeHash = "sha256:fakehash"
+	loaded, err := syscallStore.LoadSyscallAnalysis(dynamicELF, fakeHash)
+	require.NoError(t, err)
+	assert.Equal(t, "x86_64", loaded.Architecture)
+	assert.True(t, loaded.Summary.HasNetworkSyscalls)
+	assert.Equal(t, 1, loaded.Summary.NetworkSyscallCount)
+}
+
 func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
 	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}

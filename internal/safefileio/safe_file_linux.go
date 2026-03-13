@@ -73,7 +73,7 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 
 	fd, _, errno := syscall.Syscall6(
 		SysOpenat2,
-		uintptr(dirfd),
+		uintptr(dirfd), //nolint:gosec // G115: dirfd is a valid file descriptor, conversion is safe
 		// #nosec G103 - uintptr conversion is required for syscall interface
 		uintptr(unsafe.Pointer(pathBytes)),
 		// #nosec G103 - uintptr conversion is required for syscall interface
@@ -86,7 +86,7 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 		return -1, errno
 	}
 
-	return int(fd), nil
+	return int(fd), nil //nolint:gosec // G115: fd is a valid file descriptor returned by the kernel, conversion is safe
 }
 
 // safeOpenFileInternal implements Linux-specific file opening with openat2 support.
@@ -122,5 +122,5 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 		}
 		return nil, err
 	}
-	return os.NewFile(uintptr(fd), absPath), nil
+	return os.NewFile(uintptr(fd), absPath), nil //nolint:gosec // G115: fd is a valid file descriptor, conversion is safe
 }

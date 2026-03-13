@@ -24,6 +24,11 @@ type PclntabFunc struct {
 // ParsePclntab reads the .gopclntab section from an ELF file and extracts
 // function information. This works even on stripped binaries because Go
 // runtime requires pclntab for stack traces and garbage collection.
+//
+// For CGO binaries, the .text section contains C runtime startup code before
+// the Go runtime functions. This causes pclntab addresses to be offset from
+// the actual virtual addresses. ParsePclntab detects and corrects this offset
+// by comparing pclntab entries against .symtab entries when available.
 func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
 	pclntabSection := elfFile.Section(".gopclntab")
 	if pclntabSection == nil {
@@ -60,5 +65,43 @@ func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
 		}
 	}
 
+	// CGO binaries may have a constant address offset between pclntab entries
+	// and actual virtual addresses because C runtime startup code is inserted
+	// at the beginning of the .text section. Detect and apply the correction.
+	if offset := detectPclntabOffset(elfFile, functions); offset != 0 {
+		for name, fn := range functions {
+			functions[name] = PclntabFunc{
+				Name:  fn.Name,
+				Entry: uint64(int64(fn.Entry) + offset), //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
+				End:   uint64(int64(fn.End) + offset),   //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
+			}
+		}
+	}
+
 	return functions, nil
+}
+
+// detectPclntabOffset returns the address correction needed for pclntab entries
+// in CGO binaries. It compares pclntab function addresses against .symtab entries
+// to detect a constant offset introduced by C runtime startup code in .text.
+//
+// Returns 0 if no correction is needed (non-CGO binaries, stripped binaries,
+// or when .symtab is unavailable).
+func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc) int64 {
+	syms, err := elfFile.Symbols()
+	if err != nil {
+		// .symtab absent (stripped binary) — skip correction.
+		// Stripped CGO binaries remain IsHighRisk via the fail-safe path.
+		return 0
+	}
+
+	for _, sym := range syms {
+		fn, ok := pclntabFuncs[sym.Name]
+		if !ok || sym.Value == 0 || fn.Entry == 0 {
+			continue
+		}
+		// First matching symbol determines the offset.
+		return int64(sym.Value) - int64(fn.Entry) //nolint:gosec // G115: addresses are valid ELF virtual addresses
+	}
+	return 0
 }
