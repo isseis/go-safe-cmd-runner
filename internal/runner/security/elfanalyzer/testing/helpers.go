@@ -198,7 +198,7 @@ func CreateDynamicELFFile(t *testing.T, path string) {
 		uint64(dynstrOffset), uint64(len(dynstr)), 0, 0, 0) //nolint:gosec // G115: dynstrOffset is a positive layout offset, no overflow risk
 	// [3] .shstrtab
 	writeSectionHdr(uint32(shstrtabOffShstrtab), elf.SHT_STRTAB, 0,
-		uint64(shstrtabOffset), uint64(len(shstrtab)), 0, 0, 0)
+		uint64(shstrtabOffset), uint64(len(shstrtab)), 0, 0, 0) //nolint:gosec // G115: shstrtabOffset is a positive layout offset, no overflow risk
 
 	// Section data
 	buf.Write(dynsymData)
