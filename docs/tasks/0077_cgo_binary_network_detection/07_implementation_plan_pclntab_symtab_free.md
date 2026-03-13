@@ -59,10 +59,50 @@ func detectOffsetByCallTargets(
 }
 ```
 
+**import への追加（Step 4 時点で行う）:**
+```go
+import (
+    "debug/elf"
+    "debug/gosym"
+    "encoding/binary"  // detectOffsetByCallTargets, checkPclntabVersion で使用
+    "errors"
+    "fmt"
+    "sort"             // detectOffsetByCallTargets の二分探索で使用
+)
+```
+
 **実装ポイント:**
 - `MachineCodeDecoder` を使わず、x86_64 と arm64 の CALL/BL のみを独自デコード
-- `elfFile.Machine` から アーキテクチャを判定
+- `elfFile.Machine` からアーキテクチャを判定（`elf.EM_X86_64` / `elf.EM_AARCH64`）
 - 差分のヒストグラムは `map[int64]int` で管理
+- `.text` セクションのデータは `textSection.Data()` で取得（最大 `scanLimit` バイト）
+- pclntab エントリのアドレスをソート済みスライスに入れ、`sort.Search` で最近傍探索
+
+**x86_64 CALL デコード:**
+```go
+// opcode 0xE8: CALL rel32
+// callSite はバイト配列内のインデックス（.text.Addr からの相対）
+if data[i] == 0xe8 && i+5 <= len(data) {
+    rel := int32(binary.LittleEndian.Uint32(data[i+1 : i+5]))
+    target := textSection.Addr + uint64(i) + 5 + uint64(int64(rel))
+    // ...
+    i += 5
+    continue
+}
+i++
+```
+
+**arm64 BL デコード:**
+```go
+// BL 命令: bits[31:26] == 0b100101
+instr := binary.LittleEndian.Uint32(data[i : i+4])
+if instr>>26 == 0b100101 {
+    imm26 := int32(instr&0x03ffffff) << 6 >> 6 // sign-extend 26-bit
+    target := textSection.Addr + uint64(i) + uint64(int64(imm26)*4)
+    // ...
+}
+i += 4
+```
 
 ---
 
@@ -71,24 +111,36 @@ func detectOffsetByCallTargets(
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
 
 現行の `.symtab` ベースの実装を削除し、案 B 単独に置き換える。
-バージョンチェックを `ParsePclntab` に追加し、Go 1.26 未満は明示的エラーとする。
+バージョンチェックを `ParsePclntab` に追加し、magic ≠ `0xfffffff1`（Go 1.18–1.19 以前）は明示的エラーとする。
 
-**新規エラー定数を追加:**
+**新規エラー定数を追加（既存の3つはそのまま残す）:**
+
+現行コード（変更なし）:
 ```go
 var (
-    ErrNoPclntab                 = errors.New("no .gopclntab section found")
-    ErrUnsupportedPclntab        = errors.New("unsupported pclntab format")
-    ErrInvalidPclntab            = errors.New("invalid pclntab structure")
-    ErrUnsupportedPclntabVersion = errors.New("unsupported pclntab version: only Go 1.26+ (magic 0xfffffff1) is supported")
+    ErrNoPclntab          = errors.New("no .gopclntab section found")
+    ErrUnsupportedPclntab = errors.New("unsupported pclntab format")
+    ErrInvalidPclntab     = errors.New("invalid pclntab structure")
 )
 ```
 
+追加する定数:
+```go
+    ErrUnsupportedPclntabVersion = errors.New("unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) is supported")
+```
+
+**（import の追加は Step 4 で実施済みのため、Step 5 では不要）**
+
 **`ParsePclntab` にバージョンチェックを追加:**
 ```go
-// checkPclntabVersion verifies that the pclntab was compiled with a supported
-// Go version. Only Go 1.26+ (CurrentPCLnTabMagic = 0xfffffff1) is supported.
-// Earlier versions return ErrUnsupportedPclntabVersion to prevent incorrect
-// offset application on untested binary formats.
+// checkPclntabVersion verifies that the pclntab magic is supported.
+// Only magic = 0xfffffff1 (Go 1.20–1.26, CurrentPCLnTabMagic) is supported.
+// Other magic values (e.g. 0xfffffff0 for Go 1.18–1.19) return
+// ErrUnsupportedPclntabVersion to prevent incorrect offset application.
+//
+// Note: Go 1.20–1.25 share the same magic (0xfffffff1) and will pass this
+// check. The officially supported version is Go 1.26 (tested), but Go
+// 1.20–1.25 binaries may also work in practice.
 func checkPclntabVersion(data []byte, byteOrder binary.ByteOrder) error {
     if len(data) < 4 {
         return ErrInvalidPclntab
@@ -107,6 +159,27 @@ func checkPclntabVersion(data []byte, byteOrder binary.ByteOrder) error {
 if err := checkPclntabVersion(pclntabData, elfFile.ByteOrder); err != nil {
     return nil, err
 }
+```
+
+**`ParsePclntab` のコメントを更新:**
+
+現行コメント（変更前）:
+```
+// For CGO binaries, the .text section contains C runtime startup code before
+// the Go runtime functions. This causes pclntab addresses to be offset from
+// the actual virtual addresses. ParsePclntab detects and corrects this offset
+// by comparing pclntab entries against .symtab entries when available.
+```
+
+変更後:
+```
+// For CGO binaries, the .text section contains C runtime startup code before
+// the Go runtime functions. This causes pclntab addresses to be offset from
+// the actual virtual addresses. ParsePclntab detects and corrects this offset
+// using CALL/BL instruction cross-referencing (no .symtab required).
+//
+// Only pclntab with magic 0xfffffff1 (Go 1.20+, officially supported: Go 1.26)
+// is supported. Other versions return ErrUnsupportedPclntabVersion.
 ```
 
 **`detectPclntabOffset` のシグネチャは変更なし。本体を置き換え:**
@@ -144,6 +217,39 @@ func isValidOffset(offset int64, textFileSize uint64) bool {
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser_test.go`
 
+### 既存テストの変更・削除
+
+Step 5 で `detectPclntabOffset` の実装が変わるため、以下の既存テストを更新する。
+
+| 既存テスト名 | 対応 | 理由 |
+|------------|------|------|
+| `TestDetectPclntabOffset_NoSymtab` | **削除** | `.symtab` の有無は新実装で無関係になる。新実装のフォールバック（CALL が minVotes 未満）は `TestDetectOffsetByCallTargets_InsufficientVotes` でカバー |
+| `TestDetectPclntabOffset_NoMatch` | **削除** | 同上。`.symtab` 名前一致に依存したロジックが消える |
+| `TestDetectPclntabOffset_NonCGO` | **変更** | 非 CGO バイナリで offset = 0 を確認する目的は残す。ただし `ParsePclntab` が `ErrUnsupportedPclntabVersion` を返す場合は `require.NoError` の前提が崩れるため、テスト対象バイナリが magic = `0xfffffff1` であることを確認して使用 |
+| `TestParsePclntab_InvalidData` | **変更** | `checkPclntabVersion` 追加後、magic が `0xfffffff1` でないケース（"invalid magic bytes", "random garbage"）は `ErrUnsupportedPclntabVersion` を返すようになる。各サブケースの期待値を調整する |
+| `TestParsePclntab_ErrorWrapping` | **変更** | `ErrUnsupportedPclntabVersion` の `Error()` 文字列検証を追加 |
+
+#### `TestParsePclntab_InvalidData` の変更内容
+
+新実装では `checkPclntabVersion` が `gosym.NewTable` より先に呼ばれるため、
+magic が `0xfffffff1` でないデータは `ErrUnsupportedPclntabVersion` を返す。
+magic が短すぎる（4 バイト未満）データは `ErrInvalidPclntab` を返す。
+
+| ケース名 | 旧期待値 | 新期待値 |
+|---------|---------|---------|
+| `"empty pclntab"` | `NoError, empty result` | `errors.Is(err, ErrInvalidPclntab)` |
+| `"too short for header"` | `NoError, empty result` | `errors.Is(err, ErrInvalidPclntab)` |
+| `"invalid magic bytes"` | `NoError, empty result` | `errors.Is(err, ErrUnsupportedPclntabVersion)` |
+| `"random garbage"` | `NoError, empty result` | `errors.Is(err, ErrUnsupportedPclntabVersion)` |
+
+#### `TestParsePclntab_ErrorWrapping` の変更内容
+
+追加する検証:
+```go
+assert.Equal(t, "unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) is supported",
+    ErrUnsupportedPclntabVersion.Error())
+```
+
 ### ユニットテスト（`checkPclntabVersion`）
 
 | テスト名 | 検証内容 |
@@ -169,9 +275,9 @@ func isValidOffset(offset int64, textFileSize uint64) bool {
 
 | AC | テスト名 | 実施方法 |
 |----|---------|---------|
-| AC-1 | `TestParsePclntab_NotStrippedCGO` | not-stripped Go 1.26+ CGO バイナリ → offset = C_startup_size、pclntab アドレス補正確認 |
-| AC-2 | `TestParsePclntab_StrippedCGO` | strip 済み Go 1.26+ CGO バイナリ → offset = C_startup_size（.symtab なしで検出）|
-| AC-3 | `TestParsePclntab_NonCGO` | Go 1.26+ 非 CGO バイナリ → offset = 0 |
+| AC-1 | `TestParsePclntab_NotStrippedCGO` | not-stripped Go 1.26 CGO バイナリ（not stripped）→ offset = C_startup_size、pclntab アドレス補正確認 |
+| AC-2 | `TestParsePclntab_StrippedCGO` | strip 済み Go 1.26 CGO バイナリ → offset = C_startup_size（.symtab なしで検出）|
+| AC-3 | `TestParsePclntab_NonCGO` | Go 1.26 非 CGO バイナリ → offset = 0 |
 | AC-4 | `TestParsePclntab_InvalidPclntab` | 壊れた pclntab → `ErrInvalidPclntab` または `ErrUnsupportedPclntab` |
 | AC-5 | `TestParsePclntab_UnsupportedVersion` | Go 1.18–1.19 バイナリ（magic = 0xfffffff0）→ `ErrUnsupportedPclntabVersion` |
 | AC-6 | `TestParsePclntab_Go126CGO` | Go 1.26 ビルド CGO バイナリで offset = C_startup_size を検出 |

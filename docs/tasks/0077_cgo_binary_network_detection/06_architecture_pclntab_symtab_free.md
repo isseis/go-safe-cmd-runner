@@ -208,8 +208,8 @@ Go 1.26.0 ソースコードの調査（`$GOROOT/src/internal/abi/symtab.go`、
 ```mermaid
 flowchart TD
     S[ParsePclntab] --> M{"pclntab magic\n確認"}
-    M -->|"0xfffffff1\n（Go 1.26+）"| B["detectOffsetByCallTargets\nCALL ターゲット相互参照"]
-    M -->|"その他\n（Go 1.25 以前）"| E["ErrUnsupportedPclntabVersion\n（明示的エラー）"]
+    M -->|"0xfffffff1\n（Go 1.20–1.26）"| B["detectOffsetByCallTargets\nCALL ターゲット相互参照"]
+    M -->|"その他\n（magic ≠ 0xfffffff1）"| E["ErrUnsupportedPclntabVersion\n（明示的エラー）"]
     B --> H["offset = ヒストグラム\n最頻値"]
     H --> V{isValidOffset}
     V -->|"0 < offset <=\n.text.FileSize"| R["return offset"]
@@ -222,17 +222,22 @@ flowchart TD
 
 ### 5.3 サポートバージョン
 
-**サポート対象: Go 1.26+（`CurrentPCLnTabMagic = 0xfffffff1`）のみ**
+**magic = `0xfffffff1` のバイナリのみサポート（Go 1.20–1.26 の共通 magic）**
 
-Go 1.26 未満のバイナリは `ErrUnsupportedPclntabVersion` エラーとして `ParsePclntab` から返す。
+magic ≠ `0xfffffff1` のバイナリは `ErrUnsupportedPclntabVersion` エラーとして `ParsePclntab` から返す。
+
+**公称サポートバージョン: Go 1.26**（実環境テストが Go 1.26 のみのため）
+
 理由:
-- Go 1.18–1.25 は `0xfffffff0`（1.18–1.19）または `0xfffffff1`（1.20–1.25）の magic を持つが、
-  テスト環境が Go 1.26 のみのため動作検証ができない
+- magic `0xfffffff0` を持つ Go 1.18–1.19 バイナリは明示的に拒否する
+- Go 1.20–1.25 は magic が `0xfffffff1` で同一のため技術的には通過するが、
+  テスト環境が Go 1.26 のみのため動作保証外（通過するが公称サポート外）
 - 未検証バイナリへの誤った offset 適用は誤動作（誤検出/見逃し）を引き起こす
 - 明示的エラーにより呼び出し元が適切に処理できる（フェイルセーフより明確）
 
-> **注**: Go 1.20–1.25 の magic も `0xfffffff1` で同一だが、CALL ターゲット相互参照
-> アルゴリズム自体はバイナリ構造に依存するため、テストなしで有効性を保証できない。
+> **注**: `checkPclntabVersion` は magic = `0xfffffff1` を通過させるため、
+> Go 1.20–1.25 のバイナリも実質的には通過する。内部コメントに
+> 「テストが Go 1.26 のみのため Go 1.26 を公称サポートバージョンとする」旨を記載する。
 
 ### 5.4 実装しないこと（スコープ外）
 
