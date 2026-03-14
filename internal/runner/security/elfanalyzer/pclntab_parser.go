@@ -125,7 +125,7 @@ func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc)
 		return 0
 	}
 
-	// CALL/BL target cross-reference (Go 1.26+).
+	// CALL/BL target cross-reference (Go 1.20+, magic 0xfffffff1).
 	// Only reached after checkPclntabVersion confirms a supported binary.
 	// CGO binaries always have a positive offset (C startup code precedes Go
 	// text), so negative or zero results indicate detection failure.
