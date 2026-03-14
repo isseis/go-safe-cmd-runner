@@ -294,8 +294,9 @@ func collectArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, d
 	for i := 0; i+arm64InstrSize <= len(data); i += arm64InstrSize {
 		instr := binary.LittleEndian.Uint32(data[i : i+arm64InstrSize])
 		if instr>>arm64BLOpcShift == arm64BLOpcode {
-			imm26 := int32(instr&arm64BLImmMask) << arm64BLSignShift >> arm64BLSignShift // sign-extend imm26 to int32
-			target := textAddr + uint64(i) + uint64(int64(imm26)*arm64InstrSize)         //nolint:gosec // G115: result bounded by address space
+			imm26Raw := instr & arm64BLImmMask
+			imm26 := int32(imm26Raw<<arm64BLSignShift) >> arm64BLSignShift       //nolint:gosec // G115: safe, imm26Raw is masked to 26 bits; shift clears high bits before conversion
+			target := textAddr + uint64(i) + uint64(int64(imm26)*arm64InstrSize) //nolint:gosec // G115: result bounded by address space
 			collectWindowDiffs(target, sortedEntries, diffCounts)
 		}
 	}
