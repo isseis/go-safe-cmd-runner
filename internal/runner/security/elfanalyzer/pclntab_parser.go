@@ -318,15 +318,16 @@ const maxOffset = int64(0x2000)
 
 func collectWindowDiffs(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
 	lo := uint64(0)
-	if int64(target) > maxOffset { //nolint:gosec // G115: target is a VA, always fits in int64
-		lo = uint64(int64(target) - maxOffset) //nolint:gosec // G115: result is non-negative
+	if target > uint64(maxOffset) {
+		lo = target - uint64(maxOffset)
 	}
 	// Binary search: find first index where sortedEntries[i] >= lo
 	idxLo := sort.Search(len(sortedEntries), func(i int) bool {
 		return sortedEntries[i] >= lo
 	})
 	for i := idxLo; i < len(sortedEntries) && sortedEntries[i] <= target; i++ {
-		diff := int64(target) - int64(sortedEntries[i]) //nolint:gosec // G115: target >= sortedEntries[i], result non-negative and bounded by maxOffset
+		// diff is in [0, maxOffset], so the cast to int64 is safe
+		diff := int64(target - sortedEntries[i]) //nolint:gosec // G115: subtraction result bounded by maxOffset (0x2000), fits in int64
 		diffCounts[diff]++
 	}
 }
