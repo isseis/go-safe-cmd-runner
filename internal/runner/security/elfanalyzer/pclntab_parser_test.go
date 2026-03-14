@@ -448,12 +448,12 @@ func TestDetectOffsetByCallTargets_WithOffset_arm64(t *testing.T) {
 }
 
 // TestDetectOffsetByCallTargets_NoOffset verifies that when CALL targets
-// match pclntab entries exactly (offset = 0), the function returns 0
-// because isValidOffset rejects offset == 0.
+// match pclntab entries exactly (offset = 0), detectOffsetByCallTargets
+// returns 0 as the best diff.
 //
 // With window exact-match, diff=0 accumulates the most votes (each CALL target
-// matches its own entry exactly). isValidOffset(0, ...) = false correctly
-// rejects this non-CGO case and returns 0.
+// matches its own entry exactly). The caller (detectPclntabOffset) then rejects
+// bestDiff==0 via its offset<=0 guard, treating this as a non-CGO binary.
 func TestDetectOffsetByCallTargets_NoOffset(t *testing.T) {
 	const textAddr = uint64(0x401000)
 	const numCalls = 5
@@ -480,7 +480,7 @@ func TestDetectOffsetByCallTargets_NoOffset(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	// diff = 0 accumulates the most votes → isValidOffset(0, ...) = false → return 0
+	// diff = 0 accumulates the most votes → detectOffsetByCallTargets returns 0
 	got := detectOffsetByCallTargets(f, pclntabFuncs)
 	assert.Equal(t, int64(0), got, "no offset → must return 0")
 }
@@ -561,7 +561,7 @@ func TestDetectOffsetByCallTargets_TiedVotes(t *testing.T) {
 	// Construct actual tie: same number of votes for two distinct diffs.
 	//   entry0=0x401000, entry1=0x401100
 	//   CALL0 target=0x401100: diff entry0=0x100 → diffCounts[0x100]++
-	//                           entry1=0x0   → diffCounts[0x0]++   (but 0 rejected by isValidOffset)
+	//                           entry1=0x0   → diffCounts[0x0]++
 	//   CALL1 target=0x401200: diff entry0=0x200, diff entry1=0x100 → diffCounts[0x200]++, diffCounts[0x100]++
 	//   CALL2 target=0x401300: diff entry0=0x300, diff entry1=0x200 → diffCounts[0x300]++, diffCounts[0x200]++
 	//   → 0x100=2, 0x200=2, 0x300=1, 0x0=1 → TIE between 0x100 and 0x200 → return 0.
@@ -742,7 +742,7 @@ func TestDetectOffsetByCallTargets_OffsetAtMaxBoundary_x86(t *testing.T) {
 		offsetVal     int64
 		numCalls      int
 		entrySpacing  uint64
-		textSizeExtra uint64 // extra bytes to ensure isValidOffset passes
+		textSizeExtra uint64 // extra bytes to ensure detectPclntabOffset's offset<=textSize guard passes
 	}{
 		{
 			name:          "maxOffset-1: detected",
