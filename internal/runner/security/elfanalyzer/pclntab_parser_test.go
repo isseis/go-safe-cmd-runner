@@ -371,20 +371,24 @@ func encodeArm64BL(buf []byte, from, to uint64) {
 // TestDetectOffsetByCallTargets_WithOffset_x86 verifies that x86_64 CALL
 // instructions whose targets match pclntab entries shifted by 0x100 are
 // detected and the offset 0x100 is returned.
+//
+// Uses dense entry spacing (0x60) matching real Go binaries.
+// With window exact-match, each CALL accumulates votes for multiple entries in the
+// window, but only the correct offset (0x100) receives votes from all numCalls.
 func TestDetectOffsetByCallTargets_WithOffset_x86(t *testing.T) {
 	const offsetVal = int64(0x100) // simulated C startup size
 	const textAddr = uint64(0x401000)
-	const numCalls = 5
-	// Use 0x1000 spacing so CALL targets (entry+0x100) do not coincide with
-	// other entries in the sorted slice (nearest-neighbor would hit another entry).
-	const entrySpacing = uint64(0x1000)
+	const numCalls = 10
+	// Use real-binary-like dense spacing. Window exact-match correctly identifies
+	// the most frequent diff even when multiple entries fall in each window.
+	const entrySpacing = uint64(0x60)
 
 	// pclntab entries are at textAddr (uncorrected, as gosym would return them).
 	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
 	for i := range numCalls {
 		entry := textAddr + uint64(i)*entrySpacing //nolint:gosec
 		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
-			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x50,
 		}
 	}
 
@@ -410,17 +414,19 @@ func TestDetectOffsetByCallTargets_WithOffset_x86(t *testing.T) {
 // TestDetectOffsetByCallTargets_WithOffset_arm64 verifies that arm64 BL
 // instructions whose targets match pclntab entries shifted by 0x100 are
 // detected and the offset 0x100 is returned.
+//
+// Uses dense entry spacing (0x60) matching real Go binaries.
 func TestDetectOffsetByCallTargets_WithOffset_arm64(t *testing.T) {
 	const offsetVal = int64(0x100)
 	const textAddr = uint64(0x10000)
-	const numCalls = 5
-	const entrySpacing = uint64(0x1000)
+	const numCalls = 10
+	const entrySpacing = uint64(0x60)
 
 	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
 	for i := range numCalls {
 		entry := textAddr + uint64(i)*entrySpacing //nolint:gosec
 		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
-			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x50,
 		}
 	}
 
@@ -444,6 +450,10 @@ func TestDetectOffsetByCallTargets_WithOffset_arm64(t *testing.T) {
 // TestDetectOffsetByCallTargets_NoOffset verifies that when CALL targets
 // match pclntab entries exactly (offset = 0), the function returns 0
 // because isValidOffset rejects offset == 0.
+//
+// With window exact-match, diff=0 accumulates the most votes (each CALL target
+// matches its own entry exactly). isValidOffset(0, ...) = false correctly
+// rejects this non-CGO case and returns 0.
 func TestDetectOffsetByCallTargets_NoOffset(t *testing.T) {
 	const textAddr = uint64(0x401000)
 	const numCalls = 5
@@ -470,21 +480,26 @@ func TestDetectOffsetByCallTargets_NoOffset(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	// diff = 0 for all → isValidOffset(0, ...) = false → return 0
+	// diff = 0 accumulates the most votes → isValidOffset(0, ...) = false → return 0
 	got := detectOffsetByCallTargets(f, pclntabFuncs)
 	assert.Equal(t, int64(0), got, "no offset → must return 0")
 }
 
 // TestDetectOffsetByCallTargets_InsufficientVotes verifies that when fewer
 // than minVotes CALL instructions match, the function returns 0.
+//
+// With window exact-match, entrySpacing=0x1000 ensures each window [T-0x2000, T]
+// contains at most 2 entries, so each diff gets at most 2 votes < minVotes=3.
 func TestDetectOffsetByCallTargets_InsufficientVotes(t *testing.T) {
 	const offsetVal = int64(0x200)
 	const textAddr = uint64(0x401000)
 	const numCalls = 2 // below minVotes=3
 
+	// entrySpacing=0x1000: window [T-maxOffset, T] = [T-0x2000, T] contains at most
+	// 2 entries (spacing 0x1000, window 0x2000), so max votes per diff = 2 < minVotes=3.
 	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
 	for i := range numCalls {
-		entry := textAddr + uint64(i)*0x100 //nolint:gosec
+		entry := textAddr + uint64(i)*0x1000 //nolint:gosec
 		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
 			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x80,
 		}
@@ -521,3 +536,217 @@ func TestDetectOffsetByCallTargets_NoText(t *testing.T) {
 	got := detectOffsetByCallTargets(f, pclntabFuncs)
 	assert.Equal(t, int64(0), got, ".text section with no data → must return 0")
 }
+
+// --- collectWindowDiffs unit tests ---
+
+// TestCollectWindowDiffs_DenseEntries verifies that collectWindowDiffs records
+// differences for all entries within [target - maxOffset, target] and excludes
+// entries outside the window.
+func TestCollectWindowDiffs_DenseEntries(t *testing.T) {
+	target := uint64(0x402200)
+	sortedEntries := []uint64{
+		0x400000, // window外: target - 0x400000 = 0x2200 > maxOffset
+		0x402100, // window内: diff = 0x100
+		0x402140, // window内: diff = 0xc0
+		0x402180, // window内: diff = 0x80
+		0x4021c0, // window内: diff = 0x40
+		0x402200, // window内: diff = 0x0
+	}
+
+	diffCounts := make(map[int64]int)
+	collectWindowDiffs(target, sortedEntries, diffCounts)
+
+	// window外エントリは記録されない
+	assert.Len(t, diffCounts, 5, "only window-internal entries should be recorded")
+	assert.Equal(t, 1, diffCounts[0x100], "diff 0x100")
+	assert.Equal(t, 1, diffCounts[0xc0], "diff 0xc0")
+	assert.Equal(t, 1, diffCounts[0x80], "diff 0x80")
+	assert.Equal(t, 1, diffCounts[0x40], "diff 0x40")
+	assert.Equal(t, 1, diffCounts[0x0], "diff 0x0")
+	_, hasOutside := diffCounts[0x2200]
+	assert.False(t, hasOutside, "window外エントリ(0x400000)の差分が記録されてはいけない")
+}
+
+// TestCollectWindowDiffs_MaxOffsetBoundary verifies that collectWindowDiffs
+// correctly handles boundary cases at maxOffset.
+//
+// Case A: offset = maxOffset-1 → entry is inside window (diff recorded)
+// Case B: offset = maxOffset   → entry is exactly at window boundary (diff recorded)
+// Case C: offset = maxOffset+1 → entry is outside window (diff not recorded)
+func TestCollectWindowDiffs_MaxOffsetBoundary(t *testing.T) {
+	textAddr := uint64(0x401000)
+	entry := textAddr // pclntab entry E = 0x401000
+
+	cases := []struct {
+		name        string
+		offset      int64
+		expectFound bool
+	}{
+		{
+			name:        "maxOffset-1: inside window",
+			offset:      maxOffset - 1,
+			expectFound: true,
+		},
+		{
+			name:        "maxOffset: boundary (included)",
+			offset:      maxOffset,
+			expectFound: true,
+		},
+		{
+			name:        "maxOffset+1: outside window",
+			offset:      maxOffset + 1,
+			expectFound: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			target := uint64(int64(entry) + tc.offset) //nolint:gosec
+			diffCounts := make(map[int64]int)
+			collectWindowDiffs(target, []uint64{entry}, diffCounts)
+
+			_, found := diffCounts[tc.offset]
+			if tc.expectFound {
+				assert.True(t, found, "offset %d should be in window", tc.offset)
+				assert.Equal(t, 1, diffCounts[tc.offset])
+			} else {
+				assert.False(t, found, "offset %d should be outside window", tc.offset)
+			}
+		})
+	}
+}
+
+// TestDetectOffsetByCallTargets_DenseLayout_x86 verifies offset detection
+// with dense function layout (entrySpacing=0x40) matching p10 real binaries.
+func TestDetectOffsetByCallTargets_DenseLayout_x86(t *testing.T) {
+	const offsetVal = int64(0x100)
+	const textAddr = uint64(0x401000)
+	const numCalls = 20
+	const entrySpacing = uint64(0x40) // 64 bytes — real binary p10 value
+
+	pclntabFuncs := make(map[string]PclntabFunc, numCalls)
+	for i := range numCalls {
+		entry := textAddr + uint64(i)*entrySpacing //nolint:gosec
+		pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
+			Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x30,
+		}
+	}
+
+	textData := make([]byte, numCalls*10)
+	for i := range numCalls {
+		callSiteVA := textAddr + uint64(i*10)                                            //nolint:gosec
+		targetVA := pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)].Entry + uint64(offsetVal) //nolint:gosec
+		pos := i * 10
+		encodeX86Call(textData[pos:pos+5], callSiteVA, targetVA)
+	}
+
+	elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+	f, err := elf.NewFile(bytes.NewReader(elfData))
+	require.NoError(t, err)
+	defer f.Close()
+
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, offsetVal, got, "dense layout x86: expected offset 0x%x, got 0x%x", offsetVal, got)
+}
+
+// TestDetectOffsetByCallTargets_OffsetAtMaxBoundary_x86 verifies end-to-end
+// behavior of detectOffsetByCallTargets near the maxOffset boundary.
+//
+// Case 1 & 2: offset <= maxOffset → entry falls within [T - maxOffset, T], votes accumulate.
+// Case 3: offset = maxOffset+1 → single entry is outside window, no votes → returns 0.
+//
+// Case 3 uses a single pclntab entry and a single CALL to ensure no other entry
+// accidentally falls into the window (which would produce a different diff value and
+// accumulate votes, defeating the "not detected" expectation).
+func TestDetectOffsetByCallTargets_OffsetAtMaxBoundary_x86(t *testing.T) {
+	const textAddr = uint64(0x401000)
+
+	// Case 1 & 2: multiple entries with dense spacing to accumulate votes.
+	casesDetected := []struct {
+		name          string
+		offsetVal     int64
+		numCalls      int
+		entrySpacing  uint64
+		textSizeExtra uint64 // extra bytes to ensure isValidOffset passes
+	}{
+		{
+			name:          "maxOffset-1: detected",
+			offsetVal:     maxOffset - 1,
+			numCalls:      10,
+			entrySpacing:  0x40,
+			textSizeExtra: 0x100,
+		},
+		{
+			name:          "maxOffset: detected",
+			offsetVal:     maxOffset,
+			numCalls:      10,
+			entrySpacing:  0x40,
+			textSizeExtra: 0x100,
+		},
+	}
+
+	for _, tc := range casesDetected {
+		t.Run(tc.name, func(t *testing.T) {
+			pclntabFuncs := make(map[string]PclntabFunc, tc.numCalls)
+			for i := range tc.numCalls {
+				entry := textAddr + uint64(i)*tc.entrySpacing //nolint:gosec
+				pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)] = PclntabFunc{
+					Name: fmt.Sprintf("pkg.Func%d", i), Entry: entry, End: entry + 0x30,
+				}
+			}
+
+			textData := make([]byte, tc.numCalls*10)
+			for i := range tc.numCalls {
+				callSiteVA := textAddr + uint64(i*10)                                               //nolint:gosec
+				targetVA := pclntabFuncs[fmt.Sprintf("pkg.Func%d", i)].Entry + uint64(tc.offsetVal) //nolint:gosec
+				pos := i * 10
+				encodeX86Call(textData[pos:pos+5], callSiteVA, targetVA)
+			}
+
+			requiredSize := uint64(tc.offsetVal) + tc.textSizeExtra //nolint:gosec
+			if uint64(len(textData)) < requiredSize {
+				padding := make([]byte, requiredSize-uint64(len(textData)))
+				textData = append(textData, padding...)
+			}
+
+			elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+			f, err := elf.NewFile(bytes.NewReader(elfData))
+			require.NoError(t, err)
+			defer f.Close()
+
+			got := detectOffsetByCallTargets(f, pclntabFuncs)
+			assert.Equal(t, tc.offsetVal, got, "%s: expected offset 0x%x", tc.name, tc.offsetVal)
+		})
+	}
+
+	// Case 3: maxOffset+1 with a single entry.
+	// When offset = maxOffset+1, T - entry = maxOffset+1 > maxOffset, so entry is outside
+	// the window [T - maxOffset, T]. No votes accumulate → detectOffsetByCallTargets returns 0.
+	// Single entry + single CALL ensures no other entry accidentally enters the window.
+	t.Run("maxOffset+1: not detected (single entry)", func(t *testing.T) {
+		const offsetVal = maxOffset + 1
+		entry := textAddr
+		pclntabFuncs := map[string]PclntabFunc{
+			"pkg.Func0": {Name: "pkg.Func0", Entry: entry, End: entry + 0x30},
+		}
+
+		// Single CALL targeting entry + (maxOffset+1): no entry in window.
+		textData := make([]byte, 10)
+		callSiteVA := textAddr
+		targetVA := entry + uint64(offsetVal) //nolint:gosec
+		encodeX86Call(textData[0:5], callSiteVA, targetVA)
+
+		elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+		f, err := elf.NewFile(bytes.NewReader(elfData))
+		require.NoError(t, err)
+		defer f.Close()
+
+		got := detectOffsetByCallTargets(f, pclntabFuncs)
+		assert.Equal(t, int64(0), got, "maxOffset+1: entry outside window → must return 0")
+	})
+}
+
+// --- integration: real CGO binary tests ---
+
+// TestParsePclntab_RealCGOBinary_NotStripped and TestParsePclntab_RealCGOBinary_Stripped
+// are in pclntab_parser_integration_test.go (build tag: integration).

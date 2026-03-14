@@ -159,8 +159,14 @@ func isValidOffset(offset int64, textFileSize uint64) bool {
 // magic = 0xfffffff1 (Go 1.20+, officially supported: Go 1.26).
 //
 // It scans the first 256 KB of .text for CALL/BL targets, builds a histogram of
-// (target - nearestPclntabEntry) differences, and returns the most frequent value
-// if it appears at least minVotes times. Returns 0 if detection fails.
+// (target - E) for all pclntab entries E within [target - maxOffset, target],
+// and returns the most frequent value if it appears at least minVotes times.
+// Returns 0 if detection fails.
+//
+// This window exact-match approach is reliable for real Go binaries where
+// functions are typically 0x20–0x320 bytes apart. The nearest-neighbor approach
+// (comparing only the single closest entry) fails in dense layouts because the
+// closest entry is rarely the callee, scattering votes across many diff values.
 //
 // PRECONDITION: pclntabFuncs must contain *uncorrected* Entry values (as returned
 // by gosym.NewLineTable before any offset correction). The algorithm relies on the
@@ -230,7 +236,8 @@ func detectOffsetByCallTargets(
 }
 
 // collectX86CallDiffs scans data for x86_64 CALL rel32 (opcode 0xE8) instructions
-// and accumulates (target_VA - nearest_pclntab_entry) differences in diffCounts.
+// and accumulates (target_VA - E) differences in diffCounts for all pclntab entries E
+// within [target - maxOffset, target].
 //
 // x86_64 is a variable-length instruction set, so this scanner advances one
 // byte at a time when the current byte is not 0xE8. This means bytes inside
@@ -248,7 +255,7 @@ func collectX86CallDiffs(data []byte, textAddr uint64, sortedEntries []uint64, d
 		if data[i] == x86CallOpcode && i+x86CallInstrSize <= len(data) {
 			rel := int32(binary.LittleEndian.Uint32(data[i+1 : i+x86CallInstrSize]))       //nolint:gosec // G115: uint32 to int32 for sign-extended relative offset
 			target := textAddr + uint64(i) + uint64(x86CallInstrSize) + uint64(int64(rel)) //nolint:gosec // G115: result bounded by address space
-			recordDiff(target, sortedEntries, diffCounts)
+			collectWindowDiffs(target, sortedEntries, diffCounts)
 			i += x86CallInstrSize
 			continue
 		}
@@ -257,7 +264,8 @@ func collectX86CallDiffs(data []byte, textAddr uint64, sortedEntries []uint64, d
 }
 
 // collectArm64BLDiffs scans data for arm64 BL instructions (bits[31:26] == 0b100101)
-// and accumulates (target_VA - nearest_pclntab_entry) differences in diffCounts.
+// and accumulates (target_VA - E) differences in diffCounts for all pclntab entries E
+// within [target - maxOffset, target].
 func collectArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, diffCounts map[int64]int) {
 	const (
 		arm64InstrSize   = 4
@@ -272,65 +280,36 @@ func collectArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, d
 		if instr>>arm64BLOpcShift == arm64BLOpcode {
 			imm26 := int32(instr&arm64BLImmMask) << arm64BLSignShift >> arm64BLSignShift // sign-extend imm26 to int32
 			target := textAddr + uint64(i) + uint64(int64(imm26)*arm64InstrSize)         //nolint:gosec // G115: result bounded by address space
-			recordDiff(target, sortedEntries, diffCounts)
+			collectWindowDiffs(target, sortedEntries, diffCounts)
 		}
 	}
 }
 
-// recordDiff finds the nearest pclntab entry to target and records the difference
-// in diffCounts when the absolute difference is within 0x1000 bytes.
+// collectWindowDiffs records (target - E) for all pclntab entries E
+// in the range [target - maxOffset, target].
 //
-// PRECONDITION: sortedEntries must not contain address 0 (enforced by the
-// caller which filters fn.Entry != 0). findNearest returns 0 to signal "no
-// entry close enough", relying on this invariant to avoid ambiguity.
-func recordDiff(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
-	nearest := findNearest(sortedEntries, target)
-	if nearest == 0 {
-		return
+// Rationale: in a CGO binary, every CALL to a Go function satisfies
+//
+//	target = rawEntry + offset  =>  target - rawEntry = offset  (exact)
+//
+// so the correct offset accumulates votes from all Go-function calls.
+// Noise (calls to non-Go targets, or wrong-entry pairs) produces scattered
+// diffs and cannot match the vote count of the true offset.
+//
+// maxOffset is the upper bound for C startup code size (8 KB is generous).
+const maxOffset = int64(0x2000)
+
+func collectWindowDiffs(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
+	lo := uint64(0)
+	if int64(target) > maxOffset { //nolint:gosec // G115: target is a VA, always fits in int64
+		lo = uint64(int64(target) - maxOffset) //nolint:gosec // G115: result is non-negative
 	}
-	diff := int64(target) - int64(nearest) //nolint:gosec // G115: addresses are valid ELF virtual addresses
-	const maxDiff = int64(0x1000)
-	if diff > -maxDiff && diff < maxDiff {
+	// Binary search: find first index where sortedEntries[i] >= lo
+	idxLo := sort.Search(len(sortedEntries), func(i int) bool {
+		return sortedEntries[i] >= lo
+	})
+	for i := idxLo; i < len(sortedEntries) && sortedEntries[i] <= target; i++ {
+		diff := int64(target) - int64(sortedEntries[i]) //nolint:gosec // G115: target >= sortedEntries[i], result non-negative and bounded by maxOffset
 		diffCounts[diff]++
 	}
-}
-
-// findNearest returns the nearest pclntab entry address to target using binary search.
-// sortedEntries must be sorted in ascending order.
-// Returns 0 if no entry is within maxDistance — 0 is safe as a sentinel because
-// the caller (recordDiff) guarantees sortedEntries contains no address 0.
-func findNearest(sortedEntries []uint64, target uint64) uint64 {
-	const maxDistance = 0x1000
-	n := len(sortedEntries)
-	if n == 0 {
-		return 0
-	}
-
-	// Find insertion point.
-	idx := sort.Search(n, func(i int) bool { return sortedEntries[i] >= target })
-
-	var best uint64
-	bestDist := uint64(maxDistance + 1)
-
-	// Check candidate at idx and idx-1.
-	for _, i := range []int{idx - 1, idx} {
-		if i < 0 || i >= n {
-			continue
-		}
-		var dist uint64
-		if sortedEntries[i] >= target {
-			dist = sortedEntries[i] - target
-		} else {
-			dist = target - sortedEntries[i]
-		}
-		if dist < bestDist {
-			bestDist = dist
-			best = sortedEntries[i]
-		}
-	}
-
-	if bestDist > maxDistance {
-		return 0
-	}
-	return best
 }

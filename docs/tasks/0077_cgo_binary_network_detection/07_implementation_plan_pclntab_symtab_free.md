@@ -9,9 +9,9 @@
 - [x] Step 5: `detectPclntabOffset` の置き換え（.symtab 参照を削除、案 B 単独）
 - [x] Step 6: テスト追加（AC-1〜AC-6）
 - [x] Step 7: `make fmt && make test && make lint` 通過確認
-- [ ] Step 8: nearest-neighbor の欠陥修正 → window exact-match へ置き換え（2026-03-14 判明）
-- [ ] Step 9: テストの修正（4 KB 間隔の回避策を除去し、実バイナリ相当の密度で検証）
-- [ ] Step 10: `make fmt && make test && make lint` 通過確認
+- [x] Step 8: nearest-neighbor の欠陥修正 → window exact-match へ置き換え（2026-03-14 完了）
+- [x] Step 9: テストの修正（4 KB 間隔の回避策を除去し、実バイナリ相当の密度で検証）（2026-03-14 完了）
+- [x] Step 10: `make fmt && make test && make lint` 通過確認（2026-03-14 完了）
 
 ---
 
