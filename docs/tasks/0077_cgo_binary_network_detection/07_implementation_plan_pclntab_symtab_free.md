@@ -210,16 +210,18 @@ window exact-match の核心を直接テスト:
 ```
 条件:
   target = 0x402200
-  sortedEntries = [0x402100, 0x402140, 0x402180, 0x4021c0, 0x402200]
-                  (spacing = 0x40、target と最後のエントリが一致)
-  maxOffset = 0x2000
+  sortedEntries = [0x400000,  // window 外（target - 0x400000 = 0x2200 > maxOffset）
+                   0x402100, 0x402140, 0x402180, 0x4021c0, 0x402200]
+                  (window 内 5 件 + window 外 1 件)
 
 期待:
+  diffCounts の要素数 = 5（window 外エントリは記録されない）
   diffCounts[0x100] = 1   // target - 0x402100
   diffCounts[0xc0]  = 1   // target - 0x402140
   diffCounts[0x80]  = 1   // target - 0x402180
   diffCounts[0x40]  = 1   // target - 0x4021c0
   diffCounts[0x0]   = 1   // target - 0x402200
+  // 0x400000 は target - 0x400000 = 0x2200 > maxOffset なので含まれない
 ```
 
 #### `TestDetectOffsetByCallTargets_DenseLayout_x86`
@@ -235,6 +237,66 @@ window exact-match の核心を直接テスト:
 
 期待: detectOffsetByCallTargets が 0x100 を返す
 ```
+
+#### `TestCollectWindowDiffs_MaxOffsetBoundary`（maxOffset 境界値テスト）
+
+`collectWindowDiffs` が `maxOffset` の境界を正しく扱うことを直接検証する。
+`maxOffset` の値は実装コード内の定数であり、テストはその値を参照して境界を構成する。
+これにより、`maxOffset` の変更が境界テストの失敗として即座に検出される。
+
+```
+前提:
+  maxOffset は実装内の定数（現在 0x2000）
+  textAddr = 0x401000
+  pclntab entry E = textAddr（= 0x401000）
+  各ケースで CALL ターゲット T を変化させる
+
+ケース A: offset = maxOffset - 1（= 0x1fff）→ ウィンドウ内の最遠点
+  T = E + (maxOffset - 1) = 0x402fff
+  期待: diffCounts[maxOffset-1] = 1（E が window に含まれる）
+
+ケース B: offset = maxOffset（= 0x2000）→ ウィンドウ境界上（T - E = maxOffset）
+  T = E + maxOffset = 0x403000
+  期待: diffCounts[maxOffset] = 1
+  （条件は `lo <= E <= T`、lo = T - maxOffset = E なので E がちょうど境界に含まれる）
+
+ケース C: offset = maxOffset + 1（= 0x2001）→ ウィンドウ外
+  T = E + maxOffset + 1 = 0x403001
+  期待: diffCounts に E との差分が記録されない（E < lo = T - maxOffset）
+```
+
+**なぜケース B の期待が「含まれる」か:**
+
+`lo = T - maxOffset`。ケース B では `T - E = maxOffset` なので `E = T - maxOffset = lo`。
+条件 `lo <= E` が成立するため E はウィンドウに含まれる。
+off-by-one（`<` vs `<=`）の誤りがあれば、ケース B が失敗として検出される。
+
+#### `TestDetectOffsetByCallTargets_OffsetAtMaxBoundary_x86`（end-to-end 境界値テスト）
+
+`collectWindowDiffs` の境界テストに加え、`detectOffsetByCallTargets` 全体として
+`maxOffset` 近傍の offset が正しく検出・除外されることを確認する。
+
+```
+ケース 1: offsetVal = maxOffset - 1（成功期待）
+  pclntab entries: E_0, E_1, ..., E_N (spacing = 0x40)
+  各 CALL ターゲット = E_i + (maxOffset - 1)
+  期待: detectOffsetByCallTargets が (maxOffset - 1) を返す
+
+ケース 2: offsetVal = maxOffset（成功期待）
+  各 CALL ターゲット = E_i + maxOffset
+  期待: detectOffsetByCallTargets が maxOffset を返す
+  （ただし isValidOffset(maxOffset, textFileSize) が true の場合のみ）
+
+ケース 3: offsetVal = maxOffset + 1（失敗期待 = return 0）
+  各 CALL ターゲット = E_i + maxOffset + 1
+  期待: detectOffsetByCallTargets が 0 を返す
+  （E_i が window [T - maxOffset, T] に入らないため票が集まらない）
+```
+
+**注:** ケース 2 の `isValidOffset` チェックは `.text.FileSize` に依存する。
+テスト用 ELF を構築する際、`.text.FileSize >= maxOffset` になるようにデータを用意する。
+既存の `buildELF64WithText` ヘルパーを拡張して `.text.Size` を指定可能にする、
+または ELF を直接構築する既存パターン（`buildELF64WithPclntab`）を踏襲する。
 
 ### 9.3 実バイナリ回帰テスト（integration タグ）
 
