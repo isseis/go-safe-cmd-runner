@@ -40,12 +40,12 @@ func buildELF64WithPclntab(pclntabData []byte) []byte {
 	// ELF header
 	var header [elfHeaderSize]byte
 	copy(header[0:4], []byte{0x7f, 'E', 'L', 'F'})
-	header[4] = 2                                                       // ELFCLASS64
-	header[5] = 1                                                       // ELFDATA2LSB
-	header[6] = 1                                                       // EV_CURRENT
-	binary.LittleEndian.PutUint16(header[16:18], 2)                     // ET_EXEC
-	binary.LittleEndian.PutUint16(header[18:20], 62)                    // EM_X86_64
-	binary.LittleEndian.PutUint32(header[20:24], 1)                     // EV_CURRENT
+	header[4] = byte(elf.ELFCLASS64)
+	header[5] = byte(elf.ELFDATA2LSB)
+	header[6] = byte(elf.EV_CURRENT)
+	binary.LittleEndian.PutUint16(header[16:18], uint16(elf.ET_EXEC))
+	binary.LittleEndian.PutUint16(header[18:20], uint16(elf.EM_X86_64))
+	binary.LittleEndian.PutUint32(header[20:24], uint32(elf.EV_CURRENT))
 	binary.LittleEndian.PutUint64(header[40:48], uint64(shOffset))      // e_shoff
 	binary.LittleEndian.PutUint16(header[52:54], uint16(elfHeaderSize)) // e_ehsize
 	binary.LittleEndian.PutUint16(header[58:60], uint16(shEntrySize))   // e_shentsize
@@ -66,16 +66,16 @@ func buildELF64WithPclntab(pclntabData []byte) []byte {
 
 	// Section 1: .text (empty, provides textStart address)
 	var sh1 [shEntrySize]byte
-	binary.LittleEndian.PutUint32(sh1[0:4], 1)          // sh_name: ".text" at offset 1
-	binary.LittleEndian.PutUint32(sh1[4:8], 1)          // SHT_PROGBITS
-	binary.LittleEndian.PutUint64(sh1[8:16], 6)         // SHF_ALLOC|SHF_EXECINSTR
-	binary.LittleEndian.PutUint64(sh1[16:24], 0x401000) // sh_addr (textStart)
+	binary.LittleEndian.PutUint32(sh1[0:4], 1)                                        // sh_name: ".text" at offset 1
+	binary.LittleEndian.PutUint32(sh1[4:8], uint32(elf.SHT_PROGBITS))                 //nolint:gosec
+	binary.LittleEndian.PutUint64(sh1[8:16], uint64(elf.SHF_ALLOC|elf.SHF_EXECINSTR)) //nolint:gosec
+	binary.LittleEndian.PutUint64(sh1[16:24], 0x401000)                               // sh_addr (textStart)
 	buf.Write(sh1[:])
 
 	// Section 2: .gopclntab
 	var sh2 [shEntrySize]byte
 	binary.LittleEndian.PutUint32(sh2[0:4], 7)                          // sh_name: ".gopclntab" at offset 7
-	binary.LittleEndian.PutUint32(sh2[4:8], 1)                          // SHT_PROGBITS
+	binary.LittleEndian.PutUint32(sh2[4:8], uint32(elf.SHT_PROGBITS))   //nolint:gosec
 	binary.LittleEndian.PutUint64(sh2[24:32], uint64(pclntabOffset))    // sh_offset
 	binary.LittleEndian.PutUint64(sh2[32:40], uint64(len(pclntabData))) // sh_size
 	buf.Write(sh2[:])
@@ -83,7 +83,7 @@ func buildELF64WithPclntab(pclntabData []byte) []byte {
 	// Section 3: .shstrtab
 	var sh3 [shEntrySize]byte
 	binary.LittleEndian.PutUint32(sh3[0:4], 18)                       // sh_name: ".shstrtab" at offset 18
-	binary.LittleEndian.PutUint32(sh3[4:8], 3)                        // SHT_STRTAB
+	binary.LittleEndian.PutUint32(sh3[4:8], uint32(elf.SHT_STRTAB))   //nolint:gosec
 	binary.LittleEndian.PutUint64(sh3[24:32], uint64(shstrtabOffset)) // sh_offset
 	binary.LittleEndian.PutUint64(sh3[32:40], uint64(len(shstrtab)))  // sh_size
 	buf.Write(sh3[:])
@@ -298,12 +298,12 @@ func buildELF64WithTextAndPclntab(textData []byte, textAddr uint64, pclntabData 
 	// ELF header
 	var header [elfHeaderSize]byte
 	copy(header[0:4], []byte{0x7f, 'E', 'L', 'F'})
-	header[4] = 2                                                       // ELFCLASS64
-	header[5] = 1                                                       // ELFDATA2LSB
-	header[6] = 1                                                       // EV_CURRENT
-	binary.LittleEndian.PutUint16(header[16:18], 2)                     // ET_EXEC
-	binary.LittleEndian.PutUint16(header[18:20], uint16(machine))       //nolint:gosec
-	binary.LittleEndian.PutUint32(header[20:24], 1)                     // EV_CURRENT
+	header[4] = byte(elf.ELFCLASS64)
+	header[5] = byte(elf.ELFDATA2LSB)
+	header[6] = byte(elf.EV_CURRENT)
+	binary.LittleEndian.PutUint16(header[16:18], uint16(elf.ET_EXEC))
+	binary.LittleEndian.PutUint16(header[18:20], uint16(machine)) //nolint:gosec
+	binary.LittleEndian.PutUint32(header[20:24], uint32(elf.EV_CURRENT))
 	binary.LittleEndian.PutUint64(header[40:48], uint64(shOffset))      // e_shoff
 	binary.LittleEndian.PutUint16(header[52:54], uint16(elfHeaderSize)) // e_ehsize
 	binary.LittleEndian.PutUint16(header[58:60], uint16(shEntrySize))   // e_shentsize
@@ -325,18 +325,18 @@ func buildELF64WithTextAndPclntab(textData []byte, textAddr uint64, pclntabData 
 
 	// Section 1: .text
 	var sh1 [shEntrySize]byte
-	binary.LittleEndian.PutUint32(sh1[0:4], 1)                       // sh_name: ".text"
-	binary.LittleEndian.PutUint32(sh1[4:8], 1)                       // SHT_PROGBITS
-	binary.LittleEndian.PutUint64(sh1[8:16], 6)                      // SHF_ALLOC|SHF_EXECINSTR
-	binary.LittleEndian.PutUint64(sh1[16:24], textAddr)              // sh_addr
-	binary.LittleEndian.PutUint64(sh1[24:32], uint64(textOffset))    // sh_offset
-	binary.LittleEndian.PutUint64(sh1[32:40], uint64(len(textData))) // sh_size
+	binary.LittleEndian.PutUint32(sh1[0:4], 1)                                        // sh_name: ".text"
+	binary.LittleEndian.PutUint32(sh1[4:8], uint32(elf.SHT_PROGBITS))                 //nolint:gosec
+	binary.LittleEndian.PutUint64(sh1[8:16], uint64(elf.SHF_ALLOC|elf.SHF_EXECINSTR)) //nolint:gosec
+	binary.LittleEndian.PutUint64(sh1[16:24], textAddr)                               // sh_addr
+	binary.LittleEndian.PutUint64(sh1[24:32], uint64(textOffset))                     // sh_offset
+	binary.LittleEndian.PutUint64(sh1[32:40], uint64(len(textData)))                  // sh_size
 	buf.Write(sh1[:])
 
 	// Section 2: .gopclntab
 	var sh2 [shEntrySize]byte
 	binary.LittleEndian.PutUint32(sh2[0:4], 7)                          // sh_name: ".gopclntab"
-	binary.LittleEndian.PutUint32(sh2[4:8], 1)                          // SHT_PROGBITS
+	binary.LittleEndian.PutUint32(sh2[4:8], uint32(elf.SHT_PROGBITS))   //nolint:gosec
 	binary.LittleEndian.PutUint64(sh2[24:32], uint64(pclntabOffset))    // sh_offset
 	binary.LittleEndian.PutUint64(sh2[32:40], uint64(len(pclntabData))) // sh_size
 	buf.Write(sh2[:])
@@ -344,7 +344,7 @@ func buildELF64WithTextAndPclntab(textData []byte, textAddr uint64, pclntabData 
 	// Section 3: .shstrtab
 	var sh3 [shEntrySize]byte
 	binary.LittleEndian.PutUint32(sh3[0:4], 18)                       // sh_name: ".shstrtab"
-	binary.LittleEndian.PutUint32(sh3[4:8], 3)                        // SHT_STRTAB
+	binary.LittleEndian.PutUint32(sh3[4:8], uint32(elf.SHT_STRTAB))   //nolint:gosec
 	binary.LittleEndian.PutUint64(sh3[24:32], uint64(shstrtabOffset)) // sh_offset
 	binary.LittleEndian.PutUint64(sh3[32:40], uint64(len(shstrtab)))  // sh_size
 	buf.Write(sh3[:])
