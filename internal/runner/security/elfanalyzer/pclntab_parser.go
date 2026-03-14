@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 )
 
@@ -194,13 +195,10 @@ func detectOffsetByCallTargets(
 		return 0
 	}
 
-	rawData, err := textSection.Data()
+	sr := io.NewSectionReader(textSection, 0, int64(scanLimit)) //nolint:gosec // G115: scanLimit is a small positive constant
+	data, err := io.ReadAll(sr)
 	if err != nil {
 		return 0
-	}
-	data := rawData
-	if len(data) > scanLimit {
-		data = data[:scanLimit]
 	}
 
 	// Build sorted slice of pclntab entry addresses for window-based diff counting.
