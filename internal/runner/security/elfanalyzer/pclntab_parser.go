@@ -203,7 +203,7 @@ func detectOffsetByCallTargets(
 		data = data[:scanLimit]
 	}
 
-	// Build sorted slice of pclntab entry addresses for nearest-neighbor search.
+	// Build sorted slice of pclntab entry addresses for window-based diff counting.
 	sortedEntries := make([]uint64, 0, len(pclntabFuncs))
 	for _, fn := range pclntabFuncs {
 		if fn.Entry != 0 {
