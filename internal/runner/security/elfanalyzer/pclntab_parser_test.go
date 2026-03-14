@@ -620,18 +620,18 @@ func TestDetectOffsetByCallTargets_NoText(t *testing.T) {
 func TestCollectWindowDiffs_DenseEntries(t *testing.T) {
 	target := uint64(0x402200)
 	sortedEntries := []uint64{
-		0x400000, // window外: target - 0x400000 = 0x2200 > maxOffset
-		0x402100, // window内: diff = 0x100
-		0x402140, // window内: diff = 0xc0
-		0x402180, // window内: diff = 0x80
-		0x4021c0, // window内: diff = 0x40
-		0x402200, // window内: diff = 0x0
+		0x400000, // outside window: target - 0x400000 = 0x2200 > maxOffset
+		0x402100, // inside window: diff = 0x100
+		0x402140, // inside window: diff = 0xc0
+		0x402180, // inside window: diff = 0x80
+		0x4021c0, // inside window: diff = 0x40
+		0x402200, // inside window: diff = 0x0
 	}
 
 	diffCounts := make(map[int64]int)
 	collectWindowDiffs(target, sortedEntries, diffCounts)
 
-	// window外エントリは記録されない
+	// Entries outside the window must not be recorded.
 	assert.Len(t, diffCounts, 5, "only window-internal entries should be recorded")
 	assert.Equal(t, 1, diffCounts[0x100], "diff 0x100")
 	assert.Equal(t, 1, diffCounts[0xc0], "diff 0xc0")
@@ -639,7 +639,7 @@ func TestCollectWindowDiffs_DenseEntries(t *testing.T) {
 	assert.Equal(t, 1, diffCounts[0x40], "diff 0x40")
 	assert.Equal(t, 1, diffCounts[0x0], "diff 0x0")
 	_, hasOutside := diffCounts[0x2200]
-	assert.False(t, hasOutside, "window外エントリ(0x400000)の差分が記録されてはいけない")
+	assert.False(t, hasOutside, "diff for outside-window entry 0x400000 must not be recorded")
 }
 
 // TestCollectWindowDiffs_MaxOffsetBoundary verifies that collectWindowDiffs
