@@ -270,6 +270,10 @@ func collectArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, d
 
 // recordDiff finds the nearest pclntab entry to target and records the difference
 // in diffCounts when the absolute difference is within 0x1000 bytes.
+//
+// PRECONDITION: sortedEntries must not contain address 0 (enforced by the
+// caller which filters fn.Entry != 0). findNearest returns 0 to signal "no
+// entry close enough", relying on this invariant to avoid ambiguity.
 func recordDiff(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
 	nearest := findNearest(sortedEntries, target)
 	if nearest == 0 {
@@ -283,7 +287,9 @@ func recordDiff(target uint64, sortedEntries []uint64, diffCounts map[int64]int)
 }
 
 // findNearest returns the nearest pclntab entry address to target using binary search.
-// sortedEntries must be sorted in ascending order. Returns 0 if no entry is close enough.
+// sortedEntries must be sorted in ascending order.
+// Returns 0 if no entry is within maxDistance — 0 is safe as a sentinel because
+// the caller (recordDiff) guarantees sortedEntries contains no address 0.
 func findNearest(sortedEntries []uint64, target uint64) uint64 {
 	const maxDistance = 0x1000
 	n := len(sortedEntries)
