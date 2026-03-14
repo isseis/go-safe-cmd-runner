@@ -264,12 +264,13 @@ func collectArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, d
 		arm64BLOpcode    = uint32(0b100101) // bits[31:26] of BL instruction
 		arm64BLImmMask   = uint32(0x03ffffff)
 		arm64BLOpcShift  = 26
-		arm64BLSignShift = 6 // shift amount to sign-extend 26-bit immediate to 32-bit
+		arm64BLImmBits   = 26                  // width of the imm26 field
+		arm64BLSignShift = 32 - arm64BLImmBits // = 6; shift to sign-extend imm26 to int32 via <<N>>N
 	)
 	for i := 0; i+arm64InstrSize <= len(data); i += arm64InstrSize {
 		instr := binary.LittleEndian.Uint32(data[i : i+arm64InstrSize])
 		if instr>>arm64BLOpcShift == arm64BLOpcode {
-			imm26 := int32(instr&arm64BLImmMask) << arm64BLSignShift >> arm64BLSignShift // sign-extend 26-bit
+			imm26 := int32(instr&arm64BLImmMask) << arm64BLSignShift >> arm64BLSignShift // sign-extend imm26 to int32
 			target := textAddr + uint64(i) + uint64(int64(imm26)*arm64InstrSize)         //nolint:gosec // G115: result bounded by address space
 			recordDiff(target, sortedEntries, diffCounts)
 		}
