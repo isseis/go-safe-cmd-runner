@@ -4,7 +4,6 @@ package elfanalyzer
 
 import (
 	"debug/elf"
-	"debug/gosym"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -140,42 +139,9 @@ func TestParsePclntab_RealCGOBinary_Stripped(t *testing.T) {
 		"stripped binary should detect same offset 0x%x as not-stripped", expectedOffset)
 }
 
-// parsePclntabRaw returns uncorrected pclntab function entries (as gosym returns them,
-// before any offset correction). Used by integration tests to call detectOffsetByCallTargets directly.
+// parsePclntabRaw returns uncorrected pclntab function entries by delegating to
+// parsePclntabFuncsRaw, the shared core of ParsePclntab. Using the same function
+// ensures tests stay in sync with production parsing logic automatically.
 func parsePclntabRaw(elfFile *elf.File) (map[string]PclntabFunc, error) {
-	pclntabSection := elfFile.Section(".gopclntab")
-	if pclntabSection == nil {
-		return nil, ErrNoPclntab
-	}
-
-	pclntabData, err := pclntabSection.Data()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := checkPclntabVersion(pclntabData, elfFile.ByteOrder); err != nil {
-		return nil, err
-	}
-
-	var textStart uint64
-	if textSec := elfFile.Section(".text"); textSec != nil {
-		textStart = textSec.Addr
-	}
-
-	lineTable := gosym.NewLineTable(pclntabData, textStart)
-	symTable, err := gosym.NewTable(nil, lineTable)
-	if err != nil {
-		return nil, err
-	}
-
-	functions := make(map[string]PclntabFunc, len(symTable.Funcs))
-	for i := range symTable.Funcs {
-		fn := &symTable.Funcs[i]
-		functions[fn.Name] = PclntabFunc{
-			Name:  fn.Name,
-			Entry: fn.Entry,
-			End:   fn.End,
-		}
-	}
-	return functions, nil
+	return parsePclntabFuncsRaw(elfFile)
 }

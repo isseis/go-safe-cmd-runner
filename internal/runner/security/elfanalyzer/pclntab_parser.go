@@ -36,6 +36,33 @@ type PclntabFunc struct {
 // Only pclntab with magic 0xfffffff1 (Go 1.20+, officially supported: Go 1.26)
 // is supported. Other versions return ErrUnsupportedPclntabVersion.
 func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
+	functions, err := parsePclntabFuncsRaw(elfFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// CGO binaries may have a constant address offset between pclntab entries
+	// and actual virtual addresses because C runtime startup code is inserted
+	// at the beginning of the .text section. Detect and apply the correction.
+	if offset := detectPclntabOffset(elfFile, functions); offset != 0 {
+		for name, fn := range functions {
+			functions[name] = PclntabFunc{
+				Name:  fn.Name,
+				Entry: uint64(int64(fn.Entry) + offset), //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
+				End:   uint64(int64(fn.End) + offset),   //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
+			}
+		}
+	}
+
+	return functions, nil
+}
+
+// parsePclntabFuncsRaw reads .gopclntab and returns function entries as gosym
+// reports them — without any CGO offset correction applied.
+// This is the shared core used by ParsePclntab (which then corrects the offset)
+// and by tests that need the raw, uncorrected entries to validate the offset
+// detection algorithm directly.
+func parsePclntabFuncsRaw(elfFile *elf.File) (map[string]PclntabFunc, error) {
 	pclntabSection := elfFile.Section(".gopclntab")
 	if pclntabSection == nil {
 		return nil, ErrNoPclntab
@@ -74,20 +101,6 @@ func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
 			End:   fn.End,
 		}
 	}
-
-	// CGO binaries may have a constant address offset between pclntab entries
-	// and actual virtual addresses because C runtime startup code is inserted
-	// at the beginning of the .text section. Detect and apply the correction.
-	if offset := detectPclntabOffset(elfFile, functions); offset != 0 {
-		for name, fn := range functions {
-			functions[name] = PclntabFunc{
-				Name:  fn.Name,
-				Entry: uint64(int64(fn.Entry) + offset), //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
-				End:   uint64(int64(fn.End) + offset),   //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
-			}
-		}
-	}
-
 	return functions, nil
 }
 
