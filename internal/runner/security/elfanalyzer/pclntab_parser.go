@@ -150,19 +150,14 @@ func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc)
 	// ParsePclntab calls detectPclntabOffset *before* applying the correction,
 	// so this invariant is guaranteed by the call order.
 	offset := detectOffsetByCallTargets(elfFile, pclntabFuncs)
-	if !isValidOffset(offset, textSection.FileSize) {
+	// A valid offset is strictly positive (distinguishes CGO from non-CGO where offset=0)
+	// and does not exceed the .text section size.
+	// Negative offsets are theoretically impossible for CGO binaries (C startup code
+	// always precedes Go text) and must be rejected to prevent address corruption.
+	if offset <= 0 || uint64(offset) > textSection.FileSize { //nolint:gosec
 		return 0
 	}
 	return offset
-}
-
-// isValidOffset checks that offset is a plausible CGO text-start correction.
-// A valid offset is strictly positive (distinguishes CGO from non-CGO where offset=0)
-// and does not exceed the .text section size.
-// Negative offsets are theoretically impossible for CGO binaries (C startup code
-// always precedes Go text) and must be rejected to prevent address corruption.
-func isValidOffset(offset int64, textFileSize uint64) bool {
-	return offset > 0 && uint64(offset) <= textFileSize //nolint:gosec
 }
 
 // detectOffsetByCallTargets detects the pclntab address offset in CGO binaries
