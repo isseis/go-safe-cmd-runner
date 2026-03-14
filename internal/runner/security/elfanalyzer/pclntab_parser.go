@@ -231,6 +231,14 @@ func detectOffsetByCallTargets(
 
 // collectX86CallDiffs scans data for x86_64 CALL rel32 (opcode 0xE8) instructions
 // and accumulates (target_VA - nearest_pclntab_entry) differences in diffCounts.
+//
+// x86_64 is a variable-length instruction set, so this scanner advances one
+// byte at a time when the current byte is not 0xE8. This means bytes inside
+// multi-byte operands that happen to equal 0xE8 may be misidentified as CALL
+// instructions, producing spurious targets. Such false positives introduce
+// noise into diffCounts but are absorbed by the histogram voting: a spurious
+// target is unlikely to produce the same difference as the true offset, so it
+// will not accumulate enough votes to reach minVotes.
 func collectX86CallDiffs(data []byte, textAddr uint64, sortedEntries []uint64, diffCounts map[int64]int) {
 	const (
 		x86CallOpcode    = byte(0xe8)
