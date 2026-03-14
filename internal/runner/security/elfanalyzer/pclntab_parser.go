@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 )
 
@@ -211,7 +212,7 @@ func detectOffsetByCallTargets(
 	if len(sortedEntries) == 0 {
 		return 0
 	}
-	sort.Slice(sortedEntries, func(i, j int) bool { return sortedEntries[i] < sortedEntries[j] })
+	slices.Sort(sortedEntries)
 
 	diffCounts := make(map[int64]int)
 	textAddr := textSection.Addr
