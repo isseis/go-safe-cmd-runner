@@ -5,10 +5,13 @@
 - [x] Step 1: pclntab magic 値・ヘッダレイアウトを Go ソースで確認（2026-03-13 完了）
 - [x] Step 2: 案 A の調査 → **廃止**（ヘッダから textStart を読む手段が存在しないと判明）
 - [x] Step 3: Go 1.26 の pclntab 形式を確認し対応方針を確定（2026-03-13 完了）
-- [x] Step 4: 案 B — CALL ターゲット相互参照の実装（Go 1.20+ 対応）
+- [x] Step 4: 案 B — CALL ターゲット相互参照の実装（nearest-neighbor 版、後に欠陥判明）
 - [x] Step 5: `detectPclntabOffset` の置き換え（.symtab 参照を削除、案 B 単独）
 - [x] Step 6: テスト追加（AC-1〜AC-6）
 - [x] Step 7: `make fmt && make test && make lint` 通過確認
+- [ ] Step 8: nearest-neighbor の欠陥修正 → window exact-match へ置き換え（2026-03-14 判明）
+- [ ] Step 9: テストの修正（4 KB 間隔の回避策を除去し、実バイナリ相当の密度で検証）
+- [ ] Step 10: `make fmt && make test && make lint` 通過確認
 
 ---
 
@@ -32,343 +35,317 @@
 
 ---
 
-## Step 4: 案 B の実装（Go 1.20+ 対応）
+## Step 4/5/6/7: 初回実装（完了、ただし欠陥あり）
+
+Step 4〜7 の実装内容（nearest-neighbor 版）は完了した。
+ただし 2026-03-14 の実バイナリ検証により、アルゴリズムに根本的な欠陥が判明した。
+詳細は Step 8 の「欠陥の内容」を参照。
+
+---
+
+## Step 8: nearest-neighbor の欠陥修正（window exact-match へ置き換え）
+
+### 欠陥の内容（2026-03-14 実バイナリ検証により判明）
+
+既存の `recordDiff` / `findNearest` は「CALL ターゲット T の前後最近傍 pclntab エントリ」に
+差分を取っていた。実際の Go バイナリでは関数が密に並ぶため（中央値 0xc0 バイト間隔）、
+最近傍エントリはほぼ常に「呼び先以外の隣接関数」に当たり、差分が全方向に分散する。
+
+**実測結果（Go 1.26.0 / x86_64 CGO バイナリ、actual offset = 0x100）:**
+
+| アルゴリズム | 正解 offset=0x100 の得票 | 得票順位 |
+|------------|------------------------|---------|
+| nearest-neighbor（現行） | 380票 | **7位** |
+| window exact-match（新） | **4733票** | **1位**（2位: 2076票）|
+
+**テストが欠陥を検出できなかった理由:**
+
+`TestDetectOffsetByCallTargets_WithOffset_x86/arm64` は `entrySpacing = 0x1000`（4 KB）を
+使用していた（[pclntab_parser_test.go:380](../../../internal/runner/security/elfanalyzer/pclntab_parser_test.go) のコメント参照）。
+これは実バイナリでは不自然な広い間隔であり、nearest-neighbor が偶然正しいエントリに当たる条件を作っていた。
+
+### 変更内容
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
 
-**追加する関数:** `detectOffsetByCallTargets`
+`recordDiff` と `findNearest` を削除し、新関数 `collectWindowDiffs` に置き換える。
+
+**旧実装（削除）:**
 
 ```go
-// detectOffsetByCallTargets detects the pclntab address offset in CGO binaries
-// by cross-referencing CALL/BL instruction targets with pclntab function entries.
-// This method works independently of the pclntab header format and is the sole
-// offset detection mechanism. Only called after checkPclntabVersion confirms
-// magic = 0xfffffff1 (Go 1.20+, officially supported: Go 1.26).
+// recordDiff — 最近傍エントリとの差分を1件記録
+func recordDiff(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
+    nearest := findNearest(sortedEntries, target)
+    if nearest == 0 { return }
+    diff := int64(target) - int64(nearest)
+    const maxDiff = int64(0x1000)
+    if diff > -maxDiff && diff < maxDiff {
+        diffCounts[diff]++
+    }
+}
+
+// findNearest — 前後1件の最近傍を返す
+func findNearest(sortedEntries []uint64, target uint64) uint64 { ... }
+```
+
+**新実装（追加）:**
+
+```go
+// collectWindowDiffs records (target - E) for all pclntab entries E
+// in the range [target - maxOffset, target].
 //
+// Rationale: in a CGO binary, every CALL to a Go function satisfies
+//   target = rawEntry + offset  =>  target - rawEntry = offset  (exact)
+// so the correct offset accumulates votes from all Go-function calls.
+// Noise (calls to non-Go targets, or wrong-entry pairs) produces scattered
+// diffs and cannot match the vote count of the true offset.
+//
+// maxOffset is the upper bound for C startup code size (8 KB is generous).
+const maxOffset = int64(0x2000)
+
+func collectWindowDiffs(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
+    lo := uint64(0)
+    if int64(target) > maxOffset {
+        lo = uint64(int64(target) - maxOffset)
+    }
+    // Binary search: find first index where sortedEntries[i] >= lo
+    idxLo := sort.Search(len(sortedEntries), func(i int) bool {
+        return sortedEntries[i] >= lo
+    })
+    for i := idxLo; i < len(sortedEntries) && sortedEntries[i] <= target; i++ {
+        diff := int64(target) - int64(sortedEntries[i]) //nolint:gosec
+        diffCounts[diff]++
+    }
+}
+```
+
+**呼び出し元の変更（`collectX86CallDiffs` / `collectArm64BLDiffs`）:**
+
+```go
+// 旧:
+recordDiff(targetVA, sortedEntries, diffCounts)
+
+// 新:
+collectWindowDiffs(targetVA, sortedEntries, diffCounts)
+```
+
+**`detectOffsetByCallTargets` のコメント更新（算法の説明を nearest-neighbor から window exact-match に変更）:**
+
+```go
 // It scans the first 256 KB of .text for CALL/BL targets, builds a histogram of
-// (target - nearestPclntabEntry) differences, and returns the most frequent value
-// if it appears at least minVotes times. Returns 0 if detection fails.
+// (target - E) for all pclntab entries E within [target - maxOffset, target],
+// and returns the most frequent value if it appears at least minVotes times.
+// Returns 0 if detection fails.
 //
-// PRECONDITION: pclntabFuncs must contain *uncorrected* Entry values (as returned
-// by gosym.NewLineTable before any offset correction). The algorithm relies on the
-// invariant: CALL_target_VA - pclntab_Entry = C_startup_size (constant per binary).
-// If corrected entries were passed, all differences would collapse to 0.
-func detectOffsetByCallTargets(
-    elfFile *elf.File,
-    pclntabFuncs map[string]PclntabFunc,
-) int64 {
-    const (
-        scanLimit = 256 * 1024 // scan first 256 KB of .text
-        minVotes  = 3
-    )
-    // ... Implementation (see algorithm in architecture doc section 3.2)
-}
-```
-
-**import への追加（Step 4 時点で行う）:**
-```go
-import (
-    "debug/elf"
-    "debug/gosym"
-    "encoding/binary"  // detectOffsetByCallTargets, checkPclntabVersion で使用
-    "errors"
-    "fmt"
-    "sort"             // detectOffsetByCallTargets の二分探索で使用
-)
-```
-
-**実装ポイント:**
-- `MachineCodeDecoder` を使わず、x86_64 と arm64 の CALL/BL のみを独自デコード
-- `elfFile.Machine` からアーキテクチャを判定（`elf.EM_X86_64` / `elf.EM_AARCH64`）
-- 差分のヒストグラムは `map[int64]int` で管理
-- `.text` セクションのデータは `textSection.Data()` で取得（最大 `scanLimit` バイト）
-- pclntab エントリのアドレスをソート済みスライスに入れ、`sort.Search` で最近傍探索
-
-**x86_64 CALL デコード:**
-```go
-// opcode 0xE8: CALL rel32
-// callSite はバイト配列内のインデックス（.text.Addr からの相対）
-if data[i] == 0xe8 && i+5 <= len(data) {
-    rel := int32(binary.LittleEndian.Uint32(data[i+1 : i+5]))
-    target := textSection.Addr + uint64(i) + 5 + uint64(int64(rel))
-    // ...
-    i += 5
-    continue
-}
-i++
-```
-
-**arm64 BL デコード:**
-```go
-// BL 命令: bits[31:26] == 0b100101
-instr := binary.LittleEndian.Uint32(data[i : i+4])
-if instr>>26 == 0b100101 {
-    imm26 := int32(instr&0x03ffffff) << 6 >> 6 // sign-extend 26-bit
-    target := textSection.Addr + uint64(i) + uint64(int64(imm26)*4)
-    // ...
-}
-i += 4
+// This window exact-match approach is reliable for real Go binaries where
+// functions are typically 0x20–0x320 bytes apart. The nearest-neighbor approach
+// (comparing only the single closest entry) fails in dense layouts because the
+// closest entry is rarely the callee, scattering votes across many diff values.
 ```
 
 ---
 
-## Step 5: `detectPclntabOffset` の置き換えと `ParsePclntab` のバージョンチェック
-
-**ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser.go`
-
-現行の `.symtab` ベースの実装を削除し、案 B 単独に置き換える。
-バージョンチェックを `ParsePclntab` に追加し、magic ≠ `0xfffffff1`（Go 1.18–1.19 以前）は明示的エラーとする。
-
-**新規エラー定数を追加（既存の3つはそのまま残す）:**
-
-現行コード（変更なし）:
-```go
-var (
-    ErrNoPclntab          = errors.New("no .gopclntab section found")
-    ErrUnsupportedPclntab = errors.New("unsupported pclntab format")
-    ErrInvalidPclntab     = errors.New("invalid pclntab structure")
-)
-```
-
-追加する定数:
-```go
-    ErrUnsupportedPclntabVersion = errors.New("unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) is supported")
-```
-
-**（import の追加は Step 4 で実施済みのため、Step 5 では不要）**
-
-**`ParsePclntab` にバージョンチェックを追加:**
-```go
-// checkPclntabVersion verifies that the pclntab magic is supported.
-// Only magic = 0xfffffff1 (Go 1.20–1.26, CurrentPCLnTabMagic) is supported.
-// Other magic values (e.g. 0xfffffff0 for Go 1.18–1.19) return
-// ErrUnsupportedPclntabVersion to prevent incorrect offset application.
-//
-// Note: Go 1.20–1.25 share the same magic (0xfffffff1) and will pass this
-// check. The officially supported version is Go 1.26 (tested), but Go
-// 1.20–1.25 binaries may also work in practice.
-func checkPclntabVersion(data []byte, byteOrder binary.ByteOrder) error {
-    if len(data) < 4 {
-        return ErrInvalidPclntab
-    }
-    magic := byteOrder.Uint32(data[0:4])
-    const go120magic = 0xfffffff1 // Go 1.20–1.26 (CurrentPCLnTabMagic)
-    if magic != go120magic {
-        return fmt.Errorf("%w (got magic 0x%x)", ErrUnsupportedPclntabVersion, magic)
-    }
-    return nil
-}
-```
-
-`ParsePclntab` に呼び出しを追加（`gosym.NewTable` の前）:
-```go
-if err := checkPclntabVersion(pclntabData, elfFile.ByteOrder); err != nil {
-    return nil, err
-}
-```
-
-**`ParsePclntab` のコメントを更新:**
-
-現行コメント（変更前）:
-```
-// For CGO binaries, the .text section contains C runtime startup code before
-// the Go runtime functions. This causes pclntab addresses to be offset from
-// the actual virtual addresses. ParsePclntab detects and corrects this offset
-// by comparing pclntab entries against .symtab entries when available.
-```
-
-変更後:
-```
-// For CGO binaries, the .text section contains C runtime startup code before
-// the Go runtime functions. This causes pclntab addresses to be offset from
-// the actual virtual addresses. ParsePclntab detects and corrects this offset
-// using CALL/BL instruction cross-referencing (no .symtab required).
-//
-// Only pclntab with magic 0xfffffff1 (Go 1.20+, officially supported: Go 1.26)
-// is supported. Other versions return ErrUnsupportedPclntabVersion.
-```
-
-**`detectPclntabOffset` のシグネチャは変更なし。本体を置き換え:**
-```go
-func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc) int64 {
-    textSection := elfFile.Section(".text")
-    if textSection == nil {
-        return 0
-    }
-
-    // CALL/BL target cross-reference (Go 1.26+).
-    // Only reached after checkPclntabVersion confirms a supported binary.
-    // CGO binaries always have a positive offset (C startup code precedes Go
-    // text), so negative or zero results indicate detection failure.
-    //
-    // IMPORTANT: pclntabFuncs must contain the *uncorrected* Entry values as
-    // returned by gosym (i.e., before any offset correction is applied).
-    // The algorithm computes (CALL target VA) - (pclntab Entry) = offset,
-    // which is only valid when pclntabFuncs entries are still offset-shifted.
-    // ParsePclntab calls detectPclntabOffset *before* applying the correction,
-    // so this invariant is guaranteed by the call order.
-    offset := detectOffsetByCallTargets(elfFile, pclntabFuncs)
-    if !isValidOffset(offset, textSection.FileSize) {
-        return 0
-    }
-    return offset
-}
-
-// isValidOffset checks that offset is a plausible CGO text-start correction.
-// A valid offset is strictly positive (distinguishes CGO from non-CGO where offset=0)
-// and does not exceed the .text section size.
-// Negative offsets are theoretically impossible for CGO binaries (C startup code
-// always precedes Go text) and must be rejected to prevent address corruption.
-func isValidOffset(offset int64, textFileSize uint64) bool {
-    return offset > 0 && uint64(offset) <= textFileSize //nolint:gosec
-}
-```
-
----
-
-## Step 6: テスト追加
+## Step 9: テストの修正
 
 **ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser_test.go`
 
-### 既存テストの変更・削除
+### 9.1 既存テストの修正
 
-Step 5 で `detectPclntabOffset` の実装が変わるため、以下の既存テストを更新する。
+#### `TestDetectOffsetByCallTargets_WithOffset_x86` / `TestDetectOffsetByCallTargets_WithOffset_arm64`
 
-| 既存テスト名 | 対応 | 理由 |
-|------------|------|------|
-| `TestDetectPclntabOffset_NoSymtab` | **削除** | `.symtab` の有無は新実装で無関係になる。新実装のフォールバック（CALL が minVotes 未満）は `TestDetectOffsetByCallTargets_InsufficientVotes` でカバー |
-| `TestDetectPclntabOffset_NoMatch` | **削除** | 同上。`.symtab` 名前一致に依存したロジックが消える |
-| `TestDetectPclntabOffset_NonCGO` | **変更** | 非 CGO バイナリで offset = 0 を確認する目的は残す。ただし `ParsePclntab` が `ErrUnsupportedPclntabVersion` を返す場合は `require.NoError` の前提が崩れるため、テスト対象バイナリが magic = `0xfffffff1` であることを確認して使用 |
-| `TestParsePclntab_InvalidData` | **変更** | `checkPclntabVersion` 追加後、magic が `0xfffffff1` でないケース（"invalid magic bytes", "random garbage"）は `ErrUnsupportedPclntabVersion` を返すようになる。各サブケースの期待値を調整する |
-| `TestParsePclntab_ErrorWrapping` | **変更** | `ErrUnsupportedPclntabVersion` の `Error()` 文字列検証を追加 |
+**現状の問題:**
+- `entrySpacing = 0x1000`（4 KB）を使用 — nearest-neighbor の欠陥を回避するための人工的な設定
+- コメント（`:380` 行）に「nearest-neighbor が別エントリに当たるため 4 KB 間隔が必要」と明記
 
-#### `TestParsePclntab_InvalidData` の変更内容
+**変更内容:**
+- `entrySpacing` を実バイナリ相当の密な間隔（`0x60` = 96 バイト）に変更
+- CALL 数（`numCalls`）を増やして `maxOffset` 内に複数エントリが収まることを確認
+- コメントから nearest-neighbor に関する記述を削除
 
-新実装では `checkPclntabVersion` が `gosym.NewTable` より先に呼ばれるため、
-magic が `0xfffffff1` でないデータは `ErrUnsupportedPclntabVersion` を返す。
-magic が短すぎる（4 バイト未満）データは `ErrInvalidPclntab` を返す。
-
-| ケース名 | 旧期待値 | 新期待値 |
-|---------|---------|---------|
-| `"empty pclntab"` | `NoError, empty result` | `errors.Is(err, ErrInvalidPclntab)` |
-| `"too short for header"` | `NoError, empty result` | `errors.Is(err, ErrInvalidPclntab)` |
-| `"invalid magic bytes"` | `NoError, empty result` | `errors.Is(err, ErrUnsupportedPclntabVersion)` |
-| `"random garbage"` | `NoError, empty result` | `errors.Is(err, ErrUnsupportedPclntabVersion)` |
-
-#### `TestParsePclntab_ErrorWrapping` の変更内容
-
-追加する検証:
 ```go
-assert.Equal(t, "unsupported pclntab version: only magic 0xfffffff1 (Go 1.20+) is supported",
-    ErrUnsupportedPclntabVersion.Error())
+// 旧:
+const entrySpacing = uint64(0x1000)  // nearest-neighbor 回避のための人工的な間隔
+const numCalls = 5
+
+// 新:
+const entrySpacing = uint64(0x60)   // 実バイナリ相当（中央値 0xc0 より小さく、密度テスト）
+const numCalls = 10                  // window 内に複数エントリが入ることを保証
 ```
 
-### ユニットテスト（`checkPclntabVersion`）
+**なぜ `entrySpacing = 0x60` で正しく動くか:**
 
-| テスト名 | 検証内容 |
-|---------|---------|
-| `TestCheckPclntabVersion_Go120magic` | magic = 0xfffffff1 → nil（サポート対象）|
-| `TestCheckPclntabVersion_Go118magic` | magic = 0xfffffff0 → `ErrUnsupportedPclntabVersion` |
-| `TestCheckPclntabVersion_Go116magic` | magic = 0xfffffffa → `ErrUnsupportedPclntabVersion` |
-| `TestCheckPclntabVersion_Go12magic`  | magic = 0xfffffffb → `ErrUnsupportedPclntabVersion` |
-| `TestCheckPclntabVersion_TooShort`   | データが 4 バイト未満 → `ErrInvalidPclntab` |
-| `TestCheckPclntabVersion_BigEndian`  | byteOrder = BigEndian、先頭 4 バイト = `[0xff, 0xff, 0xff, 0xf1]`（big-endian で 0xfffffff1）→ nil |
+`offsetVal = 0x100`、`entrySpacing = 0x60` の場合、各 CALL ターゲット `T = entry_i + 0x100` に対して
+window `[T - 0x2000, T]` には多数のエントリが含まれる。
+しかし `T - entry_i = 0x100`（正解）の票が `numCalls` 件集まり、
+他の差分（例: `T - entry_{i-1} = 0x100 + 0x60 = 0x160`）は最大 `numCalls - 1` 件しか集まらない。
+`numCalls = 10` であれば正解が 10 票で最多になる（minVotes = 3 を超える）。
 
-### ユニットテスト（`detectOffsetByCallTargets`）
+#### `TestDetectOffsetByCallTargets_NoOffset`
 
-| テスト名 | 検証内容 |
-|---------|---------|
-| `TestDetectOffsetByCallTargets_WithOffset_x86` | x86_64 CALL 命令で 0x100 のずれを検出 |
-| `TestDetectOffsetByCallTargets_WithOffset_arm64` | arm64 BL 命令で 0x100 のずれを検出 |
-| `TestDetectOffsetByCallTargets_NoOffset` | ずれなし → 0 |
-| `TestDetectOffsetByCallTargets_InsufficientVotes` | 一致 CALL が minVotes 未満 → 0 |
-| `TestDetectOffsetByCallTargets_NoText` | .text セクションなし → 0 |
+window exact-match では `diff=0`（非 CGO）も正しく多数票になる（各 CALL target が
+何らかのエントリと `diff=0` で一致する）。`isValidOffset` の `offset > 0` 条件で除外されるため
+テスト自体の変更は不要だが、コメントに window 版での動作を追記する。
 
-### 受け入れ基準テスト（`build` タグ: `integration`）
+#### `TestDetectOffsetByCallTargets_InsufficientVotes`
 
-#### バイナリ調達方針
-
-既存の統合テスト（`syscall_analyzer_integration_test.go`）と同じく、
-**テスト内でオンザフライにビルド**する方針を採用する。
-`SafeTempDir(t)` でテンポラリディレクトリを作成し、テスト終了時に自動削除される。
-
-| AC | バイナリ種別 | 調達方法 | 実行条件 |
-|----|-----------|---------|---------|
-| AC-1 | not-stripped CGO バイナリ（x86_64） | `go build`（`CGO_ENABLED=1`、`GOARCH=amd64`） | `runtime.GOARCH == "amd64"` かつ `gcc` が存在する |
-| AC-2 | stripped CGO バイナリ（x86_64） | AC-1 と同バイナリを `strip` コマンドで処理 | 同上 かつ `strip` コマンドが存在する |
-| AC-3 | 非 CGO バイナリ（x86_64） | `go build`（`CGO_ENABLED=0`、`GOARCH=amd64`） | `runtime.GOARCH == "amd64"` |
-| AC-4 | — | インメモリで壊れた pclntab を構築（既存 `buildELF64WithPclntab` を流用） | なし（ユニットテストに統合可） |
-| AC-5 | — | インメモリで magic = `0xfffffff0` の pclntab を構築（`buildELF64WithPclntab` を流用） | なし（ユニットテストに統合可） |
-| AC-6 | CGO バイナリ（x86_64） | AC-1 と同バイナリを再利用 | `runtime.GOARCH == "amd64"` かつ `gcc` が存在する |
-
-#### CGO バイナリのソースコード（AC-1/AC-2/AC-6 共通）
+現状は numCalls = 2（minVotes = 3 未満）でテスト。window 版では各 CALL が複数エントリに
+差分を記録するため、別の diff が偶然 minVotes に達しないことを確認する必要がある。
+numCalls を 1 に減らすか、あるいはエントリ数も 1 に減らして確実に minVotes 未満にする。
 
 ```go
-const cgoBinarySrc = `package main
+// 旧: numCalls = 2, entrySpacing = 0x1000
+// 新: numCalls = 2, entrySpacing = 0x1000 のまま可
+// ただし: window 内エントリが多いと diff の種類が増え各1票になる。
+// numCalls * (entries in window / entrySpacing * maxOffset) < minVotes を確認。
+// maxOffset=0x2000, entrySpacing=0x1000 なら window 内エントリ数 ≈ 2 → 各 diff 最大2票 < 3。
+// entrySpacing = 0x1000 はこのテストでは維持する。
+```
+
+### 9.2 新規ユニットテスト
+
+#### `TestCollectWindowDiffs_DenseEntries`
+
+window exact-match の核心を直接テスト:
+
+```
+条件:
+  target = 0x402200
+  sortedEntries = [0x402100, 0x402140, 0x402180, 0x4021c0, 0x402200]
+                  (spacing = 0x40、target と最後のエントリが一致)
+  maxOffset = 0x2000
+
+期待:
+  diffCounts[0x100] = 1   // target - 0x402100
+  diffCounts[0xc0]  = 1   // target - 0x402140
+  diffCounts[0x80]  = 1   // target - 0x402180
+  diffCounts[0x40]  = 1   // target - 0x4021c0
+  diffCounts[0x0]   = 1   // target - 0x402200
+```
+
+#### `TestDetectOffsetByCallTargets_DenseLayout_x86`
+
+実バイナリ相当の密な関数配置でオフセット検出が成功することを確認:
+
+```
+条件:
+  offsetVal = 0x100
+  entrySpacing = 0x40 (64 バイト、実バイナリの p10 値)
+  numCalls = 20
+  各 CALL ターゲット = entry_i + offsetVal
+
+期待: detectOffsetByCallTargets が 0x100 を返す
+```
+
+### 9.3 実バイナリ回帰テスト（integration タグ）
+
+**追加背景:** 今回の欠陥（nearest-neighbor）は合成テストでは検出できず、
+実バイナリ検証で初めて判明した。アルゴリズムを変更した後も同じ盲点が生まれないよう、
+実際の CGO バイナリを使った `ParsePclntab` の回帰テストを統合テストとして維持する。
+
+**ファイル:** `internal/runner/security/elfanalyzer/pclntab_parser_integration_test.go`（新規）
+
+**ビルドタグ:** `//go:build integration`
+
+**スキップ条件:** `syscall_analyzer_integration_test.go` の既存テストと同じ条件を踏襲する:
+- `runtime.GOARCH != "amd64"` → `t.Skip`
+- `gcc` が存在しない → `t.Skip`（CGO バイナリの場合）
+- `strip` が存在しない → 該当テストのみ `t.Skip`
+
+#### `TestParsePclntab_RealCGOBinary_NotStripped`（AC-1 / AC-6 回帰）
+
+```
+手順:
+  1. CGO バイナリをオンザフライでビルド（CGO_ENABLED=1, GOARCH=amd64）
+  2. ParsePclntab を呼び出す
+  3. .symtab から runtime.text の VA を取得して実際の offset を算出
+
+期待:
+  - ParsePclntab がエラーなく成功する
+  - ParsePclntab が返した offset（= 補正前後の Entry 差）が symtab の offset と一致する
+  - offset > 0（C スタートアップコードが存在する）
+```
+
+#### `TestParsePclntab_RealCGOBinary_Stripped`（AC-2 回帰）
+
+```
+手順:
+  1. 上記と同じ CGO バイナリを strip コマンドで処理
+  2. ParsePclntab を呼び出す（.symtab なし）
+
+期待:
+  - ParsePclntab が not-stripped 版と同じ offset を返す
+  - .symtab の有無でオフセット検出結果が変わらない
+
+検証方法:
+  not-stripped で検出した offset を変数に保持し、stripped でも同値であることを assert する
+```
+
+**ソースコード（2 テスト共通）:**
+
+```go
+const cgoParseSrc = `package main
 
 // #include <stdio.h>
 import "C"
 
-import "net"
+import "fmt"
 
 func main() {
-    C.puts(C.CString("hello from C"))
-    conn, _ := net.Dial("tcp", "127.0.0.1:1")
-    if conn != nil { conn.Close() }
+    C.puts(C.CString("hello"))
+    fmt.Println("hello from Go")
 }
 `
 ```
 
-**注:** CGO バイナリであればソースの内容は問わないが、`import "C"` が必要（これにより C スタートアップコードが `.text` 先頭に挿入される）。ネットワーク呼び出しは pclntab テストには不要だが、既存テストとの一貫性のため残す。
+`import "C"` さえあれば内容は問わない。
+ネットワーク呼び出しは不要（`ParsePclntab` 自体のテストのため）。
 
-#### strip コマンドの確認（AC-2）
+**offset の検証方法:**
 
 ```go
-if _, err := exec.LookPath("strip"); err != nil {
-    t.Skip("strip command not available")
+// not-stripped バイナリから symtab で真の offset を取得
+elfFile, _ := elf.Open(binFile)
+syms, _ := elfFile.Symbols()
+var runtimeTextVA uint64
+for _, s := range syms {
+    if s.Name == "runtime.text" { runtimeTextVA = s.Value; break }
 }
-// AC-1 と同じバイナリを一時ディレクトリにコピーして strip を適用
-strippedBin := filepath.Join(tmpDir, "cgo_stripped")
-require.NoError(t, copyFile(binFile, strippedBin))
-cmd := exec.Command("strip", strippedBin)
-require.NoError(t, cmd.Run())
+textSec := elfFile.Section(".text")
+expectedOffset := int64(runtimeTextVA) - int64(textSec.Addr)
+
+// ParsePclntab の補正結果を verified offset と照合
+funcs, err := ParsePclntab(elfFile)
+require.NoError(t, err)
+// ParsePclntab はすでに補正済みエントリを返すため、
+// 補正量は（補正後の最初のエントリ - 補正前）= expectedOffset と等しいはず。
+// 直接 detectOffsetByCallTargets を呼んで offset 値自体を検証する。
+detectedOffset := detectOffsetByCallTargets(elfFile, rawFuncs) // 補正前の funcs を渡す
+assert.Equal(t, expectedOffset, detectedOffset)
+assert.Greater(t, detectedOffset, int64(0))
 ```
-
-#### 各テストが検証すること
-
-| AC | テスト名 | 検証内容 |
-|----|---------|---------|
-| AC-1 | `TestParsePclntab_NotStrippedCGO` | `ParsePclntab` が成功し、`syscall.RawSyscall` 等のアドレスが `.symtab` と一致（offset 補正が正しい）|
-| AC-2 | `TestParsePclntab_StrippedCGO` | `.symtab` なしでも AC-1 と同じ offset が検出される |
-| AC-3 | `TestParsePclntab_NonCGO` | `ParsePclntab` が成功し、offset 補正なし（CALL 相互参照で最頻値が `minVotes` に達しない）|
-| AC-4 | `TestParsePclntab_InvalidPclntab` | `buildELF64WithPclntab` で不正データ → `ErrInvalidPclntab` |
-| AC-5 | `TestParsePclntab_UnsupportedVersion` | `buildELF64WithPclntab` で magic = `0xfffffff0` → `ErrUnsupportedPclntabVersion` |
-| AC-6 | `TestParsePclntab_Go126CGO` | `detectOffsetByCallTargets` が返す offset = `C_startup_size`（`> 0`）を直接検証 |
-
-**注（AC-1 のアドレス一致検証）:** `.symtab` の `syscall.RawSyscall` エントリと補正後の pclntab エントリのアドレスを比較する。厳密な一致が理想だが、関数の終端アドレス精度の違いがある場合は `|diff| < threshold`（例: 16 バイト）で許容する。AC-6（offset > 0 の確認）と組み合わせることで十分な検証精度が得られる。
 
 ---
 
-## Step 7: 確認コマンド
+## Step 10: 確認コマンド
 
 ```bash
 # フォーマット
 make fmt
 
-# 全テスト
+# 全ユニットテスト
 make test
 
 # リンター
 make lint
 
-# pclntab パーサのユニットテスト（追加した関数）
+# pclntab パーサのユニットテスト（変更した関数）
 go test -tags test -v \
-  -run 'TestDetectOffsetByCallTargets|TestDetectPclntabOffset' \
+  -run 'TestDetectOffsetByCallTargets|TestCollectWindowDiffs' \
   ./internal/runner/security/elfanalyzer/
 
-# CGO バイナリ統合テスト（Go 1.26 環境）
+# 実バイナリ回帰テスト（Step 9.3）— アルゴリズム変更後に必ず実行
 go test -tags "test integration" -v \
-  -run 'TestDetectPclntabOffset|TestAC1_CgoBinaryNetworkDetection' \
+  -run 'TestParsePclntab_RealCGOBinary' \
   ./internal/runner/security/elfanalyzer/
 ```
 
@@ -379,13 +356,17 @@ go test -tags "test integration" -v \
 ```
 Step 1/2/3（調査完了: 2026-03-13）
     ↓
-Step 4（案 B 実装: detectOffsetByCallTargets）
+Step 4（nearest-neighbor 版実装: 完了）
     ↓
-Step 5（detectPclntabOffset 置き換え）
+Step 5（detectPclntabOffset 置き換え: 完了）
     ↓
-Step 6（テスト追加）
+Step 6（テスト追加: 完了、ただし 4 KB 間隔の回避策あり）
     ↓
-Step 7（make fmt / test / lint）
+Step 7（make fmt / test / lint 通過: 完了）
+    ↓
+Step 8（window exact-match への置き換え）← 現在ここ
+    ↓
+Step 9（テスト修正: entrySpacing を密に変更、新規テスト追加）
+    ↓
+Step 10（make fmt / test / lint 通過確認）
 ```
-
-Step 1/2/3 は調査済み。Step 4 から実装を開始する。
