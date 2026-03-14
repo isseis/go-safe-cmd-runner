@@ -326,8 +326,7 @@ func collectWindowDiffs(target uint64, sortedEntries []uint64, diffCounts map[in
 		return sortedEntries[i] >= lo
 	})
 	for i := idxLo; i < len(sortedEntries) && sortedEntries[i] <= target; i++ {
-		// diff is in [0, maxOffset], so this conversion to int64 is safe.
-		diff := int64(target - sortedEntries[i])
+		// diff is in [0, maxOffset], so the cast to int64 is safe
 		diff := int64(target - sortedEntries[i]) //nolint:gosec // G115: subtraction result bounded by maxOffset (0x2000), fits in int64
 		diffCounts[diff]++
 	}
