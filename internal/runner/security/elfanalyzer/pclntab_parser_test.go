@@ -522,6 +522,81 @@ func TestDetectOffsetByCallTargets_InsufficientVotes(t *testing.T) {
 	assert.Equal(t, int64(0), got, "insufficient votes → must return 0")
 }
 
+// TestDetectOffsetByCallTargets_TiedVotes verifies that when two diff values share
+// the top vote count, detectOffsetByCallTargets returns 0 (ambiguous, non-deterministic
+// otherwise because Go map iteration is randomized).
+func TestDetectOffsetByCallTargets_TiedVotes(t *testing.T) {
+	const textAddr = uint64(0x401000)
+
+	// Two pclntab entries spaced 0x40 apart.
+	// Two CALL instructions: each targets a different entry with the same offset 0x100.
+	// But the second CALL also matches the first entry with offset 0x140 (= 0x100 + 0x40).
+	// With window exact-match both 0x100 and 0x140 get 2 votes each → tie → return 0.
+	//
+	// entry0 = 0x401000, entry1 = 0x401040
+	// CALL0 → entry0 + 0x100 = 0x401100: diffs = {0x100: entry0→1, 0x40: entry1→... wait}
+	//
+	// Let's be explicit:
+	//   CALL0 target = 0x401100: window [0x401100-0x2000, 0x401100] includes both entries
+	//     diff from entry0 (0x401000) = 0x100  → diffCounts[0x100]++
+	//     diff from entry1 (0x401040) = 0xc0   → diffCounts[0xc0]++
+	//   CALL1 target = 0x401140: window includes both entries
+	//     diff from entry0 (0x401000) = 0x140  → diffCounts[0x140]++
+	//     diff from entry1 (0x401040) = 0x100  → diffCounts[0x100]++
+	//
+	// Result: diffCounts[0x100] = 2, diffCounts[0xc0] = 1, diffCounts[0x140] = 1 → 0x100 wins uniquely.
+	// That's not a tie. Let's construct a real tie instead:
+	//
+	// Use 3 entries at spacing 0x100, and 3 CALLs each targeting entry_i + 0x80.
+	//   entry0=0x401000, entry1=0x401100, entry2=0x401200
+	//   CALL0 target=0x401080: diff entry0=0x80, diff entry1=-0x80 (negative, skip since target<entry1)
+	//     Actually target(0x401080) < entry1(0x401100), so only entry0 in window → 0x80 gets 1 vote.
+	//
+	// Simpler: use 2 CALLs to non-overlapping entries but each produces the same two diffs.
+	//   entry0=0x401000, entry1=0x401050
+	//   CALL0 target=0x401100: diff0=0x100, diff1=0xb0
+	//   CALL1 target=0x401150: diff0=0x150, diff1=0x100
+	//   → diffCounts[0x100]=2 (winner), no tie.
+	//
+	// Construct actual tie: same number of votes for two distinct diffs.
+	//   entry0=0x401000, entry1=0x401100
+	//   CALL0 target=0x401100: diff entry0=0x100 → diffCounts[0x100]++
+	//                           entry1=0x0   → diffCounts[0x0]++   (but 0 rejected by isValidOffset)
+	//   CALL1 target=0x401200: diff entry0=0x200, diff entry1=0x100 → diffCounts[0x200]++, diffCounts[0x100]++
+	//   CALL2 target=0x401300: diff entry0=0x300, diff entry1=0x200 → diffCounts[0x300]++, diffCounts[0x200]++
+	//   → 0x100=2, 0x200=2, 0x300=1, 0x0=1 → TIE between 0x100 and 0x200 → return 0.
+	const entrySpacing = uint64(0x100)
+	entry0 := textAddr
+	entry1 := textAddr + entrySpacing
+
+	pclntabFuncs := map[string]PclntabFunc{
+		"pkg.Func0": {Name: "pkg.Func0", Entry: entry0, End: entry0 + 0x80},
+		"pkg.Func1": {Name: "pkg.Func1", Entry: entry1, End: entry1 + 0x80},
+	}
+
+	// 3 CALLs: targets at entry0+0x100, entry0+0x200, entry0+0x300
+	type callSpec struct{ site, target uint64 }
+	calls := []callSpec{
+		{textAddr + 0x000, entry0 + 0x100}, // CALL0: diffs {0x100, 0x0}
+		{textAddr + 0x010, entry0 + 0x200}, // CALL1: diffs {0x200, 0x100}
+		{textAddr + 0x020, entry0 + 0x300}, // CALL2: diffs {0x300, 0x200}
+	}
+	textData := make([]byte, 0x100)
+	for _, c := range calls {
+		off := int(c.site - textAddr)
+		encodeX86Call(textData[off:off+5], c.site, c.target)
+	}
+
+	elfData := buildELF64WithTextAndPclntab(textData, textAddr, []byte{}, elf.EM_X86_64)
+	f, err := elf.NewFile(bytes.NewReader(elfData))
+	require.NoError(t, err)
+	defer f.Close()
+
+	// diffCounts[0x100]=2, diffCounts[0x200]=2 → tie → must return 0.
+	got := detectOffsetByCallTargets(f, pclntabFuncs)
+	assert.Equal(t, int64(0), got, "tied top vote count → must return 0")
+}
+
 // TestDetectOffsetByCallTargets_NoText verifies that the function returns 0
 // when the ELF has no .text data (empty section returns no CALL instructions).
 func TestDetectOffsetByCallTargets_NoText(t *testing.T) {

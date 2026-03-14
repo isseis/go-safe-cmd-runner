@@ -220,16 +220,24 @@ func detectOffsetByCallTargets(
 	}
 
 	// Find the most frequent difference value.
+	// Require a unique winner: if two diffs share the top vote count, detection
+	// is ambiguous and we return 0 rather than making a non-deterministic choice
+	// (Go map iteration order is randomized, so "first winner wins" would be
+	// unpredictable across runs).
 	var bestDiff int64
 	bestCount := 0
+	tied := false
 	for diff, count := range diffCounts {
 		if count > bestCount {
 			bestCount = count
 			bestDiff = diff
+			tied = false
+		} else if count == bestCount {
+			tied = true
 		}
 	}
 
-	if bestCount < minVotes {
+	if bestCount < minVotes || tied {
 		return 0
 	}
 	return bestDiff
