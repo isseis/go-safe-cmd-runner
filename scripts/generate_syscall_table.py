@@ -42,11 +42,19 @@ NETWORK_SYSCALL_NAMES = {
 }
 
 
+
+# Meta/size constants that appear in kernel headers as __NR_<name> but are
+# not actual syscall numbers.  __NR_syscalls, for example, is the total count
+# of syscalls (last_syscall + 1), not a callable syscall entry point.
+_META_NAMES: frozenset[str] = frozenset({"syscalls"})
+
+
 def parse_header(path: str) -> dict[str, int]:
     """Parse ``#define __NR_<name> <number>`` lines from a C header file.
 
     Returns a dict mapping syscall name to number.
     Lines with non-integer values (e.g. ``(__NR_Linux + N)``) are skipped.
+    Meta/size constants listed in ``_META_NAMES`` are excluded.
     """
     pattern = re.compile(r"^#define\s+__NR_(\w+)\s+(\d+)\s*$")
     result: dict[str, int] = {}
@@ -55,6 +63,8 @@ def parse_header(path: str) -> dict[str, int]:
             m = pattern.match(line)
             if m:
                 name, number = m.group(1), int(m.group(2))
+                if name in _META_NAMES:
+                    continue
                 result[name] = number
     return result
 
@@ -115,38 +125,28 @@ func (t *{struct_name}) GetNetworkSyscalls() []int {{
 
 
 def make_struct_template(struct_name: str, arch_desc: str, constructor_name: str, constructor_extra_comment: str = "") -> str:
-    """Instantiate STRUCT_TEMPLATE for a given architecture, returning a body-parameterized template string.
+    """Instantiate STRUCT_TEMPLATE for a given architecture.
 
-    The returned string still contains a single ``{body}`` placeholder so that
-    ``generate()`` can fill in the constructor body via ``.format(body=...)``.
+    Returns a string with all architecture-specific names filled in and Go
+    braces rendered as literal ``{``/``}``.  The token ``{body}`` is left as-is
+    so that ``generate()`` can splice in the constructor body with a plain
+    ``str.replace("{body}", body)``.
     """
     if constructor_extra_comment:
         constructor_extra_comment = "\n// " + constructor_extra_comment
 
-    # STRUCT_TEMPLATE uses {{...}} to escape Go braces and {name} for Python
-    # format fields.  We want to produce a string that still has one {body}
-    # placeholder (for the second .format() call in generate()) but has all
-    # Go braces escaped.  Strategy:
-    #   1. Escape every brace in the template so .format() sees none.
-    #   2. Un-escape only the known named fields we want to substitute.
-    #   3. Call .format() to fill in the architecture parameters.
-    #   4. The {body} placeholder survives because we un-escaped it explicitly.
-
-    # Step 1: escape all braces (turns {{ -> {{{{ and {name} -> {{name}})
-    escaped_template = STRUCT_TEMPLATE.replace("{", "{{").replace("}", "}}")
-
-    # Step 2: un-escape the named format fields we want to substitute now.
-    for field in ("struct_name", "arch_desc", "constructor_name", "constructor_extra_comment", "body"):
-        escaped_template = escaped_template.replace("{{" + field + "}}", "{" + field + "}")
-
-    filled = escaped_template.format(
+    # STRUCT_TEMPLATE uses {{/}} to escape Go braces for Python str.format(),
+    # and {name} for the named placeholders.  Call .format() to substitute the
+    # architecture parameters; str.format() automatically unescapes {{/}} to
+    # {/} in the output, giving us literal Go braces.  Pass body="{body}" so
+    # that placeholder survives for the later str.replace() in generate().
+    return STRUCT_TEMPLATE.format(
         struct_name=struct_name,
         arch_desc=arch_desc,
         constructor_name=constructor_name,
         constructor_extra_comment=constructor_extra_comment,
-        body="{body}",  # pass through as literal placeholder for generate()
+        body="{body}",
     )
-    return filled
 
 
 def build_body(syscalls: dict[str, int]) -> str:
@@ -182,10 +182,15 @@ def generate(source: str, struct_template: str, output: str) -> None:
         sys.exit(1)
 
     body = build_body(syscalls)
+    # Use only the basename so the comment is stable regardless of where on
+    # disk the caller installed the kernel headers.
+    source_label = Path(source).name
+    # struct_template contains Go braces that would confuse str.format(), so
+    # substitute the {body} sentinel with a plain str.replace() instead.
     content = (
-        FILE_HEADER.format(source=source)
+        FILE_HEADER.format(source=source_label)
         + "\n"
-        + struct_template.format(body=body)
+        + struct_template.replace("{body}", body)
     )
 
     Path(output).write_text(content, encoding="utf-8")
