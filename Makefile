@@ -549,8 +549,8 @@ security-test:
 #   Debian/Ubuntu: apt-get install linux-libc-dev gcc-multilib
 # Generated files are committed to the repository.
 
-X86_SYSCALL_HEADER  := /usr/include/x86_64-linux-gnu/asm/unistd_64.h
-ARM64_SYSCALL_HEADER := /usr/include/asm-generic/unistd.h
+X86_SYSCALL_HEADER  ?= /usr/include/x86_64-linux-gnu/asm/unistd_64.h
+ARM64_SYSCALL_HEADER ?= /usr/include/asm-generic/unistd.h
 SYSCALL_TABLE_SCRIPT := scripts/generate_syscall_table.py
 SYSCALL_TABLE_OUTPUTS := \
 	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
@@ -561,7 +561,7 @@ generate-syscall-tables: $(X86_SYSCALL_HEADER) $(ARM64_SYSCALL_HEADER)
 		echo "Error: $(PYTHON) is required but not found in PATH"; \
 		exit 1; \
 	fi
-	$(PYTHON) $(SYSCALL_TABLE_SCRIPT)
+	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --x86-header $(X86_SYSCALL_HEADER) --arm64-header $(ARM64_SYSCALL_HEADER)
 	$(MAKE) fmt-all
 
 deadcode:

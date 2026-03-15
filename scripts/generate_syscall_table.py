@@ -2,17 +2,20 @@
 """Generate Go syscall number tables from Linux kernel header files.
 
 Usage:
-    python3 scripts/generate_syscall_table.py
+    python3 scripts/generate_syscall_table.py [--x86-header PATH] [--arm64-header PATH]
 
-Reads:
-    /usr/include/x86_64-linux-gnu/asm/unistd_64.h  (x86_64)
-    /usr/include/asm-generic/unistd.h               (arm64 / generic)
+Options:
+    --x86-header PATH    Path to x86_64 syscall header
+                         (default: /usr/include/x86_64-linux-gnu/asm/unistd_64.h)
+    --arm64-header PATH  Path to arm64/generic syscall header
+                         (default: /usr/include/asm-generic/unistd.h)
 
 Writes:
     internal/runner/security/elfanalyzer/x86_syscall_numbers.go
     internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -190,16 +193,29 @@ def generate(source: str, struct_template: str, output: str) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--x86-header",
+        default="/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
+        help="Path to x86_64 syscall header (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--arm64-header",
+        default="/usr/include/asm-generic/unistd.h",
+        help="Path to arm64/generic syscall header (default: %(default)s)",
+    )
+    args = parser.parse_args()
+
     repo_root = Path(__file__).parent.parent
     out_dir = repo_root / "internal/runner/security/elfanalyzer"
 
     generate(
-        source="/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
+        source=args.x86_header,
         struct_template=STRUCT_X86,
         output=str(out_dir / "x86_syscall_numbers.go"),
     )
     generate(
-        source="/usr/include/asm-generic/unistd.h",
+        source=args.arm64_header,
         struct_template=STRUCT_ARM64,
         output=str(out_dir / "arm64_syscall_numbers.go"),
     )
