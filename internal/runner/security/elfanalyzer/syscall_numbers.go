@@ -15,8 +15,7 @@ type SyscallNumberTable interface {
 
 // SyscallDefinition defines a single syscall.
 type SyscallDefinition struct {
-	Number      int
-	Name        string
-	IsNetwork   bool
-	Description string
+	Number    int
+	Name      string
+	IsNetwork bool
 }

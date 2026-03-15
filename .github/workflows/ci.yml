@@ -115,6 +115,9 @@ jobs:
         if: matrix.cgo == 1
         run: sudo apt-get update && sudo apt-get install -y build-essential
 
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@latest
+
       - name: Build production binaries
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
@@ -155,6 +158,9 @@ jobs:
 
       - name: Install CGO dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@latest
 
       - name: Run CI tests
         run: |

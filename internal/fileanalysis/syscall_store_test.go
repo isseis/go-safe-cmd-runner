@@ -194,6 +194,46 @@ func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
 	assert.Contains(t, loadedResult.HighRiskReasons[0], "indirect_setting")
 }
 
+func TestSyscallAnalysisStore_SaveSortsDetectedSyscallsByNumber(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	store := NewSyscallAnalysisStore(fileStore)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// Provide syscalls in unsorted order (mimicking Pass1+Pass2 address ordering).
+	result := &SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []SyscallInfo{
+				{Number: 257, Name: "openat"},
+				{Number: 41, Name: "socket"},
+				{Number: 1, Name: "write"},
+				{Number: 42, Name: "connect"},
+			},
+		},
+	}
+
+	fileHash := "sha256:sorttest"
+	err = store.SaveSyscallAnalysis(testFile, fileHash, result)
+	require.NoError(t, err)
+
+	loadedResult, err := store.LoadSyscallAnalysis(testFile, fileHash)
+	require.NoError(t, err)
+	require.Len(t, loadedResult.DetectedSyscalls, 4)
+
+	// Verify number-ascending order.
+	assert.Equal(t, 1, loadedResult.DetectedSyscalls[0].Number)
+	assert.Equal(t, 41, loadedResult.DetectedSyscalls[1].Number)
+	assert.Equal(t, 42, loadedResult.DetectedSyscalls[2].Number)
+	assert.Equal(t, 257, loadedResult.DetectedSyscalls[3].Number)
+}
+
 func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
