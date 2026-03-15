@@ -163,7 +163,7 @@ def build_body(syscalls: dict[str, int]) -> str:
     lines.append("\t// Network-related syscalls")
     lines.append("\tnetworkSyscalls := []SyscallDefinition{")
     for name, num in sorted(network.items(), key=lambda x: x[1]):
-        lines.append(f'\t\t{{{num}, "{name}", true, ""}},')
+        lines.append(f'\t\t{{{num}, "{name}", true}},')
     lines.append("\t}")
     lines.append("\tfor _, def := range networkSyscalls {")
     lines.append("\t\ttable.syscalls[def.Number] = def")
@@ -173,7 +173,7 @@ def build_body(syscalls: dict[str, int]) -> str:
     lines.append("\t// Non-network syscalls")
     lines.append("\tnonNetworkSyscalls := []SyscallDefinition{")
     for name, num in sorted(non_network.items(), key=lambda x: x[1]):
-        lines.append(f'\t\t{{{num}, "{name}", false, ""}},')
+        lines.append(f'\t\t{{{num}, "{name}", false}},')
     lines.append("\t}")
     lines.append("\tfor _, def := range nonNetworkSyscalls {")
     lines.append("\t\ttable.syscalls[def.Number] = def")
