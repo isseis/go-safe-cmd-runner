@@ -187,21 +187,20 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		}
 
 		// Analyze binary symbols if analyzer is available.
-		// Stores the result as NetworkSymbolAnalysis in the record.
+		// Stores the result as SymbolAnalysis in the record.
 		if v.binaryAnalyzer != nil {
 			output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
 			switch output.Result {
 			case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
-				record.NetworkSymbolAnalysis = &fileanalysis.NetworkSymbolAnalysisData{
+				record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
 					AnalyzedAt:         time.Now().UTC(),
-					HasNetworkSymbols:  output.Result == binaryanalyzer.NetworkDetected,
 					DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
 					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 				}
 			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
 				// Static binary or unsupported format: clear any previously stored
-				// NetworkSymbolAnalysis to prevent stale data from an earlier record run.
-				record.NetworkSymbolAnalysis = nil
+				// SymbolAnalysis to prevent stale data from an earlier record run.
+				record.SymbolAnalysis = nil
 			case binaryanalyzer.AnalysisError:
 				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
 			}

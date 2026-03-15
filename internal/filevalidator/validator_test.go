@@ -1074,7 +1074,7 @@ func recordWithBinaryAnalyzer(t *testing.T, stub *stubBinaryAnalyzer) (*fileanal
 	return record, nil
 }
 
-func TestRecord_NetworkDetected_SetsNetworkSymbolAnalysis(t *testing.T) {
+func TestRecord_NetworkDetected_SetsSymbolAnalysis(t *testing.T) {
 	stub := &stubBinaryAnalyzer{
 		result: binaryanalyzer.NetworkDetected,
 		detectedSymbols: []binaryanalyzer.DetectedSymbol{
@@ -1083,22 +1083,20 @@ func TestRecord_NetworkDetected_SetsNetworkSymbolAnalysis(t *testing.T) {
 	}
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
-	require.NotNil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be set")
-	assert.True(t, record.NetworkSymbolAnalysis.HasNetworkSymbols)
-	require.Len(t, record.NetworkSymbolAnalysis.DetectedSymbols, 1)
-	assert.Equal(t, "socket", record.NetworkSymbolAnalysis.DetectedSymbols[0].Name)
-	assert.Empty(t, record.NetworkSymbolAnalysis.DynamicLoadSymbols)
+	require.NotNil(t, record.SymbolAnalysis, "SymbolAnalysis should be set")
+	require.Len(t, record.SymbolAnalysis.DetectedSymbols, 1)
+	assert.Equal(t, "socket", record.SymbolAnalysis.DetectedSymbols[0].Name)
+	assert.Empty(t, record.SymbolAnalysis.DynamicLoadSymbols)
 }
 
-func TestRecord_NoNetworkSymbols_SetsNetworkSymbolAnalysis(t *testing.T) {
+func TestRecord_NoNetworkSymbols_SetsSymbolAnalysis(t *testing.T) {
 	stub := &stubBinaryAnalyzer{
 		result: binaryanalyzer.NoNetworkSymbols,
 	}
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
-	require.NotNil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be set")
-	assert.False(t, record.NetworkSymbolAnalysis.HasNetworkSymbols)
-	assert.Empty(t, record.NetworkSymbolAnalysis.DetectedSymbols)
+	require.NotNil(t, record.SymbolAnalysis, "SymbolAnalysis should be set")
+	assert.Empty(t, record.SymbolAnalysis.DetectedSymbols)
 }
 
 func TestRecord_DynamicLoadSymbols_Stored(t *testing.T) {
@@ -1110,28 +1108,28 @@ func TestRecord_DynamicLoadSymbols_Stored(t *testing.T) {
 	}
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
-	require.NotNil(t, record.NetworkSymbolAnalysis)
-	require.Len(t, record.NetworkSymbolAnalysis.DynamicLoadSymbols, 1)
-	assert.Equal(t, "dlopen", record.NetworkSymbolAnalysis.DynamicLoadSymbols[0].Name)
-	assert.Equal(t, "dynamic_load", record.NetworkSymbolAnalysis.DynamicLoadSymbols[0].Category)
+	require.NotNil(t, record.SymbolAnalysis)
+	require.Len(t, record.SymbolAnalysis.DynamicLoadSymbols, 1)
+	assert.Equal(t, "dlopen", record.SymbolAnalysis.DynamicLoadSymbols[0].Name)
+	assert.Equal(t, "dynamic_load", record.SymbolAnalysis.DynamicLoadSymbols[0].Category)
 }
 
-func TestRecord_NotSupportedBinary_NetworkSymbolAnalysisNil(t *testing.T) {
+func TestRecord_NotSupportedBinary_SymbolAnalysisNil(t *testing.T) {
 	stub := &stubBinaryAnalyzer{
 		result: binaryanalyzer.NotSupportedBinary,
 	}
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
-	assert.Nil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be nil for non-ELF")
+	assert.Nil(t, record.SymbolAnalysis, "SymbolAnalysis should be nil for non-ELF")
 }
 
-func TestRecord_StaticBinary_NetworkSymbolAnalysisNil(t *testing.T) {
+func TestRecord_StaticBinary_SymbolAnalysisNil(t *testing.T) {
 	stub := &stubBinaryAnalyzer{
 		result: binaryanalyzer.StaticBinary,
 	}
 	record, err := recordWithBinaryAnalyzer(t, stub)
 	require.NoError(t, err)
-	assert.Nil(t, record.NetworkSymbolAnalysis, "NetworkSymbolAnalysis should be nil for static binary")
+	assert.Nil(t, record.SymbolAnalysis, "SymbolAnalysis should be nil for static binary")
 }
 
 func TestRecord_AnalysisError_RecordNotSaved(t *testing.T) {
@@ -1143,7 +1141,7 @@ func TestRecord_AnalysisError_RecordNotSaved(t *testing.T) {
 	assert.Error(t, err, "SaveRecord should fail when binaryAnalyzer returns AnalysisError")
 }
 
-func TestRecord_Force_OverwritesNetworkSymbolAnalysis(t *testing.T) {
+func TestRecord_Force_OverwritesSymbolAnalysis(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
@@ -1173,17 +1171,16 @@ func TestRecord_Force_OverwritesNetworkSymbolAnalysis(t *testing.T) {
 
 	record, loadErr := v.LoadRecord(targetFile)
 	require.NoError(t, loadErr)
-	require.NotNil(t, record.NetworkSymbolAnalysis)
-	assert.False(t, record.NetworkSymbolAnalysis.HasNetworkSymbols,
-		"NetworkSymbolAnalysis should be overwritten by second record")
-	assert.Empty(t, record.NetworkSymbolAnalysis.DetectedSymbols)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Empty(t, record.SymbolAnalysis.DetectedSymbols,
+		"SymbolAnalysis should be overwritten by second record")
 }
 
-// TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis verifies that when
-// a binary previously recorded as a dynamic ELF (with NetworkSymbolAnalysis set) is
+// TestRecord_Force_NetworkToStaticBinary_ClearsSymbolAnalysis verifies that when
+// a binary previously recorded as a dynamic ELF (with SymbolAnalysis set) is
 // re-recorded with --force and the analyzer now returns StaticBinary, the stored
-// NetworkSymbolAnalysis is cleared to nil rather than left as stale data.
-func TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis(t *testing.T) {
+// SymbolAnalysis is cleared to nil rather than left as stale data.
+func TestRecord_Force_NetworkToStaticBinary_ClearsSymbolAnalysis(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
@@ -1206,9 +1203,9 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis(t *testi
 
 	record, loadErr := v.LoadRecord(targetFile)
 	require.NoError(t, loadErr)
-	require.NotNil(t, record.NetworkSymbolAnalysis, "first record should have NetworkSymbolAnalysis")
+	require.NotNil(t, record.SymbolAnalysis, "first record should have SymbolAnalysis")
 
-	// Second record (force=true): same binary now analysed as static — NetworkSymbolAnalysis must be nil.
+	// Second record (force=true): same binary now analysed as static — SymbolAnalysis must be nil.
 	v.SetBinaryAnalyzer(&stubBinaryAnalyzer{
 		result: binaryanalyzer.StaticBinary,
 	})
@@ -1217,13 +1214,13 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsNetworkSymbolAnalysis(t *testi
 
 	record, loadErr = v.LoadRecord(targetFile)
 	require.NoError(t, loadErr)
-	assert.Nil(t, record.NetworkSymbolAnalysis,
-		"NetworkSymbolAnalysis must be nil after re-recording as StaticBinary")
+	assert.Nil(t, record.SymbolAnalysis,
+		"SymbolAnalysis must be nil after re-recording as StaticBinary")
 }
 
-// TestRecord_Force_NetworkToNotSupportedBinary_ClearsNetworkSymbolAnalysis verifies the same
+// TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis verifies the same
 // nil-transition for NotSupportedBinary (non-ELF / non-Mach-O binaries).
-func TestRecord_Force_NetworkToNotSupportedBinary_ClearsNetworkSymbolAnalysis(t *testing.T) {
+func TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
@@ -1253,6 +1250,6 @@ func TestRecord_Force_NetworkToNotSupportedBinary_ClearsNetworkSymbolAnalysis(t 
 
 	record, loadErr := v.LoadRecord(targetFile)
 	require.NoError(t, loadErr)
-	assert.Nil(t, record.NetworkSymbolAnalysis,
-		"NetworkSymbolAnalysis must be nil after re-recording as NotSupportedBinary")
+	assert.Nil(t, record.SymbolAnalysis,
+		"SymbolAnalysis must be nil after re-recording as NotSupportedBinary")
 }
