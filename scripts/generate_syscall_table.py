@@ -154,7 +154,14 @@ def build_body(syscalls: dict[str, int]) -> str:
     lines = []
 
     lines.append("\tsyscalls := []SyscallDefinition{")
-    for name, num in sorted(syscalls.items(), key=lambda x: x[1]):
+    processed_numbers: set[int] = set()
+    # Sort by number, then by name length to prefer shorter names for a given number,
+    # and finally by name alphabetically for deterministic output.
+    sorted_syscalls = sorted(syscalls.items(), key=lambda x: (x[1], len(x[0]), x[0]))
+    for name, num in sorted_syscalls:
+        if num in processed_numbers:
+            continue
+        processed_numbers.add(num)
         is_network = "true" if name in NETWORK_SYSCALL_NAMES else "false"
         lines.append(f'\t\t{{{num}, "{name}", {is_network}}},')
     lines.append("\t}")
