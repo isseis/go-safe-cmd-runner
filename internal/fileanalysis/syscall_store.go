@@ -64,7 +64,10 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 	sorted := make([]common.SyscallInfo, len(result.DetectedSyscalls))
 	copy(sorted, result.DetectedSyscalls)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Number < sorted[j].Number
+		if sorted[i].Number != sorted[j].Number {
+			return sorted[i].Number < sorted[j].Number
+		}
+		return sorted[i].Location < sorted[j].Location
 	})
 
 	core := result.SyscallAnalysisResultCore
