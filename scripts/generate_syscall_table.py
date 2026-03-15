@@ -72,24 +72,24 @@ FILE_HEADER = """\
 package elfanalyzer
 """
 
-STRUCT_X86 = """\
-// X86_64SyscallTable implements SyscallNumberTable for x86_64 Linux.
-type X86_64SyscallTable struct {{
+STRUCT_TEMPLATE = """\
+// {struct_name} implements SyscallNumberTable for {arch_desc}.
+type {struct_name} struct {{
 \tsyscalls       map[int]SyscallDefinition
 \tnetworkNumbers []int
 }}
 
-// NewX86_64SyscallTable creates a new syscall table for x86_64 Linux.
-func NewX86_64SyscallTable() *X86_64SyscallTable {{
-\ttable := &X86_64SyscallTable{{
+// {constructor_name} creates a new syscall table for {arch_desc}.{constructor_extra_comment}
+func {constructor_name}() *{struct_name} {{
+\ttable := &{struct_name}{{
 \t\tsyscalls: make(map[int]SyscallDefinition),
 \t}}
-{body}
+{{body}}
 \treturn table
 }}
 
 // GetSyscallName returns the syscall name for the given number.
-func (t *X86_64SyscallTable) GetSyscallName(number int) string {{
+func (t *{struct_name}) GetSyscallName(number int) string {{
 \tif def, ok := t.syscalls[number]; ok {{
 \t\treturn def.Name
 \t}}
@@ -97,7 +97,7 @@ func (t *X86_64SyscallTable) GetSyscallName(number int) string {{
 }}
 
 // IsNetworkSyscall returns true if the syscall is network-related.
-func (t *X86_64SyscallTable) IsNetworkSyscall(number int) bool {{
+func (t *{struct_name}) IsNetworkSyscall(number int) bool {{
 \tif def, ok := t.syscalls[number]; ok {{
 \t\treturn def.IsNetwork
 \t}}
@@ -106,54 +106,47 @@ func (t *X86_64SyscallTable) IsNetworkSyscall(number int) bool {{
 
 // GetNetworkSyscalls returns all network-related syscall numbers.
 // Returns a copy to prevent callers from mutating the internal state.
-func (t *X86_64SyscallTable) GetNetworkSyscalls() []int {{
+func (t *{struct_name}) GetNetworkSyscalls() []int {{
 \tresult := make([]int, len(t.networkNumbers))
 \tcopy(result, t.networkNumbers)
 \treturn result
 }}
 """
 
-STRUCT_ARM64 = """\
-// ARM64LinuxSyscallTable implements SyscallNumberTable for arm64 Linux.
-type ARM64LinuxSyscallTable struct {{
-\tsyscalls       map[int]SyscallDefinition
-\tnetworkNumbers []int
-}}
 
-// NewARM64LinuxSyscallTable creates a new syscall table for arm64 Linux.
-// Syscall numbers are from the ARM64 Linux ABI (include/uapi/asm-generic/unistd.h).
-func NewARM64LinuxSyscallTable() *ARM64LinuxSyscallTable {{
-\ttable := &ARM64LinuxSyscallTable{{
-\t\tsyscalls: make(map[int]SyscallDefinition),
-\t}}
-{body}
-\treturn table
-}}
+def make_struct_template(struct_name: str, arch_desc: str, constructor_name: str, constructor_extra_comment: str = "") -> str:
+    """Instantiate STRUCT_TEMPLATE for a given architecture, returning a body-parameterized template string.
 
-// GetSyscallName returns the syscall name for the given number.
-func (t *ARM64LinuxSyscallTable) GetSyscallName(number int) string {{
-\tif def, ok := t.syscalls[number]; ok {{
-\t\treturn def.Name
-\t}}
-\treturn ""
-}}
+    The returned string still contains a single ``{body}`` placeholder so that
+    ``generate()`` can fill in the constructor body via ``.format(body=...)``.
+    """
+    if constructor_extra_comment:
+        constructor_extra_comment = "\n// " + constructor_extra_comment
 
-// IsNetworkSyscall returns true if the syscall is network-related.
-func (t *ARM64LinuxSyscallTable) IsNetworkSyscall(number int) bool {{
-\tif def, ok := t.syscalls[number]; ok {{
-\t\treturn def.IsNetwork
-\t}}
-\treturn false
-}}
+    # STRUCT_TEMPLATE uses {{...}} to escape Go braces and {name} for Python
+    # format fields.  We want to produce a string that still has one {body}
+    # placeholder (for the second .format() call in generate()) but has all
+    # Go braces escaped.  Strategy:
+    #   1. Escape every brace in the template so .format() sees none.
+    #   2. Un-escape only the known named fields we want to substitute.
+    #   3. Call .format() to fill in the architecture parameters.
+    #   4. The {body} placeholder survives because we un-escaped it explicitly.
 
-// GetNetworkSyscalls returns all network-related syscall numbers.
-// Returns a copy to prevent callers from mutating the internal state.
-func (t *ARM64LinuxSyscallTable) GetNetworkSyscalls() []int {{
-\tresult := make([]int, len(t.networkNumbers))
-\tcopy(result, t.networkNumbers)
-\treturn result
-}}
-"""
+    # Step 1: escape all braces (turns {{ -> {{{{ and {name} -> {{name}})
+    escaped_template = STRUCT_TEMPLATE.replace("{", "{{").replace("}", "}}")
+
+    # Step 2: un-escape the named format fields we want to substitute now.
+    for field in ("struct_name", "arch_desc", "constructor_name", "constructor_extra_comment", "body"):
+        escaped_template = escaped_template.replace("{{" + field + "}}", "{" + field + "}")
+
+    filled = escaped_template.format(
+        struct_name=struct_name,
+        arch_desc=arch_desc,
+        constructor_name=constructor_name,
+        constructor_extra_comment=constructor_extra_comment,
+        body="{body}",  # pass through as literal placeholder for generate()
+    )
+    return filled
 
 
 def build_body(syscalls: dict[str, int]) -> str:
@@ -211,12 +204,21 @@ def main() -> None:
 
     generate(
         source=args.x86_header,
-        struct_template=STRUCT_X86,
+        struct_template=make_struct_template(
+            struct_name="X86_64SyscallTable",
+            arch_desc="x86_64 Linux",
+            constructor_name="NewX86_64SyscallTable",
+        ),
         output=str(out_dir / "x86_syscall_numbers.go"),
     )
     generate(
         source=args.arm64_header,
-        struct_template=STRUCT_ARM64,
+        struct_template=make_struct_template(
+            struct_name="ARM64LinuxSyscallTable",
+            arch_desc="arm64 Linux",
+            constructor_name="NewARM64LinuxSyscallTable",
+            constructor_extra_comment="Syscall numbers are from the ARM64 Linux ABI (include/uapi/asm-generic/unistd.h).",
+        ),
         output=str(out_dir / "arm64_syscall_numbers.go"),
     )
 
