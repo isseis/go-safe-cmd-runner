@@ -2,6 +2,7 @@ package fileanalysis
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -56,12 +57,25 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
+	// Sort DetectedSyscalls by number before saving for deterministic output.
+	// Pass 1 (direct syscall instructions) and Pass 2 (Go wrapper calls) may
+	// interleave in address order; sorting by number makes the stored data easier
+	// to read and diff.
+	sorted := make([]common.SyscallInfo, len(result.DetectedSyscalls))
+	copy(sorted, result.DetectedSyscalls)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Number < sorted[j].Number
+	})
+
+	core := result.SyscallAnalysisResultCore
+	core.DetectedSyscalls = sorted
+
 	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash
 		// Copy the shared core fields directly via the embedded struct,
 		// then set the fileanalysis-specific AnalyzedAt field.
 		record.SyscallAnalysis = &SyscallAnalysisData{
-			SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
+			SyscallAnalysisResultCore: core,
 			AnalyzedAt:                time.Now().UTC(),
 		}
 		return nil
