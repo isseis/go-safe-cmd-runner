@@ -16,29 +16,7 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 	table := &X86_64SyscallTable{
 		syscalls: make(map[int]SyscallDefinition),
 	}
-	// Network-related syscalls
-	networkSyscalls := []SyscallDefinition{
-		{41, "socket", true},
-		{42, "connect", true},
-		{43, "accept", true},
-		{44, "sendto", true},
-		{45, "recvfrom", true},
-		{46, "sendmsg", true},
-		{47, "recvmsg", true},
-		{49, "bind", true},
-		{50, "listen", true},
-		{53, "socketpair", true},
-		{288, "accept4", true},
-		{299, "recvmmsg", true},
-		{307, "sendmmsg", true},
-	}
-	for _, def := range networkSyscalls {
-		table.syscalls[def.Number] = def
-		table.networkNumbers = append(table.networkNumbers, def.Number)
-	}
-
-	// Non-network syscalls
-	nonNetworkSyscalls := []SyscallDefinition{
+	syscalls := []SyscallDefinition{
 		{0, "read", false},
 		{1, "write", false},
 		{2, "open", false},
@@ -80,9 +58,19 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 		{38, "setitimer", false},
 		{39, "getpid", false},
 		{40, "sendfile", false},
+		{41, "socket", true},
+		{42, "connect", true},
+		{43, "accept", true},
+		{44, "sendto", true},
+		{45, "recvfrom", true},
+		{46, "sendmsg", true},
+		{47, "recvmsg", true},
 		{48, "shutdown", false},
+		{49, "bind", true},
+		{50, "listen", true},
 		{51, "getsockname", false},
 		{52, "getpeername", false},
+		{53, "socketpair", true},
 		{54, "setsockopt", false},
 		{55, "getsockopt", false},
 		{56, "clone", false},
@@ -317,6 +305,7 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 		{285, "fallocate", false},
 		{286, "timerfd_settime", false},
 		{287, "timerfd_gettime", false},
+		{288, "accept4", true},
 		{289, "signalfd4", false},
 		{290, "eventfd2", false},
 		{291, "epoll_create1", false},
@@ -327,6 +316,7 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 		{296, "pwritev", false},
 		{297, "rt_tgsigqueueinfo", false},
 		{298, "perf_event_open", false},
+		{299, "recvmmsg", true},
 		{300, "fanotify_init", false},
 		{301, "fanotify_mark", false},
 		{302, "prlimit64", false},
@@ -334,6 +324,7 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 		{304, "open_by_handle_at", false},
 		{305, "clock_adjtime", false},
 		{306, "syncfs", false},
+		{307, "sendmmsg", true},
 		{308, "setns", false},
 		{309, "getcpu", false},
 		{310, "process_vm_readv", false},
@@ -400,8 +391,11 @@ func NewX86_64SyscallTable() *X86_64SyscallTable {
 		{460, "lsm_set_self_attr", false},
 		{461, "lsm_list_modules", false},
 	}
-	for _, def := range nonNetworkSyscalls {
+	for _, def := range syscalls {
 		table.syscalls[def.Number] = def
+		if def.IsNetwork {
+			table.networkNumbers = append(table.networkNumbers, def.Number)
+		}
 	}
 
 	return table

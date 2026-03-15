@@ -17,29 +17,7 @@ func NewARM64LinuxSyscallTable() *ARM64LinuxSyscallTable {
 	table := &ARM64LinuxSyscallTable{
 		syscalls: make(map[int]SyscallDefinition),
 	}
-	// Network-related syscalls
-	networkSyscalls := []SyscallDefinition{
-		{198, "socket", true},
-		{199, "socketpair", true},
-		{200, "bind", true},
-		{201, "listen", true},
-		{202, "accept", true},
-		{203, "connect", true},
-		{206, "sendto", true},
-		{207, "recvfrom", true},
-		{211, "sendmsg", true},
-		{212, "recvmsg", true},
-		{242, "accept4", true},
-		{243, "recvmmsg", true},
-		{269, "sendmmsg", true},
-	}
-	for _, def := range networkSyscalls {
-		table.syscalls[def.Number] = def
-		table.networkNumbers = append(table.networkNumbers, def.Number)
-	}
-
-	// Non-network syscalls
-	nonNetworkSyscalls := []SyscallDefinition{
+	syscalls := []SyscallDefinition{
 		{0, "io_setup", false},
 		{1, "io_destroy", false},
 		{2, "io_submit", false},
@@ -230,11 +208,21 @@ func NewARM64LinuxSyscallTable() *ARM64LinuxSyscallTable {
 		{195, "shmctl", false},
 		{196, "shmat", false},
 		{197, "shmdt", false},
+		{198, "socket", true},
+		{199, "socketpair", true},
+		{200, "bind", true},
+		{201, "listen", true},
+		{202, "accept", true},
+		{203, "connect", true},
 		{204, "getsockname", false},
 		{205, "getpeername", false},
+		{206, "sendto", true},
+		{207, "recvfrom", true},
 		{208, "setsockopt", false},
 		{209, "getsockopt", false},
 		{210, "shutdown", false},
+		{211, "sendmsg", true},
+		{212, "recvmsg", true},
 		{213, "readahead", false},
 		{214, "brk", false},
 		{215, "munmap", false},
@@ -262,6 +250,8 @@ func NewARM64LinuxSyscallTable() *ARM64LinuxSyscallTable {
 		{239, "move_pages", false},
 		{240, "rt_tgsigqueueinfo", false},
 		{241, "perf_event_open", false},
+		{242, "accept4", true},
+		{243, "recvmmsg", true},
 		{244, "arch_specific_syscall", false},
 		{260, "wait4", false},
 		{261, "prlimit64", false},
@@ -272,6 +262,7 @@ func NewARM64LinuxSyscallTable() *ARM64LinuxSyscallTable {
 		{266, "clock_adjtime", false},
 		{267, "syncfs", false},
 		{268, "setns", false},
+		{269, "sendmmsg", true},
 		{270, "process_vm_readv", false},
 		{271, "process_vm_writev", false},
 		{272, "kcmp", false},
@@ -357,8 +348,11 @@ func NewARM64LinuxSyscallTable() *ARM64LinuxSyscallTable {
 		{461, "lsm_list_modules", false},
 		{462, "syscalls", false},
 	}
-	for _, def := range nonNetworkSyscalls {
+	for _, def := range syscalls {
 		table.syscalls[def.Number] = def
+		if def.IsNetwork {
+			table.networkNumbers = append(table.networkNumbers, def.Number)
+		}
 	}
 
 	return table

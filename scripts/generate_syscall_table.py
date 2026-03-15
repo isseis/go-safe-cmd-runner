@@ -155,28 +155,18 @@ func (t *ARM64LinuxSyscallTable) GetNetworkSyscalls() []int {{
 
 def build_body(syscalls: dict[str, int]) -> str:
     """Build the constructor body listing all syscalls."""
-    network = {name: num for name, num in syscalls.items() if name in NETWORK_SYSCALL_NAMES}
-    non_network = {name: num for name, num in syscalls.items() if name not in NETWORK_SYSCALL_NAMES}
-
     lines = []
 
-    lines.append("\t// Network-related syscalls")
-    lines.append("\tnetworkSyscalls := []SyscallDefinition{")
-    for name, num in sorted(network.items(), key=lambda x: x[1]):
-        lines.append(f'\t\t{{{num}, "{name}", true}},')
+    lines.append("\tsyscalls := []SyscallDefinition{")
+    for name, num in sorted(syscalls.items(), key=lambda x: x[1]):
+        is_network = "true" if name in NETWORK_SYSCALL_NAMES else "false"
+        lines.append(f'\t\t{{{num}, "{name}", {is_network}}},')
     lines.append("\t}")
-    lines.append("\tfor _, def := range networkSyscalls {")
+    lines.append("\tfor _, def := range syscalls {")
     lines.append("\t\ttable.syscalls[def.Number] = def")
-    lines.append("\t\ttable.networkNumbers = append(table.networkNumbers, def.Number)")
-    lines.append("\t}")
-    lines.append("")
-    lines.append("\t// Non-network syscalls")
-    lines.append("\tnonNetworkSyscalls := []SyscallDefinition{")
-    for name, num in sorted(non_network.items(), key=lambda x: x[1]):
-        lines.append(f'\t\t{{{num}, "{name}", false}},')
-    lines.append("\t}")
-    lines.append("\tfor _, def := range nonNetworkSyscalls {")
-    lines.append("\t\ttable.syscalls[def.Number] = def")
+    lines.append("\t\tif def.IsNetwork {")
+    lines.append("\t\t\ttable.networkNumbers = append(table.networkNumbers, def.Number)")
+    lines.append("\t\t}")
     lines.append("\t}")
 
     return "\n".join(lines) + "\n"
