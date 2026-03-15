@@ -2603,22 +2603,22 @@ func TestIsNetworkOperation_AnalysisError(t *testing.T) {
 
 // stubNetworkSymbolStore is a test double for fileanalysis.NetworkSymbolStore.
 type stubNetworkSymbolStore struct {
-	data *fileanalysis.NetworkSymbolAnalysisData
+	data *fileanalysis.SymbolAnalysisData
 	err  error
 }
 
-func (s *stubNetworkSymbolStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.NetworkSymbolAnalysisData, error) {
+func (s *stubNetworkSymbolStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.SymbolAnalysisData, error) {
 	return s.data, s.err
 }
 
 // callTrackingStore records whether LoadNetworkSymbolAnalysis was called.
 type callTrackingStore struct {
 	called *bool
-	data   *fileanalysis.NetworkSymbolAnalysisData
+	data   *fileanalysis.SymbolAnalysisData
 	err    error
 }
 
-func (s *callTrackingStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.NetworkSymbolAnalysisData, error) {
+func (s *callTrackingStore) LoadNetworkSymbolAnalysis(_ string, _ string) (*fileanalysis.SymbolAnalysisData, error) {
 	*s.called = true
 	return s.data, s.err
 }
@@ -2628,10 +2628,9 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	const cmdPath = "/usr/bin/curl"
 	const contentHash = "sha256:abc123"
 
-	t.Run("cache hit HasNetworkSymbols=true → NetworkDetected, BinaryAnalyzer not called", func(t *testing.T) {
+	t.Run("cache hit DetectedSymbols=[socket] → NetworkDetected, BinaryAnalyzer not called", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.NetworkSymbolAnalysisData{
-				HasNetworkSymbols: true,
+			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
 					{Name: "socket", Category: "socket"},
 				},
@@ -2646,10 +2645,9 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 
-	t.Run("cache hit HasNetworkSymbols=false → NoNetworkSymbols, BinaryAnalyzer not called", func(t *testing.T) {
+	t.Run("cache hit DetectedSymbols=nil → NoNetworkSymbols, BinaryAnalyzer not called", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.NetworkSymbolAnalysisData{
-				HasNetworkSymbols:  false,
+			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    nil,
 				DynamicLoadSymbols: nil,
 			},
@@ -2666,8 +2664,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 
 	t.Run("cache hit DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
-			data: &fileanalysis.NetworkSymbolAnalysisData{
-				HasNetworkSymbols: false,
+			data: &fileanalysis.SymbolAnalysisData{
 				DynamicLoadSymbols: []fileanalysis.DetectedSymbolEntry{
 					{Name: "dlopen", Category: "dynamic_load"},
 				},
@@ -2676,7 +2673,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
 		analyzer := newNetworkAnalyzer(mock, store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.False(t, isNet, "expected no network (HasNetworkSymbols=false)")
+		assert.False(t, isNet, "expected no network (DetectedSymbols=nil)")
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
 	})
 
@@ -2689,7 +2686,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	})
 
 	t.Run("SchemaVersionMismatchError → BinaryAnalyzer called as fallback", func(t *testing.T) {
-		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: 3, Actual: 2}
+		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}
 		store := &stubNetworkSymbolStore{err: schemaErr}
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
 		analyzer := newNetworkAnalyzer(mock, store)
@@ -2720,7 +2717,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 }
 
 // TestNetworkSymbolCache_RecordToRunner tests the record→runner cache flow.
-// It writes a NetworkSymbolAnalysisData record using fileanalysis.Store.Save,
+// It writes a SymbolAnalysisData record using fileanalysis.Store.Save,
 // then verifies that NetworkAnalyzer reads from the cache instead of calling
 // BinaryAnalyzer. This covers AC-3 (cache utilisation in runner).
 func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
@@ -2739,8 +2736,7 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 
 	record := &fileanalysis.Record{
 		ContentHash: fakeHash,
-		NetworkSymbolAnalysis: &fileanalysis.NetworkSymbolAnalysisData{
-			HasNetworkSymbols: true,
+		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
 			DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
 				{Name: "socket", Category: "socket"},
 			},

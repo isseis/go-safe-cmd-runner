@@ -9,12 +9,13 @@ import (
 const (
 	// CurrentSchemaVersion is the current analysis record schema version.
 	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
-	// Version 3 adds NetworkSymbolAnalysis and removes HasDynamicLoad.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 3.
+	// Version 3 adds NetworkSymbolAnalysis (now renamed SymbolAnalysis) and removes HasDynamicLoad.
+	// Version 4 renames network_symbol_analysis to symbol_analysis and removes has_network_symbols.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 4.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable
 	// (enables `record --force` migration).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 3
+	CurrentSchemaVersion = 4
 )
 
 // Record represents a unified file analysis record containing both
@@ -49,9 +50,9 @@ type Record struct {
 	// Only present for ELF binaries with DT_NEEDED entries.
 	DynLibDeps *DynLibDepsData `json:"dyn_lib_deps,omitempty"`
 
-	// NetworkSymbolAnalysis contains the network symbol analysis result cached at record time.
+	// SymbolAnalysis contains the symbol analysis result cached at record time.
 	// nil means not analyzed (static binary, non-ELF, or old schema record).
-	NetworkSymbolAnalysis *NetworkSymbolAnalysisData `json:"network_symbol_analysis,omitempty"`
+	SymbolAnalysis *SymbolAnalysisData `json:"symbol_analysis,omitempty"`
 }
 
 // DynLibDepsData contains the dynamic library dependency snapshot.
@@ -95,17 +96,15 @@ type SyscallAnalysisData struct {
 	AnalyzedAt time.Time `json:"analyzed_at"`
 }
 
-// NetworkSymbolAnalysisData holds the network symbol analysis result cached at record time.
+// SymbolAnalysisData holds the symbol analysis result cached at record time.
+// Covers both network-related symbols (DetectedSymbols) and dynamic-load symbols (DynamicLoadSymbols).
 // nil means not analyzed (static binary, non-ELF, or old schema record).
-type NetworkSymbolAnalysisData struct {
-	// AnalyzedAt is when the network symbol analysis was performed.
+type SymbolAnalysisData struct {
+	// AnalyzedAt is when the symbol analysis was performed.
 	AnalyzedAt time.Time `json:"analyzed_at"`
 
-	// HasNetworkSymbols indicates whether any network-related symbols were detected.
-	HasNetworkSymbols bool `json:"has_network_symbols"`
-
 	// DetectedSymbols contains all network-related symbols found (excluding dynamic_load category).
-	// Empty when HasNetworkSymbols is false.
+	// Non-empty when network symbols were detected.
 	DetectedSymbols []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
 
 	// DynamicLoadSymbols contains the dynamic library loading symbols found (dlopen, dlsym, dlvsym).

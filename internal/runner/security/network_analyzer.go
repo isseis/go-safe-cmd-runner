@@ -170,7 +170,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 				DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
 				DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
 			}
-			if data.HasNetworkSymbols {
+			if len(data.DetectedSymbols) > 0 {
 				output.Result = binaryanalyzer.NetworkDetected
 			} else {
 				output.Result = binaryanalyzer.NoNetworkSymbols
