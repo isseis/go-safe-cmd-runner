@@ -47,11 +47,17 @@ var knownGoWrappers = map[GoSyscallWrapper]struct{}{
 // The syscall number cannot be determined statically from these functions' bodies,
 // so both direct SYSCALL instructions and CALL-to-wrapper instructions within
 // these functions are excluded from analysis.
+//
+// Note on pclntab symbol naming: pclntab records the Go function name without
+// ABI suffixes (e.g. "internal/runtime/syscall.Syscall6", not ".abi0").
+// The ".abi0" suffix only appears in the ELF symbol table (.symtab/.dynsym).
+// Since loadFromPclntab reads from pclntab, all entries here must use the
+// plain Go function name without ABI suffixes.
 var knownSyscallImpls = map[string]struct{}{
 	"syscall.rawVforkSyscall":                 {},
 	"syscall.rawSyscallNoError":               {},
 	"internal/runtime/syscall/linux.Syscall6": {}, // Go 1.22 and earlier / x86_64
-	"internal/runtime/syscall.Syscall6.abi0":  {}, // Go 1.23+ / arm64
+	"internal/runtime/syscall.Syscall6":       {}, // Go 1.23+ / arm64 (pclntab name, no .abi0 suffix)
 }
 
 // SymbolInfo represents information about a symbol in the ELF file.
