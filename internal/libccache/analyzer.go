@@ -123,7 +123,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 		}
 	}
 
-	// Step 7: Sort by Number ascending, then Name ascending.
+	// Sort by Number ascending, then Name ascending.
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Number != entries[j].Number {
 			return entries[i].Number < entries[j].Number
