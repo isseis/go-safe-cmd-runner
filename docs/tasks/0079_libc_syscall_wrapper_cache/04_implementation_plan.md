@@ -36,6 +36,19 @@
   - [ ] 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る
 - [ ] `make fmt && make test && make lint` でパスすることを確認する
 
+### 1-2b. `elfanalyzer.SyscallAnalyzer.GetSyscallTable` の追加
+
+- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
+  ```go
+  func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool)
+  ```
+  - `archConfigs[machine]` が存在する場合は `(cfg.syscallTable, true)` を返す
+  - 存在しない場合は `(nil, false)` を返す
+- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `GetSyscallTable` のテストを追加する:
+  - [ ] 対応アーキテクチャ（`elf.EM_X86_64`）で `(table, true)` が返る
+  - [ ] 非対応アーキテクチャで `(nil, false)` が返る
+- [ ] `make fmt && make test && make lint` でパスすることを確認する
+
 ### 1-3. `fileanalysis/schema.go` コメント更新
 
 - [ ] `internal/fileanalysis/schema.go` の `SyscallAnalysis` フィールドのコメントを「静的 ELF バイナリ、および libc 経由の syscall が検出された動的 ELF バイナリ」に更新する

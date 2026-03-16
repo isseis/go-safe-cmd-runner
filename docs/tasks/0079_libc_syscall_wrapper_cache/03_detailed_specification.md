@@ -57,7 +57,16 @@ type SyscallInfo struct {
 
 ## 3. `internal/runner/security/elfanalyzer/syscall_analyzer.go` 変更仕様
 
-### 3.1 `AnalyzeSyscallsInRange` メソッドの追加
+### 3.1 追加するメソッド一覧
+
+本タスクで `SyscallAnalyzer` に追加するメソッドは以下の 2 つ。
+
+| メソッド | 目的 |
+|---------|------|
+| `AnalyzeSyscallsInRange` | libc の関数単位 syscall 解析（§3.2） |
+| `GetSyscallTable` | machine からアーキ対応の `SyscallNumberTable` を取得（§3.3） |
+
+### 3.2 `AnalyzeSyscallsInRange` メソッドの追加
 
 ```go
 // AnalyzeSyscallsInRange は code[startOffset:endOffset] の範囲に含まれる
@@ -109,6 +118,33 @@ for _, loc := range syscallLocs {
 - 正常系: syscall 命令を含む範囲で正しく検出される
 - 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない
 - 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る
+
+### 3.3 `GetSyscallTable` メソッドの追加
+
+```go
+// GetSyscallTable は machine に対応する SyscallNumberTable を返す。
+// 対応アーキテクチャの場合は (table, true)、非対応の場合は (nil, false) を返す。
+// Validator が ImportSymbolMatcher を生成する際にアーキ対応テーブルを取得するために使用する。
+func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool)
+```
+
+**実装:**
+
+```go
+func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool) {
+    cfg, ok := a.archConfigs[machine]
+    if !ok {
+        return nil, false
+    }
+    return cfg.syscallTable, true
+}
+```
+
+**追加する理由:** `Validator` が `ImportSymbolMatcher` を生成する際、対象バイナリのアーキテクチャ（`elfFile.Machine`）に対応する `SyscallNumberTable` を選択する必要がある。`SyscallAnalyzer` はすでにアーキ→テーブルのマッピングを `archConfigs` として保持しているため、その情報を公開することでハードコードを避け、将来の ARM64 拡張時も `Validator` 側の変更なしに正しいテーブルが選択される。
+
+**テスト方針:**
+- 対応アーキテクチャ（`elf.EM_X86_64`）で `(table, true)` が返る
+- 非対応アーキテクチャで `(nil, false)` が返る
 
 ---
 
@@ -463,8 +499,17 @@ if v.libcCacheMgr != nil && record.DynLibDeps != nil {
 
         if !skipLibcCache {
             // インポートシンボル照合
-            matcher := libccache.NewImportSymbolMatcher(elfanalyzer.NewX86_64SyscallTable())
-            libcSyscalls = matcher.Match(importSymbols, wrappers)
+            // elfFile.Machine からアーキ対応テーブルを取得する（x86_64 固定ではなく
+            // SyscallAnalyzer が保持するマッピングを使うことで将来の多アーキ対応に備える）
+            syscallTable, ok := v.syscallAnalyzer.GetSyscallTable(elfFile.Machine)
+            if !ok {
+                // GetOrCreate が UnsupportedArchitectureError を返す前にここに来ることはないが、
+                // 念のため table が取得できない場合も libc キャッシュ処理をスキップして続行する
+                skipLibcCache = true
+            } else {
+                matcher := libccache.NewImportSymbolMatcher(syscallTable)
+                libcSyscalls = matcher.Match(importSymbols, wrappers)
+            }
         }
     }
 }
