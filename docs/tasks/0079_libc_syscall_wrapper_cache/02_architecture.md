@@ -462,11 +462,12 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)
 ```go
 // extractUNDSymbols は elfFile の .dynsym セクションから
 // UND（未定義）シンボル名の一覧を返す。
-// .dynsym が存在しない（静的バイナリ等）場合は空スライスを返す（エラーなし）。
-func extractUNDSymbols(elfFile *elf.File) []string
+// .dynsym が存在しない（静的バイナリ等）場合は空スライスとエラーなしを返す。
+// .dynsym の読み取りエラー（ELF 破損等）はエラーを返す。
+func extractUNDSymbols(elfFile *elf.File) ([]string, error)
 ```
 
-この関数も `filevalidator` パッケージ内のパッケージ非公開ヘルパーとして実装する。`elf.ErrNoSymbols` は「シンボルなし」として空スライスを返す。`.dynsym` の読み取りエラーはコールバックエラーとする。
+この関数も `filevalidator` パッケージ内のパッケージ非公開ヘルパーとして実装する。`elf.ErrNoSymbols` は「シンボルなし」として空スライスを返す（エラーなし）。それ以外の読み取りエラーはエラーとして返し、呼び出し元のコールバックがエラーとして処理する。
 
 #### `*elf.File` の共有範囲
 

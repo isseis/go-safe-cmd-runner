@@ -156,7 +156,7 @@
 
 - [ ] `internal/filevalidator/validator.go` に以下のヘルパー関数を追加する:
   - [ ] `openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)`: SafeOpenFile + elf.NewFile
-  - [ ] `extractUNDSymbols(elfFile *elf.File) []string`: `.dynsym` UND シンボルの抽出
+  - [ ] `extractUNDSymbols(elfFile *elf.File) ([]string, error)`: `.dynsym` UND シンボルの抽出（`elf.ErrNoSymbols` は空スライス扱い、それ以外のエラーは返す）
   - [ ] `findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry`: libc エントリの特定
   - [ ] `mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo`: Number で一意化・direct 優先
   - [ ] `buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo) *fileanalysis.SyscallAnalysisData`: SyscallAnalysisData の構築
@@ -188,8 +188,11 @@
   - [ ] キャッシュ失敗時: コールバックがエラーを返し記録ファイルが保存されないこと
   - [ ] `ErrUnsupportedArchitecture` 時: libc 解析をスキップして記録保存が続行すること
   - [ ] 非 ELF ファイル: syscall 解析全体をスキップして記録保存が続行すること
+  - [ ] `.dynsym` 読み取りエラー時: コールバックがエラーを返し記録ファイルが保存されないこと
 
 - [ ] 上記のヘルパー関数 (`openELFFile`, `extractUNDSymbols`, `findLibcEntry`, `mergeSyscallInfos`, `buildSyscallAnalysisData`) の単体テストを追加する:
+  - [ ] `extractUNDSymbols`: `elf.ErrNoSymbols` 時に空スライスとエラーなしが返ること
+  - [ ] `extractUNDSymbols`: それ以外の読み取りエラー時にエラーが返ること
   - [ ] `buildSyscallAnalysisData`: `HasUnknownSyscalls` が `direct` 引数の `Number < 0` エントリの有無から計算されること（libc import 由来の `Number < 0` は対象外）
 
 - [ ] `make fmt && make test && make lint` でパスすることを確認する

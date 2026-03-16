@@ -486,8 +486,11 @@ skipLibcCache := false // フラグ変数: 非対応アーキテクチャ時に 
 if v.libcCacheMgr != nil && record.DynLibDeps != nil {
     libcEntry := findLibcEntry(record.DynLibDeps)
     if libcEntry != nil {
-        // UND シンボルの抽出
-        importSymbols := extractUNDSymbols(elfFile)
+        // UND シンボルの抽出（elf.ErrNoSymbols は空スライス扱い、それ以外はコールバックエラー）
+        importSymbols, err := extractUNDSymbols(elfFile)
+        if err != nil {
+            return fmt.Errorf("failed to extract UND symbols: %w", err)
+        }
 
         // libc キャッシュの取得または生成
         wrappers, err := v.libcCacheMgr.GetOrCreate(libcEntry.Path, libcEntry.Hash)
@@ -548,9 +551,9 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)
 
 // extractUNDSymbols は elfFile の .dynsym セクションから
 // UND（未定義）シンボル名の一覧を返す。
-// .dynsym が存在しない場合は空スライスを返す（エラーなし）。
-// .dynsym の読み取りエラーは空スライスを返す（エラーなし）。
-func extractUNDSymbols(elfFile *elf.File) []string
+// .dynsym が存在しない場合（elf.ErrNoSymbols）は空スライスとエラーなしを返す。
+// .dynsym の読み取りエラー（ELF 破損等）はエラーを返す。呼び出し元はこれをコールバックエラーとして扱う。
+func extractUNDSymbols(elfFile *elf.File) ([]string, error)
 
 // findLibcEntry は dyn_lib_deps から libc エントリを返す。
 // SOName が "libc.so." で前方一致する最初のエントリを返す。
