@@ -293,7 +293,21 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 4. キャッシュ MISS:
    - `fs.SafeOpenFile(libcPath, os.O_RDONLY, 0)` で libc を開く（失敗 → `ErrLibcFileNotAccessible` を返す）
    - `elf.NewFile(libcFile)` で ELF としてパースする（失敗 → エラーを返す）
-     - **クローズ責任**: `elf.NewFile` 成功後は `elfFile.Close()` を呼ぶだけで `libcFile` も閉じられる（`elf.File.Close()` がラップしているファイルハンドルを閉じるため）。`elfFile.Close()` と `libcFile.Close()` を両方呼ぶと二重クローズになるため、`elf.NewFile` 成功後は `defer elfFile.Close()` のみを設定し `libcFile` の `defer Close()` は設定しない
+     - **クローズ責任（全分岐を網羅すること）**:
+       - `elf.NewFile` 成功時: `elfFile.Close()` が `libcFile` も閉じる（`elf.File.Close()` がラップしているファイルハンドルを閉じるため）。`defer elfFile.Close()` のみを設定し `libcFile.Close()` は呼ばない（二重クローズになるため）
+       - `elf.NewFile` 失敗時: `elfFile` は nil のままだが `libcFile` はオープン済み。**この分岐で `libcFile.Close()` を呼ばないと FD リークになる**。実装では `defer` を使わず以下のパターンで実装すること:
+         ```go
+         libcFile, err := fs.SafeOpenFile(libcPath, os.O_RDONLY, 0)
+         if err != nil {
+             return nil, ErrLibcFileNotAccessible
+         }
+         elfFile, err := elf.NewFile(libcFile)
+         if err != nil {
+             libcFile.Close() // elf.NewFile 失敗時は libcFile を手動クローズ
+             return nil, err
+         }
+         defer elfFile.Close() // 成功後は elfFile.Close() のみ（libcFile も閉じる）
+         ```
    - `analyzer.Analyze(elfFile)` で解析する（失敗 → エラーを返す、`ErrUnsupportedArchitecture` はそのまま伝播）
    - キャッシュファイルを書き込む（失敗 → `ErrCacheWriteFailed` を返す）
    - `[]WrapperEntry` を返す
