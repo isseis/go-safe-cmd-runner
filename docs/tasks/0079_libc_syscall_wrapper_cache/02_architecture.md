@@ -292,7 +292,8 @@ type ImportSymbolMatcher struct {
 // バージョンサフィックス（"@@GLIBC_x.y" 等）の除去は不要。
 // libc の .dynsym エクスポートもバイナリの .dynsym UND も、
 // elf.File が返すシンボル名はバージョン文字列を含まない純粋なシンボル名であるため。
-// 重複統合キー: (Number, Source, Name)
+// 重複統合キー: Number。複数の importSymbols（例: "open" と "openat"）が同一の
+// syscall 番号にマップされる場合、Name の辞書順で最小のシンボル名を採用して 1 件に絞る。
 func (m *ImportSymbolMatcher) Match(
     importSymbols []string, // 対象バイナリの .dynsym UND シンボル名
     wrappers []WrapperEntry,
@@ -505,7 +506,7 @@ func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo
 | 同じ `Number` に `Source == "libc_symbol_import"` のみ存在 | そのエントリを採用 |
 | 同じ `Number` に `Source == ""` のみ存在 | そのエントリを採用 |
 
-**`ImportSymbolMatcher` 内部重複との関係**: `Match()` の重複統合キー `(Number, Source, Name)` は、libc 由来エントリ内の重複（同一 Number を複数シンボルが担う場合）を除去する。`mergeSyscallInfos` は異なる `Source` 間の重複を除去する。両者は異なるスコープで独立して動作する。
+**`ImportSymbolMatcher` 内部重複との関係**: `Match()` の重複統合キー `Number` は、libc 由来エントリ内の重複（同一 Number を複数シンボルが担う場合、例: `open` と `openat` が共に syscall 257 にマップされる場合）を除去し、`Name` の辞書順で最小のシンボル名を採用して 1 件に絞る。`mergeSyscallInfos` は異なる `Source` 間の重複を除去する。両者は異なるスコープで独立して動作する。
 
 #### 3.5.3 `SyscallAnalysisData` の再計算
 
