@@ -614,7 +614,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	// Step D: Merge and set SyscallAnalysis.
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	if len(allSyscalls) > 0 {
-		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls)
+		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls, elfFile.Machine)
 	}
 	return nil
 }
@@ -696,9 +696,22 @@ func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
 	return result
 }
 
+// elfMachineToArchName converts an elf.Machine to the architecture name string used in records.
+// Returns the elf.Machine's String() representation if the machine is not recognized.
+func elfMachineToArchName(machine elf.Machine) string {
+	switch machine {
+	case elf.EM_X86_64:
+		return "x86_64"
+	case elf.EM_AARCH64:
+		return "arm64"
+	default:
+		return machine.String()
+	}
+}
+
 // buildSyscallAnalysisData constructs a SyscallAnalysisData from the merged syscall infos.
 // HasUnknownSyscalls is determined by whether any direct (Source == "") entry has Number < 0.
-func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo) *fileanalysis.SyscallAnalysisData {
+func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
 	hasUnknown := false
 	for _, info := range direct {
 		if info.Number < 0 {
@@ -718,6 +731,7 @@ func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallI
 
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture:       elfMachineToArchName(machine),
 			DetectedSyscalls:   all,
 			HasUnknownSyscalls: hasUnknown,
 			Summary: common.SyscallSummary{
