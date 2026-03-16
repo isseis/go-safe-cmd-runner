@@ -29,7 +29,7 @@
       machine elf.Machine,
   ) ([]common.SyscallInfo, error)
   ```
-- [ ] `backwardScanForSyscallNumber` への `windowStart` を `max(windowStart, startOffset)` でクランプする処理を実装する
+- [ ] 実装では `code[startOffset:endOffset]` をスライスとして渡し、`baseAddr` を `sectionBaseAddr+uint64(startOffset)` にシフトする。これにより `backwardScanForSyscallNumber` の既存の `max(windowStart, 0)` がスライス先頭（= 元の `startOffset` 位置）へのクランプを担うため、追加のクランプ処理や専用ヘルパーメソッドは追加しない
 - [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `AnalyzeSyscallsInRange` のテストを追加する:
   - [ ] 正常系: syscall 命令を含む範囲で正しく検出される
   - [ ] 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない

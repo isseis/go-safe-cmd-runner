@@ -83,11 +83,11 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
 4. **後方スキャン窓のクランプ**: ステップ 2 でスライスを渡すため、後方スキャン窓はスライスの先頭（オフセット 0）より前に出ることはなく、追加のクランプ処理は不要。`backwardScanForSyscallNumber` の既存実装（`windowStart = max(windowStart, 0)`）がスライス先頭のクランプを担う
 5. 結果 `[]common.SyscallInfo` を返す（`SyscallInfo.Source` は空文字列のまま）
 
-**`backwardScanForSyscallNumber` のクランプ実装:**
+**`backwardScanForSyscallNumber` のクランプについて:**
 
-`AnalyzeSyscallsInRange` 専用のヘルパーメソッド `backwardScanForSyscallNumberClamped` を追加する、またはオフセットのクランプを呼び出し前に行う。既存の `backwardScanForSyscallNumber` シグネチャは変更しない。
+スライスを渡す設計を採用するため、追加のクランプ処理や専用ヘルパーメソッドは不要。`backwardScanForSyscallNumber` の既存実装（`windowStart = max(windowStart, 0)`）がスライスの先頭（インデックス 0）へのクランプを担う。スライスの先頭は元の `code` における `startOffset` に相当するため、隣接関数のバイトは参照されない。既存の `backwardScanForSyscallNumber` シグネチャは変更しない。
 
-スライスを渡す設計を採用するため、クランプ処理の概念コードは以下のようになる（スライス内オフセット基準）:
+概念コードを以下に示す（スライス内オフセット基準、追加クランプなし）:
 
 ```go
 // AnalyzeSyscallsInRange 内の実装（概念コード）
@@ -96,9 +96,10 @@ subCode := code[startOffset:endOffset]
 subBase := sectionBaseAddr + uint64(startOffset)
 syscallLocs, _ := a.findSyscallInstructions(subCode, subBase, decoder)
 for _, loc := range syscallLocs {
-    // extractSyscallInfo はスライス内オフセットで動作する。
-    // backwardScanForSyscallNumber の windowStart は max(windowStart, 0) で
-    // クランプされるため、スライス先頭より前のバイトは参照されない。
+    // extractSyscallInfo → backwardScanForSyscallNumber はスライス内オフセットで動作する。
+    // windowStart は max(windowStart, 0) でクランプされるため、
+    // subCode の先頭（元の code における startOffset 位置）より前は参照されない。
+    // startOffset を引数として渡す必要はない。
     info := a.extractSyscallInfo(subCode, loc, subBase, decoder, table)
     results = append(results, info)
 }
