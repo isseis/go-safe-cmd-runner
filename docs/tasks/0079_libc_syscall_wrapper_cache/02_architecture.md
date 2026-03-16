@@ -249,7 +249,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
 4. 返された `[]SyscallInfo` から `WrapperEntry.Number` を決定する。採用条件は以下をすべて満たすこと:
    - すべてのエントリの `DeterminationMethod == "immediate"` であること（`unknown:*` や他の方法は拒否）
-   - すべてのエントリの `Number` が同一の正値であること
+   - すべてのエントリの `Number` が同一の非負値（`>= 0`）であること
    - いずれかの条件を満たさない場合はその関数をスキップする
 
    **`immediate` のみを受理する根拠**: `backwardScanForSyscallNumber` の実装において、`Number >= 0` を返す唯一のパスは `DeterminationMethodImmediate` である（`syscall_analyzer.go:449-450`）。現時点では `DeterminationMethod == "immediate"` と `Number >= 0` は等価条件だが、将来の実装変更（新しい決定方法の追加等）によってこの等価性が崩れた際に誤った `WrapperEntry` がキャッシュに混入しないよう、`DeterminationMethod` を明示的にフィルタ条件に含める。
