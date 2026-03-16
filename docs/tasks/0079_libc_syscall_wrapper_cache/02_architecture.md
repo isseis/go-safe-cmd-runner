@@ -212,6 +212,7 @@ type LibcCacheFile struct {
     SchemaVersion   int            `json:"schema_version"`
     LibPath         string         `json:"lib_path"`
     LibHash         string         `json:"lib_hash"`
+    AnalyzedAt      string         `json:"analyzed_at"`
     SyscallWrappers []WrapperEntry `json:"syscall_wrappers"`
 }
 
