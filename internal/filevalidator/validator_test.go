@@ -1389,6 +1389,116 @@ func TestRecord_LibcCache_UnsupportedArch_SkipsAndContinues(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis verifies that force re-recording
+// a file that was previously recorded as ELF (with SyscallAnalysis set) and is now
+// treated as non-ELF clears SyscallAnalysis (schema contract: nil for non-ELF).
+func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
+	// Use a real ELF for the first record so SyscallAnalysis gets populated,
+	// then replace the file with non-ELF bytes and force re-record.
+	const elfPath = "/usr/bin/ls"
+	if _, err := os.Stat(elfPath); err != nil {
+		t.Skipf("skipping: %s not available: %v", elfPath, err)
+	}
+
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	// Copy the ELF to a writable location so we can replace it.
+	elfBytes, err := os.ReadFile(elfPath)
+	require.NoError(t, err)
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, elfBytes, 0o755))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// Inject a stub syscall analyzer that returns one syscall for any ELF.
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	// Verify first record has SyscallAnalysis.
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.SyscallAnalysis, "precondition: SyscallAnalysis must be set after ELF record")
+
+	// Overwrite target with non-ELF bytes and force re-record.
+	require.NoError(t, os.WriteFile(targetFile, []byte("not an ELF"), 0o644))
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr = v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	assert.Nil(t, record.SyscallAnalysis,
+		"SyscallAnalysis must be nil after re-recording a non-ELF file")
+}
+
+// stubSyscallAnalyzerReturnsOne is a SyscallAnalyzerInterface that returns a single
+// fake syscall for any ELF file, used to seed SyscallAnalysis in test records.
+type stubSyscallAnalyzerReturnsOne struct{}
+
+func (s *stubSyscallAnalyzerReturnsOne) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, error) {
+	return []common.SyscallInfo{{Number: 1, Name: "write"}}, nil
+}
+
+func (s *stubSyscallAnalyzerReturnsOne) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
+	return nil, false
+}
+
+// TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis verifies that force re-recording
+// an ELF that previously had syscalls detected now clears SyscallAnalysis when the
+// analyzer returns zero results (schema contract: nil when no syscalls detected).
+func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
+	const elfPath = "/usr/bin/ls"
+	if _, err := os.Stat(elfPath); err != nil {
+		t.Skipf("skipping: %s not available: %v", elfPath, err)
+	}
+
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	elfBytes, err := os.ReadFile(elfPath)
+	require.NoError(t, err)
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, elfBytes, 0o755))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// First record: analyzer returns one syscall.
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.SyscallAnalysis, "precondition: SyscallAnalysis must be set")
+
+	// Second record (force=true): analyzer returns no syscalls.
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsNone{})
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr = v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	assert.Nil(t, record.SyscallAnalysis,
+		"SyscallAnalysis must be nil when re-recording with zero detected syscalls")
+}
+
+// stubSyscallAnalyzerReturnsNone is a SyscallAnalyzerInterface that returns no syscalls.
+type stubSyscallAnalyzerReturnsNone struct{}
+
+func (s *stubSyscallAnalyzerReturnsNone) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, error) {
+	return nil, nil
+}
+
+func (s *stubSyscallAnalyzerReturnsNone) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
+	return nil, false
+}
+
 // TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis verifies the same
 // nil-transition for NotSupportedBinary (non-ELF / non-Mach-O binaries).
 func TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis(t *testing.T) {
