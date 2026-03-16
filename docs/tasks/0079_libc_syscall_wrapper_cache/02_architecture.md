@@ -135,21 +135,25 @@ sequenceDiagram
     CB->>DA: "Analyze(filePath)"
     DA-->>CB: "dyn_lib_deps (libc の Path/Hash を含む)"
     CB->>CB: "findLibcEntry(dyn_lib_deps)"
-    CB->>CM: "GetOrCreate(libcPath, libcHash, libcELFFile)"
-    CM->>FS: "lib-cache/<encoded-libc> 読み込み"
-    alt キャッシュ HIT（lib_hash 一致）
-        FS-->>CM: "LibcCacheFile"
-    else キャッシュ MISS または lib_hash 不一致
-        CM->>WA: "Analyze(libcELFFile)"
-        WA->>SA: "FindSyscallInstructions(関数範囲)"
-        SA-->>WA: "syscall 命令アドレス一覧"
-        WA->>WA: "サイズフィルタ・複数syscall番号フィルタ"
-        WA-->>CM: "[]WrapperEntry"
-        CM->>FS: "lib-cache/<encoded-libc> 書き込み  ← 先行"
+    alt libc エントリあり（*LibEntry != nil）
+        CB->>CM: "GetOrCreate(libcPath, libcHash, libcELFFile)"
+        CM->>FS: "lib-cache/<encoded-libc> 読み込み"
+        alt キャッシュ HIT（lib_hash 一致）
+            FS-->>CM: "LibcCacheFile"
+        else キャッシュ MISS または lib_hash 不一致
+            CM->>WA: "Analyze(libcELFFile)"
+            WA->>SA: "FindSyscallInstructions(関数範囲)"
+            SA-->>WA: "syscall 命令アドレス一覧"
+            WA->>WA: "サイズフィルタ・複数syscall番号フィルタ"
+            WA-->>CM: "[]WrapperEntry"
+            CM->>FS: "lib-cache/<encoded-libc> 書き込み  ← 先行"
+        end
+        CM-->>CB: "[]WrapperEntry"
+        CB->>IM: "Match(importSymbols, wrappers)"
+        IM-->>CB: "[]SyscallInfo (Source=libc_symbol_import)"
+    else libc エントリなし（静的バイナリ等）
+        CB->>CB: "libc キャッシュ処理スキップ（libc 由来 SyscallInfo なし）"
     end
-    CM-->>CB: "[]WrapperEntry"
-    CB->>IM: "Match(importSymbols, wrappers)"
-    IM-->>CB: "[]SyscallInfo (Source=libc_symbol_import)"
     CB->>SA: "AnalyzeSyscallsFromELF(targetELFFile)"
     SA-->>CB: "SyscallAnalysisResult (直接 syscall 命令由来)"
     CB->>CB: "record.DynLibDeps, record.SyscallAnalysis を設定"
@@ -315,12 +319,12 @@ store.Update() コールバック開始
   ↓
 dynlibAnalyzer.Analyze() → dyn_lib_deps 取得
   ↓
-libc エントリ特定（libc.so. 前方一致）
-  ↓
+findLibcEntry() → *LibEntry（nil = libc なし）
+  ↓ nil でない場合のみ
 LibcCacheManager.GetOrCreate() → lib-cache/ 書き込み  ← キャッシュ先行
   ↓
 ImportSymbolMatcher.Match() → libc 由来 SyscallInfo 生成
-  ↓
+  ↓ （nil の場合はここまでスキップ）
 SyscallAnalyzer.AnalyzeSyscallsFromELF() → 静的 syscall 検出
   ↓
 record.DynLibDeps, record.SyscallAnalysis を設定
@@ -353,15 +357,14 @@ store.Save() → 記録ファイル書き込み  ← 記録ファイルは必ず
 
 ```go
 // findLibcEntry は dyn_lib_deps から libc エントリを返す。
-// SOName が "libc.so." で前方一致するエントリを対象とする。
-func findLibcEntry(deps *fileanalysis.DynLibDepsData) []fileanalysis.LibEntry {
-    var result []fileanalysis.LibEntry
-    for _, lib := range deps.Libs {
+// SOName が "libc.so." で前方一致する最初のエントリを返す。見つからない場合は nil を返す。
+func findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry {
+    for i, lib := range deps.Libs {
         if strings.HasPrefix(lib.SOName, "libc.so.") {
-            result = append(result, lib)
+            return &deps.Libs[i]
         }
     }
-    return result
+    return nil
 }
 ```
 
@@ -370,16 +373,18 @@ func findLibcEntry(deps *fileanalysis.DynLibDepsData) []fileanalysis.LibEntry {
 ```
 [store.Update() コールバック内]
   1. dynlibAnalyzer.Analyze() → dyn_lib_deps 取得
-  2. LibcCacheManager.GetOrCreate() → lib-cache/ 書き込み（キャッシュ先行）
-  3. ImportSymbolMatcher.Match() + SyscallAnalyzer → SyscallInfo 収集
-  4. record.DynLibDeps = dynLibDeps
-  5. record.SyscallAnalysis = syscallData
-  6. return nil
+  2. findLibcEntry() → *LibEntry（nil = libc なし → ステップ 3・4 をスキップ）
+  3. LibcCacheManager.GetOrCreate() → lib-cache/ 書き込み（キャッシュ先行）
+  4. ImportSymbolMatcher.Match() → libc 由来 SyscallInfo 収集
+  5. SyscallAnalyzer.AnalyzeSyscallsFromELF() → 直接 syscall 検出
+  6. record.DynLibDeps = dynLibDeps
+  7. record.SyscallAnalysis = syscallData
+  8. return nil
 [store.Update() コールバック後]
-  7. store.Save() → 記録ファイル（hash-dir/）書き込み
+  9. store.Save() → 記録ファイル（hash-dir/）書き込み
 ```
 
-ステップ 2 が失敗した場合、コールバックがエラーを返し `store.Save()` は呼ばれない。ステップ 3 で `ErrNotELF` が返った場合は syscall 解析をスキップし、ステップ 4 以降を継続する。その他のエラーはすべてコールバックからエラーを返して終了する。
+ステップ 3 が失敗した場合、コールバックがエラーを返し `store.Save()` は呼ばれない。ステップ 5 で `ErrNotELF` が返った場合は syscall 解析をスキップし、ステップ 6 以降を継続する。その他のエラーはすべてコールバックからエラーを返して終了する。
 
 ### 3.4 `fileanalysis/schema.go` のコメント更新
 
