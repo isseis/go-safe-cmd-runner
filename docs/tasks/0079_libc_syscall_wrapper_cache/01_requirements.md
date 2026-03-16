@@ -72,10 +72,10 @@ libc は頻繁に更新されるものではないため、ライブラリファ
 
 #### FR-3.1.3: キャッシュファイルの保存場所
 
-キャッシュファイルは、記録ファイル保存ディレクトリ（`record` コマンドのバイナリに埋め込まれている）直下の `lib-cache/` サブディレクトリに保存する。
+キャッシュファイルは、`record` コマンドが使用するハッシュディレクトリ（`-hash-dir` フラグで指定、未指定時はビルド時に埋め込まれた `DefaultHashDirectory`）直下の `lib-cache/` サブディレクトリに保存する。
 
 ```
-hashes/
+<hash-dir>/
   <encoded-mkdir>          ← /usr/bin/mkdir の記録ファイル
   <encoded-libc.so.6>      ← libc.so.6 の記録ファイル（record に libc を渡した場合）
   lib-cache/
