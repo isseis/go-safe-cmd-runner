@@ -482,8 +482,9 @@ libc は対象バイナリとは別ファイルであるため、`LibcCacheManag
 
 ```go
 // SyscallAnalysis contains syscall analysis result (optional).
-// Present for static ELF binaries that have been analyzed,
-// and for dynamic ELF binaries where syscalls via libc were detected.
+// Present when at least one syscall was detected (via direct syscall instruction
+// or libc symbol import). Nil for non-ELF files and ELF binaries with no
+// detected syscalls.
 SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 ```
 

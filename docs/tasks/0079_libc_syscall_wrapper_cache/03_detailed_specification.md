@@ -451,7 +451,7 @@ if v.syscallAnalyzer != nil {
 
 // ステップ D: マージと SyscallAnalysis の設定
 allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
-if allSyscalls != nil || v.syscallAnalyzer != nil {
+if len(allSyscalls) > 0 {
     record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls)
 }
 ```
@@ -549,8 +549,9 @@ if fv, ok := validator.(*filevalidator.Validator); ok {
 
 ```go
 // SyscallAnalysis contains syscall analysis result (optional).
-// Present for static ELF binaries that have been analyzed,
-// and for dynamic ELF binaries where syscalls via libc were detected.
+// Present when at least one syscall was detected (via direct syscall instruction
+// or libc symbol import). Nil for non-ELF files and ELF binaries with no
+// detected syscalls.
 SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 ```
 
