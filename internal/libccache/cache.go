@@ -54,7 +54,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode libc path: %w", err)
 	}
-	cacheFilePath := m.cacheDir + "/" + encodedName
+	cacheFilePath := filepath.Join(m.cacheDir, encodedName)
 
 	// Try to load and validate the existing cache.
 	if data, err := os.ReadFile(cacheFilePath); err == nil { //nolint:nestif,gosec // G304: cacheFilePath = cacheDir + pathEnc.Encode(libcPath), both trusted
