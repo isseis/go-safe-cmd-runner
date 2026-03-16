@@ -146,11 +146,12 @@ sequenceDiagram
         CB->>CB: "findLibcEntry(dyn_lib_deps)"
         alt libc エントリあり（*LibEntry != nil）
             CB->>CB: "extractUNDSymbols(*elf.File) → importSymbols []string"
-            CB->>CM: "GetOrCreate(libcPath, libcHash, libcELFFile)"
+            CB->>CM: "GetOrCreate(libcPath, libcHash)"
             CM->>FS: "lib-cache/<encoded-libc> 読み込み"
             alt キャッシュ HIT（schema_version 一致 かつ lib_hash 一致）
                 FS-->>CM: "LibcCacheFile"
             else キャッシュ MISS、schema_version 不一致、または lib_hash 不一致
+                CM->>FS: "SafeOpenFile(libcPath) → libcELFFile"
                 CM->>WA: "Analyze(libcELFFile)"
                 WA->>SA: "AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)"
                 SA-->>WA: "[]SyscallInfo (Number, DeterminationMethod)"
@@ -269,7 +270,9 @@ type LibcCacheManager struct {
 // GetOrCreate はキャッシュを返すか、存在しない/無効な場合は解析して生成する。
 // libcPath: 正規化済みの実体ファイルパス（DynLibDeps.Libs[].Path）
 // libcHash: DynLibDeps.Libs[].Hash（"sha256:<hex>" 形式）
-func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string, libcELFFile *elf.File) ([]WrapperEntry, error)
+// キャッシュ MISS 時にのみ libcPath を SafeOpenFile で open し、解析後に close する。
+// キャッシュ HIT 時はファイルを開かない。
+func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntry, error)
 ```
 
 キャッシュファイルパス: `<cache-dir>/<pathencoding.Encode(libcPath)>`
@@ -425,7 +428,7 @@ func findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry {
   3. elf.NewFile(handle) → *elf.File（失敗 = ErrNotELF → ステップ 4〜7 をスキップ）
   4. findLibcEntry(dyn_lib_deps) → *LibEntry（nil = libc なし → ステップ 5・6 をスキップ）
   5. extractUNDSymbols(*elf.File) → importSymbols []string
-  6. LibcCacheManager.GetOrCreate(libcEntry, libcELFFile) → lib-cache/ 書き込み（キャッシュ先行）
+  6. LibcCacheManager.GetOrCreate(libcPath, libcHash) → lib-cache/ 書き込み（キャッシュ先行、MISS 時のみ libc open）
   7. ImportSymbolMatcher.Match(importSymbols, wrappers) → libc 由来 SyscallInfo 収集
   8. SyscallAnalyzer.AnalyzeSyscallsFromELF(*elf.File) → 直接 syscall 検出
   9. mergeSyscallInfos(libcSyscalls, directSyscalls) → Number で一意化・direct 優先
@@ -470,9 +473,9 @@ func extractUNDSymbols(elfFile *elf.File) []string
 |------|------------------------------|
 | `extractUNDSymbols()` | ○（UND シンボル抽出） |
 | `SyscallAnalyzer.AnalyzeSyscallsFromELF()` | ○（直接 syscall 検出） |
-| `LibcCacheManager.GetOrCreate()` に渡す `libcELFFile` | ✕（libc のパスを別途 safe open） |
+| `LibcCacheManager.GetOrCreate()` | ✕（libc は GetOrCreate が内部で safe open/close） |
 
-libc は対象バイナリとは別ファイルであるため、`LibcCacheManager.GetOrCreate()` が libc 用の `*elf.File` を内部で open・close する責務を持つ。
+libc は対象バイナリとは別ファイルであるため、`LibcCacheManager.GetOrCreate()` がキャッシュ MISS 確定後に libc を SafeOpenFile で open し、解析完了後に close する責務を持つ。キャッシュ HIT 時はファイルを開かない。
 
 ### 3.4 `fileanalysis/schema.go` のコメント更新
 
