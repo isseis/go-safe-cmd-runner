@@ -6,7 +6,7 @@
 - [x] フェーズ 2: `libccache` パッケージの実装
 - [x] フェーズ 3: `Validator` の統合
 - [x] フェーズ 4: `cmd/record` のリファクタリング
-- [ ] フェーズ 5: 統合テスト・最終確認
+- [x] フェーズ 5: 統合テスト・最終確認
 
 ---
 
@@ -227,30 +227,30 @@
 
 ### 5-1. 統合テストの作成
 
-- [ ] `internal/libccache/integration_test.go` を作成する（`//go:build integration`）:
-  - [ ] GCC が利用できない環境では `t.Skip()` でスキップ
-  - [ ] テスト用 C プログラム（mkdir syscall を呼ぶ最小プログラム）をオンデマンドコンパイル
-  - [ ] コンパイルしたバイナリを `record` した際に `mkdir` syscall（番号 83）が `DetectedSyscalls` に含まれることを確認
-  - [ ] `source: "libc_symbol_import"` の `SyscallInfo` が存在することを確認
-  - [ ] `Location` が `0` であることを確認
-  - [ ] `lib-cache/` 以下にキャッシュファイルが生成されることを確認
-  - [ ] 2 回目の record 実行でキャッシュが再利用される（libc を再解析しない）ことを確認:
+- [x] `internal/libccache/integration_test.go` を作成する（`//go:build integration`）:
+  - [x] GCC が利用できない環境では `t.Skip()` でスキップ
+  - [x] テスト用 C プログラム（mkdir syscall を呼ぶ最小プログラム）をオンデマンドコンパイル
+  - [x] コンパイルしたバイナリを `record` した際に `mkdir` syscall（番号 83）が `DetectedSyscalls` に含まれることを確認
+  - [x] `source: "libc_symbol_import"` の `SyscallInfo` が存在することを確認
+  - [x] `Location` が `0` であることを確認
+  - [x] `lib-cache/` 以下にキャッシュファイルが生成されることを確認
+  - [x] 2 回目の record 実行でキャッシュが再利用される（libc を再解析しない）ことを確認:
     - 確認方法: 1 回目の record でキャッシュファイルが生成された後、キャッシュファイルの mtime を記録する。2 回目の record 実行後にキャッシュファイルの mtime が変化していないことを `os.Stat` で検証する（mtime 不変 = ファイルが上書きされていない = libc を再解析していない）
 
 ### 5-2. 受け入れ条件の最終確認
 
-- [ ] **AC-1**: `common.SyscallInfo` に `Source` フィールドが追加されていること、既存テストがパスすること
-- [ ] **AC-2**: `record` 実行時にキャッシュファイルが `lib-cache/` 以下に生成されること、各フィールドが仕様通りであること、`number` 昇順・同一 `number` 内で `name` 昇順でソートされていること、サイズフィルタと複数 syscall フィルタが機能していること
-- [ ] **AC-3**: キャッシュ HIT/MISS・再生成・破損時の動作、保存順序（キャッシュ先行）、エラー時の記録ファイル未保存、非対応アーキテクチャでの継続
-- [ ] **AC-4**: GCC でビルドした専用バイナリを `record` した際に `mkdir`（番号 83）が検出されること、`source: "libc_symbol_import"`・`location: 0`・重複なし・direct 優先
-- [ ] **AC-5**: 静的 ELF バイナリの既存フローが変わらないこと、`make test` 全体がパスすること
+- [x] **AC-1**: `common.SyscallInfo` に `Source` フィールドが追加されていること、既存テストがパスすること
+- [x] **AC-2**: `record` 実行時にキャッシュファイルが `lib-cache/` 以下に生成されること、各フィールドが仕様通りであること、`number` 昇順・同一 `number` 内で `name` 昇順でソートされていること、サイズフィルタと複数 syscall フィルタが機能していること
+- [x] **AC-3**: キャッシュ HIT/MISS・再生成・破損時の動作、保存順序（キャッシュ先行）、エラー時の記録ファイル未保存、非対応アーキテクチャでの継続
+- [x] **AC-4**: GCC でビルドした専用バイナリを `record` した際に `mkdir`（番号 83）が検出されること、`source: "libc_symbol_import"`・`location: 0`・重複なし・direct 優先
+- [x] **AC-5**: 静的 ELF バイナリの既存フローが変わらないこと、`make test` 全体がパスすること
 
 ### 5-3. 最終ビルド・テスト
 
-- [ ] `make build` でビルドが成功することを確認する
-- [ ] `make test` で全テストがパスすることを確認する
-- [ ] `make lint` でリント警告がないことを確認する
-- [ ] `go test -tags integration -v ./internal/libccache/...` で統合テストがパスすることを確認する（GCC が利用可能な環境）
+- [x] `make build` でビルドが成功することを確認する（sudo不要部分）
+- [x] `make test` で全テストがパスすることを確認する
+- [x] `make lint` でリント警告がないことを確認する
+- [x] `go test -tags integration -v ./internal/libccache/...` で統合テストがパスすることを確認する（GCC が利用可能な環境）
 
 ---
 
