@@ -407,8 +407,10 @@ func (v *Validator) SetSyscallAnalyzer(a *elfanalyzer.SyscallAnalyzer)
 
 `store.Update()` コールバック内に以下のステップを追加する（既存の `dynlibAnalyzer.Analyze()` 呼び出しの後）。
 
-```
-[コールバック内の追加処理（既存の dynlibAnalyzer 呼び出しの後）]
+**Go では `goto` がラベル後の変数宣言をスキップできないなどの制限があるため、フラグ変数で制御する。** 実装の概念コードを以下に示す。
+
+```go
+// [コールバック内の追加処理（既存の dynlibAnalyzer 呼び出しの後）]
 
 // ステップ A: 対象バイナリを ELF としてオープン
 elfFile, err := openELFFile(safefileio.NewFileSystem(...), filePath.String())
@@ -422,6 +424,7 @@ if err != nil {
 defer elfFile.Close()
 
 var libcSyscalls []common.SyscallInfo
+skipLibcCache := false // フラグ変数: 非対応アーキテクチャ時に libc キャッシュ処理をスキップ
 
 // ステップ B: libc エントリの特定と libc キャッシュ処理
 if v.libcCacheMgr != nil && record.DynLibDeps != nil {
@@ -436,18 +439,20 @@ if v.libcCacheMgr != nil && record.DynLibDeps != nil {
             var archErr *elfanalyzer.UnsupportedArchitectureError
             if errors.As(err, &archErr) {
                 // 非対応アーキテクチャ: libc キャッシュ処理をスキップして続行
-                goto directSyscallAnalysis
+                skipLibcCache = true
+            } else {
+                return fmt.Errorf("libc cache error: %w", err)
             }
-            return fmt.Errorf("libc cache error: %w", err)
         }
 
-        // インポートシンボル照合
-        matcher := libccache.NewImportSymbolMatcher(elfanalyzer.NewX86_64SyscallTable())
-        libcSyscalls = matcher.Match(importSymbols, wrappers)
+        if !skipLibcCache {
+            // インポートシンボル照合
+            matcher := libccache.NewImportSymbolMatcher(elfanalyzer.NewX86_64SyscallTable())
+            libcSyscalls = matcher.Match(importSymbols, wrappers)
+        }
     }
 }
 
-directSyscallAnalysis:
 // ステップ C: 直接 syscall 命令解析
 var directSyscalls []common.SyscallInfo
 if v.syscallAnalyzer != nil {
@@ -467,8 +472,6 @@ if len(allSyscalls) > 0 {
     record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls)
 }
 ```
-
-**注意**: `goto` は Go では制限があるため、実装では `goto` の代わりにフラグ変数か早期 return を使う。アーキテクチャ非対応の場合は libc キャッシュ処理をスキップし、直接 syscall 解析も `ErrUnsupportedArchitecture` をスキップして空の結果で続行する。
 
 ### 9.4 パッケージ非公開ヘルパー関数
 
