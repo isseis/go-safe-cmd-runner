@@ -219,7 +219,7 @@
 - [ ] **AC-1**: `common.SyscallInfo` に `Source` フィールドが追加されていること、既存テストがパスすること
 - [ ] **AC-2**: `record` 実行時にキャッシュファイルが `lib-cache/` 以下に生成されること、各フィールドが仕様通りであること、`number` 昇順ソートされていること、サイズフィルタと複数 syscall フィルタが機能していること
 - [ ] **AC-3**: キャッシュ HIT/MISS・再生成・破損時の動作、保存順序（キャッシュ先行）、エラー時の記録ファイル未保存、非対応アーキテクチャでの継続
-- [ ] **AC-4**: `/usr/bin/mkdir` を `record` した際に `mkdir`（番号 83）が検出されること、`source: "libc_symbol_import"`・`location: 0`・重複なし・direct 優先
+- [ ] **AC-4**: GCC でビルドした専用バイナリを `record` した際に `mkdir`（番号 83）が検出されること、`source: "libc_symbol_import"`・`location: 0`・重複なし・direct 優先
 - [ ] **AC-5**: 静的 ELF バイナリの既存フローが変わらないこと、`make test` 全体がパスすること
 
 ### 5-3. 最終ビルド・テスト
