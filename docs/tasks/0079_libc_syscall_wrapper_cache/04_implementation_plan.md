@@ -3,7 +3,7 @@
 ## 進捗サマリー
 
 - [x] フェーズ 1: 基盤整備（型定義・既存 API 拡張）
-- [ ] フェーズ 2: `libccache` パッケージの実装
+- [x] フェーズ 2: `libccache` パッケージの実装
 - [ ] フェーズ 3: `Validator` の統合
 - [ ] フェーズ 4: `cmd/record` のリファクタリング
 - [ ] フェーズ 5: 統合テスト・最終確認
@@ -59,94 +59,94 @@
 
 ### 2-1. `schema.go` の作成
 
-- [ ] `internal/libccache/schema.go` を作成する:
-  - [ ] `LibcCacheSchemaVersion = 1` 定数
-  - [ ] `LibcCacheFile` 構造体
-  - [ ] `WrapperEntry` 構造体
+- [x] `internal/libccache/schema.go` を作成する:
+  - [x] `LibcCacheSchemaVersion = 1` 定数
+  - [x] `LibcCacheFile` 構造体
+  - [x] `WrapperEntry` 構造体
 
 ### 2-2. `errors.go` の作成
 
-- [ ] `internal/libccache/errors.go` を作成する:
-  - [ ] `ErrLibcFileNotAccessible`
-  - [ ] `ErrExportSymbolsFailed`
-  - [ ] `ErrCacheWriteFailed`
-  - [ ] `SourceLibcSymbolImport = "libc_symbol_import"` 定数
+- [x] `internal/libccache/errors.go` を作成する:
+  - [x] `ErrLibcFileNotAccessible`
+  - [x] `ErrExportSymbolsFailed`
+  - [x] `ErrCacheWriteFailed`
+  - [x] `SourceLibcSymbolImport = "libc_symbol_import"` 定数
 
 ### 2-3. `analyzer.go` の実装
 
-- [ ] `internal/libccache/analyzer.go` を作成する:
-  - [ ] `MaxWrapperFunctionSize = 256` 定数
-  - [ ] `LibcWrapperAnalyzer` 型と `NewLibcWrapperAnalyzer()` コンストラクタ
-  - [ ] `Analyze(libcELFFile *elf.File) ([]WrapperEntry, error)` の実装:
-    - [ ] `.text` セクションのデータとベースアドレスの取得
-    - [ ] `elf.File.DynamicSymbols()` によるエクスポートシンボルの列挙:
+- [x] `internal/libccache/analyzer.go` を作成する:
+  - [x] `MaxWrapperFunctionSize = 256` 定数
+  - [x] `LibcWrapperAnalyzer` 型と `NewLibcWrapperAnalyzer()` コンストラクタ
+  - [x] `Analyze(libcELFFile *elf.File) ([]WrapperEntry, error)` の実装:
+    - [x] `.text` セクションのデータとベースアドレスの取得
+    - [x] `elf.File.DynamicSymbols()` によるエクスポートシンボルの列挙:
       - `elf.ErrNoSymbols` → 空スライスとして続行（`.dynsym` なし = ラッパー 0 件）
       - その他のエラー → `fmt.Errorf("...: %w", ErrExportSymbolsFailed)` を返す
-    - [ ] `STB_LOCAL`/`SHN_UNDEF`/非 `STT_FUNC` シンボルの除外
-    - [ ] サイズフィルタ（256 バイト超を除外）
-    - [ ] シンボルアドレスから `.text` セクション内オフセットへの変換
-    - [ ] `AnalyzeSyscallsInRange` の呼び出しと結果の検査
-    - [ ] `DeterminationMethod == "immediate"` かつ `Number >= 0` かつ全 Number 同一のフィルタ
-    - [ ] `WrapperEntry` の収集と `Number` 昇順・同一 `Number` 内 `Name` 昇順の複合キーソート
+    - [x] `STB_LOCAL`/`SHN_UNDEF`/非 `STT_FUNC` シンボルの除外
+    - [x] サイズフィルタ（256 バイト超を除外）
+    - [x] シンボルアドレスから `.text` セクション内オフセットへの変換
+    - [x] `AnalyzeSyscallsInRange` の呼び出しと結果の検査
+    - [x] `DeterminationMethod == "immediate"` かつ `Number >= 0` かつ全 Number 同一のフィルタ
+    - [x] `WrapperEntry` の収集と `Number` 昇順・同一 `Number` 内 `Name` 昇順の複合キーソート
 
-- [ ] `internal/libccache/analyzer_test.go` を作成する（インメモリ ELF バイナリを使用）:
-  - [ ] syscall 命令を含む関数（≤256B）が検出されること
-  - [ ] 256 バイト超の関数が除外されること
-  - [ ] 複数の異なる syscall 番号を含む関数が除外されること
-  - [ ] 同一 syscall 番号の syscall 命令を複数持つ関数は採用されること
-  - [ ] syscall 命令を含まない関数が除外されること
-  - [ ] `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされていること
-  - [ ] `DeterminationMethod != "immediate"` の関数が除外されること
-  - [ ] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出されること
-  - [ ] `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返ること（エラーなし）
-  - [ ] `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返ること
+- [x] `internal/libccache/analyzer_test.go` を作成する（インメモリ ELF バイナリを使用）:
+  - [x] syscall 命令を含む関数（≤256B）が検出されること
+  - [x] 256 バイト超の関数が除外されること
+  - [x] 複数の異なる syscall 番号を含む関数が除外されること
+  - [x] 同一 syscall 番号の syscall 命令を複数持つ関数は採用されること
+  - [x] syscall 命令を含まない関数が除外されること
+  - [x] `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされていること
+  - [x] `DeterminationMethod != "immediate"` の関数が除外されること
+  - [x] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出されること
+  - [x] `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返ること（エラーなし）
+  - [x] `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返ること
 
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ### 2-4. `cache.go` の実装
 
-- [ ] `internal/libccache/cache.go` を作成する:
-  - [ ] `LibcCacheManager` 型と `NewLibcCacheManager()` コンストラクタ（`lib-cache/` ディレクトリの自動作成含む）
-  - [ ] `GetOrCreate(libcPath, libcHash string) ([]WrapperEntry, error)` の実装:
-    - [ ] キャッシュファイルパスの生成（`pathencoding.Encode`）
-    - [ ] キャッシュファイルの読み込みと有効性判定（3 条件チェック）
-    - [ ] キャッシュ MISS 時の libc 解析と書き込み
-    - [ ] `ErrLibcFileNotAccessible`/`ErrCacheWriteFailed` エラーハンドリング
-    - [ ] `*elfanalyzer.UnsupportedArchitectureError` のラップなし伝播（呼び出し元が `errors.As` で検出できること）
+- [x] `internal/libccache/cache.go` を作成する:
+  - [x] `LibcCacheManager` 型と `NewLibcCacheManager()` コンストラクタ（`lib-cache/` ディレクトリの自動作成含む）
+  - [x] `GetOrCreate(libcPath, libcHash string) ([]WrapperEntry, error)` の実装:
+    - [x] キャッシュファイルパスの生成（`pathencoding.Encode`）
+    - [x] キャッシュファイルの読み込みと有効性判定（3 条件チェック）
+    - [x] キャッシュ MISS 時の libc 解析と書き込み
+    - [x] `ErrLibcFileNotAccessible`/`ErrCacheWriteFailed` エラーハンドリング
+    - [x] `*elfanalyzer.UnsupportedArchitectureError` のラップなし伝播（呼び出し元が `errors.As` で検出できること）
 
-- [ ] `internal/libccache/cache_test.go` を作成する（テンポラリディレクトリを使用）:
-  - [ ] キャッシュ未存在時に解析・生成されること
-  - [ ] ハッシュ一致時にキャッシュが再利用されること（アナライザーが呼ばれないこと）
-  - [ ] ハッシュ不一致時にキャッシュが再生成されること
-  - [ ] キャッシュファイルが破損している場合に再解析されること
-  - [ ] `schema_version` 不一致時にキャッシュが再生成されること
-  - [ ] `syscall_wrappers` が `number` 昇順・同一 `number` 内で `name` 昇順でソートされていること
-  - [ ] libc ファイルが読み取れない場合にエラーを返すこと
-  - [ ] キャッシュファイルの書き込みに失敗した場合にエラーを返すこと
+- [x] `internal/libccache/cache_test.go` を作成する（テンポラリディレクトリを使用）:
+  - [x] キャッシュ未存在時に解析・生成されること
+  - [x] ハッシュ一致時にキャッシュが再利用されること（アナライザーが呼ばれないこと）
+  - [x] ハッシュ不一致時にキャッシュが再生成されること
+  - [x] キャッシュファイルが破損している場合に再解析されること
+  - [x] `schema_version` 不一致時にキャッシュが再生成されること
+  - [x] `syscall_wrappers` が `number` 昇順・同一 `number` 内で `name` 昇順でソートされていること
+  - [x] libc ファイルが読み取れない場合にエラーを返すこと
+  - [x] キャッシュファイルの書き込みに失敗した場合にエラーを返すこと
 
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ### 2-5. `matcher.go` の実装
 
-- [ ] `internal/libccache/matcher.go` を作成する:
-  - [ ] `SyscallNumberTable` インターフェース定義
-  - [ ] `ImportSymbolMatcher` 型と `NewImportSymbolMatcher()` コンストラクタ
-  - [ ] `Match(importSymbols []string, wrappers []WrapperEntry) []common.SyscallInfo` の実装:
-    - [ ] `WrapperEntry` を `Name` キーのマップに変換
-    - [ ] インポートシンボルとの完全一致照合
-    - [ ] `SyscallInfo` の生成（`Source = "libc_symbol_import"`, `Location = 0`, `DeterminationMethod = "immediate"`）
-    - [ ] `Number` 重複の排除
+- [x] `internal/libccache/matcher.go` を作成する:
+  - [x] `SyscallNumberTable` インターフェース定義
+  - [x] `ImportSymbolMatcher` 型と `NewImportSymbolMatcher()` コンストラクタ
+  - [x] `Match(importSymbols []string, wrappers []WrapperEntry) []common.SyscallInfo` の実装:
+    - [x] `WrapperEntry` を `Name` キーのマップに変換
+    - [x] インポートシンボルとの完全一致照合
+    - [x] `SyscallInfo` の生成（`Source = "libc_symbol_import"`, `Location = 0`, `DeterminationMethod = "immediate"`）
+    - [x] `Number` 重複の排除
 
-- [ ] `internal/libccache/matcher_test.go` を作成する:
-  - [ ] シンボルがキャッシュに存在する場合に `SyscallInfo` が生成されること
-  - [ ] シンボルがキャッシュに存在しない場合は無視されること
-  - [ ] 生成された `SyscallInfo` の `Source` が `"libc_symbol_import"` であること
-  - [ ] 生成された `SyscallInfo` の `Location` が `0` であること
-  - [ ] 生成された `SyscallInfo` の `DeterminationMethod` が `"immediate"` であること
-  - [ ] 同一 `Number` のエントリが重複しないこと
-  - [ ] 同一 `Number` にマップされる複数シンボルのうち辞書順最小のシンボル名を持つエントリが採用されること
+- [x] `internal/libccache/matcher_test.go` を作成する:
+  - [x] シンボルがキャッシュに存在する場合に `SyscallInfo` が生成されること
+  - [x] シンボルがキャッシュに存在しない場合は無視されること
+  - [x] 生成された `SyscallInfo` の `Source` が `"libc_symbol_import"` であること
+  - [x] 生成された `SyscallInfo` の `Location` が `0` であること
+  - [x] 生成された `SyscallInfo` の `DeterminationMethod` が `"immediate"` であること
+  - [x] 同一 `Number` のエントリが重複しないこと
+  - [x] 同一 `Number` にマップされる複数シンボルのうち辞書順最小のシンボル名を持つエントリが採用されること
 
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ---
 
