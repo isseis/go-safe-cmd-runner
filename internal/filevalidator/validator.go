@@ -620,7 +620,8 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 }
 
 // openELFFile opens filePath via SafeOpenFile and parses it as an ELF binary.
-// Returns errNotELF if the file is not an ELF binary.
+// Returns errNotELF if the file is not an ELF binary (bad magic number or unsupported format).
+// Returns other errors for I/O failures or unexpected parse errors.
 // The caller is responsible for calling Close() on the returned *elf.File.
 func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
 	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
@@ -630,7 +631,11 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
 	elfFile, err := elf.NewFile(f)
 	if err != nil {
 		_ = f.Close()
-		return nil, errNotELF
+		var formatErr *elf.FormatError
+		if errors.As(err, &formatErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, errNotELF
+		}
+		return nil, fmt.Errorf("failed to parse ELF file: %w", err)
 	}
 	return elfFile, nil
 }
