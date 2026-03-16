@@ -197,7 +197,7 @@ store.Save() → 記録ファイル保存（コールバック成功後のみ）
 
 集約キーを `Number` とする。同じ `Number` を持つエントリが複数存在する場合は、`Source == ""`（直接 syscall 命令由来）を優先して 1 件に絞る。`Source == ""` のエントリが存在しない場合は `Source == "libc_symbol_import"` のエントリを採用する。
 
-この設計の根拠: 目的はネットワーク関連 syscall が呼び出されているかどうかの判定であり、同一 syscall 番号に対して信頼性の高い根拠が 1 つあれば十分である。直接検出（`Source == ""`）は `Number >= 0` である限り `GetSyscallName()` により `Name` が必ず解決されるため、名前情報の欠落は発生しない。
+この設計の根拠: 目的はネットワーク関連 syscall が呼び出されているかどうかの判定であり、同一 syscall 番号に対して信頼性の高い根拠が 1 つあれば十分である。直接検出（`Source == ""`）の `Name` は `GetSyscallName()` で解決されるが、テーブルに登録されていない番号では空文字になる。これは libc import 由来でも同様に起こり得るため（libc キャッシュの `WrapperEntry.Name` はテーブル外の関数名を持つ場合がある）、`mergeSyscallInfos` における direct 優先によって Name 解決の質が低下することはない。なお `Name` が空であっても `Number` と `IsNetwork` は正しく設定されるため、セキュリティ判定への影響はない。
 
 #### FR-3.3.3: `SyscallAnalysis` の保存対象拡張（契約変更）
 
