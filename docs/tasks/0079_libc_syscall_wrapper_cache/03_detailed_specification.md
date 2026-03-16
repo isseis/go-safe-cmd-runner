@@ -70,27 +70,17 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
     code []byte,
     sectionBaseAddr uint64,
     startOffset, endOffset int,
+    machine elf.Machine,
 ) ([]common.SyscallInfo, error)
 ```
 
 **処理手順:**
 
-1. `elfFile.Machine` からアーキテクチャ設定を取得する。非対応の場合は `&UnsupportedArchitectureError{Machine: machine}` を返す
+1. `machine` 引数から `a.archConfigs[machine]` を参照してアーキテクチャ設定を取得する。非対応の場合は `&UnsupportedArchitectureError{Machine: machine}` を返す
 2. `findSyscallInstructions(code[startOffset:endOffset], sectionBaseAddr+uint64(startOffset), decoder)` を呼び出して syscall 命令の位置を取得する
 3. 各 syscall 命令位置について `extractSyscallInfo` を呼び出す
 4. **後方スキャン窓のクランプ**: `backwardScanForSyscallNumber` への `windowStart` を `max(windowStart, startOffset)` でクランプする（隣接関数のバイトの混入を防ぐ）
 5. 結果 `[]common.SyscallInfo` を返す（`SyscallInfo.Source` は空文字列のまま）
-
-**注意**: `AnalyzeSyscallsInRange` はアーキテクチャ設定を引数として受け取るか、`SyscallAnalyzer` の既存フィールドから取得する。`*elf.File` を引数に取らず、`code []byte`、`sectionBaseAddr uint64`、`machine elf.Machine` を受け取るシグネチャとする。
-
-```go
-func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
-    code []byte,
-    sectionBaseAddr uint64,
-    startOffset, endOffset int,
-    machine elf.Machine,
-) ([]common.SyscallInfo, error)
-```
 
 **`backwardScanForSyscallNumber` のクランプ実装:**
 
