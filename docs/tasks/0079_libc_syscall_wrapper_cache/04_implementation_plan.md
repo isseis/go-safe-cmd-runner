@@ -171,7 +171,8 @@
   - [ ] `ErrUnsupportedArchitecture` 時: libc 解析をスキップして記録保存が続行すること
   - [ ] 非 ELF ファイル: syscall 解析全体をスキップして記録保存が続行すること
 
-- [ ] 上記のヘルパー関数 (`openELFFile`, `extractUNDSymbols`, `findLibcEntry`, `mergeSyscallInfos`) の単体テストを追加する
+- [ ] 上記のヘルパー関数 (`openELFFile`, `extractUNDSymbols`, `findLibcEntry`, `mergeSyscallInfos`, `buildSyscallAnalysisData`) の単体テストを追加する:
+  - [ ] `buildSyscallAnalysisData`: `HasUnknownSyscalls` が `direct` 引数の `Number < 0` エントリの有無から計算されること（libc import 由来の `Number < 0` は対象外）
 
 - [ ] `make fmt && make test && make lint` でパスすることを確認する
 
