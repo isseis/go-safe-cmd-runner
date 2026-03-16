@@ -7,7 +7,7 @@
 | ファイルパス | 内容 |
 |-------------|------|
 | `internal/libccache/schema.go` | `LibcCacheFile`, `WrapperEntry`, `LibcCacheSchemaVersion` 定数 |
-| `internal/libccache/errors.go` | `ErrLibcFileNotAccessible` 等のエラー型 |
+| `internal/libccache/errors.go` | `ErrLibcFileNotAccessible` 等のエラー変数定義 |
 | `internal/libccache/analyzer.go` | `LibcWrapperAnalyzer` |
 | `internal/libccache/cache.go` | `LibcCacheManager` |
 | `internal/libccache/matcher.go` | `ImportSymbolMatcher` |
