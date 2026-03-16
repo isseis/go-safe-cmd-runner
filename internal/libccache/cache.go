@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator/pathencoding"
@@ -83,7 +84,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 		return nil, err
 	}
 
-	// Write cache file.
+	// Write cache file atomically: write to a temp file, then rename.
 	cache := LibcCacheFile{
 		SchemaVersion:   LibcCacheSchemaVersion,
 		LibPath:         libcPath,
@@ -95,9 +96,35 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCacheWriteFailed, err)
 	}
-	if err := os.WriteFile(cacheFilePath, cacheData, cacheFilePerm); err != nil {
+	if err := writeFileAtomic(cacheFilePath, cacheData, cacheFilePerm); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCacheWriteFailed, err)
 	}
 
 	return wrappers, nil
+}
+
+// writeFileAtomic writes data to path atomically by writing to a temp file in the
+// same directory and then renaming it. This prevents partial reads by concurrent
+// processes reading the cache file while it is being written.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), ".cache-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name() // tmpPath is returned by os.CreateTemp; not user-controlled
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
+		return err
+	}
+	if err := tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
+		return err
+	}
+	return os.Rename(tmpPath, path) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
 }
