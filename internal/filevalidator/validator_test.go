@@ -1348,22 +1348,32 @@ func TestRecord_LibcCache_NonELFFile(t *testing.T) {
 }
 
 // TestRecord_LibcCache_Error_CausesRecordFailure verifies that a fatal libc
-// cache error prevents the record file from being saved.
+// cache error causes analyzeSyscalls to return an error.
 func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
-	// We need a DynLibDeps record. Since the target is non-ELF, the ELF open
-	// step exits early before reaching libc cache. This test verifies the
-	// libc cache error path via merging approach – validated via unit tests.
-	// For the validator-level test, non-ELF files correctly skip cache.
-	// The fatal path is covered by stubLibcCache returning errLibcNotAccess.
-	// This is indirectly tested: we confirm non-ELF → nil SyscallAnalysis.
-	stub := &stubLibcCache{
-		err: errors.New("libc file not accessible"),
+	// Use a real ELF binary so that openELFFile succeeds and reaches the
+	// libc cache path. /usr/bin/ls is a standard ELF available on all Linux systems.
+	const elfPath = "/usr/bin/ls"
+	if _, err := os.Stat(elfPath); err != nil {
+		t.Skipf("skipping: %s not available: %v", elfPath, err)
 	}
-	v, targetFile := newValidatorWithStubs(t, stub)
 
-	// non-ELF file: ELF open fails with errNotELF → libc cache is never called
-	_, _, err := v.SaveRecord(targetFile, false)
-	require.NoError(t, err, "non-ELF should skip libc cache and succeed")
+	tempDir := safeTempDir(t)
+	stub := &stubLibcCache{err: errors.New("libc file not accessible")}
+	v, err := New(&SHA256{}, tempDir)
+	require.NoError(t, err)
+	v.SetLibcCache(stub)
+
+	// Inject a DynLibDeps record with a libc entry so the libc cache is called.
+	record := &fileanalysis.Record{
+		DynLibDeps: &fileanalysis.DynLibDepsData{
+			Libs: []fileanalysis.LibEntry{
+				{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
+			},
+		},
+	}
+	analyzeErr := v.analyzeSyscalls(record, elfPath)
+	require.Error(t, analyzeErr, "fatal libc cache error must propagate")
+	require.Contains(t, analyzeErr.Error(), "libc cache error")
 }
 
 // TestRecord_LibcCache_UnsupportedArch_SkipsAndContinues verifies that
