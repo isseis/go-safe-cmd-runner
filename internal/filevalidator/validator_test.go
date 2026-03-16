@@ -1290,8 +1290,9 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		direct := []common.SyscallInfo{
 			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
 		}
-		data := buildSyscallAnalysisData(all, direct)
+		data := buildSyscallAnalysisData(all, direct, elf.EM_X86_64)
 		assert.True(t, data.HasUnknownSyscalls, "should detect unknown from direct")
+		assert.Equal(t, "x86_64", data.Architecture)
 	})
 
 	t.Run("HasUnknownSyscalls_not_set_from_libc_entries", func(t *testing.T) {
@@ -1300,8 +1301,9 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 			{Number: -1, Source: "libc_symbol_import"},
 		}
 		direct := []common.SyscallInfo{}
-		data := buildSyscallAnalysisData(all, direct)
+		data := buildSyscallAnalysisData(all, direct, elf.EM_AARCH64)
 		assert.False(t, data.HasUnknownSyscalls)
+		assert.Equal(t, "arm64", data.Architecture)
 	})
 }
 
