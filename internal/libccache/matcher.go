@@ -2,6 +2,7 @@ package libccache
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
 // SyscallNumberTable provides syscall name and network classification by number.
@@ -52,7 +53,7 @@ func (m *ImportSymbolMatcher) Match(importSymbols []string, wrappers []WrapperEn
 			Name:                m.syscallTable.GetSyscallName(w.Number),
 			IsNetwork:           m.syscallTable.IsNetworkSyscall(w.Number),
 			Location:            0,
-			DeterminationMethod: "immediate",
+			DeterminationMethod: elfanalyzer.DeterminationMethodImmediate,
 			Source:              SourceLibcSymbolImport,
 		}
 		if info.Name == "" {
