@@ -148,9 +148,9 @@ sequenceDiagram
             CB->>CB: "extractUNDSymbols(*elf.File) → importSymbols []string"
             CB->>CM: "GetOrCreate(libcPath, libcHash, libcELFFile)"
             CM->>FS: "lib-cache/<encoded-libc> 読み込み"
-            alt キャッシュ HIT（lib_hash 一致）
+            alt キャッシュ HIT（schema_version 一致 かつ lib_hash 一致）
                 FS-->>CM: "LibcCacheFile"
-            else キャッシュ MISS または lib_hash 不一致
+            else キャッシュ MISS、schema_version 不一致、または lib_hash 不一致
                 CM->>WA: "Analyze(libcELFFile)"
                 WA->>SA: "AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)"
                 SA-->>WA: "[]SyscallInfo (Number, DeterminationMethod)"
@@ -183,9 +183,11 @@ flowchart TD
     B -->|"存在する"| C["JSON パース"]
     C --> D{"パース成功?"}
     D -->|"失敗（破損）"| E
-    D -->|"成功"| F{"lib_hash 一致?"}
-    F -->|"不一致（libc 更新）"| E
-    F -->|"一致"| G["キャッシュ返却 (HIT)"]
+    D -->|"成功"| F{"schema_version 一致?"}
+    F -->|"不一致（スキーマ変更）"| E
+    F -->|"一致"| F2{"lib_hash 一致?"}
+    F2 -->|"不一致（libc 更新）"| E
+    F2 -->|"一致"| G["キャッシュ返却 (HIT)"]
     E --> H["WrapperEntry 生成"]
     H --> I["lib-cache/ 書き込み"]
     I --> J{"書き込み成功?"}
@@ -200,8 +202,14 @@ flowchart TD
 #### 3.1.1 スキーマ定義 (`schema.go`)
 
 ```go
+// LibcCacheSchemaVersion はキャッシュファイルの現行スキーマバージョン。
+// スキーマの後方互換性を破壊する変更（フィールド削除・型変更・意味変更等）を
+// 行う際に値を更新する。不一致時はキャッシュを無効とみなして再解析する。
+const LibcCacheSchemaVersion = 1
+
 // LibcCacheFile はキャッシュファイルの JSON スキーマ。
 type LibcCacheFile struct {
+    SchemaVersion   int            `json:"schema_version"`
     LibPath         string         `json:"lib_path"`
     LibHash         string         `json:"lib_hash"`
     SyscallWrappers []WrapperEntry `json:"syscall_wrappers"`
@@ -666,7 +674,8 @@ flowchart TB
 ### 8.2 スキーマ互換性
 
 - `SyscallInfo.Source` は `omitempty` のため、既存の記録ファイルは正常に読み込める
-- `CurrentSchemaVersion` の変更は不要（`01_requirements.md` §4.3 参照）
+- `CurrentSchemaVersion`（記録ファイル側）の変更は不要（`01_requirements.md` §4.3 参照）
+- `LibcCacheFile.SchemaVersion` はキャッシュファイル専用のバージョン管理フィールド。`LibcCacheFile` のフィールド削除・型変更・意味変更など後方互換性を破壊する変更を行う際に `LibcCacheSchemaVersion` を更新する。`GetOrCreate()` は `schema_version` が `LibcCacheSchemaVersion` と一致しない場合、キャッシュを無効とみなして再解析する。新規フィールドの追加のみで既存フィールドの意味が変わらない場合はバージョンを上げなくてよい。
 
 ### 8.3 保守性
 
