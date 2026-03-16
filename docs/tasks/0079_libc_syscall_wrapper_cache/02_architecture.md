@@ -153,7 +153,7 @@ sequenceDiagram
             else キャッシュ MISS、schema_version 不一致、または lib_hash 不一致
                 CM->>FS: "SafeOpenFile(libcPath) → libcELFFile"
                 CM->>WA: "Analyze(libcELFFile)"
-                WA->>SA: "AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)"
+                WA->>SA: "AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset, machine)"
                 SA-->>WA: "[]SyscallInfo (Number, DeterminationMethod)"
                 WA->>WA: "サイズフィルタ・immediate/単一Number フィルタ"
                 WA-->>CM: "[]WrapperEntry"
@@ -224,7 +224,7 @@ type WrapperEntry struct {
 }
 ```
 
-`SyscallWrappers` は `Number` 昇順でソートして保存する（決定論的出力）。
+`SyscallWrappers` は `Number` 昇順、同一 `Number` 内では `Name` 昇順の複合キーでソートして保存する（決定論的出力）。
 
 #### 3.1.2 libc エクスポート関数解析 (`analyzer.go`)
 
@@ -247,14 +247,14 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 
 1. `.dynsym` セクションからエクスポートシンボル（定義済み、関数型）を列挙する
 2. 各シンボルのアドレス・サイズを取得し、`Size > MaxWrapperFunctionSize` のものをスキップする
-3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
+3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset, libcELFFile.Machine)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
 4. 返された `[]SyscallInfo` から `WrapperEntry.Number` を決定する。採用条件は以下をすべて満たすこと:
    - すべてのエントリの `DeterminationMethod == "immediate"` であること（`unknown:*` や他の方法は拒否）
    - すべてのエントリの `Number` が同一の非負値（`>= 0`）であること
    - いずれかの条件を満たさない場合はその関数をスキップする
 
    **`immediate` のみを受理する根拠**: `backwardScanForSyscallNumber` の実装において、`Number >= 0` を返す唯一のパスは `DeterminationMethodImmediate` である（`syscall_analyzer.go:449-450`）。現時点では `DeterminationMethod == "immediate"` と `Number >= 0` は等価条件だが、将来の実装変更（新しい決定方法の追加等）によってこの等価性が崩れた際に誤った `WrapperEntry` がキャッシュに混入しないよう、`DeterminationMethod` を明示的にフィルタ条件に含める。
-5. 採用した関数を `WrapperEntry` として収集し `Number` 昇順でソートして返す
+5. 採用した関数を `WrapperEntry` として収集し `Number` 昇順、同一 `Number` 内では `Name` 昇順の複合キーでソートして返す
 
 #### 3.1.3 キャッシュ管理 (`cache.go`)
 
@@ -382,7 +382,7 @@ store.Save() → 記録ファイル書き込み  ← 記録ファイルは必ず
 |------|--------|------|
 | 対象バイナリが ELF でない（スクリプト等） | `ErrNotELF` | syscall 解析スキップ、`SyscallAnalysis = nil` で記録保存 |
 | libc が動的依存に存在しない（静的バイナリ等） | nil（libc エントリなし） | libc キャッシュ処理スキップ、`SyscallAnalysis` に direct 分のみ設定 |
-| アーキテクチャ非対応（x86_64 以外） | `ErrUnsupportedArchitecture` | libc キャッシュ処理スキップ、同上 |
+| アーキテクチャ非対応（x86_64 以外） | `*elfanalyzer.UnsupportedArchitectureError`（`errors.As` で検出） | libc キャッシュ処理スキップ、同上 |
 
 **fatal にする条件（コールバックエラー → 記録ファイル未保存）:**
 
@@ -462,11 +462,12 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)
 ```go
 // extractUNDSymbols は elfFile の .dynsym セクションから
 // UND（未定義）シンボル名の一覧を返す。
-// .dynsym が存在しない（静的バイナリ等）場合は空スライスを返す（エラーなし）。
-func extractUNDSymbols(elfFile *elf.File) []string
+// .dynsym が存在しない（静的バイナリ等）場合は空スライスとエラーなしを返す。
+// .dynsym の読み取りエラー（ELF 破損等）はエラーを返す。
+func extractUNDSymbols(elfFile *elf.File) ([]string, error)
 ```
 
-この関数も `filevalidator` パッケージ内のパッケージ非公開ヘルパーとして実装する。`elf.ErrNoSymbols` は「シンボルなし」として空スライスを返す。`.dynsym` の読み取りエラーはコールバックエラーとする。
+この関数も `filevalidator` パッケージ内のパッケージ非公開ヘルパーとして実装する。`elf.ErrNoSymbols` は「シンボルなし」として空スライスを返す（エラーなし）。それ以外の読み取りエラーはエラーとして返し、呼び出し元のコールバックがエラーとして処理する。
 
 #### `*elf.File` の共有範囲
 
@@ -482,8 +483,9 @@ libc は対象バイナリとは別ファイルであるため、`LibcCacheManag
 
 ```go
 // SyscallAnalysis contains syscall analysis result (optional).
-// Present for static ELF binaries that have been analyzed,
-// and for dynamic ELF binaries where syscalls via libc were detected.
+// Present when at least one syscall was detected (via direct syscall instruction
+// or libc symbol import). Nil for non-ELF files and ELF binaries with no
+// detected syscalls.
 SyscallAnalysis *SyscallAnalysisData `json:"syscall_analysis,omitempty"`
 ```
 
@@ -563,14 +565,15 @@ flowchart TD
 
 `internal/libccache/errors.go` に以下を定義する:
 
-| エラー型 | 説明 |
-|---------|------|
+| エラー変数 | 説明 |
+|-----------|------|
 | `ErrLibcFileNotAccessible` | libc ファイルの読み取り失敗 |
 | `ErrExportSymbolsFailed` | エクスポートシンボル取得失敗 |
 | `ErrCacheWriteFailed` | キャッシュファイルの書き込み失敗 |
-| `ErrUnsupportedArchitecture` | 非対応アーキテクチャ（x86_64 以外） |
 
-`ErrUnsupportedArchitecture` は `AnalyzeSyscallsInRange` で発生し、`LibcWrapperAnalyzer.Analyze()` → `LibcCacheManager.GetOrCreate()` とラップなしで伝播する。Validator コールバックが `errors.Is` で検知してスキップする（唯一の継続パス）。詳細な伝播経路は §6.2 参照。
+非対応アーキテクチャのエラーは `elfanalyzer.UnsupportedArchitectureError`（型エラー）が `libccache` パッケージを通じてラップなしで伝播する。`libccache` に独自のセンチネル変数は定義しない。
+
+`UnsupportedArchitectureError` は `AnalyzeSyscallsInRange` で発生し、`LibcWrapperAnalyzer.Analyze()` → `LibcCacheManager.GetOrCreate()` とラップなしで伝播する。Validator コールバックが `errors.As(err, new(*elfanalyzer.UnsupportedArchitectureError))` で検知してスキップする（唯一の継続パス）。詳細な伝播経路は §6.2 参照。
 
 ## 6. 依存関係
 
@@ -619,11 +622,12 @@ graph LR
 // sectionBaseAddr は code 全体の仮想アドレス起点。
 // startOffset/endOffset は code 先頭からのバイトオフセット。
 // Go ラッパー解析（Pass 2）は行わない。
-// アーキテクチャ非対応の場合は ErrUnsupportedArchitecture を返す。
+// アーキテクチャ非対応の場合は *elfanalyzer.UnsupportedArchitectureError を返す（errors.As で検出）。
 func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
     code []byte,
     sectionBaseAddr uint64,
     startOffset, endOffset int,
+    machine elf.Machine,
 ) ([]common.SyscallInfo, error)
 ```
 
@@ -647,13 +651,13 @@ if windowStart < startOffset {
 
 クランプにより後方スキャン可能なバイト数が減少する場合（関数が 750 バイト未満で syscall 命令が先頭付近にある場合）、`Number` が解決できずに `DeterminationMethodUnknownScanLimitExceeded` や `DeterminationMethodUnknownDecodeFailed` が返ることがある。`LibcWrapperAnalyzer.Analyze()` はこれらを `DeterminationMethod != "immediate"` として §3.1.2 ステップ 4 のフィルタで除外するため、キャッシュへの混入は防がれる。
 
-`ErrUnsupportedArchitecture` の伝播経路:
+`*UnsupportedArchitectureError` の伝播経路（各層でラップせずそのまま返す。最終的に Validator コールバックが `errors.As` で検出する）:
 
 ```
 AnalyzeSyscallsInRange()  →  LibcWrapperAnalyzer.Analyze()  →  LibcCacheManager.GetOrCreate()  →  呼び出し元（Validator コールバック）
 ```
 
-`LibcWrapperAnalyzer.Analyze()` は `AnalyzeSyscallsInRange` から受け取った `ErrUnsupportedArchitecture` をラップせずそのまま返す。`LibcCacheManager.GetOrCreate()` も同様にそのまま返す。呼び出し元の Validator コールバックが `errors.Is(err, ErrUnsupportedArchitecture)` で検知し、libc キャッシュ処理をスキップして処理を継続する（§5.2 参照）。
+`LibcWrapperAnalyzer.Analyze()` は `AnalyzeSyscallsInRange` から受け取った `*UnsupportedArchitectureError` をラップせずそのまま返す。`LibcCacheManager.GetOrCreate()` も同様にそのまま返す。呼び出し元の Validator コールバックが `errors.As(err, new(*elfanalyzer.UnsupportedArchitectureError))` で検知し、libc キャッシュ処理をスキップして処理を継続する（§5.2 参照）。
 
 再利用方法の選択肢:
 
