@@ -274,10 +274,10 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 
 1. キャッシュファイルパスを `cacheDir + "/" + pathEnc.Encode(libcPath)` で生成する
 2. キャッシュファイルを読み込む
-   - ファイルが存在しない場合 → ステップ 5（MISS）へ
-   - JSON パース失敗 → ステップ 5（MISS）へ
-   - `cache.SchemaVersion != LibcCacheSchemaVersion` → ステップ 5（MISS）へ
-   - `cache.LibHash != libcHash` → ステップ 5（MISS）へ
+   - ファイルが存在しない場合 → ステップ 4（MISS）へ
+   - JSON パース失敗 → ステップ 4（MISS）へ
+   - `cache.SchemaVersion != LibcCacheSchemaVersion` → ステップ 4（MISS）へ
+   - `cache.LibHash != libcHash` → ステップ 4（MISS）へ
 3. キャッシュ HIT: `cache.SyscallWrappers` を返す
 4. キャッシュ MISS:
    - `fs.SafeOpenFile(libcPath, os.O_RDONLY, 0)` で libc を開く（失敗 → `ErrLibcFileNotAccessible` を返す）
