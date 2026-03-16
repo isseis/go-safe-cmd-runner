@@ -152,9 +152,9 @@ sequenceDiagram
                 FS-->>CM: "LibcCacheFile"
             else キャッシュ MISS または lib_hash 不一致
                 CM->>WA: "Analyze(libcELFFile)"
-                WA->>SA: "FindSyscallInstructions(関数範囲)"
-                SA-->>WA: "syscall 命令アドレス一覧"
-                WA->>WA: "サイズフィルタ・複数syscall番号フィルタ"
+                WA->>SA: "AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)"
+                SA-->>WA: "[]SyscallInfo (Number, DeterminationMethod)"
+                WA->>WA: "サイズフィルタ・immediate/単一Number フィルタ"
                 WA-->>CM: "[]WrapperEntry"
                 CM->>FS: "lib-cache/<encoded-libc> 書き込み  ← 先行"
             end
@@ -237,7 +237,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 
 1. `.dynsym` セクションからエクスポートシンボル（定義済み、関数型）を列挙する
 2. 各シンボルのアドレス・サイズを取得し、`Size > MaxWrapperFunctionSize` のものをスキップする
-3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, funcStartOffset, funcEndOffset, decoder, table)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
+3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
 4. 返された `[]SyscallInfo` から `WrapperEntry.Number` を決定する。採用条件は以下をすべて満たすこと:
    - すべてのエントリの `DeterminationMethod == "immediate"` であること（`unknown:*` や他の方法は拒否）
    - すべてのエントリの `Number` が同一の正値であること
