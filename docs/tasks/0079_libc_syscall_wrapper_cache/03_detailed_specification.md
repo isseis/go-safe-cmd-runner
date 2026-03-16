@@ -219,6 +219,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
    - `ErrUnsupportedArchitecture` は呼び出し元にそのまま返す（ラップなし）
    - その他のエラーはスキップ（当該関数を無視して続行）
 6. 返された `[]SyscallInfo` を検査する
+   - 空スライス（syscall 命令なし）の場合はスキップ（当該関数をキャッシュに含めない）
    - すべてのエントリの `DeterminationMethod == "immediate"` かつ `Number >= 0` でなければスキップ
    - すべてのエントリの `Number` が同一でなければスキップ
    - 条件を満たした場合 `WrapperEntry{Name: sym.Name, Number: infos[0].Number}` を収集
