@@ -1311,6 +1311,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		}
 		data := buildSyscallAnalysisData(all, direct, elf.EM_X86_64)
 		assert.True(t, data.HasUnknownSyscalls, "should detect unknown from direct")
+		assert.True(t, data.Summary.IsHighRisk, "IsHighRisk must mirror HasUnknownSyscalls")
 		assert.Equal(t, "x86_64", data.Architecture)
 	})
 
@@ -1322,6 +1323,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		direct := []common.SyscallInfo{}
 		data := buildSyscallAnalysisData(all, direct, elf.EM_AARCH64)
 		assert.False(t, data.HasUnknownSyscalls)
+		assert.False(t, data.Summary.IsHighRisk, "IsHighRisk must mirror HasUnknownSyscalls")
 		assert.Equal(t, "arm64", data.Architecture)
 	})
 }

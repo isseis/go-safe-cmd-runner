@@ -69,7 +69,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 	// Cache MISS: open and analyze the libc file.
 	libcFile, err := m.fs.SafeOpenFile(libcPath, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, ErrLibcFileNotAccessible
+		return nil, fmt.Errorf("%w: %w", ErrLibcFileNotAccessible, err)
 	}
 
 	elfFile, err := elf.NewFile(libcFile)

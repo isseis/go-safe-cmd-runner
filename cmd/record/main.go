@@ -98,7 +98,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
-		fv.SetSyscallAnalyzer(newSyscallAnalyzerAdapter(syscallAnalyzer))
+		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
 
 		cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
 		fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -108,7 +108,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "Error: Failed to initialize libc cache: %v\n", cacheErr) //nolint:errcheck
 			return 1
 		}
-		fv.SetLibcCache(newLibcCacheAdapter(cacheMgr, syscallAnalyzer))
+		fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
 	}
 
 	return processFiles(validator, cfg, stdout, stderr)

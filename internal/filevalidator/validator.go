@@ -627,6 +627,12 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	return nil
 }
 
+// elfMagicStr is the ELF magic number string literal.
+const elfMagicStr = "\x7fELF"
+
+// elfMagic is the ELF magic number bytes.
+var elfMagic = []byte(elfMagicStr)
+
 // openELFFile opens filePath via SafeOpenFile and parses it as an ELF binary.
 // Returns errNotELF if the file is not an ELF binary (bad magic number or unsupported format).
 // Returns other errors for I/O failures or unexpected parse errors.
@@ -636,11 +642,24 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
+
+	// Pre-check magic bytes to detect non-ELF files without relying on elf.NewFile
+	// error classification, which may change across Go versions.
+	magic := make([]byte, len(elfMagic))
+	if _, err := io.ReadFull(f, magic); err != nil || !bytes.Equal(magic, elfMagic) {
+		_ = f.Close()
+		return nil, errNotELF
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("failed to seek file: %w", err)
+	}
+
 	elfFile, err := elf.NewFile(f)
 	if err != nil {
 		_ = f.Close()
 		var formatErr *elf.FormatError
-		if errors.As(err, &formatErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		if errors.As(err, &formatErr) {
 			return nil, errNotELF
 		}
 		return nil, fmt.Errorf("failed to parse ELF file: %w", err)
@@ -747,6 +766,7 @@ func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallI
 				HasNetworkSyscalls:  hasNetwork,
 				TotalDetectedEvents: len(all),
 				NetworkSyscallCount: networkCount,
+				IsHighRisk:          hasUnknown,
 			},
 		},
 		AnalyzedAt: time.Now().UTC(),
