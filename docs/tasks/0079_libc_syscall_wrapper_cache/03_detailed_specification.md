@@ -377,6 +377,7 @@ func (m *ImportSymbolMatcher) Match(
 | 生成された `SyscallInfo` の `Location` が `0` | アドレス未確定 | AC-4 |
 | 生成された `SyscallInfo` の `DeterminationMethod` が `"immediate"` | 品質保証 | AC-4 |
 | 同一 `Number` のエントリが重複しない | 重複除外 | AC-4 |
+| 同一 `Number` にマップされる複数シンボルのうち辞書順最小のシンボル名を持つエントリが採用される | 重複除外のシンボル名選択 | AC-4 |
 
 ---
 

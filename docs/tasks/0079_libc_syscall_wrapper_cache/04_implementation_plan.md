@@ -127,6 +127,7 @@
   - [ ] 生成された `SyscallInfo` の `Location` が `0` であること
   - [ ] 生成された `SyscallInfo` の `DeterminationMethod` が `"immediate"` であること
   - [ ] 同一 `Number` のエントリが重複しないこと
+  - [ ] 同一 `Number` にマップされる複数シンボルのうち辞書順最小のシンボル名を持つエントリが採用されること
 
 - [ ] `make fmt && make test && make lint` でパスすることを確認する
 
