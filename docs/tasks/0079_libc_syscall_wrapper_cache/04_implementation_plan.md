@@ -2,7 +2,7 @@
 
 ## 進捗サマリー
 
-- [ ] フェーズ 1: 基盤整備（型定義・既存 API 拡張）
+- [x] フェーズ 1: 基盤整備（型定義・既存 API 拡張）
 - [ ] フェーズ 2: `libccache` パッケージの実装
 - [ ] フェーズ 3: `Validator` の統合
 - [ ] フェーズ 4: `cmd/record` のリファクタリング
@@ -14,13 +14,13 @@
 
 ### 1-1. `common.SyscallInfo` への `Source` フィールド追加
 
-- [ ] `internal/common/syscall_types.go` に `Source string \`json:"source,omitempty"\`` を追加する
-- [ ] `internal/common/syscall_types_test.go` に `Source` フィールドの JSON `omitempty` 動作テストを追加する
-- [ ] `make fmt && make test && make lint` で既存テストがパスすることを確認する
+- [x] `internal/common/syscall_types.go` に `Source string \`json:"source,omitempty"\`` を追加する
+- [x] `internal/common/syscall_types_test.go` に `Source` フィールドの JSON `omitempty` 動作テストを追加する
+- [x] `make fmt && make test && make lint` で既存テストがパスすることを確認する
 
 ### 1-2. `elfanalyzer.SyscallAnalyzer.AnalyzeSyscallsInRange` の追加
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
   ```go
   func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
       code []byte,
@@ -29,29 +29,29 @@
       machine elf.Machine,
   ) ([]common.SyscallInfo, error)
   ```
-- [ ] 実装では `code[startOffset:endOffset]` をスライスとして渡し、`baseAddr` を `sectionBaseAddr+uint64(startOffset)` にシフトする。これにより `backwardScanForSyscallNumber` の既存の `max(windowStart, 0)` がスライス先頭（= 元の `startOffset` 位置）へのクランプを担うため、追加のクランプ処理や専用ヘルパーメソッドは追加しない
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `AnalyzeSyscallsInRange` のテストを追加する:
-  - [ ] 正常系: syscall 命令を含む範囲で正しく検出される
-  - [ ] 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない
-  - [ ] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出される
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] 実装では `code[startOffset:endOffset]` をスライスとして渡し、`baseAddr` を `sectionBaseAddr+uint64(startOffset)` にシフトする。これにより `backwardScanForSyscallNumber` の既存の `max(windowStart, 0)` がスライス先頭（= 元の `startOffset` 位置）へのクランプを担うため、追加のクランプ処理や専用ヘルパーメソッドは追加しない
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `AnalyzeSyscallsInRange` のテストを追加する:
+  - [x] 正常系: syscall 命令を含む範囲で正しく検出される
+  - [x] 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない
+  - [x] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出される
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ### 1-2b. `elfanalyzer.SyscallAnalyzer.GetSyscallTable` の追加
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
   ```go
   func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool)
   ```
   - `archConfigs[machine]` が存在する場合は `(cfg.syscallTable, true)` を返す
   - 存在しない場合は `(nil, false)` を返す
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `GetSyscallTable` のテストを追加する:
-  - [ ] 対応アーキテクチャ（`elf.EM_X86_64`）で `(table, true)` が返る
-  - [ ] 非対応アーキテクチャで `(nil, false)` が返る
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `GetSyscallTable` のテストを追加する:
+  - [x] 対応アーキテクチャ（`elf.EM_X86_64`）で `(table, true)` が返る
+  - [x] 非対応アーキテクチャで `(nil, false)` が返る
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ### 1-3. `fileanalysis/schema.go` コメント更新
 
-- [ ] `internal/fileanalysis/schema.go` の `SyscallAnalysis` フィールドのコメントを「静的 ELF バイナリ、および libc 経由の syscall が検出された動的 ELF バイナリ」に更新する
+- [x] `internal/fileanalysis/schema.go` の `SyscallAnalysis` フィールドのコメントを「静的 ELF バイナリ、および libc 経由の syscall が検出された動的 ELF バイナリ」に更新する
 
 ---
 

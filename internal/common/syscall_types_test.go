@@ -49,6 +49,38 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		_, hasName := m["name"]
 		assert.False(t, hasName, "name field should be omitted when empty")
 	})
+
+	t.Run("source field omitempty when empty", func(t *testing.T) {
+		info := common.SyscallInfo{
+			Number:              41,
+			Location:            0x401000,
+			DeterminationMethod: "immediate",
+		}
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		_, hasSource := m["source"]
+		assert.False(t, hasSource, "source field should be omitted when empty")
+	})
+
+	t.Run("source field present when set", func(t *testing.T) {
+		info := common.SyscallInfo{
+			Number:              83,
+			Location:            0,
+			DeterminationMethod: "immediate",
+			Source:              "libc_symbol_import",
+		}
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		assert.Equal(t, "libc_symbol_import", m["source"])
+	})
 }
 
 // TestSyscallSummary_JSONRoundTrip verifies JSON marshal/unmarshal of SyscallSummary.

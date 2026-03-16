@@ -585,3 +585,72 @@ func TestSyscallAnalyzer_ARM64AnalysisPath(t *testing.T) {
 	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
 	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
 }
+
+// TestSyscallAnalyzer_AnalyzeSyscallsInRange tests the AnalyzeSyscallsInRange method.
+func TestSyscallAnalyzer_AnalyzeSyscallsInRange(t *testing.T) {
+	t.Run("detects syscall in range", func(t *testing.T) {
+		// code layout:
+		//   [0:5]  = mov $0x29, %eax (unrelated prefix bytes)
+		//   [5:12] = mov $0x29, %eax; syscall  (target function)
+		// We analyze [5:12] and expect syscall 41 (socket) to be detected.
+		code := []byte{
+			// prefix: mov $0xFF, %eax (not in range, should not affect result)
+			0xb8, 0xFF, 0x00, 0x00, 0x00,
+			// target function: mov $0x29, %eax; syscall
+			0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05,
+		}
+		analyzer := NewSyscallAnalyzer()
+		infos, err := analyzer.AnalyzeSyscallsInRange(code, 0x400000, 5, 12, elf.EM_X86_64)
+		require.NoError(t, err)
+		require.Len(t, infos, 1)
+		assert.Equal(t, 41, infos[0].Number)
+		assert.Equal(t, DeterminationMethodImmediate, infos[0].DeterminationMethod)
+	})
+
+	t.Run("boundary check: adjacent bytes not mixed in", func(t *testing.T) {
+		// code layout:
+		//   [0:5]  = mov $0x02, %eax (fork, not in range)
+		//   [5:12] = mov $0x29, %eax; syscall  (target function, socket=41)
+		// If startOffset clamping works correctly, the backward scan from the syscall
+		// at offset 5+5=10 will only see bytes from offset 5 onward (not offset 0).
+		code := []byte{
+			// adjacent function: mov $0x02, %eax (fork)
+			0xb8, 0x02, 0x00, 0x00, 0x00,
+			// target function: mov $0x29, %eax; syscall
+			0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05,
+		}
+		analyzer := NewSyscallAnalyzer()
+		infos, err := analyzer.AnalyzeSyscallsInRange(code, 0, 5, 12, elf.EM_X86_64)
+		require.NoError(t, err)
+		require.Len(t, infos, 1)
+		// Should detect syscall 41 (socket), not syscall 2 (fork) from adjacent bytes
+		assert.Equal(t, 41, infos[0].Number)
+	})
+
+	t.Run("unsupported architecture returns UnsupportedArchitectureError", func(t *testing.T) {
+		code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00, 0x0f, 0x05}
+		analyzer := NewSyscallAnalyzer()
+		_, err := analyzer.AnalyzeSyscallsInRange(code, 0, 0, len(code), elf.EM_386)
+		require.Error(t, err)
+		var archErr *UnsupportedArchitectureError
+		require.ErrorAs(t, err, &archErr)
+		assert.Equal(t, elf.EM_386, archErr.Machine)
+	})
+}
+
+// TestSyscallAnalyzer_GetSyscallTable tests the GetSyscallTable method.
+func TestSyscallAnalyzer_GetSyscallTable(t *testing.T) {
+	t.Run("supported architecture returns table and true", func(t *testing.T) {
+		analyzer := NewSyscallAnalyzer()
+		table, ok := analyzer.GetSyscallTable(elf.EM_X86_64)
+		assert.True(t, ok)
+		assert.NotNil(t, table)
+	})
+
+	t.Run("unsupported architecture returns nil and false", func(t *testing.T) {
+		analyzer := NewSyscallAnalyzer()
+		table, ok := analyzer.GetSyscallTable(elf.EM_386)
+		assert.False(t, ok)
+		assert.Nil(t, table)
+	})
+}

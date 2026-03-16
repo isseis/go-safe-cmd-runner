@@ -24,6 +24,11 @@ type SyscallInfo struct {
 	// See the DeterminationMethod* constants in the elfanalyzer package for
 	// possible values.
 	DeterminationMethod string `json:"determination_method"`
+
+	// Source describes how this syscall was detected.
+	// Empty string (omitted in JSON) means detection via direct syscall instruction.
+	// "libc_symbol_import" means detection via libc import symbol matching.
+	Source string `json:"source,omitempty"`
 }
 
 // SyscallSummary provides aggregated analysis information.
