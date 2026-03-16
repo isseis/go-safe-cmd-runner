@@ -1279,6 +1279,25 @@ func TestMergeSyscallInfos(t *testing.T) {
 	assert.Equal(t, "", byNum[1].Source, "direct entry must win")
 	// Number 2: libc entry kept
 	assert.Equal(t, "libc_symbol_import", byNum[2].Source)
+
+	// Output must be sorted by Number ascending.
+	require.Len(t, merged, 2)
+	assert.Equal(t, 1, merged[0].Number, "first entry must be Number=1")
+	assert.Equal(t, 2, merged[1].Number, "second entry must be Number=2")
+}
+
+func TestMergeSyscallInfos_SortOrder(t *testing.T) {
+	// Feed entries in reverse order to confirm output is always sorted ascending.
+	libc := []common.SyscallInfo{
+		{Number: 99, Source: "libc_symbol_import"},
+		{Number: 3, Source: "libc_symbol_import"},
+		{Number: 42, Source: "libc_symbol_import"},
+	}
+	merged := mergeSyscallInfos(libc, nil)
+	require.Len(t, merged, 3)
+	assert.Equal(t, 3, merged[0].Number)
+	assert.Equal(t, 42, merged[1].Number)
+	assert.Equal(t, 99, merged[2].Number)
 }
 
 func TestBuildSyscallAnalysisData(t *testing.T) {

@@ -1,6 +1,8 @@
 package libccache
 
 import (
+	"sort"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
@@ -61,6 +63,7 @@ func (m *ImportSymbolMatcher) Match(importSymbols []string, wrappers []WrapperEn
 		}
 		result = append(result, info)
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
 
 	return result
 }
