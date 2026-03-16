@@ -3,6 +3,7 @@ package libccache
 import (
 	"debug/elf"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,19 +113,23 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	tmpPath := tmpFile.Name() // tmpPath is returned by os.CreateTemp; not user-controlled
+
+	// cleanup closes and removes the temporary file, joining any errors with the primary error.
+	cleanup := func(primary error) error {
+		closeErr := tmpFile.Close()
+		removeErr := os.Remove(tmpPath) //nolint:gosec // G304: tmpPath from os.CreateTemp, not user-controlled
+		return errors.Join(primary, closeErr, removeErr)
+	}
+
 	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
-		return err
+		return cleanup(err)
 	}
 	if err := tmpFile.Chmod(perm); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
-		return err
+		return cleanup(err)
 	}
 	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
-		return err
+		removeErr := os.Remove(tmpPath) //nolint:gosec // G304: tmpPath from os.CreateTemp, not user-controlled
+		return errors.Join(err, removeErr)
 	}
-	return os.Rename(tmpPath, path) //nolint:gosec // G703: tmpPath from os.CreateTemp, not user-controlled
+	return os.Rename(tmpPath, path) //nolint:gosec // G304: tmpPath from os.CreateTemp, not user-controlled
 }
