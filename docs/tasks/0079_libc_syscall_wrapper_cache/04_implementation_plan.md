@@ -192,6 +192,7 @@
 ### 4-2. libc キャッシュマネージャーと syscall アナライザーの注入
 
 - [ ] `run()` 内で `filevalidator.Validator` に対して:
+  - [ ] 既存の `fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())` 呼び出しが削除されていないことを確認する（`syscallAnalysisContext` 廃止の副作用で誤って消さないよう注意）
   - [ ] `elfanalyzer.NewSyscallAnalyzer()` を生成して `SetSyscallAnalyzer()` で設定する
   - [ ] `libccache.NewLibcCacheManager()` を生成して `SetLibcCacheManager()` で設定する
   - [ ] `lib-cache/` ディレクトリパス（`filepath.Join(cfg.hashDir, "lib-cache")`）を使用する
