@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -700,6 +701,7 @@ func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
 	for _, info := range merged {
 		result = append(result, info)
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
 	return result
 }
 

@@ -3,10 +3,8 @@
 package libccache
 
 import (
-	"sort"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,17 +38,6 @@ func newStubTable() *stubSyscallTable {
 
 func newMatcher() *ImportSymbolMatcher {
 	return NewImportSymbolMatcher(newStubTable())
-}
-
-// sortInfos sorts SyscallInfo slices by Number then Name for deterministic comparison.
-func sortInfos(infos []common.SyscallInfo) []common.SyscallInfo {
-	sort.Slice(infos, func(i, j int) bool {
-		if infos[i].Number != infos[j].Number {
-			return infos[i].Number < infos[j].Number
-		}
-		return infos[i].Name < infos[j].Name
-	})
-	return infos
 }
 
 // TestImportSymbolMatcher_MatchFound verifies that a matching import symbol produces a SyscallInfo.
@@ -139,7 +126,8 @@ func TestImportSymbolMatcher_IsNetworkFromTable(t *testing.T) {
 	assert.True(t, result[0].IsNetwork)
 }
 
-// TestImportSymbolMatcher_MultipleSymbols verifies that multiple distinct symbols are all matched.
+// TestImportSymbolMatcher_MultipleSymbols verifies that multiple distinct symbols are all matched
+// and that the result is sorted by Number ascending.
 func TestImportSymbolMatcher_MultipleSymbols(t *testing.T) {
 	m := newMatcher()
 	wrappers := []WrapperEntry{
@@ -147,7 +135,8 @@ func TestImportSymbolMatcher_MultipleSymbols(t *testing.T) {
 		{Name: "socket", Number: 41},
 		{Name: "exit_group", Number: 231},
 	}
-	result := sortInfos(m.Match([]string{"write", "socket", "exit_group"}, wrappers))
+	// Feed symbols in reverse order to confirm sorting is applied regardless of input order.
+	result := m.Match([]string{"exit_group", "socket", "write"}, wrappers)
 	require.Len(t, result, 3)
 	assert.Equal(t, 1, result[0].Number)
 	assert.Equal(t, 41, result[1].Number)
