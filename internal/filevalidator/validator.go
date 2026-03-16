@@ -111,6 +111,7 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
+	fileSystem      safefileio.FileSystem          // used by openELFFile in analyzeSyscalls
 	dynlibAnalyzer  *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
 	binaryAnalyzer  binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
 	libcCache       LibcCacheInterface             // nil if libc cache is disabled
@@ -172,6 +173,7 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter co
 		hashDir:                 hashDir,
 		hashFilePathGetter:      hashFilePathGetter,
 		privilegedFileValidator: DefaultPrivilegedFileValidator(),
+		fileSystem:              safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
 	}, nil
 }
 
@@ -569,7 +571,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	}
 
 	// Step A: Open the target binary as an ELF file.
-	elfFile, elfErr := openELFFile(safefileio.NewFileSystem(safefileio.FileSystemConfig{}), filePath)
+	elfFile, elfErr := openELFFile(v.fileSystem, filePath)
 	if elfErr != nil {
 		if errors.Is(elfErr, errNotELF) {
 			return nil // Non-ELF: skip syscall analysis, keep record.
