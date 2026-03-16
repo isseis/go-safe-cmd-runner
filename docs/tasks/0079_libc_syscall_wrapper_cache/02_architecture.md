@@ -44,8 +44,8 @@ flowchart TD
     B -->|"⑤store.Save() ← コールバック後"| J[("hash-dir/<br>&lt;encoded-binary&gt;")]
 
     class A,D,H,J data;
-    class K,F enhanced;
-    class B,C,E,G process;
+    class K,F process;
+    class B,C,E,G enhanced;
 ```
 
 **凡例（Legend）**
