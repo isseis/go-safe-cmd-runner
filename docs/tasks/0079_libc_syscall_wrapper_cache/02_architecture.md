@@ -210,8 +210,7 @@ const MaxWrapperFunctionSize = 256
 // LibcWrapperAnalyzer は libc の ELF ファイルを解析し、
 // syscall ラッパー関数の一覧を返す。
 type LibcWrapperAnalyzer struct {
-    syscallAnalyzer syscallInstructionFinder // elfanalyzer から再利用
-    syscallTable    SyscallNumberTable        // elfanalyzer.X86_64SyscallTable 再利用
+    analyzer *elfanalyzer.SyscallAnalyzer // AnalyzeSyscallsInRange を呼び出す（§6.2 参照）
 }
 
 // Analyze は libcELFFile のエクスポート関数を走査し、
@@ -223,13 +222,12 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 
 1. `.dynsym` セクションからエクスポートシンボル（定義済み、関数型）を列挙する
 2. 各シンボルのアドレス・サイズを取得し、`Size > MaxWrapperFunctionSize` のものをスキップする
-3. 関数アドレス範囲内で `findSyscallInstructions` を呼び出す（既存 Pass 1 ロジックを再利用）
-4. 検出された syscall 命令から番号を収集する:
-   - 番号がすべて同一 → その番号を採用
-   - 1 つでも異なる番号が存在 → その関数をスキップ
+3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, funcStartOffset, funcEndOffset, decoder, table)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
+4. 返された `[]SyscallInfo` から `WrapperEntry.Number` を決定する:
+   - `Number == -1` のエントリが含まれる → 番号不明のため関数をスキップ
+   - `Number` が複数種類 → 複雑な関数のためスキップ
+   - `Number` がすべて同一の正値 → `WrapperEntry{Name: symbolName, Number: number}` として採用
 5. 採用した関数を `WrapperEntry` として収集し `Number` 昇順でソートして返す
-
-`elfanalyzer` の `findSyscallInstructions` はプライベートメソッドのため、内部アクセス可能な形（同パッケージ内の関数 or インターフェース化）で再利用する。
 
 #### 3.1.3 キャッシュ管理 (`cache.go`)
 
@@ -470,15 +468,37 @@ graph LR
 
 ### 6.2 `elfanalyzer` からの再利用
 
-`LibcWrapperAnalyzer` は `elfanalyzer.SyscallAnalyzer` の `findSyscallInstructions` の内部ロジック（Pass 1）を再利用する。再利用方法の選択肢:
+`LibcWrapperAnalyzer` が `WrapperEntry.Number` を埋めるには、「syscall 命令の位置検出（`findSyscallInstructions`）」だけでなく、「各位置からの後方スキャンによる番号抽出（`extractSyscallInfo` → `backwardScanForSyscallNumber`）」まで必要である。現行の `AnalyzeSyscallsFromELF` はファイル全体の `.text` セクションを対象とするため、関数単位の部分範囲への適用には向かない。
 
-| 案 | 方法 | メリット | デメリット |
-|----|------|---------|-----------|
-| A | `elfanalyzer` 内に `libccache` 向けのエクスポート関数を追加 | パッケージ境界を明確に維持 | `elfanalyzer` に libccache 固有のロジックが混入 |
-| **B** | `findSyscallInstructions` をエクスポートして `libccache` から呼び出す | 責務が明確 | `elfanalyzer` の API 拡張が必要 |
+このため、任意のバイト範囲に対して「位置検出 + 番号抽出」を一括実行する新しいエクスポート関数を `elfanalyzer` パッケージに追加する。
+
+**追加するエクスポート API:**
+
+```go
+// AnalyzeSyscallsInRange は code[startOffset:endOffset] の範囲に含まれる
+// syscall 命令を検出し、各命令の syscall 番号を後方スキャンで抽出して返す。
+// sectionBaseAddr は code 全体の仮想アドレス起点。
+// startOffset/endOffset は code 先頭からのバイトオフセット。
+// Go ラッパー解析（Pass 2）は行わない。
+// アーキテクチャ非対応の場合は ErrUnsupportedArchitecture を返す。
+func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
+    code []byte,
+    sectionBaseAddr uint64,
+    startOffset, endOffset int,
+) ([]common.SyscallInfo, error)
+```
+
+`libccache.LibcWrapperAnalyzer` はこの関数を呼び出して `[]SyscallInfo` を取得し、`Number` の一意性を検査して `WrapperEntry` を生成する。
+
+再利用方法の選択肢:
+
+| 案 | 公開する API | メリット | デメリット |
+|----|------------|---------|-----------|
+| A | `FindSyscallInstructions` のみ（位置だけ） | 変更が小さい | `Number` を求める処理が未定義のまま残る |
+| **B** | `AnalyzeSyscallsInRange`（位置検出 + 番号抽出） | `libccache` 側に番号抽出ロジックの重複が生じない | `elfanalyzer` の API 拡張が必要 |
 | C | `LibcWrapperAnalyzer` を `elfanalyzer` パッケージ内に配置 | 内部関数に直接アクセス可能 | パッケージが肥大化 |
 
-**採用: 案 B** — `findSyscallInstructions` に相当するロジックを `elfanalyzer` パッケージからエクスポートした関数（`FindSyscallInstructions`）として公開し、`libccache.LibcWrapperAnalyzer` から呼び出す。
+**採用: 案 B** — `AnalyzeSyscallsInRange` を `SyscallAnalyzer` のメソッドとして追加し、`libccache.LibcWrapperAnalyzer` から呼び出す。内部では既存の `findSyscallInstructions` + `extractSyscallInfo` を呼ぶだけであり、新規ロジックの追加は不要。
 
 ## 7. テスト戦略
 
