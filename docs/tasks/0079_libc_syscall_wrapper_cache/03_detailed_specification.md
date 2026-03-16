@@ -292,6 +292,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 4. キャッシュ MISS:
    - `fs.SafeOpenFile(libcPath, os.O_RDONLY, 0)` で libc を開く（失敗 → `ErrLibcFileNotAccessible` を返す）
    - `elf.NewFile(libcFile)` で ELF としてパースする（失敗 → エラーを返す）
+     - **クローズ責任**: `elf.NewFile` 成功後は `elfFile.Close()` を呼ぶだけで `libcFile` も閉じられる（`elf.File.Close()` がラップしているファイルハンドルを閉じるため）。`elfFile.Close()` と `libcFile.Close()` を両方呼ぶと二重クローズになるため、`elf.NewFile` 成功後は `defer elfFile.Close()` のみを設定し `libcFile` の `defer Close()` は設定しない
    - `analyzer.Analyze(elfFile)` で解析する（失敗 → エラーを返す、`ErrUnsupportedArchitecture` はそのまま伝播）
    - キャッシュファイルを書き込む（失敗 → `ErrCacheWriteFailed` を返す）
    - `[]WrapperEntry` を返す
