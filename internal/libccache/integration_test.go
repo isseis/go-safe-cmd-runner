@@ -3,9 +3,6 @@
 package libccache_test
 
 import (
-	"debug/elf"
-	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,56 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// localLibcCacheAdapter implements filevalidator.LibcCacheInterface for use in integration tests.
-// It combines LibcCacheManager and SyscallAnalyzer (same logic as cmd/record/libc_cache_adapter.go).
-type localLibcCacheAdapter struct {
-	cacheMgr        *libccache.LibcCacheManager
-	syscallAnalyzer *elfanalyzer.SyscallAnalyzer
-}
-
-func (a *localLibcCacheAdapter) GetOrCreateSyscalls(libcPath, libcHash string, importSymbols []string, machine elf.Machine) ([]common.SyscallInfo, error) {
-	wrappers, err := a.cacheMgr.GetOrCreate(libcPath, libcHash)
-	if err != nil {
-		var archErr *elfanalyzer.UnsupportedArchitectureError
-		if errors.As(err, &archErr) {
-			return nil, fmt.Errorf("%w: %v", filevalidator.ErrUnsupportedArch, archErr.Machine)
-		}
-		return nil, err
-	}
-
-	syscallTable, ok := a.syscallAnalyzer.GetSyscallTable(machine)
-	if !ok {
-		return nil, fmt.Errorf("%w: machine %v", filevalidator.ErrUnsupportedArch, machine)
-	}
-
-	matcher := libccache.NewImportSymbolMatcher(syscallTable)
-	return matcher.Match(importSymbols, wrappers), nil
-}
-
-// localSyscallAnalyzerAdapter implements filevalidator.SyscallAnalyzerInterface for integration tests.
-type localSyscallAnalyzerAdapter struct {
-	analyzer *elfanalyzer.SyscallAnalyzer
-}
-
-func (a *localSyscallAnalyzerAdapter) AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, error) {
-	result, err := a.analyzer.AnalyzeSyscallsFromELF(elfFile)
-	if err != nil {
-		var archErr *elfanalyzer.UnsupportedArchitectureError
-		if errors.As(err, &archErr) {
-			return nil, fmt.Errorf("%w: %v", filevalidator.ErrUnsupportedArch, archErr.Machine)
-		}
-		return nil, err
-	}
-	if result == nil {
-		return nil, nil
-	}
-	return result.DetectedSyscalls, nil
-}
-
-func (a *localSyscallAnalyzerAdapter) GetSyscallTable(machine elf.Machine) (filevalidator.SyscallNumberTable, bool) {
-	return a.analyzer.GetSyscallTable(machine)
-}
-
 // newTestValidator creates a fully wired Validator using a real libccache pipeline.
 func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	t.Helper()
@@ -84,17 +31,14 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	v.SetDynLibAnalyzer(dynlibanalysis.NewDynLibAnalyzer(fs))
 
 	syscallAn := elfanalyzer.NewSyscallAnalyzer()
-	v.SetSyscallAnalyzer(&localSyscallAnalyzerAdapter{analyzer: syscallAn})
+	v.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAn))
 
 	cacheDir := filepath.Join(hashDir, "lib-cache")
 	libcAnalyzer := libccache.NewLibcWrapperAnalyzer(syscallAn)
 	cacheMgr, err := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
 	require.NoError(t, err)
 
-	v.SetLibcCache(&localLibcCacheAdapter{
-		cacheMgr:        cacheMgr,
-		syscallAnalyzer: syscallAn,
-	})
+	v.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAn))
 
 	return v
 }
