@@ -276,6 +276,6 @@
 ## 注意事項
 
 - 各フェーズの末尾で `make fmt && make test && make lint` を実行し、回帰が発生していないことを確認する
-- `//go:build test` タグが必要なファイルは既存のパターン（`syscall_analyzer_integration_test.go` 等）に倣う
+- `//go:build integration` タグが必要なファイルは既存のパターン（`syscall_analyzer_integration_test.go` 等）に倣う
 - `git commit` は実施しない（ユーザーが明示的に要求した場合のみ）
 - ツール呼び出しはシーケンシャルに行う（1 ツール → 結果確認 → 次のツール）
