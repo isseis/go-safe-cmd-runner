@@ -382,7 +382,7 @@ store.Save() → 記録ファイル書き込み  ← 記録ファイルは必ず
 |------|--------|------|
 | 対象バイナリが ELF でない（スクリプト等） | `ErrNotELF` | syscall 解析スキップ、`SyscallAnalysis = nil` で記録保存 |
 | libc が動的依存に存在しない（静的バイナリ等） | nil（libc エントリなし） | libc キャッシュ処理スキップ、`SyscallAnalysis` に direct 分のみ設定 |
-| アーキテクチャ非対応（x86_64 以外） | `ErrUnsupportedArchitecture` | libc キャッシュ処理スキップ、同上 |
+| アーキテクチャ非対応（x86_64 以外） | `*elfanalyzer.UnsupportedArchitectureError`（`errors.As` で検出） | libc キャッシュ処理スキップ、同上 |
 
 **fatal にする条件（コールバックエラー → 記録ファイル未保存）:**
 
@@ -622,7 +622,7 @@ graph LR
 // sectionBaseAddr は code 全体の仮想アドレス起点。
 // startOffset/endOffset は code 先頭からのバイトオフセット。
 // Go ラッパー解析（Pass 2）は行わない。
-// アーキテクチャ非対応の場合は ErrUnsupportedArchitecture を返す。
+// アーキテクチャ非対応の場合は *UnsupportedArchitectureError を返す（errors.As で検出）。
 func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
     code []byte,
     sectionBaseAddr uint64,
@@ -651,7 +651,7 @@ if windowStart < startOffset {
 
 クランプにより後方スキャン可能なバイト数が減少する場合（関数が 750 バイト未満で syscall 命令が先頭付近にある場合）、`Number` が解決できずに `DeterminationMethodUnknownScanLimitExceeded` や `DeterminationMethodUnknownDecodeFailed` が返ることがある。`LibcWrapperAnalyzer.Analyze()` はこれらを `DeterminationMethod != "immediate"` として §3.1.2 ステップ 4 のフィルタで除外するため、キャッシュへの混入は防がれる。
 
-`ErrUnsupportedArchitecture` の伝播経路:
+`*UnsupportedArchitectureError` の伝播経路（各層でラップせずそのまま返す。最終的に Validator コールバックが `errors.As` で検出する）:
 
 ```
 AnalyzeSyscallsInRange()  →  LibcWrapperAnalyzer.Analyze()  →  LibcCacheManager.GetOrCreate()  →  呼び出し元（Validator コールバック）

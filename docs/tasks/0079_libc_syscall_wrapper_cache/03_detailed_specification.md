@@ -74,7 +74,7 @@ type SyscallInfo struct {
 // sectionBaseAddr は code 全体の仮想アドレス起点。
 // startOffset/endOffset は code 先頭からのバイトオフセット。
 // Go ラッパー解析（Pass 2）は行わない。
-// アーキテクチャ非対応の場合は ErrUnsupportedArchitecture を返す。
+// アーキテクチャ非対応の場合は *UnsupportedArchitectureError を返す（errors.As で検出）。
 func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
     code []byte,
     sectionBaseAddr uint64,
@@ -117,7 +117,7 @@ for _, loc := range syscallLocs {
 **テスト方針:**
 - 正常系: syscall 命令を含む範囲で正しく検出される
 - 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない
-- 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る
+- 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返る（`errors.As` で検出されること）
 
 ### 3.3 `GetSyscallTable` メソッドの追加
 
@@ -255,7 +255,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
    - `endOffset = startOffset + sym.Size`
    - 範囲が `.text` セクションの範囲外の場合はスキップ
 5. `syscallAnalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, startOffset, endOffset, libcELFFile.Machine)` を呼び出す
-   - `ErrUnsupportedArchitecture` は呼び出し元にそのまま返す（ラップなし）
+   - `*elfanalyzer.UnsupportedArchitectureError` は呼び出し元にそのまま返す（ラップなし。呼び出し元は `errors.As` で検出する）
    - その他のエラーはスキップ（当該関数を無視して続行）
 6. 返された `[]SyscallInfo` を検査する
    - 空スライス（syscall 命令なし）の場合はスキップ（当該関数をキャッシュに含めない）
@@ -279,7 +279,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 | syscall 命令を含まない関数が除外される | 非ラッパー除外 | AC-2 |
 | `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされている | 決定論的出力 | AC-2 |
 | `DeterminationMethod != "immediate"` の関数が除外される | 品質フィルタ | AC-2 |
-| 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る | アーキテクチャ検査 | AC-3 |
+| 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が `errors.As` で検出される | アーキテクチャ検査 | AC-3 |
 | `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返る（エラーなし） | `.dynsym` なし耐性 | AC-2 |
 | `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返る | シンボル取得エラー検査 | AC-3 |
 
@@ -348,7 +348,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
          }
          defer elfFile.Close() // 成功後は elfFile.Close() のみ（libcFile も閉じる）
          ```
-   - `analyzer.Analyze(elfFile)` で解析する（失敗 → エラーをそのまま返す。`ErrUnsupportedArchitecture` および `ErrExportSymbolsFailed` はラップなしで伝播する）
+   - `analyzer.Analyze(elfFile)` で解析する（失敗 → エラーをそのまま返す。`*elfanalyzer.UnsupportedArchitectureError` および `ErrExportSymbolsFailed` はラップなしで伝播する）
    - キャッシュファイルを書き込む（失敗 → `ErrCacheWriteFailed` を返す）
    - `[]WrapperEntry` を返す
 

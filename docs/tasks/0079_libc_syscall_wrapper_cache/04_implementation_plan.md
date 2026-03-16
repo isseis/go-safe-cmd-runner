@@ -33,7 +33,7 @@
 - [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `AnalyzeSyscallsInRange` のテストを追加する:
   - [ ] 正常系: syscall 命令を含む範囲で正しく検出される
   - [ ] 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない
-  - [ ] 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る
+  - [ ] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出される
 - [ ] `make fmt && make test && make lint` でパスすることを確認する
 
 ### 1-2b. `elfanalyzer.SyscallAnalyzer.GetSyscallTable` の追加
@@ -97,7 +97,7 @@
   - [ ] syscall 命令を含まない関数が除外されること
   - [ ] `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされていること
   - [ ] `DeterminationMethod != "immediate"` の関数が除外されること
-  - [ ] 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返ること
+  - [ ] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出されること
   - [ ] `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返ること（エラーなし）
   - [ ] `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返ること
 
@@ -112,7 +112,7 @@
     - [ ] キャッシュファイルの読み込みと有効性判定（3 条件チェック）
     - [ ] キャッシュ MISS 時の libc 解析と書き込み
     - [ ] `ErrLibcFileNotAccessible`/`ErrCacheWriteFailed` エラーハンドリング
-    - [ ] `ErrUnsupportedArchitecture` のラップなし伝播
+    - [ ] `*elfanalyzer.UnsupportedArchitectureError` のラップなし伝播（呼び出し元が `errors.As` で検出できること）
 
 - [ ] `internal/libccache/cache_test.go` を作成する（テンポラリディレクトリを使用）:
   - [ ] キャッシュ未存在時に解析・生成されること
@@ -173,9 +173,9 @@
   - [ ] `openELFFile()` による ELF オープン（ErrNotELF → スキップ・記録保存）
   - [ ] `findLibcEntry()` による libc エントリ特定
   - [ ] `extractUNDSymbols()` による UND シンボル抽出
-  - [ ] `libcCacheMgr.GetOrCreate()` による libc キャッシュ取得（`ErrUnsupportedArchitecture` → スキップ・直接解析へ）
+  - [ ] `libcCacheMgr.GetOrCreate()` による libc キャッシュ取得（`*elfanalyzer.UnsupportedArchitectureError` を `errors.As` で検出 → スキップ・直接解析へ）
   - [ ] `matcher.Match()` によるインポートシンボル照合
-  - [ ] `syscallAnalyzer.AnalyzeSyscallsFromELF()` による直接 syscall 解析（`ErrUnsupportedArchitecture` → スキップ）
+  - [ ] `syscallAnalyzer.AnalyzeSyscallsFromELF()` による直接 syscall 解析（`*elfanalyzer.UnsupportedArchitectureError` を `errors.As` で検出 → スキップ）
   - [ ] `mergeSyscallInfos()` による統合
   - [ ] `buildSyscallAnalysisData()` による `record.SyscallAnalysis` 設定
 
@@ -186,7 +186,7 @@
   - [ ] 直接 syscall と libc import の重複は direct 優先で統合されること
   - [ ] 保存順序: キャッシュが成功した後にのみ記録ファイルが保存されること
   - [ ] キャッシュ失敗時: コールバックがエラーを返し記録ファイルが保存されないこと
-  - [ ] `ErrUnsupportedArchitecture` 時: libc 解析をスキップして記録保存が続行すること
+  - [ ] `*elfanalyzer.UnsupportedArchitectureError`（`errors.As` で検出）時: libc 解析をスキップして記録保存が続行すること
   - [ ] 非 ELF ファイル: syscall 解析全体をスキップして記録保存が続行すること
   - [ ] `.dynsym` 読み取りエラー時: コールバックがエラーを返し記録ファイルが保存されないこと
 
