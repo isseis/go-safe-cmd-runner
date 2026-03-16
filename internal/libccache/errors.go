@@ -18,7 +18,3 @@ var (
 //
 //	var archErr *elfanalyzer.UnsupportedArchitectureError
 //	if errors.As(err, &archErr) { ... }
-
-// SourceLibcSymbolImport is the value of SyscallInfo.Source for syscalls detected
-// via libc import symbol matching.
-const SourceLibcSymbolImport = "libc_symbol_import"

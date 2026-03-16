@@ -4,6 +4,10 @@ package libccache
 // Increment when making backward-incompatible schema changes.
 const LibcCacheSchemaVersion = 1
 
+// SourceLibcSymbolImport is the value of SyscallInfo.Source for syscalls detected
+// via libc import symbol matching.
+const SourceLibcSymbolImport = "libc_symbol_import"
+
 // LibcCacheFile is the JSON schema for a libc cache file.
 //
 //nolint:revive // LibcCacheFile is intentional: callers import as libccache.LibcCacheFile
