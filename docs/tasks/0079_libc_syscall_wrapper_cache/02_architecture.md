@@ -624,6 +624,24 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
 
 `libccache.LibcWrapperAnalyzer` はこの関数を呼び出して `[]SyscallInfo` を取得し、`Number` の一意性を検査して `WrapperEntry` を生成する。
 
+**後方スキャン窓の下限クランプ（境界チェック要件）:**
+
+`backwardScanForSyscallNumber` は syscall 命令位置から最大 `maxBackwardScan * maxInstructionLength`（= 50 × 15 = 750）バイト後方まで `decodeInstructionsInWindow` でデコードする。`.text` セクション全体を対象とする `AnalyzeSyscallsFromELF` ではこの窓が隣接する別関数のバイトを取り込むことはないが、`AnalyzeSyscallsInRange` では `startOffset` より前に隣接する別の libc 関数が存在する。
+
+窓の下限が `startOffset` を下回ると、隣接関数のバイトが後方スキャンの候補命令に混入し、無関係な命令を「syscall 番号設定命令」と誤認識する可能性がある（パニックは起きないが正確性の問題）。
+
+このため `AnalyzeSyscallsInRange` の実装では、`backwardScanForSyscallNumber` へ渡す `windowStart` を `max(windowStart, startOffset)` でクランプする。これにより後方スキャンは常に `startOffset` 以降に限定され、他の関数のバイトが混入しない。
+
+```
+// windowStart のクランプ（AnalyzeSyscallsInRange 内での処理）
+windowStart := syscallOffset - (maxBackwardScan * maxWindowBytesPerInstruction)
+if windowStart < startOffset {
+    windowStart = startOffset  // ← 部分範囲の先頭より手前に出ない
+}
+```
+
+クランプにより後方スキャン可能なバイト数が減少する場合（関数が 750 バイト未満で syscall 命令が先頭付近にある場合）、`Number` が解決できずに `DeterminationMethodUnknownScanLimitExceeded` や `DeterminationMethodUnknownDecodeFailed` が返ることがある。`LibcWrapperAnalyzer.Analyze()` はこれらを `DeterminationMethod != "immediate"` として §3.1.2 ステップ 4 のフィルタで除外するため、キャッシュへの混入は防がれる。
+
 `ErrUnsupportedArchitecture` の伝播経路:
 
 ```
