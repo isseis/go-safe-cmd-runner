@@ -173,7 +173,7 @@ type WrapperEntry struct {
 }
 ```
 
-`SyscallWrappers` は `Number` 昇順でソートして保存する（`sort.Slice` を使用）。
+`SyscallWrappers` は `Number` 昇順、同一 `Number` 内では `Name` 昇順の複合キーでソートして保存する（`sort.Slice` を使用）。同一 `Number` を複数エントリが持つ場合も出力が入力順に依存しないよう、`Name` を第 2 キーとして完全に決定論的な順序を保証する。
 
 ---
 
@@ -235,7 +235,7 @@ func NewLibcWrapperAnalyzer(syscallAnalyzer *elfanalyzer.SyscallAnalyzer) *LibcW
 
 // Analyze は libcELFFile のエクスポート関数を走査し、
 // サイズフィルタと syscall 命令検出を適用して WrapperEntry スライスを返す。
-// 返すスライスは Number 昇順でソートされている。
+// 返すスライスは Number 昇順、同一 Number 内では Name 昇順でソートされている。
 func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, error)
 ```
 
@@ -260,7 +260,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
    - すべてのエントリの `DeterminationMethod == "immediate"` かつ `Number >= 0` でなければスキップ
    - すべてのエントリの `Number` が同一でなければスキップ
    - 条件を満たした場合 `WrapperEntry{Name: sym.Name, Number: infos[0].Number}` を収集
-7. 収集した `[]WrapperEntry` を `Number` 昇順でソートして返す
+7. 収集した `[]WrapperEntry` を `Number` 昇順、同一 `Number` 内では `Name` 昇順の複合キーでソートして返す
 
 ### 6.3 テスト仕様
 
@@ -275,7 +275,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 | 複数の異なる syscall 番号を含む関数が除外される | 複数 syscall フィルタ | AC-2 |
 | 同一 syscall 番号の syscall 命令を複数持つ関数は採用される | 分岐パスの許容 | AC-2 |
 | syscall 命令を含まない関数が除外される | 非ラッパー除外 | AC-2 |
-| `WrapperEntry` が `Number` 昇順でソートされている | 決定論的出力 | AC-2 |
+| `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされている | 決定論的出力 | AC-2 |
 | `DeterminationMethod != "immediate"` の関数が除外される | 品質フィルタ | AC-2 |
 | 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る | アーキテクチャ検査 | AC-3 |
 
@@ -361,7 +361,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 | ハッシュ不一致時にキャッシュが再生成される | libc 更新時 | AC-3 |
 | キャッシュファイルが破損している場合に再解析される | エラー耐性 | AC-3 |
 | `schema_version` 不一致時にキャッシュが再生成される | スキーマ変更 | AC-3 |
-| `syscall_wrappers` が `number` 昇順でソートされている | 決定論的出力 | AC-2 |
+| `syscall_wrappers` が `number` 昇順・同一 `number` 内で `name` 昇順でソートされている | 決定論的出力 | AC-2 |
 | libc ファイルが読み取れない場合にエラーを返す | fatal ケース | AC-3 |
 | キャッシュファイルの書き込みに失敗した場合にエラーを返す | fatal ケース | AC-3 |
 

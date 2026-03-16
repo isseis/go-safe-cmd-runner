@@ -224,7 +224,7 @@ type WrapperEntry struct {
 }
 ```
 
-`SyscallWrappers` は `Number` 昇順でソートして保存する（決定論的出力）。
+`SyscallWrappers` は `Number` 昇順、同一 `Number` 内では `Name` 昇順の複合キーでソートして保存する（決定論的出力）。
 
 #### 3.1.2 libc エクスポート関数解析 (`analyzer.go`)
 
@@ -254,7 +254,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
    - いずれかの条件を満たさない場合はその関数をスキップする
 
    **`immediate` のみを受理する根拠**: `backwardScanForSyscallNumber` の実装において、`Number >= 0` を返す唯一のパスは `DeterminationMethodImmediate` である（`syscall_analyzer.go:449-450`）。現時点では `DeterminationMethod == "immediate"` と `Number >= 0` は等価条件だが、将来の実装変更（新しい決定方法の追加等）によってこの等価性が崩れた際に誤った `WrapperEntry` がキャッシュに混入しないよう、`DeterminationMethod` を明示的にフィルタ条件に含める。
-5. 採用した関数を `WrapperEntry` として収集し `Number` 昇順でソートして返す
+5. 採用した関数を `WrapperEntry` として収集し `Number` 昇順、同一 `Number` 内では `Name` 昇順の複合キーでソートして返す
 
 #### 3.1.3 キャッシュ管理 (`cache.go`)
 

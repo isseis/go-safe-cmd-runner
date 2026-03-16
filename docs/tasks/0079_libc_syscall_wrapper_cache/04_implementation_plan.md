@@ -85,7 +85,7 @@
     - [ ] シンボルアドレスから `.text` セクション内オフセットへの変換
     - [ ] `AnalyzeSyscallsInRange` の呼び出しと結果の検査
     - [ ] `DeterminationMethod == "immediate"` かつ `Number >= 0` かつ全 Number 同一のフィルタ
-    - [ ] `WrapperEntry` の収集と `Number` 昇順ソート
+    - [ ] `WrapperEntry` の収集と `Number` 昇順・同一 `Number` 内 `Name` 昇順の複合キーソート
 
 - [ ] `internal/libccache/analyzer_test.go` を作成する（インメモリ ELF バイナリを使用）:
   - [ ] syscall 命令を含む関数（≤256B）が検出されること
@@ -93,7 +93,7 @@
   - [ ] 複数の異なる syscall 番号を含む関数が除外されること
   - [ ] 同一 syscall 番号の syscall 命令を複数持つ関数は採用されること
   - [ ] syscall 命令を含まない関数が除外されること
-  - [ ] `WrapperEntry` が `Number` 昇順でソートされていること
+  - [ ] `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされていること
   - [ ] `DeterminationMethod != "immediate"` の関数が除外されること
   - [ ] 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返ること
 
@@ -116,7 +116,7 @@
   - [ ] ハッシュ不一致時にキャッシュが再生成されること
   - [ ] キャッシュファイルが破損している場合に再解析されること
   - [ ] `schema_version` 不一致時にキャッシュが再生成されること
-  - [ ] `syscall_wrappers` が `number` 昇順でソートされていること
+  - [ ] `syscall_wrappers` が `number` 昇順・同一 `number` 内で `name` 昇順でソートされていること
   - [ ] libc ファイルが読み取れない場合にエラーを返すこと
   - [ ] キャッシュファイルの書き込みに失敗した場合にエラーを返すこと
 
@@ -237,7 +237,7 @@
 ### 5-2. 受け入れ条件の最終確認
 
 - [ ] **AC-1**: `common.SyscallInfo` に `Source` フィールドが追加されていること、既存テストがパスすること
-- [ ] **AC-2**: `record` 実行時にキャッシュファイルが `lib-cache/` 以下に生成されること、各フィールドが仕様通りであること、`number` 昇順ソートされていること、サイズフィルタと複数 syscall フィルタが機能していること
+- [ ] **AC-2**: `record` 実行時にキャッシュファイルが `lib-cache/` 以下に生成されること、各フィールドが仕様通りであること、`number` 昇順・同一 `number` 内で `name` 昇順でソートされていること、サイズフィルタと複数 syscall フィルタが機能していること
 - [ ] **AC-3**: キャッシュ HIT/MISS・再生成・破損時の動作、保存順序（キャッシュ先行）、エラー時の記録ファイル未保存、非対応アーキテクチャでの継続
 - [ ] **AC-4**: GCC でビルドした専用バイナリを `record` した際に `mkdir`（番号 83）が検出されること、`source: "libc_symbol_import"`・`location: 0`・重複なし・direct 優先
 - [ ] **AC-5**: 静的 ELF バイナリの既存フローが変わらないこと、`make test` 全体がパスすること
