@@ -564,14 +564,15 @@ flowchart TD
 
 `internal/libccache/errors.go` に以下を定義する:
 
-| エラー型 | 説明 |
-|---------|------|
+| エラー変数 | 説明 |
+|-----------|------|
 | `ErrLibcFileNotAccessible` | libc ファイルの読み取り失敗 |
 | `ErrExportSymbolsFailed` | エクスポートシンボル取得失敗 |
 | `ErrCacheWriteFailed` | キャッシュファイルの書き込み失敗 |
-| `ErrUnsupportedArchitecture` | 非対応アーキテクチャ（x86_64 以外） |
 
-`ErrUnsupportedArchitecture` は `AnalyzeSyscallsInRange` で発生し、`LibcWrapperAnalyzer.Analyze()` → `LibcCacheManager.GetOrCreate()` とラップなしで伝播する。Validator コールバックが `errors.Is` で検知してスキップする（唯一の継続パス）。詳細な伝播経路は §6.2 参照。
+非対応アーキテクチャのエラーは `elfanalyzer.UnsupportedArchitectureError`（型エラー）が `libccache` パッケージを通じてラップなしで伝播する。`libccache` に独自のセンチネル変数は定義しない。
+
+`UnsupportedArchitectureError` は `AnalyzeSyscallsInRange` で発生し、`LibcWrapperAnalyzer.Analyze()` → `LibcCacheManager.GetOrCreate()` とラップなしで伝播する。Validator コールバックが `errors.As(err, new(*elfanalyzer.UnsupportedArchitectureError))` で検知してスキップする（唯一の継続パス）。詳細な伝播経路は §6.2 参照。
 
 ## 6. 依存関係
 
@@ -655,7 +656,7 @@ if windowStart < startOffset {
 AnalyzeSyscallsInRange()  →  LibcWrapperAnalyzer.Analyze()  →  LibcCacheManager.GetOrCreate()  →  呼び出し元（Validator コールバック）
 ```
 
-`LibcWrapperAnalyzer.Analyze()` は `AnalyzeSyscallsInRange` から受け取った `ErrUnsupportedArchitecture` をラップせずそのまま返す。`LibcCacheManager.GetOrCreate()` も同様にそのまま返す。呼び出し元の Validator コールバックが `errors.Is(err, ErrUnsupportedArchitecture)` で検知し、libc キャッシュ処理をスキップして処理を継続する（§5.2 参照）。
+`LibcWrapperAnalyzer.Analyze()` は `AnalyzeSyscallsInRange` から受け取った `*UnsupportedArchitectureError` をラップせずそのまま返す。`LibcCacheManager.GetOrCreate()` も同様にそのまま返す。呼び出し元の Validator コールバックが `errors.As(err, new(*elfanalyzer.UnsupportedArchitectureError))` で検知し、libc キャッシュ処理をスキップして処理を継続する（§5.2 参照）。
 
 再利用方法の選択肢:
 

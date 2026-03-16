@@ -147,14 +147,13 @@ var (
 
     // ErrCacheWriteFailed はキャッシュファイルの書き込み失敗を示す。
     ErrCacheWriteFailed = errors.New("failed to write libc cache file")
-
-    // ErrUnsupportedArchitecture は非対応アーキテクチャを示す。
-    // elfanalyzer.UnsupportedArchitectureError をラップせずそのまま伝播する。
-    // この変数は libccache パッケージ独自のエラーではなく、
-    // elfanalyzer.ErrUnsupportedArchitecture を errors.As で検出するための
-    // ドキュメント目的で定義する（実際には elfanalyzer のエラーがそのまま伝播）。
-    ErrUnsupportedArchitecture = errors.New("unsupported architecture for libc analysis")
 )
+
+// 非対応アーキテクチャのエラーは elfanalyzer.UnsupportedArchitectureError（型エラー）が
+// ラップなしで伝播する。呼び出し元は errors.As で検出する:
+//
+//	var archErr *elfanalyzer.UnsupportedArchitectureError
+//	if errors.As(err, &archErr) { ... }
 
 // SourceLibcSymbolImport は SyscallInfo.Source の値。libc インポートシンボル照合由来を示す。
 const SourceLibcSymbolImport = "libc_symbol_import"
@@ -423,7 +422,8 @@ if v.libcCacheMgr != nil && record.DynLibDeps != nil {
         // libc キャッシュの取得または生成
         wrappers, err := v.libcCacheMgr.GetOrCreate(libcEntry.Path, libcEntry.Hash)
         if err != nil {
-            if errors.Is(err, elfanalyzer.ErrUnsupportedArchitecture) {
+            var archErr *elfanalyzer.UnsupportedArchitectureError
+            if errors.As(err, &archErr) {
                 // 非対応アーキテクチャ: libc キャッシュ処理をスキップして続行
                 goto directSyscallAnalysis
             }
@@ -441,7 +441,8 @@ directSyscallAnalysis:
 var directSyscalls []common.SyscallInfo
 if v.syscallAnalyzer != nil {
     result, err := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
-    if err != nil && !errors.Is(err, elfanalyzer.ErrUnsupportedArchitecture) {
+    var archErr *elfanalyzer.UnsupportedArchitectureError
+    if err != nil && !errors.As(err, &archErr) {
         return fmt.Errorf("syscall analysis failed: %w", err)
     }
     if result != nil {
