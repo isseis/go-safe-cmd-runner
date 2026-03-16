@@ -74,7 +74,7 @@ type SyscallInfo struct {
 // sectionBaseAddr は code 全体の仮想アドレス起点。
 // startOffset/endOffset は code 先頭からのバイトオフセット。
 // Go ラッパー解析（Pass 2）は行わない。
-// アーキテクチャ非対応の場合は *UnsupportedArchitectureError を返す（errors.As で検出）。
+// アーキテクチャ非対応の場合は *elfanalyzer.UnsupportedArchitectureError を返す（errors.As で検出）。
 func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
     code []byte,
     sectionBaseAddr uint64,
