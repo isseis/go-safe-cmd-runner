@@ -345,11 +345,31 @@ store.Save() → 記録ファイル書き込み  ← 記録ファイルは必ず
 
 コールバック内でキャッシュ書き込みが先行し、コールバック return 後に `store.Save()` が記録ファイルを書くため、保存順序が自然に保証される。コールバックがエラーを返した場合、`store.Save()` は呼ばれないため記録ファイルは保存されない。
 
-**現行の `analyzeFile()` の扱い**
+**現行の `analyzeFile()` との差分（仕様変更）**
 
-`analyzeFile()` は `processFiles` から分離した独立呼び出しとして warning 扱いで実行されていた。このリファクタリングにより `SyscallAnalysis` もコールバック内に統合され、失敗時はエラーで終了する（warning 扱いを廃止）。
+現行の `cmd/record/main.go` は `SaveRecord()` 成功後に `analyzeFile()` を独立呼び出しし、`ErrNotELF`・`os.ErrNotExist` 以外の失敗（ELF パース失敗、アーキテクチャ非対応等）を **warning のみ** で処理している（`main.go:188-191`）。この場合、記録ファイルはすでに保存された後であり、syscall 解析なしの記録が永続化される。
 
-ただし `SyscallAnalysis` は非 ELF ファイル（スクリプト等）に対して実行不可のため、`ErrNotELF` は引き続き非エラーとして扱う（スキップ）。
+本設計ではこれを **意図的に変更する**。syscall 解析を `store.Update()` コールバック内に移動することで、失敗時は記録ファイルが保存されない（コールバックがエラーを返し、`store.Save()` が呼ばれない）。これは `dynlibAnalyzer` の既存の扱い（`validator.go:184`）と同じレベルに syscall 解析を引き上げることを意味する。
+
+**根拠**: 目的はリスク評価であり、syscall 解析に失敗したまま記録ファイルを保存すると `SyscallAnalysis` が空のまま永続化され、検証時に過小評価を引き起こす。解析失敗は「記録不能」として扱い、利用者に明示的なエラーを返す方が安全である。
+
+**許容する失敗条件（スキップして処理続行）:**
+
+| 条件 | エラー | 扱い |
+|------|--------|------|
+| 対象バイナリが ELF でない（スクリプト等） | `ErrNotELF` | syscall 解析スキップ、`SyscallAnalysis = nil` で記録保存 |
+| libc が動的依存に存在しない（静的バイナリ等） | nil（libc エントリなし） | libc キャッシュ処理スキップ、`SyscallAnalysis` に direct 分のみ設定 |
+| アーキテクチャ非対応（x86_64 以外） | `ErrUnsupportedArchitecture` | libc キャッシュ処理スキップ、同上 |
+
+**fatal にする条件（コールバックエラー → 記録ファイル未保存）:**
+
+| 条件 | エラー |
+|------|--------|
+| `dynlibAnalyzer` 失敗 | `dynamic library analysis failed: ...` |
+| libc ファイル読み取り失敗 | `ErrLibcFileNotAccessible` |
+| libc エクスポートシンボル取得失敗 | `ErrExportSymbolsFailed` |
+| libc キャッシュ書き込み失敗 | `ErrCacheWriteFailed` |
+| ELF パース失敗（バイナリが破損等） | ELF ライブラリエラー |
 
 #### 3.3.3 `Validator` への変更範囲
 
