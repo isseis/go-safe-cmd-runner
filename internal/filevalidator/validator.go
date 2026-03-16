@@ -563,8 +563,9 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 
 // analyzeSyscalls performs ELF syscall analysis on the given file path and sets
 // record.SyscallAnalysis. It is called from the store.Update() callback in
-// updateAnalysisRecord. Non-ELF files and unsupported architectures are silently
-// skipped; other errors are returned to prevent the record from being saved.
+// updateAnalysisRecord. Always writes record.SyscallAnalysis (nil for non-ELF
+// files or ELF with no detected syscalls) to clear stale values from prior runs.
+// Fatal errors are returned to prevent the record from being saved.
 func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string) error {
 	if v.syscallAnalyzer == nil && v.libcCache == nil {
 		return nil
@@ -574,7 +575,8 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	elfFile, elfErr := openELFFile(v.fileSystem, filePath)
 	if elfErr != nil {
 		if errors.Is(elfErr, errNotELF) {
-			return nil // Non-ELF: skip syscall analysis, keep record.
+			record.SyscallAnalysis = nil // Non-ELF: clear any stale analysis from a previous record run.
+			return nil
 		}
 		return fmt.Errorf("failed to open ELF file: %w", elfErr)
 	}
@@ -614,9 +616,12 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	}
 
 	// Step D: Merge and set SyscallAnalysis.
+	// Always assign (including nil) to overwrite any stale value from a previous record run.
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	if len(allSyscalls) > 0 {
 		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls, elfFile.Machine)
+	} else {
+		record.SyscallAnalysis = nil
 	}
 	return nil
 }
