@@ -192,7 +192,6 @@ flowchart TD
 type LibcCacheFile struct {
     LibPath         string         `json:"lib_path"`
     LibHash         string         `json:"lib_hash"`
-    AnalyzedAt      time.Time      `json:"analyzed_at"`
     SyscallWrappers []WrapperEntry `json:"syscall_wrappers"`
 }
 
@@ -265,6 +264,10 @@ type ImportSymbolMatcher struct {
 }
 
 // Match はインポートシンボル一覧とキャッシュを照合し、SyscallInfo を生成する。
+// 照合は importSymbols の各要素と WrapperEntry.Name を完全一致で行う。
+// バージョンサフィックス（"@@GLIBC_x.y" 等）の除去は不要。
+// libc の .dynsym エクスポートもバイナリの .dynsym UND も、
+// elf.File が返すシンボル名はバージョン文字列を含まない純粋なシンボル名であるため。
 // 重複統合キー: (Number, Source, Name)
 func (m *ImportSymbolMatcher) Match(
     importSymbols []string, // 対象バイナリの .dynsym UND シンボル名
@@ -440,7 +443,7 @@ flowchart TD
 | `ErrCacheWriteFailed` | キャッシュファイルの書き込み失敗 |
 | `ErrUnsupportedArchitecture` | 非対応アーキテクチャ（x86_64 以外） |
 
-`ErrUnsupportedArchitecture` は `GetOrCreate` から返された場合に呼び出し元で検知してスキップする（唯一の継続パス）。
+`ErrUnsupportedArchitecture` は `AnalyzeSyscallsInRange` で発生し、`LibcWrapperAnalyzer.Analyze()` → `LibcCacheManager.GetOrCreate()` とラップなしで伝播する。Validator コールバックが `errors.Is` で検知してスキップする（唯一の継続パス）。詳細な伝播経路は §6.2 参照。
 
 ## 6. 依存関係
 
@@ -498,6 +501,14 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
 ```
 
 `libccache.LibcWrapperAnalyzer` はこの関数を呼び出して `[]SyscallInfo` を取得し、`Number` の一意性を検査して `WrapperEntry` を生成する。
+
+`ErrUnsupportedArchitecture` の伝播経路:
+
+```
+AnalyzeSyscallsInRange()  →  LibcWrapperAnalyzer.Analyze()  →  LibcCacheManager.GetOrCreate()  →  呼び出し元（Validator コールバック）
+```
+
+`LibcWrapperAnalyzer.Analyze()` は `AnalyzeSyscallsInRange` から受け取った `ErrUnsupportedArchitecture` をラップせずそのまま返す。`LibcCacheManager.GetOrCreate()` も同様にそのまま返す。呼び出し元の Validator コールバックが `errors.Is(err, ErrUnsupportedArchitecture)` で検知し、libc キャッシュ処理をスキップして処理を継続する（§5.2 参照）。
 
 再利用方法の選択肢:
 
