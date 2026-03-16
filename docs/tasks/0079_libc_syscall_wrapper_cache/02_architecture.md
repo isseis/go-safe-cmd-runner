@@ -223,10 +223,12 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 1. `.dynsym` セクションからエクスポートシンボル（定義済み、関数型）を列挙する
 2. 各シンボルのアドレス・サイズを取得し、`Size > MaxWrapperFunctionSize` のものをスキップする
 3. `elfanalyzer.AnalyzeSyscallsInRange(code, sectionBaseAddr, funcStartOffset, funcEndOffset, decoder, table)` を呼び出す（後述 §6.2）。この関数が「syscall 命令位置の検出（Pass 1）＋各位置からの後方スキャンによる番号抽出」を一括して行い、`[]SyscallInfo`（`Number`, `DeterminationMethod` を含む）を返す
-4. 返された `[]SyscallInfo` から `WrapperEntry.Number` を決定する:
-   - `Number == -1` のエントリが含まれる → 番号不明のため関数をスキップ
-   - `Number` が複数種類 → 複雑な関数のためスキップ
-   - `Number` がすべて同一の正値 → `WrapperEntry{Name: symbolName, Number: number}` として採用
+4. 返された `[]SyscallInfo` から `WrapperEntry.Number` を決定する。採用条件は以下をすべて満たすこと:
+   - すべてのエントリの `DeterminationMethod == "immediate"` であること（`unknown:*` や他の方法は拒否）
+   - すべてのエントリの `Number` が同一の正値であること
+   - いずれかの条件を満たさない場合はその関数をスキップする
+
+   **`immediate` のみを受理する根拠**: `backwardScanForSyscallNumber` の実装において、`Number >= 0` を返す唯一のパスは `DeterminationMethodImmediate` である（`syscall_analyzer.go:449-450`）。現時点では `DeterminationMethod == "immediate"` と `Number >= 0` は等価条件だが、将来の実装変更（新しい決定方法の追加等）によってこの等価性が崩れた際に誤った `WrapperEntry` がキャッシュに混入しないよう、`DeterminationMethod` を明示的にフィルタ条件に含める。
 5. 採用した関数を `WrapperEntry` として収集し `Number` 昇順でソートして返す
 
 #### 3.1.3 キャッシュ管理 (`cache.go`)
@@ -267,7 +269,7 @@ func (m *ImportSymbolMatcher) Match(
 生成される `SyscallInfo`:
 - `Source`: `"libc_symbol_import"`
 - `Location`: `0`
-- `DeterminationMethod`: `"immediate"` （キャッシュ生成時に実測した値のため）
+- `DeterminationMethod`: `"immediate"` — キャッシュには `DeterminationMethod == "immediate"` のエントリしか格納されない（`LibcWrapperAnalyzer.Analyze()` のステップ 4 フィルタによる保証）ため、`WrapperEntry` から復元する際に `"immediate"` を設定することは根拠の捏造ではなく、キャッシュスキーマの不変条件の転写である
 - `Name`, `Number`, `IsNetwork`: キャッシュ値と syscall テーブルから設定
 
 ### 3.2 `common.SyscallInfo` の拡張
