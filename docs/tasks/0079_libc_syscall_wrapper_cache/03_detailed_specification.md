@@ -243,7 +243,9 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 
 1. `.text` セクションのデータ（`code []byte`）とベースアドレス（`sectionBaseAddr uint64`）を取得する
 2. `.dynsym` セクションからエクスポートシンボル（定義済み、関数型、`STT_FUNC`）を列挙する
-   - `elf.File.DynamicSymbols()` を呼び出す（`elf.ErrNoSymbols` は空スライスとして扱う）
+   - `elf.File.DynamicSymbols()` を呼び出す
+     - `elf.ErrNoSymbols` が返った場合: 空スライスとして扱い処理を続行する（`.dynsym` セクションなし = ラッパー 0 件）
+     - それ以外のエラーが返った場合: `fmt.Errorf("...: %w", ErrExportSymbolsFailed)` を返す（ELF 破損等の回復不能エラー）
    - シンボルのバインディングが `STB_LOCAL` のものは除外する（エクスポートシンボルのみ対象）
    - `st_shndx == SHN_UNDEF`（インポートシンボル）は除外する
    - `st_type != STT_FUNC` は除外する
@@ -278,6 +280,8 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 | `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされている | 決定論的出力 | AC-2 |
 | `DeterminationMethod != "immediate"` の関数が除外される | 品質フィルタ | AC-2 |
 | 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返る | アーキテクチャ検査 | AC-3 |
+| `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返る（エラーなし） | `.dynsym` なし耐性 | AC-2 |
+| `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返る | シンボル取得エラー検査 | AC-3 |
 
 ---
 
@@ -344,7 +348,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
          }
          defer elfFile.Close() // 成功後は elfFile.Close() のみ（libcFile も閉じる）
          ```
-   - `analyzer.Analyze(elfFile)` で解析する（失敗 → エラーを返す、`ErrUnsupportedArchitecture` はそのまま伝播）
+   - `analyzer.Analyze(elfFile)` で解析する（失敗 → エラーをそのまま返す。`ErrUnsupportedArchitecture` および `ErrExportSymbolsFailed` はラップなしで伝播する）
    - キャッシュファイルを書き込む（失敗 → `ErrCacheWriteFailed` を返す）
    - `[]WrapperEntry` を返す
 
@@ -665,6 +669,7 @@ int main() { mkdir("/tmp/test_libccache", 0755); return 0; }
 | AC-1 | `internal/common/syscall_types_test.go` | `Source` フィールドの JSON `omitempty` 動作 |
 | AC-2 | `internal/libccache/analyzer_test.go` | サイズフィルタ、複数 syscall フィルタ、ソート順 |
 | AC-2 | `internal/libccache/cache_test.go` | キャッシュ生成、syscall_wrappers ソート |
+| AC-3 | `internal/libccache/analyzer_test.go` | `ErrExportSymbolsFailed`（`DynamicSymbols` エラー時） |
 | AC-3 | `internal/libccache/cache_test.go` | HIT/MISS/再生成/破損/書き込み失敗 |
 | AC-3 | `internal/filevalidator/validator_test.go` | 保存順序、アーキテクチャ非対応 |
 | AC-4 | `internal/libccache/matcher_test.go` | 照合、source/location/重複除外 |

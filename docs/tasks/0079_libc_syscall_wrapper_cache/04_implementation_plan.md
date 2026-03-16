@@ -79,7 +79,9 @@
   - [ ] `LibcWrapperAnalyzer` 型と `NewLibcWrapperAnalyzer()` コンストラクタ
   - [ ] `Analyze(libcELFFile *elf.File) ([]WrapperEntry, error)` の実装:
     - [ ] `.text` セクションのデータとベースアドレスの取得
-    - [ ] `elf.File.DynamicSymbols()` によるエクスポートシンボルの列挙
+    - [ ] `elf.File.DynamicSymbols()` によるエクスポートシンボルの列挙:
+      - `elf.ErrNoSymbols` → 空スライスとして続行（`.dynsym` なし = ラッパー 0 件）
+      - その他のエラー → `fmt.Errorf("...: %w", ErrExportSymbolsFailed)` を返す
     - [ ] `STB_LOCAL`/`SHN_UNDEF`/非 `STT_FUNC` シンボルの除外
     - [ ] サイズフィルタ（256 バイト超を除外）
     - [ ] シンボルアドレスから `.text` セクション内オフセットへの変換
@@ -96,6 +98,8 @@
   - [ ] `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされていること
   - [ ] `DeterminationMethod != "immediate"` の関数が除外されること
   - [ ] 非対応アーキテクチャで `ErrUnsupportedArchitecture` が返ること
+  - [ ] `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返ること（エラーなし）
+  - [ ] `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返ること
 
 - [ ] `make fmt && make test && make lint` でパスすることを確認する
 
