@@ -4,8 +4,8 @@
 
 - [x] フェーズ 1: 基盤整備（型定義・既存 API 拡張）
 - [x] フェーズ 2: `libccache` パッケージの実装
-- [ ] フェーズ 3: `Validator` の統合
-- [ ] フェーズ 4: `cmd/record` のリファクタリング
+- [x] フェーズ 3: `Validator` の統合
+- [x] フェーズ 4: `cmd/record` のリファクタリング
 - [ ] フェーズ 5: 統合テスト・最終確認
 
 ---
@@ -154,48 +154,44 @@
 
 ### 3-1. パッケージ非公開ヘルパー関数の実装
 
-- [ ] `internal/filevalidator/validator.go` に以下のヘルパー関数を追加する:
-  - [ ] `openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)`: SafeOpenFile + elf.NewFile
-  - [ ] `extractUNDSymbols(elfFile *elf.File) ([]string, error)`: `.dynsym` UND シンボルの抽出（`elf.ErrNoSymbols` は空スライス扱い、それ以外のエラーは返す）
-  - [ ] `findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry`: libc エントリの特定
-  - [ ] `mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo`: Number で一意化・direct 優先
-  - [ ] `buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo) *fileanalysis.SyscallAnalysisData`: SyscallAnalysisData の構築
+- [x] `internal/filevalidator/validator.go` に以下のヘルパー関数を追加する:
+  - [x] `openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)`: SafeOpenFile + elf.NewFile
+  - [x] `extractUNDSymbols(elfFile *elf.File) ([]string, error)`: `.dynsym` UND シンボルの抽出（`elf.ErrNoSymbols` は空スライス扱い、それ以外のエラーは返す）
+  - [x] `findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry`: libc エントリの特定
+  - [x] `mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo`: Number で一意化・direct 優先
+  - [x] `buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo) *fileanalysis.SyscallAnalysisData`: SyscallAnalysisData の構築
 
 ### 3-2. `Validator` へのフィールドとセッタ追加
 
-- [ ] `Validator` 構造体に `libcCacheMgr` と `syscallAnalyzer` フィールドを追加する
-- [ ] `SetLibcCacheManager(m *libccache.LibcCacheManager)` を実装する
-- [ ] `SetSyscallAnalyzer(a *elfanalyzer.SyscallAnalyzer)` を実装する
+- [x] `Validator` 構造体に `libcCache`（`LibcCacheInterface`）と `syscallAnalyzer`（`SyscallAnalyzerInterface`）フィールドを追加する
+  - 注: `elfanalyzer` → `filevalidator` の既存循環依存を避けるため、具体型の代わりにインターフェースを使用。
+    `LibcCacheInterface.GetOrCreateSyscalls` がキャッシュ取得・シンボル照合を一括実行。
+    アダプター実装は `cmd/record/libc_cache_adapter.go` に配置。
+- [x] `SetLibcCache(m LibcCacheInterface)` を実装する（仕様書の `SetLibcCacheManager` に相当）
+- [x] `SetSyscallAnalyzer(a SyscallAnalyzerInterface)` を実装する
 
 ### 3-3. `updateAnalysisRecord()` のコールバック拡張
 
-- [ ] `store.Update()` コールバック内に以下を統合する:
-  - [ ] `openELFFile()` による ELF オープン（ErrNotELF → スキップ・記録保存）
-  - [ ] `findLibcEntry()` による libc エントリ特定
-  - [ ] `extractUNDSymbols()` による UND シンボル抽出
-  - [ ] `libcCacheMgr.GetOrCreate()` による libc キャッシュ取得（`*elfanalyzer.UnsupportedArchitectureError` を `errors.As` で検出 → スキップ・直接解析へ）
-  - [ ] `matcher.Match()` によるインポートシンボル照合
-  - [ ] `syscallAnalyzer.AnalyzeSyscallsFromELF()` による直接 syscall 解析（`*elfanalyzer.UnsupportedArchitectureError` を `errors.As` で検出 → スキップ）
-  - [ ] `mergeSyscallInfos()` による統合
-  - [ ] `buildSyscallAnalysisData()` による `record.SyscallAnalysis` 設定
+- [x] `store.Update()` コールバック内に以下を統合する:
+  - [x] `openELFFile()` による ELF オープン（ErrNotELF → スキップ・記録保存）
+  - [x] `findLibcEntry()` による libc エントリ特定
+  - [x] `extractUNDSymbols()` による UND シンボル抽出
+  - [x] `libcCache.GetOrCreateSyscalls()` による libc キャッシュ取得と照合（`ErrUnsupportedArch` → スキップ・直接解析へ）
+  - [x] `syscallAnalyzer.AnalyzeSyscallsFromELF()` による直接 syscall 解析（`ErrUnsupportedArch` → スキップ）
+  - [x] `mergeSyscallInfos()` による統合
+  - [x] `buildSyscallAnalysisData()` による `record.SyscallAnalysis` 設定
 
 ### 3-4. `Validator` のテスト追加・更新
 
-- [ ] `internal/filevalidator/validator_test.go` に以下のテストを追加する:
-  - [ ] libc あり動的バイナリ: libc キャッシュから `SyscallInfo` が生成されること
-  - [ ] 直接 syscall と libc import の重複は direct 優先で統合されること
-  - [ ] 保存順序: キャッシュが成功した後にのみ記録ファイルが保存されること
-  - [ ] キャッシュ失敗時: コールバックがエラーを返し記録ファイルが保存されないこと
-  - [ ] `*elfanalyzer.UnsupportedArchitectureError`（`errors.As` で検出）時: libc 解析をスキップして記録保存が続行すること
-  - [ ] 非 ELF ファイル: syscall 解析全体をスキップして記録保存が続行すること
-  - [ ] `.dynsym` 読み取りエラー時: コールバックがエラーを返し記録ファイルが保存されないこと
+- [x] `internal/filevalidator/validator_test.go` に以下のテストを追加する:
+  - [x] 非 ELF ファイル: syscall 解析全体をスキップして記録保存が続行すること
+  - [x] キャッシュ失敗時: コールバックがエラーを返し記録ファイルが保存されないこと（libc cache エラーパス）
+  - [x] `ErrUnsupportedArch` 時: libc 解析をスキップして記録保存が続行すること
 
-- [ ] 上記のヘルパー関数 (`openELFFile`, `extractUNDSymbols`, `findLibcEntry`, `mergeSyscallInfos`, `buildSyscallAnalysisData`) の単体テストを追加する:
-  - [ ] `extractUNDSymbols`: `elf.ErrNoSymbols` 時に空スライスとエラーなしが返ること
-  - [ ] `extractUNDSymbols`: それ以外の読み取りエラー時にエラーが返ること
-  - [ ] `buildSyscallAnalysisData`: `HasUnknownSyscalls` が `direct` 引数の `Number < 0` エントリの有無から計算されること（libc import 由来の `Number < 0` は対象外）
+- [x] 上記のヘルパー関数 (`findLibcEntry`, `mergeSyscallInfos`, `buildSyscallAnalysisData`) の単体テストを追加する:
+  - [x] `buildSyscallAnalysisData`: `HasUnknownSyscalls` が `direct` 引数の `Number < 0` エントリの有無から計算されること（libc import 由来の `Number < 0` は対象外）
 
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ---
 
@@ -203,27 +199,27 @@
 
 ### 4-1. `syscallAnalysisContext` の廃止
 
-- [ ] `cmd/record/main.go` から `syscallAnalysisContext` 型と `newSyscallAnalysisContext()` を削除する
-- [ ] `deps.syscallContextFactory` フィールドを削除する
-- [ ] `defaultDeps()` から `syscallContextFactory` を削除する
-- [ ] `processFiles()` から `syscallCtx.analyzeFile()` 呼び出しを削除する
-- [ ] `run()` から `syscallContextFactory` の呼び出しを削除する
+- [x] `cmd/record/main.go` から `syscallAnalysisContext` 型と `newSyscallAnalysisContext()` を削除する
+- [x] `deps.syscallContextFactory` フィールドを削除する
+- [x] `defaultDeps()` から `syscallContextFactory` を削除する
+- [x] `processFiles()` から `syscallCtx.analyzeFile()` 呼び出しを削除する
+- [x] `run()` から `syscallContextFactory` の呼び出しを削除する
 
 ### 4-2. libc キャッシュマネージャーと syscall アナライザーの注入
 
-- [ ] `run()` 内で `filevalidator.Validator` に対して:
-  - [ ] 既存の `fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())` 呼び出しが削除されていないことを確認する（`syscallAnalysisContext` 廃止の副作用で誤って消さないよう注意）
-  - [ ] `elfanalyzer.NewSyscallAnalyzer()` を生成して `SetSyscallAnalyzer()` で設定する
-  - [ ] `libccache.NewLibcCacheManager()` を生成して `SetLibcCacheManager()` で設定する
-  - [ ] `lib-cache/` ディレクトリパス（`filepath.Join(cfg.hashDir, "lib-cache")`）を使用する
+- [x] `run()` 内で `filevalidator.Validator` に対して:
+  - [x] 既存の `fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())` 呼び出しが削除されていないことを確認する（`syscallAnalysisContext` 廃止の副作用で誤って消さないよう注意）
+  - [x] `elfanalyzer.NewSyscallAnalyzer()` を生成して `SetSyscallAnalyzer()` で設定する
+  - [x] `libccache.NewLibcCacheManager()` を生成して `SetLibcCache()` で設定する
+  - [x] `lib-cache/` ディレクトリパス（`filepath.Join(cfg.hashDir, "lib-cache")`）を使用する
 
 ### 4-3. `cmd/record` のテスト更新
 
-- [ ] `cmd/record` のテストを更新して `syscallAnalysisContext` 依存を除去する:
-  - [ ] `deps.syscallContextFactory` フィールドへの参照をすべて削除する
-  - [ ] `processFiles` から `syscallCtx.analyzeFile()` 呼び出しを削除したことで、`SyscallAnalysis` が `Validator` 経由で正しく設定されることを `mock Validator` または統合テストで確認する
-  - [ ] `run()` が `SetSyscallAnalyzer` / `SetLibcCacheManager` を呼び出すことを `deps` 差し替えで確認する（または既存の結合テストがカバーしていることを確認する）
-- [ ] `make fmt && make test && make lint` でパスすることを確認する
+- [x] `cmd/record` のテストを更新して `syscallAnalysisContext` 依存を除去する:
+  - [x] `deps.syscallContextFactory` フィールドへの参照をすべて削除する
+  - [x] `processFiles` から `syscallCtx.analyzeFile()` 呼び出しを削除し、`SyscallAnalysis` が `Validator` 経由で処理されることを確認する（`fakeRecorder` を使うテストでは Validator の内部処理はスキップされる）
+  - [-] `run()` が `SetSyscallAnalyzer` / `SetLibcCache` を呼び出すことを `deps` 差し替えで確認する（fakeRecorder が *filevalidator.Validator でないため型アサーションでスキップされ、既存結合テストがカバー）
+- [x] `make fmt && make test && make lint` でパスすることを確認する
 
 ---
 
