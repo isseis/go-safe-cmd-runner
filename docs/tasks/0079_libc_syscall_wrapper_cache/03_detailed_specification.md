@@ -345,7 +345,8 @@ func NewImportSymbolMatcher(syscallTable SyscallNumberTable) *ImportSymbolMatche
 
 // Match はインポートシンボル一覧とキャッシュを照合し、SyscallInfo を生成する。
 // 重複統合キー: Number
-// 同じ Number のエントリが複数生成された場合は 1 件に絞る。
+// 同じ Number のエントリが複数生成された場合は WrapperEntry.Name の辞書順で
+// 最小のシンボル名を持つ 1 件に絞る。
 func (m *ImportSymbolMatcher) Match(
     importSymbols []string,
     wrappers []WrapperEntry,
@@ -363,7 +364,7 @@ func (m *ImportSymbolMatcher) Match(
    - `Location`: `0`
    - `DeterminationMethod`: `"immediate"`（キャッシュスキーマの不変条件）
    - `Source`: `"libc_symbol_import"`（`SourceLibcSymbolImport` 定数を使用）
-4. 結果から `Number` 重複を排除する（同一 `Number` の場合は最初の 1 件のみ保持）
+4. 結果から `Number` 重複を排除する（同一 `Number` の場合は `WrapperEntry.Name` の辞書順で最小のシンボル名を持つ 1 件を保持）
 5. 結果スライスを返す
 
 **テスト仕様:**
