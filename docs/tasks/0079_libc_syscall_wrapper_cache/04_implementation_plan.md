@@ -197,7 +197,10 @@
 
 ### 4-3. `cmd/record` のテスト更新
 
-- [ ] `cmd/record` のテストを更新して `syscallAnalysisContext` 依存を除去する
+- [ ] `cmd/record` のテストを更新して `syscallAnalysisContext` 依存を除去する:
+  - [ ] `deps.syscallContextFactory` フィールドへの参照をすべて削除する
+  - [ ] `processFiles` から `syscallCtx.analyzeFile()` 呼び出しを削除したことで、`SyscallAnalysis` が `Validator` 経由で正しく設定されることを `mock Validator` または統合テストで確認する
+  - [ ] `run()` が `SetSyscallAnalyzer` / `SetLibcCacheManager` を呼び出すことを `deps` 差し替えで確認する（または既存の結合テストがカバーしていることを確認する）
 - [ ] `make fmt && make test && make lint` でパスすることを確認する
 
 ---
