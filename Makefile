@@ -135,7 +135,7 @@ build-security-check:
 # Production binary build rules
 $(BINARY_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/record/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v ./cmd/record
 
 $(BINARY_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
@@ -150,7 +150,7 @@ $(BINARY_RUNNER): $(GO_SOURCES)
 # Test binary build rules
 $(BINARY_TEST_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/record/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v ./cmd/record
 
 $(BINARY_TEST_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)

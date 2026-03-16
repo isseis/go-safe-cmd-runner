@@ -18,12 +18,12 @@ const MaxWrapperFunctionSize = 256
 // LibcWrapperAnalyzer analyzes a libc ELF file and returns a list of
 // syscall wrapper functions.
 type LibcWrapperAnalyzer struct {
-syscallAnalyzer *elfanalyzer.SyscallAnalyzer
+	syscallAnalyzer *elfanalyzer.SyscallAnalyzer
 }
 
 // NewLibcWrapperAnalyzer creates a new LibcWrapperAnalyzer.
 func NewLibcWrapperAnalyzer(syscallAnalyzer *elfanalyzer.SyscallAnalyzer) *LibcWrapperAnalyzer {
-return &LibcWrapperAnalyzer{syscallAnalyzer: syscallAnalyzer}
+	return &LibcWrapperAnalyzer{syscallAnalyzer: syscallAnalyzer}
 }
 
 // symTextRange returns the [startOffset, endOffset) range within the code slice

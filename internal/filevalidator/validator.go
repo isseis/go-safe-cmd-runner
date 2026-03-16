@@ -2,11 +2,13 @@ package filevalidator
 
 import (
 	"bytes"
+	"debug/elf"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -17,10 +19,59 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
+// SyscallNumberTable provides syscall name and network classification by number.
+// This interface is structurally identical to libccache.SyscallNumberTable and
+// elfanalyzer.SyscallNumberTable; defining it here avoids a direct import of those packages.
+type SyscallNumberTable interface {
+	GetSyscallName(number int) string
+	IsNetworkSyscall(number int) bool
+}
+
+// LibcSyscallInfo holds a syscall detected via libc import symbol matching.
+// Mirrors common.SyscallInfo fields needed by Validator without importing libccache.
+type LibcSyscallInfo = common.SyscallInfo
+
+// LibcCacheInterface abstracts libc wrapper cache operations.
+// Implemented by a concrete adapter wrapping libccache.LibcCacheManager.
+// This avoids a direct import of libccache which would create a cycle:
+// filevalidator → libccache → elfanalyzer → filevalidator.
+type LibcCacheInterface interface {
+	// GetOrCreateSyscalls returns the syscall infos for the given libc file.
+	// It handles cache lookup and, on miss, libc ELF analysis.
+	// importSymbols is the list of UND symbol names from the target binary.
+	// machine is the ELF machine type of the target binary, used to select the syscall table.
+	// Returns an error wrapping ErrUnsupportedArch for unsupported architectures.
+	GetOrCreateSyscalls(libcPath, libcHash string, importSymbols []string, machine elf.Machine) ([]common.SyscallInfo, error)
+}
+
+// ErrUnsupportedArch is returned by SyscallAnalyzerInterface.AnalyzeSyscallsFromELF
+// and SyscallAnalyzerInterface.GetOrCreate when the ELF architecture is not supported.
+// Adapters wrapping concrete elfanalyzer types must convert UnsupportedArchitectureError
+// to this sentinel so that filevalidator can detect it without importing elfanalyzer.
+var ErrUnsupportedArch = errors.New("unsupported ELF architecture")
+
+// SyscallAnalyzerInterface defines the subset of SyscallAnalyzer methods used by Validator.
+// This interface avoids a circular import: elfanalyzer already imports filevalidator
+// (via standard_analyzer.go), so filevalidator cannot import elfanalyzer directly.
+// Implementations must convert elfanalyzer.UnsupportedArchitectureError to ErrUnsupportedArch.
+type SyscallAnalyzerInterface interface {
+	// AnalyzeSyscallsFromELF analyzes the ELF file for direct syscall instructions.
+	// Returns a slice of detected syscalls.
+	// Returns an error wrapping ErrUnsupportedArch (detectable via errors.Is) for
+	// unsupported architectures.
+	AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, error)
+	// GetSyscallTable returns the SyscallNumberTable for the given machine type.
+	// Returns (table, true) for supported architectures, (nil, false) for unsupported ones.
+	GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool)
+}
+
 // Error definitions for static error handling
 var (
 	ErrPrivilegeManagerNotAvailable    = errors.New("privilege manager not available")
 	ErrPrivilegedExecutionNotSupported = errors.New("privileged execution not supported")
+
+	// errNotELF is returned by openELFFile when the file is not an ELF binary.
+	errNotELF = errors.New("file is not an ELF binary")
 )
 
 // FileValidator interface defines the basic file validation methods
@@ -60,8 +111,10 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	dynlibAnalyzer *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
-	binaryAnalyzer binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
+	dynlibAnalyzer  *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
+	binaryAnalyzer  binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
+	libcCache       LibcCacheInterface             // nil if libc cache is disabled
+	syscallAnalyzer SyscallAnalyzerInterface       // nil if syscall analysis is disabled
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -206,6 +259,11 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			}
 		}
 
+		// Steps A-D: ELF syscall analysis (libc import + direct instruction).
+		if err := v.analyzeSyscalls(record, filePath.String()); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -238,6 +296,16 @@ func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
 // Call before the first SaveRecord() invocation. Safe to call with nil (disables binary analysis).
 func (v *Validator) SetBinaryAnalyzer(a binaryanalyzer.BinaryAnalyzer) {
 	v.binaryAnalyzer = a
+}
+
+// SetLibcCache injects the LibcCacheInterface used during record operations.
+func (v *Validator) SetLibcCache(m LibcCacheInterface) {
+	v.libcCache = m
+}
+
+// SetSyscallAnalyzer injects the SyscallAnalyzer used during record operations.
+func (v *Validator) SetSyscallAnalyzer(a SyscallAnalyzerInterface) {
+	v.syscallAnalyzer = a
 }
 
 // Verify checks if the file at filePath matches its recorded hash.
@@ -489,4 +557,170 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
 	}
 	return entries
+}
+
+// analyzeSyscalls performs ELF syscall analysis on the given file path and sets
+// record.SyscallAnalysis. It is called from the store.Update() callback in
+// updateAnalysisRecord. Non-ELF files and unsupported architectures are silently
+// skipped; other errors are returned to prevent the record from being saved.
+func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string) error {
+	if v.syscallAnalyzer == nil && v.libcCache == nil {
+		return nil
+	}
+
+	// Step A: Open the target binary as an ELF file.
+	elfFile, elfErr := openELFFile(safefileio.NewFileSystem(safefileio.FileSystemConfig{}), filePath)
+	if elfErr != nil {
+		if errors.Is(elfErr, errNotELF) {
+			return nil // Non-ELF: skip syscall analysis, keep record.
+		}
+		return fmt.Errorf("failed to open ELF file: %w", elfErr)
+	}
+	defer func() { _ = elfFile.Close() }()
+
+	// Step B: libc import symbol matching via cache.
+	var libcSyscalls []common.SyscallInfo
+	if v.libcCache != nil && record.DynLibDeps != nil {
+		if libcEntry := findLibcEntry(record.DynLibDeps); libcEntry != nil {
+			importSymbols, symErr := extractUNDSymbols(elfFile)
+			if symErr != nil {
+				return fmt.Errorf("failed to extract UND symbols: %w", symErr)
+			}
+			infos, cacheErr := v.libcCache.GetOrCreateSyscalls(libcEntry.Path, libcEntry.Hash, importSymbols, elfFile.Machine)
+			if cacheErr != nil {
+				if !errors.Is(cacheErr, ErrUnsupportedArch) {
+					return fmt.Errorf("libc cache error: %w", cacheErr)
+				}
+				// ErrUnsupportedArch: skip libc cache and continue.
+			} else {
+				libcSyscalls = infos
+			}
+		}
+	}
+
+	// Step C: Direct syscall instruction analysis.
+	var directSyscalls []common.SyscallInfo
+	if v.syscallAnalyzer != nil {
+		detected, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
+		if analyzeErr != nil {
+			if !errors.Is(analyzeErr, ErrUnsupportedArch) {
+				return fmt.Errorf("syscall analysis failed: %w", analyzeErr)
+			}
+		} else {
+			directSyscalls = detected
+		}
+	}
+
+	// Step D: Merge and set SyscallAnalysis.
+	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
+	if len(allSyscalls) > 0 {
+		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls)
+	}
+	return nil
+}
+
+// openELFFile opens filePath via SafeOpenFile and parses it as an ELF binary.
+// Returns errNotELF if the file is not an ELF binary.
+// The caller is responsible for calling Close() on the returned *elf.File.
+func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
+	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	elfFile, err := elf.NewFile(f)
+	if err != nil {
+		_ = f.Close()
+		return nil, errNotELF
+	}
+	return elfFile, nil
+}
+
+// extractUNDSymbols returns the names of undefined (UND) symbols from elfFile's .dynsym section.
+// If .dynsym does not exist (elf.ErrNoSymbols), returns an empty slice with no error.
+// Other errors are returned as-is.
+func extractUNDSymbols(elfFile *elf.File) ([]string, error) {
+	syms, err := elfFile.DynamicSymbols()
+	if err != nil {
+		if errors.Is(err, elf.ErrNoSymbols) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var result []string
+	for _, s := range syms {
+		if elf.ST_BIND(s.Info) == elf.STB_LOCAL {
+			continue
+		}
+		if s.Section != elf.SHN_UNDEF {
+			continue
+		}
+		if elf.ST_TYPE(s.Info) != elf.STT_FUNC {
+			continue
+		}
+		result = append(result, s.Name)
+	}
+	return result, nil
+}
+
+// findLibcEntry returns the first LibEntry from deps whose SOName starts with "libc.so.".
+// Returns nil if no such entry is found.
+func findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry {
+	for i := range deps.Libs {
+		if strings.HasPrefix(deps.Libs[i].SOName, "libc.so.") {
+			return &deps.Libs[i]
+		}
+	}
+	return nil
+}
+
+// mergeSyscallInfos merges libc-derived and direct syscall infos into a single slice.
+// When the same Number appears in both, the direct entry (Source == "") takes priority.
+func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
+	// Build a map keyed by Number, direct entries override libc entries.
+	merged := make(map[int]common.SyscallInfo)
+	for _, info := range libc {
+		merged[info.Number] = info
+	}
+	for _, info := range direct {
+		merged[info.Number] = info
+	}
+	result := make([]common.SyscallInfo, 0, len(merged))
+	for _, info := range merged {
+		result = append(result, info)
+	}
+	return result
+}
+
+// buildSyscallAnalysisData constructs a SyscallAnalysisData from the merged syscall infos.
+// HasUnknownSyscalls is determined by whether any direct (Source == "") entry has Number < 0.
+func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo) *fileanalysis.SyscallAnalysisData {
+	hasUnknown := false
+	for _, info := range direct {
+		if info.Number < 0 {
+			hasUnknown = true
+			break
+		}
+	}
+
+	var hasNetwork bool
+	var networkCount int
+	for _, info := range all {
+		if info.IsNetwork {
+			hasNetwork = true
+			networkCount++
+		}
+	}
+
+	return &fileanalysis.SyscallAnalysisData{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls:   all,
+			HasUnknownSyscalls: hasUnknown,
+			Summary: common.SyscallSummary{
+				HasNetworkSyscalls:  hasNetwork,
+				TotalDetectedEvents: len(all),
+				NetworkSyscallCount: networkCount,
+			},
+		},
+		AnalyzedAt: time.Now().UTC(),
+	}
 }
