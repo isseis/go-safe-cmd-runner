@@ -23,6 +23,7 @@ type elfBuilder struct {
 	symbols   []elfSym // exported function symbols
 	badDynsym bool     // if true, create a .dynsym with truncated/bad data
 	noDynsym  bool     // if true, omit .dynsym entirely
+	noText    bool     // if true, rename the text section to .data (Section(".text") returns nil)
 }
 
 type elfSym struct {
@@ -76,7 +77,12 @@ func (b *elfBuilder) buildBytes(t *testing.T) []byte {
 	shstrtab := []byte{0} // index 0 = empty
 	shstrtabOffNull := uint32(0)
 	shstrtabOffText := uint32(len(shstrtab))
-	shstrtab = append(shstrtab, []byte(".text")...)
+	// When noText is set, use ".data" instead of ".text" so Section(".text") returns nil.
+	textSectionName := ".text"
+	if b.noText {
+		textSectionName = ".data"
+	}
+	shstrtab = append(shstrtab, []byte(textSectionName)...)
 	shstrtab = append(shstrtab, 0)
 	shstrtabOffDynsym := uint32(len(shstrtab))
 	shstrtab = append(shstrtab, []byte(".dynsym")...)
@@ -492,4 +498,26 @@ func TestLibcWrapperAnalyzer_DynsymReadError(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrExportSymbolsFailed),
 		"expected ErrExportSymbolsFailed, got: %v", err)
+}
+
+// TestLibcWrapperAnalyzer_NoTextSection verifies that an ELF without a .text
+// section returns nil wrappers and no error (treated as empty libc).
+func TestLibcWrapperAnalyzer_NoTextSection(t *testing.T) {
+	// Use elfBuilder with noText=true: the code section is named ".data" instead
+	// of ".text", so elf.File.Section(".text") returns nil.
+	eb := &elfBuilder{
+		machine:  elf.EM_X86_64,
+		textCode: append(movEAX(41), syscallInsn...),
+		textBase: 0x1000,
+		noText:   true,
+	}
+	elfFile := eb.build(t)
+	defer elfFile.Close()
+
+	// Precondition: Section(".text") must be nil.
+	require.Nil(t, elfFile.Section(".text"), "precondition: no .text section")
+
+	entries, analyzeErr := newAnalyzer().Analyze(elfFile)
+	require.NoError(t, analyzeErr, "no .text section should not be an error")
+	assert.Nil(t, entries, "no .text section should return nil wrappers")
 }
