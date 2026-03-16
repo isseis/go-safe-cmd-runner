@@ -78,21 +78,30 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
 
 1. `machine` 引数から `a.archConfigs[machine]` を参照してアーキテクチャ設定を取得する。非対応の場合は `&UnsupportedArchitectureError{Machine: machine}` を返す
 2. `findSyscallInstructions(code[startOffset:endOffset], sectionBaseAddr+uint64(startOffset), decoder)` を呼び出して syscall 命令の位置を取得する
-3. 各 syscall 命令位置について `extractSyscallInfo` を呼び出す
-4. **後方スキャン窓のクランプ**: `backwardScanForSyscallNumber` への `windowStart` を `max(windowStart, startOffset)` でクランプする（隣接関数のバイトの混入を防ぐ）
+   - **設計選択**: `code[startOffset:endOffset]` のスライスを渡し、ベースアドレスを `sectionBaseAddr+uint64(startOffset)` にシフトする。これによりスライスの先頭が仮想アドレス上で `sym.Value` に対応し、スライス内オフセットが 0 相対になる
+3. 各 syscall 命令位置について `extractSyscallInfo` を呼び出す（引数 `code` にはスライス `code[startOffset:endOffset]`、`baseAddr` には `sectionBaseAddr+uint64(startOffset)` を使用）
+4. **後方スキャン窓のクランプ**: ステップ 2 でスライスを渡すため、後方スキャン窓はスライスの先頭（オフセット 0）より前に出ることはなく、追加のクランプ処理は不要。`backwardScanForSyscallNumber` の既存実装（`windowStart = max(windowStart, 0)`）がスライス先頭のクランプを担う
 5. 結果 `[]common.SyscallInfo` を返す（`SyscallInfo.Source` は空文字列のまま）
 
 **`backwardScanForSyscallNumber` のクランプ実装:**
 
 `AnalyzeSyscallsInRange` 専用のヘルパーメソッド `backwardScanForSyscallNumberClamped` を追加する、またはオフセットのクランプを呼び出し前に行う。既存の `backwardScanForSyscallNumber` シグネチャは変更しない。
 
+スライスを渡す設計を採用するため、クランプ処理の概念コードは以下のようになる（スライス内オフセット基準）:
+
 ```go
-// AnalyzeSyscallsInRange 内でのクランプ処理（概念コード）
-windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(decoder))
-if windowStart < startOffset {
-    windowStart = startOffset // 部分範囲の先頭より前に出ない
+// AnalyzeSyscallsInRange 内の実装（概念コード）
+// subCode = code[startOffset:endOffset]、subBase = sectionBaseAddr+uint64(startOffset)
+subCode := code[startOffset:endOffset]
+subBase := sectionBaseAddr + uint64(startOffset)
+syscallLocs, _ := a.findSyscallInstructions(subCode, subBase, decoder)
+for _, loc := range syscallLocs {
+    // extractSyscallInfo はスライス内オフセットで動作する。
+    // backwardScanForSyscallNumber の windowStart は max(windowStart, 0) で
+    // クランプされるため、スライス先頭より前のバイトは参照されない。
+    info := a.extractSyscallInfo(subCode, loc, subBase, decoder, table)
+    results = append(results, info)
 }
-instructions, _ := a.decodeInstructionsInWindow(code, sectionBaseAddr, windowStart, syscallOffset, decoder)
 ```
 
 **テスト方針:**
