@@ -239,7 +239,7 @@ type LibcCacheManager struct {
     cacheDir string // <hash-dir>/lib-cache/
     fs       safefileio.FileSystem
     analyzer *LibcWrapperAnalyzer
-    pathEnc  pathencoding.PathEncoder // 既存の pathencoding パッケージを再利用
+    pathEnc  *pathencoding.SubstitutionHashEscape // 具体型を直接使用（インターフェース不在のため）
 }
 
 // GetOrCreate はキャッシュを返すか、存在しない/無効な場合は解析して生成する。
@@ -249,6 +249,8 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string, libcELFFile *e
 ```
 
 キャッシュファイルパス: `<cache-dir>/<pathencoding.Encode(libcPath)>`
+
+`pathencoding` パッケージにはエンコーダーのインターフェース定義が存在しない（`SubstitutionHashEscape` 構造体とそのコンストラクタ `NewSubstitutionHashEscape()` のみ公開）。`LibcCacheManager` はこの具体型を直接保持する。テスト時もインターフェースではなく実装をそのまま使う。
 
 #### 3.1.4 インポートシンボル照合 (`matcher.go`)
 
@@ -534,7 +536,7 @@ flowchart TB
 ### 8.2 スキーマ互換性
 
 - `SyscallInfo.Source` は `omitempty` のため、既存の記録ファイルは正常に読み込める
-- `CurrentSchemaVersion` の変更は不要（§4.3 参照）
+- `CurrentSchemaVersion` の変更は不要（`01_requirements.md` §4.3 参照）
 
 ### 8.3 保守性
 
