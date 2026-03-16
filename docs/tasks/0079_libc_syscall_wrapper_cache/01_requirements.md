@@ -54,8 +54,8 @@ libc は頻繁に更新されるものではないため、ライブラリファ
   "analyzed_at": "2026-03-16T00:00:00Z",
   "syscall_wrappers": [
     { "name": "write",  "number": 1   },
-    { "name": "mkdir",  "number": 83  },
     { "name": "socket", "number": 41  }
+    { "name": "mkdir",  "number": 83  },
   ]
 }
 ```
