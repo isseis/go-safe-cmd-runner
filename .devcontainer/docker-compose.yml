@@ -1,0 +1,20 @@
+services:
+  dev-env:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    platform: linux/amd64
+    hostname: x86-dev-box
+    container_name: my-x86-container
+    environment:
+      - SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+    volumes:
+      - ..:/workspaces/ubuntu:cached
+      - /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock
+      # 拡張機能のキャッシュ用ボリューム
+      - vscode-extensions-cache:/home/issei/.vscode-server/extensions
+    # コンテナを維持するためのコマンド
+    command: /bin/sh -c "while sleep 1000; do :; done"
+
+volumes:
+  vscode-extensions-cache:
