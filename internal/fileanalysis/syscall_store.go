@@ -20,6 +20,20 @@ type SyscallAnalysisResult struct {
 	common.SyscallAnalysisResultCore
 }
 
+// FilterSyscallsForStorage filters a slice of SyscallInfo to only entries
+// relevant to risk assessment:
+//   - Network-related syscalls (IsNetwork == true)
+//   - Syscalls with unknown numbers (Number == -1)
+func FilterSyscallsForStorage(syscalls []common.SyscallInfo) []common.SyscallInfo {
+	filtered := make([]common.SyscallInfo, 0, len(syscalls))
+	for _, s := range syscalls {
+		if s.IsNetwork || s.Number == -1 {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
 // SyscallAnalysisStore defines the interface for storing and loading syscall analysis results.
 // This interface uses fileanalysis types to avoid import cycles with elfanalyzer.
 // Used directly by cmd/record for saving/loading syscall analysis.
@@ -70,17 +84,14 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 		return sorted[i].Location < sorted[j].Location
 	})
 
-	core := result.SyscallAnalysisResultCore
-	core.DetectedSyscalls = sorted
-
 	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash
-		// Copy the shared core fields directly via the embedded struct,
-		// then set the fileanalysis-specific AnalyzedAt field.
-		record.SyscallAnalysis = &SyscallAnalysisData{
-			SyscallAnalysisResultCore: core,
+		analysisData := &SyscallAnalysisData{
+			SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
 			AnalyzedAt:                time.Now().UTC(),
 		}
+		analysisData.DetectedSyscalls = sorted
+		record.SyscallAnalysis = analysisData
 		return nil
 	})
 }
