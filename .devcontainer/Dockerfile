@@ -35,7 +35,7 @@ RUN curl -OL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz \
     && rm go1.26.0.linux-amd64.tar.gz
 
 # golangci-lint のインストール
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v2.11.3
 
 # pre-commit
 RUN pip3 install --break-system-packages pre-commit
