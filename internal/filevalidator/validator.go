@@ -764,14 +764,16 @@ func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallI
 		}
 	}
 
+	retained := fileanalysis.FilterSyscallsForStorage(all)
+
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			Architecture:       elfMachineToArchName(machine),
-			DetectedSyscalls:   all,
+			DetectedSyscalls:   retained,
 			HasUnknownSyscalls: hasUnknown,
 			Summary: common.SyscallSummary{
 				HasNetworkSyscalls:  hasNetwork,
-				TotalDetectedEvents: len(all),
+				TotalDetectedEvents: len(retained),
 				NetworkSyscallCount: networkCount,
 				IsHighRisk:          hasUnknown,
 			},

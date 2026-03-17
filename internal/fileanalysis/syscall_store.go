@@ -20,6 +20,20 @@ type SyscallAnalysisResult struct {
 	common.SyscallAnalysisResultCore
 }
 
+// FilterSyscallsForStorage filters a slice of SyscallInfo to only entries
+// relevant to risk assessment:
+//   - Network-related syscalls (IsNetwork == true)
+//   - Syscalls with unknown numbers (Number == -1)
+func FilterSyscallsForStorage(syscalls []common.SyscallInfo) []common.SyscallInfo {
+	filtered := make([]common.SyscallInfo, 0, len(syscalls))
+	for _, s := range syscalls {
+		if s.IsNetwork || s.Number == -1 {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
 // SyscallAnalysisStore defines the interface for storing and loading syscall analysis results.
 // This interface uses fileanalysis types to avoid import cycles with elfanalyzer.
 // Used directly by cmd/record for saving/loading syscall analysis.

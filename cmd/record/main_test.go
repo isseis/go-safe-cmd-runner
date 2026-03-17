@@ -168,3 +168,4 @@ func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
 	// No warning should be printed for non-ELF files
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
+
