@@ -30,9 +30,10 @@ RUN apt-get update && apt-get install -y \
 RUN locale-gen ja_JP.UTF-8
 
 # Go 言語のインストール (例: 1.26)
-RUN curl -OL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go1.26.0.linux-amd64.tar.gz \
-    && rm go1.26.0.linux-amd64.tar.gz
+RUN curl -sSfL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz -o /tmp/go.tar.gz \
+    && echo "aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235  /tmp/go.tar.gz" | sha256sum -c - \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz
 
 # golangci-lint のインストール
 RUN curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.11.3/golangci-lint-2.11.3-linux-amd64.tar.gz \
