@@ -646,7 +646,14 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
 	// Pre-check magic bytes to detect non-ELF files without relying on elf.NewFile
 	// error classification, which may change across Go versions.
 	magic := make([]byte, len(elfMagic))
-	if _, err := io.ReadFull(f, magic); err != nil || !bytes.Equal(magic, elfMagic) {
+	if _, err := io.ReadFull(f, magic); err != nil {
+		_ = f.Close()
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, errNotELF
+		}
+		return nil, fmt.Errorf("failed to read magic bytes: %w", err)
+	}
+	if !bytes.Equal(magic, elfMagic) {
 		_ = f.Close()
 		return nil, errNotELF
 	}
