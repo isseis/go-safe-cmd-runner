@@ -93,8 +93,7 @@ args = ["test", "%%{undefined_var}"]
 	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 
 	// Also verify detailed error contains variable name
-	var detailErr *config.ErrUndefinedVariableDetail
-	if errors.As(err, &detailErr) {
+	if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
 		assert.Equal(t, "undefined_var", detailErr.VariableName, "Error should mention undefined variable name")
 	}
 }
@@ -225,8 +224,7 @@ args = ["third"]
 	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 
 	// Verify detailed error contains variable name and command name in error message
-	var detailErr *config.ErrUndefinedVariableDetail
-	if errors.As(err, &detailErr) {
+	if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
 		assert.Equal(t, "undefined_var", detailErr.VariableName, "Error should mention undefined variable name")
 	}
 	// Command name appears in the outer wrapper error message

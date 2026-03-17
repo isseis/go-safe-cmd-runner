@@ -56,8 +56,7 @@ func TestCircularReference_DirectSelfReference(t *testing.T) {
 			assert.True(t, errors.Is(err, tt.wantErr), "Expected error type %v, got %v", tt.wantErr, err)
 
 			// Verify the error contains variable name information
-			var detailErr *config.ErrCircularReferenceDetail
-			if errors.As(err, &detailErr) {
+			if detailErr, ok := errors.AsType[*config.ErrCircularReferenceDetail](err); ok {
 				assert.Equal(t, tt.wantVarInErr, detailErr.VariableName, "Error should reference the correct variable")
 			}
 		})
@@ -121,8 +120,7 @@ func TestCircularReference_TwoVariables(t *testing.T) {
 			assert.True(t, errors.Is(err, tt.wantErr), "Expected error type %v, got %v", tt.wantErr, err)
 
 			// Verify the error contains variable name information
-			var detailErr *config.ErrCircularReferenceDetail
-			if errors.As(err, &detailErr) {
+			if detailErr, ok := errors.AsType[*config.ErrCircularReferenceDetail](err); ok {
 				assert.Contains(t, tt.wantVarInErrOneOf, detailErr.VariableName,
 					"Error should reference one of the variables in the cycle")
 			}
@@ -194,8 +192,7 @@ func TestCircularReference_ComplexChain(t *testing.T) {
 			assert.True(t, errors.Is(err, config.ErrCircularReference), "Expected circular reference error, got %v", err)
 
 			// Verify the error contains variable name information
-			var detailErr *config.ErrCircularReferenceDetail
-			if errors.As(err, &detailErr) {
+			if detailErr, ok := errors.AsType[*config.ErrCircularReferenceDetail](err); ok {
 				assert.Contains(t, tt.wantVarInErrOneOf, detailErr.VariableName,
 					"Error should reference one of the variables in the cycle")
 			}
@@ -287,8 +284,7 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 
 			// Verify the error contains variable name information
 			if errors.Is(err, config.ErrCircularReference) {
-				var detailErr *config.ErrCircularReferenceDetail
-				if errors.As(err, &detailErr) {
+				if detailErr, ok := errors.AsType[*config.ErrCircularReferenceDetail](err); ok {
 					if len(tt.wantVarsInChain) > 0 {
 						// For circular references, verify all expected variables are in the chain
 						for _, wantVar := range tt.wantVarsInChain {
@@ -299,8 +295,7 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 					}
 				}
 			} else if errors.Is(err, config.ErrUndefinedVariable) {
-				var detailErr *config.ErrUndefinedVariableDetail
-				if errors.As(err, &detailErr) {
+				if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
 					assert.Equal(t, tt.wantVarInErr, detailErr.VariableName, "Error should reference the correct variable")
 				}
 			}
@@ -368,8 +363,7 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 
 			// Verify the error contains variable name information
 			if errors.Is(err, config.ErrCircularReference) {
-				var detailErr *config.ErrCircularReferenceDetail
-				if errors.As(err, &detailErr) {
+				if detailErr, ok := errors.AsType[*config.ErrCircularReferenceDetail](err); ok {
 					if len(tt.wantVarInErrOneOf) > 0 {
 						assert.Contains(t, tt.wantVarInErrOneOf, detailErr.VariableName,
 							"Error should reference one of the variables in the cycle")
@@ -378,8 +372,7 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 					}
 				}
 			} else if errors.Is(err, config.ErrUndefinedVariable) {
-				var detailErr *config.ErrUndefinedVariableDetail
-				if errors.As(err, &detailErr) {
+				if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
 					assert.Equal(t, tt.wantVarInErr, detailErr.VariableName, "Error should reference the correct variable")
 				}
 			}

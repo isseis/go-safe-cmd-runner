@@ -632,8 +632,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		// Old schema record (schema_version < CurrentSchemaVersion): predates dynlib
 		// tracking. Treat as no DynLibDeps data available and skip the check.
 		// Records with a newer schema (Actual > Expected) are rejected as usual.
-		var schemaErr *fileanalysis.SchemaVersionMismatchError
-		if errors.As(err, &schemaErr) && schemaErr.Actual < schemaErr.Expected {
+		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
 			slog.Warn("Skipping dynlib verification: record predates dynlib tracking; re-run 'record' to enable",
 				"cmd_path", cmdPath,
 				"record_schema_version", schemaErr.Actual,

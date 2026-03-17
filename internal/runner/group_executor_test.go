@@ -1816,8 +1816,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 	// Verify error type using errors.Is instead of fragile string matching
 	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
 	// Also verify detailed error contains variable name
-	var detailErr *config.ErrUndefinedVariableDetail
-	if errors.As(err, &detailErr) {
+	if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
 		assert.Equal(t, "UNDEFINED_VAR", detailErr.VariableName, "Error should mention undefined variable name")
 	}
 
