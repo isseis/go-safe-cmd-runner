@@ -84,17 +84,14 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 		return sorted[i].Location < sorted[j].Location
 	})
 
-	core := result.SyscallAnalysisResultCore
-	core.DetectedSyscalls = sorted
-
 	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash
-		// Copy the shared core fields directly via the embedded struct,
-		// then set the fileanalysis-specific AnalyzedAt field.
-		record.SyscallAnalysis = &SyscallAnalysisData{
-			SyscallAnalysisResultCore: core,
+		analysisData := &SyscallAnalysisData{
+			SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
 			AnalyzedAt:                time.Now().UTC(),
 		}
+		analysisData.DetectedSyscalls = sorted
+		record.SyscallAnalysis = analysisData
 		return nil
 	})
 }
