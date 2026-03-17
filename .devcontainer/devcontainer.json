@@ -20,5 +20,5 @@
             ]
         }
     },
-    "remoteUser": "${localEnv:USERNAME:-issei}"
+    "remoteUser": "issei"
 }
