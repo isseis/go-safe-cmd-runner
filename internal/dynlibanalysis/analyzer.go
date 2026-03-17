@@ -199,8 +199,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 			// ErrDTRPATHNotSupported must propagate: DT_RPATH in any dependency
 			// is a hard error. Other parse failures (non-ELF data sections, etc.)
 			// are non-fatal and we skip child traversal for that library.
-			var rpathErr *ErrDTRPATHNotSupported
-			if errors.As(err, &rpathErr) {
+			if _, ok := errors.AsType[*ErrDTRPATHNotSupported](err); ok {
 				return nil, err
 			}
 			slog.Debug("Failed to parse child ELF dependencies",

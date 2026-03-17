@@ -99,8 +99,7 @@ func TestExpandString_UndefinedVariable(t *testing.T) {
 			require.ErrorIs(t, err, config.ErrUndefinedVariable)
 
 			// Also verify the specific variable name in the detailed error
-			var detailErr *config.ErrUndefinedVariableDetail
-			if errors.As(err, &detailErr) {
+			if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
 				assert.Equal(t, tt.checkVar, detailErr.VariableName)
 			}
 		})
