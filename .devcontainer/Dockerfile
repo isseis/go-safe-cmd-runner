@@ -43,7 +43,7 @@ RUN pip3 install --break-system-packages pre-commit
 # パスの設定
 ENV PATH=$PATH:/usr/local/go/bin
 
-# 一般ユーザー (ssei) の作成（root での開発を避けるため）
+# 一般ユーザーの作成（root での開発を避けるため）
 ARG USERNAME=issei
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
@@ -54,8 +54,8 @@ RUN if id -u $USER_UID >/dev/null 2>&1; then userdel -r $(id -un $USER_UID); fi 
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
-RUN mkdir -p /home/issei/.vscode-server/extensions \
-    && chown -R issei:issei /home/issei
+RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
+    && chown -R $USERNAME:$USERNAME /home/$USERNAME
 
 WORKDIR /home/$USERNAME
 USER $USERNAME
