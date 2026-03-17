@@ -235,6 +235,47 @@ func (a *SyscallAnalyzer) AnalyzeSyscallsFromELF(elfFile *elf.File) (*SyscallAna
 	return result, nil
 }
 
+// AnalyzeSyscallsInRange analyzes syscall instructions in code[startOffset:endOffset].
+// sectionBaseAddr is the virtual address of the start of code.
+// The slice code[startOffset:endOffset] is passed to findSyscallInstructions with
+// a shifted base address (sectionBaseAddr + startOffset), so backwardScanForSyscallNumber's
+// existing max(windowStart, 0) clamp handles the slice boundary without additional clamping.
+// Go wrapper analysis (Pass 2) is not performed.
+// Returns *UnsupportedArchitectureError (detectable via errors.As) for unsupported architectures.
+func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
+	code []byte,
+	sectionBaseAddr uint64,
+	startOffset, endOffset int,
+	machine elf.Machine,
+) ([]common.SyscallInfo, error) {
+	cfg, ok := a.archConfigs[machine]
+	if !ok {
+		return nil, &UnsupportedArchitectureError{Machine: machine}
+	}
+
+	subCode := code[startOffset:endOffset]
+	subBase := sectionBaseAddr + uint64(startOffset) //nolint:gosec // G115: startOffset is validated by caller (symbol range within ELF section)
+
+	syscallLocs, _ := a.findSyscallInstructions(subCode, subBase, cfg.decoder)
+	results := make([]common.SyscallInfo, 0, len(syscallLocs))
+	for _, loc := range syscallLocs {
+		info := a.extractSyscallInfo(subCode, loc, subBase, cfg.decoder, cfg.syscallTable)
+		results = append(results, info)
+	}
+	return results, nil
+}
+
+// GetSyscallTable returns the SyscallNumberTable for the given machine architecture.
+// Returns (table, true) for supported architectures, (nil, false) for unsupported ones.
+// Used by Validator to obtain the architecture-specific table for ImportSymbolMatcher.
+func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool) {
+	cfg, ok := a.archConfigs[machine]
+	if !ok {
+		return nil, false
+	}
+	return cfg.syscallTable, true
+}
+
 // analyzeSyscallsInCode performs the actual syscall analysis on code bytes.
 // This method uses two separate analysis passes:
 //  1. Direct syscall instruction analysis (architecture-specific: SYSCALL on x86_64, SVC #0 on arm64)
