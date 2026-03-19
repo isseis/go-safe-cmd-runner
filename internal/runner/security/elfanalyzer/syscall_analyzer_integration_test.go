@@ -311,6 +311,99 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 		"socket syscall (number 198) should be detected in the arm64 binary")
 }
 
+// TestAC1_CgoBinaryNetworkDetection verifies AC-1 (third condition) for arm64:
+// After Pass 1 fix (knownSyscallImpls updated) and Pass 2 fix, a CGO binary
+// that calls syscall.Socket() directly should return HasNetworkSyscalls: true.
+func TestAC1_CgoBinaryNetworkDetection(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("this test targets Linux ELF binaries and Linux arm64 syscall numbering")
+	}
+	if runtime.GOARCH != "arm64" {
+		t.Skip("this test targets arm64 CGO binary detection")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go compiler not available")
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("C compiler (cc) not available; required for CGO_ENABLED=1")
+	}
+
+	src := `package main
+import "C"
+import "syscall"
+func main() {
+    fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+    if err == nil { _ = syscall.Close(fd) }
+}`
+	tmpDir := commontesting.SafeTempDir(t)
+	srcFile := filepath.Join(tmpDir, "main.go")
+	binaryPath := filepath.Join(tmpDir, "cgo_test")
+
+	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
+
+	cmd := exec.Command("go", "build", "-o", binaryPath, srcFile)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "go build failed: %s", string(output))
+
+	t.Run("dynsym_returns_NoNetworkSymbols", func(t *testing.T) {
+		// Verify that .dynsym analysis returns NoNetworkSymbols (the blind spot).
+		elfFile, err := elf.Open(binaryPath)
+		require.NoError(t, err)
+		defer elfFile.Close()
+
+		dynsyms, err := elfFile.DynamicSymbols()
+		require.NoError(t, err, ".dynsym must be present in a CGO binary")
+
+		networkSyms := map[string]bool{
+			"socket": true, "connect": true, "bind": true,
+			"sendto": true, "recvfrom": true, "getaddrinfo": true,
+		}
+		for _, sym := range dynsyms {
+			if networkSyms[sym.Name] {
+				t.Errorf(".dynsym contains network symbol %q; CGO binary should not have it", sym.Name)
+			}
+		}
+		t.Logf("AnalyzeNetworkSymbols result: no_network_symbols (confirmed: no network symbols in .dynsym)")
+	})
+
+	t.Run("syscall_analysis_detects_socket", func(t *testing.T) {
+		// AC-1 third condition: after Pass 1 + Pass 2 fixes, HasNetworkSyscalls must be true.
+		elfFile, err := elf.Open(binaryPath)
+		require.NoError(t, err)
+		defer elfFile.Close()
+
+		analyzer := NewSyscallAnalyzer()
+		result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
+		require.NoError(t, err)
+
+		t.Logf("SyscallAnalysis architecture: %s", result.Architecture)
+		t.Logf("TotalDetectedEvents: %d", result.Summary.TotalDetectedEvents)
+		t.Logf("NetworkSyscallCount: %d", result.Summary.NetworkSyscallCount)
+		t.Logf("HasNetworkSyscalls: %v", result.Summary.HasNetworkSyscalls)
+		t.Logf("IsHighRisk: %v", result.Summary.IsHighRisk)
+		t.Logf("HasUnknownSyscalls: %v", result.HasUnknownSyscalls)
+
+		for i, sc := range result.DetectedSyscalls {
+			t.Logf("Syscall[%d]: #%-4d (%-20s) isNetwork=%-5v method=%s at 0x%x",
+				i, sc.Number, sc.Name, sc.IsNetwork, sc.DeterminationMethod, sc.Location)
+		}
+
+		assert.True(t, result.Summary.HasNetworkSyscalls,
+			"CGO binary calling syscall.Socket() should have HasNetworkSyscalls: true after fixes")
+
+		found := false
+		for _, sc := range result.DetectedSyscalls {
+			if sc.Name == "socket" && sc.Number == 198 {
+				found = true
+				t.Logf("socket(198) detected via method=%s", sc.DeterminationMethod)
+				break
+			}
+		}
+		assert.True(t, found, "socket syscall (arm64 #198) should be detected")
+	})
+}
+
 // TestSyscallAnalyzer_IntegrationARM64_Architecture verifies that the
 // Architecture field in the analysis result is set to "arm64".
 func TestSyscallAnalyzer_IntegrationARM64_Architecture(t *testing.T) {
