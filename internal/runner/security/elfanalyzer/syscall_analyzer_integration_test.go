@@ -314,31 +314,31 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 // TestAC1_CgoBinaryNetworkDetection verifies AC-1 (third condition) for arm64:
 // After Pass 1 fix (knownSyscallImpls updated) and Pass 2 fix, a CGO binary
 // that calls syscall.Socket() directly should return HasNetworkSyscalls: true.
-//
-// Build the test binary before running:
-//
-//	mkdir -p /tmp/ac1_verify
-//	cat > /tmp/ac1_verify/main.go << 'EOF'
-//	package main
-//	import "C"
-//	import "syscall"
-//	func main() {
-//	    fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
-//	    if err == nil { _ = syscall.Close(fd) }
-//	}
-//	EOF
-//	cd /tmp/ac1_verify && CGO_ENABLED=1 go build -o cgo_test main.go
 func TestAC1_CgoBinaryNetworkDetection(t *testing.T) {
 	if runtime.GOARCH != "arm64" {
 		t.Skip("this test targets arm64 CGO binary detection")
 	}
-
-	const binaryPath = "/tmp/ac1_verify/cgo_test"
-
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		t.Skipf("test binary not found at %s; build it with: "+
-			"cd /tmp/ac1_verify && CGO_ENABLED=1 go build -o cgo_test main.go", binaryPath)
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go compiler not available")
 	}
+
+	src := `package main
+import "C"
+import "syscall"
+func main() {
+    fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+    if err == nil { _ = syscall.Close(fd) }
+}`
+	tmpDir := commontesting.SafeTempDir(t)
+	srcFile := filepath.Join(tmpDir, "main.go")
+	binaryPath := filepath.Join(tmpDir, "cgo_test")
+
+	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
+
+	cmd := exec.Command("go", "build", "-o", binaryPath, srcFile)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "go build failed: %s", string(output))
 
 	t.Run("dynsym_returns_NoNetworkSymbols", func(t *testing.T) {
 		// Verify that .dynsym analysis returns NoNetworkSymbols (the blind spot).
