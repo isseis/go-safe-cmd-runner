@@ -20,6 +20,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// skipIfUnsupported skips the test if the current environment does not support
+// the integration test requirements: Linux OS, amd64 or arm64 architecture, and gcc available.
+func skipIfUnsupported(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("integration test requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis supports amd64 and arm64 only")
+	}
+	if _, err := exec.LookPath("gcc"); err != nil {
+		t.Skip("gcc not available")
+	}
+}
+
 // socketSyscallNumber returns the syscall number for socket(2) on the current architecture.
 // x86_64: 41, arm64: 198.
 func socketSyscallNumber() int {
@@ -66,15 +81,7 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 //
 // This covers AC-4.
 func TestLibcCache_Integration_SocketSyscallDetected(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("integration test requires Linux")
-	}
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
-		t.Skip("syscall analysis supports amd64 and arm64 only")
-	}
-	if _, err := exec.LookPath("gcc"); err != nil {
-		t.Skip("gcc not available")
-	}
+	skipIfUnsupported(t)
 
 	syscallNum := socketSyscallNumber()
 
@@ -132,15 +139,7 @@ int main() {
 //
 // This covers AC-3 (cache HIT).
 func TestLibcCache_Integration_CacheReuse(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("integration test requires Linux")
-	}
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
-		t.Skip("syscall analysis supports amd64 and arm64 only")
-	}
-	if _, err := exec.LookPath("gcc"); err != nil {
-		t.Skip("gcc not available")
-	}
+	skipIfUnsupported(t)
 
 	src := `
 #include <sys/socket.h>
