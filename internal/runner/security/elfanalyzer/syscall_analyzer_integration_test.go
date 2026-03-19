@@ -19,8 +19,11 @@ import (
 )
 
 func TestSyscallAnalyzer_RealCBinary(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("syscall analysis only supports x86_64")
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF syscall analysis requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis only supports x86_64 and arm64")
 	}
 	if _, err := exec.LookPath("gcc"); err != nil {
 		t.Skip("gcc not available")
@@ -40,10 +43,12 @@ int main() {
 
 	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
 
-	// Compile with static linking
+	// Compile with static linking; skip if static libc is unavailable (common on arm64)
 	cmd := exec.Command("gcc", "-static", "-o", binFile, srcFile)
 	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "gcc failed: %s", string(output))
+	if err != nil {
+		t.Skipf("gcc -static failed (static libc may be unavailable): %s", string(output))
+	}
 
 	// Open and parse ELF
 	elfFile, err := elf.Open(binFile)
@@ -72,8 +77,11 @@ int main() {
 }
 
 func TestSyscallAnalyzer_RealGoBinary(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("syscall analysis only supports x86_64")
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF syscall analysis requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis only supports x86_64 and arm64")
 	}
 
 	// Create test Go program that uses net package (which calls socket via Go wrappers)
@@ -98,9 +106,9 @@ func main() {
 
 	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
 
-	// Compile as static binary with CGO disabled
+	// Compile as static binary with CGO disabled for the current architecture
 	cmd := exec.Command("go", "build", "-o", binFile, srcFile)
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOARCH=amd64")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOARCH="+runtime.GOARCH)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", string(output))
 
@@ -134,8 +142,11 @@ func main() {
 }
 
 func TestSyscallAnalyzer_RealGoBinary_NoNetwork(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("syscall analysis only supports x86_64")
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF syscall analysis requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis only supports x86_64 and arm64")
 	}
 
 	// Create a simple Go program that does NOT use networking
@@ -153,9 +164,9 @@ func main() {
 
 	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
 
-	// Compile as static binary
+	// Compile as static binary for the current architecture
 	cmd := exec.Command("go", "build", "-o", binFile, srcFile)
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOARCH=amd64")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOARCH="+runtime.GOARCH)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", string(output))
 
@@ -182,8 +193,11 @@ func main() {
 //
 // This verifies AC-8: the fallback chain from record command to runner.
 func TestE2E_RecordToRunnerFallbackChain(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("syscall analysis only supports x86_64")
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF syscall analysis requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis only supports x86_64 and arm64")
 	}
 
 	// Step 1: Create and compile a Go program with network syscalls
@@ -209,7 +223,7 @@ func main() {
 	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
 
 	cmd := exec.Command("go", "build", "-o", binFile, srcFile)
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOARCH=amd64")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOARCH="+runtime.GOARCH)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", string(output))
 

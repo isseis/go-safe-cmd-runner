@@ -556,6 +556,12 @@ SYSCALL_TABLE_OUTPUTS := \
 	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
 	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
 
+# generate-syscall-tables is a manual-only target.
+# The generated files are committed to the repository and do not need to be
+# regenerated during normal builds. Defining a file-level rule for
+# $(SYSCALL_TABLE_OUTPUTS) would cause Make to check for the kernel headers
+# (e.g. /usr/include/x86_64-linux-gnu/asm/unistd_64.h) on every build,
+# which fails on arm64 hosts where x86_64 headers are not installed.
 generate-syscall-tables:
 	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
 		echo "Error: $(PYTHON) is required but not found in PATH"; \
