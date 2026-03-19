@@ -315,11 +315,17 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 // After Pass 1 fix (knownSyscallImpls updated) and Pass 2 fix, a CGO binary
 // that calls syscall.Socket() directly should return HasNetworkSyscalls: true.
 func TestAC1_CgoBinaryNetworkDetection(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("this test targets Linux ELF binaries and Linux arm64 syscall numbering")
+	}
 	if runtime.GOARCH != "arm64" {
 		t.Skip("this test targets arm64 CGO binary detection")
 	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go compiler not available")
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("C compiler (cc) not available; required for CGO_ENABLED=1")
 	}
 
 	src := `package main
