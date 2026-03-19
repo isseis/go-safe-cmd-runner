@@ -93,7 +93,7 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 		AnalyzedAt:      time.Now().UTC().Format(time.RFC3339),
 		SyscallWrappers: wrappers,
 	}
-	cacheData, err := json.Marshal(cache)
+	cacheData, err := json.MarshalIndent(cache, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCacheWriteFailed, err)
 	}
