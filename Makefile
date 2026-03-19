@@ -556,15 +556,21 @@ SYSCALL_TABLE_OUTPUTS := \
 	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
 	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
 
-$(SYSCALL_TABLE_OUTPUTS): $(SYSCALL_TABLE_SCRIPT) $(X86_SYSCALL_HEADER) $(ARM64_SYSCALL_HEADER)
+generate-syscall-tables:
 	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
 		echo "Error: $(PYTHON) is required but not found in PATH"; \
 		exit 1; \
 	fi
+	@if [ ! -f "$(X86_SYSCALL_HEADER)" ]; then \
+		echo "Error: $(X86_SYSCALL_HEADER) not found. Install linux-libc-dev (Debian/Ubuntu: apt-get install linux-libc-dev gcc-multilib)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(ARM64_SYSCALL_HEADER)" ]; then \
+		echo "Error: $(ARM64_SYSCALL_HEADER) not found. Install linux-libc-dev (Debian/Ubuntu: apt-get install linux-libc-dev)"; \
+		exit 1; \
+	fi
 	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --x86-header $(X86_SYSCALL_HEADER) --arm64-header $(ARM64_SYSCALL_HEADER)
 	$(GOFUMPTCMD) -w $(SYSCALL_TABLE_OUTPUTS)
-
-generate-syscall-tables: $(SYSCALL_TABLE_OUTPUTS)
 
 deadcode:
 	deadcode ./cmd/record ./cmd/runner ./cmd/verify

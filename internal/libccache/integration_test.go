@@ -20,6 +20,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// socketSyscallNumber returns the syscall number for socket(2) on the current architecture.
+// x86_64: 41, arm64: 198.
+func socketSyscallNumber() int {
+	switch runtime.GOARCH {
+	case "amd64":
+		return 41
+	case "arm64":
+		return 198
+	default:
+		return -1
+	}
+}
+
 // newTestValidator creates a fully wired Validator using a real libccache pipeline.
 func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	t.Helper()
@@ -43,28 +56,39 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	return v
 }
 
-// TestLibcCache_Integration_MkdirSyscallDetected verifies the end-to-end pipeline:
-// compile a C program that calls mkdir(), record it, and verify that syscall 83
-// (mkdir on x86_64) is detected with source "libc_symbol_import".
+// TestLibcCache_Integration_SocketSyscallDetected verifies the end-to-end pipeline:
+// compile a C program that calls socket(), record it, and verify that the socket
+// syscall is detected with source "libc_symbol_import".
+// socket is a network syscall (IsNetwork=true) and is therefore retained by
+// FilterSyscallsForStorage, making it reliably detectable across architectures.
+//
+// Syscall numbers: x86_64=41, arm64=198.
 //
 // This covers AC-4.
-func TestLibcCache_Integration_MkdirSyscallDetected(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("syscall analysis only supports x86_64")
+func TestLibcCache_Integration_SocketSyscallDetected(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration test requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis supports amd64 and arm64 only")
 	}
 	if _, err := exec.LookPath("gcc"); err != nil {
 		t.Skip("gcc not available")
 	}
 
-	// Compile a minimal C program that calls mkdir() via libc.
-	const mkdirSyscallNumber = 83
+	syscallNum := socketSyscallNumber()
+
+	// Compile a minimal C program that calls socket() via libc.
 	src := `
-#include <sys/stat.h>
-int main() { mkdir("/tmp/test_libccache", 0755); return 0; }
+#include <sys/socket.h>
+int main() {
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
+	return fd >= 0 ? 0 : 1;
+}
 `
 	tmpDir := commontesting.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test.c")
-	binFile := filepath.Join(tmpDir, "test_mkdir.elf")
+	binFile := filepath.Join(tmpDir, "test_socket.elf")
 
 	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
 
@@ -83,18 +107,18 @@ int main() { mkdir("/tmp/test_libccache", 0755); return 0; }
 	require.NoError(t, err)
 	require.NotNil(t, record.SyscallAnalysis, "SyscallAnalysis should be set for an ELF binary")
 
-	// Verify mkdir syscall (number 83) is detected.
-	var mkdirInfo *common.SyscallInfo
+	// Verify socket syscall is detected.
+	var socketInfo *common.SyscallInfo
 	for i := range record.SyscallAnalysis.DetectedSyscalls {
 		info := &record.SyscallAnalysis.DetectedSyscalls[i]
-		if info.Number == mkdirSyscallNumber {
-			mkdirInfo = info
+		if info.Number == syscallNum {
+			socketInfo = info
 			break
 		}
 	}
-	require.NotNil(t, mkdirInfo, "mkdir syscall (number %d) should be detected", mkdirSyscallNumber)
-	assert.Equal(t, "libc_symbol_import", mkdirInfo.Source, "mkdir should be detected via libc symbol import")
-	assert.Equal(t, uint64(0), mkdirInfo.Location, "libc_symbol_import entries should have Location=0")
+	require.NotNil(t, socketInfo, "socket syscall (number %d) should be detected", syscallNum)
+	assert.Equal(t, "libc_symbol_import", socketInfo.Source, "socket should be detected via libc symbol import")
+	assert.Equal(t, uint64(0), socketInfo.Location, "libc_symbol_import entries should have Location=0")
 
 	// Verify the lib-cache directory was created.
 	cacheDir := filepath.Join(hashDir, "lib-cache")
@@ -108,20 +132,26 @@ int main() { mkdir("/tmp/test_libccache", 0755); return 0; }
 //
 // This covers AC-3 (cache HIT).
 func TestLibcCache_Integration_CacheReuse(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("syscall analysis only supports x86_64")
+	if runtime.GOOS != "linux" {
+		t.Skip("integration test requires Linux")
+	}
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		t.Skip("syscall analysis supports amd64 and arm64 only")
 	}
 	if _, err := exec.LookPath("gcc"); err != nil {
 		t.Skip("gcc not available")
 	}
 
 	src := `
-#include <sys/stat.h>
-int main() { mkdir("/tmp/test_libccache2", 0755); return 0; }
+#include <sys/socket.h>
+int main() {
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
+	return fd >= 0 ? 0 : 1;
+}
 `
 	tmpDir := commontesting.SafeTempDir(t)
 	srcFile := filepath.Join(tmpDir, "test2.c")
-	binFile := filepath.Join(tmpDir, "test_mkdir2.elf")
+	binFile := filepath.Join(tmpDir, "test_socket2.elf")
 
 	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
 
