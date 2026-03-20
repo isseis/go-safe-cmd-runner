@@ -304,7 +304,6 @@ func (a *SyscallAnalyzer) evaluateMprotectArgs(
     code []byte,
     baseAddr uint64,
     decoder MachineCodeDecoder,
-    table SyscallNumberTable,
     detectedSyscalls []common.SyscallInfo,
 ) (*common.SyscallArgEvalResult, uint64)
 ```
