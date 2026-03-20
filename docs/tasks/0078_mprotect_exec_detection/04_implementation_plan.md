@@ -201,7 +201,7 @@ Phase 2 完了後に実施する。
 
 ### 4.2 `EvalMprotectRisk` テスト
 
-- [ ] `internal/runner/security/elfanalyzer/mprotect_risk_test.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/mprotect_risk_test.go` を新規作成
   - テストパターン: `exec_confirmed` → true、`exec_unknown` → true、
     `exec_not_set` → false、空リスト → false、非 mprotect エントリ → false
   - 仕様: 詳細仕様書 §8.5
