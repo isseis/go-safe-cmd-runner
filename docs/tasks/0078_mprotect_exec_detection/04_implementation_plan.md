@@ -212,7 +212,7 @@ Phase 2 完了後に実施する。
 
 ### 5.1 スキーマ v5 往復テスト
 
-- [ ] `internal/fileanalysis/` にスキーマ v5 の保存・読み込み往復テストを追加
+- [x] `internal/fileanalysis/` にスキーマ v5 の保存・読み込み往復テストを追加
   - `ArgEvalResults` 付きの Record の保存・復元
   - `ArgEvalResults` が nil の場合のフィールド省略確認
   - 仕様: 詳細仕様書 §8.6
@@ -220,14 +220,14 @@ Phase 2 完了後に実施する。
 
 ### 5.2 フォーマット
 
-- [ ] `make fmt` を実行し、全ファイルのフォーマットを適用
+- [x] `make fmt` を実行し、全ファイルのフォーマットを適用
 
 ### 5.3 全テストパス
 
-- [ ] `make test` で全テストがパスすることを確認
+- [x] `make test` で全テストがパスすることを確認
   - 既存の `Summary.HasNetworkSyscalls` の結果が変わらないことを含む
   - 受け入れ条件: AC-5
 
 ### 5.4 リンターパス
 
-- [ ] `make lint` でリンターが全てパスすることを確認
+- [x] `make lint` でリンターが全てパスすることを確認

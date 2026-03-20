@@ -311,3 +311,77 @@ func TestFilterSyscallsForStorage_Empty(t *testing.T) {
 	result := FilterSyscallsForStorage(nil)
 	assert.Empty(t, result)
 }
+
+func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	store := NewSyscallAnalysisStore(fileStore)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	t.Run("ArgEvalResults roundtrip", func(t *testing.T) {
+		result := &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture: "x86_64",
+				ArgEvalResults: []common.SyscallArgEvalResult{
+					{
+						SyscallName: "mprotect",
+						Status:      common.SyscallArgEvalExecConfirmed,
+						Details:     "prot=0x7",
+					},
+				},
+				Summary: SyscallSummary{
+					IsHighRisk:          true,
+					TotalDetectedEvents: 1,
+				},
+			},
+		}
+
+		fileHash := "sha256:v5roundtrip"
+		err = store.SaveSyscallAnalysis(testFile, fileHash, result)
+		require.NoError(t, err)
+
+		loaded, err := store.LoadSyscallAnalysis(testFile, fileHash)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+
+		require.Len(t, loaded.ArgEvalResults, 1)
+		assert.Equal(t, "mprotect", loaded.ArgEvalResults[0].SyscallName)
+		assert.Equal(t, common.SyscallArgEvalExecConfirmed, loaded.ArgEvalResults[0].Status)
+		assert.Equal(t, "prot=0x7", loaded.ArgEvalResults[0].Details)
+		assert.True(t, loaded.Summary.IsHighRisk)
+	})
+
+	t.Run("nil ArgEvalResults is omitted from JSON", func(t *testing.T) {
+		testFile2 := filepath.Join(tmpDir, "test2.bin")
+		err = os.WriteFile(testFile2, []byte("test content 2"), 0o644)
+		require.NoError(t, err)
+
+		result := &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture:   "x86_64",
+				ArgEvalResults: nil,
+				Summary: SyscallSummary{
+					IsHighRisk:          false,
+					TotalDetectedEvents: 0,
+				},
+			},
+		}
+
+		fileHash := "sha256:v5nilomit"
+		err = store.SaveSyscallAnalysis(testFile2, fileHash, result)
+		require.NoError(t, err)
+
+		loaded, err := store.LoadSyscallAnalysis(testFile2, fileHash)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+
+		assert.Nil(t, loaded.ArgEvalResults, "nil ArgEvalResults should remain nil after roundtrip")
+	})
+}
