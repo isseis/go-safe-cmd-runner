@@ -7,7 +7,7 @@
 - タスク 0070 の後方スキャン基盤を再利用し、`mprotect` の `prot` 引数を静的に評価する
 - `MachineCodeDecoder` インターフェースの拡張による `rdx`/`x2` レジスタの追跡
 - `SyscallAnalysisResultCore` への `ArgEvalResults` フィールド追加による拡張可能な引数評価モデル
-- リスク判定ロジックの一元化（`security` パッケージのヘルパー関数）
+- リスク判定ロジックの専用モジュール化（`internal/runner/security/elfanalyzer/mprotect_risk.go` に配置し import cycle を回避）
 
 ### 1.2 設計原則
 
