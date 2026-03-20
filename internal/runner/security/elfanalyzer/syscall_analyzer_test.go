@@ -4,6 +4,7 @@ import (
 	"debug/elf"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -660,5 +661,180 @@ func TestSyscallAnalyzer_GetSyscallTable(t *testing.T) {
 		table, ok := analyzer.GetSyscallTable(elf.EM_386)
 		assert.False(t, ok)
 		assert.Nil(t, table)
+	})
+}
+
+func TestSyscallAnalyzer_EvaluateMprotectArgs(t *testing.T) {
+	// Use x86_64 decoder and table for component tests.
+	// x86_64 syscall number for mprotect is 10 (0xa).
+	decoder := NewX86Decoder()
+	table := NewX86_64SyscallTable()
+	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 50)
+
+	tests := []struct {
+		name          string
+		code          []byte
+		wantStatus    common.SyscallArgEvalStatus
+		wantHasResult bool
+	}{
+		{
+			name: "PROT_EXEC confirmed (64bit rdx)",
+			// mov $0xa, %eax; mov $0x7, %rdx; syscall
+			// mprotect (10) with prot=0x7 (PROT_READ|PROT_WRITE|PROT_EXEC)
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+				0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecConfirmed,
+			wantHasResult: true,
+		},
+		{
+			name: "PROT_EXEC confirmed (32bit edx)",
+			// mov $0xa, %eax; mov $0x4, %edx; syscall
+			// mprotect with prot=0x4 (PROT_EXEC only)
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+				0xba, 0x04, 0x00, 0x00, 0x00, // mov $0x4, %edx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecConfirmed,
+			wantHasResult: true,
+		},
+		{
+			name: "PROT_EXEC not set",
+			// mov $0xa, %eax; mov $0x3, %rdx; syscall
+			// mprotect with prot=0x3 (PROT_READ|PROT_WRITE)
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+				0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecNotSet,
+			wantHasResult: true,
+		},
+		{
+			name: "indirect register setting",
+			// mov $0xa, %eax; mov %rsi, %rdx; syscall
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+				0x48, 0x89, 0xf2, // mov %rsi, %rdx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "control flow boundary",
+			// jmp is the first instruction; it jumps to mov+syscall block.
+			// Backward scan for rdx hits jmp before finding rdx setup.
+			// Backward scan for eax finds mov eax first (closer to syscall than jmp).
+			//
+			// Layout:
+			//   offset 0: jmp +5   (2 bytes) → jumps to offset 7 (mov eax)
+			//   offset 2-6: 5 nops (dead code, never executed)
+			//   offset 7: mov $0xa, %eax  (5 bytes)
+			//   offset 12: syscall (2 bytes)
+			code: []byte{
+				0xeb, 0x05, // jmp +5 (target = offset 7)
+				0x90, 0x90, 0x90, 0x90, 0x90, // 5 nops (dead code)
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax (mprotect)
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "non-mprotect syscall only",
+			// mov $0x01, %eax; syscall (write, not mprotect)
+			code: []byte{
+				0xb8, 0x01, 0x00, 0x00, 0x00, // mov $0x01, %eax
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    "",
+			wantHasResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Run full analysis to get detected syscalls first.
+			code := tt.code
+			baseAddr := uint64(0x1000)
+
+			// Manually build the detected syscalls list the same way analysis would.
+			// We need to analyze the code to get DetectedSyscalls.
+			result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
+
+			if !tt.wantHasResult {
+				// No mprotect, ArgEvalResults should be empty
+				assert.Empty(t, result.ArgEvalResults)
+				return
+			}
+
+			require.NotEmpty(t, result.ArgEvalResults, "expected ArgEvalResults to be populated")
+			assert.Equal(t, "mprotect", result.ArgEvalResults[0].SyscallName)
+			assert.Equal(t, tt.wantStatus, result.ArgEvalResults[0].Status)
+		})
+	}
+}
+
+func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
+	// Use x86_64 decoder and table for component tests.
+	// x86_64 syscall number for mprotect is 10 (0xa).
+	decoder := NewX86Decoder()
+	table := NewX86_64SyscallTable()
+	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 50)
+	baseAddr := uint64(0x1000)
+
+	t.Run("exec_confirmed + exec_not_set selects exec_confirmed", func(t *testing.T) {
+		// Two mprotect calls: one with PROT_EXEC, one without.
+		// First: mprotect(prot=0x7) - exec_confirmed
+		// Second: mprotect(prot=0x3) - exec_not_set
+		code := []byte{
+			// First mprotect: prot=0x7 (PROT_EXEC set)
+			0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+			0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+			0x0f, 0x05, // syscall
+			// Second mprotect: prot=0x3 (no PROT_EXEC)
+			0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+			0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+			0x0f, 0x05, // syscall
+		}
+		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
+		require.NotEmpty(t, result.ArgEvalResults)
+		assert.Equal(t, common.SyscallArgEvalExecConfirmed, result.ArgEvalResults[0].Status)
+		assert.True(t, result.Summary.IsHighRisk)
+	})
+
+	t.Run("exec_unknown + exec_not_set selects exec_unknown", func(t *testing.T) {
+		// First: unknown (indirect setting), Second: exec_not_set
+		code := []byte{
+			// First mprotect: indirect setting
+			0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+			0x48, 0x89, 0xf2, // mov %rsi, %rdx
+			0x0f, 0x05, // syscall
+			// Second mprotect: prot=0x3 (no PROT_EXEC)
+			0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+			0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+			0x0f, 0x05, // syscall
+		}
+		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
+		require.NotEmpty(t, result.ArgEvalResults)
+		assert.Equal(t, common.SyscallArgEvalExecUnknown, result.ArgEvalResults[0].Status)
+		assert.True(t, result.Summary.IsHighRisk)
+	})
+
+	t.Run("exec_not_set only does not set high risk", func(t *testing.T) {
+		// mprotect with prot=0x3 only (no PROT_EXEC)
+		code := []byte{
+			0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+			0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+			0x0f, 0x05, // syscall
+		}
+		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
+		require.NotEmpty(t, result.ArgEvalResults)
+		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.ArgEvalResults[0].Status)
+		assert.False(t, result.Summary.IsHighRisk)
 	})
 }

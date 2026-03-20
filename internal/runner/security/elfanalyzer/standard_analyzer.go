@@ -347,6 +347,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 // This method relies on Summary fields set by analyzeSyscallsInCode():
 //   - HasNetworkSyscalls: true if any network-related syscall was detected
 //   - IsHighRisk: true if any syscall number could not be determined
+//     or mprotect PROT_EXEC risk was detected
 //
 // These fields are guaranteed to be set according to the rules in the detailed specification.
 func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
