@@ -9,7 +9,8 @@
 - **`SyscallAnalysisResultCore`**: `ArgEvalResults` フィールドを追加し、引数評価結果を格納
 - **`fileanalysis.schema`**: スキーマバージョンを v4 → v5 に更新
 
-新規ファイルは `mprotect_risk.go`（リスク判定ヘルパー）のみ。
+本体コードでの新規ファイルは `mprotect_risk.go`（リスク判定ヘルパー）のみ。
+テストコードでは `mprotect_risk_test.go` を追加する。
 
 ## 1. パッケージ構成
 
@@ -107,7 +108,7 @@ type MachineCodeDecoder interface {
 
     // ModifiesThirdArgRegister returns true if the instruction writes to the
     // third syscall argument register.
-    // x86_64: edx/rdx (any write including dl, dx, r/edx)
+    // x86_64: edx/rdx (any write including dl, dx, edx/rdx)
     // arm64:  w2 or x2
     ModifiesThirdArgRegister(inst DecodedInstruction) bool
 
@@ -435,8 +436,8 @@ func (a *SyscallAnalyzer) evalSingleMprotect(
     }
 
     // Map determination method to exec_unknown details.
-    // Reuse the existing method string but strip "unknown:" prefix for readability.
-    details := strings.TrimPrefix(method, "unknown:")
+    // Convert internal method constants to stable detail strings.
+    details := unknownMethodDetail(method)
 
     return common.SyscallArgEvalResult{
         SyscallName: "mprotect",
@@ -457,6 +458,23 @@ func riskPriority(status common.SyscallArgEvalStatus) int {
         return 0
     default:
         return -1
+    }
+}
+
+// unknownMethodDetail converts unknown:* determination methods to
+// compact, stable detail strings for ArgEvalResults.
+func unknownMethodDetail(method string) string {
+    switch method {
+    case DeterminationMethodUnknownDecodeFailed:
+        return "decode failed"
+    case DeterminationMethodUnknownControlFlowBoundary:
+        return "control flow boundary"
+    case DeterminationMethodUnknownIndirectSetting:
+        return "indirect register setting"
+    case DeterminationMethodUnknownScanLimitExceeded:
+        return "scan limit exceeded"
+    default:
+        return "unknown reason"
     }
 }
 ```
@@ -923,8 +941,9 @@ func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
 
 ### 11.2 追加 import
 
-`syscall_analyzer.go` に `strings` パッケージの import を追加する（`strings.TrimPrefix` の使用のため）。
-`fmt`、`math` は既に import 済み。
+`syscall_analyzer.go` に追加 import は不要（`unknownMethodDetail` で
+`DeterminationMethod` を変換するため `strings.TrimPrefix` を使用しない）。
+`fmt`、`math` は既存 import を利用する。
 
 ### 11.3 `IsHighRisk` の OR 条件
 

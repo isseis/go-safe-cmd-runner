@@ -141,6 +141,8 @@ Phase 2 完了後に実施する。
   - `prot` 引数の後方スキャン
   - `PROT_EXEC`（`0x4`）フラグの判定
   - 複数エントリの最高リスク集約
+  - `unknown:*` 判定メソッドを詳細文字列へ変換する
+    `unknownMethodDetail` ヘルパーを追加
   - 仕様: 詳細仕様書 §4.3
   - 受け入れ条件: AC-1, AC-3, AC-6
 
@@ -158,8 +160,7 @@ Phase 2 完了後に実施する。
   - `HighRiskReasons` にメッセージを追加
   - Summary 構築ブロックのコメントを更新（`IsHighRisk` の条件に mprotect を追加）
   - `standard_analyzer.go` の `convertSyscallResult` docコメントを更新
-  - `strings` パッケージの import を追加
-  - 仕様: 詳細仕様書 §4.4, §10, §11.2, §11.3
+  - 仕様: 詳細仕様書 §4.4, §10, §11.3
   - 受け入れ条件: AC-1, AC-3, AC-7
 
 ### 3.7 単体テスト・コンポーネントテスト
@@ -176,9 +177,9 @@ Phase 2 完了後に実施する。
   - 仕様: 詳細仕様書 §8.4
   - 受け入れ条件: AC-6
 
-## Phase 4: リスク判定ヘルパーと統合
+## Phase 4: リスク判定ヘルパー
 
-`EvalMprotectRisk` ヘルパーを実装し、全体を統合する。
+`EvalMprotectRisk` ヘルパーを実装し、リスク判定ロジックを明確化する。
 
 ### 4.1 `EvalMprotectRisk` ヘルパーの実装
 
