@@ -177,15 +177,22 @@ Phase 2 完了後に実施する。
 
 - [x] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_EvaluateMprotectArgs` を追加
   - テストパターン: `PROT_EXEC` 確定（64bit/32bit）、未設定、間接設定、制御フロー境界、
-    非 mprotect syscall
+    スキャン範囲内に rdx 変更命令なし、非 mprotect syscall
   - 仕様: 詳細仕様書 §8.3
+  - 受け入れ条件: AC-1, AC-2, AC-3
+
+- [x] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` を追加
+  - arm64 用の `analyzeSyscallsInCode` 統合テスト（syscall table 解決・後方スキャン・Summary.IsHighRisk 反映を含む）
+  - テストパターン: `exec_confirmed`（`mov x2, #7`）、`exec_not_set`（`mov x2, #3`）、
+    `exec_unknown`（レジスタ間コピー）、`exec_unknown`（スキャン範囲内に x2 変更命令なし）、
+    `exec_unknown`（制御フロー境界）
   - 受け入れ条件: AC-1, AC-2, AC-3
 
 - [x] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_MultipleMprotect` を追加
   - テストパターン: `exec_confirmed + exec_not_set`、`exec_unknown + exec_not_set`、
-    `exec_not_set` のみ
+    `exec_not_set` のみ、`exec_not_set` + 他要因で既に `IsHighRisk=true`（上書きされないこと）
   - 仕様: 詳細仕様書 §8.4
-  - 受け入れ条件: AC-6
+  - 受け入れ条件: AC-6, AC-7
 
 ## Phase 4: リスク判定ヘルパー
 

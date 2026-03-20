@@ -745,6 +745,17 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs(t *testing.T) {
 			wantHasResult: true,
 		},
 		{
+			name: "mprotect syscall only (no rdx setup in scan range)",
+			// mov $0xa, %eax; syscall — mprotect with no preceding rdx assignment.
+			// Backward scan reaches start of code without finding any rdx modifier.
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
 			name: "non-mprotect syscall only",
 			// mov $0x01, %eax; syscall (write, not mprotect)
 			code: []byte{
@@ -837,4 +848,142 @@ func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
 		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.ArgEvalResults[0].Status)
 		assert.False(t, result.Summary.IsHighRisk)
 	})
+
+	t.Run("exec_not_set does not overwrite pre-existing IsHighRisk=true", func(t *testing.T) {
+		// Unknown syscall (indirect register setting) sets HasUnknownSyscalls=true,
+		// which causes Summary.IsHighRisk=true via OR semantics.
+		// Subsequent mprotect exec_not_set must NOT reset IsHighRisk to false.
+		code := []byte{
+			// Unknown syscall: mov %ebx, %eax; syscall (sets HasUnknownSyscalls=true)
+			0x89, 0xd8, // mov %ebx, %eax
+			0x0f, 0x05, // syscall
+			// mprotect: mov $0xa, %eax; mov $0x3, %rdx; syscall (exec_not_set)
+			0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0xa, %eax
+			0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+			0x0f, 0x05, // syscall
+		}
+		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
+		require.NotEmpty(t, result.ArgEvalResults)
+		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.ArgEvalResults[0].Status)
+		// IsHighRisk must remain true (set by HasUnknownSyscalls), not be overwritten by exec_not_set.
+		assert.True(t, result.HasUnknownSyscalls)
+		assert.True(t, result.Summary.IsHighRisk)
+	})
+}
+
+func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
+	// arm64 mprotect syscall number is 226 (0xe2).
+	// Syscall instruction: svc #0  = 01 00 00 D4
+	// Syscall number register: x8
+	//   mov x8, #226 = MOVZ X8, #226 = 48 1C 80 D2
+	// Third argument register: x2
+	//   mov x2, #7   = MOVZ X2, #7   = E2 00 80 D2
+	//   mov x2, #3   = MOVZ X2, #3   = 62 00 80 D2
+	//   mov x2, x1   = ORR  X2,XZR,X1 = E2 03 01 AA (register move)
+	// Branch: b +N words = N*4 bytes forward from PC
+	//   b +5 words (20 bytes): 05 00 00 14
+	decoder := NewARM64Decoder()
+	table := NewARM64LinuxSyscallTable()
+	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 50)
+	baseAddr := uint64(0x1000)
+
+	tests := []struct {
+		name           string
+		code           []byte
+		wantStatus     common.SyscallArgEvalStatus
+		wantHasResult  bool
+		wantIsHighRisk bool
+	}{
+		{
+			name: "exec_confirmed (mov x2, #7)",
+			// mov x8, #226; mov x2, #7; svc #0
+			// mprotect (226) with prot=0x7 (PROT_READ|PROT_WRITE|PROT_EXEC)
+			code: []byte{
+				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
+				0xE2, 0x00, 0x80, 0xD2, // mov x2, #7
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:     common.SyscallArgEvalExecConfirmed,
+			wantHasResult:  true,
+			wantIsHighRisk: true,
+		},
+		{
+			name: "exec_not_set (mov x2, #3)",
+			// mov x8, #226; mov x2, #3; svc #0
+			// mprotect with prot=0x3 (PROT_READ|PROT_WRITE, no PROT_EXEC)
+			code: []byte{
+				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
+				0x62, 0x00, 0x80, 0xD2, // mov x2, #3
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:     common.SyscallArgEvalExecNotSet,
+			wantHasResult:  true,
+			wantIsHighRisk: false,
+		},
+		{
+			name: "exec_unknown (register move: mov x2, x1)",
+			// mov x8, #226; mov x2, x1; svc #0 — indirect prot setting
+			code: []byte{
+				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
+				0xE2, 0x03, 0x01, 0xAA, // mov x2, x1
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:     common.SyscallArgEvalExecUnknown,
+			wantHasResult:  true,
+			wantIsHighRisk: true,
+		},
+		{
+			name: "exec_unknown (mprotect syscall only, no x2 setup in scan range)",
+			// mov x8, #226; svc #0 — no x2 assignment before syscall.
+			// Backward scan reaches the start of code without finding any x2 modifier.
+			code: []byte{
+				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:     common.SyscallArgEvalExecUnknown,
+			wantHasResult:  true,
+			wantIsHighRisk: true,
+		},
+		{
+			name: "exec_unknown (control flow boundary)",
+			// b +5 (skips 4 nops, lands on mov x8); nop x3; mov x8, #226; svc #0
+			// Backward scan for x2 from svc passes over mov x8 and nops,
+			// then hits the branch instruction at offset 0 and stops → exec_unknown.
+			//
+			// Layout (each instruction is 4 bytes):
+			//   offset  0: b +5 words (20 bytes) → jumps to offset 20 (svc), skipping everything
+			//   offset  4: nop
+			//   offset  8: nop
+			//   offset 12: nop
+			//   offset 16: mov x8, #226
+			//   offset 20: svc #0
+			code: []byte{
+				0x05, 0x00, 0x00, 0x14, // b +5 (20 bytes forward, to svc)
+				0x1F, 0x20, 0x03, 0xD5, // nop
+				0x1F, 0x20, 0x03, 0xD5, // nop
+				0x1F, 0x20, 0x03, 0xD5, // nop
+				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:     common.SyscallArgEvalExecUnknown,
+			wantHasResult:  true,
+			wantIsHighRisk: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := analyzer.analyzeSyscallsInCode(tt.code, baseAddr, decoder, table, nil)
+
+			if !tt.wantHasResult {
+				assert.Empty(t, result.ArgEvalResults)
+				return
+			}
+
+			require.NotEmpty(t, result.ArgEvalResults, "expected ArgEvalResults to be populated")
+			assert.Equal(t, "mprotect", result.ArgEvalResults[0].SyscallName)
+			assert.Equal(t, tt.wantStatus, result.ArgEvalResults[0].Status)
+			assert.Equal(t, tt.wantIsHighRisk, result.Summary.IsHighRisk)
+		})
+	}
 }
