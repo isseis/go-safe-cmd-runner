@@ -26,6 +26,16 @@ flowchart LR
     class P1,P2,P3,P4,P5 todo
 ```
 
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef todo fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00
+
+    T1["未着手フェーズ"]
+    class T1 todo
+```
+
 **注記**: Phase 2 と Phase 3 の前半（`backwardScanForRegister` の抽出）は
 Phase 1 完了後に並行して開始可能だが、Phase 3 の `evaluateMprotectArgs` は
 Phase 2 完了後に実施する。
