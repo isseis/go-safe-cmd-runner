@@ -105,11 +105,7 @@ graph TB
             C["x86_decoder.go<br>(拡張: rdx/edx 対応)"]
             D["arm64_decoder.go<br>(拡張: x2 対応)"]
             E["syscall_analyzer.go<br>(拡張: prot 引数スキャン)"]
-        end
-
-        subgraph "internal/runner/security"
             F["mprotect_risk.go<br>(新規: ArgEvalResults →<br>IsHighRisk マッピング)"]
-            G["network_analyzer.go<br>(拡張: mprotect リスク反映)"]
         end
 
         subgraph "internal/fileanalysis"
@@ -121,13 +117,12 @@ graph TB
     E --> C
     E --> D
     E --> A
-    G --> F
+    E --> F
     E --> H
     F --> A
 
-    class B,C,D,G,H enhanced
-    class A,E enhanced
-    class F enhanced
+    class B,C,D,H enhanced
+    class A,E,F enhanced
 ```
 
 ### 2.3 データフロー
@@ -137,7 +132,7 @@ sequenceDiagram
     participant SA as "SyscallAnalyzer"
     participant MD as "MachineCodeDecoder"
     participant ST as "SyscallNumberTable"
-    participant MR as "mprotect_risk<br>(security pkg)"
+    participant MR as "mprotect_risk<br>(elfanalyzer pkg)"
 
     Note over SA: Pass 1 の既存処理後
     SA->>SA: DetectedSyscalls から<br>mprotect エントリを収集
@@ -168,6 +163,10 @@ sequenceDiagram
     SA->>MR: EvalMprotectRisk(argEvalResults)
     MR-->>SA: isHighRisk bool
     SA->>SA: Summary.IsHighRisk |= isHighRisk
+
+    alt isHighRisk == true
+        SA->>SA: HighRiskReasons にメッセージ追加<br>(exec_confirmed: "mprotect at 0x%x: PROT_EXEC confirmed (prot=0x%x)")<br>(exec_unknown: "mprotect at 0x%x: PROT_EXEC could not be ruled out (%s)")
+    end
 ```
 
 ## 3. コンポーネント設計
@@ -298,14 +297,15 @@ flowchart TD
 // evaluateMprotectArgs evaluates prot argument of mprotect syscall entries.
 // It scans detected syscalls for mprotect, performs backward scan for prot
 // register (rdx on x86_64, x2 on arm64), and returns the highest-risk
-// SyscallArgEvalResult. Returns nil if no mprotect was detected.
+// SyscallArgEvalResult and its corresponding instruction address.
+// Returns nil, 0 if no mprotect was detected.
 func (a *SyscallAnalyzer) evaluateMprotectArgs(
     code []byte,
     baseAddr uint64,
     decoder MachineCodeDecoder,
     table SyscallNumberTable,
     detectedSyscalls []common.SyscallInfo,
-) *common.SyscallArgEvalResult
+) (*common.SyscallArgEvalResult, uint64)
 ```
 
 **後方スキャンの再利用**:
@@ -340,7 +340,7 @@ classDiagram
         +EvalMprotectRisk(argEvalResults []SyscallArgEvalResult) bool
     }
 
-    note for mprotect_risk "internal/runner/security/mprotect_risk.go\nArgEvalResults → IsHighRisk マッピングを一元化"
+    note for mprotect_risk "internal/runner/security/elfanalyzer/mprotect_risk.go\nArgEvalResults → IsHighRisk マッピングを一元化"
 ```
 
 **関数シグネチャ**:
@@ -358,12 +358,26 @@ func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool
 ```
 
 **呼び出し箇所**:
-1. `elfanalyzer/syscall_analyzer.go` の `analyzeSyscallsInCode`（事前解析時）
-2. `elfanalyzer/standard_analyzer.go` の `convertSyscallResult`（ストアからの読み出し時）
 
-いずれの箇所でも `Summary.IsHighRisk` を OR 条件で更新（既存の `true` を `false` に戻さない）。
+`elfanalyzer/syscall_analyzer.go` の `analyzeSyscallsInCode`（事前解析時）のみ。
+`Summary.IsHighRisk` を OR 条件で更新（既存の `true` を `false` に戻さない）。
 
-### 3.5 スキーマバージョンの更新
+`convertSyscallResult` は `analyzeSyscallsInCode` が設定した `Summary.IsHighRisk` の値をそのまま参照するため、変更不要。
+
+### 3.5 `HighRiskReasons` への追記仕様
+
+`EvalMprotectRisk` が `true` を返した場合、`evaluateMprotectArgs` は `HighRiskReasons` に以下の形式でメッセージを追加する。`location` は `SyscallInfo.Location` の値（`mprotect` 命令のアドレス）、`details` は `SyscallArgEvalResult.Details` の値を使用する。
+
+| Status | 追加するメッセージ |
+|---|---|
+| `exec_confirmed` | `"mprotect at 0x%x: PROT_EXEC confirmed (%s)"` （`%s` = Details の値、例: `"prot=0x5"`） |
+| `exec_unknown` | `"mprotect at 0x%x: PROT_EXEC could not be ruled out (%s)"` （`%s` = Details の値、例: `"scan limit exceeded"`） |
+
+`exec_not_set` の場合は `IsHighRisk` が変化しないため `HighRiskReasons` への追記も不要。
+
+`SyscallArgEvalResult` は複数の `mprotect` エントリから最高リスクの1件を集約したものであるため、メッセージは1件のみ追加する。`location` には集約元のうち最高リスクと判定された `mprotect` 命令のアドレスを使用する（`evaluateMprotectArgs` の戻り値に location を含める設計については §3.4 関数シグネチャを参照）。
+
+### 3.6 スキーマバージョンの更新
 
 ```mermaid
 flowchart LR
@@ -378,7 +392,7 @@ flowchart LR
 - `SyscallAnalysisData`（`internal/fileanalysis/schema.go`）は `SyscallAnalysisResultCore` を埋め込んでいるため、`ArgEvalResults` フィールドは自動的に JSON 出力に含まれる
 - `omitempty` タグにより、`mprotect` 未検出時はフィールド自体が省略される
 
-### 3.6 解析結果ファイル形式（v5）
+### 3.7 解析結果ファイル形式（v5）
 
 ```json
 {
@@ -432,7 +446,7 @@ flowchart TD
     G --> H["ArgEvalResults に1件追加"]
     H --> I["EvalMprotectRisk()"]
     D --> J["Summary 構築"]
-    I -->|"true"| K["Summary.IsHighRisk |= true"]
+    I -->|"true"| K["Summary.IsHighRisk |= true<br>HighRiskReasons に追加"]
     I -->|"false"| J
     K --> J
 
@@ -459,14 +473,14 @@ flowchart LR
 
     A["mprotect 検出"] --> B["ArgEvalResults"]
     B --> C["EvalMprotectRisk()"]
-    C --> D["Summary.IsHighRisk = true"]
-    D --> E["convertSyscallResult()"]
+    C --> D["Summary.IsHighRisk = true<br>HighRiskReasons に追加"]
+    D --> E["convertSyscallResult()<br>(変更なし)"]
     E --> F["AnalysisOutput.Result = AnalysisError"]
-    F --> G["handleAnalysisOutput()"]
+    F --> G["handleAnalysisOutput()<br>(変更なし)"]
     G --> H["isHighRisk = true"]
 
-    class A,B,C new
-    class D,E,F,G,H existing
+    class A,B,C,D new
+    class E,F,G,H existing
 ```
 
 ### 4.4 `defaultMaxBackwardScan` コメントの一般化
@@ -651,7 +665,7 @@ NFR-4.2.1 で定義されたテストケースを `MachineCodeDecoder` 拡張メ
 
 ### Phase 4: リスク判定ヘルパーと統合
 
-- [ ] `EvalMprotectRisk` ヘルパー関数を `internal/runner/security/mprotect_risk.go` に実装
+- [ ] `EvalMprotectRisk` ヘルパー関数を `internal/runner/security/elfanalyzer/mprotect_risk.go` に実装
 - [ ] `analyzeSyscallsInCode` からのヘルパー呼び出し
 - [ ] テスト
 
@@ -688,16 +702,20 @@ NFR-4.2.1 で定義されたテストケースを `MachineCodeDecoder` 拡張メ
 
 ### 10.3 `EvalMprotectRisk` の配置場所
 
-**採用案**: `internal/runner/security/mprotect_risk.go`
+**採用案**: `internal/runner/security/elfanalyzer/mprotect_risk.go`
 
-- 要件 §5 でリスク判定ロジックは runner 層（`security` パッケージ）に置くことが指定されている
-- `elfanalyzer` は解析事実のみを生成し、リスク判定を行わない
-- `handleAnalysisOutput` と同一パッケージに置くことで判定基準の分散を防ぐ
+- `security` パッケージはすでに `elfanalyzer` パッケージを import しているため、`EvalMprotectRisk` を `security` に置くと `elfanalyzer → security → elfanalyzer` の import cycle が発生してビルド不能になる
+- `elfanalyzer` 内に配置することで依存方向（`security` → `elfanalyzer` → `common`）を一方向に保てる
+- `EvalMprotectRisk` の唯一の呼び出し元は `analyzeSyscallsInCode`（同パッケージ内）であり、パッケージ境界を越える必要がない
+- 解析事実（`ArgEvalResults`）からリスク判定（`IsHighRisk`）への変換を `syscall_analyzer.go` のインラインではなく独立ファイルに分離し、責務の明確化と単体テストの容易化を実現する
+
+**代替案（不採用）**: `internal/runner/security/mprotect_risk.go`
+
+- `security` → `elfanalyzer` の既存 import に加え `elfanalyzer` → `security` の逆方向 import が生じ、循環依存でビルド不能
 
 **代替案（不採用）**: `elfanalyzer/syscall_analyzer.go` 内にインライン実装
 
-- 解析と判定の責務が混在する
-- リスク判定基準の変更時に `elfanalyzer` パッケージを修正する必要が生じる
+- リスク判定基準が解析ロジックに埋め込まれ、単独テストが困難になる
 
 ### 10.4 `EvalMprotectRisk` の呼び出し戦略
 
