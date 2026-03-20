@@ -43,6 +43,15 @@ RUN curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.11
         --strip-components=1 golangci-lint-2.11.3-linux-amd64/golangci-lint \
     && rm /tmp/golangci-lint.tar.gz
 
+# GitHub CLI (gh) のインストール
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # pre-commit
 RUN pip3 install --break-system-packages pre-commit
 
