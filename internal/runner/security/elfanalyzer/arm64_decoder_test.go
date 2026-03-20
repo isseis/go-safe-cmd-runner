@@ -260,3 +260,78 @@ func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func TestARM64Decoder_ModifiesThirdArgRegister(t *testing.T) {
+	decoder := NewARM64Decoder()
+
+	// arm64 third syscall argument register is X2 / W2.
+	// Verified encodings:
+	//   mov x2, #7   : E2 00 80 D2  (MOVZ X2, #7)
+	//   mov w2, #3   : 62 00 80 52  (MOVZ W2, #3)
+	//   mov x2, x1   : E2 03 01 AA  (ORR X2, XZR, X1 - MOV alias)
+	//   mov x8, #7   : E8 00 80 D2  (MOVZ X8, #7)
+
+	t.Run("mov x2, #7 returns true", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xE2, 0x00, 0x80, 0xD2}, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("mov w2, #3 returns true", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0x62, 0x00, 0x80, 0x52}, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("mov x2, x1 returns true (register move modifies x2)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xE2, 0x03, 0x01, 0xAA}, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("mov x8, #7 returns false (wrong register)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xE8, 0x00, 0x80, 0xD2}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("nop returns false", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0x1F, 0x20, 0x03, 0xD5}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+}
+
+func TestARM64Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
+	decoder := NewARM64Decoder()
+
+	t.Run("mov x2, #7 returns (true, 7)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xE2, 0x00, 0x80, 0xD2}, 0)
+		require.NoError(t, err)
+		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(7), val)
+	})
+
+	t.Run("mov w2, #3 returns (true, 3)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0x62, 0x00, 0x80, 0x52}, 0)
+		require.NoError(t, err)
+		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(3), val)
+	})
+
+	t.Run("mov x2, x1 returns false (register move)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xE2, 0x03, 0x01, 0xAA}, 0)
+		require.NoError(t, err)
+		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.False(t, ok)
+	})
+
+	t.Run("mov x8, #7 returns false (wrong register)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xE8, 0x00, 0x80, 0xD2}, 0)
+		require.NoError(t, err)
+		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.False(t, ok)
+	})
+}

@@ -49,6 +49,14 @@ func (m *MockMachineCodeDecoder) IsImmediateToFirstArgRegister(_ DecodedInstruct
 	return 0, false
 }
 
+func (m *MockMachineCodeDecoder) ModifiesThirdArgRegister(_ DecodedInstruction) bool {
+	return false
+}
+
+func (m *MockMachineCodeDecoder) IsImmediateToThirdArgRegister(_ DecodedInstruction) (bool, int64) {
+	return false, 0
+}
+
 func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	tests := []struct {
 		name       string

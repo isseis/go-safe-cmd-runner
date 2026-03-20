@@ -158,6 +158,44 @@ func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (i
 	return val, ok
 }
 
+// ModifiesThirdArgRegister returns true if the instruction writes to
+// the arm64 third syscall argument register (W2 or X2).
+func (d *ARM64Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
+	a, ok := inst.arch.(arm64asm.Inst)
+	if !ok {
+		return false
+	}
+	if a.Args[0] == nil {
+		return false
+	}
+	reg, ok := a.Args[0].(arm64asm.Reg)
+	if !ok {
+		return false
+	}
+	return reg == arm64asm.W2 || reg == arm64asm.X2
+}
+
+// IsImmediateToThirdArgRegister returns (true, value) if inst sets
+// W2 or X2 to a known immediate value.
+func (d *ARM64Decoder) IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64) {
+	a, ok := inst.arch.(arm64asm.Inst)
+	if !ok {
+		return false, 0
+	}
+	if a.Op != arm64asm.MOV {
+		return false, 0
+	}
+	if a.Args[0] == nil || a.Args[1] == nil {
+		return false, 0
+	}
+	reg, ok := a.Args[0].(arm64asm.Reg)
+	if !ok || (reg != arm64asm.W2 && reg != arm64asm.X2) {
+		return false, 0
+	}
+	val, ok := arm64ImmValue(a.Args[1])
+	return ok, val
+}
+
 // arm64ImmValue extracts an int64 immediate value from an arm64asm.Arg.
 // Handles both arm64asm.Imm and arm64asm.Imm64.
 // Returns (value, true) on success, (0, false) if arg is not an immediate.

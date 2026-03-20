@@ -328,3 +328,116 @@ func TestX86Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func TestX86Decoder_ModifiesThirdArgRegister(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	t.Run("mov imm to EDX returns true", func(t *testing.T) {
+		// ba 07 00 00 00 = mov $0x7, %edx
+		code := []byte{0xba, 0x07, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("mov imm to RDX returns true", func(t *testing.T) {
+		// 48 c7 c2 07 00 00 00 = mov $0x7, %rdx
+		code := []byte{0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("mov reg to RDX returns true", func(t *testing.T) {
+		// 48 89 f2 = mov %rsi, %rdx
+		code := []byte{0x48, 0x89, 0xf2}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("xor EDX EDX returns true", func(t *testing.T) {
+		// 31 d2 = xor %edx, %edx
+		code := []byte{0x31, 0xd2}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("mov imm to EAX returns false (wrong register)", func(t *testing.T) {
+		// b8 07 00 00 00 = mov $0x7, %eax
+		code := []byte{0xb8, 0x07, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("nop returns false", func(t *testing.T) {
+		code := []byte{0x90}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+}
+
+func TestX86Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	t.Run("mov imm to RDX (64bit) returns value", func(t *testing.T) {
+		// 48 c7 c2 07 00 00 00 = mov $0x7, %rdx
+		code := []byte{0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(7), val)
+	})
+
+	t.Run("mov imm to EDX (32bit) returns value", func(t *testing.T) {
+		// ba 04 00 00 00 = mov $0x4, %edx
+		code := []byte{0xba, 0x04, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(4), val)
+	})
+
+	t.Run("mov imm to RDX PROT_EXEC flag only", func(t *testing.T) {
+		// ba 03 00 00 00 = mov $0x3, %edx
+		code := []byte{0xba, 0x03, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(3), val)
+	})
+
+	t.Run("mov reg to RDX returns false (register move)", func(t *testing.T) {
+		// 48 89 f2 = mov %rsi, %rdx
+		code := []byte{0x48, 0x89, 0xf2}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.False(t, ok)
+	})
+
+	t.Run("xor EDX EDX zeroing idiom returns zero", func(t *testing.T) {
+		// 31 d2 = xor %edx, %edx
+		code := []byte{0x31, 0xd2}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("mov imm to EAX returns false (wrong register)", func(t *testing.T) {
+		// b8 07 00 00 00 = mov $0x7, %eax
+		code := []byte{0xb8, 0x07, 0x00, 0x00, 0x00}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
+		assert.False(t, ok)
+	})
+}

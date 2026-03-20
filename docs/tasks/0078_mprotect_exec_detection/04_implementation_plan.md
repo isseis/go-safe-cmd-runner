@@ -72,7 +72,7 @@ Phase 2 完了後に実施する。
 
 ### 2.1 インターフェース定義
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_decoder.go` の
+- [x] `internal/runner/security/elfanalyzer/syscall_decoder.go` の
   `MachineCodeDecoder` インターフェースに 2 メソッドを追加
   - `ModifiesThirdArgRegister(inst DecodedInstruction) bool`
   - `IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64)`
@@ -80,27 +80,27 @@ Phase 2 完了後に実施する。
 
 ### 2.2 X86Decoder 実装
 
-- [ ] `internal/runner/security/elfanalyzer/x86_decoder.go` に実装を追加
+- [x] `internal/runner/security/elfanalyzer/x86_decoder.go` に実装を追加
   - `ModifiesThirdArgRegister`: `edx`/`rdx`/`dx`/`dl` の書き込み検出
   - `IsImmediateToThirdArgRegister`: 既存の `isImmediateToReg` ヘルパーを再利用
   - 仕様: 詳細仕様書 §3.1
 
 ### 2.3 ARM64Decoder 実装
 
-- [ ] `internal/runner/security/elfanalyzer/arm64_decoder.go` に実装を追加
+- [x] `internal/runner/security/elfanalyzer/arm64_decoder.go` に実装を追加
   - `ModifiesThirdArgRegister`: `w2`/`x2` の書き込み検出
   - `IsImmediateToThirdArgRegister`: 既存の `arm64ImmValue` ヘルパーを再利用
   - 仕様: 詳細仕様書 §3.2
 
 ### 2.4 モックの更新
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` の
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` の
   `MockMachineCodeDecoder` に 2 メソッドのスタブを追加
   - 仕様: 詳細仕様書 §3.3
 
 ### 2.5 X86Decoder 単体テスト
 
-- [ ] `x86_decoder_test.go` にテストケースを追加
+- [x] `x86_decoder_test.go` にテストケースを追加
   - `TestX86Decoder_ModifiesThirdArgRegister`
   - `TestX86Decoder_IsImmediateToThirdArgRegister`
   - テストパターン: `mov $imm, %edx`、`mov $imm, %rdx`、`mov %rsi, %rdx`、
@@ -110,7 +110,7 @@ Phase 2 完了後に実施する。
 
 ### 2.6 ARM64Decoder 単体テスト
 
-- [ ] `arm64_decoder_test.go` にテストケースを追加
+- [x] `arm64_decoder_test.go` にテストケースを追加
   - `TestARM64Decoder_ModifiesThirdArgRegister`
   - `TestARM64Decoder_IsImmediateToThirdArgRegister`
   - テストパターン: `mov x2, #imm`、`mov w2, #imm`、`mov x2, x1`、非対象レジスタ

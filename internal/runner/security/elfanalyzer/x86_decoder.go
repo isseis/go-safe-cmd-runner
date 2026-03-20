@@ -206,3 +206,36 @@ func (d *X86Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int
 	})
 	return val, ok
 }
+
+// ModifiesThirdArgRegister checks if the instruction modifies edx or rdx.
+func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
+	x86inst, ok := inst.arch.(x86asm.Inst)
+	if !ok {
+		return false
+	}
+
+	// Trim trailing nil arguments
+	args := x86inst.Args[:]
+	for len(args) > 0 && args[len(args)-1] == nil {
+		args = args[:len(args)-1]
+	}
+	if len(args) == 0 {
+		return false
+	}
+
+	// Check destination register (first argument for most instructions)
+	if arg, ok := args[0].(x86asm.Reg); ok {
+		return arg == x86asm.EDX || arg == x86asm.RDX ||
+			arg == x86asm.DX || arg == x86asm.DL
+	}
+
+	return false
+}
+
+// IsImmediateToThirdArgRegister checks if the instruction sets edx/rdx to a known
+// immediate value. Covers MOV EDX/RDX, imm and XOR EDX, EDX (zeroing idiom).
+func (d *X86Decoder) IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64) {
+	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
+		return reg == x86asm.EDX || reg == x86asm.RDX
+	})
+}
