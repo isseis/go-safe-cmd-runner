@@ -61,6 +61,8 @@ RUN EXISTING_USER=$(getent passwd "$USER_UID" | cut -d: -f1) \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
+COPY .devcontainer/bashrc_git_ps1.sh /etc/bash_completion.d/git_ps1_settings.sh
+
 RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
     && mkdir -p /home/$USERNAME/.ssh \
     && chown -R $USERNAME:$USERNAME /home/$USERNAME

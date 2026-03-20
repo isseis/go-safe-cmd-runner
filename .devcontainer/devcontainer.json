@@ -20,5 +20,6 @@
             ]
         }
     },
-    "remoteUser": "issei"
+    "remoteUser": "issei",
+    "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install"
 }
