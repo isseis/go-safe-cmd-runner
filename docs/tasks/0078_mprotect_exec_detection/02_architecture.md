@@ -131,7 +131,6 @@ graph TB
 sequenceDiagram
     participant SA as "SyscallAnalyzer"
     participant MD as "MachineCodeDecoder"
-    participant ST as "SyscallNumberTable"
     participant MR as "mprotect_risk<br>(elfanalyzer pkg)"
 
     Note over SA: Pass 1 の既存処理後
@@ -332,7 +331,7 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 既存の `backwardScanForSyscallNumber` はこの汎用関数のラッパーとして再実装する。
 これにより、スキャンロジックの重複を排除し、`defaultMaxBackwardScan` の適用を一箇所に集約する。
 
-### 3.4 リスク判定ヘルパー（`security` パッケージ）
+### 3.4 リスク判定ヘルパー（`elfanalyzer` パッケージ）
 
 ```mermaid
 classDiagram
@@ -366,7 +365,7 @@ func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool
 
 ### 3.5 `HighRiskReasons` への追記仕様
 
-`EvalMprotectRisk` が `true` を返した場合、`evaluateMprotectArgs` は `HighRiskReasons` に以下の形式でメッセージを追加する。`location` は `SyscallInfo.Location` の値（`mprotect` 命令のアドレス）、`details` は `SyscallArgEvalResult.Details` の値を使用する。
+`EvalMprotectRisk` が `true` を返した場合、`analyzeSyscallsInCode` は `HighRiskReasons` に以下の形式でメッセージを追加する。`location` は `SyscallInfo.Location` の値（`mprotect` 命令のアドレス）、`details` は `SyscallArgEvalResult.Details` の値を使用する。
 
 | Status | 追加するメッセージ |
 |---|---|
@@ -375,7 +374,7 @@ func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool
 
 `exec_not_set` の場合は `IsHighRisk` が変化しないため `HighRiskReasons` への追記も不要。
 
-`SyscallArgEvalResult` は複数の `mprotect` エントリから最高リスクの1件を集約したものであるため、メッセージは1件のみ追加する。`location` には集約元のうち最高リスクと判定された `mprotect` 命令のアドレスを使用する（`evaluateMprotectArgs` の戻り値に location を含める設計については §3.4 関数シグネチャを参照）。
+`SyscallArgEvalResult` は複数の `mprotect` エントリから最高リスクの1件を集約したものであるため、メッセージは1件のみ追加する。`location` には集約元のうち最高リスクと判定された `mprotect` 命令のアドレスを使用する（`evaluateMprotectArgs` の戻り値に location を含める設計については §3.3.1 関数シグネチャを参照）。
 
 ### 3.6 スキーマバージョンの更新
 
