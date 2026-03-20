@@ -283,13 +283,13 @@ flowchart TD
 
     A["analyzeSyscallsInCode()"] --> B["Pass 1: Direct syscall 検出"]
     B --> C["Pass 2: Go Wrapper 解析"]
-    C --> D["Summary 構築"]
-    D --> E["mprotect 引数評価"]
-    E --> F["ArgEvalResults 生成"]
-    F --> G["IsHighRisk 更新"]
+    C --> D["mprotect 引数評価"]
+    D --> E["ArgEvalResults 生成"]
+    E --> F["IsHighRisk 更新"]
+    F --> G["Summary 構築"]
 
-    class A,B,C,D existing
-    class E,F,G new
+    class A,B,C,G existing
+    class D,E,F new
 ```
 
 **新規メソッド**: `evaluateMprotectArgs`
@@ -304,7 +304,6 @@ func (a *SyscallAnalyzer) evaluateMprotectArgs(
     code []byte,
     baseAddr uint64,
     decoder MachineCodeDecoder,
-    table SyscallNumberTable,
     detectedSyscalls []common.SyscallInfo,
 ) (*common.SyscallArgEvalResult, uint64)
 ```
