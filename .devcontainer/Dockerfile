@@ -62,6 +62,7 @@ RUN EXISTING_USER=$(getent passwd "$USER_UID" | cut -d: -f1) \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
 RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
+    && mkdir -p /home/$USERNAME/.ssh \
     && chown -R $USERNAME:$USERNAME /home/$USERNAME
 
 WORKDIR /home/$USERNAME
