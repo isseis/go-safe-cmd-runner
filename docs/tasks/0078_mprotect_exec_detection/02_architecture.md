@@ -74,6 +74,8 @@ flowchart TD
         G --> H[("Analysis Result Store")]
     end
 
+    H --> I
+
     subgraph "実行時フェーズ（runner）"
         I[("Analysis Result Store")] --> J["Network Analyzer"]
         J --> K["handleAnalysisOutput"]
