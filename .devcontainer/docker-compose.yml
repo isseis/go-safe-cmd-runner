@@ -14,6 +14,9 @@ services:
       # 拡張機能のキャッシュ用ボリューム
       - vscode-extensions-cache:/home/issei/.vscode-server/extensions
       - ~/.ssh/id_ed25519.pub:/home/issei/.ssh/id_ed25519.pub:ro
+      # 認証情報の永続化（Mac ホストと共有）
+      - ~/.config/gh:/home/issei/.config/gh
+      - ~/.claude:/home/issei/.claude
     # コンテナを維持するためのコマンド
     command: /bin/sh -c "while sleep 1000; do :; done"
 
