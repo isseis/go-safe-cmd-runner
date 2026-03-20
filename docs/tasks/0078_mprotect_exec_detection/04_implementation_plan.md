@@ -47,21 +47,21 @@ Phase 2 完了後に実施する。
 
 ### 1.1 型定義
 
-- [ ] `internal/common/syscall_types.go` に以下を追加
+- [x] `internal/common/syscall_types.go` に以下を追加
   - `SyscallArgEvalStatus` 型と 3 定数（`exec_confirmed`, `exec_unknown`, `exec_not_set`）
   - `SyscallArgEvalResult` 構造体
   - 仕様: 詳細仕様書 §2.1
 
 ### 1.2 `SyscallAnalysisResultCore` の拡張
 
-- [ ] `internal/common/syscall_types.go` の `SyscallAnalysisResultCore` に
+- [x] `internal/common/syscall_types.go` の `SyscallAnalysisResultCore` に
   `ArgEvalResults []SyscallArgEvalResult` フィールドを追加
   - JSON タグに `omitempty` を付与
   - 仕様: 詳細仕様書 §2.2
 
 ### 1.3 スキーマバージョンの更新
 
-- [ ] `internal/fileanalysis/schema.go` の `CurrentSchemaVersion` を `4` → `5` に更新
+- [x] `internal/fileanalysis/schema.go` の `CurrentSchemaVersion` を `4` → `5` に更新
   - バージョン履歴コメントを更新
   - 仕様: 詳細仕様書 §6
   - 受け入れ条件: AC-4
