@@ -400,9 +400,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	// Return execution error after outputting results (if any)
 	if execErr != nil {
 		// Extract group and command context from error chain if available
-		var cmdExecErr *runner.CommandExecutionError
 		var groupName, commandName string
-		if errors.As(execErr, &cmdExecErr) {
+		if cmdExecErr, ok := errors.AsType[*runner.CommandExecutionError](execErr); ok {
 			groupName = cmdExecErr.GroupName
 			commandName = cmdExecErr.CommandName
 		}

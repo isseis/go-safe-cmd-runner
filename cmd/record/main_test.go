@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"debug/elf"
 	"errors"
 	"fmt"
 	"os"
@@ -10,13 +9,8 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,8 +44,7 @@ func testDeps(recorder *fakeRecorder) deps {
 			}
 			return recorder, nil
 		},
-		syscallContextFactory: newSyscallAnalysisContext,
-		mkdirAll:              os.MkdirAll,
+		mkdirAll: os.MkdirAll,
 	}
 }
 
@@ -176,123 +169,3 @@ func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
 
-// fakeELFAnalyzer is a test double for elfSyscallAnalyzer that returns a
-// pre-configured result without needing a real ELF binary with a .text section.
-type fakeELFAnalyzer struct {
-	result *elfanalyzer.SyscallAnalysisResult
-	err    error
-}
-
-func (f *fakeELFAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) (*elfanalyzer.SyscallAnalysisResult, error) {
-	return f.result, f.err
-}
-
-// TestRunWithSyscallAnalysis_DynamicELF verifies AC-2:
-// SyscallAnalysis is executed and saved for a dynamic ELF binary.
-func TestRunWithSyscallAnalysis_DynamicELF(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
-	recorder := &fakeRecorder{responses: map[string]error{}}
-
-	// Create a dynamic ELF file (has .dynsym but no network symbols → CGO-like)
-	dynamicELF := filepath.Join(tempDir, "dynamic_binary.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, dynamicELF)
-
-	// Use a fake analyzer that returns a known result to avoid real ELF analysis.
-	fakeResult := &elfanalyzer.SyscallAnalysisResult{
-		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "x86_64",
-			Summary: common.SyscallSummary{
-				TotalDetectedEvents: 2,
-				NetworkSyscallCount: 1,
-				HasNetworkSyscalls:  true,
-				IsHighRisk:          false,
-			},
-		},
-	}
-
-	pathGetter := filevalidator.NewHybridHashFilePathGetter()
-	store, err := fileanalysis.NewStore(tempDir, pathGetter)
-	require.NoError(t, err)
-	syscallStore := fileanalysis.NewSyscallAnalysisStore(store)
-
-	prebuiltCtx := &syscallAnalysisContext{
-		syscallStore: syscallStore,
-		analyzer:     &fakeELFAnalyzer{result: fakeResult},
-		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	}
-
-	d := testDeps(recorder)
-	d.syscallContextFactory = func(_ string) (*syscallAnalysisContext, error) {
-		return prebuiltCtx, nil
-	}
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	exitCode := run([]string{"-d", tempDir, dynamicELF}, d, stdout, stderr)
-	require.Equal(t, 0, exitCode)
-	assert.Empty(t, stderr.String())
-
-	const fakeHash = "sha256:fakehash"
-	loaded, err := syscallStore.LoadSyscallAnalysis(dynamicELF, fakeHash)
-	require.NoError(t, err)
-	assert.Equal(t, "x86_64", loaded.Architecture)
-	assert.True(t, loaded.Summary.HasNetworkSyscalls)
-	assert.Equal(t, 1, loaded.Summary.NetworkSyscallCount)
-}
-
-func TestRunWithSyscallAnalysisSavesResult(t *testing.T) {
-	tempDir := commontesting.SafeTempDir(t)
-	recorder := &fakeRecorder{responses: map[string]error{}}
-
-	// Create a static ELF file (no .text section needed — the analyzer is faked)
-	staticELF := filepath.Join(tempDir, "static_binary.elf")
-	elfanalyzertesting.CreateStaticELFFile(t, staticELF)
-
-	// Build a fake analyzer that returns a known result.
-	fakeResult := &elfanalyzer.SyscallAnalysisResult{
-		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "x86_64",
-			Summary: common.SyscallSummary{
-				TotalDetectedEvents: 3,
-				NetworkSyscallCount: 1,
-				IsHighRisk:          false,
-			},
-		},
-	}
-
-	// Build a real store so we can verify what gets persisted.
-	pathGetter := filevalidator.NewHybridHashFilePathGetter()
-	store, err := fileanalysis.NewStore(tempDir, pathGetter)
-	require.NoError(t, err)
-	syscallStore := fileanalysis.NewSyscallAnalysisStore(store)
-
-	// Wire the context with the fake analyzer and real store.
-	prebuiltCtx := &syscallAnalysisContext{
-		syscallStore: syscallStore,
-		analyzer:     &fakeELFAnalyzer{result: fakeResult},
-		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	}
-
-	d := testDeps(recorder)
-	d.syscallContextFactory = func(_ string) (*syscallAnalysisContext, error) {
-		return prebuiltCtx, nil
-	}
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	exitCode := run([]string{"-d", tempDir, staticELF}, d, stdout, stderr)
-
-	require.Equal(t, 0, exitCode)
-
-	// fakeRecorder returns "sha256:fakehash" as the content hash.
-	const fakeHash = "sha256:fakehash"
-	loaded, err := syscallStore.LoadSyscallAnalysis(staticELF, fakeHash)
-	require.NoError(t, err)
-
-	assert.Equal(t, "x86_64", loaded.Architecture)
-	assert.Equal(t, 3, loaded.Summary.TotalDetectedEvents)
-	assert.Equal(t, 1, loaded.Summary.NetworkSyscallCount)
-	assert.False(t, loaded.Summary.IsHighRisk)
-}

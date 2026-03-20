@@ -1,0 +1,24 @@
+{
+    "name": "x86_64 Linux Development",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "dev-env",
+    "workspaceFolder": "/workspaces/ubuntu",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                // ターミナルのデフォルトシェルを bash に指定
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash"
+                    }
+                }
+            },
+            "extensions": [
+                "golang.Go",
+                "ms-vscode.cpptools"
+            ]
+        }
+    },
+    "remoteUser": "issei"
+}

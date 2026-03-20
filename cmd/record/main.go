@@ -3,19 +3,17 @@
 package main
 
 import (
-	"debug/elf"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -23,6 +21,7 @@ import (
 
 const (
 	hashDirPermissions = 0o750
+	libcCacheSubDir    = "lib-cache"
 )
 
 var (
@@ -35,7 +34,6 @@ var (
 type deps struct {
 	validatorFactory      func(hashDir string) (hashRecorder, error)
 	dynlibAnalyzerFactory func() *dynlibanalysis.DynLibAnalyzer // nil means dynlib analysis is disabled
-	syscallContextFactory func(hashDir string) (*syscallAnalysisContext, error)
 	mkdirAll              func(path string, perm os.FileMode) error
 }
 
@@ -47,8 +45,7 @@ func defaultDeps() deps {
 		dynlibAnalyzerFactory: func() *dynlibanalysis.DynLibAnalyzer {
 			return dynlibanalysis.NewDynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
 		},
-		syscallContextFactory: newSyscallAnalysisContext,
-		mkdirAll:              os.MkdirAll,
+		mkdirAll: os.MkdirAll,
 	}
 }
 
@@ -92,22 +89,29 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Inject DynLibAnalyzer and BinaryAnalyzer when the validator supports it.
+	// Inject DynLibAnalyzer, BinaryAnalyzer, SyscallAnalyzer, and LibcCache when the validator supports it.
 	// Uses a type assertion so that test fakes implementing only hashRecorder are unaffected.
 	if fv, ok := validator.(*filevalidator.Validator); ok {
 		if d.dynlibAnalyzerFactory != nil {
 			fv.SetDynLibAnalyzer(d.dynlibAnalyzerFactory())
 		}
 		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())
+
+		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
+		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))
+
+		cacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
+		fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+		libcAnalyzer := libccache.NewLibcWrapperAnalyzer(syscallAnalyzer)
+		cacheMgr, cacheErr := libccache.NewLibcCacheManager(cacheDir, fs, libcAnalyzer)
+		if cacheErr != nil {
+			fmt.Fprintf(stderr, "Error: Failed to initialize libc cache: %v\n", cacheErr) //nolint:errcheck
+			return 1
+		}
+		fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
 	}
 
-	syscallCtx, err := d.syscallContextFactory(cfg.hashDir)
-	if err != nil {
-		fmt.Fprintf(stderr, "Error: Failed to initialize syscall analysis: %v\n", err) //nolint:errcheck
-		return 1
-	}
-
-	return processFiles(validator, syscallCtx, cfg, stdout, stderr)
+	return processFiles(validator, cfg, stdout, stderr)
 }
 
 func parseArgs(args []string, d deps, stderr io.Writer) (*recordConfig, *flag.FlagSet, error) {
@@ -162,7 +166,7 @@ func printUsage(fs *flag.FlagSet, w io.Writer) {
 	fs.PrintDefaults()
 }
 
-func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg *recordConfig, stdout, stderr io.Writer) int {
+func processFiles(recorder hashRecorder, cfg *recordConfig, stdout, stderr io.Writer) int {
 	total := len(cfg.files)
 	label := "files"
 	if total == 1 {
@@ -174,7 +178,7 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 
 	for idx, filePath := range cfg.files {
 		fmt.Fprintf(stdout, "[%d/%d] %s: ", idx+1, total, filePath) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
-		hashFile, contentHash, err := recorder.SaveRecord(filePath, cfg.force)
+		hashFile, _, err := recorder.SaveRecord(filePath, cfg.force)
 		if err != nil {
 			failures++
 			fmt.Fprintln(stdout, "FAILED")                                          //nolint:errcheck
@@ -183,14 +187,6 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 		}
 		successes++
 		fmt.Fprintf(stdout, "OK (%s)\n", hashFile) //nolint:errcheck,gosec // G705: writing to stdout, not an HTTP response
-
-		// Perform syscall analysis for ELF binaries (both static and dynamic)
-		if err := syscallCtx.analyzeFile(filePath, contentHash); err != nil {
-			// ErrNotELF and file-not-found are expected for non-analyzable files
-			if !errors.Is(err, elfanalyzer.ErrNotELF) && !errors.Is(err, os.ErrNotExist) {
-				fmt.Fprintf(stderr, "Warning: Syscall analysis failed for %s: %v\n", filePath, err) //nolint:errcheck,gosec // G705: writing to stderr, not an HTTP response
-			}
-		}
 	}
 
 	fmt.Fprintf(stdout, "\nSummary: %d succeeded, %d failed\n", successes, failures) //nolint:errcheck
@@ -198,96 +194,4 @@ func processFiles(recorder hashRecorder, syscallCtx *syscallAnalysisContext, cfg
 		return 1
 	}
 	return 0
-}
-
-// elfSyscallAnalyzer is the interface for analyzing syscalls from an ELF file.
-// It is satisfied by *elfanalyzer.SyscallAnalyzer and can be replaced in tests.
-type elfSyscallAnalyzer interface {
-	AnalyzeSyscallsFromELF(elfFile *elf.File) (*elfanalyzer.SyscallAnalysisResult, error)
-}
-
-// syscallAnalysisContext holds resources for syscall analysis.
-type syscallAnalysisContext struct {
-	syscallStore fileanalysis.SyscallAnalysisStore
-	analyzer     elfSyscallAnalyzer
-	fs           safefileio.FileSystem
-}
-
-// newSyscallAnalysisContext creates a new syscall analysis context.
-func newSyscallAnalysisContext(hashDir string) (*syscallAnalysisContext, error) {
-	pathGetter := filevalidator.NewHybridHashFilePathGetter()
-	store, err := fileanalysis.NewStore(hashDir, pathGetter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create analysis store: %w", err)
-	}
-
-	return &syscallAnalysisContext{
-		syscallStore: fileanalysis.NewSyscallAnalysisStore(store),
-		analyzer:     elfanalyzer.NewSyscallAnalyzer(),
-		fs:           safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
-	}, nil
-}
-
-// analyzeFile performs syscall analysis on an ELF binary (both static and dynamic).
-// contentHash is the prefixed hash (e.g., "sha256:<hex>") already computed by Record.
-// Returns ErrNotELF if the file is not an ELF binary.
-func (ctx *syscallAnalysisContext) analyzeFile(path string, contentHash string) error {
-	// Open file securely - single open for both check and analysis
-	file, err := ctx.fs.SafeOpenFile(path, os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open file securely: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	// Parse ELF from secure file handle
-	elfFile, err := elf.NewFile(file)
-	if err != nil {
-		// Not an ELF file - this is not an error, just skip analysis
-		return elfanalyzer.ErrNotELF
-	}
-	defer func() { _ = elfFile.Close() }()
-
-	// Perform syscall analysis (both static and dynamic ELF binaries)
-	result, err := ctx.analyzer.AnalyzeSyscallsFromELF(elfFile)
-	if err != nil {
-		return fmt.Errorf("analysis failed: %w", err)
-	}
-
-	// Convert elfanalyzer.SyscallAnalysisResult to fileanalysis.SyscallAnalysisResult
-	faResult := convertToFileanalysisResult(result)
-
-	// Save syscall analysis using the reusable store
-	if err := ctx.syscallStore.SaveSyscallAnalysis(path, contentHash, faResult); err != nil {
-		return fmt.Errorf("failed to save analysis result: %w", err)
-	}
-
-	// Log summary
-	slog.Info("Syscall analysis completed", //nolint:gosec // G706: slog's TextHandler escapes control characters (newlines, etc.), preventing log injection
-		"path", path,
-		"total_detected_events", result.Summary.TotalDetectedEvents,
-		"network_syscalls", result.Summary.NetworkSyscallCount,
-		"high_risk", result.Summary.IsHighRisk)
-
-	// Log decode failure summary if any failures occurred.
-	// This provides visibility into potential decode issues without
-	// flooding logs (individual failure logs are capped at maxDecodeFailureLogs
-	// inside findSyscallInstructions).
-	if result.DecodeStats.DecodeFailureCount > 0 {
-		slog.Debug("Instruction decode failures during syscall analysis", //nolint:gosec // G706: slog's TextHandler escapes control characters (newlines, etc.), preventing log injection
-			slog.String("path", path),
-			slog.Int("decode_failures", result.DecodeStats.DecodeFailureCount),
-			slog.Int("total_bytes_analyzed", result.DecodeStats.TotalBytesAnalyzed))
-	}
-
-	return nil
-}
-
-// convertToFileanalysisResult converts elfanalyzer.SyscallAnalysisResult to fileanalysis.SyscallAnalysisResult.
-// Both types embed common.SyscallAnalysisResultCore, enabling direct struct copy
-// without field-by-field assignment. The elfanalyzer-specific DecodeStats field
-// is intentionally excluded as it is not persisted to storage.
-func convertToFileanalysisResult(result *elfanalyzer.SyscallAnalysisResult) *fileanalysis.SyscallAnalysisResult {
-	return &fileanalysis.SyscallAnalysisResult{
-		SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
-	}
 }

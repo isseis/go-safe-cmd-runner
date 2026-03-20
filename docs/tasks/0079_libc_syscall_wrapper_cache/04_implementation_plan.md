@@ -1,0 +1,277 @@
+# 実装計画書: libc システムコールラッパー関数キャッシュ
+
+## 進捗サマリー
+
+- [x] フェーズ 1: 基盤整備（型定義・既存 API 拡張）
+- [x] フェーズ 2: `libccache` パッケージの実装
+- [x] フェーズ 3: `Validator` の統合
+- [x] フェーズ 4: `cmd/record` のリファクタリング
+- [x] フェーズ 5: 統合テスト・最終確認
+
+---
+
+## フェーズ 1: 基盤整備（型定義・既存 API 拡張）
+
+### 1-1. `common.SyscallInfo` への `Source` フィールド追加
+
+- [x] `internal/common/syscall_types.go` に `Source string \`json:"source,omitempty"\`` を追加する
+- [x] `internal/common/syscall_types_test.go` に `Source` フィールドの JSON `omitempty` 動作テストを追加する
+- [x] `make fmt && make test && make lint` で既存テストがパスすることを確認する
+
+### 1-2. `elfanalyzer.SyscallAnalyzer.AnalyzeSyscallsInRange` の追加
+
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
+  ```go
+  func (a *SyscallAnalyzer) AnalyzeSyscallsInRange(
+      code []byte,
+      sectionBaseAddr uint64,
+      startOffset, endOffset int,
+      machine elf.Machine,
+  ) ([]common.SyscallInfo, error)
+  ```
+- [x] 実装では `code[startOffset:endOffset]` をスライスとして渡し、`baseAddr` を `sectionBaseAddr+uint64(startOffset)` にシフトする。これにより `backwardScanForSyscallNumber` の既存の `max(windowStart, 0)` がスライス先頭（= 元の `startOffset` 位置）へのクランプを担うため、追加のクランプ処理や専用ヘルパーメソッドは追加しない
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `AnalyzeSyscallsInRange` のテストを追加する:
+  - [x] 正常系: syscall 命令を含む範囲で正しく検出される
+  - [x] 境界チェック: `startOffset` でクランプが効き、隣接バイトが混入しない
+  - [x] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出される
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+### 1-2b. `elfanalyzer.SyscallAnalyzer.GetSyscallTable` の追加
+
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に以下のメソッドを追加する:
+  ```go
+  func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool)
+  ```
+  - `archConfigs[machine]` が存在する場合は `(cfg.syscallTable, true)` を返す
+  - 存在しない場合は `(nil, false)` を返す
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` に `GetSyscallTable` のテストを追加する:
+  - [x] 対応アーキテクチャ（`elf.EM_X86_64`）で `(table, true)` が返る
+  - [x] 非対応アーキテクチャで `(nil, false)` が返る
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+### 1-3. `fileanalysis/schema.go` コメント更新
+
+- [x] `internal/fileanalysis/schema.go` の `SyscallAnalysis` フィールドのコメントを「静的 ELF バイナリ、および libc 経由の syscall が検出された動的 ELF バイナリ」に更新する
+
+---
+
+## フェーズ 2: `libccache` パッケージの実装
+
+### 2-1. `schema.go` の作成
+
+- [x] `internal/libccache/schema.go` を作成する:
+  - [x] `LibcCacheSchemaVersion = 1` 定数
+  - [x] `LibcCacheFile` 構造体
+  - [x] `WrapperEntry` 構造体
+
+### 2-2. `errors.go` の作成
+
+- [x] `internal/libccache/errors.go` を作成する:
+  - [x] `ErrLibcFileNotAccessible`
+  - [x] `ErrExportSymbolsFailed`
+  - [x] `ErrCacheWriteFailed`
+  - [x] `SourceLibcSymbolImport = "libc_symbol_import"` 定数
+
+### 2-3. `analyzer.go` の実装
+
+- [x] `internal/libccache/analyzer.go` を作成する:
+  - [x] `MaxWrapperFunctionSize = 256` 定数
+  - [x] `LibcWrapperAnalyzer` 型と `NewLibcWrapperAnalyzer()` コンストラクタ
+  - [x] `Analyze(libcELFFile *elf.File) ([]WrapperEntry, error)` の実装:
+    - [x] `.text` セクションのデータとベースアドレスの取得
+    - [x] `elf.File.DynamicSymbols()` によるエクスポートシンボルの列挙:
+      - `elf.ErrNoSymbols` → 空スライスとして続行（`.dynsym` なし = ラッパー 0 件）
+      - その他のエラー → `fmt.Errorf("...: %w", ErrExportSymbolsFailed)` を返す
+    - [x] `STB_LOCAL`/`SHN_UNDEF`/非 `STT_FUNC` シンボルの除外
+    - [x] サイズフィルタ（256 バイト超を除外）
+    - [x] シンボルアドレスから `.text` セクション内オフセットへの変換
+    - [x] `AnalyzeSyscallsInRange` の呼び出しと結果の検査
+    - [x] `DeterminationMethod == "immediate"` かつ `Number >= 0` かつ全 Number 同一のフィルタ
+    - [x] `WrapperEntry` の収集と `Number` 昇順・同一 `Number` 内 `Name` 昇順の複合キーソート
+
+- [x] `internal/libccache/analyzer_test.go` を作成する（インメモリ ELF バイナリを使用）:
+  - [x] syscall 命令を含む関数（≤256B）が検出されること
+  - [x] 256 バイト超の関数が除外されること
+  - [x] 複数の異なる syscall 番号を含む関数が除外されること
+  - [x] 同一 syscall 番号の syscall 命令を複数持つ関数は採用されること
+  - [x] syscall 命令を含まない関数が除外されること
+  - [x] `WrapperEntry` が `Number` 昇順・同一 `Number` 内で `Name` 昇順でソートされていること
+  - [x] `DeterminationMethod != "immediate"` の関数が除外されること
+  - [x] 非対応アーキテクチャで `*elfanalyzer.UnsupportedArchitectureError` が返り `errors.As` で検出されること
+  - [x] `DynamicSymbols()` が `elf.ErrNoSymbols` を返した場合に空スライスが返ること（エラーなし）
+  - [x] `DynamicSymbols()` が `elf.ErrNoSymbols` 以外のエラーを返した場合に `ErrExportSymbolsFailed` が返ること
+
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+### 2-4. `cache.go` の実装
+
+- [x] `internal/libccache/cache.go` を作成する:
+  - [x] `LibcCacheManager` 型と `NewLibcCacheManager()` コンストラクタ（`lib-cache/` ディレクトリの自動作成含む）
+  - [x] `GetOrCreate(libcPath, libcHash string) ([]WrapperEntry, error)` の実装:
+    - [x] キャッシュファイルパスの生成（`pathencoding.Encode`）
+    - [x] キャッシュファイルの読み込みと有効性判定（3 条件チェック）
+    - [x] キャッシュ MISS 時の libc 解析と書き込み
+    - [x] `ErrLibcFileNotAccessible`/`ErrCacheWriteFailed` エラーハンドリング
+    - [x] `*elfanalyzer.UnsupportedArchitectureError` のラップなし伝播（呼び出し元が `errors.As` で検出できること）
+
+- [x] `internal/libccache/cache_test.go` を作成する（テンポラリディレクトリを使用）:
+  - [x] キャッシュ未存在時に解析・生成されること
+  - [x] ハッシュ一致時にキャッシュが再利用されること（アナライザーが呼ばれないこと）
+  - [x] ハッシュ不一致時にキャッシュが再生成されること
+  - [x] キャッシュファイルが破損している場合に再解析されること
+  - [x] `schema_version` 不一致時にキャッシュが再生成されること
+  - [x] `syscall_wrappers` が `number` 昇順・同一 `number` 内で `name` 昇順でソートされていること
+  - [x] libc ファイルが読み取れない場合にエラーを返すこと
+  - [x] キャッシュファイルの書き込みに失敗した場合にエラーを返すこと
+
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+### 2-5. `matcher.go` の実装
+
+- [x] `internal/libccache/matcher.go` を作成する:
+  - [x] `SyscallNumberTable` インターフェース定義
+  - [x] `ImportSymbolMatcher` 型と `NewImportSymbolMatcher()` コンストラクタ
+  - [x] `Match(importSymbols []string, wrappers []WrapperEntry) []common.SyscallInfo` の実装:
+    - [x] `WrapperEntry` を `Name` キーのマップに変換
+    - [x] インポートシンボルとの完全一致照合
+    - [x] `SyscallInfo` の生成（`Source = "libc_symbol_import"`, `Location = 0`, `DeterminationMethod = "immediate"`）
+    - [x] `Number` 重複の排除
+
+- [x] `internal/libccache/matcher_test.go` を作成する:
+  - [x] シンボルがキャッシュに存在する場合に `SyscallInfo` が生成されること
+  - [x] シンボルがキャッシュに存在しない場合は無視されること
+  - [x] 生成された `SyscallInfo` の `Source` が `"libc_symbol_import"` であること
+  - [x] 生成された `SyscallInfo` の `Location` が `0` であること
+  - [x] 生成された `SyscallInfo` の `DeterminationMethod` が `"immediate"` であること
+  - [x] 同一 `Number` のエントリが重複しないこと
+  - [x] 同一 `Number` にマップされる複数シンボルのうち辞書順最小のシンボル名を持つエントリが採用されること
+
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+---
+
+## フェーズ 3: `Validator` の統合
+
+### 3-1. パッケージ非公開ヘルパー関数の実装
+
+- [x] `internal/filevalidator/validator.go` に以下のヘルパー関数を追加する:
+  - [x] `openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error)`: SafeOpenFile + elf.NewFile
+  - [x] `extractUNDSymbols(elfFile *elf.File) ([]string, error)`: `.dynsym` UND シンボルの抽出（`elf.ErrNoSymbols` は空スライス扱い、それ以外のエラーは返す）
+  - [x] `findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry`: libc エントリの特定
+  - [x] `mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo`: Number で一意化・direct 優先
+  - [x] `buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo) *fileanalysis.SyscallAnalysisData`: SyscallAnalysisData の構築
+
+### 3-2. `Validator` へのフィールドとセッタ追加
+
+- [x] `Validator` 構造体に `libcCache`（`LibcCacheInterface`）と `syscallAnalyzer`（`SyscallAnalyzerInterface`）フィールドを追加する
+  - 注: `elfanalyzer` → `filevalidator` の既存循環依存を避けるため、具体型の代わりにインターフェースを使用。
+    `LibcCacheInterface.GetOrCreateSyscalls` がキャッシュ取得・シンボル照合を一括実行。
+    アダプター実装は `cmd/record/libc_cache_adapter.go` に配置。
+- [x] `SetLibcCache(m LibcCacheInterface)` を実装する（仕様書の `SetLibcCacheManager` に相当）
+- [x] `SetSyscallAnalyzer(a SyscallAnalyzerInterface)` を実装する
+
+### 3-3. `updateAnalysisRecord()` のコールバック拡張
+
+- [x] `store.Update()` コールバック内に以下を統合する:
+  - [x] `openELFFile()` による ELF オープン（ErrNotELF → スキップ・記録保存）
+  - [x] `findLibcEntry()` による libc エントリ特定
+  - [x] `extractUNDSymbols()` による UND シンボル抽出
+  - [x] `libcCache.GetOrCreateSyscalls()` による libc キャッシュ取得と照合（`ErrUnsupportedArch` → スキップ・直接解析へ）
+  - [x] `syscallAnalyzer.AnalyzeSyscallsFromELF()` による直接 syscall 解析（`ErrUnsupportedArch` → スキップ）
+  - [x] `mergeSyscallInfos()` による統合
+  - [x] `buildSyscallAnalysisData()` による `record.SyscallAnalysis` 設定
+
+### 3-4. `Validator` のテスト追加・更新
+
+- [x] `internal/filevalidator/validator_test.go` に以下のテストを追加する:
+  - [x] 非 ELF ファイル: syscall 解析全体をスキップして記録保存が続行すること
+  - [x] キャッシュ失敗時: コールバックがエラーを返し記録ファイルが保存されないこと（libc cache エラーパス）
+  - [x] `ErrUnsupportedArch` 時: libc 解析をスキップして記録保存が続行すること
+
+- [x] 上記のヘルパー関数 (`findLibcEntry`, `mergeSyscallInfos`, `buildSyscallAnalysisData`) の単体テストを追加する:
+  - [x] `buildSyscallAnalysisData`: `HasUnknownSyscalls` が `direct` 引数の `Number < 0` エントリの有無から計算されること（libc import 由来の `Number < 0` は対象外）
+
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+---
+
+## フェーズ 4: `cmd/record` のリファクタリング
+
+### 4-1. `syscallAnalysisContext` の廃止
+
+- [x] `cmd/record/main.go` から `syscallAnalysisContext` 型と `newSyscallAnalysisContext()` を削除する
+- [x] `deps.syscallContextFactory` フィールドを削除する
+- [x] `defaultDeps()` から `syscallContextFactory` を削除する
+- [x] `processFiles()` から `syscallCtx.analyzeFile()` 呼び出しを削除する
+- [x] `run()` から `syscallContextFactory` の呼び出しを削除する
+
+### 4-2. libc キャッシュマネージャーと syscall アナライザーの注入
+
+- [x] `run()` 内で `filevalidator.Validator` に対して:
+  - [x] 既存の `fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())` 呼び出しが削除されていないことを確認する（`syscallAnalysisContext` 廃止の副作用で誤って消さないよう注意）
+  - [x] `elfanalyzer.NewSyscallAnalyzer()` を生成して `SetSyscallAnalyzer()` で設定する
+  - [x] `libccache.NewLibcCacheManager()` を生成して `SetLibcCache()` で設定する
+  - [x] `lib-cache/` ディレクトリパス（`filepath.Join(cfg.hashDir, "lib-cache")`）を使用する
+
+### 4-3. `cmd/record` のテスト更新
+
+- [x] `cmd/record` のテストを更新して `syscallAnalysisContext` 依存を除去する:
+  - [x] `deps.syscallContextFactory` フィールドへの参照をすべて削除する
+  - [x] `processFiles` から `syscallCtx.analyzeFile()` 呼び出しを削除し、`SyscallAnalysis` が `Validator` 経由で処理されることを確認する（`fakeRecorder` を使うテストでは Validator の内部処理はスキップされる）
+  - [-] `run()` が `SetSyscallAnalyzer` / `SetLibcCache` を呼び出すことを `deps` 差し替えで確認する（fakeRecorder が *filevalidator.Validator でないため型アサーションでスキップされ、既存結合テストがカバー）
+- [x] `make fmt && make test && make lint` でパスすることを確認する
+
+---
+
+## フェーズ 5: 統合テスト・最終確認
+
+### 5-1. 統合テストの作成
+
+- [x] `internal/libccache/integration_test.go` を作成する（`//go:build integration`）:
+  - [x] GCC が利用できない環境では `t.Skip()` でスキップ
+  - [x] テスト用 C プログラム（mkdir syscall を呼ぶ最小プログラム）をオンデマンドコンパイル
+  - [x] コンパイルしたバイナリを `record` した際に `mkdir` syscall（番号 83）が `DetectedSyscalls` に含まれることを確認
+  - [x] `source: "libc_symbol_import"` の `SyscallInfo` が存在することを確認
+  - [x] `Location` が `0` であることを確認
+  - [x] `lib-cache/` 以下にキャッシュファイルが生成されることを確認
+  - [x] 2 回目の record 実行でキャッシュが再利用される（libc を再解析しない）ことを確認:
+    - 確認方法: 1 回目の record でキャッシュファイルが生成された後、キャッシュファイルの mtime を記録する。2 回目の record 実行後にキャッシュファイルの mtime が変化していないことを `os.Stat` で検証する（mtime 不変 = ファイルが上書きされていない = libc を再解析していない）
+
+### 5-2. 受け入れ条件の最終確認
+
+- [x] **AC-1**: `common.SyscallInfo` に `Source` フィールドが追加されていること、既存テストがパスすること
+- [x] **AC-2**: `record` 実行時にキャッシュファイルが `lib-cache/` 以下に生成されること、各フィールドが仕様通りであること、`number` 昇順・同一 `number` 内で `name` 昇順でソートされていること、サイズフィルタと複数 syscall フィルタが機能していること
+- [x] **AC-3**: キャッシュ HIT/MISS・再生成・破損時の動作、保存順序（キャッシュ先行）、エラー時の記録ファイル未保存、非対応アーキテクチャでの継続
+- [x] **AC-4**: GCC でビルドした専用バイナリを `record` した際に `mkdir`（番号 83）が検出されること、`source: "libc_symbol_import"`・`location: 0`・重複なし・direct 優先
+- [x] **AC-5**: 静的 ELF バイナリの既存フローが変わらないこと、`make test` 全体がパスすること
+
+### 5-3. 最終ビルド・テスト
+
+- [x] `make build` でビルドが成功することを確認する（sudo不要部分）
+- [x] `make test` で全テストがパスすることを確認する
+- [x] `make lint` でリント警告がないことを確認する
+- [x] `go test -tags integration -v ./internal/libccache/...` で統合テストがパスすることを確認する（GCC が利用可能な環境）
+
+---
+
+## 作業順序の根拠
+
+```
+フェーズ 1（基盤）
+  → フェーズ 2（libccache パッケージ）
+    → フェーズ 3（Validator 統合）
+      → フェーズ 4（cmd/record リファクタリング）
+        → フェーズ 5（統合テスト・確認）
+```
+
+- フェーズ 1 で `SyscallInfo.Source` フィールドと `AnalyzeSyscallsInRange` を追加することで、フェーズ 2 の `libccache` パッケージが依存する API が揃う
+- フェーズ 2 が完了してから `Validator` に統合することで、各コンポーネントを独立してテストできる
+- フェーズ 4 の `cmd/record` リファクタリング（`syscallAnalysisContext` の廃止）は、フェーズ 3 の `Validator` 統合が完了してから行う
+- フェーズ 5 の統合テストは、すべての実装が揃った段階で end-to-end の動作を確認する
+
+## 注意事項
+
+- 各フェーズの末尾で `make fmt && make test && make lint` を実行し、回帰が発生していないことを確認する
+- `//go:build integration` タグが必要なファイルは既存のパターン（`syscall_analyzer_integration_test.go` 等）に倣う
+- `git commit` は実施しない（ユーザーが明示的に要求した場合のみ）
+- ツール呼び出しはシーケンシャルに行う（1 ツール → 結果確認 → 次のツール）

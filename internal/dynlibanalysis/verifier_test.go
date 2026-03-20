@@ -137,6 +137,6 @@ func TestVerify_FileNotFound(t *testing.T) {
 	err := v.Verify(deps)
 	require.Error(t, err)
 	// Must NOT be a hash mismatch — file could not be read at all.
-	var hashErr *ErrLibraryHashMismatch
-	assert.False(t, errors.As(err, &hashErr))
+	_, ok := errors.AsType[*ErrLibraryHashMismatch](err)
+	assert.False(t, ok)
 }

@@ -1,6 +1,7 @@
 package filevalidator
 
 import (
+	"debug/elf"
 	"encoding/json"
 	"errors"
 	"os"
@@ -1216,6 +1217,307 @@ func TestRecord_Force_NetworkToStaticBinary_ClearsSymbolAnalysis(t *testing.T) {
 	require.NoError(t, loadErr)
 	assert.Nil(t, record.SymbolAnalysis,
 		"SymbolAnalysis must be nil after re-recording as StaticBinary")
+}
+
+// ---------------------------------------------------------------------------
+// Stub implementations for SyscallAnalyzerInterface and LibcCacheInterface
+// ---------------------------------------------------------------------------
+
+// stubLibcCache implements LibcCacheInterface for tests.
+type stubLibcCache struct {
+	syscalls []common.SyscallInfo
+	err      error
+}
+
+func (s *stubLibcCache) GetOrCreateSyscalls(_, _ string, _ []string, _ elf.Machine) ([]common.SyscallInfo, error) {
+	return s.syscalls, s.err
+}
+
+// ---------------------------------------------------------------------------
+// Tests for helper functions
+// ---------------------------------------------------------------------------
+
+func TestFindLibcEntry(t *testing.T) {
+	t.Run("returns_libc_entry_when_present", func(t *testing.T) {
+		deps := &fileanalysis.DynLibDepsData{
+			Libs: []fileanalysis.LibEntry{
+				{SOName: "libm.so.6", Path: "/lib/libm.so.6", Hash: "sha256:aaa"},
+				{SOName: "libc.so.6", Path: "/lib/libc.so.6", Hash: "sha256:bbb"},
+			},
+		}
+		entry := findLibcEntry(deps)
+		require.NotNil(t, entry)
+		assert.Equal(t, "libc.so.6", entry.SOName)
+	})
+
+	t.Run("returns_nil_when_absent", func(t *testing.T) {
+		deps := &fileanalysis.DynLibDepsData{
+			Libs: []fileanalysis.LibEntry{
+				{SOName: "libm.so.6", Path: "/lib/libm.so.6", Hash: "sha256:aaa"},
+			},
+		}
+		assert.Nil(t, findLibcEntry(deps))
+	})
+}
+
+func TestMergeSyscallInfos(t *testing.T) {
+	libc := []common.SyscallInfo{
+		{Number: 1, Source: "libc_symbol_import", Name: "write"},
+		{Number: 2, Source: "libc_symbol_import", Name: "read"},
+	}
+	direct := []common.SyscallInfo{
+		{Number: 1, Source: "", Name: "write_direct"},
+	}
+
+	merged := mergeSyscallInfos(libc, direct)
+	byNum := make(map[int]common.SyscallInfo)
+	for _, m := range merged {
+		byNum[m.Number] = m
+	}
+
+	// Number 1: direct takes priority
+	assert.Equal(t, "", byNum[1].Source, "direct entry must win")
+	// Number 2: libc entry kept
+	assert.Equal(t, "libc_symbol_import", byNum[2].Source)
+
+	// Output must be sorted by Number ascending.
+	require.Len(t, merged, 2)
+	assert.Equal(t, 1, merged[0].Number, "first entry must be Number=1")
+	assert.Equal(t, 2, merged[1].Number, "second entry must be Number=2")
+}
+
+func TestMergeSyscallInfos_SortOrder(t *testing.T) {
+	// Feed entries in reverse order to confirm output is always sorted ascending.
+	libc := []common.SyscallInfo{
+		{Number: 99, Source: "libc_symbol_import"},
+		{Number: 3, Source: "libc_symbol_import"},
+		{Number: 42, Source: "libc_symbol_import"},
+	}
+	merged := mergeSyscallInfos(libc, nil)
+	require.Len(t, merged, 3)
+	assert.Equal(t, 3, merged[0].Number)
+	assert.Equal(t, 42, merged[1].Number)
+	assert.Equal(t, 99, merged[2].Number)
+}
+
+func TestBuildSyscallAnalysisData(t *testing.T) {
+	t.Run("HasUnknownSyscalls_set_from_direct_entries", func(t *testing.T) {
+		all := []common.SyscallInfo{
+			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
+			{Number: 42, Source: "libc_symbol_import"},
+		}
+		direct := []common.SyscallInfo{
+			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
+		}
+		data := buildSyscallAnalysisData(all, direct, elf.EM_X86_64)
+		assert.True(t, data.HasUnknownSyscalls, "should detect unknown from direct")
+		assert.True(t, data.Summary.IsHighRisk, "IsHighRisk must mirror HasUnknownSyscalls")
+		assert.Equal(t, "x86_64", data.Architecture)
+	})
+
+	t.Run("HasUnknownSyscalls_not_set_from_libc_entries", func(t *testing.T) {
+		// libc_symbol_import with Number < 0 should NOT set HasUnknownSyscalls
+		all := []common.SyscallInfo{
+			{Number: -1, Source: "libc_symbol_import"},
+		}
+		direct := []common.SyscallInfo{}
+		data := buildSyscallAnalysisData(all, direct, elf.EM_AARCH64)
+		assert.False(t, data.HasUnknownSyscalls)
+		assert.False(t, data.Summary.IsHighRisk, "IsHighRisk must mirror HasUnknownSyscalls")
+		assert.Equal(t, "arm64", data.Architecture)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Tests for Validator with LibcCache and SyscallAnalyzer integration
+// ---------------------------------------------------------------------------
+
+// newValidatorWithLibcCache creates a test validator with stub libc cache and
+// a non-ELF target file (so ELF open fails gracefully for basic tests).
+func newValidatorWithStubs(t *testing.T, libcCache LibcCacheInterface) (*Validator, string) {
+	t.Helper()
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("not an ELF"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	if libcCache != nil {
+		v.SetLibcCache(libcCache)
+	}
+	return v, targetFile
+}
+
+// TestRecord_LibcCache_NonELFFile verifies that non-ELF files are recorded
+// without error even when a LibcCache is injected.
+func TestRecord_LibcCache_NonELFFile(t *testing.T) {
+	stub := &stubLibcCache{
+		syscalls: []common.SyscallInfo{{Number: 42, Source: "libc_symbol_import"}},
+	}
+	v, targetFile := newValidatorWithStubs(t, stub)
+
+	_, _, err := v.SaveRecord(targetFile, false)
+	require.NoError(t, err, "non-ELF file should be recorded without error")
+
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	// Non-ELF: no SyscallAnalysis
+	assert.Nil(t, record.SyscallAnalysis)
+}
+
+// TestRecord_LibcCache_Error_CausesRecordFailure verifies that a fatal libc
+// cache error causes analyzeSyscalls to return an error.
+func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
+	// Use a real ELF binary so that openELFFile succeeds and reaches the
+	// libc cache path. /usr/bin/ls is a standard ELF available on all Linux systems.
+	const elfPath = "/usr/bin/ls"
+	if _, err := os.Stat(elfPath); err != nil {
+		t.Skipf("skipping: %s not available: %v", elfPath, err)
+	}
+
+	tempDir := safeTempDir(t)
+	stub := &stubLibcCache{err: errors.New("libc file not accessible")}
+	v, err := New(&SHA256{}, tempDir)
+	require.NoError(t, err)
+	v.SetLibcCache(stub)
+
+	// Inject a DynLibDeps record with a libc entry so the libc cache is called.
+	record := &fileanalysis.Record{
+		DynLibDeps: &fileanalysis.DynLibDepsData{
+			Libs: []fileanalysis.LibEntry{
+				{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
+			},
+		},
+	}
+	analyzeErr := v.analyzeSyscalls(record, elfPath)
+	require.Error(t, analyzeErr, "fatal libc cache error must propagate")
+	require.Contains(t, analyzeErr.Error(), "libc cache error")
+}
+
+// TestRecord_LibcCache_UnsupportedArch_SkipsAndContinues verifies that
+// ErrUnsupportedArch from libc cache is skipped and the record is still saved.
+func TestRecord_LibcCache_UnsupportedArch_SkipsAndContinues(t *testing.T) {
+	stub := &stubLibcCache{
+		err: ErrUnsupportedArch,
+	}
+	v, targetFile := newValidatorWithStubs(t, stub)
+
+	_, _, err := v.SaveRecord(targetFile, false)
+	// non-ELF file → ELF open exits early, cache not called → no error
+	require.NoError(t, err)
+}
+
+// TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis verifies that force re-recording
+// a file that was previously recorded as ELF (with SyscallAnalysis set) and is now
+// treated as non-ELF clears SyscallAnalysis (schema contract: nil for non-ELF).
+func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
+	// Use a real ELF for the first record so SyscallAnalysis gets populated,
+	// then replace the file with non-ELF bytes and force re-record.
+	const elfPath = "/usr/bin/ls"
+	if _, err := os.Stat(elfPath); err != nil {
+		t.Skipf("skipping: %s not available: %v", elfPath, err)
+	}
+
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	// Copy the ELF to a writable location so we can replace it.
+	elfBytes, err := os.ReadFile(elfPath)
+	require.NoError(t, err)
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, elfBytes, 0o755))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// Inject a stub syscall analyzer that returns one syscall for any ELF.
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	// Verify first record has SyscallAnalysis.
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.SyscallAnalysis, "precondition: SyscallAnalysis must be set after ELF record")
+
+	// Overwrite target with non-ELF bytes and force re-record.
+	require.NoError(t, os.WriteFile(targetFile, []byte("not an ELF"), 0o644))
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr = v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	assert.Nil(t, record.SyscallAnalysis,
+		"SyscallAnalysis must be nil after re-recording a non-ELF file")
+}
+
+// stubSyscallAnalyzerReturnsOne is a SyscallAnalyzerInterface that returns a single
+// fake syscall for any ELF file, used to seed SyscallAnalysis in test records.
+type stubSyscallAnalyzerReturnsOne struct{}
+
+func (s *stubSyscallAnalyzerReturnsOne) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, error) {
+	return []common.SyscallInfo{{Number: 1, Name: "write"}}, nil
+}
+
+func (s *stubSyscallAnalyzerReturnsOne) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
+	return nil, false
+}
+
+// TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis verifies that force re-recording
+// an ELF that previously had syscalls detected now clears SyscallAnalysis when the
+// analyzer returns zero results (schema contract: nil when no syscalls detected).
+func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
+	const elfPath = "/usr/bin/ls"
+	if _, err := os.Stat(elfPath); err != nil {
+		t.Skipf("skipping: %s not available: %v", elfPath, err)
+	}
+
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	elfBytes, err := os.ReadFile(elfPath)
+	require.NoError(t, err)
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, elfBytes, 0o755))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// First record: analyzer returns one syscall.
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsOne{})
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.SyscallAnalysis, "precondition: SyscallAnalysis must be set")
+
+	// Second record (force=true): analyzer returns no syscalls.
+	v.SetSyscallAnalyzer(&stubSyscallAnalyzerReturnsNone{})
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	record, loadErr = v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	assert.Nil(t, record.SyscallAnalysis,
+		"SyscallAnalysis must be nil when re-recording with zero detected syscalls")
+}
+
+// stubSyscallAnalyzerReturnsNone is a SyscallAnalyzerInterface that returns no syscalls.
+type stubSyscallAnalyzerReturnsNone struct{}
+
+func (s *stubSyscallAnalyzerReturnsNone) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, error) {
+	return nil, nil
+}
+
+func (s *stubSyscallAnalyzerReturnsNone) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
+	return nil, false
 }
 
 // TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis verifies the same

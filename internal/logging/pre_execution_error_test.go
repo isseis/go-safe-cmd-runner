@@ -61,8 +61,8 @@ func TestPreExecutionError_As_Success(t *testing.T) {
 	}
 
 	// Test direct error
-	var target *PreExecutionError
-	require.True(t, errors.As(originalErr, &target), "errors.As() should return true for direct PreExecutionError")
+	target, ok := errors.AsType[*PreExecutionError](originalErr)
+	require.True(t, ok, "errors.AsType() should return true for direct PreExecutionError")
 
 	// Verify the extracted error has the same content
 	assert.Equal(t, originalErr.Type, target.Type)
@@ -83,8 +83,8 @@ func TestPreExecutionError_As_WrappedError(t *testing.T) {
 	wrappedErr := fmt.Errorf("failed to initialize: %w", originalErr)
 
 	// Test wrapped error extraction
-	var target *PreExecutionError
-	require.True(t, errors.As(wrappedErr, &target), "errors.As() should return true for wrapped PreExecutionError")
+	target, ok := errors.AsType[*PreExecutionError](wrappedErr)
+	require.True(t, ok, "errors.AsType() should return true for wrapped PreExecutionError")
 
 	// Verify the extracted error has the same content as the original
 	assert.Equal(t, originalErr.Type, target.Type)
@@ -107,8 +107,8 @@ func TestPreExecutionError_As_MultipleWrapping(t *testing.T) {
 	level3 := fmt.Errorf("level 3: %w", level2)
 
 	// Test extraction through multiple wrap levels
-	var target *PreExecutionError
-	require.True(t, errors.As(level3, &target), "errors.As() should return true for multiply wrapped PreExecutionError")
+	target, ok := errors.AsType[*PreExecutionError](level3)
+	require.True(t, ok, "errors.AsType() should return true for multiply wrapped PreExecutionError")
 
 	// Verify the extracted error is the original one
 	assert.Equal(t, originalErr.Type, target.Type)
@@ -140,8 +140,8 @@ func TestPreExecutionError_As_False_Cases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var target *PreExecutionError
-			assert.False(t, errors.As(tt.err, &target))
+			target, ok := errors.AsType[*PreExecutionError](tt.err)
+			assert.False(t, ok)
 			assert.Nil(t, target)
 		})
 	}
@@ -156,8 +156,8 @@ func TestPreExecutionError_As_WrongTargetType(t *testing.T) {
 	}
 
 	// Test with wrong target type (different error type)
-	var wrongTarget *customError
-	assert.False(t, errors.As(err, &wrongTarget))
+	wrongTarget, ok := errors.AsType[*customError](err)
+	assert.False(t, ok)
 	assert.Nil(t, wrongTarget)
 }
 
@@ -178,8 +178,8 @@ func TestPreExecutionError_As_Integration(t *testing.T) {
 
 	// Test the pattern used in main.go
 	err := wrappedError()
-	var preExecErr *PreExecutionError
-	require.True(t, errors.As(err, &preExecErr), "Should be able to extract PreExecutionError from wrapped error")
+	preExecErr, ok := errors.AsType[*PreExecutionError](err)
+	require.True(t, ok, "Should be able to extract PreExecutionError from wrapped error")
 
 	// Verify all fields are correctly extracted
 	assert.Equal(t, ErrorTypeConfigParsing, preExecErr.Type)
@@ -233,10 +233,9 @@ func TestPreExecutionError_As_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.errorChain()
-			var preExecErr *PreExecutionError
-			found := errors.As(err, &preExecErr)
+			preExecErr, found := errors.AsType[*PreExecutionError](err)
 
-			assert.Equal(t, tt.shouldFind, found, "errors.As() result: %s", tt.description)
+			assert.Equal(t, tt.shouldFind, found, "errors.AsType() result: %s", tt.description)
 
 			if tt.shouldFind {
 				assert.NotNil(t, preExecErr, "preExecErr should not be nil when found")

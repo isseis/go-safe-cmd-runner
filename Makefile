@@ -112,7 +112,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables
+.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables
 
 all: security-check
 
@@ -135,7 +135,7 @@ build-security-check:
 # Production binary build rules
 $(BINARY_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/record/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v ./cmd/record
 
 $(BINARY_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
@@ -150,7 +150,7 @@ $(BINARY_RUNNER): $(GO_SOURCES)
 # Test binary build rules
 $(BINARY_TEST_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/record/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v ./cmd/record
 
 $(BINARY_TEST_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
@@ -432,9 +432,15 @@ test: unit-test
 elfanalyzer-integration-test:
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/runner/security/elfanalyzer/
 
+# libccache integration tests - runs integration-tagged tests for libccache package
+# Requires: Linux, gcc, amd64 or arm64 arch
+# Tests gracefully skip if requirements are not met (t.Skip)
+libccache-integration-test:
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/libccache/
+
 # CI test target - tests that can run without sudo or external services
 # Suitable for GitHub Actions and other CI environments
-test-ci: unit-test e2e-test security-test performance-test elfanalyzer-integration-test
+test-ci: unit-test e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
 # Excludes Slack notification tests (require external webhook configuration)
@@ -556,15 +562,27 @@ SYSCALL_TABLE_OUTPUTS := \
 	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
 	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
 
-$(SYSCALL_TABLE_OUTPUTS): $(SYSCALL_TABLE_SCRIPT) $(X86_SYSCALL_HEADER) $(ARM64_SYSCALL_HEADER)
+# generate-syscall-tables is a manual-only target.
+# The generated files are committed to the repository and do not need to be
+# regenerated during normal builds. Defining a file-level rule for
+# $(SYSCALL_TABLE_OUTPUTS) would cause Make to check for the kernel headers
+# (e.g. /usr/include/x86_64-linux-gnu/asm/unistd_64.h) on every build,
+# which fails on arm64 hosts where x86_64 headers are not installed.
+generate-syscall-tables:
 	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
 		echo "Error: $(PYTHON) is required but not found in PATH"; \
 		exit 1; \
 	fi
+	@if [ ! -f "$(X86_SYSCALL_HEADER)" ]; then \
+		echo "Error: $(X86_SYSCALL_HEADER) not found. Install linux-libc-dev (Debian/Ubuntu: apt-get install linux-libc-dev gcc-multilib)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(ARM64_SYSCALL_HEADER)" ]; then \
+		echo "Error: $(ARM64_SYSCALL_HEADER) not found. Install linux-libc-dev (Debian/Ubuntu: apt-get install linux-libc-dev)"; \
+		exit 1; \
+	fi
 	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --x86-header $(X86_SYSCALL_HEADER) --arm64-header $(ARM64_SYSCALL_HEADER)
 	$(GOFUMPTCMD) -w $(SYSCALL_TABLE_OUTPUTS)
-
-generate-syscall-tables: $(SYSCALL_TABLE_OUTPUTS)
 
 deadcode:
 	deadcode ./cmd/record ./cmd/runner ./cmd/verify
