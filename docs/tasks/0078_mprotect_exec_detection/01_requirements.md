@@ -293,7 +293,7 @@ x86_64 において `mprotect` の引数順序は：
 
 ### AC-6: 複数 `mprotect` 検出時の集約
 
-- [ ] 複数の `mprotect` syscall が検出された場合に `ArgEvalResults` へのエントリが1件のみであること
+- [ ] 複数の `mprotect` syscall が検出された場合に `ArgEvalResults` 中の `SyscallName == "mprotect"` のエントリが1件のみであること
 - [ ] `exec_confirmed` が1件でもある場合に `ArgEvalResults` のエントリが `exec_confirmed` となること
 - [ ] `exec_confirmed` がなく `exec_unknown` が1件以上ある場合に `ArgEvalResults` のエントリが `exec_unknown` となること
 
