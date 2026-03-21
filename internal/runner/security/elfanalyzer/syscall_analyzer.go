@@ -442,22 +442,14 @@ func (a *SyscallAnalyzer) evalSingleMprotect(
 	decoder MachineCodeDecoder,
 	entry common.SyscallInfo,
 ) common.SyscallArgEvalResult {
-	if entry.Location < baseAddr {
+	offset, ok := validateSyscallOffset(entry.Location, baseAddr, len(code))
+	if !ok {
 		return common.SyscallArgEvalResult{
 			SyscallName: "mprotect",
 			Status:      common.SyscallArgEvalExecUnknown,
 			Details:     "invalid offset",
 		}
 	}
-	delta := entry.Location - baseAddr
-	if delta > uint64(math.MaxInt) || int(delta) > len(code)-2 {
-		return common.SyscallArgEvalResult{
-			SyscallName: "mprotect",
-			Status:      common.SyscallArgEvalExecUnknown,
-			Details:     "invalid offset",
-		}
-	}
-	offset := int(delta)
 
 	value, method := a.backwardScanForRegister(
 		code, baseAddr, offset, decoder,
@@ -522,6 +514,21 @@ func unknownMethodDetail(method string) string {
 	}
 }
 
+// validateSyscallOffset converts an absolute address to a section-relative offset,
+// validating that the address is within the code section and that at least 2 bytes
+// remain from that offset (the minimum syscall instruction size).
+// Returns (offset, true) on success, or (-1, false) if the address is out of bounds.
+func validateSyscallOffset(location, baseAddr uint64, codeLen int) (int, bool) {
+	if location < baseAddr {
+		return -1, false
+	}
+	delta := location - baseAddr
+	if delta > uint64(math.MaxInt) || int(delta) > codeLen-2 {
+		return -1, false
+	}
+	return int(delta), true
+}
+
 // maxWindowBytesPerInstruction returns the number of bytes to allocate per
 // instruction in the backward scan window.
 func maxWindowBytesPerInstruction(decoder MachineCodeDecoder) int {
@@ -578,21 +585,11 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 		Location: syscallAddr,
 	}
 
-	if syscallAddr < baseAddr {
+	offset, ok := validateSyscallOffset(syscallAddr, baseAddr, len(code))
+	if !ok {
 		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
 		return info
 	}
-	delta := syscallAddr - baseAddr
-	// The syscall instruction is 2 bytes. We must ensure the offset is valid
-	// and there's enough room to read the instruction.
-	// A check against math.MaxInt is included to satisfy gosec's requirement
-	// for safe uint64 to int conversion, although it's logically redundant
-	// since len(code) is an int.
-	if delta > uint64(math.MaxInt) || int(delta) > len(code)-2 {
-		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
-		return info
-	}
-	offset := int(delta)
 
 	// Backward scan to find syscall number register modification
 	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
