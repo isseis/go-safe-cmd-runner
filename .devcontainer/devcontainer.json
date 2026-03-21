@@ -23,6 +23,6 @@
     "remoteUser": "issei",
     "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install",
     "mounts": [
-        "source=${localEnv:HOME}/.config/gh,target=/home/issei/.config/gh,type=bind,consistency=cached"
+        "source=${localEnv:HOME}/.config/gh,target=${containerUserHome}/.config/gh,type=bind,consistency=cached"
     ]
 }
