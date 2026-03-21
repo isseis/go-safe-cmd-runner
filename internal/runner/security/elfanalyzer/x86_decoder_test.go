@@ -143,6 +143,24 @@ func TestX86Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 			code: []byte{0x90},
 			want: false,
 		},
+		{
+			// push %rax — reads rax, must not be mistaken for a write
+			name: "push rax returns false",
+			code: []byte{0x50},
+			want: false,
+		},
+		{
+			// cmp $0x5, %eax — compares, sets flags only
+			name: "cmp eax imm returns false",
+			code: []byte{0x83, 0xf8, 0x05},
+			want: false,
+		},
+		{
+			// test %eax, %eax — AND for flags only
+			name: "test eax eax returns false",
+			code: []byte{0x85, 0xc0},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -374,6 +392,30 @@ func TestX86Decoder_ModifiesThirdArgRegister(t *testing.T) {
 
 	t.Run("nop returns false", func(t *testing.T) {
 		code := []byte{0x90}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("push rdx returns false (reads rdx, not a write)", func(t *testing.T) {
+		// 52 = push %rdx
+		code := []byte{0x52}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("cmp edx imm returns false (sets flags only)", func(t *testing.T) {
+		// 83 fa 05 = cmp $0x5, %edx
+		code := []byte{0x83, 0xfa, 0x05}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("test edx edx returns false (sets flags only)", func(t *testing.T) {
+		// 85 d2 = test %edx, %edx
+		code := []byte{0x85, 0xd2}
 		inst, err := decoder.Decode(code, 0)
 		require.NoError(t, err)
 		assert.False(t, decoder.ModifiesThirdArgRegister(inst))

@@ -47,10 +47,27 @@ func (d *X86Decoder) IsSyscallInstruction(inst DecodedInstruction) bool {
 	return x86inst.Op == x86asm.SYSCALL
 }
 
+// isReadOnlyFirstOperandOp reports whether op uses its first operand as a
+// read-only source and does not write to it. Such instructions must not be
+// treated as register modifications during backward scanning.
+// This covers the most common cases; control-flow ops (CALL, JMP, etc.) are
+// handled separately by IsControlFlowInstruction.
+func isReadOnlyFirstOperandOp(op x86asm.Op) bool {
+	switch op {
+	case x86asm.PUSH, x86asm.CMP, x86asm.TEST, x86asm.BT:
+		return true
+	}
+	return false
+}
+
 // ModifiesSyscallNumberRegister checks if the instruction modifies eax or rax.
 func (d *X86Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
+		return false
+	}
+
+	if isReadOnlyFirstOperandOp(x86inst.Op) {
 		return false
 	}
 
@@ -211,6 +228,10 @@ func (d *X86Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int
 func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
+		return false
+	}
+
+	if isReadOnlyFirstOperandOp(x86inst.Op) {
 		return false
 	}
 
