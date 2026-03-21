@@ -51,11 +51,28 @@ func (d *ARM64Decoder) IsSyscallInstruction(inst DecodedInstruction) bool {
 	return ok && imm.Imm == 0
 }
 
+// arm64ReadOnlyFirstOperandOp reports whether op uses its first operand as a
+// read-only source (i.e., does not write to it). Such instructions must not
+// be treated as register modifications during backward scanning.
+// Control-flow ops (B, BL, etc.) are handled separately by IsControlFlowInstruction.
+func arm64ReadOnlyFirstOperandOp(op arm64asm.Op) bool {
+	switch op {
+	case arm64asm.STR, arm64asm.STP,
+		arm64asm.CMP, arm64asm.CMN,
+		arm64asm.TST, arm64asm.CCMP, arm64asm.CCMN:
+		return true
+	}
+	return false
+}
+
 // ModifiesSyscallNumberRegister returns true if the instruction writes to
 // the arm64 syscall number register (W8 or X8).
 func (d *ARM64Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
+		return false
+	}
+	if arm64ReadOnlyFirstOperandOp(a.Op) {
 		return false
 	}
 	if a.Args[0] == nil {
@@ -163,6 +180,9 @@ func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (i
 func (d *ARM64Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
+		return false
+	}
+	if arm64ReadOnlyFirstOperandOp(a.Op) {
 		return false
 	}
 	if a.Args[0] == nil {

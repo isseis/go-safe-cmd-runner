@@ -107,6 +107,13 @@ func TestARM64Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 		{"mov x0, #41", []byte{0x20, 0x05, 0x80, 0xD2}, false},
 		{"nop", []byte{0x1F, 0x20, 0x03, 0xD5}, false},
 		{"ret", []byte{0xC0, 0x03, 0x5F, 0xD6}, false},
+		// Read-only first operand: must not be mistaken for writes to X8
+		// str x8, [x0]  — stores x8 to memory, does not modify x8
+		{"str x8, [x0]", []byte{0x08, 0x00, 0x00, 0xF9}, false},
+		// cmp x8, #5   — SUBS XZR, X8, #5, sets flags only
+		{"cmp x8, #5", []byte{0x1F, 0x15, 0x00, 0xF1}, false},
+		// tst x8, x1   — ANDS XZR, X8, X1, sets flags only
+		{"tst x8, x1", []byte{0x1F, 0x01, 0x01, 0xEA}, false},
 	}
 
 	for _, tt := range tests {
@@ -297,6 +304,28 @@ func TestARM64Decoder_ModifiesThirdArgRegister(t *testing.T) {
 
 	t.Run("nop returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x1F, 0x20, 0x03, 0xD5}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	// Read-only first operand: must not be mistaken for writes to X2/W2
+	t.Run("str x2, [x0] returns false (stores x2, does not modify it)", func(t *testing.T) {
+		// str x2, [x0] — 02 00 00 F9
+		inst, err := decoder.Decode([]byte{0x02, 0x00, 0x00, 0xF9}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("cmp x2, #5 returns false (sets flags only)", func(t *testing.T) {
+		// cmp x2, #5 (SUBS XZR, X2, #5) — 5F 14 00 F1
+		inst, err := decoder.Decode([]byte{0x5F, 0x14, 0x00, 0xF1}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+	})
+
+	t.Run("tst x2, x1 returns false (sets flags only)", func(t *testing.T) {
+		// tst x2, x1 (ANDS XZR, X2, X1) — 5F 00 01 EA
+		inst, err := decoder.Decode([]byte{0x5F, 0x00, 0x01, 0xEA}, 0)
 		require.NoError(t, err)
 		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
 	})
