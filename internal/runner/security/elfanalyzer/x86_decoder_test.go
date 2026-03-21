@@ -445,8 +445,8 @@ func TestX86Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
 		assert.Equal(t, int64(4), val)
 	})
 
-	t.Run("mov imm to RDX PROT_EXEC flag only", func(t *testing.T) {
-		// ba 03 00 00 00 = mov $0x3, %edx
+	t.Run("mov imm to RDX PROT_READ|PROT_WRITE (no PROT_EXEC)", func(t *testing.T) {
+		// ba 03 00 00 00 = mov $0x3, %edx  (PROT_READ|PROT_WRITE = 0x3)
 		code := []byte{0xba, 0x03, 0x00, 0x00, 0x00}
 		inst, err := decoder.Decode(code, 0)
 		require.NoError(t, err)
