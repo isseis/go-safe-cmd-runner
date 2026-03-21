@@ -946,7 +946,7 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 		},
 		{
 			name: "exec_unknown (control flow boundary)",
-			// b +5 (skips 4 nops, lands on mov x8); nop x3; mov x8, #226; svc #0
+			// b +5 words (lands on svc #0 at offset 20); nop; nop; nop; mov x8, #226; svc #0
 			// Backward scan for x2 from svc passes over mov x8 and nops,
 			// then hits the branch instruction at offset 0 and stops → exec_unknown.
 			//
