@@ -21,5 +21,8 @@
         }
     },
     "remoteUser": "issei",
-    "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install"
+    "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install",
+    "mounts": [
+        "source=${localEnv:HOME}/.config/gh,target=/home/issei/.config/gh,type=bind,consistency=cached"
+    ]
 }
