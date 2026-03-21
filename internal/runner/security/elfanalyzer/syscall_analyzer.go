@@ -515,8 +515,9 @@ func unknownMethodDetail(method string) string {
 }
 
 // validateSyscallOffset converts an absolute address to a section-relative offset,
-// validating that the address is within the code section and that at least 2 bytes
-// remain from that offset (the minimum syscall instruction size).
+// validating that the address is within the code section with at least a small
+// margin from the end (a conservative sanity check; the decoder enforces the
+// exact per-architecture minimum instruction size separately).
 // Returns (offset, true) on success, or (-1, false) if the address is out of bounds.
 func validateSyscallOffset(location, baseAddr uint64, codeLen int) (int, bool) {
 	if location < baseAddr {
