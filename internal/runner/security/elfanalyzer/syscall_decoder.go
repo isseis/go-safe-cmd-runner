@@ -76,4 +76,16 @@ type MachineCodeDecoder interface {
 	// arm64:  MOV W0/X0, #imm   (X0 is the first argument register in Go ABI)
 	// Returns (0, false) otherwise.
 	IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)
+
+	// ModifiesThirdArgRegister returns true if the instruction writes to the
+	// third syscall argument register.
+	// x86_64: edx/rdx (any write including dl, dx, edx/rdx)
+	// arm64:  w2 or x2
+	ModifiesThirdArgRegister(inst DecodedInstruction) bool
+
+	// IsImmediateToThirdArgRegister returns (true, value) if the instruction
+	// sets the third argument register to a known immediate.
+	// x86_64: MOV EDX/RDX, imm  or  XOR EDX, EDX (zeroing idiom)
+	// arm64:  MOV W2/X2, #imm
+	IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64)
 }

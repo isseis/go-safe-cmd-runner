@@ -80,8 +80,9 @@ func TestX86GoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 	wrapperAddr := uint64(0x402000)
 	resolver.wrapperAddrs[wrapperAddr] = "syscall.Syscall"
 
-	// Create code with a call but no clear mov to eax/rax before it
-	// Just a CALL instruction without any mov to rax
+	// 5 nops + call: fewer than maxBackwardScanSteps(6) instructions before the
+	// call, so the scan exhausts the entire window without finding a mov to rax.
+	// Expected: window_exhausted (not scan_limit_exceeded).
 	baseAddr := uint64(0x401000)
 	code := []byte{
 		0x90, 0x90, 0x90, 0x90, 0x90, // nop x5
@@ -93,6 +94,33 @@ func TestX86GoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 
 	require.Len(t, result, 1)
 	assert.Equal(t, uint64(0x401005), result[0].CallSiteAddress)
+	assert.Equal(t, -1, result[0].SyscallNumber)
+	assert.False(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result[0].DeterminationMethod)
+}
+
+func TestX86GoWrapperResolver_FindWrapperCalls_ScanLimitExceeded(t *testing.T) {
+	resolver := newX86GoWrapperResolver()
+
+	wrapperAddr := uint64(0x402000)
+	resolver.wrapperAddrs[wrapperAddr] = "syscall.Syscall"
+
+	// 7 nops + call: more than maxBackwardScanSteps(6) instructions before the
+	// call, so the scan hits the step limit before reaching the window start.
+	// Expected: scan_limit_exceeded (not window_exhausted).
+	//
+	// CALL is at offset 7 (addr 0x401007), nextPC = 0x40100C.
+	// rel32 = 0x402000 - 0x40100C = 0xFF4 → bytes: f4 0f 00 00.
+	baseAddr := uint64(0x401000)
+	code := []byte{
+		0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // nop x7
+		0xe8, 0xf4, 0x0f, 0x00, 0x00, // call rel32 → 0x402000
+	}
+
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
+
+	require.Len(t, result, 1)
 	assert.Equal(t, -1, result[0].SyscallNumber)
 	assert.False(t, result[0].Resolved)
 	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result[0].DeterminationMethod)

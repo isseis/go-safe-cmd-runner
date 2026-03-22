@@ -47,21 +47,21 @@ Phase 2 完了後に実施する。
 
 ### 1.1 型定義
 
-- [ ] `internal/common/syscall_types.go` に以下を追加
+- [x] `internal/common/syscall_types.go` に以下を追加
   - `SyscallArgEvalStatus` 型と 3 定数（`exec_confirmed`, `exec_unknown`, `exec_not_set`）
   - `SyscallArgEvalResult` 構造体
   - 仕様: 詳細仕様書 §2.1
 
 ### 1.2 `SyscallAnalysisResultCore` の拡張
 
-- [ ] `internal/common/syscall_types.go` の `SyscallAnalysisResultCore` に
+- [x] `internal/common/syscall_types.go` の `SyscallAnalysisResultCore` に
   `ArgEvalResults []SyscallArgEvalResult` フィールドを追加
   - JSON タグに `omitempty` を付与
   - 仕様: 詳細仕様書 §2.2
 
 ### 1.3 スキーマバージョンの更新
 
-- [ ] `internal/fileanalysis/schema.go` の `CurrentSchemaVersion` を `4` → `5` に更新
+- [x] `internal/fileanalysis/schema.go` の `CurrentSchemaVersion` を `4` → `5` に更新
   - バージョン履歴コメントを更新
   - 仕様: 詳細仕様書 §6
   - 受け入れ条件: AC-4
@@ -72,7 +72,7 @@ Phase 2 完了後に実施する。
 
 ### 2.1 インターフェース定義
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_decoder.go` の
+- [x] `internal/runner/security/elfanalyzer/syscall_decoder.go` の
   `MachineCodeDecoder` インターフェースに 2 メソッドを追加
   - `ModifiesThirdArgRegister(inst DecodedInstruction) bool`
   - `IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64)`
@@ -80,27 +80,27 @@ Phase 2 完了後に実施する。
 
 ### 2.2 X86Decoder 実装
 
-- [ ] `internal/runner/security/elfanalyzer/x86_decoder.go` に実装を追加
+- [x] `internal/runner/security/elfanalyzer/x86_decoder.go` に実装を追加
   - `ModifiesThirdArgRegister`: `edx`/`rdx`/`dx`/`dl` の書き込み検出
   - `IsImmediateToThirdArgRegister`: 既存の `isImmediateToReg` ヘルパーを再利用
   - 仕様: 詳細仕様書 §3.1
 
 ### 2.3 ARM64Decoder 実装
 
-- [ ] `internal/runner/security/elfanalyzer/arm64_decoder.go` に実装を追加
+- [x] `internal/runner/security/elfanalyzer/arm64_decoder.go` に実装を追加
   - `ModifiesThirdArgRegister`: `w2`/`x2` の書き込み検出
   - `IsImmediateToThirdArgRegister`: 既存の `arm64ImmValue` ヘルパーを再利用
   - 仕様: 詳細仕様書 §3.2
 
 ### 2.4 モックの更新
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` の
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` の
   `MockMachineCodeDecoder` に 2 メソッドのスタブを追加
   - 仕様: 詳細仕様書 §3.3
 
 ### 2.5 X86Decoder 単体テスト
 
-- [ ] `x86_decoder_test.go` にテストケースを追加
+- [x] `x86_decoder_test.go` にテストケースを追加
   - `TestX86Decoder_ModifiesThirdArgRegister`
   - `TestX86Decoder_IsImmediateToThirdArgRegister`
   - テストパターン: `mov $imm, %edx`、`mov $imm, %rdx`、`mov %rsi, %rdx`、
@@ -110,7 +110,7 @@ Phase 2 完了後に実施する。
 
 ### 2.6 ARM64Decoder 単体テスト
 
-- [ ] `arm64_decoder_test.go` にテストケースを追加
+- [x] `arm64_decoder_test.go` にテストケースを追加
   - `TestARM64Decoder_ModifiesThirdArgRegister`
   - `TestARM64Decoder_IsImmediateToThirdArgRegister`
   - テストパターン: `mov x2, #imm`、`mov w2, #imm`、`mov x2, x1`、非対象レジスタ
@@ -123,7 +123,7 @@ Phase 2 完了後に実施する。
 
 ### 3.1 `backwardScanForRegister` 汎用関数の抽出
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に
   `backwardScanForRegister` を新規追加
   - `modifiesReg` / `isImmediateToReg` を関数引数として受け取る汎用スキャン
   - `maxValidSyscallNumber` の検証は含めない（呼び出し元で実施）
@@ -131,7 +131,7 @@ Phase 2 完了後に実施する。
 
 ### 3.2 `backwardScanForSyscallNumber` のラッパー化
 
-- [ ] 既存の `backwardScanForSyscallNumber` を `backwardScanForRegister` のラッパーに変換
+- [x] 既存の `backwardScanForSyscallNumber` を `backwardScanForRegister` のラッパーに変換
   - 外部インターフェース（引数・戻り値）は変更なし
   - `maxValidSyscallNumber` 検証をラッパー内で実施
   - 既存テスト（`TestSyscallAnalyzer_BackwardScan`）を実行して動作を確認
@@ -139,13 +139,13 @@ Phase 2 完了後に実施する。
 
 ### 3.3 `defaultMaxBackwardScan` コメントの一般化
 
-- [ ] コメントを「syscall 番号取得のための後方スキャン上限」から
+- [x] コメントを「syscall 番号取得のための後方スキャン上限」から
   「syscall 命令からの後方スキャン上限（syscall 番号・引数いずれにも適用）」に更新
   - 仕様: 詳細仕様書 §4.2
 
 ### 3.4 `evaluateMprotectArgs` メソッドの実装
 
-- [ ] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に
+- [x] `internal/runner/security/elfanalyzer/syscall_analyzer.go` に
   `evaluateMprotectArgs` と `evalSingleMprotect` を追加
   - `mprotect` エントリのフィルタリング
   - `prot` 引数の後方スキャン
@@ -158,13 +158,13 @@ Phase 2 完了後に実施する。
 
 ### 3.5 `riskPriority` ヘルパーの実装
 
-- [ ] `syscall_analyzer.go` に `riskPriority` 関数を追加
+- [x] `syscall_analyzer.go` に `riskPriority` 関数を追加
   - `exec_confirmed`(2) > `exec_unknown`(1) > `exec_not_set`(0)
   - 仕様: 詳細仕様書 §4.3
 
 ### 3.6 `analyzeSyscallsInCode` への統合
 
-- [ ] `analyzeSyscallsInCode` に mprotect 引数評価ステップを追加
+- [x] `analyzeSyscallsInCode` に mprotect 引数評価ステップを追加
   - Pass 1・2 の後、Summary 構築の前に実行
   - `Summary.IsHighRisk` を OR 条件で更新（既存の代入を変更）
   - `HighRiskReasons` にメッセージを追加
@@ -175,17 +175,24 @@ Phase 2 完了後に実施する。
 
 ### 3.7 単体テスト・コンポーネントテスト
 
-- [ ] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_EvaluateMprotectArgs` を追加
+- [x] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_EvaluateMprotectArgs` を追加
   - テストパターン: `PROT_EXEC` 確定（64bit/32bit）、未設定、間接設定、制御フロー境界、
-    非 mprotect syscall
+    スキャン範囲内に rdx 変更命令なし、非 mprotect syscall
   - 仕様: 詳細仕様書 §8.3
   - 受け入れ条件: AC-1, AC-2, AC-3
 
-- [ ] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_MultipleMprotect` を追加
+- [x] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` を追加
+  - arm64 用の `analyzeSyscallsInCode` 統合テスト（syscall table 解決・後方スキャン・Summary.IsHighRisk 反映を含む）
+  - テストパターン: `exec_confirmed`（`mov x2, #7`）、`exec_not_set`（`mov x2, #3`）、
+    `exec_unknown`（レジスタ間コピー）、`exec_unknown`（スキャン範囲内に x2 変更命令なし）、
+    `exec_unknown`（制御フロー境界）
+  - 受け入れ条件: AC-1, AC-2, AC-3
+
+- [x] `syscall_analyzer_test.go` に `TestSyscallAnalyzer_MultipleMprotect` を追加
   - テストパターン: `exec_confirmed + exec_not_set`、`exec_unknown + exec_not_set`、
-    `exec_not_set` のみ
+    `exec_not_set` のみ、`exec_not_set` + 他要因で既に `IsHighRisk=true`（上書きされないこと）
   - 仕様: 詳細仕様書 §8.4
-  - 受け入れ条件: AC-6
+  - 受け入れ条件: AC-6, AC-7
 
 ## Phase 4: リスク判定ヘルパー
 
@@ -193,7 +200,7 @@ Phase 2 完了後に実施する。
 
 ### 4.1 `EvalMprotectRisk` ヘルパーの実装
 
-- [ ] `internal/runner/security/elfanalyzer/mprotect_risk.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/mprotect_risk.go` を新規作成
   - `EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool`
   - マッピング: `exec_confirmed` / `exec_unknown` → `true`、他 → `false`
   - 仕様: 詳細仕様書 §5.1
@@ -201,7 +208,7 @@ Phase 2 完了後に実施する。
 
 ### 4.2 `EvalMprotectRisk` テスト
 
-- [ ] `internal/runner/security/elfanalyzer/mprotect_risk_test.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/mprotect_risk_test.go` を新規作成
   - テストパターン: `exec_confirmed` → true、`exec_unknown` → true、
     `exec_not_set` → false、空リスト → false、非 mprotect エントリ → false
   - 仕様: 詳細仕様書 §8.5
@@ -212,7 +219,7 @@ Phase 2 完了後に実施する。
 
 ### 5.1 スキーマ v5 往復テスト
 
-- [ ] `internal/fileanalysis/` にスキーマ v5 の保存・読み込み往復テストを追加
+- [x] `internal/fileanalysis/` にスキーマ v5 の保存・読み込み往復テストを追加
   - `ArgEvalResults` 付きの Record の保存・復元
   - `ArgEvalResults` が nil の場合のフィールド省略確認
   - 仕様: 詳細仕様書 §8.6
@@ -220,14 +227,14 @@ Phase 2 完了後に実施する。
 
 ### 5.2 フォーマット
 
-- [ ] `make fmt` を実行し、全ファイルのフォーマットを適用
+- [x] `make fmt` を実行し、全ファイルのフォーマットを適用
 
 ### 5.3 全テストパス
 
-- [ ] `make test` で全テストがパスすることを確認
+- [x] `make test` で全テストがパスすることを確認
   - 既存の `Summary.HasNetworkSyscalls` の結果が変わらないことを含む
   - 受け入れ条件: AC-5
 
 ### 5.4 リンターパス
 
-- [ ] `make lint` でリンターが全てパスすることを確認
+- [x] `make lint` でリンターが全てパスすることを確認

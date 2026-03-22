@@ -1,6 +1,38 @@
 //nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
+// SyscallArgEvalStatus is a typed string for argument evaluation status values.
+type SyscallArgEvalStatus string
+
+const (
+	// SyscallArgEvalExecConfirmed indicates prot value was obtained
+	// and PROT_EXEC flag (0x4) is set.
+	SyscallArgEvalExecConfirmed SyscallArgEvalStatus = "exec_confirmed"
+
+	// SyscallArgEvalExecUnknown indicates prot value could not be
+	// statically determined.
+	SyscallArgEvalExecUnknown SyscallArgEvalStatus = "exec_unknown"
+
+	// SyscallArgEvalExecNotSet indicates prot value was obtained
+	// and PROT_EXEC flag (0x4) is NOT set.
+	SyscallArgEvalExecNotSet SyscallArgEvalStatus = "exec_not_set"
+)
+
+// SyscallArgEvalResult represents the static evaluation result
+// of a syscall argument.
+type SyscallArgEvalResult struct {
+	// SyscallName is the syscall being evaluated (e.g., "mprotect").
+	SyscallName string `json:"syscall_name"`
+
+	// Status is the evaluation outcome.
+	Status SyscallArgEvalStatus `json:"status"`
+
+	// Details provides supplementary info.
+	// For exec_confirmed/exec_not_set: prot value (e.g., "prot=0x5").
+	// For exec_unknown: reason (e.g., "scan limit exceeded").
+	Details string `json:"details,omitempty"`
+}
+
 // SyscallInfo represents information about a single detected syscall event.
 // An event can be either a direct syscall instruction or an indirect syscall
 // via a Go wrapper function call.
@@ -74,4 +106,9 @@ type SyscallAnalysisResultCore struct {
 
 	// Summary provides aggregated information about the analysis.
 	Summary SyscallSummary `json:"summary"`
+
+	// ArgEvalResults contains static evaluation results for syscall arguments.
+	// Currently used for mprotect PROT_EXEC detection.
+	// Only populated when relevant syscalls are detected; otherwise nil.
+	ArgEvalResults []SyscallArgEvalResult `json:"arg_eval_results,omitempty"`
 }

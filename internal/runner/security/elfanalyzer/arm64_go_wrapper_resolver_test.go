@@ -96,6 +96,8 @@ func TestARM64GoWrapperResolver_FindWrapperCalls_ImmediateW0(t *testing.T) {
 
 // TestARM64GoWrapperResolver_FindWrapperCalls_Unresolved verifies that a BL without
 // a preceding immediate assignment to X0/W0 results in Resolved=false.
+// With only 2 nops before the BL (fewer than maxBackwardScanSteps=6), the scan
+// exhausts the entire window — expected method is window_exhausted, not scan_limit_exceeded.
 //
 // Code layout at baseAddr=0x401000:
 //
@@ -126,7 +128,7 @@ func TestARM64GoWrapperResolver_FindWrapperCalls_Unresolved(t *testing.T) {
 	assert.Equal(t, "syscall.Syscall", result[0].TargetFunction)
 	assert.Equal(t, -1, result[0].SyscallNumber)
 	assert.False(t, result[0].Resolved)
-	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result[0].DeterminationMethod)
 }
 
 // TestARM64GoWrapperResolver_FindWrapperCalls_ControlFlowBoundary verifies that

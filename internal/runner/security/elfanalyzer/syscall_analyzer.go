@@ -61,7 +61,8 @@ const maxInstructionLength = 15
 const DecodeFailureLogBytesLen = 4
 
 // defaultMaxBackwardScan is the default maximum number of instructions to scan
-// backward from a syscall instruction to find the syscall number.
+// backward from a syscall instruction. Applied to both syscall number extraction
+// and syscall argument evaluation (e.g., mprotect prot flag).
 const defaultMaxBackwardScan = 50
 
 // maxValidSyscallNumber is the maximum valid syscall number on x86_64.
@@ -94,8 +95,15 @@ const (
 	DeterminationMethodUnknownIndirectSetting = "unknown:indirect_setting"
 
 	// DeterminationMethodUnknownScanLimitExceeded indicates the syscall number
-	// could not be determined because the backward scan limit was exceeded.
+	// could not be determined because the backward scan step limit was reached
+	// before exhausting all decoded instructions in the window.
 	DeterminationMethodUnknownScanLimitExceeded = "unknown:scan_limit_exceeded"
+
+	// DeterminationMethodUnknownWindowExhausted indicates the syscall number
+	// could not be determined because all decoded instructions in the scan
+	// window were examined without finding a register-modifying instruction.
+	// Unlike scan_limit_exceeded, the scan consumed the entire available window.
+	DeterminationMethodUnknownWindowExhausted = "unknown:window_exhausted"
 
 	// DeterminationMethodUnknownInvalidOffset indicates the syscall number
 	// could not be determined because the offset was invalid.
@@ -344,15 +352,191 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 	// Build summary with consistent field calculation rules:
 	// - TotalDetectedEvents: total count of all detected syscall events (Pass 1 + Pass 2)
 	// - HasNetworkSyscalls: true if NetworkSyscallCount > 0
-	// - IsHighRisk: true if HasUnknownSyscalls (any syscall number could not be determined)
+	// - IsHighRisk: true if HasUnknownSyscalls or mprotect PROT_EXEC risk detected
 	// - NetworkSyscallCount: incremented during Pass 1 and Pass 2
 	// These rules ensure convertSyscallResult() in StandardELFAnalyzer correctly
 	// interprets the analysis result for network capability detection.
+
+	// Evaluate mprotect prot argument (after Pass 1 and Pass 2)
+	evalResult, evalLocation := a.evaluateMprotectArgs(
+		code, baseAddr, decoder, result.DetectedSyscalls,
+	)
+	if evalResult != nil {
+		result.ArgEvalResults = append(result.ArgEvalResults, *evalResult)
+
+		if EvalMprotectRisk(result.ArgEvalResults) {
+			result.Summary.IsHighRisk = true
+
+			// Add high risk reason message
+			switch evalResult.Status {
+			case common.SyscallArgEvalExecConfirmed:
+				result.HighRiskReasons = append(result.HighRiskReasons,
+					fmt.Sprintf("mprotect at 0x%x: PROT_EXEC confirmed (%s)",
+						evalLocation, evalResult.Details))
+			case common.SyscallArgEvalExecUnknown:
+				result.HighRiskReasons = append(result.HighRiskReasons,
+					fmt.Sprintf("mprotect at 0x%x: PROT_EXEC could not be ruled out (%s)",
+						evalLocation, evalResult.Details))
+			}
+		}
+	}
+
 	result.Summary.TotalDetectedEvents = len(result.DetectedSyscalls)
 	result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
-	result.Summary.IsHighRisk = result.HasUnknownSyscalls
+	result.Summary.IsHighRisk = result.Summary.IsHighRisk || result.HasUnknownSyscalls
 
 	return result
+}
+
+// protExecFlag is the PROT_EXEC flag value (0x4) used in mprotect syscall.
+// See: https://man7.org/linux/man-pages/man2/mprotect.2.html
+const protExecFlag = 0x4
+
+// riskPriority constants for comparing SyscallArgEvalStatus severity.
+const (
+	riskPriorityExecConfirmed = 2
+	riskPriorityExecUnknown   = 1
+	riskPriorityExecNotSet    = 0
+)
+
+// evaluateMprotectArgs evaluates prot argument of mprotect syscall entries.
+// It scans detected syscalls for mprotect, performs backward scan for prot
+// register (rdx on x86_64, x2 on arm64), and returns the highest-risk
+// SyscallArgEvalResult and its corresponding instruction address.
+// Returns nil, 0 if no mprotect was detected.
+func (a *SyscallAnalyzer) evaluateMprotectArgs(
+	code []byte,
+	baseAddr uint64,
+	decoder MachineCodeDecoder,
+	detectedSyscalls []common.SyscallInfo,
+) (*common.SyscallArgEvalResult, uint64) {
+	// Collect mprotect entries from detected syscalls.
+	// Only consider entries determined by "immediate" method, as those
+	// have confirmed syscall numbers.
+	var mprotectEntries []common.SyscallInfo
+	for _, info := range detectedSyscalls {
+		if info.Name == "mprotect" &&
+			info.DeterminationMethod == DeterminationMethodImmediate {
+			mprotectEntries = append(mprotectEntries, info)
+		}
+	}
+
+	if len(mprotectEntries) == 0 {
+		return nil, 0
+	}
+
+	// Evaluate each mprotect entry and select the highest risk.
+	// Priority: exec_confirmed > exec_unknown > exec_not_set
+	var bestResult *common.SyscallArgEvalResult
+	var bestLocation uint64
+
+	for _, entry := range mprotectEntries {
+		result := a.evalSingleMprotect(code, baseAddr, decoder, entry)
+
+		if bestResult == nil || riskPriority(result.Status) > riskPriority(bestResult.Status) {
+			bestResult = &result
+			bestLocation = entry.Location
+		}
+	}
+
+	return bestResult, bestLocation
+}
+
+// evalSingleMprotect evaluates the prot argument of a single mprotect entry.
+func (a *SyscallAnalyzer) evalSingleMprotect(
+	code []byte,
+	baseAddr uint64,
+	decoder MachineCodeDecoder,
+	entry common.SyscallInfo,
+) common.SyscallArgEvalResult {
+	offset, ok := validateSyscallOffset(entry.Location, baseAddr, len(code))
+	if !ok {
+		return common.SyscallArgEvalResult{
+			SyscallName: "mprotect",
+			Status:      common.SyscallArgEvalExecUnknown,
+			Details:     "invalid offset",
+		}
+	}
+
+	value, method := a.backwardScanForRegister(
+		code, baseAddr, offset, decoder,
+		decoder.ModifiesThirdArgRegister,
+		decoder.IsImmediateToThirdArgRegister,
+	)
+
+	if method == DeterminationMethodImmediate {
+		if value&protExecFlag != 0 {
+			return common.SyscallArgEvalResult{
+				SyscallName: "mprotect",
+				Status:      common.SyscallArgEvalExecConfirmed,
+				Details:     fmt.Sprintf("prot=0x%x", value),
+			}
+		}
+		return common.SyscallArgEvalResult{
+			SyscallName: "mprotect",
+			Status:      common.SyscallArgEvalExecNotSet,
+			Details:     fmt.Sprintf("prot=0x%x", value),
+		}
+	}
+
+	// Map determination method to exec_unknown details.
+	details := unknownMethodDetail(method)
+
+	return common.SyscallArgEvalResult{
+		SyscallName: "mprotect",
+		Status:      common.SyscallArgEvalExecUnknown,
+		Details:     details,
+	}
+}
+
+// riskPriority returns the priority of a SyscallArgEvalStatus.
+// Higher value = higher risk.
+func riskPriority(status common.SyscallArgEvalStatus) int {
+	switch status {
+	case common.SyscallArgEvalExecConfirmed:
+		return riskPriorityExecConfirmed
+	case common.SyscallArgEvalExecUnknown:
+		return riskPriorityExecUnknown
+	case common.SyscallArgEvalExecNotSet:
+		return riskPriorityExecNotSet
+	default:
+		return -1
+	}
+}
+
+// unknownMethodDetail converts unknown:* determination methods to
+// compact, stable detail strings for ArgEvalResults.
+func unknownMethodDetail(method string) string {
+	switch method {
+	case DeterminationMethodUnknownDecodeFailed:
+		return "decode failed"
+	case DeterminationMethodUnknownControlFlowBoundary:
+		return "control flow boundary"
+	case DeterminationMethodUnknownIndirectSetting:
+		return "indirect register setting"
+	case DeterminationMethodUnknownScanLimitExceeded:
+		return "scan limit exceeded"
+	case DeterminationMethodUnknownWindowExhausted:
+		return "window exhausted"
+	default:
+		return "unknown reason"
+	}
+}
+
+// validateSyscallOffset converts an absolute address to a section-relative offset,
+// validating that the address is within the code section with at least a small
+// margin from the end (a conservative sanity check; the decoder enforces the
+// exact per-architecture minimum instruction size separately).
+// Returns (offset, true) on success, or (-1, false) if the address is out of bounds.
+func validateSyscallOffset(location, baseAddr uint64, codeLen int) (int, bool) {
+	if location < baseAddr {
+		return -1, false
+	}
+	delta := location - baseAddr
+	if delta > uint64(math.MaxInt) || int(delta) > codeLen-2 {
+		return -1, false
+	}
+	return int(delta), true
 }
 
 // maxWindowBytesPerInstruction returns the number of bytes to allocate per
@@ -411,21 +595,11 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 		Location: syscallAddr,
 	}
 
-	if syscallAddr < baseAddr {
+	offset, ok := validateSyscallOffset(syscallAddr, baseAddr, len(code))
+	if !ok {
 		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
 		return info
 	}
-	delta := syscallAddr - baseAddr
-	// The syscall instruction is 2 bytes. We must ensure the offset is valid
-	// and there's enough room to read the instruction.
-	// A check against math.MaxInt is included to satisfy gosec's requirement
-	// for safe uint64 to int conversion, although it's logically redundant
-	// since len(code) is an int.
-	if delta > uint64(math.MaxInt) || int(delta) > len(code)-2 {
-		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
-		return info
-	}
-	offset := int(delta)
 
 	// Backward scan to find syscall number register modification
 	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
@@ -440,66 +614,88 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 	return info
 }
 
+// backwardScanForRegister is a generalized backward scan that extracts an
+// immediate value from a target register. modifiesReg and isImmediateToReg
+// are decoder methods specifying which register to track.
+//
+// Returns:
+//   - value: the immediate value found, or -1 if not found
+//   - method: the determination method string describing the result
+func (a *SyscallAnalyzer) backwardScanForRegister(
+	code []byte,
+	baseAddr uint64,
+	syscallOffset int,
+	decoder MachineCodeDecoder,
+	modifiesReg func(DecodedInstruction) bool,
+	isImmediateToReg func(DecodedInstruction) (bool, int64),
+) (value int64, method string) {
+	// Window calculation identical to backwardScanForSyscallNumber
+	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(decoder))
+	if windowStart < 0 {
+		windowStart = 0
+	}
+
+	instructions, _ := a.decodeInstructionsInWindow(
+		code, baseAddr, windowStart, syscallOffset, decoder,
+	)
+	if len(instructions) == 0 {
+		return -1, DeterminationMethodUnknownDecodeFailed
+	}
+
+	scanCount := 0
+	for i := len(instructions) - 1; i >= 0 && scanCount < a.maxBackwardScan; i-- {
+		inst := instructions[i]
+		scanCount++
+
+		if decoder.IsControlFlowInstruction(inst) {
+			return -1, DeterminationMethodUnknownControlFlowBoundary
+		}
+
+		if !modifiesReg(inst) {
+			continue
+		}
+
+		if isImm, val := isImmediateToReg(inst); isImm {
+			return val, DeterminationMethodImmediate
+		}
+
+		return -1, DeterminationMethodUnknownIndirectSetting
+	}
+
+	// Distinguish between exhausting the scan window (all decoded instructions
+	// examined) and hitting the step limit (more instructions may exist beyond
+	// the window but were not decoded).
+	if scanCount < a.maxBackwardScan {
+		return -1, DeterminationMethodUnknownWindowExhausted
+	}
+	return -1, DeterminationMethodUnknownScanLimitExceeded
+}
+
 // backwardScanForSyscallNumber scans backward from syscall instruction
 // to find where the syscall number register is set.
 // Note: This method only handles direct syscall instructions.
 // Go wrapper calls (e.g., Go's syscall wrappers) are handled separately
 // via goResolver.FindWrapperCalls.
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string) {
-	// Performance optimization: Use windowed decoding to avoid re-decoding
-	// the entire .text section for each syscall instruction.
-	// Window starts from max(0, syscallOffset - maxBackwardScan * maxWindowBytesPerInstruction)
-	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(decoder))
-	if windowStart < 0 {
-		windowStart = 0
-	}
+	value, method := a.backwardScanForRegister(
+		code, baseAddr, syscallOffset, decoder,
+		decoder.ModifiesSyscallNumberRegister,
+		decoder.IsImmediateToSyscallNumberRegister,
+	)
 
-	// Build instruction list by forward decoding within the window.
-	// NOTE: Decode failures in the backward scan window are NOT counted
-	// in DecodeStats. These windows overlap with findSyscallInstructions'
-	// scan range, and counting them would double-count failures.
-	// Only findSyscallInstructions (Pass 1) and FindWrapperCalls (Pass 2)
-	// contribute to DecodeStats.DecodeFailureCount.
-	instructions, _ := a.decodeInstructionsInWindow(code, baseAddr, windowStart, syscallOffset, decoder)
-	if len(instructions) == 0 {
-		return -1, DeterminationMethodUnknownDecodeFailed
-	}
-
-	// Scan backward through decoded instructions
-	scanCount := 0
-	for i := len(instructions) - 1; i >= 0 && scanCount < a.maxBackwardScan; i-- {
-		inst := instructions[i]
-		scanCount++
-
-		// Check for control flow instruction (basic block boundary)
-		if decoder.IsControlFlowInstruction(inst) {
-			return -1, DeterminationMethodUnknownControlFlowBoundary
+	if method == DeterminationMethodImmediate {
+		// Validate immediate value is a valid syscall number.
+		// Reject negative immediates (e.g., 0xffffffff as -1) and out-of-range values.
+		// This prevents inconsistency where Number=-1 (unknown sentinel) with
+		// DeterminationMethodImmediate could indicate a successful decode of an invalid value.
+		if value >= 0 && value <= maxValidSyscallNumber {
+			return int(value), DeterminationMethodImmediate
 		}
-
-		// Check if this instruction modifies the syscall number register
-		if !decoder.ModifiesSyscallNumberRegister(inst) {
-			continue
-		}
-
-		// Check if it's an immediate value to the syscall number register
-		if isImm, value := decoder.IsImmediateToSyscallNumberRegister(inst); isImm {
-			// Validate immediate value is a valid syscall number.
-			// Reject negative immediates (e.g., 0xffffffff as -1) and out-of-range values.
-			// This prevents inconsistency where Number=-1 (unknown sentinel) with
-			// DeterminationMethodImmediate could indicate a successful decode of an invalid value.
-			if value >= 0 && value <= maxValidSyscallNumber {
-				return int(value), DeterminationMethodImmediate
-			}
-			// Immediate value is out of valid range; treat as indirect setting
-			return -1, DeterminationMethodUnknownIndirectSetting
-		}
-
-		// Non-immediate modification found (register move, memory load, etc.)
+		// Immediate value is out of valid range; treat as indirect setting
 		return -1, DeterminationMethodUnknownIndirectSetting
 	}
 
-	// Reached scan limit without finding syscall number register modification
-	return -1, DeterminationMethodUnknownScanLimitExceeded
+	return int(value), method
 }
 
 // decodeInstructionsInWindow decodes instructions within a specified window [startOffset, endOffset).

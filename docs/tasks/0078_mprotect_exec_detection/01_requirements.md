@@ -274,48 +274,113 @@ x86_64 において `mprotect` の引数順序は：
 
 ### AC-1: `mprotect` の識別
 
-- [ ] syscall 番号が `mprotect`（x86_64: 10、arm64: 226）のエントリを識別できること
+- [x] syscall 番号が `mprotect`（x86_64: 10、arm64: 226）のエントリを識別できること
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs`（x86_64、syscall 10）
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64`（arm64、syscall 226）
 
 ### AC-2: `prot` 引数の取得
 
-- [ ] `rdx`（x86_64）/ `x2`（arm64）への即値設定を後方スキャンで取得できること
-- [ ] 制御フロー命令を越えた走査を行わないこと
-- [ ] `syscall` 命令から 50 命令以内（`defaultMaxBackwardScan`）に即値設定が見つからない場合は `exec_unknown` と判定されること
+- [x] `rdx`（x86_64）/ `x2`（arm64）への即値設定を後方スキャンで取得できること
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "PROT_EXEC confirmed (64bit rdx/32bit edx)"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` "exec_confirmed (mov x2, #7)"
+- [x] 制御フロー命令を越えた走査を行わないこと
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "control flow boundary"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` "exec_unknown (control flow boundary)"
+- [x] `syscall` 命令から 50 命令以内（`defaultMaxBackwardScan`）に即値設定が見つからない場合は `exec_unknown` と判定されること
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "mprotect syscall only (no rdx setup in scan range)"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` "exec_unknown (mprotect syscall only, no x2 setup in scan range)"
+  - `TestSyscallAnalyzer_ScanLimitExceeded`（共通 `backwardScanForRegister` メカニズムの上限検証）
 
 ### AC-3: `PROT_EXEC` フラグの判定
 
-- [ ] `prot & 0x4 != 0` の場合に `exec_confirmed` と判定されること
-- [ ] `prot & 0x4 == 0` の場合に `exec_not_set` と判定されること
-- [ ] 即値が取得できない場合に `exec_unknown` と判定されること
+- [x] `prot & 0x4 != 0` の場合に `exec_confirmed` と判定されること
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "PROT_EXEC confirmed (64bit rdx)" (0x7) / "(32bit edx)" (0x4)
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` "exec_confirmed (mov x2, #7)"
+- [x] `prot & 0x4 == 0` の場合に `exec_not_set` と判定されること
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "PROT_EXEC not set" (0x3)
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` "exec_not_set (mov x2, #3)"
+- [x] 即値が取得できない場合に `exec_unknown` と判定されること
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "indirect register setting", "control flow boundary", "mprotect syscall only"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` 各 "exec_unknown" ケース
 
 ### AC-4: 解析結果の保存・読み込み
 
-- [ ] `ArgEvalResults` が JSON 解析結果ファイルに保存されること
-- [ ] `mprotect` syscall が検出されなかったバイナリの解析結果において、`ArgEvalResults` に `SyscallName == "mprotect"` のエントリが存在しないこと
-- [ ] スキーマバージョンが更新され、旧バージョンの解析結果が無効化されること
-- [ ] 保存・読み込みの往復で情報が欠落しないこと
+- [x] `ArgEvalResults` が JSON 解析結果ファイルに保存されること
+  - `TestStore_SchemaV5_ArgEvalResults` "ArgEvalResults roundtrip"
+- [x] `mprotect` syscall が検出されなかったバイナリの解析結果において、`ArgEvalResults` に `SyscallName == "mprotect"` のエントリが存在しないこと
+  - `TestStore_SchemaV5_ArgEvalResults` "nil ArgEvalResults is omitted from JSON"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "non-mprotect syscall only"
+- [x] スキーマバージョンが更新され、旧バージョンの解析結果が無効化されること
+  - `CurrentSchemaVersion` を 4 → 5 に更新
+  - `TestStore_SchemaVersionMismatch`（バージョン不一致時の `SchemaVersionMismatchError` を確認）
+- [x] 保存・読み込みの往復で情報が欠落しないこと
+  - `TestStore_SchemaV5_ArgEvalResults` "ArgEvalResults roundtrip"
 
 ### AC-5: 既存機能への非影響
 
-- [ ] 既存の `Summary.HasNetworkSyscalls` の判定結果が変わらないこと
-- [ ] リポジトリ全体の既存のテスト（`make test`）がすべてパスすること
+- [x] 既存の `Summary.HasNetworkSyscalls` の判定結果が変わらないこと
+  - `TestSyscallAnalyzer_NetworkSyscalls`、`TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls` が引き続きパス
+- [x] リポジトリ全体の既存のテスト（`make test`）がすべてパスすること
 
 ### AC-6: 複数 `mprotect` 検出時の集約
 
-- [ ] 複数の `mprotect` syscall が検出された場合に `ArgEvalResults` 中の `SyscallName == "mprotect"` のエントリが1件のみであること
-- [ ] `exec_confirmed` が1件でもある場合に `ArgEvalResults` のエントリが `exec_confirmed` となること
-- [ ] `exec_confirmed` がなく `exec_unknown` が1件以上ある場合に `ArgEvalResults` のエントリが `exec_unknown` となること
+- [x] 複数の `mprotect` syscall が検出された場合に `ArgEvalResults` 中の `SyscallName == "mprotect"` のエントリが1件のみであること
+  - `TestSyscallAnalyzer_MultipleMprotect`（全サブテスト）
+- [x] `exec_confirmed` が1件でもある場合に `ArgEvalResults` のエントリが `exec_confirmed` となること
+  - `TestSyscallAnalyzer_MultipleMprotect` "exec_confirmed + exec_not_set selects exec_confirmed"
+- [x] `exec_confirmed` がなく `exec_unknown` が1件以上ある場合に `ArgEvalResults` のエントリが `exec_unknown` となること
+  - `TestSyscallAnalyzer_MultipleMprotect` "exec_unknown + exec_not_set selects exec_unknown"
 
 ### AC-7: リスク判定への反映
 
-- [ ] `exec_confirmed` が1件以上ある場合に `Summary.IsHighRisk = true` となること
-- [ ] `exec_unknown` が1件以上ある場合（`exec_confirmed` なし）に `Summary.IsHighRisk = true` となること
-- [ ] `exec_not_set` のみの場合に `Summary.IsHighRisk` が変更されないこと
-- [ ] `mprotect` 未検出の場合に `Summary.IsHighRisk` が変更されないこと
-- [ ] ネットワーク syscall 等の他要因で既に `Summary.IsHighRisk = true` の場合に値が上書き（`false` に変更）されないこと
-- [ ] マッピングロジックが `elfanalyzer` パッケージのヘルパー関数（`EvalMprotectRisk`）として実装されていること
+- [x] `exec_confirmed` が1件以上ある場合に `Summary.IsHighRisk = true` となること
+  - `TestSyscallAnalyzer_MultipleMprotect` "exec_confirmed + exec_not_set selects exec_confirmed"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` "exec_confirmed (mov x2, #7)"
+- [x] `exec_unknown` が1件以上ある場合（`exec_confirmed` なし）に `Summary.IsHighRisk = true` となること
+  - `TestSyscallAnalyzer_MultipleMprotect` "exec_unknown + exec_not_set selects exec_unknown"
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64` 各 "exec_unknown" ケース
+- [x] `exec_not_set` のみの場合に `Summary.IsHighRisk` が変更されないこと
+  - `TestSyscallAnalyzer_MultipleMprotect` "exec_not_set only does not set high risk"
+- [x] `mprotect` 未検出の場合に `Summary.IsHighRisk` が変更されないこと
+  - `TestSyscallAnalyzer_EvaluateMprotectArgs` "non-mprotect syscall only"（ArgEvalResults 空、IsHighRisk 不変）
+- [x] ネットワーク syscall 等の他要因で既に `Summary.IsHighRisk = true` の場合に値が上書き（`false` に変更）されないこと
+  - `TestSyscallAnalyzer_MultipleMprotect` "exec_not_set does not overwrite pre-existing IsHighRisk=true"
+- [x] マッピングロジックが `elfanalyzer` パッケージのヘルパー関数（`EvalMprotectRisk`）として実装されていること
+  - `TestEvalMprotectRisk`（`mprotect_risk_test.go`）
 
 ## 8. 未解決事項
 
-- `exec_unknown` を `Summary.IsHighRisk = true` とすることの妥当性：Go バイナリ等で false positive が多発するか否かを実バイナリ調査で確認し、必要に応じてマッピングルールを改定する（5.1 注1 参照）
+- ~~`exec_unknown` を `Summary.IsHighRisk = true` とすることの妥当性：Go バイナリ等で false positive が多発するか否かを実バイナリ調査で確認し、必要に応じてマッピングルールを改定する（5.1 注1 参照）~~ → **解決済み（2026-03-22）**：以下「9. 調査記録」を参照
 - arm64 における `x2` レジスタのスキャン実装詳細
+
+## 9. 調査記録
+
+### 9.1 Go バイナリにおける `exec_unknown` 偽陽性の検証（2026-03-22）
+
+#### 検証対象
+
+以下のバイナリを対象に `SyscallAnalyzer` で解析し、`ArgEvalResults` の内容と `IsHighRisk` の値を確認した。
+
+| バイナリ | ArgEvalResults | IsHighRisk |
+|---|---|---|
+| Go: hello_world（ネットワークなし）| 0 件 | false |
+| Go: file_io（ファイル I/O のみ）| 0 件 | false |
+| Go: goroutines（goroutine 10 本）| 0 件 | false |
+| Go: network（net.Dial 使用）| 0 件 | false |
+| `/usr/local/go/bin/go`（Go 1.24）| 0 件 | true（`HasUnknownSyscalls` が原因、mprotect 無関係）|
+| `/usr/local/go/bin/gofmt` | 0 件 | false |
+
+#### 結論
+
+全バイナリで `ArgEvalResults` が 0 件であり、mprotect 由来の `exec_unknown` は一切発生しなかった。
+**`exec_unknown` → `IsHighRisk = true` のマッピングルールを変更する必要はない。**
+
+#### 発生しない理由
+
+Go バイナリで mprotect の `exec_unknown` が発生しない理由は2層構造になっている。
+
+1. **Pass 1 での非検出**: Go ランタイムの mprotect 呼び出しは、Pass 1 が探す「`mov $10, %eax` + `syscall`（即値直接記述）」パターンを使わない。Go ランタイムは `RawSyscall6` 等のラッパー関数を通じて呼び出す。
+
+2. **`evaluateMprotectArgs` のフィルター**: `evaluateMprotectArgs` は `DeterminationMethod == "immediate"` のエントリのみを評価対象とする（`syscall_analyzer.go` 参照）。仮に Pass 2（Go ラッパー解析）で mprotect が検出されたとしても `prot` 引数評価の対象にならない。
+
+結果として、Go ランタイムがスタック管理（guard page の `PROT_NONE` 設定等）のために `mprotect` を呼び出しても、`ArgEvalResults` にエントリは追加されず、`IsHighRisk` への影響はない。
