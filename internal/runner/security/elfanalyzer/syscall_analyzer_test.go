@@ -490,9 +490,9 @@ func TestSyscallAnalyzer_DecodeStats(t *testing.T) {
 }
 
 func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
-	// Create a code sequence with many non-eax instructions followed by syscall.
-	// Use maxBackwardScan = 3 to make the test small.
-	// nop; nop; nop; nop; syscall
+	// 4 nops + syscall with maxBackwardScan=3: the scan processes 3 nops and
+	// hits the step limit before reaching the 4th nop (window start).
+	// Expected: scan_limit_exceeded.
 	code := []byte{
 		0x90, 0x90, 0x90, 0x90, // 4 nops (none modify eax)
 		0x0f, 0x05, // syscall
@@ -505,6 +505,25 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result.DetectedSyscalls[0].DeterminationMethod)
+	assert.True(t, result.Summary.IsHighRisk)
+}
+
+func TestSyscallAnalyzer_WindowExhausted(t *testing.T) {
+	// 2 nops + syscall with maxBackwardScan=10: the scan examines all 2 nops
+	// without hitting the step limit — the entire window is consumed.
+	// Expected: window_exhausted (not scan_limit_exceeded).
+	code := []byte{
+		0x90, 0x90, // 2 nops (none modify eax)
+		0x0f, 0x05, // syscall
+	}
+
+	analyzer := NewSyscallAnalyzerWithConfig(NewX86Decoder(), NewX86_64SyscallTable(), 10)
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+	require.Len(t, result.DetectedSyscalls, 1)
+
+	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
+	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result.DetectedSyscalls[0].DeterminationMethod)
 	assert.True(t, result.Summary.IsHighRisk)
 }
 

@@ -95,8 +95,15 @@ const (
 	DeterminationMethodUnknownIndirectSetting = "unknown:indirect_setting"
 
 	// DeterminationMethodUnknownScanLimitExceeded indicates the syscall number
-	// could not be determined because the backward scan limit was exceeded.
+	// could not be determined because the backward scan step limit was reached
+	// before exhausting all decoded instructions in the window.
 	DeterminationMethodUnknownScanLimitExceeded = "unknown:scan_limit_exceeded"
+
+	// DeterminationMethodUnknownWindowExhausted indicates the syscall number
+	// could not be determined because all decoded instructions in the scan
+	// window were examined without finding a register-modifying instruction.
+	// Unlike scan_limit_exceeded, the scan consumed the entire available window.
+	DeterminationMethodUnknownWindowExhausted = "unknown:window_exhausted"
 
 	// DeterminationMethodUnknownInvalidOffset indicates the syscall number
 	// could not be determined because the offset was invalid.
@@ -509,6 +516,8 @@ func unknownMethodDetail(method string) string {
 		return "indirect register setting"
 	case DeterminationMethodUnknownScanLimitExceeded:
 		return "scan limit exceeded"
+	case DeterminationMethodUnknownWindowExhausted:
+		return "window exhausted"
 	default:
 		return "unknown reason"
 	}
@@ -653,6 +662,12 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 		return -1, DeterminationMethodUnknownIndirectSetting
 	}
 
+	// Distinguish between exhausting the scan window (all decoded instructions
+	// examined) and hitting the step limit (more instructions may exist beyond
+	// the window but were not decoded).
+	if scanCount < a.maxBackwardScan {
+		return -1, DeterminationMethodUnknownWindowExhausted
+	}
 	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 

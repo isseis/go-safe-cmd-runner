@@ -283,8 +283,9 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 	// Scan backward through recent instructions (excluding the call itself).
 	// Start from the instruction before the call (len-2) and scan up to maxBackwardScanSteps.
 	startIdx := len(recentInstructions) - minRecentInstructionsForScan
-	minIdx := len(recentInstructions) - 1 - maxBackwardScanSteps
-	for i := startIdx; i >= 0 && i >= minIdx; i-- {
+	scanCount := 0
+	for i := startIdx; i >= 0 && scanCount < maxBackwardScanSteps; i-- {
+		scanCount++
 		inst := recentInstructions[i]
 
 		// Stop at control flow boundary
@@ -305,6 +306,11 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 		}
 	}
 
+	// Distinguish between exhausting all available instructions (window exhausted)
+	// and hitting the step limit (more instructions may precede the window).
+	if scanCount < maxBackwardScanSteps {
+		return -1, DeterminationMethodUnknownWindowExhausted
+	}
 	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 
