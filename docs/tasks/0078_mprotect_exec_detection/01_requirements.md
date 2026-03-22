@@ -350,5 +350,37 @@ x86_64 において `mprotect` の引数順序は：
 
 ## 8. 未解決事項
 
-- `exec_unknown` を `Summary.IsHighRisk = true` とすることの妥当性：Go バイナリ等で false positive が多発するか否かを実バイナリ調査で確認し、必要に応じてマッピングルールを改定する（5.1 注1 参照）
+- ~~`exec_unknown` を `Summary.IsHighRisk = true` とすることの妥当性：Go バイナリ等で false positive が多発するか否かを実バイナリ調査で確認し、必要に応じてマッピングルールを改定する（5.1 注1 参照）~~ → **解決済み（2026-03-22）**：以下「9. 調査記録」を参照
 - arm64 における `x2` レジスタのスキャン実装詳細
+
+## 9. 調査記録
+
+### 9.1 Go バイナリにおける `exec_unknown` 偽陽性の検証（2026-03-22）
+
+#### 検証対象
+
+以下のバイナリを対象に `SyscallAnalyzer` で解析し、`ArgEvalResults` の内容と `IsHighRisk` の値を確認した。
+
+| バイナリ | ArgEvalResults | IsHighRisk |
+|---|---|---|
+| Go: hello_world（ネットワークなし）| 0 件 | false |
+| Go: file_io（ファイル I/O のみ）| 0 件 | false |
+| Go: goroutines（goroutine 10 本）| 0 件 | false |
+| Go: network（net.Dial 使用）| 0 件 | false |
+| `/usr/local/go/bin/go`（Go 1.24）| 0 件 | true（`HasUnknownSyscalls` が原因、mprotect 無関係）|
+| `/usr/local/go/bin/gofmt` | 0 件 | false |
+
+#### 結論
+
+全バイナリで `ArgEvalResults` が 0 件であり、mprotect 由来の `exec_unknown` は一切発生しなかった。
+**`exec_unknown` → `IsHighRisk = true` のマッピングルールを変更する必要はない。**
+
+#### 発生しない理由
+
+Go バイナリで mprotect の `exec_unknown` が発生しない理由は2層構造になっている。
+
+1. **Pass 1 での非検出**: Go ランタイムの mprotect 呼び出しは、Pass 1 が探す「`mov $10, %eax` + `syscall`（即値直接記述）」パターンを使わない。Go ランタイムは `RawSyscall6` 等のラッパー関数を通じて呼び出す。
+
+2. **`evaluateMprotectArgs` のフィルター**: `evaluateMprotectArgs` は `DeterminationMethod == "immediate"` のエントリのみを評価対象とする（`syscall_analyzer.go` 参照）。仮に Pass 2（Go ラッパー解析）で mprotect が検出されたとしても `prot` 引数評価の対象にならない。
+
+結果として、Go ランタイムがスタック管理（guard page の `PROT_NONE` 設定等）のために `mprotect` を呼び出しても、`ArgEvalResults` にエントリは追加されず、`IsHighRisk` への影響はない。
