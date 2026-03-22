@@ -60,6 +60,37 @@ func isReadOnlyFirstOperandOp(op x86asm.Op) bool {
 	return false
 }
 
+// implicitlyWritesRAXEAX reports whether the instruction unconditionally writes
+// to RAX/EAX as an implicit (unlisted) destination, i.e. RAX does not appear
+// as the first explicit operand. Callers must handle the two/three-operand
+// IMUL forms separately via the first-operand path.
+//
+// Covered cases:
+//   - MUL r/m  — unsigned multiply: rDX:rAX = rAX × operand
+//   - IMUL r/m — one-operand signed multiply (same implicit write as MUL);
+//     distinguished from multi-operand IMUL by having exactly one non-nil arg
+//   - DIV r/m  — unsigned divide: quotient → rAX, remainder → rDX
+//   - IDIV r/m — signed divide: same layout as DIV
+//   - CPUID    — writes EAX (plus EBX/ECX/EDX); no explicit operands
+//
+// Not included: CQO/CDQ/CWD — these read rAX and write rDX only.
+func implicitlyWritesRAXEAX(x86inst x86asm.Inst) bool {
+	switch x86inst.Op {
+	case x86asm.MUL, x86asm.DIV, x86asm.IDIV, x86asm.CPUID:
+		return true
+	case x86asm.IMUL:
+		// Only the one-operand form has an implicit rAX destination.
+		// Two/three-operand forms carry an explicit destination as args[0]
+		// and are already covered by the first-operand register check.
+		args := x86inst.Args[:]
+		for len(args) > 0 && args[len(args)-1] == nil {
+			args = args[:len(args)-1]
+		}
+		return len(args) == 1
+	}
+	return false
+}
+
 // ModifiesSyscallNumberRegister checks if the instruction modifies eax or rax.
 func (d *X86Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
@@ -69,6 +100,12 @@ func (d *X86Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool
 
 	if isReadOnlyFirstOperandOp(x86inst.Op) {
 		return false
+	}
+
+	// Instructions that implicitly write RAX/EAX without it appearing as the
+	// first explicit operand (e.g. MUL, one-operand IMUL, DIV, IDIV, CPUID).
+	if implicitlyWritesRAXEAX(x86inst) {
+		return true
 	}
 
 	// Trim trailing nil arguments

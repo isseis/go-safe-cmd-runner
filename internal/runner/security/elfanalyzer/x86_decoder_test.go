@@ -161,6 +161,48 @@ func TestX86Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 			code: []byte{0x85, 0xc0},
 			want: false,
 		},
+		{
+			// mul %ecx — implicit rDX:rAX = rAX * ECX; writes EAX implicitly
+			name: "mul ecx returns true (implicit RAX write)",
+			code: []byte{0xf7, 0xe1},
+			want: true,
+		},
+		{
+			// imul %ecx (one-operand) — implicit rDX:rAX = rAX * ECX
+			name: "imul ecx one-operand returns true (implicit RAX write)",
+			code: []byte{0xf7, 0xe9},
+			want: true,
+		},
+		{
+			// imul %eax, %ecx (two-operand, dest=EAX) — explicit first operand caught by normal path
+			name: "imul eax ecx two-operand returns true (explicit EAX dest)",
+			code: []byte{0x0f, 0xaf, 0xc1},
+			want: true,
+		},
+		{
+			// imul %ecx, %ebx (two-operand, dest=ECX, not RAX) — must not fire
+			name: "imul ecx ebx two-operand returns false (dest not RAX)",
+			code: []byte{0x0f, 0xaf, 0xcb},
+			want: false,
+		},
+		{
+			// div %ecx — quotient → EAX, remainder → EDX
+			name: "div ecx returns true (implicit RAX write)",
+			code: []byte{0xf7, 0xf1},
+			want: true,
+		},
+		{
+			// idiv %ecx — signed divide, quotient → EAX
+			name: "idiv ecx returns true (implicit RAX write)",
+			code: []byte{0xf7, 0xf9},
+			want: true,
+		},
+		{
+			// cpuid — writes EAX (and EBX/ECX/EDX)
+			name: "cpuid returns true (implicit EAX write)",
+			code: []byte{0x0f, 0xa2},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
