@@ -261,6 +261,34 @@ func (d *X86Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int
 	return val, ok
 }
 
+// implicitlyWritesRDXEDX reports whether the instruction unconditionally writes
+// to RDX/EDX as an implicit (unlisted) destination.
+//
+// Covered cases:
+//   - MUL r/m  — unsigned multiply: rDX:rAX = rAX × operand; high half → rDX
+//   - IMUL r/m — one-operand signed multiply: same layout as MUL;
+//     distinguished from multi-operand IMUL by having exactly one non-nil arg
+//   - DIV r/m  — unsigned divide: remainder → rDX
+//   - IDIV r/m — signed divide: remainder → rDX
+//   - CQO      — sign-extends RAX into RDX:RAX; writes RDX
+//   - CDQ      — sign-extends EAX into EDX:EAX; writes EDX
+//   - CWD      — sign-extends AX into DX:AX; writes DX
+func implicitlyWritesRDXEDX(x86inst x86asm.Inst) bool {
+	switch x86inst.Op {
+	case x86asm.MUL, x86asm.DIV, x86asm.IDIV, x86asm.CQO, x86asm.CDQ, x86asm.CWD:
+		return true
+	case x86asm.IMUL:
+		// Only the one-operand form writes the high half into rDX.
+		// Two/three-operand forms write only to the explicit destination register.
+		args := x86inst.Args[:]
+		for len(args) > 0 && args[len(args)-1] == nil {
+			args = args[:len(args)-1]
+		}
+		return len(args) == 1
+	}
+	return false
+}
+
 // ModifiesThirdArgRegister checks if the instruction modifies edx or rdx.
 func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
@@ -272,6 +300,12 @@ func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 		return false
 	}
 
+	// Instructions that implicitly write RDX/EDX without it appearing as the
+	// first explicit operand (e.g. MUL, one-operand IMUL, DIV, IDIV, CQO/CDQ/CWD).
+	if implicitlyWritesRDXEDX(x86inst) {
+		return true
+	}
+
 	// Trim trailing nil arguments
 	args := x86inst.Args[:]
 	for len(args) > 0 && args[len(args)-1] == nil {
@@ -281,10 +315,11 @@ func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 		return false
 	}
 
-	// Check destination register (first argument for most instructions)
+	// Check destination register (first argument for most instructions).
+	// DH is included: a write to the high byte of DX overlaps EDX/RDX.
 	if arg, ok := args[0].(x86asm.Reg); ok {
 		return arg == x86asm.EDX || arg == x86asm.RDX ||
-			arg == x86asm.DX || arg == x86asm.DL
+			arg == x86asm.DX || arg == x86asm.DL || arg == x86asm.DH
 	}
 
 	return false
