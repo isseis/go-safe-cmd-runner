@@ -150,7 +150,7 @@ result.HasUnknownSyscalls || EvalMprotectRisk(result.ArgEvalResults)
 | `internal/runner/security/elfanalyzer/syscall_analyzer.go` | `result.Summary.IsHighRisk` への代入を全削除。L355 のビルドサマリーコメントブロックから `IsHighRisk` への言及を削除 |
 | `internal/runner/security/elfanalyzer/standard_analyzer.go` | `result.Summary.IsHighRisk` の参照を `HasUnknownSyscalls \|\| EvalMprotectRisk(ArgEvalResults)` に置き換え。`convertSyscallResult` 関数のドキュメントコメント（L347–352）から `IsHighRisk` の説明行を削除 |
 | `internal/runner/security/elfanalyzer/mprotect_risk.go` | `EvalMprotectRisk` 関数のコメント（L6）を「`IsHighRisk` に設定すべきか」から「mprotect 由来のリスクが存在するか（`HighRiskReasons` への追加判断に使用）」に更新 |
-| `internal/fileanalysis/syscall_store.go`（または同等） | `CurrentSchemaVersion` をインクリメント |
+| `internal/fileanalysis/schema.go` | `CurrentSchemaVersion` を 5 → 6 にインクリメント |
 
 ### 5.2 テストファイル
 
