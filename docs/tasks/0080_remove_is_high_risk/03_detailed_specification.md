@@ -68,18 +68,30 @@ type SyscallSummary struct {
 
 変更前:
 ```go
+	// CurrentSchemaVersion is the current analysis record schema version.
+	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
+	// Version 3 adds NetworkSymbolAnalysis (now renamed SymbolAnalysis) and removes HasDynamicLoad.
+	// Version 4 renames network_symbol_analysis to symbol_analysis and removes has_network_symbols.
 	// Version 5 adds ArgEvalResults for syscall argument evaluation (mprotect PROT_EXEC detection).
 	// Load returns SchemaVersionMismatchError for records with schema_version != 5.
-	...
+	// Store.Update treats older schemas (Actual < Expected) as overwritable
+	// (enables `record --force` migration).
+	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
 	CurrentSchemaVersion = 5
 ```
 
 変更後:
 ```go
+	// CurrentSchemaVersion is the current analysis record schema version.
+	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
+	// Version 3 adds NetworkSymbolAnalysis (now renamed SymbolAnalysis) and removes HasDynamicLoad.
+	// Version 4 renames network_symbol_analysis to symbol_analysis and removes has_network_symbols.
 	// Version 5 adds ArgEvalResults for syscall argument evaluation (mprotect PROT_EXEC detection).
 	// Version 6 removes is_high_risk from summary and renames high_risk_reasons to analysis_warnings.
 	// Load returns SchemaVersionMismatchError for records with schema_version != 6.
-	...
+	// Store.Update treats older schemas (Actual < Expected) as overwritable
+	// (enables `record --force` migration).
+	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
 	CurrentSchemaVersion = 6
 ```
 
@@ -831,8 +843,21 @@ assert.False(t, EvalMprotectRisk(result.ArgEvalResults))
 
 #### 3.6.4 その他のモックデータ
 
-ファイル内で `IsHighRisk` を設定している他のモックデータがあれば同様に削除する。
-`HighRiskReasons` → `AnalysisWarnings` のリネームも全箇所で実施する。
+`IsHighRisk` 設定箇所と `HighRiskReasons` 参照箇所を全箇所で削除・リネームする。
+`grep -n 'IsHighRisk\|HighRiskReasons' internal/runner/security/elfanalyzer/analyzer_test.go` で
+確認した箇所は以下のとおり（行番号は実装時に検証すること）:
+
+| 行 | 変更内容 |
+|----|----------|
+| L371 | `HighRiskReasons: []string{...}` → `AnalysisWarnings: []string{...}` |
+| L376 | `IsHighRisk: true,` → 行を削除 |
+| L397 | コメント `// IsHighRisk must win: ...` → `// Risk must win: ...` |
+| L416 | `HighRiskReasons: []string{...}` → `AnalysisWarnings: []string{...}` |
+| L422 | `IsHighRisk: true,` → 行を削除 |
+| L432 | コメント `// IsHighRisk must take precedence ...` → `// Risk must take precedence ...` |
+| L580 | 関数コメント内の `SyscallAnalysis returns IsHighRisk=true` → `SyscallAnalysis returns AnalysisError` |
+| L591 | `HighRiskReasons: []string{...}` → `AnalysisWarnings: []string{...}` |
+| L593 | `IsHighRisk: true,` → 行を削除 |
 
 ### 3.7 `syscall_analyzer_integration_test.go`
 

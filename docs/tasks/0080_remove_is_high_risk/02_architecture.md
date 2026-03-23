@@ -117,7 +117,7 @@ graph TB
     end
 
     B -->|"generates"| A1
-    B -->|"generates"| A2
+    B -->|"generates (HasUnknownSyscalls)"| A2
     C -->|"generates"| A2
     D -->|"consumes"| A2
     D -->|"uses"| E
@@ -272,6 +272,7 @@ sequenceDiagram
     SA->>SA: Set Summary (TotalDetectedEvents,<br>HasNetworkSyscalls, NetworkSyscallCount)
     SA-->>CS: SyscallAnalysisResult
 
+    Note over CS: EvalMprotectRisk is called again here intentionally.<br>Both realtime and cache paths use the same derivation<br>in convertSyscallResult — no IsHighRisk is stored.
     CS->>CS: Derive risk:<br>HasUnknownSyscalls ||<br>EvalMprotectRisk(ArgEvalResults)
 
     alt isHighRisk
