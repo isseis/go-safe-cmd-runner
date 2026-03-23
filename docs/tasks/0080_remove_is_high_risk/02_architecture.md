@@ -60,7 +60,7 @@ flowchart TD
     E -->|"derives risk"| F["AnalysisOutput"]
 
     A -->|"record command"| G["filevalidator"]
-    G -->|"facts only"| H[("SyscallAnalysisData<br>HasUnknownSyscalls,<br>AnalysisWarnings")]
+    G -->|"facts only"| H[("SyscallAnalysisData<br>HasUnknownSyscalls")]
     H -->|"store"| D
 
     class A,C,D,H data;
@@ -318,6 +318,8 @@ flowchart LR
     class A,D data;
     class B,C process;
 ```
+
+**運用への影響**: スキーマバージョンはレコードファイル全体に対して検証される（`file_analysis_store.go` の `Load`）。バージョンを 5 → 6 に上げると、syscall 分析キャッシュを持たないレコードも含め、**既存の全 JSON キャッシュが次回ロード時に `SchemaVersionMismatchError` となり再解析が走る**。再解析後は v6 として保存されるため、二回目以降のロードは正常に動作する。データ損失は発生しない。
 
 ## 7. テスト戦略
 

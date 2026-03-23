@@ -585,7 +585,11 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 	assert.True(t, result.Summary.IsHighRisk)
 ```
 
-変更後: 行を削除。`DeterminationMethodUnknownScanLimitExceeded` の確認で `HasUnknownSyscalls` が暗黙的に保証される。
+変更後: `IsHighRisk` の確認を `HasUnknownSyscalls` の直接確認に置き換える。`DeterminationMethodUnknownScanLimitExceeded` の確認だけでは、将来 `HasUnknownSyscalls` が立たない回帰を取り逃す恐れがあるため。
+
+```go
+	assert.True(t, result.HasUnknownSyscalls)
+```
 
 #### 3.5.6 ウィンドウ枯渇テスト（L525–535 付近）
 
@@ -594,7 +598,11 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 	assert.True(t, result.Summary.IsHighRisk)
 ```
 
-変更後: 行を削除。
+変更後: `IsHighRisk` の確認を `HasUnknownSyscalls` の直接確認に置き換える。
+
+```go
+	assert.True(t, result.HasUnknownSyscalls)
+```
 
 #### 3.5.7 mprotect テスト群（L830–895 付近）
 
@@ -855,6 +863,8 @@ assert.False(t, EvalMprotectRisk(result.ArgEvalResults))
 - [ ] 検証方法: `grep -r HighRiskReasons --include='*.go' .` でヒットなし
 - [ ] 検証方法: `grep -r HighRiskReasons docs/development docs/user` で該当なし（現時点で該当箇所なし）
 
+> **スコープ注記**: `docs/tasks/` 以下の過去タスク文書（アーキテクチャ設計書・詳細仕様書など）は履歴アーカイブとして意図的に検証対象外とする。旧用語が多数残っているが、それは変更時点での事実を記録した文書であるため更新しない。
+
 ### AC-3: `filevalidator` の責務限定
 
 - [ ] 実装箇所: `internal/filevalidator/validator.go` L770–785（`buildSyscallAnalysisData` 関数）
@@ -889,7 +899,8 @@ assert.False(t, EvalMprotectRisk(result.ArgEvalResults))
   - `AnalysisWarnings` ラウンドトリップ: `TestSyscallAnalysisStore_AnalysisWarnings`
   - ArgEvalResults ラウンドトリップ: `TestSyscallAnalysisStore_SchemaV5_ArgEvalResults`
 - [ ] テスト: `TestStore_SchemaVersionMismatch`（既存テスト — スキーマ不一致の動作確認）
-- [ ] 検証方法: `go test -tags test -v ./internal/fileanalysis/ -run TestSyscall`
+- [ ] テスト: `internal/fileanalysis/network_symbol_store_test.go` のスキーマ不一致伝播テスト（スキーマバージョンはファイル全体に適用されるため）
+- [ ] 検証方法: `go test -tags test -v ./internal/fileanalysis/`（パッケージ全体を実行し、`TestStore_SchemaVersionMismatch` を含む全テストを網羅する）
 
 ### AC-7: 全テスト通過
 
