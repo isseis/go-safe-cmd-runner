@@ -23,6 +23,7 @@
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
     classDef problem fill:#ffe6e6,stroke:#cc0000,stroke-width:2px,color:#660000;
 
     A[("ELF Binary")] -->|"static analysis"| B["SyscallAnalyzer<br>(elfanalyzer)"]
@@ -40,6 +41,23 @@ flowchart TD
     class A,C,D,H data;
     class B,E,G process;
     class I problem;
+```
+
+**凡例（Legend）**（以下すべての図に共通）
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#cc0000,stroke-width:2px,color:#660000;
+
+    D1[("Data")] --> P1["Existing Component"] --> E1["Enhanced Component"]
+    PR["Problem"]
+    class D1 data
+    class P1 process
+    class E1 enhanced
+    class PR problem
 ```
 
 **問題**: `IsHighRisk` を 2 箇所（`elfanalyzer` と `filevalidator`）が異なるロジックで設定する。
@@ -66,20 +84,6 @@ flowchart TD
     class A,C,D,H data;
     class B,G process;
     class E,F enhanced;
-```
-
-**凡例（Legend）**
-
-```mermaid
-flowchart LR
-    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-
-    D1[("Data")] --> P1["Existing Component"] --> E1["Modified Component"]
-    class D1 data
-    class P1 process
-    class E1 enhanced
 ```
 
 ### 2.3 コンポーネント配置
