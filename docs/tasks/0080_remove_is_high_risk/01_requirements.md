@@ -195,6 +195,8 @@ JSON キー変更に伴い、`fileanalysis` パッケージの `CurrentSchemaVer
 | `internal/fileanalysis/syscall_store_test.go` | 保存・ロードのラウンドトリップテスト（L28–64、L151–193）および ArgEvalResults ラウンドトリップテスト（L328–358）から `IsHighRisk` フィールドの設定・アサーションを削除。`HighRiskReasons` → `AnalysisWarnings` に更新 |
 | `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` | `result.Summary.IsHighRisk` への参照（L163、L194 等）を `EvalMprotectRisk` または `HasUnknownSyscalls` を使った等価な確認に置き換え。`exec_not_set does not overwrite pre-existing IsHighRisk=true` テスト（L871–890）の検証方法を `HasUnknownSyscalls` のみの確認に変更。`HighRiskReasons` → `AnalysisWarnings` に更新 |
 | `internal/runner/security/elfanalyzer/analyzer_test.go` | モックストアが返す `SyscallAnalysisResult` の `Summary.IsHighRisk` 設定（L376、L422、L593）を削除。`HighRiskReasons` → `AnalysisWarnings` に更新。`convertSyscallResult` がキャッシュ済みデータを読む経路のテストを、`HasUnknownSyscalls` / `ArgEvalResults` から正しくリスク判定されることの確認に更新（詳細は §5.3 参照）|
+| `internal/fileanalysis/file_analysis_store_test.go` | L143 の `HighRiskReasons` フィールドを `AnalysisWarnings` に更新 |
+| `internal/runner/security/elfanalyzer/syscall_analyzer_integration_test.go` | L398 の `result.Summary.IsHighRisk` 参照を削除またはコメントアウト（ログ出力なので `HasUnknownSyscalls` への置き換えも可）|
 
 ### 5.3 キャッシュ済みデータ読み取り経路の考慮
 
@@ -223,7 +225,9 @@ JSON キー変更に伴い、`fileanalysis` パッケージの `CurrentSchemaVer
 
 - [ ] `common.SyscallAnalysisResultCore` のフィールド名が `AnalysisWarnings` になっていること
 - [ ] JSON キーが `analysis_warnings` になっていること
-- [ ] コードベース全体に `HighRiskReasons` という識別子が残っていないこと（`grep` で確認）
+- [ ] **Go ソースおよびテストファイル**（`**/*.go`）に `HighRiskReasons` という識別子が残っていないこと
+  - `grep -r HighRiskReasons --include='*.go' .` でヒットなしを確認
+  - 注: Markdown ドキュメント（`docs/` 以下）は対象外。過去タスクの要件定義書等に残存しても不問
 - [ ] `TestSyscallAnalysisResultCore_JSONRoundTrip` の `"high_risk_reasons omitted when nil"` サブテストが
   `analysis_warnings` キーを対象として通過すること
 
