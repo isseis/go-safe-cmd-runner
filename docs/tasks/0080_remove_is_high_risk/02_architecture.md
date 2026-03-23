@@ -92,33 +92,35 @@ graph TB
     classDef removed fill:#f0f0f0,stroke:#999999,stroke-width:1px,stroke-dasharray:5 5,color:#999999;
 
     subgraph "shared (internal/common)"
-        A["syscall_types.go"]
-        A1["SyscallSummary<br>- HasNetworkSyscalls<br>- TotalDetectedEvents<br>- NetworkSyscallCount"]
-        A2["SyscallAnalysisResultCore<br>- AnalysisWarnings<br>- HasUnknownSyscalls<br>- ArgEvalResults"]
+        A1[("SyscallSummary<br>- HasNetworkSyscalls<br>- TotalDetectedEvents<br>- NetworkSyscallCount")]
+        A2[("SyscallAnalysisResultCore<br>- AnalysisWarnings<br>- HasUnknownSyscalls<br>- ArgEvalResults")]
         A3["(removed) IsHighRisk"]
         A4["(renamed) HighRiskReasons → AnalysisWarnings"]
     end
 
     subgraph "record side (internal/filevalidator)"
         B["validator.go<br>buildSyscallAnalysisData"]
-        B1["Sets facts only:<br>HasNetworkSyscalls,<br>TotalDetectedEvents,<br>NetworkSyscallCount,<br>HasUnknownSyscalls"]
     end
 
     subgraph "runner side (internal/runner/security/elfanalyzer)"
         C["syscall_analyzer.go<br>analyzeSyscallsInCode"]
         D["standard_analyzer.go<br>convertSyscallResult"]
         E["mprotect_risk.go<br>EvalMprotectRisk"]
-        C1["Sets facts + warnings:<br>HasUnknownSyscalls,<br>AnalysisWarnings,<br>ArgEvalResults"]
-        D1["Derives risk at read time:<br>HasUnknownSyscalls ||<br>EvalMprotectRisk(ArgEvalResults)"]
     end
 
     subgraph "storage (internal/fileanalysis)"
         F["schema.go<br>CurrentSchemaVersion = 6"]
     end
 
+    B -->|"generates"| A1
+    B -->|"generates"| A2
+    C -->|"generates"| A2
+    D -->|"consumes"| A2
+    D -->|"uses"| E
+
     class A1,A2 data;
     class B,C,E process;
-    class D,D1 enhanced;
+    class D enhanced;
     class A3,A4 removed;
 ```
 
