@@ -43,7 +43,6 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 			HasUnknownSyscalls: false,
 			Summary: SyscallSummary{
 				HasNetworkSyscalls:  true,
-				IsHighRisk:          false,
 				TotalDetectedEvents: 1,
 				NetworkSyscallCount: 1,
 			},
@@ -143,7 +142,7 @@ func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
 	assert.Nil(t, loadedResult)
 }
 
-func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
+func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
@@ -168,11 +167,10 @@ func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
 				},
 			},
 			HasUnknownSyscalls: true,
-			HighRiskReasons: []string{
+			AnalysisWarnings: []string{
 				"syscall at 0x402000: number could not be determined (unknown:indirect_setting)",
 			},
 			Summary: SyscallSummary{
-				IsHighRisk:          true,
 				TotalDetectedEvents: 1,
 			},
 		},
@@ -189,9 +187,8 @@ func TestSyscallAnalysisStore_HighRiskReasons(t *testing.T) {
 
 	// Verify high risk information
 	assert.True(t, loadedResult.HasUnknownSyscalls)
-	assert.True(t, loadedResult.Summary.IsHighRisk)
-	require.Len(t, loadedResult.HighRiskReasons, 1)
-	assert.Contains(t, loadedResult.HighRiskReasons[0], "indirect_setting")
+	require.Len(t, loadedResult.AnalysisWarnings, 1)
+	assert.Contains(t, loadedResult.AnalysisWarnings[0], "indirect_setting")
 }
 
 func TestSyscallAnalysisStore_SaveSortsDetectedSyscallsByNumber(t *testing.T) {
@@ -337,7 +334,6 @@ func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
 					},
 				},
 				Summary: SyscallSummary{
-					IsHighRisk:          true,
 					TotalDetectedEvents: 1,
 				},
 			},
@@ -355,7 +351,6 @@ func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
 		assert.Equal(t, "mprotect", loaded.ArgEvalResults[0].SyscallName)
 		assert.Equal(t, common.SyscallArgEvalExecConfirmed, loaded.ArgEvalResults[0].Status)
 		assert.Equal(t, "prot=0x7", loaded.ArgEvalResults[0].Details)
-		assert.True(t, loaded.Summary.IsHighRisk)
 	})
 
 	t.Run("nil ArgEvalResults is omitted from JSON", func(t *testing.T) {
@@ -368,7 +363,6 @@ func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
 				Architecture:   "x86_64",
 				ArgEvalResults: nil,
 				Summary: SyscallSummary{
-					IsHighRisk:          false,
 					TotalDetectedEvents: 0,
 				},
 			},

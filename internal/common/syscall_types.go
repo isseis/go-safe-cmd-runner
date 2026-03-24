@@ -68,9 +68,6 @@ type SyscallSummary struct {
 	// HasNetworkSyscalls indicates presence of network-related syscalls.
 	HasNetworkSyscalls bool `json:"has_network_syscalls"`
 
-	// IsHighRisk indicates the analysis could not fully determine network capability.
-	IsHighRisk bool `json:"is_high_risk"`
-
 	// TotalDetectedEvents is the count of detected syscall events.
 	// This includes both direct syscall instructions and indirect syscalls
 	// via Go wrapper function calls.
@@ -96,13 +93,14 @@ type SyscallAnalysisResultCore struct {
 	// HasUnknownSyscalls indicates whether any syscall number could not be determined.
 	HasUnknownSyscalls bool `json:"has_unknown_syscalls"`
 
-	// HighRiskReasons explains why the analysis resulted in high risk, if applicable.
+	// AnalysisWarnings contains observations and warnings generated during analysis.
+	// Examples: "syscall number could not be determined", "mprotect PROT_EXEC confirmed".
 	// Note: With omitempty, nil and empty slice ([]string{}) have different JSON output:
 	//   - nil: field is omitted entirely
-	//   - []string{}: field appears as "high_risk_reasons": []
-	// When initializing, use nil (not empty slice) for no high risk
+	//   - []string{}: field appears as "analysis_warnings": []
+	// When initializing, use nil (not empty slice) for no warnings
 	// to ensure the field is omitted in JSON output.
-	HighRiskReasons []string `json:"high_risk_reasons,omitempty"`
+	AnalysisWarnings []string `json:"analysis_warnings,omitempty"`
 
 	// Summary provides aggregated information about the analysis.
 	Summary SyscallSummary `json:"summary"`

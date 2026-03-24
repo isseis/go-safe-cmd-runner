@@ -775,7 +775,6 @@ func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallI
 				HasNetworkSyscalls:  hasNetwork,
 				TotalDetectedEvents: len(retained),
 				NetworkSyscallCount: networkCount,
-				IsHighRisk:          hasUnknown,
 			},
 		},
 		AnalyzedAt: time.Now().UTC(),
