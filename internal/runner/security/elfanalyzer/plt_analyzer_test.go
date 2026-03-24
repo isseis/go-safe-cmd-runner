@@ -38,6 +38,10 @@ const (
 	elfHdrSize64  = 64 // sizeof(Elf64_Ehdr)
 	elfPhdrSize64 = 56 // sizeof(Elf64_Phdr)
 	elfAlignBytes = 8  // section-header table alignment
+
+	// sym64Size is the byte size of a 64-bit ELF symbol table entry
+	// (st_name + st_info + st_other + st_shndx + st_value + st_size = 4+1+1+2+8+8 bytes).
+	sym64Size = 24
 )
 
 // ── VA constants for synthetic test ELF files ───────────────────────────────
