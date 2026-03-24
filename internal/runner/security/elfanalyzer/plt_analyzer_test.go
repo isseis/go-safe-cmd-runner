@@ -70,6 +70,25 @@ var (
 	callPLT = []byte{0xE8, 0xF6, 0xEF, 0xFF, 0xFF}
 )
 
+// ── arm64 machine code fragments used across tests ───────────────────────────
+//
+// Layout (each snippet is placed at VA testTextVA = 0x402000):
+//
+//	offset 0: MOVZ X2, #prot  (4 bytes)
+//	offset 4: BL pltAddr      (4 bytes)
+//
+// BL target: testPLTSecVA = 0x401000; instruction VA = testTextVA + 4 = 0x402004
+// PCRel = 0x401000 − 0x402004 = −0x1004; imm26 = −0x1004/4 = −0x401
+// BL encoding: 0x94000000 | (−0x401 & 0x3FFFFFF) = 0x97FFFBFF → LE: FF FB FF 97
+var (
+	// movX2_7 is MOVZ X2, #7 (PROT_READ|PROT_WRITE|PROT_EXEC); exec_confirmed.
+	movX2_7 = []byte{0xE2, 0x00, 0x80, 0xD2}
+	// movX2_3 is MOVZ X2, #3 (PROT_READ|PROT_WRITE only); exec_not_set.
+	movX2_3 = []byte{0x62, 0x00, 0x80, 0xD2}
+	// blPLT is an arm64 BL to testPLTSecVA from offset 4 of testTextVA.
+	blPLT = []byte{0xFF, 0xFB, 0xFF, 0x97}
+)
+
 // ── Synthetic ELF builder ────────────────────────────────────────────────────
 
 // testELFConfig describes a minimal ELF binary to assemble for PLT tests.
@@ -413,5 +432,37 @@ func TestEvaluatePLTCallArgs(t *testing.T) {
 		assert.Nil(t, result)
 		var archErr *UnsupportedArchitectureError
 		assert.True(t, errors.As(err, &archErr))
+	})
+
+	t.Run("arm64_exec_confirmed_prot_has_exec_bit", func(t *testing.T) {
+		// MOVZ X2, #7 (PROT_READ|PROT_WRITE|PROT_EXEC); BL mprotect PLT stub
+		code := append(append([]byte(nil), movX2_7...), blPLT...)
+		f := buildTestELF(t, testELFConfig{
+			machine:    elf.EM_AARCH64,
+			funcName:   "mprotect",
+			pltSecAddr: testPLTSecVA,
+			textAddr:   testTextVA,
+			textCode:   code,
+		})
+		result, err := NewSyscallAnalyzer().EvaluatePLTCallArgs(f, "mprotect")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, common.SyscallArgEvalExecConfirmed, result.Status)
+	})
+
+	t.Run("arm64_exec_not_set_prot_lacks_exec_bit", func(t *testing.T) {
+		// MOVZ X2, #3 (PROT_READ|PROT_WRITE only); BL mprotect PLT stub
+		code := append(append([]byte(nil), movX2_3...), blPLT...)
+		f := buildTestELF(t, testELFConfig{
+			machine:    elf.EM_AARCH64,
+			funcName:   "mprotect",
+			pltSecAddr: testPLTSecVA,
+			textAddr:   testTextVA,
+			textCode:   code,
+		})
+		result, err := NewSyscallAnalyzer().EvaluatePLTCallArgs(f, "mprotect")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.Status)
 	})
 }
