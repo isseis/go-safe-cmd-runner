@@ -156,7 +156,7 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
-	// Create result with high risk reasons
+	// Create result with analysis warnings
 	result := &SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []SyscallInfo{
