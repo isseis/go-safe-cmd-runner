@@ -5,7 +5,7 @@
 - [x] フェーズ 1: 型定義の変更
 - [x] フェーズ 2: 本体コードの変更
 - [x] フェーズ 3: テストコードの変更
-- [ ] フェーズ 4: 受け入れ条件検証
+- [x] フェーズ 4: 受け入れ条件検証
 
 ---
 
@@ -162,24 +162,24 @@
 
 ### タスク 4-1: AC-2 最終確認
 
-- [ ] `grep -r HighRiskReasons --include='*.go' .` でヒットなしを確認
-- [ ] `grep -r HighRiskReasons docs/development docs/user` でヒットなしを確認（該当箇所があれば更新）
+- [x] `grep -r HighRiskReasons --include='*.go' .` でヒットなしを確認
+- [x] `grep -r HighRiskReasons docs/development docs/user` でヒットなしを確認（該当箇所があれば更新）
 
 ### タスク 4-2: AC-1 最終確認
 
-- [ ] `internal/common/syscall_types.go` の `SyscallSummary` 構造体に `IsHighRisk` フィールドが存在しないことを目視確認
+- [x] `internal/common/syscall_types.go` の `SyscallSummary` 構造体に `IsHighRisk` フィールドが存在しないことを目視確認
 
 ### タスク 4-3: AC-6 最終確認
 
-- [ ] `TestStore_SchemaVersionMismatch` が引き続きパスすること（旧バージョンの JSON ロード時に `SchemaVersionMismatchError` が返されること）
-- [ ] `internal/fileanalysis/network_symbol_store_test.go` のスキーマ不一致伝播テストがパスすること（スキーマバージョンはファイル全体に適用されるため）
-- [ ] `go test -tags test -v ./internal/fileanalysis/` でパッケージ全体が通過すること
+- [x] `TestStore_SchemaVersionMismatch` が引き続きパスすること（旧バージョンの JSON ロード時に `SchemaVersionMismatchError` が返されること）
+- [x] `internal/fileanalysis/network_symbol_store_test.go` のスキーマ不一致伝播テストがパスすること（スキーマバージョンはファイル全体に適用されるため）
+- [x] `go test -tags test -v ./internal/fileanalysis/` でパッケージ全体が通過すること
 
 ### タスク 4-4: 全品質チェック
 
-- [ ] `make build` がエラーなく完了すること（AC-1）
-- [ ] `make test` がすべてパスすること（AC-7）
-- [ ] `make lint` がエラーなく完了すること（AC-7）
+- [x] `make build` がエラーなく完了すること（AC-1）
+- [x] `make test` がすべてパスすること（AC-7）
+- [x] `make lint` がエラーなく完了すること（AC-7）
 
 ---
 
