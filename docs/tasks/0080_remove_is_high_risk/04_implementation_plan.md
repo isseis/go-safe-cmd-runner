@@ -192,7 +192,7 @@
 | `internal/common/syscall_types.go` | `SyscallSummary.IsHighRisk` 削除。`HighRiskReasons` → `AnalysisWarnings` リネーム（JSON タグも変更） |
 | `internal/filevalidator/validator.go` | `IsHighRisk` への代入を削除 |
 | `internal/runner/security/elfanalyzer/syscall_analyzer.go` | `IsHighRisk` 代入を全削除。`HighRiskReasons` → `AnalysisWarnings`。コメント更新 |
-| `internal/runner/security/elfanalyzer/standard_analyzer.go` | リスク判定を `HasUnknownSyscalls \|\| EvalMprotectRisk` に置き換え。`HighRiskReasons` → `AnalysisWarnings`。コメント更新 |
+| `internal/runner/security/elfanalyzer/standard_analyzer.go` | リスク判定を `HasUnknownSyscalls || EvalMprotectRisk` に置き換え。`HighRiskReasons` → `AnalysisWarnings`。コメント更新 |
 | `internal/runner/security/elfanalyzer/mprotect_risk.go` | `EvalMprotectRisk` 関数のコメント更新 |
 | `internal/fileanalysis/schema.go` | `CurrentSchemaVersion` を 5 → 6 に更新 |
 
