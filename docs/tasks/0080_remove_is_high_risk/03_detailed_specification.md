@@ -89,8 +89,8 @@ type SyscallSummary struct {
 	// Version 5 adds ArgEvalResults for syscall argument evaluation (mprotect PROT_EXEC detection).
 	// Version 6 removes is_high_risk from summary and renames high_risk_reasons to analysis_warnings.
 	// Load returns SchemaVersionMismatchError for records with schema_version != 6.
-	// Store.Update treats older schemas (Actual < Expected) as overwritable
-	// (enables `record --force` migration).
+	// Store.Update treats older schemas (Actual < Expected) as overwritable;
+	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
 	CurrentSchemaVersion = 6
 ```
