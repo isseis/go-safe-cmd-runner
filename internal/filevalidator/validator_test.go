@@ -1309,7 +1309,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		direct := []common.SyscallInfo{
 			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
 		}
-		data := buildSyscallAnalysisData(all, direct, elf.EM_X86_64)
+		data := buildSyscallAnalysisData(all, direct, nil, elf.EM_X86_64)
 		assert.True(t, data.HasUnknownSyscalls, "should detect unknown from direct")
 		assert.Equal(t, "x86_64", data.Architecture)
 	})
@@ -1320,7 +1320,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 			{Number: -1, Source: "libc_symbol_import"},
 		}
 		direct := []common.SyscallInfo{}
-		data := buildSyscallAnalysisData(all, direct, elf.EM_AARCH64)
+		data := buildSyscallAnalysisData(all, direct, nil, elf.EM_AARCH64)
 		assert.False(t, data.HasUnknownSyscalls)
 		assert.Equal(t, "arm64", data.Architecture)
 	})
@@ -1458,8 +1458,12 @@ func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
 // fake syscall for any ELF file, used to seed SyscallAnalysis in test records.
 type stubSyscallAnalyzerReturnsOne struct{}
 
-func (s *stubSyscallAnalyzerReturnsOne) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, error) {
-	return []common.SyscallInfo{{Number: 1, Name: "write"}}, nil
+func (s *stubSyscallAnalyzerReturnsOne) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
+	return []common.SyscallInfo{{Number: 1, Name: "write"}}, nil, nil
+}
+
+func (s *stubSyscallAnalyzerReturnsOne) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
+	return nil, nil
 }
 
 func (s *stubSyscallAnalyzerReturnsOne) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
@@ -1510,7 +1514,11 @@ func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
 // stubSyscallAnalyzerReturnsNone is a SyscallAnalyzerInterface that returns no syscalls.
 type stubSyscallAnalyzerReturnsNone struct{}
 
-func (s *stubSyscallAnalyzerReturnsNone) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, error) {
+func (s *stubSyscallAnalyzerReturnsNone) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
+	return nil, nil, nil
+}
+
+func (s *stubSyscallAnalyzerReturnsNone) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
 	return nil, nil
 }
 

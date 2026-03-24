@@ -57,8 +57,24 @@ func NewSyscallAdapter(analyzer *elfanalyzer.SyscallAnalyzer) *SyscallAdapter {
 }
 
 // AnalyzeSyscallsFromELF implements filevalidator.SyscallAnalyzerInterface.
-func (a *SyscallAdapter) AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, error) {
+func (a *SyscallAdapter) AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
 	result, err := a.analyzer.AnalyzeSyscallsFromELF(elfFile)
+	if err != nil {
+		var archErr *elfanalyzer.UnsupportedArchitectureError
+		if errors.As(err, &archErr) {
+			return nil, nil, fmt.Errorf("%w: %v", filevalidator.ErrUnsupportedArch, archErr.Machine)
+		}
+		return nil, nil, err
+	}
+	if result == nil {
+		return nil, nil, nil
+	}
+	return result.DetectedSyscalls, result.ArgEvalResults, nil
+}
+
+// EvaluatePLTCallArgs implements filevalidator.SyscallAnalyzerInterface.
+func (a *SyscallAdapter) EvaluatePLTCallArgs(elfFile *elf.File, funcName string) (*common.SyscallArgEvalResult, error) {
+	result, err := a.analyzer.EvaluatePLTCallArgs(elfFile, funcName)
 	if err != nil {
 		var archErr *elfanalyzer.UnsupportedArchitectureError
 		if errors.As(err, &archErr) {
@@ -66,10 +82,7 @@ func (a *SyscallAdapter) AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.Sys
 		}
 		return nil, err
 	}
-	if result == nil {
-		return nil, nil
-	}
-	return result.DetectedSyscalls, nil
+	return result, nil
 }
 
 // GetSyscallTable implements filevalidator.SyscallAnalyzerInterface.

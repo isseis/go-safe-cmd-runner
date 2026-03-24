@@ -57,10 +57,15 @@ var ErrUnsupportedArch = errors.New("unsupported ELF architecture")
 // Implementations must convert elfanalyzer.UnsupportedArchitectureError to ErrUnsupportedArch.
 type SyscallAnalyzerInterface interface {
 	// AnalyzeSyscallsFromELF analyzes the ELF file for direct syscall instructions.
-	// Returns a slice of detected syscalls.
+	// Returns detected syscalls and argument evaluation results (e.g., mprotect PROT_EXEC).
 	// Returns an error wrapping ErrUnsupportedArch (detectable via errors.Is) for
 	// unsupported architectures.
-	AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, error)
+	AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error)
+	// EvaluatePLTCallArgs scans .text for CALL/BL instructions targeting funcName's
+	// PLT stub and backward-scans the third argument register at each call site.
+	// Returns (nil, nil) if funcName has no PLT entry or no call sites are found.
+	// Returns an error wrapping ErrUnsupportedArch for unsupported architectures.
+	EvaluatePLTCallArgs(elfFile *elf.File, funcName string) (*common.SyscallArgEvalResult, error)
 	// GetSyscallTable returns the SyscallNumberTable for the given machine type.
 	// Returns (table, true) for supported architectures, (nil, false) for unsupported ones.
 	GetSyscallTable(machine elf.Machine) (SyscallNumberTable, bool)
@@ -605,22 +610,25 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 
 	// Step C: Direct syscall instruction analysis.
 	var directSyscalls []common.SyscallInfo
+	var directArgEvalResults []common.SyscallArgEvalResult
 	if v.syscallAnalyzer != nil {
-		detected, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
+		detected, evalResults, analyzeErr := v.syscallAnalyzer.AnalyzeSyscallsFromELF(elfFile)
 		if analyzeErr != nil {
 			if !errors.Is(analyzeErr, ErrUnsupportedArch) {
 				return fmt.Errorf("syscall analysis failed: %w", analyzeErr)
 			}
 		} else {
 			directSyscalls = detected
+			directArgEvalResults = evalResults
 		}
 	}
 
 	// Step D: Merge and set SyscallAnalysis.
 	// Always assign (including nil) to overwrite any stale value from a previous record run.
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
-	if len(allSyscalls) > 0 {
-		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls, elfFile.Machine)
+	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
+	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
+		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls, argEvalResults, elfFile.Machine)
 	} else {
 		record.SyscallAnalysis = nil
 	}
@@ -744,9 +752,55 @@ func elfMachineToArchName(machine elf.Machine) string {
 	}
 }
 
+// buildArgEvalResults merges libc-import mprotect detection with direct analysis ArgEvalResults.
+// If mprotect appears in libcSyscalls but direct analysis produced no mprotect ArgEvalResult,
+// it attempts to determine the prot argument by scanning PLT call sites in the binary.
+// Falls back to exec_unknown when PLT analysis finds no call sites or is unavailable.
+func buildArgEvalResults(
+	libcSyscalls []common.SyscallInfo,
+	directArgEvalResults []common.SyscallArgEvalResult,
+	elfFile *elf.File,
+	analyzer SyscallAnalyzerInterface,
+) []common.SyscallArgEvalResult {
+	// If direct analysis already produced a mprotect ArgEvalResult, use it as-is.
+	for _, r := range directArgEvalResults {
+		if r.SyscallName == "mprotect" {
+			return directArgEvalResults
+		}
+	}
+
+	// Check if mprotect is present in libc import syscalls.
+	hasMprotect := false
+	for _, s := range libcSyscalls {
+		if s.Name == "mprotect" {
+			hasMprotect = true
+			break
+		}
+	}
+	if !hasMprotect {
+		return directArgEvalResults
+	}
+
+	// mprotect is imported via libc. Try to determine the prot argument by
+	// backward-scanning each PLT call site in the binary.
+	if analyzer != nil && elfFile != nil {
+		result, err := analyzer.EvaluatePLTCallArgs(elfFile, "mprotect")
+		if err == nil && result != nil {
+			return append(directArgEvalResults, *result)
+		}
+	}
+
+	// Fallback: PLT analysis unavailable or found no call sites.
+	return append(directArgEvalResults, common.SyscallArgEvalResult{
+		SyscallName: "mprotect",
+		Status:      common.SyscallArgEvalExecUnknown,
+		Details:     "called via libc wrapper (prot argument not statically determinable)",
+	})
+}
+
 // buildSyscallAnalysisData constructs a SyscallAnalysisData from the merged syscall infos.
 // HasUnknownSyscalls is determined by whether any direct (Source == "") entry has Number < 0.
-func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
+func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
 	hasUnknown := false
 	for _, info := range direct {
 		if info.Number < 0 {
@@ -771,6 +825,7 @@ func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallI
 			Architecture:       elfMachineToArchName(machine),
 			DetectedSyscalls:   retained,
 			HasUnknownSyscalls: hasUnknown,
+			ArgEvalResults:     argEvalResults,
 			Summary: common.SyscallSummary{
 				HasNetworkSyscalls:  hasNetwork,
 				TotalDetectedEvents: len(retained),
