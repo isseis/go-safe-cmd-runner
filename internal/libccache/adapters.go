@@ -28,8 +28,7 @@ func NewCacheAdapter(cacheMgr *LibcCacheManager, syscallAnalyzer *elfanalyzer.Sy
 func (a *CacheAdapter) GetOrCreateSyscalls(libcPath, libcHash string, importSymbols []string, machine elf.Machine) ([]common.SyscallInfo, error) {
 	wrappers, err := a.cacheMgr.GetOrCreate(libcPath, libcHash)
 	if err != nil {
-		var archErr *elfanalyzer.UnsupportedArchitectureError
-		if errors.As(err, &archErr) {
+		if archErr, ok := errors.AsType[*elfanalyzer.UnsupportedArchitectureError](err); ok {
 			return nil, fmt.Errorf("%w: %v", filevalidator.ErrUnsupportedArch, archErr.Machine)
 		}
 		return nil, err
@@ -60,8 +59,7 @@ func NewSyscallAdapter(analyzer *elfanalyzer.SyscallAnalyzer) *SyscallAdapter {
 func (a *SyscallAdapter) AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
 	result, err := a.analyzer.AnalyzeSyscallsFromELF(elfFile)
 	if err != nil {
-		var archErr *elfanalyzer.UnsupportedArchitectureError
-		if errors.As(err, &archErr) {
+		if archErr, ok := errors.AsType[*elfanalyzer.UnsupportedArchitectureError](err); ok {
 			return nil, nil, fmt.Errorf("%w: %v", filevalidator.ErrUnsupportedArch, archErr.Machine)
 		}
 		return nil, nil, err
@@ -76,8 +74,7 @@ func (a *SyscallAdapter) AnalyzeSyscallsFromELF(elfFile *elf.File) ([]common.Sys
 func (a *SyscallAdapter) EvaluatePLTCallArgs(elfFile *elf.File, funcName string) (*common.SyscallArgEvalResult, error) {
 	result, err := a.analyzer.EvaluatePLTCallArgs(elfFile, funcName)
 	if err != nil {
-		var archErr *elfanalyzer.UnsupportedArchitectureError
-		if errors.As(err, &archErr) {
+		if archErr, ok := errors.AsType[*elfanalyzer.UnsupportedArchitectureError](err); ok {
 			return nil, fmt.Errorf("%w: %v", filevalidator.ErrUnsupportedArch, archErr.Machine)
 		}
 		return nil, err

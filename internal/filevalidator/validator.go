@@ -673,8 +673,7 @@ func openELFFile(fs safefileio.FileSystem, filePath string) (*elf.File, error) {
 	elfFile, err := elf.NewFile(f)
 	if err != nil {
 		_ = f.Close()
-		var formatErr *elf.FormatError
-		if errors.As(err, &formatErr) {
+		if _, ok := errors.AsType[*elf.FormatError](err); ok {
 			return nil, errNotELF
 		}
 		return nil, fmt.Errorf("failed to parse ELF file: %w", err)
