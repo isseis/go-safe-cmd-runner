@@ -317,16 +317,22 @@ flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#cc0000,stroke-width:2px,color:#660000;
 
-    A[("JSON v5<br>is_high_risk ∈ summary<br>high_risk_reasons")] -->|"Load"| B["SchemaVersionMismatchError<br>(v5 ≠ v6)"]
-    B -->|"re-analyze"| C["SyscallAnalyzer"]
+    A[("JSON v5<br>is_high_risk ∈ summary<br>high_risk_reasons")]
+
+    A -->|"Load (verify 実行)"| B["SchemaVersionMismatchError<br>(v5 ≠ v6)"]
+    B --> E["VerifyGroupFiles:<br>ErrGroupVerificationFailed<br>実行ブロック"]
+
+    A -->|"Store.Update<br>(record 再実行)"| C["SyscallAnalyzer<br>(再解析)"]
     C -->|"Save"| D[("JSON v6<br>no is_high_risk<br>analysis_warnings")]
 
     class A,D data;
     class B,C process;
+    class E problem;
 ```
 
-**運用への影響**: スキーマバージョンはレコードファイル全体に対して検証される（`file_analysis_store.go` の `Load`）。バージョンを 5 → 6 に上げると、syscall 分析キャッシュを持たないレコードも含め、**既存の全 JSON キャッシュが次回ロード時に `SchemaVersionMismatchError` となり再解析が走る**。再解析後は v6 として保存されるため、二回目以降のロードは正常に動作する。データ損失は発生しない。
+**運用への影響**: スキーマバージョンはレコードファイル全体に対して検証される（`file_analysis_store.go` の `Load`）。バージョンを 5 → 6 に上げると、既存の全 JSON キャッシュは次回 `verify` 実行時に `SchemaVersionMismatchError` となり、`VerifyGroupFiles` が `ErrGroupVerificationFailed` を返して実行がブロックされる。**再解析は自動では走らない**。移行するには `record` コマンドを再実行する。`Store.Update` が旧スキーマのレコードを新規扱いとして上書きし、v6 として保存される。その後の `verify` は正常に動作する。データ損失は発生しない。
 
 ## 7. テスト戦略
 
