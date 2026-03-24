@@ -75,7 +75,7 @@
 **ファイル**: `internal/runner/security/elfanalyzer/mprotect_risk.go`
 
 - [ ] L6 のコメントを「`IsHighRisk` に設定すべきか」から「mprotect 由来のリスクが存在するか（`AnalysisWarnings` への追加判断および `convertSyscallResult` でのリスク判定に使用）」に更新
-- [ ] 対応する受け入れ条件: NFR-4.2.2
+- [ ] 対応する受け入れ条件: AC-2（`AnalysisWarnings` リネームに伴うコードの実態合わせ）
 
 ### フェーズ 2 完了確認
 
@@ -116,7 +116,13 @@
 
 **ファイル**: `internal/runner/security/elfanalyzer/syscall_analyzer_test.go`
 
-- [ ] `result.Summary.IsHighRisk` への参照（L163, L194 等）を `EvalMprotectRisk` または `HasUnknownSyscalls` を使った等価な確認に置き換え
+- [ ] 未知 syscall 検出テスト（L155–170 付近）: `assert.True(t, result.Summary.IsHighRisk)` を削除（直前行で `HasUnknownSyscalls` 確認済み）。`HighRiskReasons` → `AnalysisWarnings`
+- [ ] 複数 syscall 検出テスト（L240–270 付近）: `assert.False(t, result.Summary.IsHighRisk)` を削除
+- [ ] syscall 未検出テスト（L254–270 付近）: `assert.False(t, result.Summary.IsHighRisk)` を削除
+- [ ] ネットワーク+未知 syscall 混在テスト（L320–330 付近）: `assert.True(t, result.Summary.IsHighRisk)` を削除
+- [ ] スキャンリミット超過テスト（L500–535 付近）: `assert.True(t, result.Summary.IsHighRisk)` を `assert.True(t, result.HasUnknownSyscalls)` に置き換え
+- [ ] ウィンドウ枯渇テスト（L525–535 付近）: `assert.True(t, result.Summary.IsHighRisk)` を `assert.True(t, result.HasUnknownSyscalls)` に置き換え
+- [ ] mprotect テスト群（L830–895 付近）: `assert.True/False(t, result.Summary.IsHighRisk)` を `EvalMprotectRisk(result.ArgEvalResults)` による確認に置き換え
 - [ ] `exec_not_set does not overwrite pre-existing IsHighRisk=true` テスト（L871–890）: テスト名を `exec_not_set with HasUnknownSyscalls remains high risk` に変更し、`assert.True(t, result.Summary.IsHighRisk)` 行を削除
 - [ ] ARM64 mprotect テーブル駆動テスト（L905–1010 付近）: `wantIsHighRisk bool` フィールドを `wantHighRisk bool` にリネームし、検証式を `result.HasUnknownSyscalls || EvalMprotectRisk(result.ArgEvalResults)` に変更
 - [ ] `HighRiskReasons` → `AnalysisWarnings` に更新
@@ -126,9 +132,10 @@
 
 **ファイル**: `internal/runner/security/elfanalyzer/analyzer_test.go`
 
-- [ ] モックストアが返す `SyscallAnalysisResult` の `Summary.IsHighRisk` 設定（L376, L422, L593 付近）を削除
-- [ ] `convertSyscallResult` がキャッシュ済みデータを読む経路のテストを、`HasUnknownSyscalls` / `ArgEvalResults` から正しくリスク判定されることの確認に更新
-- [ ] `HighRiskReasons` → `AnalysisWarnings` に更新
+- [ ] `TestStandardELFAnalyzer_SyscallLookup_HighRisk`（L355–389）: `Summary.IsHighRisk: true` 削除、`HighRiskReasons` → `AnalysisWarnings`
+- [ ] `TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork`（L391–436）: 同上。コメント `// IsHighRisk must win` → `// Risk must win`、`// IsHighRisk must take precedence` → `// Risk must take precedence`
+- [ ] `TestAC3_DynamicELF_SyscallFallback_HighRisk`（L580–610 付近）: `Summary.IsHighRisk: true` 削除、`HighRiskReasons` → `AnalysisWarnings`、関数コメント内の `SyscallAnalysis returns IsHighRisk=true` → `SyscallAnalysis returns AnalysisError`
+- [ ] その他の全モックデータ: `grep -n 'IsHighRisk\|HighRiskReasons' analyzer_test.go` で残存箇所を確認し、全削除・リネーム
 - [ ] 対応する受け入れ条件: AC-5
 
 ### タスク 3-6: `file_analysis_store_test.go`
@@ -162,7 +169,13 @@
 
 - [ ] `internal/common/syscall_types.go` の `SyscallSummary` 構造体に `IsHighRisk` フィールドが存在しないことを目視確認
 
-### タスク 4-3: 全品質チェック
+### タスク 4-3: AC-6 最終確認
+
+- [ ] `TestStore_SchemaVersionMismatch` が引き続きパスすること（旧バージョンの JSON ロード時に `SchemaVersionMismatchError` が返されること）
+- [ ] `internal/fileanalysis/network_symbol_store_test.go` のスキーマ不一致伝播テストがパスすること（スキーマバージョンはファイル全体に適用されるため）
+- [ ] `go test -tags test -v ./internal/fileanalysis/` でパッケージ全体が通過すること
+
+### タスク 4-4: 全品質チェック
 
 - [ ] `make build` がエラーなく完了すること（AC-1）
 - [ ] `make test` がすべてパスすること（AC-7）
