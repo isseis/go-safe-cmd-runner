@@ -74,12 +74,13 @@ var (
 
 // testELFConfig describes a minimal ELF binary to assemble for PLT tests.
 type testELFConfig struct {
-	machine    elf.Machine // defaults to EM_X86_64 when zero
-	funcName   string      // symbol to add to .dynsym / .rela.plt (empty = omit)
-	pltSecAddr uint64      // VA for .plt.sec (0 = omit; takes priority over pltAddr)
-	pltAddr    uint64      // VA for .plt   (0 = omit; used only when pltSecAddr == 0)
-	textAddr   uint64      // VA for .text  (0 = omit)
-	textCode   []byte      // machine code for .text
+	machine         elf.Machine // defaults to EM_X86_64 when zero
+	funcName        string      // symbol to add to .dynsym / .rela.plt (empty = omit)
+	pltSecAddr      uint64      // VA for .plt.sec (0 = omit; takes priority over pltAddr)
+	pltAddr         uint64      // VA for .plt   (0 = omit; used only when pltSecAddr == 0)
+	textAddr        uint64      // VA for .text  (0 = omit)
+	textCode        []byte      // machine code for .text
+	relaPLTOverride []byte      // if non-nil, replaces the generated .rela.plt data
 }
 
 // buildTestELF assembles a minimal ELF64 from cfg and returns a parsed *elf.File.
@@ -140,7 +141,9 @@ func assembleELF64(t *testing.T, cfg testELFConfig) []byte {
 
 	// ── .rela.plt: one relocation for dynsym index 1 ─────────────────────────
 	var relaBuf bytes.Buffer
-	if cfg.funcName != "" {
+	if cfg.relaPLTOverride != nil {
+		relaBuf.Write(cfg.relaPLTOverride)
+	} else if cfg.funcName != "" {
 		type rela64 struct {
 			Off    uint64
 			Info   uint64 // sym<<32 | type
@@ -325,6 +328,18 @@ func TestFindFuncPLTAddr(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, found)
 		assert.Zero(t, addr)
+	})
+
+	t.Run("truncated_rela_plt_returns_error", func(t *testing.T) { //nolint:misspell // SHT_RELA is an ELF standard term, not a typo
+		// .rela.plt size is not a multiple of elf64RelASize → parse error.
+		f := buildTestELF(t, testELFConfig{
+			funcName:        "mprotect",
+			pltSecAddr:      testPLTSecVA,
+			relaPLTOverride: make([]byte, elf64RelASize-1), // one byte short
+		})
+		_, found, err := findFuncPLTAddr(f, "mprotect")
+		require.Error(t, err)
+		assert.False(t, found)
 	})
 }
 

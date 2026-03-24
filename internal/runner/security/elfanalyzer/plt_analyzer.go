@@ -20,6 +20,9 @@ const elf64RelASize = 24
 // ELF64_R_SYM(i) = (i) >> 32.
 const elf64RelASymShift = 32
 
+// errRelaPLTMalformed is returned when .rela.plt data is not a multiple of elf64RelASize.
+var errRelaPLTMalformed = errors.New(".rela.plt size is not a multiple of the entry size") //nolint:misspell // SHT_RELA is an ELF standard term, not a typo
+
 // findFuncPLTAddr returns the PLT stub virtual address for the named
 // undefined (imported) function in elfFile.
 //
@@ -63,7 +66,7 @@ func findFuncPLTAddr(elfFile *elf.File, funcName string) (uint64, bool, error) {
 		return 0, false, fmt.Errorf("reading .rela.plt: %w", err)
 	}
 	if len(relaData)%elf64RelASize != 0 {
-		return 0, false, nil
+		return 0, false, errRelaPLTMalformed
 	}
 
 	bo := elfFile.ByteOrder
