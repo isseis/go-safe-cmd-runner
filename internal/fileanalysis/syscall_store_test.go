@@ -309,7 +309,7 @@ func TestFilterSyscallsForStorage_Empty(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
+func TestStore_ArgEvalResults(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
 
@@ -339,7 +339,7 @@ func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
 			},
 		}
 
-		fileHash := "sha256:v5roundtrip"
+		fileHash := "sha256:argevalroundtrip"
 		err = store.SaveSyscallAnalysis(testFile, fileHash, result)
 		require.NoError(t, err)
 
@@ -368,7 +368,7 @@ func TestStore_SchemaV5_ArgEvalResults(t *testing.T) {
 			},
 		}
 
-		fileHash := "sha256:v5nilomit"
+		fileHash := "sha256:argevalnilomit"
 		err = store.SaveSyscallAnalysis(testFile2, fileHash, result)
 		require.NoError(t, err)
 
