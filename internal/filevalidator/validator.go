@@ -752,9 +752,16 @@ func elfMachineToArchName(machine elf.Machine) string {
 	}
 }
 
+// syscallNameMprotect is the canonical syscall name used as a key throughout
+// libc-import and PLT analysis for the mprotect syscall.
+const syscallNameMprotect = "mprotect"
+
+// mprotectStatusPriorityExecConfirmed is the highest risk priority for mprotect status evaluation.
+const mprotectStatusPriorityExecConfirmed = 2
+
 // buildArgEvalResults merges libc-import mprotect detection with direct analysis ArgEvalResults.
-// If mprotect appears in libcSyscalls but direct analysis produced no mprotect ArgEvalResult,
-// it attempts to determine the prot argument by scanning PLT call sites in the binary.
+// When mprotect appears in libcSyscalls, it evaluates the PLT call sites and picks the
+// highest-risk result between the direct-syscall result (if any) and the PLT result.
 // Falls back to exec_unknown when PLT analysis finds no call sites or is unavailable.
 func buildArgEvalResults(
 	libcSyscalls []common.SyscallInfo,
@@ -762,17 +769,10 @@ func buildArgEvalResults(
 	elfFile *elf.File,
 	analyzer SyscallAnalyzerInterface,
 ) []common.SyscallArgEvalResult {
-	// If direct analysis already produced a mprotect ArgEvalResult, use it as-is.
-	for _, r := range directArgEvalResults {
-		if r.SyscallName == "mprotect" {
-			return directArgEvalResults
-		}
-	}
-
 	// Check if mprotect is present in libc import syscalls.
 	hasMprotect := false
 	for _, s := range libcSyscalls {
-		if s.Name == "mprotect" {
+		if s.Name == syscallNameMprotect {
 			hasMprotect = true
 			break
 		}
@@ -781,21 +781,56 @@ func buildArgEvalResults(
 		return directArgEvalResults
 	}
 
-	// mprotect is imported via libc. Try to determine the prot argument by
-	// backward-scanning each PLT call site in the binary.
-	if analyzer != nil && elfFile != nil {
-		result, err := analyzer.EvaluatePLTCallArgs(elfFile, "mprotect")
-		if err == nil && result != nil {
-			return append(directArgEvalResults, *result)
+	// Find direct mprotect result (if any).
+	var directMprotect *common.SyscallArgEvalResult
+	for i := range directArgEvalResults {
+		if directArgEvalResults[i].SyscallName == syscallNameMprotect {
+			directMprotect = &directArgEvalResults[i]
+			break
 		}
 	}
 
-	// Fallback: PLT analysis unavailable or found no call sites.
-	return append(directArgEvalResults, common.SyscallArgEvalResult{
-		SyscallName: "mprotect",
+	// mprotect is imported via libc. Try to determine the prot argument by
+	// backward-scanning each PLT call site in the binary.
+	pltResult := common.SyscallArgEvalResult{
+		SyscallName: syscallNameMprotect,
 		Status:      common.SyscallArgEvalExecUnknown,
 		Details:     "called via libc wrapper (prot argument not statically determinable)",
-	})
+	}
+	if analyzer != nil && elfFile != nil {
+		result, err := analyzer.EvaluatePLTCallArgs(elfFile, syscallNameMprotect)
+		if err == nil && result != nil {
+			pltResult = *result
+		}
+	}
+
+	// Pick the highest-risk mprotect result between direct and PLT.
+	bestMprotect := pltResult
+	if directMprotect != nil && mprotectStatusPriority(directMprotect.Status) > mprotectStatusPriority(pltResult.Status) {
+		bestMprotect = *directMprotect
+	}
+
+	// Return non-mprotect direct results plus the best mprotect result.
+	result := make([]common.SyscallArgEvalResult, 0, len(directArgEvalResults))
+	for _, r := range directArgEvalResults {
+		if r.SyscallName != syscallNameMprotect {
+			result = append(result, r)
+		}
+	}
+	return append(result, bestMprotect)
+}
+
+// mprotectStatusPriority returns the risk priority of a SyscallArgEvalStatus.
+// Higher value means higher risk.
+func mprotectStatusPriority(status common.SyscallArgEvalStatus) int {
+	switch status {
+	case common.SyscallArgEvalExecConfirmed:
+		return mprotectStatusPriorityExecConfirmed
+	case common.SyscallArgEvalExecUnknown:
+		return mprotectStatusPriorityExecConfirmed - 1
+	default:
+		return 0
+	}
 }
 
 // buildSyscallAnalysisData constructs a SyscallAnalysisData from the merged syscall infos.

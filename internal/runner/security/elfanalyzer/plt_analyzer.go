@@ -16,6 +16,10 @@ const pltEntrySize = 16
 // (r_offset + r_info + r_addend = 8+8+8 bytes).
 const elf64RelASize = 24
 
+// sym64Size is the byte size of a 64-bit ELF symbol table entry
+// (st_name + st_info + st_other + st_shndx + st_value + st_size = 4+1+1+2+8+8 bytes).
+const sym64Size = 24
+
 // elf64RelASymShift is the bit shift to extract the symbol index from r_info.
 // ELF64_R_SYM(i) = (i) >> 32.
 const elf64RelASymShift = 32

@@ -1561,3 +1561,113 @@ func TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis(t *testin
 	assert.Nil(t, record.SymbolAnalysis,
 		"SymbolAnalysis must be nil after re-recording as NotSupportedBinary")
 }
+
+// stubPLTAnalyzer is a SyscallAnalyzerInterface that returns a fixed result for EvaluatePLTCallArgs.
+type stubPLTAnalyzer struct {
+	result *common.SyscallArgEvalResult
+	err    error
+}
+
+func (s *stubPLTAnalyzer) AnalyzeSyscallsFromELF(_ *elf.File) ([]common.SyscallInfo, []common.SyscallArgEvalResult, error) {
+	return nil, nil, nil
+}
+
+func (s *stubPLTAnalyzer) EvaluatePLTCallArgs(_ *elf.File, _ string) (*common.SyscallArgEvalResult, error) {
+	return s.result, s.err
+}
+
+func (s *stubPLTAnalyzer) GetSyscallTable(_ elf.Machine) (SyscallNumberTable, bool) {
+	return nil, false
+}
+
+func TestBuildArgEvalResults(t *testing.T) {
+	libcWithMprotect := []common.SyscallInfo{{Name: "mprotect"}}
+	libcWithoutMprotect := []common.SyscallInfo{{Name: "write"}}
+
+	ptrResult := func(name string, status common.SyscallArgEvalStatus) *common.SyscallArgEvalResult {
+		r := common.SyscallArgEvalResult{SyscallName: name, Status: status}
+		return &r
+	}
+
+	tests := []struct {
+		name          string
+		libcSyscalls  []common.SyscallInfo
+		directResults []common.SyscallArgEvalResult
+		pltResult     *common.SyscallArgEvalResult
+		wantMprotect  common.SyscallArgEvalStatus
+		wantCount     int
+	}{
+		{
+			name:          "no_libc_mprotect_returns_direct_unchanged",
+			libcSyscalls:  libcWithoutMprotect,
+			directResults: []common.SyscallArgEvalResult{{SyscallName: "mprotect", Status: common.SyscallArgEvalExecNotSet}},
+			wantMprotect:  common.SyscallArgEvalExecNotSet,
+			wantCount:     1,
+		},
+		{
+			// direct: exec_not_set (low risk), PLT: exec_confirmed (high risk) → must use PLT
+			name:          "direct_exec_not_set_plt_exec_confirmed_uses_plt",
+			libcSyscalls:  libcWithMprotect,
+			directResults: []common.SyscallArgEvalResult{{SyscallName: "mprotect", Status: common.SyscallArgEvalExecNotSet}},
+			pltResult:     ptrResult("mprotect", common.SyscallArgEvalExecConfirmed),
+			wantMprotect:  common.SyscallArgEvalExecConfirmed,
+			wantCount:     1,
+		},
+		{
+			// direct: exec_confirmed (high risk), PLT: exec_not_set (low risk) → must keep direct
+			name:          "direct_exec_confirmed_plt_exec_not_set_keeps_direct",
+			libcSyscalls:  libcWithMprotect,
+			directResults: []common.SyscallArgEvalResult{{SyscallName: "mprotect", Status: common.SyscallArgEvalExecConfirmed}},
+			pltResult:     ptrResult("mprotect", common.SyscallArgEvalExecNotSet),
+			wantMprotect:  common.SyscallArgEvalExecConfirmed,
+			wantCount:     1,
+		},
+		{
+			name:         "no_direct_mprotect_plt_exec_confirmed",
+			libcSyscalls: libcWithMprotect,
+			pltResult:    ptrResult("mprotect", common.SyscallArgEvalExecConfirmed),
+			wantMprotect: common.SyscallArgEvalExecConfirmed,
+			wantCount:    1,
+		},
+		{
+			name:         "libc_mprotect_plt_returns_nil_falls_back_to_exec_unknown",
+			libcSyscalls: libcWithMprotect,
+			pltResult:    nil,
+			wantMprotect: common.SyscallArgEvalExecUnknown,
+			wantCount:    1,
+		},
+		{
+			// Non-mprotect direct results must be preserved alongside the best mprotect result.
+			name:         "non_mprotect_direct_results_preserved",
+			libcSyscalls: libcWithMprotect,
+			directResults: []common.SyscallArgEvalResult{
+				{SyscallName: "mmap", Status: common.SyscallArgEvalExecConfirmed},
+				{SyscallName: "mprotect", Status: common.SyscallArgEvalExecNotSet},
+			},
+			pltResult:    ptrResult("mprotect", common.SyscallArgEvalExecConfirmed),
+			wantMprotect: common.SyscallArgEvalExecConfirmed,
+			wantCount:    2, // mmap + mprotect
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			analyzer := &stubPLTAnalyzer{result: tc.pltResult}
+			// Use a non-nil elfFile so the PLT analysis branch is reachable.
+			elfFile := new(elf.File)
+			results := buildArgEvalResults(tc.libcSyscalls, tc.directResults, elfFile, analyzer)
+
+			assert.Len(t, results, tc.wantCount)
+
+			var got *common.SyscallArgEvalResult
+			for i := range results {
+				if results[i].SyscallName == "mprotect" {
+					got = &results[i]
+					break
+				}
+			}
+			require.NotNil(t, got, "expected a mprotect ArgEvalResult in results")
+			assert.Equal(t, tc.wantMprotect, got.Status)
+		})
+	}
+}
