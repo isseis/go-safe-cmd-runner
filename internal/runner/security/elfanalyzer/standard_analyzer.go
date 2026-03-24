@@ -49,7 +49,7 @@ var (
 	// ErrFileTooLarge indicates the file exceeds the maximum size for analysis.
 	ErrFileTooLarge = errors.New("file too large")
 
-	// ErrSyscallAnalysisHighRisk indicates syscall analysis found unknown syscalls.
+	// ErrSyscallAnalysisHighRisk indicates syscall analysis found high-risk results.
 	ErrSyscallAnalysisHighRisk = errors.New("syscall analysis high risk")
 )
 
@@ -347,11 +347,6 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 // Risk is derived at read time from primary facts:
 //   - HasUnknownSyscalls: true if any syscall number could not be determined
 //   - EvalMprotectRisk(ArgEvalResults): true if mprotect PROT_EXEC risk detected
-//
-// This replaces the former Summary.IsHighRisk field, which was a redundant cache
-// of the same derivation. The formula is identical:
-//
-//	isHighRisk = HasUnknownSyscalls || EvalMprotectRisk(ArgEvalResults)
 func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
 	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
 	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
