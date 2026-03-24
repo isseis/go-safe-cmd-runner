@@ -55,7 +55,7 @@
 
 **ファイル**: `internal/runner/security/elfanalyzer/syscall_analyzer.go`
 
-- [ ] `HighRiskReasons` → `AnalysisWarnings` にリネーム（3 箇所: L313, L339, L373/L377 付近）
+- [ ] `HighRiskReasons` → `AnalysisWarnings` にリネーム（4 箇所: L313, L339, L374, L378 付近）
 - [ ] `result.Summary.IsHighRisk = true`（L368 付近）の行を削除
 - [ ] `result.Summary.IsHighRisk = result.Summary.IsHighRisk || result.HasUnknownSyscalls`（L386 付近）の行を削除
 - [ ] L355 付近のビルドサマリーコメントから `IsHighRisk` への言及を削除し、リスク導出は `convertSyscallResult` が行う旨を記述
