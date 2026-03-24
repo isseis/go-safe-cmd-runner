@@ -185,7 +185,7 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, loadedResult)
 
-	// Verify high risk information
+	// Verify analysis warnings are preserved
 	assert.True(t, loadedResult.HasUnknownSyscalls)
 	require.Len(t, loadedResult.AnalysisWarnings, 1)
 	assert.Contains(t, loadedResult.AnalysisWarnings[0], "indirect_setting")

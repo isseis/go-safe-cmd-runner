@@ -190,6 +190,7 @@ func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
 	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
 	// Should be marked as high risk
 	assert.True(t, result.HasUnknownSyscalls)
+	assert.NotEmpty(t, result.AnalysisWarnings)
 }
 
 func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
@@ -211,6 +212,7 @@ func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
 	assert.Equal(t, -1, info.Number)
 	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
 	assert.True(t, result.HasUnknownSyscalls)
+	assert.NotEmpty(t, result.AnalysisWarnings)
 }
 
 func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
@@ -245,6 +247,8 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	assert.Equal(t, 2, result.Summary.NetworkSyscallCount)
 	assert.True(t, result.Summary.HasNetworkSyscalls)
 	assert.False(t, result.HasUnknownSyscalls)
+	assert.Empty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 }
 
 func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
@@ -260,6 +264,8 @@ func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
 	assert.Equal(t, 0, result.Summary.NetworkSyscallCount)
 	assert.False(t, result.Summary.HasNetworkSyscalls)
 	assert.False(t, result.HasUnknownSyscalls)
+	assert.Empty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 }
 
 func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
@@ -291,6 +297,8 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	assert.Equal(t, 1, result.Summary.NetworkSyscallCount)
 	assert.True(t, result.Summary.HasNetworkSyscalls)
 	assert.False(t, result.HasUnknownSyscalls)
+	assert.Empty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 }
 
 func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
@@ -318,6 +326,8 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 
 	// Overall result should be high risk because of unknown syscall
 	assert.True(t, result.HasUnknownSyscalls)
+	assert.NotEmpty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 	assert.Equal(t, 1, result.Summary.NetworkSyscallCount)
 }
 
