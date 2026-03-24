@@ -140,7 +140,7 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				Architecture:       "x86_64",
 				HasUnknownSyscalls: true,
-				HighRiskReasons:    []string{"reason1"},
+				AnalysisWarnings:   []string{"reason1"},
 			},
 			AnalyzedAt: time.Now().UTC(),
 		},

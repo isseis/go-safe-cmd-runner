@@ -395,7 +395,6 @@ func main() {
 		t.Logf("TotalDetectedEvents: %d", result.Summary.TotalDetectedEvents)
 		t.Logf("NetworkSyscallCount: %d", result.Summary.NetworkSyscallCount)
 		t.Logf("HasNetworkSyscalls: %v", result.Summary.HasNetworkSyscalls)
-		t.Logf("IsHighRisk: %v", result.Summary.IsHighRisk)
 		t.Logf("HasUnknownSyscalls: %v", result.HasUnknownSyscalls)
 
 		for i, sc := range result.DetectedSyscalls {

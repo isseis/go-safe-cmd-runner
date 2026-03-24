@@ -160,8 +160,7 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 			assert.Equal(t, -1, info.Number)
 			assert.Equal(t, tt.wantMethod, info.DeterminationMethod)
 			assert.True(t, result.HasUnknownSyscalls)
-			assert.True(t, result.Summary.IsHighRisk)
-			assert.NotEmpty(t, result.HighRiskReasons)
+			assert.NotEmpty(t, result.AnalysisWarnings)
 		})
 	}
 }
@@ -191,7 +190,7 @@ func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
 	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
 	// Should be marked as high risk
 	assert.True(t, result.HasUnknownSyscalls)
-	assert.True(t, result.Summary.IsHighRisk)
+	assert.NotEmpty(t, result.AnalysisWarnings)
 }
 
 func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
@@ -213,7 +212,7 @@ func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
 	assert.Equal(t, -1, info.Number)
 	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
 	assert.True(t, result.HasUnknownSyscalls)
-	assert.True(t, result.Summary.IsHighRisk)
+	assert.NotEmpty(t, result.AnalysisWarnings)
 }
 
 func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
@@ -247,8 +246,9 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	assert.Equal(t, 2, result.Summary.TotalDetectedEvents)
 	assert.Equal(t, 2, result.Summary.NetworkSyscallCount)
 	assert.True(t, result.Summary.HasNetworkSyscalls)
-	assert.False(t, result.Summary.IsHighRisk)
 	assert.False(t, result.HasUnknownSyscalls)
+	assert.Empty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 }
 
 func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
@@ -263,8 +263,9 @@ func TestSyscallAnalyzer_NoSyscalls(t *testing.T) {
 	assert.Equal(t, 0, result.Summary.TotalDetectedEvents)
 	assert.Equal(t, 0, result.Summary.NetworkSyscallCount)
 	assert.False(t, result.Summary.HasNetworkSyscalls)
-	assert.False(t, result.Summary.IsHighRisk)
 	assert.False(t, result.HasUnknownSyscalls)
+	assert.Empty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 }
 
 func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
@@ -295,7 +296,9 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	assert.Equal(t, 2, result.Summary.TotalDetectedEvents)
 	assert.Equal(t, 1, result.Summary.NetworkSyscallCount)
 	assert.True(t, result.Summary.HasNetworkSyscalls)
-	assert.False(t, result.Summary.IsHighRisk)
+	assert.False(t, result.HasUnknownSyscalls)
+	assert.Empty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 }
 
 func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
@@ -323,7 +326,8 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 
 	// Overall result should be high risk because of unknown syscall
 	assert.True(t, result.HasUnknownSyscalls)
-	assert.True(t, result.Summary.IsHighRisk)
+	assert.NotEmpty(t, result.AnalysisWarnings)
+	assert.Empty(t, result.ArgEvalResults)
 	assert.Equal(t, 1, result.Summary.NetworkSyscallCount)
 }
 
@@ -505,7 +509,7 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result.DetectedSyscalls[0].DeterminationMethod)
-	assert.True(t, result.Summary.IsHighRisk)
+	assert.True(t, result.HasUnknownSyscalls)
 }
 
 func TestSyscallAnalyzer_WindowExhausted(t *testing.T) {
@@ -524,7 +528,7 @@ func TestSyscallAnalyzer_WindowExhausted(t *testing.T) {
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result.DetectedSyscalls[0].DeterminationMethod)
-	assert.True(t, result.Summary.IsHighRisk)
+	assert.True(t, result.HasUnknownSyscalls)
 }
 
 func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing.T) {
@@ -834,7 +838,7 @@ func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
 		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
 		require.NotEmpty(t, result.ArgEvalResults)
 		assert.Equal(t, common.SyscallArgEvalExecConfirmed, result.ArgEvalResults[0].Status)
-		assert.True(t, result.Summary.IsHighRisk)
+		assert.True(t, EvalMprotectRisk(result.ArgEvalResults))
 	})
 
 	t.Run("exec_unknown + exec_not_set selects exec_unknown", func(t *testing.T) {
@@ -852,7 +856,7 @@ func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
 		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
 		require.NotEmpty(t, result.ArgEvalResults)
 		assert.Equal(t, common.SyscallArgEvalExecUnknown, result.ArgEvalResults[0].Status)
-		assert.True(t, result.Summary.IsHighRisk)
+		assert.True(t, EvalMprotectRisk(result.ArgEvalResults))
 	})
 
 	t.Run("exec_not_set only does not set high risk", func(t *testing.T) {
@@ -865,13 +869,12 @@ func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
 		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
 		require.NotEmpty(t, result.ArgEvalResults)
 		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.ArgEvalResults[0].Status)
-		assert.False(t, result.Summary.IsHighRisk)
+		assert.False(t, EvalMprotectRisk(result.ArgEvalResults))
 	})
 
-	t.Run("exec_not_set does not overwrite pre-existing IsHighRisk=true", func(t *testing.T) {
-		// Unknown syscall (indirect register setting) sets HasUnknownSyscalls=true,
-		// which causes Summary.IsHighRisk=true via OR semantics.
-		// Subsequent mprotect exec_not_set must NOT reset IsHighRisk to false.
+	t.Run("exec_not_set with HasUnknownSyscalls remains high risk", func(t *testing.T) {
+		// Unknown syscall (indirect register setting) sets HasUnknownSyscalls=true.
+		// Subsequent mprotect exec_not_set must NOT change that fact.
 		code := []byte{
 			// Unknown syscall: mov %ebx, %eax; syscall (sets HasUnknownSyscalls=true)
 			0x89, 0xd8, // mov %ebx, %eax
@@ -884,9 +887,9 @@ func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
 		result := analyzer.analyzeSyscallsInCode(code, baseAddr, decoder, table, nil)
 		require.NotEmpty(t, result.ArgEvalResults)
 		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.ArgEvalResults[0].Status)
-		// IsHighRisk must remain true (set by HasUnknownSyscalls), not be overwritten by exec_not_set.
+		// HasUnknownSyscalls must remain true regardless of exec_not_set.
+		// Risk derivation (HasUnknownSyscalls || EvalMprotectRisk) is done at read time.
 		assert.True(t, result.HasUnknownSyscalls)
-		assert.True(t, result.Summary.IsHighRisk)
 	})
 }
 
@@ -907,11 +910,11 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 	baseAddr := uint64(0x1000)
 
 	tests := []struct {
-		name           string
-		code           []byte
-		wantStatus     common.SyscallArgEvalStatus
-		wantHasResult  bool
-		wantIsHighRisk bool
+		name          string
+		code          []byte
+		wantStatus    common.SyscallArgEvalStatus
+		wantHasResult bool
+		wantHighRisk  bool
 	}{
 		{
 			name: "exec_confirmed (mov x2, #7)",
@@ -922,9 +925,9 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 				0xE2, 0x00, 0x80, 0xD2, // mov x2, #7
 				0x01, 0x00, 0x00, 0xD4, // svc #0
 			},
-			wantStatus:     common.SyscallArgEvalExecConfirmed,
-			wantHasResult:  true,
-			wantIsHighRisk: true,
+			wantStatus:    common.SyscallArgEvalExecConfirmed,
+			wantHasResult: true,
+			wantHighRisk:  true,
 		},
 		{
 			name: "exec_not_set (mov x2, #3)",
@@ -935,9 +938,9 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 				0x62, 0x00, 0x80, 0xD2, // mov x2, #3
 				0x01, 0x00, 0x00, 0xD4, // svc #0
 			},
-			wantStatus:     common.SyscallArgEvalExecNotSet,
-			wantHasResult:  true,
-			wantIsHighRisk: false,
+			wantStatus:    common.SyscallArgEvalExecNotSet,
+			wantHasResult: true,
+			wantHighRisk:  false,
 		},
 		{
 			name: "exec_unknown (register move: mov x2, x1)",
@@ -947,9 +950,9 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 				0xE2, 0x03, 0x01, 0xAA, // mov x2, x1
 				0x01, 0x00, 0x00, 0xD4, // svc #0
 			},
-			wantStatus:     common.SyscallArgEvalExecUnknown,
-			wantHasResult:  true,
-			wantIsHighRisk: true,
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+			wantHighRisk:  true,
 		},
 		{
 			name: "exec_unknown (mprotect syscall only, no x2 setup in scan range)",
@@ -959,9 +962,9 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
 				0x01, 0x00, 0x00, 0xD4, // svc #0
 			},
-			wantStatus:     common.SyscallArgEvalExecUnknown,
-			wantHasResult:  true,
-			wantIsHighRisk: true,
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+			wantHighRisk:  true,
 		},
 		{
 			name: "exec_unknown (control flow boundary)",
@@ -984,9 +987,9 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 				0x48, 0x1C, 0x80, 0xD2, // mov x8, #226
 				0x01, 0x00, 0x00, 0xD4, // svc #0
 			},
-			wantStatus:     common.SyscallArgEvalExecUnknown,
-			wantHasResult:  true,
-			wantIsHighRisk: true,
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+			wantHighRisk:  true,
 		},
 	}
 
@@ -1002,7 +1005,8 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 			require.NotEmpty(t, result.ArgEvalResults, "expected ArgEvalResults to be populated")
 			assert.Equal(t, "mprotect", result.ArgEvalResults[0].SyscallName)
 			assert.Equal(t, tt.wantStatus, result.ArgEvalResults[0].Status)
-			assert.Equal(t, tt.wantIsHighRisk, result.Summary.IsHighRisk)
+			gotHighRisk := result.HasUnknownSyscalls || EvalMprotectRisk(result.ArgEvalResults)
+			assert.Equal(t, tt.wantHighRisk, gotHighRisk)
 		})
 	}
 }

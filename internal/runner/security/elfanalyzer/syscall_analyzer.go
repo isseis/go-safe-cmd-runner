@@ -310,7 +310,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 
 		if info.Number == -1 {
 			result.HasUnknownSyscalls = true
-			result.HighRiskReasons = append(result.HighRiskReasons,
+			result.AnalysisWarnings = append(result.AnalysisWarnings,
 				fmt.Sprintf("syscall at 0x%x: number could not be determined (%s)",
 					info.Location, info.DeterminationMethod))
 		}
@@ -336,7 +336,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 				info.IsNetwork = table.IsNetworkSyscall(call.SyscallNumber)
 			} else {
 				result.HasUnknownSyscalls = true
-				result.HighRiskReasons = append(result.HighRiskReasons,
+				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("go wrapper call at 0x%x: %s",
 						call.CallSiteAddress, call.DeterminationMethod))
 			}
@@ -352,10 +352,9 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 	// Build summary with consistent field calculation rules:
 	// - TotalDetectedEvents: total count of all detected syscall events (Pass 1 + Pass 2)
 	// - HasNetworkSyscalls: true if NetworkSyscallCount > 0
-	// - IsHighRisk: true if HasUnknownSyscalls or mprotect PROT_EXEC risk detected
 	// - NetworkSyscallCount: incremented during Pass 1 and Pass 2
-	// These rules ensure convertSyscallResult() in StandardELFAnalyzer correctly
-	// interprets the analysis result for network capability detection.
+	// Risk derivation (HasUnknownSyscalls || EvalMprotectRisk) is performed
+	// by convertSyscallResult() at read time, not stored in Summary.
 
 	// Evaluate mprotect prot argument (after Pass 1 and Pass 2)
 	evalResult, evalLocation := a.evaluateMprotectArgs(
@@ -365,16 +364,14 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		result.ArgEvalResults = append(result.ArgEvalResults, *evalResult)
 
 		if EvalMprotectRisk(result.ArgEvalResults) {
-			result.Summary.IsHighRisk = true
-
-			// Add high risk reason message
+			// Add analysis warning message
 			switch evalResult.Status {
 			case common.SyscallArgEvalExecConfirmed:
-				result.HighRiskReasons = append(result.HighRiskReasons,
+				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("mprotect at 0x%x: PROT_EXEC confirmed (%s)",
 						evalLocation, evalResult.Details))
 			case common.SyscallArgEvalExecUnknown:
-				result.HighRiskReasons = append(result.HighRiskReasons,
+				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("mprotect at 0x%x: PROT_EXEC could not be ruled out (%s)",
 						evalLocation, evalResult.Details))
 			}
@@ -383,7 +380,6 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 
 	result.Summary.TotalDetectedEvents = len(result.DetectedSyscalls)
 	result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
-	result.Summary.IsHighRisk = result.Summary.IsHighRisk || result.HasUnknownSyscalls
 
 	return result
 }

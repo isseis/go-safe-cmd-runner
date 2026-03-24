@@ -127,7 +127,7 @@ func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 //   - ErrRecordNotFound: creates a new record
 //   - RecordCorruptedError: creates a new record (overwriting corrupted data)
 //   - SchemaVersionMismatchError (Actual < Expected): old schema; treat as not found,
-//     allow overwrite so that `record --force` can migrate records to the current version
+//     allow overwrite; re-running `record` migrates old-schema records automatically (--force not required)
 //   - SchemaVersionMismatchError (Actual > Expected): future schema written by a newer
 //     binary; refuse to overwrite to preserve forward compatibility
 func (s *Store) Update(filePath common.ResolvedPath, updateFn func(*Record) error) error {

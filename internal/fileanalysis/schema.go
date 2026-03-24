@@ -12,11 +12,12 @@ const (
 	// Version 3 adds NetworkSymbolAnalysis (now renamed SymbolAnalysis) and removes HasDynamicLoad.
 	// Version 4 renames network_symbol_analysis to symbol_analysis and removes has_network_symbols.
 	// Version 5 adds ArgEvalResults for syscall argument evaluation (mprotect PROT_EXEC detection).
-	// Load returns SchemaVersionMismatchError for records with schema_version != 5.
-	// Store.Update treats older schemas (Actual < Expected) as overwritable
-	// (enables `record --force` migration).
+	// Version 6 removes is_high_risk from summary and renames high_risk_reasons to analysis_warnings.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 6.
+	// Store.Update treats older schemas (Actual < Expected) as overwritable;
+	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 5
+	CurrentSchemaVersion = 6
 )
 
 // Record represents a unified file analysis record containing both

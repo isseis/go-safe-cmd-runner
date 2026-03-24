@@ -368,12 +368,11 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 					},
 				},
 				HasUnknownSyscalls: true,
-				HighRiskReasons: []string{
+				AnalysisWarnings: []string{
 					"syscall at 0x401000: number could not be determined (unknown:indirect_setting)",
 				},
 				Summary: SyscallSummary{
 					HasNetworkSyscalls:  false,
-					IsHighRisk:          true,
 					TotalDetectedEvents: 1,
 				},
 			},
@@ -394,7 +393,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 	elfanalyzertesting.CreateStaticELFFile(t, testFile)
 
 	// Create mock store that returns both network syscalls and high-risk (unknown syscalls).
-	// IsHighRisk must win: incomplete analysis makes the result unreliable regardless of
+	// Risk must win: incomplete analysis makes the result unreliable regardless of
 	// what network activity was detected.
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
@@ -413,13 +412,12 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 					},
 				},
 				HasUnknownSyscalls: true,
-				HighRiskReasons: []string{
+				AnalysisWarnings: []string{
 					"syscall at 0x401010: number could not be determined (unknown:indirect_setting)",
 				},
 				Summary: SyscallSummary{
 					HasNetworkSyscalls:  true,
 					NetworkSyscallCount: 1,
-					IsHighRisk:          true,
 					TotalDetectedEvents: 2,
 				},
 			},
@@ -429,7 +427,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 	analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
-	// IsHighRisk must take precedence over HasNetworkSyscalls
+	// Risk must take precedence over HasNetworkSyscalls
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
 	assert.NotNil(t, output.Error)
 	assert.ErrorIs(t, output.Error, ErrSyscallAnalysisHighRisk)
@@ -577,7 +575,7 @@ func TestAC3_DynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 }
 
 // TestAC3_DynamicELF_SyscallFallback_HighRisk verifies AC-3:
-// When .dynsym returns NoNetworkSymbols but SyscallAnalysis returns IsHighRisk=true,
+// When .dynsym returns NoNetworkSymbols but SyscallAnalysis returns AnalysisError,
 // AnalyzeNetworkSymbols returns AnalysisError.
 func TestAC3_DynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
@@ -588,9 +586,8 @@ func TestAC3_DynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				HasUnknownSyscalls: true,
-				HighRiskReasons:    []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},
+				AnalysisWarnings:   []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},
 				Summary: SyscallSummary{
-					IsHighRisk:          true,
 					TotalDetectedEvents: 1,
 				},
 			},

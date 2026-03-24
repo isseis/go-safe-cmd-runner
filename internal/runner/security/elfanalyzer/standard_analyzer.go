@@ -49,7 +49,7 @@ var (
 	// ErrFileTooLarge indicates the file exceeds the maximum size for analysis.
 	ErrFileTooLarge = errors.New("file too large")
 
-	// ErrSyscallAnalysisHighRisk indicates syscall analysis found unknown syscalls.
+	// ErrSyscallAnalysisHighRisk indicates syscall analysis found high-risk results.
 	ErrSyscallAnalysisHighRisk = errors.New("syscall analysis high risk")
 )
 
@@ -344,20 +344,18 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 }
 
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
-// This method relies on Summary fields set by analyzeSyscallsInCode():
-//   - HasNetworkSyscalls: true if any network-related syscall was detected
-//   - IsHighRisk: true if any syscall number could not be determined
-//     or mprotect PROT_EXEC risk was detected
-//
-// These fields are guaranteed to be set according to the rules in the detailed specification.
+// Risk is derived at read time from primary facts:
+//   - HasUnknownSyscalls: true if any syscall number could not be determined
+//   - EvalMprotectRisk(ArgEvalResults): true if mprotect PROT_EXEC risk detected
 func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
-	// IsHighRisk takes precedence over NetworkDetected: when unknown syscalls are present,
-	// the analysis is incomplete and unreliable, so we must treat the result as an error
-	// even if network syscalls were also detected.
-	if result.Summary.IsHighRisk {
+	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
+	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
+	// so we must treat the result as an error even if network syscalls were also detected.
+	isHighRisk := result.HasUnknownSyscalls || EvalMprotectRisk(result.ArgEvalResults)
+	if isHighRisk {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.HighRiskReasons),
+			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.AnalysisWarnings),
 		}
 	}
 

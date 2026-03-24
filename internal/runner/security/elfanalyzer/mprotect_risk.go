@@ -3,7 +3,8 @@ package elfanalyzer
 import "github.com/isseis/go-safe-cmd-runner/internal/common"
 
 // EvalMprotectRisk evaluates ArgEvalResults for mprotect-related risk.
-// Returns true if IsHighRisk should be set based on mprotect detection.
+// Returns true if mprotect-derived risk exists (used for AnalysisWarnings
+// entries and risk derivation in convertSyscallResult).
 //
 // Mapping rules:
 //   - exec_confirmed → true

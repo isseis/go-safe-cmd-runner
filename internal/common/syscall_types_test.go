@@ -87,7 +87,6 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 func TestSyscallSummary_JSONRoundTrip(t *testing.T) {
 	original := common.SyscallSummary{
 		HasNetworkSyscalls:  true,
-		IsHighRisk:          false,
 		TotalDetectedEvents: 5,
 		NetworkSyscallCount: 2,
 	}
@@ -102,9 +101,9 @@ func TestSyscallSummary_JSONRoundTrip(t *testing.T) {
 }
 
 // TestSyscallAnalysisResultCore_JSONRoundTrip verifies JSON marshal/unmarshal of
-// SyscallAnalysisResultCore, including omitempty behavior on HighRiskReasons.
+// SyscallAnalysisResultCore, including omitempty behavior on AnalysisWarnings.
 func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
-	t.Run("with high risk reasons", func(t *testing.T) {
+	t.Run("with analysis warnings", func(t *testing.T) {
 		original := common.SyscallAnalysisResultCore{
 			Architecture: "x86_64",
 			DetectedSyscalls: []common.SyscallInfo{
@@ -117,10 +116,9 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 				},
 			},
 			HasUnknownSyscalls: false,
-			HighRiskReasons:    []string{"unknown:indirect_setting"},
+			AnalysisWarnings:   []string{"unknown:indirect_setting"},
 			Summary: common.SyscallSummary{
 				HasNetworkSyscalls:  true,
-				IsHighRisk:          true,
 				TotalDetectedEvents: 1,
 				NetworkSyscallCount: 1,
 			},
@@ -135,12 +133,12 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 		assert.Equal(t, original, decoded)
 	})
 
-	t.Run("high_risk_reasons omitted when nil", func(t *testing.T) {
+	t.Run("analysis_warnings omitted when nil", func(t *testing.T) {
 		core := common.SyscallAnalysisResultCore{
 			Architecture:       "x86_64",
 			DetectedSyscalls:   nil,
 			HasUnknownSyscalls: false,
-			HighRiskReasons:    nil,
+			AnalysisWarnings:   nil,
 			Summary:            common.SyscallSummary{},
 		}
 
@@ -150,8 +148,8 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(data, &m))
 
-		_, hasHighRisk := m["high_risk_reasons"]
-		assert.False(t, hasHighRisk, "high_risk_reasons should be omitted when nil")
+		_, hasWarnings := m["analysis_warnings"]
+		assert.False(t, hasWarnings, "analysis_warnings should be omitted when nil")
 	})
 
 	t.Run("empty detected_syscalls round-trips as empty slice", func(t *testing.T) {
