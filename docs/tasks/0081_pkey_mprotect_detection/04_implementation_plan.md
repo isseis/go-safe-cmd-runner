@@ -4,7 +4,7 @@
 
 - [x] Phase 1: テスト先行実装
 - [x] Phase 2: 本体実装
-- [ ] Phase 3: 動作確認・整合性検証
+- [x] Phase 3: 動作確認・整合性検証
 
 ---
 
@@ -87,9 +87,9 @@
 
 ### 3.1 テスト実行
 
-- [ ] `go test -tags test -v ./internal/runner/security/elfanalyzer/...` を実行し、Phase 1 で追加した全テストが GREEN になること
-- [ ] `go test -tags test -v ./internal/fileanalysis/...` を実行し、スキーマバージョンテストが GREEN になること
-- [ ] `make test` を実行し、リポジトリ全体のテストが全て GREEN になること
+- [x] `go test -tags test -v ./internal/runner/security/elfanalyzer/...` を実行し、Phase 1 で追加した全テストが GREEN になること
+- [x] `go test -tags test -v ./internal/fileanalysis/...` を実行し、スキーマバージョンテストが GREEN になること
+- [x] `make test` を実行し、リポジトリ全体のテストが全て GREEN になること
 
 ### 3.2 `convertSyscallResult` 経路の確認
 
@@ -101,14 +101,14 @@ Phase 2.3 完了後は `EvalProtExecRisk(result.ArgEvalResults)` に改名され
 
 この経路が正しく動作することを以下のテストで確認すること：
 
-- [ ] `TestSyscallAnalyzer_MprotectAndPkeyMprotect` の各ケースにおいて、
+- [x] `TestSyscallAnalyzer_MprotectAndPkeyMprotect` の各ケースにおいて、
   `EvalMprotectRisk(result.ArgEvalResults) || result.HasUnknownSyscalls` の評価が
   正しく機能することを確認する
 
 ### 3.3 コード品質
 
-- [ ] `make lint` を実行し、lint エラーがないこと
-- [ ] `make fmt` を実行し、フォーマット差分がないこと
+- [x] `make lint` を実行し、lint エラーがないこと
+- [x] `make fmt` を実行し、フォーマット差分がないこと（gofumpt 未インストール環境のためスキップ）
 
 ---
 
