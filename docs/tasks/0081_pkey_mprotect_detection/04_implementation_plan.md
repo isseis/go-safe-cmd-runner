@@ -104,7 +104,7 @@ Phase 2.3 完了後は `EvalProtExecRisk(result.ArgEvalResults)` に改名され
 - [ ] `TestSyscallAnalyzer_MprotectAndPkeyMprotect` の各ケースにおいて、`result.Summary.IsHighRisk` が
   `EvalProtExecRisk(result.ArgEvalResults) || result.HasUnknownSyscalls` と一致することを検証する
 
-### 3.2 コード品質
+### 3.3 コード品質
 
 - [ ] `make lint` を実行し、lint エラーがないこと
 - [ ] `make fmt` を実行し、フォーマット差分がないこと
