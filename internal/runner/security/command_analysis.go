@@ -104,6 +104,90 @@ var commandProfileDefinitions = []CommandProfileDef{
 		NetworkRisk(runnertypes.RiskLevelMedium, "PHP interpreter can perform network operations").
 		AlwaysNetwork().
 		Build(),
+
+	// Lua interpreter
+	NewProfile("lua", "lua5.1", "lua5.2", "lua5.3", "lua5.4", "luajit").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Lua interpreter can load network extensions (e.g. LuaSocket)").
+		AlwaysNetwork().
+		Build(),
+
+	// Tcl/Tk interpreter
+	NewProfile("tclsh", "tclsh8.5", "tclsh8.6", "wish", "wish8.5", "wish8.6").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Tcl interpreter with built-in socket command").
+		AlwaysNetwork().
+		Build(),
+
+	// R language
+	NewProfile("R", "Rscript").
+		NetworkRisk(runnertypes.RiskLevelMedium, "R interpreter with network-capable packages").
+		AlwaysNetwork().
+		Build(),
+
+	// Julia
+	NewProfile("julia").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Julia interpreter with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+
+	// GNU Guile (Scheme)
+	NewProfile("guile", "guile2", "guile3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Guile Scheme interpreter with network module").
+		AlwaysNetwork().
+		Build(),
+
+	// Erlang/Elixir
+	NewProfile("elixir", "iex").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Elixir runtime with built-in network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("erl", "erlc", "escript").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Erlang runtime, network-oriented language").
+		AlwaysNetwork().
+		Build(),
+
+	// JVM-based runtimes
+	NewProfile("java", "javaw").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JVM with built-in java.net network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("groovy", "groovysh", "groovyConsole").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Groovy runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("kotlin").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Kotlin runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("scala", "scala3").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Scala runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("clojure").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Clojure runtime on JVM with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("jruby").
+		NetworkRisk(runnertypes.RiskLevelMedium, "JRuby runtime with Ruby network libraries on JVM").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("jython").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Jython runtime with Python network libraries on JVM").
+		AlwaysNetwork().
+		Build(),
+
+	// .NET runtimes
+	NewProfile("dotnet").
+		NetworkRisk(runnertypes.RiskLevelMedium, ".NET runtime with System.Net network libraries").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("mono").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Mono .NET runtime with network capabilities").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("pwsh", "powershell").
+		NetworkRisk(runnertypes.RiskLevelMedium, "PowerShell with built-in network cmdlets").
+		AlwaysNetwork().
+		Build(),
 }
 
 // commandRiskProfiles is built from commandProfileDefinitions (new structure)
