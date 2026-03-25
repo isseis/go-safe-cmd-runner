@@ -154,7 +154,7 @@ func (a *SyscallAnalyzer) EvaluatePLTCallArgs(elfFile *elf.File, funcName string
 		if isCall && target == pltAddr {
 			// evalSingleMprotect backward-scans from entry.Location for rdx/x2.
 			synthetic := common.SyscallInfo{Location: inst.Offset}
-			result := a.evalSingleMprotect(code, baseAddr, cfg.decoder, synthetic)
+			result := a.evalSingleMprotect(code, baseAddr, cfg.decoder, synthetic, funcName)
 			if bestResult == nil || riskPriority(result.Status) > riskPriority(bestResult.Status) {
 				r := result
 				bestResult = &r

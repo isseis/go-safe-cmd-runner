@@ -1010,3 +1010,357 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 		})
 	}
 }
+
+func TestSyscallAnalyzer_EvaluatePkeyMprotectArgs(t *testing.T) {
+	// x86_64 syscall number for pkey_mprotect is 329 (0x149).
+	// Syscall instruction: syscall = 0F 05
+	// Syscall number register: eax/rax
+	//   mov eax, 329 → 0xb8 0x49 0x01 0x00 0x00 (imm32 form required since 329 > 255)
+	// Third argument register: rdx / edx (same as mprotect)
+	//   mov $0x7, %rdx  → 0x48 0xc7 0xc2 0x07 0x00 0x00 0x00
+	//   mov $0x4, %edx  → 0xba 0x04 0x00 0x00 0x00
+	//   mov $0x3, %rdx  → 0x48 0xc7 0xc2 0x03 0x00 0x00 0x00
+	//   mov %rsi, %rdx  → 0x48 0x89 0xf2
+	decoder := NewX86Decoder()
+	table := NewX86_64SyscallTable()
+	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 50)
+
+	tests := []struct {
+		name          string
+		code          []byte
+		wantStatus    common.SyscallArgEvalStatus
+		wantHasResult bool
+	}{
+		{
+			name: "PROT_EXEC confirmed (64bit rdx)",
+			// mov eax, 329; mov $0x7, %rdx; syscall
+			// pkey_mprotect (329) with prot=0x7 (PROT_READ|PROT_WRITE|PROT_EXEC)
+			code: []byte{
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329
+				0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecConfirmed,
+			wantHasResult: true,
+		},
+		{
+			name: "PROT_EXEC confirmed (32bit edx)",
+			// mov eax, 329; mov $0x4, %edx; syscall
+			// pkey_mprotect with prot=0x4 (PROT_EXEC only)
+			code: []byte{
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329
+				0xba, 0x04, 0x00, 0x00, 0x00, // mov $0x4, %edx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecConfirmed,
+			wantHasResult: true,
+		},
+		{
+			name: "PROT_EXEC not set",
+			// mov eax, 329; mov $0x3, %rdx; syscall
+			// pkey_mprotect with prot=0x3 (PROT_READ|PROT_WRITE)
+			code: []byte{
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329
+				0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecNotSet,
+			wantHasResult: true,
+		},
+		{
+			name: "indirect register setting",
+			// mov eax, 329; mov %rsi, %rdx; syscall
+			code: []byte{
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329
+				0x48, 0x89, 0xf2, // mov %rsi, %rdx
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "pkey_mprotect syscall only (no rdx setup in scan range)",
+			// mov eax, 329; syscall — no preceding rdx assignment.
+			code: []byte{
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "control flow boundary",
+			// jmp is the first instruction; it jumps to mov+syscall block.
+			// Backward scan for rdx hits jmp before finding rdx setup.
+			//
+			// Layout:
+			//   offset 0: jmp +5   (2 bytes) → jumps to offset 7 (mov eax)
+			//   offset 2-6: 5 nops (dead code)
+			//   offset 7: mov eax, 329  (5 bytes)
+			//   offset 12: syscall (2 bytes)
+			code: []byte{
+				0xeb, 0x05, // jmp +5 (target = offset 7)
+				0x90, 0x90, 0x90, 0x90, 0x90, // 5 nops (dead code)
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329 (pkey_mprotect)
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "non-pkey_mprotect syscall only",
+			// mov $0x0a, %eax; syscall (mprotect=10, not pkey_mprotect)
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $0x0a, %eax
+				0x0f, 0x05, // syscall
+			},
+			wantStatus:    "",
+			wantHasResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseAddr := uint64(0x1000)
+			result := analyzer.analyzeSyscallsInCode(tt.code, baseAddr, decoder, table, nil)
+
+			if !tt.wantHasResult {
+				// No pkey_mprotect, ArgEvalResults should have no pkey_mprotect entry
+				for _, r := range result.ArgEvalResults {
+					assert.NotEqual(t, "pkey_mprotect", r.SyscallName,
+						"expected no pkey_mprotect entry in ArgEvalResults")
+				}
+				return
+			}
+
+			var pkeyResult *common.SyscallArgEvalResult
+			for i := range result.ArgEvalResults {
+				if result.ArgEvalResults[i].SyscallName == "pkey_mprotect" {
+					pkeyResult = &result.ArgEvalResults[i]
+					break
+				}
+			}
+			require.NotNil(t, pkeyResult, "expected pkey_mprotect entry in ArgEvalResults")
+			assert.Equal(t, "pkey_mprotect", pkeyResult.SyscallName)
+			assert.Equal(t, tt.wantStatus, pkeyResult.Status)
+		})
+	}
+}
+
+func TestSyscallAnalyzer_EvaluatePkeyMprotectArgs_ARM64(t *testing.T) {
+	// arm64 pkey_mprotect syscall number is 288 (0x120).
+	// Syscall instruction: svc #0  = 01 00 00 D4
+	// Syscall number register: x8
+	//   mov x8, #288 = MOVZ X8, #288 = 08 24 80 D2
+	// Third argument register: x2
+	//   mov x2, #7   = MOVZ X2, #7   = E2 00 80 D2
+	//   mov x2, #3   = MOVZ X2, #3   = 62 00 80 D2
+	//   mov x2, x1   = ORR  X2,XZR,X1 = E2 03 01 AA (register move)
+	// Branch: b +N words
+	//   b +5 words (20 bytes): 05 00 00 14
+	decoder := NewARM64Decoder()
+	table := NewARM64LinuxSyscallTable()
+	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 50)
+	baseAddr := uint64(0x1000)
+
+	tests := []struct {
+		name          string
+		code          []byte
+		wantStatus    common.SyscallArgEvalStatus
+		wantHasResult bool
+	}{
+		{
+			name: "exec_confirmed (mov x2, #7)",
+			// mov x8, #288; mov x2, #7; svc #0
+			// pkey_mprotect (288) with prot=0x7 (PROT_READ|PROT_WRITE|PROT_EXEC)
+			code: []byte{
+				0x08, 0x24, 0x80, 0xD2, // mov x8, #288
+				0xE2, 0x00, 0x80, 0xD2, // mov x2, #7
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:    common.SyscallArgEvalExecConfirmed,
+			wantHasResult: true,
+		},
+		{
+			name: "exec_not_set (mov x2, #3)",
+			// mov x8, #288; mov x2, #3; svc #0
+			// pkey_mprotect with prot=0x3 (PROT_READ|PROT_WRITE)
+			code: []byte{
+				0x08, 0x24, 0x80, 0xD2, // mov x8, #288
+				0x62, 0x00, 0x80, 0xD2, // mov x2, #3
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:    common.SyscallArgEvalExecNotSet,
+			wantHasResult: true,
+		},
+		{
+			name: "exec_unknown (indirect register setting)",
+			// mov x8, #288; mov x2, x1; svc #0 — indirect prot setting
+			code: []byte{
+				0x08, 0x24, 0x80, 0xD2, // mov x8, #288
+				0xE2, 0x03, 0x01, 0xAA, // mov x2, x1
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "exec_unknown (pkey_mprotect syscall only, no x2 setup in scan range)",
+			// mov x8, #288; svc #0 — no x2 assignment before syscall.
+			code: []byte{
+				0x08, 0x24, 0x80, 0xD2, // mov x8, #288
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+		{
+			name: "exec_unknown (control flow boundary)",
+			// b +5 words (lands on svc #0 at offset 20); nop×3; mov x8, #288; svc #0
+			// Backward scan for x2 from svc -> hits branch at offset 0 -> exec_unknown.
+			//
+			// Layout (each instruction is 4 bytes):
+			//   offset  0: b +5 words (20 bytes) → jumps to offset 20 (svc)
+			//   offset  4: nop
+			//   offset  8: nop
+			//   offset 12: nop
+			//   offset 16: mov x8, #288
+			//   offset 20: svc #0
+			code: []byte{
+				0x05, 0x00, 0x00, 0x14, // b +5 (20 bytes forward, to svc)
+				0x1F, 0x20, 0x03, 0xD5, // nop
+				0x1F, 0x20, 0x03, 0xD5, // nop
+				0x1F, 0x20, 0x03, 0xD5, // nop
+				0x08, 0x24, 0x80, 0xD2, // mov x8, #288
+				0x01, 0x00, 0x00, 0xD4, // svc #0
+			},
+			wantStatus:    common.SyscallArgEvalExecUnknown,
+			wantHasResult: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := analyzer.analyzeSyscallsInCode(tt.code, baseAddr, decoder, table, nil)
+
+			if !tt.wantHasResult {
+				assert.Empty(t, result.ArgEvalResults)
+				return
+			}
+
+			var pkeyResult *common.SyscallArgEvalResult
+			for i := range result.ArgEvalResults {
+				if result.ArgEvalResults[i].SyscallName == "pkey_mprotect" {
+					pkeyResult = &result.ArgEvalResults[i]
+					break
+				}
+			}
+			require.NotNil(t, pkeyResult, "expected pkey_mprotect entry in ArgEvalResults")
+			assert.Equal(t, "pkey_mprotect", pkeyResult.SyscallName)
+			assert.Equal(t, tt.wantStatus, pkeyResult.Status)
+		})
+	}
+}
+
+func TestSyscallAnalyzer_MprotectAndPkeyMprotect(t *testing.T) {
+	// x86_64 syscall numbers:
+	//   mprotect (10):      0xb8 0x0a 0x00 0x00 0x00 (mov eax, 10)
+	//   pkey_mprotect (329): 0xb8 0x49 0x01 0x00 0x00 (mov eax, 329)
+	// rdx setup:
+	//   mov $0x7, %rdx  → 0x48 0xc7 0xc2 0x07 0x00 0x00 0x00
+	//   mov $0x3, %rdx  → 0x48 0xc7 0xc2 0x03 0x00 0x00 0x00
+	// syscall → 0x0f 0x05
+	decoder := NewX86Decoder()
+	table := NewX86_64SyscallTable()
+	analyzer := NewSyscallAnalyzerWithConfig(decoder, table, 50)
+	baseAddr := uint64(0x1000)
+
+	tests := []struct {
+		name        string
+		code        []byte
+		wantEntries []common.SyscallArgEvalResult // minimal fields to check (SyscallName + Status)
+	}{
+		{
+			name: "both detected: exec_confirmed + exec_confirmed",
+			// mprotect(prot=0x7) then pkey_mprotect(prot=0x7)
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov eax, 10 (mprotect)
+				0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+				0x0f, 0x05, // syscall (mprotect)
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329 (pkey_mprotect)
+				0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+				0x0f, 0x05, // syscall (pkey_mprotect)
+			},
+			wantEntries: []common.SyscallArgEvalResult{
+				{SyscallName: "mprotect", Status: common.SyscallArgEvalExecConfirmed},
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecConfirmed},
+			},
+		},
+		{
+			name: "both detected: exec_not_set + exec_unknown",
+			// mprotect(prot=0x3) then pkey_mprotect with indirect rdx setup.
+			// Backward scan for pkey_mprotect stops at mov %rsi, %rdx (indirect) → exec_unknown.
+			// Backward scan for mprotect finds mov $0x3, %rdx → exec_not_set.
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov eax, 10 (mprotect)
+				0x48, 0xc7, 0xc2, 0x03, 0x00, 0x00, 0x00, // mov $0x3, %rdx
+				0x0f, 0x05, // syscall (mprotect)
+				0x48, 0x89, 0xf2, // mov %rsi, %rdx (indirect → pkey_mprotect will be exec_unknown)
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329 (pkey_mprotect)
+				0x0f, 0x05, // syscall (pkey_mprotect)
+			},
+			wantEntries: []common.SyscallArgEvalResult{
+				{SyscallName: "mprotect", Status: common.SyscallArgEvalExecNotSet},
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecUnknown},
+			},
+		},
+		{
+			name: "only mprotect detected",
+			// mprotect only, no pkey_mprotect
+			code: []byte{
+				0xb8, 0x0a, 0x00, 0x00, 0x00, // mov eax, 10 (mprotect)
+				0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+				0x0f, 0x05, // syscall (mprotect)
+			},
+			wantEntries: []common.SyscallArgEvalResult{
+				{SyscallName: "mprotect", Status: common.SyscallArgEvalExecConfirmed},
+			},
+		},
+		{
+			name: "only pkey_mprotect detected",
+			// pkey_mprotect only, no mprotect
+			code: []byte{
+				0xb8, 0x49, 0x01, 0x00, 0x00, // mov eax, 329 (pkey_mprotect)
+				0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00, // mov $0x7, %rdx
+				0x0f, 0x05, // syscall (pkey_mprotect)
+			},
+			wantEntries: []common.SyscallArgEvalResult{
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecConfirmed},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := analyzer.analyzeSyscallsInCode(tt.code, baseAddr, decoder, table, nil)
+
+			assert.Equal(t, len(tt.wantEntries), len(result.ArgEvalResults),
+				"ArgEvalResults length mismatch")
+
+			// Build a map for order-independent comparison
+			resultMap := make(map[string]common.SyscallArgEvalStatus)
+			for _, r := range result.ArgEvalResults {
+				resultMap[r.SyscallName] = r.Status
+			}
+
+			for _, want := range tt.wantEntries {
+				gotStatus, ok := resultMap[want.SyscallName]
+				assert.True(t, ok, "expected entry with SyscallName=%q", want.SyscallName)
+				if ok {
+					assert.Equal(t, want.Status, gotStatus,
+						"status mismatch for SyscallName=%q", want.SyscallName)
+				}
+			}
+		})
+	}
+}

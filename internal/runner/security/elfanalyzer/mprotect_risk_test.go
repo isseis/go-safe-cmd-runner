@@ -61,6 +61,44 @@ func TestEvalMprotectRisk(t *testing.T) {
 			},
 			want: false,
 		},
+		// pkey_mprotect cases
+		{
+			name: "pkey_mprotect exec_confirmed returns true",
+			results: []common.SyscallArgEvalResult{
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecConfirmed},
+			},
+			want: true,
+		},
+		{
+			name: "pkey_mprotect exec_unknown returns true",
+			results: []common.SyscallArgEvalResult{
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecUnknown},
+			},
+			want: true,
+		},
+		{
+			name: "pkey_mprotect exec_not_set returns false",
+			results: []common.SyscallArgEvalResult{
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecNotSet},
+			},
+			want: false,
+		},
+		{
+			name: "mprotect exec_not_set + pkey_mprotect exec_unknown returns true",
+			results: []common.SyscallArgEvalResult{
+				{SyscallName: "mprotect", Status: common.SyscallArgEvalExecNotSet},
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecUnknown},
+			},
+			want: true,
+		},
+		{
+			name: "both exec_not_set returns false",
+			results: []common.SyscallArgEvalResult{
+				{SyscallName: "mprotect", Status: common.SyscallArgEvalExecNotSet},
+				{SyscallName: "pkey_mprotect", Status: common.SyscallArgEvalExecNotSet},
+			},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
