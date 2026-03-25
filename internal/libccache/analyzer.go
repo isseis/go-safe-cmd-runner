@@ -111,8 +111,7 @@ func (a *LibcWrapperAnalyzer) Analyze(libcELFFile *elf.File) ([]WrapperEntry, er
 			code, sectionBaseAddr, startOffset, endOffset, libcELFFile.Machine,
 		)
 		if err != nil {
-			var archErr *elfanalyzer.UnsupportedArchitectureError
-			if errors.As(err, &archErr) {
+			if _, ok := errors.AsType[*elfanalyzer.UnsupportedArchitectureError](err); ok {
 				return nil, err
 			}
 			continue

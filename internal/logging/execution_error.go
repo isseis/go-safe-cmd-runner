@@ -29,8 +29,7 @@ type UserFriendlyError interface {
 // GetUserFriendlyMessage extracts a user-friendly message from an error chain
 // Returns empty string if no user-friendly message is available
 func GetUserFriendlyMessage(err error) string {
-	var friendlyErr UserFriendlyError
-	if errors.As(err, &friendlyErr) {
+	if friendlyErr, ok := errors.AsType[UserFriendlyError](err); ok {
 		return friendlyErr.UserMessage()
 	}
 	return ""
