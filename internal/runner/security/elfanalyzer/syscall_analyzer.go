@@ -356,24 +356,23 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 	// - NetworkSyscallCount: incremented during Pass 1 and Pass 2
 	// Risk derivation (HasUnknownSyscalls || EvalMprotectRisk) is performed
 	// by convertSyscallResult() at read time, not stored in Summary.
-	evalResults, evalLocations := a.evaluateMprotectFamilyArgs(
+	evalResults := a.evaluateMprotectFamilyArgs(
 		code, baseAddr, decoder, result.DetectedSyscalls,
 	)
-	for i, evalResult := range evalResults {
-		result.ArgEvalResults = append(result.ArgEvalResults, evalResult)
-		evalLocation := evalLocations[i]
+	for _, eval := range evalResults {
+		result.ArgEvalResults = append(result.ArgEvalResults, eval.Result)
 
-		if EvalMprotectRisk([]common.SyscallArgEvalResult{evalResult}) {
+		if EvalMprotectRisk([]common.SyscallArgEvalResult{eval.Result}) {
 			// Add analysis warning message
-			switch evalResult.Status {
+			switch eval.Result.Status {
 			case common.SyscallArgEvalExecConfirmed:
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("%s at 0x%x: PROT_EXEC confirmed (%s)",
-						evalResult.SyscallName, evalLocation, evalResult.Details))
+						eval.Result.SyscallName, eval.Location, eval.Result.Details))
 			case common.SyscallArgEvalExecUnknown:
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("%s at 0x%x: PROT_EXEC could not be ruled out (%s)",
-						evalResult.SyscallName, evalLocation, evalResult.Details))
+						eval.Result.SyscallName, eval.Location, eval.Result.Details))
 			}
 		}
 	}
@@ -405,20 +404,24 @@ const (
 // Each name is processed independently to produce at most one ArgEvalResult per name.
 var MprotectFamilyNames = []string{syscallNameMprotect, syscallNamePkeyMprotect}
 
+type mprotectFamilyEvalResult struct {
+	Result   common.SyscallArgEvalResult
+	Location uint64
+}
+
 // evaluateMprotectFamilyArgs evaluates the prot argument for each syscall in the
 // mprotect family (mprotect and pkey_mprotect).
-// It returns two parallel slices: results and locations.
-// results[i] is the highest-risk SyscallArgEvalResult for the i-th detected family member,
-// and locations[i] is the corresponding syscall instruction address.
-// Syscall family members that were not detected are omitted (no entry added).
+// It returns a slice of evaluation results, where each entry contains the
+// highest-risk SyscallArgEvalResult for a detected family member and its
+// corresponding syscall instruction address.
+// Syscall family members that were not detected are omitted.
 func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 	code []byte,
 	baseAddr uint64,
 	decoder MachineCodeDecoder,
 	detectedSyscalls []common.SyscallInfo,
-) ([]common.SyscallArgEvalResult, []uint64) {
-	var results []common.SyscallArgEvalResult
-	var locations []uint64
+) []mprotectFamilyEvalResult {
+	var results []mprotectFamilyEvalResult
 
 	for _, syscallName := range MprotectFamilyNames {
 		// Collect entries for this syscall name.
@@ -450,11 +453,13 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 			}
 		}
 
-		results = append(results, *bestResult)
-		locations = append(locations, bestLocation)
+		results = append(results, mprotectFamilyEvalResult{
+			Result:   *bestResult,
+			Location: bestLocation,
+		})
 	}
 
-	return results, locations
+	return results
 }
 
 // evalSingleMprotect evaluates the prot argument of a single mprotect-family entry.
