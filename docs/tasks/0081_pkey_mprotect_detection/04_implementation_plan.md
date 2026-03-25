@@ -117,7 +117,7 @@
 タスク 0078 のテストが使用する `mov eax, imm8` 形式とは異なる点に注意する。
 
 arm64 の場合も同様に、`pkey_mprotect` の syscall 番号 288 は
-`MOVZ X8, #288`（`0x08 0x24 0x84 0xd2`）で表現する。
+`MOVZ X8, #288`（`0x08 0x24 0x80 0xd2`）で表現する。
 
 ### `EvalProtExecRisk` の呼び出し方
 
