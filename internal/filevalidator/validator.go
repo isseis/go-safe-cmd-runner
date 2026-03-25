@@ -798,7 +798,13 @@ func buildArgEvalResults(
 	}
 	if analyzer != nil && elfFile != nil {
 		result, err := analyzer.EvaluatePLTCallArgs(elfFile, syscallNameMprotect)
-		if err == nil && result != nil {
+		if err != nil {
+			if errors.Is(err, ErrUnsupportedArch) {
+				pltResult.Details = fmt.Sprintf("%s (PLT analysis unsupported for this architecture)", pltResult.Details)
+			} else {
+				pltResult.Details = fmt.Sprintf("%s (PLT analysis failed: %v)", pltResult.Details, err)
+			}
+		} else if result != nil {
 			pltResult = *result
 		}
 	}
