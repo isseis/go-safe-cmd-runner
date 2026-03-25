@@ -4,7 +4,7 @@
 
 - [x] Phase 1: テスト先行実装
 - [x] Phase 2: 本体実装
-- [ ] Phase 3: 動作確認・整合性検証
+- [x] Phase 3: 動作確認・整合性検証
 
 ---
 
@@ -99,16 +99,16 @@
 
 ### 3.1 テスト実行
 
-- [ ] `go test -tags test -v ./internal/runner/security/binaryanalyzer/...` — Phase 1.1 のテストが GREEN
-- [ ] `go test -tags test -v ./internal/filevalidator/...` — Phase 1.3 のテストが GREEN
-- [ ] `go test -tags test -v ./internal/runner/security/...` — Phase 1.2 と Phase 1.4 のテストが GREEN
-- [ ] `go test -tags test -v ./internal/fileanalysis/...` — スキーマバージョンテストが GREEN
-- [ ] `make test` — リポジトリ全体のテストが全て GREEN
+- [x] `go test -tags test -v ./internal/runner/security/binaryanalyzer/...` — Phase 1.1 のテストが GREEN
+- [x] `go test -tags test -v ./internal/filevalidator/...` — Phase 1.3 のテストが GREEN
+- [x] `go test -tags test -v ./internal/runner/security/...` — Phase 1.2 と Phase 1.4 のテストが GREEN
+- [x] `go test -tags test -v ./internal/fileanalysis/...` — スキーマバージョンテストが GREEN
+- [x] `make test` — リポジトリ全体のテストが全て GREEN
 
 ### 3.2 コード品質
 
-- [ ] `make fmt` — フォーマット差分がないこと
-- [ ] `make lint` — lint エラーがないこと
+- [x] `make fmt` — フォーマット差分がないこと
+- [x] `make lint` — lint エラーがないこと
 
 ---
 
