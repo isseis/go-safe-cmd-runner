@@ -14,7 +14,14 @@ import "github.com/isseis/go-safe-cmd-runner/internal/common"
 //   - no mprotect/pkey_mprotect entries → false
 func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
 	for _, r := range argEvalResults {
-		if r.SyscallName != syscallNameMprotect && r.SyscallName != syscallNamePkeyMprotect {
+		isMember := false
+		for _, familyName := range MprotectFamilyNames {
+			if r.SyscallName == familyName {
+				isMember = true
+				break
+			}
+		}
+		if !isMember {
 			continue
 		}
 		switch r.Status {

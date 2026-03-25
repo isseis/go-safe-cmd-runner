@@ -401,9 +401,9 @@ const (
 	syscallNamePkeyMprotect = "pkey_mprotect"
 )
 
-// mprotectFamilyNames lists the syscall names in the mprotect family.
+// MprotectFamilyNames lists the syscall names in the mprotect family.
 // Each name is processed independently to produce at most one ArgEvalResult per name.
-var mprotectFamilyNames = []string{syscallNameMprotect, syscallNamePkeyMprotect}
+var MprotectFamilyNames = []string{syscallNameMprotect, syscallNamePkeyMprotect}
 
 // evaluateMprotectFamilyArgs evaluates the prot argument for each syscall in the
 // mprotect family (mprotect and pkey_mprotect).
@@ -420,7 +420,7 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 	var results []common.SyscallArgEvalResult
 	var locations []uint64
 
-	for _, syscallName := range mprotectFamilyNames {
+	for _, syscallName := range MprotectFamilyNames {
 		// Collect entries for this syscall name.
 		// Only consider entries determined by "immediate" method, as those
 		// have confirmed syscall numbers.
