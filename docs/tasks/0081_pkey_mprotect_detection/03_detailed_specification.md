@@ -58,24 +58,32 @@ func (a *SyscallAnalyzer) evaluateMprotectArgs(
 
 #### 変更後のシグネチャ
 
+ローカル構造体（`syscall_analyzer.go` 内に定義）：
+
+```go
+type mprotectFamilyEvalResult struct {
+    result   common.SyscallArgEvalResult
+    location uint64
+}
+```
+
 ```go
 func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
     code []byte,
     baseAddr uint64,
     decoder MachineCodeDecoder,
     detectedSyscalls []common.SyscallInfo,
-) ([]common.SyscallArgEvalResult, []uint64)
+) []mprotectFamilyEvalResult
 ```
 
-戻り値は `results` と `locations` の2スライス（`results[i]` の syscall 位置が `locations[i]`）。
+`result` と `location` を1つの構造体にまとめることで、並行スライスによるインデックス不一致を構造的に排除する。
 
 #### ロジック仕様
 
 ```
 mprotectFamilySyscalls = ["mprotect", "pkey_mprotect"]
 
-results = []
-locations = []
+evalResults = []
 
 for each syscallName in mprotectFamilySyscalls:
     entries = detectedSyscalls
@@ -94,10 +102,12 @@ for each syscallName in mprotectFamilySyscalls:
             bestResult = &result
             bestLocation = entry.Location
 
-    results = append(results, *bestResult)
-    locations = append(locations, bestLocation)
+    evalResults = append(evalResults, mprotectFamilyEvalResult{
+        result:   *bestResult,
+        location: bestLocation,
+    })
 
-return results, locations
+return evalResults
 ```
 
 ### 3.3 `evalSingleMprotect` 汎化
@@ -159,23 +169,22 @@ if evalResult != nil {
 #### 変更後
 
 ```go
-evalResults, evalLocations := a.evaluateMprotectFamilyArgs(
+evalResults := a.evaluateMprotectFamilyArgs(
     code, baseAddr, decoder, result.DetectedSyscalls,
 )
-for i, evalResult := range evalResults {
-    result.ArgEvalResults = append(result.ArgEvalResults, evalResult)
-    evalLocation := evalLocations[i]
+for _, er := range evalResults {
+    result.ArgEvalResults = append(result.ArgEvalResults, er.result)
 
-    if EvalProtExecRisk([]common.SyscallArgEvalResult{evalResult}) {
-        switch evalResult.Status {
+    if EvalProtExecRisk([]common.SyscallArgEvalResult{er.result}) {
+        switch er.result.Status {
         case common.SyscallArgEvalExecConfirmed:
             result.AnalysisWarnings = append(result.AnalysisWarnings,
                 fmt.Sprintf("%s at 0x%x: PROT_EXEC confirmed (%s)",
-                    evalResult.SyscallName, evalLocation, evalResult.Details))
+                    er.result.SyscallName, er.location, er.result.Details))
         case common.SyscallArgEvalExecUnknown:
             result.AnalysisWarnings = append(result.AnalysisWarnings,
                 fmt.Sprintf("%s at 0x%x: PROT_EXEC could not be ruled out (%s)",
-                    evalResult.SyscallName, evalLocation, evalResult.Details))
+                    er.result.SyscallName, er.location, er.result.Details))
         }
     }
 }

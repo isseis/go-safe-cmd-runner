@@ -132,8 +132,8 @@ Pass 1（直接 `syscall` 命令の解析）において、syscall 番号が `pk
 - **関数名**: `evaluateMprotectArgs` → `evaluateMprotectFamilyArgs`
   （内部関数であり呼び出し元への波及なし）
 - **戻り値**: `(*SyscallArgEvalResult, uint64)` →
-  `([]common.SyscallArgEvalResult, []uint64)`
-  （result スライスと対応する location スライス、同一インデックスで対応）
+  `[]mprotectFamilyEvalResult`
+  （`result` と `location` を持つローカル構造体のスライス）
 
 `evaluateMprotectFamilyArgs` は `mprotect` ファミリー（`mprotect` と `pkey_mprotect`）を
 対象に syscall 名ごとに集約し、検出された syscall 名ごとに最大1件のエントリを返す。
