@@ -1651,6 +1651,72 @@ func TestRecord_KnownNetworkLibDeps_NonNetworkOnly(t *testing.T) {
 		"KnownNetworkLibDeps should be empty when no known network libs are in DynLibDeps")
 }
 
+func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
+	// First pass: DynLibDeps includes a known network lib → KnownNetworkLibDeps populated.
+	dynLibDepsWithCurl := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
+		},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDepsWithCurl, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	require.Equal(t, []string{"libcurl.so.4"}, record.SymbolAnalysis.KnownNetworkLibDeps,
+		"precondition: KnownNetworkLibDeps should be set after first pass")
+
+	// We need a validator pointed at the same store to do the second pass.
+	// Re-use the helper's pattern but manually: build a fresh validator on the same hashDir,
+	// replace DynLibDeps with a non-network lib, then force re-record.
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	resolvedPath, pathErr := common.NewResolvedPath(targetFile)
+	require.NoError(t, pathErr)
+
+	// Inject KnownNetworkLibDeps as if from a previous run.
+	err = v.store.Update(resolvedPath, func(r *fileanalysis.Record) error {
+		r.DynLibDeps = dynLibDepsWithCurl
+		r.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+			KnownNetworkLibDeps: []string{"libcurl.so.4"},
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Second pass: replace DynLibDeps with a non-network lib only.
+	dynLibDepsNoNetwork := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
+		},
+	}
+	err = v.store.Update(resolvedPath, func(r *fileanalysis.Record) error {
+		r.DynLibDeps = dynLibDepsNoNetwork
+		return nil
+	})
+	require.NoError(t, err)
+
+	v.SetBinaryAnalyzer(stub)
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	updated, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, updated.SymbolAnalysis)
+	assert.Empty(t, updated.SymbolAnalysis.KnownNetworkLibDeps,
+		"KnownNetworkLibDeps must be cleared when DynLibDeps no longer contains known network libs")
+}
+
 func TestRecord_KnownNetworkLibDeps_SymbolAnalysisNil(t *testing.T) {
 	dynLibDeps := &fileanalysis.DynLibDepsData{
 		Libs: []fileanalysis.LibEntry{

@@ -276,9 +276,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 					matched = append(matched, lib.SOName)
 				}
 			}
-			if len(matched) > 0 {
-				record.SymbolAnalysis.KnownNetworkLibDeps = matched
-			}
+			record.SymbolAnalysis.KnownNetworkLibDeps = matched
 		}
 
 		// Steps A-D: ELF syscall analysis (libc import + direct instruction).
