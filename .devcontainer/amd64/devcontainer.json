@@ -1,0 +1,30 @@
+{
+    "name": "x86_64 Linux Development",
+    "dockerComposeFile": [
+        "../docker-compose.base.yml",
+        "docker-compose.yml"
+    ],
+    "service": "dev-env",
+    "workspaceFolder": "/workspaces/ubuntu",
+    "remoteUser": "issei",
+    "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash"
+                    }
+                }
+            },
+            "extensions": [
+                "golang.Go",
+                "ms-vscode.cpptools"
+            ]
+        }
+    },
+    "mounts": [
+        "source=${localEnv:HOME}/.config/gh,target=${containerUserHome}/.config/gh,type=bind,consistency=cached"
+    ]
+}

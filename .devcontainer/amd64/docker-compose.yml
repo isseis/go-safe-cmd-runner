@@ -1,0 +1,11 @@
+services:
+  dev-env:
+    platform: linux/amd64
+    hostname: x86-dev-box
+    container_name: my-x86-container
+    volumes:
+      # 拡張機能のキャッシュ用ボリューム（アーキテクチャ別に分離）
+      - vscode-extensions-cache-amd64:/home/issei/.vscode-server/extensions
+
+volumes:
+  vscode-extensions-cache-amd64:

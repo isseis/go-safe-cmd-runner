@@ -1,5 +1,4 @@
-# x86_64 の Ubuntu をベースに使用
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM ubuntu:24.04
 
 # インタラクティブな入力を無効化
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,19 +27,34 @@ RUN apt-get update && apt-get install -y \
 
 # 日本語ロケール
 RUN locale-gen ja_JP.UTF-8
+ENV LANG=ja_JP.UTF-8
 
-# Go 言語のインストール (例: 1.26)
-RUN curl -sSfL https://go.dev/dl/go1.26.0.linux-amd64.tar.gz -o /tmp/go.tar.gz \
-    && echo "aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235  /tmp/go.tar.gz" | sha256sum -c - \
+# Go 言語のインストール (1.26.0)
+# TARGETARCH は docker-compose.yml の platform 指定から Docker が自動設定する
+ARG TARGETARCH
+RUN set -eux \
+    && case "${TARGETARCH}" in \
+        amd64) GO_SHA256="aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235" ;; \
+        arm64) GO_SHA256="bd03b743eb6eb4193ea3c3fd3956546bf0e3ca5b7076c8226334afe6b75704cd" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -sSfL "https://go.dev/dl/go1.26.0.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tar.gz \
+    && echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c - \
     && tar -C /usr/local -xzf /tmp/go.tar.gz \
     && rm /tmp/go.tar.gz
 
 # golangci-lint のインストール
-RUN curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.11.3/golangci-lint-2.11.3-linux-amd64.tar.gz \
+RUN set -eux \
+    && case "${TARGETARCH}" in \
+        amd64) LINT_SHA256="87bb8cddbcc825d5778b64e8a91b46c0526b247f4e2f2904dea74ec7450475d1" ;; \
+        arm64) LINT_SHA256="ee3d95f301359e7d578e6d99c8ad5aeadbabc5a13009a30b2b0df11c8058afe9" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v2.11.3/golangci-lint-2.11.3-linux-${TARGETARCH}.tar.gz" \
         -o /tmp/golangci-lint.tar.gz \
-    && echo "87bb8cddbcc825d5778b64e8a91b46c0526b247f4e2f2904dea74ec7450475d1  /tmp/golangci-lint.tar.gz" | sha256sum -c - \
+    && echo "${LINT_SHA256}  /tmp/golangci-lint.tar.gz" | sha256sum -c - \
     && tar -C /usr/local/bin -xzf /tmp/golangci-lint.tar.gz \
-        --strip-components=1 golangci-lint-2.11.3-linux-amd64/golangci-lint \
+        --strip-components=1 "golangci-lint-2.11.3-linux-${TARGETARCH}/golangci-lint" \
     && rm /tmp/golangci-lint.tar.gz
 
 # GitHub CLI (gh) のインストール
