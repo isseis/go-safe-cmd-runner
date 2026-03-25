@@ -118,9 +118,9 @@ Pass 1（直接 `syscall` 命令の解析）において、syscall 番号が `pk
 警告の生成は `mprotect` と `pkey_mprotect` のエントリそれぞれに対して独立して行う。
 生成タイミングおよび生成主体は `mprotect` と同一（`analyzeSyscallsInCode` 内でループ処理）。
 
-### 3.5 `evaluateMprotectFamilyArgs` シグネチャ変更
+### 3.3 `evaluateMprotectFamilyArgs` シグネチャ変更
 
-#### FR-3.5.1: 内部関数のリファクタリング
+#### FR-3.3.1: 内部関数のリファクタリング
 
 現在の `evaluateMprotectArgs`（`*SyscallArgEvalResult, uint64` を返す）は
 `mprotect` 単一 syscall のみを対象とし、戻り値が1件固定である。
@@ -141,9 +141,9 @@ Pass 1（直接 `syscall` 命令の解析）において、syscall 番号が `pk
 `evalSingleMprotect` は syscall 名を引数（`syscallName string`）で受け取るよう汎化し、
 `SyscallName` フィールドへの埋め込み値を動的に設定できるようにすること。
 
-### 3.3 保存と読み込み
+### 3.4 保存と読み込み
 
-#### FR-3.3.1: スキーマバージョン更新
+#### FR-3.4.1: スキーマバージョン更新
 
 `CurrentSchemaVersion` を 6 → 7 に更新し、旧バージョンの解析結果を無効化すること。
 `pkey_mprotect` エントリを含む `ArgEvalResults` は既存の JSON 構造（`[]SyscallArgEvalResult`）に
@@ -155,7 +155,7 @@ Pass 1（直接 `syscall` 命令の解析）において、syscall 番号が `pk
 // Version 7 adds pkey_mprotect PROT_EXEC detection.
 ```
 
-#### FR-3.3.2: 後方互換性
+#### FR-3.4.2: 後方互換性
 
 スキーマバージョン不一致時の既存の動作（解析結果を無効化して再解析を要求）を維持すること。
 
