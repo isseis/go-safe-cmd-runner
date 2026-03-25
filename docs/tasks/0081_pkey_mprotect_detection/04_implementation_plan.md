@@ -60,7 +60,7 @@
 
 ### 2.2 `syscall_analyzer.go` 更新
 
-- [ ] `maxValidSyscallNumber` のコメントを更新（`0-288` → `up to 335 (as of Linux 6.x)`）
+- [ ] `maxValidSyscallNumber` のコメントを更新（`0-288` → `up to 461 (lsm_list_modules, as of the syscall table in this repo)`）
 - [ ] `evalSingleMprotect` に `syscallName string` 引数を追加し、`SyscallName: "mprotect"` のハードコードを `SyscallName: syscallName` に置き換える
 - [ ] `evaluateMprotectArgs` を `evaluateMprotectFamilyArgs` に改名
   - [ ] ローカル構造体 `mprotectFamilyEvalResult{result common.SyscallArgEvalResult; location uint64}` を定義

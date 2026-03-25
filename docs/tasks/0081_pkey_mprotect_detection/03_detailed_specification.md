@@ -38,9 +38,9 @@ CurrentSchemaVersion = 7
 // to account for future syscall additions and various kernel configurations.
 
 // 変更後
-// Current x86_64 Linux syscalls range up to 335 (as of Linux 6.x),
-// but we allow up to 500 to account for future syscall additions and
-// various kernel configurations.
+// Current x86_64 Linux syscalls range up to 461 (lsm_list_modules,
+// as of the syscall table in this repo), but we allow up to 500
+// to account for future syscall additions and various kernel configurations.
 ```
 
 ### 3.2 `evaluateMprotectFamilyArgs`（`evaluateMprotectArgs` から改名・拡張）
