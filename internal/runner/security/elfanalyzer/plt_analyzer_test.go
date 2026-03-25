@@ -365,7 +365,8 @@ func TestFindFuncPLTAddr(t *testing.T) {
 // ── Tests for EvaluatePLTCallArgs ────────────────────────────────────────────
 
 // TestEvaluatePLTCallArgs verifies that EvaluatePLTCallArgs correctly evaluates
-// the mprotect prot argument at PLT call sites in synthetic x86-64 binaries.
+// the mprotect prot argument at PLT call sites in synthetic x86-64 and arm64
+// binaries.
 func TestEvaluatePLTCallArgs(t *testing.T) {
 	t.Run("exec_confirmed_prot_has_exec_bit", func(t *testing.T) {
 		// MOV EDX, 7 (PROT_READ|PROT_WRITE|PROT_EXEC); CALL mprotect PLT stub
