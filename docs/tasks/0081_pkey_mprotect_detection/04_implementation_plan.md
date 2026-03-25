@@ -93,8 +93,10 @@
 
 ### 3.2 `convertSyscallResult` 経路の確認
 
-`standard_analyzer.go:354` の `convertSyscallResult` は `EvalProtExecRisk(result.ArgEvalResults)` を
-直接呼ぶ。`pkey_mprotect` エントリが `ArgEvalResults` に追加されれば（Phase 2.2 の実装完了後）、
+`standard_analyzer.go:354` の `convertSyscallResult` は、現状では
+`EvalMprotectRisk(result.ArgEvalResults)` を呼んでいる（Phase 2.3 のリネーム前の名称）。
+Phase 2.3 完了後は `EvalProtExecRisk(result.ArgEvalResults)` に改名される。
+`pkey_mprotect` エントリが `ArgEvalResults` に追加されれば（Phase 2.2 の実装完了後）、
 `EvalProtExecRisk` の拡張（Phase 2.3）と組み合わせて自動的に `IsHighRisk` へ反映される。
 
 この経路が正しく動作することを以下のテストで確認すること：
