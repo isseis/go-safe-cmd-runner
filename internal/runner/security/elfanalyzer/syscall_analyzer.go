@@ -67,8 +67,9 @@ const defaultMaxBackwardScan = 50
 
 // maxValidSyscallNumber is the maximum valid syscall number on x86_64.
 // This is a conservative upper bound to filter out invalid immediates.
-// Current x86_64 Linux syscalls range from 0-288, but we allow up to 500
-// to account for future syscall additions and various kernel configurations.
+// Current x86_64 Linux syscalls range up to 461 (lsm_list_modules, as of the
+// syscall table in this repo), but we allow up to 500 to account for future
+// syscall additions and various kernel configurations.
 const maxValidSyscallNumber = 500
 
 // Determination method constants for syscall number extraction.
@@ -355,25 +356,24 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 	// - NetworkSyscallCount: incremented during Pass 1 and Pass 2
 	// Risk derivation (HasUnknownSyscalls || EvalMprotectRisk) is performed
 	// by convertSyscallResult() at read time, not stored in Summary.
-
-	// Evaluate mprotect prot argument (after Pass 1 and Pass 2)
-	evalResult, evalLocation := a.evaluateMprotectArgs(
+	evalResults, evalLocations := a.evaluateMprotectFamilyArgs(
 		code, baseAddr, decoder, result.DetectedSyscalls,
 	)
-	if evalResult != nil {
-		result.ArgEvalResults = append(result.ArgEvalResults, *evalResult)
+	for i, evalResult := range evalResults {
+		result.ArgEvalResults = append(result.ArgEvalResults, evalResult)
+		evalLocation := evalLocations[i]
 
-		if EvalMprotectRisk(result.ArgEvalResults) {
+		if EvalMprotectRisk([]common.SyscallArgEvalResult{evalResult}) {
 			// Add analysis warning message
 			switch evalResult.Status {
 			case common.SyscallArgEvalExecConfirmed:
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
-					fmt.Sprintf("mprotect at 0x%x: PROT_EXEC confirmed (%s)",
-						evalLocation, evalResult.Details))
+					fmt.Sprintf("%s at 0x%x: PROT_EXEC confirmed (%s)",
+						evalResult.SyscallName, evalLocation, evalResult.Details))
 			case common.SyscallArgEvalExecUnknown:
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
-					fmt.Sprintf("mprotect at 0x%x: PROT_EXEC could not be ruled out (%s)",
-						evalLocation, evalResult.Details))
+					fmt.Sprintf("%s at 0x%x: PROT_EXEC could not be ruled out (%s)",
+						evalResult.SyscallName, evalLocation, evalResult.Details))
 			}
 		}
 	}
@@ -395,60 +395,83 @@ const (
 	riskPriorityExecNotSet    = 0
 )
 
-// evaluateMprotectArgs evaluates prot argument of mprotect syscall entries.
-// It scans detected syscalls for mprotect, performs backward scan for prot
-// register (rdx on x86_64, x2 on arm64), and returns the highest-risk
-// SyscallArgEvalResult and its corresponding instruction address.
-// Returns nil, 0 if no mprotect was detected.
-func (a *SyscallAnalyzer) evaluateMprotectArgs(
+// syscall names for the mprotect family.
+const (
+	syscallNameMprotect     = "mprotect"
+	syscallNamePkeyMprotect = "pkey_mprotect"
+)
+
+// mprotectFamilyNames lists the syscall names in the mprotect family.
+// Each name is processed independently to produce at most one ArgEvalResult per name.
+var mprotectFamilyNames = []string{syscallNameMprotect, syscallNamePkeyMprotect}
+
+// evaluateMprotectFamilyArgs evaluates the prot argument for each syscall in the
+// mprotect family (mprotect and pkey_mprotect).
+// It returns two parallel slices: results and locations.
+// results[i] is the highest-risk SyscallArgEvalResult for the i-th detected family member,
+// and locations[i] is the corresponding syscall instruction address.
+// Syscall family members that were not detected are omitted (no entry added).
+func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 	code []byte,
 	baseAddr uint64,
 	decoder MachineCodeDecoder,
 	detectedSyscalls []common.SyscallInfo,
-) (*common.SyscallArgEvalResult, uint64) {
-	// Collect mprotect entries from detected syscalls.
-	// Only consider entries determined by "immediate" method, as those
-	// have confirmed syscall numbers.
-	var mprotectEntries []common.SyscallInfo
-	for _, info := range detectedSyscalls {
-		if info.Name == "mprotect" &&
-			info.DeterminationMethod == DeterminationMethodImmediate {
-			mprotectEntries = append(mprotectEntries, info)
+) ([]common.SyscallArgEvalResult, []uint64) {
+	var results []common.SyscallArgEvalResult
+	var locations []uint64
+
+	for _, syscallName := range mprotectFamilyNames {
+		// Collect entries for this syscall name.
+		// Only consider entries determined by "immediate" method, as those
+		// have confirmed syscall numbers.
+		var entries []common.SyscallInfo
+		for _, info := range detectedSyscalls {
+			if info.Name == syscallName &&
+				info.DeterminationMethod == DeterminationMethodImmediate {
+				entries = append(entries, info)
+			}
 		}
-	}
 
-	if len(mprotectEntries) == 0 {
-		return nil, 0
-	}
-
-	// Evaluate each mprotect entry and select the highest risk.
-	// Priority: exec_confirmed > exec_unknown > exec_not_set
-	var bestResult *common.SyscallArgEvalResult
-	var bestLocation uint64
-
-	for _, entry := range mprotectEntries {
-		result := a.evalSingleMprotect(code, baseAddr, decoder, entry)
-
-		if bestResult == nil || riskPriority(result.Status) > riskPriority(bestResult.Status) {
-			bestResult = &result
-			bestLocation = entry.Location
+		if len(entries) == 0 {
+			continue
 		}
+
+		// Evaluate each entry and select the highest risk.
+		// Priority: exec_confirmed > exec_unknown > exec_not_set
+		var bestResult *common.SyscallArgEvalResult
+		var bestLocation uint64
+
+		for _, entry := range entries {
+			result := a.evalSingleMprotect(code, baseAddr, decoder, entry, syscallName)
+
+			if bestResult == nil || riskPriority(result.Status) > riskPriority(bestResult.Status) {
+				bestResult = &result
+				bestLocation = entry.Location
+			}
+		}
+
+		results = append(results, *bestResult)
+		locations = append(locations, bestLocation)
 	}
 
-	return bestResult, bestLocation
+	return results, locations
 }
 
-// evalSingleMprotect evaluates the prot argument of a single mprotect entry.
+// evalSingleMprotect evaluates the prot argument of a single mprotect-family entry.
+// syscallName is used as the SyscallName field in the returned result (e.g., "mprotect"
+// or "pkey_mprotect"). The evaluation logic is identical for all family members since
+// prot is always the third argument (rdx on x86_64, x2 on arm64).
 func (a *SyscallAnalyzer) evalSingleMprotect(
 	code []byte,
 	baseAddr uint64,
 	decoder MachineCodeDecoder,
 	entry common.SyscallInfo,
+	syscallName string,
 ) common.SyscallArgEvalResult {
 	offset, ok := validateSyscallOffset(entry.Location, baseAddr, len(code))
 	if !ok {
 		return common.SyscallArgEvalResult{
-			SyscallName: "mprotect",
+			SyscallName: syscallName,
 			Status:      common.SyscallArgEvalExecUnknown,
 			Details:     "invalid offset",
 		}
@@ -463,13 +486,13 @@ func (a *SyscallAnalyzer) evalSingleMprotect(
 	if method == DeterminationMethodImmediate {
 		if value&protExecFlag != 0 {
 			return common.SyscallArgEvalResult{
-				SyscallName: "mprotect",
+				SyscallName: syscallName,
 				Status:      common.SyscallArgEvalExecConfirmed,
 				Details:     fmt.Sprintf("prot=0x%x", value),
 			}
 		}
 		return common.SyscallArgEvalResult{
-			SyscallName: "mprotect",
+			SyscallName: syscallName,
 			Status:      common.SyscallArgEvalExecNotSet,
 			Details:     fmt.Sprintf("prot=0x%x", value),
 		}
@@ -479,7 +502,7 @@ func (a *SyscallAnalyzer) evalSingleMprotect(
 	details := unknownMethodDetail(method)
 
 	return common.SyscallArgEvalResult{
-		SyscallName: "mprotect",
+		SyscallName: syscallName,
 		Status:      common.SyscallArgEvalExecUnknown,
 		Details:     details,
 	}
