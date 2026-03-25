@@ -118,15 +118,15 @@ graph TB
 ### 3.1 `SymbolAnalysisData`（`internal/fileanalysis/schema.go`）
 
 ```go
-// 変更後
+// After change
 type SymbolAnalysisData struct {
     AnalyzedAt         time.Time            `json:"analyzed_at"`
     DetectedSymbols    []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
     DynamicLoadSymbols []DetectedSymbolEntry `json:"dynamic_load_symbols,omitempty"`
 
-    // KnownNetworkLibDeps は record 時に DynLibDeps から検出された
-    // 既知ネットワークライブラリの SOName 一覧。
-    // 非空の場合、ネットワーク有りと判定する。
+    // KnownNetworkLibDeps lists SOName values of known network libraries
+    // detected from DynLibDeps during record.
+    // If non-empty, this binary is treated as network-capable.
     KnownNetworkLibDeps []string `json:"known_network_lib_deps,omitempty"`
 }
 ```
@@ -146,12 +146,12 @@ type SymbolAnalysisData struct {
 ### 4.2 公開 API
 
 ```go
-// IsKnownNetworkLibrary は SOName が既知ネットワークライブラリに一致するか判定する。
-// soname: DT_NEEDED の値（例: "libruby.so.3.2", "libcurl.so.4", "libpython3.11.so.1.0"）
-// 一致した場合 true を返す。
+// IsKnownNetworkLibrary reports whether the SOName matches the known network library list.
+// soname: DT_NEEDED value (for example, "libruby.so.3.2", "libcurl.so.4", "libpython3.11.so.1.0")
+// Returns true if there is a match.
 func IsKnownNetworkLibrary(soname string) bool
 
-// KnownNetworkLibraryCount は登録済みライブラリ数を返す（テスト・ドキュメント用）。
+// KnownNetworkLibraryCount returns the number of registered libraries (for tests and documentation).
 func KnownNetworkLibraryCount() int
 ```
 
