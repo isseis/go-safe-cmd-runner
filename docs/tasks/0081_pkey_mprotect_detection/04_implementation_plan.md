@@ -63,13 +63,14 @@
 - [ ] `maxValidSyscallNumber` のコメントを更新（`0-288` → `up to 335 (as of Linux 6.x)`）
 - [ ] `evalSingleMprotect` に `syscallName string` 引数を追加し、`SyscallName: "mprotect"` のハードコードを `SyscallName: syscallName` に置き換える
 - [ ] `evaluateMprotectArgs` を `evaluateMprotectFamilyArgs` に改名
-  - [ ] 戻り値を `(*SyscallArgEvalResult, uint64)` → `([]common.SyscallArgEvalResult, []uint64)` に変更
+  - [ ] ローカル構造体 `mprotectFamilyEvalResult{result common.SyscallArgEvalResult; location uint64}` を定義
+  - [ ] 戻り値を `(*SyscallArgEvalResult, uint64)` → `[]mprotectFamilyEvalResult` に変更
   - [ ] `mprotect` ファミリー（`"mprotect"`, `"pkey_mprotect"`）に対してループ処理を追加
   - [ ] 各 syscall 名ごとに集約ロジック（最大1件/名前）を適用
   - [ ] `evalSingleMprotect` 呼び出しに `syscallName` 引数を追加
 - [ ] `analyzeSyscallsInCode` 内の `evaluateMprotectArgs` 呼び出しを `evaluateMprotectFamilyArgs` に更新
-  - [ ] 戻り値をスライスとして受け取り、ループで処理
-  - [ ] `fmt.Sprintf` のフォーマット文字列を `evalResult.SyscallName` を使う形に統一（`"mprotect at ..."` → `"%s at ..."` + `evalResult.SyscallName`）
+  - [ ] 戻り値 `[]mprotectFamilyEvalResult` を `for _, er := range evalResults` でループ処理
+  - [ ] `fmt.Sprintf` のフォーマット文字列を `er.result.SyscallName` を使う形に統一（`"mprotect at ..."` → `"%s at ..."` + `er.result.SyscallName`）
   - [ ] `EvalProtExecRisk` の呼び出しを1エントリずつに変更
 
 ### 2.3 `mprotect_risk.go` → `prot_exec_risk.go` 改名・更新
