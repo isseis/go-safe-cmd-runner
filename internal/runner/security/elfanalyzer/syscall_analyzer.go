@@ -441,20 +441,22 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 
 		// Evaluate each entry and select the highest risk.
 		// Priority: exec_confirmed > exec_unknown > exec_not_set
-		var bestResult *common.SyscallArgEvalResult
+		var bestResult common.SyscallArgEvalResult
+		hasBestResult := false
 		var bestLocation uint64
 
 		for _, entry := range entries {
 			result := a.evalSingleMprotect(code, baseAddr, decoder, entry, syscallName)
 
-			if bestResult == nil || riskPriority(result.Status) > riskPriority(bestResult.Status) {
-				bestResult = &result
+			if !hasBestResult || riskPriority(result.Status) > riskPriority(bestResult.Status) {
+				bestResult = result
+				hasBestResult = true
 				bestLocation = entry.Location
 			}
 		}
 
 		results = append(results, mprotectFamilyEvalResult{
-			Result:   *bestResult,
+			Result:   bestResult,
 			Location: bestLocation,
 		})
 	}
