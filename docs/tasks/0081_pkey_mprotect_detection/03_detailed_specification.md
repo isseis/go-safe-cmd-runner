@@ -6,9 +6,9 @@
 |---|---|---|
 | `internal/fileanalysis/schema.go` | 修正 | `CurrentSchemaVersion` 6 → 7、コメント追加 |
 | `internal/runner/security/elfanalyzer/syscall_analyzer.go` | 修正 | `evaluateMprotectArgs` → `evaluateMprotectFamilyArgs`、`evalSingleMprotect` 汎化、`analyzeSyscallsInCode` 更新、`maxValidSyscallNumber` コメント更新 |
-| `internal/runner/security/elfanalyzer/mprotect_risk.go` | 修正 | `EvalMprotectRisk` に `pkey_mprotect` 対応追加 |
+| `internal/runner/security/elfanalyzer/prot_exec_risk.go` | 修正 | `EvalProtExecRisk` に `pkey_mprotect` 対応追加 |
 | `internal/runner/security/elfanalyzer/syscall_analyzer_test.go` | 修正・追加 | `pkey_mprotect` テストケース追加、改名追従 |
-| `internal/runner/security/elfanalyzer/mprotect_risk_test.go` | 修正 | `pkey_mprotect` テストケース追加 |
+| `internal/runner/security/elfanalyzer/prot_exec_risk_test.go` | 修正 | `pkey_mprotect` テストケース追加 |
 | `internal/fileanalysis/file_analysis_store_test.go` | 自動追従 | `CurrentSchemaVersion - 1` 参照のため変更不要 |
 
 ## 2. `internal/fileanalysis/schema.go`
@@ -141,7 +141,7 @@ evalResult, evalLocation := a.evaluateMprotectArgs(
 if evalResult != nil {
     result.ArgEvalResults = append(result.ArgEvalResults, *evalResult)
 
-    if EvalMprotectRisk(result.ArgEvalResults) {
+    if EvalProtExecRisk(result.ArgEvalResults) {
         switch evalResult.Status {
         case common.SyscallArgEvalExecConfirmed:
             result.AnalysisWarnings = append(result.AnalysisWarnings,
@@ -166,7 +166,7 @@ for i, evalResult := range evalResults {
     result.ArgEvalResults = append(result.ArgEvalResults, evalResult)
     evalLocation := evalLocations[i]
 
-    if EvalMprotectRisk([]common.SyscallArgEvalResult{evalResult}) {
+    if EvalProtExecRisk([]common.SyscallArgEvalResult{evalResult}) {
         switch evalResult.Status {
         case common.SyscallArgEvalExecConfirmed:
             result.AnalysisWarnings = append(result.AnalysisWarnings,
@@ -181,18 +181,18 @@ for i, evalResult := range evalResults {
 }
 ```
 
-**注意点**: `EvalMprotectRisk` にはエントリを1件ずつ渡す。リスク判定は各エントリに対して
+**注意点**: `EvalProtExecRisk` にはエントリを1件ずつ渡す。リスク判定は各エントリに対して
 独立して行い、エントリ間の干渉を避ける。また `fmt.Sprintf` のフォーマット文字列に
 `evalResult.SyscallName` を使うことで `mprotect` / `pkey_mprotect` の両方に対応する。
 
-## 4. `internal/runner/security/elfanalyzer/mprotect_risk.go`
+## 4. `internal/runner/security/elfanalyzer/prot_exec_risk.go`
 
-### 4.1 `EvalMprotectRisk` 拡張
+### 4.1 `EvalProtExecRisk` 拡張
 
 #### 変更前
 
 ```go
-// EvalMprotectRisk evaluates ArgEvalResults for mprotect-related risk.
+// EvalProtExecRisk evaluates ArgEvalResults for mprotect-related risk.
 // Returns true if mprotect-derived risk exists (used for AnalysisWarnings
 // entries and risk derivation in convertSyscallResult).
 //
@@ -201,7 +201,7 @@ for i, evalResult := range evalResults {
 //   - exec_unknown   → true
 //   - exec_not_set   → false
 //   - no mprotect entries → false
-func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
+func EvalProtExecRisk(argEvalResults []common.SyscallArgEvalResult) bool {
     for _, r := range argEvalResults {
         if r.SyscallName != "mprotect" {
             continue
@@ -219,7 +219,7 @@ func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
 #### 変更後
 
 ```go
-// EvalMprotectRisk evaluates ArgEvalResults for mprotect-family risk.
+// EvalProtExecRisk evaluates ArgEvalResults for mprotect-family risk.
 // Covers both mprotect and pkey_mprotect syscalls.
 // Returns true if PROT_EXEC risk exists (used for AnalysisWarnings
 // entries and risk derivation in convertSyscallResult).
@@ -229,7 +229,7 @@ func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
 //   - exec_unknown   → true
 //   - exec_not_set   → false
 //   - no mprotect/pkey_mprotect entries → false
-func EvalMprotectRisk(argEvalResults []common.SyscallArgEvalResult) bool {
+func EvalProtExecRisk(argEvalResults []common.SyscallArgEvalResult) bool {
     for _, r := range argEvalResults {
         if r.SyscallName != "mprotect" && r.SyscallName != "pkey_mprotect" {
             continue
@@ -317,9 +317,9 @@ svc #0        → 0x01 0x00 0x00 0xd4
 | `only mprotect detected` | syscall 10 のみ | 1件（mprotect のみ） |
 | `only pkey_mprotect detected` | syscall 329 のみ | 1件（pkey_mprotect のみ） |
 
-### 5.4 `TestEvalMprotectRisk`（追加ケース）
+### 5.4 `TestEvalProtExecRisk`（追加ケース）
 
-`mprotect_risk_test.go` の既存テストに以下を追加する。
+`prot_exec_risk_test.go` の既存テストに以下を追加する。
 
 | テスト名 | 入力 | 期待値 |
 |---|---|---|
@@ -349,9 +349,9 @@ svc #0        → 0x01 0x00 0x00 0xd4
 | AC-4: SyscallName = "pkey_mprotect" | 全 `EvaluatePkeyMprotectArgs` テストケースの SyscallName 検証 |
 | AC-4: mprotect + pkey_mprotect 共存 | `TestSyscallAnalyzer_MprotectAndPkeyMprotect` |
 | AC-4: 未検出時エントリなし | `non-pkey_mprotect syscall only` ケース |
-| AC-5: EvalMprotectRisk exec_confirmed → true | `TestEvalMprotectRisk` 追加ケース |
-| AC-5: EvalMprotectRisk exec_unknown → true | `TestEvalMprotectRisk` 追加ケース |
-| AC-5: EvalMprotectRisk exec_not_set → false | `TestEvalMprotectRisk` 追加ケース |
+| AC-5: EvalProtExecRisk exec_confirmed → true | `TestEvalProtExecRisk` 追加ケース |
+| AC-5: EvalProtExecRisk exec_unknown → true | `TestEvalProtExecRisk` 追加ケース |
+| AC-5: EvalProtExecRisk exec_not_set → false | `TestEvalProtExecRisk` 追加ケース |
 | AC-6: CurrentSchemaVersion = 7 | `TestStore_SchemaVersionMismatch` |
 | AC-7: 既存 mprotect テスト通過 | `TestSyscallAnalyzer_EvaluateMprotectArgs*`、`TestSyscallAnalyzer_MultipleMprotect` |
 | AC-7: 全テスト通過 | `make test` |

@@ -35,7 +35,7 @@ flowchart TD
     ESML --> BSR["backwardScanForRegister<br>rdx / x2 後方スキャン"]
     ESMP --> BSR
     BSR --> AER[("ArgEvalResults<br>[]SyscallArgEvalResult")]
-    AER --> EMR["EvalMprotectRisk<br>（mprotect / pkey_mprotect 両対応）"]
+    AER --> EMR["EvalProtExecRisk<br>（mprotect / pkey_mprotect 両対応）"]
     EMR -->|"true"| AW[("AnalysisWarnings")]
     AER --> RES[("SyscallAnalysisResult")]
     AW --> RES
@@ -73,7 +73,7 @@ graph TB
 
     subgraph "internal/runner/security/elfanalyzer"
         SA2["syscall_analyzer.go<br>evaluateMprotectArgs →<br>evaluateMprotectFamilyArgs<br>evalSingleMprotect 汎化"]
-        EMR2["mprotect_risk.go<br>EvalMprotectRisk 拡張<br>（pkey_mprotect 対応）"]
+        EMR2["prot_exec_risk.go<br>EvalProtExecRisk 拡張<br>（pkey_mprotect 対応）"]
         STDA["standard_analyzer.go<br>変更なし（呼び出しシグネチャ互換）"]
     end
 
@@ -93,7 +93,7 @@ sequenceDiagram
     participant EMFA as "evaluateMprotectFamilyArgs"
     participant ESM as "evalSingleMprotect(name)"
     participant BSR as "backwardScanForRegister"
-    participant EMR as "EvalMprotectRisk"
+    participant EMR as "EvalProtExecRisk"
 
     ASIC->>EMFA: detectedSyscalls
     Note over EMFA: "mprotect" エントリを収集・集約 → 最大1件
@@ -148,7 +148,7 @@ sequenceDiagram
 
 ### 3.2 変更される公開関数
 
-#### `EvalMprotectRisk`（`mprotect_risk.go`）
+#### `EvalProtExecRisk`（`prot_exec_risk.go`）
 
 ```
 変更前: SyscallName == "mprotect" のエントリのみ評価
@@ -167,7 +167,7 @@ sequenceDiagram
 | `SyscallAnalyzer.AnalyzeSyscallsInRange` | `evaluateMprotectFamilyArgs` を呼ばない |
 | `common.SyscallArgEvalResult` | JSON 構造変更なし |
 | `SyscallAnalysisResultCore.ArgEvalResults` | 型変更なし |
-| `standard_analyzer.go` | `evaluateMprotectFamilyArgs` のシグネチャ変更が呼び出しシグネチャに波及しないため（`EvalMprotectRisk` は動作変更されるが、関数シグネチャは不変） |
+| `standard_analyzer.go` | `evaluateMprotectFamilyArgs` のシグネチャ変更が呼び出しシグネチャに波及しないため（`EvalProtExecRisk` は動作変更されるが、関数シグネチャは不変） |
 
 ## 4. スキーマ変更
 
@@ -203,8 +203,8 @@ flowchart TB
     classDef tier3 fill:#c3f08a,stroke:#333,color:#000;
 
     T1["統合テスト<br>mprotect + pkey_mprotect 両方検出<br>TestSyscallAnalyzer_MprotectAndPkeyMprotect"]:::tier1
-    T2["コンポーネントテスト<br>evaluateMprotectFamilyArgs / EvalMprotectRisk<br>TestSyscallAnalyzer_EvaluatePkeyMprotectArgs*"]:::tier2
-    T3["単体テスト<br>evalSingleMprotect(syscallName)<br>TestEvalMprotectRisk pkey_mprotect ケース"]:::tier3
+    T2["コンポーネントテスト<br>evaluateMprotectFamilyArgs / EvalProtExecRisk<br>TestSyscallAnalyzer_EvaluatePkeyMprotectArgs*"]:::tier2
+    T3["単体テスト<br>evalSingleMprotect(syscallName)<br>TestEvalProtExecRisk pkey_mprotect ケース"]:::tier3
 
     T3 --> T2 --> T1
 ```
@@ -214,6 +214,6 @@ flowchart TB
 | テストファイル | 影響 | 対応 |
 |---|---|---|
 | `syscall_analyzer_test.go` | `evaluateMprotectArgs` 改名 | `evaluateMprotectFamilyArgs` に追従（テスト内呼び出しがあれば更新） |
-| `mprotect_risk_test.go` | `EvalMprotectRisk` に `pkey_mprotect` ケース追加 | テストケース追加のみ |
+| `prot_exec_risk_test.go`（旧 `mprotect_risk_test.go`） | ファイル改名 + `EvalProtExecRisk` に `pkey_mprotect` ケース追加 | ファイルリネーム + テストケース追加 |
 | `file_analysis_store_test.go` | スキーマバージョン `CurrentSchemaVersion - 1` 参照 | 自動追従（変更不要） |
 | `syscall_analyzer_test.go` `TestSyscallAnalyzer_MultipleMprotect` | `mprotect` 集約ロジックが継続動作 | 変更不要 |
