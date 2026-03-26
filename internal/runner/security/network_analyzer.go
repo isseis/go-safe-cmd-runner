@@ -172,6 +172,17 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			}
 			if len(data.DetectedSymbols) > 0 || len(data.KnownNetworkLibDeps) > 0 {
 				output.Result = binaryanalyzer.NetworkDetected
+				// When network capability is inferred only from KnownNetworkLibDeps,
+				// DetectedSymbols remains empty. Log this explicitly so that logs
+				// clearly explain why the binary is treated as network-capable even
+				// if handleAnalysisOutput logs an empty symbol list.
+				if len(data.DetectedSymbols) == 0 && len(data.KnownNetworkLibDeps) > 0 {
+					slog.Info(
+						"treating binary as network-capable based on known network library dependencies",
+						"path", cmdPath,
+						"known_network_lib_deps", data.KnownNetworkLibDeps,
+					)
+				}
 			} else {
 				output.Result = binaryanalyzer.NoNetworkSymbols
 			}
