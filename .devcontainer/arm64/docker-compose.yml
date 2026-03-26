@@ -1,0 +1,11 @@
+services:
+  dev-env:
+    platform: linux/arm64
+    hostname: arm64-dev-box
+    container_name: my-arm64-container
+    volumes:
+      # 拡張機能のキャッシュ用ボリューム（アーキテクチャ別に分離）
+      - vscode-extensions-cache-arm64:/home/issei/.vscode-server/extensions
+
+volumes:
+  vscode-extensions-cache-arm64:
