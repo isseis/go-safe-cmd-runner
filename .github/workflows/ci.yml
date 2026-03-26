@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has-non-md-changes: ${{ steps.check.outputs.has-non-md-changes }}
+      has-devcontainer-changes: ${{ steps.check.outputs.has-devcontainer-changes }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -39,6 +40,15 @@ jobs:
           else
             echo "has-non-md-changes=true" >> $GITHUB_OUTPUT
             echo "Non-markdown files changed, running tests"
+          fi
+
+          # Check if devcontainer files were changed
+          if echo "$changed_files" | grep -q '^\.devcontainer/'; then
+            echo "has-devcontainer-changes=true" >> $GITHUB_OUTPUT
+            echo "Devcontainer files changed, running devcontainer build test"
+          else
+            echo "has-devcontainer-changes=false" >> $GITHUB_OUTPUT
+            echo "No devcontainer changes, skipping devcontainer build test"
           fi
 
   security-scan:
@@ -271,6 +281,36 @@ jobs:
           name: security-validation-report
           path: security-report.md
           retention-days: 90
+
+  devcontainer-build-test:
+    name: Devcontainer Build Test
+    runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.has-devcontainer-changes == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create stub mounts required by docker-compose.yml
+        run: |
+          # SSH public key (read-only mount)
+          mkdir -p ~/.ssh && touch ~/.ssh/id_ed25519.pub
+          # GitHub CLI config directory
+          mkdir -p ~/.config/gh
+          # Claude config directory
+          mkdir -p ~/.claude
+          # SSH agent socket (macOS host-services path referenced in docker-compose)
+          sudo mkdir -p /run/host-services
+          sudo touch /run/host-services/ssh-auth.sock
+
+      - name: Build devcontainer and verify toolchain
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            go version
+            golangci-lint --version
+            gh --version
+            pre-commit --version
 
   markdown-only-notification:
     name: Markdown-only changes detected
