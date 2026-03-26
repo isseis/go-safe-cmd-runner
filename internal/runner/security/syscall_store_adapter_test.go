@@ -28,14 +28,9 @@ func (m *mockFileanalysisSyscallStore) SaveSyscallAnalysis(_, _ string, _ *filea
 
 func TestNewELFSyscallStoreAdapter_ReturnResult(t *testing.T) {
 	core := common.SyscallAnalysisResultCore{
-		Architecture:       "x86_64",
-		HasUnknownSyscalls: false,
+		Architecture: "x86_64",
 		DetectedSyscalls: []common.SyscallInfo{
 			{Number: 41, Name: "socket", IsNetwork: true},
-		},
-		Summary: common.SyscallSummary{
-			HasNetworkSyscalls:  true,
-			NetworkSyscallCount: 1,
 		},
 	}
 	inner := &mockFileanalysisSyscallStore{

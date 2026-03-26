@@ -640,7 +640,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
-		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, directSyscalls, argEvalResults, elfFile.Machine)
+		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, argEvalResults, elfFile.Machine)
 	} else {
 		record.SyscallAnalysis = nil
 	}
@@ -851,38 +851,14 @@ func mprotectStatusPriority(status common.SyscallArgEvalStatus) int {
 }
 
 // buildSyscallAnalysisData constructs a SyscallAnalysisData from the merged syscall infos.
-// HasUnknownSyscalls is determined by whether any direct (Source == "") entry has Number < 0.
-func buildSyscallAnalysisData(all []common.SyscallInfo, direct []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
-	hasUnknown := false
-	for _, info := range direct {
-		if info.Number < 0 {
-			hasUnknown = true
-			break
-		}
-	}
-
-	var hasNetwork bool
-	var networkCount int
-	for _, info := range all {
-		if info.IsNetwork {
-			hasNetwork = true
-			networkCount++
-		}
-	}
-
+func buildSyscallAnalysisData(all []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
 	retained := fileanalysis.FilterSyscallsForStorage(all)
 
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture:       elfMachineToArchName(machine),
-			DetectedSyscalls:   retained,
-			HasUnknownSyscalls: hasUnknown,
-			ArgEvalResults:     argEvalResults,
-			Summary: common.SyscallSummary{
-				HasNetworkSyscalls:  hasNetwork,
-				TotalDetectedEvents: len(retained),
-				NetworkSyscallCount: networkCount,
-			},
+			Architecture:     elfMachineToArchName(machine),
+			DetectedSyscalls: retained,
+			ArgEvalResults:   argEvalResults,
 		},
 		AnalyzedAt: time.Now().UTC(),
 	}

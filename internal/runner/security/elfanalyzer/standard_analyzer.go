@@ -344,34 +344,41 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 }
 
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
-// Risk is derived at read time from primary facts:
-//   - HasUnknownSyscalls: true if any syscall number could not be determined
-//   - EvalMprotectRisk(ArgEvalResults): true if mprotect PROT_EXEC risk detected
+// Risk is derived by scanning DetectedSyscalls for unknown syscall numbers and
+// checking ArgEvalResults for mprotect PROT_EXEC risk.
 func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
 	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
 	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
 	// so we must treat the result as an error even if network syscalls were also detected.
-	isHighRisk := result.HasUnknownSyscalls || EvalMprotectRisk(result.ArgEvalResults)
-	if isHighRisk {
+	//
+	// Number == -1 is the sentinel for "could not determine syscall number" and only
+	// appears in direct-syscall entries (Source == ""). libc_symbol_import entries
+	// always have Number >= 0 (enforced by validateInfos at cache-build time), so
+	// they are never mistaken for unknown syscalls here.
+	hasUnknown := false
+	for _, info := range result.DetectedSyscalls {
+		if info.Number == -1 {
+			hasUnknown = true
+			break
+		}
+	}
+	if hasUnknown || EvalMprotectRisk(result.ArgEvalResults) {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.AnalysisWarnings),
 		}
 	}
 
-	if result.Summary.HasNetworkSyscalls {
-		var symbols []binaryanalyzer.DetectedSymbol
-		if result.Summary.NetworkSyscallCount > 0 {
-			symbols = make([]binaryanalyzer.DetectedSymbol, 0, result.Summary.NetworkSyscallCount)
+	var symbols []binaryanalyzer.DetectedSymbol
+	for _, info := range result.DetectedSyscalls {
+		if info.IsNetwork {
+			symbols = append(symbols, binaryanalyzer.DetectedSymbol{
+				Name:     info.Name,
+				Category: "syscall",
+			})
 		}
-		for _, info := range result.DetectedSyscalls {
-			if info.IsNetwork {
-				symbols = append(symbols, binaryanalyzer.DetectedSymbol{
-					Name:     info.Name,
-					Category: "syscall",
-				})
-			}
-		}
+	}
+	if len(symbols) > 0 {
 		return binaryanalyzer.AnalysisOutput{
 			Result:          binaryanalyzer.NetworkDetected,
 			DetectedSymbols: symbols,

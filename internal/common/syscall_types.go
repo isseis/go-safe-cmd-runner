@@ -63,20 +63,6 @@ type SyscallInfo struct {
 	Source string `json:"source,omitempty"`
 }
 
-// SyscallSummary provides aggregated analysis information.
-type SyscallSummary struct {
-	// HasNetworkSyscalls indicates presence of network-related syscalls.
-	HasNetworkSyscalls bool `json:"has_network_syscalls"`
-
-	// TotalDetectedEvents is the count of detected syscall events.
-	// This includes both direct syscall instructions and indirect syscalls
-	// via Go wrapper function calls.
-	TotalDetectedEvents int `json:"total_detected_events"`
-
-	// NetworkSyscallCount is the count of network-related syscall events.
-	NetworkSyscallCount int `json:"network_syscall_count"`
-}
-
 // SyscallAnalysisResultCore contains the common fields shared between
 // elfanalyzer.SyscallAnalysisResult and fileanalysis.SyscallAnalysisResult.
 // Both packages embed this type to ensure field-level consistency at the
@@ -90,9 +76,6 @@ type SyscallAnalysisResultCore struct {
 	// indirect syscalls via Go wrapper function calls (e.g., syscall.Syscall).
 	DetectedSyscalls []SyscallInfo `json:"detected_syscalls"`
 
-	// HasUnknownSyscalls indicates whether any syscall number could not be determined.
-	HasUnknownSyscalls bool `json:"has_unknown_syscalls"`
-
 	// AnalysisWarnings contains observations and warnings generated during analysis.
 	// Examples: "syscall number could not be determined", "mprotect PROT_EXEC confirmed".
 	// Note: With omitempty, nil and empty slice ([]string{}) have different JSON output:
@@ -101,9 +84,6 @@ type SyscallAnalysisResultCore struct {
 	// When initializing, use nil (not empty slice) for no warnings
 	// to ensure the field is omitted in JSON output.
 	AnalysisWarnings []string `json:"analysis_warnings,omitempty"`
-
-	// Summary provides aggregated information about the analysis.
-	Summary SyscallSummary `json:"summary"`
 
 	// ArgEvalResults contains static evaluation results for syscall arguments.
 	// Currently used for mprotect PROT_EXEC detection.

@@ -27,6 +27,9 @@ func NewImportSymbolMatcher(syscallTable SyscallNumberTable) *ImportSymbolMatche
 // Match returns SyscallInfo entries for each import symbol that maps to a known libc wrapper.
 // When multiple wrapper entries share the same syscall Number, the entry whose Name is
 // lexicographically smallest is kept (stable dedup).
+//
+// Invariant: every returned entry has Number >= 0, because WrapperEntry.Number >= 0 is
+// enforced by validateInfos at cache-build time and Number is copied directly from the wrapper.
 func (m *ImportSymbolMatcher) Match(importSymbols []string, wrappers []WrapperEntry) []common.SyscallInfo {
 	// Build a name→WrapperEntry map.
 	wrapperMap := make(map[string]WrapperEntry, len(wrappers))

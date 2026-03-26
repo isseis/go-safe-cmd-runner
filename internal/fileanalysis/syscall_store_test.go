@@ -40,12 +40,6 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 					DeterminationMethod: "immediate",
 				},
 			},
-			HasUnknownSyscalls: false,
-			Summary: SyscallSummary{
-				HasNetworkSyscalls:  true,
-				TotalDetectedEvents: 1,
-				NetworkSyscallCount: 1,
-			},
 		},
 	}
 
@@ -65,8 +59,6 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 	assert.Equal(t, 41, loadedResult.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", loadedResult.DetectedSyscalls[0].Name)
 	assert.True(t, loadedResult.DetectedSyscalls[0].IsNetwork)
-	assert.False(t, loadedResult.HasUnknownSyscalls)
-	assert.True(t, loadedResult.Summary.HasNetworkSyscalls)
 }
 
 func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
@@ -166,12 +158,8 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 					Location:            0x402000,
 				},
 			},
-			HasUnknownSyscalls: true,
 			AnalysisWarnings: []string{
 				"syscall at 0x402000: number could not be determined (unknown:indirect_setting)",
-			},
-			Summary: SyscallSummary{
-				TotalDetectedEvents: 1,
 			},
 		},
 	}
@@ -186,7 +174,6 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 	require.NotNil(t, loadedResult)
 
 	// Verify analysis warnings are preserved
-	assert.True(t, loadedResult.HasUnknownSyscalls)
 	require.Len(t, loadedResult.AnalysisWarnings, 1)
 	assert.Contains(t, loadedResult.AnalysisWarnings[0], "indirect_setting")
 }
@@ -333,9 +320,6 @@ func TestStore_ArgEvalResults(t *testing.T) {
 						Details:     "prot=0x7",
 					},
 				},
-				Summary: SyscallSummary{
-					TotalDetectedEvents: 1,
-				},
 			},
 		}
 
@@ -362,9 +346,6 @@ func TestStore_ArgEvalResults(t *testing.T) {
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				Architecture:   "x86_64",
 				ArgEvalResults: nil,
-				Summary: SyscallSummary{
-					TotalDetectedEvents: 0,
-				},
 			},
 		}
 

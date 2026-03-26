@@ -20,6 +20,8 @@ type LibcCacheFile struct {
 }
 
 // WrapperEntry represents a single syscall wrapper function in libc.
+// Number is guaranteed to be >= 0; validateInfos rejects entries with Number < 0
+// before any WrapperEntry is constructed.
 type WrapperEntry struct {
 	Name   string `json:"name"`
 	Number int    `json:"number"`
