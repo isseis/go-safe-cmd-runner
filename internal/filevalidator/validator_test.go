@@ -1652,22 +1652,14 @@ func TestRecord_KnownNetworkLibDeps_NonNetworkOnly(t *testing.T) {
 }
 
 func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
-	// First pass: DynLibDeps includes a known network lib → KnownNetworkLibDeps populated.
 	dynLibDepsWithCurl := &fileanalysis.DynLibDepsData{
 		Libs: []fileanalysis.LibEntry{
 			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
 		},
 	}
 	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDepsWithCurl, stub)
-	require.NoError(t, err)
-	require.NotNil(t, record.SymbolAnalysis)
-	require.Equal(t, []string{"libcurl.so.4"}, record.SymbolAnalysis.KnownNetworkLibDeps,
-		"precondition: KnownNetworkLibDeps should be set after first pass")
 
-	// We need a validator pointed at the same store to do the second pass.
-	// Re-use the helper's pattern but manually: build a fresh validator on the same hashDir,
-	// replace DynLibDeps with a non-network lib, then force re-record.
+	// Build a validator with a record that has KnownNetworkLibDeps set from a previous run.
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
@@ -1694,7 +1686,7 @@ func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Second pass: replace DynLibDeps with a non-network lib only.
+	// Replace DynLibDeps with a non-network lib and re-record; KnownNetworkLibDeps must be cleared.
 	dynLibDepsNoNetwork := &fileanalysis.DynLibDepsData{
 		Libs: []fileanalysis.LibEntry{
 			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
