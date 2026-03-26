@@ -5,7 +5,7 @@
         "docker-compose.yml"
     ],
     "service": "dev-env",
-    "workspaceFolder": "/workspaces/ubuntu",
+    "workspaceFolder": "/workspaces/ubuntu/go-safe-cmd-runner",
     "remoteUser": "issei",
     "postCreateCommand": "cd /workspaces/ubuntu/go-safe-cmd-runner && pre-commit install",
     "customizations": {
