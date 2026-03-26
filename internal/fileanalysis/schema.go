@@ -85,11 +85,6 @@ type LibEntry struct {
 // fileanalysis.SyscallInfo while the canonical definition lives in common.
 type SyscallInfo = common.SyscallInfo
 
-// SyscallSummary is an alias for common.SyscallSummary.
-// Using a type alias preserves backward compatibility for code that references
-// fileanalysis.SyscallSummary while the canonical definition lives in common.
-type SyscallSummary = common.SyscallSummary
-
 // SyscallAnalysisData contains syscall analysis information.
 type SyscallAnalysisData struct {
 	// SyscallAnalysisResultCore contains the common fields shared with

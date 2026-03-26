@@ -138,9 +138,8 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 		ContentHash: "sha256:abc123",
 		SyscallAnalysis: &SyscallAnalysisData{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				Architecture:       "x86_64",
-				HasUnknownSyscalls: true,
-				AnalysisWarnings:   []string{"reason1"},
+				Architecture:     "x86_64",
+				AnalysisWarnings: []string{"reason1"},
 			},
 			AnalyzedAt: time.Now().UTC(),
 		},
@@ -161,7 +160,7 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 	assert.Equal(t, "sha256:def456", loadedRecord.ContentHash)
 	assert.NotNil(t, loadedRecord.SyscallAnalysis)
 	assert.Equal(t, "x86_64", loadedRecord.SyscallAnalysis.Architecture)
-	assert.True(t, loadedRecord.SyscallAnalysis.HasUnknownSyscalls)
+	assert.Equal(t, []string{"reason1"}, loadedRecord.SyscallAnalysis.AnalysisWarnings)
 }
 
 func TestStore_Update_CreatesNewRecord(t *testing.T) {

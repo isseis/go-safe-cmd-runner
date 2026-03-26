@@ -300,11 +300,6 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 						Location:  0x401010,
 					},
 				},
-				Summary: SyscallSummary{
-					HasNetworkSyscalls:  true,
-					NetworkSyscallCount: 2,
-					TotalDetectedEvents: 2,
-				},
 			},
 		},
 	}
@@ -335,11 +330,6 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 						Location:  0x401000,
 					},
 				},
-				Summary: SyscallSummary{
-					HasNetworkSyscalls:  false,
-					NetworkSyscallCount: 0,
-					TotalDetectedEvents: 1,
-				},
 			},
 		},
 	}
@@ -367,13 +357,8 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 						Location:            0x401000,
 					},
 				},
-				HasUnknownSyscalls: true,
 				AnalysisWarnings: []string{
 					"syscall at 0x401000: number could not be determined (unknown:indirect_setting)",
-				},
-				Summary: SyscallSummary{
-					HasNetworkSyscalls:  false,
-					TotalDetectedEvents: 1,
 				},
 			},
 		},
@@ -411,14 +396,8 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 						Location:            0x401010,
 					},
 				},
-				HasUnknownSyscalls: true,
 				AnalysisWarnings: []string{
 					"syscall at 0x401010: number could not be determined (unknown:indirect_setting)",
-				},
-				Summary: SyscallSummary{
-					HasNetworkSyscalls:  true,
-					NetworkSyscallCount: 1,
-					TotalDetectedEvents: 2,
 				},
 			},
 		},
@@ -462,7 +441,6 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 				DetectedSyscalls: []SyscallInfo{
 					{Number: 41, Name: "socket", IsNetwork: true},
 				},
-				Summary: SyscallSummary{HasNetworkSyscalls: true},
 			},
 		},
 		expectedHash: "sha256:differenthash", // This won't match the actual file hash
@@ -507,11 +485,6 @@ func TestAC3_DynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
 					{Number: 41, Name: "socket", IsNetwork: true, Location: 0x401000},
-				},
-				Summary: SyscallSummary{
-					HasNetworkSyscalls:  true,
-					NetworkSyscallCount: 1,
-					TotalDetectedEvents: 1,
 				},
 			},
 		},
@@ -585,11 +558,10 @@ func TestAC3_DynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				HasUnknownSyscalls: true,
-				AnalysisWarnings:   []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},
-				Summary: SyscallSummary{
-					TotalDetectedEvents: 1,
+				DetectedSyscalls: []SyscallInfo{
+					{Number: -1, DeterminationMethod: "unknown:indirect_setting", Location: 0x401000},
 				},
+				AnalysisWarnings: []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},
 			},
 		},
 	}

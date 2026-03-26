@@ -61,9 +61,14 @@ int main() {
 	require.NoError(t, err)
 
 	// Verify network syscall detected
-	assert.True(t, result.Summary.HasNetworkSyscalls,
-		"socket syscall should be detected as network-related")
-	assert.Greater(t, result.Summary.NetworkSyscallCount, 0)
+	hasNetwork := false
+	for _, info := range result.DetectedSyscalls {
+		if info.IsNetwork {
+			hasNetwork = true
+			break
+		}
+	}
+	assert.True(t, hasNetwork, "socket syscall should be detected as network-related")
 
 	// Verify socket syscall found
 	found := false
@@ -123,7 +128,7 @@ func main() {
 	require.NoError(t, err)
 
 	// Verify the analysis completed successfully
-	assert.Greater(t, result.Summary.TotalDetectedEvents, 0,
+	assert.Greater(t, len(result.DetectedSyscalls), 0,
 		"Go binary should contain detectable syscall events")
 
 	// Check that Go wrapper calls were detected (Pass 2)
@@ -181,9 +186,14 @@ func main() {
 	require.NoError(t, err)
 
 	// A simple hello-world should NOT have network syscalls
-	assert.False(t, result.Summary.HasNetworkSyscalls,
-		"hello-world Go binary should not have network syscalls")
-	assert.Equal(t, 0, result.Summary.NetworkSyscallCount)
+	hasNetwork := false
+	for _, info := range result.DetectedSyscalls {
+		if info.IsNetwork {
+			hasNetwork = true
+			break
+		}
+	}
+	assert.False(t, hasNetwork, "hello-world Go binary should not have network syscalls")
 }
 
 // TestE2E_RecordToRunnerFallbackChain tests the full pipeline:
@@ -308,10 +318,14 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 	require.NoError(t, err)
 
 	// The binary uses net.Dial which resolves to socket(198) on arm64
-	assert.True(t, result.Summary.HasNetworkSyscalls,
-		"arm64 binary using net.Dial should have network syscalls detected")
-	assert.Greater(t, result.Summary.NetworkSyscallCount, 0,
-		"expected at least one network syscall")
+	hasNetwork := false
+	for _, info := range result.DetectedSyscalls {
+		if info.IsNetwork {
+			hasNetwork = true
+			break
+		}
+	}
+	assert.True(t, hasNetwork, "arm64 binary using net.Dial should have network syscalls detected")
 
 	// Verify socket syscall (arm64 number 198) is among the detected syscalls
 	found := false
@@ -392,18 +406,22 @@ func main() {
 		require.NoError(t, err)
 
 		t.Logf("SyscallAnalysis architecture: %s", result.Architecture)
-		t.Logf("TotalDetectedEvents: %d", result.Summary.TotalDetectedEvents)
-		t.Logf("NetworkSyscallCount: %d", result.Summary.NetworkSyscallCount)
-		t.Logf("HasNetworkSyscalls: %v", result.Summary.HasNetworkSyscalls)
-		t.Logf("HasUnknownSyscalls: %v", result.HasUnknownSyscalls)
+		t.Logf("DetectedSyscalls count: %d", len(result.DetectedSyscalls))
 
 		for i, sc := range result.DetectedSyscalls {
 			t.Logf("Syscall[%d]: #%-4d (%-20s) isNetwork=%-5v method=%s at 0x%x",
 				i, sc.Number, sc.Name, sc.IsNetwork, sc.DeterminationMethod, sc.Location)
 		}
 
-		assert.True(t, result.Summary.HasNetworkSyscalls,
-			"CGO binary calling syscall.Socket() should have HasNetworkSyscalls: true after fixes")
+		hasNetwork := false
+		for _, sc := range result.DetectedSyscalls {
+			if sc.IsNetwork {
+				hasNetwork = true
+				break
+			}
+		}
+		assert.True(t, hasNetwork,
+			"CGO binary calling syscall.Socket() should have network syscalls detected after fixes")
 
 		found := false
 		for _, sc := range result.DetectedSyscalls {

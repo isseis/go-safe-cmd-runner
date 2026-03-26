@@ -83,23 +83,6 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 	})
 }
 
-// TestSyscallSummary_JSONRoundTrip verifies JSON marshal/unmarshal of SyscallSummary.
-func TestSyscallSummary_JSONRoundTrip(t *testing.T) {
-	original := common.SyscallSummary{
-		HasNetworkSyscalls:  true,
-		TotalDetectedEvents: 5,
-		NetworkSyscallCount: 2,
-	}
-
-	data, err := json.Marshal(original)
-	require.NoError(t, err)
-
-	var decoded common.SyscallSummary
-	require.NoError(t, json.Unmarshal(data, &decoded))
-
-	assert.Equal(t, original, decoded)
-}
-
 // TestSyscallAnalysisResultCore_JSONRoundTrip verifies JSON marshal/unmarshal of
 // SyscallAnalysisResultCore, including omitempty behavior on AnalysisWarnings.
 func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
@@ -115,13 +98,7 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 					DeterminationMethod: "immediate",
 				},
 			},
-			HasUnknownSyscalls: false,
-			AnalysisWarnings:   []string{"unknown:indirect_setting"},
-			Summary: common.SyscallSummary{
-				HasNetworkSyscalls:  true,
-				TotalDetectedEvents: 1,
-				NetworkSyscallCount: 1,
-			},
+			AnalysisWarnings: []string{"unknown:indirect_setting"},
 		}
 
 		data, err := json.Marshal(original)
@@ -135,11 +112,9 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 
 	t.Run("analysis_warnings omitted when nil", func(t *testing.T) {
 		core := common.SyscallAnalysisResultCore{
-			Architecture:       "x86_64",
-			DetectedSyscalls:   nil,
-			HasUnknownSyscalls: false,
-			AnalysisWarnings:   nil,
-			Summary:            common.SyscallSummary{},
+			Architecture:     "x86_64",
+			DetectedSyscalls: nil,
+			AnalysisWarnings: nil,
 		}
 
 		data, err := json.Marshal(core)

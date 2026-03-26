@@ -858,9 +858,8 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 		ContentHash: "sha256:old_hash",
 		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				Architecture:       "x86_64",
-				HasUnknownSyscalls: true,
-				AnalysisWarnings:   []string{"test reason"},
+				Architecture:     "x86_64",
+				AnalysisWarnings: []string{"test reason"},
 			},
 		},
 	})
@@ -881,7 +880,6 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	// Verify the SyscallAnalysis was preserved
 	require.NotNil(t, record.SyscallAnalysis, "SyscallAnalysis should be preserved")
 	assert.Equal(t, "x86_64", record.SyscallAnalysis.Architecture, "Architecture should be preserved")
-	assert.True(t, record.SyscallAnalysis.HasUnknownSyscalls, "HasUnknownSyscalls should be preserved")
 	require.Len(t, record.SyscallAnalysis.AnalysisWarnings, 1, "AnalysisWarnings should be preserved")
 	assert.Equal(t, "test reason", record.SyscallAnalysis.AnalysisWarnings[0], "AnalysisWarning content should be preserved")
 }
@@ -1301,27 +1299,23 @@ func TestMergeSyscallInfos_SortOrder(t *testing.T) {
 }
 
 func TestBuildSyscallAnalysisData(t *testing.T) {
-	t.Run("HasUnknownSyscalls_set_from_direct_entries", func(t *testing.T) {
+	t.Run("architecture_x86_64", func(t *testing.T) {
 		all := []common.SyscallInfo{
 			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
 			{Number: 42, Source: "libc_symbol_import"},
 		}
-		direct := []common.SyscallInfo{
-			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
-		}
-		data := buildSyscallAnalysisData(all, direct, nil, elf.EM_X86_64)
-		assert.True(t, data.HasUnknownSyscalls, "should detect unknown from direct")
+		data := buildSyscallAnalysisData(all, nil, elf.EM_X86_64)
 		assert.Equal(t, "x86_64", data.Architecture)
+		// FilterSyscallsForStorage retains only Number==-1 and IsNetwork entries.
+		// The libc_symbol_import entry (Number:42, IsNetwork:false) is filtered out.
+		assert.Len(t, data.DetectedSyscalls, 1)
 	})
 
-	t.Run("HasUnknownSyscalls_not_set_from_libc_entries", func(t *testing.T) {
-		// libc_symbol_import with Number < 0 should NOT set HasUnknownSyscalls
+	t.Run("architecture_arm64", func(t *testing.T) {
 		all := []common.SyscallInfo{
 			{Number: -1, Source: "libc_symbol_import"},
 		}
-		direct := []common.SyscallInfo{}
-		data := buildSyscallAnalysisData(all, direct, nil, elf.EM_AARCH64)
-		assert.False(t, data.HasUnknownSyscalls)
+		data := buildSyscallAnalysisData(all, nil, elf.EM_AARCH64)
 		assert.Equal(t, "arm64", data.Architecture)
 	})
 }

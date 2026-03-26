@@ -48,11 +48,6 @@ type DecodeStatistics struct {
 // elfanalyzer.SyscallInfo while the canonical definition lives in common.
 type SyscallInfo = common.SyscallInfo
 
-// SyscallSummary is an alias for common.SyscallSummary.
-// Using a type alias preserves backward compatibility for code that references
-// elfanalyzer.SyscallSummary while the canonical definition lives in common.
-type SyscallSummary = common.SyscallSummary
-
 // maxInstructionLength is the maximum instruction length in bytes for x86_64.
 const maxInstructionLength = 15
 
@@ -310,14 +305,9 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		result.DetectedSyscalls = append(result.DetectedSyscalls, info)
 
 		if info.Number == -1 {
-			result.HasUnknownSyscalls = true
 			result.AnalysisWarnings = append(result.AnalysisWarnings,
 				fmt.Sprintf("syscall at 0x%x: number could not be determined (%s)",
 					info.Location, info.DeterminationMethod))
-		}
-
-		if info.IsNetwork {
-			result.Summary.NetworkSyscallCount++
 		}
 	}
 
@@ -336,26 +326,15 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 				info.Name = table.GetSyscallName(call.SyscallNumber)
 				info.IsNetwork = table.IsNetworkSyscall(call.SyscallNumber)
 			} else {
-				result.HasUnknownSyscalls = true
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("go wrapper call at 0x%x: %s",
 						call.CallSiteAddress, call.DeterminationMethod))
 			}
 
 			result.DetectedSyscalls = append(result.DetectedSyscalls, info)
-
-			if info.IsNetwork {
-				result.Summary.NetworkSyscallCount++
-			}
 		}
 	}
 
-	// Build summary with consistent field calculation rules:
-	// - TotalDetectedEvents: total count of all detected syscall events (Pass 1 + Pass 2)
-	// - HasNetworkSyscalls: true if NetworkSyscallCount > 0
-	// - NetworkSyscallCount: incremented during Pass 1 and Pass 2
-	// Risk derivation (HasUnknownSyscalls || EvalMprotectRisk) is performed
-	// by convertSyscallResult() at read time, not stored in Summary.
 	evalResults := a.evaluateMprotectFamilyArgs(
 		code, baseAddr, decoder, result.DetectedSyscalls,
 	)
@@ -376,9 +355,6 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 			}
 		}
 	}
-
-	result.Summary.TotalDetectedEvents = len(result.DetectedSyscalls)
-	result.Summary.HasNetworkSyscalls = result.Summary.NetworkSyscallCount > 0
 
 	return result
 }
