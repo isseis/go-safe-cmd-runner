@@ -363,7 +363,7 @@ A: 主な注意点：
 5. [runner コマンド - 全フラグ詳解](runner_command.ja.md#3-コマンドラインフラグ詳解) - 詳細オプション（1時間）
 6. [TOML設定 - グローバル/グループ/コマンドレベル](toml_config/04_global_level.ja.md) - 階層的設定（1時間）
 7. [TOML設定 - 変数展開](toml_config/08_variable_expansion.ja.md) - 高度な機能（30分）
-8. [record/verify コマンド](record_command.ja.md) - ハッシュ管理（30分）
+8. [record コマンドと runner 実行時検証](record_command.ja.md) - ハッシュ管理（30分）
 
 ### 🚀 上級者向け（フル習得）
 
