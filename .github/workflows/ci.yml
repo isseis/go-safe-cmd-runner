@@ -231,7 +231,7 @@ jobs:
     name: Deployment Validation
     runs-on: ubuntu-latest
     needs: [check-changes, build-security-validation, test-ci, lint]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check-changes.outputs.has-code-changes == 'true'
+    if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -325,4 +325,8 @@ jobs:
       - name: Notify non-code-only changes
         run: |
           echo "✅ This pull request contains only non-code changes (docs, .devcontainer, LICENSE, etc.)."
-          echo "Skipping security scans, build, and test processes to save CI resources."
+          if [ "${{ needs.check-changes.outputs.has-devcontainer-changes }}" = "true" ]; then
+            echo "Running devcontainer build test. Skipping security scans, build, and Go tests."
+          else
+            echo "Skipping all CI jobs to save resources."
+          fi
