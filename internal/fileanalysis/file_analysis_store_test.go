@@ -347,6 +347,50 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	assert.Equal(t, "sha256:cafebabe", lib1.Hash)
 }
 
+// TestStore_Load_V9DynLibDepsObjectFormat verifies that a v9 record with the old
+// dyn_lib_deps object format ({"libs":[...]}) returns SchemaVersionMismatchError,
+// not RecordCorruptedError. Before the fix, json.Unmarshal into Record would fail
+// on the type mismatch before the schema version check was reached.
+func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// Write a v9 record with dyn_lib_deps in the old {"libs":[...]} object format.
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	v9Record := map[string]interface{}{
+		"schema_version": 9,
+		"file_path":      testFile,
+		"content_hash":   "sha256:abc123",
+		"updated_at":     time.Now().UTC(),
+		"dyn_lib_deps": map[string]interface{}{
+			"libs": []interface{}{
+				map[string]interface{}{
+					"soname": "libssl.so.3",
+					"path":   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+					"hash":   "sha256:deadbeef",
+				},
+			},
+		},
+	}
+	data, err := json.MarshalIndent(v9Record, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	_, err = store.Load(common.ResolvedPath(testFile))
+	var schemaErr *SchemaVersionMismatchError
+	require.ErrorAs(t, err, &schemaErr, "expected SchemaVersionMismatchError, got %T: %v", err, err)
+	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
+	assert.Equal(t, 9, schemaErr.Actual)
+}
+
 // TestStore_Update_OldSchemaAllowsOverwrite verifies that Store.Update allows
 // overwriting a record with an older schema version (Actual < Expected).
 // This enables `record --force` to migrate records to the current schema version.
