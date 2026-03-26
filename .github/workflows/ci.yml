@@ -10,12 +10,12 @@ permissions:
   actions: read
 
 jobs:
-  # Check if changes include only markdown files
+  # Check if changes require running tests/build
   check-changes:
-    name: Check for non-markdown changes
+    name: Check changed files
     runs-on: ubuntu-latest
     outputs:
-      has-non-md-changes: ${{ steps.check.outputs.has-non-md-changes }}
+      has-code-changes: ${{ steps.check.outputs.has-code-changes }}
       has-devcontainer-changes: ${{ steps.check.outputs.has-devcontainer-changes }}
     steps:
       - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check for non-markdown changes
+      - name: Classify changed files
         id: check
         run: |
           # Get list of changed files
@@ -31,15 +31,19 @@ jobs:
           echo "Changed files:"
           echo "$changed_files"
 
-          # Check if any non-markdown files were changed
-          non_md_files=$(echo "$changed_files" | grep -v '\.md$' || true)
+          # Files that do not require running tests:
+          #   - *.md (documentation)
+          #   - docs/ (documentation)
+          #   - .devcontainer/ (dev environment config)
+          #   - LICENSE
+          code_files=$(echo "$changed_files" | grep -vE '(\.md$|^docs/|^\.devcontainer/|^LICENSE$)' || true)
 
-          if [ -z "$non_md_files" ]; then
-            echo "has-non-md-changes=false" >> $GITHUB_OUTPUT
-            echo "Only markdown files changed, skipping tests"
+          if [ -z "$code_files" ]; then
+            echo "has-code-changes=false" >> $GITHUB_OUTPUT
+            echo "No code changes detected, skipping tests"
           else
-            echo "has-non-md-changes=true" >> $GITHUB_OUTPUT
-            echo "Non-markdown files changed, running tests"
+            echo "has-code-changes=true" >> $GITHUB_OUTPUT
+            echo "Code changes detected, running tests"
           fi
 
           # Check if devcontainer files were changed
@@ -55,7 +59,7 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     needs: check-changes
-    if: needs.check-changes.outputs.has-non-md-changes == 'true'
+    if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -107,7 +111,7 @@ jobs:
     name: Build & Security Validation
     runs-on: ubuntu-latest
     needs: [check-changes, security-scan]
-    if: needs.check-changes.outputs.has-non-md-changes == 'true'
+    if: needs.check-changes.outputs.has-code-changes == 'true'
     strategy:
       matrix:
         cgo: [0, 1]
@@ -155,7 +159,7 @@ jobs:
     name: CI Tests
     runs-on: ubuntu-latest
     needs: [check-changes, security-scan]
-    if: needs.check-changes.outputs.has-non-md-changes == 'true'
+    if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -195,7 +199,7 @@ jobs:
     name: Code Quality & Lint
     runs-on: ubuntu-latest
     needs: check-changes
-    if: needs.check-changes.outputs.has-non-md-changes == 'true'
+    if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -227,7 +231,7 @@ jobs:
     name: Deployment Validation
     runs-on: ubuntu-latest
     needs: [check-changes, build-security-validation, test-ci, lint]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check-changes.outputs.has-non-md-changes == 'true'
+    if: needs.check-changes.outputs.has-code-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -322,14 +326,17 @@ jobs:
             gh --version
             pre-commit --version
 
-  markdown-only-notification:
-    name: Markdown-only changes detected
+  non-code-only-notification:
+    name: Non-code changes only detected
     runs-on: ubuntu-latest
     needs: check-changes
-    if: needs.check-changes.outputs.has-non-md-changes == 'false'
+    if: needs.check-changes.outputs.has-code-changes == 'false'
     steps:
-      - name: Notify markdown-only changes
+      - name: Notify non-code-only changes
         run: |
-          echo "✅ This pull request contains only markdown file changes."
-          echo "Skipping security scans, build, and test processes to save CI resources."
-          echo "The PR can be reviewed for documentation content only."
+          echo "✅ This pull request contains only non-code changes (docs, .devcontainer, LICENSE, etc.)."
+          if [ "${{ needs.check-changes.outputs.has-devcontainer-changes }}" = "true" ]; then
+            echo "Running devcontainer build test. Skipping security scans, build, and Go tests."
+          else
+            echo "Skipping all CI jobs to save resources."
+          fi
