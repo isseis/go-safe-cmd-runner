@@ -282,6 +282,16 @@ jobs:
           path: security-report.md
           retention-days: 90
 
+  devcontainer-sync-check:
+    name: Devcontainer Sync Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check devcontainer.json files are in sync
+        run: python3 scripts/check_devcontainer_sync.py
+
   devcontainer-build-test:
     name: Devcontainer Build Test
     runs-on: ubuntu-latest
