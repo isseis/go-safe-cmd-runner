@@ -162,7 +162,7 @@ var commandProfileDefinitions = []CommandProfileDef{
 		NetworkRisk(runnertypes.RiskLevelMedium, "Scala runtime on JVM with network capabilities").
 		AlwaysNetwork().
 		Build(),
-	NewProfile("clojure").
+	NewProfile("clojure", "clj").
 		NetworkRisk(runnertypes.RiskLevelMedium, "Clojure runtime on JVM with network capabilities").
 		AlwaysNetwork().
 		Build(),
