@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
@@ -254,7 +253,6 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			switch output.Result {
 			case binaryanalyzer.NetworkDetected, binaryanalyzer.NoNetworkSymbols:
 				record.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
-					AnalyzedAt:         time.Now().UTC(),
 					DetectedSymbols:    convertDetectedSymbols(output.DetectedSymbols),
 					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 				}
@@ -860,6 +858,5 @@ func buildSyscallAnalysisData(all []common.SyscallInfo, argEvalResults []common.
 			DetectedSyscalls: retained,
 			ArgEvalResults:   argEvalResults,
 		},
-		AnalyzedAt: time.Now().UTC(),
 	}
 }

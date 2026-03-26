@@ -15,11 +15,13 @@ const (
 	// Version 6 removes is_high_risk from summary and renames high_risk_reasons to analysis_warnings.
 	// Version 7 adds pkey_mprotect PROT_EXEC detection.
 	// Version 8 adds KnownNetworkLibDeps to SymbolAnalysisData.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 8.
+	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
+	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 9.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 8
+	CurrentSchemaVersion = 9
 )
 
 // Record represents a unified file analysis record containing both
@@ -63,8 +65,7 @@ type Record struct {
 
 // DynLibDepsData contains the dynamic library dependency snapshot.
 type DynLibDepsData struct {
-	RecordedAt time.Time  `json:"recorded_at"`
-	Libs       []LibEntry `json:"libs"`
+	Libs []LibEntry `json:"libs"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.
@@ -92,18 +93,12 @@ type SyscallAnalysisData struct {
 	// consistency between packages and enables direct struct copy for
 	// type conversion.
 	common.SyscallAnalysisResultCore
-
-	// AnalyzedAt is when the syscall analysis was performed.
-	AnalyzedAt time.Time `json:"analyzed_at"`
 }
 
 // SymbolAnalysisData holds the symbol analysis result cached at record time.
 // Covers both network-related symbols (DetectedSymbols) and dynamic-load symbols (DynamicLoadSymbols).
 // nil means not analyzed (static binary, non-ELF, or old schema record).
 type SymbolAnalysisData struct {
-	// AnalyzedAt is when the symbol analysis was performed.
-	AnalyzedAt time.Time `json:"analyzed_at"`
-
 	// DetectedSymbols contains all network-related symbols found (excluding dynamic_load category).
 	// Non-empty when network symbols were detected.
 	DetectedSymbols []DetectedSymbolEntry `json:"detected_symbols,omitempty"`

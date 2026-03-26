@@ -3,7 +3,6 @@ package fileanalysis
 import (
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -88,7 +87,6 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 		record.ContentHash = fileHash
 		analysisData := &SyscallAnalysisData{
 			SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
-			AnalyzedAt:                time.Now().UTC(),
 		}
 		analysisData.DetectedSyscalls = sorted
 		record.SyscallAnalysis = analysisData
