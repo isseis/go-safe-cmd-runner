@@ -267,9 +267,9 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 
 		// Detect known network libraries based on SOName.
 		// Run only when DynLibDeps is recorded and SymbolAnalysis is set.
-		if record.DynLibDeps != nil && record.SymbolAnalysis != nil {
+		if len(record.DynLibDeps) > 0 && record.SymbolAnalysis != nil {
 			var matched []string
-			for _, lib := range record.DynLibDeps.Libs {
+			for _, lib := range record.DynLibDeps {
 				if binaryanalyzer.IsKnownNetworkLibrary(lib.SOName) {
 					matched = append(matched, lib.SOName)
 				}
@@ -600,7 +600,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 
 	// Step B: libc import symbol matching via cache.
 	var libcSyscalls []common.SyscallInfo
-	if v.libcCache != nil && record.DynLibDeps != nil {
+	if v.libcCache != nil && len(record.DynLibDeps) > 0 {
 		if libcEntry := findLibcEntry(record.DynLibDeps); libcEntry != nil {
 			importSymbols, symErr := extractUNDSymbols(elfFile)
 			if symErr != nil {
@@ -720,10 +720,10 @@ func extractUNDSymbols(elfFile *elf.File) ([]string, error) {
 
 // findLibcEntry returns the first LibEntry from deps whose SOName starts with "libc.so.".
 // Returns nil if no such entry is found.
-func findLibcEntry(deps *fileanalysis.DynLibDepsData) *fileanalysis.LibEntry {
-	for i := range deps.Libs {
-		if strings.HasPrefix(deps.Libs[i].SOName, "libc.so.") {
-			return &deps.Libs[i]
+func findLibcEntry(deps []fileanalysis.LibEntry) *fileanalysis.LibEntry {
+	for i := range deps {
+		if strings.HasPrefix(deps[i].SOName, "libc.so.") {
+			return &deps[i]
 		}
 	}
 	return nil

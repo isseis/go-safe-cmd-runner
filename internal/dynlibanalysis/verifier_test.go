@@ -33,11 +33,10 @@ func TestVerify_NilDeps(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestVerify_EmptyLibs ensures Verify returns nil when DynLibDeps.Libs is empty.
+// TestVerify_EmptyLibs ensures Verify returns nil when DynLibDeps is empty.
 func TestVerify_EmptyLibs(t *testing.T) {
 	v := newTestVerifier()
-	deps := &fileanalysis.DynLibDepsData{Libs: []fileanalysis.LibEntry{}}
-	err := v.Verify(deps)
+	err := v.Verify([]fileanalysis.LibEntry{})
 	assert.NoError(t, err)
 }
 
@@ -45,13 +44,11 @@ func TestVerify_EmptyLibs(t *testing.T) {
 func TestVerify_EmptyPath(t *testing.T) {
 	v := newTestVerifier()
 
-	deps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{
-				SOName: "libtest.so",
-				Path:   "",
-				Hash:   "sha256:aabbccdd",
-			},
+	deps := []fileanalysis.LibEntry{
+		{
+			SOName: "libtest.so",
+			Path:   "",
+			Hash:   "sha256:aabbccdd",
 		},
 	}
 
@@ -73,13 +70,11 @@ func TestVerify_HashMatch(t *testing.T) {
 	actualHash, err := computeFileHash(safefileio.NewFileSystem(safefileio.FileSystemConfig{}), libPath)
 	require.NoError(t, err)
 
-	deps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{
-				SOName: "libfoo.so",
-				Path:   libPath,
-				Hash:   actualHash,
-			},
+	deps := []fileanalysis.LibEntry{
+		{
+			SOName: "libfoo.so",
+			Path:   libPath,
+			Hash:   actualHash,
 		},
 	}
 
@@ -98,13 +93,11 @@ func TestVerify_HashMismatch(t *testing.T) {
 
 	const wrongHash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
-	deps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{
-				SOName: "libbar.so",
-				Path:   libPath,
-				Hash:   wrongHash,
-			},
+	deps := []fileanalysis.LibEntry{
+		{
+			SOName: "libbar.so",
+			Path:   libPath,
+			Hash:   wrongHash,
 		},
 	}
 
@@ -124,13 +117,11 @@ func TestVerify_HashMismatch(t *testing.T) {
 func TestVerify_FileNotFound(t *testing.T) {
 	v := newTestVerifier()
 
-	deps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{
-				SOName: "libmissing.so",
-				Path:   "/nonexistent/libmissing.so",
-				Hash:   "sha256:abc123",
-			},
+	deps := []fileanalysis.LibEntry{
+		{
+			SOName: "libmissing.so",
+			Path:   "/nonexistent/libmissing.so",
+			Hash:   "sha256:abc123",
 		},
 	}
 

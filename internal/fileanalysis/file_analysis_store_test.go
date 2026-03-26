@@ -315,18 +315,16 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
-		DynLibDeps: &DynLibDepsData{
-			Libs: []LibEntry{
-				{
-					SOName: "libssl.so.3",
-					Path:   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
-					Hash:   "sha256:deadbeef",
-				},
-				{
-					SOName: "libc.so.6",
-					Path:   "/lib/x86_64-linux-gnu/libc.so.6",
-					Hash:   "sha256:cafebabe",
-				},
+		DynLibDeps: []LibEntry{
+			{
+				SOName: "libssl.so.3",
+				Path:   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+				Hash:   "sha256:deadbeef",
+			},
+			{
+				SOName: "libc.so.6",
+				Path:   "/lib/x86_64-linux-gnu/libc.so.6",
+				Hash:   "sha256:cafebabe",
 			},
 		},
 	}
@@ -336,18 +334,61 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 
-	require.NotNil(t, loadedRecord.DynLibDeps)
-	require.Len(t, loadedRecord.DynLibDeps.Libs, 2)
+	require.Len(t, loadedRecord.DynLibDeps, 2)
 
-	lib0 := loadedRecord.DynLibDeps.Libs[0]
+	lib0 := loadedRecord.DynLibDeps[0]
 	assert.Equal(t, "libssl.so.3", lib0.SOName)
 	assert.Equal(t, "/usr/lib/x86_64-linux-gnu/libssl.so.3", lib0.Path)
 	assert.Equal(t, "sha256:deadbeef", lib0.Hash)
 
-	lib1 := loadedRecord.DynLibDeps.Libs[1]
+	lib1 := loadedRecord.DynLibDeps[1]
 	assert.Equal(t, "libc.so.6", lib1.SOName)
 	assert.Equal(t, "/lib/x86_64-linux-gnu/libc.so.6", lib1.Path)
 	assert.Equal(t, "sha256:cafebabe", lib1.Hash)
+}
+
+// TestStore_Load_V9DynLibDepsObjectFormat verifies that a v9 record with the old
+// dyn_lib_deps object format ({"libs":[...]}) returns SchemaVersionMismatchError,
+// not RecordCorruptedError. Before the fix, json.Unmarshal into Record would fail
+// on the type mismatch before the schema version check was reached.
+func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	store, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// Write a v9 record with dyn_lib_deps in the old {"libs":[...]} object format.
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	v9Record := map[string]interface{}{
+		"schema_version": 9,
+		"file_path":      testFile,
+		"content_hash":   "sha256:abc123",
+		"updated_at":     time.Now().UTC(),
+		"dyn_lib_deps": map[string]interface{}{
+			"libs": []interface{}{
+				map[string]interface{}{
+					"soname": "libssl.so.3",
+					"path":   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+					"hash":   "sha256:deadbeef",
+				},
+			},
+		},
+	}
+	data, err := json.MarshalIndent(v9Record, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	_, err = store.Load(common.ResolvedPath(testFile))
+	var schemaErr *SchemaVersionMismatchError
+	require.ErrorAs(t, err, &schemaErr, "expected SchemaVersionMismatchError, got %T: %v", err, err)
+	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
+	assert.Equal(t, 9, schemaErr.Actual)
 }
 
 // TestStore_Update_OldSchemaAllowsOverwrite verifies that Store.Update allows

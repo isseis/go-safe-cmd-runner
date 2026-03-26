@@ -642,7 +642,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		return fmt.Errorf("failed to load record for dynlib verification: %w", err)
 	}
 
-	if record.DynLibDeps != nil {
+	if len(record.DynLibDeps) > 0 {
 		// DynLibDeps is recorded: verify library hashes.
 		// m.dynlibVerifier is initialized once at Manager construction.
 		return m.dynlibVerifier.Verify(record.DynLibDeps)

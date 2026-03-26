@@ -79,17 +79,26 @@ func (s *Store) Load(filePath common.ResolvedPath) (*Record, error) {
 		return nil, fmt.Errorf("failed to read analysis record file: %w", err)
 	}
 
+	// Parse schema_version first to distinguish version mismatch from corruption.
+	// A record with an incompatible schema (e.g., v9 dyn_lib_deps as {"libs":[...]} vs
+	// current []LibEntry array) would fail full unmarshal before the version check,
+	// incorrectly masking SchemaVersionMismatchError as RecordCorruptedError.
+	var versionOnly struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &versionOnly); err != nil {
+		return nil, &RecordCorruptedError{Path: recordPath, Cause: err}
+	}
+	if versionOnly.SchemaVersion != CurrentSchemaVersion {
+		return nil, &SchemaVersionMismatchError{
+			Expected: CurrentSchemaVersion,
+			Actual:   versionOnly.SchemaVersion,
+		}
+	}
+
 	var record Record
 	if err := json.Unmarshal(data, &record); err != nil {
 		return nil, &RecordCorruptedError{Path: recordPath, Cause: err}
-	}
-
-	// Validate schema version
-	if record.SchemaVersion != CurrentSchemaVersion {
-		return nil, &SchemaVersionMismatchError{
-			Expected: CurrentSchemaVersion,
-			Actual:   record.SchemaVersion,
-		}
 	}
 
 	return &record, nil
