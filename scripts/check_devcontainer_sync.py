@@ -14,16 +14,24 @@ IGNORED_KEYS = {"name"}
 
 
 def load_without_ignored(path: Path) -> dict:
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     return {k: v for k, v in data.items() if k not in IGNORED_KEYS}
 
 
 def main() -> int:
-    try:
-        contents = {p: load_without_ignored(p) for p in DEVCONTAINER_FILES}
-    except FileNotFoundError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 1
+    contents = {}
+    for p in DEVCONTAINER_FILES:
+        try:
+            contents[p] = load_without_ignored(p)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        except json.JSONDecodeError as e:
+            print(
+                f"ERROR: Failed to parse JSON in devcontainer file {p}: {e}",
+                file=sys.stderr,
+            )
+            return 1
 
     files = list(contents.keys())
     reference = json.dumps(contents[files[0]], sort_keys=True, indent=2)
