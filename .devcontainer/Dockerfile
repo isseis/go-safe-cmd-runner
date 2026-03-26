@@ -36,6 +36,7 @@ ARG GOLANGCI_LINT_VERSION=2.11.3
 ARG GOFUMPT_VERSION=v0.6.0
 ARG TARGETARCH
 RUN set -eux \
+    && TARGETARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "${TARGETARCH}" in \
         amd64) \
             GO_SHA256="aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235"; \
