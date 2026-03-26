@@ -1,7 +1,7 @@
 services:
   dev-env:
     build:
-      context: ../..
+      context: ..
       dockerfile: .devcontainer/Dockerfile
     environment:
       - SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
