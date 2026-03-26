@@ -18,6 +18,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func hasNetworkSyscall(syscalls []SyscallInfo) bool {
+	for _, s := range syscalls {
+		if s.IsNetwork {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSyscallAnalyzer_RealCBinary(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF syscall analysis requires Linux")
@@ -61,14 +70,7 @@ int main() {
 	require.NoError(t, err)
 
 	// Verify network syscall detected
-	hasNetwork := false
-	for _, info := range result.DetectedSyscalls {
-		if info.IsNetwork {
-			hasNetwork = true
-			break
-		}
-	}
-	assert.True(t, hasNetwork, "socket syscall should be detected as network-related")
+	assert.True(t, hasNetworkSyscall(result.DetectedSyscalls), "socket syscall should be detected as network-related")
 
 	// Verify socket syscall found
 	found := false
@@ -186,14 +188,7 @@ func main() {
 	require.NoError(t, err)
 
 	// A simple hello-world should NOT have network syscalls
-	hasNetwork := false
-	for _, info := range result.DetectedSyscalls {
-		if info.IsNetwork {
-			hasNetwork = true
-			break
-		}
-	}
-	assert.False(t, hasNetwork, "hello-world Go binary should not have network syscalls")
+	assert.False(t, hasNetworkSyscall(result.DetectedSyscalls), "hello-world Go binary should not have network syscalls")
 }
 
 // TestE2E_RecordToRunnerFallbackChain tests the full pipeline:
@@ -318,14 +313,7 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 	require.NoError(t, err)
 
 	// The binary uses net.Dial which resolves to socket(198) on arm64
-	hasNetwork := false
-	for _, info := range result.DetectedSyscalls {
-		if info.IsNetwork {
-			hasNetwork = true
-			break
-		}
-	}
-	assert.True(t, hasNetwork, "arm64 binary using net.Dial should have network syscalls detected")
+	assert.True(t, hasNetworkSyscall(result.DetectedSyscalls), "arm64 binary using net.Dial should have network syscalls detected")
 
 	// Verify socket syscall (arm64 number 198) is among the detected syscalls
 	found := false
@@ -413,14 +401,7 @@ func main() {
 				i, sc.Number, sc.Name, sc.IsNetwork, sc.DeterminationMethod, sc.Location)
 		}
 
-		hasNetwork := false
-		for _, sc := range result.DetectedSyscalls {
-			if sc.IsNetwork {
-				hasNetwork = true
-				break
-			}
-		}
-		assert.True(t, hasNetwork,
+		assert.True(t, hasNetworkSyscall(result.DetectedSyscalls),
 			"CGO binary calling syscall.Socket() should have network syscalls detected after fixes")
 
 		found := false
