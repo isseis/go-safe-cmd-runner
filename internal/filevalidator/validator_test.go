@@ -1237,11 +1237,9 @@ func (s *stubLibcCache) GetOrCreateSyscalls(_, _ string, _ []string, _ elf.Machi
 
 func TestFindLibcEntry(t *testing.T) {
 	t.Run("returns_libc_entry_when_present", func(t *testing.T) {
-		deps := &fileanalysis.DynLibDepsData{
-			Libs: []fileanalysis.LibEntry{
-				{SOName: "libm.so.6", Path: "/lib/libm.so.6", Hash: "sha256:aaa"},
-				{SOName: "libc.so.6", Path: "/lib/libc.so.6", Hash: "sha256:bbb"},
-			},
+		deps := []fileanalysis.LibEntry{
+			{SOName: "libm.so.6", Path: "/lib/libm.so.6", Hash: "sha256:aaa"},
+			{SOName: "libc.so.6", Path: "/lib/libc.so.6", Hash: "sha256:bbb"},
 		}
 		entry := findLibcEntry(deps)
 		require.NotNil(t, entry)
@@ -1249,10 +1247,8 @@ func TestFindLibcEntry(t *testing.T) {
 	})
 
 	t.Run("returns_nil_when_absent", func(t *testing.T) {
-		deps := &fileanalysis.DynLibDepsData{
-			Libs: []fileanalysis.LibEntry{
-				{SOName: "libm.so.6", Path: "/lib/libm.so.6", Hash: "sha256:aaa"},
-			},
+		deps := []fileanalysis.LibEntry{
+			{SOName: "libm.so.6", Path: "/lib/libm.so.6", Hash: "sha256:aaa"},
 		}
 		assert.Nil(t, findLibcEntry(deps))
 	})
@@ -1378,10 +1374,8 @@ func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 
 	// Inject a DynLibDeps record with a libc entry so the libc cache is called.
 	record := &fileanalysis.Record{
-		DynLibDeps: &fileanalysis.DynLibDepsData{
-			Libs: []fileanalysis.LibEntry{
-				{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
-			},
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
 		},
 	}
 	analyzeErr := v.analyzeSyscalls(record, elfPath)
@@ -1565,7 +1559,7 @@ func TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis(t *testin
 // Since dynlibAnalyzer is not set, the re-record preserves the DynLibDeps from the first record.
 func recordWithDynLibDepsAndBinaryAnalyzer(
 	t *testing.T,
-	dynLibDeps *fileanalysis.DynLibDepsData,
+	dynLibDeps []fileanalysis.LibEntry,
 	stub *stubBinaryAnalyzer,
 ) (*fileanalysis.Record, error) {
 	t.Helper()
@@ -1605,11 +1599,9 @@ func recordWithDynLibDepsAndBinaryAnalyzer(
 }
 
 func TestRecord_KnownNetworkLibDeps_CurlDetected(t *testing.T) {
-	dynLibDeps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
-			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
-		},
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
+		{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
 	}
 	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
 	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
@@ -1619,10 +1611,8 @@ func TestRecord_KnownNetworkLibDeps_CurlDetected(t *testing.T) {
 }
 
 func TestRecord_KnownNetworkLibDeps_PythonVersioned(t *testing.T) {
-	dynLibDeps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{SOName: "libpython3.11.so.1.0", Path: "/usr/lib/libpython3.11.so.1.0", Hash: "sha256:aaa"},
-		},
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "libpython3.11.so.1.0", Path: "/usr/lib/libpython3.11.so.1.0", Hash: "sha256:aaa"},
 	}
 	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
 	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
@@ -1632,10 +1622,8 @@ func TestRecord_KnownNetworkLibDeps_PythonVersioned(t *testing.T) {
 }
 
 func TestRecord_KnownNetworkLibDeps_NonNetworkOnly(t *testing.T) {
-	dynLibDeps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:aaa"},
-		},
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:aaa"},
 	}
 	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
 	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
@@ -1646,10 +1634,8 @@ func TestRecord_KnownNetworkLibDeps_NonNetworkOnly(t *testing.T) {
 }
 
 func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
-	dynLibDepsWithCurl := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
-		},
+	dynLibDepsWithCurl := []fileanalysis.LibEntry{
+		{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
 	}
 	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
 
@@ -1681,10 +1667,8 @@ func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
 	require.NoError(t, err)
 
 	// Replace DynLibDeps with a non-network lib and re-record; KnownNetworkLibDeps must be cleared.
-	dynLibDepsNoNetwork := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
-		},
+	dynLibDepsNoNetwork := []fileanalysis.LibEntry{
+		{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
 	}
 	err = v.store.Update(resolvedPath, func(r *fileanalysis.Record) error {
 		r.DynLibDeps = dynLibDepsNoNetwork
@@ -1704,10 +1688,8 @@ func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
 }
 
 func TestRecord_KnownNetworkLibDeps_SymbolAnalysisNil(t *testing.T) {
-	dynLibDeps := &fileanalysis.DynLibDepsData{
-		Libs: []fileanalysis.LibEntry{
-			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
-		},
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
 	}
 	// StaticBinary → SymbolAnalysis is nil
 	stub := &stubBinaryAnalyzer{result: binaryanalyzer.StaticBinary}

@@ -315,18 +315,16 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
-		DynLibDeps: &DynLibDepsData{
-			Libs: []LibEntry{
-				{
-					SOName: "libssl.so.3",
-					Path:   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
-					Hash:   "sha256:deadbeef",
-				},
-				{
-					SOName: "libc.so.6",
-					Path:   "/lib/x86_64-linux-gnu/libc.so.6",
-					Hash:   "sha256:cafebabe",
-				},
+		DynLibDeps: []LibEntry{
+			{
+				SOName: "libssl.so.3",
+				Path:   "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+				Hash:   "sha256:deadbeef",
+			},
+			{
+				SOName: "libc.so.6",
+				Path:   "/lib/x86_64-linux-gnu/libc.so.6",
+				Hash:   "sha256:cafebabe",
 			},
 		},
 	}
@@ -336,15 +334,14 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
 	require.NoError(t, err)
 
-	require.NotNil(t, loadedRecord.DynLibDeps)
-	require.Len(t, loadedRecord.DynLibDeps.Libs, 2)
+	require.Len(t, loadedRecord.DynLibDeps, 2)
 
-	lib0 := loadedRecord.DynLibDeps.Libs[0]
+	lib0 := loadedRecord.DynLibDeps[0]
 	assert.Equal(t, "libssl.so.3", lib0.SOName)
 	assert.Equal(t, "/usr/lib/x86_64-linux-gnu/libssl.so.3", lib0.Path)
 	assert.Equal(t, "sha256:deadbeef", lib0.Hash)
 
-	lib1 := loadedRecord.DynLibDeps.Libs[1]
+	lib1 := loadedRecord.DynLibDeps[1]
 	assert.Equal(t, "libc.so.6", lib1.SOName)
 	assert.Equal(t, "/lib/x86_64-linux-gnu/libc.so.6", lib1.Path)
 	assert.Equal(t, "sha256:cafebabe", lib1.Hash)

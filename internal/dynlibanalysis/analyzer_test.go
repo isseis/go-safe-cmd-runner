@@ -265,8 +265,7 @@ func TestAnalyze_DynamicELF(t *testing.T) {
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(binary)
 	require.NoError(t, err)
-	require.NotNil(t, result, "dynamic ELF should return DynLibDepsData")
-	assert.NotEmpty(t, result.Libs, "dynamic ELF should have at least one library entry")
+	assert.NotEmpty(t, result, "dynamic ELF should have at least one library entry")
 }
 
 // TestAnalyze_LibEntryFields verifies that all fields of LibEntry are populated.
@@ -276,10 +275,9 @@ func TestAnalyze_LibEntryFields(t *testing.T) {
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(binary)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotEmpty(t, result.Libs)
+	require.NotEmpty(t, result)
 
-	for _, lib := range result.Libs {
+	for _, lib := range result {
 		assert.NotEmpty(t, lib.SOName, "SOName should not be empty")
 		assert.NotEmpty(t, lib.Path, "Path should not be empty")
 		assert.NotEmpty(t, lib.Hash, "Hash should not be empty")
@@ -295,11 +293,10 @@ func TestAnalyze_DirectDeps(t *testing.T) {
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(binaryPath)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotEmpty(t, result.Libs, "dynamic binary should have at least one library")
+	require.NotEmpty(t, result, "dynamic binary should have at least one library")
 
 	// Each entry must have a non-empty SOName, absolute Path, and sha256 hash.
-	for _, lib := range result.Libs {
+	for _, lib := range result {
 		assert.NotEmpty(t, lib.SOName)
 		assert.True(t, filepath.IsAbs(lib.Path))
 		assert.Contains(t, lib.Hash, "sha256:")
@@ -326,10 +323,10 @@ func TestAnalyze_TransitiveDeps(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	assert.Len(t, result.Libs, 2, "transitive dependency should be recorded")
+	assert.Len(t, result, 2, "transitive dependency should be recorded")
 
-	sonames := make([]string, 0, len(result.Libs))
-	for _, lib := range result.Libs {
+	sonames := make([]string, 0, len(result))
+	for _, lib := range result {
 		sonames = append(sonames, lib.SOName)
 	}
 	assert.Contains(t, sonames, "mid.so.1")
@@ -374,10 +371,10 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 	//   1. lib_a.so.1
 	//   2. lib_b.so.1
 	// Each physical file appears exactly once regardless of how many parents reference it.
-	assert.Len(t, result.Libs, 2, "circular deps: 2 unique paths expected")
+	assert.Len(t, result, 2, "circular deps: 2 unique paths expected")
 
-	sonames := make([]string, 0, len(result.Libs))
-	for _, lib := range result.Libs {
+	sonames := make([]string, 0, len(result))
+	for _, lib := range result {
 		sonames = append(sonames, lib.SOName)
 	}
 	assert.Contains(t, sonames, "lib_a.so.1")

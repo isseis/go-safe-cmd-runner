@@ -17,11 +17,12 @@ const (
 	// Version 8 adds KnownNetworkLibDeps to SymbolAnalysisData.
 	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
 	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 9.
+	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 10.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 9
+	CurrentSchemaVersion = 10
 )
 
 // Record represents a unified file analysis record containing both
@@ -56,16 +57,11 @@ type Record struct {
 
 	// DynLibDeps contains the dynamic library dependency snapshot recorded at record time.
 	// Only present for ELF binaries with DT_NEEDED entries.
-	DynLibDeps *DynLibDepsData `json:"dyn_lib_deps,omitempty"`
+	DynLibDeps []LibEntry `json:"dyn_lib_deps,omitempty"`
 
 	// SymbolAnalysis contains the symbol analysis result cached at record time.
 	// nil means not analyzed (static binary, non-ELF, or old schema record).
 	SymbolAnalysis *SymbolAnalysisData `json:"symbol_analysis,omitempty"`
-}
-
-// DynLibDepsData contains the dynamic library dependency snapshot.
-type DynLibDepsData struct {
-	Libs []LibEntry `json:"libs"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.

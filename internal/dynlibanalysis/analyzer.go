@@ -88,11 +88,11 @@ type resolveItem struct {
 }
 
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
-// ELF binary, computes their hashes, and returns a DynLibDepsData snapshot.
+// ELF binary, computes their hashes, and returns a library dependency snapshot.
 //
 // Returns nil (not an error) if the file is not ELF or has no DT_NEEDED entries.
 // Returns an error if any library cannot be resolved (FR-3.1.7).
-func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsData, error) {
+func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, error) {
 	// Open file safely
 	file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
 	if err != nil {
@@ -232,9 +232,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 		return libs[i].Path < libs[j].Path
 	})
 
-	return &fileanalysis.DynLibDepsData{
-		Libs: libs,
-	}, nil
+	return libs, nil
 }
 
 // computeFileHash computes the SHA256 hash of the file at the given path
