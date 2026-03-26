@@ -5,9 +5,9 @@
         "docker-compose.yml"
     ],
     "service": "dev-env",
-    "workspaceFolder": "/workspaces/ubuntu/go-safe-cmd-runner",
+    "workspaceFolder": "/workspaces/ubuntu",
     "remoteUser": "issei",
-    "postCreateCommand": "cd /workspaces/ubuntu/go-safe-cmd-runner && pre-commit install",
+    "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install",
     "customizations": {
         "vscode": {
             "settings": {
