@@ -58,6 +58,15 @@ func (m *MockMachineCodeDecoder) IsImmediateToThirdArgRegister(_ DecodedInstruct
 	return false, 0
 }
 
+func hasUnknownSyscall(syscalls []SyscallInfo) bool {
+	for _, info := range syscalls {
+		if info.Number == -1 {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -866,14 +875,7 @@ func TestSyscallAnalyzer_MultipleMprotect(t *testing.T) {
 		require.NotEmpty(t, result.ArgEvalResults)
 		assert.Equal(t, common.SyscallArgEvalExecNotSet, result.ArgEvalResults[0].Status)
 		// Unknown syscall entry (Number==-1) must remain in DetectedSyscalls.
-		hasUnknown := false
-		for _, info := range result.DetectedSyscalls {
-			if info.Number == -1 {
-				hasUnknown = true
-				break
-			}
-		}
-		assert.True(t, hasUnknown, "DetectedSyscalls should contain an unknown entry")
+		assert.True(t, hasUnknownSyscall(result.DetectedSyscalls), "DetectedSyscalls should contain an unknown entry")
 	})
 }
 
@@ -989,14 +991,7 @@ func TestSyscallAnalyzer_EvaluateMprotectArgs_ARM64(t *testing.T) {
 			require.NotEmpty(t, result.ArgEvalResults, "expected ArgEvalResults to be populated")
 			assert.Equal(t, "mprotect", result.ArgEvalResults[0].SyscallName)
 			assert.Equal(t, tt.wantStatus, result.ArgEvalResults[0].Status)
-			hasUnknown := false
-			for _, info := range result.DetectedSyscalls {
-				if info.Number == -1 {
-					hasUnknown = true
-					break
-				}
-			}
-			gotHighRisk := hasUnknown || EvalMprotectRisk(result.ArgEvalResults)
+			gotHighRisk := hasUnknownSyscall(result.DetectedSyscalls) || EvalMprotectRisk(result.ArgEvalResults)
 			assert.Equal(t, tt.wantHighRisk, gotHighRisk)
 		})
 	}
