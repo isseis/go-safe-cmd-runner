@@ -59,7 +59,8 @@ RUN set -eux \
         --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${TARGETARCH}/golangci-lint" \
     && rm /tmp/golangci-lint.tar.gz \
     && /usr/local/go/bin/go install mvdan.cc/gofumpt@${GOFUMPT_VERSION} \
-    && mv /root/go/bin/gofumpt /usr/local/bin/gofumpt
+    && mv /root/go/bin/gofumpt /usr/local/bin/gofumpt \
+    && rm -rf /root/go /root/.cache/go-build
 
 # GitHub CLI (gh) のインストール
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
