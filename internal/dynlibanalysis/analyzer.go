@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -234,8 +233,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) (*fileanalysis.DynLibDepsDat
 	})
 
 	return &fileanalysis.DynLibDepsData{
-		RecordedAt: time.Now(),
-		Libs:       libs,
+		Libs: libs,
 	}, nil
 }
 

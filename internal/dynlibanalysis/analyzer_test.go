@@ -267,7 +267,6 @@ func TestAnalyze_DynamicELF(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result, "dynamic ELF should return DynLibDepsData")
 	assert.NotEmpty(t, result.Libs, "dynamic ELF should have at least one library entry")
-	assert.False(t, result.RecordedAt.IsZero(), "RecordedAt should be set")
 }
 
 // TestAnalyze_LibEntryFields verifies that all fields of LibEntry are populated.

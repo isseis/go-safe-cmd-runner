@@ -141,7 +141,6 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 				Architecture:     "x86_64",
 				AnalysisWarnings: []string{"reason1"},
 			},
-			AnalyzedAt: time.Now().UTC(),
 		},
 	}
 	err = store.Save(common.ResolvedPath(testFile), originalRecord)
@@ -314,11 +313,9 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
-	recordedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
 		DynLibDeps: &DynLibDepsData{
-			RecordedAt: recordedAt,
 			Libs: []LibEntry{
 				{
 					SOName: "libssl.so.3",
@@ -340,7 +337,6 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, loadedRecord.DynLibDeps)
-	assert.Equal(t, recordedAt, loadedRecord.DynLibDeps.RecordedAt)
 	require.Len(t, loadedRecord.DynLibDeps.Libs, 2)
 
 	lib0 := loadedRecord.DynLibDeps.Libs[0]
