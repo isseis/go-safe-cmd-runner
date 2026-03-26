@@ -350,6 +350,11 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
 	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
 	// so we must treat the result as an error even if network syscalls were also detected.
+	//
+	// Number == -1 is the sentinel for "could not determine syscall number" and only
+	// appears in direct-syscall entries (Source == ""). libc_symbol_import entries
+	// always have Number >= 0 (enforced by validateInfos at cache-build time), so
+	// they are never mistaken for unknown syscalls here.
 	hasUnknown := false
 	for _, info := range result.DetectedSyscalls {
 		if info.Number == -1 {

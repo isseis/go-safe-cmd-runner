@@ -126,6 +126,23 @@ func TestImportSymbolMatcher_IsNetworkFromTable(t *testing.T) {
 	assert.True(t, result[0].IsNetwork)
 }
 
+// TestImportSymbolMatcher_NumberIsNonNegative verifies the invariant that all returned entries
+// have Number >= 0. convertSyscallResult in the runner relies on Number == -1 to detect
+// unknown syscalls; libc_symbol_import entries must never produce Number == -1.
+func TestImportSymbolMatcher_NumberIsNonNegative(t *testing.T) {
+	m := newMatcher()
+	wrappers := []WrapperEntry{
+		{Name: "write", Number: 1},
+		{Name: "socket", Number: 41},
+		{Name: "exit_group", Number: 231},
+	}
+	result := m.Match([]string{"write", "socket", "exit_group"}, wrappers)
+	for _, info := range result {
+		assert.GreaterOrEqual(t, info.Number, 0,
+			"libc_symbol_import entry %q must have Number >= 0", info.Name)
+	}
+}
+
 // TestImportSymbolMatcher_MultipleSymbols verifies that multiple distinct symbols are all matched
 // and that the result is sorted by Number ascending.
 func TestImportSymbolMatcher_MultipleSymbols(t *testing.T) {
