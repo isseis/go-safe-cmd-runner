@@ -2155,6 +2155,39 @@ func TestCommandRiskProfiles_NetworkCommands(t *testing.T) {
 	}
 }
 
+// TestCommandRiskProfiles_AdditionalInterpreters verifies that newly added language
+// interpreters and runtimes are registered as NetworkTypeAlways.
+func TestCommandRiskProfiles_AdditionalInterpreters(t *testing.T) {
+	testCases := []struct {
+		name string
+		cmd  string
+	}{
+		{"luajit is always network", "luajit"},
+		{"tclsh is always network", "tclsh"},
+		{"R is always network", "R"},
+		{"julia is always network", "julia"},
+		{"guile is always network", "guile"},
+		{"erl is always network", "erl"},
+		{"elixir is always network", "elixir"},
+		{"java is always network", "java"},
+		{"groovy is always network", "groovy"},
+		{"scala is always network", "scala"},
+		{"dotnet is always network", "dotnet"},
+		{"pwsh is always network", "pwsh"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[tc.cmd]
+			assert.True(t, exists, "command %s should exist in profiles", tc.cmd)
+			if exists {
+				assert.Equal(t, NetworkTypeAlways, profile.NetworkType,
+					"command %s should have NetworkTypeAlways", tc.cmd)
+			}
+		})
+	}
+}
+
 // TestAllProfilesAreValid verifies that all command profiles pass validation
 func TestAllProfilesAreValid(t *testing.T) {
 	for _, def := range commandProfileDefinitions {
@@ -2242,6 +2275,11 @@ func TestMigration_NetworkTypeConsistency(t *testing.T) {
 		"bash", "sh", "dash", "zsh", "ksh", "csh", "tcsh", "fish",
 		// Script interpreters - have built-in network capabilities
 		"node", "nodejs", "deno", "bun", "php",
+		// Additional language runtimes
+		"lua", "luajit", "tclsh", "R", "Rscript", "julia",
+		"guile", "elixir", "iex", "erl", "erlc", "escript",
+		"java", "javaw", "groovy", "kotlin", "scala",
+		"dotnet", "mono", "pwsh", "powershell",
 	}
 	conditionalNetwork := []string{"git", "rsync"}
 	noneNetwork := []string{"sudo", "su", "doas", "systemctl", "service", "rm", "dd"}
@@ -2713,6 +2751,36 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.False(t, mock.called, "BinaryAnalyzer must not be called when contentHash is empty")
 		assert.False(t, isNet, "expected no network result when contentHash is empty")
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
+	})
+
+	t.Run("cache hit KnownNetworkLibDeps non-empty, DetectedSymbols empty → NetworkDetected", func(t *testing.T) {
+		store := &stubNetworkSymbolStore{
+			data: &fileanalysis.SymbolAnalysisData{
+				DetectedSymbols:     nil,
+				KnownNetworkLibDeps: []string{"libcurl.so.4"},
+			},
+		}
+		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+		analyzer := newNetworkAnalyzer(mock, store)
+		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+		assert.True(t, isNet, "expected network detected from KnownNetworkLibDeps in cache")
+		assert.False(t, isHigh, "expected not high risk")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
+	})
+
+	t.Run("cache hit KnownNetworkLibDeps empty, DetectedSymbols empty → NoNetworkSymbols", func(t *testing.T) {
+		store := &stubNetworkSymbolStore{
+			data: &fileanalysis.SymbolAnalysisData{
+				DetectedSymbols:     nil,
+				KnownNetworkLibDeps: nil,
+			},
+		}
+		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
+		analyzer := newNetworkAnalyzer(mock, store)
+		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+		assert.False(t, isNet, "expected no network when both DetectedSymbols and KnownNetworkLibDeps are empty")
+		assert.False(t, isHigh, "expected not high risk")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 }
 

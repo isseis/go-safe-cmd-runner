@@ -267,6 +267,18 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			}
 		}
 
+		// Detect known network libraries based on SOName.
+		// Run only when DynLibDeps is recorded and SymbolAnalysis is set.
+		if record.DynLibDeps != nil && record.SymbolAnalysis != nil {
+			var matched []string
+			for _, lib := range record.DynLibDeps.Libs {
+				if binaryanalyzer.IsKnownNetworkLibrary(lib.SOName) {
+					matched = append(matched, lib.SOName)
+				}
+			}
+			record.SymbolAnalysis.KnownNetworkLibDeps = matched
+		}
+
 		// Steps A-D: ELF syscall analysis (libc import + direct instruction).
 		if err := v.analyzeSyscalls(record, filePath.String()); err != nil {
 			return err

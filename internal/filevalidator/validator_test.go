@@ -1562,6 +1562,167 @@ func TestRecord_Force_NetworkToNotSupportedBinary_ClearsSymbolAnalysis(t *testin
 		"SymbolAnalysis must be nil after re-recording as NotSupportedBinary")
 }
 
+// ---------------------------------------------------------------------------
+// Tests for KnownNetworkLibDeps (SOName-based network detection)
+// ---------------------------------------------------------------------------
+
+// recordWithDynLibDepsAndBinaryAnalyzer is a test helper that creates a record with
+// pre-populated DynLibDeps, then re-records with force=true using the given binaryAnalyzer stub.
+// Since dynlibAnalyzer is not set, the re-record preserves the DynLibDeps from the first record.
+func recordWithDynLibDepsAndBinaryAnalyzer(
+	t *testing.T,
+	dynLibDeps *fileanalysis.DynLibDepsData,
+	stub *stubBinaryAnalyzer,
+) (*fileanalysis.Record, error) {
+	t.Helper()
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// First record: create the record (no analyzers).
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	// Manually inject DynLibDeps into the stored record via store.Update.
+	resolvedPath, pathErr := common.NewResolvedPath(targetFile)
+	require.NoError(t, pathErr)
+	err = v.store.Update(resolvedPath, func(record *fileanalysis.Record) error {
+		record.DynLibDeps = dynLibDeps
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Re-record with force=true and binaryAnalyzer set (dynlibAnalyzer is nil,
+	// so stored DynLibDeps is preserved from the previous record).
+	v.SetBinaryAnalyzer(stub)
+	_, _, recErr := v.SaveRecord(targetFile, true)
+	if recErr != nil {
+		return nil, recErr
+	}
+	record, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	return record, nil
+}
+
+func TestRecord_KnownNetworkLibDeps_CurlDetected(t *testing.T) {
+	dynLibDeps := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
+			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
+		},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis, "SymbolAnalysis should be set")
+	assert.Equal(t, []string{"libcurl.so.4"}, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_PythonVersioned(t *testing.T) {
+	dynLibDeps := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libpython3.11.so.1.0", Path: "/usr/lib/libpython3.11.so.1.0", Hash: "sha256:aaa"},
+		},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis, "SymbolAnalysis should be set")
+	assert.Equal(t, []string{"libpython3.11.so.1.0"}, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_NonNetworkOnly(t *testing.T) {
+	dynLibDeps := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:aaa"},
+		},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis, "SymbolAnalysis should be set")
+	assert.Empty(t, record.SymbolAnalysis.KnownNetworkLibDeps,
+		"KnownNetworkLibDeps should be empty when no known network libs are in DynLibDeps")
+}
+
+func TestRecord_KnownNetworkLibDeps_StaleValueCleared(t *testing.T) {
+	dynLibDepsWithCurl := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
+		},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+
+	// Build a validator with a record that has KnownNetworkLibDeps set from a previous run.
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	targetFile := filepath.Join(tempDir, "target.bin")
+	require.NoError(t, os.WriteFile(targetFile, []byte("binary content"), 0o644))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	_, _, err = v.SaveRecord(targetFile, false)
+	require.NoError(t, err)
+
+	resolvedPath, pathErr := common.NewResolvedPath(targetFile)
+	require.NoError(t, pathErr)
+
+	// Inject KnownNetworkLibDeps as if from a previous run.
+	err = v.store.Update(resolvedPath, func(r *fileanalysis.Record) error {
+		r.DynLibDeps = dynLibDepsWithCurl
+		r.SymbolAnalysis = &fileanalysis.SymbolAnalysisData{
+			KnownNetworkLibDeps: []string{"libcurl.so.4"},
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Replace DynLibDeps with a non-network lib and re-record; KnownNetworkLibDeps must be cleared.
+	dynLibDepsNoNetwork := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libz.so.1", Path: "/usr/lib/libz.so.1", Hash: "sha256:bbb"},
+		},
+	}
+	err = v.store.Update(resolvedPath, func(r *fileanalysis.Record) error {
+		r.DynLibDeps = dynLibDepsNoNetwork
+		return nil
+	})
+	require.NoError(t, err)
+
+	v.SetBinaryAnalyzer(stub)
+	_, _, err = v.SaveRecord(targetFile, true)
+	require.NoError(t, err)
+
+	updated, loadErr := v.LoadRecord(targetFile)
+	require.NoError(t, loadErr)
+	require.NotNil(t, updated.SymbolAnalysis)
+	assert.Empty(t, updated.SymbolAnalysis.KnownNetworkLibDeps,
+		"KnownNetworkLibDeps must be cleared when DynLibDeps no longer contains known network libs")
+}
+
+func TestRecord_KnownNetworkLibDeps_SymbolAnalysisNil(t *testing.T) {
+	dynLibDeps := &fileanalysis.DynLibDepsData{
+		Libs: []fileanalysis.LibEntry{
+			{SOName: "libcurl.so.4", Path: "/usr/lib/libcurl.so.4", Hash: "sha256:aaa"},
+		},
+	}
+	// StaticBinary → SymbolAnalysis is nil
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.StaticBinary}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	assert.Nil(t, record.SymbolAnalysis,
+		"SymbolAnalysis should be nil for static binary, KnownNetworkLibDeps not recorded")
+}
+
 // stubPLTAnalyzer is a SyscallAnalyzerInterface that returns a fixed result for EvaluatePLTCallArgs.
 type stubPLTAnalyzer struct {
 	result *common.SyscallArgEvalResult
