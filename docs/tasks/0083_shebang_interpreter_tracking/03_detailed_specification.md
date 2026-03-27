@@ -260,20 +260,24 @@ func Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error) {
         return nil, fmt.Errorf("%w: %s", ErrInterpreterNotAbsolute, interpreterPath)
     }
 
-    // 7. Resolve symlinks for interpreter path
+    // 7. Detect env-form based on the original shebang token, before symlink
+    // resolution. Checking after EvalSymlinks would misclassify env-form
+    // shebangs when /usr/bin/env is a symlink (e.g., to busybox).
+    isEnvForm := filepath.Base(interpreterPath) == "env"
+
+    // 8. Resolve symlinks for interpreter path
     resolvedInterpreter, err := filepath.EvalSymlinks(interpreterPath)
     if err != nil {
         return nil, fmt.Errorf("failed to resolve interpreter path %s: %w",
             interpreterPath, err)
     }
 
-    // 8. Check if env form
-    baseName := filepath.Base(resolvedInterpreter)
-    if baseName == "env" {
+    // 9. Check if env form using original token, but pass resolved path
+    if isEnvForm {
         return parseEnvForm(resolvedInterpreter, tokens[1:])
     }
 
-    // 9. Direct form
+    // 10. Direct form
     return &ShebangInfo{
         InterpreterPath: resolvedInterpreter,
     }, nil
