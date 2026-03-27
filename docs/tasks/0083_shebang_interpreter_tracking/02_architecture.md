@@ -312,29 +312,59 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    FILE[("Script File")] --> READ["Read first 256 bytes"]
-    READ --> MAGIC{"Starts with #! ?"}
-    MAGIC -->|"No"| SKIP["Not a script<br>(skip shebang analysis)"]
-    MAGIC -->|"Yes"| NEWLINE{"\\n within 256 bytes?"}
-    NEWLINE -->|"No"| ERR1["Error: shebang line too long"]
-    NEWLINE -->|"Yes"| CR{"Contains \\r?"}
-    CR -->|"Yes"| ERR_CR["Error: \\r in shebang"]
-    CR -->|"No"| PARSE["Parse tokens"]
-    PARSE --> ABS{"Absolute path?"}
-    ABS -->|"No"| ERR2["Error: not absolute"]
-    ABS -->|"Yes"| ENV{"basename == env?"}
-    ENV -->|"Yes"| FLAG{"Arg starts with - or<br>contains =?"}
-    FLAG -->|"Yes"| ERR3["Error: env flags/vars<br>not supported"]
-    FLAG -->|"No"| CMD{"Command name<br>exists?"}
-    CMD -->|"No"| ERR4["Error: no command<br>after env"]
-    CMD -->|"Yes"| LOOKPATH["LookPath + EvalSymlinks"]
-    ENV -->|"No"| EVALSL["EvalSymlinks(path)"]
-    LOOKPATH --> SI[("ShebangInfo<br>← shebang.Parse 返却")]
-    EVALSL --> SI
+    FILE[("Script File")]
 
-    SI -->|"filevalidator.resolveShebangInfo"| RECURSIVE{"Interpreter is<br>shebang script?<br>(IsShebangScript)"}
-    RECURSIVE -->|"Yes"| ERR5["Error: recursive<br>shebang"]
-    RECURSIVE -->|"No"| OK["OK: proceed to<br>recordInterpreter"]
+    subgraph SHEBANG_PARSE["shebang.Parse"]
+        READ["Read first 256 bytes"]
+        MAGIC{"Starts with #! ?"}
+        SKIP["Not a script<br>(skip shebang analysis)"]
+        NEWLINE{"\\n within 256 bytes?"}
+        ERR1["Error: shebang line too long"]
+        CR{"Contains \\r?"}
+        ERR_CR["Error: \\r in shebang"]
+        PARSE["Parse tokens"]
+        ABS{"Absolute path?"}
+        ERR2["Error: not absolute"]
+        ENV{"basename == env?"}
+        FLAG{"Arg starts with - or<br>contains =?"}
+        ERR3["Error: env flags/vars<br>not supported"]
+        CMD{"Command name<br>exists?"}
+        ERR4["Error: no command<br>after env"]
+        LOOKPATH["LookPath + EvalSymlinks"]
+        EVALSL["EvalSymlinks(path)"]
+        SI[("ShebangInfo<br>← shebang.Parse 返却")]
+
+        READ --> MAGIC
+        MAGIC -->|"No"| SKIP
+        MAGIC -->|"Yes"| NEWLINE
+        NEWLINE -->|"No"| ERR1
+        NEWLINE -->|"Yes"| CR
+        CR -->|"Yes"| ERR_CR
+        CR -->|"No"| PARSE
+        PARSE --> ABS
+        ABS -->|"No"| ERR2
+        ABS -->|"Yes"| ENV
+        ENV -->|"Yes"| FLAG
+        FLAG -->|"Yes"| ERR3
+        FLAG -->|"No"| CMD
+        CMD -->|"No"| ERR4
+        CMD -->|"Yes"| LOOKPATH
+        ENV -->|"No"| EVALSL
+        LOOKPATH --> SI
+        EVALSL --> SI
+    end
+
+    subgraph RESOLVE["filevalidator.resolveShebangInfo"]
+        RECURSIVE{"Interpreter is<br>shebang script?<br>(IsShebangScript)"}
+        ERR5["Error: recursive<br>shebang"]
+        OK["OK: proceed to<br>recordInterpreter"]
+
+        RECURSIVE -->|"Yes"| ERR5
+        RECURSIVE -->|"No"| OK
+    end
+
+    FILE --> READ
+    SI --> RECURSIVE
 
     class FILE,SI data;
     class OK process;
