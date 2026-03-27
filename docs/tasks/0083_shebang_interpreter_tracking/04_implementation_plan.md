@@ -130,7 +130,7 @@
 **ファイル**: `internal/filevalidator/validator.go`
 
 - [ ] `resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error)` ヘルパー実装
-  - [ ] `shebang.Parse(filePath.String())` 呼び出し
+  - [ ] `shebang.Parse(filePath)` 呼び出し
   - [ ] `shebang.IsShebangScript` で再帰 shebang チェック
   - [ ] env 形式では `ResolvedPath` 側も再帰 shebang チェック
 - [ ] `SaveRecord` に shebang 事前処理を追加
