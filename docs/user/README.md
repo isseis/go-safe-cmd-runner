@@ -363,7 +363,7 @@ In addition to the above:
 5. [runner Command - All Flags Explained](runner_command.md#3-command-line-flags-explained) - Detailed options (1 hour)
 6. [TOML Configuration - Global/Group/Command Levels](toml_config/04_global_level.md) - Hierarchical configuration (1 hour)
 7. [TOML Configuration - Variable Expansion](toml_config/08_variable_expansion.md) - Advanced features (30 min)
-8. [record/verify Commands](record_command.md) - Hash management (30 min)
+8. [record Command and runner Execution Verification](record_command.md) - Hash management (30 min)
 
 ### 🚀 For Advanced Users (Full Mastery)
 
