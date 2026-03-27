@@ -166,10 +166,13 @@
 
 - [ ] `ManagerInterface` に `VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error` を追加
 
-**ファイル**: `internal/verification/manager.go`
+**ファイル**: `internal/verification/errors.go`
 
 - [ ] `ErrInterpreterRecordNotFound` エラー型実装
 - [ ] `ErrInterpreterPathMismatch` エラー型実装
+
+**ファイル**: `internal/verification/manager.go`
+
 - [ ] `VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error` 実装
   - [ ] `LoadRecord(cmdPath)` で Record 読み取り
   - [ ] `ShebangInterpreter == nil` → `nil` 返却（skip）

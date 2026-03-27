@@ -25,6 +25,7 @@
 | `internal/fileanalysis` | `schema.go` | 変更 | `ShebangInterpreterInfo` 型追加、`Record` フィールド追加、スキーマ v11 |
 | `internal/filevalidator` | `validator.go` | 変更 | `updateAnalysisRecord` に shebang 解析フェーズ追加 |
 | `internal/verification` | `manager.go` | 変更 | `VerifyCommandShebangInterpreter` メソッド追加 |
+| `internal/verification` | `errors.go` | 変更 | `ErrInterpreterRecordNotFound`、`ErrInterpreterPathMismatch` エラー型追加 |
 | `internal/verification` | `interfaces.go` | 変更 | `ManagerInterface` にメソッド追加 |
 | `internal/verification` | `testing/testify_mocks.go` | 変更 | モック更新 |
 | `internal/runner` | `group_executor.go` | 変更 | インタープリタ検証ループ追加 |
@@ -114,6 +115,10 @@ var (
     // ErrCommandNotFound is returned when the command name cannot be
     // resolved via PATH (e.g., "#!/usr/bin/env nonexistent_cmd").
     ErrCommandNotFound = errors.New("command not found in PATH")
+
+    // ErrRecursiveShebang is returned when an interpreter is itself a shebang script.
+    // Detected in filevalidator.resolveShebangInfo via IsShebangScript.
+    ErrRecursiveShebang = errors.New("interpreter is a shebang script")
 )
 ```
 
@@ -476,6 +481,10 @@ func (m *Manager) VerifyCommandShebangInterpreter(
     }
 
     // Load the script's record.
+    // Note: ErrRecordNotFound (no record at all) → skip (non-script binary may have no record).
+    // SchemaVersionMismatchError (v10 or earlier) → propagate as error (AC-18).
+    // This differs from VerifyCommandDynLibDeps which skips old-schema records,
+    // because shebang tracking is new in v11 and old records must be re-recorded.
     record, err := m.fileValidator.LoadRecord(cmdPath)
     if err != nil {
         if errors.Is(err, fileanalysis.ErrRecordNotFound) {
@@ -584,7 +593,9 @@ func lookPathInEnv(name, pathEnv string) (string, error) {
 }
 ```
 
-#### 1.3.6 `verification` パッケージ — エラー型
+#### 1.3.6 `internal/verification/errors.go` — エラー型追加
+
+既存の `errors.go` に追記する（`manager.go` には置かない）。
 
 ```go
 // ErrInterpreterRecordNotFound indicates that the interpreter binary's
@@ -640,18 +651,9 @@ for _, cmd := range runtimeGroup.Commands {
 }
 ```
 
-### 1.4 エラー追加
+### 1.4 JSON 出力例
 
-#### 1.4.1 `internal/shebang/errors.go` — 追加エラー
-
-```go
-// ErrRecursiveShebang is returned when an interpreter is itself a shebang script.
-var ErrRecursiveShebang = errors.New("interpreter is a shebang script")
-```
-
-### 1.5 JSON 出力例
-
-#### 1.5.1 直接形式（`#!/bin/sh`）のスクリプト Record
+#### 1.4.1 直接形式（`#!/bin/sh`）のスクリプト Record
 
 ```json
 {
@@ -667,7 +669,7 @@ var ErrRecursiveShebang = errors.New("interpreter is a shebang script")
 
 注: `/bin/sh` → `/usr/bin/dash`（シンボリックリンク解決後）
 
-#### 1.5.2 env 形式（`#!/usr/bin/env python3`）のスクリプト Record
+#### 1.4.2 env 形式（`#!/usr/bin/env python3`）のスクリプト Record
 
 ```json
 {
@@ -683,7 +685,7 @@ var ErrRecursiveShebang = errors.New("interpreter is a shebang script")
 }
 ```
 
-#### 1.5.3 ELF バイナリの Record（変更なし）
+#### 1.4.3 ELF バイナリの Record（変更なし）
 
 ```json
 {
@@ -699,7 +701,7 @@ var ErrRecursiveShebang = errors.New("interpreter is a shebang script")
 
 `shebang_interpreter` フィールドは `omitempty` で省略される。
 
-#### 1.5.4 インタープリタの独立 Record（`/usr/bin/dash` の例）
+#### 1.4.4 インタープリタの独立 Record（`/usr/bin/dash` の例）
 
 ```json
 {

@@ -309,6 +309,7 @@ type ManagerInterface interface {
 ```mermaid
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     FILE[("Script File")] --> READ["Read first 256 bytes"]
@@ -328,13 +329,16 @@ flowchart TD
     CMD -->|"No"| ERR4["Error: no command<br>after env"]
     CMD -->|"Yes"| LOOKPATH["LookPath + EvalSymlinks"]
     ENV -->|"No"| EVALSL["EvalSymlinks(path)"]
-    LOOKPATH --> RECURSIVE{"Interpreter is<br>shebang script?"}
-    EVALSL --> RECURSIVE
-    RECURSIVE -->|"Yes"| ERR5["Error: recursive<br>shebang"]
-    RECURSIVE -->|"No"| OK["ShebangInfo"]
+    LOOKPATH --> SI[("ShebangInfo<br>← shebang.Parse 返却")]
+    EVALSL --> SI
 
-    class FILE data;
-    class READ,PARSE,LOOKPATH,EVALSL enhanced;
+    SI -->|"filevalidator.resolveShebangInfo"| RECURSIVE{"Interpreter is<br>shebang script?<br>(IsShebangScript)"}
+    RECURSIVE -->|"Yes"| ERR5["Error: recursive<br>shebang"]
+    RECURSIVE -->|"No"| OK["OK: proceed to<br>recordInterpreter"]
+
+    class FILE,SI data;
+    class OK process;
+    class READ,PARSE,LOOKPATH,EVALSL,RECURSIVE enhanced;
 ```
 
 ### 4.3 `skip_standard_paths` との関係
