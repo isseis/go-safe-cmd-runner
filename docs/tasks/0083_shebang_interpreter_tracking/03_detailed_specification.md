@@ -44,6 +44,8 @@ import (
     "os/exec"
     "path/filepath"
     "strings"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 const (
@@ -195,6 +197,9 @@ type ManagerInterface interface {
 // parsed interpreter information. Returns (nil, nil) if the file does not
 // start with "#!" (not a script).
 //
+// fs is used to open the file safely (symlink protection, permission checks).
+// Pass safefileio.NewFileSystem(safefileio.FileSystemConfig{}) for production use; pass a mock for testing.
+//
 // Errors:
 //   - ErrShebangLineTooLong: no newline within 256 bytes
 //   - ErrShebangCR: carriage return found in shebang line
@@ -204,9 +209,13 @@ type ManagerInterface interface {
 //   - ErrEnvFlagNotSupported: env argument starts with "-"
 //   - ErrEnvAssignmentNotSupported: env argument contains "="
 //   - ErrCommandNotFound: command not found via exec.LookPath
-func Parse(filePath string) (*ShebangInfo, error) {
+func Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error) {
     // 1. Read first maxShebangBytes bytes
-    f, err := os.Open(filePath)
+    absPath, err := filepath.Abs(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to resolve path: %w", err)
+    }
+    f, err := fs.SafeOpenFile(absPath, os.O_RDONLY, 0)
     if err != nil {
         return nil, fmt.Errorf("failed to open file: %w", err)
     }
@@ -330,8 +339,15 @@ func parseEnvForm(envPath string, args []string) (*ShebangInfo, error) {
 // IsShebangScript checks if the file at filePath starts with "#!" magic bytes.
 // Returns false, nil for files that are too small.
 // Returns an error when the file cannot be opened.
-func IsShebangScript(filePath string) (bool, error) {
-    f, err := os.Open(filePath)
+//
+// fs is used to open the file safely (symlink protection, permission checks).
+// Pass safefileio.NewFileSystem(safefileio.FileSystemConfig{}) for production use; pass a mock for testing.
+func IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error) {
+    absPath, err := filepath.Abs(filePath)
+    if err != nil {
+        return false, fmt.Errorf("failed to resolve path: %w", err)
+    }
+    f, err := fs.SafeOpenFile(absPath, os.O_RDONLY, 0)
     if err != nil {
         return false, fmt.Errorf("failed to open file: %w", err)
     }
@@ -394,7 +410,7 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 }
 
 func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error) {
-    shebangInfo, err := shebang.Parse(filePath)
+    shebangInfo, err := shebang.Parse(filePath, v.fs)
     if err != nil {
         return nil, fmt.Errorf("shebang analysis failed for %s: %w", filePath, err)
     }
@@ -402,7 +418,7 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, e
         return nil, nil
     }
 
-    isShebang, err := shebang.IsShebangScript(shebangInfo.InterpreterPath)
+    isShebang, err := shebang.IsShebangScript(shebangInfo.InterpreterPath, v.fs)
     if err != nil {
         return nil, fmt.Errorf("failed to check interpreter %s: %w",
             shebangInfo.InterpreterPath, err)
@@ -413,7 +429,7 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, e
     }
 
     if shebangInfo.ResolvedPath != "" {
-        isShebang, err = shebang.IsShebangScript(shebangInfo.ResolvedPath)
+        isShebang, err = shebang.IsShebangScript(shebangInfo.ResolvedPath, v.fs)
         if err != nil {
             return nil, fmt.Errorf("failed to check resolved command %s: %w",
                 shebangInfo.ResolvedPath, err)
