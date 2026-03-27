@@ -130,8 +130,8 @@
 **ファイル**: `internal/filevalidator/validator.go`
 
 - [ ] `resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error)` ヘルパー実装
-  - [ ] `shebang.Parse(filePath)` 呼び出し
-  - [ ] `shebang.IsShebangScript` で再帰 shebang チェック
+  - [ ] `shebang.Parse(filePath, v.fs)` 呼び出し
+  - [ ] `shebang.IsShebangScript(..., v.fs)` で再帰 shebang チェック
   - [ ] env 形式では `ResolvedPath` 側も再帰 shebang チェック
 - [ ] `SaveRecord` に shebang 事前処理を追加
   - [ ] `resolveShebangInfo` を `Store.Update` 前に実行
@@ -287,7 +287,7 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 の順序で
 | `SaveRecord` の再帰呼び出しで予期しない副作用 | 高 | 低 | `resolveShebangInfo` による事前チェックで shebang インタープリタを拒否 |
 | `exec.LookPath` が record 環境と runner 環境で異なる結果 | 中 | 中 | 仕様通りの動作（runner は最終環境の PATH で再解決） |
 | スキーマ v10 → v11 で既存 Record が無効化 | 低 | 確実 | Store.Update による自動マイグレーション（`--force` 不要） |
-| shebang 解析で `os.Open` が symlink 攻撃に晒される | 中 | 低 | record 時は管理者権限で実行が前提。runner 側は Record の情報のみ使用し再解析しない |
+| shebang 解析での symlink 攻撃 | 中 | 低 | **対策済み**: `Parse` / `IsShebangScript` が `safefileio.FileSystem` 経由でファイルを開くため、シンボリックリンク攻撃を防止 |
 
 ---
 
