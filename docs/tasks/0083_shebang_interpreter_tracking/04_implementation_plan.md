@@ -55,7 +55,6 @@
 - [ ] `ErrEnvFlagNotSupported` sentinel error
 - [ ] `ErrEnvAssignmentNotSupported` sentinel error
 - [ ] `ErrCommandNotFound` sentinel error
-- [ ] `ErrRecursiveShebang` sentinel error
 
 **ファイル**: `internal/shebang/parser.go`
 
@@ -126,6 +125,10 @@
 - [ ] `TestSaveRecord_ShebangSymlink`: シンボリックリンク → 解決済みパスが記録される
 
 ### 3.2 本体実装（GREEN）
+
+**ファイル**: `internal/filevalidator/errors.go`
+
+- [ ] `ErrRecursiveShebang` sentinel error
 
 **ファイル**: `internal/filevalidator/validator.go`
 
@@ -221,10 +224,13 @@
 
 **ファイル**: `internal/runner/group_executor.go`
 
+- [ ] `verifyGroupFiles` が `runtimeGlobal` も受け取るように変更
 - [ ] `verifyGroupFiles` の DynLibDeps 検証ループの後にインタープリタ検証ループを追加
   - [ ] `for _, cmd := range runtimeGroup.Commands`
+  - [ ] `executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)` で最終プロセス環境を構築
+  - [ ] `EnvVar` から値のみを抽出した `finalEnv map[string]string` を作成
   - [ ] `ge.verificationManager.ResolvePath(cmd.ExpandedCmd)` でパス解決
-  - [ ] `ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, cmd.ExpandedEnv)` 呼び出し
+  - [ ] `ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv)` 呼び出し
   - [ ] エラー時はログ出力 + `return siErr`
 
 ### 5.3 テスト実行

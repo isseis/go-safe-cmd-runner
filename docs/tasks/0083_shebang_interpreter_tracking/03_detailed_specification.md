@@ -29,7 +29,7 @@
 | `internal/verification` | `errors.go` | 変更 | `ErrInterpreterRecordNotFound`、`ErrInterpreterPathMismatch` エラー型追加 |
 | `internal/verification` | `interfaces.go` | 変更 | `ManagerInterface` にメソッド追加 |
 | `internal/verification` | `testing/testify_mocks.go` | 変更 | モック更新 |
-| `internal/runner` | `group_executor.go` | 変更 | インタープリタ検証ループ追加 |
+| `internal/runner` | `group_executor.go` | 変更 | インタープリタ検証ループ追加、最終プロセス環境の構築 |
 
 ### 1.2 型定義とインターフェース
 
@@ -180,8 +180,9 @@ type ManagerInterface interface {
     VerifyCommandDynLibDeps(cmdPath string) error
     // VerifyCommandShebangInterpreter verifies the shebang interpreter
     // recorded in the script's Record. envVars is the final environment
-    // that will be used to execute the command (needed for env form PATH
-    // re-resolution).
+    // that will be used to execute the command. The caller must build this
+    // from executor.BuildProcessEnvironment(...), not from cmd.ExpandedEnv
+    // alone, so env form PATH re-resolution sees the same PATH as execution.
     VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error
 }
 ```
@@ -679,6 +680,12 @@ func (e *ErrInterpreterPathMismatch) Error() string {
 ```go
 // Verify shebang interpreter integrity for each command.
 for _, cmd := range runtimeGroup.Commands {
+    envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+    finalEnv := make(map[string]string, len(envMap))
+    for k, v := range envMap {
+        finalEnv[k] = v.Value
+    }
+
     resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
     if resolveErr != nil {
         slog.Warn("Path resolution failed during shebang interpreter verification",
@@ -688,7 +695,7 @@ for _, cmd := range runtimeGroup.Commands {
         continue
     }
     if siErr := ge.verificationManager.VerifyCommandShebangInterpreter(
-        resolvedPath, cmd.ExpandedEnv,
+        resolvedPath, finalEnv,
     ); siErr != nil {
         slog.Error("Shebang interpreter verification failed",
             "group", runnertypes.ExtractGroupName(runtimeGroup),
@@ -698,6 +705,8 @@ for _, cmd := range runtimeGroup.Commands {
     }
 }
 ```
+
+このため、`verifyGroupFiles` の引数には `runtimeGlobal` も追加し、`ExecuteGroup` から渡す。
 
 ### 1.4 JSON 出力例
 
@@ -732,6 +741,8 @@ for _, cmd := range runtimeGroup.Commands {
   }
 }
 ```
+
+注: この例では `/usr/bin/env` がシンボリックリンクでない前提を置いている。シンボリックリンクである環境では、`interpreter_path` には `filepath.EvalSymlinks` 後の実体パスが入る。
 
 #### 1.4.3 ELF バイナリの Record（変更なし）
 
@@ -806,7 +817,7 @@ for _, cmd := range runtimeGroup.Commands {
 | スクリプト record で ShebangInterpreter 設定 | `#!/bin/sh` スクリプトの record 後、Record に `shebang_interpreter` あり | AC-4, AC-6 |
 | env 形式で 3 フィールド設定 | `#!/usr/bin/env python3` スクリプトの record 後、3 フィールドすべて設定 | AC-5 |
 | インタープリタ独立 Record 作成 | `#!/bin/sh` スクリプトの record 後、`/bin/sh`（解決先）の Record も存在 | AC-1 |
-| env 形式で 2 つの独立 Record | `#!/usr/bin/env python3` の record 後、env と python3 の Record 存在 | AC-3 |
+| env 形式で 2 つの独立 Record | `#!/usr/bin/env python3` の record 後、env の解決済み実体パスと python3 の Record 存在 | AC-3 |
 | 再帰 shebang 検出 | インタープリタが shebang スクリプトの場合にエラー | AC-13 |
 | ELF バイナリは shebang 解析なし | ELF ファイルの record で ShebangInterpreter = nil | AC-10 |
 | テキストファイルは shebang 解析なし | shebang なしのテキストファイルの record で ShebangInterpreter = nil | AC-11 |
@@ -830,9 +841,9 @@ for _, cmd := range runtimeGroup.Commands {
 
 | AC ID | 基準 | テスト箇所 |
 |---|---|---|
-| AC-1 | `#!/bin/sh` → `/bin/sh` の独立 Record | `filevalidator` テスト |
-| AC-2 | `#!/bin/bash -e` → `/bin/bash` の独立 Record | `shebang.Parse` テスト + `filevalidator` テスト |
-| AC-3 | `#!/usr/bin/env python3` → env + python3 の独立 Record | `filevalidator` テスト |
+| AC-1 | `#!/bin/sh` → `/bin/sh` の解決済み実体パスの独立 Record | `filevalidator` テスト |
+| AC-2 | `#!/bin/bash -e` → `/bin/bash` の解決済み実体パスの独立 Record | `shebang.Parse` テスト + `filevalidator` テスト |
+| AC-3 | `#!/usr/bin/env python3` → env の解決済み実体パス + python3 の独立 Record | `filevalidator` テスト |
 | AC-4 | `shebang_interpreter` フィールド保存 | `filevalidator` テスト |
 | AC-5 | env 形式の 3 フィールド | `shebang.Parse` テスト + `filevalidator` テスト |
 | AC-6 | 直接形式で `command_name` / `resolved_path` 省略 | `shebang.Parse` テスト + JSON 出力テスト |

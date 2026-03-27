@@ -32,7 +32,7 @@ flowchart TD
     RECORD --> SHEBANG["Shebang Analyzer<br>(new)"]
     SHEBANG -->|"interpreter_path<br>command_name"| RESOLVE["Path Resolution<br>filepath.EvalSymlinks<br>exec.LookPath"]
     RESOLVE -->|"resolved paths"| SAVE["SaveRecord<br>(force=true)"]
-    SAVE --> IREC[("Interpreter Records<br>/bin/sh.json<br>python3.json")]
+    SAVE --> IREC[("Interpreter Records<br>resolved-interpreter.json<br>resolved-command.json")]
     RECORD -->|"ShebangInterpreter field"| SREC[("Script Record<br>with shebang_interpreter")]
 
     SREC -->|"runner reads"| RUNNER["Runner<br>Pre-execution Check"]
@@ -179,7 +179,8 @@ shebang 解析のみに責務を限定した新規パッケージ。`filevalidat
 // ShebangInfo holds the parsed result of a shebang line.
 type ShebangInfo struct {
     // InterpreterPath is the absolute path to the interpreter binary.
-    // For env form, this is the path to env itself (e.g., "/usr/bin/env").
+    // For env form, this is the symlink-resolved path to env itself
+    // (e.g., "/usr/bin/env" or its resolved target).
     // Always resolved via filepath.EvalSymlinks.
     InterpreterPath string
 
@@ -199,11 +200,11 @@ type ShebangInfo struct {
 // Parse reads the shebang line from the file and returns the parsed result.
 // Returns nil, nil if the file does not start with "#!".
 // Returns an error for malformed shebangs (empty path, non-absolute, env flags, etc.).
-func Parse(filePath string) (*ShebangInfo, error)
+func Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error)
 
 // IsShebangScript checks whether the file starts with "#!" magic bytes.
 // Used to detect recursive shebang interpreters.
-func IsShebangScript(filePath string) (bool, error)
+func IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error)
 ```
 
 ### 3.2 データ構造の拡張: `Record`
@@ -225,7 +226,8 @@ type Record struct {
 ```go
 // ShebangInterpreterInfo records the interpreter associated with a script file.
 type ShebangInterpreterInfo struct {
-    // InterpreterPath is the shebang interpreter path (e.g., "/bin/sh", "/usr/bin/env").
+    // InterpreterPath is the symlink-resolved shebang interpreter path
+    // (e.g., "/usr/bin/dash", "/usr/bin/env").
     // Always symlink-resolved.
     InterpreterPath string `json:"interpreter_path"`
 
@@ -287,7 +289,9 @@ type ManagerInterface interface {
 新規: for each cmd → VerifyCommandShebangInterpreter(resolvedPath, envVars)
 ```
 
-`envVars` は当該コマンドの最終環境変数（設定適用後）を渡す。`env` 形式の PATH 再解決に使用する。
+`envVars` は当該コマンドの最終環境変数（設定適用後）を渡す。これは `cmd.ExpandedEnv` をそのまま使うのではなく、既存の `executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)` で system environment と allowlist を含めて組み立てた結果から値マップを作成して渡す。`env` 形式の PATH 再解決に使用する。
+
+そのため `group_executor.go` 側は shebang 検証呼び出し時に最終環境を構築できるよう、`verifyGroupFiles` へ `runtimeGlobal` も渡す設計とする。
 
 ---
 
