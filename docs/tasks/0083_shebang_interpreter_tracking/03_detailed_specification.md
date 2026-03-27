@@ -23,7 +23,7 @@
 | `internal/shebang` | `parser_test.go` | **新規** | shebang 解析テスト |
 | `internal/shebang` | `errors.go` | **新規** | shebang 固有エラー型 |
 | `internal/fileanalysis` | `schema.go` | 変更 | `ShebangInterpreterInfo` 型追加、`Record` フィールド追加、スキーマ v11 |
-| `internal/filevalidator` | `validator.go` | 変更 | `updateAnalysisRecord` に shebang 解析フェーズ追加 |
+| `internal/filevalidator` | `validator.go` | 変更 | `SaveRecord` に shebang 解析・インタープリタ Record 作成フェーズ追加、`updateAnalysisRecord` に `shebangInfo` 反映 |
 | `internal/verification` | `manager.go` | 変更 | `VerifyCommandShebangInterpreter` メソッド追加 |
 | `internal/verification` | `errors.go` | 変更 | `ErrInterpreterRecordNotFound`、`ErrInterpreterPathMismatch` エラー型追加 |
 | `internal/verification` | `interfaces.go` | 変更 | `ManagerInterface` にメソッド追加 |
