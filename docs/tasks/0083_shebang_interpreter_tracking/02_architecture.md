@@ -142,7 +142,7 @@ sequenceDiagram
     GE->>VM: VerifyGroupFiles(group)
     Note over VM: Existing hash verification of script + command files
 
-    GE->>VM: VerifyCommandShebangInterpreter(cmdPath)
+    GE->>VM: VerifyCommandShebangInterpreter(cmdPath, envVars)
     VM->>FV: LoadRecord(cmdPath)
     FV-->>VM: Record with ShebangInterpreter
 
