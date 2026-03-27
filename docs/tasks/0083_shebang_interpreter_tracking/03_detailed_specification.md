@@ -23,6 +23,7 @@
 | `internal/shebang` | `parser_test.go` | **新規** | shebang 解析テスト |
 | `internal/shebang` | `errors.go` | **新規** | shebang 固有エラー型 |
 | `internal/fileanalysis` | `schema.go` | 変更 | `ShebangInterpreterInfo` 型追加、`Record` フィールド追加、スキーマ v11 |
+| `internal/filevalidator` | `errors.go` | 変更 | `ErrRecursiveShebang` エラー型追加 |
 | `internal/filevalidator` | `validator.go` | 変更 | `SaveRecord` に shebang 解析・インタープリタ Record 作成フェーズ追加、`updateAnalysisRecord` に `shebangInfo` 反映 |
 | `internal/verification` | `manager.go` | 変更 | `VerifyCommandShebangInterpreter` メソッド追加 |
 | `internal/verification` | `errors.go` | 変更 | `ErrInterpreterRecordNotFound`、`ErrInterpreterPathMismatch` エラー型追加 |
@@ -117,10 +118,6 @@ var (
     // ErrCommandNotFound is returned when the command name cannot be
     // resolved via PATH (e.g., "#!/usr/bin/env nonexistent_cmd").
     ErrCommandNotFound = errors.New("command not found in PATH")
-
-    // ErrRecursiveShebang is returned when an interpreter is itself a shebang script.
-    // Detected in filevalidator.resolveShebangInfo via IsShebangScript.
-    ErrRecursiveShebang = errors.New("interpreter is a shebang script")
 )
 ```
 
@@ -425,7 +422,7 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, e
     }
     if isShebang {
         return nil, fmt.Errorf("interpreter %s is itself a shebang script: %w",
-            shebangInfo.InterpreterPath, shebang.ErrRecursiveShebang)
+            shebangInfo.InterpreterPath, ErrRecursiveShebang)
     }
 
     if shebangInfo.ResolvedPath != "" {
@@ -436,7 +433,7 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, e
         }
         if isShebang {
             return nil, fmt.Errorf("resolved command %s is itself a shebang script: %w",
-                shebangInfo.ResolvedPath, shebang.ErrRecursiveShebang)
+                shebangInfo.ResolvedPath, ErrRecursiveShebang)
         }
     }
 
@@ -476,7 +473,17 @@ func (v *Validator) updateAnalysisRecord(
 
 **注意**: `recordInterpreter` は `SaveRecord` を再帰呼び出しするが、インタープリタは shebang スクリプトではないことを `resolveShebangInfo` 内で事前確認しているため、無限再帰は発生しない。
 
-#### 1.3.5 `verification.Manager.VerifyCommandShebangInterpreter`
+#### 1.3.5 `internal/filevalidator/errors.go` — エラー型追加
+
+既存の `errors.go` に追記する。
+
+```go
+// ErrRecursiveShebang is returned when an interpreter is itself a shebang script.
+// Detected in resolveShebangInfo via shebang.IsShebangScript.
+var ErrRecursiveShebang = errors.New("interpreter is a shebang script")
+```
+
+#### 1.3.6 `verification.Manager.VerifyCommandShebangInterpreter`
 
 ```go
 // VerifyCommandShebangInterpreter verifies the shebang interpreter recorded
@@ -609,7 +616,7 @@ func lookPathInEnv(name, pathEnv string) (string, error) {
 }
 ```
 
-#### 1.3.6 `internal/verification/errors.go` — エラー型追加
+#### 1.3.7 `internal/verification/errors.go` — エラー型追加
 
 既存の `errors.go` に追記する（`manager.go` には置かない）。
 
@@ -640,7 +647,7 @@ func (e *ErrInterpreterPathMismatch) Error() string {
 }
 ```
 
-#### 1.3.7 `group_executor.go` — インタープリタ検証の呼び出し
+#### 1.3.8 `group_executor.go` — インタープリタ検証の呼び出し
 
 `verifyGroupFiles` 内の DynLibDeps 検証ループの後に追加:
 
@@ -841,9 +848,10 @@ for _, cmd := range runtimeGroup.Commands {
 
 ### Phase 3: record 時ロジック
 
-- [ ] `internal/filevalidator/validator.go` — `updateAnalysisRecord` に shebang 解析フェーズ追加
-- [ ] `internal/filevalidator/validator.go` — `SaveRecord` にインタープリタ独立 Record 作成追加
-- [ ] `internal/filevalidator/validator.go` — `recordInterpreter` ヘルパー
+- [ ] `internal/filevalidator/errors.go` — `ErrRecursiveShebang` エラー型追加
+- [ ] `internal/filevalidator/validator.go` — `SaveRecord` に shebang 解析・インタープリタ独立 Record 作成フェーズ追加
+- [ ] `internal/filevalidator/validator.go` — `updateAnalysisRecord` に `shebangInfo` 反映
+- [ ] `internal/filevalidator/validator.go` — `resolveShebangInfo`、`recordInterpreter` ヘルパー
 - [ ] `internal/filevalidator/validator_test.go` — コンポーネントテスト
 
 ### Phase 4: runner 時ロジック
