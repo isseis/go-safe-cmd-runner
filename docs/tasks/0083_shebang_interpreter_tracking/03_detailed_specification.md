@@ -220,7 +220,18 @@ func Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error) {
     defer f.Close()
 
     buf := make([]byte, maxShebangBytes)
-    n, _ := f.Read(buf)
+    n, err := io.ReadFull(f, buf)
+    if err != nil {
+        if err == io.EOF {
+            // Empty file: not a shebang script.
+            return nil, nil
+        }
+        if err != io.ErrUnexpectedEOF {
+            // Real I/O error.
+            return nil, fmt.Errorf("failed to read shebang: %w", err)
+        }
+        // io.ErrUnexpectedEOF: file shorter than maxShebangBytes; continue with n bytes.
+    }
     buf = buf[:n]
 
     // 2. Check for "#!" prefix
