@@ -37,6 +37,7 @@
 package shebang
 
 import (
+    "bytes"
     "fmt"
     "os"
     "os/exec"
@@ -322,7 +323,8 @@ func parseEnvForm(envPath string, args []string) (*ShebangInfo, error) {
 
 ```go
 // IsShebangScript checks if the file at filePath starts with "#!" magic bytes.
-// Returns false for files that cannot be opened or are too small.
+// Returns false, nil for files that are too small.
+// Returns an error when the file cannot be opened.
 func IsShebangScript(filePath string) (bool, error) {
     f, err := os.Open(filePath)
     if err != nil {
@@ -339,56 +341,9 @@ func IsShebangScript(filePath string) (bool, error) {
 }
 ```
 
-#### 1.3.4 `filevalidator.Validator.updateAnalysisRecord` — shebang 解析フェーズ
+#### 1.3.4 `filevalidator.Validator.SaveRecord` — shebang 事前処理フェーズ
 
-既存の `updateAnalysisRecord` に以下のフェーズを末尾に追加する（`analyzeSyscalls` の後）。
-
-```go
-// Analyze shebang interpreter for script files.
-// Run after ELF analysis phases since ELF binaries never have shebangs.
-shebangInfo, shebangErr := shebang.Parse(filePath.String())
-if shebangErr != nil {
-    return fmt.Errorf("shebang analysis failed for %s: %w", filePath, shebangErr)
-}
-if shebangInfo != nil {
-    // Verify that interpreters are not themselves shebang scripts (no recursion).
-    isShebang, checkErr := shebang.IsShebangScript(shebangInfo.InterpreterPath)
-    if checkErr != nil {
-        return fmt.Errorf("failed to check interpreter %s: %w",
-            shebangInfo.InterpreterPath, checkErr)
-    }
-    if isShebang {
-        return fmt.Errorf("interpreter %s is itself a shebang script: %w",
-            shebangInfo.InterpreterPath, shebang.ErrRecursiveShebang)
-    }
-
-    // For env form, also check the resolved command.
-    if shebangInfo.ResolvedPath != "" {
-        isShebang, checkErr = shebang.IsShebangScript(shebangInfo.ResolvedPath)
-        if checkErr != nil {
-            return fmt.Errorf("failed to check resolved command %s: %w",
-                shebangInfo.ResolvedPath, checkErr)
-        }
-        if isShebang {
-            return fmt.Errorf("resolved command %s is itself a shebang script: %w",
-                shebangInfo.ResolvedPath, shebang.ErrRecursiveShebang)
-        }
-    }
-
-    record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
-        InterpreterPath: shebangInfo.InterpreterPath,
-        CommandName:     shebangInfo.CommandName,
-        ResolvedPath:    shebangInfo.ResolvedPath,
-    }
-} else {
-    // Not a shebang script: clear any previously stored ShebangInterpreter.
-    record.ShebangInterpreter = nil
-}
-```
-
-インタープリタの独立 Record 作成は `updateAnalysisRecord` のコールバック内ではなく、コールバック成功後に `SaveRecord` の呼び出し元（もしくは `SaveRecord` 自身）で行う。これにより、スクリプト Record と インタープリタ Record のトランザクション境界を分離し、Store のネスト呼び出しを回避する。
-
-具体的な実装方法: `updateAnalysisRecord` が `ShebangInfo` を返却（またはクロージャ変数で共有）し、`SaveRecord` 内で独立 Record を作成する。
+`SaveRecord` は `Store.Update` に入る前に shebang を解析し、インタープリタ Record の作成まで完了させる。これにより、インタープリタ記録失敗時にスクリプト Record だけが先に保存される部分更新を防ぐ。
 
 ```go
 func (v *Validator) SaveRecord(filePath string, force bool) (string, string, error) {
@@ -402,17 +357,11 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
         return "", "", fmt.Errorf("failed to calculate hash: %w", err)
     }
 
-    hashFilePath, err := v.GetHashFilePath(targetPath)
+    shebangInfo, err := v.resolveShebangInfo(targetPath.String())
     if err != nil {
         return "", "", err
     }
 
-    contentHash, shebangInfo, err := v.updateAnalysisRecord(targetPath, hash, force)
-    if err != nil {
-        return "", "", err
-    }
-
-    // Record interpreter binaries as independent entries.
     if shebangInfo != nil {
         if err := v.recordInterpreter(shebangInfo.InterpreterPath); err != nil {
             return "", "", fmt.Errorf("failed to record interpreter %s: %w",
@@ -426,7 +375,51 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
         }
     }
 
+    hashFilePath, err := v.GetHashFilePath(targetPath)
+    if err != nil {
+        return "", "", err
+    }
+
+    contentHash, err := v.updateAnalysisRecord(targetPath, hash, force, shebangInfo)
+    if err != nil {
+        return "", "", err
+    }
+
     return hashFilePath, contentHash, nil
+}
+
+func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error) {
+    shebangInfo, err := shebang.Parse(filePath)
+    if err != nil {
+        return nil, fmt.Errorf("shebang analysis failed for %s: %w", filePath, err)
+    }
+    if shebangInfo == nil {
+        return nil, nil
+    }
+
+    isShebang, err := shebang.IsShebangScript(shebangInfo.InterpreterPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to check interpreter %s: %w",
+            shebangInfo.InterpreterPath, err)
+    }
+    if isShebang {
+        return nil, fmt.Errorf("interpreter %s is itself a shebang script: %w",
+            shebangInfo.InterpreterPath, shebang.ErrRecursiveShebang)
+    }
+
+    if shebangInfo.ResolvedPath != "" {
+        isShebang, err = shebang.IsShebangScript(shebangInfo.ResolvedPath)
+        if err != nil {
+            return nil, fmt.Errorf("failed to check resolved command %s: %w",
+                shebangInfo.ResolvedPath, err)
+        }
+        if isShebang {
+            return nil, fmt.Errorf("resolved command %s is itself a shebang script: %w",
+                shebangInfo.ResolvedPath, shebang.ErrRecursiveShebang)
+        }
+    }
+
+    return shebangInfo, nil
 }
 
 // recordInterpreter creates an independent Record for an interpreter binary.
@@ -437,7 +430,30 @@ func (v *Validator) recordInterpreter(interpreterPath string) error {
 }
 ```
 
-**注意**: `recordInterpreter` は `SaveRecord` を再帰呼び出しするが、インタープリタは ELF バイナリ（shebang を持たない）であることを事前に確認済みのため（`IsShebangScript` チェック）、無限再帰は発生しない。
+`updateAnalysisRecord` 側は、引数として渡された `shebangInfo` を `record.ShebangInterpreter` に反映するだけに留める。
+
+```go
+func (v *Validator) updateAnalysisRecord(
+    filePath common.ResolvedPath,
+    hash string,
+    force bool,
+    shebangInfo *shebang.ShebangInfo,
+) (string, error) {
+    // Existing hash / dynlib / symbol / syscall analysis logic.
+
+    if shebangInfo != nil {
+        record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
+            InterpreterPath: shebangInfo.InterpreterPath,
+            CommandName:     shebangInfo.CommandName,
+            ResolvedPath:    shebangInfo.ResolvedPath,
+        }
+    } else {
+        record.ShebangInterpreter = nil
+    }
+}
+```
+
+**注意**: `recordInterpreter` は `SaveRecord` を再帰呼び出しするが、インタープリタは shebang スクリプトではないことを `resolveShebangInfo` 内で事前確認しているため、無限再帰は発生しない。
 
 #### 1.3.5 `verification.Manager.VerifyCommandShebangInterpreter`
 
@@ -503,7 +519,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(
 func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
     // Verify hash using the standard verification flow.
     if err := m.fileValidator.Verify(interpreterPath); err != nil {
-        if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+        if errors.Is(err, filevalidator.ErrHashFileNotFound) {
             return &ErrInterpreterRecordNotFound{Path: interpreterPath}
         }
         return err

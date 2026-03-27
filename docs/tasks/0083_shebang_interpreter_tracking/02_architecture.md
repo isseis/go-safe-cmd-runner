@@ -28,17 +28,17 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    SCRIPT[("Script File\n#!/usr/bin/env python3")] --> RECORD["Record Command"]
-    RECORD --> SHEBANG["Shebang Analyzer\n(new)"]
-    SHEBANG -->|"interpreter_path\ncommand_name"| RESOLVE["Path Resolution\nfilepath.EvalSymlinks\nexec.LookPath"]
-    RESOLVE -->|"resolved paths"| SAVE["SaveRecord\n(force=true)"]
-    SAVE --> IREC[("Interpreter Records\n/bin/sh.json\npython3.json")]
-    RECORD -->|"ShebangInterpreter field"| SREC[("Script Record\nwith shebang_interpreter")]
+    SCRIPT[("Script File<br>#!/usr/bin/env python3")] --> RECORD["Record Command"]
+    RECORD --> SHEBANG["Shebang Analyzer<br>(new)"]
+    SHEBANG -->|"interpreter_path<br>command_name"| RESOLVE["Path Resolution<br>filepath.EvalSymlinks<br>exec.LookPath"]
+    RESOLVE -->|"resolved paths"| SAVE["SaveRecord<br>(force=true)"]
+    SAVE --> IREC[("Interpreter Records<br>/bin/sh.json<br>python3.json")]
+    RECORD -->|"ShebangInterpreter field"| SREC[("Script Record<br>with shebang_interpreter")]
 
-    SREC -->|"runner reads"| RUNNER["Runner\nPre-execution Check"]
+    SREC -->|"runner reads"| RUNNER["Runner<br>Pre-execution Check"]
     IREC -->|"runner verifies"| RUNNER
-    RUNNER --> HASH["Hash Verification\n(existing)"]
-    RUNNER --> PATHCHK["PATH Re-resolution\n(env form only)"]
+    RUNNER --> HASH["Hash Verification<br>(existing)"]
+    RUNNER --> PATHCHK["PATH Re-resolution<br>(env form only)"]
 
     class SCRIPT,IREC,SREC data;
     class RECORD,SAVE,HASH process;
@@ -68,19 +68,19 @@ graph TB
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     subgraph fileanalysis["internal/fileanalysis"]
-        SCHEMA["schema.go\nRecord に ShebangInterpreter 追加\nSchemaVersion 10 → 11"]
+        SCHEMA["schema.go<br>Record に ShebangInterpreter 追加<br>SchemaVersion 10 → 11"]
     end
 
     subgraph shebang["internal/shebang (new)"]
-        PARSER["parser.go\nshebang 解析ロジック"]
+        PARSER["parser.go<br>shebang 解析ロジック"]
     end
 
     subgraph filevalidator["internal/filevalidator"]
-        VALIDATOR["validator.go\nrecord 時に shebang 解析 +\nインタープリタ独立 Record 作成"]
+        VALIDATOR["validator.go<br>record 時に shebang 解析 +<br>インタープリタ独立 Record 作成"]
     end
 
     subgraph verification["internal/verification"]
-        MANAGER["manager.go\nrunner 時にインタープリタ検証"]
+        MANAGER["manager.go<br>runner 時にインタープリタ検証"]
     end
 
     VALIDATOR -->|"uses"| PARSER
@@ -103,7 +103,6 @@ sequenceDiagram
 
     CMD->>FV: SaveRecord(script.sh, force)
     FV->>FV: calculateHash(script.sh)
-    FV->>FV: updateAnalysisRecord(script.sh, hash)
 
     Note over FV,SP: shebang analysis phase
     FV->>SP: Parse(script.sh)
@@ -127,6 +126,7 @@ sequenceDiagram
     end
 
     Note over FV,STORE: script record update
+    FV->>FV: updateAnalysisRecord(script.sh, hash, shebangInfo)
     FV->>STORE: Update(script.sh, record with ShebangInterpreter)
 ```
 
@@ -155,7 +155,7 @@ sequenceDiagram
         alt env form (command_name set)
             VM->>FV: LoadRecord(resolved_path)
             VM->>VM: Hash verify resolved_path
-            VM->>VM: exec.LookPath(command_name) with final env
+            VM->>VM: Re-resolve command_name using final env PATH
             VM->>VM: Compare resolved path == record.resolved_path
             alt path mismatch
                 VM-->>GE: Error: PATH manipulation detected
@@ -241,18 +241,21 @@ type ShebangInterpreterInfo struct {
 
 ### 3.3 `filevalidator.Validator` の拡張
 
-`updateAnalysisRecord` にshebang 解析フェーズを追加する。
+`SaveRecord` に shebang 解析とインタープリタ独立 Record 作成の事前フェーズを追加し、`updateAnalysisRecord` は確定済みの shebang 情報を書き込む責務に限定する。
 
 ```
-既存: 1. DynLibAnalyzer.Analyze()       → record.DynLibDeps
-既存: 2. binaryAnalyzer.AnalyzeNetwork() → record.SymbolAnalysis
-既存: 3. KnownNetworkLibDeps 照合
-既存: 4. analyzeSyscalls()
-新規: 5. shebang.Parse(filePath)         → record.ShebangInterpreter
-         + SaveRecord(interpreter, force=true)   for each interpreter binary
+新規: 1. shebang.Parse(filePath)                → shebangInfo
+新規: 2. Validate recursive shebang            → error if interpreter is script
+新規: 3. SaveRecord(interpreter, force=true)   for each interpreter binary
+既存: 4. updateAnalysisRecord(..., shebangInfo)
+         ├─ DynLibAnalyzer.Analyze()           → record.DynLibDeps
+         ├─ binaryAnalyzer.AnalyzeNetwork()    → record.SymbolAnalysis
+         ├─ KnownNetworkLibDeps 照合
+         ├─ analyzeSyscalls()
+         └─ record.ShebangInterpreter = shebangInfo
 ```
 
-shebang 解析は既存の ELF 解析の後に配置する。ELF バイナリは shebang を持たないため、ELF 解析が有効な場合（DynLibDeps が non-nil 等）は shebang 解析は実質スキップとなる。
+この順序により、インタープリタの独立 Record 作成に失敗した場合でも、スクリプト Record だけが先に永続化される状態を回避できる。
 
 ### 3.4 `verification.Manager` の拡張
 
@@ -310,7 +313,7 @@ flowchart TD
 
     FILE[("Script File")] --> READ["Read first 256 bytes"]
     READ --> MAGIC{"Starts with #! ?"}
-    MAGIC -->|"No"| SKIP["Not a script\n(skip shebang analysis)"]
+    MAGIC -->|"No"| SKIP["Not a script<br>(skip shebang analysis)"]
     MAGIC -->|"Yes"| NEWLINE{"\\n within 256 bytes?"}
     NEWLINE -->|"No"| ERR1["Error: shebang line too long"]
     NEWLINE -->|"Yes"| CR{"Contains \\r?"}
@@ -319,15 +322,15 @@ flowchart TD
     PARSE --> ABS{"Absolute path?"}
     ABS -->|"No"| ERR2["Error: not absolute"]
     ABS -->|"Yes"| ENV{"basename == env?"}
-    ENV -->|"Yes"| FLAG{"Arg starts with - or\ncontains =?"}
-    FLAG -->|"Yes"| ERR3["Error: env flags/vars\nnot supported"]
-    FLAG -->|"No"| CMD{"Command name\nexists?"}
-    CMD -->|"No"| ERR4["Error: no command\nafter env"]
+    ENV -->|"Yes"| FLAG{"Arg starts with - or<br>contains =?"}
+    FLAG -->|"Yes"| ERR3["Error: env flags/vars<br>not supported"]
+    FLAG -->|"No"| CMD{"Command name<br>exists?"}
+    CMD -->|"No"| ERR4["Error: no command<br>after env"]
     CMD -->|"Yes"| LOOKPATH["LookPath + EvalSymlinks"]
     ENV -->|"No"| EVALSL["EvalSymlinks(path)"]
-    LOOKPATH --> RECURSIVE{"Interpreter is\nshebang script?"}
+    LOOKPATH --> RECURSIVE{"Interpreter is<br>shebang script?"}
     EVALSL --> RECURSIVE
-    RECURSIVE -->|"Yes"| ERR5["Error: recursive\nshebang"]
+    RECURSIVE -->|"Yes"| ERR5["Error: recursive<br>shebang"]
     RECURSIVE -->|"No"| OK["ShebangInfo"]
 
     class FILE data;
@@ -380,7 +383,7 @@ flowchart TD
 
 - `ShebangInterpreter` フィールドの有無チェック: Record の JSON デシリアライズ時に自動で行われる（追加コストなし）
 - インタープリタハッシュ検証: ファイル 1 つまたは 2 つ（`env` 形式）の追加ハッシュ計算
-- PATH 再解決: `exec.LookPath` 1 回（`env` 形式のみ）
+- PATH 再解決: 最終環境の `PATH` を使ったコマンド探索 1 回（`env` 形式のみ）
 
 ### 6.3 パフォーマンス要件
 
@@ -402,9 +405,9 @@ flowchart TB
     classDef tier2 fill:#ffd59a,stroke:#333,color:#000;
     classDef tier3 fill:#c3f08a,stroke:#333,color:#000;
 
-    Tier1["統合テスト\n(record → runner E2E)"]:::tier1
-    Tier2["コンポーネントテスト\n(filevalidator + shebang)"]:::tier2
-    Tier3["単体テスト\n(shebang.Parse)"]:::tier3
+    Tier1["統合テスト<br>(record → runner E2E)"]:::tier1
+    Tier2["コンポーネントテスト<br>(filevalidator + shebang)"]:::tier2
+    Tier3["単体テスト<br>(shebang.Parse)"]:::tier3
 
     Tier3 --> Tier2 --> Tier1
 ```
