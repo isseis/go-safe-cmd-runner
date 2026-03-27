@@ -60,7 +60,8 @@
 **ファイル**: `internal/shebang/parser.go`
 
 - [ ] `ShebangInfo` 型定義
-- [ ] `Parse(filePath string) (*ShebangInfo, error)` 実装
+- [ ] `Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error)` 実装
+  - [ ] `fs.SafeOpenFile` でファイルオープン（シンボリックリンク攻撃防止）
   - [ ] ファイル先頭 256 バイト読み取り
   - [ ] `#!` プレフィックスチェック（非 shebang → `nil, nil`）
   - [ ] 改行検出（256 バイト以内に `\n` なし → `ErrShebangLineTooLong`）
@@ -68,10 +69,11 @@
   - [ ] トークン分割（空白スキップ + `strings.Fields`）
   - [ ] 空トークン → `ErrEmptyInterpreterPath`
   - [ ] 絶対パスチェック → `ErrInterpreterNotAbsolute`
-  - [ ] `filepath.EvalSymlinks` でシンボリックリンク解決
-  - [ ] `env` 判定（`filepath.Base(resolvedInterpreter) == "env"`）
-  - [ ] env 形式: `parseEnvForm` 呼び出し
-  - [ ] 直接形式: `ShebangInfo{InterpreterPath: resolved}` 返却
+  - [ ] 元のインタープリタトークンを保持（`rawInterpreter := tokens[0]`）
+  - [ ] `filepath.EvalSymlinks` でシンボリックリンク解決（`resolvedInterpreter`）
+  - [ ] `env` 判定（`filepath.Base(rawInterpreter) == "env"`、シンボリックリンク解決前のトークンで判定）
+  - [ ] env 形式: `parseEnvForm(resolvedInterpreter, tokens[1:])` 呼び出し
+  - [ ] 直接形式: `ShebangInfo{InterpreterPath: resolvedInterpreter}` 返却
 - [ ] `parseEnvForm(envPath string, args []string) (*ShebangInfo, error)` 実装
   - [ ] 引数なし → `ErrMissingEnvCommand`
   - [ ] フラグ検出（`-` prefix）→ `ErrEnvFlagNotSupported`
@@ -79,7 +81,9 @@
   - [ ] `exec.LookPath(cmdArg)` で PATH 解決
   - [ ] 解決不可 → `ErrCommandNotFound`
   - [ ] `filepath.EvalSymlinks` で解決済みパスのシンボリックリンク解決
-- [ ] `IsShebangScript(filePath string) (bool, error)` 実装
+- [ ] `IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error)` 実装
+  - [ ] `fs.SafeOpenFile` でファイルオープン
+  - [ ] 先頭 2 バイト読み取り（`io.EOF` → `false, nil`、他エラー → エラー返却）
 
 ### 1.3 テスト実行
 
