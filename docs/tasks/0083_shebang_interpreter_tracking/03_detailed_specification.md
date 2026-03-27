@@ -41,6 +41,7 @@ package shebang
 import (
     "bytes"
     "fmt"
+    "io"
     "os"
     "os/exec"
     "path/filepath"
@@ -356,7 +357,16 @@ func IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error) {
 
     buf := make([]byte, 2)
     n, err := f.Read(buf)
-    if err != nil || n < 2 {
+    if err != nil {
+        if err == io.EOF {
+            // File is smaller than the shebang prefix; treat as "not a shebang".
+            return false, nil
+        }
+        // Propagate non-EOF I/O errors so callers can distinguish real failures.
+        return false, fmt.Errorf("failed to read file header: %w", err)
+    }
+    if n < 2 {
+        // Too few bytes to contain a shebang prefix.
         return false, nil
     }
     return string(buf) == shebangPrefix, nil
