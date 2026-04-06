@@ -691,3 +691,136 @@ func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 	}
 	return true, nil
 }
+
+// VerifyCommandShebangInterpreter verifies the integrity of a shebang interpreter for a
+// script command. It loads the analysis record for cmdPath, reads the ShebangInterpreter
+// field, and verifies that:
+//   - The interpreter binary's hash matches the stored record.
+//   - For env-form shebangs, the command name resolves (via envVars["PATH"]) to the same
+//     binary path that was recorded at record time.
+//
+// Returns nil if cmdPath has no analysis record or the record has no ShebangInterpreter.
+func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
+	if m.fileValidator == nil {
+		return nil
+	}
+
+	record, err := m.fileValidator.LoadRecord(cmdPath)
+	if err != nil {
+		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return nil
+		}
+		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
+			// Record predates shebang tracking; skip.
+			return nil
+		}
+		return fmt.Errorf("failed to load record for shebang verification: %w", err)
+	}
+
+	si := record.ShebangInterpreter
+	if si == nil {
+		return nil
+	}
+
+	// Verify interpreter hash.
+	if err := m.verifyInterpreterHash(si.InterpreterPath); err != nil {
+		return err
+	}
+
+	// For env-form shebangs, also verify that the runtime PATH resolves to the same binary.
+	if si.CommandName != "" {
+		if err := m.verifyEnvPathResolution(si.CommandName, si.ResolvedPath, envVars); err != nil {
+			return err
+		}
+		// Verify the resolved interpreter hash as well.
+		if err := m.verifyInterpreterHash(si.ResolvedPath); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// verifyInterpreterHash verifies the hash of the given interpreter binary.
+// ErrHashFileNotFound (no record for that binary) is translated into
+// *ErrInterpreterRecordNotFound so callers can distinguish "never recorded"
+// from "tampered" (ErrMismatch).
+func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
+	err := m.fileValidator.Verify(interpreterPath)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, filevalidator.ErrHashFileNotFound) {
+		return &ErrInterpreterRecordNotFound{Path: interpreterPath}
+	}
+	return err
+}
+
+// verifyEnvPathResolution resolves commandName through envVars["PATH"] and checks
+// that the result (after symlink resolution) matches recordedResolvedPath.
+// Returns *ErrInterpreterPathMismatch when they differ.
+func (m *Manager) verifyEnvPathResolution(commandName, recordedResolvedPath string, envVars map[string]string) error {
+	pathEnv := envVars["PATH"]
+	found, err := lookPathInEnv(commandName, pathEnv)
+	if err != nil {
+		return fmt.Errorf("cannot resolve interpreter %q in PATH: %w", commandName, err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(found)
+	if err != nil {
+		return fmt.Errorf("cannot resolve symlinks for interpreter %q: %w", found, err)
+	}
+
+	if resolved != recordedResolvedPath {
+		return &ErrInterpreterPathMismatch{
+			CommandName:  commandName,
+			RecordedPath: recordedResolvedPath,
+			ActualPath:   resolved,
+		}
+	}
+	return nil
+}
+
+// lookPathInEnv searches for an executable named name in the directories listed
+// in pathEnv (colon-separated on UNIX, semicolon-separated on Windows).
+// Returns the first matching executable or ErrCommandNotFound.
+func lookPathInEnv(name, pathEnv string) (string, error) {
+	if containsPathSeparator(name) {
+		// name itself is a relative or absolute path — use directly.
+		if isExecutableFile(name) {
+			return name, nil
+		}
+		return "", ErrCommandNotFound
+	}
+
+	for _, dir := range filepath.SplitList(pathEnv) {
+		if dir == "" {
+			dir = "."
+		}
+		candidate := filepath.Join(dir, name)
+		if isExecutableFile(candidate) {
+			return candidate, nil
+		}
+	}
+	return "", ErrCommandNotFound
+}
+
+// containsPathSeparator reports whether name contains a filepath separator.
+func containsPathSeparator(name string) bool {
+	for _, c := range name {
+		if c == '/' || c == filepath.Separator {
+			return true
+		}
+	}
+	return false
+}
+
+// isExecutableFile reports whether path names a regular file with at least one
+// execute bit set.
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
+}

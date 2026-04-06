@@ -5,7 +5,7 @@
 - [x] Phase 1: shebang パーサー（テスト先行）
 - [x] Phase 2: スキーマ変更
 - [x] Phase 3: record 時ロジック
-- [ ] Phase 4: runner 時ロジック
+- [x] Phase 4: runner 時ロジック
 - [ ] Phase 5: group executor 統合
 - [ ] Phase 6: 最終検証
 
@@ -159,51 +159,51 @@
 
 **ファイル**: `internal/verification/manager_test.go` に追加
 
-- [ ] `TestVerifyCommandShebangInterpreter_NilShebang`: non-script → skip
-- [ ] `TestVerifyCommandShebangInterpreter_DirectForm_OK`: 正常系（直接形式）
-- [ ] `TestVerifyCommandShebangInterpreter_EnvForm_OK`: 正常系（env 形式）
-- [ ] `TestVerifyCommandShebangInterpreter_RecordNotFound`: インタープリタ Record 不在 → エラー
-- [ ] `TestVerifyCommandShebangInterpreter_HashMismatch`: ハッシュ不一致 → エラー
-- [ ] `TestVerifyCommandShebangInterpreter_PathMismatch`: env パス再解決不一致 → エラー
-- [ ] `TestVerifyCommandShebangInterpreter_NoRecord`: コマンド Record なし → skip
+- [x] `TestVerifyCommandShebangInterpreter_NilShebang`: non-script → skip
+- [x] `TestVerifyCommandShebangInterpreter_DirectForm_OK`: 正常系（直接形式）
+- [x] `TestVerifyCommandShebangInterpreter_EnvForm_OK`: 正常系（env 形式）
+- [x] `TestVerifyCommandShebangInterpreter_RecordNotFound`: インタープリタ Record 不在 → エラー
+- [x] `TestVerifyCommandShebangInterpreter_HashMismatch`: ハッシュ不一致 → エラー
+- [x] `TestVerifyCommandShebangInterpreter_PathMismatch`: env パス再解決不一致 → エラー
+- [x] `TestVerifyCommandShebangInterpreter_NoRecord`: コマンド Record なし → skip
 
 ### 4.2 本体実装（GREEN）
 
 **ファイル**: `internal/verification/interfaces.go`
 
-- [ ] `ManagerInterface` に `VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error` を追加
+- [x] `ManagerInterface` に `VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error` を追加
 
 **ファイル**: `internal/verification/errors.go`
 
-- [ ] `ErrInterpreterRecordNotFound` エラー型実装
-- [ ] `ErrInterpreterPathMismatch` エラー型実装
+- [x] `ErrInterpreterRecordNotFound` エラー型実装
+- [x] `ErrInterpreterPathMismatch` エラー型実装
 
 **ファイル**: `internal/verification/manager.go`
 
-- [ ] `VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error` 実装
-  - [ ] `LoadRecord(cmdPath)` で Record 読み取り
-  - [ ] `ShebangInterpreter == nil` → `nil` 返却（skip）
-  - [ ] `verifyInterpreterHash(interpreter_path)` 呼び出し
-  - [ ] env 形式: `verifyInterpreterHash(resolved_path)` + `verifyEnvPathResolution`
-- [ ] `verifyInterpreterHash(interpreterPath string) error` 実装
-  - [ ] `m.fileValidator.Verify(interpreterPath)` 呼び出し
-  - [ ] `ErrHashFileNotFound` → `ErrInterpreterRecordNotFound` 変換
-- [ ] `verifyEnvPathResolution(commandName, recordedResolvedPath string, envVars map[string]string) error` 実装
-  - [ ] `envVars["PATH"]` 取得
-  - [ ] `lookPathInEnv(commandName, pathEnv)` で PATH 解決
-  - [ ] `filepath.EvalSymlinks` で正規化
-  - [ ] パス不一致 → `ErrInterpreterPathMismatch` 返却
-- [ ] `lookPathInEnv(name, pathEnv string) (string, error)` 実装
-  - [ ] `filepath.SplitList(pathEnv)` でディレクトリ分割
-  - [ ] 各ディレクトリで候補パス構築 + `os.Stat` + 実行ビットチェック
+- [x] `VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error` 実装
+  - [x] `LoadRecord(cmdPath)` で Record 読み取り
+  - [x] `ShebangInterpreter == nil` → `nil` 返却（skip）
+  - [x] `verifyInterpreterHash(interpreter_path)` 呼び出し
+  - [x] env 形式: `verifyInterpreterHash(resolved_path)` + `verifyEnvPathResolution`
+- [x] `verifyInterpreterHash(interpreterPath string) error` 実装
+  - [x] `m.fileValidator.Verify(interpreterPath)` 呼び出し
+  - [x] `ErrHashFileNotFound` → `ErrInterpreterRecordNotFound` 変換
+- [x] `verifyEnvPathResolution(commandName, recordedResolvedPath string, envVars map[string]string) error` 実装
+  - [x] `envVars["PATH"]` 取得
+  - [x] `lookPathInEnv(commandName, pathEnv)` で PATH 解決
+  - [x] `filepath.EvalSymlinks` で正規化
+  - [x] パス不一致 → `ErrInterpreterPathMismatch` 返却
+- [x] `lookPathInEnv(name, pathEnv string) (string, error)` 実装
+  - [x] `filepath.SplitList(pathEnv)` でディレクトリ分割
+  - [x] 各ディレクトリで候補パス構築 + `os.Stat` + 実行ビットチェック
 
 **ファイル**: `internal/verification/testing/testify_mocks.go`
 
-- [ ] `MockManager` に `VerifyCommandShebangInterpreter` メソッド追加
+- [x] `MockManager` に `VerifyCommandShebangInterpreter` メソッド追加
 
 ### 4.3 テスト実行
 
-- [ ] `go test -tags test -v ./internal/verification/...` — 全テスト GREEN
+- [x] `go test -tags test -v ./internal/verification/...` — 全テスト GREEN
 
 ---
 

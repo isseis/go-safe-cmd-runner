@@ -161,3 +161,27 @@ type FileDetail struct {
 	Error        error         // error if verification failed
 	Duration     time.Duration // time taken for verification
 }
+
+// ErrInterpreterRecordNotFound is returned when no hash record exists for a shebang interpreter.
+type ErrInterpreterRecordNotFound struct {
+	Path string
+}
+
+// Error returns the error message.
+func (e *ErrInterpreterRecordNotFound) Error() string {
+	return fmt.Sprintf("interpreter record not found: %s", e.Path)
+}
+
+// ErrInterpreterPathMismatch is returned when the shebang interpreter resolved at
+// runtime differs from the path recorded at record time.
+type ErrInterpreterPathMismatch struct {
+	CommandName  string
+	RecordedPath string
+	ActualPath   string
+}
+
+// Error returns the error message.
+func (e *ErrInterpreterPathMismatch) Error() string {
+	return fmt.Sprintf("interpreter path mismatch for %s: recorded %s, actual %s",
+		e.CommandName, e.RecordedPath, e.ActualPath)
+}

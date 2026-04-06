@@ -36,6 +36,12 @@ func (m *MockManager) VerifyCommandDynLibDeps(cmdPath string) error {
 	return args.Error(0)
 }
 
+// VerifyCommandShebangInterpreter mocks the VerifyCommandShebangInterpreter method
+func (m *MockManager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
+	args := m.Called(cmdPath, envVars)
+	return args.Error(0)
+}
+
 // MockFileValidator is a mock implementation of filevalidator.FileValidator
 type MockFileValidator struct {
 	mock.Mock
