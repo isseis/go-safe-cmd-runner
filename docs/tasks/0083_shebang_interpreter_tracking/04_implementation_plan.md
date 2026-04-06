@@ -303,9 +303,9 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 の順序で
 
 `recordInterpreter` は `v.SaveRecord(interpreterPath, true)` を呼び出す。これは `updateAnalysisRecord` → shebang 解析 → `shebang.Parse` を再帰的に呼び出す。しかし：
 
-1. インタープリタは `IsShebangScript` チェックにより ELF バイナリであることが保証済み
-2. ELF バイナリに対する `shebang.Parse` は `nil, nil`（非 shebang）を返す
-3. したがって `recordInterpreter` 内の `SaveRecord` は shebang フェーズをスキップし、再帰は 1 レベルで停止する
+1. インタープリタパスに対して `IsShebangScript` を実行しており、ここで「先頭が `#!` である shebang スクリプトではない」（= 非 shebang ファイル）ことだけが保証される（ELF バイナリであることまでは保証しない）
+2. `shebang.Parse` は先頭が `#!` でないファイル（ELF バイナリを含む任意の非 shebang ファイル）に対しては即座に `nil, nil`（非 shebang）を返す
+3. したがって `recordInterpreter` 内の `SaveRecord` はインタープリタに対する shebang フェーズをスキップし、再帰は 1 レベルで停止する
 
 ### `lookPathInEnv` と `exec.LookPath` の違い
 
