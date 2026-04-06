@@ -433,7 +433,7 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 }
 
 func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error) {
-    shebangInfo, err := shebang.Parse(filePath, v.fs)
+    shebangInfo, err := shebang.Parse(filePath, v.fileSystem)
     if err != nil {
         return nil, fmt.Errorf("shebang analysis failed for %s: %w", filePath, err)
     }
@@ -441,7 +441,7 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, e
         return nil, nil
     }
 
-    isShebang, err := shebang.IsShebangScript(shebangInfo.InterpreterPath, v.fs)
+    isShebang, err := shebang.IsShebangScript(shebangInfo.InterpreterPath, v.fileSystem)
     if err != nil {
         return nil, fmt.Errorf("failed to check interpreter %s: %w",
             shebangInfo.InterpreterPath, err)
@@ -452,7 +452,7 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.ShebangInfo, e
     }
 
     if shebangInfo.ResolvedPath != "" {
-        isShebang, err = shebang.IsShebangScript(shebangInfo.ResolvedPath, v.fs)
+        isShebang, err = shebang.IsShebangScript(shebangInfo.ResolvedPath, v.fileSystem)
         if err != nil {
             return nil, fmt.Errorf("failed to check resolved command %s: %w",
                 shebangInfo.ResolvedPath, err)
