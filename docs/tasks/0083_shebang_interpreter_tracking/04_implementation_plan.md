@@ -2,7 +2,7 @@
 
 ## 進捗状況
 
-- [ ] Phase 1: shebang パーサー（テスト先行）
+- [x] Phase 1: shebang パーサー（テスト先行）
 - [ ] Phase 2: スキーマ変更
 - [ ] Phase 3: record 時ロジック
 - [ ] Phase 4: runner 時ロジック
@@ -17,29 +17,29 @@
 
 **ファイル**: `internal/shebang/parser_test.go`
 
-- [ ] `TestParse_DirectForm`: `#!/bin/sh` → `InterpreterPath` が EvalSymlinks 解決後のパス
-- [ ] `TestParse_DirectFormWithArgs`: `#!/bin/bash -e` → `/bin/bash` のみ抽出、`-e` は無視
-- [ ] `TestParse_SpaceAfterShebang`: `#! /bin/sh` → 空白許容
-- [ ] `TestParse_EnvForm`: `#!/usr/bin/env python3` → 3 フィールドすべて設定
-- [ ] `TestParse_NotShebang_ELF`: ELF magic bytes → `nil, nil`
-- [ ] `TestParse_NotShebang_Text`: 通常テキスト → `nil, nil`
-- [ ] `TestParse_ErrEmptyInterpreterPath`: `#!\n` → `ErrEmptyInterpreterPath`
-- [ ] `TestParse_ErrEmptyInterpreterPath_Whitespace`: `#!  \n` → `ErrEmptyInterpreterPath`
-- [ ] `TestParse_ErrInterpreterNotAbsolute`: `#!python3\n` → `ErrInterpreterNotAbsolute`
-- [ ] `TestParse_ErrMissingEnvCommand`: `#!/usr/bin/env\n` → `ErrMissingEnvCommand`
-- [ ] `TestParse_ErrEnvFlagNotSupported`: `#!/usr/bin/env -S python3\n` → `ErrEnvFlagNotSupported`
-- [ ] `TestParse_ErrEnvAssignmentNotSupported`: `#!/usr/bin/env PYTHONPATH=. python3\n` → `ErrEnvAssignmentNotSupported`
-- [ ] `TestParse_ErrCommandNotFound`: `#!/usr/bin/env nonexistent_cmd\n` → `ErrCommandNotFound`
-- [ ] `TestParse_ErrShebangLineTooLong`: 256 バイト以内に改行なし → `ErrShebangLineTooLong`
-- [ ] `TestParse_ErrShebangCR`: `#!/bin/sh\r\n` → `ErrShebangCR`
+- [x] `TestParse_DirectForm`: `#!/bin/sh` → `InterpreterPath` が EvalSymlinks 解決後のパス
+- [x] `TestParse_DirectFormWithArgs`: `#!/bin/bash -e` → `/bin/bash` のみ抽出、`-e` は無視
+- [x] `TestParse_SpaceAfterShebang`: `#! /bin/sh` → 空白許容
+- [x] `TestParse_EnvForm`: `#!/usr/bin/env python3` → 3 フィールドすべて設定
+- [x] `TestParse_NotShebang_ELF`: ELF magic bytes → `nil, nil`
+- [x] `TestParse_NotShebang_Text`: 通常テキスト → `nil, nil`
+- [x] `TestParse_ErrEmptyInterpreterPath`: `#!\n` → `ErrEmptyInterpreterPath`
+- [x] `TestParse_ErrEmptyInterpreterPath_Whitespace`: `#!  \n` → `ErrEmptyInterpreterPath`
+- [x] `TestParse_ErrInterpreterNotAbsolute`: `#!python3\n` → `ErrInterpreterNotAbsolute`
+- [x] `TestParse_ErrMissingEnvCommand`: `#!/usr/bin/env\n` → `ErrMissingEnvCommand`
+- [x] `TestParse_ErrEnvFlagNotSupported`: `#!/usr/bin/env -S python3\n` → `ErrEnvFlagNotSupported`
+- [x] `TestParse_ErrEnvAssignmentNotSupported`: `#!/usr/bin/env PYTHONPATH=. python3\n` → `ErrEnvAssignmentNotSupported`
+- [x] `TestParse_ErrCommandNotFound`: `#!/usr/bin/env nonexistent_cmd\n` → `ErrCommandNotFound`
+- [x] `TestParse_ErrShebangLineTooLong`: 256 バイト以内に改行なし → `ErrShebangLineTooLong`
+- [x] `TestParse_ErrShebangCR`: `#!/bin/sh\r\n` → `ErrShebangCR`
 
 **ファイル**: `internal/shebang/parser_test.go`（IsShebangScript テスト）
 
-- [ ] `TestIsShebangScript_True`: shebang ファイル → `true`
-- [ ] `TestIsShebangScript_False_ELF`: ELF ファイル → `false`
-- [ ] `TestIsShebangScript_False_Text`: テキストファイル → `false`
-- [ ] `TestIsShebangScript_False_Empty`: 空ファイル → `false`
-- [ ] `TestIsShebangScript_False_OneByte`: 1 バイトファイル → `false`
+- [x] `TestIsShebangScript_True`: shebang ファイル → `true`
+- [x] `TestIsShebangScript_False_ELF`: ELF ファイル → `false`
+- [x] `TestIsShebangScript_False_Text`: テキストファイル → `false`
+- [x] `TestIsShebangScript_False_Empty`: 空ファイル → `false`
+- [x] `TestIsShebangScript_False_OneByte`: 1 バイトファイル → `false`
 
 この時点ではコンパイルエラー（パッケージ未作成）。
 
@@ -47,46 +47,46 @@
 
 **ファイル**: `internal/shebang/errors.go`
 
-- [ ] `ErrShebangLineTooLong` sentinel error
-- [ ] `ErrShebangCR` sentinel error
-- [ ] `ErrEmptyInterpreterPath` sentinel error
-- [ ] `ErrInterpreterNotAbsolute` sentinel error
-- [ ] `ErrMissingEnvCommand` sentinel error
-- [ ] `ErrEnvFlagNotSupported` sentinel error
-- [ ] `ErrEnvAssignmentNotSupported` sentinel error
-- [ ] `ErrCommandNotFound` sentinel error
+- [x] `ErrShebangLineTooLong` sentinel error
+- [x] `ErrShebangCR` sentinel error
+- [x] `ErrEmptyInterpreterPath` sentinel error
+- [x] `ErrInterpreterNotAbsolute` sentinel error
+- [x] `ErrMissingEnvCommand` sentinel error
+- [x] `ErrEnvFlagNotSupported` sentinel error
+- [x] `ErrEnvAssignmentNotSupported` sentinel error
+- [x] `ErrCommandNotFound` sentinel error
 
 **ファイル**: `internal/shebang/parser.go`
 
-- [ ] `ShebangInfo` 型定義
-- [ ] `Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error)` 実装
-  - [ ] `fs.SafeOpenFile` でファイルオープン（シンボリックリンク攻撃防止）
-  - [ ] ファイル先頭 256 バイト読み取り
-  - [ ] `#!` プレフィックスチェック（非 shebang → `nil, nil`）
-  - [ ] 改行検出（256 バイト以内に `\n` なし → `ErrShebangLineTooLong`）
-  - [ ] `\r` 検出 → `ErrShebangCR`
-  - [ ] トークン分割（空白スキップ + `strings.Fields`）
-  - [ ] 空トークン → `ErrEmptyInterpreterPath`
-  - [ ] 絶対パスチェック → `ErrInterpreterNotAbsolute`
-  - [ ] 元のインタープリタトークンを保持（`rawInterpreter := tokens[0]`）
-  - [ ] `filepath.EvalSymlinks` でシンボリックリンク解決（`resolvedInterpreter`）
-  - [ ] `env` 判定（`filepath.Base(rawInterpreter) == "env"`、シンボリックリンク解決前のトークンで判定）
-  - [ ] env 形式: `parseEnvForm(resolvedInterpreter, tokens[1:])` 呼び出し
-  - [ ] 直接形式: `ShebangInfo{InterpreterPath: resolvedInterpreter}` 返却
-- [ ] `parseEnvForm(envPath string, args []string) (*ShebangInfo, error)` 実装
-  - [ ] 引数なし → `ErrMissingEnvCommand`
-  - [ ] フラグ検出（`-` prefix）→ `ErrEnvFlagNotSupported`
-  - [ ] 変数代入検出（`=` 含む）→ `ErrEnvAssignmentNotSupported`
-  - [ ] `exec.LookPath(cmdArg)` で PATH 解決
-  - [ ] 解決不可 → `ErrCommandNotFound`
-  - [ ] `filepath.EvalSymlinks` で解決済みパスのシンボリックリンク解決
-- [ ] `IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error)` 実装
-  - [ ] `fs.SafeOpenFile` でファイルオープン
-  - [ ] 先頭 2 バイト読み取り（`io.EOF` → `false, nil`、他エラー → エラー返却）
+- [x] `ShebangInfo` 型定義（`Info` として実装）
+- [x] `Parse(filePath string, fs safefileio.FileSystem) (*ShebangInfo, error)` 実装
+  - [x] `fs.SafeOpenFile` でファイルオープン（シンボリックリンク攻撃防止）
+  - [x] ファイル先頭 256 バイト読み取り
+  - [x] `#!` プレフィックスチェック（非 shebang → `nil, nil`）
+  - [x] 改行検出（256 バイト以内に `\n` なし → `ErrShebangLineTooLong`）
+  - [x] `\r` 検出 → `ErrShebangCR`
+  - [x] トークン分割（空白スキップ + `strings.Fields`）
+  - [x] 空トークン → `ErrEmptyInterpreterPath`
+  - [x] 絶対パスチェック → `ErrInterpreterNotAbsolute`
+  - [x] 元のインタープリタトークンを保持（`rawInterpreter := tokens[0]`）
+  - [x] `filepath.EvalSymlinks` でシンボリックリンク解決（`resolvedInterpreter`）
+  - [x] `env` 判定（`filepath.Base(rawInterpreter) == "env"`、シンボリックリンク解決前のトークンで判定）
+  - [x] env 形式: `parseEnvForm(resolvedInterpreter, tokens[1:])` 呼び出し
+  - [x] 直接形式: `ShebangInfo{InterpreterPath: resolvedInterpreter}` 返却
+- [x] `parseEnvForm(envPath string, args []string) (*ShebangInfo, error)` 実装
+  - [x] 引数なし → `ErrMissingEnvCommand`
+  - [x] フラグ検出（`-` prefix）→ `ErrEnvFlagNotSupported`
+  - [x] 変数代入検出（`=` 含む）→ `ErrEnvAssignmentNotSupported`
+  - [x] `exec.LookPath(cmdArg)` で PATH 解決
+  - [x] 解決不可 → `ErrCommandNotFound`
+  - [x] `filepath.EvalSymlinks` で解決済みパスのシンボリックリンク解決
+- [x] `IsShebangScript(filePath string, fs safefileio.FileSystem) (bool, error)` 実装
+  - [x] `fs.SafeOpenFile` でファイルオープン
+  - [x] 先頭 2 バイト読み取り（`io.EOF` → `false, nil`、他エラー → エラー返却）
 
 ### 1.3 テスト実行
 
-- [ ] `go test -tags test -v ./internal/shebang/...` — 全テスト GREEN
+- [x] `go test -tags test -v ./internal/shebang/...` — 全テスト GREEN
 
 ---
 
