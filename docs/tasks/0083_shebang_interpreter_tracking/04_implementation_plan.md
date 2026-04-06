@@ -7,7 +7,7 @@
 - [x] Phase 3: record 時ロジック
 - [x] Phase 4: runner 時ロジック
 - [x] Phase 5: group executor 統合
-- [ ] Phase 6: 最終検証
+- [x] Phase 6: 最終検証
 
 ---
 
@@ -243,12 +243,12 @@
 
 ### 6.1 全テスト実行
 
-- [ ] `make test` — リポジトリ全体のテストが全て GREEN
+- [x] `make test` — リポジトリ全体のテストが全て GREEN
 
 ### 6.2 コード品質
 
-- [ ] `make fmt` — フォーマット差分がないこと
-- [ ] `make lint` — lint エラーがないこと
+- [x] `make fmt` — フォーマット差分がないこと
+- [x] `make lint` — lint エラーがないこと
 
 ---
 
