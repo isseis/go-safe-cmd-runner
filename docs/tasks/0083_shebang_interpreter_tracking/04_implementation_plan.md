@@ -6,7 +6,7 @@
 - [x] Phase 2: スキーマ変更
 - [x] Phase 3: record 時ロジック
 - [x] Phase 4: runner 時ロジック
-- [ ] Phase 5: group executor 統合
+- [x] Phase 5: group executor 統合
 - [ ] Phase 6: 最終検証
 
 ---
@@ -213,29 +213,29 @@
 
 **ファイル**: `internal/runner/group_executor_test.go` に追加
 
-- [ ] `TestVerifyGroupFiles_ShebangInterpreter_OK`: モックで正常系
-- [ ] `TestVerifyGroupFiles_ShebangInterpreter_Error`: モックでエラー → 実行拒否
+- [x] `TestVerifyGroupFiles_ShebangInterpreter_OK`: モックで正常系
+- [x] `TestVerifyGroupFiles_ShebangInterpreter_Error`: モックでエラー → 実行拒否
 
 既存テストのモック設定に `VerifyCommandShebangInterpreter` を追加:
 
-- [ ] 既存テストの `MockManager` 設定に `.On("VerifyCommandShebangInterpreter", ...).Return(nil)` を追加
+- [x] 既存テストの `MockManager` 設定に `.On("VerifyCommandShebangInterpreter", ...).Return(nil)` を追加
 
 ### 5.2 本体実装（GREEN）
 
 **ファイル**: `internal/runner/group_executor.go`
 
-- [ ] `verifyGroupFiles` が `runtimeGlobal` も受け取るように変更
-- [ ] `verifyGroupFiles` の DynLibDeps 検証ループの後にインタープリタ検証ループを追加
-  - [ ] `for _, cmd := range runtimeGroup.Commands`
-  - [ ] `executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)` で最終プロセス環境を構築
-  - [ ] `EnvVar` から値のみを抽出した `finalEnv map[string]string` を作成
-  - [ ] `ge.verificationManager.ResolvePath(cmd.ExpandedCmd)` でパス解決
-  - [ ] `ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv)` 呼び出し
-  - [ ] エラー時はログ出力 + `return siErr`
+- [x] `verifyGroupFiles` が `runtimeGlobal` も受け取るように変更
+- [x] `verifyGroupFiles` の DynLibDeps 検証ループの後にインタープリタ検証ループを追加
+  - [x] `for _, cmd := range runtimeGroup.Commands`
+  - [x] `executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)` で最終プロセス環境を構築
+  - [x] `EnvVar` から値のみを抽出した `finalEnv map[string]string` を作成
+  - [x] `ge.verificationManager.ResolvePath(cmd.ExpandedCmd)` でパス解決
+  - [x] `ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv)` 呼び出し
+  - [x] エラー時はログ出力 + `return siErr`
 
 ### 5.3 テスト実行
 
-- [ ] `go test -tags test -v ./internal/runner/...` — 全テスト GREEN
+- [x] `go test -tags test -v ./internal/runner/...` — 全テスト GREEN
 
 ---
 

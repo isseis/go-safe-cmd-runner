@@ -196,7 +196,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 
 	// 7. Verify group files before execution
-	if err := ge.verifyGroupFiles(runtimeGroup); err != nil {
+	if err := ge.verifyGroupFiles(runtimeGroup, runtimeGlobal); err != nil {
 		return err
 	}
 
@@ -336,7 +336,7 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 // verifyGroupFiles verifies files specified in the group before execution.
 // After successful verification it copies the computed content hashes into each
 // RuntimeCommand so that downstream ELF analysis can skip re-hashing the binary.
-func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) error {
+func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) error {
 	if ge.verificationManager == nil {
 		return nil
 	}
@@ -398,6 +398,33 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 				"command", resolvedPath,
 				"error", dlErr)
 			return dlErr
+		}
+	}
+
+	// Verify shebang interpreter for each command.
+	// This is done after dynlib verification to keep each concern in its own loop.
+	for _, cmd := range runtimeGroup.Commands {
+		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
+		if resolveErr != nil {
+			slog.Warn("Path resolution failed during shebang verification; skipping shebang check for this command",
+				"group", runnertypes.ExtractGroupName(runtimeGroup),
+				"command", cmd.ExpandedCmd,
+				"error", resolveErr)
+			continue
+		}
+
+		envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+		finalEnv := make(map[string]string, len(envMap))
+		for k, v := range envMap {
+			finalEnv[k] = v.Value
+		}
+
+		if siErr := ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv); siErr != nil {
+			slog.Error("Shebang interpreter verification failed",
+				"group", runnertypes.ExtractGroupName(runtimeGroup),
+				"command", resolvedPath,
+				"error", siErr)
+			return siErr
 		}
 	}
 

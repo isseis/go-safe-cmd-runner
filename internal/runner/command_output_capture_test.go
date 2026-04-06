@@ -114,6 +114,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	// Mock validator
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
@@ -289,6 +290,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			mockVerificationManager.On("VerifyGroupFiles", matchRuntimeGroupWithName("test-group")).Return(&verification.Result{}, nil)
 			mockVerificationManager.On("ResolvePath", "/bin/sh").Return("/bin/sh", nil)
 			mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
+			mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)

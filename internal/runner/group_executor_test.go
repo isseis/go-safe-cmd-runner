@@ -426,6 +426,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -498,6 +499,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/some-command").Return("/bin/some-command", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -575,6 +577,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	// Mock verification manager to resolve paths
 	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
@@ -1388,6 +1391,9 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 
 	// Setup default behavior for dynlib verification - return nil (no error)
 	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil).Maybe()
+
+	// Setup default behavior for shebang interpreter verification - return nil (no error)
+	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	return mockValidator, mockVerificationManager
 }
@@ -2691,6 +2697,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 			mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 			mockVerificationManager.On("ResolvePath", mock.Anything).Return("/bin/false", nil)
 			mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
+			mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
@@ -3082,6 +3089,7 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 	// VerifyCommandDynLibDeps is expected ONLY for the command binary (/bin/echo),
 	// not for the verify_files entry (/etc/hosts).
 	mockVerificationManager.On("VerifyCommandDynLibDeps", "/bin/echo").Return(nil)
+	mockVerificationManager.On("VerifyCommandShebangInterpreter", "/bin/echo", mock.Anything).Return(nil)
 
 	// Mock command execution to succeed.
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -3096,6 +3104,8 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 	// not for /etc/hosts.
 	mockVerificationManager.AssertCalled(t, "VerifyCommandDynLibDeps", "/bin/echo")
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", "/etc/hosts")
+	mockVerificationManager.AssertCalled(t, "VerifyCommandShebangInterpreter", "/bin/echo", mock.Anything)
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", "/etc/hosts", mock.Anything)
 	mockVerificationManager.AssertExpectations(t)
 }
 
@@ -3145,17 +3155,19 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 	resolveErr := errors.New("command not found")
 	mockVerificationManager.On("ResolvePath", "/nonexistent/command").Return("", resolveErr)
 
-	// VerifyCommandDynLibDeps must NOT be called because ResolvePath failed.
-	// (No mock set up; testify will fail if it is called unexpectedly.)
+	// VerifyCommandDynLibDeps and VerifyCommandShebangInterpreter must NOT be called
+	// because ResolvePath failed.
+	// (No mocks set up; testify will fail if they are called unexpectedly.)
 
 	ctx := context.Background()
 	// ExecuteGroup returns an error from executeCommandInGroup (path resolution
 	// failure at execution time), but verifyGroupFiles itself must not error out
 	// due to the dynlib-phase ResolvePath failure.
-	// We only care that VerifyCommandDynLibDeps was never called.
+	// We only care that neither DynLib nor Shebang check was called.
 	_ = ge.ExecuteGroup(ctx, group, runtimeGlobal)
 
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", mock.Anything, mock.Anything)
 	mockVerificationManager.AssertExpectations(t)
 }
 
@@ -3216,6 +3228,7 @@ func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
 	// and once in executeCommandInGroup (for path validation).
 	mockVM.On("ResolvePath", cmdPath).Return(resolvedPath, nil)
 	mockVM.On("VerifyCommandDynLibDeps", resolvedPath).Return(nil)
+	mockVM.On("VerifyCommandShebangInterpreter", resolvedPath, mock.Anything).Return(nil)
 
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
 	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
@@ -3233,4 +3246,112 @@ func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
 	require.NoError(t, err)
 
 	mockRM.AssertExpectations(t)
+}
+
+// TestVerifyGroupFiles_ShebangInterpreter_OK verifies that VerifyCommandShebangInterpreter
+// is called for each command and execution proceeds when it returns nil.
+func TestVerifyGroupFiles_ShebangInterpreter_OK(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVM := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "script", Cmd: "/usr/local/bin/deploy.sh"},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVM.On("ResolvePath", "/usr/local/bin/deploy.sh").Return("/usr/local/bin/deploy.sh", nil)
+	mockVM.On("VerifyCommandDynLibDeps", "/usr/local/bin/deploy.sh").Return(nil)
+	mockVM.On("VerifyCommandShebangInterpreter", "/usr/local/bin/deploy.sh", mock.Anything).Return(nil)
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.NoError(t, err)
+
+	mockVM.AssertCalled(t, "VerifyCommandShebangInterpreter", "/usr/local/bin/deploy.sh", mock.Anything)
+	mockVM.AssertExpectations(t)
+}
+
+// TestVerifyGroupFiles_ShebangInterpreter_Error verifies that when
+// VerifyCommandShebangInterpreter returns an error, ExecuteGroup fails immediately
+// and ExecuteCommand is never invoked.
+func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVM := new(verificationtesting.MockManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "script", Cmd: "/usr/local/bin/deploy.sh"},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	shebangErr := &verification.ErrInterpreterRecordNotFound{Path: "/usr/bin/python3"}
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+
+	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVM.On("ResolvePath", "/usr/local/bin/deploy.sh").Return("/usr/local/bin/deploy.sh", nil)
+	mockVM.On("VerifyCommandDynLibDeps", "/usr/local/bin/deploy.sh").Return(nil)
+	mockVM.On("VerifyCommandShebangInterpreter", "/usr/local/bin/deploy.sh", mock.Anything).Return(shebangErr)
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.Error(t, err)
+
+	var notFound *verification.ErrInterpreterRecordNotFound
+	assert.True(t, errors.As(err, &notFound))
+	assert.Equal(t, "/usr/bin/python3", notFound.Path)
+	mockRM.AssertNotCalled(t, "ExecuteCommand")
+	mockVM.AssertExpectations(t)
 }
