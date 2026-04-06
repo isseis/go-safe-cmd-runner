@@ -29,4 +29,8 @@ var (
 	// the same hash record file. This can happen when the SHA256 fallback
 	// encoding is used for very long paths and the truncated hashes collide.
 	ErrHashFilePathCollision = errors.New("hash file path collision detected")
+
+	// ErrRecursiveShebang is returned when an interpreter is itself a shebang script.
+	// Detected in resolveShebangInfo via shebang.IsShebangScript.
+	ErrRecursiveShebang = errors.New("interpreter is a shebang script")
 )

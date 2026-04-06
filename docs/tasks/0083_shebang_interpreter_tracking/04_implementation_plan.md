@@ -4,7 +4,7 @@
 
 - [x] Phase 1: shebang パーサー（テスト先行）
 - [x] Phase 2: スキーマ変更
-- [ ] Phase 3: record 時ロジック
+- [x] Phase 3: record 時ロジック
 - [ ] Phase 4: runner 時ロジック
 - [ ] Phase 5: group executor 統合
 - [ ] Phase 6: 最終検証
@@ -117,39 +117,39 @@
 
 **ファイル**: `internal/filevalidator/validator_test.go` に追加
 
-- [ ] `TestSaveRecord_ShebangDirect`: `#!/bin/sh` スクリプトの record → `ShebangInterpreter` 設定 + インタープリタ独立 Record 存在
-- [ ] `TestSaveRecord_ShebangEnv`: `#!/usr/bin/env sh` スクリプトの record → 3 フィールド設定 + env / 解決先の独立 Record 存在
-- [ ] `TestSaveRecord_ShebangELF`: ELF バイナリの record → `ShebangInterpreter` nil
-- [ ] `TestSaveRecord_ShebangText`: shebang なしテキスト → `ShebangInterpreter` nil
-- [ ] `TestSaveRecord_ShebangRecursive`: インタープリタが shebang スクリプト → エラー
-- [ ] `TestSaveRecord_ShebangSymlink`: シンボリックリンク → 解決済みパスが記録される
+- [x] `TestSaveRecord_ShebangDirect`: `#!/bin/sh` スクリプトの record → `ShebangInterpreter` 設定 + インタープリタ独立 Record 存在
+- [x] `TestSaveRecord_ShebangEnv`: `#!/usr/bin/env sh` スクリプトの record → 3 フィールド設定 + env / 解決先の独立 Record 存在
+- [x] `TestSaveRecord_ShebangELF`: ELF バイナリの record → `ShebangInterpreter` nil
+- [x] `TestSaveRecord_ShebangText`: shebang なしテキスト → `ShebangInterpreter` nil
+- [x] `TestSaveRecord_ShebangRecursive`: インタープリタが shebang スクリプト → エラー
+- [x] `TestSaveRecord_ShebangSymlink`: シンボリックリンク → 解決済みパスが記録される
 
 ### 3.2 本体実装（GREEN）
 
 **ファイル**: `internal/filevalidator/errors.go`
 
-- [ ] `ErrRecursiveShebang` sentinel error
+- [x] `ErrRecursiveShebang` sentinel error
 
 **ファイル**: `internal/filevalidator/validator.go`
 
-- [ ] `resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error)` ヘルパー実装
-  - [ ] `shebang.Parse(filePath, v.fileSystem)` 呼び出し
-  - [ ] `shebang.IsShebangScript(..., v.fileSystem)` で再帰 shebang チェック
-  - [ ] env 形式では `ResolvedPath` 側も再帰 shebang チェック
-- [ ] `SaveRecord` に shebang 事前処理を追加
-  - [ ] `resolveShebangInfo` を `Store.Update` 前に実行
-  - [ ] `recordInterpreter(interpreterPath)` でインタープリタ Record 作成
-  - [ ] env 形式の場合は `recordInterpreter(resolvedPath)` も呼び出し
-  - [ ] インタープリタ記録成功後に `updateAnalysisRecord(..., shebangInfo)` を呼び出し
-- [ ] `updateAnalysisRecord` の引数変更: `shebangInfo *shebang.ShebangInfo` を追加
-  - [ ] `record.ShebangInterpreter` に `ShebangInterpreterInfo` を設定
-  - [ ] 非 shebang の場合は `record.ShebangInterpreter = nil`
-- [ ] `recordInterpreter(interpreterPath string) error` ヘルパー実装
-  - [ ] `v.SaveRecord(interpreterPath, true)` を呼び出し（force=true）
+- [x] `resolveShebangInfo(filePath string) (*shebang.ShebangInfo, error)` ヘルパー実装
+  - [x] `shebang.Parse(filePath, v.fileSystem)` 呼び出し
+  - [x] `shebang.IsShebangScript(..., v.fileSystem)` で再帰 shebang チェック
+  - [x] env 形式では `ResolvedPath` 側も再帰 shebang チェック
+- [x] `SaveRecord` に shebang 事前処理を追加
+  - [x] `resolveShebangInfo` を `Store.Update` 前に実行
+  - [x] `recordInterpreter(interpreterPath)` でインタープリタ Record 作成
+  - [x] env 形式の場合は `recordInterpreter(resolvedPath)` も呼び出し
+  - [x] インタープリタ記録成功後に `updateAnalysisRecord(..., shebangInfo)` を呼び出し
+- [x] `updateAnalysisRecord` の引数変更: `shebangInfo *shebang.ShebangInfo` を追加
+  - [x] `record.ShebangInterpreter` に `ShebangInterpreterInfo` を設定
+  - [x] 非 shebang の場合は `record.ShebangInterpreter = nil`
+- [x] `recordInterpreter(interpreterPath string) error` ヘルパー実装
+  - [x] `v.SaveRecord(interpreterPath, true)` を呼び出し（force=true）
 
 ### 3.3 テスト実行
 
-- [ ] `go test -tags test -v ./internal/filevalidator/...` — 全テスト GREEN
+- [x] `go test -tags test -v ./internal/filevalidator/...` — 全テスト GREEN
 
 ---
 

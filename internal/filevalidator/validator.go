@@ -17,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
 // SyscallNumberTable provides syscall name and network classification by number.
@@ -201,13 +202,33 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 		return "", "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
+	// Analyze shebang and record interpreter binaries before persisting this record.
+	// This ensures atomic failure: if interpreter recording fails, the script record
+	// is not written either.
+	shebangInfo, err := v.resolveShebangInfo(targetPath.String())
+	if err != nil {
+		return "", "", err
+	}
+	if shebangInfo != nil {
+		if err := v.recordInterpreter(shebangInfo.InterpreterPath); err != nil {
+			return "", "", fmt.Errorf("failed to record interpreter %s: %w",
+				shebangInfo.InterpreterPath, err)
+		}
+		if shebangInfo.ResolvedPath != "" {
+			if err := v.recordInterpreter(shebangInfo.ResolvedPath); err != nil {
+				return "", "", fmt.Errorf("failed to record resolved command %s: %w",
+					shebangInfo.ResolvedPath, err)
+			}
+		}
+	}
+
 	// Get the path for the hash file
 	hashFilePath, err := v.GetHashFilePath(targetPath)
 	if err != nil {
 		return "", "", err
 	}
 
-	contentHash, err := v.updateAnalysisRecord(targetPath, hash, force)
+	contentHash, err := v.updateAnalysisRecord(targetPath, hash, force, shebangInfo)
 	if err != nil {
 		return "", "", err
 	}
@@ -221,7 +242,7 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 // which avoids a redundant Load() call and keeps error handling in sync with
 // Store.Update()'s own semantics (e.g., SchemaVersionMismatchError is rejected
 // by Update before the callback runs).
-func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash string, force bool) (string, error) {
+func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash string, force bool, shebangInfo *shebang.Info) (string, error) {
 	contentHash := fmt.Sprintf("%s:%s", v.algorithm.Name(), hash)
 	err := v.store.Update(filePath, func(record *fileanalysis.Record) error {
 		// record.FilePath is non-empty when a valid existing record was loaded.
@@ -282,6 +303,17 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			return err
 		}
 
+		// Record shebang interpreter info.
+		if shebangInfo != nil {
+			record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
+				InterpreterPath: shebangInfo.InterpreterPath,
+				CommandName:     shebangInfo.CommandName,
+				ResolvedPath:    shebangInfo.ResolvedPath,
+			}
+		} else {
+			record.ShebangInterpreter = nil
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -302,6 +334,51 @@ func (v *Validator) LoadRecord(filePath string) (*fileanalysis.Record, error) {
 		return nil, fmt.Errorf("failed to load analysis record: %w", err)
 	}
 	return record, nil
+}
+
+// resolveShebangInfo parses the shebang line of the file at filePath and
+// returns the interpreter info. Returns (nil, nil) for non-shebang files.
+// Returns an error wrapping ErrRecursiveShebang if the interpreter is itself
+// a shebang script.
+func (v *Validator) resolveShebangInfo(filePath string) (*shebang.Info, error) {
+	shebangInfo, err := shebang.Parse(filePath, v.fileSystem)
+	if err != nil {
+		return nil, fmt.Errorf("shebang analysis failed for %s: %w", filePath, err)
+	}
+	if shebangInfo == nil {
+		return nil, nil
+	}
+
+	isScript, err := shebang.IsShebangScript(shebangInfo.InterpreterPath, v.fileSystem)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check interpreter %s: %w",
+			shebangInfo.InterpreterPath, err)
+	}
+	if isScript {
+		return nil, fmt.Errorf("interpreter %s is itself a shebang script: %w",
+			shebangInfo.InterpreterPath, ErrRecursiveShebang)
+	}
+
+	if shebangInfo.ResolvedPath != "" {
+		isScript, err = shebang.IsShebangScript(shebangInfo.ResolvedPath, v.fileSystem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check resolved command %s: %w",
+				shebangInfo.ResolvedPath, err)
+		}
+		if isScript {
+			return nil, fmt.Errorf("resolved command %s is itself a shebang script: %w",
+				shebangInfo.ResolvedPath, ErrRecursiveShebang)
+		}
+	}
+
+	return shebangInfo, nil
+}
+
+// recordInterpreter creates an independent Record for an interpreter binary.
+// Uses force=true to ensure the record is always updated.
+func (v *Validator) recordInterpreter(interpreterPath string) error {
+	_, _, err := v.SaveRecord(interpreterPath, true)
+	return err
 }
 
 // SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
