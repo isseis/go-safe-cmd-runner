@@ -3,7 +3,7 @@
 ## 進捗状況
 
 - [x] Phase 1: shebang パーサー（テスト先行）
-- [ ] Phase 2: スキーマ変更
+- [x] Phase 2: スキーマ変更
 - [ ] Phase 3: record 時ロジック
 - [ ] Phase 4: runner 時ロジック
 - [ ] Phase 5: group executor 統合
@@ -96,18 +96,18 @@
 
 **ファイル**: `internal/fileanalysis/schema.go`
 
-- [ ] `ShebangInterpreterInfo` 構造体を追加
-  - [ ] `InterpreterPath string` (`json:"interpreter_path"`)
-  - [ ] `CommandName string` (`json:"command_name,omitempty"`)
-  - [ ] `ResolvedPath string` (`json:"resolved_path,omitempty"`)
-- [ ] `Record` に `ShebangInterpreter *ShebangInterpreterInfo` フィールドを追加 (`json:"shebang_interpreter,omitempty"`)
-- [ ] `CurrentSchemaVersion` を 10 → 11 に更新
-- [ ] コメントに `// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.` を追記
+- [x] `ShebangInterpreterInfo` 構造体を追加
+  - [x] `InterpreterPath string` (`json:"interpreter_path"`)
+  - [x] `CommandName string` (`json:"command_name,omitempty"`)
+  - [x] `ResolvedPath string` (`json:"resolved_path,omitempty"`)
+- [x] `Record` に `ShebangInterpreter *ShebangInterpreterInfo` フィールドを追加 (`json:"shebang_interpreter,omitempty"`)
+- [x] `CurrentSchemaVersion` を 10 → 11 に更新
+- [x] コメントに `// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.` を追記
 
 ### 2.2 テスト実行
 
-- [ ] `go test -tags test -v ./internal/fileanalysis/...` — スキーマバージョンテストが GREEN
-- [ ] 既存テストが壊れていないことを確認
+- [x] `go test -tags test -v ./internal/fileanalysis/...` — スキーマバージョンテストが GREEN
+- [x] 既存テストが壊れていないことを確認
 
 ---
 

@@ -18,11 +18,12 @@ const (
 	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
 	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
+	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
 	// Load returns SchemaVersionMismatchError for records with schema_version != 10.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 10
+	CurrentSchemaVersion = 11
 )
 
 // Record represents a unified file analysis record containing both
@@ -62,6 +63,10 @@ type Record struct {
 	// SymbolAnalysis contains the symbol analysis result cached at record time.
 	// nil means not analyzed (static binary, non-ELF, or old schema record).
 	SymbolAnalysis *SymbolAnalysisData `json:"symbol_analysis,omitempty"`
+
+	// ShebangInterpreter holds interpreter information parsed from the file's
+	// shebang line. nil for non-script files (ELF binaries, text files, etc.).
+	ShebangInterpreter *ShebangInterpreterInfo `json:"shebang_interpreter,omitempty"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.
@@ -75,6 +80,25 @@ type LibEntry struct {
 
 	// Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
 	Hash string `json:"hash"`
+}
+
+// ShebangInterpreterInfo records the interpreter associated with a script file.
+// For direct form (e.g., "#!/bin/sh"), only InterpreterPath is set.
+// For env form (e.g., "#!/usr/bin/env python3"), all three fields are set.
+type ShebangInterpreterInfo struct {
+	// InterpreterPath is the shebang interpreter path, symlink-resolved.
+	// For direct form: the interpreter itself (e.g., "/usr/bin/dash").
+	// For env form: the env binary path (e.g., "/usr/bin/env").
+	InterpreterPath string `json:"interpreter_path"`
+
+	// CommandName is the command passed to env (e.g., "python3").
+	// Empty for direct form.
+	CommandName string `json:"command_name,omitempty"`
+
+	// ResolvedPath is the PATH-resolved absolute path of CommandName,
+	// symlink-resolved (e.g., "/usr/bin/python3.11").
+	// Empty for direct form.
+	ResolvedPath string `json:"resolved_path,omitempty"`
 }
 
 // SyscallInfo is an alias for common.SyscallInfo.
