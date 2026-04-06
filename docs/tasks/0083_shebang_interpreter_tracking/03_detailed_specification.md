@@ -623,22 +623,60 @@ func (m *Manager) verifyEnvPathResolution(
 // lookPathInEnv resolves a command name using the given PATH value.
 // This is used instead of exec.LookPath because we need to use the
 // execution environment's PATH, not the current process's PATH.
+//
+// Semantics are aligned with exec.LookPath:
+//   - If name contains a path separator, PATH is not searched; the
+//     name is treated as an explicit path and validated directly.
+//   - Only regular files with at least one execute bit set are
+//     considered valid.
 func lookPathInEnv(name, pathEnv string) (string, error) {
+    // If the command contains a path separator, treat it as an explicit path.
+    if containsPathSeparator(name) {
+        if isExecutableFile(name) {
+            return name, nil
+        }
+        return "", fmt.Errorf("command %s not found in PATH", name)
+    }
     for _, dir := range filepath.SplitList(pathEnv) {
         if dir == "" {
             dir = "."
         }
         candidate := filepath.Join(dir, name)
-        info, err := os.Stat(candidate)
-        if err != nil {
-            continue
-        }
-        // Check if executable (any execute bit set).
-        if info.Mode()&0o111 != 0 {
+        if isExecutableFile(candidate) {
             return candidate, nil
         }
     }
     return "", fmt.Errorf("command %s not found in PATH", name)
+}
+
+// containsPathSeparator reports whether name contains the OS-specific
+// path separator. This mirrors the behavior of exec.LookPath, which
+// treats such names as explicit paths and does not search PATH.
+func containsPathSeparator(name string) bool {
+    for i := 0; i < len(name); i++ {
+        if name[i] == byte(os.PathSeparator) {
+            return true
+        }
+    }
+    return false
+}
+
+// isExecutableFile reports whether the given path refers to a regular
+// file with at least one execute bit set. Directories and other
+// non-regular files are rejected, even if they have execute bits.
+func isExecutableFile(path string) bool {
+    info, err := os.Stat(path)
+    if err != nil {
+        return false
+    }
+    if !info.Mode().IsRegular() {
+        return false
+    }
+    // Check if any execute bit is set in the file permissions.
+    if info.Mode().Perm()&0o111 == 0 {
+        return false
+    }
+    return true
 }
 ```
 
