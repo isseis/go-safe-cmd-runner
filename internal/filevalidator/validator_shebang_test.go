@@ -8,20 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// createExecutableScript creates a script file with the given content and
-// executable permissions.
-func createExecutableScript(t *testing.T, dir, name, content string) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o755))
-	return path
-}
 
 // TestSaveRecord_ShebangDirect verifies that SaveRecord on a "#!/bin/sh" script
 // records the ShebangInterpreter field and creates an independent record for
@@ -33,7 +25,7 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)
 
-	script := createExecutableScript(t, scriptDir, "script.sh", "#!/bin/sh\necho hello\n")
+	script := commontesting.WriteExecutableFile(t, scriptDir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
 	validator, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
 
@@ -68,7 +60,7 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)
 
-	script := createExecutableScript(t, scriptDir, "script.py", "#!/usr/bin/env sh\necho hello\n")
+	script := commontesting.WriteExecutableFile(t, scriptDir, "script.py", []byte("#!/usr/bin/env sh\necho hello\n"))
 	validator, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
 
@@ -144,11 +136,11 @@ func TestSaveRecord_ShebangRecursive(t *testing.T) {
 	dir := safeTempDir(t)
 
 	// Create a fake interpreter that is itself a shebang script.
-	fakeInterp := createExecutableScript(t, dir, "fake_interpreter", "#!/bin/sh\necho wrapper\n")
+	fakeInterp := commontesting.WriteExecutableFile(t, dir, "fake_interpreter", []byte("#!/bin/sh\necho wrapper\n"))
 
 	// Create a script pointing to the fake interpreter.
-	script := createExecutableScript(t, dir, "script.sh",
-		fmt.Sprintf("#!%s\necho hello\n", fakeInterp))
+	script := commontesting.WriteExecutableFile(t, dir, "script.sh",
+		[]byte(fmt.Sprintf("#!%s\necho hello\n", fakeInterp)))
 
 	validator, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
@@ -165,7 +157,7 @@ func TestSaveRecord_ShebangSymlink(t *testing.T) {
 	hashDir := safeTempDir(t)
 	dir := safeTempDir(t)
 
-	script := createExecutableScript(t, dir, "script.sh", "#!/bin/sh\necho hello\n")
+	script := commontesting.WriteExecutableFile(t, dir, "script.sh", []byte("#!/bin/sh\necho hello\n"))
 	symlinkPath := filepath.Join(dir, "link_to_script.sh")
 	require.NoError(t, os.Symlink(script, symlinkPath))
 

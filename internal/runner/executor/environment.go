@@ -91,6 +91,16 @@ func BuildProcessEnvironment(
 	return result
 }
 
+// EnvVarValues extracts the Value field from each entry in an EnvVar map,
+// returning a plain string map suitable for use where origin metadata is not needed.
+func EnvVarValues(m map[string]EnvVar) map[string]string {
+	result := make(map[string]string, len(m))
+	for k, v := range m {
+		result[k] = v.Value
+	}
+	return result
+}
+
 // getSystemEnvironment retrieves all system environment variables as a map.
 func getSystemEnvironment() map[string]string {
 	result := make(map[string]string)

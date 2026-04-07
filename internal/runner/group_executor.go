@@ -392,11 +392,7 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		}
 
 		// Verify shebang interpreter.
-		envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
-		finalEnv := make(map[string]string, len(envMap))
-		for k, v := range envMap {
-			finalEnv[k] = v.Value
-		}
+		finalEnv := executor.EnvVarValues(executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd))
 		if siErr := ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv); siErr != nil {
 			slog.Error("Shebang interpreter verification failed",
 				"group", groupName,
@@ -463,12 +459,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		"group", groupSpec.Name,
 		"final_vars_count", len(envMap))
 
-	// Extract values for validation and ExecuteCommand
-	// Note: Origin metadata is stripped here, which is why Phase 2 update is needed
-	envVars := make(map[string]string, len(envMap))
-	for k, v := range envMap {
-		envVars[k] = v.Value
-	}
+	// Extract values for validation and ExecuteCommand (origin metadata not needed here).
+	envVars := executor.EnvVarValues(envMap)
 
 	// Validate resolved environment variables
 	if err := ge.validator.ValidateAllEnvironmentVars(envVars); err != nil {

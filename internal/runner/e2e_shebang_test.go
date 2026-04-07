@@ -23,14 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// createShebangScript writes a script file with the given content and executable permissions.
-func createShebangScript(t *testing.T, dir, name, content string) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o755))
-	return path
-}
-
 // TestIntegration_ShebangVerification_DirectForm tests the full record → verification
 // pipeline for a script with a direct-form shebang (e.g. #!/bin/sh).
 //
@@ -40,7 +32,7 @@ func TestIntegration_ShebangVerification_DirectForm(t *testing.T) {
 	scriptDir := commontesting.SafeTempDir(t)
 
 	// Step 1 (record phase): create a shebang script and save its hash record.
-	scriptPath := createShebangScript(t, scriptDir, "deploy.sh", "#!/bin/sh\necho hello\n")
+	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
@@ -65,7 +57,7 @@ func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
 
 	// Step 1 (record phase): create a shebang script and save its hash record.
 	// SaveRecord also records /usr/bin/env and the resolved sh binary automatically.
-	scriptPath := createShebangScript(t, scriptDir, "process.sh", "#!/usr/bin/env sh\necho hello\n")
+	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "process.sh", []byte("#!/usr/bin/env sh\necho hello\n"))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)
@@ -89,7 +81,7 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	scriptDir := commontesting.SafeTempDir(t)
 
 	// Step 1 (record phase): record the script (which also records the interpreter).
-	scriptPath := createShebangScript(t, scriptDir, "deploy.sh", "#!/bin/sh\necho hello\n")
+	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "deploy.sh", []byte("#!/bin/sh\necho hello\n"))
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	require.NoError(t, err)
 	_, _, err = validator.SaveRecord(scriptPath, false)

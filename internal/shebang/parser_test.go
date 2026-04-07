@@ -21,22 +21,15 @@ func realFS() safefileio.FileSystem {
 }
 
 // writeScript creates a script file with the given content in a temp dir.
-// The file is given executable permissions so it can be used with safefileio.
 func writeScript(t *testing.T, content string) string {
 	t.Helper()
-	dir := commontesting.SafeTempDir(t)
-	path := filepath.Join(dir, "test_script")
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o755))
-	return path
+	return commontesting.WriteExecutableFile(t, commontesting.SafeTempDir(t), "test_script", []byte(content))
 }
 
 // writeBinaryFile creates a binary file with the given bytes in a temp dir.
 func writeBinaryFile(t *testing.T, data []byte) string {
 	t.Helper()
-	dir := commontesting.SafeTempDir(t)
-	path := filepath.Join(dir, "test_binary")
-	require.NoError(t, os.WriteFile(path, data, 0o755))
-	return path
+	return commontesting.WriteExecutableFile(t, commontesting.SafeTempDir(t), "test_binary", data)
 }
 
 // --- Parse tests ---
