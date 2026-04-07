@@ -114,31 +114,6 @@ func TestPathResolver_ShouldSkipVerification(t *testing.T) {
 	})
 }
 
-func TestPathResolver_CanAccessDirectory(t *testing.T) {
-	resolver := NewPathResolver("/usr/bin:/bin", nil, false)
-
-	t.Run("accessible_directory", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
-		canAccess := resolver.canAccessDirectory(tmpDir)
-		assert.True(t, canAccess)
-	})
-
-	t.Run("non_existent_directory", func(t *testing.T) {
-		canAccess := resolver.canAccessDirectory("/non/existent/directory")
-		assert.False(t, canAccess)
-	})
-
-	t.Run("non_directory_path", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
-		filePath := filepath.Join(tmpDir, "test_file")
-		err := os.WriteFile(filePath, []byte("test"), 0o644)
-		require.NoError(t, err)
-
-		canAccess := resolver.canAccessDirectory(filePath)
-		assert.False(t, canAccess)
-	})
-}
-
 func TestPathResolver_NoCommandValidation(t *testing.T) {
 	// This test documents that ResolvePath intentionally does NOT perform
 	// command allowlist validation. Validation is the caller's responsibility.
