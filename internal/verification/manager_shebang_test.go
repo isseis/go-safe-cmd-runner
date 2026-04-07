@@ -29,12 +29,14 @@ func setupManagerWithMockValidator(t *testing.T, mockFV *mockFVForShebang) *Mana
 type mockFVForShebang struct {
 	records   map[string]*fileanalysis.Record
 	verifyErr map[string]error
+	schemaErr map[string]error // errors returned by LoadRecord (e.g. SchemaVersionMismatchError)
 }
 
 func newMockFVForShebang() *mockFVForShebang {
 	return &mockFVForShebang{
 		records:   make(map[string]*fileanalysis.Record),
 		verifyErr: make(map[string]error),
+		schemaErr: make(map[string]error),
 	}
 }
 
@@ -70,6 +72,9 @@ func (m *mockFVForShebang) VerifyAndReadWithPrivileges(_ string, _ runnertypes.P
 }
 
 func (m *mockFVForShebang) LoadRecord(path string) (*fileanalysis.Record, error) {
+	if err, ok := m.schemaErr[path]; ok {
+		return nil, err
+	}
 	if rec, ok := m.records[path]; ok {
 		return rec, nil
 	}
@@ -233,4 +238,87 @@ func TestVerifyCommandShebangInterpreter_NoRecord(t *testing.T) {
 	m := setupManagerWithMockValidator(t, mockFV)
 	err := m.VerifyCommandShebangInterpreter("/usr/bin/ls", map[string]string{"PATH": "/usr/bin"})
 	assert.NoError(t, err)
+}
+
+// TestVerifyCommandShebangInterpreter_OldSchema verifies that a command whose
+// record has a schema version older than CurrentSchemaVersion is rejected with
+// SchemaVersionMismatchError (AC-18). This covers the skip_standard_paths path
+// where VerifyGroupFiles does not check the file but shebang verification must
+// still enforce the schema version.
+func TestVerifyCommandShebangInterpreter_OldSchema(t *testing.T) {
+	mockFV := newMockFVForShebang()
+	// Simulate a record that fails to load with SchemaVersionMismatchError (old schema).
+	oldSchemaErr := &fileanalysis.SchemaVersionMismatchError{
+		Actual:   fileanalysis.CurrentSchemaVersion - 1,
+		Expected: fileanalysis.CurrentSchemaVersion,
+	}
+	mockFV.schemaErr["/usr/local/bin/script.sh"] = oldSchemaErr
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+	require.Error(t, err)
+	var schemaErr *fileanalysis.SchemaVersionMismatchError
+	assert.True(t, errors.As(err, &schemaErr), "expected SchemaVersionMismatchError, got: %v", err)
+}
+
+// TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch verifies that a hash
+// mismatch on the env-form resolved_path binary (i.e. the interpreter found via
+// PATH has been tampered with) is propagated as ErrMismatch.
+// This complements TestVerifyCommandShebangInterpreter_HashMismatch which covers
+// the direct-form interpreter path only.
+func TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+	shPath, err := filepath.EvalSymlinks("/bin/sh")
+	require.NoError(t, err)
+
+	scriptPath := filepath.Join(dir, "process.py")
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(scriptPath, &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      scriptPath,
+		ContentHash:   "sha256:abc",
+		ShebangInterpreter: &fileanalysis.ShebangInterpreterInfo{
+			InterpreterPath: "/usr/bin/env",
+			CommandName:     "sh",
+			ResolvedPath:    shPath,
+		},
+	})
+	// env binary verifies OK, but resolved_path has been tampered (hash mismatch).
+	mockFV.setVerifyErr(shPath, filevalidator.ErrMismatch)
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, filevalidator.ErrMismatch)
+}
+
+// TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing verifies that
+// a missing record for resolved_path is reported as ErrInterpreterRecordNotFound
+// rather than being masked by a PATH mismatch error (Issue: wrong verification order).
+func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+	shPath, err := filepath.EvalSymlinks("/bin/sh")
+	require.NoError(t, err)
+
+	scriptPath := filepath.Join(dir, "process.py")
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(scriptPath, &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      scriptPath,
+		ContentHash:   "sha256:abc",
+		ShebangInterpreter: &fileanalysis.ShebangInterpreterInfo{
+			InterpreterPath: "/usr/bin/env",
+			CommandName:     "sh",
+			ResolvedPath:    shPath,
+		},
+	})
+	// env binary verifies OK, but resolved_path record is missing.
+	mockFV.setVerifyErr(shPath, filevalidator.ErrHashFileNotFound)
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	require.Error(t, err)
+	var notFound *ErrInterpreterRecordNotFound
+	assert.True(t, errors.As(err, &notFound), "expected ErrInterpreterRecordNotFound, got: %v", err)
+	assert.Equal(t, shPath, notFound.Path)
 }

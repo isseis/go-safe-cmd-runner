@@ -26,6 +26,9 @@ func createExecutableScript(t *testing.T, dir, name, content string) string {
 // TestSaveRecord_ShebangDirect verifies that SaveRecord on a "#!/bin/sh" script
 // records the ShebangInterpreter field and creates an independent record for
 // the interpreter.
+//
+// Prerequisite: /bin/sh must exist. This is true on all Linux systems, so no
+// explicit t.Skip is needed in practice.
 func TestSaveRecord_ShebangDirect(t *testing.T) {
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)

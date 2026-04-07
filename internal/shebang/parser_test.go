@@ -80,7 +80,9 @@ func TestParse_SpaceAfterShebang(t *testing.T) {
 }
 
 func TestParse_EnvForm(t *testing.T) {
-	// Use "sh" as the env command since it is always available.
+	// Use "sh" as the env command because it is guaranteed to be present on any
+	// Linux system.  "python3" would be a more realistic choice for #!/usr/bin/env
+	// scripts, but it is not installed in all CI environments.
 	path := writeScript(t, "#!/usr/bin/env sh\necho hello\n")
 	info, err := shebang.Parse(path, realFS())
 	require.NoError(t, err)
