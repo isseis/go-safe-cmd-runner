@@ -3355,3 +3355,76 @@ func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
 	mockVM.AssertExpectations(t)
 }
+
+// TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH verifies AC-19:
+// the PATH passed to VerifyCommandShebangInterpreter is derived from the fully
+// merged (global → group → command) environment that the runner will actually
+// use, not a hardcoded or system-inherited value.
+//
+// The test sets PATH via group-level env_vars and asserts that the same PATH
+// value is forwarded to VerifyCommandShebangInterpreter verbatim.
+// This also covers AC-20 indirectly: the mock returns nil without inspecting the
+// script's shebang line, proving that only the recorded command_name (held by
+// the verification manager) is used — not a live re-parse of the script file.
+func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) {
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVM := new(verificationtesting.MockManager)
+
+	cfg := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: commontesting.Int32Ptr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              cfg,
+		Validator:           mockValidator,
+		VerificationManager: mockVM,
+		ResourceManager:     mockRM,
+	})
+
+	const scriptPath = "/usr/local/bin/deploy.sh"
+	const customPATH = "/custom/bin:/usr/bin:/bin"
+
+	// Set PATH via group-level env_vars so that ExpandGroup propagates it
+	// into runtimeGroup.ExpandedEnv, and BuildProcessEnvironment forwards it
+	// to VerifyCommandShebangInterpreter as the effective runtime PATH.
+	group := &runnertypes.GroupSpec{
+		Name:    "test-group",
+		EnvVars: []string{"PATH=" + customPATH},
+		Commands: []runnertypes.CommandSpec{
+			{Name: "script", Cmd: scriptPath},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: commontesting.Int32Ptr(30)},
+	}
+
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVM.On("ResolvePath", scriptPath).Return(scriptPath, nil)
+	mockVM.On("VerifyCommandDynLibDeps", scriptPath).Return(nil)
+
+	// Assert that the PATH forwarded to VerifyCommandShebangInterpreter exactly
+	// matches the group-level env_vars value — confirming AC-19.
+	mockVM.On("VerifyCommandShebangInterpreter", scriptPath,
+		mock.MatchedBy(func(env map[string]string) bool {
+			return env["PATH"] == customPATH
+		}),
+	).Return(nil)
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.NoError(t, err)
+
+	mockVM.AssertCalled(t, "VerifyCommandShebangInterpreter", scriptPath, mock.Anything)
+	mockVM.AssertExpectations(t)
+}

@@ -60,6 +60,10 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 // TestSaveRecord_ShebangEnv verifies that SaveRecord on a "#!/usr/bin/env sh"
 // script records all three ShebangInterpreter fields and creates independent
 // records for both env and the resolved command.
+//
+// AC-3 specifies "python3" as the representative command, but "sh" is used here
+// because python3 is not guaranteed to be installed in all CI environments.
+// The record/field structure is identical regardless of which command is resolved.
 func TestSaveRecord_ShebangEnv(t *testing.T) {
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)
