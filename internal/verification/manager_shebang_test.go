@@ -4,6 +4,7 @@ package verification
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -321,4 +322,44 @@ func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.
 	var notFound *ErrInterpreterRecordNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrInterpreterRecordNotFound, got: %v", err)
 	assert.Equal(t, shPath, notFound.Path)
+}
+
+// TestVerifyCommandShebangInterpreter_RelativePathCommandName verifies that when
+// command_name contains a path separator (e.g. an absolute path used directly),
+// the runtime resolver applies filepath.Abs before EvalSymlinks — mirroring the
+// record-time behaviour in parser.go — so a legitimate script is not falsely
+// rejected due to CWD differences.
+//
+// Concretely: lookPathInEnv returns the path unchanged when containsPathSeparator
+// is true. If that path happens to be relative, skipping filepath.Abs before
+// EvalSymlinks would produce a CWD-relative real path that differs from the
+// absolute real path stored at record time. This test exercises that branch.
+func TestVerifyCommandShebangInterpreter_RelativePathCommandName(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+	shPath, err := filepath.EvalSymlinks("/bin/sh")
+	require.NoError(t, err)
+
+	// Create a symlink "python3" → sh inside dir so the binary exists there.
+	linkPath := filepath.Join(dir, "python3")
+	require.NoError(t, os.Symlink(shPath, linkPath))
+
+	// record-time: resolved_path = EvalSymlinks(Abs(linkPath)) = shPath
+	scriptPath := filepath.Join(dir, "process.py")
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord(scriptPath, &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      scriptPath,
+		ContentHash:   "sha256:abc",
+		ShebangInterpreter: &fileanalysis.ShebangInterpreterInfo{
+			InterpreterPath: "/usr/bin/env",
+			// Use the absolute linkPath as command_name: contains a separator,
+			// so lookPathInEnv returns it directly without PATH lookup.
+			CommandName:  linkPath,
+			ResolvedPath: shPath,
+		},
+	})
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	assert.NoError(t, err)
 }
