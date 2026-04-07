@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -166,25 +165,10 @@ func parseEnvForm(envPath string, args []string) (*Info, error) {
 		return nil, fmt.Errorf("%w: %s", ErrEnvAssignmentNotSupported, cmdArg)
 	}
 
-	// Resolve command via PATH.
-	cmdPath, err := exec.LookPath(cmdArg)
+	// Resolve command via PATH using the shared algorithm (see env_resolver.go).
+	resolvedCmd, err := ResolveEnvCommand(cmdArg, os.Getenv("PATH"))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrCommandNotFound, cmdArg)
-	}
-
-	// Make absolute if not already.
-	if !filepath.IsAbs(cmdPath) {
-		abs, err := filepath.Abs(cmdPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get absolute path for %s: %w", cmdPath, err)
-		}
-		cmdPath = abs
-	}
-
-	// Resolve symlinks for resolved command path.
-	resolvedCmd, err := filepath.EvalSymlinks(cmdPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve command path %s: %w", cmdPath, err)
+		return nil, err
 	}
 
 	return &Info{

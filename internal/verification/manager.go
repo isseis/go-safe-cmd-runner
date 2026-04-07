@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
 // Manager provides file verification capabilities
@@ -766,27 +767,9 @@ func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
 // that the result (after symlink resolution) matches recordedResolvedPath.
 // Returns *ErrInterpreterPathMismatch when they differ.
 func (m *Manager) verifyEnvPathResolution(commandName, recordedResolvedPath string, envVars map[string]string) error {
-	pathEnv := envVars["PATH"]
-	found, err := lookPathInEnv(commandName, pathEnv)
+	resolved, err := shebang.ResolveEnvCommand(commandName, envVars["PATH"])
 	if err != nil {
 		return fmt.Errorf("cannot resolve interpreter %q in PATH: %w", commandName, err)
-	}
-
-	// Mirror parser.go: make absolute before symlink resolution so that a
-	// relative path returned by lookPathInEnv (e.g. when commandName contains
-	// a path separator like "./python3") produces the same absolute real path
-	// that was recorded at record time.
-	if !filepath.IsAbs(found) {
-		abs, err := filepath.Abs(found)
-		if err != nil {
-			return fmt.Errorf("cannot make interpreter path absolute %q: %w", found, err)
-		}
-		found = abs
-	}
-
-	resolved, err := filepath.EvalSymlinks(found)
-	if err != nil {
-		return fmt.Errorf("cannot resolve symlinks for interpreter %q: %w", found, err)
 	}
 
 	if resolved != recordedResolvedPath {
