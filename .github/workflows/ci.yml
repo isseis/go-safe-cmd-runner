@@ -320,6 +320,7 @@ jobs:
       - name: Build devcontainer and verify toolchain
         uses: devcontainers/ci@v0.3
         with:
+          configFile: .devcontainer/amd64/devcontainer.json
           runCmd: |
             go version
             golangci-lint --version
