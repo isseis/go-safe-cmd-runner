@@ -31,20 +31,20 @@ ENV LANG=ja_JP.UTF-8
 
 # Go 言語と golangci-lint のインストール
 # TARGETARCH は docker-compose.yml の platform 指定から Docker が自動設定する
-ARG GO_VERSION=1.26.0
-ARG GOLANGCI_LINT_VERSION=2.11.3
+ARG GO_VERSION=1.26.2
+ARG GOLANGCI_LINT_VERSION=2.11.4
 ARG GOFUMPT_VERSION=v0.6.0
 ARG TARGETARCH
 RUN set -eux \
     && TARGETARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "${TARGETARCH}" in \
         amd64) \
-            GO_SHA256="aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235"; \
-            LINT_SHA256="87bb8cddbcc825d5778b64e8a91b46c0526b247f4e2f2904dea74ec7450475d1"; \
+            GO_SHA256="990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282"; \
+            LINT_SHA256="200c5b7503f67b59a6743ccf32133026c174e272b930ee79aa2aa6f37aca7ef1"; \
             ;; \
         arm64) \
-            GO_SHA256="bd03b743eb6eb4193ea3c3fd3956546bf0e3ca5b7076c8226334afe6b75704cd"; \
-            LINT_SHA256="ee3d95f301359e7d578e6d99c8ad5aeadbabc5a13009a30b2b0df11c8058afe9"; \
+            GO_SHA256="c958a1fe1b361391db163a485e21f5f228142d6f8b584f6bef89b26f66dc5b23"; \
+            LINT_SHA256="3bcfa2e6f3d32b2bf5cd75eaa876447507025e0303698633f722a05331988db4"; \
             ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac \
