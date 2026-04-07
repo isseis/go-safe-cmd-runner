@@ -406,11 +406,11 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 	for _, cmd := range runtimeGroup.Commands {
 		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
 		if resolveErr != nil {
-			slog.Warn("Path resolution failed during shebang verification; skipping shebang check for this command",
-				"group", runnertypes.ExtractGroupName(runtimeGroup),
-				"command", cmd.ExpandedCmd,
-				"error", resolveErr)
-			continue
+			// The hash-propagation loop above already resolved every command path
+			// successfully (it returns an error on failure), so a resolution failure
+			// here indicates an unexpected state change and must not be silently skipped.
+			return fmt.Errorf("command path resolution failed for %q during shebang verification: %w",
+				cmd.ExpandedCmd, resolveErr)
 		}
 
 		envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)

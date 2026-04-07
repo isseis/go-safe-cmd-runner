@@ -196,12 +196,6 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 		return "", "", err
 	}
 
-	// Calculate the hash of the file
-	hash, err := v.calculateHash(targetPath.String())
-	if err != nil {
-		return "", "", fmt.Errorf("failed to calculate hash: %w", err)
-	}
-
 	// Analyze shebang and record interpreter binaries before persisting this record.
 	// This ensures atomic failure: if interpreter recording fails, the script record
 	// is not written either.
@@ -210,16 +204,37 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 		return "", "", err
 	}
 	if shebangInfo != nil {
-		if err := v.recordInterpreter(shebangInfo.InterpreterPath); err != nil {
+		// Use saveRecordCore to skip redundant shebang analysis: resolveShebangInfo
+		// already confirmed the interpreters are not shebang scripts themselves.
+		if _, _, err := v.saveRecordCore(shebangInfo.InterpreterPath, true, nil); err != nil {
 			return "", "", fmt.Errorf("failed to record interpreter %s: %w",
 				shebangInfo.InterpreterPath, err)
 		}
 		if shebangInfo.ResolvedPath != "" {
-			if err := v.recordInterpreter(shebangInfo.ResolvedPath); err != nil {
+			if _, _, err := v.saveRecordCore(shebangInfo.ResolvedPath, true, nil); err != nil {
 				return "", "", fmt.Errorf("failed to record resolved command %s: %w",
 					shebangInfo.ResolvedPath, err)
 			}
 		}
+	}
+
+	return v.saveRecordCore(targetPath.String(), force, shebangInfo)
+}
+
+// saveRecordCore calculates the hash and persists the analysis record for filePath.
+// shebangInfo must be pre-resolved by the caller; nil means non-script file.
+// Unlike SaveRecord, this method does NOT perform shebang analysis itself.
+// Use SaveRecord for files whose shebang status is unknown.
+func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *shebang.Info) (string, string, error) {
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Calculate the hash of the file
+	hash, err := v.calculateHash(targetPath.String())
+	if err != nil {
+		return "", "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
 	// Get the path for the hash file
@@ -372,13 +387,6 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.Info, error) {
 	}
 
 	return shebangInfo, nil
-}
-
-// recordInterpreter creates an independent Record for an interpreter binary.
-// Uses force=true to ensure the record is always updated.
-func (v *Validator) recordInterpreter(interpreterPath string) error {
-	_, _, err := v.SaveRecord(interpreterPath, true)
-	return err
 }
 
 // SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.

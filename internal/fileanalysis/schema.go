@@ -19,7 +19,7 @@ const (
 	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
 	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 10.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 11.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
