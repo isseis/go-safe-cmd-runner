@@ -73,10 +73,15 @@ go test -tags test ./internal/common/...
 
 **変更内容**
 
-1. `NewStore(analysisDir string, ...)` → `NewStore(analysisDir common.ResolvedPath, ...)`
-2. フィールド `analysisDir string` → `analysisDir common.ResolvedPath`
-3. `GetHashFilePath` 呼び出し: `s.analysisDir` を `ResolvedPath` として渡す（Phase 1 で型変更済み）
-4. ディレクトリ存在確認 (`os.Lstat`) は `analysisDir.String()` を使用
+1. フィールドを `analysisDir string` → `analysisDir common.ResolvedPath` に変更
+2. `NewStore(analysisDir string, ...)` シグネチャは **変えない**（要件 FR-3.4 / AC-13 に従い、raw string を受けて内部で正規化する）
+3. `NewStore` 内でディレクトリ存在確認・`MkdirAll` を行った後、`common.NewResolvedPath(analysisDir)` を呼んでフィールドに格納する
+   - ディレクトリが存在しない場合は `MkdirAll` で作成してから `NewResolvedPath` を呼ぶ
+   - ディレクトリが symlink でも `EvalSymlinks` が正しく解決する
+4. `GetHashFilePath` 呼び出し: `s.analysisDir` を `ResolvedPath` として渡す（Phase 1 で型変更済み）
+5. ディレクトリ存在確認 (`os.Lstat`) の文字列操作は引き続き raw string を使用（`NewResolvedPath` 呼び出し前）
+
+> **注意**: 計画書の旧 Step 2-3 では `filevalidator.New` から `NewResolvedPathForNew` を使って解決済みパスを `NewStore` に渡す案を記載していたが、これは要件と矛盾するため廃止した。`NewStore` が自前で正規化を完結させる。
 
 ---
 
@@ -94,16 +99,17 @@ go test -tags test ./internal/common/...
 
 ---
 
-### Step 2-3: `filevalidator.New` の hashDir 正規化を整理
+### Step 2-3: `filevalidator.New` の hashDir 正規化を削除
 
 **対象ファイル**
 - `internal/filevalidator/validator.go`
 
 **変更内容**
 
-1. `New()` 内の `filepath.Abs(hashDir)` を `common.NewResolvedPath(hashDir)` に置き換え
-   - ただし `hashDir` は新規作成されることがあるため `NewResolvedPathForNew` を使う
-2. 取得した `ResolvedPath` を `fileanalysis.NewStore` に渡す
+1. `New()` 内の `filepath.Abs(hashDir)` を削除する
+   - `NewStore` が内部で `NewResolvedPath` を呼んで正規化するため、呼び出し元での事前正規化は冗長かつ二重適用になる
+2. `NewStore(hashDir, hashFilePathGetter)` に raw string をそのまま渡す
+   - `NewResolvedPathForNew` は使わない（hashDir は既存ディレクトリ前提であり、`NewResolvedPath` が適切）
 
 ---
 
@@ -163,7 +169,7 @@ grep -rn "filepath\.Abs\|filepath\.EvalSymlinks" \
 [ ] Step 1-2: hash_file_path_getter.go シグネチャ更新、コンパイル通過
 [ ] Step 2-1: fileanalysis.Store analysisDir を ResolvedPath 化
 [ ] Step 2-2: sha256 / hybrid HashFilePathGetter 実装の更新
-[ ] Step 2-3: filevalidator.New の hashDir 正規化を NewResolvedPathForNew に委譲
+[ ] Step 2-3: filevalidator.New の hashDir 正規化（filepath.Abs）を削除（NewStore が内部で完結）
 [ ] Step 2-4: filevalidator.validatePath の Abs+EvalSymlinks を NewResolvedPath に委譲
 [ ] Step 3-1: 残存箇所の検索実施
 [ ] Step 3-2: 移行候補の分類
