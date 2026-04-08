@@ -23,15 +23,11 @@ func ResolveEnvCommand(name, pathEnv string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, name)
 	}
 
-	// Make absolute before symlink resolution so that a relative path
-	// (e.g. when name contains "./" or when PATH contains ".") produces the
-	// same absolute real path regardless of caller's working directory.
+	// LookPathInEnv skips non-absolute PATH entries so found is always absolute.
+	// Reject the path defensively if it is still relative (e.g. name itself
+	// contained a path separator and was not absolute).
 	if !filepath.IsAbs(found) {
-		abs, err := filepath.Abs(found)
-		if err != nil {
-			return "", fmt.Errorf("failed to get absolute path for %s: %w", found, err)
-		}
-		found = abs
+		return "", fmt.Errorf("%w: relative path %q is not supported", ErrCommandNotFound, found)
 	}
 
 	resolved, err := filepath.EvalSymlinks(found)
@@ -58,8 +54,10 @@ func LookPathInEnv(name, pathEnv string) (string, error) {
 	}
 
 	for _, dir := range filepath.SplitList(pathEnv) {
-		if dir == "" {
-			dir = "."
+		if !filepath.IsAbs(dir) {
+			// Skip empty and relative PATH entries; they are cwd-dependent and
+			// produce non-deterministic results when invoked from different locations.
+			continue
 		}
 		candidate := filepath.Join(dir, name)
 		if isExecutableFile(candidate) {
