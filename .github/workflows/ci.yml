@@ -214,7 +214,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           install-mode: goinstall
-          version: v2.9
+          version: v2.11.4
           args: --build-tags test --timeout=5m
 
       - name: Verify modules
