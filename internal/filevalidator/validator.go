@@ -364,29 +364,30 @@ func (v *Validator) resolveShebangInfo(filePath string) (*shebang.Info, error) {
 		return nil, nil
 	}
 
-	isScript, err := shebang.IsShebangScript(shebangInfo.InterpreterPath, v.fileSystem)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check interpreter %s: %w",
-			shebangInfo.InterpreterPath, err)
-	}
-	if isScript {
-		return nil, fmt.Errorf("interpreter %s is itself a shebang script: %w",
-			shebangInfo.InterpreterPath, ErrRecursiveShebang)
+	if err := v.checkNotShebang(shebangInfo.InterpreterPath, "interpreter"); err != nil {
+		return nil, err
 	}
 
 	if shebangInfo.ResolvedPath != "" {
-		isScript, err = shebang.IsShebangScript(shebangInfo.ResolvedPath, v.fileSystem)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check resolved command %s: %w",
-				shebangInfo.ResolvedPath, err)
-		}
-		if isScript {
-			return nil, fmt.Errorf("resolved command %s is itself a shebang script: %w",
-				shebangInfo.ResolvedPath, ErrRecursiveShebang)
+		if err := v.checkNotShebang(shebangInfo.ResolvedPath, "resolved command"); err != nil {
+			return nil, err
 		}
 	}
 
 	return shebangInfo, nil
+}
+
+// checkNotShebang returns ErrRecursiveShebang if path is itself a shebang script.
+// role is a human-readable label ("interpreter", "resolved command") used in error messages.
+func (v *Validator) checkNotShebang(path, role string) error {
+	isScript, err := shebang.IsShebangScript(path, v.fileSystem)
+	if err != nil {
+		return fmt.Errorf("failed to check %s %s: %w", role, path, err)
+	}
+	if isScript {
+		return fmt.Errorf("%s %s is itself a shebang script: %w", role, path, ErrRecursiveShebang)
+	}
+	return nil
 }
 
 // SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
