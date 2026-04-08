@@ -3356,16 +3356,16 @@ func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
 	mockVM.AssertExpectations(t)
 }
 
-// TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH verifies AC-19:
+// TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH verifies that
 // the PATH passed to VerifyCommandShebangInterpreter is derived from the fully
 // merged (global → group → command) environment that the runner will actually
 // use, not a hardcoded or system-inherited value.
 //
 // The test sets PATH via group-level env_vars and asserts that the same PATH
 // value is forwarded to VerifyCommandShebangInterpreter verbatim.
-// This also covers AC-20 indirectly: the mock returns nil without inspecting the
-// script's shebang line, proving that only the recorded command_name (held by
-// the verification manager) is used — not a live re-parse of the script file.
+// The mock returns nil without inspecting the script's shebang line, proving
+// that only the recorded command_name (held by the verification manager) is
+// used — not a live re-parse of the script file.
 func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
 	mockValidator := new(securitytesting.MockValidator)
@@ -3411,7 +3411,7 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 	mockVM.On("VerifyCommandDynLibDeps", scriptPath).Return(nil)
 
 	// Assert that the PATH forwarded to VerifyCommandShebangInterpreter exactly
-	// matches the group-level env_vars value — confirming AC-19.
+	// matches the group-level env_vars value.
 	mockVM.On("VerifyCommandShebangInterpreter", scriptPath,
 		mock.MatchedBy(func(env map[string]string) bool {
 			return env["PATH"] == customPATH

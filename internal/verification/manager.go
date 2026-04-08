@@ -715,7 +715,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 			// Old schema record (pre-shebang tracking). Normally VerifyGroupFiles
 			// catches this before shebang verification runs, but skip_standard_paths
 			// bypasses file verification for standard-path commands. Reject here to
-			// enforce AC-18: v10 and earlier records must be re-recorded.
+			// ensure pre-shebang records are rejected even on that path.
 			return err
 		}
 		return fmt.Errorf("failed to load record for shebang verification: %w", err)
@@ -726,20 +726,19 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 		return nil
 	}
 
-	// FR-3.3.2 + FR-3.3.3: Verify interpreter record existence and hash.
+	// Verify that the recorded interpreter binary still exists and matches its hash.
 	if err := m.verifyInterpreterHash(si.InterpreterPath); err != nil {
 		return err
 	}
 
 	if si.CommandName != "" {
-		// FR-3.3.2 + FR-3.3.3: Verify resolved command record existence and hash
-		// before PATH re-resolution. This ensures a missing resolved_path record
-		// is reported as ErrInterpreterRecordNotFound rather than being masked by
-		// a subsequent path mismatch error.
+		// Verify the resolved command binary before PATH re-resolution so that a
+		// missing resolved_path record is reported as ErrInterpreterRecordNotFound
+		// rather than being masked by a subsequent path mismatch error.
 		if err := m.verifyInterpreterHash(si.ResolvedPath); err != nil {
 			return err
 		}
-		// FR-3.3.4: Verify that the runtime PATH resolves to the recorded binary.
+		// Verify that the runtime PATH resolves the command to the recorded binary.
 		if err := m.verifyEnvPathResolution(si.CommandName, si.ResolvedPath, envVars); err != nil {
 			return err
 		}
