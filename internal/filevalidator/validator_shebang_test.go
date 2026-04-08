@@ -5,6 +5,7 @@ package filevalidator
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -55,6 +56,11 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 // installed in all CI environments. The record/field structure is identical
 // regardless of which command env resolves.
 func TestSaveRecord_ShebangEnv(t *testing.T) {
+	// Pin PATH so shebang.Parse (record time) resolves "sh" from the same
+	// directories as the assertions below; prevents flakiness when the ambient
+	// PATH differs between CI and dev environments.
+	t.Setenv("PATH", "/usr/bin:/bin")
+
 	hashDir := safeTempDir(t)
 	scriptDir := safeTempDir(t)
 
@@ -74,7 +80,13 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, expectedEnvPath, record.ShebangInterpreter.InterpreterPath)
 	assert.Equal(t, "sh", record.ShebangInterpreter.CommandName)
-	assert.NotEmpty(t, record.ShebangInterpreter.ResolvedPath)
+
+	// Compute expected resolved path from the pinned PATH — deterministic.
+	shFound, err := exec.LookPath("sh")
+	require.NoError(t, err)
+	expectedResolvedPath, err := filepath.EvalSymlinks(shFound)
+	require.NoError(t, err)
+	assert.Equal(t, expectedResolvedPath, record.ShebangInterpreter.ResolvedPath)
 
 	// Verify env has its own record.
 	envRecord, err := validator.LoadRecord(expectedEnvPath)
