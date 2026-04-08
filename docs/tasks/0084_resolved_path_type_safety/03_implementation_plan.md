@@ -44,22 +44,65 @@ fileanalysis.Store.analysisDir: string ← ResolvedPath 化する
 
 ---
 
-### Step 1-2: `common` 内・`common` 直接依存箇所のコンパイル修正
+### Step 1-2: `common` 内・全パッケージのコンパイル修正
+
+`ResolvedPath` の struct 化と `GetHashFilePath` の `hashDir` 型変更は、コンパイルエラーで全影響箇所を特定できる。以下はあらかじめ判明している修正対象の一覧。
+
+#### (a) `common` パッケージ本体
+
+**対象ファイル**: `internal/common/hash_file_path_getter.go`
+
+- `GetHashFilePath(hashDir string, filePath ResolvedPath)` → `GetHashFilePath(hashDir ResolvedPath, filePath ResolvedPath)` に変更
+
+#### (b) `common` のテスト
+
+**対象ファイル**: `internal/common/filesystem_test.go`
+
+- `NewResolvedPath` のテストを新しいシグネチャ（Abs + EvalSymlinks 込み）に更新
+
+#### (c) `GetHashFilePath` の実装（本体）
 
 **対象ファイル**
-- `internal/common/filesystem_test.go`
-- `internal/common/hash_file_path_getter.go`
+- `internal/filevalidator/sha256_path_hash_getter.go`
+- `internal/filevalidator/hybrid_hash_path_getter.go`
 
-**変更内容**
+- `hashDir string` → `hashDir common.ResolvedPath` に変更
+- 内部で `hashDir.String()` を使ってパス組み立て
 
-1. `filesystem_test.go`: `NewResolvedPath` のテストを新しいシグネチャに更新し、Abs + EvalSymlinks の期待値を追加
-2. `hash_file_path_getter.go`: `GetHashFilePath(hashDir string, ...)` → `GetHashFilePath(hashDir ResolvedPath, ...)` に変更
+#### (d) `GetHashFilePath` のモック実装（テスト）
+
+**対象ファイル**
+- `internal/fileanalysis/file_analysis_store_test.go`（`mockPathGetter.GetHashFilePath`）
+- `internal/filevalidator/validator_test.go`（`collidingHashFilePathGetter.GetHashFilePath`）
+
+- `hashDir string` → `hashDir common.ResolvedPath` に合わせてシグネチャ更新
+
+#### (e) `GetHashFilePath` のテスト呼び出し側
+
+**対象ファイル**
+- `internal/filevalidator/sha256_path_hash_getter_test.go`
+- `internal/filevalidator/hybrid_hash_path_getter_test.go`
+- `internal/verification/manager_test.go`
+- `internal/fileanalysis/network_symbol_store_test.go`
+
+- `hashDir` を `string` リテラルで渡している箇所を `common.NewResolvedPath(...)` または `MustResolvedPath(...)` に変更
+
+#### (f) `common.ResolvedPath(someString)` の直接型変換
+
+**対象ファイル**（struct 化でコンパイルエラーになる箇所）
+- `internal/filevalidator/validator_test.go`（7 箇所）
+- `internal/fileanalysis/file_analysis_store_test.go`（多数）
+- `internal/fileanalysis/syscall_store_test.go`
+- `internal/fileanalysis/network_symbol_store_test.go`
+- `internal/runner/security/command_analysis_test.go`
+
+- すべて `common.MustResolvedPath(someString)`（テスト専用コンストラクタ）に置き換える
 
 **確認コマンド**
 
 ```
 make build
-go test -tags test ./internal/common/...
+go test -tags test ./internal/common/... ./internal/fileanalysis/... ./internal/filevalidator/... ./internal/verification/... ./internal/runner/security/...
 ```
 
 ---
@@ -87,15 +130,7 @@ go test -tags test ./internal/common/...
 
 ### Step 2-2: `HashFilePathGetter` 実装群の更新
 
-**対象ファイル**
-- `internal/filevalidator/sha256_path_hash_getter.go`
-- `internal/filevalidator/hybrid_hash_path_getter.go`
-
-**変更内容**
-
-1. `GetHashFilePath(hashDir ResolvedPath, filePath ResolvedPath) (string, error)` に合わせてシグネチャ更新
-2. 内部で `hashDir.String()` / `filePath.String()` を使ってパス組み立て
-3. `hashDir` / `filePath` が既に解決済みのため、内部での再解決は行わない
+Step 1-2 (c)(d)(e) で実施済み。本 Step はスキップする。
 
 ---
 
@@ -165,11 +200,17 @@ grep -rn "filepath\.Abs\|filepath\.EvalSymlinks" \
 ## 各 Step の完了チェック
 
 ```
-[ ] Step 1-1: ResolvedPath struct 化、コンストラクタ整備、テスト更新
-[ ] Step 1-2: hash_file_path_getter.go シグネチャ更新、コンパイル通過
-[ ] Step 2-1: fileanalysis.Store analysisDir を ResolvedPath 化
-[ ] Step 2-2: sha256 / hybrid HashFilePathGetter 実装の更新
-[ ] Step 2-3: filevalidator.New の hashDir 正規化（filepath.Abs）を削除（NewStore が内部で完結）
+[ ] Step 1-1: ResolvedPath struct 化、コンストラクタ整備
+[ ] Step 1-2 (a): hash_file_path_getter.go の hashDir を ResolvedPath 化
+[ ] Step 1-2 (b): filesystem_test.go の NewResolvedPath テスト更新
+[ ] Step 1-2 (c): sha256 / hybrid GetHashFilePath 実装の hashDir 型変更
+[ ] Step 1-2 (d): mockPathGetter / collidingHashFilePathGetter のモック更新
+[ ] Step 1-2 (e): sha256/hybrid/manager/network_symbol テストの hashDir 渡し方更新
+[ ] Step 1-2 (f): 全パッケージの ResolvedPath(string) 直接変換を MustResolvedPath に置換
+[ ] Step 1-2 確認: make build && go test -tags test ./... が通る
+[ ] Step 2-1: fileanalysis.Store の analysisDir を ResolvedPath 化（NewStore は string シグネチャ維持）
+[ ] Step 2-2: スキップ（Step 1-2 で完了）
+[ ] Step 2-3: filevalidator.New の filepath.Abs 削除（NewStore が内部で完結）
 [ ] Step 2-4: filevalidator.validatePath の Abs+EvalSymlinks を NewResolvedPath に委譲
 [ ] Step 3-1: 残存箇所の検索実施
 [ ] Step 3-2: 移行候補の分類
