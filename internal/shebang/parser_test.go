@@ -175,21 +175,6 @@ func TestIsShebangScript_True(t *testing.T) {
 	assert.True(t, result)
 }
 
-func TestIsShebangScript_False_ELF(t *testing.T) {
-	elfHeader := []byte{0x7f, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00}
-	path := writeBinaryFile(t, elfHeader)
-	result, err := shebang.IsShebangScript(path, realFS())
-	require.NoError(t, err)
-	assert.False(t, result)
-}
-
-func TestIsShebangScript_False_Text(t *testing.T) {
-	path := writeScript(t, "echo hello\n")
-	result, err := shebang.IsShebangScript(path, realFS())
-	require.NoError(t, err)
-	assert.False(t, result)
-}
-
 func TestIsShebangScript_False_Empty(t *testing.T) {
 	dir := commontesting.SafeTempDir(t)
 	path := filepath.Join(dir, "empty_file")

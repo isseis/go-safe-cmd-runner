@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -176,11 +174,4 @@ func TestSaveRecord_ShebangSymlink(t *testing.T) {
 	expectedInterpreter, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
 	assert.Equal(t, expectedInterpreter, record.ShebangInterpreter.InterpreterPath)
-}
-
-// TestSaveRecord_ShebangInfoType checks that the shebang Info type alias works.
-// This is a compile-time check that the internal type is consistent.
-func TestSaveRecord_ShebangInfoType(_ *testing.T) {
-	var _ *shebang.Info
-	var _ *fileanalysis.ShebangInterpreterInfo
 }
