@@ -217,8 +217,16 @@ v, err := newValidator(algorithm, resolvedHashDir, hashFilePathGetter)
 **変更内容**
 
 1. `validatePath` 内の `filepath.Abs` + `filepath.EvalSymlinks` を `common.NewResolvedPath` 呼び出し一本に置き換え
-2. regular file 判定は `validatePath` のドメイン責務として維持
-3. 戻り値 `common.ResolvedPath` はそのまま
+2. `validatePath` 先頭の `filePath == ""` → `safefileio.ErrInvalidFilePath` チェックを削除する
+   - `NewResolvedPath` が空文字列を `common.ErrEmptyPath` として処理するため冗長
+   - 参照箇所は `validator.go` と `validator_error_test.go` のみ（内部コード）で後方互換性の制約なし
+3. regular file 判定は `validatePath` のドメイン責務として維持
+4. 戻り値 `common.ResolvedPath` はそのまま
+
+**対象ファイル（テスト）**
+- `internal/filevalidator/validator_error_test.go`
+
+"empty path" ケースの期待エラーを `safefileio.ErrInvalidFilePath` → `common.ErrEmptyPath` に変更する
 
 **確認コマンド**
 

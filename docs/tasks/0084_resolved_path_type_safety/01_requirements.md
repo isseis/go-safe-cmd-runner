@@ -164,15 +164,14 @@ func validatePath(filePath string) (common.ResolvedPath, error) {
 
 `validatePath` 内から `filepath.Abs` および `filepath.EvalSymlinks` の直接呼び出しは除去する。これにより、パス解決は `NewResolvedPath` に一元化される。
 
-**空文字チェックの設計判断（二重チェックの意図的維持）**
+**空文字チェックの設計判断（二重チェックの削除）**
 
-`validatePath` の先頭で `filePath == ""` を検査して `safefileio.ErrInvalidFilePath` を返すチェックは、`NewResolvedPath` が内部で同じケースを `common.ErrEmptyPath` として処理するため、技術的には冗長である。しかし以下の理由から意図的に残す:
+`validatePath` の先頭にある `filePath == ""` → `safefileio.ErrInvalidFilePath` のチェックは削除する。`NewResolvedPath` が空文字列を `common.ErrEmptyPath` として処理するため冗長であり、エラー生成責務が分散する。
 
-- `safefileio.ErrInvalidFilePath` for empty path は `validator_error_test.go` で `errors.Is` によって明示的に検証されており、公開 API 契約の一部として確立されている
-- `docs/tasks/0001_file_validation/03_specification.md` および `docs/tasks/0002_file_validation/03_specification.md` で `ErrInvalidFilePath` が無効パスエラーとして文書化されている
-- エラー型を `common.ErrEmptyPath` に変更すると呼び出し元の `errors.Is` チェックが壊れる（後方互換性破壊）
+`safefileio.ErrInvalidFilePath` を参照しているのは `internal/filevalidator/validator.go` と `internal/filevalidator/validator_error_test.go` の2ファイルのみであり、いずれも内部コードである。本タスクの中で以下を合わせて実施する:
 
-このチェックを削除して `common.ErrEmptyPath` に移行する場合は、独立したタスクとして以下を行う必要がある: (1) `validator_error_test.go` の期待エラー型を更新、(2) 仕様書のエラー表を更新、(3) 外部呼び出し元への変更通知。本タスクのスコープ外とする。
+1. `validatePath` の先頭の空文字チェックを削除する
+2. `validator_error_test.go` の "empty path" ケースの期待エラーを `safefileio.ErrInvalidFilePath` → `common.ErrEmptyPath` に変更する
 
 #### FR-3.2: `fileanalysis/syscall_store.go`
 
