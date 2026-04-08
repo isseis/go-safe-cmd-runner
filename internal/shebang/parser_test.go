@@ -40,6 +40,7 @@ func TestParse_DirectForm(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
+	assert.Equal(t, "/bin/sh", info.RawInterpreterPath)
 	// /bin/sh -> /usr/bin/dash (resolved via EvalSymlinks)
 	expected, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
@@ -54,6 +55,7 @@ func TestParse_DirectFormWithArgs(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
+	assert.Equal(t, "/bin/bash", info.RawInterpreterPath)
 	expected, err := filepath.EvalSymlinks("/bin/bash")
 	require.NoError(t, err)
 	assert.Equal(t, expected, info.InterpreterPath)
@@ -84,6 +86,7 @@ func TestParse_EnvForm(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
+	assert.Equal(t, "/usr/bin/env", info.RawInterpreterPath)
 	// InterpreterPath = EvalSymlinks("/usr/bin/env")
 	expectedEnvPath, err := filepath.EvalSymlinks("/usr/bin/env")
 	require.NoError(t, err)

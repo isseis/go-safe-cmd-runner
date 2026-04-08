@@ -19,11 +19,12 @@ const (
 	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
 	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 11.
+	// Version 12 adds RawInterpreterPath to ShebangInterpreterInfo for symlink-redirect detection.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 12.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 11
+	CurrentSchemaVersion = 12
 )
 
 // Record represents a unified file analysis record containing both
@@ -83,9 +84,16 @@ type LibEntry struct {
 }
 
 // ShebangInterpreterInfo records the interpreter associated with a script file.
-// For direct form (e.g., "#!/bin/sh"), only InterpreterPath is set.
-// For env form (e.g., "#!/usr/bin/env python3"), all three fields are set.
+// For direct form (e.g., "#!/bin/sh"), InterpreterPath and RawInterpreterPath are set.
+// For env form (e.g., "#!/usr/bin/env python3"), all fields are set.
 type ShebangInterpreterInfo struct {
+	// RawInterpreterPath is the interpreter path exactly as written in the shebang
+	// line, before symlink resolution (e.g., "/bin/sh" or "/usr/bin/env").
+	// At verify time this is re-resolved and compared against InterpreterPath to
+	// detect symlink redirection attacks.
+	// Empty in records written before schema version 12.
+	RawInterpreterPath string `json:"raw_interpreter_path,omitempty"`
+
 	// InterpreterPath is the shebang interpreter path, symlink-resolved.
 	// For direct form: the interpreter itself (e.g., "/usr/bin/dash").
 	// For env form: the env binary path (e.g., "/usr/bin/env").

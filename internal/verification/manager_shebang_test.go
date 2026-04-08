@@ -101,23 +101,67 @@ func TestVerifyCommandShebangInterpreter_NilShebang(t *testing.T) {
 }
 
 // TestVerifyCommandShebangInterpreter_DirectForm_OK verifies that the direct-form
-// happy path (interpreter hash OK) returns nil.
+// happy path (interpreter hash OK, symlink still valid) returns nil.
 func TestVerifyCommandShebangInterpreter_DirectForm_OK(t *testing.T) {
-	interpPath := "/usr/bin/dash"
+	// Use a real interpreter path so EvalSymlinks works for the RawInterpreterPath check.
+	interpPath, err := filepath.EvalSymlinks("/bin/sh")
+	require.NoError(t, err)
+
 	mockFV := newMockFVForShebang()
 	mockFV.setRecord("/usr/local/bin/deploy.sh", &fileanalysis.Record{
 		SchemaVersion: fileanalysis.CurrentSchemaVersion,
 		FilePath:      "/usr/local/bin/deploy.sh",
 		ContentHash:   "sha256:abc",
 		ShebangInterpreter: &fileanalysis.ShebangInterpreterInfo{
-			InterpreterPath: interpPath,
+			RawInterpreterPath: "/bin/sh",
+			InterpreterPath:    interpPath,
 		},
 	})
 	// interpreter record exists (no verifyErr → Verify returns nil)
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{})
+	err = m.VerifyCommandShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{})
 	assert.NoError(t, err)
+}
+
+// TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected verifies that
+// when the raw interpreter path resolves to a different binary than recorded,
+// ErrInterpreterSymlinkRedirected is returned.
+func TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected(t *testing.T) {
+	dir := commontesting.SafeTempDir(t)
+
+	// Create two distinct stub binaries.
+	targetA := commontesting.WriteExecutableFile(t, dir, "interp_a", []byte("#!/bin/sh\n"))
+	targetB := commontesting.WriteExecutableFile(t, dir, "interp_b", []byte("#!/bin/sh\n"))
+
+	// Create a symlink initially pointing to targetA.
+	symlink := filepath.Join(dir, "sh")
+	require.NoError(t, os.Symlink(targetA, symlink))
+
+	// Record was made when symlink → targetA.
+	mockFV := newMockFVForShebang()
+	mockFV.setRecord("/usr/local/bin/deploy.sh", &fileanalysis.Record{
+		SchemaVersion: fileanalysis.CurrentSchemaVersion,
+		FilePath:      "/usr/local/bin/deploy.sh",
+		ContentHash:   "sha256:abc",
+		ShebangInterpreter: &fileanalysis.ShebangInterpreterInfo{
+			RawInterpreterPath: symlink,
+			InterpreterPath:    targetA, // recorded resolution
+		},
+	})
+
+	// Now redirect the symlink to targetB (simulating an attack).
+	require.NoError(t, os.Remove(symlink))
+	require.NoError(t, os.Symlink(targetB, symlink))
+
+	m := setupManagerWithMockValidator(t, mockFV)
+	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{})
+	require.Error(t, err)
+	var redirected *ErrInterpreterSymlinkRedirected
+	assert.ErrorAs(t, err, &redirected)
+	assert.Equal(t, symlink, redirected.RawPath)
+	assert.Equal(t, targetA, redirected.RecordedPath)
+	assert.Equal(t, targetB, redirected.ActualPath)
 }
 
 // TestVerifyCommandShebangInterpreter_EnvForm_OK verifies the env-form happy path.

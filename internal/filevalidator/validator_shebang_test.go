@@ -36,6 +36,7 @@ func TestSaveRecord_ShebangDirect(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record.ShebangInterpreter)
 
+	assert.Equal(t, "/bin/sh", record.ShebangInterpreter.RawInterpreterPath)
 	expectedInterpreter, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
 	assert.Equal(t, expectedInterpreter, record.ShebangInterpreter.InterpreterPath)
@@ -76,6 +77,7 @@ func TestSaveRecord_ShebangEnv(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record.ShebangInterpreter)
 
+	assert.Equal(t, "/usr/bin/env", record.ShebangInterpreter.RawInterpreterPath)
 	expectedEnvPath, err := filepath.EvalSymlinks("/usr/bin/env")
 	require.NoError(t, err)
 	assert.Equal(t, expectedEnvPath, record.ShebangInterpreter.InterpreterPath)

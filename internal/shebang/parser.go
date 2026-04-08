@@ -26,6 +26,10 @@ const (
 
 // Info holds the parsed result of a shebang line.
 type Info struct {
+	// RawInterpreterPath is the interpreter path exactly as written in the
+	// shebang line, before symlink resolution (e.g., "/bin/sh" or "/usr/bin/env").
+	RawInterpreterPath string
+
 	// InterpreterPath is the absolute path to the interpreter binary,
 	// resolved via filepath.EvalSymlinks.
 	// For env form (e.g., "#!/usr/bin/env python3"), this is the resolved
@@ -138,17 +142,18 @@ func Parse(filePath string, fs safefileio.FileSystem) (*Info, error) {
 
 	// Check if env form using original token, but pass resolved path.
 	if isEnvForm {
-		return parseEnvForm(resolvedInterpreter, tokens[1:])
+		return parseEnvForm(interpreterPath, resolvedInterpreter, tokens[1:])
 	}
 
 	// Direct form.
 	return &Info{
-		InterpreterPath: resolvedInterpreter,
+		RawInterpreterPath: interpreterPath,
+		InterpreterPath:    resolvedInterpreter,
 	}, nil
 }
 
 // parseEnvForm handles "#!/usr/bin/env <cmd>" shebangs.
-func parseEnvForm(envPath string, args []string) (*Info, error) {
+func parseEnvForm(rawEnvPath, envPath string, args []string) (*Info, error) {
 	if len(args) == 0 {
 		return nil, ErrMissingEnvCommand
 	}
@@ -172,9 +177,10 @@ func parseEnvForm(envPath string, args []string) (*Info, error) {
 	}
 
 	return &Info{
-		InterpreterPath: envPath,
-		CommandName:     cmdArg,
-		ResolvedPath:    resolvedCmd,
+		RawInterpreterPath: rawEnvPath,
+		InterpreterPath:    envPath,
+		CommandName:        cmdArg,
+		ResolvedPath:       resolvedCmd,
 	}, nil
 }
 

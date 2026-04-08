@@ -334,9 +334,10 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		// Record shebang interpreter info.
 		if shebangInfo != nil {
 			record.ShebangInterpreter = &fileanalysis.ShebangInterpreterInfo{
-				InterpreterPath: shebangInfo.InterpreterPath,
-				CommandName:     shebangInfo.CommandName,
-				ResolvedPath:    shebangInfo.ResolvedPath,
+				RawInterpreterPath: shebangInfo.RawInterpreterPath,
+				InterpreterPath:    shebangInfo.InterpreterPath,
+				CommandName:        shebangInfo.CommandName,
+				ResolvedPath:       shebangInfo.ResolvedPath,
 			}
 		} else {
 			record.ShebangInterpreter = nil

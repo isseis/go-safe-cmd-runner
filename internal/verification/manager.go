@@ -726,6 +726,15 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 		return nil
 	}
 
+	// Re-resolve the raw shebang path and verify it still points to the same binary
+	// that was recorded. This detects symlink redirection (e.g., /bin/sh redirected
+	// to a different interpreter). Only checked when the field is present (schema 12+).
+	if si.RawInterpreterPath != "" {
+		if err := m.verifyInterpreterSymlinkTarget(si.RawInterpreterPath, si.InterpreterPath); err != nil {
+			return err
+		}
+	}
+
 	// Verify that the recorded interpreter binary still exists and matches its hash.
 	if err := m.verifyInterpreterHash(si.InterpreterPath); err != nil {
 		return err
@@ -763,6 +772,24 @@ func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
 }
 
 // verifyEnvPathResolution resolves commandName through envVars["PATH"] and checks
+// verifyInterpreterSymlinkTarget re-resolves rawPath via EvalSymlinks and checks
+// that it still points to recordedResolvedPath. Returns *ErrInterpreterSymlinkRedirected
+// when they differ, detecting symlink-redirection attacks.
+func (m *Manager) verifyInterpreterSymlinkTarget(rawPath, recordedResolvedPath string) error {
+	actual, err := filepath.EvalSymlinks(rawPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve interpreter path %q: %w", rawPath, err)
+	}
+	if actual != recordedResolvedPath {
+		return &ErrInterpreterSymlinkRedirected{
+			RawPath:      rawPath,
+			RecordedPath: recordedResolvedPath,
+			ActualPath:   actual,
+		}
+	}
+	return nil
+}
+
 // that the result (after symlink resolution) matches recordedResolvedPath.
 // Returns *ErrInterpreterPathMismatch when they differ.
 func (m *Manager) verifyEnvPathResolution(commandName, recordedResolvedPath string, envVars map[string]string) error {
