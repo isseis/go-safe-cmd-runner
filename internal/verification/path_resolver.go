@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
 // PathResolver provides secure path resolution with caching
@@ -101,7 +103,10 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	}
 
 	// Search PATH using the shared helper (also used by verifyEnvPathResolution).
-	found, err := lookPathInEnv(command, pr.pathEnv)
+	found, err := shebang.LookPathInEnv(command, pr.pathEnv)
+	if errors.Is(err, shebang.ErrCommandNotFound) {
+		return "", ErrCommandNotFound
+	}
 	if err != nil {
 		return "", err
 	}

@@ -18,7 +18,7 @@ import (
 // pathEnv is a colon-separated (UNIX) or semicolon-separated (Windows)
 // directory list, typically the value of the PATH environment variable.
 func ResolveEnvCommand(name, pathEnv string) (string, error) {
-	found, err := envLookPath(name, pathEnv)
+	found, err := LookPathInEnv(name, pathEnv)
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, name)
 	}
@@ -41,12 +41,17 @@ func ResolveEnvCommand(name, pathEnv string) (string, error) {
 	return resolved, nil
 }
 
-// envLookPath searches for an executable named name in the directories listed
-// in pathEnv.  Returns the first matching executable path or ErrCommandNotFound.
-func envLookPath(name, pathEnv string) (string, error) {
-	if envContainsPathSeparator(name) {
+// LookPathInEnv searches for an executable named name in the directories listed
+// in pathEnv (colon-separated on UNIX, semicolon-separated on Windows).
+// Returns the first matching executable path or ErrCommandNotFound.
+//
+// Unlike exec.LookPath, this function accepts an explicit PATH string rather
+// than using the current process environment, making it suitable for resolving
+// commands in a runtime environment whose PATH may differ from the process PATH.
+func LookPathInEnv(name, pathEnv string) (string, error) {
+	if containsPathSeparator(name) {
 		// name is a relative or absolute path — use directly.
-		if envIsExecutableFile(name) {
+		if isExecutableFile(name) {
 			return name, nil
 		}
 		return "", ErrCommandNotFound
@@ -57,15 +62,15 @@ func envLookPath(name, pathEnv string) (string, error) {
 			dir = "."
 		}
 		candidate := filepath.Join(dir, name)
-		if envIsExecutableFile(candidate) {
+		if isExecutableFile(candidate) {
 			return candidate, nil
 		}
 	}
 	return "", ErrCommandNotFound
 }
 
-// envContainsPathSeparator reports whether name contains a filepath separator.
-func envContainsPathSeparator(name string) bool {
+// containsPathSeparator reports whether name contains a filepath separator.
+func containsPathSeparator(name string) bool {
 	for _, c := range name {
 		if c == '/' || c == filepath.Separator {
 			return true
@@ -74,9 +79,9 @@ func envContainsPathSeparator(name string) bool {
 	return false
 }
 
-// envIsExecutableFile reports whether path names a regular file with at least
+// isExecutableFile reports whether path names a regular file with at least
 // one execute bit set.
-func envIsExecutableFile(path string) bool {
+func isExecutableFile(path string) bool {
 	info, err := os.Stat(path) // #nosec G703 -- path is constructed from a trusted PATH env value
 	if err != nil {
 		return false
