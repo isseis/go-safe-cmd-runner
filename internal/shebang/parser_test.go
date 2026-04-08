@@ -73,9 +73,12 @@ func TestParse_SpaceAfterShebang(t *testing.T) {
 }
 
 func TestParse_EnvForm(t *testing.T) {
-	// Use "sh" as the env command because it is guaranteed to be present on any
-	// Linux system.  "python3" would be a more realistic choice for #!/usr/bin/env
-	// scripts, but it is not installed in all CI environments.
+	// Create a controlled PATH containing a stub "sh" so the test does not
+	// depend on the ambient process PATH.
+	binDir := commontesting.SafeTempDir(t)
+	shStub := commontesting.WriteExecutableFile(t, binDir, "sh", []byte("#!/bin/sh\necho hello\n"))
+	t.Setenv("PATH", binDir)
+
 	path := writeScript(t, "#!/usr/bin/env sh\necho hello\n")
 	info, err := shebang.Parse(path, realFS())
 	require.NoError(t, err)
@@ -88,9 +91,10 @@ func TestParse_EnvForm(t *testing.T) {
 
 	assert.Equal(t, "sh", info.CommandName)
 
-	// ResolvedPath = EvalSymlinks(LookPath("sh"))
-	require.NotEmpty(t, info.ResolvedPath)
-	assert.True(t, filepath.IsAbs(info.ResolvedPath))
+	// ResolvedPath = EvalSymlinks(stub sh) — deterministic because PATH is pinned.
+	expectedResolvedPath, err := filepath.EvalSymlinks(shStub)
+	require.NoError(t, err)
+	assert.Equal(t, expectedResolvedPath, info.ResolvedPath)
 }
 
 func TestParse_NotShebang_ELF(t *testing.T) {
