@@ -148,6 +148,40 @@ func TestSaveRecord_ShebangRecursive(t *testing.T) {
 	assert.ErrorIs(t, err, ErrRecursiveShebang)
 }
 
+// TestSaveRecord_InterpreterForce verifies that the caller's force flag is
+// propagated to interpreter records:
+//   - force=false: existing interpreter record is preserved (no error, no overwrite)
+//   - force=true: existing interpreter record is overwritten
+func TestSaveRecord_InterpreterForce(t *testing.T) {
+	hashDir := safeTempDir(t)
+	dir := safeTempDir(t)
+
+	interpPath, err := filepath.EvalSymlinks("/bin/sh")
+	require.NoError(t, err)
+
+	validator, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	// Record script A — creates the interpreter record for the first time.
+	scriptA := commontesting.WriteExecutableFile(t, dir, "a.sh", []byte("#!/bin/sh\necho A\n"))
+	_, _, err = validator.SaveRecord(scriptA, false)
+	require.NoError(t, err)
+
+	// Record script B with force=false — interpreter already recorded; must not error.
+	scriptB := commontesting.WriteExecutableFile(t, dir, "b.sh", []byte("#!/bin/sh\necho B\n"))
+	_, _, err = validator.SaveRecord(scriptB, false)
+	require.NoError(t, err, "second SaveRecord(force=false) must succeed even though interpreter is already recorded")
+
+	// Record script B again with force=true — interpreter record must be refreshed.
+	_, _, err = validator.SaveRecord(scriptB, true)
+	require.NoError(t, err, "SaveRecord(force=true) must succeed and overwrite interpreter record")
+
+	// Interpreter record must still be valid after force re-record.
+	interpRecord, err := validator.LoadRecord(interpPath)
+	require.NoError(t, err)
+	assert.Equal(t, interpPath, interpRecord.FilePath)
+}
+
 // TestSaveRecord_ShebangSymlink verifies that when the script is accessed via
 // a symlink, the ShebangInterpreter is still populated correctly (the symlink is
 // resolved before shebang analysis).

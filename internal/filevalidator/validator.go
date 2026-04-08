@@ -206,12 +206,12 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 	if shebangInfo != nil {
 		// Use saveRecordCore to skip redundant shebang analysis: resolveShebangInfo
 		// already confirmed the interpreters are not shebang scripts themselves.
-		if _, _, err := v.saveRecordCore(shebangInfo.InterpreterPath, true, nil); err != nil {
+		if err := v.saveInterpreterRecord(shebangInfo.InterpreterPath, force); err != nil {
 			return "", "", fmt.Errorf("failed to record interpreter %s: %w",
 				shebangInfo.InterpreterPath, err)
 		}
 		if shebangInfo.ResolvedPath != "" {
-			if _, _, err := v.saveRecordCore(shebangInfo.ResolvedPath, true, nil); err != nil {
+			if err := v.saveInterpreterRecord(shebangInfo.ResolvedPath, force); err != nil {
 				return "", "", fmt.Errorf("failed to record resolved command %s: %w",
 					shebangInfo.ResolvedPath, err)
 			}
@@ -219,6 +219,19 @@ func (v *Validator) SaveRecord(filePath string, force bool) (string, string, err
 	}
 
 	return v.saveRecordCore(targetPath.String(), force, shebangInfo)
+}
+
+// saveInterpreterRecord records an interpreter binary discovered via shebang analysis.
+// When force is true, an existing record is overwritten.
+// When force is false, an existing record is left unchanged (ErrHashFileExists is silently
+// ignored), because multiple scripts may share the same interpreter and the caller's
+// non-destructive intent should not prevent the script itself from being recorded.
+func (v *Validator) saveInterpreterRecord(path string, force bool) error {
+	_, _, err := v.saveRecordCore(path, force, nil)
+	if !force && errors.Is(err, ErrHashFileExists) {
+		return nil
+	}
+	return err
 }
 
 // saveRecordCore calculates the hash and persists the analysis record for filePath.
