@@ -37,7 +37,6 @@ fileanalysis.Store.analysisDir: string ← ResolvedPath 化する
    - 親ディレクトリに `filepath.EvalSymlinks` → 解決
    - ファイル名を再結合して返却
 4. `String() string` メソッドは維持
-5. `MustResolvedPath(path string) ResolvedPath` を test ビルドタグ付きで追加（テスト専用）
 
 **影響確認**
 - `ResolvedPath` を `string` として直接使っている箇所はコンパイルエラーになるため、ステップ 1-2 で一括対処する
@@ -96,7 +95,44 @@ fileanalysis.Store.analysisDir: string ← ResolvedPath 化する
 - `internal/fileanalysis/network_symbol_store_test.go`
 - `internal/runner/security/command_analysis_test.go`
 
-- すべて `common.MustResolvedPath(someString)`（テスト専用コンストラクタ）に置き換える
+`MustResolvedPath` は追加しない。型安全性強化の目的（生成経路をコンストラクタに限定）と矛盾し、テストと本番で保証がずれる温床になるため。代わりに以下のパターンで対処する。
+
+**パターン A: 実在ファイル／ディレクトリのパス**（大多数）
+
+該当: `testFile`、`testFilePath`、`resolvedSymlinkPath` 等、`os.WriteFile` や `SafeTempDir` で作成済みのパスを渡している箇所。
+
+```go
+// before
+store.Load(common.ResolvedPath(testFile))
+
+// after
+rp, err := common.NewResolvedPath(testFile)
+require.NoError(t, err)
+store.Load(rp)
+```
+
+テストセットアップで `testFile` が実在するため `NewResolvedPath`（EvalSymlinks あり）が成功する。
+
+**パターン B: 非実在パスをキーとして意図的に使っているケース**
+
+該当: `file_analysis_store_test.go:64` の `/nonexistent/file.bin` など、「レコードが存在しないことを確認する」テスト。
+
+これらは `ErrRecordNotFound` を期待するテストであり、レコードが作られていさえすれば参照パスの実在は必須ではない。対処方針：
+
+1. テストファイルを実際に作成してから `NewResolvedPath` で参照する
+2. または、レコードが作られていない `testFile` の別パスを流用する
+
+どちらも `NewResolvedPath` で構築できるため `MustResolvedPath` は不要。
+
+**パターン C: ディスク上の存在を前提としない絶対パス文字列**
+
+該当: `command_analysis_test.go:2802` の `/usr/bin/curl`（コメントに "no need to exist on disk" と明記）。
+
+このテストは `isNetworkViaBinaryAnalysis` のキャッシュ挙動を検証しており、`ResolvedPath` はレコードの検索キーとしてのみ使用される。対処方針：
+
+- テストヘルパーで `/usr/bin/curl` の実体ファイルをテンポラリに作成してから `NewResolvedPath` で構築する
+
+これによりテストの意図（キャッシュ動作の確認）は維持しつつ、コンストラクタ経由の生成に統一できる。
 
 **確認コマンド**
 
@@ -206,7 +242,7 @@ grep -rn "filepath\.Abs\|filepath\.EvalSymlinks" \
 [ ] Step 1-2 (c): sha256 / hybrid GetHashFilePath 実装の hashDir 型変更
 [ ] Step 1-2 (d): mockPathGetter / collidingHashFilePathGetter のモック更新
 [ ] Step 1-2 (e): sha256/hybrid/manager/network_symbol テストの hashDir 渡し方更新
-[ ] Step 1-2 (f): 全パッケージの ResolvedPath(string) 直接変換を MustResolvedPath に置換
+[ ] Step 1-2 (f): 全パッケージの ResolvedPath(string) 直接変換をパターン A/B/C に従い NewResolvedPath に置換
 [ ] Step 1-2 確認: make build && go test -tags test ./... が通る
 [ ] Step 2-1: fileanalysis.Store の analysisDir を ResolvedPath 化（NewStore は string シグネチャ維持）
 [ ] Step 2-2: スキップ（Step 1-2 で完了）
