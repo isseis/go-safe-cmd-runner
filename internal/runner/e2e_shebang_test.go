@@ -55,6 +55,10 @@ func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
 	hashDir := commontesting.SafeTempDir(t)
 	scriptDir := commontesting.SafeTempDir(t)
 
+	// Pin PATH for both phases so shebang.Parse (record) and verifyEnvPathResolution
+	// (verify) resolve "sh" from the same directories.
+	t.Setenv("PATH", "/usr/bin:/bin")
+
 	// Step 1 (record phase): create a shebang script and save its hash record.
 	// SaveRecord also records /usr/bin/env and the resolved sh binary automatically.
 	scriptPath := commontesting.WriteExecutableFile(t, scriptDir, "process.sh", []byte("#!/usr/bin/env sh\necho hello\n"))
