@@ -196,7 +196,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 
 	// 7. Verify group files before execution
-	if err := ge.verifyGroupFiles(runtimeGroup); err != nil {
+	if err := ge.verifyGroupFiles(runtimeGroup, runtimeGlobal); err != nil {
 		return err
 	}
 
@@ -336,7 +336,7 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 // verifyGroupFiles verifies files specified in the group before execution.
 // After successful verification it copies the computed content hashes into each
 // RuntimeCommand so that downstream ELF analysis can skip re-hashing the binary.
-func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) error {
+func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) error {
 	if ge.verificationManager == nil {
 		return nil
 	}
@@ -363,41 +363,42 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		skippedPaths[p] = struct{}{}
 	}
 
-	// Propagate verified hashes and skip-flags to each command.
-	// executeCommandInGroup resolves the command path via ResolvePath before
-	// calling EvaluateRisk, so we use the same resolver here to build a
-	// resolved-path → hash lookup that matches what ResolvePath will return.
+	// Single pass over commands: resolve the path once per command, then
+	// propagate the content hash / skip-flag, verify dynamic libraries, and
+	// verify the shebang interpreter.  Collapsing the three former loops into
+	// one eliminates repeated ResolvePath calls and prevents divergence in
+	// error-handling across concerns.
 	for _, cmd := range runtimeGroup.Commands {
 		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
 		if resolveErr != nil {
 			return fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr)
 		}
+
+		// Propagate verified hash and skip-flag.
 		if hash, ok := result.ContentHashes[resolvedPath]; ok {
 			cmd.ExpandedCmdContentHash = hash
 		}
 		if _, skipped := skippedPaths[resolvedPath]; skipped {
 			cmd.SkipBinaryAnalysis = true
 		}
-	}
 
-	// Verify dynamic library dependencies for each command binary.
-	// This is done after VerifyGroupFiles to ensure command files themselves
-	// have already been hash-verified by the time we check their libraries.
-	for _, cmd := range runtimeGroup.Commands {
-		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
-		if resolveErr != nil {
-			slog.Warn("Path resolution failed during dynlib verification; skipping dynlib check for this command",
-				"group", runnertypes.ExtractGroupName(runtimeGroup),
-				"command", cmd.ExpandedCmd,
-				"error", resolveErr)
-			continue
-		}
+		// Verify dynamic library dependencies.
 		if dlErr := ge.verificationManager.VerifyCommandDynLibDeps(resolvedPath); dlErr != nil {
 			slog.Error("Dynamic library verification failed",
-				"group", runnertypes.ExtractGroupName(runtimeGroup),
+				"group", groupName,
 				"command", resolvedPath,
 				"error", dlErr)
 			return dlErr
+		}
+
+		// Verify shebang interpreter.
+		finalEnv := executor.EnvVarValues(executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd))
+		if siErr := ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv); siErr != nil {
+			slog.Error("Shebang interpreter verification failed",
+				"group", groupName,
+				"command", resolvedPath,
+				"error", siErr)
+			return siErr
 		}
 	}
 
@@ -458,12 +459,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		"group", groupSpec.Name,
 		"final_vars_count", len(envMap))
 
-	// Extract values for validation and ExecuteCommand
-	// Note: Origin metadata is stripped here, which is why Phase 2 update is needed
-	envVars := make(map[string]string, len(envMap))
-	for k, v := range envMap {
-		envVars[k] = v.Value
-	}
+	// Extract values for validation and ExecuteCommand (origin metadata not needed here).
+	envVars := executor.EnvVarValues(envMap)
 
 	// Validate resolved environment variables
 	if err := ge.validator.ValidateAllEnvironmentVars(envVars); err != nil {

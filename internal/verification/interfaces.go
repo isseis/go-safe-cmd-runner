@@ -10,6 +10,7 @@ type ManagerInterface interface {
 	ResolvePath(path string) (string, error)
 	VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Result, error)
 	VerifyCommandDynLibDeps(cmdPath string) error
+	VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error
 }
 
 // Ensure Manager implements ManagerInterface

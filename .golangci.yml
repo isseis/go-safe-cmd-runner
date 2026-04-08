@@ -54,6 +54,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/ansicolor
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
+            - github.com/isseis/go-safe-cmd-runner/internal/shebang
             - github.com/isseis/go-safe-cmd-runner/internal/terminal
             - github.com/isseis/go-safe-cmd-runner/internal/verification
             - github.com/oklog/ulid/v2
@@ -85,6 +86,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/ansicolor
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
+            - github.com/isseis/go-safe-cmd-runner/internal/shebang
             - github.com/isseis/go-safe-cmd-runner/internal/terminal
             - github.com/isseis/go-safe-cmd-runner/internal/verification
 

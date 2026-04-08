@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
 // Manager provides file verification capabilities
@@ -690,4 +691,119 @@ func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// VerifyCommandShebangInterpreter verifies the integrity of a shebang interpreter for a
+// script command. It loads the analysis record for cmdPath, reads the ShebangInterpreter
+// field, and verifies that:
+//   - The interpreter binary's hash matches the stored record.
+//   - For env-form shebangs, the command name resolves (via envVars["PATH"]) to the same
+//     binary path that was recorded at record time.
+//
+// Returns nil if cmdPath has no analysis record or the record has no ShebangInterpreter.
+func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
+	if m.fileValidator == nil {
+		return nil
+	}
+
+	record, err := m.fileValidator.LoadRecord(cmdPath)
+	if err != nil {
+		if errors.Is(err, fileanalysis.ErrRecordNotFound) {
+			return nil
+		}
+		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
+			// Old schema record (pre-shebang tracking). Normally VerifyGroupFiles
+			// catches this before shebang verification runs, but skip_standard_paths
+			// bypasses file verification for standard-path commands. Reject here to
+			// ensure pre-shebang records are rejected even on that path.
+			return err
+		}
+		return fmt.Errorf("failed to load record for shebang verification: %w", err)
+	}
+
+	si := record.ShebangInterpreter
+	if si == nil {
+		return nil
+	}
+
+	// Re-resolve the raw shebang path and verify it still points to the same binary
+	// that was recorded. This detects symlink redirection (e.g., /bin/sh redirected
+	// to a different interpreter). Only checked when the field is present (schema 12+).
+	if si.RawInterpreterPath != "" {
+		if err := m.verifyInterpreterSymlinkTarget(si.RawInterpreterPath, si.InterpreterPath); err != nil {
+			return err
+		}
+	}
+
+	// Verify that the recorded interpreter binary still exists and matches its hash.
+	if err := m.verifyInterpreterHash(si.InterpreterPath); err != nil {
+		return err
+	}
+
+	if si.CommandName != "" {
+		// Verify the resolved command binary before PATH re-resolution so that a
+		// missing resolved_path record is reported as ErrInterpreterRecordNotFound
+		// rather than being masked by a subsequent path mismatch error.
+		if err := m.verifyInterpreterHash(si.ResolvedPath); err != nil {
+			return err
+		}
+		// Verify that the runtime PATH resolves the command to the recorded binary.
+		if err := m.verifyEnvPathResolution(si.CommandName, si.ResolvedPath, envVars); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// verifyInterpreterHash verifies the hash of the given interpreter binary.
+// ErrHashFileNotFound (no record for that binary) is translated into
+// *ErrInterpreterRecordNotFound so callers can distinguish "never recorded"
+// from "tampered" (ErrMismatch).
+func (m *Manager) verifyInterpreterHash(interpreterPath string) error {
+	err := m.fileValidator.Verify(interpreterPath)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, filevalidator.ErrHashFileNotFound) {
+		return &ErrInterpreterRecordNotFound{Path: interpreterPath}
+	}
+	return err
+}
+
+// verifyEnvPathResolution resolves commandName through envVars["PATH"] and checks
+// verifyInterpreterSymlinkTarget re-resolves rawPath via EvalSymlinks and checks
+// that it still points to recordedResolvedPath. Returns *ErrInterpreterSymlinkRedirected
+// when they differ, detecting symlink-redirection attacks.
+func (m *Manager) verifyInterpreterSymlinkTarget(rawPath, recordedResolvedPath string) error {
+	actual, err := filepath.EvalSymlinks(rawPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve interpreter path %q: %w", rawPath, err)
+	}
+	if actual != recordedResolvedPath {
+		return &ErrInterpreterSymlinkRedirected{
+			RawPath:      rawPath,
+			RecordedPath: recordedResolvedPath,
+			ActualPath:   actual,
+		}
+	}
+	return nil
+}
+
+// that the result (after symlink resolution) matches recordedResolvedPath.
+// Returns *ErrInterpreterPathMismatch when they differ.
+func (m *Manager) verifyEnvPathResolution(commandName, recordedResolvedPath string, envVars map[string]string) error {
+	resolved, err := shebang.ResolveEnvCommand(commandName, envVars["PATH"])
+	if err != nil {
+		return fmt.Errorf("cannot resolve interpreter %q in PATH: %w", commandName, err)
+	}
+
+	if resolved != recordedResolvedPath {
+		return &ErrInterpreterPathMismatch{
+			CommandName:  commandName,
+			RecordedPath: recordedResolvedPath,
+			ActualPath:   resolved,
+		}
+	}
+	return nil
 }

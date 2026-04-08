@@ -161,3 +161,42 @@ type FileDetail struct {
 	Error        error         // error if verification failed
 	Duration     time.Duration // time taken for verification
 }
+
+// ErrInterpreterRecordNotFound is returned when no hash record exists for a shebang interpreter.
+type ErrInterpreterRecordNotFound struct {
+	Path string
+}
+
+// Error returns the error message.
+func (e *ErrInterpreterRecordNotFound) Error() string {
+	return fmt.Sprintf("interpreter record not found: %s", e.Path)
+}
+
+// ErrInterpreterSymlinkRedirected is returned when the shebang interpreter path
+// (as written in the script) resolves to a different binary at verify time than
+// it did at record time, indicating the symlink has been redirected.
+type ErrInterpreterSymlinkRedirected struct {
+	RawPath      string // the interpreter path from the shebang line (e.g., "/bin/sh")
+	RecordedPath string // the symlink-resolved path at record time
+	ActualPath   string // the symlink-resolved path at verify time
+}
+
+// Error returns the error message.
+func (e *ErrInterpreterSymlinkRedirected) Error() string {
+	return fmt.Sprintf("interpreter symlink redirected: %s was %s at record time, now resolves to %s",
+		e.RawPath, e.RecordedPath, e.ActualPath)
+}
+
+// ErrInterpreterPathMismatch is returned when the shebang interpreter resolved at
+// runtime differs from the path recorded at record time.
+type ErrInterpreterPathMismatch struct {
+	CommandName  string
+	RecordedPath string
+	ActualPath   string
+}
+
+// Error returns the error message.
+func (e *ErrInterpreterPathMismatch) Error() string {
+	return fmt.Sprintf("interpreter path mismatch for %s: recorded %s, actual %s",
+		e.CommandName, e.RecordedPath, e.ActualPath)
+}

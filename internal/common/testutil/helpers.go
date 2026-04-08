@@ -4,6 +4,7 @@ package testutil
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -98,4 +99,14 @@ func SafeTempDir(t *testing.T) string {
 	realPath, err := filepath.EvalSymlinks(tempDir)
 	require.NoError(t, err, "Failed to resolve symlinks in temp dir")
 	return realPath
+}
+
+// WriteExecutableFile writes content to dir/name with executable permissions (0o755)
+// and returns the full path.  Use this in tests that need a script or binary stub
+// on the filesystem.
+func WriteExecutableFile(t *testing.T, dir, name string, content []byte) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, content, 0o755)) // #nosec G306 -- executable bit is intentional for test scripts
+	return path
 }

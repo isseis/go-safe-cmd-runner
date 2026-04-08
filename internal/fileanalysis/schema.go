@@ -18,11 +18,13 @@ const (
 	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
 	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 10.
+	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
+	// Version 12 adds RawInterpreterPath to ShebangInterpreterInfo for symlink-redirect detection.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 12.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 10
+	CurrentSchemaVersion = 12
 )
 
 // Record represents a unified file analysis record containing both
@@ -62,6 +64,10 @@ type Record struct {
 	// SymbolAnalysis contains the symbol analysis result cached at record time.
 	// nil means not analyzed (static binary, non-ELF, or old schema record).
 	SymbolAnalysis *SymbolAnalysisData `json:"symbol_analysis,omitempty"`
+
+	// ShebangInterpreter holds interpreter information parsed from the file's
+	// shebang line. nil for non-script files (ELF binaries, text files, etc.).
+	ShebangInterpreter *ShebangInterpreterInfo `json:"shebang_interpreter,omitempty"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.
@@ -75,6 +81,32 @@ type LibEntry struct {
 
 	// Hash is the SHA256 hash of the library file in "sha256:<hex>" format.
 	Hash string `json:"hash"`
+}
+
+// ShebangInterpreterInfo records the interpreter associated with a script file.
+// For direct form (e.g., "#!/bin/sh"), InterpreterPath and RawInterpreterPath are set.
+// For env form (e.g., "#!/usr/bin/env python3"), all fields are set.
+type ShebangInterpreterInfo struct {
+	// RawInterpreterPath is the interpreter path exactly as written in the shebang
+	// line, before symlink resolution (e.g., "/bin/sh" or "/usr/bin/env").
+	// At verify time this is re-resolved and compared against InterpreterPath to
+	// detect symlink redirection attacks.
+	// Empty in records written before schema version 12.
+	RawInterpreterPath string `json:"raw_interpreter_path,omitempty"`
+
+	// InterpreterPath is the shebang interpreter path, symlink-resolved.
+	// For direct form: the interpreter itself (e.g., "/usr/bin/dash").
+	// For env form: the env binary path (e.g., "/usr/bin/env").
+	InterpreterPath string `json:"interpreter_path"`
+
+	// CommandName is the command passed to env (e.g., "python3").
+	// Empty for direct form.
+	CommandName string `json:"command_name,omitempty"`
+
+	// ResolvedPath is the PATH-resolved absolute path of CommandName,
+	// symlink-resolved (e.g., "/usr/bin/python3.11").
+	// Empty for direct form.
+	ResolvedPath string `json:"resolved_path,omitempty"`
 }
 
 // SyscallInfo is an alias for common.SyscallInfo.

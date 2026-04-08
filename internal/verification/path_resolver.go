@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
 // PathResolver provides secure path resolution with caching
@@ -31,16 +33,6 @@ func NewPathResolver(pathEnv string, security *security.Validator, skipStandardP
 	}
 }
 
-// canAccessDirectory checks if a directory can be accessed
-func (pr *PathResolver) canAccessDirectory(dir string) bool {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return false // Directory doesn't exist or can't be accessed
-	}
-
-	return info.IsDir() // Just check if it's a directory
-}
-
 // ShouldSkipVerification checks if a path should be skipped based on configuration
 func (pr *PathResolver) ShouldSkipVerification(path string) bool {
 	if !pr.skipStandardPaths {
@@ -59,10 +51,15 @@ func (pr *PathResolver) ShouldSkipVerification(path string) bool {
 // resolves symlinks, and caches the result.
 // Returns the symlink-resolved absolute path.
 func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, error) {
-	if info, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cacheKey)
-	} else if info.IsDir() {
+	}
+	if info.IsDir() {
 		return "", fmt.Errorf("%w: %s is a directory", ErrCommandNotFound, cacheKey)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("%w: %s is not executable", ErrCommandNotFound, cacheKey)
 	}
 
 	// Resolve symlinks to get the canonical path.
@@ -105,39 +102,18 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	}
 	pr.mu.RUnlock()
 
-	var resolvedPath string
-	var err error
-
-	// If absolute path, verify it exists and is not a directory
+	// If absolute path, verify it exists and is not a directory.
 	if filepath.IsAbs(command) {
-		resolvedPath, err = pr.validateAndCacheCommand(command, command)
-		if err != nil {
-			return "", err
-		}
-		return resolvedPath, nil
+		return pr.validateAndCacheCommand(command, command)
 	}
 
-	// Resolve from PATH environment variable
-	var lastErr error
-	for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
-		// Check if directory can be accessed
-		if !pr.canAccessDirectory(dir) {
-			continue // Skip inaccessible directories
-		}
-
-		// Try to validate the command at this path
-		fullPath := filepath.Join(dir, command)
-		resolved, err := pr.validateAndCacheCommand(fullPath, command)
-		if err == nil {
-			// Found a valid executable
-			return resolved, nil
-		}
-		// Save the last error in case we don't find any valid command
-		lastErr = err
+	// Search PATH using the shared helper (also used by verifyEnvPathResolution).
+	found, err := shebang.LookPathInEnv(command, pr.pathEnv)
+	if errors.Is(err, shebang.ErrCommandNotFound) {
+		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
 	}
-
-	if lastErr != nil {
-		return "", lastErr
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
+	return pr.validateAndCacheCommand(found, command)
 }
