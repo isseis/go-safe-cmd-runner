@@ -110,7 +110,7 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Search PATH using the shared helper (also used by verifyEnvPathResolution).
 	found, err := shebang.LookPathInEnv(command, pr.pathEnv)
 	if errors.Is(err, shebang.ErrCommandNotFound) {
-		return "", ErrCommandNotFound
+		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
 	}
 	if err != nil {
 		return "", err
