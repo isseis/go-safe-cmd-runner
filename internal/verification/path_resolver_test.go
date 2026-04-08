@@ -51,6 +51,15 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 		assert.ErrorIs(t, err, ErrCommandNotFound)
 	})
 
+	t.Run("returns error for non-executable absolute path", func(t *testing.T) {
+		nonExecPath := filepath.Join(tempDir, "non_exec_abs")
+		err = os.WriteFile(nonExecPath, []byte("#!/bin/sh\necho hello\n"), 0o644)
+		require.NoError(t, err)
+
+		_, err = resolver.ResolvePath(nonExecPath)
+		assert.ErrorIs(t, err, ErrCommandNotFound)
+	})
+
 	t.Run("returns error when command is a directory in all PATH entries", func(t *testing.T) {
 		// Create a directory with the same name in both PATH directories
 		err = os.Mkdir(filepath.Join(dir2, "testdir"), 0o755)
@@ -170,6 +179,22 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		assert.Error(t, err)
 		assert.Empty(t, path)
 		assert.ErrorIs(t, err, ErrCommandNotFound)
+	})
+
+	t.Run("non_executable_file", func(t *testing.T) {
+		tempDir := commontesting.SafeTempDir(t)
+		nonExecPath := filepath.Join(tempDir, "non_exec")
+		err := os.WriteFile(nonExecPath, []byte("#!/bin/sh\necho test"), 0o644)
+		require.NoError(t, err)
+
+		resolver := NewPathResolver(tempDir, nil, false)
+
+		path, err := resolver.validateAndCacheCommand(nonExecPath, "non_exec")
+
+		assert.Error(t, err)
+		assert.Empty(t, path)
+		assert.ErrorIs(t, err, ErrCommandNotFound)
+		assert.Contains(t, err.Error(), "is not executable")
 	})
 
 	t.Run("directory_instead_of_command", func(t *testing.T) {

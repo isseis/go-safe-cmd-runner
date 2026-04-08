@@ -51,10 +51,15 @@ func (pr *PathResolver) ShouldSkipVerification(path string) bool {
 // resolves symlinks, and caches the result.
 // Returns the symlink-resolved absolute path.
 func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, error) {
-	if info, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cacheKey)
-	} else if info.IsDir() {
+	}
+	if info.IsDir() {
 		return "", fmt.Errorf("%w: %s is a directory", ErrCommandNotFound, cacheKey)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("%w: %s is not executable", ErrCommandNotFound, cacheKey)
 	}
 
 	// Resolve symlinks to get the canonical path.

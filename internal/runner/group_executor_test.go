@@ -3110,10 +3110,9 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 }
 
 // TestVerifyGroupFiles_DynLibResolvePathFailure verifies that a ResolvePath
-// failure during dynlib verification emits a warning log and continues
-// (rather than silently skipping or returning an error). The overall
-// ExecuteGroup call must still succeed so that commands can proceed to
-// execution, where the path failure will surface in its proper context.
+// failure during verifyGroupFiles causes ExecuteGroup to return an error
+// immediately, before VerifyCommandDynLibDeps or VerifyCommandShebangInterpreter
+// are called.
 func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
 	mockValidator := new(securitytesting.MockValidator)
@@ -3147,24 +3146,21 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
 	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
-	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
 
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 
-	// ResolvePath fails for this command — dynlib check must be skipped with a warning.
+	// ResolvePath fails — verifyGroupFiles must return an error immediately.
 	resolveErr := errors.New("command not found")
 	mockVerificationManager.On("ResolvePath", "/nonexistent/command").Return("", resolveErr)
 
 	// VerifyCommandDynLibDeps and VerifyCommandShebangInterpreter must NOT be called
-	// because ResolvePath failed.
+	// because the ResolvePath failure aborts verifyGroupFiles early.
 	// (No mocks set up; testify will fail if they are called unexpectedly.)
 
 	ctx := context.Background()
-	// ExecuteGroup returns an error from executeCommandInGroup (path resolution
-	// failure at execution time), but verifyGroupFiles itself must not error out
-	// due to the dynlib-phase ResolvePath failure.
-	// We only care that neither DynLib nor Shebang check was called.
-	_ = ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "command path resolution failed")
 
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
 	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", mock.Anything, mock.Anything)
