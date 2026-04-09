@@ -214,7 +214,7 @@ func TestNewResolvedPath(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error but got none")
-				assert.Empty(t, result.String(), "Expected empty result but got %v", result)
+				assert.Empty(t, result.String(), "Expected empty result but got %s", result.String())
 			} else {
 				assert.NoError(t, err, "Unexpected error")
 				assert.Equal(t, tt.expectPath, result.String(), "Expected %s but got %s", tt.expectPath, result.String())
@@ -288,7 +288,7 @@ func TestNewResolvedPathForNew(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error but got none")
-				assert.Empty(t, result.String(), "Expected empty result but got %v", result)
+				assert.Empty(t, result.String(), "Expected empty result but got %s", result.String())
 				if tt.expectErr != nil {
 					assert.ErrorIs(t, err, tt.expectErr)
 				}
