@@ -117,6 +117,26 @@ type ResolvedPath struct {
 	path string
 }
 
+// NewResolvedPathForNew creates a ResolvedPath for a file that is to be created or overwritten.
+// It resolves the parent directory via EvalSymlinks and re-joins the file name.
+// The file itself need not exist; only the parent directory must exist.
+// Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks on the parent.
+func NewResolvedPathForNew(path string) (ResolvedPath, error) {
+	if path == "" {
+		return ResolvedPath{}, ErrEmptyPath
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	parentDir := filepath.Dir(absPath)
+	resolvedParent, err := filepath.EvalSymlinks(parentDir)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	return ResolvedPath{path: filepath.Join(resolvedParent, filepath.Base(absPath))}, nil
+}
+
 // NewResolvedPath creates a ResolvedPath for an existing file or directory.
 // It resolves the path to an absolute path and evaluates all symbolic links.
 // Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks.

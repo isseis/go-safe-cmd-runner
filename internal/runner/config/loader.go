@@ -133,7 +133,12 @@ func (l *Loader) loadTemplate(path string) (map[string]runnertypes.CommandTempla
 	} else {
 		// Test path: read without verification
 		// This is only used in test code via NewLoaderForTest() -> newLoaderInternal()
-		content, err = safefileio.SafeReadFile(path)
+		var resolvedPath common.ResolvedPath
+		resolvedPath, err = common.NewResolvedPath(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve template path: %w", err)
+		}
+		content, err = safefileio.SafeReadFile(resolvedPath)
 	}
 
 	if err != nil {

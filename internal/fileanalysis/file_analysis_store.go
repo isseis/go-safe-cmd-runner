@@ -76,7 +76,14 @@ func (s *Store) Load(filePath common.ResolvedPath) (*Record, error) {
 		return nil, fmt.Errorf("failed to get analysis record path: %w", err)
 	}
 
-	data, err := safefileio.SafeReadFile(recordPath)
+	resolvedRecordPath, err := common.NewResolvedPath(recordPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, fmt.Errorf("failed to resolve record path: %w", err)
+	}
+	data, err := safefileio.SafeReadFile(resolvedRecordPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrRecordNotFound
@@ -126,7 +133,11 @@ func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 		return fmt.Errorf("failed to marshal analysis record: %w", err)
 	}
 
-	if err := safefileio.SafeWriteFileOverwrite(recordPath, data, filePermission); err != nil {
+	resolvedRecordPath, err := common.NewResolvedPathForNew(recordPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve record path: %w", err)
+	}
+	if err := safefileio.SafeWriteFileOverwrite(resolvedRecordPath, data, filePermission); err != nil {
 		return fmt.Errorf("failed to write analysis record file: %w", err)
 	}
 

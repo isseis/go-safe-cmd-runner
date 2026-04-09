@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 )
 
@@ -97,7 +98,15 @@ func (fs *osFS) Remove(name string) error {
 
 // AtomicMoveFile atomically moves a file from source to destination with secure permissions
 func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
-	return safeAtomicMoveFileWithFS(srcPath, dstPath, requiredPerm, fs)
+	resolvedSrc, err := common.NewResolvedPath(srcPath)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	}
+	resolvedDst, err := common.NewResolvedPathForNew(dstPath)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	}
+	return safeAtomicMoveFileWithFS(resolvedSrc, resolvedDst, requiredPerm, fs)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
@@ -107,7 +116,7 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 //
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
-func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error) {
+func SafeWriteFile(filePath common.ResolvedPath, content []byte, perm os.FileMode) (err error) {
 	return safeWriteFileWithFS(filePath, content, perm, defaultFS)
 }
 
@@ -118,7 +127,7 @@ func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error
 //
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
-func SafeWriteFileOverwrite(filePath string, content []byte, perm os.FileMode) (err error) {
+func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) (err error) {
 	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
 }
 
@@ -129,30 +138,30 @@ func SafeWriteFileOverwrite(filePath string, content []byte, perm os.FileMode) (
 //
 // This function provides protection against symlink attacks, TOCTOU race conditions, and
 // ensures the destination file has the required permissions and security properties.
-func SafeAtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
+func SafeAtomicMoveFile(srcPath, dstPath common.ResolvedPath, requiredPerm os.FileMode) error {
 	return safeAtomicMoveFileWithFS(srcPath, dstPath, requiredPerm, defaultFS)
 }
 
 // safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
-func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
 	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE)
 }
 
 // safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
-func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+func safeWriteFileWithFS(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
 	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 }
 
 // safeAtomicMoveFileWithFS is the internal implementation that accepts a FileSystem for testing
-func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode, fs FileSystem) error {
-	absSrc, err := filepath.Abs(srcPath)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+func safeAtomicMoveFileWithFS(srcPath, dstPath common.ResolvedPath, requiredPerm os.FileMode, fs FileSystem) error {
+	absSrc := srcPath.String()
+	if absSrc == "" {
+		return fmt.Errorf("%w: empty source path", ErrInvalidFilePath)
 	}
 
-	absDst, err := filepath.Abs(dstPath)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	absDst := dstPath.String()
+	if absDst == "" {
+		return fmt.Errorf("%w: empty destination path", ErrInvalidFilePath)
 	}
 
 	// Pre-validate requested permissions
@@ -211,10 +220,10 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 }
 
 // safeWriteFileCommon contains the common logic for safe file writing operations
-func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs FileSystem, flags int) (err error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem, flags int) (err error) {
+	absPath := filePath.String()
+	if absPath == "" {
+		return fmt.Errorf("%w: empty path", ErrInvalidFilePath)
 	}
 
 	// Pre-validate requested permissions for write operation
@@ -350,15 +359,15 @@ const MaxFileSize = 128 * 1024 * 1024
 // SafeReadFile reads a file safely after validating the path and checking file properties.
 // It enforces a maximum file size of MaxFileSize to prevent memory exhaustion attacks.
 // It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations.
-func SafeReadFile(filePath string) ([]byte, error) {
+func SafeReadFile(filePath common.ResolvedPath) ([]byte, error) {
 	return SafeReadFileWithFS(filePath, defaultFS)
 }
 
 // SafeReadFileWithFS is the internal implementation that accepts a FileSystem for testing
-func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+func SafeReadFileWithFS(filePath common.ResolvedPath, fs FileSystem) ([]byte, error) {
+	absPath := filePath.String()
+	if absPath == "" {
+		return nil, fmt.Errorf("%w: empty path", ErrInvalidFilePath)
 	}
 
 	// Use the FileSystem interface consistently for both testing and production

@@ -243,7 +243,7 @@ func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *she
 	}
 
 	// Calculate the hash of the file
-	hash, err := v.calculateHash(targetPath.String())
+	hash, err := v.calculateHash(targetPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
@@ -434,7 +434,7 @@ func (v *Validator) Verify(filePath string) error {
 	}
 
 	// Calculate the current hash
-	actualHash, err := v.calculateHash(targetPath.String())
+	actualHash, err := v.calculateHash(targetPath)
 	if os.IsNotExist(err) {
 		return err
 	}
@@ -456,7 +456,7 @@ func (v *Validator) VerifyWithHash(filePath string) (string, error) {
 		return "", err
 	}
 
-	actualHash, err := v.calculateHash(targetPath.String())
+	actualHash, err := v.calculateHash(targetPath)
 	if os.IsNotExist(err) {
 		return "", err
 	}
@@ -517,7 +517,7 @@ func validatePath(filePath string) (common.ResolvedPath, error) {
 
 // calculateHash calculates the hash of the file at the given path.
 // filePath must be validated by validatePath before calling this function.
-func (v *Validator) calculateHash(filePath string) (string, error) {
+func (v *Validator) calculateHash(filePath common.ResolvedPath) (string, error) {
 	content, err := safefileio.SafeReadFile(filePath)
 	if err != nil {
 		return "", err
@@ -603,7 +603,7 @@ func (v *Validator) VerifyAndRead(filePath string) ([]byte, error) {
 
 	// Use common verification logic with normal file reading
 	return v.verifyAndReadContent(targetPath, func() ([]byte, error) {
-		content, err := safefileio.SafeReadFile(targetPath.String())
+		content, err := safefileio.SafeReadFile(targetPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
