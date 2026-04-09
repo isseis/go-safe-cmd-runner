@@ -110,6 +110,8 @@ func newResolvedPathForNew(path string) (ResolvedPath, error) {
 	resolvedPath := filepath.Join(resolvedParent, filepath.Base(absPath))
 	if _, err := os.Lstat(resolvedPath); err == nil {
 		return ResolvedPath{}, errPathAlreadyExists
+	} else if !os.IsNotExist(err) {
+		return ResolvedPath{}, err
 	}
 	return ResolvedPath{path: resolvedPath}, nil
 }
