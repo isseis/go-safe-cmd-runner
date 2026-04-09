@@ -14,9 +14,12 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	resourcetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 
 	"github.com/stretchr/testify/require"
 )
@@ -215,6 +218,8 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 				executortesting.WithName("privilege_escalation_test"),
 				executortesting.WithOutputFile(tc.outputPath),
 			)
+			outputSizeLimit := int64(1024 * 1024)
+			runtimeCmd.EffectiveOutputSizeLimit = common.NewOutputSizeLimitFromPtr(&outputSizeLimit)
 
 			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
@@ -225,27 +230,21 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 			exec := executor.NewDefaultExecutor()
 			privMgr := privilege.NewManager(slog.Default())
 			logger := slog.Default()
+			securityValidator, err := security.NewValidator(nil)
+			require.NoError(t, err)
+			outputMgr := output.NewDefaultOutputCaptureManager(securityValidator)
 
-			manager := resourcetesting.NewNormalResourceManager(exec, fs, privMgr, logger)
+			manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, 0, logger, nil)
 			ctx := context.Background()
 			_, result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.shouldFail {
-				// In test environment, system directories may not be writable
-				// but commands may not fail due to permission checks happening later
-				if err != nil {
-					t.Logf("Command failed as expected for %s: %v", tc.outputPath, err)
-					require.NotNil(t, result)
-				} else {
-					t.Logf("Command completed for %s but may fail at write time", tc.outputPath)
-					require.NotNil(t, result)
-				}
-			} else {
-				// May succeed or fail depending on actual permissions, but should not crash
-				if err != nil {
-					t.Logf("Expected potential failure for %s: %v", tc.outputPath, err)
-				}
+				require.Error(t, err, "expected write to be blocked for %s", tc.outputPath)
+				return
 			}
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, 0, result.ExitCode)
 
 			// Clean up if file was created
 			if !tc.shouldFail && err == nil {
