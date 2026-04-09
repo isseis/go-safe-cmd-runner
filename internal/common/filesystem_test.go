@@ -240,10 +240,23 @@ func TestNewResolvedPathForNew(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Create an existing file for the "already exists" test cases.
+	existingFile := filepath.Join(tmpDir, "existing.txt")
+	if err := os.WriteFile(existingFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink that points to an existing file.
+	symlinkPath := filepath.Join(tmpDir, "link.txt")
+	if err := os.Symlink(existingFile, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name        string
 		path        string
 		expectError bool
+		expectErr   error
 		expectPath  string
 	}{
 		{
@@ -256,11 +269,24 @@ func TestNewResolvedPathForNew(t *testing.T) {
 			name:        "empty path should fail",
 			path:        "",
 			expectError: true,
+			expectErr:   ErrEmptyPath,
 		},
 		{
 			name:        "non-existent parent dir should fail",
 			path:        filepath.Join(tmpDir, "nosuchdir", "file.txt"),
 			expectError: true,
+		},
+		{
+			name:        "existing file should fail",
+			path:        existingFile,
+			expectError: true,
+			expectErr:   ErrPathAlreadyExists,
+		},
+		{
+			name:        "existing symlink should fail",
+			path:        symlinkPath,
+			expectError: true,
+			expectErr:   ErrPathAlreadyExists,
 		},
 	}
 
@@ -271,6 +297,9 @@ func TestNewResolvedPathForNew(t *testing.T) {
 			if tt.expectError {
 				assert.Error(t, err, "Expected error but got none")
 				assert.Empty(t, result.String(), "Expected empty result but got %s", result)
+				if tt.expectErr != nil {
+					assert.ErrorIs(t, err, tt.expectErr)
+				}
 			} else {
 				assert.NoError(t, err, "Unexpected error")
 				assert.Equal(t, tt.expectPath, result.String(), "Expected %s but got %s", tt.expectPath, result.String())

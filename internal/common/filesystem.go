@@ -14,7 +14,8 @@ import (
 
 // Error definitions for static error handling
 var (
-	ErrEmptyPath = errors.New("path cannot be empty")
+	ErrEmptyPath         = errors.New("path cannot be empty")
+	ErrPathAlreadyExists = errors.New("path already exists; use NewResolvedPath for existing files")
 )
 
 // FileSystem defines the interface for file system operations
@@ -136,8 +137,18 @@ func NewResolvedPath(path string) (ResolvedPath, error) {
 }
 
 // NewResolvedPathForNew creates a ResolvedPath for a file that does not yet exist.
-// It resolves the parent directory via EvalSymlinks and re-joins the file name.
-// Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks on the parent.
+// It resolves the parent directory via EvalSymlinks and re-joins the file name,
+// then checks that the target path itself does not exist.
+//
+// Security note – TOCTOU limitation:
+// The existence check is performed at call time. Between this check and the
+// actual file-creation call, an attacker may create a symlink at the same path.
+// To close this window, callers MUST open the file with O_CREATE|O_EXCL, which
+// performs an atomic "create only if absent" operation at the kernel level and
+// refuses to follow symlinks when O_EXCL is set (on Linux).
+//
+// Returns ErrEmptyPath if path is empty, ErrPathAlreadyExists if the path
+// already exists, or any error from Abs/EvalSymlinks on the parent.
 func NewResolvedPathForNew(path string) (ResolvedPath, error) {
 	if path == "" {
 		return ResolvedPath{}, ErrEmptyPath
@@ -151,7 +162,11 @@ func NewResolvedPathForNew(path string) (ResolvedPath, error) {
 	if err != nil {
 		return ResolvedPath{}, err
 	}
-	return ResolvedPath{path: filepath.Join(resolvedParent, filepath.Base(absPath))}, nil
+	resolvedPath := filepath.Join(resolvedParent, filepath.Base(absPath))
+	if _, err := os.Lstat(resolvedPath); err == nil {
+		return ResolvedPath{}, ErrPathAlreadyExists
+	}
+	return ResolvedPath{path: resolvedPath}, nil
 }
 
 // String returns the resolved path as a string.
