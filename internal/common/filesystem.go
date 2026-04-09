@@ -117,22 +117,6 @@ type ResolvedPath struct {
 	path string
 }
 
-// NewResolvedPathAbsOnly creates a ResolvedPath from a raw path by calling filepath.Abs only,
-// without invoking EvalSymlinks. The resulting ResolvedPath may therefore contain symlink
-// components. Use this only when a downstream security layer (e.g. openat2 RESOLVE_NO_SYMLINKS
-// or ensureParentDirsNoSymlinks) is responsible for rejecting those symlinks.
-// Returns ErrEmptyPath if path is empty, or any error from filepath.Abs.
-func NewResolvedPathAbsOnly(path string) (ResolvedPath, error) {
-	if path == "" {
-		return ResolvedPath{}, ErrEmptyPath
-	}
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return ResolvedPath{}, err
-	}
-	return ResolvedPath{path: absPath}, nil
-}
-
 // NewResolvedPathParentOnly creates a ResolvedPath by resolving only the parent directory
 // via EvalSymlinks and re-joining the file name unchanged.
 // The file itself need not exist; only the parent directory must exist.

@@ -98,19 +98,19 @@ func (fs *osFS) Remove(name string) error {
 
 // AtomicMoveFile atomically moves a file from source to destination with secure permissions.
 // Path resolution is intentionally limited to filepath.Abs (no EvalSymlinks) so that symlinks
-// in srcPath and dstPath's parent are left intact for the downstream security checks in
-// safeAtomicMoveFileWithFS (SafeOpenFile via openat2 RESOLVE_NO_SYMLINKS for the source,
-// ensureParentDirsNoSymlinks for the destination parent).
+// in srcPath and dstPath's parent remain visible to the security checks in atomicMoveFileCore
+// (SafeOpenFile via openat2 RESOLVE_NO_SYMLINKS for the source, ensureParentDirsNoSymlinks
+// for the destination parent).
 func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
-	absSrc, err := common.NewResolvedPathAbsOnly(srcPath)
+	absSrc, err := filepath.Abs(srcPath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
-	absDst, err := common.NewResolvedPathAbsOnly(dstPath)
+	absDst, err := filepath.Abs(dstPath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
-	return safeAtomicMoveFileWithFS(absSrc, absDst, requiredPerm, fs)
+	return atomicMoveFileCore(absSrc, absDst, requiredPerm, fs)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
@@ -156,18 +156,27 @@ func safeWriteFileWithFS(filePath common.ResolvedPath, content []byte, perm os.F
 	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 }
 
-// safeAtomicMoveFileWithFS is the internal implementation that accepts a FileSystem for testing
+// safeAtomicMoveFileWithFS is the internal implementation that accepts a FileSystem for testing.
+// srcPath and dstPath must be ResolvedPath values (parent-dir symlinks resolved) as constructed
+// by the public API callers; the downstream security checks still reject leaf symlinks.
 func safeAtomicMoveFileWithFS(srcPath, dstPath common.ResolvedPath, requiredPerm os.FileMode, fs FileSystem) error {
 	absSrc := srcPath.String()
 	if absSrc == "" {
 		return fmt.Errorf("%w: empty source path", ErrInvalidFilePath)
 	}
-
 	absDst := dstPath.String()
 	if absDst == "" {
 		return fmt.Errorf("%w: empty destination path", ErrInvalidFilePath)
 	}
+	return atomicMoveFileCore(absSrc, absDst, requiredPerm, fs)
+}
 
+// atomicMoveFileCore is the shared implementation used by both safeAtomicMoveFileWithFS
+// (public API path, paths already resolved via ResolvedPath) and osFS.AtomicMoveFile
+// (FileSystem bridge, paths resolved via filepath.Abs only).
+// absSrc and absDst must be absolute paths. Symlinks in the paths are detected and
+// rejected here by SafeOpenFile (openat2 RESOLVE_NO_SYMLINKS) and ensureParentDirsNoSymlinks.
+func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs FileSystem) error {
 	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
 		return err
