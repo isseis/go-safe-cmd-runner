@@ -170,11 +170,7 @@ func TestDefaultFileSystem_IsDir(t *testing.T) {
 
 func TestNewResolvedPath(t *testing.T) {
 	// Create a real temp dir to test with existing paths
-	tmpDir, err := os.MkdirTemp("", "test-resolved-path-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	// Create a real file inside tmpDir
 	realFile := filepath.Join(tmpDir, "testfile.txt")
@@ -229,11 +225,7 @@ func TestNewResolvedPath(t *testing.T) {
 
 func TestNewResolvedPathForNew(t *testing.T) {
 	// Create a real temp dir to test with
-	tmpDir, err := os.MkdirTemp("", "test-resolved-path-new-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	resolvedDir, err := filepath.EvalSymlinks(tmpDir)
 	if err != nil {
