@@ -24,8 +24,8 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    A[(Raw Path String)] --> B["ResolvedPath Constructor\nNewResolvedPath / NewResolvedPathForNew"]
-    B --> C["ResolvedPath\nresolved absolute path"]
+    A[(Raw Path String)] --> B["ResolvedPath Constructor<br>NewResolvedPath / NewResolvedPathForNew"]
+    B --> C["ResolvedPath<br>resolved absolute path"]
     C --> D["Validator / Store / Analysis Components"]
     D --> E[(Hash Record / Analysis Record)]
 
@@ -62,10 +62,10 @@ flowchart TB
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    A[(Callers with raw paths)] --> B["common.ResolvedPath\nconstructors"]
-    B --> C["internal/filevalidator\nvalidatePath and verification"]
-    B --> D["internal/fileanalysis\nStore and adapters"]
-    D --> E["HashFilePathGetter\nSHA256 / Hybrid"]
+    A[(Callers with raw paths)] --> B["common.ResolvedPath<br>constructors"]
+    B --> C["internal/filevalidator<br>validatePath and verification"]
+    B --> D["internal/fileanalysis<br>Store and adapters"]
+    D --> E["HashFilePathGetter<br>SHA256 / Hybrid"]
     E --> F[(Analysis record files)]
 
     G[(Search for remaining Abs/EvalSymlinks)] --> H["Migration Review Loop"]
@@ -87,20 +87,20 @@ graph TB
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     subgraph "internal/common"
-        A["filesystem.go\nResolvedPath / constructors"]
-        B["hash_file_path_getter.go\ninterface update"]
+        A["filesystem.go<br>ResolvedPath / constructors"]
+        B["hash_file_path_getter.go<br>interface update"]
     end
 
     subgraph "internal/filevalidator"
-        C["validator.go\nvalidatePath normalization cleanup"]
-        D["sha256_path_hash_getter.go\nresolved hashDir input"]
-        E["hybrid_hash_path_getter.go\nresolved hashDir input"]
+        C["validator.go<br>validatePath normalization cleanup"]
+        D["sha256_path_hash_getter.go<br>resolved hashDir input"]
+        E["hybrid_hash_path_getter.go<br>resolved hashDir input"]
     end
 
     subgraph "internal/fileanalysis"
-        F["file_analysis_store.go\nresolved analysisDir ownership"]
-        G["syscall_store.go\nResolvedPath constructor usage"]
-        H["network_symbol_store.go\nResolvedPath constructor usage"]
+        F["file_analysis_store.go<br>resolved analysisDir ownership"]
+        G["syscall_store.go<br>ResolvedPath constructor usage"]
+        H["network_symbol_store.go<br>ResolvedPath constructor usage"]
     end
 
     A --> C
@@ -214,7 +214,7 @@ flowchart TD
     A[(Raw Path Input)] --> B["ResolvedPath Constructor"]
     B --> C{"Normalization ok?"}
     C -->|No| D["Return constructor error"]
-    C -->|Yes| E["Domain validation\nregular file / hash path generation"]
+    C -->|Yes| E["Domain validation<br>regular file / hash path generation"]
     E --> F{"Domain validation ok?"}
     F -->|No| G["Return domain-specific error"]
     F -->|Yes| H[(ResolvedPath accepted)]
@@ -224,6 +224,7 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
     class A,H data;
     class B,D,E,G process;
+
     class C,F enhanced;
 ```
 
