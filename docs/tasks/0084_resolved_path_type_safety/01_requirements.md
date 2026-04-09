@@ -144,10 +144,7 @@ func NewResolvedPathForNew(path string) (ResolvedPath, error)
 
 ```go
 func validatePath(filePath string) (common.ResolvedPath, error) {
-    if filePath == "" {
-        return common.ResolvedPath{}, safefileio.ErrInvalidFilePath
-    }
-    rp, err := common.NewResolvedPath(filePath) // Abs + EvalSymlinks を内包
+    rp, err := common.NewResolvedPath(filePath) // Abs + EvalSymlinks を内包。空文字は common.ErrEmptyPath を返す
     if err != nil {
         return common.ResolvedPath{}, err
     }
