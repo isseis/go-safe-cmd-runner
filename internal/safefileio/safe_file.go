@@ -96,17 +96,21 @@ func (fs *osFS) Remove(name string) error {
 	return os.Remove(name)
 }
 
-// AtomicMoveFile atomically moves a file from source to destination with secure permissions
+// AtomicMoveFile atomically moves a file from source to destination with secure permissions.
+// Path resolution is intentionally limited to filepath.Abs (no EvalSymlinks) so that symlinks
+// in srcPath and dstPath's parent are left intact for the downstream security checks in
+// safeAtomicMoveFileWithFS (SafeOpenFile via openat2 RESOLVE_NO_SYMLINKS for the source,
+// ensureParentDirsNoSymlinks for the destination parent).
 func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
-	resolvedSrc, err := common.NewResolvedPath(srcPath)
+	absSrc, err := common.NewResolvedPathAbsOnly(srcPath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
-	resolvedDst, err := common.NewResolvedPathParentOnly(dstPath)
+	absDst, err := common.NewResolvedPathAbsOnly(dstPath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
-	return safeAtomicMoveFileWithFS(resolvedSrc, resolvedDst, requiredPerm, fs)
+	return safeAtomicMoveFileWithFS(absSrc, absDst, requiredPerm, fs)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
