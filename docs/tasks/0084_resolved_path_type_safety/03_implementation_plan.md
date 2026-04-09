@@ -280,9 +280,9 @@ grep -rn "filepath\.Abs\|filepath\.EvalSymlinks" \
 - [-] Step 2-2: スキップ（Step 1-2 で完了）
 - [x] Step 2-3: Validator.hashDir を ResolvedPath 化・newValidator シグネチャ更新・New の filepath.Abs 削除と NewResolvedPath 取得に変更
 - [x] Step 2-4: filevalidator.validatePath の Abs+EvalSymlinks を NewResolvedPath に委譲
-- [ ] Step 3-1: 残存箇所の検索実施
-- [ ] Step 3-2: 移行候補の分類
-- [ ] Step 3-3: 停止または継続の決定
+- [x] Step 3-1: 残存箇所の検索実施
+- [x] Step 3-2: 移行候補の分類
+- [x] Step 3-3: 停止または継続の決定
 
 ---
 
