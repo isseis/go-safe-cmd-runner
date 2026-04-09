@@ -84,7 +84,7 @@ fileanalysis.Store.analysisDir: string ← ResolvedPath 化する
 - `internal/verification/manager_test.go`
 - `internal/fileanalysis/network_symbol_store_test.go`
 
-- `hashDir` を `string` リテラルで渡している箇所を `common.NewResolvedPath(...)` または `MustResolvedPath(...)` に変更
+- `hashDir` を `string` リテラルで渡している箇所を `common.NewResolvedPath(...)` に変更（テスト内で作成済みのディレクトリパスなので `NewResolvedPath` が成功する）
 
 #### (f) `common.ResolvedPath(someString)` の直接型変換
 
