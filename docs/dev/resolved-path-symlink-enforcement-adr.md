@@ -114,14 +114,15 @@ type ResolvedPath struct {
 }
 ```
 
-Each constructor sets `mode`; enforcement is placed at the entry point of each security-boundary function.
+Each constructor sets `mode`; enforcement is placed at security boundaries via
+an exported `ResolvedPath` method, `IsParentOnly() bool`.
 
 ```go
 // Inside safeAtomicMoveFileWithFS
-if srcPath.mode == resolveModeFull {
+if !srcPath.IsParentOnly() {
     return fmt.Errorf("%w: srcPath must use NewResolvedPathParentOnly", ErrInvalidFilePath)
 }
-if dstPath.mode == resolveModeFull {
+if !dstPath.IsParentOnly() {
     return fmt.Errorf("%w: dstPath must use NewResolvedPathParentOnly", ErrInvalidFilePath)
 }
 ```
@@ -169,15 +170,16 @@ That specification was a security mistake. Pre-resolving the leaf symlink with `
    - Add `mode` field to `ResolvedPath`
    - `NewResolvedPath`: set `resolveModeFull`
    - `NewResolvedPathParentOnly`: set `resolveModeParentOnly`
+    - Add `IsParentOnly() bool` method (to avoid external packages directly accessing `mode`)
 
 2. `internal/safefileio/safe_file.go`
-   - `safeAtomicMoveFileWithFS`: add assertions on `srcPath.mode` and `dstPath.mode`
-   - `safeWriteFileCommon`: add assertion on `filePath.mode`
+    - `safeAtomicMoveFileWithFS`: add assertions on `srcPath.IsParentOnly()` and `dstPath.IsParentOnly()`
+    - `safeWriteFileCommon`: add assertion on `filePath.IsParentOnly()`
 
    - `SafeReadFile` / `SafeReadFileWithFS`: no mode assertion added (both constructors are valid callers)
 
 3. New tests
-   - Verify that passing a `ResolvedPath` created with `NewResolvedPath` to `SafeWriteFile` and `SafeAtomicMoveFile` returns `ErrInvalidFilePath`
+    - Verify that passing a `ResolvedPath` created with `NewResolvedPath` to `SafeWriteFile`, `SafeWriteFileOverwrite`, and `SafeAtomicMoveFile` returns `ErrInvalidFilePath`
 
 ### Future Path
 

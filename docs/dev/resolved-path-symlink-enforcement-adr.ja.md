@@ -114,14 +114,15 @@ type ResolvedPath struct {
 }
 ```
 
-各コンストラクタが `mode` を設定し、セキュリティ境界となる関数の入口でアサーションを行う。
+各コンストラクタが `mode` を設定し、`ResolvedPath` に追加する公開メソッド
+`IsParentOnly() bool` を通じてセキュリティ境界でアサーションを行う。
 
 ```go
 // safeAtomicMoveFileWithFS 内
-if srcPath.mode == resolveModeFull {
+if !srcPath.IsParentOnly() {
     return fmt.Errorf("%w: srcPath must use NewResolvedPathParentOnly", ErrInvalidFilePath)
 }
-if dstPath.mode == resolveModeFull {
+if !dstPath.IsParentOnly() {
     return fmt.Errorf("%w: dstPath must use NewResolvedPathParentOnly", ErrInvalidFilePath)
 }
 ```
@@ -133,7 +134,7 @@ if dstPath.mode == resolveModeFull {
 - 変換ボイラープレートが不要
 - `SafeWriteFile`・`SafeWriteFileOverwrite`・`SafeAtomicMoveFile` を一括保護できる
 - `mode` のゼロ値が `resolveModeParentOnly` となるため iota の順序として安全側に倒れる（実際には `path` も空文字列になるため、空パスチェックが先に発火して mode アサーションは実行されない）
-- 変更規模：約 25 行（既存コードの修正なし）
+- 変更規模：約 25 行（既存呼び出し元コードの修正なし）
 
 **Cons:**
 - 実行時チェックであり、コンパイル時には誤用を検知できない
@@ -169,15 +170,16 @@ if dstPath.mode == resolveModeFull {
    - `ResolvedPath` へ `mode` フィールドを追加
    - `NewResolvedPath`: `resolveModeFull` を設定
    - `NewResolvedPathParentOnly`: `resolveModeParentOnly` を設定
+    - `IsParentOnly() bool` メソッドを追加（`mode` の直接参照を外部パッケージへ露出しない）
 
 2. `internal/safefileio/safe_file.go`
-   - `safeAtomicMoveFileWithFS`: `srcPath.mode` および `dstPath.mode` のアサーション追加
-   - `safeWriteFileCommon`: `filePath.mode` のアサーション追加
+    - `safeAtomicMoveFileWithFS`: `srcPath.IsParentOnly()` および `dstPath.IsParentOnly()` のアサーション追加
+    - `safeWriteFileCommon`: `filePath.IsParentOnly()` のアサーション追加
 
    - `SafeReadFile`・`SafeReadFileWithFS`: モードアサーション追加なし（両コンストラクタが正当なため）
 
 3. テストの追加
-   - `NewResolvedPath` で作成した `ResolvedPath` を `SafeWriteFile`・`SafeAtomicMoveFile` に渡した場合に `ErrInvalidFilePath` が返ることを検証
+    - `NewResolvedPath` で作成した `ResolvedPath` を `SafeWriteFile`・`SafeWriteFileOverwrite`・`SafeAtomicMoveFile` に渡した場合に `ErrInvalidFilePath` が返ることを検証
 
 ### 将来の方針
 

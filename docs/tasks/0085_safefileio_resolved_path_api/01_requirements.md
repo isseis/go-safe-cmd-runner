@@ -192,7 +192,7 @@ func SafeAtomicMoveFile(srcPath, dstPath common.ResolvedPath, requiredPerm os.Fi
 ```
 
 呼び出し元での `ResolvedPath` 生成方法:
-- `srcPath`: 移動元ファイルは存在するため `NewResolvedPath` を使用する
+- `srcPath`: `NewResolvedPathParentOnly` を使用する（リーフのシンボリックリンク検知を維持するため）
 - `dstPath`: 移動先ファイルは存在しない場合があるため `NewResolvedPathParentOnly` を使用する
 
 #### FR-5.2: 内部関数
@@ -295,7 +295,7 @@ content, err = safefileio.SafeReadFile(resolvedPath)
 
 - 新規作成・上書き・読み込み（リーフのシンボリックリンク検出を保持）: `NewResolvedPathParentOnly` または `newResolvedPathForNew`（test-only、存在チェックあり）
 - 既存ファイル（シンボリックリンクを追跡して実体パスを得る場合）: `NewResolvedPath`
-- `SafeAtomicMoveFile` の srcPath: `NewResolvedPath`（実体が必要）、dstPath: `NewResolvedPathParentOnly`
+- `SafeAtomicMoveFile` の srcPath: `NewResolvedPathParentOnly`、dstPath: `NewResolvedPathParentOnly`
 
 `WithFS` バリアント（`safeWriteFileWithFS` 等）を直接呼ぶテストも同様に変更する。
 
