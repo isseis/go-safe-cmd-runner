@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -110,7 +109,7 @@ func (v *Validator) GetStore() *fileanalysis.Store {
 // It should be instantiated using the New function.
 type Validator struct {
 	algorithm               HashAlgorithm
-	hashDir                 string
+	hashDir                 common.ResolvedPath
 	hashFilePathGetter      common.HashFilePathGetter
 	privilegedFileValidator *PrivilegedFileValidator
 
@@ -130,13 +129,6 @@ type Validator struct {
 // This constructor uses the FileAnalysisRecord format for storing hash and analysis results.
 // The analysis store preserves existing fields (e.g., SyscallAnalysis) when updating hashes.
 func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
-	// Resolve to absolute path early, consistent with newValidator behavior.
-	var err error
-	hashDir, err = filepath.Abs(hashDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for hash directory: %w", err)
-	}
-
 	hashFilePathGetter := NewHybridHashFilePathGetter()
 
 	// Create analysis store first — this creates the directory if it doesn't exist.
@@ -145,8 +137,14 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 		return nil, fmt.Errorf("failed to create analysis store: %w", err)
 	}
 
+	// The directory now exists; resolve it to an absolute, symlink-free path.
+	resolvedHashDir, err := common.NewResolvedPath(hashDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve hash directory path %q: %w", hashDir, err)
+	}
+
 	// Now create the validator — the directory is guaranteed to exist.
-	v, err := newValidator(algorithm, hashDir, hashFilePathGetter)
+	v, err := newValidator(algorithm, resolvedHashDir, hashFilePathGetter)
 	if err != nil {
 		return nil, err
 	}
@@ -157,13 +155,13 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 
 // newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
-func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter common.HashFilePathGetter) (*Validator, error) {
+func newValidator(algorithm HashAlgorithm, hashDir common.ResolvedPath, hashFilePathGetter common.HashFilePathGetter) (*Validator, error) {
 	if algorithm == nil {
 		return nil, ErrNilAlgorithm
 	}
 
 	// Ensure the hash directory exists and is a directory
-	info, err := os.Lstat(hashDir)
+	info, err := os.Lstat(hashDir.String())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)
@@ -500,29 +498,21 @@ func (v *Validator) verifyHash(filePath common.ResolvedPath, actualHash string) 
 
 // validatePath validates and normalizes the given file path.
 func validatePath(filePath string) (common.ResolvedPath, error) {
-	if filePath == "" {
-		return "", safefileio.ErrInvalidFilePath
+	rp, err := common.NewResolvedPath(filePath)
+	if err != nil {
+		return common.ResolvedPath{}, err
 	}
 
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	resolvedPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return "", err
-	}
 	// check if resolvedPath is a regular file
-	fileInfo, err := os.Lstat(resolvedPath)
+	fileInfo, err := os.Lstat(rp.String())
 	if err != nil {
-		return "", err
+		return common.ResolvedPath{}, err
 	}
 	if !fileInfo.Mode().IsRegular() {
-		return "", fmt.Errorf("%w: not a regular file: %s", safefileio.ErrInvalidFilePath, resolvedPath)
+		return common.ResolvedPath{}, fmt.Errorf("%w: not a regular file: %v", safefileio.ErrInvalidFilePath, rp)
 	}
 
-	return common.NewResolvedPath(resolvedPath)
+	return rp, nil
 }
 
 // calculateHash calculates the hash of the file at the given path.

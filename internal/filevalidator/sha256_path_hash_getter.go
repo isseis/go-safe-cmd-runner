@@ -54,12 +54,12 @@ func NewSHA256PathHashGetter() *SHA256PathHashGetter {
 //
 // Note: This implementation always produces .json files regardless of the
 // original file type, for consistency with the hash storage format.
-func (p *SHA256PathHashGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
-	if hashDir == "" {
+func (p *SHA256PathHashGetter) GetHashFilePath(hashDir common.ResolvedPath, filePath common.ResolvedPath) (string, error) {
+	if hashDir.String() == "" {
 		return "", ErrEmptyHashDir
 	}
 	h := sha256.Sum256([]byte(filePath.String()))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 
-	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
+	return filepath.Join(hashDir.String(), hashStr[:12]+".json"), nil
 }

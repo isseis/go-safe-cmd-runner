@@ -381,12 +381,14 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 
 	// Check group permissions
 	if stat.Mode()&0o020 != 0 {
-		inGroup, err := v.isUserInGroup(realUID, sysstat.Gid)
-		if err != nil {
-			return fmt.Errorf("failed to check group membership: %w", err)
-		}
-		if inGroup {
-			return nil // User is in group and group has write permission
+		if v.groupMembership != nil {
+			inGroup, err := v.isUserInGroup(realUID, sysstat.Gid)
+			if err != nil {
+				return fmt.Errorf("failed to check group membership: %w", err)
+			}
+			if inGroup {
+				return nil // User is in group and group has write permission
+			}
 		}
 	}
 

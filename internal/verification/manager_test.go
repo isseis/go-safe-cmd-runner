@@ -58,7 +58,11 @@ func createWrongHashRecord(hashDir, filePath, wrongHash string) (string, error) 
 		return "", fmt.Errorf("failed to write wrong hash record: %w", err)
 	}
 
-	hashFile, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	resolvedHashDir, err := common.NewResolvedPath(hashDir)
+	if err != nil {
+		return "", err
+	}
+	hashFile, err := getter.GetHashFilePath(resolvedHashDir, resolvedPath)
 	if err != nil {
 		return "", err
 	}
@@ -1487,8 +1491,10 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	getter := filevalidator.NewHybridHashFilePathGetter()
 	resolvedPath, err := common.NewResolvedPath(filePath)
 	require.NoError(t, err)
+	resolvedHashDir, err := common.NewResolvedPath(hashDir)
+	require.NoError(t, err)
 
-	recordFilePath, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	recordFilePath, err := getter.GetHashFilePath(resolvedHashDir, resolvedPath)
 	require.NoError(t, err)
 
 	record := map[string]interface{}{
@@ -1606,8 +1612,10 @@ func createFutureSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	getter := filevalidator.NewHybridHashFilePathGetter()
 	resolvedPath, err := common.NewResolvedPath(filePath)
 	require.NoError(t, err)
+	resolvedHashDir, err := common.NewResolvedPath(hashDir)
+	require.NoError(t, err)
 
-	recordFilePath, err := getter.GetHashFilePath(hashDir, resolvedPath)
+	recordFilePath, err := getter.GetHashFilePath(resolvedHashDir, resolvedPath)
 	require.NoError(t, err)
 
 	record := map[string]interface{}{

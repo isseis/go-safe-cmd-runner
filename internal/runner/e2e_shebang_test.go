@@ -94,7 +94,9 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	// Simulate a missing interpreter record by deleting the interpreter's hash file.
 	interpPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
-	interpHashPath, err := validator.GetHashFilePath(common.ResolvedPath(interpPath))
+	resolvedInterpPath, err := common.NewResolvedPath(interpPath)
+	require.NoError(t, err)
+	interpHashPath, err := validator.GetHashFilePath(resolvedInterpPath)
 	require.NoError(t, err)
 	require.NoError(t, os.Remove(interpHashPath))
 

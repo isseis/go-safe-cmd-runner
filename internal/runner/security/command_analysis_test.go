@@ -2798,8 +2798,13 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 
 	// Write a record that simulates what the record command would produce:
 	// a dynamically-linked binary with network symbols.
-	cmdPath := "/usr/bin/curl" // use an absolute path (no need to exist on disk)
-	resolvedPath := common.ResolvedPath(cmdPath)
+	// Create a temp file to use as the command path (NewResolvedPath requires the file to exist).
+	tmpCmd, err := os.CreateTemp(analysisDir, "fake-curl-*")
+	require.NoError(t, err)
+	tmpCmd.Close()
+	cmdPath := tmpCmd.Name()
+	resolvedPath, err := common.NewResolvedPath(cmdPath)
+	require.NoError(t, err)
 	const fakeHash = "sha256:deadbeef"
 
 	record := &fileanalysis.Record{

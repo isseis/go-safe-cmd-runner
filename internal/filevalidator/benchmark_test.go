@@ -58,7 +58,11 @@ func BenchmarkValidator_VerifyFromHandle(b *testing.B) {
 			b.Fatalf("Failed to open file: %v", err)
 		}
 
-		err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
+		rp, rpErr := common.NewResolvedPath(testFile)
+		if rpErr != nil {
+			b.Fatalf("NewResolvedPath failed: %v", rpErr)
+		}
+		err = validator.VerifyFromHandle(file, rp)
 		file.Close()
 
 		if err != nil {

@@ -1,6 +1,7 @@
 package filevalidator
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,90 +19,65 @@ func TestNewSHA256PathHashGetter(t *testing.T) {
 
 func TestSHA256PathHashGetter_GetHashFilePath(t *testing.T) {
 	getter := NewSHA256PathHashGetter()
-	hashDir := "/tmp/hash"
+	hashDirRaw := t.TempDir()
+	hashDir, err := common.NewResolvedPath(hashDirRaw)
+	require.NoError(t, err)
 
-	tests := []struct {
-		name        string
-		filePath    string
-		shouldError bool
-	}{
-		{
-			name:        "simple_absolute_path",
-			filePath:    "/home/user/file.txt",
-			shouldError: false,
-		},
-		{
-			name:        "root_path",
-			filePath:    "/",
-			shouldError: false,
-		},
-		{
-			name:        "nested_path",
-			filePath:    "/very/deep/nested/directory/structure/file.txt",
-			shouldError: false,
-		},
-		{
-			name:        "path_with_special_chars",
-			filePath:    "/path/with#hash/and~tilde/chars.txt",
-			shouldError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resolvedPath, err := common.NewResolvedPath(tt.filePath)
-			require.NoError(t, err)
-
-			result, err := getter.GetHashFilePath(hashDir, resolvedPath)
-
-			if tt.shouldError {
-				assert.Error(t, err)
-				return
-			}
-
-			assert.NoError(t, err)
-			assert.True(t, strings.HasPrefix(result, hashDir))
-
-			// Verify the result is a valid file path
-			assert.True(t, filepath.IsAbs(result))
-
-			// Extract filename and verify it's not empty
-			filename := filepath.Base(result)
-			assert.NotEmpty(t, filename)
-			assert.NotEqual(t, ".", filename)
-			assert.NotEqual(t, "/", filename)
-
-			// Production implementation always adds .json extension
-			assert.True(t, strings.HasSuffix(filename, ".json"), "Production implementation should always have .json extension")
-
-			// Verify filename format (12 chars + .json = 17 chars total)
-			assert.Equal(t, 17, len(filename), "Production filename should be exactly 17 characters (12 hash + 5 for .json)")
-		})
-	}
-}
-
-func TestSHA256PathHashGetter_GetHashFilePath_ErrorCases(t *testing.T) {
-	getter := NewSHA256PathHashGetter()
-	// Single explicit test case (previously was a single-entry table-driven test)
-	hashDir := ""
-	filePath := "/home/user/file.txt"
-
-	resolvedPath, err := common.NewResolvedPath(filePath)
+	// Create a real temp file to use as filePath
+	tmpFile, err := os.CreateTemp(hashDirRaw, "testfile-*.txt")
+	require.NoError(t, err)
+	tmpFile.Close()
+	resolvedPath, err := common.NewResolvedPath(tmpFile.Name())
 	require.NoError(t, err)
 
 	result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
-	// Expect an error and empty result when hashDir is empty
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(result, hashDir.String()))
+
+	// Verify the result is a valid file path
+	assert.True(t, filepath.IsAbs(result))
+
+	// Extract filename and verify it's not empty
+	filename := filepath.Base(result)
+	assert.NotEmpty(t, filename)
+	assert.NotEqual(t, ".", filename)
+	assert.NotEqual(t, "/", filename)
+
+	// Production implementation always adds .json extension
+	assert.True(t, strings.HasSuffix(filename, ".json"), "Production implementation should always have .json extension")
+
+	// Verify filename format (12 chars + .json = 17 chars total)
+	assert.Equal(t, 17, len(filename), "Production filename should be exactly 17 characters (12 hash + 5 for .json)")
+}
+
+func TestSHA256PathHashGetter_GetHashFilePath_ErrorCases(t *testing.T) {
+	getter := NewSHA256PathHashGetter()
+
+	hashDirRaw := t.TempDir()
+	tmpFile, err := os.CreateTemp(hashDirRaw, "testfile-*.txt")
+	require.NoError(t, err)
+	tmpFile.Close()
+	resolvedPath, err := common.NewResolvedPath(tmpFile.Name())
+	require.NoError(t, err)
+
+	// Empty hashDir (zero value) should return an error
+	result, err := getter.GetHashFilePath(common.ResolvedPath{}, resolvedPath)
+
 	assert.Error(t, err)
 	assert.Empty(t, result)
 }
 
 func TestSHA256PathHashGetter_GetHashFilePath_Consistency(t *testing.T) {
 	getter := NewSHA256PathHashGetter()
-	hashDir := "/tmp/hash"
-	filePath := "/home/user/consistent.txt"
+	hashDirRaw := t.TempDir()
+	hashDir, err := common.NewResolvedPath(hashDirRaw)
+	require.NoError(t, err)
 
-	resolvedPath, err := common.NewResolvedPath(filePath)
+	tmpFile, err := os.CreateTemp(hashDirRaw, "testfile-*.txt")
+	require.NoError(t, err)
+	tmpFile.Close()
+	resolvedPath, err := common.NewResolvedPath(tmpFile.Name())
 	require.NoError(t, err)
 
 	// Call the function multiple times with the same input
@@ -120,26 +96,34 @@ func TestSHA256PathHashGetter_GetHashFilePath_Consistency(t *testing.T) {
 
 func TestSHA256PathHashGetter_GetHashFilePath_DifferentHashDirs(t *testing.T) {
 	getter := NewSHA256PathHashGetter()
-	filePath := "/home/user/file.txt"
 
-	resolvedPath, err := common.NewResolvedPath(filePath)
+	// Create a single temp file to use as filePath
+	baseDir := t.TempDir()
+	tmpFile, err := os.CreateTemp(baseDir, "testfile-*.txt")
+	require.NoError(t, err)
+	tmpFile.Close()
+	resolvedPath, err := common.NewResolvedPath(tmpFile.Name())
 	require.NoError(t, err)
 
-	hashDirs := []string{
-		"/tmp/hash1",
-		"/tmp/hash2",
-		"/var/lib/hashes",
-		"/home/user/.hashes",
+	// Create multiple hash directories
+	hashDirRaws := []string{
+		t.TempDir(),
+		t.TempDir(),
+		t.TempDir(),
+		t.TempDir(),
 	}
 
-	results := make([]string, len(hashDirs))
-	for i, hashDir := range hashDirs {
+	results := make([]string, len(hashDirRaws))
+	for i, rawDir := range hashDirRaws {
+		hashDir, err := common.NewResolvedPath(rawDir)
+		require.NoError(t, err)
+
 		result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 		require.NoError(t, err)
 		results[i] = result
 
 		// Verify the result uses the correct hash directory
-		assert.True(t, strings.HasPrefix(result, hashDir))
+		assert.True(t, strings.HasPrefix(result, rawDir))
 	}
 
 	// All results should have different prefixes but same filename

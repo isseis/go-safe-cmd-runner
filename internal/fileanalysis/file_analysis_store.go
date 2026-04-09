@@ -25,7 +25,7 @@ const (
 // Note: This type was renamed from FileAnalysisStore to avoid stuttering
 // (fileanalysis.Store instead of fileanalysis.FileAnalysisStore).
 type Store struct {
-	analysisDir string
+	analysisDir common.ResolvedPath
 	pathGetter  common.HashFilePathGetter
 }
 
@@ -57,8 +57,13 @@ func NewStore(analysisDir string, pathGetter common.HashFilePathGetter) (*Store,
 		return nil, fmt.Errorf("%w: %s", ErrAnalysisDirNotDirectory, analysisDir)
 	}
 
+	resolvedDir, err := common.NewResolvedPath(analysisDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve analysis directory: %w", err)
+	}
+
 	return &Store{
-		analysisDir: analysisDir,
+		analysisDir: resolvedDir,
 		pathGetter:  pathGetter,
 	}, nil
 }

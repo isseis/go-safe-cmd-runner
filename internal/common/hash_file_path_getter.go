@@ -6,5 +6,5 @@ package common
 // and fileanalysis, both of which need to reference this interface.
 type HashFilePathGetter interface {
 	// GetHashFilePath returns the path where the given file's hash would be stored.
-	GetHashFilePath(hashDir string, filePath ResolvedPath) (string, error)
+	GetHashFilePath(hashDir ResolvedPath, filePath ResolvedPath) (string, error)
 }
