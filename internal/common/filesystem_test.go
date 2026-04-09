@@ -280,19 +280,19 @@ func TestNewResolvedPathForNew(t *testing.T) {
 			name:        "existing file should fail",
 			path:        existingFile,
 			expectError: true,
-			expectErr:   ErrPathAlreadyExists,
+			expectErr:   errPathAlreadyExists,
 		},
 		{
 			name:        "existing symlink should fail",
 			path:        symlinkPath,
 			expectError: true,
-			expectErr:   ErrPathAlreadyExists,
+			expectErr:   errPathAlreadyExists,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := NewResolvedPathForNew(tt.path)
+			result, err := newResolvedPathForNew(tt.path)
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error but got none")
