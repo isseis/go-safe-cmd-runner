@@ -4,7 +4,7 @@
 
 ### 1.1 背景
 
-タスク 0084 で `common.ResolvedPath` が struct 化され、コンストラクタ（`NewResolvedPath` / `NewResolvedPathForNew`）を経由しなければ有効な値を生成できなくなった。これにより「絶対パス・親ディレクトリのシンボリックリンク解決済み」であることが型レベルで保証されるようになった。
+タスク 0084 で `common.ResolvedPath` が struct 化され、コンストラクタ（`NewResolvedPath` / `NewResolvedPathParentOnly`）を経由しなければ有効な値を生成できなくなった。これにより「絶対パス・親ディレクトリのシンボリックリンク解決済み」であることが型レベルで保証されるようになった。
 
 しかし `safefileio` パッケージの公開 API は依然として `string` を受け取っており、型安全性の恩恵が届いていない：
 
@@ -15,7 +15,7 @@
 | `SafeWriteFileOverwrite` | `(filePath string, content []byte, perm os.FileMode) error` |
 | `SafeAtomicMoveFile` | `(srcPath, dstPath string, requiredPerm os.FileMode) error` |
 
-また、タスク 0084 では `NewResolvedPathForNew`（新規ファイル用コンストラクタ）の公開化が YAGNI として先送りされ、`internal/common/test_helpers.go` に非公開のまま残っている。本タスクで `SafeWriteFile` 等が `ResolvedPath` を受け取るために必要となるため、合わせて公開化する。
+また、タスク 0084 では `NewResolvedPathParentOnly`（親ディレクトリのみを解決するコンストラクタ）の公開化が YAGNI として先送りされ、`internal/common/test_helpers.go` に非公開のまま残っている。本タスクで `SafeWriteFile` 等が `ResolvedPath` を受け取るために必要となるため、合わせて公開化する。
 
 ### 1.2 採用アプローチ
 
@@ -26,7 +26,7 @@
 ### 1.3 スコープ
 
 **対象:**
-- `common.NewResolvedPathForNew` の公開化
+- `common.NewResolvedPathParentOnly` の公開化
 - `SafeReadFile` / `SafeWriteFile` / `SafeWriteFileOverwrite` / `SafeAtomicMoveFile` のシグネチャ変更
 - 上記に対応する `WithFS` バリアントおよび `safeWriteFileCommon`、`safeAtomicMoveFileWithFS` の変更
 - 各関数内部の冗長な `filepath.Abs()` 呼び出しの削除
@@ -45,25 +45,27 @@
 
 | 用語 | 定義 |
 |------|------|
-| 書き込み用解決済みパス | 親ディレクトリが `filepath.EvalSymlinks` 済みであることが保証されたパス。ファイル自体の存否は問わない。`NewResolvedPathForNew` が返す |
-| 読み取り用解決済みパス | ファイル自体も含めて `filepath.EvalSymlinks` 済みのパス。ファイルが存在することが前提。`NewResolvedPath` が返す |
+| 親のみ解決済みパス | 親ディレクトリが `filepath.EvalSymlinks` 済みであることが保証されたパス。リーフは元のファイル名をそのまま保持する。ファイル自体の存否は問わない。`NewResolvedPathParentOnly` が返す |
+| 完全解決済みパス | ファイル自体も含めて `filepath.EvalSymlinks` 済みのパス。ファイルが存在することが前提。`NewResolvedPath` が返す |
 
 ---
 
 ## 3. 機能要件
 
-### 3.1 `NewResolvedPathForNew` の公開化
+### 3.1 `NewResolvedPathParentOnly` の公開化
 
 #### FR-1.1: 公開コンストラクタの追加
 
-`internal/common/test_helpers.go` の非公開関数 `newResolvedPathForNew` を基に、`internal/common/filesystem.go` に公開コンストラクタ `NewResolvedPathForNew` を追加する。
+`internal/common/test_helpers.go` の非公開関数 `newResolvedPathForNew` を基に、`internal/common/filesystem.go` に公開コンストラクタ `NewResolvedPathParentOnly` を追加する。
 
 ```go
-// NewResolvedPathForNew は新規作成予定ファイルのパスを解決して ResolvedPath を生成する。
-// 親ディレクトリに filepath.EvalSymlinks を適用し、ファイル名を結合する。
+// NewResolvedPathParentOnly は親ディレクトリのみに filepath.EvalSymlinks を適用し、
+// ファイル名を結合して ResolvedPath を生成する。
+// リーフ（ファイル名部分）は解決しないため、SafeReadFile 等が
+// openat2(RESOLVE_NO_SYMLINKS) でリーフのシンボリックリンクを検出できる。
 // 親ディレクトリが存在しない場合はエラーを返す。
-// ファイル自体の存否は問わない（新規作成・上書きどちらにも使用できる）。
-func NewResolvedPathForNew(path string) (ResolvedPath, error)
+// ファイル自体の存否は問わない（新規作成・上書き・読み込みいずれにも使用できる）。
+func NewResolvedPathParentOnly(path string) (ResolvedPath, error)
 ```
 
 処理手順:
@@ -78,11 +80,11 @@ func NewResolvedPathForNew(path string) (ResolvedPath, error)
 
 #### FR-1.2: テストヘルパーの更新
 
-`test_helpers.go` の `newResolvedPathForNew` は `NewResolvedPathForNew` を呼び出した上でファイルの非存在チェックを追加する薄いラッパーに変更する。既存の `errPathAlreadyExists` エラーは引き続き test-only スコープで保持する。
+`test_helpers.go` の `newResolvedPathForNew` は `NewResolvedPathParentOnly` を呼び出した上でファイルの非存在チェックを追加する薄いラッパーに変更する。既存の `errPathAlreadyExists` エラーは引き続き test-only スコープで保持する。
 
 ```go
 func newResolvedPathForNew(path string) (ResolvedPath, error) {
-    rp, err := NewResolvedPathForNew(path)
+    rp, err := NewResolvedPathParentOnly(path)
     if err != nil {
         return ResolvedPath{}, err
     }
@@ -133,7 +135,7 @@ func SafeWriteFile(filePath string, content []byte, perm os.FileMode) error
 func SafeWriteFile(filePath common.ResolvedPath, content []byte, perm os.FileMode) error
 ```
 
-呼び出し元は `NewResolvedPathForNew` で `ResolvedPath` を生成して渡す。
+呼び出し元は `NewResolvedPathParentOnly` で `ResolvedPath` を生成して渡す。
 
 #### FR-3.2: 内部関数
 
@@ -163,7 +165,7 @@ func SafeWriteFileOverwrite(filePath string, content []byte, perm os.FileMode) e
 func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) error
 ```
 
-呼び出し元は `NewResolvedPathForNew` で `ResolvedPath` を生成して渡す。ファイルが既存でも新規でも `NewResolvedPathForNew` が適切（FR-1.1 参照）。
+呼び出し元は `NewResolvedPathParentOnly` で `ResolvedPath` を生成して渡す。ファイルが既存でも新規でも `NewResolvedPathParentOnly` が適切（FR-1.1 参照）。
 
 #### FR-4.2: 内部関数
 
@@ -191,7 +193,7 @@ func SafeAtomicMoveFile(srcPath, dstPath common.ResolvedPath, requiredPerm os.Fi
 
 呼び出し元での `ResolvedPath` 生成方法:
 - `srcPath`: 移動元ファイルは存在するため `NewResolvedPath` を使用する
-- `dstPath`: 移動先ファイルは存在しない場合があるため `NewResolvedPathForNew` を使用する
+- `dstPath`: 移動先ファイルは存在しない場合があるため `NewResolvedPathParentOnly` を使用する
 
 #### FR-5.2: 内部関数
 
@@ -248,7 +250,11 @@ content, err := safefileio.SafeReadFile(targetPath)
 data, err := safefileio.SafeReadFile(recordPath)  // recordPath は string
 
 // 変更後
-resolvedRecordPath, err := common.NewResolvedPath(recordPath)
+// NewResolvedPathParentOnly（親のみ解決）を使用する。
+// NewResolvedPath（完全解決）を使うとリーフのシンボリックリンクが先に解決され、
+// SafeReadFile の openat2(RESOLVE_NO_SYMLINKS) によるシンボリックリンク検出が
+// 機能しなくなるため不可。
+resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
 if err != nil {
     return nil, fmt.Errorf("failed to resolve record path: %w", err)
 }
@@ -262,7 +268,7 @@ data, err := safefileio.SafeReadFile(resolvedRecordPath)
 err = safefileio.SafeWriteFileOverwrite(recordPath, data, filePermission)  // recordPath は string
 
 // 変更後
-resolvedRecordPath, err := common.NewResolvedPathForNew(recordPath)
+resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
 if err != nil {
     return fmt.Errorf("failed to resolve record path: %w", err)
 }
@@ -287,9 +293,9 @@ content, err = safefileio.SafeReadFile(resolvedPath)
 
 `SafeReadFile`、`SafeWriteFile`、`SafeWriteFileOverwrite`、`SafeAtomicMoveFile` を直接呼ぶテストは、`ResolvedPath` を生成して渡すよう変更する。
 
-- 新規作成: `NewResolvedPathForNew` または `newResolvedPathForNew`（test-only、存在チェックあり）
-- 既存ファイル: `NewResolvedPath`
-- `SafeAtomicMoveFile` の srcPath: `NewResolvedPath`、dstPath: `newResolvedPathForNew`
+- 新規作成・上書き・読み込み（リーフのシンボリックリンク検出を保持）: `NewResolvedPathParentOnly` または `newResolvedPathForNew`（test-only、存在チェックあり）
+- 既存ファイル（シンボリックリンクを追跡して実体パスを得る場合）: `NewResolvedPath`
+- `SafeAtomicMoveFile` の srcPath: `NewResolvedPath`（実体が必要）、dstPath: `NewResolvedPathParentOnly`
 
 `WithFS` バリアント（`safeWriteFileWithFS` 等）を直接呼ぶテストも同様に変更する。
 
@@ -299,10 +305,10 @@ content, err = safefileio.SafeReadFile(resolvedPath)
 
 | ID | 基準 |
 |----|------|
-| AC-1 | `common.NewResolvedPathForNew("/existing/dir/newfile.txt")` は親ディレクトリが存在する場合に成功し、親ディレクトリが EvalSymlinks 済みのパスを返す |
-| AC-2 | `common.NewResolvedPathForNew("/nonexistent/dir/newfile.txt")` は親ディレクトリが存在しない場合にエラーを返す |
-| AC-3 | `common.NewResolvedPathForNew("")` は `ErrEmptyPath` を返す |
-| AC-4 | `common.NewResolvedPathForNew("/existing/dir/existingfile.txt")` はファイルが既に存在していても成功する（ファイルの存否を問わない） |
+| AC-1 | `common.NewResolvedPathParentOnly("/existing/dir/newfile.txt")` は親ディレクトリが存在する場合に成功し、親ディレクトリが EvalSymlinks 済みのパスを返す |
+| AC-2 | `common.NewResolvedPathParentOnly("/nonexistent/dir/newfile.txt")` は親ディレクトリが存在しない場合にエラーを返す |
+| AC-3 | `common.NewResolvedPathParentOnly("")` は `ErrEmptyPath` を返す |
+| AC-4 | `common.NewResolvedPathParentOnly("/existing/dir/existingfile.txt")` はファイルが既に存在していても成功する（ファイルの存否を問わない） |
 | AC-5 | `SafeWriteFile` に `common.ResolvedPath{}` （ゼロ値）を渡した場合にエラーを返す |
 | AC-6 | `SafeWriteFileOverwrite` に `common.ResolvedPath{}` を渡した場合にエラーを返す |
 | AC-7 | `SafeReadFile` に `common.ResolvedPath{}` を渡した場合にエラーを返す |

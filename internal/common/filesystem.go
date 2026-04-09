@@ -117,11 +117,13 @@ type ResolvedPath struct {
 	path string
 }
 
-// NewResolvedPathForNew creates a ResolvedPath for a file that is to be created or overwritten.
-// It resolves the parent directory via EvalSymlinks and re-joins the file name.
+// NewResolvedPathParentOnly creates a ResolvedPath by resolving only the parent directory
+// via EvalSymlinks and re-joining the file name unchanged.
 // The file itself need not exist; only the parent directory must exist.
+// Because the leaf is not dereferenced, callers such as SafeReadFile can still detect
+// and reject a symlink at the leaf position via openat2(RESOLVE_NO_SYMLINKS).
 // Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks on the parent.
-func NewResolvedPathForNew(path string) (ResolvedPath, error) {
+func NewResolvedPathParentOnly(path string) (ResolvedPath, error) {
 	if path == "" {
 		return ResolvedPath{}, ErrEmptyPath
 	}

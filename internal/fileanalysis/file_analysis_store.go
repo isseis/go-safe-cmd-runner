@@ -76,7 +76,10 @@ func (s *Store) Load(filePath common.ResolvedPath) (*Record, error) {
 		return nil, fmt.Errorf("failed to get analysis record path: %w", err)
 	}
 
-	resolvedRecordPath, err := common.NewResolvedPath(recordPath)
+	// Use NewResolvedPathParentOnly so that a symlink at the
+	// record file leaf is not dereferenced before SafeReadFile sees it.
+	// SafeReadFile uses openat2(RESOLVE_NO_SYMLINKS) and will reject the symlink.
+	resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrRecordNotFound
@@ -133,7 +136,7 @@ func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 		return fmt.Errorf("failed to marshal analysis record: %w", err)
 	}
 
-	resolvedRecordPath, err := common.NewResolvedPathForNew(recordPath)
+	resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve record path: %w", err)
 	}

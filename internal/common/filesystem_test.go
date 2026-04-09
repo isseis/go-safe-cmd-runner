@@ -223,7 +223,7 @@ func TestNewResolvedPath(t *testing.T) {
 	}
 }
 
-func TestNewResolvedPathForNew(t *testing.T) {
+func TestNewResolvedPathParentOnly(t *testing.T) {
 	// Create a real temp dir to test with
 	tmpDir := t.TempDir()
 

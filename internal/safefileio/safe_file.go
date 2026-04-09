@@ -102,7 +102,7 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
-	resolvedDst, err := common.NewResolvedPathForNew(dstPath)
+	resolvedDst, err := common.NewResolvedPathParentOnly(dstPath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}

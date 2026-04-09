@@ -5,7 +5,7 @@
 ```
 ResolvedPath = type alias (string)     ← 今回 struct 化する
 NewResolvedPath: empty 判定のみ        ← Abs + EvalSymlinks を追加する
-NewResolvedPathForNew: 未実装          ← 新規作成する
+NewResolvedPathParentOnly: 未実装          ← 新規作成する
 HashFilePathGetter.GetHashFilePath:
   引数 hashDir string                  ← ResolvedPath 化する
 filevalidator.New: filepath.Abs のみ   ← Abs 削除・NewStore へ委譲
@@ -31,7 +31,7 @@ fileanalysis.Store.analysisDir: string ← ResolvedPath 化する
    - `filepath.Abs` → 絶対化
    - `filepath.EvalSymlinks` → シンボリックリンク解決
    - 失敗はそのままエラー返却
-3. `NewResolvedPathForNew(path string) (ResolvedPath, error)` を新規追加
+3. `NewResolvedPathParentOnly(path string) (ResolvedPath, error)` を新規追加
    - empty 判定 → `ErrEmptyPath`
    - `filepath.Abs` → 絶対化
    - 親ディレクトリに `filepath.EvalSymlinks` → 解決
@@ -160,7 +160,7 @@ go test -tags test ./internal/common/... ./internal/fileanalysis/... ./internal/
 4. `GetHashFilePath` 呼び出し: `s.analysisDir` を `ResolvedPath` として渡す（Phase 1 で型変更済み）
 5. ディレクトリ存在確認 (`os.Lstat`) の文字列操作は引き続き raw string を使用（`NewResolvedPath` 呼び出し前）
 
-> **注意**: 計画書の旧 Step 2-3 では `filevalidator.New` から `NewResolvedPathForNew` を使って解決済みパスを `NewStore` に渡す案を記載していたが、これは要件と矛盾するため廃止した。`NewStore` が自前で正規化を完結させる。
+> **注意**: 計画書の旧 Step 2-3 では `filevalidator.New` から `NewResolvedPathParentOnly` を使って解決済みパスを `NewStore` に渡す案を記載していたが、これは要件と矛盾するため廃止した。`NewStore` が自前で正規化を完結させる。
 
 ---
 
@@ -192,7 +192,7 @@ Step 1-2(a) で `HashFilePathGetter.GetHashFilePath(hashDir ResolvedPath, ...)` 
 3. `New()` 内の `filepath.Abs(hashDir)` を削除し、`NewStore` 呼び出し後に `common.NewResolvedPath(hashDir)` を呼んで `ResolvedPath` を得る
    - `NewStore` がディレクトリを作成するため、その後の `NewResolvedPath` 呼び出しは成功する
    - 得られた `ResolvedPath` を `newValidator` に渡す
-   - `NewResolvedPathForNew` は使わない（hashDir は既存ディレクトリ前提であり、`NewResolvedPath` が適切）
+   - `NewResolvedPathParentOnly` は使わない（hashDir は既存ディレクトリ前提であり、`NewResolvedPath` が適切）
 
 ```go
 // New() の変更イメージ

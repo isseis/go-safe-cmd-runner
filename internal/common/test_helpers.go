@@ -81,13 +81,13 @@ func BoolPtr(v bool) *bool {
 var errPathAlreadyExists = errors.New("path already exists; use NewResolvedPath for existing files")
 
 // newResolvedPathForNew creates a ResolvedPath for a file that does not yet exist.
-// It delegates path resolution to NewResolvedPathForNew and additionally checks
+// It delegates path resolution to NewResolvedPathParentOnly and additionally checks
 // that the target path itself does not exist.
 //
 // Returns ErrEmptyPath if path is empty, errPathAlreadyExists if the path
-// already exists, or any error from NewResolvedPathForNew.
+// already exists, or any error from NewResolvedPathParentOnly.
 func newResolvedPathForNew(path string) (ResolvedPath, error) {
-	rp, err := NewResolvedPathForNew(path)
+	rp, err := NewResolvedPathParentOnly(path)
 	if err != nil {
 		return ResolvedPath{}, err
 	}

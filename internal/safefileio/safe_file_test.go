@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mustResolvedPath converts a string path to common.ResolvedPath using NewResolvedPathForNew.
+// mustResolvedPath converts a string path to common.ResolvedPath using NewResolvedPathParentOnly.
 // It fails the test if path resolution fails.
 func mustResolvedPath(t *testing.T, path string) common.ResolvedPath {
 	t.Helper()
-	rp, err := common.NewResolvedPathForNew(path)
+	rp, err := common.NewResolvedPathParentOnly(path)
 	require.NoError(t, err, "mustResolvedPath: failed to create ResolvedPath for %s", path)
 	return rp
 }
@@ -82,7 +82,7 @@ func TestSafeWriteFile(t *testing.T) {
 				symlinkPath := filepath.Join(testDir, "symlink")
 				require.NoError(t, os.Symlink(targetDir, symlinkPath), "Failed to create symlink")
 
-				// NewResolvedPathForNew resolves the symlink in the parent, so the write
+				// NewResolvedPathParentOnly resolves the symlink in the parent, so the write
 				// goes to the real path (targetDir/file.txt), not through the symlink.
 				filePath := filepath.Join(symlinkPath, "file.txt")
 				return filePath, []byte("test content"), 0o644

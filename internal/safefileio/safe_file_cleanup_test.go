@@ -258,7 +258,7 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 		content := []byte("test content")
 
 		// Execute: Try to write file with O_EXCL (new file creation)
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err = safeWriteFileCommon(rp, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 
@@ -301,7 +301,7 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 		content := []byte("test content")
 
 		// Execute: Try to write file with O_EXCL
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err = safeWriteFileWithFS(rp, content, 0o644, mockFS)
 
@@ -343,7 +343,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		content := []byte("new content")
 
 		// Execute: Try to overwrite (truncate happens after validation)
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
@@ -382,7 +382,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		content := []byte("new content")
 
 		// Execute
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
@@ -422,7 +422,7 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		content := []byte("new content")
 
 		// Execute
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
@@ -473,7 +473,7 @@ func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
 		content := []byte("test content")
 
 		// Execute: This should trigger cleanup, which will fail
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err = safeWriteFileCommon(rp, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 
@@ -507,7 +507,7 @@ func TestFileCleanup_Integration(t *testing.T) {
 		// This will fail because we're trying to create a file with world-writable permissions
 		// which will be rejected during validation
 		content := []byte("test content")
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err := safeWriteFileWithFS(rp, content, 0o666, fs)
 
@@ -533,7 +533,7 @@ func TestFileCleanup_Integration(t *testing.T) {
 
 		// Try to overwrite with invalid permissions (should fail validation)
 		newContent := []byte("new content")
-		rp, rpErr := common.NewResolvedPathForNew(filePath)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
 		require.NoError(t, rpErr)
 		err := safeWriteFileOverwriteWithFS(rp, newContent, 0o666, fs)
 
