@@ -268,23 +268,21 @@ grep -rn "filepath\.Abs\|filepath\.EvalSymlinks" \
 
 ## 各 Step の完了チェック
 
-```
-[ ] Step 1-1: ResolvedPath struct 化、コンストラクタ整備
-[ ] Step 1-2 (a): hash_file_path_getter.go の hashDir を ResolvedPath 化
-[ ] Step 1-2 (b): filesystem_test.go の NewResolvedPath テスト更新
-[ ] Step 1-2 (c): sha256 / hybrid GetHashFilePath 実装の hashDir 型変更
-[ ] Step 1-2 (d): mockPathGetter / collidingHashFilePathGetter のモック更新
-[ ] Step 1-2 (e): sha256/hybrid/manager/network_symbol テストの hashDir 渡し方更新
-[ ] Step 1-2 (f): 全パッケージの ResolvedPath(string) 直接変換をパターン A/B/C に従い NewResolvedPath に置換
-[ ] Step 1-2 確認: make build && go test -tags test ./... が通る
-[ ] Step 2-1: fileanalysis.Store の analysisDir を ResolvedPath 化（NewStore は string シグネチャ維持）
-[ ] Step 2-2: スキップ（Step 1-2 で完了）
-[ ] Step 2-3: Validator.hashDir を ResolvedPath 化・newValidator シグネチャ更新・New の filepath.Abs 削除と NewResolvedPath 取得に変更
-[ ] Step 2-4: filevalidator.validatePath の Abs+EvalSymlinks を NewResolvedPath に委譲
-[ ] Step 3-1: 残存箇所の検索実施
-[ ] Step 3-2: 移行候補の分類
-[ ] Step 3-3: 停止または継続の決定
-```
+- [ ] Step 1-1: ResolvedPath struct 化、コンストラクタ整備
+- [ ] Step 1-2 (a): hash_file_path_getter.go の hashDir を ResolvedPath 化
+- [ ] Step 1-2 (b): filesystem_test.go の NewResolvedPath テスト更新
+- [ ] Step 1-2 (c): sha256 / hybrid GetHashFilePath 実装の hashDir 型変更
+- [ ] Step 1-2 (d): mockPathGetter / collidingHashFilePathGetter のモック更新
+- [ ] Step 1-2 (e): sha256/hybrid/manager/network_symbol テストの hashDir 渡し方更新
+- [ ] Step 1-2 (f): 全パッケージの ResolvedPath(string) 直接変換をパターン A/B/C に従い NewResolvedPath に置換
+- [ ] Step 1-2 確認: make build && go test -tags test ./... が通る
+- [ ] Step 2-1: fileanalysis.Store の analysisDir を ResolvedPath 化（NewStore は string シグネチャ維持）
+- [ ] Step 2-2: スキップ（Step 1-2 で完了）
+- [ ] Step 2-3: Validator.hashDir を ResolvedPath 化・newValidator シグネチャ更新・New の filepath.Abs 削除と NewResolvedPath 取得に変更
+- [ ] Step 2-4: filevalidator.validatePath の Abs+EvalSymlinks を NewResolvedPath に委譲
+- [ ] Step 3-1: 残存箇所の検索実施
+- [ ] Step 3-2: 移行候補の分類
+- [ ] Step 3-3: 停止または継続の決定
 
 ---
 
