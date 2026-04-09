@@ -67,6 +67,7 @@ type File interface {
 	io.Writer
 	io.Seeker   // Required for VerifyFromHandle and similar operations
 	io.ReaderAt // Required for debug/elf.NewFile and similar operations
+	Chmod(mode os.FileMode) error
 	Close() error
 	Stat() (os.FileInfo, error)
 	Truncate(size int64) error
@@ -182,12 +183,9 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs File
 		return err
 	}
 
-	// Set secure permissions on source file before move
-	if err := os.Chmod(absSrc, requiredPerm); err != nil {
-		return fmt.Errorf("failed to set secure permissions on source: %w", err)
-	}
-
-	// Validate source file through safefileio
+	// Open the source file safely BEFORE changing permissions.
+	// SafeOpenFile uses openat2(RESOLVE_NO_SYMLINKS) which rejects symlinks,
+	// ensuring we have a handle to the real file and not a symlink target.
 	srcFile, err := fs.SafeOpenFile(absSrc, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open source file safely: %w", err)
@@ -197,6 +195,13 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs File
 			slog.Warn("error closing source file", slog.Any("error", closeErr))
 		}
 	}()
+
+	// Set secure permissions via the opened file handle (fchmod).
+	// This avoids the TOCTOU race where os.Chmod follows symlinks and could
+	// modify permissions on an unintended target before symlink checks run.
+	if err := srcFile.Chmod(requiredPerm); err != nil {
+		return fmt.Errorf("failed to set secure permissions on source: %w", err)
+	}
 
 	// Validate source file properties
 	if err := canSafelyAccessFile(srcFile, absSrc, groupmembership.FileOpRead, fs.GetGroupMembership()); err != nil {

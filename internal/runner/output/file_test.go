@@ -270,7 +270,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				return tempPath, finalPath
 			},
 			wantErr:    true,
-			errMessage: "no such file",
+			errMessage: "does not exist",
 		},
 		{
 			name: "move_to_directory_instead_of_file",

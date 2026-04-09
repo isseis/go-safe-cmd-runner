@@ -224,6 +224,7 @@ func (largeFakeFile) Read(_ []byte) (int, error)            { return 0, io.EOF }
 func (largeFakeFile) Write(_ []byte) (int, error)           { return 0, nil }
 func (largeFakeFile) Seek(_ int64, _ int) (int64, error)    { return 0, nil }
 func (largeFakeFile) ReadAt(_ []byte, _ int64) (int, error) { return 0, io.EOF }
+func (largeFakeFile) Chmod(_ os.FileMode) error             { return nil }
 func (largeFakeFile) Close() error                          { return nil }
 func (largeFakeFile) Stat() (os.FileInfo, error)            { return largeFakeFileInfo{}, nil }
 func (largeFakeFile) Truncate(_ int64) error                { return nil }

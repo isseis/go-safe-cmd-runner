@@ -126,6 +126,10 @@ func (m *mockFile) Stat() (os.FileInfo, error) {
 	return m.fileInfo, nil
 }
 
+func (m *mockFile) Chmod(_ os.FileMode) error {
+	return nil
+}
+
 func (m *mockFile) Truncate(size int64) error {
 	if m.truncateErr != nil {
 		return m.truncateErr
