@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,8 +39,8 @@ func TestErrorCases(t *testing.T) {
 			setup: func() (string, error) {
 				return "", nil
 			},
-			wantErr:     safefileio.ErrInvalidFilePath,
-			errContains: "invalid file path",
+			wantErr:     common.ErrEmptyPath,
+			errContains: "path cannot be empty",
 		},
 		{
 			name: "permission denied",
@@ -183,8 +184,8 @@ func TestErrorMessages(t *testing.T) {
 		{
 			name:        "empty path",
 			filePath:    "",
-			expectedErr: safefileio.ErrInvalidFilePath,
-			errContains: "invalid file path",
+			expectedErr: common.ErrEmptyPath,
+			errContains: "path cannot be empty",
 		},
 		{
 			name:        "non-existent file",

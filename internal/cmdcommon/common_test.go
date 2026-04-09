@@ -70,12 +70,11 @@ func TestCreateValidator_RelativePath(t *testing.T) {
 }
 
 func TestCreateValidator_EmptyPath(t *testing.T) {
-	// Test with empty path
+	// Empty path should return an error.
 	validator, err := CreateValidator("")
 
-	// CreateValidator should handle an empty path without returning an error.
-	require.NoError(t, err)
-	require.NotNil(t, validator)
+	require.Error(t, err)
+	require.Nil(t, validator)
 }
 
 func TestDefaultHashDirectory_IsSet(t *testing.T) {

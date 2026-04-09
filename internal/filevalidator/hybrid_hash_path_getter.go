@@ -57,8 +57,8 @@ func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 // Returns:
 //   - Full path to the hash file
 //   - Error if encoding fails or parameters are invalid
-func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
-	if hashDir == "" {
+func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir common.ResolvedPath, filePath common.ResolvedPath) (string, error) {
+	if hashDir.String() == "" {
 		return "", ErrEmptyHashDir
 	}
 
@@ -71,7 +71,7 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir string, filePath comm
 	// Check if encoded name exceeds length limit
 	if len(encodedName) <= MaxFilenameLength {
 		// Use normal encoding
-		return filepath.Join(hashDir, encodedName), nil
+		return filepath.Join(hashDir.String(), encodedName), nil
 	}
 
 	// Use SHA256 fallback via SHA256PathHashGetter

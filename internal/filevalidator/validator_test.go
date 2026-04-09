@@ -66,7 +66,9 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 		require.NoError(t, err, "SaveRecord failed")
 
 		// Verify the hash file exists
-		hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
+		rp, err := common.NewResolvedPath(testFilePath)
+		require.NoError(t, err, "NewResolvedPath failed")
+		hashFilePath, err := validator.GetHashFilePath(rp)
 		require.NoError(t, err, "GetHashFilePath failed")
 
 		_, err = os.Lstat(hashFilePath)
@@ -169,7 +171,9 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	store := validator.GetStore()
 	require.NotNil(t, store, "Store should not be nil")
 
-	record, err := store.Load(common.ResolvedPath(resolvedSymlinkPath))
+	rpSymlink, err := common.NewResolvedPath(resolvedSymlinkPath)
+	require.NoError(t, err, "NewResolvedPath failed")
+	record, err := store.Load(rpSymlink)
 	assert.NoError(t, err, "store.Load failed")
 	assert.Equal(t, expectedPath, record.FilePath, "Expected recorded path '%s', got '%s'", expectedPath, record.FilePath)
 	assert.NotEmpty(t, record.ContentHash, "Expected non-empty content hash, got empty")
@@ -214,7 +218,9 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	require.NoError(t, err, "Failed to create validator")
 
 	// Get the hash file path
-	hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
+	rpCorrupt, err := common.NewResolvedPath(testFilePath)
+	require.NoError(t, err, "NewResolvedPath failed")
+	hashFilePath, err := validator.GetHashFilePath(rpCorrupt)
 	require.NoError(t, err, "GetHashFilePath failed")
 
 	// Create the hash directory
@@ -254,7 +260,9 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	store := validator.GetStore()
 	require.NotNil(t, store, "Store should not be nil")
 
-	record, err := store.Load(common.ResolvedPath(testFilePath))
+	rpFormat, err := common.NewResolvedPath(testFilePath)
+	require.NoError(t, err, "NewResolvedPath failed")
+	record, err := store.Load(rpFormat)
 	require.NoError(t, err, "Failed to load record from store")
 
 	// Verify the record fields
@@ -287,8 +295,9 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 		assert.NoError(t, err, "Failed to close file")
 	}()
 
-	// Test VerifyFromHandle
-	err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
+	rpHandle, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err, "NewResolvedPath failed")
+	err = validator.VerifyFromHandle(file, rpHandle)
 	assert.NoError(t, err, "VerifyFromHandle failed")
 }
 
@@ -319,7 +328,9 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	}()
 
 	// Test VerifyFromHandle - should fail with mismatch
-	err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
+	rpMismatch, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err, "NewResolvedPath failed")
+	err = validator.VerifyFromHandle(file, rpMismatch)
 	assert.ErrorIs(t, err, ErrMismatch, "Expected ErrMismatch")
 }
 
@@ -656,11 +667,10 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	})
 
 	t.Run("privilege manager execution failure", func(t *testing.T) {
-		// Use a path that would naturally require privilege escalation
-		restrictedFile := "/root/restricted_file_test.txt"
+		// Create a real file, record it, then remove it so it "requires privilege" at verify time.
+		restrictedFile := filepath.Join(tempDir, "restricted_file_test.txt")
+		require.NoError(t, os.WriteFile(restrictedFile, []byte("restricted content"), 0o644))
 
-		// Create hash file for this restricted path (this is artificial for testing)
-		// In real scenarios, the hash would have been recorded when the file was accessible
 		restrictedPath, err := common.NewResolvedPath(restrictedFile)
 		require.NoError(t, err, "Failed to create resolved path")
 
@@ -670,6 +680,9 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err, "Failed to write hash record")
+
+		// Remove the file to make it inaccessible (simulating privilege requirement).
+		require.NoError(t, os.Remove(restrictedFile))
 
 		// Use failing mock privilege manager
 		mockPM := privtesting.NewFailingMockPrivilegeManager(true)
@@ -691,26 +704,28 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 	})
 
 	t.Run("realistic permission scenario", func(t *testing.T) {
-		// Test the behavior with a path that would typically require elevated permissions
-		// This test validates the error handling when privilege escalation would be needed
-		restrictedFile := "/root/some_restricted_file.txt"
+		// Create a real file, record a hash for it, then remove it.
+		// Simulates a file that was accessible at record time but not at verify time.
+		restrictedFile := filepath.Join(tempDir, "some_restricted_file.txt")
+		require.NoError(t, os.WriteFile(restrictedFile, []byte("restricted content"), 0o644))
 
-		// Create hash record for this restricted path (simulating it was recorded when accessible)
+		// Create hash record for this path.
 		restrictedPath, err := common.NewResolvedPath(restrictedFile)
 		require.NoError(t, err, "Failed to create resolved path")
 
-		// Create a FileAnalysisRecord for the restricted file using the analysis store.
 		err = validator.GetStore().Update(restrictedPath, func(record *fileanalysis.Record) error {
 			record.ContentHash = "sha256:some_hash_value"
 			return nil
 		})
 		require.NoError(t, err, "Failed to write hash record")
 
+		// Remove the file so it is no longer accessible.
+		require.NoError(t, os.Remove(restrictedFile))
+
 		// Create a mock privilege manager
 		mockPM := privtesting.NewMockPrivilegeManager(true)
 
 		// VerifyAndReadWithPrivileges should fail because the file doesn't exist
-		// In a real scenario, this would either succeed with privileges or fail with permission denied
 		_, err = validator.VerifyAndReadWithPrivileges(restrictedFile, mockPM)
 		assert.Error(t, err, "VerifyAndReadWithPrivileges should fail for non-existent file")
 
@@ -809,7 +824,9 @@ func TestNew_RecordAndVerify(t *testing.T) {
 		require.NoError(t, err, "Failed to record hash")
 
 		// Load record directly from store to verify format
-		record, err := store.Load(common.ResolvedPath(testFilePath))
+		rpStore, err := common.NewResolvedPath(testFilePath)
+		require.NoError(t, err, "NewResolvedPath failed")
+		record, err := store.Load(rpStore)
 		require.NoError(t, err, "Failed to load record from store")
 
 		// Verify the record fields
@@ -854,7 +871,9 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	require.NoError(t, err, "Failed to create test file")
 
 	// First, save a record with SyscallAnalysis directly via store
-	err = store.Save(common.ResolvedPath(testFilePath), &fileanalysis.Record{
+	rpPreserve, err := common.NewResolvedPath(testFilePath)
+	require.NoError(t, err, "NewResolvedPath failed")
+	err = store.Save(rpPreserve, &fileanalysis.Record{
 		ContentHash: "sha256:old_hash",
 		SyscallAnalysis: &fileanalysis.SyscallAnalysisData{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
@@ -870,7 +889,9 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	require.NoError(t, err, "Failed to record hash with force")
 
 	// Load the record and verify SyscallAnalysis is preserved
-	record, err := store.Load(common.ResolvedPath(testFilePath))
+	rpPreserveLoad, err := common.NewResolvedPath(testFilePath)
+	require.NoError(t, err, "NewResolvedPath failed")
+	record, err := store.Load(rpPreserveLoad)
 	require.NoError(t, err, "Failed to load updated record")
 
 	// Verify the content hash was updated
@@ -917,8 +938,8 @@ type collidingHashFilePathGetter struct {
 	fixedName string
 }
 
-func (c *collidingHashFilePathGetter) GetHashFilePath(hashDir string, _ common.ResolvedPath) (string, error) {
-	return filepath.Join(hashDir, c.fixedName), nil
+func (c *collidingHashFilePathGetter) GetHashFilePath(hashDir common.ResolvedPath, _ common.ResolvedPath) (string, error) {
+	return filepath.Join(hashDir.String(), c.fixedName), nil
 }
 
 // newCollisionValidator creates a Validator whose HashFilePathGetter always
@@ -935,7 +956,10 @@ func newCollisionValidator(t *testing.T) (*Validator, string) {
 	store, err := fileanalysis.NewStore(hashDir, getter)
 	require.NoError(t, err)
 
-	v, err := newValidator(&SHA256{}, hashDir, getter)
+	resolvedHashDir, err := common.NewResolvedPath(hashDir)
+	require.NoError(t, err)
+
+	v, err := newValidator(&SHA256{}, resolvedHashDir, getter)
 	require.NoError(t, err)
 	v.store = store
 

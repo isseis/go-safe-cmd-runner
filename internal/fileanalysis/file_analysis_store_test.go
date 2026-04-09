@@ -18,9 +18,9 @@ import (
 // mockPathGetter is a simple test implementation of HashFilePathGetter
 type mockPathGetter struct{}
 
-func (m *mockPathGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
+func (m *mockPathGetter) GetHashFilePath(hashDir common.ResolvedPath, filePath common.ResolvedPath) (string, error) {
 	// Use a simple hash of the path for testing
-	return filepath.Join(hashDir, filepath.Base(filePath.String())+".json"), nil
+	return filepath.Join(hashDir.String(), filepath.Base(filePath.String())+".json"), nil
 }
 
 func TestStore_SaveAndLoad(t *testing.T) {
@@ -34,16 +34,18 @@ func TestStore_SaveAndLoad(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Save record
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
 	}
-	err = store.Save(common.ResolvedPath(testFile), originalRecord)
+	err = store.Save(rp, originalRecord)
 	require.NoError(t, err)
 
 	// Load record
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	loadedRecord, err := store.Load(rp)
 	require.NoError(t, err)
 
 	// Verify fields
@@ -60,8 +62,13 @@ func TestStore_RecordNotFound(t *testing.T) {
 	store, err := NewStore(analysisDir, &mockPathGetter{})
 	require.NoError(t, err)
 
-	// Try to load non-existent record
-	_, err = store.Load(common.ResolvedPath("/nonexistent/file.bin"))
+	// Create a real file but save no record for it — load should return ErrRecordNotFound
+	noRecordFile := filepath.Join(tmpDir, "no-record.bin")
+	require.NoError(t, os.WriteFile(noRecordFile, []byte("content"), 0o644))
+	rp, err := common.NewResolvedPath(noRecordFile)
+	require.NoError(t, err)
+
+	_, err = store.Load(rp)
 	assert.ErrorIs(t, err, ErrRecordNotFound)
 }
 
@@ -75,6 +82,8 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 	// Create test file
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
 	require.NoError(t, err)
 
 	// Manually write record with wrong schema version
@@ -91,7 +100,7 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to load - should get schema version mismatch error
-	_, err = store.Load(common.ResolvedPath(testFile))
+	_, err = store.Load(rp)
 	var schemaErr *SchemaVersionMismatchError
 	assert.ErrorAs(t, err, &schemaErr)
 	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
@@ -109,6 +118,8 @@ func TestStore_CorruptedRecord(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Manually write corrupted JSON
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
@@ -116,7 +127,7 @@ func TestStore_CorruptedRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to load - should get corrupted error
-	_, err = store.Load(common.ResolvedPath(testFile))
+	_, err = store.Load(rp)
 	var corruptedErr *RecordCorruptedError
 	assert.ErrorAs(t, err, &corruptedErr)
 }
@@ -132,6 +143,8 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Save record with syscall analysis
 	originalRecord := &Record{
@@ -143,18 +156,18 @@ func TestStore_PreservesExistingFields(t *testing.T) {
 			},
 		},
 	}
-	err = store.Save(common.ResolvedPath(testFile), originalRecord)
+	err = store.Save(rp, originalRecord)
 	require.NoError(t, err)
 
 	// Update only the content hash
-	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+	err = store.Update(rp, func(record *Record) error {
 		record.ContentHash = "sha256:def456"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify syscall analysis is preserved
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	loadedRecord, err := store.Load(rp)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:def456", loadedRecord.ContentHash)
 	assert.NotNil(t, loadedRecord.SyscallAnalysis)
@@ -173,16 +186,18 @@ func TestStore_Update_CreatesNewRecord(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Update non-existent record - should create new
-	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+	err = store.Update(rp, func(record *Record) error {
 		record.ContentHash = "sha256:newrecord"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	loadedRecord, err := store.Load(rp)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:newrecord", loadedRecord.ContentHash)
 }
@@ -197,6 +212,8 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 	// Create test file
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
 	require.NoError(t, err)
 
 	// Manually write record with wrong schema version
@@ -213,7 +230,7 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update should fail due to schema version mismatch
-	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+	err = store.Update(rp, func(record *Record) error {
 		record.ContentHash = "sha256:newvalue"
 		return nil
 	})
@@ -241,6 +258,8 @@ func TestStore_Update_CorruptedRecord(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Manually write corrupted JSON
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
@@ -248,14 +267,14 @@ func TestStore_Update_CorruptedRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update should succeed by creating fresh record
-	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+	err = store.Update(rp, func(record *Record) error {
 		record.ContentHash = "sha256:fresh"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify new record
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	loadedRecord, err := store.Load(rp)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:fresh", loadedRecord.ContentHash)
 }
@@ -312,6 +331,8 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	originalRecord := &Record{
 		ContentHash: "sha256:abc123",
@@ -328,10 +349,10 @@ func TestStore_SaveAndLoad_DynLibDeps(t *testing.T) {
 			},
 		},
 	}
-	err = store.Save(common.ResolvedPath(testFile), originalRecord)
+	err = store.Save(rp, originalRecord)
 	require.NoError(t, err)
 
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	loadedRecord, err := store.Load(rp)
 	require.NoError(t, err)
 
 	require.Len(t, loadedRecord.DynLibDeps, 2)
@@ -361,6 +382,8 @@ func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Write a v9 record with dyn_lib_deps in the old {"libs":[...]} object format.
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
@@ -384,7 +407,7 @@ func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
 	err = os.WriteFile(recordPath, data, 0o600)
 	require.NoError(t, err)
 
-	_, err = store.Load(common.ResolvedPath(testFile))
+	_, err = store.Load(rp)
 	var schemaErr *SchemaVersionMismatchError
 	require.ErrorAs(t, err, &schemaErr, "expected SchemaVersionMismatchError, got %T: %v", err, err)
 	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
@@ -405,6 +428,8 @@ func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.bin")
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
 
 	// Write a record with the previous schema version (simulating a v1 record)
 	recordPath := filepath.Join(analysisDir, "test.bin.json")
@@ -420,14 +445,14 @@ func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update should succeed by allowing overwrite of old schema record
-	err = store.Update(common.ResolvedPath(testFile), func(record *Record) error {
+	err = store.Update(rp, func(record *Record) error {
 		record.ContentHash = "sha256:newvalue"
 		return nil
 	})
 	require.NoError(t, err)
 
 	// Load and verify the record was overwritten with new schema
-	loadedRecord, err := store.Load(common.ResolvedPath(testFile))
+	loadedRecord, err := store.Load(rp)
 	require.NoError(t, err)
 	assert.Equal(t, CurrentSchemaVersion, loadedRecord.SchemaVersion)
 	assert.Equal(t, "sha256:newvalue", loadedRecord.ContentHash)

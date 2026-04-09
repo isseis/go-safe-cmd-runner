@@ -169,15 +169,36 @@ func TestDefaultFileSystem_IsDir(t *testing.T) {
 }
 
 func TestNewResolvedPath(t *testing.T) {
+	// Create a real temp dir to test with existing paths
+	tmpDir, err := os.MkdirTemp("", "test-resolved-path-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create a real file inside tmpDir
+	realFile := filepath.Join(tmpDir, "testfile.txt")
+	if err := os.WriteFile(realFile, []byte("test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Resolve tmpDir itself (handles macOS /tmp -> /private/tmp symlinks)
+	resolvedDir, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedFile := filepath.Join(resolvedDir, "testfile.txt")
+
 	tests := []struct {
 		name        string
 		path        string
 		expectError bool
+		expectPath  string
 	}{
 		{
-			name:        "valid path",
-			path:        "/tmp/test",
+			name:        "existing file returns resolved absolute path",
+			path:        realFile,
 			expectError: false,
+			expectPath:  resolvedFile,
 		},
 		{
 			name:        "empty path should fail",
@@ -185,9 +206,9 @@ func TestNewResolvedPath(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "relative path",
-			path:        "./test",
-			expectError: false,
+			name:        "non-existent path should fail",
+			path:        filepath.Join(tmpDir, "does_not_exist.txt"),
+			expectError: true,
 		},
 	}
 
@@ -197,10 +218,62 @@ func TestNewResolvedPath(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error but got none")
-				assert.Empty(t, result, "Expected empty result but got %s", result)
+				assert.Empty(t, result.String(), "Expected empty result but got %s", result)
 			} else {
 				assert.NoError(t, err, "Unexpected error")
-				assert.Equal(t, tt.path, result.String(), "Expected %s but got %s", tt.path, result.String())
+				assert.Equal(t, tt.expectPath, result.String(), "Expected %s but got %s", tt.expectPath, result.String())
+			}
+		})
+	}
+}
+
+func TestNewResolvedPathForNew(t *testing.T) {
+	// Create a real temp dir to test with
+	tmpDir, err := os.MkdirTemp("", "test-resolved-path-new-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	resolvedDir, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		path        string
+		expectError bool
+		expectPath  string
+	}{
+		{
+			name:        "new file in existing dir",
+			path:        filepath.Join(tmpDir, "newfile.txt"),
+			expectError: false,
+			expectPath:  filepath.Join(resolvedDir, "newfile.txt"),
+		},
+		{
+			name:        "empty path should fail",
+			path:        "",
+			expectError: true,
+		},
+		{
+			name:        "non-existent parent dir should fail",
+			path:        filepath.Join(tmpDir, "nosuchdir", "file.txt"),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := NewResolvedPathForNew(tt.path)
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error but got none")
+				assert.Empty(t, result.String(), "Expected empty result but got %s", result)
+			} else {
+				assert.NoError(t, err, "Unexpected error")
+				assert.Equal(t, tt.expectPath, result.String(), "Expected %s but got %s", tt.expectPath, result.String())
 			}
 		})
 	}

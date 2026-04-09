@@ -29,6 +29,9 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_Normal(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
 	// Save a record with NetworkSymbolAnalysis
 	fileHash := "sha256:abc123def456"
 	nsaData := &SymbolAnalysisData{
@@ -39,7 +42,7 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_Normal(t *testing.T) {
 			{Name: "dlopen", Category: "dynamic_load"},
 		},
 	}
-	err = fileStore.Save(common.ResolvedPath(testFile), &Record{
+	err = fileStore.Save(rp, &Record{
 		ContentHash:    fileHash,
 		SymbolAnalysis: nsaData,
 	})
@@ -71,8 +74,11 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_NoNetworkSymbols(t *testin
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
 	fileHash := "sha256:netnodynload"
-	err = fileStore.Save(common.ResolvedPath(testFile), &Record{
+	err = fileStore.Save(rp, &Record{
 		ContentHash:    fileHash,
 		SymbolAnalysis: &SymbolAnalysisData{},
 	})
@@ -99,8 +105,11 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_HashMismatch(t *testing.T)
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
 	// Save with one hash
-	err = fileStore.Save(common.ResolvedPath(testFile), &Record{
+	err = fileStore.Save(rp, &Record{
 		ContentHash: "sha256:originalhash",
 		SymbolAnalysis: &SymbolAnalysisData{
 			DetectedSymbols: []DetectedSymbolEntry{
@@ -129,9 +138,12 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_NoAnalysisData(t *testing.
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
 	// Save record without NetworkSymbolAnalysis
 	fileHash := "sha256:abc123"
-	err = fileStore.Save(common.ResolvedPath(testFile), &Record{
+	err = fileStore.Save(rp, &Record{
 		ContentHash:    fileHash,
 		SymbolAnalysis: nil,
 	})
@@ -152,7 +164,10 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_RecordNotFound(t *testing.
 
 	store := NewNetworkSymbolStore(fileStore)
 
-	loaded, err := store.LoadNetworkSymbolAnalysis("/nonexistent/file.bin", "sha256:anyhash")
+	// Create a real file with no record saved — should return ErrRecordNotFound
+	noRecordFile := filepath.Join(tmpDir, "no-record.bin")
+	require.NoError(t, os.WriteFile(noRecordFile, []byte("content"), 0o644))
+	loaded, err := store.LoadNetworkSymbolAnalysis(noRecordFile, "sha256:anyhash")
 	assert.ErrorIs(t, err, ErrRecordNotFound, "should return ErrRecordNotFound for non-existent record")
 	assert.Nil(t, loaded)
 }
@@ -173,8 +188,11 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_SchemaVersionMismatch(t *t
 	// Write a raw JSON record with an older schema version directly (bypassing Store.Save).
 	// This simulates a record written by an older version of the tool.
 	getter := &mockPathGetter{}
-	resolvedPath := common.ResolvedPath(testFile)
-	recordFilePath, err := getter.GetHashFilePath(analysisDir, resolvedPath)
+	resolvedPath, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+	resolvedAnalysisDir, err := common.NewResolvedPath(analysisDir)
+	require.NoError(t, err)
+	recordFilePath, err := getter.GetHashFilePath(resolvedAnalysisDir, resolvedPath)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(recordFilePath), 0o750))
 

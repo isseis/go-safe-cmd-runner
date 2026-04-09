@@ -106,8 +106,11 @@ func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test content"), 0o644)
 	require.NoError(t, err)
 
+	rp, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+
 	// Save record without syscall analysis (only content hash)
-	err = fileStore.Save(common.ResolvedPath(testFile), &Record{
+	err = fileStore.Save(rp, &Record{
 		ContentHash:     "sha256:abc123",
 		SyscallAnalysis: nil,
 	})
@@ -128,8 +131,10 @@ func TestSyscallAnalysisStore_RecordNotFound(t *testing.T) {
 
 	store := NewSyscallAnalysisStore(fileStore)
 
-	// Try to load non-existent record
-	loadedResult, err := store.LoadSyscallAnalysis("/nonexistent/file.bin", "sha256:anyhash")
+	// Create a real file with no record saved — should return ErrRecordNotFound
+	noRecordFile := filepath.Join(tmpDir, "no-record.bin")
+	require.NoError(t, os.WriteFile(noRecordFile, []byte("content"), 0o644))
+	loadedResult, err := store.LoadSyscallAnalysis(noRecordFile, "sha256:anyhash")
 	assert.ErrorIs(t, err, ErrRecordNotFound, "should return ErrRecordNotFound for non-existent record")
 	assert.Nil(t, loadedResult)
 }
@@ -255,7 +260,9 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the record directly to verify
-	record, err := fileStore.Load(common.ResolvedPath(testFile))
+	rpLoad, err := common.NewResolvedPath(testFile)
+	require.NoError(t, err)
+	record, err := fileStore.Load(rpLoad)
 	require.NoError(t, err)
 
 	// Content hash should be updated

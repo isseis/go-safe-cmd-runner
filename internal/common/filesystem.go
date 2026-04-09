@@ -110,21 +110,53 @@ func (fs *DefaultFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-// ResolvedPath is a type that represents a file path that has been resolved
-// (e.g., through symlink resolution or absolute path conversion).
-type ResolvedPath string
-
-// NewResolvedPath creates a new ResolvedPath from a string.
-// Returns an error if the path is empty.
-func NewResolvedPath(path string) (ResolvedPath, error) {
-	if path == "" {
-		return "", ErrEmptyPath
-	}
-	return ResolvedPath(path), nil
+// ResolvedPath represents a file path that has been resolved to an absolute path
+// with all symbolic links evaluated. It can only be created via constructors,
+// ensuring that the path is always in a normalized form.
+type ResolvedPath struct {
+	path string
 }
 
+// NewResolvedPath creates a ResolvedPath for an existing file or directory.
+// It resolves the path to an absolute path and evaluates all symbolic links.
+// Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks.
+func NewResolvedPath(path string) (ResolvedPath, error) {
+	if path == "" {
+		return ResolvedPath{}, ErrEmptyPath
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	return ResolvedPath{path: resolvedPath}, nil
+}
+
+// NewResolvedPathForNew creates a ResolvedPath for a file that does not yet exist.
+// It resolves the parent directory via EvalSymlinks and re-joins the file name.
+// Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks on the parent.
+func NewResolvedPathForNew(path string) (ResolvedPath, error) {
+	if path == "" {
+		return ResolvedPath{}, ErrEmptyPath
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	parentDir := filepath.Dir(absPath)
+	resolvedParent, err := filepath.EvalSymlinks(parentDir)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	return ResolvedPath{path: filepath.Join(resolvedParent, filepath.Base(absPath))}, nil
+}
+
+// String returns the resolved path as a string.
 func (p ResolvedPath) String() string {
-	return string(p)
+	return p.path
 }
 
 // ContainsPathTraversalSegment checks if a path contains ".." as a distinct path segment
