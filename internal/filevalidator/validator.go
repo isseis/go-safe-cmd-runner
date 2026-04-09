@@ -140,7 +140,7 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 	// The directory now exists; resolve it to an absolute, symlink-free path.
 	resolvedHashDir, err := common.NewResolvedPath(hashDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve hash directory: %w", err)
+		return nil, fmt.Errorf("failed to resolve hash directory path %q: %w", hashDir, err)
 	}
 
 	// Now create the validator — the directory is guaranteed to exist.
