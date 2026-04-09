@@ -509,7 +509,7 @@ func validatePath(filePath string) (common.ResolvedPath, error) {
 		return common.ResolvedPath{}, err
 	}
 	if !fileInfo.Mode().IsRegular() {
-		return common.ResolvedPath{}, fmt.Errorf("%w: not a regular file: %s", safefileio.ErrInvalidFilePath, rp)
+		return common.ResolvedPath{}, fmt.Errorf("%w: not a regular file: %v", safefileio.ErrInvalidFilePath, rp)
 	}
 
 	return rp, nil
