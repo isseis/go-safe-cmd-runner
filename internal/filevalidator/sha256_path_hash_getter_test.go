@@ -33,7 +33,7 @@ func TestSHA256PathHashGetter_GetHashFilePath(t *testing.T) {
 	result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
 	assert.NoError(t, err)
-	assert.True(t, strings.HasPrefix(result, hashDirRaw))
+	assert.True(t, strings.HasPrefix(result, hashDir.String()))
 
 	// Verify the result is a valid file path
 	assert.True(t, filepath.IsAbs(result))
