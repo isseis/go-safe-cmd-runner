@@ -93,6 +93,8 @@ func newResolvedPathForNew(path string) (ResolvedPath, error) {
 	}
 	if _, err := os.Lstat(rp.String()); err == nil {
 		return ResolvedPath{}, errPathAlreadyExists
+	} else if !os.IsNotExist(err) {
+		return ResolvedPath{}, err
 	}
 	return rp, nil
 }
