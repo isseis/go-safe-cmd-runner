@@ -29,6 +29,8 @@
 - `common.NewResolvedPathParentOnly` の公開化
 - `SafeReadFile` / `SafeWriteFile` / `SafeWriteFileOverwrite` / `SafeAtomicMoveFile` のシグネチャ変更
 - 上記に対応する `WithFS` バリアントおよび `safeWriteFileCommon`、`safeAtomicMoveFileWithFS` の変更
+- `ResolvedPath` に解決モード（`resolveMode`）を保持し、`IsParentOnly()` で参照できるようにする
+- `safeWriteFileCommon` / `safeAtomicMoveFileWithFS` の入口で `NewResolvedPathParentOnly` 由来であることを検証する
 - 各関数内部の冗長な `filepath.Abs()` 呼び出しの削除
 - 全呼び出し箇所の移行（プロダクションコードおよびテスト）
 
@@ -36,6 +38,7 @@
 - `FileSystem` インターフェース（`SafeOpenFile`、`AtomicMoveFile`）のシグネチャ変更
 - `SafeFileManager.MoveToFinal` のシグネチャ変更（`runner/output` パッケージ）
 - `safefileio` パッケージ以外のセキュリティロジックの変更
+- `SafeReadFile` / `SafeReadFileWithFS` に対する解決モード制約の追加（両コンストラクタが正当であるため）
 
 ---
 
@@ -301,6 +304,37 @@ content, err = safefileio.SafeReadFile(resolvedPath)
 
 ---
 
+### 3.7 コンストラクタ制約の実行時強制（ADR 反映）
+
+#### FR-7.1: `ResolvedPath` への解決モード追加
+
+`internal/common/filesystem.go` の `ResolvedPath` に、どのコンストラクタ経由で生成されたかを保持する解決モードを追加する。
+
+- `NewResolvedPath` は `resolveModeFull` を設定する
+- `NewResolvedPathParentOnly` は `resolveModeParentOnly` を設定する
+- `ResolvedPath` に `IsParentOnly() bool` を追加し、外部パッケージ（`safefileio`）はこのメソッド経由で判定する
+
+`mode` フィールドは unexported とし、パッケージ外から直接参照させない。
+
+#### FR-7.2: `safefileio` のセキュリティ境界でアサーション
+
+`internal/safefileio/safe_file.go` で以下の実行時チェックを追加する。
+
+- `safeWriteFileCommon`: `filePath.IsParentOnly()` が `false` の場合は `ErrInvalidFilePath` を返す
+- `safeAtomicMoveFileWithFS`: `srcPath.IsParentOnly()` または `dstPath.IsParentOnly()` が `false` の場合は `ErrInvalidFilePath` を返す
+
+`SafeReadFile` / `SafeReadFileWithFS` にはモードアサーションを追加しない。
+
+#### FR-7.3: 誤用検知テストの追加
+
+`NewResolvedPath` で生成した `ResolvedPath` を以下に渡した場合、`ErrInvalidFilePath` を返すことをテストで検証する。
+
+- `SafeWriteFile`
+- `SafeWriteFileOverwrite`
+- `SafeAtomicMoveFile`（`srcPath` または `dstPath`）
+
+---
+
 ## 4. 受け入れ基準
 
 | ID | 基準 |
@@ -317,5 +351,10 @@ content, err = safefileio.SafeReadFile(resolvedPath)
 | AC-10 | `internal/fileanalysis/file_analysis_store.go` の `Load` / `Save` が `ResolvedPath` を介して `SafeReadFile` / `SafeWriteFileOverwrite` を呼ぶ |
 | AC-11 | `internal/filevalidator/validator.go` の `calculateHash` が `ResolvedPath` を受け取り、`SafeReadFile` に直接渡す |
 | AC-12 | `internal/runner/config/loader.go` のテスト専用パスが `NewResolvedPath` を介して `SafeReadFile` を呼ぶ |
-| AC-13 | `make test` が全パッケージでパスする |
-| AC-14 | `make lint` がエラーを報告しない |
+| AC-13 | `ResolvedPath` が解決モードを保持し、`IsParentOnly()` で判定できる |
+| AC-14 | `NewResolvedPath` で作成した値を `SafeWriteFile` に渡すと `ErrInvalidFilePath` を返す |
+| AC-15 | `NewResolvedPath` で作成した値を `SafeWriteFileOverwrite` に渡すと `ErrInvalidFilePath` を返す |
+| AC-16 | `NewResolvedPath` で作成した値を `SafeAtomicMoveFile`（`srcPath` または `dstPath`）に渡すと `ErrInvalidFilePath` を返す |
+| AC-17 | `SafeReadFile` / `SafeReadFileWithFS` は `NewResolvedPath` / `NewResolvedPathParentOnly` の両方を受け入れる |
+| AC-18 | `make test` が全パッケージでパスする |
+| AC-19 | `make lint` がエラーを報告しない |
