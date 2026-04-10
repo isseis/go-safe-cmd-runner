@@ -123,8 +123,14 @@ const (
 )
 
 // ResolvedPath represents a file path that has been resolved to an absolute path
-// with all symbolic links evaluated. It can only be created via constructors,
-// ensuring that the path is always in a normalized form.
+// via one of two constructors:
+//   - NewResolvedPath: evaluates all symbolic links including the leaf component.
+//   - NewResolvedPathParentOnly: evaluates symbolic links in the parent directory only;
+//     the leaf component is left unresolved, so a symlink at that position is preserved
+//     and can still be detected by callers (e.g. via openat2(RESOLVE_NO_SYMLINKS)).
+//
+// Use IsParentOnly to distinguish the two modes. Security-boundary write functions
+// require IsParentOnly() == true to preserve leaf-symlink detection.
 type ResolvedPath struct {
 	path string
 	mode resolveMode
