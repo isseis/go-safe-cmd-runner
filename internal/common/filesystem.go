@@ -117,9 +117,9 @@ const (
 	// resolveModeFull is set by NewResolvedPath (EvalSymlinks on the full path).
 	// It is iota+1 so that the zero value (uninitialized ResolvedPath{}) is never
 	// treated as a valid parent-only path, ensuring boundary assertions reject it.
-	resolveFull resolveMode = iota + 1
-	// resolveParentOnly is set by NewResolvedPathParentOnly.
-	resolveParentOnly
+	resolveModeFull resolveMode = iota + 1
+	// resolveModeParentOnly is set by NewResolvedPathParentOnly.
+	resolveModeParentOnly
 )
 
 // ResolvedPath represents a file path that has been resolved to an absolute path
@@ -149,7 +149,7 @@ func NewResolvedPathParentOnly(path string) (ResolvedPath, error) {
 	if err != nil {
 		return ResolvedPath{}, err
 	}
-	return ResolvedPath{path: filepath.Join(resolvedParent, filepath.Base(absPath)), mode: resolveParentOnly}, nil
+	return ResolvedPath{path: filepath.Join(resolvedParent, filepath.Base(absPath)), mode: resolveModeParentOnly}, nil
 }
 
 // NewResolvedPath creates a ResolvedPath for an existing file or directory.
@@ -167,7 +167,7 @@ func NewResolvedPath(path string) (ResolvedPath, error) {
 	if err != nil {
 		return ResolvedPath{}, err
 	}
-	return ResolvedPath{path: resolvedPath, mode: resolveFull}, nil
+	return ResolvedPath{path: resolvedPath, mode: resolveModeFull}, nil
 }
 
 // String returns the resolved path as a string.
@@ -179,7 +179,7 @@ func (p ResolvedPath) String() string {
 // Security-boundary write functions (SafeWriteFile, SafeWriteFileOverwrite, SafeAtomicMoveFile)
 // require IsParentOnly() == true to preserve leaf-symlink detection via openat2(RESOLVE_NO_SYMLINKS).
 func (p ResolvedPath) IsParentOnly() bool {
-	return p.mode == resolveParentOnly
+	return p.mode == resolveModeParentOnly
 }
 
 // ContainsPathTraversalSegment checks if a path contains ".." as a distinct path segment
