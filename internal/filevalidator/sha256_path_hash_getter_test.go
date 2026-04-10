@@ -123,7 +123,7 @@ func TestSHA256PathHashGetter_GetHashFilePath_DifferentHashDirs(t *testing.T) {
 		results[i] = result
 
 		// Verify the result uses the correct hash directory
-		assert.True(t, strings.HasPrefix(result, rawDir))
+assert.Equal(t, hashDir.String(), filepath.Dir(result))
 	}
 
 	// All results should have different prefixes but same filename
