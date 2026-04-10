@@ -76,9 +76,10 @@ func (s *Store) Load(filePath common.ResolvedPath) (*Record, error) {
 		return nil, fmt.Errorf("failed to get analysis record path: %w", err)
 	}
 
-	// Use NewResolvedPathParentOnly so that a symlink at the
-	// record file leaf is not dereferenced before SafeReadFile sees it.
-	// SafeReadFile uses openat2(RESOLVE_NO_SYMLINKS) and will reject the symlink.
+	// Use NewResolvedPathParentOnly to preserve the leaf symlink position.
+	// SafeReadFile accepts both constructors, but if NewResolvedPath were used
+	// here the leaf symlink would be resolved before SafeReadFile sees the path,
+	// silently bypassing the openat2(RESOLVE_NO_SYMLINKS) detection in SafeReadFile.
 	resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
 	if err != nil {
 		if os.IsNotExist(err) {
