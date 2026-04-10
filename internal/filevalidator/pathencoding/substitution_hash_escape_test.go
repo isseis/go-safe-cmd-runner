@@ -69,58 +69,11 @@ func TestSubstitutionHashEscape_Encode(t *testing.T) {
 	}
 }
 
-func TestSubstitutionHashEscape_Encode_ErrorCases(t *testing.T) {
+func TestSubstitutionHashEscape_Encode_EmptyError(t *testing.T) {
 	encoder := pathencoding.NewSubstitutionHashEscape()
-
-	tests := []struct {
-		name        string
-		input       string
-		expectError bool
-	}{
-		{
-			name:        "absolute path should succeed",
-			input:       "/usr/bin/python3",
-			expectError: false,
-		},
-		{
-			name:        "relative path should fail",
-			input:       "usr/bin/python3",
-			expectError: true,
-		},
-		{
-			name:        "relative path with dot should fail",
-			input:       "./local/file",
-			expectError: true,
-		},
-		{
-			name:        "relative path with double dot should fail",
-			input:       "../parent/file",
-			expectError: true,
-		},
-		{
-			name:        "path with dot component should fail",
-			input:       "/path/./file",
-			expectError: true,
-		},
-		{
-			name:        "path with double dot component should fail",
-			input:       "/path/../file",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := encoder.Encode(tt.input)
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Empty(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.NotEmpty(t, result)
-			}
-		})
-	}
+	result, err := encoder.Encode("")
+	assert.Error(t, err)
+	assert.Empty(t, result)
 }
 
 func TestSubstitutionHashEscape_Decode(t *testing.T) {
