@@ -110,11 +110,52 @@ func (fs *DefaultFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
+// resolveMode indicates how ResolvedPath was constructed.
+type resolveMode int
+
+const (
+	// resolveModeFull is set by NewResolvedPath (EvalSymlinks on the full path).
+	// It is iota+1 so that the zero value (uninitialized ResolvedPath{}) is never
+	// treated as a valid parent-only path, ensuring boundary assertions reject it.
+	resolveModeFull resolveMode = iota + 1
+	// resolveModeParentOnly is set by NewResolvedPathParentOnly.
+	resolveModeParentOnly
+)
+
 // ResolvedPath represents a file path that has been resolved to an absolute path
-// with all symbolic links evaluated. It can only be created via constructors,
-// ensuring that the path is always in a normalized form.
+// via one of two constructors:
+//   - NewResolvedPath: evaluates all symbolic links including the leaf component.
+//   - NewResolvedPathParentOnly: evaluates symbolic links in the parent directory only;
+//     the leaf component is left unresolved, so a symlink at that position is preserved
+//     and can still be detected by callers (e.g. via openat2(RESOLVE_NO_SYMLINKS)).
+//
+// Use IsParentOnly to distinguish the two modes. Security-boundary write functions
+// require IsParentOnly() == true to preserve leaf-symlink detection.
 type ResolvedPath struct {
 	path string
+	mode resolveMode
+}
+
+// NewResolvedPathParentOnly creates a ResolvedPath by resolving only the parent directory
+// via EvalSymlinks and re-joining the file name unchanged.
+// The file itself need not exist; only the parent directory must exist.
+// Because the leaf is not dereferenced, callers such as SafeReadFile can still detect
+// and reject a symlink at the leaf position via openat2(RESOLVE_NO_SYMLINKS).
+// Returns ErrEmptyPath if the path is empty, or any error from Abs/EvalSymlinks on the parent.
+func NewResolvedPathParentOnly(path string) (ResolvedPath, error) {
+	if path == "" {
+		return ResolvedPath{}, ErrEmptyPath
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	parentDir := filepath.Dir(absPath)
+	resolvedParent, err := filepath.EvalSymlinks(parentDir)
+	if err != nil {
+		return ResolvedPath{}, err
+	}
+	return ResolvedPath{path: filepath.Join(resolvedParent, filepath.Base(absPath)), mode: resolveModeParentOnly}, nil
 }
 
 // NewResolvedPath creates a ResolvedPath for an existing file or directory.
@@ -132,12 +173,19 @@ func NewResolvedPath(path string) (ResolvedPath, error) {
 	if err != nil {
 		return ResolvedPath{}, err
 	}
-	return ResolvedPath{path: resolvedPath}, nil
+	return ResolvedPath{path: resolvedPath, mode: resolveModeFull}, nil
 }
 
 // String returns the resolved path as a string.
 func (p ResolvedPath) String() string {
 	return p.path
+}
+
+// IsParentOnly returns true if this ResolvedPath was created with NewResolvedPathParentOnly.
+// Security-boundary write functions (SafeWriteFile, SafeWriteFileOverwrite, SafeAtomicMoveFile)
+// require IsParentOnly() == true to preserve leaf-symlink detection via openat2(RESOLVE_NO_SYMLINKS).
+func (p ResolvedPath) IsParentOnly() bool {
+	return p.mode == resolveModeParentOnly
 }
 
 // ContainsPathTraversalSegment checks if a path contains ".." as a distinct path segment

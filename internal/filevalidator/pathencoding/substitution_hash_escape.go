@@ -1,7 +1,6 @@
 package pathencoding
 
 import (
-	"path/filepath"
 	"strings"
 )
 
@@ -37,13 +36,12 @@ func NewSubstitutionHashEscape() *SubstitutionHashEscape {
 
 // Encode encodes a file path using substitution + double escape method.
 //
-// The input path must be an absolute, normalized path (filepath.Clean applied).
-// This function validates the input and applies the core encoding algorithm.
-// This method always uses normal encoding and does not apply length limits
-// or fallback strategies.
+// The input path must be absolute and canonical; callers are responsible for
+// ensuring this (e.g. by constructing the path via common.ResolvedPath). The
+// only validation performed here is an empty-string check.
 //
 // Encoding Process:
-//  1. Input validation: checks for empty path, absolute path, normalized path
+//  1. Input validation: checks for empty path
 //  2. Single-pass encoding: combines substitution and escaping for efficiency
 //  3. Character transformation:
 //     - '/' → '~' (substitution)
@@ -53,12 +51,12 @@ func NewSubstitutionHashEscape() *SubstitutionHashEscape {
 //
 // Parameters:
 //
-//	path: Absolute, normalized file path to encode
+//	path: Absolute, canonical file path to encode
 //
 // Returns:
 //
 //	string: Encoded filename suitable for filesystem use
-//	error: ErrInvalidPath if path validation fails
+//	error: ErrInvalidPath if path is empty
 //
 // Example:
 //
@@ -69,13 +67,6 @@ func (e *SubstitutionHashEscape) Encode(path string) (string, error) {
 		return "", ErrInvalidPath{Path: path, Err: ErrEmptyPath}
 	}
 
-	// Ensure path is absolute and canonical
-	if !filepath.IsAbs(path) {
-		return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
-	}
-	if filepath.Clean(path) != path {
-		return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
-	}
 	// Single-pass encoding optimization
 	return e.encodeOptimized(path), nil
 }

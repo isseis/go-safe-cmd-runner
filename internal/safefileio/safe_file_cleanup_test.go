@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/stretchr/testify/assert"
@@ -123,6 +124,10 @@ func (m *mockFile) Stat() (os.FileInfo, error) {
 		return nil, m.statErr
 	}
 	return m.fileInfo, nil
+}
+
+func (m *mockFile) Chmod(_ os.FileMode) error {
+	return nil
 }
 
 func (m *mockFile) Truncate(size int64) error {
@@ -257,7 +262,9 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 		content := []byte("test content")
 
 		// Execute: Try to write file with O_EXCL (new file creation)
-		err = safeWriteFileCommon(filePath, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err = safeWriteFileCommon(rp, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 
 		// Verify: Operation failed
 		require.Error(t, err)
@@ -298,7 +305,9 @@ func TestSafeWriteFile_CleanupOnValidationError(t *testing.T) {
 		content := []byte("test content")
 
 		// Execute: Try to write file with O_EXCL
-		err = safeWriteFileWithFS(filePath, content, 0o644, mockFS)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err = safeWriteFileWithFS(rp, content, 0o644, mockFS)
 
 		// Verify: Operation failed
 		require.Error(t, err)
@@ -338,7 +347,9 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		content := []byte("new content")
 
 		// Execute: Try to overwrite (truncate happens after validation)
-		err := safeWriteFileOverwriteWithFS(filePath, content, 0o644, mockFS)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
 		// Verify: Operation failed
 		require.Error(t, err)
@@ -375,7 +386,9 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		content := []byte("new content")
 
 		// Execute
-		err := safeWriteFileOverwriteWithFS(filePath, content, 0o644, mockFS)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
 		// Verify
 		require.Error(t, err)
@@ -413,7 +426,9 @@ func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
 		content := []byte("new content")
 
 		// Execute
-		err := safeWriteFileOverwriteWithFS(filePath, content, 0o644, mockFS)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
 
 		// Verify
 		require.Error(t, err)
@@ -462,7 +477,9 @@ func TestFileCleanup_RemoveFailureWarning(t *testing.T) {
 		content := []byte("test content")
 
 		// Execute: This should trigger cleanup, which will fail
-		err = safeWriteFileCommon(filePath, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err = safeWriteFileCommon(rp, content, 0o644, mockFS, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 
 		// Verify: Original error is returned (not the remove error)
 		require.Error(t, err)
@@ -494,7 +511,9 @@ func TestFileCleanup_Integration(t *testing.T) {
 		// This will fail because we're trying to create a file with world-writable permissions
 		// which will be rejected during validation
 		content := []byte("test content")
-		err := safeWriteFileWithFS(filePath, content, 0o666, fs)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err := safeWriteFileWithFS(rp, content, 0o666, fs)
 
 		// Verify: Operation failed
 		require.Error(t, err)
@@ -518,7 +537,9 @@ func TestFileCleanup_Integration(t *testing.T) {
 
 		// Try to overwrite with invalid permissions (should fail validation)
 		newContent := []byte("new content")
-		err := safeWriteFileOverwriteWithFS(filePath, newContent, 0o666, fs)
+		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, rpErr)
+		err := safeWriteFileOverwriteWithFS(rp, newContent, 0o666, fs)
 
 		// Verify: Operation failed
 		require.Error(t, err)

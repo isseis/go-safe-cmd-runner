@@ -218,6 +218,7 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 		setupFiles func(t *testing.T) (tempPath, finalPath string)
 		wantErr    bool
 		errMessage string
+		errCheck   func(t *testing.T, err error)
 	}{
 		{
 			name: "move_existing_temp_file",
@@ -269,8 +270,11 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				finalPath := filepath.Join(tempDir, "final.txt")
 				return tempPath, finalPath
 			},
-			wantErr:    true,
-			errMessage: "no such file",
+			wantErr: true,
+			errCheck: func(t *testing.T, err error) {
+				t.Helper()
+				assert.True(t, errors.Is(err, os.ErrNotExist), "expected ErrNotExist, got: %v", err)
+			},
 		},
 		{
 			name: "move_to_directory_instead_of_file",
@@ -311,6 +315,9 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				assert.Error(t, err)
 				if tt.errMessage != "" {
 					assert.Contains(t, err.Error(), tt.errMessage)
+				}
+				if tt.errCheck != nil {
+					tt.errCheck(t, err)
 				}
 			} else {
 				assert.NoError(t, err)

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 // ErrInvalidTimeout is returned when an invalid timeout value is encountered
@@ -82,36 +81,20 @@ func BoolPtr(v bool) *bool {
 var errPathAlreadyExists = errors.New("path already exists; use NewResolvedPath for existing files")
 
 // newResolvedPathForNew creates a ResolvedPath for a file that does not yet exist.
-// It resolves the parent directory via EvalSymlinks and re-joins the file name,
-// then checks that the target path itself does not exist.
-//
-// Security note – TOCTOU limitation:
-// The existence check is performed at call time. Between this check and the
-// actual file-creation call, an attacker may create a symlink at the same path.
-// To close this window, callers MUST open the file with O_CREATE|O_EXCL, which
-// performs an atomic "create only if absent" operation at the kernel level and
-// refuses to follow symlinks when O_EXCL is set (on Linux).
+// It delegates path resolution to NewResolvedPathParentOnly and additionally checks
+// that the target path itself does not exist.
 //
 // Returns ErrEmptyPath if path is empty, errPathAlreadyExists if the path
-// already exists, or any error from Abs/EvalSymlinks on the parent.
+// already exists, or any error from NewResolvedPathParentOnly.
 func newResolvedPathForNew(path string) (ResolvedPath, error) {
-	if path == "" {
-		return ResolvedPath{}, ErrEmptyPath
-	}
-	absPath, err := filepath.Abs(path)
+	rp, err := NewResolvedPathParentOnly(path)
 	if err != nil {
 		return ResolvedPath{}, err
 	}
-	parentDir := filepath.Dir(absPath)
-	resolvedParent, err := filepath.EvalSymlinks(parentDir)
-	if err != nil {
-		return ResolvedPath{}, err
-	}
-	resolvedPath := filepath.Join(resolvedParent, filepath.Base(absPath))
-	if _, err := os.Lstat(resolvedPath); err == nil {
+	if _, err := os.Lstat(rp.String()); err == nil {
 		return ResolvedPath{}, errPathAlreadyExists
 	} else if !os.IsNotExist(err) {
 		return ResolvedPath{}, err
 	}
-	return ResolvedPath{path: resolvedPath}, nil
+	return rp, nil
 }

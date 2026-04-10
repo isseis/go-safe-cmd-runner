@@ -11,7 +11,7 @@
 
 ### 1.2 設計原則
 - **型で保証**: `ResolvedPath` の生成はコンストラクタ経由に限定し、慣習依存を減らす
-- **責務の集約**: 既存ファイルと新規ファイルの正規化ロジックは `NewResolvedPath` / `NewResolvedPathForNew` に集約する
+- **責務の集約**: 既存ファイルと新規ファイルの正規化ロジックは `NewResolvedPath` / `NewResolvedPathParentOnly` に集約する
 - **重複排除**: 呼び出し側に残る `filepath.Abs` / `filepath.EvalSymlinks` / 再ラップを削減する
 - **段階的移行**: コンパイルを維持しながら小さな単位で置換し、各段階で追加移行候補を再評価する
 - **停止条件の明確化**: 追加の移行コストに対して安全性・保守性の改善が小さい場合は、その時点で打ち切れる判断基準を持つ
@@ -24,7 +24,7 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    A[(Raw Path String)] --> B["ResolvedPath Constructor<br>NewResolvedPath / NewResolvedPathForNew"]
+    A[(Raw Path String)] --> B["ResolvedPath Constructor<br>NewResolvedPath / NewResolvedPathParentOnly"]
     B --> C["ResolvedPath<br>resolved absolute path"]
     C --> D["Validator / Store / Analysis Components"]
     D --> E[(Hash Record / Analysis Record)]
@@ -156,7 +156,7 @@ type ResolvedPath struct {
 }
 
 func NewResolvedPath(path string) (ResolvedPath, error)
-func NewResolvedPathForNew(path string) (ResolvedPath, error)
+func NewResolvedPathParentOnly(path string) (ResolvedPath, error)
 func (p ResolvedPath) String() string
 ```
 
@@ -288,7 +288,7 @@ flowchart TD
 
 ### 7.1 単体テスト
 - `ResolvedPath` コンストラクタの empty path、相対パス、シンボリックリンク、非存在パスを検証する
-- `NewResolvedPathForNew` の親ディレクトリ解決を検証する
+- `NewResolvedPathParentOnly` の親ディレクトリ解決を検証する
 - `HashFilePathGetter` のシグネチャ変更後も生成パスが安定することを検証する
 
 ### 7.2 統合テスト
@@ -304,7 +304,7 @@ flowchart TD
 
 ### Phase 1: 型境界の導入
 - `ResolvedPath` の struct 化
-- `NewResolvedPath` / `NewResolvedPathForNew` の整備
+- `NewResolvedPath` / `NewResolvedPathParentOnly` の整備
 - `common` テストの更新
 
 ### Phase 2: ストレージ経路の移行

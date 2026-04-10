@@ -20,11 +20,6 @@ var (
 	// ErrEmptyPath indicates an empty path was provided to encoding functions.
 	// Empty paths cannot be encoded as they represent invalid filesystem paths.
 	ErrEmptyPath = errors.New("empty path")
-
-	// ErrNotAbsoluteOrNormalized indicates the path is not absolute or normalized.
-	// The encoder requires absolute paths that have been cleaned with filepath.Clean()
-	// to ensure consistent and predictable encoding results.
-	ErrNotAbsoluteOrNormalized = errors.New("path is not absolute or normalized")
 )
 
 // ErrFallbackNotReversible indicates a fallback encoding cannot be decoded.
@@ -60,21 +55,13 @@ func (e ErrFallbackNotReversible) Error() string {
 //
 // Common causes include:
 //   - Empty paths (wrapped ErrEmptyPath)
-//   - Relative paths (wrapped ErrNotAbsoluteOrNormalized)
-//   - Non-normalized paths (wrapped ErrNotAbsoluteOrNormalized)
-//   - Invalid characters or encoding issues
 //
 // Example usage:
 //
-//	_, err := encoder.Encode("relative/path")
+//	_, err := encoder.Encode("")
 //	var pathErr ErrInvalidPath
 //	if errors.As(err, &pathErr) {
 //	    fmt.Printf("Invalid path '%s': %v", pathErr.Path, pathErr.Err)
-//	}
-//
-//	// Check for specific underlying errors:
-//	if errors.Is(err, ErrNotAbsoluteOrNormalized) {
-//	    // Handle non-absolute path case
 //	}
 type ErrInvalidPath struct {
 	// Path is the invalid file path that caused the error

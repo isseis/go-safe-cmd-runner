@@ -76,7 +76,18 @@ func (s *Store) Load(filePath common.ResolvedPath) (*Record, error) {
 		return nil, fmt.Errorf("failed to get analysis record path: %w", err)
 	}
 
-	data, err := safefileio.SafeReadFile(recordPath)
+	// Use NewResolvedPathParentOnly to preserve the leaf symlink position.
+	// SafeReadFile accepts both constructors, but if NewResolvedPath were used
+	// here the leaf symlink would be resolved before SafeReadFile sees the path,
+	// silently bypassing the openat2(RESOLVE_NO_SYMLINKS) detection in SafeReadFile.
+	resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, fmt.Errorf("failed to resolve record path: %w", err)
+	}
+	data, err := safefileio.SafeReadFile(resolvedRecordPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrRecordNotFound
@@ -126,7 +137,11 @@ func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 		return fmt.Errorf("failed to marshal analysis record: %w", err)
 	}
 
-	if err := safefileio.SafeWriteFileOverwrite(recordPath, data, filePermission); err != nil {
+	resolvedRecordPath, err := common.NewResolvedPathParentOnly(recordPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve record path: %w", err)
+	}
+	if err := safefileio.SafeWriteFileOverwrite(resolvedRecordPath, data, filePermission); err != nil {
 		return fmt.Errorf("failed to write analysis record file: %w", err)
 	}
 
