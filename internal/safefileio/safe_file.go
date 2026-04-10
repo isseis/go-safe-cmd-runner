@@ -119,9 +119,9 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 // eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
 // On systems without openat2, it falls back to path verification before opening the file.
 //
-// filePath must be created with common.NewResolvedPathParentOnly. Passing a path created with
-// common.NewResolvedPath (which resolves the leaf symlink) silently bypasses leaf-symlink
-// detection and will return ErrInvalidFilePath.
+// filePath must be created with common.NewResolvedPathParentOnly. A path created with
+// common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
+// so this function rejects it and returns ErrInvalidFilePath.
 //
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
@@ -134,9 +134,9 @@ func SafeWriteFile(filePath common.ResolvedPath, content []byte, perm os.FileMod
 // eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
 // On systems without openat2, it falls back to path verification before opening the file.
 //
-// filePath must be created with common.NewResolvedPathParentOnly. Passing a path created with
-// common.NewResolvedPath (which resolves the leaf symlink) silently bypasses leaf-symlink
-// detection and will return ErrInvalidFilePath.
+// filePath must be created with common.NewResolvedPathParentOnly. A path created with
+// common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
+// so this function rejects it and returns ErrInvalidFilePath.
 //
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
@@ -149,9 +149,9 @@ func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm o
 // files using safefileio security checks. The source file permissions are set to requiredPerm
 // before the move operation.
 //
-// Both srcPath and dstPath must be created with common.NewResolvedPathParentOnly. Passing a
-// path created with common.NewResolvedPath (which resolves the leaf symlink) silently bypasses
-// leaf-symlink detection and will return ErrInvalidFilePath.
+// Both srcPath and dstPath must be created with common.NewResolvedPathParentOnly. A path
+// created with common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink
+// detection, so this function rejects it and returns ErrInvalidFilePath.
 //
 // This function provides protection against symlink attacks, TOCTOU race conditions, and
 // ensures the destination file has the required permissions and security properties.
