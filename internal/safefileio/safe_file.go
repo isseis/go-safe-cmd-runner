@@ -119,6 +119,10 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 // eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
 // On systems without openat2, it falls back to path verification before opening the file.
 //
+// filePath must be created with common.NewResolvedPathParentOnly. Passing a path created with
+// common.NewResolvedPath (which resolves the leaf symlink) silently bypasses leaf-symlink
+// detection and will return ErrInvalidFilePath.
+//
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
 func SafeWriteFile(filePath common.ResolvedPath, content []byte, perm os.FileMode) (err error) {
@@ -130,6 +134,10 @@ func SafeWriteFile(filePath common.ResolvedPath, content []byte, perm os.FileMod
 // eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
 // On systems without openat2, it falls back to path verification before opening the file.
 //
+// filePath must be created with common.NewResolvedPathParentOnly. Passing a path created with
+// common.NewResolvedPath (which resolves the leaf symlink) silently bypasses leaf-symlink
+// detection and will return ErrInvalidFilePath.
+//
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
 func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) (err error) {
@@ -140,6 +148,10 @@ func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm o
 // It uses rename(2) system call for atomic operation and validates both source and destination
 // files using safefileio security checks. The source file permissions are set to requiredPerm
 // before the move operation.
+//
+// Both srcPath and dstPath must be created with common.NewResolvedPathParentOnly. Passing a
+// path created with common.NewResolvedPath (which resolves the leaf symlink) silently bypasses
+// leaf-symlink detection and will return ErrInvalidFilePath.
 //
 // This function provides protection against symlink attacks, TOCTOU race conditions, and
 // ensures the destination file has the required permissions and security properties.
@@ -158,8 +170,9 @@ func safeWriteFileWithFS(filePath common.ResolvedPath, content []byte, perm os.F
 }
 
 // safeAtomicMoveFileWithFS is the internal implementation that accepts a FileSystem for testing.
-// srcPath and dstPath must be ResolvedPath values (parent-dir symlinks resolved) as constructed
-// by the public API callers; the downstream security checks still reject leaf symlinks.
+// srcPath and dstPath must be created with NewResolvedPathParentOnly; this function asserts that
+// via IsParentOnly() so that SafeOpenFile's openat2(RESOLVE_NO_SYMLINKS) check can detect and
+// reject a symlink at the leaf position.
 func safeAtomicMoveFileWithFS(srcPath, dstPath common.ResolvedPath, requiredPerm os.FileMode, fs FileSystem) error {
 	absSrc := srcPath.String()
 	if absSrc == "" {
