@@ -119,7 +119,7 @@ internal/              # Core implementation
 ├── dynlibanalysis/    # Dynamic library dependency analysis and verification for ELF binaries
 ├── fileanalysis/      # Unified file analysis records (hash, syscall, symbol, shebang)
 ├── filevalidator/     # File integrity validation
-│   └── encoding/      # Hybrid hash filename encoding
+│   └── pathencoding/ # Hybrid hash filename encoding
 ├── groupmembership/   # User/group membership validation
 ├── libccache/         # libc syscall wrapper symbol caching and matching
 ├── logging/           # Advanced logging with Slack integration
@@ -131,12 +131,12 @@ internal/              # Core implementation
 │   ├── config/        # Configuration management
 │   ├── debuginfo/     # Debug functionality and utilities
 │   ├── environment/   # Environment variable processing
-│   ├── runerrors/     # Centralized error handling
 │   ├── executor/      # Command execution logic
 │   ├── output/        # Output capture management
 │   ├── privilege/     # Privilege management
 │   ├── resource/      # Resource management (normal/dry-run)
 │   ├── risk/          # Risk-based command assessment
+│   ├── runerrors/     # Centralized error handling
 │   ├── runnertypes/   # Type definitions and interfaces
 │   ├── security/      # Security validation framework
 │   └── variable/      # Automatic variable generation and definitions
