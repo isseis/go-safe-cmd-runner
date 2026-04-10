@@ -918,3 +918,73 @@ func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 		assert.ErrorIs(t, err, groupmembership.ErrFileWorldWritable)
 	})
 }
+
+// TestResolvedPathModeEnforcement verifies that passing a ResolvedPath created with
+// NewResolvedPath (resolveModeFull) to write functions returns ErrInvalidFilePath.
+// This corresponds to AC-14, AC-15, AC-16.
+func TestResolvedPathModeEnforcement(t *testing.T) {
+	tempDir := commontesting.SafeTempDir(t)
+
+	// Create an existing file so that NewResolvedPath succeeds.
+	existingFile := filepath.Join(tempDir, "existing.txt")
+	require.NoError(t, os.WriteFile(existingFile, []byte("data"), 0o644))
+
+	fullRP, err := common.NewResolvedPath(existingFile)
+	require.NoError(t, err, "NewResolvedPath should succeed for existing file")
+
+	t.Run("SafeWriteFile rejects resolveModeFull", func(t *testing.T) {
+		err := SafeWriteFile(fullRP, []byte("new"), 0o644)
+		assert.ErrorIs(t, err, ErrInvalidFilePath,
+			"SafeWriteFile must reject ResolvedPath created with NewResolvedPath")
+	})
+
+	t.Run("SafeWriteFileOverwrite rejects resolveModeFull", func(t *testing.T) {
+		err := SafeWriteFileOverwrite(fullRP, []byte("new"), 0o644)
+		assert.ErrorIs(t, err, ErrInvalidFilePath,
+			"SafeWriteFileOverwrite must reject ResolvedPath created with NewResolvedPath")
+	})
+
+	t.Run("SafeAtomicMoveFile rejects resolveModeFull for srcPath", func(t *testing.T) {
+		// dstPath uses a valid ParentOnly to ensure only srcPath triggers the error.
+		dstPath, err := common.NewResolvedPathParentOnly(filepath.Join(tempDir, "dst.txt"))
+		require.NoError(t, err)
+		err = SafeAtomicMoveFile(fullRP, dstPath, 0o600)
+		assert.ErrorIs(t, err, ErrInvalidFilePath,
+			"SafeAtomicMoveFile must reject srcPath created with NewResolvedPath")
+	})
+
+	t.Run("SafeAtomicMoveFile rejects resolveModeFull for dstPath", func(t *testing.T) {
+		srcFile := filepath.Join(tempDir, "src.txt")
+		require.NoError(t, os.WriteFile(srcFile, []byte("src"), 0o644))
+		srcRP, err := common.NewResolvedPathParentOnly(srcFile)
+		require.NoError(t, err)
+		err = SafeAtomicMoveFile(srcRP, fullRP, 0o600)
+		assert.ErrorIs(t, err, ErrInvalidFilePath,
+			"SafeAtomicMoveFile must reject dstPath created with NewResolvedPath")
+	})
+}
+
+// TestSafeReadFile_AcceptsBothModes verifies that SafeReadFile accepts ResolvedPath values
+// created with either NewResolvedPath or NewResolvedPathParentOnly (AC-17).
+func TestSafeReadFile_AcceptsBothModes(t *testing.T) {
+	tempDir := commontesting.SafeTempDir(t)
+	filePath := filepath.Join(tempDir, "readable.txt")
+	content := []byte("hello")
+	require.NoError(t, os.WriteFile(filePath, content, 0o644))
+
+	t.Run("NewResolvedPath accepted by SafeReadFile", func(t *testing.T) {
+		rp, err := common.NewResolvedPath(filePath)
+		require.NoError(t, err)
+		got, err := SafeReadFile(rp)
+		assert.NoError(t, err)
+		assert.Equal(t, content, got)
+	})
+
+	t.Run("NewResolvedPathParentOnly accepted by SafeReadFile", func(t *testing.T) {
+		rp, err := common.NewResolvedPathParentOnly(filePath)
+		require.NoError(t, err)
+		got, err := SafeReadFile(rp)
+		assert.NoError(t, err)
+		assert.Equal(t, content, got)
+	})
+}

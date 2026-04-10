@@ -165,9 +165,16 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath common.ResolvedPath, requiredPerm
 	if absSrc == "" {
 		return fmt.Errorf("%w: empty source path", ErrInvalidFilePath)
 	}
+	// Require NewResolvedPathParentOnly so leaf-symlink detection is preserved.
+	if !srcPath.IsParentOnly() {
+		return fmt.Errorf("%w: srcPath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
+	}
 	absDst := dstPath.String()
 	if absDst == "" {
 		return fmt.Errorf("%w: empty destination path", ErrInvalidFilePath)
+	}
+	if !dstPath.IsParentOnly() {
+		return fmt.Errorf("%w: dstPath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
 	}
 	return atomicMoveFileCore(absSrc, absDst, requiredPerm, fs)
 }
@@ -242,6 +249,11 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 	absPath := filePath.String()
 	if absPath == "" {
 		return fmt.Errorf("%w: empty path", ErrInvalidFilePath)
+	}
+	// Require NewResolvedPathParentOnly so the leaf-symlink position is not pre-resolved;
+	// SafeOpenFile (openat2 RESOLVE_NO_SYMLINKS) can then detect and reject a symlink at the leaf.
+	if !filePath.IsParentOnly() {
+		return fmt.Errorf("%w: filePath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
 	}
 
 	// Pre-validate requested permissions for write operation
