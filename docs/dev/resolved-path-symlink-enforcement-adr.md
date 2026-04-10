@@ -102,10 +102,10 @@ Change the parameter types of `SafeWriteFile`, `SafeWriteFileOverwrite`, and the
 ### Option C: Add a `resolveMode` field to `ResolvedPath` (accepted)
 
 ```go
-type resolveMode uint8
+type resolveMode int
 const (
-    resolveModeParentOnly resolveMode = iota  // zero value; the empty-path check fires first on ResolvedPath{}, so the mode assertion never runs, but the iota ordering keeps the safe side as zero
-    resolveModeFull
+    resolveModeFull       resolveMode = iota + 1 // set by NewResolvedPath; iota+1 makes the zero value (0) an invalid sentinel not assigned by either constructor
+    resolveModeParentOnly                         // set by NewResolvedPathParentOnly
 )
 
 type ResolvedPath struct {
@@ -133,7 +133,7 @@ Adding the same assertion to `safeWriteFileCommon` protects `SafeWriteFile` and 
 - No changes to existing function signatures → zero impact on existing callers
 - No conversion boilerplate
 - `SafeWriteFile`, `SafeWriteFileOverwrite`, and `SafeAtomicMoveFile` are all protected uniformly
-- The zero value of `mode` is `resolveModeParentOnly`, so the zero value `ResolvedPath{}` defaults to the safe side
+- The zero value of `mode` (0) is an invalid sentinel not set by either constructor; `IsParentOnly()` returns `false` for it, so `ResolvedPath{}` is rejected by write-family boundary assertions (and also by the empty-path check)
 - Estimated change size: ~25 lines (no modifications to existing call sites)
 
 **Cons:**
@@ -153,7 +153,7 @@ Adding the same assertion to `safeWriteFileCommon` protects `SafeWriteFile` and 
 
 **Alignment with YAGNI:** At the time of this decision, the production callers of `SafeWriteFile` and `SafeAtomicMoveFile` are few (two call sites in `fileanalysis`), and both already use `NewResolvedPathParentOnly` correctly. Any misuse would surface immediately as a runtime error.
 
-**Zero-value safety:** Setting the zero value of `mode` to `resolveModeParentOnly` keeps the iota ordering on the safe side. In practice, `ResolvedPath{}` also has an empty `path`, so the empty-path check (`absPath == ""` → `ErrInvalidFilePath`) fires first and the mode assertion never runs; safety is guaranteed by the path check, not by the mode.
+**Zero-value safety:** Using `resolveModeFull = iota + 1` makes the zero value of `mode` (0) an invalid sentinel that neither constructor assigns. `IsParentOnly()` returns `false` for the zero value, so passing an uninitialized `ResolvedPath{}` to any write-family function is rejected with `ErrInvalidFilePath` by the mode assertion. Additionally, `ResolvedPath{}` has an empty `path`, so the empty-path check (`absPath == ""` → `ErrInvalidFilePath`) may fire first. Either way, the zero value is safely rejected.
 
 ### Supersession of Prior Specification
 

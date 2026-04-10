@@ -102,10 +102,10 @@ func NewResolvedPathParentOnly(path string) (ParentOnlyResolvedPath, error) { ..
 ### 案 C: `resolveMode` フィールドを `ResolvedPath` に追加（採用）
 
 ```go
-type resolveMode uint8
+type resolveMode int
 const (
-    resolveModeParentOnly resolveMode = iota  // ゼロ値。空パスチェックが先に発火するため mode アサーションは実行されないが、iota の順序として安全側に倒れる
-    resolveModeFull
+    resolveModeFull       resolveMode = iota + 1 // NewResolvedPath が設定。iota+1 にすることでゼロ値（0）がどちらのコンストラクタでも設定されない無効値となる
+    resolveModeParentOnly                         // NewResolvedPathParentOnly が設定
 )
 
 type ResolvedPath struct {
@@ -133,7 +133,7 @@ if !dstPath.IsParentOnly() {
 - 既存の関数シグネチャを変更しない → 既存呼び出し元への影響ゼロ
 - 変換ボイラープレートが不要
 - `SafeWriteFile`・`SafeWriteFileOverwrite`・`SafeAtomicMoveFile` を一括保護できる
-- `mode` のゼロ値が `resolveModeParentOnly` となるため iota の順序として安全側に倒れる（実際には `path` も空文字列になるため、空パスチェックが先に発火して mode アサーションは実行されない）
+- `mode` のゼロ値（0）はどちらのコンストラクタでも設定されない無効値となるため、`IsParentOnly()` が `false` を返し書き込み系が `ErrInvalidFilePath` で拒否する（加えて `path` も空文字列のため、空パスチェックも先に発火する）
 - 変更規模：約 25 行（既存呼び出し元コードの修正なし）
 
 **Cons:**
@@ -153,7 +153,7 @@ if !dstPath.IsParentOnly() {
 
 **YAGNI 原則との整合:** 現時点で `SafeWriteFile`・`SafeAtomicMoveFile` の本番呼び出し元は少数（`fileanalysis` の 2 か所のみ）であり、いずれも正しく `NewResolvedPathParentOnly` を使用している。誤用が実際に発生した場合、実行時エラーとして即座に検知できる。
 
-**ゼロ値の安全性:** `mode` のゼロ値を `resolveModeParentOnly` とすることで、iota の順序として安全側に倒れる。なお `ResolvedPath{}` のゼロ値は `path` も空文字列になるため、実際には空パスチェック（`absPath == ""` → `ErrInvalidFilePath`）が先に発火し、mode アサーションは実行されない。モードによる保護ではなく空パスチェックによる保護であるが、安全であることに変わりはない。
+**ゼロ値の安全性:** `resolveModeFull = iota + 1` とすることで `mode` のゼロ値（0）はどちらのコンストラクタでも設定されない無効値となる。`IsParentOnly()` はゼロ値に対して `false` を返すため、`ResolvedPath{}` をそのまま書き込み系に渡すと `ErrInvalidFilePath` で拒否される。また `ResolvedPath{}` は `path` も空文字列のため、空パスチェック（`absPath == ""` → `ErrInvalidFilePath`）が先に発火する場合もある。いずれにせよゼロ値は安全に拒否される。
 
 ### 旧仕様の上書き
 
