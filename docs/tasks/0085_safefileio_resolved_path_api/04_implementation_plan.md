@@ -77,7 +77,7 @@ if !filePath.IsParentOnly() {
 - [x] `internal/filevalidator/validator.go` の `calculateHash` が
       `ResolvedPath` を直接受け取ることを確認（実装済み）
 - [x] `internal/runner/config/loader.go` のテスト経路が
-      `NewResolvedPath` 経由で `SafeReadFile` を呼ぶことを確認（実装済み）
+      `NewResolvedPathParentOnly` 経由で `SafeReadFile` を呼ぶことを確認（実装済み）
 
 対応受け入れ基準: AC-10, AC-11, AC-12
 

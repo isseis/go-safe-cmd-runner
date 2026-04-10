@@ -133,8 +133,11 @@ func (l *Loader) loadTemplate(path string) (map[string]runnertypes.CommandTempla
 	} else {
 		// Test path: read without verification
 		// This is only used in test code via NewLoaderForTest() -> newLoaderInternal()
+		// Use NewResolvedPathParentOnly so that a leaf symlink is not resolved before
+		// SafeReadFile sees it; SafeReadFile's RESOLVE_NO_SYMLINKS check can then
+		// detect and reject it.
 		var resolvedPath common.ResolvedPath
-		resolvedPath, err = common.NewResolvedPath(path)
+		resolvedPath, err = common.NewResolvedPathParentOnly(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve template path: %w", err)
 		}

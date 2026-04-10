@@ -285,7 +285,10 @@ err = safefileio.SafeWriteFileOverwrite(resolvedRecordPath, data, filePermission
 content, err = safefileio.SafeReadFile(path)  // テスト専用パス、path は string
 
 // 変更後
-resolvedPath, err := common.NewResolvedPath(path)
+// NewResolvedPathParentOnly を使用する。NewResolvedPath（完全解決）を使うとリーフの
+// シンボリックリンクが先に解決され、SafeReadFile の RESOLVE_NO_SYMLINKS による
+// シンボリックリンク検出が機能しなくなるため不可。
+resolvedPath, err := common.NewResolvedPathParentOnly(path)
 if err != nil {
     return nil, fmt.Errorf("failed to resolve template path: %w", err)
 }
@@ -350,7 +353,7 @@ content, err = safefileio.SafeReadFile(resolvedPath)
 | AC-9 | `safeWriteFileCommon` / `safeAtomicMoveFileWithFS` / `SafeReadFileWithFS` の内部で `filepath.Abs()` を直接呼び出す箇所がない |
 | AC-10 | `internal/fileanalysis/file_analysis_store.go` の `Load` / `Save` が `ResolvedPath` を介して `SafeReadFile` / `SafeWriteFileOverwrite` を呼ぶ |
 | AC-11 | `internal/filevalidator/validator.go` の `calculateHash` が `ResolvedPath` を受け取り、`SafeReadFile` に直接渡す |
-| AC-12 | `internal/runner/config/loader.go` のテスト専用パスが `NewResolvedPath` を介して `SafeReadFile` を呼ぶ |
+| AC-12 | `internal/runner/config/loader.go` のテスト専用パスが `NewResolvedPathParentOnly` を介して `SafeReadFile` を呼ぶ |
 | AC-13 | `ResolvedPath` が解決モードを保持し、`IsParentOnly()` で判定できる |
 | AC-14 | `NewResolvedPath` で作成した値を `SafeWriteFile` に渡すと `ErrInvalidFilePath` を返す |
 | AC-15 | `NewResolvedPath` で作成した値を `SafeWriteFileOverwrite` に渡すと `ErrInvalidFilePath` を返す |
