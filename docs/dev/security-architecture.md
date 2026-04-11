@@ -262,10 +262,10 @@ Validates command paths against a configurable allowlist and prevents execution 
 **Secure PATH Environment Enforcement**:
 ```go
 // Location: internal/verification/manager.go
-const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
+// security.SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 
 // Does not inherit environment variable PATH, uses secure fixed PATH
-pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
+pathResolver := NewPathResolver(security.SecurePathEnv, securityValidator)
 ```
 
 **Path Resolution**:

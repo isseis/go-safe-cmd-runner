@@ -262,10 +262,10 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 **セキュアPATH環境の強制**:
 ```go
 // 場所: internal/verification/manager.go
-const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
+// security.SecurePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 
 // 環境変数PATHを継承せず、セキュアな固定PATHを使用
-pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
+pathResolver := NewPathResolver(security.SecurePathEnv, securityValidator)
 ```
 
 **パス解決**:
