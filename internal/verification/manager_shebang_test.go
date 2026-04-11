@@ -287,9 +287,8 @@ func TestVerifyCommandShebangInterpreter_NoRecord(t *testing.T) {
 
 // TestVerifyCommandShebangInterpreter_OldSchema verifies that a command whose
 // record has a schema version older than CurrentSchemaVersion is rejected with
-// SchemaVersionMismatchError. This covers the skip_standard_paths path where
-// VerifyGroupFiles does not check the file but shebang verification must still
-// enforce the schema version.
+// SchemaVersionMismatchError. This guards callers that invoke shebang verification
+// directly (bypassing VerifyGroupFiles), so the schema version is always enforced.
 func TestVerifyCommandShebangInterpreter_OldSchema(t *testing.T) {
 	mockFV := newMockFVForShebang()
 	// Simulate a record that fails to load with SchemaVersionMismatchError (old schema).

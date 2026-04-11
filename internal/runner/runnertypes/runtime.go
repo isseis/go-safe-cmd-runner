@@ -273,11 +273,9 @@ type RuntimeCommand struct {
 	// command binary as computed during file verification (VerifyGroupFiles).
 	// It is set by the group executor after verification completes and forwarded
 	// to the ELF analyzer to avoid a redundant read of the binary.
-	// Empty string means no hash is available (file was skipped, or the file
-	// validator is disabled — which only happens in tests via WithFileValidatorDisabled).
+	// Empty string means no hash is available (the file validator is disabled —
+	// which only happens in tests via WithFileValidatorDisabled).
 	ExpandedCmdContentHash string
-
-	// SkipBinaryAnalysis removed: hash verification now always runs for all files.
 
 	// EffectiveWorkDir is the resolved working directory for this command
 	EffectiveWorkDir string

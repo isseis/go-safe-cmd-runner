@@ -227,7 +227,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	groupName := runnertypes.ExtractGroupName(runtimeGroup)
 
 	for file := range allFiles {
-
 		// Verify file hash and collect the computed hash for downstream consumers.
 		contentHash, err := m.verifyFileWithHash(file, "group:"+groupName)
 		if err != nil {
@@ -669,10 +668,9 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 			return nil
 		}
 		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
-			// Old schema record (pre-shebang tracking). Normally VerifyGroupFiles
-			// catches this before shebang verification runs, but skip_standard_paths
-			// bypasses file verification for standard-path commands. Reject here to
-			// ensure pre-shebang records are rejected even on that path.
+			// Old schema record (pre-shebang tracking): reject so callers that
+			// invoke shebang verification directly (bypassing VerifyGroupFiles)
+			// still enforce the schema version.
 			return err
 		}
 		return fmt.Errorf("failed to load record for shebang verification: %w", err)
