@@ -18,17 +18,21 @@
 
 ```mermaid
 flowchart TD
-    A["GlobalSpec.VerifyStandardPaths<br>(spec.go)"]
-    B["DefaultVerifyStandardPaths<br>(defaults.go)"]
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    A[("GlobalSpec.VerifyStandardPaths<br>(spec.go)")]
+    B[("DefaultVerifyStandardPaths<br>(defaults.go)")]
     C["DetermineVerifyStandardPaths()<br>SkipStandardPaths()<br>(runtime.go)"]
-    D["AnalysisOptions.VerifyStandardPaths<br>(resource/types.go)"]
+    D[("AnalysisOptions.VerifyStandardPaths<br>(resource/types.go)")]
     E["shouldPerformHashValidation()<br>(hash_validation.go)"]
     F["isStandardDirectory()<br>StandardDirectories<br>(directory_risk.go)"]
     G["skipBinaryAnalysis param<br>(network_analyzer.go)"]
-    H["SkipBinaryAnalysis field<br>(runtime.go)"]
+    H[("SkipBinaryAnalysis field<br>(runtime.go)")]
     I["PathResolver.skipStandardPaths<br>ShouldSkipVerification()<br>(path_resolver.go)"]
     J["スキップロジック<br>(manager.go)"]
-    K["SkippedFiles<br>(errors.go, types.go, result_collector.go)"]
+    K[("SkippedFiles<br>(errors.go, types.go, result_collector.go)")]
     L["skippedPaths / SkipBinaryAnalysis設定<br>(group_executor.go)"]
     M["SkipBinaryAnalysis参照<br>(risk/evaluator.go)"]
     N["Skipped出力行<br>(formatter.go)"]
@@ -53,6 +57,24 @@ flowchart TD
     K --> P
     K --> Q
     L --> J
+
+    class A,B,D,H,K data;
+    class C,E,F,G,I,J,L,M,Q,R process;
+    class N,O,P enhanced;
+```
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    D1[("設定・型宣言")] --> P1["処理ロジック・関数"] --> E1["出力・エントリポイント"]
+    class D1 data
+    class P1 process
+    class E1 enhanced
 ```
 
 ## 2. 実装フェーズ計画
@@ -331,13 +353,17 @@ sample/workdir_examples.toml
 
 ```mermaid
 flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
     P1["Phase 1<br>セキュリティ分析層"]
     P2["Phase 2<br>エグゼキュータ・リスク層"]
     P3["Phase 3<br>検証層"]
     P4["Phase 4<br>SkippedFiles"]
     P5["Phase 5<br>エントリポイント・ランタイム型"]
     P6["Phase 6<br>テスト"]
-    P7["Phase 7<br>ドキュメント・サンプル"]
+    P7[("Phase 7<br>ドキュメント・サンプル")]
 
     P1 --> P2
     P2 --> P3
@@ -345,6 +371,24 @@ flowchart LR
     P4 --> P5
     P5 --> P6
     P6 --> P7
+
+    class P1,P2,P3,P4,P5 process;
+    class P6 enhanced;
+    class P7 data;
+```
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    D1[("ドキュメント・サンプル")] --> P1["コード削除フェーズ"] --> E1["テスト・検証フェーズ"]
+    class D1 data
+    class P1 process
+    class E1 enhanced
 ```
 
 各フェーズ完了時点で `make build` が成功することを確認してから次フェーズへ進む。Phase 6 完了時点で `make test` および `make lint` がすべて成功することを確認する。
