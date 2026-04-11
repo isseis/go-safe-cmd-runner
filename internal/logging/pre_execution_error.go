@@ -11,9 +11,6 @@ import (
 
 // Environment variable names
 const (
-	// SlackWebhookURLEnvVar is deprecated - kept for migration detection
-	SlackWebhookURLEnvVar = "GSCR_SLACK_WEBHOOK_URL"
-
 	// SlackWebhookURLSuccessEnvVar is the environment variable for success webhook
 	SlackWebhookURLSuccessEnvVar = "GSCR_SLACK_WEBHOOK_URL_SUCCESS"
 

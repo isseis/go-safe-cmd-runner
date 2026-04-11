@@ -2,11 +2,11 @@
 
 ## 実装ステップ
 
-- [ ] **1. `SlackWebhookURLEnvVar` 定数の削除**
+- [x] **1. `SlackWebhookURLEnvVar` 定数の削除**
   - ファイル: `internal/logging/pre_execution_error.go`
   - 内容: `SlackWebhookURLEnvVar = "GSCR_SLACK_WEBHOOK_URL"` 定数とそのコメントを削除
 
-- [ ] **2. `DeprecatedSlackWebhookError` 型と `ErrDeprecatedSlackWebhook` の削除**
+- [x] **2. `DeprecatedSlackWebhookError` 型と `ErrDeprecatedSlackWebhook` の削除**
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: 以下を削除
     - `ErrDeprecatedSlackWebhook` 変数
@@ -14,11 +14,11 @@
     - `Error()` メソッド
     - `Is()` メソッド
 
-- [ ] **3. `ValidateSlackWebhookEnv` から deprecated チェックの削除**
+- [x] **3. `ValidateSlackWebhookEnv` から deprecated チェックの削除**
   - ファイル: `internal/runner/bootstrap/environment.go`
   - 内容: `os.Getenv(logging.SlackWebhookURLEnvVar)` を使った if ブロックを削除
 
-- [ ] **4. テストコードの更新**
+- [x] **4. テストコードの更新**
   - ファイル: `internal/runner/bootstrap/environment_test.go`
   - 内容: 以下を削除・更新
     - テスト構造体の `oldURL` フィールド
