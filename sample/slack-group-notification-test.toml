@@ -6,7 +6,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-verify_standard_paths = false
 
 # Environment variables needed for Slack notifications
 # The SLACK_WEBHOOK_URL should be set in the environment before running

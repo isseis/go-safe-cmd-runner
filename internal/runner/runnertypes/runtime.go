@@ -95,26 +95,6 @@ func (r *RuntimeGlobal) EnvAllowlist() []string {
 	return r.Spec.EnvAllowed
 }
 
-// DetermineVerifyStandardPaths returns the effective verify_standard_paths setting.
-// If verifyStandardPaths is nil, returns the security-safe default (true = verify).
-// This ensures consistent behavior even if ApplyGlobalDefaults hasn't been called.
-func DetermineVerifyStandardPaths(verifyStandardPaths *bool) bool {
-	if verifyStandardPaths == nil {
-		return true // default: verify paths (matches DefaultVerifyStandardPaths)
-	}
-	return *verifyStandardPaths // use explicit value
-}
-
-// SkipStandardPaths returns the skip_standard_paths setting from the spec.
-// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
-func (r *RuntimeGlobal) SkipStandardPaths() bool {
-	if r == nil || r.Spec == nil {
-		panic("RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
-	}
-	// Convert verify_standard_paths to skip_standard_paths logic (invert boolean)
-	return !DetermineVerifyStandardPaths(r.Spec.VerifyStandardPaths)
-}
-
 // RuntimeGroup represents the runtime-expanded group configuration.
 // It contains references to the original GroupSpec along with expanded variables
 // and resources that are resolved at runtime.
@@ -297,12 +277,7 @@ type RuntimeCommand struct {
 	// validator is disabled — which only happens in tests via WithFileValidatorDisabled).
 	ExpandedCmdContentHash string
 
-	// SkipBinaryAnalysis is true when the command binary resides on a standard
-	// system path and verify_standard_paths = false is configured.  In that case
-	// file verification (including network-symbol analysis) is intentionally
-	// skipped for this command, so binary analysis must also be suppressed to
-	// avoid analysing an unverified binary.
-	SkipBinaryAnalysis bool
+	// SkipBinaryAnalysis removed: hash verification now always runs for all files.
 
 	// EffectiveWorkDir is the resolved working directory for this command
 	EffectiveWorkDir string

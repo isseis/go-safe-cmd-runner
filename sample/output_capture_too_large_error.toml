@@ -5,7 +5,6 @@ version = "1.0"
 timeout = 30
 output_size_limit = 1024
 env_allowed = ["PATH"]
-verify_standard_paths = false
 
 [[groups]]
 name = "too_large_error_test"

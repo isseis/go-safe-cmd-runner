@@ -223,14 +223,14 @@ internal/runner/resource/types.go
 
 #### 完了条件
 
-- [ ] `GlobalSpec` に `VerifyStandardPaths` フィールドが存在しないこと
-- [ ] `DefaultVerifyStandardPaths` 定数が存在しないこと
-- [ ] `DetermineVerifyStandardPaths()` が存在しないこと
-- [ ] `RuntimeGlobal.SkipStandardPaths()` が存在しないこと
-- [ ] `RuntimeCommand.SkipBinaryAnalysis` フィールドが存在しないこと
-- [ ] `DryRunOptions` に `VerifyStandardPaths` フィールドが存在しないこと
-- [ ] `make build` が成功すること
-- [ ] `make test` がすべてパスすること（テスト削除前の暫定確認）
+- [x] `GlobalSpec` に `VerifyStandardPaths` フィールドが存在しないこと
+- [x] `DefaultVerifyStandardPaths` 定数が存在しないこと
+- [x] `DetermineVerifyStandardPaths()` が存在しないこと
+- [x] `RuntimeGlobal.SkipStandardPaths()` が存在しないこと
+- [x] `RuntimeCommand.SkipBinaryAnalysis` フィールドが存在しないこと
+- [x] `DryRunOptions` に `VerifyStandardPaths` フィールドが存在しないこと
+- [x] `make build` が成功すること
+- [x] `make test` がすべてパスすること（テスト削除前の暫定確認）
 
 ### 2.6 Phase 6: テストの削除・更新
 

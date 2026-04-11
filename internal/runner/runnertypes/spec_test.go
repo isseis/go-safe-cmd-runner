@@ -18,41 +18,7 @@ func TestGlobalSpec_UnmarshalTOML_NewFieldNames(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "verify_standard_paths = true",
-			toml: `
-verify_standard_paths = true
-env_vars = ["LANG=en_US.UTF-8"]
-env_allowed = ["PATH", "HOME"]
-env_import = ["user=USER"]
-output_size_limit = 1048576
-`,
-			want: GlobalSpec{
-				VerifyStandardPaths: commontesting.BoolPtr(true),
-				EnvVars:             []string{"LANG=en_US.UTF-8"},
-				EnvAllowed:          []string{"PATH", "HOME"},
-				EnvImport:           []string{"user=USER"},
-				OutputSizeLimit:     commontesting.Int64Ptr(1048576),
-			},
-		},
-		{
-			name: "verify_standard_paths = false",
-			toml: `
-verify_standard_paths = false
-env_vars = []
-env_allowed = []
-env_import = []
-output_size_limit = 0
-`,
-			want: GlobalSpec{
-				VerifyStandardPaths: commontesting.BoolPtr(false),
-				EnvVars:             []string{},
-				EnvAllowed:          []string{},
-				EnvImport:           []string{},
-				OutputSizeLimit:     commontesting.Int64Ptr(0),
-			},
-		},
-		{
-			name: "verify_standard_paths omitted (nil)",
+			name: "verify_standard_paths omitted -> parses ok",
 			toml: `
 env_vars = ["DEBUG=1"]
 env_allowed = ["DEBUG"]
@@ -60,11 +26,10 @@ env_import = []
 output_size_limit = 2097152
 `,
 			want: GlobalSpec{
-				VerifyStandardPaths: nil, // Should remain nil
-				EnvVars:             []string{"DEBUG=1"},
-				EnvAllowed:          []string{"DEBUG"},
-				EnvImport:           []string{},
-				OutputSizeLimit:     commontesting.Int64Ptr(2097152),
+				EnvVars:         []string{"DEBUG=1"},
+				EnvAllowed:      []string{"DEBUG"},
+				EnvImport:       []string{},
+				OutputSizeLimit: commontesting.Int64Ptr(2097152),
 			},
 		},
 	}
@@ -77,18 +42,6 @@ output_size_limit = 2097152
 			assert.Equal(t, tt.wantErr, err != nil, "toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 			if err == nil {
 				require.True(t, reflect.DeepEqual(spec, tt.want), "GlobalSpec unmarshal result mismatch")
-
-				// Detailed comparison for VerifyStandardPaths
-				switch {
-				case spec.VerifyStandardPaths == nil && tt.want.VerifyStandardPaths != nil:
-					assert.Fail(t, "VerifyStandardPaths: got nil, want %v", *tt.want.VerifyStandardPaths)
-				case spec.VerifyStandardPaths != nil && tt.want.VerifyStandardPaths == nil:
-					assert.Fail(t, "VerifyStandardPaths: got %v, want nil", *spec.VerifyStandardPaths)
-				case spec.VerifyStandardPaths != nil && tt.want.VerifyStandardPaths != nil:
-					if *spec.VerifyStandardPaths != *tt.want.VerifyStandardPaths {
-						assert.Equal(t, *tt.want.VerifyStandardPaths, *spec.VerifyStandardPaths, "VerifyStandardPaths mismatch")
-					}
-				}
 			}
 		})
 	}
@@ -222,7 +175,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-verify_standard_paths = false
 output_size_limit = 1048576
 verify_files = ["/usr/bin/python3", "/usr/bin/gcc"]
 env_allowed = ["PATH", "HOME"]
@@ -243,14 +195,13 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:             commontesting.Int32Ptr(300),
-					VerifyStandardPaths: commontesting.BoolPtr(false),
-					OutputSizeLimit:     commontesting.Int64Ptr(1048576),
-					VerifyFiles:         []string{"/usr/bin/python3", "/usr/bin/gcc"},
-					EnvAllowed:          []string{"PATH", "HOME"},
-					EnvVars:             []string{"PATH=/usr/bin:/bin", "HOME=/root"},
-					EnvImport:           []string{"user=USER", "shell=SHELL"},
-					Vars:                map[string]any{"PREFIX": "/opt", "VERSION": "1.0"},
+					Timeout:         commontesting.Int32Ptr(300),
+					OutputSizeLimit: commontesting.Int64Ptr(1048576),
+					VerifyFiles:     []string{"/usr/bin/python3", "/usr/bin/gcc"},
+					EnvAllowed:      []string{"PATH", "HOME"},
+					EnvVars:         []string{"PATH=/usr/bin:/bin", "HOME=/root"},
+					EnvImport:       []string{"user=USER", "shell=SHELL"},
+					Vars:            map[string]any{"PREFIX": "/opt", "VERSION": "1.0"},
 				},
 				Groups: []GroupSpec{
 					{

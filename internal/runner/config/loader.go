@@ -244,9 +244,6 @@ func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, er
 		return nil, err
 	}
 
-	// Apply default values
-	ApplyGlobalDefaults(&cfg.Global)
-
 	// Validate timeout values are non-negative
 	if err := ValidateTimeouts(&cfg); err != nil {
 		return nil, err

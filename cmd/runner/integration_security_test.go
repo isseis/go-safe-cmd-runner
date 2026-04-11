@@ -118,7 +118,6 @@ func TestVerificationIntegration(t *testing.T) {
 				configPath := filepath.Join(tempDir, "config.toml")
 				configContent := `
 [global]
-verify_standard_paths = false
 
 [[groups]]
 name = "integration-test"
