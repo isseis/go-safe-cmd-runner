@@ -43,9 +43,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runne
 	// Check for network operations.
 	// Forward the pre-verified content hash so ELF analysis of static binaries
 	// can skip a redundant file read when looking up syscall analysis results.
-	// SkipBinaryAnalysis suppresses binary analysis for unverified binaries
-	// (e.g. standard-path commands when verify_standard_paths = false).
-	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash, cmd.SkipBinaryAnalysis)
+	isNetwork, isHighRisk := e.networkAnalyzer.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs, cmd.ExpandedCmdContentHash)
 	if isHighRisk {
 		return runnertypes.RiskLevelHigh, nil
 	}

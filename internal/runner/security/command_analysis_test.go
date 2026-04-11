@@ -25,22 +25,18 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		name            string
 		setupFile       func() string
 		args            []string
-		globalConfig    *runnertypes.GlobalSpec
 		expectedRisk    runnertypes.RiskLevel
 		expectedPattern string
 		expectedReason  string
 		expectError     bool
 	}{
 		{
-			name: "standard directory with VerifyStandardPaths=false should skip verification",
+			name: "standard directory should have low risk",
 			setupFile: func() string {
 				// Use a standard directory path (simulated)
 				return "/bin/ls"
 			},
-			args: []string{},
-			globalConfig: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: &[]bool{false}[0], // false means skip verification
-			},
+			args:           []string{},
 			expectedRisk:   runnertypes.RiskLevelLow,
 			expectedReason: "Default directory-based risk level",
 		},
@@ -53,10 +49,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 				require.NoError(t, err)
 				return testFile
 			},
-			args: []string{},
-			globalConfig: &runnertypes.GlobalSpec{
-				VerifyStandardPaths: &[]bool{true}[0], // true means verify (hash validation enabled)
-			},
+			args:           []string{},
 			expectedRisk:   runnertypes.RiskLevelUnknown,
 			expectedReason: "",
 		},
@@ -72,7 +65,6 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 				return setuidFile
 			},
 			args:           []string{},
-			globalConfig:   nil,
 			expectedRisk:   runnertypes.RiskLevelHigh,
 			expectedReason: "Executable has setuid or setgid bit set",
 		},
@@ -98,17 +90,10 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdPath := tc.setupFile()
 
-			// Determine VerifyStandardPaths from globalConfig
-			var verifyStandardPathsPtr *bool
-			if tc.globalConfig != nil {
-				verifyStandardPathsPtr = tc.globalConfig.VerifyStandardPaths
-			}
-
 			// Use empty hashDir for tests since hash validation is not the main focus
 			opts := &AnalysisOptions{
-				VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(verifyStandardPathsPtr), // AnalysisOptions.VerifyStandardPaths has "verify" semantics
-				HashDir:             "",
-				Config:              NewSkipHashValidationTestConfig(),
+				HashDir: "",
+				Config:  NewSkipHashValidationTestConfig(),
 			}
 			risk, pattern, reason, err := AnalyzeCommandSecurity(cmdPath, tc.args, opts)
 
@@ -724,7 +709,7 @@ func TestIsNetworkOperation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewNetworkAnalyzer()
-			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args, "", false)
+			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args, "")
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
 				tt.cmdName, tt.args, tt.description)
 			assert.Equal(t, tt.expectedRisk, isRisk, "IsNetworkOperation(%s, %v) risk detection. %s",
@@ -1815,7 +1800,7 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			analyzer := NewNetworkAnalyzer()
-			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args, "", false)
+			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args, "")
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
 	}
@@ -2493,7 +2478,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 			}
 
 			analyzer := newNetworkAnalyzer(mock, nil)
-			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "sha256:dummy", false)
+			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "sha256:dummy")
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
 	}
@@ -2556,7 +2541,7 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 
 		// Verify mock is used by calling IsNetworkOperation on an absolute path
 		// (binary analysis is skipped for non-absolute paths)
-		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "sha256:dummy", false)
+		isNet, _ := analyzer.IsNetworkOperation("/usr/bin/unknowncmd", []string{}, "sha256:dummy")
 		// Since mock returns NoNetworkSymbols and no network args, result should be false
 		_ = isNet // Just verify no panic
 	})
@@ -2614,7 +2599,7 @@ func TestIsNetworkOperation_HasDynamicLoad(t *testing.T) {
 				dynamicLoadSymbols: tc.dynamicLoadSymbols,
 			}
 			analyzer := newNetworkAnalyzer(mock, nil)
-			isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "sha256:dummy", false)
+			isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "sha256:dummy")
 			assert.Equal(t, tc.expectNetwork, isNet, "isNetwork mismatch")
 			assert.Equal(t, tc.expectHighRisk, isHigh, "isHighRisk mismatch")
 		})
@@ -2634,7 +2619,7 @@ func TestIsNetworkOperation_AnalysisError(t *testing.T) {
 		err:    sentinel,
 	}
 	analyzer := newNetworkAnalyzer(mock, nil)
-	isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "sha256:abc123", false)
+	isNet, isHigh := analyzer.IsNetworkOperation("/usr/bin/somecmd", []string{}, "sha256:abc123")
 	assert.True(t, isNet, "AnalysisError must report network=true (fail-safe)")
 	assert.True(t, isHigh, "AnalysisError must report highRisk=true (hash mismatch is security-relevant)")
 }

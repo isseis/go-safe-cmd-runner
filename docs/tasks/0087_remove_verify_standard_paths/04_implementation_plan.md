@@ -107,12 +107,12 @@ internal/runner/risk/evaluator.go
 
 #### 完了条件
 
-- [ ] `AnalysisOptions` に `VerifyStandardPaths` フィールドが存在しないこと
-- [ ] `shouldPerformHashValidation()` が存在しないこと
-- [ ] `isStandardDirectory()` と `StandardDirectories` が存在しないこと
-- [ ] `IsNetworkOperation` から `skipBinaryAnalysis` パラメータが削除されていること
-- [ ] `risk/evaluator.go` の `IsNetworkOperation` 呼び出しが新しいシグネチャに対応していること
-- [ ] `make build` が成功すること
+- [x] `AnalysisOptions` に `VerifyStandardPaths` フィールドが存在しないこと
+- [x] `shouldPerformHashValidation()` が存在しないこと
+- [x] `isStandardDirectory()` と `StandardDirectories` が存在しないこと
+- [x] `IsNetworkOperation` から `skipBinaryAnalysis` パラメータが削除されていること
+- [x] `risk/evaluator.go` の `IsNetworkOperation` 呼び出しが新しいシグネチャに対応していること
+- [x] `make build` が成功すること
 
 ### 2.2 Phase 2: エグゼキュータ層とリスク評価層の削除
 
@@ -132,10 +132,10 @@ internal/runner/risk/evaluator.go
 
 #### 完了条件
 
-- [ ] `group_executor.go` に `skippedPaths` マップが存在しないこと
-- [ ] `group_executor.go` に `cmd.SkipBinaryAnalysis = true` の設定が存在しないこと
-- [ ] `risk/evaluator.go` に `cmd.SkipBinaryAnalysis` を参照するコードが存在しないこと
-- [ ] `make build` が成功すること
+- [x] `group_executor.go` に `skippedPaths` マップが存在しないこと
+- [x] `group_executor.go` に `cmd.SkipBinaryAnalysis = true` の設定が存在しないこと
+- [x] `risk/evaluator.go` に `cmd.SkipBinaryAnalysis` を参照するコードが存在しないこと
+- [x] `make build` が成功すること
 
 ### 2.3 Phase 3: 検証層（PathResolver・Manager）の削除
 
@@ -398,19 +398,19 @@ flowchart LR
 
 ### Phase 1: セキュリティ分析層
 
-- [ ] `AnalysisOptions.VerifyStandardPaths` フィールドを削除（command_analysis.go）
-- [ ] `shouldPerformHashValidation()` を削除し `validateFileHash()` を常に呼び出すよう変更（hash_validation.go）
-- [ ] `StandardDirectories` 変数を削除（directory_risk.go）
-- [ ] `isStandardDirectory()` 関数を削除（directory_risk.go）
-- [ ] `IsNetworkOperation` の `skipBinaryAnalysis` パラメータ・コメント・条件分岐を削除（network_analyzer.go）
-- [ ] `IsNetworkOperation` 呼び出しから `skipBinaryAnalysis` 引数を削除（risk/evaluator.go）
-- [ ] `AnalysisOptions` への `VerifyStandardPaths` 設定を削除（resource/dryrun_manager.go）
+- [x] `AnalysisOptions.VerifyStandardPaths` フィールドを削除（command_analysis.go）
+- [x] `shouldPerformHashValidation()` を削除し `validateFileHash()` を常に呼び出すよう変更（hash_validation.go）
+- [x] `StandardDirectories` 変数を削除（directory_risk.go）
+- [x] `isStandardDirectory()` 関数を削除（directory_risk.go）
+- [x] `IsNetworkOperation` の `skipBinaryAnalysis` パラメータ・コメント・条件分岐を削除（network_analyzer.go）
+- [x] `IsNetworkOperation` 呼び出しから `skipBinaryAnalysis` 引数を削除（risk/evaluator.go）
+- [x] `AnalysisOptions` への `VerifyStandardPaths` 設定を削除（resource/dryrun_manager.go）
 
 ### Phase 2: エグゼキュータ・リスク層
 
-- [ ] `skippedPaths` マップの構築ループを削除（group_executor.go）
-- [ ] `cmd.SkipBinaryAnalysis = true` の設定を削除（group_executor.go）
-- [ ] `SkipBinaryAnalysis` 参照コメントおよび条件分岐を削除（risk/evaluator.go）
+- [x] `skippedPaths` マップの構築ループを削除（group_executor.go）
+- [x] `cmd.SkipBinaryAnalysis = true` の設定を削除（group_executor.go）
+- [x] `SkipBinaryAnalysis` 参照コメントおよび条件分岐を削除（risk/evaluator.go）
 
 ### Phase 3: 検証層
 
