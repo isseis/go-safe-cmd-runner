@@ -2826,8 +2826,8 @@ func TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns(t *testing.T
 	tmpDir := commontesting.SafeTempDir(t)
 
 	// /usr/bin/ls is a real executable in a standard directory.
-	// Using an empty HashDir means no hash file exists, so validateFileHash must fail
-	// — proving that hash validation was attempted (not skipped).
+	// Using an empty hash directory means no hash file exists for /usr/bin/ls,
+	// so validateFileHash must fail — proving that hash validation was attempted.
 	risk, _, reason, err := AnalyzeCommandSecurity("/usr/bin/ls", []string{}, &AnalysisOptions{
 		HashDir: tmpDir,
 		Config:  DefaultConfig(),
