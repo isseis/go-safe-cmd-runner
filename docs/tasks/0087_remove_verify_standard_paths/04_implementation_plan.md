@@ -133,7 +133,8 @@ internal/runner/risk/evaluator.go
 #### 完了条件
 
 - [ ] `group_executor.go` に `skippedPaths` マップが存在しないこと
-- [ ] `SkipBinaryAnalysis` への参照がプロダクションコードに存在しないこと
+- [ ] `group_executor.go` に `cmd.SkipBinaryAnalysis = true` の設定が存在しないこと
+- [ ] `risk/evaluator.go` に `cmd.SkipBinaryAnalysis` を参照するコードが存在しないこと
 - [ ] `make build` が成功すること
 
 ### 2.3 Phase 3: 検証層（PathResolver・Manager）の削除
