@@ -160,9 +160,8 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	}
 
 	result := &Result{
-		TotalFiles:   len(runtimeGlobal.ExpandedVerifyFiles),
-		FailedFiles:  []string{},
-		SkippedFiles: []string{},
+		TotalFiles:  len(runtimeGlobal.ExpandedVerifyFiles),
+		FailedFiles: []string{},
 	}
 
 	start := time.Now()
@@ -193,7 +192,6 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 			TotalFiles:    result.TotalFiles,
 			VerifiedFiles: result.VerifiedFiles,
 			FailedFiles:   len(result.FailedFiles),
-			SkippedFiles:  len(result.SkippedFiles),
 			Err:           ErrGlobalVerificationFailed,
 		}
 	}
@@ -218,7 +216,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	result := &Result{
 		TotalFiles:    len(allFiles),
 		FailedFiles:   []string{},
-		SkippedFiles:  []string{},
 		ContentHashes: make(map[string]string),
 	}
 
@@ -255,7 +252,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 			TotalFiles:    result.TotalFiles,
 			VerifiedFiles: result.VerifiedFiles,
 			FailedFiles:   len(result.FailedFiles),
-			SkippedFiles:  len(result.SkippedFiles),
 			Err:           ErrGroupVerificationFailed,
 		}
 	}

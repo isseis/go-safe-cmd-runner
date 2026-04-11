@@ -194,10 +194,10 @@ internal/runner/runner.go
 
 #### 完了条件
 
-- [ ] `SkippedFiles` フィールドへの参照がコードベースに存在しないこと
-- [ ] `RecordSkip()` メソッドが存在しないこと
-- [ ] dry-run サマリー出力に `Skipped:` 行が出力されないこと
-- [ ] `make build` が成功すること
+- [x] `SkippedFiles` フィールドへの参照がコードベースに存在しないこと
+- [x] `RecordSkip()` メソッドが存在しないこと
+- [x] dry-run サマリー出力に `Skipped:` 行が出力されないこと
+- [x] `make build` が成功すること
 
 ### 2.5 Phase 5: エントリポイントとランタイム型の削除
 

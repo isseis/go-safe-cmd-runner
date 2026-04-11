@@ -146,7 +146,6 @@ func (f *TextFormatter) writeFileVerification(buf *strings.Builder, verification
 	// Summary statistics
 	fmt.Fprintf(buf, "Total Files: %d\n", verification.TotalFiles)
 	fmt.Fprintf(buf, "  Verified: %d\n", verification.VerifiedFiles)
-	fmt.Fprintf(buf, "  Skipped: %d\n", verification.SkippedFiles)
 	fmt.Fprintf(buf, "  Failed: %d\n", verification.FailedFiles)
 	fmt.Fprintf(buf, "Duration: %v\n", verification.Duration)
 

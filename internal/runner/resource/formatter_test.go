@@ -883,7 +883,6 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    10,
 			VerifiedFiles: 7,
-			SkippedFiles:  2,
 			FailedFiles:   1,
 			Duration:      time.Millisecond * 500,
 			HashDirStatus: verification.HashDirectoryStatus{
@@ -910,7 +909,6 @@ func TestTextFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		assert.Contains(t, output, "===== File Verification =====")
 		assert.Contains(t, output, "Total Files: 10")
 		assert.Contains(t, output, "Verified: 7")
-		assert.Contains(t, output, "Skipped: 2")
 		assert.Contains(t, output, "Failed: 1")
 		assert.NotContains(t, output, "Failures:")
 		assert.NotContains(t, output, "/usr/bin/suspicious")
@@ -949,7 +947,6 @@ func TestTextFormatter_WriteFileVerification_AllSuccess(t *testing.T) {
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    5,
 			VerifiedFiles: 5,
-			SkippedFiles:  0,
 			FailedFiles:   0,
 			Duration:      time.Millisecond * 100,
 			HashDirStatus: verification.HashDirectoryStatus{
@@ -983,7 +980,6 @@ func TestTextFormatter_WriteFileVerification_WithFailures(t *testing.T) {
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    10,
 			VerifiedFiles: 5,
-			SkippedFiles:  2,
 			FailedFiles:   3,
 			Duration:      time.Millisecond * 800,
 			HashDirStatus: verification.HashDirectoryStatus{
@@ -1055,7 +1051,6 @@ func TestJSONFormatter_FormatResult_WithFileVerification(t *testing.T) {
 		FileVerification: &verification.FileVerificationSummary{
 			TotalFiles:    8,
 			VerifiedFiles: 6,
-			SkippedFiles:  1,
 			FailedFiles:   1,
 			Duration:      time.Millisecond * 300,
 			HashDirStatus: verification.HashDirectoryStatus{
@@ -1088,7 +1083,6 @@ func TestJSONFormatter_FormatResult_WithFileVerification(t *testing.T) {
 	assert.NotNil(t, parsed.FileVerification)
 	assert.Equal(t, 8, parsed.FileVerification.TotalFiles)
 	assert.Equal(t, 6, parsed.FileVerification.VerifiedFiles)
-	assert.Equal(t, 1, parsed.FileVerification.SkippedFiles)
 	assert.Equal(t, 1, parsed.FileVerification.FailedFiles)
 
 	// Verify hash directory status

@@ -433,7 +433,6 @@ func TestShouldSkipInteractiveAttr_True(t *testing.T) {
 		"schema_version",
 		"duration_ms",
 		"verified_files",
-		"skipped_files",
 		"total_files",
 		"interactive_mode",
 		"color_support",

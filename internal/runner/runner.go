@@ -396,9 +396,9 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 
 			// Check if this is a verification error - if so, notify via Slack and continue
 			if verErr, ok := errors.AsType[*verification.Error](err); ok {
-				errorMsg := fmt.Sprintf("Group: %s, Total: %d, Verified: %d, Failed: %d, Skipped: %d, Error: %s",
+				errorMsg := fmt.Sprintf("Group: %s, Total: %d, Verified: %d, Failed: %d, Error: %s",
 					verErr.Group, verErr.TotalFiles, verErr.VerifiedFiles,
-					verErr.FailedFiles, verErr.SkippedFiles, verErr.Err.Error())
+					verErr.FailedFiles, verErr.Err.Error())
 				logging.HandlePreExecutionError(
 					logging.ErrorTypeGroupFileVerification,
 					errorMsg,

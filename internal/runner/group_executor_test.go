@@ -1850,7 +1850,6 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	verifyResult := &verification.Result{
 		TotalFiles:    2,
 		VerifiedFiles: 2,
-		SkippedFiles:  []string{},
 		Duration:      100 * time.Millisecond,
 	}
 	mockVM.On("VerifyGroupFiles", mock.Anything).Return(verifyResult, nil)

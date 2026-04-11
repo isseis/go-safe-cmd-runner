@@ -271,7 +271,6 @@ func run(runID string) error {
 	if result.TotalFiles > 0 {
 		slog.Info("Global files verification completed successfully",
 			"verified", result.VerifiedFiles,
-			"skipped", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds(),
 			"run_id", runID)
 	}
