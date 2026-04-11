@@ -115,9 +115,8 @@ type GlobalSpec struct {
 	// nil: use DefaultTimeout (60 seconds)
 	// 0: unlimited execution (no timeout)
 	// Positive value: timeout after N seconds
-	Timeout             *int32 `toml:"timeout"`               // Global timeout in seconds (nil=default 60s, 0=unlimited)
-	VerifyStandardPaths *bool  `toml:"verify_standard_paths"` // Verify files in standard system paths (nil=default true)
-	OutputSizeLimit     *int64 `toml:"output_size_limit"`     // Maximum output size in bytes (nil=use default, 0=unlimited) - raw value for TOML unmarshaling
+	Timeout         *int32 `toml:"timeout"`           // Global timeout in seconds (nil=default 60s, 0=unlimited)
+	OutputSizeLimit *int64 `toml:"output_size_limit"` // Maximum output size in bytes (nil=use default, 0=unlimited) - raw value for TOML unmarshaling
 
 	// Security
 	VerifyFiles []string `toml:"verify_files"` // Files to verify before execution (raw paths)

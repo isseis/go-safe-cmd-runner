@@ -137,7 +137,6 @@ type HashDirectoryStatus struct {
 type FileVerificationSummary struct {
 	TotalFiles    int                       `json:"total_files"`
 	VerifiedFiles int                       `json:"verified_files"`
-	SkippedFiles  int                       `json:"skipped_files"`
 	FailedFiles   int                       `json:"failed_files"`
 	Duration      time.Duration             `json:"duration"`
 	HashDirStatus HashDirectoryStatus       `json:"hash_dir_status"`

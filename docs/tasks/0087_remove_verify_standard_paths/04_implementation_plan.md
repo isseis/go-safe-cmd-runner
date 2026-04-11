@@ -107,12 +107,12 @@ internal/runner/risk/evaluator.go
 
 #### 完了条件
 
-- [ ] `AnalysisOptions` に `VerifyStandardPaths` フィールドが存在しないこと
-- [ ] `shouldPerformHashValidation()` が存在しないこと
-- [ ] `isStandardDirectory()` と `StandardDirectories` が存在しないこと
-- [ ] `IsNetworkOperation` から `skipBinaryAnalysis` パラメータが削除されていること
-- [ ] `risk/evaluator.go` の `IsNetworkOperation` 呼び出しが新しいシグネチャに対応していること
-- [ ] `make build` が成功すること
+- [x] `AnalysisOptions` に `VerifyStandardPaths` フィールドが存在しないこと
+- [x] `shouldPerformHashValidation()` が存在しないこと
+- [x] `isStandardDirectory()` と `StandardDirectories` が存在しないこと
+- [x] `IsNetworkOperation` から `skipBinaryAnalysis` パラメータが削除されていること
+- [x] `risk/evaluator.go` の `IsNetworkOperation` 呼び出しが新しいシグネチャに対応していること
+- [x] `make build` が成功すること
 
 ### 2.2 Phase 2: エグゼキュータ層とリスク評価層の削除
 
@@ -132,10 +132,10 @@ internal/runner/risk/evaluator.go
 
 #### 完了条件
 
-- [ ] `group_executor.go` に `skippedPaths` マップが存在しないこと
-- [ ] `group_executor.go` に `cmd.SkipBinaryAnalysis = true` の設定が存在しないこと
-- [ ] `risk/evaluator.go` に `cmd.SkipBinaryAnalysis` を参照するコードが存在しないこと
-- [ ] `make build` が成功すること
+- [x] `group_executor.go` に `skippedPaths` マップが存在しないこと
+- [x] `group_executor.go` に `cmd.SkipBinaryAnalysis = true` の設定が存在しないこと
+- [x] `risk/evaluator.go` に `cmd.SkipBinaryAnalysis` を参照するコードが存在しないこと
+- [x] `make build` が成功すること
 
 ### 2.3 Phase 3: 検証層（PathResolver・Manager）の削除
 
@@ -158,11 +158,11 @@ internal/verification/manager.go
 
 #### 完了条件
 
-- [ ] `PathResolver` に `skipStandardPaths`・`standardPaths` フィールドが存在しないこと
-- [ ] `ShouldSkipVerification()` メソッドが存在しないこと
-- [ ] `NewPathResolver` の引数が `skipStandardPaths` パラメータなしになっていること
-- [ ] `manager.go` にスキップロジックが存在しないこと
-- [ ] `make build` が成功すること
+- [x] `PathResolver` に `skipStandardPaths`・`standardPaths` フィールドが存在しないこと
+- [x] `ShouldSkipVerification()` メソッドが存在しないこと
+- [x] `NewPathResolver` の引数が `skipStandardPaths` パラメータなしになっていること
+- [x] `manager.go` にスキップロジックが存在しないこと
+- [x] `make build` が成功すること
 
 ### 2.4 Phase 4: SkippedFiles の完全削除
 
@@ -194,10 +194,10 @@ internal/runner/runner.go
 
 #### 完了条件
 
-- [ ] `SkippedFiles` フィールドへの参照がコードベースに存在しないこと
-- [ ] `RecordSkip()` メソッドが存在しないこと
-- [ ] dry-run サマリー出力に `Skipped:` 行が出力されないこと
-- [ ] `make build` が成功すること
+- [x] `SkippedFiles` フィールドへの参照がコードベースに存在しないこと
+- [x] `RecordSkip()` メソッドが存在しないこと
+- [x] dry-run サマリー出力に `Skipped:` 行が出力されないこと
+- [x] `make build` が成功すること
 
 ### 2.5 Phase 5: エントリポイントとランタイム型の削除
 
@@ -223,14 +223,14 @@ internal/runner/resource/types.go
 
 #### 完了条件
 
-- [ ] `GlobalSpec` に `VerifyStandardPaths` フィールドが存在しないこと
-- [ ] `DefaultVerifyStandardPaths` 定数が存在しないこと
-- [ ] `DetermineVerifyStandardPaths()` が存在しないこと
-- [ ] `RuntimeGlobal.SkipStandardPaths()` が存在しないこと
-- [ ] `RuntimeCommand.SkipBinaryAnalysis` フィールドが存在しないこと
-- [ ] `DryRunOptions` に `VerifyStandardPaths` フィールドが存在しないこと
-- [ ] `make build` が成功すること
-- [ ] `make test` がすべてパスすること（テスト削除前の暫定確認）
+- [x] `GlobalSpec` に `VerifyStandardPaths` フィールドが存在しないこと
+- [x] `DefaultVerifyStandardPaths` 定数が存在しないこと
+- [x] `DetermineVerifyStandardPaths()` が存在しないこと
+- [x] `RuntimeGlobal.SkipStandardPaths()` が存在しないこと
+- [x] `RuntimeCommand.SkipBinaryAnalysis` フィールドが存在しないこと
+- [x] `DryRunOptions` に `VerifyStandardPaths` フィールドが存在しないこと
+- [x] `make build` が成功すること
+- [x] `make test` がすべてパスすること（テスト削除前の暫定確認）
 
 ### 2.6 Phase 6: テストの削除・更新
 
@@ -281,10 +281,10 @@ cmd/runner/integration_workdir_test.go
 
 #### 完了条件
 
-- [ ] `make test` がすべてパスすること
-- [ ] `verify_standard_paths` を含む TOML が unknown field として失敗するテストがパスすること
-- [ ] 標準ディレクトリのコマンドに対するハッシュ検証が常に実行される回帰テストがパスすること
-- [ ] `make lint` がエラーなく完了すること
+- [x] `make test` がすべてパスすること
+- [x] `verify_standard_paths` を含む TOML が unknown field として失敗するテストがパスすること
+- [x] 標準ディレクトリのコマンドに対するハッシュ検証が常に実行される回帰テストがパスすること
+- [x] `make lint` がエラーなく完了すること
 
 ### 2.7 Phase 7: ドキュメントとサンプルの更新
 
@@ -342,13 +342,13 @@ sample/workdir_examples.toml
 
 #### 完了条件
 
-- [ ] `docs/user/` 配下に `verify_standard_paths` への言及が存在しないこと
-- [ ] `docs/user/dry_run_json_schema.md`（日英）から `skipped_files` の説明が削除されていること
-- [ ] `docs/dev/security-architecture.md`（日英）から `skipStandardPaths` フィールドを含むコードスニペットが削除されていること
-- [ ] `docs/dev/config-inheritance-behavior.md`（日英）から `skip_standard_paths` の行が削除されていること
-- [ ] `docs/translation_glossary.md` から `verify_standard_paths` の行が削除されていること
-- [ ] `sample/` 配下に `verify_standard_paths` の記述が存在しないこと
-- [ ] `CHANGELOG.md` に Breaking Changes エントリが追加されていること
+- [x] `docs/user/` 配下に `verify_standard_paths` への言及が存在しないこと
+- [x] `docs/user/dry_run_json_schema.md`（日英）から `skipped_files` の説明が削除されていること
+- [x] `docs/dev/security-architecture.md`（日英）から `skipStandardPaths` フィールドを含むコードスニペットが削除されていること
+- [x] `docs/dev/config-inheritance-behavior.md`（日英）から `skip_standard_paths` の行が削除されていること
+- [x] `docs/translation_glossary.md` から `verify_standard_paths` の行が削除されていること
+- [x] `sample/` 配下に `verify_standard_paths` の記述が存在しないこと
+- [x] `CHANGELOG.md` に Breaking Changes エントリが追加されていること
 
 ## 3. フェーズ間の依存関係
 
@@ -398,93 +398,93 @@ flowchart LR
 
 ### Phase 1: セキュリティ分析層
 
-- [ ] `AnalysisOptions.VerifyStandardPaths` フィールドを削除（command_analysis.go）
-- [ ] `shouldPerformHashValidation()` を削除し `validateFileHash()` を常に呼び出すよう変更（hash_validation.go）
-- [ ] `StandardDirectories` 変数を削除（directory_risk.go）
-- [ ] `isStandardDirectory()` 関数を削除（directory_risk.go）
-- [ ] `IsNetworkOperation` の `skipBinaryAnalysis` パラメータ・コメント・条件分岐を削除（network_analyzer.go）
-- [ ] `IsNetworkOperation` 呼び出しから `skipBinaryAnalysis` 引数を削除（risk/evaluator.go）
-- [ ] `AnalysisOptions` への `VerifyStandardPaths` 設定を削除（resource/dryrun_manager.go）
+- [x] `AnalysisOptions.VerifyStandardPaths` フィールドを削除（command_analysis.go）
+- [x] `shouldPerformHashValidation()` を削除し `validateFileHash()` を常に呼び出すよう変更（hash_validation.go）
+- [x] `StandardDirectories` 変数を削除（directory_risk.go）
+- [x] `isStandardDirectory()` 関数を削除（directory_risk.go）
+- [x] `IsNetworkOperation` の `skipBinaryAnalysis` パラメータ・コメント・条件分岐を削除（network_analyzer.go）
+- [x] `IsNetworkOperation` 呼び出しから `skipBinaryAnalysis` 引数を削除（risk/evaluator.go）
+- [x] `AnalysisOptions` への `VerifyStandardPaths` 設定を削除（resource/dryrun_manager.go）
 
 ### Phase 2: エグゼキュータ・リスク層
 
-- [ ] `skippedPaths` マップの構築ループを削除（group_executor.go）
-- [ ] `cmd.SkipBinaryAnalysis = true` の設定を削除（group_executor.go）
-- [ ] `SkipBinaryAnalysis` 参照コメントおよび条件分岐を削除（risk/evaluator.go）
+- [x] `skippedPaths` マップの構築ループを削除（group_executor.go）
+- [x] `cmd.SkipBinaryAnalysis = true` の設定を削除（group_executor.go）
+- [x] `SkipBinaryAnalysis` 参照コメントおよび条件分岐を削除（risk/evaluator.go）
 
 ### Phase 3: 検証層
 
-- [ ] `skipStandardPaths bool` フィールドを削除（path_resolver.go）
-- [ ] `standardPaths []string` フィールドを削除（path_resolver.go）
-- [ ] `NewPathResolver` の `skipStandardPaths bool` パラメータを削除（path_resolver.go）
-- [ ] コンストラクタ内の `skipStandardPaths`・`standardPaths` 初期化を削除（path_resolver.go）
-- [ ] `ShouldSkipVerification()` メソッドを削除（path_resolver.go）
-- [ ] `m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()` を削除（manager.go）
-- [ ] `VerifyGlobalFiles` 内のスキップ処理を削除（manager.go）
-- [ ] `VerifyGroupFiles` 内のスキップ処理を削除（manager.go）
+- [x] `skipStandardPaths bool` フィールドを削除（path_resolver.go）
+- [x] `standardPaths []string` フィールドを削除（path_resolver.go）
+- [x] `NewPathResolver` の `skipStandardPaths bool` パラメータを削除（path_resolver.go）
+- [x] コンストラクタ内の `skipStandardPaths`・`standardPaths` 初期化を削除（path_resolver.go）
+- [x] `ShouldSkipVerification()` メソッドを削除（path_resolver.go）
+- [x] `m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()` を削除（manager.go）
+- [x] `VerifyGlobalFiles` 内のスキップ処理を削除（manager.go）
+- [x] `VerifyGroupFiles` 内のスキップ処理を削除（manager.go）
 
 ### Phase 4: SkippedFiles
 
-- [ ] `Error.SkippedFiles int` フィールドを削除（errors.go）
-- [ ] `Result.SkippedFiles []string` フィールドを削除（errors.go）
-- [ ] `FileVerificationSummary.SkippedFiles int` フィールドを削除（types.go）
-- [ ] `skippedFiles int` フィールドを削除（result_collector.go）
-- [ ] `RecordSkip()` メソッドを削除（result_collector.go）
-- [ ] `GetSummary()` 内の `SkippedFiles` 設定を削除（result_collector.go）
-- [ ] `Result` 初期化時の `SkippedFiles` 設定を削除（manager.go）
-- [ ] `Error` 構築時の `SkippedFiles` 設定を削除（manager.go）
-- [ ] `"  Skipped: %d\n"` 出力行を削除（formatter.go）
-- [ ] `skipKeys` の `"skipped_files"` エントリを削除（message_formatter.go）
-- [ ] `SkippedFiles` を参照するログ出力を削除（cmd/runner/main.go）
-- [ ] `verErr.SkippedFiles` 参照を削除（runner.go）
+- [x] `Error.SkippedFiles int` フィールドを削除（errors.go）
+- [x] `Result.SkippedFiles []string` フィールドを削除（errors.go）
+- [x] `FileVerificationSummary.SkippedFiles int` フィールドを削除（types.go）
+- [x] `skippedFiles int` フィールドを削除（result_collector.go）
+- [x] `RecordSkip()` メソッドを削除（result_collector.go）
+- [x] `GetSummary()` 内の `SkippedFiles` 設定を削除（result_collector.go）
+- [x] `Result` 初期化時の `SkippedFiles` 設定を削除（manager.go）
+- [x] `Error` 構築時の `SkippedFiles` 設定を削除（manager.go）
+- [x] `"  Skipped: %d\n"` 出力行を削除（formatter.go）
+- [x] `skipKeys` の `"skipped_files"` エントリを削除（message_formatter.go）
+- [x] `SkippedFiles` を参照するログ出力を削除（cmd/runner/main.go）
+- [x] `verErr.SkippedFiles` 参照を削除（runner.go）
 
 ### Phase 5: エントリポイント・ランタイム型
 
-- [ ] `DryRunOptions.VerifyStandardPaths` 設定と `DetermineVerifyStandardPaths()` 呼び出しを削除（cmd/runner/main.go）
-- [ ] `VerifyStandardPaths *bool` フィールドを削除（spec.go）
-- [ ] `DefaultVerifyStandardPaths` 定数を削除（defaults.go）
-- [ ] `ApplyGlobalDefaults` 内の `VerifyStandardPaths` 設定ブロックを削除（defaults.go）
-- [ ] `DetermineVerifyStandardPaths()` 関数を削除（runtime.go）
-- [ ] `RuntimeGlobal.SkipStandardPaths()` メソッドを削除（runtime.go）
-- [ ] `RuntimeCommand.SkipBinaryAnalysis bool` フィールドを削除（runtime.go）
-- [ ] `DryRunOptions.VerifyStandardPaths bool` フィールドを削除（resource/types.go）
+- [x] `DryRunOptions.VerifyStandardPaths` 設定と `DetermineVerifyStandardPaths()` 呼び出しを削除（cmd/runner/main.go）
+- [x] `VerifyStandardPaths *bool` フィールドを削除（spec.go）
+- [x] `DefaultVerifyStandardPaths` 定数を削除（defaults.go）
+- [x] `ApplyGlobalDefaults` 内の `VerifyStandardPaths` 設定ブロックを削除（defaults.go）
+- [x] `DetermineVerifyStandardPaths()` 関数を削除（runtime.go）
+- [x] `RuntimeGlobal.SkipStandardPaths()` メソッドを削除（runtime.go）
+- [x] `RuntimeCommand.SkipBinaryAnalysis bool` フィールドを削除（runtime.go）
+- [x] `DryRunOptions.VerifyStandardPaths bool` フィールドを削除（resource/types.go）
 
 ### Phase 6: テスト
 
-- [ ] `VerifyStandardPaths` を参照するテストケースを削除（spec_test.go）
-- [ ] `SkipStandardPaths()`・`DetermineVerifyStandardPaths()` のテストを削除（runtime_test.go）
-- [ ] `VerifyStandardPaths` を参照するテストケースを削除（command_analysis_test.go）
-- [ ] `shouldPerformHashValidation()` のテストを削除（hash_validation_test.go）
-- [ ] `isStandardDirectory()` を参照するテストケースを削除（directory_risk_test.go）
-- [ ] `RecordSkip()`・`SkippedFiles` のテストを削除（result_collector_test.go）
-- [ ] `SkippedFiles` を参照するテストケースを削除（errors_test.go）
-- [ ] `ShouldSkipVerification()` および `skipStandardPaths` を参照するテストケースを削除（path_resolver_test.go）
-- [ ] `TestShouldSkipVerification` を削除（manager_test.go）
-- [ ] `shouldSkipInteractiveAttr()` の期待値から `skipped_files` を削除（message_formatter_test.go）
-- [ ] `Skipped:`・`SkippedFiles` を参照するテストケースを削除（formatter_test.go）
-- [ ] `VerifyStandardPaths: true` を参照するテストケースを削除（security_test.go）
-- [ ] `SkipBinaryAnalysis` を参照するテストケースを削除（group_executor_test.go）
-- [ ] `VerifyStandardPaths`・`DefaultVerifyStandardPaths` を参照するテストケースを削除（defaults_test.go・loader_defaults_test.go）
-- [ ] `verify_standard_paths` を含む設定が unknown field として失敗するテストを追加または更新（loader_defaults_test.go または integration_security_test.go）
-- [ ] 標準ディレクトリのコマンドでもハッシュ検証が実行される回帰テストを追加または更新（command_analysis_test.go または integration_security_test.go）
-- [ ] `verify_standard_paths`・`VerifyStandardPaths: false` を参照するテストケースを削除（integration_security_test.go）
-- [ ] `DetermineVerifyStandardPaths` を参照するテストケースを削除（integration_dryrun_sensitive_test.go・integration_workdir_test.go）
+- [x] `VerifyStandardPaths` を参照するテストケースを削除（spec_test.go）
+- [x] `SkipStandardPaths()`・`DetermineVerifyStandardPaths()` のテストを削除（runtime_test.go）
+- [x] `VerifyStandardPaths` を参照するテストケースを削除（command_analysis_test.go）
+- [x] `shouldPerformHashValidation()` のテストを削除（hash_validation_test.go）
+- [x] `isStandardDirectory()` を参照するテストケースを削除（directory_risk_test.go）
+- [x] `RecordSkip()`・`SkippedFiles` のテストを削除（result_collector_test.go）
+- [x] `SkippedFiles` を参照するテストケースを削除（errors_test.go）
+- [x] `ShouldSkipVerification()` および `skipStandardPaths` を参照するテストケースを削除（path_resolver_test.go）
+- [x] `TestShouldSkipVerification` を削除（manager_test.go）
+- [x] `shouldSkipInteractiveAttr()` の期待値から `skipped_files` を削除（message_formatter_test.go）
+- [x] `Skipped:`・`SkippedFiles` を参照するテストケースを削除（formatter_test.go）
+- [x] `VerifyStandardPaths: true` を参照するテストケースを削除（security_test.go）
+- [x] `SkipBinaryAnalysis` を参照するテストケースを削除（group_executor_test.go）
+- [x] `VerifyStandardPaths`・`DefaultVerifyStandardPaths` を参照するテストケースを削除（defaults_test.go・loader_defaults_test.go）
+- [x] `verify_standard_paths` を含む設定が unknown field として失敗するテストを追加または更新（loader_defaults_test.go または integration_security_test.go）
+- [x] 標準ディレクトリのコマンドでもハッシュ検証が実行される回帰テストを追加または更新（command_analysis_test.go または integration_security_test.go）
+- [x] `verify_standard_paths`・`VerifyStandardPaths: false` を参照するテストケースを削除（integration_security_test.go）
+- [x] `DetermineVerifyStandardPaths` を参照するテストケースを削除（integration_dryrun_sensitive_test.go・integration_workdir_test.go）
 
 ### Phase 7: ドキュメント・サンプル
 
-- [ ] `04_global_level.md`（日英）: `verify_standard_paths` の説明を削除
-- [ ] `README.md`（日英）: `verify_standard_paths` への言及を削除
-- [ ] `runner_command.md`（日英）: `verify_standard_paths` への言及を削除
-- [ ] `09_practical_examples.md`（日英）: `verify_standard_paths` への言及を削除
-- [ ] `10_best_practices.md`（日英）: `verify_standard_paths` への言及を削除
-- [ ] `11_troubleshooting.md`（日英）: `verify_standard_paths` への言及を削除
-- [ ] `appendix.md`（日英）: `verify_standard_paths` への言及を削除
-- [ ] `dry_run_json_schema.md`（日英）: `skipped_files` フィールドの行を削除
-- [ ] `security-architecture.md`（日英）: `skipStandardPaths` フィールドを含むコードスニペットを削除
-- [ ] `config-inheritance-behavior.md`（日英）: `skip_standard_paths` の行を削除
-- [ ] `translation_glossary.md`: `verify_standard_paths` の行を削除
-- [ ] `CHANGELOG.md`: Breaking Changes エントリを追加
-- [ ] `sample/` 配下 14 ファイル: `verify_standard_paths = false` の行を削除
+- [x] `04_global_level.md`（日英）: `verify_standard_paths` の説明を削除
+- [x] `README.md`（日英）: `verify_standard_paths` への言及を削除
+- [x] `runner_command.md`（日英）: `verify_standard_paths` への言及を削除
+- [x] `09_practical_examples.md`（日英）: `verify_standard_paths` への言及を削除
+- [x] `10_best_practices.md`（日英）: `verify_standard_paths` への言及を削除
+- [x] `11_troubleshooting.md`（日英）: `verify_standard_paths` への言及を削除
+- [x] `appendix.md`（日英）: `verify_standard_paths` への言及を削除
+- [x] `dry_run_json_schema.md`（日英）: `skipped_files` フィールドの行を削除
+- [x] `security-architecture.md`（日英）: `skipStandardPaths` フィールドを含むコードスニペットを削除
+- [x] `config-inheritance-behavior.md`（日英）: `skip_standard_paths` の行を削除
+- [x] `translation_glossary.md`: `verify_standard_paths` の行を削除
+- [x] `CHANGELOG.md`: Breaking Changes エントリを追加
+- [x] `sample/` 配下 14 ファイル: `verify_standard_paths = false` の行を削除
 
 ## 5. 受け入れ基準との対応
 

@@ -118,7 +118,6 @@ func TestVerificationIntegration(t *testing.T) {
 				configPath := filepath.Join(tempDir, "config.toml")
 				configContent := `
 [global]
-verify_standard_paths = false
 
 [[groups]]
 name = "integration-test"
@@ -302,12 +301,6 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// RuntimeCommand doesn't need PrepareCommand
 
-			// Import required packages for mocks
-			// Note: Using the same mock setup pattern as existing tests
-			tempDir := commontesting.SafeTempDir(t)
-			hashDir := filepath.Join(tempDir, "hashes")
-			require.NoError(t, os.MkdirAll(hashDir, 0o700), "Failed to create hash directory")
-
 			// Create DryRunResourceManager with mocks
 			mockExec := executortesting.NewMockExecutor()
 			mockPriv := privilegetesting.NewMockPrivilegeManager(true)
@@ -316,10 +309,12 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			// Setup command path resolution
 			mockPathResolver.On("ResolvePath", tc.cmd.ExpandedCmd).Return("/usr/bin/"+tc.cmd.ExpandedCmd, nil)
 
+			// Use empty HashDir so hash validation does not interfere with
+			// security classification tests (this test validates risk levels
+			// from command patterns, not hash validation).
 			opts := &resource.DryRunOptions{
-				DetailLevel:         resource.DetailLevelDetailed,
-				HashDir:             hashDir,
-				VerifyStandardPaths: false,
+				DetailLevel: resource.DetailLevelDetailed,
+				HashDir:     "",
 			}
 
 			dryRunManager, err := resource.NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)

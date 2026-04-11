@@ -290,7 +290,6 @@ func TestErrorStructure(t *testing.T) {
 			TotalFiles:    10,
 			VerifiedFiles: 8,
 			FailedFiles:   2,
-			SkippedFiles:  0,
 			Err:           baseErr,
 		}
 
@@ -301,7 +300,6 @@ func TestErrorStructure(t *testing.T) {
 		assert.Equal(t, 10, err.TotalFiles)
 		assert.Equal(t, 8, err.VerifiedFiles)
 		assert.Equal(t, 2, err.FailedFiles)
-		assert.Equal(t, 0, err.SkippedFiles)
 	})
 
 	t.Run("error_without_group", func(t *testing.T) {
@@ -311,7 +309,6 @@ func TestErrorStructure(t *testing.T) {
 			TotalFiles:    5,
 			VerifiedFiles: 4,
 			FailedFiles:   1,
-			SkippedFiles:  0,
 			Err:           baseErr,
 		}
 
@@ -321,7 +318,6 @@ func TestErrorStructure(t *testing.T) {
 		assert.Equal(t, 5, err.TotalFiles)
 		assert.Equal(t, 4, err.VerifiedFiles)
 		assert.Equal(t, 1, err.FailedFiles)
-		assert.Equal(t, 0, err.SkippedFiles)
 	})
 
 	t.Run("unwrap_functionality", func(t *testing.T) {
@@ -409,14 +405,12 @@ func TestResultStructure(t *testing.T) {
 			TotalFiles:    10,
 			VerifiedFiles: 8,
 			FailedFiles:   []string{"file1.txt", "file2.txt"},
-			SkippedFiles:  []string{"file3.txt"},
 			Duration:      time.Minute,
 		}
 
 		assert.Equal(t, 10, result.TotalFiles)
 		assert.Equal(t, 8, result.VerifiedFiles)
 		assert.Equal(t, []string{"file1.txt", "file2.txt"}, result.FailedFiles)
-		assert.Equal(t, []string{"file3.txt"}, result.SkippedFiles)
 		assert.Equal(t, time.Minute, result.Duration)
 	})
 
@@ -426,7 +420,6 @@ func TestResultStructure(t *testing.T) {
 		assert.Equal(t, 0, result.TotalFiles)
 		assert.Equal(t, 0, result.VerifiedFiles)
 		assert.Nil(t, result.FailedFiles)
-		assert.Nil(t, result.SkippedFiles)
 		assert.Equal(t, time.Duration(0), result.Duration)
 	})
 }

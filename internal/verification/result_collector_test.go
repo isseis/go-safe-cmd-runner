@@ -24,7 +24,6 @@ func TestNewResultCollector(t *testing.T) {
 
 	assert.Equal(t, 0, summary.TotalFiles, "TotalFiles should be 0")
 	assert.Equal(t, 0, summary.VerifiedFiles, "VerifiedFiles should be 0")
-	assert.Equal(t, 0, summary.SkippedFiles, "SkippedFiles should be 0")
 	assert.Equal(t, 0, summary.FailedFiles, "FailedFiles should be 0")
 	assert.Equal(t, hashDirPath, summary.HashDirStatus.Path, "HashDirStatus.Path mismatch")
 	assert.False(t, summary.HashDirStatus.Exists, "HashDirStatus.Exists should be false")
@@ -42,7 +41,6 @@ func TestResultCollector_RecordSuccess(t *testing.T) {
 
 	assert.Equal(t, 2, summary.TotalFiles, "TotalFiles should be 2")
 	assert.Equal(t, 2, summary.VerifiedFiles, "VerifiedFiles should be 2")
-	assert.Equal(t, 0, summary.SkippedFiles, "SkippedFiles should be 0")
 	assert.Equal(t, 0, summary.FailedFiles, "FailedFiles should be 0")
 }
 
@@ -59,7 +57,6 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 
 	assert.Equal(t, 2, summary.TotalFiles, "TotalFiles should be 2")
 	assert.Equal(t, 0, summary.VerifiedFiles, "VerifiedFiles should be 0")
-	assert.Equal(t, 0, summary.SkippedFiles, "SkippedFiles should be 0")
 	assert.Equal(t, 2, summary.FailedFiles, "FailedFiles should be 2")
 
 	// Check failures
@@ -80,20 +77,6 @@ func TestResultCollector_RecordFailure(t *testing.T) {
 	assert.Equal(t, "global", f2.Context)
 }
 
-func TestResultCollector_RecordSkip(t *testing.T) {
-	rc := NewResultCollector("/test/path")
-
-	rc.RecordSkip()
-	rc.RecordSkip()
-
-	summary := rc.GetSummary()
-
-	assert.Equal(t, 2, summary.TotalFiles, "TotalFiles should be 2")
-	assert.Equal(t, 0, summary.VerifiedFiles, "VerifiedFiles should be 0")
-	assert.Equal(t, 2, summary.SkippedFiles, "SkippedFiles should be 2")
-	assert.Equal(t, 0, summary.FailedFiles, "FailedFiles should be 0")
-}
-
 func TestResultCollector_SetHashDirStatus(t *testing.T) {
 	rc := NewResultCollector("/test/path")
 
@@ -112,12 +95,11 @@ func TestResultCollector_GetSummary(t *testing.T) {
 	rc.RecordSuccess()
 	rc.RecordSuccess()
 	rc.RecordFailure("/path/to/fail1.toml", filevalidator.ErrMismatch, "config")
-	rc.RecordSkip()
 
 	summary := rc.GetSummary()
 
-	// Verify invariant: TotalFiles = VerifiedFiles + SkippedFiles + FailedFiles
-	expectedTotal := summary.VerifiedFiles + summary.SkippedFiles + summary.FailedFiles
+	// Verify invariant: TotalFiles = VerifiedFiles + FailedFiles
+	expectedTotal := summary.VerifiedFiles + summary.FailedFiles
 	assert.Equal(t, expectedTotal, summary.TotalFiles, "invariant violation: TotalFiles should equal sum of parts")
 
 	// Verify invariant: FailedFiles = len(Failures)
@@ -141,13 +123,11 @@ func TestResultCollector_Concurrency(t *testing.T) {
 			defer wg.Done()
 
 			for j := 0; j < numOpsPerGoroutine; j++ {
-				switch j % 3 {
+				switch j % 2 {
 				case 0:
 					rc.RecordSuccess()
 				case 1:
 					rc.RecordFailure("/path/to/file", filevalidator.ErrHashFileNotFound, "test")
-				case 2:
-					rc.RecordSkip()
 				}
 			}
 		}()
@@ -161,7 +141,7 @@ func TestResultCollector_Concurrency(t *testing.T) {
 	assert.Equal(t, expectedTotal, summary.TotalFiles, "TotalFiles mismatch after concurrent operations")
 
 	// Verify invariant
-	actualTotal := summary.VerifiedFiles + summary.SkippedFiles + summary.FailedFiles
+	actualTotal := summary.VerifiedFiles + summary.FailedFiles
 	assert.Equal(t, actualTotal, summary.TotalFiles, "invariant violation after concurrent operations")
 }
 
@@ -273,15 +253,12 @@ func TestResultCollector_MixedResults(t *testing.T) {
 	rc.RecordSuccess()
 	rc.RecordFailure("/etc/global3.toml", filevalidator.ErrHashFileNotFound, "global")
 	rc.RecordFailure("/etc/group.toml", filevalidator.ErrMismatch, "group:admin")
-	rc.RecordSkip()
-	rc.RecordSkip()
 	rc.SetHashDirStatus(true)
 
 	summary := rc.GetSummary()
 
-	assert.Equal(t, 7, summary.TotalFiles)
+	assert.Equal(t, 5, summary.TotalFiles)
 	assert.Equal(t, 3, summary.VerifiedFiles)
-	assert.Equal(t, 2, summary.SkippedFiles)
 	assert.Equal(t, 2, summary.FailedFiles)
 
 	// Check hash directory status

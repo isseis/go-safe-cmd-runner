@@ -38,7 +38,7 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 	t.Setenv("PATH", testPath)
 
 	// Create a new PathResolver with our test PATH
-	resolver := NewPathResolver(testPath, nil, false)
+	resolver := NewPathResolver(testPath, nil)
 
 	t.Run("finds executable in second PATH directory when first is a directory", func(t *testing.T) {
 		resolved, err := resolver.ResolvePath("testcmd")
@@ -71,58 +71,6 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 	})
 }
 
-// Additional tests for PathResolver methods
-func TestPathResolver_ShouldSkipVerification(t *testing.T) {
-	t.Run("skip_standard_paths_enabled", func(t *testing.T) {
-		resolver := NewPathResolver("/usr/bin:/bin", nil, true)
-
-		// Test various standard paths that should be skipped
-		testCases := []string{
-			"/usr/bin/ls",
-			"/bin/sh",
-			"/usr/sbin/init",
-			"/sbin/mount",
-		}
-
-		for _, path := range testCases {
-			shouldSkip := resolver.ShouldSkipVerification(path)
-			assert.True(t, shouldSkip, "Path %s should be skipped when skipStandardPaths is enabled", path)
-		}
-	})
-
-	t.Run("skip_standard_paths_disabled", func(t *testing.T) {
-		resolver := NewPathResolver("/usr/bin:/bin", nil, false)
-
-		// Test that standard paths are not skipped
-		testCases := []string{
-			"/usr/bin/ls",
-			"/bin/sh",
-			"/usr/sbin/init",
-		}
-
-		for _, path := range testCases {
-			shouldSkip := resolver.ShouldSkipVerification(path)
-			assert.False(t, shouldSkip, "Path %s should not be skipped when skipStandardPaths is disabled", path)
-		}
-	})
-
-	t.Run("non_standard_paths", func(t *testing.T) {
-		resolver := NewPathResolver("/usr/bin:/bin", nil, true)
-
-		// Test non-standard paths (should never be skipped regardless of setting)
-		testCases := []string{
-			"/home/user/custom/command",
-			"/opt/app/bin/tool",
-			"/tmp/temp_command",
-		}
-
-		for _, path := range testCases {
-			shouldSkip := resolver.ShouldSkipVerification(path)
-			assert.False(t, shouldSkip, "Non-standard path %s should not be skipped", path)
-		}
-	})
-}
-
 func TestPathResolver_NoCommandValidation(t *testing.T) {
 	// This test documents that ResolvePath intentionally does NOT perform
 	// command allowlist validation. Validation is the caller's responsibility.
@@ -138,7 +86,7 @@ func TestPathResolver_NoCommandValidation(t *testing.T) {
 		// Create PathResolver with a security validator that would reject this command
 		// (if validation were performed, which it should NOT be)
 		testPath := tempDir
-		resolver := NewPathResolver(testPath, nil, false)
+		resolver := NewPathResolver(testPath, nil)
 
 		// ResolvePath should succeed - it only resolves paths, doesn't validate
 		resolved, err := resolver.ResolvePath(execPath)
@@ -158,7 +106,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		err := os.WriteFile(execPath, []byte("#!/bin/sh\necho test"), 0o755)
 		require.NoError(t, err)
 
-		resolver := NewPathResolver(tempDir, nil, false)
+		resolver := NewPathResolver(tempDir, nil)
 
 		path, err := resolver.validateAndCacheCommand(execPath, "test_cmd")
 
@@ -172,7 +120,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	})
 
 	t.Run("command_validation_failure", func(t *testing.T) {
-		resolver := NewPathResolver("/nonexistent", nil, false)
+		resolver := NewPathResolver("/nonexistent", nil)
 
 		path, err := resolver.validateAndCacheCommand("/nonexistent/command", "nonexistent_command")
 
@@ -187,7 +135,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		err := os.WriteFile(nonExecPath, []byte("#!/bin/sh\necho test"), 0o644)
 		require.NoError(t, err)
 
-		resolver := NewPathResolver(tempDir, nil, false)
+		resolver := NewPathResolver(tempDir, nil)
 
 		path, err := resolver.validateAndCacheCommand(nonExecPath, "non_exec")
 
@@ -203,7 +151,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		err := os.MkdirAll(dirPath, 0o755)
 		require.NoError(t, err)
 
-		resolver := NewPathResolver(tempDir, nil, false)
+		resolver := NewPathResolver(tempDir, nil)
 
 		path, err := resolver.validateAndCacheCommand(dirPath, "test_dir")
 

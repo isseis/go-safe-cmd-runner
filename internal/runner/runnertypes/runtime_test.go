@@ -375,9 +375,8 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:             commontesting.Int32Ptr(300),
-		EnvAllowed:          []string{"PATH", "HOME"},
-		VerifyStandardPaths: commontesting.BoolPtr(false),
+		Timeout:    commontesting.Int32Ptr(300),
+		EnvAllowed: []string{"PATH", "HOME"},
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
@@ -393,9 +392,6 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	require.Len(t, allowlist, 2)
 	assert.Equal(t, "PATH", allowlist[0])
 	assert.Equal(t, "HOME", allowlist[1])
-
-	// Test SkipStandardPaths()
-	assert.True(t, runtime.SkipStandardPaths())
 }
 
 // TestRuntimeGlobal_TimeoutDefault tests that Timeout() returns default value when not set
@@ -410,44 +406,6 @@ func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 	// Test Timeout() is unset (caller should use DefaultTimeout)
 	timeout := runtime.Timeout()
 	assert.False(t, timeout.IsSet())
-}
-
-// TestRuntimeGlobal_SkipStandardPaths_WithNil tests SkipStandardPaths with nil value
-// This also indirectly tests the determineVerifyStandardPaths helper function
-func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {
-	tests := []struct {
-		name                string
-		verifyStandardPaths *bool
-		wantSkip            bool
-	}{
-		{
-			name:                "nil value defaults to verify (skip=false)",
-			verifyStandardPaths: nil,
-			wantSkip:            false, // don't skip = verify
-		},
-		{
-			name:                "explicit true (verify) means skip=false",
-			verifyStandardPaths: commontesting.BoolPtr(true),
-			wantSkip:            false,
-		},
-		{
-			name:                "explicit false (don't verify) means skip=true",
-			verifyStandardPaths: commontesting.BoolPtr(false),
-			wantSkip:            true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runtime := &RuntimeGlobal{
-				Spec: &GlobalSpec{
-					VerifyStandardPaths: tt.verifyStandardPaths,
-				},
-			}
-			got := runtime.SkipStandardPaths()
-			assert.Equal(t, tt.wantSkip, got)
-		})
-	}
 }
 
 // TestNewRuntimeGroup tests the NewRuntimeGroup constructor
@@ -738,41 +696,6 @@ func TestRuntimeGlobal_EnvAllowlist_Panic(t *testing.T) {
 			if tt.wantPanic {
 				assert.PanicsWithValue(t, tt.panicValue, func() {
 					tt.runtime.EnvAllowlist()
-				})
-			}
-		})
-	}
-}
-
-// TestRuntimeGlobal_SkipStandardPaths_Panic tests that SkipStandardPaths panics with nil receiver or spec
-func TestRuntimeGlobal_SkipStandardPaths_Panic(t *testing.T) {
-	tests := []struct {
-		name       string
-		runtime    *RuntimeGlobal
-		wantPanic  bool
-		panicValue string
-	}{
-		{
-			name:       "nil receiver",
-			runtime:    nil,
-			wantPanic:  true,
-			panicValue: "RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
-		},
-		{
-			name: "nil spec",
-			runtime: &RuntimeGlobal{
-				Spec: nil,
-			},
-			wantPanic:  true,
-			panicValue: "RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.wantPanic {
-				assert.PanicsWithValue(t, tt.panicValue, func() {
-					tt.runtime.SkipStandardPaths()
 				})
 			}
 		})

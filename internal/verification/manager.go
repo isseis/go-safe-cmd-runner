@@ -95,6 +95,11 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 
 	// Verify file hash using filevalidator (with privilege fallback)
 	if err := m.verifyFileWithFallback(envFilePath, "env"); err != nil {
+		// In dry-run mode, the failure is already recorded and logged by
+		// verifyFileWithFallback; treat it as non-fatal here.
+		if m.isDryRun {
+			return nil
+		}
 		slog.Error("Environment file verification failed",
 			"env_file_path", envFilePath,
 			"error", err)
@@ -160,9 +165,8 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	}
 
 	result := &Result{
-		TotalFiles:   len(runtimeGlobal.ExpandedVerifyFiles),
-		FailedFiles:  []string{},
-		SkippedFiles: []string{},
+		TotalFiles:  len(runtimeGlobal.ExpandedVerifyFiles),
+		FailedFiles: []string{},
 	}
 
 	start := time.Now()
@@ -170,23 +174,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 		result.Duration = time.Since(start)
 	}()
 
-	// Update PathResolver with skip_standard_paths setting
-	if m.pathResolver != nil {
-		m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()
-	}
-
 	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {
-		// Check if file should be skipped
-		if m.shouldSkipVerification(filePath) {
-			if m.isDryRun && m.resultCollector != nil {
-				m.resultCollector.RecordSkip()
-			}
-			result.SkippedFiles = append(result.SkippedFiles, filePath)
-			slog.Info("Skipping global file verification for standard system path",
-				"file", filePath)
-			continue
-		}
-
 		// Verify file hash (try normal verification first, then with privileges if needed)
 		if err := m.verifyFileWithFallback(filePath, "global"); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
@@ -199,6 +187,12 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	}
 
 	if len(result.FailedFiles) > 0 {
+		// In dry-run mode, failures are already recorded in the ResultCollector and
+		// logged by verifyFileWithFallback.  Return the accurate result without
+		// treating the failures as fatal.
+		if m.isDryRun {
+			return result, nil
+		}
 		slog.Error("CRITICAL: Global file verification failed - program will terminate",
 			"failed_files", result.FailedFiles,
 			"verified_files", result.VerifiedFiles,
@@ -209,7 +203,6 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 			TotalFiles:    result.TotalFiles,
 			VerifiedFiles: result.VerifiedFiles,
 			FailedFiles:   len(result.FailedFiles),
-			SkippedFiles:  len(result.SkippedFiles),
 			Err:           ErrGlobalVerificationFailed,
 		}
 	}
@@ -234,7 +227,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	result := &Result{
 		TotalFiles:    len(allFiles),
 		FailedFiles:   []string{},
-		SkippedFiles:  []string{},
 		ContentHashes: make(map[string]string),
 	}
 
@@ -246,17 +238,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	groupName := runnertypes.ExtractGroupName(runtimeGroup)
 
 	for file := range allFiles {
-		if m.shouldSkipVerification(file) {
-			if m.isDryRun && m.resultCollector != nil {
-				m.resultCollector.RecordSkip()
-			}
-			result.SkippedFiles = append(result.SkippedFiles, file)
-			slog.Info("Skipping verification for standard system path",
-				"group", groupName,
-				"file", file)
-			continue
-		}
-
 		// Verify file hash and collect the computed hash for downstream consumers.
 		contentHash, err := m.verifyFileWithHash(file, "group:"+groupName)
 		if err != nil {
@@ -274,6 +255,12 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	}
 
 	if len(result.FailedFiles) > 0 {
+		// In dry-run mode, failures are already recorded in the ResultCollector and
+		// logged by verifyFileWithHash.  Return the accurate result without treating
+		// the failures as fatal.
+		if m.isDryRun {
+			return result, nil
+		}
 		return nil, &Error{
 			Op:            "group",
 			Group:         groupName,
@@ -281,25 +268,11 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 			TotalFiles:    result.TotalFiles,
 			VerifiedFiles: result.VerifiedFiles,
 			FailedFiles:   len(result.FailedFiles),
-			SkippedFiles:  len(result.SkippedFiles),
 			Err:           ErrGroupVerificationFailed,
 		}
 	}
 
 	return result, nil
-}
-
-// shouldSkipVerification checks if a file should be skipped based on configuration
-func (m *Manager) shouldSkipVerification(path string) bool {
-	// Skip verification if file validator is disabled
-	if m.fileValidator == nil {
-		return true
-	}
-
-	if m.pathResolver == nil {
-		return false
-	}
-	return m.pathResolver.ShouldSkipVerification(path)
 }
 
 // collectVerificationFiles collects all files to verify for a group
@@ -373,8 +346,11 @@ func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
 }
 
 // verifyFileWithFallback attempts file verification with normal privileges first,
-// then falls back to privileged verification if permission errors occur
-// In dry-run mode, it records the verification result without returning errors
+// then falls back to privileged verification if permission errors occur.
+// In dry-run mode it records the result in the ResultCollector and logs the
+// failure, but still returns the underlying error so callers can track
+// accurate per-file success/failure counts.  Callers are responsible for
+// suppressing fatality in dry-run mode.
 func (m *Manager) verifyFileWithFallback(filePath string, context string) error {
 	if m.fileValidator == nil {
 		// File validator is disabled - skip verification
@@ -384,26 +360,26 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 	// Perform verification
 	err := m.fileValidator.Verify(filePath)
 
-	// In dry-run mode, record the result and return nil (warn-only mode)
+	// In dry-run mode, record the result (warn-only mode).
+	// The error is still returned so callers can count failures accurately.
 	if m.isDryRun && m.resultCollector != nil {
 		if err == nil {
 			m.resultCollector.RecordSuccess()
 		} else {
-			// Record failure and log based on severity
 			m.resultCollector.RecordFailure(filePath, err, context)
 			logVerificationFailure(filePath, context, err, "File verification")
 		}
-		return nil
 	}
 
-	// In normal mode, return the error
 	return err
 }
 
 // verifyFileWithHash verifies the file and returns the computed content hash on success.
 // It mirrors verifyFileWithFallback but also returns the hash so callers can forward
 // it to downstream consumers (e.g. ELF analysis) to avoid re-reading the file.
-// Returns ("", nil) when the file validator is disabled or in dry-run mode.
+// Returns ("", nil) when the file validator is disabled.
+// In dry-run mode it records the result and logs failures, but still returns the
+// underlying error and hash so callers can track accurate counts.
 func (m *Manager) verifyFileWithHash(filePath string, context string) (string, error) {
 	if m.fileValidator == nil {
 		return "", nil
@@ -411,6 +387,8 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 
 	contentHash, err := m.fileValidator.VerifyWithHash(filePath)
 
+	// In dry-run mode, record the result (warn-only mode).
+	// The error and hash are still returned so callers can count failures accurately.
 	if m.isDryRun && m.resultCollector != nil {
 		if err == nil {
 			m.resultCollector.RecordSuccess()
@@ -418,7 +396,6 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 			m.resultCollector.RecordFailure(filePath, err, context)
 			logVerificationFailure(filePath, context, err, "File verification")
 		}
-		return "", nil
 	}
 
 	if err != nil {
@@ -533,7 +510,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.customPathResolver != nil {
 		pathResolver = opts.customPathResolver
 	} else {
-		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator, false)
+		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator)
 	}
 
 	manager.security = securityValidator
@@ -712,10 +689,9 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 			return nil
 		}
 		if schemaErr, ok := errors.AsType[*fileanalysis.SchemaVersionMismatchError](err); ok && schemaErr.Actual < schemaErr.Expected {
-			// Old schema record (pre-shebang tracking). Normally VerifyGroupFiles
-			// catches this before shebang verification runs, but skip_standard_paths
-			// bypasses file verification for standard-path commands. Reject here to
-			// ensure pre-shebang records are rejected even on that path.
+			// Old schema record (pre-shebang tracking): reject so callers that
+			// invoke shebang verification directly (bypassing VerifyGroupFiles)
+			// still enforce the schema version.
 			return err
 		}
 		return fmt.Errorf("failed to load record for shebang verification: %w", err)

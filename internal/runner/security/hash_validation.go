@@ -7,15 +7,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 )
 
-// shouldSkipHashValidation determines whether to skip hash validation
-func shouldPerformHashValidation(cmdPath string, verifyStandardPaths bool) bool {
-	if verifyStandardPaths {
-		return true // Validate all files when VerifyStandardPaths=true
-	}
-
-	return !isStandardDirectory(cmdPath) // Skip standard directories when VerifyStandardPaths=false
-}
-
 // validateFileHash performs file hash validation using provided validator
 func validateFileHash(cmdPath string, hashDir string, config *Config) error {
 	// Skip hash validation if testSkipHashValidation is enabled (test builds only)

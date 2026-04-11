@@ -127,30 +127,28 @@ func (h *sensitiveTestHelper) executeWithCapturedOutput(
 }
 
 // createDryRunOptions creates DryRunOptions with common settings
-func (h *sensitiveTestHelper) createDryRunOptions(cfg *runnertypes.ConfigSpec, hashDir string, showSensitive bool) *resource.DryRunOptions {
+func (h *sensitiveTestHelper) createDryRunOptions(hashDir string, showSensitive bool) *resource.DryRunOptions {
 	h.t.Helper()
 
 	return &resource.DryRunOptions{
-		DetailLevel:         resource.DetailLevelFull,
-		OutputFormat:        resource.OutputFormatText,
-		ShowSensitive:       showSensitive,
-		VerifyFiles:         true,
-		VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths),
-		HashDir:             hashDir,
+		DetailLevel:   resource.DetailLevelFull,
+		OutputFormat:  resource.OutputFormatText,
+		ShowSensitive: showSensitive,
+		VerifyFiles:   true,
+		HashDir:       hashDir,
 	}
 }
 
 // createDryRunOptionsWithDetailLevel creates DryRunOptions with specific DetailLevel
-func (h *sensitiveTestHelper) createDryRunOptionsWithDetailLevel(cfg *runnertypes.ConfigSpec, hashDir string, detailLevel resource.DryRunDetailLevel) *resource.DryRunOptions {
+func (h *sensitiveTestHelper) createDryRunOptionsWithDetailLevel(hashDir string, detailLevel resource.DryRunDetailLevel) *resource.DryRunOptions {
 	h.t.Helper()
 
 	return &resource.DryRunOptions{
-		DetailLevel:         detailLevel,
-		OutputFormat:        resource.OutputFormatText,
-		ShowSensitive:       false,
-		VerifyFiles:         true,
-		VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths),
-		HashDir:             hashDir,
+		DetailLevel:   detailLevel,
+		OutputFormat:  resource.OutputFormatText,
+		ShowSensitive: false,
+		VerifyFiles:   true,
+		HashDir:       hashDir,
 	}
 }
 
@@ -201,7 +199,7 @@ risk_level = "medium"
 			configPath, hashDir := helper.createConfigAndPaths(configContent)
 			cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, hashDir, "test-run-sensitive")
 
-			dryRunOptions := helper.createDryRunOptions(cfg, hashDir, tt.showSensitive)
+			dryRunOptions := helper.createDryRunOptions(hashDir, tt.showSensitive)
 			output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run-sensitive")
 
 			// Verify PrintFinalEnvironment output
@@ -272,7 +270,7 @@ risk_level = "low"
 	configPath, hashDir := helper.createConfigAndPaths(configContent)
 	cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, hashDir, "test-run-default")
 
-	dryRunOptions := helper.createDryRunOptions(cfg, hashDir, false) // showSensitive defaults to false
+	dryRunOptions := helper.createDryRunOptions(hashDir, false) // showSensitive defaults to false
 	output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run-default")
 
 	// CRITICAL SECURITY TEST: Verify that sensitive data is masked BY DEFAULT
@@ -325,7 +323,7 @@ risk_level = "low"
 			configPath, hashDir := helper.createConfigAndPaths(configContent)
 			cfg, runtimeGlobal, verificationManager := helper.loadConfig(configPath, hashDir, "test-run")
 
-			dryRunOptions := helper.createDryRunOptionsWithDetailLevel(cfg, hashDir, tt.detailLevel)
+			dryRunOptions := helper.createDryRunOptionsWithDetailLevel(hashDir, tt.detailLevel)
 			output := helper.executeWithCapturedOutput(cfg, runtimeGlobal, verificationManager, dryRunOptions, "test-run")
 
 			// PrintFinalEnvironment should NOT be called

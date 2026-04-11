@@ -353,18 +353,11 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		slog.Info("Group file verification completed",
 			"group", groupName,
 			"verified_files", result.VerifiedFiles,
-			"skipped_files", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds())
 	}
 
-	// Build a set of skipped paths for O(1) lookup below.
-	skippedPaths := make(map[string]struct{}, len(result.SkippedFiles))
-	for _, p := range result.SkippedFiles {
-		skippedPaths[p] = struct{}{}
-	}
-
 	// Single pass over commands: resolve the path once per command, then
-	// propagate the content hash / skip-flag, verify dynamic libraries, and
+	// propagate the content hash, verify dynamic libraries, and
 	// verify the shebang interpreter.  Collapsing the three former loops into
 	// one eliminates repeated ResolvePath calls and prevents divergence in
 	// error-handling across concerns.
@@ -374,12 +367,9 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			return fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr)
 		}
 
-		// Propagate verified hash and skip-flag.
+		// Propagate verified hash.
 		if hash, ok := result.ContentHashes[resolvedPath]; ok {
 			cmd.ExpandedCmdContentHash = hash
-		}
-		if _, skipped := skippedPaths[resolvedPath]; skipped {
-			cmd.SkipBinaryAnalysis = true
 		}
 
 		// Verify dynamic library dependencies.

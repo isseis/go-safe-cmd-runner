@@ -25,7 +25,6 @@ type ResultCollector struct {
 	startTime     time.Time
 	totalFiles    int
 	verifiedFiles int
-	skippedFiles  int
 	failures      []FileVerificationFailure
 	hashDirStatus HashDirectoryStatus
 }
@@ -73,15 +72,6 @@ func (rc *ResultCollector) RecordFailure(filePath string, err error, context str
 	rc.failures = append(rc.failures, failure)
 }
 
-// RecordSkip records a skipped file verification
-func (rc *ResultCollector) RecordSkip() {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	rc.totalFiles++
-	rc.skippedFiles++
-}
-
 // SetHashDirStatus sets the hash directory status
 func (rc *ResultCollector) SetHashDirStatus(exists bool) {
 	rc.mu.Lock()
@@ -105,7 +95,6 @@ func (rc *ResultCollector) GetSummary() FileVerificationSummary {
 	return FileVerificationSummary{
 		TotalFiles:    rc.totalFiles,
 		VerifiedFiles: rc.verifiedFiles,
-		SkippedFiles:  rc.skippedFiles,
 		FailedFiles:   len(rc.failures),
 		Duration:      duration,
 		HashDirStatus: rc.hashDirStatus,

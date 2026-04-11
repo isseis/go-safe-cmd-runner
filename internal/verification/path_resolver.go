@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -14,37 +13,19 @@ import (
 
 // PathResolver provides secure path resolution with caching
 type PathResolver struct {
-	pathEnv           string
-	security          *security.Validator
-	cache             map[string]string
-	mu                sync.RWMutex
-	skipStandardPaths bool
-	standardPaths     []string
+	pathEnv  string
+	security *security.Validator
+	cache    map[string]string
+	mu       sync.RWMutex
 }
 
 // NewPathResolver creates a new PathResolver with the specified configuration
-func NewPathResolver(pathEnv string, security *security.Validator, skipStandardPaths bool) *PathResolver {
+func NewPathResolver(pathEnv string, security *security.Validator) *PathResolver {
 	return &PathResolver{
-		pathEnv:           pathEnv,
-		security:          security,
-		cache:             make(map[string]string),
-		skipStandardPaths: skipStandardPaths,
-		standardPaths:     []string{"/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/"},
+		pathEnv:  pathEnv,
+		security: security,
+		cache:    make(map[string]string),
 	}
-}
-
-// ShouldSkipVerification checks if a path should be skipped based on configuration
-func (pr *PathResolver) ShouldSkipVerification(path string) bool {
-	if !pr.skipStandardPaths {
-		return false
-	}
-
-	for _, standardPath := range pr.standardPaths {
-		if strings.HasPrefix(path, standardPath) {
-			return true
-		}
-	}
-	return false
 }
 
 // validateAndCacheCommand validates that a path points to an executable file,

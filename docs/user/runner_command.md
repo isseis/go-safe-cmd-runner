@@ -48,7 +48,6 @@ User guide for the main execution command `runner` of go-safe-cmd-runner.
 # 1. Create configuration file (config.toml)
 cat > config.toml << 'EOF'
 version = "1.0"
-verify_standard_paths = false
 
 [[groups]]
 name = "hello"

@@ -556,7 +556,6 @@
 
 | 日本語 | 旧フィールド名 | 新フィールド名 |
 |--------|--------------|--------------|
-| 標準パス検証 | `skip_standard_paths` | `verify_standard_paths` |
 | 環境変数 | `env` | `env_vars` |
 | 環境変数許可リスト | `env_allowlist` | `env_allowed` |
 | 環境変数インポート | `from_env` | `env_import` |

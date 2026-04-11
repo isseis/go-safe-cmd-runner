@@ -529,11 +529,8 @@ output_file = "environment.txt"
 #### Solution
 
 ```toml
-# Skip standard path verification
-[global]
-verify_standard_paths = false
-
 # Verify only minimum necessary files
+[global]
 verify_files = [
     "/opt/app/bin/critical-tool",
 ]

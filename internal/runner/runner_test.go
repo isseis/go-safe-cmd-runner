@@ -2415,7 +2415,7 @@ func TestCreateNormalResourceManager_NetworkStoreInjected(t *testing.T) {
 func TestCreateNormalResourceManager_NoStoreWhenResolverLacksInterface(t *testing.T) {
 	// verification.NewPathResolver returns a *PathResolver that does NOT implement
 	// GetNetworkSymbolStore, so the store must remain nil (no panic, no error).
-	resolver := verification.NewPathResolver("", nil, false)
+	resolver := verification.NewPathResolver("", nil)
 
 	opts := &runnerOptions{}
 	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, nil)

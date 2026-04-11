@@ -92,7 +92,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-verify_standard_paths = true  # Verify all files
 env_allowed = ["PATH"]      # Minimal environment variables
 verify_files = [
     "/bin/sh",
@@ -483,7 +482,6 @@ version = "1.0"
 [global]
 timeout = 900
 workdir = "/opt/deploy"
-verify_standard_paths = false
 env_allowed = [
     "PATH",
     "HOME",

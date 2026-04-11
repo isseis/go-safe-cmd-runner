@@ -532,12 +532,11 @@ risk_level = "medium"
 	hashDir := commontesting.SafeTempDir(t)
 
 	dryRunOptions := &resource.DryRunOptions{
-		DetailLevel:         resource.DetailLevelDetailed,
-		OutputFormat:        resource.OutputFormatText,
-		ShowSensitive:       false,
-		VerifyFiles:         true,
-		VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths),
-		HashDir:             hashDir,
+		DetailLevel:   resource.DetailLevelDetailed,
+		OutputFormat:  resource.OutputFormatText,
+		ShowSensitive: false,
+		VerifyFiles:   true,
+		HashDir:       hashDir,
 	}
 
 	// Create runner with dry-run option

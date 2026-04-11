@@ -101,7 +101,6 @@ type Error struct {
 	TotalFiles    int      // total number of files to verify
 	VerifiedFiles int      // number of files successfully verified
 	FailedFiles   int      // number of files that failed verification
-	SkippedFiles  int      // number of files that were skipped
 	Err           error    // underlying error
 }
 
@@ -142,7 +141,6 @@ type Result struct {
 	TotalFiles    int           // total number of files to verify
 	VerifiedFiles int           // number of files successfully verified
 	FailedFiles   []string      // list of files that failed verification
-	SkippedFiles  []string      // list of files that were skipped
 	Duration      time.Duration // time taken for verification
 
 	// ContentHashes maps each successfully verified file path (resolved, absolute)

@@ -156,7 +156,7 @@ func (f *DefaultMessageFormatter) appendInteractiveAttrs(sb *strings.Builder, re
 func (f *DefaultMessageFormatter) shouldSkipInteractiveAttr(key string) bool {
 	skipKeys := []string{
 		"time", "level", "msg", "run_id", "hostname", "pid", "schema_version",
-		"duration_ms", "verified_files", "skipped_files", "total_files",
+		"duration_ms", "verified_files", "total_files",
 		"interactive_mode", "color_support", "slack_enabled",
 	}
 

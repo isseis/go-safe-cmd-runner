@@ -271,7 +271,6 @@ func run(runID string) error {
 	if result.TotalFiles > 0 {
 		slog.Info("Global files verification completed successfully",
 			"verified", result.VerifiedFiles,
-			"skipped", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds(),
 			"run_id", runID)
 	}
@@ -315,12 +314,11 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:         detailLevel,
-			OutputFormat:        outputFormat,
-			ShowSensitive:       showSensitive,
-			VerifyFiles:         true,
-			VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths), // Use new verify logic
-			HashDir:             cmdcommon.DefaultHashDirectory,                                           // Use secure default hash directory
+			DetailLevel:   detailLevel,
+			OutputFormat:  outputFormat,
+			ShowSensitive: showSensitive,
+			VerifyFiles:   true,
+			HashDir:       cmdcommon.DefaultHashDirectory, // Use secure default hash directory
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}

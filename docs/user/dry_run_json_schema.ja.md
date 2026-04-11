@@ -458,7 +458,6 @@
 |---------|------|------|
 | `total_files` | number | 検証対象ファイルの総数 |
 | `verified_files` | number | 検証成功したファイル数 |
-| `skipped_files` | number | スキップされたファイル数 |
 | `failed_files` | number | 検証失敗したファイル数 |
 | `duration` | number | 検証処理時間 (ナノ秒) |
 | `hash_dir_status` | HashDirectoryStatus | ハッシュディレクトリの状態 |

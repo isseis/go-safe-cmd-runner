@@ -317,7 +317,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// We need to use the real filesystem for path resolution, not the mock
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -341,7 +341,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 	t.Run("fails to resolve commands not in secure PATH", func(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -364,7 +364,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -685,37 +685,6 @@ func TestResolvePath(t *testing.T) {
 	})
 }
 
-// TestShouldSkipVerification tests the shouldSkipVerification helper method
-func TestShouldSkipVerification(t *testing.T) {
-	t.Run("skip_verification_conditions", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
-
-		// Create manager for testing with hash directory validation skipped
-		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Test path that should be skipped
-		shouldSkip := manager.shouldSkipVerification("/tmp/some_file")
-
-		// When file validator is disabled, should skip verification
-		assert.True(t, shouldSkip)
-	})
-
-	t.Run("do_not_skip_verification", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
-
-		// Create manager with file validator enabled
-		manager, err := NewManagerForTest(tmpDir)
-		require.NoError(t, err)
-
-		// Test path that should not be skipped
-		shouldSkip := manager.shouldSkipVerification("/usr/bin/ls")
-
-		// When file validator is enabled, should not skip verification
-		assert.False(t, shouldSkip)
-	})
-}
-
 // TestCollectVerificationFiles tests the collectVerificationFiles helper method
 func TestCollectVerificationFiles(t *testing.T) {
 	t.Run("collect_files_from_config", func(t *testing.T) {
@@ -798,7 +767,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create manager with PATH resolver
-		pathResolver := NewPathResolver(binDir, nil, false)
+		pathResolver := NewPathResolver(binDir, nil)
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
@@ -865,7 +834,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
-		pathResolver := NewPathResolver("", nil, false)
+		pathResolver := NewPathResolver("", nil)
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
@@ -1015,9 +984,10 @@ func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 		err = os.WriteFile(testFile, []byte("test content"), 0o644)
 		require.NoError(t, err)
 
-		// In dry-run mode, verification failure should be logged but not returned as error
+		// In dry-run mode, verification failure is recorded and logged; the error is
+		// still returned so callers (VerifyGlobalFiles etc.) can count failures accurately.
 		err = manager.verifyFileWithFallback(testFile, "test-context")
-		assert.NoError(t, err, "dry-run mode should not return error on verification failure")
+		assert.Error(t, err, "dry-run mode should return the underlying error for accurate counting")
 
 		// Verify security_risk is in the log
 		logOutput := logBuffer.String()
@@ -1321,7 +1291,12 @@ func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 	// In dry-run mode, verification should complete without error
 	result, err := manager.VerifyGlobalFiles(runtimeGlobal)
 	assert.NoError(t, err, "dry-run mode should not return errors")
-	assert.NotNil(t, result)
+	require.NotNil(t, result)
+
+	// Result must reflect the true per-file outcome (not falsely claim all verified).
+	assert.Equal(t, 2, result.TotalFiles, "result should report 2 total files")
+	assert.Equal(t, 0, result.VerifiedFiles, "result should report 0 verified files")
+	assert.Len(t, result.FailedFiles, 2, "result should list both failed files")
 
 	// Verify summary
 	summary := manager.GetVerificationSummary()
@@ -1348,7 +1323,11 @@ func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	// In dry-run mode, verification should complete without error (execution continues)
 	result, err := manager.VerifyGroupFiles(runtimeGroup)
 	assert.NoError(t, err, "dry-run mode should not return errors")
-	assert.NotNil(t, result)
+	require.NotNil(t, result)
+
+	// Result must reflect the true per-file outcome.
+	assert.Equal(t, 0, result.VerifiedFiles, "result should report 0 verified files")
+	assert.Len(t, result.FailedFiles, 1, "result should list the failed file")
 
 	// Verify that verification was attempted and recorded
 	summary := manager.GetVerificationSummary()
@@ -1419,7 +1398,11 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 	// In dry-run mode, verification should complete without error
 	result, err := manager.VerifyGroupFiles(runtimeGroup)
 	assert.NoError(t, err, "dry-run mode should not return errors")
-	assert.NotNil(t, result)
+	require.NotNil(t, result)
+
+	// Result must reflect the true per-file outcome.
+	assert.Equal(t, 0, result.VerifiedFiles, "result should report 0 verified files")
+	assert.Len(t, result.FailedFiles, 1, "result should list the failed file")
 
 	// Verify that verification failure was recorded
 	summary := manager.GetVerificationSummary()
