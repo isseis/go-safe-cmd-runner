@@ -164,7 +164,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 		name        string
 		successURL  string
 		errorURL    string
-		oldURL      string
 		wantErr     error
 		wantSuccess string
 		wantError   string
@@ -173,7 +172,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			name:        "both SUCCESS and ERROR set",
 			successURL:  "https://hooks.slack.com/success",
 			errorURL:    "https://hooks.slack.com/error",
-			oldURL:      "",
 			wantErr:     nil,
 			wantSuccess: "https://hooks.slack.com/success",
 			wantError:   "https://hooks.slack.com/error",
@@ -182,7 +180,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			name:        "only ERROR set",
 			successURL:  "",
 			errorURL:    "https://hooks.slack.com/error",
-			oldURL:      "",
 			wantErr:     nil,
 			wantSuccess: "",
 			wantError:   "https://hooks.slack.com/error",
@@ -191,7 +188,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			name:        "only SUCCESS set - error because ERROR is required",
 			successURL:  "https://hooks.slack.com/success",
 			errorURL:    "",
-			oldURL:      "",
 			wantErr:     ErrSuccessWithoutError,
 			wantSuccess: "",
 			wantError:   "",
@@ -200,26 +196,7 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			name:        "neither set - Slack disabled",
 			successURL:  "",
 			errorURL:    "",
-			oldURL:      "",
 			wantErr:     nil,
-			wantSuccess: "",
-			wantError:   "",
-		},
-		{
-			name:        "deprecated env var set - error",
-			successURL:  "",
-			errorURL:    "",
-			oldURL:      "https://hooks.slack.com/old",
-			wantErr:     ErrDeprecatedSlackWebhook,
-			wantSuccess: "",
-			wantError:   "",
-		},
-		{
-			name:        "deprecated env var with new vars - error",
-			successURL:  "https://hooks.slack.com/success",
-			errorURL:    "https://hooks.slack.com/error",
-			oldURL:      "https://hooks.slack.com/old",
-			wantErr:     ErrDeprecatedSlackWebhook,
 			wantSuccess: "",
 			wantError:   "",
 		},
@@ -227,7 +204,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 			name:        "same URL for both SUCCESS and ERROR",
 			successURL:  "https://hooks.slack.com/same",
 			errorURL:    "https://hooks.slack.com/same",
-			oldURL:      "",
 			wantErr:     nil,
 			wantSuccess: "https://hooks.slack.com/same",
 			wantError:   "https://hooks.slack.com/same",
@@ -237,7 +213,6 @@ func TestValidateSlackWebhookEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set environment variables for this test (t.Setenv automatically restores on cleanup)
-			t.Setenv(logging.SlackWebhookURLEnvVar, tt.oldURL)
 			t.Setenv(logging.SlackWebhookURLSuccessEnvVar, tt.successURL)
 			t.Setenv(logging.SlackWebhookURLErrorEnvVar, tt.errorURL)
 

@@ -16,30 +16,6 @@ type SlackWebhookConfig struct {
 	ErrorURL   string
 }
 
-// ErrDeprecatedSlackWebhook is returned when the deprecated env var is set.
-// Use errors.Is(err, ErrDeprecatedSlackWebhook) to check for this error type.
-var ErrDeprecatedSlackWebhook = &DeprecatedSlackWebhookError{}
-
-// DeprecatedSlackWebhookError indicates that the deprecated GSCR_SLACK_WEBHOOK_URL is set.
-type DeprecatedSlackWebhookError struct{}
-
-func (e *DeprecatedSlackWebhookError) Error() string {
-	return `Error: GSCR_SLACK_WEBHOOK_URL is deprecated.
-
-Please migrate to the new webhook configuration:
-  export GSCR_SLACK_WEBHOOK_URL_SUCCESS="<your_webhook_url>"
-  export GSCR_SLACK_WEBHOOK_URL_ERROR="<your_webhook_url>"
-
-For more information, see the migration guide at:
-  https://github.com/isseis/go-safe-cmd-runner/docs/user/runner_command.md#slack-webhook-configuration`
-}
-
-// Is implements errors.Is support.
-func (e *DeprecatedSlackWebhookError) Is(target error) bool {
-	_, ok := target.(*DeprecatedSlackWebhookError)
-	return ok
-}
-
 // ErrSuccessWithoutError is returned when SUCCESS is set but ERROR is not.
 // Use errors.Is(err, ErrSuccessWithoutError) to check for this error type.
 var ErrSuccessWithoutError = &SuccessWithoutErrorError{}
@@ -70,11 +46,6 @@ func (e *SuccessWithoutErrorError) Is(target error) bool {
 
 // ValidateSlackWebhookEnv validates Slack webhook environment variables
 func ValidateSlackWebhookEnv() (*SlackWebhookConfig, error) {
-	// Check for deprecated environment variable
-	if os.Getenv(logging.SlackWebhookURLEnvVar) != "" {
-		return nil, &DeprecatedSlackWebhookError{}
-	}
-
 	successURL := os.Getenv(logging.SlackWebhookURLSuccessEnvVar)
 	errorURL := os.Getenv(logging.SlackWebhookURLErrorEnvVar)
 

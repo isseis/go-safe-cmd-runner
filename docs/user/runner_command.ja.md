@@ -1375,26 +1375,6 @@ Run ID: 01K2YK812JA735M4TWZ6BK0JH9
 - ログやエラーメッセージには含まれません
 - dry-runモードでは、どちらのWebhookにも通知は送信されません
 
-#### `GSCR_SLACK_WEBHOOK_URL` からの移行
-
-旧 `GSCR_SLACK_WEBHOOK_URL` 環境変数は廃止されました。設定されている場合、runnerは移行方法を説明するエラーメッセージを出力して失敗します。
-
-**移行手順**
-
-```bash
-# 以前（廃止）
-export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
-
-# 以後（推奨：エラー通知のみ）
-unset GSCR_SLACK_WEBHOOK_URL
-export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
-
-# 以後（成功とエラー両方の通知が必要な場合）
-unset GSCR_SLACK_WEBHOOK_URL
-export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/..."
-export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
-```
-
 ### 4.3 CI環境の自動検出
 
 以下の環境変数が設定されている場合、自動的にCI環境として認識され、非インタラクティブモードで動作します。

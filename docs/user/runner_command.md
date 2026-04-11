@@ -1405,26 +1405,6 @@ Run ID: 01K2YK812JA735M4TWZ6BK0JH9
 - Not included in logs or error messages
 - In dry-run mode, no notifications are sent to either webhook
 
-#### Migration from `GSCR_SLACK_WEBHOOK_URL`
-
-The old `GSCR_SLACK_WEBHOOK_URL` environment variable is deprecated. If set, the runner will fail with an error message explaining how to migrate.
-
-**Migration Steps**
-
-```bash
-# Before (deprecated)
-export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
-
-# After (recommended: error notifications only)
-unset GSCR_SLACK_WEBHOOK_URL
-export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
-
-# After (if you want both success and error notifications)
-unset GSCR_SLACK_WEBHOOK_URL
-export GSCR_SLACK_WEBHOOK_URL_SUCCESS="https://hooks.slack.com/services/..."
-export GSCR_SLACK_WEBHOOK_URL_ERROR="https://hooks.slack.com/services/..."
-```
-
 ### 4.3 CI Environment Auto-Detection
 
 When the following environment variables are set, they are automatically recognized as CI environment and operate in non-interactive mode.
