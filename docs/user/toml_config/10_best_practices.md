@@ -60,7 +60,6 @@ Always verify important configuration files and libraries. Command executables a
 ```toml
 # Good example: Verify configuration files and scripts
 [global]
-verify_standard_paths = true  # Also verify commands in standard paths
 verify_files = [
     "/etc/app/global.conf",  # Global configuration file
 ]
@@ -358,9 +357,6 @@ version = "1.0"
 # Timeout set to 1.5x the longest execution time
 timeout = 900
 
-# Due to security requirements, verify system paths as well
-verify_standard_paths = true
-
 [[groups]]
 name = "production_deployment"
 # Warning: Execute this group only in production environment
@@ -457,14 +453,12 @@ Specify only files that need verification.
 ```toml
 # Good example: Verify only necessary files
 [global]
-verify_standard_paths = false  # Skip standard paths
 verify_files = [
     "/opt/app/bin/critical-tool",  # Verify only app-specific tools
 ]
 
 # Example to avoid: Excessive verification
 [global]
-verify_standard_paths = true
 verify_files = [
     "/bin/ls", "/bin/cat", "/bin/grep", "/bin/sed",
     # ... Many standard commands (performance degradation)

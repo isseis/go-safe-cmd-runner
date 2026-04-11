@@ -529,11 +529,8 @@ output_file = "environment.txt"
 #### 解決方法
 
 ```toml
-# 標準パスの検証をスキップ
-[global]
-verify_standard_paths = false
-
 # 必要最小限のファイルのみ検証
+[global]
 verify_files = [
     "/opt/app/bin/critical-tool",
 ]

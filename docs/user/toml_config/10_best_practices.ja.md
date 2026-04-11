@@ -60,7 +60,6 @@ env_allowed = [
 ```toml
 # 良い例: 設定ファイルやスクリプトファイルを検証
 [global]
-verify_standard_paths = true  # 標準パスのコマンドも検証
 verify_files = [
     "/etc/app/global.conf",  # グローバル設定ファイル
 ]
@@ -358,9 +357,6 @@ version = "1.0"
 # タイムアウトは最長実行時間の1.5倍に設定
 timeout = 900
 
-# セキュリティ要件により、システムパスも検証
-verify_standard_paths = true
-
 [[groups]]
 name = "production_deployment"
 # 注意: このグループは本番環境でのみ実行すること
@@ -457,14 +453,12 @@ name = "backup_files"
 ```toml
 # 良い例: 必要なファイルのみ検証
 [global]
-verify_standard_paths = false  # 標準パスはスキップ
 verify_files = [
     "/opt/app/bin/critical-tool",  # アプリ固有のツールのみ検証
 ]
 
 # 避けるべき例: 過度な検証
 [global]
-verify_standard_paths = true
 verify_files = [
     "/bin/ls", "/bin/cat", "/bin/grep", "/bin/sed",
     # ... 多数の標準コマンド(パフォーマンス低下)

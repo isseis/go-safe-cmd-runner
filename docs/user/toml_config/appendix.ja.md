@@ -14,7 +14,6 @@
 |-----------|-----|------|------------|------|
 | timeout | int | - | システムデフォルト | コマンド実行のタイムアウト(秒) |
 | workdir | string | - | 実行ディレクトリ | 作業ディレクトリの絶対パス |
-| verify_standard_paths | bool | - | true | 標準パスの検証を有効化 |
 | env_allowed | []string | - | [] | 環境変数の許可リスト |
 | verify_files | []string | - | [] | 検証対象ファイルのリスト |
 | output_size_limit | int64 | - | 10485760 | 出力サイズ上限(バイト) |
@@ -139,7 +138,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = []  # コマンドは自動検証される
 
@@ -420,7 +418,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/opt/secure"
-verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = [
     # 追加の検証ファイル (コマンドは自動検証される)

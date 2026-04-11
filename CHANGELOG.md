@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+#### Removal of `verify_standard_paths` Feature
+
+The `verify_standard_paths` configuration field and all related code have been
+completely removed. Hash verification now always runs for all commands,
+regardless of their directory.
+
+**Removed items:**
+- `GlobalSpec.VerifyStandardPaths` field (TOML: `verify_standard_paths`)
+- `DefaultVerifyStandardPaths` constant
+- `DetermineVerifyStandardPaths()` function
+- `RuntimeGlobal.SkipStandardPaths()` method
+- `RuntimeCommand.SkipBinaryAnalysis` field
+- `AnalysisOptions.VerifyStandardPaths` field
+- `DryRunOptions.VerifyStandardPaths` field
+- `PathResolver.ShouldSkipVerification()` method
+- `shouldPerformHashValidation()` function
+- `isStandardDirectory()` function and `StandardDirectories` variable
+- `IsNetworkOperation()` `skipBinaryAnalysis` parameter
+- `FileVerificationSummary.SkippedFiles` field
+- `skipped_files` field from dry-run JSON output
+
+**Migration:**
+- Remove `verify_standard_paths = ...` from all TOML configuration files.
+  The field is no longer recognized; configs containing it will fail to load
+  with an "unknown field" error.
+- Update any code that references the removed types or functions listed above.
+
 ### Added
 
 #### Shebang Interpreter Tracking

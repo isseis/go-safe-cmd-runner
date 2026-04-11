@@ -92,7 +92,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-verify_standard_paths = true  # 全てのファイルを検証
 env_allowed = ["PATH"]      # 最小限の環境変数
 verify_files = [
     "/bin/sh",
@@ -488,7 +487,6 @@ version = "1.0"
 [global]
 timeout = 900
 workdir = "/opt/deploy"
-verify_standard_paths = false
 env_allowed = [
     "PATH",
     "HOME",

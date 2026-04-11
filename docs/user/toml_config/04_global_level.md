@@ -196,77 +196,7 @@ timeout = 0  # ✅ Unlimited execution (no timeout)
 timeout = -1  # ❌ Invalid: negative values are not allowed
 ```
 
-## 4.2 skip_standard_paths - Skip Standard Path Verification
-
-### Overview
-
-Skips file verification for standard system paths (`/bin`, `/usr/bin`, etc.).
-
-### Syntax
-
-```toml
-[global]
-verify_standard_paths = false/false
-```
-
-### Parameter Details
-
-| Item | Description |
-|------|-------------|
-| **Type** | Boolean (boolean) |
-| **Required/Optional** | Optional |
-| **Configurable Level** | Global only |
-| **Default Value** | false |
-| **Valid Values** | true, false |
-
-### Role
-
-- **Performance Improvement**: Reduces startup time by skipping verification of standard commands
-- **Convenience**: Eliminates the need to create hash files for standard system commands
-
-### Configuration Examples
-
-#### Example 1: Skip Verification of Standard Paths
-
-```toml
-version = "1.0"
-
-[global]
-verify_standard_paths = false  # Skip verification of /bin, /usr/bin, etc.
-
-[[groups]]
-name = "system_commands"
-
-[[groups.commands]]
-name = "list_files"
-cmd = "/bin/ls"  # Can execute without verification
-args = ["-la"]
-```
-
-#### Example 2: Verify Standard Paths (Default)
-
-```toml
-version = "1.0"
-
-[global]
-verify_standard_paths = true  # Or omit
-verify_files = ["/etc/app/config.ini"]  # Add additional configuration file to verify
-
-[[groups]]
-name = "verified_commands"
-
-[[groups.commands]]
-name = "search"
-cmd = "/usr/bin/grep"  # Standard path but still verified
-args = ["pattern", "file.txt"]
-# Both /usr/bin/grep and /etc/app/config.ini are verified
-```
-
-### Security Notice
-
-Setting `verify_standard_paths = false` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
-
-## 4.3 vars - Global Internal Variables
+## 4.2 vars - Global Internal Variables
 
 ### Overview
 
@@ -450,7 +380,7 @@ cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
 3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
 4. **Security**: Manage sensitive information in vars and expose via env_vars only when necessary
 
-## 4.4 env_import - System Environment Variable Import
+## 4.3 env_import - System Environment Variable Import
 
 ### Overview
 
@@ -622,7 +552,7 @@ env_import = [
 3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
-## 4.5 env_vars - Global Process Environment Variables
+## 4.4 env_vars - Global Process Environment Variables
 
 ### Overview
 
@@ -851,7 +781,7 @@ env_vars = [
 ]
 ```
 
-## 4.6 env_allowed - Environment Variable Allowlist
+## 4.5 env_allowed - Environment Variable Allowlist
 
 ### Overview
 
@@ -981,7 +911,7 @@ env_allowed = [
 env_allowed = ["PATH", "HOME", "USER"]
 ```
 
-## 4.7 verify_files - File Verification List
+## 4.6 verify_files - File Verification List
 
 ### Overview
 
@@ -1091,7 +1021,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 - **Performance**: File hash verification operates efficiently with minimal performance impact
 - **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
-## 4.8 Global Command Allowlist (Hardcoded)
+## 4.7 Global Command Allowlist (Hardcoded)
 
 ### Overview
 
@@ -1162,7 +1092,7 @@ The hardcoded patterns are matched against the full absolute path of the command
 - **Be Specific**: Prefer specific patterns over broad ones
 - **Combine with cmd_allowed**: Use group-level `cmd_allowed` for exceptions rather than broadening global patterns
 
-## 4.9 output_size_limit - Maximum Output Size
+## 4.8 output_size_limit - Maximum Output Size
 
 ### Overview
 
@@ -1283,8 +1213,6 @@ workdir = "/var/app/workspace"
 # Log level
 log_level = "info"
 
-# Skip standard path verification
-verify_standard_paths = false
 
 # Environment variable allowlist
 env_allowed = [

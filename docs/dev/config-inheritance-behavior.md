@@ -26,7 +26,6 @@ Single-value items always exhibit Override behavior when set at multiple levels.
 | **timeout** | ✓ | - | ✓ | **Override**: Uses Command.Timeout if > 0, otherwise uses Global.Timeout | Can be overridden at Command level<br>Implementation: [runner.go](../../internal/runner/runner.go) |
 | **workdir** | ✓ | ✓ | ✓ | **Override**: Global.WorkDir is set only when Command.Dir is empty string | Group.WorkDir is for temp_dir purpose<br>Command.Dir is used at execution time<br>Implementation: [runner.go](../../internal/runner/runner.go) |
 | **max_output_size** | ✓ | - | - | **Global only**: Only Global.MaxOutputSize can be defined | Not supported at Command or Group level |
-| **skip_standard_paths** | ✓ | - | - | **Global only**: Only Global.SkipStandardPaths can be defined | Not supported at Command or Group level |
 | **risk_level** | - | - | ✓ | **Command only**: Only Command.RiskLevel can be defined | Not supported at Global or Group level |
 | **run_as_user** | - | - | ✓ | **Command only**: Only Command.RunAsUser can be defined | Not supported at Global or Group level |
 | **run_as_group** | - | - | ✓ | **Command only**: Only Command.RunAsGroup can be defined | Not supported at Global or Group level |

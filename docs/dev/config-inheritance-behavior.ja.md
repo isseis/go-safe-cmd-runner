@@ -26,7 +26,6 @@ runner の設定は以下の4階層に分かれています：
 | **timeout** | ✓ | - | ✓ | **Override**: Command.Timeout > 0 の場合はそれを使用、それ以外は Global.Timeout を使用 | Command レベルで上書き可能<br>実装: [runner.go](../../internal/runner/runner.go) |
 | **workdir** | ✓ | ✓ | ✓ | **Override**: Command.Dir が空文字列の場合のみ Global.WorkDir を設定 | Group.WorkDir は temp_dir 用途<br>Command.Dir は実行時に使用<br>実装: [runner.go](../../internal/runner/runner.go) |
 | **max_output_size** | ✓ | - | - | **Global only**: Global.MaxOutputSize のみ定義可能 | Command や Group レベルでは未対応 |
-| **skip_standard_paths** | ✓ | - | - | **Global only**: Global.SkipStandardPaths のみ定義可能 | Command や Group レベルでは未対応 |
 | **risk_level** | - | - | ✓ | **Command only**: Command.RiskLevel のみ定義可能 | Global や Group レベルでは未対応 |
 | **run_as_user** | - | - | ✓ | **Command only**: Command.RunAsUser のみ定義可能 | Global や Group レベルでは未対応 |
 | **run_as_group** | - | - | ✓ | **Command only**: Command.RunAsGroup のみ定義可能 | Global や Group レベルでは未対応 |

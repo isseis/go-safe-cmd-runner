@@ -458,7 +458,6 @@ Contains file verification result summary. Only included when verification is pe
 |---------|------|------|
 | `total_files` | number | Total number of files to verify |
 | `verified_files` | number | Number of files successfully verified |
-| `skipped_files` | number | Number of files skipped |
 | `failed_files` | number | Number of files that failed verification |
 | `duration` | number | Verification processing time (nanoseconds) |
 | `hash_dir_status` | HashDirectoryStatus | Hash directory status |

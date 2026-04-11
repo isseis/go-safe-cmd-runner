@@ -274,7 +274,6 @@ pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
 type PathResolver struct {
     pathEnv            string    // セキュア固定PATH使用
     securityValidator  *security.Validator
-    skipStandardPaths  bool
 }
 ```
 

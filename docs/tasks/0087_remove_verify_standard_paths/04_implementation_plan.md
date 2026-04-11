@@ -342,12 +342,12 @@ sample/workdir_examples.toml
 
 #### 完了条件
 
-- [ ] `docs/user/` 配下に `verify_standard_paths` への言及が存在しないこと
-- [ ] `docs/user/dry_run_json_schema.md`（日英）から `skipped_files` の説明が削除されていること
-- [ ] `docs/dev/security-architecture.md`（日英）から `skipStandardPaths` フィールドを含むコードスニペットが削除されていること
-- [ ] `docs/dev/config-inheritance-behavior.md`（日英）から `skip_standard_paths` の行が削除されていること
-- [ ] `docs/translation_glossary.md` から `verify_standard_paths` の行が削除されていること
-- [ ] `sample/` 配下に `verify_standard_paths` の記述が存在しないこと
+- [x] `docs/user/` 配下に `verify_standard_paths` への言及が存在しないこと
+- [x] `docs/user/dry_run_json_schema.md`（日英）から `skipped_files` の説明が削除されていること
+- [x] `docs/dev/security-architecture.md`（日英）から `skipStandardPaths` フィールドを含むコードスニペットが削除されていること
+- [x] `docs/dev/config-inheritance-behavior.md`（日英）から `skip_standard_paths` の行が削除されていること
+- [x] `docs/translation_glossary.md` から `verify_standard_paths` の行が削除されていること
+- [x] `sample/` 配下に `verify_standard_paths` の記述が存在しないこと
 - [ ] `CHANGELOG.md` に Breaking Changes エントリが追加されていること
 
 ## 3. フェーズ間の依存関係

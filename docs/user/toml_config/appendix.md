@@ -14,7 +14,6 @@
 |-----------|------|----------|---------------|-------------|
 | timeout | int | - | System default | Command execution timeout (seconds) |
 | workdir | string | - | Execution directory | Absolute path of working directory |
-| verify_standard_paths | bool | - | true | Verify standard path validation |
 | env_allowed | []string | - | [] | Environment variable allowlist |
 | verify_files | []string | - | [] | List of files to verify |
 | output_size_limit | int64 | - | 10485760 | Maximum output size (bytes) |
@@ -137,7 +136,6 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/opt/secure"
-verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = []  # Commands are automatically verified
 
@@ -417,7 +415,6 @@ version = "1.0"
 [global]
 timeout = 600
 workdir = "/opt/secure"
-verify_standard_paths = true
 env_allowed = ["PATH"]
 verify_files = [
     # Additional verification files (commands are automatically verified)
