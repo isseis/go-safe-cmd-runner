@@ -3,6 +3,7 @@ package security
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -2422,7 +2423,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		},
 		{
 			name:       "unknown command with network symbols detected",
-			cmdName:    "/usr/bin/ls", // Use absolute path for ELF analysis
+			cmdName:    "/bin/ls", // Use absolute path for ELF analysis
 			args:       []string{"-la"},
 			mockResult: binaryanalyzer.NetworkDetected,
 			mockSymbols: []binaryanalyzer.DetectedSymbol{
@@ -2432,28 +2433,28 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		},
 		{
 			name:          "unknown command with no network symbols",
-			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
+			cmdName:       "/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{"-la"},
 			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: false,
 		},
 		{
 			name:          "unknown command - not an ELF binary (e.g. Mach-O on macOS)",
-			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
+			cmdName:       "/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
 			mockResult:    binaryanalyzer.NotSupportedBinary,
 			expectNetwork: false, // Non-ELF executables are treated same as ELF with no network symbols
 		},
 		{
 			name:          "unknown command - static binary",
-			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
+			cmdName:       "/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
 			mockResult:    binaryanalyzer.StaticBinary,
 			expectNetwork: false,
 		},
 		{
 			name:          "unknown command - analysis error treats as network",
-			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
+			cmdName:       "/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{},
 			mockResult:    binaryanalyzer.AnalysisError,
 			mockError:     fmt.Errorf("permission denied"),
@@ -2461,7 +2462,7 @@ func TestIsNetworkOperation_ELFAnalysis(t *testing.T) {
 		},
 		{
 			name:          "unknown command with URL in args (fallback detection)",
-			cmdName:       "/usr/bin/ls", // Use absolute path for ELF analysis
+			cmdName:       "/bin/ls", // Use absolute path for ELF analysis
 			args:          []string{"http://example.com"},
 			mockResult:    binaryanalyzer.NoNetworkSymbols,
 			expectNetwork: true, // Detected via argument, not ELF
@@ -2823,19 +2824,29 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 // commands. After removal of verify_standard_paths, hash validation must always run
 // whenever HashDir is non-empty, regardless of the command's directory.
 func TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns(t *testing.T) {
+	// Locate a real executable portably; skip on environments where ls is absent
+	// (e.g. minimal/distroless containers) rather than hard-coding /bin/ls.
+	lsPath, err := exec.LookPath("ls")
+	if err != nil {
+		t.Skip("ls not found in PATH; skipping test")
+	}
+	// Resolve symlinks so the path passed to AnalyzeCommandSecurity is canonical.
+	lsPath, err = filepath.EvalSymlinks(lsPath)
+	require.NoError(t, err)
+
 	tmpDir := commontesting.SafeTempDir(t)
 
-	// /usr/bin/ls is a real executable in a standard directory.
-	// Using an empty hash directory means no hash file exists for /usr/bin/ls,
-	// so validateFileHash must fail — proving that hash validation was attempted.
-	risk, _, reason, err := AnalyzeCommandSecurity("/usr/bin/ls", []string{}, &AnalysisOptions{
+	// Using an empty hash directory means no hash file exists for lsPath,
+	// so validateFileHash must fail — proving that hash validation was attempted
+	// for this command regardless of which directory it lives in.
+	risk, _, reason, err := AnalyzeCommandSecurity(lsPath, []string{}, &AnalysisOptions{
 		HashDir: tmpDir,
 		Config:  DefaultConfig(),
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, runnertypes.RiskLevelCritical, risk,
-		"standard directory command should be Critical when hash file is missing")
+		"command should be Critical when hash file is missing")
 	assert.Contains(t, reason, "Hash validation failed",
 		"reason should mention hash validation failure")
 }
