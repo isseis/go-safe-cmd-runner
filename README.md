@@ -40,6 +40,8 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Environment Variable Isolation**: Strict allowlist-based filtering with zero-trust approach
 - **Hybrid Hash Encoding**: Space-efficient file integrity verification with automatic fallback
 - **Sensitive Data Protection**: Automatic detection and redaction of passwords, tokens, and API keys
+- **ELF Binary Static Analysis**: Static analysis of ELF binaries to detect network capabilities, dangerous syscalls, and dynamic library dependencies before execution
+- **Shebang Interpreter Tracking**: Script interpreters are automatically recorded and verified at runtime, preventing interpreter substitution attacks
 
 ### Command Execution Security
 - **User/Group Execution Control**: Secure user and group switching with comprehensive validation
@@ -62,6 +64,8 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Hybrid Hash Encoding**: Space-efficient encoding with human-readable fallback
 - **Centralized Verification**: Unified verification management with automatic privilege handling
 - **Group and Global Verification**: Flexible file verification at multiple levels
+- **ELF Binary Static Analysis**: Static analysis of ELF binaries detecting network capabilities (socket/connect symbols), dangerous syscall patterns (mprotect/pkey_mprotect with PROT_EXEC), and dynamic library dependencies
+- **Shebang Interpreter Tracking**: The `record` command automatically detects and records the interpreter referenced in a script's shebang line (direct form `#!/bin/sh` and env form `#!/usr/bin/env python3`). At runtime, `runner` verifies the interpreter's hash and, for `env`-based scripts, confirms that the command resolves to the same path recorded at `record` time
 
 ### Command Execution
 - **Command Templates**: Reusable command definitions with parameter substitution for maintainability
@@ -109,12 +113,15 @@ cmd/                    # Command-line entry points
 └── verify/            # File verification utility
 
 internal/              # Core implementation
+├── ansicolor/         # Terminal color support (ANSI escape codes)
 ├── cmdcommon/         # Shared command utilities
-├── color/             # Terminal color support
 ├── common/            # Common utilities and filesystem abstraction
+├── dynlibanalysis/    # Dynamic library dependency analysis and verification for ELF binaries
+├── fileanalysis/      # Unified file analysis records (hash, syscall, symbol, shebang)
 ├── filevalidator/     # File integrity validation
-│   └── encoding/      # Hybrid hash filename encoding
+│   └── pathencoding/ # Hybrid hash filename encoding
 ├── groupmembership/   # User/group membership validation
+├── libccache/         # libc syscall wrapper symbol caching and matching
 ├── logging/           # Advanced logging with Slack integration
 ├── redaction/         # Automatic sensitive data filtering
 ├── runner/            # Command execution engine
@@ -122,18 +129,19 @@ internal/              # Core implementation
 │   ├── bootstrap/     # System initialization
 │   ├── cli/           # Command-line interface
 │   ├── config/        # Configuration management
-│   ├── debug/         # Debug functionality and utilities
+│   ├── debuginfo/     # Debug functionality and utilities
 │   ├── environment/   # Environment variable processing
-│   ├── errors/        # Centralized error handling
 │   ├── executor/      # Command execution logic
 │   ├── output/        # Output capture management
 │   ├── privilege/     # Privilege management
 │   ├── resource/      # Resource management (normal/dry-run)
 │   ├── risk/          # Risk-based command assessment
+│   ├── runerrors/     # Centralized error handling
 │   ├── runnertypes/   # Type definitions and interfaces
 │   ├── security/      # Security validation framework
 │   └── variable/      # Automatic variable generation and definitions
-├── safefileio/        # Secure file operations
+├── safefileio/        # Secure file operations with symlink protection
+├── shebang/           # Shebang line parsing and interpreter path resolution
 ├── terminal/          # Terminal capability detection
 └── verification/      # Centralized verification management
 ```
