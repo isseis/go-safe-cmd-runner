@@ -25,6 +25,7 @@
     - `t.Setenv(logging.SlackWebhookURLEnvVar, tt.oldURL)` の呼び出し
     - `"deprecated env var set - error"` テストケース
     - `"deprecated env var with new vars - error"` テストケース
+    - **【追加】旧環境変数（`GSCR_SLACK_WEBHOOK_URL`）が設定されていても無視されエラーにならない正常系テストケースの追加**
 
 - [x] **5. 日本語ドキュメントの更新**
   - ファイル: `docs/user/runner_command.ja.md`
