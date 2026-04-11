@@ -28,7 +28,7 @@ Added shebang interpreter tracking to the record/verify pipeline, enabling integ
 - Non-recursive shebang validation prevents infinite interpreter chains
 
 **New Package:**
-- `internal/runner/shebang`: Shebang line parsing and interpreter resolution
+- `internal/shebang`: Shebang line parsing and interpreter resolution
 
 #### ELF Dynamic Symbol Analysis for Network Detection
 
@@ -223,7 +223,7 @@ Strengthened the `common.ResolvedPath` type to carry symlink-resolution semantic
   - `NewResolvedPath(path)`: full symlink resolution — all components including the final element are resolved
   - `NewResolvedPathParentOnly(path)`: parent-only resolution — only the parent directory is resolved; the final component may not yet exist (formerly `NewResolvedPathForNew`)
 - `IsParentOnly()` method allows callers to query which mode was used
-- Write-boundary functions (`SafeWriteFile`, `AtomicMoveFile`) enforce `IsParentOnly()` at call time, returning an error if a full-resolve path is supplied
+- Write-boundary functions (`SafeWriteFile`, `SafeWriteFileOverwrite`, `SafeAtomicMoveFile`) enforce `IsParentOnly()` at call time, returning an error if a full-resolve path is supplied
 
 **Security fixes included in this work:**
 - Fixed TOCTOU race in `atomicMoveFileCore`: `fchmod` is now called via the open file handle instead of a path-based `chmod`, eliminating a race window
