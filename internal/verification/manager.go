@@ -95,6 +95,11 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 
 	// Verify file hash using filevalidator (with privilege fallback)
 	if err := m.verifyFileWithFallback(envFilePath, "env"); err != nil {
+		// In dry-run mode, the failure is already recorded and logged by
+		// verifyFileWithFallback; treat it as non-fatal here.
+		if m.isDryRun {
+			return nil
+		}
 		slog.Error("Environment file verification failed",
 			"env_file_path", envFilePath,
 			"error", err)
@@ -182,6 +187,12 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 	}
 
 	if len(result.FailedFiles) > 0 {
+		// In dry-run mode, failures are already recorded in the ResultCollector and
+		// logged by verifyFileWithFallback.  Return the accurate result without
+		// treating the failures as fatal.
+		if m.isDryRun {
+			return result, nil
+		}
 		slog.Error("CRITICAL: Global file verification failed - program will terminate",
 			"failed_files", result.FailedFiles,
 			"verified_files", result.VerifiedFiles,
@@ -244,6 +255,12 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	}
 
 	if len(result.FailedFiles) > 0 {
+		// In dry-run mode, failures are already recorded in the ResultCollector and
+		// logged by verifyFileWithHash.  Return the accurate result without treating
+		// the failures as fatal.
+		if m.isDryRun {
+			return result, nil
+		}
 		return nil, &Error{
 			Op:            "group",
 			Group:         groupName,
@@ -329,8 +346,11 @@ func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
 }
 
 // verifyFileWithFallback attempts file verification with normal privileges first,
-// then falls back to privileged verification if permission errors occur
-// In dry-run mode, it records the verification result without returning errors
+// then falls back to privileged verification if permission errors occur.
+// In dry-run mode it records the result in the ResultCollector and logs the
+// failure, but still returns the underlying error so callers can track
+// accurate per-file success/failure counts.  Callers are responsible for
+// suppressing fatality in dry-run mode.
 func (m *Manager) verifyFileWithFallback(filePath string, context string) error {
 	if m.fileValidator == nil {
 		// File validator is disabled - skip verification
@@ -340,26 +360,26 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 	// Perform verification
 	err := m.fileValidator.Verify(filePath)
 
-	// In dry-run mode, record the result and return nil (warn-only mode)
+	// In dry-run mode, record the result (warn-only mode).
+	// The error is still returned so callers can count failures accurately.
 	if m.isDryRun && m.resultCollector != nil {
 		if err == nil {
 			m.resultCollector.RecordSuccess()
 		} else {
-			// Record failure and log based on severity
 			m.resultCollector.RecordFailure(filePath, err, context)
 			logVerificationFailure(filePath, context, err, "File verification")
 		}
-		return nil
 	}
 
-	// In normal mode, return the error
 	return err
 }
 
 // verifyFileWithHash verifies the file and returns the computed content hash on success.
 // It mirrors verifyFileWithFallback but also returns the hash so callers can forward
 // it to downstream consumers (e.g. ELF analysis) to avoid re-reading the file.
-// Returns ("", nil) when the file validator is disabled or in dry-run mode.
+// Returns ("", nil) when the file validator is disabled.
+// In dry-run mode it records the result and logs failures, but still returns the
+// underlying error and hash so callers can track accurate counts.
 func (m *Manager) verifyFileWithHash(filePath string, context string) (string, error) {
 	if m.fileValidator == nil {
 		return "", nil
@@ -367,6 +387,8 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 
 	contentHash, err := m.fileValidator.VerifyWithHash(filePath)
 
+	// In dry-run mode, record the result (warn-only mode).
+	// The error and hash are still returned so callers can count failures accurately.
 	if m.isDryRun && m.resultCollector != nil {
 		if err == nil {
 			m.resultCollector.RecordSuccess()
@@ -374,7 +396,6 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 			m.resultCollector.RecordFailure(filePath, err, context)
 			logVerificationFailure(filePath, context, err, "File verification")
 		}
-		return "", nil
 	}
 
 	if err != nil {

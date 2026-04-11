@@ -984,9 +984,10 @@ func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 		err = os.WriteFile(testFile, []byte("test content"), 0o644)
 		require.NoError(t, err)
 
-		// In dry-run mode, verification failure should be logged but not returned as error
+		// In dry-run mode, verification failure is recorded and logged; the error is
+		// still returned so callers (VerifyGlobalFiles etc.) can count failures accurately.
 		err = manager.verifyFileWithFallback(testFile, "test-context")
-		assert.NoError(t, err, "dry-run mode should not return error on verification failure")
+		assert.Error(t, err, "dry-run mode should return the underlying error for accurate counting")
 
 		// Verify security_risk is in the log
 		logOutput := logBuffer.String()
@@ -1290,7 +1291,12 @@ func TestVerifyGlobalFiles_DryRun_MultipleFailures(t *testing.T) {
 	// In dry-run mode, verification should complete without error
 	result, err := manager.VerifyGlobalFiles(runtimeGlobal)
 	assert.NoError(t, err, "dry-run mode should not return errors")
-	assert.NotNil(t, result)
+	require.NotNil(t, result)
+
+	// Result must reflect the true per-file outcome (not falsely claim all verified).
+	assert.Equal(t, 2, result.TotalFiles, "result should report 2 total files")
+	assert.Equal(t, 0, result.VerifiedFiles, "result should report 0 verified files")
+	assert.Len(t, result.FailedFiles, 2, "result should list both failed files")
 
 	// Verify summary
 	summary := manager.GetVerificationSummary()
@@ -1317,7 +1323,11 @@ func TestVerifyGroupFiles_DryRun_HashFileNotFound(t *testing.T) {
 	// In dry-run mode, verification should complete without error (execution continues)
 	result, err := manager.VerifyGroupFiles(runtimeGroup)
 	assert.NoError(t, err, "dry-run mode should not return errors")
-	assert.NotNil(t, result)
+	require.NotNil(t, result)
+
+	// Result must reflect the true per-file outcome.
+	assert.Equal(t, 0, result.VerifiedFiles, "result should report 0 verified files")
+	assert.Len(t, result.FailedFiles, 1, "result should list the failed file")
 
 	// Verify that verification was attempted and recorded
 	summary := manager.GetVerificationSummary()
@@ -1388,7 +1398,11 @@ func TestVerifyGroupFiles_DryRun_HashMismatch(t *testing.T) {
 	// In dry-run mode, verification should complete without error
 	result, err := manager.VerifyGroupFiles(runtimeGroup)
 	assert.NoError(t, err, "dry-run mode should not return errors")
-	assert.NotNil(t, result)
+	require.NotNil(t, result)
+
+	// Result must reflect the true per-file outcome.
+	assert.Equal(t, 0, result.VerifiedFiles, "result should report 0 verified files")
+	assert.Len(t, result.FailedFiles, 1, "result should list the failed file")
 
 	// Verify that verification failure was recorded
 	summary := manager.GetVerificationSummary()
