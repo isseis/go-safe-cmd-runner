@@ -183,7 +183,7 @@ internal/runner/runner.go
 
 #### 実装内容
 
-- `errors.go` から `GlobalVerificationError.SkippedFiles int` および `Result.SkippedFiles []string` フィールドを削除（FR-3.7.1）
+- `errors.go` から `Error.SkippedFiles int` および `Result.SkippedFiles []string` フィールドを削除（FR-3.7.1）
 - `types.go` から `FileVerificationSummary.SkippedFiles int` フィールドを削除（FR-3.7.2）
 - `result_collector.go` から `skippedFiles int` フィールド・`RecordSkip()` メソッド・`GetSummary()` 内の `SkippedFiles` 設定を削除（FR-3.7.3）
 - `manager.go` から `Result` 初期化時の `SkippedFiles` 設定および `Error` 構築時の `SkippedFiles` 設定を削除し、Phase 3 後に残る参照を解消する（FR-3.7.1, FR-3.7.2）
@@ -425,7 +425,7 @@ flowchart LR
 
 ### Phase 4: SkippedFiles
 
-- [ ] `GlobalVerificationError.SkippedFiles int` フィールドを削除（errors.go）
+- [ ] `Error.SkippedFiles int` フィールドを削除（errors.go）
 - [ ] `Result.SkippedFiles []string` フィールドを削除（errors.go）
 - [ ] `FileVerificationSummary.SkippedFiles int` フィールドを削除（types.go）
 - [ ] `skippedFiles int` フィールドを削除（result_collector.go）
