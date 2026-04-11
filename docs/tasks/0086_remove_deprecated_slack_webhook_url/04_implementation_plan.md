@@ -26,15 +26,15 @@
     - `"deprecated env var set - error"` テストケース
     - `"deprecated env var with new vars - error"` テストケース
 
-- [ ] **5. 日本語ドキュメントの更新**
+- [x] **5. 日本語ドキュメントの更新**
   - ファイル: `docs/user/runner_command.ja.md`
   - 内容: 「`GSCR_SLACK_WEBHOOK_URL` からの移行」セクションを削除
 
-- [ ] **6. 英語ドキュメントの更新**
+- [x] **6. 英語ドキュメントの更新**
   - ファイル: `docs/user/runner_command.md`
   - 内容: 「Migration from `GSCR_SLACK_WEBHOOK_URL`」セクションを削除
 
-- [ ] **7. ビルド・テスト・Lint の確認**
+- [x] **7. ビルド・テスト・Lint の確認**
   - `make build` の成功を確認
   - `make test` の全テストパスを確認
   - `make lint` のエラーなし完了を確認
