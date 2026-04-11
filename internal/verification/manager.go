@@ -170,23 +170,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 		result.Duration = time.Since(start)
 	}()
 
-	// Update PathResolver with skip_standard_paths setting
-	if m.pathResolver != nil {
-		m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()
-	}
-
 	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {
-		// Check if file should be skipped
-		if m.shouldSkipVerification(filePath) {
-			if m.isDryRun && m.resultCollector != nil {
-				m.resultCollector.RecordSkip()
-			}
-			result.SkippedFiles = append(result.SkippedFiles, filePath)
-			slog.Info("Skipping global file verification for standard system path",
-				"file", filePath)
-			continue
-		}
-
 		// Verify file hash (try normal verification first, then with privileges if needed)
 		if err := m.verifyFileWithFallback(filePath, "global"); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
@@ -246,16 +230,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	groupName := runnertypes.ExtractGroupName(runtimeGroup)
 
 	for file := range allFiles {
-		if m.shouldSkipVerification(file) {
-			if m.isDryRun && m.resultCollector != nil {
-				m.resultCollector.RecordSkip()
-			}
-			result.SkippedFiles = append(result.SkippedFiles, file)
-			slog.Info("Skipping verification for standard system path",
-				"group", groupName,
-				"file", file)
-			continue
-		}
 
 		// Verify file hash and collect the computed hash for downstream consumers.
 		contentHash, err := m.verifyFileWithHash(file, "group:"+groupName)
@@ -287,19 +261,6 @@ func (m *Manager) VerifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup) (*Res
 	}
 
 	return result, nil
-}
-
-// shouldSkipVerification checks if a file should be skipped based on configuration
-func (m *Manager) shouldSkipVerification(path string) bool {
-	// Skip verification if file validator is disabled
-	if m.fileValidator == nil {
-		return true
-	}
-
-	if m.pathResolver == nil {
-		return false
-	}
-	return m.pathResolver.ShouldSkipVerification(path)
 }
 
 // collectVerificationFiles collects all files to verify for a group
@@ -533,7 +494,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if opts.customPathResolver != nil {
 		pathResolver = opts.customPathResolver
 	} else {
-		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator, false)
+		pathResolver = NewPathResolver(security.SecurePathEnv, securityValidator)
 	}
 
 	manager.security = securityValidator

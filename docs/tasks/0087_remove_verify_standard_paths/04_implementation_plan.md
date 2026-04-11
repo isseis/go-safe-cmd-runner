@@ -158,11 +158,11 @@ internal/verification/manager.go
 
 #### 完了条件
 
-- [ ] `PathResolver` に `skipStandardPaths`・`standardPaths` フィールドが存在しないこと
-- [ ] `ShouldSkipVerification()` メソッドが存在しないこと
-- [ ] `NewPathResolver` の引数が `skipStandardPaths` パラメータなしになっていること
-- [ ] `manager.go` にスキップロジックが存在しないこと
-- [ ] `make build` が成功すること
+- [x] `PathResolver` に `skipStandardPaths`・`standardPaths` フィールドが存在しないこと
+- [x] `ShouldSkipVerification()` メソッドが存在しないこと
+- [x] `NewPathResolver` の引数が `skipStandardPaths` パラメータなしになっていること
+- [x] `manager.go` にスキップロジックが存在しないこと
+- [x] `make build` が成功すること
 
 ### 2.4 Phase 4: SkippedFiles の完全削除
 
@@ -414,14 +414,14 @@ flowchart LR
 
 ### Phase 3: 検証層
 
-- [ ] `skipStandardPaths bool` フィールドを削除（path_resolver.go）
-- [ ] `standardPaths []string` フィールドを削除（path_resolver.go）
-- [ ] `NewPathResolver` の `skipStandardPaths bool` パラメータを削除（path_resolver.go）
-- [ ] コンストラクタ内の `skipStandardPaths`・`standardPaths` 初期化を削除（path_resolver.go）
-- [ ] `ShouldSkipVerification()` メソッドを削除（path_resolver.go）
-- [ ] `m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()` を削除（manager.go）
-- [ ] `VerifyGlobalFiles` 内のスキップ処理を削除（manager.go）
-- [ ] `VerifyGroupFiles` 内のスキップ処理を削除（manager.go）
+- [x] `skipStandardPaths bool` フィールドを削除（path_resolver.go）
+- [x] `standardPaths []string` フィールドを削除（path_resolver.go）
+- [x] `NewPathResolver` の `skipStandardPaths bool` パラメータを削除（path_resolver.go）
+- [x] コンストラクタ内の `skipStandardPaths`・`standardPaths` 初期化を削除（path_resolver.go）
+- [x] `ShouldSkipVerification()` メソッドを削除（path_resolver.go）
+- [x] `m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()` を削除（manager.go）
+- [x] `VerifyGlobalFiles` 内のスキップ処理を削除（manager.go）
+- [x] `VerifyGroupFiles` 内のスキップ処理を削除（manager.go）
 
 ### Phase 4: SkippedFiles
 

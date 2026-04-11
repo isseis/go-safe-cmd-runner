@@ -317,7 +317,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// We need to use the real filesystem for path resolution, not the mock
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -341,7 +341,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 	t.Run("fails to resolve commands not in secure PATH", func(t *testing.T) {
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -364,7 +364,7 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 
 		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil)
 		manager, err := NewManagerForTest(testHashDir,
 			WithFileValidatorDisabled(),
 			WithPathResolver(testPathResolver),
@@ -685,37 +685,6 @@ func TestResolvePath(t *testing.T) {
 	})
 }
 
-// TestShouldSkipVerification tests the shouldSkipVerification helper method
-func TestShouldSkipVerification(t *testing.T) {
-	t.Run("skip_verification_conditions", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
-
-		// Create manager for testing with hash directory validation skipped
-		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
-		require.NoError(t, err)
-
-		// Test path that should be skipped
-		shouldSkip := manager.shouldSkipVerification("/tmp/some_file")
-
-		// When file validator is disabled, should skip verification
-		assert.True(t, shouldSkip)
-	})
-
-	t.Run("do_not_skip_verification", func(t *testing.T) {
-		tmpDir := commontesting.SafeTempDir(t)
-
-		// Create manager with file validator enabled
-		manager, err := NewManagerForTest(tmpDir)
-		require.NoError(t, err)
-
-		// Test path that should not be skipped
-		shouldSkip := manager.shouldSkipVerification("/usr/bin/ls")
-
-		// When file validator is enabled, should not skip verification
-		assert.False(t, shouldSkip)
-	})
-}
-
 // TestCollectVerificationFiles tests the collectVerificationFiles helper method
 func TestCollectVerificationFiles(t *testing.T) {
 	t.Run("collect_files_from_config", func(t *testing.T) {
@@ -798,7 +767,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create manager with PATH resolver
-		pathResolver := NewPathResolver(binDir, nil, false)
+		pathResolver := NewPathResolver(binDir, nil)
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
@@ -865,7 +834,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
-		pathResolver := NewPathResolver("", nil, false)
+		pathResolver := NewPathResolver("", nil)
 		manager, err := NewManagerForTest(tmpDir, WithPathResolver(pathResolver))
 		require.NoError(t, err)
 
