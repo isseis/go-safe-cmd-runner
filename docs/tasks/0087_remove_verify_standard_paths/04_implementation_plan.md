@@ -150,6 +150,7 @@ internal/verification/manager.go
 internal/verification/errors.go
 internal/verification/types.go
 internal/verification/result_collector.go
+internal/verification/manager.go
 internal/runner/resource/formatter.go
 internal/logging/message_formatter.go
 cmd/runner/main.go
@@ -161,6 +162,7 @@ internal/runner/runner.go
 - `errors.go` から `GlobalVerificationError.SkippedFiles int` および `Result.SkippedFiles []string` フィールドを削除（FR-3.7.1）
 - `types.go` から `FileVerificationSummary.SkippedFiles int` フィールドを削除（FR-3.7.2）
 - `result_collector.go` から `skippedFiles int` フィールド・`RecordSkip()` メソッド・`GetSummary()` 内の `SkippedFiles` 設定を削除（FR-3.7.3）
+- `manager.go` から `Result` 初期化時の `SkippedFiles` 設定および `Error` 構築時の `SkippedFiles` 設定を削除し、Phase 3 後に残る参照を解消する（FR-3.7.1, FR-3.7.2）
 - `formatter.go` から `"  Skipped: %d\n"` の出力行を削除（FR-3.7.4）
 - `message_formatter.go` の `skipKeys` スライスリテラルから `"skipped_files"` エントリを削除（FR-3.7.5）
 - `cmd/runner/main.go` から `SkippedFiles` を参照するログ出力を削除（FR-3.10.1）
@@ -222,6 +224,7 @@ internal/verification/result_collector_test.go
 internal/verification/errors_test.go
 internal/verification/path_resolver_test.go
 internal/verification/manager_test.go
+internal/logging/message_formatter_test.go
 internal/runner/resource/formatter_test.go
 internal/runner/resource/security_test.go
 internal/runner/group_executor_test.go
@@ -243,16 +246,20 @@ cmd/runner/integration_workdir_test.go
 - `errors_test.go`: `SkippedFiles` を参照するテストケースを削除
 - `path_resolver_test.go`: `ShouldSkipVerification()` および `skipStandardPaths` を参照するテストケースを削除
 - `manager_test.go`: `TestShouldSkipVerification` を削除
+- `message_formatter_test.go`: `shouldSkipInteractiveAttr()` の期待値から `skipped_files` を削除
 - `formatter_test.go`: `Skipped:` 出力・`SkippedFiles` を参照するテストケースを削除
 - `security_test.go`: `VerifyStandardPaths: true` を参照するテストケースを削除
 - `group_executor_test.go`: `SkipBinaryAnalysis` を参照するテストケースを削除
-- `defaults_test.go`・`loader_defaults_test.go`: `VerifyStandardPaths`・`DefaultVerifyStandardPaths` を参照するテストケースを削除
-- `integration_security_test.go`: `verify_standard_paths = false`・`VerifyStandardPaths: false` を参照するテストケースを削除
+- `defaults_test.go`・`loader_defaults_test.go`: `VerifyStandardPaths`・`DefaultVerifyStandardPaths` を参照するテストケースを削除し、`verify_standard_paths` を含む設定が unknown field として失敗することを検証する
+- `command_analysis_test.go` または `integration_security_test.go`: 標準ディレクトリのコマンドでもハッシュ検証が常に実行されることを確認する回帰テストを追加または既存テストを更新する
+- `integration_security_test.go`: `verify_standard_paths = false`・`VerifyStandardPaths: false` を参照するテストケースを削除し、`verify_standard_paths` を含む設定が拒否されることを確認する
 - `integration_dryrun_sensitive_test.go`・`integration_workdir_test.go`: `DetermineVerifyStandardPaths` を参照するテストケースを削除
 
 #### 完了条件
 
 - [ ] `make test` がすべてパスすること
+- [ ] `verify_standard_paths` を含む TOML が unknown field として失敗するテストがパスすること
+- [ ] 標準ディレクトリのコマンドに対するハッシュ検証が常に実行される回帰テストがパスすること
 - [ ] `make lint` がエラーなく完了すること
 
 ### 2.7 Phase 7: ドキュメントとサンプルの更新
@@ -378,6 +385,8 @@ flowchart LR
 - [ ] `skippedFiles int` フィールドを削除（result_collector.go）
 - [ ] `RecordSkip()` メソッドを削除（result_collector.go）
 - [ ] `GetSummary()` 内の `SkippedFiles` 設定を削除（result_collector.go）
+- [ ] `Result` 初期化時の `SkippedFiles` 設定を削除（manager.go）
+- [ ] `Error` 構築時の `SkippedFiles` 設定を削除（manager.go）
 - [ ] `"  Skipped: %d\n"` 出力行を削除（formatter.go）
 - [ ] `skipKeys` の `"skipped_files"` エントリを削除（message_formatter.go）
 - [ ] `SkippedFiles` を参照するログ出力を削除（cmd/runner/main.go）
@@ -405,10 +414,13 @@ flowchart LR
 - [ ] `SkippedFiles` を参照するテストケースを削除（errors_test.go）
 - [ ] `ShouldSkipVerification()` および `skipStandardPaths` を参照するテストケースを削除（path_resolver_test.go）
 - [ ] `TestShouldSkipVerification` を削除（manager_test.go）
+- [ ] `shouldSkipInteractiveAttr()` の期待値から `skipped_files` を削除（message_formatter_test.go）
 - [ ] `Skipped:`・`SkippedFiles` を参照するテストケースを削除（formatter_test.go）
 - [ ] `VerifyStandardPaths: true` を参照するテストケースを削除（security_test.go）
 - [ ] `SkipBinaryAnalysis` を参照するテストケースを削除（group_executor_test.go）
 - [ ] `VerifyStandardPaths`・`DefaultVerifyStandardPaths` を参照するテストケースを削除（defaults_test.go・loader_defaults_test.go）
+- [ ] `verify_standard_paths` を含む設定が unknown field として失敗するテストを追加または更新（loader_defaults_test.go または integration_security_test.go）
+- [ ] 標準ディレクトリのコマンドでもハッシュ検証が実行される回帰テストを追加または更新（command_analysis_test.go または integration_security_test.go）
 - [ ] `verify_standard_paths`・`VerifyStandardPaths: false` を参照するテストケースを削除（integration_security_test.go）
 - [ ] `DetermineVerifyStandardPaths` を参照するテストケースを削除（integration_dryrun_sensitive_test.go・integration_workdir_test.go）
 
@@ -432,12 +444,12 @@ flowchart LR
 
 | 受け入れ基準 | 対応フェーズ |
 |------------|------------|
-| AC-1: TOML 設定フィールドの削除 | Phase 5 |
+| AC-1: TOML 設定フィールドの削除 | Phase 5, 6 |
 | AC-2: ランタイム型の削除 | Phase 5 |
 | AC-3: PathResolver の削除 | Phase 3 |
-| AC-4: ハッシュ検証が常に実行されること | Phase 1 |
+| AC-4: ハッシュ検証が常に実行されること | Phase 1, 6 |
 | AC-5: `SkipBinaryAnalysis` / `skipBinaryAnalysis` の削除 | Phase 1, 2, 5 |
-| AC-6: `SkippedFiles` の削除 | Phase 4 |
+| AC-6: `SkippedFiles` の削除 | Phase 3, 4 |
 | AC-7: ドキュメントの更新 | Phase 7 |
 | AC-8: ビルドとテストの成功 | Phase 6 完了時 |
 | AC-9: `IsNetworkOperation` のシグネチャ変更 | Phase 1, 2 |
