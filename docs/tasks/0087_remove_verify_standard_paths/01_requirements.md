@@ -6,7 +6,7 @@
 
 過去の実装では、標準システムディレクトリ（`/bin/`、`/sbin/`、`/usr/bin/`、`/usr/sbin/`）に存在するコマンドについて、TOML 設定の `verify_standard_paths = false` によりハッシュ検証をスキップできる機能が存在した。
 
-現在のセキュリティポリシーでは、**すべての実行ファイルにハッシュ検証が必要**となっており、`verify_standard_paths = false` の設定は許容されない。プロダクションコードでのすべての呼び出しは `skipStandardPaths=false`（検証を省略しない）であり、デフォルト値も `true`（検証する）に設定されている。
+現在のセキュリティポリシーでは、**すべての実行ファイルにハッシュ検証が必要**となっており、`verify_standard_paths = false` の設定は許容されない。`verify_standard_paths` のデフォルト値は `true`（検証する）である一方、現状コードでは設定値に応じて `runtimeGlobal.SkipStandardPaths()` の結果が `PathResolver.skipStandardPaths` に反映されるため、常に `skipStandardPaths=false` が渡されるわけではない。本タスクでは、そのような設定依存の分岐自体を削除し、ハッシュ検証が常に全ファイルに対して行われる状態に統一する。
 
 ### 1.2 目的
 
@@ -113,15 +113,6 @@
   - `isStandardDirectory()` 関数（`shouldPerformHashValidation` からのみ呼び出されており、削除後はデッドコードとなる）
 - 注意: `getDefaultRiskByDirectory()` は `DefaultRiskLevels` マップを直接使用しており `isStandardDirectory()` に依存していないため、リスク評価ロジックへの影響はない
 
-#### FR-3.6.5: `NetworkAnalyzer.IsNetworkOperation` の `skipBinaryAnalysis` パラメータ削除
-
-- ファイル: `internal/runner/security/network_analyzer.go`
-- 削除対象:
-  - `IsNetworkOperation` の `skipBinaryAnalysis bool` パラメータ
-  - `skipBinaryAnalysis` に関するコメント（55–60行目）
-  - 関数本体内の `!skipBinaryAnalysis` 条件（111行目）
-- 変更内容: 削除後はバイナリ解析を常に実行する（`skipBinaryAnalysis=false` と同等の動作に固定）
-
 #### FR-3.6.3: Dry-run マネージャの削除
 
 - ファイル: `internal/runner/resource/dryrun_manager.go`
@@ -131,6 +122,15 @@
 
 - ファイル: `internal/runner/resource/types.go`
 - 削除対象: `VerifyStandardPaths bool` フィールド（`AnalysisOptions` 相当の型）
+
+#### FR-3.6.5: `NetworkAnalyzer.IsNetworkOperation` の `skipBinaryAnalysis` パラメータ削除
+
+- ファイル: `internal/runner/security/network_analyzer.go`
+- 削除対象:
+  - `IsNetworkOperation` の `skipBinaryAnalysis bool` パラメータ
+  - `skipBinaryAnalysis` に関するコメント（55–60行目）
+  - 関数本体内の `!skipBinaryAnalysis` 条件（111行目）
+- 変更内容: 削除後はバイナリ解析を常に実行する（`skipBinaryAnalysis=false` と同等の動作に固定）
 
 ### 3.7 `SkippedFiles` の削除
 
@@ -239,12 +239,19 @@
 
 ### 4.1 動作の変更
 
-- `verify_standard_paths = false` を TOML に設定していたユーザーは、削除後すべての標準ディレクトリのコマンドもハッシュ検証対象となる（セキュリティ強化方向の変更）
-- `verify_standard_paths = true` を設定していたユーザーは動作変更なし（もともとデフォルトと同じ）
+以下は、`verify_standard_paths` キーを TOML から削除した後、または未指定だった場合の**実行時の検証動作**について述べる。
+
+- `verify_standard_paths = false` を TOML に設定していたユーザーは、キー削除後、すべての標準ディレクトリのコマンドもハッシュ検証対象となる（セキュリティ強化方向の変更）
+- `verify_standard_paths = true` を TOML に設定していたユーザーは、キー削除後の検証動作自体は変更なし（もともとデフォルトと同じく、標準ディレクトリのコマンドも検証対象）
 
 ### 4.2 TOML 互換性
 
-`verify_standard_paths` フィールドが TOML に記述されている場合は **パースエラー** とする（unknown field として明示的に失敗させる）。これは既知の破壊的変更として受け入れる。
+`verify_standard_paths` フィールドが TOML に記述されている場合は、値が `true` / `false` のいずれであっても **パースエラー** とする（unknown field として明示的に失敗させる）。これは既知の破壊的変更として受け入れる。
+
+したがって、既存ユーザーへの影響は以下の通りである。
+
+- `verify_standard_paths = true` を設定していたユーザーは、キーが残っている間は設定読み込みに失敗する。キー削除後の検証動作は従来と同じである。
+- `verify_standard_paths = false` を設定していたユーザーは、キーが残っている間は設定読み込みに失敗する。キー削除後は、従来スキップされていた標準ディレクトリのコマンドも検証対象となる。
 
 サンプルファイル（`sample/` 配下）からも `verify_standard_paths = false` 行を削除することで、既存のサンプルがパースエラーにならないようにする（FR-3.9.1）。
 
