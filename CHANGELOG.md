@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Shebang Interpreter Tracking
+
+Added shebang interpreter tracking to the record/verify pipeline, enabling integrity verification of script interpreters in addition to the scripts themselves.
+
+**Features:**
+- New `shebang` package parses shebang lines (`#!`) from script files
+- Shebang interpreter path is resolved and recorded alongside the command during `record` phase
+- `VerifyCommandShebangInterpreter` verifies the recorded interpreter at `verify` time
+- Detects symlink redirection attacks on shebang interpreters (schema v12)
+- Supports env-form shebangs (`#!/usr/bin/env python3`) by resolving via `PATH`
+- Rejects relative entries in `PATH` to prevent working-directory–dependent resolution
+- Integrated into the group executor verification pipeline
+
+**Security Considerations:**
+- Uses `safefileio.FileSystem` for symlink-safe file access during parsing
+- Symlink redirection of interpreter path is treated as a verification failure
+- Non-recursive shebang validation prevents infinite interpreter chains
+
+**New Package:**
+- `internal/runner/shebang`: Shebang line parsing and interpreter resolution
+
 #### ELF Dynamic Symbol Analysis for Network Detection
 
 Added ELF binary analysis capability to improve network operation detection for unknown commands.
@@ -191,6 +212,37 @@ repo = "/backup/repo"
 - Sample configuration: `sample/command_template_example.toml`
 
 ### Changed
+
+#### ResolvedPath Type Safety and safefileio API Migration
+
+Strengthened the `common.ResolvedPath` type to carry symlink-resolution semantics, and migrated the `safefileio` public API to require `ResolvedPath` arguments.
+
+**ResolvedPath struct conversion:**
+- `ResolvedPath` is now a struct (was a type alias) carrying a `resolveMode` field
+- Two constructors enforce distinct semantics at construction time:
+  - `NewResolvedPath(path)`: full symlink resolution — all components including the final element are resolved
+  - `NewResolvedPathParentOnly(path)`: parent-only resolution — only the parent directory is resolved; the final component may not yet exist (formerly `NewResolvedPathForNew`)
+- `IsParentOnly()` method allows callers to query which mode was used
+- Write-boundary functions (`SafeWriteFile`, `AtomicMoveFile`) enforce `IsParentOnly()` at call time, returning an error if a full-resolve path is supplied
+
+**Security fixes included in this work:**
+- Fixed TOCTOU race in `atomicMoveFileCore`: `fchmod` is now called via the open file handle instead of a path-based `chmod`, eliminating a race window
+- Removed `NewResolvedPathAbsOnly` to preserve the `ResolvedPath` type guarantee
+- Fixed security regression in `osFS.AtomicMoveFile` FileSystem bridge
+
+**safefileio public API migration:**
+- All public functions in `safefileio` now accept `common.ResolvedPath` instead of plain `string`
+- Callers in `fileanalysis`, `filevalidator`, and config loader updated accordingly
+- `pathencoding.Encode` had redundant `IsAbs`/`filepath.Clean` checks removed (guaranteed by `ResolvedPath`)
+
+**Rename:**
+- `NewResolvedPathForNew` → `NewResolvedPathParentOnly` (intent is clearer)
+
+#### Go Toolchain Upgrade
+
+- Upgraded Go to **1.26.2** (from 1.23.10)
+- Upgraded `golangci-lint` to **v2.11.4**
+- CI pinned to the Go version declared in `go.mod` via `go-version-file`
 
 #### WorkDir and OutputFile Type Changes
 
