@@ -566,6 +566,15 @@ slack_webhook_url = "https://hooks.slack.com/services/test"
 			wantErr: true,
 		},
 		{
+			name: "verify_standard_paths in global section should error (removed field)",
+			toml: `
+version = "1.0"
+[global]
+verify_standard_paths = false
+`,
+			wantErr: true,
+		},
+		{
 			name: "unknown_field in global section should error",
 			toml: `
 version = "1.0"

@@ -281,10 +281,10 @@ cmd/runner/integration_workdir_test.go
 
 #### 完了条件
 
-- [ ] `make test` がすべてパスすること
-- [ ] `verify_standard_paths` を含む TOML が unknown field として失敗するテストがパスすること
-- [ ] 標準ディレクトリのコマンドに対するハッシュ検証が常に実行される回帰テストがパスすること
-- [ ] `make lint` がエラーなく完了すること
+- [x] `make test` がすべてパスすること
+- [x] `verify_standard_paths` を含む TOML が unknown field として失敗するテストがパスすること
+- [x] 標準ディレクトリのコマンドに対するハッシュ検証が常に実行される回帰テストがパスすること
+- [x] `make lint` がエラーなく完了すること
 
 ### 2.7 Phase 7: ドキュメントとサンプルの更新
 

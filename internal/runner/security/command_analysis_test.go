@@ -2815,3 +2815,27 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 	// If BinaryAnalyzer were called it would have returned NoNetworkSymbols,
 	// so a true result proves only the cache path was taken.
 }
+
+// TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns is a regression
+// test ensuring that hash validation is no longer skipped for commands in standard
+// directories. Previously, when verify_standard_paths=false, SkipBinaryAnalysis was
+// set to true and shouldPerformHashValidation() returned false for standard-directory
+// commands. After removal of verify_standard_paths, hash validation must always run
+// whenever HashDir is non-empty, regardless of the command's directory.
+func TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+
+	// /usr/bin/ls is a real executable in a standard directory.
+	// Using an empty HashDir means no hash file exists, so validateFileHash must fail
+	// — proving that hash validation was attempted (not skipped).
+	risk, _, reason, err := AnalyzeCommandSecurity("/usr/bin/ls", []string{}, &AnalysisOptions{
+		HashDir: tmpDir,
+		Config:  DefaultConfig(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, runnertypes.RiskLevelCritical, risk,
+		"standard directory command should be Critical when hash file is missing")
+	assert.Contains(t, reason, "Hash validation failed",
+		"reason should mention hash validation failure")
+}
