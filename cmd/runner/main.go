@@ -293,6 +293,11 @@ func run(runID string) error {
 func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) error {
 	verifyFilePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
+		if !filepath.IsAbs(f) {
+			// Skip relative paths: they cannot be safely resolved for TOCTOU checks.
+			// Variables are already expanded so no %{ filter is needed here.
+			continue
+		}
 		if resolved, err := filepath.EvalSymlinks(f); err == nil {
 			verifyFilePaths = append(verifyFilePaths, resolved)
 		} else {
