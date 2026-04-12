@@ -195,5 +195,67 @@ For security-related questions or concerns, please contact the project maintaine
 
 ---
 
+## TOCTOU 攻撃に対する運用要件
+
+### 概要
+
+本システムは、実行前にコマンドバイナリおよびハッシュファイルの整合性を `ValidateDirectoryPermissions` /
+`validateCompletePath` を用いて検査します。ただし、検査対象のディレクトリやその親ディレクトリに
+第三者が書き込み可能な場合、**ハッシュ検証後・コマンド実行前**の間でファイルを差し替えられる
+TOCTOU (Time-of-Check to Time-of-Use) 攻撃が成立する可能性があります。
+
+以下の運用要件を満たすことで、このリスクを最小化してください。
+
+### 対象ディレクトリのパーミッション要件
+
+`verify_files`・`commands` で指定するバイナリ、および `--hash-dir` で指定するハッシュディレクトリは、
+下記のパーミッション条件を満たすディレクトリ配下に配置してください。条件は対象ディレクトリ自身だけでなく、
+**ルートまでのすべての親ディレクトリ**に適用されます。
+
+| 条件 | 詳細 |
+|------|------|
+| **other 書込不可** | `other` パーミッションに書込ビット (`o+w`) がないこと。ただし sticky bit が設定されているディレクトリ (`/tmp` 等) は例外 |
+| **group 書込制約** | `group` パーミッションに書込ビット (`g+w`) がある場合、ディレクトリの所有者が root であるか、実行ユーザが当該グループの唯一のメンバであること |
+| **owner 書込制約** | `owner` パーミッションに書込ビット (`u+w`) がある場合、ディレクトリの所有者が root または実行ユーザ自身であること |
+| **シンボリックリンク禁止** | 対象ディレクトリへのパスの途中にシンボリックリンクが含まれないこと |
+
+### ハッシュディレクトリの要件
+
+`--hash-dir` で指定するディレクトリ自体、およびそのルートまでのすべての親ディレクトリも
+上記のパーミッション要件を満たす必要があります。
+
+デフォルトのハッシュディレクトリは `/usr/local/etc/go-safe-cmd-runner/hashes` です。
+このパスの親ディレクトリ (`/usr/local/etc/go-safe-cmd-runner`, `/usr/local/etc`,
+`/usr/local`, `/usr`, `/`) もすべて上記要件を満たすよう管理してください。
+
+### 自動検査について
+
+`runner` コマンドは起動時に上記条件を自動的に検査します。
+
+- **違反が検出された場合**: `runner` はコマンド実行を開始せずエラー終了します。
+- **`record` / `verify` コマンドの場合**: 違反が検出されても警告ログを出力して処理を継続します。
+
+存在しないディレクトリはまだ攻撃対象にならないためスキップされます。ディレクトリ作成後は
+パーミッションを適切に設定してください。
+
+### 推奨設定
+
+```bash
+# ハッシュディレクトリの推奨パーミッション設定例
+sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 755 /usr/local/etc/go-safe-cmd-runner
+sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chown root:root /usr/local/etc/go-safe-cmd-runner
+sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+コマンドバイナリは `/usr/local/bin` や `/usr/bin` など、root 所有かつ other 書込なしのディレクトリに配置することを推奨します。
+
+### 関連
+
+- 中長期的な TOCTOU 対策として `fexecve` を使った実行時整合性検証 ([0090_toctou_fexecve](../tasks/0090_toctou_fexecve/00_analysis.md)) を検討中です。
+
+---
+
 **Last Updated**: 2025-12-14
 **Next Review**: 2026-01-14 (monthly review recommended)

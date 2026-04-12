@@ -513,8 +513,8 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [x] `make test` 全パス確認
 
 ### Phase 7 (M2 ドキュメント)
-- [ ] `docs/security/README.md` に運用要件セクション追記
-- [ ] 内容が AC-M2S-1 の要件を満たしていることをレビュー
+- [x] `docs/security/README.md` に運用要件セクション追記
+- [x] 内容が AC-M2S-1 の要件を満たしていることをレビュー
 - [ ] L1 は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 ### 全体
