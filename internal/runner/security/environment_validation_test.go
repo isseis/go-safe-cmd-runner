@@ -61,12 +61,30 @@ func TestValidator_ValidateEnvironmentValue(t *testing.T) {
 
 		for _, value := range safeValues {
 			err := validator.ValidateEnvironmentValue("TEST_VAR", value)
-			assert.NoError(t, err, "Value %s should be safe", value)
+			assert.NoError(t, err, "Value %q should be safe", value)
 		}
 	})
 
-	t.Run("unsafe values", func(t *testing.T) {
-		unsafeValues := []string{
+	// AC-M4-2, AC-M4-3: only \0, \n, \r are rejected
+	t.Run("unsafe values - control characters", func(t *testing.T) {
+		cases := []struct {
+			name  string
+			value string
+		}{
+			{"null byte", "value\x00suffix"},
+			{"newline", "value\nsuffix"},
+			{"carriage return", "value\rsuffix"},
+		}
+		for _, tc := range cases {
+			err := validator.ValidateEnvironmentValue("TEST_VAR", tc.value)
+			assert.Error(t, err, "Value with %s should be rejected", tc.name)
+			assert.ErrorIs(t, err, ErrUnsafeEnvironmentVar)
+		}
+	})
+
+	// AC-M4-3: shell meta-characters must pass (commands run directly, not via shell)
+	t.Run("shell meta-characters are allowed", func(t *testing.T) {
+		allowedValues := []string{
 			"value; rm -rf /",
 			"value | cat /etc/passwd",
 			"value && malicious_command",
@@ -76,13 +94,28 @@ func TestValidator_ValidateEnvironmentValue(t *testing.T) {
 			"value > /tmp/output",
 			"value < /etc/passwd",
 		}
-
-		for _, value := range unsafeValues {
+		for _, value := range allowedValues {
 			err := validator.ValidateEnvironmentValue("TEST_VAR", value)
-			assert.Error(t, err, "Value %s should be unsafe", value)
-			assert.ErrorIs(t, err, ErrUnsafeEnvironmentVar)
+			assert.NoError(t, err, "Shell meta-char value %q must pass (no shell involved)", value)
 		}
 	})
+}
+
+// TestValidator_ValidateEnvironmentValue_Regression tests values that must pass per AC-M4-4.
+func TestValidator_ValidateEnvironmentValue_Regression(t *testing.T) {
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
+
+	regressionValues := []string{
+		`{"key": "value"}`,
+		`{"a": 1, "b": [1,2]}`,
+		"https://example.com/path?q=1&r=2",
+		"echo hello; ls -la",
+	}
+	for _, value := range regressionValues {
+		err := validator.ValidateEnvironmentValue("TEST_VAR", value)
+		assert.NoError(t, err, "regression value %q must pass", value)
+	}
 }
 
 func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
@@ -103,7 +136,7 @@ func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
 		env := map[string]string{
 			"PATH":      "/usr/bin:/bin",
 			"HOME":      "/home/user",
-			"DANGEROUS": "value; rm -rf /",
+			"DANGEROUS": "value\x00null",
 		}
 		err := validator.ValidateAllEnvironmentVars(env)
 		assert.Error(t, err)
@@ -324,24 +357,19 @@ func TestIsVariableValueSafe(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe values", func(t *testing.T) {
+	t.Run("unsafe values - control characters only", func(t *testing.T) {
 		unsafeValues := []struct {
 			name  string
 			value string
 		}{
-			{"DANGEROUS", "value; rm -rf /"},
-			{"INJECTION", "value | cat /etc/passwd"},
-			{"COMMAND", "value && malicious_command"},
-			{"FALLBACK", "value || backup_command"},
-			{"SUBSHELL", "value $(malicious_command)"},
-			{"BACKTICK", "value `malicious_command`"},
-			{"REDIRECT_OUT", "value > /tmp/output"},
-			{"REDIRECT_IN", "value < /etc/passwd"},
+			{"NULL_BYTE", "value\x00suffix"},
+			{"NEWLINE", "value\nsuffix"},
+			{"CR", "value\rsuffix"},
 		}
 
 		for _, test := range unsafeValues {
 			err := IsVariableValueSafe(test.name, test.value)
-			assert.Error(t, err, "Value %s for variable %s should be unsafe", test.value, test.name)
+			assert.Error(t, err, "Value with control char for variable %s should be unsafe", test.name)
 			assert.ErrorIs(t, err, ErrUnsafeEnvironmentVar)
 		}
 	})

@@ -34,7 +34,6 @@ func TestNewValidator(t *testing.T) {
 		assert.Equal(t, config, validator.config)
 		assert.Len(t, validator.allowedCommandRegexps, 1)
 		assert.Len(t, validator.sensitiveEnvRegexps, 1)
-		assert.GreaterOrEqual(t, len(validator.dangerousEnvRegexps), 1)
 	})
 
 	t.Run("with nil config", func(t *testing.T) {
@@ -45,7 +44,6 @@ func TestNewValidator(t *testing.T) {
 		assert.NotNil(t, validator.config)
 		assert.NotEmpty(t, validator.allowedCommandRegexps)
 		assert.NotEmpty(t, validator.sensitiveEnvRegexps)
-		assert.NotEmpty(t, validator.dangerousEnvRegexps)
 	})
 
 	t.Run("with invalid command pattern", func(t *testing.T) {

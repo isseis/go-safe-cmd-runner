@@ -43,16 +43,20 @@ func (v *Validator) isSensitiveEnvVar(name string) bool {
 	return false
 }
 
-// ValidateEnvironmentValue validates that an environment variable value is safe
+// ValidateEnvironmentValue validates that an environment variable value is safe.
+// It rejects values that contain null bytes (\x00), newlines (\n), or carriage returns (\r),
+// which can be used to inject headers or corrupt structured output. Shell meta-characters
+// such as ; | $( > < are intentionally allowed because commands are executed directly
+// (not via a shell), so these characters carry no injection risk.
 func (v *Validator) ValidateEnvironmentValue(key, value string) error {
-	// Check for potential command injection patterns using compiled regexes
-	for _, re := range v.dangerousEnvRegexps {
-		if re.MatchString(value) {
-			return fmt.Errorf("%w: environment variable %s contains potentially dangerous pattern: %s",
-				ErrUnsafeEnvironmentVar, key, re.String())
-		}
+	if strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("%w: environment variable %s contains null byte",
+			ErrUnsafeEnvironmentVar, key)
 	}
-
+	if strings.ContainsAny(value, "\n\r") {
+		return fmt.Errorf("%w: environment variable %s contains newline character",
+			ErrUnsafeEnvironmentVar, key)
+	}
 	return nil
 }
 

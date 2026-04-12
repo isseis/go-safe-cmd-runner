@@ -202,9 +202,9 @@
 
 **作業内容**:
 
-- [ ] `validator.go` の `dangerousPatterns` 定義とコンパイル処理を削除 (AC-M4-1)
-- [ ] `Validator` 構造体から `dangerousEnvRegexps` フィールドを削除 (AC-M4-1)
-- [ ] `environment_validation.go` の `ValidateEnvironmentValue` を再実装 (AC-M4-2, AC-M4-3)
+- [x] `validator.go` の `dangerousPatterns` 定義とコンパイル処理を削除 (AC-M4-1)
+- [x] `Validator` 構造体から `dangerousEnvRegexps` フィールドを削除 (AC-M4-1)
+- [x] `environment_validation.go` の `ValidateEnvironmentValue` を再実装 (AC-M4-2, AC-M4-3)
   ```go
   func (v *Validator) ValidateEnvironmentValue(key, value string) error {
       if strings.ContainsRune(value, '\x00') {
@@ -218,13 +218,13 @@
       return nil
   }
   ```
-- [ ] 下記を確認するユニットテスト追加 (AC-M4-5):
+- [x] 下記を確認するユニットテスト追加 (AC-M4-5):
   - `\0` を含む値 → エラー
   - `\n` を含む値 → エラー
   - `\r` を含む値 → エラー
   - `;`, `|`, `$(`, `>`, `<` を含む値 → 通過
-- [ ] 回帰テスト: JSON 値 (`{"key": "value"}`) を含む変数が通過することを確認 (AC-M4-4)
-- [ ] `validator_test.go` の `dangerousEnvRegexps` を参照している箇所を更新
+- [x] 回帰テスト: JSON 値 (`{"key": "value"}`) を含む変数が通過することを確認 (AC-M4-4)
+- [x] `validator_test.go` の `dangerousEnvRegexps` を参照している箇所を更新
 
 **成功条件**:
 - `go test -tags test -v ./internal/runner/security/...` 全パス
@@ -491,10 +491,10 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [x] `make test` 全パス確認
 
 ### Phase 4 (M4)
-- [ ] `dangerousPatterns` および `dangerousEnvRegexps` を削除
-- [ ] `ValidateEnvironmentValue` を `\0`, `\n`, `\r` のみチェックに再実装
-- [ ] ユニットテスト追加 (拒否パス、通過パス、回帰)
-- [ ] `make test` 全パス確認
+- [x] `dangerousPatterns` および `dangerousEnvRegexps` を削除
+- [x] `ValidateEnvironmentValue` を `\0`, `\n`, `\r` のみチェックに再実装
+- [x] ユニットテスト追加 (拒否パス、通過パス、回帰)
+- [x] `make test` 全パス確認
 
 ### Phase 5 (L4)
 - [ ] `count` 負値チェック追加

