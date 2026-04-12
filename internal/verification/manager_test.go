@@ -861,8 +861,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 	})
 }
 
-// TestVerifyFileWithFallback tests the verifyFileWithFallback helper method
-func TestVerifyFileWithFallback(t *testing.T) {
+// TestVerifyFile tests the verifyFile helper method
+func TestVerifyFile(t *testing.T) {
 	t.Run("successful_verification", func(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
@@ -876,7 +876,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test verification (should succeed when file validator is disabled)
-		err = manager.verifyFileWithFallback(testFile, "test")
+		err = manager.verifyFile(testFile, "test")
 		assert.NoError(t, err)
 	})
 
@@ -887,7 +887,7 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with non-existent file (with file validator enabled to ensure error)
-		err = manager.verifyFileWithFallback("/non/existent/file.txt", "test")
+		err = manager.verifyFile("/non/existent/file.txt", "test")
 		assert.Error(t, err)
 	})
 
@@ -904,14 +904,14 @@ func TestVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test verification (should fail because no hash file exists)
-		err = manager.verifyFileWithFallback(testFile, "test")
+		err = manager.verifyFile(testFile, "test")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "hash")
 	})
 }
 
-// TestReadAndVerifyFileWithFallback tests the readAndVerifyFileWithFallback helper method
-func TestReadAndVerifyFileWithFallback(t *testing.T) {
+// TestReadAndVerifyFileWithReadFallback tests the readAndVerifyFileWithReadFallback helper method
+func TestReadAndVerifyFileWithReadFallback(t *testing.T) {
 	t.Run("successful_read_and_verification", func(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
@@ -925,7 +925,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test reading and verification
-		content, err := manager.readAndVerifyFileWithFallback(testFile, "test")
+		content, err := manager.readAndVerifyFileWithReadFallback(testFile, "test")
 		assert.NoError(t, err)
 		assert.Equal(t, testContent, string(content))
 	})
@@ -937,7 +937,7 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with non-existent file
-		content, err := manager.readAndVerifyFileWithFallback("/non/existent/config.toml", "test")
+		content, err := manager.readAndVerifyFileWithReadFallback("/non/existent/config.toml", "test")
 		assert.Error(t, err)
 		assert.Nil(t, content)
 	})
@@ -955,14 +955,14 @@ func TestReadAndVerifyFileWithFallback(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test reading and verification (should fail because no hash file exists)
-		content, err := manager.readAndVerifyFileWithFallback(testFile, "test")
+		content, err := manager.readAndVerifyFileWithReadFallback(testFile, "test")
 		assert.Error(t, err)
 		assert.Nil(t, content)
 	})
 }
 
-// TestVerifyFileWithFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
-func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
+// TestVerifyFile_DryRunLogging tests that security_risk is included in logs during dry-run mode
+func TestVerifyFile_DryRunLogging(t *testing.T) {
 	t.Run("logs_security_risk_on_verification_failure", func(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
@@ -986,7 +986,7 @@ func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 
 		// In dry-run mode, verification failure is recorded and logged; the error is
 		// still returned so callers (VerifyGlobalFiles etc.) can count failures accurately.
-		err = manager.verifyFileWithFallback(testFile, "test-context")
+		err = manager.verifyFile(testFile, "test-context")
 		assert.Error(t, err, "dry-run mode should return the underlying error for accurate counting")
 
 		// Verify security_risk is in the log
@@ -996,8 +996,8 @@ func TestVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 	})
 }
 
-// TestReadAndVerifyFileWithFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
-func TestReadAndVerifyFileWithFallback_DryRunLogging(t *testing.T) {
+// TestReadAndVerifyFileWithReadFallback_DryRunLogging tests that security_risk is included in logs during dry-run mode
+func TestReadAndVerifyFileWithReadFallback_DryRunLogging(t *testing.T) {
 	t.Run("logs_security_risk_on_verification_failure", func(t *testing.T) {
 		tmpDir := commontesting.SafeTempDir(t)
 
@@ -1020,7 +1020,7 @@ func TestReadAndVerifyFileWithFallback_DryRunLogging(t *testing.T) {
 		require.NoError(t, err)
 
 		// In dry-run mode, verification failure should be logged but file should still be read
-		content, err := manager.readAndVerifyFileWithFallback(testFile, "test-context")
+		content, err := manager.readAndVerifyFileWithReadFallback(testFile, "test-context")
 		assert.NoError(t, err, "dry-run mode should not return error on verification failure")
 		assert.Equal(t, "test content", string(content), "file content should be returned")
 

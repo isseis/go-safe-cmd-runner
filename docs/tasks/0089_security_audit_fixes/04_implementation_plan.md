@@ -35,16 +35,16 @@
 
 **作業内容**:
 
-- [ ] `verifyFileWithFallback` → `verifyFile` にリネーム (AC-I1-3)
+- [x] `verifyFileWithFallback` → `verifyFile` にリネーム (AC-I1-3)
   - 関数定義、すべての呼び出し箇所 (manager.go 内: 97行/179行)
   - 関連コメント (348行のコメント) を整合する名前に更新
-- [ ] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム (AC-I1-2)
+- [x] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム (AC-I1-2)
   - 関数定義、呼び出し箇所 (manager.go 63行)
   - コメントには以下の**2種類の `os.ReadFile` フォールバック**を明記する:
     1. `m.fileValidator == nil` (ファイル検証が無効化されている場合): 検証をスキップし、`os.ReadFile` で直接読み込む ([manager.go:411-415](../../../internal/verification/manager.go#L411-L415))
     2. dry-run モードかつ検証失敗時: 失敗を `resultCollector` に記録した上で、`os.ReadFile` でファイル読み込みを再試行する ([manager.go:421-435](../../../internal/verification/manager.go#L421-L435))
   - `WithReadFallback` という名前は上記の「ファイル読み込み処理にフォールバックする」動作全般を指すことを明記する
-- [ ] `internal/verification/manager_test.go` のテスト関数名を更新 (AC-I1-4, AC-I1-5)
+- [x] `internal/verification/manager_test.go` のテスト関数名を更新 (AC-I1-4, AC-I1-5)
   - `TestVerifyFileWithFallback` → `TestVerifyFile`
   - `TestReadAndVerifyFileWithFallback` → `TestReadAndVerifyFileWithReadFallback`
 
@@ -468,11 +468,11 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 ## 6. 実装チェックリスト
 
 ### Phase 1 (I1)
-- [ ] `verifyFileWithFallback` → `verifyFile` にリネーム
-- [ ] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム
-- [ ] コメント・ログ文言の更新
-- [ ] テスト関数名の更新
-- [ ] `make test` 全パス確認
+- [x] `verifyFileWithFallback` → `verifyFile` にリネーム
+- [x] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム
+- [x] コメント・ログ文言の更新
+- [x] テスト関数名の更新
+- [x] `make test` 全パス確認
 
 ### Phase 2 (M1)
 - [ ] `UnixPrivilegeManager` に `syscallSeteuid` / `syscallSetegid` injectable フィールド追加
