@@ -91,7 +91,27 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	if secValidator, secErr := security.NewValidatorForTOCTOU(); secErr != nil {
 		slog.Warn("Failed to create security validator for TOCTOU check, skipping", slog.Any("error", secErr))
 	} else {
-		toctouDirs := security.CollectTOCTOUCheckDirs(cfg.files, nil, cfg.hashDir)
+		absFiles := make([]string, 0, len(cfg.files))
+		for _, f := range cfg.files {
+			abs, err := filepath.Abs(f)
+			if err != nil {
+				abs = f
+			}
+			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+				absFiles = append(absFiles, resolved)
+			} else {
+				absFiles = append(absFiles, abs)
+			}
+		}
+		absHashDir := cfg.hashDir
+		if abs, err := filepath.Abs(cfg.hashDir); err == nil {
+			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+				absHashDir = resolved
+			} else {
+				absHashDir = abs
+			}
+		}
+		toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
 		security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	}
 
