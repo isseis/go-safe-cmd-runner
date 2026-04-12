@@ -246,9 +246,9 @@ func TestAnalyze_NonELF(t *testing.T) {
 // TestAnalyze_StaticELF verifies that Analyze returns nil for a static ELF
 // (no DT_NEEDED entries).
 func TestAnalyze_StaticELF(t *testing.T) {
-	staticELF := "../../runner/security/elfanalyzer/testdata/static.elf"
-	if _, err := os.Stat(staticELF); os.IsNotExist(err) {
-		t.Skip("static.elf testdata not found")
+	staticELF := "../runner/security/elfanalyzer/testdata/static.elf"
+	if _, err := os.Stat(staticELF); err != nil {
+		t.Skipf("static.elf testdata not accessible: %v", err)
 	}
 
 	a := newTestAnalyzer(t)

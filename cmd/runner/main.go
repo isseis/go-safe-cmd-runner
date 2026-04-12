@@ -278,19 +278,23 @@ func run(runID string) error {
 	}
 
 	// Run TOCTOU permission check on directories referenced by the configuration.
-	if err := runTOCTOUCheck(cfg, runtimeGlobal, runID); err != nil {
+	// The returned validator is reused for per-group checks at execution time so that
+	// group-level paths with %{GROUP_VAR} references are also checked.
+	secValidator, err := runTOCTOUCheck(cfg, runtimeGlobal, runID)
+	if err != nil {
 		return err
 	}
 
 	// Initialize and execute runner with all verified data
-	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID)
+	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator)
 }
 
 // runTOCTOUCheck collects directory paths referenced by the configuration and runs a
-// TOCTOU permission check. Returns a PreExecutionError if any violation is detected.
+// TOCTOU permission check. Returns the validator used (for reuse in per-group checks)
+// and a PreExecutionError if any violation is detected.
 // Paths containing variable references or relative paths are skipped because they
 // cannot be safely resolved before per-group expansion.
-func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) error {
+func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (*security.Validator, error) {
 	verifyFilePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
 		if !filepath.IsAbs(f) {
@@ -334,23 +338,23 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	secValidator, secErr := security.NewValidatorForTOCTOU()
 	if secErr != nil {
 		slog.Warn("Failed to create security validator for TOCTOU check, skipping", slog.Any("error", secErr))
-		return nil
+		return nil, nil
 	}
 	toctouDirs := security.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, cmdcommon.DefaultHashDirectory)
 	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	if len(violations) > 0 {
-		return &logging.PreExecutionError{
+		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("TOCTOU permission check failed: %d directory violation(s) detected; review directory permissions", len(violations)),
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
 	}
-	return nil
+	return secValidator, nil
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator *security.Validator) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
@@ -362,6 +366,9 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runner.WithRunID(runID),
 		runner.WithRuntimeGlobal(runtimeGlobal),
 		runner.WithKeepTempDirs(keepTempDirs),
+	}
+	if secValidator != nil {
+		runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))
 	}
 
 	// Parse dry-run options once for the entire function

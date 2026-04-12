@@ -3,6 +3,7 @@ package runner
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // GroupExecutorOption configures a DefaultGroupExecutor during construction.
@@ -15,6 +16,7 @@ type groupExecutorOptions struct {
 	keepTempDirs     bool
 	securityLogger   *logging.SecurityLogger
 	currentUser      string
+	toctouValidator  *security.Validator
 }
 
 // defaultGroupExecutorOptions returns a new groupExecutorOptions with default values.
@@ -25,6 +27,7 @@ func defaultGroupExecutorOptions() *groupExecutorOptions {
 		keepTempDirs:     false,
 		securityLogger:   nil,
 		currentUser:      "unknown",
+		toctouValidator:  nil,
 	}
 }
 
@@ -57,5 +60,15 @@ func WithCurrentUser(username string) GroupExecutorOption {
 		if username != "" {
 			opts.currentUser = username
 		}
+	}
+}
+
+// WithGroupTOCTOUValidator enables per-group TOCTOU directory permission checks.
+// When set, ExecuteGroup runs a TOCTOU check after variable expansion so that
+// group-level paths containing %{GROUP_VAR} references are checked with their
+// resolved values. Violations cause ExecuteGroup to return an error.
+func WithGroupTOCTOUValidator(v *security.Validator) GroupExecutorOption {
+	return func(opts *groupExecutorOptions) {
+		opts.toctouValidator = v
 	}
 }

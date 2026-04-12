@@ -20,6 +20,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -3422,4 +3423,73 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 
 	mockVM.AssertCalled(t, "VerifyCommandShebangInterpreter", scriptPath, mock.Anything)
 	mockVM.AssertExpectations(t)
+}
+
+// TestRunGroupTOCTOUCheck_NoValidator verifies that runGroupTOCTOUCheck is a
+// no-op when no toctouValidator is configured.
+func TestRunGroupTOCTOUCheck_NoValidator(t *testing.T) {
+	ge := &DefaultGroupExecutor{toctouValidator: nil}
+	rg := &runnertypes.RuntimeGroup{
+		Spec:                &runnertypes.GroupSpec{Name: "test"},
+		ExpandedVerifyFiles: []string{"/nonexistent/file"},
+	}
+	err := ge.runGroupTOCTOUCheck(rg)
+	require.NoError(t, err, "runGroupTOCTOUCheck must be a no-op when toctouValidator is nil")
+}
+
+// TestRunGroupTOCTOUCheck_SecureDir verifies that runGroupTOCTOUCheck returns
+// no error when all referenced directories satisfy the permission policy.
+func TestRunGroupTOCTOUCheck_SecureDir(t *testing.T) {
+	v, err := security.NewValidatorForTOCTOU()
+	require.NoError(t, err)
+
+	// Use a temp dir whose permissions satisfy the policy (0755).
+	tmpDir := commontesting.SafeTempDir(t)
+	require.NoError(t, os.Chmod(tmpDir, 0o755))
+
+	ge := &DefaultGroupExecutor{toctouValidator: v}
+	rg := &runnertypes.RuntimeGroup{
+		Spec:                &runnertypes.GroupSpec{Name: "test"},
+		ExpandedVerifyFiles: []string{tmpDir + "/file.txt"},
+	}
+	err = ge.runGroupTOCTOUCheck(rg)
+	require.NoError(t, err)
+}
+
+// TestRunGroupTOCTOUCheck_ViolationReturnsError verifies that runGroupTOCTOUCheck
+// returns an error when a referenced directory violates the permission policy.
+func TestRunGroupTOCTOUCheck_ViolationReturnsError(t *testing.T) {
+	v, err := security.NewValidatorForTOCTOU()
+	require.NoError(t, err)
+
+	// Make a world-writable directory to trigger a violation.
+	tmpDir := commontesting.SafeTempDir(t)
+	require.NoError(t, os.Chmod(tmpDir, 0o777))
+	t.Cleanup(func() { _ = os.Chmod(tmpDir, 0o755) })
+
+	ge := &DefaultGroupExecutor{toctouValidator: v}
+	rg := &runnertypes.RuntimeGroup{
+		Spec:                &runnertypes.GroupSpec{Name: "test"},
+		ExpandedVerifyFiles: []string{tmpDir + "/file.txt"},
+	}
+	err = ge.runGroupTOCTOUCheck(rg)
+	require.Error(t, err, "expected error when verify_files parent dir is world-writable")
+	assert.ErrorIs(t, err, ErrTOCTOUViolation)
+}
+
+// TestRunGroupTOCTOUCheck_RelativePathsSkipped verifies that relative paths in
+// ExpandedVerifyFiles are not passed to the TOCTOU check (they would produce a
+// meaningless or erroneous result).
+func TestRunGroupTOCTOUCheck_RelativePathsSkipped(t *testing.T) {
+	v, err := security.NewValidatorForTOCTOU()
+	require.NoError(t, err)
+
+	ge := &DefaultGroupExecutor{toctouValidator: v}
+	rg := &runnertypes.RuntimeGroup{
+		Spec:                &runnertypes.GroupSpec{Name: "test"},
+		ExpandedVerifyFiles: []string{"relative/path/file.txt", "./another.txt"},
+	}
+	// Relative paths only → CollectTOCTOUCheckDirs collects nothing → no violations.
+	err = ge.runGroupTOCTOUCheck(rg)
+	require.NoError(t, err)
 }
