@@ -36,18 +36,18 @@ func TestCollectTOCTOUCheckDirs(t *testing.T) {
 			wantDirs:     []string{},
 		},
 		{
-			name:         "verify_files parent directories are included",
+			name:         "verify_files parent directories and all ancestors are included",
 			verifyFiles:  []string{"/usr/bin/python3", "/etc/hosts"},
 			commandPaths: []string{},
 			hashDir:      "",
-			wantDirs:     []string{"/etc", "/usr/bin"},
+			wantDirs:     []string{"/", "/etc", "/usr", "/usr/bin"},
 		},
 		{
-			name:         "command paths parent directories are included",
+			name:         "command paths parent directories and all ancestors are included",
 			verifyFiles:  []string{},
 			commandPaths: []string{"/usr/bin/echo", "/usr/local/bin/tool"},
 			hashDir:      "",
-			wantDirs:     []string{"/usr/bin", "/usr/local/bin"},
+			wantDirs:     []string{"/", "/usr", "/usr/bin", "/usr/local", "/usr/local/bin"},
 		},
 		{
 			name:         "hashDir itself is included with ancestors",
@@ -61,14 +61,14 @@ func TestCollectTOCTOUCheckDirs(t *testing.T) {
 			verifyFiles:  []string{"/usr/bin/python3", "/usr/bin/python2"},
 			commandPaths: []string{"/usr/bin/echo"},
 			hashDir:      "",
-			wantDirs:     []string{"/usr/bin"},
+			wantDirs:     []string{"/", "/usr", "/usr/bin"},
 		},
 		{
 			name:         "combined sources without duplicates",
 			verifyFiles:  []string{"/usr/bin/python3"},
 			commandPaths: []string{"/usr/bin/echo"},
 			hashDir:      "/var/hashes",
-			wantDirs:     []string{"/", "/usr/bin", "/var", "/var/hashes"},
+			wantDirs:     []string{"/", "/usr", "/usr/bin", "/var", "/var/hashes"},
 		},
 	}
 

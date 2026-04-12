@@ -25,10 +25,13 @@ type TOCTOUViolation struct {
 
 // CollectTOCTOUCheckDirs collects directories to check for TOCTOU prevention.
 // It returns deduplicated list of directories derived from:
-//   - Parent directories of each path in verifyFilePaths
-//   - Parent directories of each path in commandPaths
-//   - hashDir itself
-//   - All ancestor directories of hashDir up to root
+//   - Parent directory and all ancestor directories up to root for each path in verifyFilePaths
+//   - Parent directory and all ancestor directories up to root for each path in commandPaths
+//   - hashDir itself and all ancestor directories up to root
+//
+// All three sources receive full ancestor traversal because an attacker with write
+// access to any ancestor directory can rename an intermediate directory and bypass
+// the protection on the immediate parent.
 func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, hashDir string) []string {
 	seen := make(map[string]struct{})
 	var result []string
@@ -44,19 +47,12 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 		}
 	}
 
-	// Parent directories of verify_files entries
-	for _, p := range verifyFilePaths {
-		add(filepath.Dir(p))
-	}
-
-	// Parent directories of command paths
-	for _, p := range commandPaths {
-		add(filepath.Dir(p))
-	}
-
-	// hashDir itself and all ancestor directories up to root
-	if hashDir != "" {
-		cur := filepath.Clean(hashDir)
+	// Traverse dir and all ancestor directories up to root.
+	addWithAncestors := func(dir string) {
+		if dir == "" {
+			return
+		}
+		cur := filepath.Clean(dir)
 		for {
 			add(cur)
 			parent := filepath.Dir(cur)
@@ -67,6 +63,19 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 			cur = parent
 		}
 	}
+
+	// Parent directory and all ancestors of verify_files entries
+	for _, p := range verifyFilePaths {
+		addWithAncestors(filepath.Dir(p))
+	}
+
+	// Parent directory and all ancestors of command paths
+	for _, p := range commandPaths {
+		addWithAncestors(filepath.Dir(p))
+	}
+
+	// hashDir itself and all ancestor directories up to root
+	addWithAncestors(hashDir)
 
 	return result
 }
