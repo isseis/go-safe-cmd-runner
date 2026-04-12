@@ -346,7 +346,7 @@
 **パフォーマンス考慮事項**:
 - ハッシュディレクトリからルートまでの親ディレクトリ列挙は O(depth) だが、
   通常の Linux/macOS では深さが 20 程度以下のため許容範囲。
-  `filepath.Dir` のループで実装し、`filepath.VolumeName` でルート判定する。
+  `filepath.Dir` のループで実装し、`parent := filepath.Dir(cur); if parent == cur { break }` をループ終了条件とする。Unix では `filepath.VolumeName` は常に空文字列を返すためルート判定には使用しないこと (Windows の drive letter / UNC パス対応が必要な場合のみ検討)。
 - 重複除去に `map[string]struct{}` を使って O(n) で処理する。
 
 **シンボリックリンク考慮事項**:
