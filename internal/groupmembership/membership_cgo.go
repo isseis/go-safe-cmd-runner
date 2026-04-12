@@ -89,8 +89,34 @@ void free_string_array(char** arr, int count) {
 import "C"
 
 import (
+	"errors"
+	"fmt"
 	"unsafe"
 )
+
+// maxGroupMembers is the maximum number of group members allowed.
+// This limit prevents unsafe memory access from malformed C return values.
+const maxGroupMembers = 65536
+
+// ErrInvalidGroupMemberCount is returned when a negative group member count is
+// received from C, which indicates a malformed or corrupted return value.
+var ErrInvalidGroupMemberCount = errors.New("invalid group member count from C")
+
+// ErrGroupMemberCountExceedsMax is returned when the group member count from C
+// exceeds the allowed maximum, preventing unsafe memory access.
+var ErrGroupMemberCountExceedsMax = errors.New("group member count exceeds maximum")
+
+// validateGroupMemberCount validates the group member count received from C.
+// It returns an error if count is negative or exceeds the maximum allowed.
+func validateGroupMemberCount(count int) error {
+	if count < 0 {
+		return fmt.Errorf("%w: %d", ErrInvalidGroupMemberCount, count)
+	}
+	if count > maxGroupMembers {
+		return fmt.Errorf("%w: %d exceeds %d", ErrGroupMemberCountExceedsMax, count, maxGroupMembers)
+	}
+	return nil
+}
 
 // getGroupMembers returns all members of a group given its GID
 func getGroupMembers(gid uint32) ([]string, error) {
@@ -101,9 +127,12 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	}
 	defer C.free_string_array(members, count)
 
-	// Create a slice that directly refers to the C array's memory
-	// This is more idiomatic and safer than manual pointer arithmetic
-	cArray := (*[1 << 30]*C.char)(unsafe.Pointer(members))[:count:count]
+	if err := validateGroupMemberCount(int(count)); err != nil {
+		return nil, err
+	}
+
+	// Use unsafe.Slice which is safer than the older unsafe pointer cast pattern.
+	cArray := unsafe.Slice(members, int(count))
 
 	result := make([]string, int(count))
 	for i, cStr := range cArray {

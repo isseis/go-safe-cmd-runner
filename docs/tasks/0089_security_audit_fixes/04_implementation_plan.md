@@ -242,25 +242,25 @@
 
 **作業内容**:
 
-- [ ] `count` が負値の場合はエラーを返す (AC-L4-1)
+- [x] `count` が負値の場合はエラーを返す (AC-L4-1)
   ```go
   if count < 0 {
       return nil, fmt.Errorf("invalid group member count from C: %d", count)
   }
   ```
-- [ ] `count` が 65536 超の場合はエラーを返す (AC-L4-2)
+- [x] `count` が 65536 超の場合はエラーを返す (AC-L4-2)
   ```go
   const maxGroupMembers = 65536
   if int(count) > maxGroupMembers {
       return nil, fmt.Errorf("group member count %d exceeds maximum %d", count, maxGroupMembers)
   }
   ```
-- [ ] `(*[1 << 30]*C.char)(unsafe.Pointer(members))[:count:count]` を `unsafe.Slice` に置き換え (AC-L4-3)
+- [x] `(*[1 << 30]*C.char)(unsafe.Pointer(members))[:count:count]` を `unsafe.Slice` に置き換え (AC-L4-3)
   ```go
   cArray := unsafe.Slice(members, int(count))
   ```
   - `count` は `C.int` 型のため、境界チェック後に `int` へ明示変換して `unsafe.Slice` に渡す
-- [ ] 境界チェックのユニットテスト追加 (AC-L4-4):
+- [x] 境界チェックのユニットテスト追加 (AC-L4-4):
   - 境界チェックロジックを Go 内部ヘルパー関数 `validateGroupMemberCount(count C.int) error` として抽出し、テストはこのヘルパーを直接呼び出す形で実装する
     (CGO 関数 `C.get_group_members` はモックできないため、境界チェック部分のみをヘルパーに分離してテスト可能にする)
   - 負値 `count` でエラーが返ること
@@ -497,11 +497,11 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [x] `make test` 全パス確認
 
 ### Phase 5 (L4)
-- [ ] `count` 負値チェック追加
-- [ ] `count` 上限チェック追加
-- [ ] `unsafe.Slice` への置き換え
-- [ ] ユニットテスト追加
-- [ ] `make test` 全パス確認
+- [x] `count` 負値チェック追加
+- [x] `count` 上限チェック追加
+- [x] `unsafe.Slice` への置き換え
+- [x] ユニットテスト追加
+- [x] `make test` 全パス確認
 
 ### Phase 6 (M2 短期)
 - [ ] `CollectTOCTOUCheckDirs` 実装
