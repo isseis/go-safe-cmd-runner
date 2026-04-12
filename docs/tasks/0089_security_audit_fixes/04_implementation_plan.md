@@ -389,12 +389,12 @@
 
 **作業内容**:
 
-- [ ] 既存の `docs/security/README.md` を確認し、以下の内容を追記 (AC-M2S-1):
+- [x] 既存の `docs/security/README.md` を確認し、以下の内容を追記 (AC-M2S-1):
   - `verify_files` および `commands` で指定するバイナリの配置ディレクトリ要件
   - 対象ディレクトリおよびルートまでの全親ディレクトリのパーミッション要件
   - `--hash-dir` のパーミッション要件
   - 要件未充足時の TOCTOU リスクに関する説明
-- [ ] L1 (include パス制約) は対応なし (Close) のため CHANGELOG.md への記載は不要
+- [-] L1 (include パス制約) は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 **推定工数**: 2時間
 
@@ -515,7 +515,7 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 ### Phase 7 (M2 ドキュメント)
 - [x] `docs/security/README.md` に運用要件セクション追記
 - [x] 内容が AC-M2S-1 の要件を満たしていることをレビュー
-- [ ] L1 は対応なし (Close) のため CHANGELOG.md への記載は不要
+- [-] L1 は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 ### 全体
 - [x] `make lint` 全パス
