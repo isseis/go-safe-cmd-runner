@@ -232,7 +232,7 @@
 
 ---
 
-### Phase 5: L1 — template include パスの basedir 制約
+### Phase 5: L1 — template include パスの絶対パス指定禁止
 
 **修正ファイル**:
 - `internal/runner/config/path_resolver.go`
@@ -240,32 +240,25 @@
 
 **作業内容**:
 
-- [ ] `ResolvePath` の Step 1 で絶対パスを拒否 (AC-L1-3)
+- [ ] `ResolvePath` の Step 1 で絶対パスを拒否 (AC-L1-1)
   ```go
   if filepath.IsAbs(includePath) {
       return "", fmt.Errorf("include path must be relative: %q is an absolute path", includePath)
   }
   ```
-- [ ] `filepath.Clean` 後に `filepath.Rel(baseDir, resolvedPath)` を計算し、
-  結果が `..` または `../` で始まる場合はエラーを返す (AC-L1-1, AC-L1-2)
-  ```go
-  rel, err := filepath.Rel(baseDir, candidatePath)
-  if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-      return "", fmt.Errorf("include path %q escapes base directory %q", includePath, baseDir)
-  }
-  ```
-- [ ] basedir 脱出パス (`../outside.toml`) のエラーを確認するユニットテスト追加 (AC-L1-4)
-- [ ] 絶対パス指定のエラーを確認するユニットテスト追加 (AC-L1-4)
-- [ ] 正当な相対パス (`./sub/config.toml`, `sub/config.toml`) の正常解決を確認するユニットテスト追加 (AC-L1-5)
-- [ ] **既存テストの更新 (破壊的変更)**: 実装着手前に `path_resolver_test.go` を実際に読み、`../` を含むテストケースおよび絶対パスを成功扱いしているケースを列挙する (`grep -n "\.\." internal/runner/config/path_resolver_test.go` 等で事前確認)。以下は想定される候補 (実在確認のうえ削除または期待値を変更する):
-  - `TestDefaultPathResolver_ResolvePath` の `"relative path with parent directory"` ケース (`../shared/backup.toml`)
-  - `TestDefaultPathResolver_ResolvePathWithDotPaths` の `"path with double dot"` ケース (`../templates/common.toml`)
+  - basedir 脱出チェック (`filepath.Rel` による `..` 判定) は追加しない。
+    `../` 相対参照はハッシュ検証が実質的な防御として機能するため許可する (詳細は要件定義 L1 の方針変更を参照)
+- [ ] 絶対パス指定のエラーを確認するユニットテスト追加 (AC-L1-2)
+- [ ] `../` を含む相対パス (`../common/restic_common.toml`) の正常解決を確認するユニットテスト追加 (AC-L1-3)
+- [ ] basedir 配下の正当な相対パス (`./sub/config.toml`, `sub/config.toml`) の正常解決を確認するユニットテスト追加 (AC-L1-4)
+- [ ] **既存テストの確認**: 絶対パスを成功扱いしているケースを列挙し、エラー期待に変更する。`../` を成功扱いしているケースは変更不要
 
 **成功条件**:
 - `go test -tags test -v ./internal/runner/config/...` 全パス
-- `../` 脱出と絶対パスがいずれもエラーを返す
+- 絶対パスがエラーを返す
+- `../` 相対パスが正常に解決される
 
-**推定工数**: 2時間
+**推定工数**: 1時間 (basedir 脱出チェックの実装が不要になったため短縮)
 
 ---
 
@@ -429,9 +422,9 @@
   - 対象ディレクトリおよびルートまでの全親ディレクトリのパーミッション要件
   - `--hash-dir` のパーミッション要件
   - 要件未充足時の TOCTOU リスクに関する説明
-- [ ] **移行影響の記述** (Phase 5 L1 の破壊的変更): `CHANGELOG.md` に以下を記載する
-  - `includes` ディレクティブで `../` による basedir 脱出および絶対パス指定が禁止されたこと
-  - 移行方法: basedir 脱出が必要な設定は、共有テンプレートファイルをメイン設定ファイルと同じディレクトリ以下に移動するか、メイン設定ファイルのパスを調整して basedir を適切に設定すること
+- [ ] **移行影響の記述** (Phase 5 L1): `CHANGELOG.md` に以下を記載する
+  - `includes` ディレクティブで絶対パス指定が禁止されたこと
+  - `../` による相対参照は引き続き許可されること (既存設定の移行作業は不要)
 
 **推定工数**: 2時間
 
@@ -465,7 +458,7 @@
 | M3 | `internal/runner/executor/environment_test.go` | LD_* フィルタ、非 LD_* フィルタ |
 | M3 | `internal/runner/config/expansion_test.go` | `isForbiddenEnvVar` のプレフィックス検査 |
 | M4 | `internal/runner/security/validator_test.go` | シェルメタ文字通過、制御文字拒否 |
-| L1 | `internal/runner/config/path_resolver_test.go` | basedir 脱出、絶対パス拒否、正常パス |
+| L1 | `internal/runner/config/path_resolver_test.go` | 絶対パス拒否、`../` 正常解決、正常パス |
 | L4 | `internal/groupmembership/membership_cgo_test.go` | 負値・上限超過 |
 | M2 | `internal/runner/security/toctou_check_test.go` | 列挙ロジック、違反検出 |
 
@@ -500,7 +493,7 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 | M2: 深いパスのパフォーマンス劣化 | Phase 7 | 起動遅延 | 重複除去で stat 回数を最小化、起動時 1 回のみ実行 |
 | M2: `record`/`verify` の意図しないエラー終了 | Phase 7 | 録画・検証が失敗 | `record`/`verify` は警告のみで継続することをテストで確認 |
 | L4: CGO テストが CI で動作しない | Phase 6 | テスト漏れ | CGO が有効な環境でのみテストを実行する build tag 等で管理 |
-| L1: 既存の `../` include が動作しなくなる | Phase 5 | 既存設定ファイルの互換性破壊 | CHANGELOG.md に移行方法を明記、既存テストの破壊ケースを事前に特定 |
+| L1: 絶対パスで include している既存設定がエラーになる | Phase 5 | 既存設定ファイルの互換性破壊 | 想定ユーザがほぼいないが CHANGELOG.md に記載する。`../` は引き続き動作するため移行コストは最小 |
 
 ---
 
@@ -536,10 +529,9 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [ ] `make test` 全パス確認
 
 ### Phase 5 (L1)
-- [ ] `ResolvePath` で絶対パスを拒否
-- [ ] basedir 脱出チェック追加
-- [ ] 既存テストの破壊ケースを削除・更新 (`path_resolver_test.go`)
-- [ ] ユニットテスト追加 (脱出、絶対パス、正常パス)
+- [ ] `ResolvePath` で絶対パスを拒否 (basedir 脱出チェックは追加しない)
+- [ ] 絶対パスを成功扱いしている既存テストを失敗期待に変更 (`path_resolver_test.go`)
+- [ ] ユニットテスト追加 (絶対パス拒否、`../` 正常解決、正常パス)
 - [ ] `make test` 全パス確認
 
 ### Phase 6 (L4)

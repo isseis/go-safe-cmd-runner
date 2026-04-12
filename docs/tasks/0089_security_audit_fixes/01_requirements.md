@@ -91,19 +91,28 @@
 
 ---
 
-## L1: template include パスの basedir 制約
+## L1: template include パスの絶対パス指定禁止
 
 ### 問題
 
-[internal/runner/config/path_resolver.go](../../../internal/runner/config/path_resolver.go) の include パス解決において、`../` による basedir 脱出および絶対パス指定が無制限に許可されている。
+[internal/runner/config/path_resolver.go](../../../internal/runner/config/path_resolver.go) の include パス解決において、絶対パス指定が無制限に許可されている。
+
+### 方針変更 (2026-04-12)
+
+当初は `../` による basedir 脱出も禁止する方針だったが、以下の理由で `../` は許可することとした:
+
+- 通常実行時はすべての include ファイルがハッシュ検証の対象であり、ハッシュ未登録ファイルの読み込みはエラーになる。これにより任意ファイル読み込みは実質的に防がれている
+- `../common/restic_common.toml` のようなサブディレクトリ間テンプレート共有は正当かつ一般的なユースケースであり、禁止すると設定ファイルのレイアウトに不必要な制約を課す
+- dry-run ではハッシュ未登録ファイルを読めるが、その前提として設定ファイルへの書込権限が必要であり、その権限があれば `../` なしでも同等の攻撃が可能なため、`../` の禁止は実質的な防御にならない
+
+絶対パス指定は設定ツリーと無関係なシステムファイル (`/etc/passwd` 等) への直接参照を可能にするため、引き続き禁止する。
 
 ### 受け入れ条件
 
-- AC-L1-1: include パスが相対パスの場合、`filepath.Clean` 後のパスが basedir 配下であることを検証すること
-- AC-L1-2: `filepath.Rel(basedir, resolved)` の結果が `..` と等しい、または `..` + パス区切りで始まる場合はエラーを返すこと
-- AC-L1-3: include パスに絶対パスを指定した場合はエラーを返すこと
-- AC-L1-4: basedir 脱出・絶対パス指定のそれぞれについてエラーを返すことを確認するユニットテストを追加すること
-- AC-L1-5: basedir 配下の正当な相対パス (例: `./sub/config.toml`, `sub/config.toml`) が正常に解決されることを確認するユニットテストを含めること
+- AC-L1-1: include パスに絶対パスを指定した場合はエラーを返すこと
+- AC-L1-2: 絶対パス指定のエラーを確認するユニットテストを追加すること
+- AC-L1-3: `../` を含む相対パス (例: `../common/restic_common.toml`) が正常に解決されることを確認するユニットテストを含めること
+- AC-L1-4: basedir 配下の正当な相対パス (例: `./sub/config.toml`, `sub/config.toml`) が正常に解決されることを確認するユニットテストを含めること
 
 ---
 
