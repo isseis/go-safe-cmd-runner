@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	cacheDirPerm  = 0o750
-	cacheFilePerm = 0o600
+	cacheDirPerm  = 0o755
+	cacheFilePerm = 0o644
 )
 
 // LibcCacheManager manages the read and write of libc analysis cache files.
