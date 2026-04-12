@@ -291,7 +291,7 @@ func run(runID string) error {
 // Paths containing variable references or relative paths are skipped because they
 // cannot be safely resolved before per-group expansion.
 func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) error {
-	verifyFilePaths := runtimeGlobal.ExpandedVerifyFiles
+	verifyFilePaths := append([]string{}, runtimeGlobal.ExpandedVerifyFiles...)
 	for _, g := range cfg.Groups {
 		for _, f := range g.VerifyFiles {
 			if filepath.IsAbs(f) && !strings.Contains(f, "%{") {

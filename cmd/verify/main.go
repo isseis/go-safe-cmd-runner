@@ -59,7 +59,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// verify does not have a config with verify_files or commands; check the files being
 	// verified and the hash directory. Violations are logged as warnings only — verify
 	// continues even if the check fails.
-	if secValidator, secErr := security.NewValidator(nil); secErr == nil {
+	if secValidator, secErr := security.NewValidator(nil); secErr != nil {
+		slog.Warn("Failed to create security validator for TOCTOU check, skipping", slog.Any("error", secErr))
+	} else {
 		toctouDirs := security.CollectTOCTOUCheckDirs(cfg.files, nil, cfg.hashDir)
 		security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	}
