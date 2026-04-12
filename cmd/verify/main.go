@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 const hashDirPermissions = 0o750
@@ -51,6 +53,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if cfg.usedDeprecated {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	}
+
+	// Run TOCTOU permission check on directories referenced by this operation.
+	// verify does not have a config with verify_files or commands; check the files being
+	// verified and the hash directory. Violations are logged as warnings only — verify
+	// continues even if the check fails.
+	if secValidator, secErr := security.NewValidator(nil); secErr == nil {
+		toctouDirs := security.CollectTOCTOUCheckDirs(cfg.files, nil, cfg.hashDir)
+		security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	}
 
 	validator, err := validatorFactory(cfg.hashDir)

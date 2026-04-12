@@ -290,7 +290,7 @@
 
 **作業内容**:
 
-- [ ] 以下の入力からチェック対象ディレクトリを列挙する関数を実装 (AC-M2S-2)
+- [x] 以下の入力からチェック対象ディレクトリを列挙する関数を実装 (AC-M2S-2)
   - `verify_files` で参照される各ファイルの親ディレクトリ
   - 実行コマンド (`cmd` フィールド) の親ディレクトリ
   - `--hash-dir` が指すディレクトリ自身
@@ -305,8 +305,8 @@
   ) []string
   ```
 
-- [ ] 重複パスを除去して返す (同一ディレクトリが複数の入力から現れる場合)
-- [ ] 列挙ロジックのユニットテスト追加 (AC-M2S-6)
+- [x] 重複パスを除去して返す (同一ディレクトリが複数の入力から現れる場合)
+- [x] 列挙ロジックのユニットテスト追加 (AC-M2S-6)
 
 **パフォーマンス考慮事項**:
 - ハッシュディレクトリからルートまでの親ディレクトリ列挙は O(depth) だが、
@@ -329,7 +329,7 @@
 
 **作業内容**:
 
-- [ ] 列挙された各ディレクトリに対して `validator.ValidateDirectoryPermissions` を呼び出す関数を実装 (AC-M2S-3)
+- [x] 列挙された各ディレクトリに対して `validator.ValidateDirectoryPermissions` を呼び出す関数を実装 (AC-M2S-3)
 
   ```go
   // RunTOCTOUPermissionCheck checks all collected directories and returns
@@ -346,8 +346,8 @@
   ) []TOCTOUViolation
   ```
 
-- [ ] 問題が検出された場合は `logger.Warn` で "path" と "violation" を含む警告ログを出力 (AC-M2S-4)
-- [ ] 検査実行のユニットテスト追加 (AC-M2S-6)
+- [x] 問題が検出された場合は `logger.Warn` で "path" と "violation" を含む警告ログを出力 (AC-M2S-4)
+- [x] 検査実行のユニットテスト追加 (AC-M2S-6)
   - 問題なし → 空のスライスが返ること
   - 1 件違反 → Violation が 1 件含まれること
   - 警告ログが出力されること (ログキャプチャで確認)
@@ -364,11 +364,11 @@
 
 **作業内容**:
 
-- [ ] `runner`: 設定ロード後、コマンド実行前に `CollectTOCTOUCheckDirs` + `RunTOCTOUPermissionCheck` を呼び出し、
+- [x] `runner`: 設定ロード後、コマンド実行前に `CollectTOCTOUCheckDirs` + `RunTOCTOUPermissionCheck` を呼び出し、
   1 件以上の違反があればエラー終了 (AC-M2S-5)
-- [ ] `record` / `verify`: 同様に検査を呼び出すが、違反があっても警告ログのみで継続 (AC-M2S-5)
-- [ ] `runner` が検査失敗後に起動中断することを確認するテスト追加 (AC-M2S-7)
-- [ ] `record` / `verify` が検査失敗後も継続することを確認するテスト追加 (AC-M2S-7)
+- [x] `record` / `verify`: 同様に検査を呼び出すが、違反があっても警告ログのみで継続 (AC-M2S-5)
+- [x] `runner` が検査失敗後に起動中断することを確認するテスト追加 (AC-M2S-7)
+- [x] `record` / `verify` が検査失敗後も継続することを確認するテスト追加 (AC-M2S-7)
 
 **パフォーマンス考慮事項**:
 - 検査は起動時 1 回のみ実行 (`sync.Once` 等は不要)。
@@ -504,13 +504,13 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [x] `make test` 全パス確認
 
 ### Phase 6 (M2 短期)
-- [ ] `CollectTOCTOUCheckDirs` 実装
-- [ ] `RunTOCTOUPermissionCheck` 実装 (違反ログ込み)
-- [ ] `runner` への組み込み (違反時エラー終了)
-- [ ] `record`/`verify` への組み込み (違反時警告継続)
-- [ ] ユニットテスト追加
-- [ ] 統合テスト追加
-- [ ] `make test` 全パス確認
+- [x] `CollectTOCTOUCheckDirs` 実装
+- [x] `RunTOCTOUPermissionCheck` 実装 (違反ログ込み)
+- [x] `runner` への組み込み (違反時エラー終了)
+- [x] `record`/`verify` への組み込み (違反時警告継続)
+- [x] ユニットテスト追加
+- [x] 統合テスト追加
+- [x] `make test` 全パス確認
 
 ### Phase 7 (M2 ドキュメント)
 - [ ] `docs/security/README.md` に運用要件セクション追記

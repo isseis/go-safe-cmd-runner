@@ -169,3 +169,32 @@ func TestRunWithSyscallAnalysisSkipsNonELF(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Syscall analysis failed")
 }
 
+// TestRunTOCTOU_ContinuesOnWorldWritableDir verifies that the record command
+// continues processing even when the file's parent directory is world-writable.
+// This validates AC-M2S-7: record warns but does not abort on TOCTOU violations.
+func TestRunTOCTOU_ContinuesOnWorldWritableDir(t *testing.T) {
+	// Create a world-writable directory with a target file
+	worldWritableDir := commontesting.SafeTempDir(t)
+	err := os.Chmod(worldWritableDir, 0o777)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.Chmod(worldWritableDir, 0o755)
+	})
+
+	targetFile := filepath.Join(worldWritableDir, "target.txt")
+	err = os.WriteFile(targetFile, []byte("hello"), 0o644)
+	require.NoError(t, err)
+
+	hashDir := commontesting.SafeTempDir(t)
+	recorder := &fakeRecorder{responses: map[string]error{}}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	// record should continue (exit 0) despite the TOCTOU violation
+	exitCode := run([]string{"-d", hashDir, targetFile}, testDeps(recorder), stdout, stderr)
+
+	// record does NOT abort on TOCTOU violations — it only logs a warning
+	assert.Equal(t, 0, exitCode, "record should continue (exit 0) despite world-writable directory")
+	require.Len(t, recorder.calls, 1, "file should have been processed")
+}

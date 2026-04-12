@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -81,6 +82,15 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 
 	if cfg.usedDeprecated {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
+	}
+
+	// Run TOCTOU permission check on directories referenced by this operation.
+	// record does not have a config with verify_files or commands; check the files being
+	// recorded and the hash directory. Violations are logged as warnings only — record
+	// continues even if the check fails.
+	if secValidator, secErr := security.NewValidator(nil); secErr == nil {
+		toctouDirs := security.CollectTOCTOUCheckDirs(cfg.files, nil, cfg.hashDir)
+		security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	}
 
 	validator, err := d.validatorFactory(cfg.hashDir)
