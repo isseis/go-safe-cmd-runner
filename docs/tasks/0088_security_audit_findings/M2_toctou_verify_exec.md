@@ -72,7 +72,8 @@ Linux では `execveat(fd, "", argv, envp, AT_EMPTY_PATH)` により、ファイ
 
 `docs/security/README.md` または運用ガイドに以下を必須要件として明記する:
 
-- `verify_files` で指定するパスは **root 所有かつ group/other に書込権限なし** のディレクトリ配下であること
+- `verify_files` で指定するパスは、既存のディレクトリパーミッション検査 (`ValidateDirectoryPermissions` / `validateCompletePath`) が通過するディレクトリ配下であること
+  - 具体的には: other 書込不可 (sticky bit ディレクトリを除く)、group 書込は root 所有または実行ユーザが唯一のグループメンバである場合のみ許可、owner 書込は root または実行ユーザ所有の場合のみ許可
 - ディレクトリ自体の rename/unlink 権限 (親ディレクトリの書込権限) も同様に制限すること
 - ハッシュディレクトリ (`--hash-dir`) 自体も同様の要件
 

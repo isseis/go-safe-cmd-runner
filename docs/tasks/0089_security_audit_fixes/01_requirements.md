@@ -20,7 +20,7 @@
 ### 受け入れ条件
 
 - AC-M1-1: `changeUserGroupInternal` の引数に `originalEGID int` を追加し、`Seteuid` 失敗時に `Setegid(originalEGID)` でロールバックすること
-- AC-M1-2: `egid` のロールバックにも失敗した場合、既存の `emergencyShutdown` と同等の処理でプロセスを即時終了すること
+- AC-M1-2: `egid` のロールバックにも失敗した場合、既存の `emergencyShutdown` を呼び出してプロセスを即時終了すること
 - AC-M1-3: 呼び出し側 `performElevation` が `execCtx.originalEGID` を `changeUserGroupInternal` に渡すこと
 - AC-M1-4: `Seteuid` 失敗 → egid ロールバック成功 のパスを網羅するユニットテストを追加すること
 - AC-M1-5: `Seteuid` 失敗 → egid ロールバック失敗 のパスを網羅するユニットテストを追加すること
@@ -37,20 +37,20 @@
 
 **運用ドキュメント整備:**
 
-- AC-M2S-1: `docs/security/README.md` (なければ新規作成) に以下の必須運用要件を日本語で明記すること
-  - `verify_files` および `commands` で指定するバイナリは、root 所有かつ group/other に書込権限なし (`o-w`, `g-w`) のディレクトリ配下に配置すること
-  - そのディレクトリを含む親ディレクトリも同様のパーミッション要件を満たすこと
+- AC-M2S-1: `docs/security/README.md` に以下の必須運用要件を日本語で明記すること
+  - `verify_files` および `commands` で指定するバイナリは、既存のディレクトリパーミッション検査 (`ValidateDirectoryPermissions` / `validateCompletePath`) が通過するディレクトリ配下に配置すること
+  - 具体的には、対象ディレクトリおよびルートまでの全親ディレクトリが、other 書込不可 (sticky bit ディレクトリを除く)、group 書込は root 所有または実行ユーザが唯一のグループメンバである場合のみ許可、owner 書込は root または実行ユーザ所有の場合のみ許可、という条件を満たすこと
   - `--hash-dir` で指定するハッシュディレクトリ自体と、その親ディレクトリ群も同要件を満たすこと
   - これらの要件が満たされない場合、TOCTOU 攻撃によってハッシュ検証をバイパスされるリスクがあること
 
 **自動パーミッション検査:**
 
 - AC-M2S-2: 起動前検査の責務を持つコンポーネントに、`verify_files` で参照される各ファイルの親ディレクトリ、実行コマンドの親ディレクトリ、ハッシュディレクトリ自身とその親ディレクトリ群を列挙して検査する機能を追加すること
-- AC-M2S-3: 各対象ディレクトリについて「root 所有であること」「group に書込権限がないこと」「other に書込権限がないこと」の3点を検査すること
+- AC-M2S-3: 各対象ディレクトリについて、既存の `ValidateDirectoryPermissions` / `validateCompletePath` と同等のポリシーで検査すること (other 書込不可、group 書込制約、owner 書込制約、シンボリックリンク不可)
 - AC-M2S-4: 検査で問題が検出された場合は、問題のあったパスと違反内容を含む警告ログ (`logger.Warn`) を出力すること
 - AC-M2S-5: 検査で問題が検出された場合、`runner` は実行開始前にエラー終了し、`record` と `verify` は警告のみで継続できること
-- AC-M2S-6: 自動検査のユニットテストを追加すること (モックファイルシステムで root 所有外・group 書込可・other 書込可ディレクトリの各検出を確認)
-- AC-M2S-7: `runner` が警告後に起動中断すること、および `record` / `verify` が警告のみで継続することを確認するテストを追加すること
+- AC-M2S-6: 自動検査のユニットテストを追加すること (既存の `ValidateDirectoryPermissions` テストと整合する形で、検出対象パスの列挙と検査実行の振る舞いを確認)
+- AC-M2S-7: `runner` が検査失敗後に起動中断すること、および `record` / `verify` が警告のみで継続することを確認するテストを追加すること
 
 ---
 
@@ -67,6 +67,7 @@
 - AC-M3-3: 既存の個別削除コード (`delete(envMap, "LD_LIBRARY_PATH")` 等) を新実装に統合して重複を排除すること
 - AC-M3-4: 上記の全変数が削除されることを確認するユニットテストを追加すること
 - AC-M3-5: `LD_` プレフィックスを持つ任意の変数名 (例: `LD_FOOBAR`) も削除されることを確認するテストを含めること
+- AC-M3-6: `internal/runner/config/expansion.go` の `forbiddenEnvVars` (`env_import` 検査) についても、`LD_` プレフィックス全体の拒否および AC-M3-2 の非 `LD_` 系危険変数の拒否を反映すること
 
 ---
 
@@ -136,6 +137,10 @@
 ### 受け入れ条件
 
 - AC-I1-1: `internal/verification/manager.go` の `verifyFileWithFallback` と `readAndVerifyFileWithFallback` の実装を調査し、「fallback」が何を指すか (または指さないか) を明確にすること
+
+> **調査結果 (2026-04-12):**
+> - `verifyFileWithFallback`: コメントに "falls back to privileged verification" とあるがフォールバック実装は存在しない。→ AC-I1-3 を適用
+> - `readAndVerifyFileWithFallback`: dry-run モードで検証失敗時に `os.ReadFile` でファイル読み込みにフォールバックする。→ AC-I1-2 を適用
 - AC-I1-2: 実装に fallback が存在する場合は、何にフォールバックするかを明示した名前にリネームすること (例: `verifyFileWithLegacyHashFallback`)
 - AC-I1-3: 実装に fallback が存在しない場合は、実装を正確に表す名前にリネームすること (例: `verifyFile`, `readAndVerifyFile`)
 - AC-I1-4: リネーム後、関連するコメント・ログ文言・全呼び出し箇所を新しい名前に更新すること
