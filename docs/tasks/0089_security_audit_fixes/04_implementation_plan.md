@@ -66,7 +66,7 @@
 
 **作業内容**:
 
-- [ ] `changeUserGroupInternal` のシグネチャに `originalEGID int` 引数を追加 (AC-M1-1)
+- [x] `changeUserGroupInternal` のシグネチャに `originalEGID int` 引数を追加 (AC-M1-1)
   ```go
   // 変更前
   func (m *UnixPrivilegeManager) changeUserGroupInternal(
@@ -76,7 +76,7 @@
   func (m *UnixPrivilegeManager) changeUserGroupInternal(
       userName, groupName string, dryRun bool, originalEGID int) error
   ```
-- [ ] 関数内の `Seteuid` 失敗時リカバリを修正 (AC-M1-1, AC-M1-2)
+- [x] 関数内の `Seteuid` 失敗時リカバリを修正 (AC-M1-1, AC-M1-2)
   ```go
   // 変更前
   if restoreErr := syscall.Setegid(syscall.Getegid()); restoreErr != nil {
@@ -88,7 +88,7 @@
       m.emergencyShutdown(restoreErr, "egid_rollback_failure_after_seteuid_failure")
   }
   ```
-- [ ] 呼び出し側 `performElevation` で `execCtx.originalEGID` を渡すよう更新 (AC-M1-3)
+- [x] 呼び出し側 `performElevation` で `execCtx.originalEGID` を渡すよう更新 (AC-M1-3)
   ```go
   // 変更前
   if err := m.changeUserGroupInternal(
@@ -99,12 +99,12 @@
       execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun,
       execCtx.originalEGID); err != nil {
   ```
-- [ ] `UnixPrivilegeManager` に `syscallSeteuid func(int) error` と `syscallSetegid func(int) error` の injectable フィールドを追加し、`changeUserGroupInternal` が直接 `syscall.Seteuid` / `syscall.Setegid` を呼ぶ代わりにこれらのフィールドを経由するよう変更する
+- [x] `UnixPrivilegeManager` に `syscallSeteuid func(int) error` と `syscallSetegid func(int) error` の injectable フィールドを追加し、`changeUserGroupInternal` が直接 `syscall.Seteuid` / `syscall.Setegid` を呼ぶ代わりにこれらのフィールドを経由するよう変更する
   - `osExit` の既存パターンに倣う
   - `newPlatformManager` のデフォルト値を `syscall.Seteuid` / `syscall.Setegid` に設定する
-- [ ] `Seteuid` 失敗 → egid ロールバック成功 パスのユニットテスト追加 (AC-M1-4)
+- [x] `Seteuid` 失敗 → egid ロールバック成功 パスのユニットテスト追加 (AC-M1-4)
   - `syscallSeteuid` をモックして失敗させ、`syscallSetegid` が `originalEGID` で呼ばれることを確認する
-- [ ] `Seteuid` 失敗 → egid ロールバック失敗 (`emergencyShutdown` 呼び出し) パスのユニットテスト追加 (AC-M1-5)
+- [x] `Seteuid` 失敗 → egid ロールバック失敗 (`emergencyShutdown` 呼び出し) パスのユニットテスト追加 (AC-M1-5)
   - `syscallSeteuid` と `syscallSetegid` の両方をモックして失敗させ、`osExit` フィールド経由で `emergencyShutdown` が呼ばれたことを検証する
 
 **成功条件**:
@@ -475,13 +475,13 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [x] `make test` 全パス確認
 
 ### Phase 2 (M1)
-- [ ] `UnixPrivilegeManager` に `syscallSeteuid` / `syscallSetegid` injectable フィールド追加
-- [ ] `changeUserGroupInternal` シグネチャ変更
-- [ ] `Seteuid` 失敗時ロールバックの修正
-- [ ] `performElevation` 呼び出し側の更新
-- [ ] ユニットテスト追加 (ロールバック成功パス)
-- [ ] ユニットテスト追加 (ロールバック失敗 → emergencyShutdown パス)
-- [ ] `make test` 全パス確認
+- [x] `UnixPrivilegeManager` に `syscallSeteuid` / `syscallSetegid` injectable フィールド追加
+- [x] `changeUserGroupInternal` シグネチャ変更
+- [x] `Seteuid` 失敗時ロールバックの修正
+- [x] `performElevation` 呼び出し側の更新
+- [x] ユニットテスト追加 (ロールバック成功パス)
+- [x] ユニットテスト追加 (ロールバック失敗 → emergencyShutdown パス)
+- [x] `make test` 全パス確認
 
 ### Phase 3 (M3)
 - [ ] `environment.go` の個別 delete をプレフィックスループに置き換え

@@ -31,6 +31,9 @@ type UnixPrivilegeManager struct {
 	mu                 sync.Mutex
 	// osExit is a function for os.Exit to enable testing of emergencyShutdown
 	osExit func(code int)
+	// syscallSeteuid and syscallSetegid are injectable for testing
+	syscallSeteuid func(uid int) error
+	syscallSetegid func(gid int) error
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
@@ -39,6 +42,8 @@ func newPlatformManager(logger *slog.Logger) Manager {
 		originalUID:        syscall.Getuid(),
 		privilegeSupported: isPrivilegeExecutionSupported(logger),
 		osExit:             os.Exit,
+		syscallSeteuid:     syscall.Seteuid,
+		syscallSetegid:     syscall.Setegid,
 	}
 }
 
@@ -119,7 +124,7 @@ func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error
 
 	if execCtx.needsUserGroupChange {
 		isDryRun := execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun
-		if err := m.changeUserGroupInternal(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun); err != nil {
+		if err := m.changeUserGroupInternal(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun, execCtx.originalEGID); err != nil {
 			if execCtx.needsPrivilegeEscalation {
 				if restoreErr := m.restorePrivileges(); restoreErr != nil {
 					m.emergencyShutdown(restoreErr, "user_group_change_failure")
@@ -376,9 +381,11 @@ func buildUserGroupLogAttrs(userName, groupName, effectiveGroupName string, isDe
 	return logAttrs
 }
 
-// changeUserGroupInternal implements the core user/group change logic with optional dry-run mode
-// Note: This method assumes the caller has already acquired appropriate privileges
-func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool) error {
+// changeUserGroupInternal implements the core user/group change logic with optional dry-run mode.
+// originalEGID is the effective GID before this call; it is used to roll back the Setegid
+// if Seteuid subsequently fails.
+// Note: This method assumes the caller has already acquired appropriate privileges.
+func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool, originalEGID int) error {
 	logAttrs := []any{"dry_run", dryRun}
 	if userName != "" {
 		logAttrs = append(logAttrs, "user", userName)
@@ -471,15 +478,14 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 	}
 
 	// Set group first, then user (standard practice)
-	if err := syscall.Setegid(targetGID); err != nil {
+	if err := m.syscallSetegid(targetGID); err != nil {
 		return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, effectiveGroupName, err)
 	}
 
-	if err := syscall.Seteuid(targetUID); err != nil {
-		// Try to restore original GID on failure
-		if restoreErr := syscall.Setegid(syscall.Getegid()); restoreErr != nil {
-			m.logger.Error("Failed to restore GID after UID change failure",
-				"restore_error", restoreErr)
+	if err := m.syscallSeteuid(targetUID); err != nil {
+		// Seteuid failed: roll back Setegid to the original GID.
+		if restoreErr := m.syscallSetegid(originalEGID); restoreErr != nil {
+			m.emergencyShutdown(restoreErr, "egid_rollback_failure_after_seteuid_failure")
 		}
 		return fmt.Errorf("failed to set effective user ID to %d (user %s): %w", targetUID, userName, err)
 	}

@@ -430,3 +430,76 @@ func TestEmergencyShutdown(t *testing.T) {
 	assert.True(t, exited, "os.Exit should have been called")
 	assert.Equal(t, 1, exitCode, "Expected exit code 1")
 }
+
+// TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess tests that when Seteuid
+// fails, Setegid is called with originalEGID to roll back (AC-M1-4).
+func TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess(t *testing.T) {
+	logger := slog.Default()
+
+	const originalEGID = 1234
+	var setegidCalledWith []int
+	seteuidErr := errors.New("seteuid failed")
+
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: false,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		syscallSeteuid:     func(_ int) error { return seteuidErr },
+		syscallSetegid: func(gid int) error {
+			setegidCalledWith = append(setegidCalledWith, gid)
+			return nil
+		},
+	}
+
+	err := manager.changeUserGroupInternal("", "", false, originalEGID)
+
+	// Seteuid failure should be propagated
+	assert.ErrorContains(t, err, "failed to set effective user ID")
+
+	// Setegid must have been called twice:
+	//   1st call: set targetGID (0 when no user/group specified → Getegid at call time)
+	//   2nd call: rollback to originalEGID
+	require.Len(t, setegidCalledWith, 2, "Setegid should be called twice")
+	assert.Equal(t, originalEGID, setegidCalledWith[1], "second Setegid call should use originalEGID for rollback")
+}
+
+// TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure tests that when both
+// Seteuid and the rollback Setegid fail, emergencyShutdown (osExit) is called (AC-M1-5).
+func TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure(t *testing.T) {
+	logger := slog.Default()
+
+	const originalEGID = 5678
+	seteuidErr := errors.New("seteuid failed")
+	setegidErr := errors.New("setegid rollback failed")
+
+	var exitCode int
+	var exited bool
+	testOsExit := func(code int) {
+		exitCode = code
+		exited = true
+		panic("os.Exit called")
+	}
+
+	// syscallSetegid: succeed on first call (set targetGID), fail on second call (rollback).
+	setegidCallCount := 0
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: false,
+		osExit:             testOsExit,
+		syscallSeteuid:     func(_ int) error { return seteuidErr },
+		syscallSetegid: func(_ int) error {
+			setegidCallCount++
+			if setegidCallCount == 1 {
+				return nil // first call (targetGID) succeeds
+			}
+			return setegidErr // second call (rollback) fails → triggers emergencyShutdown
+		},
+	}
+
+	assert.PanicsWithValue(t, "os.Exit called", func() {
+		_ = manager.changeUserGroupInternal("", "", false, originalEGID)
+	}, "emergencyShutdown should be called when rollback Setegid also fails")
+
+	assert.True(t, exited, "os.Exit should have been called")
+	assert.Equal(t, 1, exitCode, "Expected exit code 1")
+}
