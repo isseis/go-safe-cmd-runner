@@ -319,7 +319,7 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 			}
 		}
 	}
-	secValidator, secErr := security.NewValidator(nil)
+	secValidator, secErr := security.NewValidatorForTOCTOU()
 	if secErr != nil {
 		slog.Warn("Failed to create security validator for TOCTOU check, skipping", slog.Any("error", secErr))
 		return nil

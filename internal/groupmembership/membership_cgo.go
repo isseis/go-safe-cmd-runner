@@ -125,11 +125,17 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	if members == nil {
 		return []string{}, nil
 	}
-	defer C.free_string_array(members, count)
 
+	// Validate count BEFORE registering the defer so that free_string_array is
+	// never called with an untrusted count.  If count is malformed, call
+	// free_string_array with count=0 so only the outer array is freed (the
+	// inner strings are leaked in this error path, but walking an unknown
+	// number of pointers would be more dangerous).
 	if err := validateGroupMemberCount(int(count)); err != nil {
+		C.free_string_array(members, 0)
 		return nil, err
 	}
+	defer C.free_string_array(members, count)
 
 	// Use unsafe.Slice which is safer than the older unsafe pointer cast pattern.
 	cArray := unsafe.Slice(members, int(count))
