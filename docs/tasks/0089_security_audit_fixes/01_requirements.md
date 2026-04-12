@@ -4,8 +4,8 @@
 
 [0088_security_audit_findings](../0088_security_audit_findings/00_overview.md) の静的解析で発見された所見のうち、短期対応可能なものをまとめて修正する。
 
-対象所見: M1, M2(短期), M3, M4, L1, L2, L4, I1
-対象外: L3 (監視のみ), M2 中長期 (→ [0090_toctou_fexecve](../0090_toctou_fexecve/00_analysis.md) に切り出し)
+対象所見: M1, M2(短期), M3, M4, L1, L4, I1
+対象外: L3 (監視のみ), M2 中長期 (→ [0090_toctou_fexecve](../0090_toctou_fexecve/00_analysis.md) に切り出し), L2 (→ [0091_slack_webhook_allowlist](../0091_slack_webhook_allowlist/01_requirements.md) に切り出し)
 
 ---
 
@@ -31,7 +31,7 @@
 
 ### 問題
 
-バイナリのハッシュ検証 (`VerifyGroupFiles`) と `exec.CommandContext` の間に TOCTOU ウィンドウが存在する。根本対策 (`fexecve`/`execveat`) は中長期課題 (→ 0090) とし、短期では運用要件の明文化と起動時の自動パーミッション検査を行う。
+バイナリのハッシュ検証 (`VerifyGroupFiles`) と `exec.CommandContext` の間に TOCTOU ウィンドウが存在する。根本対策 (`fexecve`/`execveat`) は中長期課題 (→ 0090) とし、短期では運用要件の明文化と、起動前に実行対象パスおよびハッシュディレクトリの配置ディレクトリを検査する自動パーミッション検査を行う。
 
 ### 受け入れ条件
 
@@ -40,15 +40,17 @@
 - AC-M2S-1: `docs/security/README.md` (なければ新規作成) に以下の必須運用要件を日本語で明記すること
   - `verify_files` および `commands` で指定するバイナリは、root 所有かつ group/other に書込権限なし (`o-w`, `g-w`) のディレクトリ配下に配置すること
   - そのディレクトリを含む親ディレクトリも同様のパーミッション要件を満たすこと
-  - `--hash-dir` で指定するハッシュディレクトリ自体も同要件を満たすこと
+  - `--hash-dir` で指定するハッシュディレクトリ自体と、その親ディレクトリ群も同要件を満たすこと
   - これらの要件が満たされない場合、TOCTOU 攻撃によってハッシュ検証をバイパスされるリスクがあること
 
 **自動パーミッション検査:**
 
-- AC-M2S-2: `security.Validator` (または検証マネージャの起動時処理) に、`verify_files` / コマンドパス / ハッシュディレクトリの親ディレクトリを検査する関数を追加すること
-- AC-M2S-3: 検査項目は「ディレクトリが root 所有であること」「group に書込権限がないこと」「other に書込権限がないこと」の3点とすること
-- AC-M2S-4: 検査で問題が検出された場合は警告ログ (`logger.Warn`) を出力し、`runner` は起動を中断すること (`record`, `verify` は警告のみで継続可)
-- AC-M2S-5: 自動検査のユニットテストを追加すること (モックファイルシステムで root 所有外・書込可ディレクトリの検出を確認)
+- AC-M2S-2: 起動前検査の責務を持つコンポーネントに、`verify_files` で参照される各ファイルの親ディレクトリ、実行コマンドの親ディレクトリ、ハッシュディレクトリ自身とその親ディレクトリ群を列挙して検査する機能を追加すること
+- AC-M2S-3: 各対象ディレクトリについて「root 所有であること」「group に書込権限がないこと」「other に書込権限がないこと」の3点を検査すること
+- AC-M2S-4: 検査で問題が検出された場合は、問題のあったパスと違反内容を含む警告ログ (`logger.Warn`) を出力すること
+- AC-M2S-5: 検査で問題が検出された場合、`runner` は実行開始前にエラー終了し、`record` と `verify` は警告のみで継続できること
+- AC-M2S-6: 自動検査のユニットテストを追加すること (モックファイルシステムで root 所有外・group 書込可・other 書込可ディレクトリの各検出を確認)
+- AC-M2S-7: `runner` が警告後に起動中断すること、および `record` / `verify` が警告のみで継続することを確認するテストを追加すること
 
 ---
 
@@ -56,7 +58,7 @@
 
 ### 問題
 
-[internal/runner/executor/environment.go:87-89](../../../internal/runner/executor/environment.go#L87-L89) で `LD_LIBRARY_PATH`, `LD_PRELOAD`, `LD_AUDIT` の3変数のみを明示削除しており、他の `LD_*` 変数 (`LD_DEBUG`, `GCONV_PATH` 等) が通り抜ける。
+[internal/runner/executor/environment.go:87-89](../../../internal/runner/executor/environment.go#L87-L89) で `LD_LIBRARY_PATH`, `LD_PRELOAD`, `LD_AUDIT` の3変数のみを明示削除しており、他の `LD_*` 変数や glibc ローダ関連の危険変数 (`LD_DEBUG`, `GCONV_PATH` 等) が通り抜ける。
 
 ### 受け入れ条件
 
@@ -72,7 +74,7 @@
 
 ### 問題
 
-[internal/runner/security/validator.go](../../../internal/runner/security/validator.go) の `dangerousValuePatterns` はシェルメタ文字 (`;`, `|`, `$(` 等) を文字列マッチで検出しているが、本プロジェクトはシェル非経由の `exec.CommandContext` を使用するため、この検査は実行モデルと噛み合っていない。false positive・false negative ともに問題がある。
+[internal/runner/security/environment_validation.go](../../../internal/runner/security/environment_validation.go) の環境変数値検査は、`Validator` が保持するシェルメタ文字ベースの危険パターンに依存しているが、本プロジェクトはシェル非経由の `exec.CommandContext` を使用するため、この検査は実行モデルと噛み合っていない。false positive・false negative ともに問題がある。
 
 ### 採用方針: 案 C (再設計)
 
@@ -80,7 +82,7 @@
 
 ### 受け入れ条件
 
-- AC-M4-1: `dangerousValuePatterns` および関連するシェルメタ文字マッチのコードを削除すること
+- AC-M4-1: 環境変数値検査から、シェルメタ文字ベースの危険パターン定義および関連するマッチ処理を削除すること
 - AC-M4-2: 環境変数の値に `\0` (null byte) を含む場合はエラーを返すこと (`execve` に渡せないため)
 - AC-M4-3: 環境変数の値に `\n` (LF) または `\r` (CR) を含む場合はエラーを返すこと (多くの子プロセスのパーサを破壊するため)
 - AC-M4-4: `;`, `|`, `$(`, `>`, `<` 等のシェルメタ文字を含む値は拒否 **しない** こと (JSON 等の正当なユースケースを阻害しないため)
@@ -97,7 +99,7 @@
 ### 受け入れ条件
 
 - AC-L1-1: include パスが相対パスの場合、`filepath.Clean` 後のパスが basedir 配下であることを検証すること
-- AC-L1-2: `filepath.Rel(basedir, resolved)` の結果が `..` で始まる場合はエラーを返すこと
+- AC-L1-2: `filepath.Rel(basedir, resolved)` の結果が `..` と等しい、または `..` + パス区切りで始まる場合はエラーを返すこと
 - AC-L1-3: include パスに絶対パスを指定した場合はエラーを返すこと
 - AC-L1-4: basedir 脱出・絶対パス指定のそれぞれについてエラーを返すことを確認するユニットテストを追加すること
 - AC-L1-5: basedir 配下の正当な相対パス (例: `./sub/config.toml`, `sub/config.toml`) が正常に解決されることを確認するユニットテストを含めること
@@ -106,17 +108,7 @@
 
 ## L2: Slack webhook URL のホスト allowlist
 
-### 問題
-
-[internal/logging/slack_handler.go:132-152](../../../internal/logging/slack_handler.go#L132-L152) の `validateWebhookURL` は HTTPS スキームのみを検査し、ホスト名を制限しない。設定ファイルが改ざんされた場合に任意ホストへのログ送信 (情報漏洩・SSRF) が成立しうる。
-
-### 受け入れ条件
-
-- AC-L2-1: `validateWebhookURL` にホスト allowlist 検査を追加し、デフォルトで `hooks.slack.com` のみを許可すること
-- AC-L2-2: allowlist に含まれないホストへの URL は検証エラーを返すこと
-- AC-L2-3: 設定ファイルで追加ホストを allowlist に追加できること (拡張性のある設計)
-- AC-L2-4: `hooks.slack.com` 以外のホスト (例: `evil.example.com`) がエラーになることを確認するユニットテストを追加すること
-- AC-L2-5: `hooks.slack.com` の正当な URL が検証を通過することを確認するユニットテストを含めること
+→ [0091_slack_webhook_allowlist](../0091_slack_webhook_allowlist/01_requirements.md) に切り出し
 
 ---
 
@@ -135,18 +127,18 @@
 
 ---
 
-## I1: `verifyFileWithFallback` の命名修正
+## I1: `verifyFileWithFallback` 系関数の命名修正
 
 ### 問題
 
-`internal/verification/manager.go` 内の関数名 `verifyFileWithFallback` が実装内容と乖離している可能性があり、保守者が誤った前提でコードを変更するリスクがある。
+`internal/verification/manager.go` 内の関数名 `verifyFileWithFallback` および `readAndVerifyFileWithFallback` が実装内容と乖離している可能性があり、保守者が誤った前提でコードを変更するリスクがある。少なくとも現状の `verifyFileWithFallback` には名称が示す fallback 処理が存在しない。
 
 ### 受け入れ条件
 
-- AC-I1-1: `internal/verification/manager.go` の `verifyFileWithFallback` の実装を調査し、「fallback」が何を指すか (または指さないか) を明確にすること
+- AC-I1-1: `internal/verification/manager.go` の `verifyFileWithFallback` と `readAndVerifyFileWithFallback` の実装を調査し、「fallback」が何を指すか (または指さないか) を明確にすること
 - AC-I1-2: 実装に fallback が存在する場合は、何にフォールバックするかを明示した名前にリネームすること (例: `verifyFileWithLegacyHashFallback`)
-- AC-I1-3: 実装に fallback が存在しない場合は、実装を正確に表す名前にリネームすること (例: `verifyFileStrict` または `verifyFile`)
-- AC-I1-4: リネーム後、全呼び出し箇所を新しい名前に更新すること
+- AC-I1-3: 実装に fallback が存在しない場合は、実装を正確に表す名前にリネームすること (例: `verifyFile`, `readAndVerifyFile`)
+- AC-I1-4: リネーム後、関連するコメント・ログ文言・全呼び出し箇所を新しい名前に更新すること
 - AC-I1-5: 既存のテストがリネーム後もすべてパスすること
 
 ---
