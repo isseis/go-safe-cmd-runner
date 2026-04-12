@@ -277,12 +277,12 @@
 
 ---
 
-### Phase 7: M2 短期 — TOCTOU ウィンドウの自動パーミッション検査
+### Phase 6: M2 短期 — TOCTOU ウィンドウの自動パーミッション検査
 
 最も機能追加規模が大きいフェーズ。既存の `ValidateDirectoryPermissions` を
 再利用するがパフォーマンス・エッジケースに注意する。
 
-#### Step 7.1: 検査対象パスの列挙ロジック実装
+#### Step 6.1: 検査対象パスの列挙ロジック実装
 
 **修正ファイル**:
 - `internal/runner/security/toctou_check.go` (新規)
@@ -321,10 +321,10 @@
 
 **推定工数**: 3時間
 
-#### Step 7.2: 検査実行・ログ出力ロジック実装
+#### Step 6.2: 検査実行・ログ出力ロジック実装
 
 **修正ファイル**:
-- `internal/runner/security/toctou_check.go` (Step 7.1 と同ファイル)
+- `internal/runner/security/toctou_check.go` (Step 6.1 と同ファイル)
 - `internal/runner/security/toctou_check_test.go`
 
 **作業内容**:
@@ -354,7 +354,7 @@
 
 **推定工数**: 2時間
 
-#### Step 7.3: runner / record / verify への組み込み
+#### Step 6.3: runner / record / verify への組み込み
 
 **修正ファイル**:
 - `cmd/runner/main.go` または `internal/runner/runner.go`
@@ -375,13 +375,13 @@
 - `ValidateDirectoryPermissions` は `Lstat` ベースで実装されており、
   ディレクトリ深さ分のシステムコールが発生する。通常は数十件以内のため許容範囲。
 - パス数が多い設定ファイルの場合、検査時間が顕著になる可能性があるため、
-  重複除去 (Step 7.1) を確実に行う。
+  重複除去 (Step 6.1) を確実に行う。
 
 **推定工数**: 4時間
 
 ---
 
-### Phase 8: M2 短期 — 運用ドキュメント整備
+### Phase 7: M2 短期 — 運用ドキュメント整備
 
 **修正ファイル**:
 - `docs/security/README.md`
@@ -408,8 +408,8 @@
 | MS-2: 権限管理バグ修正完了 | Phase 2 (M1) | ロールバックバグ修正、テスト追加 |
 | MS-3: 環境変数フィルタ強化完了 | Phase 3-4 (M3, M4) | フィルタ更新、回帰テストパス |
 | MS-4: 境界検査修正完了 | Phase 5 (L4) | CGO 境界検査、テストパス |
-| MS-5: TOCTOU 検査実装完了 | Phase 7 (M2) | 新検査機能実装、統合テストパス |
-| MS-6: ドキュメント更新完了 | Phase 8 (M2 docs) | セキュリティ文書更新 |
+| MS-5: TOCTOU 検査実装完了 | Phase 6 (M2) | 新検査機能実装、統合テストパス |
+| MS-6: ドキュメント更新完了 | Phase 7 (M2 docs) | セキュリティ文書更新 |
 
 **全体推定工数**: 約 24 時間 (L1 Phase 削除により -1h、フェーズ番号繰り上げ後の合計)
 
@@ -447,7 +447,7 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 
 ### 4.3 統合テスト
 
-- Phase 7 Step 7.3 で runner / record / verify の統合テストを追加する
+- Phase 6 Step 6.3 で runner / record / verify の統合テストを追加する
 - 既存の `cmd/runner/integration_pre_execution_error_test.go` のパターンに倣い、
   バイナリをビルドして実行結果を検証する形式で行う
 
@@ -459,8 +459,8 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 |---|---|---|---|
 | M3: 正当変数の誤削除 | Phase 3 | 実行中の機能破壊 | 回帰テストで網羅、既存 E2E テストで確認 |
 | M4: 既存の正当パターン拒否 | Phase 4 | 設定ファイルが動作しない | 回帰テストでシェルメタ文字を含む値を通過確認 |
-| M2: 深いパスのパフォーマンス劣化 | Phase 7 | 起動遅延 | 重複除去で stat 回数を最小化、起動時 1 回のみ実行 |
-| M2: `record`/`verify` の意図しないエラー終了 | Phase 7 | 録画・検証が失敗 | `record`/`verify` は警告のみで継続することをテストで確認 |
+| M2: 深いパスのパフォーマンス劣化 | Phase 6 | 起動遅延 | 重複除去で stat 回数を最小化、起動時 1 回のみ実行 |
+| M2: `record`/`verify` の意図しないエラー終了 | Phase 6 | 録画・検証が失敗 | `record`/`verify` は警告のみで継続することをテストで確認 |
 | L4: CGO テストが CI で動作しない | Phase 5 | テスト漏れ | CGO が有効な環境でのみテストを実行する build tag 等で管理 |
 
 ---
