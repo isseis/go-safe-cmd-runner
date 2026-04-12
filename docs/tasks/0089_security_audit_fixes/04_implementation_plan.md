@@ -19,7 +19,9 @@
 ## 2. 実装ステップ
 
 フェーズ順序:
-**I1 → M1 → M3 → M4 → L1 → L4 → M2 (短期)**
+**I1 → M1 → M3 → M4 → L4 → M2 (短期)**
+
+> L1 (template include パス制約) は対応なし (Close)。ハッシュ検証が実質的な防御として機能しており、パス制約の追加にセキュリティ上の実質的な価値がないため。詳細は [01_requirements.md L1 セクション](./01_requirements.md) および [所見ドキュメント](../0088_security_audit_findings/L1_include_path_not_constrained.md) を参照。
 
 ---
 
@@ -232,37 +234,7 @@
 
 ---
 
-### Phase 5: L1 — template include パスの絶対パス指定禁止
-
-**修正ファイル**:
-- `internal/runner/config/path_resolver.go`
-- `internal/runner/config/path_resolver_test.go` (既存テストファイルへ追記)
-
-**作業内容**:
-
-- [ ] `ResolvePath` の Step 1 で絶対パスを拒否 (AC-L1-1)
-  ```go
-  if filepath.IsAbs(includePath) {
-      return "", fmt.Errorf("include path must be relative: %q is an absolute path", includePath)
-  }
-  ```
-  - basedir 脱出チェック (`filepath.Rel` による `..` 判定) は追加しない。
-    `../` 相対参照はハッシュ検証が実質的な防御として機能するため許可する (詳細は要件定義 L1 の方針変更を参照)
-- [ ] 絶対パス指定のエラーを確認するユニットテスト追加 (AC-L1-2)
-- [ ] `../` を含む相対パス (`../common/restic_common.toml`) の正常解決を確認するユニットテスト追加 (AC-L1-3)
-- [ ] basedir 配下の正当な相対パス (`./sub/config.toml`, `sub/config.toml`) の正常解決を確認するユニットテスト追加 (AC-L1-4)
-- [ ] **既存テストの確認**: 絶対パスを成功扱いしているケースを列挙し、エラー期待に変更する。`../` を成功扱いしているケースは変更不要
-
-**成功条件**:
-- `go test -tags test -v ./internal/runner/config/...` 全パス
-- 絶対パスがエラーを返す
-- `../` 相対パスが正常に解決される
-
-**推定工数**: 1時間 (basedir 脱出チェックの実装が不要になったため短縮)
-
----
-
-### Phase 6: L4 — CGO グループメンバ数の境界チェック
+### Phase 5: L4 — CGO グループメンバ数の境界チェック
 
 **修正ファイル**:
 - `internal/groupmembership/membership_cgo.go`
@@ -422,9 +394,7 @@
   - 対象ディレクトリおよびルートまでの全親ディレクトリのパーミッション要件
   - `--hash-dir` のパーミッション要件
   - 要件未充足時の TOCTOU リスクに関する説明
-- [ ] **移行影響の記述** (Phase 5 L1): `CHANGELOG.md` に以下を記載する
-  - `includes` ディレクティブで絶対パス指定が禁止されたこと
-  - `../` による相対参照は引き続き許可されること (既存設定の移行作業は不要)
+- [ ] L1 (include パス制約) は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 **推定工数**: 2時間
 
@@ -437,11 +407,11 @@
 | MS-1: コード品質改善完了 | Phase 1 (I1) | リネーム完了、全テストパス |
 | MS-2: 権限管理バグ修正完了 | Phase 2 (M1) | ロールバックバグ修正、テスト追加 |
 | MS-3: 環境変数フィルタ強化完了 | Phase 3-4 (M3, M4) | フィルタ更新、回帰テストパス |
-| MS-4: パス制約修正完了 | Phase 5-6 (L1, L4) | パス制約・境界検査、テストパス |
+| MS-4: 境界検査修正完了 | Phase 5 (L4) | CGO 境界検査、テストパス |
 | MS-5: TOCTOU 検査実装完了 | Phase 7 (M2) | 新検査機能実装、統合テストパス |
 | MS-6: ドキュメント更新完了 | Phase 8 (M2 docs) | セキュリティ文書更新 |
 
-**全体推定工数**: 約 26 時間
+**全体推定工数**: 約 24 時間 (L1 Phase 削除により -1h、フェーズ番号繰り上げ後の合計)
 
 ---
 
@@ -458,7 +428,6 @@
 | M3 | `internal/runner/executor/environment_test.go` | LD_* フィルタ、非 LD_* フィルタ |
 | M3 | `internal/runner/config/expansion_test.go` | `isForbiddenEnvVar` のプレフィックス検査 |
 | M4 | `internal/runner/security/validator_test.go` | シェルメタ文字通過、制御文字拒否 |
-| L1 | `internal/runner/config/path_resolver_test.go` | 絶対パス拒否、`../` 正常解決、正常パス |
 | L4 | `internal/groupmembership/membership_cgo_test.go` | 負値・上限超過 |
 | M2 | `internal/runner/security/toctou_check_test.go` | 列挙ロジック、違反検出 |
 
@@ -492,8 +461,7 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 | M4: 既存の正当パターン拒否 | Phase 4 | 設定ファイルが動作しない | 回帰テストでシェルメタ文字を含む値を通過確認 |
 | M2: 深いパスのパフォーマンス劣化 | Phase 7 | 起動遅延 | 重複除去で stat 回数を最小化、起動時 1 回のみ実行 |
 | M2: `record`/`verify` の意図しないエラー終了 | Phase 7 | 録画・検証が失敗 | `record`/`verify` は警告のみで継続することをテストで確認 |
-| L4: CGO テストが CI で動作しない | Phase 6 | テスト漏れ | CGO が有効な環境でのみテストを実行する build tag 等で管理 |
-| L1: 絶対パスで include している既存設定がエラーになる | Phase 5 | 既存設定ファイルの互換性破壊 | 想定ユーザがほぼいないが CHANGELOG.md に記載する。`../` は引き続き動作するため移行コストは最小 |
+| L4: CGO テストが CI で動作しない | Phase 5 | テスト漏れ | CGO が有効な環境でのみテストを実行する build tag 等で管理 |
 
 ---
 
@@ -528,20 +496,14 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [ ] ユニットテスト追加 (拒否パス、通過パス、回帰)
 - [ ] `make test` 全パス確認
 
-### Phase 5 (L1)
-- [ ] `ResolvePath` で絶対パスを拒否 (basedir 脱出チェックは追加しない)
-- [ ] 絶対パスを成功扱いしている既存テストを失敗期待に変更 (`path_resolver_test.go`)
-- [ ] ユニットテスト追加 (絶対パス拒否、`../` 正常解決、正常パス)
-- [ ] `make test` 全パス確認
-
-### Phase 6 (L4)
+### Phase 5 (L4)
 - [ ] `count` 負値チェック追加
 - [ ] `count` 上限チェック追加
 - [ ] `unsafe.Slice` への置き換え
 - [ ] ユニットテスト追加
 - [ ] `make test` 全パス確認
 
-### Phase 7 (M2 短期)
+### Phase 6 (M2 短期)
 - [ ] `CollectTOCTOUCheckDirs` 実装
 - [ ] `RunTOCTOUPermissionCheck` 実装 (違反ログ込み)
 - [ ] `runner` への組み込み (違反時エラー終了)
@@ -550,10 +512,10 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [ ] 統合テスト追加
 - [ ] `make test` 全パス確認
 
-### Phase 8 (M2 ドキュメント)
+### Phase 7 (M2 ドキュメント)
 - [ ] `docs/security/README.md` に運用要件セクション追記
 - [ ] 内容が AC-M2S-1 の要件を満たしていることをレビュー
-- [ ] `CHANGELOG.md` に L1 (includes 脱出禁止) の破壊的変更と移行方法を記載
+- [ ] L1 は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 ### 全体
 - [ ] `make lint` 全パス
@@ -565,7 +527,8 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 
 ### 機能完全性
 - 全受け入れ条件 (AC-M1-1〜5, AC-M2S-1〜7, AC-M3-1〜6, AC-M4-1〜5,
-  AC-L1-1〜5, AC-L4-1〜4, AC-I1-2〜5) を満たすテストが存在し、パスすること
+  AC-L4-1〜4, AC-I1-2〜5) を満たすテストが存在し、パスすること
+  (L1 は対応なし Close のため対象外)
 
 ### 品質基準
 - `make test` (全テスト) がパスすること
@@ -576,7 +539,7 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - M1: 権限昇格失敗時に元の egid に確実にロールバックされること
 - M3: `LD_DEBUG` 等の未明示変数が子プロセスに漏れないこと
 - M4: シェル非経由実行で問題にならないシェルメタ文字が通過すること
-- L1: `../` による config ディレクトリ外のファイルを include できないこと
+- L1: 対応なし (Close) — セキュリティはハッシュ検証によって担保されている
 - L4: C 側から悪意ある `count` 値を渡されても安全に失敗すること
 
 ### ドキュメント完全性
