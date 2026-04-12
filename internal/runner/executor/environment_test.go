@@ -466,3 +466,72 @@ func TestBuildProcessEnvironment_SystemEnvFiltering(t *testing.T) {
 	assert.NotContains(t, envMap, "PATH")
 	assert.NotContains(t, envMap, "SECRET")
 }
+
+// TestBuildProcessEnvironment_AllLDVarsRemoved verifies that any LD_* variable is removed,
+// not only the three originally hardcoded ones (AC-M3-1, AC-M3-2).
+func TestBuildProcessEnvironment_AllLDVarsRemoved(t *testing.T) {
+	ldVars := []string{
+		"LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT",
+		"LD_FOOBAR", "LD_DEBUG", "LD_BIND_NOW",
+	}
+
+	for _, name := range ldVars {
+		t.Run(name, func(t *testing.T) {
+			// Inject via vars to avoid needing allowlist entry
+			global := createTestRuntimeGlobal([]string{}, map[string]string{name: "injected"})
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, name, "LD_* variable must be removed")
+		})
+	}
+}
+
+// TestBuildProcessEnvironment_NonLDDangerousVarsRemoved verifies that the five additional
+// dangerous loader variables are removed (AC-M3-3).
+func TestBuildProcessEnvironment_NonLDDangerousVarsRemoved(t *testing.T) {
+	dangerousVars := []string{
+		"GCONV_PATH", "LOCPATH", "HOSTALIASES", "NLSPATH", "RES_OPTIONS",
+	}
+
+	for _, name := range dangerousVars {
+		t.Run(name, func(t *testing.T) {
+			global := createTestRuntimeGlobal([]string{}, map[string]string{name: "injected"})
+			group := createTestRuntimeGroup(map[string]string{})
+			cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+			result := executor.BuildProcessEnvironment(global, group, cmd)
+			assert.NotContains(t, result, name, "dangerous loader variable must be removed")
+		})
+	}
+}
+
+// TestBuildProcessEnvironment_LegitimateVarsPreserved is a regression test that verifies
+// common legitimate environment variables are not accidentally removed (AC-M3-4, AC-M3-5).
+func TestBuildProcessEnvironment_LegitimateVarsPreserved(t *testing.T) {
+	legitimateVars := map[string]string{
+		"PATH":     "/usr/bin:/bin",
+		"HOME":     "/home/user",
+		"USER":     "alice",
+		"LANG":     "en_US.UTF-8",
+		"TZ":       "UTC",
+		"TERM":     "xterm-256color",
+		"LANGUAGE": "en_US",
+	}
+
+	// Inject all vars via global ExpandedEnv (bypasses allowlist requirement)
+	global := createTestRuntimeGlobal([]string{}, legitimateVars)
+	group := createTestRuntimeGroup(map[string]string{})
+	cmd := createTestRuntimeCommand([]string{}, map[string]string{})
+
+	result := executor.BuildProcessEnvironment(global, group, cmd)
+
+	for name, want := range legitimateVars {
+		entry, ok := result[name]
+		assert.True(t, ok, "legitimate variable %q must be preserved", name)
+		if ok {
+			assert.Equal(t, want, entry.Value, "value of %q must be unchanged", name)
+		}
+	}
+}

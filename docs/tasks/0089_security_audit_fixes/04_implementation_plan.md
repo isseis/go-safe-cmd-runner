@@ -125,7 +125,7 @@
 
 **作業内容**:
 
-- [ ] `internal/runner/executor/environment.go` の個別 delete を置き換え (AC-M3-1, AC-M3-2, AC-M3-3)
+- [x] `internal/runner/executor/environment.go` の個別 delete を置き換え (AC-M3-1, AC-M3-2, AC-M3-3)
 
   変更前 (87-89行):
   ```go
@@ -150,7 +150,7 @@
   }
   ```
 
-- [ ] `internal/runner/config/expansion.go` の `forbiddenEnvVars` を更新 (AC-M3-6)
+- [x] `internal/runner/config/expansion.go` の `forbiddenEnvVars` を更新 (AC-M3-6)
 
   変更前 (map 定義):
   ```go
@@ -179,8 +179,8 @@
 
   あわせて `isForbiddenEnvVar` をプレフィックス + 完全一致でチェックするように更新する。
 
-- [ ] `LD_FOOBAR` 等の任意の `LD_*` 変数、および5つの非 `LD_` 系変数が削除されることを確認するユニットテスト追加 (AC-M3-4, AC-M3-5)
-- [ ] 回帰テスト: 既存の正当な環境変数 (`PATH`, `HOME`, `USER`, `LANG` 等) が削除されないことを確認するテスト追加
+- [x] `LD_FOOBAR` 等の任意の `LD_*` 変数、および5つの非 `LD_` 系変数が削除されることを確認するユニットテスト追加 (AC-M3-4, AC-M3-5)
+- [x] 回帰テスト: 既存の正当な環境変数 (`PATH`, `HOME`, `USER`, `LANG` 等) が削除されないことを確認するテスト追加
 
 **成功条件**:
 - `go test -tags test -v ./internal/runner/executor/... ./internal/runner/config/...` 全パス
@@ -484,11 +484,11 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 - [x] `make test` 全パス確認
 
 ### Phase 3 (M3)
-- [ ] `environment.go` の個別 delete をプレフィックスループに置き換え
-- [ ] 非 `LD_` 系危険変数の削除追加
-- [ ] `expansion.go` の `forbiddenEnvVars` をプレフィックス + 完全一致に更新
-- [ ] ユニットテスト追加 (全対象変数削除、回帰)
-- [ ] `make test` 全パス確認
+- [x] `environment.go` の個別 delete をプレフィックスループに置き換え
+- [x] 非 `LD_` 系危険変数の削除追加
+- [x] `expansion.go` の `forbiddenEnvVars` をプレフィックス + 完全一致に更新
+- [x] ユニットテスト追加 (全対象変数削除、回帰)
+- [x] `make test` 全パス確認
 
 ### Phase 4 (M4)
 - [ ] `dangerousPatterns` および `dangerousEnvRegexps` を削除

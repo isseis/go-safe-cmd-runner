@@ -2,6 +2,7 @@ package executor
 
 import (
 	"os"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -77,16 +78,21 @@ func BuildProcessEnvironment(
 	// These come from command-level env_vars section
 	mergeEnvWithOrigin(result, cmd.ExpandedEnv, "command")
 
-	// Always remove dynamic-linker control variables from the child process environment.
-	// The runner enforces deterministic dynamic library loading by clearing these
-	// variables regardless of how they entered the environment (env_allowlist, vars, etc.).
+	// Always remove dynamic-linker control variables and other dangerous loader-related
+	// variables from the child process environment. The runner enforces deterministic
+	// dynamic library loading by clearing these variables regardless of how they entered
+	// the environment (env_allowlist, vars, etc.).
 	// See docs/security/README.md for the threat model.
-	//   LD_LIBRARY_PATH: alters shared library search path
-	//   LD_PRELOAD:      injects arbitrary shared libraries into the process
-	//   LD_AUDIT:        loads audit libraries that can hook all symbol bindings
-	delete(result, "LD_LIBRARY_PATH")
-	delete(result, "LD_PRELOAD")
-	delete(result, "LD_AUDIT")
+	for key := range result {
+		if strings.HasPrefix(key, "LD_") {
+			delete(result, key)
+		}
+	}
+	for _, key := range []string{
+		"GCONV_PATH", "LOCPATH", "HOSTALIASES", "NLSPATH", "RES_OPTIONS",
+	} {
+		delete(result, key)
+	}
 
 	return result
 }

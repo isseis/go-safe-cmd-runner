@@ -256,3 +256,45 @@ func TestApplyTemplateInheritance_Combined(t *testing.T) {
 	}
 	assert.Equal(t, expectedVars, expandedSpec.Vars)
 }
+
+// TestIsForbiddenEnvVar_Prefix verifies that any LD_* variable is forbidden (AC-M3-6).
+func TestIsForbiddenEnvVar_Prefix(t *testing.T) {
+	cases := []struct {
+		name     string
+		expected bool
+	}{
+		{"LD_LIBRARY_PATH", true},
+		{"LD_PRELOAD", true},
+		{"LD_AUDIT", true},
+		{"LD_FOOBAR", true},
+		{"LD_DEBUG", true},
+		{"LD_BIND_NOW", true},
+		// Non-LD_* names that look similar but must not be forbidden
+		{"LDFLAGS", false},
+		{"LD", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, isForbiddenEnvVar(tc.name))
+		})
+	}
+}
+
+// TestIsForbiddenEnvVar_Exact verifies that the five non-LD_* dangerous variables are forbidden (AC-M3-6).
+func TestIsForbiddenEnvVar_Exact(t *testing.T) {
+	for _, name := range []string{"GCONV_PATH", "LOCPATH", "HOSTALIASES", "NLSPATH", "RES_OPTIONS"} {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, isForbiddenEnvVar(name), "variable must be forbidden")
+		})
+	}
+}
+
+// TestIsForbiddenEnvVar_SafeVarsAllowed is a regression test ensuring common legitimate
+// variables are not accidentally forbidden (AC-M3-6).
+func TestIsForbiddenEnvVar_SafeVarsAllowed(t *testing.T) {
+	for _, name := range []string{"PATH", "HOME", "USER", "LANG", "TZ", "TERM", "LANGUAGE"} {
+		t.Run(name, func(t *testing.T) {
+			assert.False(t, isForbiddenEnvVar(name), "variable must not be forbidden")
+		})
+	}
+}
