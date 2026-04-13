@@ -26,24 +26,47 @@
   - [ ] AC-L2-17: ポート番号付き URL (`https://hooks.slack.com:443/...`) が正しく処理されることを確認
   - [ ] 各テストは `errors.Is(err, ErrInvalidWebhookURL)` で検証する
 
-- [ ] 5. 段階的ロギング初期化の実装 (AC-L2-10, AC-L2-11, AC-L2-12)
-  - [ ] `internal/runner/bootstrap/logger.go` に `AddSlackHandlers(config LoggerConfig) error` を追加
-    - `SlackWebhookURLSuccess` が設定されている場合: `logging.NewSlackHandler` を呼び出し、エラーがあれば即座に返す
-    - `SlackWebhookURLError` が設定されている場合: 同様に処理
-    - Slack ハンドラを含む新しい `MultiHandler` を構築し `RedactingHandler` でラップして `slog.SetDefault` を更新
-  - [ ] `internal/runner/bootstrap/environment.go` に `SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error` を追加
+- [ ] 5. Phase 1 ハンドラ状態の保持機構を追加 (AC-L2-11 の前提)
+  - **背景**: 現行の `SetupLoggerWithConfig` はすべてのハンドラをローカル変数で組み立て `slog.SetDefault` まで完結させる。Phase 2 (`AddSlackHandlers`) が Slack ハンドラを追加するには、Phase 1 で作成したコンソール・ファイルハンドラ群を後から参照できる必要がある。
+  - [ ] `internal/runner/bootstrap/logger.go` にパッケージレベルの `phase1BaseHandlers []slog.Handler` 変数を追加する
+    - `SetupLoggerWithConfig` の末尾で Slack ハンドラを除いたハンドラ群 (= 既存の `failureHandlers` と同一集合) を `phase1BaseHandlers` に保存する
+    - `phase1BaseHandlers` は `AddSlackHandlers` のみが読み取り専用で参照する
+  - [ ] `phase1BaseHandlers` が nil のとき `AddSlackHandlers` を呼び出したらエラーを返すガードを追加する
+
+- [ ] 6. 段階的ロギング初期化の実装 (AC-L2-10, AC-L2-11, AC-L2-12)
+  - [ ] `internal/runner/bootstrap/logger.go` の `SetupLoggerWithConfig` から Slack ハンドラ生成ブロック (現行 :133-164) を**削除**する
+    - `LoggerConfig` から `SlackWebhookURLSuccess/Error` フィールド自体も削除する (Phase 2 専用の `AddSlackHandlers` に役割を移譲するため)
+  - [ ] `internal/runner/bootstrap/environment.go` の `SetupLoggingOptions` から `SlackWebhookURLSuccess/Error` フィールドを削除し、`SetupLogging` の `LoggerConfig` 生成からも除去する
+    - これにより `SetupLogging` は Phase 1 専用となりコンパイルレベルで Slack URL を受け付けなくなる
+  - [ ] `internal/runner/bootstrap/logger.go` に `AddSlackHandlers(config LoggerConfig) error` を追加する
+    - `phase1BaseHandlers` が nil の場合はエラーを返す
+    - `config.SlackWebhookURLSuccess` が設定されている場合: `newSlackHandlerFunc` (後述タスク 7 で追加する factory 変数) で成功ハンドラを生成し、エラーがあれば即座に返す
+    - `config.SlackWebhookURLError` が設定されている場合: 同様に処理
+    - `phase1BaseHandlers` + Slack ハンドラを結合した `allHandlers` で `MultiHandler` → `RedactingHandler` を再構築し `slog.SetDefault` を更新する
+    - `failureHandlers` (Slack 除外) も `phase1BaseHandlers` から再構築する
+    - `redactionErrorCollector` と `redactionReporter` も再初期化する
+  - [ ] `internal/runner/bootstrap/environment.go` に `SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error` を追加する
     - `slackConfig` の両 URL が空の場合は何もせず `nil` を返す
+    - `LoggerConfig{SlackWebhookURLSuccess: slackConfig.SuccessURL, SlackWebhookURLError: slackConfig.ErrorURL, SlackAllowedHost: opts.SlackAllowedHost, RunID: opts.RunID, DryRun: opts.DryRun}` を組み立てて `AddSlackHandlers` を呼ぶ
     - `AddSlackHandlers` が返したエラーを `PreExecutionError{Type: ErrorTypeConfigParsing}` にラップして返す (AC-L2-10)
-  - [ ] `SetupLogging` は Phase 1 専用とし、Slack ハンドラを生成しないことを確認する
 
-- [ ] 6. 起動フローの Phase 1/2 分割 (AC-L2-11, AC-L2-12)
-  - [ ] `cmd/runner/main.go` の `SetupLogging` 呼び出しから `SlackWebhookURLSuccess/Error` を削除する
-  - [ ] `LoadAndPrepareConfig` の直後に `SetupSlackLogging(slackConfig, SetupLoggingOptions{SlackAllowedHost: cfg.Global.SlackAllowedHost, ...})` を呼び出す
-  - [ ] `SetupSlackLogging` のエラーを既存の設定エラー処理と同様に処理する
+- [ ] 7. Slack handler factory の差し替え機構を追加 (AC-L2-19 のテスト前提)
+  - **背景**: 現行の `logger.go:137-158` は `logging.NewSlackHandler` を直接呼び出しており、テストから受け取った `SlackHandlerOptions` を検査できない
+  - [ ] `internal/runner/bootstrap/logger.go` にパッケージレベルの factory 変数を追加する
+    ```go
+    var newSlackHandlerFunc = logging.NewSlackHandler
+    ```
+  - [ ] `AddSlackHandlers` 内の `logging.NewSlackHandler` 直接呼び出しをすべて `newSlackHandlerFunc` 経由に変更する
+  - [ ] テストファイル内で `newSlackHandlerFunc` を差し替えてキャプチャするヘルパーを用意し、テスト終了後に元の値に戻す
 
-- [ ] 7. 伝播テストの追加 (AC-L2-19, AC-L2-20)
+- [ ] 8. 起動フローの Phase 1/2 分割 (AC-L2-11, AC-L2-12)
+  - [ ] `cmd/runner/main.go` の `SetupLogging` 呼び出しを確認し、削除済みの `SlackWebhookURLSuccess/Error` フィールドへの代入を除去する (タスク 6 の変更に伴うコンパイルエラー修正)
+  - [ ] `LoadAndPrepareConfig` の直後に `SetupSlackLogging(slackConfig, SetupLoggingOptions{SlackAllowedHost: cfg.Global.SlackAllowedHost, RunID: runID, DryRun: dryRun})` を呼び出す
+  - [ ] `SetupSlackLogging` のエラーを既存の設定エラー処理と同様にハンドルする
+
+- [ ] 9. 伝播テストの追加 (AC-L2-19, AC-L2-20)
   - [ ] AC-L2-19: `SlackHandlerOptions.AllowedHost` への伝播確認
-    - `bootstrap` パッケージ内で Slack handler factory を差し替え可能にし、受け取った `AllowedHost` が期待値と一致することを確認
+    - タスク 7 で追加した `newSlackHandlerFunc` をテスト内で差し替え、受け取った `SlackHandlerOptions.AllowedHost` が期待値と一致することを確認する
   - [ ] AC-L2-20: 起動フロー統合テスト
-    - 前提: `slackConfig.ErrorURL` = 有効 HTTPS URL、`SlackAllowedHost` = `""` (未設定)
-    - 期待: `errors.As(err, &preExecErr)` かつ `preExecErr.Type == ErrorTypeConfigParsing`
+    - 前提: `slackConfig.ErrorURL` = 有効 HTTPS URL、`SetupLoggingOptions.SlackAllowedHost` = `""` (未設定)
+    - `SetupSlackLogging` が返すエラーを `errors.As(err, &preExecErr)` で検査し `preExecErr.Type == ErrorTypeConfigParsing` であることを確認する
