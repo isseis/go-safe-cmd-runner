@@ -355,8 +355,9 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 		return nil
 	}
 
-	// Collect verify_files paths (already variable-expanded; apply Abs+EvalSymlinks
-	// for the same normalisation used for CLI paths in record/verify).
+	// Collect verify_files paths (already variable-expanded; keep only absolute
+	// paths and apply EvalSymlinks for the same symlink normalisation used for
+	// CLI paths in record/verify).
 	verifyPaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles))
 	for _, f := range runtimeGroup.ExpandedVerifyFiles {
 		if resolved, ok := security.ResolveAbsPathForTOCTOU(f); ok {
