@@ -5,15 +5,16 @@
 ### 1.1 アーキテクチャ目標
 
 - SSRF・情報漏洩リスクの排除: 環境変数が改ざんされても任意ホストへの送信を防止する
-- TOML によるポリシー管理: allowlist はハッシュ検証済み TOML で管理し、改ざんを検出可能にする
-- 起動フローの整合性: TOML 読み込み後に Slack ハンドラを初期化し、allowlist の確実な適用を保証する
+- TOML によるポリシー管理: 許可ホストはハッシュ検証済み TOML で管理し、改ざんを検出可能にする
+- 起動フローの整合性: TOML 読み込み後に Slack ハンドラを初期化し、許可ホストの確実な適用を保証する
 - 既存検証の維持: 既存の HTTPS スキーム・ホスト名存在チェックを除去しない
 
 ### 1.2 設計原則
 
-- **セキュリティファースト**: TOML 由来の allowlist で URL を検証してから Slack ハンドラを生成する
+- **セキュリティファースト**: TOML 由来の許可ホストで URL を検証してから Slack ハンドラを生成する
 - **最小変更**: 既存の起動フローの骨格を維持しつつ Slack 初期化のみを後段に移動する
 - **明示的設定**: デフォルト許可ホストを持たず、利用者が TOML に明示した場合のみ Slack 通知を有効化する
+- **単一ホスト**: 成功・エラー両 URL は同一ホストを使用することを前提とし、許可ホストは単一文字列で管理する
 
 ---
 
@@ -30,7 +31,7 @@ flowchart TD
     E[("環境変数<br>GSCR_SLACK_WEBHOOK_URL_*")] --> A
     A["ValidateSlackWebhookEnv()"] --> B["SetupLogging()<br>(Slack ハンドラ含む)"]
     B --> C["LoadAndPrepareConfig()"]
-    C --> D[("TOML<br>slack_allowed_hosts")]
+    C --> D[("TOML<br>slack_allowed_host")]
 
     class E data;
     class D data;
@@ -38,7 +39,7 @@ flowchart TD
     class B problem;
 ```
 
-> 問題: Slack ハンドラ生成 (B) が TOML 読み込み (C→D) より前に実行されるため、allowlist を参照できない。
+> 問題: Slack ハンドラ生成 (B) が TOML 読み込み (C→D) より前に実行されるため、許可ホストを参照できない。
 
 ### 2.2 変更後の起動フロー
 
@@ -56,11 +57,11 @@ flowchart TD
     end
 
     B --> C["LoadAndPrepareConfig()"]
-    C --> D[("TOML<br>slack_allowed_hosts")]
+    C --> D[("TOML<br>slack_allowed_host")]
     D --> F
 
     subgraph Phase2["Phase 2: TOML 読み込み後"]
-        F["SetupSlackLogging()<br>(allowlist 検証 + Slack ハンドラ追加)"]
+        F["SetupSlackLogging()<br>(ホスト検証 + Slack ハンドラ追加)"]
     end
 
     class E,D data;
@@ -101,16 +102,16 @@ graph TB
     end
 
     subgraph "internal/runner/runnertypes"
-        SPEC["spec.go<br>GlobalSpec.SlackAllowedHosts 追加"]
+        SPEC["spec.go<br>GlobalSpec.SlackAllowedHost 追加"]
     end
 
     subgraph "internal/runner/bootstrap"
-        ENV["environment.go<br>SetupLoggingOptions.SlackAllowedHosts 追加<br>SetupSlackLogging() 新規追加"]
-        LOG["logger.go<br>LoggerConfig.SlackAllowedHosts 追加<br>Slack ハンドラ生成を SetupSlackLogging に移動"]
+        ENV["environment.go<br>SetupLoggingOptions.SlackAllowedHost 追加<br>SetupSlackLogging() 新規追加"]
+        LOG["logger.go<br>LoggerConfig.SlackAllowedHost 追加<br>Slack ハンドラ生成を SetupSlackLogging に移動"]
     end
 
     subgraph "internal/logging"
-        SH["slack_handler.go<br>SlackHandlerOptions.AllowedHosts 追加<br>validateWebhookURL シグネチャ変更"]
+        SH["slack_handler.go<br>SlackHandlerOptions.AllowedHost 追加<br>validateWebhookURL シグネチャ変更"]
     end
 
     MAIN --> ENV
@@ -122,18 +123,18 @@ graph TB
     class MAIN,ENV,LOG,SH enhanced;
 ```
 
-### 3.2 allowlist 伝播経路
+### 3.2 許可ホスト伝播経路
 
 ```mermaid
 flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
-    A[("TOML<br>global.slack_allowed_hosts")] -->|"GlobalSpec<br>.SlackAllowedHosts"| B["LoadAndPrepareConfig()"]
-    B -->|"SetupLoggingOptions<br>.SlackAllowedHosts"| C["SetupSlackLogging()"]
-    C -->|"LoggerConfig<br>.SlackAllowedHosts"| D["SetupLoggerWithConfig()"]
-    D -->|"SlackHandlerOptions<br>.AllowedHosts"| E["NewSlackHandler()"]
-    E -->|"allowedHosts"| F["validateWebhookURL()"]
+    A[("TOML<br>global.slack_allowed_host")] -->|"GlobalSpec<br>.SlackAllowedHost"| B["LoadAndPrepareConfig()"]
+    B -->|"SetupLoggingOptions<br>.SlackAllowedHost"| C["SetupSlackLogging()"]
+    C -->|"LoggerConfig<br>.SlackAllowedHost"| D["SetupLoggerWithConfig()"]
+    D -->|"SlackHandlerOptions<br>.AllowedHost"| E["NewSlackHandler()"]
+    E -->|"allowedHost"| F["validateWebhookURL()"]
 
     class A data;
     class B,C,D,E,F process;
@@ -154,8 +155,8 @@ sequenceDiagram
     participant L as logger.go
 
     M->>E: SetupLogging(opts)
-    Note over E: SlackAllowedHosts は渡さない<br>(Slack URL は Phase 2 で使用)
-    E->>L: SetupLoggerWithConfig(config)<br>config.SlackAllowedHosts = nil
+    Note over E: SlackAllowedHost は渡さない<br>(Slack URL は Phase 2 で使用)
+    E->>L: SetupLoggerWithConfig(config)<br>config.SlackAllowedHost = ""
     L->>L: コンソールハンドラ生成
     L->>L: ファイルハンドラ生成 (LogDir が設定されている場合)
     Note over L: Slack ハンドラは生成しない
@@ -165,7 +166,7 @@ sequenceDiagram
 
 ### 4.2 Phase 2: `SetupSlackLogging` の新規追加
 
-TOML 読み込み後に呼び出す新関数。allowlist 検証を実施してから Slack ハンドラを既存ロガーに追加する。
+TOML 読み込み後に呼び出す新関数。ホスト検証を実施してから Slack ハンドラを既存ロガーに追加する。
 
 ```mermaid
 sequenceDiagram
@@ -175,14 +176,14 @@ sequenceDiagram
     participant S as slack_handler.go
 
     M->>E: SetupSlackLogging(slackConfig, opts)
-    Note over E: opts.SlackAllowedHosts = cfg.Global.SlackAllowedHosts
+    Note over E: opts.SlackAllowedHost = cfg.Global.SlackAllowedHost
     E->>L: AddSlackHandlers(config)
-    Note over L: config.SlackAllowedHosts = opts.SlackAllowedHosts
+    Note over L: config.SlackAllowedHost = opts.SlackAllowedHost
 
     alt successURL が設定されている場合
-        L->>S: NewSlackHandler(SlackHandlerOptions{AllowedHosts: ...})
-        S->>S: validateWebhookURL(url, allowedHosts)
-        alt allowlist 検証失敗
+        L->>S: NewSlackHandler(SlackHandlerOptions{AllowedHost: ...})
+        S->>S: validateWebhookURL(url, allowedHost)
+        alt ホスト検証失敗
             S-->>L: ErrInvalidWebhookURL
             L-->>E: error
             E-->>M: PreExecutionError{Type: ErrorTypeConfigParsing}
@@ -192,8 +193,8 @@ sequenceDiagram
     end
 
     alt errorURL が設定されている場合
-        L->>S: NewSlackHandler(SlackHandlerOptions{AllowedHosts: ...})
-        S->>S: validateWebhookURL(url, allowedHosts)
+        L->>S: NewSlackHandler(SlackHandlerOptions{AllowedHost: ...})
+        S->>S: validateWebhookURL(url, allowedHost)
     end
 
     L->>L: Slack ハンドラを既存 MultiHandler に追加して再構築
@@ -206,7 +207,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A["validateWebhookURL(url, allowedHosts)"] --> B{"url が空?"}
+    A["validateWebhookURL(url, allowedHost)"] --> B{"url が空?"}
     B -->|"Yes"| ERR1["ErrInvalidWebhookURL<br>(empty URL)"]
     B -->|"No"| C["url.Parse(url)"]
     C --> D{"パース失敗?"}
@@ -216,8 +217,8 @@ flowchart TD
     E -->|"No"| F{"Host が空?"}
     F -->|"Yes"| ERR4["ErrInvalidWebhookURL<br>(empty host)"]
     F -->|"No"| G["hostname = 正規化(url のホスト名)"]
-    G --> H{"hostname が allowedHosts に含まれる?"}
-    H -->|"No"| ERR5["ErrInvalidWebhookURL<br>(host not in allowlist)"]
+    G --> H{"hostname == 正規化(allowedHost)?"}
+    H -->|"No"| ERR5["ErrInvalidWebhookURL<br>(host not allowed)"]
     H -->|"Yes"| OK["nil (success)"]
 ```
 
@@ -232,14 +233,13 @@ flowchart TD
 | Slack URL なし (`GSCR_SLACK_WEBHOOK_URL_*` 未設定) | — (エラーなし、静粛に無効) | — |
 | SUCCESS のみ設定、ERROR なし | `ErrSuccessWithoutError` | `ErrorTypeConfigParsing` (既存) |
 | URL が HTTPS でない | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |
-| URL のホストが allowlist にない | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |
-| allowlist が空 かつ URL が設定されている | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |
+| URL のホストが許可ホストと不一致 | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |
+| 許可ホストが未設定 かつ URL が設定されている | `ErrInvalidWebhookURL` | `ErrorTypeConfigParsing` |
 
 ### 5.2 エラーメッセージ例
 
 ```
-Error: invalid webhook URL: host not in allowlist: evil.example.com
-  Allowed hosts: [hooks.slack.com]
+Error: invalid webhook URL: host not allowed: evil.example.com (allowed: hooks.slack.com)
 ```
 
 ---
@@ -265,11 +265,11 @@ flowchart TB
 
 | AC | テスト対象 | パッケージ |
 |----|-----------|------------|
-| AC-L2-13 | `validateWebhookURL` — allowlist 空 | `internal/logging` |
-| AC-L2-14 | `validateWebhookURL` — allowlist 不一致 | `internal/logging` |
-| AC-L2-15 | `validateWebhookURL` — allowlist 一致 | `internal/logging` |
+| AC-L2-13 | `validateWebhookURL` — 許可ホスト未設定 | `internal/logging` |
+| AC-L2-14 | `validateWebhookURL` — ホスト不一致 | `internal/logging` |
+| AC-L2-15 | `validateWebhookURL` — ホスト一致 | `internal/logging` |
 | AC-L2-16 | `validateWebhookURL` — 大文字/小文字 | `internal/logging` |
 | AC-L2-17 | `validateWebhookURL` — ポート番号付き URL | `internal/logging` |
 | AC-L2-18 | `validateWebhookURL` — 既存 HTTPS/host チェック | `internal/logging` |
-| AC-L2-19 | `SetupSlackLogging` — allowlist 伝播 | `internal/runner/bootstrap` |
-| AC-L2-20 | 起動フロー — allowlist 空で起動失敗 | `internal/runner/bootstrap` |
+| AC-L2-19 | `SetupSlackLogging` — 許可ホスト伝播 | `internal/runner/bootstrap` |
+| AC-L2-20 | 起動フロー — 許可ホスト未設定で起動失敗 | `internal/runner/bootstrap` |
