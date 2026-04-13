@@ -88,32 +88,34 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	// record does not have a config with verify_files or commands; check the files being
 	// recorded and the hash directory. Violations are logged as warnings only — record
 	// continues even if the check fails.
-	if secValidator, secErr := security.NewValidatorForTOCTOU(); secErr != nil {
-		slog.Warn("Failed to create security validator for TOCTOU check, skipping", slog.Any("error", secErr))
-	} else {
-		absFiles := make([]string, 0, len(cfg.files))
-		for _, f := range cfg.files {
-			abs, err := filepath.Abs(f)
-			if err != nil {
-				abs = f
-			}
-			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-				absFiles = append(absFiles, resolved)
-			} else {
-				absFiles = append(absFiles, abs)
-			}
-		}
-		absHashDir := cfg.hashDir
-		if abs, err := filepath.Abs(cfg.hashDir); err == nil {
-			if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-				absHashDir = resolved
-			} else {
-				absHashDir = abs
-			}
-		}
-		toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
-		security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	secValidator, secErr := security.NewValidatorForTOCTOU()
+	if secErr != nil {
+		// NewValidatorForTOCTOU only fails when a regex literal in DefaultConfig
+		// is invalid — a programming error that cannot be recovered at runtime.
+		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
 	}
+	absFiles := make([]string, 0, len(cfg.files))
+	for _, f := range cfg.files {
+		abs, err := filepath.Abs(f)
+		if err != nil {
+			abs = f
+		}
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			absFiles = append(absFiles, resolved)
+		} else {
+			absFiles = append(absFiles, abs)
+		}
+	}
+	absHashDir := cfg.hashDir
+	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			absHashDir = resolved
+		} else {
+			absHashDir = abs
+		}
+	}
+	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
+	security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 
 	validator, err := d.validatorFactory(cfg.hashDir)
 	if err != nil {
