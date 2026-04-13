@@ -23,6 +23,20 @@ type TOCTOUViolation struct {
 	Err  error
 }
 
+// ResolveAbsPathForTOCTOU normalizes an already-absolute path for use in TOCTOU
+// directory collection. Symlinks are resolved so that canonicalised paths can
+// be compared without false positives (e.g. /bin -> /usr/bin). The second
+// return value is false when p is not absolute and the path should be skipped.
+func ResolveAbsPathForTOCTOU(p string) (string, bool) {
+	if !filepath.IsAbs(p) {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved, true
+	}
+	return p, true
+}
+
 // CollectTOCTOUCheckDirs collects directories to check for TOCTOU prevention.
 // It returns deduplicated list of directories derived from:
 //   - Parent directory and all ancestor directories up to root for each path in verifyFilePaths

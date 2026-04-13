@@ -290,18 +290,14 @@ func run(runID string) error {
 }
 
 // resolveStaticAbsPath returns the real path for p when p is an absolute path
-// that contains no unexpanded variable references ("%{").  Symlinks are
-// resolved so that canonicalised paths can be compared without false TOCTOU
-// positives (e.g. /bin -> /usr/bin).  The second return value is false when
-// the path should be skipped entirely (relative or still contains variables).
+// that contains no unexpanded variable references ("%{").  The second return
+// value is false when the path should be skipped entirely (relative or still
+// contains variables).
 func resolveStaticAbsPath(p string) (string, bool) {
-	if !filepath.IsAbs(p) || strings.Contains(p, "%{") {
+	if strings.Contains(p, "%{") {
 		return "", false
 	}
-	if resolved, err := filepath.EvalSymlinks(p); err == nil {
-		return resolved, true
-	}
-	return p, true
+	return security.ResolveAbsPathForTOCTOU(p)
 }
 
 // runTOCTOUCheck collects directory paths referenced by the configuration and runs a

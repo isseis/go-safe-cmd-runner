@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -360,27 +359,16 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 	// for the same normalisation used for CLI paths in record/verify).
 	verifyPaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles))
 	for _, f := range runtimeGroup.ExpandedVerifyFiles {
-		if !filepath.IsAbs(f) {
-			continue
-		}
-		if resolved, err := filepath.EvalSymlinks(f); err == nil {
+		if resolved, ok := security.ResolveAbsPathForTOCTOU(f); ok {
 			verifyPaths = append(verifyPaths, resolved)
-		} else {
-			verifyPaths = append(verifyPaths, f)
 		}
 	}
 
 	// Collect command paths (expanded by preExpandCommands).
 	cmdPaths := make([]string, 0, len(runtimeGroup.Commands))
 	for _, cmd := range runtimeGroup.Commands {
-		p := cmd.Cmd()
-		if p == "" || !filepath.IsAbs(p) {
-			continue
-		}
-		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		if resolved, ok := security.ResolveAbsPathForTOCTOU(cmd.Cmd()); ok {
 			cmdPaths = append(cmdPaths, resolved)
-		} else {
-			cmdPaths = append(cmdPaths, p)
 		}
 	}
 
