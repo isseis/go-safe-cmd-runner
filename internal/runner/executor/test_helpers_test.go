@@ -19,3 +19,17 @@ func WithLogger(logger *slog.Logger) Option {
 		e.Logger = logger
 	}
 }
+
+// WithExitFunc replaces os.Exit with a custom function for testing emergency shutdown behavior.
+func WithExitFunc(fn func(int)) Option {
+	return func(e *DefaultExecutor) {
+		e.osExit = fn
+	}
+}
+
+// WithIdentityChecker replaces the default EUID/EGID checker for testing privilege leak detection.
+func WithIdentityChecker(fn func() error) Option {
+	return func(e *DefaultExecutor) {
+		e.identityChecker = fn
+	}
+}
