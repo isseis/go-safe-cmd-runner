@@ -22,6 +22,9 @@ var ErrInsufficientPrivileges = errors.New("insufficient privileges to change us
 // ErrUnsupportedOperationType is returned when an unsupported operation type is encountered
 var ErrUnsupportedOperationType = errors.New("unsupported operation type")
 
+// ErrIdentityLeak is returned when effective UID/GID do not match real UID/GID after privilege restoration.
+var ErrIdentityLeak = errors.New("privilege identity leak detected")
+
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
 type UnixPrivilegeManager struct {
 	logger             *slog.Logger
@@ -34,6 +37,8 @@ type UnixPrivilegeManager struct {
 	// syscallSeteuid and syscallSetegid are injectable for testing
 	syscallSeteuid func(uid int) error
 	syscallSetegid func(gid int) error
+	// identityVerifier checks that EUID==UID and EGID==GID; injectable for testing
+	identityVerifier func() error
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
@@ -44,7 +49,21 @@ func newPlatformManager(logger *slog.Logger) Manager {
 		osExit:             os.Exit,
 		syscallSeteuid:     syscall.Seteuid,
 		syscallSetegid:     syscall.Setegid,
+		identityVerifier:   defaultIdentityVerifier,
 	}
+}
+
+// defaultIdentityVerifier checks that EUID == UID and EGID == GID.
+// This is the security invariant that must hold after every privilege restoration:
+// the process must not carry elevated identity between operations.
+func defaultIdentityVerifier() error {
+	if euid, uid := syscall.Geteuid(), syscall.Getuid(); euid != uid {
+		return fmt.Errorf("effective UID %d does not match real UID %d after privilege restoration: %w", euid, uid, ErrIdentityLeak)
+	}
+	if egid, gid := syscall.Getegid(), syscall.Getgid(); egid != gid {
+		return fmt.Errorf("effective GID %d does not match real GID %d after privilege restoration: %w", egid, gid, ErrIdentityLeak)
+	}
+	return nil
 }
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
@@ -179,6 +198,17 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 		}
 	} else if panicValue == nil && (execCtx.needsPrivilegeEscalation || execCtx.needsUserGroupChange) {
 		m.metrics.RecordElevationSuccess(duration)
+	}
+
+	// Defense-in-depth: verify EUID==UID and EGID==GID after every non-dry-run privilege
+	// operation. This is an independent check of the privilege manager's own restoration
+	// logic and catches any leakage regardless of which restore path ran.
+	needsVerification := execCtx.needsPrivilegeEscalation ||
+		(execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun)
+	if needsVerification {
+		if err := m.identityVerifier(); err != nil {
+			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
+		}
 	}
 }
 
