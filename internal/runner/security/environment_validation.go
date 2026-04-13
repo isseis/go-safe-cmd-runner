@@ -54,7 +54,7 @@ func (v *Validator) ValidateEnvironmentValue(key, value string) error {
 			ErrUnsafeEnvironmentVar, key)
 	}
 	if strings.ContainsAny(value, "\n\r") {
-		return fmt.Errorf("%w: environment variable %s contains newline character",
+		return fmt.Errorf("%w: environment variable %s contains newline or carriage return character",
 			ErrUnsafeEnvironmentVar, key)
 	}
 	return nil
