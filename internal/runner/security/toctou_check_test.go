@@ -131,9 +131,7 @@ func TestRunTOCTOUPermissionCheck_ViolationDetected(t *testing.T) {
 	violations := RunTOCTOUPermissionCheck(v, []string{tmpDir}, slog.Default())
 	require.Len(t, violations, 1, "expected exactly one violation for world-writable directory")
 	assert.Equal(t, filepath.Clean(tmpDir), violations[0].Path)
-	assert.Error(t, violations[0].Err)
-	assert.True(t, errors.Is(violations[0].Err, ErrInvalidDirPermissions) ||
-		violations[0].Err != nil, "violation error should be about directory permissions")
+	assert.True(t, errors.Is(violations[0].Err, ErrInvalidDirPermissions), "violation error should be about directory permissions")
 }
 
 // TestRunTOCTOUPermissionCheck_MultipleViolations verifies that multiple
