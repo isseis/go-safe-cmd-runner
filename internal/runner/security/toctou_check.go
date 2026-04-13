@@ -48,12 +48,17 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 	}
 
 	// Traverse dir and all ancestor directories up to root.
+	// Stops early when a directory already in seen is reached, since its
+	// ancestors must also be present.
 	addWithAncestors := func(dir string) {
 		if dir == "" {
 			return
 		}
 		cur := filepath.Clean(dir)
 		for {
+			if _, exists := seen[cur]; exists {
+				break
+			}
 			add(cur)
 			parent := filepath.Dir(cur)
 			if parent == cur {
