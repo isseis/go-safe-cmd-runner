@@ -332,7 +332,13 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 		// is invalid — a programming error that cannot be recovered at runtime.
 		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
 	}
-	toctouDirs := security.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, cmdcommon.DefaultHashDirectory)
+	// Resolve symlinks in the hash directory so ValidateDirectoryPermissions evaluates
+	// the real path rather than rejecting symlink path components.
+	// DefaultHashDirectory is already validated to be absolute; the fallback in
+	// ResolveAbsPathForTOCTOU preserves the original path when EvalSymlinks fails
+	// (e.g. directory not yet created), so the check is still performed.
+	resolvedHashDir, _ := security.ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)
+	toctouDirs := security.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, resolvedHashDir)
 	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 	if len(violations) > 0 {
 		return nil, &logging.PreExecutionError{
