@@ -195,64 +195,67 @@ For security-related questions or concerns, please contact the project maintaine
 
 ---
 
-## TOCTOU 攻撃に対する運用要件
+## Operational Requirements for TOCTOU Attacks
 
-### 概要
+### Overview
 
-本システムは、実行前にコマンドバイナリおよびハッシュファイルの整合性を `ValidateDirectoryPermissions` /
-`validateCompletePath` を用いて検査します。ただし、検査対象のディレクトリやその親ディレクトリに
-第三者が書き込み可能な場合、**ハッシュ検証後・コマンド実行前**の間でファイルを差し替えられる
-TOCTOU (Time-of-Check to Time-of-Use) 攻撃が成立する可能性があります。
+This system inspects the integrity of command binaries and hash files before execution using
+`ValidateDirectoryPermissions` / `validateCompletePath`. However, if a third party can write to
+the inspected directories or their parent directories, a TOCTOU (Time-of-Check to Time-of-Use)
+attack — where files are swapped **after hash verification but before command execution** — may
+be possible.
 
-以下の運用要件を満たすことで、このリスクを最小化してください。
+Minimize this risk by satisfying the following operational requirements.
 
-### 対象ディレクトリのパーミッション要件
+### Permission Requirements for Target Directories
 
-`verify_files`・`commands` で指定するバイナリ、および `--hash-dir` で指定するハッシュディレクトリは、
-下記のパーミッション条件を満たすディレクトリ配下に配置してください。条件は対象ディレクトリ自身だけでなく、
-**ルートまでのすべての親ディレクトリ**に適用されます。
+Binaries specified in `verify_files` and `commands`, and the hash directory specified by
+`--hash-dir`, must be placed under directories that satisfy the permission conditions below.
+The conditions apply not only to the target directory itself but also to
+**all parent directories up to the root**.
 
-| 条件 | 詳細 |
-|------|------|
-| **other 書込不可** | `other` パーミッションに書込ビット (`o+w`) がないこと。ただし sticky bit が設定されているディレクトリ (`/tmp` 等) は例外 |
-| **group 書込制約** | `group` パーミッションに書込ビット (`g+w`) がある場合、ディレクトリの所有者が root であるか、実行ユーザが当該グループの唯一のメンバであること |
-| **owner 書込制約** | `owner` パーミッションに書込ビット (`u+w`) がある場合、ディレクトリの所有者が root または実行ユーザ自身であること |
-| **解決後パスで検証** | 対象ディレクトリのパスはシンボリックリンク解決後の実体パスを基準に検証され、その実体パスおよびルートまでのすべての親ディレクトリが上記要件を満たすこと |
+| Condition | Details |
+|-----------|---------|
+| **No other-write** | The `other` permission must not have the write bit (`o+w`) set. Exception: directories with the sticky bit set (e.g., `/tmp`) |
+| **Restricted group-write** | If the `group` permission has the write bit (`g+w`) set, the directory owner must be root, or the executing user must be the sole member of that group |
+| **Restricted owner-write** | If the `owner` permission has the write bit (`u+w`) set, the directory owner must be root or the executing user themselves |
+| **Validated on resolved path** | The path of the target directory is validated based on the real path after symlink resolution; the real path and all parent directories up to the root must satisfy the above requirements |
 
-### ハッシュディレクトリの要件
+### Hash Directory Requirements
 
-`--hash-dir` で指定するディレクトリ自体、およびそのルートまでのすべての親ディレクトリも
-上記のパーミッション要件を満たす必要があります。
+The directory specified by `--hash-dir` itself, and all parent directories up to the root,
+must also satisfy the above permission requirements.
 
-デフォルトのハッシュディレクトリは `/usr/local/etc/go-safe-cmd-runner/hashes` です。
-このパスの親ディレクトリ (`/usr/local/etc/go-safe-cmd-runner`, `/usr/local/etc`,
-`/usr/local`, `/usr`, `/`) もすべて上記要件を満たすよう管理してください。
+The default hash directory is `/usr/local/etc/go-safe-cmd-runner/hashes`.
+The parent directories of this path (`/usr/local/etc/go-safe-cmd-runner`, `/usr/local/etc`,
+`/usr/local`, `/usr`, `/`) must also all be managed to satisfy the above requirements.
 
-### 自動検査について
+### Automatic Inspection
 
-`runner` コマンドは起動時に上記条件を自動的に検査します。
+The `runner` command automatically inspects the above conditions at startup.
 
-- **違反が検出された場合**: `runner` はコマンド実行を開始せずエラー終了します。
-- **`record` / `verify` コマンドの場合**: 違反が検出されても警告ログを出力して処理を継続します。
+- **If a violation is detected**: `runner` exits with an error without starting command execution.
+- **For `record` / `verify` commands**: Processing continues with a warning log even if a violation is detected.
 
-存在しないディレクトリはまだ攻撃対象にならないためスキップされます。ディレクトリ作成後は
-パーミッションを適切に設定してください。
+Directories that do not exist are skipped as they are not yet attack targets. After creating a
+directory, set its permissions appropriately.
 
-**自動検査の対象ディレクトリ:**
+**Directories subject to automatic inspection:**
 
-| 設定項目 | 検査範囲 |
-|----------|----------|
-| `verify_files` の各ファイル | 直接の親ディレクトリ＋ルートまでの全祖先ディレクトリ |
-| `commands` の各コマンド | 直接の親ディレクトリ＋ルートまでの全祖先ディレクトリ |
-| `--hash-dir` | ハッシュディレクトリ自身＋ルートまでの全祖先ディレクトリ |
+| Configuration Item | Inspection Scope |
+|--------------------|-----------------|
+| Each file in `verify_files` | Direct parent directory + all ancestor directories up to the root |
+| Each command in `commands` | Direct parent directory + all ancestor directories up to the root |
+| `--hash-dir` | The hash directory itself + all ancestor directories up to the root |
 
-いずれの場合も全祖先を検査するのは、祖先ディレクトリへの書き込み権限があれば中間ディレクトリの
-rename によって直接の親ディレクトリを差し替えられる（TOCTOU 攻撃が成立する）ためです。
+In all cases, all ancestors are inspected because write access to an ancestor directory allows
+replacing an intermediate directory via rename, enabling a TOCTOU attack on the direct parent
+directory.
 
-### 推奨設定
+### Recommended Configuration
 
 ```bash
-# ハッシュディレクトリの推奨パーミッション設定例
+# Example recommended permission settings for the hash directory
 sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
@@ -260,11 +263,12 @@ sudo chown root:root /usr/local/etc/go-safe-cmd-runner
 sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-コマンドバイナリは `/usr/local/bin` や `/usr/bin` など、root 所有かつ other 書込なしのディレクトリに配置することを推奨します。
+It is recommended to place command binaries in directories owned by root with no other-write
+permission, such as `/usr/local/bin` or `/usr/bin`.
 
-### 関連
+### Related
 
-- 中長期的な TOCTOU 対策として `fexecve` を使った実行時整合性検証 ([0090_toctou_fexecve](../tasks/0090_toctou_fexecve/00_analysis.md)) を検討中です。
+- As a medium- to long-term TOCTOU countermeasure, runtime integrity verification using `fexecve` is under consideration ([0090_toctou_fexecve](../tasks/0090_toctou_fexecve/00_analysis.md)).
 
 ---
 
