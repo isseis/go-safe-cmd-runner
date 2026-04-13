@@ -19,6 +19,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
+var ErrPrivilegeLeak = errors.New("privilege leak detected")
+
 // Error definitions
 var (
 	ErrEmptyCommand                  = errors.New("command cannot be empty")
@@ -32,10 +35,12 @@ var (
 
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
-	FS          FileSystem
-	PrivMgr     runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
-	AuditLogger *audit.Logger                // Optional audit logger for privileged operations
-	Logger      *slog.Logger                 // Optional logger for command execution logging
+	FS              FileSystem
+	PrivMgr         runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
+	AuditLogger     *audit.Logger                // Optional audit logger for privileged operations
+	Logger          *slog.Logger                 // Optional logger for command execution logging
+	osExit          func(code int)               // injectable for testing; defaults to os.Exit
+	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -60,8 +65,10 @@ func WithAuditLogger(auditLogger *audit.Logger) Option {
 // are visible through the application's default logger.
 func NewDefaultExecutor(opts ...Option) CommandExecutor {
 	e := &DefaultExecutor{
-		FS:     &osFileSystem{},
-		Logger: slog.Default(),
+		FS:              &osFileSystem{},
+		Logger:          slog.Default(),
+		osExit:          os.Exit,
+		identityChecker: defaultIdentityChecker,
 	}
 
 	for _, opt := range opts {
@@ -77,10 +84,28 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeC
 	// The caller is responsible for calling Close() when done.
 	// This executor will NOT close the outputWriter.
 
+	var result *Result
+	var err error
 	if cmd.HasUserGroupSpecification() {
-		return e.executeWithUserGroup(ctx, cmd, envVars, outputWriter)
+		result, err = e.executeWithUserGroup(ctx, cmd, envVars, outputWriter)
+	} else {
+		result, err = e.executeNormal(ctx, cmd, envVars, outputWriter)
 	}
-	return e.executeNormal(ctx, cmd, envVars, outputWriter)
+
+	// Security invariant: EUID must equal UID and EGID must equal GID after every execution.
+	// This acts as a defense-in-depth check independent of the privilege manager's own
+	// restoration logic. If a bug causes privilege escalation to leak into the next command,
+	// we detect it here and terminate immediately rather than continue with wrong identity.
+	if checkErr := e.identityChecker(); checkErr != nil {
+		e.Logger.Error("CRITICAL SECURITY FAILURE: privilege leak detected after command execution",
+			"error", checkErr,
+			"command", cmd.Name(),
+			"pid", os.Getpid())
+		fmt.Fprintf(os.Stderr, "FATAL: %v\n", checkErr)
+		e.osExit(1)
+	}
+
+	return result, err
 }
 
 // executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics

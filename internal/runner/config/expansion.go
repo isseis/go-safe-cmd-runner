@@ -276,19 +276,30 @@ func processVarRefs(
 	return result.String(), nil
 }
 
-// forbiddenEnvVars lists environment variables that must never be passed to child processes.
-// These variables affect dynamic linker behavior and are forbidden to ensure that dynamic
-// library resolution is deterministic and matches the recorded state, and to prevent
-// library injection attacks.
-var forbiddenEnvVars = map[string]struct{}{
-	"LD_LIBRARY_PATH": {}, // alters shared library search path
-	"LD_PRELOAD":      {}, // injects arbitrary shared libraries into the process
-	"LD_AUDIT":        {}, // loads audit libraries that can hook all symbol bindings
+// forbiddenEnvVarPrefixes lists prefixes whose matching environment variables must never
+// be passed to child processes. All LD_* variables are forbidden because they control
+// dynamic linker behavior, and any future LD_* variable carries the same risk.
+var forbiddenEnvVarPrefixes = []string{"LD_"}
+
+// forbiddenEnvVarExact lists exact names of forbidden environment variables that do not
+// carry a forbidden prefix. These variables affect locale/resolver/alias resolution and
+// can be used to redirect library or name lookups.
+var forbiddenEnvVarExact = map[string]struct{}{
+	"GCONV_PATH":  {}, // redirects iconv character-set conversion modules
+	"LOCPATH":     {}, // overrides locale data directory
+	"HOSTALIASES": {}, // overrides hostname aliases for resolver
+	"NLSPATH":     {}, // redirects NLS message catalogue search path
+	"RES_OPTIONS": {}, // overrides DNS resolver options
 }
 
 // isForbiddenEnvVar reports whether name is a forbidden environment variable.
 func isForbiddenEnvVar(name string) bool {
-	_, ok := forbiddenEnvVars[name]
+	for _, prefix := range forbiddenEnvVarPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	_, ok := forbiddenEnvVarExact[name]
 	return ok
 }
 

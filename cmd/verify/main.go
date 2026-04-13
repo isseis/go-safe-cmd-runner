@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 const hashDirPermissions = 0o750
@@ -52,6 +54,39 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if cfg.usedDeprecated {
 		fmt.Fprintln(stderr, "Warning: -file flag is deprecated and will be removed in a future release. Specify files as positional arguments.") //nolint:errcheck
 	}
+
+	// Run TOCTOU permission check on directories referenced by this operation.
+	// verify does not have a config with verify_files or commands; check the files being
+	// verified and the hash directory. Violations are logged as warnings only — verify
+	// continues even if the check fails.
+	secValidator, secErr := security.NewValidatorForTOCTOU()
+	if secErr != nil {
+		// NewValidatorForTOCTOU only fails when a regex literal in DefaultConfig
+		// is invalid — a programming error that cannot be recovered at runtime.
+		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
+	}
+	absFiles := make([]string, 0, len(cfg.files))
+	for _, f := range cfg.files {
+		abs, err := filepath.Abs(f)
+		if err != nil {
+			abs = f
+		}
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			absFiles = append(absFiles, resolved)
+		} else {
+			absFiles = append(absFiles, abs)
+		}
+	}
+	absHashDir := cfg.hashDir
+	if abs, err := filepath.Abs(cfg.hashDir); err == nil {
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			absHashDir = resolved
+		} else {
+			absHashDir = abs
+		}
+	}
+	toctouDirs := security.CollectTOCTOUCheckDirs(absFiles, nil, absHashDir)
+	security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
 
 	validator, err := validatorFactory(cfg.hashDir)
 	if err != nil {

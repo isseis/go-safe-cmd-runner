@@ -60,7 +60,7 @@ func (m *Manager) verifyAndReadFile(filePath string, fileType string) ([]byte, e
 	}
 
 	// Read and verify file content atomically using filevalidator
-	content, err := m.readAndVerifyFileWithFallback(filePath, fileType)
+	content, err := m.readAndVerifyFileWithReadFallback(filePath, fileType)
 	if err != nil {
 		slog.Error("File verification and reading failed",
 			"file_path", filePath,
@@ -94,9 +94,9 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 	}
 
 	// Verify file hash using filevalidator (with privilege fallback)
-	if err := m.verifyFileWithFallback(envFilePath, "env"); err != nil {
+	if err := m.verifyFile(envFilePath, "env"); err != nil {
 		// In dry-run mode, the failure is already recorded and logged by
-		// verifyFileWithFallback; treat it as non-fatal here.
+		// verifyFile; treat it as non-fatal here.
 		if m.isDryRun {
 			return nil
 		}
@@ -176,7 +176,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 
 	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {
 		// Verify file hash (try normal verification first, then with privileges if needed)
-		if err := m.verifyFileWithFallback(filePath, "global"); err != nil {
+		if err := m.verifyFile(filePath, "global"); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
 			slog.Error("Global file verification failed",
 				"file", filePath,
@@ -188,7 +188,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 
 	if len(result.FailedFiles) > 0 {
 		// In dry-run mode, failures are already recorded in the ResultCollector and
-		// logged by verifyFileWithFallback.  Return the accurate result without
+		// logged by verifyFile.  Return the accurate result without
 		// treating the failures as fatal.
 		if m.isDryRun {
 			return result, nil
@@ -345,13 +345,12 @@ func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
 	return m.networkSymbolStore
 }
 
-// verifyFileWithFallback attempts file verification with normal privileges first,
-// then falls back to privileged verification if permission errors occur.
+// verifyFile attempts file verification using the configured fileValidator.
 // In dry-run mode it records the result in the ResultCollector and logs the
 // failure, but still returns the underlying error so callers can track
 // accurate per-file success/failure counts.  Callers are responsible for
 // suppressing fatality in dry-run mode.
-func (m *Manager) verifyFileWithFallback(filePath string, context string) error {
+func (m *Manager) verifyFile(filePath string, context string) error {
 	if m.fileValidator == nil {
 		// File validator is disabled - skip verification
 		return nil
@@ -375,7 +374,7 @@ func (m *Manager) verifyFileWithFallback(filePath string, context string) error 
 }
 
 // verifyFileWithHash verifies the file and returns the computed content hash on success.
-// It mirrors verifyFileWithFallback but also returns the hash so callers can forward
+// It mirrors verifyFile but also returns the hash so callers can forward
 // it to downstream consumers (e.g. ELF analysis) to avoid re-reading the file.
 // Returns ("", nil) when the file validator is disabled.
 // In dry-run mode it records the result and logs failures, but still returns the
@@ -404,10 +403,17 @@ func (m *Manager) verifyFileWithHash(filePath string, context string) (string, e
 	return contentHash, nil
 }
 
-// readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
-// then falls back to privileged access if permission errors occur
-// In dry-run mode, it records the verification result without returning errors
-func (m *Manager) readAndVerifyFileWithFallback(filePath string, context string) ([]byte, error) {
+// readAndVerifyFileWithReadFallback attempts file reading and verification.
+// It has two os.ReadFile fallback paths:
+//  1. When m.fileValidator == nil (file validation is disabled): verification is
+//     skipped and the file is read directly via os.ReadFile.
+//  2. In dry-run mode when verification fails: the failure is recorded in the
+//     ResultCollector and logged, then os.ReadFile is used to re-attempt reading
+//     the file so that callers can still process the content.
+//
+// "WithReadFallback" refers to both of the above "fall back to file reading"
+// behaviors taken as a whole.
+func (m *Manager) readAndVerifyFileWithReadFallback(filePath string, context string) ([]byte, error) {
 	if m.fileValidator == nil {
 		// File validator is disabled - fallback to normal file reading
 		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver

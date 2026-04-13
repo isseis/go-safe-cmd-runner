@@ -430,3 +430,179 @@ func TestEmergencyShutdown(t *testing.T) {
 	assert.True(t, exited, "os.Exit should have been called")
 	assert.Equal(t, 1, exitCode, "Expected exit code 1")
 }
+
+// TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess tests that when Seteuid
+// fails, Setegid is called with originalEGID to roll back (AC-M1-4).
+func TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackSuccess(t *testing.T) {
+	logger := slog.Default()
+
+	const originalEGID = 1234
+	var setegidCalledWith []int
+	seteuidErr := errors.New("seteuid failed")
+
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: false,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		syscallSeteuid:     func(_ int) error { return seteuidErr },
+		syscallSetegid: func(gid int) error {
+			setegidCalledWith = append(setegidCalledWith, gid)
+			return nil
+		},
+	}
+
+	err := manager.changeUserGroupInternal("", "", false, originalEGID)
+
+	// Seteuid failure should be propagated
+	assert.ErrorContains(t, err, "failed to set effective user ID")
+
+	// Setegid must have been called twice:
+	//   1st call: set targetGID (0 when no user/group specified → Getegid at call time)
+	//   2nd call: rollback to originalEGID
+	require.Len(t, setegidCalledWith, 2, "Setegid should be called twice")
+	assert.Equal(t, originalEGID, setegidCalledWith[1], "second Setegid call should use originalEGID for rollback")
+}
+
+// TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure tests that when both
+// Seteuid and the rollback Setegid fail, emergencyShutdown (osExit) is called (AC-M1-5).
+func TestChangeUserGroupInternal_SeteuidFailure_EgidRollbackFailure(t *testing.T) {
+	logger := slog.Default()
+
+	const originalEGID = 5678
+	seteuidErr := errors.New("seteuid failed")
+	setegidErr := errors.New("setegid rollback failed")
+
+	var exitCode int
+	var exited bool
+	testOsExit := func(code int) {
+		exitCode = code
+		exited = true
+		panic("os.Exit called")
+	}
+
+	// syscallSetegid: succeed on first call (set targetGID), fail on second call (rollback).
+	setegidCallCount := 0
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: false,
+		osExit:             testOsExit,
+		syscallSeteuid:     func(_ int) error { return seteuidErr },
+		syscallSetegid: func(_ int) error {
+			setegidCallCount++
+			if setegidCallCount == 1 {
+				return nil // first call (targetGID) succeeds
+			}
+			return setegidErr // second call (rollback) fails → triggers emergencyShutdown
+		},
+	}
+
+	assert.PanicsWithValue(t, "os.Exit called", func() {
+		_ = manager.changeUserGroupInternal("", "", false, originalEGID)
+	}, "emergencyShutdown should be called when rollback Setegid also fails")
+
+	assert.True(t, exited, "os.Exit should have been called")
+	assert.Equal(t, 1, exitCode, "Expected exit code 1")
+}
+
+// TestDefaultIdentityVerifier tests that defaultIdentityVerifier passes in a normal
+// test environment where EUID == UID and EGID == GID.
+func TestDefaultIdentityVerifier(t *testing.T) {
+	// In a regular test run (no setuid binary), effective and real IDs are equal.
+	err := defaultIdentityVerifier()
+	assert.NoError(t, err, "defaultIdentityVerifier should pass when EUID==UID and EGID==GID")
+}
+
+// TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown verifies that when
+// identityVerifier detects a mismatch after privilege restoration, emergencyShutdown
+// (osExit) is called immediately.
+func TestRestorePrivilegesAndMetrics_IdentityLeakTriggersShutdown(t *testing.T) {
+	var exitCode int
+	exitCalled := false
+	testOsExit := func(code int) {
+		exitCode = code
+		exitCalled = true
+		panic("os.Exit called")
+	}
+
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: false,
+		osExit:             testOsExit,
+		identityVerifier: func() error {
+			return errors.New("effective UID 0 does not match real UID 1000 after privilege restoration")
+		},
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: true,
+		needsUserGroupChange:     false,
+		originalEUID:             syscall.Geteuid(),
+		originalEGID:             syscall.Getegid(),
+		start:                    time.Now(),
+	}
+
+	assert.PanicsWithValue(t, "os.Exit called", func() {
+		manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+	}, "emergencyShutdown should be called when identity verification fails")
+
+	assert.True(t, exitCalled, "os.Exit should have been called")
+	assert.Equal(t, 1, exitCode, "exit code should be 1")
+}
+
+// TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun verifies that
+// the identity check is NOT performed for dry-run operations (which never change UID/GID).
+func TestRestorePrivilegesAndMetrics_IdentityVerificationSkippedForDryRun(t *testing.T) {
+	verifierCalled := false
+
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: false,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		identityVerifier: func() error {
+			verifierCalled = true
+			return errors.New("should not be called")
+		},
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: false,
+		needsUserGroupChange:     true,
+		start:                    time.Now(),
+	}
+
+	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+
+	assert.False(t, verifierCalled, "identityVerifier should not be called for dry-run")
+}
+
+// TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore verifies that
+// no shutdown occurs when identityVerifier confirms the identity is clean.
+func TestRestorePrivilegesAndMetrics_IdentityVerificationPassesOnCleanRestore(t *testing.T) {
+	manager := &UnixPrivilegeManager{
+		logger:             slog.Default(),
+		privilegeSupported: false,
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		identityVerifier:   func() error { return nil },
+	}
+
+	execCtx := &executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		needsPrivilegeEscalation: true,
+		needsUserGroupChange:     false,
+		start:                    time.Now(),
+	}
+
+	// Should complete without panic or osExit
+	manager.restorePrivilegesAndMetrics(execCtx, nil, "test", 0)
+}

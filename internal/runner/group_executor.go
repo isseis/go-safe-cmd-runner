@@ -40,6 +40,10 @@ func (e *CommandExecutionError) Unwrap() error {
 	return e.Err
 }
 
+// ErrTOCTOUViolation is returned when a group-level TOCTOU permission check detects
+// directory permission violations.
+var ErrTOCTOUViolation = errors.New("TOCTOU permission check failed")
+
 // GroupExecutor defines the interface for executing command groups
 type GroupExecutor interface {
 	// ExecuteGroup executes all commands in a group sequentially
@@ -62,6 +66,7 @@ type DefaultGroupExecutor struct {
 	keepTempDirs        bool
 	securityLogger      *logging.SecurityLogger
 	currentUser         string
+	toctouValidator     *security.Validator
 }
 
 // groupNotificationFunc is a function type for sending group notifications
@@ -130,6 +135,7 @@ func NewDefaultGroupExecutor(
 		keepTempDirs:        opts.keepTempDirs,
 		securityLogger:      secLogger,
 		currentUser:         opts.currentUser,
+		toctouValidator:     opts.toctouValidator,
 	}
 }
 
@@ -193,6 +199,14 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	// and provides early detection of configuration errors (Fail Fast).
 	if err := ge.preExpandCommands(groupSpec, runtimeGroup, runtimeGlobal); err != nil {
 		return fmt.Errorf("failed to pre-expand commands for group[%s]: %w", groupSpec.Name, err)
+	}
+
+	// 6.5. TOCTOU permission check using fully-resolved group paths.
+	// Group-level verify_files and command paths may contain %{GROUP_VAR} references
+	// that cannot be resolved at startup; this check runs after expansion so all paths
+	// are concrete and can be checked correctly.
+	if err := ge.runGroupTOCTOUCheck(runtimeGroup); err != nil {
+		return err
 	}
 
 	// 7. Verify group files before execution
@@ -330,6 +344,42 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 		runtimeGroup.Commands = append(runtimeGroup.Commands, runtimeCmd)
 	}
 
+	return nil
+}
+
+// runGroupTOCTOUCheck performs a TOCTOU directory permission check using the
+// fully-expanded group paths. It is a no-op when toctouValidator is nil.
+// Returns an error if any violation is detected.
+func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.RuntimeGroup) error {
+	if ge.toctouValidator == nil {
+		return nil
+	}
+
+	// Collect verify_files paths (already variable-expanded; keep only absolute
+	// paths and apply EvalSymlinks for the same symlink normalisation used for
+	// CLI paths in record/verify).
+	verifyPaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles))
+	for _, f := range runtimeGroup.ExpandedVerifyFiles {
+		if resolved, ok := security.ResolveAbsPathForTOCTOU(f); ok {
+			verifyPaths = append(verifyPaths, resolved)
+		}
+	}
+
+	// Collect command paths (expanded by preExpandCommands).
+	cmdPaths := make([]string, 0, len(runtimeGroup.Commands))
+	for _, cmd := range runtimeGroup.Commands {
+		if resolved, ok := security.ResolveAbsPathForTOCTOU(cmd.Cmd()); ok {
+			cmdPaths = append(cmdPaths, resolved)
+		}
+	}
+
+	// hashDir is already checked at startup; pass empty string to skip re-traversal.
+	dirs := security.CollectTOCTOUCheckDirs(verifyPaths, cmdPaths, "")
+	violations := security.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default())
+	if len(violations) > 0 {
+		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
+			ErrTOCTOUViolation, runnertypes.ExtractGroupName(runtimeGroup), len(violations))
+	}
 	return nil
 }
 

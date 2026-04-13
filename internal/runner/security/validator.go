@@ -55,7 +55,6 @@ type Validator struct {
 	fs                          common.FileSystem
 	allowedCommandRegexps       []*regexp.Regexp
 	sensitiveEnvRegexps         []*regexp.Regexp
-	dangerousEnvRegexps         []*regexp.Regexp
 	dangerousPrivilegedCommands map[string]struct{}
 	shellCommands               map[string]struct{}
 	// Group membership checker for permission validation
@@ -146,39 +145,6 @@ func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *gro
 			return nil, fmt.Errorf("%w: invalid sensitive env var pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
 		}
 		v.sensitiveEnvRegexps[i] = re
-	}
-
-	// Compile dangerous environment value patterns
-	dangerousPatterns := []string{
-		`;`,        // Command separator
-		`\|`,       // Pipe
-		`&&`,       // AND operator
-		`\|\|`,     // OR operator
-		`\$\(`,     // Command substitution
-		"`",        // Command substitution (backticks)
-		`>`,        // Redirect
-		`<`,        // Redirect
-		`rm `,      // Dangerous rm command
-		`del `,     // Dangerous del command
-		`format `,  // Dangerous format command
-		`mkfs `,    // Dangerous mkfs command
-		`mkfs\.`,   // Dangerous mkfs. command
-		`dd if=`,   // Dangerous dd input
-		`dd of=`,   // Dangerous dd output
-		`exec `,    // Code execution
-		`exec\(`,   // Code execution (function call)
-		`system `,  // System call
-		`system\(`, // System call (function call)
-		`eval `,    // Code evaluation
-		`eval\(`,   // Code evaluation (function call)
-	}
-	v.dangerousEnvRegexps = make([]*regexp.Regexp, len(dangerousPatterns))
-	for i, pattern := range dangerousPatterns {
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid dangerous env pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
-		}
-		v.dangerousEnvRegexps[i] = re
 	}
 
 	// Initialize dangerous commands map

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -23,6 +24,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -275,12 +277,82 @@ func run(runID string) error {
 			"run_id", runID)
 	}
 
+	// Run TOCTOU permission check on directories referenced by the configuration.
+	// The returned validator is reused for per-group checks at execution time so that
+	// group-level paths with %{GROUP_VAR} references are also checked.
+	secValidator, err := runTOCTOUCheck(cfg, runtimeGlobal, runID)
+	if err != nil {
+		return err
+	}
+
 	// Initialize and execute runner with all verified data
-	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID)
+	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator)
+}
+
+// resolveStaticAbsPath returns the real path for p when p is an absolute path
+// that contains no unexpanded variable references ("%{").  The second return
+// value is false when the path should be skipped entirely (relative or still
+// contains variables).
+func resolveStaticAbsPath(p string) (string, bool) {
+	if strings.Contains(p, "%{") {
+		return "", false
+	}
+	return security.ResolveAbsPathForTOCTOU(p)
+}
+
+// runTOCTOUCheck collects directory paths referenced by the configuration and runs a
+// TOCTOU permission check. Returns the validator used (for reuse in per-group checks)
+// and a PreExecutionError if any violation is detected.
+// Paths containing variable references or relative paths are skipped because they
+// cannot be safely resolved before per-group expansion.
+func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (*security.Validator, error) {
+	verifyFilePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
+	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
+		// Variables are already expanded so no %{ filter is needed here.
+		if resolved, ok := resolveStaticAbsPath(f); ok {
+			verifyFilePaths = append(verifyFilePaths, resolved)
+		}
+	}
+	var commandPaths []string
+	for _, g := range cfg.Groups {
+		for _, f := range g.VerifyFiles {
+			if resolved, ok := resolveStaticAbsPath(f); ok {
+				verifyFilePaths = append(verifyFilePaths, resolved)
+			}
+		}
+		for _, cmd := range g.Commands {
+			if resolved, ok := resolveStaticAbsPath(cmd.Cmd); ok {
+				commandPaths = append(commandPaths, resolved)
+			}
+		}
+	}
+	secValidator, secErr := security.NewValidatorForTOCTOU()
+	if secErr != nil {
+		// NewValidatorForTOCTOU only fails when a regex literal in DefaultConfig
+		// is invalid — a programming error that cannot be recovered at runtime.
+		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
+	}
+	// Resolve symlinks in the hash directory so ValidateDirectoryPermissions evaluates
+	// the real path rather than rejecting symlink path components.
+	// DefaultHashDirectory is already validated to be absolute; the fallback in
+	// ResolveAbsPathForTOCTOU preserves the original path when EvalSymlinks fails
+	// (e.g. directory not yet created), so the check is still performed.
+	resolvedHashDir, _ := security.ResolveAbsPathForTOCTOU(cmdcommon.DefaultHashDirectory)
+	toctouDirs := security.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, resolvedHashDir)
+	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
+	if len(violations) > 0 {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("TOCTOU permission check failed: %d directory violation(s) detected; review directory permissions", len(violations)),
+			Component: string(resource.ComponentVerification),
+			RunID:     runID,
+		}
+	}
+	return secValidator, nil
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string, secValidator *security.Validator) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
@@ -292,6 +364,9 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runner.WithRunID(runID),
 		runner.WithRuntimeGlobal(runtimeGlobal),
 		runner.WithKeepTempDirs(keepTempDirs),
+	}
+	if secValidator != nil {
+		runnerOptions = append(runnerOptions, runner.WithTOCTOUValidator(secValidator))
 	}
 
 	// Parse dry-run options once for the entire function

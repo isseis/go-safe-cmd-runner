@@ -22,6 +22,9 @@ var ErrInsufficientPrivileges = errors.New("insufficient privileges to change us
 // ErrUnsupportedOperationType is returned when an unsupported operation type is encountered
 var ErrUnsupportedOperationType = errors.New("unsupported operation type")
 
+// ErrIdentityLeak is returned when effective UID/GID do not match real UID/GID after privilege restoration.
+var ErrIdentityLeak = errors.New("privilege identity leak detected")
+
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
 type UnixPrivilegeManager struct {
 	logger             *slog.Logger
@@ -31,6 +34,11 @@ type UnixPrivilegeManager struct {
 	mu                 sync.Mutex
 	// osExit is a function for os.Exit to enable testing of emergencyShutdown
 	osExit func(code int)
+	// syscallSeteuid and syscallSetegid are injectable for testing
+	syscallSeteuid func(uid int) error
+	syscallSetegid func(gid int) error
+	// identityVerifier checks that EUID==UID and EGID==GID; injectable for testing
+	identityVerifier func() error
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
@@ -39,7 +47,23 @@ func newPlatformManager(logger *slog.Logger) Manager {
 		originalUID:        syscall.Getuid(),
 		privilegeSupported: isPrivilegeExecutionSupported(logger),
 		osExit:             os.Exit,
+		syscallSeteuid:     syscall.Seteuid,
+		syscallSetegid:     syscall.Setegid,
+		identityVerifier:   defaultIdentityVerifier,
 	}
+}
+
+// defaultIdentityVerifier checks that EUID == UID and EGID == GID.
+// This is the security invariant that must hold after every privilege restoration:
+// the process must not carry elevated identity between operations.
+func defaultIdentityVerifier() error {
+	if euid, uid := syscall.Geteuid(), syscall.Getuid(); euid != uid {
+		return fmt.Errorf("effective UID %d does not match real UID %d after privilege restoration: %w", euid, uid, ErrIdentityLeak)
+	}
+	if egid, gid := syscall.Getegid(), syscall.Getgid(); egid != gid {
+		return fmt.Errorf("effective GID %d does not match real GID %d after privilege restoration: %w", egid, gid, ErrIdentityLeak)
+	}
+	return nil
 }
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
@@ -119,7 +143,7 @@ func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error
 
 	if execCtx.needsUserGroupChange {
 		isDryRun := execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun
-		if err := m.changeUserGroupInternal(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun); err != nil {
+		if err := m.changeUserGroupInternal(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun, execCtx.originalEGID); err != nil {
 			if execCtx.needsPrivilegeEscalation {
 				if restoreErr := m.restorePrivileges(); restoreErr != nil {
 					m.emergencyShutdown(restoreErr, "user_group_change_failure")
@@ -174,6 +198,17 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionCon
 		}
 	} else if panicValue == nil && (execCtx.needsPrivilegeEscalation || execCtx.needsUserGroupChange) {
 		m.metrics.RecordElevationSuccess(duration)
+	}
+
+	// Defense-in-depth: verify EUID==UID and EGID==GID after every non-dry-run privilege
+	// operation. This is an independent check of the privilege manager's own restoration
+	// logic and catches any leakage regardless of which restore path ran.
+	needsVerification := execCtx.needsPrivilegeEscalation ||
+		(execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun)
+	if needsVerification {
+		if err := m.identityVerifier(); err != nil {
+			m.emergencyShutdown(err, fmt.Sprintf("identity_verification_failure_%s", shutdownContext))
+		}
 	}
 }
 
@@ -376,9 +411,11 @@ func buildUserGroupLogAttrs(userName, groupName, effectiveGroupName string, isDe
 	return logAttrs
 }
 
-// changeUserGroupInternal implements the core user/group change logic with optional dry-run mode
-// Note: This method assumes the caller has already acquired appropriate privileges
-func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool) error {
+// changeUserGroupInternal implements the core user/group change logic with optional dry-run mode.
+// originalEGID is the effective GID before this call; it is used to roll back the Setegid
+// if Seteuid subsequently fails.
+// Note: This method assumes the caller has already acquired appropriate privileges.
+func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool, originalEGID int) error {
 	logAttrs := []any{"dry_run", dryRun}
 	if userName != "" {
 		logAttrs = append(logAttrs, "user", userName)
@@ -471,15 +508,14 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 	}
 
 	// Set group first, then user (standard practice)
-	if err := syscall.Setegid(targetGID); err != nil {
+	if err := m.syscallSetegid(targetGID); err != nil {
 		return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, effectiveGroupName, err)
 	}
 
-	if err := syscall.Seteuid(targetUID); err != nil {
-		// Try to restore original GID on failure
-		if restoreErr := syscall.Setegid(syscall.Getegid()); restoreErr != nil {
-			m.logger.Error("Failed to restore GID after UID change failure",
-				"restore_error", restoreErr)
+	if err := m.syscallSeteuid(targetUID); err != nil {
+		// Seteuid failed: roll back Setegid to the original GID.
+		if restoreErr := m.syscallSetegid(originalEGID); restoreErr != nil {
+			m.emergencyShutdown(restoreErr, "egid_rollback_failure_after_seteuid_failure")
 		}
 		return fmt.Errorf("failed to set effective user ID to %d (user %s): %w", targetUID, userName, err)
 	}

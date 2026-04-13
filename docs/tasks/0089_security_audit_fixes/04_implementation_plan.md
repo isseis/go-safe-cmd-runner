@@ -35,16 +35,16 @@
 
 **作業内容**:
 
-- [ ] `verifyFileWithFallback` → `verifyFile` にリネーム (AC-I1-3)
+- [x] `verifyFileWithFallback` → `verifyFile` にリネーム (AC-I1-3)
   - 関数定義、すべての呼び出し箇所 (manager.go 内: 97行/179行)
   - 関連コメント (348行のコメント) を整合する名前に更新
-- [ ] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム (AC-I1-2)
+- [x] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム (AC-I1-2)
   - 関数定義、呼び出し箇所 (manager.go 63行)
   - コメントには以下の**2種類の `os.ReadFile` フォールバック**を明記する:
     1. `m.fileValidator == nil` (ファイル検証が無効化されている場合): 検証をスキップし、`os.ReadFile` で直接読み込む ([manager.go:411-415](../../../internal/verification/manager.go#L411-L415))
     2. dry-run モードかつ検証失敗時: 失敗を `resultCollector` に記録した上で、`os.ReadFile` でファイル読み込みを再試行する ([manager.go:421-435](../../../internal/verification/manager.go#L421-L435))
   - `WithReadFallback` という名前は上記の「ファイル読み込み処理にフォールバックする」動作全般を指すことを明記する
-- [ ] `internal/verification/manager_test.go` のテスト関数名を更新 (AC-I1-4, AC-I1-5)
+- [x] `internal/verification/manager_test.go` のテスト関数名を更新 (AC-I1-4, AC-I1-5)
   - `TestVerifyFileWithFallback` → `TestVerifyFile`
   - `TestReadAndVerifyFileWithFallback` → `TestReadAndVerifyFileWithReadFallback`
 
@@ -66,7 +66,7 @@
 
 **作業内容**:
 
-- [ ] `changeUserGroupInternal` のシグネチャに `originalEGID int` 引数を追加 (AC-M1-1)
+- [x] `changeUserGroupInternal` のシグネチャに `originalEGID int` 引数を追加 (AC-M1-1)
   ```go
   // 変更前
   func (m *UnixPrivilegeManager) changeUserGroupInternal(
@@ -76,7 +76,7 @@
   func (m *UnixPrivilegeManager) changeUserGroupInternal(
       userName, groupName string, dryRun bool, originalEGID int) error
   ```
-- [ ] 関数内の `Seteuid` 失敗時リカバリを修正 (AC-M1-1, AC-M1-2)
+- [x] 関数内の `Seteuid` 失敗時リカバリを修正 (AC-M1-1, AC-M1-2)
   ```go
   // 変更前
   if restoreErr := syscall.Setegid(syscall.Getegid()); restoreErr != nil {
@@ -88,7 +88,7 @@
       m.emergencyShutdown(restoreErr, "egid_rollback_failure_after_seteuid_failure")
   }
   ```
-- [ ] 呼び出し側 `performElevation` で `execCtx.originalEGID` を渡すよう更新 (AC-M1-3)
+- [x] 呼び出し側 `performElevation` で `execCtx.originalEGID` を渡すよう更新 (AC-M1-3)
   ```go
   // 変更前
   if err := m.changeUserGroupInternal(
@@ -99,12 +99,12 @@
       execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun,
       execCtx.originalEGID); err != nil {
   ```
-- [ ] `UnixPrivilegeManager` に `syscallSeteuid func(int) error` と `syscallSetegid func(int) error` の injectable フィールドを追加し、`changeUserGroupInternal` が直接 `syscall.Seteuid` / `syscall.Setegid` を呼ぶ代わりにこれらのフィールドを経由するよう変更する
+- [x] `UnixPrivilegeManager` に `syscallSeteuid func(int) error` と `syscallSetegid func(int) error` の injectable フィールドを追加し、`changeUserGroupInternal` が直接 `syscall.Seteuid` / `syscall.Setegid` を呼ぶ代わりにこれらのフィールドを経由するよう変更する
   - `osExit` の既存パターンに倣う
   - `newPlatformManager` のデフォルト値を `syscall.Seteuid` / `syscall.Setegid` に設定する
-- [ ] `Seteuid` 失敗 → egid ロールバック成功 パスのユニットテスト追加 (AC-M1-4)
+- [x] `Seteuid` 失敗 → egid ロールバック成功 パスのユニットテスト追加 (AC-M1-4)
   - `syscallSeteuid` をモックして失敗させ、`syscallSetegid` が `originalEGID` で呼ばれることを確認する
-- [ ] `Seteuid` 失敗 → egid ロールバック失敗 (`emergencyShutdown` 呼び出し) パスのユニットテスト追加 (AC-M1-5)
+- [x] `Seteuid` 失敗 → egid ロールバック失敗 (`emergencyShutdown` 呼び出し) パスのユニットテスト追加 (AC-M1-5)
   - `syscallSeteuid` と `syscallSetegid` の両方をモックして失敗させ、`osExit` フィールド経由で `emergencyShutdown` が呼ばれたことを検証する
 
 **成功条件**:
@@ -125,7 +125,7 @@
 
 **作業内容**:
 
-- [ ] `internal/runner/executor/environment.go` の個別 delete を置き換え (AC-M3-1, AC-M3-2, AC-M3-3)
+- [x] `internal/runner/executor/environment.go` の個別 delete を置き換え (AC-M3-1, AC-M3-2, AC-M3-3)
 
   変更前 (87-89行):
   ```go
@@ -150,7 +150,7 @@
   }
   ```
 
-- [ ] `internal/runner/config/expansion.go` の `forbiddenEnvVars` を更新 (AC-M3-6)
+- [x] `internal/runner/config/expansion.go` の `forbiddenEnvVars` を更新 (AC-M3-6)
 
   変更前 (map 定義):
   ```go
@@ -179,8 +179,8 @@
 
   あわせて `isForbiddenEnvVar` をプレフィックス + 完全一致でチェックするように更新する。
 
-- [ ] `LD_FOOBAR` 等の任意の `LD_*` 変数、および5つの非 `LD_` 系変数が削除されることを確認するユニットテスト追加 (AC-M3-4, AC-M3-5)
-- [ ] 回帰テスト: 既存の正当な環境変数 (`PATH`, `HOME`, `USER`, `LANG` 等) が削除されないことを確認するテスト追加
+- [x] `LD_FOOBAR` 等の任意の `LD_*` 変数、および5つの非 `LD_` 系変数が削除されることを確認するユニットテスト追加 (AC-M3-4, AC-M3-5)
+- [x] 回帰テスト: 既存の正当な環境変数 (`PATH`, `HOME`, `USER`, `LANG` 等) が削除されないことを確認するテスト追加
 
 **成功条件**:
 - `go test -tags test -v ./internal/runner/executor/... ./internal/runner/config/...` 全パス
@@ -202,9 +202,9 @@
 
 **作業内容**:
 
-- [ ] `validator.go` の `dangerousPatterns` 定義とコンパイル処理を削除 (AC-M4-1)
-- [ ] `Validator` 構造体から `dangerousEnvRegexps` フィールドを削除 (AC-M4-1)
-- [ ] `environment_validation.go` の `ValidateEnvironmentValue` を再実装 (AC-M4-2, AC-M4-3)
+- [x] `validator.go` の `dangerousPatterns` 定義とコンパイル処理を削除 (AC-M4-1)
+- [x] `Validator` 構造体から `dangerousEnvRegexps` フィールドを削除 (AC-M4-1)
+- [x] `environment_validation.go` の `ValidateEnvironmentValue` を再実装 (AC-M4-2, AC-M4-3)
   ```go
   func (v *Validator) ValidateEnvironmentValue(key, value string) error {
       if strings.ContainsRune(value, '\x00') {
@@ -218,13 +218,13 @@
       return nil
   }
   ```
-- [ ] 下記を確認するユニットテスト追加 (AC-M4-5):
+- [x] 下記を確認するユニットテスト追加 (AC-M4-5):
   - `\0` を含む値 → エラー
   - `\n` を含む値 → エラー
   - `\r` を含む値 → エラー
   - `;`, `|`, `$(`, `>`, `<` を含む値 → 通過
-- [ ] 回帰テスト: JSON 値 (`{"key": "value"}`) を含む変数が通過することを確認 (AC-M4-4)
-- [ ] `validator_test.go` の `dangerousEnvRegexps` を参照している箇所を更新
+- [x] 回帰テスト: JSON 値 (`{"key": "value"}`) を含む変数が通過することを確認 (AC-M4-4)
+- [x] `validator_test.go` の `dangerousEnvRegexps` を参照している箇所を更新
 
 **成功条件**:
 - `go test -tags test -v ./internal/runner/security/...` 全パス
@@ -242,25 +242,25 @@
 
 **作業内容**:
 
-- [ ] `count` が負値の場合はエラーを返す (AC-L4-1)
+- [x] `count` が負値の場合はエラーを返す (AC-L4-1)
   ```go
   if count < 0 {
       return nil, fmt.Errorf("invalid group member count from C: %d", count)
   }
   ```
-- [ ] `count` が 65536 超の場合はエラーを返す (AC-L4-2)
+- [x] `count` が 65536 超の場合はエラーを返す (AC-L4-2)
   ```go
   const maxGroupMembers = 65536
   if int(count) > maxGroupMembers {
       return nil, fmt.Errorf("group member count %d exceeds maximum %d", count, maxGroupMembers)
   }
   ```
-- [ ] `(*[1 << 30]*C.char)(unsafe.Pointer(members))[:count:count]` を `unsafe.Slice` に置き換え (AC-L4-3)
+- [x] `(*[1 << 30]*C.char)(unsafe.Pointer(members))[:count:count]` を `unsafe.Slice` に置き換え (AC-L4-3)
   ```go
   cArray := unsafe.Slice(members, int(count))
   ```
   - `count` は `C.int` 型のため、境界チェック後に `int` へ明示変換して `unsafe.Slice` に渡す
-- [ ] 境界チェックのユニットテスト追加 (AC-L4-4):
+- [x] 境界チェックのユニットテスト追加 (AC-L4-4):
   - 境界チェックロジックを Go 内部ヘルパー関数 `validateGroupMemberCount(count C.int) error` として抽出し、テストはこのヘルパーを直接呼び出す形で実装する
     (CGO 関数 `C.get_group_members` はモックできないため、境界チェック部分のみをヘルパーに分離してテスト可能にする)
   - 負値 `count` でエラーが返ること
@@ -290,7 +290,7 @@
 
 **作業内容**:
 
-- [ ] 以下の入力からチェック対象ディレクトリを列挙する関数を実装 (AC-M2S-2)
+- [x] 以下の入力からチェック対象ディレクトリを列挙する関数を実装 (AC-M2S-2)
   - `verify_files` で参照される各ファイルの親ディレクトリ
   - 実行コマンド (`cmd` フィールド) の親ディレクトリ
   - `--hash-dir` が指すディレクトリ自身
@@ -305,8 +305,8 @@
   ) []string
   ```
 
-- [ ] 重複パスを除去して返す (同一ディレクトリが複数の入力から現れる場合)
-- [ ] 列挙ロジックのユニットテスト追加 (AC-M2S-6)
+- [x] 重複パスを除去して返す (同一ディレクトリが複数の入力から現れる場合)
+- [x] 列挙ロジックのユニットテスト追加 (AC-M2S-6)
 
 **パフォーマンス考慮事項**:
 - ハッシュディレクトリからルートまでの親ディレクトリ列挙は O(depth) だが、
@@ -329,7 +329,7 @@
 
 **作業内容**:
 
-- [ ] 列挙された各ディレクトリに対して `validator.ValidateDirectoryPermissions` を呼び出す関数を実装 (AC-M2S-3)
+- [x] 列挙された各ディレクトリに対して `validator.ValidateDirectoryPermissions` を呼び出す関数を実装 (AC-M2S-3)
 
   ```go
   // RunTOCTOUPermissionCheck checks all collected directories and returns
@@ -346,8 +346,8 @@
   ) []TOCTOUViolation
   ```
 
-- [ ] 問題が検出された場合は `logger.Warn` で "path" と "violation" を含む警告ログを出力 (AC-M2S-4)
-- [ ] 検査実行のユニットテスト追加 (AC-M2S-6)
+- [x] 問題が検出された場合は `logger.Warn` で "path" と "violation" を含む警告ログを出力 (AC-M2S-4)
+- [x] 検査実行のユニットテスト追加 (AC-M2S-6)
   - 問題なし → 空のスライスが返ること
   - 1 件違反 → Violation が 1 件含まれること
   - 警告ログが出力されること (ログキャプチャで確認)
@@ -364,11 +364,11 @@
 
 **作業内容**:
 
-- [ ] `runner`: 設定ロード後、コマンド実行前に `CollectTOCTOUCheckDirs` + `RunTOCTOUPermissionCheck` を呼び出し、
+- [x] `runner`: 設定ロード後、コマンド実行前に `CollectTOCTOUCheckDirs` + `RunTOCTOUPermissionCheck` を呼び出し、
   1 件以上の違反があればエラー終了 (AC-M2S-5)
-- [ ] `record` / `verify`: 同様に検査を呼び出すが、違反があっても警告ログのみで継続 (AC-M2S-5)
-- [ ] `runner` が検査失敗後に起動中断することを確認するテスト追加 (AC-M2S-7)
-- [ ] `record` / `verify` が検査失敗後も継続することを確認するテスト追加 (AC-M2S-7)
+- [x] `record` / `verify`: 同様に検査を呼び出すが、違反があっても警告ログのみで継続 (AC-M2S-5)
+- [x] `runner` が検査失敗後に起動中断することを確認するテスト追加 (AC-M2S-7)
+- [x] `record` / `verify` が検査失敗後も継続することを確認するテスト追加 (AC-M2S-7)
 
 **パフォーマンス考慮事項**:
 - 検査は起動時 1 回のみ実行 (`sync.Once` 等は不要)。
@@ -389,12 +389,12 @@
 
 **作業内容**:
 
-- [ ] 既存の `docs/security/README.md` を確認し、以下の内容を追記 (AC-M2S-1):
+- [x] 既存の `docs/security/README.md` を確認し、以下の内容を追記 (AC-M2S-1):
   - `verify_files` および `commands` で指定するバイナリの配置ディレクトリ要件
   - 対象ディレクトリおよびルートまでの全親ディレクトリのパーミッション要件
   - `--hash-dir` のパーミッション要件
   - 要件未充足時の TOCTOU リスクに関する説明
-- [ ] L1 (include パス制約) は対応なし (Close) のため CHANGELOG.md への記載は不要
+- [-] L1 (include パス制約) は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 **推定工数**: 2時間
 
@@ -468,58 +468,58 @@ M3・M4 の変更は既存の正当なユースケースに影響しうる。以
 ## 6. 実装チェックリスト
 
 ### Phase 1 (I1)
-- [ ] `verifyFileWithFallback` → `verifyFile` にリネーム
-- [ ] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム
-- [ ] コメント・ログ文言の更新
-- [ ] テスト関数名の更新
-- [ ] `make test` 全パス確認
+- [x] `verifyFileWithFallback` → `verifyFile` にリネーム
+- [x] `readAndVerifyFileWithFallback` → `readAndVerifyFileWithReadFallback` にリネーム
+- [x] コメント・ログ文言の更新
+- [x] テスト関数名の更新
+- [x] `make test` 全パス確認
 
 ### Phase 2 (M1)
-- [ ] `UnixPrivilegeManager` に `syscallSeteuid` / `syscallSetegid` injectable フィールド追加
-- [ ] `changeUserGroupInternal` シグネチャ変更
-- [ ] `Seteuid` 失敗時ロールバックの修正
-- [ ] `performElevation` 呼び出し側の更新
-- [ ] ユニットテスト追加 (ロールバック成功パス)
-- [ ] ユニットテスト追加 (ロールバック失敗 → emergencyShutdown パス)
-- [ ] `make test` 全パス確認
+- [x] `UnixPrivilegeManager` に `syscallSeteuid` / `syscallSetegid` injectable フィールド追加
+- [x] `changeUserGroupInternal` シグネチャ変更
+- [x] `Seteuid` 失敗時ロールバックの修正
+- [x] `performElevation` 呼び出し側の更新
+- [x] ユニットテスト追加 (ロールバック成功パス)
+- [x] ユニットテスト追加 (ロールバック失敗 → emergencyShutdown パス)
+- [x] `make test` 全パス確認
 
 ### Phase 3 (M3)
-- [ ] `environment.go` の個別 delete をプレフィックスループに置き換え
-- [ ] 非 `LD_` 系危険変数の削除追加
-- [ ] `expansion.go` の `forbiddenEnvVars` をプレフィックス + 完全一致に更新
-- [ ] ユニットテスト追加 (全対象変数削除、回帰)
-- [ ] `make test` 全パス確認
+- [x] `environment.go` の個別 delete をプレフィックスループに置き換え
+- [x] 非 `LD_` 系危険変数の削除追加
+- [x] `expansion.go` の `forbiddenEnvVars` をプレフィックス + 完全一致に更新
+- [x] ユニットテスト追加 (全対象変数削除、回帰)
+- [x] `make test` 全パス確認
 
 ### Phase 4 (M4)
-- [ ] `dangerousPatterns` および `dangerousEnvRegexps` を削除
-- [ ] `ValidateEnvironmentValue` を `\0`, `\n`, `\r` のみチェックに再実装
-- [ ] ユニットテスト追加 (拒否パス、通過パス、回帰)
-- [ ] `make test` 全パス確認
+- [x] `dangerousPatterns` および `dangerousEnvRegexps` を削除
+- [x] `ValidateEnvironmentValue` を `\0`, `\n`, `\r` のみチェックに再実装
+- [x] ユニットテスト追加 (拒否パス、通過パス、回帰)
+- [x] `make test` 全パス確認
 
 ### Phase 5 (L4)
-- [ ] `count` 負値チェック追加
-- [ ] `count` 上限チェック追加
-- [ ] `unsafe.Slice` への置き換え
-- [ ] ユニットテスト追加
-- [ ] `make test` 全パス確認
+- [x] `count` 負値チェック追加
+- [x] `count` 上限チェック追加
+- [x] `unsafe.Slice` への置き換え
+- [x] ユニットテスト追加
+- [x] `make test` 全パス確認
 
 ### Phase 6 (M2 短期)
-- [ ] `CollectTOCTOUCheckDirs` 実装
-- [ ] `RunTOCTOUPermissionCheck` 実装 (違反ログ込み)
-- [ ] `runner` への組み込み (違反時エラー終了)
-- [ ] `record`/`verify` への組み込み (違反時警告継続)
-- [ ] ユニットテスト追加
-- [ ] 統合テスト追加
-- [ ] `make test` 全パス確認
+- [x] `CollectTOCTOUCheckDirs` 実装
+- [x] `RunTOCTOUPermissionCheck` 実装 (違反ログ込み)
+- [x] `runner` への組み込み (違反時エラー終了)
+- [x] `record`/`verify` への組み込み (違反時警告継続)
+- [x] ユニットテスト追加
+- [x] 統合テスト追加
+- [x] `make test` 全パス確認
 
 ### Phase 7 (M2 ドキュメント)
-- [ ] `docs/security/README.md` に運用要件セクション追記
-- [ ] 内容が AC-M2S-1 の要件を満たしていることをレビュー
-- [ ] L1 は対応なし (Close) のため CHANGELOG.md への記載は不要
+- [x] `docs/security/README.md` に運用要件セクション追記
+- [x] 内容が AC-M2S-1 の要件を満たしていることをレビュー
+- [-] L1 は対応なし (Close) のため CHANGELOG.md への記載は不要
 
 ### 全体
-- [ ] `make lint` 全パス
-- [ ] `make fmt` でフォーマット確認
+- [x] `make lint` 全パス
+- [x] `make fmt` でフォーマット確認
 
 ---
 

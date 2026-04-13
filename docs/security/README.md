@@ -195,5 +195,82 @@ For security-related questions or concerns, please contact the project maintaine
 
 ---
 
+## Operational Requirements for TOCTOU Attacks
+
+### Overview
+
+This system inspects the integrity of command binaries and hash files before execution using
+`ValidateDirectoryPermissions` / `validateCompletePath`. However, if a third party can write to
+the inspected directories or their parent directories, a TOCTOU (Time-of-Check to Time-of-Use)
+attack — where files are swapped **after hash verification but before command execution** — may
+be possible.
+
+Minimize this risk by satisfying the following operational requirements.
+
+### Permission Requirements for Target Directories
+
+Binaries specified in `verify_files` and `commands`, and the hash directory specified by
+`--hash-dir`, must be placed under directories that satisfy the permission conditions below.
+The conditions apply not only to the target directory itself but also to
+**all parent directories up to the root**.
+
+| Condition | Details |
+|-----------|---------|
+| **No other-write** | The `other` permission must not have the write bit (`o+w`) set. Exception: directories with the sticky bit set (e.g., `/tmp`) |
+| **Restricted group-write** | If the `group` permission has the write bit (`g+w`) set, the directory owner must be root, or the executing user must be the sole member of that group |
+| **Restricted owner-write** | If the `owner` permission has the write bit (`u+w`) set, the directory owner must be root or the executing user themselves |
+| **Validated on resolved path** | The path of the target directory is validated based on the real path after symlink resolution; the real path and all parent directories up to the root must satisfy the above requirements |
+
+### Hash Directory Requirements
+
+The directory specified by `--hash-dir` itself, and all parent directories up to the root,
+must also satisfy the above permission requirements.
+
+The default hash directory is `/usr/local/etc/go-safe-cmd-runner/hashes`.
+The parent directories of this path (`/usr/local/etc/go-safe-cmd-runner`, `/usr/local/etc`,
+`/usr/local`, `/usr`, `/`) must also all be managed to satisfy the above requirements.
+
+### Automatic Inspection
+
+The `runner` command automatically inspects the above conditions at startup.
+
+- **If a violation is detected**: `runner` exits with an error without starting command execution.
+- **For `record` / `verify` commands**: Processing continues with a warning log even if a violation is detected.
+
+Directories that do not exist are skipped as they are not yet attack targets. After creating a
+directory, set its permissions appropriately.
+
+**Directories subject to automatic inspection:**
+
+| Configuration Item | Inspection Scope |
+|--------------------|-----------------|
+| Each file in `verify_files` | Direct parent directory + all ancestor directories up to the root |
+| Each command in `commands` | Direct parent directory + all ancestor directories up to the root |
+| `--hash-dir` | The hash directory itself + all ancestor directories up to the root |
+
+In all cases, all ancestors are inspected because write access to an ancestor directory allows
+replacing an intermediate directory via rename, enabling a TOCTOU attack on the direct parent
+directory.
+
+### Recommended Configuration
+
+```bash
+# Example recommended permission settings for the hash directory
+sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 755 /usr/local/etc/go-safe-cmd-runner
+sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chown root:root /usr/local/etc/go-safe-cmd-runner
+sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+It is recommended to place command binaries in directories owned by root with no other-write
+permission, such as `/usr/local/bin` or `/usr/bin`.
+
+### Related
+
+- As a medium- to long-term TOCTOU countermeasure, runtime integrity verification using `fexecve` is under consideration ([0090_toctou_fexecve](../tasks/0090_toctou_fexecve/00_analysis.md)).
+
+---
+
 **Last Updated**: 2025-12-14
 **Next Review**: 2026-01-14 (monthly review recommended)

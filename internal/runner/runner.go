@@ -85,6 +85,7 @@ type runnerOptions struct {
 	runtimeGlobal           *runnertypes.RuntimeGlobal
 	keepTempDirs            bool
 	groupMembershipProvider *groupmembership.GroupMembership
+	toctouValidator         *security.Validator
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -148,6 +149,16 @@ func WithResourceManager(manager resource.Manager) Option {
 func WithGroupMembershipProvider(provider *groupmembership.GroupMembership) Option {
 	return func(opts *runnerOptions) {
 		opts.groupMembershipProvider = provider
+	}
+}
+
+// WithTOCTOUValidator enables per-group TOCTOU directory permission checks.
+// When set, each group execution runs a TOCTOU check after variable expansion
+// so that paths containing %{GROUP_VAR} references are checked with their
+// resolved values. Violations cause group execution to return an error.
+func WithTOCTOUValidator(v *security.Validator) Option {
+	return func(opts *runnerOptions) {
+		opts.toctouValidator = v
 	}
 }
 
@@ -347,6 +358,10 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	// Get current user for security logging
 	currentUser := getCurrentUser()
 	groupOptions = append(groupOptions, WithCurrentUser(currentUser))
+
+	if opts.toctouValidator != nil {
+		groupOptions = append(groupOptions, WithGroupTOCTOUValidator(opts.toctouValidator))
+	}
 
 	runner.groupExecutor = NewDefaultGroupExecutor(
 		opts.executor,
