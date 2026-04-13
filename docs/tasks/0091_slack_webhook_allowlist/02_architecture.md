@@ -27,10 +27,10 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
-    E[("環境変数\nGSCR_SLACK_WEBHOOK_URL_*")] --> A
-    A["ValidateSlackWebhookEnv()"] --> B["SetupLogging()\n(Slack ハンドラ含む)"]
+    E[("環境変数<br>GSCR_SLACK_WEBHOOK_URL_*")] --> A
+    A["ValidateSlackWebhookEnv()"] --> B["SetupLogging()<br>(Slack ハンドラ含む)"]
     B --> C["LoadAndPrepareConfig()"]
-    C --> D[("TOML\nslack_allowed_hosts")]
+    C --> D[("TOML<br>slack_allowed_hosts")]
 
     class E data;
     class D data;
@@ -48,19 +48,19 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    E[("環境変数\nGSCR_SLACK_WEBHOOK_URL_*")] --> A
+    E[("環境変数<br>GSCR_SLACK_WEBHOOK_URL_*")] --> A
     A["ValidateSlackWebhookEnv()"] --> B
 
     subgraph Phase1["Phase 1: TOML 読み込み前"]
-        B["SetupLogging()\n(コンソール・ファイルのみ)"]
+        B["SetupLogging()<br>(コンソール・ファイルのみ)"]
     end
 
     B --> C["LoadAndPrepareConfig()"]
-    C --> D[("TOML\nslack_allowed_hosts")]
+    C --> D[("TOML<br>slack_allowed_hosts")]
     D --> F
 
     subgraph Phase2["Phase 2: TOML 読み込み後"]
-        F["SetupSlackLogging()\n(allowlist 検証 + Slack ハンドラ追加)"]
+        F["SetupSlackLogging()<br>(allowlist 検証 + Slack ハンドラ追加)"]
     end
 
     class E,D data;
@@ -97,20 +97,20 @@ graph TB
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     subgraph "cmd/runner"
-        MAIN["main.go\n起動フロー変更\n(Phase 1/2 分割)"]
+        MAIN["main.go<br>起動フロー変更<br>(Phase 1/2 分割)"]
     end
 
     subgraph "internal/runner/runnertypes"
-        SPEC["spec.go\nGlobalSpec.SlackAllowedHosts 追加"]
+        SPEC["spec.go<br>GlobalSpec.SlackAllowedHosts 追加"]
     end
 
     subgraph "internal/runner/bootstrap"
-        ENV["environment.go\nSetupLoggingOptions.SlackAllowedHosts 追加\nSetupSlackLogging() 新規追加"]
-        LOG["logger.go\nLoggerConfig.SlackAllowedHosts 追加\nSlack ハンドラ生成を SetupSlackLogging に移動"]
+        ENV["environment.go<br>SetupLoggingOptions.SlackAllowedHosts 追加<br>SetupSlackLogging() 新規追加"]
+        LOG["logger.go<br>LoggerConfig.SlackAllowedHosts 追加<br>Slack ハンドラ生成を SetupSlackLogging に移動"]
     end
 
     subgraph "internal/logging"
-        SH["slack_handler.go\nSlackHandlerOptions.AllowedHosts 追加\nvalidateWebhookURL シグネチャ変更"]
+        SH["slack_handler.go<br>SlackHandlerOptions.AllowedHosts 追加<br>validateWebhookURL シグネチャ変更"]
     end
 
     MAIN --> ENV
@@ -129,10 +129,10 @@ flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
-    A[("TOML\nglobal.slack_allowed_hosts")] -->|"GlobalSpec\n.SlackAllowedHosts"| B["LoadAndPrepareConfig()"]
-    B -->|"SetupLoggingOptions\n.SlackAllowedHosts"| C["SetupSlackLogging()"]
-    C -->|"LoggerConfig\n.SlackAllowedHosts"| D["SetupLoggerWithConfig()"]
-    D -->|"SlackHandlerOptions\n.AllowedHosts"| E["NewSlackHandler()"]
+    A[("TOML<br>global.slack_allowed_hosts")] -->|"GlobalSpec<br>.SlackAllowedHosts"| B["LoadAndPrepareConfig()"]
+    B -->|"SetupLoggingOptions<br>.SlackAllowedHosts"| C["SetupSlackLogging()"]
+    C -->|"LoggerConfig<br>.SlackAllowedHosts"| D["SetupLoggerWithConfig()"]
+    D -->|"SlackHandlerOptions<br>.AllowedHosts"| E["NewSlackHandler()"]
     E -->|"allowedHosts"| F["validateWebhookURL()"]
 
     class A data;
@@ -207,17 +207,17 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     A["validateWebhookURL(url, allowedHosts)"] --> B{"url が空?"}
-    B -->|"Yes"| ERR1["ErrInvalidWebhookURL\n(empty URL)"]
+    B -->|"Yes"| ERR1["ErrInvalidWebhookURL<br>(empty URL)"]
     B -->|"No"| C["url.Parse(url)"]
     C --> D{"パース失敗?"}
-    D -->|"Yes"| ERR2["ErrInvalidWebhookURL\n(parse error)"]
+    D -->|"Yes"| ERR2["ErrInvalidWebhookURL<br>(parse error)"]
     D -->|"No"| E{"scheme != 'https'?"}
-    E -->|"Yes"| ERR3["ErrInvalidWebhookURL\n(not HTTPS)"]
+    E -->|"Yes"| ERR3["ErrInvalidWebhookURL<br>(not HTTPS)"]
     E -->|"No"| F{"Host が空?"}
-    F -->|"Yes"| ERR4["ErrInvalidWebhookURL\n(empty host)"]
-    F -->|"No"| G["hostname = strings.ToLower(url.Hostname())"]
+    F -->|"Yes"| ERR4["ErrInvalidWebhookURL<br>(empty host)"]
+    F -->|"No"| G["hostname = 正規化(url のホスト名)"]
     G --> H{"hostname が allowedHosts に含まれる?"}
-    H -->|"No"| ERR5["ErrInvalidWebhookURL\n(host not in allowlist)"]
+    H -->|"No"| ERR5["ErrInvalidWebhookURL<br>(host not in allowlist)"]
     H -->|"Yes"| OK["nil (success)"]
 ```
 
@@ -254,9 +254,9 @@ flowchart TB
     classDef tier2 fill:#ffd59a,stroke:#333,color:#000;
     classDef tier3 fill:#c3f08a,stroke:#333,color:#000;
 
-    Tier1["統合テスト\n起動フロー全体 (AC-L2-20)"]:::tier1
-    Tier2["コンポーネントテスト\nSetupSlackLogging / AddSlackHandlers (AC-L2-19)"]:::tier2
-    Tier3["単体テスト\nvalidateWebhookURL (AC-L2-13〜18)"]:::tier3
+    Tier1["統合テスト<br>起動フロー全体 (AC-L2-20)"]:::tier1
+    Tier2["コンポーネントテスト<br>SetupSlackLogging / AddSlackHandlers (AC-L2-19)"]:::tier2
+    Tier3["単体テスト<br>validateWebhookURL (AC-L2-13〜18)"]:::tier3
 
     Tier3 --> Tier2 --> Tier1
 ```
