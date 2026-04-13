@@ -289,6 +289,21 @@ func run(runID string) error {
 	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID, secValidator)
 }
 
+// resolveStaticAbsPath returns the real path for p when p is an absolute path
+// that contains no unexpanded variable references ("%{").  Symlinks are
+// resolved so that canonicalised paths can be compared without false TOCTOU
+// positives (e.g. /bin -> /usr/bin).  The second return value is false when
+// the path should be skipped entirely (relative or still contains variables).
+func resolveStaticAbsPath(p string) (string, bool) {
+	if !filepath.IsAbs(p) || strings.Contains(p, "%{") {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved, true
+	}
+	return p, true
+}
+
 // runTOCTOUCheck collects directory paths referenced by the configuration and runs a
 // TOCTOU permission check. Returns the validator used (for reuse in per-group checks)
 // and a PreExecutionError if any violation is detected.
@@ -297,41 +312,21 @@ func run(runID string) error {
 func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, runID string) (*security.Validator, error) {
 	verifyFilePaths := make([]string, 0, len(runtimeGlobal.ExpandedVerifyFiles))
 	for _, f := range runtimeGlobal.ExpandedVerifyFiles {
-		if !filepath.IsAbs(f) {
-			// Skip relative paths: they cannot be safely resolved for TOCTOU checks.
-			// Variables are already expanded so no %{ filter is needed here.
-			continue
-		}
-		if resolved, err := filepath.EvalSymlinks(f); err == nil {
+		// Variables are already expanded so no %{ filter is needed here.
+		if resolved, ok := resolveStaticAbsPath(f); ok {
 			verifyFilePaths = append(verifyFilePaths, resolved)
-		} else {
-			verifyFilePaths = append(verifyFilePaths, f)
-		}
-	}
-	for _, g := range cfg.Groups {
-		for _, f := range g.VerifyFiles {
-			if filepath.IsAbs(f) && !strings.Contains(f, "%{") {
-				// Resolve symlinks so that symlinked directories (e.g. /bin -> /usr/bin)
-				// are not mistakenly reported as TOCTOU violations.
-				if resolved, err := filepath.EvalSymlinks(f); err == nil {
-					verifyFilePaths = append(verifyFilePaths, resolved)
-				} else {
-					verifyFilePaths = append(verifyFilePaths, f)
-				}
-			}
 		}
 	}
 	var commandPaths []string
 	for _, g := range cfg.Groups {
+		for _, f := range g.VerifyFiles {
+			if resolved, ok := resolveStaticAbsPath(f); ok {
+				verifyFilePaths = append(verifyFilePaths, resolved)
+			}
+		}
 		for _, cmd := range g.Commands {
-			if cmd.Cmd != "" && filepath.IsAbs(cmd.Cmd) && !strings.Contains(cmd.Cmd, "%{") {
-				// Resolve symlinks so that symlinked directories (e.g. /bin -> /usr/bin)
-				// are not mistakenly reported as TOCTOU violations.
-				if resolved, err := filepath.EvalSymlinks(cmd.Cmd); err == nil {
-					commandPaths = append(commandPaths, resolved)
-				} else {
-					commandPaths = append(commandPaths, cmd.Cmd)
-				}
+			if resolved, ok := resolveStaticAbsPath(cmd.Cmd); ok {
+				commandPaths = append(commandPaths, resolved)
 			}
 		}
 	}
