@@ -119,8 +119,7 @@ graph TB
     ENV --> LOG
     LOG --> SH
 
-    class SPEC data;
-    class MAIN,ENV,LOG,SH enhanced;
+    class MAIN,SPEC,ENV,LOG,SH enhanced;
 ```
 
 ### 3.2 許可ホスト伝播経路
