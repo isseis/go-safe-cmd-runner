@@ -332,8 +332,9 @@ func runTOCTOUCheck(cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.Runt
 	}
 	secValidator, secErr := security.NewValidatorForTOCTOU()
 	if secErr != nil {
-		slog.Warn("Failed to create security validator for TOCTOU check, skipping", slog.Any("error", secErr))
-		return nil, nil
+		// NewValidatorForTOCTOU only fails when a regex literal in DefaultConfig
+		// is invalid — a programming error that cannot be recovered at runtime.
+		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
 	}
 	toctouDirs := security.CollectTOCTOUCheckDirs(verifyFilePaths, commandPaths, cmdcommon.DefaultHashDirectory)
 	violations := security.RunTOCTOUPermissionCheck(secValidator, toctouDirs, slog.Default())
