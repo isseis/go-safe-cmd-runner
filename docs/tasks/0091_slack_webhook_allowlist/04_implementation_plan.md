@@ -1,9 +1,9 @@
 # 実装計画: Slack webhook URL ホスト allowlist
 
 - [ ] 1. TOML・設定構造体の拡張 (AC-L2-1, AC-L2-3, AC-L2-4)
-  - [ ] `internal/runner/runnertypes/spec.go` の `GlobalSpec` に `SlackAllowedHost string` フィールドを追加
-  - [ ] `internal/runner/bootstrap/logger.go` の `LoggerConfig` に `SlackAllowedHost string` フィールドを追加
-  - [ ] `internal/runner/bootstrap/environment.go` の `SetupLoggingOptions` に `SlackAllowedHost string` フィールドを追加
+  - [ ] `internal/runner/runnertypes/spec.go` の `GlobalSpec` に `SlackAllowedHost string` フィールドを追加 (AC-L2-1)
+  - [ ] `internal/runner/bootstrap/environment.go` の `SetupLoggingOptions` に `SlackAllowedHost string` フィールドを追加 (AC-L2-3)
+  - [ ] `internal/runner/bootstrap/logger.go` に Phase 2 専用の `SlackLoggerConfig` 構造体を新規追加し `AllowedHost string` フィールドを持たせる (AC-L2-4、タスク 6 でも再掲)
   - [ ] `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` に `validateSlackAllowedHost` 呼び出しを追加する
     - `cfg.Global.SlackAllowedHost` が空文字列でない場合、有効なホスト名かどうかを検証する
     - 検証方法: `url.Parse("https://" + host + "/")` でパースし `parsedURL.Hostname() == host` であることを確認する (ポート番号・空白・スキーム・パスを含む値はラウンドトリップが一致しないため検出できる)
