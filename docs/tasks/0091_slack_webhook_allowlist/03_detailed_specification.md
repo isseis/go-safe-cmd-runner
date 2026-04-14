@@ -62,14 +62,19 @@ func validateWebhookURL(webhookURL string, allowedHost string) error
 2. URL パース失敗 → `ErrInvalidWebhookURL` (既存)
 3. スキームが `https` でない → `ErrInvalidWebhookURL` (既存、AC-L2-9)
 4. `Host` が空 → `ErrInvalidWebhookURL` (既存、AC-L2-9)
-5. `strings.ToLower(parsedURL.Hostname())` が `strings.ToLower(allowedHost)` と一致しない → `ErrInvalidWebhookURL` (新規、AC-L2-5〜8)
+5. `allowedHost` が空文字列 → `ErrInvalidWebhookURL` (新規、AC-L2-7)
+6. `strings.ToLower(parsedURL.Hostname())` が `strings.ToLower(allowedHost)` と一致しない → `ErrInvalidWebhookURL` (新規、AC-L2-5〜6, AC-L2-8)
 
-比較方法 (AC-L2-6):
+比較方法 (AC-L2-6, AC-L2-7):
 
 ```go
+if allowedHost == "" {
+    return fmt.Errorf("%w: allowed host is not configured", ErrInvalidWebhookURL)
+}
 hostname := strings.ToLower(parsedURL.Hostname()) // ポート除去 + 小文字正規化
-if hostname != strings.ToLower(allowedHost) {
-    return fmt.Errorf("%w: host not allowed: %s (allowed: %s)", ErrInvalidWebhookURL, hostname, allowedHost)
+normalizedAllowedHost := strings.ToLower(allowedHost)
+if hostname != normalizedAllowedHost {
+    return fmt.Errorf("%w: host not allowed: %s (allowed: %s)", ErrInvalidWebhookURL, hostname, normalizedAllowedHost)
 }
 return nil
 ```
