@@ -159,7 +159,7 @@ FD は検証完了から exec まで保持し続けなければならない。ex
 要件定義書の作成前に以下を実施する:
 
 1. **詳細分析**: `os/exec` の内部実装 (`cmd/go/internal/execabs`, `os/exec/exec.go`) を精読し、再実装が必要な最小セットを確定する
-2. **PoC 実装**: `syscall.Syscall6(SYS_EXECVEAT, fd, 0, uintptr(argv), uintptr(envp), AT_EMPTY_PATH, 0)` を呼ぶ最小プログラムで Linux 上の動作を確認する
+2. **PoC 実装**: `syscall.Syscall6(SYS_EXECVEAT, fd, uintptr(unsafe.Pointer(&[]byte{0}[0])), uintptr(argv), uintptr(envp), AT_EMPTY_PATH, 0)` を呼ぶ最小プログラムで Linux 上の動作を確認する。第2引数 pathname は `AT_EMPTY_PATH` 使用時も NULL ポインタ (`0`) ではなく空文字列 (`""`) へのポインタを渡すこと (NULL では EFAULT または未定義動作になるカーネルがある)
 3. **再実装スコープ確定**: PoC 結果をもとに、`os/exec` のどの機能を再実装するか・どの機能は捨てるかを決定する
 4. **コスト再評価**: スコープ確定後に実装コストを再見積もりし、優先度・スケジュールを判断する
 5. **設計書作成** (`01_requirements.md`, `02_architecture.md`): スコープ確定後に通常の要件定義プロセスへ移行する
