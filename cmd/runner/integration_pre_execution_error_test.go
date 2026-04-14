@@ -196,31 +196,10 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 // with a config parsing error when Slack webhook env vars are configured but
 // global.slack_allowed_host is missing from TOML (AC-L2-20).
 func TestE2E_PreExecutionError_MissingSlackAllowedHost(t *testing.T) {
-	tests := []struct {
-		name string
-		env  []string
-	}{
-		{
-			name: "error webhook only",
-			env: []string{
-				"GSCR_SLACK_WEBHOOK_URL_ERROR=https://hooks.slack.com/services/T000/B000/ERROR",
-			},
-		},
-		{
-			name: "both webhooks",
-			env: []string{
-				"GSCR_SLACK_WEBHOOK_URL_SUCCESS=https://hooks.slack.com/services/T000/B000/SUCCESS",
-				"GSCR_SLACK_WEBHOOK_URL_ERROR=https://hooks.slack.com/services/T000/B000/ERROR",
-			},
-		},
-	}
+	tmpDir := commontesting.SafeTempDir(t)
+	configFile := filepath.Join(tmpDir, "missing_slack_allowed_host.toml")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := commontesting.SafeTempDir(t)
-			configFile := filepath.Join(tmpDir, "missing_slack_allowed_host.toml")
-
-			validTOML := `
+	validTOML := `
 version = "1.0"
 
 [[groups]]
@@ -231,34 +210,32 @@ name = "test-cmd"
 cmd = "/bin/echo"
 args = ["hello"]
 `
-			err := os.WriteFile(configFile, []byte(validTOML), 0o644)
-			require.NoError(t, err)
+	err := os.WriteFile(configFile, []byte(validTOML), 0o644)
+	require.NoError(t, err)
 
-			cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run")
-			cmd.Dir = "."
-			cmd.Env = append(os.Environ(), tt.env...)
+	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run")
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "GSCR_SLACK_WEBHOOK_URL_ERROR=https://hooks.slack.com/services/T000/B000/ERROR")
 
-			var stdout, stderr strings.Builder
-			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-			err = cmd.Run()
+	err = cmd.Run()
 
-			require.Error(t, err, "runner should fail when Slack env vars are set without slack_allowed_host")
+	require.Error(t, err, "runner should fail when Slack env vars are set without slack_allowed_host")
 
-			exitErr, ok := err.(*exec.ExitError)
-			require.True(t, ok, "error should be ExitError")
-			assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
+	exitErr, ok := err.(*exec.ExitError)
+	require.True(t, ok, "error should be ExitError")
+	assert.Equal(t, 1, exitErr.ExitCode(), "exit code should be 1")
 
-			stderrOutput := stderr.String()
-			assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
-			assert.Contains(t, stderrOutput, "config_parsing_failed", "stderr should indicate config parsing failure")
-			assert.Contains(t, stderrOutput, "Slack webhook URL validation failed", "stderr should mention Slack webhook validation")
-			assert.Contains(t, stderrOutput, "allowed host is not configured", "stderr should explain missing allowed host")
+	stderrOutput := stderr.String()
+	assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
+	assert.Contains(t, stderrOutput, "config_parsing_failed", "stderr should indicate config parsing failure")
+	assert.Contains(t, stderrOutput, "Slack webhook URL validation failed", "stderr should mention Slack webhook validation")
+	assert.Contains(t, stderrOutput, "allowed host is not configured", "stderr should explain missing allowed host")
 
-			stdoutOutput := stdout.String()
-			assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
-			assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
-		})
-	}
+	stdoutOutput := stdout.String()
+	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
+	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
 }

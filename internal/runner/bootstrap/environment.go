@@ -75,8 +75,8 @@ type SetupLoggingOptions struct {
 	ConsoleWriter    io.Writer // If nil, defaults to stdout for backward compatibility
 	DryRun           bool      // If true, Slack notifications are not sent
 
-	// SlackAllowedHost は TOML から読んだ許可ホスト名。
-	// SetupSlackLogging が SlackLoggerConfig.AllowedHost に転送する。
+	// SlackAllowedHost is the permitted hostname read from TOML.
+	// SetupSlackLogging forwards it to SlackLoggerConfig.AllowedHost.
 	SlackAllowedHost string
 }
 
@@ -102,8 +102,8 @@ func SetupLogging(opts SetupLoggingOptions) error {
 	return nil
 }
 
-// SetupSlackLogging は TOML 設定読み込み後に呼び出し、Slack ハンドラを追加する。
-// ホスト検証に失敗した場合は ErrorTypeConfigParsing エラーを返す (AC-L2-10)。
+// SetupSlackLogging is called after TOML config is loaded and adds Slack handlers.
+// Returns an ErrorTypeConfigParsing error if host validation fails (AC-L2-10).
 func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error {
 	if slackConfig.SuccessURL == "" && slackConfig.ErrorURL == "" {
 		return nil
