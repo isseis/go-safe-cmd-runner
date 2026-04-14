@@ -13,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1383,14 +1384,12 @@ func TestRecord_LibcCache_NonELFFile(t *testing.T) {
 // TestRecord_LibcCache_Error_CausesRecordFailure verifies that a fatal libc
 // cache error causes analyzeSyscalls to return an error.
 func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
-	// Use a real ELF binary so that openELFFile succeeds and reaches the
-	// libc cache path. /usr/bin/ls is a standard ELF available on all Linux systems.
-	const elfPath = "/usr/bin/ls"
-	if _, err := os.Stat(elfPath); err != nil {
-		t.Skipf("skipping: %s not available: %v", elfPath, err)
-	}
-
+	// Use an in-memory dynamic ELF so that openELFFile succeeds and reaches the
+	// libc cache path without depending on any system binary.
 	tempDir := safeTempDir(t)
+	elfPath := filepath.Join(tempDir, "test.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, elfPath)
+
 	stub := &stubLibcCache{err: errors.New("libc file not accessible")}
 	v, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err)
@@ -1424,22 +1423,15 @@ func TestRecord_LibcCache_UnsupportedArch_SkipsAndContinues(t *testing.T) {
 // a file that was previously recorded as ELF (with SyscallAnalysis set) and is now
 // treated as non-ELF clears SyscallAnalysis (schema contract: nil for non-ELF).
 func TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis(t *testing.T) {
-	// Use a real ELF for the first record so SyscallAnalysis gets populated,
-	// then replace the file with non-ELF bytes and force re-record.
-	const elfPath = "/usr/bin/ls"
-	if _, err := os.Stat(elfPath); err != nil {
-		t.Skipf("skipping: %s not available: %v", elfPath, err)
-	}
-
+	// Use an in-memory dynamic ELF for the first record so SyscallAnalysis gets
+	// populated, then replace the file with non-ELF bytes and force re-record.
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
-	// Copy the ELF to a writable location so we can replace it.
-	elfBytes, err := os.ReadFile(elfPath)
-	require.NoError(t, err)
+	// Create an in-memory ELF at the target path.
 	targetFile := filepath.Join(tempDir, "target.bin")
-	require.NoError(t, os.WriteFile(targetFile, elfBytes, 0o755))
+	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
 	v, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
@@ -1486,19 +1478,13 @@ func (s *stubSyscallAnalyzerReturnsOne) GetSyscallTable(_ elf.Machine) (SyscallN
 // an ELF that previously had syscalls detected now clears SyscallAnalysis when the
 // analyzer returns zero results (schema contract: nil when no syscalls detected).
 func TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis(t *testing.T) {
-	const elfPath = "/usr/bin/ls"
-	if _, err := os.Stat(elfPath); err != nil {
-		t.Skipf("skipping: %s not available: %v", elfPath, err)
-	}
-
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
-	elfBytes, err := os.ReadFile(elfPath)
-	require.NoError(t, err)
+	// Create an in-memory ELF at the target path.
 	targetFile := filepath.Join(tempDir, "target.bin")
-	require.NoError(t, os.WriteFile(targetFile, elfBytes, 0o755))
+	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
 
 	v, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
