@@ -85,26 +85,26 @@ if err := validateWebhookURL(opts.WebhookURL, opts.AllowedHost); err != nil {
 
 ### 2.4 `SetupLoggingOptions` (`internal/runner/bootstrap/environment.go`)
 
+既存の `SlackWebhookURLSuccess/Error` フィールドを**削除**し、`SlackAllowedHost` を追加する (AC-L2-3)。Slack URL は `SetupLoggingOptions` では管理せず、`SetupSlackLogging` に渡す `SlackWebhookConfig` で別途受け取る。
+
 ```go
 type SetupLoggingOptions struct {
-    LogLevel               slog.Level
-    LogDir                 string
-    RunID                  string
-    ForceInteractive       bool
-    ForceQuiet             bool
-    ConsoleWriter          io.Writer
-    SlackWebhookURLSuccess string
-    SlackWebhookURLError   string
-    DryRun                 bool
+    LogLevel         slog.Level
+    LogDir           string
+    RunID            string
+    ForceInteractive bool
+    ForceQuiet       bool
+    ConsoleWriter    io.Writer
+    DryRun           bool
 
     // 追加フィールド (AC-L2-3)
-    // SlackAllowedHost は webhook URL のホスト名許可設定。
-    // TOML 設定読み込み後に SetupSlackLogging 経由で設定する。
+    // SlackAllowedHost は TOML から読んだ許可ホスト名。
+    // SetupSlackLogging が SlackLoggerConfig.AllowedHost に転送する。
     SlackAllowedHost string
 }
 ```
 
-`SetupLogging` は Phase 1 専用とし、Slack に関するフィールドを **使用しない**。Slack URL が渡されても、Phase 1 では Slack ハンドラを生成しない (AC-L2-11)。
+`SetupLogging` (Phase 1) は Slack フィールドを一切持たず、コンパイルレベルで Slack URL を受け付けない。Slack URL は Phase 2 の `SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions)` に `SlackWebhookConfig` として渡す (AC-L2-11)。
 
 ### 2.5 `LoggerConfig` (`internal/runner/bootstrap/logger.go`)
 
