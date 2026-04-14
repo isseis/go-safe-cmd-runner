@@ -105,6 +105,9 @@ func SetupLogging(opts SetupLoggingOptions) error {
 // SetupSlackLogging is called after TOML config is loaded and adds Slack handlers.
 // Returns an ErrorTypeConfigParsing error if host validation fails (AC-L2-10).
 func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error {
+	if slackConfig == nil {
+		return nil
+	}
 	if slackConfig.SuccessURL == "" && slackConfig.ErrorURL == "" {
 		return nil
 	}
