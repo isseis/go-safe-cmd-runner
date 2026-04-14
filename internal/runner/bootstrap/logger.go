@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -46,6 +47,17 @@ var redactionErrorCollector *redaction.InMemoryErrorCollector
 
 // redactionReporter is a global reporter for shutdown
 var redactionReporter *redaction.ShutdownReporter
+
+// errPhase1NotInitialized は AddSlackHandlers が SetupLoggerWithConfig 前に呼ばれた場合のエラー。
+var errPhase1NotInitialized = errors.New("AddSlackHandlers called before SetupLoggerWithConfig")
+
+// phase1BaseHandlers は SetupLoggerWithConfig が作成した Slack を除くハンドラ群。
+// AddSlackHandlers がこれを参照して Slack ハンドラを追加した新たな MultiHandler を構築する。
+var phase1BaseHandlers []slog.Handler
+
+// phase1FailureLogger は Phase 1 で作成した failureLogger。
+// AddSlackHandlers が RedactingHandler 再構築時に継続使用する。
+var phase1FailureLogger *slog.Logger
 
 // SetupLoggerWithConfig initializes the logging system with all handlers atomically.
 //
@@ -192,6 +204,12 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 	failureLogger := slog.New(failureMultiHandler)
 
+	// Save Phase 1 state for AddSlackHandlers to reference later.
+	// phase1BaseHandlers holds Slack-excluded handlers (= failureHandlers).
+	// phase1FailureLogger is reused by AddSlackHandlers without reinitialisation.
+	phase1BaseHandlers = failureHandlers
+	phase1FailureLogger = failureLogger
+
 	// Create redaction error collector for monitoring failures
 	// Limit to 1000 most recent failures to prevent unbounded growth
 	const maxRedactionFailures = 1000
@@ -222,6 +240,17 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 		"slack_success_enabled", config.SlackWebhookURLSuccess != "",
 		"slack_error_enabled", config.SlackWebhookURLError != "")
 
+	return nil
+}
+
+// AddSlackHandlers は既存のデフォルトロガーに Slack ハンドラを追加して再構築する。
+// successURL/errorURL どちらかでも validateWebhookURL が失敗した場合はエラーを返す。
+// SetupLoggerWithConfig が呼ばれていない場合 (phase1BaseHandlers が nil) はエラーを返す。
+func AddSlackHandlers(config SlackLoggerConfig) error {
+	if phase1BaseHandlers == nil || phase1FailureLogger == nil {
+		return errPhase1NotInitialized
+	}
+	_ = config // Phase 6 で Slack ハンドラの生成・追加ロジックを実装する
 	return nil
 }
 
