@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
@@ -17,20 +19,34 @@ import (
 // ErrInvalidSlackAllowedHost is a sentinel error returned when the slack_allowed_host value is invalid.
 var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid hostname without port or whitespace")
 
+// rfc1123LabelRE matches a single DNS label per RFC 1123 §2.1:
+// starts and ends with a letter or digit; interior may contain hyphens.
+var rfc1123LabelRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?$`)
+
 // normalizeSlackAllowedHost converts host to a normalized allowed hostname.
 // Returns ("", nil) when host is empty (Slack disabled).
-// Returns an error for invalid values such as port numbers, schemes, paths, or whitespace.
+// Accepts RFC 1123 hostnames (dot-separated labels) and IPv6 literals in brackets.
+// Returns an error for any other value (port, scheme, path, query, fragment, whitespace, etc.).
 func normalizeSlackAllowedHost(host string) (string, error) {
 	if host == "" {
 		return "", nil
 	}
-	u, err := url.Parse("https://" + host + "/")
-	// u.Path is always "/" for a valid bare hostname since we append "/" in the URL.
-	// A non-"/" path means the input contained a path or scheme component (e.g. "host/path" or "https://host").
-	if err != nil || u.Hostname() == "" || u.User != nil || u.Port() != "" || u.Path != "/" {
-		return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
+	// IPv6 literal: "[<addr>]" — delegate bracket-stripping to url.Parse.
+	if strings.HasPrefix(host, "[") {
+		u, err := url.Parse("https://" + host + "/")
+		if err != nil || u.Hostname() == "" || u.Port() != "" {
+			return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
+		}
+		return u.Hostname(), nil // bare address e.g. "::1"
 	}
-	return u.Hostname(), nil
+
+	// Plain hostname: validate each dot-separated label against RFC 1123.
+	for label := range strings.SplitSeq(host, ".") {
+		if !rfc1123LabelRE.MatchString(label) {
+			return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
+		}
+	}
+	return strings.ToLower(host), nil
 }
 
 // LoadAndPrepareConfig loads and verifies a configuration file.

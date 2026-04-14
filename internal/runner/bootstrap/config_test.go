@@ -76,6 +76,32 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			input:   "hooks.slack.com@evil.com",
 			wantErr: true,
 		},
+		{
+			name:    "query string after path separator rejected",
+			input:   "hooks.slack.com/?q=1",
+			wantErr: true,
+		},
+		{
+			name:    "fragment after path separator rejected",
+			input:   "hooks.slack.com/#frag",
+			wantErr: true,
+		},
+		{
+			name:    "label with leading hyphen rejected",
+			input:   "-hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "label with trailing hyphen rejected",
+			input:   "hooks-.slack.com",
+			wantErr: true,
+		},
+		{
+			name:     "uppercase hostname normalized to lowercase",
+			input:    "Hooks.Slack.Com",
+			wantHost: "hooks.slack.com",
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {
