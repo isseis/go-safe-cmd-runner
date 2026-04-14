@@ -75,6 +75,10 @@ type SetupLoggingOptions struct {
 	SlackWebhookURLSuccess string    // Slack webhook URL for success (INFO) notifications. Empty string disables.
 	SlackWebhookURLError   string    // Slack webhook URL for error (WARN/ERROR) notifications. Empty string disables.
 	DryRun                 bool      // If true, Slack notifications are not sent
+
+	// SlackAllowedHost は TOML から読んだ許可ホスト名。
+	// SetupSlackLogging が SlackLoggerConfig.AllowedHost に転送する。
+	SlackAllowedHost string
 }
 
 // SetupLogging sets up logging system without environment file handling

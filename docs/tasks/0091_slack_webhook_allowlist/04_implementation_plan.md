@@ -1,10 +1,10 @@
 # 実装計画: Slack webhook URL ホスト allowlist
 
-- [ ] 1. TOML・設定構造体の拡張 (AC-L2-1, AC-L2-3, AC-L2-4)
-  - [ ] `internal/runner/runnertypes/spec.go` の `GlobalSpec` に `SlackAllowedHost string` フィールドを追加 (AC-L2-1)
-  - [ ] `internal/runner/bootstrap/environment.go` の `SetupLoggingOptions` に `SlackAllowedHost string` フィールドを追加 (AC-L2-3)
-  - [ ] `internal/runner/bootstrap/logger.go` に Phase 2 専用の `SlackLoggerConfig` 構造体を新規追加し `AllowedHost string` フィールドを持たせる (AC-L2-4、タスク 6 でも再掲)
-  - [ ] `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` に `normalizeSlackAllowedHost` 呼び出しを追加する
+- [x] 1. TOML・設定構造体の拡張 (AC-L2-1, AC-L2-3, AC-L2-4)
+  - [x] `internal/runner/runnertypes/spec.go` の `GlobalSpec` に `SlackAllowedHost string` フィールドを追加 (AC-L2-1)
+  - [x] `internal/runner/bootstrap/environment.go` の `SetupLoggingOptions` に `SlackAllowedHost string` フィールドを追加 (AC-L2-3)
+  - [x] `internal/runner/bootstrap/logger.go` に Phase 2 専用の `SlackLoggerConfig` 構造体を新規追加し `AllowedHost string` フィールドを持たせる (AC-L2-4、タスク 6 でも再掲)
+  - [x] `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` に `normalizeSlackAllowedHost` 呼び出しを追加する
     - 検証と正規化を兼ねる: `url.Parse("https://" + host + "/")` でパースし、`u.Hostname()` が空でなく `u.Port()` が空であることを確認する
     - IPv6 ブラケット記法 (`[::1]`) は `u.Hostname()` が `::1` を返すことで自動的に正規化される
     - 正規化済みの値を `cfg.Global.SlackAllowedHost` に書き戻すことで以降の全層が正規化値を参照する

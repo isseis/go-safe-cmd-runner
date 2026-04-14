@@ -30,6 +30,15 @@ type LoggerConfig struct {
 	DryRun                 bool      // If true, Slack notifications are not sent
 }
 
+// SlackLoggerConfig は AddSlackHandlers に渡す Slack ハンドラ専用の設定。
+type SlackLoggerConfig struct {
+	WebhookURLSuccess string // 成功通知用 webhook URL (INFO)
+	WebhookURLError   string // エラー通知用 webhook URL (WARN/ERROR)
+	AllowedHost       string // 許可ホスト名 (AC-L2-4)
+	RunID             string
+	DryRun            bool
+}
+
 // redactionErrorCollector is a global collector for redaction failures
 // This is set during logger initialization and used for shutdown reporting
 var redactionErrorCollector *redaction.InMemoryErrorCollector

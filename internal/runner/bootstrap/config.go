@@ -2,6 +2,10 @@
 package bootstrap
 
 import (
+	"errors"
+	"fmt"
+	"net/url"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -9,6 +13,23 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
+
+// ErrInvalidSlackAllowedHost は slack_allowed_host の値が不正な場合に返される静的エラー。
+var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid hostname without port or whitespace")
+
+// normalizeSlackAllowedHost は host を正規化された許可ホスト名に変換する。
+// host が空文字列の場合は ("", nil) を返す (Slack 無効)。
+// ポート番号・スキーム・パス・空白など不正な値は error を返す。
+func normalizeSlackAllowedHost(host string) (string, error) {
+	if host == "" {
+		return "", nil
+	}
+	u, err := url.Parse("https://" + host + "/")
+	if err != nil || u.Hostname() == "" || u.Port() != "" {
+		return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
+	}
+	return u.Hostname(), nil
+}
 
 // LoadAndPrepareConfig loads and verifies a configuration file.
 //
@@ -71,6 +92,17 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 			RunID:     runID,
 		}
 	}
+
+	normalizedHost, err := normalizeSlackAllowedHost(cfg.Global.SlackAllowedHost)
+	if err != nil {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   err.Error(),
+			Component: string(resource.ComponentConfig),
+			RunID:     runID,
+		}
+	}
+	cfg.Global.SlackAllowedHost = normalizedHost
 
 	return cfg, nil
 }
