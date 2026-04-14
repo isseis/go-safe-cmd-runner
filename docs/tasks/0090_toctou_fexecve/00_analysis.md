@@ -17,8 +17,8 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef toctou fill:#ffe0e0,stroke:#c00,stroke-width:2px,color:#800000;
 
-    A([runner 起動]) --> B[WithPrivileges<br>unix.go:46]
-    B --> C[verifyGroupFiles<br>group_executor.go:336]
+    A([runner 起動]) --> B[WithPrivileges<br>privilege/unix.go:69]
+    B --> C[verifyGroupFiles<br>group_executor.go:389]
     C --> D[VerifyGroupFiles<br>verification/manager.go]
     D --> E[filevalidator.Verify<br>validator.go:429]
     E --> E1[openat2 RESOLVE_NO_SYMLINKS<br>safefileio]
@@ -26,7 +26,7 @@ flowchart TD
     E2 --> E3[close FD]
     E3 --> F{hash 一致?}
     F -- NG --> G([エラー終了])
-    F -- OK --> H[exec.CommandContext<br>executor.go:196]
+    F -- OK --> H[exec.CommandContext<br>executor.go:221]
     H --> I[OS: open → execve]
     I --> J([子プロセス実行])
 
@@ -60,14 +60,14 @@ flowchart LR
 | [internal/filevalidator/validator.go:453-](../../../internal/filevalidator/validator.go#L453) | `VerifyWithHash` — `Verify` + hash 値を返す |
 | [internal/safefileio/safe_file_linux.go](../../../internal/safefileio/safe_file_linux.go) | `openat2(RESOLVE_NO_SYMLINKS)` ラッパ |
 | [internal/verification/manager.go:39](../../../internal/verification/manager.go#L39) | `VerifyAndReadConfigFile` — config 用の検証+読込 |
-| [internal/runner/group_executor.go:344](../../../internal/runner/group_executor.go#L344) | `verifyGroupFiles` — `VerifyGroupFiles` の呼び出し元 |
+| [internal/runner/group_executor.go:389](../../../internal/runner/group_executor.go#L389) | `verifyGroupFiles` — `VerifyGroupFiles` の呼び出し元 |
 
 ### 2.2 実行側
 
 | ファイル | 役割 |
 |---|---|
-| [internal/runner/executor/executor.go:185-](../../../internal/runner/executor/executor.go#L185) | `executeCommandWithPath` — `exec.CommandContext` 呼び出し元 |
-| [internal/runner/executor/executor.go:196](../../../internal/runner/executor/executor.go#L196) | `exec.CommandContext(ctx, path, ...)` — 実際の exec |
+| [internal/runner/executor/executor.go:210-](../../../internal/runner/executor/executor.go#L210) | `executeCommandWithPath` — `exec.CommandContext` 呼び出し元 |
+| [internal/runner/executor/executor.go:221](../../../internal/runner/executor/executor.go#L221) | `exec.CommandContext(ctx, path, ...)` — 実際の exec |
 
 ---
 
@@ -126,7 +126,7 @@ func (v *Validator) VerifyAndRetainFD(filePath string) (f *os.File, hash string,
 
 **影響範囲:**
 - `internal/filevalidator/validator.go` — 新関数追加
-- `internal/filevalidator/filevalidator.go` (interface 定義) — interface 変更の要否を確認
+- `internal/filevalidator/validator.go:83` (`FileValidator` interface 定義) — interface 変更の要否を確認
 - `internal/verification/manager.go` — `VerifyGroupFiles` の変更
 - `internal/runner/group_executor.go` — FD 生存期間の管理
 - `internal/runner/executor/executor.go` — `executeCommandWithPath` の置き換え
