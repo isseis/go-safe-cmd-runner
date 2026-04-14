@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,6 +12,68 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestSetupSlackLogging_AllowedHostPropagation verifies that SlackAllowedHost is propagated
+// to SlackHandlerOptions.AllowedHost (AC-L2-19).
+func TestSetupSlackLogging_AllowedHostPropagation(t *testing.T) {
+	// Phase 1 must be initialized first.
+	originalLogger := slog.Default()
+	defer slog.SetDefault(originalLogger)
+
+	err := SetupLoggerWithConfig(LoggerConfig{
+		Level: slog.LevelInfo,
+		RunID: "test-propagation-001",
+	}, false, false)
+	require.NoError(t, err)
+
+	// Capture the SlackHandlerOptions passed to newSlackHandlerFunc.
+	var capturedOpts []logging.SlackHandlerOptions
+	orig := newSlackHandlerFunc
+	defer func() { newSlackHandlerFunc = orig }()
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		capturedOpts = append(capturedOpts, opts)
+		// Return an error so AddSlackHandlers stops early; we only care about captured opts.
+		return nil, errors.New("mock: stop here")
+	}
+
+	const wantHost = "hooks.slack.com"
+	_ = SetupSlackLogging(&SlackWebhookConfig{
+		ErrorURL: "https://hooks.slack.com/services/test",
+	}, SetupLoggingOptions{
+		SlackAllowedHost: wantHost,
+		RunID:            "test-propagation-001",
+	})
+
+	require.Len(t, capturedOpts, 1, "newSlackHandlerFunc should have been called once")
+	assert.Equal(t, wantHost, capturedOpts[0].AllowedHost, "AllowedHost should be propagated to SlackHandlerOptions")
+}
+
+// TestSetupSlackLogging_MissingAllowedHostReturnsConfigParsingError verifies that
+// SetupSlackLogging with SlackAllowedHost="" returns a PreExecutionError with
+// Type == ErrorTypeConfigParsing (AC-L2-20).
+func TestSetupSlackLogging_MissingAllowedHostReturnsConfigParsingError(t *testing.T) {
+	originalLogger := slog.Default()
+	defer slog.SetDefault(originalLogger)
+
+	err := SetupLoggerWithConfig(LoggerConfig{
+		Level: slog.LevelInfo,
+		RunID: "test-missing-host-001",
+	}, false, false)
+	require.NoError(t, err)
+
+	slackErr := SetupSlackLogging(&SlackWebhookConfig{
+		ErrorURL: "https://hooks.slack.com/services/test",
+	}, SetupLoggingOptions{
+		SlackAllowedHost: "", // intentionally empty
+		RunID:            "test-missing-host-001",
+	})
+
+	require.Error(t, slackErr, "SetupSlackLogging should return an error when AllowedHost is empty")
+
+	var preExecErr *logging.PreExecutionError
+	require.True(t, errors.As(slackErr, &preExecErr), "error should be *logging.PreExecutionError, got %T: %v", slackErr, slackErr)
+	assert.Equal(t, logging.ErrorTypeConfigParsing, preExecErr.Type, "error type should be ErrorTypeConfigParsing")
+}
 
 func TestSetupLogging_Success(t *testing.T) {
 	tests := []struct {

@@ -57,9 +57,9 @@
   - [x] `LoadAndPrepareConfig` の直後に `SetupSlackLogging` を呼び出す
   - [x] `SetupSlackLogging` のエラーを既存の設定エラー処理と同様にハンドルする
 
-- [ ] 9. 伝播テストの追加 (AC-L2-19, AC-L2-20)
-  - [ ] AC-L2-19: `SlackHandlerOptions.AllowedHost` への伝播確認
+- [x] 9. 伝播テストの追加 (AC-L2-19, AC-L2-20)
+  - [x] AC-L2-19: `SlackHandlerOptions.AllowedHost` への伝播確認
     - タスク 7 で追加した `newSlackHandlerFunc` をテスト内で差し替え、受け取った `SlackHandlerOptions.AllowedHost` が期待値と一致することを確認する
-  - [ ] AC-L2-20: 起動フロー統合テスト
+  - [x] AC-L2-20: 起動フロー統合テスト
     - 前提: `slackConfig.ErrorURL` = 有効 HTTPS URL、`SetupLoggingOptions.SlackAllowedHost` = `""` (未設定)
     - `SetupSlackLogging` が返すエラーを `errors.As(err, &preExecErr)` で検査し `preExecErr.Type == ErrorTypeConfigParsing` であることを確認する
