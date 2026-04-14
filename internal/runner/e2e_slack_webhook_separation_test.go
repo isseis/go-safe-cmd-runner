@@ -55,20 +55,22 @@ func TestE2E_SlackWebhookSeparation_SuccessOnly(t *testing.T) {
 
 	// Create two Slack handlers
 	successHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: successServer.URL,
-		RunID:      "test-success-" + timeBasedID(),
-		HTTPClient: successServer.Client(),
-		LevelMode:  logging.LevelModeExactInfo,
-		IsDryRun:   false,
+		WebhookURL:  successServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, successServer.URL),
+		RunID:       "test-success-" + timeBasedID(),
+		HTTPClient:  successServer.Client(),
+		LevelMode:   logging.LevelModeExactInfo,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: errorServer.URL,
-		RunID:      "test-error-" + timeBasedID(),
-		HTTPClient: errorServer.Client(),
-		LevelMode:  logging.LevelModeWarnAndAbove,
-		IsDryRun:   false,
+		WebhookURL:  errorServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, errorServer.URL),
+		RunID:       "test-error-" + timeBasedID(),
+		HTTPClient:  errorServer.Client(),
+		LevelMode:   logging.LevelModeWarnAndAbove,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
@@ -157,20 +159,22 @@ func TestE2E_SlackWebhookSeparation_ErrorOnly(t *testing.T) {
 	defer errorServer.Close()
 
 	successHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: successServer.URL,
-		RunID:      "test-error-" + timeBasedID(),
-		HTTPClient: successServer.Client(),
-		LevelMode:  logging.LevelModeExactInfo,
-		IsDryRun:   false,
+		WebhookURL:  successServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, successServer.URL),
+		RunID:       "test-error-" + timeBasedID(),
+		HTTPClient:  successServer.Client(),
+		LevelMode:   logging.LevelModeExactInfo,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: errorServer.URL,
-		RunID:      "test-error-" + timeBasedID(),
-		HTTPClient: errorServer.Client(),
-		LevelMode:  logging.LevelModeWarnAndAbove,
-		IsDryRun:   false,
+		WebhookURL:  errorServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, errorServer.URL),
+		RunID:       "test-error-" + timeBasedID(),
+		HTTPClient:  errorServer.Client(),
+		LevelMode:   logging.LevelModeWarnAndAbove,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
@@ -252,20 +256,22 @@ func TestE2E_SlackWebhookSeparation_WarnToError(t *testing.T) {
 	defer errorServer.Close()
 
 	successHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: successServer.URL,
-		RunID:      "test-warn-" + timeBasedID(),
-		HTTPClient: successServer.Client(),
-		LevelMode:  logging.LevelModeExactInfo,
-		IsDryRun:   false,
+		WebhookURL:  successServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, successServer.URL),
+		RunID:       "test-warn-" + timeBasedID(),
+		HTTPClient:  successServer.Client(),
+		LevelMode:   logging.LevelModeExactInfo,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: errorServer.URL,
-		RunID:      "test-warn-" + timeBasedID(),
-		HTTPClient: errorServer.Client(),
-		LevelMode:  logging.LevelModeWarnAndAbove,
-		IsDryRun:   false,
+		WebhookURL:  errorServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, errorServer.URL),
+		RunID:       "test-warn-" + timeBasedID(),
+		HTTPClient:  errorServer.Client(),
+		LevelMode:   logging.LevelModeWarnAndAbove,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
@@ -311,11 +317,12 @@ func TestE2E_SlackWebhookSeparation_ErrorOnlyConfig(t *testing.T) {
 
 	// Create only ERROR handler (no SUCCESS handler)
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: errorServer.URL,
-		RunID:      "test-error-only-" + timeBasedID(),
-		HTTPClient: errorServer.Client(),
-		LevelMode:  logging.LevelModeWarnAndAbove,
-		IsDryRun:   false,
+		WebhookURL:  errorServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, errorServer.URL),
+		RunID:       "test-error-only-" + timeBasedID(),
+		HTTPClient:  errorServer.Client(),
+		LevelMode:   logging.LevelModeWarnAndAbove,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
@@ -368,20 +375,22 @@ func TestE2E_SlackWebhookSeparation_DryRunMode(t *testing.T) {
 
 	// Create handlers with IsDryRun=true
 	successHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: successServer.URL,
-		RunID:      "test-dryrun-" + timeBasedID(),
-		HTTPClient: successServer.Client(),
-		LevelMode:  logging.LevelModeExactInfo,
-		IsDryRun:   true, // Dry-run mode
+		WebhookURL:  successServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, successServer.URL),
+		RunID:       "test-dryrun-" + timeBasedID(),
+		HTTPClient:  successServer.Client(),
+		LevelMode:   logging.LevelModeExactInfo,
+		IsDryRun:    true, // Dry-run mode
 	})
 	require.NoError(t, err)
 
 	errorHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: errorServer.URL,
-		RunID:      "test-dryrun-" + timeBasedID(),
-		HTTPClient: errorServer.Client(),
-		LevelMode:  logging.LevelModeWarnAndAbove,
-		IsDryRun:   true, // Dry-run mode
+		WebhookURL:  errorServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, errorServer.URL),
+		RunID:       "test-dryrun-" + timeBasedID(),
+		HTTPClient:  errorServer.Client(),
+		LevelMode:   logging.LevelModeWarnAndAbove,
+		IsDryRun:    true, // Dry-run mode
 	})
 	require.NoError(t, err)
 
@@ -426,11 +435,12 @@ func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
 	defer successServer.Close()
 
 	successHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-		WebhookURL: successServer.URL,
-		RunID:      "test-format-" + timeBasedID(),
-		HTTPClient: successServer.Client(),
-		LevelMode:  logging.LevelModeExactInfo,
-		IsDryRun:   false,
+		WebhookURL:  successServer.URL,
+		AllowedHost: mustWebhookAllowedHost(t, successServer.URL),
+		RunID:       "test-format-" + timeBasedID(),
+		HTTPClient:  successServer.Client(),
+		LevelMode:   logging.LevelModeExactInfo,
+		IsDryRun:    false,
 	})
 	require.NoError(t, err)
 
