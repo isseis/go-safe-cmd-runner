@@ -270,7 +270,6 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	assert.Equal(t, testFilePath, record.FilePath, "File path is empty")
 	assert.True(t, strings.HasPrefix(record.ContentHash, "sha256:"),
 		"ContentHash should have sha256: prefix, got: %s", record.ContentHash)
-	assert.False(t, record.UpdatedAt.IsZero(), "UpdatedAt should be set")
 }
 
 // TestValidator_VerifyFromHandle tests the VerifyFromHandle method
@@ -833,7 +832,6 @@ func TestNew_RecordAndVerify(t *testing.T) {
 		// Verify the record fields
 		assert.Equal(t, testFilePath, record.FilePath, "FilePath should match")
 		assert.True(t, strings.HasPrefix(record.ContentHash, "sha256:"), "ContentHash should have sha256 prefix")
-		assert.False(t, record.UpdatedAt.IsZero(), "UpdatedAt should be set")
 	})
 
 	t.Run("Verify with analysis store format", func(t *testing.T) {

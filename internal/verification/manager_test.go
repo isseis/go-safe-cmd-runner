@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
@@ -1484,7 +1483,6 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // old records predate network symbol caching (schema_version < CurrentSchemaVersion)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	require.NoError(t, err)
@@ -1605,7 +1603,6 @@ func createFutureSchemaRecord(t *testing.T, hashDir, filePath string) string {
 		"schema_version": fileanalysis.CurrentSchemaVersion + 1, // future schema (> CurrentSchemaVersion)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	require.NoError(t, err)
