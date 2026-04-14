@@ -246,10 +246,9 @@ func TestAnalyze_NonELF(t *testing.T) {
 // TestAnalyze_StaticELF verifies that Analyze returns nil for a static ELF
 // (no DT_NEEDED entries).
 func TestAnalyze_StaticELF(t *testing.T) {
-	staticELF := "../runner/security/elfanalyzer/testdata/static.elf"
-	if _, err := os.Stat(staticELF); err != nil {
-		t.Skipf("static.elf testdata not accessible: %v", err)
-	}
+	tmpDir := t.TempDir()
+	// sonames=nil produces an ELF with no DT_NEEDED entries.
+	staticELF := buildTestELFWithDeps(t, tmpDir, "static.elf", nil, "")
 
 	a := newTestAnalyzer(t)
 	result, err := a.Analyze(staticELF)
