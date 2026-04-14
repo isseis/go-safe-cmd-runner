@@ -203,34 +203,6 @@ func AddSlackHandlers(config SlackLoggerConfig) error
 - `redactionErrorCollector`: Phase 1 の動作中に蓄積されたエラー記録を保持するため、再初期化しない
 - `redactionReporter`: `phase1FailureLogger` および `redactionErrorCollector` が変わらないため、再初期化しない
 
----
-
-## 3. `cmd/runner/main.go` 起動フロー変更
-
-### 3.1 変更前
-
-```
-ValidateSlackWebhookEnv()
-SetupLogging(Slack URL を含む)          ← Slack ハンドラ生成
-LoadAndPrepareConfig()                  ← TOML 読み込み (SlackAllowedHost ここで判明)
-```
-
-### 3.2 変更後
-
-```
-ValidateSlackWebhookEnv()               → slackConfig
-SetupLogging(Slack URL を含まない)      ← Phase 1: コンソール・ファイルのみ
-LoadAndPrepareConfig()                  ← TOML 読み込み
-SetupSlackLogging(slackConfig, opts{    ← Phase 2: ホスト検証 + Slack ハンドラ追加
-    SlackAllowedHost:       cfg.Global.SlackAllowedHost,
-    RunID:                  runID,
-    DryRun:                 dryRun,
-    ...
-})
-```
-
-`SetupLogging` の呼び出しから `SlackWebhookURLSuccess/Error` を削除し、`SetupSlackLogging` の呼び出しを `LoadAndPrepareConfig` の直後に追加する。Slack webhook URL 自体は `slackConfig` から受け取り、`opts` は許可ホストや `RunID` などの共通設定のみを渡す。
-
 ### 2.9 `slack_allowed_host` フォーマット検証 (`internal/runner/bootstrap/config.go`)
 
 `LoadAndPrepareConfig` 内で `cfg.Global.SlackAllowedHost` を検証する。空文字列は有効 (Slack 無効化) とし、非空の場合のみ「有効なホスト名かどうか」を検証する。
@@ -273,6 +245,34 @@ if err := validateSlackAllowedHost(cfg.Global.SlackAllowedHost); err != nil {
 ```
 
 この検証を行うことで、`validateWebhookURL` および `AddSlackHandlers` は `allowedHost` が有効なホスト名であることを前提とできる。
+
+---
+
+## 3. `cmd/runner/main.go` 起動フロー変更
+
+### 3.1 変更前
+
+```
+ValidateSlackWebhookEnv()
+SetupLogging(Slack URL を含む)          ← Slack ハンドラ生成
+LoadAndPrepareConfig()                  ← TOML 読み込み (SlackAllowedHost ここで判明)
+```
+
+### 3.2 変更後
+
+```
+ValidateSlackWebhookEnv()               → slackConfig
+SetupLogging(Slack URL を含まない)      ← Phase 1: コンソール・ファイルのみ
+LoadAndPrepareConfig()                  ← TOML 読み込み
+SetupSlackLogging(slackConfig, opts{    ← Phase 2: ホスト検証 + Slack ハンドラ追加
+    SlackAllowedHost:       cfg.Global.SlackAllowedHost,
+    RunID:                  runID,
+    DryRun:                 dryRun,
+    ...
+})
+```
+
+`SetupLogging` の呼び出しから `SlackWebhookURLSuccess/Error` を削除し、`SetupSlackLogging` の呼び出しを `LoadAndPrepareConfig` の直後に追加する。Slack webhook URL 自体は `slackConfig` から受け取り、`opts` は許可ホストや `RunID` などの共通設定のみを渡す。
 
 ---
 
