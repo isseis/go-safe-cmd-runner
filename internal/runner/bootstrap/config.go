@@ -14,12 +14,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
-// ErrInvalidSlackAllowedHost は slack_allowed_host の値が不正な場合に返される静的エラー。
+// ErrInvalidSlackAllowedHost is a sentinel error returned when the slack_allowed_host value is invalid.
 var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid hostname without port or whitespace")
 
-// normalizeSlackAllowedHost は host を正規化された許可ホスト名に変換する。
-// host が空文字列の場合は ("", nil) を返す (Slack 無効)。
-// ポート番号・スキーム・パス・空白など不正な値は error を返す。
+// normalizeSlackAllowedHost converts host to a normalized allowed hostname.
+// Returns ("", nil) when host is empty (Slack disabled).
+// Returns an error for invalid values such as port numbers, schemes, paths, or whitespace.
 func normalizeSlackAllowedHost(host string) (string, error) {
 	if host == "" {
 		return "", nil
