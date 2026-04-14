@@ -23,13 +23,13 @@
     - 正常系テスト: `allowedHost` に適切なホスト名 (例: `hooks.slack.com`) を設定
     - 異常系テスト (HTTPS チェック等): `allowedHost` に任意のホストを設定 (HTTPS チェックが先行するため到達しない)
 
-- [ ] 4. ホスト検証テストの追加 (AC-L2-13〜AC-L2-17)
-  - [ ] AC-L2-13: `allowedHost=""` の場合に `ErrInvalidWebhookURL` が返ることを確認
-  - [ ] AC-L2-14: ホスト不一致 (`evil.example.com` vs `hooks.slack.com`) でエラーになることを確認
-  - [ ] AC-L2-15: ホスト一致 (`hooks.slack.com`) で `nil` が返ることを確認
-  - [ ] AC-L2-16: 大文字ホスト (`HOOKS.SLACK.COM`) が `hooks.slack.com` の許可設定で通過することを確認
-  - [ ] AC-L2-17: ポート番号付き URL (`https://hooks.slack.com:443/...`) が正しく処理されることを確認
-  - [ ] 各テストは `errors.Is(err, ErrInvalidWebhookURL)` で検証する
+- [x] 4. ホスト検証テストの追加 (AC-L2-13〜AC-L2-17)
+  - [x] AC-L2-13: `allowedHost=""` の場合に `ErrInvalidWebhookURL` が返ることを確認
+  - [x] AC-L2-14: ホスト不一致 (`evil.example.com` vs `hooks.slack.com`) でエラーになることを確認
+  - [x] AC-L2-15: ホスト一致 (`hooks.slack.com`) で `nil` が返ることを確認
+  - [x] AC-L2-16: 大文字ホスト (`HOOKS.SLACK.COM`) が `hooks.slack.com` の許可設定で通過することを確認
+  - [x] AC-L2-17: ポート番号付き URL (`https://hooks.slack.com:443/...`) が正しく処理されることを確認
+  - [x] 各テストは `errors.Is(err, ErrInvalidWebhookURL)` で検証する
 
 - [ ] 5. Phase 1 ハンドラ状態の保持機構を追加 (AC-L2-11 の前提)
   - **背景**: 現行の `SetupLoggerWithConfig` はすべてのハンドラをローカル変数で組み立て `slog.SetDefault` まで完結させる。Phase 2 (`AddSlackHandlers`) が Slack ハンドラを追加するには、Phase 1 で作成したコンソール・ファイルハンドラ群と `failureLogger` を後から参照できる必要がある。
