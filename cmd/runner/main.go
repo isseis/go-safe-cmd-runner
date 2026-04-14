@@ -183,15 +183,13 @@ func run(runID string) error {
 	}
 
 	if err := bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{
-		LogLevel:               logLevelValue,
-		LogDir:                 logDir,
-		RunID:                  runID,
-		ForceInteractive:       forceInteractive,
-		ForceQuiet:             forceQuiet,
-		ConsoleWriter:          consoleWriter,
-		SlackWebhookURLSuccess: slackConfig.SuccessURL,
-		SlackWebhookURLError:   slackConfig.ErrorURL,
-		DryRun:                 dryRun,
+		LogLevel:         logLevelValue,
+		LogDir:           logDir,
+		RunID:            runID,
+		ForceInteractive: forceInteractive,
+		ForceQuiet:       forceQuiet,
+		ConsoleWriter:    consoleWriter,
+		DryRun:           dryRun,
 	}); err != nil {
 		return err
 	}
@@ -227,6 +225,15 @@ func run(runID string) error {
 	// Load and prepare configuration (verify, parse, and expand variables)
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, runID)
 	if err != nil {
+		return err
+	}
+
+	// Phase 2: Add Slack handlers (AllowedHost is read from TOML)
+	if err := bootstrap.SetupSlackLogging(slackConfig, bootstrap.SetupLoggingOptions{
+		SlackAllowedHost: cfg.Global.SlackAllowedHost,
+		RunID:            runID,
+		DryRun:           dryRun,
+	}); err != nil {
 		return err
 	}
 

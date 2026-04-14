@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -65,11 +66,13 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	defer mockServer.Close()
 
 	t.Logf("Mock server URL: %s", mockServer.URL)
+	allowedHost := mustWebhookAllowedHost(t, mockServer.URL)
 
 	// Create real Slack handlers with mock server URL and HTTP client that accepts self-signed certs
 	// Use both SUCCESS and ERROR webhooks pointing to the same mock server
 	successSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:    mockServer.URL,
+		AllowedHost:   allowedHost,
 		RunID:         "e2e-mock-test-" + timeBasedID(),
 		HTTPClient:    mockServer.Client(),
 		BackoffConfig: logging.DefaultBackoffConfig,
@@ -80,6 +83,7 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 
 	errorSlackHandler, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
 		WebhookURL:    mockServer.URL,
+		AllowedHost:   allowedHost,
 		RunID:         "e2e-mock-test-" + timeBasedID(),
 		HTTPClient:    mockServer.Client(),
 		BackoffConfig: logging.DefaultBackoffConfig,
@@ -168,4 +172,14 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 // timeBasedID generates a time-based ID for test run identification
 func timeBasedID() string {
 	return time.Now().Format("20060102-150405")
+}
+
+func mustWebhookAllowedHost(t *testing.T, webhookURL string) string {
+	t.Helper()
+
+	parsedURL, err := url.Parse(webhookURL)
+	require.NoError(t, err)
+	require.NotEmpty(t, parsedURL.Hostname())
+
+	return parsedURL.Hostname()
 }

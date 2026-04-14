@@ -64,30 +64,30 @@ func ValidateSlackWebhookEnv() (*SlackWebhookConfig, error) {
 	}, nil
 }
 
-// SetupLoggingOptions holds configuration for SetupLogging
+// SetupLoggingOptions holds configuration for SetupLogging (Phase 1: console and file handlers).
+// Slack handlers are configured separately via SetupSlackLogging after TOML is loaded.
 type SetupLoggingOptions struct {
-	LogLevel               slog.Level
-	LogDir                 string
-	RunID                  string
-	ForceInteractive       bool
-	ForceQuiet             bool
-	ConsoleWriter          io.Writer // If nil, defaults to stdout for backward compatibility
-	SlackWebhookURLSuccess string    // Slack webhook URL for success (INFO) notifications. Empty string disables.
-	SlackWebhookURLError   string    // Slack webhook URL for error (WARN/ERROR) notifications. Empty string disables.
-	DryRun                 bool      // If true, Slack notifications are not sent
+	LogLevel         slog.Level
+	LogDir           string
+	RunID            string
+	ForceInteractive bool
+	ForceQuiet       bool
+	ConsoleWriter    io.Writer // If nil, defaults to stdout for backward compatibility
+	DryRun           bool      // If true, Slack notifications are not sent
+
+	// SlackAllowedHost is the permitted hostname read from TOML.
+	// SetupSlackLogging forwards it to SlackLoggerConfig.AllowedHost.
+	SlackAllowedHost string
 }
 
-// SetupLogging sets up logging system without environment file handling
+// SetupLogging sets up Phase 1 logging (console and file handlers).
+// Slack handlers are NOT configured here; call SetupSlackLogging after LoadAndPrepareConfig.
 func SetupLogging(opts SetupLoggingOptions) error {
-	// Setup logging system with all configuration including Slack
 	loggerConfig := LoggerConfig{
-		Level:                  opts.LogLevel,
-		LogDir:                 opts.LogDir,
-		RunID:                  opts.RunID,
-		SlackWebhookURLSuccess: opts.SlackWebhookURLSuccess,
-		SlackWebhookURLError:   opts.SlackWebhookURLError,
-		ConsoleWriter:          opts.ConsoleWriter,
-		DryRun:                 opts.DryRun,
+		Level:         opts.LogLevel,
+		LogDir:        opts.LogDir,
+		RunID:         opts.RunID,
+		ConsoleWriter: opts.ConsoleWriter,
 	}
 
 	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
@@ -96,6 +96,40 @@ func SetupLogging(opts SetupLoggingOptions) error {
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
 			Component: string(resource.ComponentLogging),
 			RunID:     opts.RunID,
+		}
+	}
+
+	return nil
+}
+
+// SetupSlackLogging is called after TOML config is loaded and adds Slack handlers.
+// Returns an ErrorTypeConfigParsing error if host validation fails (AC-L2-10).
+func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error {
+	if slackConfig == nil {
+		return nil
+	}
+	if slackConfig.SuccessURL == "" && slackConfig.ErrorURL == "" {
+		return nil
+	}
+
+	slackLoggerConfig := SlackLoggerConfig{
+		WebhookURLSuccess: slackConfig.SuccessURL,
+		WebhookURLError:   slackConfig.ErrorURL,
+		AllowedHost:       opts.SlackAllowedHost,
+		RunID:             opts.RunID,
+		DryRun:            opts.DryRun,
+	}
+
+	if err := AddSlackHandlers(slackLoggerConfig); err != nil {
+		// Use a constant Message and store the raw error in Err rather than formatting it
+		// into Message, because url.Parse errors embed the webhook URL verbatim and Message
+		// is written to stderr/slog by HandlePreExecutionError.
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   "Slack webhook URL validation failed",
+			Component: string(resource.ComponentLogging),
+			RunID:     opts.RunID,
+			Err:       err,
 		}
 	}
 

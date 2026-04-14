@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +13,66 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestSetupSlackLogging_AllowedHostPropagation verifies that SlackAllowedHost is propagated
+// to SlackHandlerOptions.AllowedHost (AC-L2-19).
+func TestSetupSlackLogging_AllowedHostPropagation(t *testing.T) {
+	// Phase 1 must be initialized first.
+	saveAndRestoreGlobals(t)
+
+	err := SetupLoggerWithConfig(LoggerConfig{
+		Level: slog.LevelInfo,
+		RunID: "test-propagation-001",
+	}, false, false)
+	require.NoError(t, err)
+
+	// Capture the SlackHandlerOptions passed to newSlackHandlerFunc.
+	var capturedOpts []logging.SlackHandlerOptions
+	orig := newSlackHandlerFunc
+	defer func() { newSlackHandlerFunc = orig }()
+	newSlackHandlerFunc = func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		capturedOpts = append(capturedOpts, opts)
+		// Return an error so AddSlackHandlers stops early; we only care about captured opts.
+		return nil, errors.New("mock: stop here")
+	}
+
+	const wantHost = "hooks.slack.com"
+	_ = SetupSlackLogging(&SlackWebhookConfig{
+		ErrorURL: "https://hooks.slack.com/services/test",
+	}, SetupLoggingOptions{
+		SlackAllowedHost: wantHost,
+		RunID:            "test-propagation-001",
+	})
+
+	require.Len(t, capturedOpts, 1, "newSlackHandlerFunc should have been called once")
+	assert.Equal(t, wantHost, capturedOpts[0].AllowedHost, "AllowedHost should be propagated to SlackHandlerOptions")
+}
+
+// TestSetupSlackLogging_MissingAllowedHostReturnsConfigParsingError verifies that
+// SetupSlackLogging with SlackAllowedHost="" returns a PreExecutionError with
+// Type == ErrorTypeConfigParsing (AC-L2-20).
+func TestSetupSlackLogging_MissingAllowedHostReturnsConfigParsingError(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	err := SetupLoggerWithConfig(LoggerConfig{
+		Level: slog.LevelInfo,
+		RunID: "test-missing-host-001",
+	}, false, false)
+	require.NoError(t, err)
+
+	slackErr := SetupSlackLogging(&SlackWebhookConfig{
+		ErrorURL: "https://hooks.slack.com/services/test",
+	}, SetupLoggingOptions{
+		SlackAllowedHost: "", // intentionally empty
+		RunID:            "test-missing-host-001",
+	})
+
+	require.Error(t, slackErr, "SetupSlackLogging should return an error when AllowedHost is empty")
+
+	var preExecErr *logging.PreExecutionError
+	require.True(t, errors.As(slackErr, &preExecErr), "error should be *logging.PreExecutionError, got %T: %v", slackErr, slackErr)
+	assert.Equal(t, logging.ErrorTypeConfigParsing, preExecErr.Type, "error type should be ErrorTypeConfigParsing")
+}
+
 func TestSetupLogging_Success(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -20,8 +81,6 @@ func TestSetupLogging_Success(t *testing.T) {
 		runID            string
 		forceInteractive bool
 		forceQuiet       bool
-		slackSuccessURL  string
-		slackErrorURL    string
 		wantErr          bool
 	}{
 		{
@@ -36,11 +95,9 @@ func TestSetupLogging_Success(t *testing.T) {
 			runID:    "test-run-002",
 		},
 		{
-			name:            "with both Slack webhook URLs",
-			logLevel:        slog.LevelWarn,
-			runID:           "test-run-003",
-			slackSuccessURL: "https://hooks.slack.com/services/test-success",
-			slackErrorURL:   "https://hooks.slack.com/services/test-error",
+			name:     "phase 1 logging only (Slack added separately via SetupSlackLogging)",
+			logLevel: slog.LevelWarn,
+			runID:    "test-run-003",
 		},
 		{
 			name:             "force interactive mode",
@@ -58,15 +115,14 @@ func TestSetupLogging_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			err := SetupLogging(SetupLoggingOptions{
-				LogLevel:               tt.logLevel,
-				LogDir:                 tt.logDir,
-				RunID:                  tt.runID,
-				ForceInteractive:       tt.forceInteractive,
-				ForceQuiet:             tt.forceQuiet,
-				ConsoleWriter:          nil,
-				SlackWebhookURLSuccess: tt.slackSuccessURL,
-				SlackWebhookURLError:   tt.slackErrorURL,
+				LogLevel:         tt.logLevel,
+				LogDir:           tt.logDir,
+				RunID:            tt.runID,
+				ForceInteractive: tt.forceInteractive,
+				ForceQuiet:       tt.forceQuiet,
+				ConsoleWriter:    nil,
 			})
 
 			if (err != nil) != tt.wantErr {
@@ -113,6 +169,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			logDir := tt.logDir
 			if tt.setupFunc != nil {
 				logDir = tt.setupFunc(t)
@@ -149,6 +206,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	// Ensure cleanup restores permissions for temp dir cleanup
 	defer os.Chmod(readOnlyDir, 0o755)
 
+	saveAndRestoreGlobals(t)
 	err := SetupLogging(SetupLoggingOptions{
 		LogLevel: slog.LevelInfo,
 		LogDir:   readOnlyDir,

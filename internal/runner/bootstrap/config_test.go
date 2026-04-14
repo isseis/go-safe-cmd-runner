@@ -15,6 +15,115 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNormalizeSlackAllowedHost tests normalizeSlackAllowedHost input validation and normalization.
+func TestNormalizeSlackAllowedHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantHost string
+		wantErr  bool
+	}{
+		{
+			name:     "empty string disables Slack",
+			input:    "",
+			wantHost: "",
+			wantErr:  false,
+		},
+		{
+			name:     "valid plain hostname",
+			input:    "hooks.slack.com",
+			wantHost: "hooks.slack.com",
+			wantErr:  false,
+		},
+		{
+			name:     "IPv6 bracket notation normalized",
+			input:    "[::1]",
+			wantHost: "::1",
+			wantErr:  false,
+		},
+		{
+			name:    "port number rejected",
+			input:   "hooks.slack.com:443",
+			wantErr: true,
+		},
+		{
+			name:    "path component rejected",
+			input:   "hooks.slack.com/path",
+			wantErr: true,
+		},
+		{
+			name:    "scheme-included value rejected",
+			input:   "https://hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "leading whitespace rejected",
+			input:   " hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "trailing whitespace rejected",
+			input:   "hooks.slack.com ",
+			wantErr: true,
+		},
+		{
+			name:    "userinfo prefix rejected",
+			input:   "user@hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "userinfo used as host spoofing rejected",
+			input:   "hooks.slack.com@evil.com",
+			wantErr: true,
+		},
+		{
+			name:    "query string after path separator rejected",
+			input:   "hooks.slack.com/?q=1",
+			wantErr: true,
+		},
+		{
+			name:    "fragment after path separator rejected",
+			input:   "hooks.slack.com/#frag",
+			wantErr: true,
+		},
+		{
+			name:    "label with leading hyphen rejected",
+			input:   "-hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "label with trailing hyphen rejected",
+			input:   "hooks-.slack.com",
+			wantErr: true,
+		},
+		{
+			name:     "uppercase hostname normalized to lowercase",
+			input:    "Hooks.Slack.Com",
+			wantHost: "hooks.slack.com",
+			wantErr:  false,
+		},
+		{
+			name:     "IPv4 literal accepted",
+			input:    "192.0.2.1",
+			wantHost: "192.0.2.1",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeSlackAllowedHost(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidSlackAllowedHost)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantHost, got)
+			}
+		})
+	}
+}
+
 // TestBootstrapCommandEnvExpansionIntegration verifies the complete expansion pipeline
 // from Global.EnvVars -> Group.EnvVars -> Command.EnvVars/Cmd/Args during bootstrap process.
 // This test ensures that:

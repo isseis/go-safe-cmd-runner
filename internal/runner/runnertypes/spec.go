@@ -138,6 +138,14 @@ type GlobalSpec struct {
 	//
 	// Changed from: Vars []string `toml:"vars"` (array-based format)
 	Vars map[string]any `toml:"vars"`
+
+	// SlackAllowedHost is the hostname permitted in Slack webhook URLs.
+	// Must be set to a bare hostname (e.g. "hooks.slack.com") whenever Slack webhook
+	// environment variables are configured; startup fails with a config parsing error
+	// if any webhook URL is present but this field is empty or does not match the URL host.
+	// When no webhook URLs are configured, an empty value silently disables Slack notifications.
+	// Including a port ("hooks.slack.com:443") or surrounding whitespace is a configuration error.
+	SlackAllowedHost string `toml:"slack_allowed_host"`
 }
 
 // GroupSpec represents a command group configuration loaded from TOML file.

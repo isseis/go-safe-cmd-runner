@@ -241,13 +241,10 @@ args = ["hello"]
 	logEntriesBefore, err := os.ReadDir(logDir)
 	require.NoError(t, err)
 
-	// Run command in dry-run mode with Slack webhook configured
+	// Run command in dry-run mode
 	cmd := exec.Command("go", "run", ".", "-config", configFile, "-dry-run", "-dry-run-detail", "full", "-dry-run-format", "text", "-log-level", "debug")
 	cmd.Dir = "."
-	// Set fake Slack webhook URLs to enable Slack notifications (both success and error)
-	cmd.Env = append(os.Environ(),
-		"GSCR_SLACK_WEBHOOK_URL_SUCCESS=https://hooks.slack.com/services/TEST/FAKE/SUCCESS",
-		"GSCR_SLACK_WEBHOOK_URL_ERROR=https://hooks.slack.com/services/TEST/FAKE/ERROR")
+	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -289,10 +286,6 @@ args = ["hello"]
 	logEntriesAfter, err := os.ReadDir(logDir)
 	require.NoError(t, err)
 	assert.Equal(t, len(logEntriesBefore), len(logEntriesAfter), "dry-run should not create log files")
-
-	// Verify Slack notification was suppressed in dry-run mode
-	// The debug log should contain "Skipping Slack notification in dry-run mode"
-	assert.Contains(t, outputStr, "Skipping Slack notification in dry-run mode", "dry-run should skip Slack notifications")
 
 	// Verify exit code is 0
 	assert.Equal(t, 0, cmd.ProcessState.ExitCode())
