@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
@@ -200,7 +199,6 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_SchemaVersionMismatch(t *t
 		"schema_version": CurrentSchemaVersion - 1,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(oldRecord, "", "  ")
 	require.NoError(t, err)

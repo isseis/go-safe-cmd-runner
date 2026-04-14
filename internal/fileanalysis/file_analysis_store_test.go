@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
@@ -52,7 +51,6 @@ func TestStore_SaveAndLoad(t *testing.T) {
 	assert.Equal(t, CurrentSchemaVersion, loadedRecord.SchemaVersion)
 	assert.Equal(t, testFile, loadedRecord.FilePath)
 	assert.Equal(t, "sha256:abc123", loadedRecord.ContentHash)
-	assert.False(t, loadedRecord.UpdatedAt.IsZero())
 }
 
 func TestStore_RecordNotFound(t *testing.T) {
@@ -92,7 +90,6 @@ func TestStore_SchemaVersionMismatch(t *testing.T) {
 		"schema_version": 999,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(wrongVersionRecord, "", "  ")
 	require.NoError(t, err)
@@ -222,7 +219,6 @@ func TestStore_Update_SchemaVersionMismatch(t *testing.T) {
 		"schema_version": 999,
 		"file_path":      testFile,
 		"content_hash":   "sha256:oldvalue",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(wrongVersionRecord, "", "  ")
 	require.NoError(t, err)
@@ -391,7 +387,6 @@ func TestStore_Load_V9DynLibDepsObjectFormat(t *testing.T) {
 		"schema_version": 9,
 		"file_path":      testFile,
 		"content_hash":   "sha256:abc123",
-		"updated_at":     time.Now().UTC(),
 		"dyn_lib_deps": map[string]interface{}{
 			"libs": []interface{}{
 				map[string]interface{}{
@@ -437,7 +432,6 @@ func TestStore_Update_OldSchemaAllowsOverwrite(t *testing.T) {
 		"schema_version": CurrentSchemaVersion - 1, // older schema
 		"file_path":      testFile,
 		"content_hash":   "sha256:oldvalue",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(oldVersionRecord, "", "  ")
 	require.NoError(t, err)

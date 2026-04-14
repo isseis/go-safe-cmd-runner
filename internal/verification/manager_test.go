@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
@@ -1466,8 +1465,7 @@ func TestVerifyConfigFile_DryRun_HashMismatch(t *testing.T) {
 }
 
 // createOldSchemaRecord writes a raw JSON file with schema_version = CurrentSchemaVersion-1
-// (i.e. a schema_version 2 record that predates NetworkSymbolAnalysis) so that Store.Load
-// returns SchemaVersionMismatchError with Actual < Expected.
+// so that Store.Load returns SchemaVersionMismatchError with Actual < Expected.
 // Returns the path of the created record file.
 func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	t.Helper()
@@ -1481,10 +1479,9 @@ func createOldSchemaRecord(t *testing.T, hashDir, filePath string) string {
 	require.NoError(t, err)
 
 	record := map[string]interface{}{
-		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // old records predate network symbol caching (schema_version < CurrentSchemaVersion)
+		"schema_version": fileanalysis.CurrentSchemaVersion - 1, // older schema triggers the overwrite path (Actual < Expected)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	require.NoError(t, err)
@@ -1506,8 +1503,7 @@ func resolveSymlinks(t *testing.T, path string) string { //nolint:unparam
 
 // TestVerify_SchemaVersion verifies that VerifyCommandDynLibDeps returns nil
 // (skips dynlib check) when the stored record has schema_version < CurrentSchemaVersion.
-// Old records predate network symbol caching (schema_version < CurrentSchemaVersion);
-// they should not block execution.
+// Old-schema records should not block execution; re-running `record` migrates them automatically.
 func TestVerify_SchemaVersion(t *testing.T) {
 	hashDir := commontesting.SafeTempDir(t)
 
@@ -1605,7 +1601,6 @@ func createFutureSchemaRecord(t *testing.T, hashDir, filePath string) string {
 		"schema_version": fileanalysis.CurrentSchemaVersion + 1, // future schema (> CurrentSchemaVersion)
 		"file_path":      filePath,
 		"content_hash":   "sha256:aabbcc",
-		"updated_at":     time.Now().UTC(),
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	require.NoError(t, err)

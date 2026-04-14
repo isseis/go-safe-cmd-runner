@@ -1,8 +1,6 @@
 package fileanalysis
 
 import (
-	"time"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
@@ -16,15 +14,16 @@ const (
 	// Version 7 adds pkey_mprotect PROT_EXEC detection.
 	// Version 8 adds KnownNetworkLibDeps to SymbolAnalysisData.
 	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
-	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); use Record.UpdatedAt instead.
+	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); consolidated into a record-level timestamp.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
 	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
 	// Version 12 adds RawInterpreterPath to ShebangInterpreterInfo for symlink-redirect detection.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 12.
+	// Version 13 removes UpdatedAt field (was unused by verify; caused noisy diffs).
+	// Load returns SchemaVersionMismatchError for records with schema_version != 13.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 12
+	CurrentSchemaVersion = 13
 )
 
 // Record represents a unified file analysis record containing both
@@ -47,9 +46,6 @@ type Record struct {
 	// and enables future support for multiple hash algorithms.
 	// Used by both filevalidator and elfanalyzer for validation.
 	ContentHash string `json:"content_hash"`
-
-	// UpdatedAt is when the analysis record was last updated.
-	UpdatedAt time.Time `json:"updated_at"`
 
 	// SyscallAnalysis contains syscall analysis result (optional).
 	// Present when at least one syscall was detected (via direct syscall instruction

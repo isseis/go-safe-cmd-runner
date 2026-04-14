@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -130,8 +129,6 @@ func (s *Store) Save(filePath common.ResolvedPath, record *Record) error {
 
 	record.SchemaVersion = CurrentSchemaVersion
 	record.FilePath = filePath.String()
-	record.UpdatedAt = time.Now().UTC()
-
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal analysis record: %w", err)
