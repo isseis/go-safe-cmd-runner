@@ -15,17 +15,23 @@ import (
 )
 
 // saveAndRestoreGlobals registers a t.Cleanup that restores the package-level logger
-// globals (phase1BaseHandlers, phase1FailureLogger) and the default slog logger.
+// globals and the default slog logger.
 // Call this at the start of any test that invokes SetupLoggerWithConfig.
 func saveAndRestoreGlobals(t *testing.T) {
 	t.Helper()
 	origLogger := slog.Default()
 	origHandlers := phase1BaseHandlers
 	origFailureLogger := phase1FailureLogger
+	origRedactionErrorCollector := redactionErrorCollector
+	origRedactionReporter := redactionReporter
+	origNewSlackHandlerFunc := newSlackHandlerFunc
 	t.Cleanup(func() {
 		slog.SetDefault(origLogger)
 		phase1BaseHandlers = origHandlers
 		phase1FailureLogger = origFailureLogger
+		redactionErrorCollector = origRedactionErrorCollector
+		redactionReporter = origRedactionReporter
+		newSlackHandlerFunc = origNewSlackHandlerFunc
 	})
 }
 
