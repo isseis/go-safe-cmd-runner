@@ -66,6 +66,16 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			input:   "hooks.slack.com ",
 			wantErr: true,
 		},
+		{
+			name:    "userinfo prefix rejected",
+			input:   "user@hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "userinfo used as host spoofing rejected",
+			input:   "hooks.slack.com@evil.com",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

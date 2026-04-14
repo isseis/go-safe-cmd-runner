@@ -27,7 +27,7 @@ func normalizeSlackAllowedHost(host string) (string, error) {
 	u, err := url.Parse("https://" + host + "/")
 	// u.Path is always "/" for a valid bare hostname since we append "/" in the URL.
 	// A non-"/" path means the input contained a path or scheme component (e.g. "host/path" or "https://host").
-	if err != nil || u.Hostname() == "" || u.Port() != "" || u.Path != "/" {
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Port() != "" || u.Path != "/" {
 		return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
 	}
 	return u.Hostname(), nil
