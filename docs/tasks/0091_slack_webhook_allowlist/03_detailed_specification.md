@@ -7,7 +7,8 @@
 | `internal/runner/runnertypes/spec.go` | 変更 | `GlobalSpec.SlackAllowedHost` フィールド追加 |
 | `internal/logging/slack_handler.go` | 変更 | `SlackHandlerOptions.AllowedHost` 追加、`validateWebhookURL` シグネチャ変更 |
 | `internal/runner/bootstrap/environment.go` | 変更 | `SetupLoggingOptions.SlackAllowedHost` 追加、`SetupSlackLogging` 新規追加 |
-| `internal/runner/bootstrap/logger.go` | 変更 | `LoggerConfig.SlackAllowedHost` 追加、`AddSlackHandlers` 新規追加 |
+| `internal/runner/bootstrap/logger.go` | 変更 | `SlackLoggerConfig` 新規追加、`AddSlackHandlers` 新規追加 |
+| `internal/runner/bootstrap/config.go` | 変更 | `slack_allowed_host` フォーマット検証を `LoadAndPrepareConfig` に追加 |
 | `cmd/runner/main.go` | 変更 | Phase 1/2 に分割した起動フローへ変更 |
 
 ---
@@ -23,9 +24,22 @@ type GlobalSpec struct {
     // 追加フィールド (AC-L2-1)
     // SlackAllowedHost は Slack webhook URL で許可するホスト名。
     // 空文字列の場合 Slack 通知機能は使用不可となる。
+    // 値はポート番号を含まない純粋なホスト名であること (例: "hooks.slack.com")。
+    // ポート番号付き ("hooks.slack.com:443") や前後の空白は設定エラーとなる。
     SlackAllowedHost string `toml:"slack_allowed_host"`
 }
 ```
+
+**フォーマット制約** (`slack_allowed_host` の有効な値):
+
+| 条件 | 例 | 結果 |
+|------|-----|------|
+| 純粋なホスト名 | `"hooks.slack.com"` | OK |
+| 空文字列 | `""` | OK (Slack 無効化) |
+| ポート番号付き | `"hooks.slack.com:443"` | 設定エラー |
+| 前後に空白 | `" hooks.slack.com "` | 設定エラー |
+
+制約は `LoadAndPrepareConfig` 内で検証する (§2.9 参照)。
 
 ### 2.2 `SlackHandlerOptions` (`internal/logging/slack_handler.go`)
 
@@ -56,6 +70,8 @@ func validateWebhookURL(webhookURL string) error
 // 変更後
 func validateWebhookURL(webhookURL string, allowedHost string) error
 ```
+
+**前提**: `allowedHost` はポート番号を含まない純粋なホスト名であること。この制約は呼び出し前の設定読み込み時 (§2.9) に検証済みであるため、`validateWebhookURL` 内では追加の正規化を行わず `strings.ToLower` による大文字小文字正規化のみを実施する。
 
 実装仕様:
 1. `webhookURL` が空 → `ErrInvalidWebhookURL` (既存)
@@ -212,6 +228,40 @@ SetupSlackLogging(slackConfig, opts{    ← Phase 2: ホスト検証 + Slack ハ
 ```
 
 `SetupLogging` の呼び出しから `SlackWebhookURLSuccess/Error` を削除し、`SetupSlackLogging` の呼び出しを `LoadAndPrepareConfig` の直後に追加する。Slack webhook URL 自体は `slackConfig` から受け取り、`opts` は許可ホストや `RunID` などの共通設定のみを渡す。
+
+### 2.9 `slack_allowed_host` フォーマット検証 (`internal/runner/bootstrap/config.go`)
+
+`LoadAndPrepareConfig` 内で `cfg.Global.SlackAllowedHost` を検証する。空文字列は有効 (Slack 無効化) とし、非空の場合のみ以下をチェックする。
+
+```go
+func validateSlackAllowedHost(host string) error {
+    if host == "" {
+        return nil // 空文字列は許可 (Slack 無効)
+    }
+    if host != strings.TrimSpace(host) {
+        return fmt.Errorf("slack_allowed_host must not have leading/trailing whitespace: %q", host)
+    }
+    if strings.Contains(host, ":") {
+        return fmt.Errorf("slack_allowed_host must be a hostname without port (got %q)", host)
+    }
+    return nil
+}
+```
+
+エラーは既存の `ErrorTypeConfigParsing` にラップして返す:
+
+```go
+if err := validateSlackAllowedHost(cfg.Global.SlackAllowedHost); err != nil {
+    return nil, &logging.PreExecutionError{
+        Type:      logging.ErrorTypeConfigParsing,
+        Message:   err.Error(),
+        Component: string(resource.ComponentConfig),
+        RunID:     runID,
+    }
+}
+```
+
+この検証を行うことで、`validateWebhookURL` および `AddSlackHandlers` は `allowedHost` がポート番号・空白を含まない値であることを前提とできる。
 
 ---
 
