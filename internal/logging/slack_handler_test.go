@@ -305,7 +305,7 @@ func TestValidateWebhookURL(t *testing.T) {
 	}
 }
 
-// TestValidateWebhookURL_AllowedHostChecks tests allowedHost validation (AC-L2-13〜AC-L2-17)
+// TestValidateWebhookURL_AllowedHostChecks tests allowedHost validation (AC-L2-13 to AC-L2-17)
 func TestValidateWebhookURL_AllowedHostChecks(t *testing.T) {
 	const validURL = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
 
@@ -316,35 +316,35 @@ func TestValidateWebhookURL_AllowedHostChecks(t *testing.T) {
 		expectError bool
 	}{
 		{
-			// AC-L2-13: allowedHost が空の場合は ErrInvalidWebhookURL
+			// AC-L2-13: empty allowedHost returns ErrInvalidWebhookURL
 			name:        "empty allowedHost",
 			url:         validURL,
 			allowedHost: "",
 			expectError: true,
 		},
 		{
-			// AC-L2-14: ホスト不一致でエラー
+			// AC-L2-14: host mismatch returns an error
 			name:        "host mismatch",
 			url:         "https://evil.example.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
 			allowedHost: "hooks.slack.com",
 			expectError: true,
 		},
 		{
-			// AC-L2-15: ホスト一致で nil
+			// AC-L2-15: matching host returns nil
 			name:        "host match",
 			url:         validURL,
 			allowedHost: "hooks.slack.com",
 			expectError: false,
 		},
 		{
-			// AC-L2-16: URL の大文字ホストが allowedHost (小文字) で通過する
+			// AC-L2-16: uppercase host in URL passes with lowercase allowedHost
 			name:        "uppercase host in URL matches lowercase allowedHost",
 			url:         "https://HOOKS.SLACK.COM/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
 			allowedHost: "hooks.slack.com",
 			expectError: false,
 		},
 		{
-			// AC-L2-17: ポート番号付き URL が正しく処理される (Hostname() がポートを除去)
+			// AC-L2-17: URL with port is handled correctly (Hostname() strips the port)
 			name:        "URL with port number",
 			url:         "https://hooks.slack.com:443/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
 			allowedHost: "hooks.slack.com",

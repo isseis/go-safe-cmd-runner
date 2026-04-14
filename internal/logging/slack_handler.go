@@ -128,8 +128,8 @@ type SlackHandlerOptions struct {
 	IsDryRun      bool                  // If true, suppresses actual Slack notifications (used for dry-run mode)
 	LevelMode     SlackHandlerLevelMode // Level filtering mode (optional, defaults to LevelModeDefault)
 
-	// AllowedHost は webhook URL のホスト名を検証する許可ホスト。
-	// 空文字列の場合、すべての URL がエラーを返す。
+	// AllowedHost is the permitted hostname used to validate the webhook URL.
+	// An empty string causes all URLs to be rejected.
 	AllowedHost string
 }
 

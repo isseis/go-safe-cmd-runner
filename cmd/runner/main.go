@@ -228,7 +228,7 @@ func run(runID string) error {
 		return err
 	}
 
-	// Phase 2: Slack ハンドラを追加 (AllowedHost は TOML から取得)
+	// Phase 2: Add Slack handlers (AllowedHost is read from TOML)
 	if err := bootstrap.SetupSlackLogging(slackConfig, bootstrap.SetupLoggingOptions{
 		SlackAllowedHost: cfg.Global.SlackAllowedHost,
 		RunID:            runID,

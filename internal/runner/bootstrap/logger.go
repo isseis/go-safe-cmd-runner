@@ -29,11 +29,11 @@ type LoggerConfig struct {
 	ConsoleWriter io.Writer // Writer for console output (stdout/stderr)
 }
 
-// SlackLoggerConfig は AddSlackHandlers に渡す Slack ハンドラ専用の設定。
+// SlackLoggerConfig is the Slack-handler-only config passed to AddSlackHandlers.
 type SlackLoggerConfig struct {
-	WebhookURLSuccess string // 成功通知用 webhook URL (INFO)
-	WebhookURLError   string // エラー通知用 webhook URL (WARN/ERROR)
-	AllowedHost       string // 許可ホスト名 (AC-L2-4)
+	WebhookURLSuccess string // Webhook URL for success notifications (INFO)
+	WebhookURLError   string // Webhook URL for error notifications (WARN/ERROR)
+	AllowedHost       string // Allowed hostname (AC-L2-4)
 	RunID             string
 	DryRun            bool
 }
@@ -45,19 +45,19 @@ var redactionErrorCollector *redaction.InMemoryErrorCollector
 // redactionReporter is a global reporter for shutdown
 var redactionReporter *redaction.ShutdownReporter
 
-// errPhase1NotInitialized は AddSlackHandlers が SetupLoggerWithConfig 前に呼ばれた場合のエラー。
+// errPhase1NotInitialized is returned when AddSlackHandlers is called before SetupLoggerWithConfig.
 var errPhase1NotInitialized = errors.New("AddSlackHandlers called before SetupLoggerWithConfig")
 
-// phase1BaseHandlers は SetupLoggerWithConfig が作成した Slack を除くハンドラ群。
-// AddSlackHandlers がこれを参照して Slack ハンドラを追加した新たな MultiHandler を構築する。
+// phase1BaseHandlers holds the non-Slack handlers created by SetupLoggerWithConfig.
+// AddSlackHandlers reads this to build a new MultiHandler that includes the Slack handlers.
 var phase1BaseHandlers []slog.Handler
 
-// phase1FailureLogger は Phase 1 で作成した failureLogger。
-// AddSlackHandlers が RedactingHandler 再構築時に継続使用する。
+// phase1FailureLogger is the failureLogger created in Phase 1.
+// AddSlackHandlers reuses it when rebuilding the RedactingHandler.
 var phase1FailureLogger *slog.Logger
 
-// newSlackHandlerFunc は Slack ハンドラの生成 factory。
-// テストで差し替え可能にすることで SlackHandlerOptions の内容を検査できる (AC-L2-19)。
+// newSlackHandlerFunc is the factory for creating Slack handlers.
+// Replacing it in tests allows inspection of SlackHandlerOptions (AC-L2-19).
 var newSlackHandlerFunc = logging.NewSlackHandler
 
 // SetupLoggerWithConfig initializes the Phase 1 logging system (console and file handlers).
@@ -200,9 +200,9 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	return nil
 }
 
-// AddSlackHandlers は既存のデフォルトロガーに Slack ハンドラを追加して再構築する。
-// successURL/errorURL どちらかでも validateWebhookURL が失敗した場合はエラーを返す。
-// SetupLoggerWithConfig が呼ばれていない場合 (phase1BaseHandlers が nil) はエラーを返す。
+// AddSlackHandlers rebuilds the default logger by appending Slack handlers to the existing logger.
+// Returns an error if validateWebhookURL fails for either successURL or errorURL.
+// Returns an error if SetupLoggerWithConfig has not been called (phase1BaseHandlers is nil).
 func AddSlackHandlers(config SlackLoggerConfig) error {
 	if phase1BaseHandlers == nil || phase1FailureLogger == nil {
 		return errPhase1NotInitialized
