@@ -1386,10 +1386,10 @@ func TestRecord_LibcCache_NonELFFile(t *testing.T) {
 func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 	// Use an in-memory dynamic ELF so that openELFFile succeeds and reaches the
 	// libc cache path without depending on any system binary.
-	tmpELFPath := filepath.Join(t.TempDir(), "test.elf")
-	elfanalyzertesting.CreateDynamicELFFile(t, tmpELFPath)
-
 	tempDir := safeTempDir(t)
+	elfPath := filepath.Join(tempDir, "test.elf")
+	elfanalyzertesting.CreateDynamicELFFile(t, elfPath)
+
 	stub := &stubLibcCache{err: errors.New("libc file not accessible")}
 	v, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err)
@@ -1401,7 +1401,7 @@ func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 			{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
 		},
 	}
-	analyzeErr := v.analyzeSyscalls(record, tmpELFPath)
+	analyzeErr := v.analyzeSyscalls(record, elfPath)
 	require.Error(t, analyzeErr, "fatal libc cache error must propagate")
 	require.Contains(t, analyzeErr.Error(), "libc cache error")
 }
