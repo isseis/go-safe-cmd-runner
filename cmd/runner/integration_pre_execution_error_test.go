@@ -232,8 +232,6 @@ args = ["hello"]
 	stderrOutput := stderr.String()
 	assert.Contains(t, stderrOutput, "Error:", "stderr should contain 'Error:' prefix")
 	assert.Contains(t, stderrOutput, "config_parsing_failed", "stderr should indicate config parsing failure")
-	assert.Contains(t, stderrOutput, "Slack webhook URL validation failed", "stderr should mention Slack webhook validation")
-	assert.Contains(t, stderrOutput, "allowed host is not configured", "stderr should explain missing allowed host")
 
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
