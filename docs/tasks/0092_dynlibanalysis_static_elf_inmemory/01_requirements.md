@@ -18,7 +18,7 @@
 2. **外部ツール依存**：GCC がインストールされていない環境や、`make elfanalyzer-testdata` を実行していない環境でテストが実行された場合、ファイルが存在せずテストがスキップされる（テストカバレッジが欠落する）。
 3. **パスの脆弱性**：外部ファイルへの相対パス参照は、リポジトリ構造の変更やビルドアーティファクトの配置によって誤動作を起こしやすい（本タスクの起因となった障害はこれによって発生した）。
 
-同じファイル内の他のテスト（`TestAnalyze_TransitiveDeps`、`TestAnalyze_CircularDeps` 等）は `buildTestELFWithDeps` ヘルパーを使ってインメモリで ELF を構築しており、外部ファイルに依存しない。`TestAnalyze_StaticELF` も同様の手法に統一する。
+同じファイル内の他のテスト（`TestAnalyze_TransitiveDeps`、`TestAnalyze_CircularDeps` 等）はインメモリで ELF を構築しており、外部ファイルに依存しない。`TestAnalyze_StaticELF` も同様の手法に統一する。
 
 ### 1.2 目的
 
@@ -27,7 +27,6 @@
 ### 1.3 スコープ外
 
 - `elfanalyzer/testdata/static.elf` 自体の削除・変更（`elfanalyzer` パッケージのテストは引き続き使用する）
-- `buildTestELFWithDeps` の動作変更
 - `dynlibanalysis` パッケージの他テストへの変更
 
 ---
@@ -37,32 +36,19 @@
 | 用語 | 定義 |
 |------|------|
 | 静的 ELF | PT_DYNAMIC セグメントを持たない、または DT_NEEDED エントリを持たない ELF バイナリ。`Analyze()` は nil を返す |
-| `buildTestELFWithDeps` | `analyzer_test.go` に定義済みのインメモリ ELF 生成ヘルパー。動的依存ライブラリを指定して ELF を構築する |
 | DT_NEEDED | ELF の DYNAMIC セクションに記録される動的リンク依存ライブラリのエントリ |
 
 ---
 
 ## 3. 機能要件
 
-### FR-1: `buildTestELFWithDeps` を利用した静的 ELF の生成
+### FR-1: `TestAnalyze_StaticELF` の外部ファイル依存の解消
 
-`buildTestELFWithDeps` に `sonames=nil`、`runpath=""` を渡すと、DT_NEEDED エントリを持たない ELF が生成される。`elf.DynString(elf.DT_NEEDED)` は空スライスを返し、`Analyze()` は nil を返す。この挙動を利用して `TestAnalyze_StaticELF` を書き換える。
+`TestAnalyze_StaticELF` は、外部ファイルに依存せず、テスト実行時にインメモリで ELF バイナリを生成して検証を行うこと。
+
+生成する ELF は DT_NEEDED エントリを持たないものとし、`Analyze()` が nil を返すことを検証する。
 
 **変更対象**：`internal/dynlibanalysis/analyzer_test.go`
-
-**変更内容**：
-
-1. `TestAnalyze_StaticELF` 関数本体を以下の構造に書き換える：
-   - `t.TempDir()` で一時ディレクトリを用意する
-   - `buildTestELFWithDeps(t, tmpDir, "no_deps.elf", nil, "")` で DT_NEEDED なし ELF を生成する
-   - `a.Analyze(path)` を呼び出す
-   - 結果が nil であることを `assert.Nil` で検証する
-2. 外部ファイルパス（`../runner/security/elfanalyzer/testdata/static.elf`）への参照を削除する
-3. `os.Stat` によるファイル存在確認とスキップ処理を削除する
-
-### FR-2: `os` パッケージのインポート整理
-
-`os.Stat` の削除により `os` パッケージが不要になる場合は、インポートから除去する。ただし、他のテスト関数（例：`TestAnalyze_NonELF` の `os.WriteFile`）で使用されている場合は除去しない。
 
 ---
 
@@ -74,7 +60,7 @@
 
 ### 4.2 テストのスキップ廃止
 
-変更前は `os.Stat` 失敗時にテストをスキップしていた。変更後はスキップ処理を持たず、常にテストが実行されること。
+変更前は外部ファイルの不在時にテストをスキップしていた。変更後はスキップ処理を持たず、常にテストが実行されること。
 
 ---
 
@@ -83,25 +69,15 @@
 ### AC-1: 外部ファイル参照の除去
 
 - [ ] `TestAnalyze_StaticELF` 内に `elfanalyzer/testdata` へのパス参照が存在しないこと
-- [ ] `os.Stat` によるファイル存在確認コードが除去されていること
-- [ ] `t.Skip` / `t.Skipf` 呼び出しが除去されていること
+- [ ] ファイル存在確認に基づくスキップ処理（`t.Skip` / `t.Skipf`）が除去されていること
 
 ### AC-2: インメモリ ELF による検証
 
-- [ ] `buildTestELFWithDeps` を `sonames=nil`、`runpath=""` で呼び出して ELF を生成していること
-- [ ] `a.Analyze(path)` の返り値が nil であることを `assert.Nil` で検証していること
-- [ ] `require.NoError` でエラーがないことを検証していること
+- [ ] `TestAnalyze_StaticELF` がインメモリで生成した ELF を使用して検証を行うこと
+- [ ] DT_NEEDED エントリを持たない ELF に対して `Analyze()` が nil を返すことを検証していること
 
 ### AC-3: テストの安定実行
 
 - [ ] `go test -tags test -v ./internal/dynlibanalysis/...` を `make elfanalyzer-testdata` なしで実行したとき `TestAnalyze_StaticELF` が PASS すること
 - [ ] `make test` がすべてパスすること
 - [ ] `make lint` がエラーなく完了すること
-
----
-
-## 6. 実装ノート
-
-`buildTestELFWithDeps(t, tmpDir, "no_deps.elf", nil, "")` が生成する ELF は、DT_STRTAB・DT_STRSZ・DT_NULL のみを含む `.dynamic` セクションを持つ。これは `gcc -static` で生成される「PT_DYNAMIC セグメントを持たない」ELF とは構造が異なるが、`Analyze()` の戻り値（DT_NEEDED が空のとき nil）の検証という観点では同等である。
-
-テストの目的が「DT_NEEDED なし ELF に対して Analyze() が nil を返すこと」の確認であるため、本変更は機能的に等価な置き換えである。
