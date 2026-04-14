@@ -14,6 +14,9 @@
 
 ```mermaid
 flowchart TD
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef toctou fill:#ffe0e0,stroke:#c00,stroke-width:2px,color:#800000;
+
     A([runner 起動]) --> B[WithPrivileges<br>unix.go:46]
     B --> C[verifyGroupFiles<br>group_executor.go:336]
     C --> D[VerifyGroupFiles<br>verification/manager.go]
@@ -27,8 +30,20 @@ flowchart TD
     H --> I[OS: open → execve]
     I --> J([子プロセス実行])
 
-    style E3 fill:#f96,stroke:#c00
-    style H fill:#f96,stroke:#c00
+    class B,C,D,E,E1,E2,I process;
+    class E3,H toctou;
+```
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef toctou fill:#ffe0e0,stroke:#c00,stroke-width:2px,color:#800000;
+
+    P["通常処理ステップ"] --> T["TOCTOU ウィンドウ境界<br>(FD close / exec 開始点)"]
+    class P process;
+    class T toctou;
 ```
 
 **TOCTOU ウィンドウ**: E3 (FD close) と H の OS open の間でファイルを rename 差し替え可能。
