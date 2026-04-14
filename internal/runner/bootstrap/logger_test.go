@@ -14,6 +14,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// saveAndRestoreGlobals registers a t.Cleanup that restores the package-level logger
+// globals (phase1BaseHandlers, phase1FailureLogger) and the default slog logger.
+// Call this at the start of any test that invokes SetupLoggerWithConfig.
+func saveAndRestoreGlobals(t *testing.T) {
+	t.Helper()
+	origLogger := slog.Default()
+	origHandlers := phase1BaseHandlers
+	origFailureLogger := phase1FailureLogger
+	t.Cleanup(func() {
+		slog.SetDefault(origLogger)
+		phase1BaseHandlers = origHandlers
+		phase1FailureLogger = origFailureLogger
+	})
+}
+
 func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -54,6 +69,7 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			err := SetupLoggerWithConfig(tt.config, tt.forceInteractive, tt.forceQuiet)
 
 			if tt.wantErr {
@@ -120,6 +136,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			err := SetupLoggerWithConfig(tt.config, tt.forceInteractive, tt.forceQuiet)
 
 			if tt.wantErr {
@@ -167,6 +184,7 @@ func TestSetupLoggerWithConfig_InvalidLogDirectory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			err := SetupLoggerWithConfig(tt.config, false, false)
 
 			if tt.wantErr {
@@ -199,6 +217,7 @@ func TestSetupLoggerWithConfig_LogDirectoryPermissionError(t *testing.T) {
 		RunID:  "test-perm-001",
 	}
 
+	saveAndRestoreGlobals(t)
 	err = SetupLoggerWithConfig(config, false, false)
 
 	assert.Error(t, err, "SetupLoggerWithConfig() expected error for read-only directory, got nil")
@@ -225,6 +244,7 @@ func TestSetupLoggerWithConfig_FailureLoggerUsesMultiHandler(t *testing.T) {
 		ConsoleWriter: &consoleBuffer,
 	}
 
+	saveAndRestoreGlobals(t)
 	err := SetupLoggerWithConfig(config, false, true) // forceQuiet=true to use console writer
 	require.NoError(t, err)
 
@@ -297,6 +317,7 @@ func TestSetupLoggerWithConfig_FailureLoggerCircularDependencyPrevention(t *test
 	}
 
 	// This should not cause infinite recursion or panic
+	saveAndRestoreGlobals(t)
 	err := SetupLoggerWithConfig(config, false, true)
 	require.NoError(t, err)
 
@@ -335,6 +356,7 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 		ConsoleWriter: &consoleBuffer,
 	}
 
+	saveAndRestoreGlobals(t)
 	err := SetupLoggerWithConfig(config, false, true)
 	require.NoError(t, err)
 

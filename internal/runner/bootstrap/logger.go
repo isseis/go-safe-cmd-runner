@@ -27,7 +27,6 @@ type LoggerConfig struct {
 	LogDir        string
 	RunID         string
 	ConsoleWriter io.Writer // Writer for console output (stdout/stderr)
-	DryRun        bool      // If true, Slack notifications are not sent
 }
 
 // SlackLoggerConfig は AddSlackHandlers に渡す Slack ハンドラ専用の設定。

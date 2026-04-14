@@ -17,8 +17,7 @@ import (
 // to SlackHandlerOptions.AllowedHost (AC-L2-19).
 func TestSetupSlackLogging_AllowedHostPropagation(t *testing.T) {
 	// Phase 1 must be initialized first.
-	originalLogger := slog.Default()
-	defer slog.SetDefault(originalLogger)
+	saveAndRestoreGlobals(t)
 
 	err := SetupLoggerWithConfig(LoggerConfig{
 		Level: slog.LevelInfo,
@@ -52,8 +51,7 @@ func TestSetupSlackLogging_AllowedHostPropagation(t *testing.T) {
 // SetupSlackLogging with SlackAllowedHost="" returns a PreExecutionError with
 // Type == ErrorTypeConfigParsing (AC-L2-20).
 func TestSetupSlackLogging_MissingAllowedHostReturnsConfigParsingError(t *testing.T) {
-	originalLogger := slog.Default()
-	defer slog.SetDefault(originalLogger)
+	saveAndRestoreGlobals(t)
 
 	err := SetupLoggerWithConfig(LoggerConfig{
 		Level: slog.LevelInfo,
@@ -117,6 +115,7 @@ func TestSetupLogging_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			err := SetupLogging(SetupLoggingOptions{
 				LogLevel:         tt.logLevel,
 				LogDir:           tt.logDir,
@@ -170,6 +169,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			saveAndRestoreGlobals(t)
 			logDir := tt.logDir
 			if tt.setupFunc != nil {
 				logDir = tt.setupFunc(t)
@@ -206,6 +206,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	// Ensure cleanup restores permissions for temp dir cleanup
 	defer os.Chmod(readOnlyDir, 0o755)
 
+	saveAndRestoreGlobals(t)
 	err := SetupLogging(SetupLoggingOptions{
 		LogLevel: slog.LevelInfo,
 		LogDir:   readOnlyDir,

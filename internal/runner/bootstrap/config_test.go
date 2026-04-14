@@ -56,6 +56,16 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			input:   "https://hooks.slack.com",
 			wantErr: true,
 		},
+		{
+			name:    "leading whitespace rejected",
+			input:   " hooks.slack.com",
+			wantErr: true,
+		},
+		{
+			name:    "trailing whitespace rejected",
+			input:   "hooks.slack.com ",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

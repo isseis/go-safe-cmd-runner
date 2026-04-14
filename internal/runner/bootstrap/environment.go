@@ -88,7 +88,6 @@ func SetupLogging(opts SetupLoggingOptions) error {
 		LogDir:        opts.LogDir,
 		RunID:         opts.RunID,
 		ConsoleWriter: opts.ConsoleWriter,
-		DryRun:        opts.DryRun,
 	}
 
 	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
