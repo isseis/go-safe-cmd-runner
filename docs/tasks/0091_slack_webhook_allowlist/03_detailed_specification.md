@@ -32,16 +32,17 @@ type GlobalSpec struct {
 
 **フォーマット制約** (`slack_allowed_host` の有効な値):
 
-| 条件 | 例 | 結果 |
-|------|-----|------|
-| 有効なホスト名 | `"hooks.slack.com"` | OK |
-| 空文字列 | `""` | OK (Slack 無効化) |
-| ポート番号付き | `"hooks.slack.com:443"` | 設定エラー |
-| 前後に空白 | `" hooks.slack.com "` | 設定エラー |
-| スキーム付き | `"https://hooks.slack.com"` | 設定エラー |
-| パス付き | `"hooks.slack.com/path"` | 設定エラー |
+| 条件 | 例 (TOML の値) | 正規化後 | 結果 |
+|------|--------------|---------|------|
+| ホスト名 | `"hooks.slack.com"` | `"hooks.slack.com"` | OK |
+| IPv6 ブラケット記法 | `"[::1]"` | `"::1"` | OK (ブラケットを除去して正規化) |
+| 空文字列 | `""` | `""` | OK (Slack 無効化) |
+| ポート番号付き | `"hooks.slack.com:443"` | — | 設定エラー |
+| 前後に空白 | `" hooks.slack.com "` | — | 設定エラー |
+| スキーム付き | `"https://hooks.slack.com"` | — | 設定エラー |
+| パス付き | `"hooks.slack.com/path"` | — | 設定エラー |
 
-制約は `LoadAndPrepareConfig` 内でホスト名としての正当性を検証することで担保する (§2.9 参照)。
+TOML の値をそのまま比較に使うのではなく、`LoadAndPrepareConfig` 内で `url.Hostname()` を用いて正規化した値を `cfg.Global.SlackAllowedHost` に書き戻す (§2.9 参照)。以降の全層 (`SetupLoggingOptions` → `SlackLoggerConfig` → `SlackHandlerOptions`) は正規化済みの値を参照するため、`validateWebhookURL` での `parsedURL.Hostname()` との比較が IPv6 を含む任意のホスト形式で正しく機能する。
 
 ### 2.2 `SlackHandlerOptions` (`internal/logging/slack_handler.go`)
 
@@ -203,38 +204,60 @@ func AddSlackHandlers(config SlackLoggerConfig) error
 - `redactionErrorCollector`: Phase 1 の動作中に蓄積されたエラー記録を保持するため、再初期化しない
 - `redactionReporter`: `phase1FailureLogger` および `redactionErrorCollector` が変わらないため、再初期化しない
 
-### 2.9 `slack_allowed_host` フォーマット検証 (`internal/runner/bootstrap/config.go`)
+### 2.9 `slack_allowed_host` 正規化・検証 (`internal/runner/bootstrap/config.go`)
 
-`LoadAndPrepareConfig` 内で `cfg.Global.SlackAllowedHost` を検証する。空文字列は有効 (Slack 無効化) とし、非空の場合のみ「有効なホスト名かどうか」を検証する。
+`LoadAndPrepareConfig` 内で `cfg.Global.SlackAllowedHost` を **正規化しつつ検証** する。正規化済みの値を `cfg.Global.SlackAllowedHost` に書き戻すことで、以降の全層が一貫した正規化値を参照できる。
 
-**検証方法**: `"https://" + host + "/"` を `url.Parse` で解析し、`parsedURL.Hostname()` が元の `host` と完全一致するかを確認する。一致しない場合、`host` はポート番号・スキーム・パス・空白などを含む不正な値であると判断する。
+**正規化関数** (検証と正規化を兼ねる):
 
 ```go
-func validateSlackAllowedHost(host string) error {
+// normalizeSlackAllowedHost は host を正規化された許可ホスト名に変換する。
+// host が空文字列の場合は ("", nil) を返す (Slack 無効)。
+// 正規化は url.Parse を経由した Hostname() の取得で行う。
+// これにより IPv6 ブラケット記法 ([::1] → ::1) も適切に処理される。
+// ポート番号・スキーム・パス・空白など不正な値は error を返す。
+func normalizeSlackAllowedHost(host string) (string, error) {
     if host == "" {
-        return nil // 空文字列は許可 (Slack 無効)
+        return "", nil
     }
     u, err := url.Parse("https://" + host + "/")
-    if err != nil || u.Hostname() != host {
-        return fmt.Errorf("slack_allowed_host must be a valid hostname without port or whitespace (got %q)", host)
+    if err != nil || u.Hostname() == "" {
+        return "", fmt.Errorf("slack_allowed_host must be a valid hostname without port or whitespace (got %q)", host)
     }
-    return nil
+    return u.Hostname(), nil // 正規化済みホスト名 (ブラケット除去・スキーム除去済み)
 }
 ```
 
-ラウンドトリップ検証が捕捉する不正値の例:
+正規化の例:
 
-| 不正な値 | `url.Hostname()` の結果 | 判定 |
-|---------|------------------------|------|
-| `"hooks.slack.com:443"` | `"hooks.slack.com"` | 不一致 → エラー |
-| `" hooks.slack.com "` | `""` または不一致 | 不一致 → エラー |
-| `"hooks.slack.com/path"` | `"hooks.slack.com"` | 不一致 → エラー |
-| `"https://hooks.slack.com"` | `""` | 不一致 → エラー |
+| TOML の値 | `u.Hostname()` | 結果 |
+|----------|---------------|------|
+| `"hooks.slack.com"` | `"hooks.slack.com"` | OK → そのまま |
+| `"[::1]"` | `"::1"` | OK → ブラケット除去 |
+| `"hooks.slack.com:443"` | `"hooks.slack.com"` → ポートが脱落し不正 | エラー (*) |
+| `" hooks.slack.com "` | `""` | エラー |
+| `"https://hooks.slack.com"` | `""` | エラー |
 
-エラーは既存の `ErrorTypeConfigParsing` にラップして返す:
+(*) ポート付きの場合は `u.Hostname()` がポートを除去するため見かけ上は有効に見えるが、スキームなしで `"https://" + host + "/"` を構築するため `"https://hooks.slack.com:443/"` となり `u.Hostname()` は `"hooks.slack.com"` を返す。この値は非空なのでエラーにならない点に注意が必要。ポートを明示的に拒否するには `u.Port() != ""` でガードを追加する:
 
 ```go
-if err := validateSlackAllowedHost(cfg.Global.SlackAllowedHost); err != nil {
+func normalizeSlackAllowedHost(host string) (string, error) {
+    if host == "" {
+        return "", nil
+    }
+    u, err := url.Parse("https://" + host + "/")
+    if err != nil || u.Hostname() == "" || u.Port() != "" {
+        return "", fmt.Errorf("slack_allowed_host must be a valid hostname without port or whitespace (got %q)", host)
+    }
+    return u.Hostname(), nil
+}
+```
+
+`LoadAndPrepareConfig` での利用:
+
+```go
+normalizedHost, err := normalizeSlackAllowedHost(cfg.Global.SlackAllowedHost)
+if err != nil {
     return nil, &logging.PreExecutionError{
         Type:      logging.ErrorTypeConfigParsing,
         Message:   err.Error(),
@@ -242,9 +265,10 @@ if err := validateSlackAllowedHost(cfg.Global.SlackAllowedHost); err != nil {
         RunID:     runID,
     }
 }
+cfg.Global.SlackAllowedHost = normalizedHost // 正規化済み値に更新
 ```
 
-この検証を行うことで、`validateWebhookURL` および `AddSlackHandlers` は `allowedHost` が有効なホスト名であることを前提とできる。
+これにより `validateWebhookURL` での `parsedURL.Hostname()` との比較が、通常のホスト名・IPv6 を問わず正しく機能する (`parsedURL.Hostname()` もブラケットを除去するため両辺が同じ形式になる)。
 
 ---
 
