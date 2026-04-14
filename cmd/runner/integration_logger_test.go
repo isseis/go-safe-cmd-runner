@@ -57,6 +57,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 				RunID:                  "test-run-003",
 				SlackWebhookURLSuccess: "https://hooks.slack.com/test/webhook-success",
 				SlackWebhookURLError:   "https://hooks.slack.com/test/webhook-error",
+				SlackAllowedHost:       "hooks.slack.com",
 			},
 			envVars: map[string]string{
 				"TERM": "xterm",

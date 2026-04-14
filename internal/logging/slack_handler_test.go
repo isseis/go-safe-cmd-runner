@@ -216,71 +216,82 @@ func TestValidateWebhookURL(t *testing.T) {
 	tests := []struct {
 		name        string
 		url         string
+		allowedHost string
 		expectError bool
 		errorType   error
 	}{
 		{
 			name:        "valid HTTPS URL",
 			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			allowedHost: "hooks.slack.com",
 			expectError: false,
 		},
 		{
 			name:        "empty URL",
 			url:         "",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "HTTP URL (should be rejected)",
 			url:         "http://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "URL without scheme",
 			url:         "hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "URL without host",
 			url:         "https:///services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "malformed URL with invalid characters",
 			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXX\x00XX",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "URL with only protocol",
 			url:         "https://",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "FTP protocol (should be rejected)",
 			url:         "ftp://example.com/webhook",
+			allowedHost: "hooks.slack.com",
 			expectError: true,
 			errorType:   ErrInvalidWebhookURL,
 		},
 		{
 			name:        "localhost HTTPS URL (valid for testing)",
 			url:         "https://localhost:8080/webhook",
+			allowedHost: "localhost",
 			expectError: false,
 		},
 		{
 			name:        "URL with special characters in path (valid)",
 			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXX%20XX",
+			allowedHost: "hooks.slack.com",
 			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateWebhookURL(tt.url)
+			err := validateWebhookURL(tt.url, tt.allowedHost)
 
 			if tt.expectError {
 				require.Error(t, err, "Expected error for URL: %s", tt.url)
@@ -304,8 +315,9 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 		{
 			name: "minimal options with defaults",
 			opts: SlackHandlerOptions{
-				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-				RunID:      "test-run-123",
+				WebhookURL:  "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:       "test-run-123",
+				AllowedHost: "hooks.slack.com",
 			},
 			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {
@@ -318,9 +330,10 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 		{
 			name: "all options specified",
 			opts: SlackHandlerOptions{
-				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-				RunID:      "test-run-456",
-				HTTPClient: &http.Client{Timeout: 10 * time.Second},
+				WebhookURL:  "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:       "test-run-456",
+				AllowedHost: "hooks.slack.com",
+				HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 				BackoffConfig: BackoffConfig{
 					Base:       3 * time.Second,
 					RetryCount: 5,
@@ -338,9 +351,10 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 		{
 			name: "with LevelModeExactInfo",
 			opts: SlackHandlerOptions{
-				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-				RunID:      "test-run-exact-info",
-				LevelMode:  LevelModeExactInfo,
+				WebhookURL:  "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:       "test-run-exact-info",
+				AllowedHost: "hooks.slack.com",
+				LevelMode:   LevelModeExactInfo,
 			},
 			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {
@@ -350,9 +364,10 @@ func TestNewSlackHandlerWithOptions(t *testing.T) {
 		{
 			name: "with LevelModeWarnAndAbove",
 			opts: SlackHandlerOptions{
-				WebhookURL: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
-				RunID:      "test-run-warn-above",
-				LevelMode:  LevelModeWarnAndAbove,
+				WebhookURL:  "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				RunID:       "test-run-warn-above",
+				AllowedHost: "hooks.slack.com",
+				LevelMode:   LevelModeWarnAndAbove,
 			},
 			expectError: false,
 			validate: func(t *testing.T, handler *SlackHandler) {

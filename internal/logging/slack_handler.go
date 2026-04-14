@@ -127,10 +127,15 @@ type SlackHandlerOptions struct {
 	BackoffConfig BackoffConfig         // Retry backoff configuration (optional, defaults to DefaultBackoffConfig)
 	IsDryRun      bool                  // If true, suppresses actual Slack notifications (used for dry-run mode)
 	LevelMode     SlackHandlerLevelMode // Level filtering mode (optional, defaults to LevelModeDefault)
+
+	// AllowedHost は webhook URL のホスト名を検証する許可ホスト。
+	// 空文字列の場合、すべての URL がエラーを返す。
+	AllowedHost string
 }
 
-// validateWebhookURL validates that the webhook URL is a valid HTTPS URL
-func validateWebhookURL(webhookURL string) error {
+// validateWebhookURL validates that the webhook URL is a valid HTTPS URL with allowed host.
+// allowedHost must be a pure hostname without port (pre-validated by normalizeSlackAllowedHost).
+func validateWebhookURL(webhookURL string, allowedHost string) error {
 	if webhookURL == "" {
 		return fmt.Errorf("%w: empty URL", ErrInvalidWebhookURL)
 	}
@@ -148,13 +153,23 @@ func validateWebhookURL(webhookURL string) error {
 		return fmt.Errorf("%w: URL must have a host", ErrInvalidWebhookURL)
 	}
 
+	if allowedHost == "" {
+		return fmt.Errorf("%w: allowed host is not configured", ErrInvalidWebhookURL)
+	}
+
+	hostname := strings.ToLower(parsedURL.Hostname())
+	normalizedAllowedHost := strings.ToLower(allowedHost)
+	if hostname != normalizedAllowedHost {
+		return fmt.Errorf("%w: host not allowed: %s (allowed: %s)", ErrInvalidWebhookURL, hostname, normalizedAllowedHost)
+	}
+
 	return nil
 }
 
 // NewSlackHandler creates a new SlackHandler with the provided options
 // This is the preferred way to create a SlackHandler as it allows for easy addition of new configuration options
 func NewSlackHandler(opts SlackHandlerOptions) (*SlackHandler, error) {
-	if err := validateWebhookURL(opts.WebhookURL); err != nil {
+	if err := validateWebhookURL(opts.WebhookURL, opts.AllowedHost); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 

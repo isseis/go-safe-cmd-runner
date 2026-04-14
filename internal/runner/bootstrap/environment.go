@@ -90,6 +90,7 @@ func SetupLogging(opts SetupLoggingOptions) error {
 		RunID:                  opts.RunID,
 		SlackWebhookURLSuccess: opts.SlackWebhookURLSuccess,
 		SlackWebhookURLError:   opts.SlackWebhookURLError,
+		SlackAllowedHost:       opts.SlackAllowedHost,
 		ConsoleWriter:          opts.ConsoleWriter,
 		DryRun:                 opts.DryRun,
 	}

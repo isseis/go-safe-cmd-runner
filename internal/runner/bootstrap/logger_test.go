@@ -90,6 +90,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 				RunID:                  "test-full-002",
 				SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
 				SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
+				SlackAllowedHost:       "hooks.slack.com",
 			},
 		},
 		{
@@ -100,6 +101,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 				RunID:                  "test-full-003",
 				SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
 				SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
+				SlackAllowedHost:       "hooks.slack.com",
 			},
 		},
 		{
@@ -338,6 +340,7 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 		RunID:                  "test-slack-exclusion-001",
 		SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
 		SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
+		SlackAllowedHost:       "hooks.slack.com",
 		ConsoleWriter:          &consoleBuffer,
 	}
 

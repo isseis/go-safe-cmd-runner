@@ -22,6 +22,7 @@ func TestSetupLogging_Success(t *testing.T) {
 		forceQuiet       bool
 		slackSuccessURL  string
 		slackErrorURL    string
+		slackAllowedHost string
 		wantErr          bool
 	}{
 		{
@@ -36,11 +37,12 @@ func TestSetupLogging_Success(t *testing.T) {
 			runID:    "test-run-002",
 		},
 		{
-			name:            "with both Slack webhook URLs",
-			logLevel:        slog.LevelWarn,
-			runID:           "test-run-003",
-			slackSuccessURL: "https://hooks.slack.com/services/test-success",
-			slackErrorURL:   "https://hooks.slack.com/services/test-error",
+			name:             "with both Slack webhook URLs",
+			logLevel:         slog.LevelWarn,
+			runID:            "test-run-003",
+			slackSuccessURL:  "https://hooks.slack.com/services/test-success",
+			slackErrorURL:    "https://hooks.slack.com/services/test-error",
+			slackAllowedHost: "hooks.slack.com",
 		},
 		{
 			name:             "force interactive mode",
@@ -67,6 +69,7 @@ func TestSetupLogging_Success(t *testing.T) {
 				ConsoleWriter:          nil,
 				SlackWebhookURLSuccess: tt.slackSuccessURL,
 				SlackWebhookURLError:   tt.slackErrorURL,
+				SlackAllowedHost:       tt.slackAllowedHost,
 			})
 
 			if (err != nil) != tt.wantErr {

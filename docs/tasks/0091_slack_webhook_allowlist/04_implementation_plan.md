@@ -10,16 +10,16 @@
     - 正規化済みの値を `cfg.Global.SlackAllowedHost` に書き戻すことで以降の全層が正規化値を参照する
     - 違反した場合は `ErrorTypeConfigParsing` にラップして返す (詳細仕様 §2.9)
 
-- [ ] 2. Slack ホスト検証ロジックの実装 (AC-L2-2, AC-L2-5〜AC-L2-9)
-  - [ ] `internal/logging/slack_handler.go` の `SlackHandlerOptions` に `AllowedHost string` フィールドを追加
-  - [ ] `validateWebhookURL(webhookURL string)` → `validateWebhookURL(webhookURL, allowedHost string)` にシグネチャ変更
+- [x] 2. Slack ホスト検証ロジックの実装 (AC-L2-2, AC-L2-5〜AC-L2-9)
+  - [x] `internal/logging/slack_handler.go` の `SlackHandlerOptions` に `AllowedHost string` フィールドを追加
+  - [x] `validateWebhookURL(webhookURL string)` → `validateWebhookURL(webhookURL, allowedHost string)` にシグネチャ変更
     - `allowedHost` が空の場合は `ErrInvalidWebhookURL` を返す (AC-L2-7)
     - `strings.ToLower(parsedURL.Hostname()) != strings.ToLower(allowedHost)` の場合は `ErrInvalidWebhookURL` を返す (AC-L2-5, AC-L2-6, AC-L2-8)
     - 既存の HTTPS スキーム・ホスト名存在チェックは維持する (AC-L2-9)
-  - [ ] `NewSlackHandler` 内の `validateWebhookURL` 呼び出しに `opts.AllowedHost` を追加
+  - [x] `NewSlackHandler` 内の `validateWebhookURL` 呼び出しに `opts.AllowedHost` を追加
 
-- [ ] 3. 既存テストの修正 (AC-L2-18)
-  - [ ] `internal/logging/slack_handler_test.go` の既存 `validateWebhookURL` テストに `allowedHost` 引数を追加
+- [x] 3. 既存テストの修正 (AC-L2-18)
+  - [x] `internal/logging/slack_handler_test.go` の既存 `validateWebhookURL` テストに `allowedHost` 引数を追加
     - 正常系テスト: `allowedHost` に適切なホスト名 (例: `hooks.slack.com`) を設定
     - 異常系テスト (HTTPS チェック等): `allowedHost` に任意のホストを設定 (HTTPS チェックが先行するため到達しない)
 

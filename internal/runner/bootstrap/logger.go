@@ -26,6 +26,7 @@ type LoggerConfig struct {
 	RunID                  string
 	SlackWebhookURLSuccess string    // Webhook URL for success (INFO) notifications
 	SlackWebhookURLError   string    // Webhook URL for error (WARN/ERROR) notifications
+	SlackAllowedHost       string    // Allowed host for Slack webhook URL validation
 	ConsoleWriter          io.Writer // Writer for console output (stdout/stderr)
 	DryRun                 bool      // If true, Slack notifications are not sent
 }
@@ -145,10 +146,11 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	// Create success handler if URL is provided (INFO level only)
 	if config.SlackWebhookURLSuccess != "" {
 		sh, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-			WebhookURL: config.SlackWebhookURLSuccess,
-			RunID:      config.RunID,
-			IsDryRun:   config.DryRun,
-			LevelMode:  logging.LevelModeExactInfo,
+			WebhookURL:  config.SlackWebhookURLSuccess,
+			RunID:       config.RunID,
+			IsDryRun:    config.DryRun,
+			LevelMode:   logging.LevelModeExactInfo,
+			AllowedHost: config.SlackAllowedHost,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create success Slack handler: %w", err)
@@ -160,10 +162,11 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	// Create error handler if URL is provided (WARN and above)
 	if config.SlackWebhookURLError != "" {
 		sh, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-			WebhookURL: config.SlackWebhookURLError,
-			RunID:      config.RunID,
-			IsDryRun:   config.DryRun,
-			LevelMode:  logging.LevelModeWarnAndAbove,
+			WebhookURL:  config.SlackWebhookURLError,
+			RunID:       config.RunID,
+			IsDryRun:    config.DryRun,
+			LevelMode:   logging.LevelModeWarnAndAbove,
+			AllowedHost: config.SlackAllowedHost,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create error Slack handler: %w", err)
