@@ -139,10 +139,10 @@ type GlobalSpec struct {
 	// Changed from: Vars []string `toml:"vars"` (array-based format)
 	Vars map[string]any `toml:"vars"`
 
-	// SlackAllowedHost は Slack webhook URL で許可するホスト名。
-	// 空文字列の場合 Slack 通知機能は使用不可となる。
-	// 値はポート番号を含まない純粋なホスト名であること (例: "hooks.slack.com")。
-	// ポート番号付き ("hooks.slack.com:443") や前後の空白は設定エラーとなる。
+	// SlackAllowedHost is the hostname permitted in Slack webhook URLs.
+	// When empty, the Slack notification feature is disabled.
+	// The value must be a bare hostname without a port number (e.g. "hooks.slack.com").
+	// Including a port ("hooks.slack.com:443") or surrounding whitespace is a configuration error.
 	SlackAllowedHost string `toml:"slack_allowed_host"`
 }
 
