@@ -14,16 +14,16 @@
 
 ```mermaid
 flowchart TD
-    A([runner 起動]) --> B[WithPrivileges\nunix.go:46]
-    B --> C[verifyGroupFiles\ngroup_executor.go:336]
-    C --> D[VerifyGroupFiles\nverification/manager.go]
-    D --> E[filevalidator.Verify\nvalidator.go:429]
-    E --> E1[openat2 RESOLVE_NO_SYMLINKS\nsafefileio]
+    A([runner 起動]) --> B[WithPrivileges<br>unix.go:46]
+    B --> C[verifyGroupFiles<br>group_executor.go:336]
+    C --> D[VerifyGroupFiles<br>verification/manager.go]
+    D --> E[filevalidator.Verify<br>validator.go:429]
+    E --> E1[openat2 RESOLVE_NO_SYMLINKS<br>safefileio]
     E1 --> E2[SHA-256 計算]
     E2 --> E3[close FD]
     E3 --> F{hash 一致?}
     F -- NG --> G([エラー終了])
-    F -- OK --> H[exec.CommandContext\nexecutor.go:196]
+    F -- OK --> H[exec.CommandContext<br>executor.go:196]
     H --> I[OS: open → execve]
     I --> J([子プロセス実行])
 
@@ -85,8 +85,7 @@ AT_EMPTY_PATH フラグ: 0x1000  — pathname が空文字列の場合 dirfd を
 
 | 機能 | `os/exec` の実装 | 再実装方針 |
 |---|---|---|
-| `fork` | `os.StartProcess` 経由 | `syscall.ForkExec` または `syscall.Fork` + `syscall.Exec` |
-| `execve` | `exec.Cmd.Start` → `forkExec` | `syscall.Syscall6(SYS_EXECVEAT, ...)` に置き換え |
+| `fork` + `execveat` | `os.StartProcess` 経由 → 内部で `forkAndExecInChild` (Go ランタイム internal) が `execve` を呼ぶ | `syscall.ForkExec` / `syscall.Fork` + `syscall.Exec` はいずれも `execve` を発行するため **使用不可**。Go internal の `forkAndExecInChild` と同等のカスタム実装が必要: fork 後の子プロセス内で `syscall.RawSyscall6(SYS_EXECVEAT, ...)` を呼ぶ。fork〜exec 間は Go ランタイム (GC・goroutine スケジューラ) を使用できないため、メモリ確保を伴わない raw syscall のみで記述する必要がある |
 | stdin/stdout/stderr リダイレクト | `exec.Cmd.Stdin/.Stdout/.Stderr` + pipe | `syscall.Pipe` で手動セットアップ |
 | context キャンセル (SIGKILL) | `exec.Cmd` が goroutine で監視 | `os.Process.Kill` または `syscall.Kill` を goroutine で実行 |
 | `Wait` / exit code 取得 | `exec.Cmd.Wait` | `syscall.Wait4` |
@@ -149,7 +148,7 @@ FD は検証完了から exec まで保持し続けなければならない。ex
 
 ### 5.2 総合評価
 
-- **高コスト・高リスク**: `os/exec` の再実装は Go のランタイムと密結合しており、fork/exec 周りは実装ミスがクリティカルなバグに直結する
+- **高コスト・高リスク**: `os/exec` の再実装は Go のランタイムと密結合しており、fork/exec 周りは実装ミスがクリティカルなバグに直結する。特に `execveat` を呼ぶためには `syscall.ForkExec` は使えず、Go 標準ライブラリ internal の `forkAndExecInChild` に相当するカスタム実装が必要になる。この関数は fork 後〜exec 前の「unsafe window」(Go ランタイムが使用不可な区間) を raw syscall のみで記述しており、同等の制約を守った実装を自前で書く必要がある
 - **緩和要因**: 現実的な運用環境 (root 所有ディレクトリ) では TOCTOU の実際のリスクは低く、短期対策 (0089) で実用上は十分
 - **推奨**: 要件定義・設計に先立ち、PoC として `execveat` syscall 呼び出し単体の動作確認を行い、リスク評価を更新する
 
