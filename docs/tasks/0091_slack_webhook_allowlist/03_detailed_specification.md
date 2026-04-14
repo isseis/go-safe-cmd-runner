@@ -145,11 +145,19 @@ func AddSlackHandlers(config LoggerConfig) error
 ```
 
 内部処理:
-1. `config.SlackWebhookURLSuccess` が設定されている場合:
-   - `logging.NewSlackHandler(SlackHandlerOptions{AllowedHost: config.SlackAllowedHost, ...})` を呼ぶ (AC-L2-12)
+1. `phase1BaseHandlers` が nil の場合はエラーを返す
+2. `config.SlackWebhookURLSuccess` が設定されている場合:
+   - `newSlackHandlerFunc(SlackHandlerOptions{AllowedHost: config.SlackAllowedHost, ...})` を呼ぶ (AC-L2-12)
    - エラーがあれば即座に返す
-2. `config.SlackWebhookURLError` が設定されている場合: 同様
-3. Slack ハンドラを含む新しい `MultiHandler` を構築し、`RedactingHandler` でラップして `slog.SetDefault` を更新する
+3. `config.SlackWebhookURLError` が設定されている場合: 同様
+4. `phase1BaseHandlers` + Slack ハンドラを結合した `allHandlers` で新しい `MultiHandler` を構築する
+5. Phase 1 で生成済みの `failureLogger` と `redactionErrorCollector` を使って `RedactingHandler` を再構築し、`slog.SetDefault` を更新する
+
+**再利用するオブジェクト (Phase 1 で生成したものをそのまま継続使用する):**
+
+- `failureLogger`: Slack を除外したハンドラ群 (`failureHandlers`) は Phase 1 と Phase 2 で内容が変わらないため、`phase1BaseHandlers` から再構築せず Phase 1 の `failureLogger` を継続使用する
+- `redactionErrorCollector`: Phase 1 の動作中に蓄積されたエラー記録を保持するため、再初期化しない
+- `redactionReporter`: `failureLogger` および `redactionErrorCollector` が変わらないため、再初期化しない
 
 ---
 

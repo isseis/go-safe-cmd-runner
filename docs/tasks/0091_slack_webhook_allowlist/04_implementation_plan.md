@@ -27,10 +27,10 @@
   - [ ] 各テストは `errors.Is(err, ErrInvalidWebhookURL)` で検証する
 
 - [ ] 5. Phase 1 ハンドラ状態の保持機構を追加 (AC-L2-11 の前提)
-  - **背景**: 現行の `SetupLoggerWithConfig` はすべてのハンドラをローカル変数で組み立て `slog.SetDefault` まで完結させる。Phase 2 (`AddSlackHandlers`) が Slack ハンドラを追加するには、Phase 1 で作成したコンソール・ファイルハンドラ群を後から参照できる必要がある。
-  - [ ] `internal/runner/bootstrap/logger.go` にパッケージレベルの `phase1BaseHandlers []slog.Handler` 変数を追加する
-    - `SetupLoggerWithConfig` の末尾で Slack ハンドラを除いたハンドラ群 (= 既存の `failureHandlers` と同一集合) を `phase1BaseHandlers` に保存する
-    - `phase1BaseHandlers` は `AddSlackHandlers` のみが読み取り専用で参照する
+  - **背景**: 現行の `SetupLoggerWithConfig` はすべてのハンドラをローカル変数で組み立て `slog.SetDefault` まで完結させる。Phase 2 (`AddSlackHandlers`) が Slack ハンドラを追加するには、Phase 1 で作成したコンソール・ファイルハンドラ群と `failureLogger` を後から参照できる必要がある。
+  - [ ] `internal/runner/bootstrap/logger.go` にパッケージレベルの変数を追加する
+    - `phase1BaseHandlers []slog.Handler`: `SetupLoggerWithConfig` の末尾で Slack ハンドラを除いたハンドラ群 (= 既存の `failureHandlers` と同一集合) を保存する。`AddSlackHandlers` のみが読み取り専用で参照する
+    - `phase1FailureLogger *slog.Logger`: Phase 1 で作成した `failureLogger` を保存する。`AddSlackHandlers` が `RedactingHandler` 再構築時に継続使用する
   - [ ] `phase1BaseHandlers` が nil のとき `AddSlackHandlers` を呼び出したらエラーを返すガードを追加する
 
 - [ ] 6. 段階的ロギング初期化の実装 (AC-L2-10, AC-L2-11, AC-L2-12)
@@ -42,9 +42,9 @@
     - `phase1BaseHandlers` が nil の場合はエラーを返す
     - `config.SlackWebhookURLSuccess` が設定されている場合: `newSlackHandlerFunc` (後述タスク 7 で追加する factory 変数) で成功ハンドラを生成し、エラーがあれば即座に返す
     - `config.SlackWebhookURLError` が設定されている場合: 同様に処理
-    - `phase1BaseHandlers` + Slack ハンドラを結合した `allHandlers` で `MultiHandler` → `RedactingHandler` を再構築し `slog.SetDefault` を更新する
-    - `failureHandlers` (Slack 除外) も `phase1BaseHandlers` から再構築する
-    - `redactionErrorCollector` と `redactionReporter` も再初期化する
+    - `phase1BaseHandlers` + Slack ハンドラを結合した `allHandlers` で `MultiHandler` を再構築し、Phase 1 で作成済みの `redactionErrorCollector` と `failureLogger` を使って `RedactingHandler` を再構築し `slog.SetDefault` を更新する
+    - `failureHandlers` は Slack を除外したハンドラ群であり Phase 1 と内容が変わらないため、`phase1BaseHandlers` から再構築せず Phase 1 で作成した `failureLogger` をそのまま継続使用する
+    - `redactionErrorCollector` および `redactionReporter` は Phase 1 で生成済みのものを継続使用し、再初期化しない (Phase 1 中に蓄積されたエラー記録を保持するため)
   - [ ] `internal/runner/bootstrap/environment.go` に `SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions) error` を追加する
     - `slackConfig` の両 URL が空の場合は何もせず `nil` を返す
     - `LoggerConfig{SlackWebhookURLSuccess: slackConfig.SuccessURL, SlackWebhookURLError: slackConfig.ErrorURL, SlackAllowedHost: opts.SlackAllowedHost, RunID: opts.RunID, DryRun: opts.DryRun}` を組み立てて `AddSlackHandlers` を呼ぶ
