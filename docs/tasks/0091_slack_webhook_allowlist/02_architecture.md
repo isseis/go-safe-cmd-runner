@@ -131,7 +131,7 @@ flowchart LR
 
     A[("TOML<br>global.slack_allowed_host")] -->|"GlobalSpec<br>.SlackAllowedHost"| B["LoadAndPrepareConfig()"]
     B -->|"SetupLoggingOptions<br>.SlackAllowedHost"| C["SetupSlackLogging()"]
-    C -->|"LoggerConfig<br>.SlackAllowedHost"| D["AddSlackHandlers()"]
+    C -->|"SlackLoggerConfig<br>.AllowedHost"| D["AddSlackHandlers()"]
     D -->|"SlackHandlerOptions<br>.AllowedHost"| E["NewSlackHandler()"]
     E -->|"allowedHost"| F["validateWebhookURL()"]
 
