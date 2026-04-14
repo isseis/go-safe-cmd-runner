@@ -14,7 +14,7 @@ const (
 	// Version 7 adds pkey_mprotect PROT_EXEC detection.
 	// Version 8 adds KnownNetworkLibDeps to SymbolAnalysisData.
 	// Version 9 removes per-sub-analysis timestamps (DynLibDepsData.RecordedAt,
-	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); consolidates into Record.UpdatedAt.
+	// SyscallAnalysisData.AnalyzedAt, SymbolAnalysisData.AnalyzedAt); consolidated into a record-level timestamp.
 	// Version 10 flattens dyn_lib_deps from {"libs": [...]} to [...] directly.
 	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
 	// Version 12 adds RawInterpreterPath to ShebangInterpreterInfo for symlink-redirect detection.
