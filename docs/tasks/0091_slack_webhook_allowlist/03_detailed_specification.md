@@ -34,12 +34,14 @@ type GlobalSpec struct {
 
 | 条件 | 例 | 結果 |
 |------|-----|------|
-| 純粋なホスト名 | `"hooks.slack.com"` | OK |
+| 有効なホスト名 | `"hooks.slack.com"` | OK |
 | 空文字列 | `""` | OK (Slack 無効化) |
 | ポート番号付き | `"hooks.slack.com:443"` | 設定エラー |
 | 前後に空白 | `" hooks.slack.com "` | 設定エラー |
+| スキーム付き | `"https://hooks.slack.com"` | 設定エラー |
+| パス付き | `"hooks.slack.com/path"` | 設定エラー |
 
-制約は `LoadAndPrepareConfig` 内で検証する (§2.9 参照)。
+制約は `LoadAndPrepareConfig` 内でホスト名としての正当性を検証することで担保する (§2.9 参照)。
 
 ### 2.2 `SlackHandlerOptions` (`internal/logging/slack_handler.go`)
 
@@ -231,22 +233,31 @@ SetupSlackLogging(slackConfig, opts{    ← Phase 2: ホスト検証 + Slack ハ
 
 ### 2.9 `slack_allowed_host` フォーマット検証 (`internal/runner/bootstrap/config.go`)
 
-`LoadAndPrepareConfig` 内で `cfg.Global.SlackAllowedHost` を検証する。空文字列は有効 (Slack 無効化) とし、非空の場合のみ以下をチェックする。
+`LoadAndPrepareConfig` 内で `cfg.Global.SlackAllowedHost` を検証する。空文字列は有効 (Slack 無効化) とし、非空の場合のみ「有効なホスト名かどうか」を検証する。
+
+**検証方法**: `"https://" + host + "/"` を `url.Parse` で解析し、`parsedURL.Hostname()` が元の `host` と完全一致するかを確認する。一致しない場合、`host` はポート番号・スキーム・パス・空白などを含む不正な値であると判断する。
 
 ```go
 func validateSlackAllowedHost(host string) error {
     if host == "" {
         return nil // 空文字列は許可 (Slack 無効)
     }
-    if host != strings.TrimSpace(host) {
-        return fmt.Errorf("slack_allowed_host must not have leading/trailing whitespace: %q", host)
-    }
-    if strings.Contains(host, ":") {
-        return fmt.Errorf("slack_allowed_host must be a hostname without port (got %q)", host)
+    u, err := url.Parse("https://" + host + "/")
+    if err != nil || u.Hostname() != host {
+        return fmt.Errorf("slack_allowed_host must be a valid hostname without port or whitespace (got %q)", host)
     }
     return nil
 }
 ```
+
+ラウンドトリップ検証が捕捉する不正値の例:
+
+| 不正な値 | `url.Hostname()` の結果 | 判定 |
+|---------|------------------------|------|
+| `"hooks.slack.com:443"` | `"hooks.slack.com"` | 不一致 → エラー |
+| `" hooks.slack.com "` | `""` または不一致 | 不一致 → エラー |
+| `"hooks.slack.com/path"` | `"hooks.slack.com"` | 不一致 → エラー |
+| `"https://hooks.slack.com"` | `""` | 不一致 → エラー |
 
 エラーは既存の `ErrorTypeConfigParsing` にラップして返す:
 
@@ -261,7 +272,7 @@ if err := validateSlackAllowedHost(cfg.Global.SlackAllowedHost); err != nil {
 }
 ```
 
-この検証を行うことで、`validateWebhookURL` および `AddSlackHandlers` は `allowedHost` がポート番号・空白を含まない値であることを前提とできる。
+この検証を行うことで、`validateWebhookURL` および `AddSlackHandlers` は `allowedHost` が有効なホスト名であることを前提とできる。
 
 ---
 

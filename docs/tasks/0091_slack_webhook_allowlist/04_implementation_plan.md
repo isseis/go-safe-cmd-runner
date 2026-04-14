@@ -5,7 +5,8 @@
   - [ ] `internal/runner/bootstrap/logger.go` の `LoggerConfig` に `SlackAllowedHost string` フィールドを追加
   - [ ] `internal/runner/bootstrap/environment.go` の `SetupLoggingOptions` に `SlackAllowedHost string` フィールドを追加
   - [ ] `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` に `validateSlackAllowedHost` 呼び出しを追加する
-    - `cfg.Global.SlackAllowedHost` が空文字列でない場合、前後の空白・コロン (ポート番号) が含まれていないことを検証する
+    - `cfg.Global.SlackAllowedHost` が空文字列でない場合、有効なホスト名かどうかを検証する
+    - 検証方法: `url.Parse("https://" + host + "/")` でパースし `parsedURL.Hostname() == host` であることを確認する (ポート番号・空白・スキーム・パスを含む値はラウンドトリップが一致しないため検出できる)
     - 違反した場合は `ErrorTypeConfigParsing` にラップして返す (詳細仕様 §2.9)
 
 - [ ] 2. Slack ホスト検証ロジックの実装 (AC-L2-2, AC-L2-5〜AC-L2-9)
