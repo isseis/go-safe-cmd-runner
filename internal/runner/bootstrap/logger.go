@@ -165,14 +165,10 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	}
 	failureLogger := slog.New(failureMultiHandler)
 
-	// Save Phase 1 state for AddSlackHandlers to reference later.
-	phase1BaseHandlers = handlers
-	phase1FailureLogger = failureLogger
-
 	// Create redaction error collector for monitoring failures
 	// Limit to 1000 most recent failures to prevent unbounded growth
 	const maxRedactionFailures = 1000
-	redactionErrorCollector = redaction.NewInMemoryErrorCollector(maxRedactionFailures)
+	collector := redaction.NewInMemoryErrorCollector(maxRedactionFailures)
 
 	// Create MultiHandler with redaction (Phase 1 handlers only; Slack added via AddSlackHandlers)
 	multiHandler, err := logging.NewMultiHandler(handlers...)
@@ -180,14 +176,21 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 		return fmt.Errorf("failed to create multi handler: %w", err)
 	}
 	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, failureLogger).
-		WithErrorCollector(redactionErrorCollector)
+		WithErrorCollector(collector)
 
 	// Create shutdown reporter for redaction failures
-	redactionReporter = redaction.NewShutdownReporter(redactionErrorCollector, os.Stderr, failureLogger)
+	reporter := redaction.NewShutdownReporter(collector, os.Stderr, failureLogger)
 
 	// Set as default logger
-	logger := slog.New(redactedHandler)
-	slog.SetDefault(logger)
+	slog.SetDefault(slog.New(redactedHandler))
+
+	// All initialization succeeded — commit Phase 1 state for AddSlackHandlers to reference.
+	// These globals must only be set after every step above has completed without error,
+	// so that AddSlackHandlers cannot run against a partially-initialized logger.
+	phase1BaseHandlers = handlers
+	phase1FailureLogger = failureLogger
+	redactionErrorCollector = collector
+	redactionReporter = reporter
 
 	slog.Info("Logger initialized",
 		"log-level", config.Level,
@@ -204,7 +207,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 // Returns an error if validateWebhookURL fails for either successURL or errorURL.
 // Returns an error if SetupLoggerWithConfig has not been called (phase1BaseHandlers is nil).
 func AddSlackHandlers(config SlackLoggerConfig) error {
-	if phase1BaseHandlers == nil || phase1FailureLogger == nil {
+	if phase1BaseHandlers == nil || phase1FailureLogger == nil || redactionErrorCollector == nil {
 		return errPhase1NotInitialized
 	}
 
