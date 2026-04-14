@@ -177,7 +177,7 @@ sequenceDiagram
     M->>E: SetupSlackLogging(slackConfig, opts)
     Note over E: opts.SlackAllowedHost = cfg.Global.SlackAllowedHost
     E->>L: AddSlackHandlers(config)
-    Note over L: config.SlackAllowedHost = opts.SlackAllowedHost
+    Note over L: config.AllowedHost = opts.SlackAllowedHost
 
     alt successURL が設定されている場合
         L->>S: NewSlackHandler(SlackHandlerOptions{AllowedHost: ...})
