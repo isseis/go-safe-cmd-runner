@@ -121,11 +121,15 @@ func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions
 	}
 
 	if err := AddSlackHandlers(slackLoggerConfig); err != nil {
+		// Use a constant Message and store the raw error in Err rather than formatting it
+		// into Message, because url.Parse errors embed the webhook URL verbatim and Message
+		// is written to stderr/slog by HandlePreExecutionError.
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
-			Message:   fmt.Sprintf("Slack webhook URL validation failed: %v", err),
+			Message:   "Slack webhook URL validation failed",
 			Component: string(resource.ComponentLogging),
 			RunID:     opts.RunID,
+			Err:       err,
 		}
 	}
 
