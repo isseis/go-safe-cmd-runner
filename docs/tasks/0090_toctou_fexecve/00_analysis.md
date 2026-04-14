@@ -113,13 +113,16 @@ AT_EMPTY_PATH フラグ: 0x1000  — pathname が空文字列の場合 dirfd を
 現在の `Verify` / `VerifyWithHash` はファイルを open → 読込 → **close** して hash を返す。`fexecve` 対応には以下が必要:
 
 ```
-// 新関数 (案)
-func (v *Validator) VerifyAndRetainFD(filePath string) (fd uintptr, hash string, err error)
+// 新関数 (案) — 推奨シグネチャ
+func (v *Validator) VerifyAndRetainFD(filePath string) (f *os.File, hash string, err error)
 ```
 
-- `openat2` で FD を open し、hash を計算後、FD を **呼び出し元に返す**
-- 呼び出し元は exec 完了後に FD を close する責務を持つ
-- 既存の `Verify` / `VerifyWithHash` は内部で `VerifyAndRetainFD` を呼び close する形に変更可
+- `openat2` が返す生 FD を `os.NewFile(uintptr(fd), filePath)` でラップして `*os.File` として返す
+- 呼び出し元は `defer f.Close()` でリソース管理できる
+- `execveat` に渡す生 FD 番号は `f.Fd()` で取得するが、`f.Fd()` 呼び出し後は `runtime.KeepAlive(f)` を syscall の直後に置き、ファイナライザによる早期 close を防ぐこと
+- 既存の `Verify` / `VerifyWithHash` は内部で `VerifyAndRetainFD` を呼び `f.Close()` する形に変更可
+
+**代替案**: `int` (生 FD 番号) を返し、呼び出し元が `defer unix.Close(fd)` で管理する方法もある。`*os.File` の `Fd()` + `KeepAlive` の組み合わせより単純だが、Go イディオムからは外れる。
 
 **影響範囲:**
 - `internal/filevalidator/validator.go` — 新関数追加
@@ -130,7 +133,7 @@ func (v *Validator) VerifyAndRetainFD(filePath string) (fd uintptr, hash string,
 
 ### 4.3 FD の生存期間管理
 
-FD は検証完了から exec まで保持し続けなければならない。exec 失敗時・context キャンセル時のリークを防ぐため、`defer fd.Close()` パターンまたは専用の FD ホルダー型が必要。
+FD は検証完了から exec まで保持し続けなければならない。exec 失敗時・context キャンセル時のリークを防ぐため、`defer f.Close()` (`*os.File` 案) または `defer unix.Close(fd)` (`int` 案) を呼び出し元で確実に呼ぶ設計が必要。
 
 ### 4.4 マルチプラットフォーム対応
 
