@@ -84,24 +84,18 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "full config with both Slack handlers",
+			name: "full config with log file only (Slack added via AddSlackHandlers)",
 			config: LoggerConfig{
-				Level:                  slog.LevelInfo,
-				RunID:                  "test-full-002",
-				SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
-				SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
-				SlackAllowedHost:       "hooks.slack.com",
+				Level: slog.LevelInfo,
+				RunID: "test-full-002",
 			},
 		},
 		{
-			name: "full config with all handlers",
+			name: "full config with all Phase 1 handlers",
 			config: LoggerConfig{
-				Level:                  slog.LevelWarn,
-				LogDir:                 tempDir,
-				RunID:                  "test-full-003",
-				SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
-				SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
-				SlackAllowedHost:       "hooks.slack.com",
+				Level:  slog.LevelWarn,
+				LogDir: tempDir,
+				RunID:  "test-full-003",
 			},
 		},
 		{
@@ -335,16 +329,22 @@ func TestSetupLoggerWithConfig_FailureLoggerExcludesSlack(t *testing.T) {
 	var consoleBuffer bytes.Buffer
 
 	config := LoggerConfig{
-		Level:                  slog.LevelDebug,
-		LogDir:                 tempDir,
-		RunID:                  "test-slack-exclusion-001",
-		SlackWebhookURLSuccess: "https://hooks.slack.com/services/test-success",
-		SlackWebhookURLError:   "https://hooks.slack.com/services/test-error",
-		SlackAllowedHost:       "hooks.slack.com",
-		ConsoleWriter:          &consoleBuffer,
+		Level:         slog.LevelDebug,
+		LogDir:        tempDir,
+		RunID:         "test-slack-exclusion-001",
+		ConsoleWriter: &consoleBuffer,
 	}
 
 	err := SetupLoggerWithConfig(config, false, true)
+	require.NoError(t, err)
+
+	// Add Slack handlers via AddSlackHandlers (Slack is now excluded from failureLogger by design)
+	err = AddSlackHandlers(SlackLoggerConfig{
+		WebhookURLSuccess: "https://hooks.slack.com/services/test-success",
+		WebhookURLError:   "https://hooks.slack.com/services/test-error",
+		AllowedHost:       "hooks.slack.com",
+		RunID:             "test-slack-exclusion-001",
+	})
 	require.NoError(t, err)
 
 	// Log a message (this would trigger failureLogger in actual redaction failures)

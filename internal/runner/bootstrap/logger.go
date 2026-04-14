@@ -20,16 +20,14 @@ const (
 	logFilePerm = 0o600
 )
 
-// LoggerConfig holds all configuration for logger setup
+// LoggerConfig holds all configuration for Phase 1 logger setup (console and file handlers).
+// Slack handlers are configured separately via AddSlackHandlers after TOML is loaded.
 type LoggerConfig struct {
-	Level                  slog.Level
-	LogDir                 string
-	RunID                  string
-	SlackWebhookURLSuccess string    // Webhook URL for success (INFO) notifications
-	SlackWebhookURLError   string    // Webhook URL for error (WARN/ERROR) notifications
-	SlackAllowedHost       string    // Allowed host for Slack webhook URL validation
-	ConsoleWriter          io.Writer // Writer for console output (stdout/stderr)
-	DryRun                 bool      // If true, Slack notifications are not sent
+	Level         slog.Level
+	LogDir        string
+	RunID         string
+	ConsoleWriter io.Writer // Writer for console output (stdout/stderr)
+	DryRun        bool      // If true, Slack notifications are not sent
 }
 
 // SlackLoggerConfig は AddSlackHandlers に渡す Slack ハンドラ専用の設定。
@@ -59,12 +57,19 @@ var phase1BaseHandlers []slog.Handler
 // AddSlackHandlers が RedactingHandler 再構築時に継続使用する。
 var phase1FailureLogger *slog.Logger
 
-// SetupLoggerWithConfig initializes the logging system with all handlers atomically.
+// newSlackHandlerFunc は Slack ハンドラの生成 factory。
+// テストで差し替え可能にすることで SlackHandlerOptions の内容を検査できる (AC-L2-19)。
+var newSlackHandlerFunc = logging.NewSlackHandler
+
+// SetupLoggerWithConfig initializes the Phase 1 logging system (console and file handlers).
 //
 // IMPORTANT: This function must be called exactly once during application startup,
 // before any logging operations occur. It is designed for single-threaded bootstrap
 // initialization and should not be called concurrently or after the application
 // has started processing.
+//
+// Slack handlers are NOT set up here. Call AddSlackHandlers after LoadAndPrepareConfig
+// to add Slack handlers with the AllowedHost from the TOML configuration.
 //
 // The global redactionErrorCollector and redactionReporter are initialized during
 // this call and must not be accessed before initialization completes.
@@ -152,62 +157,17 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 		handlers = append(handlers, enrichedHandler)
 	}
 
-	// 4. Slack notification handlers (optional)
-	var slackSuccessHandler, slackErrorHandler slog.Handler
-
-	// Create success handler if URL is provided (INFO level only)
-	if config.SlackWebhookURLSuccess != "" {
-		sh, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-			WebhookURL:  config.SlackWebhookURLSuccess,
-			RunID:       config.RunID,
-			IsDryRun:    config.DryRun,
-			LevelMode:   logging.LevelModeExactInfo,
-			AllowedHost: config.SlackAllowedHost,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create success Slack handler: %w", err)
-		}
-		slackSuccessHandler = sh
-		handlers = append(handlers, sh)
-	}
-
-	// Create error handler if URL is provided (WARN and above)
-	if config.SlackWebhookURLError != "" {
-		sh, err := logging.NewSlackHandler(logging.SlackHandlerOptions{
-			WebhookURL:  config.SlackWebhookURLError,
-			RunID:       config.RunID,
-			IsDryRun:    config.DryRun,
-			LevelMode:   logging.LevelModeWarnAndAbove,
-			AllowedHost: config.SlackAllowedHost,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create error Slack handler: %w", err)
-		}
-		slackErrorHandler = sh
-		handlers = append(handlers, sh)
-	}
-
-	// Create failure logger (excludes Slack to prevent sensitive information leakage)
-	// This logger is used for detailed error logging during redaction failures
-	failureHandlers := make([]slog.Handler, 0, len(handlers))
-	for _, h := range handlers {
-		// Exclude Slack handlers from failure logger
-		// Detailed panic values and stack traces should not be sent to Slack
-		if h != slackSuccessHandler && h != slackErrorHandler {
-			failureHandlers = append(failureHandlers, h)
-		}
-	}
-
-	failureMultiHandler, err := logging.NewMultiHandler(failureHandlers...)
+	// Create failure logger using all Phase 1 handlers.
+	// Slack handlers are excluded from failureLogger by design (added later via AddSlackHandlers).
+	// Detailed panic values and stack traces should not be sent to Slack.
+	failureMultiHandler, err := logging.NewMultiHandler(handlers...)
 	if err != nil {
 		return fmt.Errorf("failed to create failure multi handler: %w", err)
 	}
 	failureLogger := slog.New(failureMultiHandler)
 
 	// Save Phase 1 state for AddSlackHandlers to reference later.
-	// phase1BaseHandlers holds Slack-excluded handlers (= failureHandlers).
-	// phase1FailureLogger is reused by AddSlackHandlers without reinitialisation.
-	phase1BaseHandlers = failureHandlers
+	phase1BaseHandlers = handlers
 	phase1FailureLogger = failureLogger
 
 	// Create redaction error collector for monitoring failures
@@ -215,7 +175,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	const maxRedactionFailures = 1000
 	redactionErrorCollector = redaction.NewInMemoryErrorCollector(maxRedactionFailures)
 
-	// Create MultiHandler with redaction (includes all handlers including Slack)
+	// Create MultiHandler with redaction (Phase 1 handlers only; Slack added via AddSlackHandlers)
 	multiHandler, err := logging.NewMultiHandler(handlers...)
 	if err != nil {
 		return fmt.Errorf("failed to create multi handler: %w", err)
@@ -236,9 +196,7 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 		"run_id", config.RunID,
 		"hostname", hostname,
 		"interactive_mode", capabilities.IsInteractive(),
-		"color_support", capabilities.SupportsColor(),
-		"slack_success_enabled", config.SlackWebhookURLSuccess != "",
-		"slack_error_enabled", config.SlackWebhookURLError != "")
+		"color_support", capabilities.SupportsColor())
 
 	return nil
 }
@@ -250,7 +208,46 @@ func AddSlackHandlers(config SlackLoggerConfig) error {
 	if phase1BaseHandlers == nil || phase1FailureLogger == nil {
 		return errPhase1NotInitialized
 	}
-	_ = config // Phase 6 で Slack ハンドラの生成・追加ロジックを実装する
+
+	allHandlers := make([]slog.Handler, len(phase1BaseHandlers))
+	copy(allHandlers, phase1BaseHandlers)
+
+	if config.WebhookURLSuccess != "" {
+		sh, err := newSlackHandlerFunc(logging.SlackHandlerOptions{
+			WebhookURL:  config.WebhookURLSuccess,
+			RunID:       config.RunID,
+			IsDryRun:    config.DryRun,
+			LevelMode:   logging.LevelModeExactInfo,
+			AllowedHost: config.AllowedHost,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create success Slack handler: %w", err)
+		}
+		allHandlers = append(allHandlers, sh)
+	}
+
+	if config.WebhookURLError != "" {
+		sh, err := newSlackHandlerFunc(logging.SlackHandlerOptions{
+			WebhookURL:  config.WebhookURLError,
+			RunID:       config.RunID,
+			IsDryRun:    config.DryRun,
+			LevelMode:   logging.LevelModeWarnAndAbove,
+			AllowedHost: config.AllowedHost,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create error Slack handler: %w", err)
+		}
+		allHandlers = append(allHandlers, sh)
+	}
+
+	multiHandler, err := logging.NewMultiHandler(allHandlers...)
+	if err != nil {
+		return fmt.Errorf("failed to create multi handler: %w", err)
+	}
+	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil, phase1FailureLogger).
+		WithErrorCollector(redactionErrorCollector)
+
+	slog.SetDefault(slog.New(redactedHandler))
 	return nil
 }
 

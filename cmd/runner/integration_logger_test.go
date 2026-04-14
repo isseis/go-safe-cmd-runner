@@ -50,19 +50,16 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name: "full_handler_chain_with_log_and_slack",
+			name: "full_handler_chain_with_log_file",
 			config: bootstrap.LoggerConfig{
-				Level:                  slog.LevelWarn,
-				LogDir:                 commontesting.SafeTempDir(t),
-				RunID:                  "test-run-003",
-				SlackWebhookURLSuccess: "https://hooks.slack.com/test/webhook-success",
-				SlackWebhookURLError:   "https://hooks.slack.com/test/webhook-error",
-				SlackAllowedHost:       "hooks.slack.com",
+				Level:  slog.LevelWarn,
+				LogDir: commontesting.SafeTempDir(t),
+				RunID:  "test-run-003",
 			},
 			envVars: map[string]string{
 				"TERM": "xterm",
 			},
-			expectHandlers: 5, // Interactive + Conditional text + JSON + 2x Slack
+			expectHandlers: 3, // Interactive + Conditional text + JSON
 			expectError:    false,
 		},
 		{
@@ -257,49 +254,35 @@ func TestHandlerChainIntegration(t *testing.T) {
 
 // TestErrorHandling tests error handling in the integrated system
 func TestErrorHandling(t *testing.T) {
-	testCases := []struct {
-		name        string
-		config      bootstrap.LoggerConfig
-		expectError bool
-		errorType   string
-	}{
-		{
-			name: "invalid_slack_webhook_success",
-			config: bootstrap.LoggerConfig{
-				Level:                  slog.LevelInfo,
-				LogDir:                 "",
-				RunID:                  "test-error-002",
-				SlackWebhookURLSuccess: "not-a-valid-url",
-				SlackWebhookURLError:   "https://hooks.slack.com/valid",
-			},
-			expectError: true,
-			errorType:   "slack handler creation",
-		},
-		{
-			name: "nonexistent_log_directory",
-			config: bootstrap.LoggerConfig{
-				Level:  slog.LevelInfo,
-				LogDir: "/path/does/not/exist",
-				RunID:  "test-error-003",
-			},
-			expectError: true,
-			errorType:   "log directory validation",
-		},
-	}
+	t.Run("invalid_slack_webhook_success", func(t *testing.T) {
+		// Slack URL validation is now done in AddSlackHandlers (after TOML is loaded)
+		originalLogger := slog.Default()
+		defer slog.SetDefault(originalLogger)
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Capture original logger to restore later
-			originalLogger := slog.Default()
-			defer slog.SetDefault(originalLogger)
+		err := bootstrap.SetupLoggerWithConfig(bootstrap.LoggerConfig{
+			Level: slog.LevelInfo,
+			RunID: "test-error-002",
+		}, false, false)
+		require.NoError(t, err)
 
-			err := bootstrap.SetupLoggerWithConfig(tc.config, false, false)
-
-			if tc.expectError {
-				assert.Error(t, err, "Expected error (%s) but got none", tc.errorType)
-			} else {
-				assert.NoError(t, err, "Unexpected error")
-			}
+		err = bootstrap.AddSlackHandlers(bootstrap.SlackLoggerConfig{
+			WebhookURLSuccess: "not-a-valid-url",
+			WebhookURLError:   "https://hooks.slack.com/valid",
+			AllowedHost:       "hooks.slack.com",
+			RunID:             "test-error-002",
 		})
-	}
+		assert.Error(t, err, "Expected error for invalid Slack webhook URL")
+	})
+
+	t.Run("nonexistent_log_directory", func(t *testing.T) {
+		originalLogger := slog.Default()
+		defer slog.SetDefault(originalLogger)
+
+		err := bootstrap.SetupLoggerWithConfig(bootstrap.LoggerConfig{
+			Level:  slog.LevelInfo,
+			LogDir: "/path/does/not/exist",
+			RunID:  "test-error-003",
+		}, false, false)
+		assert.Error(t, err, "Expected error for nonexistent log directory")
+	})
 }
