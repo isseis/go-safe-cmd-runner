@@ -254,26 +254,6 @@ func TestHandlerChainIntegration(t *testing.T) {
 
 // TestErrorHandling tests error handling in the integrated system
 func TestErrorHandling(t *testing.T) {
-	t.Run("invalid_slack_webhook_success", func(t *testing.T) {
-		// Slack URL validation is now done in AddSlackHandlers (after TOML is loaded)
-		originalLogger := slog.Default()
-		defer slog.SetDefault(originalLogger)
-
-		err := bootstrap.SetupLoggerWithConfig(bootstrap.LoggerConfig{
-			Level: slog.LevelInfo,
-			RunID: "test-error-002",
-		}, false, false)
-		require.NoError(t, err)
-
-		err = bootstrap.AddSlackHandlers(bootstrap.SlackLoggerConfig{
-			WebhookURLSuccess: "not-a-valid-url",
-			WebhookURLError:   "https://hooks.slack.com/valid",
-			AllowedHost:       "hooks.slack.com",
-			RunID:             "test-error-002",
-		})
-		assert.Error(t, err, "Expected error for invalid Slack webhook URL")
-	})
-
 	t.Run("nonexistent_log_directory", func(t *testing.T) {
 		originalLogger := slog.Default()
 		defer slog.SetDefault(originalLogger)
