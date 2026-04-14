@@ -145,7 +145,7 @@ flowchart LR
 
 ### 4.1 Phase 1: `SetupLogging` の変更
 
-`SetupLogging` はコンソールハンドラ・ファイルハンドラのみを初期化し、Slack ハンドラを生成しない。`SetupLoggingOptions.SlackWebhookURLSuccess/Error` は引き続き保持するが、Phase 1 では使用しない。
+`SetupLogging` はコンソールハンドラ・ファイルハンドラのみを初期化し、Slack ハンドラを生成しない。`SetupLoggingOptions` および `LoggerConfig` から `SlackWebhookURLSuccess/Error` フィールドを**削除**し、コンパイルレベルで Slack URL を受け付けなくする。
 
 ```mermaid
 sequenceDiagram
@@ -154,8 +154,8 @@ sequenceDiagram
     participant L as logger.go
 
     M->>E: SetupLogging(opts)
-    Note over E: SlackAllowedHost は渡さない<br>(Slack URL は Phase 2 で使用)
-    E->>L: SetupLoggerWithConfig(config)<br>config.SlackAllowedHost = ""
+    Note over E: Slack URL フィールドなし<br>(SetupLoggingOptions から削除済み)
+    E->>L: SetupLoggerWithConfig(config)
     L->>L: コンソールハンドラ生成
     L->>L: ファイルハンドラ生成 (LogDir が設定されている場合)
     Note over L: Slack ハンドラは生成しない
