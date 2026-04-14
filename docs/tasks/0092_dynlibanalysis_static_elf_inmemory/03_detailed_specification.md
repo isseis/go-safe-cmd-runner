@@ -87,6 +87,6 @@ func TestAnalyze_StaticELF(t *testing.T) {
 | AC-1: `t.Skip` / `t.Skipf` の除去 | `t.Skipf(...)` を削除 |
 | AC-2: インメモリ ELF による検証 | `buildTestELFWithDeps(t, tmpDir, "static.elf", nil, "")` を使用 |
 | AC-2: `Analyze()` が nil を返すことの検証 | `assert.Nil(t, result, ...)` で検証（変更なし） |
-| AC-3: `make elfanalyzer-testdata` 不要での PASS | 外部ファイル依存が解消されるため達成 |
-| AC-3: `make test` がすべてパス | テストロジックの変更は最小限であり影響なし |
-| AC-3: `make lint` がエラーなし | 削除した変数 `err` はスコープが消えるため、未使用変数エラーは発生しない |
+| AC-3: `make elfanalyzer-testdata` 不要での PASS | 外部ファイル依存が解消されるため、実装後に達成予定 |
+| AC-3: `make test` がすべてパス | テストロジックの変更は最小限であり、実装後に確認 |
+| AC-3: `make lint` がエラーなし | 削除した変数 `err` はスコープが消えるため未使用変数エラーは発生しない想定。実装後に確認 |
