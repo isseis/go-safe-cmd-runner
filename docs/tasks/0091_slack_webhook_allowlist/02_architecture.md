@@ -107,7 +107,7 @@ graph TB
 
     subgraph "internal/runner/bootstrap"
         ENV["environment.go<br>SetupLoggingOptions.SlackAllowedHost 追加<br>SetupSlackLogging() 新規追加"]
-        LOG["logger.go<br>LoggerConfig.SlackAllowedHost 追加<br>Slack ハンドラ生成を SetupSlackLogging に移動"]
+        LOG["logger.go<br>SlackLoggerConfig 新規追加 (AllowedHost を保持)<br>Slack ハンドラ生成を AddSlackHandlers に移動"]
     end
 
     subgraph "internal/logging"
