@@ -100,7 +100,7 @@ AT_EMPTY_PATH フラグ: 0x1000  — pathname が空文字列の場合 dirfd を
 
 | 機能 | `os/exec` の実装 | 再実装方針 |
 |---|---|---|
-| `fork` + `execveat` | `os.StartProcess` 経由 → 内部で `forkAndExecInChild` (Go ランタイム internal) が `execve` を呼ぶ | `syscall.ForkExec` / `syscall.Fork` + `syscall.Exec` はいずれも `execve` を発行するため **使用不可**。Go internal の `forkAndExecInChild` と同等のカスタム実装が必要: fork 後の子プロセス内で `syscall.RawSyscall6(SYS_EXECVEAT, ...)` を呼ぶ。fork〜exec 間は Go ランタイム (GC・goroutine スケジューラ) を使用できないため、メモリ確保を伴わない raw syscall のみで記述する必要がある |
+| `fork` + `execveat` | `os.StartProcess` 経由 → 内部で `forkAndExecInChild` (Go ランタイム internal) が `execve` を呼ぶ | `syscall.ForkExec` (`golang.org/x/sys/unix.ForkExec` も同様) は内部で `execve` を発行するため **使用不可**。なお Go の `syscall` パッケージには `Fork` 単体の API は存在しない。Go internal の `forkAndExecInChild` と同等のカスタム実装が必要: `RawSyscall(SYS_FORK, ...)` で fork し、子プロセス内で `RawSyscall6(SYS_EXECVEAT, ...)` を呼ぶ。fork〜exec 間は Go ランタイム (GC・goroutine スケジューラ) を使用できないため、メモリ確保を伴わない raw syscall のみで記述する必要がある |
 | stdin/stdout/stderr リダイレクト | `exec.Cmd.Stdin/.Stdout/.Stderr` + pipe | `syscall.Pipe` で手動セットアップ |
 | context キャンセル (SIGKILL) | `exec.Cmd` が goroutine で監視 | `os.Process.Kill` または `syscall.Kill` を goroutine で実行 |
 | `Wait` / exit code 取得 | `exec.Cmd.Wait` | `syscall.Wait4` |
