@@ -4,8 +4,8 @@
   - [x] `elfanalyzertesting` パッケージのインポートを追加する
   - [x] `TestRecord_LibcCache_Error_CausesRecordFailure` を修正する (FR-1)
     - `const elfPath = "/usr/bin/ls"` および `os.Stat` + `t.Skipf` ブロックを削除
-    - `tmpELFPath := filepath.Join(t.TempDir(), "test.elf")` + `elfanalyzertesting.CreateDynamicELFFile(t, tmpELFPath)` に置き換える
-    - `analyzeSyscalls(record, elfPath)` の `elfPath` を新しいパスに変更する
+    - `safeTempDir(t)` で一時ディレクトリを作成し、必要に応じて `filepath.EvalSymlinks` で解決したパス配下の `test.elf` を `elfanalyzertesting.CreateDynamicELFFile(t, ...)` で生成する形に置き換える
+    - `analyzeSyscalls(record, elfPath)` の `elfPath` を生成した ELF のパスに変更する
   - [x] `TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis` を修正する (FR-2)
     - `const elfPath = "/usr/bin/ls"` および `os.Stat` + `t.Skipf` ブロックを削除
     - `elfBytes, err := os.ReadFile(elfPath)` + `os.WriteFile(targetFile, elfBytes, ...)` を `elfanalyzertesting.CreateDynamicELFFile(t, targetFile)` に置き換える

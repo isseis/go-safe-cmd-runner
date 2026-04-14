@@ -30,11 +30,11 @@ if _, err := os.Stat(elfPath); err != nil {
 
 ### 1.3 対象テスト
 
-| テスト名 | 行 | 説明 |
-|---|---|---|
-| `TestRecord_LibcCache_Error_CausesRecordFailure` | 1385 | libc キャッシュエラーが `analyzeSyscalls` を失敗させることを検証 |
-| `TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis` | 1426 | ELF → 非 ELF の force 再記録で `SyscallAnalysis` が nil になることを検証 |
-| `TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis` | 1488 | ELF の force 再記録で syscall 数が 0 になると `SyscallAnalysis` が nil になることを検証 |
+| テスト名 | 説明 |
+|---|---|
+| `TestRecord_LibcCache_Error_CausesRecordFailure` | libc キャッシュエラーが `analyzeSyscalls` を失敗させることを検証 |
+| `TestRecord_Force_ELFToNonELF_ClearsSyscallAnalysis` | ELF → 非 ELF の force 再記録で `SyscallAnalysis` が nil になることを検証 |
+| `TestRecord_Force_SyscallsToNone_ClearsSyscallAnalysis` | ELF の force 再記録で syscall 数が 0 になると `SyscallAnalysis` が nil になることを検証 |
 
 ### 1.4 スコープ外
 
