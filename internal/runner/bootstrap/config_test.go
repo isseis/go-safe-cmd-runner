@@ -102,6 +102,12 @@ func TestNormalizeSlackAllowedHost(t *testing.T) {
 			wantHost: "hooks.slack.com",
 			wantErr:  false,
 		},
+		{
+			name:     "IPv4 literal accepted",
+			input:    "192.0.2.1",
+			wantHost: "192.0.2.1",
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -17,15 +17,16 @@ import (
 )
 
 // ErrInvalidSlackAllowedHost is a sentinel error returned when the slack_allowed_host value is invalid.
-var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid hostname without port or whitespace")
+var ErrInvalidSlackAllowedHost = errors.New("slack_allowed_host must be a valid hostname or IP address without port or whitespace")
 
 // rfc1123LabelRE matches a single DNS label per RFC 1123 §2.1:
 // starts and ends with a letter or digit; interior may contain hyphens.
 var rfc1123LabelRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?$`)
 
-// normalizeSlackAllowedHost converts host to a normalized allowed hostname.
+// normalizeSlackAllowedHost converts host to a normalized allowed host value.
 // Returns ("", nil) when host is empty (Slack disabled).
-// Accepts RFC 1123 hostnames (dot-separated labels) and IPv6 literals in brackets.
+// Accepts RFC 1123 hostnames (dot-separated labels), IPv4 literals (e.g. "192.0.2.1"),
+// and IPv6 literals in brackets (e.g. "[::1]").
 // Returns an error for any other value (port, scheme, path, query, fragment, whitespace, etc.).
 func normalizeSlackAllowedHost(host string) (string, error) {
 	if host == "" {
@@ -40,7 +41,8 @@ func normalizeSlackAllowedHost(host string) (string, error) {
 		return u.Hostname(), nil // bare address e.g. "::1"
 	}
 
-	// Plain hostname: validate each dot-separated label against RFC 1123.
+	// Plain hostname or IPv4 literal: validate each dot-separated label against RFC 1123.
+	// IPv4 addresses (e.g. "192.0.2.1") pass because each octet matches the label regex.
 	for label := range strings.SplitSeq(host, ".") {
 		if !rfc1123LabelRE.MatchString(label) {
 			return "", fmt.Errorf("%w (got %q)", ErrInvalidSlackAllowedHost, host)
