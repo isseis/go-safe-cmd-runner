@@ -628,14 +628,16 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) 
     if fatErr == nil {
         // fatFile.Close() does NOT close the underlying io.ReaderAt (file),
         // so we must close file explicitly in all paths.
-        _ = fatFile.Close()
+        // Defer close until after Arches is fully read.
         cpuType := goarchToCPUType(runtime.GOARCH)
         if cpuType == 0 {
+            _ = fatFile.Close()
             _ = file.Close()
             return nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
         }
         for _, arch := range fatFile.Arches {
             if arch.Cpu == cpuType {
+                _ = fatFile.Close()
                 // Close the original file handle and re-open for the slice.
                 _ = file.Close()
                 sliceFile, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
@@ -649,6 +651,7 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) 
                     io.NewSectionReader(sliceFile, int64(arch.Offset), int64(arch.Size)))
             }
         }
+        _ = fatFile.Close()
         _ = file.Close()
         return nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
     }
@@ -819,13 +822,15 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
     // Try as Fat binary first
     fatFile, fatErr := macho.NewFatFile(file)
     if fatErr == nil {
-        _ = fatFile.Close()
+        // Defer close until after Arches is fully read.
         cpuType := goarchToCPUType(runtime.GOARCH)
         if cpuType == 0 {
+            _ = fatFile.Close()
             return false, nil
         }
         for _, arch := range fatFile.Arches {
             if arch.Cpu == cpuType {
+                _ = fatFile.Close()
                 // Re-open for the matching slice
                 sliceFile, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
                 if err != nil {
@@ -852,6 +857,7 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
                 return false, nil
             }
         }
+        _ = fatFile.Close()
         return false, nil // no matching architecture
     }
 
