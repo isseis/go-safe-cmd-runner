@@ -66,12 +66,17 @@
 
 #### FR-3.1.1: 依存ライブラリ名の取得
 
-Mach-O バイナリの Load Commands から依存ライブラリのインストール名一覧を取得できること。
-`debug/macho` パッケージの `macho.File.ImportedLibraries()` を使用し、
-`LC_LOAD_DYLIB` および `LC_LOAD_WEAK_DYLIB` のインストール名を取得する。
+Mach-O バイナリの Load Commands から、依存ライブラリごとのインストール名と
+Load Command 種別（`LC_LOAD_DYLIB` / `LC_LOAD_WEAK_DYLIB`）を取得できること。
+実装は `debug/macho` パッケージの `macho.File.Loads` 等を走査し、各 Load Command から
+インストール名とコマンド種別を対応付けて取得すること。
 
-**補足**: `ImportedLibraries()` は `LC_LOAD_DYLIB` と `LC_LOAD_WEAK_DYLIB` を区別せずに
-返す。実装は両者を等しく処理し、解決失敗時の動作のみ FR-3.1.7 に従って区別する。
+`macho.File.ImportedLibraries()` は依存ライブラリ名の一覧取得には利用できるが、
+`LC_LOAD_DYLIB` と `LC_LOAD_WEAK_DYLIB` を区別できないため、これのみを依存種別の
+判定に用いてはならない。別手段で weak/strong を同等に判定できる場合はその実装でもよい。
+
+**補足**: FR-3.1.7 の「強い依存はエラー／弱い依存はスキップ」を実装するため、
+依存ライブラリごとに weak/strong の属性を保持したまま後続の解決処理へ渡すこと。
 
 #### FR-3.1.2: ライブラリパスの解決順序
 
