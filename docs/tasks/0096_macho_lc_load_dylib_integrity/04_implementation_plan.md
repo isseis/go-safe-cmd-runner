@@ -385,18 +385,18 @@ if v.machoDynlibAnalyzer != nil && len(record.DynLibDeps) == 0 {
 
 #### 完了条件
 
-- [ ] `CurrentSchemaVersion` が 14 に変更されていること
-- [ ] `Record` に `AnalysisWarnings []string` フィールドが追加されていること
-- [ ] `ErrDynLibDepsRequired` のエラーメッセージが "binary" に汎用化されていること
-- [ ] `Validator.SetMachODynLibAnalyzer` セッターが追加されていること
-- [ ] `updateAnalysisRecord` コールバック内で DynLibDeps と AnalysisWarnings が初期化されてから再解析されること
-- [ ] ELF 解析と Mach-O 解析が排他的に実行されること（ELF が結果を返した場合 Mach-O をスキップ）
-- [ ] `cmd/record/main.go` で `MachODynLibAnalyzer` が注入されること
-- [ ] `record --force` で Mach-O の `DynLibDeps` が更新されること
-- [ ] 既存の `ContentHash` / `SymbolAnalysis` / `SyscallAnalysis` が変更されないこと
-- [ ] `CurrentSchemaVersion` に依存する既存テストが更新されていること
-- [ ] 全テストがパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `CurrentSchemaVersion` が 14 に変更されていること
+- [x] `Record` に `AnalysisWarnings []string` フィールドが追加されていること
+- [x] `ErrDynLibDepsRequired` のエラーメッセージが "binary" に汎用化されていること
+- [x] `Validator.SetMachODynLibAnalyzer` セッターが追加されていること
+- [x] `updateAnalysisRecord` コールバック内で DynLibDeps と AnalysisWarnings が初期化されてから再解析されること
+- [x] ELF 解析と Mach-O 解析が排他的に実行されること（ELF が結果を返した場合 Mach-O をスキップ）
+- [x] `cmd/record/main.go` で `MachODynLibAnalyzer` が注入されること
+- [-] `record --force` で Mach-O の `DynLibDeps` が更新されること
+- [x] 既存の `ContentHash` / `SymbolAnalysis` / `SyscallAnalysis` が変更されないこと
+- [-] `CurrentSchemaVersion` に依存する既存テストが更新されていること
+- [x] 全テストがパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 

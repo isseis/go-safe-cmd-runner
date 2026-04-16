@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
+	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -33,9 +34,10 @@ var (
 // deps holds injectable dependencies for the record command.
 // This makes the dependency graph visible at call sites and simplifies testing.
 type deps struct {
-	validatorFactory         func(hashDir string) (hashRecorder, error)
-	elfDynlibAnalyzerFactory func() *elfdynlib.DynLibAnalyzer // nil means dynlib analysis is disabled
-	mkdirAll                 func(path string, perm os.FileMode) error
+	validatorFactory           func(hashDir string) (hashRecorder, error)
+	elfDynlibAnalyzerFactory   func() *elfdynlib.DynLibAnalyzer       // nil means dynlib analysis is disabled
+	machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer // nil means Mach-O dynlib analysis is disabled
+	mkdirAll                   func(path string, perm os.FileMode) error
 }
 
 func defaultDeps() deps {
@@ -45,6 +47,9 @@ func defaultDeps() deps {
 		},
 		elfDynlibAnalyzerFactory: func() *elfdynlib.DynLibAnalyzer {
 			return elfdynlib.NewDynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
+		},
+		machoDynlibAnalyzerFactory: func() *machodylib.MachODynLibAnalyzer {
+			return machodylib.NewMachODynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
 		},
 		mkdirAll: os.MkdirAll,
 	}
@@ -128,6 +133,9 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	if fv, ok := validator.(*filevalidator.Validator); ok {
 		if d.elfDynlibAnalyzerFactory != nil {
 			fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
+		}
+		if d.machoDynlibAnalyzerFactory != nil {
+			fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 		}
 		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())
 

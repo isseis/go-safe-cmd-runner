@@ -1,3 +1,5 @@
+package machodylib
+
 // Package machodylib provides Mach-O dynamic library dependency analysis
 // for LC_LOAD_DYLIB integrity verification.
 //
@@ -12,4 +14,3 @@
 // dyld shared cache libraries (macOS system libraries that live in the shared
 // cache rather than as individual files on disk) are identified by
 // IsDyldSharedCacheLib and excluded from hash verification.
-package machodylib

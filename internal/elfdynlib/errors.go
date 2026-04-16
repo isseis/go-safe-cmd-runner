@@ -83,13 +83,13 @@ func (e *ErrEmptyLibraryPath) Error() string {
 }
 
 // ErrDynLibDepsRequired indicates that a DynLibDeps record is required
-// but not present for an ELF binary.
+// but not present for a binary.
 type ErrDynLibDepsRequired struct {
 	BinaryPath string
 }
 
 func (e *ErrDynLibDepsRequired) Error() string {
-	return fmt.Sprintf("dynamic library dependencies not recorded for ELF binary: %s\n"+
+	return fmt.Sprintf("dynamic library dependencies not recorded for binary: %s\n"+
 		"  please re-run 'record' command",
 		e.BinaryPath)
 }
