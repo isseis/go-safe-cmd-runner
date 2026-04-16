@@ -285,7 +285,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
         switch token {
         case "@executable_path":
             candidate := filepath.Join(r.executableDir, suffix)
-            resolved, err := tryResolve(candidate)
+            resolved, err := r.tryResolve(candidate)
             if err == nil {
                 return resolved, nil
             }
@@ -299,7 +299,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
         case "@loader_path":
             loaderDir := filepath.Dir(loaderPath)
             candidate := filepath.Join(loaderDir, suffix)
-            resolved, err := tryResolve(candidate)
+            resolved, err := r.tryResolve(candidate)
             if err == nil {
                 return resolved, nil
             }
@@ -315,7 +315,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
                 // LC_RPATH entries may contain @executable_path or @loader_path
                 expandedRpath := r.expandRpathEntry(rp, loaderPath)
                 candidate := filepath.Join(expandedRpath, suffix)
-                resolved, err := tryResolve(candidate)
+                resolved, err := r.tryResolve(candidate)
                 if err == nil {
                     return resolved, nil
                 }
@@ -338,7 +338,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 
     // Absolute path (no @ token, starts with /)
     if filepath.IsAbs(installName) {
-        resolved, err := tryResolve(installName)
+        resolved, err := r.tryResolve(installName)
         if err == nil {
             return resolved, nil
         }
@@ -353,7 +353,7 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
     basename := filepath.Base(installName)
     for _, dir := range defaultSearchPaths {
         candidate := filepath.Join(dir, basename)
-        resolved, err := tryResolve(candidate)
+        resolved, err := r.tryResolve(candidate)
         if err == nil {
             return resolved, nil
         }
