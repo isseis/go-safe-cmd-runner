@@ -547,9 +547,9 @@ func (m *Manager) hasMachODynamicLibraryDeps(path string) (bool, error) {
 |------------|-------|-------------|
 | ライブラリ改ざん（同一パスで中身書き換え） | ハッシュ照合 | `DynLibVerifier.Verify` でハッシュ不一致を検出 |
 | ライブラリ丸ごと差し替え（同一パスへ別ライブラリをコピー） | ハッシュ照合 | `DynLibVerifier.Verify` でハッシュ不一致を検出 |
-| `DYLD_LIBRARY_PATH` ハイジャック | 設計上除外 | `runner` は `DYLD_LIBRARY_PATH` をクリアして実行、`record` 時も使用しない |
+| `DYLD_LIBRARY_PATH` ハイジャック | 現行実装の防御対象外 | `runner` の既存環境変数サニタイズは `DYLD_*` を常時クリアしないため、本設計では `record`/検証ロジックがこの前提に依存しない |
 | 間接依存ライブラリの差し替え | BFS 再帰解決 | 完全な依存ツリーがスナップショットに含まれる |
-| `DYLD_INSERT_LIBRARIES` 注入 | 設計上除外 | `runner` が環境変数クリア済み |
+| `DYLD_INSERT_LIBRARIES` 注入 | 現行実装の防御対象外 | `runner` は現時点で `DYLD_INSERT_LIBRARIES` のクリアを保証しない。必要なら別タスクで環境変数サニタイズ強化を行う |
 | `dlopen` による未知ライブラリのロード | 既存の `HasDynamicLoad` 検出 | 既存の方策 B（タスク 0074）で対応済み |
 | シンボリックリンク攻撃（ライブラリ読み取り時） | `safefileio` | `O_NOFOLLOW` による防止 |
 | 不完全な記録（`path: ""`）の悪用 | 防御的検出 | `DynLibVerifier` が `ErrEmptyLibraryPath` を返す |
