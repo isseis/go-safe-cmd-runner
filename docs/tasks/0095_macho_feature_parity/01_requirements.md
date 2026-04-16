@@ -64,13 +64,13 @@
 | G3 | Fat バイナリの全スライス解析 | N/A | ✅ 0073 | 対応済み |
 | G4 | 機械語 syscall 静的解析（syscall 番号の特定） | ✅ 0070 (x86_64) / 0072 (arm64) | ⚠️ 0073（`svc #0x80` の存在確認のみ、番号解析なし） | **FR-3.2** |
 | G5 | 動的リンクライブラリ整合性検証（依存ライブラリのハッシュ記録・照合） | ✅ 0074 | ❌ 未実装 | **FR-3.3** |
-| G6 | ネットワークシンボル解析結果のキャッシュ（`record` → `runner`） | ✅ 0076 | ❌ 未実装（毎回 live 解析） | **FR-3.4** |
+| G6 | ネットワークシンボル解析結果のキャッシュ（`record` → `runner`） | ✅ 0076 | ⚠️ `DetectedSymbols` / `DynamicLoadSymbols` は共通キャッシュ済みだが、Mach-O 固有の direct syscall/high risk 信号は live 解析依存 | **FR-3.4** |
 | G7 | CGO/動的バイナリへの syscall 解析フォールバック | ✅ 0077 | ❌ 未実装 | **FR-3.5** |
 | G8 | 動的コードロード（`mprotect(PROT_EXEC)`）静的検出 | ✅ 0078 | ❌ 未実装 | **FR-3.6** |
 | G9 | `pkey_mprotect(PROT_EXEC)` 静的検出 | ✅ 0081 | N/A（Linux 固有） | 対象外 |
 | G10 | libc syscall ラッパー関数キャッシュ（関数名 → syscall 番号） | ✅ 0079 | ❌ 未実装（libSystem.dylib 対応なし） | **FR-3.7** |
-| G11 | 直接依存ライブラリの SOName による既知ネットワークライブラリ検出 | ✅ 0082 | ❌ 未実装 | **FR-3.8** |
-| G12 | `dlopen`/`dlsym` シンボル検出（`HasDynamicLoad`） | ✅ 0074/0076 | ⚠️ `DynamicLoadSymbols` フィールドは収集するが `record` 側でのキャッシュ・整合性利用が未配線 | **FR-3.4** に包含 |
+| G11 | 直接依存 `.dylib` のベース名による既知ネットワークライブラリ検出 | ✅ 0082 | ❌ 未実装 | **FR-3.8** |
+| G12 | `dlopen`/`dlsym` シンボル検出（dynamic load） | ✅ 0074/0076 | ✅ `DynamicLoadSymbols` は `SymbolAnalysis` に保存され、runner 判定でも利用済み | 対応済み |
 | G13 | 実行バイナリ本体の `.text` セクション走査 | ✅ 0070/0072 | ✅ 0073（`svc #0x80` のみ） | G4 に包含 |
 | G14 | 特権アクセス（execute-only バイナリ）対応 | ✅ 0069 | ❌ 未実装 | **FR-3.9** |
 
@@ -78,10 +78,32 @@
 
 | 項目 | 内容 | 影響 |
 |------|------|------|
-| dyld shared cache | `libSystem.dylib` 等のシステムライブラリはディスク上に個別ファイルとして存在しない場合がある（macOS 11+） | G5（依存ライブラリ整合性検証）および G10（libSystem syscall ラッパーキャッシュ）で独自対応が必要 |
-| コード署名 | Apple の署名検証が OS レベルで実施される | 本システムのハッシュ検証と併存可能だが、未署名バイナリの扱いを要定義 |
+| dyld shared cache | `libSystem.dylib` 等のシステムライブラリはディスク上に個別ファイルとして存在しない場合がある（macOS 11+）。詳細は下記 | G5（依存ライブラリ整合性検証）および G10（libSystem syscall ラッパーキャッシュ）で独自対応が必要 |
+| コード署名 | Apple の署名検証が OS レベルで実施される | 本システムのハッシュ検証と併存する。未署名バイナリを追加で拒否する要件は本タスクでは扱わない |
 | `svc #0x80` の希少性 | 正規バイナリでは出現しない | ELF のように全 syscall 命令を解析する前提が成り立たない。検出時は即 high risk 扱い（タスク 0073 方針維持） |
 | SIP (System Integrity Protection) | `/usr/bin` 等の書き換え不可領域が存在 | 供給チェーン攻撃の前提が ELF と異なり、優先度判断に影響 |
+
+#### dyld shared cache の詳細
+
+**格納場所の変遷:**
+
+| macOS バージョン | 格納場所 |
+|---|---|
+| ~10.15 (Catalina) | `/private/var/db/dyld/dyld_shared_cache_<arch>` |
+| 11 (Big Sur) | `/System/Library/dyld/dyld_shared_cache_<arch>` |
+| 12 (Monterey) | 同上（サブキャッシュ `.1`, `.2`, ... 分割導入） |
+| 13 (Ventura)〜15 | Cryptex 導入: `/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld/dyld_shared_cache_<arch>[.N]` |
+
+- Apple Silicon マシンでは `arm64e` アーキテクチャのキャッシュが使用される
+- macOS 12+ ではキャッシュが主キャッシュ + 複数サブキャッシュ (`.1`, `.2`, ...) + `.symbols` に分割されるため、抽出には全ファイルが必要
+
+**ファイルフォーマット概要:**
+
+- **ヘッダ** (`dyld_cache_header`): magic `"dyld_v1 "` + アーキ文字列、mapping/images オフセット、UUID
+- **mapping 配列** (`dyld_cache_mapping_info`): 仮想アドレス → ファイルオフセット（TEXT/DATA/LINKEDIT）
+- **images 配列** (`dyld_cache_image_info`): 各 dylib のロードアドレス、パス文字列オフセット
+- **slide info**: DATA 領域の再配置テーブル
+- 仕様ソース: [apple-oss-distributions/dyld](https://github.com/apple-oss-distributions/dyld) の `cache-builder/dyld_cache_format.h`
 
 ## 4. 機能要件
 
@@ -92,7 +114,7 @@
 - `safefileio` パッケージを経由したファイルアクセス（シンボリックリンク・TOCTOU 保護）
 - 不正な Mach-O ファイルに対するパニック非発生
 - 解析失敗時は安全側（ネットワーク操作ありと見做す）に倒す
-- Go 標準ライブラリ `debug/macho` および準公式 `golang.org/x/arch/arm64/arm64asm` のみを使用
+- 原則として Go 標準ライブラリ `debug/macho` および準公式 `golang.org/x/arch/arm64/arm64asm` を使用する。追加依存を導入する場合は、FR ごとに必要性・ライセンス・配布影響を明記する
 
 ### FR-3.2: Mach-O 機械語 syscall 静的解析（G4）
 
@@ -120,22 +142,23 @@
   4. `DYLD_LIBRARY_PATH` / `DYLD_FALLBACK_LIBRARY_PATH` は **`record` 時は使用しない**。`runner` は常にこれらをクリアして子プロセスを起動する
 - **dyld shared cache への対応**: `libSystem.dylib` 等がファイルシステム上に存在しない場合は、ハッシュ検証をスキップし、**コード署名検証に委譲する旨をログに記録**する。あるいは macOS バージョンとアーキテクチャに基づく whitelist で代替する（詳細は設計フェーズ）
 - **パス正規化**: `filepath.EvalSymlinks` + `filepath.Clean`（ELF と同様）
-- **`fileanalysis.Record` への保存**: `DynLibDeps` フィールドを Mach-O でも使用する。スキーマバージョン更新を要する場合は新規 `DYLIB_DEPS` フィールドとして区別するか、既存フィールドを共用するかは設計で決定
+- **`fileanalysis.Record` への保存**: Mach-O でも既存の `DynLibDeps` フィールドを使用する。別フィールドは追加しない
 - **`LC_RPATH` 非対応ケース**: 未サポートのパストークンを検出した場合は `ErrDyldTokenNotSupported` として `record` を中断
 
 **実装優先度**: 高（供給チェーン攻撃対策として基幹）
 
-### FR-3.4: Mach-O ネットワークシンボル解析結果のキャッシュ（G6、G12 包含）
+### FR-3.4: Mach-O 固有 high risk 信号のキャッシュ統合（G6）
 
-タスク 0076 相当の仕組みを Mach-O に適用する：
+`DetectedSymbols` / `DynamicLoadSymbols` のキャッシュ自体は既に共通実装で扱えているため、
+本 FR では Mach-O 固有の未キャッシュ信号を既存スキーマへ統合する：
 
-- **`record` 時**: `StandardMachOAnalyzer.AnalyzeNetworkSymbols` の結果（`HasNetworkSymbols`, `DetectedSymbols`, `DynamicLoadSymbols`, `HasDirectSyscall`）を `fileanalysis.Record.NetworkSymbolAnalysis` に保存
-- **`runner` 実行時**: 保存済み結果を参照し、live 解析をスキップ
-- **`HasDynamicLoad` の活用**: `DynamicLoadSymbols`（`dlopen`, `dlsym`, `dlvsym`）が検出された場合のリスク加点ロジックを、ELF 同等に配線
-- **Fat バイナリ**: 記録時点で全スライスの結合結果を保存（再解析時の非決定性を避けるため）
-- **`svc #0x80` 検出フラグ**: 記録時に `HasDirectSyscall` として保存し、runner 実行時の high risk 判定に使用
+- **`record` 時**: FR-3.2 / FR-3.6 で得た Mach-O の syscall 解析結果を既存の `fileanalysis.Record.SyscallAnalysis` に保存する
+- **`record` 時の direct syscall**: 現行の「`svc #0x80` 検出 → `AnalysisError`」だけでは runner が毎回 live 解析に依存するため、記録可能な表現へ整理する
+- **`runner` 実行時**: 保存済みの `SyscallAnalysis` と `SymbolAnalysis` を参照し、Mach-O でも ELF 同様に live 再解析を最小化する
+- **Fat バイナリ**: 記録時点で全スライスの結合結果を保存し、再解析時の非決定性を避ける
+- **スキーマ方針**: 新規の `NetworkSymbolAnalysis` / `HasDirectSyscall` フィールドは導入せず、既存の `SymbolAnalysis` / `SyscallAnalysis` / `AnalysisWarnings` に集約する
 
-**実装優先度**: 高（毎回の live 解析コスト削減、およびスキーマの統一性確保）
+**実装優先度**: 中（既存キャッシュ基盤はあるため、Mach-O 固有信号の保存統合が中心）
 
 ### FR-3.5: CGO/動的 Mach-O バイナリへの syscall 解析フォールバック（G7）
 
@@ -156,7 +179,7 @@
 - **PROT_EXEC フラグ**: `0x4`（POSIX 共通）
 - **後方スキャン**: FR-3.2 と共通の arm64 デコーダを再利用
 - **libSystem.dylib 経由の呼び出し**: 本検出はバイナリ本体の `.text` にしか適用されないため、通常の動的リンクバイナリでは `mprotect` ラッパーは libSystem 側にある。FR-3.7 との併用で検出範囲を広げる
-- **結果の保存**: `SyscallArgEvalResult` を Mach-O 版でも保存（FR-3.4 のスキーマに組み込む）
+- **結果の保存**: `SyscallArgEvalResult` を Mach-O 版でも既存の `fileanalysis.Record.SyscallAnalysis.ArgEvalResults` に保存する
 
 **実装優先度**: 中（動的コードロードシグナルの補強）
 
@@ -168,20 +191,39 @@
 - **ラッパー関数の特定**: FR-3.2 の syscall 解析を libSystem の各エクスポート関数に適用
 - **dyld shared cache への対応**:
   1. `libSystem.dylib` がファイルシステム上に存在する場合は従来通り解析
-  2. 存在しない場合は dyld shared cache（`/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld/dyld_shared_cache_*`）から該当 `.dylib` を抽出して解析。抽出には専用ツール（`dyld_shared_cache_util` または自前実装）が必要
+  2. 存在しない場合は dyld shared cache から該当 `.dylib` を抽出して解析（格納場所は §3.2 参照）
   3. 実装複雑度が高いため、初期リリースでは「dyld shared cache 利用時は解析をスキップし、シンボル名単体一致にフォールバック」とすることを許容
 - **キャッシュ保存場所**: `<hash-dir>/lib-cache/` サブディレクトリ（ELF と共通）
 - **キャッシュキー**: ライブラリファイルのハッシュ値。dyld shared cache 由来の場合は shared cache 自体のハッシュ + エントリ名
 
+**dyld shared cache からの抽出手段:**
+
+| 手段 | 概要 | 長所 | 短所 |
+|------|------|------|------|
+| **blacktop/ipsw `pkg/dyld`** | Pure Go の dyld shared cache パーサ/抽出ライブラリ | MIT ライセンス、クロスプラットフォーム、活発にメンテナンス（★3300+）、サブキャッシュ対応済み、Go import で単体バイナリに統合可能 | 依存ライブラリが増加、ipsw 全体のサイズが大きいため pkg/dyld のみ import する場合でも依存整理が必要 |
+| **keith/dyld-shared-cache-extractor** | `dsc_extractor.bundle` を呼び出すラッパー | `brew install` で導入可能、サブキャッシュ対応 | macOS 限定、Xcode 依存（`dsc_extractor.bundle`）、外部コマンド呼び出し |
+| **`dsc_extractor.bundle` (Xcode 付属)** | Apple 提供の抽出用 dylib | Apple 公式 | Xcode インストール必須、再配布不可、cgo (`dlopen`) 必要 |
+| **Apple `dyld_shared_cache_util`** | Apple 公式 CLI | フル機能 | 自前ビルド必要、APSL 2.0 ライセンス、再配布の整理が必要 |
+| **ランタイム `dlopen` + メモリ解析** | 自プロセスに dylib をロードしてメモリ上の Mach-O を解析 | SIP 下でも動作、外部依存なし | rebase/bind 済みのため元バイナリと異なる、cgo 必要 |
+| **`.tbd` スタブ** | Xcode SDK 内のテキストベース dylib 定義 | シンボル名一覧のみの用途なら十分 | **マシンコードを含まない** — syscall ラッパーの命令列解析には使用不可 |
+
+**推奨方針（段階的アプローチ）:**
+
+1. **初期リリース**: dyld shared cache 内のライブラリに対しては syscall ラッパー解析をスキップし、シンボル名単体一致にフォールバック
+2. **将来実装**: `blacktop/ipsw` の `pkg/dyld` パッケージを Go ライブラリとして import し、キャッシュからの `.dylib` 抽出を実装する
+   - **根拠**: Pure Go（cgo 不要）、MIT ライセンス、サブキャッシュ対応済み、単体バイナリに統合可能
+   - **リスク**: 依存ライブラリのサイズ・transitive dependency の評価を設計フェーズで実施すること
+3. **不採用**: `.tbd` ファイルは命令列を含まないため syscall 解析には使用不可。`dsc_extractor.bundle` / `dyld_shared_cache_util` は外部依存・ライセンスの観点から非推奨
+
 **実装優先度**: 低（dyld shared cache 対応の実装コストが大きい）。段階的リリースを推奨
 
-### FR-3.8: 直接依存 `.dylib` の SOName ベース既知ネットワークライブラリ検出（G11）
+### FR-3.8: 直接依存 `.dylib` のベース名ベース既知ネットワークライブラリ検出（G11）
 
 タスク 0082（方策 C）相当の仕組みを Mach-O に適用する：
 
 - `LC_LOAD_DYLIB` のインストール名（例: `/usr/local/opt/ruby/lib/libruby.3.2.dylib`）からベース名を抽出し、既知ネットワークライブラリリスト（`libruby`, `libpython`, `libperl`, `libcurl`, `libssl` 等のプレフィックス照合）と突き合わせる
-- **プレフィックスリスト**: ELF 版（`known_network_libs.go`）と共通のデータ構造を使用し、Mach-O のインストール名正規化レイヤーを追加
-- **FR-3.3 との統合**: `DynLibDeps` 相当の記録に SOName ベース判定結果を併記
+- **プレフィックスリスト**: ELF 版の `known_network_libs.go` をそのまま再利用し、Mach-O 側では「インストール名 → ベース名」正規化のみ追加する
+- **FR-3.3 との統合**: `DynLibDeps` に格納された Mach-O 依存ライブラリ名から `KnownNetworkLibDeps` を導出する
 
 **実装優先度**: 中（Ruby/Python 等のランタイムでの誤検出回避に有用）
 
@@ -232,7 +274,7 @@
 | 0072 (ELF arm64 syscall) | FR-3.2 | arm64 デコーダを再利用 |
 | 0073 (Mach-O ネットワーク検出) | G1-G3, G13 | 基盤。本タスクはこの上に機能追加 |
 | 0074 (ELF `DT_NEEDED` 整合性) | FR-3.3 | `LC_LOAD_DYLIB` に置換 |
-| 0076 (ネットワークシンボルキャッシュ) | FR-3.4 | 既存のスキーマ拡張 |
+| 0076 (ネットワークシンボルキャッシュ) | FR-3.4 | 共通キャッシュ基盤は既存実装を流用し、Mach-O 固有信号の保存だけを追加 |
 | 0077 (CGO 動的バイナリフォールバック) | FR-3.5 | FR-3.2 に依存 |
 | 0078 (mprotect PROT_EXEC) | FR-3.6 | arm64 デコーダを共用 |
 | 0079 (libc syscall ラッパーキャッシュ) | FR-3.7 | dyld shared cache 対応が追加必要 |
@@ -246,15 +288,14 @@
 
 ### フェーズ 1（基盤・高優先度）
 
-1. **FR-3.4**: Mach-O ネットワークシンボル解析結果のキャッシュ
-   - 毎回 live 解析のコストを削減し、後続機能の記録先スキーマを確立する
-2. **FR-3.3**: `LC_LOAD_DYLIB` 整合性検証
+1. **FR-3.3**: `LC_LOAD_DYLIB` 整合性検証
    - 供給チェーン攻撃対策として最も効果的。dyld shared cache 対応は初期では簡易版でよい
 
 ### フェーズ 2（検出力強化）
 
-3. **FR-3.2**: Mach-O 機械語 syscall 静的解析（`x16` レジスタ + macOS syscall テーブル）
-4. **FR-3.8**: SOName ベース既知ネットワークライブラリ検出
+2. **FR-3.2**: Mach-O 機械語 syscall 静的解析（`x16` レジスタ + macOS syscall テーブル）
+3. **FR-3.4**: Mach-O 固有 high risk 信号のキャッシュ統合
+4. **FR-3.8**: `.dylib` ベース名ベース既知ネットワークライブラリ検出
 5. **FR-3.6**: Mach-O `mprotect(PROT_EXEC)` 静的検出
 
 ### フェーズ 3（補完）
@@ -263,56 +304,13 @@
 7. **FR-3.7**: libSystem.dylib syscall ラッパーキャッシュ（dyld shared cache 対応）
 8. **FR-3.9**: 特権アクセス対応
 
-## 9. 未解決課題・調査事項
+## 9. 設計上の決定事項
 
-以下は設計フェーズで調査・決定すべき事項：
-
-1. ~~**dyld shared cache からの `.dylib` 抽出**~~ → §10 で調査完了
-2. **コード署名検証との関係**: 本システムのハッシュ検証と Apple のコード署名検証をどう併存させるか（相互補完 / 重複排除）
-3. **Fat バイナリのキャッシュ粒度**: 全スライスを単一のエントリとして保存するか、スライスごとに分けるか
-4. **`fileanalysis.Record` スキーマ**: ELF 用 `DynLibDeps` と Mach-O 用データを同一フィールドで扱うか、別フィールドで分離するか
-5. **macOS バージョン差異**: macOS 11（Big Sur）以降の dyld shared cache、macOS 13 の Cryptex 導入等、対応範囲を明確化する
-6. **CI 環境**: GitHub Actions `macos-latest` で arm64 テストが実行可能か（現状は x86_64 ランナーが多い）
-
-## 10. 調査結果: dyld shared cache からの `.dylib` 抽出
-
-### 10.1 dyld shared cache の格納場所
-
-| macOS バージョン | 格納場所 |
-|---|---|
-| ~10.15 (Catalina) | `/private/var/db/dyld/dyld_shared_cache_<arch>` |
-| 11 (Big Sur) | `/System/Library/dyld/dyld_shared_cache_<arch>` |
-| 12 (Monterey) | 同上（サブキャッシュ `.1`, `.2`, ... 分割導入） |
-| 13 (Ventura)〜15 | Cryptex 導入: `/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld/dyld_shared_cache_<arch>[.N]` |
-
-- Apple Silicon マシンでは `arm64e` アーキテクチャのキャッシュが使用される
-- macOS 12+ ではキャッシュが主キャッシュ + 複数サブキャッシュ (`.1`, `.2`, ...) + `.symbols` に分割されるため、抽出には全ファイルが必要
-
-### 10.2 キャッシュファイルフォーマット概要
-
-- **ヘッダ** (`dyld_cache_header`): magic `"dyld_v1 "` + アーキ文字列、mapping/images オフセット、UUID
-- **mapping 配列** (`dyld_cache_mapping_info`): 仮想アドレス → ファイルオフセット（TEXT/DATA/LINKEDIT）
-- **images 配列** (`dyld_cache_image_info`): 各 dylib のロードアドレス、パス文字列オフセット
-- **slide info**: DATA 領域の再配置テーブル
-- 仕様ソース: [apple-oss-distributions/dyld](https://github.com/apple-oss-distributions/dyld) の `cache-builder/dyld_cache_format.h`
-
-### 10.3 抽出手段の比較
-
-| 手段 | 概要 | 長所 | 短所 |
-|------|------|------|------|
-| **blacktop/ipsw `pkg/dyld`** | Pure Go の dyld shared cache パーサ/抽出ライブラリ | MIT ライセンス、クロスプラットフォーム、活発にメンテナンス（★3300+）、サブキャッシュ対応済み、Go import で単体バイナリに統合可能 | 依存ライブラリが増加、ipsw 全体のサイズが大きいため pkg/dyld のみ import する場合でも依存整理が必要 |
-| **keith/dyld-shared-cache-extractor** | `dsc_extractor.bundle` を呼び出すラッパー | `brew install` で導入可能、サブキャッシュ対応 | macOS 限定、Xcode 依存（`dsc_extractor.bundle`）、外部コマンド呼び出し |
-| **`dsc_extractor.bundle` (Xcode 付属)** | Apple 提供の抽出用 dylib | Apple 公式 | Xcode インストール必須、再配布不可、cgo (`dlopen`) 必要 |
-| **Apple `dyld_shared_cache_util`** | Apple 公式 CLI | フル機能 | 自前ビルド必要、APSL 2.0 ライセンス、再配布の整理が必要 |
-| **ランタイム `dlopen` + メモリ解析** | 自プロセスに dylib をロードしてメモリ上の Mach-O を解析 | SIP 下でも動作、外部依存なし | rebase/bind 済みのため元バイナリと異なる、cgo 必要 |
-| **`.tbd` スタブ** | Xcode SDK 内のテキストベース dylib 定義 | シンボル名一覧のみの用途なら十分 | **マシンコードを含まない** — syscall ラッパーの命令列解析には使用不可 |
-
-### 10.4 推奨方針
-
-**段階的アプローチ:**
-
-1. **初期リリース（FR-3.7 段階的リリースの第 1 段階）**: dyld shared cache 内のライブラリに対しては syscall ラッパー解析をスキップし、**シンボル名単体一致にフォールバック**する。これは §4 FR-3.7 で既に許容済み
-2. **将来実装**: `blacktop/ipsw` の `pkg/dyld` パッケージを Go ライブラリとして import し、キャッシュからの `.dylib` 抽出を実装する
-   - **根拠**: Pure Go（cgo 不要）、MIT ライセンス、サブキャッシュ対応済み、単体バイナリに統合可能
-   - **リスク**: 依存ライブラリのサイズ・transitive dependency の評価を設計フェーズで実施すること
-3. **不採用**: `.tbd` ファイルは命令列を含まないため syscall 解析には使用不可。`dsc_extractor.bundle` / `dyld_shared_cache_util` は外部依存・ライセンスの観点から非推奨
+| 項目 | 決定内容 |
+|------|----------|
+| dyld shared cache からの `.dylib` 抽出 | Go での実装は可能（§3.2 に格納場所・フォーマット、FR-3.7 に抽出手段の比較・推奨方針を記載） |
+| コード署名検証との関係 | 本システムのハッシュ検証と Apple のコード署名検証は**相互補完**として併存する。本システムは供給チェーン攻撃（record 時と実行時のバイナリ差し替え）を検出し、Apple のコード署名は改竄検出を担う |
+| Fat バイナリのキャッシュ粒度 | 当面は arm64 のみ対応のため、スライス分割は不要 |
+| `fileanalysis.Record` スキーマ | ELF 用 `DynLibDeps` と Mach-O 用データは同一フィールドで扱う。別フィールドの必要性が出た時点で再検討する |
+| macOS バージョン差異 | 原則として最新版 macOS を対象とする |
+| CI 環境 | 本タスクでは検討対象外とする |
