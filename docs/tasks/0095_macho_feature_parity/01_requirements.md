@@ -62,17 +62,17 @@
 | G1 | バイナリ形式判定 | ✅ 0069 | ✅ 0073 | 対応済み |
 | G2 | インポートシンボル解析 | ✅ 0069 | ✅ 0073 | 対応済み |
 | G3 | Fat バイナリの全スライス解析 | N/A | ✅ 0073 | 対応済み |
-| G4 | 機械語 syscall 静的解析（syscall 番号の特定） | ✅ 0070 (x86_64) / 0072 (arm64) | ⚠️ 0073（`svc #0x80` の存在確認のみ、番号解析なし） | **FR-3.2** |
-| G5 | 動的リンクライブラリ整合性検証（依存ライブラリのハッシュ記録・照合） | ✅ 0074 | ❌ 未実装 | **FR-3.3** |
-| G6 | ネットワークシンボル解析結果のキャッシュ（`record` → `runner`） | ✅ 0076 | ⚠️ `DetectedSymbols` / `DynamicLoadSymbols` は共通キャッシュ済みだが、Mach-O 固有の direct syscall/high risk 信号は live 解析依存 | **FR-3.4** |
-| G7 | CGO/動的バイナリへの syscall 解析フォールバック | ✅ 0077 | ❌ 未実装 | **FR-3.5** |
-| G8 | 動的コードロード（`mprotect(PROT_EXEC)`）静的検出 | ✅ 0078 | ❌ 未実装 | **FR-3.6** |
+| G4 | 機械語 syscall 静的解析（syscall 番号の特定） | ✅ 0070 (x86_64) / 0072 (arm64) | ⚠️ 0073（`svc #0x80` の存在確認のみ、番号解析なし） | **FR-4.2** |
+| G5 | 動的リンクライブラリ整合性検証（依存ライブラリのハッシュ記録・照合） | ✅ 0074 | ❌ 未実装 | **FR-4.3** |
+| G6 | ネットワークシンボル解析結果のキャッシュ（`record` → `runner`） | ✅ 0076 | ⚠️ `DetectedSymbols` / `DynamicLoadSymbols` は共通キャッシュ済みだが、Mach-O 固有の direct syscall/high risk 信号は live 解析依存 | **FR-4.4** |
+| G7 | CGO/動的バイナリへの syscall 解析フォールバック | ✅ 0077 | ❌ 未実装 | **FR-4.5** |
+| G8 | 動的コードロード（`mprotect(PROT_EXEC)`）静的検出 | ✅ 0078 | ❌ 未実装 | **FR-4.6** |
 | G9 | `pkey_mprotect(PROT_EXEC)` 静的検出 | ✅ 0081 | N/A（Linux 固有） | 対象外 |
-| G10 | libc syscall ラッパー関数キャッシュ（関数名 → syscall 番号） | ✅ 0079 | ❌ 未実装（libSystem.dylib 対応なし） | **FR-3.7** |
-| G11 | 直接依存 `.dylib` のベース名による既知ネットワークライブラリ検出 | ✅ 0082 | ❌ 未実装 | **FR-3.8** |
+| G10 | libc syscall ラッパー関数キャッシュ（関数名 → syscall 番号） | ✅ 0079 | ❌ 未実装（libSystem.dylib 対応なし） | **FR-4.7** |
+| G11 | 直接依存 `.dylib` のベース名による既知ネットワークライブラリ検出 | ✅ 0082 | ❌ 未実装 | **FR-4.8** |
 | G12 | `dlopen`/`dlsym` シンボル検出（dynamic load） | ✅ 0074/0076 | ✅ `DynamicLoadSymbols` は `SymbolAnalysis` に保存され、runner 判定でも利用済み | 対応済み |
 | G13 | 実行バイナリ本体の `.text` セクション走査 | ✅ 0070/0072 | ✅ 0073（`svc #0x80` のみ） | G4 に包含 |
-| G14 | 特権アクセス（execute-only バイナリ）対応 | ✅ 0069 | ❌ 未実装 | **FR-3.9** |
+| G14 | 特権アクセス（execute-only バイナリ）対応 | ✅ 0069 | ❌ 未実装 | **FR-4.9** |
 
 ### 3.2 macOS 固有の制約
 
@@ -105,18 +105,43 @@
 - **slide info**: DATA 領域の再配置テーブル
 - 仕様ソース: [apple-oss-distributions/dyld](https://github.com/apple-oss-distributions/dyld) の `cache-builder/dyld_cache_format.h`
 
+### 3.3 FR 実装完了後の到達状態
+
+全 FR（優先度低を含む）を実装した場合に達成される ELF との機能パリティを示す。
+
+凡例: ✅ ELF と同等 / ⚠️ 機能的に近いが差異あり / N/A 対象外（プラットフォーム固有）
+
+| # | 機能 | ELF | Mach-O（FR 完了後） | 残存する差異・制約 |
+|---|------|-----|--------------------|-------------------|
+| G1 | バイナリ形式判定 | ✅ | ✅ | — |
+| G2 | インポートシンボル解析 | ✅ | ✅ | — |
+| G3 | Fat バイナリの全スライス解析 | N/A | ✅ | — |
+| G4 | 機械語 syscall 静的解析（syscall 番号の特定） | ✅ | ✅ | `svc #0x80` は正規バイナリでは稀なため適用頻度は低い。検出ロジック自体は ELF arm64 と同等 |
+| G5 | 動的リンクライブラリ整合性検証 | ✅ | ⚠️ | dyld shared cache 内のシステムライブラリ（`libSystem.dylib` 等）はハッシュ検証不可。Apple のコード署名に委譲（macOS プラットフォーム制約） |
+| G6 | ネットワークシンボル解析結果のキャッシュ | ✅ | ✅ | FR-4.4 で Mach-O 固有の direct syscall 信号も既存スキーマへ統合 |
+| G7 | CGO/動的バイナリへの syscall 解析フォールバック | ✅ | ✅ | macOS の正規 Go バイナリは `libSystem.dylib` 経由で syscall を発行するため、主に難読化・マルウェア的バイナリの検出が対象になる点で用途が異なる |
+| G8 | 動的コードロード（`mprotect(PROT_EXEC)`）静的検出 | ✅ | ⚠️ | バイナリ本体 `.text` 内の直接 `svc #0x80` 経由呼び出しのみ検出。通常の動的リンクバイナリが `libSystem.dylib` 経由で呼ぶケースは FR-4.7（libSystem キャッシュ）との組み合わせで補完 |
+| G9 | `pkey_mprotect(PROT_EXEC)` 静的検出 | ✅ | N/A | Linux 固有 syscall。macOS には存在しない |
+| G10 | libc syscall ラッパー関数キャッシュ | ✅ | ⚠️ | 初期リリース（FR-4.7 段階 1）は dyld shared cache 内ライブラリをシンボル名一致にフォールバック。`blacktop/ipsw` を用いた将来実装（段階 2）で ELF 同等のキャッシュに到達 |
+| G11 | 直接依存ライブラリの既知ネットワークライブラリ検出 | ✅ | ✅ | ELF 版の `known_network_libs.go` を共用。Mach-O 側はインストール名正規化のみ追加 |
+| G12 | `dlopen`/`dlsym` シンボル検出 | ✅ | ✅ | 既に対応済み |
+| G13 | 実行バイナリ本体の `.text` セクション走査 | ✅ | ✅ | G4 に包含 |
+| G14 | 特権アクセス（execute-only バイナリ）対応 | ✅ | ✅ | macOS では execute-only バイナリは稀 |
+
+**⚠️ 項目のまとめ:** 残存する差異はいずれも実装上の問題ではなく、macOS プラットフォームの構造的制約（dyld shared cache によるシステムライブラリの非公開、`svc #0x80` の希少性）に起因する。ELF と完全同一ではないが、これらの制約を踏まえた「機能的同等」を達成できる。
+
 ## 4. 機能要件
 
-### FR-3.1: 共通要件
+### FR-4.1: 共通要件
 
-本タスクで定義される個別機能（FR-3.2〜FR-3.9）は、いずれも以下を満たすこと：
+本タスクで定義される個別機能（FR-4.2〜FR-4.9）は、いずれも以下を満たすこと：
 
 - `safefileio` パッケージを経由したファイルアクセス（シンボリックリンク・TOCTOU 保護）
 - 不正な Mach-O ファイルに対するパニック非発生
 - 解析失敗時は安全側（ネットワーク操作ありと見做す）に倒す
 - 原則として Go 標準ライブラリ `debug/macho` および準公式 `golang.org/x/arch/arm64/arm64asm` を使用する。追加依存を導入する場合は、FR ごとに必要性・ライセンス・配布影響を明記する
 
-### FR-3.2: Mach-O 機械語 syscall 静的解析（G4）
+### FR-4.2: Mach-O 機械語 syscall 静的解析（G4）
 
 タスク 0072 の arm64 syscall 解析と同等の仕組みを Mach-O の `__TEXT,__text` セクションに
 適用すること。ただし macOS 固有の事情に配慮する：
@@ -130,7 +155,7 @@
 
 **実装優先度**: 中（`svc #0x80` は稀なため、主に Go 純正静的バイナリの将来対応用）
 
-### FR-3.3: Mach-O 動的リンクライブラリ整合性検証（G5）
+### FR-4.3: Mach-O 動的リンクライブラリ整合性検証（G5）
 
 タスク 0074 相当の機能を Mach-O に適用する：
 
@@ -147,12 +172,12 @@
 
 **実装優先度**: 高（供給チェーン攻撃対策として基幹）
 
-### FR-3.4: Mach-O 固有 high risk 信号のキャッシュ統合（G6）
+### FR-4.4: Mach-O 固有 high risk 信号のキャッシュ統合（G6）
 
 `DetectedSymbols` / `DynamicLoadSymbols` のキャッシュ自体は既に共通実装で扱えているため、
 本 FR では Mach-O 固有の未キャッシュ信号を既存スキーマへ統合する：
 
-- **`record` 時**: FR-3.2 / FR-3.6 で得た Mach-O の syscall 解析結果を既存の `fileanalysis.Record.SyscallAnalysis` に保存する
+- **`record` 時**: FR-4.2 / FR-4.6 で得た Mach-O の syscall 解析結果を既存の `fileanalysis.Record.SyscallAnalysis` に保存する
 - **`record` 時の direct syscall**: 現行の「`svc #0x80` 検出 → `AnalysisError`」だけでは runner が毎回 live 解析に依存するため、記録可能な表現へ整理する
 - **`runner` 実行時**: 保存済みの `SyscallAnalysis` と `SymbolAnalysis` を参照し、Mach-O でも ELF 同様に live 再解析を最小化する
 - **Fat バイナリ**: 記録時点で全スライスの結合結果を保存し、再解析時の非決定性を避ける
@@ -160,35 +185,35 @@
 
 **実装優先度**: 中（既存キャッシュ基盤はあるため、Mach-O 固有信号の保存統合が中心）
 
-### FR-3.5: CGO/動的 Mach-O バイナリへの syscall 解析フォールバック（G7）
+### FR-4.5: CGO/動的 Mach-O バイナリへの syscall 解析フォールバック（G7）
 
 タスク 0077 相当のフォールバックを Mach-O にも適用する：
 
-- インポートシンボル解析で `NoNetworkSymbols` となった Mach-O バイナリに対して、FR-3.2 の syscall 解析を適用
+- インポートシンボル解析で `NoNetworkSymbols` となった Mach-O バイナリに対して、FR-4.2 の syscall 解析を適用
 - **注記**: macOS の正規 Go バイナリは `libSystem.dylib` 経由で syscall を発行するため、本フォールバックが検出するのは主に「難読化・マルウェア的挙動のバイナリ」である
-- 実装は FR-3.2 の機械語 syscall 解析に依存
+- 実装は FR-4.2 の機械語 syscall 解析に依存
 
-**実装優先度**: 低（FR-3.2 の副次的効果として実現）
+**実装優先度**: 低（FR-4.2 の副次的効果として実現）
 
-### FR-3.6: Mach-O における `mprotect(PROT_EXEC)` 静的検出（G8）
+### FR-4.6: Mach-O における `mprotect(PROT_EXEC)` 静的検出（G8）
 
 タスク 0078 相当の検出を Mach-O に適用する：
 
 - **syscall 番号**: macOS arm64 BSD syscall `mprotect` = 74
 - **引数レジスタ**: `x2`（第3引数 `prot`）
 - **PROT_EXEC フラグ**: `0x4`（POSIX 共通）
-- **後方スキャン**: FR-3.2 と共通の arm64 デコーダを再利用
-- **libSystem.dylib 経由の呼び出し**: 本検出はバイナリ本体の `.text` にしか適用されないため、通常の動的リンクバイナリでは `mprotect` ラッパーは libSystem 側にある。FR-3.7 との併用で検出範囲を広げる
+- **後方スキャン**: FR-4.2 と共通の arm64 デコーダを再利用
+- **libSystem.dylib 経由の呼び出し**: 本検出はバイナリ本体の `.text` にしか適用されないため、通常の動的リンクバイナリでは `mprotect` ラッパーは libSystem 側にある。FR-4.7 との併用で検出範囲を広げる
 - **結果の保存**: `SyscallArgEvalResult` を Mach-O 版でも既存の `fileanalysis.Record.SyscallAnalysis.ArgEvalResults` に保存する
 
 **実装優先度**: 中（動的コードロードシグナルの補強）
 
-### FR-3.7: libSystem.dylib システムコールラッパー関数キャッシュ（G10）
+### FR-4.7: libSystem.dylib システムコールラッパー関数キャッシュ（G10）
 
 タスク 0079 相当のキャッシュを macOS でも実装する：
 
 - **対象ライブラリ**: `libSystem.dylib`（およびサブコンポーネント `libsystem_kernel.dylib`）
-- **ラッパー関数の特定**: FR-3.2 の syscall 解析を libSystem の各エクスポート関数に適用
+- **ラッパー関数の特定**: FR-4.2 の syscall 解析を libSystem の各エクスポート関数に適用
 - **dyld shared cache への対応**:
   1. `libSystem.dylib` がファイルシステム上に存在する場合は従来通り解析
   2. 存在しない場合は dyld shared cache から該当 `.dylib` を抽出して解析（格納場所は §3.2 参照）
@@ -217,17 +242,17 @@
 
 **実装優先度**: 低（dyld shared cache 対応の実装コストが大きい）。段階的リリースを推奨
 
-### FR-3.8: 直接依存 `.dylib` のベース名ベース既知ネットワークライブラリ検出（G11）
+### FR-4.8: 直接依存 `.dylib` のベース名ベース既知ネットワークライブラリ検出（G11）
 
 タスク 0082（方策 C）相当の仕組みを Mach-O に適用する：
 
 - `LC_LOAD_DYLIB` のインストール名（例: `/usr/local/opt/ruby/lib/libruby.3.2.dylib`）からベース名を抽出し、既知ネットワークライブラリリスト（`libruby`, `libpython`, `libperl`, `libcurl`, `libssl` 等のプレフィックス照合）と突き合わせる
 - **プレフィックスリスト**: ELF 版の `known_network_libs.go` をそのまま再利用し、Mach-O 側では「インストール名 → ベース名」正規化のみ追加する
-- **FR-3.3 との統合**: `DynLibDeps` に格納された Mach-O 依存ライブラリ名から `KnownNetworkLibDeps` を導出する
+- **FR-4.3 との統合**: `DynLibDeps` に格納された Mach-O 依存ライブラリ名から `KnownNetworkLibDeps` を導出する
 
 **実装優先度**: 中（Ruby/Python 等のランタイムでの誤検出回避に有用）
 
-### FR-3.9: 特権アクセス対応（G14）
+### FR-4.9: 特権アクセス対応（G14）
 
 - `PrivilegeManager` 経由の execute-only バイナリ読み取りを `StandardMachOAnalyzer` でも対応
 - **実装優先度**: 低（macOS では execute-only パーミッションは稀）
@@ -270,16 +295,16 @@
 | 先行タスク | 対応する本タスクの FR | 備考 |
 |----------|---------------------|------|
 | 0069 (ELF `.dynsym`) | G1, G2（0073 で対応済み） | — |
-| 0070 (ELF x86_64 syscall) | FR-3.2 | x86_64 Mach-O は対象外 |
-| 0072 (ELF arm64 syscall) | FR-3.2 | arm64 デコーダを再利用 |
+| 0070 (ELF x86_64 syscall) | FR-4.2 | x86_64 Mach-O は対象外 |
+| 0072 (ELF arm64 syscall) | FR-4.2 | arm64 デコーダを再利用 |
 | 0073 (Mach-O ネットワーク検出) | G1-G3, G13 | 基盤。本タスクはこの上に機能追加 |
-| 0074 (ELF `DT_NEEDED` 整合性) | FR-3.3 | `LC_LOAD_DYLIB` に置換 |
-| 0076 (ネットワークシンボルキャッシュ) | FR-3.4 | 共通キャッシュ基盤は既存実装を流用し、Mach-O 固有信号の保存だけを追加 |
-| 0077 (CGO 動的バイナリフォールバック) | FR-3.5 | FR-3.2 に依存 |
-| 0078 (mprotect PROT_EXEC) | FR-3.6 | arm64 デコーダを共用 |
-| 0079 (libc syscall ラッパーキャッシュ) | FR-3.7 | dyld shared cache 対応が追加必要 |
+| 0074 (ELF `DT_NEEDED` 整合性) | FR-4.3 | `LC_LOAD_DYLIB` に置換 |
+| 0076 (ネットワークシンボルキャッシュ) | FR-4.4 | 共通キャッシュ基盤は既存実装を流用し、Mach-O 固有信号の保存だけを追加 |
+| 0077 (CGO 動的バイナリフォールバック) | FR-4.5 | FR-4.2 に依存 |
+| 0078 (mprotect PROT_EXEC) | FR-4.6 | arm64 デコーダを共用 |
+| 0079 (libc syscall ラッパーキャッシュ) | FR-4.7 | dyld shared cache 対応が追加必要 |
 | 0081 (pkey_mprotect) | 対象外（Linux 固有） | — |
-| 0082 (SOName ベース検出) | FR-3.8 | 既知ライブラリリストを共用 |
+| 0082 (SOName ベース検出) | FR-4.8 | 既知ライブラリリストを共用 |
 
 ## 8. 実装サブタスク分割案
 
@@ -288,27 +313,27 @@
 
 ### フェーズ 1（基盤・高優先度）
 
-1. **FR-3.3**: `LC_LOAD_DYLIB` 整合性検証
+1. **FR-4.3**: `LC_LOAD_DYLIB` 整合性検証
    - 供給チェーン攻撃対策として最も効果的。dyld shared cache 対応は初期では簡易版でよい
 
 ### フェーズ 2（検出力強化）
 
-2. **FR-3.2**: Mach-O 機械語 syscall 静的解析（`x16` レジスタ + macOS syscall テーブル）
-3. **FR-3.4**: Mach-O 固有 high risk 信号のキャッシュ統合
-4. **FR-3.8**: `.dylib` ベース名ベース既知ネットワークライブラリ検出
-5. **FR-3.6**: Mach-O `mprotect(PROT_EXEC)` 静的検出
+2. **FR-4.2**: Mach-O 機械語 syscall 静的解析（`x16` レジスタ + macOS syscall テーブル）
+3. **FR-4.4**: Mach-O 固有 high risk 信号のキャッシュ統合
+4. **FR-4.8**: `.dylib` ベース名ベース既知ネットワークライブラリ検出
+5. **FR-4.6**: Mach-O `mprotect(PROT_EXEC)` 静的検出
 
 ### フェーズ 3（補完）
 
-6. **FR-3.5**: CGO Mach-O フォールバック（FR-3.2 の副次的効果）
-7. **FR-3.7**: libSystem.dylib syscall ラッパーキャッシュ（dyld shared cache 対応）
-8. **FR-3.9**: 特権アクセス対応
+6. **FR-4.5**: CGO Mach-O フォールバック（FR-4.2 の副次的効果）
+7. **FR-4.7**: libSystem.dylib syscall ラッパーキャッシュ（dyld shared cache 対応）
+8. **FR-4.9**: 特権アクセス対応
 
 ## 9. 設計上の決定事項
 
 | 項目 | 決定内容 |
 |------|----------|
-| dyld shared cache からの `.dylib` 抽出 | Go での実装は可能（§3.2 に格納場所・フォーマット、FR-3.7 に抽出手段の比較・推奨方針を記載） |
+| dyld shared cache からの `.dylib` 抽出 | Go での実装は可能（§3.2 に格納場所・フォーマット、FR-4.7 に抽出手段の比較・推奨方針を記載） |
 | コード署名検証との関係 | 本システムのハッシュ検証と Apple のコード署名検証は**相互補完**として併存する。本システムは供給チェーン攻撃（record 時と実行時のバイナリ差し替え）を検出し、Apple のコード署名は改竄検出を担う |
 | Fat バイナリのキャッシュ粒度 | 当面は arm64 のみ対応のため、スライス分割は不要 |
 | `fileanalysis.Record` スキーマ | ELF 用 `DynLibDeps` と Mach-O 用データは同一フィールドで扱う。別フィールドの必要性が出た時点で再検討する |
