@@ -123,9 +123,15 @@ type Record struct {
 package machodylib
 
 import (
+    "errors"
     "fmt"
     "strings"
 )
+
+// ErrNotMachO is returned by openMachO when the file is not a valid Mach-O or
+// Fat binary. Callers use errors.Is to distinguish "not Mach-O" (skip silently)
+// from real failures such as I/O errors or ErrNoMatchingSlice.
+var ErrNotMachO = errors.New("not a Mach-O file")
 
 // ErrLibraryNotResolved indicates that an LC_LOAD_DYLIB install name could not
 // be resolved to a filesystem path through any of the available search methods.
@@ -477,7 +483,10 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
     // Open and parse Mach-O (or Fat binary)
     machoFile, err := a.openMachO(binaryPath)
     if err != nil {
-        return nil, nil, nil // not a Mach-O file
+        if errors.Is(err, ErrNotMachO) {
+            return nil, nil, nil // not a Mach-O file; skip silently
+        }
+        return nil, nil, err // I/O error, ErrNoMatchingSlice, etc.
     }
     defer func() { _ = machoFile.Close() }()
 
@@ -605,7 +614,9 @@ type depEntry struct {
 
 // openMachO opens the file at binaryPath and returns a *macho.File.
 // For Fat binaries, selects the slice matching runtime.GOARCH.
-// Returns an error if the file is not Mach-O or no matching slice exists.
+// Returns ErrNotMachO (via errors.Is) if the file is not a Mach-O or Fat binary.
+// Returns ErrNoMatchingSlice if the Fat binary has no slice for the native arch.
+// Returns other errors for I/O or permission failures.
 func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) {
     file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
     if err != nil {
@@ -654,7 +665,7 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) 
     machoFile, err := macho.NewFile(file)
     if err != nil {
         _ = file.Close()
-        return nil, err // not a Mach-O file
+        return nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
     }
 
     return machoFile, nil
