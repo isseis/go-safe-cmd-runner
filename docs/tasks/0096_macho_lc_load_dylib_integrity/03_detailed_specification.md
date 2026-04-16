@@ -386,15 +386,17 @@ func splitAtToken(installName string) (token, suffix string) {
     return installName[:idx], installName[idx:]
 }
 
-// tryResolve checks if the candidate path exists on the filesystem and
-// returns the normalized path (filepath.EvalSymlinks + filepath.Clean).
-// Note: filepath.EvalSymlinks returns an error if the file does not exist,
-// so a separate os.Lstat call is unnecessary.
-func tryResolve(candidate string) (string, error) {
-    cleaned := filepath.Clean(candidate)
-    resolved, err := filepath.EvalSymlinks(cleaned)
-    if err != nil {
+// tryResolve checks if the candidate path exists and resolves it via
+// filepath.EvalSymlinks + filepath.Clean for normalization.
+func (r *LibraryResolver) tryResolve(candidate string) (string, error) {
+    // Check if the file exists; distinguishes not-found from other errors
+    // (e.g., permission denied) consistent with the ELF resolver.
+    if _, err := os.Lstat(candidate); err != nil {
         return "", err
+    }
+    resolved, err := filepath.EvalSymlinks(candidate)
+    if err != nil {
+        return "", fmt.Errorf("failed to resolve symlinks for %s: %w", candidate, err)
     }
     return filepath.Clean(resolved), nil
 }
