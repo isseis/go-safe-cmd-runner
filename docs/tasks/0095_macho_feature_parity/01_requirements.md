@@ -267,9 +267,52 @@
 
 以下は設計フェーズで調査・決定すべき事項：
 
-1. **dyld shared cache からの `.dylib` 抽出**: Go で実装可能か、または外部ツール（`dyld_shared_cache_util`）への依存を許容するか
+1. ~~**dyld shared cache からの `.dylib` 抽出**~~ → §10 で調査完了
 2. **コード署名検証との関係**: 本システムのハッシュ検証と Apple のコード署名検証をどう併存させるか（相互補完 / 重複排除）
 3. **Fat バイナリのキャッシュ粒度**: 全スライスを単一のエントリとして保存するか、スライスごとに分けるか
 4. **`fileanalysis.Record` スキーマ**: ELF 用 `DynLibDeps` と Mach-O 用データを同一フィールドで扱うか、別フィールドで分離するか
 5. **macOS バージョン差異**: macOS 11（Big Sur）以降の dyld shared cache、macOS 13 の Cryptex 導入等、対応範囲を明確化する
 6. **CI 環境**: GitHub Actions `macos-latest` で arm64 テストが実行可能か（現状は x86_64 ランナーが多い）
+
+## 10. 調査結果: dyld shared cache からの `.dylib` 抽出
+
+### 10.1 dyld shared cache の格納場所
+
+| macOS バージョン | 格納場所 |
+|---|---|
+| ~10.15 (Catalina) | `/private/var/db/dyld/dyld_shared_cache_<arch>` |
+| 11 (Big Sur) | `/System/Library/dyld/dyld_shared_cache_<arch>` |
+| 12 (Monterey) | 同上（サブキャッシュ `.1`, `.2`, ... 分割導入） |
+| 13 (Ventura)〜15 | Cryptex 導入: `/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld/dyld_shared_cache_<arch>[.N]` |
+
+- Apple Silicon マシンでは `arm64e` アーキテクチャのキャッシュが使用される
+- macOS 12+ ではキャッシュが主キャッシュ + 複数サブキャッシュ (`.1`, `.2`, ...) + `.symbols` に分割されるため、抽出には全ファイルが必要
+
+### 10.2 キャッシュファイルフォーマット概要
+
+- **ヘッダ** (`dyld_cache_header`): magic `"dyld_v1 "` + アーキ文字列、mapping/images オフセット、UUID
+- **mapping 配列** (`dyld_cache_mapping_info`): 仮想アドレス → ファイルオフセット（TEXT/DATA/LINKEDIT）
+- **images 配列** (`dyld_cache_image_info`): 各 dylib のロードアドレス、パス文字列オフセット
+- **slide info**: DATA 領域の再配置テーブル
+- 仕様ソース: [apple-oss-distributions/dyld](https://github.com/apple-oss-distributions/dyld) の `cache-builder/dyld_cache_format.h`
+
+### 10.3 抽出手段の比較
+
+| 手段 | 概要 | 長所 | 短所 |
+|------|------|------|------|
+| **blacktop/ipsw `pkg/dyld`** | Pure Go の dyld shared cache パーサ/抽出ライブラリ | MIT ライセンス、クロスプラットフォーム、活発にメンテナンス（★3300+）、サブキャッシュ対応済み、Go import で単体バイナリに統合可能 | 依存ライブラリが増加、ipsw 全体のサイズが大きいため pkg/dyld のみ import する場合でも依存整理が必要 |
+| **keith/dyld-shared-cache-extractor** | `dsc_extractor.bundle` を呼び出すラッパー | `brew install` で導入可能、サブキャッシュ対応 | macOS 限定、Xcode 依存（`dsc_extractor.bundle`）、外部コマンド呼び出し |
+| **`dsc_extractor.bundle` (Xcode 付属)** | Apple 提供の抽出用 dylib | Apple 公式 | Xcode インストール必須、再配布不可、cgo (`dlopen`) 必要 |
+| **Apple `dyld_shared_cache_util`** | Apple 公式 CLI | フル機能 | 自前ビルド必要、APSL 2.0 ライセンス、再配布の整理が必要 |
+| **ランタイム `dlopen` + メモリ解析** | 自プロセスに dylib をロードしてメモリ上の Mach-O を解析 | SIP 下でも動作、外部依存なし | rebase/bind 済みのため元バイナリと異なる、cgo 必要 |
+| **`.tbd` スタブ** | Xcode SDK 内のテキストベース dylib 定義 | シンボル名一覧のみの用途なら十分 | **マシンコードを含まない** — syscall ラッパーの命令列解析には使用不可 |
+
+### 10.4 推奨方針
+
+**段階的アプローチ:**
+
+1. **初期リリース（FR-3.7 段階的リリースの第 1 段階）**: dyld shared cache 内のライブラリに対しては syscall ラッパー解析をスキップし、**シンボル名単体一致にフォールバック**する。これは §4 FR-3.7 で既に許容済み
+2. **将来実装**: `blacktop/ipsw` の `pkg/dyld` パッケージを Go ライブラリとして import し、キャッシュからの `.dylib` 抽出を実装する
+   - **根拠**: Pure Go（cgo 不要）、MIT ライセンス、サブキャッシュ対応済み、単体バイナリに統合可能
+   - **リスク**: 依存ライブラリのサイズ・transitive dependency の評価を設計フェーズで実施すること
+3. **不採用**: `.tbd` ファイルは命令列を含まないため syscall 解析には使用不可。`dsc_extractor.bundle` / `dyld_shared_cache_util` は外部依存・ライセンスの観点から非推奨
