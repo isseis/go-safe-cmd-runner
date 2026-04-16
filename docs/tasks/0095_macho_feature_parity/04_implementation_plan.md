@@ -22,7 +22,7 @@
 
 **概要**: `record` 実行時に Mach-O バイナリの依存ライブラリ（`LC_LOAD_DYLIB` / `LC_LOAD_WEAK_DYLIB`）のパスを解決してハッシュを記録し、`runner` 実行時に照合することで供給チェーン攻撃を検出する。ELF の `DT_NEEDED` 整合性検証（タスク 0074）の Mach-O 版。`@executable_path` / `@loader_path` / `@rpath` トークンの展開と `LC_RPATH` の走査を含む。dyld shared cache 内のシステムライブラリ（`libSystem.dylib` 等）はハッシュ検証をスキップしてコード署名検証に委譲する。
 
-- [ ] `docs/tasks/0096_macho_lc_load_dylib_integrity/01_requirements.md` を作成する
+- [x] `docs/tasks/0096_macho_lc_load_dylib_integrity/01_requirements.md` を作成する
 - [ ] `docs/tasks/0096_macho_lc_load_dylib_integrity/02_architecture.md` を作成する
 - [ ] `docs/tasks/0096_macho_lc_load_dylib_integrity/03_detailed_specification.md` を作成する
 - [ ] `docs/tasks/0096_macho_lc_load_dylib_integrity/04_implementation_plan.md` を作成する
