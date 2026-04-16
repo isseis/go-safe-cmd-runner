@@ -840,9 +840,14 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
                 defer func() { _ = machoFile.Close() }()
                 deps, _ := extractLoadCommands(machoFile)
                 for _, dep := range deps {
-                    if !IsDyldSharedCacheLib(dep.installName) {
-                        return true, nil
+                    // Treat as dyld shared cache only when the install name is
+                    // system-prefixed AND the file is absent from disk.
+                    if IsDyldSharedCacheLib(dep.installName) {
+                        if _, err := os.Stat(dep.installName); os.IsNotExist(err) {
+                            continue
+                        }
                     }
+                    return true, nil
                 }
                 return false, nil
             }
@@ -866,9 +871,14 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 
     deps, _ := extractLoadCommands(machoFile)
     for _, dep := range deps {
-        if !IsDyldSharedCacheLib(dep.installName) {
-            return true, nil
+        // Treat as dyld shared cache only when the install name is
+        // system-prefixed AND the file is absent from disk.
+        if IsDyldSharedCacheLib(dep.installName) {
+            if _, err := os.Stat(dep.installName); os.IsNotExist(err) {
+                continue
+            }
         }
+        return true, nil
     }
     return false, nil
 }
