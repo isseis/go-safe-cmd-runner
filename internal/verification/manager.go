@@ -13,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -643,7 +644,18 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
 	}
 
-	// Non-ELF binary (or static/no-dependency ELF) without DynLibDeps → normal.
+	// Check if this is a dynamically linked Mach-O binary.
+	hasMachODeps, err := m.hasMachODynamicLibraryDeps(cmdPath)
+	if err != nil {
+		return fmt.Errorf("failed to check Mach-O dynamic library dependencies: %w", err)
+	}
+
+	if hasMachODeps {
+		// Mach-O binary without DynLibDeps record → requires re-recording.
+		return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+	}
+
+	// Non-ELF, non-Mach-O binary (or static/no-dependency binary) without DynLibDeps → normal.
 	return nil
 }
 
@@ -674,6 +686,16 @@ func (m *Manager) hasDynamicLibraryDeps(path string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// hasMachODynamicLibraryDeps checks if the file at the given path is a Mach-O
+// binary that has at least one LC_LOAD_DYLIB or LC_LOAD_WEAK_DYLIB entry
+// pointing to a non-dyld-shared-cache library.
+//
+// Returns (false, nil) for non-Mach-O files and binaries whose dependencies
+// are all in the dyld shared cache (absent from disk).
+func (m *Manager) hasMachODynamicLibraryDeps(path string) (bool, error) {
+	return machodylib.HasDynamicLibDeps(path, m.safeFS)
 }
 
 // VerifyCommandShebangInterpreter verifies the integrity of a shebang interpreter for a
