@@ -149,7 +149,7 @@
 - **syscall 命令**: `svc #0x80`（arm64）
 - **syscall 番号レジスタ**: `x16`（macOS ABI）
 - **後方スキャン**: タスク 0072 の `arm64_decoder.go` のロジックを再利用し、`x16` への即値設定を特定する
-- **検出対象 syscall**: macOS syscall 番号テーブル（BSD クラス: `socket`=97, `connect`=98, etc.）を新規に定義する
+- **検出対象 syscall**: macOS のシステムコール番号テーブル（BSD クラス: `socket`=97, `connect`=98 等）を新規に定義する。なお、Darwin arm64 では `x16` レジスタにクラスプレフィックス（BSD の場合は `0x2000000`）が含まれるため、解析時にこれを考慮すること
 - **フォールバック動作**: 現行の「`svc #0x80` 存在 → 即 high risk」挙動は維持しつつ、syscall 番号が特定できた場合はネットワーク関連 syscall のみを `NetworkDetected` として扱い、番号不明の `svc #0x80` は引き続き high risk とする
 - **Fat バイナリ**: 全スライスを解析（タスク 0073 方針維持）
 
