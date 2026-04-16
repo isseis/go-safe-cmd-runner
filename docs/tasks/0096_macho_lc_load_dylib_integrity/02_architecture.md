@@ -428,13 +428,16 @@ func IsDyldSharedCacheLib(installName string) bool
 
 `dynlibanalysis.DynLibVerifier` はハッシュ照合のみを行う形式非依存の実装であり、Mach-O の LibEntry に対してもそのまま再利用できる。
 
-`LibEntry.Path` は `record` 時点で `filepath.EvalSymlinks` + `filepath.Clean` により正規化済みである前提とする。本タスクでは verifier 自体は変更せず、`runner` 時の追加正規化は行わない。
+`LibEntry.Path` は `record` 時点で `filepath.EvalSymlinks` + `filepath.Clean` により正規化済みである。さらに FR-3.1.4 に合わせ、`runner` 時にも検証対象のパスに対して `filepath.EvalSymlinks` + `filepath.Clean` を再適用したうえでハッシュ照合を行う。
+
+ただし既存の `DynLibVerifier` 自体は変更せず、Mach-O の `runner` 側フローで verifier 呼び出し前に `LibEntry.Path` を再正規化した `[]fileanalysis.LibEntry` を構築して渡す。これにより、要件の実行時正規化と verifier の形式非依存性を両立する。
 
 ```go
 // internal/dynlibanalysis/verifier.go（変更なし）
 
 // Verify は記録済み依存ライブラリのハッシュ検証を実施する。
-// 各 LibEntry について entry.Path のファイルをハッシュ計算し entry.Hash と比較する。
+// Each LibEntry must already contain the runner-time normalized path.
+// The caller applies filepath.EvalSymlinks + filepath.Clean before Verify.
 func (v *DynLibVerifier) Verify(deps []fileanalysis.LibEntry) error
 ```
 
