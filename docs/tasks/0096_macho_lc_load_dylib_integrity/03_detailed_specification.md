@@ -421,6 +421,7 @@ import (
     "debug/macho"
     "encoding/binary"
     "encoding/hex"
+    "errors"
     "fmt"
     "io"
     "log/slog"
