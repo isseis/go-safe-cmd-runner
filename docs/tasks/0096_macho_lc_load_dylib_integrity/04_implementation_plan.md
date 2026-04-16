@@ -161,21 +161,21 @@ package machodylib
 
 #### 完了条件
 
-- [ ] `machodylib` パッケージが作成されていること
-- [ ] エラー型が全て定義されていること
-- [ ] `IsDyldSharedCacheLib` がシステムプレフィックスを正しく判定すること
-- [ ] `IsDyldSharedCacheLib` が非システムパス（`/usr/local/lib/`, `/opt/homebrew/lib/` 等）に false を返すこと
-- [ ] `LibraryResolver.Resolve` が絶対パスを正しく解決すること
-- [ ] `LibraryResolver.Resolve` が `@executable_path` を正しく展開すること
-- [ ] `LibraryResolver.Resolve` が `@loader_path` を正しく展開すること
-- [ ] `LibraryResolver.Resolve` が `@rpath` を LC_RPATH エントリ順に試して解決すること
-- [ ] `LibraryResolver.Resolve` が `LC_RPATH` 内の `@executable_path` を展開すること
-- [ ] `LibraryResolver.Resolve` がデフォルト検索パスで解決すること
-- [ ] 未知 `@` トークンで `ErrUnknownAtToken` が返ること
-- [ ] 解決失敗で `ErrLibraryNotResolved` が返り、InstallName と Tried が含まれること
-- [ ] 戻り値のパスが `filepath.EvalSymlinks` + `filepath.Clean` で正規化されていること
-- [ ] 全ユニットテストがパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `machodylib` パッケージが作成されていること
+- [x] エラー型が全て定義されていること
+- [x] `IsDyldSharedCacheLib` がシステムプレフィックスを正しく判定すること
+- [x] `IsDyldSharedCacheLib` が非システムパス（`/usr/local/lib/`, `/opt/homebrew/lib/` 等）に false を返すこと
+- [x] `LibraryResolver.Resolve` が絶対パスを正しく解決すること
+- [x] `LibraryResolver.Resolve` が `@executable_path` を正しく展開すること
+- [x] `LibraryResolver.Resolve` が `@loader_path` を正しく展開すること
+- [x] `LibraryResolver.Resolve` が `@rpath` を LC_RPATH エントリ順に試して解決すること
+- [x] `LibraryResolver.Resolve` が `LC_RPATH` 内の `@executable_path` を展開すること
+- [x] `LibraryResolver.Resolve` がデフォルト検索パスで解決すること
+- [x] 未知 `@` トークンで `ErrUnknownAtToken` が返ること
+- [x] 解決失敗で `ErrLibraryNotResolved` が返り、InstallName と Tried が含まれること
+- [x] 戻り値のパスが `filepath.EvalSymlinks` + `filepath.Clean` で正規化されていること
+- [x] 全ユニットテストがパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 
@@ -254,28 +254,28 @@ internal/machodylib/testdata/              # テスト用 Mach-O フィクスチ
 
 #### 完了条件
 
-- [ ] `MachODynLibAnalyzer.Analyze` が LC_LOAD_DYLIB を持つ動的 Mach-O から `[]LibEntry` を返すこと
-- [ ] `MachODynLibAnalyzer.Analyze` が非 Mach-O で `(nil, nil, nil)` を返すこと
-- [ ] `MachODynLibAnalyzer.Analyze` が LC_LOAD_DYLIB なし Mach-O で `(nil, nil, nil)` を返すこと
-- [ ] `LibEntry` に `SOName`（インストール名）, `Path`（解決済みフルパス）, `Hash`（`"sha256:<hex>"`）が正しく記録されること
-- [ ] LC_LOAD_DYLIB の解決失敗で `record` が失敗し、何も永続化されないこと
-- [ ] LC_LOAD_WEAK_DYLIB の解決失敗でスキップして継続されること
-- [ ] dyld shared cache ライブラリ（システムプレフィックス + ファイル不在）がスキップされること
-- [ ] dyld shared cache のみの依存では `DynLibDeps` が nil であること
-- [ ] 未知 `@` トークンで `AnalysisWarning` が生成され、`record` は継続すること
-- [ ] 間接依存が再帰的に解決・記録されること
-- [ ] 間接依存の `@rpath` 解決が各 `.dylib` 自身の `LC_RPATH` を使って行われること
-- [ ] 循環依存で無限ループしないこと（`visited` セット）
-- [ ] 再帰深度超過時にエラーで `record` が失敗すること
-- [ ] Fat バイナリでネイティブアーキテクチャのスライスが選択されること
-- [ ] Fat バイナリで一致スライスがない場合に `ErrNoMatchingSlice` が返ること
-- [ ] `HasDynamicLibDeps` が単一アーキテクチャ Mach-O + 非 dyld-cache 依存で `(true, nil)` を返すこと
-- [ ] `HasDynamicLibDeps` が Fat バイナリ + 非 dyld-cache 依存で `(true, nil)` を返すこと
-- [ ] `HasDynamicLibDeps` が Mach-O + dyld-cache のみで `(false, nil)` を返すこと
-- [ ] `HasDynamicLibDeps` が非 Mach-O で `(false, nil)` を返すこと
-- [ ] テスト用 Mach-O フィクスチャが `testdata/` に配置されていること
-- [ ] 全ユニットテストがパスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `MachODynLibAnalyzer.Analyze` が LC_LOAD_DYLIB を持つ動的 Mach-O から `[]LibEntry` を返すこと
+- [x] `MachODynLibAnalyzer.Analyze` が非 Mach-O で `(nil, nil, nil)` を返すこと
+- [-] `MachODynLibAnalyzer.Analyze` が LC_LOAD_DYLIB なし Mach-O で `(nil, nil, nil)` を返すこと
+- [x] `LibEntry` に `SOName`（インストール名）, `Path`（解決済みフルパス）, `Hash`（`"sha256:<hex>"`）が正しく記録されること
+- [-] LC_LOAD_DYLIB の解決失敗で `record` が失敗し、何も永続化されないこと
+- [-] LC_LOAD_WEAK_DYLIB の解決失敗でスキップして継続されること
+- [x] dyld shared cache ライブラリ（システムプレフィックス + ファイル不在）がスキップされること
+- [x] dyld shared cache のみの依存では `DynLibDeps` が nil であること
+- [-] 未知 `@` トークンで `AnalysisWarning` が生成され、`record` は継続すること
+- [-] 間接依存が再帰的に解決・記録されること
+- [-] 間接依存の `@rpath` 解決が各 `.dylib` 自身の `LC_RPATH` を使って行われること
+- [-] 循環依存で無限ループしないこと（`visited` セット）
+- [-] 再帰深度超過時にエラーで `record` が失敗すること
+- [-] Fat バイナリでネイティブアーキテクチャのスライスが選択されること
+- [-] Fat バイナリで一致スライスがない場合に `ErrNoMatchingSlice` が返ること
+- [-] `HasDynamicLibDeps` が単一アーキテクチャ Mach-O + 非 dyld-cache 依存で `(true, nil)` を返すこと
+- [-] `HasDynamicLibDeps` が Fat バイナリ + 非 dyld-cache 依存で `(true, nil)` を返すこと
+- [x] `HasDynamicLibDeps` が Mach-O + dyld-cache のみで `(false, nil)` を返すこと
+- [x] `HasDynamicLibDeps` が非 Mach-O で `(false, nil)` を返すこと
+- [-] テスト用 Mach-O フィクスチャが `testdata/` に配置されていること
+- [x] 全ユニットテストがパスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 
