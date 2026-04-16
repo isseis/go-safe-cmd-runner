@@ -82,13 +82,13 @@ internal/verification/manager_test.go           # import パス更新
 
 #### 完了条件
 
-- [ ] `internal/elfdynlib/` パッケージが存在し、`package elfdynlib` 宣言になっていること
-- [ ] `internal/elfdynlib/` ディレクトリが削除されていること
-- [ ] `Validator.elfDynlibAnalyzer` フィールドが存在すること
-- [ ] `Validator.SetELFDynLibAnalyzer` メソッドが存在すること
-- [ ] `cmd/record/main.go` の `elfDynlibAnalyzerFactory` フィールドが存在すること
-- [ ] `make test` 全パスすること
-- [ ] `make lint` / `make fmt` がパスすること
+- [x] `internal/elfdynlib/` パッケージが存在し、`package elfdynlib` 宣言になっていること
+- [x] `internal/elfdynlib/` ディレクトリが削除されていること
+- [x] `Validator.elfDynlibAnalyzer` フィールドが存在すること
+- [x] `Validator.SetELFDynLibAnalyzer` メソッドが存在すること
+- [x] `cmd/record/main.go` の `elfDynlibAnalyzerFactory` フィールドが存在すること
+- [-] `make test` 全パスすること
+- [x] `make lint` / `make fmt` がパスすること
 
 ---
 

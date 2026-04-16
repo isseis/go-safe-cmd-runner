@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -26,7 +26,7 @@ type Manager struct {
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
 	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
-	dynlibVerifier              *dynlibanalysis.DynLibVerifier  // initialized once at construction
+	dynlibVerifier              *elfdynlib.DynLibVerifier       // initialized once at construction
 	security                    *security.Validator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -476,7 +476,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	// Initialize dynamic library verifier (parses /etc/ld.so.cache once at startup).
-	manager.dynlibVerifier = dynlibanalysis.NewDynLibVerifier(safeFS)
+	manager.dynlibVerifier = elfdynlib.NewDynLibVerifier(safeFS)
 
 	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
@@ -640,7 +640,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 
 	if hasDynDeps {
 		// ELF binary without DynLibDeps record → requires re-recording.
-		return &dynlibanalysis.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+		return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
 	}
 
 	// Non-ELF binary (or static/no-dependency ELF) without DynLibDeps → normal.

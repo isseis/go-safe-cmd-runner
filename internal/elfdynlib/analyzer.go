@@ -1,4 +1,4 @@
-package dynlibanalysis
+package elfdynlib
 
 import (
 	"crypto/sha256"

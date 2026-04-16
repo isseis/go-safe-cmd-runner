@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
@@ -116,11 +116,11 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	fileSystem      safefileio.FileSystem          // used by openELFFile in analyzeSyscalls
-	dynlibAnalyzer  *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
-	binaryAnalyzer  binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
-	libcCache       LibcCacheInterface             // nil if libc cache is disabled
-	syscallAnalyzer SyscallAnalyzerInterface       // nil if syscall analysis is disabled
+	fileSystem        safefileio.FileSystem         // used by openELFFile in analyzeSyscalls
+	elfDynlibAnalyzer *elfdynlib.DynLibAnalyzer     // nil if dynlib analysis is disabled
+	binaryAnalyzer    binaryanalyzer.BinaryAnalyzer // nil if binary analysis is disabled
+	libcCache         LibcCacheInterface            // nil if libc cache is disabled
+	syscallAnalyzer   SyscallAnalyzerInterface      // nil if syscall analysis is disabled
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -285,8 +285,8 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		// Analyze dynamic library dependencies if analyzer is available.
 		// Analysis failure causes the callback to return an error, which
 		// prevents the record from being persisted (atomicity).
-		if v.dynlibAnalyzer != nil {
-			dynLibDeps, analyzeErr := v.dynlibAnalyzer.Analyze(filePath.String())
+		if v.elfDynlibAnalyzer != nil {
+			dynLibDeps, analyzeErr := v.elfDynlibAnalyzer.Analyze(filePath.String())
 			if analyzeErr != nil {
 				return fmt.Errorf("dynamic library analysis failed: %w", analyzeErr)
 			}
@@ -402,10 +402,10 @@ func (v *Validator) checkNotShebang(path, role string) error {
 	return nil
 }
 
-// SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
+// SetELFDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
 // Call before the first SaveRecord() invocation. Safe to call with nil (disables dynlib analysis).
-func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
-	v.dynlibAnalyzer = a
+func (v *Validator) SetELFDynLibAnalyzer(a *elfdynlib.DynLibAnalyzer) {
+	v.elfDynlibAnalyzer = a
 }
 
 // SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.

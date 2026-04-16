@@ -11,7 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -1549,7 +1549,7 @@ func TestVerify_ELFNoDynLibDeps(t *testing.T) {
 	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr)
 
-	var errRequired *dynlibanalysis.ErrDynLibDepsRequired
+	var errRequired *elfdynlib.ErrDynLibDepsRequired
 	assert.ErrorAs(t, verifyErr, &errRequired, "expected ErrDynLibDepsRequired for dynamic ELF without DynLibDeps")
 }
 

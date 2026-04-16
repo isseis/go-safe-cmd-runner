@@ -45,7 +45,7 @@ linters:
             - $gostd
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/common
-            - github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis
+            - github.com/isseis/go-safe-cmd-runner/internal/elfdynlib
             - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/redaction
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
@@ -77,7 +77,7 @@ linters:
             - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/common
-            - github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis
+            - github.com/isseis/go-safe-cmd-runner/internal/elfdynlib
             - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
             - github.com/isseis/go-safe-cmd-runner/internal/libccache
