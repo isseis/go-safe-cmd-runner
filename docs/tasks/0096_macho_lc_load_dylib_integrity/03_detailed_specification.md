@@ -1119,7 +1119,7 @@ if fv, ok := validator.(*filevalidator.Validator); ok {
 | AC-3: ハッシュ不一致でブロック | `TestVerifyDynLibDeps_MachO_HashMismatch` | `manager_test.go` |
 | AC-3: ハッシュ不一致エラーメッセージ | `TestVerifyDynLibDeps_MachO_HashMismatch_ErrorMessage` | `manager_test.go` |
 | AC-3: `path: ""` でブロック | `TestVerifyDynLibDeps_MachO_EmptyPath` | `manager_test.go` |
-| AC-3: 旧スキーマ（< 14）で許可 | `TestVerifyDynLibDeps_OldSchema_MachO` | `manager_test.go` |
+| AC-3: 旧スキーマ（< 14）でブロック | `TestVerifyDynLibDeps_OldSchema_MachO_Blocked` | `manager_test.go` |
 | AC-3: 新スキーマ（>= 14）`DynLibDeps` なしでブロック | `TestVerifyDynLibDeps_NewSchema_MachO_NoDynLibDeps` | `manager_test.go` |
 | AC-3: 非 Mach-O で `DynLibDeps` なし | `TestVerifyDynLibDeps_NonMachO_NoDynLibDeps` | `manager_test.go` |
 | AC-3: `HasDynamicLibDeps` 判定 | `TestHasDynamicLibDeps_MachO`, `TestHasDynamicLibDeps_NonMachO`, `TestHasDynamicLibDeps_FatBinary` | `analyzer_test.go` |
@@ -1280,13 +1280,13 @@ func TestIntegration_MachO_LibraryTampering(t *testing.T) {
 }
 ```
 
-#### 4.3.3 後方互換性
+#### 4.3.3 旧スキーマブロック
 
 ```go
-func TestIntegration_MachO_OldSchemaBackwardCompat(t *testing.T) {
+func TestIntegration_MachO_OldSchemaBlocked(t *testing.T) {
     // 1. Create a record with schema_version: 13 (pre-Mach-O dynlib support)
     // 2. Run runner verification for a Mach-O binary
-    // 3. Verify: execution is permitted (old schema, dynlib check skipped with warning)
+    // 3. Verify: execution is blocked with SchemaVersionMismatchError (old schema must re-record)
 }
 ```
 
