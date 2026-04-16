@@ -74,7 +74,8 @@ type AnalysisFeatures struct {
 `filevalidator.Validator.SaveRecord` は `Store.Update` コールバック内でレコードを構築する際、`record.AnalysisFeatures` を必ずセットする（旧レコードを区別できるよう、非 nil であることを保証する）：
 
 - ELF バイナリで `elfDynlibAnalyzer.Analyze` を呼び出した場合（エラーの有無にかかわらず呼び出した場合）: `AnalysisFeatures.ELFDynLibDeps = true`
-- Mach-O バイナリで `machoDynlibAnalyzer.Analyze` を呼び出した場合: `AnalysisFeatures.MachODynLibDeps = true`
+  - 注意: 現在の `DynLibAnalyzer.Analyze()` は全ファイルに対して呼び出され、non-ELF と static ELF の双方で `(nil, nil)` を返す。フラグを正しく設定するには、ファイルが ELF であるかどうかを `Analyze()` の戻り値とは独立に判定する仕組みが必要（例: `Analyze()` の戻り値にフォーマット情報を含める、または `updateAnalysisRecord` 内で ELF マジックバイトを別途チェックする）。詳細はアーキテクチャ設計で定める
+- Mach-O バイナリで `machoDynlibAnalyzer.Analyze` を呼び出した場合: `AnalysisFeatures.MachODynLibDeps = true`（タスク 0096 実装後に有効化される）
 - アナライザーが nil（未注入）の場合は対応するフラグを `false` のまま維持する
 - `AnalysisFeatures` は `record` ごとに毎回構築しなおす（stale な値を引き継がない）
 
@@ -95,14 +96,16 @@ type AnalysisFeatures struct {
 | 対象バイナリ | 必要なフラグ | フラグが false の場合の挙動 |
 |------------|-------------|--------------------------|
 | ELF バイナリ | `ELFDynLibDeps == true` | エラー（`record` 再実行を要求） |
-| Mach-O バイナリ | `MachODynLibDeps == true` | エラー（`record` 再実行を要求） |
+| Mach-O バイナリ | `MachODynLibDeps == true` | エラー（`record` 再実行を要求）（タスク 0096 実装後に有効化） |
 | スクリプト・その他 | なし | フラグチェックをスキップ |
+
+注意: Mach-O フォーマットの検出ロジックはタスク 0096 のスコープであり、本タスクでは ELF のフラグチェックのみを実装する。Mach-O 行は将来拡張のための設計指針として記載する。
 
 フラグが `true` の場合、既存の `DynLibDeps` ハッシュ検証ロジックをそのまま適用する（フラグは「解析が行われた」事実を示すのみで、検証ロジックは変更しない）。
 
-#### FR-3.3: スキーマバージョンベースの判定の廃止
+#### FR-3.3: `verifyDynLibDeps` 内のスキーマバージョンベース分岐の削除
 
-dynlib 関連の判定において、現行の `SchemaVersionMismatchError.Actual < Expected` によるスキップ分岐を削除し、FR-3.1 のフラグチェックに一本化する。
+`verifyDynLibDeps` 内の `SchemaVersionMismatchError.Actual < Expected` による警告＋スキップ分岐を削除し、FR-3.1 のフラグチェックに一本化する。`Store.Load` のスキーマバージョン検証自体は維持する（JSON 構造の互換性チェックとして継続使用）。
 
 ### FR-4: `SchemaVersionMismatchError`（`Actual < Expected`）のエラー化
 
@@ -149,9 +152,9 @@ return fmt.Errorf("failed to load record for dynlib verification: %w", err)
 ### AC-2: `record` コマンドでのフラグ設定
 
 - ELF バイナリに対して `record` を実行すると、レコードに `analysis_features.elf_dynlib_deps: true` が設定されること
-- Mach-O バイナリに対して `record` を実行すると、レコードに `analysis_features.macho_dynlib_deps: true` が設定されること
 - スクリプトファイルに対して `record` を実行すると、`analysis_features` フィールドが存在するが `elf_dynlib_deps` / `macho_dynlib_deps` はいずれも `false`（省略）であること
 - `record --force` を実行しても `AnalysisFeatures` が正しく設定されること
+- Mach-O バイナリに対して `record` を実行すると、`analysis_features` フィールドが存在するが `macho_dynlib_deps` は `false`（省略）であること（タスク 0096 実装後に `true` が設定される。本タスクでは Mach-O アナライザーが未注入のため `false`）
 
 ### AC-3: `runner` での旧レコード拒否
 
@@ -163,9 +166,8 @@ return fmt.Errorf("failed to load record for dynlib verification: %w", err)
 
 - ELF バイナリのレコードに `elf_dynlib_deps: false`（または未設定）の `AnalysisFeatures` が存在する場合、`runner` がエラーで終了すること
 - ELF バイナリのレコードに `elf_dynlib_deps: true` の `AnalysisFeatures` が存在する場合、既存の dynlib 検証ロジックが適用されること
-- Mach-O バイナリのレコードに `macho_dynlib_deps: false`（または未設定）の `AnalysisFeatures` が存在する場合、`runner` がエラーで終了すること
-- Mach-O バイナリのレコードに `macho_dynlib_deps: true` の `AnalysisFeatures` が存在する場合、既存の dynlib 検証ロジックが適用されること
 - スクリプト・非 ELF・非 Mach-O バイナリのレコードに `AnalysisFeatures` が存在しても、dynlib 関連フラグチェックをスキップして通常の ContentHash 検証のみが行われること
+- Mach-O バイナリのフラグチェックはタスク 0096 のスコープとし、本タスクでは Mach-O バイナリを「その他」として扱う（dynlib フラグチェックをスキップ）
 
 ### AC-5: 既存テストへの非影響
 
@@ -178,5 +180,5 @@ return fmt.Errorf("failed to load record for dynlib verification: %w", err)
 | タスク | 関係 |
 |-------|------|
 | 0074 ELF DynLibDeps | `ELFDynLibDeps` フラグの導入元。`record` が ELF 解析を実施済みであることを明示するためにフラグを付与する |
-| 0096 Mach-O LC_LOAD_DYLIB | `MachODynLibDeps` フラグの導入元。`record` が Mach-O 解析を実施済みであることを明示するためにフラグを付与する |
+| 0096 Mach-O LC_LOAD_DYLIB | `MachODynLibDeps` フラグの導入元。**未実装**。本タスクでは `AnalysisFeatures` 構造体にフィールドを定義するが、フラグの設定・チェックはタスク 0096 で実装する |
 | 0102 本タスク | 0074 / 0096 で暗黙的にスキーマバージョンに依存していた「解析実施の証跡」を `AnalysisFeatures` に移管する |
