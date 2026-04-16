@@ -481,13 +481,14 @@ type bfsItem struct {
 // Unknown @ tokens generate warnings and skip the library.
 func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, []AnalysisWarning, error) {
     // Open and parse Mach-O (or Fat binary)
-    machoFile, err := a.openMachO(binaryPath)
+    machoFile, closer, err := a.openMachO(binaryPath)
     if err != nil {
         if errors.Is(err, ErrNotMachO) {
             return nil, nil, nil // not a Mach-O file; skip silently
         }
         return nil, nil, err // I/O error, ErrNoMatchingSlice, etc.
     }
+    defer func() { _ = closer.Close() }()
     defer func() { _ = machoFile.Close() }()
 
     // Extract load commands: LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_RPATH
@@ -612,15 +613,20 @@ type depEntry struct {
     isWeak      bool
 }
 
-// openMachO opens the file at binaryPath and returns a *macho.File.
+// openMachO opens the file at binaryPath and returns a *macho.File along with
+// an io.Closer that must be called to release all underlying file descriptors.
+// The caller must call closer.Close() when done, regardless of whether
+// machoFile.Close() is also called (macho.File.Close does not close the
+// underlying os.File / SectionReader source).
+//
 // For Fat binaries, selects the slice matching runtime.GOARCH.
 // Returns ErrNotMachO (via errors.Is) if the file is not a Mach-O or Fat binary.
 // Returns ErrNoMatchingSlice if the Fat binary has no slice for the native arch.
 // Returns other errors for I/O or permission failures.
-func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) {
+func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, io.Closer, error) {
     file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
     if err != nil {
-        return nil, err
+        return nil, nil, err
     }
 
     // Try as Fat binary first
@@ -633,7 +639,7 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) 
         if cpuType == 0 {
             _ = fatFile.Close()
             _ = file.Close()
-            return nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
+            return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
         }
         for _, arch := range fatFile.Arches {
             if arch.Cpu == cpuType {
@@ -642,18 +648,22 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) 
                 _ = file.Close()
                 sliceFile, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
                 if err != nil {
-                    return nil, err
+                    return nil, nil, err
                 }
-                // macho.NewFile takes ownership of the io.ReaderAt.
-                // The caller is responsible for closing sliceFile after
-                // closing the returned *macho.File.
-                return macho.NewFile(
+                machoFile, err := macho.NewFile(
                     io.NewSectionReader(sliceFile, int64(arch.Offset), int64(arch.Size)))
+                if err != nil {
+                    _ = sliceFile.Close()
+                    return nil, nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
+                }
+                // Return sliceFile as the closer: macho.File.Close does not
+                // close the SectionReader's underlying source.
+                return machoFile, sliceFile, nil
             }
         }
         _ = fatFile.Close()
         _ = file.Close()
-        return nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
+        return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
     }
 
     // Try as single-architecture Mach-O
@@ -661,17 +671,18 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, error) 
     if seeker, ok := file.(io.Seeker); ok {
         if _, err := seeker.Seek(0, io.SeekStart); err != nil {
             _ = file.Close()
-            return nil, err
+            return nil, nil, err
         }
     }
 
     machoFile, err := macho.NewFile(file)
     if err != nil {
         _ = file.Close()
-        return nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
+        return nil, nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
     }
 
-    return machoFile, nil
+    // file is the underlying source; return it as the closer.
+    return machoFile, file, nil
 }
 
 // goarchToCPUType maps runtime.GOARCH to macho.Cpu type.
