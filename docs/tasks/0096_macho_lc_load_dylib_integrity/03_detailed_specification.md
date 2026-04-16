@@ -12,15 +12,15 @@
 - `fileanalysis` パッケージのスキーマ拡張（`AnalysisWarnings`、`CurrentSchemaVersion` 変更）
 - `filevalidator` パッケージの拡張（`machoDynlibAnalyzer` 注入、`SaveRecord` 内の Mach-O 解析呼び出し）
 - `verification` パッケージの拡張（`hasMachODynamicLibraryDeps` 追加）
-- `dynlibanalysis` パッケージの拡張（`ErrDynLibDepsRequired` のエラーメッセージ汎用化）
+- `elfdynlib` パッケージの拡張（`ErrDynLibDepsRequired` のエラーメッセージ汎用化）
 - `cmd/record` コマンドの拡張（`MachODynLibAnalyzer` 注入）
 
 ### 1.3 前提
 
 - ELF 版タスク 0074 で導入された以下の基盤を再利用する：
   - `fileanalysis.LibEntry` 型（`SOName`, `Path`, `Hash`）
-  - `dynlibanalysis.DynLibVerifier`（形式非依存のハッシュ照合）
-  - `dynlibanalysis` パッケージの共有エラー型（`ErrLibraryHashMismatch`, `ErrEmptyLibraryPath`, `ErrDynLibDepsRequired`）
+  - `elfdynlib.DynLibVerifier`（形式非依存のハッシュ照合）
+  - `elfdynlib` パッケージの共有エラー型（`ErrLibraryHashMismatch`, `ErrEmptyLibraryPath`, `ErrDynLibDepsRequired`）
   - `computeFileHash` ヘルパー関数
 - `DynLibDeps` フィールドは `[]fileanalysis.LibEntry` 型（スキーマバージョン 10 でフラット化済み）
 - 現行 `CurrentSchemaVersion` は 13
@@ -56,7 +56,7 @@ internal/
 │   └── manager.go                       # hasMachODynamicLibraryDeps 追加
 │                                        # verifyDynLibDeps 内の Mach-O 判定追加
 │
-├── dynlibanalysis/
+├── elfdynlib/
 │   └── errors.go                        # ErrDynLibDepsRequired メッセージ汎用化
 │
 cmd/
@@ -64,7 +64,7 @@ cmd/
     └── main.go                          # MachODynLibAnalyzer 注入
 ```
 
-> **NOTE（`elfDynlibAnalyzer` リネームについて）**: 02_architecture.md では `dynlibAnalyzer` → `elfDynlibAnalyzer` へのフィールドリネーム、および `dynlibanalysis` → `elfdynlib` へのパッケージリネームが記述されている。しかし、本タスクのスコープではリネームを実施しない。理由は、リネームは広範なテスト更新を伴い、Mach-O 機能追加の本質とは無関係であるため。リネームが必要な場合は別タスクで対応する。本仕様書では現行のフィールド名 `dynlibAnalyzer`・パッケージ名 `dynlibanalysis` をそのまま使用する。
+> **NOTE（`elfDynlibAnalyzer` リネームについて）**: `dynlibAnalyzer` → `elfDynlibAnalyzer` へのフィールドリネームおよび `dynlibanalysis` → `elfdynlib` へのパッケージリネームは、実装計画の **Phase 0** として本タスク着手前に完了させる。本仕様書では Phase 0 完了後の名称（`elfDynlibAnalyzer`、`elfdynlib`）を使用する。
 
 ## 3. 型定義
 
@@ -192,7 +192,7 @@ func (e *ErrNoMatchingSlice) Error() string {
 }
 ```
 
-`ErrLibraryHashMismatch`・`ErrEmptyLibraryPath`・`ErrDynLibDepsRequired` は `dynlibanalysis` パッケージの既存型を再利用する。
+`ErrLibraryHashMismatch`・`ErrEmptyLibraryPath`・`ErrDynLibDepsRequired` は `elfdynlib` パッケージの既存型を再利用する。
 
 ### 3.3 `machodylib/shared_cache.go` — dyld shared cache 判定
 
@@ -799,9 +799,9 @@ func (a *MachODynLibAnalyzer) parseMachODeps(path string) ([]depEntry, []string,
 // using safefileio for symlink attack prevention.
 // Uses streaming (SafeOpenFile + io.Copy) to avoid loading large libraries into memory.
 //
-// Note: This is functionally identical to dynlibanalysis.computeFileHash but
+// Note: This is functionally identical to elfdynlib.computeFileHash but
 // is defined separately to avoid a circular import between machodylib and
-// dynlibanalysis. Both implementations use the same algorithm (SHA256) and
+// elfdynlib. Both implementations use the same algorithm (SHA256) and
 // format ("sha256:<hex>").
 func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
     file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
@@ -904,14 +904,14 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 }
 ```
 
-> **`computeFileHash` の重複について**: `dynlibanalysis.computeFileHash` と同一ロジックだが、`machodylib` → `dynlibanalysis` の import は循環依存を引き起こさないものの、将来 `dynlibanalysis` を `elfdynlib` にリネームした場合に不自然な依存となる。実装時に共通ユーティリティパッケージへの切り出しを検討してもよいが、YAGNI の観点で本タスクでは重複を許容する。
+> **`computeFileHash` の重複について**: `elfdynlib.computeFileHash` と同一ロジックだが、`machodylib` が `elfdynlib` に依存すると ELF 固有パッケージへの不自然な依存が生じる。実装時に共通ユーティリティパッケージへの切り出しを検討してもよいが、YAGNI の観点で本タスクでは重複を許容する。
 
-### 3.6 `dynlibanalysis/errors.go` — エラーメッセージの汎用化
+### 3.6 `elfdynlib/errors.go` — エラーメッセージの汎用化
 
 `ErrDynLibDepsRequired` のエラーメッセージが "ELF binary" とハードコーディングされているため、Mach-O バイナリに対しても適切なメッセージを返すよう汎用化する。
 
 ```go
-// internal/dynlibanalysis/errors.go（変更箇所のみ）
+// internal/elfdynlib/errors.go（変更箇所のみ）
 
 func (e *ErrDynLibDepsRequired) Error() string {
     return fmt.Sprintf("dynamic library dependencies not recorded for binary: %s\n"+
@@ -942,7 +942,7 @@ import (
 
 type Validator struct {
     // ... 既存フィールド ...
-    dynlibAnalyzer      *dynlibanalysis.DynLibAnalyzer    // ELF 用（既存）
+    elfDynlibAnalyzer   *elfdynlib.DynLibAnalyzer    // ELF 用（既存）
     machoDynlibAnalyzer *machodylib.MachODynLibAnalyzer   // Mach-O 用（新規）
     // ... 他の既存フィールド ...
 }
@@ -969,8 +969,8 @@ record.DynLibDeps = nil
 record.AnalysisWarnings = nil
 
 // ELF analysis (existing)
-if v.dynlibAnalyzer != nil {
-    dynLibDeps, analyzeErr := v.dynlibAnalyzer.Analyze(filePath.String())
+if v.elfDynlibAnalyzer != nil {
+    dynLibDeps, analyzeErr := v.elfDynlibAnalyzer.Analyze(filePath.String())
     if analyzeErr != nil {
         return fmt.Errorf("dynamic library analysis failed: %w", analyzeErr)
     }
@@ -1023,7 +1023,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
         return fmt.Errorf("failed to check dynamic library dependencies: %w", err)
     }
     if hasDynDeps {
-        return &dynlibanalysis.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+        return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
     }
 
     // Mach-O check (new)
@@ -1032,7 +1032,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
         return fmt.Errorf("failed to check Mach-O dynamic library dependencies: %w", err)
     }
     if hasMachoDynDeps {
-        return &dynlibanalysis.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+        return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
     }
 
     return nil
@@ -1057,7 +1057,7 @@ import (
 
 type deps struct {
     // ... 既存フィールド ...
-    dynlibAnalyzerFactory      func() *dynlibanalysis.DynLibAnalyzer      // 既存
+    elfDynlibAnalyzerFactory      func() *elfdynlib.DynLibAnalyzer      // 既存
     machoDynlibAnalyzerFactory func() *machodylib.MachODynLibAnalyzer     // 新規
     // ...
 }
@@ -1065,8 +1065,8 @@ type deps struct {
 // defaultDeps (or equivalent initialization):
 var defaultDeps = deps{
     // ... 既存 ...
-    dynlibAnalyzerFactory: func() *dynlibanalysis.DynLibAnalyzer {
-        return dynlibanalysis.NewDynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
+    elfDynlibAnalyzerFactory: func() *elfdynlib.DynLibAnalyzer {
+        return elfdynlib.NewDynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
     },
     machoDynlibAnalyzerFactory: func() *machodylib.MachODynLibAnalyzer {
         return machodylib.NewMachODynLibAnalyzer(safefileio.NewFileSystem(safefileio.FileSystemConfig{}))
@@ -1076,8 +1076,8 @@ var defaultDeps = deps{
 
 // run() 内の analyzer 注入部分:
 if fv, ok := validator.(*filevalidator.Validator); ok {
-    if d.dynlibAnalyzerFactory != nil {
-        fv.SetDynLibAnalyzer(d.dynlibAnalyzerFactory())
+    if d.elfDynlibAnalyzerFactory != nil {
+        fv.SetELFDynLibAnalyzer(d.elfDynlibAnalyzerFactory())
     }
     // NEW: Inject Mach-O dynamic library analyzer
     if d.machoDynlibAnalyzerFactory != nil {
