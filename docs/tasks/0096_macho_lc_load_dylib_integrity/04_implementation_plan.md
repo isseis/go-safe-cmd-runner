@@ -93,7 +93,7 @@ package machodylib
   4. `@rpath` トークン: `rpaths` を順に試し、最初に存在するパスを採用
   5. デフォルト検索パス: `/usr/local/lib`, `/usr/lib` の順
 - `expandRpathEntry(rpathEntry, loaderPath string) string`: LC_RPATH エントリ内の `@executable_path` / `@loader_path` 展開
-- `splitAtToken(installName string) (token, suffix string)`: `@rpath/libFoo.dylib` → `("@rpath", "/libFoo.dylib")`
+- `splitAtToken(installName string) (token, suffix string)`: `@rpath/libFoo.dylib` → `("@rpath", "libFoo.dylib")` — suffix は先頭の `/` を含まない
 - `tryResolve(candidate string) (string, error)`: `filepath.Clean` → `os.Lstat`（ファイル不在とその他のエラーを区別）→ `filepath.EvalSymlinks` → `filepath.Clean` で正規化パス返却
 
 > **設計注記（`safefileio` 不使用）**: `tryResolve` は `os.Lstat` で存在確認とエラー分類を行ったうえで `filepath.EvalSymlinks` を使用する。`safefileio` はコンテンツ読み取り向けであり、パス存在確認向けではない。ELF 版 `dynlibanalysis.LibraryResolver` と同一の方針で、not-found 判定とエラー wrapping の一貫性を保つ。

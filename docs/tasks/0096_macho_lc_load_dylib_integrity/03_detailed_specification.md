@@ -372,10 +372,12 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 func (r *LibraryResolver) expandRpathEntry(rpathEntry, loaderPath string) string {
     if strings.HasPrefix(rpathEntry, "@executable_path") {
         suffix := strings.TrimPrefix(rpathEntry, "@executable_path")
+        suffix = strings.TrimPrefix(suffix, "/")
         return filepath.Clean(filepath.Join(r.executableDir, suffix))
     }
     if strings.HasPrefix(rpathEntry, "@loader_path") {
         suffix := strings.TrimPrefix(rpathEntry, "@loader_path")
+        suffix = strings.TrimPrefix(suffix, "/")
         loaderDir := filepath.Dir(loaderPath)
         return filepath.Clean(filepath.Join(loaderDir, suffix))
     }
@@ -383,13 +385,13 @@ func (r *LibraryResolver) expandRpathEntry(rpathEntry, loaderPath string) string
 }
 
 // splitAtToken splits an install name like "@rpath/libFoo.dylib" into
-// ("@rpath", "/libFoo.dylib"). The suffix includes the leading separator.
+// ("@rpath", "libFoo.dylib"). The suffix does not include the leading separator.
 func splitAtToken(installName string) (token, suffix string) {
     idx := strings.Index(installName, "/")
     if idx < 0 {
         return installName, ""
     }
-    return installName[:idx], installName[idx:]
+    return installName[:idx], installName[idx+1:]
 }
 
 // tryResolve checks if the candidate path exists and resolves it via
