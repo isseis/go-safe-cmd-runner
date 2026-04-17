@@ -20,7 +20,7 @@
 - [ ] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
   - 確認コマンド: `grep -r "filevalidator" internal/runner/security/machoanalyzer/`
 - [ ] `internal/filevalidator` が `internal/runner/security/machoanalyzer` を import 可能なこと
-  - 確認コマンド: `go build ./internal/runner/security/machoanalyzer/` が通ること
+  - 確認コマンド: `go build ./internal/filevalidator/...` が通ること
 
 ### 2.2 `safefileio.FileSystem.SafeOpenFile` の返り値型確認
 
@@ -81,7 +81,6 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
 
 ### 4.1 実装チェックリスト
 
-- [ ] `runtime` パッケージのインポートを追加する
 - [ ] `machoanalyzer` パッケージのインポートを追加する:
   `"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"`
 - [ ] `buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData` を実装する
@@ -92,7 +91,7 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
 - [ ] `binaryanalyzer.AnalysisResult` を保持するローカル変数 `networkResult` を
   `if v.binaryAnalyzer != nil` ブロック内で追加し、`output.Result` を保存する
 - [ ] `updateAnalysisRecord` のコールバック内、`analyzeSyscalls()` 呼び出し直後に Mach-O svc スキャンを追加する
-  - [ ] `runtime.GOOS == "darwin" && networkResult == binaryanalyzer.NoNetworkSymbols` の条件分岐を追加する
+  - [ ] `networkResult == binaryanalyzer.NoNetworkSymbols` の条件分岐を追加する
   - [ ] `machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)` を呼ぶ
   - [ ] エラー時はラップして返す
   - [ ] `len(addrs) > 0` の場合のみ `record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)` を設定する
@@ -127,8 +126,8 @@ go test -tags test -v ./internal/filevalidator/
   - [ ] `binaryAnalyzer: NewBinaryAnalyzer()` を設定する
 - [ ] `syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool` を実装する
   - [ ] nil の場合は `false` を返す
-  - [ ] `AnalysisWarnings` が空でない場合は `true` を返す
-  - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合は `true` を返す
+  - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合のみ `true` を返す
+  - [ ] `AnalysisWarnings` は判定条件に含めない（ELF 側の警告による誤検知を防ぐ）
 - [ ] `isNetworkViaBinaryAnalysis` の `case err == nil:` ブランチ内、
   `output.Result = binaryanalyzer.NoNetworkSymbols` を設定する箇所の直後に svc キャッシュ参照を追加する
   - [ ] `a.syscallStore != nil` の条件分岐を追加する
@@ -145,7 +144,7 @@ go test -tags test -v ./internal/filevalidator/
 
 - [ ] `TestSyscallAnalysisHasSVCSignal_Nil`: nil → false
 - [ ] `TestSyscallAnalysisHasSVCSignal_Empty`: 空の result → false
-- [ ] `TestSyscallAnalysisHasSVCSignal_WithWarnings`: AnalysisWarnings あり → true
+- [ ] `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly`: AnalysisWarnings のみ（DeterminationMethod なし）→ false
 - [ ] `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod`: DeterminationMethod == "direct_svc_0x80" → true
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: AnalysisError が返される
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil`: 通過（false, false）

@@ -93,8 +93,6 @@ func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]u
 
 **`internal/filevalidator/validator.go`** に追加:
 ```go
-"runtime"
-
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 ```
 
@@ -134,10 +132,12 @@ if v.binaryAnalyzer != nil {
 shebang 設定の前:
 
 ```go
-// Mach-O arm64 svc #0x80 scan (darwin only).
+// Mach-O arm64 svc #0x80 scan.
 // Run after analyzeSyscalls() to overwrite the nil it sets for non-ELF files.
 // Only runs when binaryanalyzer returned NoNetworkSymbols for this file.
-if runtime.GOOS == "darwin" && networkResult == binaryanalyzer.NoNetworkSymbols {
+// CollectSVCAddressesFromFile checks magic bytes and returns nil for non-Mach-O files,
+// so this is safe to call on all platforms and binary formats.
+if networkResult == binaryanalyzer.NoNetworkSymbols {
     addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
     if svcErr != nil {
         return fmt.Errorf("mach-o svc scan failed: %w", svcErr)
@@ -153,6 +153,8 @@ if runtime.GOOS == "darwin" && networkResult == binaryanalyzer.NoNetworkSymbols 
 - `v.binaryAnalyzer == nil` の場合は `networkResult` がゼロ値（`NetworkDetected`(0)）となり
   条件は `false` になるため、svc スキャンは実行されない（意図通り）
 - `NetworkDetected` / `StaticBinary` / `AnalysisError` の場合は条件が `false` になる
+- `CollectSVCAddressesFromFile` は内部でマジックバイトを確認し、非 Mach-O ファイルには
+  `nil, nil` を返すため、OS を問わず安全に呼び出せる
 
 **`SymbolAnalysis` が nil（`StaticBinary` / `NotSupportedBinary` / `binaryAnalyzer == nil`）の
 場合は `CollectSVCAddressesFromFile` を呼ばない**（`networkResult != NoNetworkSymbols` のため）。
@@ -252,12 +254,10 @@ func NewNetworkAnalyzerWithStores(
 
 ### 5.3 `isNetworkViaBinaryAnalysis` の変更
 
-**変更箇所**: `case err == nil:` ブランチ内、
-`output.Result = binaryanalyzer.NoNetworkSymbols` を設定した直後に
-以下の処理を追加する。
+**変更箇所**: `case err == nil:` ブランチ内の `else` ブロック（`output.Result = binaryanalyzer.NoNetworkSymbols` を設定する箇所）を以下のように変更する。
 
 ```go
-case binaryanalyzer.NoNetworkSymbols:
+} else {
     output.Result = binaryanalyzer.NoNetworkSymbols
     // Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
     if a.syscallStore != nil {
@@ -291,9 +291,14 @@ case binaryanalyzer.NoNetworkSymbols:
             // Fall through to handleAnalysisOutput.
         }
     }
+}
+return handleAnalysisOutput(output, cmdPath)
 ```
 
-**変更後の `return handleAnalysisOutput(output, cmdPath)` 呼び出し**:
+**`return handleAnalysisOutput(output, cmdPath)` 呼び出しについて**:
+svc キャッシュが `AnalysisError` を返さなかった場合、`else` ブロックを抜けた後に
+`return handleAnalysisOutput(output, cmdPath)` が実行される（既存コードを維持）。
+`handleAnalysisOutput` は `NoNetworkSymbols` に対して `false, isHighRisk` を返す。
 `output.Result = binaryanalyzer.NoNetworkSymbols` の後、
 svc キャッシュが `AnalysisError` を返さなかった場合は `handleAnalysisOutput` に到達する。
 `handleAnalysisOutput` は `NoNetworkSymbols` に対して `false, isHighRisk` を返す。
@@ -303,14 +308,12 @@ svc キャッシュが `AnalysisError` を返さなかった場合は `handleAna
 ```go
 // syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult
 // contains evidence of svc #0x80 direct syscall usage.
-// Returns true when AnalysisWarnings is non-empty OR any DetectedSyscall
-// has DeterminationMethod == "direct_svc_0x80".
+// Returns true only when any DetectedSyscall has DeterminationMethod == "direct_svc_0x80".
+// AnalysisWarnings is not checked here because it may contain warnings from ELF syscall
+// analysis that are unrelated to svc #0x80, which would cause false positives.
 func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool {
     if result == nil {
         return false
-    }
-    if len(result.AnalysisWarnings) > 0 {
-        return true
     }
     for _, s := range result.DetectedSyscalls {
         if s.DeterminationMethod == "direct_svc_0x80" {
@@ -327,7 +330,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 現行の `NewNetworkAnalyzerWithStore` 呼び出し箇所を特定し、
 `SyscallAnalysisStore` を注入する。
 
-対象ファイルの特定は `grep_search` で `NewNetworkAnalyzerWithStore` を検索して確認する。
+対象ファイルの特定は `grep -r "NewNetworkAnalyzerWithStore" .` で検索して確認する。
 
 ### 5.6 テスト仕様 (`network_analyzer_test.go` 追加分)
 
@@ -338,7 +341,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | ErrHashMismatch → AnalysisError | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoCache` | ErrNoSyscallAnalysis → 通過 | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged` | NetworkDetected はそのまま通過 | AC-4 |
-| `TestSyscallAnalysisHasSVCSignal_WithWarnings` | AnalysisWarnings あり → true | AC-3 |
+| `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly` | AnalysisWarnings のみ（DeterminationMethod なし）→ false | AC-3 |
 | `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod` | DeterminationMethod == "direct_svc_0x80" → true | AC-3 |
 | `TestSyscallAnalysisHasSVCSignal_Empty` | 空の SyscallAnalysisResult → false | AC-3 |
 | `TestSyscallAnalysisHasSVCSignal_Nil` | nil → false | AC-3 |
@@ -373,8 +376,8 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 ### 7.2 `machoanalyzer` → `filevalidator` インポートサイクル
 
 `machoanalyzer` パッケージが現在 `filevalidator` を import していないことを
-`go mod graph` または `grep_search` で確認する。循環が発生する場合は
-`CollectSVCAddressesFromFile` を別パッケージ（例: `internal/machoscan`）に配置する。
+`grep -r "filevalidator" internal/runner/security/machoanalyzer/` で確認する。
+循環が発生する場合は `CollectSVCAddressesFromFile` を別パッケージ（例: `internal/machoscan`）に配置する。
 
 **`machoanalyzer` → `safefileio` インポートについて**:
 `CollectSVCAddressesFromFile` が `safefileio.FileSystem` をパラメータとして受け取るため、
