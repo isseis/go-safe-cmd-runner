@@ -465,7 +465,7 @@ benchmark:
 	$(GOTEST) -tags test -bench=. -benchmem ./internal/runner/resource/ ./internal/runner/config
 
 coverage:
-	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$' | grep -v '/binaryanalyzer$$')
+	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$' | grep -v '/binaryanalyzer$$' | grep -v '/dynlib$$')
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
