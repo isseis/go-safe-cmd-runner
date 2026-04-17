@@ -482,16 +482,10 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 			if arch.Cpu == cpuType {
 				_ = fatFile.Close()
 
-				// Re-open for the matching slice
-				sliceFile, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
-				if err != nil {
-					return false, err
-				}
-
-				defer func() { _ = sliceFile.Close() }()
-
+				// Reuse the already-open file as the SectionReader source to
+				// avoid a second SafeOpenFile call and eliminate the TOCTOU race.
 				machoFile, err := macho.NewFile(
-					io.NewSectionReader(sliceFile, int64(arch.Offset), int64(arch.Size)))
+					io.NewSectionReader(file, int64(arch.Offset), int64(arch.Size)))
 				if err != nil {
 					return false, nil
 				}
