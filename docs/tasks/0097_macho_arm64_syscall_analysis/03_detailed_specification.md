@@ -59,22 +59,21 @@ func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]u
      `macho.MagicFat (0xCAFEBABE)`, バイトスワップ版 (`0xCEFAEDFE`, `0xCFFAEDFE`, `0xBEBAFECA`)
    - 非 Mach-O（マジック不一致）の場合は `nil, nil` を返す
 3. Fat バイナリの場合 (`MagicFat`):
-   - `macho.NewFatFile` でパースする（`io.ReadSeeker` 経由）
+   - `macho.NewFatFile(f)` でパースする（`safefileio.File` は `io.ReaderAt` を実装するため
+     シーク不要。先頭 4 バイト読み出し後もそのまま渡せる）
    - 各 `FatArch` スライスを順次確認する
    - `fa.Cpu == macho.CpuArm64` のスライスに対してのみ `collectSVCAddresses(&fa.File)` を呼ぶ
    - 各スライスの結果を `append` で連結して返す
    - `macho.NewFatFile` でパースエラーの場合はエラーを返す
 4. 単一アーキテクチャ Mach-O の場合:
-   - `macho.NewFile` でパースする（`io.ReadSeeker` 経由）
+   - `macho.NewFile(f)` でパースする（同上、シーク不要）
    - `collectSVCAddresses` を呼ぶ
    - `macho.NewFile` でパースエラーの場合はエラーを返す
 
-**ファイルシーク戦略**:
-- `SafeOpenFile` は `safefileio.File` インターフェースを返す。このインターフェースは
-  `io.Reader`, `io.Seeker`, `io.ReaderAt` を実装するため、マジック確認後に
-  `f.Seek(0, io.SeekStart)` でシークして `macho.NewFile` / `macho.NewFatFile` に渡せる
-- `macho.NewFatFile` は `io.ReaderAt` を必要とするが、`safefileio.File` が実装済みのため
-  型アサーション不要
+**ファイルアクセス戦略**:
+- `macho.NewFile` / `macho.NewFatFile` はいずれも `io.ReaderAt` を受け取る。
+  `safefileio.File` はこのインターフェースを実装しているため、先頭 4 バイト読み出し後に
+  シークする必要はなく、ファイルをそのまま渡せる
 
 ### 3.3 テスト仕様 (`svc_scanner_test.go` 追加分)
 
@@ -151,7 +150,7 @@ if runtime.GOOS == "darwin" && networkResult == binaryanalyzer.NoNetworkSymbols 
 
 **`networkResult == binaryanalyzer.NoNetworkSymbols` 判定の根拠**:
 - `output.Result` の値を直接変数に保持するため、フィールド値推測より正確
-- `v.binaryAnalyzer == nil` の場合は `networkResult` がゼロ値（`""`）となり
+- `v.binaryAnalyzer == nil` の場合は `networkResult` がゼロ値（`NetworkDetected`(0)）となり
   条件は `false` になるため、svc スキャンは実行されない（意図通り）
 - `NetworkDetected` / `StaticBinary` / `AnalysisError` の場合は条件が `false` になる
 
