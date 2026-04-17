@@ -122,10 +122,11 @@ func (r *LibraryResolver) Resolve(installName, loaderPath string, rpaths []strin
 		}
 	}
 
-	// Relative name without @ token: search default paths
-	basename := filepath.Base(installName)
+	// Relative name without @ token: search default paths.
+	// Preserve the relative path so that "foo/libBar.dylib" resolves to
+	// "/usr/lib/foo/libBar.dylib", not "/usr/lib/libBar.dylib".
 	for _, dir := range defaultSearchPaths {
-		candidate := filepath.Join(dir, basename)
+		candidate := filepath.Join(dir, installName)
 		resolved, err := tryResolve(candidate)
 		if err == nil {
 			return resolved, nil
