@@ -36,7 +36,7 @@
 
 **概要**: Mach-O の `__TEXT,__text` セクションを逆アセンブルし、`svc #0x80` 直前の `x16` レジスタへの即値設定から BSD syscall 番号を特定することで、ネットワーク関連 syscall（`socket`=97, `connect`=98 等）を検出する（FR-4.2）。Darwin arm64 では `x16` に BSD クラスプレフィックス `0x2000000` が付加されるため解析時に考慮する。タスク 0072 の arm64 デコーダを再利用。Fat バイナリは全スライスを解析し最も深刻な結果を採用する。解析結果を `fileanalysis.Record.SyscallAnalysis` に保存してキャッシュとして活用し live 再解析を最小化する（FR-4.4）。インポートシンボル解析で `NoNetworkSymbols` となった CGO/動的バイナリにも同 syscall 解析をフォールバック適用する（FR-4.5）。
 
-- [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/01_requirements.md` を作成する
+- [x] `docs/tasks/0097_macho_arm64_syscall_analysis/01_requirements.md` を作成する
 - [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/02_architecture.md` を作成する
 - [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/03_detailed_specification.md` を作成する
 - [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/04_implementation_plan.md` を作成する
