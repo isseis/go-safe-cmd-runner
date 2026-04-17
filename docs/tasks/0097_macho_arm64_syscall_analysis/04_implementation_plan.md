@@ -1,0 +1,237 @@
+# Mach-O arm64 svc #0x80 キャッシュ統合・CGO フォールバック 実装計画書
+
+## 1. 実装の進め方
+
+本実装計画書は詳細仕様書（`03_detailed_specification.md`）に基づき、
+依存関係の順番を考慮した実装手順と進捗管理チェックリストを定義する。
+
+### 実装ステップ概要
+
+1. **Step 1**: `machoanalyzer` パッケージの拡張（依存なし）
+2. **Step 2**: `filevalidator` パッケージの拡張（Step 1 に依存）
+3. **Step 3**: `network_analyzer` の拡張（fileanalysis パッケージへの依存のみ）
+4. **Step 4**: `risk/evaluator.go` の更新（Step 3 に依存）
+5. **Step 5**: 統合確認とビルド検証
+
+## 2. 事前確認事項
+
+### 2.1 インポートサイクル確認
+
+- [ ] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
+  - 確認コマンド: `grep -r "filevalidator" internal/runner/security/machoanalyzer/`
+- [ ] `internal/filevalidator` が `internal/runner/security/machoanalyzer` を import 可能なこと
+  - 確認コマンド: `go build ./internal/runner/security/machoanalyzer/` が通ること
+
+### 2.2 `safefileio.FileSystem.SafeOpenFile` の返り値型確認
+
+- [x] `SafeOpenFile` の返り値型: `safefileio.File` インターフェース
+  - `io.Reader`, `io.Writer`, `io.Seeker`, `io.ReaderAt` を実装する
+  - `macho.NewFile` および `macho.NewFatFile` に直接渡せる（型アサーション不要）
+
+### 2.3 `fileanalysis.SyscallAnalysisData` の型確認
+
+- [ ] `fileanalysis.SyscallAnalysisData` が `common.SyscallAnalysisResultCore` を embed していること
+  - ファイル: `internal/fileanalysis/schema.go`
+
+## 3. Step 1: `machoanalyzer` パッケージの拡張
+
+**対象ファイル**: `internal/runner/security/machoanalyzer/svc_scanner.go`
+
+### 3.1 実装チェックリスト
+
+- [ ] `svc_scanner.go` に `safefileio` パッケージのインポートを追加する:
+  `"github.com/isseis/go-safe-cmd-runner/internal/safefileio"`
+- [ ] `svc_scanner.go` に `"os"` パッケージのインポートを追加する
+- [ ] `collectSVCAddresses(f *macho.File) ([]uint64, error)` を実装する
+  - [ ] `f.Cpu != macho.CpuArm64` の場合は `nil, nil` を返す
+  - [ ] `__TEXT,__text` セクションが存在しない場合は `nil, nil` を返す
+  - [ ] セクションデータ読み出しエラー時はエラーを返す
+  - [ ] 4 バイトアラインで走査し、`svcInstruction` にマッチした仮想アドレスを収集する
+  - [ ] `section.Addr + uint64(i)` で仮想アドレスを算出する
+  - [ ] 検出なしの場合は `nil, nil` を返す
+- [ ] `containsSVCInstruction` を `collectSVCAddresses` に委譲するよう変更する
+  - [ ] 変更後も既存の動作（bool 返し）を維持する
+- [ ] `CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error)` を実装する
+  - [ ] `fs.SafeOpenFile` でファイルを開く
+  - [ ] 先頭 4 バイトでマジック確認を行い、非 Mach-O には `nil, nil` を返す
+  - [ ] Fat バイナリ: arm64 スライスのみ `collectSVCAddresses` を呼び結果を連結する
+  - [ ] 単一アーキテクチャ: `collectSVCAddresses` を呼ぶ
+  - [ ] パースエラー時はエラーを返す
+
+### 3.2 テストチェックリスト
+
+**ファイル**: `internal/runner/security/machoanalyzer/svc_scanner_test.go`（追加分）
+
+- [ ] `TestCollectSVCAddresses_Arm64WithSVC`: arm64 + svc #0x80 → アドレスを返す
+- [ ] `TestCollectSVCAddresses_Arm64NoSVC`: arm64 + svc なし → `nil, nil`
+- [ ] `TestCollectSVCAddresses_NonArm64`: x86_64 → `nil, nil`
+- [ ] `TestCollectSVCAddresses_MultipleSVC`: 複数 svc #0x80 → 全アドレスを返す
+- [ ] `TestCollectSVCAddressesFromFile_NotMacho`: ELF ファイル → `nil, nil`
+- [ ] `TestCollectSVCAddressesFromFile_FatBinary`: Fat バイナリ → arm64 スライスのみ走査
+- [ ] `TestContainsSVCInstruction_DelegatesToCollect`: リファクタリング後も正常動作
+
+**実行コマンド**:
+```
+go test -tags test -v ./internal/runner/security/machoanalyzer/
+```
+
+## 4. Step 2: `filevalidator` パッケージの拡張
+
+**対象ファイル**: `internal/filevalidator/validator.go`
+
+### 4.1 実装チェックリスト
+
+- [ ] `runtime` パッケージのインポートを追加する
+- [ ] `machoanalyzer` パッケージのインポートを追加する:
+  `"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"`
+- [ ] `buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData` を実装する
+  - [ ] `Architecture: "arm64"` を設定する
+  - [ ] `AnalysisWarnings: []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"}` を設定する
+  - [ ] `DetectedSyscalls` に各アドレスを `Number=-1, DeterminationMethod="direct_svc_0x80", Source="direct_svc_0x80"` で記録する
+  - [ ] `ArgEvalResults` は設定しない（nil のまま）
+- [ ] `binaryanalyzer.AnalysisResult` を保持するローカル変数 `networkResult` を
+  `if v.binaryAnalyzer != nil` ブロック内で追加し、`output.Result` を保存する
+- [ ] `updateAnalysisRecord` のコールバック内、`analyzeSyscalls()` 呼び出し直後に Mach-O svc スキャンを追加する
+  - [ ] `runtime.GOOS == "darwin" && networkResult == binaryanalyzer.NoNetworkSymbols` の条件分岐を追加する
+  - [ ] `machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)` を呼ぶ
+  - [ ] エラー時はラップして返す
+  - [ ] `len(addrs) > 0` の場合のみ `record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)` を設定する
+
+### 4.2 テストチェックリスト
+
+**ファイル**: `internal/filevalidator/validator_darwin_test.go`（新規）
+
+- [ ] `TestBuildSVCSyscallAnalysis`: 単体テスト
+  - [ ] `Architecture == "arm64"` を確認
+  - [ ] `AnalysisWarnings` に検出メッセージが含まれる
+  - [ ] `DetectedSyscalls` に正しいフィールドが設定される
+- [ ] `TestUpdateAnalysisRecord_MachoSVCDetected`: svc ありの Mach-O で SyscallAnalysis が設定される
+- [ ] `TestUpdateAnalysisRecord_MachoNoSVC`: svc なしの Mach-O で SyscallAnalysis が nil
+- [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC`: NetworkDetected → SyscallAnalysis 保存なし
+- [ ] `TestUpdateAnalysisRecord_ELFNotAffected`: ELF バイナリのフロー変更なし（linux のみ、またはモック）
+
+**実行コマンド**:
+```
+go test -tags test -v ./internal/filevalidator/
+```
+
+## 5. Step 3: `network_analyzer` の拡張
+
+**対象ファイル**: `internal/runner/security/network_analyzer.go`
+
+### 5.1 実装チェックリスト
+
+- [ ] `NetworkAnalyzer` 構造体に `syscallStore fileanalysis.SyscallAnalysisStore` フィールドを追加する
+- [ ] `NewNetworkAnalyzerWithStores` コンストラクタを実装する
+  - [ ] `symStore` と `svcStore` を受け取り `NetworkAnalyzer` を返す
+  - [ ] `binaryAnalyzer: NewBinaryAnalyzer()` を設定する
+- [ ] `syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool` を実装する
+  - [ ] nil の場合は `false` を返す
+  - [ ] `AnalysisWarnings` が空でない場合は `true` を返す
+  - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合は `true` を返す
+- [ ] `isNetworkViaBinaryAnalysis` の `case err == nil:` ブランチ内、
+  `output.Result = binaryanalyzer.NoNetworkSymbols` を設定する箇所の直後に svc キャッシュ参照を追加する
+  - [ ] `a.syscallStore != nil` の条件分岐を追加する
+  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ
+  - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す
+  - [ ] `errors.Is(svcErr, fileanalysis.ErrHashMismatch)` → `true, true` を返す
+  - [ ] `ErrRecordNotFound` / `ErrNoSyscallAnalysis` → フォールバック（`handleAnalysisOutput` へ）
+  - [ ] `SchemaVersionMismatchError` → ログ警告 + フォールバック
+  - [ ] その他エラー → ログ警告 + フォールバック
+
+### 5.2 テストチェックリスト
+
+**ファイル**: `internal/runner/security/network_analyzer_test.go`（追加分）
+
+- [ ] `TestSyscallAnalysisHasSVCSignal_Nil`: nil → false
+- [ ] `TestSyscallAnalysisHasSVCSignal_Empty`: 空の result → false
+- [ ] `TestSyscallAnalysisHasSVCSignal_WithWarnings`: AnalysisWarnings あり → true
+- [ ] `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod`: DeterminationMethod == "direct_svc_0x80" → true
+- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: AnalysisError が返される
+- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil`: 通過（false, false）
+- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch`: AnalysisError が返される
+- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoCache`: 通過
+- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged`: NetworkDetected は変更なし
+
+**実行コマンド**:
+```
+go test -tags test -v ./internal/runner/security/
+```
+
+## 6. Step 4: `risk/evaluator.go` の更新
+
+**対象ファイル**: `internal/runner/risk/evaluator.go`
+
+### 6.1 実装チェックリスト
+
+- [ ] `NewStandardEvaluator` のシグネチャを変更して `syscallStore` を追加する:
+  ```go
+  func NewStandardEvaluator(store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) Evaluator
+  ```
+- [ ] `security.NewNetworkAnalyzerWithStore(store)` を
+  `security.NewNetworkAnalyzerWithStores(store, syscallStore)` に変更する
+- [ ] `NewStandardEvaluator` の呼び出し箇所を全て更新する
+  - 呼び出し箇所の確認: `grep -r "NewStandardEvaluator" --include="*.go" .`
+
+### 6.2 呼び出し箇所のチェックリスト
+
+- [ ] `internal/runner/` 内の `NewStandardEvaluator` 呼び出しを全て更新する
+- [ ] `cmd/runner/` 内の呼び出しを更新する（`SyscallAnalysisStore` を注入）
+- [ ] テストコード内の呼び出しを更新する
+
+**実行コマンド**:
+```
+go build ./...
+go test -tags test -v ./internal/runner/risk/
+```
+
+## 7. Step 5: 統合確認
+
+### 7.1 ビルドチェックリスト
+
+- [ ] `make build` でビルドエラーなし
+- [ ] `make lint` でリントエラーなし
+- [ ] `make fmt` でフォーマット適用後に変更差分なし
+
+### 7.2 テストチェックリスト
+
+- [ ] `make test` で全テストパス
+  ```
+  go test -tags test -v ./...
+  ```
+- [ ] Step 1〜4 で追加したテストがすべてパス
+
+### 7.3 最終確認チェックリスト
+
+- [ ] `go vet ./...` でエラーなし
+- [ ] `make test` が全て GREEN
+- [ ] `make lint` が全て GREEN
+- [ ] `make build` が成功
+
+## 8. リスクと対策
+
+| リスク | 影響 | 対策 |
+|-------|------|------|
+| `machoanalyzer` → `filevalidator` インポートサイクル | ビルド不可 | 事前確認（§2.1）で検出。循環が発生する場合は `CollectSVCAddressesFromFile` を別パッケージに移動 |
+| `SafeOpenFile` の返り値型が `io.ReaderAt` を実装しない | `macho.NewFile` に渡せない | 事前確認（§2.2）で検出。型アサーションまたは `os.Open` 直接使用への代替を検討 |
+| darwin 環境以外でのテスト失敗 | CI の失敗 | `validator_darwin_test.go` を darwin ビルドタグ付きで分離。OS モックを使用 |
+| `NewStandardEvaluator` の呼び出し箇所の見落とし | コンパイルエラー | `go build ./...` で早期検出 |
+
+## 9. 実装順序の根拠
+
+```
+machoanalyzer (Step 1)
+    ↓ (CollectSVCAddressesFromFile を利用)
+filevalidator (Step 2)
+
+fileanalysis (既存・変更なし)
+    ↓ (SyscallAnalysisStore を利用)
+network_analyzer (Step 3)
+    ↓ (NewNetworkAnalyzerWithStores を利用)
+risk/evaluator (Step 4)
+    ↓
+runner コマンド (Step 4 の一部)
+```
+
+Step 1 と Step 3 は相互依存がないため、並行実装が可能。
+ただし、本実装計画書の規約（Sequential Tool Execution Protocol）に従い順次実装する。
