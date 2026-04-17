@@ -95,10 +95,12 @@ type AnalysisFeatures struct {
 
 | 対象バイナリ | 必要なフラグ | フラグが false の場合の挙動 |
 |------------|-------------|--------------------------|
-| ELF バイナリ | `ELFDynLibDeps == true` | エラー（`record` 再実行を要求） |
+| 動的リンク ELF バイナリ（`DT_NEEDED` あり） | `ELFDynLibDeps == true` | エラー（`record` 再実行を要求） |
+| static ELF バイナリ（`DT_NEEDED` なし） | なし | フラグチェックをスキップ |
 | Mach-O バイナリ | `MachODynLibDeps == true` | エラー（`record` 再実行を要求）（タスク 0096 実装後に有効化） |
 | スクリプト・その他 | なし | フラグチェックをスキップ |
 
+注意: `ELFDynLibDeps` は「動的リンク ELF に対する dynlib 依存解析が実施された」ことを示すフラグとする。したがって、static ELF（`DT_NEEDED` なし）には `ELFDynLibDeps == true` を要求しない。これは現行の `verifyDynLibDeps` の挙動（動的リンク ELF のみをブロックし、static ELF は許可する）と整合させるためである。
 注意: Mach-O フォーマットの検出ロジックはタスク 0096 のスコープであり、本タスクでは ELF のフラグチェックのみを実装する。Mach-O 行は将来拡張のための設計指針として記載する。
 
 フラグが `true` の場合、既存の `DynLibDeps` ハッシュ検証ロジックをそのまま適用する（フラグは「解析が行われた」事実を示すのみで、検証ロジックは変更しない）。
