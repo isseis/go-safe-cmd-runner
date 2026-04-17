@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1524,6 +1525,10 @@ func TestVerify_SchemaVersion(t *testing.T) {
 // ErrDynLibDepsRequired when a dynamically linked ELF binary has a valid v2
 // record but DynLibDeps is nil (i.e., dynlib snapshot was never recorded).
 func TestVerify_ELFNoDynLibDeps(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
 	hashDir := commontesting.SafeTempDir(t)
 
 	// /bin/ls is a dynamically linked ELF binary on Linux.

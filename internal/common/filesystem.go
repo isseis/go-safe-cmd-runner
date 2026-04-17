@@ -91,9 +91,11 @@ func (fs *DefaultFileSystem) FileExists(path string) (bool, error) {
 	return err == nil, err
 }
 
-// IsDir checks if the path is a directory
+// IsDir checks if the path is a directory, following symlinks.
+// Use os.Stat so that symlinks to directories (e.g. /tmp -> /private/tmp on
+// macOS) are correctly reported as directories.
 func (fs *DefaultFileSystem) IsDir(path string) (bool, error) {
-	info, err := os.Lstat(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		return false, err
 	}

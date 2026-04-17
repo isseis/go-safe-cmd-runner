@@ -321,14 +321,29 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 
 	// Walk up the directory tree until we find an existing directory
 	for {
-		if info, err := v.fs.Lstat(currentPath); err == nil {
+		if _, err := v.fs.Lstat(currentPath); err == nil {
+			// Resolve symlinks to get the canonical path for security validation.
+			// On some systems (e.g. macOS), system paths like /tmp are symlinks
+			// (e.g. /tmp -> /private/tmp). EvalSymlinks resolves the real path so
+			// that validateCompletePath can verify each component without tripping
+			// over OS-provided symlinks.
+			resolvedPath, err := filepath.EvalSymlinks(currentPath)
+			if err != nil {
+				return fmt.Errorf("failed to resolve path %s: %w", currentPath, err)
+			}
+
+			resolvedInfo, err := v.fs.Lstat(resolvedPath)
+			if err != nil {
+				return fmt.Errorf("failed to stat resolved path %s: %w", resolvedPath, err)
+			}
+
 			// Directory exists, validate security for complete path with realUID context
-			if err := v.validateCompletePath(currentPath, currentPath, realUID); err != nil {
+			if err := v.validateCompletePath(resolvedPath, currentPath, realUID); err != nil {
 				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
 			}
 
 			// Check write permission for the existing directory (where files will be created)
-			if err := v.checkWritePermission(currentPath, info, realUID); err != nil {
+			if err := v.checkWritePermission(resolvedPath, resolvedInfo, realUID); err != nil {
 				return fmt.Errorf("write permission check failed for %s: %w", currentPath, err)
 			}
 

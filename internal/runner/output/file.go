@@ -69,14 +69,35 @@ func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string) error {
 		return fmt.Errorf("failed to ensure directory for final path: %w", err)
 	}
 
+	// Resolve symlinks in the parent directories before calling AtomicMoveFile.
+	// safefileio rejects any symlink in the path for security, but OS-managed
+	// symlinks (e.g. /tmp -> /private/tmp on macOS) must be allowed.
+	// Resolving only the parent keeps the leaf-symlink check intact.
+	resolvedTemp := resolveParentSymlinks(tempPath)
+	resolvedFinal := resolveParentSymlinks(finalPath)
+
 	// Use safeFS.AtomicMoveFile for secure atomic file moving
 	// This provides protection against TOCTOU attacks and ensures 0600 permissions
 	const secureFilePermission = 0o600
-	if err := f.safeFS.AtomicMoveFile(tempPath, finalPath, secureFilePermission); err != nil {
+	if err := f.safeFS.AtomicMoveFile(resolvedTemp, resolvedFinal, secureFilePermission); err != nil {
 		return fmt.Errorf("failed to move to final path %s: %w", finalPath, err)
 	}
 
 	return nil
+}
+
+// resolveParentSymlinks resolves symlinks in the parent directory of path and
+// returns the resulting canonical path.  The leaf (file) component is left
+// unresolved so that a symlink placed at the destination is still detectable
+// by downstream security checks.  If the parent directory cannot be resolved
+// (e.g. it does not exist yet) the original path is returned unchanged.
+func resolveParentSymlinks(path string) string {
+	dir := filepath.Dir(path)
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return path
+	}
+	return filepath.Join(resolved, filepath.Base(path))
 }
 
 // EnsureDirectory ensures directory exists with proper permissions (0750)

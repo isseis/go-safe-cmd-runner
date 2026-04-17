@@ -599,12 +599,15 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Verify AtomicMoveFile was called with correct parameters
+			// Verify AtomicMoveFile was called with correct parameters.
+			// MoveToFinal resolves symlinks in the parent directories before
+			// calling AtomicMoveFile (e.g. /tmp -> /private/tmp on macOS),
+			// so we compare against the resolved paths, not the originals.
 			if tt.wantAtomicMoveCalled {
 				require.Len(t, mockSafeFS.AtomicMoveFileCalls, 1)
 				call := mockSafeFS.AtomicMoveFileCalls[0]
-				assert.Equal(t, tt.tempPath, call.SrcPath)
-				assert.Equal(t, tt.finalPath, call.DstPath)
+				assert.Equal(t, resolveParentSymlinks(tt.tempPath), call.SrcPath)
+				assert.Equal(t, resolveParentSymlinks(tt.finalPath), call.DstPath)
 				assert.Equal(t, os.FileMode(0o600), call.RequiredPerm)
 			} else {
 				assert.Empty(t, mockSafeFS.AtomicMoveFileCalls)

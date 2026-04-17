@@ -87,12 +87,29 @@ type resolveItem struct {
 	depth      int
 }
 
+// resolveSymlinks resolves all symlinks in path using filepath.EvalSymlinks.
+// If resolution fails (e.g. the path does not exist yet), the original path is
+// returned unchanged.  This is used to canonicalise paths before passing them
+// to safefileio, which rejects OS-managed symlinks such as /var -> /private/var
+// on macOS.
+func resolveSymlinks(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
+}
+
 // Analyze resolves all direct and transitive DT_NEEDED dependencies of the given
 // ELF binary, computes their hashes, and returns a library dependency snapshot.
 //
 // Returns nil (not an error) if the file is not ELF or has no DT_NEEDED entries.
 // Returns an error if any library cannot be resolved (FR-3.1.7).
 func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, error) {
+	// Resolve symlinks upfront so that safefileio, error messages, and path
+	// comparisons all use the canonical path consistently.
+	binaryPath = resolveSymlinks(binaryPath)
+
 	// Open file safely
 	file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
 	if err != nil {
@@ -241,7 +258,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 // Streams the file content through sha256.New() to avoid loading the entire
 // file into memory (important for large libraries such as libLLVM.so ~50MB).
 func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
-	file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+	file, err := fs.SafeOpenFile(resolveSymlinks(path), os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +275,7 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 // Returns ErrDTRPATHNotSupported if the library contains DT_RPATH.
 // Returns nil slices (not an error) if parsing fails for other reasons.
 func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, err error) {
-	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
+	file, err := a.fs.SafeOpenFile(resolveSymlinks(path), os.O_RDONLY, 0)
 	if err != nil {
 		return nil, nil, err
 	}
