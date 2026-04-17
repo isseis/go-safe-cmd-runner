@@ -73,8 +73,9 @@ syscall を発行するため、`svc #0x80` はバイナリ本体の `__TEXT,__t
 - `SyscallAnalysis.Architecture = "arm64"`
 - `SyscallAnalysis.AnalysisWarnings` に「`svc #0x80` を検出: libSystem.dylib を迂回した
   直接 syscall が存在する」旨のメッセージを追加する
-- `SyscallAnalysis.DetectedSyscalls` に各 `svc #0x80` のアドレスを記録する。
-  syscall 番号は解析しないため `Number = -1`、`DeterminationMethod = "direct_svc_0x80"` とする
+- `SyscallAnalysis.DetectedSyscalls` に各 `svc #0x80` の情報を記録する。
+  syscall 番号は解析しないため `Number = -1` とし、検出したアドレスは `Location` に保存する。
+  また、検出理由は既存スキーマに合わせて `Source = "direct_svc_0x80"` で表現する
 
 **保存しない場合**: `svc #0x80` が 1 件も検出されなかった場合は `SyscallAnalysis` を `nil` のままにする。
 
