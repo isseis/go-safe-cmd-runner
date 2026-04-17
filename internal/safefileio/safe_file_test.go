@@ -964,11 +964,10 @@ func TestResolvedPathModeEnforcement(t *testing.T) {
 	})
 }
 
-// TestSafeReadFile_AcceptsBothModes verifies that SafeReadFile accepts ResolvedPath values
-// created with either NewResolvedPath or NewResolvedPathParentOnly (AC-17).
 // TestEnsureParentDirsNoSymlinks exercises the symlink policy in
 // ensureParentDirsNoSymlinks: user-owned symlinks must be rejected, while
-// root-owned (OS-managed) symlinks must be allowed.
+// OS-managed symlinks on the explicit allowlist (e.g. /tmp -> /private/tmp)
+// must be allowed after target verification.
 func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 	t.Run("rejects user-owned symlink in parent", func(t *testing.T) {
 		// Create:  <tmpDir>/real/   (real directory)
@@ -1010,6 +1009,8 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 	})
 }
 
+// TestSafeReadFile_AcceptsBothModes verifies that SafeReadFile accepts ResolvedPath values
+// created with either NewResolvedPath or NewResolvedPathParentOnly (AC-17).
 func TestSafeReadFile_AcceptsBothModes(t *testing.T) {
 	tempDir := commontesting.SafeTempDir(t)
 	filePath := filepath.Join(tempDir, "readable.txt")
