@@ -59,8 +59,8 @@ func (m *MockFileManager) WriteToTemp(file *os.File, data []byte) (int, error) {
 	return args.Int(0), args.Error(1)
 }
 
-func (m *MockFileManager) MoveToFinal(tempPath, finalPath string) error {
-	args := m.Called(tempPath, finalPath)
+func (m *MockFileManager) MoveToFinal(tempPath, finalPath string, perm os.FileMode) error {
+	args := m.Called(tempPath, finalPath, perm)
 	return args.Error(0)
 }
 
@@ -355,7 +355,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			name:          "successful_finalization",
 			bufferContent: []byte("test output content\nline 2\n"),
 			setupMocks: func(fm *MockFileManager) {
-				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/final.txt").Return(nil)
+				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/final.txt", os.FileMode(0o600)).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -363,7 +363,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			name:          "empty_buffer_finalization",
 			bufferContent: []byte{},
 			setupMocks: func(fm *MockFileManager) {
-				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/empty.txt").Return(nil)
+				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/empty.txt", os.FileMode(0o600)).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -371,7 +371,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			name:          "file_move_error",
 			bufferContent: []byte("content"),
 			setupMocks: func(fm *MockFileManager) {
-				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/error.txt").Return(ErrTestPermissionDenied)
+				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/error.txt", os.FileMode(0o600)).Return(ErrTestPermissionDenied)
 			},
 			wantErr:    true,
 			errMessage: "permission denied",

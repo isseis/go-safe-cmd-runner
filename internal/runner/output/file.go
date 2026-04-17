@@ -61,8 +61,11 @@ func (f *SafeFileManager) WriteToTemp(file *os.File, data []byte) (int, error) {
 	return n, nil
 }
 
-// MoveToFinal atomically moves temp file to final location using safefileio
-func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string) error {
+// MoveToFinal atomically moves temp file to final location using safefileio.
+// perm is the permission to apply to the destination file; the caller is
+// responsible for choosing an appropriate value based on the sensitivity of
+// the file content.
+func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string, perm os.FileMode) error {
 	// Ensure the directory exists for the final path
 	finalDir := filepath.Dir(finalPath)
 	if err := f.EnsureDirectory(finalDir); err != nil {
@@ -76,8 +79,7 @@ func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string) error {
 	// macOS).  Do NOT pre-resolve symlinks here: doing so would bypass that
 	// check and allow a user-owned symlink in a parent directory to redirect
 	// the write to an attacker-controlled location.
-	const secureFilePermission = 0o600
-	if err := f.safeFS.AtomicMoveFile(tempPath, finalPath, secureFilePermission); err != nil {
+	if err := f.safeFS.AtomicMoveFile(tempPath, finalPath, perm); err != nil {
 		return fmt.Errorf("failed to move to final path %s: %w", finalPath, err)
 	}
 

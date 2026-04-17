@@ -175,9 +175,12 @@ func (m *DefaultOutputCaptureManager) createTempFile(outputPath string) (*os.Fil
 	return tempFile, tempFile.Name(), nil
 }
 
-// moveToFinalLocation moves the temporary file to the final output location
+// moveToFinalLocation moves the temporary file to the final output location.
+// Output files may contain sensitive command output (environment variables,
+// credentials, database dumps, etc.), so 0o600 (owner-only) is used.
 func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath string) error {
-	if err := m.fileManager.MoveToFinal(tempPath, outputPath); err != nil {
+	const outputFilePerm = 0o600
+	if err := m.fileManager.MoveToFinal(tempPath, outputPath, outputFilePerm); err != nil {
 		return fmt.Errorf("failed to move temp file to final location: %w", err)
 	}
 	return nil

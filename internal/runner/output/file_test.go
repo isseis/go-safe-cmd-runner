@@ -309,7 +309,8 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			err := manager.MoveToFinal(tempPath, finalPath)
+			const testPerm = os.FileMode(0o600)
+			err := manager.MoveToFinal(tempPath, finalPath, testPerm)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -331,14 +332,10 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, originalContent, finalContent)
 
-				// Verify final file has secure permissions
-				// Note: SafeAtomicMoveFile enforces 0600 permissions for maximum security
+				// Verify final file has the permission specified by the caller
 				stat, err := os.Stat(finalPath)
 				require.NoError(t, err)
-				actualPerm := stat.Mode().Perm()
-				// SafeAtomicMoveFile enforces 0600 for write operations for security
-				expectedPerm := os.FileMode(0o600)
-				assert.Equal(t, expectedPerm, actualPerm)
+				assert.Equal(t, testPerm, stat.Mode().Perm())
 			}
 		})
 	}
@@ -437,7 +434,7 @@ func TestSafeFileManager_FileDescriptorLeakagePrevention(t *testing.T) {
 	require.NoError(t, tempFile.Close())
 
 	// 4. Use SafeFileManager to move temp to final
-	err = manager.MoveToFinal(tempPath, finalPath)
+	err = manager.MoveToFinal(tempPath, finalPath, 0o600)
 	assert.NoError(t, err, "MoveToFinal should succeed")
 
 	// 5. Verify file was overwritten
@@ -494,7 +491,7 @@ func TestSafeFileManager_Integration(t *testing.T) {
 	tempFile.Close()
 
 	// Move to final location
-	err = manager.MoveToFinal(tempPath, finalPath)
+	err = manager.MoveToFinal(tempPath, finalPath, 0o600)
 	require.NoError(t, err)
 
 	// Verify final file content
@@ -509,7 +506,6 @@ func TestSafeFileManager_Integration(t *testing.T) {
 	// Verify final file permissions
 	stat, err := os.Stat(finalPath)
 	require.NoError(t, err)
-	// SafeAtomicMoveFile enforces 0600 for write operations for security
 	assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm())
 }
 
@@ -524,6 +520,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 		name                 string
 		tempPath             string
 		finalPath            string
+		perm                 os.FileMode
 		setupMock            func(*commontesting.MockFileSystem)
 		atomicMoveError      error
 		wantErr              bool
@@ -534,6 +531,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 			name:      "successful_move",
 			tempPath:  "/tmp/test.tmp",
 			finalPath: "/output/final.txt",
+			perm:      0o600,
 			setupMock: func(mock *commontesting.MockFileSystem) {
 				// Pre-add directory so EnsureDirectory succeeds
 				require.NoError(t, mock.AddDir("/output", 0o750))
@@ -546,6 +544,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 			name:      "atomic_move_fails",
 			tempPath:  "/tmp/test.tmp",
 			finalPath: "/output/final.txt",
+			perm:      0o600,
 			setupMock: func(mock *commontesting.MockFileSystem) {
 				// Pre-add directory so EnsureDirectory succeeds
 				require.NoError(t, mock.AddDir("/output", 0o750))
@@ -559,6 +558,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 			name:      "ensure_directory_fails_path_is_file",
 			tempPath:  "/tmp/test.tmp",
 			finalPath: "/existing_file/final.txt",
+			perm:      0o600,
 			setupMock: func(mock *commontesting.MockFileSystem) {
 				// Add a file at the path where we expect a directory
 				require.NoError(t, mock.AddFile("/existing_file", 0o644, []byte("content")))
@@ -587,7 +587,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 			manager := NewSafeFileManagerWithFS(mockSafeFS, mockCommonFS)
 
 			// Execute
-			err := manager.MoveToFinal(tt.tempPath, tt.finalPath)
+			err := manager.MoveToFinal(tt.tempPath, tt.finalPath, tt.perm)
 
 			// Verify error handling
 			if tt.wantErr {
@@ -608,7 +608,7 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 				call := mockSafeFS.AtomicMoveFileCalls[0]
 				assert.Equal(t, tt.tempPath, call.SrcPath)
 				assert.Equal(t, tt.finalPath, call.DstPath)
-				assert.Equal(t, os.FileMode(0o600), call.RequiredPerm)
+				assert.Equal(t, tt.perm, call.RequiredPerm)
 			} else {
 				assert.Empty(t, mockSafeFS.AtomicMoveFileCalls)
 			}
