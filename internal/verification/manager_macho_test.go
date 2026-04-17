@@ -34,38 +34,7 @@ func findDyldCacheOnlyMachOBinary(t *testing.T) (string, bool) {
 	return "", false
 }
 
-// findNonDyldCacheMachOBinary returns the path of a Mach-O binary that has at
-// least one LC_LOAD_DYLIB entry pointing to a file that exists on disk
-// (i.e., a non-dyld-shared-cache library). Returns ("", false) when not found.
-//
-// It first checks common Homebrew locations; if none are present (e.g. on a
-// clean CI image), it falls back to compiling a minimal binary with clang.
-func findNonDyldCacheMachOBinary(t *testing.T) (string, bool) {
-	t.Helper()
-
-	// Common Homebrew binary locations.
-	candidates := []string{
-		"/opt/homebrew/bin/python3",
-		"/usr/local/bin/python3",
-		"/opt/homebrew/bin/git",
-		"/usr/local/bin/git",
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			resolved, err := filepath.EvalSymlinks(p)
-			if err != nil {
-				continue
-			}
-			return resolved, true
-		}
-	}
-
-	// No Homebrew binary found: compile a minimal binary on the fly so the
-	// test is not silently skipped on clean CI images without Homebrew.
-	return buildNonDyldCacheMachOBinary(t)
-}
-
-// buildNonDyldCacheMachOBinary compiles a minimal Mach-O binary in a temp
+// findNonDyldCacheMachOBinary compiles a minimal Mach-O binary in a temp
 // directory that links against a locally-built shared library (not in the dyld
 // shared cache). Returns ("", false) if clang is unavailable or compilation fails.
 //
@@ -76,7 +45,7 @@ func findNonDyldCacheMachOBinary(t *testing.T) (string, bool) {
 //
 // Because libfoo.dylib lives on disk and is not a system library, Analyze()
 // will include it in DynLibDeps rather than skipping it as a shared-cache lib.
-func buildNonDyldCacheMachOBinary(t *testing.T) (string, bool) {
+func findNonDyldCacheMachOBinary(t *testing.T) (string, bool) {
 	t.Helper()
 
 	clang, err := exec.LookPath("clang")
