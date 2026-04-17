@@ -73,7 +73,7 @@ type AnalysisFeatures struct {
 
 `filevalidator.Validator.SaveRecord` は `Store.Update` コールバック内でレコードを構築する際、`record.AnalysisFeatures` を必ずセットする（旧レコードを区別できるよう、非 nil であることを保証する）：
 
-- ELF バイナリで `elfDynlibAnalyzer.Analyze` を呼び出した場合（エラーの有無にかかわらず呼び出した場合）: `AnalysisFeatures.ELFDynLibDeps = true`
+- ELF バイナリで elfDynlibAnalyzer.Analyze を呼び出した場合（解析が正常に試行された場合）: AnalysisFeatures.ELFDynLibDeps = true
   - 注意: 現在の `DynLibAnalyzer.Analyze()` は全ファイルに対して呼び出され、non-ELF と static ELF の双方で `(nil, nil)` を返す。フラグを正しく設定するには、ファイルが ELF であるかどうかを `Analyze()` の戻り値とは独立に判定する仕組みが必要（例: `Analyze()` の戻り値にフォーマット情報を含める、または `updateAnalysisRecord` 内で ELF マジックバイトを別途チェックする）。詳細はアーキテクチャ設計で定める
 - Mach-O バイナリで `machoDynlibAnalyzer.Analyze` を呼び出した場合: `AnalysisFeatures.MachODynLibDeps = true`（タスク 0096 実装後に有効化される）
 - アナライザーが nil（未注入）の場合は対応するフラグを `false` のまま維持する
