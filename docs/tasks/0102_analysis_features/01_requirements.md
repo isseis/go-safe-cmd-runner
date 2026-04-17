@@ -133,7 +133,7 @@ return fmt.Errorf("failed to load record for dynlib verification: %w", err)
 
 ### NFR-2: 再 `record` の影響範囲
 
-本タスクリリース後の初回 `record` で `AnalysisFeatures` が付与されるため、以来のレコードは有効となる。管理対象バイナリの全再 `record` が必要であるが、これは一回限りである。
+本タスクリリース後の初回 `record` で `AnalysisFeatures` が付与されるため、以後のレコードは有効となる。管理対象バイナリの全再 `record` が必要であるが、これは一回限りである。
 
 以後は：
 - ELF 専用機能を追加しても、Mach-O バイナリのレコードは再 `record` 不要（`MachODynLibDeps` フラグは維持される）
