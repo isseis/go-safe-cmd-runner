@@ -24,9 +24,9 @@
 
 - [x] `docs/tasks/0096_macho_lc_load_dylib_integrity/01_requirements.md` を作成する
 - [x] `docs/tasks/0096_macho_lc_load_dylib_integrity/02_architecture.md` を作成する
-- [ ] `docs/tasks/0096_macho_lc_load_dylib_integrity/03_detailed_specification.md` を作成する
-- [ ] `docs/tasks/0096_macho_lc_load_dylib_integrity/04_implementation_plan.md` を作成する
-- [ ] 実装・テストを行い PR をマージする
+- [x] `docs/tasks/0096_macho_lc_load_dylib_integrity/03_detailed_specification.md` を作成する
+- [x] `docs/tasks/0096_macho_lc_load_dylib_integrity/04_implementation_plan.md` を作成する
+- [x] 実装・テストを行い PR をマージする
 
 ---
 
