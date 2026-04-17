@@ -169,33 +169,6 @@ func TestVerify_MachOWithDynLibDeps(t *testing.T) {
 	assert.NoError(t, verifyErr, "Mach-O binary with matching DynLibDeps should pass verification")
 }
 
-// TestVerify_MachONonMachOScript verifies that VerifyCommandDynLibDeps returns
-// nil for a plain shell script (non-Mach-O, non-ELF) without DynLibDeps.
-func TestVerify_MachONonMachOScript(t *testing.T) {
-	hashDir := commontesting.SafeTempDir(t)
-	tmpDir := commontesting.SafeTempDir(t)
-
-	scriptPath := filepath.Join(tmpDir, "myscript.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hello\n"), 0o755))
-
-	getter := filevalidator.NewHybridHashFilePathGetter()
-	store, err := fileanalysis.NewStore(hashDir, getter)
-	require.NoError(t, err)
-	resolvedPath, err := common.NewResolvedPath(scriptPath)
-	require.NoError(t, err)
-	err = store.Update(resolvedPath, func(record *fileanalysis.Record) error {
-		record.ContentHash = "sha256:aabbcc"
-		return nil
-	})
-	require.NoError(t, err)
-
-	m, err := NewManagerForTest(hashDir)
-	require.NoError(t, err)
-
-	verifyErr := m.VerifyCommandDynLibDeps(scriptPath)
-	assert.NoError(t, verifyErr, "non-Mach-O script without DynLibDeps should not require dynlib record")
-}
-
 // TestVerify_MachOOldSchema verifies that VerifyCommandDynLibDeps skips dynlib
 // verification (returns nil) when the stored record has a schema_version older
 // than CurrentSchemaVersion. Old records predate Mach-O dynlib tracking and

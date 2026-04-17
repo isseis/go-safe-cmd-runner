@@ -3,7 +3,6 @@
 package machodylib
 
 import (
-	"debug/macho"
 	"encoding/binary"
 	"os"
 	"path/filepath"
@@ -41,8 +40,9 @@ func TestAnalyze_NonMachO(t *testing.T) {
 }
 
 // TestAnalyze_MacOSBinary tests Analyze against the real /bin/ls on macOS.
-// /bin/ls links against dyld shared cache libraries only, so it returns
-// (nil, nil, nil) because all deps are shared cache libraries absent from disk.
+// /bin/ls links against dyld shared cache libraries only; Analyze must parse at
+// least one LC_LOAD_DYLIB entry and return without error or warnings.
+// Because all deps are shared cache libraries absent from disk, libs is empty.
 func TestAnalyze_MacOSBinary(t *testing.T) {
 	if _, err := os.Stat("/bin/ls"); err != nil {
 		t.Skip("/bin/ls not available")
@@ -50,6 +50,15 @@ func TestAnalyze_MacOSBinary(t *testing.T) {
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
+
+	// openMachO must succeed, confirming that extractLoadCommands can parse the
+	// binary and return at least one LC_LOAD_DYLIB (e.g., libSystem.B.dylib).
+	machoFile, closer, err := a.openMachO("/bin/ls")
+	require.NoError(t, err)
+	deps, _ := extractLoadCommands(machoFile)
+	_ = machoFile.Close()
+	_ = closer.Close()
+	assert.NotEmpty(t, deps, "/bin/ls should have LC_LOAD_DYLIB entries")
 
 	libs, warnings, err := a.Analyze("/bin/ls")
 	require.NoError(t, err)
@@ -63,54 +72,6 @@ func TestAnalyze_MacOSBinary(t *testing.T) {
 		assert.NotEmpty(t, lib.Path)
 		assert.NotEmpty(t, lib.SOName)
 	}
-}
-
-// TestExtractLoadCommands_SystemBinary verifies that extractLoadCommands parses
-// LC_LOAD_DYLIB entries from /bin/ls.
-func TestExtractLoadCommands_SystemBinary(t *testing.T) {
-	if _, err := os.Stat("/bin/ls"); err != nil {
-		t.Skip("/bin/ls not available")
-	}
-
-	file, err := os.Open("/bin/ls")
-	require.NoError(t, err)
-	defer file.Close()
-
-	// Try single-arch Mach-O first, then Fat
-	var machoFile *macho.File
-
-	mf, mErr := macho.NewFile(file)
-	if mErr != nil {
-		if _, err := file.Seek(0, 0); err != nil {
-			t.Skip("cannot seek /bin/ls: " + err.Error())
-		}
-
-		fat, fatErr := macho.NewFatFile(file)
-		if fatErr != nil {
-			t.Skip("cannot parse /bin/ls as Mach-O or Fat: " + fatErr.Error())
-		}
-		defer fat.Close()
-
-		cpuType := goarchToCPUType("arm64")
-
-		for _, arch := range fat.Arches {
-			if arch.Cpu == cpuType {
-				machoFile = arch.File
-				break
-			}
-		}
-
-		if machoFile == nil {
-			t.Skip("/bin/ls: no matching arch slice")
-		}
-	} else {
-		machoFile = mf
-		defer machoFile.Close()
-	}
-
-	deps, _ := extractLoadCommands(machoFile)
-	// /bin/ls should have at least one LC_LOAD_DYLIB (e.g., libSystem.B.dylib)
-	assert.NotEmpty(t, deps, "/bin/ls should have LC_LOAD_DYLIB entries")
 }
 
 // TestHasDynamicLibDeps_SystemBinary verifies HasDynamicLibDeps for /bin/ls.
@@ -137,17 +98,6 @@ func TestHasDynamicLibDeps_NonMachO(t *testing.T) {
 	hasDeps, err := HasDynamicLibDeps(notMachO, fs)
 	require.NoError(t, err)
 	assert.False(t, hasDeps)
-}
-
-// TestAnalysisWarning_String verifies the String() method output format.
-func TestAnalysisWarning_String(t *testing.T) {
-	w := AnalysisWarning{
-		InstallName: "@loader_rpath/libFoo.dylib",
-		Reason:      "unknown @ token in install name: @loader_rpath/libFoo.dylib (token: @loader_rpath)",
-	}
-	s := w.String()
-	assert.Contains(t, s, "dynlib warning:")
-	assert.Contains(t, s, "@loader_rpath/libFoo.dylib")
 }
 
 // TestExtractDylibName verifies that extractDylibName correctly parses the

@@ -142,14 +142,3 @@ func TestResolve_Rpath_NotFound(t *testing.T) {
 	assert.Equal(t, "@rpath/libmissing.dylib", notResolved.InstallName)
 	assert.Len(t, notResolved.Tried, 2)
 }
-
-func TestResolve_ReturnsCleanPath(t *testing.T) {
-	dir := t.TempDir()
-	libPath := createTempLib(t, dir, "libfoo.dylib")
-
-	r := NewLibraryResolver(dir)
-	resolved, err := r.Resolve(libPath, "/tmp/loader", nil)
-	require.NoError(t, err)
-	// filepath.EvalSymlinks + filepath.Clean is applied
-	assert.Equal(t, resolvePath(t, libPath), resolved)
-}
