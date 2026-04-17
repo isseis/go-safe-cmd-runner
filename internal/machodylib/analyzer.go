@@ -401,8 +401,11 @@ func extractDylibName(raw []byte, bo binary.ByteOrder) string {
 		return ""
 	}
 
+	// dylib_command header is 24 bytes; name must start at or after that.
+	const dylibCmdHeaderSize = 24
+
 	nameOffset := bo.Uint32(raw[8:12])
-	if int(nameOffset) >= len(raw) {
+	if int(nameOffset) < dylibCmdHeaderSize || int(nameOffset) >= len(raw) {
 		return ""
 	}
 
