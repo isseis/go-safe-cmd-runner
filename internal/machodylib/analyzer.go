@@ -139,12 +139,17 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 				continue
 			}
 
-			// Resolution failed: check if dyld shared cache library
+			// Resolution failed: skip dyld shared cache libraries only when
+			// the install-name path is absent from disk (FR-3.1.5 two-condition test).
+			// A resolution failure due to permission errors or other I/O issues on a
+			// file that exists on disk must not silently bypass verification.
 			if IsDyldSharedCacheLib(item.installName) {
-				slog.Info("dynlib: skipping dyld shared cache library (delegating to code signing)",
-					"install_name", item.installName)
+				if _, statErr := os.Stat(item.installName); os.IsNotExist(statErr) {
+					slog.Info("dynlib: skipping dyld shared cache library (delegating to code signing)",
+						"install_name", item.installName)
 
-				continue
+					continue
+				}
 			}
 
 			// Weak dependency: skip with info log
