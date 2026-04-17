@@ -304,8 +304,8 @@ flowchart TD
     LOAD_SVC["SyscallAnalysisStore<br>.LoadSyscallAnalysis()<br>（新規）"]
     CHECK_SVC_RESULT{"SyscallAnalysis<br>の状態は？"}
     SVC_HASH_ERR["ErrHashMismatch<br>→ true, true（AnalysisError）"]
-    SVC_HIT["svc #0x80 検出記録あり<br>→ true, true（AnalysisError）"]
-    SVC_NIL["nil（記録なし）<br>→ false, false を返す"]
+    SVC_HIT["direct_svc_0x80 検出記録あり<br>→ true, true（AnalysisError）"]
+    SVC_SAFE["ロード成功・svc signal なし<br>→ false, false を返す"]
     SVC_ERR["ErrNoSyscallAnalysis /<br>ErrRecordNotFound<br>→ live 解析へフォールバック"]
     SVC_SCHEMA["SchemaVersionMismatch<br>→ log 警告 + フォールバック"]
     SYM_FALLBACK["cache miss:<br>ErrRecordNotFound /<br>ErrHashMismatch /<br>ErrNoNetworkSymbolAnalysis"]
@@ -322,8 +322,8 @@ flowchart TD
     CHECK_SYM -->|"cache miss"| SYM_FALLBACK
     LOAD_SVC --> CHECK_SVC_RESULT
     CHECK_SVC_RESULT -->|"ErrHashMismatch"| SVC_HASH_ERR
-    CHECK_SVC_RESULT -->|"警告あり / svc 記録あり"| SVC_HIT
-    CHECK_SVC_RESULT -->|"nil（空）"| SVC_NIL
+    CHECK_SVC_RESULT -->|"direct_svc_0x80 記録あり"| SVC_HIT
+    CHECK_SVC_RESULT -->|"ロード成功・svc signal なし"| SVC_SAFE
     CHECK_SVC_RESULT -->|"ErrNoSyscallAnalysis /<br>ErrRecordNotFound"| SVC_ERR
     CHECK_SVC_RESULT -->|"SchemaVersionMismatch"| SVC_SCHEMA
     SYM_FALLBACK --> FALLBACK
@@ -334,13 +334,13 @@ flowchart TD
     SYM_NET --> RETURN
     SVC_HASH_ERR --> RETURN
     SVC_HIT --> RETURN
-    SVC_NIL --> RETURN
+    SVC_SAFE --> RETURN
 
     class START,RETURN process;
     class LOAD_SYM,HANDLE,FALLBACK,SYM_NET process;
     class CHECK_STORE,CHECK_SYM,CHECK_SVC_RESULT decision;
     class LOAD_SVC new;
-    class SVC_HIT,SVC_HASH_ERR,SVC_NIL,SVC_ERR,SVC_SCHEMA new;
+    class SVC_HIT,SVC_HASH_ERR,SVC_SAFE,SVC_ERR,SVC_SCHEMA new;
     class SYM_FALLBACK enhanced;
 ```
 
@@ -353,6 +353,22 @@ flowchart TD
 `AnalysisWarnings` は ELF 側の syscall 解析を含む汎用的な警告を含み得るため、`svc #0x80` 検出の高リスク判定条件には使用しない。
 
 この判定ロジックは `syscallAnalysisHasSVCSignal(result *SyscallAnalysisResult) bool` として分離し、テスト容易性と判定根拠の明確性を高める。
+
+#### 3.3.4 ストア注入チェーンの変更
+
+`SyscallAnalysisStore` を `NetworkAnalyzer` まで到達させるため、既存の
+`NetworkSymbolStore` 注入チェーンを以下のように拡張する。
+
+1. `verification.Manager` に `GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore` を追加する
+2. `runner.createNormalResourceManager()` で path resolver から `NetworkSymbolStore` と
+    `SyscallAnalysisStore` の両方を取得する
+3. `resource.NewDefaultResourceManager()` に `SyscallAnalysisStore` 引数を追加する
+4. `resource.NewNormalResourceManagerWithOutput()` に `SyscallAnalysisStore` 引数を追加する
+5. `risk.NewStandardEvaluator()` に `SyscallAnalysisStore` 引数を追加し、
+    `security.NewNetworkAnalyzerWithStores()` を呼び出す
+
+この変更により、live 解析フォールバックを維持したまま、`runner` の通常実行パスでも
+`SyscallAnalysis` キャッシュを利用できる。
 
 #### 3.3.3 エラーハンドリングまとめ
 
@@ -511,6 +527,11 @@ type SyscallAnalysisData struct {
 | `internal/runner/security/machoanalyzer/svc_scanner.go` | 拡張 | `collectSVCAddresses()` 追加（パッケージプライベート）、`CollectSVCAddressesFromFile()` 追加（exported）、`containsSVCInstruction()` を `collectSVCAddresses()` に委譲してリファクタリング |
 | `internal/filevalidator/validator.go` | 拡張 | `updateAnalysisRecord()` の `store.Update()` コールバック内で `analyzeSyscalls()` の後に `machoanalyzer.CollectSVCAddressesFromFile()` を呼び出し、`record.SyscallAnalysis` を直接設定 |
 | `internal/runner/security/network_analyzer.go` | 拡張 | `NetworkAnalyzer` に `syscallStore` フィールドを追加。`NewNetworkAnalyzerWithStores()` を追加。`isNetworkViaBinaryAnalysis()` で `NoNetworkSymbols` 後に `SyscallAnalysis` キャッシュを参照。`syscallAnalysisHasSVCSignal()` を追加 |
+| `internal/runner/risk/evaluator.go` | 拡張 | `NewStandardEvaluator()` に `SyscallAnalysisStore` を注入し、`NewNetworkAnalyzerWithStores()` を呼び出す |
+| `internal/runner/resource/normal_manager.go` | 拡張 | `NewNormalResourceManagerWithOutput()` に `SyscallAnalysisStore` 引数を追加し、risk evaluator へ転送 |
+| `internal/runner/resource/default_manager.go` | 拡張 | `NewDefaultResourceManager()` に `SyscallAnalysisStore` 引数を追加し、normal manager へ転送 |
+| `internal/runner/runner.go` | 拡張 | path resolver から `GetSyscallAnalysisStore()` を取得し、resource manager 構築時に注入 |
+| `internal/verification/manager.go` | 拡張 | `GetSyscallAnalysisStore()` を追加し、verification と runner が同一 hash dir の syscall store を共有できるようにする |
 
 ## 8. 先行タスクとの関係
 

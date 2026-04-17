@@ -12,9 +12,14 @@
 | `internal/runner/security/machoanalyzer/svc_scanner.go` | 拡張 |
 | `internal/runner/security/machoanalyzer/svc_scanner_test.go` | 新規（テスト追加） |
 | `internal/filevalidator/validator.go` | 拡張 |
-| `internal/filevalidator/validator_test.go` | 拡張（テスト追加） |
+| `internal/filevalidator/validator_macho_test.go` | 新規または拡張（Mach-O 向けテスト追加） |
 | `internal/runner/security/network_analyzer.go` | 拡張 |
 | `internal/runner/security/network_analyzer_test.go` | 拡張（テスト追加） |
+| `internal/runner/risk/evaluator.go` | 拡張 |
+| `internal/runner/resource/normal_manager.go` | 拡張 |
+| `internal/runner/resource/default_manager.go` | 拡張 |
+| `internal/runner/runner.go` | 拡張 |
+| `internal/verification/manager.go` | 拡張 |
 
 ## 3. `internal/runner/security/machoanalyzer/svc_scanner.go`
 
@@ -203,7 +208,7 @@ common.SyscallInfo{
 
 **注意**: `ArgEvalResults` は設定しない（`nil` のまま）。
 
-### 4.4 テスト仕様 (`validator_test.go` 追加分)
+### 4.4 テスト仕様 (`validator_macho_test.go` 追加分)
 
 | テスト名 | 検証内容 | AC |
 |---------|---------|-----|
@@ -214,10 +219,10 @@ common.SyscallInfo{
 | `TestBuildSVCSyscallAnalysis` | 単体: 正しいフィールド値が設定される | AC-1 |
 
 **テスト実装上の注意**:
-- Darwin 固有コードのため、`//go:build darwin` ビルドタグを付与したテストファイルに
-  分離するか、`runtime.GOOS` をモック可能にすること。
-  現行の `validator_test.go` は OS 分岐をテストしていないため、
-  `validator_darwin_test.go` として別ファイルに追加する方針とする。
+- `debug/macho` と `CollectSVCAddressesFromFile` はクロスプラットフォームでビルド可能なため、
+    darwin 専用ビルドタグは不要。
+- 既存の `validator_test.go` に追加してもよいが、Mach-O 専用ケースを分離するため
+    `validator_macho_test.go` のような専用テストファイルを推奨する。
 
 ## 5. `internal/runner/security/network_analyzer.go`
 
@@ -299,9 +304,6 @@ return handleAnalysisOutput(output, cmdPath)
 svc キャッシュが `AnalysisError` を返さなかった場合、`else` ブロックを抜けた後に
 `return handleAnalysisOutput(output, cmdPath)` が実行される（既存コードを維持）。
 `handleAnalysisOutput` は `NoNetworkSymbols` に対して `false, isHighRisk` を返す。
-`output.Result = binaryanalyzer.NoNetworkSymbols` の後、
-svc キャッシュが `AnalysisError` を返さなかった場合は `handleAnalysisOutput` に到達する。
-`handleAnalysisOutput` は `NoNetworkSymbols` に対して `false, isHighRisk` を返す。
 
 ### 5.4 追加関数: `syscallAnalysisHasSVCSignal`
 
@@ -326,11 +328,25 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 
 ### 5.5 呼び出し元の変更
 
-`runner` コマンドの初期化コードで `NewNetworkAnalyzerWithStores` を使用するよう変更する。
-現行の `NewNetworkAnalyzerWithStore` 呼び出し箇所を特定し、
-`SyscallAnalysisStore` を注入する。
+`NewNetworkAnalyzerWithStores` の追加だけでは不十分であり、`SyscallAnalysisStore` を
+`runner` の通常実行パスまで運ぶ注入チェーン全体を更新する必要がある。
 
-対象ファイルの特定は `grep -r "NewNetworkAnalyzerWithStore" .` で検索して確認する。
+対象となる本番コード:
+
+1. `internal/verification/manager.go`
+    - `GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore` を追加する
+2. `internal/runner/runner.go`
+    - path resolver から `GetNetworkSymbolStore()` と `GetSyscallAnalysisStore()` を取得する
+    - `resource.NewDefaultResourceManager()` 呼び出しに両ストアを渡す
+3. `internal/runner/resource/default_manager.go`
+    - `NewDefaultResourceManager()` に `SyscallAnalysisStore` 引数を追加する
+4. `internal/runner/resource/normal_manager.go`
+    - `NewNormalResourceManagerWithOutput()` に `SyscallAnalysisStore` 引数を追加する
+5. `internal/runner/risk/evaluator.go`
+    - `NewStandardEvaluator()` に `SyscallAnalysisStore` 引数を追加し、
+      `security.NewNetworkAnalyzerWithStores()` を使用する
+
+関連テストも合わせて更新すること。
 
 ### 5.6 テスト仕様 (`network_analyzer_test.go` 追加分)
 
@@ -350,18 +366,18 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 
 | AC | テスト | ファイル |
 |----|-------|---------|
-| AC-1: svc あり Mach-O に SyscallAnalysis が保存される | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_darwin_test.go` |
-| AC-1: Architecture が "arm64" | `TestBuildSVCSyscallAnalysis` | `validator_darwin_test.go` |
-| AC-1: AnalysisWarnings に検出メッセージ | `TestBuildSVCSyscallAnalysis` | `validator_darwin_test.go` |
-| AC-1: DetectedSyscalls に Number=-1, DeterminationMethod="direct_svc_0x80" | `TestBuildSVCSyscallAnalysis` | `validator_darwin_test.go` |
-| AC-1: svc なし Mach-O は SyscallAnalysis が nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_darwin_test.go` |
-| AC-1: NetworkDetected → SyscallAnalysis 保存なし | `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | `validator_darwin_test.go` |
-| AC-2: NoNetworkSymbols + svc あり → SyscallAnalysis 保存 | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_darwin_test.go` |
-| AC-2: NoNetworkSymbols + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_darwin_test.go` |
+| AC-1: svc あり Mach-O に SyscallAnalysis が保存される | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_macho_test.go` |
+| AC-1: Architecture が "arm64" | `TestBuildSVCSyscallAnalysis` | `validator_macho_test.go` |
+| AC-1: AnalysisWarnings に検出メッセージ | `TestBuildSVCSyscallAnalysis` | `validator_macho_test.go` |
+| AC-1: DetectedSyscalls に Number=-1, DeterminationMethod="direct_svc_0x80" | `TestBuildSVCSyscallAnalysis` | `validator_macho_test.go` |
+| AC-1: svc なし Mach-O は SyscallAnalysis が nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_macho_test.go` |
+| AC-1: NetworkDetected → SyscallAnalysis 保存なし | `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | `validator_macho_test.go` |
+| AC-2: NoNetworkSymbols + svc あり → SyscallAnalysis 保存 | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_macho_test.go` |
+| AC-2: NoNetworkSymbols + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_macho_test.go` |
 | AC-3: NoNetworkSymbols + SyscallAnalysis に svc → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | `network_analyzer_test.go` |
 | AC-3: NoNetworkSymbols + SyscallAnalysis nil → 通過 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil` | `network_analyzer_test.go` |
 | AC-3: ErrHashMismatch → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | `network_analyzer_test.go` |
-| AC-4: ELF バイナリのフロー変更なし | `TestUpdateAnalysisRecord_ELFNotAffected` | `validator_darwin_test.go` |
+| AC-4: ELF バイナリのフロー変更なし | `TestUpdateAnalysisRecord_ELFNotAffected` | `validator_macho_test.go` |
 | AC-4: NetworkDetected Mach-O の判定変更なし | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged` | `network_analyzer_test.go` |
 
 ## 7. エッジケースと注意事項
@@ -386,12 +402,10 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 
 ### 7.3 darwin ビルドタグ
 
-`CollectSVCAddressesFromFile` が `runtime.GOOS == "darwin"` の条件分岐内でのみ
-呼ばれるため、`svc_scanner.go` への `//go:build darwin` タグは不要。
-ただし `macho` パッケージは全 OS でビルド可能なため問題ない。
-
-`filevalidator/validator.go` の変更は `runtime.GOOS` による実行時分岐のみであり、
-ビルドタグは不要。
+`CollectSVCAddressesFromFile` は Mach-O マジックを自前で判定し、非 Mach-O には `nil, nil` を
+返すため、呼び出し元で `runtime.GOOS == "darwin"` に制限する必要はない。
+`debug/macho` も全 OS でビルド可能なため、`svc_scanner.go` / `validator.go` / 関連テストに
+darwin 専用ビルドタグは不要。
 
 ### 7.4 `FilterSyscallsForStorage` との整合性
 
@@ -411,5 +425,5 @@ Mach-O svc スキャンはその直後に実行し、検出時のみ上書きす
 
 - [ ] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
 - [ ] `safefileio.FileSystem.SafeOpenFile` の返り値型が `macho.NewFile` に渡せること
-- [ ] `NewNetworkAnalyzerWithStore` の呼び出し箇所を特定し、変更が必要か確認すること
+- [ ] `GetNetworkSymbolStore()` に加えて `GetSyscallAnalysisStore()` の注入チェーンを追加すべき箇所を特定すること
 - [ ] `fileanalysis.SyscallAnalysisData` が `common.SyscallAnalysisResultCore` を embed していること（スキーマ確認）

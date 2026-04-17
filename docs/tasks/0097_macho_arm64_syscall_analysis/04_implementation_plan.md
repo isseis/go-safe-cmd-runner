@@ -98,7 +98,7 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
 
 ### 4.2 テストチェックリスト
 
-**ファイル**: `internal/filevalidator/validator_darwin_test.go`（新規）
+**ファイル**: `internal/filevalidator/validator_macho_test.go`（新規推奨）
 
 - [ ] `TestBuildSVCSyscallAnalysis`: 単体テスト
   - [ ] `Architecture == "arm64"` を確認
@@ -108,6 +108,10 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
 - [ ] `TestUpdateAnalysisRecord_MachoNoSVC`: svc なしの Mach-O で SyscallAnalysis が nil
 - [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC`: NetworkDetected → SyscallAnalysis 保存なし
 - [ ] `TestUpdateAnalysisRecord_ELFNotAffected`: ELF バイナリのフロー変更なし（linux のみ、またはモック）
+
+**注意**:
+- `debug/macho` はクロスプラットフォームで利用できるため、darwin ビルドタグは不要
+- 既存の `validator_test.go` に統合してもよいが、Mach-O 向けケース分離のため専用ファイルを推奨
 
 **実行コマンド**:
 ```
@@ -157,12 +161,29 @@ go test -tags test -v ./internal/filevalidator/
 go test -tags test -v ./internal/runner/security/
 ```
 
-## 6. Step 4: `risk/evaluator.go` の更新
+## 6. Step 4: ストア注入チェーンの更新
 
-**対象ファイル**: `internal/runner/risk/evaluator.go`
+**対象ファイル**:
+- `internal/verification/manager.go`
+- `internal/runner/runner.go`
+- `internal/runner/resource/default_manager.go`
+- `internal/runner/resource/normal_manager.go`
+- `internal/runner/risk/evaluator.go`
 
 ### 6.1 実装チェックリスト
 
+- [ ] `internal/verification/manager.go` に `GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore` を追加する
+- [ ] `internal/runner/runner.go` で path resolver から `SyscallAnalysisStore` を取得する
+  - [ ] `networkSymbolStoreProvider` と同様の provider interface を追加するか、共通 provider を拡張する
+  - [ ] `resource.NewDefaultResourceManager()` 呼び出しに `syscallStore` を渡す
+- [ ] `internal/runner/resource/default_manager.go` のシグネチャを変更して `syscallStore` を追加する:
+  ```go
+  func NewDefaultResourceManager(..., store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) (*DefaultResourceManager, error)
+  ```
+- [ ] `internal/runner/resource/normal_manager.go` のシグネチャを変更して `syscallStore` を追加する:
+  ```go
+  func NewNormalResourceManagerWithOutput(..., store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) *NormalResourceManager
+  ```
 - [ ] `NewStandardEvaluator` のシグネチャを変更して `syscallStore` を追加する:
   ```go
   func NewStandardEvaluator(store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) Evaluator
@@ -174,14 +195,19 @@ go test -tags test -v ./internal/runner/security/
 
 ### 6.2 呼び出し箇所のチェックリスト
 
-- [ ] `internal/runner/` 内の `NewStandardEvaluator` 呼び出しを全て更新する
-- [ ] `cmd/runner/` 内の呼び出しを更新する（`SyscallAnalysisStore` を注入）
-- [ ] テストコード内の呼び出しを更新する
+- [ ] `internal/runner/resource/normal_manager.go` 内の `NewStandardEvaluator` 呼び出しを更新する
+- [ ] `internal/runner/resource/default_manager.go` から `NewNormalResourceManagerWithOutput` への引数転送を更新する
+- [ ] `internal/runner/runner.go` の `createNormalResourceManager()` で `SyscallAnalysisStore` を取得して渡す
+- [ ] `internal/runner/runner_test.go` の path resolver モックに `GetSyscallAnalysisStore()` を追加する
+- [ ] `internal/runner/resource/*_test.go` のコンストラクタ呼び出しを更新する
+- [ ] `internal/runner/risk/evaluator_test.go` の `NewStandardEvaluator(nil)` 呼び出しを更新する
 
 **実行コマンド**:
 ```
 go build ./...
 go test -tags test -v ./internal/runner/risk/
+go test -tags test -v ./internal/runner/resource/
+go test -tags test -v ./internal/runner/
 ```
 
 ## 7. Step 5: 統合確認
@@ -213,8 +239,9 @@ go test -tags test -v ./internal/runner/risk/
 |-------|------|------|
 | `machoanalyzer` → `filevalidator` インポートサイクル | ビルド不可 | 事前確認（§2.1）で検出。循環が発生する場合は `CollectSVCAddressesFromFile` を別パッケージに移動 |
 | `SafeOpenFile` の返り値型が `io.ReaderAt` を実装しない | `macho.NewFile` に渡せない | 事前確認（§2.2）で検出。型アサーションまたは `os.Open` 直接使用への代替を検討 |
-| darwin 環境以外でのテスト失敗 | CI の失敗 | `validator_darwin_test.go` を darwin ビルドタグ付きで分離。OS モックを使用 |
-| `NewStandardEvaluator` の呼び出し箇所の見落とし | コンパイルエラー | `go build ./...` で早期検出 |
+| darwin 環境以外でのテスト失敗 | CI の失敗 | darwin ビルドタグに依存せず、Mach-O フィクスチャを使ったクロスプラットフォームテストにする |
+| `NewStandardEvaluator` や resource manager の呼び出し箇所の見落とし | コンパイルエラー | `go build ./...` と `go test ./internal/runner/...` で早期検出 |
+| path resolver provider の追加漏れ | キャッシュが常に無効化される | `runner.go` と `runner_test.go` に `GetSyscallAnalysisStore()` 経路のテストを追加 |
 
 ## 9. 実装順序の根拠
 
@@ -229,7 +256,15 @@ network_analyzer (Step 3)
     ↓ (NewNetworkAnalyzerWithStores を利用)
 risk/evaluator (Step 4)
     ↓
-runner コマンド (Step 4 の一部)
+resource/normal_manager
+    ↓
+resource/default_manager
+    ↓
+runner.createNormalResourceManager
+    ↑ (GetSyscallAnalysisStore を提供)
+verification.Manager
+    ↓
+runner 通常実行パス
 ```
 
 Step 1 と Step 3 は相互依存がないため、並行実装が可能。
