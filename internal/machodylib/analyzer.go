@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -94,7 +95,10 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 	// BFS queue and visited set
 	var queue []bfsItem
 
-	visited := make(map[string]struct{})
+	// visited maps resolvedPath -> hash. Used to skip redundant hash computation
+	// and recursive child parsing when multiple installNames (e.g. symlinks) resolve
+	// to the same physical file, while still recording a LibEntry for every installName.
+	visited := make(map[string]string)
 
 	var libs []fileanalysis.LibEntry
 
@@ -165,18 +169,26 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 			return nil, nil, fmt.Errorf("failed to resolve LC_LOAD_DYLIB dependency: %w", err)
 		}
 
-		// Skip already-visited libraries (cycle prevention)
-		if _, ok := visited[resolvedPath]; ok {
+		// If this physical file was already hashed, record a LibEntry for the
+		// current installName (a different symlink may point here) but skip
+		// redundant hash computation and recursive child parsing.
+		if cachedHash, ok := visited[resolvedPath]; ok {
+			libs = append(libs, fileanalysis.LibEntry{
+				SOName: item.installName,
+				Path:   resolvedPath,
+				Hash:   cachedHash,
+			})
+
 			continue
 		}
-
-		visited[resolvedPath] = struct{}{}
 
 		// Compute hash using safefileio
 		hash, err := computeFileHash(a.fs, resolvedPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to compute hash for %s: %w", resolvedPath, err)
 		}
+
+		visited[resolvedPath] = hash
 
 		// Record the library entry
 		libs = append(libs, fileanalysis.LibEntry{
@@ -208,6 +220,13 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 	if len(libs) == 0 {
 		return nil, warnings, nil
 	}
+
+	sort.Slice(libs, func(i, j int) bool {
+		if libs[i].SOName != libs[j].SOName {
+			return libs[i].SOName < libs[j].SOName
+		}
+		return libs[i].Path < libs[j].Path
+	})
 
 	return libs, warnings, nil
 }
