@@ -333,11 +333,15 @@ func goarchToCPUType(goarch string) macho.Cpu {
 	}
 }
 
-// loadCmdWeakDylib is LC_LOAD_WEAK_DYLIB (0x80000018).
-// Go's debug/macho package does not define this constant as of Go 1.23.
-const loadCmdWeakDylib macho.LoadCmd = 0x80000018
+// Load command constants not defined in Go's debug/macho package as of Go 1.23.
+const (
+	loadCmdWeakDylib     macho.LoadCmd = 0x80000018 // LC_LOAD_WEAK_DYLIB
+	loadCmdReexportDylib macho.LoadCmd = 0x1F       // LC_REEXPORT_DYLIB
+	loadCmdLazyLoadDylib macho.LoadCmd = 0x20       // LC_LAZY_LOAD_DYLIB
+	loadCmdUpwardDylib   macho.LoadCmd = 0x23       // LC_LOAD_UPWARD_DYLIB
+)
 
-// extractLoadCommands extracts LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, and LC_RPATH
+// extractLoadCommands extracts all dylib load commands and LC_RPATH
 // entries from the Mach-O file's load commands.
 //
 // Implementation note: macho.File.ImportedLibraries() returns all dependency names
@@ -366,6 +370,12 @@ func extractLoadCommands(f *macho.File) (deps []depEntry, rpaths []string) {
 			name := extractDylibName(raw, f.ByteOrder)
 			if name != "" {
 				deps = append(deps, depEntry{installName: name, isWeak: true})
+			}
+
+		case loadCmdReexportDylib, loadCmdLazyLoadDylib, loadCmdUpwardDylib:
+			name := extractDylibName(raw, f.ByteOrder)
+			if name != "" {
+				deps = append(deps, depEntry{installName: name, isWeak: false})
 			}
 
 		case macho.LoadCmdRpath: // LC_RPATH = 0x8000001C
