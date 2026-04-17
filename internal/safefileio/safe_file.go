@@ -363,9 +363,10 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 
 		// Check if it's a symlink
 		if fi.Mode()&os.ModeSymlink != 0 {
-			// Allow root-owned symlinks that are part of the OS directory layout
-			// (e.g. /tmp -> /private/tmp on macOS). Reject all user-owned symlinks.
-			if !isRootOwnedSymlink(currentPath) {
+			// Allow only well-known OS-managed symlinks whose target matches the
+			// expected value in the allowlist (e.g. /tmp -> /private/tmp on macOS).
+			// All other symlinks — including unexpected root-owned ones — are rejected.
+			if !isAllowedOSManagedSymlink(currentPath) {
 				return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
 			}
 			// Resolve the OS-managed symlink so subsequent components are
