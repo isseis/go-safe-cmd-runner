@@ -163,66 +163,17 @@ func TestExtractRpathName_TooShort(t *testing.T) {
 
 // --- Fat Mach-O test helpers ---
 
-// nativeAndNonNativeCPU returns the native Mach-O CPU type for the running
-// architecture and a CPU type that will NOT match, used to build deterministic
-// Fat binary fixtures for slice-selection tests.
-func nativeAndNonNativeCPU() (native, nonNative macho.Cpu) {
-	switch runtime.GOARCH {
-	case "arm64":
-		return macho.CpuArm64, macho.CpuAmd64
-	default: // amd64 and any future architectures
-		return macho.CpuAmd64, macho.CpuArm64
-	}
-}
-
-// buildMinimalMachOSlice returns a 32-byte minimal 64-bit little-endian Mach-O
-// header for cpuType with no load commands.
-func buildMinimalMachOSlice(cpuType macho.Cpu) []byte {
-	buf := make([]byte, 32)                             // mach_header_64: 8 × uint32
-	binary.LittleEndian.PutUint32(buf[0:4], 0xFEEDFACF) // MH_MAGIC_64 (LE)
-	binary.LittleEndian.PutUint32(buf[4:8], uint32(cpuType))
-	binary.LittleEndian.PutUint32(buf[8:12], 0)  // cpusubtype = ALL
-	binary.LittleEndian.PutUint32(buf[12:16], 2) // filetype = MH_EXECUTE
-	binary.LittleEndian.PutUint32(buf[16:20], 0) // ncmds = 0
-	binary.LittleEndian.PutUint32(buf[20:24], 0) // sizeofcmds = 0
-	binary.LittleEndian.PutUint32(buf[24:28], 0) // flags = 0
-	binary.LittleEndian.PutUint32(buf[28:32], 0) // reserved = 0
-	return buf
-}
-
-// buildFatBinary returns a minimal Fat Mach-O binary (FAT_MAGIC header followed
-// by one minimal Mach-O slice per cpuType).  Each slice has no load commands.
-func buildFatBinary(cpuTypes []macho.Cpu) []byte {
-	nArch := len(cpuTypes)
-	fatHdrSize := 8 + 20*nArch // magic(4)+narch(4) + nArch*fatArch(5×4)
-	sliceSize := 32
-	buf := make([]byte, fatHdrSize+sliceSize*nArch)
-
-	binary.BigEndian.PutUint32(buf[0:4], 0xCAFEBABE) // FAT_MAGIC
-	binary.BigEndian.PutUint32(buf[4:8], uint32(nArch))
-
-	for i, cpu := range cpuTypes {
-		archOff := 8 + i*20
-		sliceOff := fatHdrSize + i*sliceSize
-		binary.BigEndian.PutUint32(buf[archOff:archOff+4], uint32(cpu))           // cputype
-		binary.BigEndian.PutUint32(buf[archOff+4:archOff+8], 0)                   // cpusubtype
-		binary.BigEndian.PutUint32(buf[archOff+8:archOff+12], uint32(sliceOff))   // offset
-		binary.BigEndian.PutUint32(buf[archOff+12:archOff+16], uint32(sliceSize)) // size
-		binary.BigEndian.PutUint32(buf[archOff+16:archOff+20], 0)                 // align
-		copy(buf[sliceOff:], buildMinimalMachOSlice(cpu))
-	}
-
-	return buf
-}
-
-// writeFatBinary writes a Fat binary to a test-scoped temp dir and returns the
-// resolved absolute path (symlinks expanded for safefileio compatibility).
+// writeFatBinary writes a Fat binary (with one minimal no-dep slice per CPU type)
+// to a test-scoped temp dir and returns the resolved absolute path.
 func writeFatBinary(t *testing.T, name string, cpuTypes []macho.Cpu) string {
 	t.Helper()
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, name)
-	require.NoError(t, os.WriteFile(path, buildFatBinary(cpuTypes), 0o600))
-
+	slices := make([][]byte, len(cpuTypes))
+	for i, cpu := range cpuTypes {
+		slices[i] = machodylibtesting.BuildMachOWithDeps(cpu, nil, nil, nil)
+	}
+	require.NoError(t, os.WriteFile(path, machodylibtesting.BuildFatBinaryFromSlices(cpuTypes, slices), 0o600))
 	return path
 }
 
@@ -232,7 +183,7 @@ func writeFatBinary(t *testing.T, name string, cpuTypes []macho.Cpu) string {
 // native-arch slice from a Fat binary and returns a valid *macho.File whose
 // Cpu field matches the native CPU type.
 func TestOpenMachO_FatBinary_MatchingSlice(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	path := writeFatBinary(t, "fat_native.bin", []macho.Cpu{nativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -252,7 +203,7 @@ func TestOpenMachO_FatBinary_MatchingSlice(t *testing.T) {
 // TestOpenMachO_FatBinary_NoMatchingSlice verifies that openMachO returns an
 // ErrNoMatchingSlice error when the Fat binary contains no native-arch slice.
 func TestOpenMachO_FatBinary_NoMatchingSlice(t *testing.T) {
-	_, nonNativeCPU := nativeAndNonNativeCPU()
+	nonNativeCPU := machodylibtesting.NonNativeCPU()
 	path := writeFatBinary(t, "fat_non_native.bin", []macho.Cpu{nonNativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -271,7 +222,7 @@ func TestOpenMachO_FatBinary_NoMatchingSlice(t *testing.T) {
 // TestAnalyze_FatBinary_MatchingSlice verifies that Analyze returns (nil, nil, nil)
 // for a Fat binary with a native-arch slice that has no LC_LOAD_DYLIB entries.
 func TestAnalyze_FatBinary_MatchingSlice(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	path := writeFatBinary(t, "fat_native.bin", []macho.Cpu{nativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -287,7 +238,7 @@ func TestAnalyze_FatBinary_MatchingSlice(t *testing.T) {
 // ErrNoMatchingSlice (and does NOT swallow it as ErrNotMachO) when the Fat
 // binary has no native-arch slice.
 func TestAnalyze_FatBinary_NoMatchingSlice(t *testing.T) {
-	_, nonNativeCPU := nativeAndNonNativeCPU()
+	nonNativeCPU := machodylibtesting.NonNativeCPU()
 	path := writeFatBinary(t, "fat_non_native.bin", []macho.Cpu{nonNativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -306,7 +257,7 @@ func TestAnalyze_FatBinary_NoMatchingSlice(t *testing.T) {
 // TestHasDynamicLibDeps_FatBinary_MatchingSlice verifies HasDynamicLibDeps for a
 // Fat binary whose native-arch slice has no LC_LOAD_DYLIB entries.
 func TestHasDynamicLibDeps_FatBinary_MatchingSlice(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	path := writeFatBinary(t, "fat_native.bin", []macho.Cpu{nativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -318,7 +269,7 @@ func TestHasDynamicLibDeps_FatBinary_MatchingSlice(t *testing.T) {
 // TestHasDynamicLibDeps_FatBinary_NoMatchingSlice verifies that HasDynamicLibDeps
 // returns (false, nil) for a Fat binary that has no native-arch slice.
 func TestHasDynamicLibDeps_FatBinary_NoMatchingSlice(t *testing.T) {
-	_, nonNativeCPU := nativeAndNonNativeCPU()
+	nonNativeCPU := machodylibtesting.NonNativeCPU()
 	path := writeFatBinary(t, "fat_non_native.bin", []macho.Cpu{nonNativeCPU})
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -332,8 +283,8 @@ func TestHasDynamicLibDeps_FatBinary_NoMatchingSlice(t *testing.T) {
 // TestAnalyze_SingleArchMachO_NoDeps verifies that Analyze returns (nil, nil, nil) for a
 // single-architecture Mach-O binary that has no LC_LOAD_DYLIB entries.
 func TestAnalyze_SingleArchMachO_NoDeps(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
-	buf := buildMinimalMachOSlice(nativeCPU) // 32-byte header, ncmds=0
+	nativeCPU := machodylibtesting.NativeCPU()
+	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil)
 
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "nolc.bin")
@@ -351,7 +302,7 @@ func TestAnalyze_SingleArchMachO_NoDeps(t *testing.T) {
 // TestAnalyze_StrongDepResolutionFailure verifies that Analyze returns an error when
 // a LC_LOAD_DYLIB (strong) dependency cannot be resolved.
 func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	// Use an absolute path outside dyld shared cache prefixes that does not exist.
 	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/nonexistent_dir_xyz_12345/libfoo.dylib"},
@@ -371,7 +322,7 @@ func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
 // TestAnalyze_WeakDepSkipped verifies that an unresolvable LC_LOAD_WEAK_DYLIB
 // dependency is silently skipped and Analyze returns (nil, nil, nil).
 func TestAnalyze_WeakDepSkipped(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		nil,
 		[]string{"/nonexistent_dir_xyz_12345/libweak.dylib"},
@@ -393,7 +344,7 @@ func TestAnalyze_WeakDepSkipped(t *testing.T) {
 // TestAnalyze_UnknownAtToken_Warning verifies that an install name with an unknown
 // @ token generates an AnalysisWarning and does not cause Analyze to fail.
 func TestAnalyze_UnknownAtToken_Warning(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	// @loaderrpath is an intentional misspelling of @loader_path – an unknown @ token.
 	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"@loaderrpath/libfoo.dylib"},
@@ -416,7 +367,7 @@ func TestAnalyze_UnknownAtToken_Warning(t *testing.T) {
 // TestAnalyze_IndirectDeps verifies that Analyze recursively resolves transitive
 // LC_LOAD_DYLIB dependencies (BFS) and includes them all in the returned slice.
 func TestAnalyze_IndirectDeps(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// lib2.dylib: leaf, no dependencies.
@@ -455,7 +406,7 @@ func TestAnalyze_IndirectDeps(t *testing.T) {
 // TestAnalyze_IndirectDeps_RpathFromDylib verifies that @rpath entries in a child
 // .dylib's own LC_RPATH are used to resolve its dependencies, not the root binary's rpaths.
 func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// lib2.dylib lives in a subdirectory; its install name is resolved via @rpath.
@@ -497,7 +448,7 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 // TestAnalyze_CircularDeps verifies that circular dependencies (A→B→A) do not
 // cause an infinite loop; the visited set prevents redundant processing.
 func TestAnalyze_CircularDeps(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	libAPath := filepath.Join(tmp, "libA.dylib")
@@ -532,7 +483,7 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 // TestAnalyze_RecursionDepthExceeded verifies that Analyze returns an
 // ErrRecursionDepthExceeded when the dependency chain exceeds MaxRecursionDepth.
 func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	tmp := realPath(t, t.TempDir())
 
 	// Build a chain: root → chain[0] → chain[1] → … → chain[MaxRecursionDepth-1] → chain[MaxRecursionDepth].
@@ -574,7 +525,7 @@ func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
 // The referenced library does not need to exist on disk: IsDyldSharedCacheLib
 // returns false for /opt/homebrew/lib/, so the function returns true immediately.
 func TestHasDynamicLibDeps_SingleArch_NonSharedCacheDep(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)
@@ -593,7 +544,7 @@ func TestHasDynamicLibDeps_SingleArch_NonSharedCacheDep(t *testing.T) {
 // returns (true, nil) for a Fat binary whose native-arch slice has at least one
 // LC_LOAD_DYLIB entry pointing to a non-dyld-shared-cache path.
 func TestHasDynamicLibDeps_FatBinary_NonSharedCacheDep(t *testing.T) {
-	nativeCPU, _ := nativeAndNonNativeCPU()
+	nativeCPU := machodylibtesting.NativeCPU()
 	nativeSlice := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)

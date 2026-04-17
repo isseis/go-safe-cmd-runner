@@ -36,6 +36,17 @@ func NativeCPU() macho.Cpu {
 	}
 }
 
+// NonNativeCPU returns a macho.Cpu type that does NOT match the current build
+// architecture, used to build Fat binary fixtures for slice-selection tests.
+func NonNativeCPU() macho.Cpu {
+	switch runtime.GOARCH {
+	case "arm64":
+		return macho.CpuAmd64
+	default:
+		return macho.CpuArm64
+	}
+}
+
 // BuildMachOWithDeps builds a 64-bit little-endian Mach-O binary for cpuType
 // with the specified strong deps (LC_LOAD_DYLIB), weak deps (LC_LOAD_WEAK_DYLIB),
 // and rpath entries (LC_RPATH).
