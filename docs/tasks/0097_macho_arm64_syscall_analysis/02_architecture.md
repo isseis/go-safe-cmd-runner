@@ -222,7 +222,7 @@ flowchart TD
     CHECK_RESULT{"Result は？"}
     SAVE_SYMBOL["record.SymbolAnalysis を設定<br>（既存処理）"]
     ANALYZE_SYS["analyzeSyscalls()<br>ELF: SyscallAnalysis を設定<br>非ELF: SyscallAnalysis = nil<br>（既存: Mach-O は nil になる）"]
-    CHECK_DARWIN{"runtime.GOOS<br>== \"darwin\" かつ<br>result == NoNetworkSymbols?"}
+    CHECK_DARWIN{"runtime.GOOS<br>== 'darwin' かつ<br>result == NoNetworkSymbols?"}
     SVC_SCAN["machoanalyzer.CollectSVCAddressesFromFile()<br>svc #0x80 アドレス収集<br>（新規）"]
     CHECK_SVC{"svc #0x80 が<br>検出されたか？"}
     SET_SVC["record.SyscallAnalysis =<br>buildSVCSyscallAnalysis(addrs)<br>（直接設定 ← 新規）"]
