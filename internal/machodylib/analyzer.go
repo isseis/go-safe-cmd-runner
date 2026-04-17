@@ -488,6 +488,23 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 	return fmt.Sprintf("sha256:%s", hex.EncodeToString(h.Sum(nil))), nil
 }
 
+// looksLikeMachO returns true if buf starts with a recognised Mach-O magic
+// value (32/64-bit, either endianness). Fat-binary magic is excluded because
+// callers handle it via macho.NewFatFile before reaching the single-arch path.
+func looksLikeMachO(buf []byte) bool {
+	const machOMagicSize = 4
+
+	if len(buf) < machOMagicSize {
+		return false
+	}
+
+	le := binary.LittleEndian.Uint32(buf[:machOMagicSize])
+	be := binary.BigEndian.Uint32(buf[:machOMagicSize])
+
+	return le == macho.Magic32 || le == macho.Magic64 ||
+		be == macho.Magic32 || be == macho.Magic64
+}
+
 // HasDynamicLibDeps checks if the file at the given path is a Mach-O binary
 // that has at least one LC_LOAD_DYLIB or LC_LOAD_WEAK_DYLIB entry pointing to
 // a non-dyld-shared-cache library.
@@ -524,7 +541,9 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 				machoFile, err := macho.NewFile(
 					io.NewSectionReader(file, int64(arch.Offset), int64(arch.Size)))
 				if err != nil {
-					return false, nil
+					// Fat header was valid so this is a Mach-O file; treat parse
+					// failure as an error rather than silently returning false.
+					return false, fmt.Errorf("failed to parse Mach-O slice from Fat binary: %w", err)
 				}
 
 				defer func() { _ = machoFile.Close() }()
@@ -551,7 +570,20 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 		return false, nil // no matching architecture
 	}
 
-	// Try as single-architecture Mach-O
+	// Try as single-architecture Mach-O.
+	// Read the magic bytes first so we can distinguish "not Mach-O" (silent
+	// skip) from "looks like Mach-O but parse failed" (return error).
+	var magic [4]byte
+	if seeker, ok := file.(io.Seeker); ok {
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			return false, nil
+		}
+	}
+
+	if _, err := io.ReadFull(file, magic[:]); err != nil {
+		return false, nil // too short to be Mach-O
+	}
+
 	if seeker, ok := file.(io.Seeker); ok {
 		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 			return false, nil
@@ -560,8 +592,11 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 
 	machoFile, err := macho.NewFile(file)
 	if err != nil {
-		// Not a Mach-O binary
-		return false, nil
+		if looksLikeMachO(magic[:]) {
+			return false, fmt.Errorf("failed to parse Mach-O binary: %w", err)
+		}
+
+		return false, nil // not a Mach-O file
 	}
 
 	defer func() { _ = machoFile.Close() }()
