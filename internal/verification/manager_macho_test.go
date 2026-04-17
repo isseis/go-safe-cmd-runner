@@ -14,6 +14,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -168,6 +170,10 @@ func TestVerify_MachONoDynLibDeps(t *testing.T) {
 // TestVerify_MachOWithDynLibDeps verifies that VerifyCommandDynLibDeps returns
 // nil for a Mach-O binary when a valid DynLibDeps snapshot is recorded and all
 // library hashes match.
+//
+// The record step is performed in-process via filevalidator so that the test
+// does not depend on a pre-built `record` binary being present in PATH or the
+// build output directory.
 func TestVerify_MachOWithDynLibDeps(t *testing.T) {
 	cmdPath, found := findNonDyldCacheMachOBinary(t)
 	if !found {
@@ -176,22 +182,15 @@ func TestVerify_MachOWithDynLibDeps(t *testing.T) {
 
 	hashDir := commontesting.SafeTempDir(t)
 
-	// Use the `record` binary to generate a real hash record.
-	recordBin, err := exec.LookPath("record")
-	if err != nil {
-		// Fall back to the build output.
-		recordBin = "../../build/prod/record"
-		if _, err2 := os.Stat(recordBin); err2 != nil {
-			t.Skip("record binary not found; run 'make build' first")
-		}
-	}
-
-	// Run `record` to populate the hash directory.
-	cmd := exec.Command(recordBin, "--hash-dir", hashDir, cmdPath) //nolint:gosec
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Skipf("record command failed (%v): %s", err, out)
-	}
+	// Build a validator with Mach-O dynlib analysis enabled and record the
+	// binary in-process, replicating what the `record` binary would do.
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetMachODynLibAnalyzer(machodylib.NewMachODynLibAnalyzer(
+		safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+	))
+	_, _, err = v.SaveRecord(cmdPath, false)
+	require.NoError(t, err, "SaveRecord should succeed for the test binary")
 
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
