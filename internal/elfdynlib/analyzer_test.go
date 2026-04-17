@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -404,7 +405,7 @@ func TestAnalyze_MaxDepth(t *testing.T) {
 	_, err := a.Analyze(mainBin)
 	require.Error(t, err, "deep recursion should return ErrRecursionDepthExceeded")
 
-	var depthErr *ErrRecursionDepthExceeded
+	var depthErr *dynlib.ErrRecursionDepthExceeded
 	assert.ErrorAs(t, err, &depthErr, "error should be ErrRecursionDepthExceeded")
 }
 

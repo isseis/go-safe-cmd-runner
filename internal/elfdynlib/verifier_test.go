@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +41,7 @@ func TestVerify_EmptyLibs(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestVerify_EmptyPath ensures ErrEmptyLibraryPath is returned when an entry has an empty Path.
+// TestVerify_EmptyPath ensures dynlib.ErrEmptyLibraryPath is returned when an entry has an empty Path.
 func TestVerify_EmptyPath(t *testing.T) {
 	v := newTestVerifier()
 
@@ -54,8 +55,8 @@ func TestVerify_EmptyPath(t *testing.T) {
 
 	err := v.Verify(deps)
 	require.Error(t, err)
-	var errEmpty *ErrEmptyLibraryPath
-	assert.ErrorAs(t, err, &errEmpty, "expected ErrEmptyLibraryPath")
+	var errEmpty *dynlib.ErrEmptyLibraryPath
+	assert.ErrorAs(t, err, &errEmpty, "expected dynlib.ErrEmptyLibraryPath")
 	assert.Equal(t, "libtest.so", errEmpty.SOName)
 }
 
@@ -82,7 +83,7 @@ func TestVerify_HashMatch(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestVerify_HashMismatch ensures ErrLibraryHashMismatch is returned
+// TestVerify_HashMismatch ensures dynlib.ErrLibraryHashMismatch is returned
 // when a recorded hash does not match the current file content.
 func TestVerify_HashMismatch(t *testing.T) {
 	v := newTestVerifier()
@@ -104,8 +105,8 @@ func TestVerify_HashMismatch(t *testing.T) {
 	err := v.Verify(deps)
 	require.Error(t, err)
 
-	var hashErr *ErrLibraryHashMismatch
-	require.ErrorAs(t, err, &hashErr, "expected ErrLibraryHashMismatch")
+	var hashErr *dynlib.ErrLibraryHashMismatch
+	require.ErrorAs(t, err, &hashErr, "expected dynlib.ErrLibraryHashMismatch")
 	assert.Equal(t, "libbar.so", hashErr.SOName)
 	assert.Equal(t, libPath, hashErr.Path)
 	assert.Equal(t, wrongHash, hashErr.ExpectedHash)
@@ -128,6 +129,6 @@ func TestVerify_FileNotFound(t *testing.T) {
 	err := v.Verify(deps)
 	require.Error(t, err)
 	// Must NOT be a hash mismatch — file could not be read at all.
-	_, ok := errors.AsType[*ErrLibraryHashMismatch](err)
+	_, ok := errors.AsType[*dynlib.ErrLibraryHashMismatch](err)
 	assert.False(t, ok)
 }

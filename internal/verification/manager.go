@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -641,7 +642,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 
 	if hasDynDeps {
 		// ELF binary without DynLibDeps record → requires re-recording.
-		return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+		return &dynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
 	}
 
 	// Check if this is a dynamically linked Mach-O binary.
@@ -652,7 +653,7 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 
 	if hasMachODeps {
 		// Mach-O binary without DynLibDeps record → requires re-recording.
-		return &elfdynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
+		return &dynlib.ErrDynLibDepsRequired{BinaryPath: cmdPath}
 	}
 
 	// Non-ELF, non-Mach-O binary (or static/no-dependency binary) without DynLibDeps → normal.

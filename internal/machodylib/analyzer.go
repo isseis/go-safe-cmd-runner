@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -117,7 +118,7 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 
 		// Check depth limit
 		if item.depth > MaxRecursionDepth {
-			return nil, nil, &ErrRecursionDepthExceeded{
+			return nil, nil, &dynlib.ErrRecursionDepthExceeded{
 				Depth:    item.depth,
 				MaxDepth: MaxRecursionDepth,
 				SOName:   item.installName,

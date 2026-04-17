@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -186,7 +187,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 
 		// Check depth limit
 		if item.depth > MaxRecursionDepth {
-			return nil, &ErrRecursionDepthExceeded{
+			return nil, &dynlib.ErrRecursionDepthExceeded{
 				Depth:    item.depth,
 				MaxDepth: MaxRecursionDepth,
 				SOName:   item.soname,

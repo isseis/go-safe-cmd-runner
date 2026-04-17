@@ -48,20 +48,6 @@ func (e *ErrUnknownAtToken) Error() string {
 		e.InstallName, e.Token)
 }
 
-// ErrRecursionDepthExceeded indicates that dependency resolution exceeded the
-// maximum allowed depth. This typically indicates an abnormal library
-// configuration.
-type ErrRecursionDepthExceeded struct {
-	Depth    int
-	MaxDepth int
-	SOName   string
-}
-
-func (e *ErrRecursionDepthExceeded) Error() string {
-	return fmt.Sprintf("dependency resolution depth exceeded: %s at depth %d (max %d)",
-		e.SOName, e.Depth, e.MaxDepth)
-}
-
 // ErrNoMatchingSlice indicates that a Fat binary does not contain a slice
 // matching the native architecture.
 type ErrNoMatchingSlice struct {

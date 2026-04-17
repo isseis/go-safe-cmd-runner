@@ -11,7 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/stretchr/testify/assert"
@@ -129,7 +129,7 @@ func TestVerify_MachONoDynLibDeps(t *testing.T) {
 	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr)
 
-	var errRequired *elfdynlib.ErrDynLibDepsRequired
+	var errRequired *dynlib.ErrDynLibDepsRequired
 	assert.ErrorAs(t, verifyErr, &errRequired,
 		"Mach-O binary with non-dyld-cache deps without DynLibDeps should return ErrDynLibDepsRequired")
 }
