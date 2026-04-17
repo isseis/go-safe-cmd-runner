@@ -1,4 +1,4 @@
-package dynlibanalysis
+package elfdynlib
 
 import (
 	"crypto/sha256"
@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -93,6 +94,15 @@ type resolveItem struct {
 // Returns nil (not an error) if the file is not ELF or has no DT_NEEDED entries.
 // Returns an error if any library cannot be resolved (FR-3.1.7).
 func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, error) {
+	// Canonicalise the path upfront so that safefileio, error messages, and path
+	// comparisons all use the same resolved path consistently.
+	// safefileio rejects OS-managed symlinks such as /var -> /private/var on macOS.
+	var err error
+	binaryPath, err = filepath.EvalSymlinks(binaryPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving symlinks for %q: %w", binaryPath, err)
+	}
+
 	// Open file safely
 	file, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
 	if err != nil {
@@ -159,7 +169,7 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 
 		// Check depth limit
 		if item.depth > MaxRecursionDepth {
-			return nil, &ErrRecursionDepthExceeded{
+			return nil, &dynlib.ErrRecursionDepthExceeded{
 				Depth:    item.depth,
 				MaxDepth: MaxRecursionDepth,
 				SOName:   item.soname,
@@ -241,7 +251,11 @@ func (a *DynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntry, er
 // Streams the file content through sha256.New() to avoid loading the entire
 // file into memory (important for large libraries such as libLLVM.so ~50MB).
 func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
-	file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+	canonPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving symlinks for %q: %w", path, err)
+	}
+	file, err := fs.SafeOpenFile(canonPath, os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +272,11 @@ func computeFileHash(fs safefileio.FileSystem, path string) (string, error) {
 // Returns ErrDTRPATHNotSupported if the library contains DT_RPATH.
 // Returns nil slices (not an error) if parsing fails for other reasons.
 func (a *DynLibAnalyzer) parseELFDeps(path string) (needed, runpath []string, err error) {
-	file, err := a.fs.SafeOpenFile(path, os.O_RDONLY, 0)
+	canonPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolving symlinks for %q: %w", path, err)
+	}
+	file, err := a.fs.SafeOpenFile(canonPath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, nil, err
 	}

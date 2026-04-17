@@ -223,6 +223,103 @@ func TestMockFileSystem_AddSymlink_ErrorHandling(t *testing.T) {
 	}
 }
 
+func TestMockFileSystem_EvalSymlinks(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(*MockFileSystem)
+		path          string
+		expectedPath  string
+		expectedError error
+	}{
+		{
+			name: "plain file returns its own path",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddFile("/a/b", 0o644, nil)
+			},
+			path:         "/a/b",
+			expectedPath: "/a/b",
+		},
+		{
+			name: "plain directory returns its own path",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddDir("/a/b", 0o755)
+			},
+			path:         "/a/b",
+			expectedPath: "/a/b",
+		},
+		{
+			name: "symlink to file resolves",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddFile("/real", 0o644, nil)
+				_ = fs.AddSymlink("/link", "/real")
+			},
+			path:         "/link",
+			expectedPath: "/real",
+		},
+		{
+			name: "symlink in intermediate path component resolves",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddDir("/private/tmp", 0o755)
+				_ = fs.AddSymlink("/tmp", "/private/tmp")
+				_ = fs.AddFile("/private/tmp/file.txt", 0o644, nil)
+			},
+			path:         "/tmp/file.txt",
+			expectedPath: "/private/tmp/file.txt",
+		},
+		{
+			name: "symlink directory with sub-path resolves",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddDir("/private/tmp", 0o755)
+				_ = fs.AddDir("/private/tmp/sub", 0o755)
+				_ = fs.AddSymlink("/tmp", "/private/tmp")
+			},
+			path:         "/tmp/sub",
+			expectedPath: "/private/tmp/sub",
+		},
+		{
+			name: "chained symlinks resolve",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddFile("/real", 0o644, nil)
+				_ = fs.AddSymlink("/b", "/real")
+				_ = fs.AddSymlink("/a", "/b")
+			},
+			path:         "/a",
+			expectedPath: "/real",
+		},
+		{
+			name:          "non-existent path returns ErrNotExist",
+			setup:         func(_ *MockFileSystem) {},
+			path:          "/no/such/path",
+			expectedError: os.ErrNotExist,
+		},
+		{
+			name: "circular symlinks return ErrTooManySymlinks",
+			setup: func(fs *MockFileSystem) {
+				_ = fs.AddSymlink("/a", "/b")
+				_ = fs.AddSymlink("/b", "/a")
+			},
+			path:          "/a",
+			expectedError: ErrTooManySymlinks,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := NewMockFileSystem()
+			tt.setup(fs)
+
+			got, err := fs.EvalSymlinks(tt.path)
+			if tt.expectedError != nil {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.expectedError)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedPath, got)
+			}
+		})
+	}
+}
+
 func TestMockFileSystem_ConsistentBehavior(t *testing.T) {
 	t.Run("all Add functions should behave consistently with existing paths", func(t *testing.T) {
 		fs := NewMockFileSystem()

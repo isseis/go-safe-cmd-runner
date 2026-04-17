@@ -6,12 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -1524,6 +1525,10 @@ func TestVerify_SchemaVersion(t *testing.T) {
 // ErrDynLibDepsRequired when a dynamically linked ELF binary has a valid v2
 // record but DynLibDeps is nil (i.e., dynlib snapshot was never recorded).
 func TestVerify_ELFNoDynLibDeps(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF test requires Linux")
+	}
+
 	hashDir := commontesting.SafeTempDir(t)
 
 	// /bin/ls is a dynamically linked ELF binary on Linux.
@@ -1549,7 +1554,7 @@ func TestVerify_ELFNoDynLibDeps(t *testing.T) {
 	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
 	require.Error(t, verifyErr)
 
-	var errRequired *dynlibanalysis.ErrDynLibDepsRequired
+	var errRequired *dynlib.ErrDynLibDepsRequired
 	assert.ErrorAs(t, verifyErr, &errRequired, "expected ErrDynLibDepsRequired for dynamic ELF without DynLibDeps")
 }
 

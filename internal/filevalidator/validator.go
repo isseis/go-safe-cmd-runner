@@ -11,8 +11,9 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -116,11 +117,12 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	fileSystem      safefileio.FileSystem          // used by openELFFile in analyzeSyscalls
-	dynlibAnalyzer  *dynlibanalysis.DynLibAnalyzer // nil if dynlib analysis is disabled
-	binaryAnalyzer  binaryanalyzer.BinaryAnalyzer  // nil if binary analysis is disabled
-	libcCache       LibcCacheInterface             // nil if libc cache is disabled
-	syscallAnalyzer SyscallAnalyzerInterface       // nil if syscall analysis is disabled
+	fileSystem          safefileio.FileSystem           // used by openELFFile in analyzeSyscalls
+	elfDynlibAnalyzer   *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
+	machoDynlibAnalyzer *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
+	binaryAnalyzer      binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
+	libcCache           LibcCacheInterface              // nil if libc cache is disabled
+	syscallAnalyzer     SyscallAnalyzerInterface        // nil if syscall analysis is disabled
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -282,15 +284,9 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		}
 		record.ContentHash = contentHash
 
-		// Analyze dynamic library dependencies if analyzer is available.
-		// Analysis failure causes the callback to return an error, which
-		// prevents the record from being persisted (atomicity).
-		if v.dynlibAnalyzer != nil {
-			dynLibDeps, analyzeErr := v.dynlibAnalyzer.Analyze(filePath.String())
-			if analyzeErr != nil {
-				return fmt.Errorf("dynamic library analysis failed: %w", analyzeErr)
-			}
-			record.DynLibDeps = dynLibDeps // nil for non-ELF or static ELF (omitted in JSON)
+		// Analyze dynamic library dependencies (ELF + Mach-O).
+		if err := v.analyzeDynLibDeps(filePath.String(), record); err != nil {
+			return err
 		}
 
 		// Analyze binary symbols if analyzer is available.
@@ -402,10 +398,54 @@ func (v *Validator) checkNotShebang(path, role string) error {
 	return nil
 }
 
-// SetDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
+// SetELFDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
 // Call before the first SaveRecord() invocation. Safe to call with nil (disables dynlib analysis).
-func (v *Validator) SetDynLibAnalyzer(a *dynlibanalysis.DynLibAnalyzer) {
-	v.dynlibAnalyzer = a
+func (v *Validator) SetELFDynLibAnalyzer(a *elfdynlib.DynLibAnalyzer) {
+	v.elfDynlibAnalyzer = a
+}
+
+// SetMachODynLibAnalyzer injects the MachODynLibAnalyzer used during record operations.
+// Call before the first SaveRecord() invocation. Safe to call with nil (disables Mach-O dynlib analysis).
+func (v *Validator) SetMachODynLibAnalyzer(a *machodylib.MachODynLibAnalyzer) {
+	v.machoDynlibAnalyzer = a
+}
+
+// analyzeDynLibDeps analyzes dynamic library dependencies for the given file and
+// updates the record. ELF analysis runs first; Mach-O analysis runs only when ELF
+// returns no results. Both fields are cleared before analysis when at least one
+// analyzer is set, to prevent stale data from a previous record.
+func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Record) error {
+	if v.elfDynlibAnalyzer == nil && v.machoDynlibAnalyzer == nil {
+		return nil
+	}
+
+	// Stale data prevention: reset before re-analysis.
+	record.DynLibDeps = nil
+	record.AnalysisWarnings = nil
+
+	if v.elfDynlibAnalyzer != nil {
+		dynLibDeps, err := v.elfDynlibAnalyzer.Analyze(filePath)
+		if err != nil {
+			return fmt.Errorf("dynamic library analysis failed: %w", err)
+		}
+
+		record.DynLibDeps = dynLibDeps // nil for non-ELF or static ELF (omitted in JSON)
+	}
+
+	// Mach-O analysis: only when ELF analysis returned no results.
+	if v.machoDynlibAnalyzer != nil && len(record.DynLibDeps) == 0 {
+		libs, warns, err := v.machoDynlibAnalyzer.Analyze(filePath)
+		if err != nil {
+			return fmt.Errorf("Mach-O dynamic library analysis failed: %w", err)
+		}
+
+		record.DynLibDeps = libs
+		for _, w := range warns {
+			record.AnalysisWarnings = append(record.AnalysisWarnings, w.String())
+		}
+	}
+
+	return nil
 }
 
 // SetBinaryAnalyzer injects the BinaryAnalyzer used during record operations.

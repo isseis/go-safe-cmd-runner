@@ -46,6 +46,9 @@ type MockFileSystem struct {
 // ErrDirectoryNotEmpty is returned when trying to remove a non-empty directory
 var ErrDirectoryNotEmpty = errors.New("directory not empty")
 
+// ErrTooManySymlinks is returned when symlink resolution exceeds the maximum depth
+var ErrTooManySymlinks = errors.New("too many levels of symbolic links")
+
 // MockFileInfo implements fs.FileInfo for testing
 type MockFileInfo struct {
 	name      string
@@ -188,6 +191,76 @@ func (m *MockFileSystem) Readlink(name string) (string, error) {
 	}
 
 	return target, nil
+}
+
+// EvalSymlinks resolves symbolic links in the mock filesystem.
+// Each path component is resolved in order; if a component is a symlink its target
+// replaces it and resolution continues from there, up to 40 levels deep.
+func (m *MockFileSystem) EvalSymlinks(path string) (string, error) {
+	path = filepath.Clean(path)
+
+	const maxSteps = 40
+	steps := 0
+
+	// Process path components left to right.
+	// resolved: the fully resolved path prefix built so far.
+	// parts: remaining unresolved components.
+	parts := strings.Split(path, string(filepath.Separator))
+	resolved := ""
+
+	for len(parts) > 0 {
+		part := parts[0]
+		parts = parts[1:]
+
+		if part == "" {
+			// Marks the leading slash of an absolute path.
+			if resolved == "" {
+				resolved = string(filepath.Separator)
+			}
+			continue
+		}
+
+		var candidate string
+		if resolved == "" {
+			candidate = part
+		} else {
+			candidate = filepath.Join(resolved, part)
+		}
+
+		target, isSymlink := m.symlinks[candidate]
+		if !isSymlink {
+			resolved = candidate
+			continue
+		}
+
+		steps++
+		if steps > maxSteps {
+			return "", fmt.Errorf("evalSymlinks %s: %w", path, ErrTooManySymlinks)
+		}
+
+		linkTarget := filepath.Clean(target)
+		if filepath.IsAbs(linkTarget) {
+			// Absolute symlink: restart resolution from the target.
+			newParts := strings.Split(linkTarget, string(filepath.Separator))
+			parts = append(newParts, parts...)
+			resolved = ""
+		} else {
+			// Relative symlink: resolve relative to the symlink's parent directory.
+			targetParts := strings.Split(linkTarget, string(filepath.Separator))
+			parts = append(targetParts, parts...)
+			// resolved stays as the parent directory of the symlink.
+		}
+	}
+
+	// Verify the resolved path exists; both files and directories live in m.files,
+	// but check m.dirs as well to guard against future inconsistency.
+	_, inFiles := m.files[resolved]
+	_, inDirs := m.dirs[resolved]
+	if !inFiles && !inDirs {
+		return "", fmt.Errorf("evalSymlinks %s: %w", path, os.ErrNotExist)
+	}
+
+	return resolved, nil
 }
 
 // FileExists checks if a file or directory exists in the mock filesystem

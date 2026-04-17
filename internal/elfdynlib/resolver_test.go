@@ -1,6 +1,6 @@
-//go:build test
+//go:build test && linux
 
-package dynlibanalysis
+package elfdynlib
 
 import (
 	"debug/elf"

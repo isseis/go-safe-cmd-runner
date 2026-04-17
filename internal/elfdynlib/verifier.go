@@ -1,8 +1,9 @@
-package dynlibanalysis
+package elfdynlib
 
 import (
 	"fmt"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -33,7 +34,7 @@ func (v *DynLibVerifier) Verify(deps []fileanalysis.LibEntry) error {
 
 	for _, entry := range deps {
 		if entry.Path == "" {
-			return &ErrEmptyLibraryPath{
+			return &dynlib.ErrEmptyLibraryPath{
 				SOName: entry.SOName,
 			}
 		}
@@ -45,7 +46,7 @@ func (v *DynLibVerifier) Verify(deps []fileanalysis.LibEntry) error {
 		}
 
 		if actualHash != entry.Hash {
-			return &ErrLibraryHashMismatch{
+			return &dynlib.ErrLibraryHashMismatch{
 				SOName:       entry.SOName,
 				Path:         entry.Path,
 				ExpectedHash: entry.Hash,

@@ -19,11 +19,13 @@ const (
 	// Version 11 adds ShebangInterpreter to Record for shebang interpreter tracking.
 	// Version 12 adds RawInterpreterPath to ShebangInterpreterInfo for symlink-redirect detection.
 	// Version 13 removes UpdatedAt field (was unused by verify; caused noisy diffs).
-	// Load returns SchemaVersionMismatchError for records with schema_version != 13.
+	// Version 14 adds AnalysisWarnings to Record for dynlib analysis warnings.
+	// Mach-O binaries also record DynLibDeps starting with version 14.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 14.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 13
+	CurrentSchemaVersion = 14
 )
 
 // Record represents a unified file analysis record containing both
@@ -64,6 +66,11 @@ type Record struct {
 	// ShebangInterpreter holds interpreter information parsed from the file's
 	// shebang line. nil for non-script files (ELF binaries, text files, etc.).
 	ShebangInterpreter *ShebangInterpreterInfo `json:"shebang_interpreter,omitempty"`
+
+	// AnalysisWarnings holds non-fatal warnings generated during dynlib analysis
+	// (e.g., unknown @ tokens that prevent hash verification for specific libraries).
+	// nil/empty is omitted from JSON (omitempty).
+	AnalysisWarnings []string `json:"analysis_warnings,omitempty"`
 }
 
 // LibEntry represents a single resolved dynamic library dependency.

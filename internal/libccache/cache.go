@@ -68,7 +68,13 @@ func (m *LibcCacheManager) GetOrCreate(libcPath, libcHash string) ([]WrapperEntr
 	}
 
 	// Cache MISS: open and analyze the libc file.
-	libcFile, err := m.fs.SafeOpenFile(libcPath, os.O_RDONLY, 0)
+	// Resolve symlinks so that safefileio does not reject OS-managed symlinks
+	// such as /var -> /private/var on macOS.
+	resolvedLibcPath, err := filepath.EvalSymlinks(libcPath)
+	if err != nil {
+		resolvedLibcPath = libcPath
+	}
+	libcFile, err := m.fs.SafeOpenFile(resolvedLibcPath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrLibcFileNotAccessible, err)
 	}

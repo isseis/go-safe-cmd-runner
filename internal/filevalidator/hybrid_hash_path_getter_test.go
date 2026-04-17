@@ -35,7 +35,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {
 	result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
 	assert.NoError(t, err)
-	assert.True(t, strings.HasPrefix(result, hashDirRaw))
+	assert.True(t, strings.HasPrefix(result, hashDir.String()))
 	assert.True(t, filepath.IsAbs(result))
 
 	filename := filepath.Base(result)
@@ -162,8 +162,12 @@ func TestHybridHashFilePathGetter_GetHashFilePath_DifferentHashDirs(t *testing.T
 		require.NoError(t, err)
 		results[i] = result
 
-		// Verify the result uses the correct hash directory
-		assert.True(t, strings.HasPrefix(result, rawDir))
+		// Verify the result uses the correct hash directory.
+		// Use the resolved path because GetHashFilePath stores results under
+		// the canonical path (EvalSymlinks applied), which may differ from
+		// rawDir on systems with OS-managed symlinks (e.g. /var -> /private/var
+		// on macOS).
+		assert.True(t, strings.HasPrefix(result, hashDir.String()))
 	}
 
 	// All results should have different prefixes but same filename

@@ -41,8 +41,9 @@ type FileManager interface {
 	// WriteToTemp writes data to temporary file
 	WriteToTemp(file *os.File, data []byte) (int, error)
 
-	// MoveToFinal atomically moves temp file to final location
-	MoveToFinal(tempPath, finalPath string) error
+	// MoveToFinal atomically moves temp file to final location with the given permissions.
+	// The caller is responsible for choosing perm based on the sensitivity of the file content.
+	MoveToFinal(tempPath, finalPath string, perm os.FileMode) error
 
 	// EnsureDirectory ensures directory exists with proper permissions
 	EnsureDirectory(path string) error

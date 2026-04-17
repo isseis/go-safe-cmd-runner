@@ -11,7 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/dynlibanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
@@ -56,7 +56,7 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	require.NoError(t, err)
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	v.SetDynLibAnalyzer(dynlibanalysis.NewDynLibAnalyzer(fs))
+	v.SetELFDynLibAnalyzer(elfdynlib.NewDynLibAnalyzer(fs))
 
 	syscallAn := elfanalyzer.NewSyscallAnalyzer()
 	v.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAn))

@@ -330,6 +330,12 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 
 // ensureParentDirsNoSymlinks checks if any component of the path is a symlink
 // by traversing the directory hierarchy step-by-step using opendir(2) equivalent.
+//
+// Exception: OS-managed symlinks on an explicit allowlist (e.g. /tmp ->
+// /private/tmp on macOS) are followed after verifying the target matches the
+// expected destination. All other symlinks are rejected to prevent
+// symlink-redirect attacks where an attacker substitutes a directory component
+// with a symlink to an arbitrary target.
 func ensureParentDirsNoSymlinks(absPath string) error {
 	// Get the directory of the file
 	dir := filepath.Dir(absPath)
@@ -357,7 +363,20 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 
 		// Check if it's a symlink
 		if fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+			// Allow only well-known OS-managed symlinks whose target matches the
+			// expected value in the allowlist (e.g. /tmp -> /private/tmp on macOS).
+			// All other symlinks — including unexpected root-owned ones — are rejected.
+			if !isAllowedOSManagedSymlink(currentPath) {
+				return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+			}
+			// Resolve the OS-managed symlink so subsequent components are
+			// evaluated against the real path.
+			resolved, err := filepath.EvalSymlinks(currentPath)
+			if err != nil {
+				return fmt.Errorf("failed to resolve OS symlink %s: %w", currentPath, err)
+			}
+			currentPath = resolved
+			continue
 		}
 
 		// Ensure it's a directory (except for the last component which might not exist yet)

@@ -964,6 +964,51 @@ func TestResolvedPathModeEnforcement(t *testing.T) {
 	})
 }
 
+// TestEnsureParentDirsNoSymlinks exercises the symlink policy in
+// ensureParentDirsNoSymlinks: user-owned symlinks must be rejected, while
+// OS-managed symlinks on the explicit allowlist (e.g. /tmp -> /private/tmp)
+// must be allowed after target verification.
+func TestEnsureParentDirsNoSymlinks(t *testing.T) {
+	t.Run("rejects user-owned symlink in parent", func(t *testing.T) {
+		// Create:  <tmpDir>/real/   (real directory)
+		//          <tmpDir>/link -> <tmpDir>/real  (user-owned symlink)
+		// Target path: <tmpDir>/link/file.txt
+		// ensureParentDirsNoSymlinks should reject the symlink component.
+		tmpDir := commontesting.SafeTempDir(t)
+		realDir := filepath.Join(tmpDir, "real")
+		require.NoError(t, os.Mkdir(realDir, 0o750))
+		linkDir := filepath.Join(tmpDir, "link")
+		require.NoError(t, os.Symlink(realDir, linkDir))
+
+		targetPath := filepath.Join(linkDir, "file.txt")
+		err := ensureParentDirsNoSymlinks(targetPath)
+		assert.ErrorIs(t, err, ErrIsSymlink, "user-owned symlink in parent must be rejected")
+	})
+
+	t.Run("allows regular directory hierarchy", func(t *testing.T) {
+		tmpDir := commontesting.SafeTempDir(t)
+		subDir := filepath.Join(tmpDir, "sub")
+		require.NoError(t, os.Mkdir(subDir, 0o750))
+
+		targetPath := filepath.Join(subDir, "file.txt")
+		err := ensureParentDirsNoSymlinks(targetPath)
+		assert.NoError(t, err, "plain directory hierarchy must be accepted")
+	})
+
+	t.Run("os.TempDir path is accepted (may traverse OS-managed symlinks)", func(t *testing.T) {
+		// os.TempDir() on macOS resolves through /tmp -> /private/tmp.
+		// ensureParentDirsNoSymlinks must accept that root-owned symlink so
+		// that writing to the system temp directory works correctly.
+		subDir, err := os.MkdirTemp("", "safefileio-test-*")
+		require.NoError(t, err)
+		defer func() { _ = os.RemoveAll(subDir) }()
+
+		targetPath := filepath.Join(subDir, "file.txt")
+		err = ensureParentDirsNoSymlinks(targetPath)
+		assert.NoError(t, err, "path under os.TempDir must be accepted")
+	})
+}
+
 // TestSafeReadFile_AcceptsBothModes verifies that SafeReadFile accepts ResolvedPath values
 // created with either NewResolvedPath or NewResolvedPathParentOnly (AC-17).
 func TestSafeReadFile_AcceptsBothModes(t *testing.T) {

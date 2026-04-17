@@ -1,4 +1,4 @@
-// Package dynlibanalysis provides dynamic library dependency analysis
+// Package elfdynlib provides dynamic library dependency analysis
 // and verification for ELF binaries.
 //
 // At record time (DynLibAnalyzer.Analyze), it resolves all DT_NEEDED entries
@@ -10,4 +10,4 @@
 //
 // Note: ld.so.cache tampering is outside the threat model of this system.
 // See docs/security/README.md for the security scope.
-package dynlibanalysis
+package elfdynlib

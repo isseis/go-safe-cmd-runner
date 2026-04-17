@@ -130,6 +130,26 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 	}
 }
 
+func TestValidator_ValidateOutputWritePermission_RejectsUserSymlinkComponent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test is not portable on Windows")
+	}
+
+	baseDir := commontesting.SafeTempDir(t)
+	realDir := filepath.Join(baseDir, "real-output-dir")
+	require.NoError(t, os.Mkdir(realDir, 0o755))
+
+	symlinkDir := filepath.Join(baseDir, "linked-output-dir")
+	require.NoError(t, os.Symlink(realDir, symlinkDir))
+
+	validator, err := NewValidator(NewPermissiveTestConfig())
+	require.NoError(t, err)
+
+	err = validator.ValidateOutputWritePermission(filepath.Join(symlinkDir, "output.log"), os.Getuid())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInsecurePathComponent)
+}
+
 func TestValidator_checkWritePermission(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
