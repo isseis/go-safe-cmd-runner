@@ -82,9 +82,7 @@ syscall を発行するため、`svc #0x80` はバイナリ本体の `__TEXT,__t
 
 #### FR-3.1.2: SymbolAnalysis との保存順序
 
-`SyscallAnalysis` の保存は `SymbolAnalysis` が `NetworkDetected` の場合は実行しなくてよい。
-`SymbolAnalysis = NetworkDetected` の場合、`runner` は `SymbolAnalysis` キャッシュのみで
-判定できるため、追加コストを避ける。
+SyscallAnalysis の保存は SymbolAnalysis の結果に関わらず実行すること。svc #0x80 は SymbolAnalysis では検知できない高リスクなシグナルであるため、ネットワーク検出の有無によらずスキャンを行う。
 
 #### FR-3.1.3: スキーマバージョン
 
