@@ -229,63 +229,68 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, io.Clos
 		return nil, nil, err
 	}
 
-	// Try as Fat binary first
 	fatFile, fatErr := macho.NewFatFile(file)
 	if fatErr == nil {
-		cpuType := goarchToCPUType(runtime.GOARCH)
-		if cpuType == 0 {
-			_ = fatFile.Close()
-			_ = file.Close()
+		// openFatSlice takes ownership of fatFile and file; both are always closed.
+		return a.openFatSlice(binaryPath, fatFile, file)
+	}
 
-			return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
-		}
+	// Single-arch path: openSingleArch takes ownership of file.
+	return openSingleArch(file)
+}
 
-		for _, arch := range fatFile.Arches {
-			if arch.Cpu == cpuType {
-				_ = fatFile.Close()
+// openFatSlice selects the native-arch slice from a Fat binary and returns
+// a *macho.File backed by a freshly opened SectionReader.
+// It takes ownership of fatFile and file; both are always closed before returning.
+func (a *MachODynLibAnalyzer) openFatSlice(binaryPath string, fatFile *macho.FatFile, file safefileio.File) (*macho.File, io.Closer, error) {
+	defer func() { _ = fatFile.Close() }()
+	defer func() { _ = file.Close() }()
 
-				// Close the original file handle and re-open for the slice.
-				_ = file.Close()
-
-				sliceFile, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
-				if err != nil {
-					return nil, nil, err
-				}
-
-				machoFile, err := macho.NewFile(
-					io.NewSectionReader(sliceFile, int64(arch.Offset), int64(arch.Size)))
-				if err != nil {
-					_ = sliceFile.Close()
-
-					return nil, nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
-				}
-
-				// Return sliceFile as the closer: macho.File.Close does not
-				// close the SectionReader's underlying source.
-				return machoFile, sliceFile, nil
-			}
-		}
-
-		_ = fatFile.Close()
-		_ = file.Close()
-
+	cpuType := goarchToCPUType(runtime.GOARCH)
+	if cpuType == 0 {
 		return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
 	}
 
-	// Try as single-architecture Mach-O.
-	// Reset file position (NewFatFile may have consumed bytes).
-	if seeker, ok := file.(io.Seeker); ok {
-		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-			_ = file.Close()
+	for _, arch := range fatFile.Arches {
+		if arch.Cpu == cpuType {
+			sliceFile, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
+			if err != nil {
+				return nil, nil, err
+			}
 
-			return nil, nil, err
+			machoFile, err := macho.NewFile(
+				io.NewSectionReader(sliceFile, int64(arch.Offset), int64(arch.Size)))
+			if err != nil {
+				_ = sliceFile.Close()
+
+				return nil, nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
+			}
+
+			// Return sliceFile as the closer: macho.File.Close does not
+			// close the SectionReader's underlying source.
+			return machoFile, sliceFile, nil
 		}
+	}
+
+	return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
+}
+
+// openSingleArch parses file as a single-architecture Mach-O.
+// It takes ownership of file; file is closed on error but left open on success.
+func openSingleArch(file safefileio.File) (_ *macho.File, _ io.Closer, retErr error) {
+	defer func() {
+		if retErr != nil {
+			_ = file.Close()
+		}
+	}()
+
+	// Reset file position (NewFatFile may have consumed bytes).
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, nil, err
 	}
 
 	machoFile, err := macho.NewFile(file)
 	if err != nil {
-		_ = file.Close()
-
 		return nil, nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
 	}
 
