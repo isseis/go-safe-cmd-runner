@@ -47,6 +47,9 @@ type FileSystem interface {
 
 	// MkdirAll creates a directory and all necessary parents with the specified permissions
 	MkdirAll(path string, perm os.FileMode) error
+
+	// EvalSymlinks returns the path name after the evaluation of any symbolic links.
+	EvalSymlinks(path string) (string, error)
 }
 
 // DefaultFileSystem implements FileSystem using standard os package functions
@@ -110,6 +113,11 @@ func (fs *DefaultFileSystem) CreateTemp(dir string, pattern string) (*os.File, e
 // MkdirAll creates a directory and all necessary parents with the specified permissions
 func (fs *DefaultFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
+}
+
+// EvalSymlinks returns the path name after the evaluation of any symbolic links.
+func (fs *DefaultFileSystem) EvalSymlinks(path string) (string, error) {
+	return filepath.EvalSymlinks(path)
 }
 
 // resolveMode indicates how ResolvedPath was constructed.

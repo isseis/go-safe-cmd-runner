@@ -46,6 +46,9 @@ type MockFileSystem struct {
 // ErrDirectoryNotEmpty is returned when trying to remove a non-empty directory
 var ErrDirectoryNotEmpty = errors.New("directory not empty")
 
+// ErrTooManySymlinks is returned when symlink resolution exceeds the maximum depth
+var ErrTooManySymlinks = errors.New("too many levels of symbolic links")
+
 // MockFileInfo implements fs.FileInfo for testing
 type MockFileInfo struct {
 	name      string
@@ -188,6 +191,25 @@ func (m *MockFileSystem) Readlink(name string) (string, error) {
 	}
 
 	return target, nil
+}
+
+// EvalSymlinks resolves symbolic links in the mock filesystem.
+// Each path component that is a symlink is replaced with its target, up to 40 levels deep.
+func (m *MockFileSystem) EvalSymlinks(path string) (string, error) {
+	path = filepath.Clean(path)
+
+	const maxDepth = 40
+	for i := 0; i < maxDepth; i++ {
+		target, isSymlink := m.symlinks[path]
+		if !isSymlink {
+			if _, exists := m.files[path]; !exists {
+				return "", fmt.Errorf("evalSymlinks %s: %w", path, os.ErrNotExist)
+			}
+			return path, nil
+		}
+		path = filepath.Clean(target)
+	}
+	return "", fmt.Errorf("evalSymlinks %s: %w", path, ErrTooManySymlinks)
 }
 
 // FileExists checks if a file or directory exists in the mock filesystem
