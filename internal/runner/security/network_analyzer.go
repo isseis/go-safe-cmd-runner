@@ -171,7 +171,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 				// clearly explain why the binary is treated as network-capable even
 				// if handleAnalysisOutput logs an empty symbol list.
 				if len(data.DetectedSymbols) == 0 && len(data.KnownNetworkLibDeps) > 0 {
-					slog.Info(
+					slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
 						"treating binary as network-capable based on known network library dependencies",
 						"path", cmdPath,
 						"known_network_lib_deps", data.KnownNetworkLibDeps,
@@ -225,7 +225,7 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 
 	switch output.Result {
 	case binaryanalyzer.NetworkDetected:
-		slog.Info("Binary analysis detected network symbols; set risk_level = \"medium\" or higher to allow execution",
+		slog.Info("Binary analysis detected network symbols; set risk_level = \"medium\" or higher to allow execution", //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
 			"path", cmdPath,
 			"symbols", formatDetectedSymbols(output.DetectedSymbols))
 		return true, isHighRisk
@@ -260,7 +260,7 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 
 	default:
 		// Unknown result: treat as potential network operation for safety
-		slog.Warn("Binary analysis returned unknown result",
+		slog.Warn("Binary analysis returned unknown result", //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
 			"path", cmdPath,
 			"result", output.Result)
 		return true, isHighRisk
