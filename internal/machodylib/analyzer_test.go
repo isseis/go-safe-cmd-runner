@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
+	machodylibtesting "github.com/isseis/go-safe-cmd-runner/internal/machodylib/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -326,118 +327,6 @@ func TestHasDynamicLibDeps_FatBinary_NoMatchingSlice(t *testing.T) {
 	assert.False(t, hasDeps, "Fat binary with no matching arch should report no deps")
 }
 
-// --- LC_LOAD_DYLIB / LC_RPATH load-command build helpers ---
-
-// alignTo4 rounds n up to the nearest multiple of 4 for Mach-O load command size alignment.
-func alignTo4(n int) int {
-	return (n + 3) &^ 3
-}
-
-// buildDylibLoadCmd builds a raw LC_LOAD_DYLIB or LC_LOAD_WEAK_DYLIB load command.
-// The dylib_command header is 24 bytes; the name string follows immediately after.
-func buildDylibLoadCmd(name string, isWeak bool) []byte {
-	const dylibHeaderSize = 24
-	totalSize := alignTo4(dylibHeaderSize + len(name) + 1)
-	buf := make([]byte, totalSize)
-
-	var cmd uint32
-	if isWeak {
-		cmd = 0x80000018 // LC_LOAD_WEAK_DYLIB
-	} else {
-		cmd = 0x0C // LC_LOAD_DYLIB
-	}
-	binary.LittleEndian.PutUint32(buf[0:4], cmd)
-	binary.LittleEndian.PutUint32(buf[4:8], uint32(totalSize))
-	binary.LittleEndian.PutUint32(buf[8:12], dylibHeaderSize) // name_offset
-	// timestamp, current_version, compat_version at [12:24] default to 0
-	copy(buf[dylibHeaderSize:], name)
-	// null terminator is already zero from make
-	return buf
-}
-
-// buildRpathLoadCmd builds a raw LC_RPATH load command.
-// The rpath_command header is 12 bytes; the path string follows immediately after.
-func buildRpathLoadCmd(rp string) []byte {
-	const rpathHeaderSize = 12
-	totalSize := alignTo4(rpathHeaderSize + len(rp) + 1)
-	buf := make([]byte, totalSize)
-
-	binary.LittleEndian.PutUint32(buf[0:4], 0x8000001C) // LC_RPATH
-	binary.LittleEndian.PutUint32(buf[4:8], uint32(totalSize))
-	binary.LittleEndian.PutUint32(buf[8:12], rpathHeaderSize) // path_offset
-	copy(buf[rpathHeaderSize:], rp)
-	return buf
-}
-
-// buildMachOWithDeps builds a 64-bit little-endian Mach-O binary for cpuType
-// with the specified strong deps (LC_LOAD_DYLIB), weak deps (LC_LOAD_WEAK_DYLIB),
-// and rpath entries (LC_RPATH).
-func buildMachOWithDeps(cpuType macho.Cpu, strongDeps, weakDeps, rpaths []string) []byte {
-	var cmds [][]byte
-	for _, dep := range strongDeps {
-		cmds = append(cmds, buildDylibLoadCmd(dep, false))
-	}
-	for _, dep := range weakDeps {
-		cmds = append(cmds, buildDylibLoadCmd(dep, true))
-	}
-	for _, rp := range rpaths {
-		cmds = append(cmds, buildRpathLoadCmd(rp))
-	}
-
-	sizeofcmds := 0
-	for _, c := range cmds {
-		sizeofcmds += len(c)
-	}
-
-	hdr := make([]byte, 32)                             // mach_header_64
-	binary.LittleEndian.PutUint32(hdr[0:4], 0xFEEDFACF) // MH_MAGIC_64
-	binary.LittleEndian.PutUint32(hdr[4:8], uint32(cpuType))
-	binary.LittleEndian.PutUint32(hdr[8:12], 0)                   // cpusubtype
-	binary.LittleEndian.PutUint32(hdr[12:16], 2)                  // filetype = MH_EXECUTE
-	binary.LittleEndian.PutUint32(hdr[16:20], uint32(len(cmds)))  // ncmds
-	binary.LittleEndian.PutUint32(hdr[20:24], uint32(sizeofcmds)) // sizeofcmds
-	binary.LittleEndian.PutUint32(hdr[24:28], 0)                  // flags
-	binary.LittleEndian.PutUint32(hdr[28:32], 0)                  // reserved
-
-	out := make([]byte, 32+sizeofcmds)
-	copy(out, hdr)
-	off := 32
-	for _, c := range cmds {
-		copy(out[off:], c)
-		off += len(c)
-	}
-	return out
-}
-
-// buildFatBinaryFromSlices builds a Fat Mach-O binary whose slices are provided
-// as pre-built byte slices. Each slice is placed sequentially after the fat header.
-func buildFatBinaryFromSlices(cpuTypes []macho.Cpu, slices [][]byte) []byte {
-	nArch := len(cpuTypes)
-	fatHdrSize := 8 + 20*nArch
-
-	totalSize := fatHdrSize
-	for _, s := range slices {
-		totalSize += len(s)
-	}
-
-	buf := make([]byte, totalSize)
-	binary.BigEndian.PutUint32(buf[0:4], 0xCAFEBABE) // FAT_MAGIC
-	binary.BigEndian.PutUint32(buf[4:8], uint32(nArch))
-
-	offset := fatHdrSize
-	for i, cpu := range cpuTypes {
-		archOff := 8 + i*20
-		binary.BigEndian.PutUint32(buf[archOff:archOff+4], uint32(cpu))
-		binary.BigEndian.PutUint32(buf[archOff+4:archOff+8], 0)                        // cpusubtype
-		binary.BigEndian.PutUint32(buf[archOff+8:archOff+12], uint32(offset))          // offset
-		binary.BigEndian.PutUint32(buf[archOff+12:archOff+16], uint32(len(slices[i]))) // size
-		binary.BigEndian.PutUint32(buf[archOff+16:archOff+20], 0)                      // align
-		copy(buf[offset:], slices[i])
-		offset += len(slices[i])
-	}
-	return buf
-}
-
 // --- Phase 2 unit tests using synthetic Mach-O files ---
 
 // TestAnalyze_SingleArchMachO_NoDeps verifies that Analyze returns (nil, nil, nil) for a
@@ -464,7 +353,7 @@ func TestAnalyze_SingleArchMachO_NoDeps(t *testing.T) {
 func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
 	nativeCPU, _ := nativeAndNonNativeCPU()
 	// Use an absolute path outside dyld shared cache prefixes that does not exist.
-	buf := buildMachOWithDeps(nativeCPU,
+	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/nonexistent_dir_xyz_12345/libfoo.dylib"},
 		nil, nil)
 
@@ -483,7 +372,7 @@ func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
 // dependency is silently skipped and Analyze returns (nil, nil, nil).
 func TestAnalyze_WeakDepSkipped(t *testing.T) {
 	nativeCPU, _ := nativeAndNonNativeCPU()
-	buf := buildMachOWithDeps(nativeCPU,
+	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		nil,
 		[]string{"/nonexistent_dir_xyz_12345/libweak.dylib"},
 		nil)
@@ -506,7 +395,7 @@ func TestAnalyze_WeakDepSkipped(t *testing.T) {
 func TestAnalyze_UnknownAtToken_Warning(t *testing.T) {
 	nativeCPU, _ := nativeAndNonNativeCPU()
 	// @loaderrpath is an intentional misspelling of @loader_path – an unknown @ token.
-	buf := buildMachOWithDeps(nativeCPU,
+	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"@loaderrpath/libfoo.dylib"},
 		nil, nil)
 
@@ -533,17 +422,17 @@ func TestAnalyze_IndirectDeps(t *testing.T) {
 	// lib2.dylib: leaf, no dependencies.
 	lib2Path := filepath.Join(tmp, "lib2.dylib")
 	require.NoError(t, os.WriteFile(lib2Path,
-		buildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
 
 	// lib1.dylib: depends on lib2 by absolute path.
 	lib1Path := filepath.Join(tmp, "lib1.dylib")
 	require.NoError(t, os.WriteFile(lib1Path,
-		buildMachOWithDeps(nativeCPU, []string{lib2Path}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib2Path}, nil, nil), 0o600))
 
 	// root.bin: depends on lib1 by absolute path.
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		buildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -574,12 +463,12 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 	require.NoError(t, os.MkdirAll(lib2Dir, 0o700))
 	lib2Path := filepath.Join(lib2Dir, "lib2.dylib")
 	require.NoError(t, os.WriteFile(lib2Path,
-		buildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
 
 	// lib1.dylib: references lib2 via @rpath, carries its own LC_RPATH pointing to lib2Dir.
 	lib1Path := filepath.Join(tmp, "lib1.dylib")
 	require.NoError(t, os.WriteFile(lib1Path,
-		buildMachOWithDeps(nativeCPU,
+		machodylibtesting.BuildMachOWithDeps(nativeCPU,
 			[]string{"@rpath/lib2.dylib"},
 			nil,
 			[]string{lib2Dir}), 0o600))
@@ -587,7 +476,7 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 	// root.bin: references lib1 by absolute path (no rpath expansion needed for lib1).
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		buildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib1Path}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -617,13 +506,13 @@ func TestAnalyze_CircularDeps(t *testing.T) {
 	// Write libA first; it references libB (which does not yet exist – the bytes
 	// embed the path string; the file is resolved later at analysis time).
 	require.NoError(t, os.WriteFile(libAPath,
-		buildMachOWithDeps(nativeCPU, []string{libBPath}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{libBPath}, nil, nil), 0o600))
 	require.NoError(t, os.WriteFile(libBPath,
-		buildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
 
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		buildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{libAPath}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -659,12 +548,12 @@ func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
 	// chain[MaxRecursionDepth-1] references chain[MaxRecursionDepth] (does not need to exist).
 	for i := 0; i < MaxRecursionDepth; i++ {
 		require.NoError(t, os.WriteFile(chain[i],
-			buildMachOWithDeps(nativeCPU, []string{chain[i+1]}, nil, nil), 0o600))
+			machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{chain[i+1]}, nil, nil), 0o600))
 	}
 
 	rootPath := filepath.Join(tmp, "root.bin")
 	require.NoError(t, os.WriteFile(rootPath,
-		buildMachOWithDeps(nativeCPU, []string{chain[0]}, nil, nil), 0o600))
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{chain[0]}, nil, nil), 0o600))
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	a := NewMachODynLibAnalyzer(fs)
@@ -686,7 +575,7 @@ func TestAnalyze_RecursionDepthExceeded(t *testing.T) {
 // returns false for /opt/homebrew/lib/, so the function returns true immediately.
 func TestHasDynamicLibDeps_SingleArch_NonSharedCacheDep(t *testing.T) {
 	nativeCPU, _ := nativeAndNonNativeCPU()
-	buf := buildMachOWithDeps(nativeCPU,
+	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)
 
@@ -705,10 +594,10 @@ func TestHasDynamicLibDeps_SingleArch_NonSharedCacheDep(t *testing.T) {
 // LC_LOAD_DYLIB entry pointing to a non-dyld-shared-cache path.
 func TestHasDynamicLibDeps_FatBinary_NonSharedCacheDep(t *testing.T) {
 	nativeCPU, _ := nativeAndNonNativeCPU()
-	nativeSlice := buildMachOWithDeps(nativeCPU,
+	nativeSlice := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)
-	fatBin := buildFatBinaryFromSlices([]macho.Cpu{nativeCPU}, [][]byte{nativeSlice})
+	fatBin := machodylibtesting.BuildFatBinaryFromSlices([]macho.Cpu{nativeCPU}, [][]byte{nativeSlice})
 
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "fat_test.bin")
