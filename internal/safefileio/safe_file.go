@@ -331,11 +331,11 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 // ensureParentDirsNoSymlinks checks if any component of the path is a symlink
 // by traversing the directory hierarchy step-by-step using opendir(2) equivalent.
 //
-// Exception: root-owned symlinks (uid 0) that are part of the OS directory
-// layout (e.g. /tmp -> /private/tmp on macOS) are followed transparently.
-// User-owned symlinks are always rejected to prevent symlink-redirect attacks
-// where an attacker substitutes a directory component with a symlink to an
-// arbitrary target.
+// Exception: OS-managed symlinks on an explicit allowlist (e.g. /tmp ->
+// /private/tmp on macOS) are followed after verifying the target matches the
+// expected destination. All other symlinks are rejected to prevent
+// symlink-redirect attacks where an attacker substitutes a directory component
+// with a symlink to an arbitrary target.
 func ensureParentDirsNoSymlinks(absPath string) error {
 	// Get the directory of the file
 	dir := filepath.Dir(absPath)
