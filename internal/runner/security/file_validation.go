@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -322,6 +323,10 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 	// Walk up the directory tree until we find an existing directory
 	for {
 		if _, err := v.fs.Lstat(currentPath); err == nil {
+			if err := v.validateAllowedOutputPathSymlinks(currentPath); err != nil {
+				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
+			}
+
 			// Resolve symlinks to get the canonical path for security validation.
 			// On some systems (e.g. macOS), system paths like /tmp are symlinks
 			// (e.g. /tmp -> /private/tmp). EvalSymlinks resolves the real path so
@@ -362,6 +367,51 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 		}
 		currentPath = parent
 	}
+}
+
+// validateAllowedOutputPathSymlinks rejects user-controlled symlink components in
+// output paths while allowing specific OS-managed aliases on macOS.
+func (v *Validator) validateAllowedOutputPathSymlinks(path string) error {
+	for currentPath := filepath.Clean(path); ; {
+		info, err := v.fs.Lstat(currentPath)
+		if err != nil {
+			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 && !isAllowedOSManagedSymlink(currentPath) {
+			return fmt.Errorf("%w: path component %s is a symlink", ErrInsecurePathComponent, currentPath)
+		}
+
+		parentPath := filepath.Dir(currentPath)
+		if parentPath == currentPath {
+			return nil
+		}
+		currentPath = parentPath
+	}
+}
+
+func isAllowedOSManagedSymlink(path string) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+
+	allowedTargets := map[string]string{
+		"/tmp": "/private/tmp",
+		"/var": "/private/var",
+	}
+
+	cleanPath := filepath.Clean(path)
+	expectedTarget, ok := allowedTargets[cleanPath]
+	if !ok {
+		return false
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(cleanPath)
+	if err != nil {
+		return false
+	}
+
+	return filepath.Clean(resolvedPath) == expectedTarget
 }
 
 // validateOutputFileWritePermission checks if the user can write to the existing file
