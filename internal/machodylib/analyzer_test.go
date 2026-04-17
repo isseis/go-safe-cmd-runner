@@ -303,12 +303,12 @@ func TestAnalyze_SingleArchMachO_NoDeps(t *testing.T) {
 // a LC_LOAD_DYLIB (strong) dependency cannot be resolved.
 func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
 	nativeCPU := machodylibtesting.NativeCPU()
-	// Use an absolute path outside dyld shared cache prefixes that does not exist.
+	tmp := realPath(t, t.TempDir())
+	// Use a path inside the test's temp dir that is guaranteed not to exist.
 	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
-		[]string{"/nonexistent_dir_xyz_12345/libfoo.dylib"},
+		[]string{filepath.Join(tmp, "does-not-exist.dylib")},
 		nil, nil)
 
-	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "test.bin")
 	require.NoError(t, os.WriteFile(path, buf, 0o600))
 
@@ -323,12 +323,13 @@ func TestAnalyze_StrongDepResolutionFailure(t *testing.T) {
 // dependency is silently skipped and Analyze returns (nil, nil, nil).
 func TestAnalyze_WeakDepSkipped(t *testing.T) {
 	nativeCPU := machodylibtesting.NativeCPU()
+	tmp := realPath(t, t.TempDir())
+	// Use a path inside the test's temp dir that is guaranteed not to exist.
 	buf := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		nil,
-		[]string{"/nonexistent_dir_xyz_12345/libweak.dylib"},
+		[]string{filepath.Join(tmp, "does-not-exist.dylib")},
 		nil)
 
-	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "test.bin")
 	require.NoError(t, os.WriteFile(path, buf, 0o600))
 
