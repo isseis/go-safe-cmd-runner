@@ -53,16 +53,20 @@ AnalysisFeatures *AnalysisFeatures `json:"analysis_features,omitempty"`
 ```
 
 ```go
-// AnalysisFeatures は record 実行時にどの解析が実施されたかを示すフラグの集合。
-// 各フラグが true の場合、その解析が実施されてレコードに反映されていることを保証する。
-// false の場合、解析が実施されなかった（対象外バイナリ等）か、まだ未実装であることを示す。
+// AnalysisFeatures is a set of flags indicating which analyses were performed
+// during record.
+// If a flag is true, the corresponding analysis was performed and reflected in
+// the record.
+// If a flag is false, the analysis was either not performed, not applicable to
+// the binary, or not implemented yet.
 type AnalysisFeatures struct {
-    // ELFDynLibDeps は ELF バイナリの DT_NEEDED 依存ライブラリ解析（タスク 0074）が
-    // 実施されたことを示す。ELF バイナリ以外では false。
+    // ELFDynLibDeps indicates that DT_NEEDED dependency analysis for ELF
+    // binaries (task 0074) was performed. It is false for non-ELF binaries.
     ELFDynLibDeps bool `json:"elf_dynlib_deps,omitempty"`
 
-    // MachODynLibDeps は Mach-O バイナリの LC_LOAD_DYLIB 依存ライブラリ解析（タスク 0096）が
-    // 実施されたことを示す。Mach-O バイナリ以外では false。
+    // MachODynLibDeps indicates that LC_LOAD_DYLIB dependency analysis for
+    // Mach-O binaries (task 0096) was performed. It is false for non-Mach-O
+    // binaries.
     MachODynLibDeps bool `json:"macho_dynlib_deps,omitempty"`
 }
 ```
