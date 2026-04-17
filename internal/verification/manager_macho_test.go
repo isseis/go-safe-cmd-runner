@@ -246,3 +246,49 @@ func writeRawJSONRecord(t *testing.T, path string, record interface{}) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
 	require.NoError(t, os.WriteFile(path, data, 0o600))
 }
+
+// TestVerify_MachOLibraryTampered verifies that VerifyCommandDynLibDeps returns
+// ErrLibraryHashMismatch when a recorded dynamic library has been modified after
+// the DynLibDeps snapshot was taken.
+func TestVerify_MachOLibraryTampered(t *testing.T) {
+	cmdPath, found := findNonDyldCacheMachOBinary(t)
+	if !found {
+		t.Skip("no non-dyld-cache Mach-O binary found")
+	}
+
+	hashDir := commontesting.SafeTempDir(t)
+	libPath := filepath.Join(filepath.Dir(cmdPath), "libfoo.dylib")
+
+	// Record the binary in-process with Mach-O dynlib analysis enabled.
+	v, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	require.NoError(t, err)
+	v.SetMachODynLibAnalyzer(machodylib.NewMachODynLibAnalyzer(
+		safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
+	))
+	_, _, err = v.SaveRecord(cmdPath, false)
+	require.NoError(t, err, "initial record should succeed")
+
+	// Sanity check: initial verification passes.
+	m, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+	require.NoError(t, m.VerifyCommandDynLibDeps(cmdPath),
+		"initial verification should pass")
+
+	// Tamper with the library by appending bytes.
+	f, err := os.OpenFile(libPath, os.O_APPEND|os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, writeErr := f.Write([]byte("tampered"))
+	require.NoError(t, f.Close())
+	require.NoError(t, writeErr)
+
+	// Re-create manager to avoid any in-process caching.
+	m2, err := NewManagerForTest(hashDir)
+	require.NoError(t, err)
+
+	verifyErr := m2.VerifyCommandDynLibDeps(cmdPath)
+	require.Error(t, verifyErr, "tampered library should cause verification failure")
+
+	var hashErr *dynlib.ErrLibraryHashMismatch
+	assert.ErrorAs(t, verifyErr, &hashErr,
+		"expected ErrLibraryHashMismatch, got %T: %v", verifyErr, verifyErr)
+}
