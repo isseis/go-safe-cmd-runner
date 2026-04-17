@@ -87,7 +87,7 @@ internal/verification/manager_test.go           # import パス更新
 - [x] `Validator.elfDynlibAnalyzer` フィールドが存在すること
 - [x] `Validator.SetELFDynLibAnalyzer` メソッドが存在すること
 - [x] `cmd/record/main.go` の `elfDynlibAnalyzerFactory` フィールドが存在すること
-- [-] `make test` 全パスすること
+- [x] `make test` 全パスすること
 - [x] `make lint` / `make fmt` がパスすること
 
 ---
