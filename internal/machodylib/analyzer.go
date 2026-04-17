@@ -240,38 +240,37 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, io.Clos
 }
 
 // openFatSlice selects the native-arch slice from a Fat binary and returns
-// a *macho.File backed by a freshly opened SectionReader.
-// It takes ownership of fatFile and file; both are always closed before returning.
+// a *macho.File backed by a SectionReader over the already-open file.
+// It takes ownership of fatFile and file; fatFile is always closed before
+// returning. file is closed on error; on success it is returned as the closer.
 func (a *MachODynLibAnalyzer) openFatSlice(binaryPath string, fatFile *macho.FatFile, file safefileio.File) (*macho.File, io.Closer, error) {
 	defer func() { _ = fatFile.Close() }()
-	defer func() { _ = file.Close() }()
 
 	cpuType := goarchToCPUType(runtime.GOARCH)
 	if cpuType == 0 {
+		_ = file.Close()
 		return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
 	}
 
 	for _, arch := range fatFile.Arches {
 		if arch.Cpu == cpuType {
-			sliceFile, err := a.fs.SafeOpenFile(binaryPath, os.O_RDONLY, 0)
-			if err != nil {
-				return nil, nil, err
-			}
-
+			// Reuse the already-open file as the SectionReader source.
+			// This avoids a second SafeOpenFile call and eliminates the
+			// TOCTOU race that would exist between the two opens.
 			machoFile, err := macho.NewFile(
-				io.NewSectionReader(sliceFile, int64(arch.Offset), int64(arch.Size)))
+				io.NewSectionReader(file, int64(arch.Offset), int64(arch.Size)))
 			if err != nil {
-				_ = sliceFile.Close()
-
+				_ = file.Close()
 				return nil, nil, fmt.Errorf("%w: %w", ErrNotMachO, err)
 			}
 
-			// Return sliceFile as the closer: macho.File.Close does not
+			// Return file as the closer: macho.File.Close does not
 			// close the SectionReader's underlying source.
-			return machoFile, sliceFile, nil
+			return machoFile, file, nil
 		}
 	}
 
+	_ = file.Close()
 	return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
 }
 
