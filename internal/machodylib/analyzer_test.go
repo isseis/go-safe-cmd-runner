@@ -169,11 +169,11 @@ func writeFatBinary(t *testing.T, name string, cpuTypes []macho.Cpu) string {
 	t.Helper()
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, name)
-	slices := make([][]byte, len(cpuTypes))
+	slices := make([]machodylibtesting.FatSlice, len(cpuTypes))
 	for i, cpu := range cpuTypes {
-		slices[i] = machodylibtesting.BuildMachOWithDeps(cpu, nil, nil, nil)
+		slices[i] = machodylibtesting.FatSlice{CPU: cpu, Bytes: machodylibtesting.BuildMachOWithDeps(cpu, nil, nil, nil)}
 	}
-	require.NoError(t, os.WriteFile(path, machodylibtesting.BuildFatBinaryFromSlices(cpuTypes, slices), 0o600))
+	require.NoError(t, os.WriteFile(path, machodylibtesting.BuildFatBinaryFromSlices(slices), 0o600))
 	return path
 }
 
@@ -548,7 +548,7 @@ func TestHasDynamicLibDeps_FatBinary_NonSharedCacheDep(t *testing.T) {
 	nativeSlice := machodylibtesting.BuildMachOWithDeps(nativeCPU,
 		[]string{"/opt/homebrew/lib/libfoo.dylib"},
 		nil, nil)
-	fatBin := machodylibtesting.BuildFatBinaryFromSlices([]macho.Cpu{nativeCPU}, [][]byte{nativeSlice})
+	fatBin := machodylibtesting.BuildFatBinaryFromSlices([]machodylibtesting.FatSlice{{CPU: nativeCPU, Bytes: nativeSlice}})
 
 	tmp := realPath(t, t.TempDir())
 	path := filepath.Join(tmp, "fat_test.bin")

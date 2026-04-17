@@ -87,15 +87,21 @@ func BuildMachOWithDeps(cpuType macho.Cpu, strongDeps, weakDeps, rpaths []string
 	return out
 }
 
-// BuildFatBinaryFromSlices builds a Fat Mach-O binary whose slices are provided
-// as pre-built byte slices. Each slice is placed sequentially after the fat header.
-func BuildFatBinaryFromSlices(cpuTypes []macho.Cpu, slices [][]byte) []byte {
-	nArch := len(cpuTypes)
+// FatSlice pairs a CPU type with its pre-built Mach-O slice bytes.
+type FatSlice struct {
+	CPU   macho.Cpu
+	Bytes []byte
+}
+
+// BuildFatBinaryFromSlices builds a Fat Mach-O binary from the provided slices.
+// Each FatSlice pairs a CPU type with its pre-built Mach-O bytes.
+func BuildFatBinaryFromSlices(slices []FatSlice) []byte {
+	nArch := len(slices)
 	fatHdrSize := fatFixedHdrSize + fatArchSize*nArch
 
 	totalSize := fatHdrSize
 	for _, s := range slices {
-		totalSize += len(s)
+		totalSize += len(s.Bytes)
 	}
 
 	buf := make([]byte, totalSize)
@@ -103,15 +109,15 @@ func BuildFatBinaryFromSlices(cpuTypes []macho.Cpu, slices [][]byte) []byte {
 	binary.BigEndian.PutUint32(buf[4:8], uint32(nArch)) //nolint:gosec
 
 	offset := fatHdrSize
-	for i, cpu := range cpuTypes {
+	for i, s := range slices {
 		archOff := fatFixedHdrSize + i*fatArchSize
-		binary.BigEndian.PutUint32(buf[archOff:archOff+4], uint32(cpu))                //nolint:gosec
-		binary.BigEndian.PutUint32(buf[archOff+4:archOff+8], 0)                        // cpusubtype
-		binary.BigEndian.PutUint32(buf[archOff+8:archOff+12], uint32(offset))          //nolint:gosec
-		binary.BigEndian.PutUint32(buf[archOff+12:archOff+16], uint32(len(slices[i]))) //nolint:gosec
-		binary.BigEndian.PutUint32(buf[archOff+16:archOff+20], 0)                      // align
-		copy(buf[offset:], slices[i])
-		offset += len(slices[i])
+		binary.BigEndian.PutUint32(buf[archOff:archOff+4], uint32(s.CPU))            //nolint:gosec
+		binary.BigEndian.PutUint32(buf[archOff+4:archOff+8], 0)                      // cpusubtype
+		binary.BigEndian.PutUint32(buf[archOff+8:archOff+12], uint32(offset))        //nolint:gosec
+		binary.BigEndian.PutUint32(buf[archOff+12:archOff+16], uint32(len(s.Bytes))) //nolint:gosec
+		binary.BigEndian.PutUint32(buf[archOff+16:archOff+20], 0)                    // align
+		copy(buf[offset:], s.Bytes)
+		offset += len(s.Bytes)
 	}
 	return buf
 }
