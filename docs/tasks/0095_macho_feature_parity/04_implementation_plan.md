@@ -8,7 +8,7 @@
 | タスク | 概要 | 優先度 | 状態 |
 |--------|------|--------|------|
 | 0096 | Mach-O `LC_LOAD_DYLIB` 整合性検証 | 高 | 未着手 |
-| 0097 | Mach-O arm64 syscall 静的解析・キャッシュ統合・CGO フォールバック | 中 | 未着手 |
+| 0097 | Mach-O `svc #0x80` キャッシュ統合・CGO フォールバック | 中 | 未着手 |
 | 0098 | Mach-O `.dylib` ベース名による既知ネットワークライブラリ検出 | 中 | 未着手 |
 | 0099 | Mach-O `mprotect(PROT_EXEC)` 静的検出 | 中 | 未着手 |
 | 0100 | libSystem.dylib syscall ラッパー関数キャッシュ | 低 | 未着手 |
@@ -32,11 +32,11 @@
 
 ## フェーズ 2: 検出力強化
 
-### タスク 0097: Mach-O arm64 syscall 静的解析・キャッシュ統合・CGO フォールバック（FR-4.2 / FR-4.4 / FR-4.5）
+### タスク 0097: Mach-O svc #0x80 キャッシュ統合・CGO フォールバック（FR-4.4 / FR-4.5）
 
-**概要**: Mach-O の `__TEXT,__text` セクションを逆アセンブルし、`svc #0x80` 直前の `x16` レジスタへの即値設定から BSD syscall 番号を特定することで、ネットワーク関連 syscall（`socket`=97, `connect`=98 等）を検出する（FR-4.2）。Darwin arm64 では `x16` に BSD クラスプレフィックス `0x2000000` が付加されるため解析時に考慮する。タスク 0072 の arm64 デコーダを再利用。Fat バイナリは全スライスを解析し最も深刻な結果を採用する。解析結果を `fileanalysis.Record.SyscallAnalysis` に保存してキャッシュとして活用し live 再解析を最小化する（FR-4.4）。インポートシンボル解析で `NoNetworkSymbols` となった CGO/動的バイナリにも同 syscall 解析をフォールバック適用する（FR-4.5）。
+**概要**: `svc #0x80` スキャン結果を `fileanalysis.Record.SyscallAnalysis` に保存してキャッシュとして活用し live 再解析を最小化する（FR-4.4）。`SymbolAnalysis = NoNetworkSymbols` の Mach-O バイナリに svc スキャンをフォールバック適用し、SymbolAnalysis キャッシュヒット時に svc スキャンが迂回される問題を解消する（FR-4.5）。`svc #0x80` は正規 macOS バイナリでは現れないため syscall 番号解析は行わず、`svc #0x80` の存在自体を一律高リスクとして扱う現行方針を維持する。
 
-- [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/01_requirements.md` を作成する
+- [x] `docs/tasks/0097_macho_arm64_syscall_analysis/01_requirements.md` を作成する
 - [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/02_architecture.md` を作成する
 - [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/03_detailed_specification.md` を作成する
 - [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/04_implementation_plan.md` を作成する
