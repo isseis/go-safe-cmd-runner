@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -332,9 +333,20 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 			// (e.g. /tmp -> /private/tmp). EvalSymlinks resolves the real path so
 			// that validateCompletePath can verify each component without tripping
 			// over OS-provided symlinks.
-			resolvedPath, err := filepath.EvalSymlinks(currentPath)
-			if err != nil {
-				return fmt.Errorf("failed to resolve path %s: %w", currentPath, err)
+			//
+			// Only use filepath.EvalSymlinks (OS call) when v.fs is the real
+			// DefaultFileSystem. With an injected mock FS there are no real OS
+			// symlinks to resolve, so we skip the OS call to keep behaviour
+			// consistent with the mock and avoid surprising errors.
+			var resolvedPath string
+			if _, isReal := v.fs.(*common.DefaultFileSystem); isReal {
+				rp, err := filepath.EvalSymlinks(currentPath)
+				if err != nil {
+					return fmt.Errorf("failed to resolve path %s: %w", currentPath, err)
+				}
+				resolvedPath = rp
+			} else {
+				resolvedPath = currentPath
 			}
 
 			resolvedInfo, err := v.fs.Lstat(resolvedPath)
