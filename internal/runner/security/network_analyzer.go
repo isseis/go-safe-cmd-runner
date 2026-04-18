@@ -214,7 +214,8 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 				}
 				// No svc signal: fall through to SymbolAnalysis-based decision.
 			case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
-				// v15 schema guarantee: svc scan was performed and found nothing.
+				// Schema v15+ guarantee: svc scan was performed and found nothing
+				// (old v14 records are rejected earlier as SchemaVersionMismatchError).
 				// Fall through to SymbolAnalysis-based decision.
 			case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
 				slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
