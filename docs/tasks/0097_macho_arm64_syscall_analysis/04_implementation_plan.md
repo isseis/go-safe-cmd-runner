@@ -1,4 +1,4 @@
-# Mach-O arm64 svc #0x80 キャッシュ統合・CGO フォールバック 実装計画書
+# Mach-O arm64 svc #0x80 キャッシュ統合・キャッシュ優先判定 実装計画書
 
 ## 1. 実装の進め方
 
@@ -132,18 +132,19 @@ go test -tags test -v ./internal/filevalidator/
   - [ ] nil の場合は `false` を返す
   - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合のみ `true` を返す
   - [ ] `AnalysisWarnings` は判定条件に含めない（ELF 側の警告による誤検知を防ぐ）
-- [ ] `isNetworkViaBinaryAnalysis` を書き直して live 解析コードを完全削除する
-  - [ ] `a.store == nil` / `contentHash == ""` のガード節を削除する
+- [ ] `isNetworkViaBinaryAnalysis` の cache-backed path を書き直し、SVC 判定の live 解析フォールバックを削除する
+  - [ ] `a.store == nil` / `contentHash == ""` の互換ガードを残すか、別経路へ切り出す方針を明確化する
   - [ ] SymbolAnalysis ロードエラー → `return true, true`（AnalysisError、live 解析なし）
-  - [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを関数から削除する
-  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（`syscallStore != nil` ガード不要）
+  - [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを cache-backed path から削除する
+  - [ ] legacy nil-store / empty-hash 経路を残す場合は、前段または別 helper に live 解析を切り出す
+  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（cache-backed path 前提。nil 許容 API を残す場合は前段で分岐する）
   - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す
   - [ ] `svcErr == nil` かつ svc signal なし → `false, false` を返す
   - [ ] `ErrNoSyscallAnalysis` → `false, false` を返す（v15 保証：スキャン済み・svc 未検出）
   - [ ] `ErrHashMismatch` → `return true, true`
   - [ ] `SchemaVersionMismatchError` → `return true, true`（再 `record` 要求）
   - [ ] `ErrRecordNotFound` / その他エラー → `return true, true`（整合性エラー）
-  - [ ] 関数内のすべてのケースが直接 `return` することを確認する
+  - [ ] cache-backed path 内のすべてのケースが直接 `return` することを確認する
 
 ### 5.2 テストチェックリスト
 

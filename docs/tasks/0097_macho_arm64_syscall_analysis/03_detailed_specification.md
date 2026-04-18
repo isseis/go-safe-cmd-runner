@@ -1,4 +1,4 @@
-# Mach-O arm64 svc #0x80 キャッシュ統合・CGO フォールバック 詳細仕様書
+# Mach-O arm64 svc #0x80 キャッシュ統合・キャッシュ優先判定 詳細仕様書
 
 ## 1. 概要
 
@@ -229,17 +229,23 @@ func NewNetworkAnalyzerWithStores(
 ```
 
 **既存コンストラクタとの互換性**: `NewNetworkAnalyzerWithStore` は変更しない
-（`syscallStore = nil` のまま）。
+（`syscallStore = nil` のまま）。`NewNetworkAnalyzer()` や `NewNetworkAnalyzerWithStore(nil)` の
+legacy live 解析経路を残す場合は、cache-backed path の前段で分岐させる。
 
 ### 5.3 `isNetworkViaBinaryAnalysis` の変更
 
-**変更方針**: 関数全体を書き換え、live 解析コード（`a.binaryAnalyzer.AnalyzeNetworkSymbols()`）を
-完全に削除する。すべてのケースが直接 `return` する。
+**変更方針**: cache-backed path を書き換え、`svc #0x80` 判定のために
+live 解析コード（`a.binaryAnalyzer.AnalyzeNetworkSymbols()`）へ戻らないようにする。
+`NewNetworkAnalyzer()` / `NewNetworkAnalyzerWithStore(nil)` を残す場合の互換ガードは別途維持してよい。
 
 ```go
 func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
     cmdPath string, contentHash string,
 ) (isNetwork bool, isHighRisk bool) {
+    // Note: if legacy nil-store / empty-hash compatibility paths are kept,
+    // guard them before entering the cache-backed path shown below.
+    // The snippet below starts after those compatibility guards.
+
     // Load SymbolAnalysis cache. All errors are treated as AnalysisError
     // because production always has records.
     data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
@@ -295,10 +301,11 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
 }
 ```
 
-**live 解析コードの完全削除**:
-- `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを関数から削除する
-- `a.store == nil` および `contentHash == ""` のガード節を削除する（production では常に設定済み）
-- すべてのケースが直接 `return` するため、フォールバックパスは存在しない
+**cache-backed path における live 解析の削除**:
+- `a.binaryAnalyzer.AnalyzeNetworkSymbols()` へ戻る `svc #0x80` 用フォールバックを削除する
+- `a.store == nil` や `contentHash == ""` の互換ガードを残す場合は、cache-backed path に入る前段で処理する
+- legacy live 解析経路を残す場合は、別 helper へ抽出して cache-backed path と責務を分離してよい
+- cache-backed path のすべてのケースが直接 `return` し、SVC 判定のためのフォールバックパスを持たない
 
 ### 5.4 追加関数: `syscallAnalysisHasSVCSignal`
 

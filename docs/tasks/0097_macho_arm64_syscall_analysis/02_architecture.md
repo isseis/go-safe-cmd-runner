@@ -1,4 +1,4 @@
-# Mach-O arm64 svc #0x80 キャッシュ統合・CGO フォールバック アーキテクチャ設計書
+# Mach-O arm64 svc #0x80 キャッシュ統合・キャッシュ優先判定 アーキテクチャ設計書
 
 ## 1. システム概要
 
@@ -12,7 +12,7 @@
 2. **SymbolAnalysis キャッシュヒット時の svc スキャン迂回（セキュリティ問題）**
    `SymbolAnalysis = NoNetworkSymbols` の Mach-O バイナリに対して、`runner` が `SyscallAnalysis` キャッシュを追加参照することで、キャッシュ経由の検出迂回を防ぐ。
 
-ELF 版タスク 0077 の「CGO バイナリフォールバック」パターンを Mach-O に対応させ、`record` → `runner` の一貫したキャッシュフローを実現する。
+ELF 版タスク 0077 の `SyscallAnalysis` 参照パターンを Mach-O に対応させ、`record` → `runner` の一貫したキャッシュフローを実現する。
 
 ### 1.2 設計原則
 
@@ -98,7 +98,7 @@ flowchart TB
         STORE1[("Record<br>SymbolAnalysis: NoNetworkSymbols<br>SyscallAnalysis: nil ← 保存されない")]
     end
 
-    subgraph RunnerPhase["runner フェーズ（毎回 live 解析）"]
+    subgraph RunnerPhase["runner フェーズ（svc スキャン迂回）"]
         NA1["isNetworkViaBinaryAnalysis()"]
         SYMHIT["SymbolAnalysis キャッシュヒット<br>→ NoNetworkSymbols"]
         RETURN1["false, false を返す<br>（svc スキャン未実施）"]
@@ -347,8 +347,9 @@ flowchart TD
 5. `risk.NewStandardEvaluator()` に `SyscallAnalysisStore` 引数を追加し、
     `security.NewNetworkAnalyzerWithStores()` を呼び出す
 
-この変更により、live 解析フォールバックを維持したまま、`runner` の通常実行パスでも
-`SyscallAnalysis` キャッシュを利用できる。
+この変更により、`runner` の通常実行パスで `SyscallAnalysis` キャッシュを利用できる。
+互換用の nil-store / empty-hash 経路を残す場合でも、cache-backed path では追加の live 解析に戻らない。
+必要であれば legacy live 解析経路は cache-backed path の前段または別 helper に切り出して維持する。
 
 #### 3.3.4 エラーハンドリングまとめ
 
@@ -367,8 +368,10 @@ flowchart TD
 | `SchemaVersionMismatchError` | `AnalysisError` を返す | v14 以前 → 再 `record` を要求 |
 | `ErrRecordNotFound` / その他エラー | `AnalysisError` を返す | SymbolAnalysis ロード成功後は record が必ず存在するため整合性エラー |
 
-`isNetworkViaBinaryAnalysis` 内の live 解析コード（`a.binaryAnalyzer.AnalyzeNetworkSymbols()`）は
-完全に削除する。すべてのケースが直接 return するため、フォールバックパスは不要となる。
+cache-backed path では `isNetworkViaBinaryAnalysis` 内の live 解析コード
+（`a.binaryAnalyzer.AnalyzeNetworkSymbols()` による追加再判定）を削除する。
+その経路のすべてのケースは直接 return し、フォールバックパスを持たない。
+互換用の nil-store / empty-hash 経路を残す場合は、cache-backed path に入る前段へ切り出す。
 
 ## 4. データフロー
 
@@ -480,6 +483,7 @@ type SyscallAnalysisStore interface {
 ```
 
 既存の `NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore)` は後方互換のため残す（`syscallStore = nil`）。
+`NewNetworkAnalyzer()` や `NewNetworkAnalyzerWithStore(nil)` の legacy live 解析経路を残す場合も、cache-backed path の仕様は変更しない。
 
 ## 6. スキーマ変更
 
