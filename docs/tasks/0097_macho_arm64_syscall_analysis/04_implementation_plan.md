@@ -240,7 +240,32 @@ go test -tags test -v ./internal/runner/
 - [ ] `make lint` が全て GREEN
 - [ ] `make build` が成功
 
-## 8. リスクと対策
+## 8. 後続作業: runner の svc #0x80 live 解析コード削除
+
+本タスクの実装完了後、`runner` が `SyscallAnalysis` キャッシュを利用した cache-backed path で
+正常に動作することを確認した上で、既存の live 解析コードを削除する。
+
+### 8.1 削除対象
+
+`isNetworkViaBinaryAnalysis` 内に現在残存する svc #0x80 live 解析コード。
+具体的には `a.binaryAnalyzer.AnalyzeNetworkSymbols()` による再判定パスが対象。
+
+互換ガード（`a.store == nil` / `contentHash == ""` 分岐）を本タスクで切り出した場合は、
+その互換経路ごと削除対象に含める。
+
+### 8.2 削除のタイミング
+
+- 本タスク（0097）の全 Step（1〜5）完了後
+- `make test` が全 GREEN であることを確認後
+- 削除は別コミットまたは別 PR として実施する
+
+### 8.3 削除後の確認
+
+- [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しが `isNetworkViaBinaryAnalysis` から完全に除去されていること
+- [ ] `make test` が引き続き全 GREEN であること
+- [ ] `make lint` でデッドコード警告が出ないこと
+
+## 9. リスクと対策
 
 | リスク | 影響 | 対策 |
 |-------|------|------|
@@ -250,7 +275,7 @@ go test -tags test -v ./internal/runner/
 | `NewStandardEvaluator` や resource manager の呼び出し箇所の見落とし | コンパイルエラー | `go build ./...` と `go test ./internal/runner/...` で早期検出 |
 | path resolver provider の追加漏れ | キャッシュが常に無効化される | `runner.go` と `runner_test.go` に `GetSyscallAnalysisStore()` 経路のテストを追加 |
 
-## 9. 実装順序の根拠
+## 10. 実装順序の根拠
 
 ```
 machoanalyzer (Step 1)
