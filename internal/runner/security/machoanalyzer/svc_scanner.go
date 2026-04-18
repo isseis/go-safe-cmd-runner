@@ -3,6 +3,7 @@ package machoanalyzer
 import (
 	"debug/macho"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,16 +34,19 @@ func collectSVCAddresses(f *macho.File) ([]uint64, error) {
 		return nil, nil
 	}
 
-	data, err := section.Data()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read __TEXT,__text section: %w", err)
-	}
-
+	r := section.Open()
 	target := binary.LittleEndian.Uint32(svcInstruction)
+	buf := make([]byte, len(svcInstruction))
 	var addrs []uint64
-	for i := 0; i+4 <= len(data); i += 4 {
-		if binary.LittleEndian.Uint32(data[i:i+4]) == target {
-			addrs = append(addrs, section.Addr+uint64(i))
+	for offset := uint64(0); ; offset += uint64(len(svcInstruction)) {
+		if _, err := io.ReadFull(r, buf); err != nil {
+			if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
+			}
+			return nil, fmt.Errorf("failed to read __TEXT,__text section: %w", err)
+		}
+		if binary.LittleEndian.Uint32(buf) == target {
+			addrs = append(addrs, section.Addr+offset)
 		}
 	}
 	if len(addrs) == 0 {
