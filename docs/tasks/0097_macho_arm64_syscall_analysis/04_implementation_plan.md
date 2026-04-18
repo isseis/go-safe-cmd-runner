@@ -17,9 +17,9 @@
 
 ### 2.1 インポートサイクル確認
 
-- [ ] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
+- [x] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
   - 確認コマンド: `grep -r "filevalidator" internal/runner/security/machoanalyzer/`
-- [ ] `internal/filevalidator` が `internal/runner/security/machoanalyzer` を import 可能なこと
+- [x] `internal/filevalidator` が `internal/runner/security/machoanalyzer` を import 可能なこと
   - 確認コマンド: `go build ./internal/filevalidator/...` が通ること
 
 ### 2.2 `safefileio.FileSystem.SafeOpenFile` の返り値型確認
@@ -30,7 +30,7 @@
 
 ### 2.3 `fileanalysis.SyscallAnalysisData` の型確認
 
-- [ ] `fileanalysis.SyscallAnalysisData` が `common.SyscallAnalysisResultCore` を embed していること
+- [x] `fileanalysis.SyscallAnalysisData` が `common.SyscallAnalysisResultCore` を embed していること
   - ファイル: `internal/fileanalysis/schema.go`
 
 ## 3. Step 1: `machoanalyzer` パッケージの拡張
@@ -39,36 +39,36 @@
 
 ### 3.1 実装チェックリスト
 
-- [ ] `svc_scanner.go` に `safefileio` パッケージのインポートを追加する:
+- [x] `svc_scanner.go` に `safefileio` パッケージのインポートを追加する:
   `"github.com/isseis/go-safe-cmd-runner/internal/safefileio"`
-- [ ] `svc_scanner.go` に `"os"` パッケージのインポートを追加する
-- [ ] `collectSVCAddresses(f *macho.File) ([]uint64, error)` を実装する
-  - [ ] `f.Cpu != macho.CpuArm64` の場合は `nil, nil` を返す
-  - [ ] `__TEXT,__text` セクションが存在しない場合は `nil, nil` を返す
-  - [ ] セクションデータ読み出しエラー時はエラーを返す
-  - [ ] 4 バイトアラインで走査し、`svcInstruction` にマッチした仮想アドレスを収集する
-  - [ ] `section.Addr + uint64(i)` で仮想アドレスを算出する
-  - [ ] 検出なしの場合は `nil, nil` を返す
-- [ ] `containsSVCInstruction` を `collectSVCAddresses` に委譲するよう変更する
-  - [ ] 変更後も既存の動作（bool 返し）を維持する
-- [ ] `CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error)` を実装する
-  - [ ] `fs.SafeOpenFile` でファイルを開く
-  - [ ] 先頭 4 バイトでマジック確認を行い、非 Mach-O には `nil, nil` を返す
-  - [ ] Fat バイナリ: arm64 スライスのみ `collectSVCAddresses` を呼び結果を連結する
-  - [ ] 単一アーキテクチャ: `collectSVCAddresses` を呼ぶ
-  - [ ] パースエラー時はエラーを返す
+- [x] `svc_scanner.go` に `"os"` パッケージのインポートを追加する
+- [x] `collectSVCAddresses(f *macho.File) ([]uint64, error)` を実装する
+  - [x] `f.Cpu != macho.CpuArm64` の場合は `nil, nil` を返す
+  - [x] `__TEXT,__text` セクションが存在しない場合は `nil, nil` を返す
+  - [x] セクションデータ読み出しエラー時はエラーを返す
+  - [x] 4 バイトアラインで走査し、`svcInstruction` にマッチした仮想アドレスを収集する
+  - [x] `section.Addr + uint64(i)` で仮想アドレスを算出する
+  - [x] 検出なしの場合は `nil, nil` を返す
+- [x] `containsSVCInstruction` を `collectSVCAddresses` に委譲するよう変更する
+  - [x] 変更後も既存の動作（bool 返し）を維持する
+- [x] `CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error)` を実装する
+  - [x] `fs.SafeOpenFile` でファイルを開く
+  - [x] 先頭 4 バイトでマジック確認を行い、非 Mach-O には `nil, nil` を返す
+  - [x] Fat バイナリ: arm64 スライスのみ `collectSVCAddresses` を呼び結果を連結する
+  - [x] 単一アーキテクチャ: `collectSVCAddresses` を呼ぶ
+  - [x] パースエラー時はエラーを返す
 
 ### 3.2 テストチェックリスト
 
 **ファイル**: `internal/runner/security/machoanalyzer/svc_scanner_test.go`（追加分）
 
-- [ ] `TestCollectSVCAddresses_Arm64WithSVC`: arm64 + svc #0x80 → アドレスを返す
-- [ ] `TestCollectSVCAddresses_Arm64NoSVC`: arm64 + svc なし → `nil, nil`
-- [ ] `TestCollectSVCAddresses_NonArm64`: x86_64 → `nil, nil`
-- [ ] `TestCollectSVCAddresses_MultipleSVC`: 複数 svc #0x80 → 全アドレスを返す
-- [ ] `TestCollectSVCAddressesFromFile_NotMacho`: ELF ファイル → `nil, nil`
-- [ ] `TestCollectSVCAddressesFromFile_FatBinary`: Fat バイナリ → arm64 スライスのみ走査
-- [ ] `TestContainsSVCInstruction_DelegatesToCollect`: リファクタリング後も正常動作
+- [x] `TestCollectSVCAddresses_Arm64WithSVC`: arm64 + svc #0x80 → アドレスを返す
+- [x] `TestCollectSVCAddresses_Arm64NoSVC`: arm64 + svc なし → `nil, nil`
+- [x] `TestCollectSVCAddresses_NonArm64`: x86_64 → `nil, nil`
+- [x] `TestCollectSVCAddresses_MultipleSVC`: 複数 svc #0x80 → 全アドレスを返す
+- [x] `TestCollectSVCAddressesFromFile_NotMacho`: ELF ファイル → `nil, nil`
+- [x] `TestCollectSVCAddressesFromFile_FatBinary`: Fat バイナリ → arm64 スライスのみ走査
+- [x] `TestContainsSVCInstruction_DelegatesToCollect`: リファクタリング後も正常動作
 
 **実行コマンド**:
 ```
