@@ -244,18 +244,37 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
     // Legacy nil-store / empty-hash paths are removed after this task (see implementation plan Section 8).
     // The snippet below is the cache-backed path.
 
-    // Load SymbolAnalysis cache. All errors are treated as AnalysisError
-    // because production always has records.
+    // Load SymbolAnalysis cache.
+    // ErrNoNetworkSymbolAnalysis is a valid case (static binary): fall through to SyscallAnalysis.
+    // All other errors are treated as AnalysisError because production always has records.
     data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
-    if err != nil {
+    var symSchemaMismatch *fileanalysis.SchemaVersionMismatchError
+    switch {
+    case err == nil:
+        // data is valid; continue below.
+    case errors.Is(err, fileanalysis.ErrNoNetworkSymbolAnalysis):
+        // Static binary: no SymbolAnalysis record.
+        // Fall through to SyscallAnalysis check (data remains nil).
+    case errors.Is(err, fileanalysis.ErrHashMismatch):
+        slog.Warn("SymbolAnalysis cache hash mismatch; treating as high risk",
+            "path", cmdPath)
+        return true, true
+    case errors.As(err, &symSchemaMismatch):
+        slog.Warn("SymbolAnalysis cache has outdated schema; treating as high risk",
+            "path", cmdPath,
+            "expected_schema", symSchemaMismatch.Expected,
+            "actual_schema", symSchemaMismatch.Actual)
+        return true, true
+    default:
         slog.Warn("SymbolAnalysis cache load failed; treating as high risk",
             "path", cmdPath, "error", err)
         return true, true
     }
 
     // Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
-    // This check runs regardless of SymbolAnalysis result (NetworkDetected or NoNetworkSymbols)
-    // so that svc #0x80 always escalates isHighRisk to true.
+    // This check runs regardless of SymbolAnalysis result (NetworkDetected, NoNetworkSymbols,
+    // or ErrNoNetworkSymbolAnalysis for static binaries) so that svc #0x80 always escalates
+    // isHighRisk to true.
     svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
     var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
     switch {
@@ -280,14 +299,20 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
             "actual_schema", svcSchemaMismatch.Actual)
         return true, true
     default:
-        // ErrRecordNotFound or unexpected error: record must exist because
-        // SymbolAnalysis was loaded successfully, so treat as integrity error.
+        // ErrRecordNotFound or unexpected error: treat as integrity error.
+        // (When SymbolAnalysis loaded successfully, a matching SyscallAnalysis record
+        //  must exist. When SymbolAnalysis returned ErrNoNetworkSymbolAnalysis, absence
+        //  of the SyscallAnalysis record is equally unexpected.)
         slog.Warn("unexpected error loading SyscallAnalysis cache; treating as high risk",
             "path", cmdPath, "error", svcErr)
         return true, true
     }
 
     // No svc #0x80 signal: determine result from SymbolAnalysis.
+    // data == nil when ErrNoNetworkSymbolAnalysis was returned (static binary with no svc).
+    if data == nil {
+        return false, false
+    }
     output := binaryanalyzer.AnalysisOutput{
         DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
         DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
@@ -354,13 +379,18 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 
 | テスト名 | 検証内容 | AC |
 |---------|---------|-----|
-| `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss` | SymbolAnalysis キャッシュミス → AnalysisError（live 解析なし） | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_UnexpectedError` | SymbolAnalysis で予期しないエラー → AnalysisError（live 解析なし） | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch` | SymbolAnalysis で ErrHashMismatch → AnalysisError | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch` | SymbolAnalysis で SchemaVersionMismatchError → AnalysisError | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit` | ErrNoNetworkSymbolAnalysis（静的バイナリ）+ svc あり → true, true | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC` | ErrNoNetworkSymbolAnalysis（静的バイナリ）+ svc なし（ErrNoSyscallAnalysis）→ false, false | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCSignalPresent` | ErrNoNetworkSymbolAnalysis（静的バイナリ）+ SyscallAnalysis ロード成功・svc あり → true, true | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | NoNetworkSymbols + svc キャッシュあり → true, true（isNetwork=true, isHighRisk=true） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil` | NoNetworkSymbols + SyscallAnalysis nil（ロード成功・svc なし）→ false, false | AC-3 |
-| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | ErrHashMismatch → AnalysisError | AC-3 |
-| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | ErrNoSyscallAnalysis → false, false（v15 保証・フォールバックなし） | AC-3 |
-| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch` | SchemaVersionMismatchError → AnalysisError（再 record 要求） | AC-3 |
-| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound` | ErrRecordNotFound → AnalysisError（整合性エラー・live 解析なし） | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | SyscallAnalysis で ErrHashMismatch → AnalysisError | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | SyscallAnalysis で ErrNoSyscallAnalysis → false, false（v15 保証・フォールバックなし） | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch` | SyscallAnalysis で SchemaVersionMismatchError → AnalysisError（再 record 要求） | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound` | SyscallAnalysis で ErrRecordNotFound → AnalysisError（整合性エラー・live 解析なし） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit` | NetworkDetected + svc キャッシュあり → true, true（isHighRisk 格上げ） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis` | NetworkDetected + ErrNoSyscallAnalysis → true, false（svc なし・格上げなし） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC` | NetworkDetected + svc なし（ロード成功）→ true, false（格上げなし） | AC-4 |
@@ -382,12 +412,16 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | AC-1: NetworkDetected + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | `validator_macho_test.go` |
 | AC-2: NoNetworkSymbols + svc あり → SyscallAnalysis 保存 | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_macho_test.go` |
 | AC-2: NoNetworkSymbols + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_macho_test.go` |
-| AC-3: SymbolAnalysis キャッシュミス → AnalysisError | `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss` | `network_analyzer_test.go` |
+| AC-3: SymbolAnalysis で予期しないエラー → AnalysisError | `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_UnexpectedError` | `network_analyzer_test.go` |
+| AC-3: SymbolAnalysis で ErrHashMismatch → AnalysisError | `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch` | `network_analyzer_test.go` |
+| AC-3: SymbolAnalysis で SchemaVersionMismatchError → AnalysisError | `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch` | `network_analyzer_test.go` |
+| AC-3: 静的バイナリ（ErrNoNetworkSymbolAnalysis）+ svc あり → true, true | `TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit` | `network_analyzer_test.go` |
+| AC-3: 静的バイナリ（ErrNoNetworkSymbolAnalysis）+ svc なし → false, false | `TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC` | `network_analyzer_test.go` |
 | AC-3: NoNetworkSymbols + SyscallAnalysis に svc → true, true | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | `network_analyzer_test.go` |
 | AC-3: NoNetworkSymbols + ErrNoSyscallAnalysis → false, false | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | `network_analyzer_test.go` |
-| AC-3: ErrHashMismatch → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | `network_analyzer_test.go` |
-| AC-3: SchemaVersionMismatchError → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch` | `network_analyzer_test.go` |
-| AC-3: ErrRecordNotFound → AnalysisError（live 解析なし） | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound` | `network_analyzer_test.go` |
+| AC-3: SyscallAnalysis で ErrHashMismatch → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | `network_analyzer_test.go` |
+| AC-3: SyscallAnalysis で SchemaVersionMismatchError → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch` | `network_analyzer_test.go` |
+| AC-3: SyscallAnalysis で ErrRecordNotFound → AnalysisError（live 解析なし） | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound` | `network_analyzer_test.go` |
 | AC-3: NetworkDetected + svc → true, true（isHighRisk 格上げ） | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit` | `network_analyzer_test.go` |
 | AC-3: NetworkDetected + ErrNoSyscallAnalysis → true, false | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis` | `network_analyzer_test.go` |
 | AC-4: ELF バイナリのフロー変更なし | `TestUpdateAnalysisRecord_ELFNotAffected` | `validator_macho_test.go` |
