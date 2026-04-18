@@ -269,7 +269,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		syscallStore = p.GetSyscallAnalysisStore()
 	}
 
-	resourceManager, err := resource.NewDefaultResourceManagerWithStores(
+	resourceManager, err := resource.NewDefaultResourceManager(
 		opts.executor,
 		fs,
 		opts.privilegeManager,

@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -87,7 +88,7 @@ func TestIntegration_CommandOutputCapture(t *testing.T) {
 	var outputMgr output.CaptureManager
 
 	// Create resource manager
-	rm, err := resource.NewDefaultResourceManager(
+	rm, err := resourcetestutil.NewDefaultResourceManager(
 		exec,
 		fs,
 		nil, // privilege manager not needed for this test
@@ -263,7 +264,7 @@ func TestIntegration_SensitiveDataRedaction(t *testing.T) {
 			// Output manager will be created by NewDefaultResourceManager
 			var outputMgr output.CaptureManager
 
-			rm, err := resource.NewDefaultResourceManager(
+			rm, err := resourcetestutil.NewDefaultResourceManager(
 				exec,
 				fs,
 				nil,
