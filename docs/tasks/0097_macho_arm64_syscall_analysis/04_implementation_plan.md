@@ -133,11 +133,10 @@ go test -tags test -v ./internal/filevalidator/
   - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合のみ `true` を返す
   - [ ] `AnalysisWarnings` は判定条件に含めない（ELF 側の警告による誤検知を防ぐ）
 - [ ] `isNetworkViaBinaryAnalysis` の cache-backed path を書き直し、SVC 判定の live 解析フォールバックを削除する
-  - [ ] `a.store == nil` / `contentHash == ""` の互換ガードを残すか、別経路へ切り出す方針を明確化する
+  - [ ] `a.store == nil` / `contentHash == ""` の互換ガード（legacy live 解析経路）を削除する（実装計画書 Section 8 参照）
   - [ ] SymbolAnalysis ロードエラー → `return true, true`（AnalysisError、live 解析なし）
   - [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを cache-backed path から削除する
-  - [ ] legacy nil-store / empty-hash 経路を残す場合は、前段または別 helper に live 解析を切り出す
-  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（cache-backed path 前提。nil 許容 API を残す場合は前段で分岐する）
+  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ
   - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す
   - [ ] `svcErr == nil` かつ svc signal なし → `false, false` を返す
   - [ ] `ErrNoSyscallAnalysis` → `false, false` を返す（v15 保証：スキャン済み・svc 未検出）

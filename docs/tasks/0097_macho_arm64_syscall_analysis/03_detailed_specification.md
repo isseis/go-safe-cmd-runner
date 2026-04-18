@@ -230,21 +230,19 @@ func NewNetworkAnalyzerWithStores(
 
 **既存コンストラクタとの互換性**: `NewNetworkAnalyzerWithStore` は変更しない
 （`syscallStore = nil` のまま）。`NewNetworkAnalyzer()` や `NewNetworkAnalyzerWithStore(nil)` の
-legacy live 解析経路を残す場合は、cache-backed path の前段で分岐させる。
+legacy live 解析経路は本タスク完了後に削除する（実装計画書 Section 8 参照）。
 
 ### 5.3 `isNetworkViaBinaryAnalysis` の変更
 
 **変更方針**: cache-backed path を書き換え、`svc #0x80` 判定のために
 live 解析コード（`a.binaryAnalyzer.AnalyzeNetworkSymbols()`）へ戻らないようにする。
-`NewNetworkAnalyzer()` / `NewNetworkAnalyzerWithStore(nil)` を残す場合の互換ガードは別途維持してよい。
 
 ```go
 func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
     cmdPath string, contentHash string,
 ) (isNetwork bool, isHighRisk bool) {
-    // Note: if legacy nil-store / empty-hash compatibility paths are kept,
-    // guard them before entering the cache-backed path shown below.
-    // The snippet below starts after those compatibility guards.
+    // Legacy nil-store / empty-hash paths are removed after this task (see implementation plan Section 8).
+    // The snippet below is the cache-backed path.
 
     // Load SymbolAnalysis cache. All errors are treated as AnalysisError
     // because production always has records.
@@ -301,10 +299,9 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
 }
 ```
 
-**cache-backed path における live 解析の削除**:
+**live 解析コードの削除**:
 - `a.binaryAnalyzer.AnalyzeNetworkSymbols()` へ戻る `svc #0x80` 用フォールバックを削除する
-- `a.store == nil` や `contentHash == ""` の互換ガードを残す場合は、cache-backed path に入る前段で処理する
-- legacy live 解析経路を残す場合は、別 helper へ抽出して cache-backed path と責務を分離してよい
+- `a.store == nil` や `contentHash == ""` の互換ガード（legacy live 解析経路）も本タスク完了後に削除する（実装計画書 Section 8 参照）
 - cache-backed path のすべてのケースが直接 `return` し、SVC 判定のためのフォールバックパスを持たない
 
 ### 5.4 追加関数: `syscallAnalysisHasSVCSignal`

@@ -349,8 +349,7 @@ flowchart TD
     `security.NewNetworkAnalyzerWithStores()` を呼び出す
 
 この変更により、`runner` の通常実行パスで `SyscallAnalysis` キャッシュを利用できる。
-互換用の nil-store / empty-hash 経路を残す場合でも、cache-backed path では追加の live 解析に戻らない。
-必要であれば legacy live 解析経路は cache-backed path の前段または別 helper に切り出して維持する。
+legacy live 解析経路（nil-store / empty-hash パス）は本タスク完了後に削除する（実装計画書 Section 8 参照）。
 
 #### 3.3.4 エラーハンドリングまとめ
 
@@ -372,7 +371,7 @@ flowchart TD
 cache-backed path では `isNetworkViaBinaryAnalysis` 内の live 解析コード
 （`a.binaryAnalyzer.AnalyzeNetworkSymbols()` による追加再判定）を削除する。
 その経路のすべてのケースは直接 return し、フォールバックパスを持たない。
-互換用の nil-store / empty-hash 経路を残す場合は、cache-backed path に入る前段へ切り出す。
+legacy live 解析経路（nil-store / empty-hash パス）は本タスク完了後に削除する（実装計画書 Section 8 参照）。
 
 ## 4. データフロー
 
@@ -484,7 +483,7 @@ type SyscallAnalysisStore interface {
 ```
 
 既存の `NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore)` は後方互換のため残す（`syscallStore = nil`）。
-`NewNetworkAnalyzer()` や `NewNetworkAnalyzerWithStore(nil)` の legacy live 解析経路を残す場合も、cache-backed path の仕様は変更しない。
+`NewNetworkAnalyzer()` や `NewNetworkAnalyzerWithStore(nil)` の legacy live 解析経路は本タスク完了後に削除する（実装計画書 Section 8 参照）。
 
 ## 6. スキーマ変更
 
