@@ -283,45 +283,43 @@ flowchart TD
 
     START(["isNetworkViaBinaryAnalysis<br/>(cmdPath, contentHash)"])
     LOAD_SYM["NetworkSymbolStore<br>.LoadNetworkSymbolAnalysis()"]
-    CHECK_SYM{"SymbolAnalysis<br>結果は？"}
-    SYM_NET["NetworkDetected<br>→ true, false を返す"]
-    LOAD_SVC["SyscallAnalysisStore<br>.LoadSyscallAnalysis()<br>（新規）"]
+    SYM_ERR["SymbolAnalysis エラー<br>（cache miss / ErrHashMismatch /<br>SchemaVersionMismatch / その他）<br>→ AnalysisError"]
+    LOAD_SVC["SyscallAnalysisStore<br>.LoadSyscallAnalysis()<br>（新規・SymbolAnalysis 結果に関わらず実行）"]
     CHECK_SVC_RESULT{"SyscallAnalysis<br>の状態は？"}
     SVC_HASH_ERR["ErrHashMismatch<br>→ true, true（AnalysisError）"]
-    SVC_HIT["direct_svc_0x80 検出記録あり<br>→ true, true（ネットワーク検出・高リスク確定）"]
-    SVC_SAFE["ロード成功・svc signal なし<br>→ false, false を返す"]
-    SVC_ERR["ErrNoSyscallAnalysis<br>→ false, false を返す<br>（v15 保証：スキャン済み・未検出）"]
+    SVC_HIT["direct_svc_0x80 検出記録あり<br>→ true, true（高リスク確定）<br>SymbolAnalysis 結果に関わらず"]
+    SVC_NO_SIGNAL["svc signal なし<br>（ロード成功 or ErrNoSyscallAnalysis）<br>→ SymbolAnalysis 結果で判定"]
     SVC_NOT_FOUND["ErrRecordNotFound / その他<br>→ AnalysisError<br>（SymbolAnalysis 成功後は整合性エラー）"]
     SVC_SCHEMA["SchemaVersionMismatch<br>→ AnalysisError（再 record 要求）"]
-    SYM_ERR["SymbolAnalysis エラー<br>（cache miss / ErrHashMismatch /<br>SchemaVersionMismatch / その他）<br>→ AnalysisError"]
+    CHECK_SYM{"SymbolAnalysis<br>結果は？"}
+    SYM_NET["NetworkDetected<br>→ true, false を返す"]
+    SYM_SAFE["NoNetworkSymbols<br>→ false, false を返す"]
     RETURN(["(isNetwork, isHighRisk) を返す"])
 
     START --> LOAD_SYM
-    LOAD_SYM --> CHECK_SYM
-    CHECK_SYM -->|"NetworkDetected"| SYM_NET
-    CHECK_SYM -->|"NoNetworkSymbols"| LOAD_SVC
-    CHECK_SYM -->|"エラー"| SYM_ERR
+    LOAD_SYM -->|"エラー"| SYM_ERR
+    LOAD_SYM -->|"ok"| LOAD_SVC
     LOAD_SVC --> CHECK_SVC_RESULT
     CHECK_SVC_RESULT -->|"ErrHashMismatch"| SVC_HASH_ERR
     CHECK_SVC_RESULT -->|"direct_svc_0x80 記録あり"| SVC_HIT
-    CHECK_SVC_RESULT -->|"ロード成功・svc signal なし"| SVC_SAFE
-    CHECK_SVC_RESULT -->|"ErrNoSyscallAnalysis"| SVC_ERR
+    CHECK_SVC_RESULT -->|"ロード成功・svc なし<br>or ErrNoSyscallAnalysis"| SVC_NO_SIGNAL
     CHECK_SVC_RESULT -->|"ErrRecordNotFound / その他"| SVC_NOT_FOUND
     CHECK_SVC_RESULT -->|"SchemaVersionMismatch"| SVC_SCHEMA
+    SVC_NO_SIGNAL --> CHECK_SYM
+    CHECK_SYM -->|"NetworkDetected"| SYM_NET
+    CHECK_SYM -->|"NoNetworkSymbols"| SYM_SAFE
     SYM_ERR --> RETURN
     SVC_NOT_FOUND --> RETURN
-    SVC_ERR --> RETURN
     SVC_SCHEMA --> RETURN
-    SYM_NET --> RETURN
     SVC_HASH_ERR --> RETURN
     SVC_HIT --> RETURN
-    SVC_SAFE --> RETURN
+    SYM_NET --> RETURN
+    SYM_SAFE --> RETURN
 
-    class START,RETURN,SYM_NET process;
+    class START,RETURN process;
     class CHECK_SYM,CHECK_SVC_RESULT decision;
     class LOAD_SYM enhanced;
-    class LOAD_SVC new;
-    class SVC_HIT,SVC_HASH_ERR,SVC_SAFE,SVC_ERR,SVC_NOT_FOUND,SVC_SCHEMA,SYM_ERR new;
+    class LOAD_SVC,SVC_HIT,SVC_HASH_ERR,SVC_NO_SIGNAL,SVC_NOT_FOUND,SVC_SCHEMA,SYM_ERR,SYM_NET,SYM_SAFE new;
 ```
 
 #### 3.3.2 SyscallAnalysis 高リスク判定ロジック
@@ -406,17 +404,19 @@ flowchart LR
 
 ### 4.2 `runner` フェーズのデータフロー（SyscallAnalysis キャッシュヒット）
 
+`SymbolAnalysis` の結果に関わらず `SyscallAnalysis` を先行確認し、`svc #0x80` 検出時は高リスク確定を返す。
+
 ```mermaid
 flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef new fill:#f3e8ff,stroke:#7b2d8b,stroke-width:2px,color:#4a0072;
 
-    STORE[("fileanalysis.Record<br>SymbolAnalysis: NoNetworkSymbols<br>SyscallAnalysis: {DetectedSyscalls: [{DeterminationMethod: direct_svc_0x80, ...}]}")]
-    LOADSYM["LoadNetworkSymbolAnalysis()<br>→ NoNetworkSymbols"]
+    STORE[("fileanalysis.Record<br>SymbolAnalysis: NetworkDetected or NoNetworkSymbols<br>SyscallAnalysis: {DetectedSyscalls: [{DeterminationMethod: direct_svc_0x80, ...}]}")]
+    LOADSYM["LoadNetworkSymbolAnalysis()<br>→ NetworkDetected or NoNetworkSymbols"]
     LOADSVC["LoadSyscallAnalysis()<br>→ {DetectedSyscalls: [{DeterminationMethod: direct_svc_0x80}]}"]
     CHECK["syscallAnalysisHasSVCSignal()<br>DetectedSyscalls に direct_svc_0x80 あり<br>→ true"]
-    RESULT["isNetwork=true, isHighRisk=true<br>（svc 検出・ネットワーク確定）"]
+    RESULT["isNetwork=true, isHighRisk=true<br>（svc 検出・高リスク確定）<br>SymbolAnalysis 結果に関わらず"]
 
     STORE -.-> LOADSYM
     STORE -.-> LOADSVC
