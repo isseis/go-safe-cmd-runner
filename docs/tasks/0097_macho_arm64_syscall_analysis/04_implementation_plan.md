@@ -136,14 +136,14 @@ go test -tags test -v ./internal/filevalidator/
   - [ ] `a.store == nil` / `contentHash == ""` の互換ガード（legacy live 解析経路）を削除する（実装計画書 Section 8 参照）
   - [ ] SymbolAnalysis ロードエラー → `return true, true`（AnalysisError、live 解析なし）
   - [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを cache-backed path から削除する
-  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ
-  - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す
-  - [ ] `svcErr == nil` かつ svc signal なし → `false, false` を返す
-  - [ ] `ErrNoSyscallAnalysis` → `false, false` を返す（v15 保証：スキャン済み・svc 未検出）
+  - [ ] SymbolAnalysis ロード成功後、`SymbolAnalysis` の結果に関わらず `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（FR-3.3.1）
+  - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す（`SymbolAnalysis` の結果に関わらず高リスク確定）
+  - [ ] `svcErr == nil` かつ svc signal なし → `SymbolAnalysis` 結果に基づいて判定を続ける（fall through）
+  - [ ] `ErrNoSyscallAnalysis` → `SymbolAnalysis` 結果に基づいて判定を続ける（fall through、v15 保証：スキャン済み・svc 未検出）
   - [ ] `ErrHashMismatch` → `return true, true`
   - [ ] `SchemaVersionMismatchError` → `return true, true`（再 `record` 要求）
   - [ ] `ErrRecordNotFound` / その他エラー → `return true, true`（整合性エラー）
-  - [ ] cache-backed path 内のすべてのケースが直接 `return` することを確認する
+  - [ ] svc signal なし時の `SymbolAnalysis` 結果判定: `NetworkDetected` → `true, false`、`NoNetworkSymbols` → `false, false`
 
 ### 5.2 テストチェックリスト
 
@@ -154,13 +154,15 @@ go test -tags test -v ./internal/filevalidator/
 - [ ] `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly`: AnalysisWarnings のみ（DeterminationMethod なし）→ false
 - [ ] `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod`: DeterminationMethod == "direct_svc_0x80" → true
 - [ ] `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss`: SymbolAnalysis ロードエラー → AnalysisError（live 解析なし）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: AnalysisError が返される
+- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: NoNetworkSymbols + svc あり → true, true
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil`: ロード成功・svc なし → false, false
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch`: ErrHashMismatch → AnalysisError
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis`: ErrNoSyscallAnalysis → false, false（フォールバックなし）
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch`: SchemaVersionMismatchError → AnalysisError
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound`: ErrRecordNotFound → AnalysisError（live 解析なし）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged`: NetworkDetected は変更なし
+- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit`: NetworkDetected + svc あり → true, true（isHighRisk 格上げ）
+- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis`: NetworkDetected + ErrNoSyscallAnalysis → true, false（格上げなし）
+- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC`: NetworkDetected + svc なし（ロード成功）→ true, false（格上げなし）
 
 **実行コマンド**:
 ```
