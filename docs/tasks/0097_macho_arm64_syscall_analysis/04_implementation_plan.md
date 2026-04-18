@@ -88,13 +88,12 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
   - [ ] `AnalysisWarnings: []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"}` を設定する
   - [ ] `DetectedSyscalls` に各アドレスを `Number=-1, DeterminationMethod="direct_svc_0x80", Source="direct_svc_0x80"` で記録する
   - [ ] `ArgEvalResults` は設定しない（nil のまま）
-- [ ] `binaryanalyzer.AnalysisResult` を保持するローカル変数 `networkResult` を
-  `if v.binaryAnalyzer != nil` ブロック内で追加し、`output.Result` を保存する
 - [ ] `updateAnalysisRecord` のコールバック内、`analyzeSyscalls()` 呼び出し直後に Mach-O svc スキャンを追加する
-  - [ ] `networkResult == binaryanalyzer.NoNetworkSymbols` の条件分岐を追加する
+  - [ ] `v.binaryAnalyzer != nil` の条件分岐を追加する（binaryAnalyzer が nil の場合はスキップ）
   - [ ] `machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)` を呼ぶ
   - [ ] エラー時はラップして返す
   - [ ] `len(addrs) > 0` の場合のみ `record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)` を設定する
+  - [ ] `SymbolAnalysis = NetworkDetected` の場合も svc スキャンを実行すること（`runner` 側で参照可否を制御する）
 
 ### 4.2 テストチェックリスト
 
@@ -104,9 +103,10 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
   - [ ] `Architecture == "arm64"` を確認
   - [ ] `AnalysisWarnings` に検出メッセージが含まれる
   - [ ] `DetectedSyscalls` に正しいフィールドが設定される
-- [ ] `TestUpdateAnalysisRecord_MachoSVCDetected`: svc ありの Mach-O で SyscallAnalysis が設定される
+- [ ] `TestUpdateAnalysisRecord_MachoSVCDetected`: svc ありの Mach-O (NoNetworkSymbols) で SyscallAnalysis が設定される
 - [ ] `TestUpdateAnalysisRecord_MachoNoSVC`: svc なしの Mach-O で SyscallAnalysis が nil
-- [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC`: NetworkDetected → SyscallAnalysis 保存なし
+- [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_SVCDetected`: NetworkDetected + svc あり → SyscallAnalysis が保存される
+- [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC`: NetworkDetected + svc なし → SyscallAnalysis が nil
 - [ ] `TestUpdateAnalysisRecord_ELFNotAffected`: ELF バイナリのフロー変更なし（linux のみ、またはモック）
 
 **注意**:

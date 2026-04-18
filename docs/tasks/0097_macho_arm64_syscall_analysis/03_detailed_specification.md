@@ -117,32 +117,17 @@ func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]u
 `store.Update()` コールバック内、`analyzeSyscalls()` 呼び出しの**直後**に
 以下のコードを追加する。
 
-**変更の前提**: `updateAnalysisRecord` コールバック内の `if v.binaryAnalyzer != nil` ブロックに
-ローカル変数 `networkResult binaryanalyzer.AnalysisResult` を追加し、
-`output.Result` の値をブロック外でも参照できるようにする。
-
-**追加箇所 1**: `if v.binaryAnalyzer != nil` ブロック前（またはブロック内先頭）に
-ローカル変数宣言を追加する:
-
-```go
-var networkResult binaryanalyzer.AnalysisResult
-if v.binaryAnalyzer != nil {
-    output := v.binaryAnalyzer.AnalyzeNetworkSymbols(filePath.String(), contentHash)
-    networkResult = output.Result
-    // ... 既存の switch output.Result ブロック ...
-}
-```
-
-**追加箇所 2**: `v.analyzeSyscalls(record, filePath.String())` の呼び出し行直後、
+**追加箇所**: `v.analyzeSyscalls(record, filePath.String())` の呼び出し行直後、
 shebang 設定の前:
 
 ```go
 // Mach-O arm64 svc #0x80 scan.
 // Run after analyzeSyscalls() to overwrite the nil it sets for non-ELF files.
-// Only runs when binaryanalyzer returned NoNetworkSymbols for this file.
+// record's responsibility is to faithfully capture binary state regardless of SymbolAnalysis result.
+// runner decides whether to consult SyscallAnalysis based on SymbolAnalysis outcome (FR-3.2.2).
 // CollectSVCAddressesFromFile checks magic bytes and returns nil for non-Mach-O files,
 // so this is safe to call on all platforms and binary formats.
-if networkResult == binaryanalyzer.NoNetworkSymbols {
+if v.binaryAnalyzer != nil {
     addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
     if svcErr != nil {
         return fmt.Errorf("mach-o svc scan failed: %w", svcErr)
@@ -153,24 +138,12 @@ if networkResult == binaryanalyzer.NoNetworkSymbols {
 }
 ```
 
-**`networkResult == binaryanalyzer.NoNetworkSymbols` 判定の根拠**:
-- `output.Result` の値を直接変数に保持するため、フィールド値推測より正確
-- `v.binaryAnalyzer == nil` の場合は `networkResult` がゼロ値（`NetworkDetected`(0)）となり
-  条件は `false` になるため、svc スキャンは実行されない（意図通り）
-- `NetworkDetected` / `StaticBinary` / `AnalysisError` の場合は条件が `false` になる
+**`v.binaryAnalyzer != nil` 判定の根拠**:
+- `binaryAnalyzer` が nil の場合はバイナリ解析自体が無効化された環境であり、svc スキャンもスキップする
 - `CollectSVCAddressesFromFile` は内部でマジックバイトを確認し、非 Mach-O ファイルには
   `nil, nil` を返すため、OS を問わず安全に呼び出せる
-
-**`SymbolAnalysis` が nil（`StaticBinary` / `NotSupportedBinary` / `binaryAnalyzer == nil`）の
-場合は `CollectSVCAddressesFromFile` を呼ばない**（`networkResult != NoNetworkSymbols` のため）。
-
-**FR-3.2.2 との整合性について**:
-要件定義 FR-3.2.2 は「NetworkDetected 時も svc スキャンを継続すべき」と記述しているが、
-アーキテクチャ設計書 §3.2.1 はこの不整合を解消しており、受け入れ条件 AC-1 に従い
-**NetworkDetected 時は svc スキャンをスキップする**と決定している。
-`runner` は `SymbolAnalysis = NoNetworkSymbols` の場合のみ `SyscallAnalysis` を参照するため、
-NetworkDetected バイナリに svc 結果を保存しても実用上の追加セキュリティ効果はない。
-本仕様書はこのアーキテクチャ決定を実装に反映している。
+- `SymbolAnalysis = NetworkDetected` / `NoNetworkSymbols` いずれの場合も svc スキャンを実行する
+  （`runner` が参照するかどうかは `runner` 側の責務 FR-3.2.2 で制御する）
 
 ### 4.3 追加関数: `buildSVCSyscallAnalysis`
 
@@ -212,9 +185,10 @@ common.SyscallInfo{
 
 | テスト名 | 検証内容 | AC |
 |---------|---------|-----|
-| `TestUpdateAnalysisRecord_MachoSVCDetected` | svc ありの Mach-O: SyscallAnalysis が設定される | AC-1, AC-2 |
+| `TestUpdateAnalysisRecord_MachoSVCDetected` | svc ありの Mach-O (NoNetworkSymbols): SyscallAnalysis が設定される | AC-1, AC-2 |
 | `TestUpdateAnalysisRecord_MachoNoSVC` | svc なしの Mach-O: SyscallAnalysis が nil | AC-1, AC-2 |
-| `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | NetworkDetected Mach-O: SyscallAnalysis が保存されない | AC-1 |
+| `TestUpdateAnalysisRecord_MachoNetworkDetected_SVCDetected` | NetworkDetected Mach-O + svc あり: SyscallAnalysis が保存される | AC-1 |
+| `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | NetworkDetected Mach-O + svc なし: SyscallAnalysis が nil | AC-1 |
 | `TestUpdateAnalysisRecord_ELFNotAffected` | ELF バイナリ: Mach-O パスが呼ばれない | AC-4 |
 | `TestBuildSVCSyscallAnalysis` | 単体: 正しいフィールド値が設定される | AC-1 |
 
@@ -389,7 +363,8 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | AC-1: AnalysisWarnings に検出メッセージ | `TestBuildSVCSyscallAnalysis` | `validator_macho_test.go` |
 | AC-1: DetectedSyscalls に Number=-1, DeterminationMethod="direct_svc_0x80" | `TestBuildSVCSyscallAnalysis` | `validator_macho_test.go` |
 | AC-1: svc なし Mach-O は SyscallAnalysis が nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_macho_test.go` |
-| AC-1: NetworkDetected → SyscallAnalysis 保存なし | `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | `validator_macho_test.go` |
+| AC-1: NetworkDetected + svc あり → SyscallAnalysis 保存 | `TestUpdateAnalysisRecord_MachoNetworkDetected_SVCDetected` | `validator_macho_test.go` |
+| AC-1: NetworkDetected + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | `validator_macho_test.go` |
 | AC-2: NoNetworkSymbols + svc あり → SyscallAnalysis 保存 | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_macho_test.go` |
 | AC-2: NoNetworkSymbols + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_macho_test.go` |
 | AC-3: NoNetworkSymbols + SyscallAnalysis に svc → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | `network_analyzer_test.go` |

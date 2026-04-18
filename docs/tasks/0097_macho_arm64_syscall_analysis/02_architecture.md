@@ -51,7 +51,7 @@ flowchart TB
 
     REC --> FV
     FV --> BA
-    BA -->|"NoNetworkSymbols"| SVC
+    BA --> SVC
     SVC --> STORE
 
     RUN --> EVAL
@@ -140,7 +140,7 @@ flowchart TB
     end
 
     FV2 --> BA2
-    BA2 -->|"NoNetworkSymbols"| SVC2
+    BA2 --> SVC2
     SVC2 --> STORE2
 
     NA2 --> SYMHIT2 --> SVCCHECK --> BLOCK
@@ -220,27 +220,17 @@ flowchart TD
     START(["store.Update() コールバック開始"])
     DYNLIB["analyzeDynLibDeps()<br>（既存）"]
     ANALYZE["BinaryAnalyzer.AnalyzeNetworkSymbols()<br>（既存）"]
-    CHECK_RESULT{"Result は？"}
-    SAVE_SYMBOL["record.SymbolAnalysis を設定<br>（既存処理）"]
     ANALYZE_SYS["analyzeSyscalls()<br>ELF: SyscallAnalysis を設定<br>非ELF: SyscallAnalysis = nil<br>（既存: Mach-O は nil になる）"]
-    CHECK_NOSVC{"result ==<br>NoNetworkSymbols?"}
-    SVC_SCAN["machoanalyzer.CollectSVCAddressesFromFile()<br>svc #0x80 アドレス収集<br>（新規）"]
+    SVC_SCAN["machoanalyzer.CollectSVCAddressesFromFile()<br>svc #0x80 アドレス収集<br>（新規: SymbolAnalysis 結果にかかわらず実行）"]
     CHECK_SVC{"svc #0x80 が<br>検出されたか？"}
     SET_SVC["record.SyscallAnalysis =<br>buildSVCSyscallAnalysis(addrs)<br>（直接設定 ← 新規）"]
     SKIP_SVC["record.SyscallAnalysis は nil のまま"]
-    NETWORK_DETECTED["NetworkDetected / その他:<br>既存処理のまま"]
     SHEBANG["shebang 設定（既存）"]
     END(["コールバック完了"])
 
     START --> DYNLIB --> ANALYZE
-    ANALYZE --> CHECK_RESULT
-    CHECK_RESULT -->|"NetworkDetected<br>StaticBinary 等"| NETWORK_DETECTED
-    CHECK_RESULT -->|"NoNetworkSymbols"| SAVE_SYMBOL
-    NETWORK_DETECTED --> ANALYZE_SYS
-    SAVE_SYMBOL --> ANALYZE_SYS
-    ANALYZE_SYS --> CHECK_NOSVC
-    CHECK_NOSVC -->|"Yes"| SVC_SCAN
-    CHECK_NOSVC -->|"No"| SHEBANG
+    ANALYZE --> ANALYZE_SYS
+    ANALYZE_SYS --> SVC_SCAN
     SVC_SCAN --> CHECK_SVC
     CHECK_SVC -->|"あり"| SET_SVC
     CHECK_SVC -->|"なし"| SKIP_SVC
@@ -249,19 +239,16 @@ flowchart TD
     SHEBANG --> END
 
     class START,END,DYNLIB,SHEBANG process;
-    class ANALYZE,SAVE_SYMBOL,NETWORK_DETECTED,ANALYZE_SYS process;
-    class CHECK_RESULT,CHECK_NOSVC,CHECK_SVC decision;
+    class ANALYZE,ANALYZE_SYS process;
+    class CHECK_SVC decision;
     class SVC_SCAN,SET_SVC new;
     class SKIP_SVC process;
 ```
 
 **`SymbolAnalysis = NetworkDetected` 時の svc スキャンについて**:
-要件 FR-3.2.2 は「NetworkDetected 時も svc スキャンを継続すべき」と記述しているが、
-同要件の受け入れ条件 AC-1 および テスト表（§6.1）は「NetworkDetected の場合は
-`SyscallAnalysis` が保存されないこと」と規定している。
-`runner` は `SymbolAnalysis = NoNetworkSymbols` の場合のみ `SyscallAnalysis` を参照するため、
-NetworkDetected バイナリに svc 結果を保存しても実用上の追加セキュリティ効果はない。
-よって本アーキテクチャは AC-1 に従い、**NetworkDetected 時は svc スキャンをスキップする**。
+`record` は `SymbolAnalysis` の結果にかかわらず svc スキャンを実行し、検出結果を保存する。
+`runner` が `NetworkDetected` 時に `SyscallAnalysis` を参照しないという判断は `runner` 側で行う（FR-3.2.2 参照）。
+これにより `record` の責務（バイナリ状態の記録）と `runner` の責務（脅威判断）の境界が明確になる。
 
 **`buildSVCSyscallAnalysis` の出力（svc #0x80 検出時）**:
 
@@ -385,6 +372,9 @@ flowchart TD
 
 ### 4.1 `record` フェーズのデータフロー（Mach-O、svc #0x80 あり）
 
+`record` は `SymbolAnalysis` の結果にかかわらず svc スキャンを実行する。
+以下は `SymbolAnalysis = NoNetworkSymbols` の例だが、`NetworkDetected` の場合も同様に svc スキャン結果が保存される。
+
 ```mermaid
 flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
@@ -393,10 +383,10 @@ flowchart LR
 
     BIN[("/usr/local/bin/suspicious<br>（arm64 Mach-O, svc #0x80 あり）")]
     HASH["SHA256 計算"]
-    ANALYZE["AnalyzeNetworkSymbols()<br>→ NoNetworkSymbols"]
+    ANALYZE["AnalyzeNetworkSymbols()<br>→ 任意の結果（例: NoNetworkSymbols）"]
     SVC["collectSVCAddresses()<br>→ [0x100003f00, 0x100003f10]"]
     CONVERT["SyscallAnalysisResult 構築<br>Architecture: arm64<br>AnalysisWarnings: [svc #0x80 検出...]<br>DetectedSyscalls: [{-1, 0x100003f00, ...}, ...]"]
-    STORE[("fileanalysis.Record<br>ContentHash: sha256:abc...<br>SymbolAnalysis: {NoNetworkSymbols}<br>SyscallAnalysis: {arm64, ...}")]
+    STORE[("fileanalysis.Record<br>ContentHash: sha256:abc...<br>SymbolAnalysis: {NoNetworkSymbols 等}<br>SyscallAnalysis: {arm64, ...}")]
 
     BIN --> HASH
     HASH --> ANALYZE
