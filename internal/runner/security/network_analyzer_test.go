@@ -260,18 +260,17 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound verifies that
-// ErrRecordNotFound from SyscallAnalysis returns AnalysisError (integrity error, no live analysis).
+// ErrRecordNotFound from SyscallAnalysis panics (consistency bug: SymbolAnalysis record
+// exists but the matching SyscallAnalysis record is missing).
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrRecordNotFound}
 	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
 	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
 
-	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
-
-	assert.True(t, isNet, "ErrRecordNotFound should return AnalysisError (integrity error)")
-	assert.True(t, isHigh, "ErrRecordNotFound should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
+	assert.Panics(t, func() {
+		analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+	}, "ErrRecordNotFound from SyscallAnalysis must panic (consistency bug)")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit verifies that NetworkDetected

@@ -2,6 +2,7 @@ package security
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -228,13 +229,11 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 					"actual_schema", svcSchemaMismatch.Actual)
 				return true, true
 			default:
-				// ErrRecordNotFound or unexpected error: treat as integrity error.
-				// (When SymbolAnalysis loaded successfully, a matching SyscallAnalysis record
-				//  must exist. When SymbolAnalysis returned ErrNoNetworkSymbolAnalysis, absence
-				//  of the SyscallAnalysis record is equally unexpected.)
-				slog.Warn("unexpected error loading SyscallAnalysis cache; treating as high risk",
-					"path", cmdPath, "error", svcErr)
-				return true, true
+				// ErrRecordNotFound or unexpected error: this must not occur in production.
+				// The underlying record exists (SymbolAnalysis succeeded or returned
+				// ErrNoNetworkSymbolAnalysis), so a missing SyscallAnalysis record indicates
+				// a consistency bug that must be fixed, not silently absorbed.
+				panic(fmt.Sprintf("SyscallAnalysis cache inconsistency for %q: %v", cmdPath, svcErr))
 			}
 		}
 
