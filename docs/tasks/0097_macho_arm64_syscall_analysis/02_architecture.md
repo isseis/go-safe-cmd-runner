@@ -169,7 +169,8 @@ func collectSVCAddresses(f *macho.File) ([]uint64, error)
 // CollectSVCAddressesFromFile opens filePath via the given FileSystem and returns
 // the virtual addresses of all svc #0x80 instructions found in the Mach-O binary.
 // Returns nil, nil if the file is not a Mach-O arm64 binary, or if no svc found.
-// Called by filevalidator on darwin to record svc scan results.
+// Called by filevalidator to record svc scan results; safe to call
+// cross-platform because Mach-O detection relies on file magic bytes, not build tags.
 func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error)
 ```
 
@@ -180,7 +181,7 @@ func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]u
 - arm64 以外のアーキテクチャでは即座に `nil, nil` を返す
 
 **`CollectSVCAddressesFromFile` の実装の詳細**:
-- `safefileio.SafeOpenFile` でファイルを開く
+- `fs.SafeOpenFile` でファイルを開く
 - ファイル先頭 4 バイトで Mach-O/Fat マジックを確認し、非 Mach-O なら `nil, nil` を返す
 - Fat バイナリの場合は全スライスを試行し arm64 スライスのみ `collectSVCAddresses` を呼ぶ
 - 単一アーキテクチャ Mach-O の場合は直接 `collectSVCAddresses` を呼ぶ
@@ -354,7 +355,7 @@ flowchart TD
 
 この判定ロジックは `syscallAnalysisHasSVCSignal(result *SyscallAnalysisResult) bool` として分離し、テスト容易性と判定根拠の明確性を高める。
 
-#### 3.3.4 ストア注入チェーンの変更
+#### 3.3.3 ストア注入チェーンの変更
 
 `SyscallAnalysisStore` を `NetworkAnalyzer` まで到達させるため、既存の
 `NetworkSymbolStore` 注入チェーンを以下のように拡張する。
@@ -370,7 +371,7 @@ flowchart TD
 この変更により、live 解析フォールバックを維持したまま、`runner` の通常実行パスでも
 `SyscallAnalysis` キャッシュを利用できる。
 
-#### 3.3.3 エラーハンドリングまとめ
+#### 3.3.4 エラーハンドリングまとめ
 
 | エラー種別 | 処理 | 理由 |
 |-----------|------|------|
@@ -416,10 +417,10 @@ flowchart LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef new fill:#f3e8ff,stroke:#7b2d8b,stroke-width:2px,color:#4a0072;
 
-    STORE[("fileanalysis.Record<br>SymbolAnalysis: NoNetworkSymbols<br>SyscallAnalysis: {AnalysisWarnings: [...]}")]
+    STORE[("fileanalysis.Record<br>SymbolAnalysis: NoNetworkSymbols<br>SyscallAnalysis: {DetectedSyscalls: [{DeterminationMethod: direct_svc_0x80, ...}]}")]
     LOADSYM["LoadNetworkSymbolAnalysis()<br>→ NoNetworkSymbols"]
-    LOADSVC["LoadSyscallAnalysis()<br>→ {AnalysisWarnings: [svc 検出]}"]
-    CHECK["syscallAnalysisHasSVCSignal()<br>→ true"]
+    LOADSVC["LoadSyscallAnalysis()<br>→ {DetectedSyscalls: [{DeterminationMethod: direct_svc_0x80}]}"]
+    CHECK["syscallAnalysisHasSVCSignal()<br>DetectedSyscalls に direct_svc_0x80 あり<br>→ true"]
     RESULT["isNetwork=true, isHighRisk=true<br>（AnalysisError）"]
 
     STORE -.-> LOADSYM

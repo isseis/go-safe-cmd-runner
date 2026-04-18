@@ -267,5 +267,4 @@ verification.Manager
 runner 通常実行パス
 ```
 
-Step 1 と Step 3 は相互依存がないため、並行実装が可能。
-ただし、本実装計画書の規約（Sequential Tool Execution Protocol）に従い順次実装する。
+Step 1 と Step 3 は相互依存がないが、本実装計画書では依存関係と検証順序を優先し、Step 1 から順に実装する。

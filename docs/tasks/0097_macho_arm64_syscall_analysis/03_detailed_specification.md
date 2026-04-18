@@ -63,7 +63,7 @@ func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]u
    - マジック判定: `macho.Magic32 (0xFEEDFACE)`, `macho.Magic64 (0xFEEDFACF)`,
      `macho.MagicFat (0xCAFEBABE)`, バイトスワップ版 (`0xCEFAEDFE`, `0xCFFAEDFE`, `0xBEBAFECA`)
    - 非 Mach-O（マジック不一致）の場合は `nil, nil` を返す
-3. Fat バイナリの場合 (`MagicFat`):
+3. Fat バイナリの場合 (`0xCAFEBABE` または `0xBEBAFECA` にマッチしたもの):
    - `macho.NewFatFile(f)` でパースする（`safefileio.File` は `io.ReaderAt` を実装するため
      シーク不要。先頭 4 バイト読み出し後もそのまま渡せる）
    - 各 `FatArch` スライスを順次確認する
@@ -259,12 +259,20 @@ func NewNetworkAnalyzerWithStores(
 
 ### 5.3 `isNetworkViaBinaryAnalysis` の変更
 
-**変更箇所**: `case err == nil:` ブランチ内の `else` ブロック（`output.Result = binaryanalyzer.NoNetworkSymbols` を設定する箇所）を以下のように変更する。
+**変更箇所**: `case err == nil:` ブランチ全体を以下のように書き換える。
 
 ```go
-} else {
-    output.Result = binaryanalyzer.NoNetworkSymbols
-    // Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
+case err == nil:
+    output := binaryanalyzer.AnalysisOutput{
+        DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
+        DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
+    }
+    if len(data.DetectedSymbols) > 0 || len(data.KnownNetworkLibDeps) > 0 {
+        output.Result = binaryanalyzer.NetworkDetected
+        // KnownNetworkLibDeps のみの場合のログ出力は既存コードを維持。
+        return handleAnalysisOutput(output, cmdPath)
+    }
+    // NoNetworkSymbols: check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
     if a.syscallStore != nil {
         svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
         var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
@@ -275,35 +283,45 @@ func NewNetworkAnalyzerWithStores(
                     "path", cmdPath)
                 return true, true
             }
-            // No svc signal: treat as NoNetworkSymbols (fall through to handleAnalysisOutput).
+            // No svc signal: safe to return the cached NoNetworkSymbols result.
+            output.Result = binaryanalyzer.NoNetworkSymbols
+            return handleAnalysisOutput(output, cmdPath)
         case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
             slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
                 "path", cmdPath)
             return true, true
         case errors.Is(svcErr, fileanalysis.ErrRecordNotFound) ||
             errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
-            // Cache miss: fall through to handleAnalysisOutput (which returns false, false).
+            // Cache miss: fall through to live binary analysis.
         case errors.As(svcErr, &svcSchemaMismatch):
-            slog.Warn("SyscallAnalysis cache has outdated schema; ignoring svc cache",
+            slog.Warn("SyscallAnalysis cache has outdated schema; falling back to live analysis",
                 "path", cmdPath,
                 "expected_schema", svcSchemaMismatch.Expected,
                 "actual_schema", svcSchemaMismatch.Actual)
-            // Fall through to handleAnalysisOutput.
+            // Fall through to live binary analysis.
         default:
-            slog.Warn("unexpected error loading SyscallAnalysis cache; ignoring svc cache",
+            slog.Warn("unexpected error loading SyscallAnalysis cache; falling back to live analysis",
                 "path", cmdPath,
                 "error", svcErr)
-            // Fall through to handleAnalysisOutput.
+            // Fall through to live binary analysis.
         }
+        // svc cache miss or error: do NOT return here.
+        // Fall out of this case block so execution reaches the live analysis below.
+    } else {
+        // No svc store configured: return the cached NoNetworkSymbols result.
+        output.Result = binaryanalyzer.NoNetworkSymbols
+        return handleAnalysisOutput(output, cmdPath)
     }
-}
-return handleAnalysisOutput(output, cmdPath)
 ```
 
-**`return handleAnalysisOutput(output, cmdPath)` 呼び出しについて**:
-svc キャッシュが `AnalysisError` を返さなかった場合、`else` ブロックを抜けた後に
-`return handleAnalysisOutput(output, cmdPath)` が実行される（既存コードを維持）。
-`handleAnalysisOutput` は `NoNetworkSymbols` に対して `false, isHighRisk` を返す。
+**フォールバック動作について**:
+svc キャッシュミス (`ErrRecordNotFound` / `ErrNoSyscallAnalysis`) およびスキーマ不一致
+(`SchemaVersionMismatchError`) の場合、`case err == nil:` ブロック内で `return` を実行せずに
+ブロックを抜ける。Go の `switch` はデフォルトで fall-through しないため、そのまま
+`if a.store != nil && contentHash != ""` ブロックの外に出て、既存の live 解析コード
+（`a.binaryAnalyzer.AnalyzeNetworkSymbols(...)` → `handleAnalysisOutput`）が実行される。
+これはアーキテクチャ設計書 3.3.1 のフローチャートで `SVC_ERR/SVC_SCHEMA → FALLBACK → HANDLE`
+と示された経路に対応する。
 
 ### 5.4 追加関数: `syscallAnalysisHasSVCSignal`
 
