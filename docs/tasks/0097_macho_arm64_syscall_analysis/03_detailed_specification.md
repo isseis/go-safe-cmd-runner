@@ -352,7 +352,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | テスト名 | 検証内容 | AC |
 |---------|---------|-----|
 | `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss` | SymbolAnalysis キャッシュミス → AnalysisError（live 解析なし） | AC-3 |
-| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | NoNetworkSymbols + svc キャッシュあり → AnalysisError | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | NoNetworkSymbols + svc キャッシュあり → true, true（isNetwork=true, isHighRisk=true） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil` | NoNetworkSymbols + SyscallAnalysis nil（ロード成功・svc なし）→ false, false | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | ErrHashMismatch → AnalysisError | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | ErrNoSyscallAnalysis → false, false（v15 保証・フォールバックなし） | AC-3 |

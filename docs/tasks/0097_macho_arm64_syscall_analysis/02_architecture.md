@@ -416,7 +416,7 @@ flowchart LR
     LOADSYM["LoadNetworkSymbolAnalysis()<br>→ NoNetworkSymbols"]
     LOADSVC["LoadSyscallAnalysis()<br>→ {DetectedSyscalls: [{DeterminationMethod: direct_svc_0x80}]}"]
     CHECK["syscallAnalysisHasSVCSignal()<br>DetectedSyscalls に direct_svc_0x80 あり<br>→ true"]
-    RESULT["isNetwork=true, isHighRisk=true<br>（AnalysisError）"]
+    RESULT["isNetwork=true, isHighRisk=true<br>（svc 検出・ネットワーク確定）"]
 
     STORE -.-> LOADSYM
     STORE -.-> LOADSVC
