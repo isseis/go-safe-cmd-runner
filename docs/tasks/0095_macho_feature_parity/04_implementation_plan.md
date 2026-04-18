@@ -32,14 +32,14 @@
 
 ## フェーズ 2: 検出力強化
 
-### タスク 0097: Mach-O svc #0x80 キャッシュ統合・CGO フォールバック（FR-4.4 / FR-4.5）
+### タスク 0097: Mach-O svc #0x80 キャッシュ統合・キャッシュ優先判定（FR-4.4 / FR-4.5）
 
-**概要**: `svc #0x80` スキャン結果を `fileanalysis.Record.SyscallAnalysis` に保存してキャッシュとして活用し live 再解析を最小化する（FR-4.4）。`SymbolAnalysis = NoNetworkSymbols` の Mach-O バイナリに svc スキャンをフォールバック適用し、SymbolAnalysis キャッシュヒット時に svc スキャンが迂回される問題を解消する（FR-4.5）。`svc #0x80` は正規 macOS バイナリでは現れないため syscall 番号解析は行わず、`svc #0x80` の存在自体を一律高リスクとして扱う現行方針を維持する。
+**概要**: `svc #0x80` スキャン結果を `fileanalysis.Record.SyscallAnalysis` に保存してキャッシュとして活用し live 再解析を最小化する（FR-4.4）。`SymbolAnalysis = NoNetworkSymbols` の Mach-O バイナリに対して `runner` が `SyscallAnalysis` キャッシュを優先参照し、SymbolAnalysis キャッシュヒット時に svc スキャンが迂回される問題を解消する（FR-4.5）。CGO フォールバックは本タスクのスコープ外。`svc #0x80` は正規 macOS バイナリでは現れないため syscall 番号解析は行わず、`svc #0x80` の存在自体を一律高リスクとして扱う現行方針を維持する。
 
 - [x] `docs/tasks/0097_macho_arm64_syscall_analysis/01_requirements.md` を作成する
-- [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/02_architecture.md` を作成する
-- [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/03_detailed_specification.md` を作成する
-- [ ] `docs/tasks/0097_macho_arm64_syscall_analysis/04_implementation_plan.md` を作成する
+- [x] `docs/tasks/0097_macho_arm64_syscall_analysis/02_architecture.md` を作成する
+- [x] `docs/tasks/0097_macho_arm64_syscall_analysis/03_detailed_specification.md` を作成する
+- [x] `docs/tasks/0097_macho_arm64_syscall_analysis/04_implementation_plan.md` を作成する
 - [ ] 実装・テストを行い PR をマージする
 
 ### タスク 0098: Mach-O `.dylib` ベース名による既知ネットワークライブラリ検出（FR-4.8）
