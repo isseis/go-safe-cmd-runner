@@ -16,3 +16,14 @@ func newNetworkAnalyzer(
 ) *NetworkAnalyzer {
 	return &NetworkAnalyzer{binaryAnalyzer: analyzer, store: store}
 }
+
+// newNetworkAnalyzerWithStores creates a NetworkAnalyzer with a custom BinaryAnalyzer,
+// symbol store, and syscall store for testing.
+// This function is only available in test builds.
+func newNetworkAnalyzerWithStores(
+	analyzer binaryanalyzer.BinaryAnalyzer,
+	symStore fileanalysis.NetworkSymbolStore,
+	svcStore fileanalysis.SyscallAnalysisStore,
+) *NetworkAnalyzer {
+	return &NetworkAnalyzer{binaryAnalyzer: analyzer, store: symStore, syscallStore: svcStore}
+}

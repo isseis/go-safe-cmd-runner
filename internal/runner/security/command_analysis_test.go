@@ -2701,12 +2701,14 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
 	})
 
-	t.Run("cache miss (ErrNoNetworkSymbolAnalysis) → BinaryAnalyzer called as fallback", func(t *testing.T) {
+	t.Run("ErrNoNetworkSymbolAnalysis (no syscallStore) → false, false (static binary, no live fallback)", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
 		analyzer := newNetworkAnalyzer(mock, store)
-		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.True(t, isNet, "expected network detected via live binary analysis fallback")
+		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+		assert.False(t, isNet, "static binary with no svc should return false")
+		assert.False(t, isHigh, "static binary with no svc should return false")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called (live fallback removed)")
 	})
 
 	t.Run("SchemaVersionMismatchError → BinaryAnalyzer called as fallback", func(t *testing.T) {

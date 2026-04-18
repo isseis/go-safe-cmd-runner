@@ -20,7 +20,8 @@ const gosDarwin = "darwin"
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
 	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
-	store          fileanalysis.NetworkSymbolStore // nil means cache disabled
+	store          fileanalysis.NetworkSymbolStore   // nil means cache disabled
+	syscallStore   fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
 }
 
 // NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the current platform.
@@ -44,6 +45,20 @@ func NewNetworkAnalyzer() *NetworkAnalyzer {
 // If store is nil, falls back to live binary analysis.
 func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
 	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer(), store: store}
+}
+
+// NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
+// symbol and syscall stores for cache-based analysis.
+// If either store is nil, the corresponding cache lookup is disabled.
+func NewNetworkAnalyzerWithStores(
+	symStore fileanalysis.NetworkSymbolStore,
+	svcStore fileanalysis.SyscallAnalysisStore,
+) *NetworkAnalyzer {
+	return &NetworkAnalyzer{
+		binaryAnalyzer: NewBinaryAnalyzer(),
+		store:          symStore,
+		syscallStore:   svcStore,
+	}
 }
 
 // IsNetworkOperation checks if the command performs network operations.
@@ -156,52 +171,98 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// for a valid record. That would misuse ErrHashMismatch (which signals a genuine
 	// file-content change) for a mere "no hash available" situation.
 	if a.store != nil && contentHash != "" {
+		// Load SymbolAnalysis cache.
+		// ErrNoNetworkSymbolAnalysis is a valid case (static binary): fall through to SyscallAnalysis.
+		// All other errors are treated as AnalysisError because production always has records.
 		data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
-		var schemaMismatch *fileanalysis.SchemaVersionMismatchError
+		var symSchemaMismatch *fileanalysis.SchemaVersionMismatchError
 		switch {
 		case err == nil:
-			output := binaryanalyzer.AnalysisOutput{
-				DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
-				DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
-			}
-			if len(data.DetectedSymbols) > 0 || len(data.KnownNetworkLibDeps) > 0 {
-				output.Result = binaryanalyzer.NetworkDetected
-				// When network capability is inferred only from KnownNetworkLibDeps,
-				// DetectedSymbols remains empty. Log this explicitly so that logs
-				// clearly explain why the binary is treated as network-capable even
-				// if handleAnalysisOutput logs an empty symbol list.
-				if len(data.DetectedSymbols) == 0 && len(data.KnownNetworkLibDeps) > 0 {
-					slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
-						"treating binary as network-capable based on known network library dependencies",
-						"path", cmdPath,
-						"known_network_lib_deps", data.KnownNetworkLibDeps,
-					)
-				}
-			} else {
-				output.Result = binaryanalyzer.NoNetworkSymbols
-			}
-			return handleAnalysisOutput(output, cmdPath)
-		case errors.Is(err, fileanalysis.ErrNoNetworkSymbolAnalysis) ||
-			errors.Is(err, fileanalysis.ErrHashMismatch) ||
-			errors.Is(err, fileanalysis.ErrRecordNotFound):
-			// Expected cache miss: fall through to live binary analysis.
-		case errors.As(err, &schemaMismatch):
-			// Cache record uses an old schema version. Normally VerifyGroupFiles blocks
-			// execution before reaching this point, but log a warning so that callers
-			// that bypass verification (e.g. tests, future code paths) can diagnose
-			// unexpected schema mismatches.
-			slog.Warn("network symbol analysis cache has outdated schema; falling back to live analysis",
+			// data is valid; continue below.
+		case errors.Is(err, fileanalysis.ErrNoNetworkSymbolAnalysis):
+			// Static binary: no SymbolAnalysis record.
+			// Fall through to SyscallAnalysis check (data remains nil).
+		case errors.Is(err, fileanalysis.ErrHashMismatch):
+			slog.Warn("SymbolAnalysis cache hash mismatch; treating as high risk",
+				"path", cmdPath)
+			return true, true
+		case errors.As(err, &symSchemaMismatch):
+			slog.Warn("SymbolAnalysis cache has outdated schema; treating as high risk",
 				"path", cmdPath,
-				"expected_schema", schemaMismatch.Expected,
-				"actual_schema", schemaMismatch.Actual)
+				"expected_schema", symSchemaMismatch.Expected,
+				"actual_schema", symSchemaMismatch.Actual)
+			return true, true
 		default:
-			// Unexpected error (e.g. I/O failure, corrupted record): log a warning and
-			// fall through to live binary analysis so execution is not silently blocked,
-			// but make the error visible for diagnosis.
-			slog.Warn("unexpected error loading network symbol analysis cache; falling back to live analysis",
-				"path", cmdPath,
-				"error", err)
+			slog.Warn("SymbolAnalysis cache load failed; treating as high risk",
+				"path", cmdPath, "error", err)
+			return true, true
 		}
+
+		// Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
+		// This check runs regardless of SymbolAnalysis result (NetworkDetected, NoNetworkSymbols,
+		// or ErrNoNetworkSymbolAnalysis for static binaries) so that svc #0x80 always escalates
+		// isHighRisk to true.
+		if a.syscallStore != nil {
+			svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
+			var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
+			switch {
+			case svcErr == nil:
+				if syscallAnalysisHasSVCSignal(svcResult) {
+					slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
+						"path", cmdPath)
+					return true, true
+				}
+				// No svc signal: fall through to SymbolAnalysis-based decision.
+			case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
+				// v15 schema guarantee: svc scan was performed and found nothing.
+				// Fall through to SymbolAnalysis-based decision.
+			case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
+				slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
+					"path", cmdPath)
+				return true, true
+			case errors.As(svcErr, &svcSchemaMismatch):
+				slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
+					"path", cmdPath,
+					"expected_schema", svcSchemaMismatch.Expected,
+					"actual_schema", svcSchemaMismatch.Actual)
+				return true, true
+			default:
+				// ErrRecordNotFound or unexpected error: treat as integrity error.
+				// (When SymbolAnalysis loaded successfully, a matching SyscallAnalysis record
+				//  must exist. When SymbolAnalysis returned ErrNoNetworkSymbolAnalysis, absence
+				//  of the SyscallAnalysis record is equally unexpected.)
+				slog.Warn("unexpected error loading SyscallAnalysis cache; treating as high risk",
+					"path", cmdPath, "error", svcErr)
+				return true, true
+			}
+		}
+
+		// No svc #0x80 signal: determine result from SymbolAnalysis.
+		// data == nil when ErrNoNetworkSymbolAnalysis was returned (static binary with no svc).
+		if data == nil {
+			return false, false
+		}
+		output := binaryanalyzer.AnalysisOutput{
+			DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
+			DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
+		}
+		if len(data.DetectedSymbols) > 0 || len(data.KnownNetworkLibDeps) > 0 {
+			output.Result = binaryanalyzer.NetworkDetected
+			// When network capability is inferred only from KnownNetworkLibDeps,
+			// DetectedSymbols remains empty. Log this explicitly so that logs
+			// clearly explain why the binary is treated as network-capable even
+			// if handleAnalysisOutput logs an empty symbol list.
+			if len(data.DetectedSymbols) == 0 && len(data.KnownNetworkLibDeps) > 0 {
+				slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
+					"treating binary as network-capable based on known network library dependencies",
+					"path", cmdPath,
+					"known_network_lib_deps", data.KnownNetworkLibDeps,
+				)
+			}
+		} else {
+			output.Result = binaryanalyzer.NoNetworkSymbols
+		}
+		return handleAnalysisOutput(output, cmdPath)
 	}
 
 	// Fallback: live binary analysis.
@@ -212,6 +273,23 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	}
 	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
 	return handleAnalysisOutput(output, cmdPath)
+}
+
+// syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult
+// contains evidence of svc #0x80 direct syscall usage.
+// Returns true only when any DetectedSyscall has DeterminationMethod == "direct_svc_0x80".
+// AnalysisWarnings is not checked here because it may contain warnings from ELF syscall
+// analysis that are unrelated to svc #0x80, which would cause false positives.
+func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, s := range result.DetectedSyscalls {
+		if s.DeterminationMethod == "direct_svc_0x80" {
+			return true
+		}
+	}
+	return false
 }
 
 // handleAnalysisOutput maps a binaryanalyzer.AnalysisOutput to (isNetwork, isHighRisk).
