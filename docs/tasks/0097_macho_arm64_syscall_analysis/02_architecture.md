@@ -18,7 +18,7 @@ ELF 版タスク 0077 の「CGO バイナリフォールバック」パターン
 
 - **Security First**: `svc #0x80` は番号解析の有無によらず常に `AnalysisError`（高リスク）とする。`ErrHashMismatch` は安全側フェイルセーフとして `AnalysisError` を返す
 - **DRY**: `SyscallAnalysis` の保存・読み込みパターン（タスク 0070/0072/0077）をそのまま踏襲する
-- **Non-Breaking Change**: ELF バイナリの解析フローを変更しない。スキーマバージョンを変更しない
+- **Non-Breaking Change**: ELF バイナリの解析フローを変更しない。スキーマバージョンを v15 に変更し、v14 レコードは再 `record` を強制する
 - **YAGNI**: syscall 番号（`x16` レジスタ）解析は行わず、`svc #0x80` の有無のみをシグナルとして扱う
 
 ## 2. システムアーキテクチャ
@@ -60,7 +60,7 @@ flowchart TB
     SYMCACHE -->|"NoNetworkSymbols"| SVCCACHE
     SYMCACHE -->|"キャッシュなし"| FALLBACK
     SVCCACHE -->|"svc 検出"| NA
-    SVCCACHE -->|"キャッシュなし"| FALLBACK
+    SVCCACHE -->|"ErrNoSyscallAnalysis"| NA
 
     STORE -.->|"読み込み"| SYMCACHE
     STORE -.->|"読み込み"| SVCCACHE
@@ -294,8 +294,9 @@ flowchart TD
     SVC_HASH_ERR["ErrHashMismatch<br>→ true, true（AnalysisError）"]
     SVC_HIT["direct_svc_0x80 検出記録あり<br>→ true, true（AnalysisError）"]
     SVC_SAFE["ロード成功・svc signal なし<br>→ false, false を返す"]
-    SVC_ERR["ErrNoSyscallAnalysis /<br>ErrRecordNotFound<br>→ live 解析へフォールバック"]
-    SVC_SCHEMA["SchemaVersionMismatch<br>→ log 警告 + フォールバック"]
+    SVC_ERR["ErrNoSyscallAnalysis<br>→ false, false を返す<br>（v15 保証：スキャン済み・未検出）"]
+    SVC_NOT_FOUND["ErrRecordNotFound<br>→ live 解析へフォールバック<br>（未 record ファイル）"]
+    SVC_SCHEMA["SchemaVersionMismatch<br>→ AnalysisError（再 record 要求）"]
     SYM_FALLBACK["cache miss:<br>ErrRecordNotFound /<br>ErrHashMismatch /<br>ErrNoNetworkSymbolAnalysis"]
     FALLBACK["BinaryAnalyzer<br>.AnalyzeNetworkSymbols()<br>（live 解析）"]
     HANDLE["handleAnalysisOutput()"]
@@ -312,11 +313,13 @@ flowchart TD
     CHECK_SVC_RESULT -->|"ErrHashMismatch"| SVC_HASH_ERR
     CHECK_SVC_RESULT -->|"direct_svc_0x80 記録あり"| SVC_HIT
     CHECK_SVC_RESULT -->|"ロード成功・svc signal なし"| SVC_SAFE
-    CHECK_SVC_RESULT -->|"ErrNoSyscallAnalysis /<br>ErrRecordNotFound"| SVC_ERR
+    CHECK_SVC_RESULT -->|"ErrNoSyscallAnalysis"| SVC_ERR
+    CHECK_SVC_RESULT -->|"ErrRecordNotFound"| SVC_NOT_FOUND
     CHECK_SVC_RESULT -->|"SchemaVersionMismatch"| SVC_SCHEMA
     SYM_FALLBACK --> FALLBACK
-    SVC_ERR --> FALLBACK
-    SVC_SCHEMA --> FALLBACK
+    SVC_NOT_FOUND --> FALLBACK
+    SVC_ERR --> RETURN
+    SVC_SCHEMA --> RETURN
     FALLBACK --> HANDLE
     HANDLE --> RETURN
     SYM_NET --> RETURN
@@ -328,7 +331,7 @@ flowchart TD
     class LOAD_SYM,HANDLE,FALLBACK,SYM_NET process;
     class CHECK_STORE,CHECK_SYM,CHECK_SVC_RESULT decision;
     class LOAD_SVC new;
-    class SVC_HIT,SVC_HASH_ERR,SVC_SAFE,SVC_ERR,SVC_SCHEMA new;
+    class SVC_HIT,SVC_HASH_ERR,SVC_SAFE,SVC_ERR,SVC_NOT_FOUND,SVC_SCHEMA new;
     class SYM_FALLBACK enhanced;
 ```
 
@@ -362,10 +365,10 @@ flowchart TD
 
 | エラー種別 | 処理 | 理由 |
 |-----------|------|------|
-| `ErrRecordNotFound` | フォールバック | 古い record（svc 未保存）との互換性 |
-| `ErrNoSyscallAnalysis` | フォールバック | svc #0x80 が存在しなかった正常ケース |
+| `ErrRecordNotFound` | フォールバック | 未 `record` ファイル（SymbolAnalysis パスは成立しているが SVC パスで発生し得ない想定外ケース） |
+| `ErrNoSyscallAnalysis` | `false, false` を返す | v15 スキーマ保証：スキャン実施済み・svc 未検出 |
 | `ErrHashMismatch` | `AnalysisError` を返す | ファイル改ざんの可能性 → 安全側フェイルセーフ |
-| `SchemaVersionMismatchError` | ログ警告 + フォールバック | スキーマ変更に対する寛容性 |
+| `SchemaVersionMismatchError` | `AnalysisError` を返す | v14 以前 → 再 `record` を要求 |
 | その他エラー | フォールバック | 予期しない問題に対する寛容性 |
 
 ## 4. データフロー
@@ -483,9 +486,11 @@ type SyscallAnalysisStore interface {
 
 ### 6.1 スキーマバージョン
 
-本タスクでは**スキーマバージョンを変更しない**（引き続き v14）。
-`SyscallAnalysis` は既存の任意フィールドであり、`nil` の場合は
-`ErrNoSyscallAnalysis` として live 解析にフォールバックする。
+本タスクで**スキーマバージョンを v14 から v15 に変更する**。
+v15 スキーマ自体が「svc スキャンを実施済み」であることを保証するため、
+`SyscallAnalysis` が `nil`（`ErrNoSyscallAnalysis`）の場合は「スキャン済み・svc 未検出」を意味し、
+`runner` は live 解析へフォールバックせず `false, false` を返す。
+v14 以前のレコードは `SchemaVersionMismatchError` を返し、再 `record` を要求する。
 
 ### 6.2 `SyscallAnalysisData` フィールドの使用
 
