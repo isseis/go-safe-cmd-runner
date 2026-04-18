@@ -46,7 +46,7 @@ flowchart TB
         NA["NetworkAnalyzer<br>.isNetworkViaBinaryAnalysis()<br>（拡張）"]
         SYMCACHE["NetworkSymbolStore<br>.LoadNetworkSymbolAnalysis()"]
         SVCCACHE["SyscallAnalysisStore<br>.LoadSyscallAnalysis()<br>（新規参照）"]
-        FALLBACK["BinaryAnalyzer<br>.AnalyzeNetworkSymbols()<br>（フォールバック時のみ）"]
+        FALLBACK["BinaryAnalyzer<br>.AnalyzeNetworkSymbols()<br>（SymbolAnalysis キャッシュミス時のみ）"]
     end
 
     REC --> FV
@@ -295,7 +295,7 @@ flowchart TD
     SVC_HIT["direct_svc_0x80 検出記録あり<br>→ true, true（AnalysisError）"]
     SVC_SAFE["ロード成功・svc signal なし<br>→ false, false を返す"]
     SVC_ERR["ErrNoSyscallAnalysis<br>→ false, false を返す<br>（v15 保証：スキャン済み・未検出）"]
-    SVC_NOT_FOUND["ErrRecordNotFound<br>→ live 解析へフォールバック<br>（未 record ファイル）"]
+    SVC_NOT_FOUND["ErrRecordNotFound / その他<br>→ AnalysisError<br>（SymbolAnalysis 成功後は整合性エラー）"]
     SVC_SCHEMA["SchemaVersionMismatch<br>→ AnalysisError（再 record 要求）"]
     SYM_FALLBACK["cache miss:<br>ErrRecordNotFound /<br>ErrHashMismatch /<br>ErrNoNetworkSymbolAnalysis"]
     FALLBACK["BinaryAnalyzer<br>.AnalyzeNetworkSymbols()<br>（live 解析）"]
@@ -317,7 +317,7 @@ flowchart TD
     CHECK_SVC_RESULT -->|"ErrRecordNotFound"| SVC_NOT_FOUND
     CHECK_SVC_RESULT -->|"SchemaVersionMismatch"| SVC_SCHEMA
     SYM_FALLBACK --> FALLBACK
-    SVC_NOT_FOUND --> FALLBACK
+    SVC_NOT_FOUND --> RETURN
     SVC_ERR --> RETURN
     SVC_SCHEMA --> RETURN
     FALLBACK --> HANDLE
@@ -365,11 +365,10 @@ flowchart TD
 
 | エラー種別 | 処理 | 理由 |
 |-----------|------|------|
-| `ErrRecordNotFound` | フォールバック | 未 `record` ファイル（SymbolAnalysis パスは成立しているが SVC パスで発生し得ない想定外ケース） |
 | `ErrNoSyscallAnalysis` | `false, false` を返す | v15 スキーマ保証：スキャン実施済み・svc 未検出 |
 | `ErrHashMismatch` | `AnalysisError` を返す | ファイル改ざんの可能性 → 安全側フェイルセーフ |
 | `SchemaVersionMismatchError` | `AnalysisError` を返す | v14 以前 → 再 `record` を要求 |
-| その他エラー | フォールバック | 予期しない問題に対する寛容性 |
+| `ErrRecordNotFound` / その他エラー | `AnalysisError` を返す | SymbolAnalysis ロード成功後は record が必ず存在するため整合性エラー → 安全側フェイルセーフ。SVC パス内の live 解析フォールバックコードを削除する |
 
 ## 4. データフロー
 

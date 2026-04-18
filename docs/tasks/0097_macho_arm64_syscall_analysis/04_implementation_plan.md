@@ -138,10 +138,10 @@ go test -tags test -v ./internal/filevalidator/
   - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ
   - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す
   - [ ] `errors.Is(svcErr, fileanalysis.ErrHashMismatch)` → `true, true` を返す
-  - [ ] `ErrRecordNotFound` → フォールバック（未 `record` ファイル）
   - [ ] `ErrNoSyscallAnalysis` → `false, false` を返す（v15 保証：スキャン済み・svc 未検出、フォールバックなし）
   - [ ] `SchemaVersionMismatchError` → `return true, true`（AnalysisError、再 `record` 要求）
-  - [ ] その他エラー → ログ警告 + フォールバック
+  - [ ] `ErrRecordNotFound` / その他エラー → `return true, true`（SymbolAnalysis 成功後の record 不在は整合性エラー）
+  - [ ] SVC ブロック内のすべてのケースが直接 `return` することを確認し、fall-through コードを削除する
 
 ### 5.2 テストチェックリスト
 
@@ -156,6 +156,7 @@ go test -tags test -v ./internal/filevalidator/
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch`: ErrHashMismatch → AnalysisError
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis`: ErrNoSyscallAnalysis → false, false（フォールバックなし）
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch`: SchemaVersionMismatchError → AnalysisError
+- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound`: ErrRecordNotFound → AnalysisError（live 解析なし）
 - [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged`: NetworkDetected は変更なし
 
 **実行コマンド**:

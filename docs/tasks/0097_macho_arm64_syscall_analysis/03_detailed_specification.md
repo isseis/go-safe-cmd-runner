@@ -264,8 +264,6 @@ case err == nil:
             slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
                 "path", cmdPath)
             return true, true
-        case errors.Is(svcErr, fileanalysis.ErrRecordNotFound):
-            // Unrecorded file: fall through to live binary analysis.
         case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
             // v15 schema guarantee: svc scan was performed and found nothing.
             output.Result = binaryanalyzer.NoNetworkSymbols
@@ -277,13 +275,13 @@ case err == nil:
                 "actual_schema", svcSchemaMismatch.Actual)
             return true, true
         default:
-            slog.Warn("unexpected error loading SyscallAnalysis cache; falling back to live analysis",
+            // ErrRecordNotFound or unexpected error: record must exist because
+            // SymbolAnalysis was loaded successfully, so treat as integrity error.
+            slog.Warn("unexpected error loading SyscallAnalysis cache; treating as high risk",
                 "path", cmdPath,
                 "error", svcErr)
-            // Fall through to live binary analysis.
+            return true, true
         }
-        // svc cache miss or error: do NOT return here.
-        // Fall out of this case block so execution reaches the live analysis below.
     } else {
         // No svc store configured: return the cached NoNetworkSymbols result.
         output.Result = binaryanalyzer.NoNetworkSymbols
@@ -292,9 +290,14 @@ case err == nil:
 ```
 
 **各ケースの動作について**:
-- `ErrNoSyscallAnalysis`: v15 スキーマ保証により「スキャン済み・svc 未検出」を意味する。`return handleAnalysisOutput(output, cmdPath)` を直接呼び出して `false, false` を返す。live 解析フォールバックは行わない。
+- `ErrNoSyscallAnalysis`: v15 スキーマ保証により「スキャン済み・svc 未検出」を意味する。`false, false` を直接返す。live 解析フォールバックは行わない。
 - `SchemaVersionMismatchError`: v14 以前のレコード。`return true, true` で `AnalysisError` を返し、再 `record` を要求する。
-- `ErrRecordNotFound`: 未 `record` ファイル。`return` を実行せずブロックを抜け、live 解析コードが実行される。これはアーキテクチャ設計書 3.3.1 のフローチャートで `SVC_NOT_FOUND → FALLBACK → HANDLE` と示された経路に対応する。
+- `ErrRecordNotFound` / `default`: SymbolAnalysis ロード成功後は record が必ず存在するため、SVC パスでの record 不在や予期しないエラーは整合性エラーとして `return true, true` を返す。
+
+**live 解析コードの削除**: SVC キャッシュ参照ブロック内のすべてのケースが直接 `return` するため、
+このブロックからの fall-through は発生しない。
+`a.binaryAnalyzer.AnalyzeNetworkSymbols()` は SymbolAnalysis キャッシュミスおよび
+`a.store == nil` の場合にのみ到達可能となり、SVC パス専用の live 解析フォールバックコードは削除する。
 
 ### 5.4 追加関数: `syscallAnalysisHasSVCSignal`
 
@@ -348,6 +351,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | ErrHashMismatch → AnalysisError | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | ErrNoSyscallAnalysis → false, false（v15 保証・フォールバックなし） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch` | SchemaVersionMismatchError → AnalysisError（再 record 要求） | AC-3 |
+| `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound` | ErrRecordNotFound → AnalysisError（整合性エラー・live 解析なし） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged` | NetworkDetected はそのまま通過 | AC-4 |
 | `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly` | AnalysisWarnings のみ（DeterminationMethod なし）→ false | AC-3 |
 | `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod` | DeterminationMethod == "direct_svc_0x80" → true | AC-3 |
@@ -371,6 +375,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | AC-3: NoNetworkSymbols + ErrNoSyscallAnalysis → false, false | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | `network_analyzer_test.go` |
 | AC-3: ErrHashMismatch → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | `network_analyzer_test.go` |
 | AC-3: SchemaVersionMismatchError → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch` | `network_analyzer_test.go` |
+| AC-3: ErrRecordNotFound → AnalysisError（live 解析なし） | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound` | `network_analyzer_test.go` |
 | AC-4: ELF バイナリのフロー変更なし | `TestUpdateAnalysisRecord_ELFNotAffected` | `validator_macho_test.go` |
 | AC-4: NetworkDetected Mach-O の判定変更なし | `TestIsNetworkViaBinaryAnalysis_NetworkDetected_Unchanged` | `network_analyzer_test.go` |
 
