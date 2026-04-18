@@ -189,6 +189,28 @@ func TestUpdateAnalysisRecord_MachoNoSVC(t *testing.T) {
 	assert.Nil(t, record.SyscallAnalysis, "SyscallAnalysis must be nil when no svc #0x80 found")
 }
 
+// TestUpdateAnalysisRecord_MachoSVCDetected_BinaryAnalyzerNil verifies that the
+// Mach-O svc scan does not depend on SymbolAnalysis being enabled.
+func TestUpdateAnalysisRecord_MachoSVCDetected_BinaryAnalyzerNil(t *testing.T) {
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{svcEncodingU32}))
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+
+	_, _, recErr := v.SaveRecord(binPath, false)
+	require.NoError(t, recErr)
+
+	record, loadErr := v.LoadRecord(binPath)
+	require.NoError(t, loadErr)
+	require.NotNil(t, record.SyscallAnalysis, "SyscallAnalysis must be set when svc #0x80 is found")
+	require.Len(t, record.SyscallAnalysis.DetectedSyscalls, 1)
+	assert.Equal(t, "direct_svc_0x80", record.SyscallAnalysis.DetectedSyscalls[0].DeterminationMethod)
+}
+
 // TestUpdateAnalysisRecord_MachoNetworkDetected_SVCDetected verifies that SaveRecord
 // saves SyscallAnalysis even when the Mach-O also has network symbols (NetworkDetected).
 // The runner controls whether to consult SyscallAnalysis; record captures it unconditionally.

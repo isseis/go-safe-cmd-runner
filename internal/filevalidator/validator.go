@@ -333,7 +333,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		// on SymbolAnalysis outcome (FR-3.2.2).
 		// CollectSVCAddressesFromFile checks magic bytes and returns nil for non-Mach-O
 		// files, so this is safe to call on all platforms and binary formats.
-		if v.binaryAnalyzer != nil {
+		{
 			addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
 			if svcErr != nil {
 				return fmt.Errorf("mach-o svc scan failed: %w", svcErr)

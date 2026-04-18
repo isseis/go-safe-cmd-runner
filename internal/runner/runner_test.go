@@ -2378,10 +2378,11 @@ func (h *logCaptureHandler) WithGroup(_ string) slog.Handler {
 }
 
 // pathResolverWithStore is a minimal PathResolver that also implements
-// GetNetworkSymbolStore(), allowing tests to verify that createNormalResourceManager
-// picks up the store from the path resolver.
+// GetNetworkSymbolStore() and GetSyscallAnalysisStore(), allowing tests to verify
+// that createNormalResourceManager picks up both stores from the path resolver.
 type pathResolverWithStore struct {
-	storeCalled *bool
+	networkStoreCalled *bool
+	syscallStoreCalled *bool
 }
 
 func (p *pathResolverWithStore) ResolvePath(path string) (string, error) {
@@ -2389,23 +2390,32 @@ func (p *pathResolverWithStore) ResolvePath(path string) (string, error) {
 }
 
 func (p *pathResolverWithStore) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
-	*p.storeCalled = true
+	*p.networkStoreCalled = true
 	return nil // nil store is sufficient; we only verify the method was called
 }
 
-// TestCreateNormalResourceManager_NetworkStoreInjected verifies that when the
-// path resolver implements GetNetworkSymbolStore(), createNormalResourceManager
-// calls it to obtain and inject the store. This ensures the caching path in
-// NetworkAnalyzer is wired up during normal runner initialisation.
-func TestCreateNormalResourceManager_NetworkStoreInjected(t *testing.T) {
-	storeCalled := false
-	resolver := &pathResolverWithStore{storeCalled: &storeCalled}
+func (p *pathResolverWithStore) GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore {
+	*p.syscallStoreCalled = true
+	return nil // nil store is sufficient; we only verify the method was called
+}
+
+// TestCreateNormalResourceManager_AnalysisStoresInjected verifies that when the
+// path resolver implements both store getters, createNormalResourceManager calls
+// them to obtain and inject the caches used by NetworkAnalyzer.
+func TestCreateNormalResourceManager_AnalysisStoresInjected(t *testing.T) {
+	networkStoreCalled := false
+	syscallStoreCalled := false
+	resolver := &pathResolverWithStore{
+		networkStoreCalled: &networkStoreCalled,
+		syscallStoreCalled: &syscallStoreCalled,
+	}
 
 	opts := &runnerOptions{}
 	err := createNormalResourceManager(opts, &runnertypes.ConfigSpec{}, resolver, nil)
 	require.NoError(t, err)
 
-	assert.True(t, storeCalled, "GetNetworkSymbolStore must be called when pathResolver implements the interface")
+	assert.True(t, networkStoreCalled, "GetNetworkSymbolStore must be called when pathResolver implements the interface")
+	assert.True(t, syscallStoreCalled, "GetSyscallAnalysisStore must be called when pathResolver implements the interface")
 	assert.NotNil(t, opts.resourceManager)
 }
 
