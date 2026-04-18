@@ -132,16 +132,18 @@ go test -tags test -v ./internal/filevalidator/
   - [ ] nil の場合は `false` を返す
   - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合のみ `true` を返す
   - [ ] `AnalysisWarnings` は判定条件に含めない（ELF 側の警告による誤検知を防ぐ）
-- [ ] `isNetworkViaBinaryAnalysis` の `case err == nil:` ブランチ内、
-  `output.Result = binaryanalyzer.NoNetworkSymbols` を設定する箇所の直後に svc キャッシュ参照を追加する
-  - [ ] `a.syscallStore != nil` の条件分岐を追加する
-  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ
+- [ ] `isNetworkViaBinaryAnalysis` を書き直して live 解析コードを完全削除する
+  - [ ] `a.store == nil` / `contentHash == ""` のガード節を削除する
+  - [ ] SymbolAnalysis ロードエラー → `return true, true`（AnalysisError、live 解析なし）
+  - [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを関数から削除する
+  - [ ] `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（`syscallStore != nil` ガード不要）
   - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す
-  - [ ] `errors.Is(svcErr, fileanalysis.ErrHashMismatch)` → `true, true` を返す
-  - [ ] `ErrNoSyscallAnalysis` → `false, false` を返す（v15 保証：スキャン済み・svc 未検出、フォールバックなし）
-  - [ ] `SchemaVersionMismatchError` → `return true, true`（AnalysisError、再 `record` 要求）
-  - [ ] `ErrRecordNotFound` / その他エラー → `return true, true`（SymbolAnalysis 成功後の record 不在は整合性エラー）
-  - [ ] SVC ブロック内のすべてのケースが直接 `return` することを確認し、fall-through コードを削除する
+  - [ ] `svcErr == nil` かつ svc signal なし → `false, false` を返す
+  - [ ] `ErrNoSyscallAnalysis` → `false, false` を返す（v15 保証：スキャン済み・svc 未検出）
+  - [ ] `ErrHashMismatch` → `return true, true`
+  - [ ] `SchemaVersionMismatchError` → `return true, true`（再 `record` 要求）
+  - [ ] `ErrRecordNotFound` / その他エラー → `return true, true`（整合性エラー）
+  - [ ] 関数内のすべてのケースが直接 `return` することを確認する
 
 ### 5.2 テストチェックリスト
 
@@ -151,6 +153,7 @@ go test -tags test -v ./internal/filevalidator/
 - [ ] `TestSyscallAnalysisHasSVCSignal_Empty`: 空の result → false
 - [ ] `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly`: AnalysisWarnings のみ（DeterminationMethod なし）→ false
 - [ ] `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod`: DeterminationMethod == "direct_svc_0x80" → true
+- [ ] `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss`: SymbolAnalysis ロードエラー → AnalysisError（live 解析なし）
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: AnalysisError が返される
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil`: ロード成功・svc なし → false, false
 - [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch`: ErrHashMismatch → AnalysisError

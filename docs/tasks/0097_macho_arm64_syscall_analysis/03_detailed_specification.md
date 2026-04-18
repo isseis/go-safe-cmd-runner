@@ -233,10 +233,22 @@ func NewNetworkAnalyzerWithStores(
 
 ### 5.3 `isNetworkViaBinaryAnalysis` の変更
 
-**変更箇所**: `case err == nil:` ブランチ全体を以下のように書き換える。
+**変更方針**: 関数全体を書き換え、live 解析コード（`a.binaryAnalyzer.AnalyzeNetworkSymbols()`）を
+完全に削除する。すべてのケースが直接 `return` する。
 
 ```go
-case err == nil:
+func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(
+    cmdPath string, contentHash string,
+) (isNetwork bool, isHighRisk bool) {
+    // Load SymbolAnalysis cache. All errors are treated as AnalysisError
+    // because production always has records.
+    data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
+    if err != nil {
+        slog.Warn("SymbolAnalysis cache load failed; treating as high risk",
+            "path", cmdPath, "error", err)
+        return true, true
+    }
+
     output := binaryanalyzer.AnalysisOutput{
         DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
         DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
@@ -246,58 +258,47 @@ case err == nil:
         // KnownNetworkLibDeps のみの場合のログ出力は既存コードを維持。
         return handleAnalysisOutput(output, cmdPath)
     }
+
     // NoNetworkSymbols: check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
-    if a.syscallStore != nil {
-        svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
-        var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
-        switch {
-        case svcErr == nil:
-            if syscallAnalysisHasSVCSignal(svcResult) {
-                slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
-                    "path", cmdPath)
-                return true, true
-            }
-            // No svc signal: safe to return the cached NoNetworkSymbols result.
-            output.Result = binaryanalyzer.NoNetworkSymbols
-            return handleAnalysisOutput(output, cmdPath)
-        case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
-            slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
+    svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
+    var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
+    switch {
+    case svcErr == nil:
+        if syscallAnalysisHasSVCSignal(svcResult) {
+            slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
                 "path", cmdPath)
             return true, true
-        case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
-            // v15 schema guarantee: svc scan was performed and found nothing.
-            output.Result = binaryanalyzer.NoNetworkSymbols
-            return handleAnalysisOutput(output, cmdPath)
-        case errors.As(svcErr, &svcSchemaMismatch):
-            slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
-                "path", cmdPath,
-                "expected_schema", svcSchemaMismatch.Expected,
-                "actual_schema", svcSchemaMismatch.Actual)
-            return true, true
-        default:
-            // ErrRecordNotFound or unexpected error: record must exist because
-            // SymbolAnalysis was loaded successfully, so treat as integrity error.
-            slog.Warn("unexpected error loading SyscallAnalysis cache; treating as high risk",
-                "path", cmdPath,
-                "error", svcErr)
-            return true, true
         }
-    } else {
-        // No svc store configured: return the cached NoNetworkSymbols result.
         output.Result = binaryanalyzer.NoNetworkSymbols
         return handleAnalysisOutput(output, cmdPath)
+    case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
+        // v15 schema guarantee: svc scan was performed and found nothing.
+        output.Result = binaryanalyzer.NoNetworkSymbols
+        return handleAnalysisOutput(output, cmdPath)
+    case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
+        slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
+            "path", cmdPath)
+        return true, true
+    case errors.As(svcErr, &svcSchemaMismatch):
+        slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
+            "path", cmdPath,
+            "expected_schema", svcSchemaMismatch.Expected,
+            "actual_schema", svcSchemaMismatch.Actual)
+        return true, true
+    default:
+        // ErrRecordNotFound or unexpected error: record must exist because
+        // SymbolAnalysis was loaded successfully, so treat as integrity error.
+        slog.Warn("unexpected error loading SyscallAnalysis cache; treating as high risk",
+            "path", cmdPath, "error", svcErr)
+        return true, true
     }
+}
 ```
 
-**各ケースの動作について**:
-- `ErrNoSyscallAnalysis`: v15 スキーマ保証により「スキャン済み・svc 未検出」を意味する。`false, false` を直接返す。live 解析フォールバックは行わない。
-- `SchemaVersionMismatchError`: v14 以前のレコード。`return true, true` で `AnalysisError` を返し、再 `record` を要求する。
-- `ErrRecordNotFound` / `default`: SymbolAnalysis ロード成功後は record が必ず存在するため、SVC パスでの record 不在や予期しないエラーは整合性エラーとして `return true, true` を返す。
-
-**live 解析コードの削除**: SVC キャッシュ参照ブロック内のすべてのケースが直接 `return` するため、
-このブロックからの fall-through は発生しない。
-`a.binaryAnalyzer.AnalyzeNetworkSymbols()` は SymbolAnalysis キャッシュミスおよび
-`a.store == nil` の場合にのみ到達可能となり、SVC パス専用の live 解析フォールバックコードは削除する。
+**live 解析コードの完全削除**:
+- `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを関数から削除する
+- `a.store == nil` および `contentHash == ""` のガード節を削除する（production では常に設定済み）
+- すべてのケースが直接 `return` するため、フォールバックパスは存在しない
 
 ### 5.4 追加関数: `syscallAnalysisHasSVCSignal`
 
@@ -346,6 +347,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 
 | テスト名 | 検証内容 | AC |
 |---------|---------|-----|
+| `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss` | SymbolAnalysis キャッシュミス → AnalysisError（live 解析なし） | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | NoNetworkSymbols + svc キャッシュあり → AnalysisError | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil` | NoNetworkSymbols + SyscallAnalysis nil（ロード成功・svc なし）→ false, false | AC-3 |
 | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | ErrHashMismatch → AnalysisError | AC-3 |
@@ -371,6 +373,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 | AC-1: NetworkDetected + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC` | `validator_macho_test.go` |
 | AC-2: NoNetworkSymbols + svc あり → SyscallAnalysis 保存 | `TestUpdateAnalysisRecord_MachoSVCDetected` | `validator_macho_test.go` |
 | AC-2: NoNetworkSymbols + svc なし → SyscallAnalysis nil | `TestUpdateAnalysisRecord_MachoNoSVC` | `validator_macho_test.go` |
+| AC-3: SymbolAnalysis キャッシュミス → AnalysisError | `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss` | `network_analyzer_test.go` |
 | AC-3: NoNetworkSymbols + SyscallAnalysis に svc → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit` | `network_analyzer_test.go` |
 | AC-3: NoNetworkSymbols + ErrNoSyscallAnalysis → false, false | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis` | `network_analyzer_test.go` |
 | AC-3: ErrHashMismatch → AnalysisError | `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch` | `network_analyzer_test.go` |

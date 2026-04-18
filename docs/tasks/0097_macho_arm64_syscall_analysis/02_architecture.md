@@ -46,7 +46,6 @@ flowchart TB
         NA["NetworkAnalyzer<br>.isNetworkViaBinaryAnalysis()<br>（拡張）"]
         SYMCACHE["NetworkSymbolStore<br>.LoadNetworkSymbolAnalysis()"]
         SVCCACHE["SyscallAnalysisStore<br>.LoadSyscallAnalysis()<br>（新規参照）"]
-        FALLBACK["BinaryAnalyzer<br>.AnalyzeNetworkSymbols()<br>（SymbolAnalysis キャッシュミス時のみ）"]
     end
 
     REC --> FV
@@ -58,15 +57,13 @@ flowchart TB
     EVAL --> NA
     NA --> SYMCACHE
     SYMCACHE -->|"NoNetworkSymbols"| SVCCACHE
-    SYMCACHE -->|"キャッシュなし"| FALLBACK
-    SVCCACHE -->|"svc 検出"| NA
-    SVCCACHE -->|"ErrNoSyscallAnalysis"| NA
+    SVCCACHE -->|"svc 検出 / エラー"| NA
 
     STORE -.->|"読み込み"| SYMCACHE
     STORE -.->|"読み込み"| SVCCACHE
 
     class STORE data;
-    class REC,FV,RUN,EVAL,FALLBACK process;
+    class REC,FV,RUN,EVAL process;
     class NA,SYMCACHE enhanced;
     class SVC,SVCCACHE new;
 ```
@@ -285,7 +282,6 @@ flowchart TD
     classDef decision fill:#fffde7,stroke:#f9a825,stroke-width:1px,color:#5d4037;
 
     START(["isNetworkViaBinaryAnalysis<br/>(cmdPath, contentHash)"])
-    CHECK_STORE{"store != nil かつ<br>contentHash != ''?"}
     LOAD_SYM["NetworkSymbolStore<br>.LoadNetworkSymbolAnalysis()"]
     CHECK_SYM{"SymbolAnalysis<br>結果は？"}
     SYM_NET["NetworkDetected<br>→ true, false を返す"]
@@ -297,42 +293,35 @@ flowchart TD
     SVC_ERR["ErrNoSyscallAnalysis<br>→ false, false を返す<br>（v15 保証：スキャン済み・未検出）"]
     SVC_NOT_FOUND["ErrRecordNotFound / その他<br>→ AnalysisError<br>（SymbolAnalysis 成功後は整合性エラー）"]
     SVC_SCHEMA["SchemaVersionMismatch<br>→ AnalysisError（再 record 要求）"]
-    SYM_FALLBACK["cache miss:<br>ErrRecordNotFound /<br>ErrHashMismatch /<br>ErrNoNetworkSymbolAnalysis"]
-    FALLBACK["BinaryAnalyzer<br>.AnalyzeNetworkSymbols()<br>（live 解析）"]
-    HANDLE["handleAnalysisOutput()"]
+    SYM_ERR["SymbolAnalysis エラー<br>（cache miss / ErrHashMismatch /<br>SchemaVersionMismatch / その他）<br>→ AnalysisError"]
     RETURN(["(isNetwork, isHighRisk) を返す"])
 
-    START --> CHECK_STORE
-    CHECK_STORE -->|"Yes"| LOAD_SYM
-    CHECK_STORE -->|"No"| FALLBACK
+    START --> LOAD_SYM
     LOAD_SYM --> CHECK_SYM
     CHECK_SYM -->|"NetworkDetected"| SYM_NET
     CHECK_SYM -->|"NoNetworkSymbols"| LOAD_SVC
-    CHECK_SYM -->|"cache miss"| SYM_FALLBACK
+    CHECK_SYM -->|"エラー"| SYM_ERR
     LOAD_SVC --> CHECK_SVC_RESULT
     CHECK_SVC_RESULT -->|"ErrHashMismatch"| SVC_HASH_ERR
     CHECK_SVC_RESULT -->|"direct_svc_0x80 記録あり"| SVC_HIT
     CHECK_SVC_RESULT -->|"ロード成功・svc signal なし"| SVC_SAFE
     CHECK_SVC_RESULT -->|"ErrNoSyscallAnalysis"| SVC_ERR
-    CHECK_SVC_RESULT -->|"ErrRecordNotFound"| SVC_NOT_FOUND
+    CHECK_SVC_RESULT -->|"ErrRecordNotFound / その他"| SVC_NOT_FOUND
     CHECK_SVC_RESULT -->|"SchemaVersionMismatch"| SVC_SCHEMA
-    SYM_FALLBACK --> FALLBACK
+    SYM_ERR --> RETURN
     SVC_NOT_FOUND --> RETURN
     SVC_ERR --> RETURN
     SVC_SCHEMA --> RETURN
-    FALLBACK --> HANDLE
-    HANDLE --> RETURN
     SYM_NET --> RETURN
     SVC_HASH_ERR --> RETURN
     SVC_HIT --> RETURN
     SVC_SAFE --> RETURN
 
-    class START,RETURN process;
-    class LOAD_SYM,HANDLE,FALLBACK,SYM_NET process;
-    class CHECK_STORE,CHECK_SYM,CHECK_SVC_RESULT decision;
+    class START,RETURN,SYM_NET process;
+    class CHECK_SYM,CHECK_SVC_RESULT decision;
+    class LOAD_SYM enhanced;
     class LOAD_SVC new;
-    class SVC_HIT,SVC_HASH_ERR,SVC_SAFE,SVC_ERR,SVC_NOT_FOUND,SVC_SCHEMA new;
-    class SYM_FALLBACK enhanced;
+    class SVC_HIT,SVC_HASH_ERR,SVC_SAFE,SVC_ERR,SVC_NOT_FOUND,SVC_SCHEMA,SYM_ERR new;
 ```
 
 #### 3.3.2 SyscallAnalysis 高リスク判定ロジック
@@ -363,12 +352,23 @@ flowchart TD
 
 #### 3.3.4 エラーハンドリングまとめ
 
+**SymbolAnalysis 読み込みエラー**
+
+| エラー種別 | 処理 | 理由 |
+|-----------|------|------|
+| すべてのエラー（`ErrRecordNotFound` / `ErrHashMismatch` / `SchemaVersionMismatchError` / その他） | `AnalysisError` を返す | production では record 済みが前提 → live 解析フォールバックなし |
+
+**SyscallAnalysis 読み込みエラー**
+
 | エラー種別 | 処理 | 理由 |
 |-----------|------|------|
 | `ErrNoSyscallAnalysis` | `false, false` を返す | v15 スキーマ保証：スキャン実施済み・svc 未検出 |
 | `ErrHashMismatch` | `AnalysisError` を返す | ファイル改ざんの可能性 → 安全側フェイルセーフ |
 | `SchemaVersionMismatchError` | `AnalysisError` を返す | v14 以前 → 再 `record` を要求 |
-| `ErrRecordNotFound` / その他エラー | `AnalysisError` を返す | SymbolAnalysis ロード成功後は record が必ず存在するため整合性エラー → 安全側フェイルセーフ。SVC パス内の live 解析フォールバックコードを削除する |
+| `ErrRecordNotFound` / その他エラー | `AnalysisError` を返す | SymbolAnalysis ロード成功後は record が必ず存在するため整合性エラー |
+
+`isNetworkViaBinaryAnalysis` 内の live 解析コード（`a.binaryAnalyzer.AnalyzeNetworkSymbols()`）は
+完全に削除する。すべてのケースが直接 return するため、フォールバックパスは不要となる。
 
 ## 4. データフロー
 
