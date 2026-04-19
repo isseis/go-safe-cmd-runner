@@ -8,7 +8,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -86,18 +85,16 @@ func networkDetectedData() *fileanalysis.SymbolAnalysisData {
 }
 
 // TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss verifies that an unexpected
-// SymbolAnalysis load error returns AnalysisError (true, true) without calling BinaryAnalyzer.
+// SymbolAnalysis load error returns AnalysisError (true, true).
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: errors.New("unexpected I/O error")}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "unexpected SymbolAnalysis error should return true (AnalysisError)")
 	assert.True(t, isHigh, "unexpected SymbolAnalysis error should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called (live fallback removed)")
 }
 
 // TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch verifies that ErrHashMismatch
@@ -105,14 +102,12 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrHashMismatch}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "ErrHashMismatch should return true (AnalysisError)")
 	assert.True(t, isHigh, "ErrHashMismatch should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch verifies that a
@@ -124,14 +119,12 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 	}
 	symStore := &stubNetworkSymbolStore{err: schemaErr}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "SchemaVersionMismatchError should return true (AnalysisError)")
 	assert.True(t, isHigh, "SchemaVersionMismatchError should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit verifies that a static binary
@@ -139,14 +132,12 @@ func TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_SchemaMismatch(t *testing.T) 
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "static binary + svc signal should return true")
 	assert.True(t, isHigh, "static binary + svc signal should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCSignalPresent verifies that a static binary
@@ -154,8 +145,7 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCSignalPresent(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
@@ -168,14 +158,12 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCSignalPresent(t *testing.T) 
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.False(t, isNet, "static binary + no svc should return false")
 	assert.False(t, isHigh, "static binary + no svc should return false")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit verifies that a binary with
@@ -183,14 +171,12 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "svc signal should escalate to true even for NoNetworkSymbols")
 	assert.True(t, isHigh, "svc signal should set high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil verifies that a binary with
@@ -199,14 +185,12 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	// LoadSyscallAnalysis returns nil result (no svc signal).
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.False(t, isNet, "NoNetworkSymbols + no svc should return false")
 	assert.False(t, isHigh, "NoNetworkSymbols + no svc should return false")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch verifies that
@@ -214,14 +198,12 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrHashMismatch}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "SVC ErrHashMismatch should return true (AnalysisError)")
 	assert.True(t, isHigh, "SVC ErrHashMismatch should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis verifies that
@@ -230,14 +212,12 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch(t *testing.
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.False(t, isNet, "ErrNoSyscallAnalysis should fall through to NoNetworkSymbols result")
 	assert.False(t, isHigh)
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called (no live fallback)")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch verifies that a
@@ -249,14 +229,12 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 	}
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: schemaErr}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "SVC SchemaVersionMismatchError should return AnalysisError")
 	assert.True(t, isHigh, "SVC SchemaVersionMismatchError should return high risk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound verifies that
@@ -265,8 +243,7 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch(t *testin
 func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: noNetworkSymbolData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrRecordNotFound}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	assert.Panics(t, func() {
 		analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
@@ -278,14 +255,12 @@ func TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound(t *testin
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "NetworkDetected + svc should return true")
 	assert.True(t, isHigh, "svc signal should escalate isHighRisk to true")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis verifies that
@@ -293,14 +268,12 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{err: fileanalysis.ErrNoSyscallAnalysis}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "NetworkDetected should return true")
 	assert.False(t, isHigh, "ErrNoSyscallAnalysis should not escalate isHighRisk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
 
 // TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC verifies that NetworkDetected
@@ -308,12 +281,10 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis(t *test
 func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
 	svcStore := &mockFileanalysisSyscallStore{result: noSVCResult()}
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzerWithStores(mock, symStore, svcStore)
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
 
 	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
 
 	assert.True(t, isNet, "NetworkDetected should return true")
 	assert.False(t, isHigh, "no svc signal should not escalate isHighRisk")
-	assert.False(t, mock.called, "BinaryAnalyzer must not be called")
 }
