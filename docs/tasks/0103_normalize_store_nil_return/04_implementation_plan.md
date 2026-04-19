@@ -10,6 +10,7 @@
 | ファイル | 変更内容 |
 |---------|---------|
 | `internal/fileanalysis/errors.go` | `ErrNoSyscallAnalysis`、`ErrNoNetworkSymbolAnalysis` の定義を削除 |
+| `internal/fileanalysis/schema.go` | `ErrNoSyscallAnalysis` に言及するコメントを `(nil, nil)` 返却に合わせて更新 |
 | `internal/fileanalysis/syscall_store.go` | `LoadSyscallAnalysis` の `nil` フィールド時の返却値を `(nil, nil)` に変更。コメント更新 |
 | `internal/fileanalysis/network_symbol_store.go` | `LoadNetworkSymbolAnalysis` の `nil` フィールド時の返却値を `(nil, nil)` に変更。コメント更新 |
 | `internal/fileanalysis/syscall_store_test.go` | `ErrNoSyscallAnalysis` を使うテストを `(nil, nil)` に更新 |
