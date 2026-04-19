@@ -17,22 +17,31 @@
 
 ### 2.1 依存方向の確認
 
-- [ ] `internal/libccache` が `internal/filevalidator` を直接 import しないこと
-- [ ] `internal/filevalidator` から `internal/libccache` への依存がインターフェース経由で閉じること
-- [ ] `internal/machodylib` が `internal/libccache` に依存しないこと
+- [x] `internal/libccache` が `internal/filevalidator` を直接 import しないこと
+  - 注: `adapters.go` は既存設計で `filevalidator` を import 済み。新規の core ファイル (macho_analyzer.go, macho_cache.go, macos_syscall_table.go) は import しない設計とする。
+- [x] `internal/filevalidator` から `internal/libccache` への依存がインターフェース経由で閉じること
+  - 確認: `validator.go` は `LibcCacheInterface` / `LibSystemCacheInterface` を package-local に定義しており、`libccache` を直接 import しない
+- [x] `internal/machodylib` が `internal/libccache` に依存しないこと
+  - 確認: machodylib のいずれのファイルも libccache を import していない
 
 ### 2.2 既存 API の確認
 
-- [ ] `internal/libccache/cache.go` の `writeFileAtomic`、`LibcCacheFile`、`WrapperEntry` を再利用できること
-- [ ] `internal/machodylib` にタスク 0096 のライブラリ解決ロジック再利用点があること
-- [ ] `internal/runner/security/machoanalyzer` のシンボル正規化処理を外部再利用できること
-- [ ] `internal/fileanalysis` の `SyscallAnalysisData` が Mach-O 用の `DetectedSyscalls` マージを表現できること
+- [x] `internal/libccache/cache.go` の `writeFileAtomic`、`LibcCacheFile`、`WrapperEntry` を再利用できること
+- [x] `internal/machodylib` にタスク 0096 のライブラリ解決ロジック再利用点があること
+  - 確認: `resolver.go` に `LibraryResolver` が実装済み
+- [x] `internal/runner/security/machoanalyzer` のシンボル正規化処理を外部再利用できること
+  - 確認: `normalizeSymbolName` は現状非エクスポート。Step 4 で `NormalizeSymbolName` としてエクスポートする
+- [x] `internal/fileanalysis` の `SyscallAnalysisData` が Mach-O 用の `DetectedSyscalls` マージを表現できること
+  - 確認: `SyscallAnalysisResultCore.DetectedSyscalls []SyscallInfo` に `Source` フィールドあり
 
 ### 2.3 外部依存の確認
 
-- [ ] `github.com/blacktop/ipsw/pkg/dyld` を Darwin ビルドタグ配下に閉じ込められること
-- [ ] `pkg/dyld` の API 差異を `dyld_extractor_darwin.go` 内で吸収できること
-- [ ] Linux 環境で `go test ./...` が non-Darwin スタブのみで通ること
+- [x] `github.com/blacktop/ipsw/pkg/dyld` を Darwin ビルドタグ配下に閉じ込められること
+  - 対応: `go get github.com/blacktop/ipsw@v0.1.0` 実施済み。`dyld_extractor_darwin.go` に `//go:build darwin` タグで閉じ込める
+- [x] `pkg/dyld` の API 差異を `dyld_extractor_darwin.go` 内で吸収できること
+  - 確認: `Image()` が `(*CacheImage, error)` を返す点など、API 差異は `extractMachOImageBytes` ヘルパーで吸収する
+- [x] Linux 環境で `go test ./...` が non-Darwin スタブのみで通ること
+  - 確認: `dyld_extractor.go` に `//go:build !darwin` のスタブを用意する設計で対応
 
 ## 3. Step 1: `internal/libccache` の拡張
 
