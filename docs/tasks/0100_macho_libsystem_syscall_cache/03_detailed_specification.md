@@ -45,7 +45,7 @@ const DeterminationMethodSymbolNameMatch = "symbol_name_match"
 ### 3.1 型定義とテーブル
 
 ```go
-//go:build !integration_only
+//go:build !integration
 
 package libccache
 
@@ -1414,7 +1414,7 @@ func TestMachoLibSystemAdapter_Fallback_LogsReasonAndCount(t *testing.T) { ... }
 
 ### 15.4 統合テスト条件
 
-`//go:build !integration_only` または `t.Skip()` でプラットフォームをチェックする。
+`//go:build !integration` または `t.Skip()` でプラットフォームをチェックする。
 
 ```go
 // TestMachoLibSystem_Integration_DyldSharedCache runs only on macOS arm64.
