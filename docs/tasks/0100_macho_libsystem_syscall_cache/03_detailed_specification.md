@@ -49,7 +49,7 @@ const DeterminationMethodSymbolNameMatch = "symbol_name_match"
 
 package libccache
 
-// macOSSyscallEntry は BSD syscall エントリの内部表現。
+// macOSSyscallEntry is the internal representation of a BSD syscall entry.
 type macOSSyscallEntry struct {
     name      string
     isNetwork bool
@@ -58,8 +58,8 @@ type macOSSyscallEntry struct {
 // MacOSSyscallTable implements SyscallNumberTable for macOS arm64 BSD syscalls.
 type MacOSSyscallTable struct{}
 
-// macOSSyscallEntries は macOS arm64 の BSD syscall テーブル。
-// キーは BSD クラスプレフィックス 0x2000000 を除いた syscall 番号。
+// macOSSyscallEntries defines the macOS arm64 BSD syscall table.
+// Keys are syscall numbers without the BSD class prefix 0x2000000.
 var macOSSyscallEntries = map[int]macOSSyscallEntry{
     3:   {name: "read",        isNetwork: false},
     4:   {name: "write",       isNetwork: false},
@@ -99,9 +99,9 @@ func (t MacOSSyscallTable) IsNetworkSyscall(number int) bool {
     return false
 }
 
-// networkSyscallWrapperNames は FR-3.4.2 のフォールバック照合に使用する
-// ネットワーク関連 syscall ラッパー関数名のリスト。
-// sendmmsg / recvmmsg は Linux 固有であり macOS には存在しないため含めない。
+// networkSyscallWrapperNames lists network-related syscall wrapper names used by
+// the fallback matching path in FR-3.4.2.
+// sendmmsg / recvmmsg are Linux-specific and are therefore excluded on macOS.
 var networkSyscallWrapperNames = []string{
     "socket", "connect", "bind", "listen", "accept",
     "sendto", "recvfrom", "sendmsg", "recvmsg",
@@ -134,14 +134,14 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 )
 
-// maxBackwardScanInstructions は x16 後方スキャンの最大命令数。
+// maxBackwardScanInstructions is the maximum number of instructions scanned backward from svc.
 const maxBackwardScanInstructions = 16
 
-// bsdSyscallClassPrefix は macOS arm64 BSD syscall クラスプレフィックス（0x2000000）。
+// bsdSyscallClassPrefix is the macOS arm64 BSD syscall class prefix (0x2000000).
 const bsdSyscallClassPrefix = 0x2000000
 
-// svcMacOSEncoding は "svc #0x80" 命令のリトルエンディアン uint32 エンコーディング。
-// ARM64 エンコーディング: 0xD4001001
+// svcMacOSEncoding is the little-endian uint32 encoding of the "svc #0x80" instruction.
+// ARM64 encoding: 0xD4001001.
 const svcMacOSEncoding = uint32(0xD4001001)
 
 // MachoLibSystemAnalyzer analyzes a libsystem_kernel.dylib Mach-O file and returns
@@ -154,14 +154,14 @@ type MachoLibSystemAnalyzer struct{}
 ```go
 // Analyze scans exported functions in machoFile and returns WrapperEntry values
 // for functions recognized as syscall wrappers.
-// arm64 以外のアーキテクチャは *elfanalyzer.UnsupportedArchitectureError を返す。
-// 戻り値は Number 昇順・同一 Number 内で Name 昇順にソートされる。
+// Returns *elfanalyzer.UnsupportedArchitectureError for non-arm64 architectures.
+// The returned slice is sorted by Number and then by Name.
 func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry, error) {
     if machoFile.Cpu != macho.CpuArm64 {
         return nil, &elfanalyzer.UnsupportedArchitectureError{Machine: fmt.Sprintf("%v", machoFile.Cpu)}
     }
 
-    // __TEXT,__text セクションを取得する。
+    // Get the __TEXT,__text section.
     textSection := machoFile.Section("__text")
     if textSection == nil || textSection.Seg != "__TEXT" {
         return nil, nil
@@ -170,14 +170,14 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
     if err != nil {
         return nil, fmt.Errorf("failed to read __TEXT,__text section: %w", err)
     }
-    textBase := textSection.Addr // 仮想アドレスベース
+    textBase := textSection.Addr // Virtual address base.
 
-    // LC_SYMTAB から外部定義シンボルを列挙する。
+    // Enumerate externally defined symbols from LC_SYMTAB.
     if machoFile.Symtab == nil {
         return nil, nil
     }
 
-    // アドレス昇順でソートしてシンボルサイズを推定する。
+    // Sort by address to estimate function sizes.
     syms := filterFunctionSymbols(machoFile.Symtab.Syms)
     sort.Slice(syms, func(i, j int) bool {
         return syms[i].Value < syms[j].Value
@@ -187,7 +187,7 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
     var entries []WrapperEntry
 
     for i, sym := range syms {
-        // 関数サイズを推定する（Mach-O symtab には st_size 相当がないため）。
+        // Estimate function size because Mach-O symtab has no st_size equivalent.
         var funcEnd uint64
         if i+1 < len(syms) {
             funcEnd = syms[i+1].Value
@@ -199,17 +199,17 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
         }
         funcSize := funcEnd - sym.Value
 
-        // サイズフィルタ（FR-3.2.2）。
+        // Apply the size filter from FR-3.2.2.
         if funcSize > MaxWrapperFunctionSize {
             continue
         }
 
-        // 関数バイト列をスライスする。
+        // Slice out the function bytes.
         startOff := int(sym.Value - textBase)  //nolint:gosec // G115: sym.Value >= textBase
         endOff := int(funcEnd - textBase)      //nolint:gosec // G115: funcEnd <= textEnd
         funcCode := code[startOff:endOff]
 
-        // svc #0x80 を検出し、x16 後方スキャンで BSD syscall 番号を特定する。
+        // Detect svc #0x80 and resolve the BSD syscall number by scanning backward for x16 setup.
         number, ok := analyzeWrapperFunction(funcCode)
         if !ok {
             continue
@@ -217,7 +217,7 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
         entries = append(entries, WrapperEntry{Name: sym.Name, Number: number})
     }
 
-    // Number 昇順・同一 Number 内 Name 昇順でソートする（FR-3.1.1）。
+    // Sort by Number and then by Name as required by FR-3.1.1.
     sort.Slice(entries, func(i, j int) bool {
         if entries[i].Number != entries[j].Number {
             return entries[i].Number < entries[j].Number
@@ -232,9 +232,9 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 ### 4.3 シンボルフィルタリング
 
 ```go
-// filterFunctionSymbols は Symtab から外部定義済み関数シンボルのみを返す。
-// 外部定義: (sym.Type & 0x0E) == 0x0E かつ (sym.Type & 0x01) == 0（未定義でない）
-// macOS Mach-O のシンボルタイプフラグ:
+// filterFunctionSymbols returns only externally defined function symbols from Symtab.
+// Externally defined means the symbol is section-defined and not undefined.
+// macOS Mach-O symbol type flags:
 //   N_EXT    = 0x01 (external)
 //   N_TYPE   = 0x0E (type mask)
 //   N_SECT   = 0x0E (defined in section)
@@ -242,15 +242,15 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 func filterFunctionSymbols(syms []macho.Symbol) []macho.Symbol {
     var result []macho.Symbol
     for _, s := range syms {
-        // 未定義シンボル（import）を除外する。
+        // Exclude undefined symbols (imports).
         if s.Sect == 0 {
             continue
         }
-        // デバッグシンボル（N_STAB: type >= 0x20）を除外する。
+        // Exclude debug symbols (N_STAB: type >= 0x20).
         if s.Type >= 0x20 {
             continue
         }
-        // 外部シンボルのみを対象とする（N_EXT ビットが立っていること）。
+        // Keep only external symbols (N_EXT bit set).
         if s.Type&0x01 == 0 {
             continue
         }
@@ -263,9 +263,9 @@ func filterFunctionSymbols(syms []macho.Symbol) []macho.Symbol {
 ### 4.4 ラッパー関数解析（x16 後方スキャン）
 
 ```go
-// analyzeWrapperFunction は funcCode（1 つの関数のバイト列）を解析し、
-// 単一の BSD syscall 番号を返す。複数の異なる番号を含む場合や svc が存在しない場合は
-// (0, false) を返す。
+// analyzeWrapperFunction analyzes funcCode, which contains one function body,
+// and returns a single BSD syscall number. It returns (0, false) if the
+// function contains no svc or if multiple distinct syscall numbers are found.
 func analyzeWrapperFunction(funcCode []byte) (int, bool) {
     var foundNumbers []int
     const instrLen = 4
@@ -275,7 +275,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
         if word != svcMacOSEncoding {
             continue
         }
-        // svc #0x80 を発見した。直前から x16 への即値設定を後方スキャンする。
+        // Found svc #0x80. Scan backward to find the immediate loaded into x16.
         num, ok := backwardScanX16(funcCode, i)
         if !ok {
             return 0, false
@@ -287,7 +287,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
         return 0, false
     }
 
-    // すべての svc で同一 BSD 番号であることを確認する（FR-3.2.3）。
+    // Verify that all svc instructions resolve to the same BSD number (FR-3.2.3).
     first := foundNumbers[0]
     for _, n := range foundNumbers[1:] {
         if n != first {
@@ -297,31 +297,32 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
     return first, true
 }
 
-// backwardScanX16 は funcCode[svcOffset] の svc #0x80 より前の命令を遡り、
-// x16 レジスタへの即値設定命令を探す。見つかった場合は BSD クラスプレフィックスを
-// 除去した syscall 番号を返す。最大 maxBackwardScanInstructions 命令を遡る。
+// backwardScanX16 walks backward from the svc #0x80 instruction at funcCode[svcOffset]
+// and looks for an immediate-load sequence into x16. When found, it returns the
+// syscall number with the BSD class prefix removed. The scan is limited to
+// maxBackwardScanInstructions instructions.
 //
-// 対応する命令パターン:
-//   - MOVZ X16, #imm               （imm < 0x10000: 1 命令で完結）
-//   - MOVZ X16, #hi, LSL #16       （上位16ビットのみ設定）
-//   - MOVZ X16, #hi, LSL #16       （先行）
-//     MOVK X16, #lo                 （後続 = svc 直前）
+// Supported instruction patterns:
+//   - MOVZ X16, #imm               (single-instruction case when imm < 0x10000)
+//   - MOVZ X16, #hi, LSL #16       (upper 16 bits only)
+//   - MOVZ X16, #hi, LSL #16       (preceding instruction)
+//     MOVK X16, #lo                (following instruction immediately before svc)
 //
-// macOS BSD syscall の典型的なパターン（例: socket = 0x2000061）:
+// Typical macOS BSD syscall pattern (example: socket = 0x2000061):
 //   MOVZ X16, #0x200, LSL #16    ; x16 = 0x02000000
 //   MOVK X16, #0x61              ; x16 = 0x02000061
 //   SVC  #0x80
 //
-// 後方スキャンでは svc に近い命令から遡るため、MOVK を先に観測し、
-// その後 MOVZ を観測したときに組み合わせて返す。
-// MOVK X16 命令はスキャンを中断せず部分値を記録して継続する。
+// Because the scan runs backward from the instruction nearest to svc, it can observe
+// MOVK first and then combine it with a later-observed MOVZ.
+// MOVK X16 does not terminate the scan; it records a partial value and continues.
 //
-// arm64asm ライブラリは使用せず、固定エンコーディングで直接デコードする。
-// これはシンプルな即値ロード命令のみを対象とし、asm ライブラリ依存を避けるため。
+// arm64asm is intentionally not used here. Only a small subset of fixed encodings
+// is needed, and direct decoding keeps the dependency surface small.
 func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
     const instrLen = 4
 
-    // MOVZ X16, #imm, LSL #shift エンコーディング:
+    // MOVZ X16, #imm, LSL #shift encoding:
     //   [31]:   sf=1 (64-bit)
     //   [30:29]: opc=10 (MOVZ)
     //   [28:23]: 100101
@@ -332,7 +333,7 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
     // MOVZ X16, #imm (shift=0): 0xD280_0010 | (imm16 << 5)
     // MOVZ X16, #imm, LSL #16: 0xD2A0_0010 | (imm16 << 5)
     //
-    // MOVK X16, #imm, LSL #shift エンコーディング:
+    // MOVK X16, #imm, LSL #shift encoding:
     //   [31]:   sf=1
     //   [30:29]: opc=11 (MOVK)
     //   [28:23]: 100101
@@ -352,17 +353,17 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
         imm16Shift   = 5
     )
 
-    // 後方スキャン: svcOffset の直前から最大 maxBackwardScanInstructions 命令を遡る。
+    // Scan backward from the instruction immediately before svc.
     startIdx := svcOffset/instrLen - 1
     endIdx := startIdx - maxBackwardScanInstructions
     if endIdx < 0 {
         endIdx = -1
     }
 
-    // 後方スキャンで MOVZ+MOVK シーケンスを組み立てるための部分値を保持する。
-    // -1 は「未観測」を意味する。
-    x16Lo := -1 // MOVK X16, #imm, LSL #0 で記録した下位16ビット
-    x16Hi := -1 // MOVK X16, #imm, LSL #16 で記録した上位16ビット（シフト済み）
+    // Keep partial values so a MOVZ+MOVK sequence can be reconstructed.
+    // -1 means "not observed yet".
+    x16Lo := -1 // Lower 16 bits recorded from MOVK X16, #imm, LSL #0.
+    x16Hi := -1 // Upper 16 bits recorded from MOVK X16, #imm, LSL #16.
 
     for i := startIdx; i > endIdx; i-- {
         off := i * instrLen
@@ -371,8 +372,8 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
         }
         word := binary.LittleEndian.Uint32(funcCode[off:])
 
-        // MOVZ X16, #imm (LSL #0): x16 の下位ビットを設定する終端命令。
-        // 先に観測した MOVK #hi があれば組み合わせる。
+        // MOVZ X16, #imm (LSL #0) terminates the sequence and sets the low bits.
+        // Combine it with a previously observed MOVK #hi if present.
         if word&^imm16Mask == movzX16Base {
             lo := int((word & imm16Mask) >> imm16Shift)
             hi := 0
@@ -382,8 +383,8 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
             return stripBSDPrefix(hi | lo), true
         }
 
-        // MOVZ X16, #imm, LSL #16: x16 の上位ビットを設定する終端命令。
-        // 先に観測した MOVK #lo があれば組み合わせる。
+        // MOVZ X16, #imm, LSL #16 terminates the sequence and sets the high bits.
+        // Combine it with a previously observed MOVK #lo if present.
         if word&^imm16Mask == movzX16Lsl16 {
             hi := int((word & imm16Mask) >> imm16Shift) << 16
             lo := 0
@@ -393,25 +394,24 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
             return stripBSDPrefix(hi | lo), true
         }
 
-        // MOVK X16, #imm (LSL #0): 下位16ビットを記録して走査を継続する。
-        // 後方スキャンでは svc に近い側から遡るため MOVK を先に観測する。
+        // MOVK X16, #imm (LSL #0): record the low 16 bits and continue scanning.
         if word&^imm16Mask == movkX16Base {
             x16Lo = int((word & imm16Mask) >> imm16Shift)
             continue
         }
 
-        // MOVK X16, #imm, LSL #16: 上位16ビットを記録して走査を継続する。
+        // MOVK X16, #imm, LSL #16: record the high 16 bits and continue scanning.
         if word&^imm16Mask == movkX16Lsl16 {
             x16Hi = int((word & imm16Mask) >> imm16Shift) << 16
             continue
         }
 
-        // 制御フロー命令（B, BL, RET, CBZ, CBNZ 等）に達したらスキャンを中断する。
+        // Stop when a control-flow instruction is reached.
         if isControlFlowInstruction(word) {
             break
         }
 
-        // 上記 MOVZ/MOVK 以外で x16 を書き込む命令に達したらスキャンを中断する。
+        // Stop when some other instruction writes to x16.
         if writesX16NotMovzMovk(word) {
             break
         }
@@ -419,7 +419,7 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
     return 0, false
 }
 
-// stripBSDPrefix は BSD クラスプレフィックス（0x2000000）を除去する（FR-3.2.3）。
+// stripBSDPrefix removes the BSD class prefix (0x2000000) as required by FR-3.2.3.
 func stripBSDPrefix(value int) int {
     if value >= bsdSyscallClassPrefix {
         return value - bsdSyscallClassPrefix
@@ -433,9 +433,9 @@ func stripBSDPrefix(value int) int {
 ARM64 命令を arm64asm ライブラリなしでデコードするためのシンプルな判定関数。
 
 ```go
-// isControlFlowInstruction は ARM64 命令が制御フロー命令かどうかを判定する。
-// B / BL / BLR / BR / RET / CBZ / CBNZ / TBZ / TBNZ を対象とする。
-// arm64 では命令は固定 4 バイトでリトルエンディアン。
+// isControlFlowInstruction reports whether an ARM64 instruction is a control-flow instruction.
+// It recognizes B / BL / BLR / BR / RET / CBZ / CBNZ / TBZ / TBNZ.
+// ARM64 instructions are fixed-width 4-byte little-endian values.
 func isControlFlowInstruction(word uint32) bool {
     // B:  [31:26] = 000101 (0b000101 = 5)
     // BL: [31:26] = 100101 (0b100101 = 37)
@@ -443,9 +443,9 @@ func isControlFlowInstruction(word uint32) bool {
         return true
     }
     // BLR / BR / RET: [31:22] = 1101011000 (0b1101011000)
-    // BR:  全体 = 0xD61F0000 | (Rn << 5)
-    // BLR: 全体 = 0xD63F0000 | (Rn << 5)
-    // RET: 全体 = 0xD65F0000 | (Rn << 5)
+    // BR:  full encoding = 0xD61F0000 | (Rn << 5)
+    // BLR: full encoding = 0xD63F0000 | (Rn << 5)
+    // RET: full encoding = 0xD65F0000 | (Rn << 5)
     if word>>22 == 0b1101011000 {
         return true
     }
@@ -461,22 +461,23 @@ func isControlFlowInstruction(word uint32) bool {
     return false
 }
 
-// writesX16NotMovzMovk は MOVZ/MOVK 以外で x16 レジスタを書き込む 64-bit 命令を検出する。
-// backwardScanX16 ループ内で MOVZ/MOVK を先に処理した後、残る x16 書き込み命令の
-// 検出に使用する。
+// writesX16NotMovzMovk detects 64-bit instructions that write to x16,
+// excluding MOVZ and MOVK.
+// It is used after MOVZ/MOVK handling inside backwardScanX16.
 //
-// MOVZ/MOVK のエンコーディングは [28:23] = 100101 (0b100101) の固定パターンを持つ。
-// この範囲に該当する場合は false を返す（呼び出し元で処理済み）。
+// MOVZ/MOVK share a fixed [28:23] = 100101 pattern.
+// When that pattern is present, this helper returns false because the caller
+// already handled those instructions.
 func writesX16NotMovzMovk(word uint32) bool {
-    // MOVZ/MOVK: [28:23] = 100101、かつ Rd = X16 ([4:0] = 0x10)
-    // ここに達した場合は MOVZ/MOVK の X16 以外の Rd への書き込みか、
-    // または別命令エンコーディングのため、X16 書き込みか否かを判定する。
+    // MOVZ/MOVK: [28:23] = 100101, with Rd encoded in [4:0].
+    // Reaching this point means either MOVZ/MOVK targeting another register
+    // or a different encoding, so perform a generic x16-write check.
     bits28_23 := (word >> 23) & 0x3F
     if bits28_23 == 0b100101 {
-        // MOVZ または MOVK エンコーディング（任意の Rd）→ 呼び出し元で処理済み
+        // MOVZ or MOVK encoding for some Rd: already handled by the caller.
         return false
     }
-    // 64-bit 命令 (sf=1) かつ Rd=16 ([4:0] = 0b10000)
+    // 64-bit instruction (sf=1) with Rd=16 ([4:0] = 0b10000).
     return word>>31 == 1 && word&0x1F == 0x10
 }
 ```
@@ -530,9 +531,9 @@ func NewMachoLibSystemCacheManager(cacheDir string) (*MachoLibSystemCacheManager
 
 ```go
 // GetOrCreate returns cached wrappers, or analyzes libsystem_kernel and creates cache on miss.
-// libPath はキャッシュファイル命名および lib_path フィールドに使用するパス（インストール名または実ファイルパス）。
-// libHash は "sha256:<hex>" 形式のハッシュ（キャッシュ有効性判定に使用）。
-// getData はキャッシュミス時のみ呼び出される Mach-O バイト列取得コールバック。
+// libPath is used for cache file naming and the lib_path field (install name or real file path).
+// libHash is the "sha256:<hex>" validity hash.
+// getData is a callback that returns Mach-O bytes on cache miss only.
 func (m *MachoLibSystemCacheManager) GetOrCreate(
     libPath, libHash string,
     getData func() ([]byte, error),
@@ -543,7 +544,7 @@ func (m *MachoLibSystemCacheManager) GetOrCreate(
     }
     cacheFilePath := filepath.Join(m.cacheDir, encodedName)
 
-    // 既存キャッシュの読み込みと有効性確認（FR-3.1.4）。
+    // Load and validate any existing cache entry (FR-3.1.4).
     if data, readErr := os.ReadFile(cacheFilePath); readErr == nil { //nolint:nestif,gosec // G304: cacheFilePath = cacheDir + pathEnc.Encode(libPath), both trusted
         var cache LibcCacheFile
         if jsonErr := json.Unmarshal(data, &cache); jsonErr == nil {
@@ -553,7 +554,7 @@ func (m *MachoLibSystemCacheManager) GetOrCreate(
         }
     }
 
-    // キャッシュミス: getData() で Mach-O バイト列を取得して解析する。
+    // Cache miss: obtain Mach-O bytes through getData() and analyze them.
     machoBytes, err := getData()
     if err != nil {
         return nil, fmt.Errorf("%w: %w", ErrLibcFileNotAccessible, err)
@@ -570,7 +571,7 @@ func (m *MachoLibSystemCacheManager) GetOrCreate(
         return nil, err
     }
 
-    // キャッシュファイルをアトミック書き込みする（ELF 版と同一）。
+    // Write the cache file atomically, same as the ELF path.
     cache := LibcCacheFile{
         SchemaVersion:   LibcCacheSchemaVersion,
         LibPath:         libPath,
@@ -595,21 +596,22 @@ func (m *MachoLibSystemCacheManager) GetOrCreate(
 ### 6.1 `MatchWithMethod()` の追加
 
 ```go
-// MatchWithMethod は Match と同様だが、DeterminationMethod を外部から指定できる。
-// Mach-O 版でキャッシュヒット時 "lib_cache_match" / フォールバック時 "symbol_name_match"
-// を設定するために使用する。
+// MatchWithMethod is equivalent to Match, but allows the caller to specify
+// the DeterminationMethod explicitly.
+// It is used by the Mach-O path to set "lib_cache_match" on cache hits and
+// "symbol_name_match" on fallback.
 func (m *ImportSymbolMatcher) MatchWithMethod(
     importSymbols []string,
     wrappers []WrapperEntry,
     determinationMethod string,
 ) []common.SyscallInfo {
-    // wrappers からシンボル名 → WrapperEntry のマップを作成する。
+    // Build a symbol-name to WrapperEntry map.
     wrapperMap := make(map[string]WrapperEntry, len(wrappers))
     for _, w := range wrappers {
         wrapperMap[w.Name] = w
     }
 
-    // 同一 Number に対してシンボル名が最小のものを採用する（Match と同一の dedup）。
+    // Deduplicate by Number, keeping the lexicographically smallest symbol name.
     candidate := make(map[int]WrapperEntry)
     for _, sym := range importSymbols {
         w, ok := wrapperMap[sym]
@@ -676,9 +678,9 @@ func NewMachoLibSystemAdapter(
 // gets/creates the wrapper cache, matches importSymbols against the cache,
 // and returns detected SyscallInfo entries.
 //
-// フォールバック条件（FR-3.4.1）:
-//   - libSystem 系ライブラリが dynLibDeps に含まれていない
-//   - dyld shared cache からの抽出も失敗した場合
+// Fallback conditions (FR-3.4.1):
+//   - dynLibDeps does not contain a libSystem-family library
+//   - dyld shared cache extraction also failed
 func (a *MachoLibSystemAdapter) GetSyscallInfos(
     dynLibDeps []fileanalysis.LibEntry,
     importSymbols []string,
@@ -689,28 +691,58 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
     }
 
     if source == nil {
-        // フォールバック: シンボル名単体一致（FR-3.4.2）。
-        slog.Info("libSystem キャッシュ解析不可: シンボル名単体一致にフォールバック",
-            "reason", "libsystem_kernel.dylib not available (filesystem or dyld cache)")
-        return a.fallbackNameMatch(importSymbols), nil
+        reason := classifyLibSystemFallbackReason(dynLibDeps)
+
+        // Fallback to name-only matching (FR-3.4.2).
+        slog.Info("libSystem cache unavailable; falling back to symbol-name matching",
+            "reason", reason)
+        result := a.fallbackNameMatch(importSymbols)
+        slog.Info("libSystem fallback matching completed",
+            "reason", reason,
+            "detected_syscalls", len(result))
+        return result, nil
     }
 
-    // キャッシュ取得または生成する。
+    // Load or create the cache.
     wrappers, err := a.cacheMgr.GetOrCreate(source.Path, source.Hash, source.GetData)
     if err != nil {
+        var archErr *elfanalyzer.UnsupportedArchitectureError
+        if errors.As(err, &archErr) {
+            slog.Info("Skipping libsystem_kernel.dylib analysis because the library is not arm64",
+                "machine", archErr.Machine)
+            return nil, nil
+        }
         return nil, err
     }
 
-    // インポートシンボルとキャッシュを照合する（FR-3.3.2）。
+    // Match imported symbols against the cache (FR-3.3.2).
     matcher := NewImportSymbolMatcher(a.syscallTable)
     return matcher.MatchWithMethod(importSymbols, wrappers, DeterminationMethodLibCacheMatch), nil
 }
 
-// fallbackNameMatch は FR-3.4.2 のシンボル名単体一致フォールバックを実装する。
-// macOS syscall テーブルのネットワーク関連 syscall 名リストと importSymbols を照合し、
-// 一致した名前の SyscallInfo を生成する。
+// classifyLibSystemFallbackReason classifies the fallback reason required by FR-3.4.3.
+// If DynLibDeps has no libSystem umbrella or kernel entry, the reason is
+// "missing_libsystem_dependency". Otherwise the resolver already attempted filesystem and
+// dyld cache resolution and the reason is "dyld_extraction_unavailable".
+func classifyLibSystemFallbackReason(dynLibDeps []fileanalysis.LibEntry) string {
+    const (
+        umbrellaInstallName = "/usr/lib/libSystem.B.dylib"
+        kernelBaseName      = "libsystem_kernel.dylib"
+    )
+
+    for _, entry := range dynLibDeps {
+        if entry.SOName == umbrellaInstallName || filepath.Base(entry.SOName) == kernelBaseName {
+            return "dyld_extraction_unavailable"
+        }
+    }
+    return "missing_libsystem_dependency"
+}
+
+// fallbackNameMatch implements the symbol-name fallback defined in FR-3.4.2.
+// It matches importSymbols against the macOS network-related syscall wrapper list
+// and returns the resulting SyscallInfo entries.
 func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []common.SyscallInfo {
-    // インポートシンボルのセットを作成する。
+    // Build a set of imported symbols.
     symSet := make(map[string]bool, len(importSymbols))
     for _, s := range importSymbols {
         symSet[s] = true
@@ -721,7 +753,7 @@ func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []comm
         if !symSet[name] {
             continue
         }
-        // macOS syscall テーブルから番号を逆引きする。
+        // Reverse-lookup the syscall number from the macOS syscall table.
         number := -1
         for num, entry := range macOSSyscallEntries {
             if entry.name == name {
@@ -742,10 +774,8 @@ func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []comm
         })
     }
 
-    // Number 昇順でソートする。
+    // Sort by Number.
     sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
-    slog.Info("libSystem フォールバック照合完了",
-        "detected_syscalls", len(result))
     return result
 }
 ```
@@ -754,13 +784,16 @@ func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []comm
 
 ```go
 import (
-    // 既存の import に追加
+    // Add to the existing import list.
+    "errors"
     "log/slog"
+    "path/filepath"
     "sort"
 
     "github.com/isseis/go-safe-cmd-runner/internal/common"
     "github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
     "github.com/isseis/go-safe-cmd-runner/internal/machodylib"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
     "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 ```
@@ -773,10 +806,10 @@ import (
 package machodylib
 
 // LibSystemKernelBytes holds the in-memory bytes of libsystem_kernel.dylib
-// extracted from the dyld shared cache, along with its SHA-256 hash.
+// extracted from the dyld shared cache, together with its SHA-256 hash.
 type LibSystemKernelBytes struct {
-    Data []byte // Mach-O バイト列
-    Hash string // "sha256:<hex>" (Data の SHA-256)
+    Data []byte // Mach-O bytes.
+    Hash string // "sha256:<hex>" (SHA-256 of Data).
 }
 
 // ExtractLibSystemKernelFromDyldCache extracts libsystem_kernel.dylib from the
@@ -803,23 +836,23 @@ import (
     "github.com/blacktop/ipsw/pkg/dyld"
 )
 
-// dyldSharedCachePaths は試行する dyld shared cache のパス順序（FR-3.1.6）。
+// dyldSharedCachePaths is the ordered list of dyld shared cache paths to try (FR-3.1.6).
 var dyldSharedCachePaths = []string{
     "/System/Library/dyld/dyld_shared_cache_arm64e",
     "/System/Library/dyld/dyld_shared_cache_arm64",
 }
 
-// libsystemKernelInstallName は dyld shared cache 内の libsystem_kernel.dylib のインストール名。
+// libsystemKernelInstallName is the install name of libsystem_kernel.dylib inside the dyld shared cache.
 const libsystemKernelInstallName = "/usr/lib/system/libsystem_kernel.dylib"
 
 // ExtractLibSystemKernelFromDyldCache extracts libsystem_kernel.dylib from the
 // dyld shared cache.
 //
-// 失敗時（キャッシュが見つからない、イメージが見つからない、展開失敗）は
-// nil, nil を返してフォールバックへ移行する（FR-3.1.6）。
-// slog.Info レベルでログを出力する。
+// On failure (cache not found, image not found, or extraction failure),
+// return nil, nil and let the caller fall back as defined in FR-3.1.6.
+// Emit logs at slog.Info level.
 func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
-    // dyld shared cache ファイルの試行（FR-3.1.6）。
+    // Try the configured dyld shared cache paths (FR-3.1.6).
     var cachePath string
     for _, p := range dyldSharedCachePaths {
         if _, err := os.Stat(p); err == nil {
@@ -828,47 +861,39 @@ func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
         }
     }
     if cachePath == "" {
-        slog.Info("dyld shared cache が見つかりません: フォールバックを適用します",
+        slog.Info("dyld shared cache not found; applying fallback",
             "tried", dyldSharedCachePaths)
         return nil, nil
     }
 
-    // blacktop/ipsw/pkg/dyld を使用して shared cache を解析する。
+    // Parse the shared cache using blacktop/ipsw/pkg/dyld.
     f, err := dyld.Open(cachePath)
     if err != nil {
-        slog.Info("dyld shared cache のオープンに失敗: フォールバックを適用します",
+        slog.Info("Failed to open dyld shared cache; applying fallback",
             "path", cachePath, "error", err)
         return nil, nil
     }
     defer func() { _ = f.Close() }()
 
-    // libsystem_kernel.dylib イメージを取得する。
+    // Locate the libsystem_kernel.dylib image.
     image := f.Image(libsystemKernelInstallName)
     if image == nil {
-        slog.Info("dyld shared cache 内に libsystem_kernel.dylib が見つかりません: フォールバックを適用します",
+        slog.Info("libsystem_kernel.dylib was not found in the dyld shared cache; applying fallback",
             "cache_path", cachePath,
             "install_name", libsystemKernelInstallName)
         return nil, nil
     }
 
-    // イメージをバイト列に展開する。
-    data, err := image.GetMacho()
+    // Materialize the image as Mach-O bytes.
+    // Concrete pkg/dyld API details are isolated in a helper.
+    machoBytes, err := extractMachOImageBytes(f, image)
     if err != nil {
-        slog.Info("libsystem_kernel.dylib の展開に失敗: フォールバックを適用します",
-            "cache_path", cachePath, "error", err)
-        return nil, nil
-    }
-
-    machoBytes, err := data.FileSetFileData()
-    if err != nil {
-        // GetMacho() 直後に MachO バイト列を取得する別メソッドを試みる。
-        // blacktop/ipsw API の具体的なメソッドは実装フェーズで確認する。
-        slog.Info("libsystem_kernel.dylib バイト列の取得に失敗: フォールバックを適用します",
+        slog.Info("Failed to obtain libsystem_kernel.dylib bytes; applying fallback",
             "error", err)
         return nil, nil
     }
 
-    // SHA-256 ハッシュを計算する（FR-3.1.4 補足・FR-3.1.6）。
+    // Compute the SHA-256 hash as required by FR-3.1.4 and FR-3.1.6.
     h := sha256.Sum256(machoBytes)
     hash := fmt.Sprintf("sha256:%s", hex.EncodeToString(h[:]))
 
@@ -877,10 +902,12 @@ func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
         Hash: hash,
     }, nil
 }
-```
 
-**実装注意**: `blacktop/ipsw/pkg/dyld` の正確な API（`Image.GetMacho()` の戻り値型、バイト列取得メソッド名）は、実装フェーズで `pkg/dyld` のドキュメントと実コードを参照して確定する。
-API が変更されている場合は `image.Data()` や `image.Bytes()` 等の代替メソッドを使用する。
+// extractMachOImageBytes hides pkg/dyld API details and returns a standalone Mach-O byte slice
+// for the selected image. This helper is the only place allowed to depend on concrete
+// pkg/dyld method names so future API changes do not affect resolver logic or tests.
+func extractMachOImageBytes(cache *dyld.File, image *dyld.CacheImage) ([]byte, error)
+```
 
 ## 10. `internal/machodylib/libsystem_resolver.go`（新規）
 
@@ -901,24 +928,23 @@ import (
 
 // LibSystemKernelSource represents the resolved source of libsystem_kernel.dylib.
 type LibSystemKernelSource struct {
-    // Path は lib_path フィールドおよびキャッシュファイル命名に使用するパス。
-    // ファイルシステム経由: 実体ファイルパス。
-    // dyld shared cache 経由: インストール名 "/usr/lib/system/libsystem_kernel.dylib"。
+    // Path is used for the lib_path field and cache file naming.
+    // Filesystem case: the resolved library path.
+    // dyld shared cache case: the install name "/usr/lib/system/libsystem_kernel.dylib".
     Path string
-    // Hash は "sha256:<hex>" 形式のハッシュ（キャッシュ有効性判定に使用）。
+    // Hash is the cache validity hash in "sha256:<hex>" format.
     Hash string
-    // GetData は Mach-O バイト列を返すコールバック（キャッシュミス時のみ呼び出し）。
+    // GetData returns Mach-O bytes and is called only on cache miss.
     GetData func() ([]byte, error)
 }
 
-// wellKnownLibsystemKernelPath は macOS 11+ 以前に libsystem_kernel.dylib が
-// ファイルシステム上に存在する場合のウェルノウンパス。
+// wellKnownLibsystemKernelPath is the well-known filesystem path for libsystem_kernel.dylib.
 const wellKnownLibsystemKernelPath = "/usr/lib/system/libsystem_kernel.dylib"
 
-// libSystemBDylibInstallName は umbrella フレームワークのインストール名。
+// libSystemBDylibInstallName is the install name of the umbrella framework.
 const libSystemBDylibInstallName = "/usr/lib/libSystem.B.dylib"
 
-// libsystemKernelBaseName は libsystem_kernel.dylib のベース名。
+// libsystemKernelBaseName is the base name of libsystem_kernel.dylib.
 const libsystemKernelBaseName = "libsystem_kernel.dylib"
 ```
 
@@ -928,34 +954,31 @@ const libsystemKernelBaseName = "libsystem_kernel.dylib"
 // ResolveLibSystemKernel resolves the libsystem_kernel.dylib source from DynLibDeps.
 //
 // Returns nil, nil when:
-//   - libSystem 系ライブラリが DynLibDeps に含まれない（非 libSystem バイナリ）
-//   - dyld shared cache からの抽出も失敗した場合（フォールバック適用）
+//   - no libSystem-family library is present in DynLibDeps (non-libSystem binary)
+//   - dyld shared cache extraction also failed (fallback path)
 // Returns error only for unrecoverable conditions (permission errors, hash computation failures).
 func ResolveLibSystemKernel(
     dynLibDeps []fileanalysis.LibEntry,
     fs safefileio.FileSystem,
 ) (*LibSystemKernelSource, error) {
-    // Step 1: DynLibDeps から libSystem 系ライブラリを特定する（FR-3.1.5）。
-    kernelEntry, hasLibSystem := findLibsystemKernelEntry(dynLibDeps)
+    // Step 1: Collect libSystem umbrella and kernel candidates from DynLibDeps (FR-3.1.5).
+    candidates := findLibSystemCandidates(dynLibDeps)
 
-    if !hasLibSystem {
-        // libSystem 系が DynLibDeps に含まれていない: nil を返す（フォールバック条件 2）。
+    if !candidates.HasLibSystem {
+        // No libSystem-family library in DynLibDeps: return nil (fallback condition 2).
         return nil, nil
     }
 
-    // Step 2: libsystem_kernel.dylib の実体パスを決定する。
-    var candidatePath string
-    if kernelEntry != nil {
-        // libsystem_kernel.dylib が DynLibDeps に直接含まれている。
-        candidatePath = kernelEntry.Path
-    } else {
-        // libSystem.B.dylib のみが含まれている: ウェルノウンパスを試行する（FR-3.1.5）。
-        candidatePath = wellKnownLibsystemKernelPath
+    // Step 2: Choose a filesystem candidate path in this order:
+    // direct kernel entry, umbrella re-export, then the well-known path.
+    candidatePath, err := resolveLibSystemKernelPath(candidates, fs)
+    if err != nil {
+        return nil, err
     }
 
-    // Step 3: ファイルシステム上に存在するか確認する。
-    if _, err := os.Stat(candidatePath); err == nil {
-        // ファイルシステム上に存在する: ハッシュを計算する。
+    // Step 3: Use the filesystem path if one was resolved.
+    if candidatePath != "" {
+        // Filesystem path resolved: compute its hash.
         hash, err := computeFileHash(fs, candidatePath)
         if err != nil {
             return nil, fmt.Errorf("failed to compute hash for %s: %w", candidatePath, err)
@@ -970,20 +993,20 @@ func ResolveLibSystemKernel(
         }, nil
     }
 
-    // Step 4: dyld shared cache からの抽出を試みる（FR-3.1.6）。
+    // Step 4: Try dyld shared cache extraction (FR-3.1.6).
     extracted, err := ExtractLibSystemKernelFromDyldCache()
     if err != nil {
-        // 予期しないエラー（通常は発生しない: ExtractLibSystemKernelFromDyldCache は失敗時 nil, nil を返す）。
+        // Unexpected error. Normally the extractor returns nil, nil on fallback cases.
         return nil, fmt.Errorf("dyld shared cache extraction failed unexpectedly: %w", err)
     }
     if extracted == nil {
-        // 抽出失敗: nil を返してフォールバックへ移行する（FR-3.4.1 条件 1）。
-        slog.Info("libsystem_kernel.dylib: dyld shared cache からの抽出も失敗: フォールバックを適用します",
+        // Extraction failed: return nil and let the caller enter the fallback path.
+        slog.Info("dyld shared cache extraction for libsystem_kernel.dylib also failed; applying fallback",
             "candidate_path", candidatePath)
         return nil, nil
     }
 
-    // 抽出成功: インストール名をパスとして使用する（FR-3.1.6）。
+    // Extraction succeeded: use the install name as the cache path (FR-3.1.6).
     data := extracted.Data
     return &LibSystemKernelSource{
         Path:    libsystemKernelInstallName,
@@ -996,38 +1019,50 @@ func ResolveLibSystemKernel(
 ### 10.3 ヘルパー関数
 
 ```go
-// findLibsystemKernelEntry は DynLibDeps から libSystem 系ライブラリを特定する（FR-3.1.5）。
+// libSystemCandidates holds the relevant DynLibDeps entries for FR-3.1.5 resolution.
+type libSystemCandidates struct {
+    Umbrella     *fileanalysis.LibEntry
+    Kernel       *fileanalysis.LibEntry
+    HasLibSystem bool
+}
+
+// findLibSystemCandidates collects libSystem umbrella and kernel candidates from DynLibDeps (FR-3.1.5).
 //
-// 戻り値の解釈:
-//   - kernelEntry != nil, hasLibSystem == true:
-//       libsystem_kernel.dylib が直接 DynLibDeps に含まれる（優先順位 1）。
-//       kernelEntry.Path を candidatePath として使用する。
-//   - kernelEntry == nil, hasLibSystem == true:
-//       libSystem.B.dylib のみが含まれる（優先順位 2）。
-//       ウェルノウンパス wellKnownLibsystemKernelPath を candidatePath として試行する。
-//   - kernelEntry == nil, hasLibSystem == false:
-//       libSystem 系が含まれていない（非 libSystem バイナリ）。
-//       ResolveLibSystemKernel は nil, nil を返してフォールバックへ移行する。
-//
-// 注意: libsystem_kernel.dylib が DynLibDeps に見つかった時点で即座に return するため、
-// 同一 DynLibDeps 内に libsystem_kernel.dylib と libSystem.B.dylib の両方が含まれていても
-// libsystem_kernel.dylib が優先される。
-func findLibsystemKernelEntry(dynLibDeps []fileanalysis.LibEntry) (kernelEntry *fileanalysis.LibEntry, hasLibSystem bool) {
+// Return value interpretation:
+//   - Kernel != nil:
+//       libsystem_kernel.dylib is directly present in DynLibDeps.
+//   - Kernel == nil, Umbrella != nil:
+//       Only libSystem.B.dylib is present in DynLibDeps.
+//       ResolveLibSystemKernel first resolves LC_REEXPORT_DYLIB from the umbrella binary.
+//   - HasLibSystem == false:
+//       No libSystem-family dependency is present.
+//       ResolveLibSystemKernel returns nil, nil and lets the caller fall back.
+func findLibSystemCandidates(dynLibDeps []fileanalysis.LibEntry) libSystemCandidates {
+    var result libSystemCandidates
     for i, entry := range dynLibDeps {
-        // 優先順位 1: libsystem_kernel.dylib のベース名一致（FR-3.1.5）。
+        if entry.SOName == libSystemBDylibInstallName {
+            e := dynLibDeps[i]
+            result.Umbrella = &e
+            result.HasLibSystem = true
+        }
+
+        // A direct kernel dependency takes precedence as the filesystem source.
         if filepath.Base(entry.SOName) == libsystemKernelBaseName {
             e := dynLibDeps[i]
-            return &e, true
-        }
-        // 優先順位 2: libSystem.B.dylib のインストール名一致。
-        // hasLibSystem を true にマークして走査を継続し、libsystem_kernel.dylib が
-        // 後続エントリに存在するか確認する。
-        if entry.SOName == libSystemBDylibInstallName {
-            hasLibSystem = true
+            result.Kernel = &e
+            result.HasLibSystem = true
         }
     }
-    return nil, hasLibSystem
+    return result
 }
+
+// resolveLibSystemKernelPath decides the filesystem path candidate according to FR-3.1.5.
+// Order:
+//   1. direct kernel Path from DynLibDeps
+//   2. umbrella file on disk -> LC_REEXPORT_DYLIB -> task 0096 resolver reuse
+//   3. well-known path /usr/lib/system/libsystem_kernel.dylib
+//   4. empty string (caller proceeds to dyld shared cache extraction)
+func resolveLibSystemKernelPath(candidates libSystemCandidates, fs safefileio.FileSystem) (string, error)
 ```
 
 ## 11. `internal/filevalidator/validator.go` の拡張
@@ -1063,7 +1098,7 @@ func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
 **変更前の該当箇所** (`internal/filevalidator/validator.go` の svc スキャン部分):
 
 ```go
-// Mach-O arm64 svc #0x80 scan（現行）。
+// Current Mach-O arm64 svc #0x80 scan.
 {
     addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
     if svcErr != nil {
@@ -1078,8 +1113,8 @@ func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
 **変更後**:
 
 ```go
-// Mach-O arm64 svc #0x80 スキャンと libSystem インポートシンボル照合。
-// 両結果をマージして record.SyscallAnalysis に設定する（タスク 0100）。
+// Mach-O arm64 svc #0x80 scan and libSystem import-symbol matching.
+// Merge both results and store them in record.SyscallAnalysis (task 0100).
 {
     addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
     if svcErr != nil {
@@ -1102,8 +1137,8 @@ func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
 ### 11.3 新規ヘルパー関数の実装
 
 ```go
-// buildSVCSyscallEntries は svc #0x80 アドレスリストを []common.SyscallInfo に変換する。
-// addrs が空の場合は nil を返す（変更前の buildSVCSyscallAnalysis の前半相当）。
+// buildSVCSyscallEntries converts a list of svc #0x80 addresses into []common.SyscallInfo.
+// It returns nil when addrs is empty.
 func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
     if len(addrs) == 0 {
         return nil
@@ -1121,10 +1156,10 @@ func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
     return syscalls
 }
 
-// buildMachoSyscallAnalysisData は svc エントリと libSystem エントリをマージして
-// SyscallAnalysisData を構築する。
-// AnalysisWarnings は svc エントリが存在する場合のみ設定する。
-// DetectedSyscalls は Number 昇順でソートする（FR-3.3.3）。
+// buildMachoSyscallAnalysisData merges svc and libSystem entries and constructs
+// SyscallAnalysisData.
+// AnalysisWarnings is populated only when svc entries exist.
+// DetectedSyscalls is sorted by Number as required by FR-3.3.3.
 func buildMachoSyscallAnalysisData(
     svcEntries []common.SyscallInfo,
     libsysEntries []common.SyscallInfo,
@@ -1145,14 +1180,13 @@ func buildMachoSyscallAnalysisData(
     }
 }
 
-// mergeSyscallInfos は svc エントリと libSystem エントリを結合し Number 昇順でソートする。
-// svc エントリは Number=-1（すべて異なる Location で重複なし）。
-// libSystem エントリは Number>=0（GetSyscallInfos 内で dedup 済み）。
-// 両者の Number が衝突することはないため追加の dedup は不要（FR-3.3.2）。
+// mergeSyscallInfos combines svc entries and libSystem entries and sorts them by Number.
+// svc entries use Number=-1 and remain distinct by Location.
+// libSystem entries use Number>=0 and are already deduplicated inside GetSyscallInfos.
+// Their Number ranges do not overlap, so no extra deduplication is required.
 //
-// ソート後の順序: Number=-1 の svc エントリが先頭（-1 < 0 < 正の番号）、
-// libSystem エントリ（正の番号）がそれに続く。
-// runner 側は Number の値ではなく DeterminationMethod で svc エントリを識別する。
+// After sorting, svc entries appear first because -1 < 0 < positive numbers.
+// The runner identifies svc entries by DeterminationMethod rather than Number.
 func mergeSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
     if len(svcEntries) == 0 && len(libsysEntries) == 0 {
         return nil
@@ -1166,10 +1200,9 @@ func mergeSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.
     return merged
 }
 
-// analyzeLibSystemImports は対象 Mach-O バイナリのインポートシンボルを取得し
-// libSystem キャッシュと照合する（FR-3.3.2）。
-// v.libSystemCache が nil の場合または DynLibDeps が空の場合は nil, nil を返す。
-// 非 Mach-O ファイルは nil, nil を返す。
+// analyzeLibSystemImports obtains imported symbols from the target Mach-O binary
+// and matches them against the libSystem cache (FR-3.3.2).
+// It returns nil, nil when v.libSystemCache is nil, DynLibDeps is empty, or the file is not Mach-O.
 func (v *Validator) analyzeLibSystemImports(
     record *fileanalysis.Record,
     filePath string,
@@ -1178,15 +1211,15 @@ func (v *Validator) analyzeLibSystemImports(
         return nil, nil
     }
 
-    // debug/macho を使って Mach-O バイナリのインポートシンボルを取得する。
-    // 非 Mach-O ファイル（ELF 等）は nil, nil を返す。
+    // Obtain Mach-O imported symbols using debug/macho.
+    // Return nil, nil for non-Mach-O files such as ELF binaries.
     importSymbols, err := getMachoImportSymbols(v.fileSystem, filePath)
     if err != nil || importSymbols == nil {
         return nil, err
     }
 
-    // アンダースコアプレフィックスを除去する（FR-3.3.2）。
-    // "_socket" → "socket", "_socket$UNIX2003" → "socket"
+    // Strip the Mach-O underscore prefix before matching (FR-3.3.2).
+    // "_socket" -> "socket", "_socket$UNIX2003" -> "socket"
     normalized := make([]string, len(importSymbols))
     for i, sym := range importSymbols {
         normalized[i] = machoanalyzer.NormalizeSymbolName(sym)
@@ -1195,8 +1228,8 @@ func (v *Validator) analyzeLibSystemImports(
     return v.libSystemCache.GetSyscallInfos(record.DynLibDeps, normalized)
 }
 
-// getMachoImportSymbols は filePath を Mach-O として開き、インポートシンボルを返す。
-// 非 Mach-O ファイルの場合は nil, nil を返す。
+// getMachoImportSymbols opens filePath as a Mach-O file and returns imported symbols.
+// It returns nil, nil for non-Mach-O files.
 func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string, error) {
     f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
     if err != nil {
@@ -1206,8 +1239,8 @@ func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string,
 
     mf, err := macho.NewFile(f)
     if err != nil {
-        // 非 Mach-O ファイル（ELF 等）: スキップする。
-        return nil, nil //nolint:nilerr // Mach-O parse failure = non-Mach-O file; callers expect nil, nil
+        // Non-Mach-O file such as ELF: skip it.
+        return nil, nil //nolint:nilerr // Mach-O parse failure means a non-Mach-O file; callers expect nil, nil
     }
     defer func() { _ = mf.Close() }()
 
@@ -1228,7 +1261,7 @@ func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string,
 ```go
 // NormalizeSymbolName strips the leading underscore and version suffix
 // from a macOS imported symbol name.
-// normalizeSymbolName (小文字) はパッケージ内互換のため残す。
+// Keep normalizeSymbolName (lowercase) for package-internal compatibility.
 func NormalizeSymbolName(name string) string {
     return normalizeSymbolName(name)
 }
@@ -1239,8 +1272,8 @@ func NormalizeSymbolName(name string) string {
 ### 13.1 新規ヘルパー関数
 
 ```go
-// syscallAnalysisHasNetworkSignal は SyscallAnalysisResult に IsNetwork==true エントリが
-// あるかどうかを確認する（FR-3.6.2 優先順位 2）。
+// syscallAnalysisHasNetworkSignal checks whether SyscallAnalysisResult contains
+// any IsNetwork==true entry (FR-3.6.2 priority 2).
 func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
     if result == nil {
         return false
@@ -1263,20 +1296,21 @@ svc 結果を処理する switch 文のケース後（`// No svc #0x80 signal:` 
 具体的には現行コードの以下の位置の直後:
 
 ```go
-// 現行コード（変更なし）
+// Existing code (unchanged).
 case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
     // Fall through to SymbolAnalysis-based decision.
-// ... その他の case ...
+// ... other cases ...
 }
-// ← ここに IsNetwork チェックを挿入する
+// Insert the IsNetwork check here.
 ```
 
 **追加コード**:
 
 ```go
-// IsNetwork チェック: libSystem 由来のネットワーク syscall を確認する（FR-3.6.2 優先順位 2）。
-// direct_svc_0x80 チェック（switch 内）が優先されるため、ここに達した場合は
-// svc #0x80 未検出が確定している。
+// IsNetwork check: look for libSystem-derived network syscalls
+// (FR-3.6.2 priority 2).
+// Because the direct_svc_0x80 check happens inside the switch earlier,
+// reaching this point means no svc #0x80 signal was detected.
 if syscallAnalysisHasNetworkSignal(svcResult) {
     slog.Info("SyscallAnalysis cache indicates libSystem network syscall",
         "path", cmdPath)
@@ -1284,7 +1318,7 @@ if syscallAnalysisHasNetworkSignal(svcResult) {
 }
 
 // No svc #0x80 signal: determine result from SymbolAnalysis.
-// （既存コード: data == nil { return false, false } ... 以降）
+// Existing code continues with the data == nil { return false, false } path.
 ```
 
 **優先順位の実現**: `direct_svc_0x80` チェック（switch 内の `syscallAnalysisHasSVCSignal` 呼び出し）が
@@ -1295,7 +1329,7 @@ if syscallAnalysisHasNetworkSignal(svcResult) {
 `MachoLibSystemAdapter` を初期化して `Validator` に注入する。
 
 ```go
-// 既存の LibcCacheManager 初期化の後に追加する。
+// Add this immediately after the existing LibcCacheManager initialization.
 machoLibSystemCacheMgr, err := libccache.NewMachoLibSystemCacheManager(libCacheDir)
 if err != nil {
     log.Fatalf("failed to create Mach-O libSystem cache manager: %v", err)
@@ -1313,33 +1347,37 @@ fv.SetLibSystemCache(machoAdapter)
 | AC | テストファイル | テスト関数名（案） |
 |----|--------------|----------------|
 | AC-1 | `internal/libccache/macos_syscall_table_test.go` | `TestMacOSSyscallTable_NetworkEntries`, `TestMacOSSyscallTable_SocketNumber` |
-| AC-2 | `internal/libccache/macho_cache_test.go` | `TestMachoLibSystemCacheManager_CreateAndLoad` |
-| AC-3 | `internal/libccache/macho_cache_test.go` | `TestMachoLibSystemCacheManager_InvalidatesOnHashMismatch`, `TestMachoLibSystemCacheManager_InvalidatesOnSchemaMismatch` |
-| AC-4 | `internal/libccache/adapters_test.go` | `TestMachoLibSystemAdapter_Fallback_NoLibSystem`, `TestMachoLibSystemAdapter_Fallback_DyldExtractFail` |
-| AC-5 | `internal/libccache/adapters_test.go` | `TestMachoLibSystemAdapter_ImportSymbolMatching`, `TestMachoLibSystemAdapter_UnderscoreNormalization` |
-| AC-6 | `internal/runner/security/network_analyzer_test.go` | `TestIsNetworkViaBinaryAnalysis_LibSystemNetworkSyscall` |
+| AC-2 | `internal/libccache/macho_analyzer_test.go`, `internal/libccache/macho_cache_test.go` | `TestMachoLibSystemAnalyzer_Analyze_SvcDetection`, `TestMachoLibSystemAnalyzer_Analyze_SizeTooLarge`, `TestMachoLibSystemAnalyzer_Analyze_MultipleDistinctSyscalls`, `TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval`, `TestMachoLibSystemCacheManager_CreateAndLoad` |
+| AC-3 | `internal/libccache/macho_cache_test.go`, `internal/filevalidator/validator_macho_test.go` | `TestMachoLibSystemCacheManager_InvalidatesOnHashMismatch`, `TestMachoLibSystemCacheManager_InvalidatesOnSchemaMismatch`, `TestMachoLibSystemCacheManager_ReparsesBrokenCache`, `TestUpdateAnalysisRecord_LibSystemUnreadable`, `TestUpdateAnalysisRecord_LibSystemExportSymbolsFailure`, `TestUpdateAnalysisRecord_LibSystemCacheWriteFailure` |
+| AC-4 | `internal/libccache/adapters_test.go`, `internal/filevalidator/validator_macho_test.go` | `TestMachoLibSystemAdapter_Fallback_NoLibSystem`, `TestMachoLibSystemAdapter_Fallback_DyldExtractFail`, `TestMachoLibSystemAdapter_Fallback_LogsReasonAndCount` |
+| AC-5 | `internal/libccache/adapters_test.go`, `internal/filevalidator/validator_macho_test.go` | `TestMachoLibSystemAdapter_ImportSymbolMatching`, `TestMachoLibSystemAdapter_DedupsByNumber`, `TestAnalyzeLibSystemImports_NormalizesUnderscoreSymbols`, `TestUpdateAnalysisRecord_MergesDirectSVCAndLibSystemEntries` |
+| AC-6 | `internal/runner/security/network_analyzer_test.go` | `TestIsNetworkViaBinaryAnalysis_LibSystemNetworkSyscall`, `TestIsNetworkViaBinaryAnalysis_DirectSVCOverridesLibSystem`, `TestIsNetworkViaBinaryAnalysis_LibSystemNonNetworkFallsBackToSymbols` |
 | AC-7 | `make test` | 全テスト |
 
 ### 15.2 `macho_analyzer_test.go`（主要テストケース）
 
 ```go
-// TestMachoLibSystemAnalyzer_Analyze_SvcDetection はサイズフィルタと svc 検出の正常系。
+// TestMachoLibSystemAnalyzer_Analyze_SvcDetection covers the main success path for
+// size filtering and svc detection.
 func TestMachoLibSystemAnalyzer_Analyze_SvcDetection(t *testing.T) {
-    // テスト用 Mach-O バイナリをメモリ上で構築する。
-    // arm64 CpuType, __TEXT,__text セクション, Symtab を含む。
-    // svc #0x80 命令 (0xD4001001) の直前に MOVZ X16, #97 (socket) を配置する。
+    // Build a test Mach-O binary in memory.
+    // Include an arm64 CPU type, a __TEXT,__text section, and a Symtab.
+    // Place MOVZ X16, #97 (socket) immediately before svc #0x80 (0xD4001001).
 }
 
-// TestMachoLibSystemAnalyzer_Analyze_SizeTooLarge は 256 バイト超の関数が除外されること。
+// TestMachoLibSystemAnalyzer_Analyze_SizeTooLarge verifies that functions larger than 256 bytes are excluded.
 func TestMachoLibSystemAnalyzer_Analyze_SizeTooLarge(t *testing.T) { ... }
 
-// TestMachoLibSystemAnalyzer_Analyze_MultipleDistinctSyscalls は複数の異なる番号を持つ関数が除外されること。
+// TestMachoLibSystemAnalyzer_Analyze_MultipleDistinctSyscalls verifies that functions with multiple distinct syscall numbers are excluded.
 func TestMachoLibSystemAnalyzer_Analyze_MultipleDistinctSyscalls(t *testing.T) { ... }
 
-// TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval は 0x2000000 プレフィックスが除去されること（AC-2）。
+// TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval verifies removal of the 0x2000000 BSD prefix (AC-2).
 func TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval(t *testing.T) { ... }
 
-// TestMachoLibSystemAnalyzer_Analyze_NonArm64 は非 arm64 で UnsupportedArchitectureError が返ること。
+// TestMachoLibSystemAnalyzer_Analyze_MultipleSameSyscall verifies that multiple svc instructions with the same syscall number are accepted.
+func TestMachoLibSystemAnalyzer_Analyze_MultipleSameSyscall(t *testing.T) { ... }
+
+// TestMachoLibSystemAnalyzer_Analyze_NonArm64 verifies that non-arm64 inputs return UnsupportedArchitectureError.
 func TestMachoLibSystemAnalyzer_Analyze_NonArm64(t *testing.T) { ... }
 ```
 
@@ -1351,21 +1389,27 @@ func TestMachoLibSystemAnalyzer_Analyze_NonArm64(t *testing.T) { ... }
 ### 15.3 `adapters_test.go`（主要テストケース）
 
 ```go
-// TestMachoLibSystemAdapter_GetSyscallInfos_CacheHit はキャッシュヒット時の正常系。
-// LibSystemKernelSource を返すモックリゾルバーと、既存のキャッシュファイルを使用する。
+// TestMachoLibSystemAdapter_GetSyscallInfos_CacheHit covers the normal cache-hit path.
+// Use a mock resolver that returns LibSystemKernelSource and an existing cache file.
 func TestMachoLibSystemAdapter_GetSyscallInfos_CacheHit(t *testing.T) { ... }
 
-// TestMachoLibSystemAdapter_GetSyscallInfos_Fallback_NoLibSystem は
-// libSystem が DynLibDeps に含まれない場合のフォールバック。
+// TestMachoLibSystemAdapter_GetSyscallInfos_Fallback_NoLibSystem covers the fallback path when DynLibDeps has no libSystem dependency.
 func TestMachoLibSystemAdapter_GetSyscallInfos_Fallback_NoLibSystem(t *testing.T) { ... }
 
-// TestMachoLibSystemAdapter_Fallback_DetectedSyscalls_Source は
-// フォールバック時の Source が "libsystem_symbol_import" であること（AC-4）。
+// TestMachoLibSystemAdapter_Fallback_DetectedSyscalls_Source verifies that Source is "libsystem_symbol_import" during fallback (AC-4).
 func TestMachoLibSystemAdapter_Fallback_DetectedSyscalls_Source(t *testing.T) { ... }
 
-// TestMachoLibSystemAdapter_DeterminationMethod_LibCacheMatch は
-// キャッシュヒット時の DeterminationMethod が "lib_cache_match" であること（AC-5）。
+// TestMachoLibSystemAdapter_DeterminationMethod_LibCacheMatch verifies that DeterminationMethod is "lib_cache_match" on cache hit (AC-5).
 func TestMachoLibSystemAdapter_DeterminationMethod_LibCacheMatch(t *testing.T) { ... }
+
+// TestMachoLibSystemAdapter_DedupsByNumber verifies deduplication by Number (AC-5).
+func TestMachoLibSystemAdapter_DedupsByNumber(t *testing.T) { ... }
+
+// TestMachoLibSystemAdapter_NonArm64Library_SkipsGracefully verifies that non-arm64 libraries are skipped without returning an error (FR-3.3.1).
+func TestMachoLibSystemAdapter_NonArm64Library_SkipsGracefully(t *testing.T) { ... }
+
+// TestMachoLibSystemAdapter_Fallback_LogsReasonAndCount verifies that the fallback reason and detected count are logged via slog.Info (AC-4).
+func TestMachoLibSystemAdapter_Fallback_LogsReasonAndCount(t *testing.T) { ... }
 ```
 
 ### 15.4 統合テスト条件
@@ -1373,14 +1417,18 @@ func TestMachoLibSystemAdapter_DeterminationMethod_LibCacheMatch(t *testing.T) {
 `//go:build !integration_only` または `t.Skip()` でプラットフォームをチェックする。
 
 ```go
-// TestMachoLibSystem_Integration_DyldSharedCache は macOS arm64 のみで実行する。
+// TestMachoLibSystem_Integration_DyldSharedCache runs only on macOS arm64.
 func TestMachoLibSystem_Integration_DyldSharedCache(t *testing.T) {
     if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
         t.Skip("macOS arm64 only")
     }
-    // record コマンドで動的 Mach-O バイナリを解析し、SyscallAnalysis に
-    // ネットワーク syscall が検出されることを確認する。
+    // Analyze a dynamic Mach-O binary through the record command and verify that
+    // SyscallAnalysis contains detected network syscalls.
 }
+
+// TestMachoLibSystem_Integration_FallbackWhenDyldExtractionFails verifies that
+// the final fallback path activates and record still succeeds when dyld extraction fails.
+func TestMachoLibSystem_Integration_FallbackWhenDyldExtractionFails(t *testing.T) { ... }
 ```
 
 ## 16. build タグ方針
@@ -1399,34 +1447,28 @@ func TestMachoLibSystem_Integration_DyldSharedCache(t *testing.T) {
 
 ## 17. エラー定義
 
-`internal/libccache/errors.go` に以下を追加する。
+Mach-O 版で新しい sentinel error は追加しない。既存の `libccache` エラーを再利用し、
+必要なら呼び出し側でコンテキストを付けてラップする。
 
 ```go
-var (
-    // 既存のエラーはそのまま
-
-    // ErrLibsystemFileNotAccessible indicates that the libsystem_kernel.dylib file could not be read.
-    ErrLibsystemFileNotAccessible = errors.New("libsystem_kernel.dylib file not accessible")
-
-    // ErrLibsystemExportSymbolsFailed indicates that export symbol retrieval from libsystem_kernel.dylib failed.
-    ErrLibsystemExportSymbolsFailed = errors.New("failed to get export symbols from libsystem_kernel.dylib")
-)
+// Reuse existing errors to avoid a parallel Mach-O-only error hierarchy.
+// - file access failure: ErrLibcFileNotAccessible
+// - export symbol retrieval failure: ErrExportSymbolsFailed
+// - cache write failure: ErrCacheWriteFailed
 ```
 
-**実装注意**: `ErrLibcFileNotAccessible` を Mach-O 版でも再利用することも可能だが、
-エラーメッセージの可読性のため専用エラーを定義する。`MachoLibSystemCacheManager.GetOrCreate` は
-`ErrLibcFileNotAccessible` を使用する（`cache.go` の既存パターンに合わせるため）。
+**実装注意**: エラーメッセージの可読性が必要な場合は
+`fmt.Errorf("libsystem cache error: %w", ErrLibcFileNotAccessible)` のように文脈を追加する。
 
 ## 18. `go.mod` / `go.sum` の更新
 
 `blacktop/ipsw/pkg/dyld` を依存として追加する。
 
 ```
-go get github.com/blacktop/ipsw@latest
+go get github.com/blacktop/ipsw@<pinned-version>
 ```
 
 **注意**: `blacktop/ipsw` は大きなモジュールであり、`pkg/dyld` サブパッケージのみが必要なため、
 Go モジュールの最小バージョン選択（MVS）により実際の依存グラフが肥大化する可能性がある。
-`pkg/dyld` のみを使用する最小依存パッケージを探すか、もしくは必要なコードを
-`internal/machodylib/vendor/` 以下に手動で取り込む（ベンダリング）方法も検討する。
-最終判断は実装フェーズで行う。
+本タスクでは通常の `go.mod` 依存追加を採用し、コミット時には `latest` ではなく
+具体バージョンを固定する。ベンダリングは採用しない。
