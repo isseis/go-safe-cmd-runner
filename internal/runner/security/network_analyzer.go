@@ -20,9 +20,8 @@ const gosDarwin = "darwin"
 
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
-	binaryAnalyzer binaryanalyzer.BinaryAnalyzer
-	store          fileanalysis.NetworkSymbolStore   // nil means cache disabled
-	syscallStore   fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
+	store        fileanalysis.NetworkSymbolStore   // nil means cache disabled
+	syscallStore fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
 }
 
 // NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the current platform.
@@ -39,13 +38,12 @@ func NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer {
 // NewNetworkAnalyzer creates a new NetworkAnalyzer.
 // On macOS, uses StandardMachOAnalyzer; on Linux and other platforms, uses StandardELFAnalyzer.
 func NewNetworkAnalyzer() *NetworkAnalyzer {
-	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer()}
+	return &NetworkAnalyzer{}
 }
 
 // NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
-// If store is nil, falls back to live binary analysis.
 func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
-	return &NetworkAnalyzer{binaryAnalyzer: NewBinaryAnalyzer(), store: store}
+	return &NetworkAnalyzer{store: store}
 }
 
 // NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
@@ -56,9 +54,8 @@ func NewNetworkAnalyzerWithStores(
 	svcStore fileanalysis.SyscallAnalysisStore,
 ) *NetworkAnalyzer {
 	return &NetworkAnalyzer{
-		binaryAnalyzer: NewBinaryAnalyzer(),
-		store:          symStore,
-		syscallStore:   svcStore,
+		store:        symStore,
+		syscallStore: svcStore,
 	}
 }
 

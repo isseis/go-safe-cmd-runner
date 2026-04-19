@@ -2370,25 +2370,6 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 	}
 }
 
-// mockBinaryAnalyzer is a mock implementation of binaryanalyzer.BinaryAnalyzer for testing.
-type mockBinaryAnalyzer struct {
-	result             binaryanalyzer.AnalysisResult
-	symbols            []binaryanalyzer.DetectedSymbol
-	err                error
-	dynamicLoadSymbols []binaryanalyzer.DetectedSymbol
-	called             bool
-}
-
-func (m *mockBinaryAnalyzer) AnalyzeNetworkSymbols(_ string, _ string) binaryanalyzer.AnalysisOutput {
-	m.called = true
-	return binaryanalyzer.AnalysisOutput{
-		Result:             m.result,
-		DetectedSymbols:    m.symbols,
-		Error:              m.err,
-		DynamicLoadSymbols: m.dynamicLoadSymbols,
-	}
-}
-
 // TestIsNetworkOperation_Analysis tests analysis integration in IsNetworkOperation.
 // Binary analysis (live path) has been removed; unknown commands without a store
 // return false, false. Network detection for unknown commands is args-based only
@@ -2492,7 +2473,7 @@ func TestNewNetworkAnalyzer(t *testing.T) {
 	})
 
 	t.Run("with nil store → binary analysis skipped", func(t *testing.T) {
-		analyzer := newNetworkAnalyzer(nil, nil)
+		analyzer := newNetworkAnalyzer(nil)
 		assert.NotNil(t, analyzer)
 
 		// With nil store, binary analysis is skipped and returns false, false.
@@ -2529,7 +2510,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	const cmdPath = "/usr/bin/curl"
 	const contentHash = "sha256:abc123"
 
-	t.Run("cache hit DetectedSymbols=[socket] → NetworkDetected, BinaryAnalyzer not called", func(t *testing.T) {
+	t.Run("cache hit DetectedSymbols=[socket] → NetworkDetected", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
@@ -2537,30 +2518,23 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				},
 			},
 		}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "expected network detected from cache")
 		assert.False(t, isHigh, "expected not high risk (no dlopen)")
-		// BinaryAnalyzer must not have been called.
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 
-	t.Run("cache hit DetectedSymbols=nil → NoNetworkSymbols, BinaryAnalyzer not called", func(t *testing.T) {
+	t.Run("cache hit DetectedSymbols=nil → NoNetworkSymbols", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols:    nil,
 				DynamicLoadSymbols: nil,
 			},
 		}
-		// Mock returns NetworkDetected to confirm it is never consulted.
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network from cache")
 		assert.False(t, isHigh, "expected not high risk")
-		// BinaryAnalyzer must not have been called.
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 
 	t.Run("cache hit DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
@@ -2571,53 +2545,42 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				},
 			},
 		}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network (DetectedSymbols=nil)")
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
 	})
 
-	t.Run("ErrNoNetworkSymbolAnalysis (no syscallStore) → false, false (static binary, no live fallback)", func(t *testing.T) {
+	t.Run("ErrNoNetworkSymbolAnalysis (no syscallStore) → false, false (static binary)", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "static binary with no svc should return false")
 		assert.False(t, isHigh, "static binary with no svc should return false")
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called (live fallback removed)")
 	})
 
-	t.Run("SchemaVersionMismatchError → high risk, BinaryAnalyzer not called", func(t *testing.T) {
+	t.Run("SchemaVersionMismatchError → high risk", func(t *testing.T) {
 		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}
 		store := &stubNetworkSymbolStore{err: schemaErr}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "schema mismatch must return isNetwork=true as safety measure")
 		assert.True(t, isHigh, "schema mismatch must return high risk")
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called on schema mismatch")
 	})
 
-	t.Run("nil store → false, false (live analysis removed)", func(t *testing.T) {
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-		analyzer := newNetworkAnalyzer(mock, nil)
+	t.Run("nil store → false, false", func(t *testing.T) {
+		analyzer := newNetworkAnalyzer(nil)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "nil store must return false (no live binary analysis)")
 		assert.False(t, isHigh, "nil store must return false (no live binary analysis)")
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called (live analysis removed)")
 	})
 
-	t.Run("empty contentHash → cache and BinaryAnalyzer both skipped", func(t *testing.T) {
-		// BinaryAnalyzer.AnalyzeNetworkSymbols requires a non-empty contentHash.
-		// When no hash is available, both cache and live analysis must be skipped.
+	t.Run("empty contentHash → cache skipped", func(t *testing.T) {
 		storeCalled := false
 		store := &callTrackingStore{called: &storeCalled, err: fileanalysis.ErrHashMismatch}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, "")
 		assert.False(t, storeCalled, "store must not be called when contentHash is empty")
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called when contentHash is empty")
 		assert.False(t, isNet, "expected no network result when contentHash is empty")
 		assert.False(t, isHigh, "expected no high-risk result when contentHash is empty")
 	})
@@ -2629,12 +2592,10 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				KnownNetworkLibDeps: []string{"libcurl.so.4"},
 			},
 		}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.True(t, isNet, "expected network detected from KnownNetworkLibDeps in cache")
 		assert.False(t, isHigh, "expected not high risk")
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 
 	t.Run("cache hit KnownNetworkLibDeps empty, DetectedSymbols empty → NoNetworkSymbols", func(t *testing.T) {
@@ -2644,12 +2605,10 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 				KnownNetworkLibDeps: nil,
 			},
 		}
-		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
-		analyzer := newNetworkAnalyzer(mock, store)
+		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "expected no network when both DetectedSymbols and KnownNetworkLibDeps are empty")
 		assert.False(t, isHigh, "expected not high risk")
-		assert.False(t, mock.called, "BinaryAnalyzer must not be called on cache hit")
 	})
 }
 
@@ -2689,15 +2648,11 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 	// Create a NetworkSymbolStore backed by the real Store.
 	symStore := fileanalysis.NewNetworkSymbolStore(store)
 
-	// BinaryAnalyzer mock returns NoNetworkSymbols to prove it is never called.
-	mock := &mockBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
-	analyzer := newNetworkAnalyzer(mock, symStore)
+	analyzer := newNetworkAnalyzer(symStore)
 
 	isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, fakeHash)
 
 	assert.True(t, isNet, "cache hit should report network detected")
-	// If BinaryAnalyzer were called it would have returned NoNetworkSymbols,
-	// so a true result proves only the cache path was taken.
 }
 
 // TestAnalyzeCommandSecurity_StandardDirHashValidationAlwaysRuns is a regression
