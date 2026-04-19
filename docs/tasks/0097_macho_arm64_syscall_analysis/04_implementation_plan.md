@@ -265,9 +265,9 @@ go test -tags test -v ./internal/runner/
 
 ### 8.3 削除後の確認
 
-- [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しが `isNetworkViaBinaryAnalysis` から完全に除去されていること
-- [ ] `make test` が引き続き全 GREEN であること
-- [ ] `make lint` でデッドコード警告が出ないこと
+- [x] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しが `isNetworkViaBinaryAnalysis` から完全に除去されていること
+- [x] `make test` が引き続き全 GREEN であること
+- [x] `make lint` でデッドコード警告が出ないこと
 
 ## 9. リスクと対策
 
