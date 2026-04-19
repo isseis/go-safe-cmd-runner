@@ -466,6 +466,14 @@ macOS syscall テーブルは以下の 2 箇所で使用する。
 `runner` が Mach-O バイナリの `SyscallAnalysis` を参照した際、以下の優先順位で
 判定すること。
 
+**キャッシュロードエラー時の実行拒否**: `SyscallAnalysis` キャッシュのロードが
+以下のいずれかの理由で完了しない場合、`true, true`（実行拒否）を返す。
+不完全な解析データを許容的なデフォルトとして扱ってはならない。
+
+- `SchemaVersionMismatchError`: スキーマバージョン不一致（旧形式のレコード）
+- `ErrRecordNotFound`: レコード自体が存在しない
+- `ErrNoSyscallAnalysis`: レコードに `SyscallAnalysis` フィールドが存在しない
+
 1. `DeterminationMethod == "direct_svc_0x80"` のエントリが存在 → `true, true`
    （高リスク確定、タスク 0097 と同一）
 2. `IsNetwork == true` のエントリが存在 → `true, false`（ネットワーク検出）
