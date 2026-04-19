@@ -1289,69 +1289,46 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 
 ### 13.2 `isNetworkViaBinaryAnalysis()` の拡張
 
-**変更対象**: `network_analyzer.go` の `isNetworkViaBinaryAnalysis()` 内で、
-`a.syscallStore != nil { ... }` ブロック内の switch 文を以下の通り変更する。
+**挿入位置**: `network_analyzer.go` の `isNetworkViaBinaryAnalysis()` 内で、
+svc 結果を処理する switch 文のケース後（`// No svc #0x80 signal:` コメントが付いた
+`if a.syscallStore != nil { ... }` ブロックの直後）、かつ `if data == nil { return false, false }` の前に挿入する。
 
-**変更後の switch 文**:
+具体的には現行コードの以下の位置の直後:
 
 ```go
-var svcSchemaMismatch *fileanalysis.SchemaVersionMismatchError
-switch {
-case svcErr == nil:
-    if syscallAnalysisHasSVCSignal(svcResult) {
-        slog.Warn("SyscallAnalysis cache indicates svc #0x80; treating as high risk",
-            "path", cmdPath)
-        return true, true
-    }
-    // No svc signal; fall through to IsNetwork check below.
+// Existing code (unchanged).
 case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
-    // SyscallAnalysis record exists but contains no SyscallAnalysis field.
-    // Per FR-3.6.2: incomplete cache data must not be treated as a permissive
-    // default. Refuse execution to prevent analysis bypass.
-    slog.Warn("SyscallAnalysis missing from record; treating as high risk",
-        "path", cmdPath)
-    return true, true
-case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
-    slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
-        "path", cmdPath)
-    return true, true
-case errors.As(svcErr, &svcSchemaMismatch):
-    slog.Warn("SyscallAnalysis cache has outdated schema; treating as high risk",
-        "path", cmdPath,
-        "expected_schema", svcSchemaMismatch.Expected,
-        "actual_schema", svcSchemaMismatch.Actual)
-    return true, true
-default:
-    // ErrRecordNotFound or unexpected error.
-    // Per FR-3.6.2: a missing record must not be treated as a permissive default.
-    // Refuse execution rather than panicking or falling through.
-    slog.Warn("SyscallAnalysis cache load failed; treating as high risk",
-        "path", cmdPath, "error", svcErr)
-    return true, true
+    // Schema v15+ guarantee: svc scan was performed and found nothing.
+    // Fall through to SymbolAnalysis-based decision.
+// ... other cases ...
 }
+// Insert the IsNetwork check here.
 ```
 
-**switch 直後に追加するコード**:
+**`ErrNoSyscallAnalysis` は変更しない**: システムコールを直接呼び出していない
+バイナリは `SyscallAnalysis` フィールドを持たない。「解析が実施された」という
+保証は `SchemaVersion` が担うため、`ErrNoSyscallAnalysis` は「解析済みだが未検出」を
+意味する正常ケースである（ELF バイナリと同一ポリシー）。
+
+**追加コード**:
 
 ```go
 // IsNetwork check: look for libSystem-derived network syscalls
 // (FR-3.6.2 priority 2).
-// Reaching this point means svcErr == nil and no svc #0x80 signal was detected.
+// Because the direct_svc_0x80 check happens inside the switch earlier,
+// reaching this point means no svc #0x80 signal was detected.
 if syscallAnalysisHasNetworkSignal(svcResult) {
     slog.Info("SyscallAnalysis cache indicates libSystem network syscall",
         "path", cmdPath)
     return true, false
 }
 
-// No svc #0x80 signal and no libSystem network syscall:
-// determine result from SymbolAnalysis.
+// No svc #0x80 signal: determine result from SymbolAnalysis.
 // Existing code continues with the data == nil { return false, false } path.
 ```
 
 **優先順位の実現**: `direct_svc_0x80` チェック（switch 内の `syscallAnalysisHasSVCSignal` 呼び出し）が
 この `IsNetwork` チェックより先に行われるため、FR-3.6.2 の優先順位 1 → 2 → 3 が自然に実現される。
-キャッシュロードエラーは switch 内で即時 `return true, true` するため、
-許容的なデフォルトへのフォールスルーは発生しない（FR-3.6.2 エラー時ルール）。
 
 ## 14. `cmd/record/main.go` の拡張
 
