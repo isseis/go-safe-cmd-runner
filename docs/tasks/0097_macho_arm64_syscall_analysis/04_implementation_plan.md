@@ -225,24 +225,24 @@ go test -tags test -v ./internal/runner/
 
 ### 7.1 ビルドチェックリスト
 
-- [ ] `make build` でビルドエラーなし
-- [ ] `make lint` でリントエラーなし
-- [ ] `make fmt` でフォーマット適用後に変更差分なし
+- [x] `make build` でビルドエラーなし
+- [x] `make lint` でリントエラーなし
+- [x] `make fmt` でフォーマット適用後に変更差分なし
 
 ### 7.2 テストチェックリスト
 
-- [ ] `make test` で全テストパス
+- [x] `make test` で全テストパス
   ```
   go test -tags test -v ./...
   ```
-- [ ] Step 1〜4 で追加したテストがすべてパス
+- [x] Step 1〜4 で追加したテストがすべてパス
 
 ### 7.3 最終確認チェックリスト
 
-- [ ] `go vet ./...` でエラーなし
-- [ ] `make test` が全て GREEN
-- [ ] `make lint` が全て GREEN
-- [ ] `make build` が成功
+- [x] `go vet ./...` でエラーなし
+- [x] `make test` が全て GREEN
+- [x] `make lint` が全て GREEN
+- [x] `make build` が成功
 
 ## 8. 後続作業: runner の svc #0x80 live 解析コード削除
 
