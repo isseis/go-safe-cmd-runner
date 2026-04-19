@@ -180,35 +180,38 @@ go test -tags test -v ./internal/runner/security/
 
 ### 6.1 実装チェックリスト
 
-- [ ] `internal/verification/manager.go` に `GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore` を追加する
-- [ ] `internal/runner/runner.go` で path resolver から `SyscallAnalysisStore` を取得する
-  - [ ] `networkSymbolStoreProvider` と同様の provider interface を追加するか、共通 provider を拡張する
-  - [ ] `resource.NewDefaultResourceManager()` 呼び出しに `syscallStore` を渡す
-- [ ] `internal/runner/resource/default_manager.go` のシグネチャを変更して `syscallStore` を追加する:
+- [x] `internal/verification/manager.go` に `GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore` を追加する
+- [x] `internal/runner/runner.go` で path resolver から `SyscallAnalysisStore` を取得する
+  - [x] `networkSymbolStoreProvider` と同様の provider interface を追加するか、共通 provider を拡張する
+  - [x] `resource.NewDefaultResourceManager()` 呼び出しに `syscallStore` を渡す
+- [x] `internal/runner/resource/default_manager.go` のシグネチャを変更して `syscallStore` を追加する:
   ```go
   func NewDefaultResourceManager(..., store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) (*DefaultResourceManager, error)
   ```
-- [ ] `internal/runner/resource/normal_manager.go` のシグネチャを変更して `syscallStore` を追加する:
+- [x] `internal/runner/resource/normal_manager.go` のシグネチャを変更して `syscallStore` を追加する:
+  `NewNormalResourceManagerWithStores` として実装（後方互換 wrapper `NewNormalResourceManagerWithOutput` を維持）
   ```go
-  func NewNormalResourceManagerWithOutput(..., store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) *NormalResourceManager
+  func NewNormalResourceManagerWithStores(..., symStore fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) *NormalResourceManager
   ```
-- [ ] `NewStandardEvaluator` のシグネチャを変更して `syscallStore` を追加する:
+- [x] `NewStandardEvaluator` のシグネチャを変更して `syscallStore` を追加する:
+  `NewStandardEvaluatorWithStores` として実装（後方互換 wrapper `NewStandardEvaluator` を維持）
   ```go
-  func NewStandardEvaluator(store fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) Evaluator
+  func NewStandardEvaluatorWithStores(symStore fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) Evaluator
   ```
-- [ ] `security.NewNetworkAnalyzerWithStore(store)` を
+- [x] `security.NewNetworkAnalyzerWithStore(store)` を
   `security.NewNetworkAnalyzerWithStores(store, syscallStore)` に変更する
-- [ ] `NewStandardEvaluator` の呼び出し箇所を全て更新する
+- [x] `NewStandardEvaluator` の呼び出し箇所を全て更新する
   - 呼び出し箇所の確認: `grep -r "NewStandardEvaluator" --include="*.go" .`
 
 ### 6.2 呼び出し箇所のチェックリスト
 
-- [ ] `internal/runner/resource/normal_manager.go` 内の `NewStandardEvaluator` 呼び出しを更新する
-- [ ] `internal/runner/resource/default_manager.go` から `NewNormalResourceManagerWithOutput` への引数転送を更新する
-- [ ] `internal/runner/runner.go` の `createNormalResourceManager()` で `SyscallAnalysisStore` を取得して渡す
-- [ ] `internal/runner/runner_test.go` の path resolver モックに `GetSyscallAnalysisStore()` を追加する
-- [ ] `internal/runner/resource/*_test.go` のコンストラクタ呼び出しを更新する
-- [ ] `internal/runner/risk/evaluator_test.go` の `NewStandardEvaluator(nil)` 呼び出しを更新する
+- [x] `internal/runner/resource/normal_manager.go` 内の `NewStandardEvaluator` 呼び出しを更新する
+- [x] `internal/runner/resource/default_manager.go` から `NewNormalResourceManagerWithOutput` への引数転送を更新する
+- [x] `internal/runner/runner.go` の `createNormalResourceManager()` で `SyscallAnalysisStore` を取得して渡す
+- [x] `internal/runner/runner_test.go` の path resolver モックに `GetSyscallAnalysisStore()` を追加する
+- [x] `internal/runner/resource/*_test.go` のコンストラクタ呼び出しを更新する
+- [x] `internal/runner/risk/evaluator_test.go` の `NewStandardEvaluator(nil)` 呼び出しを更新する
+  （後方互換 wrapper が維持されているため変更不要）
 
 **実行コマンド**:
 ```
@@ -222,24 +225,24 @@ go test -tags test -v ./internal/runner/
 
 ### 7.1 ビルドチェックリスト
 
-- [ ] `make build` でビルドエラーなし
-- [ ] `make lint` でリントエラーなし
-- [ ] `make fmt` でフォーマット適用後に変更差分なし
+- [x] `make build` でビルドエラーなし
+- [x] `make lint` でリントエラーなし
+- [x] `make fmt` でフォーマット適用後に変更差分なし
 
 ### 7.2 テストチェックリスト
 
-- [ ] `make test` で全テストパス
+- [x] `make test` で全テストパス
   ```
   go test -tags test -v ./...
   ```
-- [ ] Step 1〜4 で追加したテストがすべてパス
+- [x] Step 1〜4 で追加したテストがすべてパス
 
 ### 7.3 最終確認チェックリスト
 
-- [ ] `go vet ./...` でエラーなし
-- [ ] `make test` が全て GREEN
-- [ ] `make lint` が全て GREEN
-- [ ] `make build` が成功
+- [x] `go vet ./...` でエラーなし
+- [x] `make test` が全て GREEN
+- [x] `make lint` が全て GREEN
+- [x] `make build` が成功
 
 ## 8. 後続作業: runner の svc #0x80 live 解析コード削除
 
