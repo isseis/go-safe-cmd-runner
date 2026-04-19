@@ -56,9 +56,9 @@
 
 ## フェーズ 3: 補完
 
-### タスク 0100: libSystem.dylib syscall ラッパー関数キャッシュ・mprotect 検出（FR-4.7 / FR-4.6 前半）
+### タスク 0100: libSystem.dylib syscall ラッパー関数キャッシュ（FR-4.7）
 
-**概要**: タスク 0079（ELF 版 libc syscall ラッパーキャッシュ）の macOS 版。`libSystem.dylib` の各エクスポート関数に FR-4.2 の syscall 解析を適用し、関数名 → syscall 番号のキャッシュを構築する。ファイルシステム上に存在しない場合は dyld shared cache（`/System/Library/dyld/dyld_shared_cache_arm64e` 等）から対象ライブラリを抽出して解析する。段階的リリースを推奨（段階 1: ファイル存在時のみ解析、段階 2: dyld shared cache 対応）。
+**概要**: タスク 0079（ELF 版 libc syscall ラッパーキャッシュ）の macOS 版。`libSystem.dylib`（実体は `libsystem_kernel.dylib`）の各エクスポート関数に syscall 解析を適用し、関数名 → syscall 番号のキャッシュを構築する。ファイルシステム上に存在しない場合は `blacktop/ipsw` の `pkg/dyld` を用いて dyld shared cache から抽出して解析する（dyld shared cache 対応は本タスクのスコープに含める。段階的リリースは採用しない）。mprotect 検出（FR-4.6）は本タスクのスコープ外とするが、syscall テーブルに `mprotect`（番号 74）を含めることで libSystem 経由の呼び出しは自然に検出される（詳細は `01_requirements.md` セクション 8 参照）。
 
 **0099 より先に実装する理由**: macOS では通常バイナリは `libSystem.dylib` 経由で `mprotect` を呼ぶため、`svc #0x80` の直接スキャン（タスク 0099）より libSystem.dylib シンボル経由の検出が実用的な攻撃ベクタに直接対応する。また、タスク 0097 で「`svc #0x80` の存在自体を一律ハイリスク」と確定済みであり、直接 svc スキャンによる mprotect 引数判定（0099）はリスク判定を変えない。
 

@@ -297,10 +297,11 @@ x86_64 Mach-O 向けの解析は本タスクのスコープ外とする。
 の判定には、macOS 固有の syscall テーブルを定義する。ELF 版の Linux syscall テーブルとは
 番号が異なるため（例: Linux `socket` = 41, macOS `socket` = 97）、別テーブルとする。
 
-**重複統合ルール**: ELF 版（タスク 0079 FR-3.3.2）と同一方針。集約キーを `Number` とする。
-同じ `Number` を持つエントリが複数存在する場合は、`Source == "direct_svc_0x80"`
-（直接 syscall 命令由来）を優先して 1 件に絞る。Mach-O コンテキストでは ELF の
-`Source == ""`（`syscall` 命令由来）は出現しない。
+**重複統合ルール**: libSystem シンボル照合由来エントリは `Number` をキーとして重複排除する
+（同一 syscall 番号に対して最大 1 件）。svc #0x80 検出由来エントリは `Number = -1`
+（番号未解析、タスク 0097 FR-3.1.1 で規定）であり、libSystem 由来エントリ（正の syscall
+番号）と番号が重複することはない。両者は `DetectedSyscalls` 内に共存し、追加の排他処理
+は不要。runner 側の優先順位判定は FR-3.6.2 で定義する。
 
 #### FR-3.3.3: `SyscallAnalysis` の保存対象拡張
 
@@ -584,9 +585,10 @@ macOS syscall テーブル、シンボル名正規化）のみを追加する。
   あること
 - [ ] 照合によって検出された `SyscallInfo` の `Location` が `0` であること
 - [ ] 同一 `Number` のエントリが `DetectedSyscalls` に重複して含まれないこと
-- [ ] `svc #0x80` 直接検出（`Source: "direct_svc_0x80"`）と libSystem import 由来
-  （`Source: "libsystem_symbol_import"`）の両方が検出された場合、直接検出が優先される
-  こと
+- [ ] `svc #0x80` 直接検出（`Source: "direct_svc_0x80"`, `Number: -1`）と libSystem import
+  由来（`Source: "libsystem_symbol_import"`, 正の番号）の両方が検出された場合、
+  `DetectedSyscalls` に両方のエントリが共存すること（番号が異なるため dedup は発生しない。
+  runner 側の優先順位は AC-6 で検証する）
 
 ### AC-6: `runner` 側の判定
 
