@@ -67,12 +67,11 @@ func NewNetworkAnalyzerWithStores(
 // Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded.
 //
 // contentHash is a pre-computed hash in "algo:hex" format (e.g. "sha256:abc123...").
-// Forwarded to ELF analysis for static binaries to avoid re-reading the binary.
-// Must be non-empty when binary analysis may run.
+// Used to verify cache record freshness when store-based binary analysis runs.
 //
 // Detection priority:
 // 1. commandProfileDefinitions (hardcoded list) - takes precedence
-// 2. ELF .dynsym analysis for unknown commands
+// 2. Cache-backed binary analysis for unknown commands (requires store and contentHash)
 // 3. Argument-based detection (URLs, SSH-style addresses)
 func (a *NetworkAnalyzer) IsNetworkOperation(cmdName string, args []string, contentHash string) (bool, bool) {
 	// Extract all possible command names including symlink targets
@@ -152,9 +151,8 @@ func hasNetworkArguments(args []string) bool {
 // already resolved by the caller (via verification.PathResolver.ResolvePath()).
 // This ensures TOCTOU safety and consistency across all security checks.
 //
-// contentHash is a pre-computed hash in "algo:hex" format required by
-// BinaryAnalyzer.AnalyzeNetworkSymbols. Must be non-empty; binary analysis
-// is skipped (returning false, false) when no hash is available.
+// contentHash is a pre-computed hash in "algo:hex" format. Used to verify cache
+// record freshness; when empty or store is nil, analysis is skipped (returning false, false).
 func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash string) (isNetwork, isHighRisk bool) {
 	// Validate that cmdPath is an absolute path.
 	// The caller (EvaluateRisk via group_executor) must have already resolved the path.
@@ -265,14 +263,8 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		return handleAnalysisOutput(output, cmdPath)
 	}
 
-	// Fallback: live binary analysis.
-	// BinaryAnalyzer.AnalyzeNetworkSymbols requires a non-empty contentHash.
-	// Skip when no hash is available rather than violating the contract.
-	if contentHash == "" {
-		return false, false
-	}
-	output := a.binaryAnalyzer.AnalyzeNetworkSymbols(cmdPath, contentHash)
-	return handleAnalysisOutput(output, cmdPath)
+	// No store configured or contentHash empty: skip analysis.
+	return false, false
 }
 
 // syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult
