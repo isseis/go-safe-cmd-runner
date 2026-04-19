@@ -62,10 +62,10 @@
 
 **0099 より先に実装する理由**: macOS では通常バイナリは `libSystem.dylib` 経由で `mprotect` を呼ぶため、`svc #0x80` の直接スキャン（タスク 0099）より libSystem.dylib シンボル経由の検出が実用的な攻撃ベクタに直接対応する。また、タスク 0097 で「`svc #0x80` の存在自体を一律ハイリスク」と確定済みであり、直接 svc スキャンによる mprotect 引数判定（0099）はリスク判定を変えない。
 
-- [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/01_requirements.md` を作成する
-- [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/02_architecture.md` を作成する
-- [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/03_detailed_specification.md` を作成する
-- [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/04_implementation_plan.md` を作成する
+- [x] `docs/tasks/0100_macho_libsystem_syscall_cache/01_requirements.md` を作成する
+- [x] `docs/tasks/0100_macho_libsystem_syscall_cache/02_architecture.md` を作成する
+- [x] `docs/tasks/0100_macho_libsystem_syscall_cache/03_detailed_specification.md` を作成する
+- [x] `docs/tasks/0100_macho_libsystem_syscall_cache/04_implementation_plan.md` を作成する
 - [ ] 実装・テストを行い PR をマージする
 
 ### タスク 0099: Mach-O `mprotect(PROT_EXEC)` 直接 svc 検出（FR-4.6 後半・保留）
