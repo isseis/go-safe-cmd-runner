@@ -19,8 +19,8 @@
 
 ### 2.1 実装チェックリスト
 
-- [ ] `"path/filepath"` のインポートが既に存在することを確認する（なければ追加する）
-- [ ] `KnownNetworkLibDeps` 導出ループを以下のように修正する:
+- [x] `"path/filepath"` のインポートが既に存在することを確認する（なければ追加する）
+- [x] `KnownNetworkLibDeps` 導出ループを以下のように修正する:
 
 ```go
 // 変更前
@@ -51,19 +51,19 @@ for _, lib := range record.DynLibDeps {
 
 ### 3.1 テストチェックリスト
 
-- [ ] `TestRecord_KnownNetworkLibDeps_MachoInstallNameRuby`
+- [x] `TestRecord_KnownNetworkLibDeps_MachoInstallNameRuby`
   - `DynLibDeps: [{SOName: "/usr/local/opt/ruby/lib/libruby.3.2.dylib", ...}]` でインストール名がそのまま `KnownNetworkLibDeps` に記録される
-- [ ] `TestRecord_KnownNetworkLibDeps_MachoInstallNameCurl`
+- [x] `TestRecord_KnownNetworkLibDeps_MachoInstallNameCurl`
   - `DynLibDeps: [{SOName: "/usr/local/lib/libcurl.4.dylib", ...}]` で記録される（AC-2）
-- [ ] `TestRecord_KnownNetworkLibDeps_MachoInstallNamePython`
+- [x] `TestRecord_KnownNetworkLibDeps_MachoInstallNamePython`
   - `DynLibDeps: [{SOName: "/usr/local/opt/python/lib/libpython3.11.dylib", ...}]` で記録される（AC-3）
-- [ ] `TestRecord_KnownNetworkLibDeps_MachoRpathInstallName`
+- [x] `TestRecord_KnownNetworkLibDeps_MachoRpathInstallName`
   - `DynLibDeps: [{SOName: "@rpath/libcurl.dylib", ...}]` で記録される（`@rpath/` プレフィックス付き）
-- [ ] `TestRecord_KnownNetworkLibDeps_MachoNonNetworkLib`
+- [x] `TestRecord_KnownNetworkLibDeps_MachoNonNetworkLib`
   - `DynLibDeps: [{SOName: "/usr/lib/libz.1.dylib", ...}]` で `KnownNetworkLibDeps` が空（AC-5）
-- [ ] `TestRecord_KnownNetworkLibDeps_MachoFalsePositivePrefix`
+- [x] `TestRecord_KnownNetworkLibDeps_MachoFalsePositivePrefix`
   - `DynLibDeps: [{SOName: "/usr/local/lib/libpythonista.dylib", ...}]` で記録されない（AC-6）
-- [ ] 既存の ELF テスト（`TestRecord_KnownNetworkLibDeps_CurlDetected` 等）が引き続きパスする（AC-7）
+- [x] 既存の ELF テスト（`TestRecord_KnownNetworkLibDeps_CurlDetected` 等）が引き続きパスする（AC-7）
 
 **テストヘルパー**: 既存の `recordWithDynLibDepsAndBinaryAnalyzer()` を利用する。`DynLibDeps` の `Path` と `Hash` はダミー値で可（照合ロジックは `SOName` のみ参照）。
 
@@ -78,10 +78,10 @@ go test -tags test -v ./internal/filevalidator/ -run TestRecord_KnownNetworkLibD
 
 ### 4.1 確認チェックリスト
 
-- [ ] `make fmt` でフォーマット適用後に変更差分なし
-- [ ] `make build` でビルドエラーなし
-- [ ] `make test` で全テストパス
-- [ ] `make lint` でリントエラーなし
+- [x] `make fmt` でフォーマット適用後に変更差分なし
+- [x] `make build` でビルドエラーなし
+- [x] `make test` で全テストパス
+- [x] `make lint` でリントエラーなし
 
 ---
 

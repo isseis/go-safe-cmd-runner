@@ -1707,6 +1707,76 @@ func TestRecord_KnownNetworkLibDeps_SymbolAnalysisNil(t *testing.T) {
 		"SymbolAnalysis should be nil for static binary, KnownNetworkLibDeps not recorded")
 }
 
+// ---------------------------------------------------------------------------
+// Mach-O install name tests for KnownNetworkLibDeps (AC-1 through AC-6)
+// ---------------------------------------------------------------------------
+
+func TestRecord_KnownNetworkLibDeps_MachoInstallNameRuby(t *testing.T) {
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "/usr/local/opt/ruby/lib/libruby.3.2.dylib", Path: "/usr/local/opt/ruby/lib/libruby.3.2.dylib", Hash: "sha256:aaa"},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Equal(t, []string{"/usr/local/opt/ruby/lib/libruby.3.2.dylib"}, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_MachoInstallNameCurl(t *testing.T) {
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "/usr/local/lib/libcurl.4.dylib", Path: "/usr/local/lib/libcurl.4.dylib", Hash: "sha256:aaa"},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Equal(t, []string{"/usr/local/lib/libcurl.4.dylib"}, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_MachoInstallNamePython(t *testing.T) {
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "/usr/local/opt/python/lib/libpython3.11.dylib", Path: "/usr/local/opt/python/lib/libpython3.11.dylib", Hash: "sha256:aaa"},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Equal(t, []string{"/usr/local/opt/python/lib/libpython3.11.dylib"}, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_MachoRpathInstallName(t *testing.T) {
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "@rpath/libcurl.dylib", Path: "@rpath/libcurl.dylib", Hash: "sha256:aaa"},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Equal(t, []string{"@rpath/libcurl.dylib"}, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_MachoNonNetworkLib(t *testing.T) {
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "/usr/lib/libz.1.dylib", Path: "/usr/lib/libz.1.dylib", Hash: "sha256:aaa"},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Empty(t, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
+func TestRecord_KnownNetworkLibDeps_MachoFalsePositivePrefix(t *testing.T) {
+	dynLibDeps := []fileanalysis.LibEntry{
+		{SOName: "/usr/local/lib/libpythonista.dylib", Path: "/usr/local/lib/libpythonista.dylib", Hash: "sha256:aaa"},
+	}
+	stub := &stubBinaryAnalyzer{result: binaryanalyzer.NoNetworkSymbols}
+	record, err := recordWithDynLibDepsAndBinaryAnalyzer(t, dynLibDeps, stub)
+	require.NoError(t, err)
+	require.NotNil(t, record.SymbolAnalysis)
+	assert.Empty(t, record.SymbolAnalysis.KnownNetworkLibDeps)
+}
+
 // stubPLTAnalyzer is a SyscallAnalyzerInterface that returns a fixed result for EvaluatePLTCallArgs.
 type stubPLTAnalyzer struct {
 	result *common.SyscallArgEvalResult

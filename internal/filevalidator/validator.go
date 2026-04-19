@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -314,7 +315,8 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		if len(record.DynLibDeps) > 0 && record.SymbolAnalysis != nil {
 			var matched []string
 			for _, lib := range record.DynLibDeps {
-				if binaryanalyzer.IsKnownNetworkLibrary(lib.SOName) {
+				base := filepath.Base(lib.SOName)
+				if binaryanalyzer.IsKnownNetworkLibrary(base) {
 					matched = append(matched, lib.SOName)
 				}
 			}
