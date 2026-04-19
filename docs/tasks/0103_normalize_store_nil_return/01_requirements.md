@@ -102,6 +102,18 @@ if record.SyscallAnalysis == nil {
 `lookupSyscallAnalysis` 内の switch 文から
 `errors.Is(err, fileanalysis.ErrNoSyscallAnalysis)` ケースを削除すること。
 
+また、`LoadSyscallAnalysis` が `(nil, nil)` を返す新ケースに対応するため、
+`convertSyscallResult` 呼び出し前に `result == nil` チェックを追加し、
+nilポインタ参照パニックを防止すること。
+
+**追加するガード:**
+```go
+if result == nil {
+    // Syscall analysis not stored for this file. Fall back silently.
+    return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
+}
+```
+
 ## 4. 非機能要件
 
 ### NFR-4.1: 動作の非変更
@@ -120,6 +132,7 @@ if record.SyscallAnalysis == nil {
 
 - [ ] `ErrNoSyscallAnalysis` が `errors.go` から削除されていること
 - [ ] `errors.Is(_, fileanalysis.ErrNoSyscallAnalysis)` の参照がコードベース全体に存在しないこと
+- [ ] `lookupSyscallAnalysis` 内に `result == nil` ガードが追加されていること
 
 ### AC-2: `ErrNoNetworkSymbolAnalysis` の削除
 

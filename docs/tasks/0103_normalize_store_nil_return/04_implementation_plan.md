@@ -55,8 +55,9 @@
 - [ ] **3.2** `internal/runner/security/elfanalyzer/standard_analyzer.go`
   - switch 文から `errors.Is(err, fileanalysis.ErrNoSyscallAnalysis)` ケースを削除し、
     `ErrRecordNotFound` のケースのみを残す
-  - **重要:** `err == nil` の後に `result == nil` チェックを追加する。
-    現在のコードは `err == nil` の場合に直接 `a.convertSyscallResult(result)` を呼ぶため、
+  - **重要:** `if err != nil` ブロックの直後（`return a.convertSyscallResult(result)` の前）に
+    `result == nil` チェックを追加する。
+    現在のコードは `if err != nil` ブロックを抜けた後に直接 `a.convertSyscallResult(result)` を呼ぶため、
     `result == nil` だと nil ポインタ参照パニックが発生する。
 
     ```go
@@ -111,5 +112,6 @@
 ## 注意事項
 
 - `network_analyzer.go` 削除ケースのコメント（文脈説明）は `case err == nil:` 側のコメントに吸収すること
-- `standard_analyzer.go` では `err == nil` かつ `result == nil` の新ケースが生じるため、
-  `convertSyscallResult` 呼び出し前に必ず nil チェックを追加すること（nil ポインタパニック防止）
+- `standard_analyzer.go` では `if err != nil` ブロックを抜けた後に `result == nil` となる
+  新ケースが生じるため、`convertSyscallResult` 呼び出し前に必ず nil チェックを追加すること
+  （nil ポインタパニック防止）
