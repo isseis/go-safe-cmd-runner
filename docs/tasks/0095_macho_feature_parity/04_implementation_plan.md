@@ -10,8 +10,8 @@
 | 0096 | Mach-O `LC_LOAD_DYLIB` 整合性検証 | 高 | 未着手 |
 | 0097 | Mach-O `svc #0x80` キャッシュ統合・CGO フォールバック | 中 | 未着手 |
 | 0098 | Mach-O `.dylib` ベース名による既知ネットワークライブラリ検出 | 中 | 未着手 |
-| 0099 | Mach-O `mprotect(PROT_EXEC)` 静的検出 | 中 | 未着手 |
-| 0100 | libSystem.dylib syscall ラッパー関数キャッシュ | 低 | 未着手 |
+| 0100 | libSystem.dylib syscall ラッパー関数キャッシュ・mprotect 検出 | 中 | 未着手 |
+| 0099 | Mach-O `mprotect(PROT_EXEC)` 直接 svc 検出（保留） | 低 | 未着手 |
 | 0101 | Mach-O 特権アクセス（execute-only バイナリ）対応 | 低 | 未着手 |
 
 ---
@@ -52,28 +52,32 @@
 - [x] `docs/tasks/0098_macho_known_network_libs/04_implementation_plan.md` を作成する
 - [ ] 実装・テストを行い PR をマージする
 
-### タスク 0099: Mach-O `mprotect(PROT_EXEC)` 静的検出（FR-4.6）
-
-**概要**: Mach-O の `__TEXT,__text` セクションで `svc #0x80`（`mprotect` = BSD syscall 74）を検出し、`x2` レジスタ（第3引数 `prot`）に `PROT_EXEC`（`0x4`）が設定されているかを後方スキャンで確認する。タスク 0097 の arm64 デコーダを共用。結果は `fileanalysis.Record.SyscallAnalysis.ArgEvalResults` に保存する。タスク 0078（ELF 版）の Mach-O 対応。
-
-- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/01_requirements.md` を作成する
-- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/02_architecture.md` を作成する
-- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/03_detailed_specification.md` を作成する
-- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/04_implementation_plan.md` を作成する
-- [ ] 実装・テストを行い PR をマージする
-
 ---
 
 ## フェーズ 3: 補完
 
-### タスク 0100: libSystem.dylib syscall ラッパー関数キャッシュ（FR-4.7）
+### タスク 0100: libSystem.dylib syscall ラッパー関数キャッシュ・mprotect 検出（FR-4.7 / FR-4.6 前半）
 
 **概要**: タスク 0079（ELF 版 libc syscall ラッパーキャッシュ）の macOS 版。`libSystem.dylib` の各エクスポート関数に FR-4.2 の syscall 解析を適用し、関数名 → syscall 番号のキャッシュを構築する。ファイルシステム上に存在しない場合は dyld shared cache（`/System/Library/dyld/dyld_shared_cache_arm64e` 等）から対象ライブラリを抽出して解析する。段階的リリースを推奨（段階 1: ファイル存在時のみ解析、段階 2: dyld shared cache 対応）。
+
+**0099 より先に実装する理由**: macOS では通常バイナリは `libSystem.dylib` 経由で `mprotect` を呼ぶため、`svc #0x80` の直接スキャン（タスク 0099）より libSystem.dylib シンボル経由の検出が実用的な攻撃ベクタに直接対応する。また、タスク 0097 で「`svc #0x80` の存在自体を一律ハイリスク」と確定済みであり、直接 svc スキャンによる mprotect 引数判定（0099）はリスク判定を変えない。
 
 - [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/01_requirements.md` を作成する
 - [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/02_architecture.md` を作成する
 - [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/03_detailed_specification.md` を作成する
 - [ ] `docs/tasks/0100_macho_libsystem_syscall_cache/04_implementation_plan.md` を作成する
+- [ ] 実装・テストを行い PR をマージする
+
+### タスク 0099: Mach-O `mprotect(PROT_EXEC)` 直接 svc 検出（FR-4.6 後半・保留）
+
+**概要**: Mach-O の `__TEXT,__text` セクションで `svc #0x80`（`mprotect` = BSD syscall 74）を検出し、`x2` レジスタ（第3引数 `prot`）に `PROT_EXEC`（`0x4`）が設定されているかを後方スキャンで確認する。タスク 0097 の arm64 デコーダを共用。結果は `fileanalysis.Record.SyscallAnalysis.ArgEvalResults` に保存する。タスク 0078（ELF 版）の Mach-O 対応。
+
+**保留理由**: `svc #0x80` の直接呼び出しはタスク 0097 で既に一律ハイリスク扱いのため、引数レベルの検出を追加してもリスク判定が変わらない。タスク 0100 で libSystem.dylib 経由の検出を実装した後、静的引数解析の追加価値を再評価する。
+
+- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/01_requirements.md` を作成する
+- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/02_architecture.md` を作成する
+- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/03_detailed_specification.md` を作成する
+- [ ] `docs/tasks/0099_macho_mprotect_exec_detection/04_implementation_plan.md` を作成する
 - [ ] 実装・テストを行い PR をマージする
 
 ### タスク 0101: Mach-O 特権アクセス（execute-only バイナリ）対応（FR-4.9）
