@@ -46,10 +46,10 @@
 
 **概要**: `LC_LOAD_DYLIB` のインストール名（例: `/usr/local/opt/ruby/lib/libruby.3.2.dylib`）からベース名を抽出し、ELF 版の `known_network_libs.go` が持つ既知ネットワークライブラリ・言語ランタイムのプレフィックスリストと照合する。Mach-O 側で追加するのはインストール名 → ベース名の正規化のみ。タスク 0082（方策 C）の Mach-O 版。
 
-- [ ] `docs/tasks/0098_macho_known_network_libs/01_requirements.md` を作成する
-- [ ] `docs/tasks/0098_macho_known_network_libs/02_architecture.md` を作成する
-- [ ] `docs/tasks/0098_macho_known_network_libs/03_detailed_specification.md` を作成する
-- [ ] `docs/tasks/0098_macho_known_network_libs/04_implementation_plan.md` を作成する
+- [x] `docs/tasks/0098_macho_known_network_libs/01_requirements.md` を作成する
+- [-] `docs/tasks/0098_macho_known_network_libs/02_architecture.md` を作成する（変更最小のため省略）
+- [-] `docs/tasks/0098_macho_known_network_libs/03_detailed_specification.md` を作成する（変更最小のため省略）
+- [x] `docs/tasks/0098_macho_known_network_libs/04_implementation_plan.md` を作成する
 - [ ] 実装・テストを行い PR をマージする
 
 ### タスク 0099: Mach-O `mprotect(PROT_EXEC)` 静的検出（FR-4.6）
