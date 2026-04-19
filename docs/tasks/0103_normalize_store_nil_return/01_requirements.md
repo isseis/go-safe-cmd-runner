@@ -36,6 +36,7 @@
 - `internal/fileanalysis/syscall_store.go` — `LoadSyscallAnalysis` の返却値
 - `internal/fileanalysis/network_symbol_store.go` — `LoadNetworkSymbolAnalysis` の返却値
 - `internal/fileanalysis/errors.go` — センチネルエラー定義の削除
+- `internal/fileanalysis/schema.go` — `ErrNoSyscallAnalysis` への言及を含むコメントの更新
 - `internal/runner/security/network_analyzer.go` — 呼び出し側の switch 文
 - `internal/runner/security/elfanalyzer/standard_analyzer.go` — 呼び出し側の switch 文
 - 上記ファイルに対応するテストファイル
