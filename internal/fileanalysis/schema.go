@@ -21,11 +21,14 @@ const (
 	// Version 13 removes UpdatedAt field (was unused by verify; caused noisy diffs).
 	// Version 14 adds AnalysisWarnings to Record for dynlib analysis warnings.
 	// Mach-O binaries also record DynLibDeps starting with version 14.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 14.
+	// Version 15 adds Mach-O arm64 svc #0x80 scanning: records written at v15 or later
+	// guarantee that the svc scan was performed, so ErrNoSyscallAnalysis means the scan
+	// ran and found nothing (safe to fall through to SymbolAnalysis-based decision).
+	// Load returns SchemaVersionMismatchError for records with schema_version != 15.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 14
+	CurrentSchemaVersion = 15
 )
 
 // Record represents a unified file analysis record containing both

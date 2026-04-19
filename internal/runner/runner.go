@@ -250,16 +250,23 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 	// Create output manager with the same validator that has group membership support
 	outputMgr := output.NewDefaultOutputCaptureManager(validator)
 
-	// Obtain a NetworkSymbolStore from the path resolver if available.
-	// When the resolver does not implement networkSymbolStoreProvider (e.g., test mocks
-	// without a hash dir), store is nil and cache-based analysis is disabled
-	// (falls back to live binary analysis).
+	// Obtain analysis stores from the path resolver if available.
+	// When the resolver does not implement these provider interfaces (e.g., test mocks
+	// without a hash dir), the corresponding cache is nil and cache-based analysis
+	// is disabled.
 	var networkStore fileanalysis.NetworkSymbolStore
+	var syscallStore fileanalysis.SyscallAnalysisStore
 	type networkSymbolStoreProvider interface {
 		GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore
 	}
+	type syscallAnalysisStoreProvider interface {
+		GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore
+	}
 	if p, ok := pathResolver.(networkSymbolStoreProvider); ok {
 		networkStore = p.GetNetworkSymbolStore()
+	}
+	if p, ok := pathResolver.(syscallAnalysisStoreProvider); ok {
+		syscallStore = p.GetSyscallAnalysisStore()
 	}
 
 	resourceManager, err := resource.NewDefaultResourceManager(
@@ -273,6 +280,7 @@ func createNormalResourceManager(opts *runnerOptions, _ *runnertypes.ConfigSpec,
 		outputMgr,                 // Pass output manager with validator
 		maxOutputSize,             // Not used anymore (per-command limit is used instead)
 		networkStore,              // NetworkSymbolStore for cache-based analysis (nil disables cache)
+		syscallStore,              // SyscallAnalysisStore for cache-based analysis (nil disables cache)
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create default resource manager: %w", err)

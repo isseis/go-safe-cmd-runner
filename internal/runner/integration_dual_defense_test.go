@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
@@ -86,7 +87,7 @@ func TestIntegration_DualDefense(t *testing.T) {
 	// Output manager will be created by NewDefaultResourceManager
 	var outputMgr output.CaptureManager
 
-	rm, err := resource.NewDefaultResourceManager(
+	rm, err := resourcetestutil.NewDefaultResourceManager(
 		exec,
 		fs,
 		nil,
@@ -197,7 +198,7 @@ func TestIntegration_Case1Only(t *testing.T) {
 	// Output manager will be created by NewDefaultResourceManager
 	var outputMgr output.CaptureManager
 
-	rm, err := resource.NewDefaultResourceManager(
+	rm, err := resourcetestutil.NewDefaultResourceManager(
 		exec,
 		fs,
 		nil,
@@ -299,7 +300,7 @@ func TestIntegration_Case2Only(t *testing.T) {
 	// Output manager will be created by NewDefaultResourceManager
 	var outputMgr output.CaptureManager
 
-	rm, err := resource.NewDefaultResourceManager(
+	rm, err := resourcetestutil.NewDefaultResourceManager(
 		exec,
 		fs,
 		nil,
@@ -406,7 +407,7 @@ func TestIntegration_Case2Only_DebugLeakage(t *testing.T) {
 	// Output manager will be created by NewDefaultResourceManager
 	var outputMgr output.CaptureManager
 
-	rm, err := resource.NewDefaultResourceManager(
+	rm, err := resourcetestutil.NewDefaultResourceManager(
 		exec,
 		fs,
 		nil,

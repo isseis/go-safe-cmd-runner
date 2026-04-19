@@ -22,9 +22,9 @@ type DefaultResourceManager struct {
 	dryrun *DryRunResourceManager
 }
 
-// NewDefaultResourceManager creates a new DefaultResourceManager with output capture support.
-// If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64, store fileanalysis.NetworkSymbolStore) (*DefaultResourceManager, error) {
+// NewDefaultResourceManager creates a new DefaultResourceManager with output capture support
+// and both binary-analysis caches.
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64, symStore fileanalysis.NetworkSymbolStore, syscallStore fileanalysis.SyscallAnalysisStore) (*DefaultResourceManager, error) {
 	// Create output manager if not provided
 	if outputMgr == nil {
 		// Create a security validator for output validation
@@ -37,7 +37,7 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 
 	mgr := &DefaultResourceManager{
 		mode:   mode,
-		normal: NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger, store),
+		normal: NewNormalResourceManagerWithStores(exec, fs, privMgr, outputMgr, maxOutputSize, logger, symStore, syscallStore),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.

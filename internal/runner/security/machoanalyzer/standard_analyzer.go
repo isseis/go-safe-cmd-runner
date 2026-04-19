@@ -31,6 +31,8 @@ const magicNumberSize = 4
 const (
 	machoMagic64 = 0xFEEDFACF // 64-bit Mach-O (native endian)
 	machoCigam64 = 0xCFFAEDFE // 64-bit Mach-O (byte-swapped)
+	machoMagic32 = 0xFEEDFACE // 32-bit Mach-O (native endian)
+	machoCigam32 = 0xCEFAEDFE // 32-bit Mach-O (byte-swapped)
 	fatMagic     = 0xCAFEBABE // Fat binary
 	fatCigam     = 0xBEBAFECA // Fat binary (byte-swapped)
 )

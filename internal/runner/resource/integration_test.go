@@ -229,7 +229,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeNormal, dryRunOpts, nil, 0, nil)
+		manager, err := NewDefaultResourceManagerForTest(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeNormal, dryRunOpts, nil, 0, nil)
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 
@@ -248,7 +248,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0, nil)
+		manager, err := NewDefaultResourceManagerForTest(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0, nil)
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 

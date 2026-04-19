@@ -17,9 +17,9 @@
 
 ### 2.1 インポートサイクル確認
 
-- [ ] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
+- [x] `internal/runner/security/machoanalyzer` が `internal/filevalidator` を import していないこと
   - 確認コマンド: `grep -r "filevalidator" internal/runner/security/machoanalyzer/`
-- [ ] `internal/filevalidator` が `internal/runner/security/machoanalyzer` を import 可能なこと
+- [x] `internal/filevalidator` が `internal/runner/security/machoanalyzer` を import 可能なこと
   - 確認コマンド: `go build ./internal/filevalidator/...` が通ること
 
 ### 2.2 `safefileio.FileSystem.SafeOpenFile` の返り値型確認
@@ -30,7 +30,7 @@
 
 ### 2.3 `fileanalysis.SyscallAnalysisData` の型確認
 
-- [ ] `fileanalysis.SyscallAnalysisData` が `common.SyscallAnalysisResultCore` を embed していること
+- [x] `fileanalysis.SyscallAnalysisData` が `common.SyscallAnalysisResultCore` を embed していること
   - ファイル: `internal/fileanalysis/schema.go`
 
 ## 3. Step 1: `machoanalyzer` パッケージの拡張
@@ -39,36 +39,36 @@
 
 ### 3.1 実装チェックリスト
 
-- [ ] `svc_scanner.go` に `safefileio` パッケージのインポートを追加する:
+- [x] `svc_scanner.go` に `safefileio` パッケージのインポートを追加する:
   `"github.com/isseis/go-safe-cmd-runner/internal/safefileio"`
-- [ ] `svc_scanner.go` に `"os"` パッケージのインポートを追加する
-- [ ] `collectSVCAddresses(f *macho.File) ([]uint64, error)` を実装する
-  - [ ] `f.Cpu != macho.CpuArm64` の場合は `nil, nil` を返す
-  - [ ] `__TEXT,__text` セクションが存在しない場合は `nil, nil` を返す
-  - [ ] セクションデータ読み出しエラー時はエラーを返す
-  - [ ] 4 バイトアラインで走査し、`svcInstruction` にマッチした仮想アドレスを収集する
-  - [ ] `section.Addr + uint64(i)` で仮想アドレスを算出する
-  - [ ] 検出なしの場合は `nil, nil` を返す
-- [ ] `containsSVCInstruction` を `collectSVCAddresses` に委譲するよう変更する
-  - [ ] 変更後も既存の動作（bool 返し）を維持する
-- [ ] `CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error)` を実装する
-  - [ ] `fs.SafeOpenFile` でファイルを開く
-  - [ ] 先頭 4 バイトでマジック確認を行い、非 Mach-O には `nil, nil` を返す
-  - [ ] Fat バイナリ: arm64 スライスのみ `collectSVCAddresses` を呼び結果を連結する
-  - [ ] 単一アーキテクチャ: `collectSVCAddresses` を呼ぶ
-  - [ ] パースエラー時はエラーを返す
+- [x] `svc_scanner.go` に `"os"` パッケージのインポートを追加する
+- [x] `collectSVCAddresses(f *macho.File) ([]uint64, error)` を実装する
+  - [x] `f.Cpu != macho.CpuArm64` の場合は `nil, nil` を返す
+  - [x] `__TEXT,__text` セクションが存在しない場合は `nil, nil` を返す
+  - [x] セクションデータ読み出しエラー時はエラーを返す
+  - [x] 4 バイトアラインで走査し、`svcInstruction` にマッチした仮想アドレスを収集する
+  - [x] `section.Addr + uint64(i)` で仮想アドレスを算出する
+  - [x] 検出なしの場合は `nil, nil` を返す
+- [x] `containsSVCInstruction` を `collectSVCAddresses` に委譲するよう変更する
+  - [x] 変更後も既存の動作（bool 返し）を維持する
+- [x] `CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error)` を実装する
+  - [x] `fs.SafeOpenFile` でファイルを開く
+  - [x] 先頭 4 バイトでマジック確認を行い、非 Mach-O には `nil, nil` を返す
+  - [x] Fat バイナリ: arm64 スライスのみ `collectSVCAddresses` を呼び結果を連結する
+  - [x] 単一アーキテクチャ: `collectSVCAddresses` を呼ぶ
+  - [x] パースエラー時はエラーを返す
 
 ### 3.2 テストチェックリスト
 
 **ファイル**: `internal/runner/security/machoanalyzer/svc_scanner_test.go`（追加分）
 
-- [ ] `TestCollectSVCAddresses_Arm64WithSVC`: arm64 + svc #0x80 → アドレスを返す
-- [ ] `TestCollectSVCAddresses_Arm64NoSVC`: arm64 + svc なし → `nil, nil`
-- [ ] `TestCollectSVCAddresses_NonArm64`: x86_64 → `nil, nil`
-- [ ] `TestCollectSVCAddresses_MultipleSVC`: 複数 svc #0x80 → 全アドレスを返す
-- [ ] `TestCollectSVCAddressesFromFile_NotMacho`: ELF ファイル → `nil, nil`
-- [ ] `TestCollectSVCAddressesFromFile_FatBinary`: Fat バイナリ → arm64 スライスのみ走査
-- [ ] `TestContainsSVCInstruction_DelegatesToCollect`: リファクタリング後も正常動作
+- [x] `TestCollectSVCAddresses_Arm64WithSVC`: arm64 + svc #0x80 → アドレスを返す
+- [x] `TestCollectSVCAddresses_Arm64NoSVC`: arm64 + svc なし → `nil, nil`
+- [x] `TestCollectSVCAddresses_NonArm64`: x86_64 → `nil, nil`
+- [x] `TestCollectSVCAddresses_MultipleSVC`: 複数 svc #0x80 → 全アドレスを返す
+- [x] `TestCollectSVCAddressesFromFile_NotMacho`: ELF ファイル → `nil, nil`
+- [x] `TestCollectSVCAddressesFromFile_FatBinary`: Fat バイナリ → arm64 スライスのみ走査
+- [x] `TestContainsSVCInstruction_DelegatesToCollect`: リファクタリング後も正常動作
 
 **実行コマンド**:
 ```
@@ -81,33 +81,33 @@ go test -tags test -v ./internal/runner/security/machoanalyzer/
 
 ### 4.1 実装チェックリスト
 
-- [ ] `machoanalyzer` パッケージのインポートを追加する:
+- [x] `machoanalyzer` パッケージのインポートを追加する:
   `"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"`
-- [ ] `buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData` を実装する
-  - [ ] `Architecture: "arm64"` を設定する
-  - [ ] `AnalysisWarnings: []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"}` を設定する
-  - [ ] `DetectedSyscalls` に各アドレスを `Number=-1, DeterminationMethod="direct_svc_0x80", Source="direct_svc_0x80"` で記録する
-  - [ ] `ArgEvalResults` は設定しない（nil のまま）
-- [ ] `updateAnalysisRecord` のコールバック内、`analyzeSyscalls()` 呼び出し直後に Mach-O svc スキャンを追加する
-  - [ ] `v.binaryAnalyzer != nil` の条件分岐を追加する（binaryAnalyzer が nil の場合はスキップ）
-  - [ ] `machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)` を呼ぶ
-  - [ ] エラー時はラップして返す
-  - [ ] `len(addrs) > 0` の場合のみ `record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)` を設定する
-  - [ ] `SymbolAnalysis = NetworkDetected` の場合も svc スキャンを実行すること（`runner` 側で参照可否を制御する）
+- [x] `buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData` を実装する
+  - [x] `Architecture: "arm64"` を設定する
+  - [x] `AnalysisWarnings: []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"}` を設定する
+  - [x] `DetectedSyscalls` に各アドレスを `Number=-1, DeterminationMethod="direct_svc_0x80", Source="direct_svc_0x80"` で記録する
+  - [x] `ArgEvalResults` は設定しない（nil のまま）
+- [x] `updateAnalysisRecord` のコールバック内、`analyzeSyscalls()` 呼び出し直後に Mach-O svc スキャンを追加する
+  - [x] `v.binaryAnalyzer != nil` の条件分岐を追加する（binaryAnalyzer が nil の場合はスキップ）
+  - [x] `machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)` を呼ぶ
+  - [x] エラー時はラップして返す
+  - [x] `len(addrs) > 0` の場合のみ `record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)` を設定する
+  - [x] `SymbolAnalysis = NetworkDetected` の場合も svc スキャンを実行すること（`runner` 側で参照可否を制御する）
 
 ### 4.2 テストチェックリスト
 
 **ファイル**: `internal/filevalidator/validator_macho_test.go`（新規推奨）
 
-- [ ] `TestBuildSVCSyscallAnalysis`: 単体テスト
-  - [ ] `Architecture == "arm64"` を確認
-  - [ ] `AnalysisWarnings` に検出メッセージが含まれる
-  - [ ] `DetectedSyscalls` に正しいフィールドが設定される
-- [ ] `TestUpdateAnalysisRecord_MachoSVCDetected`: svc ありの Mach-O (NoNetworkSymbols) で SyscallAnalysis が設定される
-- [ ] `TestUpdateAnalysisRecord_MachoNoSVC`: svc なしの Mach-O で SyscallAnalysis が nil
-- [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_SVCDetected`: NetworkDetected + svc あり → SyscallAnalysis が保存される
-- [ ] `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC`: NetworkDetected + svc なし → SyscallAnalysis が nil
-- [ ] `TestUpdateAnalysisRecord_ELFNotAffected`: ELF バイナリのフロー変更なし（linux のみ、またはモック）
+- [x] `TestBuildSVCSyscallAnalysis`: 単体テスト
+  - [x] `Architecture == "arm64"` を確認
+  - [x] `AnalysisWarnings` に検出メッセージが含まれる
+  - [x] `DetectedSyscalls` に正しいフィールドが設定される
+- [x] `TestUpdateAnalysisRecord_MachoSVCDetected`: svc ありの Mach-O (NoNetworkSymbols) で SyscallAnalysis が設定される
+- [x] `TestUpdateAnalysisRecord_MachoNoSVC`: svc なしの Mach-O で SyscallAnalysis が nil
+- [x] `TestUpdateAnalysisRecord_MachoNetworkDetected_SVCDetected`: NetworkDetected + svc あり → SyscallAnalysis が保存される
+- [x] `TestUpdateAnalysisRecord_MachoNetworkDetected_NoSVC`: NetworkDetected + svc なし → SyscallAnalysis が nil
+- [x] `TestUpdateAnalysisRecord_ELFNotAffected`: ELF バイナリのフロー変更なし（linux のみ、またはモック）
 
 **注意**:
 - `debug/macho` はクロスプラットフォームで利用できるため、darwin ビルドタグは不要
@@ -124,45 +124,45 @@ go test -tags test -v ./internal/filevalidator/
 
 ### 5.1 実装チェックリスト
 
-- [ ] `NetworkAnalyzer` 構造体に `syscallStore fileanalysis.SyscallAnalysisStore` フィールドを追加する
-- [ ] `NewNetworkAnalyzerWithStores` コンストラクタを実装する
-  - [ ] `symStore` と `svcStore` を受け取り `NetworkAnalyzer` を返す
-  - [ ] `binaryAnalyzer: NewBinaryAnalyzer()` を設定する
-- [ ] `syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool` を実装する
-  - [ ] nil の場合は `false` を返す
-  - [ ] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合のみ `true` を返す
-  - [ ] `AnalysisWarnings` は判定条件に含めない（ELF 側の警告による誤検知を防ぐ）
-- [ ] `isNetworkViaBinaryAnalysis` の cache-backed path を書き直し、SVC 判定の live 解析フォールバックを削除する
-  - [ ] `a.store == nil` / `contentHash == ""` の互換ガード（legacy live 解析経路）を削除する（実装計画書 Section 8 参照）
-  - [ ] SymbolAnalysis ロードエラー → `return true, true`（AnalysisError、live 解析なし）
-  - [ ] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを cache-backed path から削除する
-  - [ ] SymbolAnalysis ロード成功後、`SymbolAnalysis` の結果に関わらず `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（FR-3.3.1）
-  - [ ] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す（`SymbolAnalysis` の結果に関わらず高リスク確定）
-  - [ ] `svcErr == nil` かつ svc signal なし → `SymbolAnalysis` 結果に基づいて判定を続ける（fall through）
-  - [ ] `ErrNoSyscallAnalysis` → `SymbolAnalysis` 結果に基づいて判定を続ける（fall through、v15 保証：スキャン済み・svc 未検出）
-  - [ ] `ErrHashMismatch` → `return true, true`
-  - [ ] `SchemaVersionMismatchError` → `return true, true`（再 `record` 要求）
-  - [ ] `ErrRecordNotFound` / その他エラー → `return true, true`（整合性エラー）
-  - [ ] svc signal なし時の `SymbolAnalysis` 結果判定: `NetworkDetected` → `true, false`、`NoNetworkSymbols` → `false, false`
+- [x] `NetworkAnalyzer` 構造体に `syscallStore fileanalysis.SyscallAnalysisStore` フィールドを追加する
+- [x] `NewNetworkAnalyzerWithStores` コンストラクタを実装する
+  - [x] `symStore` と `svcStore` を受け取り `NetworkAnalyzer` を返す
+  - [x] `binaryAnalyzer: NewBinaryAnalyzer()` を設定する
+- [x] `syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool` を実装する
+  - [x] nil の場合は `false` を返す
+  - [x] `DetectedSyscalls` に `DeterminationMethod == "direct_svc_0x80"` のエントリがある場合のみ `true` を返す
+  - [x] `AnalysisWarnings` は判定条件に含めない（ELF 側の警告による誤検知を防ぐ）
+- [x] `isNetworkViaBinaryAnalysis` の cache-backed path を書き直し、SVC 判定の live 解析フォールバックを削除する
+  - [-] `a.store == nil` / `contentHash == ""` の互換ガード（legacy live 解析経路）を削除する（実装計画書 Section 8 参照）
+  - [x] SymbolAnalysis ロードエラー → `return true, true`（AnalysisError、live 解析なし）
+  - [x] `a.binaryAnalyzer.AnalyzeNetworkSymbols()` の呼び出しを cache-backed path から削除する
+  - [x] SymbolAnalysis ロード成功後、`SymbolAnalysis` の結果に関わらず `a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)` を呼ぶ（FR-3.3.1）
+  - [x] `svcErr == nil` かつ `syscallAnalysisHasSVCSignal(svcResult)` → `true, true` を返す（`SymbolAnalysis` の結果に関わらず高リスク確定）
+  - [x] `svcErr == nil` かつ svc signal なし → `SymbolAnalysis` 結果に基づいて判定を続ける（fall through）
+  - [x] `ErrNoSyscallAnalysis` → `SymbolAnalysis` 結果に基づいて判定を続ける（fall through、v15 保証：スキャン済み・svc 未検出）
+  - [x] `ErrHashMismatch` → `return true, true`
+  - [x] `SchemaVersionMismatchError` → `return true, true`（再 `record` 要求）
+  - [x] `ErrRecordNotFound` / その他エラー → `return true, true`（整合性エラー）
+  - [x] svc signal なし時の `SymbolAnalysis` 結果判定: `NetworkDetected` → `true, false`、`NoNetworkSymbols` → `false, false`
 
 ### 5.2 テストチェックリスト
 
 **ファイル**: `internal/runner/security/network_analyzer_test.go`（追加分）
 
-- [ ] `TestSyscallAnalysisHasSVCSignal_Nil`: nil → false
-- [ ] `TestSyscallAnalysisHasSVCSignal_Empty`: 空の result → false
-- [ ] `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly`: AnalysisWarnings のみ（DeterminationMethod なし）→ false
-- [ ] `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod`: DeterminationMethod == "direct_svc_0x80" → true
-- [ ] `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss`: SymbolAnalysis ロードエラー → AnalysisError（live 解析なし）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: NoNetworkSymbols + svc あり → true, true
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil`: ロード成功・svc なし → false, false
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch`: ErrHashMismatch → AnalysisError
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis`: ErrNoSyscallAnalysis → false, false（フォールバックなし）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch`: SchemaVersionMismatchError → AnalysisError
-- [ ] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound`: ErrRecordNotFound → AnalysisError（live 解析なし）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit`: NetworkDetected + svc あり → true, true（isHighRisk 格上げ）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis`: NetworkDetected + ErrNoSyscallAnalysis → true, false（格上げなし）
-- [ ] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC`: NetworkDetected + svc なし（ロード成功）→ true, false（格上げなし）
+- [x] `TestSyscallAnalysisHasSVCSignal_Nil`: nil → false
+- [x] `TestSyscallAnalysisHasSVCSignal_Empty`: 空の result → false
+- [x] `TestSyscallAnalysisHasSVCSignal_WithWarningsOnly`: AnalysisWarnings のみ（DeterminationMethod なし）→ false
+- [x] `TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod`: DeterminationMethod == "direct_svc_0x80" → true
+- [x] `TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss`: SymbolAnalysis ロードエラー → AnalysisError（live 解析なし）
+- [x] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheHit`: NoNetworkSymbols + svc あり → true, true
+- [x] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCCacheNil`: ロード成功・svc なし → false, false
+- [x] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCHashMismatch`: ErrHashMismatch → AnalysisError
+- [x] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCNoSyscallAnalysis`: ErrNoSyscallAnalysis → false, false（フォールバックなし）
+- [x] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCSchemaMismatch`: SchemaVersionMismatchError → AnalysisError
+- [x] `TestIsNetworkViaBinaryAnalysis_NoNetworkSymbols_SVCRecordNotFound`: ErrRecordNotFound → AnalysisError（live 解析なし）
+- [x] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCCacheHit`: NetworkDetected + svc あり → true, true（isHighRisk 格上げ）
+- [x] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_SVCNoSyscallAnalysis`: NetworkDetected + ErrNoSyscallAnalysis → true, false（格上げなし）
+- [x] `TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC`: NetworkDetected + svc なし（ロード成功）→ true, false（格上げなし）
 
 **実行コマンド**:
 ```

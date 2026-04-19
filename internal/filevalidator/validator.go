@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
@@ -323,6 +324,23 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		// Steps A-D: ELF syscall analysis (libc import + direct instruction).
 		if err := v.analyzeSyscalls(record, filePath.String()); err != nil {
 			return err
+		}
+
+		// Mach-O arm64 svc #0x80 scan.
+		// Run after analyzeSyscalls() to overwrite the nil it sets for non-ELF files.
+		// record's responsibility is to faithfully capture binary state regardless of
+		// SymbolAnalysis result. runner decides whether to consult SyscallAnalysis based
+		// on SymbolAnalysis outcome (FR-3.2.2).
+		// CollectSVCAddressesFromFile checks magic bytes and returns nil for non-Mach-O
+		// files, so this is safe to call on all platforms and binary formats.
+		{
+			addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
+			if svcErr != nil {
+				return fmt.Errorf("mach-o svc scan failed: %w", svcErr)
+			}
+			if len(addrs) > 0 {
+				record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)
+			}
 		}
 
 		// Record shebang interpreter info.
@@ -705,6 +723,32 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
 	}
 	return entries
+}
+
+// buildSVCSyscallAnalysis constructs a SyscallAnalysisData record for a Mach-O
+// binary where svc #0x80 instructions were detected at the given virtual addresses.
+// Each address is recorded as a DetectedSyscall with Number=-1 (undetermined) and
+// DeterminationMethod="direct_svc_0x80".
+func buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData {
+	syscalls := make([]common.SyscallInfo, len(addrs))
+	for i, addr := range addrs {
+		syscalls[i] = common.SyscallInfo{
+			Number:              -1,
+			IsNetwork:           false,
+			Location:            addr,
+			DeterminationMethod: "direct_svc_0x80",
+			Source:              "direct_svc_0x80",
+		}
+	}
+	return &fileanalysis.SyscallAnalysisData{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "arm64",
+			AnalysisWarnings: []string{
+				"svc #0x80 detected: direct syscall bypassing libSystem.dylib",
+			},
+			DetectedSyscalls: syscalls,
+		},
+	}
 }
 
 // analyzeSyscalls performs ELF syscall analysis on the given file path and sets

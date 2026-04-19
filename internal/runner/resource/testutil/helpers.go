@@ -6,7 +6,9 @@ package testutil
 import (
 	"log/slog"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -20,4 +22,21 @@ func NewNormalResourceManager(
 ) *resource.NormalResourceManager {
 	// Delegate to NewNormalResourceManagerWithOutput with nil outputManager and 0 maxOutputSize
 	return resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger, nil)
+}
+
+// NewDefaultResourceManager creates a DefaultResourceManager with nil SyscallAnalysisStore.
+// Use only in tests; production code must supply all stores explicitly via resource.NewDefaultResourceManager.
+func NewDefaultResourceManager(
+	exec executor.CommandExecutor,
+	fs executor.FileSystem,
+	privMgr runnertypes.PrivilegeManager,
+	pathResolver resource.PathResolver,
+	logger *slog.Logger,
+	mode resource.ExecutionMode,
+	dryRunOpts *resource.DryRunOptions,
+	outputMgr output.CaptureManager,
+	maxOutputSize int64,
+	symStore fileanalysis.NetworkSymbolStore,
+) (*resource.DefaultResourceManager, error) {
+	return resource.NewDefaultResourceManager(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, outputMgr, maxOutputSize, symStore, nil)
 }

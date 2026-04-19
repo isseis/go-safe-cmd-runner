@@ -2701,21 +2701,25 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
 	})
 
-	t.Run("cache miss (ErrNoNetworkSymbolAnalysis) → BinaryAnalyzer called as fallback", func(t *testing.T) {
+	t.Run("ErrNoNetworkSymbolAnalysis (no syscallStore) → false, false (static binary, no live fallback)", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
 		analyzer := newNetworkAnalyzer(mock, store)
-		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.True(t, isNet, "expected network detected via live binary analysis fallback")
+		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+		assert.False(t, isNet, "static binary with no svc should return false")
+		assert.False(t, isHigh, "static binary with no svc should return false")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called (live fallback removed)")
 	})
 
-	t.Run("SchemaVersionMismatchError → BinaryAnalyzer called as fallback", func(t *testing.T) {
+	t.Run("SchemaVersionMismatchError → high risk, BinaryAnalyzer not called", func(t *testing.T) {
 		schemaErr := &fileanalysis.SchemaVersionMismatchError{Expected: fileanalysis.CurrentSchemaVersion, Actual: fileanalysis.CurrentSchemaVersion - 1}
 		store := &stubNetworkSymbolStore{err: schemaErr}
 		mock := &mockBinaryAnalyzer{result: binaryanalyzer.NetworkDetected}
 		analyzer := newNetworkAnalyzer(mock, store)
-		isNet, _ := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
-		assert.True(t, isNet, "expected live binary analysis fallback on schema mismatch")
+		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
+		assert.True(t, isNet, "schema mismatch must return isNetwork=true as safety measure")
+		assert.True(t, isHigh, "schema mismatch must return high risk")
+		assert.False(t, mock.called, "BinaryAnalyzer must not be called on schema mismatch")
 	})
 
 	t.Run("nil store → BinaryAnalyzer called directly", func(t *testing.T) {

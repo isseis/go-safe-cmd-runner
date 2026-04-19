@@ -28,7 +28,8 @@ type Manager struct {
 	safeFS                      safefileio.FileSystem // used for secure file I/O (e.g. ELF inspection)
 	fileValidator               filevalidator.FileValidator
 	networkSymbolStore          fileanalysis.NetworkSymbolStore // nil when cache is unavailable
-	dynlibVerifier              *elfdynlib.DynLibVerifier       // initialized once at construction
+	syscallAnalysisStore        fileanalysis.SyscallAnalysisStore
+	dynlibVerifier              *elfdynlib.DynLibVerifier // initialized once at construction
 	security                    *security.Validator
 	pathResolver                *PathResolver
 	isDryRun                    bool
@@ -347,6 +348,13 @@ func (m *Manager) GetNetworkSymbolStore() fileanalysis.NetworkSymbolStore {
 	return m.networkSymbolStore
 }
 
+// GetSyscallAnalysisStore returns a SyscallAnalysisStore backed by the same hash
+// directory, or nil if not available (e.g. when fileValidator is a test mock or
+// hash dir is absent).
+func (m *Manager) GetSyscallAnalysisStore() fileanalysis.SyscallAnalysisStore {
+	return m.syscallAnalysisStore
+}
+
 // verifyFile attempts file verification using the configured fileValidator.
 // In dry-run mode it records the result in the ResultCollector and logs the
 // failure, but still returns the underlying error so callers can track
@@ -501,6 +509,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			manager.fileValidator = validator
 			if s := validator.GetStore(); s != nil {
 				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
+				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
 			}
 		}
 	}
