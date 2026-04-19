@@ -55,45 +55,45 @@
 
 ### 3.1 実装チェックリスト
 
-- [ ] `SourceLibsystemSymbolImport` を追加する
-- [ ] `DeterminationMethodLibCacheMatch` と `DeterminationMethodSymbolNameMatch` を追加する
-- [ ] macOS arm64 BSD syscall テーブルを定義する
-- [ ] フォールバック専用のネットワーク syscall 名リストを定義する
-- [ ] `MachoLibSystemAnalyzer.Analyze()` を実装する
-- [ ] Mach-O `__TEXT,__text` 範囲から `svc #0x80` を検出する
-- [ ] `x16` 後方スキャンで BSD クラスプレフィックスを除去した syscall 番号を抽出する
-- [ ] 256 バイト超の関数を除外する
-- [ ] 複数の異なる syscall 番号を持つ関数を除外する
-- [ ] `MachoLibSystemCacheManager.GetOrCreate()` を実装する
-- [ ] `ImportSymbolMatcher.MatchWithMethod()` を追加する
-- [ ] `MachoLibSystemAdapter` で cache hit / fallback の両経路を実装する
-- [ ] 非 arm64 ライブラリ時は info ログを出して解析をスキップする
+- [x] `SourceLibsystemSymbolImport` を追加する
+- [x] `DeterminationMethodLibCacheMatch` と `DeterminationMethodSymbolNameMatch` を追加する
+- [x] macOS arm64 BSD syscall テーブルを定義する
+- [x] フォールバック専用のネットワーク syscall 名リストを定義する
+- [x] `MachoLibSystemAnalyzer.Analyze()` を実装する
+- [x] Mach-O `__TEXT,__text` 範囲から `svc #0x80` を検出する
+- [x] `x16` 後方スキャンで BSD クラスプレフィックスを除去した syscall 番号を抽出する
+- [x] 256 バイト超の関数を除外する
+- [x] 複数の異なる syscall 番号を持つ関数を除外する
+- [x] `MachoLibSystemCacheManager.GetOrCreate()` を実装する
+- [x] `ImportSymbolMatcher.MatchWithMethod()` を追加する
+- [x] `MachoLibSystemAdapter` で cache hit / fallback の両経路を実装する
+- [x] 非 arm64 ライブラリ時は info ログを出して解析をスキップする
 
 ### 3.2 テストチェックリスト
 
-- [ ] `internal/libccache/macos_syscall_table_test.go`
-  - [ ] ネットワーク syscall 定義の存在確認
-  - [ ] `socket=97`, `connect=98` の番号確認
-- [ ] `internal/libccache/macho_analyzer_test.go`
-  - [ ] `svc #0x80` を含む関数の正常検出
-  - [ ] 256 バイト超関数の除外
-  - [ ] 複数番号関数の除外
-  - [ ] 同一番号複数 `svc` の許容
-  - [ ] BSD クラスプレフィックス除去
-  - [ ] 非 arm64 のスキップ確認
-- [ ] `internal/libccache/macho_cache_test.go`
-  - [ ] キャッシュ生成
-  - [ ] キャッシュヒット
-  - [ ] schema mismatch 再生成
-  - [ ] hash mismatch 再生成
-  - [ ] 破損キャッシュ再生成
-  - [ ] キャッシュ書き込み失敗時のエラー
-- [ ] `internal/libccache/adapters_test.go`
-  - [ ] import symbol 照合
-  - [ ] 同一 Number dedup
-  - [ ] フォールバック時 `symbol_name_match`
-  - [ ] フォールバック理由ログ
-  - [ ] 非 arm64 スキップ
+- [x] `internal/libccache/macos_syscall_table_test.go`
+  - [x] ネットワーク syscall 定義の存在確認
+  - [x] `socket=97`, `connect=98` の番号確認
+- [x] `internal/libccache/macho_analyzer_test.go`
+  - [x] `svc #0x80` を含む関数の正常検出
+  - [x] 256 バイト超関数の除外
+  - [x] 複数番号関数の除外
+  - [x] 同一番号複数 `svc` の許容
+  - [x] BSD クラスプレフィックス除去
+  - [x] 非 arm64 のスキップ確認
+- [x] `internal/libccache/macho_cache_test.go`
+  - [x] キャッシュ生成
+  - [x] キャッシュヒット
+  - [x] schema mismatch 再生成
+  - [x] hash mismatch 再生成
+  - [x] 破損キャッシュ再生成
+  - [x] キャッシュ書き込み失敗時のエラー
+- [x] `internal/libccache/adapters_test.go`
+  - [x] import symbol 照合
+  - [x] 同一 Number dedup
+  - [x] フォールバック時 `symbol_name_match`
+  - [x] フォールバック理由ログ
+  - [x] 非 arm64 スキップ
 
 ## 4. Step 2: `internal/machodylib` の拡張
 

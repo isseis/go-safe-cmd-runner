@@ -70,3 +70,51 @@ func (m *ImportSymbolMatcher) Match(importSymbols []string, wrappers []WrapperEn
 
 	return result
 }
+
+// MatchWithMethod is equivalent to Match, but allows the caller to specify
+// the DeterminationMethod explicitly.
+// It is used by the Mach-O path to set "lib_cache_match" on cache hits and
+// "symbol_name_match" on fallback.
+func (m *ImportSymbolMatcher) MatchWithMethod(
+	importSymbols []string,
+	wrappers []WrapperEntry,
+	determinationMethod string,
+) []common.SyscallInfo {
+	// Build a symbol-name to WrapperEntry map.
+	wrapperMap := make(map[string]WrapperEntry, len(wrappers))
+	for _, w := range wrappers {
+		wrapperMap[w.Name] = w
+	}
+
+	// Deduplicate by Number, keeping the lexicographically smallest symbol name.
+	candidate := make(map[int]WrapperEntry)
+	for _, sym := range importSymbols {
+		w, ok := wrapperMap[sym]
+		if !ok {
+			continue
+		}
+		prev, seen := candidate[w.Number]
+		if !seen || w.Name < prev.Name {
+			candidate[w.Number] = w
+		}
+	}
+
+	result := make([]common.SyscallInfo, 0, len(candidate))
+	for _, w := range candidate {
+		info := common.SyscallInfo{
+			Number:              w.Number,
+			Name:                m.syscallTable.GetSyscallName(w.Number),
+			IsNetwork:           m.syscallTable.IsNetworkSyscall(w.Number),
+			Location:            0,
+			DeterminationMethod: determinationMethod,
+			Source:              SourceLibsystemSymbolImport,
+		}
+		if info.Name == "" {
+			info.Name = w.Name
+		}
+		result = append(result, info)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
+
+	return result
+}

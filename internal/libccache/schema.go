@@ -8,6 +8,18 @@ const LibcCacheSchemaVersion = 1
 // via libc import symbol matching.
 const SourceLibcSymbolImport = "libc_symbol_import"
 
+// SourceLibsystemSymbolImport is the value of SyscallInfo.Source for syscalls
+// detected via libSystem import symbol matching.
+const SourceLibsystemSymbolImport = "libsystem_symbol_import"
+
+// DeterminationMethodLibCacheMatch indicates the syscall was determined via
+// libSystem function-level analysis cache matching.
+const DeterminationMethodLibCacheMatch = "lib_cache_match"
+
+// DeterminationMethodSymbolNameMatch indicates the syscall was determined via
+// symbol name-only matching (fallback path).
+const DeterminationMethodSymbolNameMatch = "symbol_name_match"
+
 // LibcCacheFile is the JSON schema for a libc cache file.
 //
 //nolint:revive // LibcCacheFile is intentional: callers import as libccache.LibcCacheFile
