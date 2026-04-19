@@ -40,7 +40,7 @@
 - [x] `docs/tasks/0097_macho_arm64_syscall_analysis/02_architecture.md` を作成する
 - [x] `docs/tasks/0097_macho_arm64_syscall_analysis/03_detailed_specification.md` を作成する
 - [x] `docs/tasks/0097_macho_arm64_syscall_analysis/04_implementation_plan.md` を作成する
-- [ ] 実装・テストを行い PR をマージする
+- [x] 実装・テストを行い PR をマージする
 
 ### タスク 0098: Mach-O `.dylib` ベース名による既知ネットワークライブラリ検出（FR-4.8）
 
