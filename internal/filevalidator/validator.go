@@ -336,7 +336,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			record.SymbolAnalysis.KnownNetworkLibDeps = matched
 		}
 
-		// Steps A-D: ELF syscall analysis (libc import + direct instruction).
+		// Analyze ELF syscalls via libc import symbol matching and direct instruction scan.
 		if err := v.analyzeSyscalls(record, filePath.String()); err != nil {
 			return err
 		}
@@ -882,7 +882,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 		return nil
 	}
 
-	// Step A: Open the target binary as an ELF file.
+	// Open the target binary as an ELF file; skip non-ELF files silently.
 	elfFile, elfErr := openELFFile(v.fileSystem, filePath)
 	if elfErr != nil {
 		if errors.Is(elfErr, errNotELF) {
@@ -893,7 +893,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	}
 	defer func() { _ = elfFile.Close() }()
 
-	// Step B: libc import symbol matching via cache.
+	// Match imported symbols against the libc syscall cache.
 	var libcSyscalls []common.SyscallInfo
 	if v.libcCache != nil && len(record.DynLibDeps) > 0 {
 		if libcEntry := findLibcEntry(record.DynLibDeps); libcEntry != nil {
@@ -913,7 +913,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 		}
 	}
 
-	// Step C: Direct syscall instruction analysis.
+	// Scan ELF instructions directly for syscall invocations.
 	var directSyscalls []common.SyscallInfo
 	var directArgEvalResults []common.SyscallArgEvalResult
 	if v.syscallAnalyzer != nil {
@@ -928,8 +928,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 		}
 	}
 
-	// Step D: Merge and set SyscallAnalysis.
-	// Always assign (including nil) to overwrite any stale value from a previous record run.
+	// Merge results and write SyscallAnalysis; always assign to overwrite any stale value.
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
