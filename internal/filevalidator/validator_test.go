@@ -69,8 +69,8 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 		// Verify the hash file exists
 		rp, err := common.NewResolvedPath(testFilePath)
 		require.NoError(t, err, "NewResolvedPath failed")
-		hashFilePath, err := validator.GetHashFilePath(rp)
-		require.NoError(t, err, "GetHashFilePath failed")
+		hashFilePath, err := validator.HashFilePath(rp)
+		require.NoError(t, err, "HashFilePath failed")
 
 		_, err = os.Lstat(hashFilePath)
 		assert.NoError(t, err)
@@ -169,7 +169,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	assert.NoError(t, err, "SaveRecord failed")
 
 	// Use store.Load() to verify the recorded path and hash
-	store := validator.GetStore()
+	store := validator.Store()
 	require.NotNil(t, store, "Store should not be nil")
 
 	rpSymlink, err := common.NewResolvedPath(resolvedSymlinkPath)
@@ -221,8 +221,8 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	// Get the hash file path
 	rpCorrupt, err := common.NewResolvedPath(testFilePath)
 	require.NoError(t, err, "NewResolvedPath failed")
-	hashFilePath, err := validator.GetHashFilePath(rpCorrupt)
-	require.NoError(t, err, "GetHashFilePath failed")
+	hashFilePath, err := validator.HashFilePath(rpCorrupt)
+	require.NoError(t, err, "HashFilePath failed")
 
 	// Create the hash directory
 	require.NoError(t, os.MkdirAll(filepath.Dir(hashFilePath), 0o750), "Failed to create hash directory")
@@ -258,7 +258,7 @@ func TestValidator_FileAnalysisRecordFormat(t *testing.T) {
 	require.NoError(t, err, "SaveRecord failed")
 
 	// Load from store and verify the FileAnalysisRecord format
-	store := validator.GetStore()
+	store := validator.Store()
 	require.NotNil(t, store, "Store should not be nil")
 
 	rpFormat, err := common.NewResolvedPath(testFilePath)
@@ -675,7 +675,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 		require.NoError(t, err, "Failed to create resolved path")
 
 		// Create a FileAnalysisRecord for the restricted file using the analysis store.
-		err = validator.GetStore().Update(restrictedPath, func(record *fileanalysis.Record) error {
+		err = validator.Store().Update(restrictedPath, func(record *fileanalysis.Record) error {
 			record.ContentHash = "sha256:mock_hash_for_restricted_file"
 			return nil
 		})
@@ -713,7 +713,7 @@ func TestValidator_VerifyAndReadWithPrivileges(t *testing.T) {
 		restrictedPath, err := common.NewResolvedPath(restrictedFile)
 		require.NoError(t, err, "Failed to create resolved path")
 
-		err = validator.GetStore().Update(restrictedPath, func(record *fileanalysis.Record) error {
+		err = validator.Store().Update(restrictedPath, func(record *fileanalysis.Record) error {
 			record.ContentHash = "sha256:some_hash_value"
 			return nil
 		})
@@ -808,9 +808,9 @@ func TestNew_RecordAndVerify(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator with analysis store")
 
-	// Verify that GetStore returns a non-nil store
-	store := validator.GetStore()
-	require.NotNil(t, store, "GetStore should return non-nil store")
+	// Verify that Store returns a non-nil store
+	store := validator.Store()
+	require.NotNil(t, store, "Store should return non-nil store")
 
 	// Create a test file
 	testContent := "test content for analysis store"
@@ -860,8 +860,8 @@ func TestNew_PreservesExistingFields(t *testing.T) {
 	validator, err := New(&SHA256{}, tempDir)
 	require.NoError(t, err, "Failed to create validator with analysis store")
 
-	store := validator.GetStore()
-	require.NotNil(t, store, "GetStore should return non-nil store")
+	store := validator.Store()
+	require.NotNil(t, store, "Store should return non-nil store")
 
 	// Create a test file
 	testContent := "test content for preserving fields"
@@ -927,8 +927,8 @@ func TestNew_CreatesDirectory(t *testing.T) {
 	assert.True(t, info.IsDir(), "hashDir should be a directory")
 
 	// Verify the store is usable
-	store := validator.GetStore()
-	require.NotNil(t, store, "GetStore should return non-nil store")
+	store := validator.Store()
+	require.NotNil(t, store, "Store should return non-nil store")
 }
 
 // collidingHashFilePathGetter always maps every file path to the same
@@ -1323,7 +1323,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
 			{Number: 42, Source: "libc_symbol_import"},
 		}
-		data := buildSyscallAnalysisData(all, nil, elf.EM_X86_64)
+		data := buildSyscallData(all, nil, elf.EM_X86_64)
 		assert.Equal(t, "x86_64", data.Architecture)
 		// FilterSyscallsForStorage retains only Number==-1 and IsNetwork entries.
 		// The libc_symbol_import entry (Number:42, IsNetwork:false) is filtered out.
@@ -1334,7 +1334,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		all := []common.SyscallInfo{
 			{Number: -1, Source: "libc_symbol_import"},
 		}
-		data := buildSyscallAnalysisData(all, nil, elf.EM_AARCH64)
+		data := buildSyscallData(all, nil, elf.EM_AARCH64)
 		assert.Equal(t, "arm64", data.Architecture)
 	})
 }

@@ -149,7 +149,7 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 				require.NoError(t, err)
 
 				// Use internal method to get hash file path
-				hashFilePath, err := validator.GetHashFilePath(resolvedPath)
+				hashFilePath, err := validator.HashFilePath(resolvedPath)
 				require.NoError(t, err)
 
 				// Tamper with the hash value by modifying the JSON content
@@ -191,7 +191,7 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 				resolvedPath, err := common.NewResolvedPath(resolvedPathStr)
 				require.NoError(t, err)
 
-				hashFilePath, err := validator.GetHashFilePath(resolvedPath)
+				hashFilePath, err := validator.HashFilePath(resolvedPath)
 				require.NoError(t, err)
 
 				// Delete the hash file

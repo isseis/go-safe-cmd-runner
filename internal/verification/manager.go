@@ -507,7 +507,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 			}
 		} else {
 			manager.fileValidator = validator
-			if s := validator.GetStore(); s != nil {
+			if s := validator.Store(); s != nil {
 				manager.networkSymbolStore = fileanalysis.NewNetworkSymbolStore(s)
 				manager.syscallAnalysisStore = fileanalysis.NewSyscallAnalysisStore(s)
 			}
