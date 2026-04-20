@@ -101,6 +101,7 @@ type MachoLibSystemAdapter struct {
 	cacheMgr     *MachoLibSystemCacheManager
 	fs           safefileio.FileSystem
 	syscallTable SyscallNumberTable
+	resolveFunc  func([]fileanalysis.LibEntry, safefileio.FileSystem) (*machodylib.LibSystemKernelSource, error)
 }
 
 // NewMachoLibSystemAdapter creates a new MachoLibSystemAdapter.
@@ -112,6 +113,7 @@ func NewMachoLibSystemAdapter(
 		cacheMgr:     cacheMgr,
 		fs:           fs,
 		syscallTable: MacOSSyscallTable{},
+		resolveFunc:  machodylib.ResolveLibSystemKernel,
 	}
 }
 
@@ -122,11 +124,13 @@ func NewMachoLibSystemAdapter(
 // Fallback conditions (FR-3.4.1):
 //   - dynLibDeps does not contain a libSystem-family library
 //   - dyld shared cache extraction also failed
+//   - GetOrCreate succeeds but returns an empty wrapper list (e.g., the resolved
+//     dylib is a linker stub with no usable __TEXT/__SYMTAB on this architecture)
 func (a *MachoLibSystemAdapter) GetSyscallInfos(
 	dynLibDeps []fileanalysis.LibEntry,
 	importSymbols []string,
 ) ([]common.SyscallInfo, error) {
-	source, err := machodylib.ResolveLibSystemKernel(dynLibDeps, a.fs)
+	source, err := a.resolveFunc(dynLibDeps, a.fs)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +159,19 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 		result := a.fallbackNameMatch(importSymbols)
 		slog.Info("libSystem fallback matching completed",
 			"reason", "cache_error",
+			"detected_syscalls", len(result))
+		return result, nil
+	}
+
+	// If the cache returned no wrappers (e.g., the resolved dylib is a linker stub
+	// with no usable __TEXT/__SYMTAB, or is not arm64), fall back to symbol-name
+	// matching to avoid false negatives in network detection (FR-3.4.1).
+	if len(wrappers) == 0 {
+		slog.Info("libSystem cache contains no wrappers; falling back to symbol-name matching",
+			"source_path", source.Path)
+		result := a.fallbackNameMatch(importSymbols)
+		slog.Info("libSystem fallback matching completed",
+			"reason", "empty_wrapper_cache",
 			"detected_syscalls", len(result))
 		return result, nil
 	}

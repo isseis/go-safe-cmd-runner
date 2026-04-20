@@ -3,10 +3,13 @@
 package libccache
 
 import (
+	"debug/macho"
+	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -190,4 +193,49 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_ReturnType(t *testing.T) {
 	require.NoError(t, err)
 	// Ensure the return type is []common.SyscallInfo
 	assert.IsType(t, []common.SyscallInfo{}, result)
+}
+
+// TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers verifies that when
+// GetOrCreate returns an empty wrappers slice (e.g., the resolved dylib is a non-arm64
+// stub with no usable __TEXT/__SYMTAB), the adapter falls back to symbol-name matching
+// instead of returning no results (false negative).
+func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers(t *testing.T) {
+	mgr, _ := newMachoTestCacheManager(t)
+	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	adapter := NewMachoLibSystemAdapter(mgr, fs)
+
+	const libPath = "/usr/lib/system/libsystem_kernel.dylib"
+	const libHash = "sha256:nonarm64stub"
+
+	// Pre-populate the cache with empty wrappers by analyzing a non-arm64 Mach-O.
+	// Use nil text bytes: the analyzer returns nil, nil for non-arm64 without examining
+	// the text section content, so the bytes do not matter.
+	nonArm64Bytes := buildRawMachoBytes(t, macho.CpuAmd64, nil, nil)
+	cachedWrappers, err := mgr.GetOrCreate(libPath, libHash, func() ([]byte, error) {
+		return nonArm64Bytes, nil
+	})
+	require.NoError(t, err)
+	require.Empty(t, cachedWrappers, "non-arm64 analysis should return empty wrappers")
+
+	// Inject a resolver that returns the pre-populated source so GetOrCreate hits the cache.
+	adapter.resolveFunc = func(_ []fileanalysis.LibEntry, _ safefileio.FileSystem) (*machodylib.LibSystemKernelSource, error) {
+		return &machodylib.LibSystemKernelSource{
+			Path:    libPath,
+			Hash:    libHash,
+			GetData: func() ([]byte, error) { return nil, errors.New("should not be called") },
+		}, nil
+	}
+
+	// GetSyscallInfos must fall back to symbol-name matching when wrappers are empty.
+	result, err := adapter.GetSyscallInfos(nil, []string{"socket", "connect", "malloc"})
+	require.NoError(t, err)
+	names := make(map[string]bool)
+	for _, r := range result {
+		names[r.Name] = true
+		assert.Equal(t, DeterminationMethodSymbolNameMatch, r.DeterminationMethod,
+			"fallback path should use symbol-name matching")
+	}
+	assert.True(t, names["socket"], "socket should be matched via symbol-name fallback")
+	assert.True(t, names["connect"], "connect should be matched via symbol-name fallback")
+	assert.False(t, names["malloc"], "malloc should not be matched (not a syscall wrapper)")
 }
