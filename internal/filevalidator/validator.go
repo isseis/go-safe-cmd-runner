@@ -315,8 +315,10 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 				}
 			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
-				// Static binary or unsupported format: clear any previously stored
-				// SymbolAnalysis to prevent stale data from an earlier record run.
+				// SymbolAnalysis does not apply to static or unsupported binaries.
+				// Explicitly nil it out so that a force-re-record of a binary that was
+				// previously dynamic does not carry over the old SymbolAnalysis value
+				// (store.Update passes the existing record to this callback unchanged).
 				record.SymbolAnalysis = nil
 			case binaryanalyzer.AnalysisError:
 				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
