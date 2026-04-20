@@ -120,9 +120,20 @@ func filesystemKernelSource(path string, fs safefileio.FileSystem) (*LibSystemKe
 		Path: path,
 		Hash: hash,
 		GetData: func() ([]byte, error) {
-			return os.ReadFile(path) //nolint:gosec // #nosec G304 -- path is a system library path from DynLibDeps or well-known locations
+			return safeReadFile(fs, path)
 		},
 	}, nil
+}
+
+// safeReadFile reads the entire file at path using fs.SafeOpenFile,
+// applying the same symlink/TOCTOU protections as computeFileHash.
+func safeReadFile(fs safefileio.FileSystem, path string) ([]byte, error) {
+	f, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(f)
 }
 
 // findLibSystemCandidates scans DynLibDeps for libSystem umbrella and kernel entries (FR-3.1.5).

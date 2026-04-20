@@ -792,9 +792,10 @@ func buildMachoSyscallAnalysisData(
 	}
 }
 
-// mergeMachoSyscallInfos combines svc entries and libSystem entries sorted by Number.
-// svc entries use Number=-1 and remain distinct by Location.
-// libSystem entries use Number>=0 and are already deduplicated.
+// mergeMachoSyscallInfos combines svc entries and libSystem entries into a
+// deterministically sorted slice. The sort key is (Number, Location, Source)
+// so that entries with the same Number (e.g. multiple svc #0x80 with Number=-1)
+// produce stable JSON output across runs.
 func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
 	if len(svcEntries) == 0 && len(libsysEntries) == 0 {
 		return nil
@@ -802,8 +803,14 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 	merged := make([]common.SyscallInfo, 0, len(svcEntries)+len(libsysEntries))
 	merged = append(merged, svcEntries...)
 	merged = append(merged, libsysEntries...)
-	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Number < merged[j].Number
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].Number != merged[j].Number {
+			return merged[i].Number < merged[j].Number
+		}
+		if merged[i].Location != merged[j].Location {
+			return merged[i].Location < merged[j].Location
+		}
+		return merged[i].Source < merged[j].Source
 	})
 	return merged
 }
