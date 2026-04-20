@@ -101,7 +101,13 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 		if funcEnd == 0 {
 			funcEnd = textEnd
 		}
-		if sym.Value >= funcEnd || sym.Value < textBase || funcEnd > textEnd {
+		// Clamp the inferred end to the __TEXT,__text boundary so the last
+		// in-range function is still analyzed even if the next symbol is in a
+		// later section.
+		if funcEnd > textEnd {
+			funcEnd = textEnd
+		}
+		if sym.Value >= funcEnd || sym.Value < textBase {
 			continue
 		}
 		funcSize := funcEnd - sym.Value
