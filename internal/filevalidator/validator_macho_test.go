@@ -5,6 +5,7 @@ package filevalidator
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -295,4 +296,216 @@ func TestBuildSVCSyscallAnalysis_CommonSyscallInfo(t *testing.T) {
 	assert.Equal(t, "direct_svc_0x80", sc.Source)
 	assert.False(t, sc.IsNetwork)
 	assert.Empty(t, sc.Name)
+}
+
+// ---- stubLibSystemCache for Section 5.2 tests ----
+
+// stubLibSystemCache is a test double for LibSystemCacheInterface.
+type stubLibSystemCache struct {
+	// infos is returned by GetSyscallInfos when err is nil.
+	infos []common.SyscallInfo
+	// err is returned by GetSyscallInfos when non-nil.
+	err error
+}
+
+func (s *stubLibSystemCache) GetSyscallInfos(
+	_ []fileanalysis.LibEntry,
+	_ []string,
+) ([]common.SyscallInfo, error) {
+	return s.infos, s.err
+}
+
+// recordMachOWithLibSystem records a synthetic Mach-O and injects the libSystem cache stub.
+func recordMachOWithLibSystem(
+	t *testing.T,
+	binData []byte,
+	stub *stubBinaryAnalyzer,
+	libsys LibSystemCacheInterface,
+) (*fileanalysis.Record, error) {
+	t.Helper()
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	binPath := writeTempBinary(t, tempDir, "target.bin", binData)
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	if stub != nil {
+		v.SetBinaryAnalyzer(stub)
+	}
+	if libsys != nil {
+		v.SetLibSystemCache(libsys)
+	}
+
+	_, _, recErr := v.SaveRecord(binPath, false)
+	if recErr != nil {
+		return nil, recErr
+	}
+
+	record, loadErr := v.LoadRecord(binPath)
+	require.NoError(t, loadErr)
+	return record, nil
+}
+
+// TestUpdateAnalysisRecord_LibSystemImportOnly verifies that when libSystem
+// returns entries and no svc is found, SyscallAnalysis is populated with
+// Source=libsystem_symbol_import and Location=0 (FR-3.3.2).
+func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
+	libsysEntries := []common.SyscallInfo{
+		{
+			Number:              97,
+			Name:                "socket",
+			IsNetwork:           true,
+			Location:            0,
+			DeterminationMethod: "lib_cache_match",
+			Source:              "libsystem_symbol_import",
+		},
+	}
+	stub := &stubLibSystemCache{infos: libsysEntries}
+
+	v, err := New(&SHA256{}, safeTempDir(t))
+	require.NoError(t, err)
+	v.SetLibSystemCache(stub)
+
+	// Build a record with DynLibDeps so analyzeLibSystemImports is not skipped.
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "/usr/lib/libSystem.B.dylib"},
+		},
+	}
+
+	// Write a minimal arm64 Mach-O as the analysis target (no svc).
+	tempDir := safeTempDir(t)
+	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
+
+	libsys, err := v.analyzeLibSystemImports(record, binPath)
+	require.NoError(t, err)
+	require.Len(t, libsys, 1)
+
+	sc := libsys[0]
+	assert.Equal(t, 97, sc.Number)
+	assert.Equal(t, "socket", sc.Name)
+	assert.Equal(t, uint64(0), sc.Location, "libSystem entries must have Location=0")
+	assert.Equal(t, "libsystem_symbol_import", sc.Source)
+	assert.True(t, sc.IsNetwork)
+}
+
+// TestUpdateAnalysisRecord_SVCAndLibSystemMerged verifies that buildMachoSyscallAnalysisData
+// merges svc and libSystem entries correctly, sorted by Number.
+func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
+	svcEntries := buildSVCSyscallEntries([]uint64{0x100000000})
+	libsysEntries := []common.SyscallInfo{
+		{
+			Number:              98,
+			Name:                "connect",
+			IsNetwork:           true,
+			Location:            0,
+			DeterminationMethod: "lib_cache_match",
+			Source:              "libsystem_symbol_import",
+		},
+	}
+
+	result := buildMachoSyscallAnalysisData(svcEntries, libsysEntries)
+	require.NotNil(t, result)
+
+	// svc entry (Number=-1) + libSystem entry (Number=98) = 2 entries.
+	require.Len(t, result.DetectedSyscalls, 2)
+
+	// svc entry must come first (Number=-1 < 98).
+	first := result.DetectedSyscalls[0]
+	assert.Equal(t, -1, first.Number)
+	assert.Equal(t, "direct_svc_0x80", first.Source)
+
+	second := result.DetectedSyscalls[1]
+	assert.Equal(t, 98, second.Number)
+	assert.Equal(t, "libsystem_symbol_import", second.Source)
+
+	// Warning must be set because svc was found.
+	require.Len(t, result.AnalysisWarnings, 1)
+	assert.Contains(t, result.AnalysisWarnings[0], "svc #0x80")
+}
+
+// TestUpdateAnalysisRecord_LibSystemError verifies that when the libSystem cache
+// returns an error and DynLibDeps is populated, analyzeLibSystemImports propagates it.
+func TestUpdateAnalysisRecord_LibSystemError(t *testing.T) {
+	stubErr := errors.New("libSystem cache read failure")
+	stub := &stubLibSystemCache{err: stubErr}
+
+	// Build a minimal arm64 Mach-O so getMachoImportSymbols succeeds (returns empty list).
+	// analyzeLibSystemImports skips when DynLibDeps is empty, so inject a mock record directly.
+	v, err := New(&SHA256{}, safeTempDir(t))
+	require.NoError(t, err)
+	v.SetLibSystemCache(stub)
+
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "/usr/lib/libSystem.B.dylib"},
+		},
+	}
+
+	// Write a minimal Mach-O so getMachoImportSymbols has a file to open.
+	tempDir := safeTempDir(t)
+	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
+
+	_, libsysErr := v.analyzeLibSystemImports(record, binPath)
+	// The Mach-O has no imports (no symbol table), so GetSyscallInfos is called with empty list.
+	// The stub returns the injected error.
+	require.Error(t, libsysErr, "analyzeLibSystemImports must propagate the cache error")
+}
+
+// TestUpdateAnalysisRecord_LibSystemNilCache verifies that when no libSystem cache
+// is injected, analyzeLibSystemImports returns nil and SyscallAnalysis is nil
+// (assuming no svc is found either).
+func TestUpdateAnalysisRecord_LibSystemNilCache(t *testing.T) {
+	binData := buildArm64MachOBinary(t, []uint32{nopEncodingU32})
+
+	record, err := recordMachOWithLibSystem(t, binData, nil, nil)
+	require.NoError(t, err)
+	assert.Nil(t, record.SyscallAnalysis, "SyscallAnalysis must be nil when no cache and no svc")
+}
+
+// TestMergeMachoSyscallInfos_BothNil verifies that merging two nil slices returns nil.
+func TestMergeMachoSyscallInfos_BothNil(t *testing.T) {
+	result := mergeMachoSyscallInfos(nil, nil)
+	assert.Nil(t, result)
+}
+
+// TestMergeMachoSyscallInfos_SVCOnly verifies that svc-only merge returns svc entries.
+func TestMergeMachoSyscallInfos_SVCOnly(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{Number: -1, Source: "direct_svc_0x80", Location: 0x100000000},
+	}
+	result := mergeMachoSyscallInfos(svcEntries, nil)
+	require.Len(t, result, 1)
+	assert.Equal(t, -1, result[0].Number)
+}
+
+// TestMergeMachoSyscallInfos_LibSysOnly verifies that libSystem-only merge returns entries.
+func TestMergeMachoSyscallInfos_LibSysOnly(t *testing.T) {
+	libsysEntries := []common.SyscallInfo{
+		{Number: 97, Source: "libsystem_symbol_import"},
+	}
+	result := mergeMachoSyscallInfos(nil, libsysEntries)
+	require.Len(t, result, 1)
+	assert.Equal(t, 97, result[0].Number)
+}
+
+// TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC verifies that
+// AnalysisWarnings is populated only when svc entries are present.
+func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
+	libsysEntries := []common.SyscallInfo{
+		{Number: 97, Source: "libsystem_symbol_import"},
+	}
+
+	// No svc entries: no warning.
+	result := buildMachoSyscallAnalysisData(nil, libsysEntries)
+	assert.Empty(t, result.AnalysisWarnings, "no warning when no svc entries")
+
+	// With svc entries: warning present.
+	svcEntries := []common.SyscallInfo{
+		{Number: -1, Source: "direct_svc_0x80"},
+	}
+	result = buildMachoSyscallAnalysisData(svcEntries, libsysEntries)
+	assert.Len(t, result.AnalysisWarnings, 1)
 }

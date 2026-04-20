@@ -208,7 +208,13 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 						"path", cmdPath)
 					return true, true
 				}
-				// No svc signal: fall through to SymbolAnalysis-based decision.
+				// Check whether any libSystem-matched syscall is a network syscall (FR-3.5.1).
+				if syscallAnalysisHasNetworkSignal(svcResult) {
+					slog.Info("SyscallAnalysis cache indicates libSystem network syscall",
+						"path", cmdPath)
+					return true, false
+				}
+				// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
 			case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
 				// Schema v15+ guarantee: svc scan was performed and found nothing
 				// (old v14 records are rejected earlier as SchemaVersionMismatchError).
@@ -275,6 +281,22 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 	}
 	for _, s := range result.DetectedSyscalls {
 		if s.DeterminationMethod == "direct_svc_0x80" {
+			return true
+		}
+	}
+	return false
+}
+
+// syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisResult
+// contains a libSystem-matched syscall that is classified as a network syscall (IsNetwork == true).
+// This covers the case where a Mach-O binary makes network calls via libSystem.dylib wrappers
+// rather than raw svc instructions.
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, s := range result.DetectedSyscalls {
+		if s.IsNetwork && s.DeterminationMethod != "direct_svc_0x80" {
 			return true
 		}
 	}

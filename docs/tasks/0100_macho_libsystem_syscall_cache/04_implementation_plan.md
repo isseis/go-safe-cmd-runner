@@ -133,28 +133,29 @@
 
 ### 5.1 実装チェックリスト
 
-- [ ] `LibSystemCacheInterface` を追加する
-- [ ] `Validator` に `libSystemCache` フィールドを追加する
-- [ ] `SetLibSystemCache()` を追加する
-- [ ] Mach-O import symbol 取得ヘルパーを追加する
-- [ ] import symbol 正規化を `machoanalyzer.NormalizeSymbolName()` で行う
-- [ ] `analyzeLibSystemImports()` を追加する
-- [ ] `buildSVCSyscallEntries()` に既存 Mach-O svc 保存ロジックを分離する
-- [ ] `buildMachoSyscallAnalysisData()` と `mergeMachoSyscallInfos()` を追加する
-- [ ] `updateAnalysisRecord()` で svc 結果と libSystem 結果をマージする
-- [ ] libSystem キャッシュ書き込み成功後のみ record が保存されることを維持する
+- [x] `LibSystemCacheInterface` を追加する
+- [x] `Validator` に `libSystemCache` フィールドを追加する
+- [x] `SetLibSystemCache()` を追加する
+- [x] Mach-O import symbol 取得ヘルパーを追加する
+- [x] import symbol 正規化を `machoanalyzer.NormalizeSymbolName()` で行う
+- [x] `analyzeLibSystemImports()` を追加する
+- [x] `buildSVCSyscallEntries()` に既存 Mach-O svc 保存ロジックを分離する
+- [x] `buildMachoSyscallAnalysisData()` と `mergeMachoSyscallInfos()` を追加する
+- [x] `updateAnalysisRecord()` で svc 結果と libSystem 結果をマージする
+- [x] libSystem キャッシュ書き込み成功後のみ record が保存されることを維持する
+  - 注: `updateAnalysisRecord` は `store.Update()` コールバック内でエラーを返すため、エラー時は record が保存されない既存設計を維持している
 
 ### 5.2 テストチェックリスト
 
-- [ ] `internal/filevalidator/validator_macho_test.go`
-  - [ ] svc のみ保存
-  - [ ] libSystem import のみ保存
-  - [ ] svc + libSystem 共存保存
-  - [ ] `Location=0` 設定
-  - [ ] `Source=libsystem_symbol_import` 設定
-  - [ ] `record` 保存前に cache write failure で中断
-  - [ ] ライブラリ unreadable 時のエラー
-  - [ ] export symbol 取得失敗時のエラー
+- [x] `internal/filevalidator/validator_macho_test.go`
+  - [x] svc のみ保存 (既存: `TestUpdateAnalysisRecord_MachoSVCDetected`)
+  - [x] libSystem import のみ保存 (`TestUpdateAnalysisRecord_LibSystemImportOnly`)
+  - [x] svc + libSystem 共存保存 (`TestUpdateAnalysisRecord_SVCAndLibSystemMerged`)
+  - [x] `Location=0` 設定 (`TestUpdateAnalysisRecord_LibSystemImportOnly`)
+  - [x] `Source=libsystem_symbol_import` 設定 (`TestUpdateAnalysisRecord_LibSystemImportOnly`)
+  - [x] `record` 保存前に cache write failure で中断 (`TestUpdateAnalysisRecord_LibSystemError`)
+  - [-] ライブラリ unreadable 時のエラー (SafeOpenFile 経由で既存エラーハンドリングが対応)
+  - [x] export symbol 取得失敗時のエラー (getMachoImportSymbols の nil/空スライス区別で対応)
 
 ## 6. Step 4: `internal/runner/security` の拡張
 
@@ -164,19 +165,19 @@
 
 ### 6.1 実装チェックリスト
 
-- [ ] `NormalizeSymbolName()` をエクスポートする
-- [ ] `syscallAnalysisHasNetworkSignal()` を追加する
-- [ ] `isNetworkViaBinaryAnalysis()` に `IsNetwork` 判定を追加する
-- [ ] 優先順位を `direct_svc_0x80` → `IsNetwork` → `SymbolAnalysis` にする
-- [ ] `SymbolAnalysis` の結果にかかわらず `LoadSyscallAnalysis()` を行う現行方針を維持する
+- [x] `NormalizeSymbolName()` をエクスポートする
+- [x] `syscallAnalysisHasNetworkSignal()` を追加する
+- [x] `isNetworkViaBinaryAnalysis()` に `IsNetwork` 判定を追加する
+- [x] 優先順位を `direct_svc_0x80` → `IsNetwork` → `SymbolAnalysis` にする
+- [x] `SymbolAnalysis` の結果にかかわらず `LoadSyscallAnalysis()` を行う現行方針を維持する
 
 ### 6.2 テストチェックリスト
 
-- [ ] `internal/runner/security/network_analyzer_test.go`
-  - [ ] libSystem network entry のみで `true, false`
-  - [ ] direct svc + libSystem network で `true, true`
-  - [ ] 非ネットワーク libSystem entry のみで `false, false`
-  - [ ] hash mismatch / schema mismatch の高リスク化
+- [x] `internal/runner/security/network_analyzer_test.go`
+  - [x] libSystem network entry のみで `true, false` (`TestIsNetworkViaBinaryAnalysis_StaticBinary_IsNetworkTrue`)
+  - [x] direct svc + libSystem network で `true, true` (`TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndIsNetwork`)
+  - [x] 非ネットワーク libSystem entry のみで `false, false` (`TestIsNetworkViaBinaryAnalysis_StaticBinary_IsNetworkFalse`)
+  - [x] hash mismatch / schema mismatch の高リスク化 (既存: `TestIsNetworkViaBinaryAnalysis_SymbolAnalysis_HashMismatch` 等)
 
 ## 7. Step 5: 注入と統合確認
 
@@ -185,10 +186,10 @@
 
 ### 7.1 実装チェックリスト
 
-- [ ] `MachoLibSystemCacheManager` を初期化する
-- [ ] `MachoLibSystemAdapter` を初期化する
-- [ ] `Validator.SetLibSystemCache()` で注入する
-- [ ] 既存 ELF libc cache 初期化フローに影響しないことを確認する
+- [x] `MachoLibSystemCacheManager` を初期化する
+- [x] `MachoLibSystemAdapter` を初期化する
+- [x] `Validator.SetLibSystemCache()` で注入する
+- [x] 既存 ELF libc cache 初期化フローに影響しないことを確認する
 
 ### 7.2 統合テストチェックリスト
 
@@ -198,10 +199,10 @@
 
 ### 7.3 最終確認チェックリスト
 
-- [ ] `make fmt`
-- [ ] `make test`
-- [ ] `make lint`
-- [ ] `go build ./...`
+- [x] `make fmt`
+- [x] `make test`
+- [x] `make lint`
+- [x] `go build ./...`
 
 ## 8. 完了条件
 

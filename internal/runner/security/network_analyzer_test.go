@@ -288,3 +288,135 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 	assert.True(t, isNet, "NetworkDetected should return true")
 	assert.False(t, isHigh, "no svc signal should not escalate isHighRisk")
 }
+
+// ---- Section 6.2: syscallAnalysisHasNetworkSignal tests ----
+
+// syscallAnalysisResultWithIsNetwork builds a SyscallAnalysisResult containing
+// one DetectedSyscall with IsNetwork set to the given value.
+func syscallAnalysisResultWithIsNetwork(isNetwork bool) *fileanalysis.SyscallAnalysisResult {
+	return &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{
+					Number:              97,
+					Name:                "socket",
+					IsNetwork:           isNetwork,
+					DeterminationMethod: "lib_cache_match",
+					Source:              "libsystem_symbol_import",
+				},
+			},
+		},
+	}
+}
+
+// TestSyscallAnalysisHasNetworkSignal_Nil verifies nil returns false.
+func TestSyscallAnalysisHasNetworkSignal_Nil(t *testing.T) {
+	assert.False(t, syscallAnalysisHasNetworkSignal(nil))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_Empty verifies empty result returns false.
+func TestSyscallAnalysisHasNetworkSignal_Empty(t *testing.T) {
+	assert.False(t, syscallAnalysisHasNetworkSignal(&fileanalysis.SyscallAnalysisResult{}))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_IsNetworkTrue verifies that a DetectedSyscall
+// with IsNetwork==true triggers the network signal.
+func TestSyscallAnalysisHasNetworkSignal_IsNetworkTrue(t *testing.T) {
+	assert.True(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithIsNetwork(true)))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_IsNetworkFalse verifies that a DetectedSyscall
+// with IsNetwork==false does not trigger the network signal.
+func TestSyscallAnalysisHasNetworkSignal_IsNetworkFalse(t *testing.T) {
+	assert.False(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithIsNetwork(false)))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_MultipleEntries verifies that any entry with
+// IsNetwork==true is sufficient to trigger the signal.
+func TestSyscallAnalysisHasNetworkSignal_MultipleEntries(t *testing.T) {
+	result := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 5, IsNetwork: false},
+				{Number: 97, IsNetwork: true, Name: "socket"},
+				{Number: 98, IsNetwork: true, Name: "connect"},
+			},
+		},
+	}
+	assert.True(t, syscallAnalysisHasNetworkSignal(result))
+}
+
+// ---- Section 6.2: isNetworkViaBinaryAnalysis IsNetwork flow tests ----
+
+// syscallResultWithNetworkEntry builds a SyscallAnalysisResult with a network syscall entry.
+func syscallResultWithNetworkEntry() *fileanalysis.SyscallAnalysisResult {
+	return syscallAnalysisResultWithIsNetwork(true)
+}
+
+// syscallResultWithNonNetworkEntry builds a SyscallAnalysisResult with a non-network syscall entry.
+func syscallResultWithNonNetworkEntry() *fileanalysis.SyscallAnalysisResult {
+	return syscallAnalysisResultWithIsNetwork(false)
+}
+
+// TestIsNetworkViaBinaryAnalysis_StaticBinary_IsNetworkTrue verifies that a static binary
+// (ErrNoNetworkSymbolAnalysis) with IsNetwork==true in SyscallAnalysis returns true, false.
+// (IsNetwork path does not escalate to high risk — only direct_svc_0x80 does.)
+func TestIsNetworkViaBinaryAnalysis_StaticBinary_IsNetworkTrue(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
+	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNetworkEntry()}
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+
+	assert.True(t, isNet, "static binary with IsNetwork syscall should return true")
+	assert.False(t, isHigh, "IsNetwork path should not escalate to high risk")
+}
+
+// TestIsNetworkViaBinaryAnalysis_StaticBinary_IsNetworkFalse verifies that a static binary
+// with no network syscall and no svc returns false, false.
+func TestIsNetworkViaBinaryAnalysis_StaticBinary_IsNetworkFalse(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
+	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNonNetworkEntry()}
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+
+	assert.False(t, isNet, "static binary with no network syscall should return false")
+	assert.False(t, isHigh, "no network signal should not escalate to high risk")
+}
+
+// TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndIsNetwork verifies that a static binary
+// with both svc #0x80 and IsNetwork==true returns true, true (svc escalates).
+func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndIsNetwork(t *testing.T) {
+	// Build a result that has both direct_svc_0x80 and IsNetwork==true.
+	result := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: -1, DeterminationMethod: "direct_svc_0x80", IsNetwork: false},
+				{Number: 97, Name: "socket", IsNetwork: true, Source: "libsystem_symbol_import"},
+			},
+		},
+	}
+	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
+	svcStore := &mockFileanalysisSyscallStore{result: result}
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+
+	assert.True(t, isNet, "svc + IsNetwork should return true")
+	assert.True(t, isHigh, "svc #0x80 should escalate to high risk")
+}
+
+// TestIsNetworkViaBinaryAnalysis_NetworkDetected_IsNetworkTrue verifies that when
+// SymbolAnalysis detects network but the SyscallAnalysis also has IsNetwork==true,
+// network is detected (true, false) — IsNetwork does not add high risk over symbol analysis.
+func TestIsNetworkViaBinaryAnalysis_NetworkDetected_IsNetworkTrue(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{data: networkDetectedData()}
+	svcStore := &mockFileanalysisSyscallStore{result: syscallResultWithNetworkEntry()}
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+
+	assert.True(t, isNet, "SymbolAnalysis network should return true")
+	assert.False(t, isHigh, "IsNetwork without svc should not escalate to high risk")
+}
