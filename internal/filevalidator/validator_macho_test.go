@@ -138,11 +138,13 @@ func recordMachO(t *testing.T, binData []byte, stub *stubBinaryAnalyzer) *filean
 	return record
 }
 
-// TestBuildSVCSyscallAnalysis is a unit test for the buildSVCSyscallAnalysis helper.
-// It verifies that the returned SyscallAnalysisData has the correct fields.
-func TestBuildSVCSyscallAnalysis(t *testing.T) {
+// TestBuildMachoSyscallAnalysisData_SVCOnly is a unit test for the buildMachoSyscallAnalysisData helper
+// when only svc entries are present. It verifies that the returned SyscallAnalysisData has the
+// correct fields for the svc-only case.
+func TestBuildMachoSyscallAnalysisData_SVCOnly(t *testing.T) {
 	addrs := []uint64{0x100000004, 0x10000000C}
-	result := buildSVCSyscallAnalysis(addrs)
+	svcEntries := buildSVCSyscallEntries(addrs)
+	result := buildMachoSyscallAnalysisData(svcEntries, nil)
 
 	require.NotNil(t, result)
 	assert.Equal(t, "arm64", result.Architecture)
@@ -279,16 +281,15 @@ func TestUpdateAnalysisRecord_ELFNotAffected(t *testing.T) {
 		"SyscallAnalysis must remain nil for a non-Mach-O, non-ELF file")
 }
 
-// TestBuildSVCSyscallAnalysis_CommonSyscallInfo verifies that DetectedSyscalls use
-// common.SyscallInfo and the fields match the expected values from the spec.
-func TestBuildSVCSyscallAnalysis_CommonSyscallInfo(t *testing.T) {
+// TestBuildSVCSyscallEntries_CommonSyscallInfo verifies that buildSVCSyscallEntries produces
+// common.SyscallInfo entries with the expected field values from the spec.
+func TestBuildSVCSyscallEntries_CommonSyscallInfo(t *testing.T) {
 	addrs := []uint64{0x100000000}
-	result := buildSVCSyscallAnalysis(addrs)
+	entries := buildSVCSyscallEntries(addrs)
 
-	require.NotNil(t, result)
-	require.Len(t, result.DetectedSyscalls, 1)
+	require.Len(t, entries, 1)
 
-	sc := result.DetectedSyscalls[0]
+	sc := entries[0]
 	// Verify the type is common.SyscallInfo (zero-value assignment as type check).
 	_ = common.SyscallInfo{}
 	assert.Equal(t, -1, sc.Number, "Number must be -1 (undetermined)")

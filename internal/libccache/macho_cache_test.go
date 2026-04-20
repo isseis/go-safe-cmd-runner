@@ -23,18 +23,7 @@ func buildMachoBytes(t *testing.T) []byte {
 	syms := []testSym{
 		{Name: "socket", Value: testTextVMAddr, Sect: 1, Type: 0x0F},
 	}
-	mf := buildTestMacho(t, macho.CpuArm64, text, syms)
-
-	// Re-serialize by reading raw bytes from the built binary.
-	// Since buildTestMacho uses bytes.NewReader, we can rebuild directly.
-	text2 := buildInstructions(movzX16(97), svcMacOS)
-	syms2 := []testSym{
-		{Name: "socket", Value: testTextVMAddr, Sect: 1, Type: 0x0F},
-	}
-	_ = mf // already verified by buildTestMacho
-
-	// Rebuild the raw binary representation directly.
-	return buildRawMachoBytes(t, macho.CpuArm64, text2, syms2)
+	return buildRawMachoBytes(t, macho.CpuArm64, text, syms)
 }
 
 // buildRawMachoBytes builds a raw Mach-O binary byte slice (does not call NewFile).

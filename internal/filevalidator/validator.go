@@ -357,8 +357,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 				return fmt.Errorf("libSystem import analysis failed: %w", libsysErr)
 			}
 
-			merged := mergeMachoSyscallInfos(svcEntries, libsysEntries)
-			if len(merged) > 0 {
+			if len(svcEntries)+len(libsysEntries) > 0 {
 				record.SyscallAnalysis = buildMachoSyscallAnalysisData(svcEntries, libsysEntries)
 			}
 		}
@@ -748,32 +747,6 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
 	}
 	return entries
-}
-
-// buildSVCSyscallAnalysis constructs a SyscallAnalysisData record for a Mach-O
-// binary where svc #0x80 instructions were detected at the given virtual addresses.
-// Each address is recorded as a DetectedSyscall with Number=-1 (undetermined) and
-// DeterminationMethod="direct_svc_0x80".
-func buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData {
-	syscalls := make([]common.SyscallInfo, len(addrs))
-	for i, addr := range addrs {
-		syscalls[i] = common.SyscallInfo{
-			Number:              -1,
-			IsNetwork:           false,
-			Location:            addr,
-			DeterminationMethod: "direct_svc_0x80",
-			Source:              "direct_svc_0x80",
-		}
-	}
-	return &fileanalysis.SyscallAnalysisData{
-		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "arm64",
-			AnalysisWarnings: []string{
-				"svc #0x80 detected: direct syscall bypassing libSystem.dylib",
-			},
-			DetectedSyscalls: syscalls,
-		},
-	}
 }
 
 // buildSVCSyscallEntries converts a list of svc #0x80 addresses into []common.SyscallInfo.
