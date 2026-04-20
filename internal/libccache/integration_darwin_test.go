@@ -266,7 +266,7 @@ func TestLibSystemCache_Integration_MachodyLibResolver(t *testing.T) {
 	}
 
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	source, err := machodylib.ResolveLibSystemKernel(dynDeps, fs, true)
+        source, err := machodylib.ResolveLibSystemKernel(dynDeps, fs, true)
 	require.NoError(t, err)
 
 	if source == nil {
