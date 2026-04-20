@@ -54,10 +54,16 @@ type libSystemCandidates struct {
 
 // ResolveLibSystemKernel resolves the libsystem_kernel.dylib source from DynLibDeps.
 //
-// Returns nil, nil when:
-//   - no libSystem-family library is present in DynLibDeps (non-libSystem binary)
-//   - dyld shared cache extraction also failed (fallback path)
+// Resolution order:
+//  1. Direct kernel entry from DynLibDeps (FR-3.1.5 priority 1)
+//  2. Umbrella LC_REEXPORT_DYLIB traversal (FR-3.1.5 priority 2)
+//  3. dyld shared cache extraction (FR-3.1.6) — tried before the well-known stub
+//     path because on modern macOS /usr/lib/system/libsystem_kernel.dylib is a
+//     stub that does not contain real syscall wrappers
+//  4. Well-known filesystem path as last resort
 //
+// Returns nil, nil when no libSystem-family library is present in DynLibDeps,
+// or when all resolution methods fail.
 // Returns error only for unrecoverable conditions (permission errors, hash computation failures).
 func ResolveLibSystemKernel(
 	dynLibDeps []fileanalysis.LibEntry,
@@ -71,43 +77,51 @@ func ResolveLibSystemKernel(
 		return nil, nil
 	}
 
-	// Step 2: Choose a filesystem candidate path in priority order:
-	// direct kernel entry, umbrella re-export, well-known path.
-	candidatePath := resolveLibSystemKernelPath(candidates, fs)
-
-	// Step 3: Use the filesystem path if one was resolved.
+	// Step 2: DynLibDeps-derived paths (priorities 1 & 2 only; well-known path excluded).
+	candidatePath := resolveLibSystemKernelPathFromDeps(candidates, fs)
 	if candidatePath != "" {
-		hash, err := computeFileHash(fs, candidatePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compute hash for %s: %w", candidatePath, err)
-		}
-		path := candidatePath
-		return &LibSystemKernelSource{
-			Path: path,
-			Hash: hash,
-			GetData: func() ([]byte, error) {
-				return os.ReadFile(path) //nolint:gosec // #nosec G304 -- path is a system library path from DynLibDeps or well-known locations
-			},
-		}, nil
+		return filesystemKernelSource(candidatePath, fs)
 	}
 
-	// Step 4: Try dyld shared cache extraction (FR-3.1.6).
+	// Step 3: Try dyld shared cache extraction (FR-3.1.6) before the well-known stub path.
+	// On modern macOS the real image lives in the shared cache; the well-known filesystem
+	// path is a stub that does not contain real syscall wrappers.
 	extracted, err := ExtractLibSystemKernelFromDyldCache()
 	if err != nil {
 		// Normally the extractor returns nil, nil on fallback cases.
 		return nil, fmt.Errorf("dyld shared cache extraction failed unexpectedly: %w", err)
 	}
-	if extracted == nil {
-		slog.Info("dyld shared cache extraction for libsystem_kernel.dylib also failed; applying fallback")
-		return nil, nil
+	if extracted != nil {
+		// Extraction succeeded: use the install name as the canonical cache path (FR-3.1.6).
+		data := extracted.Data
+		return &LibSystemKernelSource{
+			Path:    libsystemKernelInstallName,
+			Hash:    extracted.Hash,
+			GetData: func() ([]byte, error) { return data, nil },
+		}, nil
 	}
 
-	// Extraction succeeded: use the install name as the canonical cache path (FR-3.1.6).
-	data := extracted.Data
+	// Step 4: Well-known filesystem path as last resort (may be a stub on modern macOS).
+	if _, err := os.Stat(libsystemKernelInstallName); err == nil {
+		return filesystemKernelSource(libsystemKernelInstallName, fs)
+	}
+
+	slog.Info("libsystem_kernel.dylib not found via any method; applying fallback")
+	return nil, nil
+}
+
+// filesystemKernelSource creates a LibSystemKernelSource backed by a filesystem path.
+func filesystemKernelSource(path string, fs safefileio.FileSystem) (*LibSystemKernelSource, error) {
+	hash, err := computeFileHash(fs, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute hash for %s: %w", path, err)
+	}
 	return &LibSystemKernelSource{
-		Path:    libsystemKernelInstallName,
-		Hash:    extracted.Hash,
-		GetData: func() ([]byte, error) { return data, nil },
+		Path: path,
+		Hash: hash,
+		GetData: func() ([]byte, error) {
+			return os.ReadFile(path) //nolint:gosec // #nosec G304 -- path is a system library path from DynLibDeps or well-known locations
+		},
 	}, nil
 }
 
@@ -137,13 +151,11 @@ func findLibSystemCandidates(dynLibDeps []fileanalysis.LibEntry) libSystemCandid
 	return result
 }
 
-// resolveLibSystemKernelPath selects the best filesystem path for libsystem_kernel.dylib
-// according to FR-3.1.5 priority order:
-//  1. direct kernel Path from DynLibDeps (already resolved and on disk)
-//  2. umbrella file on disk → LC_REEXPORT_DYLIB traversal (task 0096 resolver reuse)
-//  3. well-known path /usr/lib/system/libsystem_kernel.dylib
-//  4. empty string (caller proceeds to dyld shared cache extraction)
-func resolveLibSystemKernelPath(candidates libSystemCandidates, fs safefileio.FileSystem) string {
+// resolveLibSystemKernelPathFromDeps selects the best filesystem path for
+// libsystem_kernel.dylib from DynLibDeps-derived sources only (priorities 1 and 2).
+// Returns "" when neither source yields a usable path; the caller then tries the
+// dyld shared cache before falling back to the well-known stub path.
+func resolveLibSystemKernelPathFromDeps(candidates libSystemCandidates, fs safefileio.FileSystem) string {
 	// Priority 1: direct kernel entry in DynLibDeps.
 	if candidates.Kernel != nil && candidates.Kernel.Path != "" {
 		if _, err := os.Stat(candidates.Kernel.Path); err == nil {
@@ -155,7 +167,7 @@ func resolveLibSystemKernelPath(candidates libSystemCandidates, fs safefileio.Fi
 	if candidates.Umbrella != nil && candidates.Umbrella.Path != "" {
 		kernelPath, err := findKernelInUmbrellaReexports(candidates.Umbrella.Path, fs)
 		if err != nil {
-			// Non-fatal: log and fall through to the well-known path.
+			// Non-fatal: log and fall through to dyld extraction.
 			slog.Info("Failed to traverse LC_REEXPORT_DYLIB from umbrella; continuing",
 				"umbrella", candidates.Umbrella.Path, "error", err)
 		} else if kernelPath != "" {
@@ -163,12 +175,6 @@ func resolveLibSystemKernelPath(candidates libSystemCandidates, fs safefileio.Fi
 		}
 	}
 
-	// Priority 3: well-known filesystem path.
-	if _, err := os.Stat(libsystemKernelInstallName); err == nil {
-		return libsystemKernelInstallName
-	}
-
-	// No filesystem path found; caller will try the dyld shared cache.
 	return ""
 }
 
