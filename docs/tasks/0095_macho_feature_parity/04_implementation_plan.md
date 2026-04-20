@@ -10,7 +10,7 @@
 | 0096 | Mach-O `LC_LOAD_DYLIB` 整合性検証 | 高 | 未着手 |
 | 0097 | Mach-O `svc #0x80` キャッシュ統合・CGO フォールバック | 中 | 未着手 |
 | 0098 | Mach-O `.dylib` ベース名による既知ネットワークライブラリ検出 | 中 | 未着手 |
-| 0100 | libSystem.dylib syscall ラッパー関数キャッシュ・mprotect 検出 | 中 | 未着手 |
+| 0100 | libSystem.dylib syscall ラッパー関数キャッシュ・mprotect 検出 | 中 | 完了 |
 | 0099 | Mach-O `mprotect(PROT_EXEC)` 直接 svc 検出（保留） | 低 | 未着手 |
 | 0101 | Mach-O 特権アクセス（execute-only バイナリ）対応 | 低 | 未着手 |
 
@@ -66,7 +66,7 @@
 - [x] `docs/tasks/0100_macho_libsystem_syscall_cache/02_architecture.md` を作成する
 - [x] `docs/tasks/0100_macho_libsystem_syscall_cache/03_detailed_specification.md` を作成する
 - [x] `docs/tasks/0100_macho_libsystem_syscall_cache/04_implementation_plan.md` を作成する
-- [ ] 実装・テストを行い PR をマージする
+- [x] 実装・テストを行い PR をマージする
 
 ### タスク 0099: Mach-O `mprotect(PROT_EXEC)` 直接 svc 検出（FR-4.6 後半・保留）
 

@@ -837,12 +837,16 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 
 // analyzeLibSystemImports obtains imported symbols from the target Mach-O binary
 // and matches them against the libSystem cache (FR-3.3.2).
-// Returns nil, nil when v.libSystemCache is nil, DynLibDeps is empty, or the file is not Mach-O.
+// Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
+// Note: DynLibDeps may be empty on macOS 11+ because all system libraries
+// (including libSystem.B.dylib) live in the dyld shared cache and are not
+// hash-verified by MachODynLibAnalyzer. The adapter's fallback symbol-name
+// matching handles detection in that case.
 func (v *Validator) analyzeLibSystemImports(
 	record *fileanalysis.Record,
 	filePath string,
 ) ([]common.SyscallInfo, error) {
-	if v.libSystemCache == nil || len(record.DynLibDeps) == 0 {
+	if v.libSystemCache == nil {
 		return nil, nil
 	}
 

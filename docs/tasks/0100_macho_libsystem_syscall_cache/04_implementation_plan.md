@@ -193,9 +193,9 @@
 
 ### 7.2 統合テストチェックリスト
 
-- [ ] macOS arm64 で dyld shared cache 経由の E2E テスト
-- [ ] dyld 抽出失敗時の最終フォールバック E2E テスト
-- [ ] ELF フロー非回帰テスト
+- [x] macOS arm64 で dyld shared cache 経由の E2E テスト
+- [x] dyld 抽出失敗時の最終フォールバック E2E テスト
+- [x] ELF フロー非回帰テスト
 
 ### 7.3 最終確認チェックリスト
 
@@ -206,7 +206,7 @@
 
 ## 8. 完了条件
 
-- [ ] `01_requirements.md` の AC-1 から AC-7 をすべてテストでカバーしている
-- [ ] `02_architecture.md` のコンポーネント境界どおりに依存が収まっている
-- [ ] `03_detailed_specification.md` に未確定 API 名や実装保留メモが残っていない
-- [ ] Linux と macOS arm64 の両方でビルドが成立する
+- [x] `01_requirements.md` の AC-1 から AC-7 をすべてテストでカバーしている
+- [x] `02_architecture.md` のコンポーネント境界どおりに依存が収まっている
+- [x] `03_detailed_specification.md` に未確定 API 名や実装保留メモが残っていない
+- [x] Linux と macOS arm64 の両方でビルドが成立する
