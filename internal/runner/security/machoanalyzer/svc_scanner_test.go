@@ -198,26 +198,26 @@ func TestCollectSVCAddresses_MultipleSVC(t *testing.T) {
 	assert.Equal(t, uint64(0x100000014), addrs[2])
 }
 
-// TestCollectSVCAddressesFromFile_NotMacho verifies that CollectSVCAddressesFromFile
+// TestScanSVCAddrs_NotMacho verifies that ScanSVCAddrs
 // returns nil, nil for a non-Mach-O file (e.g., a shell script).
-func TestCollectSVCAddressesFromFile_NotMacho(t *testing.T) {
+func TestScanSVCAddrs_NotMacho(t *testing.T) {
 	path := testdataPath("script.sh")
 	skipIfNotExist(t, path)
 
-	addrs, err := CollectSVCAddressesFromFile(path, osWrapFS{})
+	addrs, err := ScanSVCAddrs(path, osWrapFS{})
 	require.NoError(t, err)
 	assert.Nil(t, addrs, "expected nil for non-Mach-O file")
 }
 
-// TestCollectSVCAddressesFromFile_FatBinary verifies that CollectSVCAddressesFromFile
+// TestScanSVCAddrs_FatBinary verifies that ScanSVCAddrs
 // processes a Fat binary, scanning only arm64 slices for svc #0x80.
-func TestCollectSVCAddressesFromFile_FatBinary(t *testing.T) {
+func TestScanSVCAddrs_FatBinary(t *testing.T) {
 	path := testdataPath("fat_binary")
 	skipIfNotExist(t, path)
 
 	// fat_binary contains arm64 and x86_64 slices; both lack svc #0x80.
 	// Verify: no error, returns nil (no svc in arm64 slice).
-	addrs, err := CollectSVCAddressesFromFile(path, osWrapFS{})
+	addrs, err := ScanSVCAddrs(path, osWrapFS{})
 	require.NoError(t, err)
 	assert.Nil(t, addrs, "expected nil: arm64 slice in fat_binary has no svc #0x80")
 }

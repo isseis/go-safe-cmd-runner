@@ -345,10 +345,10 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 
 		// Mach-O arm64 svc #0x80 scan and libSystem import-symbol matching.
 		// Merge both results and store them in record.SyscallAnalysis (task 0100).
-		// CollectSVCAddressesFromFile checks magic bytes and returns nil for non-Mach-O
+		// ScanSVCAddrs checks magic bytes and returns nil for non-Mach-O
 		// files, so this is safe to call on all platforms and binary formats.
 		{
-			addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
+			addrs, svcErr := machoanalyzer.ScanSVCAddrs(filePath.String(), v.fileSystem)
 			if svcErr != nil {
 				return fmt.Errorf("mach-o svc scan failed: %w", svcErr)
 			}
