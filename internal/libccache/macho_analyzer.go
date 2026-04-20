@@ -105,8 +105,8 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 		}
 
 		// Slice out the function bytes.
-		startOff := int(sym.Value - textBase) //nolint:gosec // G115: sym.Value >= textBase
-		endOff := int(funcEnd - textBase)     //nolint:gosec // G115: funcEnd <= textEnd
+		startOff := int(sym.Value - textBase) //nolint:gosec // #nosec G115 -- safe: sym.Value >= textBase verified above
+		endOff := int(funcEnd - textBase)     //nolint:gosec // #nosec G115 -- safe: funcEnd <= textEnd verified above
 		funcCode := code[startOff:endOff]
 
 		// Detect svc #0x80 and resolve the BSD syscall number by scanning backward for x16 setup.

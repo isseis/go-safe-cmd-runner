@@ -86,7 +86,7 @@ func ResolveLibSystemKernel(
 			Path: path,
 			Hash: hash,
 			GetData: func() ([]byte, error) {
-				return os.ReadFile(path) //nolint:gosec // G304: path is a system library path from DynLibDeps or well-known
+				return os.ReadFile(path) //nolint:gosec // #nosec G304 -- path is a system library path from DynLibDeps or well-known locations
 			},
 		}, nil
 	}
