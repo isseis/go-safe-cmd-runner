@@ -100,12 +100,22 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 	// to the same physical file, while still recording a LibEntry for every installName.
 	visited := make(map[string]string)
 
+	// queued tracks installNames already added to the queue to prevent duplicate
+	// LibEntry records when multiple libraries share the same dependency.
+	queued := make(map[string]bool)
+
 	var libs []fileanalysis.LibEntry
 
 	var warnings []AnalysisWarning
 
 	// Seed queue with direct dependencies
 	for _, dep := range deps {
+		if queued[dep.installName] {
+			continue
+		}
+
+		queued[dep.installName] = true
+
 		queue = append(queue, bfsItem{
 			installName: dep.installName,
 			loaderPath:  binaryPath,
@@ -207,6 +217,12 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		}
 
 		for _, childDep := range childDeps {
+			if queued[childDep.installName] {
+				continue
+			}
+
+			queued[childDep.installName] = true
+
 			queue = append(queue, bfsItem{
 				installName: childDep.installName,
 				loaderPath:  resolvedPath,
