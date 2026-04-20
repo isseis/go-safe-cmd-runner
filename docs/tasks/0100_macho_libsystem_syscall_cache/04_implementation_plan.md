@@ -104,27 +104,27 @@
 
 ### 4.1 実装チェックリスト
 
-- [ ] `DynLibDeps` から `libSystem.B.dylib` と `libsystem_kernel.dylib` を区別して抽出する
-- [ ] `libsystem_kernel.dylib` が直接ある場合はその `Path` を優先使用する
-- [ ] `libSystem.B.dylib` のみ存在する場合は `LC_REEXPORT_DYLIB` を走査する
-- [ ] re-export 解決にタスク 0096 のパス解決ロジックを再利用する
-- [ ] ウェルノウンパス `/usr/lib/system/libsystem_kernel.dylib` を試行する
-- [ ] dyld shared cache 抽出を Darwin 実装に閉じ込める
-- [ ] 抽出バイト列の SHA-256 を `lib_hash` に使用する
-- [ ] dyld shared cache 不在・未収録・抽出失敗時は `nil, nil` でフォールバックに委譲する
+- [x] `DynLibDeps` から `libSystem.B.dylib` と `libsystem_kernel.dylib` を区別して抽出する
+- [x] `libsystem_kernel.dylib` が直接ある場合はその `Path` を優先使用する
+- [x] `libSystem.B.dylib` のみ存在する場合は `LC_REEXPORT_DYLIB` を走査する
+- [x] re-export 解決にタスク 0096 のパス解決ロジックを再利用する
+- [x] ウェルノウンパス `/usr/lib/system/libsystem_kernel.dylib` を試行する
+- [x] dyld shared cache 抽出を Darwin 実装に閉じ込める
+- [x] 抽出バイト列の SHA-256 を `lib_hash` に使用する
+- [x] dyld shared cache 不在・未収録・抽出失敗時は `nil, nil` でフォールバックに委譲する
 
 ### 4.2 テストチェックリスト
 
-- [ ] `internal/machodylib/libsystem_resolver_test.go`
-  - [ ] direct `libsystem_kernel.dylib` 優先
-  - [ ] umbrella から re-export 解決
-  - [ ] ウェルノウンパス使用
-  - [ ] libSystem 依存なしで `nil, nil`
-- [ ] `internal/machodylib/dyld_extractor_test.go`
-  - [ ] `arm64e` キャッシュ優先
-  - [ ] `arm64` フォールバック
-  - [ ] 抽出バイト列ハッシュ確認
-  - [ ] 対象イメージ未検出時の `nil, nil`
+- [x] `internal/machodylib/libsystem_resolver_test.go`
+  - [x] direct `libsystem_kernel.dylib` 優先
+  - [x] umbrella から re-export 解決
+  - [x] ウェルノウンパス使用
+  - [x] libSystem 依存なしで `nil, nil`
+- [x] `internal/machodylib/dyld_extractor_test.go`
+  - [x] `arm64e` キャッシュ優先
+  - [x] `arm64` フォールバック
+  - [x] 抽出バイト列ハッシュ確認
+  - [x] 対象イメージ未検出時の `nil, nil`
 
 ## 5. Step 3: `internal/filevalidator` の拡張
 

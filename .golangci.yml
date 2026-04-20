@@ -67,6 +67,7 @@ linters:
             - github.com/stretchr/testify/mock
             - golang.org/x/arch
             - golang.org/x/term
+            - github.com/blacktop/ipsw/pkg/dyld
 
         main:
           files:

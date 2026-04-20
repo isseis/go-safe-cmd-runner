@@ -147,7 +147,16 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 	// Load or create the cache.
 	wrappers, err := a.cacheMgr.GetOrCreate(source.Path, source.Hash, source.GetData)
 	if err != nil {
-		return nil, err
+		// If the Mach-O could not be read or parsed (e.g., the file on disk is a
+		// linker stub, not a standalone parseable Mach-O), treat it the same as a
+		// failed extraction and fall back to symbol-name matching (FR-3.4.1).
+		slog.Info("libSystem cache unavailable after source resolution; falling back to symbol-name matching",
+			"source_path", source.Path, "error", err)
+		result := a.fallbackNameMatch(importSymbols)
+		slog.Info("libSystem fallback matching completed",
+			"reason", "cache_error",
+			"detected_syscalls", len(result))
+		return result, nil
 	}
 
 	// Match imported symbols against the cache (FR-3.3.2).
