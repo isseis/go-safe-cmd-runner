@@ -262,7 +262,7 @@ func TestUpdateAnalysisRecord_ELFNotAffected(t *testing.T) {
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
-	// Plain text file: neither ELF nor Mach-O. analyzeSyscalls sets nil.
+	// Plain text file: neither ELF nor Mach-O. analyzeELFSyscalls sets nil.
 	// The Mach-O svc scan must also return nil (magic mismatch).
 	textPath := writeTempBinary(t, tempDir, "not_binary.txt", []byte("hello world"))
 

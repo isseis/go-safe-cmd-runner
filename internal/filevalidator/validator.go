@@ -131,7 +131,7 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	fileSystem          safefileio.FileSystem           // used by openELFFile in analyzeSyscalls
+	fileSystem          safefileio.FileSystem           // used by openELFFile in analyzeELFSyscalls
 	elfDynlibAnalyzer   *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
 	machoDynlibAnalyzer *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
 	binaryAnalyzer      binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
@@ -339,7 +339,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 		}
 
 		// Analyze ELF syscalls via libc import symbol matching and direct instruction scan.
-		if err := v.analyzeSyscalls(record, filePath.String()); err != nil {
+		if err := v.analyzeELFSyscalls(record, filePath.String()); err != nil {
 			return err
 		}
 
@@ -874,12 +874,12 @@ func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string,
 	return syms, nil
 }
 
-// analyzeSyscalls performs ELF syscall analysis on the given file path and sets
+// analyzeELFSyscalls performs ELF syscall analysis on the given file path and sets
 // record.SyscallAnalysis. It is called from the store.Update() callback in
 // updateAnalysisRecord. Always writes record.SyscallAnalysis (nil for non-ELF
 // files or ELF with no detected syscalls) to clear stale values from prior runs.
 // Fatal errors are returned to prevent the record from being saved.
-func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string) error {
+func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath string) error {
 	if v.syscallAnalyzer == nil && v.libcCache == nil {
 		return nil
 	}

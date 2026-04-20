@@ -1380,7 +1380,7 @@ func TestRecord_LibcCache_NonELFFile(t *testing.T) {
 }
 
 // TestRecord_LibcCache_Error_CausesRecordFailure verifies that a fatal libc
-// cache error causes analyzeSyscalls to return an error.
+// cache error causes analyzeELFSyscalls to return an error.
 func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 	// Use an in-memory dynamic ELF so that openELFFile succeeds and reaches the
 	// libc cache path without depending on any system binary.
@@ -1399,7 +1399,7 @@ func TestRecord_LibcCache_Error_CausesRecordFailure(t *testing.T) {
 			{SOName: "libc.so.6", Path: "/lib/x86_64-linux-gnu/libc.so.6", Hash: "sha256:aabb"},
 		},
 	}
-	analyzeErr := v.analyzeSyscalls(record, elfPath)
+	analyzeErr := v.analyzeELFSyscalls(record, elfPath)
 	require.Error(t, analyzeErr, "fatal libc cache error must propagate")
 	require.Contains(t, analyzeErr.Error(), "libc cache error")
 }
