@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// buildMachOWithReexport builds a minimal Mach-O binary that contains a single
+// buildMachOWithReexport builds a minimal arm64 Mach-O binary that contains a single
 // LC_REEXPORT_DYLIB (0x1F) load command pointing to reexportName.
 // The format mirrors LC_LOAD_DYLIB, so buildDylibLoadCmd logic applies directly.
-func buildMachOWithReexport(cpuType macho.Cpu, reexportName string) []byte {
+func buildMachOWithReexport(reexportName string) []byte {
 	const (
 		machOMagic64      = uint32(0xFEEDFACF)
 		machOHeaderSize64 = 32
@@ -27,6 +27,7 @@ func buildMachOWithReexport(cpuType macho.Cpu, reexportName string) []byte {
 		mhDylib           = uint32(6) // MH_DYLIB for an umbrella library
 		lcReexportDylib   = uint32(0x1F)
 		align4Mask        = 3
+		cpuArm64          = uint32(macho.CpuArm64)
 	)
 
 	alignTo4 := func(n int) int {
@@ -43,8 +44,8 @@ func buildMachOWithReexport(cpuType macho.Cpu, reexportName string) []byte {
 
 	hdr := make([]byte, machOHeaderSize64)
 	binary.LittleEndian.PutUint32(hdr[0:4], machOMagic64)
-	binary.LittleEndian.PutUint32(hdr[4:8], uint32(cpuType)) //nolint:gosec
-	binary.LittleEndian.PutUint32(hdr[8:12], 0)              // cpusubtype
+	binary.LittleEndian.PutUint32(hdr[4:8], cpuArm64)
+	binary.LittleEndian.PutUint32(hdr[8:12], 0) // cpusubtype
 	binary.LittleEndian.PutUint32(hdr[12:16], mhDylib)
 	binary.LittleEndian.PutUint32(hdr[16:20], 1)                    // ncmds
 	binary.LittleEndian.PutUint32(hdr[20:24], uint32(totalCmdSize)) //nolint:gosec
@@ -112,7 +113,7 @@ func TestResolveLibSystemKernel_UmbrellaReexport(t *testing.T) {
 	kernelPath := writeTempFile(t, dir, "libsystem_kernel.dylib", []byte("kernel_dummy"))
 
 	// Build a minimal umbrella Mach-O that re-exports kernelPath.
-	umbrellaBytes := buildMachOWithReexport(macho.CpuArm64, kernelPath)
+	umbrellaBytes := buildMachOWithReexport(kernelPath)
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
 	dynLibDeps := []fileanalysis.LibEntry{
@@ -199,7 +200,7 @@ func TestFindKernelInUmbrellaReexports_Found(t *testing.T) {
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 
 	kernelPath := writeTempFile(t, dir, "libsystem_kernel.dylib", []byte("kernel"))
-	umbrellaBytes := buildMachOWithReexport(macho.CpuArm64, kernelPath)
+	umbrellaBytes := buildMachOWithReexport(kernelPath)
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
 	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)
@@ -214,7 +215,7 @@ func TestFindKernelInUmbrellaReexports_NotFound(t *testing.T) {
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 
 	// LC_REEXPORT_DYLIB points to a path that does not exist on disk.
-	umbrellaBytes := buildMachOWithReexport(macho.CpuArm64, filepath.Join(dir, "does_not_exist.dylib"))
+	umbrellaBytes := buildMachOWithReexport(filepath.Join(dir, "does_not_exist.dylib"))
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
 	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)
@@ -234,7 +235,7 @@ func TestFindKernelInUmbrellaReexports_SkipsWellKnownStubPath(t *testing.T) {
 	// The umbrella re-exports the canonical well-known install name.
 	// Even though the path may not exist on this test machine, the function must
 	// return "" because it is filtered by the stub-path guard.
-	umbrellaBytes := buildMachOWithReexport(macho.CpuArm64, libsystemKernelInstallName)
+	umbrellaBytes := buildMachOWithReexport(libsystemKernelInstallName)
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
 	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)

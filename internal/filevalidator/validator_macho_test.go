@@ -492,6 +492,45 @@ func TestMergeMachoSyscallInfos_LibSysOnly(t *testing.T) {
 	assert.Equal(t, 97, result[0].Number)
 }
 
+// TestMergeMachoSyscallInfos_SameNumberSortsByLocationThenSource verifies that
+// entries sharing the same Number are ordered by (Location, Source) so that
+// JSON output is deterministic across runs.
+//
+// The primary case is Number=-1 (unresolved svc #0x80), where multiple svc
+// instructions can appear at different addresses in the same binary.
+func TestMergeMachoSyscallInfos_SameNumberSortsByLocationThenSource(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{Number: -1, Location: 0x100000020, Source: "z_source"},
+		{Number: -1, Location: 0x100000010, Source: "b_source"},
+		{Number: -1, Location: 0x100000010, Source: "a_source"},
+	}
+	result := mergeMachoSyscallInfos(svcEntries, nil)
+	require.Len(t, result, 3)
+	// Secondary sort key: Location ascending.
+	assert.Equal(t, uint64(0x100000010), result[0].Location)
+	assert.Equal(t, uint64(0x100000010), result[1].Location)
+	assert.Equal(t, uint64(0x100000020), result[2].Location)
+	// Tertiary sort key: Source ascending (for equal Number and Location).
+	assert.Equal(t, "a_source", result[0].Source)
+	assert.Equal(t, "b_source", result[1].Source)
+}
+
+// TestMergeMachoSyscallInfos_MixedNumbersSortedFirst verifies that entries with
+// different Number values are sorted by Number before Location or Source are
+// considered.
+func TestMergeMachoSyscallInfos_MixedNumbersSortedFirst(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{Number: 98, Location: 0x100000000, Source: "s1"},
+		{Number: -1, Location: 0x100000020, Source: "s2"},
+		{Number: 97, Location: 0x100000010, Source: "s3"},
+	}
+	result := mergeMachoSyscallInfos(svcEntries, nil)
+	require.Len(t, result, 3)
+	assert.Equal(t, -1, result[0].Number, "Number=-1 sorts smallest")
+	assert.Equal(t, 97, result[1].Number)
+	assert.Equal(t, 98, result[2].Number)
+}
+
 // TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC verifies that
 // AnalysisWarnings is populated only when svc entries are present.
 func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {

@@ -324,6 +324,40 @@ func TestMachoLibSystemAnalyzer_Analyze_NoSVC(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
+// TestMachoLibSystemAnalyzer_Analyze_LastFunctionClampedToTextEnd verifies that a
+// wrapper function occupying the last bytes of __TEXT,__text is still analyzed when
+// the next symbol in the symbol table lies beyond the section boundary.
+//
+// Before the funcEnd clamp fix, funcEnd was set to the next symbol's address
+// (> textEnd), the boundary check "funcEnd > textEnd" triggered, and the function
+// was silently skipped. After the fix, funcEnd is clamped to textEnd so the last
+// in-range function is always analyzed.
+func TestMachoLibSystemAnalyzer_Analyze_LastFunctionClampedToTextEnd(t *testing.T) {
+	// socket wrapper: 8 bytes occupying the entire __text section.
+	text := buildInstructions(
+		movzX16(97), // MOVZ X16, #97
+		svcMacOS,    // SVC #0x80
+	)
+	textEnd := testTextVMAddr + uint64(len(text)) // 0x100000008
+
+	// _beyond_text simulates a symbol in a different section (e.g. __DATA) whose
+	// address is past the end of __text. Including it causes the loop to set
+	// funcEnd = _beyond_text.Value > textEnd for the socket function.
+	syms := []testSym{
+		{Name: "socket", Value: testTextVMAddr, Sect: 1, Type: 0x0F},
+		{Name: "_beyond_text", Value: textEnd + 0x10, Sect: 2, Type: 0x0F},
+	}
+
+	mf := buildTestMacho(t, macho.CpuArm64, text, syms)
+
+	analyzer := &MachoLibSystemAnalyzer{}
+	entries, err := analyzer.Analyze(mf)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "socket must be detected even though the next symbol is beyond textEnd")
+	assert.Equal(t, "socket", entries[0].Name)
+	assert.Equal(t, 97, entries[0].Number)
+}
+
 // TestMachoLibSystemAnalyzer_Analyze_MultipleSymbols verifies that multiple
 // wrapper functions are returned and sorted by Number then Name.
 func TestMachoLibSystemAnalyzer_Analyze_MultipleSymbols(t *testing.T) {
