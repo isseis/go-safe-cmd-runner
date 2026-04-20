@@ -28,8 +28,10 @@ const arm64Imm16HighShift = 16
 
 // ARM64 instruction pattern constants for control-flow detection.
 const (
-	// arm64PatternBLRBRRET matches bits [31:22] for BLR / BR / RET instructions.
-	arm64PatternBLRBRRET = uint32(0b1101011000) // 0x36C
+	// arm64PatternBLRBR matches bits [31:22] for BLR / BR instructions.
+	arm64PatternBLRBR = uint32(0b1101011000) // 0x36C
+	// arm64PatternRET matches bits [31:22] for RET instructions (bit 22 differs from BLR/BR).
+	arm64PatternRET = uint32(0b1101011001) // 0x36D
 	// arm64PatternCBZ matches bits [30:25] for CBZ / CBNZ instructions.
 	arm64PatternCBZ = uint32(0b011010) // 0x1A
 	// arm64PatternTBZ matches bits [30:25] for TBZ / TBNZ instructions.
@@ -88,10 +90,15 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 
 	for i, sym := range syms {
 		// Estimate function size because Mach-O symtab has no st_size equivalent.
+		// Skip aliases (syms[j].Value == sym.Value) to avoid zero-length bodies.
 		var funcEnd uint64
-		if i+1 < len(syms) {
-			funcEnd = syms[i+1].Value
-		} else {
+		for j := i + 1; j < len(syms); j++ {
+			if syms[j].Value > sym.Value {
+				funcEnd = syms[j].Value
+				break
+			}
+		}
+		if funcEnd == 0 {
 			funcEnd = textEnd
 		}
 		if sym.Value >= funcEnd || sym.Value < textBase || funcEnd > textEnd {
@@ -128,11 +135,12 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 	return entries, nil
 }
 
-// filterFunctionSymbols returns only externally defined function symbols from Symtab.
-// Externally defined means the symbol is section-defined and not undefined.
+// filterFunctionSymbols returns all section-defined symbols from Symtab.
+// Local symbols are kept because they are needed for accurate function boundary
+// detection: a local function between two exported functions would otherwise
+// cause the exported function's size to be overestimated.
 // macOS Mach-O symbol type flags:
 //
-//	N_EXT  = 0x01 (external)
 //	N_TYPE = 0x0E (type mask)
 //	N_SECT = 0x0E (defined in section)
 //	N_UNDF = 0x00 (undefined)
@@ -145,10 +153,6 @@ func filterFunctionSymbols(syms []macho.Symbol) []macho.Symbol {
 		}
 		// Exclude debug symbols (N_STAB: type >= machoSymTypeDebugMin).
 		if s.Type >= machoSymTypeDebugMin {
-			continue
-		}
-		// Keep only external symbols (N_EXT bit set).
-		if s.Type&0x01 == 0 {
 			continue
 		}
 		result = append(result, s)
@@ -312,8 +316,8 @@ func isControlFlowInstruction(word uint32) bool {
 	if word>>26 == 0b000101 || word>>26 == 0b100101 {
 		return true
 	}
-	// BLR / BR / RET: [31:22] = arm64PatternBLRBRRET
-	if word>>arm64BitShiftBLRBR == arm64PatternBLRBRRET {
+	// BLR / BR / RET: [31:22] = arm64PatternBLRBR or arm64PatternRET
+	if word>>arm64BitShiftBLRBR == arm64PatternBLRBR || word>>arm64BitShiftBLRBR == arm64PatternRET {
 		return true
 	}
 	// CBZ / CBNZ: [30:25] = arm64PatternCBZ
