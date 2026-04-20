@@ -221,3 +221,23 @@ func TestFindKernelInUmbrellaReexports_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
+
+// TestFindKernelInUmbrellaReexports_SkipsWellKnownStubPath verifies that when
+// LC_REEXPORT_DYLIB points to the well-known stub install name
+// (/usr/lib/system/libsystem_kernel.dylib), findKernelInUmbrellaReexports returns ""
+// regardless of whether the path exists on disk, so that the caller can proceed to
+// dyld shared cache extraction (priority 3).
+func TestFindKernelInUmbrellaReexports_SkipsWellKnownStubPath(t *testing.T) {
+	dir := evalReal(t, t.TempDir())
+	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+
+	// The umbrella re-exports the canonical well-known install name.
+	// Even though the path may not exist on this test machine, the function must
+	// return "" because it is filtered by the stub-path guard.
+	umbrellaBytes := buildMachOWithReexport(macho.CpuArm64, libsystemKernelInstallName)
+	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
+
+	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)
+	require.NoError(t, err)
+	assert.Empty(t, result, "well-known stub install-name should be skipped in priority-2 resolution")
+}

@@ -164,8 +164,11 @@ func findLibSystemCandidates(dynLibDeps []fileanalysis.LibEntry) libSystemCandid
 
 // resolveLibSystemKernelPathFromDeps selects the best filesystem path for
 // libsystem_kernel.dylib from DynLibDeps-derived sources only (priorities 1 and 2).
-// Returns "" when neither source yields a usable path; the caller then tries the
-// dyld shared cache before falling back to the well-known stub path.
+// The well-known stub path (libsystemKernelInstallName) is explicitly excluded from
+// priority-2 results so that dyld shared cache extraction (priority 3) still runs on
+// modern macOS where the stub exists on disk but contains no real syscall wrappers.
+// Returns "" when neither source yields a usable non-stub path; the caller then tries
+// the dyld shared cache before falling back to the well-known stub path.
 func resolveLibSystemKernelPathFromDeps(candidates libSystemCandidates, fs safefileio.FileSystem) string {
 	// Priority 1: direct kernel entry in DynLibDeps.
 	if candidates.Kernel != nil && candidates.Kernel.Path != "" {
@@ -213,6 +216,16 @@ func findKernelInUmbrellaReexports(umbrellaPath string, fs safefileio.FileSystem
 	deps, _ := extractLoadCommands(mf)
 	for _, dep := range deps {
 		if filepath.Base(dep.installName) == libsystemKernelBaseName {
+			// Skip the canonical well-known stub install-name path.
+			// On modern macOS, /usr/lib/system/libsystem_kernel.dylib is a linker
+			// stub that exists on disk but does not contain real syscall wrappers.
+			// Returning it here would prevent the caller from proceeding to dyld
+			// shared cache extraction (priority 3), which holds the real image.
+			if dep.installName == libsystemKernelInstallName {
+				slog.Info("Skipping well-known stub path from umbrella re-exports; will try dyld cache",
+					"path", dep.installName)
+				continue
+			}
 			// The install name is typically an absolute path; check if it exists on disk.
 			if _, statErr := os.Stat(dep.installName); statErr == nil {
 				return dep.installName, nil
