@@ -102,7 +102,7 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 
 	// queued tracks installNames already added to the queue to prevent duplicate
 	// LibEntry records when multiple libraries share the same dependency.
-	queued := make(map[string]bool)
+	queued := make(map[string]struct{})
 
 	var libs []fileanalysis.LibEntry
 
@@ -110,11 +110,11 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 
 	// Seed queue with direct dependencies
 	for _, dep := range deps {
-		if queued[dep.installName] {
+		if _, ok := queued[dep.installName]; ok {
 			continue
 		}
 
-		queued[dep.installName] = true
+		queued[dep.installName] = struct{}{}
 
 		queue = append(queue, bfsItem{
 			installName: dep.installName,
@@ -217,11 +217,11 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		}
 
 		for _, childDep := range childDeps {
-			if queued[childDep.installName] {
+			if _, ok := queued[childDep.installName]; ok {
 				continue
 			}
 
-			queued[childDep.installName] = true
+			queued[childDep.installName] = struct{}{}
 
 			queue = append(queue, bfsItem{
 				installName: childDep.installName,
