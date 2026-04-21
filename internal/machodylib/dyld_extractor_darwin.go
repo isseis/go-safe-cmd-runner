@@ -457,11 +457,8 @@ func readMachOHeader(path string, fileOff uint64) (*machoHeader, []byte, error) 
 	}
 
 	magic := binary.LittleEndian.Uint32(raw[0:])
-	const (
-		macho64Magic   = 0xFEEDFACF
-		macho64MagicBE = 0xCFFAEDFE
-	)
-	if magic != macho64Magic && magic != macho64MagicBE {
+	const macho64Magic = 0xFEEDFACF // little-endian arm64/x86-64 only; dyld caches never contain BE slices
+	if magic != macho64Magic {
 		return nil, nil, fmt.Errorf("0x%08x at 0x%x: %w", magic, fileOff, errInvalidMachOMagic)
 	}
 
