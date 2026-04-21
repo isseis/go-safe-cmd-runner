@@ -940,7 +940,10 @@ func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnal
 	// so sequential read position does not affect them.
 	var magicBuf [4]byte
 	if _, err := io.ReadFull(f, magicBuf[:]); err != nil {
-		return nil, nil // file shorter than 4 bytes — not Mach-O
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, nil // file shorter than 4 bytes — not Mach-O
+		}
+		return nil, err
 	}
 	magic := binary.LittleEndian.Uint32(magicBuf[:])
 
