@@ -1,0 +1,259 @@
+# Mach-O arm64 syscall 番号解析 要件定義書
+
+## 1. 概要
+
+### 1.1 背景
+
+タスク 0097 では Mach-O バイナリの `svc #0x80` スキャン結果を `SyscallAnalysis` にキャッシュし、`svc #0x80` の存在自体を高リスクとして扱う方針を実装した。
+
+しかし、macOS arm64 向けに Go で記述されたバイナリ（本システムの `record` コマンドを含む）は、Go runtime が `libSystem.dylib` を経由せず直接 `svc #0x80` を発行するランタイムスタブを持つ。このため、タスク 0097 の方針では正規の Go バイナリが誤って高リスク判定される偽陽性問題が生じる。
+
+実際に `record` バイナリ自身（`build/prod/record`、スキーマバージョン 15）を解析したところ、以下の `svc #0x80` が検出された：
+
+```
+0x1000ccbf0:  ldr x16, [sp, #0x18]
+              ldr x0,  [sp, #0x20]
+              ...
+              svc #0x80               ← Go runtime syscall スタブ
+```
+
+このパターンは Go の `syscall.RawSyscall` 等が使用するランタイム内部のディスパッチスタブであり、syscall 番号は呼び出し元からスタック経由で渡される。タスク 0097 の方針ではこのバイナリを高リスクと判定し、自システムのコマンドが実行拒否される。
+
+### 1.2 ELF バイナリとの比較
+
+ELF バイナリの解析（タスク 0070/0072/0077）は `svc #0` の存在ではなく syscall 番号（X8 レジスタ）を解析し、ネットワーク関連 syscall の有無でリスク判定を行う。macOS arm64 も同様のアプローチを取るべきであり、`svc #0x80` の存在だけをシグナルとする現行方針は ELF との一貫性を欠く。
+
+macOS arm64 と ELF arm64 の主な差異：
+
+| 項目 | macOS arm64 | ELF arm64 (Linux) |
+|------|------------|-------------------|
+| syscall 命令 | `svc #0x80` (0xD4001001) | `svc #0` (0xD4000001) |
+| syscall 番号レジスタ | X16 | X8 |
+| syscall 番号の BSD prefix | 0x2000000 | なし |
+| ネットワーク判定 | 本タスクで実装 | 実装済み |
+
+### 1.3 目的
+
+- Mach-O arm64 バイナリに対して X16 レジスタ後方スキャンにより syscall 番号を解析し、ネットワーク関連 syscall のみをネットワーク利用・高リスクとして分類する
+- Go runtime スタブ関数（X16 をスタックから間接ロードする関数）を直接解析の対象から除外し、呼び出しサイト解析（Pass 2）によって実際の syscall 番号を判定する
+- タスク 0097 の `SyscallAnalysis` キャッシュ基盤を継続利用しつつ、検出ロジックを精緻化する
+- `record` コマンド自身を含む正規の Go バイナリが誤ってブロックされないようにする
+
+### 1.4 スコープ
+
+- **対象**: macOS (Darwin) arm64 Mach-O バイナリ（単一アーキテクチャおよび Fat バイナリ）
+- **対象外**: ELF バイナリの解析フロー（変更しない）
+- **対象外**: `mprotect(PROT_EXEC)` の引数評価（タスク 0099 で扱う）
+
+## 2. 用語定義
+
+| 用語 | 定義 |
+|------|------|
+| `svc #0x80` | arm64 macOS における直接 syscall 命令（エンコード `0xD4001001`）|
+| X16 | macOS arm64 における syscall 番号レジスタ |
+| BSD prefix | macOS BSD syscall 番号のクラス識別子（0x2000000）。X16 の実際の値から差し引いて syscall 番号を得る |
+| Pass 1 | `svc #0x80` を直接スキャンし X16 後方スキャンで syscall 番号を解析するパス |
+| Pass 2 | Go ラッパー関数（`syscall.RawSyscall` 等）への `BL` 命令を検出し第1引数から syscall 番号を解析するパス |
+| Go runtime スタブ | X16 をスタックから間接ロードする Go ランタイムの syscall ディスパッチ関数。第1引数として syscall 番号を受け取る |
+| `knownSyscallImpls` | Pass 1 から除外する Go runtime スタブ関数の集合（ELF 版と対応する概念）|
+| `MacOSSyscallTable` | macOS BSD syscall 番号とネットワーク関連フラグのマッピングテーブル（`libccache` パッケージに既存実装）|
+
+## 3. 機能要件
+
+### FR-3.1: Mach-O arm64 syscall 番号解析エンジン（Pass 1）
+
+#### FR-3.1.1: `svc #0x80` 検出と X16 後方スキャン
+
+`__TEXT,__text` セクションを走査して `svc #0x80` 命令を検出した際、各命令アドレスから後方スキャンを実施して X16 レジスタへの即値設定パターンを探索すること。
+
+検出対象パターン（`libccache/macho_analyzer.go` の `backwardScanX16` に既存実装あり）：
+
+- `MOVZ X16, #imm`（16 bit 以下の値）
+- `MOVZ X16, #hi, LSL #16` + `MOVK X16, #lo`（32 bit 値の組み合わせ）
+
+これらのパターン以外（`ldr x16, [sp, #N]` 等の間接ロード）は `DeterminationMethod = "unknown:indirect_setting"` として記録すること。
+
+制御フロー命令（`B`, `BL`, `BLR`, `BR`, `RET`, `CBZ`, `CBNZ`, `TBZ`, `TBNZ`）を後方スキャンの境界とすること。
+
+スキャン最大命令数は `defaultMaxBackwardScan`（ELF 版の 50 命令に準拠）とすること。
+
+#### FR-3.1.2: Go runtime スタブの除外
+
+Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclntab から Go 関数名テーブルを構築し、以下の既知 Go syscall スタブ実装関数のアドレス範囲内にある `svc #0x80` を Pass 1 の直接解析から除外すること：
+
+- `internal/runtime/syscall.Syscall6`（Go 1.23+, arm64）
+- `syscall.rawSyscallNoError`
+- その他、ELF 版 `knownSyscallImpls` に対応する macOS arm64 のスタブ関数
+
+`.gopclntab` が存在しない場合は除外処理なしで Pass 1 を継続すること（非 Go バイナリや stripped バイナリ向け）。
+
+#### FR-3.1.3: BSD prefix の除去
+
+後方スキャンで得た X16 の即値が BSD prefix（`0x2000000`）を含む場合、prefix を除去して syscall 番号を得ること。
+
+例：`MOVZ X16, #0x2000062` → raw 値 `0x2000062` → BSD prefix 除去 → syscall 番号 `98`（`connect`）
+
+#### FR-3.1.4: ネットワーク判定
+
+取得した syscall 番号を `MacOSSyscallTable`（`libccache` に既存実装）で検索し、`IsNetwork` フラグを設定すること。
+
+### FR-3.2: Go ラッパー呼び出しサイト解析（Pass 2）
+
+#### FR-3.2.1: Go ラッパー関数の特定
+
+`.gopclntab` セクションが存在する場合、以下の既知 Go syscall ラッパー関数のアドレスを解決すること（ELF 版 `knownGoWrappers` に対応する macOS arm64 版）：
+
+- `syscall.Syscall`, `syscall.Syscall6`
+- `syscall.RawSyscall`, `syscall.RawSyscall6`
+- `runtime.syscall`, `runtime.syscall6`
+
+#### FR-3.2.2: 呼び出しサイトでの syscall 番号解析
+
+`__TEXT,__text` セクション内で上記ラッパーへの `BL` 命令を検出し、各呼び出しサイトにおける第1引数（syscall 番号）を後方スキャンで解析すること。
+
+Go レジスタ ABI では第1引数は X0 で渡されるため、`BL` 命令直前から `MOV X0, #imm`（または `MOV W0, #imm`）パターンを後方スキャンで探索する。
+
+即値が確定した場合の `DeterminationMethod` は `"go_wrapper"` とすること。
+
+#### FR-3.2.3: 結果のマージ
+
+Pass 2 の呼び出しサイト解析結果を Pass 1 の結果とマージし、`SyscallAnalysis.DetectedSyscalls` に統合すること。各エントリの `Location` は呼び出しサイトのアドレス（`BL` 命令のアドレス）とすること。
+
+### FR-3.3: 判定ロジックの変更
+
+#### FR-3.3.1: ネットワーク syscall によるリスク判定
+
+`runner` の `isNetworkViaBinaryAnalysis` における `SyscallAnalysis` キャッシュ参照の判定を以下のとおり変更すること：
+
+| `SyscallAnalysis` の状態 | 変更前（タスク 0097）| 変更後（本タスク）|
+|------------------------|---------------------|-----------------|
+| `DetectedSyscalls` に `IsNetwork = true` のエントリあり | N/A（`direct_svc_0x80` シグナルで代替）| `true, true`（ネットワーク確定・高リスク）|
+| `DetectedSyscalls` に `IsNetwork = true` なし（非ネットワーク syscall のみ、または空）| N/A | `SymbolAnalysis` 判定へ委譲 |
+| `DetectedSyscalls` に `DeterminationMethod = "direct_svc_0x80"` のエントリあり | `true, true`（高リスク確定）| **廃止**（本判定方式を削除）|
+| `SyscallAnalysis` が nil（`ErrNoSyscallAnalysis`）| `false, false` | `false, false`（変更なし）|
+
+#### FR-3.3.2: `SyscallAnalysis` への保存内容の変更
+
+タスク 0097 では `svc #0x80` 検出時に `Number = -1`、`DeterminationMethod = "direct_svc_0x80"` としていた。本タスクではこの形式を廃止し、以下に変更すること：
+
+- `Number`: 解析で得た syscall 番号（不明の場合は `-1`）
+- `IsNetwork`: `MacOSSyscallTable` による判定結果（不明の場合は `false`）
+- `DeterminationMethod`: `"immediate"` / `"go_wrapper"` / `"unknown:*"` のいずれか（ELF 版と同一定数を使用）
+- `Source` フィールドは廃止（スキーマから削除）
+
+#### FR-3.3.3: スキーマバージョン
+
+本タスクの変更はタスク 0097 が保存したスキーマ v15 レコードと互換性を持たない（`direct_svc_0x80` 判定方式が廃止されるため、v15 レコードを v16 の判定ロジックで安全に再利用できない）。**スキーマバージョンを v15 から v16 に変更し**、v15 以前のレコードを参照した場合は `SchemaVersionMismatchError` を返してユーザーに再 `record` を強制すること。
+
+### FR-3.4: 既存機能への非影響
+
+- `elfanalyzer` パッケージ（ELF バイナリの解析フロー）は変更しないこと
+- `libccache` の `MacOSSyscallTable` および `backwardScanX16` は既存の動作を変更せずに再利用または参照すること
+
+## 4. 非機能要件
+
+### NFR-4.1: パフォーマンス
+
+Pass 1 は `__TEXT,__text` セクション全体を 4 バイト単位でスキャンする（既存の `collectSVCAddresses` と同等）。Pass 2 は同セクションを再度走査して `BL` 命令を検出する。合計走査時間の増加は許容範囲とする。
+
+### NFR-4.2: セキュリティ
+
+ネットワーク syscall が確認された場合は常に `true, true`（ネットワーク検出・高リスク確定）を返す。解析エラー（`AnalysisError`）はフェイルセーフとして実行をブロックする。
+
+X16 不明時にネットワークリスクなしと判定することで Go runtime スタブ由来の偽陽性を排除するが、実際のネットワーク syscall は Pass 2 によってカバーされるため、偽陰性のリスクは限定的である。
+
+### NFR-4.3: 後方互換性
+
+スキーマバージョンを v16 に変更する。v15（タスク 0097 で保存されたレコード）との後方互換性は持たない。
+
+## 5. 受け入れ条件
+
+### AC-1: Pass 1 - 直接 syscall 番号解析
+
+- [ ] `MOVZ X16, #imm` + `svc #0x80` から syscall 番号が解析されること
+- [ ] `MOVZ X16, #hi, LSL #16` + `MOVK X16, #lo` + `svc #0x80` から 32 bit syscall 番号が正しく解析されること
+- [ ] BSD prefix（0x2000000）が除去されて正しい syscall 番号が得られること
+- [ ] `ldr x16, [sp, #N]` のような間接ロードの場合、`DeterminationMethod = "unknown:indirect_setting"` となること
+- [ ] 解析された syscall 番号が `MacOSSyscallTable` でネットワーク syscall と判定される場合、`IsNetwork = true` が設定されること
+- [ ] 制御フロー命令を後方スキャンの境界として扱うこと
+
+### AC-2: Go runtime スタブの除外
+
+- [ ] `.gopclntab` が存在する Go バイナリに対して、既知 Go syscall スタブ実装関数のアドレス範囲内の `svc #0x80` が Pass 1 の解析から除外されること
+
+### AC-3: Pass 2 - Go ラッパー呼び出しサイト解析
+
+- [ ] `.gopclntab` が存在する Go バイナリに対して既知 Go ラッパー関数のアドレスが解決されること
+- [ ] 既知 Go ラッパー（`syscall.RawSyscall` 等）への `BL` 命令が検出されること
+- [ ] 呼び出しサイトで X0 後方スキャンにより第1引数（syscall 番号）が解析されること
+- [ ] 解析された syscall 番号に対して `MacOSSyscallTable` でネットワーク判定が実施されること
+- [ ] `.gopclntab` が存在しないバイナリでは Pass 2 がスキップされること
+
+### AC-4: リスク判定変更
+
+- [ ] ネットワーク syscall が検出されたバイナリに対して `runner` が `true, true` を返すこと
+- [ ] 非ネットワーク syscall のみを含む正規の Go バイナリ（例：`record` コマンド自身）に対して `runner` が `true, true` を返さないこと（偽陽性の解消）
+- [ ] X16 不明な `svc #0x80` のみを含み、ネットワーク syscall の呼び出しサイトが存在しない場合に `false, false` を返すこと
+- [ ] `SymbolAnalysis = NetworkDetected` かつネットワーク syscall 検出の場合は `true, true`（高リスク）を返すこと
+- [ ] `"direct_svc_0x80"` を判定条件に使用するコードが存在しないこと
+
+### AC-5: スキーマ
+
+- [ ] スキーマバージョンが v16 であること
+- [ ] v15 レコードに対して `SchemaVersionMismatchError` が返されること
+- [ ] `DetectedSyscalls` の各エントリに正しい `Number`、`IsNetwork`、`DeterminationMethod` が設定されること
+
+### AC-6: 既存機能への非影響
+
+- [ ] ELF バイナリの解析フローが変更されないこと
+- [ ] 既存のテストがすべてパスすること
+
+## 6. テスト方針
+
+### 6.1 Pass 1 テスト（ユニットテスト）
+
+| テストケース | 検証内容 |
+|-------------|---------|
+| `MOVZ X16, #(0x2000000+connect)` + `svc #0x80` | `Number=98`, `IsNetwork=true`, `DeterminationMethod="immediate"` |
+| `MOVZ X16, #(0x2000000+read)` + `svc #0x80` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="immediate"` |
+| `MOVZ X16, #hi, LSL #16` + `MOVK X16, #lo` + `svc #0x80` | 32 bit BSD 番号が正しく解析されること |
+| `ldr x16, [sp, #N]` + `svc #0x80` | `Number=-1`, `IsNetwork=false`, `DeterminationMethod="unknown:indirect_setting"` |
+| 制御フロー命令を挟んだ `svc #0x80` | 後方スキャンが制御フロー命令で停止すること |
+
+### 6.2 Pass 2 テスト（ユニットテスト）
+
+| テストケース | 検証内容 |
+|-------------|---------|
+| `MOV X0, #98` + `BL syscall.RawSyscall` | `Number=98`, `IsNetwork=true`, `DeterminationMethod="go_wrapper"` |
+| `MOV X0, #3` + `BL syscall.RawSyscall` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
+| X0 が間接ロードの `BL syscall.RawSyscall` | `Number=-1`, `DeterminationMethod="unknown:indirect_setting"` |
+| `.gopclntab` なしバイナリ | Pass 2 がスキップされること |
+
+### 6.3 リスク判定テスト
+
+| テストケース | 検証内容 |
+|-------------|---------|
+| `SyscallAnalysis` に `IsNetwork=true` エントリあり | `runner` が `true, true` を返すこと |
+| `SyscallAnalysis` に `IsNetwork=true` エントリなし | `runner` が `SymbolAnalysis` 判定に委譲すること |
+| `SyscallAnalysis` が nil（`ErrNoSyscallAnalysis`）| `runner` が `false, false` を返すこと（変更なし）|
+
+### 6.4 統合テスト
+
+| テストケース | 検証内容 |
+|-------------|---------|
+| `record` コマンド自身（Go バイナリ）| `record` → `runner` で実行が拒否されないこと（偽陽性なし）|
+| ネットワーク syscall を持つテスト Mach-O | `record` → `runner` で `true, true` が返されること |
+
+### 6.5 テストフィクスチャ
+
+- ネットワーク syscall を含む arm64 Mach-O バイナリのフィクスチャが不足する場合は追加生成する
+- `record` コマンド自身（`build/prod/record`）をリグレッションテストの対象とすることを検討する
+
+## 7. 先行タスクとの関係
+
+| 先行タスク | 関連 | 備考 |
+|----------|------|------|
+| 0073 (Mach-O ネットワーク検出) | svc スキャン基盤 | `collectSVCAddresses` を Pass 1 の基盤として継続利用 |
+| 0097 (svc キャッシュ統合) | `SyscallAnalysis` スキーマ v15 | 本タスクは v16 に変更し `direct_svc_0x80` 判定方式を廃止 |
+| 0100 (libSystem.dylib キャッシュ) | `MacOSSyscallTable`・`backwardScanX16` | 本タスクの Pass 1 で利用する既存実装が含まれる |
+| 0099 (mprotect PROT_EXEC) | mprotect 引数評価 | 本タスクで実装する X16 後方スキャンを再利用予定 |
