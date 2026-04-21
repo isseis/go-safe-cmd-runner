@@ -160,7 +160,7 @@ func extractLibsystemKernel(cachePath string) ([]byte, error) {
 	}
 
 	// Locate the sub-cache file that contains the library's __TEXT segment.
-	textFile, textMapping, err := findSubCacheForAddr(libImg.LoadAddress, mainMapping, subCaches)
+	textFile, textMapping, err := findSubCacheForAddr(libImg.LoadAddress, cachePath, mainMapping, subCaches)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func extractLibsystemKernel(cachePath string) ([]byte, error) {
 	// sub-cache maps only a small "header" region), so use vmBase-range lookup rather
 	// than mapping coverage. The fileOff from LC_SEGMENT_64 is already relative to
 	// the sub-cache file and gives the correct offset directly.
-	linkeditFile := findSubCacheFileForAddr(linkeditSeg.vmaddr, mainMapping, subCaches)
+	linkeditFile := findSubCacheFileForAddr(linkeditSeg.vmaddr, cachePath, mainMapping, subCaches)
 	if linkeditFile == "" {
 		return nil, nil
 	}
@@ -321,10 +321,10 @@ func buildSubCacheList(f *os.File, mainPath string, _ dyldMappingInfo, cacheBase
 // findSubCacheForAddr finds the sub-cache file and its relevant mapping that
 // covers the given VM address.  Falls back to the main cache mapping when
 // no sub-caches are defined (pre-Ventura) or when the address is in the main file.
-func findSubCacheForAddr(vmAddr uint64, mainMapping dyldMappingInfo, subCaches []subCacheFile) (string, dyldMappingInfo, error) {
+func findSubCacheForAddr(vmAddr uint64, mainPath string, mainMapping dyldMappingInfo, subCaches []subCacheFile) (string, dyldMappingInfo, error) {
 	// Check if the address is in the main cache.
 	if vmAddr >= mainMapping.Address && vmAddr < mainMapping.Address+mainMapping.Size {
-		return "", mainMapping, nil // placeholder: caller uses empty path for main file (not needed in practice)
+		return mainPath, mainMapping, nil
 	}
 
 	for i, sc := range subCaches {
@@ -357,9 +357,9 @@ func findSubCacheForAddr(vmAddr uint64, mainMapping dyldMappingInfo, subCaches [
 // This is used for segments (like __LINKEDIT in .dyldlinkedit sub-caches) whose vmaddr
 // may lie just beyond the sub-cache's small header mapping.
 // Returns empty string when vmAddr is in the main file or no sub-cache covers it.
-func findSubCacheFileForAddr(vmAddr uint64, mainMapping dyldMappingInfo, subCaches []subCacheFile) string {
+func findSubCacheFileForAddr(vmAddr uint64, mainPath string, mainMapping dyldMappingInfo, subCaches []subCacheFile) string {
 	if vmAddr >= mainMapping.Address && vmAddr < mainMapping.Address+mainMapping.Size {
-		return "" // in the main cache file
+		return mainPath
 	}
 	for i, sc := range subCaches {
 		var vmEnd uint64
