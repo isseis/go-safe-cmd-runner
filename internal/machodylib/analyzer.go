@@ -155,8 +155,7 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		resolvedPath, err := resolver.Resolve(item.installName, item.loaderPath, item.rpaths)
 		if err != nil {
 			// Check for unknown @ token
-			var unknownErr *ErrUnknownAtToken
-			if errors.As(err, &unknownErr) {
+			if unknownErr, ok := errors.AsType[*ErrUnknownAtToken](err); ok {
 				warnings = append(warnings, AnalysisWarning{
 					InstallName: item.installName,
 					Reason:      unknownErr.Error(),
