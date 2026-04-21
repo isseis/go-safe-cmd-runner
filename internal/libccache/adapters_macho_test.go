@@ -127,12 +127,14 @@ func TestMachoLibSystemAdapter_FallbackNameMatch_SortedByNumber(t *testing.T) {
 // ---- MachoLibSystemAdapter.GetSyscallInfos tests ----
 
 // TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnNilSource verifies that when
-// ResolveLibSystemKernel returns nil (stub implementation), the adapter falls back to
-// symbol-name matching.
+// ResolveLibSystemKernel returns nil (e.g., dyld cache unavailable), the adapter falls
+// back to symbol-name matching.
 func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnNilSource(t *testing.T) {
 	adapter := newTestMachoAdapter(t)
-	// With the stub machodylib, ResolveLibSystemKernel returns nil, nil.
-	// So the adapter must fall back to symbol-name matching.
+	// Inject a nil-returning resolver to simulate a dyld cache unavailability.
+	adapter.resolveFunc = func(_ []fileanalysis.LibEntry, _ safefileio.FileSystem, _ bool) (*machodylib.LibSystemKernelSource, error) {
+		return nil, nil
+	}
 	dynDeps := []fileanalysis.LibEntry{
 		{SOName: "/usr/lib/libSystem.B.dylib"},
 	}
@@ -227,16 +229,20 @@ func TestClassifyLibSystemFallbackReason_HasLoadCmd(t *testing.T) {
 
 // TestMachoLibSystemAdapter_GetSyscallInfos_DyldCacheLibSystem verifies that when
 // dynDeps is empty (macOS 11+ dyld cache case) but hasLibSystemLoadCmd is true,
-// the adapter falls back to symbol-name matching (because the stub resolver returns
-// nil on non-Darwin or unavailable dyld cache) without returning nil.
+// the adapter falls back to symbol-name matching when the resolver cannot extract
+// from the dyld cache (e.g., non-Darwin or unavailable cache).
 func TestMachoLibSystemAdapter_GetSyscallInfos_DyldCacheLibSystem(t *testing.T) {
 	adapter := newTestMachoAdapter(t)
+	// Inject a nil-returning resolver to simulate dyld cache unavailability.
+	adapter.resolveFunc = func(_ []fileanalysis.LibEntry, _ safefileio.FileSystem, _ bool) (*machodylib.LibSystemKernelSource, error) {
+		return nil, nil
+	}
 	// dynDeps is empty: MachODynLibAnalyzer did not record libSystem because it
 	// lives in the dyld shared cache. hasLibSystemLoadCmd=true signals that the
 	// binary's LC_LOAD_DYLIB contains /usr/lib/libSystem.B.dylib.
 	result, err := adapter.GetSyscallInfos(nil, []string{"socket", "connect"}, true)
 	require.NoError(t, err)
-	// The stub resolver returns nil (non-Darwin / unavailable), so we fall through to
+	// The resolver returns nil (simulated unavailability), so we fall through to
 	// symbol-name matching. socket and connect must be detected.
 	names := make(map[string]bool)
 	for _, r := range result {
