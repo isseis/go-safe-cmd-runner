@@ -22,6 +22,7 @@ var (
 	errImplausibleSizeCmds = errors.New("implausible sizeofcmds")
 	errImplausibleReadSize = errors.New("implausible read size")
 	errUnsupportedType     = errors.New("unsupported readAt type")
+	errSymbolTableExceeded = errors.New("symbol table exceeds maximum allowed entries")
 )
 
 // Load command types and layout constants for Mach-O parsing.
@@ -154,7 +155,7 @@ func extractLibsystemKernel(cachePath string) ([]byte, error) {
 	}
 
 	// Build the sub-cache file list from the sub-cache entry array.
-	subCaches, err := buildSubCacheList(f, cachePath, mainMapping, cacheBase)
+	subCaches, err := buildSubCacheList(f, cachePath, cacheBase)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +247,12 @@ func findLibsystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 		return nil, nil
 	}
 
+	// Sanity check: reject implausible image counts before looping.
+	const maxImageTextEntries = 8192
+	if imgTextCount > maxImageTextEntries {
+		return nil, fmt.Errorf("%d image text entries exceeds limit %d: %w", imgTextCount, maxImageTextEntries, errImplausibleCount)
+	}
+
 	const entrySize = 32 // sizeof(dyld_cache_image_text_info)
 	for i := uint64(0); i < imgTextCount; i++ {
 		off := int64(imgTextOff) + int64(i)*entrySize
@@ -262,8 +269,11 @@ func findLibsystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 
 		// Read the path string.
 		var pathBuf [128]byte
-		n, _ := f.ReadAt(pathBuf[:], int64(img.PathFileOffset))
+		n, err := f.ReadAt(pathBuf[:], int64(img.PathFileOffset))
 		if n == 0 {
+			if err != nil && err.Error() != "EOF" {
+				slog.Warn("failed to read image path", "offset", img.PathFileOffset, "error", err)
+			}
 			continue
 		}
 		nullIdx := bytes.IndexByte(pathBuf[:n], 0)
@@ -279,7 +289,7 @@ func findLibsystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 
 // buildSubCacheList reads sub-cache entries and constructs file paths.
 // Returns an empty slice when there are no sub-caches (pre-Ventura single-file cache).
-func buildSubCacheList(f *os.File, mainPath string, _ dyldMappingInfo, cacheBase uint64) ([]subCacheFile, error) {
+func buildSubCacheList(f *os.File, mainPath string, cacheBase uint64) ([]subCacheFile, error) {
 	var subCacheOff, subCacheCount uint32
 	if err := readAt(f, dyldHdrOffSubCacheOffset, &subCacheOff); err != nil {
 		return nil, fmt.Errorf("read subCacheArrayOffset: %w", err)
@@ -562,8 +572,14 @@ const nlist64Size = 16
 // a compact symbol table + string table containing only the referenced symbols.
 // symFileOff and strFileOff are absolute file offsets within the LINKEDIT sub-cache.
 func buildCompactSymtab(linkeditPath string, symFileOff uint64, nsyms uint32, strFileOff uint64) ([]byte, []byte, error) {
-	if nsyms == 0 || nsyms > 1<<17 { // sanity: max 131072 symbols
-		return nil, []byte{0}, nil
+	const maxSymbols = 1 << 17 // 131072 symbols
+	if nsyms == 0 {
+		// No symbols: return minimal valid symbol table.
+		return []byte{}, []byte{0}, nil
+	}
+	if nsyms > maxSymbols {
+		slog.Warn("symbol table truncated: too many symbols", "nsyms", nsyms, "limit", maxSymbols) //nolint:gosec // Static hardcoded message, no injection risk
+		return nil, nil, fmt.Errorf("%d entries: %w", nsyms, errSymbolTableExceeded)
 	}
 
 	f, err := os.Open(linkeditPath) //nolint:gosec // path is from trusted sub-cache list
@@ -649,7 +665,7 @@ func reconstructMachO(
 	patchedLC := make([]byte, len(lcData))
 	copy(patchedLC, lcData)
 	patchLoadCommands(
-		patchedLC, hdr.byteOrder,
+		patchedLC,
 		uint64(textStart), textSeg.fileOff, //nolint:gosec // G115: textStart is a small positive int offset
 		uint64(linkeditStart), newLinkeditSize, //nolint:gosec // G115: linkeditStart is a small positive int offset
 		newSymoff, uint32(nsyms), newStroff, uint32(len(compactStrtab)), //nolint:gosec // G115: nsyms and len are bounded
@@ -684,16 +700,18 @@ func reconstructMachO(
 }
 
 // patchLoadCommands modifies load command bytes in-place to reflect the new file layout.
+// Note: dyld caches are always little-endian; the bo parameter is present for reading but
+// patching always uses little-endian writes (per the invariant in readMachOHeader).
 func patchLoadCommands(
-	lcData []byte, bo binary.ByteOrder,
+	lcData []byte,
 	newTextFileOff, oldTextFileOff uint64,
 	newLinkeditFileOff, newLinkeditFileSize uint64,
 	newSymoff, newNsyms, newStroff, newStrsize uint32,
 ) {
 	offset := 0
 	for offset+8 <= len(lcData) {
-		cmd := bo.Uint32(lcData[offset:])
-		cmdsize := bo.Uint32(lcData[offset+4:])
+		cmd := binary.LittleEndian.Uint32(lcData[offset:])
+		cmdsize := binary.LittleEndian.Uint32(lcData[offset+4:])
 		if cmdsize < minLoadCmdSize {
 			break
 		}
@@ -710,13 +728,13 @@ func patchLoadCommands(
 				// Update segment fileoff.
 				binary.LittleEndian.PutUint64(lcData[offset+40:], newTextFileOff)
 				// Update section offsets (each section_64 is section64Size bytes, starting at offset+seg64SectionsOffset).
-				nsects := bo.Uint32(lcData[offset+64:])
+				nsects := binary.LittleEndian.Uint32(lcData[offset+64:])
 				for s := uint32(0); s < nsects; s++ {
 					sBase := offset + seg64SectionsOffset + int(s)*section64Size //nolint:gosec // G115: s is bounded by nsects < 256
 					if sBase+section64FileOffset+4 > len(lcData) {
 						break
 					}
-					oldSectOff := bo.Uint32(lcData[sBase+section64FileOffset:])
+					oldSectOff := binary.LittleEndian.Uint32(lcData[sBase+section64FileOffset:])
 					if oldSectOff == 0 {
 						continue // section with no file data (e.g. zerofill)
 					}
@@ -745,7 +763,7 @@ func patchLoadCommands(
 
 // readAt reads a little-endian value from the file at the given offset.
 // dst must be a pointer to uint32 or uint64.
-func readAt(f *os.File, offset int64, dst interface{}) error {
+func readAt(f *os.File, offset int64, dst any) error {
 	switch v := dst.(type) {
 	case *uint32:
 		var buf [4]byte

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestExtractLibSystemKernelFromDyldCache_NonDarwinOrARM64 skips the test when
+// TestExtractLibSystemKernelFromDyldCache_Live skips the test when
 // the dyld shared cache cannot be expected to be present (non-darwin or non-arm64).
 // On darwin arm64, it attempts an actual extraction and verifies the invariants.
 func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
@@ -36,8 +36,10 @@ func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
 	require.NoError(t, err)
 
 	if result == nil {
-		// Fallback is allowed: cache present but libsystem_kernel.dylib not found or export failed.
-		t.Log("ExtractLibSystemKernelFromDyldCache returned nil (fallback); acceptable for this platform")
+		// Cache was confirmed to exist above, so nil here indicates a fallback condition
+		// (image not found in cache, or dyld export failed). Log as warning since we found the cache.
+		t.Error("ExtractLibSystemKernelFromDyldCache returned nil even though cache exists; " +
+			"libsystem_kernel.dylib may not be in cache or extraction failed")
 		return
 	}
 
