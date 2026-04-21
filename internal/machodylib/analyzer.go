@@ -100,21 +100,33 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 	// to the same physical file, while still recording a LibEntry for every installName.
 	visited := make(map[string]string)
 
-	// queued tracks installNames already added to the queue to prevent duplicate
-	// LibEntry records when multiple libraries share the same dependency.
-	queued := make(map[string]struct{})
+	// bfsKey deduplicates BFS queue entries by (installName, loaderPath).
+	// Keying by loaderPath (not just installName) is necessary because
+	// @rpath-relative names resolve against the loader's LC_RPATH set; the
+	// same installName from two loaders with different rpaths can resolve to
+	// different physical files and must not be collapsed into one queue entry.
+	type bfsKey struct {
+		installName string
+		loaderPath  string
+	}
+	queued := make(map[bfsKey]struct{})
 
 	var libs []fileanalysis.LibEntry
+
+	// emitted prevents duplicate LibEntry records for the same (installName,
+	// resolvedPath) pair, which can arise when two loaders with the same rpath
+	// layout both reference the same installName after the queued key broadening.
+	emitted := make(map[libKey]struct{})
 
 	var warnings []AnalysisWarning
 
 	// Seed queue with direct dependencies
 	for _, dep := range deps {
-		if _, ok := queued[dep.installName]; ok {
+		if _, ok := queued[bfsKey{dep.installName, binaryPath}]; ok {
 			continue
 		}
 
-		queued[dep.installName] = struct{}{}
+		queued[bfsKey{dep.installName, binaryPath}] = struct{}{}
 
 		queue = append(queue, bfsItem{
 			installName: dep.installName,
@@ -183,11 +195,7 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		// current installName (a different symlink may point here) but skip
 		// redundant hash computation and recursive child parsing.
 		if cachedHash, ok := visited[resolvedPath]; ok {
-			libs = append(libs, fileanalysis.LibEntry{
-				SOName: item.installName,
-				Path:   resolvedPath,
-				Hash:   cachedHash,
-			})
+			appendLibEntry(&libs, emitted, item.installName, resolvedPath, cachedHash)
 
 			continue
 		}
@@ -201,11 +209,7 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		visited[resolvedPath] = hash
 
 		// Record the library entry
-		libs = append(libs, fileanalysis.LibEntry{
-			SOName: item.installName,
-			Path:   resolvedPath,
-			Hash:   hash,
-		})
+		appendLibEntry(&libs, emitted, item.installName, resolvedPath, hash)
 
 		// Parse child dependencies for BFS continuation
 		childDeps, childRpaths, parseErr := a.parseMachODeps(resolvedPath)
@@ -217,11 +221,11 @@ func (a *MachODynLibAnalyzer) Analyze(binaryPath string) ([]fileanalysis.LibEntr
 		}
 
 		for _, childDep := range childDeps {
-			if _, ok := queued[childDep.installName]; ok {
+			if _, ok := queued[bfsKey{childDep.installName, resolvedPath}]; ok {
 				continue
 			}
 
-			queued[childDep.installName] = struct{}{}
+			queued[bfsKey{childDep.installName, resolvedPath}] = struct{}{}
 
 			queue = append(queue, bfsItem{
 				installName: childDep.installName,
@@ -477,6 +481,27 @@ func (a *MachODynLibAnalyzer) parseMachODeps(path string) ([]depEntry, []string,
 	deps, rpaths := extractLoadCommands(machoFile)
 
 	return deps, rpaths, nil
+}
+
+// libKey is the deduplication key for LibEntry output records.
+// Two BFS items that resolve to the same (installName, resolvedPath) pair
+// produce identical LibEntry records and must be collapsed to one.
+type libKey struct {
+	installName  string
+	resolvedPath string
+}
+
+// appendLibEntry appends a LibEntry for (soName, path, hash) to *libs unless
+// an entry for the same (soName, path) pair has already been recorded in emitted.
+// Defined as a package-level function so its branch does not count toward the
+// cyclomatic complexity of its callers (gocyclo counts FuncLit branches inline).
+func appendLibEntry(libs *[]fileanalysis.LibEntry, emitted map[libKey]struct{}, soName, path, hash string) {
+	lk := libKey{soName, path}
+	if _, already := emitted[lk]; already {
+		return
+	}
+	emitted[lk] = struct{}{}
+	*libs = append(*libs, fileanalysis.LibEntry{SOName: soName, Path: path, Hash: hash})
 }
 
 // computeFileHash computes the SHA256 hash of the file at the given path
