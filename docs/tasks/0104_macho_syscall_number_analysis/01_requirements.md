@@ -111,7 +111,14 @@ Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclnt
 
 `__TEXT,__text` セクション内で上記ラッパーへの `BL` 命令を検出し、各呼び出しサイトにおける第1引数（syscall 番号）を後方スキャンで解析すること。
 
-Go レジスタ ABI では第1引数は X0 で渡されるため、`BL` 命令直前から `MOV X0, #imm`（または `MOV W0, #imm`）パターンを後方スキャンで探索する。
+`syscall.Syscall`/`Syscall6`/`RawSyscall`/`RawSyscall6`/`Syscall9` は Go の**旧スタック ABI**（stack-based calling convention）を使うアセンブリスタブである。第1引数 `trap`（syscall 番号）はレジスタ X0 ではなく `[SP, #8]` に格納される（`SP+0` は呼び出し規約上の戻りアドレス用スロット）。
+
+したがって、`BL` 命令直前を後方スキャンする際のターゲットは次の順序で探索すること：
+
+1. `[SP, #8]` への書き込みストア命令（`STP xN, ..., [SP, #8]` または `STR xN, [SP, #8]`）を検出し、書き込みレジスタ xN を特定する
+2. xN への即値設定命令（`MOV xN, #imm` / `MOVZ xN, #imm` / `MOVZ xN, #hi, LSL#16` + `MOVK xN, #lo`）を更に後方スキャンする
+
+ストア命令またはそれ以前の即値設定が確定できない場合は `Number = -1`、`DeterminationMethod = "unknown:indirect_setting"` とする。
 
 即値が確定した場合の `DeterminationMethod` は `"go_wrapper"` とすること。
 
@@ -185,7 +192,7 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 
 - [ ] `.gopclntab` が存在する Go バイナリに対して既知 Go ラッパー関数のアドレスが解決されること
 - [ ] 既知 Go ラッパー（`syscall.RawSyscall` 等）への `BL` 命令が検出されること
-- [ ] 呼び出しサイトで X0 後方スキャンにより第1引数（syscall 番号）が解析されること
+- [ ] 呼び出しサイトで `[SP, #8]` へのストア命令と xN への即値設定を後方スキャンすることにより第1引数（syscall 番号）が解析されること
 - [ ] 解析された syscall 番号に対して `MacOSSyscallTable` でネットワーク判定が実施されること
 - [ ] `.gopclntab` が存在しないバイナリでは Pass 2 がスキップされること
 
@@ -226,9 +233,9 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 
 | テストケース | 検証内容 |
 |-------------|---------|
-| `MOV X0, #98` + `BL syscall.RawSyscall` | `Number=98`, `IsNetwork=true`, `DeterminationMethod="go_wrapper"` |
-| `MOV X0, #3` + `BL syscall.RawSyscall` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
-| X0 が間接ロードの `BL syscall.RawSyscall` | `Number=-1`, `DeterminationMethod="unknown:indirect_setting"` |
+| `MOV xN, #98` + `STP xN, ..., [SP, #8]` + `BL syscall.RawSyscall` | `Number=98`, `IsNetwork=true`, `DeterminationMethod="go_wrapper"` |
+| `MOV xN, #3` + `STR xN, [SP, #8]` + `BL syscall.RawSyscall` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
+| `[SP, #8]` への書き込みが間接ロード由来の `BL syscall.RawSyscall` | `Number=-1`, `DeterminationMethod="unknown:indirect_setting"` |
 | `.gopclntab` なしバイナリ | Pass 2 がスキップされること |
 
 ### 6.3 リスク判定テスト
