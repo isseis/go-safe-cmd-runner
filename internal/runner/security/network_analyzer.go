@@ -208,9 +208,9 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 						"path", cmdPath)
 					return true, true
 				}
-				// Check whether any libSystem-matched syscall is a network syscall.
+				// Check whether any non-svc detected syscall is a network syscall.
 				if syscallAnalysisHasNetworkSignal(svcResult) {
-					slog.Info("SyscallAnalysis cache indicates libSystem network syscall",
+					slog.Info("SyscallAnalysis cache indicates network syscall",
 						"path", cmdPath)
 					return true, false
 				}
@@ -288,9 +288,10 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 }
 
 // syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisResult
-// contains a libSystem-matched syscall that is classified as a network syscall (IsNetwork == true).
-// This covers the case where a Mach-O binary makes network calls via libSystem.dylib wrappers
-// rather than raw svc instructions.
+// contains any detected syscall classified as a network syscall (IsNetwork == true)
+// that was not identified as a direct svc #0x80 instruction.
+// Direct svc #0x80 entries are handled separately by syscallAnalysisHasSVCSignal
+// (which escalates to high risk) and are therefore excluded here.
 func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
 	if result == nil {
 		return false
