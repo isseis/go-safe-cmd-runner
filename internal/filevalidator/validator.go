@@ -864,12 +864,11 @@ func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string,
 
 	syms, err := mf.ImportedSymbols()
 	if err != nil {
-		// Some Mach-O binaries (e.g. stripped or bare test binaries) have no
-		// symbol table.  Treat this as "no imported symbols" rather than a fatal
-		// error so that the rest of the analysis can proceed.
+		// debug/macho returns FormatError when Symtab is nil (e.g. stripped binaries).
+		// This is a valid Mach-O, just without a symbol table — treat as no imports.
 		// Return an empty slice (not nil) so the caller can distinguish
 		// "is a Mach-O but has no imports" from "not a Mach-O" (which returns nil).
-		return []string{}, nil //nolint:nilerr // missing symbol table is not a fatal error
+		return []string{}, nil //nolint:nilerr // FormatError for missing Symtab is not fatal
 	}
 	return syms, nil
 }
