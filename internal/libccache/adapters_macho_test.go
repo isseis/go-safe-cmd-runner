@@ -7,7 +7,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -71,12 +70,6 @@ func TestClassifyLibSystemFallbackReason_NeitherPresent(t *testing.T) {
 		{SOName: "/usr/lib/libz.1.dylib"},
 	}
 	got := classifyLibSystemFallbackReason(deps)
-	assert.Equal(t, "missing_libsystem_dependency", got)
-}
-
-// TestClassifyLibSystemFallbackReason_Empty verifies the empty deps case.
-func TestClassifyLibSystemFallbackReason_Empty(t *testing.T) {
-	got := classifyLibSystemFallbackReason(nil)
 	assert.Equal(t, "missing_libsystem_dependency", got)
 }
 
@@ -184,15 +177,6 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_EmptyImports(t *testing.T) {
 	result, err := adapter.GetSyscallInfos(nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, result)
-}
-
-// TestMachoLibSystemAdapter_GetSyscallInfos_ReturnType verifies result type compatibility.
-func TestMachoLibSystemAdapter_GetSyscallInfos_ReturnType(t *testing.T) {
-	adapter := newTestMachoAdapter(t)
-	result, err := adapter.GetSyscallInfos(nil, []string{"socket"})
-	require.NoError(t, err)
-	// Ensure the return type is []common.SyscallInfo
-	assert.IsType(t, []common.SyscallInfo{}, result)
 }
 
 // TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers verifies that when

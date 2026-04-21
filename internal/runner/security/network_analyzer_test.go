@@ -140,19 +140,6 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCCacheHit(t *testing.T) {
 	assert.True(t, isHigh, "static binary + svc signal should return high risk")
 }
 
-// TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCSignalPresent verifies that a static binary
-// with SyscallAnalysis loaded successfully and a svc signal returns true, true.
-func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCSignalPresent(t *testing.T) {
-	symStore := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
-	svcStore := &mockFileanalysisSyscallStore{result: svcResult()}
-	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
-
-	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
-
-	assert.True(t, isNet)
-	assert.True(t, isHigh)
-}
-
 // TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC verifies that a static binary
 // (ErrNoNetworkSymbolAnalysis) with ErrNoSyscallAnalysis returns false, false.
 func TestIsNetworkViaBinaryAnalysis_StaticBinary_NoSVC(t *testing.T) {

@@ -42,16 +42,6 @@ func TestMacOSSyscallTable_NetworkEntries(t *testing.T) {
 	}
 }
 
-// TestMacOSSyscallTable_SocketNumber verifies that socket=97 and connect=98.
-func TestMacOSSyscallTable_SocketNumber(t *testing.T) {
-	table := MacOSSyscallTable{}
-
-	assert.Equal(t, "socket", table.GetSyscallName(97))
-	assert.True(t, table.IsNetworkSyscall(97))
-	assert.Equal(t, "connect", table.GetSyscallName(98))
-	assert.True(t, table.IsNetworkSyscall(98))
-}
-
 // TestMacOSSyscallTable_NonNetworkEntries verifies non-network syscalls are correctly classified.
 func TestMacOSSyscallTable_NonNetworkEntries(t *testing.T) {
 	table := MacOSSyscallTable{}
