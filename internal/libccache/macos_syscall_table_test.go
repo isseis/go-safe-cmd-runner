@@ -50,11 +50,9 @@ func TestMacOSSyscallTable_NonNetworkEntries(t *testing.T) {
 		number int
 		name   string
 	}{
-		{3, "read"},
-		{4, "write"},
-		{5, "open"},
-		{6, "close"},
+		{73, "munmap"},
 		{74, "mprotect"},
+		{197, "mmap"},
 	}
 
 	for _, tc := range nonNetworkSyscalls {

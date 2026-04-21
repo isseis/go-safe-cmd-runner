@@ -16,16 +16,13 @@ var _ SyscallNumberTable = MacOSSyscallTable{}
 // Keys are syscall numbers without the BSD class prefix 0x2000000.
 // sendmmsg / recvmmsg are Linux-specific and are not present on macOS.
 var macOSSyscallEntries = map[int]macOSSyscallEntry{
-	3:   {name: "read", isNetwork: false},
-	4:   {name: "write", isNetwork: false},
-	5:   {name: "open", isNetwork: false},
-	6:   {name: "close", isNetwork: false},
 	27:  {name: "recvmsg", isNetwork: true},
 	28:  {name: "sendmsg", isNetwork: true},
 	29:  {name: "recvfrom", isNetwork: true},
 	30:  {name: "accept", isNetwork: true},
 	31:  {name: "getpeername", isNetwork: true},
 	32:  {name: "getsockname", isNetwork: true},
+	73:  {name: "munmap", isNetwork: false},
 	74:  {name: "mprotect", isNetwork: false},
 	97:  {name: "socket", isNetwork: true},
 	98:  {name: "connect", isNetwork: true},
@@ -36,6 +33,7 @@ var macOSSyscallEntries = map[int]macOSSyscallEntry{
 	133: {name: "sendto", isNetwork: true},
 	134: {name: "shutdown", isNetwork: true},
 	135: {name: "socketpair", isNetwork: true},
+	197: {name: "mmap", isNetwork: false},
 }
 
 // networkSyscallWrapperNames lists network-related syscall wrapper names used when
