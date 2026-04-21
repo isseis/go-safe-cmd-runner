@@ -38,8 +38,8 @@ var macOSSyscallEntries = map[int]macOSSyscallEntry{
 	135: {name: "socketpair", isNetwork: true},
 }
 
-// networkSyscallWrapperNames lists network-related syscall wrapper names used by
-// the fallback matching path (FR-3.4.2).
+// networkSyscallWrapperNames lists network-related syscall wrapper names used when
+// matching import symbols as a fallback for binaries where the libSystem cache is unavailable.
 // sendmmsg / recvmmsg are Linux-specific and are therefore excluded on macOS.
 var networkSyscallWrapperNames = []string{
 	"socket", "connect", "bind", "listen", "accept",

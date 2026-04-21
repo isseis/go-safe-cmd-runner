@@ -203,8 +203,8 @@ func TestMachoLibSystemAnalyzer_Analyze_SvcDetection(t *testing.T) {
 	assert.Equal(t, 97, entries[0].Number)
 }
 
-// TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval verifies that the 0x2000000
-// BSD class prefix is stripped when present (AC-2).
+// TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval verifies that the macOS BSD
+// syscall class prefix (0x2000000) encoded in x16 is stripped before recording the number.
 func TestMachoLibSystemAnalyzer_Analyze_BSDPrefixRemoval(t *testing.T) {
 	// socket with full BSD prefix: MOVZ X16, #0x200, LSL #16 / MOVK X16, #0x61 / SVC
 	// 0x2000000 | 97 = 0x2000061

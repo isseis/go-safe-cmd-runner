@@ -33,7 +33,7 @@ type LibSystemKernelSource struct {
 
 // libsystemKernelInstallName is the well-known install name for libsystem_kernel.dylib.
 // Used both as a filesystem path candidate and as the cache key when extracting from
-// the dyld shared cache (FR-3.1.5, FR-3.1.6).
+// the dyld shared cache.
 const libsystemKernelInstallName = "/usr/lib/system/libsystem_kernel.dylib"
 
 // libSystemBDylibInstallName is the install name of the libSystem umbrella library.
@@ -42,7 +42,7 @@ const libSystemBDylibInstallName = "/usr/lib/libSystem.B.dylib"
 // libsystemKernelBaseName is the base name of libsystem_kernel.dylib.
 const libsystemKernelBaseName = "libsystem_kernel.dylib"
 
-// libSystemCandidates holds relevant DynLibDeps entries identified during FR-3.1.5 resolution.
+// libSystemCandidates holds relevant DynLibDeps entries identified when scanning for libSystem-family libraries.
 type libSystemCandidates struct {
 	// Umbrella is the libSystem.B.dylib entry if present.
 	Umbrella *fileanalysis.LibEntry
@@ -55,9 +55,9 @@ type libSystemCandidates struct {
 // ResolveLibSystemKernel resolves the libsystem_kernel.dylib source from DynLibDeps.
 //
 // Resolution order:
-//  1. Direct kernel entry from DynLibDeps (FR-3.1.5 priority 1)
-//  2. Umbrella LC_REEXPORT_DYLIB traversal (FR-3.1.5 priority 2)
-//  3. dyld shared cache extraction (FR-3.1.6) — tried before the well-known stub
+//  1. Direct kernel entry from DynLibDeps
+//  2. Umbrella LC_REEXPORT_DYLIB traversal
+//  3. dyld shared cache extraction — tried before the well-known stub
 //     path because on modern macOS /usr/lib/system/libsystem_kernel.dylib is a
 //     stub that does not contain real syscall wrappers
 //  4. Well-known filesystem path as last resort
@@ -69,7 +69,7 @@ func ResolveLibSystemKernel(
 	dynLibDeps []fileanalysis.LibEntry,
 	fs safefileio.FileSystem,
 ) (*LibSystemKernelSource, error) {
-	// Step 1: Collect libSystem umbrella and kernel candidates from DynLibDeps (FR-3.1.5).
+	// Step 1: Collect libSystem umbrella and kernel candidates from DynLibDeps.
 	candidates := findLibSystemCandidates(dynLibDeps)
 
 	if !candidates.HasLibSystem {
@@ -83,7 +83,7 @@ func ResolveLibSystemKernel(
 		return filesystemKernelSource(candidatePath, fs)
 	}
 
-	// Step 3: Try dyld shared cache extraction (FR-3.1.6) before the well-known stub path.
+	// Step 3: Try dyld shared cache extraction before the well-known stub path.
 	// On modern macOS the real image lives in the shared cache; the well-known filesystem
 	// path is a stub that does not contain real syscall wrappers.
 	extracted, err := ExtractLibSystemKernelFromDyldCache()
@@ -92,7 +92,7 @@ func ResolveLibSystemKernel(
 		return nil, fmt.Errorf("dyld shared cache extraction failed unexpectedly: %w", err)
 	}
 	if extracted != nil {
-		// Extraction succeeded: use the install name as the canonical cache path (FR-3.1.6).
+		// Use the well-known install name as the canonical cache path for dyld-extracted images.
 		data := extracted.Data
 		return &LibSystemKernelSource{
 			Path:    libsystemKernelInstallName,
@@ -136,7 +136,7 @@ func safeReadFile(fs safefileio.FileSystem, path string) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
-// findLibSystemCandidates scans DynLibDeps for libSystem umbrella and kernel entries (FR-3.1.5).
+// findLibSystemCandidates scans DynLibDeps for libSystem umbrella and kernel entries.
 //
 // Return value interpretation:
 //   - Kernel != nil: libsystem_kernel.dylib is directly present in DynLibDeps.

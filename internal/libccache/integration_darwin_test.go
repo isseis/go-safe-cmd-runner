@@ -70,10 +70,9 @@ func compileMacOSBinary(t *testing.T, srcFile, binFile string) {
 // pipeline on macOS arm64: compile a C program that calls socket(), record it,
 // and verify that socket is detected with Source="libsystem_symbol_import".
 //
-// This covers AC-5 (import symbol matching) and AC-6 (runner judgment) end-to-end.
 // On macOS 11+, libSystem.B.dylib is in the dyld shared cache and is not
 // included in DynLibDeps. The adapter falls back to symbol-name matching which
-// is sufficient to detect network syscalls (FR-3.4).
+// is sufficient to detect network syscalls.
 func TestLibSystemCache_Integration_SocketSyscallDetected(t *testing.T) {
 	skipIfUnsupportedMacOS(t)
 
@@ -129,7 +128,7 @@ int main() {
 // TestLibSystemCache_Integration_CacheReuse verifies that a second SaveRecord
 // call does not rewrite the libSystem cache file (mtime must not change).
 //
-// This covers AC-3 (cache HIT) end-to-end.
+// Verifies cache HIT: the second SaveRecord must not rewrite the libSystem cache file.
 func TestLibSystemCache_Integration_CacheReuse(t *testing.T) {
 	skipIfUnsupportedMacOS(t)
 
@@ -178,7 +177,8 @@ int main() {
 // fails (simulated by a binary with no libSystem dependency), the adapter completes
 // without error and falls back gracefully.
 //
-// This covers AC-4 (final fallback) end-to-end.
+// Verifies graceful fallback: when no network symbols are imported, SaveRecord must
+// succeed without error even if the dyld cache extraction path is unavailable.
 func TestLibSystemCache_Integration_Fallback(t *testing.T) {
 	skipIfUnsupportedMacOS(t)
 
@@ -217,9 +217,9 @@ int main() { return 0; }
 // TestLibSystemCache_Integration_ELFFlowNonRegression verifies that the ELF
 // libc cache flow is not affected by the macOS libSystem cache changes.
 //
-// This covers AC-7 (no impact on existing features) at the integration level.
 // On macOS, ELF binaries cannot be directly executed, but we verify that
-// SaveRecord on a non-ELF binary completes without error.
+// SaveRecord on a non-ELF binary completes without error and that the macOS
+// libSystem cache addition does not break the base record/load pipeline.
 func TestLibSystemCache_Integration_ELFFlowNonRegression(t *testing.T) {
 	skipIfUnsupportedMacOS(t)
 
@@ -253,7 +253,6 @@ func TestLibSystemCache_Integration_ELFFlowNonRegression(t *testing.T) {
 // machodylib.ResolveLibSystemKernel can resolve the libsystem_kernel.dylib
 // source from a DynLibDeps slice containing libSystem.B.dylib on macOS arm64.
 //
-// This covers the resolver layer of AC-2.
 // Note: on macOS 11+, MachODynLibAnalyzer does not include dyld shared cache
 // entries in DynLibDeps, so we construct the DynLibDeps directly here.
 func TestLibSystemCache_Integration_MachodyLibResolver(t *testing.T) {

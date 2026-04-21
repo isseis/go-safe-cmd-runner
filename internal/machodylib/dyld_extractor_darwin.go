@@ -12,7 +12,7 @@ import (
 	"github.com/blacktop/ipsw/pkg/dyld"
 )
 
-// dyldSharedCachePaths is the ordered list of dyld shared cache paths to try (FR-3.1.6).
+// dyldSharedCachePaths is the ordered list of dyld shared cache paths to try.
 // arm64e is preferred; arm64 is the fallback for older hardware.
 var dyldSharedCachePaths = []string{
 	"/System/Library/dyld/dyld_shared_cache_arm64e",
@@ -23,10 +23,10 @@ var dyldSharedCachePaths = []string{
 // dyld shared cache.
 //
 // On failure (cache not found, image not found, or extraction failure),
-// returns nil, nil so the caller can fall back as defined in FR-3.1.6.
+// returns nil, nil so the caller can fall back to symbol-name matching.
 // Logs at slog.Info level for all non-error fallback conditions.
 func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
-	// Try each configured dyld shared cache path in order (FR-3.1.6).
+	// Try each configured dyld shared cache path in order.
 	var cachePath string
 	for _, p := range dyldSharedCachePaths {
 		if _, err := os.Stat(p); err == nil {
@@ -68,7 +68,7 @@ func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
 		return nil, nil
 	}
 
-	// Compute the SHA-256 hash as required by FR-3.1.4 and FR-3.1.6.
+	// Compute the SHA-256 hash used as the cache validity key.
 	h := sha256.Sum256(machoBytes)
 	hash := fmt.Sprintf("sha256:%s", hex.EncodeToString(h[:]))
 

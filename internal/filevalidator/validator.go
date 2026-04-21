@@ -818,7 +818,7 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 }
 
 // analyzeLibSystemImports obtains imported symbols from the target Mach-O binary
-// and matches them against the libSystem cache (FR-3.3.2).
+// and matches them against the libSystem syscall wrapper cache.
 // Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
 // Note: DynLibDeps may be empty on macOS 11+ because all system libraries
 // (including libSystem.B.dylib) live in the dyld shared cache and are not
@@ -837,7 +837,7 @@ func (v *Validator) analyzeLibSystemImports(
 		return nil, err
 	}
 
-	// Strip the Mach-O underscore prefix before matching (FR-3.3.2).
+	// Strip the Mach-O underscore prefix (e.g. "_socket" → "socket") before matching.
 	normalized := make([]string, len(importSymbols))
 	for i, sym := range importSymbols {
 		normalized[i] = machoanalyzer.NormalizeSymbolName(sym)

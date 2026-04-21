@@ -41,7 +41,7 @@ func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
 		return
 	}
 
-	// Verify FR-3.1.6 invariants on a successful extraction.
+	// Verify invariants on a successful extraction.
 	assert.NotEmpty(t, result.Data, "extracted Data must not be empty")
 	assert.True(t, strings.HasPrefix(result.Hash, "sha256:"),
 		"extracted Hash must start with 'sha256:', got %q", result.Hash)
@@ -50,7 +50,7 @@ func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
 }
 
 // TestExtractLibSystemKernelFromDyldCache_NoCachePaths verifies that when no
-// dyld shared cache is available, the function returns nil, nil (FR-3.1.6 fallback).
+// dyld shared cache is available, the function returns nil, nil.
 //
 // This test overrides the package-level dyldSharedCachePaths to point to
 // non-existent paths, simulating the absence of a shared cache.

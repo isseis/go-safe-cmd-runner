@@ -351,7 +351,7 @@ func recordMachOWithLibSystem(
 
 // TestUpdateAnalysisRecord_LibSystemImportOnly verifies that when libSystem
 // returns entries and no svc is found, SyscallAnalysis is populated with
-// Source=libsystem_symbol_import and Location=0 (FR-3.3.2).
+// Source=libsystem_symbol_import and Location=0.
 func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 	libsysEntries := []common.SyscallInfo{
 		{

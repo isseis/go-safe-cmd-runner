@@ -76,7 +76,7 @@ func evalReal(t *testing.T, path string) string {
 }
 
 // TestResolveLibSystemKernel_DirectKernel verifies that a DynLibDeps entry
-// pointing directly to libsystem_kernel.dylib is used with priority (FR-3.1.5 priority 1).
+// pointing directly to libsystem_kernel.dylib is used as the highest-priority source.
 func TestResolveLibSystemKernel_DirectKernel(t *testing.T) {
 	dir := evalReal(t, t.TempDir())
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -103,8 +103,8 @@ func TestResolveLibSystemKernel_DirectKernel(t *testing.T) {
 }
 
 // TestResolveLibSystemKernel_UmbrellaReexport verifies that when only
-// libSystem.B.dylib is in DynLibDeps, LC_REEXPORT_DYLIB traversal finds
-// libsystem_kernel.dylib (FR-3.1.5 priority 2).
+// libSystem.B.dylib is in DynLibDeps, libsystem_kernel.dylib is found by
+// traversing its LC_REEXPORT_DYLIB entries.
 func TestResolveLibSystemKernel_UmbrellaReexport(t *testing.T) {
 	dir := evalReal(t, t.TempDir())
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -132,8 +132,7 @@ func TestResolveLibSystemKernel_UmbrellaReexport(t *testing.T) {
 }
 
 // TestResolveLibSystemKernel_NoLibSystem verifies that when there is no
-// libSystem-family entry in DynLibDeps, ResolveLibSystemKernel returns nil, nil
-// (FR-3.1.5 fallback condition 2).
+// libSystem-family entry in DynLibDeps, ResolveLibSystemKernel returns nil, nil.
 func TestResolveLibSystemKernel_NoLibSystem(t *testing.T) {
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
 	dynLibDeps := []fileanalysis.LibEntry{

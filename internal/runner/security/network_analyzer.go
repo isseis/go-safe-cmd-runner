@@ -208,7 +208,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 						"path", cmdPath)
 					return true, true
 				}
-				// Check whether any libSystem-matched syscall is a network syscall (FR-3.5.1).
+				// Check whether any libSystem-matched syscall is a network syscall.
 				if syscallAnalysisHasNetworkSignal(svcResult) {
 					slog.Info("SyscallAnalysis cache indicates libSystem network syscall",
 						"path", cmdPath)

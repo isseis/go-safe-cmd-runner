@@ -112,7 +112,7 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 		}
 		funcSize := funcEnd - sym.Value
 
-		// Apply the size filter (FR-3.2.2).
+		// Real syscall wrappers are small; skip oversized functions.
 		if funcSize > MaxWrapperFunctionSize {
 			continue
 		}
@@ -130,7 +130,7 @@ func (a *MachoLibSystemAnalyzer) Analyze(machoFile *macho.File) ([]WrapperEntry,
 		entries = append(entries, WrapperEntry{Name: sym.Name, Number: number})
 	}
 
-	// Sort by Number and then by Name as required (FR-3.1.1).
+	// Sort by Number then by Name for deterministic output.
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Number != entries[j].Number {
 			return entries[i].Number < entries[j].Number
@@ -190,7 +190,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
 		return 0, false
 	}
 
-	// Verify that all svc instructions resolve to the same BSD number (FR-3.2.3).
+	// A valid syscall wrapper calls exactly one syscall; reject functions with mixed numbers.
 	first := foundNumbers[0]
 	for _, n := range foundNumbers[1:] {
 		if n != first {
@@ -306,7 +306,8 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
 	return 0, false
 }
 
-// stripBSDPrefix removes the BSD class prefix (0x2000000) as required by FR-3.2.3.
+// stripBSDPrefix removes the macOS BSD syscall class prefix (0x2000000) that ARM64
+// wrappers encode in the high bits of x16 before the svc instruction.
 func stripBSDPrefix(value int) int {
 	if value >= bsdSyscallClassPrefix {
 		return value - bsdSyscallClassPrefix

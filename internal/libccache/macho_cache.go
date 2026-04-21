@@ -49,7 +49,7 @@ func (m *MachoLibSystemCacheManager) GetOrCreate(
 	}
 	cacheFilePath := filepath.Join(m.cacheDir, encodedName)
 
-	// Load and validate any existing cache entry (FR-3.1.4).
+	// Return cached wrappers when the schema version and lib hash both match.
 	if data, readErr := os.ReadFile(cacheFilePath); readErr == nil { //nolint:nestif,gosec // #nosec G304 -- cacheFilePath = cacheDir + pathEnc.Encode(libPath), both trusted
 		var cache LibcCacheFile
 		if jsonErr := json.Unmarshal(data, &cache); jsonErr == nil {

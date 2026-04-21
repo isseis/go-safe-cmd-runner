@@ -121,11 +121,10 @@ func NewMachoLibSystemAdapter(
 // gets/creates the wrapper cache, matches importSymbols against the cache,
 // and returns detected SyscallInfo entries.
 //
-// Fallback conditions (FR-3.4.1):
-//   - dynLibDeps does not contain a libSystem-family library
-//   - dyld shared cache extraction also failed
-//   - GetOrCreate succeeds but returns an empty wrapper list (e.g., the resolved
-//     dylib is a linker stub with no usable __TEXT/__SYMTAB on this architecture)
+// When libsystem_kernel.dylib cannot be resolved (no libSystem-family library in
+// dynLibDeps, dyld cache extraction failed, or the resolved dylib has no usable
+// __TEXT/__SYMTAB), the method falls back to matching import symbol names against
+// the known network syscall wrapper list.
 func (a *MachoLibSystemAdapter) GetSyscallInfos(
 	dynLibDeps []fileanalysis.LibEntry,
 	importSymbols []string,
@@ -138,7 +137,7 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 	if source == nil {
 		reason := classifyLibSystemFallbackReason(dynLibDeps)
 
-		// Fallback to name-only matching (FR-3.4.2).
+		// libSystem source not resolved; match import names against known network syscall wrappers.
 		slog.Info("libSystem cache unavailable; falling back to symbol-name matching",
 			"reason", reason)
 		result := a.fallbackNameMatch(importSymbols)
@@ -151,9 +150,8 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 	// Load or create the cache.
 	wrappers, err := a.cacheMgr.GetOrCreate(source.Path, source.Hash, source.GetData)
 	if err != nil {
-		// If the Mach-O could not be read or parsed (e.g., the file on disk is a
-		// linker stub, not a standalone parseable Mach-O), treat it the same as a
-		// failed extraction and fall back to symbol-name matching (FR-3.4.1).
+		// The resolved file could not be read or parsed (e.g., it is a linker stub
+		// rather than a standalone Mach-O); fall back to symbol-name matching.
 		slog.Info("libSystem cache unavailable after source resolution; falling back to symbol-name matching",
 			"source_path", source.Path, "error", err)
 		result := a.fallbackNameMatch(importSymbols)
@@ -163,9 +161,9 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 		return result, nil
 	}
 
-	// If the cache returned no wrappers (e.g., the resolved dylib is a linker stub
-	// with no usable __TEXT/__SYMTAB, or is not arm64), fall back to symbol-name
-	// matching to avoid false negatives in network detection (FR-3.4.1).
+	// Empty wrapper list means the resolved dylib has no usable __TEXT/__SYMTAB
+	// (e.g., a linker stub or non-arm64 binary); fall back to symbol-name matching
+	// to avoid false negatives in network detection.
 	if len(wrappers) == 0 {
 		slog.Info("libSystem cache contains no wrappers; falling back to symbol-name matching",
 			"source_path", source.Path)
@@ -176,12 +174,13 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 		return result, nil
 	}
 
-	// Match imported symbols against the cache (FR-3.3.2).
+	// Match imported symbols against the cache.
 	matcher := NewImportSymbolMatcher(a.syscallTable)
 	return matcher.MatchWithMethod(importSymbols, wrappers, DeterminationMethodLibCacheMatch), nil
 }
 
-// classifyLibSystemFallbackReason classifies the fallback reason required by FR-3.4.3.
+// classifyLibSystemFallbackReason returns a string describing why the libSystem cache
+// lookup fell back to symbol-name matching.
 // If DynLibDeps has no libSystem umbrella or kernel entry, the reason is
 // "missing_libsystem_dependency". Otherwise the resolver already attempted filesystem and
 // dyld cache resolution and the reason is "dyld_extraction_unavailable".
@@ -199,8 +198,7 @@ func classifyLibSystemFallbackReason(dynLibDeps []fileanalysis.LibEntry) string 
 	return "missing_libsystem_dependency"
 }
 
-// fallbackNameMatch implements the symbol-name fallback defined in FR-3.4.2.
-// It matches importSymbols against the macOS network-related syscall wrapper list
+// fallbackNameMatch matches importSymbols against the macOS network-related syscall wrapper list
 // and returns the resulting SyscallInfo entries.
 func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []common.SyscallInfo {
 	// Build a set of imported symbols.
