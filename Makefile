@@ -144,8 +144,8 @@ $(BINARY_VERIFY): $(GO_SOURCES)
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
 	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
-	$(SUDOCMD) $(CHOWN) root:$(ROOT_GROUP) $@
-	$(SUDOCMD) $(CHMOD) u+s $@
+	#$(SUDOCMD) $(CHOWN) root:$(ROOT_GROUP) $@
+	#$(SUDOCMD) $(CHMOD) u+s $@
 
 # Test binary build rules
 $(BINARY_TEST_RECORD): $(GO_SOURCES)
