@@ -91,7 +91,7 @@ func TestResolveLibSystemKernel_DirectKernel(t *testing.T) {
 		},
 	}
 
-	src, err := ResolveLibSystemKernel(dynLibDeps, fs)
+	src, err := ResolveLibSystemKernel(dynLibDeps, fs, false)
 	require.NoError(t, err)
 	require.NotNil(t, src)
 	assert.Equal(t, kernelPath, src.Path)
@@ -124,7 +124,7 @@ func TestResolveLibSystemKernel_UmbrellaReexport(t *testing.T) {
 		},
 	}
 
-	src, err := ResolveLibSystemKernel(dynLibDeps, fs)
+	src, err := ResolveLibSystemKernel(dynLibDeps, fs, false)
 	require.NoError(t, err)
 	require.NotNil(t, src)
 	assert.Equal(t, kernelPath, src.Path)
@@ -139,7 +139,7 @@ func TestResolveLibSystemKernel_NoLibSystem(t *testing.T) {
 		{SOName: "/usr/lib/libssl.1.1.dylib", Path: "/usr/lib/libssl.1.1.dylib"},
 	}
 
-	src, err := ResolveLibSystemKernel(dynLibDeps, fs)
+	src, err := ResolveLibSystemKernel(dynLibDeps, fs, false)
 	require.NoError(t, err)
 	assert.Nil(t, src)
 }
@@ -148,7 +148,7 @@ func TestResolveLibSystemKernel_NoLibSystem(t *testing.T) {
 // returns nil, nil.
 func TestResolveLibSystemKernel_EmptyDeps(t *testing.T) {
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
-	src, err := ResolveLibSystemKernel(nil, fs)
+	src, err := ResolveLibSystemKernel(nil, fs, false)
 	require.NoError(t, err)
 	assert.Nil(t, src)
 }

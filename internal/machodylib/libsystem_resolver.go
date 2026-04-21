@@ -52,7 +52,7 @@ type libSystemCandidates struct {
 	HasLibSystem bool
 }
 
-// ResolveLibSystemKernel resolves the libsystem_kernel.dylib source from DynLibDeps.
+// ResolveLibSystemKernel resolves the libsystem_kernel.dylib source.
 //
 // Resolution order:
 //  1. Direct kernel entry from DynLibDeps
@@ -62,25 +62,38 @@ type libSystemCandidates struct {
 //     stub that does not contain real syscall wrappers
 //  4. Well-known filesystem path as last resort
 //
-// Returns nil, nil when no libSystem-family library is present in DynLibDeps,
-// or when all resolution methods fail.
+// hasLibSystemFromLoadCmds must be set to true when the binary has an LC_LOAD_DYLIB
+// entry naming a libSystem-family library (e.g. /usr/lib/libSystem.B.dylib or
+// libsystem_kernel.dylib). On macOS 11+ these libraries live only in the dyld shared
+// cache, so DynLibDeps will be empty even though the binary depends on libSystem.
+// Passing hasLibSystemFromLoadCmds=true allows the resolver to skip Step 2 and
+// proceed to Step 3 (dyld cache extraction) in that case.
+//
+// Returns nil, nil when no libSystem-family library is present in either DynLibDeps
+// or the binary's load commands, or when all resolution methods fail.
 // Returns error only for unrecoverable conditions (permission errors, hash computation failures).
 func ResolveLibSystemKernel(
 	dynLibDeps []fileanalysis.LibEntry,
 	fs safefileio.FileSystem,
+	hasLibSystemFromLoadCmds bool,
 ) (*LibSystemKernelSource, error) {
 	// Step 1: Collect libSystem umbrella and kernel candidates from DynLibDeps.
 	candidates := findLibSystemCandidates(dynLibDeps)
 
-	if !candidates.HasLibSystem {
-		// No libSystem-family library in DynLibDeps: return nil (fallback condition 2).
+	if !candidates.HasLibSystem && !hasLibSystemFromLoadCmds {
+		// No libSystem-family library in DynLibDeps or load commands: return nil.
 		return nil, nil
 	}
 
 	// Step 2: DynLibDeps-derived paths (priorities 1 & 2 only; well-known path excluded).
-	candidatePath := resolveLibSystemKernelPathFromDeps(candidates, fs)
-	if candidatePath != "" {
-		return filesystemKernelSource(candidatePath, fs)
+	// Only attempted when DynLibDeps contains a libSystem entry; on macOS 11+ the
+	// system libraries are in the dyld shared cache and absent from DynLibDeps, so
+	// we fall through to Step 3 directly.
+	if candidates.HasLibSystem {
+		candidatePath := resolveLibSystemKernelPathFromDeps(candidates, fs)
+		if candidatePath != "" {
+			return filesystemKernelSource(candidatePath, fs)
+		}
 	}
 
 	// Step 3: Try dyld shared cache extraction before the well-known stub path.

@@ -52,10 +52,15 @@ type LibcCacheInterface interface {
 type LibSystemCacheInterface interface {
 	// GetSyscallInfos resolves the libsystem_kernel.dylib source from dynLibDeps,
 	// matches importSymbols against the cache, and returns the detected syscalls.
+	// hasLibSystemLoadCmd must be true when the binary's LC_LOAD_DYLIB entries
+	// name a libSystem-family library; this allows the resolver to proceed to
+	// dyld cache extraction on macOS 11+ where system libraries are absent from
+	// DynLibDeps because they live only in the dyld shared cache.
 	// Returns nil, nil when libSystem is not in dynLibDeps or all fallback paths failed.
 	GetSyscallInfos(
 		dynLibDeps []fileanalysis.LibEntry,
 		importSymbols []string,
+		hasLibSystemLoadCmd bool,
 	) ([]common.SyscallInfo, error)
 }
 
@@ -822,8 +827,9 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 // Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
 // Note: DynLibDeps may be empty on macOS 11+ because all system libraries
 // (including libSystem.B.dylib) live in the dyld shared cache and are not
-// hash-verified by MachODynLibAnalyzer. The adapter's fallback symbol-name
-// matching handles detection in that case.
+// hash-verified by MachODynLibAnalyzer. The hasLibSystemLoadCmd flag is set
+// from the binary's LC_LOAD_DYLIB entries so the resolver can still reach
+// dyld cache extraction (Step 3) in that case.
 func (v *Validator) analyzeLibSystemImports(
 	record *fileanalysis.Record,
 	filePath string,
@@ -832,23 +838,33 @@ func (v *Validator) analyzeLibSystemImports(
 		return nil, nil
 	}
 
-	importSymbols, err := getMachoImportSymbols(v.fileSystem, filePath)
-	if err != nil || importSymbols == nil {
+	info, err := getMachoAnalysisInfo(v.fileSystem, filePath)
+	if err != nil || info == nil {
 		return nil, err
 	}
 
 	// Strip the Mach-O underscore prefix (e.g. "_socket" → "socket") before matching.
-	normalized := make([]string, len(importSymbols))
-	for i, sym := range importSymbols {
+	normalized := make([]string, len(info.importSymbols))
+	for i, sym := range info.importSymbols {
 		normalized[i] = machoanalyzer.NormalizeSymbolName(sym)
 	}
 
-	return v.libSystemCache.GetSyscallInfos(record.DynLibDeps, normalized)
+	return v.libSystemCache.GetSyscallInfos(record.DynLibDeps, normalized, info.hasLibSystemLoadCmd)
 }
 
-// getMachoImportSymbols opens filePath as a Mach-O file and returns imported symbols.
+// machoAnalysisInfo holds the results of a Mach-O load-command inspection.
+type machoAnalysisInfo struct {
+	// importSymbols is the list of UND symbols from the Mach-O symbol table.
+	importSymbols []string
+	// hasLibSystemLoadCmd is true when any LC_LOAD_DYLIB entry names a
+	// libSystem-family library (/usr/lib/libSystem.B.dylib or libsystem_kernel.dylib).
+	hasLibSystemLoadCmd bool
+}
+
+// getMachoAnalysisInfo opens filePath as a Mach-O file, extracts imported symbols,
+// and checks whether any LC_LOAD_DYLIB entry names a libSystem-family library.
 // Returns nil, nil for non-Mach-O files.
-func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string, error) {
+func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnalysisInfo, error) {
 	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
@@ -868,9 +884,25 @@ func getMachoImportSymbols(fs safefileio.FileSystem, filePath string) ([]string,
 		// This is a valid Mach-O, just without a symbol table — treat as no imports.
 		// Return an empty slice (not nil) so the caller can distinguish
 		// "is a Mach-O but has no imports" from "not a Mach-O" (which returns nil).
-		return []string{}, nil //nolint:nilerr // FormatError for missing Symtab is not fatal
+		syms = []string{} //nolint:nilerr // FormatError for missing Symtab is not fatal
 	}
-	return syms, nil
+
+	// Check load commands for libSystem-family dependencies.
+	// ImportedLibraries returns all LC_LOAD_DYLIB / LC_LOAD_WEAK_DYLIB names.
+	hasLibSystem := false
+	if libs, libErr := mf.ImportedLibraries(); libErr == nil {
+		for _, lib := range libs {
+			if lib == "/usr/lib/libSystem.B.dylib" || filepath.Base(lib) == "libsystem_kernel.dylib" {
+				hasLibSystem = true
+				break
+			}
+		}
+	}
+
+	return &machoAnalysisInfo{
+		importSymbols:       syms,
+		hasLibSystemLoadCmd: hasLibSystem,
+	}, nil
 }
 
 // analyzeELFSyscalls performs ELF syscall analysis on the given file path and sets

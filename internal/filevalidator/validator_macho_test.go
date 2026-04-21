@@ -312,6 +312,7 @@ type stubLibSystemCache struct {
 func (s *stubLibSystemCache) GetSyscallInfos(
 	_ []fileanalysis.LibEntry,
 	_ []string,
+	_ bool,
 ) ([]common.SyscallInfo, error) {
 	return s.infos, s.err
 }

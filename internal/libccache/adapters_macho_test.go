@@ -48,7 +48,7 @@ func TestClassifyLibSystemFallbackReason_UmbrellaPresent(t *testing.T) {
 	deps := []fileanalysis.LibEntry{
 		{SOName: "/usr/lib/libSystem.B.dylib"},
 	}
-	got := classifyLibSystemFallbackReason(deps)
+	got := classifyLibSystemFallbackReason(deps, false)
 	assert.Equal(t, "dyld_extraction_unavailable", got)
 }
 
@@ -58,7 +58,7 @@ func TestClassifyLibSystemFallbackReason_KernelPresent(t *testing.T) {
 	deps := []fileanalysis.LibEntry{
 		{SOName: "/usr/lib/system/libsystem_kernel.dylib"},
 	}
-	got := classifyLibSystemFallbackReason(deps)
+	got := classifyLibSystemFallbackReason(deps, false)
 	assert.Equal(t, "dyld_extraction_unavailable", got)
 }
 
@@ -69,7 +69,7 @@ func TestClassifyLibSystemFallbackReason_NeitherPresent(t *testing.T) {
 		{SOName: "/usr/lib/libc.dylib"},
 		{SOName: "/usr/lib/libz.1.dylib"},
 	}
-	got := classifyLibSystemFallbackReason(deps)
+	got := classifyLibSystemFallbackReason(deps, false)
 	assert.Equal(t, "missing_libsystem_dependency", got)
 }
 
@@ -136,7 +136,7 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnNilSource(t *testing.T)
 	dynDeps := []fileanalysis.LibEntry{
 		{SOName: "/usr/lib/libSystem.B.dylib"},
 	}
-	result, err := adapter.GetSyscallInfos(dynDeps, []string{"socket", "connect", "malloc"})
+	result, err := adapter.GetSyscallInfos(dynDeps, []string{"socket", "connect", "malloc"}, true)
 	require.NoError(t, err)
 	// socket and connect should be matched; malloc should not.
 	names := make(map[string]bool)
@@ -150,31 +150,25 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnNilSource(t *testing.T)
 }
 
 // TestMachoLibSystemAdapter_GetSyscallInfos_NoLibSystem verifies that when dynDeps
-// does not contain any libSystem-family library, the result is also based on
-// symbol-name fallback with "missing_libsystem_dependency" reason.
+// does not contain any libSystem-family library and hasLibSystemLoadCmd is false,
+// the result is nil (no detection: neither DynLibDeps nor load commands indicate libSystem).
 func TestMachoLibSystemAdapter_GetSyscallInfos_NoLibSystem(t *testing.T) {
 	adapter := newTestMachoAdapter(t)
 	dynDeps := []fileanalysis.LibEntry{
 		{SOName: "/usr/lib/libobjc.A.dylib"},
 	}
-	result, err := adapter.GetSyscallInfos(dynDeps, []string{"socket"})
+	result, err := adapter.GetSyscallInfos(dynDeps, []string{"socket"}, false)
 	require.NoError(t, err)
-	// socket should still be matched via symbol-name fallback.
-	found := false
-	for _, r := range result {
-		if r.Name == "socket" {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found)
+	// Neither DynLibDeps nor hasLibSystemLoadCmd signals libSystem: resolver returns
+	// nil and the adapter must also return nil (no fallback detection).
+	assert.Nil(t, result)
 }
 
 // TestMachoLibSystemAdapter_GetSyscallInfos_EmptyImports verifies that no results
 // are returned when importSymbols is empty.
 func TestMachoLibSystemAdapter_GetSyscallInfos_EmptyImports(t *testing.T) {
 	adapter := newTestMachoAdapter(t)
-	result, err := adapter.GetSyscallInfos(nil, nil)
+	result, err := adapter.GetSyscallInfos(nil, nil, false)
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
@@ -202,7 +196,7 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers(t *testin
 	require.Empty(t, cachedWrappers, "non-arm64 analysis should return empty wrappers")
 
 	// Inject a resolver that returns the pre-populated source so GetOrCreate hits the cache.
-	adapter.resolveFunc = func(_ []fileanalysis.LibEntry, _ safefileio.FileSystem) (*machodylib.LibSystemKernelSource, error) {
+	adapter.resolveFunc = func(_ []fileanalysis.LibEntry, _ safefileio.FileSystem, _ bool) (*machodylib.LibSystemKernelSource, error) {
 		return &machodylib.LibSystemKernelSource{
 			Path:    libPath,
 			Hash:    libHash,
@@ -211,7 +205,7 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers(t *testin
 	}
 
 	// GetSyscallInfos must fall back to symbol-name matching when wrappers are empty.
-	result, err := adapter.GetSyscallInfos(nil, []string{"socket", "connect", "malloc"})
+	result, err := adapter.GetSyscallInfos(nil, []string{"socket", "connect", "malloc"}, false)
 	require.NoError(t, err)
 	names := make(map[string]bool)
 	for _, r := range result {
@@ -222,4 +216,32 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers(t *testin
 	assert.True(t, names["socket"], "socket should be matched via symbol-name fallback")
 	assert.True(t, names["connect"], "connect should be matched via symbol-name fallback")
 	assert.False(t, names["malloc"], "malloc should not be matched (not a syscall wrapper)")
+}
+
+// TestClassifyLibSystemFallbackReason_HasLoadCmd verifies that when hasLibSystemLoadCmd
+// is true the reason is "dyld_extraction_unavailable" even when DynLibDeps is empty.
+func TestClassifyLibSystemFallbackReason_HasLoadCmd(t *testing.T) {
+	got := classifyLibSystemFallbackReason(nil, true)
+	assert.Equal(t, "dyld_extraction_unavailable", got)
+}
+
+// TestMachoLibSystemAdapter_GetSyscallInfos_DyldCacheLibSystem verifies that when
+// dynDeps is empty (macOS 11+ dyld cache case) but hasLibSystemLoadCmd is true,
+// the adapter falls back to symbol-name matching (because the stub resolver returns
+// nil on non-Darwin or unavailable dyld cache) without returning nil.
+func TestMachoLibSystemAdapter_GetSyscallInfos_DyldCacheLibSystem(t *testing.T) {
+	adapter := newTestMachoAdapter(t)
+	// dynDeps is empty: MachODynLibAnalyzer did not record libSystem because it
+	// lives in the dyld shared cache. hasLibSystemLoadCmd=true signals that the
+	// binary's LC_LOAD_DYLIB contains /usr/lib/libSystem.B.dylib.
+	result, err := adapter.GetSyscallInfos(nil, []string{"socket", "connect"}, true)
+	require.NoError(t, err)
+	// The stub resolver returns nil (non-Darwin / unavailable), so we fall through to
+	// symbol-name matching. socket and connect must be detected.
+	names := make(map[string]bool)
+	for _, r := range result {
+		names[r.Name] = true
+	}
+	assert.True(t, names["socket"], "socket must be detected via fallback when hasLibSystemLoadCmd=true")
+	assert.True(t, names["connect"], "connect must be detected via fallback when hasLibSystemLoadCmd=true")
 }

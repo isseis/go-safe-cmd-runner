@@ -101,7 +101,7 @@ type MachoLibSystemAdapter struct {
 	cacheMgr     *MachoLibSystemCacheManager
 	fs           safefileio.FileSystem
 	syscallTable SyscallNumberTable
-	resolveFunc  func([]fileanalysis.LibEntry, safefileio.FileSystem) (*machodylib.LibSystemKernelSource, error)
+	resolveFunc  func([]fileanalysis.LibEntry, safefileio.FileSystem, bool) (*machodylib.LibSystemKernelSource, error)
 }
 
 // NewMachoLibSystemAdapter creates a new MachoLibSystemAdapter.
@@ -121,21 +121,33 @@ func NewMachoLibSystemAdapter(
 // gets/creates the wrapper cache, matches importSymbols against the cache,
 // and returns detected SyscallInfo entries.
 //
+// hasLibSystemLoadCmd must be true when the binary has an LC_LOAD_DYLIB entry
+// naming a libSystem-family library. On macOS 11+ those libraries live only in
+// the dyld shared cache and therefore do not appear in dynLibDeps; setting this
+// flag allows the resolver to proceed to dyld cache extraction (Step 3).
+//
 // When libsystem_kernel.dylib cannot be resolved (no libSystem-family library in
-// dynLibDeps, dyld cache extraction failed, or the resolved dylib has no usable
-// __TEXT/__SYMTAB), the method falls back to matching import symbol names against
-// the known network syscall wrapper list.
+// either dynLibDeps or load commands, dyld cache extraction failed, or the
+// resolved dylib has no usable __TEXT/__SYMTAB), the method falls back to
+// matching import symbol names against the known network syscall wrapper list.
 func (a *MachoLibSystemAdapter) GetSyscallInfos(
 	dynLibDeps []fileanalysis.LibEntry,
 	importSymbols []string,
+	hasLibSystemLoadCmd bool,
 ) ([]common.SyscallInfo, error) {
-	source, err := a.resolveFunc(dynLibDeps, a.fs)
+	source, err := a.resolveFunc(dynLibDeps, a.fs, hasLibSystemLoadCmd)
 	if err != nil {
 		return nil, err
 	}
 
 	if source == nil {
-		reason := classifyLibSystemFallbackReason(dynLibDeps)
+		reason := classifyLibSystemFallbackReason(dynLibDeps, hasLibSystemLoadCmd)
+
+		if reason == "missing_libsystem_dependency" {
+			// The binary has no libSystem dependency at all: skip detection entirely
+			// to avoid false positives from symbol-name matching.
+			return nil, nil
+		}
 
 		// libSystem source not resolved; match import names against known network syscall wrappers.
 		slog.Info("libSystem cache unavailable; falling back to symbol-name matching",
@@ -181,14 +193,19 @@ func (a *MachoLibSystemAdapter) GetSyscallInfos(
 
 // classifyLibSystemFallbackReason returns a string describing why the libSystem cache
 // lookup fell back to symbol-name matching.
-// If DynLibDeps has no libSystem umbrella or kernel entry, the reason is
-// "missing_libsystem_dependency". Otherwise the resolver already attempted filesystem and
-// dyld cache resolution and the reason is "dyld_extraction_unavailable".
-func classifyLibSystemFallbackReason(dynLibDeps []fileanalysis.LibEntry) string {
+// If neither DynLibDeps nor the binary's load commands contain a libSystem entry,
+// the reason is "missing_libsystem_dependency". Otherwise the resolver already
+// attempted filesystem and dyld cache resolution and the reason is
+// "dyld_extraction_unavailable".
+func classifyLibSystemFallbackReason(dynLibDeps []fileanalysis.LibEntry, hasLibSystemLoadCmd bool) string {
 	const (
 		umbrellaInstallName = "/usr/lib/libSystem.B.dylib"
 		kernelBaseName      = "libsystem_kernel.dylib"
 	)
+
+	if hasLibSystemLoadCmd {
+		return "dyld_extraction_unavailable"
+	}
 
 	for _, entry := range dynLibDeps {
 		if entry.SOName == umbrellaInstallName || filepath.Base(entry.SOName) == kernelBaseName {
