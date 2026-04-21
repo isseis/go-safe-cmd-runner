@@ -533,20 +533,25 @@ func TestMergeMachoSyscallInfos_MixedNumbersSortedFirst(t *testing.T) {
 }
 
 // TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC verifies that
-// AnalysisWarnings is populated only when svc entries are present.
+// AnalysisWarnings is populated only when svc entries are present, and that
+// non-network libSystem entries are filtered out of DetectedSyscalls.
 func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
+	// IsNetwork is false (default): non-network libSystem entry must be filtered out.
 	libsysEntries := []common.SyscallInfo{
 		{Number: 97, Source: "libsystem_symbol_import"},
 	}
 
-	// No svc entries: no warning.
+	// No svc entries: no warning, non-network libsys entry filtered out.
 	result := buildMachoSyscallAnalysisData(nil, libsysEntries)
 	assert.Empty(t, result.AnalysisWarnings, "no warning when no svc entries")
+	assert.Empty(t, result.DetectedSyscalls, "non-network libsys entry must be filtered")
 
-	// With svc entries: warning present.
+	// With svc entries: warning present; svc entry (Number=-1) retained, non-network libsys filtered.
 	svcEntries := []common.SyscallInfo{
 		{Number: -1, Source: "direct_svc_0x80"},
 	}
 	result = buildMachoSyscallAnalysisData(svcEntries, libsysEntries)
 	assert.Len(t, result.AnalysisWarnings, 1)
+	require.Len(t, result.DetectedSyscalls, 1, "only svc entry (Number=-1) should remain")
+	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
 }

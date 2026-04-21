@@ -780,12 +780,15 @@ func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
 // buildMachoSyscallAnalysisData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
 // AnalysisWarnings is populated only when svc entries exist.
-// DetectedSyscalls is sorted by Number (svc entries with Number=-1 appear first).
+// DetectedSyscalls contains only network syscalls (IsNetwork==true) and entries
+// with unknown numbers (Number==-1), consistent with the ELF filter applied in
+// buildSyscallAnalysisData. All svc entries have Number==-1 and are always retained.
 func buildMachoSyscallAnalysisData(
 	svcEntries []common.SyscallInfo,
 	libsysEntries []common.SyscallInfo,
 ) *fileanalysis.SyscallAnalysisData {
 	merged := mergeMachoSyscallInfos(svcEntries, libsysEntries)
+	retained := fileanalysis.FilterSyscallsForStorage(merged)
 
 	var warnings []string
 	if len(svcEntries) > 0 {
@@ -796,7 +799,7 @@ func buildMachoSyscallAnalysisData(
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			Architecture:     "arm64",
 			AnalysisWarnings: warnings,
-			DetectedSyscalls: merged,
+			DetectedSyscalls: retained,
 		},
 	}
 }
