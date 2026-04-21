@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"debug/elf"
 	"debug/macho"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -861,34 +863,51 @@ type machoAnalysisInfo struct {
 	hasLibSystemLoadCmd bool
 }
 
-// getMachoAnalysisInfo opens filePath as a Mach-O file, extracts imported symbols,
-// and checks whether any LC_LOAD_DYLIB entry names a libSystem-family library.
-// Returns nil, nil for non-Mach-O files.
-func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnalysisInfo, error) {
-	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
+// machoFatMagicLE is the byte pattern for a Fat/universal Mach-O header
+// (big-endian 0xCAFEBABE / 0xBEBAFECA) interpreted as a little-endian uint32.
+// Fat binaries write the magic in big-endian; reading as little-endian gives
+// 0xBEBAFECA for a real fat binary (0xCAFEBABE for a byte-swapped one).
+const (
+	machoFatMagicLE = uint32(0xCAFEBABE)
+	machoFatCigamLE = uint32(0xBEBAFECA)
+)
 
-	mf, err := macho.NewFile(f)
-	if err != nil {
-		// Non-Mach-O file such as ELF: skip it.
-		return nil, nil //nolint:nilerr // Mach-O parse failure means a non-Mach-O file
+// nativeOrArm64Slice returns the Fat arch slice that matches the native CPU,
+// falling back to arm64 if the native arch is not present.
+// Returns nil when neither the native arch nor arm64 is present.
+func nativeOrArm64Slice(fat *macho.FatFile) *macho.File {
+	var nativeCPU macho.Cpu
+	switch runtime.GOARCH {
+	case "arm64":
+		nativeCPU = macho.CpuArm64
+	case "amd64":
+		nativeCPU = macho.CpuAmd64
 	}
-	defer func() { _ = mf.Close() }()
 
+	var arm64Slice *macho.File
+	for i := range fat.Arches {
+		cpu := fat.Arches[i].Cpu
+		if nativeCPU != 0 && cpu == nativeCPU {
+			return fat.Arches[i].File
+		}
+		if cpu == macho.CpuArm64 {
+			arm64Slice = fat.Arches[i].File
+		}
+	}
+	return arm64Slice
+}
+
+// extractMachoSliceInfo extracts imported symbols and libSystem load-command
+// presence from an already-parsed *macho.File slice.
+func extractMachoSliceInfo(mf *macho.File) *machoAnalysisInfo {
 	syms, err := mf.ImportedSymbols()
 	if err != nil {
 		// debug/macho returns FormatError when Symtab is nil (e.g. stripped binaries).
-		// This is a valid Mach-O, just without a symbol table — treat as no imports.
-		// Return an empty slice (not nil) so the caller can distinguish
-		// "is a Mach-O but has no imports" from "not a Mach-O" (which returns nil).
+		// Return an empty slice so the caller can distinguish "is a Mach-O but has no
+		// imports" from "not a Mach-O" (which returns nil).
 		syms = []string{} //nolint:nilerr // FormatError for missing Symtab is not fatal
 	}
 
-	// Check load commands for libSystem-family dependencies.
-	// ImportedLibraries returns all LC_LOAD_DYLIB / LC_LOAD_WEAK_DYLIB names.
 	hasLibSystem := false
 	if libs, libErr := mf.ImportedLibraries(); libErr == nil {
 		for _, lib := range libs {
@@ -902,7 +921,52 @@ func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnal
 	return &machoAnalysisInfo{
 		importSymbols:       syms,
 		hasLibSystemLoadCmd: hasLibSystem,
-	}, nil
+	}
+}
+
+// getMachoAnalysisInfo opens filePath as a Mach-O file, extracts imported symbols,
+// and checks whether any LC_LOAD_DYLIB entry names a libSystem-family library.
+// Handles both single-arch and Fat/universal binaries; for Fat binaries the native
+// GOARCH slice is used (arm64 as fallback). Returns nil, nil for non-Mach-O files.
+func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnalysisInfo, error) {
+	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	// Read the first 4 bytes to distinguish Fat binaries from single-arch Mach-O.
+	// macho.NewFile and macho.NewFatFile both use io.ReaderAt (absolute offsets),
+	// so sequential read position does not affect them.
+	var magicBuf [4]byte
+	if _, err := io.ReadFull(f, magicBuf[:]); err != nil {
+		return nil, nil // file shorter than 4 bytes — not Mach-O
+	}
+	magic := binary.LittleEndian.Uint32(magicBuf[:])
+
+	if magic == machoFatMagicLE || magic == machoFatCigamLE {
+		fat, err := macho.NewFatFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Fat Mach-O: %w", err)
+		}
+		defer func() { _ = fat.Close() }()
+
+		slice := nativeOrArm64Slice(fat)
+		if slice == nil {
+			// No matching slice found; treat as non-Mach-O for analysis purposes.
+			return nil, nil
+		}
+		return extractMachoSliceInfo(slice), nil
+	}
+
+	mf, err := macho.NewFile(f)
+	if err != nil {
+		// Non-Mach-O file such as ELF: skip it.
+		return nil, nil //nolint:nilerr // Mach-O parse failure means a non-Mach-O file
+	}
+	defer func() { _ = mf.Close() }()
+
+	return extractMachoSliceInfo(mf), nil
 }
 
 // analyzeELFSyscalls performs ELF syscall analysis on the given file path and sets
