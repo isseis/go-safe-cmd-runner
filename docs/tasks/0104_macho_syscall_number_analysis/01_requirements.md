@@ -85,8 +85,8 @@ macOS arm64 と ELF arm64 の主な差異：
 
 Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclntab から Go 関数名テーブルを構築し、以下の既知 Go syscall スタブ実装関数のアドレス範囲内にある `svc #0x80` を Pass 1 の直接解析から除外すること：
 
-- `syscall.Syscall`, `syscall.Syscall6`, `syscall.Syscall9`
-- `syscall.RawSyscall`, `syscall.RawSyscall6`, `syscall.RawSyscall9`
+- `syscall.Syscall`, `syscall.Syscall6`
+- `syscall.RawSyscall`, `syscall.RawSyscall6`
 - `internal/runtime/syscall.Syscall6` 等の Go バージョン依存スタブ名
 - その他、ELF 版 `knownSyscallImpls` に対応する macOS arm64 のスタブ関数
 
@@ -106,17 +106,18 @@ Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclnt
 
 #### FR-3.2.1: Go ラッパー関数の特定
 
-`.gopclntab` セクションが存在する場合、以下の既知 Go syscall ラッパー関数のアドレスを解決すること（ELF 版 `knownGoWrappers` に対応する macOS arm64 版）。これらはすべて旧スタック ABI を使うため、Pass 1 の `knownSyscallImpls` 除外対象と同一集合である。
 
-- `syscall.Syscall`, `syscall.Syscall6`, `syscall.Syscall9`
-- `syscall.RawSyscall`, `syscall.RawSyscall6`, `syscall.RawSyscall9`
-- `runtime.syscall`, `runtime.syscall6`（Go バージョン依存の内部スタブ）
+`.gopclntab` セクションが存在する場合、以下の既知 Go syscall ラッパー関数のアドレスを解決すること（ELF 版 `knownGoWrappers` に対応する macOS arm64 版）。少なくとも調査で確認済みの公開ラッパーを対象とし、Go バージョン差分に応じて内部スタブ名を追加できること。
+
+- `syscall.Syscall`, `syscall.Syscall6`
+- `syscall.RawSyscall`, `syscall.RawSyscall6`
+- `runtime.syscall`, `runtime.syscall6` や `internal/runtime/syscall.Syscall6` などの Go バージョン依存の内部スタブ
 
 #### FR-3.2.2: 呼び出しサイトでの syscall 番号解析
 
 `__TEXT,__text` セクション内で上記ラッパーへの `BL` 命令を検出し、各呼び出しサイトにおける第1引数（syscall 番号）を後方スキャンで解析すること。
 
-`syscall.Syscall`/`Syscall6`/`RawSyscall`/`RawSyscall6`/`Syscall9` は Go の**旧スタック ABI**（stack-based calling convention）を使うアセンブリスタブである。第1引数 `trap`（syscall 番号）はレジスタ X0 ではなく `[SP, #8]` に格納される（`SP+0` は呼び出し規約上の戻りアドレス用スロット）。
+`syscall.Syscall`/`Syscall6`/`RawSyscall`/`RawSyscall6` は Go の**旧スタック ABI**（stack-based calling convention）を使うアセンブリスタブである。第1引数 `trap`（syscall 番号）はレジスタ X0 ではなく `[SP, #8]` に格納される（`SP+0` は呼び出し規約上の戻りアドレス用スロット）。同等の呼び出し規約を使う Go バージョン依存スタブがある場合も、同じ解析手法を適用すること。
 
 したがって、`BL` 命令直前を後方スキャンする際のターゲットは次の順序で探索すること：
 
@@ -195,7 +196,7 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 
 ### AC-3: Pass 2 - Go ラッパー呼び出しサイト解析
 
-- [ ] `.gopclntab` が存在する Go バイナリに対して既知 Go ラッパー関数（`syscall.{,Raw}Syscall{,6,9}` 等）のアドレスが解決されること
+- [ ] `.gopclntab` が存在する Go バイナリに対して既知 Go ラッパー関数（少なくとも `syscall.Syscall`、`syscall.Syscall6`、`syscall.RawSyscall`、`syscall.RawSyscall6`）のアドレスが解決されること
 - [ ] 既知 Go ラッパーへの `BL` 命令が検出されること
 - [ ] 呼び出しサイトで `[SP, #8]` へのストア命令（旧スタック ABI における第1引数スロット）と xN への即値設定を後方スキャンすることにより syscall 番号が解析されること
 - [ ] 解析された syscall 番号に対して `MacOSSyscallTable` でネットワーク判定が実施されること
