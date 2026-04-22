@@ -223,7 +223,7 @@ func readMainMapping(f *os.File) (dyldMappingInfo, error) {
 		return dyldMappingInfo{}, fmt.Errorf("read mappingOffset: %w", err)
 	}
 	var m dyldMappingInfo
-	var raw [28]byte
+	var raw [32]byte
 	if _, err := f.ReadAt(raw[:], int64(mapOff)); err != nil {
 		return dyldMappingInfo{}, fmt.Errorf("read main mapping: %w", err)
 	}
@@ -404,7 +404,7 @@ func readSubCacheMapping(path string, vmAddr uint64) (*dyldMappingInfo, error) {
 	const mappingEntrySize = 32
 	for i := uint32(0); i < mapCount; i++ {
 		off := int64(mapOff) + int64(i)*mappingEntrySize
-		var raw [28]byte
+		var raw [32]byte
 		if _, err := f.ReadAt(raw[:], off); err != nil {
 			return nil, err
 		}
