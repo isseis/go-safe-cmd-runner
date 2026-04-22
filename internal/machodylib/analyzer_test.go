@@ -446,6 +446,48 @@ func TestAnalyze_IndirectDeps_RpathFromDylib(t *testing.T) {
 	assert.True(t, soNames["@rpath/lib2.dylib"], "@rpath/lib2.dylib must be in DynLibDeps")
 }
 
+// TestAnalyze_SharedDep_NoDuplicates verifies that a shared transitive dependency
+// (diamond pattern: root→lib1→shared, root→lib2→shared) appears only once in DynLibDeps.
+func TestAnalyze_SharedDep_NoDuplicates(t *testing.T) {
+	nativeCPU := machodylibtesting.NativeCPU()
+	tmp := realPath(t, t.TempDir())
+
+	// shared.dylib: leaf, no dependencies.
+	sharedPath := filepath.Join(tmp, "shared.dylib")
+	require.NoError(t, os.WriteFile(sharedPath,
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, nil, nil, nil), 0o600))
+
+	// lib1.dylib and lib2.dylib: both depend on shared.dylib.
+	lib1Path := filepath.Join(tmp, "lib1.dylib")
+	require.NoError(t, os.WriteFile(lib1Path,
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{sharedPath}, nil, nil), 0o600))
+
+	lib2Path := filepath.Join(tmp, "lib2.dylib")
+	require.NoError(t, os.WriteFile(lib2Path,
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{sharedPath}, nil, nil), 0o600))
+
+	// root.bin: depends on lib1 and lib2 (diamond).
+	rootPath := filepath.Join(tmp, "root.bin")
+	require.NoError(t, os.WriteFile(rootPath,
+		machodylibtesting.BuildMachOWithDeps(nativeCPU, []string{lib1Path, lib2Path}, nil, nil), 0o600))
+
+	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
+	a := NewMachODynLibAnalyzer(fs)
+
+	libs, warnings, err := a.Analyze(rootPath)
+	require.NoError(t, err)
+	assert.Nil(t, warnings)
+	require.Len(t, libs, 3, "lib1, lib2, shared must each appear exactly once")
+
+	soNames := make(map[string]int, len(libs))
+	for _, lib := range libs {
+		soNames[lib.SOName]++
+	}
+	assert.Equal(t, 1, soNames[lib1Path], "lib1.dylib must appear exactly once")
+	assert.Equal(t, 1, soNames[lib2Path], "lib2.dylib must appear exactly once")
+	assert.Equal(t, 1, soNames[sharedPath], "shared.dylib must appear exactly once (no duplicates)")
+}
+
 // TestAnalyze_CircularDeps verifies that circular dependencies (A→B→A) do not
 // cause an infinite loop; the visited set prevents redundant processing.
 func TestAnalyze_CircularDeps(t *testing.T) {

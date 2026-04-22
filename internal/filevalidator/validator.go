@@ -3,11 +3,14 @@ package filevalidator
 import (
 	"bytes"
 	"debug/elf"
+	"debug/macho"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -46,6 +49,27 @@ type LibcCacheInterface interface {
 	// Returns an error wrapping ErrUnsupportedArch for unsupported architectures.
 	GetOrCreateSyscalls(libcPath, libcHash string, importSymbols []string, machine elf.Machine) ([]common.SyscallInfo, error)
 }
+
+// LibSystemCacheInterface abstracts libSystem wrapper cache operations for Mach-O.
+type LibSystemCacheInterface interface {
+	// GetSyscallInfos resolves the libsystem_kernel.dylib source from dynLibDeps,
+	// matches importSymbols against the cache, and returns the detected syscalls.
+	// hasLibSystemLoadCmd must be true when the binary's LC_LOAD_DYLIB entries
+	// name a libSystem-family library; this allows the resolver to proceed to
+	// dyld cache extraction on macOS 11+ where system libraries are absent from
+	// DynLibDeps because they live only in the dyld shared cache.
+	// Returns nil, nil when libSystem is not in dynLibDeps or all fallback paths failed.
+	GetSyscallInfos(
+		dynLibDeps []fileanalysis.LibEntry,
+		importSymbols []string,
+		hasLibSystemLoadCmd bool,
+	) ([]common.SyscallInfo, error)
+}
+
+// ErrUnsupportedGOARCH is returned by nativeMachoCPU when runtime.GOARCH is not a
+// recognised macOS architecture. Callers must abort analysis for the affected binary
+// rather than silently falling back to the wrong Fat Mach-O slice.
+var ErrUnsupportedGOARCH = errors.New("unsupported GOARCH for Fat Mach-O slice selection")
 
 // ErrUnsupportedArch is returned by SyscallAnalyzerInterface.AnalyzeSyscallsFromELF
 // and SyscallAnalyzerInterface.GetOrCreate when the ELF architecture is not supported.
@@ -119,11 +143,12 @@ type Validator struct {
 	// store is the unified analysis store for FileAnalysisRecord format.
 	store *fileanalysis.Store
 
-	fileSystem          safefileio.FileSystem           // used by openELFFile in analyzeSyscalls
+	fileSystem          safefileio.FileSystem           // used by openELFFile in analyzeELFSyscalls
 	elfDynlibAnalyzer   *elfdynlib.DynLibAnalyzer       // nil if dynlib analysis is disabled
 	machoDynlibAnalyzer *machodylib.MachODynLibAnalyzer // nil if Mach-O dynlib analysis is disabled
 	binaryAnalyzer      binaryanalyzer.BinaryAnalyzer   // nil if binary analysis is disabled
 	libcCache           LibcCacheInterface              // nil if libc cache is disabled
+	libSystemCache      LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
 	syscallAnalyzer     SyscallAnalyzerInterface        // nil if syscall analysis is disabled
 }
 
@@ -302,8 +327,10 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 					DynamicLoadSymbols: convertDetectedSymbols(output.DynamicLoadSymbols),
 				}
 			case binaryanalyzer.StaticBinary, binaryanalyzer.NotSupportedBinary:
-				// Static binary or unsupported format: clear any previously stored
-				// SymbolAnalysis to prevent stale data from an earlier record run.
+				// SymbolAnalysis does not apply to static or unsupported binaries.
+				// Explicitly nil it out so that a force-re-record of a binary that was
+				// previously dynamic does not carry over the old SymbolAnalysis value
+				// (store.Update passes the existing record to this callback unchanged).
 				record.SymbolAnalysis = nil
 			case binaryanalyzer.AnalysisError:
 				return fmt.Errorf("network symbol analysis failed: %w", output.Error)
@@ -323,26 +350,17 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 			record.SymbolAnalysis.KnownNetworkLibDeps = matched
 		}
 
-		// Steps A-D: ELF syscall analysis (libc import + direct instruction).
-		if err := v.analyzeSyscalls(record, filePath.String()); err != nil {
+		// Analyze ELF syscalls via libc import symbol matching and direct instruction scan.
+		if err := v.analyzeELFSyscalls(record, filePath.String()); err != nil {
 			return err
 		}
 
-		// Mach-O arm64 svc #0x80 scan.
-		// Run after analyzeSyscalls() to overwrite the nil it sets for non-ELF files.
-		// record's responsibility is to faithfully capture binary state regardless of
-		// SymbolAnalysis result. runner decides whether to consult SyscallAnalysis based
-		// on SymbolAnalysis outcome (FR-3.2.2).
-		// CollectSVCAddressesFromFile checks magic bytes and returns nil for non-Mach-O
+		// Mach-O arm64 svc #0x80 scan and libSystem import-symbol matching.
+		// Merge both results and store them in record.SyscallAnalysis (task 0100).
+		// ScanSVCAddrs checks magic bytes and returns nil for non-Mach-O
 		// files, so this is safe to call on all platforms and binary formats.
-		{
-			addrs, svcErr := machoanalyzer.CollectSVCAddressesFromFile(filePath.String(), v.fileSystem)
-			if svcErr != nil {
-				return fmt.Errorf("mach-o svc scan failed: %w", svcErr)
-			}
-			if len(addrs) > 0 {
-				record.SyscallAnalysis = buildSVCSyscallAnalysis(addrs)
-			}
+		if err := v.analyzeMachoSyscalls(record, filePath.String()); err != nil {
+			return err
 		}
 
 		// Record shebang interpreter info.
@@ -416,6 +434,11 @@ func (v *Validator) checkNotShebang(path, role string) error {
 		return fmt.Errorf("%s %s is itself a shebang script: %w", role, path, ErrRecursiveShebang)
 	}
 	return nil
+}
+
+// SetLibSystemCache injects the LibSystemCacheInterface used during record operations.
+func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
+	v.libSystemCache = m
 }
 
 // SetELFDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
@@ -727,43 +750,297 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 	return entries
 }
 
-// buildSVCSyscallAnalysis constructs a SyscallAnalysisData record for a Mach-O
-// binary where svc #0x80 instructions were detected at the given virtual addresses.
-// Each address is recorded as a DetectedSyscall with Number=-1 (undetermined) and
-// DeterminationMethod="direct_svc_0x80".
-func buildSVCSyscallAnalysis(addrs []uint64) *fileanalysis.SyscallAnalysisData {
+// buildSVCSyscallEntries converts a list of svc #0x80 addresses into []common.SyscallInfo.
+// Returns nil when addrs is empty.
+func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
+	if len(addrs) == 0 {
+		return nil
+	}
 	syscalls := make([]common.SyscallInfo, len(addrs))
 	for i, addr := range addrs {
 		syscalls[i] = common.SyscallInfo{
 			Number:              -1,
 			IsNetwork:           false,
 			Location:            addr,
-			DeterminationMethod: "direct_svc_0x80",
-			Source:              "direct_svc_0x80",
+			DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+			Source:              common.DeterminationMethodDirectSVC0x80,
 		}
 	}
+	return syscalls
+}
+
+// buildMachoSyscallAnalysisData merges svc and libSystem entries and constructs
+// SyscallAnalysisData.
+// AnalysisWarnings is populated only when svc entries exist.
+// DetectedSyscalls contains only network syscalls (IsNetwork==true) and entries
+// with unknown numbers (Number==-1), consistent with the ELF filter applied in
+// buildSyscallAnalysisData. All svc entries have Number==-1 and are always retained.
+func buildMachoSyscallAnalysisData(
+	svcEntries []common.SyscallInfo,
+	libsysEntries []common.SyscallInfo,
+	arch string,
+) *fileanalysis.SyscallAnalysisData {
+	merged := mergeMachoSyscallInfos(svcEntries, libsysEntries)
+	retained := fileanalysis.FilterSyscallsForStorage(merged)
+
+	var warnings []string
+	if len(svcEntries) > 0 {
+		warnings = []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"}
+	}
+
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "arm64",
-			AnalysisWarnings: []string{
-				"svc #0x80 detected: direct syscall bypassing libSystem.dylib",
-			},
-			DetectedSyscalls: syscalls,
+			Architecture:     arch,
+			AnalysisWarnings: warnings,
+			DetectedSyscalls: retained,
 		},
 	}
 }
 
-// analyzeSyscalls performs ELF syscall analysis on the given file path and sets
+// mergeMachoSyscallInfos combines svc entries and libSystem entries into a
+// deterministically sorted slice. The sort key is (Number, Location, Source)
+// so that entries with the same Number (e.g. multiple svc #0x80 with Number=-1)
+// produce stable JSON output across runs.
+func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
+	if len(svcEntries) == 0 && len(libsysEntries) == 0 {
+		return nil
+	}
+	merged := make([]common.SyscallInfo, 0, len(svcEntries)+len(libsysEntries))
+	merged = append(merged, svcEntries...)
+	merged = append(merged, libsysEntries...)
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].Number != merged[j].Number {
+			return merged[i].Number < merged[j].Number
+		}
+		if merged[i].Location != merged[j].Location {
+			return merged[i].Location < merged[j].Location
+		}
+		return merged[i].Source < merged[j].Source
+	})
+	return merged
+}
+
+// analyzeMachoSyscalls runs the Mach-O svc #0x80 scan and libSystem import-symbol
+// matching, then stores the merged result in record.SyscallAnalysis.
+// It is a no-op (leaves SyscallAnalysis unchanged) when neither scan yields entries.
+// ScanSVCAddrs checks magic bytes and returns nil for non-Mach-O files, so this is
+// safe to call on all platforms and binary formats.
+func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath string) error {
+	addrs, err := machoanalyzer.ScanSVCAddrs(filePath, v.fileSystem)
+	if err != nil {
+		return fmt.Errorf("mach-o svc scan failed: %w", err)
+	}
+	svcEntries := buildSVCSyscallEntries(addrs)
+
+	libsysEntries, libsysArch, err := v.analyzeLibSystemImports(record, filePath)
+	if err != nil {
+		return fmt.Errorf("libSystem import analysis failed: %w", err)
+	}
+
+	if len(svcEntries)+len(libsysEntries) > 0 {
+		// Use the architecture from the Mach-O slice used for libSystem analysis.
+		// Fall back to archNameArm64 when no libSystem info was available: svc scan
+		// (collectSVCAddresses) only processes arm64 slices, so svc entries always
+		// originate from an arm64 binary.
+		arch := libsysArch
+		if arch == "" {
+			arch = archNameArm64
+		}
+		record.SyscallAnalysis = buildMachoSyscallAnalysisData(svcEntries, libsysEntries, arch)
+	}
+	return nil
+}
+
+// analyzeLibSystemImports obtains imported symbols from the target Mach-O binary
+// and matches them against the libSystem syscall wrapper cache.
+// Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
+// Note: DynLibDeps may be empty on macOS 11+ because all system libraries
+// (including libSystem.B.dylib) live in the dyld shared cache and are not
+// hash-verified by MachODynLibAnalyzer. The hasLibSystemLoadCmd flag is set
+// from the binary's LC_LOAD_DYLIB entries so the resolver can still reach
+// dyld cache extraction (Step 3) in that case.
+func (v *Validator) analyzeLibSystemImports(
+	record *fileanalysis.Record,
+	filePath string,
+) ([]common.SyscallInfo, string, error) {
+	if v.libSystemCache == nil {
+		return nil, "", nil
+	}
+
+	info, err := getMachoAnalysisInfo(v.fileSystem, filePath)
+	if err != nil || info == nil {
+		return nil, "", err
+	}
+
+	// Strip the Mach-O underscore prefix (e.g. "_socket" → "socket") before matching.
+	normalized := make([]string, len(info.importSymbols))
+	for i, sym := range info.importSymbols {
+		normalized[i] = machoanalyzer.NormalizeSymbolName(sym)
+	}
+
+	syscalls, err := v.libSystemCache.GetSyscallInfos(record.DynLibDeps, normalized, info.hasLibSystemLoadCmd)
+	return syscalls, info.architecture, err
+}
+
+// machoAnalysisInfo holds the results of a Mach-O load-command inspection.
+type machoAnalysisInfo struct {
+	// importSymbols is the list of UND symbols from the Mach-O symbol table.
+	importSymbols []string
+	// hasLibSystemLoadCmd is true when any LC_LOAD_DYLIB entry names a
+	// libSystem-family library (/usr/lib/libSystem.B.dylib or libsystem_kernel.dylib).
+	hasLibSystemLoadCmd bool
+	// architecture is the arch string derived from the Mach-O CPU type (e.g. "arm64", "x86_64").
+	architecture string
+}
+
+// machoCPUToArchName converts a macho.Cpu constant to the architecture name
+// used in SyscallAnalysisResultCore.Architecture (matching the ELF convention).
+func machoCPUToArchName(cpu macho.Cpu) string {
+	switch cpu {
+	case macho.CpuArm64:
+		return archNameArm64
+	case macho.CpuAmd64:
+		return "x86_64"
+	default:
+		return cpu.String()
+	}
+}
+
+// machoFatMagicLE and machoFatCigamLE are the Mach-O fat-header magic values
+// as seen after decoding the first 4 bytes with binary.LittleEndian.Uint32.
+// A real fat header written on disk as big-endian 0xCAFEBABE decodes to
+// 0xBEBAFECA, while the byte-swapped form 0xBEBAFECA decodes to 0xCAFEBABE.
+const (
+	machoFatMagicLE = uint32(0xBEBAFECA)
+	machoFatCigamLE = uint32(0xCAFEBABE)
+)
+
+// archNameArm64 is the canonical architecture string for Apple Silicon (arm64).
+const archNameArm64 = "arm64"
+
+// nativeMachoCPU returns the macho.Cpu constant for the current runtime.GOARCH.
+// Returns an error for unrecognised architectures to prevent silent wrong-slice
+// selection in fat binaries — a security-critical mismatch.
+// Add a new case here whenever a new macOS/Go architecture is supported.
+func nativeMachoCPU() (macho.Cpu, error) {
+	switch runtime.GOARCH {
+	case "arm64":
+		return macho.CpuArm64, nil
+	case "amd64":
+		return macho.CpuAmd64, nil
+	default:
+		return 0, fmt.Errorf("%w: %s", ErrUnsupportedGOARCH, runtime.GOARCH)
+	}
+}
+
+// nativeOrArm64Slice returns the Fat arch slice that matches nativeCPU,
+// falling back to arm64 if the native arch is not present.
+// Returns nil when neither nativeCPU nor arm64 is present in the fat binary.
+func nativeOrArm64Slice(fat *macho.FatFile, nativeCPU macho.Cpu) *macho.File {
+	var arm64Slice *macho.File
+	for i := range fat.Arches {
+		cpu := fat.Arches[i].Cpu
+		if cpu == nativeCPU {
+			return fat.Arches[i].File
+		}
+		if cpu == macho.CpuArm64 {
+			arm64Slice = fat.Arches[i].File
+		}
+	}
+	return arm64Slice
+}
+
+// extractMachoSliceInfo extracts imported symbols and libSystem load-command
+// presence from an already-parsed *macho.File slice.
+func extractMachoSliceInfo(mf *macho.File) *machoAnalysisInfo {
+	syms, err := mf.ImportedSymbols()
+	if err != nil {
+		// debug/macho returns FormatError when Symtab is nil (e.g. stripped binaries).
+		// Return an empty slice so the caller can distinguish "is a Mach-O but has no
+		// imports" from "not a Mach-O" (which returns nil).
+		syms = []string{} //nolint:nilerr // FormatError for missing Symtab is not fatal
+	}
+
+	hasLibSystem := false
+	if libs, libErr := mf.ImportedLibraries(); libErr == nil {
+		for _, lib := range libs {
+			if lib == "/usr/lib/libSystem.B.dylib" || filepath.Base(lib) == "libsystem_kernel.dylib" {
+				hasLibSystem = true
+				break
+			}
+		}
+	}
+
+	return &machoAnalysisInfo{
+		importSymbols:       syms,
+		hasLibSystemLoadCmd: hasLibSystem,
+		architecture:        machoCPUToArchName(mf.Cpu),
+	}
+}
+
+// getMachoAnalysisInfo opens filePath as a Mach-O file, extracts imported symbols,
+// and checks whether any LC_LOAD_DYLIB entry names a libSystem-family library.
+// Handles both single-arch and Fat/universal binaries; for Fat binaries the native
+// GOARCH slice is used (arm64 as fallback). Returns nil, nil for non-Mach-O files.
+func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnalysisInfo, error) {
+	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	// Read the first 4 bytes to distinguish Fat binaries from single-arch Mach-O.
+	// macho.NewFile and macho.NewFatFile both use io.ReaderAt (absolute offsets),
+	// so sequential read position does not affect them.
+	var magicBuf [4]byte
+	if _, err := io.ReadFull(f, magicBuf[:]); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, nil // file shorter than 4 bytes — not Mach-O
+		}
+		return nil, err
+	}
+	magic := binary.LittleEndian.Uint32(magicBuf[:])
+
+	if magic == machoFatMagicLE || magic == machoFatCigamLE {
+		fat, err := macho.NewFatFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Fat Mach-O: %w", err)
+		}
+		defer func() { _ = fat.Close() }()
+
+		nativeCPU, err := nativeMachoCPU()
+		if err != nil {
+			return nil, err
+		}
+		slice := nativeOrArm64Slice(fat, nativeCPU)
+		if slice == nil {
+			// No matching slice found; treat as non-Mach-O for analysis purposes.
+			return nil, nil
+		}
+		return extractMachoSliceInfo(slice), nil
+	}
+
+	mf, err := macho.NewFile(f)
+	if err != nil {
+		// Non-Mach-O file such as ELF: skip it.
+		return nil, nil //nolint:nilerr // Mach-O parse failure means a non-Mach-O file
+	}
+	defer func() { _ = mf.Close() }()
+
+	return extractMachoSliceInfo(mf), nil
+}
+
+// analyzeELFSyscalls performs ELF syscall analysis on the given file path and sets
 // record.SyscallAnalysis. It is called from the store.Update() callback in
 // updateAnalysisRecord. Always writes record.SyscallAnalysis (nil for non-ELF
 // files or ELF with no detected syscalls) to clear stale values from prior runs.
 // Fatal errors are returned to prevent the record from being saved.
-func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string) error {
+func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath string) error {
 	if v.syscallAnalyzer == nil && v.libcCache == nil {
 		return nil
 	}
 
-	// Step A: Open the target binary as an ELF file.
+	// Open the target binary as an ELF file; skip non-ELF files silently.
 	elfFile, elfErr := openELFFile(v.fileSystem, filePath)
 	if elfErr != nil {
 		if errors.Is(elfErr, errNotELF) {
@@ -774,7 +1051,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 	}
 	defer func() { _ = elfFile.Close() }()
 
-	// Step B: libc import symbol matching via cache.
+	// Match imported symbols against the libc syscall cache.
 	var libcSyscalls []common.SyscallInfo
 	if v.libcCache != nil && len(record.DynLibDeps) > 0 {
 		if libcEntry := findLibcEntry(record.DynLibDeps); libcEntry != nil {
@@ -794,7 +1071,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 		}
 	}
 
-	// Step C: Direct syscall instruction analysis.
+	// Scan ELF instructions directly for syscall invocations.
 	var directSyscalls []common.SyscallInfo
 	var directArgEvalResults []common.SyscallArgEvalResult
 	if v.syscallAnalyzer != nil {
@@ -809,8 +1086,7 @@ func (v *Validator) analyzeSyscalls(record *fileanalysis.Record, filePath string
 		}
 	}
 
-	// Step D: Merge and set SyscallAnalysis.
-	// Always assign (including nil) to overwrite any stale value from a previous record run.
+	// Merge results and write SyscallAnalysis; always assign to overwrite any stale value.
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
@@ -931,7 +1207,7 @@ func elfMachineToArchName(machine elf.Machine) string {
 	case elf.EM_X86_64:
 		return "x86_64"
 	case elf.EM_AARCH64:
-		return "arm64"
+		return archNameArm64
 	default:
 		return machine.String()
 	}

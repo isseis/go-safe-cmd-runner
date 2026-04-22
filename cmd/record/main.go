@@ -151,6 +151,15 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fv.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAnalyzer))
+
+		// Inject MachoLibSystemAdapter for Mach-O libSystem import-symbol matching.
+		machoCacheDir := filepath.Join(cfg.hashDir, libcCacheSubDir)
+		machoCacheMgr, machoCacheErr := libccache.NewMachoLibSystemCacheManager(machoCacheDir)
+		if machoCacheErr != nil {
+			fmt.Fprintf(stderr, "Error: Failed to initialize machoLibSystem cache: %v\n", machoCacheErr) //nolint:errcheck
+			return 1
+		}
+		fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
 	}
 
 	return processFiles(validator, cfg, stdout, stderr)

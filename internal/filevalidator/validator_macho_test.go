@@ -4,7 +4,9 @@ package filevalidator
 
 import (
 	"bytes"
+	"debug/macho"
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,6 +109,129 @@ func buildArm64MachOBinary(t *testing.T, instructions []uint32) []byte {
 	return buf.Bytes()
 }
 
+// buildX86_64MachOBinary builds a minimal x86_64 Mach-O binary in memory.
+// textBytes is placed in __TEXT,__text at virtual address 0x100000000.
+func buildX86_64MachOBinary(t *testing.T, textBytes []byte) []byte {
+	t.Helper()
+
+	const (
+		headerSize   = 32
+		segCmdSize   = 72
+		sectSize     = 80
+		textOffset   = headerSize + segCmdSize + sectSize
+		lcSegment64  = uint32(0x19)
+		mhExecute    = uint32(0x2)
+		cpuX86_64    = uint32(0x01000007)
+		cpuSubX86All = uint32(3)
+		vmBase       = uint64(0x100000000)
+	)
+
+	sectDataSize := uint32(len(textBytes))
+
+	var buf bytes.Buffer
+	pu32 := func(v uint32) {
+		b := [4]byte{}
+		binary.LittleEndian.PutUint32(b[:], v)
+		buf.Write(b[:])
+	}
+	pu64 := func(v uint64) {
+		b := [8]byte{}
+		binary.LittleEndian.PutUint64(b[:], v)
+		buf.Write(b[:])
+	}
+	pad16 := func(s string) {
+		b := [16]byte{}
+		copy(b[:], s)
+		buf.Write(b[:])
+	}
+
+	// mach_header_64 (32 bytes)
+	pu32(0xFEEDFACF)
+	pu32(cpuX86_64)
+	pu32(cpuSubX86All)
+	pu32(mhExecute)
+	pu32(1)
+	pu32(uint32(segCmdSize + sectSize))
+	pu32(0)
+	pu32(0)
+
+	// segment_command_64 (72 bytes)
+	pu32(lcSegment64)
+	pu32(uint32(segCmdSize + sectSize))
+	pad16("__TEXT")
+	pu64(vmBase)
+	pu64(0x1000)
+	pu64(uint64(textOffset))
+	pu64(uint64(sectDataSize))
+	pu32(7)
+	pu32(5)
+	pu32(1)
+	pu32(0)
+
+	// section_64 (80 bytes)
+	pad16("__text")
+	pad16("__TEXT")
+	pu64(vmBase)
+	pu64(uint64(sectDataSize))
+	pu32(uint32(textOffset))
+	pu32(2)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+
+	buf.Write(textBytes)
+
+	require.Equal(t, textOffset+int(sectDataSize), buf.Len())
+	return buf.Bytes()
+}
+
+// buildFatMachOBinary combines multiple Mach-O arch binaries into a Fat/universal
+// binary. cputype and cpusubtype are read directly from each arch's header bytes.
+func buildFatMachOBinary(t *testing.T, arches [][]byte) []byte {
+	t.Helper()
+	require.NotEmpty(t, arches)
+
+	nArch := len(arches)
+	headerSize := 8 + nArch*20
+
+	// Calculate 4-byte-aligned offsets for each arch slice.
+	offsets := make([]int, nArch)
+	offset := headerSize
+	for i, arch := range arches {
+		offset = (offset + 3) &^ 3
+		offsets[i] = offset
+		offset += len(arch)
+	}
+
+	buf := make([]byte, offset)
+
+	// Fat header is big-endian.
+	binary.BigEndian.PutUint32(buf[0:], 0xCAFEBABE)
+	binary.BigEndian.PutUint32(buf[4:], uint32(nArch))
+
+	pos := 8
+	for i, arch := range arches {
+		require.GreaterOrEqual(t, len(arch), 12, "arch %d too short", i)
+		// cputype/cpusubtype are at bytes [4:12] of the Mach-O header (little-endian).
+		cputype := binary.LittleEndian.Uint32(arch[4:8])
+		cpusubtype := binary.LittleEndian.Uint32(arch[8:12])
+
+		binary.BigEndian.PutUint32(buf[pos:], cputype)
+		binary.BigEndian.PutUint32(buf[pos+4:], cpusubtype)
+		binary.BigEndian.PutUint32(buf[pos+8:], uint32(offsets[i]))
+		binary.BigEndian.PutUint32(buf[pos+12:], uint32(len(arch)))
+		binary.BigEndian.PutUint32(buf[pos+16:], 2) // align: 4-byte
+		pos += 20
+
+		copy(buf[offsets[i]:], arch)
+	}
+
+	return buf
+}
+
 // writeTempBinary writes data to a file in the given directory and returns its path.
 func writeTempBinary(t *testing.T, dir string, name string, data []byte) string {
 	t.Helper()
@@ -137,11 +262,76 @@ func recordMachO(t *testing.T, binData []byte, stub *stubBinaryAnalyzer) *filean
 	return record
 }
 
-// TestBuildSVCSyscallAnalysis is a unit test for the buildSVCSyscallAnalysis helper.
-// It verifies that the returned SyscallAnalysisData has the correct fields.
-func TestBuildSVCSyscallAnalysis(t *testing.T) {
+// TestNativeMachoCPU verifies that nativeMachoCPU returns a non-error for the
+// current build architecture, confirming the switch covers it.
+func TestNativeMachoCPU(t *testing.T) {
+	cpu, err := nativeMachoCPU()
+	require.NoError(t, err, "current GOARCH must be a recognised macOS architecture")
+	assert.NotZero(t, cpu)
+}
+
+// TestNativeOrArm64Slice verifies slice selection logic without depending on
+// runtime.GOARCH: the fat binary has arm64 and x86_64 slices; selecting by
+// CpuArm64 returns the arm64 slice, by CpuAmd64 returns the x86_64 slice,
+// and by an unknown CPU falls back to arm64.
+func TestNativeOrArm64Slice(t *testing.T) {
+	// Build a minimal fat binary (arm64 + x86_64) in a temp file.
+	arm64Bytes := buildArm64MachOBinary(t, []uint32{nopEncodingU32})
+	x86Bytes := buildX86_64MachOBinary(t, []byte{0x90}) // NOP
+
+	fatBytes := buildFatMachOBinary(t, [][]byte{arm64Bytes, x86Bytes})
+	tmpFile := writeTempBinary(t, t.TempDir(), "fat.bin", fatBytes)
+
+	f, err := os.Open(tmpFile)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = f.Close() })
+
+	fat, err := macho.NewFatFile(f)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = fat.Close() })
+
+	t.Run("arm64_selected_for_CpuArm64", func(t *testing.T) {
+		slice := nativeOrArm64Slice(fat, macho.CpuArm64)
+		require.NotNil(t, slice)
+		assert.Equal(t, macho.CpuArm64, slice.Cpu)
+	})
+
+	t.Run("x86_64_selected_for_CpuAmd64", func(t *testing.T) {
+		slice := nativeOrArm64Slice(fat, macho.CpuAmd64)
+		require.NotNil(t, slice)
+		assert.Equal(t, macho.CpuAmd64, slice.Cpu)
+	})
+
+	t.Run("fallback_to_arm64_for_unknown_cpu", func(t *testing.T) {
+		// Use a CPU type absent from the fat binary; arm64 must be returned.
+		slice := nativeOrArm64Slice(fat, macho.Cpu(0xFFFF))
+		require.NotNil(t, slice)
+		assert.Equal(t, macho.CpuArm64, slice.Cpu)
+	})
+
+	t.Run("nil_when_no_matching_or_arm64_slice", func(t *testing.T) {
+		// Build a fat binary with only x86_64 and no arm64 slice.
+		fatX86Only := buildFatMachOBinary(t, [][]byte{x86Bytes})
+		tmpX86 := writeTempBinary(t, t.TempDir(), "fat_x86_only.bin", fatX86Only)
+		fx, err := os.Open(tmpX86)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = fx.Close() })
+		fatX86, err := macho.NewFatFile(fx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = fatX86.Close() })
+
+		slice := nativeOrArm64Slice(fatX86, macho.Cpu(0xFFFF))
+		assert.Nil(t, slice)
+	})
+}
+
+// TestBuildMachoSyscallAnalysisData_SVCOnly is a unit test for the buildMachoSyscallAnalysisData helper
+// when only svc entries are present. It verifies that the returned SyscallAnalysisData has the
+// correct fields for the svc-only case.
+func TestBuildMachoSyscallAnalysisData_SVCOnly(t *testing.T) {
 	addrs := []uint64{0x100000004, 0x10000000C}
-	result := buildSVCSyscallAnalysis(addrs)
+	svcEntries := buildSVCSyscallEntries(addrs)
+	result := buildMachoSyscallAnalysisData(svcEntries, nil, "arm64")
 
 	require.NotNil(t, result)
 	assert.Equal(t, "arm64", result.Architecture)
@@ -259,7 +449,7 @@ func TestUpdateAnalysisRecord_ELFNotAffected(t *testing.T) {
 	hashDir := filepath.Join(tempDir, "hashes")
 	require.NoError(t, os.MkdirAll(hashDir, 0o700))
 
-	// Plain text file: neither ELF nor Mach-O. analyzeSyscalls sets nil.
+	// Plain text file: neither ELF nor Mach-O. analyzeELFSyscalls sets nil.
 	// The Mach-O svc scan must also return nil (magic mismatch).
 	textPath := writeTempBinary(t, tempDir, "not_binary.txt", []byte("hello world"))
 
@@ -278,16 +468,15 @@ func TestUpdateAnalysisRecord_ELFNotAffected(t *testing.T) {
 		"SyscallAnalysis must remain nil for a non-Mach-O, non-ELF file")
 }
 
-// TestBuildSVCSyscallAnalysis_CommonSyscallInfo verifies that DetectedSyscalls use
-// common.SyscallInfo and the fields match the expected values from the spec.
-func TestBuildSVCSyscallAnalysis_CommonSyscallInfo(t *testing.T) {
+// TestBuildSVCSyscallEntries_CommonSyscallInfo verifies that buildSVCSyscallEntries produces
+// common.SyscallInfo entries with the expected field values from the spec.
+func TestBuildSVCSyscallEntries_CommonSyscallInfo(t *testing.T) {
 	addrs := []uint64{0x100000000}
-	result := buildSVCSyscallAnalysis(addrs)
+	entries := buildSVCSyscallEntries(addrs)
 
-	require.NotNil(t, result)
-	require.Len(t, result.DetectedSyscalls, 1)
+	require.Len(t, entries, 1)
 
-	sc := result.DetectedSyscalls[0]
+	sc := entries[0]
 	// Verify the type is common.SyscallInfo (zero-value assignment as type check).
 	_ = common.SyscallInfo{}
 	assert.Equal(t, -1, sc.Number, "Number must be -1 (undetermined)")
@@ -295,4 +484,261 @@ func TestBuildSVCSyscallAnalysis_CommonSyscallInfo(t *testing.T) {
 	assert.Equal(t, "direct_svc_0x80", sc.Source)
 	assert.False(t, sc.IsNetwork)
 	assert.Empty(t, sc.Name)
+}
+
+// ---- stubLibSystemCache for Section 5.2 tests ----
+
+// stubLibSystemCache is a test double for LibSystemCacheInterface.
+type stubLibSystemCache struct {
+	// infos is returned by GetSyscallInfos when err is nil.
+	infos []common.SyscallInfo
+	// err is returned by GetSyscallInfos when non-nil.
+	err error
+}
+
+func (s *stubLibSystemCache) GetSyscallInfos(
+	_ []fileanalysis.LibEntry,
+	_ []string,
+	_ bool,
+) ([]common.SyscallInfo, error) {
+	return s.infos, s.err
+}
+
+// recordMachOWithLibSystem records a synthetic Mach-O and injects the libSystem cache stub.
+func recordMachOWithLibSystem(
+	t *testing.T,
+	binData []byte,
+	stub *stubBinaryAnalyzer,
+	libsys LibSystemCacheInterface,
+) (*fileanalysis.Record, error) {
+	t.Helper()
+	tempDir := safeTempDir(t)
+	hashDir := filepath.Join(tempDir, "hashes")
+	require.NoError(t, os.MkdirAll(hashDir, 0o700))
+
+	binPath := writeTempBinary(t, tempDir, "target.bin", binData)
+
+	v, err := New(&SHA256{}, hashDir)
+	require.NoError(t, err)
+	if stub != nil {
+		v.SetBinaryAnalyzer(stub)
+	}
+	if libsys != nil {
+		v.SetLibSystemCache(libsys)
+	}
+
+	_, _, recErr := v.SaveRecord(binPath, false)
+	if recErr != nil {
+		return nil, recErr
+	}
+
+	record, loadErr := v.LoadRecord(binPath)
+	require.NoError(t, loadErr)
+	return record, nil
+}
+
+// TestUpdateAnalysisRecord_LibSystemImportOnly verifies that when libSystem
+// returns entries and no svc is found, SyscallAnalysis is populated with
+// Source=libsystem_symbol_import and Location=0.
+func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
+	libsysEntries := []common.SyscallInfo{
+		{
+			Number:              97,
+			Name:                "socket",
+			IsNetwork:           true,
+			Location:            0,
+			DeterminationMethod: "lib_cache_match",
+			Source:              "libsystem_symbol_import",
+		},
+	}
+	stub := &stubLibSystemCache{infos: libsysEntries}
+
+	v, err := New(&SHA256{}, safeTempDir(t))
+	require.NoError(t, err)
+	v.SetLibSystemCache(stub)
+
+	// Build a record with DynLibDeps so analyzeLibSystemImports is not skipped.
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "/usr/lib/libSystem.B.dylib"},
+		},
+	}
+
+	// Write a minimal arm64 Mach-O as the analysis target (no svc).
+	tempDir := safeTempDir(t)
+	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
+
+	libsys, _, err := v.analyzeLibSystemImports(record, binPath)
+	require.NoError(t, err)
+	require.Len(t, libsys, 1)
+
+	sc := libsys[0]
+	assert.Equal(t, 97, sc.Number)
+	assert.Equal(t, "socket", sc.Name)
+	assert.Equal(t, uint64(0), sc.Location, "libSystem entries must have Location=0")
+	assert.Equal(t, "libsystem_symbol_import", sc.Source)
+	assert.True(t, sc.IsNetwork)
+}
+
+// TestUpdateAnalysisRecord_SVCAndLibSystemMerged verifies that buildMachoSyscallAnalysisData
+// merges svc and libSystem entries correctly, sorted by Number.
+func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
+	svcEntries := buildSVCSyscallEntries([]uint64{0x100000000})
+	libsysEntries := []common.SyscallInfo{
+		{
+			Number:              98,
+			Name:                "connect",
+			IsNetwork:           true,
+			Location:            0,
+			DeterminationMethod: "lib_cache_match",
+			Source:              "libsystem_symbol_import",
+		},
+	}
+
+	result := buildMachoSyscallAnalysisData(svcEntries, libsysEntries, "arm64")
+	require.NotNil(t, result)
+
+	// svc entry (Number=-1) + libSystem entry (Number=98) = 2 entries.
+	require.Len(t, result.DetectedSyscalls, 2)
+
+	// svc entry must come first (Number=-1 < 98).
+	first := result.DetectedSyscalls[0]
+	assert.Equal(t, -1, first.Number)
+	assert.Equal(t, "direct_svc_0x80", first.Source)
+
+	second := result.DetectedSyscalls[1]
+	assert.Equal(t, 98, second.Number)
+	assert.Equal(t, "libsystem_symbol_import", second.Source)
+
+	// Warning must be set because svc was found.
+	require.Len(t, result.AnalysisWarnings, 1)
+	assert.Contains(t, result.AnalysisWarnings[0], "svc #0x80")
+}
+
+// TestUpdateAnalysisRecord_LibSystemError verifies that when the libSystem cache
+// returns an error and DynLibDeps is populated, analyzeLibSystemImports propagates it.
+func TestUpdateAnalysisRecord_LibSystemError(t *testing.T) {
+	stubErr := errors.New("libSystem cache read failure")
+	stub := &stubLibSystemCache{err: stubErr}
+
+	// Build a minimal arm64 Mach-O so getMachoImportSymbols succeeds (returns empty list).
+	// analyzeLibSystemImports skips when DynLibDeps is empty, so inject a mock record directly.
+	v, err := New(&SHA256{}, safeTempDir(t))
+	require.NoError(t, err)
+	v.SetLibSystemCache(stub)
+
+	record := &fileanalysis.Record{
+		DynLibDeps: []fileanalysis.LibEntry{
+			{SOName: "/usr/lib/libSystem.B.dylib"},
+		},
+	}
+
+	// Write a minimal Mach-O so getMachoImportSymbols has a file to open.
+	tempDir := safeTempDir(t)
+	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
+
+	_, _, libsysErr := v.analyzeLibSystemImports(record, binPath)
+	// The Mach-O has no imports (no symbol table), so GetSyscallInfos is called with empty list.
+	// The stub returns the injected error.
+	require.Error(t, libsysErr, "analyzeLibSystemImports must propagate the cache error")
+}
+
+// TestUpdateAnalysisRecord_LibSystemNilCache verifies that when no libSystem cache
+// is injected, analyzeLibSystemImports returns nil and SyscallAnalysis is nil
+// (assuming no svc is found either).
+func TestUpdateAnalysisRecord_LibSystemNilCache(t *testing.T) {
+	binData := buildArm64MachOBinary(t, []uint32{nopEncodingU32})
+
+	record, err := recordMachOWithLibSystem(t, binData, nil, nil)
+	require.NoError(t, err)
+	assert.Nil(t, record.SyscallAnalysis, "SyscallAnalysis must be nil when no cache and no svc")
+}
+
+// TestMergeMachoSyscallInfos_BothNil verifies that merging two nil slices returns nil.
+func TestMergeMachoSyscallInfos_BothNil(t *testing.T) {
+	result := mergeMachoSyscallInfos(nil, nil)
+	assert.Nil(t, result)
+}
+
+// TestMergeMachoSyscallInfos_SVCOnly verifies that svc-only merge returns svc entries.
+func TestMergeMachoSyscallInfos_SVCOnly(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{Number: -1, Source: "direct_svc_0x80", Location: 0x100000000},
+	}
+	result := mergeMachoSyscallInfos(svcEntries, nil)
+	require.Len(t, result, 1)
+	assert.Equal(t, -1, result[0].Number)
+}
+
+// TestMergeMachoSyscallInfos_LibSysOnly verifies that libSystem-only merge returns entries.
+func TestMergeMachoSyscallInfos_LibSysOnly(t *testing.T) {
+	libsysEntries := []common.SyscallInfo{
+		{Number: 97, Source: "libsystem_symbol_import"},
+	}
+	result := mergeMachoSyscallInfos(nil, libsysEntries)
+	require.Len(t, result, 1)
+	assert.Equal(t, 97, result[0].Number)
+}
+
+// TestMergeMachoSyscallInfos_SameNumberSortsByLocationThenSource verifies that
+// entries sharing the same Number are ordered by (Location, Source) so that
+// JSON output is deterministic across runs.
+//
+// The primary case is Number=-1 (unresolved svc #0x80), where multiple svc
+// instructions can appear at different addresses in the same binary.
+func TestMergeMachoSyscallInfos_SameNumberSortsByLocationThenSource(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{Number: -1, Location: 0x100000020, Source: "z_source"},
+		{Number: -1, Location: 0x100000010, Source: "b_source"},
+		{Number: -1, Location: 0x100000010, Source: "a_source"},
+	}
+	result := mergeMachoSyscallInfos(svcEntries, nil)
+	require.Len(t, result, 3)
+	// Secondary sort key: Location ascending.
+	assert.Equal(t, uint64(0x100000010), result[0].Location)
+	assert.Equal(t, uint64(0x100000010), result[1].Location)
+	assert.Equal(t, uint64(0x100000020), result[2].Location)
+	// Tertiary sort key: Source ascending (for equal Number and Location).
+	assert.Equal(t, "a_source", result[0].Source)
+	assert.Equal(t, "b_source", result[1].Source)
+}
+
+// TestMergeMachoSyscallInfos_MixedNumbersSortedFirst verifies that entries with
+// different Number values are sorted by Number before Location or Source are
+// considered.
+func TestMergeMachoSyscallInfos_MixedNumbersSortedFirst(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{Number: 98, Location: 0x100000000, Source: "s1"},
+		{Number: -1, Location: 0x100000020, Source: "s2"},
+		{Number: 97, Location: 0x100000010, Source: "s3"},
+	}
+	result := mergeMachoSyscallInfos(svcEntries, nil)
+	require.Len(t, result, 3)
+	assert.Equal(t, -1, result[0].Number, "Number=-1 sorts smallest")
+	assert.Equal(t, 97, result[1].Number)
+	assert.Equal(t, 98, result[2].Number)
+}
+
+// TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC verifies that
+// AnalysisWarnings is populated only when svc entries are present, and that
+// non-network libSystem entries are filtered out of DetectedSyscalls.
+func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
+	// IsNetwork is false (default): non-network libSystem entry must be filtered out.
+	libsysEntries := []common.SyscallInfo{
+		{Number: 97, Source: "libsystem_symbol_import"},
+	}
+
+	// No svc entries: no warning, non-network libsys entry filtered out.
+	result := buildMachoSyscallAnalysisData(nil, libsysEntries, "arm64")
+	assert.Empty(t, result.AnalysisWarnings, "no warning when no svc entries")
+	assert.Empty(t, result.DetectedSyscalls, "non-network libsys entry must be filtered")
+
+	// With svc entries: warning present; svc entry (Number=-1) retained, non-network libsys filtered.
+	svcEntries := []common.SyscallInfo{
+		{Number: -1, Source: "direct_svc_0x80"},
+	}
+	result = buildMachoSyscallAnalysisData(svcEntries, libsysEntries, "arm64")
+	assert.Len(t, result.AnalysisWarnings, 1)
+	require.Len(t, result.DetectedSyscalls, 1, "only svc entry (Number=-1) should remain")
+	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
 }

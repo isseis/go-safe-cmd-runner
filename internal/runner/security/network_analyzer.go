@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
@@ -208,7 +209,13 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 						"path", cmdPath)
 					return true, true
 				}
-				// No svc signal: fall through to SymbolAnalysis-based decision.
+				// Check whether any non-svc detected syscall is a network syscall.
+				if syscallAnalysisHasNetworkSignal(svcResult) {
+					slog.Info("SyscallAnalysis cache indicates network syscall",
+						"path", cmdPath)
+					return true, false
+				}
+				// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
 			case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
 				// Schema v15+ guarantee: svc scan was performed and found nothing
 				// (old v14 records are rejected earlier as SchemaVersionMismatchError).
@@ -274,7 +281,24 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 		return false
 	}
 	for _, s := range result.DetectedSyscalls {
-		if s.DeterminationMethod == "direct_svc_0x80" {
+		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
+			return true
+		}
+	}
+	return false
+}
+
+// syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisResult
+// contains any detected syscall classified as a network syscall (IsNetwork == true)
+// that was not identified as a direct svc #0x80 instruction.
+// Direct svc #0x80 entries are handled separately by syscallAnalysisHasSVCSignal
+// (which escalates to high risk) and are therefore excluded here.
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, s := range result.DetectedSyscalls {
+		if s.IsNetwork && s.DeterminationMethod != common.DeterminationMethodDirectSVC0x80 {
 			return true
 		}
 	}

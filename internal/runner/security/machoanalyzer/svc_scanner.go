@@ -90,14 +90,14 @@ func isMachOMagicAll(b []byte) bool {
 	return false
 }
 
-// CollectSVCAddressesFromFile opens the file at filePath using fs, checks
-// whether it is a Mach-O binary, and collects virtual addresses of svc #0x80
-// instructions from arm64 slices.
+// ScanSVCAddrs opens the file at filePath using fs, checks whether it is a
+// Mach-O binary, and returns the virtual addresses of svc #0x80 instructions
+// found in arm64 slices.
 //
 // For Fat binaries only arm64 slices are scanned; other architecture slices
 // are skipped.  Returns nil, nil for non-Mach-O files or when no svc #0x80
 // is detected.  Returns an error on I/O failures or Mach-O parse failures.
-func CollectSVCAddressesFromFile(filePath string, fs safefileio.FileSystem) ([]uint64, error) {
+func ScanSVCAddrs(filePath string, fs safefileio.FileSystem) ([]uint64, error) {
 	f, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)

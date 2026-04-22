@@ -1,0 +1,65 @@
+name: macOS dyld offset verification
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'internal/machodylib/**'
+      - '.github/workflows/macos-dyld.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'internal/machodylib/**'
+      - '.github/workflows/macos-dyld.yml'
+  schedule:
+    # Every Monday 09:00 UTC — catches upstream dyld_cache_format.h changes
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  dyld-header-sync:
+    name: dyld_cache_format.h upstream sync check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compare committed headers against apple-oss-distributions/dyld
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for file in mach-o/dyld_cache_format.h mach-o/fixup-chains.h; do
+            echo "Checking $file ..."
+            gh api "repos/apple-oss-distributions/dyld/contents/include/$file" \
+              --jq '.content' | base64 -d > /tmp/upstream_$(basename $file)
+            committed="internal/machodylib/testdata/dyld_headers/$file"
+            if ! cmp -s "$committed" /tmp/upstream_$(basename $file); then
+              echo "FAIL: $file has changed upstream."
+              echo "Update testdata/dyld_headers/$file, review dyld_offsets_test.go"
+              echo "and dyld_extractor_darwin.go constants, then commit."
+              diff "$committed" /tmp/upstream_$(basename $file) || true
+              exit 1
+            fi
+            echo "OK: $file matches upstream."
+          done
+
+  dyld-offset-verification:
+    name: dyld struct layout verification (macOS + cgo)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run machodylib tests including cgo struct layout verification
+        env:
+          CGO_ENABLED: 1
+        run: |
+          go test -tags test -v -race ./internal/machodylib/...

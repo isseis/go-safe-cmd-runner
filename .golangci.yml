@@ -68,6 +68,7 @@ linters:
             - golang.org/x/arch
             - golang.org/x/term
 
+
         main:
           files:
             - $all

@@ -112,9 +112,13 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables
+.PHONY: all lint build run clean test test-ci test-all benchmark coverage coverage-internal hash hash-integration-test integration-test slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test unit-test e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
+
+setuid: all
+	$(SUDOCMD) $(CHOWN) root:$(ROOT_GROUP) $(BINARY_RUNNER)
+	$(SUDOCMD) $(CHMOD) u+s $(BINARY_RUNNER)
 
 lint:
 	$(GOLINT)
@@ -144,8 +148,6 @@ $(BINARY_VERIFY): $(GO_SOURCES)
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
 	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
-	$(SUDOCMD) $(CHOWN) root:$(ROOT_GROUP) $@
-	$(SUDOCMD) $(CHMOD) u+s $@
 
 # Test binary build rules
 $(BINARY_TEST_RECORD): $(GO_SOURCES)
@@ -562,6 +564,10 @@ SYSCALL_TABLE_OUTPUTS := \
 	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
 	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
 
+DYLD_HEADERS_BASE_URL ?= https://raw.githubusercontent.com/apple-oss-distributions/dyld/main/include/mach-o
+DYLD_HEADERS_DIR := internal/machodylib/testdata/dyld_headers/mach-o
+DYLD_HEADERS := dyld_cache_format.h fixup-chains.h
+
 # generate-syscall-tables is a manual-only target.
 # The generated files are committed to the repository and do not need to be
 # regenerated during normal builds. Defining a file-level rule for
@@ -583,6 +589,20 @@ generate-syscall-tables:
 	fi
 	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --x86-header $(X86_SYSCALL_HEADER) --arm64-header $(ARM64_SYSCALL_HEADER)
 	$(GOFUMPTCMD) -w $(SYSCALL_TABLE_OUTPUTS)
+
+# Fetch Mach-O dyld headers from apple-oss-distributions/dyld without normalization.
+# Files are stored byte-for-byte so CI can compare exact content.
+fetch-dyld-headers:
+	@if ! command -v curl >/dev/null 2>&1; then \
+		echo "Error: curl is required but not found in PATH"; \
+		exit 1; \
+	fi
+	@$(MKDIR) $(DYLD_HEADERS_DIR)
+	@for file in $(DYLD_HEADERS); do \
+		echo "Fetching $$file ..."; \
+		curl -fsSL "$(DYLD_HEADERS_BASE_URL)/$$file" -o "$(DYLD_HEADERS_DIR)/$$file"; \
+	done
+	@echo "Updated dyld headers in $(DYLD_HEADERS_DIR)"
 
 deadcode:
 	deadcode ./cmd/record ./cmd/runner ./cmd/verify
