@@ -53,8 +53,10 @@ macOS arm64 と ELF arm64 の主な差異：
 | X16 | macOS arm64 における syscall 番号レジスタ |
 | BSD prefix | macOS BSD syscall 番号のクラス識別子（0x2000000）。X16 の実際の値から差し引いて syscall 番号を得る |
 | Pass 1 | `svc #0x80` を直接スキャンし X16 後方スキャンで syscall 番号を解析するパス |
-| Pass 2 | Go ラッパー関数（`syscall.RawSyscall` 等）への `BL` 命令を検出し第1引数から syscall 番号を解析するパス |
-| Go runtime スタブ | X16 をスタックから間接ロードする Go ランタイムの syscall ディスパッチ関数。第1引数として syscall 番号を受け取る |
+| Pass 2 | Go ラッパー関数（`syscall.Syscall` 等）への `BL` 命令を検出し呼び出しサイトを後方スキャンして syscall 番号を解析するパス |
+| Go runtime スタブ | X16 をスタックから間接ロード（`ldr x16, [sp, #N]`）する Go ランタイムの syscall ディスパッチ関数。syscall 番号は呼び出し元からスタック経由で渡される（旧スタック ABI）|
+| 旧スタック ABI | Go アセンブリスタブが使う引数渡し規約。第1引数 `trap`（syscall 番号）は X0 ではなく呼び出し直前の `[SP, #8]` に格納される（`SP+0` は戻りアドレス用スロット）。`syscall.{,Raw}Syscall{,6,9}` はすべてこの ABI を使う |
+| スタック経由渡し | 旧スタック ABI を使う Go スタブにおける syscall 番号の受け渡し方式。Pass 1 では解析不能（`unknown:indirect_setting`）となるため、Pass 2 の呼び出しサイト解析で補完する |
 | `knownSyscallImpls` | Pass 1 から除外する Go runtime スタブ関数の集合（ELF 版と対応する概念）|
 | `MacOSSyscallTable` | macOS BSD syscall 番号とネットワーク関連フラグのマッピングテーブル（`libccache` パッケージに既存実装）|
 
@@ -71,7 +73,9 @@ macOS arm64 と ELF arm64 の主な差異：
 - `MOVZ X16, #imm`（16 bit 以下の値。BSD prefix を含まない小さいテスト値や prefix 除去後の値の確認用）
 - `MOVZ X16, #hi, LSL #16` + `MOVK X16, #lo`（32 bit 値の組み合わせ）
 
-これらのパターン以外（`ldr x16, [sp, #N]` 等の間接ロード）は `DeterminationMethod = "unknown:indirect_setting"` として記録すること。
+これらのパターン以外（`ldr x16, [sp, #N]` 等のスタック経由ロード・間接ロード）は `DeterminationMethod = "unknown:indirect_setting"` として記録すること。
+
+`ldr x16, [sp, #N]` パターンは Go の旧スタック ABI を使う syscall スタブ（`syscall.Syscall` 等）の内部でも発生する。これらの既知スタブは FR-3.1.2 の除外処理が先行するため Pass 1 の解析対象にはならず、代わりに Pass 2 の呼び出しサイト解析（FR-3.2）で syscall 番号を特定する。
 
 制御フロー命令（`B`, `BL`, `BLR`, `BR`, `RET`, `CBZ`, `CBNZ`, `TBZ`, `TBNZ`）を後方スキャンの境界とすること。
 
@@ -81,8 +85,8 @@ macOS arm64 と ELF arm64 の主な差異：
 
 Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclntab から Go 関数名テーブルを構築し、以下の既知 Go syscall スタブ実装関数のアドレス範囲内にある `svc #0x80` を Pass 1 の直接解析から除外すること：
 
-- `syscall.Syscall`, `syscall.Syscall6`
-- `syscall.RawSyscall`, `syscall.RawSyscall6`
+- `syscall.Syscall`, `syscall.Syscall6`, `syscall.Syscall9`
+- `syscall.RawSyscall`, `syscall.RawSyscall6`, `syscall.RawSyscall9`
 - `internal/runtime/syscall.Syscall6` 等の Go バージョン依存スタブ名
 - その他、ELF 版 `knownSyscallImpls` に対応する macOS arm64 のスタブ関数
 
@@ -102,11 +106,11 @@ Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclnt
 
 #### FR-3.2.1: Go ラッパー関数の特定
 
-`.gopclntab` セクションが存在する場合、以下の既知 Go syscall ラッパー関数のアドレスを解決すること（ELF 版 `knownGoWrappers` に対応する macOS arm64 版）：
+`.gopclntab` セクションが存在する場合、以下の既知 Go syscall ラッパー関数のアドレスを解決すること（ELF 版 `knownGoWrappers` に対応する macOS arm64 版）。これらはすべて旧スタック ABI を使うため、Pass 1 の `knownSyscallImpls` 除外対象と同一集合である。
 
-- `syscall.Syscall`, `syscall.Syscall6`
-- `syscall.RawSyscall`, `syscall.RawSyscall6`
-- `runtime.syscall`, `runtime.syscall6`
+- `syscall.Syscall`, `syscall.Syscall6`, `syscall.Syscall9`
+- `syscall.RawSyscall`, `syscall.RawSyscall6`, `syscall.RawSyscall9`
+- `runtime.syscall`, `runtime.syscall6`（Go バージョン依存の内部スタブ）
 
 #### FR-3.2.2: 呼び出しサイトでの syscall 番号解析
 
@@ -191,9 +195,9 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 
 ### AC-3: Pass 2 - Go ラッパー呼び出しサイト解析
 
-- [ ] `.gopclntab` が存在する Go バイナリに対して既知 Go ラッパー関数のアドレスが解決されること
-- [ ] 既知 Go ラッパー（`syscall.RawSyscall` 等）への `BL` 命令が検出されること
-- [ ] 呼び出しサイトで `[SP, #8]` へのストア命令と xN への即値設定を後方スキャンすることにより第1引数（syscall 番号）が解析されること
+- [ ] `.gopclntab` が存在する Go バイナリに対して既知 Go ラッパー関数（`syscall.{,Raw}Syscall{,6,9}` 等）のアドレスが解決されること
+- [ ] 既知 Go ラッパーへの `BL` 命令が検出されること
+- [ ] 呼び出しサイトで `[SP, #8]` へのストア命令（旧スタック ABI における第1引数スロット）と xN への即値設定を後方スキャンすることにより syscall 番号が解析されること
 - [ ] 解析された syscall 番号に対して `MacOSSyscallTable` でネットワーク判定が実施されること
 - [ ] `.gopclntab` が存在しないバイナリでは Pass 2 がスキップされること
 
@@ -232,11 +236,14 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 
 ### 6.2 Pass 2 テスト（ユニットテスト）
 
+旧スタック ABI（`[SP, #8]` = 第1引数スロット）の解析を検証する。
+
 | テストケース | 検証内容 |
 |-------------|---------|
-| `MOV xN, #98` + `STP xN, ..., [SP, #8]` + `BL syscall.RawSyscall` | `Number=98`, `IsNetwork=true`, `DeterminationMethod="go_wrapper"` |
-| `MOV xN, #3` + `STR xN, [SP, #8]` + `BL syscall.RawSyscall` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
-| `[SP, #8]` への書き込みが間接ロード由来の `BL syscall.RawSyscall` | `Number=-1`, `DeterminationMethod="unknown:indirect_setting"` |
+| `MOV xN, #98` + `STP xN, ..., [SP, #8]` + `BL syscall.Syscall` | `Number=98`, `IsNetwork=true`, `DeterminationMethod="go_wrapper"` |
+| `MOV xN, #3` + `STR xN, [SP, #8]` + `BL syscall.Syscall6` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
+| `MOV xN, #49` + `STP xN, ..., [SP, #8]` + `BL syscall.RawSyscall` | `Number=49`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
+| `[SP, #8]` への書き込みが間接ロード由来の `BL syscall.RawSyscall6` | `Number=-1`, `DeterminationMethod="unknown:indirect_setting"` |
 | `.gopclntab` なしバイナリ | Pass 2 がスキップされること |
 
 ### 6.3 リスク判定テスト
