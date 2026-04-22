@@ -2551,8 +2551,8 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
 	})
 
-	t.Run("ErrNoNetworkSymbolAnalysis (no syscallStore) → false, false (static binary)", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
+	t.Run("nil (no syscallStore) → false, false (static binary)", func(t *testing.T) {
+		store := &stubNetworkSymbolStore{data: nil}
 		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "static binary with no svc should return false")

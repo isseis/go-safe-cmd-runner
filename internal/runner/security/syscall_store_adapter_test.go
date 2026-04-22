@@ -49,7 +49,6 @@ func TestNewELFSyscallStoreAdapter_PassesThroughErrors(t *testing.T) {
 	for _, sentinel := range []error{
 		fileanalysis.ErrRecordNotFound,
 		fileanalysis.ErrHashMismatch,
-		fileanalysis.ErrNoSyscallAnalysis,
 		errors.New("unexpected store error"),
 	} {
 		inner := &mockFileanalysisSyscallStore{err: sentinel}

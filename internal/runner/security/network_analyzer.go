@@ -169,16 +169,13 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// file-content change) for a mere "no hash available" situation.
 	if a.store != nil && contentHash != "" {
 		// Load SymbolAnalysis cache.
-		// ErrNoNetworkSymbolAnalysis is a valid case (static binary): fall through to SyscallAnalysis.
+		// (nil, nil) means analyzed but no network symbols found (static binary): fall through to SyscallAnalysis.
 		// All other errors are treated as AnalysisError because production always has records.
 		data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
 		var symSchemaMismatch *fileanalysis.SchemaVersionMismatchError
 		switch {
 		case err == nil:
-			// data is valid; continue below.
-		case errors.Is(err, fileanalysis.ErrNoNetworkSymbolAnalysis):
-			// Static binary: no SymbolAnalysis record.
-			// Fall through to SyscallAnalysis check (data remains nil).
+			// data is valid (or nil when analyzed but no symbols found); continue below.
 		case errors.Is(err, fileanalysis.ErrHashMismatch):
 			slog.Warn("SymbolAnalysis cache hash mismatch; treating as high risk",
 				"path", cmdPath)
@@ -197,7 +194,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 		// Check SyscallAnalysis cache for svc #0x80 signal (Mach-O arm64).
 		// This check runs regardless of SymbolAnalysis result (NetworkDetected, NoNetworkSymbols,
-		// or ErrNoNetworkSymbolAnalysis for static binaries) so that svc #0x80 always escalates
+		// or nil for static binaries) so that svc #0x80 always escalates
 		// isHighRisk to true.
 		if a.syscallStore != nil {
 			svcResult, svcErr := a.syscallStore.LoadSyscallAnalysis(cmdPath, contentHash)
@@ -216,10 +213,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 					return true, false
 				}
 				// No svc signal and no network signal: fall through to SymbolAnalysis-based decision.
-			case errors.Is(svcErr, fileanalysis.ErrNoSyscallAnalysis):
-				// Schema v15+ guarantee: svc scan was performed and found nothing
-				// (old v14 records are rejected earlier as SchemaVersionMismatchError).
-				// Fall through to SymbolAnalysis-based decision.
+
 			case errors.Is(svcErr, fileanalysis.ErrHashMismatch):
 				slog.Warn("SyscallAnalysis cache hash mismatch; treating as high risk",
 					"path", cmdPath)
@@ -233,14 +227,14 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			default:
 				// ErrRecordNotFound or unexpected error: this must not occur in production.
 				// The underlying record exists (SymbolAnalysis succeeded or returned
-				// ErrNoNetworkSymbolAnalysis), so a missing SyscallAnalysis record indicates
+				// nil for static binary), so a missing SyscallAnalysis record indicates
 				// a consistency bug that must be fixed, not silently absorbed.
 				panic(fmt.Sprintf("SyscallAnalysis cache inconsistency for %q: %v", cmdPath, svcErr))
 			}
 		}
 
 		// No svc #0x80 signal: determine result from SymbolAnalysis.
-		// data == nil when ErrNoNetworkSymbolAnalysis was returned (static binary with no svc).
+		// data == nil when analyzed but no network symbols found (static binary with no svc).
 		if data == nil {
 			return false, false
 		}

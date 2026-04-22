@@ -116,9 +116,9 @@ func TestSyscallAnalysisStore_NoSyscallAnalysis(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Try to load - should return ErrNoSyscallAnalysis since no syscall analysis
+	// Try to load - should return (nil, nil) since no syscall analysis
 	loadedResult, err := store.LoadSyscallAnalysis(testFile, "sha256:abc123")
-	assert.ErrorIs(t, err, ErrNoSyscallAnalysis, "should return ErrNoSyscallAnalysis when syscall analysis is nil")
+	assert.NoError(t, err, "should return nil error when syscall analysis is nil")
 	assert.Nil(t, loadedResult)
 }
 
