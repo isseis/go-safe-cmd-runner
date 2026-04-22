@@ -17,7 +17,7 @@
 # 変更
 internal/libccache/macho_analyzer.go         # backwardScanX16 → BackwardScanX16 (公開)
 internal/fileanalysis/schema.go              # CurrentSchemaVersion 15 → 16
-internal/filevalidator/validator.go          # analyzeMachoSyscalls() を新アナライザに差し替え
+internal/filevalidator/validator.go          # analyzeMachoSyscalls() を拡張（Pass1/Pass2 + 既存 libSystem 統合）
 internal/runner/security/network_analyzer.go # 判定ロジック変更、syscallAnalysisHasSVCSignal 削除
 
 # 新規
@@ -290,7 +290,7 @@ func decodeBLTarget(word uint32, instrAddr uint64) (uint64, bool) {
 
 ### 6.5 呼び出しサイト後方スキャン（旧スタック ABI）
 
-`[SP, #8]` は Go 1.20+ の `NOSPLIT` フレーム規約による第1引数スロットの固定オフセットである（`SP+0` = 戻りアドレス用スロット、`SP+8` = `trap+0(FP)`）。Go 1.20 未満でのサポートは対象外。
+`[SP, #8]` は調査対象の Go arm64 Mach-O スタブで確認された第1引数スロットである（`SP+0` = 戻りアドレス用スロット、`SP+8` = `trap+0(FP)`）。
 
 ```
 Pass 2 後方スキャン手順（BL 命令アドレスから最大 defaultMaxBackwardScan 命令）：
@@ -425,7 +425,7 @@ func (a *MachoSyscallNumberAnalyzer) Analyze(f *macho.File) (*fileanalysis.Sysca
     // 呼び出しサイトを対象とする）ため、単純な append でよく重複排除は不要。
     all := append(pass1Results, pass2Results...)
     if len(all) == 0 {
-        return nil, nil  // 解析済み・結果なし → nil を返し Store では SyscallAnalysis = nil 扱い
+        return nil, nil  // Pass 1/Pass 2 としては解析済み・結果なし（最終保存は libSystem 結果とのマージ後に決定）
     }
 
     return &fileanalysis.SyscallAnalysisResult{
@@ -437,7 +437,7 @@ func (a *MachoSyscallNumberAnalyzer) Analyze(f *macho.File) (*fileanalysis.Sysca
 }
 ```
 
-戻り値 `nil, nil` の意味: 解析完了したが記録すべき syscall が存在しない（ELF パスと同様）。`analyzer.go` の `analyzeMachoSyscalls` はこれを受けて `record.SyscallAnalysis = nil` とする。
+戻り値 `nil, nil` の意味: Pass 1/Pass 2 解析としては記録すべき syscall が存在しない（ELF パスと同様）。最終的な `record.SyscallAnalysis` は既存の libSystem import 解析結果とのマージ後に決定される。
 
 ## 8. `internal/filevalidator/validator.go` 変更
 
@@ -531,7 +531,7 @@ if syscallAnalysisHasNetworkSignal(svcResult) {
 // SymbolAnalysis 判定ブランチ（既存コード）が担当する。
 ```
 
-`syscallAnalysisHasNetworkSignal` の実装は変更しない（`IsNetwork == true` のエントリを探す）。
+`syscallAnalysisHasNetworkSignal` は `IsNetwork == true` のエントリのみを判定条件とし、`DeterminationMethod`（`direct_svc_0x80` など）を参照しない実装にする。
 
 戻り値を `true, true`（高リスク確定）に変更する。変更前は `true, false` を返していたが、v16 では Pass 1/Pass 2 で確認されたネットワーク syscall は常に `isHighRisk = true` とする（FR-3.3.1 要件変更）。
 
@@ -617,8 +617,7 @@ slog.Info("SyscallAnalysis cache indicates network syscall (high risk)", ...)
 |---|---|---|---|
 | `IsNetwork=true` エントリあり | DetectedSyscalls に IsNetwork=true | `true, true` | AC-4 |
 | `IsNetwork=false` のみ | IsNetwork=true なし | `SymbolAnalysis` 判定に委譲 | AC-4 |
-| `SyscallAnalysis = nil`（nil, nil） | nil | `false, false` | AC-4 |
-| `"direct_svc_0x80"` エントリのみ（v15 レコード相当） | `DeterminationMethod="direct_svc_0x80"` | v16 ロジックでは `IsNetwork=false` → 委譲 | AC-4 |
+| `SyscallAnalysis = nil`（nil, nil） | nil | `SymbolAnalysis` 判定に委譲 | AC-4 |
 | v15 レコード（SchemaVersionMismatch） | スキーマ不一致 | `true, true` | AC-4 |
 
 最後のケース（v15 レコード）は `SchemaVersionMismatchError` のケースであり、既存の `errors.As(err, &svcSchemaMismatch)` ブランチで処理される。
