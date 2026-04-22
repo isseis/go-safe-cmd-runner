@@ -84,13 +84,13 @@ type subCacheFile struct {
 	cacheBase uint64 // VM address of the main cache's first mapping
 }
 
-// ExtractLibSystemKernelFromDyldCache extracts libsystem_kernel.dylib from the
+// ExtractLibSystemKernel extracts libsystem_kernel.dylib from the
 // dyld shared cache.
 //
 // On failure (cache not found, image not found, or extraction failure),
 // returns nil, nil so the caller can fall back to symbol-name matching.
 // Logs at slog.Info level for all non-error fallback conditions.
-func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
+func ExtractLibSystemKernel() (*LibSystemKernelBytes, error) {
 	var cachePath string
 	for _, p := range dyldSharedCachePaths {
 		if _, err := os.Stat(p); err == nil {
@@ -103,7 +103,7 @@ func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
 		return nil, nil
 	}
 
-	machoBytes, err := extractLibsystemKernel(cachePath)
+	machoBytes, err := extractLibSystemKernel(cachePath)
 	if err != nil {
 		slog.Info("Failed to extract libsystem_kernel from dyld cache; applying fallback",
 			"path", cachePath, "error", err)
@@ -122,8 +122,8 @@ func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
 	}, nil
 }
 
-// extractLibsystemKernel performs the actual extraction.
-func extractLibsystemKernel(cachePath string) ([]byte, error) {
+// extractLibSystemKernel performs the actual extraction.
+func extractLibSystemKernel(cachePath string) ([]byte, error) {
 	// cachePath is an element of dyldSharedCachePaths, a hardcoded list of system paths
 	// protected by macOS SIP (System Integrity Protection). Directory components cannot be
 	// replaced with symlinks without disabling SIP, so os.Open is safe here without
@@ -151,7 +151,7 @@ func extractLibsystemKernel(cachePath string) ([]byte, error) {
 	cacheBase := mainMapping.Address
 
 	// Find libsystem_kernel.dylib in the image text info array.
-	libImg, err := findLibsystemKernelImage(f)
+	libImg, err := findLibSystemKernelImage(f)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func extractLibsystemKernel(cachePath string) ([]byte, error) {
 	}
 
 	// Parse load commands to find __TEXT, __LINKEDIT, and LC_SYMTAB.
-	textSeg, linkeditSeg, symtab := parseSegmentsAndSymtab(lcData, hdr.byteOrder)
+	textSeg, linkeditSeg, symtab := parseSegsSymtab(lcData, hdr.byteOrder)
 	if textSeg == nil || linkeditSeg == nil || symtab == nil {
 		return nil, nil
 	}
@@ -224,7 +224,7 @@ func extractLibsystemKernel(cachePath string) ([]byte, error) {
 // readMainMapping reads the first (or only) mapping info from the main cache file.
 func readMainMapping(f *os.File) (dyldMappingInfo, error) {
 	var mapOff uint32
-	if err := readAt(f, dyldHdrOffMappingOffset, &mapOff); err != nil {
+	if err := readLE(f, dyldHdrOffMappingOffset, &mapOff); err != nil {
 		return dyldMappingInfo{}, fmt.Errorf("read mappingOffset: %w", err)
 	}
 	var m dyldMappingInfo
@@ -238,14 +238,14 @@ func readMainMapping(f *os.File) (dyldMappingInfo, error) {
 	return m, nil
 }
 
-// findLibsystemKernelImage scans the image text info array for libsystem_kernel.dylib.
-func findLibsystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
+// findLibSystemKernelImage scans the image text info array for libsystem_kernel.dylib.
+func findLibSystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 	var imgTextOff uint64
 	var imgTextCount uint64
-	if err := readAt(f, dyldHdrOffImgTextOffset, &imgTextOff); err != nil {
+	if err := readLE(f, dyldHdrOffImgTextOffset, &imgTextOff); err != nil {
 		return nil, fmt.Errorf("read imagesTextOffset: %w", err)
 	}
-	if err := readAt(f, dyldHdrOffImgTextCount, &imgTextCount); err != nil {
+	if err := readLE(f, dyldHdrOffImgTextCount, &imgTextCount); err != nil {
 		return nil, fmt.Errorf("read imagesTextCount: %w", err)
 	}
 	if imgTextCount == 0 || imgTextOff == 0 {
@@ -296,10 +296,10 @@ func findLibsystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 // Returns an empty slice when there are no sub-caches (pre-Ventura single-file cache).
 func buildSubCacheList(f *os.File, mainPath string, cacheBase uint64) ([]subCacheFile, error) {
 	var subCacheOff, subCacheCount uint32
-	if err := readAt(f, dyldHdrOffSubCacheOffset, &subCacheOff); err != nil {
+	if err := readLE(f, dyldHdrOffSubCacheOffset, &subCacheOff); err != nil {
 		return nil, fmt.Errorf("read subCacheArrayOffset: %w", err)
 	}
-	if err := readAt(f, dyldHdrOffSubCacheCount, &subCacheCount); err != nil {
+	if err := readLE(f, dyldHdrOffSubCacheCount, &subCacheCount); err != nil {
 		return nil, fmt.Errorf("read subCacheArrayCount: %w", err)
 	}
 	if subCacheCount == 0 {
@@ -409,10 +409,10 @@ func readSubCacheMapping(path string, vmAddr uint64) (*dyldMappingInfo, error) {
 	defer func() { _ = f.Close() }()
 
 	var mapOff, mapCount uint32
-	if err := readAt(f, dyldHdrOffMappingOffset, &mapOff); err != nil {
+	if err := readLE(f, dyldHdrOffMappingOffset, &mapOff); err != nil {
 		return nil, err
 	}
-	if err := readAt(f, dyldHdrOffMappingCount, &mapCount); err != nil {
+	if err := readLE(f, dyldHdrOffMappingCount, &mapCount); err != nil {
 		return nil, err
 	}
 
@@ -510,8 +510,8 @@ func readMachOHeader(path string, fileOff uint64) (*machoHeader, []byte, error) 
 	return hdr, lcData, nil
 }
 
-// parseSegmentsAndSymtab extracts __TEXT, __LINKEDIT, and LC_SYMTAB from load command bytes.
-func parseSegmentsAndSymtab(lcData []byte, bo binary.ByteOrder) (*segInfo, *segInfo, *symtabInfo) {
+// parseSegsSymtab extracts __TEXT, __LINKEDIT, and LC_SYMTAB from load command bytes.
+func parseSegsSymtab(lcData []byte, bo binary.ByteOrder) (*segInfo, *segInfo, *symtabInfo) {
 	var textSeg, linkeditSeg *segInfo
 	var symtab *symtabInfo
 
@@ -776,9 +776,9 @@ func patchLoadCommands(
 	}
 }
 
-// readAt reads a little-endian value from the file at the given offset.
+// readLE reads a little-endian value from the file at the given offset.
 // dst must be a pointer to uint32 or uint64.
-func readAt(f *os.File, offset int64, dst any) error {
+func readLE(f *os.File, offset int64, dst any) error {
 	switch v := dst.(type) {
 	case *uint32:
 		var buf [4]byte

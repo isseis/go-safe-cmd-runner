@@ -2,8 +2,8 @@
 
 package machodylib
 
-// ExtractLibSystemKernelFromDyldCache extracts libsystem_kernel.dylib from the
+// ExtractLibSystemKernel extracts libsystem_kernel.dylib from the
 // dyld shared cache. On non-Darwin platforms, always returns nil, nil.
-func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
+func ExtractLibSystemKernel() (*LibSystemKernelBytes, error) {
 	return nil, nil
 }

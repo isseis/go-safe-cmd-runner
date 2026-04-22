@@ -99,7 +99,7 @@ func ResolveLibSystemKernel(
 	// Step 3: Try dyld shared cache extraction before the well-known stub path.
 	// On modern macOS the real image lives in the shared cache; the well-known filesystem
 	// path is a stub that does not contain real syscall wrappers.
-	extracted, err := ExtractLibSystemKernelFromDyldCache()
+	extracted, err := ExtractLibSystemKernel()
 	if err != nil {
 		// Normally the extractor returns nil, nil on fallback cases.
 		return nil, fmt.Errorf("dyld shared cache extraction failed unexpectedly: %w", err)
