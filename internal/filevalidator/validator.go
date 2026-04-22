@@ -775,8 +775,8 @@ func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
 			Number:              -1,
 			IsNetwork:           false,
 			Location:            addr,
-			DeterminationMethod: "direct_svc_0x80",
-			Source:              "direct_svc_0x80",
+			DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+			Source:              common.DeterminationMethodDirectSVC0x80,
 		}
 	}
 	return syscalls

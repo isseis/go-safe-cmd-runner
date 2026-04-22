@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
@@ -280,7 +281,7 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 		return false
 	}
 	for _, s := range result.DetectedSyscalls {
-		if s.DeterminationMethod == "direct_svc_0x80" {
+		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
 			return true
 		}
 	}
@@ -297,7 +298,7 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 		return false
 	}
 	for _, s := range result.DetectedSyscalls {
-		if s.IsNetwork && s.DeterminationMethod != "direct_svc_0x80" {
+		if s.IsNetwork && s.DeterminationMethod != common.DeterminationMethodDirectSVC0x80 {
 			return true
 		}
 	}

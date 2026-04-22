@@ -1,6 +1,10 @@
 //nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
+// DeterminationMethodDirectSVC0x80 indicates the syscall was detected as a
+// direct svc #0x80 instruction in a Mach-O arm64 binary, bypassing libSystem.
+const DeterminationMethodDirectSVC0x80 = "direct_svc_0x80"
+
 // SyscallArgEvalStatus is a typed string for argument evaluation status values.
 type SyscallArgEvalStatus string
 
