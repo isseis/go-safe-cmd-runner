@@ -121,14 +121,14 @@ type FileValidator interface {
 	LoadRecord(filePath string) (*fileanalysis.Record, error)
 }
 
-// GetHashFilePath returns the path where the hash for the given file would be stored.
-func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error) {
+// HashFilePath returns the path where the hash for the given file would be stored.
+func (v *Validator) HashFilePath(filePath common.ResolvedPath) (string, error) {
 	return v.hashFilePathGetter.GetHashFilePath(v.hashDir, filePath)
 }
 
-// GetStore returns the underlying fileanalysis.Store.
+// Store returns the underlying fileanalysis.Store.
 // This is useful for accessing syscall analysis results stored alongside hashes.
-func (v *Validator) GetStore() *fileanalysis.Store {
+func (v *Validator) Store() *fileanalysis.Store {
 	return v.store
 }
 
@@ -278,7 +278,7 @@ func (v *Validator) saveRecordCore(filePath string, force bool, shebangInfo *she
 	}
 
 	// Get the path for the hash file
-	hashFilePath, err := v.GetHashFilePath(targetPath)
+	hashFilePath, err := v.HashFilePath(targetPath)
 	if err != nil {
 		return "", "", err
 	}
@@ -750,9 +750,9 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 	return entries
 }
 
-// buildSVCSyscallEntries converts a list of svc #0x80 addresses into []common.SyscallInfo.
+// buildSVCInfos converts a list of svc #0x80 addresses into []common.SyscallInfo.
 // Returns nil when addrs is empty.
-func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
+func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 	if len(addrs) == 0 {
 		return nil
 	}
@@ -769,13 +769,11 @@ func buildSVCSyscallEntries(addrs []uint64) []common.SyscallInfo {
 	return syscalls
 }
 
-// buildMachoSyscallAnalysisData merges svc and libSystem entries and constructs
+// buildMachoSyscallData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
 // AnalysisWarnings is populated only when svc entries exist.
-// DetectedSyscalls contains only network syscalls (IsNetwork==true) and entries
-// with unknown numbers (Number==-1), consistent with the ELF filter applied in
-// buildSyscallAnalysisData. All svc entries have Number==-1 and are always retained.
-func buildMachoSyscallAnalysisData(
+// DetectedSyscalls is sorted by Number (svc entries with Number=-1 appear first).
+func buildMachoSyscallData(
 	svcEntries []common.SyscallInfo,
 	libsysEntries []common.SyscallInfo,
 	arch string,
@@ -830,9 +828,9 @@ func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath s
 	if err != nil {
 		return fmt.Errorf("mach-o svc scan failed: %w", err)
 	}
-	svcEntries := buildSVCSyscallEntries(addrs)
+	svcEntries := buildSVCInfos(addrs)
 
-	libsysEntries, libsysArch, err := v.analyzeLibSystemImports(record, filePath)
+	libsysEntries, libsysArch, err := v.analyzeLibSystem(record, filePath)
 	if err != nil {
 		return fmt.Errorf("libSystem import analysis failed: %w", err)
 	}
@@ -846,20 +844,19 @@ func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath s
 		if arch == "" {
 			arch = archNameArm64
 		}
-		record.SyscallAnalysis = buildMachoSyscallAnalysisData(svcEntries, libsysEntries, arch)
+		record.SyscallAnalysis = buildMachoSyscallData(svcEntries, libsysEntries, arch)
 	}
 	return nil
 }
 
-// analyzeLibSystemImports obtains imported symbols from the target Mach-O binary
-// and matches them against the libSystem syscall wrapper cache.
+// analyzeLibSystem obtains imported symbols from the target Mach-O binary
+// and matches them against the libSystem cache (FR-3.3.2).
 // Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
 // Note: DynLibDeps may be empty on macOS 11+ because all system libraries
 // (including libSystem.B.dylib) live in the dyld shared cache and are not
-// hash-verified by MachODynLibAnalyzer. The hasLibSystemLoadCmd flag is set
-// from the binary's LC_LOAD_DYLIB entries so the resolver can still reach
-// dyld cache extraction (Step 3) in that case.
-func (v *Validator) analyzeLibSystemImports(
+// hash-verified by MachODynLibAnalyzer. The adapter's fallback symbol-name
+// matching handles detection in that case.
+func (v *Validator) analyzeLibSystem(
 	record *fileanalysis.Record,
 	filePath string,
 ) ([]common.SyscallInfo, string, error) {
@@ -1090,7 +1087,7 @@ func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath str
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
-		record.SyscallAnalysis = buildSyscallAnalysisData(allSyscalls, argEvalResults, elfFile.Machine)
+		record.SyscallAnalysis = buildSyscallData(allSyscalls, argEvalResults, elfFile.Machine)
 	} else {
 		record.SyscallAnalysis = nil
 	}
@@ -1200,9 +1197,9 @@ func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
 	return result
 }
 
-// elfMachineToArchName converts an elf.Machine to the architecture name string used in records.
+// elfArchName converts an elf.Machine to the architecture name string used in records.
 // Returns the elf.Machine's String() representation if the machine is not recognized.
-func elfMachineToArchName(machine elf.Machine) string {
+func elfArchName(machine elf.Machine) string {
 	switch machine {
 	case elf.EM_X86_64:
 		return "x86_64"
@@ -1300,13 +1297,13 @@ func mprotectStatusPriority(status common.SyscallArgEvalStatus) int {
 	}
 }
 
-// buildSyscallAnalysisData constructs a SyscallAnalysisData from the merged syscall infos.
-func buildSyscallAnalysisData(all []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
+// buildSyscallData constructs a SyscallAnalysisData from the merged syscall infos.
+func buildSyscallData(all []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
 	retained := fileanalysis.FilterSyscallsForStorage(all)
 
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture:     elfMachineToArchName(machine),
+			Architecture:     elfArchName(machine),
 			DetectedSyscalls: retained,
 			ArgEvalResults:   argEvalResults,
 		},

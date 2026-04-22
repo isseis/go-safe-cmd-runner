@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestExtractLibSystemKernelFromDyldCache_Live skips the test when
+// TestExtractLibSystemKernel_Live skips the test when
 // the dyld shared cache cannot be expected to be present (non-darwin or non-arm64).
 // On darwin arm64, it attempts an actual extraction and verifies the invariants.
-func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
+func TestExtractLibSystemKernel_Live(t *testing.T) {
 	if runtime.GOOS != "darwin" || (runtime.GOARCH != "arm64") {
 		t.Skip("dyld shared cache extraction only applicable on darwin/arm64")
 	}
@@ -32,11 +32,11 @@ func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
 		t.Skipf("no dyld shared cache found in %v; skipping live extraction test", dyldSharedCachePaths)
 	}
 
-	result, err := ExtractLibSystemKernelFromDyldCache()
+	result, err := ExtractLibSystemKernel()
 	require.NoError(t, err)
 
 	if result == nil {
-		t.Skip("ExtractLibSystemKernelFromDyldCache returned nil; " +
+		t.Skip("ExtractLibSystemKernel returned nil; " +
 			"libsystem_kernel.dylib may not be present in this environment's dyld shared cache")
 	}
 
@@ -48,12 +48,12 @@ func TestExtractLibSystemKernelFromDyldCache_Live(t *testing.T) {
 		"extracted Hash must contain a hex digest after the prefix")
 }
 
-// TestExtractLibSystemKernelFromDyldCache_NoCachePaths verifies that when no
+// TestExtractLibSystemKernel_NoCachePaths verifies that when no
 // dyld shared cache is available, the function returns nil, nil.
 //
 // This test overrides the package-level dyldSharedCachePaths to point to
 // non-existent paths, simulating the absence of a shared cache.
-func TestExtractLibSystemKernelFromDyldCache_NoCachePaths(t *testing.T) {
+func TestExtractLibSystemKernel_NoCachePaths(t *testing.T) {
 	original := dyldSharedCachePaths
 	t.Cleanup(func() { dyldSharedCachePaths = original })
 
@@ -63,7 +63,7 @@ func TestExtractLibSystemKernelFromDyldCache_NoCachePaths(t *testing.T) {
 		"/nonexistent/dyld_shared_cache_arm64",
 	}
 
-	result, err := ExtractLibSystemKernelFromDyldCache()
+	result, err := ExtractLibSystemKernel()
 	require.NoError(t, err)
 	assert.Nil(t, result, "expected nil result when no cache paths exist")
 }

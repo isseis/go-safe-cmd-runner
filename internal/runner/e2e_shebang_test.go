@@ -96,7 +96,7 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	require.NoError(t, err)
 	resolvedInterpPath, err := common.NewResolvedPath(interpPath)
 	require.NoError(t, err)
-	interpHashPath, err := validator.GetHashFilePath(resolvedInterpPath)
+	interpHashPath, err := validator.HashFilePath(resolvedInterpPath)
 	require.NoError(t, err)
 	require.NoError(t, os.Remove(interpHashPath))
 
