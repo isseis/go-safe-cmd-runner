@@ -42,7 +42,7 @@ type SyscallAnalysisStore interface {
 	// Returns (result, nil) if found and hash matches.
 	// Returns (nil, ErrRecordNotFound) if record not found.
 	// Returns (nil, ErrHashMismatch) if hash mismatch.
-	// Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
+	// Returns (nil, nil) if no syscall analysis data exists (e.g., not applicable, skipped, or none detected).
 	// Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
 	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
 
@@ -98,7 +98,7 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 // Returns (result, nil) if found and hash matches.
 // Returns (nil, ErrRecordNotFound) if record not found.
 // Returns (nil, ErrHashMismatch) if hash mismatch.
-// Returns (nil, ErrNoSyscallAnalysis) if no syscall analysis data exists.
+// Returns (nil, nil) if no syscall analysis data exists (analyzed but none detected).
 // Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
 func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string) (*SyscallAnalysisResult, error) {
 	resolvedPath, err := common.NewResolvedPath(filePath)
@@ -117,7 +117,7 @@ func (s *syscallAnalysisStore) LoadSyscallAnalysis(filePath, expectedHash string
 
 	// Check if syscall analysis exists
 	if record.SyscallAnalysis == nil {
-		return nil, ErrNoSyscallAnalysis
+		return nil, nil
 	}
 
 	// Convert SyscallAnalysisData to SyscallAnalysisResult.

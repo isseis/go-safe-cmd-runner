@@ -45,11 +45,20 @@ func TestNewELFSyscallStoreAdapter_ReturnResult(t *testing.T) {
 	assert.Equal(t, core, got.SyscallAnalysisResultCore)
 }
 
+func TestNewELFSyscallStoreAdapter_NilResult(t *testing.T) {
+	inner := &mockFileanalysisSyscallStore{result: nil, err: nil}
+	adapter := NewELFSyscallStoreAdapter(inner)
+
+	got, err := adapter.LoadSyscallAnalysis("/bin/foo", "sha256:abc")
+
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
 func TestNewELFSyscallStoreAdapter_PassesThroughErrors(t *testing.T) {
 	for _, sentinel := range []error{
 		fileanalysis.ErrRecordNotFound,
 		fileanalysis.ErrHashMismatch,
-		fileanalysis.ErrNoSyscallAnalysis,
 		errors.New("unexpected store error"),
 	} {
 		inner := &mockFileanalysisSyscallStore{err: sentinel}

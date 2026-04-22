@@ -2551,8 +2551,8 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		assert.True(t, isHigh, "expected high risk from dlopen in cache")
 	})
 
-	t.Run("ErrNoNetworkSymbolAnalysis (no syscallStore) → false, false (static binary)", func(t *testing.T) {
-		store := &stubNetworkSymbolStore{err: fileanalysis.ErrNoNetworkSymbolAnalysis}
+	t.Run("nil (no syscallStore) → false, false (static binary)", func(t *testing.T) {
+		store := &stubNetworkSymbolStore{data: nil}
 		analyzer := newNetworkAnalyzer(store)
 		isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(cmdPath, contentHash)
 		assert.False(t, isNet, "static binary with no svc should return false")
@@ -2615,7 +2615,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 // TestNetworkSymbolCache_RecordToRunner tests the record→runner cache flow.
 // It writes a SymbolAnalysisData record using fileanalysis.Store.Save,
 // then verifies that NetworkAnalyzer reads from the cache instead of calling
-// BinaryAnalyzer. This covers AC-3 (cache utilisation in runner).
+// BinaryAnalyzer. This verifies that the network symbol cache is used in the runner pipeline.
 func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 	analysisDir := commontesting.SafeTempDir(t)
 

@@ -149,8 +149,7 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_NoAnalysisData(t *testing.
 	require.NoError(t, err)
 
 	loaded, err := store.LoadNetworkSymbolAnalysis(testFile, fileHash)
-	assert.ErrorIs(t, err, ErrNoNetworkSymbolAnalysis,
-		"should return ErrNoNetworkSymbolAnalysis when analysis is nil")
+	assert.NoError(t, err, "should return nil error when analysis is nil")
 	assert.Nil(t, loaded)
 }
 
@@ -214,6 +213,4 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_SchemaVersionMismatch(t *t
 		"should propagate SchemaVersionMismatchError without converting it to a cache miss error")
 	assert.NotErrorIs(t, err, ErrHashMismatch,
 		"SchemaVersionMismatchError should not be wrapped as ErrHashMismatch")
-	assert.NotErrorIs(t, err, ErrNoNetworkSymbolAnalysis,
-		"SchemaVersionMismatchError should not be wrapped as ErrNoNetworkSymbolAnalysis")
 }

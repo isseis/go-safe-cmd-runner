@@ -24,7 +24,8 @@ type SyscallAnalysisStore interface {
 	// Returns (result, nil) if found and hash matches.
 	// Returns (nil, fileanalysis.ErrRecordNotFound) if not found.
 	// Returns (nil, fileanalysis.ErrHashMismatch) if hash mismatch.
-	// Returns (nil, fileanalysis.ErrNoSyscallAnalysis) if no syscall analysis data exists.
+	// Returns (nil, nil) if no syscall analysis result exists in storage
+	// (e.g., analysis was not applicable, skipped, or completed without stored results).
 	// Returns (nil, error) on other errors.
 	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
 }
@@ -319,9 +320,8 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 	result, err := a.syscallStore.LoadSyscallAnalysis(path, contentHash)
 	if err != nil {
 		switch {
-		case errors.Is(err, fileanalysis.ErrRecordNotFound),
-			errors.Is(err, fileanalysis.ErrNoSyscallAnalysis):
-			// Cache miss: no record or no syscall analysis stored yet. Fall back silently.
+		case errors.Is(err, fileanalysis.ErrRecordNotFound):
+			// Cache miss: no record stored yet. Fall back silently.
 		case errors.Is(err, fileanalysis.ErrHashMismatch):
 			// The stored record was created for a different binary. The binary has been
 			// replaced since record time, which is a security-relevant condition.
@@ -340,6 +340,12 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
 	}
 
+	if result == nil {
+		// A matching record exists, but the syscall analysis payload is absent
+		// (commonly interpreted as analyzed but no relevant syscalls detected).
+		// Treat it as StaticBinary and fall back silently.
+		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
+	}
 	return a.convertSyscallResult(result)
 }
 
