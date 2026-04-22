@@ -48,7 +48,7 @@
 | `@rpath` | `LC_LOAD_DYLIB` に記録されるパス中で、`LC_RPATH` の各エントリを順に展開して解決されるプレースホルダ |
 | dyld shared cache | macOS のシステム `.dylib`（`libSystem.dylib` 等）を単一の大きなキャッシュファイルに統合した機構。macOS 11 以降は個別の `.dylib` ファイルがファイルシステム上に存在しない場合がある |
 | コード署名 | Apple 独自のバイナリ完全性検証機構（`LC_CODE_SIGNATURE`）。本書のハッシュ検証とは独立に運用される |
-| `svc #0x80` | arm64 macOS における直接 syscall 命令（エンコード `0xD4001001`）。正規バイナリは `libSystem.dylib` 経由で呼ぶため通常出現しない |
+| `svc #0x80` | arm64 macOS における直接 syscall 命令（エンコード `0xD4001001`）。正規バイナリは `libSystem.dylib` 経由で呼ぶため通常出現しない（**[訂正 - タスク 0104]**: Go ランタイムは正規バイナリにおいても `svc #0x80` を直接発行する。タスク 0104 参照）|
 | ImportedLibraries | `debug/macho` パッケージの `File.ImportedLibraries()`。`LC_LOAD_DYLIB` / `LC_LOAD_WEAK_DYLIB` のライブラリ名一覧を返す |
 
 ## 3. ギャップ分析
@@ -80,7 +80,7 @@
 |------|------|------|
 | dyld shared cache | `libSystem.dylib` 等のシステムライブラリはディスク上に個別ファイルとして存在しない場合がある（macOS 11+）。詳細は下記 | G5（依存ライブラリ整合性検証）および G10（libSystem syscall ラッパーキャッシュ）で独自対応が必要 |
 | コード署名 | Apple の署名検証が OS レベルで実施される | 本システムのハッシュ検証と併存する。未署名バイナリを追加で拒否する要件は本タスクでは扱わない |
-| `svc #0x80` の希少性 | 正規バイナリでは出現しない | ELF のように全 syscall 命令を解析する前提が成り立たない。検出時は即 high risk 扱い（タスク 0073 方針維持） |
+| `svc #0x80` の希少性 | 正規バイナリでは出現しない（**[訂正 - タスク 0104]**: Go ランタイムが正規バイナリにも含む）| ELF のように全 syscall 命令を解析する前提が成り立たない。検出時は即 high risk 扱い（タスク 0073 方針維持）。**[訂正 - タスク 0104]**: syscall 番号解析による判定に方針変更。タスク 0104 参照 |
 | SIP (System Integrity Protection) | `/usr/bin` 等の書き換え不可領域が存在 | 供給チェーン攻撃の前提が ELF と異なり、優先度判断に影響 |
 
 #### dyld shared cache の詳細
