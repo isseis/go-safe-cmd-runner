@@ -1,16 +1,16 @@
-/* -*- mode: C++; c-basic-offset: 4; tab-width: 4 -*-
+/* -*- mode: C++; c-basic-offset: 4; tab-width: 4 -*- 
  *
  * Copyright (c) 2006-2015 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- *
+ * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
  * compliance with the License. Please obtain a copy of the License at
  * http://www.opensource.apple.com/apsl/ and read it before using this
  * file.
- *
+ * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -18,7 +18,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
  * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  */
 #ifndef __DYLD_CACHE_FORMAT__
@@ -82,7 +82,7 @@ struct dyld_cache_header
     uint32_t    mappingWithSlideCount;  // number of dyld_cache_mapping_and_slide_info entries
     uint64_t    dylibsPBLStateArrayAddrUnused;    // unused
     uint64_t    dylibsPBLSetAddr;           // (unslid) address of PrebuiltLoaderSet of all cached dylibs
-    uint64_t    programsPBLSetPoolAddr;     // (unslid) address of pool of PrebuiltLoaderSet for each program
+    uint64_t    programsPBLSetPoolAddr;     // (unslid) address of pool of PrebuiltLoaderSet for each program 
     uint64_t    programsPBLSetPoolSize;     // size of pool of PrebuiltLoaderSet for each program
     uint64_t    programTrieAddr;            // (unslid) address of trie mapping program path to PrebuiltLoaderSet
     uint32_t    programTrieSize;
@@ -233,7 +233,7 @@ struct dyld_cache_slide_info
     uint32_t    toc_count;
     uint32_t    entries_offset;
     uint32_t    entries_count;
-    uint32_t    entries_size;  // currently 128
+    uint32_t    entries_size;  // currently 128 
     // uint16_t toc[toc_count];
     // entrybitmap entries[entries_count];
 };
@@ -291,7 +291,7 @@ struct dyld_cache_slide_info_entry {
 // cache.
 //
 // The code for processing a linked list (chain) is:
-//
+//   
 //    uint32_t delta = 1;
 //    while ( delta != 0 ) {
 //        uint8_t* loc = pageStart + pageOffset;
@@ -596,7 +596,7 @@ struct dyld_cache_function_variant_entry
                 pacKey              :  2,
                 pacDiversity        : 16;
     uint16_t    targetDylibIndex;             // which dylib has the function variant
-    uint16_t    functionVariantTableSizeDiv4; // size of FunctionVariants in LINKEDIT (unslid) divided by 4
+    uint16_t    functionVariantTableSizeDiv4; // size of FunctionVariants in LINKEDIT (unslid) divided by 4 
 };
 
 struct dyld_cache_function_variant_info
@@ -658,6 +658,6 @@ static const uint64_t kDyldSharedCacheTypeUniversal = 2;
 
 
 
-
-
 #endif // __DYLD_CACHE_FORMAT__
+
+

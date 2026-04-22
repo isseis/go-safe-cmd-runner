@@ -1,3 +1,5 @@
+exclude: ^internal/machodylib/testdata/dyld_headers/mach-o/(dyld_cache_format\.h|fixup-chains\.h)$
+
 repos:
 -   repo: local
     hooks:

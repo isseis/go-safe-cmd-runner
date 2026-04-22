@@ -34,15 +34,12 @@ jobs:
             echo "Checking $file ..."
             gh api "repos/apple-oss-distributions/dyld/contents/include/$file" \
               --jq '.content' | base64 -d > /tmp/upstream_$(basename $file)
-            # Normalize trailing whitespace and ensure a single trailing newline so
-            # that cosmetic upstream edits (whitespace-only) don't trigger false alarms.
-            sed 's/[[:space:]]*$//' /tmp/upstream_$(basename $file) | sed -e '$a\' > /tmp/upstream_norm_$(basename $file)
             committed="internal/machodylib/testdata/dyld_headers/$file"
-            if ! diff -q "$committed" /tmp/upstream_norm_$(basename $file) > /dev/null; then
+            if ! cmp -s "$committed" /tmp/upstream_$(basename $file); then
               echo "FAIL: $file has changed upstream."
               echo "Update testdata/dyld_headers/$file, review dyld_offsets_test.go"
               echo "and dyld_extractor_darwin.go constants, then commit."
-              diff "$committed" /tmp/upstream_norm_$(basename $file) || true
+              diff "$committed" /tmp/upstream_$(basename $file) || true
               exit 1
             fi
             echo "OK: $file matches upstream."
