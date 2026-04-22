@@ -5,6 +5,7 @@ package machodylib
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -326,4 +327,63 @@ func TestReconstructMachO_BasicStructure(t *testing.T) {
 	// Verify magic is preserved.
 	magic := binary.LittleEndian.Uint32(machO[0:4])
 	assert.Equal(t, uint32(0xFEEDFACF), magic, "magic not preserved")
+}
+
+// TestBuildCompactSymtab_UsesAbsoluteFileOffsets verifies that symFileOff and
+// strFileOff are treated as absolute file offsets within the sub-cache file,
+// not as offsets relative to any base such as linkeditSeg.fileOff.
+//
+// Regression test for the bug where linkeditSeg.fileOff (= 0x4000) was
+// incorrectly added to symtab.symoff and symtab.stroff before calling
+// buildCompactSymtab, causing the reads to land 0x4000 bytes past the actual
+// symbol and string data, producing garbage symbol names from adjacent libraries.
+func TestBuildCompactSymtab_UsesAbsoluteFileOffsets(t *testing.T) {
+	const wantName = "___accept"
+
+	// Place the symbol table and string table at absolute offsets that are
+	// clearly distinct from zero. Using values larger than a typical
+	// linkeditSeg.fileOff (0x4000) ensures that any accidental addition of
+	// such an offset shifts the read past the data, causing a detectable failure.
+	const symoff = uint64(0x8000)
+	const stroff = uint64(0x9000)
+
+	// Build a minimal string table: [0x00 | wantName | 0x00]
+	strtab := []byte{0} // index 0 = empty string (Mach-O convention)
+	nameOffset := uint32(len(strtab))
+	strtab = append(strtab, []byte(wantName)...)
+	strtab = append(strtab, 0) // null terminator
+
+	// Build one nlist_64 entry pointing to wantName in the string table.
+	entry := make([]byte, nlist64Size)
+	binary.LittleEndian.PutUint32(entry[0:], nameOffset) // n_strx
+	entry[4] = 0x0F                                      // N_EXT | N_SECT
+	entry[5] = 1                                         // n_sect
+	binary.LittleEndian.PutUint64(entry[8:], 0x1804ab000)
+
+	// Allocate a buffer large enough to hold data at the absolute positions.
+	fileSize := int(stroff) + len(strtab)
+	buf := make([]byte, fileSize)
+	copy(buf[symoff:], entry)
+	copy(buf[stroff:], strtab)
+
+	f, err := os.CreateTemp(t.TempDir(), "buildcompact_*.bin")
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	_, err = f.Write(buf)
+	require.NoError(t, err)
+
+	compactSyms, compactStrtab, err := buildCompactSymtab(f.Name(), symoff, 1, stroff)
+	require.NoError(t, err)
+	require.Len(t, compactSyms, nlist64Size, "expected exactly one nlist_64 entry")
+
+	// Decode the new n_strx from the compact symbol entry.
+	newStrx := binary.LittleEndian.Uint32(compactSyms[0:])
+	require.Less(t, int(newStrx), len(compactStrtab), "n_strx out of compact strtab bounds")
+
+	end := bytes.IndexByte(compactStrtab[newStrx:], 0)
+	require.GreaterOrEqual(t, end, 0, "null terminator not found in compact strtab")
+	gotName := string(compactStrtab[newStrx : int(newStrx)+end])
+
+	assert.Equal(t, wantName, gotName,
+		"symbol name mismatch: symoff/stroff must be used as absolute file offsets, not relative to any base")
 }
