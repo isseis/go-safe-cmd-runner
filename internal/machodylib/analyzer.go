@@ -289,7 +289,7 @@ func (a *MachODynLibAnalyzer) openMachO(binaryPath string) (*macho.File, io.Clos
 func (a *MachODynLibAnalyzer) openFatSlice(binaryPath string, fatFile *macho.FatFile, file safefileio.File) (*macho.File, io.Closer, error) {
 	defer func() { _ = fatFile.Close() }()
 
-	cpuType := goarchToCPUType(runtime.GOARCH)
+	cpuType := goarchCPU(runtime.GOARCH)
 	if cpuType == 0 {
 		_ = file.Close()
 		return nil, nil, &ErrNoMatchingSlice{BinaryPath: binaryPath, GOARCH: runtime.GOARCH}
@@ -340,8 +340,8 @@ func openSingleArch(file safefileio.File) (_ *macho.File, _ io.Closer, retErr er
 	return machoFile, file, nil
 }
 
-// goarchToCPUType maps runtime.GOARCH to macho.Cpu type.
-func goarchToCPUType(goarch string) macho.Cpu {
+// goarchCPU maps runtime.GOARCH to macho.Cpu type.
+func goarchCPU(goarch string) macho.Cpu {
 	switch goarch {
 	case "arm64":
 		return macho.CpuArm64
@@ -380,25 +380,25 @@ func extractLoadCommands(f *macho.File) (deps []depEntry, rpaths []string) {
 
 		switch macho.LoadCmd(cmd) {
 		case macho.LoadCmdDylib: // LC_LOAD_DYLIB = 0xC
-			name := extractDylibName(raw, f.ByteOrder)
+			name := dylibName(raw, f.ByteOrder)
 			if name != "" {
 				deps = append(deps, depEntry{installName: name, isWeak: false})
 			}
 
 		case loadCmdWeakDylib: // LC_LOAD_WEAK_DYLIB = 0x80000018
-			name := extractDylibName(raw, f.ByteOrder)
+			name := dylibName(raw, f.ByteOrder)
 			if name != "" {
 				deps = append(deps, depEntry{installName: name, isWeak: true})
 			}
 
 		case loadCmdReexportDylib, loadCmdLazyLoadDylib, loadCmdUpwardDylib:
-			name := extractDylibName(raw, f.ByteOrder)
+			name := dylibName(raw, f.ByteOrder)
 			if name != "" {
 				deps = append(deps, depEntry{installName: name, isWeak: false})
 			}
 
 		case macho.LoadCmdRpath: // LC_RPATH = 0x8000001C
-			path := extractRpathName(raw, f.ByteOrder)
+			path := rpathName(raw, f.ByteOrder)
 			if path != "" {
 				rpaths = append(rpaths, path)
 			}
@@ -408,11 +408,11 @@ func extractLoadCommands(f *macho.File) (deps []depEntry, rpaths []string) {
 	return deps, rpaths
 }
 
-// extractDylibName extracts the library name from an LC_LOAD_DYLIB or
+// dylibName extracts the library name from an LC_LOAD_DYLIB or
 // LC_LOAD_WEAK_DYLIB load command's raw bytes.
 // Layout: cmd(4) + cmdsize(4) + name_offset(4) + timestamp(4) + current_version(4)
 // + compat_version(4) + name string (null-terminated).
-func extractDylibName(raw []byte, bo binary.ByteOrder) string {
+func dylibName(raw []byte, bo binary.ByteOrder) string {
 	// name_offset field starts at byte 8; minimum header size is 12 to read it.
 	const minDylibCmdSize = 12
 
@@ -436,9 +436,9 @@ func extractDylibName(raw []byte, bo binary.ByteOrder) string {
 	return string(name)
 }
 
-// extractRpathName extracts the path from an LC_RPATH load command's raw bytes.
+// rpathName extracts the path from an LC_RPATH load command's raw bytes.
 // Layout: cmd(4) + cmdsize(4) + path_offset(4) + path string (null-terminated).
-func extractRpathName(raw []byte, bo binary.ByteOrder) string {
+func rpathName(raw []byte, bo binary.ByteOrder) string {
 	// path_offset field starts at byte 8; minimum header size is 12 to read it.
 	const minRpathCmdSize = 12
 
@@ -565,7 +565,7 @@ func HasDynamicLibDeps(path string, fs safefileio.FileSystem) (bool, error) {
 	// Try as Fat binary first
 	fatFile, fatErr := macho.NewFatFile(file)
 	if fatErr == nil {
-		cpuType := goarchToCPUType(runtime.GOARCH)
+		cpuType := goarchCPU(runtime.GOARCH)
 		if cpuType == 0 {
 			_ = fatFile.Close()
 

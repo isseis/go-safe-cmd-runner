@@ -202,13 +202,13 @@ func TestFindKernelInUmbrellaReexports_Found(t *testing.T) {
 	umbrellaBytes := buildMachOWithReexport(kernelPath)
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
-	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)
+	result, err := findKernelInUmbrella(umbrellaPath, fs)
 	require.NoError(t, err)
 	assert.Equal(t, kernelPath, result)
 }
 
 // TestFindKernelInUmbrellaReexports_NotFound verifies that when LC_REEXPORT_DYLIB
-// points to a non-existent path, findKernelInUmbrellaReexports returns empty string.
+// points to a non-existent path, findKernelInUmbrella returns empty string.
 func TestFindKernelInUmbrellaReexports_NotFound(t *testing.T) {
 	dir := evalReal(t, t.TempDir())
 	fs := safefileio.NewFileSystem(safefileio.FileSystemConfig{})
@@ -217,14 +217,14 @@ func TestFindKernelInUmbrellaReexports_NotFound(t *testing.T) {
 	umbrellaBytes := buildMachOWithReexport(filepath.Join(dir, "does_not_exist.dylib"))
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
-	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)
+	result, err := findKernelInUmbrella(umbrellaPath, fs)
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
 
 // TestFindKernelInUmbrellaReexports_SkipsWellKnownStubPath verifies that when
 // LC_REEXPORT_DYLIB points to the well-known stub install name
-// (/usr/lib/system/libsystem_kernel.dylib), findKernelInUmbrellaReexports returns ""
+// (/usr/lib/system/libsystem_kernel.dylib), findKernelInUmbrella returns ""
 // regardless of whether the path exists on disk, so that the caller can proceed to
 // dyld shared cache extraction (priority 3).
 func TestFindKernelInUmbrellaReexports_SkipsWellKnownStubPath(t *testing.T) {
@@ -234,10 +234,10 @@ func TestFindKernelInUmbrellaReexports_SkipsWellKnownStubPath(t *testing.T) {
 	// The umbrella re-exports the canonical well-known install name.
 	// Even though the path may not exist on this test machine, the function must
 	// return "" because it is filtered by the stub-path guard.
-	umbrellaBytes := buildMachOWithReexport(libsystemKernelInstallName)
+	umbrellaBytes := buildMachOWithReexport(libSystemKernelInstallName)
 	umbrellaPath := writeTempFile(t, dir, "libSystem.B.dylib", umbrellaBytes)
 
-	result, err := findKernelInUmbrellaReexports(umbrellaPath, fs)
+	result, err := findKernelInUmbrella(umbrellaPath, fs)
 	require.NoError(t, err)
 	assert.Empty(t, result, "well-known stub install-name should be skipped in priority-2 resolution")
 }

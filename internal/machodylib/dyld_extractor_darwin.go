@@ -285,7 +285,7 @@ func findLibSystemKernelImage(f *os.File) (*dyldImgTextInfo, error) {
 		if nullIdx < 0 {
 			nullIdx = n
 		}
-		if string(pathBuf[:nullIdx]) == libsystemKernelInstallName {
+		if string(pathBuf[:nullIdx]) == libSystemKernelInstallName {
 			return &img, nil
 		}
 	}

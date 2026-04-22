@@ -106,7 +106,7 @@ func TestHasDynamicLibDeps_NonMachO(t *testing.T) {
 	assert.False(t, hasDeps)
 }
 
-// TestExtractDylibName verifies that extractDylibName correctly parses the
+// TestExtractDylibName verifies that dylibName correctly parses the
 // library name from a synthesized LC_LOAD_DYLIB raw bytes.
 func TestExtractDylibName(t *testing.T) {
 	// Synthesize LC_LOAD_DYLIB raw bytes (little-endian):
@@ -123,11 +123,11 @@ func TestExtractDylibName(t *testing.T) {
 	binary.LittleEndian.PutUint32(raw[8:12], nameOffset)
 	copy(raw[nameOffset:], name)
 
-	result := extractDylibName(raw, binary.LittleEndian)
+	result := dylibName(raw, binary.LittleEndian)
 	assert.Equal(t, name, result)
 }
 
-// TestExtractRpathName verifies that extractRpathName correctly parses the
+// TestExtractRpathName verifies that rpathName correctly parses the
 // rpath from a synthesized LC_RPATH raw bytes.
 func TestExtractRpathName(t *testing.T) {
 	// Synthesize LC_RPATH raw bytes (little-endian):
@@ -143,21 +143,21 @@ func TestExtractRpathName(t *testing.T) {
 	binary.LittleEndian.PutUint32(raw[8:12], pathOffset)
 	copy(raw[12:], path)
 
-	result := extractRpathName(raw, binary.LittleEndian)
+	result := rpathName(raw, binary.LittleEndian)
 	assert.Equal(t, path, result)
 }
 
-// TestExtractDylibName_TooShort verifies that extractDylibName returns empty
+// TestExtractDylibName_TooShort verifies that dylibName returns empty
 // string for raw bytes that are too short.
 func TestExtractDylibName_TooShort(t *testing.T) {
-	result := extractDylibName([]byte{0x01, 0x02}, binary.LittleEndian)
+	result := dylibName([]byte{0x01, 0x02}, binary.LittleEndian)
 	assert.Equal(t, "", result)
 }
 
-// TestExtractRpathName_TooShort verifies that extractRpathName returns empty
+// TestExtractRpathName_TooShort verifies that rpathName returns empty
 // string for raw bytes that are too short.
 func TestExtractRpathName_TooShort(t *testing.T) {
-	result := extractRpathName([]byte{0x01, 0x02}, binary.LittleEndian)
+	result := rpathName([]byte{0x01, 0x02}, binary.LittleEndian)
 	assert.Equal(t, "", result)
 }
 
