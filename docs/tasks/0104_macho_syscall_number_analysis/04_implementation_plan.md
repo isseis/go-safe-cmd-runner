@@ -284,17 +284,17 @@ const CurrentSchemaVersion = 16
 - [x] スキーマテスト更新
 
 ### ステップ 3: pclntab_macho.go
-- [ ] エラー定数定義
-- [ ] `MachoPclntabFunc`、`funcRange`、`isInsideRange` 実装
-- [ ] `ParseMachoPclntab` 実装
-- [ ] `detectMachoPclntabOffset` 実装
-- [ ] `pclntab_macho_test.go` 作成
+- [x] エラー定数定義
+- [x] `MachoPclntabFunc`、`funcRange`、`isInsideRange` 実装
+- [x] `ParseMachoPclntab` 実装
+- [x] `detectMachoPclntabOffset` 実装
+- [x] `pclntab_macho_test.go` 作成
 
 ### ステップ 4: pass1_scanner.go
-- [ ] `knownMachoSyscallImpls` 定義
-- [ ] `buildStubRanges` 実装
-- [ ] `scanSVCWithX16` 実装
-- [ ] `pass1_scanner_test.go` 作成
+- [x] `knownMachoSyscallImpls` 定義
+- [x] `buildStubRanges` 実装
+- [x] `scanSVCWithX16` 実装
+- [x] `pass1_scanner_test.go` 作成
 
 ### ステップ 5: pass2_scanner.go
 - [ ] `MachoWrapperCall` 型定義
