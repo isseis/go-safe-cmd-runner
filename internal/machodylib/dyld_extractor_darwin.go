@@ -61,7 +61,7 @@ var dyldSharedCachePaths = []string{
 	"/System/Library/dyld/dyld_shared_cache_arm64",
 }
 
-// dyldMappingInfo mirrors dyld_cache_mapping_info (on-disk: addr+size+fileOffset+maxProt+initProt = 28 bytes).
+// dyldMappingInfo mirrors dyld_cache_mapping_info (on-disk: addr+size+fileOffset+maxProt+initProt = 32 bytes).
 type dyldMappingInfo struct {
 	Address    uint64
 	Size       uint64
@@ -401,7 +401,7 @@ func readSubCacheMapping(path string, vmAddr uint64) (*dyldMappingInfo, error) {
 		return nil, err
 	}
 
-	const mappingEntrySize = 28
+	const mappingEntrySize = 32
 	for i := uint32(0); i < mapCount; i++ {
 		off := int64(mapOff) + int64(i)*mappingEntrySize
 		var raw [28]byte
