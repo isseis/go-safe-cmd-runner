@@ -508,16 +508,17 @@ func TestAC3_DynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
 	tests := []struct {
-		name string
-		err  error
+		name   string
+		result *SyscallAnalysisResult
+		err    error
 	}{
-		{"ErrRecordNotFound", fileanalysis.ErrRecordNotFound},
-		{"ErrNoSyscallAnalysis", fileanalysis.ErrNoSyscallAnalysis},
+		{"ErrRecordNotFound", nil, fileanalysis.ErrRecordNotFound},
+		{"nil result (analyzed, none detected)", nil, nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStore := &mockSyscallAnalysisStore{err: tt.err}
+			mockStore := &mockSyscallAnalysisStore{result: tt.result, err: tt.err}
 			analyzer := NewStandardELFAnalyzerWithSyscallStore(nil, nil, mockStore)
 			output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
