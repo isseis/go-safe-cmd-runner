@@ -331,7 +331,7 @@ func TestNativeOrArm64Slice(t *testing.T) {
 func TestBuildMachoSyscallAnalysisData_SVCOnly(t *testing.T) {
 	addrs := []uint64{0x100000004, 0x10000000C}
 	svcEntries := buildSVCSyscallEntries(addrs)
-	result := buildMachoSyscallAnalysisData(svcEntries, nil)
+	result := buildMachoSyscallAnalysisData(svcEntries, nil, "arm64")
 
 	require.NotNil(t, result)
 	assert.Equal(t, "arm64", result.Architecture)
@@ -568,7 +568,7 @@ func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 	tempDir := safeTempDir(t)
 	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
 
-	libsys, err := v.analyzeLibSystemImports(record, binPath)
+	libsys, _, err := v.analyzeLibSystemImports(record, binPath)
 	require.NoError(t, err)
 	require.Len(t, libsys, 1)
 
@@ -595,7 +595,7 @@ func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
 		},
 	}
 
-	result := buildMachoSyscallAnalysisData(svcEntries, libsysEntries)
+	result := buildMachoSyscallAnalysisData(svcEntries, libsysEntries, "arm64")
 	require.NotNil(t, result)
 
 	// svc entry (Number=-1) + libSystem entry (Number=98) = 2 entries.
@@ -637,7 +637,7 @@ func TestUpdateAnalysisRecord_LibSystemError(t *testing.T) {
 	tempDir := safeTempDir(t)
 	binPath := writeTempBinary(t, tempDir, "target.bin", buildArm64MachOBinary(t, []uint32{nopEncodingU32}))
 
-	_, libsysErr := v.analyzeLibSystemImports(record, binPath)
+	_, _, libsysErr := v.analyzeLibSystemImports(record, binPath)
 	// The Mach-O has no imports (no symbol table), so GetSyscallInfos is called with empty list.
 	// The stub returns the injected error.
 	require.Error(t, libsysErr, "analyzeLibSystemImports must propagate the cache error")
@@ -729,7 +729,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	}
 
 	// No svc entries: no warning, non-network libsys entry filtered out.
-	result := buildMachoSyscallAnalysisData(nil, libsysEntries)
+	result := buildMachoSyscallAnalysisData(nil, libsysEntries, "arm64")
 	assert.Empty(t, result.AnalysisWarnings, "no warning when no svc entries")
 	assert.Empty(t, result.DetectedSyscalls, "non-network libsys entry must be filtered")
 
@@ -737,7 +737,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	svcEntries := []common.SyscallInfo{
 		{Number: -1, Source: "direct_svc_0x80"},
 	}
-	result = buildMachoSyscallAnalysisData(svcEntries, libsysEntries)
+	result = buildMachoSyscallAnalysisData(svcEntries, libsysEntries, "arm64")
 	assert.Len(t, result.AnalysisWarnings, 1)
 	require.Len(t, result.DetectedSyscalls, 1, "only svc entry (Number=-1) should remain")
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
