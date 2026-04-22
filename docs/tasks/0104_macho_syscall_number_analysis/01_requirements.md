@@ -206,8 +206,8 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 
 - [ ] ネットワーク syscall が検出されたバイナリに対して `runner` が `true, true` を返すこと
 - [ ] 非ネットワーク syscall のみを含む正規の Go バイナリ（例：`record` コマンド自身）に対して `runner` が `true, true` を返さないこと（偽陽性の解消）
-- [ ] X16 不明な `svc #0x80` のみを含み、ネットワーク syscall の呼び出しサイトも `SymbolAnalysis` のネットワーク根拠も存在しない場合に `false, false` を返すこと
-- [ ] `SymbolAnalysis = NetworkDetected` かつネットワーク syscall 検出の場合は `true, true`（高リスク）を返すこと
+- [ ] X16 不明な `svc #0x80` のみを含み、ネットワーク syscall の呼び出しサイトも `SymbolAnalysis` のネットワーク根拠も存在しない場合に `false, false` を返すこと。この判定は `SyscallAnalysis` に `IsNetwork=true` エントリがないため `SymbolAnalysis` 判定に委譲され、`SymbolAnalysis` も NetworkDetected でなければ `false, false` となる（既存フローで達成）。
+- [ ] `SymbolAnalysis = NetworkDetected` かつネットワーク syscall 検出の場合は `true, true`（高リスク）を返すこと。この判定は `SyscallAnalysis` の `IsNetwork=true` チェックが先行して `true, true` を返すことで達成される。
 - [ ] `"direct_svc_0x80"` を判定条件に使用するコードが存在しないこと
 
 ### AC-5: スキーマ
@@ -245,6 +245,7 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 | `MOV xN, #3` + `STR xN, [SP, #8]` + `BL syscall.Syscall6` | `Number=3`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
 | `MOV xN, #49` + `STP xN, ..., [SP, #8]` + `BL syscall.RawSyscall` | `Number=49`, `IsNetwork=false`, `DeterminationMethod="go_wrapper"` |
 | `[SP, #8]` への書き込みが間接ロード由来の `BL syscall.RawSyscall6` | `Number=-1`, `DeterminationMethod="unknown:indirect_setting"` |
+| 制御フロー命令（`BL other`）を挟んだ `BL syscall.Syscall` | 後方スキャンが制御フロー命令で停止し `Number=-1` となること |
 | `.gopclntab` なしバイナリ | Pass 2 がスキップされること |
 
 ### 6.3 リスク判定テスト
@@ -254,6 +255,7 @@ X16 不明時にネットワークリスクなしと判定することで Go run
 | `SyscallAnalysis` に `IsNetwork=true` エントリあり | `runner` が `true, true` を返すこと |
 | `SyscallAnalysis` に `IsNetwork=true` エントリなし | `runner` が `SymbolAnalysis` 判定に委譲すること |
 | `SyscallAnalysis` が nil（`LoadSyscallAnalysis` が `nil, nil` を返す）| `runner` が `false, false` を返すこと（変更なし）|
+| v15 スキーマレコード（`SchemaVersionMismatchError`）| `runner` が `true, true` を返すこと（既存のフェイルセーフ動作）|
 
 ### 6.4 統合テスト
 
