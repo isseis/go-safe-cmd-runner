@@ -275,13 +275,13 @@ const CurrentSchemaVersion = 16
 ## 3. 進捗チェックリスト
 
 ### ステップ 1: libccache 公開化
-- [ ] `BackwardScanX16` 実装
-- [ ] `IsControlFlowInstruction` 実装（必要に応じて公開）
-- [ ] 既存テスト通過確認
+- [x] `BackwardScanX16` 実装
+- [x] `IsControlFlowInstruction` 実装（必要に応じて公開）
+- [x] 既存テスト通過確認
 
 ### ステップ 2: スキーマバージョン v16
-- [ ] `CurrentSchemaVersion = 16` 変更
-- [ ] スキーマテスト更新
+- [x] `CurrentSchemaVersion = 16` 変更
+- [x] スキーマテスト更新
 
 ### ステップ 3: pclntab_macho.go
 - [ ] エラー定数定義

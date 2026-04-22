@@ -179,7 +179,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
 			continue
 		}
 		// Found svc #0x80. Scan backward to find the immediate loaded into x16.
-		num, ok := backwardScanX16(funcCode, i)
+		num, ok := BackwardScanX16(funcCode, i)
 		if !ok {
 			return 0, false
 		}
@@ -200,7 +200,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
 	return first, true
 }
 
-// backwardScanX16 walks backward from the svc #0x80 instruction at funcCode[svcOffset]
+// BackwardScanX16 walks backward from the svc #0x80 instruction at funcCode[svcOffset]
 // and looks for an immediate-load sequence into x16. When found, it returns the
 // syscall number with the BSD class prefix removed. The scan is limited to
 // maxBackwardScanInstructions instructions.
@@ -212,7 +212,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
 //
 // arm64asm is intentionally not used here. Only a small subset of fixed encodings
 // is needed, and direct decoding keeps the dependency surface small.
-func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
+func BackwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
 	const instrLen = 4
 
 	// MOVZ X16, #imm, LSL #shift encoding (ARM64):
@@ -294,7 +294,7 @@ func backwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
 		}
 
 		// Stop when a control-flow instruction is reached.
-		if isControlFlowInstruction(word) {
+		if IsControlFlowInstruction(word) {
 			break
 		}
 
@@ -315,9 +315,9 @@ func stripBSDPrefix(value int) int {
 	return value
 }
 
-// isControlFlowInstruction reports whether an ARM64 instruction is a control-flow instruction.
+// IsControlFlowInstruction reports whether an ARM64 instruction is a control-flow instruction.
 // It recognizes B / BL / BLR / BR / RET / CBZ / CBNZ / TBZ / TBNZ.
-func isControlFlowInstruction(word uint32) bool {
+func IsControlFlowInstruction(word uint32) bool {
 	// B:  [31:26] = 000101
 	// BL: [31:26] = 100101
 	if word>>26 == 0b000101 || word>>26 == 0b100101 {
