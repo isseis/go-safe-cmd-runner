@@ -2615,7 +2615,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 // TestNetworkSymbolCache_RecordToRunner tests the record→runner cache flow.
 // It writes a SymbolAnalysisData record using fileanalysis.Store.Save,
 // then verifies that NetworkAnalyzer reads from the cache instead of calling
-// BinaryAnalyzer. This covers AC-3 (cache utilisation in runner).
+// BinaryAnalyzer. This verifies that the network symbol cache is used in the runner pipeline.
 func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 	analysisDir := commontesting.SafeTempDir(t)
 

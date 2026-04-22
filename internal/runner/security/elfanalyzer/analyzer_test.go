@@ -467,14 +467,14 @@ func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
 	assert.Equal(t, binaryanalyzer.StaticBinary, output.Result)
 }
 
-// AC-3: runner フォールバックテスト
-// 動的ELFバイナリ（.dynsym = NoNetworkSymbols）に対する SyscallAnalysis フォールバックの
-// 各ケースを検証する。
+// SyscallAnalysis fallback tests for dynamic ELF binaries.
+// These tests cover the case where .dynsym returns NoNetworkSymbols and the
+// analyzer falls back to the syscall analysis store.
 
-// TestAC3_DynamicELF_SyscallFallback_NetworkDetected verifies AC-3:
-// When .dynsym returns NoNetworkSymbols but SyscallAnalysis records HasNetworkSyscalls=true,
+// TestDynamicELF_SyscallFallback_NetworkDetected verifies that
+// when .dynsym returns NoNetworkSymbols but SyscallAnalysis records HasNetworkSyscalls=true,
 // AnalyzeNetworkSymbols returns NetworkDetected.
-func TestAC3_DynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
+func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
@@ -499,10 +499,10 @@ func TestAC3_DynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 	assert.Equal(t, "syscall", output.DetectedSymbols[0].Category)
 }
 
-// TestAC3_DynamicELF_SyscallFallback_NotRecorded verifies AC-3:
-// When .dynsym returns NoNetworkSymbols and SyscallAnalysis is not recorded
+// TestDynamicELF_SyscallFallback_NotRecorded verifies that
+// when .dynsym returns NoNetworkSymbols and SyscallAnalysis is not recorded
 // (ErrRecordNotFound or (nil, nil)), AnalyzeNetworkSymbols returns NoNetworkSymbols.
-func TestAC3_DynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
+func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
@@ -528,10 +528,10 @@ func TestAC3_DynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 	}
 }
 
-// TestAC3_DynamicELF_SyscallFallback_HashMismatch verifies AC-3:
-// When .dynsym returns NoNetworkSymbols but SyscallAnalysis returns ErrHashMismatch
+// TestDynamicELF_SyscallFallback_HashMismatch verifies that
+// when .dynsym returns NoNetworkSymbols but SyscallAnalysis returns ErrHashMismatch
 // (binary changed since record), AnalyzeNetworkSymbols returns AnalysisError.
-func TestAC3_DynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
+func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
@@ -548,10 +548,10 @@ func TestAC3_DynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 	assert.ErrorIs(t, output.Error, ErrSyscallHashMismatch)
 }
 
-// TestAC3_DynamicELF_SyscallFallback_HighRisk verifies AC-3:
-// When .dynsym returns NoNetworkSymbols but SyscallAnalysis returns AnalysisError,
+// TestDynamicELF_SyscallFallback_HighRisk verifies that
+// when .dynsym returns NoNetworkSymbols but SyscallAnalysis returns AnalysisError,
 // AnalyzeNetworkSymbols returns AnalysisError.
-func TestAC3_DynamicELF_SyscallFallback_HighRisk(t *testing.T) {
+func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
@@ -574,10 +574,10 @@ func TestAC3_DynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 	assert.ErrorIs(t, output.Error, ErrSyscallAnalysisHighRisk)
 }
 
-// TestAC3_DynamicELF_WithoutSyscallStore verifies AC-3:
-// When syscallStore is nil, dynamic ELF with NoNetworkSymbols in .dynsym
+// TestDynamicELF_WithoutSyscallStore verifies that
+// when syscallStore is nil, dynamic ELF with NoNetworkSymbols in .dynsym
 // returns NoNetworkSymbols (no fallback attempted).
-func TestAC3_DynamicELF_WithoutSyscallStore(t *testing.T) {
+func TestDynamicELF_WithoutSyscallStore(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
