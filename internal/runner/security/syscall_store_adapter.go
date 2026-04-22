@@ -31,6 +31,9 @@ func (a *fileanalysisSyscallStoreAdapter) LoadSyscallAnalysis(filePath string, e
 	if err != nil {
 		return nil, err
 	}
+	if result == nil {
+		return nil, nil
+	}
 	return &elfanalyzer.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: result.SyscallAnalysisResultCore,
 	}, nil

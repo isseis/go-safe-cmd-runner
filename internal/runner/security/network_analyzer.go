@@ -169,7 +169,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 	// file-content change) for a mere "no hash available" situation.
 	if a.store != nil && contentHash != "" {
 		// Load SymbolAnalysis cache.
-		// (nil, nil) means analyzed but no network symbols found (static binary): fall through to SyscallAnalysis.
+		// (nil, nil) means no network symbol analysis stored (e.g., not applicable or none detected): fall through to SyscallAnalysis.
 		// All other errors are treated as AnalysisError because production always has records.
 		data, err := a.store.LoadNetworkSymbolAnalysis(cmdPath, contentHash)
 		var symSchemaMismatch *fileanalysis.SchemaVersionMismatchError

@@ -501,7 +501,7 @@ func TestAC3_DynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 
 // TestAC3_DynamicELF_SyscallFallback_NotRecorded verifies AC-3:
 // When .dynsym returns NoNetworkSymbols and SyscallAnalysis is not recorded
-// (ErrRecordNotFound / ErrNoSyscallAnalysis), AnalyzeNetworkSymbols returns NoNetworkSymbols.
+// (ErrRecordNotFound or (nil, nil)), AnalyzeNetworkSymbols returns NoNetworkSymbols.
 func TestAC3_DynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	testFile := filepath.Join(tmpDir, "dynamic.elf")

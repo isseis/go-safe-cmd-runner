@@ -42,7 +42,7 @@ type SyscallAnalysisStore interface {
 	// Returns (result, nil) if found and hash matches.
 	// Returns (nil, ErrRecordNotFound) if record not found.
 	// Returns (nil, ErrHashMismatch) if hash mismatch.
-	// Returns (nil, nil) if no syscall analysis data exists (analyzed but none detected).
+	// Returns (nil, nil) if no syscall analysis data exists (e.g., not applicable, skipped, or none detected).
 	// Returns (nil, error) on other errors (e.g., schema mismatch, corrupted record).
 	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
 

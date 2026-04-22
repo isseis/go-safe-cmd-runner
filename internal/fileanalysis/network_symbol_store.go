@@ -13,7 +13,7 @@ type NetworkSymbolStore interface {
 	// Returns (data, nil) if found and hash matches.
 	// Returns (nil, ErrRecordNotFound) if record not found.
 	// Returns (nil, ErrHashMismatch) if hash does not match.
-	// Returns (nil, nil) if no network symbol analysis exists (analyzed but none detected).
+	// Returns (nil, nil) if no network symbol analysis exists (e.g., not applicable, skipped, or none detected).
 	// Returns (nil, error) on other errors.
 	LoadNetworkSymbolAnalysis(filePath string, contentHash string) (*SymbolAnalysisData, error)
 }
