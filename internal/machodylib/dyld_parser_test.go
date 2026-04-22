@@ -278,6 +278,20 @@ func TestBuildCompactSymtab_EdgeCases(t *testing.T) {
 	}
 }
 
+func TestFindSubCacheFileForAddr_UsesVMBaseOrder(t *testing.T) {
+	mainMapping := dyldMappingInfo{
+		Address: 0x1000,
+		Size:    0x100,
+	}
+	subCaches := []subCacheFile{
+		{path: "cache.02", vmBase: 0x3000},
+		{path: "cache.01", vmBase: 0x2000},
+	}
+
+	got := findSubCacheFileForAddr(0x2800, "main.cache", mainMapping, subCaches)
+	assert.Equal(t, "cache.01", got)
+}
+
 // TestReconstructMachO_BasicStructure verifies that reconstructMachO produces valid Mach-O header.
 func TestReconstructMachO_BasicStructure(t *testing.T) {
 	hdr := &machoHeader{

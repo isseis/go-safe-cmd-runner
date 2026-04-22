@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -325,6 +326,13 @@ func buildSubCacheList(f *os.File, mainPath string, cacheBase uint64) ([]subCach
 			cacheBase: cacheBase,
 		})
 	}
+
+	// dyld_subcache_entry order is not guaranteed to be VM-address order.
+	// Sort here because downstream range selection assumes monotonic vmBase.
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].vmBase < result[j].vmBase
+	})
+
 	return result, nil
 }
 
