@@ -4,6 +4,7 @@ package filevalidator
 
 import (
 	"bytes"
+	"debug/macho"
 	"encoding/binary"
 	"errors"
 	"os"
@@ -108,6 +109,129 @@ func buildArm64MachOBinary(t *testing.T, instructions []uint32) []byte {
 	return buf.Bytes()
 }
 
+// buildX86_64MachOBinary builds a minimal x86_64 Mach-O binary in memory.
+// textBytes is placed in __TEXT,__text at virtual address 0x100000000.
+func buildX86_64MachOBinary(t *testing.T, textBytes []byte) []byte {
+	t.Helper()
+
+	const (
+		headerSize   = 32
+		segCmdSize   = 72
+		sectSize     = 80
+		textOffset   = headerSize + segCmdSize + sectSize
+		lcSegment64  = uint32(0x19)
+		mhExecute    = uint32(0x2)
+		cpuX86_64    = uint32(0x01000007)
+		cpuSubX86All = uint32(3)
+		vmBase       = uint64(0x100000000)
+	)
+
+	sectDataSize := uint32(len(textBytes))
+
+	var buf bytes.Buffer
+	pu32 := func(v uint32) {
+		b := [4]byte{}
+		binary.LittleEndian.PutUint32(b[:], v)
+		buf.Write(b[:])
+	}
+	pu64 := func(v uint64) {
+		b := [8]byte{}
+		binary.LittleEndian.PutUint64(b[:], v)
+		buf.Write(b[:])
+	}
+	pad16 := func(s string) {
+		b := [16]byte{}
+		copy(b[:], s)
+		buf.Write(b[:])
+	}
+
+	// mach_header_64 (32 bytes)
+	pu32(0xFEEDFACF)
+	pu32(cpuX86_64)
+	pu32(cpuSubX86All)
+	pu32(mhExecute)
+	pu32(1)
+	pu32(uint32(segCmdSize + sectSize))
+	pu32(0)
+	pu32(0)
+
+	// segment_command_64 (72 bytes)
+	pu32(lcSegment64)
+	pu32(uint32(segCmdSize + sectSize))
+	pad16("__TEXT")
+	pu64(vmBase)
+	pu64(0x1000)
+	pu64(uint64(textOffset))
+	pu64(uint64(sectDataSize))
+	pu32(7)
+	pu32(5)
+	pu32(1)
+	pu32(0)
+
+	// section_64 (80 bytes)
+	pad16("__text")
+	pad16("__TEXT")
+	pu64(vmBase)
+	pu64(uint64(sectDataSize))
+	pu32(uint32(textOffset))
+	pu32(2)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+	pu32(0)
+
+	buf.Write(textBytes)
+
+	require.Equal(t, textOffset+int(sectDataSize), buf.Len())
+	return buf.Bytes()
+}
+
+// buildFatMachOBinary combines multiple Mach-O arch binaries into a Fat/universal
+// binary. cputype and cpusubtype are read directly from each arch's header bytes.
+func buildFatMachOBinary(t *testing.T, arches [][]byte) []byte {
+	t.Helper()
+	require.NotEmpty(t, arches)
+
+	nArch := len(arches)
+	headerSize := 8 + nArch*20
+
+	// Calculate 4-byte-aligned offsets for each arch slice.
+	offsets := make([]int, nArch)
+	offset := headerSize
+	for i, arch := range arches {
+		offset = (offset + 3) &^ 3
+		offsets[i] = offset
+		offset += len(arch)
+	}
+
+	buf := make([]byte, offset)
+
+	// Fat header is big-endian.
+	binary.BigEndian.PutUint32(buf[0:], 0xCAFEBABE)
+	binary.BigEndian.PutUint32(buf[4:], uint32(nArch))
+
+	pos := 8
+	for i, arch := range arches {
+		require.GreaterOrEqual(t, len(arch), 12, "arch %d too short", i)
+		// cputype/cpusubtype are at bytes [4:12] of the Mach-O header (little-endian).
+		cputype := binary.LittleEndian.Uint32(arch[4:8])
+		cpusubtype := binary.LittleEndian.Uint32(arch[8:12])
+
+		binary.BigEndian.PutUint32(buf[pos:], cputype)
+		binary.BigEndian.PutUint32(buf[pos+4:], cpusubtype)
+		binary.BigEndian.PutUint32(buf[pos+8:], uint32(offsets[i]))
+		binary.BigEndian.PutUint32(buf[pos+12:], uint32(len(arch)))
+		binary.BigEndian.PutUint32(buf[pos+16:], 2) // align: 4-byte
+		pos += 20
+
+		copy(buf[offsets[i]:], arch)
+	}
+
+	return buf
+}
+
 // writeTempBinary writes data to a file in the given directory and returns its path.
 func writeTempBinary(t *testing.T, dir string, name string, data []byte) string {
 	t.Helper()
@@ -136,6 +260,69 @@ func recordMachO(t *testing.T, binData []byte, stub *stubBinaryAnalyzer) *filean
 	record, loadErr := v.LoadRecord(binPath)
 	require.NoError(t, loadErr)
 	return record
+}
+
+// TestNativeMachoCPU verifies that nativeMachoCPU returns a non-error for the
+// current build architecture, confirming the switch covers it.
+func TestNativeMachoCPU(t *testing.T) {
+	cpu, err := nativeMachoCPU()
+	require.NoError(t, err, "current GOARCH must be a recognised macOS architecture")
+	assert.NotZero(t, cpu)
+}
+
+// TestNativeOrArm64Slice verifies slice selection logic without depending on
+// runtime.GOARCH: the fat binary has arm64 and x86_64 slices; selecting by
+// CpuArm64 returns the arm64 slice, by CpuAmd64 returns the x86_64 slice,
+// and by an unknown CPU falls back to arm64.
+func TestNativeOrArm64Slice(t *testing.T) {
+	// Build a minimal fat binary (arm64 + x86_64) in a temp file.
+	arm64Bytes := buildArm64MachOBinary(t, []uint32{nopEncodingU32})
+	x86Bytes := buildX86_64MachOBinary(t, []byte{0x90}) // NOP
+
+	fatBytes := buildFatMachOBinary(t, [][]byte{arm64Bytes, x86Bytes})
+	tmpFile := writeTempBinary(t, t.TempDir(), "fat.bin", fatBytes)
+
+	f, err := os.Open(tmpFile)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = f.Close() })
+
+	fat, err := macho.NewFatFile(f)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = fat.Close() })
+
+	t.Run("arm64_selected_for_CpuArm64", func(t *testing.T) {
+		slice := nativeOrArm64Slice(fat, macho.CpuArm64)
+		require.NotNil(t, slice)
+		assert.Equal(t, macho.CpuArm64, slice.Cpu)
+	})
+
+	t.Run("x86_64_selected_for_CpuAmd64", func(t *testing.T) {
+		slice := nativeOrArm64Slice(fat, macho.CpuAmd64)
+		require.NotNil(t, slice)
+		assert.Equal(t, macho.CpuAmd64, slice.Cpu)
+	})
+
+	t.Run("fallback_to_arm64_for_unknown_cpu", func(t *testing.T) {
+		// Use a CPU type absent from the fat binary; arm64 must be returned.
+		slice := nativeOrArm64Slice(fat, macho.Cpu(0xFFFF))
+		require.NotNil(t, slice)
+		assert.Equal(t, macho.CpuArm64, slice.Cpu)
+	})
+
+	t.Run("nil_when_no_matching_or_arm64_slice", func(t *testing.T) {
+		// Build a fat binary with only x86_64 and no arm64 slice.
+		fatX86Only := buildFatMachOBinary(t, [][]byte{x86Bytes})
+		tmpX86 := writeTempBinary(t, t.TempDir(), "fat_x86_only.bin", fatX86Only)
+		fx, err := os.Open(tmpX86)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = fx.Close() })
+		fatX86, err := macho.NewFatFile(fx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = fatX86.Close() })
+
+		slice := nativeOrArm64Slice(fatX86, macho.Cpu(0xFFFF))
+		assert.Nil(t, slice)
+	})
 }
 
 // TestBuildMachoSyscallAnalysisData_SVCOnly is a unit test for the buildMachoSyscallAnalysisData helper

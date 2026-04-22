@@ -66,6 +66,11 @@ type LibSystemCacheInterface interface {
 	) ([]common.SyscallInfo, error)
 }
 
+// ErrUnsupportedGOARCH is returned by nativeMachoCPU when runtime.GOARCH is not a
+// recognised macOS architecture. Callers must abort analysis for the affected binary
+// rather than silently falling back to the wrong Fat Mach-O slice.
+var ErrUnsupportedGOARCH = errors.New("unsupported GOARCH for Fat Mach-O slice selection")
+
 // ErrUnsupportedArch is returned by SyscallAnalyzerInterface.AnalyzeSyscallsFromELF
 // and SyscallAnalyzerInterface.GetOrCreate when the ELF architecture is not supported.
 // Adapters wrapping concrete elfanalyzer types must convert UnsupportedArchitectureError
@@ -875,22 +880,29 @@ const (
 	machoFatCigamLE = uint32(0xBEBAFECA)
 )
 
-// nativeOrArm64Slice returns the Fat arch slice that matches the native CPU,
-// falling back to arm64 if the native arch is not present.
-// Returns nil when neither the native arch nor arm64 is present.
-func nativeOrArm64Slice(fat *macho.FatFile) *macho.File {
-	var nativeCPU macho.Cpu
+// nativeMachoCPU returns the macho.Cpu constant for the current runtime.GOARCH.
+// Returns an error for unrecognised architectures to prevent silent wrong-slice
+// selection in fat binaries — a security-critical mismatch.
+// Add a new case here whenever a new macOS/Go architecture is supported.
+func nativeMachoCPU() (macho.Cpu, error) {
 	switch runtime.GOARCH {
 	case "arm64":
-		nativeCPU = macho.CpuArm64
+		return macho.CpuArm64, nil
 	case "amd64":
-		nativeCPU = macho.CpuAmd64
+		return macho.CpuAmd64, nil
+	default:
+		return 0, fmt.Errorf("%w: %s", ErrUnsupportedGOARCH, runtime.GOARCH)
 	}
+}
 
+// nativeOrArm64Slice returns the Fat arch slice that matches nativeCPU,
+// falling back to arm64 if the native arch is not present.
+// Returns nil when neither nativeCPU nor arm64 is present in the fat binary.
+func nativeOrArm64Slice(fat *macho.FatFile, nativeCPU macho.Cpu) *macho.File {
 	var arm64Slice *macho.File
 	for i := range fat.Arches {
 		cpu := fat.Arches[i].Cpu
-		if nativeCPU != 0 && cpu == nativeCPU {
+		if cpu == nativeCPU {
 			return fat.Arches[i].File
 		}
 		if cpu == macho.CpuArm64 {
@@ -957,7 +969,11 @@ func getMachoAnalysisInfo(fs safefileio.FileSystem, filePath string) (*machoAnal
 		}
 		defer func() { _ = fat.Close() }()
 
-		slice := nativeOrArm64Slice(fat)
+		nativeCPU, err := nativeMachoCPU()
+		if err != nil {
+			return nil, err
+		}
+		slice := nativeOrArm64Slice(fat, nativeCPU)
 		if slice == nil {
 			// No matching slice found; treat as non-Mach-O for analysis purposes.
 			return nil, nil
