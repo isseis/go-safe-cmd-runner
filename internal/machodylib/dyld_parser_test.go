@@ -95,7 +95,7 @@ func TestParseSegmentsAndSymtab(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			textSeg, linkeditSeg, symtab := parseSegsSymtab(tt.lcData, binary.LittleEndian)
+			textSeg, linkeditSeg, symtab := parseSegmentsAndSymtab(tt.lcData, binary.LittleEndian)
 			assert.Equal(t, tt.wantTextSeg, textSeg != nil, "text segment presence mismatch")
 			assert.Equal(t, tt.wantLinkeditSeg, linkeditSeg != nil, "linkedit segment presence mismatch")
 			assert.Equal(t, tt.wantSymtab, symtab != nil, "symtab presence mismatch")

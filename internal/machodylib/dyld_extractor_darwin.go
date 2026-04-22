@@ -184,7 +184,7 @@ func extractLibSystemKernel(cachePath string) ([]byte, error) {
 	}
 
 	// Parse load commands to find __TEXT, __LINKEDIT, and LC_SYMTAB.
-	textSeg, linkeditSeg, symtab := parseSegsSymtab(lcData, hdr.byteOrder)
+	textSeg, linkeditSeg, symtab := parseSegmentsAndSymtab(lcData, hdr.byteOrder)
 	if textSeg == nil || linkeditSeg == nil || symtab == nil {
 		return nil, nil
 	}
@@ -510,8 +510,8 @@ func readMachOHeader(path string, fileOff uint64) (*machoHeader, []byte, error) 
 	return hdr, lcData, nil
 }
 
-// parseSegsSymtab extracts __TEXT, __LINKEDIT, and LC_SYMTAB from load command bytes.
-func parseSegsSymtab(lcData []byte, bo binary.ByteOrder) (*segInfo, *segInfo, *symtabInfo) {
+// parseSegmentsAndSymtab extracts __TEXT, __LINKEDIT, and LC_SYMTAB from load command bytes.
+func parseSegmentsAndSymtab(lcData []byte, bo binary.ByteOrder) (*segInfo, *segInfo, *symtabInfo) {
 	var textSeg, linkeditSeg *segInfo
 	var symtab *symtabInfo
 
