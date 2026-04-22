@@ -198,8 +198,6 @@ func extractLibSystemKernel(cachePath string) ([]byte, error) {
 	if linkeditFile == "" {
 		return nil, nil
 	}
-	linkeditFileOffInSub := linkeditSeg.fileOff
-
 	// Read the __TEXT segment data from the text sub-cache.
 	textData, err := readFileRange(textFile, textSeg.fileOff, textSeg.fileSize)
 	if err != nil {
@@ -207,11 +205,13 @@ func extractLibSystemKernel(cachePath string) ([]byte, error) {
 	}
 
 	// Read and compact the symbol table from the LINKEDIT sub-cache.
+	// symtab.symoff and symtab.stroff are absolute file offsets within the
+	// .dyldlinkedit sub-cache file, not relative to linkeditSeg.fileOff.
 	compactSyms, compactStrtab, err := buildCompactSymtab(
 		linkeditFile,
-		linkeditFileOffInSub+uint64(symtab.symoff),
+		uint64(symtab.symoff),
 		symtab.nsyms,
-		linkeditFileOffInSub+uint64(symtab.stroff),
+		uint64(symtab.stroff),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build compact symtab: %w", err)

@@ -2,7 +2,13 @@ package libccache
 
 // LibcCacheSchemaVersion is the current schema version for libc cache files.
 // Increment when making backward-incompatible schema changes.
-const LibcCacheSchemaVersion = 1
+//
+// Version history:
+//
+//	1 - initial schema
+//	2 - fix dyld shared cache extraction: symoff/stroff treated as absolute
+//	    sub-cache file offsets (was incorrectly adding linkeditSeg.fileOff)
+const LibcCacheSchemaVersion = 2
 
 // SourceLibcSymbolImport is the value of SyscallInfo.Source for syscalls detected
 // via libc import symbol matching.
