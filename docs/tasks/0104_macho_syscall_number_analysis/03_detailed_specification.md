@@ -560,32 +560,54 @@ slog.Info("SyscallAnalysis cache indicates network syscall (high risk)", ...)
 | 不正マジック | `ErrUnsupportedPclntabVersion` が返ること | ― |
 | 正常な pclntab バイト列 | `syscall.Syscall` 等のエントリが含まれること | AC-2, AC-3 |
 | `nil` pclntab | `ErrNoPclntab` が返ること | AC-2, AC-3 |
+| stripped バイナリ（`__gopclntab` セクション削除済み） | `ErrNoPclntab` が返り、呼び出し側が Pass 1/Pass 2 スキップで継続すること（`Analyze` がエラーを返さないこと） | AC-2, AC-3 |
 
 ### 10.2 Pass 1 テスト（AC-1, AC-2 対応）
 
 各テストは合成 arm64 機械語バイト列を入力として渡す。
 
+主要命令の arm64 エンコーディング参考値（リトルエンディアン）：
+
+| 命令 | hex（LE） | 備考 |
+|---|---|---|
+| `svc #0x80` | `01 10 00 D4` | macOS syscall 命令 |
+| `MOVZ X16, #98` | `10 0C 80 D2` | `0xD2800C10`：imm16=98, hw=0 |
+| `MOVZ X16, #3` | `70 00 80 D2` | `0xD2800070`：imm16=3, hw=0 |
+| `MOVZ X16, #0x0200, LSL#16` | `10 04 A0 D2` | `0xD2A00410`：imm16=0x200, hw=1 |
+| `MOVK X16, #0x0062` | `50 0C 80 F2` | `0xF2800C50`：imm16=0x62 |
+| `ldr x16, [sp, #0x18]` | `F0 63 40 F9` | スタックロード |
+| `BL <offset>` | 先頭バイト `94` or `97` 等 | `[31:26]=100101` |
+
 | テストケース | 入力 | 期待出力 | AC |
 |---|---|---|---|
-| `MOVZ X16, #98` + `svc #0x80` | `MOVZ X16, #98`（エンコード）+ `svc` | `Number=98, IsNetwork=true, Method="immediate"` | AC-1 |
-| `MOVZ X16, #3` + `svc #0x80` | `MOVZ X16, #3` + `svc` | `Number=3, IsNetwork=false, Method="immediate"` | AC-1 |
-| BSD prefix 付き 32bit（`MOVZ X16, #0x0200, LSL#16` + `MOVK X16, #0x0062`） | 組み合わせエンコード + `svc` | `Number=98（0x2000062 - 0x2000000）, IsNetwork=true` | AC-1 |
-| `ldr x16, [sp, #0x18]` + `svc #0x80` | スタックロード命令 + `svc` | `Number=-1, IsNetwork=false, Method="unknown:indirect_setting"` | AC-1 |
-| 制御フロー命令（`BL`）を挟んだ `svc #0x80` | `BL xxx` + `MOVZ X16, #98` + `svc` | 後方スキャンが `BL` で停止 → `Number=-1` | AC-1 |
+| `MOVZ X16, #98` + `svc #0x80` | `0xD2800C10` + `0xD4001001` | `Number=98, IsNetwork=true, Method="immediate"` | AC-1 |
+| `MOVZ X16, #3` + `svc #0x80` | `0xD2800070` + `0xD4001001` | `Number=3, IsNetwork=false, Method="immediate"` | AC-1 |
+| BSD prefix 付き 32bit（`MOVZ X16, #0x0200, LSL#16` + `MOVK X16, #0x0062`） | `0xD2A00410` + `0xF2800C50` + `0xD4001001` | `Number=98（0x2000062 - 0x2000000）, IsNetwork=true` | AC-1 |
+| `ldr x16, [sp, #0x18]` + `svc #0x80` | `0xF963C0F9`（適切なオフセット値）+ `0xD4001001` | `Number=-1, IsNetwork=false, Method="unknown:indirect_setting"` | AC-1 |
+| 制御フロー命令（`BL`）を挟んだ `svc #0x80` | `BL xxx`（`[31:26]=100101`）+ `MOVZ X16, #98` + `svc` | 後方スキャンが `BL` で停止 → `Number=-1` | AC-1 |
 | `svc #0x80` が既知スタブアドレス範囲内 | stubRanges に含む | 結果スライスにエントリなし（除外） | AC-2 |
 | `svc #0x80` がスタブ範囲外 | stubRanges に含まない | エントリあり | AC-2 |
 
 ### 10.3 Pass 2 テスト（AC-3 対応）
 
+主要命令の arm64 エンコーディング参考値（リトルエンディアン）：
+
+| 命令 | hex（LE） | 備考 |
+|---|---|---|
+| `MOVZ X0, #98` | `00 0C 80 D2` | `0xD2800C00`：imm16=98, Rd=X0 |
+| `STP X0, X1, [SP, #8]` | `E0 07 00 A9` | `0xA9000FE0`（実際のオフセット/レジスタに応じて変わる）|
+| `STR X0, [SP, #8]` | `E0 07 00 F9` | `0xF90007E0`：imm12=1（×8=8）, Rn=SP |
+| `BL <target>` | `[31:26]=100101` | 上位6bit が `0x25` (big-endian) = `0x94` (LE 先頭バイト) |
+
 | テストケース | 入力 | 期待出力 | AC |
 |---|---|---|---|
-| `MOV xN, #98` + `STP xN, ..., [SP, #8]` + `BL syscall.Syscall` | エンコード済みバイト列 | `Number=98, IsNetwork=true, Method="go_wrapper"` | AC-3 |
-| `MOV xN, #3` + `STR xN, [SP, #8]` + `BL syscall.Syscall6` | エンコード済みバイト列 | `Number=3, IsNetwork=false, Method="go_wrapper"` | AC-3 |
-| `MOV xN, #49` + `STP xN, ..., [SP, #8]` + `BL syscall.RawSyscall` | エンコード済みバイト列 | `Number=49 (munmap), IsNetwork=false, Method="go_wrapper"` | AC-3 |
-| `[SP, #8]` への書き込みが間接ロード由来 | 即値なし + `BL syscall.RawSyscall6` | `Number=-1, Method="unknown:indirect_setting"` | AC-3 |
+| `MOV xN, #98` + `STP xN, ..., [SP, #8]` + `BL syscall.Syscall` | `MOVZ X0, #98`（`0xD2800C00`）+ STP + BL（ターゲット=wrapperAddr）| `Number=98, IsNetwork=true, Method="go_wrapper"` | AC-3 |
+| `MOV xN, #3` + `STR xN, [SP, #8]` + `BL syscall.Syscall6` | `MOVZ X0, #3`（`0xD2800060`）+ STR + BL | `Number=3, IsNetwork=false, Method="go_wrapper"` | AC-3 |
+| `MOV xN, #49` + `STP xN, ..., [SP, #8]` + `BL syscall.RawSyscall` | `MOVZ X0, #49`（`0xD2800620`）+ STP + BL | `Number=49 (munmap), IsNetwork=false, Method="go_wrapper"` | AC-3 |
+| `[SP, #8]` への書き込みが間接ロード由来 | `LDR X0, [X1]` + STP + `BL syscall.RawSyscall6` | `Number=-1, Method="unknown:indirect_setting"` | AC-3 |
 | `.gopclntab` なし（noPclntab=true） | wrapperAddrs 空 | Pass 2 結果なし（スキップ） | AC-3 |
 | ラッパー関数内からの BL（IsInsideWrapper） | callSite ∈ wrapperRanges | 結果スライスに含まれない | ― |
-| 制御フロー境界 | `BL other` + `MOV xN, #98` + `BL syscall.Syscall` | 後方スキャンが BL で停止 → `Number=-1` | AC-3 |
+| 制御フロー境界 | `BL other`（`[31:26]=100101`）+ `MOVZ X0, #98` + `BL syscall.Syscall` | 後方スキャンが BL で停止 → `Number=-1` | AC-3 |
 
 ### 10.4 リスク判定テスト（AC-4 対応）
 

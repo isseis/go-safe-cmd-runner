@@ -90,6 +90,8 @@ Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclnt
 - `internal/runtime/syscall.Syscall6` 等の Go バージョン依存スタブ名
 - その他、ELF 版 `knownSyscallImpls` に対応する macOS arm64 のスタブ関数
 
+この除外集合（`knownMachoSyscallImpls`）と FR-3.2.1 の Pass 2 解決対象集合（`knownGoWrappers`）は必ずしも同一ではない。`knownGoWrappers` には `runtime.syscall` 等の呼び出し元向け高レベルラッパーが追加的に含まれる場合がある（詳細は FR-3.2.1 を参照）。
+
 `.gopclntab` が存在しない場合は除外処理なしで Pass 1 を継続すること（非 Go バイナリや stripped バイナリ向け）。
 
 #### FR-3.1.3: BSD prefix の除去
@@ -106,12 +108,13 @@ Mach-O バイナリに `.gopclntab` セクションが存在する場合、pclnt
 
 #### FR-3.2.1: Go ラッパー関数の特定
 
-
 `.gopclntab` セクションが存在する場合、以下の既知 Go syscall ラッパー関数のアドレスを解決すること（ELF 版 `knownGoWrappers` に対応する macOS arm64 版）。少なくとも調査で確認済みの公開ラッパーを対象とし、Go バージョン差分に応じて内部スタブ名を追加できること。
 
 - `syscall.Syscall`, `syscall.Syscall6`
 - `syscall.RawSyscall`, `syscall.RawSyscall6`
 - `runtime.syscall`, `runtime.syscall6` や `internal/runtime/syscall.Syscall6` などの Go バージョン依存の内部スタブ
+
+この Pass 2 解決対象集合（`knownGoWrappers`）は FR-3.1.2 の Pass 1 除外集合（`knownMachoSyscallImpls`）を包含する。Pass 1 除外集合は内部スタブ実装（直接 `svc #0x80` を発行する関数）のみを対象とするが、Pass 2 解決集合はその呼び出し側にあたる高レベルラッパー（`runtime.syscall` 等）も加える場合がある。
 
 #### FR-3.2.2: 呼び出しサイトでの syscall 番号解析
 
