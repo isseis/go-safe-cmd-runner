@@ -64,7 +64,7 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	var detected []binaryanalyzer.DetectedSymbol
 	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
 	for _, sym := range symbols {
-		normalized := normalizeSymbolName(sym)
+		normalized := NormalizeSymbolName(sym)
 		if cat, found := a.networkSymbols[normalized]; found {
 			detected = append(detected, binaryanalyzer.DetectedSymbol{
 				Name:     normalized,

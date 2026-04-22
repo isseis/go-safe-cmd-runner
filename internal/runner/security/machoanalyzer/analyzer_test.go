@@ -35,7 +35,7 @@ func skipIfNotExist(t *testing.T, path string) {
 	}
 }
 
-// TestNormalizeSymbolName tests the normalizeSymbolName function.
+// TestNormalizeSymbolName tests the NormalizeSymbolName function.
 func TestNormalizeSymbolName(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -51,7 +51,7 @@ func TestNormalizeSymbolName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := normalizeSymbolName(tt.input)
+			got := NormalizeSymbolName(tt.input)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
