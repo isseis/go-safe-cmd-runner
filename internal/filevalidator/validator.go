@@ -871,13 +871,13 @@ type machoAnalysisInfo struct {
 	hasLibSystemLoadCmd bool
 }
 
-// machoFatMagicLE is the byte pattern for a Fat/universal Mach-O header
-// (big-endian 0xCAFEBABE / 0xBEBAFECA) interpreted as a little-endian uint32.
-// Fat binaries write the magic in big-endian; reading as little-endian gives
-// 0xBEBAFECA for a real fat binary (0xCAFEBABE for a byte-swapped one).
+// machoFatMagicLE and machoFatCigamLE are the Mach-O fat-header magic values
+// as seen after decoding the first 4 bytes with binary.LittleEndian.Uint32.
+// A real fat header written on disk as big-endian 0xCAFEBABE decodes to
+// 0xBEBAFECA, while the byte-swapped form 0xBEBAFECA decodes to 0xCAFEBABE.
 const (
-	machoFatMagicLE = uint32(0xCAFEBABE)
-	machoFatCigamLE = uint32(0xBEBAFECA)
+	machoFatMagicLE = uint32(0xBEBAFECA)
+	machoFatCigamLE = uint32(0xCAFEBABE)
 )
 
 // nativeMachoCPU returns the macho.Cpu constant for the current runtime.GOARCH.
