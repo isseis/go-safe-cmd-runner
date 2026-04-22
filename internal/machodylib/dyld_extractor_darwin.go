@@ -124,7 +124,11 @@ func ExtractLibSystemKernelFromDyldCache() (*LibSystemKernelBytes, error) {
 
 // extractLibsystemKernel performs the actual extraction.
 func extractLibsystemKernel(cachePath string) ([]byte, error) {
-	f, err := os.Open(cachePath) //nolint:gosec // cachePath comes from the trusted dyldSharedCachePaths list
+	// cachePath is an element of dyldSharedCachePaths, a hardcoded list of system paths
+	// protected by macOS SIP (System Integrity Protection). Directory components cannot be
+	// replaced with symlinks without disabling SIP, so os.Open is safe here without
+	// additional safefileio checks.
+	f, err := os.Open(cachePath) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("open dyld cache: %w", err)
 	}
@@ -395,7 +399,10 @@ func findSubCacheFileForAddr(vmAddr uint64, mainPath string, mainMapping dyldMap
 
 // readSubCacheMapping opens a sub-cache file and finds the mapping that contains vmAddr.
 func readSubCacheMapping(path string, vmAddr uint64) (*dyldMappingInfo, error) {
-	f, err := os.Open(path) //nolint:gosec // path is constructed from trusted dyldSharedCachePaths + validated suffix
+	// path is derived from dyldSharedCachePaths, a hardcoded list of system paths protected by
+	// macOS SIP (System Integrity Protection). Directory components cannot be replaced with
+	// symlinks without disabling SIP, so os.Open is safe here without additional safefileio checks.
+	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
 		return nil, err
 	}
