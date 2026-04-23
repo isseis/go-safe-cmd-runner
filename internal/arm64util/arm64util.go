@@ -5,25 +5,29 @@ package arm64util
 import "encoding/binary"
 
 const (
-	instrLen                 = 4
-	maxBackwardScanInstr     = 16
-	bsdSyscallClassPrefix    = 0x2000000
-	imm16HighShift           = 16
-	movzX16Base              = uint32(0xD2800010) // MOVZ X16, #0, LSL #0
-	movzX16Lsl16             = uint32(0xD2A00010) // MOVZ X16, #0, LSL #16
-	movkX16Base              = uint32(0xF2800010) // MOVK X16, #0, LSL #0
-	movkX16Lsl16             = uint32(0xF2A00010) // MOVK X16, #0, LSL #16
-	imm16Mask                = uint32(0x001FFFE0) // bits[20:5]
-	imm16Shift               = 5
-	patternBLRBR             = uint32(0b1101011000) // bits[31:22] for BLR/BR
-	patternRET               = uint32(0b1101011001) // bits[31:22] for RET
-	patternCBZ               = uint32(0b011010)     // bits[30:25] for CBZ/CBNZ
-	patternTBZ               = uint32(0b011011)     // bits[30:25] for TBZ/TBNZ
-	field6Mask               = uint32(0x3F)
-	patternMovzMovkBits28_23 = uint32(0b100101) // [28:23] shared by MOVZ and MOVK
-	bitShiftBLRBR            = 22
-	bitShiftCBZTBZ           = 25
-	bitShiftMovzMovk         = 23
+	instrLen                = 4
+	maxBackwardScanInstr    = 16
+	bsdSyscallClassPrefix   = 0x2000000
+	imm16HighShift          = 16
+	movzX16Base             = uint32(0xD2800010) // MOVZ X16, #0, LSL #0
+	movzX16Lsl16            = uint32(0xD2A00010) // MOVZ X16, #0, LSL #16
+	movkX16Base             = uint32(0xF2800010) // MOVK X16, #0, LSL #0
+	movkX16Lsl16            = uint32(0xF2A00010) // MOVK X16, #0, LSL #16
+	imm16Mask               = uint32(0x001FFFE0) // bits[20:5]
+	imm16Shift              = 5
+	patternBLRBR            = uint32(0b1101011000) // bits[31:22] for BLR/BR
+	patternRET              = uint32(0b1101011001) // bits[31:22] for RET
+	patternCBZ              = uint32(0b011010)     // bits[30:25] for CBZ/CBNZ
+	patternTBZ              = uint32(0b011011)     // bits[30:25] for TBZ/TBNZ
+	field6Mask              = uint32(0x3F)
+	patternMovWideBits28_23 = uint32(0b100101) // [28:23] shared by MOVN/MOVZ/MOVK
+	bitShiftBLRBR           = 22
+	bitShiftCBZTBZ          = 25
+	bitShiftMovWide         = 23
+	bitShiftOpc             = 29
+	opcMask                 = uint32(0x3)
+	opcMOVZ                 = uint32(0b10) // opc[30:29]=10 → MOVZ
+	opcMOVK                 = uint32(0b11) // opc[30:29]=11 → MOVK
 )
 
 // BackwardScanX16 walks backward from the svc #0x80 instruction at code[svcOffset]
@@ -110,10 +114,13 @@ func IsControlFlowInstruction(word uint32) bool {
 }
 
 // WritesX16NotMovzMovk reports whether word is a 64-bit instruction that writes to x16,
-// excluding MOVZ and MOVK.
+// excluding MOVZ and MOVK (but not MOVN, which also writes its destination).
 func WritesX16NotMovzMovk(word uint32) bool {
-	if (word>>bitShiftMovzMovk)&field6Mask == patternMovzMovkBits28_23 {
-		return false
+	if (word>>bitShiftMovWide)&field6Mask == patternMovWideBits28_23 {
+		opc := (word >> bitShiftOpc) & opcMask
+		if opc == opcMOVZ || opc == opcMOVK {
+			return false
+		}
 	}
 	return word>>31 == 1 && word&0x1F == 0x10
 }
