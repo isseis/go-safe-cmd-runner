@@ -32,7 +32,8 @@
 - `internal/filevalidator/validator.go` の `buildMachoSyscallData`（Mach-O）における `FilterSyscallsForStorage` 呼び出しの削除、および `AnalysisWarnings` 生成ロジックの修正
 - `internal/runner/security/network_analyzer.go` の `syscallAnalysisHasSVCSignal` および `syscallAnalysisHasNetworkSignal` のフィルタリングされていないレコードに対する動作確認・修正
 - **macOS BSD syscall テーブルの自動生成化**（後述 FR-5）
-- 上記に伴うテストの更新
+- 上記に伴う既存テストの更新（少なくとも `internal/fileanalysis/syscall_store_test.go`、`internal/filevalidator/validator_test.go`、`internal/filevalidator/validator_macho_test.go`、`internal/runner/security/network_analyzer_test.go`、macOS syscall テーブル関連テスト）
+- 関連仕様書との整合更新（少なくとも `docs/tasks/0104_macho_syscall_number_analysis/` 配下の `syscallAnalysisHasSVCSignal` 削除前提記述を本タスクの方針に合わせて修正、または superseded として明示）
 
 #### 対象外
 
@@ -261,7 +262,14 @@ macOS SDK ヘッダーが存在しない環境（Linux CI 等）では macOS テ
 ### AC-7: 既存テストの通過
 
 - `make test` / `make lint` がエラーなしで通過すること
-- 既存の ELF・Mach-O 解析テストが、フィルタリング削除後も意図した動作を検証する内容に更新されること
+- `internal/filevalidator/validator_test.go` の `buildSyscallData` テストが、非ネットワーク・解決済み syscall も保持される前提へ更新されること
+- `internal/filevalidator/validator_macho_test.go` の `buildMachoSyscallData` テストが、解決済み非ネットワーク svc を保持しつつ、未解決 svc のみ `analysis_warnings` を発火させる前提へ更新されること
+- `internal/runner/security/network_analyzer_test.go` の SVC / network signal テストが、未解決 svc のみ high risk、`IsNetwork == true` は `DeterminationMethod` に依存せず network signal と判定する前提へ更新されること
+- `internal/fileanalysis/syscall_store_test.go` の `FilterSyscallsForStorage` 前提テストが削除または置換されること
+
+### AC-8: 関連ドキュメントの整合
+
+- `docs/tasks/0104_macho_syscall_number_analysis/` 配下に残っている「`syscallAnalysisHasSVCSignal` を削除する」前提の記述が、本タスク後の実装方針と矛盾しない状態へ更新されること
 
 ## 6. 先行タスクとの関係
 
