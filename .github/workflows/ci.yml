@@ -84,6 +84,13 @@ jobs:
             --out-format sarif \
             --timeout=5m \
             ./... > golangci-security.sarif 2>/dev/null || true
+          # Remove invalid SARIF to prevent upload-sarif from failing with
+          # "Invalid SARIF. JSON syntax error: Unexpected end of JSON input"
+          # which can happen when golangci-lint is killed mid-run.
+          if [ -f golangci-security.sarif ]; then
+            python3 -c "import json,sys; json.load(open('golangci-security.sarif'))" 2>/dev/null \
+              || { echo "Invalid SARIF output (likely truncated), skipping upload"; rm -f golangci-security.sarif; }
+          fi
         continue-on-error: true
 
       - name: Upload golangci-lint security SARIF file
