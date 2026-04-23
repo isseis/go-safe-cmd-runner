@@ -38,7 +38,6 @@ func buildMachOWithPclntab(t *testing.T, pclntabData []byte) *macho.File {
 		segCmdSize64    = 72        // sizeof(segment_command_64)
 		sectCmdSize64   = 80        // sizeof(section_64)
 		lcSegment64     = uint32(0x19)
-		vmProtNone      = uint32(0)
 		vmProtRX        = uint32(5)           // VM_PROT_READ | VM_PROT_EXECUTE
 		textSectionData = "\x00\x00\x00\x00"  // 4-byte placeholder
 		textVMAddr      = uint64(0x100000000) // typical macOS arm64 base
