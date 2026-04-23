@@ -108,7 +108,7 @@ func (noopSyscallTable) IsNetworkSyscall(_ int) bool { return false }
 // Pass 1: scans svc #0x80 addresses, excludes known Go stub bodies, and resolves
 // the X16 syscall number via backward scan.
 // Pass 2: scans BL calls to known Go syscall wrapper addresses and resolves the
-// X0 argument via backward scan.
+// trap argument from the preceding write to the stack slot [SP, #8] (old stack ABI).
 //
 // Returns:
 //   - directSVCInfos: Pass 1 results (actual svc #0x80 instructions in user code).
@@ -140,8 +140,14 @@ func analyzeArm64Slice(f *macho.File, table SyscallNumberTable) (directSVCInfos,
 
 	// Parse pclntab to obtain Go function address ranges.
 	// ErrNoPclntab is expected for non-Go or stripped binaries; continue without exclusion.
+	// ErrUnsupportedPclntabVersion means a Go binary with an older pclntab format; continue
+	// without exclusion/resolution rather than failing the entire analysis.
+	// Other errors (I/O failures, corrupt data) are propagated to the caller.
 	funcs, pclntabErr := ParseMachoPclntab(f)
 	if pclntabErr != nil {
+		if !errors.Is(pclntabErr, ErrNoPclntab) && !errors.Is(pclntabErr, ErrUnsupportedPclntabVersion) && !errors.Is(pclntabErr, ErrInvalidPclntab) {
+			return nil, nil, fmt.Errorf("failed to parse pclntab: %w", pclntabErr)
+		}
 		funcs = nil
 	}
 

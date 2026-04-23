@@ -2,7 +2,10 @@
 // Extracted to break the import cycle: machoanalyzer → libccache → filevalidator → machoanalyzer.
 package arm64util
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"math/bits"
+)
 
 const (
 	instrLen                = 4
@@ -34,6 +37,11 @@ const (
 	opcMask                 = uint32(0x3)
 	opcMOVZ                 = uint32(0b10) // opc[30:29]=10 → MOVZ
 	opcMOVK                 = uint32(0b11) // opc[30:29]=11 → MOVK
+	arm64BitsPerWord        = uint32(64)   // bit width of a 64-bit ARM64 register
+	orrNBitPos              = uint32(22)   // bit position of N in ORR/logical immediate
+	orrImmrBitPos           = uint32(16)   // bit position of immr in logical immediate (bits[21:16])
+	orrImmsbitPos           = uint32(10)   // bit position of imms in logical immediate (bits[15:10])
+	bitmaskImmFieldWidth    = uint32(6)    // bit width of immr/imms fields in bitmask immediate
 )
 
 // BackwardScanX16 walks backward from the svc #0x80 instruction at code[svcOffset]
@@ -82,6 +90,11 @@ func BackwardScanX16(code []byte, svcOffset int) (int, bool) {
 		if word&^imm16Mask == movkX16Lsl16 {
 			x16Hi = int((word&imm16Mask)>>imm16Shift) << imm16HighShift
 			continue
+		}
+
+		// ORR X16, XZR, #imm (bitmask immediate form of MOV X16, #imm)
+		if val, ok := decodeORRX16XZR(word); ok {
+			return stripBSDPrefix(val), true
 		}
 
 		if isControlFlowInstruction(word) {
@@ -259,6 +272,66 @@ func isControlFlowInstruction(word uint32) bool {
 		return true
 	}
 	return false
+}
+
+// decodeORRX16XZR decodes an ORR X16, XZR, #imm instruction (bitmask immediate
+// form of MOV X16, #imm, as sometimes emitted by Go 1.25+ compilers) and returns
+// the immediate value. Returns (0, false) if word is not that instruction or if
+// the bitmask encoding is undefined.
+func decodeORRX16XZR(word uint32) (int, bool) {
+	// ORR (immediate) 64-bit: sf=1, opc=01, [28:23]=100100, Rn=XZR(31), Rd=X16(16)
+	// Fixed-bit mask covers bits[31:23] and bits[9:0] (Rn and Rd).
+	const orrX16XZRMask = uint32(0xFF8003FF)
+	const orrX16XZRFixed = uint32(0xB20003F0)
+	if word&orrX16XZRMask != orrX16XZRFixed {
+		return 0, false
+	}
+
+	N := (word >> orrNBitPos) & 1
+	immr := (word >> orrImmrBitPos) & field6Mask
+	imms := (word >> orrImmsbitPos) & field6Mask
+
+	// len = HighestSetBit(N:NOT(imms)) — ARMv8 Reference Manual bitmask decode
+	nNotImms := (N << bitmaskImmFieldWidth) | ((^imms) & field6Mask)
+	lenBits := bits.Len32(nNotImms) - 1
+	if lenBits < 1 {
+		return 0, false // undefined encoding
+	}
+
+	esize := uint32(1) << lenBits
+	levels := esize - 1
+	S := imms & levels
+	R := immr & levels
+
+	// All-ones within an element is undefined in ARM64 bitmask immediate.
+	if S == levels {
+		return 0, false
+	}
+
+	// Build S+1 consecutive ones (S < levels < esize ≤ 64, so S+1 ≤ 63 — no overflow).
+	welem := (uint64(1) << (S + 1)) - 1
+
+	// Rotate right by R within esize bits.
+	if R > 0 {
+		if esize == arm64BitsPerWord {
+			welem = bits.RotateLeft64(welem, -int(R))
+		} else {
+			mask := (uint64(1) << esize) - 1
+			welem = ((welem >> R) | (welem << (esize - R))) & mask
+		}
+	}
+
+	// Replicate the esize-bit pattern to fill 64 bits.
+	var result uint64
+	if esize == arm64BitsPerWord {
+		result = welem
+	} else {
+		for i := uint32(0); i < arm64BitsPerWord/esize; i++ {
+			result |= welem << (i * esize)
+		}
+	}
+
+	return int(result), true
 }
 
 // writesX16NotMovzMovk reports whether word is a 64-bit instruction that writes to x16,

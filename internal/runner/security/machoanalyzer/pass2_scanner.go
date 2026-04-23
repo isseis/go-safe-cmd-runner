@@ -78,7 +78,13 @@ func isKnownWrapper(code []byte, textBase, target uint64, wrapperAddrs map[uint6
 
 // scanGoWrapperCalls performs Pass 2: scans the __TEXT,__text section for BL
 // instructions targeting known Go syscall stub addresses, then resolves the
-// syscall number from the preceding X0 register assignment.
+// syscall number from the preceding trap argument write to [SP, #8].
+//
+// syscall.Syscall/RawSyscall et al. use the old stack-based calling convention
+// (NOSPLIT assembly stubs): the caller stores the trap number at SP+8 (trap+0(FP))
+// before the BL, not in a register via the register ABI. BackwardScanStackTrap
+// detects the STR/STP to [SP, #8] and then backward-scans the source register
+// for an immediate-load sequence.
 //
 //   - code: raw bytes of __TEXT,__text section
 //   - textBase: virtual address of the section start

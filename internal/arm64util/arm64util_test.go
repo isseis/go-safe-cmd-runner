@@ -157,10 +157,75 @@ func TestBackwardScanStackTrap_IndirectRegWrite(t *testing.T) {
 	assert.False(t, ok, "indirect write to trap register must stop the scan")
 }
 
-// TestBackwardScanX0_IndirectWriteStopsScal verifies that a non-MOV write to X0
+// svcImm80 is the ARM64 encoding of SVC #0x80 (macOS BSD syscall trap).
+const svcImm80 = uint32(0xD4001001)
+
+// encodeORRX16 builds an ORR X16, XZR, #imm instruction word from a raw encoding
+// (caller supplies the exact 32-bit word; helper only exists for documentation).
+// The actual instruction words used in tests are computed from the ARM64 bitmask spec.
+
+// TestBackwardScanX16_ORRX16_Basic verifies that ORR X16, XZR, #1 (0xB24003F0)
+// immediately before svc #0x80 resolves to syscall number 1.
+func TestBackwardScanX16_ORRX16_Basic(t *testing.T) {
+	t.Parallel()
+	// ORR X16, XZR, #1 (N=1, immr=0, imms=0 → value=1); SVC #0x80
+	const orrX16XZR1 = uint32(0xB24003F0)
+	code := buildCodeSliceX0(orrX16XZR1, svcImm80)
+	num, ok := BackwardScanX16(code, 4) // SVC at offset 4
+	require.True(t, ok)
+	assert.Equal(t, 1, num)
+}
+
+// TestBackwardScanX16_ORRX16_BSDPrefix verifies that when ORR loads a BSD-prefixed
+// value the prefix is stripped before returning.
+// Encoding: ORR X16, XZR, #0x3FFFFFF (N=1, immr=0, imms=25 → 26 consecutive ones).
+// 0x3FFFFFF >= bsdSyscallClassPrefix(0x2000000), so result = 0x3FFFFFF - 0x2000000 = 0x1FFFFFF.
+func TestBackwardScanX16_ORRX16_BSDPrefix(t *testing.T) {
+	t.Parallel()
+	// ORR X16, XZR, #0x3FFFFFF: N=1, immr=0, imms=25=0x19
+	// word = 0xB2000000 | (1<<22) | (0<<16) | (0x19<<10) | (31<<5) | 16
+	//      = 0xB2400000 | 0x6400 | 0x3E0 | 0x10 = 0xB24067F0
+	const orrX16BSDPrefixed = uint32(0xB24067F0)
+	code := buildCodeSliceX0(orrX16BSDPrefixed, svcImm80)
+	num, ok := BackwardScanX16(code, 4)
+	require.True(t, ok)
+	assert.Equal(t, 0x1FFFFFF, num)
+}
+
+// TestDecodeORRX16XZR_N0 verifies correct decoding of a N=0 bitmask immediate
+// by calling decodeORRX16XZR directly (bypassing the BSD-prefix strip in
+// BackwardScanX16, which would change the result for large values).
+// Encoding: ORR X16, XZR, #0x0F0F0F0F0F0F0F0F
+//
+//	N=0, esize=8, S=3 (4 ones), R=0, imms=0x33, immr=0
+//	word = 0xB2000000 | (0x33<<10) | (31<<5) | 16 = 0xB200CFF0
+func TestDecodeORRX16XZR_N0(t *testing.T) {
+	t.Parallel()
+	val, ok := decodeORRX16XZR(0xB200CFF0)
+	require.True(t, ok)
+	assert.Equal(t, int(uint64(0x0F0F0F0F0F0F0F0F)), val)
+}
+
+// TestBackwardScanX16_ORRX16_DoesNotStopScan verifies that an ORR X16 instruction
+// that used to terminate the scan (via writesX16NotMovzMovk) now resolves correctly
+// even when preceded by other instructions.
+func TestBackwardScanX16_ORRX16_DoesNotStopScan(t *testing.T) {
+	t.Parallel()
+	// NOP-like instruction (MOV X3, X3 = ORR X3, XZR, X3 encoded differently)
+	// Use a simple ADD X1, X1, #0 as a harmless filler (does not write X16).
+	// ADD X1, X1, #0 = 0x91000021
+	const nopFiller = uint32(0x91000021)
+	const orrX16XZR1 = uint32(0xB24003F0) // ORR X16, XZR, #1
+	code := buildCodeSliceX0(orrX16XZR1, nopFiller, svcImm80)
+	num, ok := BackwardScanX16(code, 8)
+	require.True(t, ok)
+	assert.Equal(t, 1, num)
+}
+
+// TestBackwardScanX0_IndirectWriteStopsScan verifies that a non-MOV write to X0
 // (e.g., ADD X0, X1, X2 — encoded as a 64-bit instruction with Rd=0) stops the scan.
 // ADD X0, X1, X2: sf=1, op=0b0001011_000, Rm=X2(2), Rn=X1(1), Rd=X0(0) → 0x8B020020
-func TestBackwardScanX0_IndirectWriteStopsScal(t *testing.T) {
+func TestBackwardScanX0_IndirectWriteStopsScan(t *testing.T) {
 	t.Parallel()
 	const addX0X1X2 = uint32(0x8B020020) // ADD X0, X1, X2
 	code := buildCodeSliceX0(
