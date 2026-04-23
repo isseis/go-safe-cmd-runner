@@ -289,38 +289,6 @@ func TestIsInsideRange_EmptySlice(t *testing.T) {
 	assert.False(t, isInsideRange(0x100, []funcRange{}))
 }
 
-// TestParseMachoPclntab_LiveBinary verifies that ParseMachoPclntab can parse
-// the actual test binary (go test builds contain __gopclntab) and finds known
-// Go runtime function names.
-func TestParseMachoPclntab_LiveBinary(t *testing.T) {
-	t.Parallel()
-
-	// Open the current test binary (self-test).
-	f, err := macho.Open("/proc/self/exe")
-	if err != nil {
-		// Not on macOS or not a Mach-O binary — skip.
-		t.Skip("skipping live binary test: cannot open /proc/self/exe as Mach-O")
-	}
-	defer f.Close() //nolint:errcheck
-
-	funcs, err := ParseMachoPclntab(f)
-	if errors.Is(err, ErrNoPclntab) || errors.Is(err, ErrUnsupportedPclntabVersion) || errors.Is(err, ErrInvalidPclntab) {
-		t.Skip("no suitable pclntab found in test binary")
-	}
-	require.NoError(t, err)
-	require.NotEmpty(t, funcs)
-
-	// Verify that at least one Go runtime function is present.
-	found := false
-	for name := range funcs {
-		if name == "testing.Main" || name == "testing.tRunner" || name == "main.main" {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "expected at least one known Go runtime function in pclntab")
-}
-
 // TestParseMachoPclntab_MacOSTestBinary verifies ParseMachoPclntab on macOS
 // using the actual test runner binary (os.Args[0]).
 func TestParseMachoPclntab_MacOSTestBinary(t *testing.T) {

@@ -3,7 +3,6 @@
 package machoanalyzer
 
 import (
-	"encoding/binary"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/arm64util"
@@ -64,10 +63,6 @@ func encodeMovkX16(imm uint32) uint32 {
 	return 0xF2800010 | ((imm & 0xFFFF) << 5)
 }
 
-// svcEncodingPass1 is the little-endian encoding of "svc #0x80" for arm64.
-// Named with Pass1 suffix to avoid redeclaration with svc_scanner_test.go.
-const svcEncodingPass1 = uint32(0xD4001001)
-
 // encodeBL encodes a BL instruction with a PC-relative offset (in bytes).
 // The offset must be a multiple of 4.
 func encodeBL(offsetBytes int32) uint32 {
@@ -83,46 +78,11 @@ func encodeLDRX16SP(offset uint32) uint32 {
 	return 0xF9400010 | (imm12 << 10) | (31 << 5)
 }
 
-// buildCodeSlice assembles a sequence of 32-bit ARM64 instructions into a byte slice.
-func buildCodeSlice(instrs ...uint32) []byte {
-	buf := make([]byte, len(instrs)*4)
-	for i, instr := range instrs {
-		binary.LittleEndian.PutUint32(buf[i*4:], instr)
-	}
-	return buf
-}
-
 // TestScanSVCWithX16_ImmediateNetworkSyscall verifies that MOVZ X16, #98 + svc
 // produces Number=98 (connect), IsNetwork=true, Method="immediate".
 func TestScanSVCWithX16_ImmediateNetworkSyscall(t *testing.T) {
 	t.Parallel()
-	// BSD syscall 98 = connect (network), 0x2000000+98 = 0x2000062
-	// MOVZ X16, #98: 0xD2800010 | (98 << 5) = 0xD2800010 | 0xC40 = 0xD2800C50
-	// Wait, imm=98 dec = 0x62, (0x62 << 5) = 0xC40
-	// 0xD2800010 | 0xC40 = 0xD2800C50... let me recalculate
-	// encodeMovzX16(98) = 0xD2800010 | ((98 & 0xFFFF) << 5) = 0xD2800010 | (98*32) = 0xD2800010 | 0xC40
-	// = 0xD2800C50... hmm, that gives Rd=0x10 | (imm<<5) part?
-	// Actually the encoding is:
-	//   [31]:    sf=1
-	//   [30:29]: opc=10 (MOVZ)
-	//   [28:23]: 100101 = 0x25
-	//   [22:21]: hw=00 (LSL #0)
-	//   [20:5]:  imm16
-	//   [4:0]:   Rd=16=0x10
-	// So base = 0xD2800010 = 1101 0010 1000 0000 0000 0000 0001 0000
-	// imm16 goes to bits [20:5], so shift by 5
-	// For imm=98: (98 << 5) = 3136 = 0xC40
-	// base | (98<<5) = 0xD2800010 | 0xC40 = 0xD2800C50... wait that shifts into bit 11
-	// Actually imm16Mask = 0x001FFFE0 (bits [20:5]), imm16Shift = 5
-	// encodeMovzX16(98) = 0xD2800010 | ((98 & 0xFFFF) << 5)
-	// = 0xD2800010 | 0xC40 = 0xD2800C50
-	// Let me verify: 0xD2800C50 & ^imm16Mask = 0xD2800C50 & 0xFFE0001F
-	//   = 0xD2800010... wait: 0xD2800C50 = 1101 0010 1000 0000 0000 1100 0101 0000
-	//   ^imm16Mask = ~0x001FFFE0 = 0xFFE0001F
-	//   0xD2800C50 & 0xFFE0001F = 1101 0010 1000 0000 0000 0000 0001 0000 = 0xD2800010 ✓
-	// And (0xD2800C50 & imm16Mask) >> 5 = (0xC40) >> 5 = 0x62 = 98 ✓
-
-	code := buildCodeSlice(encodeMovzX16(98), svcEncodingPass1)
+	code := buildCodeSlice(encodeMovzX16(98), svcEncoding)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 4 // second instruction
 
@@ -141,7 +101,7 @@ func TestScanSVCWithX16_ImmediateNetworkSyscall(t *testing.T) {
 // produces Number=3, IsNetwork=false.
 func TestScanSVCWithX16_ImmediateNonNetworkSyscall(t *testing.T) {
 	t.Parallel()
-	code := buildCodeSlice(encodeMovzX16(3), svcEncodingPass1)
+	code := buildCodeSlice(encodeMovzX16(3), svcEncoding)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 4
 
@@ -164,7 +124,7 @@ func TestScanSVCWithX16_BSDPrefix32bit(t *testing.T) {
 	code := buildCodeSlice(
 		encodeMovzX16Lsl16(0x0200), // sets X16 = 0x02000000
 		encodeMovkX16(0x0062),      // X16 |= 0x62 → 0x02000062
-		svcEncodingPass1,
+		svcEncoding,
 	)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 8 // third instruction
@@ -180,7 +140,7 @@ func TestScanSVCWithX16_BSDPrefix32bit(t *testing.T) {
 // produces Number=-1, Method="unknown:indirect_setting".
 func TestScanSVCWithX16_IndirectLoad(t *testing.T) {
 	t.Parallel()
-	code := buildCodeSlice(encodeLDRX16SP(24), svcEncodingPass1)
+	code := buildCodeSlice(encodeLDRX16SP(24), svcEncoding)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 4
 
@@ -206,7 +166,7 @@ func TestScanSVCWithX16_ControlFlowBoundary(t *testing.T) {
 	code := buildCodeSlice(
 		encodeMovzX16(98), // offset 0: MOVZ X16, #98
 		encodeBL(-4),      // offset 4: BL (control-flow; scan stops here)
-		svcEncodingPass1,  // offset 8: svc #0x80
+		svcEncoding,       // offset 8: svc #0x80
 	)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 8 // third instruction
@@ -222,7 +182,7 @@ func TestScanSVCWithX16_ControlFlowBoundary(t *testing.T) {
 // range is excluded from Pass 1 results.
 func TestScanSVCWithX16_SVCInsideStubRange(t *testing.T) {
 	t.Parallel()
-	code := buildCodeSlice(encodeMovzX16(98), svcEncodingPass1)
+	code := buildCodeSlice(encodeMovzX16(98), svcEncoding)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 4
 
@@ -239,7 +199,7 @@ func TestScanSVCWithX16_SVCInsideStubRange(t *testing.T) {
 // is included in Pass 1 results.
 func TestScanSVCWithX16_SVCOutsideStubRange(t *testing.T) {
 	t.Parallel()
-	code := buildCodeSlice(encodeMovzX16(98), svcEncodingPass1)
+	code := buildCodeSlice(encodeMovzX16(98), svcEncoding)
 	const textBase = uint64(0x100000000)
 	svcAddr := textBase + 4
 
@@ -273,7 +233,7 @@ func TestBuildStubRanges(t *testing.T) {
 // text section produces an unknown-syscall entry instead of panicking.
 func TestScanSVCWithX16_OutOfBoundsAddress(t *testing.T) {
 	t.Parallel()
-	code := buildCodeSlice(encodeMovzX16(98), svcEncodingPass1)
+	code := buildCodeSlice(encodeMovzX16(98), svcEncoding)
 	const textBase = uint64(0x100000000)
 	table := newStubSyscallTable()
 
@@ -300,8 +260,7 @@ func TestScanSVCWithX16_OutOfBoundsAddress(t *testing.T) {
 // preceding MOVZ/MOVK instructions returns (0, false).
 func TestArm64BackwardScanX16_NoPrecedingInstruction(t *testing.T) {
 	t.Parallel()
-	// Just the svc instruction at offset 0.
-	code := buildCodeSlice(svcEncodingPass1)
+	code := buildCodeSlice(svcEncoding)
 	num, ok := arm64util.BackwardScanX16(code, 0)
 	assert.False(t, ok)
 	assert.Zero(t, num)

@@ -78,11 +78,11 @@ func BackwardScanX16(code []byte, svcOffset int) (int, bool) {
 			continue
 		}
 
-		if IsControlFlowInstruction(word) {
+		if isControlFlowInstruction(word) {
 			break
 		}
 
-		if WritesX16NotMovzMovk(word) {
+		if writesX16NotMovzMovk(word) {
 			break
 		}
 	}
@@ -96,8 +96,8 @@ func stripBSDPrefix(v int) int {
 	return v
 }
 
-// IsControlFlowInstruction reports whether word is a B/BL/BLR/BR/RET/CBZ/CBNZ/TBZ/TBNZ instruction.
-func IsControlFlowInstruction(word uint32) bool {
+// isControlFlowInstruction reports whether word is a B/BL/BLR/BR/RET/CBZ/CBNZ/TBZ/TBNZ instruction.
+func isControlFlowInstruction(word uint32) bool {
 	if word>>26 == 0b000101 || word>>26 == 0b100101 {
 		return true
 	}
@@ -113,9 +113,9 @@ func IsControlFlowInstruction(word uint32) bool {
 	return false
 }
 
-// WritesX16NotMovzMovk reports whether word is a 64-bit instruction that writes to x16,
+// writesX16NotMovzMovk reports whether word is a 64-bit instruction that writes to x16,
 // excluding MOVZ and MOVK (but not MOVN, which also writes its destination).
-func WritesX16NotMovzMovk(word uint32) bool {
+func writesX16NotMovzMovk(word uint32) bool {
 	if (word>>bitShiftMovWide)&field6Mask == patternMovWideBits28_23 {
 		opc := (word >> bitShiftOpc) & opcMask
 		if opc == opcMOVZ || opc == opcMOVK {

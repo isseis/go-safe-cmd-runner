@@ -11,8 +11,8 @@ import (
 	"sort"
 )
 
-// machoTextSegName is the Mach-O segment name for the executable text segment.
-const machoTextSegName = "__TEXT"
+// textSegName is the Mach-O segment name for the executable text segment.
+const textSegName = "__TEXT"
 
 // Errors returned by ParseMachoPclntab.
 var (
@@ -114,7 +114,7 @@ func parseMachoPclntabFuncsRaw(f *macho.File) (map[string]MachoPclntabFunc, erro
 	// The text start address is required by gosym.NewLineTable.
 	var textStart uint64
 	textSection := f.Section("__text")
-	if textSection != nil && textSection.Seg == machoTextSegName {
+	if textSection != nil && textSection.Seg == textSegName {
 		textStart = textSection.Addr
 	}
 
@@ -161,7 +161,7 @@ func checkMachoPclntabVersion(data []byte) error {
 // Returns 0 if no correction is needed (non-CGO binaries) or if detection fails.
 func detectMachoPclntabOffset(f *macho.File, pclntabFuncs map[string]MachoPclntabFunc) int64 {
 	textSection := f.Section("__text")
-	if textSection == nil || textSection.Seg != machoTextSegName {
+	if textSection == nil || textSection.Seg != textSegName {
 		return 0
 	}
 
@@ -187,7 +187,7 @@ func detectMachoOffsetByBLTargets(
 	)
 
 	textSection := f.Section("__text")
-	if textSection == nil || textSection.Seg != machoTextSegName {
+	if textSection == nil || textSection.Seg != textSegName {
 		return 0
 	}
 
@@ -212,7 +212,7 @@ func detectMachoOffsetByBLTargets(
 	diffCounts := make(map[int64]int)
 	textAddr := textSection.Addr
 
-	collectMachoArm64BLDiffs(data, textAddr, sortedEntries, diffCounts)
+	collectBLDiffs(data, textAddr, sortedEntries, diffCounts)
 
 	// Find the most frequent difference value with a unique winner.
 	var bestDiff int64
@@ -234,9 +234,9 @@ func detectMachoOffsetByBLTargets(
 	return bestDiff
 }
 
-// collectMachoArm64BLDiffs scans data for arm64 BL instructions and accumulates
+// collectBLDiffs scans data for arm64 BL instructions and accumulates
 // (target_VA - E) differences for all pclntab entries E within the window.
-func collectMachoArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, diffCounts map[int64]int) {
+func collectBLDiffs(data []byte, textAddr uint64, sortedEntries []uint64, diffCounts map[int64]int) {
 	const (
 		arm64InstrSize   = 4
 		arm64BLOpcode    = uint32(0b100101) // bits[31:26] of BL instruction
@@ -251,26 +251,26 @@ func collectMachoArm64BLDiffs(data []byte, textAddr uint64, sortedEntries []uint
 			imm26Raw := instr & arm64BLImmMask
 			imm26 := int32(imm26Raw<<arm64BLSignShift) >> arm64BLSignShift       //nolint:gosec // G115: safe, imm26Raw is masked to 26 bits
 			target := textAddr + uint64(i) + uint64(int64(imm26)*arm64InstrSize) //nolint:gosec // G115: result bounded by address space
-			collectMachoWindowDiffs(target, sortedEntries, diffCounts)
+			collectWindowDiffs(target, sortedEntries, diffCounts)
 		}
 	}
 }
 
-// maxMachoOffset is the upper bound for C startup code size (8 KB).
-const maxMachoOffset = int64(0x2000)
+// maxCStartupOffset is the upper bound for C startup code size before Go text (8 KB).
+const maxCStartupOffset = int64(0x2000)
 
-// collectMachoWindowDiffs records (target - E) for all pclntab entries E
-// in the range [target - maxMachoOffset, target].
-func collectMachoWindowDiffs(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
+// collectWindowDiffs records (target - E) for all pclntab entries E
+// in the range [target - maxCStartupOffset, target].
+func collectWindowDiffs(target uint64, sortedEntries []uint64, diffCounts map[int64]int) {
 	lo := uint64(0)
-	if target > uint64(maxMachoOffset) {
-		lo = target - uint64(maxMachoOffset)
+	if target > uint64(maxCStartupOffset) {
+		lo = target - uint64(maxCStartupOffset)
 	}
 	idxLo := sort.Search(len(sortedEntries), func(i int) bool {
 		return sortedEntries[i] >= lo
 	})
 	for i := idxLo; i < len(sortedEntries) && sortedEntries[i] <= target; i++ {
-		diff := int64(target - sortedEntries[i]) //nolint:gosec // G115: subtraction result bounded by maxMachoOffset
+		diff := int64(target - sortedEntries[i]) //nolint:gosec // G115: subtraction result bounded by maxCStartupOffset
 		diffCounts[diff]++
 	}
 }

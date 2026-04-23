@@ -83,14 +83,7 @@ func scanSVCWithX16(
 		}
 
 		if addr < textBase || addr >= textBase+uint64(len(code)) {
-			results = append(results, common.SyscallInfo{
-				Number:              -1,
-				Name:                "",
-				IsNetwork:           false,
-				Location:            addr,
-				DeterminationMethod: determinationMethodUnknownIndirect,
-				Source:              "",
-			})
+			results = append(results, unknownSyscallInfo(addr))
 			continue
 		}
 		svcOffset := int(addr - textBase) //nolint:gosec // G115: addr-textBase < len(code) which fits in int
@@ -105,20 +98,20 @@ func scanSVCWithX16(
 				IsNetwork:           table.IsNetworkSyscall(num),
 				Location:            addr,
 				DeterminationMethod: determinationMethodImmediate,
-				Source:              "", // Mach-O direct svc entries have empty Source (same as ELF)
 			}
 		} else {
-			info = common.SyscallInfo{
-				Number:              -1,
-				Name:                "",
-				IsNetwork:           false,
-				Location:            addr,
-				DeterminationMethod: determinationMethodUnknownIndirect,
-				Source:              "",
-			}
+			info = unknownSyscallInfo(addr)
 		}
 		results = append(results, info)
 	}
 
 	return results
+}
+
+func unknownSyscallInfo(addr uint64) common.SyscallInfo {
+	return common.SyscallInfo{
+		Number:              -1,
+		Location:            addr,
+		DeterminationMethod: determinationMethodUnknownIndirect,
+	}
 }
