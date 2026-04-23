@@ -21,7 +21,6 @@ const (
 	movkW0Base              = uint32(0x72800000) // MOVK W0, #0, LSL #0
 	imm16Mask               = uint32(0x001FFFE0) // bits[20:5]
 	imm16Shift              = 5
-	regEncodingX0           = uint32(0x00)         // arm64 register encoding for X0/W0
 	patternBLRBR            = uint32(0b1101011000) // bits[31:22] for BLR/BR
 	patternRET              = uint32(0b1101011001) // bits[31:22] for RET
 	patternCBZ              = uint32(0b011010)     // bits[30:25] for CBZ/CBNZ
@@ -101,84 +100,141 @@ func BackwardScanX16(code []byte, svcOffset int) (int, bool) {
 // on arm64). When found, it returns the loaded value. The scan is limited to
 // maxBackwardScanInstr instructions.
 func BackwardScanX0(code []byte, blOffset int) (int, bool) {
+	return backwardScanRegImm(code, blOffset, 0)
+}
+
+// BackwardScanStackTrap walks backward from the BL instruction at code[blOffset]
+// looking for a Go old-stack-ABI trap argument write: STR/STP xN, [SP, #8] (the
+// trap argument slot), followed by an immediate-load sequence into xN.
+//
+// This is the correct scan for syscall.Syscall/RawSyscall et al., which are
+// NOSPLIT assembly stubs using the old stack-based calling convention: the caller
+// stores trap+0(FP) = [SP+8] before the BL, not in a register passed via ABI.
+func BackwardScanStackTrap(code []byte, blOffset int) (int, bool) {
 	startIdx := blOffset/instrLen - 1
 	endIdx := startIdx - maxBackwardScanInstr
 	if endIdx < 0 {
 		endIdx = -1
 	}
-
-	x0Lo := -1
-	x0Hi := -1
-
 	for i := startIdx; i > endIdx; i-- {
 		off := i * instrLen
-		if off < 0 {
-			break
-		}
-		if off+instrLen > len(code) {
+		if off < 0 || off+instrLen > len(code) {
 			break
 		}
 		word := binary.LittleEndian.Uint32(code[off:])
-
-		if word&^imm16Mask == movzX0Base {
-			lo := int((word & imm16Mask) >> imm16Shift)
-			hi := 0
-			if x0Hi >= 0 {
-				hi = x0Hi
-			}
-			return hi | lo, true
-		}
-
-		if word&^imm16Mask == movzX0Lsl16 {
-			hi := int((word&imm16Mask)>>imm16Shift) << imm16HighShift
-			lo := 0
-			if x0Lo >= 0 {
-				lo = x0Lo
-			}
-			return hi | lo, true
-		}
-
-		if word&^imm16Mask == movzW0Base {
-			return int((word & imm16Mask) >> imm16Shift), true
-		}
-
-		if word&^imm16Mask == movkX0Base {
-			x0Lo = int((word & imm16Mask) >> imm16Shift)
-			continue
-		}
-
-		if word&^imm16Mask == movkX0Lsl16 {
-			x0Hi = int((word&imm16Mask)>>imm16Shift) << imm16HighShift
-			continue
-		}
-
-		if word&^imm16Mask == movkW0Base {
-			x0Lo = int((word & imm16Mask) >> imm16Shift)
-			continue
-		}
-
 		if isControlFlowInstruction(word) {
 			break
 		}
+		trapReg, found := trapStoreReg(word)
+		if !found {
+			continue
+		}
+		return backwardScanRegImm(code, off, trapReg)
+	}
+	return 0, false
+}
 
-		if writesX0NotMovzMovk(word) {
+// trapStoreReg checks whether word stores a register to [SP, #8] (the trap
+// argument slot in Go's old stack ABI). Returns (regN, true) where regN is
+// the register that holds the syscall number.
+//
+// Go old stack ABI frame for syscall.Syscall: SP+0=return addr, SP+8=trap,
+// SP+16=a1, ... The compiler emits STR xN,[SP,#8] or STP xN,xM,[SP,#8]
+// to set up the trap argument before BL.
+func trapStoreReg(word uint32) (uint32, bool) {
+	const (
+		strUnsignedOffset64 = uint32(0x3E4) // STR Xt,[Xn,#pimm] bits[31:22]
+		stpSignedOffset64   = uint32(0x2A4) // STP Xt1,Xt2,[Xn,#imm] bits[31:22]
+		strImm12Shift       = 10            // bit position of imm12 in STR unsigned-offset
+		stpImm7Shift        = 15            // bit position of imm7 in STP signed-offset
+		loadStoreRnShift    = 5             // bit position of Rn in load/store instructions
+		loadStoreRdMask     = uint32(0x1F)  // 5-bit mask for Rt/Rd in load/store
+		loadStoreImm12Mask  = uint32(0xFFF) // 12-bit mask for imm12
+		loadStoreImm7Mask   = uint32(0x7F)  // 7-bit mask for imm7
+		trapSlotImm         = uint32(1)     // imm=1 → offset=8 bytes (trap slot)
+		regSP               = uint32(31)
+	)
+	// STR xN, [SP, #8]: imm12=1 (=8/8), Rn=SP
+	if word>>22 == strUnsignedOffset64 &&
+		(word>>strImm12Shift)&loadStoreImm12Mask == trapSlotImm &&
+		(word>>loadStoreRnShift)&loadStoreRdMask == regSP {
+		return word & loadStoreRdMask, true
+	}
+	// STP xN, xM, [SP, #8]: imm7=1 (=8/8), Rn=SP; xN(Rt1) stored at SP+8 = trap slot
+	if word>>22 == stpSignedOffset64 &&
+		(word>>stpImm7Shift)&loadStoreImm7Mask == trapSlotImm &&
+		(word>>loadStoreRnShift)&loadStoreRdMask == regSP {
+		return word & loadStoreRdMask, true
+	}
+	return 0, false
+}
+
+// backwardScanRegImm scans backward from code[fromOffset] (exclusive) looking
+// for an immediate-load sequence into register regN (MOVZ/MOVK patterns).
+// The scan is limited to maxBackwardScanInstr instructions.
+func backwardScanRegImm(code []byte, fromOffset int, regN uint32) (int, bool) {
+	startIdx := fromOffset/instrLen - 1
+	endIdx := startIdx - maxBackwardScanInstr
+	if endIdx < 0 {
+		endIdx = -1
+	}
+	immLo := -1
+	immHi := -1
+	for i := startIdx; i > endIdx; i-- {
+		off := i * instrLen
+		if off < 0 || off+instrLen > len(code) {
+			break
+		}
+		word := binary.LittleEndian.Uint32(code[off:])
+		// MOVZ xN/wN, #imm, LSL#0 — terminal: assemble hi|lo and return
+		if word&^imm16Mask == movzX0Base|regN || word&^imm16Mask == movzW0Base|regN {
+			lo := int((word & imm16Mask) >> imm16Shift)
+			hi := 0
+			if immHi >= 0 {
+				hi = immHi
+			}
+			return hi | lo, true
+		}
+		// MOVZ xN, #imm, LSL#16 — terminal
+		if word&^imm16Mask == movzX0Lsl16|regN {
+			hi := int((word&imm16Mask)>>imm16Shift) << imm16HighShift
+			lo := 0
+			if immLo >= 0 {
+				lo = immLo
+			}
+			return hi | lo, true
+		}
+		// MOVK xN/wN, #imm, LSL#0 — accumulate low half
+		if word&^imm16Mask == movkX0Base|regN || word&^imm16Mask == movkW0Base|regN {
+			immLo = int((word & imm16Mask) >> imm16Shift)
+			continue
+		}
+		// MOVK xN, #imm, LSL#16 — accumulate high half
+		if word&^imm16Mask == movkX0Lsl16|regN {
+			immHi = int((word&imm16Mask)>>imm16Shift) << imm16HighShift
+			continue
+		}
+		if isControlFlowInstruction(word) {
+			break
+		}
+		if writesRegNotMovzMovk(word, regN) {
 			break
 		}
 	}
 	return 0, false
 }
 
-// writesX0NotMovzMovk reports whether word is an instruction that writes to
-// X0 or W0, excluding MOVZ and MOVK (which are handled by BackwardScanX0).
-// Used as a conservative stop signal during backward scanning.
-func writesX0NotMovzMovk(word uint32) bool {
+// writesRegNotMovzMovk reports whether word is an instruction that writes to
+// register regN, excluding MOVZ and MOVK. Used as a conservative stop signal
+// during backward immediate-load scanning.
+func writesRegNotMovzMovk(word, regN uint32) bool {
 	if (word>>bitShiftMovWide)&field6Mask == patternMovWideBits28_23 {
 		opc := (word >> bitShiftOpc) & opcMask
 		if opc == opcMOVZ || opc == opcMOVK {
 			return false
 		}
 	}
-	return word&0x1F == regEncodingX0
+	return word&0x1F == regN
 }
 
 func stripBSDPrefix(v int) int {

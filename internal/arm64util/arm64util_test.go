@@ -90,6 +90,73 @@ func TestBackwardScanX0_ControlFlowBoundary(t *testing.T) {
 	assert.Zero(t, num)
 }
 
+// encodeStrSp8 encodes STR xN, [SP, #8].
+func encodeStrSp8(regN uint32) uint32 {
+	// STR Xt,[Xn,#pimm]: bits[31:22]=0x3E4, imm12=1, Rn=SP(31), Rt=N
+	return 0xF9000000 | (1 << 10) | (31 << 5) | regN
+}
+
+// encodeStpSp8 encodes STP xN, xM, [SP, #8].
+func encodeStpSp8(regN, regM uint32) uint32 {
+	// STP Xt1,Xt2,[Xn,#imm]: bits[31:22]=0x2A4, imm7=1, Rt2=M, Rn=SP(31), Rt1=N
+	return 0xA9000000 | (1 << 15) | (regM << 10) | (31 << 5) | regN
+}
+
+// encodeMovzReg encodes MOVZ xN, #imm (LSL#0, 64-bit).
+func encodeMovzReg(regN, imm uint32) uint32 { //nolint:unparam
+	return 0xD2800000 | ((imm & 0xFFFF) << 5) | regN
+}
+
+// TestBackwardScanStackTrap_STRPattern verifies STR x5,#imm + STR x5,[SP,#8] + BL → syscall number.
+func TestBackwardScanStackTrap_STRPattern(t *testing.T) {
+	t.Parallel()
+	// MOVZ X5, #73; STR X5, [SP, #8]; BL placeholder
+	code := buildCodeSliceX0(encodeMovzReg(5, 73), encodeStrSp8(5), blPlaceholder)
+	num, ok := BackwardScanStackTrap(code, 8) // BL at offset 8
+	require.True(t, ok)
+	assert.Equal(t, 73, num)
+}
+
+// TestBackwardScanStackTrap_STPPattern verifies MOVZ xN + STP xN,xM,[SP,#8] + BL → syscall number.
+func TestBackwardScanStackTrap_STPPattern(t *testing.T) {
+	t.Parallel()
+	// MOVZ X5, #73; STP X5, X4, [SP, #8]; BL placeholder
+	code := buildCodeSliceX0(encodeMovzReg(5, 73), encodeStpSp8(5, 4), blPlaceholder)
+	num, ok := BackwardScanStackTrap(code, 8)
+	require.True(t, ok)
+	assert.Equal(t, 73, num)
+}
+
+// TestBackwardScanStackTrap_RegX0 verifies that regN=0 (X0) works correctly.
+func TestBackwardScanStackTrap_RegX0(t *testing.T) {
+	t.Parallel()
+	// MOVZ X0, #197; STR X0, [SP, #8]; BL placeholder
+	code := buildCodeSliceX0(encodeMovzX0(197), encodeStrSp8(0), blPlaceholder)
+	num, ok := BackwardScanStackTrap(code, 8)
+	require.True(t, ok)
+	assert.Equal(t, 197, num)
+}
+
+// TestBackwardScanStackTrap_NoStore verifies that a BL with no preceding store
+// to [SP, #8] returns (0, false).
+func TestBackwardScanStackTrap_NoStore(t *testing.T) {
+	t.Parallel()
+	code := buildCodeSliceX0(encodeMovzReg(5, 73), blPlaceholder)
+	_, ok := BackwardScanStackTrap(code, 4)
+	assert.False(t, ok)
+}
+
+// TestBackwardScanStackTrap_IndirectRegWrite verifies that a non-immediate write
+// to the trap register stops the scan.
+func TestBackwardScanStackTrap_IndirectRegWrite(t *testing.T) {
+	t.Parallel()
+	// ADD X5, X1, X2 → non-immediate write to X5
+	const addX5X1X2 = uint32(0x8B020025)
+	code := buildCodeSliceX0(encodeMovzReg(5, 73), addX5X1X2, encodeStrSp8(5), blPlaceholder)
+	_, ok := BackwardScanStackTrap(code, 12) // BL at offset 12
+	assert.False(t, ok, "indirect write to trap register must stop the scan")
+}
+
 // TestBackwardScanX0_IndirectWriteStopsScal verifies that a non-MOV write to X0
 // (e.g., ADD X0, X1, X2 — encoded as a 64-bit instruction with Rd=0) stops the scan.
 // ADD X0, X1, X2: sf=1, op=0b0001011_000, Rm=X2(2), Rn=X1(1), Rd=X0(0) → 0x8B020020

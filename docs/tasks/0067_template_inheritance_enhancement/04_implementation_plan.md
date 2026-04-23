@@ -435,7 +435,7 @@ func expandTemplateToSpec(
 - TestTemplateInheritance_CommandReferences: テンプレート参照とオーバーライドの確認（5ケース）
 - TestTemplateInheritance_GlobalConfig: グローバル設定の確認
 
-**注記**: 
+**注記**:
 - テンプレート展開/継承のランタイム動作テストは Phase 3 で実装済み
 - この Phase 5 では TOML ファイルの解析と構造の保持を確認
 

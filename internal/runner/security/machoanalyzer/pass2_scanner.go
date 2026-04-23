@@ -7,12 +7,13 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
-// arm64BL constants for detecting and decoding BL instructions.
+// arm64 branch instruction constants for BL and B decoding.
 const (
 	arm64BLOpcShift  = 26
 	arm64BLOpcode    = uint32(0b100101) // bits[31:26] of BL
+	arm64BOpcode     = uint32(0b000101) // bits[31:26] of B (unconditional, no link)
 	arm64BLImmMask   = uint32(0x03ffffff)
-	arm64BLSignShift = uint32(6) // 32 - 26
+	arm64BLSignShift = uint32(6) // 32 - 26; also used for B imm26 sign-extension
 	arm64InstrLen    = 4
 )
 
@@ -45,6 +46,34 @@ func getBLTarget(word uint32, instrAddr uint64) (uint64, bool) {
 		return 0, false
 	}
 	return uint64(target), true //nolint:gosec // G115: target non-negative checked above
+}
+
+// isKnownWrapper reports whether target is a known Go syscall wrapper address,
+// handling single-instruction stub trampolines of the form "B wrapperAddr".
+// Go linkers sometimes emit a one-instruction trampoline at a near address that
+// simply branches to the actual wrapper; we resolve one level of such stubs.
+func isKnownWrapper(code []byte, textBase, target uint64, wrapperAddrs map[uint64]string) bool {
+	if _, ok := wrapperAddrs[target]; ok {
+		return true
+	}
+	// Attempt one-level stub resolution: if the instruction at target is a
+	// plain B (not BL), follow it and check whether the branch destination is
+	// a known wrapper.
+	if target < textBase {
+		return false
+	}
+	off := target - textBase
+	if off+arm64InstrLen > uint64(len(code)) { //nolint:gosec // G115: off bounded by section size
+		return false
+	}
+	word := binary.LittleEndian.Uint32(code[off:])
+	if word>>arm64BLOpcShift != arm64BOpcode {
+		return false
+	}
+	imm26 := int32(word&arm64BLImmMask<<arm64BLSignShift) >> int(arm64BLSignShift) //nolint:gosec // G115: masked to 26 bits
+	stubTarget := uint64(int64(target) + int64(imm26)*arm64InstrLen)               //nolint:gosec // G115: target is a Mach-O VA
+	_, ok := wrapperAddrs[stubTarget]
+	return ok
 }
 
 // scanGoWrapperCalls performs Pass 2: scans the __TEXT,__text section for BL
@@ -81,7 +110,7 @@ func scanGoWrapperCalls(
 			continue
 		}
 
-		if _, isWrapper := wrapperAddrs[target]; !isWrapper {
+		if !isKnownWrapper(code, textBase, target, wrapperAddrs) {
 			continue
 		}
 
@@ -91,7 +120,7 @@ func scanGoWrapperCalls(
 			continue
 		}
 
-		num, resolved := arm64util.BackwardScanX0(code, offset)
+		num, resolved := arm64util.BackwardScanStackTrap(code, offset)
 
 		var info common.SyscallInfo
 		if resolved {
