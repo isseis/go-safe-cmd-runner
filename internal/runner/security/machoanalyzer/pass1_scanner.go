@@ -85,7 +85,7 @@ func scanSVCWithX16(
 		if addr < textBase || addr >= textBase+uint64(len(code)) {
 			panic("svc address out of bounds")
 		}
-		svcOffset := int(addr - textBase)
+		svcOffset := int(addr - textBase) //nolint:gosec // G115: addr-textBase < len(code) which fits in int
 
 		num, ok := arm64util.BackwardScanX16(code, svcOffset)
 
