@@ -269,6 +269,33 @@ func TestBuildStubRanges(t *testing.T) {
 	}
 }
 
+// TestScanSVCWithX16_OutOfBoundsAddress verifies that an svc address outside the
+// text section produces an unknown-syscall entry instead of panicking.
+func TestScanSVCWithX16_OutOfBoundsAddress(t *testing.T) {
+	t.Parallel()
+	code := buildCodeSlice(encodeMovzX16(98), svcEncodingPass1)
+	const textBase = uint64(0x100000000)
+	table := newStubSyscallTable()
+
+	tests := []struct {
+		name    string
+		svcAddr uint64
+	}{
+		{"below textBase", textBase - 4},
+		{"beyond end", textBase + uint64(len(code))},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			results := scanSVCWithX16([]uint64{tc.svcAddr}, code, textBase, nil, table)
+			require.Len(t, results, 1)
+			assert.Equal(t, -1, results[0].Number)
+			assert.Equal(t, determinationMethodUnknownIndirect, results[0].DeterminationMethod)
+			assert.Equal(t, tc.svcAddr, results[0].Location)
+		})
+	}
+}
+
 // TestArm64BackwardScanX16_NoPrecedingInstruction verifies that a svc with no
 // preceding MOVZ/MOVK instructions returns (0, false).
 func TestArm64BackwardScanX16_NoPrecedingInstruction(t *testing.T) {

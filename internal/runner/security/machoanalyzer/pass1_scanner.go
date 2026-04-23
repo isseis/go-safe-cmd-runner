@@ -83,7 +83,15 @@ func scanSVCWithX16(
 		}
 
 		if addr < textBase || addr >= textBase+uint64(len(code)) {
-			panic("svc address out of bounds")
+			results = append(results, common.SyscallInfo{
+				Number:              -1,
+				Name:                "",
+				IsNetwork:           false,
+				Location:            addr,
+				DeterminationMethod: determinationMethodUnknownIndirect,
+				Source:              "",
+			})
+			continue
 		}
 		svcOffset := int(addr - textBase) //nolint:gosec // G115: addr-textBase < len(code) which fits in int
 
