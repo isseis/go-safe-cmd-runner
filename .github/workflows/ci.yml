@@ -77,20 +77,16 @@ jobs:
 
       - name: Run golangci-lint security scan (gosec)
         run: |
+          # Use "sarif:filename" format so golangci-lint writes the file itself
+          # rather than relying on shell redirection, which can leave a
+          # truncated (invalid) JSON file when the process is killed.
           golangci-lint run \
             --enable gosec \
             --disable-all \
             --build-tags test \
-            --out-format sarif \
+            --out-format sarif:golangci-security.sarif \
             --timeout=5m \
-            ./... > golangci-security.sarif 2>/dev/null || true
-          # Remove invalid SARIF to prevent upload-sarif from failing with
-          # "Invalid SARIF. JSON syntax error: Unexpected end of JSON input"
-          # which can happen when golangci-lint is killed mid-run.
-          if [ -f golangci-security.sarif ]; then
-            python3 -c "import json,sys; json.load(open('golangci-security.sarif'))" 2>/dev/null \
-              || { echo "Invalid SARIF output (likely truncated), skipping upload"; rm -f golangci-security.sarif; }
-          fi
+            ./... || true
         continue-on-error: true
 
       - name: Upload golangci-lint security SARIF file
