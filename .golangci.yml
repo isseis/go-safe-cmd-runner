@@ -43,6 +43,7 @@ linters:
             - "**/internal/**"
           allow:
             - $gostd
+            - github.com/isseis/go-safe-cmd-runner/internal/arm64util
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/common
             - github.com/isseis/go-safe-cmd-runner/internal/dynlib

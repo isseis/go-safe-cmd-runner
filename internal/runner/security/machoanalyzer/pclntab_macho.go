@@ -85,8 +85,8 @@ func ParseMachoPclntab(f *macho.File) (map[string]MachoPclntabFunc, error) {
 		for name, fn := range functions {
 			functions[name] = MachoPclntabFunc{
 				Name:  fn.Name,
-				Entry: uint64(int64(fn.Entry) + offset), //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
-				End:   uint64(int64(fn.End) + offset),   //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
+				Entry: fn.Entry + uint64(offset), //nolint:gosec // G115: offset verified positive in detectMachoPclntabOffset
+				End:   fn.End + uint64(offset),   //nolint:gosec // G115: offset verified positive in detectMachoPclntabOffset
 			}
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/arm64util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -274,7 +275,7 @@ func TestArm64BackwardScanX16_NoPrecedingInstruction(t *testing.T) {
 	t.Parallel()
 	// Just the svc instruction at offset 0.
 	code := buildCodeSlice(svcEncodingPass1)
-	num, ok := arm64BackwardScanX16(code, 0)
+	num, ok := arm64util.BackwardScanX16(code, 0)
 	assert.False(t, ok)
 	assert.Zero(t, num)
 }
