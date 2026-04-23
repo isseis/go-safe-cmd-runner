@@ -15,10 +15,10 @@ import (
 )
 
 // buildMachOWithPclntab constructs a minimal valid 64-bit Mach-O file in
-// memory containing a __TEXT,__text section and optionally a __gopclntab
-// section. This is sufficient for ParseMachoPclntab unit tests.
+// memory containing a __TEXT,__text section and, when pclntabData is not nil,
+// a __gopclntab section. This is sufficient for ParseMachoPclntab unit tests.
 //
-// textData may be nil (no __text section). pclntabData nil means no __gopclntab.
+// A nil pclntabData means no __gopclntab section is added.
 func buildMachOWithPclntab(t *testing.T, pclntabData []byte) *macho.File {
 	t.Helper()
 
