@@ -74,12 +74,15 @@ define format_files_from_list
 endef
 
 
+GO_VERSION_IN_MOD=$(shell awk '/^go /{print $$2}' go.mod)
+
 ENVSET=$(ENVCMD) -i \
 	HOME=$(HOME) \
 	USER=$(USER) \
 	PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/go/bin:/opt/homebrew/bin \
 	LANG=C \
 	TERM=$(TERM) \
+	GOTOOLCHAIN=go$(GO_VERSION_IN_MOD) \
 	TEST_GLOBAL_VAR=global_test_value \
 	COMPREHENSIVE_TEST=enabled \
 	NODE_ENV=test \
