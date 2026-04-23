@@ -149,7 +149,7 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
 			continue
 		}
 		// Found svc #0x80. Scan backward to find the immediate loaded into x16.
-		num, ok := BackwardScanX16(funcCode, i)
+		num, ok := arm64util.BackwardScanX16(funcCode, i)
 		if !ok {
 			return 0, false
 		}
@@ -168,14 +168,4 @@ func analyzeWrapperFunction(funcCode []byte) (int, bool) {
 		}
 	}
 	return first, true
-}
-
-// BackwardScanX16 delegates to arm64util.BackwardScanX16.
-func BackwardScanX16(funcCode []byte, svcOffset int) (int, bool) {
-	return arm64util.BackwardScanX16(funcCode, svcOffset)
-}
-
-// IsControlFlowInstruction delegates to arm64util.IsControlFlowInstruction.
-func IsControlFlowInstruction(word uint32) bool {
-	return arm64util.IsControlFlowInstruction(word)
 }
