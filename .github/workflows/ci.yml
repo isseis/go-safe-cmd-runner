@@ -72,25 +72,28 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install Gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
 
-      - name: Run Gosec security scanner
-        run: gosec -fmt sarif -out gosec-report.sarif -stdout -verbose=text ./...
+      - name: Run golangci-lint security scan (gosec)
+        run: |
+          # Use "sarif:filename" format so golangci-lint writes the file itself
+          # rather than relying on shell redirection, which can leave a
+          # truncated (invalid) JSON file when the process is killed.
+          golangci-lint run \
+            --enable gosec \
+            --disable-all \
+            --build-tags test \
+            --out-format sarif:golangci-security.sarif \
+            --timeout=5m \
+            ./... || true
         continue-on-error: true
 
-      - name: Fix Gosec SARIF (ensure relationships is array)
-        if: always() && hashFiles('gosec-report.sarif') != ''
-        run: |
-          jq '(.runs[].tool.driver.rules[]?.relationships) |= (if (. | type) == "array" then map(select(. != null)) else [] end)' \
-            gosec-report.sarif > gosec-report-fixed.sarif
-          mv gosec-report-fixed.sarif gosec-report.sarif
-
-      - name: Upload Gosec SARIF file
+      - name: Upload golangci-lint security SARIF file
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('gosec-report.sarif') != ''
+        if: always() && hashFiles('golangci-security.sarif') != ''
         with:
-          sarif_file: gosec-report.sarif
+          sarif_file: golangci-security.sarif
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master

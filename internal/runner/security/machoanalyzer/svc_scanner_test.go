@@ -15,9 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// svcEncoding is the little-endian encoding of "svc #0x80" for arm64.
-const svcEncoding = uint32(0xD4001001)
-
 // nopEncoding is a common arm64 NOP instruction.
 const nopEncoding = uint32(0xD503201F)
 

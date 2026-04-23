@@ -82,19 +82,18 @@ func TestStandardMachOAnalyzer_NoNetworkSymbols(t *testing.T) {
 	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
 }
 
-// TestStandardMachOAnalyzer_SVCOnly_HighRisk tests that a binary containing only svc #0x80
-// returns AnalysisError wrapping ErrDirectSyscall. (AC-6)
-func TestStandardMachOAnalyzer_SVCOnly_HighRisk(t *testing.T) {
+// TestStandardMachOAnalyzer_SVCOnly_NoNetworkSymbols tests that a binary containing only
+// svc #0x80 (no network symbols) returns NoNetworkSymbols from AnalyzeNetworkSymbols.
+// svc #0x80 risk is evaluated separately via SyscallAnalysis (ScanSyscallInfos).
+func TestStandardMachOAnalyzer_SVCOnly_NoNetworkSymbols(t *testing.T) {
 	path := testdataPath("svc_only_arm64")
 	skipIfNotExist(t, path)
 
 	analyzer := NewStandardMachOAnalyzer(nil)
 	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
 
-	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
-	require.Error(t, output.Error)
-	assert.True(t, errors.Is(output.Error, ErrDirectSyscall),
-		"expected ErrDirectSyscall, got: %v", output.Error)
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
+	assert.NoError(t, output.Error)
 }
 
 // TestStandardMachOAnalyzer_NetworkSymbols_SVCIgnored tests that network symbols take priority

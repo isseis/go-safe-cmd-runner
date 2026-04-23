@@ -6,6 +6,7 @@ import (
 
 const (
 	// CurrentSchemaVersion is the current analysis record schema version.
+	// v16: Pass 1/Pass 2 Mach-O arm64 syscall number analysis support.
 	// Version 2 adds DynLibDeps and HasDynamicLoad fields.
 	// Version 3 adds NetworkSymbolAnalysis (now renamed SymbolAnalysis) and removes HasDynamicLoad.
 	// Version 4 renames network_symbol_analysis to symbol_analysis and removes has_network_symbols.
@@ -21,14 +22,14 @@ const (
 	// Version 13 removes UpdatedAt field (was unused by verify; caused noisy diffs).
 	// Version 14 adds AnalysisWarnings to Record for dynlib analysis warnings.
 	// Mach-O binaries also record DynLibDeps starting with version 14.
-	// Version 15 adds Mach-O arm64 svc #0x80 scanning: records written at v15 or later
-	// guarantee that the svc scan was performed, so LoadSyscallAnalysis returning (nil, nil)
-	// means the scan ran and found nothing (safe to fall through to SymbolAnalysis-based decision).
-	// Load returns SchemaVersionMismatchError for records with schema_version != 15.
+	// Version 15 adds Mach-O arm64 svc #0x80 scanning.
+	// Version 16 adds Mach-O arm64 Pass 1 (direct svc) and Pass 2 (go_wrapper) syscall
+	// number analysis. Records at v16 carry precise syscall numbers with IsNetwork flags.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 16.
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 15
+	CurrentSchemaVersion = 16
 )
 
 // Record represents a unified file analysis record containing both

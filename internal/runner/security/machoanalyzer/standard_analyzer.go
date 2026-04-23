@@ -12,7 +12,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 )
 
-// ErrDirectSyscall indicates svc #0x80 was found, indicating a direct syscall.
+// ErrDirectSyscall is retained for backward compatibility.
+// It is no longer returned by AnalyzeNetworkSymbols; svc #0x80 risk
+// is evaluated separately via SyscallAnalysis (see svc_scanner.go).
 var ErrDirectSyscall = errors.New("direct syscall instruction detected (svc #0x80)")
 
 // ErrNotRegularFile indicates the target is not a regular file.
@@ -87,22 +89,10 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 		}
 	}
 
-	hasSVC, err := containsSVCInstruction(f)
-	if err != nil {
-		return binaryanalyzer.AnalysisOutput{
-			Result:             binaryanalyzer.AnalysisError,
-			DynamicLoadSymbols: dynamicLoadSyms,
-			Error:              fmt.Errorf("svc scan failed: %w", err),
-		}
-	}
-	if hasSVC {
-		return binaryanalyzer.AnalysisOutput{
-			Result:             binaryanalyzer.AnalysisError,
-			DynamicLoadSymbols: dynamicLoadSyms,
-			Error:              fmt.Errorf("binary analysis: %w", ErrDirectSyscall),
-		}
-	}
-
+	// svc #0x80 presence is not evaluated here; it is handled separately by
+	// ScanSyscallInfos / analyzeMachoSyscalls which stores the result in
+	// SyscallAnalysis. That record is checked at verify time via
+	// syscallAnalysisHasSVCSignal (high-risk) and syscallAnalysisHasNetworkSignal.
 	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols, DynamicLoadSymbols: dynamicLoadSyms}
 }
 
