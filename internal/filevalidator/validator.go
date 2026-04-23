@@ -779,7 +779,10 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 
 // buildMachoSyscallData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
-// AnalysisWarnings is populated only when svc entries exist.
+// AnalysisWarnings is populated only when unresolved svc #0x80 entries remain
+// after filtering (i.e., entries with DeterminationMethod="direct_svc_0x80").
+// When all svc entries are resolved to non-network syscalls they are dropped by
+// FilterSyscallsForStorage and no warning is emitted.
 // DetectedSyscalls is sorted by Number (svc entries with Number=-1 appear first).
 func buildMachoSyscallData(
 	svcEntries []common.SyscallInfo,
@@ -790,8 +793,11 @@ func buildMachoSyscallData(
 	retained := fileanalysis.FilterSyscallsForStorage(merged)
 
 	var warnings []string
-	if len(svcEntries) > 0 {
-		warnings = []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"}
+	for _, s := range retained {
+		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
+			warnings = []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"}
+			break
+		}
 	}
 
 	return &fileanalysis.SyscallAnalysisData{

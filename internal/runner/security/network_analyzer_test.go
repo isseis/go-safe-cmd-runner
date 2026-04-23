@@ -26,7 +26,7 @@ func TestSyscallAnalysisHasSVCSignal_Empty(t *testing.T) {
 func TestSyscallAnalysisHasSVCSignal_WithWarningsOnly(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			AnalysisWarnings: []string{"svc #0x80 detected: direct syscall bypassing libSystem.dylib"},
+			AnalysisWarnings: []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"},
 		},
 	}
 	assert.False(t, syscallAnalysisHasSVCSignal(r))
