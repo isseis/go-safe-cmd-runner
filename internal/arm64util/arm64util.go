@@ -13,8 +13,15 @@ const (
 	movzX16Lsl16            = uint32(0xD2A00010) // MOVZ X16, #0, LSL #16
 	movkX16Base             = uint32(0xF2800010) // MOVK X16, #0, LSL #0
 	movkX16Lsl16            = uint32(0xF2A00010) // MOVK X16, #0, LSL #16
+	movzX0Base              = uint32(0xD2800000) // MOVZ X0, #0, LSL #0
+	movzX0Lsl16             = uint32(0xD2A00000) // MOVZ X0, #0, LSL #16
+	movkX0Base              = uint32(0xF2800000) // MOVK X0, #0, LSL #0
+	movkX0Lsl16             = uint32(0xF2A00000) // MOVK X0, #0, LSL #16
+	movzW0Base              = uint32(0x52800000) // MOVZ W0, #0, LSL #0
+	movkW0Base              = uint32(0x72800000) // MOVK W0, #0, LSL #0
 	imm16Mask               = uint32(0x001FFFE0) // bits[20:5]
 	imm16Shift              = 5
+	regEncodingX0           = uint32(0x00)         // arm64 register encoding for X0/W0
 	patternBLRBR            = uint32(0b1101011000) // bits[31:22] for BLR/BR
 	patternRET              = uint32(0b1101011001) // bits[31:22] for RET
 	patternCBZ              = uint32(0b011010)     // bits[30:25] for CBZ/CBNZ
@@ -87,6 +94,91 @@ func BackwardScanX16(code []byte, svcOffset int) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// BackwardScanX0 walks backward from the BL instruction at code[blOffset]
+// and looks for an immediate-load sequence into X0 or W0 (first argument register
+// on arm64). When found, it returns the loaded value. The scan is limited to
+// maxBackwardScanInstr instructions.
+func BackwardScanX0(code []byte, blOffset int) (int, bool) {
+	startIdx := blOffset/instrLen - 1
+	endIdx := startIdx - maxBackwardScanInstr
+	if endIdx < 0 {
+		endIdx = -1
+	}
+
+	x0Lo := -1
+	x0Hi := -1
+
+	for i := startIdx; i > endIdx; i-- {
+		off := i * instrLen
+		if off < 0 {
+			break
+		}
+		if off+instrLen > len(code) {
+			break
+		}
+		word := binary.LittleEndian.Uint32(code[off:])
+
+		if word&^imm16Mask == movzX0Base {
+			lo := int((word & imm16Mask) >> imm16Shift)
+			hi := 0
+			if x0Hi >= 0 {
+				hi = x0Hi
+			}
+			return hi | lo, true
+		}
+
+		if word&^imm16Mask == movzX0Lsl16 {
+			hi := int((word&imm16Mask)>>imm16Shift) << imm16HighShift
+			lo := 0
+			if x0Lo >= 0 {
+				lo = x0Lo
+			}
+			return hi | lo, true
+		}
+
+		if word&^imm16Mask == movzW0Base {
+			return int((word & imm16Mask) >> imm16Shift), true
+		}
+
+		if word&^imm16Mask == movkX0Base {
+			x0Lo = int((word & imm16Mask) >> imm16Shift)
+			continue
+		}
+
+		if word&^imm16Mask == movkX0Lsl16 {
+			x0Hi = int((word&imm16Mask)>>imm16Shift) << imm16HighShift
+			continue
+		}
+
+		if word&^imm16Mask == movkW0Base {
+			x0Lo = int((word & imm16Mask) >> imm16Shift)
+			continue
+		}
+
+		if isControlFlowInstruction(word) {
+			break
+		}
+
+		if writesX0NotMovzMovk(word) {
+			break
+		}
+	}
+	return 0, false
+}
+
+// writesX0NotMovzMovk reports whether word is an instruction that writes to
+// X0 or W0, excluding MOVZ and MOVK (which are handled by BackwardScanX0).
+// Used as a conservative stop signal during backward scanning.
+func writesX0NotMovzMovk(word uint32) bool {
+	if (word>>bitShiftMovWide)&field6Mask == patternMovWideBits28_23 {
+		opc := (word >> bitShiftOpc) & opcMask
+		if opc == opcMOVZ || opc == opcMOVK {
+			return false
+		}
+	}
+	return word&0x1F == regEncodingX0
 }
 
 func stripBSDPrefix(v int) int {

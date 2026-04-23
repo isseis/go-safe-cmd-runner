@@ -26,13 +26,13 @@ const (
 	determinationMethodUnknownIndirect = "unknown:indirect_setting" // elfanalyzer.DeterminationMethodUnknownIndirectSetting
 )
 
-// syscallNumberTable provides syscall name and network-risk classification by
+// SyscallNumberTable provides syscall name and network-risk classification by
 // BSD syscall number.
 // Structurally identical to libccache.SyscallNumberTable and
 // filevalidator.SyscallNumberTable; defined here to avoid an import cycle:
 //
 //	machoanalyzer → libccache → filevalidator → machoanalyzer
-type syscallNumberTable interface {
+type SyscallNumberTable interface {
 	GetSyscallName(number int) string
 	IsNetworkSyscall(number int) bool
 }
@@ -72,7 +72,7 @@ func scanSVCWithX16(
 	code []byte,
 	textBase uint64, //nolint:unparam // textBase will vary in production use
 	stubRanges []funcRange,
-	table syscallNumberTable,
+	table SyscallNumberTable,
 ) []common.SyscallInfo {
 	var results []common.SyscallInfo
 

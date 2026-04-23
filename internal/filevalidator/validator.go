@@ -150,6 +150,7 @@ type Validator struct {
 	libcCache           LibcCacheInterface              // nil if libc cache is disabled
 	libSystemCache      LibSystemCacheInterface         // nil if Mach-O libSystem cache is disabled
 	syscallAnalyzer     SyscallAnalyzerInterface        // nil if syscall analysis is disabled
+	machoSyscallTable   SyscallNumberTable              // nil falls back to noop table in ScanSyscallInfos
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -439,6 +440,13 @@ func (v *Validator) checkNotShebang(path, role string) error {
 // SetLibSystemCache injects the LibSystemCacheInterface used during record operations.
 func (v *Validator) SetLibSystemCache(m LibSystemCacheInterface) {
 	v.libSystemCache = m
+}
+
+// SetMachoSyscallTable injects the SyscallNumberTable used for macOS BSD syscall
+// number resolution during Pass 1 and Pass 2 analysis. When nil, syscall names
+// and network flags are left empty but numbers are still resolved where possible.
+func (v *Validator) SetMachoSyscallTable(t SyscallNumberTable) {
+	v.machoSyscallTable = t
 }
 
 // SetELFDynLibAnalyzer injects the DynLibAnalyzer used during record operations.
@@ -818,33 +826,42 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 	return merged
 }
 
-// analyzeMachoSyscalls runs the Mach-O svc #0x80 scan and libSystem import-symbol
-// matching, then stores the merged result in record.SyscallAnalysis.
-// It is a no-op (leaves SyscallAnalysis unchanged) when neither scan yields entries.
-// ScanSVCAddrs checks magic bytes and returns nil for non-Mach-O files, so this is
-// safe to call on all platforms and binary formats.
+// analyzeMachoSyscalls runs the Mach-O Pass 1 / Pass 2 syscall scan and
+// libSystem import-symbol matching, then stores the merged result in
+// record.SyscallAnalysis.
+//
+// Pass 1 (direct svc #0x80): resolves syscall numbers via X16 backward scan.
+// Pass 2 (Go wrapper calls): resolves syscall numbers via X0 backward scan at
+// BL call sites targeting known Go syscall stubs.
+//
+// It is a no-op (leaves SyscallAnalysis unchanged) when no entries are found.
+// ScanSyscallInfos checks magic bytes and returns nil for non-Mach-O files, so
+// this is safe to call on all platforms and binary formats.
 func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath string) error {
-	addrs, err := machoanalyzer.ScanSVCAddrs(filePath, v.fileSystem)
+	svcEntries, wrapperEntries, err := machoanalyzer.ScanSyscallInfos(filePath, v.fileSystem, v.machoSyscallTable)
 	if err != nil {
-		return fmt.Errorf("mach-o svc scan failed: %w", err)
+		return fmt.Errorf("mach-o syscall scan failed: %w", err)
 	}
-	svcEntries := buildSVCInfos(addrs)
 
 	libsysEntries, libsysArch, err := v.analyzeLibSystem(record, filePath)
 	if err != nil {
 		return fmt.Errorf("libSystem import analysis failed: %w", err)
 	}
 
-	if len(svcEntries)+len(libsysEntries) > 0 {
+	// Combine Go wrapper call results with libSystem entries: both are
+	// non-direct-svc detections and do not trigger the high-risk svc warning.
+	wrapperEntries = append(wrapperEntries, libsysEntries...)
+	combinedLibEntries := wrapperEntries
+
+	if len(svcEntries)+len(combinedLibEntries) > 0 {
 		// Use the architecture from the Mach-O slice used for libSystem analysis.
 		// Fall back to archNameArm64 when no libSystem info was available: svc scan
-		// (collectSVCAddresses) only processes arm64 slices, so svc entries always
-		// originate from an arm64 binary.
+		// only processes arm64 slices, so entries always originate from arm64.
 		arch := libsysArch
 		if arch == "" {
 			arch = archNameArm64
 		}
-		record.SyscallAnalysis = buildMachoSyscallData(svcEntries, libsysEntries, arch)
+		record.SyscallAnalysis = buildMachoSyscallData(svcEntries, combinedLibEntries, arch)
 	}
 	return nil
 }

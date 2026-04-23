@@ -160,6 +160,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fv.SetLibSystemCache(libccache.NewMachoLibSystemAdapter(machoCacheMgr, fs))
+		fv.SetMachoSyscallTable(libccache.MacOSSyscallTable{})
 	}
 
 	return processFiles(validator, cfg, stdout, stderr)
