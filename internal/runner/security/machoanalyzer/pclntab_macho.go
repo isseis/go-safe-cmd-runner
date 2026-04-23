@@ -191,7 +191,11 @@ func detectMachoOffsetByBLTargets(
 		return 0
 	}
 
-	sr := io.NewSectionReader(textSection, 0, int64(scanLimit)) //nolint:gosec
+	readLimit := int64(scanLimit)                                        //nolint:gosec
+	if sectionSize := int64(textSection.Size); sectionSize < readLimit { //nolint:gosec
+		readLimit = sectionSize
+	}
+	sr := io.NewSectionReader(textSection, 0, readLimit)
 	data, err := io.ReadAll(sr)
 	if err != nil {
 		return 0
