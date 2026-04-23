@@ -304,7 +304,7 @@ func TestParseMachoPclntab_LiveBinary(t *testing.T) {
 	defer f.Close() //nolint:errcheck
 
 	funcs, err := ParseMachoPclntab(f)
-	if errors.Is(err, ErrNoPclntab) || errors.Is(err, ErrUnsupportedPclntabVersion) {
+	if errors.Is(err, ErrNoPclntab) || errors.Is(err, ErrUnsupportedPclntabVersion) || errors.Is(err, ErrInvalidPclntab) {
 		t.Skip("no suitable pclntab found in test binary")
 	}
 	require.NoError(t, err)

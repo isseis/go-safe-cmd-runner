@@ -121,7 +121,7 @@ func parseMachoPclntabFuncsRaw(f *macho.File) (map[string]MachoPclntabFunc, erro
 	lineTable := gosym.NewLineTable(data, textStart)
 	symTable, err := gosym.NewTable(nil, lineTable)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnsupportedPclntabVersion, err)
+		return nil, fmt.Errorf("%w: failed to parse __gopclntab: %w", ErrInvalidPclntab, err)
 	}
 
 	functions := make(map[string]MachoPclntabFunc, len(symTable.Funcs))
