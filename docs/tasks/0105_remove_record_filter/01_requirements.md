@@ -71,7 +71,7 @@ retained := fileanalysis.FilterSyscallsForStorage(all)
 
 修正後:
 ```go
-// all: すべて格納（フィルタリングなし）
+// all: store everything (no filtering)
 ```
 
 ### FR-3: Mach-O システムコール記録のフィルタリング削除
