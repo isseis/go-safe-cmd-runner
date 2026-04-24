@@ -16,17 +16,17 @@
 
 ### 2.1 依存方向の確認
 
-- [ ] internal/fileanalysis は syscall 保存対象の選別を持たず、解析データ構造の責務に留める
-- [ ] internal/filevalidator は fileanalysis のデータ型を利用するが、runner の判定ロジックを持ち込まない
-- [ ] internal/runner/security は保存済み record を評価する責務に留まり、record 側の保存方針へ逆依存しない
-- [ ] internal/libccache の macOS syscall テーブル拡張は既存 API を維持し、呼び出し側の変更を不要にする
+- [x] internal/fileanalysis は syscall 保存対象の選別を持たず、解析データ構造の責務に留める
+- [x] internal/filevalidator は fileanalysis のデータ型を利用するが、runner の判定ロジックを持ち込まない
+- [x] internal/runner/security は保存済み record を評価する責務に留まり、record 側の保存方針へ逆依存しない
+- [x] internal/libccache の macOS syscall テーブル拡張は既存 API を維持し、呼び出し側の変更を不要にする
 
 ### 2.2 既存実装の確認
 
-- [ ] internal/fileanalysis/syscall_store.go に FilterSyscallsForStorage が存在し、削除対象が明確である
-- [ ] internal/filevalidator/validator.go に buildSyscallData と buildMachoSyscallData の 2 箇所の呼び出しが存在する
-- [ ] internal/runner/security/network_analyzer.go に syscallAnalysisHasSVCSignal と syscallAnalysisHasNetworkSignal の現行判定が存在する
-- [ ] scripts/generate_syscall_table.py と Makefile に Linux 用自動生成フローがあり、macOS 向け追加先が明確である
+- [x] internal/fileanalysis/syscall_store.go に FilterSyscallsForStorage が存在し、削除対象が明確である
+- [x] internal/filevalidator/validator.go に buildSyscallData と buildMachoSyscallData の 2 箇所の呼び出しが存在する
+- [x] internal/runner/security/network_analyzer.go に syscallAnalysisHasSVCSignal と syscallAnalysisHasNetworkSignal の現行判定が存在する
+- [x] scripts/generate_syscall_table.py と Makefile に Linux 用自動生成フローがあり、macOS 向け追加先が明確である
 
 ### 2.3 事前に完了済みのドキュメント整合
 
