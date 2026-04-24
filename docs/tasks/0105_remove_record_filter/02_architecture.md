@@ -215,6 +215,17 @@ Linux の `NETWORK_SYSCALL_NAMES` から macOS で存在しない名前（`accep
 - 境界値: 解決済み svc（Number != -1）は高リスク判定しない、未解決 svc（Number == -1）は高リスク判定する
 - 後方互換性: 旧レコード（フィルタリング済み）でも runner が正しく動作することを確認する
 
+### 5.3 受け入れ基準と確認方法
+
+| 観点 | 確認方法 |
+|---|---|
+| AC-1, AC-2, AC-3 | `validator_test.go` / `validator_macho_test.go` の単体テストで `DetectedSyscalls` と `AnalysisWarnings` を確認する |
+| AC-4, AC-5 | `network_analyzer_test.go` で未解決 svc と解決済みネットワーク svc の判定分岐を確認する |
+| AC-6 | `internal/libccache` 配下のテストと `make generate-syscall-tables` で生成結果と API 挙動を確認する |
+| AC-7 | `make test` / `make lint` を実行して既存テストの回帰がないことを確認する |
+| AC-8 | `docs/tasks/0104_macho_syscall_number_analysis/03_detailed_specification.md` と `04_implementation_plan.md` の superseded 記述をレビューして整合を確認する |
+| NFR-1 | `network_analyzer_test.go` で旧レコード相当のフィルタ済み `DetectedSyscalls` を与え、判定が変わらないことを確認する |
+
 ## 6. 変更対象外
 
 - `SymbolAnalysis`（`AnalyzeNetworkSymbols`）のフィルタリングロジック

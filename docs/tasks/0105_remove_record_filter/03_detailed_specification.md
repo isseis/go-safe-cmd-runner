@@ -308,6 +308,8 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 
 **変更内容の方向性:**
 
+加えて、旧レコード互換性（NFR-1）を確認するため、フィルタリング済み `DetectedSyscalls` のみを持つ入力に対しても判定結果が変わらないケースを残す。
+
 `syscallAnalysisHasSVCSignal` テストケース:
 
 | テスト名 | 入力 | 期待される出力 |
@@ -326,7 +328,7 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 | 非ネットワーク | IsNetwork=false | false |
 | nil | nil | false |
 
-**対応 AC:** AC-4、AC-5、AC-7
+**対応 AC/NFR:** AC-4、AC-5、AC-7、NFR-1
 
 ## 10. `internal/libccache/macos_syscall_table.go`
 
@@ -501,6 +503,10 @@ generate-syscall-tables:
 - 「削除する」という記述を「本タスク（0105）で `Number == -1` 条件を追加して修正した」という旨に変更する、または
 - superseded として明示する
 
+対象ファイル:
+- `docs/tasks/0104_macho_syscall_number_analysis/03_detailed_specification.md`
+- `docs/tasks/0104_macho_syscall_number_analysis/04_implementation_plan.md`
+
 **対応 AC:** AC-8
 
 ## 15. 受け入れ基準とテストの対応
@@ -514,4 +520,5 @@ generate-syscall-tables:
 | AC-5: 解決済みネットワーク svc 判定 | `network_analyzer_test.go` | IsNetwork=true, DeterminationMethod="direct_svc_0x80" → isNetwork=true |
 | AC-6: macOS syscall テーブル拡張 | `libccache` テスト | GetSyscallName(3)="read", IsNetworkSyscall(97)=true, IsNetworkSyscall(3)=false |
 | AC-7: 既存テスト通過 | 全テストファイル | `make test` `make lint` エラーなし |
-| AC-8: 関連ドキュメント整合 | — | 0104 配下のドキュメント更新確認 |
+| AC-8: 関連ドキュメント整合 | `docs/tasks/0104_macho_syscall_number_analysis/03_detailed_specification.md`, `docs/tasks/0104_macho_syscall_number_analysis/04_implementation_plan.md` | `syscallAnalysisHasSVCSignal` 削除前提が superseded または 0105 方針へ更新されていることを確認する |
+| NFR-1: 既存レコード互換性 | `network_analyzer_test.go` | 旧レコード相当のフィルタ済み `DetectedSyscalls` でも判定が維持されることを確認する |

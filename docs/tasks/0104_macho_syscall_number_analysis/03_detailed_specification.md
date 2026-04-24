@@ -505,9 +505,14 @@ type MachoSyscallAnalyzerInterface interface {
 
 ## 9. `internal/runner/security/network_analyzer.go` 変更
 
-### 9.1 `syscallAnalysisHasSVCSignal` の削除
+### 9.1 `syscallAnalysisHasSVCSignal` の扱い
 
-`syscallAnalysisHasSVCSignal` 関数を削除する。この関数は `DeterminationMethod == "direct_svc_0x80"` を検索するものであり、v16 レコードには該当エントリが存在しない。
+この節の初版では `syscallAnalysisHasSVCSignal` 関数の削除を前提としていたが、後続タスク 0105 で方針が更新された。
+
+- 0104 完了時点の意図: v16 レコードでは `DeterminationMethod == "direct_svc_0x80"` を高リスク判定に直接使わない
+- 0105 以降の確定方針: `syscallAnalysisHasSVCSignal` 自体は保持し、`Number == -1` かつ `DeterminationMethod == "direct_svc_0x80"` の未解決 svc のみを高リスクシグナルとして扱う
+
+したがって、本節の「削除」は superseded とし、実装時は 0105 の要件・設計を優先する。
 
 ### 9.2 `isNetworkViaBinaryAnalysis` の判定ロジック変更
 
@@ -521,7 +526,7 @@ if syscallAnalysisHasNetworkSignal(svcResult) {
 }
 ```
 
-変更後（v16 ロジック）：
+変更後（0104 初版で想定していた v16 ロジック）：
 ```go
 if syscallAnalysisHasNetworkSignal(svcResult) {
     return true, true  // ネットワーク syscall 検出 → 高リスク確定
@@ -532,6 +537,8 @@ if syscallAnalysisHasNetworkSignal(svcResult) {
 ```
 
 `syscallAnalysisHasNetworkSignal` は `IsNetwork == true` のエントリのみを判定条件とし、`DeterminationMethod`（`direct_svc_0x80` など）を参照しない実装にする。
+
+注記: 0105 では `syscallAnalysisHasSVCSignal` を保持したまま、未解決 svc のみを高リスクとする条件が追加された。ここでの network 判定変更自体は 0105 後も維持される。
 
 戻り値を `true, true`（高リスク確定）に変更する。変更前は `true, false` を返していたが、v16 では Pass 1/Pass 2 で確認されたネットワーク syscall は常に `isHighRisk = true` とする（FR-3.3.1 要件変更）。
 
