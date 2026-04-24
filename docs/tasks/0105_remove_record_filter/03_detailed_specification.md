@@ -302,6 +302,18 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 
 **対応 AC:** AC-5
 
+### 8.3 変更しない: キャッシュエラー処理
+
+`isNetworkViaBinaryAnalysis` のキャッシュエラー処理（`SchemaVersionMismatchError`・`ErrRecordNotFound`・`nil` 結果）は 0105 では変更しない。既存の挙動を明示的に維持する:
+
+| エラー条件 | 挙動 | 理由 |
+|-----------|------|------|
+| `SchemaVersionMismatchError`（SymbolAnalysis または SyscallAnalysis） | `return true, true`（高リスク確定） | 古いスキーマのレコードは信頼できないため、許容するのではなく保守的に高リスクとする |
+| `ErrRecordNotFound`（SyscallAnalysis のみ） | panic | SymbolAnalysis レコードが存在するのに SyscallAnalysis レコードが存在しない場合は一貫性バグであり、サイレントに許容してはならない |
+| `nil` result（SyscallAnalysis） | SVC シグナルなしとして SymbolAnalysis 判定に委ねる | syscall 解析が存在しない静的バイナリ等では正常ケース |
+
+**実装上の注意:** 0105 ではスキーマバージョンを変更しない（既存 v16 レコードの後方互換を維持）。そのため、フィルタリング前の旧レコードは `SchemaVersionMismatchError` を発生させず、より少ない `DetectedSyscalls` のまま利用される。これは意図的な設計であり（NFR-1）、`record` を再実行すれば最新の（フィルタなし）レコードへ自動的に上書きされる。
+
 ## 9. `internal/runner/security/network_analyzer_test.go`
 
 ### 9.1 変更内容: SVC / network signal テストの更新
@@ -402,11 +414,14 @@ MACOS_NETWORK_SYSCALL_NAMES = {
     "getsockopt",
     "getpeername",
     "getsockname",
-    "sendfile",
 }
 ```
 
-Linux 固有（macOS に存在しない）を除外: `accept4`、`recvmmsg`、`sendmmsg`
+Linux 固有（macOS に存在しない）を除外: `accept4`・`recvmmsg`・`sendmmsg`
+Linux にはないが macOS でソケット操作に使われるため追加: `shutdown`・`setsockopt`・`getsockopt`・`getpeername`・`getsockname`
+（これらは既存の `networkSyscallWrapperNames` と一致させる）
+
+`sendfile` は macOS でファイル-to-ソケット転送に使える syscall だが、既存の `networkSyscallWrapperNames` には含まれていないため追加しない。Linux の `NETWORK_SYSCALL_NAMES` にも含まれておらず、一貫性の観点から除外する。
 
 #### 12.1.2 `parse_macos_header` 関数の追加
 

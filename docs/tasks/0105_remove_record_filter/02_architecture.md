@@ -189,7 +189,13 @@ flowchart LR
 
 ### 4.3 macOS ネットワーク syscall セット
 
-Linux の `NETWORK_SYSCALL_NAMES` から macOS で存在しない名前（`accept4`・`recvmmsg`・`sendmmsg`）を除いたセットを `MACOS_NETWORK_SYSCALL_NAMES` として定義する。
+`MACOS_NETWORK_SYSCALL_NAMES` は既存の `networkSyscallWrapperNames`（`internal/libccache/macos_syscall_table.go`）と一致させる。
+具体的には、Linux の `NETWORK_SYSCALL_NAMES` を基に以下の調整を行う:
+
+- **除外**: Linux 固有で macOS に存在しない `accept4`・`recvmmsg`・`sendmmsg`
+- **追加**: macOS でソケット操作に使われ `networkSyscallWrapperNames` に含まれる `shutdown`・`setsockopt`・`getsockopt`・`getpeername`・`getsockname`
+
+`sendfile` は macOS でファイル-to-ソケット転送に使えるが、既存の `networkSyscallWrapperNames` に含まれておらず Linux 側の `NETWORK_SYSCALL_NAMES` にも含まれないため、両プラットフォームとも対象外とする。
 
 ### 4.4 Makefile の更新方針
 
