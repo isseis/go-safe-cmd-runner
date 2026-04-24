@@ -149,15 +149,10 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
         return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
     }
 
-    libcInNeeded := false
+    fallbackAllFuncsFromLibc := false
     if !hasVERNEED {
         libs, _ := elfFile.ImportedLibraries()
-        for _, lib := range libs {
-            if isLibcLibrary(lib) {
-                libcInNeeded = true
-                break
-            }
-        }
+        fallbackAllFuncsFromLibc = hasOnlyLibcImportedLibraries(libs)
     }
 
     var detected []binaryanalyzer.DetectedSymbol
@@ -172,9 +167,9 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
         isLibc := false
         if hasVERNEED {
             isLibc = isLibcLibrary(sym.Library)
-        } else if libcInNeeded {
-            // VERNEED なし・DT_NEEDED に libc あり：STT_FUNC 限定で全シンボルを libc 由来とみなす
-            // （libcInNeeded の判定が true の場合、DT_NEEDED に libc パターンが含まれることが保証される）
+        } else if fallbackAllFuncsFromLibc {
+            // VERNEED なし・libc が唯一の DT_NEEDED 依存である場合のみ
+            // STT_FUNC 限定で全シンボルを libc 由来とみなす
             isLibc = elf.ST_TYPE(sym.Info) == elf.STT_FUNC
         }
 
@@ -225,6 +220,27 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 func isLibcLibrary(lib string) bool {
     return strings.HasPrefix(lib, "libc.so.") ||
         strings.HasPrefix(lib, "libc.musl-")
+}
+
+// hasOnlyLibcImportedLibraries は DT_NEEDED に libc が少なくとも 1 つ存在し、
+// かつ libc 以外のライブラリが含まれない場合に true を返す。
+// この条件を満たすときのみ、VERNEED なしのフォールバックで全 STT_FUNC を
+// libc 由来とみなせる。
+func hasOnlyLibcImportedLibraries(libs []string) bool {
+    if len(libs) == 0 {
+        return false
+    }
+
+    hasLibc := false
+    for _, lib := range libs {
+        if isLibcLibrary(lib) {
+            hasLibc = true
+            continue
+        }
+        return false
+    }
+
+    return hasLibc
 }
 
 // categorizeELFSymbol はシンボル名を networkSymbols で検索し、
@@ -417,7 +433,7 @@ func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []strin
 
     symbols, err := f.ImportedSymbols()
     if err != nil {
-        return nil, nil
+        return nil, nil, err
     }
 
     for _, sym := range symbols {

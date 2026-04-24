@@ -277,20 +277,21 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
 	}
 
-	// For binaries without VERNEED, check DT_NEEDED for libc presence.
-	// This serves as a fallback for stripped or older binaries.
-	libcInNeeded := false
+	// For binaries without VERNEED, allow the DT_NEEDED fallback only when
+	// libc is the sole imported library. If other libraries are present, we
+	// cannot safely attribute every STT_FUNC import to libc.
+	fallbackAllFuncsFromLibc := false
 	if !hasVERNEED {
 		libs, _ := elfFile.ImportedLibraries()
-		for _, lib := range libs {
-			if isLibcLibrary(lib) {
-				libcInNeeded = true
-				break
-			}
-		}
+		fallbackAllFuncsFromLibc = hasOnlyLibcImportedLibraries(libs)
 	}
 
-	detected, dynamicLoadSyms := buildDetectedSymbols(dynsyms, hasVERNEED, libcInNeeded, a.networkSymbols)
+	detected, dynamicLoadSyms := buildDetectedSymbols(
+		dynsyms,
+		hasVERNEED,
+		fallbackAllFuncsFromLibc,
+		a.networkSymbols,
+	)
 
 	// Result is determined by whether any network-category symbol was found.
 	hasNetwork := false
@@ -315,12 +316,13 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 
 // buildDetectedSymbols filters dynsyms for libc-sourced symbols and categorizes them.
 // hasVERNEED indicates whether the ELF has GNU version requirements (sym.Library is set).
-// libcInNeeded indicates whether libc appears in DT_NEEDED (used only when !hasVERNEED).
+// fallbackAllFuncsFromLibc indicates whether the DT_NEEDED fallback is safe to use
+// for all imported STT_FUNC symbols (used only when !hasVERNEED).
 // Dynamic load symbols (dlopen/dlsym/dlvsym) are always collected independently.
 func buildDetectedSymbols(
 	dynsyms []elf.Symbol,
 	hasVERNEED bool,
-	libcInNeeded bool,
+	fallbackAllFuncsFromLibc bool,
 	networkSymbols map[string]binaryanalyzer.SymbolCategory,
 ) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol) {
 	for _, sym := range dynsyms {
@@ -333,8 +335,9 @@ func buildDetectedSymbols(
 		if hasVERNEED {
 			// VERNEED available: use the Library field for per-symbol attribution.
 			isLibc = isLibcLibrary(sym.Library)
-		} else if libcInNeeded {
-			// No VERNEED but libc in DT_NEEDED: treat all STT_FUNC imports as libc.
+		} else if fallbackAllFuncsFromLibc {
+			// No VERNEED and libc is the sole imported library: attribute all
+			// imported functions to libc for this fallback path.
 			isLibc = elf.ST_TYPE(sym.Info) == elf.STT_FUNC
 		}
 
@@ -362,6 +365,26 @@ func buildDetectedSymbols(
 func isLibcLibrary(lib string) bool {
 	return strings.HasPrefix(lib, "libc.so.") ||
 		strings.HasPrefix(lib, "libc.musl-")
+}
+
+// hasOnlyLibcImportedLibraries returns true when DT_NEEDED contains at least one
+// libc entry and no non-libc libraries. This is the narrow fallback condition in
+// which it is safe to attribute all imported STT_FUNC symbols to libc.
+func hasOnlyLibcImportedLibraries(libs []string) bool {
+	if len(libs) == 0 {
+		return false
+	}
+
+	hasLibc := false
+	for _, lib := range libs {
+		if isLibcLibrary(lib) {
+			hasLibc = true
+			continue
+		}
+		return false
+	}
+
+	return hasLibc
 }
 
 // categorizeELFSymbol looks up the symbol name in networkSymbols and returns its
