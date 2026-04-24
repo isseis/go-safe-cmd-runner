@@ -597,6 +597,21 @@ generate-syscall-tables:
 		$(if $(MACOS_SYSCALL_HEADER),$(if $(wildcard $(MACOS_SYSCALL_HEADER)),--macos-header $(MACOS_SYSCALL_HEADER),),)
 	$(GOFUMPTCMD) -w $(SYSCALL_TABLE_OUTPUTS)
 
+# generate-macos-syscall-table regenerates only the macOS BSD syscall table.
+# It requires the macOS SDK (available on any macOS host) but does NOT require
+# Linux kernel headers, so macOS developers can run it without extra setup.
+generate-macos-syscall-table:
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
+		echo "Error: $(PYTHON) is required but not found in PATH"; \
+		exit 1; \
+	fi
+	@if [ -z "$(MACOS_SYSCALL_HEADER)" ] || [ ! -f "$(MACOS_SYSCALL_HEADER)" ]; then \
+		echo "Error: macOS SDK header not found. Is Xcode Command Line Tools installed?"; \
+		exit 1; \
+	fi
+	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --macos-header $(MACOS_SYSCALL_HEADER)
+	$(GOFUMPTCMD) -w internal/libccache/macos_syscall_numbers.go
+
 # Fetch Mach-O dyld headers from apple-oss-distributions/dyld without normalization.
 # Files are stored byte-for-byte so CI can compare exact content.
 fetch-dyld-headers:

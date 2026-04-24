@@ -465,5 +465,4 @@ var macOSSyscallEntries = map[int]macOSSyscallEntry{
 	555: {name: "ungraftdmg", isNetwork: false},
 	556: {name: "coalition_policy_set", isNetwork: false},
 	557: {name: "coalition_policy_get", isNetwork: false},
-	558: {name: "MAXSYSCALL", isNetwork: false},
 }

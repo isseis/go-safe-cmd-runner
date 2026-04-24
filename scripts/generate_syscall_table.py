@@ -318,13 +318,13 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--x86-header",
-        default="/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
-        help="Path to x86_64 syscall header (default: %(default)s)",
+        default=None,
+        help="Path to x86_64 syscall header (default: /usr/include/x86_64-linux-gnu/asm/unistd_64.h)",
     )
     parser.add_argument(
         "--arm64-header",
-        default="/usr/include/asm-generic/unistd.h",
-        help="Path to arm64/generic syscall header (default: %(default)s)",
+        default=None,
+        help="Path to arm64/generic syscall header (default: /usr/include/asm-generic/unistd.h)",
     )
     parser.add_argument(
         "--macos-header",
@@ -333,28 +333,35 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.x86_header is None and args.arm64_header is None and args.macos_header is None:
+        # Default: generate all Linux tables using well-known paths.
+        args.x86_header = "/usr/include/x86_64-linux-gnu/asm/unistd_64.h"
+        args.arm64_header = "/usr/include/asm-generic/unistd.h"
+
     repo_root = Path(__file__).parent.parent
     out_dir = repo_root / "internal/runner/security/elfanalyzer"
 
-    generate(
-        source=args.x86_header,
-        struct_template=make_struct_template(
-            struct_name="X86_64SyscallTable",
-            arch_desc="x86_64 Linux",
-            constructor_name="NewX86_64SyscallTable",
-        ),
-        output=str(out_dir / "x86_syscall_numbers.go"),
-    )
-    generate(
-        source=args.arm64_header,
-        struct_template=make_struct_template(
-            struct_name="ARM64LinuxSyscallTable",
-            arch_desc="arm64 Linux",
-            constructor_name="NewARM64LinuxSyscallTable",
-            constructor_extra_comment="Syscall numbers are from the ARM64 Linux ABI (include/uapi/asm-generic/unistd.h).",
-        ),
-        output=str(out_dir / "arm64_syscall_numbers.go"),
-    )
+    if args.x86_header is not None:
+        generate(
+            source=args.x86_header,
+            struct_template=make_struct_template(
+                struct_name="X86_64SyscallTable",
+                arch_desc="x86_64 Linux",
+                constructor_name="NewX86_64SyscallTable",
+            ),
+            output=str(out_dir / "x86_syscall_numbers.go"),
+        )
+    if args.arm64_header is not None:
+        generate(
+            source=args.arm64_header,
+            struct_template=make_struct_template(
+                struct_name="ARM64LinuxSyscallTable",
+                arch_desc="arm64 Linux",
+                constructor_name="NewARM64LinuxSyscallTable",
+                constructor_extra_comment="Syscall numbers are from the ARM64 Linux ABI (include/uapi/asm-generic/unistd.h).",
+            ),
+            output=str(out_dir / "arm64_syscall_numbers.go"),
+        )
 
     if args.macos_header is not None:
         macos_out_dir = repo_root / "internal/libccache"
