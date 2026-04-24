@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -282,7 +283,13 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 	// cannot safely attribute every STT_FUNC import to libc.
 	fallbackAllFuncsFromLibc := false
 	if !hasVERNEED {
-		libs, _ := elfFile.ImportedLibraries()
+		libs, err := elfFile.ImportedLibraries()
+		if err != nil {
+			return binaryanalyzer.AnalysisOutput{
+				Result: binaryanalyzer.AnalysisError,
+				Error:  fmt.Errorf("failed to read imported libraries: %w", err),
+			}
+		}
 		fallbackAllFuncsFromLibc = hasOnlyLibcImportedLibraries(libs)
 	}
 
@@ -347,6 +354,15 @@ func buildDetectedSymbols(
 				Name:     sym.Name,
 				Category: cat,
 			})
+		} else if hasVERNEED && binaryanalyzer.IsKnownNetworkLibrary(sym.Library) {
+			// Symbol from a known non-libc network library (e.g., SSL_CTX_new from
+			// libssl.so). Only record it when the name is in the network symbol registry.
+			if cat, found := networkSymbols[sym.Name]; found {
+				detected = append(detected, binaryanalyzer.DetectedSymbol{
+					Name:     sym.Name,
+					Category: string(cat),
+				})
+			}
 		}
 
 		if binaryanalyzer.IsDynamicLoadSymbol(sym.Name) {
@@ -362,9 +378,11 @@ func buildDetectedSymbols(
 
 // isLibcLibrary returns true if the given library name matches a known libc pattern.
 // Recognized patterns: glibc ("libc.so.6") and musl ("libc.musl-<arch>.so.1").
+// filepath.Base handles the rare case where DT_NEEDED contains an absolute path.
 func isLibcLibrary(lib string) bool {
-	return strings.HasPrefix(lib, "libc.so.") ||
-		strings.HasPrefix(lib, "libc.musl-")
+	base := filepath.Base(lib)
+	return strings.HasPrefix(base, "libc.so.") ||
+		strings.HasPrefix(base, "libc.musl-")
 }
 
 // hasOnlyLibcImportedLibraries returns true when DT_NEEDED contains at least one

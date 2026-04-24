@@ -147,13 +147,13 @@ func TestBuildDetectedSymbols(t *testing.T) {
 	networkSymbols := binaryanalyzer.GetNetworkSymbols()
 
 	tests := []struct {
-		name                    string
-		symbols                 []elf.Symbol
-		hasVERNEED              bool
-		libcInNeeded            bool
-		wantDetectedNames       []string
-		wantDetectedCategories  []string
-		wantDynamicLoadSymNames []string
+		name                     string
+		symbols                  []elf.Symbol
+		hasVERNEED               bool
+		fallbackAllFuncsFromLibc bool
+		wantDetectedNames        []string
+		wantDetectedCategories   []string
+		wantDynamicLoadSymNames  []string
 	}{
 		{
 			// VERNEED path: socket from libc.so.6 → detected with "socket" category (AC-1)
@@ -215,9 +215,9 @@ func TestBuildDetectedSymbols(t *testing.T) {
 					Info:    uint8(elf.STT_FUNC) | uint8(elf.STB_GLOBAL<<4),
 				},
 			},
-			libcInNeeded:           true,
-			wantDetectedNames:      []string{"socket"},
-			wantDetectedCategories: []string{"socket"},
+			fallbackAllFuncsFromLibc: true,
+			wantDetectedNames:        []string{"socket"},
+			wantDetectedCategories:   []string{"socket"},
 		},
 		{
 			// Fallback path: no VERNEED, no libc in DT_NEEDED → socket not detected (AC-2 variant)
@@ -229,7 +229,26 @@ func TestBuildDetectedSymbols(t *testing.T) {
 					Info:    uint8(elf.STT_FUNC) | uint8(elf.STB_GLOBAL<<4),
 				},
 			},
-			libcInNeeded:      false,
+			fallbackAllFuncsFromLibc: false,
+			wantDetectedNames:        nil,
+		},
+		{
+			// VERNEED path: SSL_CTX_new from libssl.so → detected with "tls" category
+			name: "VERNEED: SSL_CTX_new from libssl detected",
+			symbols: []elf.Symbol{
+				{Name: "SSL_CTX_new", Section: elf.SHN_UNDEF, Library: "libssl.so.1.1"},
+			},
+			hasVERNEED:             true,
+			wantDetectedNames:      []string{"SSL_CTX_new"},
+			wantDetectedCategories: []string{"tls"},
+		},
+		{
+			// VERNEED path: unknown symbol from a known network library is not recorded
+			name: "VERNEED: unknown symbol from known network library not detected",
+			symbols: []elf.Symbol{
+				{Name: "unknown_ssl_func", Section: elf.SHN_UNDEF, Library: "libssl.so.1.1"},
+			},
+			hasVERNEED:        true,
 			wantDetectedNames: nil,
 		},
 		{
@@ -238,10 +257,10 @@ func TestBuildDetectedSymbols(t *testing.T) {
 			symbols: []elf.Symbol{
 				{Name: "dlopen", Section: elf.SHN_UNDEF},
 			},
-			hasVERNEED:              false,
-			libcInNeeded:            false,
-			wantDetectedNames:       nil,
-			wantDynamicLoadSymNames: []string{"dlopen"},
+			hasVERNEED:               false,
+			fallbackAllFuncsFromLibc: false,
+			wantDetectedNames:        nil,
+			wantDynamicLoadSymNames:  []string{"dlopen"},
 		},
 		{
 			// dlopen + socket from libc: both signals captured independently
@@ -277,7 +296,7 @@ func TestBuildDetectedSymbols(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			detected, dynamicLoadSyms := buildDetectedSymbols(
-				tt.symbols, tt.hasVERNEED, tt.libcInNeeded, networkSymbols,
+				tt.symbols, tt.hasVERNEED, tt.fallbackAllFuncsFromLibc, networkSymbols,
 			)
 
 			var gotNames []string

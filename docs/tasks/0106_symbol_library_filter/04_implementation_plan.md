@@ -72,7 +72,7 @@
 **作業内容**:
 - [x] library ordinal を使う libSystem 判定ヘルパーを追加する
 - [x] `NormalizeSymbolName` を通したカテゴリ付与を統合する
-- [x] Symtab なし時の `ImportedLibraries()` / `ImportedSymbols()` フォールバ ックを整理する
+- [x] Symtab なし時の `ImportedLibraries()` / `ImportedSymbols()` フォールバックを整理する
 - [x] libSystem 以外のシンボルが記録されないことを確認するテストを追加する
 - [x] AC-3 を満たすテストを追加または更新する
 

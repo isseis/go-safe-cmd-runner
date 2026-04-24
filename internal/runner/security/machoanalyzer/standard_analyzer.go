@@ -58,7 +58,13 @@ func isMachOMagic(b []byte) bool {
 // Returns the AnalysisOutput for that slice.
 func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.AnalysisOutput {
 	// Retrieve referenced library list for ordinal resolution.
-	libs, _ := f.ImportedLibraries()
+	libs, err := f.ImportedLibraries()
+	if err != nil {
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to get imported libraries: %w", err),
+		}
+	}
 
 	var detected []binaryanalyzer.DetectedSymbol
 	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
@@ -140,12 +146,12 @@ func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
 	}
 	if f.Dysymtab != nil {
 		dt := f.Dysymtab
-		total := uint32(len(f.Symtab.Syms)) //#nosec G115 -- len() is non-negative and slice lengths fit in uint32
+		total := uint32(len(f.Symtab.Syms)) // #nosec G115 -- len() is non-negative and slice lengths fit in uint32
 		if dt.Iundefsym > total {
 			return nil
 		}
 		end := dt.Iundefsym + dt.Nundefsym
-		if end > total {
+		if end < dt.Iundefsym || end > total {
 			end = total
 		}
 		return f.Symtab.Syms[dt.Iundefsym:end]
