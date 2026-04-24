@@ -123,34 +123,34 @@
 
 ### 6.1 テスト更新チェックリスト
 
-- [ ] AC-1 を validator_test.go の保持テストでカバーする
-- [ ] AC-2 と AC-3 を validator_macho_test.go の全件保持と warning 条件でカバーする
-- [ ] AC-4 と AC-5 を network_analyzer_test.go の分岐テストでカバーする
-- [ ] AC-6 を libccache テストでカバーする
-- [ ] NFR-1 を network_analyzer_test.go の旧レコード互換ケースでカバーする
-- [ ] 不要になった旧前提テスト名やコメントを更新する
+- [x] AC-1 を validator_test.go の保持テストでカバーする
+- [x] AC-2 と AC-3 を validator_macho_test.go の全件保持と warning 条件でカバーする
+- [x] AC-4 と AC-5 を network_analyzer_test.go の分岐テストでカバーする
+- [x] AC-6 を libccache テストでカバーする
+- [x] NFR-1 を network_analyzer_test.go の旧レコード互換ケースでカバーする
+- [x] 不要になった旧前提テスト名やコメントを更新する
 
 ## 7. Step 5: 最終検証
 
 ### 7.1 実行チェックリスト
 
-- [ ] make fmt
-- [ ] make build
-- [ ] make test
-- [ ] make lint
-- [ ] 必要に応じて make generate-syscall-tables を実行し、生成物に差分がないことを確認する
+- [x] make fmt
+- [x] make build
+- [x] make test
+- [x] make lint
+- [x] 必要に応じて make generate-syscall-tables を実行し、生成物に差分がないことを確認する
 
 ### 7.2 ドキュメント整合チェックリスト
 
-- [ ] docs/tasks/0105_remove_record_filter/01_requirements.md の AC-1 から AC-8 が実装・テスト・文書確認のいずれかに対応付いていることを確認する
-- [ ] docs/tasks/0105_remove_record_filter/02_architecture.md と 03_detailed_specification.md の記述が最終実装と一致することを確認する
-- [ ] docs/tasks/0104_macho_syscall_number_analysis 配下に 0105 と矛盾する記述が残っていないことを確認する
+- [x] docs/tasks/0105_remove_record_filter/01_requirements.md の AC-1 から AC-8 が実装・テスト・文書確認のいずれかに対応付いていることを確認する
+- [x] docs/tasks/0105_remove_record_filter/02_architecture.md と 03_detailed_specification.md の記述が最終実装と一致することを確認する
+- [x] docs/tasks/0104_macho_syscall_number_analysis 配下に 0105 と矛盾する記述が残っていないことを確認する
 
 ## 8. 完了条件
 
-- [ ] record は全 syscall をフィルタなしで保存する
-- [ ] runner は未解決 svc のみを high risk とし、解決済みネットワーク syscall を見逃さない
-- [ ] macOS BSD syscall テーブルが自動生成に移行している
-- [ ] 既存テストと追加テストで AC-1 から AC-8、および NFR-1 を確認できる
-- [ ] make build が通過する
-- [ ] make test と make lint が通過する
+- [x] record は全 syscall をフィルタなしで保存する
+- [x] runner は未解決 svc のみを high risk とし、解決済みネットワーク syscall を見逃さない
+- [x] macOS BSD syscall テーブルが自動生成に移行している
+- [x] 既存テストと追加テストで AC-1 から AC-8、および NFR-1 を確認できる
+- [x] make build が通過する
+- [x] make test と make lint が通過する
