@@ -236,9 +236,12 @@ const CurrentSchemaVersion = 16
 
 ### ステップ 8: `internal/runner/security/network_analyzer.go` — 判定ロジック変更
 
+注記: このステップの初版には `syscallAnalysisHasSVCSignal` 削除案が含まれていたが、後続タスク 0105 で superseded となった。実装・レビュー時は「削除」ではなく「未解決 svc (`Number == -1`) のみを高リスク判定する条件へ修正」を正とする。
+
 **変更内容:**
 
-1. `syscallAnalysisHasSVCSignal` 関数を削除
+1. `syscallAnalysisHasSVCSignal` 関数を削除せず、未解決 svc (`Number == -1`) のみを高リスク判定する条件へ修正する
+   - superseded: 0105 以降は削除しない。`Number == -1` 条件を追加して保持する
 2. `isNetworkViaBinaryAnalysis` 内の `SyscallAnalysis` 参照ブロックを以下に変更:
    ```go
    // 変更前: syscallAnalysisHasSVCSignal → true, true
@@ -258,7 +261,7 @@ const CurrentSchemaVersion = 16
 - [ ] `IsNetwork=false` のみ → `SymbolAnalysis` 判定に委譲（AC-4）
 - [ ] `SyscallAnalysis==nil`（`nil, nil`）→ `SymbolAnalysis` 判定に委譲（AC-4）
 - [ ] v15 レコード（`SchemaVersionMismatchError`）→ `true, true`（AC-4）
-- [ ] `"direct_svc_0x80"` を判定条件に使うコードが存在しないこと（AC-4）
+- [ ] 未解決 svc (`Number == -1` かつ `"direct_svc_0x80"`) のみを高リスク判定すること（0105 で更新）
 
 ---
 
