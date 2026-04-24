@@ -67,6 +67,10 @@ MACOS_NETWORK_SYSCALL_NAMES = {
     "getsockname",
 }
 
+MACOS_NETWORK_SYSCALL_SUFFIXES = (
+    "_nocancel",
+)
+
 
 
 # Meta/size constants that appear in kernel headers as __NR_<name> but are
@@ -109,6 +113,16 @@ def parse_macos_header(path: str) -> dict[str, int]:
                 name, number = m.group(1), int(m.group(2))
                 result[name] = number
     return result
+
+
+def is_macos_network_syscall(name: str) -> bool:
+    """Return whether the macOS syscall name should be classified as network-related."""
+    if name in MACOS_NETWORK_SYSCALL_NAMES:
+        return True
+    for suffix in MACOS_NETWORK_SYSCALL_SUFFIXES:
+        if name.endswith(suffix) and name[: -len(suffix)] in MACOS_NETWORK_SYSCALL_NAMES:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +283,7 @@ def generate_macos(source: str, output: str) -> None:
 
     # Sort by number for deterministic output.
     for name, number in sorted(syscalls.items(), key=lambda x: x[1]):
-        is_network = "true" if name in MACOS_NETWORK_SYSCALL_NAMES else "false"
+        is_network = "true" if is_macos_network_syscall(name) else "false"
         lines.append(f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}}},')
 
     lines.append("}")

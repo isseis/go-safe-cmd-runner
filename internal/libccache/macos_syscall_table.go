@@ -23,6 +23,8 @@ var _ SyscallNumberTable = MacOSSyscallTable{}
 var networkSyscallWrapperNames = []string{
 	"socket", "connect", "bind", "listen", "accept",
 	"sendto", "recvfrom", "sendmsg", "recvmsg",
+	"connect_nocancel", "accept_nocancel", "sendto_nocancel",
+	"recvfrom_nocancel", "sendmsg_nocancel", "recvmsg_nocancel",
 	"socketpair", "shutdown", "setsockopt", "getsockopt",
 	"getpeername", "getsockname",
 }
