@@ -68,19 +68,19 @@
 
 ### 4.1 実装チェックリスト
 
-- [ ] syscallAnalysisHasSVCSignal を削除せずに保持する
-- [ ] syscallAnalysisHasSVCSignal の高リスク条件を direct_svc_0x80 かつ Number == -1 のみに修正する
-- [ ] syscallAnalysisHasNetworkSignal の direct_svc_0x80 除外条件を削除する
-- [ ] syscallAnalysisHasNetworkSignal を IsNetwork のみで判定する実装に更新する
-- [ ] 関数コメントを未解決 svc と解決済みネットワーク svc の責務分担に合わせて更新する
+- [x] syscallAnalysisHasSVCSignal を削除せずに保持する
+- [x] syscallAnalysisHasSVCSignal の高リスク条件を direct_svc_0x80 かつ Number == -1 のみに修正する
+- [x] syscallAnalysisHasNetworkSignal の direct_svc_0x80 除外条件を削除する
+- [x] syscallAnalysisHasNetworkSignal を IsNetwork のみで判定する実装に更新する
+- [x] 関数コメントを未解決 svc と解決済ぽネットワーク svc の責務分担に合わせて更新する
 
 ### 4.2 テストチェックリスト
 
-- [ ] 未解決 svc を high risk と判定するテストを維持または追加する
-- [ ] 解決済み非ネットワーク svc を high risk と判定しないテストを追加する
-- [ ] 解決済みネットワーク svc を network signal として検出するテストを追加する
-- [ ] libSystem 由来ネットワーク syscall を network signal として検出する既存テストを維持する
-- [ ] 旧レコード相当のフィルタ済み DetectedSyscalls でも判定が変わらないことを確認する
+- [x] 未解決 svc を high risk と判定するテストを維持または追加する
+- [x] 解決済み非ネットワーク svc を high risk と判定しないテストを追加する
+- [x] 解決済みネットワーク svc を network signal として検出するテストを追加する
+- [x] libSystem 由来ネットワーク syscall を network signal として検出する既存テストを維持する
+- [x] 旧レコード相当のフィルタ済み DetectedSyscalls でも判定が変わらないことを確認する
 
 ## 5. Step 3: macOS BSD syscall テーブル自動生成
 

@@ -32,8 +32,8 @@ func TestSyscallAnalysisHasSVCSignal_WithWarningsOnly(t *testing.T) {
 	assert.False(t, syscallAnalysisHasSVCSignal(r))
 }
 
-// TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod verifies that a DetectedSyscall
-// with DeterminationMethod == "direct_svc_0x80" triggers the svc signal.
+// TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod verifies that an unresolved svc
+// (Number=-1, DeterminationMethod=="direct_svc_0x80") triggers the high-risk svc signal.
 func TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
@@ -43,6 +43,74 @@ func TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod(t *testing.T) {
 		},
 	}
 	assert.True(t, syscallAnalysisHasSVCSignal(r))
+}
+
+// TestSyscallAnalysisHasSVCSignal_ResolvedNonNetworkSVC verifies that a resolved
+// non-network svc (Number != -1, IsNetwork=false) does NOT trigger the high-risk signal.
+// After filter removal, resolved svc entries appear in DetectedSyscalls; only
+// unresolved ones (Number==-1) are high risk.
+func TestSyscallAnalysisHasSVCSignal_ResolvedNonNetworkSVC(t *testing.T) {
+	r := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 3, Name: "read", IsNetwork: false, DeterminationMethod: "direct_svc_0x80"},
+			},
+		},
+	}
+	assert.False(t, syscallAnalysisHasSVCSignal(r),
+		"resolved non-network svc (Number != -1) must not be treated as high risk")
+}
+
+// TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC verifies that a resolved network svc
+// (Number != -1, IsNetwork=true) does NOT trigger the high-risk svc signal.
+// Its network nature is handled by syscallAnalysisHasNetworkSignal instead.
+func TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC(t *testing.T) {
+	r := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 97, Name: "socket", IsNetwork: true, DeterminationMethod: "direct_svc_0x80"},
+			},
+		},
+	}
+	assert.False(t, syscallAnalysisHasSVCSignal(r),
+		"resolved network svc (Number != -1) must not be treated as high-risk svc signal")
+}
+
+// TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC verifies that a resolved network svc
+// (DeterminationMethod="direct_svc_0x80", IsNetwork=true) is detected as a network signal.
+// After filter removal, resolved svc entries appear in DetectedSyscalls and must be evaluated
+// by IsNetwork, regardless of DeterminationMethod.
+func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
+	r := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 97, Name: "socket", IsNetwork: true, DeterminationMethod: "direct_svc_0x80"},
+			},
+		},
+	}
+	assert.True(t, syscallAnalysisHasNetworkSignal(r),
+		"resolved network svc (IsNetwork=true) must be detected as network signal")
+}
+
+// TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility
+// (NFR-1): when DetectedSyscalls was filtered by the old FilterSyscallsForStorage logic
+// (only network or Number==-1 entries present), the new judgment still produces the same result.
+func TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord(t *testing.T) {
+	// Simulate old filtered DetectedSyscalls: only network and unresolved entries kept.
+	r := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 97, Name: "socket", IsNetwork: true, DeterminationMethod: "lib_cache_match"},
+				{Number: -1, DeterminationMethod: "direct_svc_0x80"},
+			},
+		},
+	}
+	// Network signal from socket (network=true) must still be detected.
+	assert.True(t, syscallAnalysisHasNetworkSignal(r),
+		"legacy filtered record with network entry must still trigger network signal")
+	// Unresolved svc (Number==-1) must still trigger high-risk signal.
+	assert.True(t, syscallAnalysisHasSVCSignal(r),
+		"legacy filtered record with unresolved svc must still trigger high-risk signal")
 }
 
 const (

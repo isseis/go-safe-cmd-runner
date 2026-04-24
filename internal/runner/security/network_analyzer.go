@@ -266,16 +266,17 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 }
 
 // syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult
-// contains evidence of svc #0x80 direct syscall usage.
-// Returns true only when any DetectedSyscall has DeterminationMethod == "direct_svc_0x80".
-// AnalysisWarnings is not checked here because it may contain warnings from ELF syscall
-// analysis that are unrelated to svc #0x80, which would cause false positives.
+// contains evidence of unresolved svc #0x80 direct syscall usage (high risk).
+// Returns true only when any DetectedSyscall has both
+// DeterminationMethod == "direct_svc_0x80" AND Number == -1.
+// Resolved svc entries (Number != -1) are not treated as high risk here;
+// their network classification is handled by syscallAnalysisHasNetworkSignal.
 func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool {
 	if result == nil {
 		return false
 	}
 	for _, s := range result.DetectedSyscalls {
-		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
+		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 && s.Number == -1 {
 			return true
 		}
 	}
@@ -283,16 +284,15 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 }
 
 // syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisResult
-// contains any detected syscall classified as a network syscall (IsNetwork == true)
-// that was not identified as a direct svc #0x80 instruction.
-// Direct svc #0x80 entries are handled separately by syscallAnalysisHasSVCSignal
-// (which escalates to high risk) and are therefore excluded here.
+// contains any detected syscall classified as a network syscall (IsNetwork == true).
+// This includes resolved svc entries (DeterminationMethod == "direct_svc_0x80" AND Number != -1)
+// whose network classification is determined by the syscall table lookup.
 func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
 	if result == nil {
 		return false
 	}
 	for _, s := range result.DetectedSyscalls {
-		if s.IsNetwork && s.DeterminationMethod != common.DeterminationMethodDirectSVC0x80 {
+		if s.IsNetwork {
 			return true
 		}
 	}
