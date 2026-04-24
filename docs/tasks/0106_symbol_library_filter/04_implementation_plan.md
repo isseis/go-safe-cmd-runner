@@ -113,10 +113,10 @@
 - `docs/tasks/0106_symbol_library_filter/03_detailed_specification.md`
 
 **作業内容**:
-- [ ] AC-1 から AC-4 までのテスト実装を完了する
-- [ ] `03_detailed_specification.md` の受け入れ基準検証フェーズを更新する
-- [ ] `make test` を実行して回帰を確認する
-- [ ] `make lint` を実行して lint を確認する
+- [x] AC-1 から AC-4 までのテスト実装を完了する
+- [x] `03_detailed_specification.md` の受け入れ基準検証フェーズを更新する
+- [x] `make test` を実行して回帰を確認する
+- [x] `make lint` を実行して lint を確認する
 
 **成功条件**:
 - AC-1 から AC-5 までの検証経路が実装と一致する
@@ -124,7 +124,7 @@
 
 **推定工数**: 0.5日
 
-**実績**: 未着手
+**実績**: 完了
 
 ## 3. 実装順序とマイルストーン
 
@@ -207,9 +207,9 @@
 
 ### Phase 5
 
-- [ ] AC-5 の検証を完了した
-- [ ] `make test` を通した
-- [ ] `make lint` を通した
+- [x] AC-5 の検証を完了した
+- [x] `make test` を通した
+- [x] `make lint` を通した
 
 ## 7. 成功基準
 
