@@ -346,6 +346,9 @@ func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
     }
     if f.Dysymtab != nil {
         dt := f.Dysymtab
+        if dt.Iundefsym > uint32(len(f.Symtab.Syms)) {
+            return nil
+        }
         end := dt.Iundefsym + dt.Nundefsym
         if end > uint32(len(f.Symtab.Syms)) {
             end = uint32(len(f.Symtab.Syms))
