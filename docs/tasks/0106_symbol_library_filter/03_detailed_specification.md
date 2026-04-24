@@ -118,7 +118,8 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
     dynsyms, err := elfFile.DynamicSymbols()
     if err != nil {
         if errors.Is(err, elf.ErrNoSymbols) {
-            // 静的バイナリ処理は呼び出し元で先に行うので、ここには到達しない
+            // DynamicSymbols() をこの関数内に移したため ErrNoSymbols はここで到達する。
+            // 静的バイナリとして扱い、呼び出し元が handleStaticBinary() へフォールバックする。
             return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
         }
         return binaryanalyzer.AnalysisOutput{
