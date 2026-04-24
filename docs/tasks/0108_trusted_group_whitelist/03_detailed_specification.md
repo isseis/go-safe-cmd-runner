@@ -45,16 +45,16 @@ graph TD
 
 package security
 
-// defaultTrustedGIDs は macOS のデフォルト信頼済みグループ GID セット。
-// GID 80 は macOS の admin グループ（全バージョンで固定値）。
-// GID 0 は root グループ（後方互換）。
+// defaultTrustedGIDs is the default trusted group GID set for macOS.
+// GID 80 is the macOS admin group (fixed across versions).
+// GID 0 is the root group (backward compatibility).
 var defaultTrustedGIDs = map[uint32]struct{}{
     0:  {},
     80: {},
 }
 
-// isTrustedGroup は macOS のデフォルト信頼済み GID セットのみを参照する。
-// macOS では trusted_gids 設定を無視する（admin GID 80 はビルドタグで固定）。
+// isTrustedGroup checks only the default trusted GID set on macOS.
+// On macOS, the trusted_gids config is ignored (admin GID 80 is fixed by build tag).
 func (v *Validator) isTrustedGroup(gid uint32) bool {
     _, ok := defaultTrustedGIDs[gid]
     return ok
@@ -68,15 +68,14 @@ func (v *Validator) isTrustedGroup(gid uint32) bool {
 
 package security
 
-// defaultTrustedGIDs は Linux のデフォルト信頼済みグループ GID セット。
-// GID 0 (root グループ) のみ。管理者グループ (wheel 等) の GID は
-// ディストリビューションによって異なるため、設定ファイルで指定する。
+// defaultTrustedGIDs is the default trusted group GID set for Linux.
+// Only GID 0 (root group) is included. Administrator groups (wheel, etc.)
+// vary by distribution and must be configured explicitly.
 var defaultTrustedGIDs = map[uint32]struct{}{
     0: {},
 }
 
-// isTrustedGroup は Linux のデフォルト信頼済み GID と Config.TrustedGIDs の
-// 両方を参照する。
+// isTrustedGroup checks both Linux default trusted GIDs and Config.TrustedGIDs.
 func (v *Validator) isTrustedGroup(gid uint32) bool {
     if _, ok := defaultTrustedGIDs[gid]; ok {
         return true
@@ -97,12 +96,12 @@ func (v *Validator) isTrustedGroup(gid uint32) bool {
 
 package security
 
-// defaultTrustedGIDs はその他 OS のデフォルト信頼済みグループ GID セット。
+// defaultTrustedGIDs is the default trusted group GID set for other platforms.
 var defaultTrustedGIDs = map[uint32]struct{}{
     0: {},
 }
 
-// isTrustedGroup はデフォルト信頼済み GID と Config.TrustedGIDs の両方を参照する。
+// isTrustedGroup checks both default trusted GIDs and Config.TrustedGIDs.
 func (v *Validator) isTrustedGroup(gid uint32) bool {
     if _, ok := defaultTrustedGIDs[gid]; ok {
         return true
@@ -121,10 +120,12 @@ func (v *Validator) isTrustedGroup(gid uint32) bool {
 #### 追加する型
 
 ```go
-// SecuritySpec は TOML 設定ファイルの [security] セクションに対応する。
+// SecuritySpec maps to the [security] section in a TOML configuration file.
 type SecuritySpec struct {
-    // TrustedGIDs は信頼済みグループ GID の追加リスト（Linux 向け）。
-    // macOS では無視される。省略した場合はデフォルトホワイトリストのみを使用する。
+    // TrustedGIDs is an additional trusted group GID list
+    // for Linux and other non-macOS platforms.
+    // On macOS, this field is ignored. When omitted, only default
+    // whitelist entries are used.
     TrustedGIDs []uint32 `toml:"trusted_gids"`
 }
 ```
@@ -148,9 +149,9 @@ type ConfigSpec struct {
 type Config struct {
     // ... 既存フィールド ...
 
-    // TrustedGIDs は設定ファイルで指定された追加の信頼済みグループ GID リスト。
-    // defaultTrustedGIDs と合わせて isTrustedGroup の判定に使用する。
-    // macOS ではこのフィールドを無視する。
+    // TrustedGIDs is an additional trusted group GID list from config.
+    // It is used with defaultTrustedGIDs in isTrustedGroup checks.
+    // This field is effective on non-macOS platforms and ignored on macOS.
     TrustedGIDs []uint32
 }
 ```
@@ -207,14 +208,14 @@ validator, err := security.NewValidator(securityConfig, security.WithGroupMember
 **テスト対象**: `validateGroupWritePermissions`
 
 ```go
-// テストケース（macOS のみ実行）
+// Test case (macOS only)
 //
-// AC-1 に対応するテスト
+// Test for AC-1
 func TestValidateGroupWritePermissions_MacOSAdmin(t *testing.T) {
     if runtime.GOOS != "darwin" {
         t.Skip("macOS only")
     }
-    // uid=0, gid=80, perm=0775 のディレクトリ → エラーなし
+    // uid=0, gid=80, perm=0775 directory -> no error
     stat := &syscall.Stat_t{Uid: 0, Gid: 80}
     // ...
 }
@@ -231,9 +232,9 @@ func TestValidateGroupWritePermissions_MacOSAdmin(t *testing.T) {
 **テスト対象**: `validateGroupWritePermissions`
 
 ```go
-// AC-3 に対応するテスト
+// Test for AC-3
 func TestValidateGroupWritePermissions_UntrustedGroup(t *testing.T) {
-    // uid=0, gid=1000 (非信頼済み), perm=0775 のディレクトリ → エラー
+    // uid=0, gid=1000 (untrusted), perm=0775 directory -> error
 }
 ```
 
@@ -242,9 +243,9 @@ func TestValidateGroupWritePermissions_UntrustedGroup(t *testing.T) {
 **テスト対象**: `validateGroupWritePermissions`
 
 ```go
-// AC-4 に対応するテスト（後方互換確認）
+// Test for AC-4 (backward compatibility)
 func TestValidateGroupWritePermissions_RootRoot(t *testing.T) {
-    // uid=0, gid=0, perm=0775 → エラーなし
+    // uid=0, gid=0, perm=0775 -> no error
 }
 ```
 
@@ -253,13 +254,13 @@ func TestValidateGroupWritePermissions_RootRoot(t *testing.T) {
 **テスト対象**: `isTrustedGroup`、TOML パース
 
 ```go
-// AC-5 に対応するテスト（Linux のみ実行）
+// Test for AC-5 (Linux only)
 func TestValidateGroupWritePermissions_LinuxTrustedGID(t *testing.T) {
     if runtime.GOOS != "linux" {
         t.Skip("Linux only")
     }
-    // trusted_gids = [10] の Config で uid=0, gid=10, perm=0775 → エラーなし
-    // trusted_gids 未指定の Config で uid=0, gid=10, perm=0775 → エラー
+    // With trusted_gids = [10], uid=0, gid=10, perm=0775 -> no error
+    // Without trusted_gids, uid=0, gid=10, perm=0775 -> error
 }
 ```
 

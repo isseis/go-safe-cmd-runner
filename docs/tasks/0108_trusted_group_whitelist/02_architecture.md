@@ -191,9 +191,9 @@ flowchart LR
 プラットフォーム定義ファイルには `//go:build` ディレクティブを使用する。
 
 ```
-trusted_gids_darwin.go  // go:build darwin
-trusted_gids_linux.go   // go:build linux
-trusted_gids_other.go   // go:build !darwin && !linux
+trusted_gids_darwin.go  //go:build darwin
+trusted_gids_linux.go   //go:build linux
+trusted_gids_other.go   //go:build !darwin && !linux
 ```
 
 各ファイルは `defaultTrustedGIDs` 変数と同じシグネチャの `isTrustedGroup(gid uint32) bool` を定義する。
@@ -208,7 +208,8 @@ trusted_gids_other.go   // go:build !darwin && !linux
 - `defaultTrustedGIDs`: ビルドタグで決まるプラットフォーム固有の定数セット
 - `Config.TrustedGIDs`: 設定ファイルで追加される GID スライス
 
-`isTrustedGroup` は両方を合わせてチェックする。
+`isTrustedGroup` は Linux/other では両方を合わせてチェックし、macOS では
+`defaultTrustedGIDs` のみをチェックする。
 
 ### 5.3 後方互換性の確保
 
