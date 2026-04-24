@@ -72,7 +72,7 @@
 - [x] syscallAnalysisHasSVCSignal の高リスク条件を direct_svc_0x80 かつ Number == -1 のみに修正する
 - [x] syscallAnalysisHasNetworkSignal の direct_svc_0x80 除外条件を削除する
 - [x] syscallAnalysisHasNetworkSignal を IsNetwork のみで判定する実装に更新する
-- [x] 関数コメントを未解決 svc と解決済ぽネットワーク svc の責務分担に合わせて更新する
+- [x] 関数コメントを未解決 svc と解決済みネットワーク svc の責務分担に合わせて更新する
 
 ### 4.2 テストチェックリスト
 
