@@ -390,3 +390,99 @@ flowchart LR
 | `machoanalyzer/standard_analyzer.go` | 変更 | `analyzeSlice` の libSystem フィルタ追加 |
 | `security/network_analyzer.go` | 変更 | `IsNetworkCategory` ベースのネットワーク判定 |
 | 対応する `_test.go` ファイル | 変更 | 新フィルタロジックの検証 |
+
+## 7. エラーハンドリング設計
+
+### 7.1 既存エラー型の利用
+
+- 新しい公開エラー型は追加しない
+- ELF 解析で `DynamicSymbols()` が失敗した場合は既存の `AnalysisError` を返す
+- ELF 解析で `elf.ErrNoSymbols` または実質的に空の `.dynsym` に到達した場合は `StaticBinary` として既存の静的解析経路へフォールバックする
+- Mach-O フォールバックで `ImportedSymbols()` の取得に失敗した場合は、そのスライスの `DetectedSymbols` を空として扱い、他の既存判定経路を阻害しない
+
+### 7.2 フォールバック方針
+
+- ELF: VERNEED ありと判定できる場合は `sym.Library` のみを信頼し、DT_NEEDED フォールバックと混在させない
+- ELF: VERNEED なしのときだけ DT_NEEDED に libc があるかを確認し、`STT_FUNC` の undefined symbol に限定して記録する
+- Mach-O: Symtab がない場合だけ `ImportedLibraries()` + `ImportedSymbols()` フォールバックを使う
+- 旧レコード読込時はスキーマ変更を伴わないため、カテゴリベース判定のみで安全に処理する
+
+## 8. セキュリティ考慮事項
+
+### 8.1 セキュリティ設計上の意図
+
+- 非 libc / 非 libSystem のシンボルを除外し、ネットワーク名だけで過剰検出するリスクを下げる
+- `DetectedSymbols` に syscall wrapper を残しつつ、`runner` 側では `IsNetworkCategory` を通したカテゴリ判定だけを採用して誤検知を防ぐ
+- `DynamicLoadSymbols` と `KnownNetworkLibDeps` の既存判定を保持し、ライブラリフィルタ導入で既存の高リスク検知を弱めない
+
+### 8.2 脅威モデル
+
+```mermaid
+flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    A[(非 libc / 非 libSystem<br>ライブラリのシンボル)] --> B[名前一致だけで記録]
+    B --> C[runner が誤って network 判定]
+    A --> D[ライブラリフィルタ]
+    D --> E[カテゴリ付き DetectedSymbols]
+    E --> F[IsNetworkCategory による判定]
+
+    class A data;
+    class B,C process;
+    class D,E,F enhanced;
+```
+
+## 9. 処理フロー詳細
+
+### 9.1 ELF の結果決定フロー
+
+1. `.dynsym` の undefined symbol を列挙する
+2. VERNEED の有無に応じて libc 帰属判定方法を一意に選ぶ
+3. libc 由来シンボルをすべて `DetectedSymbols` に追加する
+4. `IsDynamicLoadSymbol` に一致するシンボルは並行して `DynamicLoadSymbols` に追加する
+5. `DetectedSymbols` にネットワーク系カテゴリが 1 件でもあれば `NetworkDetected`、なければ `NoNetworkSymbols` を返す
+
+### 9.2 Mach-O の結果決定フロー
+
+1. `Desc` のライブラリ序数で libSystem 帰属を解決する
+2. libSystem 由来シンボルを正規化して `DetectedSymbols` に追加する
+3. Symtab がない場合だけ `ImportedLibraries()` に libSystem があるか確認してフォールバックする
+4. ELF と同様に `IsNetworkCategory` で最終結果を決める
+
+## 10. テスト戦略
+
+### 10.1 ユニットテスト
+
+- `binaryanalyzer/network_symbols_test.go` で `IsNetworkCategory` の真偽境界を検証する
+- `elfanalyzer/analyzer_test.go` で VERNEED あり・なしの両分岐と libc 以外除外を検証する
+- `machoanalyzer/analyzer_test.go` で library ordinal 解決、Symtab なしフォールバック、非 libSystem 除外を検証する
+- `network_analyzer_test.go` で `syscall_wrapper` のみでは network 判定にならないことを検証する
+
+### 10.2 統合テストと後方互換性
+
+- 既存レコード互換性は `DetectedSymbols` の既存カテゴリを持つデータを用いた `network_analyzer_test.go` で維持を確認する
+- 変更後のドキュメントどおりに `make test` と `make lint` を通し、既存セキュリティ判定ロジックへの退行がないことを確認する
+
+### 10.3 受け入れ基準との対応
+
+- AC-1: ELF で `socket` と `read` がともに記録されること
+- AC-2: libc 以外のみの ELF で `DetectedSymbols` が空であること
+- AC-3: Mach-O で `socket` と `read` がともに記録されること
+- AC-4: `runner` がカテゴリベースでのみ network 判定すること
+- AC-5: 回帰テスト一式が成功すること
+
+## 11. 実装の優先順位
+
+1. `binaryanalyzer` に `CategorySyscallWrapper` と `IsNetworkCategory` を追加する
+2. ELF アナライザを更新し、もっとも誤判定しやすい VERNEED / DT_NEEDED 分岐を先に固める
+3. Mach-O アナライザへ library ordinal ベースのフィルタを導入する
+4. `network_analyzer.go` をカテゴリベース判定へ切り替える
+5. 単体テスト、後方互換テスト、`make test` / `make lint` で全体確認する
+
+## 12. 将来の拡張性
+
+- 将来 `networkSymbols` に新カテゴリが追加されても、`IsNetworkCategory` の判定集合だけを更新すれば `runner` の意味論を保てる
+- Mach-O の libSystem 判定は、将来 `MachoLibSystemCache` を使う実装に差し替えても `analyzeSlice` の責務を維持できる
+- ELF の libc 判定は、将来より厳密な ABI 判定を導入しても `categorize` と結果決定ロジックを変更せずに拡張できる
