@@ -157,7 +157,8 @@ type Config struct {
 
 ### 2.4 `internal/runner/security/file_validation.go` への変更
 
-`isTrustedGroup` はプラットフォーム固有ファイル（`trusted_gids_*.go`）に定義するため、`file_validation.go` への追加はない。
+`isTrustedGroup` はプラットフォーム固有ファイル（`trusted_gids_*.go`）に定義する。
+`file_validation.go` では `validateGroupWritePermissions` の root 判定を置き換え、信頼済み所有権を通した場合のデバッグログを追加する。
 
 #### `validateGroupWritePermissions` の変更箇所
 
@@ -175,6 +176,10 @@ if isRootOwned {
 // Safe case: root-owned directory with trusted group
 isTrustedOwnership := stat.Uid == UIDRoot && v.isTrustedGroup(stat.Gid)
 if isTrustedOwnership {
+    slog.Debug("Directory has trusted ownership, group write allowed",
+        slog.String("path", dirPath),
+        slog.Any("gid", stat.Gid),
+        slog.String("permissions", fmt.Sprintf("%04o", perm)))
     return nil
 }
 ```

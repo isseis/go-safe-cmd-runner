@@ -196,11 +196,14 @@ trusted_gids_linux.go   // go:build linux
 trusted_gids_other.go   // go:build !darwin && !linux
 ```
 
-各ファイルは同じシグネチャの `defaultTrustedGIDs` 変数を定義し、コアロジックはこの変数を参照する。
+各ファイルは `defaultTrustedGIDs` 変数と同じシグネチャの `isTrustedGroup(gid uint32) bool` を定義する。
+`validateGroupWritePermissions` はプラットフォーム分岐を持たず、`isTrustedGroup` を呼び出すだけに留める。
 
 ### 5.2 GID セットの表現
 
-実行時に `isTrustedGroup(gid uint32) bool` を `O(1)` で判定するため、GID セットを `map[uint32]struct{}` で保持する。
+デフォルトの信頼済み GID セットは `map[uint32]struct{}` で保持し、プラットフォーム固有の既知 GID を `O(1)` で判定する。
+設定ファイルから読み込む追加 GID は `Config.TrustedGIDs []uint32` として保持し、Linux/other の `isTrustedGroup` で順に照合する。
+これにより TOML スキーマを単純に保ちつつ、既定値の判定コストを一定にできる。
 
 - `defaultTrustedGIDs`: ビルドタグで決まるプラットフォーム固有の定数セット
 - `Config.TrustedGIDs`: 設定ファイルで追加される GID スライス
