@@ -160,7 +160,7 @@ type SyscallInfo struct {
 
 アナライザー（elfanalyzer・machoanalyzer）は引き続き出現ごとに 1 エントリを生成する中間形式を使用しても構わない。グループ化は保存ゲートウェイである `SaveSyscallAnalysis` でのみ行う。
 
-> **設計上の注意**：アナライザー内部で `SyscallInfo` を中間型として使い続けると、グループ化前の（`Occurrences` が空の）エントリを返すことになる。これは保存時の変換前にのみ存在する中間状態であり、ディスクには書き込まれない。アナライザー内部の `SyscallInfo` 使用箇所では `Occurrences` フィールドを無視してよい（コンパイルエラーにはならない）。
+> **設計上の注意**：FR-2 適用後、アナライザーが `SyscallInfo` を中間型として使い続ける場合の表現は「出現ごとに 1 `SyscallInfo`」とし、その `Occurrences` には当該出現を表す 1 要素のみを格納する。すなわち、グループ化前の中間データでも `Occurrences` を空にしてはならない。各要素の `Location`・`DeterminationMethod`・`Source` などの出現単位情報は、その 1 要素の `Occurrences` に保持する。`SaveSyscallAnalysis` はこれらの中間エントリを syscall 番号（および同一 syscall を識別する共通属性）で束ね、永続化用のグループ化済み `SyscallInfo` に変換する。
 
 ### FR-4: `validator.go` の `buildMachoSyscallData` 修正
 
