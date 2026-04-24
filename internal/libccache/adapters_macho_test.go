@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -102,6 +103,24 @@ func TestMachoLibSystemAdapter_FallbackNameMatch_KnownNames(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "socket should be in fallback results")
+}
+
+// TestMachoLibSystemAdapter_FallbackNameMatch_NocancelNames verifies that
+// nocancel network wrappers are matched by the fallback path.
+func TestMachoLibSystemAdapter_FallbackNameMatch_NocancelNames(t *testing.T) {
+	adapter := newTestMachoAdapter(t)
+	result := adapter.fallbackNameMatch([]string{"connect_nocancel", "recvmsg_nocancel"})
+	require.Len(t, result, 2)
+
+	names := make(map[string]common.SyscallInfo, len(result))
+	for _, syscall := range result {
+		names[syscall.Name] = syscall
+		assert.True(t, syscall.IsNetwork)
+		assert.Equal(t, DeterminationMethodSymbolNameMatch, syscall.DeterminationMethod)
+	}
+
+	assert.Equal(t, 409, names["connect_nocancel"].Number)
+	assert.Equal(t, 401, names["recvmsg_nocancel"].Number)
 }
 
 // TestMachoLibSystemAdapter_FallbackNameMatch_UnknownSymbol verifies that unknown

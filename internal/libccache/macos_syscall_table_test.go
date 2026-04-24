@@ -31,6 +31,12 @@ func TestMacOSSyscallTable_NetworkEntries(t *testing.T) {
 		{133, "sendto"},
 		{134, "shutdown"},
 		{135, "socketpair"},
+		{401, "recvmsg_nocancel"},
+		{402, "sendmsg_nocancel"},
+		{403, "recvfrom_nocancel"},
+		{404, "accept_nocancel"},
+		{409, "connect_nocancel"},
+		{413, "sendto_nocancel"},
 	}
 
 	for _, tc := range networkSyscalls {
@@ -50,6 +56,7 @@ func TestMacOSSyscallTable_NonNetworkEntries(t *testing.T) {
 		number int
 		name   string
 	}{
+		{3, "read"}, // basic syscall present only in auto-generated table
 		{73, "munmap"},
 		{74, "mprotect"},
 		{197, "mmap"},
@@ -77,6 +84,8 @@ func TestNetworkSyscallWrapperNames(t *testing.T) {
 	expected := []string{
 		"socket", "connect", "bind", "listen", "accept",
 		"sendto", "recvfrom", "sendmsg", "recvmsg",
+		"connect_nocancel", "accept_nocancel", "sendto_nocancel",
+		"recvfrom_nocancel", "sendmsg_nocancel", "recvmsg_nocancel",
 		"socketpair", "shutdown", "setsockopt", "getsockopt",
 		"getpeername", "getsockname",
 	}

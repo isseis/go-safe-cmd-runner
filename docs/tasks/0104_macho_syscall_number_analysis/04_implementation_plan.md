@@ -323,7 +323,7 @@ const CurrentSchemaVersion = 16
 - [ ] バリデータテスト更新
 
 ### ステップ 8: network_analyzer.go 変更
-- [ ] `syscallAnalysisHasSVCSignal` 削除
+- [ ] `syscallAnalysisHasSVCSignal` 削除（superseded by 0105: 削除ではなく `Number == -1` 条件追加に変更）
 - [ ] `isNetworkViaBinaryAnalysis` 判定ロジック変更
 - [ ] `nil` SyscallAnalysis の委譲動作確認
 - [ ] ログメッセージ更新

@@ -722,17 +722,18 @@ func TestMergeMachoSyscallInfos_MixedNumbersSortedFirst(t *testing.T) {
 // TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC verifies that
 // AnalysisWarnings is populated only when there are unresolved svc entries
 // (Number=-1, DeterminationMethod="direct_svc_0x80"), and that resolved
-// non-network svc entries produce no warning.
+// non-network svc entries produce no warning but are retained in DetectedSyscalls.
 func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
-	// IsNetwork is false (default): non-network libSystem entry must be filtered out.
+	// libSystem entry that is non-network: must be retained (no filtering).
 	libsysEntries := []common.SyscallInfo{
-		{Number: 97, Source: "libsystem_symbol_import"},
+		{Number: 97, Source: "libsystem_symbol_import", IsNetwork: false},
 	}
 
-	// No svc entries: no warning, non-network libsys entry filtered out.
+	// No svc entries: no warning, libsys entry is retained.
 	result := buildMachoSyscallData(nil, libsysEntries, "arm64")
 	assert.Empty(t, result.AnalysisWarnings, "no warning when no svc entries")
-	assert.Empty(t, result.DetectedSyscalls, "non-network libsys entry must be filtered")
+	require.Len(t, result.DetectedSyscalls, 1, "non-network libsys entry must be retained (no filtering)")
+	assert.Equal(t, 97, result.DetectedSyscalls[0].Number)
 
 	// Unresolved svc entry (Number=-1, DeterminationMethod=direct_svc_0x80): warning present.
 	unresolvedSVCEntries := []common.SyscallInfo{
@@ -744,10 +745,9 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	}
 	result = buildMachoSyscallData(unresolvedSVCEntries, libsysEntries, "arm64")
 	assert.Len(t, result.AnalysisWarnings, 1, "warning expected for unresolved svc entry")
-	require.Len(t, result.DetectedSyscalls, 1, "only svc entry (Number=-1) should remain")
-	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
+	require.Len(t, result.DetectedSyscalls, 2, "both svc and libsys entries must be retained")
 
-	// Resolved non-network svc entries (e.g., munmap=73): no warning, entries filtered out.
+	// Resolved non-network svc entries (e.g., munmap=73): no warning, entries retained.
 	resolvedNonNetworkSVCEntries := []common.SyscallInfo{
 		{
 			Number:              73, // munmap — non-network
@@ -757,6 +757,34 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 		},
 	}
 	result = buildMachoSyscallData(resolvedNonNetworkSVCEntries, libsysEntries, "arm64")
-	assert.Empty(t, result.AnalysisWarnings, "no warning when all svc entries resolved to non-network")
-	assert.Empty(t, result.DetectedSyscalls, "resolved non-network svc entries must be filtered")
+	assert.Empty(t, result.AnalysisWarnings, "no warning when all svc entries resolved (Number != -1)")
+	require.Len(t, result.DetectedSyscalls, 2, "resolved non-network svc entries must be retained")
+	numbers := []int{result.DetectedSyscalls[0].Number, result.DetectedSyscalls[1].Number}
+	assert.Contains(t, numbers, 73)
+	assert.Contains(t, numbers, 97)
+
+	// Resolved network svc entry (socket=97): no warning, entry retained in DetectedSyscalls.
+	resolvedNetworkSVCEntries := []common.SyscallInfo{
+		{
+			Number:              97, // socket — network
+			Name:                "socket",
+			IsNetwork:           true,
+			Source:              common.DeterminationMethodDirectSVC0x80,
+			DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+		},
+	}
+	result = buildMachoSyscallData(resolvedNetworkSVCEntries, nil, "arm64")
+	assert.Empty(t, result.AnalysisWarnings, "no warning for resolved network svc entry")
+	require.Len(t, result.DetectedSyscalls, 1, "resolved network svc entry must be retained")
+	assert.Equal(t, 97, result.DetectedSyscalls[0].Number)
+	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
+
+	// Mixed: resolved network svc + unresolved svc: warning present, both retained.
+	mixedEntries := []common.SyscallInfo{
+		{Number: 97, IsNetwork: true, DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80},
+		{Number: -1, DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80},
+	}
+	result = buildMachoSyscallData(mixedEntries, nil, "arm64")
+	assert.Len(t, result.AnalysisWarnings, 1, "warning expected when any unresolved svc entry exists")
+	assert.Len(t, result.DetectedSyscalls, 2, "all entries must be retained")
 }

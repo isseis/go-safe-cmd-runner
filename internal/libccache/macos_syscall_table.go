@@ -15,26 +15,7 @@ var _ SyscallNumberTable = MacOSSyscallTable{}
 // macOSSyscallEntries defines the macOS arm64 BSD syscall table.
 // Keys are syscall numbers without the BSD class prefix 0x2000000.
 // sendmmsg / recvmmsg are Linux-specific and are not present on macOS.
-var macOSSyscallEntries = map[int]macOSSyscallEntry{
-	27:  {name: "recvmsg", isNetwork: true},
-	28:  {name: "sendmsg", isNetwork: true},
-	29:  {name: "recvfrom", isNetwork: true},
-	30:  {name: "accept", isNetwork: true},
-	31:  {name: "getpeername", isNetwork: true},
-	32:  {name: "getsockname", isNetwork: true},
-	73:  {name: "munmap", isNetwork: false},
-	74:  {name: "mprotect", isNetwork: false},
-	97:  {name: "socket", isNetwork: true},
-	98:  {name: "connect", isNetwork: true},
-	104: {name: "bind", isNetwork: true},
-	105: {name: "setsockopt", isNetwork: true},
-	106: {name: "listen", isNetwork: true},
-	118: {name: "getsockopt", isNetwork: true},
-	133: {name: "sendto", isNetwork: true},
-	134: {name: "shutdown", isNetwork: true},
-	135: {name: "socketpair", isNetwork: true},
-	197: {name: "mmap", isNetwork: false},
-}
+// The actual map is defined in macos_syscall_numbers.go (auto-generated).
 
 // networkSyscallWrapperNames lists network-related syscall wrapper names used when
 // matching import symbols as a fallback for binaries where the libSystem cache is unavailable.
@@ -42,6 +23,8 @@ var macOSSyscallEntries = map[int]macOSSyscallEntry{
 var networkSyscallWrapperNames = []string{
 	"socket", "connect", "bind", "listen", "accept",
 	"sendto", "recvfrom", "sendmsg", "recvmsg",
+	"connect_nocancel", "accept_nocancel", "sendto_nocancel",
+	"recvfrom_nocancel", "sendmsg_nocancel", "recvmsg_nocancel",
 	"socketpair", "shutdown", "setsockopt", "getsockopt",
 	"getpeername", "getsockname",
 }
