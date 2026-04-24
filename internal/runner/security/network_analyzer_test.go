@@ -152,6 +152,17 @@ func networkDetectedData() *fileanalysis.SymbolAnalysisData {
 	}
 }
 
+// syscallWrapperOnlyData builds a SymbolAnalysisData that contains only
+// non-network libc/libSystem symbols.
+func syscallWrapperOnlyData() *fileanalysis.SymbolAnalysisData {
+	return &fileanalysis.SymbolAnalysisData{
+		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
+			{Name: "read", Category: "syscall_wrapper"},
+			{Name: "close", Category: "syscall_wrapper"},
+		},
+	}
+}
+
 // TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss verifies that an unexpected
 // SymbolAnalysis load error returns AnalysisError (true, true).
 func TestIsNetworkViaBinaryAnalysis_SymbolAnalysisCacheMiss(t *testing.T) {
@@ -342,6 +353,37 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 
 	assert.True(t, isNet, "NetworkDetected should return true")
 	assert.False(t, isHigh, "no svc signal should not escalate isHighRisk")
+}
+
+// TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol verifies that
+// at least one network category in DetectedSymbols causes NetworkDetected.
+func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{data: &fileanalysis.SymbolAnalysisData{
+		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
+			{Name: "read", Category: "syscall_wrapper"},
+			{Name: "socket", Category: "socket"},
+		},
+	}}
+	svcStore := &mockFileanalysisSyscallStore{result: nil}
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+
+	assert.True(t, isNet, "network category symbol should trigger NetworkDetected")
+	assert.False(t, isHigh, "no svc signal should keep high risk false")
+}
+
+// TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly verifies that symbols with
+// only "syscall_wrapper" category do not trigger NetworkDetected.
+func TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly(t *testing.T) {
+	symStore := &stubNetworkSymbolStore{data: syscallWrapperOnlyData()}
+	svcStore := &mockFileanalysisSyscallStore{result: nil}
+	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)
+
+	isNet, isHigh := analyzer.isNetworkViaBinaryAnalysis(testCmdPath, testContentHash)
+
+	assert.False(t, isNet, "syscall_wrapper only must not trigger NetworkDetected")
+	assert.False(t, isHigh, "syscall_wrapper only must not escalate to high risk")
 }
 
 // ---- Section 6.2: syscallAnalysisHasNetworkSignal tests ----

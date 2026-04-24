@@ -242,13 +242,20 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
 			DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
 		}
-		if len(data.DetectedSymbols) > 0 || len(data.KnownNetworkLibDeps) > 0 {
+		hasNetworkSymbol := false
+		for _, sym := range data.DetectedSymbols {
+			if binaryanalyzer.IsNetworkCategory(sym.Category) {
+				hasNetworkSymbol = true
+				break
+			}
+		}
+		if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 {
 			output.Result = binaryanalyzer.NetworkDetected
 			// When network capability is inferred only from KnownNetworkLibDeps,
 			// DetectedSymbols remains empty. Log this explicitly so that logs
 			// clearly explain why the binary is treated as network-capable even
 			// if handleAnalysisOutput logs an empty symbol list.
-			if len(data.DetectedSymbols) == 0 && len(data.KnownNetworkLibDeps) > 0 {
+			if !hasNetworkSymbol && len(data.KnownNetworkLibDeps) > 0 {
 				slog.Info( //nolint:gosec // G706: cmdPath is a configured command path from TOML, not arbitrary user input
 					"treating binary as network-capable based on known network library dependencies",
 					"path", cmdPath,
