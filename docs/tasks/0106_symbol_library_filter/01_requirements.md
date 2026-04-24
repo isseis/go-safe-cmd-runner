@@ -150,7 +150,7 @@ libc / libSystem のすべてのシンボルを記録するため、`DetectedSym
 
 ### AC-2: ELF バイナリの非 libc シンボル非記録
 
-- libc 以外のライブラリ（例: `libm`）からのみシンボルをインポートする ELF バイナリで、libc シンボルをインポートしない場合、`detected_symbols` が空または libc シンボルのみであること
+- libc 以外のライブラリ（例: `libm`）からのみシンボルをインポートする ELF バイナリで、libc シンボルをインポートしない場合、`detected_symbols` が空であること
 
 ### AC-3: Mach-O バイナリの libSystem シンボル全記録
 
