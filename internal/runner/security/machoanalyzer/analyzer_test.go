@@ -375,3 +375,20 @@ func TestIsFlatNamespace(t *testing.T) {
 	assert.False(t, isFlatNamespace([]macho.Symbol{makeSymbol(0), makeSymbol(1)}))
 	assert.False(t, isFlatNamespace([]macho.Symbol{makeSymbol(1)}))
 }
+
+// TestAnalyzeSlice_SymtabAbsentImportedSymbolsError verifies that the Symtab-absent
+// fallback does not silently downgrade ImportedSymbols failures to NoNetworkSymbols.
+func TestAnalyzeSlice_SymtabAbsentImportedSymbolsError(t *testing.T) {
+	analyzer := NewStandardMachOAnalyzer(nil)
+	file := &macho.File{
+		Loads: []macho.Load{
+			&macho.Dylib{Name: "/usr/lib/libSystem.B.dylib"},
+		},
+	}
+
+	output := analyzer.analyzeSlice(file)
+
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	require.Error(t, output.Error)
+	assert.ErrorContains(t, output.Error, "failed to get imported symbols")
+}

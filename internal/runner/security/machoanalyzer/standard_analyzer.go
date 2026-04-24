@@ -93,7 +93,14 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 		}
 	} else {
 		// Symtab absent: fall back to ImportedLibraries / ImportedSymbols.
-		detected, dynamicLoadSyms = a.analyzeSliceFallback(f, libs)
+		var err error
+		detected, dynamicLoadSyms, err = a.analyzeSliceFallback(f, libs)
+		if err != nil {
+			return binaryanalyzer.AnalysisOutput{
+				Result: binaryanalyzer.AnalysisError,
+				Error:  fmt.Errorf("failed to get imported symbols: %w", err),
+			}
+		}
 	}
 
 	// Result is determined by whether any network-category symbol was found.
@@ -220,7 +227,7 @@ func categorizeMachoSymbol(name string, networkSymbols map[string]binaryanalyzer
 // analyzeSliceFallback handles Symtab-absent Mach-O slices.
 // When libSystem is listed in ImportedLibraries, all ImportedSymbols are treated
 // as libSystem-derived. When libSystem is absent, no symbols are recorded.
-func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []string) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol) {
+func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []string) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol, err error) {
 	hasLibSystem := false
 	for _, lib := range libs {
 		if isLibSystemLibrary(lib) {
@@ -231,12 +238,12 @@ func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []strin
 
 	// Without libSystem the binary does not use standard syscall interfaces.
 	if !hasLibSystem {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	symbols, err := f.ImportedSymbols()
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 
 	for _, sym := range symbols {
@@ -253,7 +260,7 @@ func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []strin
 			})
 		}
 	}
-	return detected, dynamicLoadSyms
+	return detected, dynamicLoadSyms, nil
 }
 
 // analyzeAllFatSlices analyzes every slice in a Fat binary and returns the most
