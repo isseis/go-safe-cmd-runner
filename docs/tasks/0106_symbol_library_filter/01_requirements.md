@@ -27,13 +27,13 @@
 - `internal/runner/security/elfanalyzer/standard_analyzer.go` の `checkDynamicSymbols`
   - ネットワーク名フィルタ（`a.networkSymbols` によるマッチング）を廃止
   - libc 由来シンボルの判定ロジックを追加
-  - すべての libc シンボルを記録し、ネットワーク関連には `Category: "network"` を付与
+  - すべての libc シンボルを記録し、ネットワーク関連には既存カテゴリ（`"socket"`, `"dns"`, `"tls"`, `"http"` など）、その他には `"syscall_wrapper"` を付与
 - `internal/runner/security/machoanalyzer/standard_analyzer.go` の `analyzeSlice`
   - ネットワーク名フィルタ（`a.networkSymbols` によるマッチング）を廃止
   - libSystem 由来シンボルの判定ロジックを追加
-  - すべての libSystem シンボルを記録し、ネットワーク関連には `Category: "network"` を付与
+  - すべての libSystem シンボルを記録し、ネットワーク関連には既存カテゴリ（`"socket"`, `"dns"`, `"tls"`, `"http"` など）、その他には `"syscall_wrapper"` を付与
 - `internal/runner/security/network_analyzer.go` のシンボル依存判定ロジック
-  - `Category == "network"` を条件としたネットワーク判定へ更新
+  - `binaryanalyzer.IsNetworkCategory(sym.Category)` を条件としたネットワーク判定へ更新
 - 上記に伴う既存テストの更新
 
 #### 対象外
