@@ -240,7 +240,7 @@ const CurrentSchemaVersion = 16
 
 **変更内容:**
 
-1. `syscallAnalysisHasSVCSignal` 関数を削除
+1. `syscallAnalysisHasSVCSignal` 関数を削除せず、未解決 svc (`Number == -1`) のみを高リスク判定する条件へ修正する
    - superseded: 0105 以降は削除しない。`Number == -1` 条件を追加して保持する
 2. `isNetworkViaBinaryAnalysis` 内の `SyscallAnalysis` 参照ブロックを以下に変更:
    ```go
