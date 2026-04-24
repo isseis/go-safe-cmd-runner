@@ -28,10 +28,10 @@
 - `internal/runner/security/binaryanalyzer/analyzer.go`
 
 **作業内容**:
-- [ ] `CategorySyscallWrapper` を追加する
-- [ ] `IsNetworkCategory` を追加し、ネットワーク系カテゴリ集合を明文化する
-- [ ] `AnalysisOutput.DetectedSymbols` コメントを新セマンティクスに更新する
-- [ ] `network_symbols_test.go` に真偽境界のテストを追加する
+- [x] `CategorySyscallWrapper` を追加する
+- [x] `IsNetworkCategory` を追加し、ネットワーク系カテゴリ集合を明文化する
+- [x] `AnalysisOutput.DetectedSymbols` コメントを新セマンティクスに更新する
+- [x] `network_symbols_test.go` に真偽境界のテストを追加する
 
 **成功条件**:
 - `syscall_wrapper` が新カテゴリとして文書化されている
@@ -39,7 +39,7 @@
 
 **推定工数**: 0.5日
 
-**実績**: 未着手
+**実績**: 完了
 
 ### Phase 2: ELF 解析ロジックの更新
 
@@ -183,9 +183,9 @@
 
 ### Phase 1
 
-- [ ] カテゴリ定数を追加した
-- [ ] `IsNetworkCategory` を追加した
-- [ ] カテゴリ判定テストを追加した
+- [x] カテゴリ定数を追加した
+- [x] `IsNetworkCategory` を追加した
+- [x] カテゴリ判定テストを追加した
 
 ### Phase 2
 

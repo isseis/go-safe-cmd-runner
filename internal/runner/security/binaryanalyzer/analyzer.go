@@ -61,9 +61,10 @@ type AnalysisOutput struct {
 	// Result is the overall analysis result type
 	Result AnalysisResult
 
-	// DetectedSymbols contains all network-related symbols found.
-	// Only populated when Result == NetworkDetected.
-	// Useful for logging and debugging purposes.
+	// DetectedSymbols contains all symbols imported from libc (ELF) or libSystem (Mach-O).
+	// Populated for both NetworkDetected and NoNetworkSymbols results.
+	// Network-related symbols have categories like "socket", "dns", "tls", "http".
+	// Other libc/libSystem symbols have category "syscall_wrapper".
 	DetectedSymbols []DetectedSymbol
 
 	// DynamicLoadSymbols contains the dynamic library loading symbols found
