@@ -141,8 +141,13 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
             }
         }
     }
-    // SHN_UNDEF シンボルが存在しない（空の dynsym）場合は static binary として扱う
-    _ = hasAnyUndef
+    // SHN_UNDEF シンボルが存在しない場合：
+    // - ErrNoSymbols / len==0 はすでに StaticBinary で返済済み（前段で処理）
+    // - dynsym は存在するが全シンボルが defined（SHN_UNDEF なし）の場合はインポートなし
+    //   → libc 由来シンボルが存在しないため NoNetworkSymbols を返す
+    if !hasAnyUndef {
+        return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
+    }
 
     libcInNeeded := false
     if !hasVERNEED {
