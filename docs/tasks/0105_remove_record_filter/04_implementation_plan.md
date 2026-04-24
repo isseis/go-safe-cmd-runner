@@ -93,24 +93,24 @@
 
 ### 5.1 実装チェックリスト
 
-- [ ] macos_syscall_table.go から手動定義の macOSSyscallEntries を削除する
-- [ ] macos_syscall_numbers.go を自動生成ファイルとして追加する
-- [ ] macos_syscall_numbers.go をコミット対象に含め、macOS ヘッダーがない環境でも既存生成物を利用できる状態にする
-- [ ] generate_syscall_table.py に MACOS_NETWORK_SYSCALL_NAMES を追加する
-- [ ] generate_syscall_table.py に parse_macos_header を追加する
-- [ ] generate_syscall_table.py に macOS 用生成関数を追加する
-- [ ] generate_syscall_table.py に --macos-header オプションを追加する
-- [ ] Makefile に MACOS_SYSCALL_HEADER を追加する
-- [ ] generate-syscall-tables ターゲットで macOS ヘッダーがある場合のみ生成する
-- [ ] gofumpt 対象に macos_syscall_numbers.go を追加する
+- [x] macos_syscall_table.go から手動定義の macOSSyscallEntries を削除する
+- [x] macos_syscall_numbers.go を自動生成ファイルとして追加する
+- [x] macos_syscall_numbers.go をコミット対象に含め、macOS ヘッダーがない環境でも既存生成物を利用できる状態にする
+- [x] generate_syscall_table.py に MACOS_NETWORK_SYSCALL_NAMES を追加する
+- [x] generate_syscall_table.py に parse_macos_header を追加する
+- [x] generate_syscall_table.py に macOS 用生成関数を追加する
+- [x] generate_syscall_table.py に --macos-header オプションを追加する
+- [x] Makefile に MACOS_SYSCALL_HEADER を追加する
+- [x] generate-syscall-tables ターゲットで macOS ヘッダーがある場合のみ生成する
+- [x] gofumpt 対象に macos_syscall_numbers.go を追加する
 
 ### 5.2 テストチェックリスト
 
-- [ ] MacOSSyscallTable.GetSyscallName(3) == read を確認する
-- [ ] MacOSSyscallTable.IsNetworkSyscall(97) == true を確認する
-- [ ] MacOSSyscallTable.IsNetworkSyscall(3) == false を確認する
-- [ ] make generate-syscall-tables で macOS 環境の再生成が成立することを確認する
-- [ ] macOS ヘッダー非存在環境でも既存ファイル利用でビルドが維持されることを確認する
+- [x] MacOSSyscallTable.GetSyscallName(3) == read を確認する
+- [x] MacOSSyscallTable.IsNetworkSyscall(97) == true を確認する
+- [x] MacOSSyscallTable.IsNetworkSyscall(3) == false を確認する
+- [x] make generate-syscall-tables で macOS 環境の再生成が成立することを確認する
+- [x] macOS ヘッダー非存在環境でも既存ファイル利用でビルドが維持されることを確認する
 
 ## 6. Step 4: テスト更新と回帰確認
 

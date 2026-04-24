@@ -558,14 +558,17 @@ security-test:
 # Generates Go syscall number tables from Linux kernel header files.
 # Prerequisites: Linux kernel headers for x86_64 and asm-generic (arm64).
 #   Debian/Ubuntu: apt-get install linux-libc-dev gcc-multilib
+# On macOS, the macOS BSD syscall table is also generated if the SDK header exists.
 # Generated files are committed to the repository.
 
 X86_SYSCALL_HEADER  ?= /usr/include/x86_64-linux-gnu/asm/unistd_64.h
 ARM64_SYSCALL_HEADER ?= /usr/include/asm-generic/unistd.h
+MACOS_SYSCALL_HEADER ?= $(shell xcrun --show-sdk-path 2>/dev/null | awk 'NF{print $$0"/usr/include/sys/syscall.h"}')
 SYSCALL_TABLE_SCRIPT := scripts/generate_syscall_table.py
 SYSCALL_TABLE_OUTPUTS := \
 	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
-	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go
+	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go \
+	internal/libccache/macos_syscall_numbers.go
 
 DYLD_HEADERS_BASE_URL ?= https://raw.githubusercontent.com/apple-oss-distributions/dyld/main/include/mach-o
 DYLD_HEADERS_DIR := internal/machodylib/testdata/dyld_headers/mach-o
@@ -590,7 +593,8 @@ generate-syscall-tables:
 		echo "Error: $(ARM64_SYSCALL_HEADER) not found. Install linux-libc-dev (Debian/Ubuntu: apt-get install linux-libc-dev)"; \
 		exit 1; \
 	fi
-	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --x86-header $(X86_SYSCALL_HEADER) --arm64-header $(ARM64_SYSCALL_HEADER)
+	$(PYTHON) $(SYSCALL_TABLE_SCRIPT) --x86-header $(X86_SYSCALL_HEADER) --arm64-header $(ARM64_SYSCALL_HEADER) \
+		$(if $(MACOS_SYSCALL_HEADER),$(if $(wildcard $(MACOS_SYSCALL_HEADER)),--macos-header $(MACOS_SYSCALL_HEADER),),)
 	$(GOFUMPTCMD) -w $(SYSCALL_TABLE_OUTPUTS)
 
 # Fetch Mach-O dyld headers from apple-oss-distributions/dyld without normalization.

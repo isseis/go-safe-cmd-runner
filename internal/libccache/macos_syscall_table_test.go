@@ -50,6 +50,7 @@ func TestMacOSSyscallTable_NonNetworkEntries(t *testing.T) {
 		number int
 		name   string
 	}{
+		{3, "read"}, // basic syscall present only in auto-generated table
 		{73, "munmap"},
 		{74, "mprotect"},
 		{197, "mmap"},
