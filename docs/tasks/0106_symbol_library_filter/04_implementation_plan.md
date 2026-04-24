@@ -195,9 +195,9 @@
 
 ### Phase 3
 
-- [ ] Mach-O の libSystem 判定を実装した
-- [ ] Mach-O フォールバックを実装した
-- [ ] AC-3 のテストを追加した
+- [x] Mach-O の libSystem 判定を実装した
+- [x] Mach-O フォールバックを実装した
+- [x] AC-3 のテストを追加した
 
 ### Phase 4
 
