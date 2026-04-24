@@ -7,7 +7,7 @@ package libccache
 // macOSSyscallEntries defines the macOS arm64 BSD syscall table.
 // Keys are syscall numbers without the BSD class prefix 0x2000000.
 var macOSSyscallEntries = map[int]macOSSyscallEntry{
-	0:   {name: "syscall", isNetwork: false},
+	0:   {name: "syscall", isNetwork: true},
 	1:   {name: "exit", isNetwork: false},
 	2:   {name: "fork", isNetwork: false},
 	3:   {name: "read", isNetwork: false},

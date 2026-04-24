@@ -50,6 +50,9 @@ NETWORK_SYSCALL_NAMES = {
 # shutdown / setsockopt / getsockopt / getpeername / getsockname are included
 # to match the existing networkSyscallWrapperNames in macos_syscall_table.go.
 MACOS_NETWORK_SYSCALL_NAMES = {
+    # Indirect syscall: dispatches any syscall by number at runtime,
+    # so it may invoke network syscalls and must be treated as network-capable.
+    "syscall",
     "socket",
     "connect",
     "accept",
