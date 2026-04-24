@@ -461,7 +461,7 @@ parser.add_argument(
 
 **追加変数:**
 ```makefile
-MACOS_SYSCALL_HEADER ?= $(shell xcrun --show-sdk-path 2>/dev/null)/usr/include/sys/syscall.h
+MACOS_SYSCALL_HEADER ?= $(shell xcrun --show-sdk-path 2>/dev/null | awk 'NF{print $$0"/usr/include/sys/syscall.h"}')
 ```
 
 **`SYSCALL_TABLE_OUTPUTS` への追加:**
