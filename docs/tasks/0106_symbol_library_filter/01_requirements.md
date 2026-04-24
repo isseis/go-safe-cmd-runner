@@ -130,9 +130,15 @@ for _, sym := range result.DetectedSymbols {
 
 libc / libSystem のすべてのシンボルを記録するため、`DetectedSymbols` の件数が増加する。タスク 0105 の NFR-2 と同様にセキュリティ正確性を優先し許容する。
 
-### NFR-3: スキーマバージョンの非変更
+### NFR-3: スキーマバージョンの非変更とセマンティクス変更時の安全なフォールバック
 
 `CurrentSchemaVersion` は変更しない。
+
+ただし、本タスクにより `DetectedSymbols` のセマンティクスが変化する（ネットワークシンボルのみ → libc / libSystem の全シンボル）。スキーマバージョンを変えないため、`SchemaVersionMismatchError` は発生しない。一方、旧 `record` が生成したキャッシュと新 `runner` の間で意味的な不整合が生じうる。
+
+この意味的な互換性は NFR-1 で保証する。旧キャッシュの `DetectedSymbols` にはネットワーク系カテゴリのシンボルのみが記録されており、新 `runner` がカテゴリベースのネットワーク判定を行っても結果は変わらない。
+
+将来スキーマバージョンを変更する場合（本タスクのスコープ外）、`SchemaVersionMismatchError` が発生したときは high-risk 扱いではなくライブ解析（バイナリ直接解析）へフォールバックすること。これにより、古いキャッシュによる誤判定を防ぎつつ安全に解析を継続できる。
 
 ## 5. 受け入れ基準
 
