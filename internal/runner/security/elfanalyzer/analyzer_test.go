@@ -48,7 +48,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			name:           "binary without network symbols",
 			filename:       "no_network.elf",
 			expectedResult: binaryanalyzer.NoNetworkSymbols,
-			expectSymbols:  false,
+			expectSymbols:  true, // libc symbols are recorded with "syscall_wrapper" category
 		},
 		{
 			name:           "static binary",
@@ -141,100 +141,219 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 		"python3 is expected to import dlopen/dlsym, got no DynamicLoadSymbols")
 }
 
-// TestCheckDynamicSymbols_HasDynamicLoad verifies that checkDynamicSymbols
-// correctly populates DynamicLoadSymbols when dlopen/dlsym/dlvsym appear in the symbol list.
-func TestCheckDynamicSymbols_HasDynamicLoad(t *testing.T) {
-	analyzer := NewStandardELFAnalyzer(nil, nil)
+// TestBuildDetectedSymbols verifies the libc-filter logic and DynamicLoadSymbols
+// collection in buildDetectedSymbols. AC-1, AC-2.
+func TestBuildDetectedSymbols(t *testing.T) {
+	networkSymbols := binaryanalyzer.GetNetworkSymbols()
 
 	tests := []struct {
 		name                    string
 		symbols                 []elf.Symbol
-		wantResult              binaryanalyzer.AnalysisResult
+		hasVERNEED              bool
+		libcInNeeded            bool
+		wantDetectedNames       []string
+		wantDetectedCategories  []string
 		wantDynamicLoadSymNames []string
 	}{
 		{
-			name: "dlopen only",
+			// VERNEED path: socket from libc.so.6 → detected with "socket" category (AC-1)
+			name: "VERNEED: socket from libc detected",
+			symbols: []elf.Symbol{
+				{Name: "socket", Section: elf.SHN_UNDEF, Library: "libc.so.6"},
+			},
+			hasVERNEED:             true,
+			wantDetectedNames:      []string{"socket"},
+			wantDetectedCategories: []string{"socket"},
+		},
+		{
+			// VERNEED path: read from libc → syscall_wrapper category (AC-1)
+			name: "VERNEED: read from libc is syscall_wrapper",
+			symbols: []elf.Symbol{
+				{Name: "read", Section: elf.SHN_UNDEF, Library: "libc.so.6"},
+			},
+			hasVERNEED:             true,
+			wantDetectedNames:      []string{"read"},
+			wantDetectedCategories: []string{"syscall_wrapper"},
+		},
+		{
+			// VERNEED path: socket + read from libc (AC-1)
+			name: "VERNEED: socket and read from libc",
+			symbols: []elf.Symbol{
+				{Name: "socket", Section: elf.SHN_UNDEF, Library: "libc.so.6"},
+				{Name: "read", Section: elf.SHN_UNDEF, Library: "libc.so.6"},
+			},
+			hasVERNEED:             true,
+			wantDetectedNames:      []string{"socket", "read"},
+			wantDetectedCategories: []string{"socket", "syscall_wrapper"},
+		},
+		{
+			// VERNEED path: non-libc library symbol is not recorded (AC-2)
+			name: "VERNEED: non-libc symbol is not detected",
+			symbols: []elf.Symbol{
+				{Name: "socket", Section: elf.SHN_UNDEF, Library: "libfoo.so.1"},
+			},
+			hasVERNEED:        true,
+			wantDetectedNames: nil,
+		},
+		{
+			// VERNEED path: musl libc is recognized (AC-1 variant)
+			name: "VERNEED: musl libc socket is detected",
+			symbols: []elf.Symbol{
+				{Name: "socket", Section: elf.SHN_UNDEF, Library: "libc.musl-x86_64.so.1"},
+			},
+			hasVERNEED:             true,
+			wantDetectedNames:      []string{"socket"},
+			wantDetectedCategories: []string{"socket"},
+		},
+		{
+			// Fallback path: no VERNEED, libc in DT_NEEDED, STT_FUNC → detected
+			name: "fallback: STT_FUNC socket detected when libc in DT_NEEDED",
+			symbols: []elf.Symbol{
+				{
+					Name:    "socket",
+					Section: elf.SHN_UNDEF,
+					Info:    uint8(elf.STT_FUNC) | uint8(elf.STB_GLOBAL<<4),
+				},
+			},
+			libcInNeeded:           true,
+			wantDetectedNames:      []string{"socket"},
+			wantDetectedCategories: []string{"socket"},
+		},
+		{
+			// Fallback path: no VERNEED, no libc in DT_NEEDED → socket not detected (AC-2 variant)
+			name: "fallback: socket not detected when libc not in DT_NEEDED",
+			symbols: []elf.Symbol{
+				{
+					Name:    "socket",
+					Section: elf.SHN_UNDEF,
+					Info:    uint8(elf.STT_FUNC) | uint8(elf.STB_GLOBAL<<4),
+				},
+			},
+			libcInNeeded:      false,
+			wantDetectedNames: nil,
+		},
+		{
+			// dlopen is always collected independently of libc filter
+			name: "dlopen is collected regardless of libc filter",
 			symbols: []elf.Symbol{
 				{Name: "dlopen", Section: elf.SHN_UNDEF},
 			},
-			wantResult:              binaryanalyzer.NoNetworkSymbols,
+			hasVERNEED:              false,
+			libcInNeeded:            false,
+			wantDetectedNames:       nil,
 			wantDynamicLoadSymNames: []string{"dlopen"},
 		},
 		{
-			name: "dlsym only",
+			// dlopen + socket from libc: both signals captured independently
+			name: "VERNEED: dlopen and socket from libc",
 			symbols: []elf.Symbol{
-				{Name: "dlsym", Section: elf.SHN_UNDEF},
+				{Name: "dlopen", Section: elf.SHN_UNDEF, Library: "libdl.so.2"},
+				{Name: "socket", Section: elf.SHN_UNDEF, Library: "libc.so.6"},
 			},
-			wantResult:              binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoadSymNames: []string{"dlsym"},
-		},
-		{
-			name: "dlvsym only",
-			symbols: []elf.Symbol{
-				{Name: "dlvsym", Section: elf.SHN_UNDEF},
-			},
-			wantResult:              binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoadSymNames: []string{"dlvsym"},
-		},
-		{
-			name: "dlopen and socket (both signals)",
-			symbols: []elf.Symbol{
-				{Name: "dlopen", Section: elf.SHN_UNDEF},
-				{Name: "socket", Section: elf.SHN_UNDEF},
-			},
-			wantResult:              binaryanalyzer.NetworkDetected,
+			hasVERNEED:              true,
+			wantDetectedNames:       []string{"socket"},
+			wantDetectedCategories:  []string{"socket"},
 			wantDynamicLoadSymNames: []string{"dlopen"},
 		},
 		{
-			name: "socket only (no dynamic load)",
+			// Defined symbols (SHN_ABS etc.) are skipped
+			name: "defined dlopen is not collected",
 			symbols: []elf.Symbol{
-				{Name: "socket", Section: elf.SHN_UNDEF},
-			},
-			wantResult:              binaryanalyzer.NetworkDetected,
-			wantDynamicLoadSymNames: nil,
-		},
-		{
-			name: "no relevant symbols",
-			symbols: []elf.Symbol{
-				{Name: "printf", Section: elf.SHN_UNDEF},
-			},
-			wantResult:              binaryanalyzer.NoNetworkSymbols,
-			wantDynamicLoadSymNames: nil,
-		},
-		{
-			name: "dlopen defined (not imported, SHN_UNDEF=0)",
-			symbols: []elf.Symbol{
-				// Section != SHN_UNDEF means it's defined, not imported
 				{Name: "dlopen", Section: elf.SHN_ABS},
 			},
-			wantResult:              binaryanalyzer.NoNetworkSymbols,
 			wantDynamicLoadSymNames: nil,
 		},
 		{
-			name: "dlsym and dlvsym both present",
+			// dlsym and dlvsym
+			name: "dlsym and dlvsym both collected",
 			symbols: []elf.Symbol{
 				{Name: "dlsym", Section: elf.SHN_UNDEF},
 				{Name: "dlvsym", Section: elf.SHN_UNDEF},
 			},
-			wantResult:              binaryanalyzer.NoNetworkSymbols,
 			wantDynamicLoadSymNames: []string{"dlsym", "dlvsym"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output := analyzer.checkDynamicSymbols(tt.symbols)
-			assert.Equal(t, tt.wantResult, output.Result)
+			detected, dynamicLoadSyms := buildDetectedSymbols(
+				tt.symbols, tt.hasVERNEED, tt.libcInNeeded, networkSymbols,
+			)
+
 			var gotNames []string
-			for _, sym := range output.DynamicLoadSymbols {
+			for _, sym := range detected {
 				gotNames = append(gotNames, sym.Name)
-				// All DynamicLoadSymbols must have category "dynamic_load"
+			}
+			assert.Equal(t, tt.wantDetectedNames, gotNames, "detected symbol names")
+
+			if len(tt.wantDetectedCategories) > 0 {
+				var gotCats []string
+				for _, sym := range detected {
+					gotCats = append(gotCats, sym.Category)
+				}
+				assert.Equal(t, tt.wantDetectedCategories, gotCats, "detected symbol categories")
+			}
+
+			var gotDLNames []string
+			for _, sym := range dynamicLoadSyms {
+				gotDLNames = append(gotDLNames, sym.Name)
 				assert.Equal(t, "dynamic_load", sym.Category,
 					"DynamicLoadSymbol %q should have category dynamic_load", sym.Name)
 			}
-			assert.Equal(t, tt.wantDynamicLoadSymNames, gotNames)
+			assert.Equal(t, tt.wantDynamicLoadSymNames, gotDLNames, "dynamic load symbol names")
 		})
 	}
+}
+
+// TestAnalyzeNetworkSymbols_DetectsLibcSocketAndSyscallWrapper verifies AC-1:
+// socket and read from libc appear in DetectedSymbols with correct categories.
+// This test requires testdata/with_socket.elf; skipped if not present.
+func TestAnalyzeNetworkSymbols_DetectsLibcSocketAndSyscallWrapper(t *testing.T) {
+	testdataDir := "testdata"
+	path := filepath.Join(testdataDir, "with_socket.elf")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skip("testdata/with_socket.elf not found; generate per testdata/README.md")
+	}
+
+	absPath, err := filepath.Abs(path)
+	require.NoError(t, err)
+
+	analyzer := NewStandardELFAnalyzer(nil, nil)
+	output := analyzer.AnalyzeNetworkSymbols(absPath, "sha256:dummy")
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+
+	// socket must be detected with "socket" category
+	socketFound := false
+	for _, sym := range output.DetectedSymbols {
+		if sym.Name == "socket" {
+			assert.Equal(t, "socket", sym.Category, "socket should have category 'socket'")
+			socketFound = true
+		}
+		// All libc symbols that are not network-related should be "syscall_wrapper"
+		if sym.Name != "socket" && sym.Name != "connect" && sym.Name != "bind" &&
+			sym.Name != "listen" && sym.Name != "accept" && sym.Name != "getaddrinfo" {
+			assert.Equal(t, "syscall_wrapper", sym.Category,
+				"non-network symbol %q should be 'syscall_wrapper'", sym.Name)
+		}
+	}
+	assert.True(t, socketFound, "socket should appear in DetectedSymbols")
+}
+
+// TestAnalyzeNetworkSymbols_IgnoresNonLibcSymbols verifies AC-2:
+// symbols from libraries other than libc are not recorded.
+// This test uses buildDetectedSymbols directly to avoid fixture dependency.
+func TestAnalyzeNetworkSymbols_IgnoresNonLibcSymbols(t *testing.T) {
+	networkSymbols := binaryanalyzer.GetNetworkSymbols()
+
+	// Simulate an ELF that imports only from libfoo (not libc)
+	symbols := []elf.Symbol{
+		{Name: "socket", Section: elf.SHN_UNDEF, Library: "libfoo.so.1"},
+		{Name: "connect", Section: elf.SHN_UNDEF, Library: "libfoo.so.1"},
+		{Name: "read", Section: elf.SHN_UNDEF, Library: "libfoo.so.1"},
+	}
+
+	detected, _ := buildDetectedSymbols(symbols, true, false, networkSymbols)
+	assert.Empty(t, detected, "symbols from non-libc library should not be recorded")
 }
 
 func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {

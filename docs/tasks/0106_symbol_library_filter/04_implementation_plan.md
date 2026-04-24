@@ -48,11 +48,11 @@
 - `internal/runner/security/elfanalyzer/analyzer_test.go`
 
 **作業内容**:
-- [ ] `checkDynamicSymbols` の入力を `*elf.File` に変更する
-- [ ] VERNEED あり時は `sym.Library` ベースで libc 判定する
-- [ ] VERNEED なし時のみ DT_NEEDED フォールバックを適用する
-- [ ] libc 由来シンボルを全記録し、非対象ライブラリを除外する
-- [ ] AC-1 と AC-2 を満たすテストを追加または更新する
+- [x] `checkDynamicSymbols` の入力を `*elf.File` に変更する
+- [x] VERNEED あり時は `sym.Library` ベースで libc 判定する
+- [x] VERNEED なし時のみ DT_NEEDED フォールバックを適用する
+- [x] libc 由来シンボルを全記録し、非対象ライブラリを除外する
+- [x] AC-1 と AC-2 を満たすテストを追加または更新する
 
 **成功条件**:
 - `socket` と `read` がともに `DetectedSymbols` に記録される
@@ -61,7 +61,7 @@
 
 **推定工数**: 1日
 
-**実績**: 未着手
+**実績**: 完了
 
 ### Phase 3: Mach-O 解析ロジックの更新
 
@@ -189,9 +189,9 @@
 
 ### Phase 2
 
-- [ ] ELF の libc 判定を実装した
-- [ ] VERNEED なし時のフォールバックを実装した
-- [ ] AC-1 / AC-2 のテストを追加した
+- [x] ELF の libc 判定を実装した
+- [x] VERNEED なし時のフォールバックを実装した
+- [x] AC-1 / AC-2 のテストを追加した
 
 ### Phase 3
 

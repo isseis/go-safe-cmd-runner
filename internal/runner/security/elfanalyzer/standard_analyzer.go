@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -206,26 +207,13 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 		}
 	}()
 
-	// Step 4: Get dynamic symbols
-	dynsyms, err := elfFile.DynamicSymbols()
-	if err != nil {
-		// ErrNoSymbols indicates no .dynsym section exists (static binary)
-		if errors.Is(err, elf.ErrNoSymbols) {
-			return a.handleStaticBinary(path, file, contentHash)
-		}
-		return binaryanalyzer.AnalysisOutput{
-			Result: binaryanalyzer.AnalysisError,
-			Error:  fmt.Errorf("failed to read dynamic symbols: %w", err),
-		}
-	}
-
-	// Empty .dynsym is treated as static binary
-	if len(dynsyms) == 0 {
+	// Step 4+5: libc symbol filter and dynamic load symbol check.
+	// DynamicSymbols() is called inside checkDynamicSymbols.
+	// If the ELF has no .dynsym, checkDynamicSymbols returns StaticBinary.
+	dynOutput := a.checkDynamicSymbols(elfFile)
+	if dynOutput.Result == binaryanalyzer.StaticBinary {
 		return a.handleStaticBinary(path, file, contentHash)
 	}
-
-	// Step 5: Check for network symbols and dynamic load symbols
-	dynOutput := a.checkDynamicSymbols(dynsyms)
 	if dynOutput.Result != binaryanalyzer.NoNetworkSymbols {
 		return dynOutput
 	}
@@ -246,43 +234,144 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 	return dynOutput
 }
 
-// checkDynamicSymbols scans the given ELF symbol list for network-related and
-// dynamic-load symbols. It only considers symbols in the undefined section
-// (i.e. imported from shared libraries).
-func (a *StandardELFAnalyzer) checkDynamicSymbols(dynsyms []elf.Symbol) binaryanalyzer.AnalysisOutput {
-	var detected []binaryanalyzer.DetectedSymbol
-	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
+// checkDynamicSymbols analyzes the ELF file's dynamic symbol table to detect
+// libc-sourced symbols. Only symbols imported from libc are recorded.
+// Returns StaticBinary if .dynsym is absent or empty.
+func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanalyzer.AnalysisOutput {
+	dynsyms, err := elfFile.DynamicSymbols()
+	if err != nil {
+		if errors.Is(err, elf.ErrNoSymbols) {
+			// No .dynsym section: treat as static binary so the caller can
+			// fall back to handleStaticBinary.
+			return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
+		}
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to read dynamic symbols: %w", err),
+		}
+	}
+
+	// Empty .dynsym is treated as static binary.
+	if len(dynsyms) == 0 {
+		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
+	}
+
+	// Determine whether VERNEED (GNU version requirements) is present.
+	// If at least one SHN_UNDEF symbol has a non-empty Library field, VERNEED
+	// sections are available and we can use per-symbol library attribution.
+	// If all SHN_UNDEF symbols have Library=="", fall back to DT_NEEDED.
+	hasAnyUndef := false
+	hasVERNEED := false
 	for _, sym := range dynsyms {
-		// Only check undefined symbols (imported from shared libraries)
-		// Defined symbols are exported, not imported
 		if sym.Section == elf.SHN_UNDEF {
-			if cat, found := a.networkSymbols[sym.Name]; found {
-				detected = append(detected, binaryanalyzer.DetectedSymbol{
-					Name:     sym.Name,
-					Category: string(cat),
-				})
-			}
-			if binaryanalyzer.IsDynamicLoadSymbol(sym.Name) {
-				dynamicLoadSyms = append(dynamicLoadSyms, binaryanalyzer.DetectedSymbol{
-					Name:     sym.Name,
-					Category: "dynamic_load",
-				})
+			hasAnyUndef = true
+			if sym.Library != "" {
+				hasVERNEED = true
+				break
 			}
 		}
 	}
 
-	if len(detected) > 0 {
-		return binaryanalyzer.AnalysisOutput{
-			Result:             binaryanalyzer.NetworkDetected,
-			DetectedSymbols:    detected,
-			DynamicLoadSymbols: dynamicLoadSyms,
+	// No SHN_UNDEF symbols: no imports → no libc symbols to record.
+	if !hasAnyUndef {
+		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
+	}
+
+	// For binaries without VERNEED, check DT_NEEDED for libc presence.
+	// This serves as a fallback for stripped or older binaries.
+	libcInNeeded := false
+	if !hasVERNEED {
+		libs, _ := elfFile.ImportedLibraries()
+		for _, lib := range libs {
+			if isLibcLibrary(lib) {
+				libcInNeeded = true
+				break
+			}
 		}
+	}
+
+	detected, dynamicLoadSyms := buildDetectedSymbols(dynsyms, hasVERNEED, libcInNeeded, a.networkSymbols)
+
+	// Result is determined by whether any network-category symbol was found.
+	hasNetwork := false
+	for _, sym := range detected {
+		if binaryanalyzer.IsNetworkCategory(sym.Category) {
+			hasNetwork = true
+			break
+		}
+	}
+
+	result := binaryanalyzer.NoNetworkSymbols
+	if hasNetwork {
+		result = binaryanalyzer.NetworkDetected
 	}
 
 	return binaryanalyzer.AnalysisOutput{
-		Result:             binaryanalyzer.NoNetworkSymbols,
+		Result:             result,
+		DetectedSymbols:    detected,
 		DynamicLoadSymbols: dynamicLoadSyms,
 	}
+}
+
+// buildDetectedSymbols filters dynsyms for libc-sourced symbols and categorizes them.
+// hasVERNEED indicates whether the ELF has GNU version requirements (sym.Library is set).
+// libcInNeeded indicates whether libc appears in DT_NEEDED (used only when !hasVERNEED).
+// Dynamic load symbols (dlopen/dlsym/dlvsym) are always collected independently.
+func buildDetectedSymbols(
+	dynsyms []elf.Symbol,
+	hasVERNEED bool,
+	libcInNeeded bool,
+	networkSymbols map[string]binaryanalyzer.SymbolCategory,
+) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol) {
+	for _, sym := range dynsyms {
+		if sym.Section != elf.SHN_UNDEF {
+			continue
+		}
+
+		// Determine whether this symbol originates from libc.
+		isLibc := false
+		if hasVERNEED {
+			// VERNEED available: use the Library field for per-symbol attribution.
+			isLibc = isLibcLibrary(sym.Library)
+		} else if libcInNeeded {
+			// No VERNEED but libc in DT_NEEDED: treat all STT_FUNC imports as libc.
+			isLibc = elf.ST_TYPE(sym.Info) == elf.STT_FUNC
+		}
+
+		if isLibc {
+			cat := categorizeELFSymbol(sym.Name, networkSymbols)
+			detected = append(detected, binaryanalyzer.DetectedSymbol{
+				Name:     sym.Name,
+				Category: cat,
+			})
+		}
+
+		if binaryanalyzer.IsDynamicLoadSymbol(sym.Name) {
+			dynamicLoadSyms = append(dynamicLoadSyms, binaryanalyzer.DetectedSymbol{
+				Name:     sym.Name,
+				Category: "dynamic_load",
+			})
+		}
+	}
+
+	return detected, dynamicLoadSyms
+}
+
+// isLibcLibrary returns true if the given library name matches a known libc pattern.
+// Recognized patterns: glibc ("libc.so.6") and musl ("libc.musl-<arch>.so.1").
+func isLibcLibrary(lib string) bool {
+	return strings.HasPrefix(lib, "libc.so.") ||
+		strings.HasPrefix(lib, "libc.musl-")
+}
+
+// categorizeELFSymbol looks up the symbol name in networkSymbols and returns its
+// category string. If not found, returns "syscall_wrapper".
+func categorizeELFSymbol(name string, networkSymbols map[string]binaryanalyzer.SymbolCategory) string {
+	if cat, found := networkSymbols[name]; found {
+		return string(cat)
+	}
+
+	return string(binaryanalyzer.CategorySyscallWrapper)
 }
 
 // isELFMagic checks if the given bytes match the ELF magic number.
