@@ -66,6 +66,7 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	if f.Symtab != nil {
 		symbols := machoUndefinedSymbols(f)
 		flatNamespace := isFlatNamespace(symbols)
+		libSystemPresent := hasLibSystem(libs)
 
 		for _, sym := range symbols {
 			normalized := NormalizeSymbolName(sym.Name)
@@ -75,7 +76,7 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 			// exact source library, so we use the conservative heuristic that all
 			// undefined symbols originate from a system library.
 			fromLibSystem := isLibSystemSymbol(sym, libs) ||
-				(flatNamespace && hasLibSystem(libs))
+				(flatNamespace && libSystemPresent)
 			if fromLibSystem {
 				cat := categorizeMachoSymbol(normalized, a.networkSymbols)
 				detected = append(detected, binaryanalyzer.DetectedSymbol{
@@ -228,16 +229,8 @@ func categorizeMachoSymbol(name string, networkSymbols map[string]binaryanalyzer
 // When libSystem is listed in ImportedLibraries, all ImportedSymbols are treated
 // as libSystem-derived. When libSystem is absent, no symbols are recorded.
 func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []string) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol, err error) {
-	hasLibSystem := false
-	for _, lib := range libs {
-		if isLibSystemLibrary(lib) {
-			hasLibSystem = true
-			break
-		}
-	}
-
 	// Without libSystem the binary does not use standard syscall interfaces.
-	if !hasLibSystem {
+	if !hasLibSystem(libs) {
 		return nil, nil, nil
 	}
 
