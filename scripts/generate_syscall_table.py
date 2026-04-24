@@ -77,6 +77,10 @@ MACOS_NETWORK_SYSCALL_SUFFIXES = (
 # of syscalls (last_syscall + 1), not a callable syscall entry point.
 _META_NAMES: frozenset[str] = frozenset({"syscalls"})
 
+# Meta/size constants that appear in macOS syscall headers as SYS_<name> but are
+# not callable syscall entry points.  SYS_MAXSYSCALL is the total count.
+_MACOS_META_NAMES: frozenset[str] = frozenset({"MAXSYSCALL"})
+
 
 def parse_header(path: str) -> dict[str, int]:
     """Parse ``#define __NR_<name> <number>`` lines from a C header file.
@@ -102,14 +106,18 @@ def parse_macos_header(path: str) -> dict[str, int]:
     """Parse ``#define SYS_<name> <number>`` lines from a macOS syscall header.
 
     Returns a dict mapping syscall name to number.
+    Lines with trailing comments (e.g. ``/* read(2) */``) are accepted.
+    Meta/size constants listed in ``_MACOS_META_NAMES`` are excluded.
     """
-    pattern = re.compile(r"^#define\s+SYS_(\w+)\s+(\d+)\s*$")
+    pattern = re.compile(r"^#define\s+SYS_(\w+)\s+(\d+).*$")
     result: dict[str, int] = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
             m = pattern.match(line)
             if m:
                 name, number = m.group(1), int(m.group(2))
+                if name in _MACOS_META_NAMES:
+                    continue
                 result[name] = number
     return result
 
@@ -284,8 +292,15 @@ def generate_macos(source: str, output: str) -> None:
         "// Keys are syscall numbers without the BSD class prefix 0x2000000.")
     lines.append("var macOSSyscallEntries = map[int]macOSSyscallEntry{")
 
-    # Sort by number for deterministic output.
-    for name, number in sorted(syscalls.items(), key=lambda x: x[1]):
+    processed_numbers: set[int] = set()
+    # Sort by number, then by name length to prefer shorter names for a given number,
+    # and finally by name alphabetically for deterministic output.
+    sorted_syscalls = sorted(
+        syscalls.items(), key=lambda x: (x[1], len(x[0]), x[0]))
+    for name, number in sorted_syscalls:
+        if number in processed_numbers:
+            continue
+        processed_numbers.add(number)
         is_network = "true" if is_macos_network_syscall(name) else "false"
         lines.append(
             f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}}},')
@@ -295,7 +310,7 @@ def generate_macos(source: str, output: str) -> None:
 
     content = "\n".join(lines)
     Path(output).write_text(content, encoding="utf-8")
-    print(f"Generated {output}  ({len(syscalls)} syscalls from {source})")
+    print(f"Generated {output}  ({len(processed_numbers)} syscalls from {source})")
 
 
 def main() -> None:
