@@ -121,7 +121,7 @@ flowchart TD
         E3 --> E4[("detected_syscalls<br>全エントリ記録")]
     end
 
-    subgraph MacOパス
+    subgraph Mach-Oパス
         M1[("Mach-O バイナリ")] --> M2["ScanSyscallInfos<br>（svc #0x80 スキャン）"]
         M1 --> M3["GetSyscallInfos<br>（libSystem シンボルマッチ）"]
         M2 -->|"svc エントリ"| M4["mergeMachoSyscallInfos"]

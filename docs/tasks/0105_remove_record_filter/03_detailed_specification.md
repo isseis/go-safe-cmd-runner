@@ -531,7 +531,7 @@ generate-syscall-tables:
 | AC-1: ELF 全 syscall 記録 | `validator_test.go` | 非ネットワーク・解決済み syscall が `DetectedSyscalls` に含まれる |
 | AC-2: Mach-O 全 syscall 記録 | `validator_macho_test.go` | libSystem + svc 全エントリが `DetectedSyscalls` に含まれる |
 | AC-3: `AnalysisWarnings` 正確な発出 | `validator_macho_test.go` | 未解決 svc のみ警告。解決済みのみの場合は警告なし |
-| AC-4: 未解決 svc 高リスク判定 | `network_analyzer_test.go` | Number=-1 → high risk。Number!=−1 非ネットワーク → high risk でない |
+| AC-4: 未解決 svc 高リスク判定 | `network_analyzer_test.go` | Number=-1 → high risk。Number!=-1 非ネットワーク → high risk でない |
 | AC-5: 解決済みネットワーク svc 判定 | `network_analyzer_test.go` | IsNetwork=true, DeterminationMethod="direct_svc_0x80" → isNetwork=true |
 | AC-6: macOS syscall テーブル拡張 | `libccache` テスト | GetSyscallName(3)="read", IsNetworkSyscall(97)=true, IsNetworkSyscall(3)=false |
 | AC-7: 既存テスト通過 | 全テストファイル | `make test` `make lint` エラーなし |
