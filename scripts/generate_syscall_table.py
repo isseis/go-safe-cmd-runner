@@ -72,7 +72,6 @@ MACOS_NETWORK_SYSCALL_SUFFIXES = (
 )
 
 
-
 # Meta/size constants that appear in kernel headers as __NR_<name> but are
 # not actual syscall numbers.  __NR_syscalls, for example, is the total count
 # of syscalls (last_syscall + 1), not a callable syscall entry point.
@@ -221,7 +220,8 @@ def build_body(syscalls: dict[str, int]) -> str:
     processed_numbers: set[int] = set()
     # Sort by number, then by name length to prefer shorter names for a given number,
     # and finally by name alphabetically for deterministic output.
-    sorted_syscalls = sorted(syscalls.items(), key=lambda x: (x[1], len(x[0]), x[0]))
+    sorted_syscalls = sorted(
+        syscalls.items(), key=lambda x: (x[1], len(x[0]), x[0]))
     for name, num in sorted_syscalls:
         if num in processed_numbers:
             continue
@@ -232,7 +232,8 @@ def build_body(syscalls: dict[str, int]) -> str:
     lines.append("\tfor _, def := range syscalls {")
     lines.append("\t\ttable.syscalls[def.Number] = def")
     lines.append("\t\tif def.IsNetwork {")
-    lines.append("\t\t\ttable.networkNumbers = append(table.networkNumbers, def.Number)")
+    lines.append(
+        "\t\t\ttable.networkNumbers = append(table.networkNumbers, def.Number)")
     lines.append("\t\t}")
     lines.append("\t}")
 
@@ -277,14 +278,17 @@ def generate_macos(source: str, output: str) -> None:
     source_label = Path(source).name
     lines: list[str] = []
     lines.append(MACOS_FILE_HEADER.format(source=source_label))
-    lines.append("// macOSSyscallEntries defines the macOS arm64 BSD syscall table.")
-    lines.append("// Keys are syscall numbers without the BSD class prefix 0x2000000.")
+    lines.append(
+        "// macOSSyscallEntries defines the macOS arm64 BSD syscall table.")
+    lines.append(
+        "// Keys are syscall numbers without the BSD class prefix 0x2000000.")
     lines.append("var macOSSyscallEntries = map[int]macOSSyscallEntry{")
 
     # Sort by number for deterministic output.
     for name, number in sorted(syscalls.items(), key=lambda x: x[1]):
         is_network = "true" if is_macos_network_syscall(name) else "false"
-        lines.append(f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}}},')
+        lines.append(
+            f'\t{number}:\t{{name: "{name}", isNetwork: {is_network}}},')
 
     lines.append("}")
     lines.append("")
@@ -295,7 +299,8 @@ def generate_macos(source: str, output: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--x86-header",
         default="/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
