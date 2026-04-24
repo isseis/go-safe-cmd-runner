@@ -1325,9 +1325,8 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		}
 		data := buildSyscallData(all, nil, elf.EM_X86_64)
 		assert.Equal(t, "x86_64", data.Architecture)
-		// FilterSyscallsForStorage retains only Number==-1 and IsNetwork entries.
-		// The libc_symbol_import entry (Number:42, IsNetwork:false) is filtered out.
-		assert.Len(t, data.DetectedSyscalls, 1)
+		// All syscalls are retained (no filtering): Number=-1 and Number=42 both present.
+		assert.Len(t, data.DetectedSyscalls, 2)
 	})
 
 	t.Run("architecture_arm64", func(t *testing.T) {
@@ -1336,6 +1335,22 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 		}
 		data := buildSyscallData(all, nil, elf.EM_AARCH64)
 		assert.Equal(t, "arm64", data.Architecture)
+	})
+
+	t.Run("non_network_resolved_syscall_retained", func(t *testing.T) {
+		all := []common.SyscallInfo{
+			{Number: 1, Name: "write", IsNetwork: false, Source: "libc_symbol_import"},
+			{Number: 3, Name: "read", IsNetwork: false, Source: "libc_symbol_import"},
+		}
+		data := buildSyscallData(all, nil, elf.EM_X86_64)
+		// Non-network, resolved syscalls must be retained (no filtering).
+		assert.Len(t, data.DetectedSyscalls, 2)
+		numbers := make([]int, len(data.DetectedSyscalls))
+		for i, s := range data.DetectedSyscalls {
+			numbers[i] = s.Number
+		}
+		assert.Contains(t, numbers, 1)
+		assert.Contains(t, numbers, 3)
 	})
 }
 

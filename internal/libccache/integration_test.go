@@ -74,8 +74,7 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 // TestLibcCache_Integration_SocketSyscallDetected verifies the end-to-end pipeline:
 // compile a C program that calls socket(), record it, and verify that the socket
 // syscall is detected with source "libc_symbol_import".
-// socket is a network syscall (IsNetwork=true) and is therefore retained by
-// FilterSyscallsForStorage, making it reliably detectable across architectures.
+// socket is a network syscall (IsNetwork=true) and is reliably detectable across architectures.
 //
 // Syscall numbers: x86_64=41, arm64=198.
 //

@@ -45,20 +45,20 @@
 
 ### 3.1 実装チェックリスト
 
-- [ ] FilterSyscallsForStorage を削除する
-- [ ] buildSyscallData で all をそのまま DetectedSyscalls に格納する
-- [ ] buildMachoSyscallData で merge 結果をそのまま DetectedSyscalls に格納する
-- [ ] buildMachoSyscallData の warnings 判定を merged に対して実行する
-- [ ] buildMachoSyscallData の warnings 条件を direct_svc_0x80 かつ Number == -1 に限定する
-- [ ] 関数コメントをフィルタなし前提へ更新する
+- [x] FilterSyscallsForStorage を削除する
+- [x] buildSyscallData で all をそのまま DetectedSyscalls に格納する
+- [x] buildMachoSyscallData で merge 結果をそのまま DetectedSyscalls に格納する
+- [x] buildMachoSyscallData の warnings 判定を merged に対して実行する
+- [x] buildMachoSyscallData の warnings 条件を direct_svc_0x80 かつ Number == -1 に限定する
+- [x] 関数コメントをフィルタなし前提へ更新する
 
 ### 3.2 テストチェックリスト
 
-- [ ] internal/fileanalysis/syscall_store_test.go の FilterSyscallsForStorage 前提テストを削除または置換する
-- [ ] internal/filevalidator/validator_test.go で非ネットワーク・解決済み syscall が DetectedSyscalls に残ることを確認する
-- [ ] internal/filevalidator/validator_macho_test.go で解決済み非ネットワーク svc が DetectedSyscalls に残ることを確認する
-- [ ] internal/filevalidator/validator_macho_test.go で libSystem と svc の全エントリが保持されることを確認する
-- [ ] internal/filevalidator/validator_macho_test.go で未解決 svc のみ AnalysisWarnings を発火させることを確認する
+- [x] internal/fileanalysis/syscall_store_test.go の FilterSyscallsForStorage 前提テストを削除または置換する
+- [x] internal/filevalidator/validator_test.go で非ネットワーク・解決済み syscall が DetectedSyscalls に残ることを確認する
+- [x] internal/filevalidator/validator_macho_test.go で解決済み非ネットワーク svc が DetectedSyscalls に残ることを確認する
+- [x] internal/filevalidator/validator_macho_test.go で libSystem と svc の全エントリが保持されることを確認する
+- [x] internal/filevalidator/validator_macho_test.go で未解決 svc のみ AnalysisWarnings を発火させることを確認する
 
 ## 4. Step 2: runner 側の判定修正
 

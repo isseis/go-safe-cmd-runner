@@ -779,22 +779,20 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 
 // buildMachoSyscallData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
-// AnalysisWarnings is populated only when unresolved svc #0x80 entries remain
-// after filtering (i.e., entries with DeterminationMethod="direct_svc_0x80").
-// When all svc entries are resolved to non-network syscalls they are dropped by
-// FilterSyscallsForStorage and no warning is emitted.
-// DetectedSyscalls is sorted by Number (svc entries with Number=-1 appear first).
+// AnalysisWarnings is populated only when unresolved svc #0x80 entries exist
+// (i.e., entries with DeterminationMethod="direct_svc_0x80" AND Number == -1).
+// When all svc entries are resolved (Number != -1), no warning is emitted.
+// DetectedSyscalls contains all entries without filtering.
 func buildMachoSyscallData(
 	svcEntries []common.SyscallInfo,
 	libsysEntries []common.SyscallInfo,
 	arch string,
 ) *fileanalysis.SyscallAnalysisData {
 	merged := mergeMachoSyscallInfos(svcEntries, libsysEntries)
-	retained := fileanalysis.FilterSyscallsForStorage(merged)
 
 	var warnings []string
-	for _, s := range retained {
-		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
+	for _, s := range merged {
+		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 && s.Number == -1 {
 			warnings = []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"}
 			break
 		}
@@ -804,7 +802,7 @@ func buildMachoSyscallData(
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			Architecture:     arch,
 			AnalysisWarnings: warnings,
-			DetectedSyscalls: retained,
+			DetectedSyscalls: merged,
 		},
 	}
 }
@@ -1322,12 +1320,10 @@ func mprotectStatusPriority(status common.SyscallArgEvalStatus) int {
 
 // buildSyscallData constructs a SyscallAnalysisData from the merged syscall infos.
 func buildSyscallData(all []common.SyscallInfo, argEvalResults []common.SyscallArgEvalResult, machine elf.Machine) *fileanalysis.SyscallAnalysisData {
-	retained := fileanalysis.FilterSyscallsForStorage(all)
-
 	return &fileanalysis.SyscallAnalysisData{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			Architecture:     elfArchName(machine),
-			DetectedSyscalls: retained,
+			DetectedSyscalls: all,
 			ArgEvalResults:   argEvalResults,
 		},
 	}

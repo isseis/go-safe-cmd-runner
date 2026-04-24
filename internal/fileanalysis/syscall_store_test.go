@@ -274,35 +274,6 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 	assert.Equal(t, 42, record.SyscallAnalysis.DetectedSyscalls[0].Number)
 }
 
-func TestFilterSyscallsForStorage(t *testing.T) {
-	input := []common.SyscallInfo{
-		{Number: 41, Name: "socket", IsNetwork: true, DeterminationMethod: "immediate"},
-		{Number: 1, Name: "write", IsNetwork: false, DeterminationMethod: "immediate"},
-		{Number: -1, Name: "", IsNetwork: false, DeterminationMethod: "unknown:scan_limit_exceeded"},
-		{Number: 42, Name: "connect", IsNetwork: true, DeterminationMethod: "immediate"},
-		{Number: 2, Name: "open", IsNetwork: false, DeterminationMethod: "immediate"},
-	}
-
-	result := FilterSyscallsForStorage(input)
-
-	// Only network syscalls and unknown syscalls should be retained.
-	require.Len(t, result, 3)
-	numbers := make([]int, len(result))
-	for i, s := range result {
-		numbers[i] = s.Number
-	}
-	assert.Contains(t, numbers, 41)
-	assert.Contains(t, numbers, -1)
-	assert.Contains(t, numbers, 42)
-	assert.NotContains(t, numbers, 1)
-	assert.NotContains(t, numbers, 2)
-}
-
-func TestFilterSyscallsForStorage_Empty(t *testing.T) {
-	result := FilterSyscallsForStorage(nil)
-	assert.Empty(t, result)
-}
-
 func TestStore_ArgEvalResults(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")
