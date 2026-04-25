@@ -209,6 +209,16 @@ func (a *StandardELFAnalyzer) AnalyzeNetworkSymbols(path string, contentHash str
 
 	// Step 4+5: libc symbol filtering and dynamic load symbol checking
 	dynOutput := a.checkDynamicSymbols(elfFile)
+	if dynOutput.Result == binaryanalyzer.StaticBinary {
+		if a.syscallStore != nil {
+			syscallOutput := a.lookupSyscallAnalysis(path, file, contentHash)
+			if syscallOutput.Result != binaryanalyzer.StaticBinary {
+				return syscallOutput
+			}
+		}
+		return dynOutput
+	}
+
 	if dynOutput.Result != binaryanalyzer.NoNetworkSymbols {
 		return dynOutput
 	}
@@ -246,8 +256,8 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 	}
 
 	// VERNEED judgment: scan all SHN_UNDEF symbols and check if any Library field is non-empty.
-	// If hasVERNEED=true, all symbols have valid Library information from VERNEED section.
-	// If hasVERNEED=false, fall back to checking DT_NEEDED.
+	// If hasVERNEED=true, classify symbols by sym.Library. If hasVERNEED=false,
+	// do not infer libc ownership from DT_NEEDED.
 	hasAnyUndef := false
 	hasVERNEED := false
 	for _, sym := range dynsyms {
@@ -265,18 +275,6 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
 	}
 
-	// Fallback to DT_NEEDED if VERNEED is absent
-	libcInNeeded := false
-	if !hasVERNEED {
-		libs, _ := elfFile.ImportedLibraries()
-		for _, lib := range libs {
-			if isLibcLibrary(lib) {
-				libcInNeeded = true
-				break
-			}
-		}
-	}
-
 	var detected []binaryanalyzer.DetectedSymbol
 	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
 
@@ -289,9 +287,6 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 		isLibc := false
 		if hasVERNEED {
 			isLibc = isLibcLibrary(sym.Library)
-		} else if libcInNeeded {
-			// When VERNEED is absent but DT_NEEDED has libc: only treat STT_FUNC as libc
-			isLibc = elf.ST_TYPE(sym.Info) == elf.STT_FUNC
 		}
 
 		if isLibc {

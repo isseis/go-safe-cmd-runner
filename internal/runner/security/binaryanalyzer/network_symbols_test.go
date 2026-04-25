@@ -53,22 +53,23 @@ func TestHasDynamicLoad_Independent(t *testing.T) {
 // network-related categories ("socket", "dns", "tls", "http") and correctly rejects
 // other categories ("syscall_wrapper", "dynamic_load", empty string).
 func TestIsNetworkCategory(t *testing.T) {
-        tests := []struct {
-                name     string
-                category string
-                expected bool
-        }{
-                // Network categories (should return true)
-                {"socket category", "socket", true},
-                {"dns category", "dns", true},
-                {"tls category", "tls", true},
-                {"http category", "http", true},
+	tests := []struct {
+		name     string
+		category string
+		expected bool
+	}{
+		// Network categories (should return true)
+		{"socket category", "socket", true},
+		{"dns category", "dns", true},
+		{"tls category", "tls", true},
+		{"http category", "http", true},
 
-                // Non-network categories (should return false)
-                {"syscall_wrapper category", "syscall_wrapper", false},
-                {"dynamic_load category", "dynamic_load", false},
-                {"empty string", "", false},
-                {"unknown category", "unknown", false},
+		// Non-network categories (should return false)
+		{"syscall_wrapper category", "syscall_wrapper", false},
+		{"dynamic_load category", "dynamic_load", false},
+		{"empty string", "", false},
+		{"unknown category", "unknown", false},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, IsNetworkCategory(tt.category))

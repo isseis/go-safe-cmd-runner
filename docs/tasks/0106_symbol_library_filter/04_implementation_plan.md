@@ -50,7 +50,7 @@
 **作業内容**:
 - [x] `checkDynamicSymbols` の入力を `*elf.File` に変更する
 - [x] VERNEED あり時は `sym.Library` ベースで libc 判定する
-- [x] VERNEED なし時のみ DT_NEEDED フォールバックを適用する
+- [x] VERNEED なし時は libc 判定を行わず、記録対象外として扱う
 - [x] libc 由来シンボルを全記録し、非対象ライブラリを除外する
 - [-] AC-1 と AC-2 を満たすテストを追加（Phase 5 で AC テスト検証時に対応）
 
@@ -129,7 +129,7 @@
 
 **実績**: 1 日（ELF 修正完了、Mach-O は Linux 環境制限により保留）
 
-**既知制限**: 
+**既知制限**:
 - Linux/arm64 環境では Mach-O バイナリのテスト実行不可（ファイル読み込み失敗）
 - Mach-O テスト期待値の検証は macOS で実施必要
 
@@ -162,7 +162,7 @@
 ### 4.1 ユニットテスト
 
 - `binaryanalyzer/network_symbols_test.go` で `IsNetworkCategory` の境界値を確認する
-- `elfanalyzer/analyzer_test.go` で VERNEED 分岐、DT_NEEDED フォールバック、非 libc 除外を確認する
+- `elfanalyzer/analyzer_test.go` で VERNEED 分岐と非 libc 除外を確認する
 - `machoanalyzer/analyzer_test.go` で library ordinal 解決、Symtab なしフォールバック、非 libSystem 除外を確認する
 - `network_analyzer_test.go` でカテゴリベース判定と旧レコード互換性を確認する
 
@@ -180,7 +180,7 @@
 
 | リスク | 影響 | 緩和策 |
 |--------|------|--------|
-| ELF の VERNEED 判定と DT_NEEDED フォールバックを混在させる | 非 libc シンボルを誤記録する | VERNEED の有無を先に一意に判定し、混在を禁止する |
+| ELF の VERNEED 非搭載バイナリでライブラリ帰属を推定する | 非 libc シンボルを誤記録する | VERNEED なしの場合は libc 判定を行わず、シンボル記録を抑止する |
 | Mach-O の library ordinal 解決ミス | libSystem 以外のシンボルを誤記録する | ordinal 範囲外と特殊値を明示的に除外する |
 | `runner` 側の判定条件を更新し忘れる | `syscall_wrapper` のみで誤検知する | `network_analyzer_test.go` に否定ケースを追加する |
 | `DetectedSymbols` の件数増加で既存期待値が壊れる | 既存テストが広く失敗する | AC 対応テストを先に用意し、既存期待値の見直しを限定的に行う |
@@ -190,33 +190,33 @@
 
 ### Phase 1
 
-- [ ] カテゴリ定数を追加した
-- [ ] `IsNetworkCategory` を追加した
-- [ ] カテゴリ判定テストを追加した
+- [x] カテゴリ定数を追加した
+- [x] `IsNetworkCategory` を追加した
+- [x] カテゴリ判定テストを追加した
 
 ### Phase 2
 
-- [ ] ELF の libc 判定を実装した
-- [ ] VERNEED なし時のフォールバックを実装した
-- [ ] AC-1 / AC-2 のテストを追加した
+- [x] ELF の libc 判定を実装した
+- [x] VERNEED なし時は記録対象外とする方針を実装した
+- [-] AC-1 / AC-2 のテストを追加した
 
 ### Phase 3
 
-- [ ] Mach-O の libSystem 判定を実装した
-- [ ] Mach-O フォールバックを実装した
-- [ ] AC-3 のテストを追加した
+- [x] Mach-O の libSystem 判定を実装した
+- [x] Mach-O フォールバックを実装した
+- [-] AC-3 のテストを追加した
 
 ### Phase 4
 
-- [ ] `runner` のカテゴリベース判定を実装した
-- [ ] AC-4 のテストを追加した
-- [ ] 旧レコード互換ケースを追加した
+- [x] `runner` のカテゴリベース判定を実装した
+- [x] AC-4 のテストを追加した
+- [-] 旧レコード互換ケースを追加した
 
 ### Phase 5
 
-- [ ] AC-5 の検証を完了した
-- [ ] `make test` を通した
-- [ ] `make lint` を通した
+- [~] AC-5 の検証を完了した
+- [~] `make test` を通した
+- [x] `make lint` を通した
 
 ## 7. 成功基準
 
