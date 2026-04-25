@@ -114,10 +114,10 @@
 
 **作業内容**:
 - [x] ELF テスト期待値を修正（with_ssl.elf は NoNetworkSymbols を期待）
-- [~] Mach-O テスト期待値を修正（Linux 環境では実行不可、macOS で検証必要）
+- [-] Mach-O テスト期待値を修正（Linux 環境では実行不可、macOS で検証必要）
 - [x] `03_detailed_specification.md` の受け入れ基準検証フェーズを確認
 - [x] `make lint` を実行して lint を確認する（成功）
-- [~] `make test` を実行して回帰を確認する（ELF PASS、Mach-O は環境依存）
+- [x] `make test` を実行して回帰を確認する（全パッケージ PASS）
 
 **成功条件**:
 - AC-1 から AC-5 までの検証経路が実装と一致する
@@ -214,8 +214,8 @@
 
 ### Phase 5
 
-- [~] AC-5 の検証を完了した
-- [~] `make test` を通した
+- [x] AC-5 の検証を完了した
+- [x] `make test` を通した
 - [x] `make lint` を通した
 
 ## 7. 成功基準
