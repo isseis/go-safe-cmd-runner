@@ -84,6 +84,9 @@ type ConfigSpec struct {
 	// Global contains global-level configuration
 	Global GlobalSpec `toml:"global"`
 
+	// Security contains optional security-related configuration.
+	Security SecuritySpec `toml:"security"`
+
 	// CommandTemplates contains reusable command template definitions.
 	// After loading, this will contain templates from:
 	//   1. All included template files (in order)
@@ -103,6 +106,14 @@ type ConfigSpec struct {
 
 	// Groups contains all command groups defined in the configuration
 	Groups []GroupSpec `toml:"groups"`
+}
+
+// SecuritySpec maps to the [security] section in a TOML configuration file.
+type SecuritySpec struct {
+	// TrustedGIDs is an additional trusted group GID list for Linux and
+	// other non-macOS platforms. On macOS, this field is ignored.
+	// When omitted, only default whitelist entries are used.
+	TrustedGIDs []uint32 `toml:"trusted_gids"`
 }
 
 // GlobalSpec contains global configuration options loaded from TOML file.

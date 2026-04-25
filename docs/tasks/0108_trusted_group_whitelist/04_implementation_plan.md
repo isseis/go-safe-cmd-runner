@@ -49,10 +49,10 @@
 - `internal/runner/runnertypes/spec_test.go`
 
 作業内容:
-- [ ] `SecuritySpec` を追加し `trusted_gids` を定義する
-- [ ] `ConfigSpec` に `Security SecuritySpec` を追加する
-- [ ] TOML パーステストを追加し、`[security].trusted_gids` の読込を検証する
-- [ ] `security` セクション省略時の後方互換をテストで確認する
+- [x] `SecuritySpec` を追加し `trusted_gids` を定義する
+- [x] `ConfigSpec` に `Security SecuritySpec` を追加する
+- [x] TOML パーステストを追加し、`[security].trusted_gids` の読込を検証する
+- [x] `security` セクション省略時の後方互換をテストで確認する
 
 成功条件:
 - `trusted_gids` が `[]uint32` として正しくパースされる
@@ -60,7 +60,7 @@
 
 推定工数: 0.5日
 
-実績: 未着手
+実績: 完了
 
 ### Phase 2: セキュリティ設定モデル拡張
 

@@ -169,6 +169,81 @@ args = ["hello"]
 			wantErr: false,
 		},
 		{
+			name: "valid config with security trusted gids",
+			toml: `
+version = "1.0"
+
+[global]
+timeout = 300
+
+[security]
+trusted_gids = [10, 20]
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "hello"
+cmd = "/bin/echo"
+`,
+			want: &ConfigSpec{
+				Version: "1.0",
+				Global: GlobalSpec{
+					Timeout: commontesting.Int32Ptr(300),
+				},
+				Security: SecuritySpec{
+					TrustedGIDs: []uint32{10, 20},
+				},
+				Groups: []GroupSpec{
+					{
+						Name: "test",
+						Commands: []CommandSpec{
+							{
+								Name: "hello",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "security section omitted keeps backward compatibility",
+			toml: `
+version = "1.0"
+
+[global]
+timeout = 120
+
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "hello"
+cmd = "/bin/echo"
+`,
+			want: &ConfigSpec{
+				Version: "1.0",
+				Global: GlobalSpec{
+					Timeout: commontesting.Int32Ptr(120),
+				},
+				Security: SecuritySpec{},
+				Groups: []GroupSpec{
+					{
+						Name: "test",
+						Commands: []CommandSpec{
+							{
+								Name: "hello",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "valid config with all global fields",
 			toml: `
 version = "1.0"
