@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
@@ -59,7 +60,13 @@ func isMachOMagic(b []byte) bool {
 // Returns the AnalysisOutput for that slice.
 func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.AnalysisOutput {
 	// Get imported libraries for library ordinal resolution
-	libs, _ := f.ImportedLibraries()
+	libs, err := f.ImportedLibraries()
+	if err != nil {
+		return binaryanalyzer.AnalysisOutput{
+			Result: binaryanalyzer.AnalysisError,
+			Error:  fmt.Errorf("failed to get imported libraries: %w", err),
+		}
+	}
 
 	var detected []binaryanalyzer.DetectedSymbol
 	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
@@ -68,15 +75,7 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 		// Symtab available: extract undefined symbols and check library ordinal
 		symbols := machoUndefinedSymbols(f)
 		flatNamespace := isFlatNamespace(symbols)
-		hasLibSystem := false
-		if flatNamespace {
-			for _, lib := range libs {
-				if isLibSystemLibrary(lib) {
-					hasLibSystem = true
-					break
-				}
-			}
-		}
+		hasLibSystem := flatNamespace && slices.ContainsFunc(libs, isLibSystemLibrary)
 
 		for _, sym := range symbols {
 			normalized := NormalizeSymbolName(sym.Name)
@@ -109,13 +108,9 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	}
 
 	// Determine Result based on network-category symbols in detected list
-	hasNetwork := false
-	for _, sym := range detected {
-		if binaryanalyzer.IsNetworkCategory(sym.Category) {
-			hasNetwork = true
-			break
-		}
-	}
+	hasNetwork := slices.ContainsFunc(detected, func(s binaryanalyzer.DetectedSymbol) bool {
+		return binaryanalyzer.IsNetworkCategory(s.Category)
+	})
 
 	result := binaryanalyzer.NoNetworkSymbols
 	if hasNetwork {
@@ -342,15 +337,9 @@ func isFlatNamespace(symbols []macho.Symbol) bool {
 		libOrdinalMask  = 0xFF
 		libOrdinalShift = 8
 	)
-	if len(symbols) == 0 {
-		return false
-	}
-	for _, sym := range symbols {
-		if ((sym.Desc >> libOrdinalShift) & libOrdinalMask) != 0 {
-			return false
-		}
-	}
-	return true
+	return len(symbols) > 0 && !slices.ContainsFunc(symbols, func(sym macho.Symbol) bool {
+		return ((sym.Desc >> libOrdinalShift) & libOrdinalMask) != 0
+	})
 }
 
 // isLibSystemLibrary checks if a library path is a libSystem variant.
@@ -379,13 +368,7 @@ func (a *StandardMachOAnalyzer) analyzeSliceFallback(
 	f *macho.File,
 	libs []string,
 ) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol, err error) {
-	hasLibSystem := false
-	for _, lib := range libs {
-		if isLibSystemLibrary(lib) {
-			hasLibSystem = true
-			break
-		}
-	}
+	hasLibSystem := slices.ContainsFunc(libs, isLibSystemLibrary)
 
 	// If libSystem is not imported, don't record symbols
 	if !hasLibSystem {

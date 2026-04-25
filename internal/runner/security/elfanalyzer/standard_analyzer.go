@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -259,17 +260,13 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 	// VERNEED judgment: scan all SHN_UNDEF symbols and check if any Library field is non-empty.
 	// If hasVERNEED=true, classify symbols by sym.Library. If hasVERNEED=false,
 	// do not infer libc ownership from DT_NEEDED.
-	hasAnyUndef := false
-	hasVERNEED := false
-	for _, sym := range dynsyms {
-		if sym.Section == elf.SHN_UNDEF {
-			hasAnyUndef = true
-			if sym.Library != "" {
-				hasVERNEED = true
-				break
-			}
-		}
-	}
+	hasVERNEED := slices.ContainsFunc(dynsyms, func(s elf.Symbol) bool {
+		return s.Section == elf.SHN_UNDEF && s.Library != ""
+	})
+	// hasVERNEED implies hasAnyUndef; only scan again if VERNEED was not found.
+	hasAnyUndef := hasVERNEED || slices.ContainsFunc(dynsyms, func(s elf.Symbol) bool {
+		return s.Section == elf.SHN_UNDEF
+	})
 
 	// If no undefined symbols exist, this is a statically linked or import-free binary
 	if !hasAnyUndef {
@@ -307,13 +304,9 @@ func (a *StandardELFAnalyzer) checkDynamicSymbols(elfFile *elf.File) binaryanaly
 	}
 
 	// Determine Result based on network-category symbols in detected list
-	hasNetwork := false
-	for _, sym := range detected {
-		if binaryanalyzer.IsNetworkCategory(sym.Category) {
-			hasNetwork = true
-			break
-		}
-	}
+	hasNetwork := slices.ContainsFunc(detected, func(s binaryanalyzer.DetectedSymbol) bool {
+		return binaryanalyzer.IsNetworkCategory(s.Category)
+	})
 
 	result := binaryanalyzer.NoNetworkSymbols
 	if hasNetwork {
@@ -405,13 +398,9 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	// appears in direct-syscall entries (Source == ""). libc_symbol_import entries
 	// always have Number >= 0 (enforced by validateInfos at cache-build time), so
 	// they are never mistaken for unknown syscalls here.
-	hasUnknown := false
-	for _, info := range result.DetectedSyscalls {
-		if info.Number == -1 {
-			hasUnknown = true
-			break
-		}
-	}
+	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info SyscallInfo) bool {
+		return info.Number == -1
+	})
 	if hasUnknown || EvalMprotectRisk(result.ArgEvalResults) {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
