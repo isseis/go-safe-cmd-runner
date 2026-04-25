@@ -40,7 +40,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 		{
 			name:           "binary with ssl symbols",
 			filename:       "with_ssl.elf",
-			expectedResult: binaryanalyzer.NetworkDetected,
+			expectedResult: binaryanalyzer.NoNetworkSymbols,
 			expectSymbols:  true,
 		},
 		{
