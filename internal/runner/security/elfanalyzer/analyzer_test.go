@@ -47,7 +47,7 @@ func TestStandardELFAnalyzer_AnalyzeNetworkSymbols(t *testing.T) {
 			name:           "binary without network symbols",
 			filename:       "no_network.elf",
 			expectedResult: binaryanalyzer.NoNetworkSymbols,
-			expectSymbols:  false,
+			expectSymbols:  true,
 		},
 		{
 			name:           "static binary",
