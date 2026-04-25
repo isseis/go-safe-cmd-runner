@@ -242,6 +242,9 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 			DetectedSymbols:    convertNetworkSymbolEntries(data.DetectedSymbols),
 			DynamicLoadSymbols: convertNetworkSymbolEntries(data.DynamicLoadSymbols),
 		}
+
+		// Check if any detected symbol has a network category (socket, dns, tls, http).
+		// non-network categories like syscall_wrapper don't trigger NetworkDetected.
 		hasNetworkSymbol := false
 		for _, sym := range data.DetectedSymbols {
 			if binaryanalyzer.IsNetworkCategory(sym.Category) {
@@ -249,6 +252,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 				break
 			}
 		}
+
 		if hasNetworkSymbol || len(data.KnownNetworkLibDeps) > 0 {
 			output.Result = binaryanalyzer.NetworkDetected
 			// When network capability is inferred only from KnownNetworkLibDeps,

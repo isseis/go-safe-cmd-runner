@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
@@ -41,6 +42,13 @@ const (
 	fatCigam     = 0xBEBAFECA // Fat binary (byte-swapped)
 )
 
+// libOrdinalMask and libOrdinalShift extract the library ordinal from a symbol's Desc field.
+// The ordinal occupies bits 15:8 of Desc (see <mach-o/nlist.h> GET_LIBRARY_ORDINAL).
+const (
+	libOrdinalMask  = 0xFF
+	libOrdinalShift = 8
+)
+
 // isMachOMagic returns true if the first 4 bytes match any Mach-O or Fat binary magic.
 func isMachOMagic(b []byte) bool {
 	if len(b) < magicNumberSize {
@@ -54,10 +62,11 @@ func isMachOMagic(b []byte) bool {
 	return false
 }
 
-// analyzeSlice performs libSystem-filtered symbol analysis on a single *macho.File.
+// analyzeSlice performs symbol analysis on a single *macho.File with libSystem filtering.
+// Records all libSystem-derived symbols (both network and non-network categories).
 // Returns the AnalysisOutput for that slice.
 func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.AnalysisOutput {
-	// Retrieve referenced library list for ordinal resolution.
+	// Get imported libraries for library ordinal resolution
 	libs, err := f.ImportedLibraries()
 	if err != nil {
 		return binaryanalyzer.AnalysisOutput{
@@ -70,20 +79,15 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 	var dynamicLoadSyms []binaryanalyzer.DetectedSymbol
 
 	if f.Symtab != nil {
+		// Symtab available: extract undefined symbols and check library ordinal
 		symbols := machoUndefinedSymbols(f)
 		flatNamespace := isFlatNamespace(symbols)
-		libSystemPresent := hasLibSystem(libs)
+		hasLibSystem := flatNamespace && slices.ContainsFunc(libs, isLibSystemLibrary)
 
 		for _, sym := range symbols {
 			normalized := NormalizeSymbolName(sym.Name)
 
-			// In flat namespace (ordinal==0), attribute to libSystem when libSystem
-			// is present in the imported libraries list — we cannot determine the
-			// exact source library, so we use the conservative heuristic that all
-			// undefined symbols originate from a system library.
-			fromLibSystem := isLibSystemSymbol(sym, libs) ||
-				(flatNamespace && libSystemPresent)
-			if fromLibSystem {
+			if isLibSystemSymbol(sym, libs) || (flatNamespace && hasLibSystem) {
 				cat := categorizeMachoSymbol(normalized, a.networkSymbols)
 				detected = append(detected, binaryanalyzer.DetectedSymbol{
 					Name:     normalized,
@@ -99,7 +103,7 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 			}
 		}
 	} else {
-		// Symtab absent: fall back to ImportedLibraries / ImportedSymbols.
+		// Symtab unavailable: fall back to ImportedSymbols() if libSystem is in ImportedLibraries
 		var err error
 		detected, dynamicLoadSyms, err = a.analyzeSliceFallback(f, libs)
 		if err != nil {
@@ -110,14 +114,10 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 		}
 	}
 
-	// Result is determined by whether any network-category symbol was found.
-	hasNetwork := false
-	for _, sym := range detected {
-		if binaryanalyzer.IsNetworkCategory(sym.Category) {
-			hasNetwork = true
-			break
-		}
-	}
+	// Determine Result based on network-category symbols in detected list
+	hasNetwork := slices.ContainsFunc(detected, func(s binaryanalyzer.DetectedSymbol) bool {
+		return binaryanalyzer.IsNetworkCategory(s.Category)
+	})
 
 	result := binaryanalyzer.NoNetworkSymbols
 	if hasNetwork {
@@ -129,137 +129,6 @@ func (a *StandardMachOAnalyzer) analyzeSlice(f *macho.File) binaryanalyzer.Analy
 		DetectedSymbols:    detected,
 		DynamicLoadSymbols: dynamicLoadSyms,
 	}
-}
-
-// machoUndefinedSymbols returns the undefined external symbols from a Mach-O file.
-// When Dysymtab is present, only the undef section range is used.
-// Otherwise, all Symtab entries with N_TYPE==N_UNDF and N_EXT are returned.
-func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
-	const (
-		nTypeMask = 0x0e // N_TYPE mask
-		nUndf     = 0x0  // N_UNDF
-		nExt      = 0x01 // N_EXT (external)
-		nStab     = 0xe0 // stab mask
-	)
-	if f.Symtab == nil {
-		return nil
-	}
-	if f.Dysymtab != nil {
-		dt := f.Dysymtab
-		total := uint32(len(f.Symtab.Syms)) // #nosec G115 -- len() is non-negative and slice lengths fit in uint32
-		if dt.Iundefsym > total {
-			return nil
-		}
-		end := dt.Iundefsym + dt.Nundefsym
-		if end < dt.Iundefsym || end > total {
-			end = total
-		}
-		return f.Symtab.Syms[dt.Iundefsym:end]
-	}
-	var result []macho.Symbol
-	for _, s := range f.Symtab.Syms {
-		if s.Type&nStab != 0 {
-			continue
-		}
-		if s.Type&nTypeMask == nUndf && s.Type&nExt != 0 {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-// libOrdinalShift is the bit shift to extract the library ordinal from Desc.
-const libOrdinalShift = 8
-
-// libOrdinalMask masks the 8-bit library ordinal field after shifting.
-const libOrdinalMask = 0xFF
-
-// isLibSystemSymbol returns true if the Mach-O symbol originates from libSystem.
-// In two-level namespace binaries, the library ordinal is encoded in the upper
-// byte of Desc (bits 15:8). Ordinal 1 refers to libs[0], etc.
-// Special ordinals (0=SELF, 254=DYNAMIC_LOOKUP, 255=EXECUTABLE) return false.
-func isLibSystemSymbol(sym macho.Symbol, libs []string) bool {
-	ordinal := int((sym.Desc >> libOrdinalShift) & libOrdinalMask)
-	if ordinal < 1 || ordinal > len(libs) {
-		return false
-	}
-	return isLibSystemLibrary(libs[ordinal-1])
-}
-
-// isLibSystemLibrary returns true if the library path corresponds to libSystem
-// or one of its sub-libraries (libsystem_*.dylib).
-func isLibSystemLibrary(path string) bool {
-	if path == "/usr/lib/libSystem.B.dylib" {
-		return true
-	}
-	base := filepath.Base(path)
-	return strings.HasPrefix(base, "libsystem_") && strings.HasSuffix(base, ".dylib")
-}
-
-// hasLibSystem returns true if any entry in libs is a libSystem library.
-func hasLibSystem(libs []string) bool {
-	for _, lib := range libs {
-		if isLibSystemLibrary(lib) {
-			return true
-		}
-	}
-	return false
-}
-
-// isFlatNamespace returns true when all symbols use ordinal 0, which indicates
-// the binary was linked with -flat_namespace (e.g., Go CGO binaries on macOS).
-// Returns false for an empty slice so the fast path is taken for binaries with
-// no undefined symbols.
-func isFlatNamespace(syms []macho.Symbol) bool {
-	if len(syms) == 0 {
-		return false
-	}
-	for _, s := range syms {
-		if (s.Desc>>libOrdinalShift)&libOrdinalMask != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// categorizeMachoSymbol categorizes a Mach-O symbol using the networkSymbols registry.
-// Returns the matching category or "syscall_wrapper" for non-network libc symbols.
-func categorizeMachoSymbol(name string, networkSymbols map[string]binaryanalyzer.SymbolCategory) string {
-	if cat, found := networkSymbols[name]; found {
-		return string(cat)
-	}
-	return string(binaryanalyzer.CategorySyscallWrapper)
-}
-
-// analyzeSliceFallback handles Symtab-absent Mach-O slices.
-// When libSystem is listed in ImportedLibraries, all ImportedSymbols are treated
-// as libSystem-derived. When libSystem is absent, no symbols are recorded.
-func (a *StandardMachOAnalyzer) analyzeSliceFallback(f *macho.File, libs []string) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol, err error) {
-	// Without libSystem the binary does not use standard syscall interfaces.
-	if !hasLibSystem(libs) {
-		return nil, nil, nil
-	}
-
-	symbols, err := f.ImportedSymbols()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, sym := range symbols {
-		normalized := NormalizeSymbolName(sym)
-		cat := categorizeMachoSymbol(normalized, a.networkSymbols)
-		detected = append(detected, binaryanalyzer.DetectedSymbol{
-			Name:     normalized,
-			Category: cat,
-		})
-		if binaryanalyzer.IsDynamicLoadSymbol(normalized) {
-			dynamicLoadSyms = append(dynamicLoadSyms, binaryanalyzer.DetectedSymbol{
-				Name:     normalized,
-				Category: "dynamic_load",
-			})
-		}
-	}
-	return detected, dynamicLoadSyms, nil
 }
 
 // analyzeAllFatSlices analyzes every slice in a Fat binary and returns the most
@@ -413,4 +282,114 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 	}()
 
 	return a.analyzeSlice(machOFile)
+}
+
+// machoUndefinedSymbols extracts undefined external symbols from a Mach-O file.
+// Uses Dysymtab if available for efficiency; falls back to scanning all symtab entries.
+func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
+	const (
+		nType = 0x0e
+		nUndf = 0x0
+		nExt  = 0x01
+		nStab = 0xe0
+	)
+	if f.Symtab == nil {
+		return nil
+	}
+	if f.Dysymtab != nil {
+		dt := f.Dysymtab
+		symCount := uint32(len(f.Symtab.Syms)) //nolint:gosec // len() is always non-negative
+		if dt.Iundefsym > symCount {
+			return nil
+		}
+		end := dt.Iundefsym + dt.Nundefsym
+		if end < dt.Iundefsym || end > symCount {
+			end = symCount
+		}
+		return f.Symtab.Syms[dt.Iundefsym:end]
+	}
+	var result []macho.Symbol
+	for _, s := range f.Symtab.Syms {
+		if s.Type&nStab != 0 {
+			continue
+		}
+		if s.Type&nType == nUndf && s.Type&nExt != 0 {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// isLibSystemSymbol checks if a Mach-O symbol is from libSystem.
+// Uses the library ordinal in Desc field (two-level namespace).
+// Returns false for out-of-range ordinals (SELF, DYNAMIC_LOOKUP, EXECUTABLE, etc.).
+func isLibSystemSymbol(sym macho.Symbol, libs []string) bool {
+	ordinal := int((sym.Desc >> libOrdinalShift) & libOrdinalMask)
+	if ordinal < 1 || ordinal > len(libs) {
+		return false
+	}
+	return isLibSystemLibrary(libs[ordinal-1])
+}
+
+// isFlatNamespace reports whether all symbols use ordinal 0 (flat namespace).
+// Empty input returns false.
+func isFlatNamespace(symbols []macho.Symbol) bool {
+	return len(symbols) > 0 && !slices.ContainsFunc(symbols, func(sym macho.Symbol) bool {
+		return ((sym.Desc >> libOrdinalShift) & libOrdinalMask) != 0
+	})
+}
+
+// isLibSystemLibrary checks if a library path is a libSystem variant.
+func isLibSystemLibrary(path string) bool {
+	if path == "/usr/lib/libSystem.B.dylib" {
+		return true
+	}
+	base := filepath.Base(path)
+	return strings.HasPrefix(base, "libsystem_") &&
+		strings.HasSuffix(base, ".dylib")
+}
+
+// categorizeMachoSymbol returns the category of a symbol using networkSymbols,
+// or "syscall_wrapper" if not found.
+func categorizeMachoSymbol(name string, networkSymbols map[string]binaryanalyzer.SymbolCategory) string {
+	if cat, found := networkSymbols[name]; found {
+		return string(cat)
+	}
+	return string(binaryanalyzer.CategorySyscallWrapper)
+}
+
+// analyzeSliceFallback handles Mach-O analysis when Symtab is unavailable.
+// If libSystem is in ImportedLibraries, all imported symbols are treated as libSystem-derived.
+// If libSystem is absent, no symbols are recorded (maintains library filtering intent).
+func (a *StandardMachOAnalyzer) analyzeSliceFallback(
+	f *macho.File,
+	libs []string,
+) (detected, dynamicLoadSyms []binaryanalyzer.DetectedSymbol, err error) {
+	hasLibSystem := slices.ContainsFunc(libs, isLibSystemLibrary)
+
+	// If libSystem is not imported, don't record symbols
+	if !hasLibSystem {
+		return nil, nil, nil
+	}
+
+	symbols, err := f.ImportedSymbols()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, sym := range symbols {
+		normalized := NormalizeSymbolName(sym)
+		cat := categorizeMachoSymbol(normalized, a.networkSymbols)
+		detected = append(detected, binaryanalyzer.DetectedSymbol{
+			Name:     normalized,
+			Category: cat,
+		})
+		if binaryanalyzer.IsDynamicLoadSymbol(normalized) {
+			dynamicLoadSyms = append(dynamicLoadSyms, binaryanalyzer.DetectedSymbol{
+				Name:     normalized,
+				Category: "dynamic_load",
+			})
+		}
+	}
+	return detected, dynamicLoadSyms, nil
 }
