@@ -42,6 +42,13 @@ const (
 	fatCigam     = 0xBEBAFECA // Fat binary (byte-swapped)
 )
 
+// libOrdinalMask and libOrdinalShift extract the library ordinal from a symbol's Desc field.
+// The ordinal occupies bits 15:8 of Desc (see <mach-o/nlist.h> GET_LIBRARY_ORDINAL).
+const (
+	libOrdinalMask  = 0xFF
+	libOrdinalShift = 8
+)
+
 // isMachOMagic returns true if the first 4 bytes match any Mach-O or Fat binary magic.
 func isMachOMagic(b []byte) bool {
 	if len(b) < magicNumberSize {
@@ -281,12 +288,10 @@ func (a *StandardMachOAnalyzer) AnalyzeNetworkSymbols(path string, _ string) bin
 // Uses Dysymtab if available for efficiency; falls back to scanning all symtab entries.
 func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
 	const (
-		nType           = 0x0e
-		nUndf           = 0x0
-		nExt            = 0x01
-		nStab           = 0xe0
-		libOrdinalMask  = 0xFF
-		libOrdinalShift = 8
+		nType = 0x0e
+		nUndf = 0x0
+		nExt  = 0x01
+		nStab = 0xe0
 	)
 	if f.Symtab == nil {
 		return nil
@@ -319,10 +324,6 @@ func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
 // Uses the library ordinal in Desc field (two-level namespace).
 // Returns false for out-of-range ordinals (SELF, DYNAMIC_LOOKUP, EXECUTABLE, etc.).
 func isLibSystemSymbol(sym macho.Symbol, libs []string) bool {
-	const (
-		libOrdinalMask  = 0xFF
-		libOrdinalShift = 8
-	)
 	ordinal := int((sym.Desc >> libOrdinalShift) & libOrdinalMask)
 	if ordinal < 1 || ordinal > len(libs) {
 		return false
@@ -333,10 +334,6 @@ func isLibSystemSymbol(sym macho.Symbol, libs []string) bool {
 // isFlatNamespace reports whether all symbols use ordinal 0 (flat namespace).
 // Empty input returns false.
 func isFlatNamespace(symbols []macho.Symbol) bool {
-	const (
-		libOrdinalMask  = 0xFF
-		libOrdinalShift = 8
-	)
 	return len(symbols) > 0 && !slices.ContainsFunc(symbols, func(sym macho.Symbol) bool {
 		return ((sym.Desc >> libOrdinalShift) & libOrdinalMask) != 0
 	})
