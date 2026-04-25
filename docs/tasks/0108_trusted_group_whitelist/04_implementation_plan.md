@@ -25,8 +25,7 @@
 ### 2.1 新規作成ファイル
 
 - `internal/runner/security/trusted_gids_darwin.go`
-- `internal/runner/security/trusted_gids_linux.go`
-- `internal/runner/security/trusted_gids_other.go`
+- `internal/runner/security/trusted_gids_notdarwin.go`
 
 ### 2.2 変更対象ファイル
 
@@ -36,8 +35,8 @@
 - `internal/runner/security/file_validation.go`
 - `internal/runner/security/file_validation_test.go`
 - `internal/runner/security/trusted_gids_darwin_test.go`（新規想定）
-- `internal/runner/security/trusted_gids_linux_test.go`（新規想定）
-- `internal/runner/security/trusted_gids_other_test.go`（新規想定）
+- `internal/runner/security/trusted_gids_linux_test.go`（新規想定、`trusted_gids_notdarwin.go` を対象）
+- `internal/runner/security/trusted_gids_other_test.go`（新規想定、`trusted_gids_notdarwin.go` を対象）
 - `internal/runner/runner.go`
 
 ## 3. 実装フェーズ
@@ -85,13 +84,11 @@
 
 対象:
 - `internal/runner/security/trusted_gids_darwin.go`
-- `internal/runner/security/trusted_gids_linux.go`
-- `internal/runner/security/trusted_gids_other.go`
+- `internal/runner/security/trusted_gids_notdarwin.go`（linux/other 共用、`!darwin` build tag）
 
 作業内容:
 - [x] darwin 向けに `defaultTrustedGIDs={0,80}` と `isTrustedGroup` を実装する
-- [x] linux 向けに `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する
-- [x] other 向けに `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する
+- [x] linux/other 共用の `trusted_gids_notdarwin.go` に `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する（当初計画の `trusted_gids_linux.go` / `trusted_gids_other.go` は統合）
 - [x] `file_validation.go` から platform 依存判定を排除できるシグネチャを揃える
 
 成功条件:
@@ -180,7 +177,7 @@
 | AC-2 | `others` 書き込み拒否の既存テスト回帰確認 | 既存 `validateDirectoryComponentPermissions` 系テスト |
 | AC-3 | 非信頼 GID で `ErrInvalidDirPermissions` を確認 | `file_validation_test.go` の非信頼 GID ケース |
 | AC-4 | `uid=0,gid=0` の許可継続を確認 | `file_validation_test.go` の root:root ケース |
-| AC-5 | Linux で `trusted_gids` 有無比較 | `file_validation_test.go` + `trusted_gids_linux_test.go` + `spec_test.go` |
+| AC-5 | Linux で `trusted_gids` 有無比較 | `file_validation_test.go` + `trusted_gids_linux_test.go`（`trusted_gids_notdarwin.go` 対象）+ `spec_test.go` |
 | AC-6 | 全体回帰 | `make test` / `make lint` |
 
 ## 5. 設計整合チェックポイント
@@ -194,7 +191,7 @@
 
 | リスク | 影響 | 緩和策 |
 |---|---|---|
-| Linux の追加 GID 判定漏れ | AC-5 不達 | `trusted_gids_linux.go` 専用テスト追加 |
+| Linux の追加 GID 判定漏れ | AC-5 不達 | `trusted_gids_linux_test.go` 専用テスト追加（実装は `trusted_gids_notdarwin.go`）|
 | macOS で設定値を誤って適用 | セキュリティ低下 | darwin 実装で config 非参照を固定化 |
 | 既存 root:root 許可を壊す | 後方互換性破壊 | AC-4 テストを先に追加してから実装 |
 | 既存 others 拒否に影響 | セキュリティ退行 | AC-2 回帰テストを明示的に実行 |
