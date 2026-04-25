@@ -311,6 +311,9 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	// Create security config with hardcoded allowed commands
 	// AllowedCommands are not configurable from TOML for security reasons
 	securityConfig := security.DefaultConfig()
+	// Transfer trusted GIDs from config spec without aliasing immutable input.
+	// On macOS, this value is ignored by platform-specific trusted group logic.
+	securityConfig.TrustedGIDs = append([]uint32(nil), configSpec.Security.TrustedGIDs...)
 
 	// Create validator with merged security config
 	validator, err := security.NewValidator(securityConfig, security.WithGroupMembership(gmProvider))

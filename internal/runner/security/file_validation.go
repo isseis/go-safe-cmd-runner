@@ -195,8 +195,12 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 		}
 	}
 
-	// Check group write permissions
-	if perm&0o020 != 0 {
+	// Check group write permissions.
+	// Skip group-write validation only when the directory is both sticky and world-writable:
+	// world-write is already more permissive than group-write, and we already accepted it above
+	// because the sticky bit makes that specific world-writable case safe (for example /tmp).
+	// Requiring group membership verification on top would be redundant in that case only.
+	if perm&0o020 != 0 && (perm&0o002 == 0 || !isStickyDirectory(info)) {
 		if err := v.validateGroupWritePermissions(dirPath, info, realUID); err != nil {
 			return err
 		}
@@ -224,7 +228,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 // validateGroupWritePermissions validates group write permissions for a directory component
 func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileInfo, realUID int) error {
 	// Allow group write if:
-	// 1. Owned by root (traditional safe case)
+	// 1. Owned by root with a trusted group
 	// 2. realUID context is provided and the user is the only member of the group
 	// 3. testPermissiveMode is enabled
 	if v.config.testPermissiveMode {
@@ -238,9 +242,13 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 
 	perm := info.Mode().Perm()
 
-	// Traditional safe case: root-owned directory
-	isRootOwned := stat.Uid == UIDRoot && stat.Gid == GIDRoot
-	if isRootOwned {
+	// Safe case: root-owned directory with trusted group
+	isTrustedOwnership := stat.Uid == UIDRoot && v.isTrustedGroup(stat.Gid)
+	if isTrustedOwnership {
+		slog.Debug("Directory has trusted ownership, group write allowed",
+			slog.String("path", dirPath),
+			slog.Any("gid", stat.Gid),
+			slog.String("permissions", fmt.Sprintf("%04o", perm)))
 		return nil
 	}
 

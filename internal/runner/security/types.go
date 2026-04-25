@@ -166,6 +166,9 @@ type Config struct {
 	OutputHighRiskPathPatterns []string
 	// SuspiciousExtensions defines file extensions that pose security risks for output files
 	SuspiciousExtensions []string
+	// TrustedGIDs is an additional trusted group GID list from config.
+	// This field is effective on non-macOS platforms and ignored on macOS.
+	TrustedGIDs []uint32
 	// testPermissiveMode is only available in test builds and allows relaxed directory permissions
 	testPermissiveMode bool
 	// testSkipHashValidation is only available in test builds and allows skipping hash validation

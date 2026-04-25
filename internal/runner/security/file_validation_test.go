@@ -1325,6 +1325,20 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("directory with sticky bit but not world-writable (mode 1775)", func(t *testing.T) {
+		// A sticky directory that is group-writable but NOT world-writable (e.g. 1775)
+		// must still go through validateGroupWritePermissions — the sticky-bit bypass
+		// applies only to the sticky+world-writable combination.
+		// Here the directory is root-owned with trusted GID 0, so it should pass.
+		err := mockFS.AddDirWithOwner("/test-sticky-group-dir", 0o775|os.ModeSticky, 0, 0)
+		require.NoError(t, err)
+
+		err = validator.ValidateDirectoryPermissions("/test-sticky-group-dir")
+		// Should pass: root-owned with trusted group (GID 0); group-write validation runs
+		// and approves the trusted ownership.
+		assert.NoError(t, err)
+	})
+
 	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
 		// Test that directories with permissions that are a subset of allowed permissions pass
 		mockFS.AddDir("/test-subset-dir", 0o700)
@@ -1753,4 +1767,43 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios(t *testing.T) {
+	createValidatorWithDir := func(t *testing.T, uid uint32, gid uint32, perm os.FileMode) *Validator {
+		t.Helper()
+
+		mockFS := commontesting.NewMockFileSystem()
+		err := mockFS.AddDirWithOwner("/test", perm, uid, gid)
+		require.NoError(t, err)
+
+		validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS), WithGroupMembership(nil))
+		require.NoError(t, err)
+
+		return validator
+	}
+
+	t.Run("rejects_group_write_for_root_owned_directory_with_untrusted_gid", func(t *testing.T) {
+		validator := createValidatorWithDir(t, UIDRoot, 9999, 0o775)
+
+		info, err := validator.fs.Lstat("/test")
+		require.NoError(t, err)
+
+		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+	})
+
+	t.Run("allows_group_write_for_root_owned_directory_with_macos_admin_gid", func(t *testing.T) {
+		if runtime.GOOS != gosDarwin {
+			t.Skip("macOS only")
+		}
+
+		validator := createValidatorWithDir(t, UIDRoot, 80, 0o775)
+
+		info, err := validator.fs.Lstat("/test")
+		require.NoError(t, err)
+
+		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		assert.NoError(t, err)
+	})
 }
