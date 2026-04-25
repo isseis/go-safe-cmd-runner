@@ -767,11 +767,15 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 	syscalls := make([]common.SyscallInfo, len(addrs))
 	for i, addr := range addrs {
 		syscalls[i] = common.SyscallInfo{
-			Number:              -1,
-			IsNetwork:           false,
-			Location:            addr,
-			DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
-			Source:              common.DeterminationMethodDirectSVC0x80,
+			Number:    -1,
+			IsNetwork: false,
+			Occurrences: []common.SyscallOccurrence{
+				{
+					Location:            addr,
+					DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+					Source:              common.DeterminationMethodDirectSVC0x80,
+				},
+			},
 		}
 	}
 	return syscalls
@@ -780,7 +784,7 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 // buildMachoSyscallData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
 // AnalysisWarnings is populated only when unresolved svc #0x80 entries exist
-// (i.e., entries with DeterminationMethod="direct_svc_0x80" AND Number == -1).
+// (i.e., entries with an Occurrence where DeterminationMethod="direct_svc_0x80" AND Number == -1).
 // When all svc entries are resolved (Number != -1), no warning is emitted.
 // DetectedSyscalls contains all entries without filtering.
 func buildMachoSyscallData(
@@ -792,9 +796,17 @@ func buildMachoSyscallData(
 
 	var warnings []string
 	for _, s := range merged {
-		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 && s.Number == -1 {
-			warnings = []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"}
-			break
+		if s.Number == -1 {
+			// Check if any Occurrence has DeterminationMethod="direct_svc_0x80"
+			for _, occ := range s.Occurrences {
+				if occ.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
+					warnings = []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"}
+					break
+				}
+			}
+			if len(warnings) > 0 {
+				break
+			}
 		}
 	}
 
@@ -808,9 +820,10 @@ func buildMachoSyscallData(
 }
 
 // mergeMachoSyscallInfos combines svc entries and libSystem entries into a
-// deterministically sorted slice. The sort key is (Number, Location, Source)
-// so that entries with the same Number (e.g. multiple svc #0x80 with Number=-1)
-// produce stable JSON output across runs.
+// deterministically sorted slice grouped by syscall number.
+// Entries with the same Number are merged into a single SyscallInfo with
+// multiple Occurrences, sorted by Location.
+// Groups are sorted by Number (ascending), with Number=-1 at the end.
 func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
 	if len(svcEntries) == 0 && len(libsysEntries) == 0 {
 		return nil
@@ -818,16 +831,57 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 	merged := make([]common.SyscallInfo, 0, len(svcEntries)+len(libsysEntries))
 	merged = append(merged, svcEntries...)
 	merged = append(merged, libsysEntries...)
-	sort.SliceStable(merged, func(i, j int) bool {
-		if merged[i].Number != merged[j].Number {
-			return merged[i].Number < merged[j].Number
+
+	// Group by Number
+	groups := make(map[int]*common.SyscallInfo)
+	var numberOrder []int
+	seenNumber := make(map[int]bool)
+
+	for _, info := range merged {
+		if !seenNumber[info.Number] {
+			seenNumber[info.Number] = true
+			numberOrder = append(numberOrder, info.Number)
 		}
-		if merged[i].Location != merged[j].Location {
-			return merged[i].Location < merged[j].Location
+		if _, exists := groups[info.Number]; !exists {
+			groups[info.Number] = &common.SyscallInfo{
+				Number:      info.Number,
+				Name:        info.Name,
+				IsNetwork:   info.IsNetwork,
+				Occurrences: make([]common.SyscallOccurrence, 0),
+			}
 		}
-		return merged[i].Source < merged[j].Source
+		groups[info.Number].Occurrences = append(groups[info.Number].Occurrences, info.Occurrences...)
+	}
+
+	// Sort each group's Occurrences by Location
+	for _, group := range groups {
+		sort.SliceStable(group.Occurrences, func(i, j int) bool {
+			return group.Occurrences[i].Location < group.Occurrences[j].Location
+		})
+	}
+
+	// Sort number groups: ascending order, with -1 at the end
+	sort.SliceStable(numberOrder, func(i, j int) bool {
+		ni, nj := numberOrder[i], numberOrder[j]
+		if ni == -1 && nj == -1 {
+			return false
+		}
+		if ni == -1 {
+			return false
+		}
+		if nj == -1 {
+			return true
+		}
+		return ni < nj
 	})
-	return merged
+
+	// Build result
+	result := make([]common.SyscallInfo, 0, len(groups))
+	for _, num := range numberOrder {
+		result = append(result, *groups[num])
+	}
+
+	return result
 }
 
 // analyzeMachoSyscalls runs the Mach-O Pass 1 / Pass 2 syscall scan and
@@ -1202,19 +1256,64 @@ func findLibcEntry(deps []fileanalysis.LibEntry) *fileanalysis.LibEntry {
 // mergeSyscallInfos merges libc-derived and direct syscall infos into a single slice.
 // When the same Number appears in both, the direct entry (Source == "") takes priority.
 func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
-	// Build a map keyed by Number, direct entries override libc entries.
-	merged := make(map[int]common.SyscallInfo)
-	for _, info := range libc {
-		merged[info.Number] = info
+	// Combine both slices
+	combined := make([]common.SyscallInfo, 0, len(libc)+len(direct))
+	combined = append(combined, libc...)
+	combined = append(combined, direct...)
+
+	if len(combined) == 0 {
+		return nil
 	}
-	for _, info := range direct {
-		merged[info.Number] = info
+
+	// Group by Number
+	groups := make(map[int]*common.SyscallInfo)
+	var numberOrder []int
+	seenNumber := make(map[int]bool)
+
+	for _, info := range combined {
+		if !seenNumber[info.Number] {
+			seenNumber[info.Number] = true
+			numberOrder = append(numberOrder, info.Number)
+		}
+		if _, exists := groups[info.Number]; !exists {
+			groups[info.Number] = &common.SyscallInfo{
+				Number:      info.Number,
+				Name:        info.Name,
+				IsNetwork:   info.IsNetwork,
+				Occurrences: make([]common.SyscallOccurrence, 0),
+			}
+		}
+		groups[info.Number].Occurrences = append(groups[info.Number].Occurrences, info.Occurrences...)
 	}
-	result := make([]common.SyscallInfo, 0, len(merged))
-	for _, info := range merged {
-		result = append(result, info)
+
+	// Sort each group's Occurrences by Location
+	for _, group := range groups {
+		sort.SliceStable(group.Occurrences, func(i, j int) bool {
+			return group.Occurrences[i].Location < group.Occurrences[j].Location
+		})
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
+
+	// Sort number groups: ascending order, with -1 at the end
+	sort.SliceStable(numberOrder, func(i, j int) bool {
+		ni, nj := numberOrder[i], numberOrder[j]
+		if ni == -1 && nj == -1 {
+			return false
+		}
+		if ni == -1 {
+			return false
+		}
+		if nj == -1 {
+			return true
+		}
+		return ni < nj
+	})
+
+	// Build result
+	result := make([]common.SyscallInfo, 0, len(groups))
+	for _, num := range numberOrder {
+		result = append(result, *groups[num])
+	}
+
 	return result
 }
 

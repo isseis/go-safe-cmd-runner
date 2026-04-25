@@ -287,8 +287,10 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 		return false
 	}
 	for _, s := range result.DetectedSyscalls {
-		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 && s.Number == -1 {
-			return true
+		for _, occ := range s.Occurrences {
+			if occ.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 && s.Number == -1 {
+				return true
+			}
 		}
 	}
 	return false

@@ -663,7 +663,10 @@ func TestMergeMachoSyscallInfos_BothNil(t *testing.T) {
 // TestMergeMachoSyscallInfos_SVCOnly verifies that svc-only merge returns svc entries.
 func TestMergeMachoSyscallInfos_SVCOnly(t *testing.T) {
 	svcEntries := []common.SyscallInfo{
-		{Number: -1, Source: "direct_svc_0x80", Location: 0x100000000},
+		{
+			Number: -1,
+			Occurrences: []common.SyscallOccurrence{{Location: 0x100000000}},
+		},
 	}
 	result := mergeMachoSyscallInfos(svcEntries, nil)
 	require.Len(t, result, 1)
@@ -688,9 +691,9 @@ func TestMergeMachoSyscallInfos_LibSysOnly(t *testing.T) {
 // instructions can appear at different addresses in the same binary.
 func TestMergeMachoSyscallInfos_SameNumberSortsByLocationThenSource(t *testing.T) {
 	svcEntries := []common.SyscallInfo{
-		{Number: -1, Location: 0x100000020, Source: "z_source"},
-		{Number: -1, Location: 0x100000010, Source: "b_source"},
-		{Number: -1, Location: 0x100000010, Source: "a_source"},
+ Occurrences: []common.SyscallOccurrence{{Location: 0x100000020}},
+ Occurrences: []common.SyscallOccurrence{{Location: 0x100000010}},
+ Occurrences: []common.SyscallOccurrence{{Location: 0x100000010}},
 	}
 	result := mergeMachoSyscallInfos(svcEntries, nil)
 	require.Len(t, result, 3)
@@ -708,9 +711,9 @@ func TestMergeMachoSyscallInfos_SameNumberSortsByLocationThenSource(t *testing.T
 // considered.
 func TestMergeMachoSyscallInfos_MixedNumbersSortedFirst(t *testing.T) {
 	svcEntries := []common.SyscallInfo{
-		{Number: 98, Location: 0x100000000, Source: "s1"},
-		{Number: -1, Location: 0x100000020, Source: "s2"},
-		{Number: 97, Location: 0x100000010, Source: "s3"},
+ Occurrences: []common.SyscallOccurrence{{Location: 0x100000000}},
+ Occurrences: []common.SyscallOccurrence{{Location: 0x100000020}},
+ Occurrences: []common.SyscallOccurrence{{Location: 0x100000010}},
 	}
 	result := mergeMachoSyscallInfos(svcEntries, nil)
 	require.Len(t, result, 3)

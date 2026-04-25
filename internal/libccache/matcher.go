@@ -54,12 +54,16 @@ func (m *ImportSymbolMatcher) Match(importSymbols []string, wrappers []WrapperEn
 	result := make([]common.SyscallInfo, 0, len(candidate))
 	for _, w := range candidate {
 		info := common.SyscallInfo{
-			Number:              w.Number,
-			Name:                m.syscallTable.GetSyscallName(w.Number),
-			IsNetwork:           m.syscallTable.IsNetworkSyscall(w.Number),
-			Location:            0,
-			DeterminationMethod: elfanalyzer.DeterminationMethodImmediate,
-			Source:              SourceLibcSymbolImport,
+			Number:    w.Number,
+			Name:      m.syscallTable.GetSyscallName(w.Number),
+			IsNetwork: m.syscallTable.IsNetworkSyscall(w.Number),
+			Occurrences: []common.SyscallOccurrence{
+				{
+					Location:            0,
+					DeterminationMethod: elfanalyzer.DeterminationMethodImmediate,
+					Source:              SourceLibcSymbolImport,
+				},
+			},
 		}
 		if info.Name == "" {
 			info.Name = w.Name
@@ -102,12 +106,16 @@ func (m *ImportSymbolMatcher) MatchWithMethod(
 	result := make([]common.SyscallInfo, 0, len(candidate))
 	for _, w := range candidate {
 		info := common.SyscallInfo{
-			Number:              w.Number,
-			Name:                m.syscallTable.GetSyscallName(w.Number),
-			IsNetwork:           m.syscallTable.IsNetworkSyscall(w.Number),
-			Location:            0,
-			DeterminationMethod: determinationMethod,
-			Source:              SourceLibsystemSymbolImport,
+			Number:    w.Number,
+			Name:      m.syscallTable.GetSyscallName(w.Number),
+			IsNetwork: m.syscallTable.IsNetworkSyscall(w.Number),
+			Occurrences: []common.SyscallOccurrence{
+				{
+					Location:            0,
+					DeterminationMethod: determinationMethod,
+					Source:              SourceLibsystemSymbolImport,
+				},
+			},
 		}
 		if info.Name == "" {
 			info.Name = w.Name

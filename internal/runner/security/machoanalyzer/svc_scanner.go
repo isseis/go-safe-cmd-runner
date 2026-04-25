@@ -159,8 +159,8 @@ func analyzeArm64Slice(f *macho.File, table SyscallNumberTable) (directSVCInfos,
 		for _, info := range pass1 {
 			if info.Number == -1 {
 				// Unresolved svc — preserve the "direct svc detected" signal.
-				info.DeterminationMethod = determinationMethodDirectSVC0x80
-				info.Source = determinationMethodDirectSVC0x80
+				info.Occurrences[0].DeterminationMethod = determinationMethodDirectSVC0x80
+				info.Occurrences[0].Source = determinationMethodDirectSVC0x80
 			}
 			directSVCInfos = append(directSVCInfos, info)
 		}

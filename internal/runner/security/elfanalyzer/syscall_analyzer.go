@@ -307,7 +307,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		if info.Number == -1 {
 			result.AnalysisWarnings = append(result.AnalysisWarnings,
 				fmt.Sprintf("syscall at 0x%x: number could not be determined (%s)",
-					info.Location, info.DeterminationMethod))
+					info.Occurrences[0].Location, info.Occurrences[0].DeterminationMethod))
 		}
 	}
 
@@ -317,9 +317,13 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		result.DecodeStats.DecodeFailureCount += pass2DecodeFailures
 		for _, call := range wrapperCalls {
 			info := common.SyscallInfo{
-				Number:              call.SyscallNumber,
-				Location:            call.CallSiteAddress,
-				DeterminationMethod: call.DeterminationMethod,
+				Number: call.SyscallNumber,
+				Occurrences: []common.SyscallOccurrence{
+					{
+						Location:            call.CallSiteAddress,
+						DeterminationMethod: call.DeterminationMethod,
+					},
+				},
 			}
 
 			if call.SyscallNumber >= 0 {
@@ -406,7 +410,7 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 		var entries []common.SyscallInfo
 		for _, info := range detectedSyscalls {
 			if info.Name == syscallName &&
-				info.DeterminationMethod == DeterminationMethodImmediate {
+				len(info.Occurrences) > 0 && info.Occurrences[0].DeterminationMethod == DeterminationMethodImmediate {
 				entries = append(entries, info)
 			}
 		}
@@ -427,7 +431,7 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 			if !hasBestResult || riskPriority(result.Status) > riskPriority(bestResult.Status) {
 				bestResult = result
 				hasBestResult = true
-				bestLocation = entry.Location
+				bestLocation = entry.Occurrences[0].Location
 			}
 		}
 
@@ -451,7 +455,7 @@ func (a *SyscallAnalyzer) evalSingleMprotect(
 	entry common.SyscallInfo,
 	syscallName string,
 ) common.SyscallArgEvalResult {
-	offset, ok := validateSyscallOffset(entry.Location, baseAddr, len(code))
+	offset, ok := validateSyscallOffset(entry.Occurrences[0].Location, baseAddr, len(code))
 	if !ok {
 		return common.SyscallArgEvalResult{
 			SyscallName: syscallName,
@@ -593,24 +597,30 @@ func (a *SyscallAnalyzer) findSyscallInstructions(code []byte, baseAddr uint64, 
 // extractSyscallInfo extracts syscall number by backward scanning.
 func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, baseAddr uint64, decoder MachineCodeDecoder, table SyscallNumberTable) common.SyscallInfo {
 	info := common.SyscallInfo{
-		Number:   -1,
-		Location: syscallAddr,
+		Number: -1,
 	}
 
 	offset, ok := validateSyscallOffset(syscallAddr, baseAddr, len(code))
+	var method string
 	if !ok {
-		info.DeterminationMethod = DeterminationMethodUnknownInvalidOffset
-		return info
+		method = DeterminationMethodUnknownInvalidOffset
+	} else {
+		// Backward scan to find syscall number register modification
+		number, m := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
+		info.Number = number
+		method = m
 	}
 
-	// Backward scan to find syscall number register modification
-	number, method := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
-	info.Number = number
-	info.DeterminationMethod = method
+	info.Occurrences = []common.SyscallOccurrence{
+		{
+			Location:            syscallAddr,
+			DeterminationMethod: method,
+		},
+	}
 
-	if number >= 0 {
-		info.Name = table.GetSyscallName(number)
-		info.IsNetwork = table.IsNetworkSyscall(number)
+	if info.Number >= 0 {
+		info.Name = table.GetSyscallName(info.Number)
+		info.IsNetwork = table.IsNetworkSyscall(info.Number)
 	}
 
 	return info

@@ -4,14 +4,14 @@
 
 | フェーズ | 内容 | 状態 |
 |---------|------|------|
-| 1 | 型定義の変更（FR-1, FR-2） | 未着手 |
-| 2 | elfanalyzer の修正（FR-6） | 未着手 |
-| 3 | machoanalyzer の修正 | 未着手 |
-| 4 | validator.go の修正（FR-4） | 未着手 |
-| 5 | network_analyzer.go の修正（FR-5） | 未着手 |
-| 6 | syscall_store.go の修正（FR-3） | 未着手 |
-| 7 | スキーマバージョンの更新（FR-7） | 未着手 |
-| 8 | テストの更新（AC-7） | 未着手 |
+| 1 | 型定義の変更（FR-1, FR-2） | [x] 完了 |
+| 2 | elfanalyzer の修正（FR-6） | [x] 完了 |
+| 3 | machoanalyzer の修正 | [x] 完了 |
+| 4 | validator.go の修正（FR-4） | [x] 完了 |
+| 5 | network_analyzer.go の修正（FR-5） | [x] 完了 |
+| 6 | syscall_store.go の修正（FR-3） | [x] 完了 |
+| 7 | スキーマバージョンの更新（FR-7） | [x] 完了 |
+| 8 | テストの更新（AC-7） | [-] 部分完了 |
 
 ## 実装ステップ
 

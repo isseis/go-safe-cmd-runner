@@ -131,17 +131,25 @@ func scanGoWrapperCalls(
 		var info common.SyscallInfo
 		if resolved {
 			info = common.SyscallInfo{
-				Number:              num,
-				Name:                table.GetSyscallName(num),
-				IsNetwork:           table.IsNetworkSyscall(num),
-				Location:            instrAddr,
-				DeterminationMethod: determinationMethodGoWrapper,
+				Number:    num,
+				Name:      table.GetSyscallName(num),
+				IsNetwork: table.IsNetworkSyscall(num),
+				Occurrences: []common.SyscallOccurrence{
+					{
+						Location:            instrAddr,
+						DeterminationMethod: determinationMethodGoWrapper,
+					},
+				},
 			}
 		} else {
 			info = common.SyscallInfo{
-				Number:              -1,
-				Location:            instrAddr,
-				DeterminationMethod: determinationMethodUnknownIndirect,
+				Number: -1,
+				Occurrences: []common.SyscallOccurrence{
+					{
+						Location:            instrAddr,
+						DeterminationMethod: determinationMethodUnknownIndirect,
+					},
+				},
 			}
 		}
 		results = append(results, info)

@@ -130,7 +130,7 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 
 			info := result.DetectedSyscalls[0]
 			assert.Equal(t, tt.wantNumber, info.Number)
-			assert.Equal(t, tt.wantMethod, info.DeterminationMethod)
+			assert.Equal(t, tt.wantMethod, info.Occurrences[0].DeterminationMethod)
 		})
 	}
 }
@@ -167,7 +167,7 @@ func TestSyscallAnalyzer_BackwardScan_HighRisk(t *testing.T) {
 
 			info := result.DetectedSyscalls[0]
 			assert.Equal(t, -1, info.Number)
-			assert.Equal(t, tt.wantMethod, info.DeterminationMethod)
+			assert.Equal(t, tt.wantMethod, info.Occurrences[0].DeterminationMethod)
 			assert.NotEmpty(t, result.AnalysisWarnings)
 		})
 	}
@@ -195,7 +195,7 @@ func TestSyscallAnalyzer_NegativeImmediateValue(t *testing.T) {
 	// Number should be -1 (unknown), not the negative value itself
 	assert.Equal(t, -1, info.Number)
 	// Method should be unknown:indirect_setting, not immediate
-	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.Occurrences[0].DeterminationMethod)
 	assert.NotEmpty(t, result.AnalysisWarnings)
 }
 
@@ -216,7 +216,7 @@ func TestSyscallAnalyzer_OutOfRangeImmediateValue(t *testing.T) {
 
 	info := result.DetectedSyscalls[0]
 	assert.Equal(t, -1, info.Number)
-	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, info.Occurrences[0].DeterminationMethod)
 	assert.NotEmpty(t, result.AnalysisWarnings)
 }
 
@@ -239,13 +239,13 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", result.DetectedSyscalls[0].Name)
 	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
-	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 
 	// Second syscall: connect (42)
 	assert.Equal(t, 42, result.DetectedSyscalls[1].Number)
 	assert.Equal(t, "connect", result.DetectedSyscalls[1].Name)
 	assert.True(t, result.DetectedSyscalls[1].IsNetwork)
-	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[1].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[1].Occurrences[0].DeterminationMethod)
 
 	assert.Empty(t, result.AnalysisWarnings)
 	assert.Empty(t, result.ArgEvalResults)
@@ -310,11 +310,11 @@ func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 
 	// First: socket (known)
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
-	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 
 	// Second: unknown (indirect)
 	assert.Equal(t, -1, result.DetectedSyscalls[1].Number)
-	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, result.DetectedSyscalls[1].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, result.DetectedSyscalls[1].Occurrences[0].DeterminationMethod)
 
 	assert.NotEmpty(t, result.AnalysisWarnings)
 	assert.Empty(t, result.ArgEvalResults)
@@ -331,7 +331,7 @@ func TestSyscallAnalyzer_WithBaseAddress(t *testing.T) {
 
 	require.Len(t, result.DetectedSyscalls, 1)
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
-	assert.Equal(t, baseAddr+5, result.DetectedSyscalls[0].Location) // syscall at offset 5
+	assert.Equal(t, baseAddr+5, result.DetectedSyscalls[0].Occurrences[0].Location) // syscall at offset 5
 }
 
 func TestSyscallAnalyzer_InvalidOffset(t *testing.T) {
@@ -343,12 +343,12 @@ func TestSyscallAnalyzer_InvalidOffset(t *testing.T) {
 	cfg := analyzer.archConfigs[elf.EM_X86_64]
 	info := analyzer.extractSyscallInfo(code, 0, 100, cfg.decoder, cfg.syscallTable)
 	assert.Equal(t, -1, info.Number)
-	assert.Equal(t, DeterminationMethodUnknownInvalidOffset, info.DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownInvalidOffset, info.Occurrences[0].DeterminationMethod)
 
 	// syscallAddr beyond code length
 	info = analyzer.extractSyscallInfo(code, 200, 0, cfg.decoder, cfg.syscallTable)
 	assert.Equal(t, -1, info.Number)
-	assert.Equal(t, DeterminationMethodUnknownInvalidOffset, info.DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownInvalidOffset, info.Occurrences[0].DeterminationMethod)
 }
 
 func TestSyscallAnalyzer_FindSyscallInstructions(t *testing.T) {
@@ -497,7 +497,7 @@ func TestSyscallAnalyzer_ScanLimitExceeded(t *testing.T) {
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
-	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownScanLimitExceeded, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 }
 
 func TestSyscallAnalyzer_WindowExhausted(t *testing.T) {
@@ -515,7 +515,7 @@ func TestSyscallAnalyzer_WindowExhausted(t *testing.T) {
 	require.Len(t, result.DetectedSyscalls, 1)
 
 	assert.Equal(t, -1, result.DetectedSyscalls[0].Number)
-	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 }
 
 func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing.T) {
@@ -602,7 +602,7 @@ func TestSyscallAnalyzer_ARM64AnalysisPath(t *testing.T) {
 	assert.Equal(t, 198, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", result.DetectedSyscalls[0].Name)
 	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
-	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].DeterminationMethod)
+	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 }
 
 // TestSyscallAnalyzer_AnalyzeSyscallsInRange tests the AnalyzeSyscallsInRange method.
@@ -623,7 +623,7 @@ func TestSyscallAnalyzer_AnalyzeSyscallsInRange(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, infos, 1)
 		assert.Equal(t, 41, infos[0].Number)
-		assert.Equal(t, DeterminationMethodImmediate, infos[0].DeterminationMethod)
+		assert.Equal(t, DeterminationMethodImmediate, infos[0].Occurrences[0].DeterminationMethod)
 	})
 
 	t.Run("boundary check: adjacent bytes not mixed in", func(t *testing.T) {

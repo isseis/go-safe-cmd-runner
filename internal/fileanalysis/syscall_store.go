@@ -56,18 +56,55 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
-	// Sort DetectedSyscalls by number before saving for deterministic output.
-	// Pass 1 (direct syscall instructions) and Pass 2 (Go wrapper calls) may
-	// interleave in address order; sorting by number makes the stored data easier
-	// to read and diff.
-	sorted := make([]common.SyscallInfo, len(result.DetectedSyscalls))
-	copy(sorted, result.DetectedSyscalls)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Number != sorted[j].Number {
-			return sorted[i].Number < sorted[j].Number
+
+	// Group DetectedSyscalls by number, merging Occurrences
+	groups := make(map[int]*common.SyscallInfo)
+	var numberOrder []int
+	seenNumber := make(map[int]bool)
+
+	for _, info := range result.DetectedSyscalls {
+		if !seenNumber[info.Number] {
+			seenNumber[info.Number] = true
+			numberOrder = append(numberOrder, info.Number)
 		}
-		return sorted[i].Location < sorted[j].Location
+		if _, exists := groups[info.Number]; !exists {
+			groups[info.Number] = &common.SyscallInfo{
+				Number:      info.Number,
+				Name:        info.Name,
+				IsNetwork:   info.IsNetwork,
+				Occurrences: make([]common.SyscallOccurrence, 0),
+			}
+		}
+		groups[info.Number].Occurrences = append(groups[info.Number].Occurrences, info.Occurrences...)
+	}
+
+	// Sort each group's Occurrences by Location
+	for _, group := range groups {
+		sort.SliceStable(group.Occurrences, func(i, j int) bool {
+			return group.Occurrences[i].Location < group.Occurrences[j].Location
+		})
+	}
+
+	// Sort number groups: ascending order, with -1 at the end
+	sort.SliceStable(numberOrder, func(i, j int) bool {
+		ni, nj := numberOrder[i], numberOrder[j]
+		if ni == -1 && nj == -1 {
+			return false
+		}
+		if ni == -1 {
+			return false
+		}
+		if nj == -1 {
+			return true
+		}
+		return ni < nj
 	})
+
+	// Build result
+	sorted := make([]common.SyscallInfo, 0, len(groups))
+	for _, num := range numberOrder {
+		sorted = append(sorted, *groups[num])
+	}
 
 	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash

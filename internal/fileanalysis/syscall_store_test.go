@@ -36,8 +36,8 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 					Number:              41,
 					Name:                "socket",
 					IsNetwork:           true,
-					Location:            0x401000,
-					DeterminationMethod: "immediate",
+					Occurrences: []common.SyscallOccurrence{{Location: 0x401000}},
+					Occurrences[0].DeterminationMethod: "immediate",
 				},
 			},
 		},
@@ -159,8 +159,8 @@ func TestSyscallAnalysisStore_AnalysisWarnings(t *testing.T) {
 			DetectedSyscalls: []SyscallInfo{
 				{
 					Number:              -1,
-					DeterminationMethod: "unknown:indirect_setting",
-					Location:            0x402000,
+					Occurrences[0].DeterminationMethod: "unknown:indirect_setting",
+					Occurrences: []common.SyscallOccurrence{{Location: 0x402000}},
 				},
 			},
 			AnalysisWarnings: []string{
