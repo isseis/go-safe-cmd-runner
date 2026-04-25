@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -822,7 +821,8 @@ func buildMachoSyscallData(
 // mergeMachoSyscallInfos combines svc entries and libSystem entries into a
 // deterministically sorted slice grouped by syscall number.
 // Entries with the same Number are merged into a single SyscallInfo with
-// multiple Occurrences, sorted by Location.
+// multiple Occurrences, sorted by Location. When merging, a non-empty Name is
+// preferred over an empty one, and IsNetwork is true if any entry has it set.
 // Groups are sorted by Number (ascending), with Number=-1 at the end.
 func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
 	if len(svcEntries) == 0 && len(libsysEntries) == 0 {
@@ -831,57 +831,7 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 	merged := make([]common.SyscallInfo, 0, len(svcEntries)+len(libsysEntries))
 	merged = append(merged, svcEntries...)
 	merged = append(merged, libsysEntries...)
-
-	// Group by Number
-	groups := make(map[int]*common.SyscallInfo)
-	var numberOrder []int
-	seenNumber := make(map[int]bool)
-
-	for _, info := range merged {
-		if !seenNumber[info.Number] {
-			seenNumber[info.Number] = true
-			numberOrder = append(numberOrder, info.Number)
-		}
-		if _, exists := groups[info.Number]; !exists {
-			groups[info.Number] = &common.SyscallInfo{
-				Number:      info.Number,
-				Name:        info.Name,
-				IsNetwork:   info.IsNetwork,
-				Occurrences: make([]common.SyscallOccurrence, 0),
-			}
-		}
-		groups[info.Number].Occurrences = append(groups[info.Number].Occurrences, info.Occurrences...)
-	}
-
-	// Sort each group's Occurrences by Location
-	for _, group := range groups {
-		sort.SliceStable(group.Occurrences, func(i, j int) bool {
-			return group.Occurrences[i].Location < group.Occurrences[j].Location
-		})
-	}
-
-	// Sort number groups: ascending order, with -1 at the end
-	sort.SliceStable(numberOrder, func(i, j int) bool {
-		ni, nj := numberOrder[i], numberOrder[j]
-		if ni == -1 && nj == -1 {
-			return false
-		}
-		if ni == -1 {
-			return false
-		}
-		if nj == -1 {
-			return true
-		}
-		return ni < nj
-	})
-
-	// Build result
-	result := make([]common.SyscallInfo, 0, len(groups))
-	for _, num := range numberOrder {
-		result = append(result, *groups[num])
-	}
-
-	return result
+	return common.GroupAndSortSyscalls(merged)
 }
 
 // analyzeMachoSyscalls runs the Mach-O Pass 1 / Pass 2 syscall scan and
@@ -1254,67 +1204,13 @@ func findLibcEntry(deps []fileanalysis.LibEntry) *fileanalysis.LibEntry {
 }
 
 // mergeSyscallInfos merges libc-derived and direct syscall infos into a single slice.
-// When the same Number appears in both, the direct entry (Source == "") takes priority.
+// Entries with the same Number are grouped together and their Occurrences are merged.
+// A non-empty Name is preferred over an empty one; IsNetwork is true if any entry has it set.
 func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
-	// Combine both slices
 	combined := make([]common.SyscallInfo, 0, len(libc)+len(direct))
 	combined = append(combined, libc...)
 	combined = append(combined, direct...)
-
-	if len(combined) == 0 {
-		return nil
-	}
-
-	// Group by Number
-	groups := make(map[int]*common.SyscallInfo)
-	var numberOrder []int
-	seenNumber := make(map[int]bool)
-
-	for _, info := range combined {
-		if !seenNumber[info.Number] {
-			seenNumber[info.Number] = true
-			numberOrder = append(numberOrder, info.Number)
-		}
-		if _, exists := groups[info.Number]; !exists {
-			groups[info.Number] = &common.SyscallInfo{
-				Number:      info.Number,
-				Name:        info.Name,
-				IsNetwork:   info.IsNetwork,
-				Occurrences: make([]common.SyscallOccurrence, 0),
-			}
-		}
-		groups[info.Number].Occurrences = append(groups[info.Number].Occurrences, info.Occurrences...)
-	}
-
-	// Sort each group's Occurrences by Location
-	for _, group := range groups {
-		sort.SliceStable(group.Occurrences, func(i, j int) bool {
-			return group.Occurrences[i].Location < group.Occurrences[j].Location
-		})
-	}
-
-	// Sort number groups: ascending order, with -1 at the end
-	sort.SliceStable(numberOrder, func(i, j int) bool {
-		ni, nj := numberOrder[i], numberOrder[j]
-		if ni == -1 && nj == -1 {
-			return false
-		}
-		if ni == -1 {
-			return false
-		}
-		if nj == -1 {
-			return true
-		}
-		return ni < nj
-	})
-
-	// Build result
-	result := make([]common.SyscallInfo, 0, len(groups))
-	for _, num := range numberOrder {
-		result = append(result, *groups[num])
-	}
-
-	return result
+	return common.GroupAndSortSyscalls(combined)
 }
 
 // elfArchName converts an elf.Machine to the architecture name string used in records.

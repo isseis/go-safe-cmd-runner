@@ -2,7 +2,6 @@ package fileanalysis
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -57,54 +56,8 @@ func (s *syscallAnalysisStore) SaveSyscallAnalysis(filePath, fileHash string, re
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
 
-	// Group DetectedSyscalls by number, merging Occurrences
-	groups := make(map[int]*common.SyscallInfo)
-	var numberOrder []int
-	seenNumber := make(map[int]bool)
-
-	for _, info := range result.DetectedSyscalls {
-		if !seenNumber[info.Number] {
-			seenNumber[info.Number] = true
-			numberOrder = append(numberOrder, info.Number)
-		}
-		if _, exists := groups[info.Number]; !exists {
-			groups[info.Number] = &common.SyscallInfo{
-				Number:      info.Number,
-				Name:        info.Name,
-				IsNetwork:   info.IsNetwork,
-				Occurrences: make([]common.SyscallOccurrence, 0),
-			}
-		}
-		groups[info.Number].Occurrences = append(groups[info.Number].Occurrences, info.Occurrences...)
-	}
-
-	// Sort each group's Occurrences by Location
-	for _, group := range groups {
-		sort.SliceStable(group.Occurrences, func(i, j int) bool {
-			return group.Occurrences[i].Location < group.Occurrences[j].Location
-		})
-	}
-
-	// Sort number groups: ascending order, with -1 at the end
-	sort.SliceStable(numberOrder, func(i, j int) bool {
-		ni, nj := numberOrder[i], numberOrder[j]
-		if ni == -1 && nj == -1 {
-			return false
-		}
-		if ni == -1 {
-			return false
-		}
-		if nj == -1 {
-			return true
-		}
-		return ni < nj
-	})
-
-	// Build result
-	sorted := make([]common.SyscallInfo, 0, len(groups))
-	for _, num := range numberOrder {
-		sorted = append(sorted, *groups[num])
-	}
+	// Group DetectedSyscalls by number, merging Occurrences and metadata
+	sorted := common.GroupAndSortSyscalls(result.DetectedSyscalls)
 
 	return s.store.Update(resolvedPath, func(record *Record) error {
 		record.ContentHash = fileHash

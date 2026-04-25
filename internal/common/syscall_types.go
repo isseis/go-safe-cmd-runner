@@ -75,7 +75,7 @@ type SyscallInfo struct {
 	// Occurrences contains all detected occurrences of this syscall.
 	// Multiple occurrences with the same number are grouped together.
 	// Occurrences should be sorted by Location in ascending order.
-	Occurrences []SyscallOccurrence `json:"occurrences"`
+	Occurrences []SyscallOccurrence `json:"occurrences,omitempty"`
 }
 
 // SyscallAnalysisResultCore contains the common fields shared between

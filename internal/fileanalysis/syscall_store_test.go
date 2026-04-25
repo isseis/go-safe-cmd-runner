@@ -272,6 +272,118 @@ func TestSyscallAnalysisStore_UpdatePreservesOtherFields(t *testing.T) {
 	assert.Equal(t, 42, record.SyscallAnalysis.DetectedSyscalls[0].Number)
 }
 
+func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	store := NewSyscallAnalysisStore(fileStore)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	t.Run("multiple entries with same number are collapsed", func(t *testing.T) {
+		result := &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{
+						Number:      41,
+						Name:        "socket",
+						IsNetwork:   true,
+						Occurrences: []common.SyscallOccurrence{{Location: 0x401020, DeterminationMethod: "immediate"}},
+					},
+					{
+						Number:      41,
+						Name:        "socket",
+						IsNetwork:   true,
+						Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "go_wrapper"}},
+					},
+				},
+			},
+		}
+
+		fileHash := "sha256:grouptest1"
+		err = store.SaveSyscallAnalysis(testFile, fileHash, result)
+		require.NoError(t, err)
+
+		loaded, err := store.LoadSyscallAnalysis(testFile, fileHash)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+
+		// Both entries for number 41 must be collapsed into one
+		require.Len(t, loaded.DetectedSyscalls, 1, "two entries with the same Number should be collapsed")
+		group := loaded.DetectedSyscalls[0]
+		assert.Equal(t, 41, group.Number)
+		assert.Equal(t, "socket", group.Name)
+		assert.True(t, group.IsNetwork)
+
+		// Occurrences should be merged and sorted by Location ascending
+		require.Len(t, group.Occurrences, 2)
+		assert.Equal(t, uint64(0x401000), group.Occurrences[0].Location, "lower address should come first")
+		assert.Equal(t, uint64(0x401020), group.Occurrences[1].Location)
+	})
+
+	t.Run("unknown number (-1) is placed last", func(t *testing.T) {
+		testFile2 := filepath.Join(tmpDir, "test2.bin")
+		err = os.WriteFile(testFile2, []byte("content2"), 0o644)
+		require.NoError(t, err)
+
+		result := &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					{Number: -1, Occurrences: []common.SyscallOccurrence{{Location: 0x402000, DeterminationMethod: "direct_svc_0x80"}}},
+					{Number: 5, Name: "fstat", Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}}},
+				},
+			},
+		}
+
+		fileHash := "sha256:grouptest2"
+		err = store.SaveSyscallAnalysis(testFile2, fileHash, result)
+		require.NoError(t, err)
+
+		loaded, err := store.LoadSyscallAnalysis(testFile2, fileHash)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+
+		require.Len(t, loaded.DetectedSyscalls, 2)
+		assert.Equal(t, 5, loaded.DetectedSyscalls[0].Number, "known number should come first")
+		assert.Equal(t, -1, loaded.DetectedSyscalls[1].Number, "unknown number (-1) should be last")
+	})
+
+	t.Run("later non-empty Name is preserved when first entry has empty name", func(t *testing.T) {
+		testFile3 := filepath.Join(tmpDir, "test3.bin")
+		err = os.WriteFile(testFile3, []byte("content3"), 0o644)
+		require.NoError(t, err)
+
+		result := &SyscallAnalysisResult{
+			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				DetectedSyscalls: []SyscallInfo{
+					// First entry has no name (e.g., direct scan couldn't look it up)
+					{Number: 41, Name: "", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}}},
+					// Second entry has name from symbol import fallback
+					{Number: 41, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{Location: 0, DeterminationMethod: "immediate", Source: "libc_symbol_import"}}},
+				},
+			},
+		}
+
+		fileHash := "sha256:grouptest3"
+		err = store.SaveSyscallAnalysis(testFile3, fileHash, result)
+		require.NoError(t, err)
+
+		loaded, err := store.LoadSyscallAnalysis(testFile3, fileHash)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+
+		require.Len(t, loaded.DetectedSyscalls, 1)
+		group := loaded.DetectedSyscalls[0]
+		assert.Equal(t, "socket", group.Name, "non-empty Name from later entry should be preserved")
+		assert.True(t, group.IsNetwork, "IsNetwork=true from later entry should be preserved")
+	})
+}
+
 func TestStore_ArgEvalResults(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")

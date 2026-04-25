@@ -278,8 +278,8 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 
 // syscallAnalysisHasSVCSignal reports whether the given SyscallAnalysisResult
 // contains evidence of unresolved svc #0x80 direct syscall usage (high risk).
-// Returns true only when any DetectedSyscall has both
-// DeterminationMethod == "direct_svc_0x80" AND Number == -1.
+// Returns true only when any DetectedSyscall has Number == -1 and at least one
+// Occurrence with DeterminationMethod == "direct_svc_0x80".
 // Resolved svc entries (Number != -1) are not treated as high risk here;
 // their network classification is handled by syscallAnalysisHasNetworkSignal.
 func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) bool {
