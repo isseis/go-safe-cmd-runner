@@ -1755,7 +1755,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 	}
 }
 
-func TestValidator_validateGroupWritePermissions_TrustedOwnershipACs(t *testing.T) {
+func TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios(t *testing.T) {
 	createValidatorWithDir := func(t *testing.T, uid uint32, gid uint32, perm os.FileMode) *Validator {
 		t.Helper()
 
@@ -1769,7 +1769,7 @@ func TestValidator_validateGroupWritePermissions_TrustedOwnershipACs(t *testing.
 		return validator
 	}
 
-	t.Run("ac3_untrusted_root_group_is_rejected", func(t *testing.T) {
+	t.Run("rejects_group_write_for_root_owned_directory_with_untrusted_gid", func(t *testing.T) {
 		validator := createValidatorWithDir(t, UIDRoot, 9999, 0o775)
 
 		info, err := validator.fs.Lstat("/test")
@@ -1779,7 +1779,7 @@ func TestValidator_validateGroupWritePermissions_TrustedOwnershipACs(t *testing.
 		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
 	})
 
-	t.Run("ac1_macos_admin_gid_is_allowed", func(t *testing.T) {
+	t.Run("allows_group_write_for_root_owned_directory_with_macos_admin_gid", func(t *testing.T) {
 		if runtime.GOOS != gosDarwin {
 			t.Skip("macOS only")
 		}
