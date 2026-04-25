@@ -184,7 +184,7 @@ strings.HasPrefix(sym.Library, "libc.musl-")
 
 フォールバックは「SHN_UNDEF シンボルが存在するがそのすべてで `Library == ""`」の場合にのみ適用する（一部のシンボルに Library 情報があれば VERNEED ありと判断し、フォールバックと混在させない）。
 
-この条件を満たすとき `elfFile.ImportedLibraries()` で DT_NEEDED エントリを確認し、libc パターンが含まれる場合は `SHN_UNDEF` かつ `STT_FUNC` である全シンボルを libc 由来とみなす。DT_NEEDED にも libc パターンがなければ全シンボルをスキップする（ライブラリフィルタの趣旨を維持）。
+この条件を満たすとき `elfFile.ImportedLibraries()` で DT_NEEDED エントリを確認し、libc パターンが少なくとも 1 つ存在し、かつ libc 以外のライブラリが含まれない場合に限って `SHN_UNDEF` かつ `STT_FUNC` である全シンボルを libc 由来とみなす。libc 以外の DT_NEEDED が混在する場合は、全 `STT_FUNC` を libc に帰属させる根拠がないためフォールバックを無効化する。DT_NEEDED に libc パターンがない場合も全シンボルをスキップする（ライブラリフィルタの趣旨を維持）。
 
 #### 3.2.2 `checkDynamicSymbols` の変更
 
@@ -398,12 +398,12 @@ flowchart LR
 - 新しい公開エラー型は追加しない
 - ELF 解析で `DynamicSymbols()` が失敗した場合は既存の `AnalysisError` を返す
 - ELF 解析で `elf.ErrNoSymbols` または実質的に空の `.dynsym` に到達した場合は `StaticBinary` として既存の静的解析経路へフォールバックする
-- Mach-O フォールバックで `ImportedSymbols()` の取得に失敗した場合は、そのスライスの `DetectedSymbols` を空として扱い、他の既存判定経路を阻害しない
+- Mach-O フォールバックで `ImportedSymbols()` の取得に失敗した場合は `AnalysisError` を返し、シンボル取得不能を安全側に倒す
 
 ### 7.2 フォールバック方針
 
 - ELF: VERNEED ありと判定できる場合は `sym.Library` のみを信頼し、DT_NEEDED フォールバックと混在させない
-- ELF: VERNEED なしのときだけ DT_NEEDED に libc があるかを確認し、`STT_FUNC` の undefined symbol に限定して記録する
+- ELF: VERNEED なしのときだけ DT_NEEDED を確認し、libc が唯一の依存ライブラリである場合に限って `STT_FUNC` の undefined symbol を記録する
 - Mach-O: Symtab がない場合だけ `ImportedLibraries()` + `ImportedSymbols()` フォールバックを使う
 - 旧レコード読込時はスキーマ変更を伴わないため、カテゴリベース判定のみで安全に処理する
 

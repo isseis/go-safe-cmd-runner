@@ -23,6 +23,10 @@ const (
 
 	// CategoryDynamicLoad represents dynamic library loading functions (dlopen/dlsym/dlvsym).
 	CategoryDynamicLoad SymbolCategory = "dynamic_load"
+
+	// CategorySyscallWrapper represents libc/libSystem symbols that are not network-related.
+	// These are syscall wrapper functions imported from libc (ELF) or libSystem (Mach-O).
+	CategorySyscallWrapper SymbolCategory = "syscall_wrapper"
 )
 
 // networkSymbolRegistry contains the default set of network-related symbols.
@@ -131,10 +135,15 @@ func IsNetworkSymbol(name string) (SymbolCategory, bool) {
 	return cat, found
 }
 
-// SymbolCount returns the number of registered network symbols.
-// Useful for testing and documentation.
-func SymbolCount() int {
-	return len(networkSymbolRegistry)
+// IsNetworkCategory returns true if the given category string represents a
+// network-related symbol category. The network categories are "socket", "dns",
+// "tls", and "http". "syscall_wrapper" and "dynamic_load" return false.
+func IsNetworkCategory(cat string) bool {
+	switch SymbolCategory(cat) {
+	case CategorySocket, CategoryDNS, CategoryTLS, CategoryHTTP:
+		return true
+	}
+	return false
 }
 
 // dynamicLoadSymbolRegistry contains symbols for dynamic library loading.

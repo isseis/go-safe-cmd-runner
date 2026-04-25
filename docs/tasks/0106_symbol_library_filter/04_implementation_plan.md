@@ -28,10 +28,10 @@
 - `internal/runner/security/binaryanalyzer/analyzer.go`
 
 **作業内容**:
-- [ ] `CategorySyscallWrapper` を追加する
-- [ ] `IsNetworkCategory` を追加し、ネットワーク系カテゴリ集合を明文化する
-- [ ] `AnalysisOutput.DetectedSymbols` コメントを新セマンティクスに更新する
-- [ ] `network_symbols_test.go` に真偽境界のテストを追加する
+- [x] `CategorySyscallWrapper` を追加する
+- [x] `IsNetworkCategory` を追加し、ネットワーク系カテゴリ集合を明文化する
+- [x] `AnalysisOutput.DetectedSymbols` コメントを新セマンティクスに更新する
+- [x] `network_symbols_test.go` に真偽境界のテストを追加する
 
 **成功条件**:
 - `syscall_wrapper` が新カテゴリとして文書化されている
@@ -39,7 +39,7 @@
 
 **推定工数**: 0.5日
 
-**実績**: 未着手
+**実績**: 完了
 
 ### Phase 2: ELF 解析ロジックの更新
 
@@ -48,11 +48,11 @@
 - `internal/runner/security/elfanalyzer/analyzer_test.go`
 
 **作業内容**:
-- [ ] `checkDynamicSymbols` の入力を `*elf.File` に変更する
-- [ ] VERNEED あり時は `sym.Library` ベースで libc 判定する
-- [ ] VERNEED なし時のみ DT_NEEDED フォールバックを適用する
-- [ ] libc 由来シンボルを全記録し、非対象ライブラリを除外する
-- [ ] AC-1 と AC-2 を満たすテストを追加または更新する
+- [x] `checkDynamicSymbols` の入力を `*elf.File` に変更する
+- [x] VERNEED あり時は `sym.Library` ベースで libc 判定する
+- [x] VERNEED なし時のみ DT_NEEDED フォールバックを適用する
+- [x] libc 由来シンボルを全記録し、非対象ライブラリを除外する
+- [x] AC-1 と AC-2 を満たすテストを追加または更新する
 
 **成功条件**:
 - `socket` と `read` がともに `DetectedSymbols` に記録される
@@ -61,7 +61,7 @@
 
 **推定工数**: 1日
 
-**実績**: 未着手
+**実績**: 完了
 
 ### Phase 3: Mach-O 解析ロジックの更新
 
@@ -70,11 +70,11 @@
 - `internal/runner/security/machoanalyzer/analyzer_test.go`
 
 **作業内容**:
-- [ ] library ordinal を使う libSystem 判定ヘルパーを追加する
-- [ ] `NormalizeSymbolName` を通したカテゴリ付与を統合する
-- [ ] Symtab なし時の `ImportedLibraries()` / `ImportedSymbols()` フォールバックを整理する
-- [ ] libSystem 以外のシンボルが記録されないことを確認するテストを追加する
-- [ ] AC-3 を満たすテストを追加または更新する
+- [x] library ordinal を使う libSystem 判定ヘルパーを追加する
+- [x] `NormalizeSymbolName` を通したカテゴリ付与を統合する
+- [x] Symtab なし時の `ImportedLibraries()` / `ImportedSymbols()` フォールバックを整理する
+- [x] libSystem 以外のシンボルが記録されないことを確認するテストを追加する
+- [x] AC-3 を満たすテストを追加または更新する
 
 **成功条件**:
 - libSystem 由来の `socket` と `read` が記録される
@@ -83,7 +83,7 @@
 
 **推定工数**: 1日
 
-**実績**: 未着手
+**実績**: 完了
 
 ### Phase 4: `runner` 側判定の更新
 
@@ -92,10 +92,10 @@
 - `internal/runner/security/network_analyzer_test.go`
 
 **作業内容**:
-- [ ] `len(data.DetectedSymbols) > 0` に依存した判定を除去する
-- [ ] `IsNetworkCategory(sym.Category)` ベースの判定へ更新する
-- [ ] 旧レコード互換ケースを含むテストを追加する
-- [ ] `syscall_wrapper` のみでは `NoNetworkSymbols` となることを確認する
+- [x] `len(data.DetectedSymbols) > 0` に依存した判定を除去する
+- [x] `IsNetworkCategory(sym.Category)` ベースの判定へ更新する
+- [x] 旧レコード互換ケースを含むテストを追加する
+- [x] `syscall_wrapper` のみでは `NoNetworkSymbols` となることを確認する
 
 **成功条件**:
 - ネットワーク系カテゴリを含む場合のみ `NetworkDetected` になる
@@ -104,7 +104,7 @@
 
 **推定工数**: 0.5日
 
-**実績**: 未着手
+**実績**: 完了
 
 ### Phase 5: 受け入れ基準検証と回帰確認
 
@@ -113,10 +113,10 @@
 - `docs/tasks/0106_symbol_library_filter/03_detailed_specification.md`
 
 **作業内容**:
-- [ ] AC-1 から AC-4 までのテスト実装を完了する
-- [ ] `03_detailed_specification.md` の受け入れ基準検証フェーズを更新する
-- [ ] `make test` を実行して回帰を確認する
-- [ ] `make lint` を実行して lint を確認する
+- [x] AC-1 から AC-4 までのテスト実装を完了する
+- [x] `03_detailed_specification.md` の受け入れ基準検証フェーズを更新する
+- [x] `make test` を実行して回帰を確認する
+- [x] `make lint` を実行して lint を確認する
 
 **成功条件**:
 - AC-1 から AC-5 までの検証経路が実装と一致する
@@ -124,7 +124,7 @@
 
 **推定工数**: 0.5日
 
-**実績**: 未着手
+**実績**: 完了
 
 ## 3. 実装順序とマイルストーン
 
@@ -183,33 +183,33 @@
 
 ### Phase 1
 
-- [ ] カテゴリ定数を追加した
-- [ ] `IsNetworkCategory` を追加した
-- [ ] カテゴリ判定テストを追加した
+- [x] カテゴリ定数を追加した
+- [x] `IsNetworkCategory` を追加した
+- [x] カテゴリ判定テストを追加した
 
 ### Phase 2
 
-- [ ] ELF の libc 判定を実装した
-- [ ] VERNEED なし時のフォールバックを実装した
-- [ ] AC-1 / AC-2 のテストを追加した
+- [x] ELF の libc 判定を実装した
+- [x] VERNEED なし時のフォールバックを実装した
+- [x] AC-1 / AC-2 のテストを追加した
 
 ### Phase 3
 
-- [ ] Mach-O の libSystem 判定を実装した
-- [ ] Mach-O フォールバックを実装した
-- [ ] AC-3 のテストを追加した
+- [x] Mach-O の libSystem 判定を実装した
+- [x] Mach-O フォールバックを実装した
+- [x] AC-3 のテストを追加した
 
 ### Phase 4
 
-- [ ] `runner` のカテゴリベース判定を実装した
-- [ ] AC-4 のテストを追加した
-- [ ] 旧レコード互換ケースを追加した
+- [x] `runner` のカテゴリベース判定を実装した
+- [x] AC-4 のテストを追加した
+- [x] 旧レコード互換ケースを追加した
 
 ### Phase 5
 
-- [ ] AC-5 の検証を完了した
-- [ ] `make test` を通した
-- [ ] `make lint` を通した
+- [x] AC-5 の検証を完了した
+- [x] `make test` を通した
+- [x] `make lint` を通した
 
 ## 7. 成功基準
 

@@ -3,6 +3,7 @@
 package machoanalyzer
 
 import (
+	"debug/macho"
 	"errors"
 	"io"
 	"os"
@@ -268,8 +269,126 @@ func TestNetworkAnalyzer_Integration_MachO(t *testing.T) {
 
 	analyzer := NewStandardMachOAnalyzer(nil)
 
-	// /usr/bin/curl is a well-known network binary on macOS
-	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "sha256:dummy")
+	// /usr/bin/nc directly imports socket/connect from libSystem.B.dylib and is
+	// a reliable fixture for libSystem-level network symbol detection.
+	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/nc", "sha256:dummy")
 	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result,
-		"expected NetworkDetected for /usr/bin/curl")
+		"expected NetworkDetected for /usr/bin/nc")
+	assert.NotEmpty(t, output.DetectedSymbols,
+		"expected at least one detected symbol for /usr/bin/nc")
+}
+
+// TestAnalyzeSlice_DetectsLibSystemSocketAndSyscallWrapper verifies AC-3:
+// symbols from libSystem are recorded in DetectedSymbols with correct categories.
+// "socket" must have category "socket"; a non-network symbol (e.g. "read") must
+// have category "syscall_wrapper".
+func TestAnalyzeSlice_DetectsLibSystemSocketAndSyscallWrapper(t *testing.T) {
+	path := testdataPath("network_macho_arm64")
+	skipIfNotExist(t, path)
+
+	analyzer := NewStandardMachOAnalyzer(nil)
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+	require.NotEmpty(t, output.DetectedSymbols)
+
+	catMap := make(map[string]string)
+	for _, sym := range output.DetectedSymbols {
+		catMap[sym.Name] = sym.Category
+	}
+
+	// "socket" must be categorized as "socket" (network category).
+	assert.Equal(t, "socket", catMap["socket"], "socket symbol must have 'socket' category")
+
+	// At least one syscall_wrapper symbol must be present (e.g. read, write, close).
+	hasSyscallWrapper := false
+	for _, sym := range output.DetectedSymbols {
+		if sym.Category == "syscall_wrapper" {
+			hasSyscallWrapper = true
+			break
+		}
+	}
+	assert.True(t, hasSyscallWrapper, "expected at least one 'syscall_wrapper' symbol from libSystem")
+}
+
+// TestAnalyzeSlice_LibSystemFlatNamespace verifies that Go binaries compiled with
+// flat namespace (all symbol ordinals == 0) and libSystem in imported libraries
+// have their symbols attributed to libSystem. (AC-3)
+func TestAnalyzeSlice_LibSystemFlatNamespace(t *testing.T) {
+	path := testdataPath("network_go_macho_arm64")
+	skipIfNotExist(t, path)
+
+	analyzer := NewStandardMachOAnalyzer(nil)
+	output := analyzer.AnalyzeNetworkSymbols(path, "sha256:dummy")
+
+	assert.Equal(t, binaryanalyzer.NetworkDetected, output.Result)
+	assert.NotEmpty(t, output.DetectedSymbols)
+}
+
+// TestAnalyzeSlice_NonLibSystemSymbolsExcluded verifies that symbols from libraries
+// other than libSystem are excluded from DetectedSymbols when using two-level namespace.
+// /usr/bin/curl links against libcurl (ordinal 1) and libSystem (ordinal 3); its
+// network functions (socket, connect, etc.) come from libcurl, not libSystem, so
+// the analyzer must return NoNetworkSymbols for curl's own libSystem-level imports. (AC-3)
+func TestAnalyzeSlice_NonLibSystemSymbolsExcluded(t *testing.T) {
+	if runtime.GOOS != gosDarwin {
+		t.Skip("macOS-only test")
+	}
+	analyzer := NewStandardMachOAnalyzer(nil)
+	output := analyzer.AnalyzeNetworkSymbols("/usr/bin/curl", "sha256:dummy")
+
+	// curl's socket calls go through libcurl (not libSystem directly), so the
+	// libSystem-level symbol filter must not report NetworkDetected at the
+	// analyzer layer. (curl is detected at the runner level via KnownNetworkLibDeps.)
+	assert.Equal(t, binaryanalyzer.NoNetworkSymbols, output.Result)
+}
+
+// TestIsLibSystemLibrary exercises the boundary conditions of isLibSystemLibrary. (AC-3)
+func TestIsLibSystemLibrary(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{"/usr/lib/libSystem.B.dylib", true},
+		{"/usr/lib/libsystem_c.dylib", true},
+		{"/usr/lib/libsystem_kernel.dylib", true},
+		{"/usr/lib/libcurl.4.dylib", false},
+		{"/usr/lib/libz.1.dylib", false},
+		{"/usr/lib/libresolv.9.dylib", false},
+		{"libsystem_c.dylib", true},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isLibSystemLibrary(tt.path))
+		})
+	}
+}
+
+// TestIsFlatNamespace verifies the flat-namespace detection helper. (AC-3)
+func TestIsFlatNamespace(t *testing.T) {
+	makeSymbol := func(descHigh uint16) macho.Symbol {
+		return macho.Symbol{Desc: descHigh << 8}
+	}
+	assert.False(t, isFlatNamespace(nil), "empty slice must be false")
+	assert.True(t, isFlatNamespace([]macho.Symbol{makeSymbol(0), makeSymbol(0)}))
+	assert.False(t, isFlatNamespace([]macho.Symbol{makeSymbol(0), makeSymbol(1)}))
+	assert.False(t, isFlatNamespace([]macho.Symbol{makeSymbol(1)}))
+}
+
+// TestAnalyzeSlice_SymtabAbsentImportedSymbolsError verifies that the Symtab-absent
+// fallback does not silently downgrade ImportedSymbols failures to NoNetworkSymbols.
+func TestAnalyzeSlice_SymtabAbsentImportedSymbolsError(t *testing.T) {
+	analyzer := NewStandardMachOAnalyzer(nil)
+	file := &macho.File{
+		Loads: []macho.Load{
+			&macho.Dylib{Name: "/usr/lib/libSystem.B.dylib"},
+		},
+	}
+
+	output := analyzer.analyzeSlice(file)
+
+	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
+	require.Error(t, output.Error)
+	assert.ErrorContains(t, output.Error, "failed to get imported symbols")
 }
