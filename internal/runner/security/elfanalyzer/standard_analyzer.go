@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
@@ -331,8 +332,9 @@ func isLibcLibrary(lib string) bool {
 	if lib == "" {
 		return false
 	}
-	return strings.HasPrefix(lib, "libc.so.") ||
-		strings.HasPrefix(lib, "libc.musl-")
+	base := filepath.Base(lib)
+	return strings.HasPrefix(base, "libc.so.") ||
+		strings.HasPrefix(base, "libc.musl-")
 }
 
 // categorizeELFSymbol returns the category of the symbol using networkSymbols,
