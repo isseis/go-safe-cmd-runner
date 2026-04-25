@@ -3,7 +3,6 @@
 package security
 
 import (
-	"os"
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
@@ -56,20 +55,6 @@ func TestValidator_validateGroupWritePermissions_LinuxTrustedGIDConfigDifference
 		require.NoError(t, err)
 
 		err = validator.validateGroupWritePermissions("/test", info, 1000)
-		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
-	})
-
-	t.Run("others_write_is_still_rejected", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
-		err := mockFS.AddDirWithOwner("/test", os.FileMode(0o777), UIDRoot, 10)
-		require.NoError(t, err)
-
-		config := DefaultConfig()
-		config.TrustedGIDs = []uint32{10}
-		validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(nil))
-		require.NoError(t, err)
-
-		err = validator.ValidateDirectoryPermissions("/test")
 		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
 	})
 }

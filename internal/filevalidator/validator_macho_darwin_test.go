@@ -16,7 +16,7 @@ import (
 
 // TestRecord_Force_MachO_UpdatesDynLibDeps verifies that SaveRecord with force=true
 // re-runs Mach-O dynlib analysis and updates DynLibDeps with the new hash.
-// This covers Phase 3 completion criterion: record --force で Mach-O の DynLibDeps が更新されること.
+// This covers Phase 3 completion criterion: Mach-O DynLibDeps is updated by record --force.
 func TestRecord_Force_MachO_UpdatesDynLibDeps(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")

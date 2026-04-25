@@ -1012,7 +1012,7 @@ func TestValidator_Verify_HashFilePathCollision(t *testing.T) {
 }
 
 // TestAnalyze_Force verifies that record --force updates DynLibDeps.
-// This covers Phase 3 completion criterion: `record --force` で DynLibDeps が更新されること.
+// This covers Phase 3 completion criterion: DynLibDeps is updated by `record --force`.
 func TestAnalyze_Force(t *testing.T) {
 	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")

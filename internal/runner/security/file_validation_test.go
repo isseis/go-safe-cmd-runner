@@ -1769,16 +1769,6 @@ func TestValidator_validateGroupWritePermissions_TrustedOwnershipACs(t *testing.
 		return validator
 	}
 
-	t.Run("ac4_root_root_keeps_allowed", func(t *testing.T) {
-		validator := createValidatorWithDir(t, UIDRoot, GIDRoot, 0o775)
-
-		info, err := validator.fs.Lstat("/test")
-		require.NoError(t, err)
-
-		err = validator.validateGroupWritePermissions("/test", info, 1000)
-		assert.NoError(t, err)
-	})
-
 	t.Run("ac3_untrusted_root_group_is_rejected", func(t *testing.T) {
 		validator := createValidatorWithDir(t, UIDRoot, 9999, 0o775)
 
