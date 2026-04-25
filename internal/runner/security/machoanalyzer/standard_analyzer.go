@@ -303,7 +303,7 @@ func machoUndefinedSymbols(f *macho.File) []macho.Symbol {
 			return nil
 		}
 		end := dt.Iundefsym + dt.Nundefsym
-		if end > symCount {
+		if end < dt.Iundefsym || end > symCount {
 			end = symCount
 		}
 		return f.Symtab.Syms[dt.Iundefsym:end]
