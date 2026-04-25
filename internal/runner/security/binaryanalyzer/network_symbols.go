@@ -171,3 +171,14 @@ func DynamicLoadSymbolNames() []string {
 	slices.Sort(names)
 	return names
 }
+
+// IsNetworkCategory checks if the given category string represents a network-related category.
+// Returns true for "socket", "dns", "tls", "http"; returns false for other categories
+// like "syscall_wrapper" or "dynamic_load".
+func IsNetworkCategory(cat string) bool {
+	switch SymbolCategory(cat) {
+	case CategorySocket, CategoryDNS, CategoryTLS, CategoryHTTP:
+		return true
+	}
+	return false
+}
