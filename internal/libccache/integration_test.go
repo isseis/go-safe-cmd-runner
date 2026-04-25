@@ -123,8 +123,9 @@ int main() {
 		}
 	}
 	require.NotNil(t, socketInfo, "socket syscall (number %d) should be detected", syscallNum)
-	assert.Equal(t, "libc_symbol_import", socketInfo.Source, "socket should be detected via libc symbol import")
-	assert.Equal(t, uint64(0), socketInfo.Location, "libc_symbol_import entries should have Location=0")
+	require.NotEmpty(t, socketInfo.Occurrences, "socket syscall should have at least one occurrence")
+	assert.Equal(t, "libc_symbol_import", socketInfo.Occurrences[0].Source, "socket should be detected via libc symbol import")
+	assert.Equal(t, uint64(0), socketInfo.Occurrences[0].Location, "libc_symbol_import entries should have Location=0")
 
 	// Verify the lib-cache directory was created.
 	cacheDir := filepath.Join(hashDir, "lib-cache")
