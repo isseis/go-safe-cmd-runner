@@ -63,10 +63,18 @@
 #### 対象
 
 - `internal/common/syscall_types.go`：`SyscallInfo` 型の再設計、新型 `SyscallOccurrence` の追加
-- `internal/fileanalysis/syscall_store.go`：保存時のグループ化ロジック（`SaveSyscallAnalysis` 内のソート処理を含む）
-- `internal/filevalidator/validator.go`：`buildMachoSyscallData` の `DeterminationMethod` 参照をグループ化後の構造に合わせた修正
+- `internal/fileanalysis/syscall_store.go`：`SaveSyscallAnalysis` 内のソート処理をグループ化ロジックへ変更
+- `internal/filevalidator/validator.go`：以下の関数を修正
+  - `buildSVCInfos`：`SyscallInfo` を `Occurrences` を持つ新形式へ変更
+  - `mergeSyscallInfos`（ELF パス）：同一 `Number` の `Occurrences` をマージするよう変更
+  - `mergeMachoSyscallInfos`：ソートキーから `Location`・`Source`（削除されるフィールド）を除去
+  - `buildMachoSyscallData`：`DeterminationMethod` 参照をグループ化後の構造に合わせた修正
 - `internal/runner/security/network_analyzer.go`：`syscallAnalysisHasSVCSignal` の `DeterminationMethod` 参照をグループ化後の構造に合わせた修正
-- `internal/runner/security/elfanalyzer/`・`internal/runner/security/machoanalyzer/`：内部中間型（`SyscallInfo` を使用している箇所）の更新
+- `internal/runner/security/elfanalyzer/`：以下の関数を修正
+  - `syscall_analyzer.go` の `SyscallInfo` 生成箇所（`Location`・`DeterminationMethod` を `Occurrences[0]` へ移動）
+  - `evaluateMprotectFamilyArgs`・`evalSingleMprotect`：`entry.Location`・`entry.DeterminationMethod` を `entry.Occurrences[0].Location`・`entry.Occurrences[0].DeterminationMethod` へ変更
+  - `plt_analyzer.go`：synthetic `SyscallInfo{Location: inst.Offset}` を `Occurrences[0]` を持つ形式へ変更
+- `internal/runner/security/machoanalyzer/`：`SyscallInfo` 生成箇所（`Location`・`DeterminationMethod`・`Source` を `Occurrences[0]` へ移動）
 - スキーマバージョンの更新（v16 → v17）
 - 上記に伴うテストの更新
 
@@ -158,9 +166,15 @@ type SyscallInfo struct {
 4. グループエントリは `Number` 昇順でソートする（`Number == -1` は末尾）
 5. 各グループ内の `Occurrences` は `Location` 昇順でソートする
 
-アナライザー（elfanalyzer・machoanalyzer）は引き続き出現ごとに 1 エントリを生成する中間形式を使用しても構わない。グループ化は保存ゲートウェイである `SaveSyscallAnalysis` でのみ行う。
+アナライザー（elfanalyzer・machoanalyzer）は引き続き出現ごとに 1 エントリを生成する中間形式を使用しても構わない。グループ化の責務は各保存関数に集約する。
 
-> **設計上の注意**：FR-2 適用後、アナライザーが `SyscallInfo` を中間型として使い続ける場合の表現は「出現ごとに 1 `SyscallInfo`」とし、その `Occurrences` には当該出現を表す 1 要素のみを格納する。すなわち、グループ化前の中間データでも `Occurrences` を空にしてはならない。各要素の `Location`・`DeterminationMethod`・`Source` などの出現単位情報は、その 1 要素の `Occurrences` に保持する。`SaveSyscallAnalysis` はこれらの中間エントリを syscall 番号（および同一 syscall を識別する共通属性）で束ね、永続化用のグループ化済み `SyscallInfo` に変換する。
+> **設計上の注意**：FR-2 適用後、アナライザーが `SyscallInfo` を中間型として使い続ける場合の表現は「出現ごとに 1 `SyscallInfo`」とし、その `Occurrences` には当該出現を表す 1 要素のみを格納する。すなわち、グループ化前の中間データでも `Occurrences` を空にしてはならない。各要素の `Location`・`DeterminationMethod`・`Source` などの出現単位情報は、その 1 要素の `Occurrences` に保持する。FR-2 適用後は `SyscallInfo` の top-level フィールドに `Location`・`DeterminationMethod`・`Source` が存在しないため、アナライザー内部でこれらを直接代入するコードはコンパイルエラーになる。
+>
+> グループ化は以下の 3 か所で行う（本番コードとテストで異なる経路を通るため）：
+>
+> - **ELF パス**（本番）：`validator.go` の `mergeSyscallInfos` で同一 `Number` の `Occurrences` をマージし、`buildSyscallData` 経由で `record.SyscallAnalysis` へ保存する
+> - **Mach-O パス**（本番）：`validator.go` の `mergeMachoSyscallInfos` でソート後、`buildMachoSyscallData` 経由で `record.SyscallAnalysis` へ保存する
+> - **統合テストパス**：`syscall_store.go` の `SaveSyscallAnalysis` でグループ化して保存する
 
 ### FR-4: `validator.go` の `buildMachoSyscallData` 修正
 
@@ -196,9 +210,47 @@ for _, s := range merged {
 }
 ```
 
-#### FR-4.2: ソート条件の修正
+#### FR-4.2: `mergeMachoSyscallInfos` のソート条件の修正
 
-`Location` フィールドが `SyscallInfo` から削除されるため、`merged` のソート条件から `Location` 参照を削除する。グループ化後はグループエントリを `Number` でソートし、`Occurrences` 内を `Location` でソートする（FR-3 のグループ化ロジックに委ねる）。
+`Location`・`Source` フィールドが `SyscallInfo` から削除されるため、`mergeMachoSyscallInfos` のソートキー `(Number, Location, Source)` から `Location`・`Source` 参照を削除する。グループ化後はグループエントリを `Number` でソートし、`Occurrences` 内を `Location` でソートする（FR-3 のグループ化ロジックに委ねる）。
+
+#### FR-4.3: `buildSVCInfos` の修正
+
+`Location`・`DeterminationMethod`・`Source` フィールドが `SyscallInfo` から削除されるため、`buildSVCInfos` を修正する。現行は `SyscallInfo{Location: addr, DeterminationMethod: ..., Source: ...}` で svc エントリを生成しているが、これらを `Occurrences[0]` に移動する。
+
+変更前:
+
+```go
+syscalls[i] = common.SyscallInfo{
+    Number:              -1,
+    IsNetwork:           false,
+    Location:            addr,
+    DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+    Source:              common.DeterminationMethodDirectSVC0x80,
+}
+```
+
+変更後:
+
+```go
+syscalls[i] = common.SyscallInfo{
+    Number:    -1,
+    IsNetwork: false,
+    Occurrences: []common.SyscallOccurrence{
+        {
+            Location:            addr,
+            DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+            Source:              common.DeterminationMethodDirectSVC0x80,
+        },
+    },
+}
+```
+
+#### FR-4.4: `mergeSyscallInfos` の修正（ELF パス）
+
+ELF パスで libc・direct の両エントリをマージする `mergeSyscallInfos` は、現行は `Number` をキーにして同一番号のうち 1 エントリのみを保持する（direct が libc を上書き）。FR-2 適用後、各中間 `SyscallInfo` は `Occurrences[0]` に出現情報を持つため、同一 `Number` の複数エントリを `Occurrences` へマージする必要がある。
+
+> **注意**：libc エントリは通常 `Number` ごとに 1 件のみ生成されるが、direct エントリは同一番号が複数箇所で検出される可能性がある。
 
 ### FR-5: `network_analyzer.go` の `syscallAnalysisHasSVCSignal` 修正
 
@@ -228,7 +280,23 @@ for _, s := range result.DetectedSyscalls {
 }
 ```
 
-### FR-6: スキーマバージョンの更新
+### FR-6: `elfanalyzer` 内部の `Location`・`DeterminationMethod` 参照の修正
+
+FR-2 適用後、`SyscallInfo` から `Location`・`DeterminationMethod` が削除されるため、`elfanalyzer` 内でこれらを top-level フィールドとして参照している箇所を修正する。
+
+#### FR-6.1: `evaluateMprotectFamilyArgs` の修正
+
+`syscall_analyzer.go` の `evaluateMprotectFamilyArgs` は `info.DeterminationMethod` を直接参照して mprotect 候補を絞り込んでいる。グループ化前の中間データでは `Occurrences[0].DeterminationMethod` を使用するよう変更する。また、`entry.Location` の参照も `entry.Occurrences[0].Location` へ変更する。
+
+#### FR-6.2: `evalSingleMprotect` の修正
+
+`evalSingleMprotect` は `entry.Location` を使って後方スキャンの起点アドレスを取得している。`entry.Occurrences[0].Location` へ変更する。
+
+#### FR-6.3: `plt_analyzer.go` の synthetic `SyscallInfo` の修正
+
+`plt_analyzer.go` の `EvaluatePLTCallArgs` は `common.SyscallInfo{Location: inst.Offset}` という synthetic エントリを作成して `evalSingleMprotect` に渡している。`Occurrences[0]` に `Location` を格納する形式へ変更する。
+
+### FR-7: スキーマバージョンの更新
 
 `internal/fileanalysis/schema.go` の `CurrentSchemaVersion` を 16 から 17 に更新する。
 
@@ -258,7 +326,9 @@ const CurrentSchemaVersion = 17
 
 ### NFR-3: アナライザー内部への影響の最小化
 
-elfanalyzer・machoanalyzer の内部実装は、グループ化された `SyscallInfo` ではなく従来の出現ごと `SyscallInfo`（`Occurrences` が空）を生成しても構わない。グループ化の責務は `SaveSyscallAnalysis` に集約し、アナライザーの大規模改修を避ける。
+elfanalyzer・machoanalyzer の内部実装は、グループ化された `SyscallInfo`（複数 `Occurrences`）ではなく、出現ごとに 1 `SyscallInfo`（`Occurrences` に 1 要素のみ）を生成しても構わない。グループ化の責務は各保存関数（`mergeSyscallInfos`・`buildMachoSyscallData`・`SaveSyscallAnalysis`）に集約し、アナライザーの大規模改修を避ける。
+
+ただし、FR-2 適用後は `SyscallInfo` に `Location`・`DeterminationMethod`・`Source` の top-level フィールドが存在しないため、アナライザーは必ず `Occurrences[0]` にこれらの出現情報を格納しなければならない。「`Occurrences` を空のまま中間データを渡す」ことは許容されない（出現情報が消失するうえ、コンパイルエラーを回避できない）。
 
 ## 5. 受け入れ基準
 
@@ -298,6 +368,8 @@ elfanalyzer・machoanalyzer の内部実装は、グループ化された `Sysca
 - `internal/fileanalysis/syscall_store_test.go`：グループ化ロジックのテスト（同一番号の複数エントリが 1 グループに集約されること）
 - `internal/filevalidator/validator_macho_test.go`：`buildMachoSyscallData` の `Occurrences` 参照前提へ更新
 - `internal/runner/security/network_analyzer_test.go`：`syscallAnalysisHasSVCSignal` のテストが `Occurrences` を持つ構造前提へ更新
+- `internal/runner/security/elfanalyzer/` 配下のテスト：`SyscallInfo` 生成箇所が `Occurrences[0]` を持つ形式へ更新
+- `internal/runner/security/machoanalyzer/` 配下のテスト：`SyscallInfo` 生成箇所が `Occurrences[0]` を持つ形式へ更新
 
 ## 6. 先行タスクとの関係
 
