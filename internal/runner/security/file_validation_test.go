@@ -1325,6 +1325,20 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("directory with sticky bit but not world-writable (mode 1775)", func(t *testing.T) {
+		// A sticky directory that is group-writable but NOT world-writable (e.g. 1775)
+		// must still go through validateGroupWritePermissions — the sticky-bit bypass
+		// applies only to the sticky+world-writable combination.
+		// Here the directory is root-owned with trusted GID 0, so it should pass.
+		err := mockFS.AddDirWithOwner("/test-sticky-group-dir", 0o775|os.ModeSticky, 0, 0)
+		require.NoError(t, err)
+
+		err = validator.ValidateDirectoryPermissions("/test-sticky-group-dir")
+		// Should pass: root-owned with trusted group (GID 0); group-write validation runs
+		// and approves the trusted ownership.
+		assert.NoError(t, err)
+	})
+
 	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
 		// Test that directories with permissions that are a subset of allowed permissions pass
 		mockFS.AddDir("/test-subset-dir", 0o700)

@@ -196,11 +196,11 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	}
 
 	// Check group write permissions.
-	// Skip group-write validation when the sticky bit is set and the directory is world-writable:
+	// Skip group-write validation only when the directory is both sticky and world-writable:
 	// world-write is already more permissive than group-write, and we already accepted it above
-	// (because of the sticky bit). Requiring group membership verification on top would be
-	// redundant and would reject legitimate sticky directories like /tmp.
-	if perm&0o020 != 0 && !isStickyDirectory(info) {
+	// because the sticky bit makes that specific world-writable case safe (for example /tmp).
+	// Requiring group membership verification on top would be redundant in that case only.
+	if perm&0o020 != 0 && (perm&0o002 == 0 || !isStickyDirectory(info)) {
 		if err := v.validateGroupWritePermissions(dirPath, info, realUID); err != nil {
 			return err
 		}
