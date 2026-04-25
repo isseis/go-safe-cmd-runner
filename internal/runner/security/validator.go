@@ -53,6 +53,7 @@ import (
 type Validator struct {
 	config                      *Config
 	fs                          common.FileSystem
+	trustedGIDs                 map[uint32]struct{}
 	allowedCommandRegexps       []*regexp.Regexp
 	sensitiveEnvRegexps         []*regexp.Regexp
 	dangerousPrivilegedCommands map[string]struct{}
@@ -125,6 +126,11 @@ func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *gro
 		groupMembership:   groupMembership,
 		sensitivePatterns: sensitivePatterns,
 		redactionConfig:   redactionConfig,
+		trustedGIDs:       make(map[uint32]struct{}, len(config.TrustedGIDs)),
+	}
+
+	for _, gid := range config.TrustedGIDs {
+		v.trustedGIDs[gid] = struct{}{}
 	}
 
 	// Compile allowed command patterns
