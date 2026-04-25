@@ -142,7 +142,9 @@ func TestHasDynamicLoad_ELF(t *testing.T) {
 
 // NOTE: TestCheckDynamicSymbols_HasDynamicLoad has been temporarily disabled
 // because checkDynamicSymbols signature changed from (dynsyms []elf.Symbol) to (elfFile *elf.File).
-// This test will be replaced with integration tests covering AC-1 and AC-2.
+// This test will be replaced with integration tests verifying that libc symbols
+// are recorded (socket → "socket", read → "syscall_wrapper") and that symbols
+// from non-libc libraries are not recorded.
 // TODO: Add integration tests for libc symbol filtering in Phase 2.
 /*
 // TestCheckDynamicSymbols_HasDynamicLoad verifies that checkDynamicSymbols
