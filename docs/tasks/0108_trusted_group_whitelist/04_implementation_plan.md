@@ -89,10 +89,10 @@
 - `internal/runner/security/trusted_gids_other.go`
 
 作業内容:
-- [ ] darwin 向けに `defaultTrustedGIDs={0,80}` と `isTrustedGroup` を実装する
-- [ ] linux 向けに `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する
-- [ ] other 向けに `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する
-- [ ] `file_validation.go` から platform 依存判定を排除できるシグネチャを揃える
+- [x] darwin 向けに `defaultTrustedGIDs={0,80}` と `isTrustedGroup` を実装する
+- [x] linux 向けに `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する
+- [x] other 向けに `defaultTrustedGIDs={0}` と `isTrustedGroup(default + config)` を実装する
+- [x] `file_validation.go` から platform 依存判定を排除できるシグネチャを揃える
 
 成功条件:
 - macOS は config を無視し固定 whitelist のみで判定する
@@ -100,7 +100,7 @@
 
 推定工数: 0.5日
 
-実績: 未着手
+実績: 完了
 
 ### Phase 4: ディレクトリ権限判定の置換
 
@@ -108,10 +108,10 @@
 - `internal/runner/security/file_validation.go`
 
 作業内容:
-- [ ] `isRootOwned` 判定を `isTrustedOwnership` 判定に置換する
-- [ ] `uid==0 && isTrustedGroup(gid)` の場合に早期 return する
-- [ ] 信頼済み所有権で許可した場合の debug ログを追加する
-- [ ] 既存の `CanUserSafelyWriteFile` 経路とエラー型を維持する
+- [x] `isRootOwned` 判定を `isTrustedOwnership` 判定に置換する
+- [x] `uid==0 && isTrustedGroup(gid)` の場合に早期 return する
+- [x] 信頼済み所有権で許可した場合の debug ログを追加する
+- [x] 既存の `CanUserSafelyWriteFile` 経路とエラー型を維持する
 
 成功条件:
 - root:root は従来通り許可される
@@ -120,7 +120,7 @@
 
 推定工数: 0.5日
 
-実績: 未着手
+実績: 完了
 
 ### Phase 5: テスト実装と受け入れ基準検証
 

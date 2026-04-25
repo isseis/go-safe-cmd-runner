@@ -224,7 +224,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 // validateGroupWritePermissions validates group write permissions for a directory component
 func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileInfo, realUID int) error {
 	// Allow group write if:
-	// 1. Owned by root (traditional safe case)
+	// 1. Owned by root with a trusted group
 	// 2. realUID context is provided and the user is the only member of the group
 	// 3. testPermissiveMode is enabled
 	if v.config.testPermissiveMode {
@@ -238,9 +238,13 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 
 	perm := info.Mode().Perm()
 
-	// Traditional safe case: root-owned directory
-	isRootOwned := stat.Uid == UIDRoot && stat.Gid == GIDRoot
-	if isRootOwned {
+	// Safe case: root-owned directory with trusted group
+	isTrustedOwnership := stat.Uid == UIDRoot && v.isTrustedGroup(stat.Gid)
+	if isTrustedOwnership {
+		slog.Debug("Directory has trusted ownership, group write allowed",
+			slog.String("path", dirPath),
+			slog.Any("gid", stat.Gid),
+			slog.String("permissions", fmt.Sprintf("%04o", perm)))
 		return nil
 	}
 
