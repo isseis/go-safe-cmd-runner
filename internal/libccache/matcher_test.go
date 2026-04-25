@@ -67,7 +67,7 @@ func TestImportSymbolMatcher_SourceIsLibcSymbolImport(t *testing.T) {
 	wrappers := []WrapperEntry{{Name: "write", Number: 1}}
 	result := m.Match([]string{"write"}, wrappers)
 	require.Len(t, result, 1)
-	assert.Equal(t, SourceLibcSymbolImport, result[0].Source)
+	assert.Equal(t, SourceLibcSymbolImport, result[0].Occurrences[0].Source)
 }
 
 // TestImportSymbolMatcher_LocationIsZero verifies that Location is always 0.
@@ -76,7 +76,7 @@ func TestImportSymbolMatcher_LocationIsZero(t *testing.T) {
 	wrappers := []WrapperEntry{{Name: "write", Number: 1}}
 	result := m.Match([]string{"write"}, wrappers)
 	require.Len(t, result, 1)
-	assert.Equal(t, uint64(0), result[0].Location)
+	assert.Equal(t, uint64(0), result[0].Occurrences[0].Location)
 }
 
 // TestImportSymbolMatcher_DeterminationMethodIsImmediate verifies DeterminationMethod.
@@ -85,7 +85,7 @@ func TestImportSymbolMatcher_DeterminationMethodIsImmediate(t *testing.T) {
 	wrappers := []WrapperEntry{{Name: "write", Number: 1}}
 	result := m.Match([]string{"write"}, wrappers)
 	require.Len(t, result, 1)
-	assert.Equal(t, "immediate", result[0].DeterminationMethod)
+	assert.Equal(t, "immediate", result[0].Occurrences[0].DeterminationMethod)
 }
 
 // TestImportSymbolMatcher_NoDuplicateNumbers verifies that wrappers with the same Number

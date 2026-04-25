@@ -24,8 +24,8 @@ func TestImportSymbolMatcher_MatchWithMethod_DeterminationMethod(t *testing.T) {
 	wrappers := []WrapperEntry{{Name: "socket", Number: 41}}
 	result := m.MatchWithMethod([]string{"socket"}, wrappers, DeterminationMethodLibCacheMatch)
 	require.Len(t, result, 1)
-	assert.Equal(t, DeterminationMethodLibCacheMatch, result[0].DeterminationMethod)
-	assert.Equal(t, SourceLibsystemSymbolImport, result[0].Source)
+	assert.Equal(t, DeterminationMethodLibCacheMatch, result[0].Occurrences[0].DeterminationMethod)
+	assert.Equal(t, SourceLibsystemSymbolImport, result[0].Occurrences[0].Source)
 }
 
 // TestImportSymbolMatcher_MatchWithMethod_Dedup verifies that duplicate entries
@@ -98,8 +98,8 @@ func TestMachoLibSystemAdapter_FallbackNameMatch_KnownNames(t *testing.T) {
 			found = true
 			assert.Equal(t, 97, r.Number)
 			assert.True(t, r.IsNetwork)
-			assert.Equal(t, DeterminationMethodSymbolNameMatch, r.DeterminationMethod)
-			assert.Equal(t, SourceLibsystemSymbolImport, r.Source)
+			assert.Equal(t, DeterminationMethodSymbolNameMatch, r.Occurrences[0].DeterminationMethod)
+			assert.Equal(t, SourceLibsystemSymbolImport, r.Occurrences[0].Source)
 		}
 	}
 	assert.True(t, found, "socket should be in fallback results")
@@ -116,7 +116,7 @@ func TestMachoLibSystemAdapter_FallbackNameMatch_NocancelNames(t *testing.T) {
 	for _, syscall := range result {
 		names[syscall.Name] = syscall
 		assert.True(t, syscall.IsNetwork)
-		assert.Equal(t, DeterminationMethodSymbolNameMatch, syscall.DeterminationMethod)
+		assert.Equal(t, DeterminationMethodSymbolNameMatch, syscall.Occurrences[0].DeterminationMethod)
 	}
 
 	assert.Equal(t, 409, names["connect_nocancel"].Number)
@@ -163,7 +163,7 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnNilSource(t *testing.T)
 	names := make(map[string]bool)
 	for _, r := range result {
 		names[r.Name] = true
-		assert.Equal(t, DeterminationMethodSymbolNameMatch, r.DeterminationMethod)
+		assert.Equal(t, DeterminationMethodSymbolNameMatch, r.Occurrences[0].DeterminationMethod)
 	}
 	assert.True(t, names["socket"])
 	assert.True(t, names["connect"])
@@ -231,7 +231,7 @@ func TestMachoLibSystemAdapter_GetSyscallInfos_FallbackOnEmptyWrappers(t *testin
 	names := make(map[string]bool)
 	for _, r := range result {
 		names[r.Name] = true
-		assert.Equal(t, DeterminationMethodSymbolNameMatch, r.DeterminationMethod,
+		assert.Equal(t, DeterminationMethodSymbolNameMatch, r.Occurrences[0].DeterminationMethod,
 			"fallback path should use symbol-name matching")
 	}
 	assert.True(t, names["socket"], "socket should be matched via symbol-name fallback")
