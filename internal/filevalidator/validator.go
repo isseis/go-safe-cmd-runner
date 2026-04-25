@@ -925,7 +925,7 @@ func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath s
 }
 
 // analyzeLibSystem obtains imported symbols from the target Mach-O binary
-// and matches them against the libSystem cache (FR-3.3.2).
+// and matches them against the libSystem cache to identify syscall wrappers.
 // Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
 // Note: DynLibDeps may be empty on macOS 11+ because all system libraries
 // (including libSystem.B.dylib) live in the dyld shared cache and are not

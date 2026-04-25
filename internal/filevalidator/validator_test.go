@@ -1726,7 +1726,7 @@ func TestRecord_KnownNetworkLibDeps_SymbolAnalysisNil(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Mach-O install name tests for KnownNetworkLibDeps (AC-1 through AC-6)
+// Mach-O install name tests for KnownNetworkLibDeps
 // ---------------------------------------------------------------------------
 
 func TestRecord_KnownNetworkLibDeps_MachoInstallNameRuby(t *testing.T) {

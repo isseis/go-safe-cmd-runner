@@ -92,8 +92,8 @@ func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
 		"resolved network svc (IsNetwork=true) must be detected as network signal")
 }
 
-// TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility
-// (NFR-1): when DetectedSyscalls was filtered by the old FilterSyscallsForStorage logic
+// TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility:
+// when DetectedSyscalls was filtered by the old FilterSyscallsForStorage logic
 // (only network or Number==-1 entries present), the new judgment still produces the same result.
 func TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord(t *testing.T) {
 	// Simulate old filtered DetectedSyscalls: only network and unresolved entries kept.
