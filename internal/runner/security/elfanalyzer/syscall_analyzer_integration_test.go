@@ -136,8 +136,13 @@ func main() {
 	// Check that Go wrapper calls were detected (Pass 2)
 	hasGoWrapper := false
 	for _, info := range result.DetectedSyscalls {
-		if info.DeterminationMethod == DeterminationMethodGoWrapper {
-			hasGoWrapper = true
+		for _, occ := range info.Occurrences {
+			if occ.DeterminationMethod == DeterminationMethodGoWrapper {
+				hasGoWrapper = true
+				break
+			}
+		}
+		if hasGoWrapper {
 			break
 		}
 	}
@@ -397,8 +402,13 @@ func main() {
 		t.Logf("DetectedSyscalls count: %d", len(result.DetectedSyscalls))
 
 		for i, sc := range result.DetectedSyscalls {
+			method, location := "", uint64(0)
+			if len(sc.Occurrences) > 0 {
+				method = sc.Occurrences[0].DeterminationMethod
+				location = sc.Occurrences[0].Location
+			}
 			t.Logf("Syscall[%d]: #%-4d (%-20s) isNetwork=%-5v method=%s at 0x%x",
-				i, sc.Number, sc.Name, sc.IsNetwork, sc.DeterminationMethod, sc.Location)
+				i, sc.Number, sc.Name, sc.IsNetwork, method, location)
 		}
 
 		assert.True(t, hasNetworkSyscall(result.DetectedSyscalls),
@@ -408,7 +418,11 @@ func main() {
 		for _, sc := range result.DetectedSyscalls {
 			if sc.Name == "socket" && sc.Number == 198 {
 				found = true
-				t.Logf("socket(198) detected via method=%s", sc.DeterminationMethod)
+				method := ""
+				if len(sc.Occurrences) > 0 {
+					method = sc.Occurrences[0].DeterminationMethod
+				}
+				t.Logf("socket(198) detected via method=%s", method)
 				break
 			}
 		}
