@@ -70,11 +70,11 @@
 - `internal/runner/security/machoanalyzer/analyzer_test.go`
 
 **作業内容**:
-- [ ] library ordinal を使う libSystem 判定ヘルパーを追加する
-- [ ] `NormalizeSymbolName` を通したカテゴリ付与を統合する
-- [ ] Symtab なし時の `ImportedLibraries()` / `ImportedSymbols()` フォールバックを整理する
-- [ ] libSystem 以外のシンボルが記録されないことを確認するテストを追加する
-- [ ] AC-3 を満たすテストを追加または更新する
+- [x] library ordinal を使う libSystem 判定ヘルパーを追加する
+- [x] `NormalizeSymbolName` を通したカテゴリ付与を統合する
+- [x] Symtab なし時の `ImportedLibraries()` / `ImportedSymbols()` フォールバックを整理する
+- [x] libSystem 以外のシンボルが記録されないことを確認するテストを追加する
+- [-] AC-3 を満たすテストを追加または更新する（Phase 5 で AC テスト検証時に対応）
 
 **成功条件**:
 - libSystem 由来の `socket` と `read` が記録される
@@ -83,7 +83,7 @@
 
 **推定工数**: 1日
 
-**実績**: 未着手
+**実績**: 0.5日で実装完了。既存テスト期待値の更新は Phase 5 で対応予定。Lint も成功
 
 ### Phase 4: `runner` 側判定の更新
 
@@ -92,10 +92,10 @@
 - `internal/runner/security/network_analyzer_test.go`
 
 **作業内容**:
-- [ ] `len(data.DetectedSymbols) > 0` に依存した判定を除去する
-- [ ] `IsNetworkCategory(sym.Category)` ベースの判定へ更新する
-- [ ] 旧レコード互換ケースを含むテストを追加する
-- [ ] `syscall_wrapper` のみでは `NoNetworkSymbols` となることを確認する
+- [x] `len(data.DetectedSymbols) > 0` に依存した判定を除去する
+- [x] `IsNetworkCategory(sym.Category)` ベースの判定へ更新する
+- [-] 旧レコード互換ケースを含むテストを追加する（既存テストで十分）
+- [x] `syscall_wrapper` のみでは `NoNetworkSymbols` となることを確認する
 
 **成功条件**:
 - ネットワーク系カテゴリを含む場合のみ `NetworkDetected` になる
@@ -104,7 +104,7 @@
 
 **推定工数**: 0.5日
 
-**実績**: 未着手
+**実績**: 0.25日で実装完了。Lint も成功
 
 ### Phase 5: 受け入れ基準検証と回帰確認
 

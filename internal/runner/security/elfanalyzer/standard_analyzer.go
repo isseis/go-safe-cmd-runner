@@ -357,23 +357,6 @@ func isELFMagic(magic []byte) bool {
 	return bytes.Equal(magic[:elfMagicLen], elfMagic)
 }
 
-// handleStaticBinary handles static binary detection and syscall analysis lookup.
-// If syscallStore is configured, it attempts to lookup pre-computed syscall analysis.
-// Otherwise, it returns StaticBinary directly.
-// contentHash must be non-empty (see BinaryAnalyzer.AnalyzeNetworkSymbols contract).
-func (a *StandardELFAnalyzer) handleStaticBinary(path string, file safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
-	if a.syscallStore == nil {
-		return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
-	}
-
-	result := a.lookupSyscallAnalysis(path, file, contentHash)
-	if result.Result != binaryanalyzer.StaticBinary {
-		return result
-	}
-
-	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.StaticBinary}
-}
-
 // lookupSyscallAnalysis checks the syscall analysis store for analysis results.
 // contentHash must be non-empty (see BinaryAnalyzer.AnalyzeNetworkSymbols contract).
 func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.File, contentHash string) binaryanalyzer.AnalysisOutput {
