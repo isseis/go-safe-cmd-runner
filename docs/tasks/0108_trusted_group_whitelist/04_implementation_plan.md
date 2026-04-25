@@ -69,9 +69,9 @@
 - `internal/runner/runner.go`
 
 作業内容:
-- [ ] `security.Config` に `TrustedGIDs []uint32` を追加する
-- [ ] `runner.go` で `configSpec.Security.TrustedGIDs` を `securityConfig.TrustedGIDs` へ転写する
-- [ ] コメントで macOS では値が無視されることを明記する
+- [x] `security.Config` に `TrustedGIDs []uint32` を追加する
+- [x] `runner.go` で `configSpec.Security.TrustedGIDs` を `securityConfig.TrustedGIDs` へ転写する
+- [x] コメントで macOS では値が無視されることを明記する
 
 成功条件:
 - `NewRunner` 経路で `TrustedGIDs` が validator 構築時に伝播される
@@ -79,7 +79,7 @@
 
 推定工数: 0.5日
 
-実績: 未着手
+実績: 完了
 
 ### Phase 3: プラットフォーム別信頼済みグループ判定実装
 
