@@ -133,15 +133,15 @@
 - 必要に応じて `internal/runner/runner_security_test.go` または `internal/runner/runner_test.go`
 
 作業内容:
-- [ ] AC-1: macOS で uid=0,gid=80,perm=0775 が許可されるテストを追加
-- [ ] AC-3: 非信頼 GID の group-write が拒否されるテストを追加
-- [ ] AC-4: uid=0,gid=0 の許可継続をテストで明示
-- [ ] AC-5: Linux で `trusted_gids` 指定有無の差分をテスト追加
-- [ ] `trusted_gids` TOML 読込テストで設定経路を確認
-- [ ] `isTrustedGroup` のプラットフォーム別ユニットテストを追加する
-- [ ] macOS で `Config.TrustedGIDs` が無視されることをテストで固定化する
-- [ ] Linux/other で `default + config` の和集合判定をテストで固定化する
-- [ ] 既存 AC-2 (`others` 書き込み拒否) に影響がないことを回帰で確認
+- [x] AC-1: macOS で uid=0,gid=80,perm=0775 が許可されるテストを追加
+- [x] AC-3: 非信頼 GID の group-write が拒否されるテストを追加
+- [x] AC-4: uid=0,gid=0 の許可継続をテストで明示
+- [x] AC-5: Linux で `trusted_gids` 指定有無の差分をテスト追加
+- [x] `trusted_gids` TOML 読込テストで設定経路を確認
+- [x] `isTrustedGroup` のプラットフォーム別ユニットテストを追加する
+- [x] macOS で `Config.TrustedGIDs` が無視されることをテストで固定化する
+- [x] Linux/other で `default + config` の和集合判定をテストで固定化する
+- [x] 既存 AC-2 (`others` 書き込み拒否) に影響がないことを回帰で確認
 
 成功条件:
 - AC-1〜AC-6 を満たすテストが存在し、成功する
@@ -149,7 +149,7 @@
 
 推定工数: 1.0日
 
-実績: 未着手
+実績: 完了
 
 ### Phase 6: 回帰確認と文書整合チェック
 

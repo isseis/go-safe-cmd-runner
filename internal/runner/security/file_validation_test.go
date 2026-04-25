@@ -1754,3 +1754,52 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 		})
 	}
 }
+
+func TestValidator_validateGroupWritePermissions_TrustedOwnershipACs(t *testing.T) {
+	createValidatorWithDir := func(t *testing.T, uid uint32, gid uint32, perm os.FileMode) *Validator {
+		t.Helper()
+
+		mockFS := commontesting.NewMockFileSystem()
+		err := mockFS.AddDirWithOwner("/test", perm, uid, gid)
+		require.NoError(t, err)
+
+		validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS), WithGroupMembership(nil))
+		require.NoError(t, err)
+
+		return validator
+	}
+
+	t.Run("ac4_root_root_keeps_allowed", func(t *testing.T) {
+		validator := createValidatorWithDir(t, UIDRoot, GIDRoot, 0o775)
+
+		info, err := validator.fs.Lstat("/test")
+		require.NoError(t, err)
+
+		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		assert.NoError(t, err)
+	})
+
+	t.Run("ac3_untrusted_root_group_is_rejected", func(t *testing.T) {
+		validator := createValidatorWithDir(t, UIDRoot, 9999, 0o775)
+
+		info, err := validator.fs.Lstat("/test")
+		require.NoError(t, err)
+
+		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+	})
+
+	t.Run("ac1_macos_admin_gid_is_allowed", func(t *testing.T) {
+		if runtime.GOOS != gosDarwin {
+			t.Skip("macOS only")
+		}
+
+		validator := createValidatorWithDir(t, UIDRoot, 80, 0o775)
+
+		info, err := validator.fs.Lstat("/test")
+		require.NoError(t, err)
+
+		err = validator.validateGroupWritePermissions("/test", info, 1000)
+		assert.NoError(t, err)
+	})
+}
