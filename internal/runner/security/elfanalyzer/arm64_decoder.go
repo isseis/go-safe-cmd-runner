@@ -20,6 +20,10 @@ const (
 	arm64LDRSizeShift              = 30
 	arm64LDRImm12Mask       uint32 = 0x0fff
 	arm64LDRSizeMask        uint32 = 0x3
+	// arm64LDRSizeWord and arm64LDRSizeDWord are the expected values of bits[31:30]
+	// in the LDR unsigned-offset encoding for 32-bit (W) and 64-bit (X) registers.
+	arm64LDRSizeWord  uint32 = 2 // W registers: byte_size = 1 << 2 = 4
+	arm64LDRSizeDWord uint32 = 3 // X registers: byte_size = 1 << 3 = 8
 )
 
 // ARM64Decoder implements MachineCodeDecoder for arm64.
@@ -341,10 +345,14 @@ func arm64ImmValue(arg arm64asm.Arg) (int64, bool) {
 	return 0, false
 }
 
-func arm64UnsignedOffsetFromEnc(enc uint32) (uint64, bool) {
+func arm64UnsignedOffsetFromEnc(enc uint32, is64Bit bool) (uint64, bool) {
 	imm12 := (enc >> arm64LDRImm12Shift) & arm64LDRImm12Mask
 	size := (enc >> arm64LDRSizeShift) & arm64LDRSizeMask
-	if size > arm64LDRSizeMask {
+	expectedSize := arm64LDRSizeWord
+	if is64Bit {
+		expectedSize = arm64LDRSizeDWord
+	}
+	if size != expectedSize {
 		return 0, false
 	}
 	return uint64(imm12) << size, true
@@ -397,7 +405,7 @@ func (d *ARM64Decoder) decodeFirstArgGlobalLoad(inst DecodedInstruction) (arm64F
 	}
 
 	loadEnc := binary.LittleEndian.Uint32(inst.Raw)
-	offset, ok := arm64UnsignedOffsetFromEnc(loadEnc)
+	offset, ok := arm64UnsignedOffsetFromEnc(loadEnc, isX0)
 	if !ok {
 		return arm64FirstArgLoadInfo{}, false
 	}
@@ -433,8 +441,22 @@ func arm64ResolveADRPAddress(instOffset uint64, rel arm64asm.PCRel, offset uint6
 	if pageBase > math.MaxInt64 {
 		return 0, false
 	}
-	targetPage := int64(pageBase) + int64(rel)
+	pageBaseSigned := int64(pageBase)
+	relSigned := int64(rel)
+	// Check signed overflow: addition overflows when operands share the same sign
+	// but the result has the opposite sign.
+	if relSigned > 0 && pageBaseSigned > math.MaxInt64-relSigned {
+		return 0, false
+	}
+	if relSigned < 0 && pageBaseSigned < math.MinInt64-relSigned {
+		return 0, false
+	}
+	targetPage := pageBaseSigned + relSigned
 	if targetPage < 0 {
+		return 0, false
+	}
+	// Check unsigned overflow before adding the page offset.
+	if offset > math.MaxUint64-uint64(targetPage) {
 		return 0, false
 	}
 	return uint64(targetPage) + offset, true
