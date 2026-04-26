@@ -93,8 +93,8 @@ func TestScanSVCWithX16_ImmediateNetworkSyscall(t *testing.T) {
 	assert.Equal(t, 98, results[0].Number)
 	assert.Equal(t, "connect", results[0].Name)
 	assert.True(t, results[0].IsNetwork)
-	assert.Equal(t, determinationMethodImmediate, results[0].DeterminationMethod)
-	assert.Equal(t, "", results[0].Source)
+	assert.Equal(t, determinationMethodImmediate, results[0].Occurrences[0].DeterminationMethod)
+	assert.Equal(t, "", results[0].Occurrences[0].Source)
 }
 
 // TestScanSVCWithX16_ImmediateNonNetworkSyscall verifies MOVZ X16, #3 + svc
@@ -112,7 +112,7 @@ func TestScanSVCWithX16_ImmediateNonNetworkSyscall(t *testing.T) {
 	assert.Equal(t, 3, results[0].Number)
 	assert.Equal(t, "read", results[0].Name)
 	assert.False(t, results[0].IsNetwork)
-	assert.Equal(t, determinationMethodImmediate, results[0].DeterminationMethod)
+	assert.Equal(t, determinationMethodImmediate, results[0].Occurrences[0].DeterminationMethod)
 }
 
 // TestScanSVCWithX16_BSDPrefix32bit verifies a 32-bit value with BSD prefix:
@@ -149,7 +149,7 @@ func TestScanSVCWithX16_IndirectLoad(t *testing.T) {
 
 	require.Len(t, results, 1)
 	assert.Equal(t, -1, results[0].Number)
-	assert.Equal(t, determinationMethodUnknownIndirect, results[0].DeterminationMethod)
+	assert.Equal(t, determinationMethodUnknownIndirect, results[0].Occurrences[0].DeterminationMethod)
 }
 
 // TestScanSVCWithX16_ControlFlowBoundary verifies that a BL instruction between
@@ -250,8 +250,8 @@ func TestScanSVCWithX16_OutOfBoundsAddress(t *testing.T) {
 			results := scanSVCWithX16([]uint64{tc.svcAddr}, code, textBase, nil, table)
 			require.Len(t, results, 1)
 			assert.Equal(t, -1, results[0].Number)
-			assert.Equal(t, determinationMethodUnknownIndirect, results[0].DeterminationMethod)
-			assert.Equal(t, tc.svcAddr, results[0].Location)
+			assert.Equal(t, determinationMethodUnknownIndirect, results[0].Occurrences[0].DeterminationMethod)
+			assert.Equal(t, tc.svcAddr, results[0].Occurrences[0].Location)
 		})
 	}
 }

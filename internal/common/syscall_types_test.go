@@ -14,11 +14,12 @@ import (
 func TestSyscallInfo_JSONTags(t *testing.T) {
 	t.Run("with name", func(t *testing.T) {
 		info := common.SyscallInfo{
-			Number:              41,
-			Name:                "socket",
-			IsNetwork:           true,
-			Location:            0x401000,
-			DeterminationMethod: "immediate",
+			Number:    41,
+			Name:      "socket",
+			IsNetwork: true,
+			Occurrences: []common.SyscallOccurrence{
+				{Location: 0x401000, DeterminationMethod: "immediate"},
+			},
 		}
 		data, err := json.Marshal(info)
 		require.NoError(t, err)
@@ -29,16 +30,22 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		assert.Equal(t, float64(41), m["number"])
 		assert.Equal(t, "socket", m["name"])
 		assert.Equal(t, true, m["is_network"])
-		assert.Equal(t, float64(0x401000), m["location"])
-		assert.Equal(t, "immediate", m["determination_method"])
+
+		occs, ok := m["occurrences"].([]any)
+		require.True(t, ok)
+		require.Len(t, occs, 1)
+		occ := occs[0].(map[string]any)
+		assert.Equal(t, float64(0x401000), occ["location"])
+		assert.Equal(t, "immediate", occ["determination_method"])
 	})
 
 	t.Run("name omitted when empty", func(t *testing.T) {
 		info := common.SyscallInfo{
-			Number:              -1,
-			IsNetwork:           false,
-			Location:            0x401010,
-			DeterminationMethod: "unknown:scan_limit_exceeded",
+			Number:    -1,
+			IsNetwork: false,
+			Occurrences: []common.SyscallOccurrence{
+				{Location: 0x401010, DeterminationMethod: "unknown:scan_limit_exceeded"},
+			},
 		}
 		data, err := json.Marshal(info)
 		require.NoError(t, err)
@@ -52,9 +59,10 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 
 	t.Run("source field omitempty when empty", func(t *testing.T) {
 		info := common.SyscallInfo{
-			Number:              41,
-			Location:            0x401000,
-			DeterminationMethod: "immediate",
+			Number: 41,
+			Occurrences: []common.SyscallOccurrence{
+				{Location: 0x401000, DeterminationMethod: "immediate"},
+			},
 		}
 		data, err := json.Marshal(info)
 		require.NoError(t, err)
@@ -62,16 +70,20 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(data, &m))
 
-		_, hasSource := m["source"]
+		occs, ok := m["occurrences"].([]any)
+		require.True(t, ok)
+		require.Len(t, occs, 1)
+		occ := occs[0].(map[string]any)
+		_, hasSource := occ["source"]
 		assert.False(t, hasSource, "source field should be omitted when empty")
 	})
 
 	t.Run("source field present when set", func(t *testing.T) {
 		info := common.SyscallInfo{
-			Number:              83,
-			Location:            0,
-			DeterminationMethod: "immediate",
-			Source:              "libc_symbol_import",
+			Number: 83,
+			Occurrences: []common.SyscallOccurrence{
+				{Location: 0, DeterminationMethod: "immediate", Source: "libc_symbol_import"},
+			},
 		}
 		data, err := json.Marshal(info)
 		require.NoError(t, err)
@@ -79,7 +91,11 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(data, &m))
 
-		assert.Equal(t, "libc_symbol_import", m["source"])
+		occs, ok := m["occurrences"].([]any)
+		require.True(t, ok)
+		require.Len(t, occs, 1)
+		occ := occs[0].(map[string]any)
+		assert.Equal(t, "libc_symbol_import", occ["source"])
 	})
 }
 
@@ -91,11 +107,12 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 			Architecture: "x86_64",
 			DetectedSyscalls: []common.SyscallInfo{
 				{
-					Number:              41,
-					Name:                "socket",
-					IsNetwork:           true,
-					Location:            0x401000,
-					DeterminationMethod: "immediate",
+					Number:    41,
+					Name:      "socket",
+					IsNetwork: true,
+					Occurrences: []common.SyscallOccurrence{
+						{Location: 0x401000, DeterminationMethod: "immediate"},
+					},
 				},
 			},
 			AnalysisWarnings: []string{"unknown:indirect_setting"},

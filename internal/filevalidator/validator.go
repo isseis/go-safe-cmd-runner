@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -767,11 +766,15 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 	syscalls := make([]common.SyscallInfo, len(addrs))
 	for i, addr := range addrs {
 		syscalls[i] = common.SyscallInfo{
-			Number:              -1,
-			IsNetwork:           false,
-			Location:            addr,
-			DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
-			Source:              common.DeterminationMethodDirectSVC0x80,
+			Number:    -1,
+			IsNetwork: false,
+			Occurrences: []common.SyscallOccurrence{
+				{
+					Location:            addr,
+					DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+					Source:              common.DeterminationMethodDirectSVC0x80,
+				},
+			},
 		}
 	}
 	return syscalls
@@ -780,7 +783,7 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 // buildMachoSyscallData merges svc and libSystem entries and constructs
 // SyscallAnalysisData.
 // AnalysisWarnings is populated only when unresolved svc #0x80 entries exist
-// (i.e., entries with DeterminationMethod="direct_svc_0x80" AND Number == -1).
+// (i.e., entries with an Occurrence where DeterminationMethod="direct_svc_0x80" AND Number == -1).
 // When all svc entries are resolved (Number != -1), no warning is emitted.
 // DetectedSyscalls contains all entries without filtering.
 func buildMachoSyscallData(
@@ -792,9 +795,17 @@ func buildMachoSyscallData(
 
 	var warnings []string
 	for _, s := range merged {
-		if s.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 && s.Number == -1 {
-			warnings = []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"}
-			break
+		if s.Number == -1 {
+			// Check if any Occurrence has DeterminationMethod="direct_svc_0x80"
+			for _, occ := range s.Occurrences {
+				if occ.DeterminationMethod == common.DeterminationMethodDirectSVC0x80 {
+					warnings = []string{"svc #0x80 detected: syscall number unresolved, direct kernel call bypassing libSystem.dylib"}
+					break
+				}
+			}
+			if len(warnings) > 0 {
+				break
+			}
 		}
 	}
 
@@ -808,9 +819,11 @@ func buildMachoSyscallData(
 }
 
 // mergeMachoSyscallInfos combines svc entries and libSystem entries into a
-// deterministically sorted slice. The sort key is (Number, Location, Source)
-// so that entries with the same Number (e.g. multiple svc #0x80 with Number=-1)
-// produce stable JSON output across runs.
+// deterministically sorted slice grouped by syscall number.
+// Entries with the same Number are merged into a single SyscallInfo with
+// multiple Occurrences, sorted by Location. When merging, a non-empty Name is
+// preferred over an empty one, and IsNetwork is true if any entry has it set.
+// Groups are sorted by Number (ascending), with Number=-1 at the end.
 func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
 	if len(svcEntries) == 0 && len(libsysEntries) == 0 {
 		return nil
@@ -818,16 +831,7 @@ func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []co
 	merged := make([]common.SyscallInfo, 0, len(svcEntries)+len(libsysEntries))
 	merged = append(merged, svcEntries...)
 	merged = append(merged, libsysEntries...)
-	sort.SliceStable(merged, func(i, j int) bool {
-		if merged[i].Number != merged[j].Number {
-			return merged[i].Number < merged[j].Number
-		}
-		if merged[i].Location != merged[j].Location {
-			return merged[i].Location < merged[j].Location
-		}
-		return merged[i].Source < merged[j].Source
-	})
-	return merged
+	return common.GroupAndSortSyscalls(merged)
 }
 
 // analyzeMachoSyscalls runs the Mach-O Pass 1 / Pass 2 syscall scan and
@@ -871,7 +875,7 @@ func (v *Validator) analyzeMachoSyscalls(record *fileanalysis.Record, filePath s
 }
 
 // analyzeLibSystem obtains imported symbols from the target Mach-O binary
-// and matches them against the libSystem cache (FR-3.3.2).
+// and matches them against the libSystem cache to identify syscall wrappers.
 // Returns nil, nil when v.libSystemCache is nil or the file is not Mach-O.
 // Note: DynLibDeps may be empty on macOS 11+ because all system libraries
 // (including libSystem.B.dylib) live in the dyld shared cache and are not
@@ -1200,22 +1204,13 @@ func findLibcEntry(deps []fileanalysis.LibEntry) *fileanalysis.LibEntry {
 }
 
 // mergeSyscallInfos merges libc-derived and direct syscall infos into a single slice.
-// When the same Number appears in both, the direct entry (Source == "") takes priority.
+// Entries with the same Number are grouped together and their Occurrences are merged.
+// A non-empty Name is preferred over an empty one; IsNetwork is true if any entry has it set.
 func mergeSyscallInfos(libc, direct []common.SyscallInfo) []common.SyscallInfo {
-	// Build a map keyed by Number, direct entries override libc entries.
-	merged := make(map[int]common.SyscallInfo)
-	for _, info := range libc {
-		merged[info.Number] = info
-	}
-	for _, info := range direct {
-		merged[info.Number] = info
-	}
-	result := make([]common.SyscallInfo, 0, len(merged))
-	for _, info := range merged {
-		result = append(result, info)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
-	return result
+	combined := make([]common.SyscallInfo, 0, len(libc)+len(direct))
+	combined = append(combined, libc...)
+	combined = append(combined, direct...)
+	return common.GroupAndSortSyscalls(combined)
 }
 
 // elfArchName converts an elf.Machine to the architecture name string used in records.

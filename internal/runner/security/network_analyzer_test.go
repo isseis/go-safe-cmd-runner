@@ -38,7 +38,7 @@ func TestSyscallAnalysisHasSVCSignal_WithDeterminationMethod(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: -1, DeterminationMethod: "direct_svc_0x80"},
+				{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -53,7 +53,7 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNonNetworkSVC(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 3, Name: "read", IsNetwork: false, DeterminationMethod: "direct_svc_0x80"},
+				{Number: 3, Name: "read", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -68,7 +68,7 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 97, Name: "socket", IsNetwork: true, DeterminationMethod: "direct_svc_0x80"},
+				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -84,7 +84,7 @@ func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 97, Name: "socket", IsNetwork: true, DeterminationMethod: "direct_svc_0x80"},
+				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -92,16 +92,16 @@ func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
 		"resolved network svc (IsNetwork=true) must be detected as network signal")
 }
 
-// TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility
-// (NFR-1): when DetectedSyscalls was filtered by the old FilterSyscallsForStorage logic
+// TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility:
+// when DetectedSyscalls was filtered by the old FilterSyscallsForStorage logic
 // (only network or Number==-1 entries present), the new judgment still produces the same result.
 func TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord(t *testing.T) {
 	// Simulate old filtered DetectedSyscalls: only network and unresolved entries kept.
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 97, Name: "socket", IsNetwork: true, DeterminationMethod: "lib_cache_match"},
-				{Number: -1, DeterminationMethod: "direct_svc_0x80"},
+				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "lib_cache_match"}}},
+				{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -124,7 +124,7 @@ func svcResult() *fileanalysis.SyscallAnalysisResult {
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			Architecture: "arm64",
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: -1, DeterminationMethod: "direct_svc_0x80"},
+				{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -395,11 +395,13 @@ func syscallAnalysisResultWithIsNetwork(isNetwork bool) *fileanalysis.SyscallAna
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
 				{
-					Number:              97,
-					Name:                "socket",
-					IsNetwork:           isNetwork,
-					DeterminationMethod: "lib_cache_match",
-					Source:              "libsystem_symbol_import",
+					Number:    97,
+					Name:      "socket",
+					IsNetwork: isNetwork,
+					Occurrences: []common.SyscallOccurrence{{
+						DeterminationMethod: "lib_cache_match",
+						Source:              "libsystem_symbol_import",
+					}},
 				},
 			},
 		},
@@ -489,8 +491,8 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndIsNetwork(t *testing.T) {
 	result := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: -1, DeterminationMethod: "direct_svc_0x80", IsNetwork: false},
-				{Number: 97, Name: "socket", IsNetwork: true, Source: "libsystem_symbol_import"},
+				{Number: -1, IsNetwork: false, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
+				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
 			},
 		},
 	}

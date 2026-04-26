@@ -1279,11 +1279,11 @@ func TestFindLibcEntry(t *testing.T) {
 
 func TestMergeSyscallInfos(t *testing.T) {
 	libc := []common.SyscallInfo{
-		{Number: 1, Source: "libc_symbol_import", Name: "write"},
-		{Number: 2, Source: "libc_symbol_import", Name: "read"},
+		{Number: 1, Name: "write", Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
+		{Number: 2, Name: "read", Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 	}
 	direct := []common.SyscallInfo{
-		{Number: 1, Source: "", Name: "write_direct"},
+		{Number: 1, Name: "write_direct", Occurrences: []common.SyscallOccurrence{{Source: ""}}},
 	}
 
 	merged := mergeSyscallInfos(libc, direct)
@@ -1292,10 +1292,13 @@ func TestMergeSyscallInfos(t *testing.T) {
 		byNum[m.Number] = m
 	}
 
-	// Number 1: direct takes priority
-	assert.Equal(t, "", byNum[1].Source, "direct entry must win")
-	// Number 2: libc entry kept
-	assert.Equal(t, "libc_symbol_import", byNum[2].Source)
+	// Number 1: both libc and direct entries are merged into one group with two Occurrences.
+	require.Len(t, byNum[1].Occurrences, 2)
+	assert.Equal(t, "libc_symbol_import", byNum[1].Occurrences[0].Source)
+	assert.Equal(t, "", byNum[1].Occurrences[1].Source)
+	// Number 2: libc entry kept with one Occurrence.
+	require.Len(t, byNum[2].Occurrences, 1)
+	assert.Equal(t, "libc_symbol_import", byNum[2].Occurrences[0].Source)
 
 	// Output must be sorted by Number ascending.
 	require.Len(t, merged, 2)
@@ -1306,9 +1309,9 @@ func TestMergeSyscallInfos(t *testing.T) {
 func TestMergeSyscallInfos_SortOrder(t *testing.T) {
 	// Feed entries in reverse order to confirm output is always sorted ascending.
 	libc := []common.SyscallInfo{
-		{Number: 99, Source: "libc_symbol_import"},
-		{Number: 3, Source: "libc_symbol_import"},
-		{Number: 42, Source: "libc_symbol_import"},
+		{Number: 99, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
+		{Number: 3, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
+		{Number: 42, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 	}
 	merged := mergeSyscallInfos(libc, nil)
 	require.Len(t, merged, 3)
@@ -1320,8 +1323,8 @@ func TestMergeSyscallInfos_SortOrder(t *testing.T) {
 func TestBuildSyscallAnalysisData(t *testing.T) {
 	t.Run("architecture_x86_64", func(t *testing.T) {
 		all := []common.SyscallInfo{
-			{Number: -1, Source: "", DeterminationMethod: "unknown:decode_failed"},
-			{Number: 42, Source: "libc_symbol_import"},
+			{Number: -1, Occurrences: []common.SyscallOccurrence{{Source: "", DeterminationMethod: "unknown:decode_failed"}}},
+			{Number: 42, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
 		data := buildSyscallData(all, nil, elf.EM_X86_64)
 		assert.Equal(t, "x86_64", data.Architecture)
@@ -1331,7 +1334,7 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 
 	t.Run("architecture_arm64", func(t *testing.T) {
 		all := []common.SyscallInfo{
-			{Number: -1, Source: "libc_symbol_import"},
+			{Number: -1, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
 		data := buildSyscallData(all, nil, elf.EM_AARCH64)
 		assert.Equal(t, "arm64", data.Architecture)
@@ -1339,8 +1342,8 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 
 	t.Run("non_network_resolved_syscall_retained", func(t *testing.T) {
 		all := []common.SyscallInfo{
-			{Number: 1, Name: "write", IsNetwork: false, Source: "libc_symbol_import"},
-			{Number: 3, Name: "read", IsNetwork: false, Source: "libc_symbol_import"},
+			{Number: 1, Name: "write", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
+			{Number: 3, Name: "read", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
 		data := buildSyscallData(all, nil, elf.EM_X86_64)
 		// Non-network, resolved syscalls must be retained (no filtering).
@@ -1381,7 +1384,7 @@ func newValidatorWithStubs(t *testing.T, libcCache LibcCacheInterface) (*Validat
 // without error even when a LibcCache is injected.
 func TestRecord_LibcCache_NonELFFile(t *testing.T) {
 	stub := &stubLibcCache{
-		syscalls: []common.SyscallInfo{{Number: 42, Source: "libc_symbol_import"}},
+		syscalls: []common.SyscallInfo{{Number: 42, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}}},
 	}
 	v, targetFile := newValidatorWithStubs(t, stub)
 
@@ -1723,7 +1726,7 @@ func TestRecord_KnownNetworkLibDeps_SymbolAnalysisNil(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Mach-O install name tests for KnownNetworkLibDeps (AC-1 through AC-6)
+// Mach-O install name tests for KnownNetworkLibDeps
 // ---------------------------------------------------------------------------
 
 func TestRecord_KnownNetworkLibDeps_MachoInstallNameRuby(t *testing.T) {

@@ -93,11 +93,15 @@ func scanSVCWithX16(
 		var info common.SyscallInfo
 		if ok {
 			info = common.SyscallInfo{
-				Number:              num,
-				Name:                table.GetSyscallName(num),
-				IsNetwork:           table.IsNetworkSyscall(num),
-				Location:            addr,
-				DeterminationMethod: determinationMethodImmediate,
+				Number:    num,
+				Name:      table.GetSyscallName(num),
+				IsNetwork: table.IsNetworkSyscall(num),
+				Occurrences: []common.SyscallOccurrence{
+					{
+						Location:            addr,
+						DeterminationMethod: determinationMethodImmediate,
+					},
+				},
 			}
 		} else {
 			info = unknownSyscallInfo(addr)
@@ -110,8 +114,12 @@ func scanSVCWithX16(
 
 func unknownSyscallInfo(addr uint64) common.SyscallInfo {
 	return common.SyscallInfo{
-		Number:              -1,
-		Location:            addr,
-		DeterminationMethod: determinationMethodUnknownIndirect,
+		Number: -1,
+		Occurrences: []common.SyscallOccurrence{
+			{
+				Location:            addr,
+				DeterminationMethod: determinationMethodUnknownIndirect,
+			},
+		},
 	}
 }

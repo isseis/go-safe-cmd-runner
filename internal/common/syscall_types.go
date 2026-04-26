@@ -37,21 +37,10 @@ type SyscallArgEvalResult struct {
 	Details string `json:"details,omitempty"`
 }
 
-// SyscallInfo represents information about a single detected syscall event.
-// An event can be either a direct syscall instruction or an indirect syscall
-// via a Go wrapper function call.
-type SyscallInfo struct {
-	// Number is the syscall number (e.g., 41 for socket on x86_64).
-	// -1 indicates the number could not be determined.
-	Number int `json:"number"`
-
-	// Name is the human-readable syscall name (e.g., "socket").
-	// Empty if the number is unknown or not in the table.
-	Name string `json:"name,omitempty"`
-
-	// IsNetwork indicates whether this syscall is network-related.
-	IsNetwork bool `json:"is_network"`
-
+// SyscallOccurrence represents a single occurrence of a syscall.
+// Multiple occurrences can be grouped under a single SyscallInfo entry
+// when they have the same syscall number.
+type SyscallOccurrence struct {
 	// Location is the virtual address of the syscall instruction
 	// (typically located within the .text section).
 	Location uint64 `json:"location"`
@@ -65,6 +54,28 @@ type SyscallInfo struct {
 	// Empty string (omitted in JSON) means detection via direct syscall instruction.
 	// "libc_symbol_import" means detection via libc import symbol matching.
 	Source string `json:"source,omitempty"`
+}
+
+// SyscallInfo represents information about a detected syscall,
+// potentially with multiple occurrences (all with the same syscall number).
+// An occurrence can be either a direct syscall instruction or an indirect syscall
+// via a Go wrapper function call.
+type SyscallInfo struct {
+	// Number is the syscall number (e.g., 41 for socket on x86_64).
+	// -1 indicates the number could not be determined.
+	Number int `json:"number"`
+
+	// Name is the human-readable syscall name (e.g., "socket").
+	// Empty if the number is unknown or not in the table.
+	Name string `json:"name,omitempty"`
+
+	// IsNetwork indicates whether this syscall is network-related.
+	IsNetwork bool `json:"is_network"`
+
+	// Occurrences contains all detected occurrences of this syscall.
+	// Multiple occurrences with the same number are grouped together.
+	// Occurrences should be sorted by Location in ascending order.
+	Occurrences []SyscallOccurrence `json:"occurrences,omitempty"`
 }
 
 // SyscallAnalysisResultCore contains the common fields shared between

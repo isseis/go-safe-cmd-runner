@@ -29,7 +29,13 @@ const (
 	// Store.Update treats older schemas (Actual < Expected) as overwritable;
 	// re-running `record` migrates old-schema records automatically (--force not required).
 	// Store.Update rejects newer schemas (Actual > Expected) to preserve forward compatibility.
-	CurrentSchemaVersion = 16
+	// Version 17 groups detected_syscalls by syscall number. Multiple occurrences with the
+	// same syscall number are merged into a single SyscallInfo entry with an Occurrences array.
+	// Location, DeterminationMethod, and Source fields are moved from top-level SyscallInfo
+	// to individual SyscallOccurrence entries. This change provides clearer structure and
+	// proper grouping of syscall instances that share the same number.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 17.
+	CurrentSchemaVersion = 17
 )
 
 // Record represents a unified file analysis record containing both

@@ -79,8 +79,8 @@ func TestScanGoWrapperCalls_ResolvedNetworkSyscall(t *testing.T) {
 	assert.Equal(t, 97, results[0].Number)
 	assert.Equal(t, "socket", results[0].Name)
 	assert.True(t, results[0].IsNetwork)
-	assert.Equal(t, determinationMethodGoWrapper, results[0].DeterminationMethod)
-	assert.Equal(t, textBase+8, results[0].Location)
+	assert.Equal(t, determinationMethodGoWrapper, results[0].Occurrences[0].DeterminationMethod)
+	assert.Equal(t, textBase+8, results[0].Occurrences[0].Location)
 }
 
 // TestScanGoWrapperCalls_ResolvedW0 verifies that MOVZ W0 (32-bit) stored via
@@ -128,7 +128,7 @@ func TestScanGoWrapperCalls_UnresolvedX0(t *testing.T) {
 
 	require.Len(t, results, 1)
 	assert.Equal(t, -1, results[0].Number)
-	assert.Equal(t, determinationMethodUnknownIndirect, results[0].DeterminationMethod)
+	assert.Equal(t, determinationMethodUnknownIndirect, results[0].Occurrences[0].DeterminationMethod)
 }
 
 // TestScanGoWrapperCalls_UnknownTarget verifies that a BL to a non-wrapper
@@ -238,7 +238,7 @@ func TestScanGoWrapperCalls_StackABI_STPPattern(t *testing.T) {
 
 	require.Len(t, results, 1)
 	assert.Equal(t, 97, results[0].Number)
-	assert.Equal(t, determinationMethodGoWrapper, results[0].DeterminationMethod)
+	assert.Equal(t, determinationMethodGoWrapper, results[0].Occurrences[0].DeterminationMethod)
 }
 
 // TestScanGoWrapperCalls_StubTrampoline verifies that a BL targeting a single-
@@ -287,8 +287,8 @@ func TestScanGoWrapperCalls_StubTrampoline(t *testing.T) {
 
 	require.Len(t, results, 1)
 	assert.Equal(t, 97, results[0].Number)
-	assert.Equal(t, determinationMethodGoWrapper, results[0].DeterminationMethod)
-	assert.Equal(t, textBase+8, results[0].Location)
+	assert.Equal(t, determinationMethodGoWrapper, results[0].Occurrences[0].DeterminationMethod)
+	assert.Equal(t, textBase+8, results[0].Occurrences[0].Location)
 }
 
 // TestIsKnownWrapper_DirectAndStub verifies isKnownWrapper for both direct

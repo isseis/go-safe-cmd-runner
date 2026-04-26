@@ -63,7 +63,7 @@ func validateInfos(infos []common.SyscallInfo) (int, bool) {
 	}
 	first := infos[0].Number
 	for _, info := range infos {
-		if info.DeterminationMethod != elfanalyzer.DeterminationMethodImmediate || info.Number < 0 {
+		if len(info.Occurrences) == 0 || info.Occurrences[0].DeterminationMethod != elfanalyzer.DeterminationMethodImmediate || info.Number < 0 {
 			return 0, false
 		}
 		if info.Number != first {

@@ -274,13 +274,17 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 						Number:    41, // socket
 						Name:      "socket",
 						IsNetwork: true,
-						Location:  0x401000,
+						Occurrences: []common.SyscallOccurrence{
+							{Location: 0x401000},
+						},
 					},
 					{
 						Number:    42, // connect
 						Name:      "connect",
 						IsNetwork: true,
-						Location:  0x401010,
+						Occurrences: []common.SyscallOccurrence{
+							{Location: 0x401010},
+						},
 					},
 				},
 			},
@@ -310,7 +314,9 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 						Number:    1, // write
 						Name:      "write",
 						IsNetwork: false,
-						Location:  0x401000,
+						Occurrences: []common.SyscallOccurrence{
+							{Location: 0x401000},
+						},
 					},
 				},
 			},
@@ -335,9 +341,10 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
 					{
-						Number:              -1,
-						DeterminationMethod: "unknown:indirect_setting",
-						Location:            0x401000,
+						Number: -1,
+						Occurrences: []common.SyscallOccurrence{
+							{Location: 0x401000, DeterminationMethod: "unknown:indirect_setting"},
+						},
 					},
 				},
 				AnalysisWarnings: []string{
@@ -371,12 +378,15 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 						Number:    41, // socket
 						Name:      "socket",
 						IsNetwork: true,
-						Location:  0x401000,
+						Occurrences: []common.SyscallOccurrence{
+							{Location: 0x401000},
+						},
 					},
 					{
-						Number:              -1,
-						DeterminationMethod: "unknown:indirect_setting",
-						Location:            0x401010,
+						Number: -1,
+						Occurrences: []common.SyscallOccurrence{
+							{Location: 0x401010, DeterminationMethod: "unknown:indirect_setting"},
+						},
 					},
 				},
 				AnalysisWarnings: []string{
@@ -467,7 +477,7 @@ func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
-					{Number: 41, Name: "socket", IsNetwork: true, Location: 0x401000},
+					{Number: 41, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{Location: 0x401000}}},
 				},
 			},
 		},
@@ -543,7 +553,7 @@ func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
-					{Number: -1, DeterminationMethod: "unknown:indirect_setting", Location: 0x401000},
+					{Number: -1, Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "unknown:indirect_setting"}}},
 				},
 				AnalysisWarnings: []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},
 			},
