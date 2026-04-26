@@ -22,11 +22,11 @@ func (m *MockMachineCodeDecoder) IsSyscallInstruction(_ DecodedInstruction) bool
 	return false
 }
 
-func (m *MockMachineCodeDecoder) ModifiesSyscallNumberRegister(_ DecodedInstruction) bool {
+func (m *MockMachineCodeDecoder) ModifiesSyscallReg(_ DecodedInstruction) bool {
 	return false
 }
 
-func (m *MockMachineCodeDecoder) IsImmediateToSyscallNumberRegister(_ DecodedInstruction) (bool, int64) {
+func (m *MockMachineCodeDecoder) IsSyscallNumImm(_ DecodedInstruction) (bool, int64) {
 	return false, 0
 }
 
@@ -46,23 +46,23 @@ func (m *MockMachineCodeDecoder) GetCallTarget(_ DecodedInstruction, _ uint64) (
 	return 0, false
 }
 
-func (m *MockMachineCodeDecoder) IsImmediateToFirstArgRegister(_ DecodedInstruction) (int64, bool) {
+func (m *MockMachineCodeDecoder) IsFirstArgImm(_ DecodedInstruction) (int64, bool) {
 	return 0, false
 }
 
-func (m *MockMachineCodeDecoder) ModifiesFirstArgRegister(_ DecodedInstruction) bool {
+func (m *MockMachineCodeDecoder) ModifiesFirstArg(_ DecodedInstruction) bool {
 	return false
 }
 
-func (m *MockMachineCodeDecoder) TryResolveFirstArgFromGlobalLoad(_ []DecodedInstruction, _ int) (int64, bool) {
+func (m *MockMachineCodeDecoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (int64, bool) {
 	return 0, false
 }
 
-func (m *MockMachineCodeDecoder) ModifiesThirdArgRegister(_ DecodedInstruction) bool {
+func (m *MockMachineCodeDecoder) ModifiesThirdArg(_ DecodedInstruction) bool {
 	return false
 }
 
-func (m *MockMachineCodeDecoder) IsImmediateToThirdArgRegister(_ DecodedInstruction) (bool, int64) {
+func (m *MockMachineCodeDecoder) IsThirdArgImm(_ DecodedInstruction) (bool, int64) {
 	return false, 0
 }
 
@@ -423,7 +423,7 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow(t *testing.T) {
 
 	// Decode window [0, 6) - should decode "mov" and "nop" but not "syscall"
 	cfg := analyzer.archConfigs[elf.EM_X86_64]
-	instructions, decodeFailures := analyzer.decodeInstructionsInWindow(code, 0, 0, 6, cfg.decoder)
+	instructions, decodeFailures := analyzer.decodeWindow(code, 0, 0, 6, cfg.decoder)
 	require.Len(t, instructions, 2) // mov (5 bytes) + nop (1 byte)
 	assert.Equal(t, 0, decodeFailures)
 
@@ -527,7 +527,7 @@ func TestSyscallAnalyzer_WindowExhausted(t *testing.T) {
 }
 
 func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing.T) {
-	// Test that decodeInstructionsInWindow panics when decoder returns
+	// Test that decodeWindow panics when decoder returns
 	// non-positive instruction lengths, indicating a programming bug.
 	code := []byte{0x90, 0x90, 0x90} // 3 nop instructions
 
@@ -546,12 +546,12 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow_NonPositiveLength(t *testing
 
 	// This should panic because returning Len=0 without error is a programming bug.
 	assert.Panics(t, func() {
-		analyzer.decodeInstructionsInWindow(code, 0, 0, 3, analyzer.archConfigs[elf.EM_X86_64].decoder)
+		analyzer.decodeWindow(code, 0, 0, 3, analyzer.archConfigs[elf.EM_X86_64].decoder)
 	}, "expected panic when decoder returns non-positive instruction length")
 }
 
 func TestSyscallAnalyzer_DecodeInstructionsInWindow_NegativeLength(t *testing.T) {
-	// Test that decodeInstructionsInWindow panics when decoder returns negative lengths.
+	// Test that decodeWindow panics when decoder returns negative lengths.
 	code := []byte{0x90, 0x90, 0x90} // 3 nop instructions
 
 	// Create a mock decoder that returns negative lengths
@@ -569,7 +569,7 @@ func TestSyscallAnalyzer_DecodeInstructionsInWindow_NegativeLength(t *testing.T)
 
 	// This should panic because returning Len=-1 without error is a programming bug.
 	assert.Panics(t, func() {
-		analyzer.decodeInstructionsInWindow(code, 0, 0, 3, analyzer.archConfigs[elf.EM_X86_64].decoder)
+		analyzer.decodeWindow(code, 0, 0, 3, analyzer.archConfigs[elf.EM_X86_64].decoder)
 	}, "expected panic when decoder returns negative instruction length")
 }
 

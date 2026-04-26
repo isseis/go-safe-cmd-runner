@@ -139,9 +139,9 @@ func arm64OrrZeroRegImm(a arm64asm.Inst, regs ...arm64asm.Reg) (bool, int64) {
 	return ok, val
 }
 
-// ModifiesSyscallNumberRegister returns true if the instruction writes to
+// ModifiesSyscallReg returns true if the instruction writes to
 // the arm64 syscall number register (W8 or X8).
-func (d *ARM64Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool {
+func (d *ARM64Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false
@@ -155,12 +155,12 @@ func (d *ARM64Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bo
 	return arm64MatchesReg(a.Args[0], arm64asm.W8) || arm64MatchesReg(a.Args[0], arm64asm.X8)
 }
 
-// IsImmediateToSyscallNumberRegister returns (true, value) if inst sets
+// IsSyscallNumImm returns (true, value) if inst sets
 // W8 or X8 to a known immediate value.
 // Handles two encodings:
 //   - MOV W8/X8, #imm  (arm64asm normalises MOVZ to MOV)
 //   - ORR W8/X8, WZR/XZR, #imm  (bitmask-immediate; functionally identical to MOV)
-func (d *ARM64Decoder) IsImmediateToSyscallNumberRegister(inst DecodedInstruction) (bool, int64) {
+func (d *ARM64Decoder) IsSyscallNumImm(inst DecodedInstruction) (bool, int64) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false, 0
@@ -227,13 +227,13 @@ func (d *ARM64Decoder) GetCallTarget(inst DecodedInstruction, instAddr uint64) (
 	return uint64(target), true //nolint:gosec // G115: target non-negative validated above
 }
 
-// IsImmediateToFirstArgRegister returns (value, true) if inst sets the arm64
+// IsFirstArgImm returns (value, true) if inst sets the arm64
 // first argument register (X0 or W0) to an immediate.
 // arm64 Go ABI uses X0 for the first integer argument.
 // Handles two encodings:
 //   - MOV X0/W0, #imm  (arm64asm normalises MOVZ to MOV)
 //   - ORR X0/W0, XZR/WZR, #imm  (bitmask-immediate; functionally identical to MOV)
-func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool) {
+func (d *ARM64Decoder) IsFirstArgImm(inst DecodedInstruction) (int64, bool) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return 0, false
@@ -252,9 +252,9 @@ func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (i
 	return val, ok2
 }
 
-// ModifiesFirstArgRegister returns true if the instruction writes to
+// ModifiesFirstArg returns true if the instruction writes to
 // the arm64 first syscall argument register (W0 or X0).
-func (d *ARM64Decoder) ModifiesFirstArgRegister(inst DecodedInstruction) bool {
+func (d *ARM64Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false
@@ -268,11 +268,11 @@ func (d *ARM64Decoder) ModifiesFirstArgRegister(inst DecodedInstruction) bool {
 	return arm64MatchesReg(a.Args[0], arm64asm.W0) || arm64MatchesReg(a.Args[0], arm64asm.X0)
 }
 
-// TryResolveFirstArgFromGlobalLoad resolves X0/W0 value for the pattern:
+// ResolveFirstArgGlobal resolves X0/W0 value for the pattern:
 //
 //	ADRP Xn, <page>
 //	LDR  X0/W0, [Xn, #offset]
-func (d *ARM64Decoder) TryResolveFirstArgFromGlobalLoad(recentInstructions []DecodedInstruction, idx int) (int64, bool) {
+func (d *ARM64Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (int64, bool) {
 	if idx < 0 || idx >= len(recentInstructions) {
 		return 0, false
 	}
@@ -293,9 +293,9 @@ func (d *ARM64Decoder) TryResolveFirstArgFromGlobalLoad(recentInstructions []Dec
 	return d.readResolvedFirstArg(addr, loadInfo.is64Bit)
 }
 
-// ModifiesThirdArgRegister returns true if the instruction writes to
+// ModifiesThirdArg returns true if the instruction writes to
 // the arm64 third syscall argument register (W2 or X2).
-func (d *ARM64Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
+func (d *ARM64Decoder) ModifiesThirdArg(inst DecodedInstruction) bool {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false
@@ -309,12 +309,12 @@ func (d *ARM64Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 	return arm64MatchesReg(a.Args[0], arm64asm.W2) || arm64MatchesReg(a.Args[0], arm64asm.X2)
 }
 
-// IsImmediateToThirdArgRegister returns (true, value) if inst sets
+// IsThirdArgImm returns (true, value) if inst sets
 // W2 or X2 to a known immediate value.
 // Handles two encodings:
 //   - MOV W2/X2, #imm  (arm64asm normalises MOVZ to MOV)
 //   - ORR W2/X2, WZR/XZR, #imm  (bitmask-immediate; functionally identical to MOV)
-func (d *ARM64Decoder) IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64) {
+func (d *ARM64Decoder) IsThirdArgImm(inst DecodedInstruction) (bool, int64) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false, 0
@@ -381,36 +381,36 @@ func (d *ARM64Decoder) readUintAtVA(addr uint64, size int) (uint64, bool) {
 	return 0, false
 }
 
-type arm64FirstArgLoadInfo struct {
+type arm64LoadInfo struct {
 	base    arm64asm.RegSP
 	offset  uint64
 	is64Bit bool
 }
 
-func (d *ARM64Decoder) decodeFirstArgGlobalLoad(inst DecodedInstruction) (arm64FirstArgLoadInfo, bool) {
+func (d *ARM64Decoder) decodeFirstArgGlobalLoad(inst DecodedInstruction) (arm64LoadInfo, bool) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok || a.Op != arm64asm.LDR || a.Args[0] == nil || a.Args[1] == nil {
-		return arm64FirstArgLoadInfo{}, false
+		return arm64LoadInfo{}, false
 	}
 
 	isX0 := arm64MatchesReg(a.Args[0], arm64asm.X0)
 	isW0 := arm64MatchesReg(a.Args[0], arm64asm.W0)
 	if !isX0 && !isW0 {
-		return arm64FirstArgLoadInfo{}, false
+		return arm64LoadInfo{}, false
 	}
 
 	mem, ok := a.Args[1].(arm64asm.MemImmediate)
 	if !ok || mem.Mode != arm64asm.AddrOffset {
-		return arm64FirstArgLoadInfo{}, false
+		return arm64LoadInfo{}, false
 	}
 
 	loadEnc := binary.LittleEndian.Uint32(inst.Raw)
 	offset, ok := arm64UnsignedOffsetFromEnc(loadEnc, isX0)
 	if !ok {
-		return arm64FirstArgLoadInfo{}, false
+		return arm64LoadInfo{}, false
 	}
 
-	info := arm64FirstArgLoadInfo{base: mem.Base, offset: offset, is64Bit: isX0}
+	info := arm64LoadInfo{base: mem.Base, offset: offset, is64Bit: isX0}
 	return info, true
 }
 

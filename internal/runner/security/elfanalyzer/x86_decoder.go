@@ -91,8 +91,8 @@ func implicitlyWritesRAXEAX(x86inst x86asm.Inst) bool {
 	return false
 }
 
-// ModifiesSyscallNumberRegister checks if the instruction modifies eax or rax.
-func (d *X86Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool {
+// ModifiesSyscallReg checks if the instruction modifies eax or rax.
+func (d *X86Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
 		return false
@@ -126,11 +126,11 @@ func (d *X86Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool
 	return false
 }
 
-// IsImmediateToSyscallNumberRegister checks if the instruction sets eax/rax to a known immediate value.
+// IsSyscallNumImm checks if the instruction sets eax/rax to a known immediate value.
 // This covers two common compiler patterns:
 //   - MOV EAX/RAX, <imm>  — direct immediate load
 //   - XOR EAX, EAX        — idiom for zeroing EAX (equivalent to MOV EAX, 0)
-func (d *X86Decoder) IsImmediateToSyscallNumberRegister(inst DecodedInstruction) (bool, int64) {
+func (d *X86Decoder) IsSyscallNumImm(inst DecodedInstruction) (bool, int64) {
 	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
 		return reg == x86asm.EAX || reg == x86asm.RAX
 	})
@@ -249,27 +249,27 @@ func (d *X86Decoder) GetCallTarget(inst DecodedInstruction, instAddr uint64) (ui
 	return uint64(displacement), true
 }
 
-// IsImmediateToFirstArgRegister returns (value, true) if the instruction
+// IsFirstArgImm returns (value, true) if the instruction
 // sets the first argument register (RAX/EAX for x86_64 Go ABI) to an immediate.
 // Returns (0, false) otherwise.
-// Note: same as IsImmediateToSyscallNumberRegister for x86_64 (RAX is both syscall
+// Note: same as IsSyscallNumImm for x86_64 (RAX is both syscall
 // number register and first argument register in Go's register-based ABI).
-func (d *X86Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool) {
+func (d *X86Decoder) IsFirstArgImm(inst DecodedInstruction) (int64, bool) {
 	ok, val := d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
 		return reg == x86asm.RAX || reg == x86asm.EAX
 	})
 	return val, ok
 }
 
-// ModifiesFirstArgRegister returns true if the instruction writes to the
+// ModifiesFirstArg returns true if the instruction writes to the
 // first argument register in x86_64 Go ABI (RAX/EAX).
-func (d *X86Decoder) ModifiesFirstArgRegister(inst DecodedInstruction) bool {
-	return d.ModifiesSyscallNumberRegister(inst)
+func (d *X86Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
+	return d.ModifiesSyscallReg(inst)
 }
 
-// TryResolveFirstArgFromGlobalLoad returns unresolved on x86_64.
+// ResolveFirstArgGlobal returns unresolved on x86_64.
 // The current Go wrapper resolution path only uses immediate assignments.
-func (d *X86Decoder) TryResolveFirstArgFromGlobalLoad(_ []DecodedInstruction, _ int) (int64, bool) {
+func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (int64, bool) {
 	return 0, false
 }
 
@@ -301,8 +301,8 @@ func implicitlyWritesRDXEDX(x86inst x86asm.Inst) bool {
 	return false
 }
 
-// ModifiesThirdArgRegister checks if the instruction modifies edx or rdx.
-func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
+// ModifiesThirdArg checks if the instruction modifies edx or rdx.
+func (d *X86Decoder) ModifiesThirdArg(inst DecodedInstruction) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
 		return false
@@ -337,9 +337,9 @@ func (d *X86Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 	return false
 }
 
-// IsImmediateToThirdArgRegister checks if the instruction sets edx/rdx to a known
+// IsThirdArgImm checks if the instruction sets edx/rdx to a known
 // immediate value. Covers MOV EDX/RDX, imm and XOR EDX, EDX (zeroing idiom).
-func (d *X86Decoder) IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64) {
+func (d *X86Decoder) IsThirdArgImm(inst DecodedInstruction) (bool, int64) {
 	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
 		return reg == x86asm.EDX || reg == x86asm.RDX
 	})
