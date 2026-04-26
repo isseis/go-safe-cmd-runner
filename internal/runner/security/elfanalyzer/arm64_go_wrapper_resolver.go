@@ -131,7 +131,8 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 }
 
 // decodeOneAt decodes the next valid instruction starting at pos, skipping
-// any undecodable bytes. Returns (instruction, advancedPos, true) on success,
+// undecodable 4-byte chunks to stay instruction-aligned (ARM64 is fixed-width).
+// Returns (instruction, advancedPos, true) on success,
 // or (zero, pos, false) when the end of code is reached without a valid instruction.
 func (r *ARM64GoWrapperResolver) decodeOneAt(code []byte, baseAddr uint64, pos int) (DecodedInstruction, int, bool) {
 	for pos+arm64InstructionLen <= len(code) {
