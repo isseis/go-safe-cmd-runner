@@ -95,21 +95,9 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 	win := make([]DecodedInstruction, 0, winSize)
 	pos := 0
 
-	// decodeOne advances pos to the next successfully decoded instruction.
-	decodeOne := func() (DecodedInstruction, bool) {
-		for pos+arm64InstructionLen <= len(code) {
-			inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos bounded by loop condition
-			pos += arm64InstructionLen
-			if err == nil {
-				return inst, true
-			}
-		}
-		return DecodedInstruction{}, false
-	}
-
 	// Fill the initial window.
 	for len(win) < winSize {
-		inst, ok := decodeOne()
+		inst, ok := r.decodeOneAt(code, baseAddr, &pos)
 		if !ok {
 			break
 		}
@@ -125,12 +113,23 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 		// Advance: drop the oldest instruction and append the next decoded one.
 		copy(win, win[1:])
 		win = win[:len(win)-1]
-		if inst, ok := decodeOne(); ok {
+		if inst, ok := r.decodeOneAt(code, baseAddr, &pos); ok {
 			win = append(win, inst)
 		}
 	}
 
 	r.sortAndDedupWrapperRanges()
+}
+
+func (r *ARM64GoWrapperResolver) decodeOneAt(code []byte, baseAddr uint64, pos *int) (DecodedInstruction, bool) {
+	for *pos+arm64InstructionLen <= len(code) {
+		inst, err := r.decoder.Decode(code[*pos:], baseAddr+uint64(*pos)) //nolint:gosec // G115: pos bounded by loop condition
+		*pos += arm64InstructionLen
+		if err == nil {
+			return inst, true
+		}
+	}
+	return DecodedInstruction{}, false
 }
 
 func (r *ARM64GoWrapperResolver) addTransparentWrapperFromCall(insts []DecodedInstruction, callIdx int) {
