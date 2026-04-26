@@ -82,17 +82,52 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 		return
 	}
 
-	insts := make([]DecodedInstruction, 0, len(code)/arm64InstructionLen)
-	for pos := 0; pos+arm64InstructionLen <= len(code); pos += arm64InstructionLen {
-		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos bounded by loop condition
-		if err != nil {
-			continue
+	// totalLookback is the maximum number of instructions that must precede the
+	// call candidate for the backward-scan chain to succeed:
+	//   reload(8) + helper(15) + save(15) + prologue(6) = 44.
+	// arm64FunctionTailSearchSpan is the lookahead needed to find the closing RET.
+	// The window holds at most winSize instructions at any one time, so memory is
+	// O(1) with respect to binary size instead of O(len(code)/4).
+	const totalLookback = arm64ReloadSearchWindow + arm64HelperSearchWindow +
+		arm64SaveSearchWindow + arm64PrologueSearchWindow // 44
+	const winSize = totalLookback + 1 + arm64FunctionTailSearchSpan // 69
+
+	win := make([]DecodedInstruction, 0, winSize)
+	pos := 0
+
+	// decodeOne advances pos to the next successfully decoded instruction.
+	decodeOne := func() (DecodedInstruction, bool) {
+		for pos+arm64InstructionLen <= len(code) {
+			inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos bounded by loop condition
+			pos += arm64InstructionLen
+			if err == nil {
+				return inst, true
+			}
 		}
-		insts = append(insts, inst)
+		return DecodedInstruction{}, false
 	}
 
-	for idx := range insts {
-		r.addTransparentWrapperFromCall(insts, idx)
+	// Fill the initial window.
+	for len(win) < winSize {
+		inst, ok := decodeOne()
+		if !ok {
+			break
+		}
+		win = append(win, inst)
+	}
+
+	// Slide: win[totalLookback] is the call candidate; it has totalLookback
+	// instructions of lookback history and up to arm64FunctionTailSearchSpan
+	// instructions of lookahead for RET detection.
+	for len(win) > totalLookback {
+		r.addTransparentWrapperFromCall(win, totalLookback)
+
+		// Advance: drop the oldest instruction and append the next decoded one.
+		copy(win, win[1:])
+		win = win[:len(win)-1]
+		if inst, ok := decodeOne(); ok {
+			win = append(win, inst)
+		}
 	}
 
 	r.sortAndDedupWrapperRanges()
