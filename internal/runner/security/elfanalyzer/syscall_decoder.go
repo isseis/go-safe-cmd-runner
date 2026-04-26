@@ -45,6 +45,7 @@ type MachineCodeDecoder interface {
 	// instruction sets the syscall number register to a known immediate.
 	// x86_64: MOV EAX/RAX, imm  or  XOR EAX, EAX (zeroing idiom)
 	// arm64:  MOV W8/X8, #imm  (arm64asm normalizes MOVZ to MOV)
+	//         ORR W8/X8, WZR/XZR, #imm  (bitmask-immediate encoding)
 	IsImmediateToSyscallNumberRegister(inst DecodedInstruction) (bool, int64)
 
 	// IsControlFlowInstruction returns true if the instruction changes the
@@ -74,6 +75,7 @@ type MachineCodeDecoder interface {
 	// sets the first integer argument register to a known immediate.
 	// x86_64: MOV EAX/RAX, imm  (RAX is the first argument register in Go ABI)
 	// arm64:  MOV W0/X0, #imm   (X0 is the first argument register in Go ABI)
+	//         ORR X0/W0, XZR/WZR, #imm  (bitmask-immediate encoding)
 	// Returns (0, false) otherwise.
 	IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)
 
@@ -87,5 +89,6 @@ type MachineCodeDecoder interface {
 	// sets the third argument register to a known immediate.
 	// x86_64: MOV EDX/RDX, imm  or  XOR EDX, EDX (zeroing idiom)
 	// arm64:  MOV W2/X2, #imm
+	//         ORR W2/X2, WZR/XZR, #imm  (bitmask-immediate encoding)
 	IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64)
 }

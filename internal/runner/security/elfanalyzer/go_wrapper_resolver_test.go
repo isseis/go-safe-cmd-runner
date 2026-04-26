@@ -99,15 +99,16 @@ func TestX86GoWrapperResolver_FindWrapperCalls_UnresolvedSyscall(t *testing.T) {
 	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result[0].DeterminationMethod)
 }
 
-func TestX86GoWrapperResolver_FindWrapperCalls_ScanLimitExceeded(t *testing.T) {
+func TestX86GoWrapperResolver_FindWrapperCalls_WindowExhausted(t *testing.T) {
 	resolver := newX86GoWrapperResolver()
 
 	wrapperAddr := uint64(0x402000)
 	resolver.wrapperAddrs[wrapperAddr] = "syscall.Syscall"
 
-	// 7 nops + call: more than maxBackwardScanSteps(6) instructions before the
-	// call, so the scan hits the step limit before reaching the window start.
-	// Expected: scan_limit_exceeded (not window_exhausted).
+	// 7 nops + call: the entire buffer (7 nops + call = 8 entries, less than
+	// maxRecentInstructionsToKeep) is scanned without finding a syscall-number
+	// setter. Because the buffer is not full, all available instructions were
+	// examined → window_exhausted (not scan_limit_exceeded).
 	//
 	// CALL is at offset 7 (addr 0x401007), nextPC = 0x40100C.
 	// rel32 = 0x402000 - 0x40100C = 0xFF4 → bytes: f4 0f 00 00.
@@ -116,6 +117,40 @@ func TestX86GoWrapperResolver_FindWrapperCalls_ScanLimitExceeded(t *testing.T) {
 		0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // nop x7
 		0xe8, 0xf4, 0x0f, 0x00, 0x00, // call rel32 → 0x402000
 	}
+
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
+
+	require.Len(t, result, 1)
+	assert.Equal(t, -1, result[0].SyscallNumber)
+	assert.False(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodUnknownWindowExhausted, result[0].DeterminationMethod)
+}
+
+func TestX86GoWrapperResolver_FindWrapperCalls_ScanLimitExceeded(t *testing.T) {
+	resolver := newX86GoWrapperResolver()
+
+	wrapperAddr := uint64(0x402000)
+	resolver.wrapperAddrs[wrapperAddr] = "syscall.Syscall"
+
+	// maxRecentInstructionsToKeep nops + call: fills the rolling buffer exactly,
+	// so the scan exhausts maxBackwardScanSteps steps before reaching the window
+	// start. Expected: scan_limit_exceeded (not window_exhausted).
+	//
+	// CALL is at offset maxRecentInstructionsToKeep (one byte per nop).
+	// rel32 = wrapperAddr - (baseAddr + maxRecentInstructionsToKeep + 5).
+	baseAddr := uint64(0x401000)
+	nopCount := maxRecentInstructionsToKeep
+	rel32 := int32(wrapperAddr) - int32(baseAddr+uint64(nopCount)+5) //nolint:gosec // G115: addresses are test constants that fit int32
+	code := make([]byte, nopCount+5)
+	for i := range nopCount {
+		code[i] = 0x90 // nop
+	}
+	code[nopCount] = 0xe8
+	code[nopCount+1] = byte(rel32)
+	code[nopCount+2] = byte(rel32 >> 8)
+	code[nopCount+3] = byte(rel32 >> 16)
+	code[nopCount+4] = byte(rel32 >> 24)
 
 	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
 	assert.Equal(t, 0, decodeFailures)
