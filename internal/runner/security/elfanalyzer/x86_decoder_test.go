@@ -597,3 +597,26 @@ func TestX86Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func TestX86Decoder_ModifiesFirstArgRegister(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	t.Run("mov imm to EAX returns true", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xb8, 0x2a, 0x00, 0x00, 0x00}, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesFirstArgRegister(inst))
+	})
+
+	t.Run("mov imm to EDX returns false", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xba, 0x07, 0x00, 0x00, 0x00}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesFirstArgRegister(inst))
+	})
+}
+
+func TestX86Decoder_TryResolveFirstArgFromGlobalLoad(t *testing.T) {
+	decoder := NewX86Decoder()
+	value, ok := decoder.TryResolveFirstArgFromGlobalLoad(nil, 0)
+	assert.False(t, ok)
+	assert.Equal(t, int64(0), value)
+}

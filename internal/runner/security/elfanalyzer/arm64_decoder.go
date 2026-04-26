@@ -1,6 +1,7 @@
 package elfanalyzer
 
 import (
+	"encoding/binary"
 	"errors"
 	"math"
 
@@ -10,11 +11,34 @@ import (
 // arm64InstructionLen is the fixed length of all arm64 instructions in bytes.
 const arm64InstructionLen = 4
 
+const (
+	arm64PageMask                  = 0xfff
+	arm64LoadSize32                = 4
+	arm64LoadSize64                = 8
+	arm64ADRPBacktrackLimit        = 4
+	arm64LDRImm12Shift             = 10
+	arm64LDRSizeShift              = 30
+	arm64LDRImm12Mask       uint32 = 0x0fff
+	arm64LDRSizeMask        uint32 = 0x3
+)
+
 // ARM64Decoder implements MachineCodeDecoder for arm64.
-type ARM64Decoder struct{}
+type ARM64Decoder struct {
+	dataSections []arm64DataSection
+}
+
+type arm64DataSection struct {
+	Addr uint64
+	Data []byte
+}
 
 // NewARM64Decoder creates a new ARM64Decoder.
 func NewARM64Decoder() *ARM64Decoder { return &ARM64Decoder{} }
+
+// SetDataSections sets readonly data regions used to resolve ADRP+LDR loads.
+func (d *ARM64Decoder) SetDataSections(sections []arm64DataSection) {
+	d.dataSections = sections
+}
 
 var errCodeTooShort = errors.New("code too short for arm64 instruction")
 
@@ -224,6 +248,47 @@ func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (i
 	return val, ok2
 }
 
+// ModifiesFirstArgRegister returns true if the instruction writes to
+// the arm64 first syscall argument register (W0 or X0).
+func (d *ARM64Decoder) ModifiesFirstArgRegister(inst DecodedInstruction) bool {
+	a, ok := inst.arch.(arm64asm.Inst)
+	if !ok {
+		return false
+	}
+	if arm64ReadOnlyFirstOperandOp(a.Op) {
+		return false
+	}
+	if a.Args[0] == nil {
+		return false
+	}
+	return arm64MatchesReg(a.Args[0], arm64asm.W0) || arm64MatchesReg(a.Args[0], arm64asm.X0)
+}
+
+// TryResolveFirstArgFromGlobalLoad resolves X0/W0 value for the pattern:
+//
+//	ADRP Xn, <page>
+//	LDR  X0/W0, [Xn, #offset]
+func (d *ARM64Decoder) TryResolveFirstArgFromGlobalLoad(recentInstructions []DecodedInstruction, idx int) (int64, bool) {
+	if idx < 0 || idx >= len(recentInstructions) {
+		return 0, false
+	}
+	if len(d.dataSections) == 0 {
+		return 0, false
+	}
+
+	loadInfo, ok := d.decodeFirstArgGlobalLoad(recentInstructions[idx])
+	if !ok {
+		return 0, false
+	}
+
+	addr, ok := d.resolveADRPBacktrackAddress(recentInstructions, idx, loadInfo.base, loadInfo.offset)
+	if !ok {
+		return 0, false
+	}
+
+	return d.readResolvedFirstArg(addr, loadInfo.is64Bit)
+}
+
 // ModifiesThirdArgRegister returns true if the instruction writes to
 // the arm64 third syscall argument register (W2 or X2).
 func (d *ARM64Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
@@ -274,4 +339,116 @@ func arm64ImmValue(arg arm64asm.Arg) (int64, bool) {
 		return int64(v.Imm), true //nolint:gosec // G115: caller validates range via maxValidSyscallNumber before using the value
 	}
 	return 0, false
+}
+
+func arm64UnsignedOffsetFromEnc(enc uint32) (uint64, bool) {
+	imm12 := (enc >> arm64LDRImm12Shift) & arm64LDRImm12Mask
+	size := (enc >> arm64LDRSizeShift) & arm64LDRSizeMask
+	if size > arm64LDRSizeMask {
+		return 0, false
+	}
+	return uint64(imm12) << size, true
+}
+
+func (d *ARM64Decoder) readUintAtVA(addr uint64, size int) (uint64, bool) {
+	for _, sec := range d.dataSections {
+		if addr < sec.Addr {
+			continue
+		}
+		off := addr - sec.Addr
+		if off > uint64(len(sec.Data)) {
+			continue
+		}
+		start := int(off) //nolint:gosec // G115: off bounded by section length above
+		if size > len(sec.Data)-start {
+			continue
+		}
+		if size == arm64LoadSize64 {
+			return binary.LittleEndian.Uint64(sec.Data[start : start+8]), true
+		}
+		if size == arm64LoadSize32 {
+			return uint64(binary.LittleEndian.Uint32(sec.Data[start : start+4])), true
+		}
+	}
+	return 0, false
+}
+
+type arm64FirstArgLoadInfo struct {
+	base    arm64asm.RegSP
+	offset  uint64
+	is64Bit bool
+}
+
+func (d *ARM64Decoder) decodeFirstArgGlobalLoad(inst DecodedInstruction) (arm64FirstArgLoadInfo, bool) {
+	a, ok := inst.arch.(arm64asm.Inst)
+	if !ok || a.Op != arm64asm.LDR || a.Args[0] == nil || a.Args[1] == nil {
+		return arm64FirstArgLoadInfo{}, false
+	}
+
+	isX0 := arm64MatchesReg(a.Args[0], arm64asm.X0)
+	isW0 := arm64MatchesReg(a.Args[0], arm64asm.W0)
+	if !isX0 && !isW0 {
+		return arm64FirstArgLoadInfo{}, false
+	}
+
+	mem, ok := a.Args[1].(arm64asm.MemImmediate)
+	if !ok || mem.Mode != arm64asm.AddrOffset {
+		return arm64FirstArgLoadInfo{}, false
+	}
+
+	loadEnc := binary.LittleEndian.Uint32(inst.Raw)
+	offset, ok := arm64UnsignedOffsetFromEnc(loadEnc)
+	if !ok {
+		return arm64FirstArgLoadInfo{}, false
+	}
+
+	info := arm64FirstArgLoadInfo{base: mem.Base, offset: offset, is64Bit: isX0}
+	return info, true
+}
+
+func (d *ARM64Decoder) resolveADRPBacktrackAddress(recentInstructions []DecodedInstruction, idx int, base arm64asm.RegSP, offset uint64) (uint64, bool) {
+	for j := idx - 1; j >= 0 && idx-j <= arm64ADRPBacktrackLimit; j-- {
+		prev := recentInstructions[j]
+		p, ok := prev.arch.(arm64asm.Inst)
+		if !ok || p.Op != arm64asm.ADRP || p.Args[0] == nil || p.Args[1] == nil {
+			continue
+		}
+		if !arm64MatchesReg(p.Args[0], arm64asm.Reg(base)) {
+			continue
+		}
+		rel, ok := p.Args[1].(arm64asm.PCRel)
+		if !ok {
+			continue
+		}
+		return arm64ResolveADRPAddress(prev.Offset, rel, offset)
+	}
+	return 0, false
+}
+
+func arm64ResolveADRPAddress(instOffset uint64, rel arm64asm.PCRel, offset uint64) (uint64, bool) {
+	pageBase := instOffset &^ uint64(arm64PageMask)
+	if pageBase > math.MaxInt64 {
+		return 0, false
+	}
+	targetPage := int64(pageBase) + int64(rel)
+	if targetPage < 0 {
+		return 0, false
+	}
+	return uint64(targetPage) + offset, true
+}
+
+func (d *ARM64Decoder) readResolvedFirstArg(addr uint64, is64Bit bool) (int64, bool) {
+	if is64Bit {
+		v, ok := d.readUintAtVA(addr, arm64LoadSize64)
+		if !ok || v > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	}
+
+	v, ok := d.readUintAtVA(addr, arm64LoadSize32)
+	if !ok || v > math.MaxUint32 {
+		return 0, false
+	}
+	return int64(v), true
 }

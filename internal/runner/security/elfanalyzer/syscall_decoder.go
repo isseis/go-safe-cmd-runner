@@ -79,6 +79,18 @@ type MachineCodeDecoder interface {
 	// Returns (0, false) otherwise.
 	IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)
 
+	// ModifiesFirstArgRegister returns true if the instruction writes to the
+	// first integer argument register.
+	// x86_64: eax/rax (same as syscall number register in Go ABI)
+	// arm64:  w0 or x0
+	ModifiesFirstArgRegister(inst DecodedInstruction) bool
+
+	// TryResolveFirstArgFromGlobalLoad tries to resolve the first argument value
+	// when it is loaded from memory, using nearby context in recentInstructions.
+	// idx is the index of the candidate load instruction in recentInstructions.
+	// Returns (value, true) if resolved, (0, false) otherwise.
+	TryResolveFirstArgFromGlobalLoad(recentInstructions []DecodedInstruction, idx int) (int64, bool)
+
 	// ModifiesThirdArgRegister returns true if the instruction writes to the
 	// third syscall argument register.
 	// x86_64: edx/rdx (any write including dl, dx, edx/rdx)

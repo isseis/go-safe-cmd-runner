@@ -2,6 +2,18 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"sort"
+
+	"golang.org/x/arch/arm64/arm64asm"
+)
+
+const (
+	arm64ReloadSearchWindow     = 8
+	arm64HelperSearchWindow     = 15
+	arm64SaveSearchWindow       = 15
+	arm64PrologueSearchWindow   = 6
+	arm64FunctionTailSearchSpan = 24
+	decimalBase                 = 10
 )
 
 // ARM64GoWrapperResolver implements GoWrapperResolver for arm64 binaries.
@@ -21,6 +33,7 @@ func NewARM64GoWrapperResolver(elfFile *elf.File) (*ARM64GoWrapperResolver, erro
 	if err := r.loadFromPclntab(elfFile); err != nil {
 		return r, err
 	}
+	r.decoder.SetDataSections(loadARM64DataSections(elfFile))
 	r.hasSymbols = len(r.symbols) > 0
 	return r, nil
 }
@@ -43,7 +56,218 @@ func newARM64GoWrapperResolver() *ARM64GoWrapperResolver {
 // On arm64, all instructions are exactly 4 bytes. On decode failure, the scanner
 // advances by 4 bytes (InstructionAlignment) to stay aligned.
 func (r *ARM64GoWrapperResolver) FindWrapperCalls(code []byte, baseAddr uint64) ([]WrapperCall, int) {
+	r.discoverTransparentWrappers(code, baseAddr)
 	return r.findWrapperCalls(code, baseAddr, r.decoder)
+}
+
+func loadARM64DataSections(elfFile *elf.File) []arm64DataSection {
+	sectionNames := []string{".noptrdata", ".rodata", ".data"}
+	sections := make([]arm64DataSection, 0, len(sectionNames))
+	for _, name := range sectionNames {
+		sec := elfFile.Section(name)
+		if sec == nil {
+			continue
+		}
+		data, err := sec.Data()
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		sections = append(sections, arm64DataSection{Addr: sec.Addr, Data: data})
+	}
+	return sections
+}
+
+func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAddr uint64) {
+	if len(r.wrapperAddrs) == 0 || len(code) == 0 {
+		return
+	}
+
+	insts := make([]DecodedInstruction, 0, len(code)/arm64InstructionLen)
+	for pos := 0; pos+arm64InstructionLen <= len(code); pos += arm64InstructionLen {
+		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos bounded by loop condition
+		if err != nil {
+			continue
+		}
+		insts = append(insts, inst)
+	}
+
+	for idx := range insts {
+		r.addTransparentWrapperFromCall(insts, idx)
+	}
+
+	r.sortAndDedupWrapperRanges()
+}
+
+func (r *ARM64GoWrapperResolver) addTransparentWrapperFromCall(insts []DecodedInstruction, callIdx int) {
+	target, ok := r.decoder.GetCallTarget(insts[callIdx], insts[callIdx].Offset)
+	if !ok {
+		return
+	}
+	wrapperName, ok := r.wrapperAddrs[target]
+	if !ok {
+		return
+	}
+
+	loadIdx, stackOff, ok := findArm64StackReloadBeforeCall(insts, callIdx)
+	if !ok {
+		return
+	}
+	helperIdx, ok := findArm64NonWrapperCallBefore(insts, loadIdx, r.wrapperAddrs, r.decoder)
+	if !ok {
+		return
+	}
+	saveIdx, ok := findArm64StackSaveBeforeHelper(insts, helperIdx, stackOff)
+	if !ok {
+		return
+	}
+	prologueIdx, ok := findArm64PrologueBefore(insts, saveIdx)
+	if !ok {
+		return
+	}
+
+	r.registerTransparentWrapper(insts, prologueIdx, callIdx, wrapperName)
+}
+
+func (r *ARM64GoWrapperResolver) registerTransparentWrapper(insts []DecodedInstruction, prologueIdx, callIdx int, wrapperName GoSyscallWrapper) {
+	start := insts[prologueIdx].Offset
+	if _, exists := r.wrapperAddrs[start]; !exists {
+		r.wrapperAddrs[start] = wrapperName
+	}
+
+	end := insts[callIdx].Offset + uint64(arm64InstructionLen)
+	for j := callIdx + 1; j < len(insts) && j <= callIdx+arm64FunctionTailSearchSpan; j++ {
+		a, ok := insts[j].arch.(arm64asm.Inst)
+		if ok && a.Op == arm64asm.RET {
+			end = insts[j].Offset + uint64(arm64InstructionLen)
+			break
+		}
+	}
+	if end > start {
+		r.wrapperRanges = append(r.wrapperRanges, wrapperRange{start: start, end: end})
+	}
+}
+
+func (r *ARM64GoWrapperResolver) sortAndDedupWrapperRanges() {
+	if len(r.wrapperRanges) <= 1 {
+		return
+	}
+	sort.Slice(r.wrapperRanges, func(i, j int) bool {
+		if r.wrapperRanges[i].start == r.wrapperRanges[j].start {
+			return r.wrapperRanges[i].end < r.wrapperRanges[j].end
+		}
+		return r.wrapperRanges[i].start < r.wrapperRanges[j].start
+	})
+	dedup := r.wrapperRanges[:0]
+	for i := range r.wrapperRanges {
+		if len(dedup) == 0 {
+			dedup = append(dedup, r.wrapperRanges[i])
+			continue
+		}
+		last := dedup[len(dedup)-1]
+		if last.start == r.wrapperRanges[i].start && last.end == r.wrapperRanges[i].end {
+			continue
+		}
+		dedup = append(dedup, r.wrapperRanges[i])
+	}
+	r.wrapperRanges = dedup
+}
+
+func findArm64StackReloadBeforeCall(insts []DecodedInstruction, callIdx int) (int, int64, bool) {
+	start := max(callIdx-arm64ReloadSearchWindow, 0)
+	for i := callIdx - 1; i >= start; i-- {
+		a, ok := insts[i].arch.(arm64asm.Inst)
+		if !ok || a.Op != arm64asm.LDR || a.Args[0] == nil || a.Args[1] == nil {
+			continue
+		}
+		if !arm64MatchesReg(a.Args[0], arm64asm.X0) {
+			continue
+		}
+		mem, ok := a.Args[1].(arm64asm.MemImmediate)
+		if !ok || mem.Mode != arm64asm.AddrOffset || mem.Base != arm64asm.RegSP(arm64asm.SP) {
+			continue
+		}
+		return i, int64(arm64MemImmediateOffsetFromString(mem)), true
+	}
+	return -1, 0, false
+}
+
+func findArm64NonWrapperCallBefore(insts []DecodedInstruction, idx int, wrapperAddrs map[uint64]GoSyscallWrapper, decoder *ARM64Decoder) (int, bool) {
+	start := max(idx-arm64HelperSearchWindow, 0)
+	for i := idx - 1; i >= start; i-- {
+		target, ok := decoder.GetCallTarget(insts[i], insts[i].Offset)
+		if !ok {
+			continue
+		}
+		if _, isWrapper := wrapperAddrs[target]; isWrapper {
+			continue
+		}
+		return i, true
+	}
+	return -1, false
+}
+
+func findArm64StackSaveBeforeHelper(insts []DecodedInstruction, helperIdx int, stackOff int64) (int, bool) {
+	start := max(helperIdx-arm64SaveSearchWindow, 0)
+	for i := helperIdx - 1; i >= start; i-- {
+		a, ok := insts[i].arch.(arm64asm.Inst)
+		if !ok || a.Op != arm64asm.STR || a.Args[0] == nil || a.Args[1] == nil {
+			continue
+		}
+		if !arm64MatchesReg(a.Args[0], arm64asm.X0) {
+			continue
+		}
+		mem, ok := a.Args[1].(arm64asm.MemImmediate)
+		if !ok || mem.Mode != arm64asm.AddrOffset || mem.Base != arm64asm.RegSP(arm64asm.SP) {
+			continue
+		}
+		if int64(arm64MemImmediateOffsetFromString(mem)) == stackOff {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func findArm64PrologueBefore(insts []DecodedInstruction, saveIdx int) (int, bool) {
+	start := max(saveIdx-arm64PrologueSearchWindow, 0)
+	for i := saveIdx - 1; i >= start; i-- {
+		a, ok := insts[i].arch.(arm64asm.Inst)
+		if !ok || a.Op != arm64asm.STR || a.Args[0] == nil || a.Args[1] == nil {
+			continue
+		}
+		if !arm64MatchesReg(a.Args[0], arm64asm.X30) {
+			continue
+		}
+		mem, ok := a.Args[1].(arm64asm.MemImmediate)
+		if !ok || mem.Mode != arm64asm.AddrPreIndex || mem.Base != arm64asm.RegSP(arm64asm.SP) {
+			continue
+		}
+		return i, true
+	}
+	return -1, false
+}
+
+func arm64MemImmediateOffsetFromString(m arm64asm.MemImmediate) int {
+	// arm64asm.MemImmediate has an unexported offset field.
+	// Parse from its stable string form: [SP,#104] / [SP,#-16]!
+	text := m.String()
+	for i := 0; i < len(text); i++ {
+		if text[i] != '#' {
+			continue
+		}
+		i++
+		sign := 1
+		if i < len(text) && text[i] == '-' {
+			sign = -1
+			i++
+		}
+		v := 0
+		for i < len(text) && text[i] >= '0' && text[i] <= '9' {
+			v = v*decimalBase + int(text[i]-'0')
+			i++
+		}
+		return sign * v
+	}
+	return 0
 }
 
 // GetWrapperAddresses returns all known wrapper function addresses.

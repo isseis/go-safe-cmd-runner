@@ -50,6 +50,14 @@ func (m *MockMachineCodeDecoder) IsImmediateToFirstArgRegister(_ DecodedInstruct
 	return 0, false
 }
 
+func (m *MockMachineCodeDecoder) ModifiesFirstArgRegister(_ DecodedInstruction) bool {
+	return false
+}
+
+func (m *MockMachineCodeDecoder) TryResolveFirstArgFromGlobalLoad(_ []DecodedInstruction, _ int) (int64, bool) {
+	return 0, false
+}
+
 func (m *MockMachineCodeDecoder) ModifiesThirdArgRegister(_ DecodedInstruction) bool {
 	return false
 }

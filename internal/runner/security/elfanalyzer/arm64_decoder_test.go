@@ -3,10 +3,12 @@
 package elfanalyzer
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/arch/arm64/arm64asm"
 )
 
 // Verified arm64 instruction byte sequences (little-endian, 4 bytes each):
@@ -396,4 +398,68 @@ func TestARM64Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
 		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
 		assert.False(t, ok)
 	})
+}
+
+func TestARM64Decoder_ModifiesFirstArgRegister(t *testing.T) {
+	decoder := NewARM64Decoder()
+
+	t.Run("mov x0, x1 returns true", func(t *testing.T) {
+		// mov x0, x1
+		inst, err := decoder.Decode([]byte{0xE0, 0x03, 0x01, 0xAA}, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesFirstArgRegister(inst))
+	})
+
+	t.Run("mov w0, #198 returns true", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xC0, 0x18, 0x80, 0x52}, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesFirstArgRegister(inst))
+	})
+
+	t.Run("mov x8, #198 returns false", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xC8, 0x18, 0x80, 0xD2}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesFirstArgRegister(inst))
+	})
+
+	t.Run("str x0, [x1] returns false", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0x20, 0x00, 0x00, 0xF9}, 0)
+		require.NoError(t, err)
+		assert.False(t, decoder.ModifiesFirstArgRegister(inst))
+	})
+}
+
+func TestARM64Decoder_TryResolveFirstArgFromGlobalLoad(t *testing.T) {
+	decoder := NewARM64Decoder()
+
+	adrpCode := []byte{0x1b, 0x89, 0x19, 0x90} // adrp x27, .+0x33120000
+	ldrCode := []byte{0x60, 0xd7, 0x42, 0xf9}  // ldr x0, [x27,#1448]
+	callCode := []byte{0x00, 0x00, 0x00, 0x94} // bl .
+
+	adrpInst, err := decoder.Decode(adrpCode, 0x401000)
+	require.NoError(t, err)
+	ldrInst, err := decoder.Decode(ldrCode, 0x401004)
+	require.NoError(t, err)
+	callInst, err := decoder.Decode(callCode, 0x401008)
+	require.NoError(t, err)
+
+	a := adrpInst.arch.(arm64asm.Inst)
+	rel, ok := a.Args[1].(arm64asm.PCRel)
+	require.True(t, ok)
+
+	pageBase := adrpInst.Offset &^ uint64(0xfff)
+	loadAddr := uint64(int64(pageBase)+int64(rel)) + 1448
+
+	blob := make([]byte, 16)
+	binary.LittleEndian.PutUint64(blob[:8], 25)
+	decoder.SetDataSections([]arm64DataSection{{Addr: loadAddr, Data: blob}})
+
+	insts := []DecodedInstruction{adrpInst, ldrInst, callInst}
+	value, ok := decoder.TryResolveFirstArgFromGlobalLoad(insts, 1)
+	assert.True(t, ok)
+	assert.Equal(t, int64(25), value)
+
+	value, ok = decoder.TryResolveFirstArgFromGlobalLoad(insts, 0)
+	assert.False(t, ok)
+	assert.Equal(t, int64(0), value)
 }
