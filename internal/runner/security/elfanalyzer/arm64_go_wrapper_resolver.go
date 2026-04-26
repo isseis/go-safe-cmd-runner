@@ -155,19 +155,19 @@ func (r *ARM64GoWrapperResolver) addTransparentWrapperFromCall(insts []DecodedIn
 		return
 	}
 
-	loadIdx, stackOff, ok := findArm64StackReloadBeforeCall(insts, callIdx)
+	loadIdx, stackOff, ok := findArm64StackReload(insts, callIdx)
 	if !ok {
 		return
 	}
-	helperIdx, ok := findArm64NonWrapperCallBefore(insts, loadIdx, r.wrapperAddrs, r.decoder)
+	helperIdx, ok := findArm64HelperCall(insts, loadIdx, r.wrapperAddrs, r.decoder)
 	if !ok {
 		return
 	}
-	saveIdx, ok := findArm64StackSaveBeforeHelper(insts, helperIdx, stackOff)
+	saveIdx, ok := findArm64StackSave(insts, helperIdx, stackOff)
 	if !ok {
 		return
 	}
-	prologueIdx, ok := findArm64PrologueBefore(insts, saveIdx)
+	prologueIdx, ok := findArm64Prologue(insts, saveIdx)
 	if !ok {
 		return
 	}
@@ -219,7 +219,7 @@ func (r *ARM64GoWrapperResolver) sortAndDedupWrapperRanges() {
 	r.wrapperRanges = dedup
 }
 
-func findArm64StackReloadBeforeCall(insts []DecodedInstruction, callIdx int) (int, int64, bool) {
+func findArm64StackReload(insts []DecodedInstruction, callIdx int) (int, int64, bool) {
 	start := max(callIdx-arm64ReloadSearchWindow, 0)
 	for i := callIdx - 1; i >= start; i-- {
 		a, ok := insts[i].arch.(arm64asm.Inst)
@@ -233,12 +233,12 @@ func findArm64StackReloadBeforeCall(insts []DecodedInstruction, callIdx int) (in
 		if !ok || mem.Mode != arm64asm.AddrOffset || mem.Base != arm64asm.RegSP(arm64asm.SP) {
 			continue
 		}
-		return i, int64(arm64MemImmediateOffsetFromString(mem)), true
+		return i, int64(arm64ImmOffset(mem)), true
 	}
 	return -1, 0, false
 }
 
-func findArm64NonWrapperCallBefore(insts []DecodedInstruction, idx int, wrapperAddrs map[uint64]GoSyscallWrapper, decoder *ARM64Decoder) (int, bool) {
+func findArm64HelperCall(insts []DecodedInstruction, idx int, wrapperAddrs map[uint64]GoSyscallWrapper, decoder *ARM64Decoder) (int, bool) {
 	start := max(idx-arm64HelperSearchWindow, 0)
 	for i := idx - 1; i >= start; i-- {
 		target, ok := decoder.GetCallTarget(insts[i], insts[i].Offset)
@@ -253,7 +253,7 @@ func findArm64NonWrapperCallBefore(insts []DecodedInstruction, idx int, wrapperA
 	return -1, false
 }
 
-func findArm64StackSaveBeforeHelper(insts []DecodedInstruction, helperIdx int, stackOff int64) (int, bool) {
+func findArm64StackSave(insts []DecodedInstruction, helperIdx int, stackOff int64) (int, bool) {
 	start := max(helperIdx-arm64SaveSearchWindow, 0)
 	for i := helperIdx - 1; i >= start; i-- {
 		a, ok := insts[i].arch.(arm64asm.Inst)
@@ -267,14 +267,14 @@ func findArm64StackSaveBeforeHelper(insts []DecodedInstruction, helperIdx int, s
 		if !ok || mem.Mode != arm64asm.AddrOffset || mem.Base != arm64asm.RegSP(arm64asm.SP) {
 			continue
 		}
-		if int64(arm64MemImmediateOffsetFromString(mem)) == stackOff {
+		if int64(arm64ImmOffset(mem)) == stackOff {
 			return i, true
 		}
 	}
 	return -1, false
 }
 
-func findArm64PrologueBefore(insts []DecodedInstruction, saveIdx int) (int, bool) {
+func findArm64Prologue(insts []DecodedInstruction, saveIdx int) (int, bool) {
 	start := max(saveIdx-arm64PrologueSearchWindow, 0)
 	for i := saveIdx - 1; i >= start; i-- {
 		a, ok := insts[i].arch.(arm64asm.Inst)
@@ -293,7 +293,7 @@ func findArm64PrologueBefore(insts []DecodedInstruction, saveIdx int) (int, bool
 	return -1, false
 }
 
-func arm64MemImmediateOffsetFromString(m arm64asm.MemImmediate) int {
+func arm64ImmOffset(m arm64asm.MemImmediate) int {
 	// arm64asm.MemImmediate has an unexported offset field.
 	// Parse from its stable string form: [SP,#104] / [SP,#-16]!
 	text := m.String()
