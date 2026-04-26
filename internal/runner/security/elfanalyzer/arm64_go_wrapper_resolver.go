@@ -97,7 +97,11 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 
 	// Fill the initial window.
 	for len(win) < winSize {
-		inst, ok := r.decodeOneAt(code, baseAddr, &pos)
+		var (
+			inst DecodedInstruction
+			ok   bool
+		)
+		inst, pos, ok = r.decodeOneAt(code, baseAddr, pos)
 		if !ok {
 			break
 		}
@@ -113,7 +117,12 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 		// Advance: drop the oldest instruction and append the next decoded one.
 		copy(win, win[1:])
 		win = win[:len(win)-1]
-		if inst, ok := r.decodeOneAt(code, baseAddr, &pos); ok {
+		var (
+			inst DecodedInstruction
+			ok   bool
+		)
+		inst, pos, ok = r.decodeOneAt(code, baseAddr, pos)
+		if ok {
 			win = append(win, inst)
 		}
 	}
@@ -121,15 +130,18 @@ func (r *ARM64GoWrapperResolver) discoverTransparentWrappers(code []byte, baseAd
 	r.sortAndDedupWrapperRanges()
 }
 
-func (r *ARM64GoWrapperResolver) decodeOneAt(code []byte, baseAddr uint64, pos *int) (DecodedInstruction, bool) {
-	for *pos+arm64InstructionLen <= len(code) {
-		inst, err := r.decoder.Decode(code[*pos:], baseAddr+uint64(*pos)) //nolint:gosec // G115: pos bounded by loop condition
-		*pos += arm64InstructionLen
+// decodeOneAt decodes the next valid instruction starting at pos, skipping
+// any undecodable bytes. Returns (instruction, advancedPos, true) on success,
+// or (zero, pos, false) when the end of code is reached without a valid instruction.
+func (r *ARM64GoWrapperResolver) decodeOneAt(code []byte, baseAddr uint64, pos int) (DecodedInstruction, int, bool) {
+	for pos+arm64InstructionLen <= len(code) {
+		inst, err := r.decoder.Decode(code[pos:], baseAddr+uint64(pos)) //nolint:gosec // G115: pos bounded by loop condition
+		pos += arm64InstructionLen
 		if err == nil {
-			return inst, true
+			return inst, pos, true
 		}
 	}
-	return DecodedInstruction{}, false
+	return DecodedInstruction{}, pos, false
 }
 
 func (r *ARM64GoWrapperResolver) addTransparentWrapperFromCall(insts []DecodedInstruction, callIdx int) {
