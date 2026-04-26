@@ -104,8 +104,7 @@ func arm64OrrZeroRegImm(a arm64asm.Inst, regs ...arm64asm.Reg) (bool, int64) {
 		return false, 0
 	}
 	// Source must be the zero register (XZR or WZR).
-	src, ok := a.Args[1].(arm64asm.Reg)
-	if !ok || (src != arm64asm.XZR && src != arm64asm.WZR) {
+	if !arm64MatchesReg(a.Args[1], arm64asm.XZR) && !arm64MatchesReg(a.Args[1], arm64asm.WZR) {
 		return false, 0
 	}
 	val, ok := arm64ImmValue(a.Args[2])
@@ -142,8 +141,7 @@ func (d *ARM64Decoder) IsImmediateToSyscallNumberRegister(inst DecodedInstructio
 		if a.Args[0] == nil || a.Args[1] == nil {
 			return false, 0
 		}
-		reg, ok := a.Args[0].(arm64asm.Reg)
-		if !ok || (reg != arm64asm.W8 && reg != arm64asm.X8) {
+		if !arm64MatchesReg(a.Args[0], arm64asm.W8) && !arm64MatchesReg(a.Args[0], arm64asm.X8) {
 			return false, 0
 		}
 		val, ok := arm64ImmValue(a.Args[1])
@@ -216,8 +214,7 @@ func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (i
 		if a.Args[0] == nil || a.Args[1] == nil {
 			return 0, false
 		}
-		reg, ok := a.Args[0].(arm64asm.Reg)
-		if !ok || (reg != arm64asm.X0 && reg != arm64asm.W0) {
+		if !arm64MatchesReg(a.Args[0], arm64asm.X0) && !arm64MatchesReg(a.Args[0], arm64asm.W0) {
 			return 0, false
 		}
 		val, ok := arm64ImmValue(a.Args[1])
@@ -257,8 +254,7 @@ func (d *ARM64Decoder) IsImmediateToThirdArgRegister(inst DecodedInstruction) (b
 		if a.Args[0] == nil || a.Args[1] == nil {
 			return false, 0
 		}
-		reg, ok := a.Args[0].(arm64asm.Reg)
-		if !ok || (reg != arm64asm.W2 && reg != arm64asm.X2) {
+		if !arm64MatchesReg(a.Args[0], arm64asm.W2) && !arm64MatchesReg(a.Args[0], arm64asm.X2) {
 			return false, 0
 		}
 		val, ok := arm64ImmValue(a.Args[1])
