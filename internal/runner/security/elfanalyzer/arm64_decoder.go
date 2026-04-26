@@ -472,8 +472,8 @@ func (d *ARM64Decoder) readResolvedFirstArg(addr uint64, is64Bit bool) (int64, b
 	}
 
 	v, ok := d.readUintAtVA(addr, arm64LoadSize32)
-	if !ok || v > math.MaxUint32 {
+	if !ok {
 		return 0, false
 	}
-	return int64(v), true
+	return int64(v), true //nolint:gosec // G115: v is zero-extended from uint32, always fits int64
 }
