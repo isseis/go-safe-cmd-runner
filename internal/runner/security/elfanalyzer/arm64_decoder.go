@@ -65,6 +65,53 @@ func arm64ReadOnlyFirstOperandOp(op arm64asm.Op) bool {
 	return false
 }
 
+// arm64MatchesReg returns true if arg represents the specified register.
+// It handles both arm64asm.Reg and arm64asm.RegSP types: arm64asm encodes the
+// destination operand of ORR-immediate instructions as RegSP rather than Reg,
+// which causes a simple type assertion to arm64asm.Reg to fail for those cases.
+func arm64MatchesReg(arg arm64asm.Arg, reg arm64asm.Reg) bool {
+	if r, ok := arg.(arm64asm.Reg); ok {
+		return r == reg
+	}
+	if rSP, ok := arg.(arm64asm.RegSP); ok {
+		return arm64asm.Reg(rSP) == reg
+	}
+	return false
+}
+
+// arm64OrrZeroRegImm returns (true, value) if a is "ORR dst, XZR/WZR, #imm"
+// and dst matches one of the given registers.
+// This encoding is used when a constant cannot be represented as a 16-bit MOVZ
+// immediate but fits the ARM64 bitmask-immediate format; it is functionally
+// identical to "MOV dst, #imm".
+func arm64OrrZeroRegImm(a arm64asm.Inst, regs ...arm64asm.Reg) (bool, int64) {
+	if a.Op != arm64asm.ORR {
+		return false, 0
+	}
+	if a.Args[0] == nil || a.Args[1] == nil || a.Args[2] == nil {
+		return false, 0
+	}
+	// Destination must be one of the target registers.
+	// ORR-immediate uses arm64asm.RegSP for the destination operand.
+	matched := false
+	for _, reg := range regs {
+		if arm64MatchesReg(a.Args[0], reg) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return false, 0
+	}
+	// Source must be the zero register (XZR or WZR).
+	src, ok := a.Args[1].(arm64asm.Reg)
+	if !ok || (src != arm64asm.XZR && src != arm64asm.WZR) {
+		return false, 0
+	}
+	val, ok := arm64ImmValue(a.Args[2])
+	return ok, val
+}
+
 // ModifiesSyscallNumberRegister returns true if the instruction writes to
 // the arm64 syscall number register (W8 or X8).
 func (d *ARM64Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bool {
@@ -78,33 +125,31 @@ func (d *ARM64Decoder) ModifiesSyscallNumberRegister(inst DecodedInstruction) bo
 	if a.Args[0] == nil {
 		return false
 	}
-	reg, ok := a.Args[0].(arm64asm.Reg)
-	if !ok {
-		return false
-	}
-	return reg == arm64asm.W8 || reg == arm64asm.X8
+	return arm64MatchesReg(a.Args[0], arm64asm.W8) || arm64MatchesReg(a.Args[0], arm64asm.X8)
 }
 
 // IsImmediateToSyscallNumberRegister returns (true, value) if inst sets
 // W8 or X8 to a known immediate value.
-// arm64asm normalises MOVZ to MOV, so we check for MOV.
+// Handles two encodings:
+//   - MOV W8/X8, #imm  (arm64asm normalises MOVZ to MOV)
+//   - ORR W8/X8, WZR/XZR, #imm  (bitmask-immediate; functionally identical to MOV)
 func (d *ARM64Decoder) IsImmediateToSyscallNumberRegister(inst DecodedInstruction) (bool, int64) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false, 0
 	}
-	if a.Op != arm64asm.MOV {
-		return false, 0
+	if a.Op == arm64asm.MOV {
+		if a.Args[0] == nil || a.Args[1] == nil {
+			return false, 0
+		}
+		reg, ok := a.Args[0].(arm64asm.Reg)
+		if !ok || (reg != arm64asm.W8 && reg != arm64asm.X8) {
+			return false, 0
+		}
+		val, ok := arm64ImmValue(a.Args[1])
+		return ok, val
 	}
-	if a.Args[0] == nil || a.Args[1] == nil {
-		return false, 0
-	}
-	reg, ok := a.Args[0].(arm64asm.Reg)
-	if !ok || (reg != arm64asm.W8 && reg != arm64asm.X8) {
-		return false, 0
-	}
-	val, ok := arm64ImmValue(a.Args[1])
-	return ok, val
+	return arm64OrrZeroRegImm(a, arm64asm.W8, arm64asm.X8)
 }
 
 // IsControlFlowInstruction returns true if inst changes the instruction pointer.
@@ -159,20 +204,27 @@ func (d *ARM64Decoder) GetCallTarget(inst DecodedInstruction, instAddr uint64) (
 // IsImmediateToFirstArgRegister returns (value, true) if inst sets the arm64
 // first argument register (X0 or W0) to an immediate.
 // arm64 Go ABI uses X0 for the first integer argument.
+// Handles two encodings:
+//   - MOV X0/W0, #imm  (arm64asm normalises MOVZ to MOV)
+//   - ORR X0/W0, XZR/WZR, #imm  (bitmask-immediate; functionally identical to MOV)
 func (d *ARM64Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool) {
 	a, ok := inst.arch.(arm64asm.Inst)
-	if !ok || a.Op != arm64asm.MOV {
+	if !ok {
 		return 0, false
 	}
-	if a.Args[0] == nil || a.Args[1] == nil {
-		return 0, false
+	if a.Op == arm64asm.MOV {
+		if a.Args[0] == nil || a.Args[1] == nil {
+			return 0, false
+		}
+		reg, ok := a.Args[0].(arm64asm.Reg)
+		if !ok || (reg != arm64asm.X0 && reg != arm64asm.W0) {
+			return 0, false
+		}
+		val, ok := arm64ImmValue(a.Args[1])
+		return val, ok
 	}
-	reg, ok := a.Args[0].(arm64asm.Reg)
-	if !ok || (reg != arm64asm.X0 && reg != arm64asm.W0) {
-		return 0, false
-	}
-	val, ok := arm64ImmValue(a.Args[1])
-	return val, ok
+	ok2, val := arm64OrrZeroRegImm(a, arm64asm.X0, arm64asm.W0)
+	return val, ok2
 }
 
 // ModifiesThirdArgRegister returns true if the instruction writes to
@@ -188,32 +240,31 @@ func (d *ARM64Decoder) ModifiesThirdArgRegister(inst DecodedInstruction) bool {
 	if a.Args[0] == nil {
 		return false
 	}
-	reg, ok := a.Args[0].(arm64asm.Reg)
-	if !ok {
-		return false
-	}
-	return reg == arm64asm.W2 || reg == arm64asm.X2
+	return arm64MatchesReg(a.Args[0], arm64asm.W2) || arm64MatchesReg(a.Args[0], arm64asm.X2)
 }
 
 // IsImmediateToThirdArgRegister returns (true, value) if inst sets
 // W2 or X2 to a known immediate value.
+// Handles two encodings:
+//   - MOV W2/X2, #imm  (arm64asm normalises MOVZ to MOV)
+//   - ORR W2/X2, WZR/XZR, #imm  (bitmask-immediate; functionally identical to MOV)
 func (d *ARM64Decoder) IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false, 0
 	}
-	if a.Op != arm64asm.MOV {
-		return false, 0
+	if a.Op == arm64asm.MOV {
+		if a.Args[0] == nil || a.Args[1] == nil {
+			return false, 0
+		}
+		reg, ok := a.Args[0].(arm64asm.Reg)
+		if !ok || (reg != arm64asm.W2 && reg != arm64asm.X2) {
+			return false, 0
+		}
+		val, ok := arm64ImmValue(a.Args[1])
+		return ok, val
 	}
-	if a.Args[0] == nil || a.Args[1] == nil {
-		return false, 0
-	}
-	reg, ok := a.Args[0].(arm64asm.Reg)
-	if !ok || (reg != arm64asm.W2 && reg != arm64asm.X2) {
-		return false, 0
-	}
-	val, ok := arm64ImmValue(a.Args[1])
-	return ok, val
+	return arm64OrrZeroRegImm(a, arm64asm.W2, arm64asm.X2)
 }
 
 // arm64ImmValue extracts an int64 immediate value from an arm64asm.Arg.

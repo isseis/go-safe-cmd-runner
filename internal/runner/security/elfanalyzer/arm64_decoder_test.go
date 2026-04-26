@@ -102,6 +102,9 @@ func TestARM64Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 		{"mov w8, #198", []byte{0xC8, 0x18, 0x80, 0x52}, true},
 		{"mov x8, #198", []byte{0xC8, 0x18, 0x80, 0xD2}, true},
 		{"add x8, x0, x1", []byte{0x08, 0x00, 0x01, 0x8B}, true},
+		// orr x8, xzr, #0x38 — bitmask immediate; arm64asm uses RegSP for the
+		// destination, which must be handled alongside the regular Reg type.
+		{"orr x8, xzr, #0x38 (bitmask imm, RegSP dest)", []byte{0xe8, 0x0b, 0x7d, 0xb2}, true},
 		// Instructions that do NOT write to W8/X8
 		{"svc #0", []byte{0x01, 0x00, 0x00, 0xD4}, false},
 		{"mov x0, #41", []byte{0x20, 0x05, 0x80, 0xD2}, false},
@@ -128,6 +131,13 @@ func TestARM64Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 func TestARM64Decoder_IsImmediateToSyscallNumberRegister(t *testing.T) {
 	decoder := NewARM64Decoder()
 
+	// Verified ORR-immediate encodings (little-endian, bitmask immediate):
+	//   orr x8, xzr, #0x38  : e8 0b 7d b2  (open syscall, #56)
+	//   orr x8, xzr, #0x3f  : e8 17 40 b2  (read syscall, #63)
+	//   orr x8, xzr, #0x40  : e8 03 7a b2  (write syscall, #64)
+	//   orr x8, xzr, #0x7c  : e8 13 7e b2  (vgetrandom syscall, #124)
+	// These bitmask-immediate values cannot be encoded as 16-bit MOVZ immediates,
+	// so the assembler emits ORR instead of MOV.
 	tests := []struct {
 		name    string
 		code    []byte
@@ -138,6 +148,11 @@ func TestARM64Decoder_IsImmediateToSyscallNumberRegister(t *testing.T) {
 		{"mov x8, #198", []byte{0xC8, 0x18, 0x80, 0xD2}, true, 198},
 		{"mov w8, #41 (connect-like)", []byte{0x28, 0x05, 0x80, 0x52}, true, 41},
 		{"mov w8, #63 (read)", []byte{0xE8, 0x07, 0x80, 0x52}, true, 63},
+		// ORR x8/w8, xzr/wzr, #imm (bitmask-immediate encoding, same effect as MOV)
+		{"orr x8, xzr, #0x38 (open, bitmask imm)", []byte{0xe8, 0x0b, 0x7d, 0xb2}, true, 0x38},
+		{"orr x8, xzr, #0x3f (read, bitmask imm)", []byte{0xe8, 0x17, 0x40, 0xb2}, true, 0x3f},
+		{"orr x8, xzr, #0x40 (write, bitmask imm)", []byte{0xe8, 0x03, 0x7a, 0xb2}, true, 0x40},
+		{"orr x8, xzr, #0x7c (bitmask imm)", []byte{0xe8, 0x13, 0x7e, 0xb2}, true, 0x7c},
 		// Non-matching cases
 		{"svc #0 (not mov)", []byte{0x01, 0x00, 0x00, 0xD4}, false, 0},
 		{"mov x0, #41 (wrong register)", []byte{0x20, 0x05, 0x80, 0xD2}, false, 0},
@@ -262,6 +277,24 @@ func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 
 	t.Run("nop returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x1F, 0x20, 0x03, 0xD5}, 0)
+		require.NoError(t, err)
+		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		assert.False(t, ok)
+	})
+
+	// orr x0, xzr, #0x38 — bitmask-immediate encoding of x0 := 0x38 (openat syscall number).
+	// arm64asm uses RegSP for the destination operand of ORR-immediate instructions.
+	// Encoding: e0 0b 7d b2
+	t.Run("orr x0, xzr, #0x38 (bitmask imm, openat syscall number)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xe0, 0x0b, 0x7d, 0xb2}, 0)
+		require.NoError(t, err)
+		imm, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		assert.True(t, ok)
+		assert.Equal(t, int64(0x38), imm)
+	})
+
+	t.Run("orr x8, xzr, #0x38 (bitmask imm, wrong register)", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0xe8, 0x0b, 0x7d, 0xb2}, 0)
 		require.NoError(t, err)
 		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
 		assert.False(t, ok)

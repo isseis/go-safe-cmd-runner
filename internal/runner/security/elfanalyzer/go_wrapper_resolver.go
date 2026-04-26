@@ -13,13 +13,16 @@ const (
 	// needed to attempt syscall argument resolution.
 	minRecentInstructionsForScan = 2
 
-	// maxBackwardScanSteps is the maximum number of instructions to scan backward
-	// when resolving syscall arguments in wrapper calls.
-	maxBackwardScanSteps = 6
-
 	// maxRecentInstructionsToKeep is the maximum number of recent instructions
 	// to keep in memory for backward scanning.
-	maxRecentInstructionsToKeep = 10
+	maxRecentInstructionsToKeep = 12
+
+	// maxBackwardScanSteps is the maximum number of instructions to scan backward
+	// when resolving syscall arguments in wrapper calls.
+	// Set to maxRecentInstructionsToKeep - 1 so the entire available window is
+	// searched (the most recent slot holds the call instruction itself, so at most
+	// maxRecentInstructionsToKeep-1 pre-call instructions are available).
+	maxBackwardScanSteps = maxRecentInstructionsToKeep - 1
 )
 
 // GoSyscallWrapper represents the name of a known Go syscall wrapper function.
