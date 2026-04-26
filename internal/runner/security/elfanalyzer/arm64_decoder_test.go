@@ -462,4 +462,14 @@ func TestARM64Decoder_TryResolveFirstArgFromGlobalLoad(t *testing.T) {
 	value, ok = decoder.TryResolveFirstArgFromGlobalLoad(insts, 0)
 	assert.False(t, ok)
 	assert.Equal(t, int64(0), value)
+
+	t.Run("control flow boundary before adrp returns false", func(t *testing.T) {
+		branchInst, err := decoder.Decode([]byte{0x02, 0x00, 0x00, 0x14}, 0x401004)
+		require.NoError(t, err)
+
+		instsWithBranch := []DecodedInstruction{adrpInst, branchInst, ldrInst, callInst}
+		value, ok := decoder.TryResolveFirstArgFromGlobalLoad(instsWithBranch, 2)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), value)
+	})
 }

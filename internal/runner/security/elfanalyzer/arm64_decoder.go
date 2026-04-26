@@ -409,6 +409,9 @@ func (d *ARM64Decoder) decodeFirstArgGlobalLoad(inst DecodedInstruction) (arm64F
 func (d *ARM64Decoder) resolveADRPBacktrackAddress(recentInstructions []DecodedInstruction, idx int, base arm64asm.RegSP, offset uint64) (uint64, bool) {
 	for j := idx - 1; j >= 0 && idx-j <= arm64ADRPBacktrackLimit; j-- {
 		prev := recentInstructions[j]
+		if d.IsControlFlowInstruction(prev) {
+			return 0, false
+		}
 		p, ok := prev.arch.(arm64asm.Inst)
 		if !ok || p.Op != arm64asm.ADRP || p.Args[0] == nil || p.Args[1] == nil {
 			continue
