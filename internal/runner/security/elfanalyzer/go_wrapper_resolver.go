@@ -291,11 +291,6 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 		scanCount++
 		inst := recentInstructions[i]
 
-		// Stop at control flow boundary
-		if decoder.IsControlFlowInstruction(inst) {
-			return -1, DeterminationMethodUnknownControlFlowBoundary
-		}
-
 		// Check for immediate move to first argument register.
 		if value, ok := decoder.IsImmediateToFirstArgRegister(inst); ok {
 			// Validate immediate value is a plausible syscall number.
@@ -306,6 +301,26 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 			}
 			// Immediate value is out of valid range; treat as indirect setting
 			return -1, DeterminationMethodUnknownIndirectSetting
+		}
+
+		// Try resolving first argument from a global-data load pattern
+		// (e.g., ADRP+LDR on arm64).
+		if value, ok := decoder.TryResolveFirstArgFromGlobalLoad(recentInstructions, i); ok {
+			if value >= 0 && value <= maxValidSyscallNumber {
+				return int(value), DeterminationMethodGoWrapper
+			}
+			return -1, DeterminationMethodUnknownIndirectSetting
+		}
+
+		// Any non-immediate write to the first argument register means
+		// the value is set indirectly and cannot be resolved statically.
+		if decoder.ModifiesFirstArgRegister(inst) {
+			return -1, DeterminationMethodUnknownIndirectSetting
+		}
+
+		// Stop at control flow boundary.
+		if decoder.IsControlFlowInstruction(inst) {
+			return -1, DeterminationMethodUnknownControlFlowBoundary
 		}
 	}
 

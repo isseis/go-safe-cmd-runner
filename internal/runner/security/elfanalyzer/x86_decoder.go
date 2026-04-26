@@ -261,6 +261,18 @@ func (d *X86Decoder) IsImmediateToFirstArgRegister(inst DecodedInstruction) (int
 	return val, ok
 }
 
+// ModifiesFirstArgRegister returns true if the instruction writes to the
+// first argument register in x86_64 Go ABI (RAX/EAX).
+func (d *X86Decoder) ModifiesFirstArgRegister(inst DecodedInstruction) bool {
+	return d.ModifiesSyscallNumberRegister(inst)
+}
+
+// TryResolveFirstArgFromGlobalLoad returns unresolved on x86_64.
+// The current Go wrapper resolution path only uses immediate assignments.
+func (d *X86Decoder) TryResolveFirstArgFromGlobalLoad(_ []DecodedInstruction, _ int) (int64, bool) {
+	return 0, false
+}
+
 // implicitlyWritesRDXEDX reports whether the instruction unconditionally writes
 // to RDX/EDX as an implicit (unlisted) destination.
 //

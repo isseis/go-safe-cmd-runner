@@ -4,10 +4,12 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/arch/arm64/arm64asm"
 )
 
 func TestNewARM64GoWrapperResolver_NoPclntab(t *testing.T) {
@@ -179,4 +181,59 @@ func TestARM64GoWrapperResolver_FindWrapperCalls_NoWrappers(t *testing.T) {
 	result, decodeFailures := resolver.FindWrapperCalls(code, 0x401000)
 	assert.Nil(t, result)
 	assert.Equal(t, 0, decodeFailures)
+}
+
+func TestARM64GoWrapperResolver_FindWrapperCalls_IndirectBeforeControlFlow(t *testing.T) {
+	resolver := newARM64GoWrapperResolver()
+
+	wrapperAddr := uint64(0x402000)
+	resolver.wrapperAddrs[wrapperAddr] = "syscall.RawSyscall6"
+
+	baseAddr := uint64(0x401000)
+	code := []byte{
+		0x00, 0x00, 0x00, 0x94, // bl . (helper call, control flow)
+		0xE0, 0x03, 0x01, 0xAA, // mov x0, x1 (indirect setting)
+		0xFE, 0x03, 0x00, 0x94, // bl 0x402000
+	}
+
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
+
+	require.Len(t, result, 1)
+	assert.Equal(t, -1, result[0].SyscallNumber)
+	assert.False(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodUnknownIndirectSetting, result[0].DeterminationMethod)
+}
+
+func TestARM64GoWrapperResolver_FindWrapperCalls_GlobalLoadFromDataSection(t *testing.T) {
+	resolver := newARM64GoWrapperResolver()
+
+	wrapperAddr := uint64(0x402000)
+	resolver.wrapperAddrs[wrapperAddr] = "syscall.RawSyscall"
+
+	baseAddr := uint64(0x401000)
+	code := []byte{
+		0x1b, 0x89, 0x19, 0x90, // adrp x27, .+0x33120000
+		0x60, 0xd7, 0x42, 0xf9, // ldr x0, [x27,#1448]
+		0xFE, 0x03, 0x00, 0x94, // bl 0x402000
+	}
+
+	adrpInst, err := resolver.decoder.Decode(code[:4], baseAddr)
+	require.NoError(t, err)
+	a := adrpInst.arch.(arm64asm.Inst)
+	rel, ok := a.Args[1].(arm64asm.PCRel)
+	require.True(t, ok)
+	loadAddr := uint64(int64(adrpInst.Offset&^uint64(0xfff))+int64(rel)) + 1448
+
+	blob := make([]byte, 16)
+	binary.LittleEndian.PutUint64(blob[:8], 25)
+	resolver.decoder.SetDataSections([]arm64DataSection{{Addr: loadAddr, Data: blob}})
+
+	result, decodeFailures := resolver.FindWrapperCalls(code, baseAddr)
+	assert.Equal(t, 0, decodeFailures)
+
+	require.Len(t, result, 1)
+	assert.Equal(t, 25, result[0].SyscallNumber)
+	assert.True(t, result[0].Resolved)
+	assert.Equal(t, DeterminationMethodGoWrapper, result[0].DeterminationMethod)
 }
