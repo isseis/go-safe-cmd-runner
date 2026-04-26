@@ -2,6 +2,7 @@ package elfanalyzer
 
 import (
 	"debug/elf"
+	"encoding/binary"
 	"sort"
 
 	"golang.org/x/arch/arm64/arm64asm"
@@ -13,7 +14,6 @@ const (
 	arm64SaveSearchWindow       = 15
 	arm64PrologueSearchWindow   = 6
 	arm64FunctionTailSearchSpan = 24
-	decimalBase                 = 10
 )
 
 // ARM64GoWrapperResolver implements GoWrapperResolver for arm64 binaries.
@@ -233,7 +233,11 @@ func findArm64StackReload(insts []DecodedInstruction, callIdx int) (int, int64, 
 		if !ok || mem.Mode != arm64asm.AddrOffset || mem.Base != arm64asm.RegSP(arm64asm.SP) {
 			continue
 		}
-		return i, int64(arm64ImmOffset(mem)), true
+		off, ok := arm64UnsignedOffsetFromEnc(binary.LittleEndian.Uint32(insts[i].Raw), true)
+		if !ok {
+			continue
+		}
+		return i, int64(off), true //nolint:gosec // G115: max off = 4095<<3 = 32760, safely fits int64
 	}
 	return -1, 0, false
 }
@@ -267,7 +271,11 @@ func findArm64StackSave(insts []DecodedInstruction, helperIdx int, stackOff int6
 		if !ok || mem.Mode != arm64asm.AddrOffset || mem.Base != arm64asm.RegSP(arm64asm.SP) {
 			continue
 		}
-		if int64(arm64ImmOffset(mem)) == stackOff {
+		off, ok := arm64UnsignedOffsetFromEnc(binary.LittleEndian.Uint32(insts[i].Raw), true)
+		if !ok {
+			continue
+		}
+		if int64(off) == stackOff { //nolint:gosec // G115: max off = 4095<<3 = 32760, safely fits int64
 			return i, true
 		}
 	}
@@ -291,30 +299,6 @@ func findArm64Prologue(insts []DecodedInstruction, saveIdx int) (int, bool) {
 		return i, true
 	}
 	return -1, false
-}
-
-func arm64ImmOffset(m arm64asm.MemImmediate) int {
-	// arm64asm.MemImmediate has an unexported offset field.
-	// Parse from its stable string form: [SP,#104] / [SP,#-16]!
-	text := m.String()
-	for i := 0; i < len(text); i++ {
-		if text[i] != '#' {
-			continue
-		}
-		i++
-		sign := 1
-		if i < len(text) && text[i] == '-' {
-			sign = -1
-			i++
-		}
-		v := 0
-		for i < len(text) && text[i] >= '0' && text[i] <= '9' {
-			v = v*decimalBase + int(text[i]-'0')
-			i++
-		}
-		return sign * v
-	}
-	return 0
 }
 
 // GetWrapperAddresses returns all known wrapper function addresses.
