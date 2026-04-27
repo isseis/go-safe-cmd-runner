@@ -132,7 +132,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     A["SyscallAnalysisData<br>{Architecture: 'x86_64',<br> DetectedSyscalls: [{Number:41, ...}]}"]
-    B["syscallAnalysisHasNetworkSignal<br>(result, arch)"]
+    B["syscallAnalysisHasNetworkSignal<br>(result)"]
     C{"arch == ?"}
     D["NewX86_64SyscallTable()"]
     E["NewARM64LinuxSyscallTable()"]
@@ -153,7 +153,7 @@ flowchart TD
     style H fill:#c8e6c9
 ```
 
-`syscallTableForArch(arch string)` はアーキテクチャ文字列と `runtime.GOOS` からテーブルを選択する。未知のアーキテクチャの場合は `nil` を返し、呼び出し元は安全側（ネットワーク判定なし）に倒す。
+`syscallAnalysisHasNetworkSignal` は関数内で `syscallTableForArch(arch string)` を呼び出し、アーキテクチャ文字列と `runtime.GOOS` からテーブルを選択する。未知のアーキテクチャの場合は `nil` を返し、安全側（ネットワーク判定なし）に倒す。
 
 ### 4.2 `Category` 除去後のシンボルネットワーク判定フロー
 

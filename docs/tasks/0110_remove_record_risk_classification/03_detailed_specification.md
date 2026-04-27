@@ -291,7 +291,7 @@ func IsNetworkSymbolName(name string) bool {
 
 #### `syscallTableForArch` 関数の追加
 
-`network_analyzer.go`（または同パッケージ内の新ファイル）に以下のヘルパーを追加する。
+`network_analyzer.go` に以下のヘルパーを追加する。
 
 ```go
 // syscallTableInterface abstracts syscall number → network classification.
@@ -633,6 +633,7 @@ func TestSyscallAnalysisHasNetworkSignal_Nil(t *testing.T) {
 | ファイル | 参照フィールド | 対応方針 |
 |---------|-------------|---------|
 | `internal/common/syscall_types_test.go` | `IsNetwork` | `IsNetwork` フィールドの参照を削除。テストが IsNetwork の設定/読み取りのみを行っているなら削除。他の不変性を検証しているなら IsNetwork 参照箇所のみ除去 |
+| `internal/common/syscall_grouping_test.go` | `IsNetwork` | `IsNetwork` フィールドの参照を削除。グルーピング結果の期待値から `IsNetwork` を除去 |
 | `internal/fileanalysis/syscall_store_test.go` | `IsNetwork` | `IsNetwork` フィールドの参照を削除。期待値の構築から `IsNetwork` を除去 |
 | `internal/fileanalysis/network_symbol_store_test.go` | `Category` | `DetectedSymbolEntry.Category` の設定・検証を削除。期待値の構築から `Category` を除去し、`Name` のみで検証する |
 | `internal/filevalidator/validator_test.go` | `IsNetwork` | `IsNetwork` フィールドの参照を削除。期待値の構築および assert から `IsNetwork` を除去 |

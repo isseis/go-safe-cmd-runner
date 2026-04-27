@@ -38,7 +38,7 @@
 | `internal/libccache/adapters.go` | `IsNetwork` の設定を削除 |
 | `internal/libccache/matcher.go` | `IsNetwork` の設定を削除 |
 | `internal/runner/security/network_analyzer.go` | `syscallAnalysisHasNetworkSignal` を syscall 番号ベースの判定に変更、`convertNetworkSymbolEntries` を名前ベースの判定に変更 |
-| `internal/runner/security/binaryanalyzer/analyzer.go` | `DetectedSymbolEntry.Category` 除去に伴う変換・判定処理を更新（`runner` 内部表現の `DetectedSymbol.Category` は保持可） |
+| `internal/runner/security/binaryanalyzer/network_symbols.go` | `IsNetworkSymbolName` を追加し、名前ベース判定を共通化 |
 | 上記に伴うテストの更新 | — |
 
 #### 対象外
@@ -104,7 +104,11 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 
 **変更後（概念）:**
 ```go
-func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, table SyscallTable) bool {
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
+    table := syscallTableForArch(result.Architecture)
+    if table == nil {
+        return false
+    }
     for _, s := range result.DetectedSyscalls {
         if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
             return true
@@ -114,7 +118,7 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult,
 }
 ```
 
-`table` はアーキテクチャ（`result.Architecture`）から選択する。アーキテクチャが不明または未サポートの場合は安全側（ネットワーク判定なし）に倒す。
+`syscallAnalysisHasNetworkSignal` の関数シグネチャは変更しない。`table` は関数内でアーキテクチャ（`result.Architecture`）から選択する。アーキテクチャが不明または未サポートの場合は安全側（ネットワーク判定なし）に倒す。
 
 ### FR-3: `DetectedSymbolEntry.Category` の除去
 
