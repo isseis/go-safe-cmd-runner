@@ -120,7 +120,7 @@
 - [ ] `network_analyzer.go` の import に `libccache` を追加する（循環参照がないことを `go build` で確認する）
 - [ ] `syscallAnalysisHasNetworkSignal` を `s.IsNetwork` 参照から `table.IsNetworkSyscall(s.Number)` へ変更する（`table == nil` の場合は `false` を返す）
 - [ ] `isNetworkViaBinaryAnalysis` 内の `hasNetworkSymbol` チェックを `binaryanalyzer.IsNetworkCategory(sym.Category)` から `binaryanalyzer.IsNetworkSymbolName(sym.Name)` に変更する
-- [ ] `convertNetworkSymbolEntries` を `e.Category` 転写から `binaryanalyzer.IsNetworkSymbol(e.Name)` によるカテゴリ導出に変更する
+- [ ] `convertNetworkSymbolEntries` を `e.Category` 転写からランタイム導出へ変更する（`IsNetworkSymbol(e.Name)` を優先し、未分類時は `IsDynamicLoadSymbol(e.Name)` なら `dynamic_load`、それ以外は `syscall_wrapper` を設定）
 
 成功条件:
 - `go build ./...` がエラーなしで通る
@@ -162,8 +162,8 @@
 作業内容:
 - [ ] AC-1: `TestSyscallInfo_JSONDoesNotContainIsNetwork` を追加する
 - [ ] AC-2: `TestDetectedSymbolEntry_JSONDoesNotContainCategory` を追加する
-- [ ] AC-3a: `TestSyscallAnalysisHasNetworkSignal_NetworkSyscall`（x86_64 socket=41 → true）を追加する
-- [ ] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall`（x86_64 write=1 → false）を追加する
+- [ ] AC-3a: `TestSyscallAnalysisHasNetworkSignal_NetworkSyscall` を追加する（OS条件付きの syscall 番号を使用: 例 Linux x86_64 socket=41 / Darwin socket=97）
+- [ ] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall` を追加する（OS条件付きの syscall 番号を使用: 例 Linux x86_64 write=1 / Darwin write=4）
 - [ ] AC-4: `TestCurrentSchemaVersion`（値が 18）を追加する
 - [ ] AC-4: `TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError` を追加する
 - [ ] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → ネットワーク検知スキップで false、fail-open）を追加する

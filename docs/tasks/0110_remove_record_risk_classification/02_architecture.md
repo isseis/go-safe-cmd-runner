@@ -119,9 +119,10 @@ flowchart LR
 | `internal/runner/security/binaryanalyzer/network_symbols.go` | 変更 | `IsNetworkSymbolName` ヘルパー追加 |
 | `internal/runner/security/network_analyzer.go` | 変更 | `syscallAnalysisHasNetworkSignal` を番号ベースに、`convertNetworkSymbolEntries` を名前ベースに変更 |
 
-### 3.2 新規ファイルなし
+### 3.2 新規プロダクションファイルなし
 
-本タスクでは新規ファイルは作成しない。すべての変更は既存ファイルへの修正である。
+本タスクでは新規のプロダクションコードファイルは作成しない。変更は既存ファイルへの修正が中心である。
+ただし、受け入れ基準を満たすために新規テストファイル（例: `internal/fileanalysis/schema_test.go`）を追加することは許容する。
 
 ---
 
@@ -131,13 +132,13 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["SyscallAnalysisData<br>{Architecture: 'x86_64',<br> DetectedSyscalls: [{Number:41, ...}]}"]
+    A["SyscallAnalysisData<br>{Architecture: 'x86_64',<br> DetectedSyscalls: [{Number:socketSyscallNumber, ...}]}"]
     B["syscallAnalysisHasNetworkSignal<br>(result)"]
     C{"arch == ?"}
     D["NewX86_64SyscallTable()"]
     E["NewARM64LinuxSyscallTable()"]
     F["libccache.MacOSSyscallTable{}"]
-    G["IsNetworkSyscall(41) → true"]
+    G["IsNetworkSyscall(socketSyscallNumber) → true"]
     H["return true"]
 
     A --> B
@@ -184,7 +185,7 @@ flowchart TD
 flowchart LR
     A["[]DetectedSymbolEntry<br>{Name: 'getaddrinfo'}<br>{Name: 'read'}"]
     B["convertNetworkSymbolEntries"]
-    C["IsNetworkSymbol(name)"]
+    C["IsNetworkSymbol(name)<br>+ fallback mapping<br>(dynamic_load / syscall_wrapper)"]
     D["[]binaryanalyzer.DetectedSymbol<br>{Name:'getaddrinfo', Category:'dns'}<br>{Name:'read', Category:'syscall_wrapper'}"]
     E["handleAnalysisOutput<br>(ログ出力用に Category 使用)"]
 
@@ -223,7 +224,8 @@ linux, arch=arm64  → elfanalyzer.NewARM64LinuxSyscallTable()
 
 ### 5.3 runner 内部表現（`binaryanalyzer.DetectedSymbol.Category`）の保持
 
-`binaryanalyzer.DetectedSymbol` は runner 内部の表現であり、永続化されない。`Category` フィールドはログ出力（`formatDetectedSymbols`）に使用されているため、削除しない。ただし `convertNetworkSymbolEntries` でのカテゴリ導出を `e.Category`（スキーマ由来）から `IsNetworkSymbol(e.Name)`（ランタイム導出）に切り替える。
+`binaryanalyzer.DetectedSymbol` は runner 内部の表現であり、永続化されない。`Category` フィールドはログ出力（`formatDetectedSymbols`）に使用されているため、削除しない。
+`convertNetworkSymbolEntries` では `e.Category`（スキーマ由来）を使わずにランタイム導出へ切り替える。カテゴリ導出は `IsNetworkSymbol(e.Name)` を優先し、未分類時は `IsDynamicLoadSymbol(e.Name)` なら `dynamic_load`、それ以外は `syscall_wrapper` を設定してログ情報量を維持する。
 
 ---
 
