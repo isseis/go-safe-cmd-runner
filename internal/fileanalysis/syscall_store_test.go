@@ -3,6 +3,7 @@
 package fileanalysis
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -441,4 +442,38 @@ func TestStore_ArgEvalResults(t *testing.T) {
 
 		assert.Nil(t, loaded.ArgEvalResults, "nil ArgEvalResults should remain nil after roundtrip")
 	})
+}
+
+// TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError verifies that loading a
+// syscall analysis record saved with schema version 17 returns SchemaVersionMismatchError (AC-4).
+func TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError(t *testing.T) {
+	tmpDir := commontesting.SafeTempDir(t)
+	analysisDir := filepath.Join(tmpDir, "analysis")
+
+	fileStore, err := NewStore(analysisDir, &mockPathGetter{})
+	require.NoError(t, err)
+
+	store := NewSyscallAnalysisStore(fileStore)
+
+	testFile := filepath.Join(tmpDir, "test.bin")
+	err = os.WriteFile(testFile, []byte("test content"), 0o644)
+	require.NoError(t, err)
+
+	// Manually write a record with schema_version 17 (previous version).
+	recordPath := filepath.Join(analysisDir, "test.bin.json")
+	v17Record := map[string]any{
+		"schema_version": 17,
+		"file_path":      testFile,
+		"content_hash":   "sha256:abc123",
+	}
+	data, err := json.MarshalIndent(v17Record, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(recordPath, data, 0o600)
+	require.NoError(t, err)
+
+	_, err = store.LoadSyscallAnalysis(testFile, "sha256:abc123")
+	var schemaErr *SchemaVersionMismatchError
+	require.ErrorAs(t, err, &schemaErr, "expected SchemaVersionMismatchError for schema v17 record")
+	assert.Equal(t, CurrentSchemaVersion, schemaErr.Expected)
+	assert.Equal(t, 17, schemaErr.Actual)
 }

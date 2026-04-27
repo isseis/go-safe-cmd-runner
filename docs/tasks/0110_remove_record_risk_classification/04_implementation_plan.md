@@ -160,16 +160,16 @@
 - `internal/runner/security/binaryanalyzer/network_symbols_test.go`
 
 作業内容:
-- [ ] AC-1: `TestSyscallInfo_JSONDoesNotContainIsNetwork` を追加する
-- [ ] AC-2: `TestDetectedSymbolEntry_JSONDoesNotContainCategory` を追加する
-- [ ] AC-3a: `TestSyscallAnalysisHasNetworkSignal_NetworkSyscall` を追加する（OS条件付きの syscall 番号を使用: 例 Linux x86_64 socket=41 / Darwin socket=97）
-- [ ] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall` を追加する（OS条件付きの syscall 番号を使用: 例 Linux x86_64 write=1 / Darwin write=4）
-- [ ] AC-4: `TestCurrentSchemaVersion`（値が 18）を追加する
-- [ ] AC-4: `TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError` を追加する
-- [ ] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → ネットワーク検知スキップで false、fail-open）を追加する
-- [ ] AC-7b: `TestSyscallAnalysisHasNetworkSignal_NegativeNumber`（Number=-1 → ネットワーク検知スキップで false、fail-open）を追加する
-- [ ] AC-7c: `TestSyscallAnalysisHasNetworkSignal_Nil`（nil → ネットワーク検知スキップで false、fail-open）を追加する
-- [ ] `TestIsNetworkSymbolName`（dns シンボル/syscall_wrapper/未知シンボルの判定）を追加する
+- [x] AC-1: `TestSyscallInfo_JSONDoesNotContainIsNetwork` を追加する
+- [x] AC-2: `TestDetectedSymbolEntry_JSONDoesNotContainCategory` を追加する
+- [x] AC-3a: `TestSyscallAnalysisHasNetworkSignal_NetworkSyscall` を追加する（OS条件付きの syscall 番号を使用: 例 Linux x86_64 socket=41 / Darwin socket=97）
+- [x] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall` を追加する （OS条件付きの syscall 番号を使用: 例 Linux x86_64 write=1 / Darwin write=4）
+- [x] AC-4: `TestCurrentSchemaVersion`（値が 18）を追加する
+- [x] AC-4: `TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError` を追加 する
+- [x] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → ネットワ ーク検知スキップで false、fail-open）を追加する
+- [x] AC-7b: `TestSyscallAnalysisHasNetworkSignal_NegativeNumber`（Number=-1 →  ネットワーク検知スキップで false、fail-open）を追加する
+- [x] AC-7c: `TestSyscallAnalysisHasNetworkSignal_Nil`（nil → ネットワーク検知スキップで false、fail-open）を追加する
+- [x] `TestIsNetworkSymbolName`（dns シンボル/syscall_wrapper/未知シンボルの判定）を追加する
 
 成功条件:
 - 上記テストがすべて成功する
@@ -182,12 +182,12 @@
 対象: 変更済みコード全体
 
 作業内容:
-- [ ] `make fmt` を実行してフォーマットエラーがないことを確認する
-- [ ] `make test` を実行して全テストが通過することを確認する
-- [ ] `make lint` を実行してリンターエラーがないことを確認する
-- [ ] AC-3（行動不変性）を既存テスト（`network_analyzer_test.go` 等）の通過で確認する
-- [ ] AC-5（スキーマ自動移行）を `Store.Update` 既存テストの通過で確認する
-- [ ] 実装計画書のチェックボックスをすべて完了に更新する
+- [x] `make fmt` を実行してフォーマットエラーがないことを確認する
+- [x] `make test` を実行して全テストが通過することを確認する
+- [x] `make lint` を実行してリンターエラーがないことを確認する
+- [x] AC-3（行動不変性）を既存テスト（`network_analyzer_test.go` 等）の通過で確 認する
+- [x] AC-5（スキーマ自動移行）を `Store.Update` 既存テストの通過で確認する
+- [x] 実装計画書のチェックボックスをすべて完了に更新する
 
 成功条件:
 - `make fmt` / `make test` / `make lint` がすべてエラーなしで完了する
@@ -230,7 +230,7 @@
 
 ## 7. 完了条件
 
-- [ ] 変更対象ファイルの実装が完了している
-- [ ] AC-1〜AC-7 の検証がテストで確認できる
-- [ ] `make fmt` / `make test` / `make lint` が成功する
-- [ ] 仕様書（要件・設計・詳細仕様）と実装の乖離がない
+- [x] 変更対象ファイルの実装が完了している
+- [x] AC-1〜AC-7 の検証がテストで確認できる
+- [x] `make fmt` / `make test` / `make lint` が成功する
+- [x] 仕様書（要件・設計・詳細仕様）と実装の乖離がない

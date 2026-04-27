@@ -532,3 +532,61 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_IsNetworkTrue(t *testing.T) 
 	assert.True(t, isNet, "SymbolAnalysis network should return true")
 	assert.False(t, isHigh, "IsNetwork without svc should not escalate to high risk")
 }
+
+// ---- AC-3: syscall-number-based network detection ----
+
+// TestSyscallAnalysisHasNetworkSignal_NetworkSyscall verifies that a known network
+// syscall number (Linux x86_64 socket=41) triggers the network signal (AC-3a).
+func TestSyscallAnalysisHasNetworkSignal_NetworkSyscall(t *testing.T) {
+	result := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 41, Name: "socket"},
+			},
+		},
+	}
+	assert.True(t, syscallAnalysisHasNetworkSignal(result))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall verifies that a non-network
+// syscall number (Linux x86_64 write=1) does not trigger the network signal (AC-3b).
+func TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall(t *testing.T) {
+	result := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 1, Name: "write"},
+			},
+		},
+	}
+	assert.False(t, syscallAnalysisHasNetworkSignal(result))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_UnknownArch verifies that an unknown architecture
+// (mips) causes network detection to be skipped, returning false (AC-7a: fail-open).
+func TestSyscallAnalysisHasNetworkSignal_UnknownArch(t *testing.T) {
+	result := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "mips",
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 41},
+			},
+		},
+	}
+	assert.False(t, syscallAnalysisHasNetworkSignal(result))
+}
+
+// TestSyscallAnalysisHasNetworkSignal_NegativeNumber verifies that a negative syscall
+// number does not trigger the network signal (AC-7b: fail-open).
+func TestSyscallAnalysisHasNetworkSignal_NegativeNumber(t *testing.T) {
+	result := &fileanalysis.SyscallAnalysisResult{
+		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: -1},
+			},
+		},
+	}
+	assert.False(t, syscallAnalysisHasNetworkSignal(result))
+}

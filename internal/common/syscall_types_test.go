@@ -157,3 +157,23 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 		assert.Len(t, decoded.DetectedSyscalls, 0)
 	})
 }
+
+// TestSyscallInfo_JSONDoesNotContainIsNetwork verifies that the JSON output of
+// SyscallInfo does not include an "is_network" field (AC-1: field removed from schema).
+func TestSyscallInfo_JSONDoesNotContainIsNetwork(t *testing.T) {
+	info := common.SyscallInfo{
+		Number: 41,
+		Name:   "socket",
+		Occurrences: []common.SyscallOccurrence{
+			{Location: 0x401000, DeterminationMethod: "immediate"},
+		},
+	}
+	data, err := json.Marshal(info)
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(data, &m))
+
+	_, hasIsNetwork := m["is_network"]
+	assert.False(t, hasIsNetwork, "is_network field must not appear in SyscallInfo JSON (schema v18)")
+}
