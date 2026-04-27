@@ -74,22 +74,19 @@ func parsePclntabFuncs(elfFile *elf.File) ([]PclntabFunc, error) {
 		return nil, err
 	}
 
-	// Collect ALL entries preserving duplicates.
-	allFuncs := make([]PclntabFunc, 0, len(symTable.Funcs))
+	// Collect all entries preserving duplicates, and build a temporary map for
+	// CGO offset detection in a single pass.
+	// Key by entry address (not name) so ABI0 stubs — which share a function
+	// name with the full implementation but have a distinct entry address — are
+	// not deduplicated.  detectPclntabOffset only reads map values, so any
+	// unique key works.
+	allFuncs := make([]PclntabFunc, len(symTable.Funcs))
+	tmpMap := make(map[string]PclntabFunc, len(symTable.Funcs))
 	for i := range symTable.Funcs {
 		fn := &symTable.Funcs[i]
-		allFuncs = append(allFuncs, PclntabFunc{
-			Name:  fn.Name,
-			Entry: fn.Entry,
-			End:   fn.End,
-		})
-	}
-
-	// CGO offset detection requires uncorrected entries; build a temporary
-	// deduplicated map (same shape as parsePclntabFuncsRaw) for that purpose.
-	tmpMap := make(map[string]PclntabFunc, len(allFuncs))
-	for _, fn := range allFuncs {
-		tmpMap[fn.Name] = fn
+		pf := PclntabFunc{Name: fn.Name, Entry: fn.Entry, End: fn.End}
+		allFuncs[i] = pf
+		tmpMap[fmt.Sprintf("%x", fn.Entry)] = pf
 	}
 	if offset := detectPclntabOffset(elfFile, tmpMap); offset != 0 {
 		for i := range allFuncs {
