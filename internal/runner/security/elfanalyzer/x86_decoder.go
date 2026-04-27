@@ -490,24 +490,44 @@ func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstructi
 		return false, 0
 	}
 
-	// RIP at execution time points to the instruction following this one.
-	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Len is decoder-validated positive
-
-	// x86asm stores disp32 as a zero-extended uint32 in int64 (not sign-extended),
-	// so 0xFFFFFFF8 is stored as int64(4294967288), not int64(-8).
-	// Re-interpret through int32 to recover the correct signed value before
-	// computing the effective address (RIP + sign_extend(disp32)).
-	dispSigned := int64(int32(mem.Disp)) //nolint:gosec // G115: intentional int32 reinterpretation for sign extension
-	if dispSigned < 0 {
-		negDisp := uint64(-dispSigned) //nolint:gosec // G115: dispSigned is negative; disp32 range guarantees no overflow on negation
-		if negDisp > nextPC {
-			return false, 0
-		}
+	target, ok := x86RIPRelAddr(inst.Offset, inst.Len, mem.Disp)
+	if !ok {
+		return false, 0
 	}
-	target := uint64(int64(nextPC) + dispSigned) //nolint:gosec // G115: underflow checked above; overflow bounded by binary size
 
 	val, ok := d.readGlobal(target, loadSize)
 	return ok, val
+}
+
+// x86RIPRelAddr computes the effective address for a RIP-relative memory
+// operand, guarding against uint64 wraparound and int64 overflow/underflow.
+//
+// nextPC = instOffset + instLen
+// target = nextPC + sign_extend(disp32)
+func x86RIPRelAddr(instOffset uint64, instLen int, rawDisp int64) (uint64, bool) {
+	// Guard uint64 overflow on nextPC.
+	if instOffset > math.MaxUint64-uint64(instLen) { //nolint:gosec // G115: instLen validated non-negative
+		return 0, false
+	}
+	nextPC := instOffset + uint64(instLen) //nolint:gosec // G115: overflow checked above
+	// nextPC must fit in int64 for signed displacement arithmetic.
+	if nextPC > math.MaxInt64 {
+		return 0, false
+	}
+
+	// x86asm stores disp32 as zero-extended in int64, not sign-extended.
+	// Re-interpret through int32 to recover the correct signed value.
+	dispSigned := int64(int32(rawDisp)) //nolint:gosec // G115: intentional int32 reinterpretation for sign extension
+
+	// In Go, signed int64 arithmetic wraps on overflow. Both positive overflow
+	// (nextPC near MaxInt64, large positive disp) and negative underflow
+	// (disp too negative) produce a negative result, so a single < 0 check
+	// catches both cases.
+	target := int64(nextPC) + dispSigned
+	if target < 0 {
+		return 0, false
+	}
+	return uint64(target), true
 }
 
 // writesRDXImplicitly reports whether the instruction unconditionally writes
