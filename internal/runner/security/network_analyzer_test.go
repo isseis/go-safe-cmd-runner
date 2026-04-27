@@ -100,7 +100,7 @@ func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
 			},
 		},
 	}
-	assert.True(t, syscallAnalysisHasNetworkSignal(r),
+	assert.True(t, syscallAnalysisHasNetworkSignal(r, runtime.GOOS),
 		"resolved network svc (socket on %s/%s) must be detected as network signal", runtime.GOOS, arch)
 }
 
@@ -120,7 +120,7 @@ func TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord(t *testing.T) {
 		},
 	}
 	// Network signal from socket must still be detected.
-	assert.True(t, syscallAnalysisHasNetworkSignal(r),
+	assert.True(t, syscallAnalysisHasNetworkSignal(r, runtime.GOOS),
 		"legacy filtered record with network entry must still trigger network signal")
 	// Unresolved svc (Number==-1) must still trigger high-risk signal.
 	assert.True(t, syscallAnalysisHasSVCSignal(r),
@@ -437,24 +437,24 @@ func syscallAnalysisResultWithNetworkSyscall(hasNetwork bool) *fileanalysis.Sysc
 
 // TestSyscallAnalysisHasNetworkSignal_Nil verifies nil returns false.
 func TestSyscallAnalysisHasNetworkSignal_Nil(t *testing.T) {
-	assert.False(t, syscallAnalysisHasNetworkSignal(nil))
+	assert.False(t, syscallAnalysisHasNetworkSignal(nil, runtime.GOOS))
 }
 
 // TestSyscallAnalysisHasNetworkSignal_Empty verifies empty result returns false.
 func TestSyscallAnalysisHasNetworkSignal_Empty(t *testing.T) {
-	assert.False(t, syscallAnalysisHasNetworkSignal(&fileanalysis.SyscallAnalysisResult{}))
+	assert.False(t, syscallAnalysisHasNetworkSignal(&fileanalysis.SyscallAnalysisResult{}, runtime.GOOS))
 }
 
 // TestSyscallAnalysisHasNetworkSignal_NetworkSyscall verifies that a network syscall
 // (socket #41 on x86_64) triggers the network signal.
 func TestSyscallAnalysisHasNetworkSignal_NetworkSyscall(t *testing.T) {
-	assert.True(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithNetworkSyscall(true)))
+	assert.True(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithNetworkSyscall(true), runtime.GOOS))
 }
 
 // TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall verifies that a non-network syscall
 // (read #3 on x86_64) does not trigger the network signal.
 func TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall(t *testing.T) {
-	assert.False(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithNetworkSyscall(false)))
+	assert.False(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithNetworkSyscall(false), runtime.GOOS))
 }
 
 // TestSyscallAnalysisHasNetworkSignal_MultipleEntries verifies that any network syscall entry
@@ -471,7 +471,7 @@ func TestSyscallAnalysisHasNetworkSignal_MultipleEntries(t *testing.T) {
 			},
 		},
 	}
-	assert.True(t, syscallAnalysisHasNetworkSignal(result))
+	assert.True(t, syscallAnalysisHasNetworkSignal(result, runtime.GOOS))
 }
 
 // ---- Section 6.2: isNetworkViaBinaryAnalysis syscall-signal flow tests ----
@@ -560,7 +560,7 @@ func TestSyscallAnalysisHasNetworkSignal_UnknownArch(t *testing.T) {
 			},
 		},
 	}
-	assert.False(t, syscallAnalysisHasNetworkSignal(result))
+	assert.False(t, syscallAnalysisHasNetworkSignal(result, runtime.GOOS))
 }
 
 // TestSyscallAnalysisHasNetworkSignal_NegativeNumber verifies that a negative syscall
@@ -574,5 +574,5 @@ func TestSyscallAnalysisHasNetworkSignal_NegativeNumber(t *testing.T) {
 			},
 		},
 	}
-	assert.False(t, syscallAnalysisHasNetworkSignal(result))
+	assert.False(t, syscallAnalysisHasNetworkSignal(result, runtime.GOOS))
 }
