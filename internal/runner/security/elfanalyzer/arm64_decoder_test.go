@@ -257,7 +257,7 @@ func TestARM64Decoder_IsFirstArgImm(t *testing.T) {
 	t.Run("mov x0, #41 (first arg register)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x20, 0x05, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsFirstArgImm(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(41), imm)
 	})
@@ -265,7 +265,7 @@ func TestARM64Decoder_IsFirstArgImm(t *testing.T) {
 	t.Run("mov w0, #198 (first arg register, 32-bit)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xC0, 0x18, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsFirstArgImm(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(198), imm)
 	})
@@ -273,14 +273,14 @@ func TestARM64Decoder_IsFirstArgImm(t *testing.T) {
 	t.Run("mov w8, #198 (syscall reg, not first arg)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xC8, 0x18, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsFirstArgImm(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 
 	t.Run("nop returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x1F, 0x20, 0x03, 0xD5}, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsFirstArgImm(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 
@@ -290,7 +290,7 @@ func TestARM64Decoder_IsFirstArgImm(t *testing.T) {
 	t.Run("orr x0, xzr, #0x38 (bitmask imm, openat syscall number)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xe0, 0x0b, 0x7d, 0xb2}, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsFirstArgImm(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(0x38), imm)
 	})
@@ -298,7 +298,7 @@ func TestARM64Decoder_IsFirstArgImm(t *testing.T) {
 	t.Run("orr x8, xzr, #0x38 (bitmask imm, wrong register)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xe8, 0x0b, 0x7d, 0xb2}, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsFirstArgImm(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 }
@@ -455,11 +455,11 @@ func TestARM64Decoder_ResolveFirstArgGlobal(t *testing.T) {
 	decoder.SetDataSections([]arm64DataSection{{Addr: loadAddr, Data: blob}})
 
 	insts := []DecodedInstruction{adrpInst, ldrInst, callInst}
-	value, ok := decoder.ResolveFirstArgGlobal(insts, 1)
+	ok, value := decoder.ResolveFirstArgGlobal(insts, 1)
 	assert.True(t, ok)
 	assert.Equal(t, int64(25), value)
 
-	value, ok = decoder.ResolveFirstArgGlobal(insts, 0)
+	ok, value = decoder.ResolveFirstArgGlobal(insts, 0)
 	assert.False(t, ok)
 	assert.Equal(t, int64(0), value)
 
@@ -468,7 +468,7 @@ func TestARM64Decoder_ResolveFirstArgGlobal(t *testing.T) {
 		require.NoError(t, err)
 
 		instsWithBranch := []DecodedInstruction{adrpInst, branchInst, ldrInst, callInst}
-		value, ok := decoder.ResolveFirstArgGlobal(instsWithBranch, 2)
+		ok, value := decoder.ResolveFirstArgGlobal(instsWithBranch, 2)
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), value)
 	})

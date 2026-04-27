@@ -356,7 +356,7 @@ func TestX86Decoder_IsFirstArgImm(t *testing.T) {
 		code := []byte{0xb8, 0x29, 0x00, 0x00, 0x00}
 		inst, err := decoder.Decode(code, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsFirstArgImm(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(0x29), imm)
 	})
@@ -366,7 +366,7 @@ func TestX86Decoder_IsFirstArgImm(t *testing.T) {
 		code := []byte{0x48, 0xc7, 0xc0, 0x29, 0x00, 0x00, 0x00}
 		inst, err := decoder.Decode(code, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsFirstArgImm(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(0x29), imm)
 	})
@@ -376,7 +376,7 @@ func TestX86Decoder_IsFirstArgImm(t *testing.T) {
 		code := []byte{0x48, 0xc7, 0xc7, 0x29, 0x00, 0x00, 0x00}
 		inst, err := decoder.Decode(code, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsFirstArgImm(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 
@@ -384,7 +384,7 @@ func TestX86Decoder_IsFirstArgImm(t *testing.T) {
 		code := []byte{0x90} // nop
 		inst, err := decoder.Decode(code, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsFirstArgImm(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 }
@@ -616,7 +616,7 @@ func TestX86Decoder_ModifiesFirstArg(t *testing.T) {
 
 func TestX86Decoder_ResolveFirstArgGlobal(t *testing.T) {
 	decoder := NewX86Decoder()
-	value, ok := decoder.ResolveFirstArgGlobal(nil, 0)
+	ok, value := decoder.ResolveFirstArgGlobal(nil, 0)
 	assert.False(t, ok)
 	assert.Equal(t, int64(0), value)
 }

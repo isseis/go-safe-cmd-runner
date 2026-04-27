@@ -71,13 +71,13 @@ type MachineCodeDecoder interface {
 	// Returns (addr, true) on success, (0, false) otherwise.
 	GetCallTarget(inst DecodedInstruction, instAddr uint64) (uint64, bool)
 
-	// IsFirstArgImm returns (value, true) if the instruction
+	// IsFirstArgImm returns (true, value) if the instruction
 	// sets the first integer argument register to a known immediate.
 	// x86_64: MOV EAX/RAX, imm  (RAX is the first argument register in Go ABI)
 	// arm64:  MOV W0/X0, #imm   (X0 is the first argument register in Go ABI)
 	//         ORR X0/W0, XZR/WZR, #imm  (bitmask-immediate encoding)
-	// Returns (0, false) otherwise.
-	IsFirstArgImm(inst DecodedInstruction) (int64, bool)
+	// Returns (false, 0) otherwise.
+	IsFirstArgImm(inst DecodedInstruction) (bool, int64)
 
 	// ModifiesFirstArg returns true if the instruction writes to the
 	// first integer argument register.
@@ -88,8 +88,8 @@ type MachineCodeDecoder interface {
 	// ResolveFirstArgGlobal tries to resolve the first argument value
 	// when it is loaded from memory, using nearby context in recentInstructions.
 	// idx is the index of the candidate load instruction in recentInstructions.
-	// Returns (value, true) if resolved, (0, false) otherwise.
-	ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (int64, bool)
+	// Returns (true, value) if resolved, (false, 0) otherwise.
+	ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (bool, int64)
 
 	// ModifiesThirdArg returns true if the instruction writes to the
 	// third syscall argument register.

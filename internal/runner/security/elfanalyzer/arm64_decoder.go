@@ -227,29 +227,29 @@ func (d *ARM64Decoder) GetCallTarget(inst DecodedInstruction, instAddr uint64) (
 	return uint64(target), true //nolint:gosec // G115: target non-negative validated above
 }
 
-// IsFirstArgImm returns (value, true) if inst sets the arm64
+// IsFirstArgImm returns (true, value) if inst sets the arm64
 // first argument register (X0 or W0) to an immediate.
 // arm64 Go ABI uses X0 for the first integer argument.
 // Handles two encodings:
 //   - MOV X0/W0, #imm  (arm64asm normalises MOVZ to MOV)
 //   - ORR X0/W0, XZR/WZR, #imm  (bitmask-immediate; functionally identical to MOV)
-func (d *ARM64Decoder) IsFirstArgImm(inst DecodedInstruction) (int64, bool) {
+func (d *ARM64Decoder) IsFirstArgImm(inst DecodedInstruction) (bool, int64) {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
-		return 0, false
+		return false, 0
 	}
 	if a.Op == arm64asm.MOV {
 		if a.Args[0] == nil || a.Args[1] == nil {
-			return 0, false
+			return false, 0
 		}
 		if !arm64MatchesReg(a.Args[0], arm64asm.X0) && !arm64MatchesReg(a.Args[0], arm64asm.W0) {
-			return 0, false
+			return false, 0
 		}
 		val, ok := arm64ImmValue(a.Args[1])
-		return val, ok
+		return ok, val
 	}
 	ok2, val := arm64OrrZeroRegImm(a, arm64asm.X0, arm64asm.W0)
-	return val, ok2
+	return ok2, val
 }
 
 // ModifiesFirstArg returns true if the instruction writes to
@@ -272,25 +272,26 @@ func (d *ARM64Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
 //
 //	ADRP Xn, <page>
 //	LDR  X0/W0, [Xn, #offset]
-func (d *ARM64Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (int64, bool) {
+func (d *ARM64Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (bool, int64) {
 	if idx < 0 || idx >= len(recentInstructions) {
-		return 0, false
+		return false, 0
 	}
 	if len(d.dataSections) == 0 {
-		return 0, false
+		return false, 0
 	}
 
 	loadInfo, ok := d.decodeFirstArgGlobalLoad(recentInstructions[idx])
 	if !ok {
-		return 0, false
+		return false, 0
 	}
 
 	addr, ok := d.resolveADRPBacktrackAddress(recentInstructions, idx, loadInfo.base, loadInfo.offset)
 	if !ok {
-		return 0, false
+		return false, 0
 	}
 
-	return d.readResolvedFirstArg(addr, loadInfo.is64Bit)
+	val, ok := d.readResolvedFirstArg(addr, loadInfo.is64Bit)
+	return ok, val
 }
 
 // ModifiesThirdArg returns true if the instruction writes to

@@ -46,16 +46,16 @@ func (m *MockMachineCodeDecoder) GetCallTarget(_ DecodedInstruction, _ uint64) (
 	return 0, false
 }
 
-func (m *MockMachineCodeDecoder) IsFirstArgImm(_ DecodedInstruction) (int64, bool) {
-	return 0, false
+func (m *MockMachineCodeDecoder) IsFirstArgImm(_ DecodedInstruction) (bool, int64) {
+	return false, 0
 }
 
 func (m *MockMachineCodeDecoder) ModifiesFirstArg(_ DecodedInstruction) bool {
 	return false
 }
 
-func (m *MockMachineCodeDecoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (int64, bool) {
-	return 0, false
+func (m *MockMachineCodeDecoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool, int64) {
+	return false, 0
 }
 
 func (m *MockMachineCodeDecoder) ModifiesThirdArg(_ DecodedInstruction) bool {

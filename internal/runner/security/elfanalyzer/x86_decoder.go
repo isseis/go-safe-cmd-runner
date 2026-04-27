@@ -254,11 +254,11 @@ func (d *X86Decoder) GetCallTarget(inst DecodedInstruction, instAddr uint64) (ui
 // Returns (0, false) otherwise.
 // Note: same as IsSyscallNumImm for x86_64 (RAX is both syscall
 // number register and first argument register in Go's register-based ABI).
-func (d *X86Decoder) IsFirstArgImm(inst DecodedInstruction) (int64, bool) {
+func (d *X86Decoder) IsFirstArgImm(inst DecodedInstruction) (bool, int64) {
 	ok, val := d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
 		return reg == x86asm.RAX || reg == x86asm.EAX
 	})
-	return val, ok
+	return ok, val
 }
 
 // ModifiesFirstArg returns true if the instruction writes to the
@@ -269,8 +269,8 @@ func (d *X86Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
 
 // ResolveFirstArgGlobal returns unresolved on x86_64.
 // The current Go wrapper resolution path only uses immediate assignments.
-func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (int64, bool) {
-	return 0, false
+func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool, int64) {
+	return false, 0
 }
 
 // implicitlyWritesRDXEDX reports whether the instruction unconditionally writes
