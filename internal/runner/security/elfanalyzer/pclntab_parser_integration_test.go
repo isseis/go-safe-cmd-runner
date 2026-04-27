@@ -83,8 +83,8 @@ func TestParsePclntab_RealCGOBinary_NotStripped(t *testing.T) {
 	expectedOffset := int64(runtimeTextVA) - int64(textSec.Addr) //nolint:gosec
 
 	// Parse pclntab raw entries (before offset correction) to pass to detectOffsetByCallTargets.
-	rawFuncs, err := parsePclntabRaw(elfFile)
-	require.NoError(t, err, "parsePclntabRaw should succeed")
+	rawFuncs, err := parsePclntabFuncsRaw(elfFile)
+	require.NoError(t, err, "parsePclntabFuncsRaw should succeed")
 
 	detectedOffset := detectOffsetByCallTargets(elfFile, rawFuncs)
 
@@ -114,7 +114,7 @@ func TestParsePclntab_RealCGOBinary_Stripped(t *testing.T) {
 	require.NoError(t, err)
 	defer elfNotStripped.Close()
 
-	rawFuncs, err := parsePclntabRaw(elfNotStripped)
+	rawFuncs, err := parsePclntabFuncsRaw(elfNotStripped)
 	require.NoError(t, err)
 	expectedOffset := detectOffsetByCallTargets(elfNotStripped, rawFuncs)
 	require.Greater(t, expectedOffset, int64(0), "not-stripped binary must have positive offset")
@@ -130,18 +130,11 @@ func TestParsePclntab_RealCGOBinary_Stripped(t *testing.T) {
 	require.NoError(t, err)
 	defer elfStripped.Close()
 
-	rawFuncsStripped, err := parsePclntabRaw(elfStripped)
-	require.NoError(t, err, "parsePclntabRaw should succeed on stripped binary")
+	rawFuncsStripped, err := parsePclntabFuncsRaw(elfStripped)
+	require.NoError(t, err, "parsePclntabFuncsRaw should succeed on stripped binary")
 
 	detectedOffset := detectOffsetByCallTargets(elfStripped, rawFuncsStripped)
 
 	assert.Equal(t, expectedOffset, detectedOffset,
 		"stripped binary should detect same offset 0x%x as not-stripped", expectedOffset)
-}
-
-// parsePclntabRaw returns uncorrected pclntab function entries by delegating to
-// parsePclntabFuncsRaw, the shared core of ParsePclntab. Using the same function
-// ensures tests stay in sync with production parsing logic automatically.
-func parsePclntabRaw(elfFile *elf.File) (map[string]PclntabFunc, error) {
-	return parsePclntabFuncsRaw(elfFile)
 }

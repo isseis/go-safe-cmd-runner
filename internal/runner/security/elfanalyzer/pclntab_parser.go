@@ -27,9 +27,8 @@ type PclntabFunc struct {
 }
 
 // newPclntabSymTable is the shared core that reads .gopclntab and returns the
-// parsed gosym.Table.  Both parsePclntabFuncsRaw and parsePclntabFuncs
-// delegate to this helper to avoid duplicating the version-check and
-// line-table initialisation logic.
+// parsed gosym.Table.  parsePclntabFuncs and test helpers delegate to this
+// to avoid duplicating the version-check and line-table initialisation logic.
 func newPclntabSymTable(elfFile *elf.File) (*gosym.Table, error) {
 	pclntabSection := elfFile.Section(".gopclntab")
 	if pclntabSection == nil {
@@ -59,32 +58,6 @@ func newPclntabSymTable(elfFile *elf.File) (*gosym.Table, error) {
 		return nil, fmt.Errorf("%w: %w", ErrUnsupportedPclntab, err)
 	}
 	return symTable, nil
-}
-
-// parsePclntabFuncsRaw reads .gopclntab and returns function entries as gosym
-// reports them — without any CGO offset correction applied.
-// Used by tests that need raw, uncorrected entries to validate the offset
-// detection algorithm directly.
-//
-// Note: when the same function name appears multiple times in pclntab (e.g.
-// ABI0 wrapper stubs), only the last entry survives in the returned map.
-// Use parsePclntabFuncs when all address ranges are needed.
-func parsePclntabFuncsRaw(elfFile *elf.File) (map[string]PclntabFunc, error) {
-	symTable, err := newPclntabSymTable(elfFile)
-	if err != nil {
-		return nil, err
-	}
-
-	functions := make(map[string]PclntabFunc, len(symTable.Funcs))
-	for i := range symTable.Funcs {
-		fn := &symTable.Funcs[i]
-		functions[fn.Name] = PclntabFunc{
-			Name:  fn.Name,
-			Entry: fn.Entry,
-			End:   fn.End,
-		}
-	}
-	return functions, nil
 }
 
 // parsePclntabFuncs returns all function entries from .gopclntab as a slice,
