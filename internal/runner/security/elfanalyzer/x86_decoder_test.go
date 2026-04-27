@@ -791,6 +791,19 @@ func TestX86Decoder_ResolveFirstArgGlobal(t *testing.T) {
 		assert.Equal(t, int64(59), val)
 	})
 
+	t.Run("MOV EAX [RIP+disp] reads 32-bit value only", func(t *testing.T) {
+		code := makeEAXRIPLoad(8)
+		inst := decodeOne(t, code, instAddr)
+		targetAddr := instAddr + uint64(inst.Len) + 8
+
+		data := []byte{59, 0, 0, 0, 0xff, 0xff, 0xff, 0xff}
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{{Addr: targetAddr, Data: data}})
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		require.True(t, ok)
+		assert.Equal(t, int64(59), val)
+	})
+
 	t.Run("negative displacement", func(t *testing.T) {
 		// MOV RAX, [RIP-8] at 0x1010 → nextPC=0x1017, target=0x100F
 		const addr = uint64(0x1010)

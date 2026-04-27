@@ -14,6 +14,12 @@ const (
 	// minArgsForImmediateMove is the minimum number of arguments
 	// required to check for an immediate move instruction (destination + source).
 	minArgsForImmediateMove = 2
+
+	// x86LoadSize32 is the byte count for 32-bit MOV EAX, [RIP+disp32] loads.
+	x86LoadSize32 = 4
+
+	// x86LoadSize64 is the byte count for 64-bit MOV RAX, [RIP+disp32] loads.
+	x86LoadSize64 = 8
 )
 
 // x86DataSection holds the virtual address and raw bytes of an ELF section
@@ -416,9 +422,8 @@ func (d *X86Decoder) SetDataSections(sections []x86DataSection) {
 	d.dataSections = sections
 }
 
-// readGlobal64 reads a little-endian uint64 from the data sections at addr.
-func (d *X86Decoder) readGlobal64(addr uint64) (int64, bool) {
-	const loadSize = uint64(8)
+// readGlobal reads a little-endian uint32/uint64 from the data sections at addr.
+func (d *X86Decoder) readGlobal(addr uint64, loadSize uint64) (int64, bool) {
 	for _, sec := range d.dataSections {
 		if addr < sec.Addr {
 			continue
@@ -427,8 +432,15 @@ func (d *X86Decoder) readGlobal64(addr uint64) (int64, bool) {
 		if off+loadSize > uint64(len(sec.Data)) { //nolint:gosec // G115: len(sec.Data) fits in uint64; section sizes are bounded by binary size
 			continue
 		}
-		val := binary.LittleEndian.Uint64(sec.Data[off : off+loadSize])
-		return int64(val), true //nolint:gosec // G115: int64/uint64 reinterpretation; caller validates range
+		start := int(off) //nolint:gosec // G115: off is bounded by the section length check above
+		if loadSize == x86LoadSize32 {
+			return int64(binary.LittleEndian.Uint32(sec.Data[start : start+x86LoadSize32])), true
+		}
+		if loadSize == x86LoadSize64 {
+			val := binary.LittleEndian.Uint64(sec.Data[start : start+x86LoadSize64])
+			return int64(val), true //nolint:gosec // G115: int64/uint64 reinterpretation; caller validates range
+		}
+		return 0, false
 	}
 	return 0, false
 }
@@ -464,6 +476,10 @@ func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstructi
 	if !ok || !sameFamily(destReg, x86asm.RAX) || !isFullWidthWrite(destReg) {
 		return false, 0
 	}
+	loadSize := uint64(x86LoadSize64)
+	if destReg == x86asm.EAX {
+		loadSize = x86LoadSize32
+	}
 
 	mem, ok := args[1].(x86asm.Mem)
 	if !ok || mem.Base != x86asm.RIP || mem.Index != 0 || mem.Scale != 0 {
@@ -486,7 +502,7 @@ func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstructi
 	}
 	target := uint64(int64(nextPC) + dispSigned) //nolint:gosec // G115: underflow checked above; overflow bounded by binary size
 
-	val, ok := d.readGlobal64(target)
+	val, ok := d.readGlobal(target, loadSize)
 	return ok, val
 }
 
