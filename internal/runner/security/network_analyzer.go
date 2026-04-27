@@ -13,11 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 )
-
-// gosDarwin is the GOOS value for macOS.
-const gosDarwin = "darwin"
 
 type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
@@ -30,29 +26,11 @@ func syscallTableForArch(goos, arch string) syscallTableInterface {
 	return elfanalyzer.SyscallTableForArchitecture(arch)
 }
 
-func requireGOOS(goos string) string {
-	if goos == "" {
-		panic("goos must not be empty")
-	}
-	return goos
-}
-
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
 	goos         string
 	store        fileanalysis.NetworkSymbolStore   // nil means cache disabled
 	syscallStore fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
-}
-
-// NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the specified OS.
-// On macOS, returns StandardMachOAnalyzer; on Linux and other platforms, returns StandardELFAnalyzer.
-func NewBinaryAnalyzer(goos string) binaryanalyzer.BinaryAnalyzer {
-	switch requireGOOS(goos) {
-	case gosDarwin:
-		return machoanalyzer.NewStandardMachOAnalyzer(nil)
-	default: // "linux", etc.
-		return elfanalyzer.NewStandardELFAnalyzer(nil, nil)
-	}
 }
 
 // NewNetworkAnalyzer creates a new NetworkAnalyzer.

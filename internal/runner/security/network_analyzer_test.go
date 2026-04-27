@@ -19,9 +19,6 @@ func TestSyscallAnalysisHasSVCSignal_Nil(t *testing.T) {
 
 func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 	assert.Panics(t, func() {
-		_ = NewBinaryAnalyzer("")
-	})
-	assert.Panics(t, func() {
 		_ = NewNetworkAnalyzer("")
 	})
 	assert.Panics(t, func() {
@@ -33,9 +30,6 @@ func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
 }
 
 func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
-	assert.NotPanics(t, func() {
-		_ = NewBinaryAnalyzer(runtime.GOOS)
-	})
 	assert.NotPanics(t, func() {
 		_ = NewNetworkAnalyzer(runtime.GOOS)
 	})
