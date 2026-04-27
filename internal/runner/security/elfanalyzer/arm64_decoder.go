@@ -139,9 +139,9 @@ func arm64OrrZeroRegImm(a arm64asm.Inst, regs ...arm64asm.Reg) (bool, int64) {
 	return ok, val
 }
 
-// ModifiesSyscallReg returns true if the instruction writes to
+// WritesSyscallReg returns true if the instruction writes to
 // the arm64 syscall number register (W8 or X8).
-func (d *ARM64Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
+func (d *ARM64Decoder) WritesSyscallReg(inst DecodedInstruction) bool {
 	a, ok := inst.arch.(arm64asm.Inst)
 	if !ok {
 		return false

@@ -92,7 +92,7 @@ func TestARM64Decoder_IsSyscallInstruction(t *testing.T) {
 	}
 }
 
-func TestARM64Decoder_ModifiesSyscallReg(t *testing.T) {
+func TestARM64Decoder_WritesSyscallReg(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	tests := []struct {
@@ -125,7 +125,7 @@ func TestARM64Decoder_ModifiesSyscallReg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, decoder.ModifiesSyscallReg(inst))
+			assert.Equal(t, tt.want, decoder.WritesSyscallReg(inst))
 		})
 	}
 }

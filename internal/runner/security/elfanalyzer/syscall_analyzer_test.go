@@ -22,7 +22,7 @@ func (m *MockMachineCodeDecoder) IsSyscallInstruction(_ DecodedInstruction) bool
 	return false
 }
 
-func (m *MockMachineCodeDecoder) ModifiesSyscallReg(_ DecodedInstruction) bool {
+func (m *MockMachineCodeDecoder) WritesSyscallReg(_ DecodedInstruction) bool {
 	return false
 }
 

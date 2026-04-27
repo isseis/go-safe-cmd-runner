@@ -105,7 +105,7 @@ func TestX86Decoder_IsSyscallInstruction(t *testing.T) {
 	}
 }
 
-func TestX86Decoder_ModifiesSyscallReg(t *testing.T) {
+func TestX86Decoder_WritesSyscallReg(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	tests := []struct {
@@ -210,7 +210,7 @@ func TestX86Decoder_ModifiesSyscallReg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, decoder.ModifiesSyscallReg(inst))
+			assert.Equal(t, tt.want, decoder.WritesSyscallReg(inst))
 		})
 	}
 }
@@ -331,14 +331,14 @@ func TestX86Decoder_IsSyscallNumImm_PartialRegisterWritesIgnored(t *testing.T) {
 	}
 }
 
-func TestX86Decoder_GetCopySourceForRegisterFamily_PartialRegisterWritesIgnored(t *testing.T) {
+func TestX86Decoder_CopySourceForRegFamily_PartialRegisterWritesIgnored(t *testing.T) {
 	decoder := NewX86Decoder()
 
 	t.Run("mov AL DL is ignored for RAX family", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x88, 0xd0}, 0)
 		require.NoError(t, err)
 
-		_, ok := decoder.GetCopySourceForRegisterFamily(inst, x86asm.RAX)
+		_, ok := decoder.CopySourceForRegFamily(inst, x86asm.RAX)
 		assert.False(t, ok)
 	})
 
@@ -346,7 +346,7 @@ func TestX86Decoder_GetCopySourceForRegisterFamily_PartialRegisterWritesIgnored(
 		inst, err := decoder.Decode([]byte{0x89, 0xd0}, 0)
 		require.NoError(t, err)
 
-		src, ok := decoder.GetCopySourceForRegisterFamily(inst, x86asm.RAX)
+		src, ok := decoder.CopySourceForRegFamily(inst, x86asm.RAX)
 		assert.True(t, ok)
 		assert.Equal(t, x86asm.EDX, src)
 	})
