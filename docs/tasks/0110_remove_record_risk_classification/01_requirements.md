@@ -118,7 +118,7 @@ func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult)
 }
 ```
 
-`syscallAnalysisHasNetworkSignal` の関数シグネチャは変更しない。`table` は関数内でアーキテクチャ（`result.Architecture`）から選択する。アーキテクチャが不明または未サポートの場合は安全側（ネットワーク判定なし）に倒す。
+`syscallAnalysisHasNetworkSignal` の関数シグネチャは変更しない。`table` は関数内でアーキテクチャ（`result.Architecture`）から選択する。アーキテクチャが不明または未サポートの場合は「ネットワーク検知をスキップ（`false` を返す）」動作とする（fail-open 挙動）。
 
 ### FR-3: `DetectedSymbolEntry.Category` の除去
 
@@ -208,7 +208,7 @@ syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: string(cat)}
 - 全テストがエラーなしで通過すること
 - リンターエラーがないこと
 
-### AC-7: FR-2 の安全側挙動が満たされる
+### AC-7: FR-2 の検知スキップ挙動（fail-open）が満たされる
 
 - `result.Architecture` が不明または未サポートの場合、`syscallAnalysisHasNetworkSignal` は `false` を返すこと
 - syscall 番号が負値など無効値の場合、ネットワーク判定に使用せず安全に処理されること

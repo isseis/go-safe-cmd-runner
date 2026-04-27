@@ -166,9 +166,9 @@
 - [ ] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall`（x86_64 write=1 → false）を追加する
 - [ ] AC-4: `TestCurrentSchemaVersion`（値が 18）を追加する
 - [ ] AC-4: `TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError` を追加する
-- [ ] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → false）を追加する
-- [ ] AC-7b: `TestSyscallAnalysisHasNetworkSignal_NegativeNumber`（Number=-1 → false）を追加する
-- [ ] AC-7c: `TestSyscallAnalysisHasNetworkSignal_Nil`（nil → false）を追加する
+- [ ] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → ネットワーク検知スキップで false、fail-open）を追加する
+- [ ] AC-7b: `TestSyscallAnalysisHasNetworkSignal_NegativeNumber`（Number=-1 → ネットワーク検知スキップで false、fail-open）を追加する
+- [ ] AC-7c: `TestSyscallAnalysisHasNetworkSignal_Nil`（nil → ネットワーク検知スキップで false、fail-open）を追加する
 - [ ] `TestIsNetworkSymbolName`（dns シンボル/syscall_wrapper/未知シンボルの判定）を追加する
 
 成功条件:
@@ -204,7 +204,7 @@
 | AC-4 | `CurrentSchemaVersion == 18`、v17 で `SchemaVersionMismatchError` | `TestCurrentSchemaVersion` / `TestLoad_SchemaVersion17_*` |
 | AC-5 | v17 レコードが `--force` なしで上書き可能 | `Store.Update` 既存テストの回帰確認 |
 | AC-6 | `make test` / `make lint` が通過 | CI 相当コマンドの実行 |
-| AC-7 | 不明アーキテクチャ・負値番号・nil で `false` を返す | `TestSyscallAnalysisHasNetworkSignal_{UnknownArch,NegativeNumber,Nil}` |
+| AC-7 | 不明アーキテクチャ・負値番号・nil ではネットワーク検知をスキップし `false` を返す（fail-open） | `TestSyscallAnalysisHasNetworkSignal_{UnknownArch,NegativeNumber,Nil}` |
 
 ---
 
