@@ -7,26 +7,26 @@
 ```mermaid
 graph TD
     subgraph "共通型（common パッケージ）"
-        A["syscall_types.go\nSyscallInfo.IsNetwork 削除"]
-        B["syscall_grouping.go\nIsNetwork 伝播ロジック削除"]
+        A["syscall_types.go<br>SyscallInfo.IsNetwork 削除"]
+        B["syscall_grouping.go<br>IsNetwork 伝播ロジック削除"]
     end
 
     subgraph "永続化スキーマ（fileanalysis パッケージ）"
-        C["schema.go\nDetectedSymbolEntry.Category 削除\nCurrentSchemaVersion = 18"]
+        C["schema.go<br>DetectedSymbolEntry.Category 削除<br>CurrentSchemaVersion = 18"]
     end
 
     subgraph "プロデューサー（record 側）"
-        D["filevalidator/validator.go\n IsNetwork 設定削除\nCategory 設定削除"]
-        E["elfanalyzer/syscall_analyzer.go\nIsNetwork 設定削除"]
-        F["machoanalyzer/pass1_scanner.go\nIsNetwork 設定削除"]
-        G["machoanalyzer/pass2_scanner.go\nIsNetwork 設定削除"]
-        H["libccache/adapters.go\nIsNetwork 設定削除"]
-        I["libccache/matcher.go\nIsNetwork 設定削除"]
+        D["filevalidator/validator.go<br> IsNetwork 設定削除<br>Category 設定削除"]
+        E["elfanalyzer/syscall_analyzer.go<br>IsNetwork 設定削除"]
+        F["machoanalyzer/pass1_scanner.go<br>IsNetwork 設定削除"]
+        G["machoanalyzer/pass2_scanner.go<br>IsNetwork 設定削除"]
+        H["libccache/adapters.go<br>IsNetwork 設定削除"]
+        I["libccache/matcher.go<br>IsNetwork 設定削除"]
     end
 
     subgraph "コンシューマー（runner 側）"
-        J["binaryanalyzer/network_symbols.go\nIsNetworkSymbolName 追加"]
-        K["network_analyzer.go\nsyscallAnalysisHasNetworkSignal 変更\nconvertNetworkSymbolEntries 変更\nhasNetworkSymbol チェック変更"]
+        J["binaryanalyzer/network_symbols.go<br>IsNetworkSymbolName 追加"]
+        K["network_analyzer.go<br>syscallAnalysisHasNetworkSignal 変更<br>convertNetworkSymbolEntries 変更<br>hasNetworkSymbol チェック変更"]
     end
 
     A --> D & E & F & G & H & I
