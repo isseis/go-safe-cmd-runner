@@ -207,8 +207,10 @@ int main() { return 0; }
 	require.NoError(t, err)
 	// SyscallAnalysis may be nil (no syscalls detected) or set with no network entries.
 	if record.SyscallAnalysis != nil {
+		table := libccache.MacOSSyscallTable{}
 		for _, sc := range record.SyscallAnalysis.DetectedSyscalls {
-			_ = sc // no IsNetwork field to check after schema v18
+			assert.False(t, sc.Number >= 0 && table.IsNetworkSyscall(sc.Number),
+				"minimal binary should not have network syscalls, got %+v", sc)
 		}
 	}
 }

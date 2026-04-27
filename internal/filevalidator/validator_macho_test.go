@@ -759,7 +759,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	// Resolved non-network svc entries (e.g., munmap=73): no warning, entries retained.
 	resolvedNonNetworkSVCEntries := []common.SyscallInfo{
 		{
-			Number: 73, // munmap — non-network,
+			Number: 73, // munmap — non-network
 			Occurrences: []common.SyscallOccurrence{{
 				Source:              common.DeterminationMethodDirectSVC0x80,
 				DeterminationMethod: common.DeterminationMethodDirectSVC0x80,

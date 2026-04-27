@@ -430,14 +430,14 @@ func TestSyscallAnalysisHasNetworkSignal_Empty(t *testing.T) {
 	assert.False(t, syscallAnalysisHasNetworkSignal(&fileanalysis.SyscallAnalysisResult{}))
 }
 
-// TestSyscallAnalysisHasNetworkSignal_IsNetworkTrue verifies that a DetectedSyscall
-// with IsNetwork==true triggers the network signal.
+// TestSyscallAnalysisHasNetworkSignal_IsNetworkTrue verifies that a network syscall
+// (socket #41 on x86_64) triggers the network signal.
 func TestSyscallAnalysisHasNetworkSignal_IsNetworkTrue(t *testing.T) {
 	assert.True(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithIsNetwork(true)))
 }
 
-// TestSyscallAnalysisHasNetworkSignal_IsNetworkFalse verifies that a DetectedSyscall
-// with IsNetwork==false does not trigger the network signal.
+// TestSyscallAnalysisHasNetworkSignal_IsNetworkFalse verifies that a non-network syscall
+// (read #3 on x86_64) does not trigger the network signal.
 func TestSyscallAnalysisHasNetworkSignal_IsNetworkFalse(t *testing.T) {
 	assert.False(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithIsNetwork(false)))
 }
