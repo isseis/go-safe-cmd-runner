@@ -26,39 +26,6 @@ type PclntabFunc struct {
 	End   uint64 // Function end address (if available)
 }
 
-// ParsePclntab reads the .gopclntab section from an ELF file and extracts
-// function information. This works even on stripped binaries because Go
-// runtime requires pclntab for stack traces and garbage collection.
-//
-// For CGO binaries, the .text section contains C runtime startup code before
-// the Go runtime functions. This causes pclntab addresses to be offset from
-// the actual virtual addresses. ParsePclntab detects and corrects this offset
-// using CALL/BL instruction cross-referencing (no .symtab required).
-//
-// Only pclntab with magic 0xfffffff1 (Go 1.20+, officially supported: Go 1.26)
-// is supported. Other versions return ErrUnsupportedPclntabVersion.
-func ParsePclntab(elfFile *elf.File) (map[string]PclntabFunc, error) {
-	functions, err := parsePclntabFuncsRaw(elfFile)
-	if err != nil {
-		return nil, err
-	}
-
-	// CGO binaries may have a constant address offset between pclntab entries
-	// and actual virtual addresses because C runtime startup code is inserted
-	// at the beginning of the .text section. Detect and apply the correction.
-	if offset := detectPclntabOffset(elfFile, functions); offset != 0 {
-		for name, fn := range functions {
-			functions[name] = PclntabFunc{
-				Name:  fn.Name,
-				Entry: uint64(int64(fn.Entry) + offset), //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
-				End:   uint64(int64(fn.End) + offset),   //nolint:gosec // G115: offset is bounded by binary size, no overflow risk
-			}
-		}
-	}
-
-	return functions, nil
-}
-
 // newPclntabSymTable is the shared core that reads .gopclntab and returns the
 // parsed gosym.Table.  Both parsePclntabFuncsRaw and parsePclntabAllFuncs
 // delegate to this helper to avoid duplicating the version-check and
@@ -96,8 +63,7 @@ func newPclntabSymTable(elfFile *elf.File) (*gosym.Table, error) {
 
 // parsePclntabFuncsRaw reads .gopclntab and returns function entries as gosym
 // reports them — without any CGO offset correction applied.
-// This is the shared core used by ParsePclntab (which then corrects the offset)
-// and by tests that need the raw, uncorrected entries to validate the offset
+// Used by tests that need raw, uncorrected entries to validate the offset
 // detection algorithm directly.
 //
 // Note: when the same function name appears multiple times in pclntab (e.g.
@@ -205,8 +171,8 @@ func detectPclntabOffset(elfFile *elf.File, pclntabFuncs map[string]PclntabFunc)
 	// returned by gosym (i.e., before any offset correction is applied).
 	// The algorithm computes (CALL target VA) - (pclntab Entry) = offset,
 	// which is only valid when pclntabFuncs entries are still offset-shifted.
-	// ParsePclntab calls detectPclntabOffset *before* applying the correction,
-	// so this invariant is guaranteed by the call order.
+	// Callers must pass uncorrected entries; parsePclntabAllFuncs satisfies
+	// this invariant by calling detectPclntabOffset before applying correction.
 	offset := detectOffsetByCallTargets(elfFile, pclntabFuncs)
 	// A valid offset is strictly positive (distinguishes CGO from non-CGO where offset=0)
 	// and does not exceed the .text section size.
