@@ -150,19 +150,33 @@ func (b *goWrapperBase) IsInsideWrapper(addr uint64) bool {
 
 // loadFromPclntab parses the .gopclntab section and populates symbols,
 // wrapperAddrs, and wrapperRanges.
+//
+// It uses parsePclntabFuncs so that duplicate pclntab entries for the same
+// function name — ABI0 wrapper stubs emitted by the Go compiler since Go 1.17
+// — are each registered in wrapperRanges.  Without this, calls originating
+// from inside an ABI0 stub body (e.g. the syscall.RawSyscall stub at a
+// different address than the full implementation) would not be recognised as
+// inside a wrapper and would be reported as unresolved wrapper calls with
+// number=-1.
 func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
-	functions, err := ParsePclntab(elfFile)
+	functions, err := parsePclntabFuncs(elfFile)
 	if err != nil {
 		return err
 	}
 
-	for name, fn := range functions {
-		// Calculate size, guarding against missing/zero End to avoid underflow
+	for _, fn := range functions {
+		name := fn.Name
+
+		// Calculate size, guarding against missing/zero End to avoid underflow.
 		size := uint64(0)
 		if fn.End > fn.Entry {
 			size = fn.End - fn.Entry
 		}
 
+		// symbols is keyed by name; duplicate entries overwrite each other.
+		// The map drives HasSymbols() (len(symbols) > 0) and exposes entries
+		// to test helpers via GetSymbols(); its exact contents are not relied
+		// on by the core analysis path.
 		b.symbols[name] = SymbolInfo{
 			Name:    name,
 			Address: fn.Entry,
@@ -172,6 +186,8 @@ func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
 		// Check if this is a known Go wrapper (exact match).
 		// Go standard library syscall wrappers use stable, unqualified symbol names
 		// (e.g. "syscall.Syscall") in pclntab, so exact match is sufficient.
+		// ALL occurrences (including ABI0 stubs) are registered so that both
+		// wrapperAddrs and wrapperRanges are complete.
 		wrapper := GoSyscallWrapper(name)
 		if _, ok := knownGoWrappers[wrapper]; ok {
 			b.wrapperAddrs[fn.Entry] = wrapper

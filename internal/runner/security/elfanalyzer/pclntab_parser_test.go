@@ -113,7 +113,7 @@ func TestParsePclntab_NoPclntabSection(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	_, err = ParsePclntab(f)
+	_, err = parsePclntabFuncs(f)
 	assert.ErrorIs(t, err, ErrNoPclntab)
 }
 
@@ -156,7 +156,7 @@ func TestParsePclntab_InvalidData(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := openELFWithPclntab(t, tc.data)
 
-			_, err := ParsePclntab(f)
+			_, err := parsePclntabFuncs(f)
 
 			require.Error(t, err)
 			assert.ErrorIs(t, err, tc.expectErr)
@@ -204,8 +204,8 @@ func TestDetectPclntabOffset_NonCGO(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	// Parse pclntab normally — addresses should already match actual VAs.
-	funcs, err := ParsePclntab(f)
+	// Parse raw pclntab entries (no CGO correction for non-CGO binaries).
+	funcs, err := parsePclntabFuncsRaw(f)
 	if err != nil {
 		// If the binary uses a different magic (e.g. Go 1.18-1.19), skip.
 		if errors.Is(err, ErrUnsupportedPclntabVersion) {
@@ -215,9 +215,8 @@ func TestDetectPclntabOffset_NonCGO(t *testing.T) {
 	}
 	require.NotEmpty(t, funcs)
 
-	// For non-CGO binaries the offset should be 0 (already corrected by ParsePclntab,
-	// but since ParsePclntab applies correction in-place, re-running detectPclntabOffset
-	// on the already-corrected map should return 0).
+	// For non-CGO binaries, CALL targets already match pclntab entries without
+	// any adjustment, so detectPclntabOffset must return 0.
 	offset := detectPclntabOffset(f, funcs)
 	assert.Equal(t, int64(0), offset, "non-CGO binary → offset must be 0")
 }
