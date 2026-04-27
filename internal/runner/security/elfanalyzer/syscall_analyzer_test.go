@@ -339,6 +339,86 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	assert.Empty(t, result.ArgEvalResults)
 }
 
+func TestSyscallAnalyzer_DeterminationDetail_X86(t *testing.T) {
+	tests := []struct {
+		name       string
+		code       []byte
+		wantNumber int
+		wantMethod string
+		wantDetail string
+	}{
+		{
+			name:       "copy chain detail",
+			code:       []byte{0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05}, // mov $0x2a,%edx; mov %edx,%eax; syscall
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+			wantDetail: DeterminationDetailX86CopyChain,
+		},
+		{
+			name:       "branch converged detail",
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+			wantDetail: DeterminationDetailX86BranchConverged,
+		},
+		{
+			name:       "copy chain unresolved detail",
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2b, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: -1,
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
+			wantDetail: DeterminationDetailX86CopyChainUnresolved,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := NewSyscallAnalyzer()
+			cfg := analyzer.archConfigs[elf.EM_X86_64]
+			result := analyzer.analyzeSyscallsInCode(tt.code, 0, cfg.decoder, cfg.syscallTable, nil)
+			require.Len(t, result.DetectedSyscalls, 1)
+
+			occ := result.DetectedSyscalls[0].Occurrences[0]
+			assert.Equal(t, tt.wantNumber, result.DetectedSyscalls[0].Number)
+			assert.Equal(t, tt.wantMethod, occ.DeterminationMethod)
+			assert.Equal(t, tt.wantDetail, occ.DeterminationDetail)
+		})
+	}
+}
+
+func TestSyscallAnalyzer_DeterminationStats(t *testing.T) {
+	// sequence:
+	// 1) mov $0x2a,%edx; mov %edx,%eax; syscall                -> copy chain immediate
+	// 2) cmp %ecx,%ecx; jne alt; mov $0x2b,%edx; ...; syscall  -> branch converged immediate
+	// 3) mov %ebx,%eax; syscall                                 -> unknown indirect
+	code := []byte{
+		0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05,
+		0x39, 0xc9, 0x75, 0x07, 0xba, 0x2b, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2b, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05,
+		0x89, 0xd8, 0x0f, 0x05,
+	}
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.NotNil(t, result.DeterminationStats)
+	assert.Equal(t, 2, result.DeterminationStats.ImmediateTotal)
+	assert.Equal(t, 1, result.DeterminationStats.ImmediateViaCopyChain)
+	assert.Equal(t, 1, result.DeterminationStats.ImmediateViaBranchConvergence)
+	assert.Equal(t, 1, result.DeterminationStats.UnknownIndirectSetting)
+}
+
+func TestSyscallAnalyzer_UnknownWarningIncludesDetail(t *testing.T) {
+	code := []byte{0x89, 0xd8, 0x0f, 0x05} // mov %ebx, %eax; syscall
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.NotEmpty(t, result.AnalysisWarnings)
+	assert.Contains(t, result.AnalysisWarnings[0], "unknown:indirect_setting")
+	assert.Contains(t, result.AnalysisWarnings[0], "detail=x86_copy_chain_unresolved")
+}
+
 func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 	// mov $0x29, %eax; syscall; mov %ebx, %eax; syscall
 	code := []byte{

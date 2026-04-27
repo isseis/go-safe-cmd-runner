@@ -105,6 +105,15 @@
 - 新しい判定情報が正しくシリアライズ/デシリアライズされること
 - 解析警告と統計が期待どおり生成されること
 
+### フェーズ3 チェックリスト（細分化）
+- [x] P3-1: `determination_method` を維持したまま拡張情報 `determination_detail` を後方互換で追加
+- [x] P3-2: x86 でコピー連鎖解決と分岐収束解決を `determination_detail` で識別可能に実装
+- [x] P3-3: 未解決時（特に indirect_setting）の警告に詳細理由を付加して診断性を改善
+- [x] P3-4: 解析統計 `determination_stats`（copy chain/branch convergence/unknown indirect）を追加
+- [x] P3-5: 共通型（`internal/common`）の JSON シリアライズ互換テストを追加
+- [x] P3-6: elfanalyzer の detail/stats/警告フォーマットに関するユニットテストを追加
+- [x] P3-7: `make fmt` / `make test` / `make lint` を実行し成功を確認
+
 ## 受け入れ条件
 - 既存の即値解決ケースが回帰しない。
 - レジスタコピー経由の代表ケースが `-1` ではなく有効なシステムコール番号になる。

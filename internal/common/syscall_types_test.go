@@ -17,7 +17,7 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 			Number: 41,
 			Name:   "socket",
 			Occurrences: []common.SyscallOccurrence{
-				{Location: 0x401000, DeterminationMethod: "immediate"},
+				{Location: 0x401000, DeterminationMethod: "immediate", DeterminationDetail: "x86_copy_chain"},
 			},
 		}
 		data, err := json.Marshal(info)
@@ -35,6 +35,7 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		occ := occs[0].(map[string]any)
 		assert.Equal(t, float64(0x401000), occ["location"])
 		assert.Equal(t, "immediate", occ["determination_method"])
+		assert.Equal(t, "x86_copy_chain", occ["determination_detail"])
 	})
 
 	t.Run("name omitted when empty", func(t *testing.T) {
@@ -93,6 +94,27 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 		require.Len(t, occs, 1)
 		occ := occs[0].(map[string]any)
 		assert.Equal(t, "libc_symbol_import", occ["source"])
+	})
+
+	t.Run("determination_detail omitted when empty", func(t *testing.T) {
+		info := common.SyscallInfo{
+			Number: 41,
+			Occurrences: []common.SyscallOccurrence{
+				{Location: 0x401000, DeterminationMethod: "immediate"},
+			},
+		}
+		data, err := json.Marshal(info)
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		occs, ok := m["occurrences"].([]any)
+		require.True(t, ok)
+		require.Len(t, occs, 1)
+		occ := occs[0].(map[string]any)
+		_, hasDetail := occ["determination_detail"]
+		assert.False(t, hasDetail, "determination_detail field should be omitted when empty")
 	})
 }
 
@@ -155,5 +177,46 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 		assert.Equal(t, original.Architecture, decoded.Architecture)
 		assert.NotNil(t, decoded.DetectedSyscalls)
 		assert.Len(t, decoded.DetectedSyscalls, 0)
+	})
+
+	t.Run("determination_stats round-trip", func(t *testing.T) {
+		original := common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
+			DetectedSyscalls: []common.SyscallInfo{
+				{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}}},
+			},
+			DeterminationStats: &common.SyscallDeterminationStats{
+				ImmediateTotal:                3,
+				ImmediateViaCopyChain:         1,
+				ImmediateViaBranchConvergence: 1,
+				UnknownIndirectSetting:        2,
+			},
+		}
+
+		data, err := json.Marshal(original)
+		require.NoError(t, err)
+
+		var decoded common.SyscallAnalysisResultCore
+		require.NoError(t, json.Unmarshal(data, &decoded))
+
+		require.NotNil(t, decoded.DeterminationStats)
+		assert.Equal(t, *original.DeterminationStats, *decoded.DeterminationStats)
+	})
+
+	t.Run("determination_stats omitted when nil", func(t *testing.T) {
+		core := common.SyscallAnalysisResultCore{
+			Architecture:       "x86_64",
+			DetectedSyscalls:   nil,
+			DeterminationStats: nil,
+		}
+
+		data, err := json.Marshal(core)
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		_, hasStats := m["determination_stats"]
+		assert.False(t, hasStats, "determination_stats should be omitted when nil")
 	})
 }

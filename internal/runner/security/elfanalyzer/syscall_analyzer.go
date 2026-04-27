@@ -107,6 +107,17 @@ const (
 	DeterminationMethodUnknownInvalidOffset = "unknown:invalid_offset"
 )
 
+// Determination detail constants for syscall number extraction.
+// These values provide additional context while keeping
+// DeterminationMethod backward-compatible.
+const (
+	DeterminationDetailX86CopyChain           = "x86_copy_chain"
+	DeterminationDetailX86BranchConverged     = "x86_branch_converged"
+	DeterminationDetailX86CopyChainUnresolved = "x86_copy_chain_unresolved"
+	DeterminationDetailX86IndirectWrite       = "x86_indirect_write"
+	DeterminationDetailInvalidOffset          = "invalid_offset"
+)
+
 // archConfig holds architecture-specific components for syscall analysis.
 type archConfig struct {
 	decoder              MachineCodeDecoder
@@ -290,6 +301,7 @@ func (a *SyscallAnalyzer) GetSyscallTable(machine elf.Machine) (SyscallNumberTab
 func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, decoder MachineCodeDecoder, table SyscallNumberTable, goResolver GoWrapperResolver) *SyscallAnalysisResult {
 	result := &SyscallAnalysisResult{}
 	result.DetectedSyscalls = make([]common.SyscallInfo, 0)
+	stats := newDeterminationStatsAccumulator()
 
 	// Pass 1: Analyze direct syscall instructions
 	syscallLocs, pass1DecodeFailures := a.findSyscallInstructions(code, baseAddr, decoder)
@@ -304,11 +316,12 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		}
 		info := a.extractSyscallInfo(code, loc, baseAddr, decoder, table)
 		result.DetectedSyscalls = append(result.DetectedSyscalls, info)
+		if len(info.Occurrences) > 0 {
+			stats.add(info.Occurrences[0])
+		}
 
 		if info.Number == -1 {
-			result.AnalysisWarnings = append(result.AnalysisWarnings,
-				fmt.Sprintf("syscall at 0x%x: number could not be determined (%s)",
-					info.Occurrences[0].Location, info.Occurrences[0].DeterminationMethod))
+			result.AnalysisWarnings = append(result.AnalysisWarnings, formatUnknownSyscallWarning(info.Occurrences[0]))
 		}
 	}
 
@@ -329,10 +342,12 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 
 			if call.SyscallNumber >= 0 {
 				info.Name = table.GetSyscallName(call.SyscallNumber)
+				stats.add(info.Occurrences[0])
 			} else {
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("go wrapper call at 0x%x: %s",
 						call.CallSiteAddress, call.DeterminationMethod))
+				stats.add(info.Occurrences[0])
 			}
 
 			result.DetectedSyscalls = append(result.DetectedSyscalls, info)
@@ -360,7 +375,68 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		}
 	}
 
+	result.DeterminationStats = stats.toCommonStats()
+
 	return result
+}
+
+type determinationStatsAccumulator struct {
+	immediateTotal                int
+	immediateViaCopyChain         int
+	immediateViaBranchConvergence int
+	unknownIndirectSetting        int
+}
+
+func newDeterminationStatsAccumulator() *determinationStatsAccumulator {
+	return &determinationStatsAccumulator{}
+}
+
+func (s *determinationStatsAccumulator) add(occ common.SyscallOccurrence) {
+	switch occ.DeterminationMethod {
+	case DeterminationMethodImmediate:
+		s.immediateTotal++
+		switch occ.DeterminationDetail {
+		case DeterminationDetailX86CopyChain:
+			s.immediateViaCopyChain++
+		case DeterminationDetailX86BranchConverged:
+			s.immediateViaBranchConvergence++
+		}
+	case DeterminationMethodUnknownIndirectSetting:
+		s.unknownIndirectSetting++
+	}
+}
+
+func (s *determinationStatsAccumulator) toCommonStats() *common.SyscallDeterminationStats {
+	if s.immediateTotal == 0 &&
+		s.immediateViaCopyChain == 0 &&
+		s.immediateViaBranchConvergence == 0 &&
+		s.unknownIndirectSetting == 0 {
+		return nil
+	}
+
+	return &common.SyscallDeterminationStats{
+		ImmediateTotal:                s.immediateTotal,
+		ImmediateViaCopyChain:         s.immediateViaCopyChain,
+		ImmediateViaBranchConvergence: s.immediateViaBranchConvergence,
+		UnknownIndirectSetting:        s.unknownIndirectSetting,
+	}
+}
+
+func formatUnknownSyscallWarning(occ common.SyscallOccurrence) string {
+	if occ.DeterminationDetail == "" {
+		return fmt.Sprintf(
+			"syscall at 0x%x: number could not be determined (%s)",
+			occ.Location,
+			occ.DeterminationMethod,
+		)
+	}
+
+	return fmt.Sprintf(
+		"syscall at 0x%x: number could not be determined (%s, detail=%s)",
+		occ.Location,
+		occ.DeterminationMethod,
+		occ.DeterminationDetail,
+	)
 }
 
 // protExecFlag is the PROT_EXEC flag value (0x4) used in mprotect syscall.
@@ -602,19 +678,23 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 
 	offset, ok := validateSyscallOffset(syscallAddr, baseAddr, len(code))
 	var method string
+	var detail string
 	if !ok {
 		method = DeterminationMethodUnknownInvalidOffset
+		detail = DeterminationDetailInvalidOffset
 	} else {
 		// Backward scan to find syscall number register modification
-		number, m := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
+		number, m, d := a.backwardScanForSyscallNumber(code, baseAddr, offset, decoder)
 		info.Number = number
 		method = m
+		detail = d
 	}
 
 	info.Occurrences = []common.SyscallOccurrence{
 		{
 			Location:            syscallAddr,
 			DeterminationMethod: method,
+			DeterminationDetail: detail,
 		},
 	}
 
@@ -687,7 +767,7 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 // Note: This method only handles direct syscall instructions.
 // Go wrapper calls (e.g., Go's syscall wrappers) are handled separately
 // via goResolver.FindWrapperCalls.
-func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string) {
+func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string, string) {
 	if x86Decoder, ok := decoder.(*X86Decoder); ok {
 		return a.backwardScanForSyscallNumberX86WithRegCopy(code, baseAddr, syscallOffset, x86Decoder)
 	}
@@ -704,13 +784,13 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 		// This prevents inconsistency where Number=-1 (unknown sentinel) with
 		// DeterminationMethodImmediate could indicate a successful decode of an invalid value.
 		if value >= 0 && value <= maxValidSyscallNumber {
-			return int(value), DeterminationMethodImmediate
+			return int(value), DeterminationMethodImmediate, ""
 		}
 		// Immediate value is out of valid range; treat as indirect setting
-		return -1, DeterminationMethodUnknownIndirectSetting
+		return -1, DeterminationMethodUnknownIndirectSetting, ""
 	}
 
-	return int(value), method
+	return int(value), method, ""
 }
 
 // backwardScanForSyscallNumberX86WithRegCopy scans backward from a direct
@@ -721,7 +801,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 	baseAddr uint64,
 	syscallOffset int,
 	x86Decoder *X86Decoder,
-) (int, string) {
+) (int, string, string) {
 	syscallAddr := baseAddr + uint64(syscallOffset) //nolint:gosec // G115: syscallOffset is validated by caller
 	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(x86Decoder))
 	if windowStart < 0 {
@@ -732,44 +812,44 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 		code, baseAddr, windowStart, syscallOffset, x86Decoder,
 	)
 	if len(instructions) == 0 {
-		return -1, DeterminationMethodUnknownDecodeFailed
+		return -1, DeterminationMethodUnknownDecodeFailed, ""
 	}
 
 	scanResult := a.scanX86SyscallRegInBlock(instructions, x86Decoder)
 	if scanResult.indirectSetting {
-		return -1, DeterminationMethodUnknownIndirectSetting
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86IndirectWrite
 	}
 
 	if scanResult.foundImmediate {
 		if scanResult.immediateValue >= 0 && scanResult.immediateValue <= maxValidSyscallNumber {
-			return int(scanResult.immediateValue), DeterminationMethodImmediate
+			return int(scanResult.immediateValue), DeterminationMethodImmediate, ""
 		}
-		return -1, DeterminationMethodUnknownIndirectSetting
+		return -1, DeterminationMethodUnknownIndirectSetting, ""
 	}
 
 	if scanResult.sawRegisterCopy && (scanResult.encounteredControlBoundary || scanResult.needPredecessorResolution) {
-		if value, ok := a.resolveX86RegValueAcrossPredecessors(instructions, scanResult.targetReg, syscallAddr, x86Decoder); ok {
+		if value, ok, detail := a.resolveX86RegValueAcrossPredecessors(instructions, scanResult.targetReg, syscallAddr, x86Decoder); ok {
 			if value >= 0 && value <= maxValidSyscallNumber {
-				return int(value), DeterminationMethodImmediate
+				return int(value), DeterminationMethodImmediate, detail
 			}
 		}
-		return -1, DeterminationMethodUnknownIndirectSetting
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved
 	}
 
 	if scanResult.sawRegisterCopy {
 		// Register-copy chains without a resolvable source immediate remain
 		// indirect by definition.
-		return -1, DeterminationMethodUnknownIndirectSetting
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved
 	}
 
 	if scanResult.encounteredControlBoundary {
-		return -1, DeterminationMethodUnknownControlFlowBoundary
+		return -1, DeterminationMethodUnknownControlFlowBoundary, ""
 	}
 
 	if scanResult.scanCount < a.maxBackwardScan {
-		return -1, DeterminationMethodUnknownWindowExhausted
+		return -1, DeterminationMethodUnknownWindowExhausted, ""
 	}
-	return -1, DeterminationMethodUnknownScanLimitExceeded
+	return -1, DeterminationMethodUnknownScanLimitExceeded, ""
 }
 
 type x86BackwardScanResult struct {
@@ -838,12 +918,13 @@ func (a *SyscallAnalyzer) resolveX86RegValueAcrossPredecessors(
 	targetReg x86asm.Reg,
 	syscallAddr uint64,
 	x86Decoder *X86Decoder,
-) (int64, bool) {
+) (int64, bool, string) {
 	if len(instructions) == 0 {
-		return 0, false
+		return 0, false, ""
 	}
 
 	succs := buildX86Successors(instructions, syscallAddr)
+	preds := buildX86Predecessors(succs)
 	virtualEnd := len(instructions)
 
 	// inStates contain register values at entry of each node.
@@ -894,10 +975,62 @@ func (a *SyscallAnalyzer) resolveX86RegValueAcrossPredecessors(
 
 	targetFamily := regFamily(targetReg)
 	if targetFamily == x86RegFamilyUnknown || !inStates[virtualEnd].hasInput {
-		return 0, false
+		return 0, false, ""
 	}
 	v := inValues[virtualEnd][targetFamily]
-	return v.value, v.known
+	if !v.known {
+		return 0, false, ""
+	}
+
+	if hasX86KnownConvergence(preds, inStates, inValues, targetFamily) {
+		return v.value, true, DeterminationDetailX86BranchConverged
+	}
+
+	return v.value, true, DeterminationDetailX86CopyChain
+}
+
+func buildX86Predecessors(succs map[int][]int) map[int][]int {
+	preds := make(map[int][]int, len(succs))
+	for from, targets := range succs {
+		for _, to := range targets {
+			preds[to] = append(preds[to], from)
+		}
+	}
+	return preds
+}
+
+func countDistinctX86Predecessors(nodes []int) int {
+	if len(nodes) == 0 {
+		return 0
+	}
+	seen := make(map[int]struct{}, len(nodes))
+	for _, n := range nodes {
+		seen[n] = struct{}{}
+	}
+	return len(seen)
+}
+
+func hasX86KnownConvergence(
+	preds map[int][]int,
+	inStates []x86StateMarker,
+	inValues [][]x86RegValue,
+	targetFamily x86RegFamily,
+) bool {
+	for node, ps := range preds {
+		if countDistinctX86Predecessors(ps) <= 1 {
+			continue
+		}
+		if node >= len(inStates) || node >= len(inValues) {
+			continue
+		}
+		if !inStates[node].hasInput {
+			continue
+		}
+		if inValues[node][targetFamily].known {
+			return true
+		}
+	}
+	return false
 }
 
 func buildX86Successors(instructions []DecodedInstruction, syscallAddr uint64) map[int][]int {
