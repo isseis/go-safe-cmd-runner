@@ -35,10 +35,10 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_Normal(t *testing.T) {
 	fileHash := "sha256:abc123def456"
 	nsaData := &SymbolAnalysisData{
 		DetectedSymbols: []DetectedSymbolEntry{
-			{Name: "socket", Category: "network"},
+			{Name: "socket"},
 		},
 		DynamicLoadSymbols: []DetectedSymbolEntry{
-			{Name: "dlopen", Category: "dynamic_load"},
+			{Name: "dlopen"},
 		},
 	}
 	err = fileStore.Save(rp, &Record{
@@ -54,10 +54,8 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_Normal(t *testing.T) {
 
 	require.Len(t, loaded.DetectedSymbols, 1)
 	assert.Equal(t, "socket", loaded.DetectedSymbols[0].Name)
-	assert.Equal(t, "network", loaded.DetectedSymbols[0].Category)
 	require.Len(t, loaded.DynamicLoadSymbols, 1)
 	assert.Equal(t, "dlopen", loaded.DynamicLoadSymbols[0].Name)
-	assert.Equal(t, "dynamic_load", loaded.DynamicLoadSymbols[0].Category)
 }
 
 func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_NoNetworkSymbols(t *testing.T) {
@@ -112,7 +110,7 @@ func TestNetworkSymbolStore_LoadNetworkSymbolAnalysis_HashMismatch(t *testing.T)
 		ContentHash: "sha256:originalhash",
 		SymbolAnalysis: &SymbolAnalysisData{
 			DetectedSymbols: []DetectedSymbolEntry{
-				{Name: "socket", Category: "network"},
+				{Name: "socket"},
 			},
 		},
 	})

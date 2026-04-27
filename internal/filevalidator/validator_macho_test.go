@@ -341,7 +341,6 @@ func TestBuildMachoSyscallAnalysisData_SVCOnly(t *testing.T) {
 
 	sc := result.DetectedSyscalls[0]
 	assert.Equal(t, -1, sc.Number)
-	assert.False(t, sc.IsNetwork)
 	require.Len(t, sc.Occurrences, 2)
 	// Occurrences sorted by Location ascending.
 	assert.Equal(t, addrs[0], sc.Occurrences[0].Location)
@@ -486,7 +485,6 @@ func TestBuildSVCSyscallEntries_CommonSyscallInfo(t *testing.T) {
 	require.Len(t, sc.Occurrences, 1)
 	assert.Equal(t, "direct_svc_0x80", sc.Occurrences[0].DeterminationMethod)
 	assert.Equal(t, "direct_svc_0x80", sc.Occurrences[0].Source)
-	assert.False(t, sc.IsNetwork)
 	assert.Empty(t, sc.Name)
 }
 
@@ -547,9 +545,8 @@ func recordMachOWithLibSystem(
 func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 	libsysEntries := []common.SyscallInfo{
 		{
-			Number:    97,
-			Name:      "socket",
-			IsNetwork: true,
+			Number: 97,
+			Name:   "socket",
 			Occurrences: []common.SyscallOccurrence{{
 				Location:            0,
 				DeterminationMethod: "lib_cache_match",
@@ -583,7 +580,6 @@ func TestUpdateAnalysisRecord_LibSystemImportOnly(t *testing.T) {
 	assert.Equal(t, "socket", sc.Name)
 	assert.Equal(t, uint64(0), sc.Occurrences[0].Location, "libSystem entries must have Location=0")
 	assert.Equal(t, "libsystem_symbol_import", sc.Occurrences[0].Source)
-	assert.True(t, sc.IsNetwork)
 }
 
 // TestUpdateAnalysisRecord_SVCAndLibSystemMerged verifies that buildMachoSyscallData
@@ -592,9 +588,8 @@ func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
 	svcEntries := buildSVCInfos([]uint64{0x100000000})
 	libsysEntries := []common.SyscallInfo{
 		{
-			Number:    98,
-			Name:      "connect",
-			IsNetwork: true,
+			Number: 98,
+			Name:   "connect",
 			Occurrences: []common.SyscallOccurrence{{
 				Location:            0,
 				DeterminationMethod: "lib_cache_match",
@@ -738,7 +733,7 @@ func TestMergeMachoSyscallInfos_MixedNumbersSortedFirst(t *testing.T) {
 func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	// libSystem entry that is non-network: must be retained (no filtering).
 	libsysEntries := []common.SyscallInfo{
-		{Number: 97, IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
+		{Number: 97, Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
 	}
 
 	// No svc entries: no warning, libsys entry is retained.
@@ -764,8 +759,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	// Resolved non-network svc entries (e.g., munmap=73): no warning, entries retained.
 	resolvedNonNetworkSVCEntries := []common.SyscallInfo{
 		{
-			Number:    73, // munmap — non-network
-			IsNetwork: false,
+			Number: 73, // munmap — non-network
 			Occurrences: []common.SyscallOccurrence{{
 				Source:              common.DeterminationMethodDirectSVC0x80,
 				DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
@@ -782,9 +776,8 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	// Resolved network svc entry (socket=97): no warning, entry retained in DetectedSyscalls.
 	resolvedNetworkSVCEntries := []common.SyscallInfo{
 		{
-			Number:    97, // socket — network
-			Name:      "socket",
-			IsNetwork: true,
+			Number: 97, // socket — network
+			Name:   "socket",
 			Occurrences: []common.SyscallOccurrence{{
 				Source:              common.DeterminationMethodDirectSVC0x80,
 				DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
@@ -795,11 +788,10 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	assert.Empty(t, result.AnalysisWarnings, "no warning for resolved network svc entry")
 	require.Len(t, result.DetectedSyscalls, 1, "resolved network svc entry must be retained")
 	assert.Equal(t, 97, result.DetectedSyscalls[0].Number)
-	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
 
 	// Mixed: resolved network svc + unresolved svc: warning present, both retained.
 	mixedEntries := []common.SyscallInfo{
-		{Number: 97, IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80}}},
+		{Number: 97, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80}}},
 		{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80}}},
 	}
 	result = buildMachoSyscallData(mixedEntries, nil, "arm64")

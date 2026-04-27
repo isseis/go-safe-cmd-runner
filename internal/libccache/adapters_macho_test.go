@@ -97,7 +97,6 @@ func TestMachoLibSystemAdapter_FallbackNameMatch_KnownNames(t *testing.T) {
 		if r.Name == "socket" {
 			found = true
 			assert.Equal(t, 97, r.Number)
-			assert.True(t, r.IsNetwork)
 			assert.Equal(t, DeterminationMethodSymbolNameMatch, r.Occurrences[0].DeterminationMethod)
 			assert.Equal(t, SourceLibsystemSymbolImport, r.Occurrences[0].Source)
 		}
@@ -115,7 +114,6 @@ func TestMachoLibSystemAdapter_FallbackNameMatch_NocancelNames(t *testing.T) {
 	names := make(map[string]common.SyscallInfo, len(result))
 	for _, syscall := range result {
 		names[syscall.Name] = syscall
-		assert.True(t, syscall.IsNetwork)
 		assert.Equal(t, DeterminationMethodSymbolNameMatch, syscall.Occurrences[0].DeterminationMethod)
 	}
 

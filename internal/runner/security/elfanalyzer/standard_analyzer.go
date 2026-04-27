@@ -409,8 +409,9 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	}
 
 	var symbols []binaryanalyzer.DetectedSymbol
+	table := syscallTableForArchitecture(result.Architecture)
 	for _, info := range result.DetectedSyscalls {
-		if info.IsNetwork {
+		if table != nil && info.Number >= 0 && table.IsNetworkSyscall(info.Number) {
 			symbols = append(symbols, binaryanalyzer.DetectedSymbol{
 				Name:     info.Name,
 				Category: "syscall",
@@ -425,4 +426,15 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	}
 
 	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
+}
+
+func syscallTableForArchitecture(arch string) SyscallNumberTable {
+	switch arch {
+	case "x86_64":
+		return NewX86_64SyscallTable()
+	case "arm64":
+		return NewARM64LinuxSyscallTable()
+	default:
+		return nil
+	}
 }

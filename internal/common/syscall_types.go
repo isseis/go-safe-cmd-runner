@@ -69,9 +69,6 @@ type SyscallInfo struct {
 	// Empty if the number is unknown or not in the table.
 	Name string `json:"name,omitempty"`
 
-	// IsNetwork indicates whether this syscall is network-related.
-	IsNetwork bool `json:"is_network"`
-
 	// Occurrences contains all detected occurrences of this syscall.
 	// Multiple occurrences with the same number are grouped together.
 	// Occurrences should be sorted by Location in ascending order.

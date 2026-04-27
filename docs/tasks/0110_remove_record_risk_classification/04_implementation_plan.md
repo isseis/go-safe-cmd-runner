@@ -70,11 +70,11 @@
 - `internal/fileanalysis/schema.go`
 
 作業内容:
-- [ ] `SyscallInfo` から `IsNetwork bool \`json:"is_network"\`` を削除する
-- [ ] `SyscallAnalysisResultCore` コメントの `IsNetwork` 言及を整理する
-- [ ] `GroupAndSortSyscalls` から `IsNetwork:` フィールド設定と `if info.IsNetwork` ブロックを削除する
-- [ ] `DetectedSymbolEntry` から `Category string \`json:"category"\`` を削除する
-- [ ] `CurrentSchemaVersion` を 18 に更新し、バージョン履歴コメントに v18 の説明を追記する
+- [x] `SyscallInfo` から `IsNetwork bool \`json:"is_network"\`` を削除する
+- [x] `SyscallAnalysisResultCore` コメントの `IsNetwork` 言及を整理する
+- [x] `GroupAndSortSyscalls` から `IsNetwork:` フィールド設定と `if info.IsNetwork` ブロックを削除する
+- [x] `DetectedSymbolEntry` から `Category string \`json:"category"\`` を削除する
+- [x] `CurrentSchemaVersion` を 18 に更新し、バージョン履歴コメントに v18 の説明を追記する
 
 成功条件:
 - `go build ./internal/common/...` および `go build ./internal/fileanalysis/...` が通る
@@ -93,13 +93,13 @@
 - `internal/filevalidator/validator.go`
 
 作業内容:
-- [ ] `elfanalyzer/syscall_analyzer.go`：`info.IsNetwork = table.IsNetworkSyscall(...)` を 2 箇所削除する
-- [ ] `machoanalyzer/pass1_scanner.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を削除する
-- [ ] `machoanalyzer/pass2_scanner.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を削除する
-- [ ] `libccache/adapters.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を削除する
-- [ ] `libccache/matcher.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を 2 箇所削除する
-- [ ] `filevalidator/validator.go`：`buildSVCInfos` の `IsNetwork: false` を削除する
-- [ ] `filevalidator/validator.go`：`convertDetectedSymbols` の `Category: s.Category` を削除する（`DetectedSymbolEntry{Name: s.Name}` のみにする）
+- [x] `elfanalyzer/syscall_analyzer.go`：`info.IsNetwork = table.IsNetworkSyscall(...)` を 2 箇所削除する
+- [x] `machoanalyzer/pass1_scanner.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を削除する
+- [x] `machoanalyzer/pass2_scanner.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を削除する
+- [x] `libccache/adapters.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を削除する
+- [x] `libccache/matcher.go`：`SyscallInfo` 初期化の `IsNetwork: ...` を 2 箇所削除する
+- [x] `filevalidator/validator.go`：`buildSVCInfos` の `IsNetwork: false` を削除する
+- [x] `filevalidator/validator.go`：`convertDetectedSymbols` の `Category: s.Category` を削除する（`DetectedSymbolEntry{Name: s.Name}` のみにする）
 
 成功条件:
 - `go build ./internal/runner/security/elfanalyzer/...` など各パッケージのビルドが通る
@@ -114,13 +114,13 @@
 - `internal/runner/security/network_analyzer.go`
 
 作業内容:
-- [ ] `binaryanalyzer/network_symbols.go` に `IsNetworkSymbolName(name string) bool` を追加する
-- [ ] `network_analyzer.go` に `syscallTableInterface` インターフェースを定義する
-- [ ] `network_analyzer.go` に `syscallTableForArch(arch string) syscallTableInterface` を実装する（darwin は `libccache.MacOSSyscallTable{}`、linux は arch に応じて選択、不明は `nil`）
-- [ ] `network_analyzer.go` の import に `libccache` を追加する（循環参照がないことを `go build` で確認する）
-- [ ] `syscallAnalysisHasNetworkSignal` を `s.IsNetwork` 参照から `table.IsNetworkSyscall(s.Number)` へ変更する（`table == nil` の場合は `false` を返す）
-- [ ] `isNetworkViaBinaryAnalysis` 内の `hasNetworkSymbol` チェックを `binaryanalyzer.IsNetworkCategory(sym.Category)` から `binaryanalyzer.IsNetworkSymbolName(sym.Name)` に変更する
-- [ ] `convertNetworkSymbolEntries` を `e.Category` 転写から `binaryanalyzer.IsNetworkSymbol(e.Name)` によるカテゴリ導出に変更する
+- [x] `binaryanalyzer/network_symbols.go` に `IsNetworkSymbolName(name string) bool` を追加する
+- [x] `network_analyzer.go` に `syscallTableInterface` インターフェースを定義する
+- [x] `network_analyzer.go` に `syscallTableForArch(arch string) syscallTableInterface` を実装する（darwin は `libccache.MacOSSyscallTable{}`、linux は arch に応じて選択、不明は `nil`）
+- [x] `network_analyzer.go` の import に `libccache` を追加する（循環参照がないことを `go build` で確認する）
+- [x] `syscallAnalysisHasNetworkSignal` を `s.IsNetwork` 参照から `table.IsNetworkSyscall(s.Number)` へ変更する（`table == nil` の場合は `false` を返す）
+- [x] `isNetworkViaBinaryAnalysis` 内の `hasNetworkSymbol` チェックを `binaryanalyzer.IsNetworkCategory(sym.Category)` から `binaryanalyzer.IsNetworkSymbolName(sym.Name)` に変更する
+- [x] `convertNetworkSymbolEntries` を `e.Category` 転写からランタイム導出へ変更する（`IsNetworkSymbol(e.Name)` を優先し、未分類時は `IsDynamicLoadSymbol(e.Name)` なら `dynamic_load`、それ以外は `syscall_wrapper` を設定）
 
 成功条件:
 - `go build ./...` がエラーなしで通る
@@ -133,18 +133,18 @@
 対象: 「2.2 変更対象ファイル（テストコード）」に列挙した全ファイル
 
 作業内容:
-- [ ] `common/syscall_types_test.go`：`IsNetwork` フィールドへの参照を削除・更新する
-- [ ] `common/syscall_grouping_test.go`：`IsNetwork` フィールドへの参照を削除・更新する
-- [ ] `fileanalysis/syscall_store_test.go`：`SyscallInfo` 構造体リテラルの `IsNetwork:` を削除する
-- [ ] `fileanalysis/network_symbol_store_test.go`：`DetectedSymbolEntry` 構造体リテラルの `Category:` を削除する
-- [ ] `filevalidator/validator_test.go`：`SyscallInfo` 構造体リテラルの `IsNetwork:` を削除する
-- [ ] `filevalidator/validator_macho_test.go`：`SyscallInfo` 構造体リテラルの `IsNetwork:` を削除する
-- [ ] `libccache/adapters_macho_test.go`：`SyscallInfo` の期待値から `IsNetwork:` を削除する
-- [ ] `libccache/matcher_test.go`：`SyscallInfo` の期待値から `IsNetwork:` を削除する
-- [ ] `libccache/integration_darwin_test.go`：`SyscallInfo.IsNetwork` への参照を削除する
-- [ ] `runner/security/syscall_store_adapter_test.go`：`SyscallInfo.IsNetwork` への参照を削除する
-- [ ] `runner/security/command_analysis_test.go`：`DetectedSymbolEntry.Category` への参照を削除する
-- [ ] `runner/security/network_analyzer_test.go`：`syscallAnalysisHasNetworkSignal` 呼び出しと `Category` 参照を更新する
+- [x] `common/syscall_types_test.go`：`IsNetwork` フィールドへの参照を削除・更新する
+- [x] `common/syscall_grouping_test.go`：`IsNetwork` フィールドへの参照を削除・更新する
+- [x] `fileanalysis/syscall_store_test.go`：`SyscallInfo` 構造体リテラルの `IsNetwork:` を削除する
+- [x] `fileanalysis/network_symbol_store_test.go`：`DetectedSymbolEntry` 構造体リテラルの `Category:` を削除する
+- [x] `filevalidator/validator_test.go`：`SyscallInfo` 構造体リテラルの `IsNetwork:` を削除する
+- [x] `filevalidator/validator_macho_test.go`：`SyscallInfo` 構造体リテラルの `IsNetwork:` を削除する
+- [x] `libccache/adapters_macho_test.go`：`SyscallInfo` の期待値から `IsNetwork:` を削除する
+- [x] `libccache/matcher_test.go`：`SyscallInfo` の期待値から `IsNetwork:` を削除する
+- [x] `libccache/integration_darwin_test.go`：`SyscallInfo.IsNetwork` への参照を削除する
+- [x] `runner/security/syscall_store_adapter_test.go`：`SyscallInfo.IsNetwork` への参照を削除する
+- [x] `runner/security/command_analysis_test.go`：`DetectedSymbolEntry.Category` への参照を削除する
+- [x] `runner/security/network_analyzer_test.go`：`syscallAnalysisHasNetworkSignal` 呼び出しと `Category` 参照を更新する
 
 成功条件:
 - `go test -tags test -run . ./...` がコンパイルエラーなしで実行できる（テスト失敗は Phase 5 で対処）
@@ -160,16 +160,16 @@
 - `internal/runner/security/binaryanalyzer/network_symbols_test.go`
 
 作業内容:
-- [ ] AC-1: `TestSyscallInfo_JSONDoesNotContainIsNetwork` を追加する
-- [ ] AC-2: `TestDetectedSymbolEntry_JSONDoesNotContainCategory` を追加する
-- [ ] AC-3a: `TestSyscallAnalysisHasNetworkSignal_NetworkSyscall`（x86_64 socket=41 → true）を追加する
-- [ ] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall`（x86_64 write=1 → false）を追加する
-- [ ] AC-4: `TestCurrentSchemaVersion`（値が 18）を追加する
-- [ ] AC-4: `TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError` を追加する
-- [ ] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → ネットワーク検知スキップで false、fail-open）を追加する
-- [ ] AC-7b: `TestSyscallAnalysisHasNetworkSignal_NegativeNumber`（Number=-1 → ネットワーク検知スキップで false、fail-open）を追加する
-- [ ] AC-7c: `TestSyscallAnalysisHasNetworkSignal_Nil`（nil → ネットワーク検知スキップで false、fail-open）を追加する
-- [ ] `TestIsNetworkSymbolName`（dns シンボル/syscall_wrapper/未知シンボルの判定）を追加する
+- [x] AC-1: `TestSyscallInfo_JSONDoesNotContainIsNetwork` を追加する
+- [x] AC-2: `TestDetectedSymbolEntry_JSONDoesNotContainCategory` を追加する
+- [x] AC-3a: `TestSyscallAnalysisHasNetworkSignal_NetworkSyscall` を追加する（OS条件付きの syscall 番号を使用: 例 Linux x86_64 socket=41 / Darwin socket=97）
+- [x] AC-3b: `TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall` を追加する （OS条件付きの syscall 番号を使用: 例 Linux x86_64 write=1 / Darwin write=4）
+- [x] AC-4: `TestCurrentSchemaVersion`（値が 18）を追加する
+- [x] AC-4: `TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError` を追加 する
+- [x] AC-7a: `TestSyscallAnalysisHasNetworkSignal_UnknownArch`（mips → ネットワ ーク検知スキップで false、fail-open）を追加する
+- [x] AC-7b: `TestSyscallAnalysisHasNetworkSignal_NegativeNumber`（Number=-1 →  ネットワーク検知スキップで false、fail-open）を追加する
+- [x] AC-7c: `TestSyscallAnalysisHasNetworkSignal_Nil`（nil → ネットワーク検知スキップで false、fail-open）を追加する
+- [x] `TestIsNetworkSymbolName`（dns シンボル/syscall_wrapper/未知シンボルの判定）を追加する
 
 成功条件:
 - 上記テストがすべて成功する
@@ -182,12 +182,12 @@
 対象: 変更済みコード全体
 
 作業内容:
-- [ ] `make fmt` を実行してフォーマットエラーがないことを確認する
-- [ ] `make test` を実行して全テストが通過することを確認する
-- [ ] `make lint` を実行してリンターエラーがないことを確認する
-- [ ] AC-3（行動不変性）を既存テスト（`network_analyzer_test.go` 等）の通過で確認する
-- [ ] AC-5（スキーマ自動移行）を `Store.Update` 既存テストの通過で確認する
-- [ ] 実装計画書のチェックボックスをすべて完了に更新する
+- [x] `make fmt` を実行してフォーマットエラーがないことを確認する
+- [x] `make test` を実行して全テストが通過することを確認する
+- [x] `make lint` を実行してリンターエラーがないことを確認する
+- [x] AC-3（行動不変性）を既存テスト（`network_analyzer_test.go` 等）の通過で確 認する
+- [x] AC-5（スキーマ自動移行）を `Store.Update` 既存テストの通過で確認する
+- [x] 実装計画書のチェックボックスをすべて完了に更新する
 
 成功条件:
 - `make fmt` / `make test` / `make lint` がすべてエラーなしで完了する
@@ -230,7 +230,7 @@
 
 ## 7. 完了条件
 
-- [ ] 変更対象ファイルの実装が完了している
-- [ ] AC-1〜AC-7 の検証がテストで確認できる
-- [ ] `make fmt` / `make test` / `make lint` が成功する
-- [ ] 仕様書（要件・設計・詳細仕様）と実装の乖離がない
+- [x] 変更対象ファイルの実装が完了している
+- [x] AC-1〜AC-7 の検証がテストで確認できる
+- [x] `make fmt` / `make test` / `make lint` が成功する
+- [x] 仕様書（要件・設計・詳細仕様）と実装の乖離がない

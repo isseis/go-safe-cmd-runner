@@ -128,7 +128,7 @@ group = &SyscallInfo{
     Name:        info.Name,
     Occurrences: make([]SyscallOccurrence, 0),
 }
-// IsNetwork の伝播ロジックを削除（フィールド自体が存在しない）
+// Remove IsNetwork propagation because the field no longer exists.
 ```
 
 ### 3.2 `internal/runner/security/elfanalyzer/syscall_analyzer.go`
@@ -295,8 +295,8 @@ func IsNetworkSymbolName(name string) bool {
 
 ```go
 // syscallTableInterface abstracts syscall number → network classification.
-// Structurally identical to elfanalyzer.SyscallNumberTable (defined locally
-// to avoid depending on a specific package here).
+// This is a subset of elfanalyzer.SyscallNumberTable, defined locally to avoid
+// depending on a specific concrete table type in this package.
 type syscallTableInterface interface {
     IsNetworkSyscall(number int) bool
 }
@@ -386,7 +386,14 @@ func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbolEntry) []b
     }
     syms := make([]binaryanalyzer.DetectedSymbol, len(entries))
     for i, e := range entries {
-        cat, _ := binaryanalyzer.IsNetworkSymbol(e.Name)
+        cat, found := binaryanalyzer.IsNetworkSymbol(e.Name)
+        if !found {
+            if binaryanalyzer.IsDynamicLoadSymbol(e.Name) {
+                cat = binaryanalyzer.CategoryDynamicLoad
+            } else {
+                cat = binaryanalyzer.CategorySyscallWrapper
+            }
+        }
         syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: string(cat)}
     }
     return syms
@@ -449,7 +456,7 @@ libccache
 
 ### 5.4 `IsNetworkSymbol` の返り値と `DynamicLoadSymbols`
 
-`DynamicLoadSymbols` に含まれるシンボル（dlopen, dlsym, dlvsym）は `binaryanalyzer.IsDynamicLoadSymbol(name)` で識別される。これらは `networkSymbolRegistry` には含まれないため、`IsNetworkSymbol(name)` は `("", false)` を返す。`convertNetworkSymbolEntries` は `DynamicLoadSymbols` にも呼ばれるが、`Category: ""` として扱われ、ログ表示のみに影響する（`IsNetworkCategory("")` は false を返すため、判定ロジックには影響しない）。
+`DynamicLoadSymbols` に含まれるシンボル（dlopen, dlsym, dlvsym）は `binaryanalyzer.IsDynamicLoadSymbol(name)` で識別される。これらは `networkSymbolRegistry` には含まれないため、`IsNetworkSymbol(name)` は `("", false)` を返す。`convertNetworkSymbolEntries` ではこの未分類ケースに対して `dynamic_load` を明示設定し、さらにその他の未分類シンボルには `syscall_wrapper` を設定して、ログの可読性と従来同等の情報量を維持する。
 
 ---
 
@@ -465,7 +472,11 @@ func TestSyscallInfo_JSONDoesNotContainIsNetwork(t *testing.T) {
     info := common.SyscallInfo{Number: 41, Name: "socket"}
     data, err := json.Marshal(info)
     require.NoError(t, err)
-    assert.NotContains(t, string(data), "is_network")
+
+    var got map[string]any
+    require.NoError(t, json.Unmarshal(data, &got))
+    _, exists := got["is_network"]
+    assert.False(t, exists)
 }
 ```
 
@@ -481,7 +492,11 @@ func TestDetectedSymbolEntry_JSONDoesNotContainCategory(t *testing.T) {
     entry := fileanalysis.DetectedSymbolEntry{Name: "getaddrinfo"}
     data, err := json.Marshal(entry)
     require.NoError(t, err)
-    assert.NotContains(t, string(data), "category")
+
+    var got map[string]any
+    require.NoError(t, json.Unmarshal(data, &got))
+    _, exists := got["category"]
+    assert.False(t, exists)
 }
 ```
 
@@ -496,11 +511,16 @@ func TestDetectedSymbolEntry_JSONDoesNotContainCategory(t *testing.T) {
 ```go
 // AC-3a: ネットワーク syscall を含む SyscallAnalysisData
 func TestSyscallAnalysisHasNetworkSignal_NetworkSyscall(t *testing.T) {
+    socketNumber := 41 // Linux x86_64 default
+    if runtime.GOOS == "darwin" {
+        socketNumber = 97 // macOS/BSD socket syscall
+    }
+
     result := &fileanalysis.SyscallAnalysisResult{
         SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
             Architecture: "x86_64",
             DetectedSyscalls: []common.SyscallInfo{
-                {Number: 41, Name: "socket"}, // x86_64 socket syscall
+                {Number: socketNumber, Name: "socket"},
             },
         },
     }
@@ -509,11 +529,16 @@ func TestSyscallAnalysisHasNetworkSignal_NetworkSyscall(t *testing.T) {
 
 // AC-3b: ネットワーク syscall を含まない SyscallAnalysisData
 func TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall(t *testing.T) {
+    writeNumber := 1 // Linux x86_64 default
+    if runtime.GOOS == "darwin" {
+        writeNumber = 4 // macOS/BSD write syscall
+    }
+
     result := &fileanalysis.SyscallAnalysisResult{
         SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
             Architecture: "x86_64",
             DetectedSyscalls: []common.SyscallInfo{
-                {Number: 1, Name: "write"}, // 非ネットワーク syscall
+                {Number: writeNumber, Name: "write"},
             },
         },
     }
@@ -526,7 +551,7 @@ func TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall(t *testing.T) {
 
 ### AC-4: スキーマバージョンが 18 に更新されている
 
-**テスト対象**: `fileanalysis.CurrentSchemaVersion`、`fileanalysis.Load`
+**テスト対象**: `fileanalysis.CurrentSchemaVersion`、`(*fileanalysis.Store).Load`
 
 ```go
 // AC-4a: CurrentSchemaVersion が 18 であること
@@ -536,9 +561,9 @@ func TestCurrentSchemaVersion(t *testing.T) {
 
 // AC-4b: schema_version=17 のレコードが SchemaVersionMismatchError を返すこと
 func TestLoad_SchemaVersion17_ReturnsError(t *testing.T) {
-    // schema_version: 17 の JSON を構築
-    json := `{"schema_version": 17, ...}`
-    _, err := fileanalysis.Load(...)
+    // NewStore で Store を作成し、schema_version:17 の JSON レコードを書き込む
+    store, _ := fileanalysis.NewStore(analysisDir, &mockPathGetter{})
+    _, err := store.Load(targetPath)
     var mismatch *fileanalysis.SchemaVersionMismatchError
     assert.ErrorAs(t, err, &mismatch)
     assert.Equal(t, 18, mismatch.Expected)
@@ -617,7 +642,7 @@ func TestSyscallAnalysisHasNetworkSignal_Nil(t *testing.T) {
 
 | ケース | 変更前 | 変更後 |
 |-------|--------|--------|
-| syscall 41 (socket, x86_64) が検出された | `IsNetwork=true` → ネットワーク判定 | `IsNetworkSyscall(41)=true` → ネットワーク判定（同等） |
+| syscall socket（OSごとの番号）が検出された | `IsNetwork=true` → ネットワーク判定 | `IsNetworkSyscall(socketNumber)=true` → ネットワーク判定（同等） |
 | syscall 1 (write, x86_64) が検出された | `IsNetwork=false` → 非ネットワーク | `IsNetworkSyscall(1)=false` → 非ネットワーク（同等） |
 | `getaddrinfo` シンボルが検出された | `Category="dns"`, `IsNetworkCategory=true` → ネットワーク | `IsNetworkSymbolName=true` → ネットワーク（同等） |
 | `read` シンボルが検出された | `Category="syscall_wrapper"`, `IsNetworkCategory=false` → 非ネットワーク | `IsNetworkSymbolName=false` → 非ネットワーク（同等） |

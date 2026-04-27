@@ -2514,7 +2514,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-					{Name: "socket", Category: "socket"},
+					{Name: "socket"},
 				},
 			},
 		}
@@ -2541,7 +2541,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
 				DynamicLoadSymbols: []fileanalysis.DetectedSymbolEntry{
-					{Name: "dlopen", Category: "dynamic_load"},
+					{Name: "dlopen"},
 				},
 			},
 		}
@@ -2639,7 +2639,7 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 		ContentHash: fakeHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
 			DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-				{Name: "socket", Category: "socket"},
+				{Name: "socket"},
 			},
 		},
 	}

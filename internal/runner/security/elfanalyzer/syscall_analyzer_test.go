@@ -246,13 +246,11 @@ func TestSyscallAnalyzer_MultipleSyscalls(t *testing.T) {
 	// First syscall: socket (41)
 	assert.Equal(t, 41, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", result.DetectedSyscalls[0].Name)
-	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
 	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 
 	// Second syscall: connect (42)
 	assert.Equal(t, 42, result.DetectedSyscalls[1].Number)
 	assert.Equal(t, "connect", result.DetectedSyscalls[1].Name)
-	assert.True(t, result.DetectedSyscalls[1].IsNetwork)
 	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[1].Occurrences[0].DeterminationMethod)
 
 	assert.Empty(t, result.AnalysisWarnings)
@@ -290,12 +288,10 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 	// First: write (non-network)
 	assert.Equal(t, 1, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "write", result.DetectedSyscalls[0].Name)
-	assert.False(t, result.DetectedSyscalls[0].IsNetwork)
 
 	// Second: socket (network)
 	assert.Equal(t, 41, result.DetectedSyscalls[1].Number)
 	assert.Equal(t, "socket", result.DetectedSyscalls[1].Name)
-	assert.True(t, result.DetectedSyscalls[1].IsNetwork)
 
 	assert.Empty(t, result.AnalysisWarnings)
 	assert.Empty(t, result.ArgEvalResults)
@@ -609,7 +605,6 @@ func TestSyscallAnalyzer_ARM64AnalysisPath(t *testing.T) {
 	require.Len(t, result.DetectedSyscalls, 1)
 	assert.Equal(t, 198, result.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", result.DetectedSyscalls[0].Name)
-	assert.True(t, result.DetectedSyscalls[0].IsNetwork)
 	assert.Equal(t, DeterminationMethodImmediate, result.DetectedSyscalls[0].Occurrences[0].DeterminationMethod)
 }
 

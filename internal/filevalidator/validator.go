@@ -744,7 +744,7 @@ func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager run
 //
 // NOTE: This is the inverse of convertNetworkSymbolEntries in
 // internal/runner/security/network_analyzer.go. Both functions map the same
-// two fields (Name, Category) between binaryanalyzer and fileanalysis types.
+// Name field between binaryanalyzer and fileanalysis types.
 // If either type gains or loses fields, update both functions together.
 func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbolEntry {
 	if len(syms) == 0 {
@@ -752,7 +752,7 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis
 	}
 	entries := make([]fileanalysis.DetectedSymbolEntry, len(syms))
 	for i, s := range syms {
-		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name, Category: s.Category}
+		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name}
 	}
 	return entries
 }
@@ -766,8 +766,7 @@ func buildSVCInfos(addrs []uint64) []common.SyscallInfo {
 	syscalls := make([]common.SyscallInfo, len(addrs))
 	for i, addr := range addrs {
 		syscalls[i] = common.SyscallInfo{
-			Number:    -1,
-			IsNetwork: false,
+			Number: -1,
 			Occurrences: []common.SyscallOccurrence{
 				{
 					Location:            addr,
@@ -822,7 +821,7 @@ func buildMachoSyscallData(
 // deterministically sorted slice grouped by syscall number.
 // Entries with the same Number are merged into a single SyscallInfo with
 // multiple Occurrences, sorted by Location. When merging, a non-empty Name is
-// preferred over an empty one, and IsNetwork is true if any entry has it set.
+// preferred over an empty one.
 // Groups are sorted by Number (ascending), with Number=-1 at the end.
 func mergeMachoSyscallInfos(svcEntries, libsysEntries []common.SyscallInfo) []common.SyscallInfo {
 	if len(svcEntries) == 0 && len(libsysEntries) == 0 {

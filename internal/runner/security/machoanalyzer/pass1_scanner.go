@@ -93,9 +93,8 @@ func scanSVCWithX16(
 		var info common.SyscallInfo
 		if ok {
 			info = common.SyscallInfo{
-				Number:    num,
-				Name:      table.GetSyscallName(num),
-				IsNetwork: table.IsNetworkSyscall(num),
+				Number: num,
+				Name:   table.GetSyscallName(num),
 				Occurrences: []common.SyscallOccurrence{
 					{
 						Location:            addr,

@@ -76,3 +76,32 @@ func TestIsNetworkCategory(t *testing.T) {
 		})
 	}
 }
+
+// TestIsNetworkSymbolName verifies IsNetworkSymbolName for network, non-network,
+// and unknown symbols.
+func TestIsNetworkSymbolName(t *testing.T) {
+	tests := []struct {
+		name     string
+		symbol   string
+		expected bool
+	}{
+		// Network symbols
+		{"socket (socket category)", "socket", true},
+		{"connect (socket category)", "connect", true},
+		{"getaddrinfo (dns category)", "getaddrinfo", true},
+		{"SSL_connect (tls category)", "SSL_connect", true},
+		{"curl_easy_init (http category)", "curl_easy_init", true},
+		// Non-network symbols (syscall_wrapper category)
+		{"dlopen (dynamic_load, not network)", "dlopen", false},
+		// Unknown symbols
+		{"write (not in registry)", "write", false},
+		{"empty string", "", false},
+		{"unknown symbol", "unknown_xyz", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, IsNetworkSymbolName(tt.symbol))
+		})
+	}
+}

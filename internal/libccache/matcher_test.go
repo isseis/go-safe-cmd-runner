@@ -117,13 +117,14 @@ func TestImportSymbolMatcher_DedupPicksLexicographicallySmallestName(t *testing.
 	assert.Equal(t, "creat", result[0].Name)
 }
 
-// TestImportSymbolMatcher_IsNetworkFromTable verifies that IsNetwork is populated from the table.
-func TestImportSymbolMatcher_IsNetworkFromTable(t *testing.T) {
+// TestImportSymbolMatcher_MatchedEntryHasCorrectNumber verifies that a matched wrapper
+// entry carries the expected syscall number.
+func TestImportSymbolMatcher_MatchedEntryHasCorrectNumber(t *testing.T) {
 	m := newMatcher()
 	wrappers := []WrapperEntry{{Name: "socket", Number: 41}}
 	result := m.Match([]string{"socket"}, wrappers)
 	require.Len(t, result, 1)
-	assert.True(t, result[0].IsNetwork)
+	assert.Equal(t, 41, result[0].Number)
 }
 
 // TestImportSymbolMatcher_NumberIsNonNegative verifies the invariant that all returned entries

@@ -1133,7 +1133,6 @@ func TestRecord_DynamicLoadSymbols_Stored(t *testing.T) {
 	require.NotNil(t, record.SymbolAnalysis)
 	require.Len(t, record.SymbolAnalysis.DynamicLoadSymbols, 1)
 	assert.Equal(t, "dlopen", record.SymbolAnalysis.DynamicLoadSymbols[0].Name)
-	assert.Equal(t, "dynamic_load", record.SymbolAnalysis.DynamicLoadSymbols[0].Category)
 }
 
 func TestRecord_NotSupportedBinary_SymbolAnalysisNil(t *testing.T) {
@@ -1342,8 +1341,8 @@ func TestBuildSyscallAnalysisData(t *testing.T) {
 
 	t.Run("non_network_resolved_syscall_retained", func(t *testing.T) {
 		all := []common.SyscallInfo{
-			{Number: 1, Name: "write", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
-			{Number: 3, Name: "read", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
+			{Number: 1, Name: "write", Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
+			{Number: 3, Name: "read", Occurrences: []common.SyscallOccurrence{{Source: "libc_symbol_import"}}},
 		}
 		data := buildSyscallData(all, nil, elf.EM_X86_64)
 		// Non-network, resolved syscalls must be retained (no filtering).

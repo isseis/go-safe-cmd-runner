@@ -269,19 +269,18 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture: "x86_64",
 				DetectedSyscalls: []SyscallInfo{
 					{
-						Number:    41, // socket
-						Name:      "socket",
-						IsNetwork: true,
+						Number: 41, // socket
+						Name:   "socket",
 						Occurrences: []common.SyscallOccurrence{
 							{Location: 0x401000},
 						},
 					},
 					{
-						Number:    42, // connect
-						Name:      "connect",
-						IsNetwork: true,
+						Number: 42, // connect
+						Name:   "connect",
 						Occurrences: []common.SyscallOccurrence{
 							{Location: 0x401010},
 						},
@@ -311,9 +310,8 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
 					{
-						Number:    1, // write
-						Name:      "write",
-						IsNetwork: false,
+						Number: 1, // write
+						Name:   "write",
 						Occurrences: []common.SyscallOccurrence{
 							{Location: 0x401000},
 						},
@@ -375,9 +373,8 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
 					{
-						Number:    41, // socket
-						Name:      "socket",
-						IsNetwork: true,
+						Number: 41, // socket
+						Name:   "socket",
 						Occurrences: []common.SyscallOccurrence{
 							{Location: 0x401000},
 						},
@@ -432,7 +429,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
-					{Number: 41, Name: "socket", IsNetwork: true},
+					{Number: 41, Name: "socket"},
 				},
 			},
 		},
@@ -476,8 +473,9 @@ func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 	mockStore := &mockSyscallAnalysisStore{
 		result: &SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+				Architecture: "x86_64",
 				DetectedSyscalls: []SyscallInfo{
-					{Number: 41, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{Location: 0x401000}}},
+					{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{Location: 0x401000}}},
 				},
 			},
 		},

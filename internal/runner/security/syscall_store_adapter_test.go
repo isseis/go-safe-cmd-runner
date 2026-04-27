@@ -30,7 +30,7 @@ func TestNewELFSyscallStoreAdapter_ReturnResult(t *testing.T) {
 	core := common.SyscallAnalysisResultCore{
 		Architecture: "x86_64",
 		DetectedSyscalls: []common.SyscallInfo{
-			{Number: 41, Name: "socket", IsNetwork: true},
+			{Number: 41, Name: "socket"},
 		},
 	}
 	inner := &mockFileanalysisSyscallStore{
