@@ -292,7 +292,7 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 		inst := recentInstructions[i]
 
 		// Check for immediate move to first argument register.
-		if value, ok := decoder.IsImmediateToFirstArgRegister(inst); ok {
+		if ok, value := decoder.IsFirstArgImm(inst); ok {
 			// Validate immediate value is a plausible syscall number.
 			// Reject negative immediates and out-of-range values to prevent
 			// incorrect marking of wrapper calls as resolved.
@@ -305,7 +305,7 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 
 		// Try resolving first argument from a global-data load pattern
 		// (e.g., ADRP+LDR on arm64).
-		if value, ok := decoder.TryResolveFirstArgFromGlobalLoad(recentInstructions, i); ok {
+		if ok, value := decoder.ResolveFirstArgGlobal(recentInstructions, i); ok {
 			if value >= 0 && value <= maxValidSyscallNumber {
 				return int(value), DeterminationMethodGoWrapper
 			}
@@ -314,7 +314,7 @@ func (b *goWrapperBase) resolveSyscallArgument(recentInstructions []DecodedInstr
 
 		// Any non-immediate write to the first argument register means
 		// the value is set indirectly and cannot be resolved statically.
-		if decoder.ModifiesFirstArgRegister(inst) {
+		if decoder.ModifiesFirstArg(inst) {
 			return -1, DeterminationMethodUnknownIndirectSetting
 		}
 

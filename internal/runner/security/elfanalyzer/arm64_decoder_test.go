@@ -92,7 +92,7 @@ func TestARM64Decoder_IsSyscallInstruction(t *testing.T) {
 	}
 }
 
-func TestARM64Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
+func TestARM64Decoder_ModifiesSyscallReg(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	tests := []struct {
@@ -125,12 +125,12 @@ func TestARM64Decoder_ModifiesSyscallNumberRegister(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, decoder.ModifiesSyscallNumberRegister(inst))
+			assert.Equal(t, tt.want, decoder.ModifiesSyscallReg(inst))
 		})
 	}
 }
 
-func TestARM64Decoder_IsImmediateToSyscallNumberRegister(t *testing.T) {
+func TestARM64Decoder_IsSyscallNumImm(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	// Verified ORR-immediate encodings (little-endian, bitmask immediate):
@@ -166,7 +166,7 @@ func TestARM64Decoder_IsImmediateToSyscallNumberRegister(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			inst, err := decoder.Decode(tt.code, 0)
 			require.NoError(t, err)
-			gotImm, gotVal := decoder.IsImmediateToSyscallNumberRegister(inst)
+			gotImm, gotVal := decoder.IsSyscallNumImm(inst)
 			assert.Equal(t, tt.wantImm, gotImm)
 			if tt.wantImm {
 				assert.Equal(t, tt.wantVal, gotVal)
@@ -250,14 +250,14 @@ func TestARM64Decoder_GetCallTarget(t *testing.T) {
 	})
 }
 
-func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
+func TestARM64Decoder_IsFirstArgImm(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	// In arm64 Go ABI, X0 is the first argument register.
 	t.Run("mov x0, #41 (first arg register)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x20, 0x05, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(41), imm)
 	})
@@ -265,7 +265,7 @@ func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 	t.Run("mov w0, #198 (first arg register, 32-bit)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xC0, 0x18, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(198), imm)
 	})
@@ -273,14 +273,14 @@ func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 	t.Run("mov w8, #198 (syscall reg, not first arg)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xC8, 0x18, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 
 	t.Run("nop returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x1F, 0x20, 0x03, 0xD5}, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 
@@ -290,7 +290,7 @@ func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 	t.Run("orr x0, xzr, #0x38 (bitmask imm, openat syscall number)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xe0, 0x0b, 0x7d, 0xb2}, 0)
 		require.NoError(t, err)
-		imm, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		ok, imm := decoder.IsFirstArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(0x38), imm)
 	})
@@ -298,12 +298,12 @@ func TestARM64Decoder_IsImmediateToFirstArgRegister(t *testing.T) {
 	t.Run("orr x8, xzr, #0x38 (bitmask imm, wrong register)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xe8, 0x0b, 0x7d, 0xb2}, 0)
 		require.NoError(t, err)
-		_, ok := decoder.IsImmediateToFirstArgRegister(inst)
+		ok, _ := decoder.IsFirstArgImm(inst)
 		assert.False(t, ok)
 	})
 }
 
-func TestARM64Decoder_ModifiesThirdArgRegister(t *testing.T) {
+func TestARM64Decoder_ModifiesThirdArg(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	// arm64 third syscall argument register is X2 / W2.
@@ -316,31 +316,31 @@ func TestARM64Decoder_ModifiesThirdArgRegister(t *testing.T) {
 	t.Run("mov x2, #7 returns true", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xE2, 0x00, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.True(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	t.Run("mov w2, #3 returns true", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x62, 0x00, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.True(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	t.Run("mov x2, x1 returns true (register move modifies x2)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xE2, 0x03, 0x01, 0xAA}, 0)
 		require.NoError(t, err)
-		assert.True(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.True(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	t.Run("mov x8, #7 returns false (wrong register)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xE8, 0x00, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.False(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	t.Run("nop returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x1F, 0x20, 0x03, 0xD5}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.False(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	// Read-only first operand: must not be mistaken for writes to X2/W2
@@ -348,31 +348,31 @@ func TestARM64Decoder_ModifiesThirdArgRegister(t *testing.T) {
 		// str x2, [x0] — 02 00 00 F9
 		inst, err := decoder.Decode([]byte{0x02, 0x00, 0x00, 0xF9}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.False(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	t.Run("cmp x2, #5 returns false (sets flags only)", func(t *testing.T) {
 		// cmp x2, #5 (SUBS XZR, X2, #5) — 5F 14 00 F1
 		inst, err := decoder.Decode([]byte{0x5F, 0x14, 0x00, 0xF1}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.False(t, decoder.ModifiesThirdArg(inst))
 	})
 
 	t.Run("tst x2, x1 returns false (sets flags only)", func(t *testing.T) {
 		// tst x2, x1 (ANDS XZR, X2, X1) — 5F 00 01 EA
 		inst, err := decoder.Decode([]byte{0x5F, 0x00, 0x01, 0xEA}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesThirdArgRegister(inst))
+		assert.False(t, decoder.ModifiesThirdArg(inst))
 	})
 }
 
-func TestARM64Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
+func TestARM64Decoder_IsThirdArgImm(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	t.Run("mov x2, #7 returns (true, 7)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xE2, 0x00, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		ok, val := decoder.IsThirdArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(7), val)
 	})
@@ -380,7 +380,7 @@ func TestARM64Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
 	t.Run("mov w2, #3 returns (true, 3)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x62, 0x00, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		ok, val := decoder.IsImmediateToThirdArgRegister(inst)
+		ok, val := decoder.IsThirdArgImm(inst)
 		assert.True(t, ok)
 		assert.Equal(t, int64(3), val)
 	})
@@ -388,48 +388,48 @@ func TestARM64Decoder_IsImmediateToThirdArgRegister(t *testing.T) {
 	t.Run("mov x2, x1 returns false (register move)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xE2, 0x03, 0x01, 0xAA}, 0)
 		require.NoError(t, err)
-		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
+		ok, _ := decoder.IsThirdArgImm(inst)
 		assert.False(t, ok)
 	})
 
 	t.Run("mov x8, #7 returns false (wrong register)", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xE8, 0x00, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		ok, _ := decoder.IsImmediateToThirdArgRegister(inst)
+		ok, _ := decoder.IsThirdArgImm(inst)
 		assert.False(t, ok)
 	})
 }
 
-func TestARM64Decoder_ModifiesFirstArgRegister(t *testing.T) {
+func TestARM64Decoder_ModifiesFirstArg(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	t.Run("mov x0, x1 returns true", func(t *testing.T) {
 		// mov x0, x1
 		inst, err := decoder.Decode([]byte{0xE0, 0x03, 0x01, 0xAA}, 0)
 		require.NoError(t, err)
-		assert.True(t, decoder.ModifiesFirstArgRegister(inst))
+		assert.True(t, decoder.ModifiesFirstArg(inst))
 	})
 
 	t.Run("mov w0, #198 returns true", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xC0, 0x18, 0x80, 0x52}, 0)
 		require.NoError(t, err)
-		assert.True(t, decoder.ModifiesFirstArgRegister(inst))
+		assert.True(t, decoder.ModifiesFirstArg(inst))
 	})
 
 	t.Run("mov x8, #198 returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0xC8, 0x18, 0x80, 0xD2}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesFirstArgRegister(inst))
+		assert.False(t, decoder.ModifiesFirstArg(inst))
 	})
 
 	t.Run("str x0, [x1] returns false", func(t *testing.T) {
 		inst, err := decoder.Decode([]byte{0x20, 0x00, 0x00, 0xF9}, 0)
 		require.NoError(t, err)
-		assert.False(t, decoder.ModifiesFirstArgRegister(inst))
+		assert.False(t, decoder.ModifiesFirstArg(inst))
 	})
 }
 
-func TestARM64Decoder_TryResolveFirstArgFromGlobalLoad(t *testing.T) {
+func TestARM64Decoder_ResolveFirstArgGlobal(t *testing.T) {
 	decoder := NewARM64Decoder()
 
 	adrpCode := []byte{0x1b, 0x89, 0x19, 0x90} // adrp x27, .+0x33120000
@@ -455,11 +455,11 @@ func TestARM64Decoder_TryResolveFirstArgFromGlobalLoad(t *testing.T) {
 	decoder.SetDataSections([]arm64DataSection{{Addr: loadAddr, Data: blob}})
 
 	insts := []DecodedInstruction{adrpInst, ldrInst, callInst}
-	value, ok := decoder.TryResolveFirstArgFromGlobalLoad(insts, 1)
+	ok, value := decoder.ResolveFirstArgGlobal(insts, 1)
 	assert.True(t, ok)
 	assert.Equal(t, int64(25), value)
 
-	value, ok = decoder.TryResolveFirstArgFromGlobalLoad(insts, 0)
+	ok, value = decoder.ResolveFirstArgGlobal(insts, 0)
 	assert.False(t, ok)
 	assert.Equal(t, int64(0), value)
 
@@ -468,7 +468,7 @@ func TestARM64Decoder_TryResolveFirstArgFromGlobalLoad(t *testing.T) {
 		require.NoError(t, err)
 
 		instsWithBranch := []DecodedInstruction{adrpInst, branchInst, ldrInst, callInst}
-		value, ok := decoder.TryResolveFirstArgFromGlobalLoad(instsWithBranch, 2)
+		ok, value := decoder.ResolveFirstArgGlobal(instsWithBranch, 2)
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), value)
 	})

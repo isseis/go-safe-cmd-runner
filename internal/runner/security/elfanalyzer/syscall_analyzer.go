@@ -384,7 +384,7 @@ const (
 // Each name is processed independently to produce at most one ArgEvalResult per name.
 var MprotectFamilyNames = []string{syscallNameMprotect, syscallNamePkeyMprotect}
 
-type mprotectFamilyEvalResult struct {
+type mprotectEvalResult struct {
 	Result   common.SyscallArgEvalResult
 	Location uint64
 }
@@ -400,8 +400,8 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 	baseAddr uint64,
 	decoder MachineCodeDecoder,
 	detectedSyscalls []common.SyscallInfo,
-) []mprotectFamilyEvalResult {
-	var results []mprotectFamilyEvalResult
+) []mprotectEvalResult {
+	var results []mprotectEvalResult
 
 	for _, syscallName := range MprotectFamilyNames {
 		// Collect entries for this syscall name.
@@ -435,7 +435,7 @@ func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
 			}
 		}
 
-		results = append(results, mprotectFamilyEvalResult{
+		results = append(results, mprotectEvalResult{
 			Result:   bestResult,
 			Location: bestLocation,
 		})
@@ -466,8 +466,8 @@ func (a *SyscallAnalyzer) evalSingleMprotect(
 
 	value, method := a.backwardScanForRegister(
 		code, baseAddr, offset, decoder,
-		decoder.ModifiesThirdArgRegister,
-		decoder.IsImmediateToThirdArgRegister,
+		decoder.ModifiesThirdArg,
+		decoder.IsThirdArgImm,
 	)
 
 	if method == DeterminationMethodImmediate {
@@ -647,7 +647,7 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 		windowStart = 0
 	}
 
-	instructions, _ := a.decodeInstructionsInWindow(
+	instructions, _ := a.decodeWindow(
 		code, baseAddr, windowStart, syscallOffset, decoder,
 	)
 	if len(instructions) == 0 {
@@ -691,8 +691,8 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string) {
 	value, method := a.backwardScanForRegister(
 		code, baseAddr, syscallOffset, decoder,
-		decoder.ModifiesSyscallNumberRegister,
-		decoder.IsImmediateToSyscallNumberRegister,
+		decoder.ModifiesSyscallReg,
+		decoder.IsSyscallNumImm,
 	)
 
 	if method == DeterminationMethodImmediate {
@@ -710,7 +710,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 	return int(value), method
 }
 
-// decodeInstructionsInWindow decodes instructions within a specified window [startOffset, endOffset).
+// decodeWindow decodes instructions within a specified window [startOffset, endOffset).
 // This method provides better performance by avoiding unnecessary decoding of the entire code section.
 // For large binaries with many syscall instructions, this reduces total decode overhead significantly.
 //
@@ -738,7 +738,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 // Performance comparison (example: 10MB .text, 100 syscalls):
 //   - Old approach: 100 * 5MB avg = ~500MB worth of redundant decoding
 //   - Window approach: 100 * (50 instructions * 15 bytes) = ~75KB of focused decoding
-func (a *SyscallAnalyzer) decodeInstructionsInWindow(code []byte, baseAddr uint64, startOffset, endOffset int, decoder MachineCodeDecoder) ([]DecodedInstruction, int) {
+func (a *SyscallAnalyzer) decodeWindow(code []byte, baseAddr uint64, startOffset, endOffset int, decoder MachineCodeDecoder) ([]DecodedInstruction, int) {
 	var instructions []DecodedInstruction
 	decodeFailures := 0
 	pos := startOffset

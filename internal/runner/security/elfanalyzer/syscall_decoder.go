@@ -35,18 +35,18 @@ type MachineCodeDecoder interface {
 	// arm64:  SVC #0 (D4000001)
 	IsSyscallInstruction(inst DecodedInstruction) bool
 
-	// ModifiesSyscallNumberRegister returns true if the instruction writes
+	// ModifiesSyscallReg returns true if the instruction writes
 	// to the architecture's syscall number register.
 	// x86_64: eax/rax (any write including al, ax, r/eax)
 	// arm64:  w8 or x8
-	ModifiesSyscallNumberRegister(inst DecodedInstruction) bool
+	ModifiesSyscallReg(inst DecodedInstruction) bool
 
-	// IsImmediateToSyscallNumberRegister returns (true, value) if the
+	// IsSyscallNumImm returns (true, value) if the
 	// instruction sets the syscall number register to a known immediate.
 	// x86_64: MOV EAX/RAX, imm  or  XOR EAX, EAX (zeroing idiom)
 	// arm64:  MOV W8/X8, #imm  (arm64asm normalizes MOVZ to MOV)
 	//         ORR W8/X8, WZR/XZR, #imm  (bitmask-immediate encoding)
-	IsImmediateToSyscallNumberRegister(inst DecodedInstruction) (bool, int64)
+	IsSyscallNumImm(inst DecodedInstruction) (bool, int64)
 
 	// IsControlFlowInstruction returns true if the instruction changes the
 	// instruction pointer in a way that may skip over the syscall number setup.
@@ -71,36 +71,36 @@ type MachineCodeDecoder interface {
 	// Returns (addr, true) on success, (0, false) otherwise.
 	GetCallTarget(inst DecodedInstruction, instAddr uint64) (uint64, bool)
 
-	// IsImmediateToFirstArgRegister returns (value, true) if the instruction
+	// IsFirstArgImm returns (true, value) if the instruction
 	// sets the first integer argument register to a known immediate.
 	// x86_64: MOV EAX/RAX, imm  (RAX is the first argument register in Go ABI)
 	// arm64:  MOV W0/X0, #imm   (X0 is the first argument register in Go ABI)
 	//         ORR X0/W0, XZR/WZR, #imm  (bitmask-immediate encoding)
-	// Returns (0, false) otherwise.
-	IsImmediateToFirstArgRegister(inst DecodedInstruction) (int64, bool)
+	// Returns (false, 0) otherwise.
+	IsFirstArgImm(inst DecodedInstruction) (bool, int64)
 
-	// ModifiesFirstArgRegister returns true if the instruction writes to the
+	// ModifiesFirstArg returns true if the instruction writes to the
 	// first integer argument register.
 	// x86_64: eax/rax (same as syscall number register in Go ABI)
 	// arm64:  w0 or x0
-	ModifiesFirstArgRegister(inst DecodedInstruction) bool
+	ModifiesFirstArg(inst DecodedInstruction) bool
 
-	// TryResolveFirstArgFromGlobalLoad tries to resolve the first argument value
+	// ResolveFirstArgGlobal tries to resolve the first argument value
 	// when it is loaded from memory, using nearby context in recentInstructions.
 	// idx is the index of the candidate load instruction in recentInstructions.
-	// Returns (value, true) if resolved, (0, false) otherwise.
-	TryResolveFirstArgFromGlobalLoad(recentInstructions []DecodedInstruction, idx int) (int64, bool)
+	// Returns (true, value) if resolved, (false, 0) otherwise.
+	ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (bool, int64)
 
-	// ModifiesThirdArgRegister returns true if the instruction writes to the
+	// ModifiesThirdArg returns true if the instruction writes to the
 	// third syscall argument register.
 	// x86_64: edx/rdx (any write including dl, dx, edx/rdx)
 	// arm64:  w2 or x2
-	ModifiesThirdArgRegister(inst DecodedInstruction) bool
+	ModifiesThirdArg(inst DecodedInstruction) bool
 
-	// IsImmediateToThirdArgRegister returns (true, value) if the instruction
+	// IsThirdArgImm returns (true, value) if the instruction
 	// sets the third argument register to a known immediate.
 	// x86_64: MOV EDX/RDX, imm  or  XOR EDX, EDX (zeroing idiom)
 	// arm64:  MOV W2/X2, #imm
 	//         ORR W2/X2, WZR/XZR, #imm  (bitmask-immediate encoding)
-	IsImmediateToThirdArgRegister(inst DecodedInstruction) (bool, int64)
+	IsThirdArgImm(inst DecodedInstruction) (bool, int64)
 }
