@@ -97,6 +97,27 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 			wantMethod: DeterminationMethodImmediate,
 		},
 		{
+			name: "register copy from immediate source",
+			// mov $0x2a, %edx; mov %edx, %eax; syscall
+			code:       []byte{0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "register copy from zeroing source",
+			// xor %edx, %edx; mov %edx, %eax; syscall
+			code:       []byte{0x31, 0xd2, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 0,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "register copy from r9d immediate source",
+			// mov $0xca, %r9d; mov %r9d, %eax; syscall
+			code:       []byte{0x41, 0xb9, 0xca, 0x00, 0x00, 0x00, 0x44, 0x89, 0xc8, 0x0f, 0x05},
+			wantNumber: 202,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
 			name: "register move (indirect)",
 			// mov %ebx, %eax; syscall
 			code:       []byte{0x89, 0xd8, 0x0f, 0x05},

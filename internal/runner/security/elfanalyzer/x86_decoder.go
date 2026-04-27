@@ -91,8 +91,83 @@ func implicitlyWritesRAXEAX(x86inst x86asm.Inst) bool {
 	return false
 }
 
+type x86RegFamily int
+
+const (
+	x86RegFamilyUnknown x86RegFamily = iota
+	x86RegFamilyAX
+	x86RegFamilyCX
+	x86RegFamilyDX
+	x86RegFamilyBX
+	x86RegFamilySP
+	x86RegFamilyBP
+	x86RegFamilySI
+	x86RegFamilyDI
+	x86RegFamilyR8
+	x86RegFamilyR9
+	x86RegFamilyR10
+	x86RegFamilyR11
+	x86RegFamilyR12
+	x86RegFamilyR13
+	x86RegFamilyR14
+	x86RegFamilyR15
+)
+
+func regFamily(reg x86asm.Reg) x86RegFamily {
+	switch reg {
+	case x86asm.AL, x86asm.AX, x86asm.EAX, x86asm.RAX:
+		return x86RegFamilyAX
+	case x86asm.CL, x86asm.CX, x86asm.ECX, x86asm.RCX:
+		return x86RegFamilyCX
+	case x86asm.DL, x86asm.DX, x86asm.EDX, x86asm.RDX:
+		return x86RegFamilyDX
+	case x86asm.BL, x86asm.BX, x86asm.EBX, x86asm.RBX:
+		return x86RegFamilyBX
+	case x86asm.SP, x86asm.ESP, x86asm.RSP:
+		return x86RegFamilySP
+	case x86asm.BP, x86asm.EBP, x86asm.RBP:
+		return x86RegFamilyBP
+	case x86asm.SI, x86asm.ESI, x86asm.RSI:
+		return x86RegFamilySI
+	case x86asm.DI, x86asm.EDI, x86asm.RDI:
+		return x86RegFamilyDI
+	case x86asm.R8B, x86asm.R8W, x86asm.R8L, x86asm.R8:
+		return x86RegFamilyR8
+	case x86asm.R9B, x86asm.R9W, x86asm.R9L, x86asm.R9:
+		return x86RegFamilyR9
+	case x86asm.R10B, x86asm.R10W, x86asm.R10L, x86asm.R10:
+		return x86RegFamilyR10
+	case x86asm.R11B, x86asm.R11W, x86asm.R11L, x86asm.R11:
+		return x86RegFamilyR11
+	case x86asm.R12B, x86asm.R12W, x86asm.R12L, x86asm.R12:
+		return x86RegFamilyR12
+	case x86asm.R13B, x86asm.R13W, x86asm.R13L, x86asm.R13:
+		return x86RegFamilyR13
+	case x86asm.R14B, x86asm.R14W, x86asm.R14L, x86asm.R14:
+		return x86RegFamilyR14
+	case x86asm.R15B, x86asm.R15W, x86asm.R15L, x86asm.R15:
+		return x86RegFamilyR15
+	default:
+		return x86RegFamilyUnknown
+	}
+}
+
+func sameRegFamily(a, b x86asm.Reg) bool {
+	aFamily := regFamily(a)
+	if aFamily == x86RegFamilyUnknown {
+		return false
+	}
+	return aFamily == regFamily(b)
+}
+
 // ModifiesSyscallReg checks if the instruction modifies eax or rax.
 func (d *X86Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
+	return d.ModifiesRegisterFamily(inst, x86asm.RAX)
+}
+
+// ModifiesRegisterFamily checks whether the instruction modifies the same
+// register family as targetReg (e.g. EAX and RAX are in the same family).
+func (d *X86Decoder) ModifiesRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
 		return false
@@ -104,7 +179,7 @@ func (d *X86Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
 
 	// Instructions that implicitly write RAX/EAX without it appearing as the
 	// first explicit operand (e.g. MUL, one-operand IMUL, DIV, IDIV, CPUID).
-	if implicitlyWritesRAXEAX(x86inst) {
+	if sameRegFamily(targetReg, x86asm.RAX) && implicitlyWritesRAXEAX(x86inst) {
 		return true
 	}
 
@@ -119,8 +194,7 @@ func (d *X86Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
 
 	// Check destination register (first argument for most instructions)
 	if arg, ok := args[0].(x86asm.Reg); ok {
-		return arg == x86asm.EAX || arg == x86asm.RAX ||
-			arg == x86asm.AX || arg == x86asm.AL
+		return sameRegFamily(arg, targetReg)
 	}
 
 	return false
@@ -131,9 +205,44 @@ func (d *X86Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
 //   - MOV EAX/RAX, <imm>  — direct immediate load
 //   - XOR EAX, EAX        — idiom for zeroing EAX (equivalent to MOV EAX, 0)
 func (d *X86Decoder) IsSyscallNumImm(inst DecodedInstruction) (bool, int64) {
+	return d.IsImmediateToRegisterFamily(inst, x86asm.RAX)
+}
+
+// IsImmediateToRegisterFamily returns (true, value) when the instruction sets
+// the target register family from an immediate value or a self-XOR zeroing idiom.
+func (d *X86Decoder) IsImmediateToRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) (bool, int64) {
 	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
-		return reg == x86asm.EAX || reg == x86asm.RAX
+		return sameRegFamily(reg, targetReg)
 	})
+}
+
+// GetCopySourceForRegisterFamily reports source register when instruction is a
+// simple register copy into targetReg family (e.g. MOV EAX, EDX).
+func (d *X86Decoder) GetCopySourceForRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) (x86asm.Reg, bool) {
+	x86inst, ok := inst.arch.(x86asm.Inst)
+	if !ok || x86inst.Op != x86asm.MOV {
+		return 0, false
+	}
+
+	args := x86inst.Args[:]
+	for len(args) > 0 && args[len(args)-1] == nil {
+		args = args[:len(args)-1]
+	}
+	if len(args) < minArgsForImmediateMove {
+		return 0, false
+	}
+
+	destReg, ok := args[0].(x86asm.Reg)
+	if !ok || !sameRegFamily(destReg, targetReg) {
+		return 0, false
+	}
+
+	srcReg, ok := args[1].(x86asm.Reg)
+	if !ok {
+		return 0, false
+	}
+
+	return srcReg, true
 }
 
 // isImmediateToReg is an internal helper that checks if an instruction sets

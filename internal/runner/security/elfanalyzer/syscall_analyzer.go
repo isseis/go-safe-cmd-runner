@@ -8,6 +8,7 @@ import (
 	"math"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"golang.org/x/arch/x86/x86asm"
 )
 
 // MaxDecodeFailureLogs is the maximum number of individual decode failure
@@ -687,6 +688,10 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 // Go wrapper calls (e.g., Go's syscall wrappers) are handled separately
 // via goResolver.FindWrapperCalls.
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string) {
+	if x86Decoder, ok := decoder.(*X86Decoder); ok {
+		return a.backwardScanForSyscallNumberX86WithRegCopy(code, baseAddr, syscallOffset, x86Decoder)
+	}
+
 	value, method := a.backwardScanForRegister(
 		code, baseAddr, syscallOffset, decoder,
 		decoder.ModifiesSyscallReg,
@@ -706,6 +711,71 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 	}
 
 	return int(value), method
+}
+
+// backwardScanForSyscallNumberX86WithRegCopy scans backward from a direct
+// syscall instruction and resolves syscall numbers through simple register copy
+// chains in the same basic block (e.g. mov eax, edx; mov edx, imm).
+func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
+	code []byte,
+	baseAddr uint64,
+	syscallOffset int,
+	x86Decoder *X86Decoder,
+) (int, string) {
+	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(x86Decoder))
+	if windowStart < 0 {
+		windowStart = 0
+	}
+
+	instructions, _ := a.decodeWindow(
+		code, baseAddr, windowStart, syscallOffset, x86Decoder,
+	)
+	if len(instructions) == 0 {
+		return -1, DeterminationMethodUnknownDecodeFailed
+	}
+
+	scanCount := 0
+	targetReg := x86asm.RAX
+	sawRegisterCopy := false
+
+	for i := len(instructions) - 1; i >= 0 && scanCount < a.maxBackwardScan; i-- {
+		inst := instructions[i]
+		scanCount++
+
+		if x86Decoder.IsControlFlowInstruction(inst) {
+			return -1, DeterminationMethodUnknownControlFlowBoundary
+		}
+
+		if !x86Decoder.ModifiesRegisterFamily(inst, targetReg) {
+			continue
+		}
+
+		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, targetReg); isImm {
+			if value >= 0 && value <= maxValidSyscallNumber {
+				return int(value), DeterminationMethodImmediate
+			}
+			return -1, DeterminationMethodUnknownIndirectSetting
+		}
+
+		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, targetReg); ok {
+			targetReg = srcReg
+			sawRegisterCopy = true
+			continue
+		}
+
+		return -1, DeterminationMethodUnknownIndirectSetting
+	}
+
+	if sawRegisterCopy {
+		// Register-copy chains without a resolvable source immediate remain
+		// indirect by definition.
+		return -1, DeterminationMethodUnknownIndirectSetting
+	}
+
+	if scanCount < a.maxBackwardScan {
+		return -1, DeterminationMethodUnknownWindowExhausted
+	}
+	return -1, DeterminationMethodUnknownScanLimitExceeded
 }
 
 // decodeWindow decodes instructions within a specified window [startOffset, endOffset).
