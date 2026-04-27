@@ -24,25 +24,11 @@ type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
 }
 
-var (
-	cachedX86Table   = elfanalyzer.NewX86_64SyscallTable()
-	cachedArm64Table = elfanalyzer.NewARM64LinuxSyscallTable()
-	cachedMacOSTable = libccache.MacOSSyscallTable{}
-)
-
-func syscallTableForArch(arch string) syscallTableInterface {
-	if runtime.GOOS == gosDarwin {
-		return cachedMacOSTable
+func syscallTableForArch(goos, arch string) syscallTableInterface {
+	if goos == gosDarwin {
+		return libccache.MacOSSyscallTable{}
 	}
-
-	switch arch {
-	case "x86_64":
-		return cachedX86Table
-	case "arm64":
-		return cachedArm64Table
-	default:
-		return nil
-	}
+	return elfanalyzer.SyscallTableForArchitecture(arch)
 }
 
 // NetworkAnalyzer provides network operation detection for commands.
@@ -233,7 +219,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 					return true, true
 				}
 				// Check whether any non-svc detected syscall is a network syscall.
-				if syscallAnalysisHasNetworkSignal(svcResult) {
+				if syscallAnalysisHasNetworkSignal(svcResult, runtime.GOOS) {
 					slog.Info("SyscallAnalysis cache indicates network syscall",
 						"path", cmdPath)
 					return true, false
@@ -326,14 +312,14 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 // contains any detected syscall classified as a network syscall.
 // This includes resolved svc entries (DeterminationMethod == "direct_svc_0x80" AND Number != -1)
 // whose network classification is determined by the syscall table lookup.
-func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
+func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult, goos string) bool { //nolint:unparam // goos varies by platform (darwin vs linux)
 	if result == nil {
 		return false
 	}
 	if len(result.DetectedSyscalls) == 0 {
 		return false
 	}
-	table := syscallTableForArch(result.Architecture)
+	table := syscallTableForArch(goos, result.Architecture)
 	if table == nil {
 		return false
 	}

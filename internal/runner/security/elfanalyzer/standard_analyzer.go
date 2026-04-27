@@ -409,7 +409,7 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	}
 
 	var symbols []binaryanalyzer.DetectedSymbol
-	table := syscallTableForArchitecture(result.Architecture)
+	table := SyscallTableForArchitecture(result.Architecture)
 	for _, info := range result.DetectedSyscalls {
 		if table != nil && info.Number >= 0 && table.IsNetworkSyscall(info.Number) {
 			symbols = append(symbols, binaryanalyzer.DetectedSymbol{
@@ -433,7 +433,9 @@ var (
 	cachedArm64SyscallTable = NewARM64LinuxSyscallTable()
 )
 
-func syscallTableForArchitecture(arch string) SyscallNumberTable {
+// SyscallTableForArchitecture returns the shared cached SyscallNumberTable for the given Linux architecture.
+// Returns nil for unrecognized architectures.
+func SyscallTableForArchitecture(arch string) SyscallNumberTable {
 	switch arch {
 	case "x86_64":
 		return cachedX86SyscallTable
