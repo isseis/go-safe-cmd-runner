@@ -808,48 +808,153 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 		windowStart = 0
 	}
 
-	instructions, _ := a.decodeWindow(
+	number, method, detail, decodeFailures := a.backwardScanForSyscallNumberX86WithWindow(
+		code,
+		baseAddr,
+		syscallOffset,
+		syscallAddr,
+		windowStart,
+		x86Decoder,
+	)
+	if detail != DeterminationDetailX86CopyChainUnresolved {
+		return number, method, detail
+	}
+
+	if value, resolvedDetail, ok := a.resolveX86CopyChainByTailWindowConsensus(
+		code,
+		baseAddr,
+		syscallOffset,
+		syscallAddr,
+		windowStart,
+		x86Decoder,
+	); ok {
+		return value, DeterminationMethodImmediate, resolvedDetail
+	}
+
+	if decodeFailures == 0 {
+		return number, method, detail
+	}
+
+	probeLimit := windowStart + x86Decoder.MaxInstructionLength()
+	if probeLimit > syscallOffset {
+		probeLimit = syscallOffset
+	}
+	for candidateStart := windowStart + 1; candidateStart <= probeLimit; candidateStart++ {
+		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanForSyscallNumberX86WithWindow(
+			code,
+			baseAddr,
+			syscallOffset,
+			syscallAddr,
+			candidateStart,
+			x86Decoder,
+		)
+		if candidateMethod == DeterminationMethodImmediate {
+			return candidateNumber, candidateMethod, candidateDetail
+		}
+	}
+
+	return number, method, detail
+}
+
+func (a *SyscallAnalyzer) resolveX86CopyChainByTailWindowConsensus(
+	code []byte,
+	baseAddr uint64,
+	syscallOffset int,
+	syscallAddr uint64,
+	windowStart int,
+	x86Decoder *X86Decoder,
+) (int, string, bool) {
+	const tailProbeBytes = 128
+
+	probeStart := syscallOffset - tailProbeBytes
+	if probeStart < windowStart {
+		probeStart = windowStart
+	}
+
+	resolvedValue := 0
+	resolvedDetail := ""
+	hasResolvedValue := false
+
+	for candidateStart := probeStart; candidateStart < syscallOffset; candidateStart++ {
+		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanForSyscallNumberX86WithWindow(
+			code,
+			baseAddr,
+			syscallOffset,
+			syscallAddr,
+			candidateStart,
+			x86Decoder,
+		)
+		if candidateMethod != DeterminationMethodImmediate {
+			continue
+		}
+		if !hasResolvedValue {
+			resolvedValue = candidateNumber
+			resolvedDetail = candidateDetail
+			hasResolvedValue = true
+			continue
+		}
+		if candidateNumber != resolvedValue {
+			return 0, "", false
+		}
+	}
+
+	if !hasResolvedValue {
+		return 0, "", false
+	}
+
+	return resolvedValue, resolvedDetail, true
+}
+
+func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithWindow(
+	code []byte,
+	baseAddr uint64,
+	syscallOffset int,
+	syscallAddr uint64,
+	windowStart int,
+	x86Decoder *X86Decoder,
+) (int, string, string, int) {
+	instructions, decodeFailures := a.decodeWindow(
 		code, baseAddr, windowStart, syscallOffset, x86Decoder,
 	)
 	if len(instructions) == 0 {
-		return -1, DeterminationMethodUnknownDecodeFailed, ""
+		return -1, DeterminationMethodUnknownDecodeFailed, "", decodeFailures
 	}
 
 	scanResult := a.scanX86SyscallRegInBlock(instructions, x86Decoder)
 	if scanResult.indirectSetting {
-		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86IndirectWrite
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86IndirectWrite, decodeFailures
 	}
 
 	if scanResult.foundImmediate {
 		if scanResult.immediateValue >= 0 && scanResult.immediateValue <= maxValidSyscallNumber {
-			return int(scanResult.immediateValue), DeterminationMethodImmediate, ""
+			return int(scanResult.immediateValue), DeterminationMethodImmediate, "", decodeFailures
 		}
-		return -1, DeterminationMethodUnknownIndirectSetting, ""
+		return -1, DeterminationMethodUnknownIndirectSetting, "", decodeFailures
 	}
 
 	if scanResult.sawRegisterCopy && (scanResult.encounteredControlBoundary || scanResult.needPredecessorResolution) {
 		if value, ok, detail := a.resolveX86RegValueAcrossPredecessors(instructions, scanResult.targetReg, syscallAddr, x86Decoder); ok {
 			if value >= 0 && value <= maxValidSyscallNumber {
-				return int(value), DeterminationMethodImmediate, detail
+				return int(value), DeterminationMethodImmediate, detail, decodeFailures
 			}
 		}
-		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved, decodeFailures
 	}
 
 	if scanResult.sawRegisterCopy {
 		// Register-copy chains without a resolvable source immediate remain
 		// indirect by definition.
-		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved, decodeFailures
 	}
 
 	if scanResult.encounteredControlBoundary {
-		return -1, DeterminationMethodUnknownControlFlowBoundary, ""
+		return -1, DeterminationMethodUnknownControlFlowBoundary, "", decodeFailures
 	}
 
 	if scanResult.scanCount < a.maxBackwardScan {
-		return -1, DeterminationMethodUnknownWindowExhausted, ""
+		return -1, DeterminationMethodUnknownWindowExhausted, "", decodeFailures
 	}
-	return -1, DeterminationMethodUnknownScanLimitExceeded, ""
+	return -1, DeterminationMethodUnknownScanLimitExceeded, "", decodeFailures
 }
 
 type x86BackwardScanResult struct {

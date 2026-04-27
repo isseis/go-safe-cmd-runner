@@ -419,6 +419,38 @@ func TestSyscallAnalyzer_UnknownWarningIncludesDetail(t *testing.T) {
 	assert.Contains(t, result.AnalysisWarnings[0], "detail=x86_copy_chain_unresolved")
 }
 
+func TestSyscallAnalyzer_BackwardScan_MisalignedWindowRecovery(t *testing.T) {
+	prefix := append([]byte{0xeb, 0x00}, make([]byte, 730)...)
+	for i := 2; i < len(prefix); i++ {
+		prefix[i] = 0x90
+	}
+
+	pattern := []byte{
+		0xf3, 0x0f, 0x1e, 0xfa,
+		0xba, 0xe7, 0x00, 0x00, 0x00,
+		0xeb, 0x06,
+		0x0f, 0x1f, 0x44, 0x00, 0x00,
+		0xf4,
+		0x89, 0xd0,
+		0x0f, 0x05,
+	}
+	code := make([]byte, 0, len(prefix)+len(pattern))
+	code = append(code, prefix...)
+	code = append(code, pattern...)
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.Len(t, result.DetectedSyscalls, 1)
+	info := result.DetectedSyscalls[0]
+	occ := info.Occurrences[0]
+	assert.Equal(t, 231, info.Number)
+	assert.Equal(t, "exit_group", info.Name)
+	assert.Equal(t, DeterminationMethodImmediate, occ.DeterminationMethod)
+	assert.NotEqual(t, DeterminationDetailX86CopyChainUnresolved, occ.DeterminationDetail)
+}
+
 func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 	// mov $0x29, %eax; syscall; mov %ebx, %eax; syscall
 	code := []byte{
