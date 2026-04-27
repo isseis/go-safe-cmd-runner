@@ -4,6 +4,7 @@ package security
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -76,36 +77,49 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC(t *testing.T) {
 		"resolved network svc (Number != -1) must not be treated as high-risk svc signal")
 }
 
+// platformNetworkSyscallNums returns the architecture string and network syscall
+// numbers (socket, connect) that match syscallTableForArch's behavior on the current OS.
+// On macOS, syscallTableForArch ignores the arch field and always uses MacOSSyscallTable
+// (socket=97, connect=98); on Linux it uses the x86_64 table (socket=41, connect=42).
+func platformNetworkSyscallNums() (arch string, socketNum, connectNum int) {
+	if runtime.GOOS == "darwin" {
+		return "arm64", 97, 98
+	}
+	return "x86_64", 41, 42
+}
+
 // TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC verifies that a resolved network svc
 // is detected as a network signal based on syscall number lookup.
 func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
+	arch, socketNum, _ := platformNetworkSyscallNums()
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "x86_64",
+			Architecture: arch,
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
+				{Number: socketNum, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
 	assert.True(t, syscallAnalysisHasNetworkSignal(r),
-		"resolved network svc (socket #41 on x86_64) must be detected as network signal")
+		"resolved network svc (socket on %s/%s) must be detected as network signal", runtime.GOOS, arch)
 }
 
 // TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility:
 // when DetectedSyscalls was filtered by the old FilterSyscallsForStorage logic
 // (only network or Number==-1 entries present), the new judgment still produces the same result.
 func TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord(t *testing.T) {
+	arch, socketNum, _ := platformNetworkSyscallNums()
 	// Simulate old filtered DetectedSyscalls: only network and unresolved entries kept.
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "x86_64",
+			Architecture: arch,
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "lib_cache_match"}}},
+				{Number: socketNum, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "lib_cache_match"}}},
 				{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
-	// Network signal from socket (#41 on x86_64) must still be detected.
+	// Network signal from socket must still be detected.
 	assert.True(t, syscallAnalysisHasNetworkSignal(r),
 		"legacy filtered record with network entry must still trigger network signal")
 	// Unresolved svc (Number==-1) must still trigger high-risk signal.
@@ -389,13 +403,14 @@ func TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly(t *testing.T) {
 // ---- Section 6.2: syscallAnalysisHasNetworkSignal tests ----
 
 // syscallAnalysisResultWithNetworkSyscall builds a SyscallAnalysisResult containing
-// one DetectedSyscall. When hasNetwork is true, uses socket (x86_64 #41, a network syscall);
-// when false, uses read (x86_64 #3, a non-network syscall).
+// one DetectedSyscall. When hasNetwork is true, uses socket (a network syscall for the
+// current OS); when false, uses read (#3, non-network on both Linux and macOS).
 func syscallAnalysisResultWithNetworkSyscall(hasNetwork bool) *fileanalysis.SyscallAnalysisResult {
+	arch, socketNum, _ := platformNetworkSyscallNums()
 	var info common.SyscallInfo
 	if hasNetwork {
 		info = common.SyscallInfo{
-			Number: 41,
+			Number: socketNum,
 			Name:   "socket",
 			Occurrences: []common.SyscallOccurrence{{
 				DeterminationMethod: "lib_cache_match",
@@ -404,7 +419,7 @@ func syscallAnalysisResultWithNetworkSyscall(hasNetwork bool) *fileanalysis.Sysc
 		}
 	} else {
 		info = common.SyscallInfo{
-			Number: 3,
+			Number: 3, // read: non-network on both Linux x86_64 and macOS
 			Name:   "read",
 			Occurrences: []common.SyscallOccurrence{{
 				DeterminationMethod: "lib_cache_match",
@@ -414,7 +429,7 @@ func syscallAnalysisResultWithNetworkSyscall(hasNetwork bool) *fileanalysis.Sysc
 	}
 	return &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture:     "x86_64",
+			Architecture:     arch,
 			DetectedSyscalls: []common.SyscallInfo{info},
 		},
 	}
@@ -445,13 +460,14 @@ func TestSyscallAnalysisHasNetworkSignal_NonNetworkSyscall(t *testing.T) {
 // TestSyscallAnalysisHasNetworkSignal_MultipleEntries verifies that any network syscall entry
 // is sufficient to trigger the signal.
 func TestSyscallAnalysisHasNetworkSignal_MultipleEntries(t *testing.T) {
+	arch, socketNum, connectNum := platformNetworkSyscallNums()
 	result := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			Architecture: "x86_64",
+			Architecture: arch,
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 1},                   // write: non-network
-				{Number: 41, Name: "socket"},  // x86_64 socket: network
-				{Number: 42, Name: "connect"}, // x86_64 connect: network
+				{Number: 3}, // read: non-network on both Linux and macOS
+				{Number: socketNum, Name: "socket"},
+				{Number: connectNum, Name: "connect"},
 			},
 		},
 	}
