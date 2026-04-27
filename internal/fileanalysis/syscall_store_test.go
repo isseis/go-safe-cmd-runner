@@ -445,7 +445,7 @@ func TestStore_ArgEvalResults(t *testing.T) {
 }
 
 // TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError verifies that loading a
-// syscall analysis record saved with schema version 17 returns SchemaVersionMismatchError (AC-4).
+// syscall analysis record saved with schema version 17 returns SchemaVersionMismatchError.
 func TestLoad_SchemaVersion17_ReturnsSchemaVersionMismatchError(t *testing.T) {
 	tmpDir := commontesting.SafeTempDir(t)
 	analysisDir := filepath.Join(tmpDir, "analysis")

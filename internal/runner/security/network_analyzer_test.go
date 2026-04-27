@@ -533,10 +533,8 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_IsNetworkTrue(t *testing.T) 
 	assert.False(t, isHigh, "IsNetwork without svc should not escalate to high risk")
 }
 
-// ---- AC-3: syscall-number-based network detection ----
-
 // TestSyscallAnalysisHasNetworkSignal_UnknownArch verifies that an unknown architecture
-// (mips) causes network detection to be skipped, returning false (AC-7a: fail-open).
+// (mips) causes network detection to be skipped and returns false.
 func TestSyscallAnalysisHasNetworkSignal_UnknownArch(t *testing.T) {
 	result := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
@@ -550,7 +548,7 @@ func TestSyscallAnalysisHasNetworkSignal_UnknownArch(t *testing.T) {
 }
 
 // TestSyscallAnalysisHasNetworkSignal_NegativeNumber verifies that a negative syscall
-// number does not trigger the network signal (AC-7b: fail-open).
+// number (unresolved SVC) does not trigger the network signal.
 func TestSyscallAnalysisHasNetworkSignal_NegativeNumber(t *testing.T) {
 	result := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
