@@ -184,12 +184,13 @@ func sameFamily(a, b x86asm.Reg) bool {
 	return aFamily == regFamily(b)
 }
 
-// WritesSyscallReg checks if the instruction modifies eax or rax.
+// WritesSyscallReg returns true if the instruction writes to the RAX register
+// family (AL/AX/EAX/RAX), which is the syscall number register on x86_64.
 func (d *X86Decoder) WritesSyscallReg(inst DecodedInstruction) bool {
 	return d.WritesRegisterFamily(inst, x86asm.RAX)
 }
 
-// WritesRegisterFamily checks whether the instruction modifies the same
+// WritesRegisterFamily reports whether the instruction writes to the same
 // register family as targetReg (e.g. EAX and RAX are in the same family).
 func (d *X86Decoder) WritesRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
@@ -204,6 +205,14 @@ func (d *X86Decoder) WritesRegisterFamily(inst DecodedInstruction, targetReg x86
 	// Instructions that implicitly write RAX/EAX without it appearing as the
 	// first explicit operand (e.g. MUL, one-operand IMUL, DIV, IDIV, CPUID).
 	if sameFamily(targetReg, x86asm.RAX) && writesRAXImplicitly(x86inst) {
+		return true
+	}
+	// Instructions that implicitly write RDX/EDX (e.g. MUL, DIV, CPUID, CQO/CDQ/CWD).
+	if sameFamily(targetReg, x86asm.RDX) && writesRDXImplicitly(x86inst) {
+		return true
+	}
+	// CPUID also implicitly writes EBX and ECX.
+	if (sameFamily(targetReg, x86asm.RBX) || sameFamily(targetReg, x86asm.RCX)) && x86inst.Op == x86asm.CPUID {
 		return true
 	}
 
@@ -415,12 +424,13 @@ func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool,
 //     distinguished from multi-operand IMUL by having exactly one non-nil arg
 //   - DIV r/m  — unsigned divide: remainder → rDX
 //   - IDIV r/m — signed divide: remainder → rDX
+//   - CPUID    — writes EDX (along with EAX/EBX/ECX); no explicit operands
 //   - CQO      — sign-extends RAX into RDX:RAX; writes RDX
 //   - CDQ      — sign-extends EAX into EDX:EAX; writes EDX
 //   - CWD      — sign-extends AX into DX:AX; writes DX
 func writesRDXImplicitly(x86inst x86asm.Inst) bool {
 	switch x86inst.Op {
-	case x86asm.MUL, x86asm.DIV, x86asm.IDIV, x86asm.CQO, x86asm.CDQ, x86asm.CWD:
+	case x86asm.MUL, x86asm.DIV, x86asm.IDIV, x86asm.CPUID, x86asm.CQO, x86asm.CDQ, x86asm.CWD:
 		return true
 	case x86asm.IMUL:
 		// Only the one-operand form writes the high half into rDX.
