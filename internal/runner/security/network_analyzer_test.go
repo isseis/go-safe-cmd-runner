@@ -17,6 +17,36 @@ func TestSyscallAnalysisHasSVCSignal_Nil(t *testing.T) {
 	assert.False(t, syscallAnalysisHasSVCSignal(nil))
 }
 
+func TestConstructors_PanicOnEmptyGOOS(t *testing.T) {
+	assert.Panics(t, func() {
+		_ = NewBinaryAnalyzer("")
+	})
+	assert.Panics(t, func() {
+		_ = NewNetworkAnalyzer("")
+	})
+	assert.Panics(t, func() {
+		_ = NewNetworkAnalyzerWithStore("", nil)
+	})
+	assert.Panics(t, func() {
+		_ = NewNetworkAnalyzerWithStores("", nil, nil)
+	})
+}
+
+func TestConstructors_AcceptCurrentGOOS(t *testing.T) {
+	assert.NotPanics(t, func() {
+		_ = NewBinaryAnalyzer(runtime.GOOS)
+	})
+	assert.NotPanics(t, func() {
+		_ = NewNetworkAnalyzer(runtime.GOOS)
+	})
+	assert.NotPanics(t, func() {
+		_ = NewNetworkAnalyzerWithStore(runtime.GOOS, nil)
+	})
+	assert.NotPanics(t, func() {
+		_ = NewNetworkAnalyzerWithStores(runtime.GOOS, nil, nil)
+	})
+}
+
 // TestSyscallAnalysisHasSVCSignal_Empty verifies that an empty result returns false.
 func TestSyscallAnalysisHasSVCSignal_Empty(t *testing.T) {
 	assert.False(t, syscallAnalysisHasSVCSignal(&fileanalysis.SyscallAnalysisResult{}))
