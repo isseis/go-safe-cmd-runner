@@ -4,16 +4,16 @@ package security
 
 import "path/filepath"
 
+var allowedDarwinSymlinkTargets = map[string]string{
+	"/tmp": "/private/tmp",
+	"/var": "/private/var",
+}
+
 // isAllowedOSManagedSymlink allows known macOS root-level aliases only when
 // their resolved target exactly matches the expected destination.
 func isAllowedOSManagedSymlink(path string) bool {
-	allowedTargets := map[string]string{
-		"/tmp": "/private/tmp",
-		"/var": "/private/var",
-	}
-
 	cleanPath := filepath.Clean(path)
-	expectedTarget, ok := allowedTargets[cleanPath]
+	expectedTarget, ok := allowedDarwinSymlinkTargets[cleanPath]
 	if !ok {
 		return false
 	}
