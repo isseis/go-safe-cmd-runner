@@ -113,7 +113,7 @@ func TestParsePclntab_NoPclntabSection(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	_, err = parsePclntabAllFuncs(f)
+	_, err = parsePclntabFuncs(f)
 	assert.ErrorIs(t, err, ErrNoPclntab)
 }
 
@@ -156,7 +156,7 @@ func TestParsePclntab_InvalidData(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := openELFWithPclntab(t, tc.data)
 
-			_, err := parsePclntabAllFuncs(f)
+			_, err := parsePclntabFuncs(f)
 
 			require.Error(t, err)
 			assert.ErrorIs(t, err, tc.expectErr)

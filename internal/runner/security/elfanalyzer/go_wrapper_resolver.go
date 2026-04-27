@@ -151,7 +151,7 @@ func (b *goWrapperBase) IsInsideWrapper(addr uint64) bool {
 // loadFromPclntab parses the .gopclntab section and populates symbols,
 // wrapperAddrs, and wrapperRanges.
 //
-// It uses parsePclntabAllFuncs so that duplicate pclntab entries for the same
+// It uses parsePclntabFuncs so that duplicate pclntab entries for the same
 // function name — ABI0 wrapper stubs emitted by the Go compiler since Go 1.17
 // — are each registered in wrapperRanges.  Without this, calls originating
 // from inside an ABI0 stub body (e.g. the syscall.RawSyscall stub at a
@@ -159,7 +159,7 @@ func (b *goWrapperBase) IsInsideWrapper(addr uint64) bool {
 // inside a wrapper and would be reported as unresolved wrapper calls with
 // number=-1.
 func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
-	functions, err := parsePclntabAllFuncs(elfFile)
+	functions, err := parsePclntabFuncs(elfFile)
 	if err != nil {
 		return err
 	}
