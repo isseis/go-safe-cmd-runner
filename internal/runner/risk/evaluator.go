@@ -3,6 +3,8 @@
 package risk
 
 import (
+	"runtime"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -31,7 +33,7 @@ func NewStandardEvaluatorWithStores(
 	symStore fileanalysis.NetworkSymbolStore,
 	syscallStore fileanalysis.SyscallAnalysisStore,
 ) Evaluator {
-	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzerWithStores(symStore, syscallStore)}
+	return &StandardEvaluator{networkAnalyzer: security.NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, syscallStore)}
 }
 
 // EvaluateRisk analyzes a command and returns its risk level

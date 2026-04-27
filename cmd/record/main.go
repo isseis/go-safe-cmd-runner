@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/elfdynlib"
@@ -137,7 +138,7 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 		if d.machoDynlibAnalyzerFactory != nil {
 			fv.SetMachODynLibAnalyzer(d.machoDynlibAnalyzerFactory())
 		}
-		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer())
+		fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
 
 		syscallAnalyzer := elfanalyzer.NewSyscallAnalyzer()
 		fv.SetSyscallAnalyzer(libccache.NewSyscallAdapter(syscallAnalyzer))

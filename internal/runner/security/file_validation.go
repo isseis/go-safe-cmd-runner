@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -396,30 +395,6 @@ func (v *Validator) validateAllowedOutputPathSymlinks(path string) error {
 		}
 		currentPath = parentPath
 	}
-}
-
-func isAllowedOSManagedSymlink(path string) bool {
-	if runtime.GOOS != "darwin" {
-		return false
-	}
-
-	allowedTargets := map[string]string{
-		"/tmp": "/private/tmp",
-		"/var": "/private/var",
-	}
-
-	cleanPath := filepath.Clean(path)
-	expectedTarget, ok := allowedTargets[cleanPath]
-	if !ok {
-		return false
-	}
-
-	resolvedPath, err := filepath.EvalSymlinks(cleanPath)
-	if err != nil {
-		return false
-	}
-
-	return filepath.Clean(resolvedPath) == expectedTarget
 }
 
 // validateOutputFileWritePermission checks if the user can write to the existing file

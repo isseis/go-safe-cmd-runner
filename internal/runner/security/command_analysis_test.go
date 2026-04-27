@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -709,7 +710,7 @@ func TestIsNetworkOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			analyzer := NewNetworkAnalyzer()
+			analyzer := NewNetworkAnalyzer(runtime.GOOS)
 			isNet, isRisk := analyzer.IsNetworkOperation(tt.cmdName, tt.args, "")
 			assert.Equal(t, tt.expectedNet, isNet, "IsNetworkOperation(%s, %v) network detection. %s",
 				tt.cmdName, tt.args, tt.description)
@@ -1800,7 +1801,7 @@ func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			analyzer := NewNetworkAnalyzer()
+			analyzer := NewNetworkAnalyzer(runtime.GOOS)
 			result, _ := analyzer.IsNetworkOperation(tt.cmd, tt.args, "")
 			assert.Equal(t, tt.expected, result, "IsNetworkOperation(%q, %v)", tt.cmd, tt.args)
 		})
@@ -2415,7 +2416,7 @@ func TestIsNetworkOperation_Analysis(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			analyzer := NewNetworkAnalyzer()
+			analyzer := NewNetworkAnalyzer(runtime.GOOS)
 			isNetwork, _ := analyzer.IsNetworkOperation(tc.cmdName, tc.args, "sha256:dummy")
 			assert.Equal(t, tc.expectNetwork, isNetwork, "isNetwork mismatch")
 		})
@@ -2468,7 +2469,7 @@ func TestFormatDetectedSymbols(t *testing.T) {
 // TestNewNetworkAnalyzer tests the creation of NetworkAnalyzer.
 func TestNewNetworkAnalyzer(t *testing.T) {
 	t.Run("creates analyzer with default binaryAnalyzer", func(t *testing.T) {
-		analyzer := NewNetworkAnalyzer()
+		analyzer := NewNetworkAnalyzer(runtime.GOOS)
 		assert.NotNil(t, analyzer)
 	})
 

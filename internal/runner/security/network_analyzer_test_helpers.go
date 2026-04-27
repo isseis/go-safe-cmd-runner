@@ -3,6 +3,8 @@
 package security
 
 import (
+	"runtime"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 )
 
@@ -12,7 +14,7 @@ import (
 func newNetworkAnalyzer(
 	store fileanalysis.NetworkSymbolStore,
 ) *NetworkAnalyzer {
-	return &NetworkAnalyzer{store: store}
+	return NewNetworkAnalyzerWithStore(runtime.GOOS, store)
 }
 
 // newNetworkAnalyzerWithStores creates a NetworkAnalyzer with a symbol store and
@@ -22,5 +24,5 @@ func newNetworkAnalyzerWithStores(
 	symStore fileanalysis.NetworkSymbolStore,
 	svcStore fileanalysis.SyscallAnalysisStore,
 ) *NetworkAnalyzer {
-	return &NetworkAnalyzer{store: symStore, syscallStore: svcStore}
+	return NewNetworkAnalyzerWithStores(runtime.GOOS, symStore, svcStore)
 }

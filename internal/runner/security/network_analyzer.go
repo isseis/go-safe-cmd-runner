@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -14,11 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 )
-
-// gosDarwin is the GOOS value for macOS.
-const gosDarwin = "darwin"
 
 type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
@@ -33,40 +28,32 @@ func syscallTableForArch(goos, arch string) syscallTableInterface {
 
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
+	goos         string
 	store        fileanalysis.NetworkSymbolStore   // nil means cache disabled
 	syscallStore fileanalysis.SyscallAnalysisStore // nil means svc cache disabled
 }
 
-// NewBinaryAnalyzer creates a BinaryAnalyzer appropriate for the current platform.
-// On macOS, returns StandardMachOAnalyzer; on Linux and other platforms, returns StandardELFAnalyzer.
-func NewBinaryAnalyzer() binaryanalyzer.BinaryAnalyzer {
-	switch runtime.GOOS {
-	case gosDarwin:
-		return machoanalyzer.NewStandardMachOAnalyzer(nil)
-	default: // "linux", etc.
-		return elfanalyzer.NewStandardELFAnalyzer(nil, nil)
-	}
-}
-
 // NewNetworkAnalyzer creates a new NetworkAnalyzer.
-// On macOS, uses StandardMachOAnalyzer; on Linux and other platforms, uses StandardELFAnalyzer.
-func NewNetworkAnalyzer() *NetworkAnalyzer {
-	return &NetworkAnalyzer{}
+// The caller must inject the target GOOS.
+func NewNetworkAnalyzer(goos string) *NetworkAnalyzer {
+	return &NetworkAnalyzer{goos: requireGOOS(goos)}
 }
 
 // NewNetworkAnalyzerWithStore creates a NetworkAnalyzer with a store for cache-based analysis.
-func NewNetworkAnalyzerWithStore(store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
-	return &NetworkAnalyzer{store: store}
+func NewNetworkAnalyzerWithStore(goos string, store fileanalysis.NetworkSymbolStore) *NetworkAnalyzer {
+	return &NetworkAnalyzer{goos: requireGOOS(goos), store: store}
 }
 
 // NewNetworkAnalyzerWithStores creates a NetworkAnalyzer with both
 // symbol and syscall stores for cache-based analysis.
 // If either store is nil, the corresponding cache lookup is disabled.
 func NewNetworkAnalyzerWithStores(
+	goos string,
 	symStore fileanalysis.NetworkSymbolStore,
 	svcStore fileanalysis.SyscallAnalysisStore,
 ) *NetworkAnalyzer {
 	return &NetworkAnalyzer{
+		goos:         requireGOOS(goos),
 		store:        symStore,
 		syscallStore: svcStore,
 	}
@@ -219,7 +206,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 					return true, true
 				}
 				// Check whether any non-svc detected syscall is a network syscall.
-				if syscallAnalysisHasNetworkSignal(svcResult, runtime.GOOS) {
+				if syscallAnalysisHasNetworkSignal(svcResult, a.goos) {
 					slog.Info("SyscallAnalysis cache indicates network syscall",
 						"path", cmdPath)
 					return true, false
