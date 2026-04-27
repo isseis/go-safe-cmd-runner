@@ -185,7 +185,7 @@ func sameFamily(a, b x86asm.Reg) bool {
 }
 
 // WritesSyscallReg returns true if the instruction writes to the RAX register
-// family (AL/AX/EAX/RAX), which is the syscall number register on x86_64.
+// family (AL/AH/AX/EAX/RAX), which is the syscall number register on x86_64.
 func (d *X86Decoder) WritesSyscallReg(inst DecodedInstruction) bool {
 	return d.WritesRegisterFamily(inst, x86asm.RAX)
 }
