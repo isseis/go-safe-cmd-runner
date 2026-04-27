@@ -97,6 +97,48 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 			wantMethod: DeterminationMethodImmediate,
 		},
 		{
+			name: "register copy from immediate source",
+			// mov $0x2a, %edx; mov %edx, %eax; syscall
+			code:       []byte{0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "register copy from zeroing source",
+			// xor %edx, %edx; mov %edx, %eax; syscall
+			code:       []byte{0x31, 0xd2, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 0,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "register copy from r9d immediate source",
+			// mov $0xca, %r9d; mov %r9d, %eax; syscall
+			code:       []byte{0x41, 0xb9, 0xca, 0x00, 0x00, 0x00, 0x44, 0x89, 0xc8, 0x0f, 0x05},
+			wantNumber: 202,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "phase2 predecessor single path via jump",
+			// mov $0x2a, %edx; jmp join; nop; nop; join: mov %edx, %eax; syscall
+			code:       []byte{0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x02, 0x90, 0x90, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "phase2 predecessor multi-path same value",
+			// cmp %ecx,%ecx; jne alt; mov $0x2a,%edx; jmp join; alt: mov $0x2a,%edx; join: mov %edx,%eax; syscall
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "phase2 predecessor multi-path conflicting value",
+			// cmp %ecx,%ecx; jne alt; mov $0x2a,%edx; jmp join; alt: mov $0x2b,%edx; join: mov %edx,%eax; syscall
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2b, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: -1,
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
+		},
+		{
 			name: "register move (indirect)",
 			// mov %ebx, %eax; syscall
 			code:       []byte{0x89, 0xd8, 0x0f, 0x05},
@@ -295,6 +337,142 @@ func TestSyscallAnalyzer_NetworkAndNonNetworkSyscalls(t *testing.T) {
 
 	assert.Empty(t, result.AnalysisWarnings)
 	assert.Empty(t, result.ArgEvalResults)
+}
+
+func TestSyscallAnalyzer_DeterminationDetail_X86(t *testing.T) {
+	tests := []struct {
+		name       string
+		code       []byte
+		wantNumber int
+		wantMethod string
+		wantDetail string
+	}{
+		{
+			name:       "copy chain detail",
+			code:       []byte{0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05}, // mov $0x2a,%edx; mov %edx,%eax; syscall
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+			wantDetail: DeterminationDetailX86CopyChain,
+		},
+		{
+			name:       "branch converged detail",
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+			wantDetail: DeterminationDetailX86BranchConverged,
+		},
+		{
+			name:       "copy chain unresolved detail",
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2b, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: -1,
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
+			wantDetail: DeterminationDetailX86CopyChainUnresolved,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := NewSyscallAnalyzer()
+			cfg := analyzer.archConfigs[elf.EM_X86_64]
+			result := analyzer.analyzeSyscallsInCode(tt.code, 0, cfg.decoder, cfg.syscallTable, nil)
+			require.Len(t, result.DetectedSyscalls, 1)
+
+			occ := result.DetectedSyscalls[0].Occurrences[0]
+			assert.Equal(t, tt.wantNumber, result.DetectedSyscalls[0].Number)
+			assert.Equal(t, tt.wantMethod, occ.DeterminationMethod)
+			assert.Equal(t, tt.wantDetail, occ.DeterminationDetail)
+		})
+	}
+}
+
+func TestSyscallAnalyzer_DeterminationStats(t *testing.T) {
+	// sequence:
+	// 1) mov $0x2a,%edx; mov %edx,%eax; syscall                -> copy chain immediate
+	// 2) cmp %ecx,%ecx; jne alt; mov $0x2b,%edx; ...; syscall  -> branch converged immediate
+	// 3) mov %ebx,%eax; syscall                                 -> unknown indirect
+	code := []byte{
+		0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05,
+		0x39, 0xc9, 0x75, 0x07, 0xba, 0x2b, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2b, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05,
+		0x89, 0xd8, 0x0f, 0x05,
+	}
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.NotNil(t, result.DeterminationStats)
+	assert.Equal(t, 2, result.DeterminationStats.ImmediateTotal)
+	assert.Equal(t, 1, result.DeterminationStats.ImmediateViaCopyChain)
+	assert.Equal(t, 1, result.DeterminationStats.ImmediateViaBranchConvergence)
+	assert.Equal(t, 1, result.DeterminationStats.UnknownIndirectSetting)
+}
+
+func TestSyscallAnalyzer_UnknownWarningIncludesDetail(t *testing.T) {
+	code := []byte{0x89, 0xd8, 0x0f, 0x05} // mov %ebx, %eax; syscall
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.NotEmpty(t, result.AnalysisWarnings)
+	assert.Contains(t, result.AnalysisWarnings[0], "unknown:indirect_setting")
+	assert.Contains(t, result.AnalysisWarnings[0], "detail=x86_copy_chain_unresolved")
+}
+
+func TestSyscallAnalyzer_BackwardScan_MisalignedWindowRecovery(t *testing.T) {
+	prefix := append([]byte{0xeb, 0x00}, make([]byte, 730)...)
+	for i := 2; i < len(prefix); i++ {
+		prefix[i] = 0x90
+	}
+
+	pattern := []byte{
+		0xf3, 0x0f, 0x1e, 0xfa,
+		0xba, 0xe7, 0x00, 0x00, 0x00,
+		0xeb, 0x06,
+		0x0f, 0x1f, 0x44, 0x00, 0x00,
+		0xf4,
+		0x89, 0xd0,
+		0x0f, 0x05,
+	}
+	code := make([]byte, 0, len(prefix)+len(pattern))
+	code = append(code, prefix...)
+	code = append(code, pattern...)
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.Len(t, result.DetectedSyscalls, 1)
+	info := result.DetectedSyscalls[0]
+	occ := info.Occurrences[0]
+	assert.Equal(t, 231, info.Number)
+	assert.Equal(t, "exit_group", info.Name)
+	assert.Equal(t, DeterminationMethodImmediate, occ.DeterminationMethod)
+	assert.NotEqual(t, DeterminationDetailX86CopyChainUnresolved, occ.DeterminationDetail)
+}
+
+func TestSyscallAnalyzer_CopyChain_IgnoresSourceClobberAfterCopy(t *testing.T) {
+	// mov $0x2a,%edx; mov %edx,%eax; mov $0x3c,%edx; syscall
+	// EDX is clobbered after the copy into EAX, but syscall number in EAX remains 42.
+	code := []byte{
+		0xba, 0x2a, 0x00, 0x00, 0x00,
+		0x89, 0xd0,
+		0xba, 0x3c, 0x00, 0x00, 0x00,
+		0x0f, 0x05,
+	}
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.Len(t, result.DetectedSyscalls, 1)
+	info := result.DetectedSyscalls[0]
+	occ := info.Occurrences[0]
+
+	assert.Equal(t, 42, info.Number)
+	assert.Equal(t, "connect", info.Name)
+	assert.Equal(t, DeterminationMethodImmediate, occ.DeterminationMethod)
+	assert.Equal(t, DeterminationDetailX86CopyChain, occ.DeterminationDetail)
 }
 
 func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {

@@ -50,6 +50,11 @@ type SyscallOccurrence struct {
 	// possible values.
 	DeterminationMethod string `json:"determination_method"`
 
+	// DeterminationDetail provides additional context for DeterminationMethod.
+	// Examples: "x86_copy_chain", "x86_branch_converged", "x86_copy_chain_unresolved".
+	// Empty string (omitted in JSON) means no additional detail is available.
+	DeterminationDetail string `json:"determination_detail,omitempty"`
+
 	// Source describes how this syscall was detected.
 	// Empty string (omitted in JSON) means detection via direct syscall instruction.
 	// "libc_symbol_import" means detection via libc import symbol matching.
@@ -101,4 +106,27 @@ type SyscallAnalysisResultCore struct {
 	// Currently used for mprotect PROT_EXEC detection.
 	// Only populated when relevant syscalls are detected; otherwise nil.
 	ArgEvalResults []SyscallArgEvalResult `json:"arg_eval_results,omitempty"`
+
+	// DeterminationStats contains diagnostic counters for syscall number
+	// determination paths. This field is optional and omitted when nil.
+	DeterminationStats *SyscallDeterminationStats `json:"determination_stats,omitempty"`
+}
+
+// SyscallDeterminationStats represents diagnostic counters for syscall
+// number resolution outcomes.
+type SyscallDeterminationStats struct {
+	// ImmediateTotal is the number of occurrences resolved by the immediate method.
+	ImmediateTotal int `json:"immediate_total,omitempty"`
+
+	// ImmediateViaCopyChain is the number of x86 occurrences resolved via
+	// register-copy chain tracking without branch convergence.
+	ImmediateViaCopyChain int `json:"immediate_via_copy_chain,omitempty"`
+
+	// ImmediateViaBranchConvergence is the number of x86 occurrences resolved
+	// via conservative multi-predecessor convergence.
+	ImmediateViaBranchConvergence int `json:"immediate_via_branch_convergence,omitempty"`
+
+	// UnknownIndirectSetting is the number of occurrences unresolved due to
+	// indirect register/value setting.
+	UnknownIndirectSetting int `json:"unknown_indirect_setting,omitempty"`
 }

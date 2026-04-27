@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/arch/x86/x86asm"
 )
 
 func TestX86Decoder_Decode(t *testing.T) {
@@ -273,6 +274,82 @@ func TestX86Decoder_IsSyscallNumImm(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRegFamily_AdditionalVariants(t *testing.T) {
+	tests := []struct {
+		name string
+		reg  x86asm.Reg
+		want x86RegFamily
+	}{
+		{name: "AH maps to AX family", reg: x86asm.AH, want: x86RegFamilyAX},
+		{name: "CH maps to CX family", reg: x86asm.CH, want: x86RegFamilyCX},
+		{name: "DH maps to DX family", reg: x86asm.DH, want: x86RegFamilyDX},
+		{name: "BH maps to BX family", reg: x86asm.BH, want: x86RegFamilyBX},
+		{name: "SPB maps to SP family", reg: x86asm.SPB, want: x86RegFamilySP},
+		{name: "BPB maps to BP family", reg: x86asm.BPB, want: x86RegFamilyBP},
+		{name: "SIB maps to SI family", reg: x86asm.SIB, want: x86RegFamilySI},
+		{name: "DIB maps to DI family", reg: x86asm.DIB, want: x86RegFamilyDI},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, regFamily(tt.reg))
+		})
+	}
+}
+
+func TestX86Decoder_IsSyscallNumImm_PartialRegisterWritesIgnored(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	tests := []struct {
+		name string
+		code []byte
+	}{
+		{
+			name: "mov imm8 to AL",
+			code: []byte{0xb0, 0x29},
+		},
+		{
+			name: "mov imm16 to AX",
+			code: []byte{0x66, 0xb8, 0x29, 0x00},
+		},
+		{
+			name: "xor AX AX",
+			code: []byte{0x66, 0x31, 0xc0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst, err := decoder.Decode(tt.code, 0)
+			require.NoError(t, err)
+
+			ok, _ := decoder.IsSyscallNumImm(inst)
+			assert.False(t, ok)
+		})
+	}
+}
+
+func TestX86Decoder_GetCopySourceForRegisterFamily_PartialRegisterWritesIgnored(t *testing.T) {
+	decoder := NewX86Decoder()
+
+	t.Run("mov AL DL is ignored for RAX family", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0x88, 0xd0}, 0)
+		require.NoError(t, err)
+
+		_, ok := decoder.GetCopySourceForRegisterFamily(inst, x86asm.RAX)
+		assert.False(t, ok)
+	})
+
+	t.Run("mov EAX EDX is accepted for RAX family", func(t *testing.T) {
+		inst, err := decoder.Decode([]byte{0x89, 0xd0}, 0)
+		require.NoError(t, err)
+
+		src, ok := decoder.GetCopySourceForRegisterFamily(inst, x86asm.RAX)
+		assert.True(t, ok)
+		assert.Equal(t, x86asm.EDX, src)
+	})
 }
 
 func TestX86Decoder_InstructionAlignment(t *testing.T) {
