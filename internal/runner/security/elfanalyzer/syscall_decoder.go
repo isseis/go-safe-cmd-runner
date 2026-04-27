@@ -35,11 +35,11 @@ type MachineCodeDecoder interface {
 	// arm64:  SVC #0 (D4000001)
 	IsSyscallInstruction(inst DecodedInstruction) bool
 
-	// ModifiesSyscallReg returns true if the instruction writes
+	// WritesSyscallReg returns true if the instruction writes
 	// to the architecture's syscall number register.
 	// x86_64: eax/rax (any write including al, ax, r/eax)
 	// arm64:  w8 or x8
-	ModifiesSyscallReg(inst DecodedInstruction) bool
+	WritesSyscallReg(inst DecodedInstruction) bool
 
 	// IsSyscallNumImm returns (true, value) if the
 	// instruction sets the syscall number register to a known immediate.

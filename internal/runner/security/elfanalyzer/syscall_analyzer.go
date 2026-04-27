@@ -774,7 +774,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 
 	value, method := a.backwardScanForRegister(
 		code, baseAddr, syscallOffset, decoder,
-		decoder.ModifiesSyscallReg,
+		decoder.WritesSyscallReg,
 		decoder.IsSyscallNumImm,
 	)
 
@@ -1020,11 +1020,11 @@ func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruc
 			break
 		}
 
-		if !x86Decoder.ModifiesRegisterFamily(inst, result.targetReg) {
+		if !x86Decoder.WritesRegisterFamily(inst, result.targetReg) {
 			continue
 		}
 
-		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, result.targetReg); isImm {
+		if isImm, value := x86Decoder.IsImmToRegisterFamily(inst, result.targetReg); isImm {
 			if result.sawRegCopy {
 				result.foundImmediate = true
 				result.immediateValue = value
@@ -1036,7 +1036,7 @@ func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruc
 			return result
 		}
 
-		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, result.targetReg); ok {
+		if srcReg, ok := x86Decoder.CopySourceForRegFamily(inst, result.targetReg); ok {
 			result.targetReg = srcReg
 			result.sawRegCopy = true
 			result.hasCopyInstAddr = true
@@ -1333,14 +1333,14 @@ func transferX86State(in []x86RegValue, inst DecodedInstruction, x86Decoder *X86
 		if family == x86RegFamilyUnknown {
 			continue
 		}
-		if !x86Decoder.ModifiesRegisterFamily(inst, reg) {
+		if !x86Decoder.WritesRegisterFamily(inst, reg) {
 			continue
 		}
-		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, reg); isImm {
+		if isImm, value := x86Decoder.IsImmToRegisterFamily(inst, reg); isImm {
 			out[family] = x86RegValue{known: true, value: value}
 			continue
 		}
-		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, reg); ok {
+		if srcReg, ok := x86Decoder.CopySourceForRegFamily(inst, reg); ok {
 			srcFamily := regFamily(srcReg)
 			if srcFamily == x86RegFamilyUnknown {
 				out[family] = x86RegValue{}

@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	// x86_64BitMode is the bit width for 64-bit mode decoding.
-	x86_64BitMode = 64
+	// decodeMode64 is the bit width for 64-bit mode decoding.
+	decodeMode64 = 64
 
 	// minArgsForImmediateMove is the minimum number of arguments
 	// required to check for an immediate move instruction (destination + source).
@@ -25,7 +25,7 @@ func NewX86Decoder() *X86Decoder {
 
 // Decode decodes a single x86_64 instruction.
 func (d *X86Decoder) Decode(code []byte, offset uint64) (DecodedInstruction, error) {
-	inst, err := x86asm.Decode(code, x86_64BitMode)
+	inst, err := x86asm.Decode(code, decodeMode64)
 	if err != nil {
 		return DecodedInstruction{}, err
 	}
@@ -47,12 +47,12 @@ func (d *X86Decoder) IsSyscallInstruction(inst DecodedInstruction) bool {
 	return x86inst.Op == x86asm.SYSCALL
 }
 
-// isReadOnlyFirstOperandOp reports whether op uses its first operand as a
+// isFirstOperandReadOnly reports whether op uses its first operand as a
 // read-only source and does not write to it. Such instructions must not be
 // treated as register modifications during backward scanning.
 // This covers the most common cases; control-flow ops (CALL, JMP, etc.) are
 // handled separately by IsControlFlowInstruction.
-func isReadOnlyFirstOperandOp(op x86asm.Op) bool {
+func isFirstOperandReadOnly(op x86asm.Op) bool {
 	switch op {
 	case x86asm.PUSH, x86asm.CMP, x86asm.TEST, x86asm.BT:
 		return true
@@ -60,7 +60,7 @@ func isReadOnlyFirstOperandOp(op x86asm.Op) bool {
 	return false
 }
 
-// implicitlyWritesRAXEAX reports whether the instruction unconditionally writes
+// writesRAXImplicitly reports whether the instruction unconditionally writes
 // to RAX/EAX as an implicit (unlisted) destination, i.e. RAX does not appear
 // as the first explicit operand. Callers must handle the two/three-operand
 // IMUL forms separately via the first-operand path.
@@ -74,7 +74,7 @@ func isReadOnlyFirstOperandOp(op x86asm.Op) bool {
 //   - CPUID    — writes EAX (plus EBX/ECX/EDX); no explicit operands
 //
 // Not included: CQO/CDQ/CWD — these read rAX and write rDX only.
-func implicitlyWritesRAXEAX(x86inst x86asm.Inst) bool {
+func writesRAXImplicitly(x86inst x86asm.Inst) bool {
 	switch x86inst.Op {
 	case x86asm.MUL, x86asm.DIV, x86asm.IDIV, x86asm.CPUID:
 		return true
@@ -152,7 +152,7 @@ func regFamily(reg x86asm.Reg) x86RegFamily {
 	}
 }
 
-func isFullWidthFamilyWrite(reg x86asm.Reg) bool {
+func isFullWidthWrite(reg x86asm.Reg) bool {
 	switch reg {
 	case x86asm.EAX, x86asm.RAX,
 		x86asm.ECX, x86asm.RCX,
@@ -176,7 +176,7 @@ func isFullWidthFamilyWrite(reg x86asm.Reg) bool {
 	return false
 }
 
-func sameRegFamily(a, b x86asm.Reg) bool {
+func sameFamily(a, b x86asm.Reg) bool {
 	aFamily := regFamily(a)
 	if aFamily == x86RegFamilyUnknown {
 		return false
@@ -184,26 +184,26 @@ func sameRegFamily(a, b x86asm.Reg) bool {
 	return aFamily == regFamily(b)
 }
 
-// ModifiesSyscallReg checks if the instruction modifies eax or rax.
-func (d *X86Decoder) ModifiesSyscallReg(inst DecodedInstruction) bool {
-	return d.ModifiesRegisterFamily(inst, x86asm.RAX)
+// WritesSyscallReg checks if the instruction modifies eax or rax.
+func (d *X86Decoder) WritesSyscallReg(inst DecodedInstruction) bool {
+	return d.WritesRegisterFamily(inst, x86asm.RAX)
 }
 
-// ModifiesRegisterFamily checks whether the instruction modifies the same
+// WritesRegisterFamily checks whether the instruction modifies the same
 // register family as targetReg (e.g. EAX and RAX are in the same family).
-func (d *X86Decoder) ModifiesRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) bool {
+func (d *X86Decoder) WritesRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) bool {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
 		return false
 	}
 
-	if isReadOnlyFirstOperandOp(x86inst.Op) {
+	if isFirstOperandReadOnly(x86inst.Op) {
 		return false
 	}
 
 	// Instructions that implicitly write RAX/EAX without it appearing as the
 	// first explicit operand (e.g. MUL, one-operand IMUL, DIV, IDIV, CPUID).
-	if sameRegFamily(targetReg, x86asm.RAX) && implicitlyWritesRAXEAX(x86inst) {
+	if sameFamily(targetReg, x86asm.RAX) && writesRAXImplicitly(x86inst) {
 		return true
 	}
 
@@ -218,7 +218,7 @@ func (d *X86Decoder) ModifiesRegisterFamily(inst DecodedInstruction, targetReg x
 
 	// Check destination register (first argument for most instructions)
 	if arg, ok := args[0].(x86asm.Reg); ok {
-		return sameRegFamily(arg, targetReg)
+		return sameFamily(arg, targetReg)
 	}
 
 	return false
@@ -229,20 +229,20 @@ func (d *X86Decoder) ModifiesRegisterFamily(inst DecodedInstruction, targetReg x
 //   - MOV EAX/RAX, <imm>  — direct immediate load
 //   - XOR EAX, EAX        — idiom for zeroing EAX (equivalent to MOV EAX, 0)
 func (d *X86Decoder) IsSyscallNumImm(inst DecodedInstruction) (bool, int64) {
-	return d.IsImmediateToRegisterFamily(inst, x86asm.RAX)
+	return d.IsImmToRegisterFamily(inst, x86asm.RAX)
 }
 
-// IsImmediateToRegisterFamily returns (true, value) when the instruction sets
+// IsImmToRegisterFamily returns (true, value) when the instruction sets
 // the target register family from an immediate value or a self-XOR zeroing idiom.
-func (d *X86Decoder) IsImmediateToRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) (bool, int64) {
-	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
-		return sameRegFamily(reg, targetReg) && isFullWidthFamilyWrite(reg)
+func (d *X86Decoder) IsImmToRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) (bool, int64) {
+	return d.isImmToReg(inst, func(reg x86asm.Reg) bool {
+		return sameFamily(reg, targetReg) && isFullWidthWrite(reg)
 	})
 }
 
-// GetCopySourceForRegisterFamily reports source register when instruction is a
+// CopySourceForRegFamily reports source register when instruction is a
 // simple register copy into targetReg family (e.g. MOV EAX, EDX).
-func (d *X86Decoder) GetCopySourceForRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) (x86asm.Reg, bool) {
+func (d *X86Decoder) CopySourceForRegFamily(inst DecodedInstruction, targetReg x86asm.Reg) (x86asm.Reg, bool) {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok || x86inst.Op != x86asm.MOV {
 		return 0, false
@@ -257,22 +257,22 @@ func (d *X86Decoder) GetCopySourceForRegisterFamily(inst DecodedInstruction, tar
 	}
 
 	destReg, ok := args[0].(x86asm.Reg)
-	if !ok || !sameRegFamily(destReg, targetReg) || !isFullWidthFamilyWrite(destReg) {
+	if !ok || !sameFamily(destReg, targetReg) || !isFullWidthWrite(destReg) {
 		return 0, false
 	}
 
 	srcReg, ok := args[1].(x86asm.Reg)
-	if !ok || !isFullWidthFamilyWrite(srcReg) {
+	if !ok || !isFullWidthWrite(srcReg) {
 		return 0, false
 	}
 
 	return srcReg, true
 }
 
-// isImmediateToReg is an internal helper that checks if an instruction sets
+// isImmToReg is an internal helper that checks if an instruction sets
 // a register (matched by regMatch) to an immediate value.
 // Covers MOV <reg>, <imm> and XOR <reg>, <reg> (zeroing idiom).
-func (d *X86Decoder) isImmediateToReg(inst DecodedInstruction, regMatch func(x86asm.Reg) bool) (bool, int64) {
+func (d *X86Decoder) isImmToReg(inst DecodedInstruction, regMatch func(x86asm.Reg) bool) (bool, int64) {
 	x86inst, ok := inst.arch.(x86asm.Inst)
 	if !ok {
 		return false, 0
@@ -388,7 +388,7 @@ func (d *X86Decoder) GetCallTarget(inst DecodedInstruction, instAddr uint64) (ui
 // Note: same as IsSyscallNumImm for x86_64 (RAX is both syscall
 // number register and first argument register in Go's register-based ABI).
 func (d *X86Decoder) IsFirstArgImm(inst DecodedInstruction) (bool, int64) {
-	ok, val := d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
+	ok, val := d.isImmToReg(inst, func(reg x86asm.Reg) bool {
 		return reg == x86asm.RAX || reg == x86asm.EAX
 	})
 	return ok, val
@@ -397,7 +397,7 @@ func (d *X86Decoder) IsFirstArgImm(inst DecodedInstruction) (bool, int64) {
 // ModifiesFirstArg returns true if the instruction writes to the
 // first argument register in x86_64 Go ABI (RAX/EAX).
 func (d *X86Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
-	return d.ModifiesSyscallReg(inst)
+	return d.WritesSyscallReg(inst)
 }
 
 // ResolveFirstArgGlobal returns unresolved on x86_64.
@@ -406,7 +406,7 @@ func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool,
 	return false, 0
 }
 
-// implicitlyWritesRDXEDX reports whether the instruction unconditionally writes
+// writesRDXImplicitly reports whether the instruction unconditionally writes
 // to RDX/EDX as an implicit (unlisted) destination.
 //
 // Covered cases:
@@ -418,7 +418,7 @@ func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool,
 //   - CQO      — sign-extends RAX into RDX:RAX; writes RDX
 //   - CDQ      — sign-extends EAX into EDX:EAX; writes EDX
 //   - CWD      — sign-extends AX into DX:AX; writes DX
-func implicitlyWritesRDXEDX(x86inst x86asm.Inst) bool {
+func writesRDXImplicitly(x86inst x86asm.Inst) bool {
 	switch x86inst.Op {
 	case x86asm.MUL, x86asm.DIV, x86asm.IDIV, x86asm.CQO, x86asm.CDQ, x86asm.CWD:
 		return true
@@ -441,13 +441,13 @@ func (d *X86Decoder) ModifiesThirdArg(inst DecodedInstruction) bool {
 		return false
 	}
 
-	if isReadOnlyFirstOperandOp(x86inst.Op) {
+	if isFirstOperandReadOnly(x86inst.Op) {
 		return false
 	}
 
 	// Instructions that implicitly write RDX/EDX without it appearing as the
 	// first explicit operand (e.g. MUL, one-operand IMUL, DIV, IDIV, CQO/CDQ/CWD).
-	if implicitlyWritesRDXEDX(x86inst) {
+	if writesRDXImplicitly(x86inst) {
 		return true
 	}
 
@@ -473,7 +473,7 @@ func (d *X86Decoder) ModifiesThirdArg(inst DecodedInstruction) bool {
 // IsThirdArgImm checks if the instruction sets edx/rdx to a known
 // immediate value. Covers MOV EDX/RDX, imm and XOR EDX, EDX (zeroing idiom).
 func (d *X86Decoder) IsThirdArgImm(inst DecodedInstruction) (bool, int64) {
-	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
+	return d.isImmToReg(inst, func(reg x86asm.Reg) bool {
 		return reg == x86asm.EDX || reg == x86asm.RDX
 	})
 }
