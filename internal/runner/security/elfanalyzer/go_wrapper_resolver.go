@@ -173,8 +173,10 @@ func (b *goWrapperBase) loadFromPclntab(elfFile *elf.File) error {
 			size = fn.End - fn.Entry
 		}
 
-		// symbols is keyed by name; duplicate entries overwrite each other,
-		// which is acceptable since symbols is only used by test helpers.
+		// symbols is keyed by name; duplicate entries overwrite each other.
+		// The map drives HasSymbols() (len(symbols) > 0) and exposes entries
+		// to test helpers via GetSymbols(); its exact contents are not relied
+		// on by the core analysis path.
 		b.symbols[name] = SymbolInfo{
 			Name:    name,
 			Address: fn.Entry,
