@@ -24,16 +24,22 @@ type syscallTableInterface interface {
 	IsNetworkSyscall(number int) bool
 }
 
+var (
+	cachedX86Table   = elfanalyzer.NewX86_64SyscallTable()
+	cachedArm64Table = elfanalyzer.NewARM64LinuxSyscallTable()
+	cachedMacOSTable = libccache.MacOSSyscallTable{}
+)
+
 func syscallTableForArch(arch string) syscallTableInterface {
 	if runtime.GOOS == gosDarwin {
-		return libccache.MacOSSyscallTable{}
+		return cachedMacOSTable
 	}
 
 	switch arch {
 	case "x86_64":
-		return elfanalyzer.NewX86_64SyscallTable()
+		return cachedX86Table
 	case "arm64":
-		return elfanalyzer.NewARM64LinuxSyscallTable()
+		return cachedArm64Table
 	default:
 		return nil
 	}
@@ -322,6 +328,9 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 // whose network classification is determined by the syscall table lookup.
 func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
 	if result == nil {
+		return false
+	}
+	if len(result.DetectedSyscalls) == 0 {
 		return false
 	}
 	table := syscallTableForArch(result.Architecture)

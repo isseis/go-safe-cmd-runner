@@ -428,12 +428,17 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
 }
 
+var (
+	cachedX86SyscallTable   = NewX86_64SyscallTable()
+	cachedArm64SyscallTable = NewARM64LinuxSyscallTable()
+)
+
 func syscallTableForArchitecture(arch string) SyscallNumberTable {
 	switch arch {
 	case "x86_64":
-		return NewX86_64SyscallTable()
+		return cachedX86SyscallTable
 	case "arm64":
-		return NewARM64LinuxSyscallTable()
+		return cachedArm64SyscallTable
 	default:
 		return nil
 	}
