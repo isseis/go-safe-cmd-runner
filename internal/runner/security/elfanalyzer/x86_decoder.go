@@ -429,16 +429,20 @@ func (d *X86Decoder) readGlobal(addr uint64, loadSize uint64) (int64, bool) {
 			continue
 		}
 		off := addr - sec.Addr
-		if off+loadSize > uint64(len(sec.Data)) { //nolint:gosec // G115: len(sec.Data) fits in uint64; section sizes are bounded by binary size
+		secLen := uint64(len(sec.Data)) //nolint:gosec // G115: section sizes are bounded by binary size
+		if off > secLen || loadSize > secLen-off {
 			continue
 		}
-		start := int(off) //nolint:gosec // G115: off is bounded by the section length check above
+		start := int(off) //nolint:gosec // G115: off <= secLen-loadSize, so off fits in int
 		if loadSize == x86LoadSize32 {
 			return int64(binary.LittleEndian.Uint32(sec.Data[start : start+x86LoadSize32])), true
 		}
 		if loadSize == x86LoadSize64 {
 			val := binary.LittleEndian.Uint64(sec.Data[start : start+x86LoadSize64])
-			return int64(val), true //nolint:gosec // G115: int64/uint64 reinterpretation; caller validates range
+			if val > math.MaxInt64 {
+				return 0, false
+			}
+			return int64(val), true
 		}
 		return 0, false
 	}
