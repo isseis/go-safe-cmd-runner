@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     manpages-dev \
     vim \
     bash-completion \
+    ripgrep \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 日本語ロケール
