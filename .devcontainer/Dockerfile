@@ -9,21 +9,21 @@ RUN yes | unminimize
 
 # 開発ツールのインストール
 RUN apt-get update && apt-get install -y \
+    bash-completion \
+    build-essential \
     curl \
     git \
-    build-essential \
-    locales \
-    sudo \
-    python3 \
-    python3-pip \
     libssl-dev \
-    pkg-config \
+    locales \
     man-db \
     manpages \
     manpages-dev \
-    vim \
-    bash-completion \
+    pkg-config \
+    python3 \
+    python3-pip \
     ripgrep \
+    sudo \
+    vim \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 日本語ロケール
