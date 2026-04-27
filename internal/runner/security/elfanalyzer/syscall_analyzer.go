@@ -925,11 +925,8 @@ func (a *SyscallAnalyzer) backwardScanX86WithWindow(
 		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86IndirectWrite, decodeFailures
 	}
 
-	if scanResult.foundImmediate {
-		if scanResult.immediateValue >= 0 && scanResult.immediateValue <= maxValidSyscallNumber {
-			return int(scanResult.immediateValue), DeterminationMethodImmediate, "", decodeFailures
-		}
-		return -1, DeterminationMethodUnknownIndirectSetting, "", decodeFailures
+	if number, method, detail, ok := a.resolveX86ImmediateScanResult(scanResult, instructions, x86Decoder); ok {
+		return number, method, detail, decodeFailures
 	}
 
 	if scanResult.sawRegCopy && (scanResult.hitControlBoundary || scanResult.needPredResolution) {
@@ -957,12 +954,55 @@ func (a *SyscallAnalyzer) backwardScanX86WithWindow(
 	return -1, DeterminationMethodUnknownScanLimitExceeded, "", decodeFailures
 }
 
+func (a *SyscallAnalyzer) resolveX86ImmediateScanResult(
+	scanResult x86ScanResult,
+	instructions []DecodedInstruction,
+	x86Decoder *X86Decoder,
+) (number int, method, detail string, ok bool) {
+	if !scanResult.foundImmediate {
+		return 0, "", "", false
+	}
+
+	if scanResult.immediateValue < 0 || scanResult.immediateValue > maxValidSyscallNumber {
+		return -1, DeterminationMethodUnknownIndirectSetting, "", true
+	}
+
+	if !scanResult.sawRegCopy {
+		return int(scanResult.immediateValue), DeterminationMethodImmediate, "", true
+	}
+
+	if !scanResult.needPredResolution {
+		return int(scanResult.immediateValue), DeterminationMethodImmediate, DeterminationDetailX86CopyChain, true
+	}
+
+	if !scanResult.hasCopyInstAddr {
+		return int(scanResult.immediateValue), DeterminationMethodImmediate, DeterminationDetailX86CopyChain, true
+	}
+
+	value, resolved, resolvedDetail := a.resolveX86RegAtInstructionEntry(
+		instructions,
+		scanResult.targetReg,
+		scanResult.copyInstAddr,
+		x86Decoder,
+	)
+	if !resolved {
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved, true
+	}
+	if value < 0 || value > maxValidSyscallNumber {
+		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved, true
+	}
+
+	return int(value), DeterminationMethodImmediate, resolvedDetail, true
+}
+
 type x86ScanResult struct {
 	scanCount          int
 	targetReg          x86asm.Reg
 	sawRegCopy         bool
 	hitControlBoundary bool
 	needPredResolution bool
+	hasCopyInstAddr    bool
+	copyInstAddr       uint64
 	indirectSetting    bool
 	foundImmediate     bool
 	immediateValue     int64
@@ -986,8 +1026,10 @@ func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruc
 
 		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, result.targetReg); isImm {
 			if result.sawRegCopy {
+				result.foundImmediate = true
+				result.immediateValue = value
 				result.needPredResolution = true
-				break
+				return result
 			}
 			result.foundImmediate = true
 			result.immediateValue = value
@@ -997,6 +1039,8 @@ func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruc
 		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, result.targetReg); ok {
 			result.targetReg = srcReg
 			result.sawRegCopy = true
+			result.hasCopyInstAddr = true
+			result.copyInstAddr = inst.Offset
 			continue
 		}
 
@@ -1088,6 +1132,92 @@ func (a *SyscallAnalyzer) resolveX86RegAcrossPreds(
 	}
 
 	if hasX86KnownConvergence(preds, inStates, inValues, targetFamily) {
+		return v.value, true, DeterminationDetailX86BranchConverged
+	}
+
+	return v.value, true, DeterminationDetailX86CopyChain
+}
+
+func (a *SyscallAnalyzer) resolveX86RegAtInstructionEntry(
+	instructions []DecodedInstruction,
+	targetReg x86asm.Reg,
+	targetAddr uint64,
+	x86Decoder *X86Decoder,
+) (int64, bool, string) {
+	if len(instructions) == 0 {
+		return 0, false, ""
+	}
+
+	targetIndex := -1
+	for i, inst := range instructions {
+		if inst.Offset == targetAddr {
+			targetIndex = i
+			break
+		}
+	}
+	if targetIndex < 0 {
+		return 0, false, ""
+	}
+
+	succs := buildX86Successors(instructions, 0)
+	preds := buildX86Predecessors(succs)
+	virtualEnd := len(instructions)
+
+	inStates := make([]x86StateMarker, virtualEnd+1)
+	inValues := make([][]x86RegValue, virtualEnd+1)
+	for i := range inValues {
+		inValues[i] = make([]x86RegValue, x86RegFamilyR15+1)
+	}
+
+	outValues := make([][]x86RegValue, virtualEnd)
+	outInitialized := make([]bool, virtualEnd)
+	for i := range outValues {
+		outValues[i] = make([]x86RegValue, x86RegFamilyR15+1)
+	}
+
+	inStates[0].hasInput = true
+	worklist := []int{0}
+	inQueue := make([]bool, virtualEnd)
+	inQueue[0] = true
+
+	for len(worklist) > 0 {
+		node := worklist[0]
+		worklist = worklist[1:]
+		inQueue[node] = false
+
+		if !inStates[node].hasInput {
+			continue
+		}
+
+		newOut := transferX86State(inValues[node], instructions[node], x86Decoder)
+		if outInitialized[node] && equalX86State(outValues[node], newOut) {
+			continue
+		}
+		copy(outValues[node], newOut)
+		outInitialized[node] = true
+
+		for _, succ := range succs[node] {
+			changed := mergeX86State(&inStates[succ], inValues[succ], outValues[node])
+			if !changed || succ == virtualEnd {
+				continue
+			}
+			if !inQueue[succ] {
+				worklist = append(worklist, succ)
+				inQueue[succ] = true
+			}
+		}
+	}
+
+	targetFamily := regFamily(targetReg)
+	if targetFamily == x86RegFamilyUnknown || !inStates[targetIndex].hasInput {
+		return 0, false, ""
+	}
+	v := inValues[targetIndex][targetFamily]
+	if !v.known {
+		return 0, false, ""
+	}
+
+	if countDistinctX86Predecessors(preds[targetIndex]) > 1 {
 		return v.value, true, DeterminationDetailX86BranchConverged
 	}
 

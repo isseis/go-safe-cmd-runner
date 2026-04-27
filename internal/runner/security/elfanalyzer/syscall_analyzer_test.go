@@ -451,6 +451,30 @@ func TestSyscallAnalyzer_BackwardScan_MisalignedWindowRecovery(t *testing.T) {
 	assert.NotEqual(t, DeterminationDetailX86CopyChainUnresolved, occ.DeterminationDetail)
 }
 
+func TestSyscallAnalyzer_CopyChain_IgnoresSourceClobberAfterCopy(t *testing.T) {
+	// mov $0x2a,%edx; mov %edx,%eax; mov $0x3c,%edx; syscall
+	// EDX is clobbered after the copy into EAX, but syscall number in EAX remains 42.
+	code := []byte{
+		0xba, 0x2a, 0x00, 0x00, 0x00,
+		0x89, 0xd0,
+		0xba, 0x3c, 0x00, 0x00, 0x00,
+		0x0f, 0x05,
+	}
+
+	analyzer := NewSyscallAnalyzer()
+	cfg := analyzer.archConfigs[elf.EM_X86_64]
+	result := analyzer.analyzeSyscallsInCode(code, 0, cfg.decoder, cfg.syscallTable, nil)
+
+	require.Len(t, result.DetectedSyscalls, 1)
+	info := result.DetectedSyscalls[0]
+	occ := info.Occurrences[0]
+
+	assert.Equal(t, 42, info.Number)
+	assert.Equal(t, "connect", info.Name)
+	assert.Equal(t, DeterminationMethodImmediate, occ.DeterminationMethod)
+	assert.Equal(t, DeterminationDetailX86CopyChain, occ.DeterminationDetail)
+}
+
 func TestSyscallAnalyzer_MixedKnownAndUnknown(t *testing.T) {
 	// mov $0x29, %eax; syscall; mov %ebx, %eax; syscall
 	code := []byte{

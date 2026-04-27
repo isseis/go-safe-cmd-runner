@@ -115,21 +115,21 @@ const (
 
 func regFamily(reg x86asm.Reg) x86RegFamily {
 	switch reg {
-	case x86asm.AL, x86asm.AX, x86asm.EAX, x86asm.RAX:
+	case x86asm.AL, x86asm.AH, x86asm.AX, x86asm.EAX, x86asm.RAX:
 		return x86RegFamilyAX
-	case x86asm.CL, x86asm.CX, x86asm.ECX, x86asm.RCX:
+	case x86asm.CL, x86asm.CH, x86asm.CX, x86asm.ECX, x86asm.RCX:
 		return x86RegFamilyCX
-	case x86asm.DL, x86asm.DX, x86asm.EDX, x86asm.RDX:
+	case x86asm.DL, x86asm.DH, x86asm.DX, x86asm.EDX, x86asm.RDX:
 		return x86RegFamilyDX
-	case x86asm.BL, x86asm.BX, x86asm.EBX, x86asm.RBX:
+	case x86asm.BL, x86asm.BH, x86asm.BX, x86asm.EBX, x86asm.RBX:
 		return x86RegFamilyBX
-	case x86asm.SP, x86asm.ESP, x86asm.RSP:
+	case x86asm.SPB, x86asm.SP, x86asm.ESP, x86asm.RSP:
 		return x86RegFamilySP
-	case x86asm.BP, x86asm.EBP, x86asm.RBP:
+	case x86asm.BPB, x86asm.BP, x86asm.EBP, x86asm.RBP:
 		return x86RegFamilyBP
-	case x86asm.SI, x86asm.ESI, x86asm.RSI:
+	case x86asm.SIB, x86asm.SI, x86asm.ESI, x86asm.RSI:
 		return x86RegFamilySI
-	case x86asm.DI, x86asm.EDI, x86asm.RDI:
+	case x86asm.DIB, x86asm.DI, x86asm.EDI, x86asm.RDI:
 		return x86RegFamilyDI
 	case x86asm.R8B, x86asm.R8W, x86asm.R8L, x86asm.R8:
 		return x86RegFamilyR8
@@ -150,6 +150,30 @@ func regFamily(reg x86asm.Reg) x86RegFamily {
 	default:
 		return x86RegFamilyUnknown
 	}
+}
+
+func isFullWidthFamilyWrite(reg x86asm.Reg) bool {
+	switch reg {
+	case x86asm.EAX, x86asm.RAX,
+		x86asm.ECX, x86asm.RCX,
+		x86asm.EDX, x86asm.RDX,
+		x86asm.EBX, x86asm.RBX,
+		x86asm.ESP, x86asm.RSP,
+		x86asm.EBP, x86asm.RBP,
+		x86asm.ESI, x86asm.RSI,
+		x86asm.EDI, x86asm.RDI,
+		x86asm.R8L, x86asm.R8,
+		x86asm.R9L, x86asm.R9,
+		x86asm.R10L, x86asm.R10,
+		x86asm.R11L, x86asm.R11,
+		x86asm.R12L, x86asm.R12,
+		x86asm.R13L, x86asm.R13,
+		x86asm.R14L, x86asm.R14,
+		x86asm.R15L, x86asm.R15:
+		return true
+	}
+
+	return false
 }
 
 func sameRegFamily(a, b x86asm.Reg) bool {
@@ -212,7 +236,7 @@ func (d *X86Decoder) IsSyscallNumImm(inst DecodedInstruction) (bool, int64) {
 // the target register family from an immediate value or a self-XOR zeroing idiom.
 func (d *X86Decoder) IsImmediateToRegisterFamily(inst DecodedInstruction, targetReg x86asm.Reg) (bool, int64) {
 	return d.isImmediateToReg(inst, func(reg x86asm.Reg) bool {
-		return sameRegFamily(reg, targetReg)
+		return sameRegFamily(reg, targetReg) && isFullWidthFamilyWrite(reg)
 	})
 }
 
@@ -233,12 +257,12 @@ func (d *X86Decoder) GetCopySourceForRegisterFamily(inst DecodedInstruction, tar
 	}
 
 	destReg, ok := args[0].(x86asm.Reg)
-	if !ok || !sameRegFamily(destReg, targetReg) {
+	if !ok || !sameRegFamily(destReg, targetReg) || !isFullWidthFamilyWrite(destReg) {
 		return 0, false
 	}
 
 	srcReg, ok := args[1].(x86asm.Reg)
-	if !ok {
+	if !ok || !isFullWidthFamilyWrite(srcReg) {
 		return 0, false
 	}
 
