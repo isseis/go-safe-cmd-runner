@@ -53,7 +53,7 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNonNetworkSVC(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 3, Name: "read", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
+				{Number: 3, Name: "read", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -68,7 +68,7 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
+				{Number: 97, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
@@ -77,19 +77,18 @@ func TestSyscallAnalysisHasSVCSignal_ResolvedNetworkSVC(t *testing.T) {
 }
 
 // TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC verifies that a resolved network svc
-// (DeterminationMethod="direct_svc_0x80", IsNetwork=true) is detected as a network signal.
-// After filter removal, resolved svc entries appear in DetectedSyscalls and must be evaluated
-// by IsNetwork, regardless of DeterminationMethod.
+// is detected as a network signal based on syscall number lookup.
 func TestSyscallAnalysisHasNetworkSignal_ResolvedNetworkSVC(t *testing.T) {
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
+				{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
 	assert.True(t, syscallAnalysisHasNetworkSignal(r),
-		"resolved network svc (IsNetwork=true) must be detected as network signal")
+		"resolved network svc (socket #41 on x86_64) must be detected as network signal")
 }
 
 // TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord verifies backward compatibility:
@@ -99,13 +98,14 @@ func TestSyscallAnalysisHasNetworkSignal_LegacyFilteredRecord(t *testing.T) {
 	// Simulate old filtered DetectedSyscalls: only network and unresolved entries kept.
 	r := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "lib_cache_match"}}},
+				{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "lib_cache_match"}}},
 				{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
 			},
 		},
 	}
-	// Network signal from socket (network=true) must still be detected.
+	// Network signal from socket (#41 on x86_64) must still be detected.
 	assert.True(t, syscallAnalysisHasNetworkSignal(r),
 		"legacy filtered record with network entry must still trigger network signal")
 	// Unresolved svc (Number==-1) must still trigger high-risk signal.
@@ -147,7 +147,7 @@ func noNetworkSymbolData() *fileanalysis.SymbolAnalysisData {
 func networkDetectedData() *fileanalysis.SymbolAnalysisData {
 	return &fileanalysis.SymbolAnalysisData{
 		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-			{Name: "socket", Category: "socket"},
+			{Name: "socket"},
 		},
 	}
 }
@@ -157,8 +157,8 @@ func networkDetectedData() *fileanalysis.SymbolAnalysisData {
 func syscallWrapperOnlyData() *fileanalysis.SymbolAnalysisData {
 	return &fileanalysis.SymbolAnalysisData{
 		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-			{Name: "read", Category: "syscall_wrapper"},
-			{Name: "close", Category: "syscall_wrapper"},
+			{Name: "read"},
+			{Name: "close"},
 		},
 	}
 }
@@ -360,8 +360,8 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: &fileanalysis.SymbolAnalysisData{
 		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-			{Name: "read", Category: "syscall_wrapper"},
-			{Name: "socket", Category: "socket"},
+			{Name: "read"},
+			{Name: "socket"},
 		},
 	}}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
@@ -388,22 +388,34 @@ func TestIsNetworkViaBinaryAnalysis_SyscallWrapperOnly(t *testing.T) {
 
 // ---- Section 6.2: syscallAnalysisHasNetworkSignal tests ----
 
-// syscallAnalysisResultWithIsNetwork builds a SyscallAnalysisResult containing
-// one DetectedSyscall with IsNetwork set to the given value.
-func syscallAnalysisResultWithIsNetwork(isNetwork bool) *fileanalysis.SyscallAnalysisResult {
+// syscallAnalysisResultWithNetworkSyscall builds a SyscallAnalysisResult containing
+// one DetectedSyscall. When hasNetwork is true, uses socket (x86_64 #41, a network syscall);
+// when false, uses read (x86_64 #3, a non-network syscall).
+func syscallAnalysisResultWithIsNetwork(hasNetwork bool) *fileanalysis.SyscallAnalysisResult {
+	var info common.SyscallInfo
+	if hasNetwork {
+		info = common.SyscallInfo{
+			Number: 41,
+			Name:   "socket",
+			Occurrences: []common.SyscallOccurrence{{
+				DeterminationMethod: "lib_cache_match",
+				Source:              "libsystem_symbol_import",
+			}},
+		}
+	} else {
+		info = common.SyscallInfo{
+			Number: 3,
+			Name:   "read",
+			Occurrences: []common.SyscallOccurrence{{
+				DeterminationMethod: "lib_cache_match",
+				Source:              "libsystem_symbol_import",
+			}},
+		}
+	}
 	return &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-			DetectedSyscalls: []common.SyscallInfo{
-				{
-					Number:    97,
-					Name:      "socket",
-					IsNetwork: isNetwork,
-					Occurrences: []common.SyscallOccurrence{{
-						DeterminationMethod: "lib_cache_match",
-						Source:              "libsystem_symbol_import",
-					}},
-				},
-			},
+			Architecture:     "x86_64",
+			DetectedSyscalls: []common.SyscallInfo{info},
 		},
 	}
 }
@@ -430,15 +442,16 @@ func TestSyscallAnalysisHasNetworkSignal_IsNetworkFalse(t *testing.T) {
 	assert.False(t, syscallAnalysisHasNetworkSignal(syscallAnalysisResultWithIsNetwork(false)))
 }
 
-// TestSyscallAnalysisHasNetworkSignal_MultipleEntries verifies that any entry with
-// IsNetwork==true is sufficient to trigger the signal.
+// TestSyscallAnalysisHasNetworkSignal_MultipleEntries verifies that any network syscall entry
+// is sufficient to trigger the signal.
 func TestSyscallAnalysisHasNetworkSignal_MultipleEntries(t *testing.T) {
 	result := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
+			Architecture: "x86_64",
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: 5, IsNetwork: false},
-				{Number: 97, IsNetwork: true, Name: "socket"},
-				{Number: 98, IsNetwork: true, Name: "connect"},
+				{Number: 1},                   // write: non-network
+				{Number: 41, Name: "socket"},  // x86_64 socket: network
+				{Number: 42, Name: "connect"}, // x86_64 connect: network
 			},
 		},
 	}
@@ -491,8 +504,8 @@ func TestIsNetworkViaBinaryAnalysis_StaticBinary_SVCAndIsNetwork(t *testing.T) {
 	result := &fileanalysis.SyscallAnalysisResult{
 		SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 			DetectedSyscalls: []common.SyscallInfo{
-				{Number: -1, IsNetwork: false, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
-				{Number: 97, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
+				{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: "direct_svc_0x80"}}},
+				{Number: 97, Name: "socket", Occurrences: []common.SyscallOccurrence{{Source: "libsystem_symbol_import"}}},
 			},
 		},
 	}

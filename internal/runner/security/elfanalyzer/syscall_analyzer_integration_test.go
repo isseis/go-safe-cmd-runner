@@ -18,9 +18,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func hasNetworkSyscall(syscalls []SyscallInfo) bool {
+func hasNetworkSyscall(arch string, syscalls []SyscallInfo) bool {
+	var table interface{ IsNetworkSyscall(int) bool }
+	switch arch {
+	case "x86_64":
+		table = NewX86_64SyscallTable()
+	case "arm64":
+		table = NewARM64LinuxSyscallTable()
+	default:
+		return false
+	}
 	for _, s := range syscalls {
-		if s.IsNetwork {
+		if table.IsNetworkSyscall(s.Number) {
 			return true
 		}
 	}
@@ -70,7 +79,7 @@ int main() {
 	require.NoError(t, err)
 
 	// Verify network syscall detected
-	assert.True(t, hasNetworkSyscall(result.DetectedSyscalls), "socket syscall should be detected as network-related")
+	assert.True(t, hasNetworkSyscall(result.Architecture, result.DetectedSyscalls), "socket syscall should be detected as network-related")
 
 	// Verify socket syscall found
 	found := false
@@ -193,7 +202,7 @@ func main() {
 	require.NoError(t, err)
 
 	// A simple hello-world should NOT have network syscalls
-	assert.False(t, hasNetworkSyscall(result.DetectedSyscalls), "hello-world Go binary should not have network syscalls")
+	assert.False(t, hasNetworkSyscall(result.Architecture, result.DetectedSyscalls), "hello-world Go binary should not have network syscalls")
 }
 
 // TestE2E_RecordToRunnerFallbackChain tests the full pipeline:
@@ -318,7 +327,7 @@ func TestSyscallAnalyzer_IntegrationARM64_NetworkSyscalls(t *testing.T) {
 	require.NoError(t, err)
 
 	// The binary uses net.Dial which resolves to socket(198) on arm64
-	assert.True(t, hasNetworkSyscall(result.DetectedSyscalls), "arm64 binary using net.Dial should have network syscalls detected")
+	assert.True(t, hasNetworkSyscall(result.Architecture, result.DetectedSyscalls), "arm64 binary using net.Dial should have network syscalls detected")
 
 	// Verify socket syscall (arm64 number 198) is among the detected syscalls
 	found := false
@@ -407,11 +416,11 @@ func main() {
 				method = sc.Occurrences[0].DeterminationMethod
 				location = sc.Occurrences[0].Location
 			}
-			t.Logf("Syscall[%d]: #%-4d (%-20s) isNetwork=%-5v method=%s at 0x%x",
-				i, sc.Number, sc.Name, sc.IsNetwork, method, location)
+			t.Logf("Syscall[%d]: #%-4d (%-20s) method=%s at 0x%x",
+				i, sc.Number, sc.Name, method, location)
 		}
 
-		assert.True(t, hasNetworkSyscall(result.DetectedSyscalls),
+		assert.True(t, hasNetworkSyscall(result.Architecture, result.DetectedSyscalls),
 			"CGO binary calling syscall.Socket() should have network syscalls detected after fixes")
 
 		found := false

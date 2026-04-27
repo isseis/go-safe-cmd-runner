@@ -146,6 +146,16 @@ func IsNetworkCategory(cat string) bool {
 	return false
 }
 
+// IsNetworkSymbolName returns true if the symbol name belongs to a
+// network-related category (socket, dns, tls, or http).
+func IsNetworkSymbolName(name string) bool {
+	cat, found := IsNetworkSymbol(name)
+	if !found {
+		return false
+	}
+	return IsNetworkCategory(string(cat))
+}
+
 // dynamicLoadSymbolRegistry contains symbols for dynamic library loading.
 var dynamicLoadSymbolRegistry = map[string]struct{}{
 	"dlopen": {},

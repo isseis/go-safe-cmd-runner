@@ -92,7 +92,6 @@ func TestScanSVCWithX16_ImmediateNetworkSyscall(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, 98, results[0].Number)
 	assert.Equal(t, "connect", results[0].Name)
-	assert.True(t, results[0].IsNetwork)
 	assert.Equal(t, determinationMethodImmediate, results[0].Occurrences[0].DeterminationMethod)
 	assert.Equal(t, "", results[0].Occurrences[0].Source)
 }
@@ -111,7 +110,6 @@ func TestScanSVCWithX16_ImmediateNonNetworkSyscall(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, 3, results[0].Number)
 	assert.Equal(t, "read", results[0].Name)
-	assert.False(t, results[0].IsNetwork)
 	assert.Equal(t, determinationMethodImmediate, results[0].Occurrences[0].DeterminationMethod)
 }
 

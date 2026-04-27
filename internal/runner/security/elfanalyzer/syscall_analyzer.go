@@ -328,7 +328,6 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 
 			if call.SyscallNumber >= 0 {
 				info.Name = table.GetSyscallName(call.SyscallNumber)
-				info.IsNetwork = table.IsNetworkSyscall(call.SyscallNumber)
 			} else {
 				result.AnalysisWarnings = append(result.AnalysisWarnings,
 					fmt.Sprintf("go wrapper call at 0x%x: %s",
@@ -620,7 +619,6 @@ func (a *SyscallAnalyzer) extractSyscallInfo(code []byte, syscallAddr uint64, ba
 
 	if info.Number >= 0 {
 		info.Name = table.GetSyscallName(info.Number)
-		info.IsNetwork = table.IsNetworkSyscall(info.Number)
 	}
 
 	return info

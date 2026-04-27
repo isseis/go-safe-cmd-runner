@@ -49,6 +49,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/dynlib
             - github.com/isseis/go-safe-cmd-runner/internal/elfdynlib
             - github.com/isseis/go-safe-cmd-runner/internal/fileanalysis
+            - github.com/isseis/go-safe-cmd-runner/internal/libccache
             - github.com/isseis/go-safe-cmd-runner/internal/machodylib
             - github.com/isseis/go-safe-cmd-runner/internal/redaction
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator

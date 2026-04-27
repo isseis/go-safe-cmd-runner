@@ -241,9 +241,8 @@ func (a *MachoLibSystemAdapter) fallbackNameMatch(importSymbols []string) []comm
 			continue
 		}
 		result = append(result, common.SyscallInfo{
-			Number:    number,
-			Name:      name,
-			IsNetwork: a.syscallTable.IsNetworkSyscall(number),
+			Number: number,
+			Name:   name,
 			Occurrences: []common.SyscallOccurrence{
 				{
 					Location:            0,

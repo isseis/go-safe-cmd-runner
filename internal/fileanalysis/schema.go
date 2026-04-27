@@ -34,8 +34,11 @@ const (
 	// Location, DeterminationMethod, and Source fields are moved from top-level SyscallInfo
 	// to individual SyscallOccurrence entries. This change provides clearer structure and
 	// proper grouping of syscall instances that share the same number.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 17.
-	CurrentSchemaVersion = 17
+	// Version 18 removes is_network from SyscallInfo and category from
+	// DetectedSymbolEntry. Risk classification is now derived by the runner
+	// at runtime from syscall numbers and symbol names.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 18.
+	CurrentSchemaVersion = 18
 )
 
 // Record represents a unified file analysis record containing both
@@ -157,6 +160,5 @@ type SymbolAnalysisData struct {
 
 // DetectedSymbolEntry represents a single detected symbol in the analysis record.
 type DetectedSymbolEntry struct {
-	Name     string `json:"name"`
-	Category string `json:"category"`
+	Name string `json:"name"`
 }

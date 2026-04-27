@@ -35,7 +35,6 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 				{
 					Number:      41,
 					Name:        "socket",
-					IsNetwork:   true,
 					Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}},
 				},
 			},
@@ -57,7 +56,6 @@ func TestSyscallAnalysisStore_SaveAndLoad(t *testing.T) {
 	assert.Len(t, loadedResult.DetectedSyscalls, 1)
 	assert.Equal(t, 41, loadedResult.DetectedSyscalls[0].Number)
 	assert.Equal(t, "socket", loadedResult.DetectedSyscalls[0].Name)
-	assert.True(t, loadedResult.DetectedSyscalls[0].IsNetwork)
 }
 
 func TestSyscallAnalysisStore_HashMismatch(t *testing.T) {
@@ -292,13 +290,11 @@ func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
 					{
 						Number:      41,
 						Name:        "socket",
-						IsNetwork:   true,
 						Occurrences: []common.SyscallOccurrence{{Location: 0x401020, DeterminationMethod: "immediate"}},
 					},
 					{
 						Number:      41,
 						Name:        "socket",
-						IsNetwork:   true,
 						Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "go_wrapper"}},
 					},
 				},
@@ -318,7 +314,6 @@ func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
 		group := loaded.DetectedSyscalls[0]
 		assert.Equal(t, 41, group.Number)
 		assert.Equal(t, "socket", group.Name)
-		assert.True(t, group.IsNetwork)
 
 		// Occurrences should be merged and sorted by Location ascending
 		require.Len(t, group.Occurrences, 2)
@@ -362,9 +357,9 @@ func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				DetectedSyscalls: []SyscallInfo{
 					// First entry has no name (e.g., direct scan couldn't look it up)
-					{Number: 41, Name: "", IsNetwork: false, Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}}},
+					{Number: 41, Name: "", Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "immediate"}}},
 					// Second entry has name from symbol import fallback
-					{Number: 41, Name: "socket", IsNetwork: true, Occurrences: []common.SyscallOccurrence{{Location: 0, DeterminationMethod: "immediate", Source: "libc_symbol_import"}}},
+					{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{Location: 0, DeterminationMethod: "immediate", Source: "libc_symbol_import"}}},
 				},
 			},
 		}
@@ -380,7 +375,6 @@ func TestSyscallAnalysisStore_GroupingBehavior(t *testing.T) {
 		require.Len(t, loaded.DetectedSyscalls, 1)
 		group := loaded.DetectedSyscalls[0]
 		assert.Equal(t, "socket", group.Name, "non-empty Name from later entry should be preserved")
-		assert.True(t, group.IsNetwork, "IsNetwork=true from later entry should be preserved")
 	})
 }
 

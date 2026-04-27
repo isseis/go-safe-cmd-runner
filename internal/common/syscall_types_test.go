@@ -14,9 +14,8 @@ import (
 func TestSyscallInfo_JSONTags(t *testing.T) {
 	t.Run("with name", func(t *testing.T) {
 		info := common.SyscallInfo{
-			Number:    41,
-			Name:      "socket",
-			IsNetwork: true,
+			Number: 41,
+			Name:   "socket",
 			Occurrences: []common.SyscallOccurrence{
 				{Location: 0x401000, DeterminationMethod: "immediate"},
 			},
@@ -29,7 +28,6 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 
 		assert.Equal(t, float64(41), m["number"])
 		assert.Equal(t, "socket", m["name"])
-		assert.Equal(t, true, m["is_network"])
 
 		occs, ok := m["occurrences"].([]any)
 		require.True(t, ok)
@@ -41,8 +39,7 @@ func TestSyscallInfo_JSONTags(t *testing.T) {
 
 	t.Run("name omitted when empty", func(t *testing.T) {
 		info := common.SyscallInfo{
-			Number:    -1,
-			IsNetwork: false,
+			Number: -1,
 			Occurrences: []common.SyscallOccurrence{
 				{Location: 0x401010, DeterminationMethod: "unknown:scan_limit_exceeded"},
 			},
@@ -107,9 +104,8 @@ func TestSyscallAnalysisResultCore_JSONRoundTrip(t *testing.T) {
 			Architecture: "x86_64",
 			DetectedSyscalls: []common.SyscallInfo{
 				{
-					Number:    41,
-					Name:      "socket",
-					IsNetwork: true,
+					Number: 41,
+					Name:   "socket",
 					Occurrences: []common.SyscallOccurrence{
 						{Location: 0x401000, DeterminationMethod: "immediate"},
 					},

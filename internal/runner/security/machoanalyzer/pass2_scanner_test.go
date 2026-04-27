@@ -78,7 +78,6 @@ func TestScanGoWrapperCalls_ResolvedNetworkSyscall(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, 97, results[0].Number)
 	assert.Equal(t, "socket", results[0].Name)
-	assert.True(t, results[0].IsNetwork)
 	assert.Equal(t, determinationMethodGoWrapper, results[0].Occurrences[0].DeterminationMethod)
 	assert.Equal(t, textBase+8, results[0].Occurrences[0].Location)
 }
@@ -105,7 +104,6 @@ func TestScanGoWrapperCalls_ResolvedW0(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, 98, results[0].Number)
 	assert.Equal(t, "connect", results[0].Name)
-	assert.True(t, results[0].IsNetwork)
 }
 
 // TestScanGoWrapperCalls_UnresolvedX0 verifies that a BL to a wrapper without

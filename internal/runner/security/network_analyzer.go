@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
+	"github.com/isseis/go-safe-cmd-runner/internal/libccache"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
@@ -18,6 +19,25 @@ import (
 
 // gosDarwin is the GOOS value for macOS.
 const gosDarwin = "darwin"
+
+type syscallTableInterface interface {
+	IsNetworkSyscall(number int) bool
+}
+
+func syscallTableForArch(arch string) syscallTableInterface {
+	if runtime.GOOS == gosDarwin {
+		return libccache.MacOSSyscallTable{}
+	}
+
+	switch arch {
+	case "x86_64":
+		return elfanalyzer.NewX86_64SyscallTable()
+	case "arm64":
+		return elfanalyzer.NewARM64LinuxSyscallTable()
+	default:
+		return nil
+	}
+}
 
 // NetworkAnalyzer provides network operation detection for commands.
 type NetworkAnalyzer struct {
@@ -244,10 +264,10 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		}
 
 		// Check if any detected symbol has a network category (socket, dns, tls, http).
-		// non-network categories like syscall_wrapper don't trigger NetworkDetected.
+		// non-network symbols don't trigger NetworkDetected.
 		hasNetworkSymbol := false
 		for _, sym := range data.DetectedSymbols {
-			if binaryanalyzer.IsNetworkCategory(sym.Category) {
+			if binaryanalyzer.IsNetworkSymbolName(sym.Name) {
 				hasNetworkSymbol = true
 				break
 			}
@@ -297,15 +317,19 @@ func syscallAnalysisHasSVCSignal(result *fileanalysis.SyscallAnalysisResult) boo
 }
 
 // syscallAnalysisHasNetworkSignal reports whether the given SyscallAnalysisResult
-// contains any detected syscall classified as a network syscall (IsNetwork == true).
+// contains any detected syscall classified as a network syscall.
 // This includes resolved svc entries (DeterminationMethod == "direct_svc_0x80" AND Number != -1)
 // whose network classification is determined by the syscall table lookup.
 func syscallAnalysisHasNetworkSignal(result *fileanalysis.SyscallAnalysisResult) bool {
 	if result == nil {
 		return false
 	}
+	table := syscallTableForArch(result.Architecture)
+	if table == nil {
+		return false
+	}
 	for _, s := range result.DetectedSyscalls {
-		if s.IsNetwork {
+		if s.Number >= 0 && table.IsNetworkSyscall(s.Number) {
 			return true
 		}
 	}
@@ -368,16 +392,23 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 // convertNetworkSymbolEntries converts fileanalysis.DetectedSymbolEntry slice to binaryanalyzer.DetectedSymbol slice.
 //
 // NOTE: This is the inverse of convertDetectedSymbols in
-// internal/filevalidator/validator.go. Both functions map the same two fields
-// (Name, Category) between binaryanalyzer and fileanalysis types.
-// If either type gains or loses fields, update both functions together.
+// internal/filevalidator/validator.go. fileanalysis stores Name only, and this
+// function derives Category for runner-internal logging and filtering.
 func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbolEntry) []binaryanalyzer.DetectedSymbol {
 	if len(entries) == 0 {
 		return nil
 	}
 	syms := make([]binaryanalyzer.DetectedSymbol, len(entries))
 	for i, e := range entries {
-		syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: e.Category}
+		cat, found := binaryanalyzer.IsNetworkSymbol(e.Name)
+		if !found {
+			if binaryanalyzer.IsDynamicLoadSymbol(e.Name) {
+				cat = binaryanalyzer.CategoryDynamicLoad
+			} else {
+				cat = binaryanalyzer.CategorySyscallWrapper
+			}
+		}
+		syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: string(cat)}
 	}
 	return syms
 }
