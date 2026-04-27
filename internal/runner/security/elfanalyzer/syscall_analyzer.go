@@ -354,7 +354,7 @@ func (a *SyscallAnalyzer) analyzeSyscallsInCode(code []byte, baseAddr uint64, de
 		}
 	}
 
-	evalResults := a.evaluateMprotectFamilyArgs(
+	evalResults := a.evalMprotectFamilyArgs(
 		code, baseAddr, decoder, result.DetectedSyscalls,
 	)
 	for _, eval := range evalResults {
@@ -465,13 +465,13 @@ type mprotectEvalResult struct {
 	Location uint64
 }
 
-// evaluateMprotectFamilyArgs evaluates the prot argument for each syscall in the
+// evalMprotectFamilyArgs evaluates the prot argument for each syscall in the
 // mprotect family (mprotect and pkey_mprotect).
 // It returns a slice of evaluation results, where each entry contains the
 // highest-risk SyscallArgEvalResult for a detected family member and its
 // corresponding syscall instruction address.
 // Syscall family members that were not detected are omitted.
-func (a *SyscallAnalyzer) evaluateMprotectFamilyArgs(
+func (a *SyscallAnalyzer) evalMprotectFamilyArgs(
 	code []byte,
 	baseAddr uint64,
 	decoder MachineCodeDecoder,
@@ -769,7 +769,7 @@ func (a *SyscallAnalyzer) backwardScanForRegister(
 // via goResolver.FindWrapperCalls.
 func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uint64, syscallOffset int, decoder MachineCodeDecoder) (int, string, string) {
 	if x86Decoder, ok := decoder.(*X86Decoder); ok {
-		return a.backwardScanForSyscallNumberX86WithRegCopy(code, baseAddr, syscallOffset, x86Decoder)
+		return a.backwardScanX86WithRegCopy(code, baseAddr, syscallOffset, x86Decoder)
 	}
 
 	value, method := a.backwardScanForRegister(
@@ -793,10 +793,10 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumber(code []byte, baseAddr uin
 	return int(value), method, ""
 }
 
-// backwardScanForSyscallNumberX86WithRegCopy scans backward from a direct
+// backwardScanX86WithRegCopy scans backward from a direct
 // syscall instruction and resolves syscall numbers through simple register copy
 // chains in the same basic block (e.g. mov eax, edx; mov edx, imm).
-func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
+func (a *SyscallAnalyzer) backwardScanX86WithRegCopy(
 	code []byte,
 	baseAddr uint64,
 	syscallOffset int,
@@ -808,7 +808,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 		windowStart = 0
 	}
 
-	number, method, detail, decodeFailures := a.backwardScanForSyscallNumberX86WithWindow(
+	number, method, detail, decodeFailures := a.backwardScanX86WithWindow(
 		code,
 		baseAddr,
 		syscallOffset,
@@ -820,7 +820,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 		return number, method, detail
 	}
 
-	if value, resolvedDetail, ok := a.resolveX86CopyChainByTailWindowConsensus(
+	if value, resolvedDetail, ok := a.resolveX86CopyChainTailConsensus(
 		code,
 		baseAddr,
 		syscallOffset,
@@ -840,7 +840,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 		probeLimit = syscallOffset
 	}
 	for candidateStart := windowStart + 1; candidateStart <= probeLimit; candidateStart++ {
-		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanForSyscallNumberX86WithWindow(
+		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanX86WithWindow(
 			code,
 			baseAddr,
 			syscallOffset,
@@ -856,7 +856,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 	return number, method, detail
 }
 
-func (a *SyscallAnalyzer) resolveX86CopyChainByTailWindowConsensus(
+func (a *SyscallAnalyzer) resolveX86CopyChainTailConsensus(
 	code []byte,
 	baseAddr uint64,
 	syscallOffset int,
@@ -876,7 +876,7 @@ func (a *SyscallAnalyzer) resolveX86CopyChainByTailWindowConsensus(
 	hasResolvedValue := false
 
 	for candidateStart := probeStart; candidateStart < syscallOffset; candidateStart++ {
-		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanForSyscallNumberX86WithWindow(
+		candidateNumber, candidateMethod, candidateDetail, _ := a.backwardScanX86WithWindow(
 			code,
 			baseAddr,
 			syscallOffset,
@@ -905,7 +905,7 @@ func (a *SyscallAnalyzer) resolveX86CopyChainByTailWindowConsensus(
 	return resolvedValue, resolvedDetail, true
 }
 
-func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithWindow(
+func (a *SyscallAnalyzer) backwardScanX86WithWindow(
 	code []byte,
 	baseAddr uint64,
 	syscallOffset int,
@@ -932,8 +932,8 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithWindow(
 		return -1, DeterminationMethodUnknownIndirectSetting, "", decodeFailures
 	}
 
-	if scanResult.sawRegisterCopy && (scanResult.encounteredControlBoundary || scanResult.needPredecessorResolution) {
-		if value, ok, detail := a.resolveX86RegValueAcrossPredecessors(instructions, scanResult.targetReg, syscallAddr, x86Decoder); ok {
+	if scanResult.sawRegCopy && (scanResult.hitControlBoundary || scanResult.needPredResolution) {
+		if value, ok, detail := a.resolveX86RegAcrossPreds(instructions, scanResult.targetReg, syscallAddr, x86Decoder); ok {
 			if value >= 0 && value <= maxValidSyscallNumber {
 				return int(value), DeterminationMethodImmediate, detail, decodeFailures
 			}
@@ -941,13 +941,13 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithWindow(
 		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved, decodeFailures
 	}
 
-	if scanResult.sawRegisterCopy {
+	if scanResult.sawRegCopy {
 		// Register-copy chains without a resolvable source immediate remain
 		// indirect by definition.
 		return -1, DeterminationMethodUnknownIndirectSetting, DeterminationDetailX86CopyChainUnresolved, decodeFailures
 	}
 
-	if scanResult.encounteredControlBoundary {
+	if scanResult.hitControlBoundary {
 		return -1, DeterminationMethodUnknownControlFlowBoundary, "", decodeFailures
 	}
 
@@ -957,26 +957,26 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithWindow(
 	return -1, DeterminationMethodUnknownScanLimitExceeded, "", decodeFailures
 }
 
-type x86BackwardScanResult struct {
-	scanCount                  int
-	targetReg                  x86asm.Reg
-	sawRegisterCopy            bool
-	encounteredControlBoundary bool
-	needPredecessorResolution  bool
-	indirectSetting            bool
-	foundImmediate             bool
-	immediateValue             int64
+type x86ScanResult struct {
+	scanCount          int
+	targetReg          x86asm.Reg
+	sawRegCopy         bool
+	hitControlBoundary bool
+	needPredResolution bool
+	indirectSetting    bool
+	foundImmediate     bool
+	immediateValue     int64
 }
 
-func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruction, x86Decoder *X86Decoder) x86BackwardScanResult {
-	result := x86BackwardScanResult{targetReg: x86asm.RAX}
+func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruction, x86Decoder *X86Decoder) x86ScanResult {
+	result := x86ScanResult{targetReg: x86asm.RAX}
 
 	for i := len(instructions) - 1; i >= 0 && result.scanCount < a.maxBackwardScan; i-- {
 		inst := instructions[i]
 		result.scanCount++
 
 		if x86Decoder.IsControlFlowInstruction(inst) {
-			result.encounteredControlBoundary = true
+			result.hitControlBoundary = true
 			break
 		}
 
@@ -985,8 +985,8 @@ func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruc
 		}
 
 		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, result.targetReg); isImm {
-			if result.sawRegisterCopy {
-				result.needPredecessorResolution = true
+			if result.sawRegCopy {
+				result.needPredResolution = true
 				break
 			}
 			result.foundImmediate = true
@@ -996,7 +996,7 @@ func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruc
 
 		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, result.targetReg); ok {
 			result.targetReg = srcReg
-			result.sawRegisterCopy = true
+			result.sawRegCopy = true
 			continue
 		}
 
@@ -1016,9 +1016,9 @@ type x86RegValue struct {
 	value int64
 }
 
-// resolveX86RegValueAcrossPredecessors resolves targetReg at syscall point by
+// resolveX86RegAcrossPreds resolves targetReg at syscall point by
 // traversing predecessors in a conservative CFG.
-func (a *SyscallAnalyzer) resolveX86RegValueAcrossPredecessors(
+func (a *SyscallAnalyzer) resolveX86RegAcrossPreds(
 	instructions []DecodedInstruction,
 	targetReg x86asm.Reg,
 	syscallAddr uint64,
