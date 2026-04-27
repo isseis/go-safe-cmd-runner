@@ -118,6 +118,27 @@ func TestSyscallAnalyzer_BackwardScan(t *testing.T) {
 			wantMethod: DeterminationMethodImmediate,
 		},
 		{
+			name: "phase2 predecessor single path via jump",
+			// mov $0x2a, %edx; jmp join; nop; nop; join: mov %edx, %eax; syscall
+			code:       []byte{0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x02, 0x90, 0x90, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "phase2 predecessor multi-path same value",
+			// cmp %ecx,%ecx; jne alt; mov $0x2a,%edx; jmp join; alt: mov $0x2a,%edx; join: mov %edx,%eax; syscall
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2a, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: 42,
+			wantMethod: DeterminationMethodImmediate,
+		},
+		{
+			name: "phase2 predecessor multi-path conflicting value",
+			// cmp %ecx,%ecx; jne alt; mov $0x2a,%edx; jmp join; alt: mov $0x2b,%edx; join: mov %edx,%eax; syscall
+			code:       []byte{0x39, 0xc9, 0x75, 0x07, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xeb, 0x05, 0xba, 0x2b, 0x00, 0x00, 0x00, 0x89, 0xd0, 0x0f, 0x05},
+			wantNumber: -1,
+			wantMethod: DeterminationMethodUnknownIndirectSetting,
+		},
+		{
 			name: "register move (indirect)",
 			// mov %ebx, %eax; syscall
 			code:       []byte{0x89, 0xd8, 0x0f, 0x05},

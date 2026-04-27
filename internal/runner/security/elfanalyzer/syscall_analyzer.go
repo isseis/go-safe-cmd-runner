@@ -722,6 +722,7 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 	syscallOffset int,
 	x86Decoder *X86Decoder,
 ) (int, string) {
+	syscallAddr := baseAddr + uint64(syscallOffset) //nolint:gosec // G115: syscallOffset is validated by caller
 	windowStart := syscallOffset - (a.maxBackwardScan * maxWindowBytesPerInstruction(x86Decoder))
 	if windowStart < 0 {
 		windowStart = 0
@@ -734,48 +735,372 @@ func (a *SyscallAnalyzer) backwardScanForSyscallNumberX86WithRegCopy(
 		return -1, DeterminationMethodUnknownDecodeFailed
 	}
 
-	scanCount := 0
-	targetReg := x86asm.RAX
-	sawRegisterCopy := false
-
-	for i := len(instructions) - 1; i >= 0 && scanCount < a.maxBackwardScan; i-- {
-		inst := instructions[i]
-		scanCount++
-
-		if x86Decoder.IsControlFlowInstruction(inst) {
-			return -1, DeterminationMethodUnknownControlFlowBoundary
-		}
-
-		if !x86Decoder.ModifiesRegisterFamily(inst, targetReg) {
-			continue
-		}
-
-		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, targetReg); isImm {
-			if value >= 0 && value <= maxValidSyscallNumber {
-				return int(value), DeterminationMethodImmediate
-			}
-			return -1, DeterminationMethodUnknownIndirectSetting
-		}
-
-		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, targetReg); ok {
-			targetReg = srcReg
-			sawRegisterCopy = true
-			continue
-		}
-
+	scanResult := a.scanX86SyscallRegInBlock(instructions, x86Decoder)
+	if scanResult.indirectSetting {
 		return -1, DeterminationMethodUnknownIndirectSetting
 	}
 
-	if sawRegisterCopy {
+	if scanResult.foundImmediate {
+		if scanResult.immediateValue >= 0 && scanResult.immediateValue <= maxValidSyscallNumber {
+			return int(scanResult.immediateValue), DeterminationMethodImmediate
+		}
+		return -1, DeterminationMethodUnknownIndirectSetting
+	}
+
+	if scanResult.sawRegisterCopy && (scanResult.encounteredControlBoundary || scanResult.needPredecessorResolution) {
+		if value, ok := a.resolveX86RegValueAcrossPredecessors(instructions, scanResult.targetReg, syscallAddr, x86Decoder); ok {
+			if value >= 0 && value <= maxValidSyscallNumber {
+				return int(value), DeterminationMethodImmediate
+			}
+		}
+		return -1, DeterminationMethodUnknownIndirectSetting
+	}
+
+	if scanResult.sawRegisterCopy {
 		// Register-copy chains without a resolvable source immediate remain
 		// indirect by definition.
 		return -1, DeterminationMethodUnknownIndirectSetting
 	}
 
-	if scanCount < a.maxBackwardScan {
+	if scanResult.encounteredControlBoundary {
+		return -1, DeterminationMethodUnknownControlFlowBoundary
+	}
+
+	if scanResult.scanCount < a.maxBackwardScan {
 		return -1, DeterminationMethodUnknownWindowExhausted
 	}
 	return -1, DeterminationMethodUnknownScanLimitExceeded
+}
+
+type x86BackwardScanResult struct {
+	scanCount                  int
+	targetReg                  x86asm.Reg
+	sawRegisterCopy            bool
+	encounteredControlBoundary bool
+	needPredecessorResolution  bool
+	indirectSetting            bool
+	foundImmediate             bool
+	immediateValue             int64
+}
+
+func (a *SyscallAnalyzer) scanX86SyscallRegInBlock(instructions []DecodedInstruction, x86Decoder *X86Decoder) x86BackwardScanResult {
+	result := x86BackwardScanResult{targetReg: x86asm.RAX}
+
+	for i := len(instructions) - 1; i >= 0 && result.scanCount < a.maxBackwardScan; i-- {
+		inst := instructions[i]
+		result.scanCount++
+
+		if x86Decoder.IsControlFlowInstruction(inst) {
+			result.encounteredControlBoundary = true
+			break
+		}
+
+		if !x86Decoder.ModifiesRegisterFamily(inst, result.targetReg) {
+			continue
+		}
+
+		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, result.targetReg); isImm {
+			if result.sawRegisterCopy {
+				result.needPredecessorResolution = true
+				break
+			}
+			result.foundImmediate = true
+			result.immediateValue = value
+			return result
+		}
+
+		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, result.targetReg); ok {
+			result.targetReg = srcReg
+			result.sawRegisterCopy = true
+			continue
+		}
+
+		result.indirectSetting = true
+		return result
+	}
+
+	return result
+}
+
+type x86StateMarker struct {
+	hasInput bool
+}
+
+type x86RegValue struct {
+	known bool
+	value int64
+}
+
+// resolveX86RegValueAcrossPredecessors resolves targetReg at syscall point by
+// traversing predecessors in a conservative CFG.
+func (a *SyscallAnalyzer) resolveX86RegValueAcrossPredecessors(
+	instructions []DecodedInstruction,
+	targetReg x86asm.Reg,
+	syscallAddr uint64,
+	x86Decoder *X86Decoder,
+) (int64, bool) {
+	if len(instructions) == 0 {
+		return 0, false
+	}
+
+	succs := buildX86Successors(instructions, syscallAddr)
+	virtualEnd := len(instructions)
+
+	// inStates contain register values at entry of each node.
+	inStates := make([]x86StateMarker, virtualEnd+1)
+	inValues := make([][]x86RegValue, virtualEnd+1)
+	for i := range inValues {
+		inValues[i] = make([]x86RegValue, x86RegFamilyR15+1)
+	}
+
+	outValues := make([][]x86RegValue, virtualEnd)
+	outInitialized := make([]bool, virtualEnd)
+	for i := range outValues {
+		outValues[i] = make([]x86RegValue, x86RegFamilyR15+1)
+	}
+
+	inStates[0].hasInput = true
+	worklist := []int{0}
+	inQueue := make([]bool, virtualEnd)
+	inQueue[0] = true
+
+	for len(worklist) > 0 {
+		node := worklist[0]
+		worklist = worklist[1:]
+		inQueue[node] = false
+
+		if !inStates[node].hasInput {
+			continue
+		}
+
+		newOut := transferX86State(inValues[node], instructions[node], x86Decoder)
+		if outInitialized[node] && equalX86State(outValues[node], newOut) {
+			continue
+		}
+		copy(outValues[node], newOut)
+		outInitialized[node] = true
+
+		for _, succ := range succs[node] {
+			changed := mergeX86State(&inStates[succ], inValues[succ], outValues[node])
+			if !changed || succ == virtualEnd {
+				continue
+			}
+			if !inQueue[succ] {
+				worklist = append(worklist, succ)
+				inQueue[succ] = true
+			}
+		}
+	}
+
+	targetFamily := regFamily(targetReg)
+	if targetFamily == x86RegFamilyUnknown || !inStates[virtualEnd].hasInput {
+		return 0, false
+	}
+	v := inValues[virtualEnd][targetFamily]
+	return v.value, v.known
+}
+
+func buildX86Successors(instructions []DecodedInstruction, syscallAddr uint64) map[int][]int {
+	succs := make(map[int][]int, len(instructions))
+	indexByAddr := make(map[uint64]int, len(instructions))
+	for i, inst := range instructions {
+		indexByAddr[inst.Offset] = i
+	}
+
+	for i, inst := range instructions {
+		x86inst, ok := inst.arch.(x86asm.Inst)
+		if !ok {
+			if i+1 < len(instructions) {
+				succs[i] = append(succs[i], i+1)
+			} else {
+				succs[i] = append(succs[i], len(instructions))
+			}
+			continue
+		}
+
+		target, hasTarget := getX86BranchTarget(x86inst, inst.Offset)
+		switch {
+		case isX86UnconditionalJump(x86inst.Op):
+			addX86SuccessorEdge(succs, indexByAddr, i, target, hasTarget, syscallAddr, len(instructions))
+		case isX86ConditionalJump(x86inst.Op):
+			addX86SuccessorEdge(succs, indexByAddr, i, target, hasTarget, syscallAddr, len(instructions))
+			if i+1 < len(instructions) {
+				succs[i] = append(succs[i], i+1)
+			} else {
+				succs[i] = append(succs[i], len(instructions))
+			}
+		case isX86Terminator(x86inst.Op):
+			// No fallthrough edge.
+		default:
+			if i+1 < len(instructions) {
+				succs[i] = append(succs[i], i+1)
+			} else {
+				succs[i] = append(succs[i], len(instructions))
+			}
+		}
+	}
+
+	return succs
+}
+
+func addX86SuccessorEdge(succs map[int][]int, indexByAddr map[uint64]int, from int, target uint64, hasTarget bool, syscallAddr uint64, virtualEnd int) {
+	if !hasTarget {
+		return
+	}
+	if idx, ok := indexByAddr[target]; ok {
+		succs[from] = append(succs[from], idx)
+		return
+	}
+	if target == syscallAddr {
+		succs[from] = append(succs[from], virtualEnd)
+	}
+}
+
+func transferX86State(in []x86RegValue, inst DecodedInstruction, x86Decoder *X86Decoder) []x86RegValue {
+	out := make([]x86RegValue, len(in))
+	copy(out, in)
+
+	for _, reg := range x86TrackedRegisters {
+		family := regFamily(reg)
+		if family == x86RegFamilyUnknown {
+			continue
+		}
+		if !x86Decoder.ModifiesRegisterFamily(inst, reg) {
+			continue
+		}
+		if isImm, value := x86Decoder.IsImmediateToRegisterFamily(inst, reg); isImm {
+			out[family] = x86RegValue{known: true, value: value}
+			continue
+		}
+		if srcReg, ok := x86Decoder.GetCopySourceForRegisterFamily(inst, reg); ok {
+			srcFamily := regFamily(srcReg)
+			if srcFamily == x86RegFamilyUnknown {
+				out[family] = x86RegValue{}
+			} else {
+				out[family] = in[srcFamily]
+			}
+			continue
+		}
+
+		out[family] = x86RegValue{}
+	}
+
+	return out
+}
+
+func mergeX86State(state *x86StateMarker, dst []x86RegValue, incoming []x86RegValue) bool {
+	if !state.hasInput {
+		state.hasInput = true
+		copy(dst, incoming)
+		return true
+	}
+
+	changed := false
+	for i := range dst {
+		merged := mergeX86Value(dst[i], incoming[i])
+		if merged != dst[i] {
+			dst[i] = merged
+			changed = true
+		}
+	}
+	return changed
+}
+
+func mergeX86Value(current x86RegValue, incoming x86RegValue) x86RegValue {
+	if current.known && incoming.known && current.value == incoming.value {
+		return current
+	}
+	return x86RegValue{}
+}
+
+func equalX86State(a, b []x86RegValue) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func getX86BranchTarget(inst x86asm.Inst, instAddr uint64) (uint64, bool) {
+	args := inst.Args[:]
+	for len(args) > 0 && args[len(args)-1] == nil {
+		args = args[:len(args)-1]
+	}
+	if len(args) == 0 {
+		return 0, false
+	}
+
+	switch branch := args[0].(type) {
+	case x86asm.Rel:
+		next := instAddr + uint64(inst.Len) //nolint:gosec // G115: Len is decoder-validated positive length
+		rel := int64(branch)
+		if rel < 0 {
+			neg := uint64(-rel) //nolint:gosec // G115: rel is checked negative and converted for safe underflow check below
+			if next < neg {
+				return 0, false
+			}
+			return next - neg, true
+		}
+		pos := uint64(rel) //nolint:gosec // G115: rel is checked non-negative and range is validated before addition
+		if next > ^uint64(0)-pos {
+			return 0, false
+		}
+		return next + pos, true
+	case x86asm.Imm:
+		if int64(branch) < 0 {
+			return 0, false
+		}
+		return uint64(branch), true //nolint:gosec // G115: branch is validated non-negative immediately above
+	default:
+		return 0, false
+	}
+}
+
+func isX86UnconditionalJump(op x86asm.Op) bool {
+	return op == x86asm.JMP
+}
+
+func isX86ConditionalJump(op x86asm.Op) bool {
+	switch op {
+	case x86asm.JA, x86asm.JAE, x86asm.JB, x86asm.JBE,
+		x86asm.JE, x86asm.JG, x86asm.JGE, x86asm.JL, x86asm.JLE,
+		x86asm.JNE, x86asm.JNO, x86asm.JNP, x86asm.JNS, x86asm.JO,
+		x86asm.JP, x86asm.JS, x86asm.JCXZ, x86asm.JECXZ, x86asm.JRCXZ,
+		x86asm.LOOP, x86asm.LOOPE, x86asm.LOOPNE:
+		return true
+	}
+	return false
+}
+
+func isX86Terminator(op x86asm.Op) bool {
+	switch op {
+	case x86asm.CALL, x86asm.RET, x86asm.IRET, x86asm.INT:
+		return true
+	}
+	return false
+}
+
+var x86TrackedRegisters = []x86asm.Reg{
+	x86asm.RAX,
+	x86asm.RCX,
+	x86asm.RDX,
+	x86asm.RBX,
+	x86asm.RSP,
+	x86asm.RBP,
+	x86asm.RSI,
+	x86asm.RDI,
+	x86asm.R8,
+	x86asm.R9,
+	x86asm.R10,
+	x86asm.R11,
+	x86asm.R12,
+	x86asm.R13,
+	x86asm.R14,
+	x86asm.R15,
 }
 
 // decodeWindow decodes instructions within a specified window [startOffset, endOffset).
