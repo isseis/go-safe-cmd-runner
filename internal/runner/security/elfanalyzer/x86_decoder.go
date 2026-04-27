@@ -1,6 +1,7 @@
 package elfanalyzer
 
 import (
+	"encoding/binary"
 	"math"
 
 	"golang.org/x/arch/x86/x86asm"
@@ -15,8 +16,17 @@ const (
 	minArgsForImmediateMove = 2
 )
 
+// x86DataSection holds the virtual address and raw bytes of an ELF section
+// used by ResolveFirstArgGlobal to read global variable values.
+type x86DataSection struct {
+	Addr uint64
+	Data []byte
+}
+
 // X86Decoder implements MachineCodeDecoder for x86_64.
-type X86Decoder struct{}
+type X86Decoder struct {
+	dataSections []x86DataSection
+}
 
 // NewX86Decoder creates a new X86Decoder.
 func NewX86Decoder() *X86Decoder {
@@ -400,10 +410,84 @@ func (d *X86Decoder) ModifiesFirstArg(inst DecodedInstruction) bool {
 	return d.WritesSyscallReg(inst)
 }
 
-// ResolveFirstArgGlobal returns unresolved on x86_64.
-// The current Go wrapper resolution path only uses immediate assignments.
-func (d *X86Decoder) ResolveFirstArgGlobal(_ []DecodedInstruction, _ int) (bool, int64) {
-	return false, 0
+// SetDataSections supplies read-only and read-write ELF data sections used
+// by ResolveFirstArgGlobal to read global variable values.
+func (d *X86Decoder) SetDataSections(sections []x86DataSection) {
+	d.dataSections = sections
+}
+
+// readGlobal64 reads a little-endian uint64 from the data sections at addr.
+func (d *X86Decoder) readGlobal64(addr uint64) (int64, bool) {
+	const loadSize = uint64(8)
+	for _, sec := range d.dataSections {
+		if addr < sec.Addr {
+			continue
+		}
+		off := addr - sec.Addr
+		if off+loadSize > uint64(len(sec.Data)) { //nolint:gosec // G115: len(sec.Data) fits in uint64; section sizes are bounded by binary size
+			continue
+		}
+		val := binary.LittleEndian.Uint64(sec.Data[off : off+loadSize])
+		return int64(val), true //nolint:gosec // G115: int64/uint64 reinterpretation; caller validates range
+	}
+	return 0, false
+}
+
+// ResolveFirstArgGlobal resolves the syscall number when it is loaded into
+// RAX/EAX via a RIP-relative memory read, i.e. the pattern:
+//
+//	MOV RAX, [RIP + disp32]
+//
+// This occurs in Go's syscall package when the syscall number is stored in a
+// package-level variable (e.g. syscall.fcntl64Syscall in forkAndExecInChild1).
+// SetDataSections must be called before this method returns useful results.
+func (d *X86Decoder) ResolveFirstArgGlobal(recentInstructions []DecodedInstruction, idx int) (bool, int64) {
+	if len(d.dataSections) == 0 || idx < 0 || idx >= len(recentInstructions) {
+		return false, 0
+	}
+
+	inst := recentInstructions[idx]
+	x86inst, ok := inst.arch.(x86asm.Inst)
+	if !ok || x86inst.Op != x86asm.MOV {
+		return false, 0
+	}
+
+	args := x86inst.Args[:]
+	for len(args) > 0 && args[len(args)-1] == nil {
+		args = args[:len(args)-1]
+	}
+	if len(args) < minArgsForImmediateMove {
+		return false, 0
+	}
+
+	destReg, ok := args[0].(x86asm.Reg)
+	if !ok || !sameFamily(destReg, x86asm.RAX) || !isFullWidthWrite(destReg) {
+		return false, 0
+	}
+
+	mem, ok := args[1].(x86asm.Mem)
+	if !ok || mem.Base != x86asm.RIP || mem.Index != 0 || mem.Scale != 0 {
+		return false, 0
+	}
+
+	// RIP at execution time points to the instruction following this one.
+	nextPC := inst.Offset + uint64(inst.Len) //nolint:gosec // G115: Len is decoder-validated positive
+
+	// x86asm stores disp32 as a zero-extended uint32 in int64 (not sign-extended),
+	// so 0xFFFFFFF8 is stored as int64(4294967288), not int64(-8).
+	// Re-interpret through int32 to recover the correct signed value before
+	// computing the effective address (RIP + sign_extend(disp32)).
+	dispSigned := int64(int32(mem.Disp)) //nolint:gosec // G115: intentional int32 reinterpretation for sign extension
+	if dispSigned < 0 {
+		negDisp := uint64(-dispSigned) //nolint:gosec // G115: dispSigned is negative; disp32 range guarantees no overflow on negation
+		if negDisp > nextPC {
+			return false, 0
+		}
+	}
+	target := uint64(int64(nextPC) + dispSigned) //nolint:gosec // G115: underflow checked above; overflow bounded by binary size
+
+	val, ok := d.readGlobal64(target)
+	return ok, val
 }
 
 // writesRDXImplicitly reports whether the instruction unconditionally writes

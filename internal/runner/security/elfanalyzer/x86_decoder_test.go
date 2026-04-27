@@ -691,9 +691,160 @@ func TestX86Decoder_ModifiesFirstArg(t *testing.T) {
 	})
 }
 
+// decodeOne decodes a single instruction from code at instAddr and returns it.
+func decodeOne(t *testing.T, code []byte, instAddr uint64) DecodedInstruction {
+	t.Helper()
+	d := NewX86Decoder()
+	inst, err := d.Decode(code, instAddr)
+	require.NoError(t, err)
+	return inst
+}
+
 func TestX86Decoder_ResolveFirstArgGlobal(t *testing.T) {
-	decoder := NewX86Decoder()
-	ok, value := decoder.ResolveFirstArgGlobal(nil, 0)
-	assert.False(t, ok)
-	assert.Equal(t, int64(0), value)
+	const instAddr = uint64(0x1000)
+
+	// MOV RAX, [RIP+disp32]: 48 8B 05 <disp32-le>  (7 bytes, REX.W)
+	// MOV EAX, [RIP+disp32]: 8B 05 <disp32-le>     (6 bytes, no REX.W)
+	// MOV RBX, [RIP+disp32]: 48 8B 1D <disp32-le>  (7 bytes, reg=011=RBX)
+	// MOV RAX, [RBX]:        48 8B 03               (3 bytes, register indirect)
+	// MOV RAX, imm64:        48 B8 <imm64-le>       (10 bytes)
+
+	makeRAXRIPLoad := func(disp int32) []byte {
+		b := []byte{0x48, 0x8B, 0x05, 0, 0, 0, 0}
+		b[3] = byte(disp)
+		b[4] = byte(disp >> 8)
+		b[5] = byte(disp >> 16)
+		b[6] = byte(disp >> 24)
+		return b
+	}
+	makeEAXRIPLoad := func(disp int32) []byte {
+		b := []byte{0x8B, 0x05, 0, 0, 0, 0}
+		b[2] = byte(disp)
+		b[3] = byte(disp >> 8)
+		b[4] = byte(disp >> 16)
+		b[5] = byte(disp >> 24)
+		return b
+	}
+
+	// Helper: build a data section holding val64 at addr.
+	makeSec := func(addr uint64, val uint64) x86DataSection {
+		data := make([]byte, 8)
+		data[0] = byte(val)
+		data[1] = byte(val >> 8)
+		data[2] = byte(val >> 16)
+		data[3] = byte(val >> 24)
+		data[4] = byte(val >> 32)
+		data[5] = byte(val >> 40)
+		data[6] = byte(val >> 48)
+		data[7] = byte(val >> 56)
+		return x86DataSection{Addr: addr, Data: data}
+	}
+
+	t.Run("no data sections", func(t *testing.T) {
+		decoder := NewX86Decoder()
+		inst := decodeOne(t, makeRAXRIPLoad(4), instAddr)
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("nil instructions", func(t *testing.T) {
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(0x2000, 72)})
+		ok, val := decoder.ResolveFirstArgGlobal(nil, 0)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("out-of-range index", func(t *testing.T) {
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(0x2000, 72)})
+		inst := decodeOne(t, makeRAXRIPLoad(4), instAddr)
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 1)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("MOV RAX [RIP+disp] resolved", func(t *testing.T) {
+		// MOV RAX, [RIP+4] at 0x1000 → nextPC=0x1007, target=0x100B
+		code := makeRAXRIPLoad(4)
+		inst := decodeOne(t, code, instAddr)
+		targetAddr := instAddr + uint64(inst.Len) + 4 // 0x100B
+
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(targetAddr, 72)})
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		require.True(t, ok)
+		assert.Equal(t, int64(72), val)
+	})
+
+	t.Run("MOV EAX [RIP+disp] resolved", func(t *testing.T) {
+		// MOV EAX, [RIP+8] at 0x1000 → nextPC=0x1006, target=0x100E
+		code := makeEAXRIPLoad(8)
+		inst := decodeOne(t, code, instAddr)
+		targetAddr := instAddr + uint64(inst.Len) + 8 // 0x100E
+
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(targetAddr, 59)}) // SYS_execve
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		require.True(t, ok)
+		assert.Equal(t, int64(59), val)
+	})
+
+	t.Run("negative displacement", func(t *testing.T) {
+		// MOV RAX, [RIP-8] at 0x1010 → nextPC=0x1017, target=0x100F
+		const addr = uint64(0x1010)
+		code := makeRAXRIPLoad(-8)
+		inst := decodeOne(t, code, addr)
+		targetAddr := addr + uint64(inst.Len) - 8 // 0x100F
+
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(targetAddr, 202)}) // SYS_futex
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		require.True(t, ok)
+		assert.Equal(t, int64(202), val)
+	})
+
+	t.Run("address not in data section", func(t *testing.T) {
+		code := makeRAXRIPLoad(4)
+		inst := decodeOne(t, code, instAddr)
+
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(0x9000, 72)}) // wrong address
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("non-RIP-relative load MOV RAX [RBX]", func(t *testing.T) {
+		// MOV RAX, [RBX]: 48 8B 03
+		inst := decodeOne(t, []byte{0x48, 0x8B, 0x03}, instAddr)
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(0x1000, 72)})
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("wrong destination register MOV RBX [RIP+disp]", func(t *testing.T) {
+		// MOV RBX, [RIP+disp32]: 48 8B 1D <disp32-le>
+		b := []byte{0x48, 0x8B, 0x1D, 0x04, 0x00, 0x00, 0x00}
+		inst := decodeOne(t, b, instAddr)
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(instAddr+uint64(inst.Len)+4, 72)})
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
+
+	t.Run("MOV RAX imm is not a global load", func(t *testing.T) {
+		// MOV RAX, 72: 48 B8 48 00 00 00 00 00 00 00
+		b := []byte{0x48, 0xB8, 72, 0, 0, 0, 0, 0, 0, 0}
+		inst := decodeOne(t, b, instAddr)
+		decoder := NewX86Decoder()
+		decoder.SetDataSections([]x86DataSection{makeSec(0x1000, 72)})
+		ok, val := decoder.ResolveFirstArgGlobal([]DecodedInstruction{inst}, 0)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), val)
+	})
 }
