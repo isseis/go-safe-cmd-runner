@@ -611,6 +611,39 @@ func TestX86Decoder_ModifiesThirdArg(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, decoder.ModifiesThirdArg(inst))
 	})
+
+	t.Run("cpuid returns true (implicit EDX write)", func(t *testing.T) {
+		// 0f a2 = cpuid — writes EAX/EBX/ECX/EDX implicitly
+		code := []byte{0x0f, 0xa2}
+		inst, err := decoder.Decode(code, 0)
+		require.NoError(t, err)
+		assert.True(t, decoder.ModifiesThirdArg(inst))
+	})
+}
+
+func TestX86Decoder_WritesRegisterFamily_CPUID(t *testing.T) {
+	decoder := NewX86Decoder()
+	// 0f a2 = cpuid — implicitly writes EAX/EBX/ECX/EDX
+	cpuidCode := []byte{0x0f, 0xa2}
+
+	tests := []struct {
+		name      string
+		targetReg x86asm.Reg
+		want      bool
+	}{
+		{"RBX family", x86asm.RBX, true},
+		{"RCX family", x86asm.RCX, true},
+		{"RDX family", x86asm.RDX, true},
+		{"RSI family (unrelated)", x86asm.RSI, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst, err := decoder.Decode(cpuidCode, 0)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, decoder.WritesRegisterFamily(inst, tt.targetReg))
+		})
+	}
 }
 
 func TestX86Decoder_IsThirdArgImm(t *testing.T) {

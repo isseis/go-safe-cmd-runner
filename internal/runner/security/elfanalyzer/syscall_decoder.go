@@ -37,7 +37,7 @@ type MachineCodeDecoder interface {
 
 	// WritesSyscallReg returns true if the instruction writes
 	// to the architecture's syscall number register.
-	// x86_64: eax/rax (any write including al, ax, r/eax)
+	// x86_64: any write to any subregister of RAX (AL/AH/AX/EAX/RAX)
 	// arm64:  w8 or x8
 	WritesSyscallReg(inst DecodedInstruction) bool
 
