@@ -2,6 +2,7 @@ package filevalidator
 
 import (
 	"bytes"
+	"cmp"
 	"debug/elf"
 	"debug/macho"
 	"encoding/binary"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -347,6 +349,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 					matched = append(matched, lib.SOName)
 				}
 			}
+			slices.Sort(matched)
 			record.SymbolAnalysis.KnownNetworkLibDeps = matched
 		}
 
@@ -494,6 +497,17 @@ func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Reco
 			record.AnalysisWarnings = append(record.AnalysisWarnings, w.String())
 		}
 	}
+
+	slices.SortFunc(record.DynLibDeps, func(a, b fileanalysis.LibEntry) int {
+		if c := cmp.Compare(a.SOName, b.SOName); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Path, b.Path); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Hash, b.Hash)
+	})
+	slices.Sort(record.AnalysisWarnings)
 
 	return nil
 }
@@ -753,6 +767,7 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []string {
 	for i, s := range syms {
 		entries[i] = s.Name
 	}
+	slices.Sort(entries)
 	return entries
 }
 
@@ -1109,6 +1124,12 @@ func (v *Validator) analyzeELFSyscalls(record *fileanalysis.Record, filePath str
 	// Merge results and write SyscallAnalysis; always assign to overwrite any stale value.
 	allSyscalls := mergeSyscallInfos(libcSyscalls, directSyscalls)
 	argEvalResults := buildArgEvalResults(libcSyscalls, directArgEvalResults, elfFile, v.syscallAnalyzer)
+	slices.SortFunc(argEvalResults, func(a, b common.SyscallArgEvalResult) int {
+		if c := cmp.Compare(a.SyscallName, b.SyscallName); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Status, b.Status)
+	})
 	if len(allSyscalls) > 0 || len(argEvalResults) > 0 {
 		record.SyscallAnalysis = buildSyscallData(allSyscalls, argEvalResults, elfFile.Machine)
 	} else {
