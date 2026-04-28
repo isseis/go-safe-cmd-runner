@@ -141,87 +141,87 @@
 ### Phase 5: テスト整備・回帰確認
 
 **対象ファイル（追加/更新）**:
-- [ ] `internal/security/*_test.go`
-- [ ] `internal/filevalidator/*_test.go`
-- [ ] `internal/libccache/*_test.go`
-- [ ] `cmd/record/*_test.go`
-- [ ] `cmd/verify/*_test.go`
+- [x] `internal/security/*_test.go`
+- [x] `internal/filevalidator/*_test.go`
+- [x] `internal/libccache/*_test.go`
+- [x] `cmd/record/*_test.go`
+- [x] `cmd/verify/*_test.go`
 
 **作業内容**:
-- [ ] 移植先パッケージで必要な単体テストを追加
-- [ ] 既存テストの import path を更新
-- [ ] 重複テストを除去（同一ロジックの二重検証を回避）
-- [ ] 既存ヘルパーを再利用し、自前ユーティリティの重複実装を避ける
+- [x] 移植先パッケージで必要な単体テストを追加
+- [x] 既存テストの import path を更新
+- [x] 重複テストを除去（同一ロジックの二重検証を回避）
+- [x] 既存ヘルパーを再利用し、自前ユーティリティの重複実装を避ける
 
 **成功条件**:
-- [ ] `make test` 成功
-- [ ] 追加テストが AC と 1:1 または 1:多で対応付けられている
-- [ ] 既存テストと重複する無意味なテストがない
+- [x] `make test` 成功
+- [x] 追加テストが AC と 1:1 または 1:多で対応付けられている
+- [x] 既存テストと重複する無意味なテストがない
 
 **推定工数**: 1.0日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ---
 
 ### Phase 6: 品質ゲート・受け入れ判定
 
 **作業内容**:
-- [ ] `make lint` を実行
-- [ ] `make build` を実行
-- [ ] AC 充足レビュー（FR-1〜FR-6）を実施
-- [ ] ソースコード中の日本語コメント/文字列混入を確認（仕様で要求される例外を除く）
-- [ ] 変更差分の最終レビュー（再利用性、重複実装の有無）
+- [x] `make lint` を実行
+- [x] `make build` を実行
+- [x] AC 充足レビュー（FR-1〜FR-6）を実施
+- [x] ソースコード中の日本語コメント/文字列混入を確認（仕様で要求される例外を除く）
+- [x] 変更差分の最終レビュー（再利用性、重複実装の有無）
 
 **成功条件**:
-- [ ] `make lint` / `make test` / `make build` がすべて成功
-- [ ] AC チェックリストがすべて完了
+- [x] `make lint` / `make test` / `make build` がすべて成功
+- [x] AC チェックリストがすべて完了
 
 **推定工数**: 0.5日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ## 3. 実装順序とマイルストーン
 
 ### M1: 基盤分離完了
-- [ ] Phase 1 完了
-- [ ] `internal/security` の TOCTOU / dir-permission API が利用可能
+- [x] Phase 1 完了
+- [x] `internal/security` の TOCTOU / dir-permission API が利用可能
 
 ### M2: 解析パッケージ移行完了
-- [ ] Phase 2 完了
-- [ ] `internal/security/{binaryanalyzer,machoanalyzer,elfanalyzer(core)}` が利用可能
+- [x] Phase 2 完了
+- [x] `internal/security/{binaryanalyzer,machoanalyzer,elfanalyzer(core)}` が利用可能
 
 ### M3: 利用側移行完了
-- [ ] Phase 3, 4 完了
-- [ ] `cmd/verify` とライブラリ群の依存再編が完了
+- [x] Phase 3, 4 完了
+- [x] `cmd/verify` とライブラリ群の依存再編が完了
 
 ### M4: 品質ゲート通過
-- [ ] Phase 5, 6 完了
-- [ ] 受け入れ条件を全て満たす
+- [x] Phase 5, 6 完了
+- [x] 受け入れ条件を全て満たす
 
 ## 4. 受け入れ条件トレーサビリティ
 
 ### FR-1
-- [ ] Phase 1 で `internal/security` 基盤導入
-- [ ] Phase 6 で `go build ./internal/security/...` 確認
+- [x] Phase 1 で `internal/security` 基盤導入
+- [x] Phase 6 で `go build ./internal/security/...` 確認
 
 ### FR-2
-- [ ] Phase 2 でサブパッケージ移行
-- [ ] Phase 5/6 で関連テスト実施
+- [x] Phase 2 でサブパッケージ移行
+- [x] Phase 5/6 で関連テスト実施
 
 ### FR-3
-- [ ] Phase 3 で `cmd/verify` 依存解消
-- [ ] Phase 3 で `cmd/record` の `elfanalyzer` 依存解消
-- [ ] Phase 6 で依存グラフ検証
+- [x] Phase 3 で `cmd/verify` 依存解消
+- [x] Phase 3 で `cmd/record` の `elfanalyzer` 依存解消
+- [x] Phase 6 で依存グラフ検証
 
 ### FR-4
-- [ ] Phase 3 で `internal/filevalidator` / `internal/libccache` 依存更新
-- [ ] Phase 5/6 でテスト検証
+- [x] Phase 3 で `internal/filevalidator` / `internal/libccache` 依存更新
+- [x] Phase 5/6 でテスト検証
 
 ### FR-5
-- [ ] Phase 1/3/4 で `internal/runner/security` の責務再編
-- [ ] Phase 6 で `cmd/runner` / `internal/verification` 回帰確認
+- [x] Phase 1/3/4 で `internal/runner/security` の責務再編
+- [x] Phase 6 で `cmd/runner` / `internal/verification` 回帰確認
 
 ### FR-6
-- [ ] Phase 6 で `make test` / `make build` / `make lint` 完了
+- [x] Phase 6 で `make test` / `make build` / `make lint` 完了
 
 ## 5. リスク管理
 
@@ -239,28 +239,28 @@
 ## 6. 実装チェックリスト
 
 ### 実装前
-- [ ] ベースライン取得
-- [ ] 影響範囲の明確化
+- [x] ベースライン取得
+- [x] 影響範囲の明確化
 
 ### 実装中
-- [ ] 各 Phase の成功条件を満たしてから次へ進む
-- [ ] 既存関数の再利用を優先し、重複実装しない
-- [ ] コードコメントは英語で記述する
+- [x] 各 Phase の成功条件を満たしてから次へ進む
+- [x] 既存関数の再利用を優先し、重複実装しない
+- [x] コードコメントは英語で記述する
 
 ### 実装後
-- [ ] AC トレース完了
-- [ ] 重複・不要テストがないことを確認
-- [ ] ドキュメント（01-04）が相互整合している
+- [x] AC トレース完了
+- [x] 重複・不要テストがないことを確認
+- [x] ドキュメント（01-04）が相互整合している
 
 ## 7. 成功基準
 
-- [ ] 機能要件 FR-1〜FR-6 をすべて満たす
-- [ ] 非機能要件（後方互換性・テスト戦略・セキュリティ）を満たす
-- [ ] 依存グラフが設計方針に一致する
-- [ ] 実装計画書のチェックボックスで進捗追跡が可能
+- [x] 機能要件 FR-1〜FR-6 をすべて満たす
+- [x] 非機能要件（後方互換性・テスト戦略・セキュリティ）を満たす
+- [x] 依存グラフが設計方針に一致する
+- [x] 実装計画書のチェックボックスで進捗追跡が可能
 
 ## 8. 次のステップ
 
-- [ ] Phase 0 着手（ベースライン取得）
-- [ ] M1 完了時に中間レビュー
-- [ ] M4 完了後に最終レビューとマージ判断
+- [x] Phase 0 着手（ベースライン取得）
+- [x] M1 完了時に中間レビュー
+- [x] M4 完了後に最終レビューとマージ判断
