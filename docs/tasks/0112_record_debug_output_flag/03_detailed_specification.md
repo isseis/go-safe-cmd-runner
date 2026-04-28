@@ -351,7 +351,7 @@ func (s *stubSyscallAnalyzerWithDebugInfo) AnalyzeSyscallsFromELF(_ *elf.File) (
             Number: 1,
             Name:   "write",
             Occurrences: []common.SyscallOccurrence{
-                {Location: 0x1000, DeterminationMethod: "immediate"},
+                {Location: 0x1000, DeterminationMethod: elfanalyzer.DeterminationMethodImmediate},
             },
         },
     }, nil, &common.SyscallDeterminationStats{ImmediateTotal: 1}, nil
