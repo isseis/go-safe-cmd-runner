@@ -14,8 +14,9 @@
 
 `internal/runner/security/binaryanalyzer/` の全ファイルを
 `internal/security/binaryanalyzer/` へコピーし、
-パッケージ内のインポートパスを更新する（このパッケージは runner 依存を持たないため
-インポートパスの変更は不要）。
+利用側（呼び出し元）のインポートパスを更新する。
+このパッケージ自体は runner 依存を持たないため、
+コピー先パッケージ内部のコード変更は不要。
 
 **コピー対象:**
 
@@ -245,79 +246,29 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 **変更点:** `RunTOCTOUPermissionCheck` の第 1 引数を `*Validator` から
 `DirectoryPermChecker` インタフェースに変更する。
 
-### 5.4 `internal/security/binary_analyzer.go`
+### 5.4 `internal/runner/security/binary_analyzer.go`（残留）
 
-`internal/runner/security/binary_analyzer.go` を `internal/security/binary_analyzer.go`
-へコピーし、インポートパスを更新する。
+`NewBinaryAnalyzer()` は `NewStandardELFAnalyzer()`（`runnertypes.PrivilegeManager` 依存）を
+利用するため、`internal/runner/security/binary_analyzer.go` に残留させる。
+
+実施する変更は「配置変更」ではなく「依存先更新」のみとする。
 
 ```go
 // Before
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
-"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
+
 // After
 "github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
-"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"  // StandardELFAnalyzer は runner 側に残留
 "github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
+// elfanalyzer は internal/runner/security/elfanalyzer（StandardELFAnalyzer 側）を継続利用
 ```
 
-`NewBinaryAnalyzer` が `NewStandardELFAnalyzer` を使用するため、
-`elfanalyzer` のインポートは `internal/runner/security/elfanalyzer` のままとする。
-（`NewBinaryAnalyzer` は `internal/security` に置くが、`StandardELFAnalyzer` 経由で
-`internal/runner/security/elfanalyzer` を使用する）
+**確定方針:**
 
-> **注意:** `internal/security/binary_analyzer.go` が `internal/runner/security/elfanalyzer` を
-> インポートする場合、`internal/security` パッケージ自体が `internal/runner/` に依存することになる。
-> これを避けるため、`binary_analyzer.go` は `internal/runner/security/` に残留させる。
-> `cmd/record` は `security.NewBinaryAnalyzer()` を `internal/runner/security` から
-> 引き続き呼び出すのではなく、`internal/security/binaryanalyzer` と
-> `internal/runner/security/elfanalyzer` を直接使用するよう変更する。
-
-**修正方針:**
-
-`cmd/record` は `security.NewBinaryAnalyzer(runtime.GOOS)` を使用しているが、
-これは以下のように変更する:
-
-```go
-// Before (cmd/record/main.go)
-import "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
-
-// After (cmd/record/main.go)
-import (
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
-    "github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
-    "github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
-)
-// OS ごとに直接生成するか、新しい internal/security の factory を使う
-```
-
-ただしこのアプローチは `cmd/record` が `internal/runner/security/elfanalyzer` に
-依存したままになる。
-
-**最終決定:** `binary_analyzer.go` は `internal/runner/security/` に残留し、
-`cmd/record` は `NewBinaryAnalyzer()` のために `internal/runner/security` を
-引き続きインポートする。ただしそれ以外の TOCTOU 関係は `internal/security` 経由とする。
-
----
-
-**スコープの再確認:**
-
-`elfanalyzer/standard_analyzer.go` が `internal/runner/runnertypes` に依存するため、
-`NewBinaryAnalyzer()` ファクトリを `internal/security` に置くことができない。
-このため、`cmd/record` は以下の 2 パッケージをインポートする:
-
-- `internal/security` — TOCTOU ユーティリティ、DirectoryPermChecker
-- `internal/runner/security` — `NewBinaryAnalyzer()` のみ（残留）
-- `internal/runner/security/elfanalyzer` — `NewSyscallAnalyzer()`
-
-`NewBinaryAnalyzer()` の依存問題は別タスクとして切り出す（FR-3 の部分達成）。
-
-> **代替案（完全達成のための将来タスク）:**
-> `runnertypes.PrivilegeManager` を `internal/common` や `internal/privilege` パッケージに
-> 移動することで、`elfanalyzer/standard_analyzer.go` の runner 依存を完全に取り除き、
-> `binaryanalyzer/`・`elfanalyzer/`・`machoanalyzer/` を `internal/security/` に
-> 完全移動できる。
+- `cmd/record` は `internal/runner/security` を `NewBinaryAnalyzer()` 用にのみ継続利用する
+- `cmd/record` の `NewSyscallAnalyzer()` は `internal/security/elfanalyzer` へ移行する
+- `cmd/record` の TOCTOU 関連は `internal/security` 経由へ移行する
 
 ---
 
@@ -418,24 +369,23 @@ import secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/el
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 // After
-"github.com/isseis/go-safe-cmd-runner/internal/runner/security"              // NewBinaryAnalyzer() のみ残留
-"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"  // NewSyscallAnalyzer() は security/elfanalyzer へ（残留）
-"github.com/isseis/go-safe-cmd-runner/internal/security"                      // TOCTOU ユーティリティ
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security"   // NewBinaryAnalyzer() のみ残留
+"github.com/isseis/go-safe-cmd-runner/internal/security"
+"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 ```
 
 呼び出し変更:
 - `security.NewValidatorForTOCTOU()` → `isec.NewDirectoryPermChecker()`
 - `security.CollectTOCTOUCheckDirs()` → `isec.CollectTOCTOUCheckDirs()`
 - `security.RunTOCTOUPermissionCheck()` → `isec.RunTOCTOUPermissionCheck()`
-
-`elfanalyzer.NewSyscallAnalyzer()` は `cmd/record` が引き続き
-`internal/runner/security/elfanalyzer` を使用するため変更なし（段階的移行）。
+- `elfanalyzer.NewSyscallAnalyzer()` の参照先を
+  `internal/runner/security/elfanalyzer` から `internal/security/elfanalyzer` に変更
 
 > **本タスクのスコープ:**
 > `cmd/verify` については `internal/runner/security` の依存を完全に解消する。
 > `cmd/record` については TOCTOU 関連の `internal/runner/security` 依存を解消し、
-> `NewBinaryAnalyzer()` と `elfanalyzer.NewSyscallAnalyzer()` の残留依存は
-> 次タスクで対応する。
+> `NewSyscallAnalyzer()` の依存先を `internal/security/elfanalyzer` へ移行する。
+> 残留する `internal/runner/security` 依存は `NewBinaryAnalyzer()` のみとする。
 
 ### 6.9 `cmd/runner/main.go`
 
@@ -508,6 +458,10 @@ go list -deps github.com/isseis/go-safe-cmd-runner/cmd/verify \
 # 期待結果: 出力なし
 ```
 
+この確認は `cmd/verify` 向けの受け入れ基準であり、`cmd/record` には適用しない。
+`cmd/record` は本タスクでは既知の例外として
+`NewBinaryAnalyzer()` 用に `internal/runner/security` 依存を保持する。
+
 ### AC-3: `internal/filevalidator` が `internal/runner/security` をインポートしない
 
 **検証方法:**
@@ -544,9 +498,10 @@ make lint
 
 ### 10.1 `cmd/record` の部分的な残留依存
 
-`cmd/record` は `NewBinaryAnalyzer()` のために `internal/runner/security` を、
-`NewSyscallAnalyzer()` のために `internal/runner/security/elfanalyzer` を
-引き続きインポートする（`standard_analyzer.go` の `runnertypes` 依存のため）。
+`cmd/record` は `NewBinaryAnalyzer()` のために
+`internal/runner/security` を引き続きインポートする。
+`NewSyscallAnalyzer()` は `internal/security/elfanalyzer` へ移行し、
+`internal/runner/security/elfanalyzer` 依存は解消する。
 
 **完全解消の条件:**
 `runnertypes.PrivilegeManager` インタフェースを `internal/common` または

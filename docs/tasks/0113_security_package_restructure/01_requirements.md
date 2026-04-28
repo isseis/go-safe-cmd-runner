@@ -117,7 +117,6 @@
 - `CollectTOCTOUCheckDirs()` 関数
 - `ResolveAbsPathForTOCTOU()` 関数
 - `RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logger *slog.Logger)` 関数
-- `NewBinaryAnalyzer(goos string)` ファクトリ関数
 - 共有エラー変数（`ErrInvalidDirPermissions`・`ErrInsecurePathComponent`・`ErrInvalidPath` 等）
 
 **受け入れ基準:**
@@ -127,26 +126,33 @@
 
 #### FR-2: バイナリ解析サブパッケージの移動
 
-`internal/runner/security/binaryanalyzer/`・`elfanalyzer/`・`machoanalyzer/` を
+`internal/runner/security/binaryanalyzer/`・`machoanalyzer/` を
 `internal/security/` 以下に移動する。
+`elfanalyzer/` はコア層（`NewSyscallAnalyzer()`、命令デコーダ、解析共通処理）を
+`internal/security/elfanalyzer/` へ移動し、`StandardELFAnalyzer` は
+`internal/runner/security/elfanalyzer/` に残留する。
 
 **受け入れ基準:**
 
-1. 移動後のサブパッケージが `internal/runner/` 以下を一切インポートしない
+1. `internal/security/binaryanalyzer/`・`internal/security/machoanalyzer/`・
+  `internal/security/elfanalyzer/`（コア層）が `internal/runner/` 以下を一切インポートしない
 2. 既存のすべてのテストが引き続き合格する
 
-#### FR-3: `cmd/record`・`cmd/verify` の依存解消
+#### FR-3: `cmd/record`・`cmd/verify` の依存再編
 
-`cmd/record`・`cmd/verify` が `internal/runner/security`（およびそのサブパッケージ）を
-インポートしなくなる。
-代わりに `internal/security`・`internal/security/elfanalyzer` 等を使用する。
+`cmd/verify` は `internal/runner/security` 依存を完全に解消する。
+`cmd/record` は `internal/runner/security/elfanalyzer` 依存を解消し、
+`NewSyscallAnalyzer()` を `internal/security/elfanalyzer` から利用する。
+一方で `NewBinaryAnalyzer()` のための `internal/runner/security` 依存は当面維持する。
 
 **受け入れ基準:**
 
-1. `cmd/record` のインポートグラフに `internal/runner/security` が含まれない
-2. `cmd/verify` のインポートグラフに `internal/runner/security` が含まれない
-3. `go build ./cmd/record/` および `go build ./cmd/verify/` がエラーなく成功する
-4. `record`・`verify` コマンドの既存テストがすべて合格する
+1. `cmd/verify` のインポートグラフに `internal/runner/security` が含まれない
+2. `cmd/record` のインポートグラフに `internal/runner/security/elfanalyzer` が含まれない
+3. `cmd/record` は `internal/security/elfanalyzer` から `NewSyscallAnalyzer()` を利用する
+4. `cmd/record` の `internal/runner/security` 依存は `NewBinaryAnalyzer()` 用のみに限定される
+5. `go build ./cmd/record/` および `go build ./cmd/verify/` がエラーなく成功する
+6. `record`・`verify` コマンドの既存テストがすべて合格する
 
 #### FR-4: `internal/filevalidator`・`internal/libccache` の依存解消
 
