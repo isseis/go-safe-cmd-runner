@@ -1,0 +1,560 @@
+# 詳細仕様書: セキュリティパッケージの再構成
+
+## 1. 前提・スコープ
+
+本文書は `docs/tasks/0113_security_package_restructure/02_architecture.md` の
+実装詳細を定義する。対象は `internal/security/` パッケージの新設と
+`internal/runner/security` の縮小・再配置。
+
+---
+
+## 2. Phase 1: `internal/security/binaryanalyzer/` の作成
+
+### 2.1 対象ファイル
+
+`internal/runner/security/binaryanalyzer/` の全ファイルを
+`internal/security/binaryanalyzer/` へコピーし、
+パッケージ内のインポートパスを更新する（このパッケージは runner 依存を持たないため
+インポートパスの変更は不要）。
+
+**コピー対象:**
+
+- `analyzer.go`
+- `doc.go`
+- `known_network_libs.go`
+- `known_network_libs_test.go`
+- `network_symbols.go`
+- `network_symbols_test.go`
+
+### 2.2 変更内容
+
+`package binaryanalyzer` の宣言はそのまま維持する。
+このパッケージは外部パッケージ（`internal/runner/` など）をインポートしないため、
+コード変更は不要。
+
+---
+
+## 3. Phase 2: `internal/security/elfanalyzer/` の作成（コア層）
+
+### 3.1 対象ファイル
+
+`internal/runner/security/elfanalyzer/` のうち、
+`internal/runner/` への依存を持たないファイルを `internal/security/elfanalyzer/` へコピーする。
+
+**コピー対象（runner 依存なし）:**
+
+| ファイル | インポート変更 |
+|---|---|
+| `syscall_analyzer.go` | なし（`internal/common` のみ） |
+| `syscall_decoder.go` | なし |
+| `syscall_numbers.go` | なし |
+| `arm64_decoder.go` | なし |
+| `arm64_go_wrapper_resolver.go` | なし |
+| `arm64_syscall_numbers.go` | なし |
+| `x86_decoder.go` | なし |
+| `x86_go_wrapper_resolver.go` | なし |
+| `x86_syscall_numbers.go` | なし |
+| `go_wrapper_resolver.go` | なし |
+| `pclntab_parser.go` | なし（`internal/common`, `safefileio`） |
+| `plt_analyzer.go` | なし |
+| `mprotect_risk.go` | なし |
+| `errors.go` | なし |
+| `doc.go` | なし |
+| `testing/` ディレクトリ | インポートパス更新 |
+| `testdata/` ディレクトリ | コピーのみ |
+
+**コピー対象（テストファイル）:**
+
+| ファイル | インポート変更 |
+|---|---|
+| `syscall_analyzer_test.go` | インポートパス更新 |
+| `syscall_analyzer_integration_test.go` | `binaryanalyzer` インポートパス更新 |
+| `arm64_decoder_test.go` | なし |
+| `arm64_go_wrapper_resolver_test.go` | なし |
+| `arm64_syscall_numbers_test.go` | なし |
+| `go_wrapper_resolver_test.go` | なし |
+| `pclntab_parser_test.go` 等 | インポートパス更新 |
+| `mprotect_risk_test.go` | なし |
+| `plt_analyzer_test.go` | なし |
+
+**`internal/runner/security/elfanalyzer/` に残留するファイル:**
+
+| ファイル | 理由 |
+|---|---|
+| `standard_analyzer.go` | `internal/runner/runnertypes` 依存 |
+| `analyzer.go` | `StandardELFAnalyzer` のコンパイル時チェック |
+| `analyzer_test.go` | `StandardELFAnalyzer` のテスト |
+| `standard_analyzer_fallback_test.go` | `StandardELFAnalyzer` のテスト |
+| `analyzer_benchmark_test.go` | ベンチマーク（`StandardELFAnalyzer` 使用） |
+
+### 3.2 `syscall_analyzer_integration_test.go` のインポート更新
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+```
+
+### 3.3 `testing/` サブパッケージの更新
+
+`testing/` 内のファイルのパッケージ宣言と自己参照するインポートパスを更新する。
+
+---
+
+## 4. Phase 3: `internal/security/machoanalyzer/` の作成
+
+### 4.1 対象ファイル
+
+`internal/runner/security/machoanalyzer/` の全ファイルをコピーし、
+`binaryanalyzer` のインポートパスを更新する。
+
+**インポート変更:**
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+```
+
+**対象ファイル:**
+
+- `analyzer.go`
+- `pass1_scanner.go`
+- `pass2_scanner.go`
+- `pclntab_macho.go`
+- `standard_analyzer.go`
+- `svc_scanner.go`
+- `symbol_normalizer.go`
+- `testdata/`
+- テストファイル全般
+
+---
+
+## 5. Phase 4: `internal/security/` 基盤ファイルの作成
+
+### 5.1 `internal/security/errors.go`
+
+TOCTOU チェックおよびディレクトリ権限チェックで使用するエラー変数。
+
+```go
+package security
+
+import "errors"
+
+var (
+    // ErrInvalidDirPermissions is returned when a directory has inappropriate permissions.
+    ErrInvalidDirPermissions = errors.New("invalid directory permissions")
+
+    // ErrInsecurePathComponent is returned for insecure path component issues.
+    ErrInsecurePathComponent = errors.New("insecure path component")
+
+    // ErrInvalidPath is returned for path structural issues.
+    ErrInvalidPath = errors.New("invalid path")
+)
+```
+
+### 5.2 `internal/security/dir_permissions.go`
+
+ディレクトリ権限チェックの独立実装。`internal/runner/security/file_validation.go` の
+`ValidateDirectoryPermissions` および関連ロジックをこのファイルに抽出する。
+
+```go
+package security
+
+// DirectoryPermChecker validates directory permissions for TOCTOU safety.
+// internal/runner/security.Validator satisfies this interface.
+type DirectoryPermChecker interface {
+    ValidateDirectoryPermissions(path string) error
+}
+
+// dirPermChecker is a standalone implementation using the real OS file system.
+type dirPermChecker struct {
+    gm *groupmembership.GroupMembership
+}
+
+// NewDirectoryPermChecker creates a standalone DirectoryPermChecker
+// using real OS file system and group membership checking.
+// Used by cmd/record and cmd/verify without depending on internal/runner/security.
+func NewDirectoryPermChecker() (DirectoryPermChecker, error) {
+    return &dirPermChecker{gm: groupmembership.New()}, nil
+}
+
+func (d *dirPermChecker) ValidateDirectoryPermissions(path string) error {
+    // Full implementation equivalent to runner/security.Validator.ValidateDirectoryPermissions
+    // using os.Lstat directly (no injectable filesystem abstraction needed here).
+    ...
+}
+```
+
+**実装詳細:**
+
+`dirPermChecker.ValidateDirectoryPermissions` の実装は
+`internal/runner/security/file_validation.go` の `ValidateDirectoryPermissions` を
+ベースとし、`v.fs.Lstat` を `os.Lstat` に置き換え、
+`v.config.MaxPathLength` を `DefaultMaxPathLength` 定数で代替する。
+
+関連するヘルパーメソッドも `dir_permissions.go` に移植する:
+- `validateCompletePath()`
+- `validateDirectoryComponentMode()`
+- `validateDirectoryComponentPermissions()`
+- `isStickyDirectory()`
+
+定数:
+```go
+const (
+    DefaultMaxPathLength        = 4096
+    DefaultDirectoryPermissions = 0o755
+    UIDRoot                     = 0
+    GIDRoot                     = 0
+)
+```
+
+### 5.3 `internal/security/toctou.go`
+
+`internal/runner/security/toctou_check.go` から以下を移植する。
+
+```go
+package security
+
+import (
+    "errors"
+    "io/fs"
+    "log/slog"
+    "path/filepath"
+)
+
+// TOCTOUViolation contains information about a TOCTOU permission check violation.
+type TOCTOUViolation struct {
+    Path string
+    Err  error
+}
+
+// ResolveAbsPathForTOCTOU normalizes an absolute path for TOCTOU directory collection.
+func ResolveAbsPathForTOCTOU(p string) (string, bool) { ... }
+
+// CollectTOCTOUCheckDirs collects directories to check for TOCTOU prevention.
+func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, hashDir string) []string { ... }
+
+// RunTOCTOUPermissionCheck checks all collected directories for TOCTOU-exploitable
+// permission issues. Takes DirectoryPermChecker interface instead of *Validator.
+func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logger *slog.Logger) []TOCTOUViolation { ... }
+```
+
+**変更点:** `RunTOCTOUPermissionCheck` の第 1 引数を `*Validator` から
+`DirectoryPermChecker` インタフェースに変更する。
+
+### 5.4 `internal/security/binary_analyzer.go`
+
+`internal/runner/security/binary_analyzer.go` を `internal/security/binary_analyzer.go`
+へコピーし、インポートパスを更新する。
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"  // StandardELFAnalyzer は runner 側に残留
+"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
+```
+
+`NewBinaryAnalyzer` が `NewStandardELFAnalyzer` を使用するため、
+`elfanalyzer` のインポートは `internal/runner/security/elfanalyzer` のままとする。
+（`NewBinaryAnalyzer` は `internal/security` に置くが、`StandardELFAnalyzer` 経由で
+`internal/runner/security/elfanalyzer` を使用する）
+
+> **注意:** `internal/security/binary_analyzer.go` が `internal/runner/security/elfanalyzer` を
+> インポートする場合、`internal/security` パッケージ自体が `internal/runner/` に依存することになる。
+> これを避けるため、`binary_analyzer.go` は `internal/runner/security/` に残留させる。
+> `cmd/record` は `security.NewBinaryAnalyzer()` を `internal/runner/security` から
+> 引き続き呼び出すのではなく、`internal/security/binaryanalyzer` と
+> `internal/runner/security/elfanalyzer` を直接使用するよう変更する。
+
+**修正方針:**
+
+`cmd/record` は `security.NewBinaryAnalyzer(runtime.GOOS)` を使用しているが、
+これは以下のように変更する:
+
+```go
+// Before (cmd/record/main.go)
+import "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+fv.SetBinaryAnalyzer(security.NewBinaryAnalyzer(runtime.GOOS))
+
+// After (cmd/record/main.go)
+import (
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+    "github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
+    "github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+)
+// OS ごとに直接生成するか、新しい internal/security の factory を使う
+```
+
+ただしこのアプローチは `cmd/record` が `internal/runner/security/elfanalyzer` に
+依存したままになる。
+
+**最終決定:** `binary_analyzer.go` は `internal/runner/security/` に残留し、
+`cmd/record` は `NewBinaryAnalyzer()` のために `internal/runner/security` を
+引き続きインポートする。ただしそれ以外の TOCTOU 関係は `internal/security` 経由とする。
+
+---
+
+**スコープの再確認:**
+
+`elfanalyzer/standard_analyzer.go` が `internal/runner/runnertypes` に依存するため、
+`NewBinaryAnalyzer()` ファクトリを `internal/security` に置くことができない。
+このため、`cmd/record` は以下の 2 パッケージをインポートする:
+
+- `internal/security` — TOCTOU ユーティリティ、DirectoryPermChecker
+- `internal/runner/security` — `NewBinaryAnalyzer()` のみ（残留）
+- `internal/runner/security/elfanalyzer` — `NewSyscallAnalyzer()`
+
+`NewBinaryAnalyzer()` の依存問題は別タスクとして切り出す（FR-3 の部分達成）。
+
+> **代替案（完全達成のための将来タスク）:**
+> `runnertypes.PrivilegeManager` を `internal/common` や `internal/privilege` パッケージに
+> 移動することで、`elfanalyzer/standard_analyzer.go` の runner 依存を完全に取り除き、
+> `binaryanalyzer/`・`elfanalyzer/`・`machoanalyzer/` を `internal/security/` に
+> 完全移動できる。
+
+---
+
+## 6. Phase 5: 既存コードのインポートパス更新
+
+### 6.1 `internal/filevalidator/validator.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
+```
+
+`internal/filevalidator/validator_test.go` および `validator_macho_test.go`、
+`validator_sort_test.go` のインポートも同様に更新する。
+
+### 6.2 `internal/libccache/adapters.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
+```
+
+`adapters_test.go` のインポートも同様に更新する。
+
+### 6.3 `internal/runner/security/syscall_store_adapter.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
+```
+
+`elfanalyzer.SyscallAnalysisResult` と `elfanalyzer.SyscallAnalysisStore` は
+`internal/security/elfanalyzer/` に移動するため。
+
+### 6.4 `internal/runner/security/elfanalyzer/standard_analyzer.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+```
+
+`SyscallAnalysisResult` や `SyscallAnalysisStore` も `internal/security/elfanalyzer/` から
+インポートするよう変更する:
+
+```go
+// Add
+import secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
+
+// SyscallAnalysisResult and SyscallAnalysisStore come from internal/security/elfanalyzer
+```
+
+### 6.5 `internal/runner/security/binary_analyzer.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
+// elfanalyzer インポートはそのまま（StandardELFAnalyzer は runner/security/elfanalyzer に残留）
+```
+
+### 6.6 `internal/runner/security/toctou_check.go`
+
+`NewValidatorForTOCTOU()` のみ残留し、他の関数（`CollectTOCTOUCheckDirs` 等）は削除する。
+`cmd/runner/main.go` が `CollectTOCTOUCheckDirs` 等を呼ぶ箇所は
+`internal/security` 経由に変更する。
+
+### 6.7 `cmd/verify/main.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/security"
+```
+
+呼び出し箇所:
+- `security.NewValidatorForTOCTOU()` → `security.NewDirectoryPermChecker()`
+- `security.CollectTOCTOUCheckDirs()` → `security.CollectTOCTOUCheckDirs()`（同名、新パッケージ）
+- `security.RunTOCTOUPermissionCheck()` → `security.RunTOCTOUPermissionCheck()`（同名、新パッケージ）
+
+### 6.8 `cmd/record/main.go`
+
+```go
+// Before
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+// After
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security"              // NewBinaryAnalyzer() のみ残留
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"  // NewSyscallAnalyzer() は security/elfanalyzer へ（残留）
+"github.com/isseis/go-safe-cmd-runner/internal/security"                      // TOCTOU ユーティリティ
+```
+
+呼び出し変更:
+- `security.NewValidatorForTOCTOU()` → `isec.NewDirectoryPermChecker()`
+- `security.CollectTOCTOUCheckDirs()` → `isec.CollectTOCTOUCheckDirs()`
+- `security.RunTOCTOUPermissionCheck()` → `isec.RunTOCTOUPermissionCheck()`
+
+`elfanalyzer.NewSyscallAnalyzer()` は `cmd/record` が引き続き
+`internal/runner/security/elfanalyzer` を使用するため変更なし（段階的移行）。
+
+> **本タスクのスコープ:**
+> `cmd/verify` については `internal/runner/security` の依存を完全に解消する。
+> `cmd/record` については TOCTOU 関連の `internal/runner/security` 依存を解消し、
+> `NewBinaryAnalyzer()` と `elfanalyzer.NewSyscallAnalyzer()` の残留依存は
+> 次タスクで対応する。
+
+### 6.9 `cmd/runner/main.go`
+
+`CollectTOCTOUCheckDirs`・`RunTOCTOUPermissionCheck`・`ResolveAbsPathForTOCTOU` を
+`internal/security` 経由に変更する。
+`NewValidatorForTOCTOU()` と `*security.Validator` は `internal/runner/security` から引き続き使用する。
+
+```go
+// Add
+import isec "github.com/isseis/go-safe-cmd-runner/internal/security"
+
+// Change
+isec.CollectTOCTOUCheckDirs(...)
+isec.RunTOCTOUPermissionCheck(secValidator, ...)  // *Validator satisfies DirectoryPermChecker
+isec.ResolveAbsPathForTOCTOU(...)
+```
+
+---
+
+## 7. Phase 6: 旧ファイルの削除
+
+以下のファイル・ディレクトリを削除する。
+
+### 7.1 削除するサブパッケージ
+
+- `internal/runner/security/binaryanalyzer/` — `internal/security/binaryanalyzer/` に移動済み
+- `internal/runner/security/machoanalyzer/` — `internal/security/machoanalyzer/` に移動済み
+
+### 7.2 `internal/runner/security/elfanalyzer/` から削除するファイル
+
+移動対象ファイル（Phase 3 でコピー済み）を削除する。
+残留するファイル: `standard_analyzer.go`・`analyzer.go`・各テストファイル。
+
+### 7.3 `internal/runner/security/toctou_check.go` の整理
+
+`NewValidatorForTOCTOU()` のみ残し、移動済みの関数・型を削除する。
+
+---
+
+## 8. Phase 7: `internal/runner/security` の `ValidateDirectoryPermissions` 更新
+
+`Validator.ValidateDirectoryPermissions()` は `internal/security.DirectoryPermChecker` を
+自動的に満たす（メソッドシグネチャ変更なし）。`Validator` 自身の実装は変更しない。
+
+`internal/security.RunTOCTOUPermissionCheck()` に `*Validator` を渡す場合、
+Go の構造的型付けにより自動的に `DirectoryPermChecker` として機能する。
+
+---
+
+## 9. 受け入れ基準の検証計画
+
+### AC-1: `internal/security` が `internal/runner/` をインポートしない
+
+**検証方法:**
+```sh
+go list -deps github.com/isseis/go-safe-cmd-runner/internal/security/... \
+  | grep internal/runner
+# 期待結果: 出力なし
+```
+
+ただし `binary_analyzer.go` は `internal/runner/security/elfanalyzer` を参照するため
+`internal/security/` には置かない（Phase 4 で確認）。
+
+### AC-2: `cmd/verify` が `internal/runner/security` をインポートしない
+
+**検証方法:**
+```sh
+go list -deps github.com/isseis/go-safe-cmd-runner/cmd/verify \
+  | grep internal/runner/security
+# 期待結果: 出力なし
+```
+
+### AC-3: `internal/filevalidator` が `internal/runner/security` をインポートしない
+
+**検証方法:**
+```sh
+go list -deps github.com/isseis/go-safe-cmd-runner/internal/filevalidator \
+  | grep internal/runner/security
+# 期待結果: 出力なし
+```
+
+### AC-4: `internal/libccache` が `internal/runner/security` をインポートしない
+
+**検証方法:**
+```sh
+go list -deps github.com/isseis/go-safe-cmd-runner/internal/libccache \
+  | grep internal/runner/security
+# 期待結果: 出力なし
+```
+
+### AC-5: 全テスト合格
+
+```sh
+make test
+```
+
+### AC-6: lint 合格
+
+```sh
+make lint
+```
+
+---
+
+## 10. 既知の制限事項と将来タスク
+
+### 10.1 `cmd/record` の部分的な残留依存
+
+`cmd/record` は `NewBinaryAnalyzer()` のために `internal/runner/security` を、
+`NewSyscallAnalyzer()` のために `internal/runner/security/elfanalyzer` を
+引き続きインポートする（`standard_analyzer.go` の `runnertypes` 依存のため）。
+
+**完全解消の条件:**
+`runnertypes.PrivilegeManager` インタフェースを `internal/common` または
+`internal/privilege` に移動し、`elfanalyzer/standard_analyzer.go` と
+`filevalidator/privileged_file.go` を更新する別タスクが必要。
+
+### 10.2 `internal/runner/security/elfanalyzer/` の残留
+
+`standard_analyzer.go`（と `analyzer.go`）は runner 固有のため残留する。
+将来、`PrivilegeManager` の移動後に `elfanalyzer/` 全体を `internal/security/elfanalyzer/` へ
+統合できる。
