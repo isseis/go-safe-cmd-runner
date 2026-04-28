@@ -499,7 +499,13 @@ func (v *Validator) analyzeDynLibDeps(filePath string, record *fileanalysis.Reco
 	}
 
 	slices.SortFunc(record.DynLibDeps, func(a, b fileanalysis.LibEntry) int {
-		return cmp.Compare(a.SOName, b.SOName)
+		if c := cmp.Compare(a.SOName, b.SOName); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Path, b.Path); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Hash, b.Hash)
 	})
 	slices.Sort(record.AnalysisWarnings)
 
