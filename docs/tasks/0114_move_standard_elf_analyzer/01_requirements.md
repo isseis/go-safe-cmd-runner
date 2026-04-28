@@ -76,7 +76,7 @@ internal/runner/security/elfanalyzer/
 // PrivilegedFileOpener はアクセス権不足時に特権昇格でファイルを開く手段を提供する。
 // nil の場合は特権昇格を行わない（os.ErrPermission をそのまま返す）。
 type PrivilegedFileOpener interface {
-    OpenWithPrivileges(path string) (io.ReadCloser, error)
+    OpenWithPrivileges(path string) (safefileio.File, error)
 }
 ```
 
