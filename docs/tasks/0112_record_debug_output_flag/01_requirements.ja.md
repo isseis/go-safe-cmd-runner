@@ -180,6 +180,6 @@ record --debug-info --hash-dir /path/to/hashdir /usr/bin/myapp
 ## 8. 次のステップ
 
 1. アーキテクチャ設計書の作成（02_architecture.ja.md）
-2. 詳細設計書の作成（03_detailed_design.ja.md）
+2. 詳細仕様書の作成（03_detailed_specification.ja.md）
 3. 実装計画書の作成（04_implementation_plan.ja.md）
 4. 実装とテスト
