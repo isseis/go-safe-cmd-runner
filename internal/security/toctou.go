@@ -26,6 +26,10 @@ func ResolveAbsPathForTOCTOU(p string) (string, bool) {
 }
 
 // CollectTOCTOUCheckDirs collects directories to check for TOCTOU prevention.
+// Returns a deduplicated list of directories covering the parent and all ancestor
+// directories up to root for each entry, because an attacker with write access to
+// any ancestor can rename an intermediate directory to bypass protection on the
+// immediate parent.
 func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, hashDir string) []string {
 	seen := make(map[string]struct{})
 	var result []string
@@ -73,7 +77,8 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 }
 
 // RunTOCTOUPermissionCheck checks all collected directories for TOCTOU-exploitable
-// permission issues.
+// permission issues. Non-existent directories are silently skipped (they cannot be
+// exploited). Violations are logged as warnings and returned as a slice.
 func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logger *slog.Logger) []TOCTOUViolation {
 	var violations []TOCTOUViolation
 
