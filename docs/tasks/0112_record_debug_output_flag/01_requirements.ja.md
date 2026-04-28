@@ -134,7 +134,7 @@ record --debug-info --hash-dir /path/to/hashdir /usr/bin/myapp
 
 ### 5.1 技術的制約
 
-- Go 1.23.10 を使用
+- Go 1.18 以降を使用
 - 既存の `encoding/json` パッケージを使用
 - `Occurrences` の除去は、既存の直接書き込みパス（`filevalidator` 内の `buildSyscallData` / `buildMachoSyscallData`）と libc キャッシュ経由のパス（`SaveSyscallAnalysis`）の両方に適用する
 
