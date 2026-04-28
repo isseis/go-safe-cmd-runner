@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	elfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	elfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

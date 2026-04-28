@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
-	rsec "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
@@ -60,11 +59,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// verify does not have a config with verify_files or commands; check the files being
 	// verified and the hash directory. Violations are logged as warnings only — verify
 	// continues even if the check fails.
-	secValidator, secErr := rsec.NewValidatorForTOCTOU()
+	secValidator, secErr := isec.NewDirectoryPermChecker()
 	if secErr != nil {
-		// NewValidatorForTOCTOU only fails when a regex literal in DefaultConfig
-		// is invalid — a programming error that cannot be recovered at runtime.
-		panic(fmt.Sprintf("security validator initialisation failed (invalid built-in regex pattern): %v", secErr))
+		// NewDirectoryPermChecker only fails when standalone checker setup fails,
+		// which is not recoverable in this startup path.
+		panic(fmt.Sprintf("security validator initialisation failed: %v", secErr))
 	}
 	absFiles := make([]string, 0, len(cfg.files))
 	for _, f := range cfg.files {

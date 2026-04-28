@@ -92,28 +92,28 @@
 ### Phase 3: 利用側の依存更新（record / verify / filevalidator / libccache）
 
 **対象ファイル**:
-- [ ] `cmd/verify/main.go`
-- [ ] `cmd/record/main.go`
-- [ ] `cmd/runner/main.go`
-- [ ] `internal/filevalidator/validator.go`
-- [ ] `internal/libccache/adapters.go`
-- [ ] `internal/runner/security/binary_analyzer.go`
+- [x] `cmd/verify/main.go`
+- [x] `cmd/record/main.go`
+- [x] `cmd/runner/main.go`
+- [x] `internal/filevalidator/validator.go`
+- [x] `internal/libccache/adapters.go`
+- [x] `internal/runner/security/binary_analyzer.go`
 
 **作業内容**:
-- [ ] `cmd/verify` の TOCTOU 呼び出しを `internal/security` へ移行
-- [ ] `cmd/record` の TOCTOU 呼び出しを `internal/security` へ移行
-- [ ] `cmd/record` の `NewSyscallAnalyzer()` 参照先を `internal/security/elfanalyzer` へ移行
-- [ ] `cmd/record` の `internal/runner/security` 依存を `NewBinaryAnalyzer()` 用のみに限定
-- [ ] `internal/filevalidator` / `internal/libccache` の import を `internal/security/...` へ変更
-- [ ] `cmd/runner` の TOCTOU ユーティリティ参照を `internal/security` へ変更
+- [x] `cmd/verify` の TOCTOU 呼び出しを `internal/security` へ移行
+- [x] `cmd/record` の TOCTOU 呼び出しを `internal/security` へ移行
+- [x] `cmd/record` の `NewSyscallAnalyzer()` 参照先を `internal/security/elfanalyzer` へ移行
+- [x] `cmd/record` の `internal/runner/security` 依存を `NewBinaryAnalyzer()` 用のみに限定
+- [x] `internal/filevalidator` / `internal/libccache` の import を `internal/security/...` へ変更
+- [x] `cmd/runner` の TOCTOU ユーティリティ参照を `internal/security` へ変更
 
 **成功条件**:
-- [ ] `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功
-- [ ] `go list -deps ./cmd/verify | grep internal/runner/security` が 0 件
-- [ ] `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` が 0 件
+- [x] `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功
+- [x] `go list -deps ./cmd/verify | grep internal/runner/security` が 0 件
+- [-] `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` が 0 件（`NewBinaryAnalyzer()` が `StandardELFAnalyzer` を経由して runner 側 `elfanalyzer` に依存するため）
 
 **推定工数**: 1.0日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ---
 

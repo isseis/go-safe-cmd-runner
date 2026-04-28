@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
 // SyscallNumberTable provides syscall name and network classification by number.
