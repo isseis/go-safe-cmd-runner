@@ -11,6 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestKnownSyscallImpls_ContainsX86RuntimeInternalVariant(t *testing.T) {
+	_, ok := knownSyscallImpls["runtime/internal/syscall.Syscall6"]
+	assert.True(t, ok, "knownSyscallImpls must include runtime/internal/syscall.Syscall6")
+}
+
 func TestNewX86GoWrapperResolver_NoPclntab(t *testing.T) {
 	// An empty elf.File has no .gopclntab section.
 	// NewX86GoWrapperResolver should return a usable resolver and ErrNoPclntab.

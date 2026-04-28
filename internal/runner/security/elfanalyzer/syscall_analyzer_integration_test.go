@@ -497,12 +497,10 @@ func main() {
 	// Regression check: low-level implementation bodies should be excluded from
 	// direct-syscall pass, so control-flow-boundary unknowns are not reported.
 	for _, sc := range result.DetectedSyscalls {
-		if len(sc.Occurrences) == 0 {
-			continue
+		for _, occ := range sc.Occurrences {
+			assert.NotEqual(t, DeterminationMethodUnknownControlFlowBoundary, occ.DeterminationMethod,
+				"unexpected unknown:control_flow_boundary at 0x%x", occ.Location)
 		}
-		method := sc.Occurrences[0].DeterminationMethod
-		assert.NotEqual(t, DeterminationMethodUnknownControlFlowBoundary, method,
-			"unexpected unknown:control_flow_boundary at 0x%x", sc.Occurrences[0].Location)
 	}
 }
 
