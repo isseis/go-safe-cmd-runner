@@ -11,16 +11,17 @@ import (
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
 // validatePathAndGetInfo validates and cleans a path, then returns its file info
 func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.FileInfo, error) {
 	if path == "" {
 		slog.Error("Empty " + pathType + " path provided for permission validation")
-		return "", nil, fmt.Errorf("%w: empty path", ErrInvalidPath)
+		return "", nil, fmt.Errorf("%w: empty path", isec.ErrInvalidPath)
 	}
 	if !filepath.IsAbs(path) {
-		err := fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, path)
+		err := fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, path)
 		slog.Error("Path validation failed", slog.String("path", path), slog.Any("error", err))
 		return "", nil, err
 	}
@@ -30,7 +31,7 @@ func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.Fi
 	slog.Debug("Validating "+pathType+" permissions", slog.String("path", cleanPath))
 
 	if len(cleanPath) > v.config.MaxPathLength {
-		err := fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
+		err := fmt.Errorf("%w: path too long (%d > %d)", isec.ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
 		slog.Error("Path validation failed", slog.String("path", cleanPath), slog.Any("error", err), slog.Int("max_length", v.config.MaxPathLength))
 		return "", nil, err
 	}
@@ -95,7 +96,7 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 
 	// Check if it's a directory
 	if !dirInfo.Mode().IsDir() {
-		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, dirPath)
+		err := fmt.Errorf("%w: %s is not a directory", isec.ErrInvalidDirPermissions, dirPath)
 		slog.Warn("Invalid directory type", slog.String("path", dirPath), slog.String("mode", dirInfo.Mode().String()))
 		return err
 	}
@@ -146,12 +147,12 @@ func (v *Validator) validateCompletePath(cleanPath string, originalPath string, 
 func (v *Validator) validateDirectoryComponentMode(dirPath string, info os.FileInfo) error {
 	// Check if the component is not a symlink
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: path component %s is a symlink", ErrInsecurePathComponent, dirPath)
+		return fmt.Errorf("%w: path component %s is a symlink", isec.ErrInsecurePathComponent, dirPath)
 	}
 
 	// Ensure the component is a directory
 	if !info.Mode().IsDir() {
-		return fmt.Errorf("%w: path component %s is not a directory", ErrInsecurePathComponent, dirPath)
+		return fmt.Errorf("%w: path component %s is not a directory", isec.ErrInsecurePathComponent, dirPath)
 	}
 	return nil
 }
@@ -170,7 +171,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	// Get system-level file info for ownership checks
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return fmt.Errorf("%w: failed to get system info for directory %s", ErrInsecurePathComponent, dirPath)
+		return fmt.Errorf("%w: failed to get system info for directory %s", isec.ErrInsecurePathComponent, dirPath)
 	}
 
 	perm := info.Mode().Perm()
@@ -190,7 +191,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 				slog.String("path", dirPath),
 				slog.String("permissions", fmt.Sprintf("%04o", perm)))
 			return fmt.Errorf("%w: directory %s is writable by others (%04o)",
-				ErrInvalidDirPermissions, dirPath, perm)
+				isec.ErrInvalidDirPermissions, dirPath, perm)
 		}
 	}
 
@@ -216,7 +217,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 					slog.Any("directory_owner_uid", stat.Uid),
 					slog.Int("execution_user_uid", realUID))
 				return fmt.Errorf("%w: directory %s is owned by UID %d but execution user is UID %d",
-					ErrInvalidDirPermissions, dirPath, stat.Uid, realUID)
+					isec.ErrInvalidDirPermissions, dirPath, stat.Uid, realUID)
 			}
 		}
 	}
@@ -236,7 +237,7 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return fmt.Errorf("%w: failed to get system info for directory %s", ErrInsecurePathComponent, dirPath)
+		return fmt.Errorf("%w: failed to get system info for directory %s", isec.ErrInsecurePathComponent, dirPath)
 	}
 
 	perm := info.Mode().Perm()
@@ -258,7 +259,7 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 			slog.String("path", dirPath),
 			slog.String("permissions", fmt.Sprintf("%04o", perm)))
 		return fmt.Errorf("%w: directory %s has group write permissions (%04o) but group membership cannot be verified",
-			ErrInvalidDirPermissions, dirPath, perm)
+			isec.ErrInvalidDirPermissions, dirPath, perm)
 	}
 
 	// Use unified security validation from groupmembership package
@@ -271,7 +272,7 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 			slog.Int("user_uid", realUID),
 			slog.Any("error", err))
 		return fmt.Errorf("%w: directory %s failed security validation: %v",
-			ErrInvalidDirPermissions, dirPath, err)
+			isec.ErrInvalidDirPermissions, dirPath, err)
 	}
 	if !canSafelyWrite {
 		slog.Error("Directory security validation failed - write not safe",
@@ -279,7 +280,7 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 			slog.String("permissions", fmt.Sprintf("%04o", perm)),
 			slog.Int("user_uid", realUID))
 		return fmt.Errorf("%w: directory %s - user UID %d cannot safely write to this directory",
-			ErrInvalidDirPermissions, dirPath, realUID)
+			isec.ErrInvalidDirPermissions, dirPath, realUID)
 	}
 
 	return nil
@@ -290,12 +291,12 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 // It leverages the existing secure path validation infrastructure to prevent symlink attacks
 func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int) error {
 	if outputPath == "" {
-		return fmt.Errorf("%w: empty output path", ErrInvalidPath)
+		return fmt.Errorf("%w: empty output path", isec.ErrInvalidPath)
 	}
 
 	// Ensure absolute path
 	if !filepath.IsAbs(outputPath) {
-		return fmt.Errorf("%w: output path must be absolute, got: %s", ErrInvalidPath, outputPath)
+		return fmt.Errorf("%w: output path must be absolute, got: %s", isec.ErrInvalidPath, outputPath)
 	}
 
 	cleanPath := filepath.Clean(outputPath)
@@ -386,7 +387,7 @@ func (v *Validator) validateAllowedOutputPathSymlinks(path string) error {
 		}
 
 		if info.Mode()&os.ModeSymlink != 0 && !isAllowedOSManagedSymlink(currentPath) {
-			return fmt.Errorf("%w: path component %s is a symlink", ErrInsecurePathComponent, currentPath)
+			return fmt.Errorf("%w: path component %s is a symlink", isec.ErrInsecurePathComponent, currentPath)
 		}
 
 		parentPath := filepath.Dir(currentPath)
@@ -459,7 +460,7 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 					slog.String("permissions", fmt.Sprintf("%04o", stat.Mode().Perm())),
 					slog.Int("uid", realUID))
 				return fmt.Errorf("%w: directory %s is writable by others (%04o), which poses security risks",
-					ErrInvalidDirPermissions, path, stat.Mode().Perm())
+					isec.ErrInvalidDirPermissions, path, stat.Mode().Perm())
 			}
 			slog.Error("File writable by others detected",
 				slog.String("path", path),
@@ -529,17 +530,17 @@ func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) (runnertype
 	if workDir != "" {
 		if !filepath.IsAbs(workDir) {
 			// Programming error: workDir must be absolute
-			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be absolute, got: %s", ErrInvalidPath, workDir)
+			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be absolute, got: %s", isec.ErrInvalidPath, workDir)
 		}
 		if filepath.Clean(workDir) != workDir {
 			// Programming error: workDir must be pre-cleaned
-			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be pre-cleaned, got: %s", ErrInvalidPath, workDir)
+			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be pre-cleaned, got: %s", isec.ErrInvalidPath, workDir)
 		}
 	}
 
 	// Handle empty path as a programming error
 	if path == "" {
-		return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: empty path provided", ErrInvalidPath)
+		return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: empty path provided", isec.ErrInvalidPath)
 	}
 
 	var cleanPath string

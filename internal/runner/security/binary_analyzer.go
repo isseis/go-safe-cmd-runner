@@ -1,9 +1,9 @@
 package security
 
 import (
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
 )
 
 // gosDarwin is the GOOS value for macOS.

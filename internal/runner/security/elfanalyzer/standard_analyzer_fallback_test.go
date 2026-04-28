@@ -5,7 +5,7 @@ package elfanalyzer
 import (
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 )
 

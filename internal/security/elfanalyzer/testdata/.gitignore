@@ -1,0 +1,5 @@
+# Test binaries (generated locally, not checked into Git)
+*.elf
+
+# Pre-compiled test fixtures checked into the repository
+!arm64_network_program/arm64_network_program.elf

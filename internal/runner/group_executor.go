@@ -19,6 +19,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -360,7 +361,7 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 	// CLI paths in record/verify).
 	verifyPaths := make([]string, 0, len(runtimeGroup.ExpandedVerifyFiles))
 	for _, f := range runtimeGroup.ExpandedVerifyFiles {
-		if resolved, ok := security.ResolveAbsPathForTOCTOU(f); ok {
+		if resolved, ok := isec.ResolveAbsPathForTOCTOU(f); ok {
 			verifyPaths = append(verifyPaths, resolved)
 		}
 	}
@@ -368,14 +369,14 @@ func (ge *DefaultGroupExecutor) runGroupTOCTOUCheck(runtimeGroup *runnertypes.Ru
 	// Collect command paths (expanded by preExpandCommands).
 	cmdPaths := make([]string, 0, len(runtimeGroup.Commands))
 	for _, cmd := range runtimeGroup.Commands {
-		if resolved, ok := security.ResolveAbsPathForTOCTOU(cmd.Cmd()); ok {
+		if resolved, ok := isec.ResolveAbsPathForTOCTOU(cmd.Cmd()); ok {
 			cmdPaths = append(cmdPaths, resolved)
 		}
 	}
 
 	// hashDir is already checked at startup; pass empty string to skip re-traversal.
-	dirs := security.CollectTOCTOUCheckDirs(verifyPaths, cmdPaths, "")
-	violations := security.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default())
+	dirs := isec.CollectTOCTOUCheckDirs(verifyPaths, cmdPaths, "")
+	violations := isec.RunTOCTOUPermissionCheck(ge.toctouValidator, dirs, slog.Default())
 	if len(violations) > 0 {
 		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
 			ErrTOCTOUViolation, runnertypes.ExtractGroupName(runtimeGroup), len(violations))

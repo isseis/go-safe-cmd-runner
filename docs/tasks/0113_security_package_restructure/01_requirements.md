@@ -6,8 +6,8 @@
 
 `internal/runner/security` パッケージおよびそのサブパッケージを、
 `runner` 固有の責務と汎用的な責務に分離し、
-`cmd/record`・`cmd/verify`・`internal/filevalidator`・`internal/libccache` が
-`internal/runner/` 以下に依存しないようにする。
+`cmd/record`・`cmd/verify`・`internal/filevalidator`・`internal/libccache` の
+`internal/runner/` 以下への依存を解消または最小化する。
 
 ### 1.2 背景
 

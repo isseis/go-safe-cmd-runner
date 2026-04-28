@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
 // MaxWrapperFunctionSize is the maximum size in bytes for a function to be

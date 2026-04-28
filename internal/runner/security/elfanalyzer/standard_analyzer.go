@@ -15,23 +15,13 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
-// SyscallAnalysisStore defines the interface for syscall analysis result storage.
-type SyscallAnalysisStore interface {
-	// LoadSyscallAnalysis loads syscall analysis from storage.
-	// `expectedHash` contains both the hash algorithm and the expected hash value.
-	// Format: "sha256:<hex>" (e.g., "sha256:abc123...def789")
-	// Returns (result, nil) if found and hash matches.
-	// Returns (nil, fileanalysis.ErrRecordNotFound) if not found.
-	// Returns (nil, fileanalysis.ErrHashMismatch) if hash mismatch.
-	// Returns (nil, nil) if no syscall analysis result exists in storage
-	// (e.g., analysis was not applicable, skipped, or completed without stored results).
-	// Returns (nil, error) on other errors.
-	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
-}
+// SyscallAnalysisStore aliases the shared syscall analysis store interface.
+type SyscallAnalysisStore = secelfanalyzer.SyscallAnalysisStore
 
 // elfMagicStr is the ELF magic number string literal.
 const elfMagicStr = "\x7fELF"
@@ -366,7 +356,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 			// silently assuming no network capability.
 			return binaryanalyzer.AnalysisOutput{
 				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("%w: %s", ErrSyscallHashMismatch, path),
+				Error:  fmt.Errorf("%w: %s", secelfanalyzer.ErrSyscallHashMismatch, path),
 			}
 		default:
 			// Unexpected error, log it before falling back.
@@ -389,7 +379,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
 // Risk is derived by scanning DetectedSyscalls for unknown syscall numbers and
 // checking ArgEvalResults for mprotect PROT_EXEC risk.
-func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
+func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
 	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
 	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
 	// so we must treat the result as an error even if network syscalls were also detected.
@@ -398,10 +388,10 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	// appears in direct-syscall entries (Source == ""). libc_symbol_import entries
 	// always have Number >= 0 (enforced by validateInfos at cache-build time), so
 	// they are never mistaken for unknown syscalls here.
-	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info SyscallInfo) bool {
+	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info secelfanalyzer.SyscallInfo) bool {
 		return info.Number == -1
 	})
-	if hasUnknown || EvalMprotectRisk(result.ArgEvalResults) {
+	if hasUnknown || secelfanalyzer.EvalMprotectRisk(result.ArgEvalResults) {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.AnalysisWarnings),
@@ -409,7 +399,7 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	}
 
 	var symbols []binaryanalyzer.DetectedSymbol
-	table := SyscallTableForArchitecture(result.Architecture)
+	table := secelfanalyzer.SyscallTableForArchitecture(result.Architecture)
 	for _, info := range result.DetectedSyscalls {
 		if table != nil && info.Number >= 0 && table.IsNetworkSyscall(info.Number) {
 			symbols = append(symbols, binaryanalyzer.DetectedSymbol{
@@ -426,22 +416,4 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult
 	}
 
 	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
-}
-
-var (
-	cachedX86SyscallTable   = NewX86_64SyscallTable()
-	cachedArm64SyscallTable = NewARM64LinuxSyscallTable()
-)
-
-// SyscallTableForArchitecture returns the shared cached SyscallNumberTable for the given Linux architecture.
-// Returns nil for unrecognized architectures.
-func SyscallTableForArchitecture(arch string) SyscallNumberTable {
-	switch arch {
-	case "x86_64":
-		return cachedX86SyscallTable
-	case "arm64":
-		return cachedArm64SyscallTable
-	default:
-		return nil
-	}
 }

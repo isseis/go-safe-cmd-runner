@@ -261,7 +261,8 @@ func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logge
 // After
 "github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 "github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
-// elfanalyzer は internal/runner/security/elfanalyzer（StandardELFAnalyzer 側）を継続利用
+// Keep elfanalyzer import on internal/runner/security/elfanalyzer
+// because StandardELFAnalyzer remains runner-side.
 ```
 
 **確定方針:**
@@ -339,7 +340,8 @@ import secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/el
 // After
 "github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 "github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
-// elfanalyzer インポートはそのまま（StandardELFAnalyzer は runner/security/elfanalyzer に残留）
+// Keep the elfanalyzer import unchanged because StandardELFAnalyzer
+// remains under runner/security/elfanalyzer.
 ```
 
 ### 6.6 `internal/runner/security/toctou_check.go`
@@ -369,7 +371,7 @@ import secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/el
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 // After
-"github.com/isseis/go-safe-cmd-runner/internal/runner/security"   // NewBinaryAnalyzer() のみ残留
+"github.com/isseis/go-safe-cmd-runner/internal/runner/security"   // Keep only for NewBinaryAnalyzer().
 "github.com/isseis/go-safe-cmd-runner/internal/security"
 "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 ```

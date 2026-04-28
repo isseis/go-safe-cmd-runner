@@ -5,8 +5,8 @@
 package machoanalyzer
 
 import (
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 )
 
 // StandardMachOAnalyzer implements binaryanalyzer.BinaryAnalyzer for Mach-O binaries.

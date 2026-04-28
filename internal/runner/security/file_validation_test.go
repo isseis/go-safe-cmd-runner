@@ -14,6 +14,7 @@ import (
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 )
 
 func TestValidator_ValidateOutputWritePermission(t *testing.T) {
@@ -71,7 +72,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			expectedErr: ErrInvalidPath,
+			expectedErr: isec.ErrInvalidPath,
 		},
 		{
 			name: "relative_path",
@@ -80,7 +81,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			},
 			uid:         currentUID,
 			wantErr:     true,
-			expectedErr: ErrInvalidPath,
+			expectedErr: isec.ErrInvalidPath,
 		},
 		{
 			name: "directory_instead_of_file",
@@ -147,7 +148,7 @@ func TestValidator_ValidateOutputWritePermission_RejectsUserSymlinkComponent(t *
 
 	err = validator.ValidateOutputWritePermission(filepath.Join(symlinkDir, "output.log"), os.Getuid())
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrInsecurePathComponent)
+	assert.ErrorIs(t, err, isec.ErrInsecurePathComponent)
 }
 
 func TestValidator_checkWritePermission(t *testing.T) {
@@ -666,7 +667,7 @@ func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 	t.Run("empty_path", func(t *testing.T) {
 		risk, err := validator.EvaluateOutputSecurityRisk("", "/home/user")
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 	})
 
@@ -822,7 +823,7 @@ func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) 
 			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, tt.workDir)
 			if tt.expectError {
 				assert.Error(t, err, "Test failed: %s. Expected error but got none for path=%q, workDir=%q", tt.desc, tt.path, tt.workDir)
-				assert.ErrorIs(t, err, ErrInvalidPath, "Error type mismatch for %s", tt.desc)
+				assert.ErrorIs(t, err, isec.ErrInvalidPath, "Error type mismatch for %s", tt.desc)
 				assert.Equal(t, tt.expectRisk, risk, "Risk level mismatch when error expected for %s", tt.desc)
 			} else {
 				require.NoError(t, err, "Test failed: %s. Unexpected error for path=%q, workDir=%q: %v", tt.desc, tt.path, tt.workDir, err)
@@ -867,7 +868,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/usr/local/etc/go-safe-cmd-runner/hashes",
 			shouldFail:  true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory with group-writable intermediate directory owned by non-root",
@@ -880,7 +881,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/opt/myapp/etc/go-safe-cmd-runner/hashes",
 			shouldFail:  true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory with root group write owned by root",
@@ -905,7 +906,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/usr/local/etc/go-safe-cmd-runner/hashes",
 			shouldFail:  true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory owned by current user",
@@ -926,13 +927,13 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/home/user/config",
 			shouldFail:  true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name:        "relative path rejected",
 			dirPath:     "relative/path",
 			shouldFail:  true,
-			expectedErr: ErrInvalidPath,
+			expectedErr: isec.ErrInvalidPath,
 		},
 		{
 			name:        "path does not exist",
@@ -951,7 +952,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/usr/local",
 			shouldFail:  true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory hierarchy with sticky bit directory",
@@ -973,7 +974,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/shared/data",
 			shouldFail:  true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 	}
 
@@ -1029,7 +1030,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 			},
 			path:        "/usr/local", // Test the symlink path itself
 			shouldFail:  true,
-			expectedErr: ErrInsecurePathComponent,
+			expectedErr: isec.ErrInsecurePathComponent,
 		},
 		{
 			name: "path with symlink target directory should be rejected",
@@ -1049,7 +1050,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 			},
 			path:        "/usr/local/etc/go-safe-cmd-runner",
 			shouldFail:  true,
-			expectedErr: ErrInsecurePathComponent,
+			expectedErr: isec.ErrInsecurePathComponent,
 		},
 		{
 			name: "secure path with no symlinks should pass",
@@ -1188,14 +1189,14 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		err := validator.ValidateFilePermissions("")
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 
 	t.Run("relative path", func(t *testing.T) {
 		err := validator.ValidateFilePermissions("relative/path/file.conf")
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 
 	t.Run("non-existent file", func(t *testing.T) {
@@ -1269,7 +1270,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		longPath := "/very/long/path/that/exceeds/limit"
 		err = validator2.ValidateFilePermissions(longPath)
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 }
 
@@ -1281,14 +1282,14 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 	t.Run("empty path", func(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("")
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 
 	t.Run("relative path", func(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("relative/path/dir")
 
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 
 	t.Run("non-existent directory", func(t *testing.T) {
@@ -1311,7 +1312,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("/test-excessive-dir")
 		// This test should fail with strict security validation
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+		assert.ErrorIs(t, err, isec.ErrInvalidDirPermissions)
 	})
 
 	t.Run("directory with sticky bit and world writable permissions", func(t *testing.T) {
@@ -1361,7 +1362,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 		err := validator.ValidateDirectoryPermissions("/test-file.txt")
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+		assert.ErrorIs(t, err, isec.ErrInvalidDirPermissions)
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -1378,7 +1379,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		longPath := "/very/long/path/that/exceeds/limit"
 		err = validator2.ValidateDirectoryPermissions(longPath)
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 }
 
@@ -1422,7 +1423,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 			},
 			realUID:     currentUID,
 			wantErr:     true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "root_owned_directory_always_allowed",
@@ -1459,7 +1460,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 			},
 			realUID:     currentUID,
 			wantErr:     true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 	}
 
@@ -1679,7 +1680,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			useNilGroup: true,
 			realUID:     currentUID,
 			wantErr:     true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "group_write_safe_with_single_member",
@@ -1704,7 +1705,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 			useNilGroup: false,
 			realUID:     currentUID,
 			wantErr:     true,
-			expectedErr: ErrInvalidDirPermissions,
+			expectedErr: isec.ErrInvalidDirPermissions,
 		},
 		{
 			name: "uid_0_gid_0_boundary",
@@ -1790,7 +1791,7 @@ func TestValidator_validateGroupWritePermissions_TrustedOwnershipScenarios(t *te
 		require.NoError(t, err)
 
 		err = validator.validateGroupWritePermissions("/test", info, 1000)
-		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+		assert.ErrorIs(t, err, isec.ErrInvalidDirPermissions)
 	})
 
 	t.Run("allows_group_write_for_root_owned_directory_with_macos_admin_gid", func(t *testing.T) {

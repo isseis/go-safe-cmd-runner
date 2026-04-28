@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +56,6 @@ func TestValidator_validateGroupWritePermissions_LinuxTrustedGIDConfigDifference
 		require.NoError(t, err)
 
 		err = validator.validateGroupWritePermissions("/test", info, 1000)
-		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
+		assert.ErrorIs(t, err, isec.ErrInvalidDirPermissions)
 	})
 }

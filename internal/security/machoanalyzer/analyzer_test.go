@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -20,10 +20,6 @@ var (
 	// (e.g., world-writable, group-writable when not allowed, wrong file type)
 	ErrInvalidFilePermissions = errors.New("invalid file permissions")
 
-	// ErrInvalidDirPermissions is returned when a directory has inappropriate permissions
-	// (e.g., world-writable, group-writable by non-root, writable by non-root user)
-	ErrInvalidDirPermissions = errors.New("invalid directory permissions")
-
 	// ErrUnsafeEnvironmentVar is returned when an environment variable contains
 	// potentially dangerous patterns that could lead to command injection
 	ErrUnsafeEnvironmentVar = errors.New("unsafe environment variable")
@@ -35,24 +31,12 @@ var (
 	// ErrSymlinkDepthExceeded is returned when symbolic link resolution exceeds MaxSymlinkDepth
 	ErrSymlinkDepthExceeded = errors.New("symbolic link depth exceeded")
 
-	// ErrInvalidPath is returned for path-related structural issues:
-	// - Empty paths
-	// - Relative paths (when absolute paths are required)
-	// - Paths that exceed maximum length limits
-	ErrInvalidPath = errors.New("invalid path")
-
 	// ErrHashValidationFailed is returned when file hash validation fails
 	ErrHashValidationFailed = errors.New("hash validation failed")
 
 	// ErrInvalidRegexPattern is returned when a regex pattern in the security configuration
 	// cannot be compiled
 	ErrInvalidRegexPattern = errors.New("invalid regex pattern")
-
-	// ErrInsecurePathComponent is returned for structural security issues in path components:
-	// - Path components that are symbolic links (symlink attack prevention)
-	// - Path components that are not directories when they should be
-	// - Failed to get system information for path components
-	ErrInsecurePathComponent = errors.New("insecure path component")
 
 	// ErrVariableNameEmpty is returned when a variable name is empty
 	ErrVariableNameEmpty = errors.New("variable name cannot be empty")

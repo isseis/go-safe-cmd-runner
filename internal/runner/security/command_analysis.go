@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 )
 
 // NetworkOperationType indicates the type of network operation a command performs
@@ -647,11 +648,11 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOp
 
 	// Step 1: Input validation
 	if resolvedPath == "" {
-		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", ErrInvalidPath)
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", isec.ErrInvalidPath)
 	}
 
 	if !filepath.IsAbs(resolvedPath) {
-		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, resolvedPath)
 	}
 
 	// Step 2: Symbolic link depth check
@@ -851,7 +852,7 @@ func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
 // Returns (hasSetuidOrSetgid, error)
 func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
 	if !filepath.IsAbs(cmdPath) {
-		return false, fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, cmdPath)
+		return false, fmt.Errorf("%w: path must be absolute, got relative path: %s", isec.ErrInvalidPath, cmdPath)
 	}
 	// Get file information
 	fileInfo, err := os.Stat(cmdPath)

@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 )
 
 // ErrDirectSyscall is retained for backward compatibility.
