@@ -39,8 +39,8 @@ go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer
 
 | # | 基準 |
 |---|------|
-| AC-1 | `go list -deps ./cmd/record \| grep internal/runner/security/elfanalyzer` が 0 件 |
-| AC-2 | `go list -deps ./cmd/verify \| grep internal/runner/security` が 0 件（現状維持） |
+| AC-1 | `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` が 0 件 |
+| AC-2 | `go list -deps ./cmd/verify | grep internal/runner/security` が 0 件（現状維持） |
 | AC-3 | `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功 |
 | AC-4 | `make test` が全件パス |
 | AC-5 | `cmd/runner` において execute-only バイナリ（`os.ErrPermission`）への特権アクセスが引き続き動作する |
