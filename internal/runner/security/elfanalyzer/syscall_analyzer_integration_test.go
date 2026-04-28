@@ -499,7 +499,7 @@ func main() {
 	for _, sc := range result.DetectedSyscalls {
 		for _, occ := range sc.Occurrences {
 			assert.NotEqual(t, DeterminationMethodUnknownControlFlowBoundary, occ.DeterminationMethod,
-				"unexpected unknown:control_flow_boundary at 0x%x", occ.Location)
+				"unexpected unknown:control_flow_boundary for syscall %q (#%d) at 0x%x", sc.Name, sc.Number, occ.Location)
 		}
 	}
 }
