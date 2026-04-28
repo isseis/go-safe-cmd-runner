@@ -374,7 +374,8 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 // convertNetworkSymbolEntries converts []string to binaryanalyzer.DetectedSymbol slice.
 //
 // NOTE: This is the inverse of convertDetectedSymbols in
-// internal/filevalidator/validator.go. fileanalysis stores Name only, and this
+// internal/filevalidator/validator.go. fileanalysis stores symbol names as
+// plain strings, and this
 // function derives Category for runner-internal logging and filtering.
 func convertNetworkSymbolEntries(entries []string) []binaryanalyzer.DetectedSymbol {
 	if len(entries) == 0 {
