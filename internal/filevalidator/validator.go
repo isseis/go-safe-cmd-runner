@@ -1348,7 +1348,6 @@ func mprotectStatusPriority(status common.SyscallArgEvalStatus) int {
 	}
 }
 
-// buildSyscallData constructs a SyscallAnalysisData from the merged syscall infos.
 // stripOccurrences returns a copy of syscalls with Occurrences removed from each entry.
 func stripOccurrences(syscalls []common.SyscallInfo) []common.SyscallInfo {
 	result := make([]common.SyscallInfo, len(syscalls))
@@ -1359,6 +1358,7 @@ func stripOccurrences(syscalls []common.SyscallInfo) []common.SyscallInfo {
 	return result
 }
 
+// buildSyscallData constructs a SyscallAnalysisData from the merged syscall infos.
 func buildSyscallData(
 	all []common.SyscallInfo,
 	argEvalResults []common.SyscallArgEvalResult,

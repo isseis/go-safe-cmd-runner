@@ -2,7 +2,6 @@ package libccache
 
 import (
 	"debug/elf"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,13 +13,7 @@ import (
 func TestSyscallAdapterAnalyzeSyscallsFromELF_PassesThroughDeterminationStats(t *testing.T) {
 	elfPath := filepath.Join("..", "runner", "security", "elfanalyzer", "testdata", "arm64_network_program", "arm64_network_program.elf")
 
-	f, err := os.Open(elfPath)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = f.Close()
-	})
-
-	ef, err := elf.NewFile(f)
+	ef, err := elf.Open(elfPath)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = ef.Close()

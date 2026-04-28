@@ -1405,6 +1405,7 @@ func TestRecord_DebugInfo_ELF(t *testing.T) {
 	require.NotNil(t, withoutDebug.SyscallAnalysis)
 	require.Len(t, withoutDebug.SyscallAnalysis.DetectedSyscalls, 1)
 	assert.Nil(t, withoutDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences)
+	assert.Nil(t, withoutDebug.SyscallAnalysis.DeterminationStats)
 
 	v.SetIncludeDebugInfo(true)
 	_, _, err = v.SaveRecord(targetFile, true)
@@ -1416,35 +1417,6 @@ func TestRecord_DebugInfo_ELF(t *testing.T) {
 	require.Len(t, withDebug.SyscallAnalysis.DetectedSyscalls, 1)
 	require.Len(t, withDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences, 1)
 	assert.Equal(t, uint64(0x1000), withDebug.SyscallAnalysis.DetectedSyscalls[0].Occurrences[0].Location)
-}
-
-func TestRecord_DebugInfo_DeterminationStats(t *testing.T) {
-	tempDir := safeTempDir(t)
-	hashDir := filepath.Join(tempDir, "hashes")
-	require.NoError(t, os.MkdirAll(hashDir, 0o700))
-
-	targetFile := filepath.Join(tempDir, "target.bin")
-	elfanalyzertesting.CreateDynamicELFFile(t, targetFile)
-
-	v, err := New(&SHA256{}, hashDir)
-	require.NoError(t, err)
-	v.SetSyscallAnalyzer(&stubSyscallAnalyzerWithDebugInfo{})
-
-	_, _, err = v.SaveRecord(targetFile, false)
-	require.NoError(t, err)
-
-	withoutDebug, loadErr := v.LoadRecord(targetFile)
-	require.NoError(t, loadErr)
-	require.NotNil(t, withoutDebug.SyscallAnalysis)
-	assert.Nil(t, withoutDebug.SyscallAnalysis.DeterminationStats)
-
-	v.SetIncludeDebugInfo(true)
-	_, _, err = v.SaveRecord(targetFile, true)
-	require.NoError(t, err)
-
-	withDebug, loadErr := v.LoadRecord(targetFile)
-	require.NoError(t, loadErr)
-	require.NotNil(t, withDebug.SyscallAnalysis)
 	require.NotNil(t, withDebug.SyscallAnalysis.DeterminationStats)
 	assert.Equal(t, 1, withDebug.SyscallAnalysis.DeterminationStats.ImmediateTotal)
 }
