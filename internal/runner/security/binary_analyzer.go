@@ -1,8 +1,8 @@
 package security
 
 import (
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
 )
 
@@ -23,6 +23,6 @@ func NewBinaryAnalyzer(goos string) binaryanalyzer.BinaryAnalyzer {
 	case gosDarwin:
 		return machoanalyzer.NewStandardMachOAnalyzer(nil)
 	default: // "linux", etc.
-		return elfanalyzer.NewStandardELFAnalyzer(nil, nil)
+		return secelfanalyzer.NewStandardELFAnalyzer(nil, nil)
 	}
 }

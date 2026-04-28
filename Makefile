@@ -178,7 +178,7 @@ clean:
 # Generates test binaries for elfanalyzer package unit tests.
 # Prerequisites: GCC, libssl-dev
 
-ELFANALYZER_TESTDATA_DIR := internal/runner/security/elfanalyzer/testdata
+ELFANALYZER_TESTDATA_DIR := internal/security/elfanalyzer/testdata
 
 # List of ELF test binaries that require C compilation (Linux ELF format only)
 # On macOS, gcc produces Mach-O binaries, so these are only generated on Linux.
@@ -208,7 +208,7 @@ elfanalyzer-testdata-verify: $(ELFANALYZER_TESTDATA_DIR)/static.elf \
 	fi
 	@echo "Verifying elfanalyzer test binaries..."
 	@TEMP_FILE=$$(mktemp); \
-	if $(GOTEST) -tags test -v ./internal/runner/security/elfanalyzer/ -run TestStandardELFAnalyzer_AnalyzeNetworkSymbols > "$$TEMP_FILE" 2>&1; then \
+	if $(GOTEST) -tags test -v ./internal/security/elfanalyzer/ -run TestStandardELFAnalyzer_AnalyzeNetworkSymbols > "$$TEMP_FILE" 2>&1; then \
 		rm -f "$$TEMP_FILE"; \
 	else \
 		cat "$$TEMP_FILE"; \
@@ -435,7 +435,7 @@ test: unit-test
 # Requires: gcc (for TestSyscallAnalyzer_RealCBinary), amd64 arch
 # Tests gracefully skip if requirements are not met (t.Skip)
 elfanalyzer-integration-test:
-	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/runner/security/elfanalyzer/
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/security/elfanalyzer/
 
 # libccache integration tests - runs integration-tagged tests for libccache package
 # Requires: Linux, gcc, amd64 or arm64 arch
@@ -566,8 +566,8 @@ ARM64_SYSCALL_HEADER ?= /usr/include/asm-generic/unistd.h
 MACOS_SYSCALL_HEADER ?= $(shell xcrun --show-sdk-path 2>/dev/null | awk 'NF{print $$0"/usr/include/sys/syscall.h"}')
 SYSCALL_TABLE_SCRIPT := scripts/generate_syscall_table.py
 SYSCALL_TABLE_OUTPUTS := \
-	internal/runner/security/elfanalyzer/x86_syscall_numbers.go \
-	internal/runner/security/elfanalyzer/arm64_syscall_numbers.go \
+	internal/security/elfanalyzer/x86_syscall_numbers.go \
+	internal/security/elfanalyzer/arm64_syscall_numbers.go \
 	internal/libccache/macos_syscall_numbers.go
 
 DYLD_HEADERS_BASE_URL ?= https://raw.githubusercontent.com/apple-oss-distributions/dyld/main/include/mach-o

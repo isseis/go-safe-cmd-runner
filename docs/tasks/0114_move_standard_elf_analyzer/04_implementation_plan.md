@@ -11,56 +11,56 @@
 
 ### 2.1 事前確認
 
-- [ ] `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` の現状値を記録
-- [ ] `go list -deps ./cmd/verify | grep internal/runner/security` の現状値を記録
-- [ ] `internal/runner/security/elfanalyzer/testdata` と
+- [x] `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` の現状値を記録
+- [x] `go list -deps ./cmd/verify | grep internal/runner/security` の現状値を記録
+- [x] `internal/runner/security/elfanalyzer/testdata` と
       `internal/security/elfanalyzer/testdata` の差分を確認（特に `README.md`）
 
 ### 2.2 コア実装の移動
 
-- [ ] `internal/security/elfanalyzer/privileged_opener.go` を新規作成
-- [ ] `internal/runner/security/elfanalyzer/standard_analyzer.go` を
+- [x] `internal/security/elfanalyzer/privileged_opener.go` を新規作成
+- [x] `internal/runner/security/elfanalyzer/standard_analyzer.go` を
       `internal/security/elfanalyzer/standard_analyzer.go` へ移動
-- [ ] `StandardELFAnalyzer` の依存を `PrivilegeManager` から
+- [x] `StandardELFAnalyzer` の依存を `PrivilegeManager` から
       `PrivilegedFileOpener` へ置換
-- [ ] `AnalyzeNetworkSymbols` の権限フォールバックを
+- [x] `AnalyzeNetworkSymbols` の権限フォールバックを
       `opener.OpenWithPrivileges(path)` 呼び出しに置換
-- [ ] `binaryanalyzer.BinaryAnalyzer` のコンパイル時チェックを移動先へ配置
+- [x] `binaryanalyzer.BinaryAnalyzer` のコンパイル時チェックを移動先へ配置
 
 ### 2.3 runner 側アダプタの実装
 
-- [ ] `internal/runner/security/elfanalyzer/privileged_opener_impl.go` を新規作成
-- [ ] `NewPrivilegedFileOpener(fs, privManager)` を実装
-- [ ] `OpenWithPrivileges(path)` が `PrivilegedFileValidator` を正しく委譲することを確認
+- [x] `internal/runner/security/elfanalyzer/privileged_opener_impl.go` を新規作成
+- [x] `NewPrivilegedFileOpener(fs, privManager)` を実装
+- [x] `OpenWithPrivileges(path)` が `PrivilegedFileValidator` を正しく委譲することを確認
 
 ### 2.4 呼び出し側の切り替え
 
-- [ ] `internal/runner/security/binary_analyzer.go` の import を
+- [x] `internal/runner/security/binary_analyzer.go` の import を
       `internal/security/elfanalyzer` に変更
-- [ ] `NewStandardELFAnalyzer(nil, nil)` の呼び出し先を移動先へ切り替え
-- [ ] `internal/runner/security/syscall_store_adapter.go` のコメント参照を更新
+- [x] `NewStandardELFAnalyzer(nil, nil)` の呼び出し先を移動先へ切り替え
+- [x] `internal/runner/security/syscall_store_adapter.go` のコメント参照を更新
 
 ### 2.5 不要ファイルの整理
 
-- [ ] `internal/runner/security/elfanalyzer/analyzer.go` を削除
-- [ ] `internal/runner/security/elfanalyzer/standard_analyzer.go` を削除
-- [ ] `internal/runner/security/elfanalyzer/testdata/` を削除
+- [x] `internal/runner/security/elfanalyzer/analyzer.go` を削除
+- [x] `internal/runner/security/elfanalyzer/standard_analyzer.go` を削除
+- [x] `internal/runner/security/elfanalyzer/testdata/` を削除
 
 ### 2.6 テスト移行
 
-- [ ] `analyzer_test.go` を `internal/security/elfanalyzer/` へ移動
-- [ ] `analyzer_benchmark_test.go` を `internal/security/elfanalyzer/` へ移動
-- [ ] `standard_analyzer_fallback_test.go` を `internal/security/elfanalyzer/` へ移動
-- [ ] `analyzer_test.go` から `secelfanalyzer` import を削除し、
+- [x] `analyzer_test.go` を `internal/security/elfanalyzer/` へ移動
+- [x] `analyzer_benchmark_test.go` を `internal/security/elfanalyzer/` へ移動
+- [x] `standard_analyzer_fallback_test.go` を `internal/security/elfanalyzer/` へ移動
+- [x] `analyzer_test.go` から `secelfanalyzer` import を削除し、
       型参照を自パッケージ参照へ置換
 
 ### 2.7 受け入れ基準の検証
 
-- [ ] AC-1: `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` が 0 件
-- [ ] AC-2: `go list -deps ./cmd/verify | grep internal/runner/security` が 0 件
-- [ ] AC-3: `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功
-- [ ] AC-4: `make test` が成功
-- [ ] AC-5: `cmd/runner` の統合テスト（`integration_cmd_allowed_security_test.go` など）が成功
+- [x] AC-1: `go list -deps ./cmd/record | grep internal/runner/security/elfanalyzer` が 0 件
+- [x] AC-2: `go list -deps ./cmd/verify | grep internal/runner/security` が 0 件
+- [x] AC-3: `go build ./cmd/record ./cmd/verify ./cmd/runner` が成功
+- [x] AC-4: `make test` が成功
+- [x] AC-5: `cmd/runner` の統合テスト（`integration_cmd_allowed_security_test.go` など）が成功
 
 ## 3. 品質レビュー観点（本タスク重点）
 
