@@ -10,7 +10,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
-	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

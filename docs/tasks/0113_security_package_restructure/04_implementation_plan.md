@@ -120,21 +120,21 @@
 ### Phase 4: 旧配置の削除と整理
 
 **対象ファイル/ディレクトリ**:
-- [ ] `internal/runner/security/binaryanalyzer/`（削除）
-- [ ] `internal/runner/security/machoanalyzer/`（削除）
-- [ ] `internal/runner/security/elfanalyzer/`（core 部分削除）
+- [x] `internal/runner/security/binaryanalyzer/`（削除）
+- [x] `internal/runner/security/machoanalyzer/`（削除）
+- [x] `internal/runner/security/elfanalyzer/`（core 部分削除）
 
 **作業内容**:
-- [ ] 移行済みコードを削除
-- [ ] 残留対象（`StandardELFAnalyzer` 系）を明示
-- [ ] dangling import / 参照切れを修正
+- [x] 移行済みコードを削除
+- [x] 残留対象（`StandardELFAnalyzer` 系）を明示
+- [x] dangling import / 参照切れを修正
 
 **成功条件**:
-- [ ] `go test ./internal/runner/security/...` が成功
-- [ ] 削除対象に未参照の残骸がない
+- [x] `go test ./internal/runner/security/...` が成功
+- [x] 削除対象に未参照の残骸がない
 
 **推定工数**: 0.5日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ---
 

@@ -10,9 +10,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
+	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -442,7 +442,7 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 
 	// Hash mismatch means the binary has changed since record time: treat as AnalysisError.
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
-	assert.ErrorIs(t, output.Error, ErrSyscallHashMismatch)
+	assert.ErrorIs(t, output.Error, secelfanalyzer.ErrSyscallHashMismatch)
 }
 
 func TestStandardELFAnalyzer_WithoutSyscallStore(t *testing.T) {
@@ -537,7 +537,7 @@ func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 	output := analyzer.AnalyzeNetworkSymbols(testFile, "sha256:dummy")
 
 	assert.Equal(t, binaryanalyzer.AnalysisError, output.Result)
-	assert.ErrorIs(t, output.Error, ErrSyscallHashMismatch)
+	assert.ErrorIs(t, output.Error, secelfanalyzer.ErrSyscallHashMismatch)
 }
 
 // TestDynamicELF_SyscallFallback_HighRisk verifies that

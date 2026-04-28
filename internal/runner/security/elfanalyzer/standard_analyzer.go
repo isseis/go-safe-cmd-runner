@@ -356,7 +356,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 			// silently assuming no network capability.
 			return binaryanalyzer.AnalysisOutput{
 				Result: binaryanalyzer.AnalysisError,
-				Error:  fmt.Errorf("%w: %s", ErrSyscallHashMismatch, path),
+				Error:  fmt.Errorf("%w: %s", secelfanalyzer.ErrSyscallHashMismatch, path),
 			}
 		default:
 			// Unexpected error, log it before falling back.
@@ -388,10 +388,10 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.Syscal
 	// appears in direct-syscall entries (Source == ""). libc_symbol_import entries
 	// always have Number >= 0 (enforced by validateInfos at cache-build time), so
 	// they are never mistaken for unknown syscalls here.
-	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info SyscallInfo) bool {
+	hasUnknown := slices.ContainsFunc(result.DetectedSyscalls, func(info secelfanalyzer.SyscallInfo) bool {
 		return info.Number == -1
 	})
-	if hasUnknown || EvalMprotectRisk(result.ArgEvalResults) {
+	if hasUnknown || secelfanalyzer.EvalMprotectRisk(result.ArgEvalResults) {
 		return binaryanalyzer.AnalysisOutput{
 			Result: binaryanalyzer.AnalysisError,
 			Error:  fmt.Errorf("%w: %v", ErrSyscallAnalysisHighRisk, result.AnalysisWarnings),
@@ -399,7 +399,7 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.Syscal
 	}
 
 	var symbols []binaryanalyzer.DetectedSymbol
-	table := SyscallTableForArchitecture(result.Architecture)
+	table := secelfanalyzer.SyscallTableForArchitecture(result.Architecture)
 	for _, info := range result.DetectedSyscalls {
 		if table != nil && info.Number >= 0 && table.IsNetworkSyscall(info.Number) {
 			symbols = append(symbols, binaryanalyzer.DetectedSymbol{
@@ -416,22 +416,4 @@ func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.Syscal
 	}
 
 	return binaryanalyzer.AnalysisOutput{Result: binaryanalyzer.NoNetworkSymbols}
-}
-
-var (
-	cachedX86SyscallTable   = NewX86_64SyscallTable()
-	cachedArm64SyscallTable = NewARM64LinuxSyscallTable()
-)
-
-// SyscallTableForArchitecture returns the shared cached SyscallNumberTable for the given Linux architecture.
-// Returns nil for unrecognized architectures.
-func SyscallTableForArchitecture(arch string) SyscallNumberTable {
-	switch arch {
-	case "x86_64":
-		return cachedX86SyscallTable
-	case "arm64":
-		return cachedArm64SyscallTable
-	default:
-		return nil
-	}
 }
