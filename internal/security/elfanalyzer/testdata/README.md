@@ -3,7 +3,21 @@
 ## Overview
 
 This directory contains test binaries for the elfanalyzer package unit tests.
-Binaries are NOT checked into Git (see `.gitignore`). They must be generated locally.
+
+Most binaries are NOT checked into Git and must be generated locally (see
+`.gitignore`). The following fixture is the exception and **is** committed:
+
+| File | Reason committed |
+|------|-----------------|
+| `arm64_network_program/arm64_network_program.elf` | Cross-compiled arm64 Go binary; requires a Go toolchain with `GOARCH=arm64` support to regenerate, so it is kept as a stable fixture. Source: `arm64_network_program/main.go`. |
+
+To regenerate it:
+
+```bash
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+  -o testdata/arm64_network_program/arm64_network_program.elf \
+  ./testdata/arm64_network_program/
+```
 
 ## Prerequisites
 
