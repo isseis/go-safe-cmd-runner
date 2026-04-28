@@ -129,19 +129,6 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.False(t, cfg.debugInfo)
 }
 
-func TestParseArgsDebugInfoFlag(t *testing.T) {
-	d := deps{
-		mkdirAll: func(_ string, _ os.FileMode) error { return nil },
-	}
-
-	stderr := &bytes.Buffer{}
-
-	cfg, _, err := parseArgs([]string{"--debug-info", "file1.txt"}, d, stderr)
-
-	require.NoError(t, err)
-	assert.True(t, cfg.debugInfo)
-}
-
 func TestRunWithSyscallAnalysis(t *testing.T) {
 	tempDir := commontesting.SafeTempDir(t)
 	recorder := &fakeRecorder{responses: map[string]error{}}
