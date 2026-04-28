@@ -50,7 +50,8 @@ type privilegedFileOpenerImpl struct {
 }
 
 // NewPrivilegedFileOpener は secelfanalyzer.PrivilegedFileOpener の runner 実装を生成する。
-// privManager が nil の場合は特権昇格なし（os.ErrPermission をそのまま返す）。
+// privManager は非 nil であること。特権昇格が不要な場合は呼び出し側で
+// NewStandardELFAnalyzer* に nil を直接渡すこと。
 func NewPrivilegedFileOpener(
 	fs safefileio.FileSystem,
 	privManager runnertypes.PrivilegeManager,

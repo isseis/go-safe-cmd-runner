@@ -199,6 +199,13 @@ sequenceDiagram
 `filevalidator.PrivilegedFileValidator` と `runnertypes.PrivilegeManager` をラップし、
 `PrivilegedFileOpener` インターフェースを実装する。runner 固有の依存をここに閉じ込める。
 
+`NewPrivilegedFileOpener` には非 nil の `privManager` を渡すこと。
+特権昇格が不要な場合（`cmd/record` など）は `NewPrivilegedFileOpener` を呼ばず、
+`NewStandardELFAnalyzer*` に `opener = nil` を直接渡す。
+（`PrivilegedFileValidator.OpenFileWithPrivileges` は `privManager == nil` のとき
+`os.ErrPermission` ではなく `ErrPrivilegedExecutionNotAvailable` を返すため、
+nil privManager を opener impl に持たせてはならない。）
+
 ### 3.4 `internal/runner/security/elfanalyzer` パッケージの残存ファイル
 
 移動完了後、このパッケージには以下のファイルのみが残る：
