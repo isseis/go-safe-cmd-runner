@@ -439,6 +439,71 @@ func main() {
 	})
 }
 
+// TestAC1_X86CgoBinaryLowLevelImplExcluded verifies that x86_64 CGO binaries
+// do not report unknown:control_flow_boundary from low-level syscall
+// implementation bodies where syscall numbers are caller-supplied.
+func TestAC1_X86CgoBinaryLowLevelImplExcluded(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("this test targets Linux ELF binaries")
+	}
+	if runtime.GOARCH != "amd64" {
+		t.Skip("this test targets x86_64 CGO binary detection")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go compiler not available")
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("C compiler (cc) not available; required for CGO_ENABLED=1")
+	}
+
+	src := `package main
+import "C"
+import "syscall"
+
+func main() {
+	fd, _, errno := syscall.RawSyscall(
+		syscall.SYS_SOCKET,
+		uintptr(syscall.AF_INET),
+		uintptr(syscall.SOCK_STREAM),
+		0,
+	)
+	if errno == 0 {
+		_ = syscall.Close(int(fd))
+	}
+}`
+	tmpDir := commontesting.SafeTempDir(t)
+	srcFile := filepath.Join(tmpDir, "main.go")
+	binaryPath := filepath.Join(tmpDir, "cgo_x86_test")
+
+	require.NoError(t, os.WriteFile(srcFile, []byte(src), 0o644))
+
+	cmd := exec.Command("go", "build", "-o", binaryPath, srcFile)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "go build failed: %s", string(output))
+
+	elfFile, err := elf.Open(binaryPath)
+	require.NoError(t, err)
+	defer elfFile.Close()
+
+	analyzer := NewSyscallAnalyzer()
+	result, err := analyzer.AnalyzeSyscallsFromELF(elfFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, "x86_64", result.Architecture)
+	assert.True(t, hasNetworkSyscall(result.Architecture, result.DetectedSyscalls),
+		"x86_64 CGO binary calling syscall.RawSyscall(SYS_SOCKET) should detect network syscall")
+
+	// Regression check: low-level implementation bodies should be excluded from
+	// direct-syscall pass, so control-flow-boundary unknowns are not reported.
+	for _, sc := range result.DetectedSyscalls {
+		for _, occ := range sc.Occurrences {
+			assert.NotEqual(t, DeterminationMethodUnknownControlFlowBoundary, occ.DeterminationMethod,
+				"unexpected unknown:control_flow_boundary for syscall %q (#%d) at 0x%x", sc.Name, sc.Number, occ.Location)
+		}
+	}
+}
+
 // TestSyscallAnalyzer_IntegrationARM64_Architecture verifies that the
 // Architecture field in the analysis result is set to "arm64".
 func TestSyscallAnalyzer_IntegrationARM64_Architecture(t *testing.T) {
