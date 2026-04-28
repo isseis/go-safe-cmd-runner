@@ -246,7 +246,7 @@ func (a *NetworkAnalyzer) isNetworkViaBinaryAnalysis(cmdPath string, contentHash
 		// non-network symbols don't trigger NetworkDetected.
 		hasNetworkSymbol := false
 		for _, sym := range data.DetectedSymbols {
-			if binaryanalyzer.IsNetworkSymbolName(sym.Name) {
+			if binaryanalyzer.IsNetworkSymbolName(sym) {
 				hasNetworkSymbol = true
 				break
 			}
@@ -371,26 +371,27 @@ func handleAnalysisOutput(output binaryanalyzer.AnalysisOutput, cmdPath string) 
 	}
 }
 
-// convertNetworkSymbolEntries converts fileanalysis.DetectedSymbolEntry slice to binaryanalyzer.DetectedSymbol slice.
+// convertNetworkSymbolEntries converts []string to binaryanalyzer.DetectedSymbol slice.
 //
 // NOTE: This is the inverse of convertDetectedSymbols in
-// internal/filevalidator/validator.go. fileanalysis stores Name only, and this
+// internal/filevalidator/validator.go. fileanalysis stores symbol names as
+// plain strings, and this
 // function derives Category for runner-internal logging and filtering.
-func convertNetworkSymbolEntries(entries []fileanalysis.DetectedSymbolEntry) []binaryanalyzer.DetectedSymbol {
+func convertNetworkSymbolEntries(entries []string) []binaryanalyzer.DetectedSymbol {
 	if len(entries) == 0 {
 		return nil
 	}
 	syms := make([]binaryanalyzer.DetectedSymbol, len(entries))
 	for i, e := range entries {
-		cat, found := binaryanalyzer.IsNetworkSymbol(e.Name)
+		cat, found := binaryanalyzer.IsNetworkSymbol(e)
 		if !found {
-			if binaryanalyzer.IsDynamicLoadSymbol(e.Name) {
+			if binaryanalyzer.IsDynamicLoadSymbol(e) {
 				cat = binaryanalyzer.CategoryDynamicLoad
 			} else {
 				cat = binaryanalyzer.CategorySyscallWrapper
 			}
 		}
-		syms[i] = binaryanalyzer.DetectedSymbol{Name: e.Name, Category: string(cat)}
+		syms[i] = binaryanalyzer.DetectedSymbol{Name: e, Category: string(cat)}
 	}
 	return syms
 }

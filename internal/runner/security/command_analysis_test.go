@@ -2514,9 +2514,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	t.Run("cache hit DetectedSymbols=[socket] → NetworkDetected", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
-				DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-					{Name: "socket"},
-				},
+				DetectedSymbols: []string{"socket"},
 			},
 		}
 		analyzer := newNetworkAnalyzer(store)
@@ -2541,9 +2539,7 @@ func TestIsNetworkViaBinaryAnalysis_Cache(t *testing.T) {
 	t.Run("cache hit DynamicLoadSymbols=[dlopen] → isHighRisk=true", func(t *testing.T) {
 		store := &stubNetworkSymbolStore{
 			data: &fileanalysis.SymbolAnalysisData{
-				DynamicLoadSymbols: []fileanalysis.DetectedSymbolEntry{
-					{Name: "dlopen"},
-				},
+				DynamicLoadSymbols: []string{"dlopen"},
 			},
 		}
 		analyzer := newNetworkAnalyzer(store)
@@ -2639,9 +2635,7 @@ func TestNetworkSymbolCache_RecordToRunner(t *testing.T) {
 	record := &fileanalysis.Record{
 		ContentHash: fakeHash,
 		SymbolAnalysis: &fileanalysis.SymbolAnalysisData{
-			DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-				{Name: "socket"},
-			},
+			DetectedSymbols: []string{"socket"},
 		},
 	}
 	require.NoError(t, store.Save(resolvedPath, record))

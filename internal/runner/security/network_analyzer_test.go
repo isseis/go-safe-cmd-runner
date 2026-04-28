@@ -184,9 +184,7 @@ func noNetworkSymbolData() *fileanalysis.SymbolAnalysisData {
 // networkDetectedData builds a SymbolAnalysisData with network symbols detected.
 func networkDetectedData() *fileanalysis.SymbolAnalysisData {
 	return &fileanalysis.SymbolAnalysisData{
-		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-			{Name: "socket"},
-		},
+		DetectedSymbols: []string{"socket"},
 	}
 }
 
@@ -194,10 +192,7 @@ func networkDetectedData() *fileanalysis.SymbolAnalysisData {
 // non-network libc/libSystem symbols.
 func syscallWrapperOnlyData() *fileanalysis.SymbolAnalysisData {
 	return &fileanalysis.SymbolAnalysisData{
-		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-			{Name: "read"},
-			{Name: "close"},
-		},
+		DetectedSymbols: []string{"read", "close"},
 	}
 }
 
@@ -397,10 +392,7 @@ func TestIsNetworkViaBinaryAnalysis_NetworkDetected_NoSVC(t *testing.T) {
 // at least one network category in DetectedSymbols causes NetworkDetected.
 func TestIsNetworkViaBinaryAnalysis_NetworkCategorySymbol(t *testing.T) {
 	symStore := &stubNetworkSymbolStore{data: &fileanalysis.SymbolAnalysisData{
-		DetectedSymbols: []fileanalysis.DetectedSymbolEntry{
-			{Name: "read"},
-			{Name: "socket"},
-		},
+		DetectedSymbols: []string{"read", "socket"},
 	}}
 	svcStore := &mockFileanalysisSyscallStore{result: nil}
 	analyzer := newNetworkAnalyzerWithStores(symStore, svcStore)

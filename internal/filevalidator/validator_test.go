@@ -1107,7 +1107,7 @@ func TestRecord_NetworkDetected_SetsSymbolAnalysis(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record.SymbolAnalysis, "SymbolAnalysis should be set")
 	require.Len(t, record.SymbolAnalysis.DetectedSymbols, 1)
-	assert.Equal(t, "socket", record.SymbolAnalysis.DetectedSymbols[0].Name)
+	assert.Equal(t, "socket", record.SymbolAnalysis.DetectedSymbols[0])
 	assert.Empty(t, record.SymbolAnalysis.DynamicLoadSymbols)
 }
 
@@ -1132,7 +1132,7 @@ func TestRecord_DynamicLoadSymbols_Stored(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record.SymbolAnalysis)
 	require.Len(t, record.SymbolAnalysis.DynamicLoadSymbols, 1)
-	assert.Equal(t, "dlopen", record.SymbolAnalysis.DynamicLoadSymbols[0].Name)
+	assert.Equal(t, "dlopen", record.SymbolAnalysis.DynamicLoadSymbols[0])
 }
 
 func TestRecord_NotSupportedBinary_SymbolAnalysisNil(t *testing.T) {
