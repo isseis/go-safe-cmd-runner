@@ -20,21 +20,21 @@
 ### Phase 0: 事前準備とベースライン取得
 
 **対象ファイル**:
-- [ ] `docs/tasks/0113_security_package_restructure/01_requirements.md`
-- [ ] `docs/tasks/0113_security_package_restructure/02_architecture.md`
-- [ ] `docs/tasks/0113_security_package_restructure/03_detailed_specification.md`
+- [x] `docs/tasks/0113_security_package_restructure/01_requirements.md`
+- [x] `docs/tasks/0113_security_package_restructure/02_architecture.md`
+- [x] `docs/tasks/0113_security_package_restructure/03_detailed_specification.md`
 
 **作業内容**:
-- [ ] 現行の依存グラフを採取 (`go list -deps`)
-- [ ] ベースラインとして `make test` / `make lint` を実行
-- [ ] 変更対象パッケージの既存テスト一覧を整理
+- [x] 現行の依存グラフを採取 (`go list -deps`)
+- [x] ベースラインとして `make test` / `make lint` を実行
+- [x] 変更対象パッケージの既存テスト一覧を整理
 
 **成功条件**:
-- [ ] 依存グラフの差分比較用データが取得できている
-- [ ] ベースラインのテスト・lint結果が記録されている
+- [x] 依存グラフの差分比較用データが取得できている
+- [x] ベースラインのテスト・lint結果が記録されている
 
 **推定工数**: 0.5日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ---
 
