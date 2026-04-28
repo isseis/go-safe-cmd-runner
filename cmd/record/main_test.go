@@ -126,6 +126,7 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	assert.Equal(t, cmdcommon.DefaultHashDirectory, cfg.hashDir)
 	assert.Equal(t, []string{"file1.txt"}, cfg.files)
 	assert.False(t, cfg.force)
+	assert.False(t, cfg.debugInfo)
 }
 
 func TestRunWithSyscallAnalysis(t *testing.T) {

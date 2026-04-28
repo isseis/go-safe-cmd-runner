@@ -67,6 +67,8 @@ func newTestValidator(t *testing.T, hashDir string) *filevalidator.Validator {
 	require.NoError(t, err)
 
 	v.SetLibcCache(libccache.NewCacheAdapter(cacheMgr, syscallAn))
+	// Keep syscall occurrences in the saved record for integration assertions.
+	v.SetIncludeDebugInfo(true)
 
 	return v
 }

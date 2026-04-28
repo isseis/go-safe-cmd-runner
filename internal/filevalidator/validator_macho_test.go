@@ -253,6 +253,7 @@ func recordMachO(t *testing.T, binData []byte, stub *stubBinaryAnalyzer) *filean
 	v, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
 	v.SetBinaryAnalyzer(stub)
+	v.SetIncludeDebugInfo(true)
 
 	_, _, recErr := v.SaveRecord(binPath, false)
 	require.NoError(t, recErr)
@@ -331,7 +332,7 @@ func TestNativeOrArm64Slice(t *testing.T) {
 func TestBuildMachoSyscallAnalysisData_SVCOnly(t *testing.T) {
 	addrs := []uint64{0x100000004, 0x10000000C}
 	svcEntries := buildSVCInfos(addrs)
-	result := buildMachoSyscallData(svcEntries, nil, "arm64")
+	result := buildMachoSyscallData(svcEntries, nil, "arm64", true)
 
 	require.NotNil(t, result)
 	assert.Equal(t, "arm64", result.Architecture)
@@ -392,6 +393,7 @@ func TestUpdateAnalysisRecord_MachoSVCDetected_BinaryAnalyzerNil(t *testing.T) {
 
 	v, err := New(&SHA256{}, hashDir)
 	require.NoError(t, err)
+	v.SetIncludeDebugInfo(true)
 
 	_, _, recErr := v.SaveRecord(binPath, false)
 	require.NoError(t, recErr)
@@ -525,6 +527,7 @@ func recordMachOWithLibSystem(
 	if stub != nil {
 		v.SetBinaryAnalyzer(stub)
 	}
+	v.SetIncludeDebugInfo(true)
 	if libsys != nil {
 		v.SetLibSystemCache(libsys)
 	}
@@ -598,7 +601,7 @@ func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
 		},
 	}
 
-	result := buildMachoSyscallData(svcEntries, libsysEntries, "arm64")
+	result := buildMachoSyscallData(svcEntries, libsysEntries, "arm64", true)
 	require.NotNil(t, result)
 
 	// svc entry (Number=-1) + libSystem entry (Number=98) = 2 entries.
@@ -616,6 +619,32 @@ func TestUpdateAnalysisRecord_SVCAndLibSystemMerged(t *testing.T) {
 	// Warning must be set because svc was found.
 	require.Len(t, result.AnalysisWarnings, 1)
 	assert.Contains(t, result.AnalysisWarnings[0], "svc #0x80")
+}
+
+func TestBuildMachoSyscallData_DebugInfo(t *testing.T) {
+	svcEntries := []common.SyscallInfo{
+		{
+			Number: -1,
+			Occurrences: []common.SyscallOccurrence{{
+				Location:            0x100000000,
+				DeterminationMethod: common.DeterminationMethodDirectSVC0x80,
+				Source:              common.DeterminationMethodDirectSVC0x80,
+			}},
+		},
+	}
+
+	withoutDebug := buildMachoSyscallData(svcEntries, nil, "arm64", false)
+	require.NotNil(t, withoutDebug)
+	require.Len(t, withoutDebug.DetectedSyscalls, 1)
+	assert.Nil(t, withoutDebug.DetectedSyscalls[0].Occurrences)
+	require.Len(t, withoutDebug.AnalysisWarnings, 1)
+	assert.Contains(t, withoutDebug.AnalysisWarnings[0], "svc #0x80")
+
+	withDebug := buildMachoSyscallData(svcEntries, nil, "arm64", true)
+	require.NotNil(t, withDebug)
+	require.Len(t, withDebug.DetectedSyscalls, 1)
+	require.Len(t, withDebug.DetectedSyscalls[0].Occurrences, 1)
+	assert.Equal(t, uint64(0x100000000), withDebug.DetectedSyscalls[0].Occurrences[0].Location)
 }
 
 // TestUpdateAnalysisRecord_LibSystemError verifies that when the libSystem cache
@@ -737,7 +766,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 	}
 
 	// No svc entries: no warning, libsys entry is retained.
-	result := buildMachoSyscallData(nil, libsysEntries, "arm64")
+	result := buildMachoSyscallData(nil, libsysEntries, "arm64", true)
 	assert.Empty(t, result.AnalysisWarnings, "no warning when no svc entries")
 	require.Len(t, result.DetectedSyscalls, 1, "non-network libsys entry must be retained (no filtering)")
 	assert.Equal(t, 97, result.DetectedSyscalls[0].Number)
@@ -752,7 +781,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 			}},
 		},
 	}
-	result = buildMachoSyscallData(unresolvedSVCEntries, libsysEntries, "arm64")
+	result = buildMachoSyscallData(unresolvedSVCEntries, libsysEntries, "arm64", true)
 	assert.Len(t, result.AnalysisWarnings, 1, "warning expected for unresolved svc entry")
 	require.Len(t, result.DetectedSyscalls, 2, "both svc and libsys entries must be retained")
 
@@ -766,7 +795,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 			}},
 		},
 	}
-	result = buildMachoSyscallData(resolvedNonNetworkSVCEntries, libsysEntries, "arm64")
+	result = buildMachoSyscallData(resolvedNonNetworkSVCEntries, libsysEntries, "arm64", true)
 	assert.Empty(t, result.AnalysisWarnings, "no warning when all svc entries resolved (Number != -1)")
 	require.Len(t, result.DetectedSyscalls, 2, "resolved non-network svc entries must be retained")
 	numbers := []int{result.DetectedSyscalls[0].Number, result.DetectedSyscalls[1].Number}
@@ -784,7 +813,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 			}},
 		},
 	}
-	result = buildMachoSyscallData(resolvedNetworkSVCEntries, nil, "arm64")
+	result = buildMachoSyscallData(resolvedNetworkSVCEntries, nil, "arm64", true)
 	assert.Empty(t, result.AnalysisWarnings, "no warning for resolved network svc entry")
 	require.Len(t, result.DetectedSyscalls, 1, "resolved network svc entry must be retained")
 	assert.Equal(t, 97, result.DetectedSyscalls[0].Number)
@@ -794,7 +823,7 @@ func TestBuildMachoSyscallAnalysisData_WarningOnlyWhenSVC(t *testing.T) {
 		{Number: 97, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80}}},
 		{Number: -1, Occurrences: []common.SyscallOccurrence{{DeterminationMethod: common.DeterminationMethodDirectSVC0x80, Source: common.DeterminationMethodDirectSVC0x80}}},
 	}
-	result = buildMachoSyscallData(mixedEntries, nil, "arm64")
+	result = buildMachoSyscallData(mixedEntries, nil, "arm64", true)
 	assert.Len(t, result.AnalysisWarnings, 1, "warning expected when any unresolved svc entry exists")
 	assert.Len(t, result.DetectedSyscalls, 2, "all entries must be retained")
 }
