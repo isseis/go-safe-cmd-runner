@@ -142,6 +142,10 @@ sequenceDiagram
 
 ### 2.5 データフロー: `cmd/runner` の execute-only バイナリ解析パス
 
+> 注記: 現行コードの `cmd/runner` の主経路は `internal/runner/security/network_analyzer.go`
+> によるキャッシュ参照であり、本シーケンスは本タスクで変更対象となる
+> `StandardELFAnalyzer` の execute-only 互換経路を示す。
+
 ```mermaid
 sequenceDiagram
     participant RUN as "cmd/runner"
@@ -235,7 +239,8 @@ sequenceDiagram
 ### 4.2 テストデータの統合
 
 `internal/runner/security/elfanalyzer/testdata/` は
-`internal/security/elfanalyzer/testdata/` と同一内容のため、移動後に削除して重複を解消する。
+バイナリフィクスチャ本体が `internal/security/elfanalyzer/testdata/` と重複しているため、
+`README.md` 差分を確認したうえで移動後に削除して重複を解消する。
 
 ## 5. 受け入れ基準との対応
 
@@ -254,7 +259,7 @@ sequenceDiagram
 | リスク | 影響度 | 対策 |
 |-------|--------|------|
 | テスト移動時のプライベート関数アクセス | 中 | `package elfanalyzer` の内部テストとして移動 |
-| `SyscallAnalysisStore` 型エイリアスの扱い | 低 | 移動先パッケージで直接 `secelfanalyzer.SyscallAnalysisStore` を参照 |
+| `SyscallAnalysisStore` 型エイリアスの扱い | 低 | 型エイリアスを削除し、移動先パッケージの `SyscallAnalysisStore` を直接参照 |
 | `runner/security/elfanalyzer` の空パッケージ化 | 低 | `doc.go` + `privileged_opener_impl.go` が残るため問題なし |
 
 ### 6.2 スコープ境界

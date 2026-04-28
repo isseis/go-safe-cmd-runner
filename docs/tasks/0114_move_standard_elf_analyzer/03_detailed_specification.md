@@ -14,7 +14,7 @@
 | 移動 | `internal/runner/security/elfanalyzer/analyzer_test.go` → `internal/security/elfanalyzer/` |
 | 移動 | `internal/runner/security/elfanalyzer/analyzer_benchmark_test.go` → `internal/security/elfanalyzer/` |
 | 移動 | `internal/runner/security/elfanalyzer/standard_analyzer_fallback_test.go` → `internal/security/elfanalyzer/` |
-| 削除 | `internal/runner/security/elfanalyzer/testdata/`（`internal/security/elfanalyzer/testdata/` と重複） |
+| 削除 | `internal/runner/security/elfanalyzer/testdata/`（フィクスチャ重複を解消） |
 
 ## 2. 新規ファイル
 
@@ -218,8 +218,11 @@ return secelfanalyzer.NewStandardELFAnalyzer(nil, nil)
 
 ### 4.3 `internal/runner/security/elfanalyzer/testdata/`
 
-`internal/security/elfanalyzer/testdata/` と同一内容のため削除する。
-削除前に両ディレクトリのファイルが一致することを確認する。
+バイナリフィクスチャ本体（`.elf`、`.sh`、`.gitignore`、サブディレクトリ）は
+`internal/security/elfanalyzer/testdata/` と重複しているため削除する。
+
+`README.md` は内容差分があるため、削除前に差分を確認し、
+`internal/security/elfanalyzer/testdata/README.md` 側の内容を正として残す。
 
 ## 5. テストファイルの移動と変更
 
