@@ -46,7 +46,7 @@ func (d *dirPermChecker) ValidateDirectoryPermissions(dirPath string) error {
 	}
 
 	realUID := os.Getuid()
-	return d.validateCompletePath(cleanDir, dirPath, realUID)
+	return d.validateCompletePath(cleanDir, dirPath, dirInfo, realUID)
 }
 
 func (d *dirPermChecker) validatePathAndGetInfo(path string) (string, os.FileInfo, error) {
@@ -76,16 +76,12 @@ func (d *dirPermChecker) validatePathAndGetInfo(path string) (string, os.FileInf
 	return cleanPath, fileInfo, nil
 }
 
-func (d *dirPermChecker) validateCompletePath(cleanPath string, originalPath string, realUID int) error {
+func (d *dirPermChecker) validateCompletePath(cleanPath string, originalPath string, firstInfo os.FileInfo, realUID int) error {
 	slog.Debug("Validating complete path security with UID context", slog.String("target_path", originalPath), slog.Int("realUID", realUID))
 
-	for currentPath := cleanPath; ; {
-		info, err := os.Lstat(currentPath)
-		if err != nil {
-			slog.Error("Failed to stat path component", slog.String("path", currentPath), slog.Any("error", err))
-			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
-		}
-
+	info := firstInfo
+	currentPath := cleanPath
+	for {
 		if err := validateDirectoryComponentMode(currentPath, info); err != nil {
 			return err
 		}
@@ -98,6 +94,13 @@ func (d *dirPermChecker) validateCompletePath(cleanPath string, originalPath str
 			break
 		}
 		currentPath = parentPath
+
+		var err error
+		info, err = os.Lstat(currentPath)
+		if err != nil {
+			slog.Error("Failed to stat path component", slog.String("path", currentPath), slog.Any("error", err))
+			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
+		}
 	}
 
 	return nil
