@@ -10,8 +10,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	elfanalyzertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -245,14 +246,14 @@ func TestStandardELFAnalyzer_WithCustomSymbols(t *testing.T) {
 
 // mockSyscallAnalysisStore is a mock implementation of SyscallAnalysisStore for testing.
 type mockSyscallAnalysisStore struct {
-	result *SyscallAnalysisResult
+	result *secelfanalyzer.SyscallAnalysisResult
 	err    error
 	// expectedHash is used to verify hash matching behavior.
 	// When set, returns ErrHashMismatch if the provided hash does not match.
 	expectedHash string
 }
 
-func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash string) (*SyscallAnalysisResult, error) {
+func (m *mockSyscallAnalysisStore) LoadSyscallAnalysis(_ string, expectedHash string) (*secelfanalyzer.SyscallAnalysisResult, error) {
 	// If expectedHash is set, only return result when hash matches
 	if m.expectedHash != "" && m.expectedHash != expectedHash {
 		return nil, fileanalysis.ErrHashMismatch
@@ -267,10 +268,10 @@ func TestStandardELFAnalyzer_SyscallLookup_NetworkDetected(t *testing.T) {
 
 	// Create mock store that returns network syscall result
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				Architecture: "x86_64",
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{
 						Number: 41, // socket
 						Name:   "socket",
@@ -306,9 +307,9 @@ func TestStandardELFAnalyzer_SyscallLookup_NoNetwork(t *testing.T) {
 
 	// Create mock store that returns non-network syscall result
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{
 						Number: 1, // write
 						Name:   "write",
@@ -335,9 +336,9 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRisk(t *testing.T) {
 
 	// Create mock store that returns high-risk result (unknown syscalls)
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{
 						Number: -1,
 						Occurrences: []common.SyscallOccurrence{
@@ -369,9 +370,9 @@ func TestStandardELFAnalyzer_SyscallLookup_HighRiskTakesPrecedenceOverNetwork(t 
 	// Risk must win: incomplete analysis makes the result unreliable regardless of
 	// what network activity was detected.
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{
 						Number: 41, // socket
 						Name:   "socket",
@@ -426,9 +427,9 @@ func TestStandardELFAnalyzer_SyscallLookup_HashMismatch(t *testing.T) {
 
 	// Create mock store that expects a specific hash
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{Number: 41, Name: "socket"},
 				},
 			},
@@ -471,10 +472,10 @@ func TestDynamicELF_SyscallFallback_NetworkDetected(t *testing.T) {
 
 	// Store returns HasNetworkSyscalls=true (simulates CGO binary with socket syscall)
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
 				Architecture: "x86_64",
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{Number: 41, Name: "socket", Occurrences: []common.SyscallOccurrence{{Location: 0x401000}}},
 				},
 			},
@@ -500,7 +501,7 @@ func TestDynamicELF_SyscallFallback_NotRecorded(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		result *SyscallAnalysisResult
+		result *secelfanalyzer.SyscallAnalysisResult
 		err    error
 	}{
 		{"ErrRecordNotFound", nil, fileanalysis.ErrRecordNotFound},
@@ -528,7 +529,7 @@ func TestDynamicELF_SyscallFallback_HashMismatch(t *testing.T) {
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
 	mockStore := &mockSyscallAnalysisStore{
-		result:       &SyscallAnalysisResult{},
+		result:       &secelfanalyzer.SyscallAnalysisResult{},
 		expectedHash: "sha256:differenthash", // won't match "sha256:dummy"
 	}
 
@@ -548,9 +549,9 @@ func TestDynamicELF_SyscallFallback_HighRisk(t *testing.T) {
 	elfanalyzertesting.CreateDynamicELFFile(t, testFile)
 
 	mockStore := &mockSyscallAnalysisStore{
-		result: &SyscallAnalysisResult{
+		result: &secelfanalyzer.SyscallAnalysisResult{
 			SyscallAnalysisResultCore: common.SyscallAnalysisResultCore{
-				DetectedSyscalls: []SyscallInfo{
+				DetectedSyscalls: []secelfanalyzer.SyscallInfo{
 					{Number: -1, Occurrences: []common.SyscallOccurrence{{Location: 0x401000, DeterminationMethod: "unknown:indirect_setting"}}},
 				},
 				AnalysisWarnings: []string{"syscall at 0x401000: number could not be determined (unknown:indirect_setting)"},

@@ -15,23 +15,13 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	secelfanalyzer "github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
-// SyscallAnalysisStore defines the interface for syscall analysis result storage.
-type SyscallAnalysisStore interface {
-	// LoadSyscallAnalysis loads syscall analysis from storage.
-	// `expectedHash` contains both the hash algorithm and the expected hash value.
-	// Format: "sha256:<hex>" (e.g., "sha256:abc123...def789")
-	// Returns (result, nil) if found and hash matches.
-	// Returns (nil, fileanalysis.ErrRecordNotFound) if not found.
-	// Returns (nil, fileanalysis.ErrHashMismatch) if hash mismatch.
-	// Returns (nil, nil) if no syscall analysis result exists in storage
-	// (e.g., analysis was not applicable, skipped, or completed without stored results).
-	// Returns (nil, error) on other errors.
-	LoadSyscallAnalysis(filePath string, expectedHash string) (*SyscallAnalysisResult, error)
-}
+// SyscallAnalysisStore aliases the shared syscall analysis store interface.
+type SyscallAnalysisStore = secelfanalyzer.SyscallAnalysisStore
 
 // elfMagicStr is the ELF magic number string literal.
 const elfMagicStr = "\x7fELF"
@@ -389,7 +379,7 @@ func (a *StandardELFAnalyzer) lookupSyscallAnalysis(path string, _ safefileio.Fi
 // convertSyscallResult converts SyscallAnalysisResult to AnalysisOutput.
 // Risk is derived by scanning DetectedSyscalls for unknown syscall numbers and
 // checking ArgEvalResults for mprotect PROT_EXEC risk.
-func (a *StandardELFAnalyzer) convertSyscallResult(result *SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
+func (a *StandardELFAnalyzer) convertSyscallResult(result *secelfanalyzer.SyscallAnalysisResult) binaryanalyzer.AnalysisOutput {
 	// Risk takes precedence over NetworkDetected: when unknown syscalls are present
 	// or mprotect PROT_EXEC risk is detected, the analysis is incomplete and unreliable,
 	// so we must treat the result as an error even if network syscalls were also detected.

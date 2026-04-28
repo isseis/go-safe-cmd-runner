@@ -66,26 +66,26 @@
 ### Phase 2: 解析サブパッケージ移行（binary + mach-o + elf core）
 
 **対象ファイル（新規ディレクトリ）**:
-- [ ] `internal/security/binaryanalyzer/*`
-- [ ] `internal/security/machoanalyzer/*`
-- [ ] `internal/security/elfanalyzer/*`（core のみ）
+- [x] `internal/security/binaryanalyzer/*`
+- [x] `internal/security/machoanalyzer/*`
+- [x] `internal/security/elfanalyzer/*`（core のみ）
 
 **対象ファイル（更新）**:
-- [ ] `internal/runner/security/elfanalyzer/standard_analyzer.go`
-- [ ] `internal/runner/security/syscall_store_adapter.go`
+- [x] `internal/runner/security/elfanalyzer/standard_analyzer.go`
+- [x] `internal/runner/security/syscall_store_adapter.go`
 
 **作業内容**:
-- [ ] `binaryanalyzer` を移植（内部コード変更は最小）
-- [ ] `machoanalyzer` を移植し、`binaryanalyzer` 参照先を更新
-- [ ] `elfanalyzer` は core のみ移植し、`StandardELFAnalyzer` は runner 側に残留
-- [ ] `syscall_store_adapter` の参照先を `internal/security/elfanalyzer` へ更新
+- [x] `binaryanalyzer` を移植（内部コード変更は最小）
+- [x] `machoanalyzer` を移植し、`binaryanalyzer` 参照先を更新
+- [x] `elfanalyzer` は core のみ移植し、`StandardELFAnalyzer` は runner 側に残留
+- [x] `syscall_store_adapter` の参照先を `internal/security/elfanalyzer` へ更新
 
 **成功条件**:
-- [ ] `internal/security/...` が `internal/runner/...` を import しない
-- [ ] `go test ./internal/security/elfanalyzer/...` が成功
+- [x] `internal/security/...` が `internal/runner/...` を import しない
+- [x] `go test ./internal/security/elfanalyzer/...` が成功
 
 **推定工数**: 1.5日
-**実績**: [ ] 未着手
+**実績**: [x] 完了
 
 ---
 

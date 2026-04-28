@@ -2,7 +2,7 @@ package security
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/elfanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/elfanalyzer"
 )
 
 // fileanalysisSyscallStoreAdapter wraps fileanalysis.SyscallAnalysisStore and implements

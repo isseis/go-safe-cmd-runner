@@ -20,9 +20,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/binaryanalyzer"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security/machoanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
+	"github.com/isseis/go-safe-cmd-runner/internal/security/machoanalyzer"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
