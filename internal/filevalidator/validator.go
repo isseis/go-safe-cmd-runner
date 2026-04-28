@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -347,6 +348,7 @@ func (v *Validator) updateAnalysisRecord(filePath common.ResolvedPath, hash stri
 					matched = append(matched, lib.SOName)
 				}
 			}
+			slices.Sort(matched)
 			record.SymbolAnalysis.KnownNetworkLibDeps = matched
 		}
 
@@ -753,6 +755,7 @@ func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []string {
 	for i, s := range syms {
 		entries[i] = s.Name
 	}
+	slices.Sort(entries)
 	return entries
 }
 
