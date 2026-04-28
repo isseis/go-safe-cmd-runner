@@ -739,20 +739,19 @@ func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager run
 	})
 }
 
-// convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to fileanalysis.DetectedSymbolEntry slice.
+// convertDetectedSymbols converts binaryanalyzer.DetectedSymbol slice to []string.
 // Returns nil for empty input to keep JSON output clean with omitempty.
 //
 // NOTE: This is the inverse of convertNetworkSymbolEntries in
-// internal/runner/security/network_analyzer.go. Both functions map the same
-// Name field between binaryanalyzer and fileanalysis types.
-// If either type gains or loses fields, update both functions together.
-func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []fileanalysis.DetectedSymbolEntry {
+// internal/runner/security/network_analyzer.go. fileanalysis stores symbol
+// names as plain strings.
+func convertDetectedSymbols(syms []binaryanalyzer.DetectedSymbol) []string {
 	if len(syms) == 0 {
 		return nil
 	}
-	entries := make([]fileanalysis.DetectedSymbolEntry, len(syms))
+	entries := make([]string, len(syms))
 	for i, s := range syms {
-		entries[i] = fileanalysis.DetectedSymbolEntry{Name: s.Name}
+		entries[i] = s.Name
 	}
 	return entries
 }

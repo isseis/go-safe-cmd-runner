@@ -37,8 +37,10 @@ const (
 	// Version 18 removes is_network from SyscallInfo and category from
 	// DetectedSymbolEntry. Risk classification is now derived by the runner
 	// at runtime from syscall numbers and symbol names.
-	// Load returns SchemaVersionMismatchError for records with schema_version != 18.
-	CurrentSchemaVersion = 18
+	// Version 19 flattens detected_symbols and dynamic_load_symbols from
+	// [{"name":"..."}] to ["..."] directly.
+	// Load returns SchemaVersionMismatchError for records with schema_version != 19.
+	CurrentSchemaVersion = 19
 )
 
 // Record represents a unified file analysis record containing both
@@ -145,20 +147,15 @@ type SyscallAnalysisData struct {
 type SymbolAnalysisData struct {
 	// DetectedSymbols contains all network-related symbols found (excluding dynamic_load category).
 	// Non-empty when network symbols were detected.
-	DetectedSymbols []DetectedSymbolEntry `json:"detected_symbols,omitempty"`
+	DetectedSymbols []string `json:"detected_symbols,omitempty"`
 
 	// DynamicLoadSymbols contains the dynamic library loading symbols found (dlopen, dlsym, dlvsym).
 	// Empty when none were detected.
 	// HasDynamicLoad is derived as len(DynamicLoadSymbols) > 0; no separate field.
-	DynamicLoadSymbols []DetectedSymbolEntry `json:"dynamic_load_symbols,omitempty"`
+	DynamicLoadSymbols []string `json:"dynamic_load_symbols,omitempty"`
 
 	// KnownNetworkLibDeps lists SOName values of known network libraries
 	// detected from DynLibDeps during record.
 	// If non-empty, this binary is treated as network-capable.
 	KnownNetworkLibDeps []string `json:"known_network_lib_deps,omitempty"`
-}
-
-// DetectedSymbolEntry represents a single detected symbol in the analysis record.
-type DetectedSymbolEntry struct {
-	Name string `json:"name"`
 }
