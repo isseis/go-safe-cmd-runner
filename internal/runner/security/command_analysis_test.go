@@ -13,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/security/binaryanalyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -276,7 +277,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		// Test with relative path - should return error
 		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, nil)
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 
 	t.Run("integration test with real setuid binary", func(t *testing.T) {
@@ -1456,7 +1457,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		// Updated to use AnalyzeCommandSecurityWithConfig
 		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{}, nil)
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.ErrorIs(t, err, isec.ErrInvalidPath)
 	})
 }
 
