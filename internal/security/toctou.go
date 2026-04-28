@@ -80,6 +80,10 @@ func CollectTOCTOUCheckDirs(verifyFilePaths []string, commandPaths []string, has
 // permission issues. Non-existent directories are silently skipped (they cannot be
 // exploited). Violations are logged as warnings and returned as a slice.
 func RunTOCTOUPermissionCheck(checker DirectoryPermChecker, dirs []string, logger *slog.Logger) []TOCTOUViolation {
+	if logger == nil {
+		panic("RunTOCTOUPermissionCheck: logger must not be nil")
+	}
+
 	var violations []TOCTOUViolation
 
 	for _, dir := range dirs {
